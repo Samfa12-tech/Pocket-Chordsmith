@@ -71,6 +71,8 @@ var _pending_stinger := {}
 var _stem_player: AudioStreamPlayer
 var _stinger_player: AudioStreamPlayer
 var _stinger_playback: AudioStreamPlaybackPolyphonic
+var _polyphonic_players := {}
+var _polyphonic_playbacks := {}
 var _active_stinger_ids := {}
 var _stinger_return_states := {}
 var _active_sample_ids := {}
@@ -87,6 +89,7 @@ var _sample_play_failures_total := 0
 var _stinger_play_requests_total := 0
 var _stinger_play_failures_total := 0
 var _audio_stream_cache := {}
+var _last_stinger_stream_key := ""
 
 
 func _ready() -> void:
@@ -105,6 +108,7 @@ func _exit_tree() -> void:
 	_stinger_return_states.clear()
 	_active_sample_ids.clear()
 	_audio_stream_cache.clear()
+	_last_stinger_stream_key = ""
 	_stinger_playback = null
 	if is_instance_valid(_stem_player):
 		_stem_player.stop()
@@ -116,19 +120,29 @@ func _exit_tree() -> void:
 	if is_instance_valid(_stinger_player):
 		_stinger_player.stop()
 		_stinger_player.stream = null
-		if _stinger_player.get_parent() == self:
-			remove_child(_stinger_player)
-		_stinger_player.free()
 		_stinger_player = null
+	for player in _polyphonic_players.values():
+		if is_instance_valid(player):
+			(player as AudioStreamPlayer).stop()
+			(player as AudioStreamPlayer).stream = null
+			if (player as AudioStreamPlayer).get_parent() == self:
+				remove_child(player)
+			(player as AudioStreamPlayer).free()
+	_polyphonic_players.clear()
+	_polyphonic_playbacks.clear()
 
 
 func _stop_polyphonic_streams() -> void:
-	if _stinger_playback == null:
-		return
-	for stream_id in _active_stinger_ids.keys():
-		_stinger_playback.stop_stream(int(stream_id))
-	for stream_id in _active_sample_ids.keys():
-		_stinger_playback.stop_stream(int(stream_id))
+	for stream_key in _active_stinger_ids.keys():
+		var info: Dictionary = _active_stinger_ids[stream_key]
+		var playback := _polyphonic_playbacks.get(str(info.get("bus", "")), null) as AudioStreamPlaybackPolyphonic
+		if playback != null:
+			playback.stop_stream(int(info.get("id", -1)))
+	for stream_key in _active_sample_ids.keys():
+		var info: Dictionary = _active_sample_ids[stream_key]
+		var playback := _polyphonic_playbacks.get(str(info.get("bus", "")), null) as AudioStreamPlaybackPolyphonic
+		if playback != null:
+			playback.stop_stream(int(info.get("id", -1)))
 
 
 func play() -> void:
@@ -297,7 +311,7 @@ func trigger_stinger(name: String, return_to_state := "") -> void:
 			queue_music_state(return_to_state, TransitionBoundary.NEXT_BAR)
 		return
 	if not return_to_state.is_empty():
-		_stinger_return_states[stream_id] = return_to_state
+		_stinger_return_states[_last_stinger_stream_key] = return_to_state
 
 
 func duck_for_dialogue(amount := 0.55, transition_time := 0.2) -> void:
@@ -895,16 +909,9 @@ func _setup_native_audio_players() -> void:
 func _setup_stinger_player() -> void:
 	if not is_inside_tree():
 		return
-	if _stinger_player == null:
-		_stinger_player = AudioStreamPlayer.new()
-		_stinger_player.name = "ChordsmithPolyphonicStingerPlayer"
-		_stinger_player.bus = _safe_bus_name(playback_profile.stingers_bus if playback_profile != null else "Music_Stingers")
-		var polyphonic := AudioStreamPolyphonic.new()
-		polyphonic.set_polyphony(playback_profile.max_polyphony if playback_profile != null else 32)
-		_stinger_player.stream = polyphonic
-		add_child(_stinger_player)
-		_stinger_player.play()
-		_stinger_playback = _stinger_player.get_stream_playback() as AudioStreamPlaybackPolyphonic
+	var stinger_bus := _safe_bus_name(playback_profile.stingers_bus if playback_profile != null else "Music_Stingers")
+	_stinger_playback = _get_polyphonic_playback(stinger_bus)
+	_stinger_player = _polyphonic_players.get(stinger_bus, null)
 
 
 func _apply_safe_default_buses() -> void:
@@ -914,6 +921,28 @@ func _apply_safe_default_buses() -> void:
 		_stem_player.bus = _safe_bus_name(playback_profile.master_music_bus)
 	if is_instance_valid(_stinger_player):
 		_stinger_player.bus = _safe_bus_name(playback_profile.stingers_bus)
+
+
+func _get_polyphonic_playback(bus_name: String) -> AudioStreamPlaybackPolyphonic:
+	if not is_inside_tree():
+		return null
+	var safe_bus := _safe_bus_name(bus_name)
+	if _polyphonic_playbacks.has(safe_bus):
+		var existing := _polyphonic_playbacks[safe_bus] as AudioStreamPlaybackPolyphonic
+		if existing != null:
+			return existing
+	var player := AudioStreamPlayer.new()
+	player.name = "ChordsmithPolyphonic_%s" % safe_bus.replace(" ", "_")
+	player.bus = safe_bus
+	var polyphonic := AudioStreamPolyphonic.new()
+	polyphonic.set_polyphony(playback_profile.max_polyphony if playback_profile != null else 32)
+	player.stream = polyphonic
+	add_child(player)
+	player.play()
+	var playback := player.get_stream_playback() as AudioStreamPlaybackPolyphonic
+	_polyphonic_players[safe_bus] = player
+	_polyphonic_playbacks[safe_bus] = playback
+	return playback
 
 
 func _safe_bus_name(preferred: String, fallback := "Master") -> String:
@@ -1094,21 +1123,20 @@ func _play_stinger_stream(name: String) -> int:
 	if not is_inside_tree() or _is_headless_display():
 		_stinger_play_failures_total += 1
 		return -1
-	_setup_stinger_player()
-	if _stinger_playback == null:
-		_stinger_player.play()
-		_stinger_playback = _stinger_player.get_stream_playback() as AudioStreamPlaybackPolyphonic
-	if _stinger_playback == null:
+	var safe_bus := _safe_bus_name(playback_profile.stingers_bus)
+	var playback := _get_polyphonic_playback(safe_bus)
+	if playback == null:
 		_stinger_play_failures_total += 1
 		return -1
 	var stream := _load_audio_stream(playback_profile.accent_streams.get(name, null))
 	if stream == null:
 		_stinger_play_failures_total += 1
 		return -1
-	var bus := StringName(_safe_bus_name(playback_profile.stingers_bus))
-	var stream_id := _stinger_playback.play_stream(stream, 0.0, 0.0, 1.0, 0, bus)
+	var bus := StringName(safe_bus)
+	var stream_id := playback.play_stream(stream, 0.0, _sample_preview_gain_db("stingers", name), 1.0, 0, bus)
 	if stream_id >= 0:
-		_active_stinger_ids[stream_id] = name
+		_last_stinger_stream_key = _stream_key(safe_bus, stream_id)
+		_active_stinger_ids[_last_stinger_stream_key] = {"id": stream_id, "bus": safe_bus, "name": name}
 		return stream_id
 	_stinger_play_failures_total += 1
 	return -1
@@ -1122,36 +1150,40 @@ func _play_polyphonic_sample(stream: AudioStream, bus_name: String, sample_name:
 	if stream == null or not is_inside_tree() or _is_headless_display():
 		_sample_play_failures_total += 1
 		return -1
-	_setup_stinger_player()
-	if _stinger_playback == null:
-		_stinger_player.play()
-		_stinger_playback = _stinger_player.get_stream_playback() as AudioStreamPlaybackPolyphonic
-	if _stinger_playback == null:
+	var safe_bus := _safe_bus_name(bus_name)
+	var playback := _get_polyphonic_playback(safe_bus)
+	if playback == null:
 		_sample_play_failures_total += 1
 		return -1
-	var stream_id := _stinger_playback.play_stream(stream, 0.0, volume_db, max(0.05, pitch_scale), 0, StringName(_safe_bus_name(bus_name)))
+	var stream_id := playback.play_stream(stream, 0.0, volume_db, max(0.05, pitch_scale), 0, StringName(safe_bus))
 	if stream_id >= 0:
-		_active_sample_ids[stream_id] = sample_name
+		_active_sample_ids[_stream_key(safe_bus, stream_id)] = {"id": stream_id, "bus": safe_bus, "name": sample_name}
 	else:
 		_sample_play_failures_total += 1
 	return stream_id
 
 
 func _update_stinger_finishes() -> void:
-	if _stinger_playback == null:
-		return
-	for stream_id in _active_stinger_ids.keys().duplicate():
-		if not _stinger_playback.is_stream_playing(int(stream_id)):
-			var stinger_name := str(_active_stinger_ids[stream_id])
-			_active_stinger_ids.erase(stream_id)
+	for stream_key in _active_stinger_ids.keys().duplicate():
+		var info: Dictionary = _active_stinger_ids[stream_key]
+		var playback := _polyphonic_playbacks.get(str(info.get("bus", "")), null) as AudioStreamPlaybackPolyphonic
+		if playback == null or not playback.is_stream_playing(int(info.get("id", -1))):
+			var stinger_name := str(info.get("name", ""))
+			_active_stinger_ids.erase(stream_key)
 			stinger_finished.emit(stinger_name)
-			var return_state := str(_stinger_return_states.get(stream_id, ""))
-			_stinger_return_states.erase(stream_id)
+			var return_state := str(_stinger_return_states.get(stream_key, ""))
+			_stinger_return_states.erase(stream_key)
 			if not return_state.is_empty():
 				queue_music_state(return_state, TransitionBoundary.NEXT_BAR)
-	for stream_id in _active_sample_ids.keys().duplicate():
-		if not _stinger_playback.is_stream_playing(int(stream_id)):
-			_active_sample_ids.erase(stream_id)
+	for stream_key in _active_sample_ids.keys().duplicate():
+		var info: Dictionary = _active_sample_ids[stream_key]
+		var playback := _polyphonic_playbacks.get(str(info.get("bus", "")), null) as AudioStreamPlaybackPolyphonic
+		if playback == null or not playback.is_stream_playing(int(info.get("id", -1))):
+			_active_sample_ids.erase(stream_key)
+
+
+func _stream_key(bus_name: String, stream_id: int) -> String:
+	return "%s:%d" % [bus_name, stream_id]
 
 
 func _sample_key_for_event(event: Dictionary) -> String:
