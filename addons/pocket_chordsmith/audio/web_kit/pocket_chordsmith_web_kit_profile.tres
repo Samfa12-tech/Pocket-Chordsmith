@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="PCSPlaybackProfile" format=3]
+
+[ext_resource type="Script" path="res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd" id="1_bgq2e"]
+
+[resource]
+script = ExtResource("1_bgq2e")
+playback_backend = 1
+max_polyphony = 24
+accent_streams = {
+"reward_hit": "res://addons/pocket_chordsmith/audio/web_kit/reward_hit.wav",
+"transition_hit": "res://addons/pocket_chordsmith/audio/web_kit/transition_hit.wav",
+"warning_hit": "res://addons/pocket_chordsmith/audio/web_kit/warning_hit.wav"
+}
+drum_kit = {
+"clap": "res://addons/pocket_chordsmith/audio/web_kit/clap.wav",
+"hat": "res://addons/pocket_chordsmith/audio/web_kit/hat.wav",
+"hat_accent": "res://addons/pocket_chordsmith/audio/web_kit/hat_accent.wav",
+"kick": "res://addons/pocket_chordsmith/audio/web_kit/kick.wav",
+"kick_accent": "res://addons/pocket_chordsmith/audio/web_kit/kick_accent.wav",
+"open_hat": "res://addons/pocket_chordsmith/audio/web_kit/open_hat.wav",
+"snare": "res://addons/pocket_chordsmith/audio/web_kit/snare.wav",
+"snare_accent": "res://addons/pocket_chordsmith/audio/web_kit/snare_accent.wav"
+}
+marker_stingers = {
+"boss_warning": "warning_hit",
+"reward": "reward_hit",
+"transition": "transition_hit"
+}
