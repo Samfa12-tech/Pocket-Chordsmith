@@ -12,6 +12,7 @@ const AudioBusTools := preload("res://addons/pocket_chordsmith/editor/pcs_audio_
 const ChartBuildTools := preload("res://addons/pocket_chordsmith/import/pcs_chart_build_tools.gd")
 
 const POCKET_CHORDSMITH_URL := "https://samfa12.itch.io/pocket-chordsmith"
+const WEB_KIT_PROFILE_PATH := "res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.tres"
 
 var editor_interface: EditorInterface
 var import_result: Dictionary = {}
@@ -52,6 +53,7 @@ func _ready() -> void:
 	conductor.section_started.connect(_on_preview_section)
 	conductor.event_triggered.connect(_on_preview_event)
 	add_child(conductor)
+	_assign_default_preview_profile(false)
 	_timeline.set_conductor(conductor)
 	_update_actions()
 
@@ -366,10 +368,11 @@ func _generate_web_sound_kit() -> void:
 	if not errors.is_empty():
 		_set_status("Could not generate sound kit: %s" % str(errors))
 		return
+	_assign_default_preview_profile(false)
 	_set_status("Generated %d Pocket Chordsmith web-kit WAV(s) and profile %s. %s" % [
 		samples.size(),
 		str(result.get("profile_path", "")),
-		"Warnings: %s" % str(warnings) if not warnings.is_empty() else "",
+		"Warnings: %s" % str(warnings) if not warnings.is_empty() else "Preview will use this HYBRID profile.",
 	])
 
 
@@ -435,6 +438,9 @@ func _play_preview() -> void:
 		return
 	conductor.chart = chart
 	conductor.loop_enabled = true
+	if not _assign_default_preview_profile(true):
+		_set_status("Preview timing is ready, but no audio profile is assigned. Click Generate Web Sound Kit, then press Play Preview again.")
+		return
 	if conductor.playback_profile != null and conductor.playback_profile.playback_backend == PCSPlaybackProfile.PlaybackBackend.STEM_SYNC and conductor.playback_profile.stem_paths.is_empty() and conductor.playback_profile.stem_sets.is_empty():
 		_set_status("Preview timing will play, but this profile is STEM_SYNC with no stems assigned.")
 	conductor.play()
@@ -563,6 +569,30 @@ func _on_preview_section(section_id: String) -> void:
 func _on_preview_event(event: Dictionary) -> void:
 	if str(event.get("track_type", "")) == "marker":
 		_set_status("Marker: %s" % str(event.get("instrument_id", "")))
+
+
+func _assign_default_preview_profile(update_status: bool) -> bool:
+	if conductor == null:
+		return false
+	if conductor.playback_profile != null and not _profile_needs_preview_fallback(conductor.playback_profile):
+		return true
+	if not ResourceLoader.exists(WEB_KIT_PROFILE_PATH):
+		return false
+	var profile := ResourceLoader.load(WEB_KIT_PROFILE_PATH)
+	if not (profile is PCSPlaybackProfile):
+		return false
+	conductor.playback_profile = profile
+	if update_status:
+		_set_status("Using generated Pocket Chordsmith Web Sound Kit profile for preview.")
+	return true
+
+
+func _profile_needs_preview_fallback(profile: PCSPlaybackProfile) -> bool:
+	if profile == null:
+		return true
+	if profile.playback_backend != PCSPlaybackProfile.PlaybackBackend.STEM_SYNC:
+		return false
+	return profile.stem_paths.is_empty() and profile.stem_sets.is_empty() and profile.drum_kit.is_empty() and profile.accent_streams.is_empty() and profile.event_sample_streams.is_empty()
 
 
 func _set_status(text: String) -> void:
