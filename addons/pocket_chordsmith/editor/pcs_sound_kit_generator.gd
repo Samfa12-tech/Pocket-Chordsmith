@@ -70,18 +70,22 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 	profile.mobile_safe = true
 	profile.sample_preview_enabled = true
 	profile.sample_preview_velocity_scale = true
+	profile.sample_preview_tonal_enabled = false
+	profile.sample_preview_wall_clock_timing = true
+	profile.sample_preview_max_chord_notes = 2
+	profile.sample_preview_skip_late_audio_ticks = 960
 	profile.sample_preview_gain_db = {
 		"drums": -3.0,
-		"kick": 2.0,
-		"kick_accent": 2.0,
+		"kick": 4.0,
+		"kick_accent": 4.0,
 		"snare": -3.0,
 		"snare_accent": -3.0,
-		"hat": -9.0,
-		"hat_accent": -8.0,
-		"open_hat": -8.0,
-		"bass": -12.0,
-		"chords": -20.0,
-		"melody": -15.0,
+		"hat": -12.0,
+		"hat_accent": -11.0,
+		"open_hat": -12.0,
+		"bass": -26.0,
+		"chords": -36.0,
+		"melody": -30.0,
 		"stingers": -8.0,
 	}
 	profile.drum_kit = {
@@ -142,7 +146,8 @@ func _kick(peak: float) -> PackedFloat32Array:
 		var freq := lerp(155.0, 45.0, 1.0 - pow(0.001, n))
 		phase += TWO_PI * freq / float(SAMPLE_RATE)
 		var env: float = max(0.0, peak) * exp(-30.0 * t)
-		out[i] = sin(phase) * env
+		var click := exp(-420.0 * t) * sin(TWO_PI * 2800.0 * t) * 0.22
+		out[i] = sin(phase) * env + click
 	return _normalize(out, 0.98)
 
 

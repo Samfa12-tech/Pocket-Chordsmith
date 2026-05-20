@@ -83,6 +83,8 @@ var _events_emitted_total := 0
 var _events_late_total := 0
 var _events_deferred_total := 0
 var _process_previous_tick := 0
+var _clock_anchor_tick := 0
+var _clock_anchor_usec := 0
 var _last_playback_warning_signature := ""
 var _sample_play_requests_total := 0
 var _sample_play_failures_total := 0
@@ -151,6 +153,7 @@ func play() -> void:
 	_warn_playback_profile_once()
 	_playing = true
 	_paused = false
+	_reset_wall_clock_anchor()
 	_initialize_music_state()
 	_prepare_stem_sync_for_current_state()
 	if current_sequence.is_empty():
@@ -186,6 +189,7 @@ func resume() -> void:
 	if chart != null:
 		_playing = true
 		_paused = false
+		_reset_wall_clock_anchor()
 
 
 func seek_tick(tick: int) -> void:
@@ -193,6 +197,7 @@ func seek_tick(tick: int) -> void:
 		return
 	current_tick = clamp(tick, 0, max(0, chart.get_length_ticks()))
 	_tick_float = float(current_tick)
+	_reset_wall_clock_anchor()
 	_event_cursor = _find_event_cursor(current_tick)
 	_last_beat_index = int(floor(float(current_tick) / float(chart.ticks_per_quarter))) - 1
 	_last_bar_index = int(floor(float(current_tick) / float(max(1, chart.time_signature * chart.ticks_per_quarter)))) - 1
@@ -431,7 +436,11 @@ func _process(delta: float) -> void:
 		return
 
 	var previous_tick := current_tick
-	_tick_float += delta * _ticks_per_second()
+	if _use_wall_clock_timing():
+		var elapsed_seconds := float(Time.get_ticks_usec() - _clock_anchor_usec) / 1000000.0
+		_tick_float = float(_clock_anchor_tick) + elapsed_seconds * _ticks_per_second()
+	else:
+		_tick_float += delta * _ticks_per_second()
 	current_tick = int(floor(_tick_float))
 	_process_previous_tick = previous_tick
 
@@ -806,13 +815,19 @@ func _route_sample_preview_event(event: Dictionary) -> void:
 		return
 	var track_type := str(event.get("track_type", ""))
 	var instrument_id := str(event.get("instrument_id", ""))
+	if _sample_audio_is_too_late(event):
+		return
 	if track_type == "marker":
 		var stinger_name := str(playback_profile.marker_stingers.get(instrument_id, ""))
 		if not stinger_name.is_empty():
 			trigger_stinger(stinger_name)
 		return
 	if track_type == "chord":
+		if not playback_profile.sample_preview_tonal_enabled:
+			return
 		_route_sample_preview_chord(event)
+		return
+	if (track_type == "bass" or track_type == "melody") and not playback_profile.sample_preview_tonal_enabled:
 		return
 	if not ["drum", "accent", "bass", "melody"].has(track_type):
 		return
@@ -837,6 +852,8 @@ func _route_sample_preview_chord(event: Dictionary) -> void:
 		return
 	var flags: Dictionary = event.get("flags", {})
 	var notes: Array = flags.get("midi_notes", [int(event.get("midi_note", 60))])
+	if playback_profile.sample_preview_max_chord_notes > 0 and notes.size() > playback_profile.sample_preview_max_chord_notes:
+		notes = notes.slice(0, playback_profile.sample_preview_max_chord_notes)
 	var velocity := clamp(float(event.get("velocity", 76)) / 127.0, 0.0, 1.0)
 	var volume_db := lerp(-28.0, -18.0, velocity) if playback_profile.sample_preview_velocity_scale else -22.0
 	volume_db += _sample_preview_gain_db("chords", sample_key)
@@ -1254,6 +1271,22 @@ func _sample_preview_gain_db(layer_name: String, sample_key: String) -> float:
 	if gains.has(layer_name):
 		return float(gains[layer_name])
 	return 0.0
+
+
+func _sample_audio_is_too_late(event: Dictionary) -> bool:
+	if playback_profile == null or playback_profile.sample_preview_skip_late_audio_ticks <= 0:
+		return false
+	var event_tick := int(event.get("tick", current_tick))
+	return current_tick - event_tick > playback_profile.sample_preview_skip_late_audio_ticks
+
+
+func _use_wall_clock_timing() -> bool:
+	return playback_profile != null and playback_profile.sample_preview_wall_clock_timing
+
+
+func _reset_wall_clock_anchor() -> void:
+	_clock_anchor_tick = current_tick
+	_clock_anchor_usec = Time.get_ticks_usec()
 
 
 func _sample_stream_for_key(sample_key: String) -> AudioStream:
