@@ -86,6 +86,7 @@ var _sample_play_requests_total := 0
 var _sample_play_failures_total := 0
 var _stinger_play_requests_total := 0
 var _stinger_play_failures_total := 0
+var _audio_stream_cache := {}
 
 
 func _ready() -> void:
@@ -103,6 +104,7 @@ func _exit_tree() -> void:
 	_active_stinger_ids.clear()
 	_stinger_return_states.clear()
 	_active_sample_ids.clear()
+	_audio_stream_cache.clear()
 	_stinger_playback = null
 	if is_instance_valid(_stem_player):
 		_stem_player.stop()
@@ -807,6 +809,7 @@ func _route_sample_preview_event(event: Dictionary) -> void:
 	var velocity := clamp(float(event.get("velocity", 100)) / 127.0, 0.0, 1.0)
 	var volume_db := lerp(-18.0, 0.0, velocity) if playback_profile.sample_preview_velocity_scale else 0.0
 	var layer := _sample_preview_layer_for_event(event)
+	volume_db += _sample_preview_gain_db(layer, sample_key)
 	var pitch_scale := _sample_pitch_scale_for_event(event)
 	_play_polyphonic_sample(stream, _bus_for_layer(layer), sample_key, volume_db, pitch_scale)
 
@@ -821,7 +824,8 @@ func _route_sample_preview_chord(event: Dictionary) -> void:
 	var flags: Dictionary = event.get("flags", {})
 	var notes: Array = flags.get("midi_notes", [int(event.get("midi_note", 60))])
 	var velocity := clamp(float(event.get("velocity", 76)) / 127.0, 0.0, 1.0)
-	var volume_db := lerp(-24.0, -7.0, velocity) if playback_profile.sample_preview_velocity_scale else -10.0
+	var volume_db := lerp(-28.0, -18.0, velocity) if playback_profile.sample_preview_velocity_scale else -22.0
+	volume_db += _sample_preview_gain_db("chords", sample_key)
 	for note in notes:
 		var midi_note := int(note)
 		var pitch_scale := pow(2.0, float(midi_note - 60) / 12.0)
@@ -906,15 +910,10 @@ func _setup_stinger_player() -> void:
 func _apply_safe_default_buses() -> void:
 	if playback_profile == null:
 		return
-	playback_profile.master_music_bus = _safe_bus_name(playback_profile.master_music_bus)
-	playback_profile.drums_bus = _safe_bus_name(playback_profile.drums_bus)
-	playback_profile.bass_bus = _safe_bus_name(playback_profile.bass_bus)
-	playback_profile.chords_bus = _safe_bus_name(playback_profile.chords_bus)
-	playback_profile.melody_bus = _safe_bus_name(playback_profile.melody_bus)
-	playback_profile.stingers_bus = _safe_bus_name(playback_profile.stingers_bus)
-	playback_profile.fx_bus = _safe_bus_name(playback_profile.fx_bus)
-	playback_profile.accent_bus_name = _safe_bus_name(playback_profile.accent_bus_name)
-	playback_profile.music_bus_name = _safe_bus_name(playback_profile.music_bus_name)
+	if is_instance_valid(_stem_player):
+		_stem_player.bus = _safe_bus_name(playback_profile.master_music_bus)
+	if is_instance_valid(_stinger_player):
+		_stinger_player.bus = _safe_bus_name(playback_profile.stingers_bus)
 
 
 func _safe_bus_name(preferred: String, fallback := "Master") -> String:
@@ -1071,8 +1070,14 @@ func _load_audio_stream(value) -> AudioStream:
 	if value is AudioStream:
 		return value
 	if value is String and ResourceLoader.exists(value):
-		var resource := load(value)
-		return resource if resource is AudioStream else null
+		var path := str(value)
+		if _audio_stream_cache.has(path):
+			return _audio_stream_cache[path]
+		var resource := load(path)
+		if resource is AudioStream:
+			_audio_stream_cache[path] = resource
+			return resource
+		return null
 	return null
 
 
@@ -1206,6 +1211,17 @@ func _sample_pitch_scale_for_event(event: Dictionary) -> float:
 	elif track_type == "chord":
 		root_note = 60
 	return pow(2.0, float(midi_note - root_note) / 12.0)
+
+
+func _sample_preview_gain_db(layer_name: String, sample_key: String) -> float:
+	if playback_profile == null:
+		return 0.0
+	var gains: Dictionary = playback_profile.sample_preview_gain_db
+	if gains.has(sample_key):
+		return float(gains[sample_key])
+	if gains.has(layer_name):
+		return float(gains[layer_name])
+	return 0.0
 
 
 func _sample_stream_for_key(sample_key: String) -> AudioStream:

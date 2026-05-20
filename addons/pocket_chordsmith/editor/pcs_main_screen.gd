@@ -441,6 +441,7 @@ func _play_preview() -> void:
 	if not _assign_default_preview_profile(true):
 		_set_status("Preview timing is ready, but no audio profile is assigned. Click Generate Web Sound Kit, then press Play Preview again.")
 		return
+	_ensure_preview_audio_buses()
 	if conductor.playback_profile != null and conductor.playback_profile.playback_backend == PCSPlaybackProfile.PlaybackBackend.STEM_SYNC and conductor.playback_profile.stem_paths.is_empty() and conductor.playback_profile.stem_sets.is_empty():
 		_set_status("Preview timing will play, but this profile is STEM_SYNC with no stems assigned.")
 	conductor.play()
@@ -593,6 +594,29 @@ func _profile_needs_preview_fallback(profile: PCSPlaybackProfile) -> bool:
 	if profile.playback_backend != PCSPlaybackProfile.PlaybackBackend.STEM_SYNC:
 		return false
 	return profile.stem_paths.is_empty() and profile.stem_sets.is_empty() and profile.drum_kit.is_empty() and profile.accent_streams.is_empty() and profile.event_sample_streams.is_empty()
+
+
+func _ensure_preview_audio_buses() -> void:
+	if conductor == null or conductor.playback_profile == null:
+		return
+	var required := [
+		conductor.playback_profile.master_music_bus,
+		conductor.playback_profile.drums_bus,
+		conductor.playback_profile.bass_bus,
+		conductor.playback_profile.chords_bus,
+		conductor.playback_profile.melody_bus,
+		conductor.playback_profile.stingers_bus,
+	]
+	for bus_name in required:
+		if AudioServer.get_bus_index(str(bus_name)) == -1:
+			var tools = AudioBusTools.new()
+			var result: Dictionary = tools.create_missing_recommended_buses(true)
+			if editor_interface != null:
+				editor_interface.get_resource_filesystem().scan()
+			var warnings: Array = result.get("warnings", [])
+			if not warnings.is_empty():
+				_set_status("Preview created/reused Chordsmith audio buses. Warnings: %s" % str(warnings))
+			return
 
 
 func _set_status(text: String) -> void:

@@ -70,6 +70,20 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 	profile.mobile_safe = true
 	profile.sample_preview_enabled = true
 	profile.sample_preview_velocity_scale = true
+	profile.sample_preview_gain_db = {
+		"drums": -3.0,
+		"kick": 2.0,
+		"kick_accent": 2.0,
+		"snare": -3.0,
+		"snare_accent": -3.0,
+		"hat": -9.0,
+		"hat_accent": -8.0,
+		"open_hat": -8.0,
+		"bass": -12.0,
+		"chords": -20.0,
+		"melody": -15.0,
+		"stingers": -8.0,
+	}
 	profile.drum_kit = {
 		"kick": sample_paths.get("kick", ""),
 		"kick_accent": sample_paths.get("kick_accent", ""),
