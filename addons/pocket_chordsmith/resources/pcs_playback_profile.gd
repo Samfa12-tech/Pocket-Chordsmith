@@ -25,7 +25,7 @@ enum PlaybackBackend {
 @export var marker_stingers: Dictionary = {}
 @export var sample_preview_enabled := true
 @export var sample_preview_velocity_scale := true
-@export var sample_preview_tonal_enabled := false
+@export var sample_preview_tonal_enabled := true
 @export var sample_preview_wall_clock_timing := true
 @export var sample_preview_max_chord_notes := 2
 @export var sample_preview_skip_late_audio_ticks := 960
@@ -38,9 +38,9 @@ enum PlaybackBackend {
 	"hat": -12.0,
 	"hat_accent": -11.0,
 	"open_hat": -12.0,
-	"bass": -26.0,
-	"chords": -36.0,
-	"melody": -30.0,
+	"bass": -18.0,
+	"chords": -26.0,
+	"melody": -20.0,
 	"stingers": -8.0,
 }
 @export var master_music_bus := "Music_Master"

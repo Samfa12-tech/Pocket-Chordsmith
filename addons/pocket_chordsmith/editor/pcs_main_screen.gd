@@ -254,7 +254,7 @@ func _build_ui() -> void:
 
 	_paste_dialog = ConfirmationDialog.new()
 	_paste_dialog.title = "Paste Pocket Chordsmith JSON Or Share Code"
-	_paste_dialog.min_size = Vector2i(760, 500)
+	_paste_dialog.min_size = Vector2i(760, 340)
 	_paste_dialog.confirmed.connect(_import_pasted_text)
 	add_child(_paste_dialog)
 	var paste_root := VBoxContainer.new()
@@ -265,7 +265,7 @@ func _build_ui() -> void:
 	paste_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	paste_root.add_child(paste_hint)
 	_paste_text = TextEdit.new()
-	_paste_text.custom_minimum_size = Vector2(720, 360)
+	_paste_text.custom_minimum_size = Vector2(720, 210)
 	paste_root.add_child(_paste_text)
 
 
@@ -286,7 +286,7 @@ func _open_import_dialog() -> void:
 func _open_paste_dialog() -> void:
 	if _paste_text != null:
 		_paste_text.text = ""
-	_paste_dialog.popup_centered()
+	_paste_dialog.popup_centered(Vector2i(760, 340))
 
 
 func _open_pocket_chordsmith_site() -> void:
