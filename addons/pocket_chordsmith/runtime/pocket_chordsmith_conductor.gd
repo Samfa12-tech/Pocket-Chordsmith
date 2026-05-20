@@ -795,7 +795,10 @@ func _route_sample_preview_event(event: Dictionary) -> void:
 		if not stinger_name.is_empty():
 			trigger_stinger(stinger_name)
 		return
-	if track_type != "drum" and track_type != "accent":
+	if track_type == "chord":
+		_route_sample_preview_chord(event)
+		return
+	if not ["drum", "accent", "bass", "melody"].has(track_type):
 		return
 	var sample_key := _sample_key_for_event(event)
 	var stream := _sample_stream_for_key(sample_key)
@@ -803,8 +806,26 @@ func _route_sample_preview_event(event: Dictionary) -> void:
 		return
 	var velocity := clamp(float(event.get("velocity", 100)) / 127.0, 0.0, 1.0)
 	var volume_db := lerp(-18.0, 0.0, velocity) if playback_profile.sample_preview_velocity_scale else 0.0
-	var layer := "drums" if track_type == "drum" else "stingers"
-	_play_polyphonic_sample(stream, _bus_for_layer(layer), sample_key, volume_db)
+	var layer := _sample_preview_layer_for_event(event)
+	var pitch_scale := _sample_pitch_scale_for_event(event)
+	_play_polyphonic_sample(stream, _bus_for_layer(layer), sample_key, volume_db, pitch_scale)
+
+
+func _route_sample_preview_chord(event: Dictionary) -> void:
+	if playback_profile == null:
+		return
+	var sample_key := _sample_key_for_event(event)
+	var stream := _sample_stream_for_key(sample_key)
+	if stream == null:
+		return
+	var flags: Dictionary = event.get("flags", {})
+	var notes: Array = flags.get("midi_notes", [int(event.get("midi_note", 60))])
+	var velocity := clamp(float(event.get("velocity", 76)) / 127.0, 0.0, 1.0)
+	var volume_db := lerp(-24.0, -7.0, velocity) if playback_profile.sample_preview_velocity_scale else -10.0
+	for note in notes:
+		var midi_note := int(note)
+		var pitch_scale := pow(2.0, float(midi_note - 60) / 12.0)
+		_play_polyphonic_sample(stream, _bus_for_layer("chords"), "chord:%d" % midi_note, volume_db, pitch_scale)
 
 
 func _warn_playback_profile_once() -> void:
@@ -1088,7 +1109,7 @@ func _play_stinger_stream(name: String) -> int:
 	return -1
 
 
-func _play_polyphonic_sample(stream: AudioStream, bus_name: String, sample_name: String, volume_db := 0.0) -> int:
+func _play_polyphonic_sample(stream: AudioStream, bus_name: String, sample_name: String, volume_db := 0.0, pitch_scale := 1.0) -> int:
 	_sample_play_requests_total += 1
 	if playback_profile == null or not playback_profile.use_audio_stream_polyphonic_for_accents:
 		_sample_play_failures_total += 1
@@ -1103,7 +1124,7 @@ func _play_polyphonic_sample(stream: AudioStream, bus_name: String, sample_name:
 	if _stinger_playback == null:
 		_sample_play_failures_total += 1
 		return -1
-	var stream_id := _stinger_playback.play_stream(stream, 0.0, volume_db, 1.0, 0, StringName(_safe_bus_name(bus_name)))
+	var stream_id := _stinger_playback.play_stream(stream, 0.0, volume_db, max(0.05, pitch_scale), 0, StringName(_safe_bus_name(bus_name)))
 	if stream_id >= 0:
 		_active_sample_ids[stream_id] = sample_name
 	else:
@@ -1141,7 +1162,50 @@ func _sample_key_for_event(event: Dictionary) -> String:
 		var full_key := "accent:%s" % instrument_id
 		if playback_profile != null and playback_profile.event_sample_streams.has(full_key):
 			return full_key
+	if track_type == "bass":
+		var bass_key := "bass:%s" % instrument_id
+		if playback_profile != null and playback_profile.event_sample_streams.has(bass_key):
+			return bass_key
+		return "bass"
+	if track_type == "chord":
+		if playback_profile != null and playback_profile.event_sample_streams.has("chord:tone"):
+			return "chord:tone"
+		return "chord"
+	if track_type == "melody":
+		var melody_key := "melody:%s" % instrument_id
+		if playback_profile != null and playback_profile.event_sample_streams.has(melody_key):
+			return melody_key
+		return "melody"
 	return instrument_id
+
+
+func _sample_preview_layer_for_event(event: Dictionary) -> String:
+	match str(event.get("track_type", "")):
+		"drum":
+			return "drums"
+		"bass":
+			return "bass"
+		"chord":
+			return "chords"
+		"melody":
+			return "melody"
+		_:
+			return "stingers"
+
+
+func _sample_pitch_scale_for_event(event: Dictionary) -> float:
+	var midi_note := int(event.get("midi_note", -1))
+	if midi_note < 0:
+		return 1.0
+	var track_type := str(event.get("track_type", ""))
+	var root_note := 60
+	if track_type == "bass":
+		root_note = 36
+	elif track_type == "melody":
+		root_note = 60
+	elif track_type == "chord":
+		root_note = 60
+	return pow(2.0, float(midi_note - root_note) / 12.0)
 
 
 func _sample_stream_for_key(sample_key: String) -> AudioStream:

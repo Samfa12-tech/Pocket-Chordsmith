@@ -11,6 +11,18 @@ accent_streams = {
 "transition_hit": "res://addons/pocket_chordsmith/audio/web_kit/transition_hit.wav",
 "warning_hit": "res://addons/pocket_chordsmith/audio/web_kit/warning_hit.wav"
 }
+event_sample_streams = {
+"bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
+"bass:auto_bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
+"bass:manual_bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
+"chord": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:tone": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"melody": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
+"melody:bell": "res://addons/pocket_chordsmith/audio/web_kit/melody_bell.wav",
+"melody:pulse": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
+"melody:soft": "res://addons/pocket_chordsmith/audio/web_kit/melody_soft.wav",
+"melody:synth": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav"
+}
 drum_kit = {
 "clap": "res://addons/pocket_chordsmith/audio/web_kit/clap.wav",
 "hat": "res://addons/pocket_chordsmith/audio/web_kit/hat.wav",

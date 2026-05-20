@@ -5,6 +5,7 @@ class_name PCSSoundKitGenerator
 const DEFAULT_OUTPUT_DIR := "res://addons/pocket_chordsmith/audio/web_kit"
 const SAMPLE_RATE := 44100
 const TWO_PI := PI * 2.0
+const PlaybackProfileScript := preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
 
 
 func generate_web_kit(output_dir := DEFAULT_OUTPUT_DIR) -> Dictionary:
@@ -30,6 +31,11 @@ func generate_web_kit(output_dir := DEFAULT_OUTPUT_DIR) -> Dictionary:
 		"open_hat": _hat(0.24, true, 4),
 		"hat_accent": _hat(0.24, true, 4),
 		"clap": _clap(0.34, 5),
+		"bass_tone": _bass_tone(),
+		"chord_tone": _chord_tone(),
+		"melody_pulse": _melody_pulse(),
+		"melody_soft": _melody_soft(),
+		"melody_bell": _melody_bell(),
 		"warning_hit": _warning_hit(),
 		"reward_hit": _reward_hit(),
 		"transition_hit": _transition_hit(6),
@@ -58,8 +64,8 @@ func generate_web_kit(output_dir := DEFAULT_OUTPUT_DIR) -> Dictionary:
 
 
 func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary:
-	var profile := PCSPlaybackProfile.new()
-	profile.playback_backend = PCSPlaybackProfile.PlaybackBackend.HYBRID
+	var profile: Resource = PlaybackProfileScript.new()
+	profile.playback_backend = PlaybackProfileScript.PlaybackBackend.HYBRID
 	profile.max_polyphony = 24
 	profile.mobile_safe = true
 	profile.sample_preview_enabled = true
@@ -79,6 +85,18 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 		"reward_hit": sample_paths.get("reward_hit", ""),
 		"transition_hit": sample_paths.get("transition_hit", ""),
 	}
+	profile.event_sample_streams = {
+		"bass": sample_paths.get("bass_tone", ""),
+		"bass:auto_bass": sample_paths.get("bass_tone", ""),
+		"bass:manual_bass": sample_paths.get("bass_tone", ""),
+		"chord": sample_paths.get("chord_tone", ""),
+		"chord:tone": sample_paths.get("chord_tone", ""),
+		"melody": sample_paths.get("melody_pulse", ""),
+		"melody:pulse": sample_paths.get("melody_pulse", ""),
+		"melody:synth": sample_paths.get("melody_pulse", ""),
+		"melody:soft": sample_paths.get("melody_soft", ""),
+		"melody:bell": sample_paths.get("melody_bell", ""),
+	}
 	profile.marker_stingers = {
 		"boss_warning": "warning_hit",
 		"reward": "reward_hit",
@@ -86,6 +104,9 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 	}
 	profile.master_music_bus = "Music_Master"
 	profile.drums_bus = "Music_Drums"
+	profile.bass_bus = "Music_Bass"
+	profile.chords_bus = "Music_Chords"
+	profile.melody_bus = "Music_Melody"
 	profile.stingers_bus = "Music_Stingers"
 	var error := ResourceSaver.save(profile, profile_path)
 	return {
@@ -158,6 +179,76 @@ func _clap(peak: float, seed: int) -> PackedFloat32Array:
 	return _normalize(_highpass(data, 1350.0), 0.78)
 
 
+func _bass_tone() -> PackedFloat32Array:
+	var duration := 0.46
+	var total := int(SAMPLE_RATE * duration)
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.012) * exp(-4.6 * t)
+		var tone := sin(TWO_PI * 65.406 * t) * 0.74
+		tone += sin(TWO_PI * 130.812 * t) * 0.22
+		tone += _soft_clip(sin(TWO_PI * 65.406 * t) * 2.4) * 0.16
+		data[i] = tone * env
+	return _normalize(data, 0.82)
+
+
+func _chord_tone() -> PackedFloat32Array:
+	var duration := 0.62
+	var total := int(SAMPLE_RATE * duration)
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.018) * exp(-3.1 * t)
+		var pulse := 1.0 if fmod(t * 261.626, 1.0) < 0.52 else -1.0
+		var tone := pulse * 0.36 + sin(TWO_PI * 261.626 * t) * 0.28 + sin(TWO_PI * 523.252 * t) * 0.08
+		data[i] = tone * env
+	return _normalize(_lowpass(data, 5200.0), 0.64)
+
+
+func _melody_pulse() -> PackedFloat32Array:
+	var duration := 0.38
+	var total := int(SAMPLE_RATE * duration)
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.009) * exp(-5.8 * t)
+		var pulse := 1.0 if fmod(t * 261.626, 1.0) < 0.46 else -1.0
+		data[i] = (pulse * 0.42 + sin(TWO_PI * 523.252 * t) * 0.12) * env
+	return _normalize(_lowpass(data, 6200.0), 0.70)
+
+
+func _melody_soft() -> PackedFloat32Array:
+	var duration := 0.46
+	var total := int(SAMPLE_RATE * duration)
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.024) * exp(-4.2 * t)
+		var tone := sin(TWO_PI * 261.626 * t) * 0.55 + sin(TWO_PI * 392.0 * t) * 0.13
+		data[i] = tone * env
+	return _normalize(data, 0.66)
+
+
+func _melody_bell() -> PackedFloat32Array:
+	var duration := 0.72
+	var total := int(SAMPLE_RATE * duration)
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.004) * exp(-5.4 * t)
+		var tone := sin(TWO_PI * 523.252 * t) * 0.52
+		tone += sin(TWO_PI * 1046.504 * t) * 0.20
+		tone += sin(TWO_PI * 1567.982 * t) * 0.08
+		data[i] = tone * env
+	return _normalize(data, 0.68)
+
+
 func _warning_hit() -> PackedFloat32Array:
 	var duration := 0.42
 	var total := int(SAMPLE_RATE * duration)
@@ -203,6 +294,25 @@ func _transition_hit(seed: int) -> PackedFloat32Array:
 		var env: float = min(1.0, t / 0.02) * exp(-8.0 * t)
 		data[i] = (rng.randf() * 2.0 - 1.0) * env * 0.42
 	return _normalize(_highpass(data, 900.0), 0.72)
+
+
+func _lowpass(input: PackedFloat32Array, cutoff_hz: float) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(input.size())
+	if input.is_empty():
+		return out
+	var dt := 1.0 / float(SAMPLE_RATE)
+	var rc := 1.0 / (TWO_PI * cutoff_hz)
+	var alpha := dt / (rc + dt)
+	var y := float(input[0])
+	for i in range(input.size()):
+		y = y + alpha * (float(input[i]) - y)
+		out[i] = y
+	return out
+
+
+func _soft_clip(value: float) -> float:
+	return value / (1.0 + absf(value))
 
 
 func _highpass(input: PackedFloat32Array, cutoff_hz: float) -> PackedFloat32Array:
