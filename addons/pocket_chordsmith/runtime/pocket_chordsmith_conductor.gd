@@ -54,6 +54,7 @@ var _playing := false
 var _paused := false
 var _tick_float := 0.0
 var _event_cursor := 0
+var _audio_event_cursor := 0
 var _last_beat_index := -1
 var _last_bar_index := -1
 var _last_section_id := ""
@@ -171,6 +172,7 @@ func stop() -> void:
 	current_tick = 0
 	_tick_float = 0.0
 	_event_cursor = 0
+	_audio_event_cursor = 0
 	_last_beat_index = -1
 	_last_bar_index = -1
 	_last_section_id = ""
@@ -199,6 +201,7 @@ func seek_tick(tick: int) -> void:
 	_tick_float = float(current_tick)
 	_reset_wall_clock_anchor()
 	_event_cursor = _find_event_cursor(current_tick)
+	_audio_event_cursor = _find_event_cursor(current_tick)
 	_last_beat_index = int(floor(float(current_tick) / float(chart.ticks_per_quarter))) - 1
 	_last_bar_index = int(floor(float(current_tick) / float(max(1, chart.time_signature * chart.ticks_per_quarter)))) - 1
 	_update_position_fields()
@@ -399,7 +402,10 @@ func get_diagnostics() -> Dictionary:
 		"backend": backend,
 		"chart": chart.resource_path if chart != null else "",
 		"event_cursor": _event_cursor,
+		"audio_event_cursor": _audio_event_cursor,
 		"event_count": chart.compiled_events.size() if chart != null else 0,
+		"lookahead_ticks": playback_profile.lookahead_ticks if playback_profile != null else 0,
+		"swing": chart.swing if chart != null else 0.0,
 		"events_emitted_this_frame": _events_emitted_this_frame,
 		"events_late_this_frame": _events_late_this_frame,
 		"events_deferred_this_frame": _events_deferred_this_frame,
@@ -452,6 +458,7 @@ func _process(delta: float) -> void:
 	_update_position_fields()
 	_emit_timing_signals()
 	_emit_section_changes()
+	_route_audio_lookahead_events()
 	_emit_due_events()
 
 
@@ -561,7 +568,6 @@ func _emit_due_events() -> void:
 				clamp(float(event.get("velocity", 0)) / 127.0, 0.0, 1.0)
 			)
 		_route_native_audio_event(event)
-		_route_sample_preview_event(event)
 	if emitted >= max_events and _event_cursor < chart.compiled_events.size():
 		var index := _event_cursor
 		while index < chart.compiled_events.size() and int(chart.compiled_events[index].get("tick", 0)) <= current_tick:
@@ -761,13 +767,32 @@ func _seek_to_sequence_index(index: int) -> void:
 		return
 	_current_sequence_index = posmod(index, current_sequence.size())
 	var section_id := str(current_sequence[_current_sequence_index])
-	var target_tick := chart.first_section_start_tick(section_id) if chart != null else -1
+	var target_tick := _sequence_target_tick(_current_sequence_index, section_id)
 	if target_tick < 0:
 		push_warning("PocketChordsmithConductor could not find section '%s' for sequence playback." % section_id)
 		return
 	seek_tick(target_tick)
 	_emit_current_section_started()
 	_start_native_stems_from_current_tick()
+
+
+func _sequence_target_tick(index: int, section_id: String) -> int:
+	if chart == null:
+		return -1
+	if _sequence_matches_arrangement() and index < chart.arrangement_positions.size():
+		var arrangement_section := chart.arrangement_section_id(index)
+		if arrangement_section == section_id:
+			return chart.arrangement_start_tick(index)
+	return chart.first_section_start_tick(section_id)
+
+
+func _sequence_matches_arrangement() -> bool:
+	if chart == null or current_sequence.size() != chart.arrangement.size():
+		return false
+	for index in range(current_sequence.size()):
+		if str(current_sequence[index]) != str(chart.arrangement[index]):
+			return false
+	return true
 
 
 func _sync_sequence_index_to_section(section_id: String) -> void:
@@ -808,10 +833,39 @@ func _route_native_audio_event(event: Dictionary) -> void:
 	router.call("handle_pcs_event", event, self)
 
 
-func _route_sample_preview_event(event: Dictionary) -> void:
+func _route_audio_lookahead_events() -> void:
+	if chart == null or playback_profile == null or not playback_profile.sample_preview_enabled:
+		return
+	if not playback_profile.is_event_mode_enabled():
+		return
+	var lookahead_ticks := max(0, int(playback_profile.lookahead_ticks))
+	var audio_limit_tick: int = current_tick + lookahead_ticks
+	while _audio_event_cursor < chart.compiled_events.size():
+		var event: Dictionary = chart.compiled_events[_audio_event_cursor]
+		var event_tick := int(event.get("tick", 0))
+		if event_tick > audio_limit_tick:
+			break
+		_audio_event_cursor += 1
+		if _event_is_suppressed(event):
+			continue
+		var delay_ticks := max(0, event_tick - current_tick)
+		_route_sample_preview_event(event, delay_ticks)
+
+
+func _route_sample_preview_event(event: Dictionary, delay_ticks := 0) -> void:
 	if playback_profile == null or not playback_profile.sample_preview_enabled:
 		return
 	if not playback_profile.is_event_mode_enabled():
+		return
+	if delay_ticks > 0 and _is_headless_display():
+		return
+	if delay_ticks > 0 and chart != null and is_inside_tree():
+		var event_copy := event.duplicate(true)
+		var delay_seconds := float(delay_ticks) * chart.get_seconds_per_tick()
+		get_tree().create_timer(delay_seconds, false).timeout.connect(func() -> void:
+			if _playing and not _paused:
+				_route_sample_preview_event(event_copy, 0)
+		)
 		return
 	var track_type := str(event.get("track_type", ""))
 	var instrument_id := str(event.get("instrument_id", ""))

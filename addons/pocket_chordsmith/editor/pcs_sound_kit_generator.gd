@@ -38,6 +38,7 @@ func generate_web_kit(output_dir := DEFAULT_OUTPUT_DIR) -> Dictionary:
 		"melody_bell": _melody_bell(),
 		"warning_hit": _warning_hit(),
 		"reward_hit": _reward_hit(),
+		"victory_hit": _reward_hit(),
 		"transition_hit": _transition_hit(6),
 	}
 
@@ -76,13 +77,13 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 	profile.sample_preview_skip_late_audio_ticks = 960
 	profile.sample_preview_gain_db = {
 		"drums": -3.0,
-		"kick": 4.0,
-		"kick_accent": 4.0,
-		"snare": -3.0,
-		"snare_accent": -3.0,
-		"hat": -12.0,
-		"hat_accent": -11.0,
-		"open_hat": -12.0,
+		"kick": 0.0,
+		"kick_accent": 0.0,
+		"snare": -5.0,
+		"snare_accent": -5.0,
+		"hat": -14.0,
+		"hat_accent": -13.0,
+		"open_hat": -14.0,
 		"bass": -18.0,
 		"chords": -26.0,
 		"melody": -20.0,
@@ -101,6 +102,7 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 	profile.accent_streams = {
 		"warning_hit": sample_paths.get("warning_hit", ""),
 		"reward_hit": sample_paths.get("reward_hit", ""),
+		"victory_hit": sample_paths.get("victory_hit", sample_paths.get("reward_hit", "")),
 		"transition_hit": sample_paths.get("transition_hit", ""),
 	}
 	profile.event_sample_streams = {
@@ -135,23 +137,22 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 
 
 func _kick(peak: float) -> PackedFloat32Array:
-	var duration := 0.18
+	var duration := 0.17
 	var total := int(SAMPLE_RATE * duration)
 	var out := PackedFloat32Array()
 	out.resize(total)
 	var phase := 0.0
 	for i in range(total):
 		var t := float(i) / float(SAMPLE_RATE)
-		var n := t / duration
-		var freq := lerp(155.0, 45.0, 1.0 - pow(0.001, n))
+		var freq := _exp_ramp(155.0, 45.0, t / 0.14)
 		phase += TWO_PI * freq / float(SAMPLE_RATE)
-		var env: float = max(0.0, peak) * exp(-30.0 * t)
+		var env := _exp_ramp(max(0.08, peak), 0.001, t / 0.16)
 		out[i] = sin(phase) * env
-	return _normalize(out, 0.98)
+	return _limit_peak(out, 0.98)
 
 
 func _snare(peak: float, seed: int) -> PackedFloat32Array:
-	var duration := 0.14
+	var duration := 0.13
 	var total := int(SAMPLE_RATE * duration)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
@@ -159,14 +160,13 @@ func _snare(peak: float, seed: int) -> PackedFloat32Array:
 	noise.resize(total)
 	for i in range(total):
 		var t := float(i) / float(SAMPLE_RATE)
-		var env: float = max(0.05, peak) * exp(-34.0 * t)
-		var body: float = sin(TWO_PI * 185.0 * t) * env * 0.16
-		noise[i] = (rng.randf() * 2.0 - 1.0) * env + body
-	return _normalize(_highpass(noise, 1700.0), 0.88)
+		var env := _exp_ramp(max(0.05, peak), 0.001, t / 0.12)
+		noise[i] = (rng.randf() * 2.0 - 1.0) * env
+	return _limit_peak(_highpass(noise, 1700.0), 0.98)
 
 
 func _hat(peak: float, open: bool, seed: int) -> PackedFloat32Array:
-	var duration := 0.16 if open else 0.055
+	var duration := 0.16 if open else 0.05
 	var total := int(SAMPLE_RATE * duration)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
@@ -174,10 +174,9 @@ func _hat(peak: float, open: bool, seed: int) -> PackedFloat32Array:
 	data.resize(total)
 	for i in range(total):
 		var t := float(i) / float(SAMPLE_RATE)
-		var env: float = max(0.03 if not open else 0.05, peak) * exp((-18.0 if open else -82.0) * t)
-		var metallic := sin(TWO_PI * 7700.0 * t) * 0.18 + sin(TWO_PI * 10400.0 * t) * 0.12
-		data[i] = ((rng.randf() * 2.0 - 1.0) + metallic) * env
-	return _normalize(_highpass(data, 3800.0 if open else 5600.0), 0.62)
+		var env := _exp_ramp(max(0.05 if open else 0.03, peak), 0.001, t / (0.14 if open else 0.05))
+		data[i] = (rng.randf() * 2.0 - 1.0) * (0.9 if open else 1.0) * env
+	return _limit_peak(_highpass(data, 3800.0 if open else 5600.0), 0.98)
 
 
 func _clap(peak: float, seed: int) -> PackedFloat32Array:
@@ -333,6 +332,13 @@ func _soft_clip(value: float) -> float:
 	return value / (1.0 + absf(value))
 
 
+func _exp_ramp(start: float, end: float, progress: float) -> float:
+	var safe_start := max(0.0001, start)
+	var safe_end := max(0.0001, end)
+	var amount := clamp(progress, 0.0, 1.0)
+	return safe_start * pow(safe_end / safe_start, amount)
+
+
 func _highpass(input: PackedFloat32Array, cutoff_hz: float) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	out.resize(input.size())
@@ -349,6 +355,20 @@ func _highpass(input: PackedFloat32Array, cutoff_hz: float) -> PackedFloat32Arra
 		out[i] = y
 		last_y = y
 		last_x = x
+	return out
+
+
+func _limit_peak(input: PackedFloat32Array, target_peak: float) -> PackedFloat32Array:
+	var peak := 0.0
+	for sample in input:
+		peak = max(peak, absf(float(sample)))
+	if peak <= target_peak or peak <= 0.00001:
+		return input
+	var gain := target_peak / peak
+	var out := PackedFloat32Array()
+	out.resize(input.size())
+	for i in range(input.size()):
+		out[i] = clamp(float(input[i]) * gain, -1.0, 1.0)
 	return out
 
 

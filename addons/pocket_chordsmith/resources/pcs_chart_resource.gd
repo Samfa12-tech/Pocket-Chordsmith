@@ -9,6 +9,7 @@ const TICKS_PER_QUARTER := 480
 @export var imported_at_unix_time := 0
 @export var bpm := 120
 @export var time_signature := 4
+@export_range(0.0, 0.35, 0.01) var swing := 0.0
 @export var key := "C"
 @export var scale := "major"
 @export var resolution := 1
@@ -64,9 +65,29 @@ func first_section_start_tick(section_id: String) -> int:
 	return -1
 
 
+func arrangement_start_tick(index: int) -> int:
+	if index < 0 or index >= arrangement_positions.size():
+		return -1
+	return int((arrangement_positions[index] as Dictionary).get("start_tick", -1))
+
+
+func arrangement_section_id(index: int) -> String:
+	if index < 0 or index >= arrangement_positions.size():
+		return ""
+	return str((arrangement_positions[index] as Dictionary).get("id", ""))
+
+
 func get_event_count_by_type() -> Dictionary:
 	var counts := {}
 	for event in compiled_events:
 		var track_type := str(event.get("track_type", "unknown"))
 		counts[track_type] = int(counts.get(track_type, 0)) + 1
 	return counts
+
+
+func has_slide_events() -> bool:
+	for event in compiled_events:
+		var flags: Dictionary = event.get("flags", {})
+		if bool(flags.get("slide", false)):
+			return true
+	return false

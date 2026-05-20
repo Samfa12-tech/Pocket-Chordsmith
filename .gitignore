@@ -1,0 +1,7 @@
+# Godot local/generated metadata. Let each project rebuild these.
+.godot/
+*.uid
+*.import
+
+# Local/editor packaging output.
+*.zip

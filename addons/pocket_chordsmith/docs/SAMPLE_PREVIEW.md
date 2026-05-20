@@ -24,11 +24,14 @@ res://addons/pocket_chordsmith/audio/web_kit/open_hat.wav
 res://addons/pocket_chordsmith/audio/web_kit/clap.wav
 res://addons/pocket_chordsmith/audio/web_kit/warning_hit.wav
 res://addons/pocket_chordsmith/audio/web_kit/reward_hit.wav
+res://addons/pocket_chordsmith/audio/web_kit/victory_hit.wav
 res://addons/pocket_chordsmith/audio/web_kit/transition_hit.wav
 res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.tres
 ```
 
 Assign `pocket_chordsmith_web_kit_profile.tres` to `PocketChordsmithConductor.playback_profile` to hear chart drum events through Godot-native sample playback.
+
+The generated kick, snare, and hats are recreated from the original Pocket Chordsmith WebAudio drum functions. They are useful for previewing arrangements inside Godot, but they are still one-shot samples. Imported JSON can include bass and melody slide events from one note to another; sample preview preserves those slide flags in the event data but does not reproduce continuous pitch glides. Use rendered stems or a native audio router when slide accuracy matters.
 
 Example drum kit:
 

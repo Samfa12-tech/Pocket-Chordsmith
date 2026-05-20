@@ -9,6 +9,7 @@ max_polyphony = 24
 accent_streams = {
 "reward_hit": "res://addons/pocket_chordsmith/audio/web_kit/reward_hit.wav",
 "transition_hit": "res://addons/pocket_chordsmith/audio/web_kit/transition_hit.wav",
+"victory_hit": "res://addons/pocket_chordsmith/audio/web_kit/victory_hit.wav",
 "warning_hit": "res://addons/pocket_chordsmith/audio/web_kit/warning_hit.wav"
 }
 event_sample_streams = {
@@ -37,4 +38,18 @@ marker_stingers = {
 "boss_warning": "warning_hit",
 "reward": "reward_hit",
 "transition": "transition_hit"
+}
+sample_preview_gain_db = {
+"bass": -18.0,
+"chords": -26.0,
+"drums": -3.0,
+"hat": -14.0,
+"hat_accent": -13.0,
+"kick": 0.0,
+"kick_accent": 0.0,
+"melody": -20.0,
+"open_hat": -14.0,
+"snare": -5.0,
+"snare_accent": -5.0,
+"stingers": -8.0
 }

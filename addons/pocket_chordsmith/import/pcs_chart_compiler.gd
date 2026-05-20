@@ -27,6 +27,7 @@ func compile_project(project: Dictionary, import_result := {}) -> PCSChartResour
 	chart.imported_at_unix_time = int(Time.get_unix_time_from_system())
 	chart.bpm = int(project.get("bpm", 120))
 	chart.time_signature = int(project.get("timeSig", 4))
+	chart.swing = clamp(float(project.get("swing", 0.0)), 0.0, 0.35)
 	chart.key = str(project.get("key", "C"))
 	chart.scale = str(project.get("scale", "major"))
 	chart.resolution = int(project.get("resolution", 1))
@@ -155,10 +156,10 @@ func _compile_drum_events(project: Dictionary, section_id: String, arrangement_i
 			var level := _grid_level(grid, track_id, step)
 			if level <= 0:
 				continue
-			var tick := section_start_tick + step * step_ticks
+			var tick := section_start_tick + _step_to_tick(project, step)
 			if _grid_tuplet_start(grid, tuplets, track_id, step, step_count):
 				var next_level := _grid_level(grid, track_id, step + 1)
-				var span_ticks := step_ticks * 2
+				var span_ticks := max(1, _step_to_tick(project, step + 2) - _step_to_tick(project, step))
 				var offsets := _triplet_offsets(span_ticks)
 				for triplet_index in range(3):
 					var hit_level := next_level if triplet_index == 2 else level
@@ -178,7 +179,7 @@ func _compile_drum_events(project: Dictionary, section_id: String, arrangement_i
 			else:
 				events.append(_make_drum_event(
 					tick,
-					max(1, int(round(float(step_ticks) * 0.70))),
+					max(1, int(round(float(_step_duration_ticks(project, step)) * 0.70))),
 					section_id,
 					arrangement_index,
 					track_index,
@@ -207,9 +208,9 @@ func _compile_bass_events(project: Dictionary, section_id: String, arrangement_i
 			continue
 		if not _bass_has_trigger(project, section_id, step):
 			continue
-		var tick := section_start_tick + step * step_ticks
+		var tick := section_start_tick + _step_to_tick(project, step)
 		if _bass_tuplet_start(project, section_id, grid, tuplets, step, step_count):
-			var span_ticks := step_ticks * 2
+			var span_ticks := max(1, _step_to_tick(project, step + 2) - _step_to_tick(project, step))
 			var offsets := _triplet_offsets(span_ticks)
 			var left_midi := _bass_midi_at(project, section_id, step)
 			var right_midi := _bass_midi_at(project, section_id, step + 1)
@@ -315,9 +316,9 @@ func _compile_melody_events(project: Dictionary, section_id: String, arrangement
 				continue
 			if _value_at(track, step) == null:
 				continue
-			var tick := section_start_tick + step * step_ticks
+			var tick := section_start_tick + _step_to_tick(project, step)
 			if _melody_tuplet_start(track, tuplet_track, step, step_count):
-				var span_ticks := step_ticks * 2
+				var span_ticks := max(1, _step_to_tick(project, step + 2) - _step_to_tick(project, step))
 				var offsets := _triplet_offsets(span_ticks)
 				var first_note := int(_value_at(track, step))
 				var third_note := int(_value_at(track, step + 1))
@@ -610,14 +611,13 @@ func _chord_rhythm_starts(project: Dictionary, bar_start_tick: int) -> Array:
 
 
 func _bass_phrase_info(project: Dictionary, section_id: String, step: int) -> Dictionary:
-	var step_ticks := _ticks_per_step(project)
 	var step_count := _section_step_count(project, section_id)
 	var hold_track: Array = project.get("bassHold%s" % section_id, [])
 	var slide_track: Array = project.get("bassSlide%s" % section_id, [])
 	var duration_ticks := 0
 	var index := step
 	while index < step_count:
-		duration_ticks += step_ticks
+		duration_ticks += _step_duration_ticks(project, index)
 		index += 1
 		if index >= step_count or not _bool_at(hold_track, index):
 			break
@@ -626,10 +626,10 @@ func _bass_phrase_info(project: Dictionary, section_id: String, step: int) -> Di
 	if index < step_count and _bool_at(slide_track, index) and _bass_has_trigger(project, section_id, index):
 		slide_midi = _bass_midi_at(project, section_id, index)
 		slide_offset_ticks = duration_ticks
-		duration_ticks += step_ticks
+		duration_ticks += _step_duration_ticks(project, index)
 		index += 1
 		while index < step_count and _bool_at(hold_track, index):
-			duration_ticks += step_ticks
+			duration_ticks += _step_duration_ticks(project, index)
 			index += 1
 	if not bool(project.get("midiExactDurations", true)):
 		duration_ticks = max(1, int(round(float(duration_ticks) * 0.94)))
@@ -637,7 +637,6 @@ func _bass_phrase_info(project: Dictionary, section_id: String, step: int) -> Di
 
 
 func _melody_phrase_info(project: Dictionary, section_id: String, track_index: int, step: int) -> Dictionary:
-	var step_ticks := _ticks_per_step(project)
 	var step_count := _section_step_count(project, section_id)
 	var tracks: Array = project.get("melodyTracks%s" % section_id, [])
 	var octaves: Array = project.get("melodyOctaves%s" % section_id, [])
@@ -650,7 +649,7 @@ func _melody_phrase_info(project: Dictionary, section_id: String, track_index: i
 	var duration_ticks := 0
 	var index := step
 	while index < step_count:
-		duration_ticks += step_ticks
+		duration_ticks += _step_duration_ticks(project, index)
 		index += 1
 		if index >= step_count or not _bool_at(hold_track, index):
 			break
@@ -659,10 +658,10 @@ func _melody_phrase_info(project: Dictionary, section_id: String, track_index: i
 	if index < step_count and _bool_at(slide_track, index) and _value_at(track, index) != null:
 		slide_midi = _melody_index_to_midi(project, int(_value_at(track, index)), octave)
 		slide_offset_ticks = duration_ticks
-		duration_ticks += step_ticks
+		duration_ticks += _step_duration_ticks(project, index)
 		index += 1
 		while index < step_count and _bool_at(hold_track, index):
-			duration_ticks += step_ticks
+			duration_ticks += _step_duration_ticks(project, index)
 			index += 1
 	if not bool(project.get("midiExactDurations", true)):
 		duration_ticks = max(1, int(round(float(duration_ticks) * 0.92)))
@@ -866,6 +865,22 @@ func _section_step_count(project: Dictionary, section_id: String) -> int:
 
 func _ticks_per_step(project: Dictionary) -> int:
 	return max(1, int(round(float(TICKS_PER_QUARTER) / float(max(1, int(project.get("resolution", 1)))))))
+
+
+func _step_to_tick(project: Dictionary, step: int) -> int:
+	var step_ticks := _ticks_per_step(project)
+	var base_tick := step * step_ticks
+	var resolution := max(1, int(project.get("resolution", 1)))
+	var swing := clamp(float(project.get("swing", 0.0)), 0.0, 0.35)
+	if swing <= 0.0 or resolution < 2 or resolution == 3:
+		return base_tick
+	if step % 2 == 1:
+		return max(0, base_tick - int(round(float(step_ticks) * swing)))
+	return base_tick
+
+
+func _step_duration_ticks(project: Dictionary, step: int) -> int:
+	return max(1, _step_to_tick(project, step + 1) - _step_to_tick(project, step))
 
 
 func _step_to_bar(project: Dictionary, step: int) -> int:

@@ -2,6 +2,16 @@
 
 Use this guidance when helping a project integrate `addons/pocket_chordsmith`.
 
+## Active Test Project
+
+When working on this addon locally, also update the active test project:
+
+```text
+C:\Users\ssmall13\Documents\Goblin Grenade Pinball\goblin-grenade-pinball\addons\pocket_chordsmith
+```
+
+After syncing the addon there, recompile the project's Pocket Chordsmith level charts in `assets/music/compiled` and validate the active `_pcs_chart.tres` resources with the generated web-kit playback profile. This is where the addon is being tested in gameplay.
+
 ## Core Architecture
 
 Pocket Chordsmith is a music intelligence layer:

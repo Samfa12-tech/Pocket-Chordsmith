@@ -64,10 +64,12 @@ func validate_runtime_readiness(chart: PCSChartResource, playback_profile: PCSPl
 	info["chart_source_path"] = chart.source_path
 	info["bpm"] = chart.bpm
 	info["time_signature"] = chart.time_signature
+	info["swing"] = chart.swing
 	info["arrangement"] = chart.arrangement.duplicate()
 	info["event_count"] = chart.compiled_events.size()
 	info["event_counts_by_type"] = chart.get_event_count_by_type()
 	info["music_states"] = chart.music_states.keys()
+	info["has_slide_events"] = chart.has_slide_events()
 
 	if chart.bpm <= 0:
 		errors.append("Chart BPM must be greater than zero.")
@@ -81,6 +83,8 @@ func validate_runtime_readiness(chart: PCSChartResource, playback_profile: PCSPl
 		warnings.append("Chart has no compiled section resources.")
 	if chart.compiled_events.is_empty():
 		warnings.append("Chart has no compiled events; beat/bar timing can still run, but no cues will emit.")
+	if chart.swing > 0.0:
+		warnings.append("Chart uses swing %.0f%%. Compiled event ticks preserve swung step timing; check stem alignment if stems were rendered dry/straight." % [chart.swing * 100.0])
 
 	var previous_tick := -1
 	for index in range(chart.compiled_events.size()):
@@ -115,6 +119,7 @@ func _validate_playback_profile(chart: PCSChartResource, playback_profile: PCSPl
 	info["stem_count"] = playback_profile.stem_paths.size()
 	info["drum_kit_count"] = playback_profile.drum_kit.size()
 	info["accent_stream_count"] = playback_profile.accent_streams.size()
+	info["marker_stinger_count"] = playback_profile.marker_stingers.size()
 
 	if playback_profile.max_events_per_frame <= 0:
 		warnings.append("Playback profile max_events_per_frame should be greater than zero.")
@@ -137,6 +142,22 @@ func _validate_playback_profile(chart: PCSChartResource, playback_profile: PCSPl
 	for key in missing_sample_keys:
 		warnings.append("Drum event '%s' has no sample assigned in playback_profile.drum_kit." % key)
 	info["missing_drum_sample_keys"] = missing_sample_keys
+
+	var missing_stingers := _missing_stinger_keys(chart, playback_profile)
+	for key in missing_stingers:
+		warnings.append("Stinger '%s' is referenced by the chart/profile but is missing from playback_profile.accent_streams." % key)
+	info["missing_stinger_keys"] = missing_stingers
+
+	var missing_state_stems := _missing_state_stem_sets(chart, playback_profile)
+	for key in missing_state_stems:
+		warnings.append("State stem set '%s' is referenced but not assigned in playback_profile.stem_sets or chart.stem_sets." % key)
+	info["missing_state_stem_sets"] = missing_state_stems
+
+	if chart.has_slide_events() and playback_profile.sample_preview_enabled and playback_profile.sample_preview_tonal_enabled:
+		warnings.append("Chart includes bass/melody slide events. The sample preview preserves slide metadata but cannot reproduce continuous pitch glides; use stems or a native audio router for accurate slides.")
+
+	if playback_profile.lookahead_ticks <= 0 and playback_profile.is_event_mode_enabled():
+		warnings.append("Playback profile lookahead_ticks is 0; sample preview hits will be triggered on the frame they become due.")
 
 	for key in playback_profile.drum_kit.keys():
 		_warn_missing_resource("drum_kit.%s" % str(key), playback_profile.drum_kit[key], warnings)
@@ -170,6 +191,51 @@ func _missing_drum_sample_keys(chart: PCSChartResource, playback_profile: PCSPla
 		missing.append(str(key))
 	missing.sort()
 	return missing
+
+
+func _missing_stinger_keys(chart: PCSChartResource, playback_profile: PCSPlaybackProfile) -> Array[String]:
+	var missing: Array[String] = []
+	var seen := {}
+	for state_name in chart.music_states.keys():
+		var state = chart.music_states[state_name]
+		if not (state is Dictionary):
+			continue
+		var stinger := str(state.get("stinger", ""))
+		if not stinger.is_empty() and _profile_path_missing(playback_profile.accent_streams, stinger):
+			seen[stinger] = true
+	for marker_name in playback_profile.marker_stingers.keys():
+		var stinger_name := str(playback_profile.marker_stingers[marker_name])
+		if not stinger_name.is_empty() and _profile_path_missing(playback_profile.accent_streams, stinger_name):
+			seen[stinger_name] = true
+	for key in seen.keys():
+		missing.append(str(key))
+	missing.sort()
+	return missing
+
+
+func _missing_state_stem_sets(chart: PCSChartResource, playback_profile: PCSPlaybackProfile) -> Array[String]:
+	var missing: Array[String] = []
+	var seen := {}
+	for state_name in playback_profile.state_stem_sets.keys():
+		var set_key := str(playback_profile.state_stem_sets[state_name])
+		if not set_key.is_empty() and not playback_profile.stem_sets.has(set_key) and not chart.stem_sets.has(set_key):
+			seen[set_key] = true
+	for state_name in chart.music_states.keys():
+		var state = chart.music_states[state_name]
+		if not (state is Dictionary):
+			continue
+		for field in ["stem_set", "stem_set_key", "stem_set_id"]:
+			var set_key := str(state.get(field, ""))
+			if not set_key.is_empty() and not playback_profile.stem_sets.has(set_key) and not chart.stem_sets.has(set_key):
+				seen[set_key] = true
+	for key in seen.keys():
+		missing.append(str(key))
+	missing.sort()
+	return missing
+
+
+func _profile_path_missing(map: Dictionary, key: String) -> bool:
+	return not map.has(key) or str(map.get(key, "")).is_empty()
 
 
 func _warn_missing_resource(label: String, value: Variant, warnings: Array[String]) -> void:
