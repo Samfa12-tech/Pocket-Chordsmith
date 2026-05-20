@@ -2,15 +2,18 @@
 
 Use this guidance when helping a project integrate `addons/pocket_chordsmith`.
 
-## Active Test Project
+This file is intentionally public-safe. Do not add local machine paths, private project names,
+personal emails, credentials, tokens, or deployment secrets here.
 
-When working on this addon locally, also update the active test project:
+## AI Assistant Role
 
-```text
-C:\Users\ssmall13\Documents\Goblin Grenade Pinball\goblin-grenade-pinball\addons\pocket_chordsmith
-```
+Pocket Chordsmith should be treated as a reusable Godot addon, not as project-specific game code.
+When helping a user, inspect their current Godot project first and adapt paths to that project.
+Keep changes isolated under `res://addons/pocket_chordsmith/` unless the user explicitly asks
+for level scripts, autoloads, or game-specific integration code.
 
-After syncing the addon there, recompile the project's Pocket Chordsmith level charts in `assets/music/compiled` and validate the active `_pcs_chart.tres` resources with the generated web-kit playback profile. This is where the addon is being tested in gameplay.
+If the user is modifying the addon itself, validate against a small Godot project and avoid
+committing generated `.godot/`, `.uid`, `.import`, export builds, or local cache files.
 
 ## Core Architecture
 
