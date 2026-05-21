@@ -1,0 +1,20 @@
+# Windows and editor clutter
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# Local/generated exports
+*.zip
+*.wav
+*.mid
+*.midi
+*.log
+
+# Historical local HTML snapshots kept outside this repo's first clean commit
+pocket_chordsmith_v57*.html
+pocket_chordsmith_v58*.html
+
+# Separate Godot add-on packaging repo kept beside the web app
+PocketChordsmith_Godot_Addon_0.9.0-rc1_GitUpload/
