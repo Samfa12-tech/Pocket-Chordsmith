@@ -3,6 +3,7 @@ extends Node2D
 const ChartResourceScript := preload("res://addons/pocket_chordsmith/resources/pcs_chart_resource.gd")
 const SectionResourceScript := preload("res://addons/pocket_chordsmith/resources/pcs_section_resource.gd")
 const WebKitProfilePath := "res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.tres"
+const SampleFocus808ProfilePath := "res://assets/music/playback_profiles/pcs_sample_focus_808_profile.tres"
 
 @export var chart: PCSChartResource
 
@@ -22,6 +23,7 @@ var _section_colors := {
 var _muffled := false
 var _ducked := false
 var _drums_quiet := false
+var _active_kit_name := "Default"
 
 
 func _ready() -> void:
@@ -30,7 +32,7 @@ func _ready() -> void:
 		chart = _create_fallback_chart()
 	conductor.chart = chart
 	if _should_use_web_kit_profile() and ResourceLoader.exists(WebKitProfilePath):
-		conductor.playback_profile = load(WebKitProfilePath)
+		_apply_demo_profile(WebKitProfilePath, "Generated Web Kit", false)
 	conductor.loop_enabled = false
 	conductor.beat.connect(_on_beat)
 	conductor.accent_hit.connect(_on_accent)
@@ -54,7 +56,8 @@ func _should_use_web_kit_profile() -> bool:
 func _process(_delta: float) -> void:
 	if conductor == null:
 		return
-	status_label.text = "State %s  Queued %s  Section %s  Bar %d  Beat %d  Tick %d" % [
+	status_label.text = "Kit %s  State %s  Queued %s  Section %s  Bar %d  Beat %d  Tick %d" % [
+		_active_kit_name,
 		conductor.get_current_music_state(),
 		conductor.get_queued_music_state(),
 		conductor.current_section,
@@ -142,9 +145,29 @@ func _build_demo_buttons() -> void:
 		_drums_quiet = not _drums_quiet
 		conductor.set_layer_volume("drums", -8.0 if _drums_quiet else 0.0)
 	)
+	_add_demo_button(rows, "Kit: Web", func() -> void:
+		_apply_demo_profile(WebKitProfilePath, "Generated Web Kit")
+	)
+	if ResourceLoader.exists(SampleFocus808ProfilePath):
+		_add_demo_button(rows, "Kit: 808", func() -> void:
+			_apply_demo_profile(SampleFocus808ProfilePath, "Sample Focus 808")
+		)
 	_add_demo_button(rows, "Stinger Now", func() -> void:
 		conductor.trigger_stinger("warning_hit")
 	)
+
+
+func _apply_demo_profile(path: String, kit_name: String, stop_active_samples := true) -> void:
+	if not ResourceLoader.exists(path):
+		marker_label.text = "Missing profile: %s" % path
+		return
+	var profile := load(path) as PCSPlaybackProfile
+	if profile == null:
+		marker_label.text = "Profile failed: %s" % path
+		return
+	conductor.set_playback_profile(profile, stop_active_samples)
+	_active_kit_name = kit_name
+	marker_label.text = "Kit: %s" % kit_name
 
 
 func _add_demo_button(parent: Control, text: String, callback: Callable) -> void:

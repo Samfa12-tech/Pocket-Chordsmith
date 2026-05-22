@@ -146,6 +146,21 @@ func _stop_polyphonic_streams() -> void:
 		var playback := _polyphonic_playbacks.get(str(info.get("bus", "")), null) as AudioStreamPlaybackPolyphonic
 		if playback != null:
 			playback.stop_stream(int(info.get("id", -1)))
+	_active_stinger_ids.clear()
+	_stinger_return_states.clear()
+	_active_sample_ids.clear()
+	_last_stinger_stream_key = ""
+
+
+func set_playback_profile(profile: PCSPlaybackProfile, stop_active_samples := true) -> void:
+	if stop_active_samples:
+		_stop_polyphonic_streams()
+	playback_profile = profile if profile != null else PCSPlaybackProfile.new()
+	_audio_stream_cache.clear()
+	_last_playback_warning_signature = ""
+	_setup_native_audio_players()
+	_apply_safe_default_buses()
+	_warn_playback_profile_once()
 
 
 func play() -> void:
