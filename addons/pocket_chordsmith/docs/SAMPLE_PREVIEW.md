@@ -37,6 +37,10 @@ When using your own samples, trim long silent tails before assigning them to a p
 
 For short sample hits, `PCSPlaybackProfile.sample_preview_load_wavs_uncompressed` defaults to `true`. This makes the conductor load WAV hit samples with `AudioStreamWAV.load_from_file(..., {"compress/mode": 0})` for preview/hybrid event playback, avoiding the lossy default WAV import mode that can smear drum transients. Stem playback still uses normal Godot imports and routing.
 
+For web exports, `PCSPlaybackProfile.sample_preview_force_web_stream_for_pitched` defaults to `true`. When bass, chord, or melody sample preview needs pitch variation, the conductor asks Godot to use stream playback for those tonal hits on web builds. This works around the browser export pitch variation issue without changing drum one-shot playback or the desktop/native path.
+
+If a web melody still sounds wrong, temporarily enable `sample_preview_log_pitched_events` on the playback profile. The conductor will print the sample key, MIDI note, pitch scale, bus, and requested playback type for tonal events.
+
 `PCSPlaybackProfile.sample_preview_prewarm_on_ready` also defaults to `true`. The conductor preloads drum-kit, event-sample, and stinger streams into its cache before playback. You can call `conductor.prewarm_audio()` yourself during a loading screen after assigning the chart and playback profile.
 
 Example drum kit:

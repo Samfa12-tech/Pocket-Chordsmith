@@ -1,4 +1,4 @@
-# Migrating To Pocket Chordsmith Godot Addon 1.0.0
+# Migrating To Pocket Chordsmith Godot Addon 1.1.0
 
 This release keeps the core architecture stable:
 
@@ -19,6 +19,10 @@ res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.t
 ```
 
 6. Keep any previous procedural preview player out of shipped gameplay scenes unless it is intentionally used as a temporary fallback.
+
+## 1.1 Web Export Note
+
+Version 1.1 adds a web-export compatibility toggle for pitched tonal preview samples. `PCSPlaybackProfile.sample_preview_force_web_stream_for_pitched` defaults to `true`; leave it enabled for Godot web builds that use sample preview or HYBRID melody, bass, and chord playback. It does not affect rendered stems, and desktop/native preview remains on the normal Godot playback path unless you change the profile.
 
 ## API Notes
 

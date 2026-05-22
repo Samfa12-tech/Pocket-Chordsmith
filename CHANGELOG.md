@@ -1,5 +1,19 @@
 # Pocket Chordsmith Godot Addon Changelog
 
+## 1.1.0
+
+Web export compatibility update for sample preview and hybrid playback.
+
+Added:
+
+- A `sample_preview_force_web_stream_for_pitched` playback profile option, enabled by default, so pitched bass, chord, and melody preview samples use Godot stream playback on web exports.
+- A `sample_preview_log_pitched_events` debug option for inspecting sample key, MIDI note, pitch scale, bus, and playback type when diagnosing tonal preview playback.
+
+Changed:
+
+- Pitched sample preview now requests `AudioServer.PLAYBACK_TYPE_STREAM` on web builds where needed, avoiding the melody pitch variation issue seen in exported games.
+- Tonal sample preview keeps the same behavior on desktop/native exports unless the project explicitly changes profile settings.
+
 ## 1.0.0
 
 First stable release of the Godot addon.

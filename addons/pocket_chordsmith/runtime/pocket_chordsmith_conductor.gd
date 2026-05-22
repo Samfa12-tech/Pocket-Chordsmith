@@ -945,7 +945,9 @@ func _route_sample_preview_event(event: Dictionary, delay_ticks := 0) -> void:
 	if track_type == "bass" and _sample_preview_should_duck_bass_for_kick(event_tick):
 		volume_db += playback_profile.sample_preview_bass_duck_on_kick_db
 	var pitch_scale := _sample_pitch_scale_for_event(event)
-	var stream_id := _play_polyphonic_sample(stream, _bus_for_layer(layer), sample_key, volume_db, pitch_scale)
+	var playback_type := _playback_type_for_pitched_event(track_type, pitch_scale)
+	var debug_info := _pitch_debug_info(event, sample_key, _sample_path_for_key(sample_key), pitch_scale, track_type, int(event.get("midi_note", -1)))
+	var stream_id := _play_polyphonic_sample(stream, _bus_for_layer(layer), sample_key, volume_db, pitch_scale, playback_type, debug_info)
 	if stream_id >= 0 and track_type == "drum" and instrument_id == "kick":
 		_sample_preview_last_kick_tick = event_tick
 
@@ -967,7 +969,9 @@ func _route_sample_preview_chord(event: Dictionary) -> void:
 	for note in notes:
 		var midi_note := int(note)
 		var pitch_scale := pow(2.0, float(midi_note - 60) / 12.0)
-		_play_polyphonic_sample(stream, _bus_for_layer("chords"), "chord:%d" % midi_note, volume_db, pitch_scale)
+		var playback_type := _playback_type_for_pitched_event("chord", pitch_scale)
+		var debug_info := _pitch_debug_info(event, sample_key, _sample_path_for_key(sample_key), pitch_scale, "chord", midi_note)
+		_play_polyphonic_sample(stream, _bus_for_layer("chords"), "chord:%d" % midi_note, volume_db, pitch_scale, playback_type, debug_info)
 
 
 func _warn_playback_profile_once() -> void:
@@ -1058,6 +1062,8 @@ func _get_polyphonic_playback(bus_name: String) -> AudioStreamPlaybackPolyphonic
 	var player := AudioStreamPlayer.new()
 	player.name = "ChordsmithPolyphonic_%s" % safe_bus.replace(" ", "_")
 	player.bus = safe_bus
+	if _should_force_web_stream_for_tonal_bus(safe_bus):
+		_set_player_playback_type(player, AudioServer.PLAYBACK_TYPE_STREAM)
 	var polyphonic := AudioStreamPolyphonic.new()
 	polyphonic.set_polyphony(playback_profile.max_polyphony if playback_profile != null else 32)
 	player.stream = polyphonic
@@ -1303,7 +1309,7 @@ func _play_stinger_stream(name: String) -> int:
 	return -1
 
 
-func _play_polyphonic_sample(stream: AudioStream, bus_name: String, sample_name: String, volume_db := 0.0, pitch_scale := 1.0) -> int:
+func _play_polyphonic_sample(stream: AudioStream, bus_name: String, sample_name: String, volume_db := 0.0, pitch_scale := 1.0, playback_type := AudioServer.PLAYBACK_TYPE_DEFAULT, debug_info := {}) -> int:
 	_sample_play_requests_total += 1
 	if playback_profile == null or not playback_profile.use_audio_stream_polyphonic_for_accents:
 		_sample_play_failures_total += 1
@@ -1316,7 +1322,10 @@ func _play_polyphonic_sample(stream: AudioStream, bus_name: String, sample_name:
 	if playback == null:
 		_sample_play_failures_total += 1
 		return -1
-	var stream_id := playback.play_stream(stream, 0.0, volume_db, max(0.05, pitch_scale), 0, StringName(safe_bus))
+	var player := _polyphonic_players.get(safe_bus, null) as AudioStreamPlayer
+	var player_playback_type := _player_playback_type(player)
+	_log_pitched_sample_event(debug_info, sample_name, safe_bus, player_playback_type, playback_type)
+	var stream_id := playback.play_stream(stream, 0.0, volume_db, max(0.05, pitch_scale), playback_type, StringName(safe_bus))
 	if stream_id >= 0:
 		_active_sample_ids[_stream_key(safe_bus, stream_id)] = {"id": stream_id, "bus": safe_bus, "name": sample_name}
 	else:
@@ -1409,6 +1418,92 @@ func _sample_pitch_scale_for_event(event: Dictionary) -> float:
 	return pow(2.0, float(midi_note - root_note) / 12.0)
 
 
+func _playback_type_for_pitched_event(track_type: String, pitch_scale: float) -> int:
+	if playback_profile == null or not playback_profile.sample_preview_force_web_stream_for_pitched:
+		return AudioServer.PLAYBACK_TYPE_DEFAULT
+	if not OS.has_feature("web"):
+		return AudioServer.PLAYBACK_TYPE_DEFAULT
+	if track_type == "melody":
+		return AudioServer.PLAYBACK_TYPE_STREAM
+	if (track_type == "bass" or track_type == "chord") and abs(pitch_scale - 1.0) > 0.0001:
+		return AudioServer.PLAYBACK_TYPE_STREAM
+	return AudioServer.PLAYBACK_TYPE_DEFAULT
+
+
+func _should_force_web_stream_for_tonal_bus(bus_name: String) -> bool:
+	if playback_profile == null or not playback_profile.sample_preview_force_web_stream_for_pitched or not OS.has_feature("web"):
+		return false
+	return bus_name in [
+		_safe_bus_name(playback_profile.bass_bus),
+		_safe_bus_name(playback_profile.chords_bus),
+		_safe_bus_name(playback_profile.melody_bus),
+	]
+
+
+func _set_player_playback_type(player: AudioStreamPlayer, playback_type: int) -> void:
+	if player == null:
+		return
+	if _property_names(player).has("playback_type"):
+		player.set("playback_type", playback_type)
+
+
+func _player_playback_type(player: AudioStreamPlayer) -> int:
+	if player == null or not _property_names(player).has("playback_type"):
+		return -1
+	return int(player.get("playback_type"))
+
+
+func _pitch_debug_info(event: Dictionary, sample_key: String, sample_path: String, pitch_scale: float, track_type: String, midi_note: int) -> Dictionary:
+	return {
+		"enabled": playback_profile != null and playback_profile.sample_preview_log_pitched_events and track_type in ["melody", "bass", "chord"],
+		"section": _section_for_event(event),
+		"tick": int(event.get("tick", current_tick)),
+		"instrument": str(event.get("instrument_id", "")),
+		"lane": int(event.get("track_index", -1)),
+		"track_type": track_type,
+		"sample_key": sample_key,
+		"sample_path": sample_path,
+		"midi_note": midi_note,
+		"note": _midi_note_label(midi_note),
+		"pitch_scale": pitch_scale,
+	}
+
+
+func _log_pitched_sample_event(debug_info, sample_name: String, bus_name: String, player_playback_type: int, requested_playback_type: int) -> void:
+	if not (debug_info is Dictionary) or not bool(debug_info.get("enabled", false)):
+		return
+	print("MUSIC NOTE: section=", str(debug_info.get("section", "")),
+		" tick=", int(debug_info.get("tick", 0)),
+		" lane=", str(debug_info.get("track_type", "")), ":", int(debug_info.get("lane", -1)),
+		" instrument=", str(debug_info.get("instrument", "")),
+		" sample_key=", str(debug_info.get("sample_key", "")),
+		" sample_name=", sample_name,
+		" sample_path=", str(debug_info.get("sample_path", "")),
+		" note=", str(debug_info.get("note", "")),
+		" midi_note=", int(debug_info.get("midi_note", -1)),
+		" pitch_scale=", "%.5f" % float(debug_info.get("pitch_scale", 1.0)),
+		" AudioStreamPlayer.playback_type=", player_playback_type,
+		" requested_playback_type=", requested_playback_type,
+		" bus=", bus_name,
+		" platform=", OS.get_name())
+
+
+func _section_for_event(event: Dictionary) -> String:
+	var section_id := str(event.get("section_id", event.get("section", "")))
+	if not section_id.is_empty():
+		return section_id
+	if chart == null:
+		return current_section
+	return str(chart.find_section_at_tick(int(event.get("tick", current_tick))).get("id", current_section))
+
+
+func _midi_note_label(midi_note: int) -> String:
+	if midi_note < 0:
+		return ""
+	var names := ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+	return "%s%d" % [names[posmod(midi_note, names.size())], int(floor(float(midi_note) / 12.0)) - 1]
+
+
 func _sample_preview_should_duck_bass_for_kick(event_tick: int) -> bool:
 	if playback_profile == null or playback_profile.sample_preview_bass_duck_on_kick_db >= 0.0:
 		return false
@@ -1470,6 +1565,18 @@ func _sample_stream_for_key(sample_key: String) -> AudioStream:
 	if playback_profile.accent_streams.has(sample_key):
 		return _load_audio_stream(playback_profile.accent_streams[sample_key], true)
 	return null
+
+
+func _sample_path_for_key(sample_key: String) -> String:
+	if playback_profile == null:
+		return ""
+	if playback_profile.drum_kit.has(sample_key):
+		return str(playback_profile.drum_kit[sample_key])
+	if playback_profile.event_sample_streams.has(sample_key):
+		return str(playback_profile.event_sample_streams[sample_key])
+	if playback_profile.accent_streams.has(sample_key):
+		return str(playback_profile.accent_streams[sample_key])
+	return ""
 
 
 func _is_headless_display() -> bool:
