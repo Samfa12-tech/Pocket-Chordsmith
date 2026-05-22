@@ -35,6 +35,8 @@ The generated kick, snare, and hats are inspired by the original Pocket Chordsmi
 
 When using your own samples, trim long silent tails before assigning them to a playback profile. Godot will keep an `AudioStreamPolyphonic` voice active until the stream ends, so a punchy kick saved as a three-second file can waste polyphony and make diagnostics look busier than the audible sound.
 
+For short sample hits, `PCSPlaybackProfile.sample_preview_load_wavs_uncompressed` defaults to `true`. This makes the conductor load WAV hit samples with `AudioStreamWAV.load_from_file(..., {"compress/mode": 0})` for preview/hybrid event playback, avoiding the lossy default WAV import mode that can smear drum transients. Stem playback still uses normal Godot imports and routing.
+
 Example drum kit:
 
 ```gdscript
