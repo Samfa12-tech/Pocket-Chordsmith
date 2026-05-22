@@ -137,18 +137,24 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 
 
 func _kick(peak: float) -> PackedFloat32Array:
-	var duration := 0.17
+	var duration := 0.14
 	var total := int(SAMPLE_RATE * duration)
 	var out := PackedFloat32Array()
 	out.resize(total)
 	var phase := 0.0
 	for i in range(total):
 		var t := float(i) / float(SAMPLE_RATE)
-		var freq := _exp_ramp(155.0, 45.0, t / 0.14)
+		var freq := _exp_ramp(78.0, 48.0, t / 0.052)
 		phase += TWO_PI * freq / float(SAMPLE_RATE)
-		var env := _exp_ramp(max(0.08, peak), 0.001, t / 0.16)
-		out[i] = sin(phase) * env
-	return _limit_peak(out, 0.98)
+		var body_attack: float = min(1.0, t / 0.007)
+		var body_env := body_attack * _exp_ramp(max(0.08, peak), 0.001, t / 0.082)
+		var punch_env := _exp_ramp(max(0.04, peak * 0.34), 0.001, t / 0.026)
+		var click_env := _exp_ramp(max(0.03, peak * 0.16), 0.001, t / 0.006)
+		var body := _soft_clip(sin(phase) * 1.55) * body_env
+		var punch := sin(phase * 2.0) * punch_env
+		var click := sin(TWO_PI * 1800.0 * t) * click_env
+		out[i] = _soft_clip((body + punch + click) * 1.45)
+	return _normalize(_lowpass(out, 7200.0), 0.90)
 
 
 func _snare(peak: float, seed: int) -> PackedFloat32Array:
