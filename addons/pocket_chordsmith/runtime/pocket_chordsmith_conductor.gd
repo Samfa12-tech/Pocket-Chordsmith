@@ -93,6 +93,7 @@ var _stinger_play_requests_total := 0
 var _stinger_play_failures_total := 0
 var _audio_stream_cache := {}
 var _last_stinger_stream_key := ""
+var _sample_preview_last_kick_tick := -2147483648
 
 
 func _ready() -> void:
@@ -188,6 +189,7 @@ func stop() -> void:
 	_tick_float = 0.0
 	_event_cursor = 0
 	_audio_event_cursor = 0
+	_sample_preview_last_kick_tick = -2147483648
 	_last_beat_index = -1
 	_last_bar_index = -1
 	_last_section_id = ""
@@ -217,6 +219,7 @@ func seek_tick(tick: int) -> void:
 	_reset_wall_clock_anchor()
 	_event_cursor = _find_event_cursor(current_tick)
 	_audio_event_cursor = _find_event_cursor(current_tick)
+	_sample_preview_last_kick_tick = -2147483648
 	_last_beat_index = int(floor(float(current_tick) / float(chart.ticks_per_quarter))) - 1
 	_last_bar_index = int(floor(float(current_tick) / float(max(1, chart.time_signature * chart.ticks_per_quarter)))) - 1
 	_update_position_fields()
@@ -908,8 +911,13 @@ func _route_sample_preview_event(event: Dictionary, delay_ticks := 0) -> void:
 	var volume_db := lerp(-18.0, 0.0, velocity) if playback_profile.sample_preview_velocity_scale else 0.0
 	var layer := _sample_preview_layer_for_event(event)
 	volume_db += _sample_preview_gain_db(layer, sample_key)
+	var event_tick := int(event.get("tick", current_tick))
+	if track_type == "bass" and _sample_preview_should_duck_bass_for_kick(event_tick):
+		volume_db += playback_profile.sample_preview_bass_duck_on_kick_db
 	var pitch_scale := _sample_pitch_scale_for_event(event)
-	_play_polyphonic_sample(stream, _bus_for_layer(layer), sample_key, volume_db, pitch_scale)
+	var stream_id := _play_polyphonic_sample(stream, _bus_for_layer(layer), sample_key, volume_db, pitch_scale)
+	if stream_id >= 0 and track_type == "drum" and instrument_id == "kick":
+		_sample_preview_last_kick_tick = event_tick
 
 
 func _route_sample_preview_chord(event: Dictionary) -> void:
@@ -1332,6 +1340,30 @@ func _sample_pitch_scale_for_event(event: Dictionary) -> float:
 	elif track_type == "chord":
 		root_note = 60
 	return pow(2.0, float(midi_note - root_note) / 12.0)
+
+
+func _sample_preview_should_duck_bass_for_kick(event_tick: int) -> bool:
+	if playback_profile == null or playback_profile.sample_preview_bass_duck_on_kick_db >= 0.0:
+		return false
+	var window_ticks := max(0, int(playback_profile.sample_preview_bass_duck_window_ticks))
+	if window_ticks == 0:
+		return _sample_preview_tick_has_kick(event_tick)
+	return abs(event_tick - _sample_preview_last_kick_tick) <= window_ticks
+
+
+func _sample_preview_tick_has_kick(event_tick: int) -> bool:
+	if chart == null:
+		return false
+	var index := _find_event_cursor(event_tick)
+	while index < chart.compiled_events.size():
+		var candidate: Dictionary = chart.compiled_events[index]
+		var candidate_tick := int(candidate.get("tick", -1))
+		if candidate_tick != event_tick:
+			break
+		if str(candidate.get("track_type", "")) == "drum" and str(candidate.get("instrument_id", "")) == "kick":
+			return true
+		index += 1
+	return false
 
 
 func _sample_preview_gain_db(layer_name: String, sample_key: String) -> float:

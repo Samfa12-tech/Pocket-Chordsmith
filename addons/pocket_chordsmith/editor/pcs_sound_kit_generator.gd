@@ -75,6 +75,8 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 	profile.sample_preview_wall_clock_timing = true
 	profile.sample_preview_max_chord_notes = 2
 	profile.sample_preview_skip_late_audio_ticks = 960
+	profile.sample_preview_bass_duck_on_kick_db = -9.0
+	profile.sample_preview_bass_duck_window_ticks = 0
 	profile.sample_preview_gain_db = {
 		"drums": -3.0,
 		"kick": 1.0,

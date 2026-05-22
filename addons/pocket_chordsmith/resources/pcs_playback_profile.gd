@@ -29,6 +29,8 @@ enum PlaybackBackend {
 @export var sample_preview_wall_clock_timing := true
 @export var sample_preview_max_chord_notes := 2
 @export var sample_preview_skip_late_audio_ticks := 960
+@export var sample_preview_bass_duck_on_kick_db := -9.0
+@export var sample_preview_bass_duck_window_ticks := 0
 @export var sample_preview_gain_db: Dictionary = {
 	"drums": -3.0,
 	"kick": 1.0,
