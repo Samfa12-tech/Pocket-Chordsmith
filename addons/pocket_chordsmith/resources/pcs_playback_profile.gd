@@ -38,7 +38,7 @@ enum PlaybackBackend {
 	"hat": -12.0,
 	"hat_accent": -13.0,
 	"open_hat": -13.0,
-	"bass": -18.0,
+	"bass": -6.0,
 	"chords": -26.0,
 	"melody": -20.0,
 	"stingers": -8.0,
