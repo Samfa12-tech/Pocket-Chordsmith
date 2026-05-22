@@ -39,17 +39,3 @@ marker_stingers = {
 "reward": "reward_hit",
 "transition": "transition_hit"
 }
-sample_preview_gain_db = {
-"bass": -18.0,
-"chords": -26.0,
-"drums": -3.0,
-"hat": -14.0,
-"hat_accent": -13.0,
-"kick": 0.0,
-"kick_accent": 0.0,
-"melody": -20.0,
-"open_hat": -14.0,
-"snare": 0.0,
-"snare_accent": 0.0,
-"stingers": -8.0
-}

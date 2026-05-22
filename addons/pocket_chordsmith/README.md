@@ -31,6 +31,8 @@ Editor workflow:
 6. Save the compiled chart as `.tres` or `.res`.
 7. Assign the chart and playback profile to `PocketChordsmithConductor` in a level or demo scene.
 
+The addon does not require users to bring their own drum WAVs just to get started: the editor can generate a small built-in preview kit. At runtime, audio still uses Godot-native `AudioStream` playback. For a shipped game, use generated samples, your own licensed drum/stinger samples, rendered stems, or a mix of stems plus event-triggered samples.
+
 Visual track building stays in the web app for now. Godot receives the exported JSON/share code, compiles it to a lightweight `PCSChartResource`, then uses the conductor for timing, states, markers, cues, and Godot-native audio routing. A future Godot visual editor should build on the compiled chart/section data instead of porting the whole browser app into runtime.
 
 For batch migration, use the editor `Compile Folder` button or the headless compiler:

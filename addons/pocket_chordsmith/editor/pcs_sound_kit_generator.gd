@@ -77,13 +77,13 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 	profile.sample_preview_skip_late_audio_ticks = 960
 	profile.sample_preview_gain_db = {
 		"drums": -3.0,
-		"kick": 0.0,
-		"kick_accent": 0.0,
+		"kick": 1.0,
+		"kick_accent": 1.0,
 		"snare": 0.0,
 		"snare_accent": 0.0,
-		"hat": -14.0,
+		"hat": -12.0,
 		"hat_accent": -13.0,
-		"open_hat": -14.0,
+		"open_hat": -13.0,
 		"bass": -18.0,
 		"chords": -26.0,
 		"melody": -20.0,
@@ -184,7 +184,7 @@ func _snare(peak: float, seed: int) -> PackedFloat32Array:
 
 
 func _hat(peak: float, open: bool, seed: int) -> PackedFloat32Array:
-	var duration := 0.16 if open else 0.05
+	var duration := 0.42 if open else 0.095
 	var total := int(SAMPLE_RATE * duration)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
@@ -192,9 +192,17 @@ func _hat(peak: float, open: bool, seed: int) -> PackedFloat32Array:
 	data.resize(total)
 	for i in range(total):
 		var t := float(i) / float(SAMPLE_RATE)
-		var env := _exp_ramp(max(0.05 if open else 0.03, peak), 0.001, t / (0.14 if open else 0.05))
-		data[i] = (rng.randf() * 2.0 - 1.0) * (0.9 if open else 1.0) * env
-	return _limit_peak(_highpass(data, 3800.0 if open else 5600.0), 0.98)
+		var env := _exp_ramp(max(0.05 if open else 0.03, peak), 0.001, t / (0.36 if open else 0.075))
+		var noise := (rng.randf() * 2.0 - 1.0) * (0.62 if open else 0.78)
+		var metallic := 0.0
+		metallic += sin(TWO_PI * 6320.0 * t) * 0.34
+		metallic += sin(TWO_PI * 8150.0 * t) * 0.26
+		metallic += sin(TWO_PI * 10760.0 * t) * 0.18
+		metallic += sin(TWO_PI * 13220.0 * t) * 0.10
+		var tick := sin(TWO_PI * 3100.0 * t) * _exp_ramp(0.20, 0.001, t / 0.018)
+		data[i] = (noise + metallic + tick) * env
+	var filtered := _lowpass(_highpass(data, 3300.0 if open else 4700.0), 13200.0)
+	return _normalize(filtered, 0.36 if open else 0.42)
 
 
 func _clap(peak: float, seed: int) -> PackedFloat32Array:

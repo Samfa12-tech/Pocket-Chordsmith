@@ -31,13 +31,13 @@ enum PlaybackBackend {
 @export var sample_preview_skip_late_audio_ticks := 960
 @export var sample_preview_gain_db: Dictionary = {
 	"drums": -3.0,
-	"kick": 4.0,
-	"kick_accent": 4.0,
+	"kick": 1.0,
+	"kick_accent": 1.0,
 	"snare": 0.0,
 	"snare_accent": 0.0,
 	"hat": -12.0,
-	"hat_accent": -11.0,
-	"open_hat": -12.0,
+	"hat_accent": -13.0,
+	"open_hat": -13.0,
 	"bass": -18.0,
 	"chords": -26.0,
 	"melody": -20.0,
