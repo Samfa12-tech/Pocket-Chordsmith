@@ -1302,10 +1302,13 @@ func _sample_preview_layer_for_event(event: Dictionary) -> String:
 
 
 func _sample_pitch_scale_for_event(event: Dictionary) -> float:
+	var track_type := str(event.get("track_type", ""))
+	# Drum WAVs are already rendered at their intended pitch; MIDI notes are metadata for cues/export.
+	if track_type == "drum":
+		return 1.0
 	var midi_note := int(event.get("midi_note", -1))
 	if midi_note < 0:
 		return 1.0
-	var track_type := str(event.get("track_type", ""))
 	var root_note := 60
 	if track_type == "bass":
 		root_note = 36
