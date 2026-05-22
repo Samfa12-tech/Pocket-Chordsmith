@@ -31,7 +31,7 @@ res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.t
 
 Assign `pocket_chordsmith_web_kit_profile.tres` to `PocketChordsmithConductor.playback_profile` to hear chart drum events through Godot-native sample playback.
 
-The generated kick, snare, and hats are recreated from the original Pocket Chordsmith WebAudio drum functions. They are useful for previewing arrangements inside Godot, but they are still one-shot samples. Imported JSON can include bass and melody slide events from one note to another; sample preview preserves those slide flags in the event data but does not reproduce continuous pitch glides. Use rendered stems or a native audio router when slide accuracy matters.
+The generated kick, snare, and hats are inspired by the original Pocket Chordsmith WebAudio drum functions and tuned into short, reusable WAV one-shots for Godot. This means projects can preview charts without sourcing a drum kit first. It does not mean runtime bypasses audio assets entirely: generated WAVs, licensed user samples, or rendered stems are still played through Godot's audio system. Imported JSON can include bass and melody slide events from one note to another; sample preview preserves those slide flags in the event data but does not reproduce continuous pitch glides. Use rendered stems or a native audio router when slide accuracy matters.
 
 Example drum kit:
 
