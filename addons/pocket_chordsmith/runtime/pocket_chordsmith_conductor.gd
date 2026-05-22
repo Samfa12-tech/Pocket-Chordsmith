@@ -101,6 +101,8 @@ func _ready() -> void:
 		playback_profile = PCSPlaybackProfile.new()
 	_setup_native_audio_players()
 	_apply_safe_default_buses()
+	if playback_profile.sample_preview_prewarm_on_ready:
+		prewarm_audio(false)
 	set_process(true)
 	if autoplay and chart != null:
 		play()
@@ -161,6 +163,8 @@ func set_playback_profile(profile: PCSPlaybackProfile, stop_active_samples := tr
 	_last_playback_warning_signature = ""
 	_setup_native_audio_players()
 	_apply_safe_default_buses()
+	if playback_profile.sample_preview_prewarm_on_ready:
+		prewarm_audio(false)
 	_warn_playback_profile_once()
 
 
@@ -168,6 +172,8 @@ func play() -> void:
 	if chart == null:
 		return
 	_warn_playback_profile_once()
+	if playback_profile != null and playback_profile.sample_preview_prewarm_on_ready:
+		prewarm_audio(false)
 	_playing = true
 	_paused = false
 	_reset_wall_clock_anchor()
@@ -409,6 +415,29 @@ func get_active_intensity() -> String:
 	return _active_intensity
 
 
+func prewarm_audio(include_stems := false) -> Dictionary:
+	var report := {
+		"ok": true,
+		"loaded": 0,
+		"failed": 0,
+		"cached_streams": _audio_stream_cache.size(),
+		"warnings": [],
+	}
+	if playback_profile == null:
+		report["ok"] = false
+		report["warnings"].append("Pocket Chordsmith cannot prewarm audio without a playback profile.")
+		return report
+	var seen := {}
+	_prewarm_audio_dictionary(playback_profile.drum_kit, seen, report, true)
+	_prewarm_audio_dictionary(playback_profile.event_sample_streams, seen, report, true)
+	_prewarm_audio_dictionary(playback_profile.accent_streams, seen, report, true)
+	if include_stems:
+		_prewarm_audio_dictionary(_stem_map_for_current_state(), seen, report, false)
+	report["cached_streams"] = _audio_stream_cache.size()
+	report["ok"] = int(report["failed"]) == 0
+	return report
+
+
 func get_diagnostics() -> Dictionary:
 	var backend := "none"
 	var stem_status := "inactive"
@@ -434,6 +463,7 @@ func get_diagnostics() -> Dictionary:
 		"active_samples": _active_sample_ids.size(),
 		"active_polyphony": _active_stinger_ids.size() + _active_sample_ids.size(),
 		"max_polyphony": playback_profile.max_polyphony if playback_profile != null else 0,
+		"cached_audio_streams": _audio_stream_cache.size(),
 		"sample_play_requests_total": _sample_play_requests_total,
 		"sample_play_failures_total": _sample_play_failures_total,
 		"stinger_play_requests_total": _stinger_play_requests_total,
@@ -1194,19 +1224,51 @@ func _load_audio_stream(value, prefer_uncompressed_wav := false) -> AudioStream:
 		return value
 	if value is String and ResourceLoader.exists(value):
 		var path := str(value)
-		if _audio_stream_cache.has(path):
-			return _audio_stream_cache[path]
+		var cache_key := _audio_cache_key(path, prefer_uncompressed_wav)
+		if _audio_stream_cache.has(cache_key):
+			return _audio_stream_cache[cache_key]
 		if prefer_uncompressed_wav and playback_profile != null and playback_profile.sample_preview_load_wavs_uncompressed and path.get_extension().to_lower() == "wav":
 			var wav_stream := AudioStreamWAV.load_from_file(path, {"compress/mode": 0})
 			if wav_stream != null:
-				_audio_stream_cache[path] = wav_stream
+				_audio_stream_cache[cache_key] = wav_stream
 				return wav_stream
 		var resource := load(path)
 		if resource is AudioStream:
-			_audio_stream_cache[path] = resource
+			_audio_stream_cache[cache_key] = resource
 			return resource
 		return null
 	return null
+
+
+func _audio_cache_key(path: String, prefer_uncompressed_wav := false) -> String:
+	var wants_raw_wav := prefer_uncompressed_wav and playback_profile != null and playback_profile.sample_preview_load_wavs_uncompressed and path.get_extension().to_lower() == "wav"
+	return "%s:%s" % ["wav_raw" if wants_raw_wav else "resource", path]
+
+
+func _prewarm_audio_dictionary(stream_map: Dictionary, seen: Dictionary, report: Dictionary, prefer_uncompressed_wav := false) -> void:
+	for value in stream_map.values():
+		_prewarm_audio_value(value, seen, report, prefer_uncompressed_wav)
+
+
+func _prewarm_audio_value(value, seen: Dictionary, report: Dictionary, prefer_uncompressed_wav := false) -> void:
+	if value is AudioStream:
+		report["loaded"] = int(report["loaded"]) + 1
+		return
+	if not (value is String):
+		return
+	var path := str(value)
+	if path.is_empty():
+		return
+	var key := _audio_cache_key(path, prefer_uncompressed_wav)
+	if seen.has(key):
+		return
+	seen[key] = true
+	var stream := _load_audio_stream(path, prefer_uncompressed_wav)
+	if stream != null:
+		report["loaded"] = int(report["loaded"]) + 1
+	else:
+		report["failed"] = int(report["failed"]) + 1
+		report["warnings"].append("Pocket Chordsmith could not prewarm audio stream: %s" % path)
 
 
 func _stop_native_stems() -> void:
