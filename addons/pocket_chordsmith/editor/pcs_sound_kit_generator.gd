@@ -73,6 +73,7 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 	profile.sample_preview_velocity_scale = true
 	profile.sample_preview_tonal_enabled = true
 	profile.sample_preview_wall_clock_timing = true
+	profile.sample_preview_load_wavs_uncompressed = true
 	profile.sample_preview_max_chord_notes = 2
 	profile.sample_preview_skip_late_audio_ticks = 960
 	profile.sample_preview_bass_duck_on_kick_db = -9.0

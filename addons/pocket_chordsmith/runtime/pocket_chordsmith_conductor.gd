@@ -1189,13 +1189,18 @@ func _stem_map_for_current_state() -> Dictionary:
 	return {}
 
 
-func _load_audio_stream(value) -> AudioStream:
+func _load_audio_stream(value, prefer_uncompressed_wav := false) -> AudioStream:
 	if value is AudioStream:
 		return value
 	if value is String and ResourceLoader.exists(value):
 		var path := str(value)
 		if _audio_stream_cache.has(path):
 			return _audio_stream_cache[path]
+		if prefer_uncompressed_wav and playback_profile != null and playback_profile.sample_preview_load_wavs_uncompressed and path.get_extension().to_lower() == "wav":
+			var wav_stream := AudioStreamWAV.load_from_file(path, {"compress/mode": 0})
+			if wav_stream != null:
+				_audio_stream_cache[path] = wav_stream
+				return wav_stream
 		var resource := load(path)
 		if resource is AudioStream:
 			_audio_stream_cache[path] = resource
@@ -1222,7 +1227,7 @@ func _play_stinger_stream(name: String) -> int:
 	if playback == null:
 		_stinger_play_failures_total += 1
 		return -1
-	var stream := _load_audio_stream(playback_profile.accent_streams.get(name, null))
+	var stream := _load_audio_stream(playback_profile.accent_streams.get(name, null), true)
 	if stream == null:
 		_stinger_play_failures_total += 1
 		return -1
@@ -1397,11 +1402,11 @@ func _sample_stream_for_key(sample_key: String) -> AudioStream:
 	if playback_profile == null:
 		return null
 	if playback_profile.drum_kit.has(sample_key):
-		return _load_audio_stream(playback_profile.drum_kit[sample_key])
+		return _load_audio_stream(playback_profile.drum_kit[sample_key], true)
 	if playback_profile.event_sample_streams.has(sample_key):
-		return _load_audio_stream(playback_profile.event_sample_streams[sample_key])
+		return _load_audio_stream(playback_profile.event_sample_streams[sample_key], true)
 	if playback_profile.accent_streams.has(sample_key):
-		return _load_audio_stream(playback_profile.accent_streams[sample_key])
+		return _load_audio_stream(playback_profile.accent_streams[sample_key], true)
 	return null
 
 
