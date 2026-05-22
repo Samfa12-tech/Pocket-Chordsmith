@@ -37,6 +37,8 @@ When using your own samples, trim long silent tails before assigning them to a p
 
 For short sample hits, `PCSPlaybackProfile.sample_preview_load_wavs_uncompressed` defaults to `true`. This makes the conductor load WAV hit samples with `AudioStreamWAV.load_from_file(..., {"compress/mode": 0})` for preview/hybrid event playback, avoiding the lossy default WAV import mode that can smear drum transients. Stem playback still uses normal Godot imports and routing.
 
+`PCSPlaybackProfile.sample_preview_prewarm_on_ready` also defaults to `true`. The conductor preloads drum-kit, event-sample, and stinger streams into its cache before playback. You can call `conductor.prewarm_audio()` yourself during a loading screen after assigning the chart and playback profile.
+
 Example drum kit:
 
 ```gdscript

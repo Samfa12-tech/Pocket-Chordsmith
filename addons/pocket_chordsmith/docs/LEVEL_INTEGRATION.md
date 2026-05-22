@@ -22,6 +22,7 @@ Setup:
 func _ready() -> void:
 	conductor.chart = preload("res://music/charts/level_01_pcs_chart.tres")
 	conductor.playback_profile = preload("res://music/profiles/level_01_profile.tres")
+	conductor.prewarm_audio()
 	conductor.beat.connect(_on_beat)
 	conductor.marker_hit.connect(_on_marker)
 	conductor.event_triggered.connect(_on_chart_event)
@@ -74,6 +75,20 @@ func bind_music(conductor: PocketChordsmithConductor) -> void:
 
 This keeps one chart clock per level and avoids drift.
 
+## Cooking And Prewarming
+
+Pocket Chordsmith has two separate preparation steps:
+
+- Compile/cook the chart in the editor or with the headless build tool. This turns Pocket Chordsmith JSON/share codes into a lightweight `PCSChartResource`; gameplay should load this `.tres`, not parse JSON.
+- Prewarm audio streams before playback. `PocketChordsmithConductor.prewarm_audio()` loads the playback profile's drum kit, preview notes, and stingers into the conductor cache so the first beat does not pay the load cost.
+
+`PCSPlaybackProfile.sample_preview_prewarm_on_ready` defaults to `true`, so normal level-owned conductors prewarm automatically when they enter the scene. For loading screens or autoload bridges, calling `prewarm_audio()` explicitly after assigning the chart/profile is still useful. Pass `true` only when you also want to prewarm the current stem map:
+
+```gdscript
+var report := conductor.prewarm_audio()
+print(report)
+```
+
 ## Common Gameplay Calls
 
 ```gdscript
@@ -95,4 +110,3 @@ conductor.trigger_stinger("reward_hit")
 - Use compiled `.tres` chart resources.
 - Use Godot stems, samples, buses, and effects for audio playback.
 - Keep procedural preview out of shipped runtime unless heavily constrained.
-
