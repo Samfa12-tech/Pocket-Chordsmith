@@ -49,7 +49,7 @@ sample_preview_gain_db = {
 "kick_accent": 0.0,
 "melody": -20.0,
 "open_hat": -14.0,
-"snare": -5.0,
-"snare_accent": -5.0,
+"snare": 4.0,
+"snare_accent": 2.0,
 "stingers": -8.0
 }
