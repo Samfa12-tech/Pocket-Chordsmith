@@ -79,8 +79,8 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 		"drums": -3.0,
 		"kick": 0.0,
 		"kick_accent": 0.0,
-		"snare": 4.0,
-		"snare_accent": 2.0,
+		"snare": 0.0,
+		"snare_accent": 0.0,
 		"hat": -14.0,
 		"hat_accent": -13.0,
 		"open_hat": -14.0,
@@ -152,17 +152,35 @@ func _kick(peak: float) -> PackedFloat32Array:
 
 
 func _snare(peak: float, seed: int) -> PackedFloat32Array:
-	var duration := 0.13
+	var duration := 0.16
 	var total := int(SAMPLE_RATE * duration)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
-	var noise := PackedFloat32Array()
-	noise.resize(total)
+	var shell := PackedFloat32Array()
+	shell.resize(total)
+	var body := PackedFloat32Array()
+	body.resize(total)
+	var body_phase := 0.0
+	var overtone_phase := 0.0
 	for i in range(total):
 		var t := float(i) / float(SAMPLE_RATE)
-		var env := _exp_ramp(max(0.05, peak), 0.001, t / 0.12)
-		noise[i] = (rng.randf() * 2.0 - 1.0) * env
-	return _limit_peak(_highpass(noise, 1700.0), 0.98)
+		var shell_env := _exp_ramp(max(0.05, peak) * 0.52, 0.001, t / 0.145)
+		var crack_env := _exp_ramp(max(0.04, peak) * 0.18, 0.001, t / 0.026)
+		shell[i] = (rng.randf() * 2.0 - 1.0) * (shell_env + crack_env)
+
+		var body_freq := _exp_ramp(215.0, 165.0, t / 0.09)
+		body_phase += TWO_PI * body_freq / float(SAMPLE_RATE)
+		overtone_phase += TWO_PI * 335.0 / float(SAMPLE_RATE)
+		var body_env := _exp_ramp(max(0.05, peak) * 0.30, 0.001, t / 0.105)
+		var triangle := asin(sin(body_phase)) * (2.0 / PI)
+		var overtone := sin(overtone_phase) * 0.32
+		body[i] = (triangle + overtone) * body_env
+	var shaped_shell := _lowpass(_highpass(shell, 900.0), 7200.0)
+	var out := PackedFloat32Array()
+	out.resize(total)
+	for i in range(total):
+		out[i] = _soft_clip(shaped_shell[i] + body[i])
+	return _normalize(out, 0.74 + clamp(peak - 0.5, 0.0, 0.35) * 0.28)
 
 
 func _hat(peak: float, open: bool, seed: int) -> PackedFloat32Array:
