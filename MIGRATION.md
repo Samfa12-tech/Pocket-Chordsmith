@@ -1,6 +1,6 @@
-# Migrating To Pocket Chordsmith Godot Addon 0.9.0-rc1
+# Migrating To Pocket Chordsmith Godot Addon 1.0.0
 
-This RC keeps the core architecture stable:
+This release keeps the core architecture stable:
 
 ```text
 Pocket Chordsmith JSON/share code -> PCSChartResource -> PocketChordsmithConductor

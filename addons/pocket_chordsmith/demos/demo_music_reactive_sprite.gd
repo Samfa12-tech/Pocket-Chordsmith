@@ -3,7 +3,6 @@ extends Node2D
 const ChartResourceScript := preload("res://addons/pocket_chordsmith/resources/pcs_chart_resource.gd")
 const SectionResourceScript := preload("res://addons/pocket_chordsmith/resources/pcs_section_resource.gd")
 const WebKitProfilePath := "res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.tres"
-const SampleFocus808ProfilePath := "res://assets/music/playback_profiles/pcs_sample_focus_808_profile.tres"
 
 @export var chart: PCSChartResource
 
@@ -148,10 +147,6 @@ func _build_demo_buttons() -> void:
 	_add_demo_button(rows, "Kit: Web", func() -> void:
 		_apply_demo_profile(WebKitProfilePath, "Generated Web Kit")
 	)
-	if ResourceLoader.exists(SampleFocus808ProfilePath):
-		_add_demo_button(rows, "Kit: 808", func() -> void:
-			_apply_demo_profile(SampleFocus808ProfilePath, "Sample Focus 808")
-		)
 	_add_demo_button(rows, "Stinger Now", func() -> void:
 		conductor.trigger_stinger("warning_hit")
 	)

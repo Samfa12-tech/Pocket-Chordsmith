@@ -1,8 +1,8 @@
 # Pocket Chordsmith Godot Addon Changelog
 
-## 0.9.0-rc1
+## 1.0.0
 
-Release-candidate hardening pass for the Godot addon.
+First stable release of the Godot addon.
 
 Added:
 
@@ -20,8 +20,8 @@ Changed:
 - The plugin can import from file, pasted JSON, or pasted `PCS1:` share code text.
 - `PocketChordsmithPlayer.gd` is documented as legacy editor/demo preview rather than the shipped runtime playback layer.
 
-Known RC limits:
+Known limits:
 
 - Generated samples are close Pocket Chordsmith-style recreations, not bit-identical WebAudio exports.
 - Stem playback is prepared around Godot-native streams; projects still need to provide final rendered stems for shipped music beds.
-- Full visual sequence editing still belongs in the web app for this RC.
+- Full visual sequence editing still belongs in the web app for this release.
