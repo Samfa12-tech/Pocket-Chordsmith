@@ -73,6 +73,7 @@ func create_playback_profile_template(save_path: String, options := {}) -> Dicti
 		"drums": "",
 		"bass": "",
 		"chords": "",
+		"guitar": "",
 		"melody_1": "",
 		"fx": "",
 	}

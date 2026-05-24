@@ -69,4 +69,4 @@ profile.marker_stingers = {
 }
 ```
 
-Use the recommended Chordsmith audio buses so drums route to `Music_Drums` and stingers route to `Music_Stingers`. Add compression/limiting on those buses in Godot's native audio bus layout, not in Pocket Chordsmith.
+Use the recommended Chordsmith audio buses so drums route to `Music_Drums`, guitar routes to `Music_Guitar`, and stingers route to `Music_Stingers`. The `Create Chordsmith Audio Buses` tool can add a conservative native guitar preview chain on `Music_Guitar`; add or tune heavier compression/limiting in Godot's native audio bus layout for shipped mixes.

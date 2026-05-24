@@ -33,6 +33,10 @@ func generate_web_kit(output_dir := DEFAULT_OUTPUT_DIR) -> Dictionary:
 		"clap": _clap(0.34, 5),
 		"bass_tone": _bass_tone(),
 		"chord_tone": _chord_tone(),
+		"guitar_open": _guitar_open(),
+		"guitar_chug": _guitar_chug(),
+		"guitar_accent": _guitar_accent(),
+		"guitar_scratch": _guitar_scratch(),
 		"melody_pulse": _melody_pulse(),
 		"melody_soft": _melody_soft(),
 		"melody_bell": _melody_bell(),
@@ -79,6 +83,7 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 	profile.sample_preview_skip_late_audio_ticks = 960
 	profile.sample_preview_bass_duck_on_kick_db = -9.0
 	profile.sample_preview_bass_duck_window_ticks = 0
+	profile.guitar_preview_effects_enabled = true
 	profile.sample_preview_gain_db = {
 		"drums": -3.0,
 		"kick": 1.0,
@@ -90,6 +95,7 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 		"open_hat": -13.0,
 		"bass": -6.0,
 		"chords": -26.0,
+		"guitar": -22.0,
 		"melody": -20.0,
 		"stingers": -8.0,
 	}
@@ -115,6 +121,11 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 		"bass:manual_bass": sample_paths.get("bass_tone", ""),
 		"chord": sample_paths.get("chord_tone", ""),
 		"chord:tone": sample_paths.get("chord_tone", ""),
+		"guitar": sample_paths.get("guitar_open", ""),
+		"guitar:open": sample_paths.get("guitar_open", ""),
+		"guitar:chug": sample_paths.get("guitar_chug", ""),
+		"guitar:accent": sample_paths.get("guitar_accent", ""),
+		"guitar:scratch": sample_paths.get("guitar_scratch", ""),
 		"melody": sample_paths.get("melody_pulse", ""),
 		"melody:pulse": sample_paths.get("melody_pulse", ""),
 		"melody:synth": sample_paths.get("melody_pulse", ""),
@@ -130,6 +141,7 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 	profile.drums_bus = "Music_Drums"
 	profile.bass_bus = "Music_Bass"
 	profile.chords_bus = "Music_Chords"
+	profile.guitar_bus = "Music_Guitar"
 	profile.melody_bus = "Music_Melody"
 	profile.stingers_bus = "Music_Stingers"
 	var error := ResourceSaver.save(profile, profile_path)
@@ -259,6 +271,63 @@ func _chord_tone() -> PackedFloat32Array:
 		var tone := pulse * 0.36 + sin(TWO_PI * 261.626 * t) * 0.28 + sin(TWO_PI * 523.252 * t) * 0.08
 		data[i] = tone * env
 	return _normalize(_lowpass(data, 5200.0), 0.64)
+
+
+func _guitar_open() -> PackedFloat32Array:
+	return _guitar_tone(0.78, 2.05, 3.2, 7, 0.36, 0.70)
+
+
+func _guitar_chug() -> PackedFloat32Array:
+	return _guitar_tone(0.16, 16.0, 3.8, 8, 0.58, 0.74)
+
+
+func _guitar_accent() -> PackedFloat32Array:
+	return _guitar_tone(0.44, 3.8, 4.1, 9, 0.52, 0.82)
+
+
+func _guitar_tone(duration: float, decay_rate: float, drive: float, seed: int, pick_amount: float, peak: float) -> PackedFloat32Array:
+	var total := int(SAMPLE_RATE * duration)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var data := PackedFloat32Array()
+	data.resize(total)
+	var phase_a := 0.0
+	var phase_b := 0.0
+	var base_freq := 82.407
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		phase_a += TWO_PI * base_freq / float(SAMPLE_RATE)
+		phase_b += TWO_PI * (base_freq * 1.006) / float(SAMPLE_RATE)
+		var cycle_a := fmod(phase_a / TWO_PI, 1.0)
+		var cycle_b := fmod(phase_b / TWO_PI, 1.0)
+		var saw_a := cycle_a * 2.0 - 1.0
+		var saw_b := cycle_b * 2.0 - 1.0
+		var square := 1.0 if cycle_a < 0.52 else -1.0
+		var string_body := saw_a * 0.46 + saw_b * 0.34 + square * 0.18
+		string_body += sin(phase_a * 2.0) * 0.14 + sin(phase_a * 3.01) * 0.08
+		var amp_env: float = min(1.0, t / 0.004) * exp(-decay_rate * t)
+		var pick_env := exp(-85.0 * t)
+		var pick_noise := (rng.randf() * 2.0 - 1.0) * pick_amount * pick_env
+		var value := _soft_clip((string_body + pick_noise) * drive) * amp_env
+		data[i] = value
+	var filtered := _lowpass(_highpass(data, 80.0), 5600.0)
+	return _normalize(_limit_peak(filtered, 0.92), peak)
+
+
+func _guitar_scratch() -> PackedFloat32Array:
+	var duration := 0.11
+	var total := int(SAMPLE_RATE * duration)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 10
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env := exp(-48.0 * t)
+		var scrape := rng.randf() * 2.0 - 1.0
+		var tick := sin(TWO_PI * 1450.0 * t) * exp(-110.0 * t) * 0.28
+		data[i] = _soft_clip((scrape * 1.6 + tick) * env)
+	return _normalize(_lowpass(_highpass(data, 320.0), 4200.0), 0.48)
 
 
 func _melody_pulse() -> PackedFloat32Array:

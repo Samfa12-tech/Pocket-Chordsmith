@@ -1,5 +1,38 @@
 # Pocket Chordsmith Godot Addon Changelog
 
+## 1.1.2
+
+Guitar preview audio update for the v60 rock guitar import path.
+
+Added:
+
+- Dedicated `Music_Guitar` bus support through `PCSPlaybackProfile.guitar_bus`.
+- A conservative native guitar preview chain for the recommended bus layout: high-pass, drive, cab-style EQ, low-pass, compression, and limiting.
+- Generated web-kit guitar samples for open strums, palm-muted chugs, accents, and scratches.
+
+Changed:
+
+- Guitar sample preview now routes to `Music_Guitar` instead of the chord bus.
+- Web-kit guitar event sample keys now point to guitar-specific WAVs instead of `chord_tone.wav`.
+- Guitar sample pitch preview uses low-E style source tuning so root/fifth/octave stacks sit in a more useful rhythm-guitar range.
+
+## 1.1.1
+
+Rock guitar import compatibility update for Pocket Chordsmith v60 projects.
+
+Added:
+
+- Importer schema support for optional v60 guitar settings and per-section guitar patterns.
+- Chart compiler output for guitar rhythm events, including root/fifth/octave power-chord note stacks, palm-muted chugs, accents, scratches, holds, register, tone, and strum-direction flags.
+- HYBRID/sample-preview fallback keys for guitar events so new charts can audition in Godot without custom samples.
+- A `guitar` stem layer in generated playback profile templates and stem workflow docs.
+
+Changed:
+
+- Timeline, section list, and import summary views now include guitar event counts when present.
+- Sample preview routes guitar through the chord bus and allows three-note power chords while keeping older chord preview limits unchanged.
+- Older projects still normalise with guitar disabled and empty per-section guitar patterns.
+
 ## 1.1.0
 
 Web export compatibility update for sample preview and hybrid playback.

@@ -1,4 +1,4 @@
-# Migrating To Pocket Chordsmith Godot Addon 1.1.0
+# Migrating To Pocket Chordsmith Godot Addon 1.1.2
 
 This release keeps the core architecture stable:
 
@@ -23,6 +23,14 @@ res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.t
 ## 1.1 Web Export Note
 
 Version 1.1 adds a web-export compatibility toggle for pitched tonal preview samples. `PCSPlaybackProfile.sample_preview_force_web_stream_for_pitched` defaults to `true`; leave it enabled for Godot web builds that use sample preview or HYBRID melody, bass, and chord playback. It does not affect rendered stems, and desktop/native preview remains on the normal Godot playback path unless you change the profile.
+
+## 1.1.1 Guitar Import Note
+
+Version 1.1.1 understands Pocket Chordsmith v60 rock-guitar projects. Recompile v60 JSON or share-code imports after updating the addon; guitar patterns compile into `track_type == "guitar"` events with power-chord note stacks in `flags.midi_notes`. Existing projects load with guitar disabled unless the exported project explicitly contains guitar settings.
+
+## 1.1.2 Guitar Preview Note
+
+Version 1.1.2 adds a dedicated `Music_Guitar` bus plus generated guitar preview samples. Run `Create Chordsmith Audio Buses` after updating if your project does not already have `Music_Guitar`; the tool will add a safe native amp/cab-style preview chain without removing existing buses. Existing playback profiles still load, but regenerate the web sound kit or use the bundled web-kit profile to get the new guitar sample mappings.
 
 ## API Notes
 

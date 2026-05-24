@@ -542,13 +542,16 @@ func _update_track_summary() -> void:
 		var info: Dictionary = chart.section_library.get(section_id, {})
 		var summary: Dictionary = info.get("track_summary", {})
 		var bass: Dictionary = summary.get("bass", {})
+		var guitar: Dictionary = summary.get("guitar", {})
 		var melody: Array = summary.get("melody_tracks", [])
 		var drums: Dictionary = summary.get("drums", {})
-		lines.append("Section %s: drums %s, bass %d %s triggers, melody tracks %d" % [
+		lines.append("Section %s: drums %s, bass %d %s triggers, guitar %d %s events, melody tracks %d" % [
 			str(section_id),
 			str(drums),
 			int(bass.get("triggers", 0)),
 			str(bass.get("mode", "auto")),
+			int(guitar.get("events", 0)),
+			str(guitar.get("tone", "off")) if bool(guitar.get("enabled", false)) else "off",
 			melody.size(),
 		])
 	_track_summary_label.text = "\n".join(lines)
@@ -604,6 +607,7 @@ func _ensure_preview_audio_buses() -> void:
 		conductor.playback_profile.drums_bus,
 		conductor.playback_profile.bass_bus,
 		conductor.playback_profile.chords_bus,
+		conductor.playback_profile.guitar_bus,
 		conductor.playback_profile.melody_bus,
 		conductor.playback_profile.stingers_bus,
 	]
@@ -617,6 +621,9 @@ func _ensure_preview_audio_buses() -> void:
 			if not warnings.is_empty():
 				_set_status("Preview created/reused Chordsmith audio buses. Warnings: %s" % str(warnings))
 			return
+	if conductor.playback_profile.guitar_preview_effects_enabled:
+		var effect_tools = AudioBusTools.new()
+		effect_tools.ensure_guitar_preview_effects(true)
 
 
 func _set_status(text: String) -> void:

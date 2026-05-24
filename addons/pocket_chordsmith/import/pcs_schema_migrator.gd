@@ -8,7 +8,8 @@ const NOTE_NAMES := ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#",
 const MAX_BARS := 4
 const MAX_MELODY_TRACKS := 6
 const MAX_SEQUENCE_SLOTS := 64
-const PROJECT_SCHEMA_VERSION := 15
+const PROJECT_SCHEMA_VERSION := 16
+const GUITAR_ARTICULATIONS := ["off", "open", "chug", "accent", "hold", "scratch"]
 
 const DEFAULT_SECTION_BARS := {
 	"A": 4, "B": 4, "C": 4, "D": 4,
@@ -22,7 +23,9 @@ const TOP_LEVEL_SUPPORTED_KEYS := [
 	"projectVersion", "schemaVersion", "key", "scale", "timeSig", "bpm", "swing",
 	"resolution", "chordType", "chordPlayMode", "chordRhythmMode", "chordOctave",
 	"melodyPitchMode", "melodyOctave", "bassMode", "midiExportMode",
-	"midiChordExport", "midiExactDurations", "sectionBars", "sectionLengths",
+	"midiChordExport", "midiExactDurations", "guitarEnabled", "guitarTone",
+	"guitarRegister", "guitarStrumMode", "guitarPatternPreset", "guitarVolume",
+	"sectionBars", "sectionLengths",
 	"songSequence", "sectionSequence", "level_id", "default_loop", "mood",
 	"intensity_tags", "markers", "loop_regions", "gameplay_flags", "accent_map",
 	"music_states", "default_music_state", "stem_sets", "state_stem_sets",
@@ -80,6 +83,12 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 	data["midiExportMode"] = _safe_choice(str(raw.get("midiExportMode", "quantized")), ["quantized", "performance"], "quantized", "midiExportMode", warnings)
 	data["midiChordExport"] = _safe_choice(str(raw.get("midiChordExport", "played")), ["played", "block", "none"], "played", "midiChordExport", warnings)
 	data["midiExactDurations"] = raw.get("midiExactDurations", true) != false
+	data["guitarEnabled"] = bool(raw.get("guitarEnabled", false))
+	data["guitarTone"] = _safe_choice(str(raw.get("guitarTone", "high_gain")), ["clean", "crunch", "high_gain", "metal"], "high_gain", "guitarTone", warnings)
+	data["guitarRegister"] = _safe_choice(str(raw.get("guitarRegister", "low")), ["low", "mid", "high"], "low", "guitarRegister", warnings)
+	data["guitarStrumMode"] = _safe_choice(str(raw.get("guitarStrumMode", "down")), ["down", "up", "alternate"], "down", "guitarStrumMode", warnings)
+	data["guitarPatternPreset"] = _safe_choice(str(raw.get("guitarPatternPreset", "metal_chug")), ["rock_eighths", "punk_downstrokes", "metal_chug", "gallop", "doom_slow", "verse_chorus"], "metal_chug", "guitarPatternPreset", warnings)
+	data["guitarVolume"] = _clamp_float(raw.get("guitarVolume", 0.58), 0.0, 1.0, 0.58, "guitarVolume", warnings)
 	data["sectionBars"] = _sanitize_section_bars(raw.get("sectionBars", raw.get("sectionLengths", {})), warnings)
 	data["songSequence"] = _sanitize_song_sequence(raw.get("songSequence", raw.get("sectionSequence", DEFAULT_SONG_SEQUENCE)), warnings)
 
@@ -106,6 +115,7 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 		data["bassAccent%s" % section_id] = _rescale_bool_interval_track(raw.get("bassAccent%s" % section_id, []), max_steps)
 		data["bassHold%s" % section_id] = _rescale_bool_interval_track(raw.get("bassHold%s" % section_id, []), max_steps)
 		data["bassSlide%s" % section_id] = _rescale_bool_interval_track(raw.get("bassSlide%s" % section_id, []), max_steps)
+		data["guitarPattern%s" % section_id] = _sanitize_guitar_pattern(raw.get("guitarPattern%s" % section_id, []), max_steps)
 
 	_clean_tuplets(data, warnings)
 	_collect_metadata(raw, data, metadata, warnings)
@@ -125,7 +135,7 @@ func _collect_metadata(raw: Dictionary, data: Dictionary, metadata: Dictionary, 
 	for key in TOP_LEVEL_SUPPORTED_KEYS:
 		supported_lookup[key] = true
 	for section_id in SECTION_IDS:
-		for prefix in ["progression", "grid", "gridTuplets", "melodyTracks", "melodyInstruments", "melodyOctaves", "melodyMute", "melodySolo", "melodyPan", "melodyHold", "melodySlide", "melodyTuplets", "bassNotes", "bassAccent", "bassHold", "bassSlide"]:
+		for prefix in ["progression", "grid", "gridTuplets", "melodyTracks", "melodyInstruments", "melodyOctaves", "melodyMute", "melodySolo", "melodyPan", "melodyHold", "melodySlide", "melodyTuplets", "bassNotes", "bassAccent", "bassHold", "bassSlide", "guitarPattern"]:
 			supported_lookup["%s%s" % [prefix, section_id]] = true
 
 	var ignored_ui_fields: Array[String] = []
@@ -323,6 +333,37 @@ func _sanitize_pan_list(raw, track_count: int) -> Array[float]:
 		var value = source[index] if index < source.size() else 0.0
 		out.append(clamp(_as_float(value, 0.0), -1.0, 1.0))
 	return out
+
+
+func _sanitize_guitar_pattern(raw, new_len: int) -> Array[String]:
+	var old: Array = raw if raw is Array else []
+	var next: Array[String] = []
+	next.resize(new_len)
+	next.fill("off")
+	if old.is_empty():
+		return next
+	if old.size() == new_len:
+		for index in range(new_len):
+			next[index] = _normalize_guitar_articulation(old[index])
+		return next
+	for index in range(old.size()):
+		var articulation := _normalize_guitar_articulation(old[index])
+		if articulation == "off":
+			continue
+		var target_index := _rescale_step_index(index, old.size(), new_len)
+		next[target_index] = articulation
+	return next
+
+
+func _normalize_guitar_articulation(value) -> String:
+	var articulation := str(value).to_lower()
+	if articulation in ["mute", "palm", "pm"]:
+		articulation = "chug"
+	elif articulation in ["sustain"]:
+		articulation = "hold"
+	elif articulation in ["dead", "dead_mute"]:
+		articulation = "scratch"
+	return articulation if GUITAR_ARTICULATIONS.has(articulation) else "off"
 
 
 func _rescale_beat_track(track, new_len: int) -> Array:

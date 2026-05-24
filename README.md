@@ -49,6 +49,7 @@ Master
     Music_Drums
     Music_Bass
     Music_Chords
+    Music_Guitar
     Music_Melody
     Music_Stingers
     Music_FX
@@ -57,6 +58,7 @@ Master
 ```
 
 Existing buses are reused. Existing sends are reported as warnings instead of being overwritten.
+The guitar bus also gets a conservative native amp/cab-style preview chain when created: high-pass, distortion, EQ, low-pass, compression, and limiting.
 
 Runtime signal example:
 
@@ -132,4 +134,4 @@ Godot Asset Library release checklist:
 1. Commit all release changes to Git.
 2. Copy the full 40-character Git commit hash from the committed revision.
 3. Paste that full hash into the Godot Asset Library `Download Commit` field.
-4. Do not use branch names or version tags such as `main`, `master`, or `v1.1.0` for `Download Commit`.
+4. Do not use branch names or version tags such as `main`, `master`, or `v1.1.2` for `Download Commit`.

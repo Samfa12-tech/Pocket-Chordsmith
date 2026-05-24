@@ -30,7 +30,7 @@ Before publishing a game or distributing the addon, check these.
 - Shipped music uses `STEM_SYNC` or `HYBRID`.
 - Stems are imported as Godot audio streams.
 - Drum/accent/stinger samples are assigned in `PCSPlaybackProfile`.
-- `Music_Drums`, `Music_Bass`, `Music_Chords`, `Music_Melody`, and `Music_Stingers` buses exist or profile falls back safely.
+- `Music_Drums`, `Music_Bass`, `Music_Chords`, `Music_Guitar`, `Music_Melody`, and `Music_Stingers` buses exist or profile falls back safely.
 - Drum bus has suitable Godot-native compression/limiting if needed.
 - Mobile-safe polyphony cap is set.
 - Legacy `PocketChordsmithPlayer.gd` is editor/demo only.
@@ -51,4 +51,3 @@ Before publishing a game or distributing the addon, check these.
 - Include `CLI_COMPILE.md`.
 - Include `UID_CACHE_RECOVERY.md`.
 - Include `SKILL.md` for AI-assisted integration.
-

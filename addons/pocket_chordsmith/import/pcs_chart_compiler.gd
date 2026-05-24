@@ -8,6 +8,7 @@ const SectionResource := preload("res://addons/pocket_chordsmith/resources/pcs_s
 const SECTION_IDS := ["A", "B", "C", "D", "E", "F", "G", "H"]
 const DRUM_TRACKS := ["kick", "snare", "hat"]
 const GRID_TRACKS := ["kick", "snare", "hat", "bass"]
+const GUITAR_ARTICULATIONS := ["off", "open", "chug", "accent", "hold", "scratch"]
 const NOTE_NAMES := ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 const MAJOR_SCALE := [0, 2, 4, 5, 7, 9, 11]
 const MINOR_SCALE := [0, 2, 3, 5, 7, 8, 10]
@@ -98,6 +99,7 @@ func _compile_section_events(project: Dictionary, section_id: String, arrangemen
 	events.append_array(_compile_chord_events(project, section_id, arrangement_index, section_start_tick))
 	events.append_array(_compile_drum_events(project, section_id, arrangement_index, section_start_tick))
 	events.append_array(_compile_bass_events(project, section_id, arrangement_index, section_start_tick))
+	events.append_array(_compile_guitar_events(project, section_id, arrangement_index, section_start_tick))
 	events.append_array(_compile_melody_events(project, section_id, arrangement_index, section_start_tick))
 	return events
 
@@ -278,6 +280,59 @@ func _compile_bass_events(project: Dictionary, section_id: String, arrangement_i
 				_step_to_bar(project, step),
 				arrangement_index
 			))
+	return events
+
+
+func _compile_guitar_events(project: Dictionary, section_id: String, arrangement_index: int, section_start_tick: int) -> Array[Dictionary]:
+	var events: Array[Dictionary] = []
+	if not bool(project.get("guitarEnabled", false)):
+		return events
+	var step_count := _section_step_count(project, section_id)
+	var pattern: Array = project.get("guitarPattern%s" % section_id, [])
+	for step in range(step_count):
+		var articulation := _guitar_articulation_at(pattern, step)
+		if articulation in ["off", "hold"]:
+			continue
+		var tick := section_start_tick + _step_to_tick(project, step)
+		var bar := _step_to_bar(project, step)
+		var progression := _progression(project, section_id)
+		var degree := int(progression[bar % progression.size()])
+		var notes := _guitar_power_chord_notes(project, degree)
+		var duration_ticks := _guitar_duration_ticks(project, section_id, pattern, step, articulation)
+		var accent := articulation == "accent"
+		var flags := {
+			"accent": accent,
+			"tuplet": false,
+			"hold": duration_ticks > _step_duration_ticks(project, step),
+			"slide": false,
+			"muted": false,
+			"solo": false,
+			"generated": false,
+			"articulation": articulation,
+			"tone": str(project.get("guitarTone", "high_gain")),
+			"register": str(project.get("guitarRegister", "low")),
+			"direction": _guitar_direction_for_step(project, step),
+			"palm_muted": articulation == "chug",
+			"scratch": articulation == "scratch",
+			"midi_notes": notes,
+			"chord_degree": degree,
+			"chord_quality": _triad_quality(project, degree),
+		}
+		events.append(_make_event(
+			tick,
+			duration_ticks,
+			section_id,
+			"guitar",
+			0,
+			articulation,
+			int(notes[0]) if not notes.is_empty() else -1,
+			_guitar_velocity(articulation),
+			0.0,
+			flags,
+			step,
+			bar,
+			arrangement_index
+		))
 	return events
 
 
@@ -474,6 +529,7 @@ func _build_section_source_data(project: Dictionary) -> Dictionary:
 			"bassAccent": (project.get("bassAccent%s" % section_id, []) as Array).duplicate(true),
 			"bassHold": (project.get("bassHold%s" % section_id, []) as Array).duplicate(true),
 			"bassSlide": (project.get("bassSlide%s" % section_id, []) as Array).duplicate(true),
+			"guitarPattern": (project.get("guitarPattern%s" % section_id, []) as Array).duplicate(true),
 		}
 	return out
 
@@ -518,10 +574,24 @@ func _track_summary(project: Dictionary, section_id: String) -> Dictionary:
 	for step in range(step_count):
 		if _bass_has_trigger(project, section_id, step):
 			bass_triggers += 1
+	var guitar_counts := {"open": 0, "chug": 0, "accent": 0, "scratch": 0, "hold": 0}
+	var guitar_pattern: Array = project.get("guitarPattern%s" % section_id, [])
+	for step in range(step_count):
+		var articulation := _guitar_articulation_at(guitar_pattern, step)
+		if guitar_counts.has(articulation):
+			guitar_counts[articulation] = int(guitar_counts[articulation]) + 1
 
 	return {
 		"drums": drum_counts,
 		"bass": {"mode": str(project.get("bassMode", "auto")), "triggers": bass_triggers},
+		"guitar": {
+			"enabled": bool(project.get("guitarEnabled", false)),
+			"tone": str(project.get("guitarTone", "high_gain")),
+			"register": str(project.get("guitarRegister", "low")),
+			"strum": str(project.get("guitarStrumMode", "down")),
+			"events": int(guitar_counts["open"]) + int(guitar_counts["chug"]) + int(guitar_counts["accent"]) + int(guitar_counts["scratch"]),
+			"articulations": guitar_counts,
+		},
 		"chords": {"progression": _progression(project, section_id).duplicate(true)},
 		"melody_tracks": melody_summary,
 	}
@@ -755,6 +825,75 @@ func _melody_triplet_middle(project: Dictionary, first: int, third: int) -> int:
 	return clamp(int(round(float(first + third) / 2.0)), 0, max_note)
 
 
+func _guitar_articulation_at(pattern: Array, step: int) -> String:
+	var value = _value_at(pattern, step)
+	var articulation := str(value).to_lower() if value != null else "off"
+	if articulation in ["mute", "palm", "pm"]:
+		articulation = "chug"
+	elif articulation == "sustain":
+		articulation = "hold"
+	elif articulation in ["dead", "dead_mute"]:
+		articulation = "scratch"
+	return articulation if GUITAR_ARTICULATIONS.has(articulation) else "off"
+
+
+func _guitar_power_chord_notes(project: Dictionary, degree: int) -> Array[int]:
+	var root_pc := _chord_root_semitone(project, degree)
+	var register := str(project.get("guitarRegister", "low"))
+	var min_note := 35
+	var max_note := 47
+	if register == "mid":
+		min_note = 45
+		max_note = 57
+	elif register == "high":
+		min_note = 52
+		max_note = 64
+	var root := 24 + root_pc
+	while root < min_note:
+		root += 12
+	while root > max_note:
+		root -= 12
+	return [clamp(root, 0, 127), clamp(root + 7, 0, 127), clamp(root + 12, 0, 127)]
+
+
+func _guitar_duration_ticks(project: Dictionary, section_id: String, pattern: Array, step: int, articulation: String) -> int:
+	var step_ticks := _step_duration_ticks(project, step)
+	if articulation == "chug":
+		return max(1, int(round(float(step_ticks) * 0.48)))
+	if articulation == "scratch":
+		return max(1, int(round(float(step_ticks) * 0.25)))
+	var duration_ticks := step_ticks
+	var index := step + 1
+	var step_count := _section_step_count(project, section_id)
+	while index < step_count and _guitar_articulation_at(pattern, index) == "hold":
+		duration_ticks += _step_duration_ticks(project, index)
+		index += 1
+	if not bool(project.get("midiExactDurations", true)):
+		duration_ticks = max(1, int(round(float(duration_ticks) * 0.90)))
+	return max(1, duration_ticks)
+
+
+func _guitar_velocity(articulation: String) -> int:
+	match articulation:
+		"accent":
+			return 108
+		"chug":
+			return 92
+		"scratch":
+			return 64
+		_:
+			return 96
+
+
+func _guitar_direction_for_step(project: Dictionary, step: int) -> String:
+	var mode := str(project.get("guitarStrumMode", "down"))
+	if mode == "up":
+		return "up"
+	if mode == "alternate":
+		return "up" if step % 2 == 1 else "down"
+	return "down"
+
+
 func _chord_midi_notes(project: Dictionary, degree: int) -> Array[int]:
 	var root := _chord_root_semitone(project, degree)
 	var quality := _triad_quality(project, degree)
@@ -907,10 +1046,12 @@ func _event_sort_rank(event: Dictionary) -> int:
 			return 1
 		"drum":
 			return 2
-		"bass":
+		"guitar":
 			return 3
-		"melody":
+		"bass":
 			return 4
+		"melody":
+			return 5
 		_:
 			return 9
 

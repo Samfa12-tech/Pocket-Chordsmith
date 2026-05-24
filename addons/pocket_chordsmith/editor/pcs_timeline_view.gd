@@ -72,6 +72,8 @@ func _event_y(track_type: String) -> float:
 			return size.y * 0.36
 		"bass":
 			return size.y * 0.52
+		"guitar":
+			return size.y * 0.60
 		"chord":
 			return size.y * 0.20
 		"melody":
@@ -88,6 +90,8 @@ func _event_color(track_type: String) -> Color:
 			return Color(0.95, 0.45, 0.38)
 		"bass":
 			return Color(0.45, 0.85, 0.58)
+		"guitar":
+			return Color(1.0, 0.48, 0.26)
 		"chord":
 			return Color(0.55, 0.68, 1.0)
 		"melody":

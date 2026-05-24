@@ -924,7 +924,7 @@ func _route_sample_preview_event(event: Dictionary, delay_ticks := 0) -> void:
 		if not stinger_name.is_empty():
 			trigger_stinger(stinger_name)
 		return
-	if track_type == "chord":
+	if track_type == "chord" or track_type == "guitar":
 		if not playback_profile.sample_preview_tonal_enabled:
 			return
 		_route_sample_preview_chord(event)
@@ -961,17 +961,22 @@ func _route_sample_preview_chord(event: Dictionary) -> void:
 		return
 	var flags: Dictionary = event.get("flags", {})
 	var notes: Array = flags.get("midi_notes", [int(event.get("midi_note", 60))])
-	if playback_profile.sample_preview_max_chord_notes > 0 and notes.size() > playback_profile.sample_preview_max_chord_notes:
-		notes = notes.slice(0, playback_profile.sample_preview_max_chord_notes)
+	var track_type := str(event.get("track_type", "chord"))
+	var max_notes := playback_profile.sample_preview_max_chord_notes
+	if track_type == "guitar":
+		max_notes = max(max_notes, 3)
+	if max_notes > 0 and notes.size() > max_notes:
+		notes = notes.slice(0, max_notes)
+	var layer := _sample_preview_layer_for_event(event)
 	var velocity := clamp(float(event.get("velocity", 76)) / 127.0, 0.0, 1.0)
 	var volume_db := lerp(-28.0, -18.0, velocity) if playback_profile.sample_preview_velocity_scale else -22.0
-	volume_db += _sample_preview_gain_db("chords", sample_key)
+	volume_db += _sample_preview_gain_db(layer, sample_key)
 	for note in notes:
 		var midi_note := int(note)
 		var pitch_scale := pow(2.0, float(midi_note - 60) / 12.0)
-		var playback_type := _playback_type_for_pitched_event("chord", pitch_scale)
-		var debug_info := _pitch_debug_info(event, sample_key, _sample_path_for_key(sample_key), pitch_scale, "chord", midi_note)
-		_play_polyphonic_sample(stream, _bus_for_layer("chords"), "chord:%d" % midi_note, volume_db, pitch_scale, playback_type, debug_info)
+		var playback_type := _playback_type_for_pitched_event(track_type, pitch_scale)
+		var debug_info := _pitch_debug_info(event, sample_key, _sample_path_for_key(sample_key), pitch_scale, track_type, midi_note)
+		_play_polyphonic_sample(stream, _bus_for_layer(layer), "%s:%d" % [track_type, midi_note], volume_db, pitch_scale, playback_type, debug_info)
 
 
 func _warn_playback_profile_once() -> void:
@@ -1049,6 +1054,7 @@ func _apply_safe_default_buses() -> void:
 		_stem_player.bus = _safe_bus_name(playback_profile.master_music_bus)
 	if is_instance_valid(_stinger_player):
 		_stinger_player.bus = _safe_bus_name(playback_profile.stingers_bus)
+	_ensure_guitar_preview_effects()
 
 
 func _get_polyphonic_playback(bus_name: String) -> AudioStreamPlaybackPolyphonic:
@@ -1123,9 +1129,66 @@ func _find_or_create_effect(bus_name: String, effect_name: String) -> AudioEffec
 			effect = AudioEffectDelay.new()
 		"compressor", "ducking":
 			effect = AudioEffectCompressor.new()
+		"distortion", "drive":
+			effect = AudioEffectDistortion.new()
+		"eq10", "cab":
+			effect = AudioEffectEQ10.new()
+		"limiter":
+			effect = AudioEffectLimiter.new()
 	if effect != null:
 		AudioServer.add_bus_effect(bus_index, effect, AudioServer.get_bus_effect_count(bus_index))
 	return effect
+
+
+func _ensure_guitar_preview_effects() -> void:
+	if playback_profile == null or not playback_profile.guitar_preview_effects_enabled:
+		return
+	var guitar_bus := str(playback_profile.guitar_bus)
+	var bus_index := AudioServer.get_bus_index(guitar_bus)
+	if bus_index < 0:
+		return
+	if _bus_has_effect(bus_index, "AudioEffectDistortion"):
+		return
+	var highpass := AudioEffectHighPassFilter.new()
+	_set_effect_property_if_present(highpass, "cutoff_hz", 90.0)
+	_set_effect_property_if_present(highpass, "resonance", 0.18)
+	AudioServer.add_bus_effect(bus_index, highpass, AudioServer.get_bus_effect_count(bus_index))
+	var distortion := AudioEffectDistortion.new()
+	_set_effect_property_if_present(distortion, "mode", AudioEffectDistortion.MODE_ATAN)
+	_set_effect_property_if_present(distortion, "pre_gain", 3.0)
+	_set_effect_property_if_present(distortion, "keep_hf_hz", 3600.0)
+	_set_effect_property_if_present(distortion, "drive", 0.42)
+	_set_effect_property_if_present(distortion, "post_gain", -8.0)
+	AudioServer.add_bus_effect(bus_index, distortion, AudioServer.get_bus_effect_count(bus_index))
+	var eq := AudioEffectEQ10.new()
+	var gains := [-18.0, -9.0, -4.0, 1.0, 0.0, 1.8, 1.2, -2.5, -8.0, -18.0]
+	for band in range(min(eq.get_band_count(), gains.size())):
+		eq.set_band_gain_db(band, gains[band])
+	AudioServer.add_bus_effect(bus_index, eq, AudioServer.get_bus_effect_count(bus_index))
+	var lowpass := AudioEffectLowPassFilter.new()
+	_set_effect_property_if_present(lowpass, "cutoff_hz", 5200.0)
+	_set_effect_property_if_present(lowpass, "resonance", 0.12)
+	AudioServer.add_bus_effect(bus_index, lowpass, AudioServer.get_bus_effect_count(bus_index))
+	var limiter := AudioEffectLimiter.new()
+	_set_effect_property_if_present(limiter, "ceiling_db", -1.2)
+	_set_effect_property_if_present(limiter, "soft_clip_db", 2.0)
+	_set_effect_property_if_present(limiter, "soft_clip_ratio", 8.0)
+	AudioServer.add_bus_effect(bus_index, limiter, AudioServer.get_bus_effect_count(bus_index))
+
+
+func _bus_has_effect(bus_index: int, effect_class: String) -> bool:
+	for effect_index in range(AudioServer.get_bus_effect_count(bus_index)):
+		var effect := AudioServer.get_bus_effect(bus_index, effect_index)
+		if effect != null and effect.get_class() == effect_class:
+			return true
+	return false
+
+
+func _set_effect_property_if_present(effect: AudioEffect, property_name: String, value) -> void:
+	for property in effect.get_property_list():
+		if str(property.get("name", "")) == property_name:
+			effect.set(property_name, value)
+			return
 
 
 func _set_bus_effect_property_smooth(bus_name: String, effect_name: String, property_name: String, target_value, transition_time: float) -> void:
@@ -1378,6 +1441,15 @@ func _sample_key_for_event(event: Dictionary) -> String:
 		if playback_profile != null and playback_profile.event_sample_streams.has("chord:tone"):
 			return "chord:tone"
 		return "chord"
+	if track_type == "guitar":
+		var guitar_key := "guitar:%s" % instrument_id
+		if playback_profile != null and playback_profile.event_sample_streams.has(guitar_key):
+			return guitar_key
+		if playback_profile != null and playback_profile.event_sample_streams.has("guitar"):
+			return "guitar"
+		if playback_profile != null and playback_profile.event_sample_streams.has("chord:tone"):
+			return "chord:tone"
+		return "chord"
 	if track_type == "melody":
 		var melody_key := "melody:%s" % instrument_id
 		if playback_profile != null and playback_profile.event_sample_streams.has(melody_key):
@@ -1394,6 +1466,8 @@ func _sample_preview_layer_for_event(event: Dictionary) -> String:
 			return "bass"
 		"chord":
 			return "chords"
+		"guitar":
+			return "guitar"
 		"melody":
 			return "melody"
 		_:
@@ -1415,6 +1489,8 @@ func _sample_pitch_scale_for_event(event: Dictionary) -> float:
 		root_note = 60
 	elif track_type == "chord":
 		root_note = 60
+	elif track_type == "guitar":
+		root_note = 40
 	return pow(2.0, float(midi_note - root_note) / 12.0)
 
 
@@ -1425,7 +1501,7 @@ func _playback_type_for_pitched_event(track_type: String, pitch_scale: float) ->
 		return AudioServer.PLAYBACK_TYPE_DEFAULT
 	if track_type == "melody":
 		return AudioServer.PLAYBACK_TYPE_STREAM
-	if (track_type == "bass" or track_type == "chord") and abs(pitch_scale - 1.0) > 0.0001:
+	if (track_type == "bass" or track_type == "chord" or track_type == "guitar") and abs(pitch_scale - 1.0) > 0.0001:
 		return AudioServer.PLAYBACK_TYPE_STREAM
 	return AudioServer.PLAYBACK_TYPE_DEFAULT
 
@@ -1436,6 +1512,7 @@ func _should_force_web_stream_for_tonal_bus(bus_name: String) -> bool:
 	return bus_name in [
 		_safe_bus_name(playback_profile.bass_bus),
 		_safe_bus_name(playback_profile.chords_bus),
+		_safe_bus_name(playback_profile.guitar_bus),
 		_safe_bus_name(playback_profile.melody_bus),
 	]
 
@@ -1455,7 +1532,7 @@ func _player_playback_type(player: AudioStreamPlayer) -> int:
 
 func _pitch_debug_info(event: Dictionary, sample_key: String, sample_path: String, pitch_scale: float, track_type: String, midi_note: int) -> Dictionary:
 	return {
-		"enabled": playback_profile != null and playback_profile.sample_preview_log_pitched_events and track_type in ["melody", "bass", "chord"],
+		"enabled": playback_profile != null and playback_profile.sample_preview_log_pitched_events and track_type in ["melody", "bass", "chord", "guitar"],
 		"section": _section_for_event(event),
 		"tick": int(event.get("tick", current_tick)),
 		"instrument": str(event.get("instrument_id", "")),

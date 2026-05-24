@@ -9,6 +9,7 @@ const RECOMMENDED_MUSIC_BUSES := [
 	"Music_Drums",
 	"Music_Bass",
 	"Music_Chords",
+	"Music_Guitar",
 	"Music_Melody",
 	"Music_Stingers",
 	"Music_FX",
@@ -48,6 +49,8 @@ func validate_project(project: Dictionary) -> Dictionary:
 		for track_id in TRACK_IDS:
 			if not (grid.get(track_id, []) is Array):
 				errors.append("Section %s grid.%s is not an array." % [section_id, track_id])
+		if bool(project.get("guitarEnabled", false)) and not (project.get("guitarPattern%s" % section_id, []) is Array):
+			errors.append("Section %s guitarPattern is not an array." % section_id)
 
 	return {"warnings": warnings, "errors": errors}
 
@@ -257,6 +260,7 @@ func _profile_bus_names(playback_profile: PCSPlaybackProfile) -> Array[String]:
 		playback_profile.drums_bus,
 		playback_profile.bass_bus,
 		playback_profile.chords_bus,
+		playback_profile.guitar_bus,
 		playback_profile.melody_bus,
 		playback_profile.stingers_bus,
 		playback_profile.fx_bus,

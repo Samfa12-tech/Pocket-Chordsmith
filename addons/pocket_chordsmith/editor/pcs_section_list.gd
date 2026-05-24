@@ -36,13 +36,15 @@ func _rebuild() -> void:
 		var summary: Dictionary = section_info.get("track_summary", {})
 		var melody_tracks: Array = summary.get("melody_tracks", [])
 		var bass: Dictionary = summary.get("bass", {})
+		var guitar: Dictionary = summary.get("guitar", {})
 		var button := Button.new()
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.text = "%s  %d bars  %d events-ish  bass:%d  mel:%d" % [
+		button.text = "%s  %d bars  %d events-ish  bass:%d  gtr:%d  mel:%d" % [
 			section_id,
 			int(section_info.get("bars", 0)),
 			_count_section_events(str(section_id)),
 			int(bass.get("triggers", 0)),
+			int(guitar.get("events", 0)),
 			melody_tracks.size(),
 		]
 		button.pressed.connect(func() -> void:

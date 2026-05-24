@@ -35,6 +35,7 @@ enum PlaybackBackend {
 @export var sample_preview_skip_late_audio_ticks := 960
 @export var sample_preview_bass_duck_on_kick_db := -9.0
 @export var sample_preview_bass_duck_window_ticks := 0
+@export var guitar_preview_effects_enabled := true
 @export var sample_preview_gain_db: Dictionary = {
 	"drums": -3.0,
 	"kick": 1.0,
@@ -46,6 +47,7 @@ enum PlaybackBackend {
 	"open_hat": -13.0,
 	"bass": -6.0,
 	"chords": -26.0,
+	"guitar": -24.0,
 	"melody": -20.0,
 	"stingers": -8.0,
 }
@@ -53,6 +55,7 @@ enum PlaybackBackend {
 @export var drums_bus := "Music_Drums"
 @export var bass_bus := "Music_Bass"
 @export var chords_bus := "Music_Chords"
+@export var guitar_bus := "Music_Guitar"
 @export var melody_bus := "Music_Melody"
 @export var stingers_bus := "Music_Stingers"
 @export var fx_bus := "Music_FX"
@@ -64,7 +67,7 @@ enum PlaybackBackend {
 @export var native_audio_router_script: Script
 @export var stem_sets: Dictionary = {}
 @export var state_stem_sets: Dictionary = {}
-@export var default_stem_layers: Array[String] = ["drums", "bass", "chords", "melody_1", "melody_2", "melody_3", "fx"]
+@export var default_stem_layers: Array[String] = ["drums", "bass", "chords", "guitar", "melody_1", "melody_2", "melody_3", "fx"]
 
 
 func is_event_mode_enabled() -> bool:
@@ -79,6 +82,8 @@ func get_bus_for_layer(layer_name: String) -> String:
 			return bass_bus
 		"chords":
 			return chords_bus
+		"guitar", "guitars":
+			return guitar_bus
 		"melody", "melody_1", "melody_2", "melody_3", "melody_4", "melody_5", "melody_6":
 			return melody_bus
 		"stingers", "stinger":

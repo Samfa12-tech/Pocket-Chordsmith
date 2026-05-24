@@ -18,6 +18,11 @@ event_sample_streams = {
 "bass:manual_bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
 "chord": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
 "chord:tone": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"guitar": "res://addons/pocket_chordsmith/audio/web_kit/guitar_open.wav",
+"guitar:accent": "res://addons/pocket_chordsmith/audio/web_kit/guitar_accent.wav",
+"guitar:chug": "res://addons/pocket_chordsmith/audio/web_kit/guitar_chug.wav",
+"guitar:open": "res://addons/pocket_chordsmith/audio/web_kit/guitar_open.wav",
+"guitar:scratch": "res://addons/pocket_chordsmith/audio/web_kit/guitar_scratch.wav",
 "melody": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
 "melody:bell": "res://addons/pocket_chordsmith/audio/web_kit/melody_bell.wav",
 "melody:pulse": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
@@ -38,4 +43,19 @@ marker_stingers = {
 "boss_warning": "warning_hit",
 "reward": "reward_hit",
 "transition": "transition_hit"
+}
+sample_preview_gain_db = {
+"bass": -6.0,
+"chords": -26.0,
+"drums": -3.0,
+"guitar": -22.0,
+"hat": -12.0,
+"hat_accent": -13.0,
+"kick": 1.0,
+"kick_accent": 1.0,
+"melody": -20.0,
+"open_hat": -13.0,
+"snare": 0.0,
+"snare_accent": 0.0,
+"stingers": -8.0
 }
