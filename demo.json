@@ -454,7 +454,7 @@
   ],
   "melodyMuteA": [
     false,
-    false,
+    true,
     false
   ],
   "melodySoloA": [
@@ -1313,7 +1313,7 @@
   ],
   "melodyMuteB": [
     false,
-    false,
+    true,
     false
   ],
   "melodySoloB": [
@@ -2172,7 +2172,7 @@
   ],
   "melodyMuteC": [
     false,
-    false,
+    true,
     false
   ],
   "melodySoloC": [
@@ -3031,7 +3031,7 @@
   ],
   "melodyMuteD": [
     false,
-    false,
+    true,
     false
   ],
   "melodySoloD": [
