@@ -1438,6 +1438,10 @@ func _sample_key_for_event(event: Dictionary) -> String:
 			return bass_key
 		return "bass"
 	if track_type == "chord":
+		var chord_instrument := str(flags.get("chord_instrument", "pocket"))
+		var chord_key := "chord:%s" % chord_instrument
+		if playback_profile != null and playback_profile.event_sample_streams.has(chord_key):
+			return chord_key
 		if playback_profile != null and playback_profile.event_sample_streams.has("chord:tone"):
 			return "chord:tone"
 		return "chord"

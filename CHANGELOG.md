@@ -1,5 +1,15 @@
 # Pocket Chordsmith Godot Addon Changelog
 
+## 1.1.3
+
+Sound-option compatibility update for Pocket Chordsmith v63 projects.
+
+Changed:
+
+- Chord events now preserve the browser app's optional `chordInstrument` choice in event flags.
+- Sample-preview lookup can route chord-specific keys such as `chord:piano`, `chord:harp`, `chord:warm_pad`, `chord:glass`, and `chord:pocket` when a playback profile provides them.
+- The bundled web-kit profile maps new chord and melody sound IDs to safe existing preview samples, so v63 charts compile and audition without custom sample packs.
+
 ## 1.1.2
 
 Guitar preview audio update for the v60 rock guitar import path.

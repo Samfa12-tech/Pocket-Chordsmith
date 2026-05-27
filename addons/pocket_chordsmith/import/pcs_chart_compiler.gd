@@ -135,6 +135,7 @@ func _compile_chord_events(project: Dictionary, section_id: String, arrangement_
 					"generated": false,
 					"chord_degree": degree,
 					"chord_quality": _triad_quality(project, degree),
+					"chord_instrument": str(project.get("chordInstrument", "pocket")),
 					"midi_notes": midi_notes,
 				},
 				0,

@@ -17,7 +17,12 @@ event_sample_streams = {
 "bass:auto_bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
 "bass:manual_bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
 "chord": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:glass": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:harp": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:piano": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:pocket": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
 "chord:tone": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:warm_pad": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
 "guitar": "res://addons/pocket_chordsmith/audio/web_kit/guitar_open.wav",
 "guitar:accent": "res://addons/pocket_chordsmith/audio/web_kit/guitar_accent.wav",
 "guitar:chug": "res://addons/pocket_chordsmith/audio/web_kit/guitar_chug.wav",
@@ -25,9 +30,13 @@ event_sample_streams = {
 "guitar:scratch": "res://addons/pocket_chordsmith/audio/web_kit/guitar_scratch.wav",
 "melody": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
 "melody:bell": "res://addons/pocket_chordsmith/audio/web_kit/melody_bell.wav",
+"melody:distorted_lead_guitar": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
+"melody:lead_guitar": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
 "melody:pulse": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
+"melody:saxophone": "res://addons/pocket_chordsmith/audio/web_kit/melody_soft.wav",
 "melody:soft": "res://addons/pocket_chordsmith/audio/web_kit/melody_soft.wav",
-"melody:synth": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav"
+"melody:synth": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
+"melody:trumpet": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav"
 }
 drum_kit = {
 "clap": "res://addons/pocket_chordsmith/audio/web_kit/clap.wav",

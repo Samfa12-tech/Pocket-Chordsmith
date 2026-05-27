@@ -1,4 +1,4 @@
-# Migrating To Pocket Chordsmith Godot Addon 1.1.2
+# Migrating To Pocket Chordsmith Godot Addon 1.1.3
 
 This release keeps the core architecture stable:
 
@@ -31,6 +31,10 @@ Version 1.1.1 understands Pocket Chordsmith v60 rock-guitar projects. Recompile 
 ## 1.1.2 Guitar Preview Note
 
 Version 1.1.2 adds a dedicated `Music_Guitar` bus plus generated guitar preview samples. Run `Create Chordsmith Audio Buses` after updating if your project does not already have `Music_Guitar`; the tool will add a safe native amp/cab-style preview chain without removing existing buses. Existing playback profiles still load, but regenerate the web sound kit or use the bundled web-kit profile to get the new guitar sample mappings.
+
+## 1.1.3 Pocket Chordsmith v63 Sound Options Note
+
+Version 1.1.3 understands Pocket Chordsmith v63 chord and melody sound option IDs. Recompile v63 JSON or share-code imports after updating the addon; chord events preserve `flags.chord_instrument`, and the bundled web-kit playback profile maps the new chord and melody sound IDs to safe preview samples.
 
 ## API Notes
 

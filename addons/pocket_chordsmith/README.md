@@ -134,4 +134,4 @@ Godot Asset Library release checklist:
 1. Commit all release changes to Git.
 2. Copy the full 40-character Git commit hash from the committed revision.
 3. Paste that full hash into the Godot Asset Library `Download Commit` field.
-4. Do not use branch names or version tags such as `main`, `master`, or `v1.1.2` for `Download Commit`.
+4. Do not use branch names or version tags such as `main`, `master`, or `v1.1.3` for `Download Commit`.

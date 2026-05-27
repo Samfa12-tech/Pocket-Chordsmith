@@ -21,7 +21,7 @@ const DEFAULT_MINOR_PROGRESSION := [0, 5, 2, 6]
 
 const TOP_LEVEL_SUPPORTED_KEYS := [
 	"projectVersion", "schemaVersion", "key", "scale", "timeSig", "bpm", "swing",
-	"resolution", "chordType", "chordPlayMode", "chordRhythmMode", "chordOctave",
+	"resolution", "chordType", "chordInstrument", "chordPlayMode", "chordRhythmMode", "chordOctave",
 	"melodyPitchMode", "melodyOctave", "bassMode", "midiExportMode",
 	"midiChordExport", "midiExactDurations", "guitarEnabled", "guitarTone",
 	"guitarRegister", "guitarStrumMode", "guitarPatternPreset", "guitarVolume",
@@ -74,6 +74,7 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 	data["swing"] = _clamp_float(raw.get("swing", 0.0), 0.0, 0.35, 0.0, "swing", warnings)
 	data["resolution"] = _sanitize_resolution(raw.get("resolution", 1), warnings)
 	data["chordType"] = _safe_choice(str(raw.get("chordType", "triad")), ["triad", "seventh", "sus2", "sus4"], "triad", "chordType", warnings)
+	data["chordInstrument"] = _safe_choice(str(raw.get("chordInstrument", "pocket")), ["pocket", "piano", "harp", "warm_pad", "glass"], "pocket", "chordInstrument", warnings)
 	data["chordPlayMode"] = _safe_choice(str(raw.get("chordPlayMode", "block")), ["block", "strum_up", "strum_down", "arp_up", "arp_down"], "block", "chordPlayMode", warnings)
 	data["chordRhythmMode"] = _safe_choice(str(raw.get("chordRhythmMode", "sustain")), ["sustain", "quarter", "half"], "sustain", "chordRhythmMode", warnings)
 	data["chordOctave"] = _clamp_int(raw.get("chordOctave", 0), -2, 2, 0, "chordOctave", warnings)
@@ -305,7 +306,7 @@ func _sanitize_instruments(raw, track_count: int) -> Array[String]:
 	var out: Array[String] = []
 	for index in range(track_count):
 		var value := str(source[index]) if index < source.size() else "pulse"
-		out.append(value if ["pulse", "soft", "synth", "bell"].has(value) else "pulse")
+		out.append(value if ["pulse", "soft", "synth", "bell", "lead_guitar", "distorted_lead_guitar", "trumpet", "saxophone"].has(value) else "pulse")
 	return out
 
 
