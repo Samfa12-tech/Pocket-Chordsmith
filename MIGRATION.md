@@ -1,4 +1,4 @@
-# Migrating To Pocket Chordsmith Godot Addon 1.1.3
+# Migrating To Pocket Chordsmith Godot Addon 1.1.4
 
 This release keeps the core architecture stable:
 
@@ -19,6 +19,10 @@ res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.t
 ```
 
 6. Keep any previous procedural preview player out of shipped gameplay scenes unless it is intentionally used as a temporary fallback.
+
+## 1.1.4 Runtime Sample Preview Stability Note
+
+Version 1.1.4 tightens sample-preview timing behaviour for dense charts. Late preview hits older than `sample_preview_skip_late_audio_ticks` now default to being dropped after 120 ticks instead of being played as catch-up bursts. Keep `sample_preview_log_pitched_events` disabled outside short diagnostics, and leave `sample_preview_load_wavs_uncompressed` enabled for small hit kits unless memory testing says otherwise.
 
 ## 1.1 Web Export Note
 

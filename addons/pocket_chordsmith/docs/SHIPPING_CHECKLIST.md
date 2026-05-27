@@ -33,6 +33,8 @@ Before publishing a game or distributing the addon, check these.
 - `Music_Drums`, `Music_Bass`, `Music_Chords`, `Music_Guitar`, `Music_Melody`, and `Music_Stingers` buses exist or profile falls back safely.
 - Drum bus has suitable Godot-native compression/limiting if needed.
 - Mobile-safe polyphony cap is set.
+- `sample_preview_log_pitched_events` is disabled outside short diagnostics.
+- Small preview WAV kits use `sample_preview_load_wavs_uncompressed` unless memory testing proves otherwise.
 - Legacy `PocketChordsmithPlayer.gd` is editor/demo only.
 
 ## Compatibility

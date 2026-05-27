@@ -22,6 +22,10 @@ res://addons/pocket_chordsmith/audio/web_kit/snare_accent.wav
 res://addons/pocket_chordsmith/audio/web_kit/hat.wav
 res://addons/pocket_chordsmith/audio/web_kit/open_hat.wav
 res://addons/pocket_chordsmith/audio/web_kit/clap.wav
+res://addons/pocket_chordsmith/audio/web_kit/guitar_chug.wav
+res://addons/pocket_chordsmith/audio/web_kit/guitar_open.wav
+res://addons/pocket_chordsmith/audio/web_kit/guitar_accent.wav
+res://addons/pocket_chordsmith/audio/web_kit/guitar_scratch.wav
 res://addons/pocket_chordsmith/audio/web_kit/warning_hit.wav
 res://addons/pocket_chordsmith/audio/web_kit/reward_hit.wav
 res://addons/pocket_chordsmith/audio/web_kit/victory_hit.wav
@@ -40,6 +44,10 @@ For short sample hits, `PCSPlaybackProfile.sample_preview_load_wavs_uncompressed
 For web exports, `PCSPlaybackProfile.sample_preview_force_web_stream_for_pitched` defaults to `true`. When bass, chord, or melody sample preview needs pitch variation, the conductor asks Godot to use stream playback for those tonal hits on web builds. This works around the browser export pitch variation issue without changing drum one-shot playback or the desktop/native path.
 
 If a web melody still sounds wrong, temporarily enable `sample_preview_log_pitched_events` on the playback profile. The conductor will print the sample key, MIDI note, pitch scale, bus, and requested playback type for tonal events.
+
+Keep `sample_preview_log_pitched_events` disabled in normal gameplay. Dense charts can trigger more than a thousand tonal sample logs per loop, and console output can stall the main thread enough for audio timers to fire late.
+
+`sample_preview_skip_late_audio_ticks` defaults to `120`, so badly late preview hits are dropped instead of being played as catch-up bursts. If a target device still sounds rushed after a frame hitch, prefer increasing audio headroom and reducing logging before raising this too far.
 
 `PCSPlaybackProfile.sample_preview_prewarm_on_ready` also defaults to `true`. The conductor preloads drum-kit, event-sample, and stinger streams into its cache before playback. You can call `conductor.prewarm_audio()` yourself during a loading screen after assigning the chart and playback profile.
 

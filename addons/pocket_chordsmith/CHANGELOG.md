@@ -1,5 +1,20 @@
 # Pocket Chordsmith Godot Addon Changelog
 
+## 1.1.4
+
+Runtime sample-preview stability update.
+
+Changed:
+
+- Sample preview now drops hits that are more than 120 ticks late instead of playing old notes as catch-up bursts.
+- Runtime diagnostics now report `sample_play_skipped_late_total`.
+- The bundled web-kit profile and generated web-kit profiles use the tighter late-hit threshold.
+- Playback profile warnings now flag pitched-event debug logging, compressed/imported WAV preview loading, and missing `Music_Guitar` buses.
+
+Docs:
+
+- Sample preview docs now call out diagnostic logging as a temporary-only option and list the generated guitar web-kit samples.
+
 ## 1.1.3
 
 Sound-option compatibility update for Pocket Chordsmith v63 projects.

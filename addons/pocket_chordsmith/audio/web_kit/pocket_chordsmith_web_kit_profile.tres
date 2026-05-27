@@ -6,6 +6,7 @@
 script = ExtResource("1_bgq2e")
 playback_backend = 1
 max_polyphony = 24
+sample_preview_skip_late_audio_ticks = 120
 accent_streams = {
 "reward_hit": "res://addons/pocket_chordsmith/audio/web_kit/reward_hit.wav",
 "transition_hit": "res://addons/pocket_chordsmith/audio/web_kit/transition_hit.wav",

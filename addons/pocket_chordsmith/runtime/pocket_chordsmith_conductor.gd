@@ -89,6 +89,7 @@ var _clock_anchor_usec := 0
 var _last_playback_warning_signature := ""
 var _sample_play_requests_total := 0
 var _sample_play_failures_total := 0
+var _sample_play_skipped_late_total := 0
 var _stinger_play_requests_total := 0
 var _stinger_play_failures_total := 0
 var _audio_stream_cache := {}
@@ -466,6 +467,7 @@ func get_diagnostics() -> Dictionary:
 		"cached_audio_streams": _audio_stream_cache.size(),
 		"sample_play_requests_total": _sample_play_requests_total,
 		"sample_play_failures_total": _sample_play_failures_total,
+		"sample_play_skipped_late_total": _sample_play_skipped_late_total,
 		"stinger_play_requests_total": _stinger_play_requests_total,
 		"stinger_play_failures_total": _stinger_play_failures_total,
 		"stem_sync_status": stem_status,
@@ -918,6 +920,7 @@ func _route_sample_preview_event(event: Dictionary, delay_ticks := 0) -> void:
 	var track_type := str(event.get("track_type", ""))
 	var instrument_id := str(event.get("instrument_id", ""))
 	if _sample_audio_is_too_late(event):
+		_sample_play_skipped_late_total += 1
 		return
 	if track_type == "marker":
 		var stinger_name := str(playback_profile.marker_stingers.get(instrument_id, ""))
@@ -1003,6 +1006,12 @@ func _validate_playback_profile() -> Array[String]:
 		if playback_profile.stem_paths.is_empty() and playback_profile.stem_sets.is_empty() and playback_profile.drum_kit.is_empty() and playback_profile.accent_streams.is_empty() and playback_profile.event_sample_streams.is_empty():
 			warnings.append("Pocket Chordsmith playback profile is HYBRID, but no stems, drum kit, accent samples, or event samples are assigned.")
 		warnings.append_array(_missing_drum_sample_warnings())
+	if playback_profile.sample_preview_enabled and playback_profile.sample_preview_log_pitched_events:
+		warnings.append("Pocket Chordsmith pitched sample logging is enabled; disable sample_preview_log_pitched_events for normal gameplay to avoid timing stutter from console spam.")
+	if playback_profile.sample_preview_enabled and not playback_profile.sample_preview_load_wavs_uncompressed:
+		warnings.append("Pocket Chordsmith sample preview is using imported/compressed WAV resources; enable sample_preview_load_wavs_uncompressed for small hit kits to reduce transient crackle.")
+	if playback_profile.sample_preview_enabled and not playback_profile.guitar_bus.is_empty() and AudioServer.get_bus_index(playback_profile.guitar_bus) == -1:
+		warnings.append("Pocket Chordsmith guitar bus '%s' is missing; guitar preview will fall back to Master without the recommended bus effects." % playback_profile.guitar_bus)
 	return warnings
 
 
