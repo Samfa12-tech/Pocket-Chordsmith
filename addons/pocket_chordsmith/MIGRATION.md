@@ -1,4 +1,4 @@
-# Migrating To Pocket Chordsmith Godot Addon 1.1.4
+# Migrating To Pocket Chordsmith Godot Addon 1.1.5
 
 This release keeps the core architecture stable:
 
@@ -19,6 +19,10 @@ res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.t
 ```
 
 6. Keep any previous procedural preview player out of shipped gameplay scenes unless it is intentionally used as a temporary fallback.
+
+## 1.1.5 Pocket Chordsmith v64 Western Sound Note
+
+Version 1.1.5 understands Pocket Chordsmith v64 western musical sound IDs. Recompile v64 JSON or share-code imports after updating the addon; chord events preserve `flags.chord_instrument == "saloon_piano"`, melody tracks preserve `banjo`, `harmonica`, and `cowboy_whistle`, guitar rhythm events preserve `flags.tone == "western_twang"`, and western guitar preset names are accepted during import.
 
 ## 1.1.4 Runtime Sample Preview Stability Note
 

@@ -1,5 +1,16 @@
 # Pocket Chordsmith Godot Addon Changelog
 
+## 1.1.5
+
+Pocket Chordsmith v64 western sound compatibility update.
+
+Changed:
+
+- Importer schema now preserves v64 western sound IDs from web exports: `saloon_piano`, `banjo`, `harmonica`, `cowboy_whistle`, and `western_twang`.
+- Importer schema now preserves v64 western guitar pattern presets: `boom_chick`, `train_chop`, and `western_waltz`.
+- The bundled web-kit playback profile maps new western chord and melody IDs to safe preview samples, so v64 charts compile and audition without custom sample packs.
+- Generated web-kit playback profiles now include the v63 and v64 chord/melody sample keys.
+
 ## 1.1.4
 
 Runtime sample-preview stability update.

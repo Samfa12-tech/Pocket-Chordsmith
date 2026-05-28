@@ -2,6 +2,8 @@
 
 Pocket Chordsmith imports web-app JSON into compiled Godot resources, then drives runtime music callbacks through one lightweight conductor node.
 
+Current release: `1.1.5`, with Pocket Chordsmith v64 western sound export compatibility.
+
 Author charts in the Pocket Chordsmith web app:
 
 ```text
@@ -134,4 +136,4 @@ Godot Asset Library release checklist:
 1. Commit all release changes to Git.
 2. Copy the full 40-character Git commit hash from the committed revision.
 3. Paste that full hash into the Godot Asset Library `Download Commit` field.
-4. Do not use branch names or version tags such as `main`, `master`, or `v1.1.4` for `Download Commit`.
+4. Do not use branch names or version tags such as `main`, `master`, or `v1.1.5` for `Download Commit`.

@@ -74,7 +74,7 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 	data["swing"] = _clamp_float(raw.get("swing", 0.0), 0.0, 0.35, 0.0, "swing", warnings)
 	data["resolution"] = _sanitize_resolution(raw.get("resolution", 1), warnings)
 	data["chordType"] = _safe_choice(str(raw.get("chordType", "triad")), ["triad", "seventh", "sus2", "sus4"], "triad", "chordType", warnings)
-	data["chordInstrument"] = _safe_choice(str(raw.get("chordInstrument", "pocket")), ["pocket", "piano", "harp", "warm_pad", "glass"], "pocket", "chordInstrument", warnings)
+	data["chordInstrument"] = _safe_choice(str(raw.get("chordInstrument", "pocket")), ["pocket", "piano", "harp", "warm_pad", "glass", "saloon_piano"], "pocket", "chordInstrument", warnings)
 	data["chordPlayMode"] = _safe_choice(str(raw.get("chordPlayMode", "block")), ["block", "strum_up", "strum_down", "arp_up", "arp_down"], "block", "chordPlayMode", warnings)
 	data["chordRhythmMode"] = _safe_choice(str(raw.get("chordRhythmMode", "sustain")), ["sustain", "quarter", "half"], "sustain", "chordRhythmMode", warnings)
 	data["chordOctave"] = _clamp_int(raw.get("chordOctave", 0), -2, 2, 0, "chordOctave", warnings)
@@ -85,10 +85,10 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 	data["midiChordExport"] = _safe_choice(str(raw.get("midiChordExport", "played")), ["played", "block", "none"], "played", "midiChordExport", warnings)
 	data["midiExactDurations"] = raw.get("midiExactDurations", true) != false
 	data["guitarEnabled"] = bool(raw.get("guitarEnabled", false))
-	data["guitarTone"] = _safe_choice(str(raw.get("guitarTone", "high_gain")), ["clean", "crunch", "high_gain", "metal"], "high_gain", "guitarTone", warnings)
+	data["guitarTone"] = _safe_choice(str(raw.get("guitarTone", "high_gain")), ["clean", "crunch", "high_gain", "metal", "western_twang"], "high_gain", "guitarTone", warnings)
 	data["guitarRegister"] = _safe_choice(str(raw.get("guitarRegister", "low")), ["low", "mid", "high"], "low", "guitarRegister", warnings)
 	data["guitarStrumMode"] = _safe_choice(str(raw.get("guitarStrumMode", "down")), ["down", "up", "alternate"], "down", "guitarStrumMode", warnings)
-	data["guitarPatternPreset"] = _safe_choice(str(raw.get("guitarPatternPreset", "metal_chug")), ["rock_eighths", "punk_downstrokes", "metal_chug", "gallop", "doom_slow", "verse_chorus"], "metal_chug", "guitarPatternPreset", warnings)
+	data["guitarPatternPreset"] = _safe_choice(str(raw.get("guitarPatternPreset", "metal_chug")), ["rock_eighths", "punk_downstrokes", "metal_chug", "gallop", "doom_slow", "verse_chorus", "boom_chick", "train_chop", "western_waltz"], "metal_chug", "guitarPatternPreset", warnings)
 	data["guitarVolume"] = _clamp_float(raw.get("guitarVolume", 0.58), 0.0, 1.0, 0.58, "guitarVolume", warnings)
 	data["sectionBars"] = _sanitize_section_bars(raw.get("sectionBars", raw.get("sectionLengths", {})), warnings)
 	data["songSequence"] = _sanitize_song_sequence(raw.get("songSequence", raw.get("sectionSequence", DEFAULT_SONG_SEQUENCE)), warnings)
@@ -306,7 +306,7 @@ func _sanitize_instruments(raw, track_count: int) -> Array[String]:
 	var out: Array[String] = []
 	for index in range(track_count):
 		var value := str(source[index]) if index < source.size() else "pulse"
-		out.append(value if ["pulse", "soft", "synth", "bell", "lead_guitar", "distorted_lead_guitar", "trumpet", "saxophone"].has(value) else "pulse")
+		out.append(value if ["pulse", "soft", "synth", "bell", "lead_guitar", "distorted_lead_guitar", "trumpet", "saxophone", "banjo", "harmonica", "cowboy_whistle"].has(value) else "pulse")
 	return out
 
 
