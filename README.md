@@ -2,7 +2,7 @@
 
 Pocket Chordsmith imports web-app JSON into compiled Godot resources, then drives runtime music callbacks through one lightweight conductor node.
 
-Current release: `1.1.5`, with Pocket Chordsmith v64 western sound export compatibility.
+Current release: `1.1.6`, with direct local Push-to-Godot browser handoff support.
 
 Author charts in the Pocket Chordsmith web app:
 
@@ -32,6 +32,15 @@ Editor workflow:
 5. Optional: click `Generate Web Sound Kit` to create Pocket Chordsmith-style drum/stinger WAVs and a HYBRID playback profile.
 6. Save the compiled chart as `.tres` or `.res`.
 7. Assign the chart and playback profile to `PocketChordsmithConductor` in a level or demo scene.
+
+Push-to-Godot workflow from the browser app:
+
+1. In Pocket Chordsmith, open Settings > Project & export.
+2. Click `Push to Godot`.
+3. If the addon is enabled in an open Godot editor, the browser app sends the `PCS1:` song code to the local receiver at `http://127.0.0.1:9087/pocket-chordsmith/push-to-godot`.
+4. The `Chordsmith` tab imports and compiles the song.
+5. Click `Save Chart Resource` to save the compiled `.tres` or `.res` chart.
+6. If local push is unavailable, the browser app copies the same `PCS1:` code and shows the manual paste path: `Chordsmith` tab > `Paste JSON/Code` > paste > import.
 
 The addon does not require users to bring their own drum WAVs just to get started: the editor can generate a small built-in preview kit. At runtime, audio still uses Godot-native `AudioStream` playback. For a shipped game, use generated samples, your own licensed drum/stinger samples, rendered stems, or a mix of stems plus event-triggered samples.
 
@@ -136,4 +145,4 @@ Godot Asset Library release checklist:
 1. Commit all release changes to Git.
 2. Copy the full 40-character Git commit hash from the committed revision.
 3. Paste that full hash into the Godot Asset Library `Download Commit` field.
-4. Do not use branch names or version tags such as `main`, `master`, or `v1.1.5` for `Download Commit`.
+4. Do not use branch names or version tags such as `main`, `master`, or `v1.1.6` for `Download Commit`.

@@ -1,4 +1,4 @@
-# Migrating To Pocket Chordsmith Godot Addon 1.1.5
+# Migrating To Pocket Chordsmith Godot Addon 1.1.6
 
 This release keeps the core architecture stable:
 
@@ -19,6 +19,10 @@ res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.t
 ```
 
 6. Keep any previous procedural preview player out of shipped gameplay scenes unless it is intentionally used as a temporary fallback.
+
+## 1.1.6 Direct Push-to-Godot Note
+
+Version 1.1.6 adds an editor-only localhost receiver for Pocket Chordsmith browser handoffs. When the addon is enabled in an open editor, Pocket Chordsmith v67 can send a `PCS1:` song code to `http://127.0.0.1:9087/pocket-chordsmith/push-to-godot`; the `Chordsmith` tab imports and compiles it immediately. If the receiver is unavailable or browser local-network access is blocked, use the existing clipboard fallback: `Chordsmith` tab > `Paste JSON/Code` > paste > import.
 
 ## 1.1.5 Pocket Chordsmith v64 Western Sound Note
 

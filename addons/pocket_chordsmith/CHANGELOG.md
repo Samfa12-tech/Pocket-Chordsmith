@@ -1,5 +1,19 @@
 # Pocket Chordsmith Godot Addon Changelog
 
+## 1.1.6
+
+Direct Push-to-Godot browser handoff update.
+
+Added:
+
+- Editor-only localhost receiver at `http://127.0.0.1:9087/pocket-chordsmith/push-to-godot`.
+- Pocket Chordsmith browser app v67 can send `PCS1:` song codes directly to the open Godot addon.
+- The `Chordsmith` tab imports and compiles pushed songs immediately, then leaves saving as an explicit `Save Chart Resource` step.
+
+Changed:
+
+- Push-to-Godot docs now describe the direct receiver flow with the existing clipboard/paste fallback.
+
 ## 1.1.5
 
 Pocket Chordsmith v64 western sound compatibility update.

@@ -16,6 +16,7 @@ Use one of these:
 
 - `Import JSON`: choose an exported Pocket Chordsmith JSON file.
 - `Paste JSON/Code`: paste raw JSON or a `PCS1:` share code.
+- `Push to Godot` in the browser app: sends a `PCS1:` code directly to the local addon receiver when Godot is open, with clipboard/paste fallback.
 - `Compile Folder`: batch compile every supported JSON file in a folder.
 
 After import, inspect:
@@ -140,4 +141,3 @@ print(music.get_diagnostics())
 ```
 
 Useful fields include current backend, chart, event cursor, emitted/late/deferred events, active samples/stingers, current state, queued state, section, bar, beat, and tick.
-

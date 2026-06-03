@@ -10,6 +10,7 @@ const SectionList := preload("res://addons/pocket_chordsmith/editor/pcs_section_
 const ImportReport := preload("res://addons/pocket_chordsmith/editor/pcs_import_report.gd")
 const AudioBusTools := preload("res://addons/pocket_chordsmith/editor/pcs_audio_bus_tools.gd")
 const ChartBuildTools := preload("res://addons/pocket_chordsmith/import/pcs_chart_build_tools.gd")
+const PushReceiver := preload("res://addons/pocket_chordsmith/editor/pcs_push_receiver.gd")
 
 const POCKET_CHORDSMITH_URL := "https://samfa12.itch.io/pocket-chordsmith"
 const WEB_KIT_PROFILE_PATH := "res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.tres"
@@ -37,6 +38,7 @@ var _compile_folder_dialog: FileDialog
 var _profile_save_dialog: FileDialog
 var _paste_dialog: ConfirmationDialog
 var _paste_text: TextEdit
+var _push_receiver: PCSPushReceiver
 
 
 func set_editor_interface(value: EditorInterface) -> void:
@@ -55,12 +57,18 @@ func _ready() -> void:
 	add_child(conductor)
 	_assign_default_preview_profile(false)
 	_timeline.set_conductor(conductor)
+	_start_push_receiver()
 	_update_actions()
 
 
 func _process(_delta: float) -> void:
 	if conductor != null and conductor.is_playing():
 		_update_position_label()
+
+
+func _exit_tree() -> void:
+	if _push_receiver != null:
+		_push_receiver.stop()
 
 
 func _build_ui() -> void:
@@ -105,7 +113,7 @@ func _build_ui() -> void:
 	_toolbar_button(
 		toolbar,
 		"Paste JSON/Code",
-		"Paste raw Pocket Chordsmith JSON or a PCS1 share code and compile it immediately.",
+		"Paste raw Pocket Chordsmith JSON, a PCS1 share code, or the code copied by Pocket Chordsmith's Push to Godot action.",
 		_open_paste_dialog
 	)
 
@@ -387,11 +395,40 @@ func _import_pasted_text() -> void:
 	_stop_preview()
 	var pasted := _paste_text.text if _paste_text != null else ""
 	if pasted.strip_edges().is_empty():
-		_set_status("Paste JSON or a PCS1 share code before importing.")
+		_set_status("Paste JSON, a PCS1 share code, or a Push to Godot code before importing.")
 		return
 	var importer = JsonImporter.new()
 	import_result = importer.load_text(pasted, "pasted_json_or_share_code")
 	_compile_import_result("pasted input")
+
+
+func _import_pushed_song(code: String, source_label: String) -> Dictionary:
+	_stop_preview()
+	var importer = JsonImporter.new()
+	import_result = importer.load_text(code, source_label)
+	if not bool(import_result.get("ok", false)):
+		_report.set_import_result(import_result)
+		chart = null
+		_set_status("Push to Godot import failed. See the report for details.")
+		_refresh_chart_views()
+		return {
+			"ok": false,
+			"error": "Import failed",
+			"errors": import_result.get("errors", []),
+			"warnings": import_result.get("warnings", []),
+		}
+	_compile_import_result(source_label)
+	if editor_interface != null and editor_interface.has_method("set_main_screen_editor"):
+		editor_interface.call("set_main_screen_editor", "Chordsmith")
+	return {
+		"ok": true,
+		"message": "Imported and compiled in the Chordsmith tab",
+		"bpm": chart.bpm if chart != null else 0,
+		"key": chart.key if chart != null else "",
+		"scale": chart.scale if chart != null else "",
+		"sequence": chart.arrangement if chart != null else [],
+		"event_count": chart.compiled_events.size() if chart != null else 0,
+	}
 
 
 func _compile_import_result(source_label: String) -> void:
@@ -406,6 +443,18 @@ func _compile_import_result(source_label: String) -> void:
 	conductor.chart = chart
 	_set_status("Imported and compiled %s." % source_label)
 	_refresh_chart_views()
+
+
+func _start_push_receiver() -> void:
+	if _push_receiver != null:
+		return
+	_push_receiver = PushReceiver.new()
+	_push_receiver.name = "BrowserPushReceiver"
+	_push_receiver.import_callback = Callable(self, "_import_pushed_song")
+	add_child(_push_receiver)
+	var error := _push_receiver.start()
+	if error != OK:
+		_set_status("Direct Push to Godot receiver unavailable on localhost:%d: %s" % [PCSPushReceiver.DEFAULT_PORT, error_string(error)])
 
 
 func _save_chart_resource(path: String) -> void:
