@@ -11,10 +11,21 @@ Desktop.ini
 *.mid
 *.midi
 *.log
+*.keystore
+*.jks
+*.p12
 
-# Historical local HTML snapshots kept outside this repo's first clean commit
-pocket_chordsmith_v57*.html
-pocket_chordsmith_v58*.html
+# Local web tooling outputs
+node_modules/
+dist/
+test-results/
+playwright-report/
+.codex-server-logs/
 
-# Separate Godot add-on packaging repo kept beside the web app
-PocketChordsmith_Godot_Addon_0.9.0-rc1_GitUpload/
+# Organized local-only working folders
+archive/
+marketing-assets/
+releases/
+
+# Separate Godot add-on repo with its own Git history
+godot-addon/

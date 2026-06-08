@@ -2,7 +2,7 @@
 
 Use this file as stable project context for Codex before making any Pocket Chordsmith update.
 
-Current baseline: `pocket_chordsmith_v61_rock_guitar_fix.html`  
+Current baseline: `pocket_chordsmith_v67_direct_godot_push.html`
 Project type: single-file, mobile-first browser music sketchpad  
 Core build style: HTML, CSS and JavaScript in one file unless a specific update deliberately changes that  
 
@@ -85,9 +85,9 @@ Audio features must avoid painful harshness and clipping. Use sensible gain stag
 
 ## 3. Current known architecture facts
 
-These are the important current-v61 facts Codex should assume and verify in the file before editing:
+These are the important current-v67 facts Codex should assume and verify in the file before editing:
 
-- The app title is Pocket Chordsmith v61.
+- The app title is Pocket Chordsmith v67.
 - `PROJECT_SCHEMA_VERSION` is currently 16.
 - `SECTION_IDS` currently supports `["A","B","C","D","E","F","G","H"]`.
 - `MAX_MELODY_TRACKS` is currently 6.
@@ -96,6 +96,9 @@ These are the important current-v61 facts Codex should assume and verify in the 
 - MIDI export supports quantized/performance style handling and exact MIDI durations.
 - Existing data normalisation and import/export functions are important. Do not bypass them.
 - Existing render, scheduler, playback and export functions are tightly connected. Changes must be tested across live playback, MIDI export and WAV export.
+- Recent compatibility features include western procedural instruments, playback-section visual following, guitar fill/generation helpers, compact JSON export, and `Push to DJ` / `Push to Godot` handoffs using existing `PCS1:` codes.
+- v67 upgrades `Push to Godot` to try the local Godot addon receiver first, then keep the v66 clipboard/paste fallback.
+- New fields must remain optional and backwards compatible.
 
 Useful areas to inspect before most changes:
 
@@ -303,6 +306,73 @@ Audio rules:
 - Avoid spawning excessive nodes for very dense patterns where a simpler approach works.
 - Live playback and WAV export should match as closely as practical.
 
+### Game runtime and export integration lessons
+
+When generating or adapting Pocket Chordsmith output into browser games, especially WebGL-heavy games, the exported music engine must protect musical layers as well as raw performance. Do not rely on one global audio voice limit or one global overload guard.
+
+Reference games in `C:\Users\sam_s\Documents` include Fish Tank, Ant Farm, Spin Vector, Possum Cafe, Moon Mower, Dust on the River and Party Bus. The lighter games show that a compact Pocket Chordsmith-style Web Audio runtime works well for HTML games: structured score data stays cheap, adaptive sections are easy, and no large audio-file pipeline is needed. Party Bus is the stress case because its Babylon scene, ultra graphics mode, enemies, shadows, bloom, lights and particles leave less main-thread room for last-moment audio node creation.
+
+Reference lesson: the Party Bus performance/audio issue showed that a single global overload guard kept drums alive but starved chords, guitar, bass and melody under ultra graphics load. The engine looked stable because the beat survived, but the song lost its musical identity. Grouped budgets restored the beat, bass, harmony, chug/guitar and melody layers while still keeping total node count stable.
+
+Best architecture for HTML games:
+
+- keep Pocket Chordsmith as the musical brain: progression, beat, bass, chord/pad, guitar/chug, lead/melody, ambience and state/section data
+- add a small game music runtime adapter around the score instead of pasting the full app engine into each game
+- let the adapter own scheduling, voice groups, resource caching, node cleanup, debug counters and game-state transitions
+- keep music state separate from the renderer; game scenes can request mode changes such as menu, calm, danger, return, victory or pause without directly creating audio nodes
+- treat SFX as another budgeted role, not as a free unlimited path that can steal the music budget
+
+Generated or adapted game music engines should use:
+
+- audio-clock-based lookahead scheduling, usually around 0.18-0.36 seconds ahead
+- a short scheduler interval, usually around 30-40 ms
+- dropped-step recovery when the main thread stalls, by advancing past missed steps and counting them, not by slowing tempo or bunching late notes together
+- dedicated buses or voice groups for beat, bass, chord/pad, guitar/chug, lead/melody, air/ambience and SFX
+- per-role voice limits for beat, bass, chord/pad, guitar/chug, lead/melody, air/ambience and SFX, plus a total voice budget
+- priority rules that preserve core musical identity layers under load instead of letting drums, ambience or SFX consume all voices
+- cleanup, stop handling and disconnection of Web Audio nodes when each voice ends
+- cached reusable noise buffers, distortion curves, impulse responses and other shared audio resources instead of rebuilding them per note
+- debug counters in game builds for audio context state, active voices, per-group active counts, peak voices and dropped scheduler steps
+
+For heavy browser games, a useful starting voice budget is:
+
+- beat: 10
+- bass: 4
+- chord/pad: 8
+- guitar/chug: 6
+- lead/melody: 5
+- air/ambience: 3
+- SFX: 8
+- total: 32
+
+Treat these as starting points, not fixed rules. The important rule is that every musical role keeps a reserved lane, and SFX or dense hats should be dropped before bass, harmony or melody disappear.
+
+Useful debug overlay shape:
+
+```text
+audio running  voices 21/32  peak 29
+beat 4 bass 1 chord 3 chug 2 lead 1 air 0 sfx 3
+dropped scheduler steps 2
+```
+
+Avoid these patterns in game exports:
+
+- BPM-derived `setInterval()` that fires one music step at a time with only a tiny start offset
+- creating noise buffers, distortion curves or impulse responses inside every note/hit function
+- creating dense distorted chord/chug/lead stacks without per-role limits
+- a single global voice cap or overload guard that preserves whichever role schedules first
+- lowering tempo to recover from main-thread stalls
+- counting FPS as proof that audio is healthy
+
+Party Bus-specific diagnosis:
+
+- Party Bus uses a fixed BPM step interval and schedules events only slightly ahead; ultra rendering stalls can make the scheduler itself late.
+- Its danger/return music can trigger drums, bass, metal chords, chug and lead on the same step.
+- Distorted voices create several oscillators/filters/waveshapers, and the current style of noise hit can allocate a fresh buffer per hit.
+- The right first fix is not to remove the Chordsmith sound. Replace step-timer playback with lookahead scheduling, add grouped budgets, cache shared audio resources, disconnect ended nodes, and add audio counters to the existing debug overlay.
+
+Stress-test exported or adapted engines in the heaviest graphics preset and densest gameplay state. FPS alone is not enough proof that audio is safe, because Web Audio scheduling and node creation still compete with game JavaScript on the main thread. A valid stress result should confirm that every role bus remains represented musically, not just that the beat stays audible.
+
 For distorted sounds:
 
 - Distortion must be controlled.
@@ -346,6 +416,18 @@ When adding a new property to state, also update:
 ---
 
 ## 9. Testing checklist for every update
+
+### Local Node tooling
+
+In this Codex desktop workspace, plain `node` may resolve to the protected Codex app package under `C:\Program Files\WindowsApps\...` and fail with `Access is denied`.
+
+Use the bundled user-cache Node instead:
+
+```powershell
+& 'C:\Users\sam_s\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' --version
+```
+
+For single-file HTML syntax checks, extract and parse the inline script with Node's `vm.Script`; do not run `node --check` directly against the `.html` file.
 
 Minimum tests after each change:
 
@@ -416,11 +498,12 @@ Known limitations:
 
 Likely future updates may include:
 
-- rock/metal guitar rhythm engine
-- power chord and chug sequencing
+- shared game music runtime/export adapter for HTML games
+- stronger game/adaptive music export guidance and examples
+- Party Bus-style stress-test fixtures for heavy WebGL/Babylon scenes
+- grouped voice budgets, debug counters and cached Web Audio resources in generated game engines
 - improved sound design and tone shaping
 - more demo songs
-- game/adaptive music export improvements
 - Godot addon/runtime compatibility
 - better mobile arrangement editing
 - improved documentation and tooltips
