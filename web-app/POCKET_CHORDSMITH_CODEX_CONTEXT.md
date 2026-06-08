@@ -332,6 +332,8 @@ Generated or adapted game music engines should use:
 - priority rules that preserve core musical identity layers under load instead of letting drums, ambience or SFX consume all voices
 - cleanup, stop handling and disconnection of Web Audio nodes when each voice ends
 - cached reusable noise buffers, distortion curves, impulse responses and other shared audio resources instead of rebuilding them per note
+- sample-backed preview hits where they preserve the Pocket Chordsmith sound with less CPU, especially drums, guitar articulations, stingers and simple tonal preview layers
+- prewarmed and decoded sample buffers after the first user audio unlock, with trimmed silent tails and a gain map per sample or layer
 - debug counters in game builds for audio context state, active voices, per-group active counts, peak voices and dropped scheduler steps
 
 For heavy browser games, a useful starting voice budget is:
