@@ -1,0 +1,135 @@
+import type { Clip, PocketDawProject } from "./schema";
+import { cloneProject } from "./dawProject";
+import { recomputeTimelineBars } from "./timeline";
+
+export function selectClip(project: PocketDawProject, clipId: string | null): PocketDawProject {
+  const next = cloneProject(project);
+  next.timeline.clips.forEach((clip) => {
+    clip.metadata = { ...(clip.metadata || {}), selected: clip.id === clipId };
+  });
+  return next;
+}
+
+export function moveClipByBars(project: PocketDawProject, clipId: string, deltaBars: number): PocketDawProject {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip) return project;
+  clip.startBar = Math.max(1, clip.startBar + deltaBars);
+  return recomputeTimelineBars(next);
+}
+
+export function duplicateClip(project: PocketDawProject, clipId: string): { project: PocketDawProject; duplicatedId: string | null } {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip) return { project, duplicatedId: null };
+  const newClip: Clip = {
+    ...JSON.parse(JSON.stringify(clip)),
+    id: nextClipId(next.timeline.clips),
+    startBar: clip.startBar + clip.barLength,
+    linked: true,
+    name: `${clip.name} copy`
+  };
+  next.timeline.clips.push(newClip);
+  recomputeTimelineBars(next);
+  return { project: next, duplicatedId: newClip.id };
+}
+
+export function deleteClip(project: PocketDawProject, clipId: string): PocketDawProject {
+  const next = cloneProject(project);
+  next.timeline.clips = next.timeline.clips.filter((clip) => clip.id !== clipId);
+  return recomputeTimelineBars(next);
+}
+
+export function toggleClipMute(project: PocketDawProject, clipId: string): PocketDawProject {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (clip) clip.muted = !clip.muted;
+  return next;
+}
+
+export function splitClipAtBar(project: PocketDawProject, clipId: string, splitBar: number): { project: PocketDawProject; rightClipId: string | null } {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip) return { project, rightClipId: null };
+  const split = Math.round(splitBar);
+  const clipEnd = clip.startBar + clip.barLength;
+  if (split <= clip.startBar || split >= clipEnd) return { project, rightClipId: null };
+  const originalLength = clip.barLength;
+  const leftLength = split - clip.startBar;
+  const rightLength = originalLength - leftLength;
+  const sourceOffset = clipSourceStartBar(clip);
+  clip.barLength = leftLength;
+  const rightClip: Clip = {
+    ...JSON.parse(JSON.stringify(clip)),
+    id: nextClipId(next.timeline.clips),
+    startBar: split,
+    barLength: rightLength,
+    linked: clip.linked,
+    name: `${clip.name} split`,
+    metadata: {
+      ...(clip.metadata || {}),
+      sourceStartBar: sourceOffset + leftLength
+    }
+  };
+  next.timeline.clips.push(rightClip);
+  recomputeTimelineBars(next);
+  return { project: next, rightClipId: rightClip.id };
+}
+
+export function trimClipStart(project: PocketDawProject, clipId: string, deltaBars: number): PocketDawProject {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "generated-section") return project;
+  const delta = Math.round(deltaBars);
+  if (delta === 0) return project;
+  const sourceOffset = clipSourceStartBar(clip);
+  if (delta > 0) {
+    const trim = Math.min(delta, clip.barLength - 1);
+    clip.startBar += trim;
+    clip.barLength -= trim;
+    clip.metadata = { ...(clip.metadata || {}), sourceStartBar: sourceOffset + trim };
+  } else {
+    const extend = Math.min(Math.abs(delta), clip.startBar - 1, sourceOffset);
+    if (extend <= 0) return project;
+    clip.startBar -= extend;
+    clip.barLength += extend;
+    clip.metadata = { ...(clip.metadata || {}), sourceStartBar: sourceOffset - extend };
+  }
+  return recomputeTimelineBars(next);
+}
+
+export function trimClipEnd(project: PocketDawProject, clipId: string, deltaBars: number): PocketDawProject {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "generated-section") return project;
+  const delta = Math.round(deltaBars);
+  if (delta === 0) return project;
+  clip.barLength = Math.max(1, clip.barLength + delta);
+  return recomputeTimelineBars(next);
+}
+
+export function pasteClip(project: PocketDawProject, source: Clip, startBar: number): { project: PocketDawProject; pastedId: string } {
+  const next = cloneProject(project);
+  const newClip: Clip = {
+    ...JSON.parse(JSON.stringify(source)),
+    id: nextClipId(next.timeline.clips),
+    startBar: Math.max(1, startBar),
+    linked: true,
+    name: `${source.name} pasted`
+  };
+  next.timeline.clips.push(newClip);
+  recomputeTimelineBars(next);
+  return { project: next, pastedId: newClip.id };
+}
+
+export function clipSourceStartBar(clip: Clip): number {
+  const value = clip.metadata?.sourceStartBar;
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+}
+
+function nextClipId(clips: Clip[]): string {
+  let i = clips.length + 1;
+  const ids = new Set(clips.map((clip) => clip.id));
+  while (ids.has(`clip_${String(i).padStart(3, "0")}`)) i += 1;
+  return `clip_${String(i).padStart(3, "0")}`;
+}

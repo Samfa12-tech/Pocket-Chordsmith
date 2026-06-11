@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Pocket DAW",
+  "version": "0.5.1",
+  "identifier": "io.pocketfamily.pocketdaw",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:5177",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Pocket DAW",
+        "width": 1440,
+        "height": 920,
+        "minWidth": 1100,
+        "minHeight": 720
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/pocket-daw-icon.ico",
+      "icons/pocket-daw-icon.png"
+    ]
+  }
+}

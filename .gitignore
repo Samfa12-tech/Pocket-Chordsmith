@@ -3,5 +3,41 @@
 *.uid
 *.import
 
-# Local/editor packaging output.
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+*.log
+.DS_Store
+.env
+.env.*
+src-tauri/target/
+target/
+*.exe
+*.msi
+*.dmg
+*.app
 *.zip
+*.7z
+*.rar
+_incoming/
+_tmp/
+*.pocketdaw
+
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+test-results/
+playwright-report/
+.codex-server-logs/
+
+# Local source workspaces kept only as import references after consolidation.
+/archive/
+/godot-addon/
+/marketing-assets/
+/pocket_audio_core_handoff/
+/pocket_dj/
+/pocket-daw/
+/releases/

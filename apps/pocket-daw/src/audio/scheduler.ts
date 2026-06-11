@@ -1,0 +1,2 @@
+export const SCHEDULER_LOOKAHEAD_SECONDS = 0.22;
+export const SCHEDULER_INTERVAL_MS = 25;

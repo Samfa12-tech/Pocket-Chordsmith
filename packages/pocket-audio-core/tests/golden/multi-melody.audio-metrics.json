@@ -1,0 +1,10 @@
+{
+  "durationSeconds": 3.1,
+  "sampleRate": 16000,
+  "channelCount": 2,
+  "eventCount": 29,
+  "peak": 0.208151,
+  "rms": 0.020959,
+  "zeroCrossingRate": 0.03619,
+  "quantizedSampleHash": "95fd3c15"
+}

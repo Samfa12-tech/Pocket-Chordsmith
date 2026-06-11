@@ -1,5 +1,24 @@
 * text=auto eol=lf
 
+*.html text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.gd text eol=lf
+*.ts text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.toml text eol=lf
+*.cfg text eol=lf
+*.tres text eol=lf
+*.tscn text eol=lf
+
+*.png binary
+*.ico binary
+*.zip binary
+*.wav binary
+*.mid binary
+*.midi binary
+
 /**        export-ignore
 /addons    !export-ignore
 /addons/** !export-ignore

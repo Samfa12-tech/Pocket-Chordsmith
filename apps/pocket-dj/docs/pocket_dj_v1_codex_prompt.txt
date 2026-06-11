@@ -1,0 +1,35 @@
+We are building a new standalone single-file HTML app called Pocket DJ.
+
+Pocket DJ is a mobile-first performance/remix companion to Pocket Chordsmith. It must import Pocket Chordsmith PCS1 share codes and raw Pocket Chordsmith JSON projects, then convert them into a live remix deck.
+
+Important compatibility details from current Pocket Chordsmith v66:
+- PCS share codes use prefix "PCS1:"
+- Current project schema version is 16
+- Sections are A, B, C, D, E, F, G, H
+- Each section can have sectionBars, progression, grid, gridTuplets, melodyTracks, melodyInstruments, melodyOctaves, melodyMute, melodySolo, melodyPan, melodyHold, melodySlide, melodyTuplets, bassHold, bassSlide, bassNotes, bassAccent and guitarPattern
+- Global settings include key, scale, timeSig, bpm, swing, chord settings, guitar settings, FX settings, sidechain settings, sectionBars and songSequence
+
+The app should NOT copy the full Pocket Chordsmith editor UI. It should feel like a DJ performance surface.
+
+Build v1 with:
+1. Import screen for PCS1 share codes and raw JSON.
+2. Sanitise/normalise imported Pocket Chordsmith projects.
+3. Convert imported project into a Pocket DJ session.
+4. Display key, scale, BPM, time signature and section info.
+5. Show large section pads A-H.
+6. Support Play, Stop and Restart.
+7. Support tapping section pads to queue section changes on the next bar.
+8. Show current and queued section states.
+9. Provide stem controls for Drums, Bass, Chords, Melody and Guitar.
+10. Provide mute and volume for each stem.
+11. Hide or dim Guitar if guitarEnabled is false or no guitar data exists.
+12. Provide a master filter and basic echo/reverb controls.
+13. Provide Build, Drop and Reset FX buttons.
+14. Provide Loop Current Section and Exit Loop.
+15. Save/load the last DJ session using localStorage.
+16. Keep UI mobile-first, portrait-friendly, touch-friendly and visually distinct from Pocket Chordsmith.
+17. Provide Edit this song, which copies the original source Pocket Chordsmith song as PCS1 and opens https://samfa12.itch.io/pocket-chordsmith.
+
+Do not implement full note editing, chord editing, MIDI import, MIDI export, two-deck mixing, account systems or online sharing in v1.
+
+The core success criterion is: a user can paste a Pocket Chordsmith PCS1 code, press play, trigger sections, mute stems, use FX, build and drop, and have it feel like a fun live remix deck.

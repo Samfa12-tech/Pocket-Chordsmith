@@ -1,0 +1,110 @@
+[
+  {
+    "name": "basic-4-4-major",
+    "description": "Basic 4/4 major progression, no swing.",
+    "raw": "basic-4-4-major.pcs.json",
+    "shareCode": "basic-4-4-major.pcs1.txt",
+    "normalised": "basic-4-4-major.normalised.json",
+    "events": "../golden/basic-4-4-major.events.json",
+    "audioMetrics": "../golden/basic-4-4-major.audio-metrics.json"
+  },
+  {
+    "name": "three-four",
+    "description": "3/4 time signature.",
+    "raw": "three-four.pcs.json",
+    "shareCode": "three-four.pcs1.txt",
+    "normalised": "three-four.normalised.json",
+    "events": "../golden/three-four.events.json",
+    "audioMetrics": "../golden/three-four.audio-metrics.json"
+  },
+  {
+    "name": "swing-groove",
+    "description": "Swing groove.",
+    "raw": "swing-groove.pcs.json",
+    "shareCode": "swing-groove.pcs1.txt",
+    "normalised": "swing-groove.normalised.json",
+    "events": "../golden/swing-groove.events.json",
+    "audioMetrics": "../golden/swing-groove.audio-metrics.json"
+  },
+  {
+    "name": "drum-tuplets",
+    "description": "Triplets/tuplets in drums.",
+    "raw": "drum-tuplets.pcs.json",
+    "shareCode": "drum-tuplets.pcs1.txt",
+    "normalised": "drum-tuplets.normalised.json",
+    "events": "../golden/drum-tuplets.events.json",
+    "audioMetrics": "../golden/drum-tuplets.audio-metrics.json"
+  },
+  {
+    "name": "melody-holds",
+    "description": "Melody holds.",
+    "raw": "melody-holds.pcs.json",
+    "shareCode": "melody-holds.pcs1.txt",
+    "normalised": "melody-holds.normalised.json",
+    "events": "../golden/melody-holds.events.json",
+    "audioMetrics": "../golden/melody-holds.audio-metrics.json"
+  },
+  {
+    "name": "melody-slides",
+    "description": "Melody slides.",
+    "raw": "melody-slides.pcs.json",
+    "shareCode": "melody-slides.pcs1.txt",
+    "normalised": "melody-slides.normalised.json",
+    "events": "../golden/melody-slides.events.json",
+    "audioMetrics": "../golden/melody-slides.audio-metrics.json"
+  },
+  {
+    "name": "manual-bass",
+    "description": "Bass manual notes, holds, slides and accents.",
+    "raw": "manual-bass.pcs.json",
+    "shareCode": "manual-bass.pcs1.txt",
+    "normalised": "manual-bass.normalised.json",
+    "events": "../golden/manual-bass.events.json",
+    "audioMetrics": "../golden/manual-bass.audio-metrics.json"
+  },
+  {
+    "name": "guitar-patterns",
+    "description": "Guitar enabled with at least two pattern styles.",
+    "raw": "guitar-patterns.pcs.json",
+    "shareCode": "guitar-patterns.pcs1.txt",
+    "normalised": "guitar-patterns.normalised.json",
+    "events": "../golden/guitar-patterns.events.json",
+    "audioMetrics": "../golden/guitar-patterns.audio-metrics.json"
+  },
+  {
+    "name": "multi-melody",
+    "description": "Multiple melody tracks with mute/solo/pan.",
+    "raw": "multi-melody.pcs.json",
+    "shareCode": "multi-melody.pcs1.txt",
+    "normalised": "multi-melody.normalised.json",
+    "events": "../golden/multi-melody.events.json",
+    "audioMetrics": "../golden/multi-melody.audio-metrics.json"
+  },
+  {
+    "name": "section-sequence",
+    "description": "Section sequence A-B-C-D-A.",
+    "raw": "section-sequence.pcs.json",
+    "shareCode": "section-sequence.pcs1.txt",
+    "normalised": "section-sequence.normalised.json",
+    "events": "../golden/section-sequence.events.json",
+    "audioMetrics": "../golden/section-sequence.audio-metrics.json"
+  },
+  {
+    "name": "build-drop-fx",
+    "description": "Build/drop/FX state fixture.",
+    "raw": "build-drop-fx.pcs.json",
+    "shareCode": "build-drop-fx.pcs1.txt",
+    "normalised": "build-drop-fx.normalised.json",
+    "events": "../golden/build-drop-fx.events.json",
+    "audioMetrics": "../golden/build-drop-fx.audio-metrics.json"
+  },
+  {
+    "name": "legacy-minimal",
+    "description": "Legacy/minimal project with missing fields.",
+    "raw": "legacy-minimal.pcs.json",
+    "shareCode": "legacy-minimal.pcs1.txt",
+    "normalised": "legacy-minimal.normalised.json",
+    "events": "../golden/legacy-minimal.events.json",
+    "audioMetrics": "../golden/legacy-minimal.audio-metrics.json"
+  }
+]

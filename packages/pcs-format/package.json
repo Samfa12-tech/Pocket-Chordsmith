@@ -1,0 +1,8 @@
+{
+  "name": "pcs-format",
+  "version": "0.1.0-scaffold",
+  "private": true,
+  "type": "module",
+  "description": "Future shared PCS format definitions and compatibility helpers.",
+  "license": "UNLICENSED"
+}

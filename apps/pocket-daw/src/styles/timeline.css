@@ -1,0 +1,219 @@
+.timeline-wrap {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: #090d18;
+}
+
+.timeline-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #0e1423;
+}
+
+.timeline-toolbar > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.timeline-toolbar button {
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.timeline-toolbar label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.timeline-toolbar select {
+  min-height: 28px;
+  border: 1px solid #293550;
+  border-radius: 6px;
+  color: #eef4ff;
+  background: #0d1322;
+  font-size: 12px;
+}
+
+.timeline-scroll {
+  position: relative;
+  overflow: auto;
+  min-height: 0;
+}
+
+.timeline {
+  position: relative;
+  min-height: 100%;
+  cursor: crosshair;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 1px, transparent 1px var(--bar)),
+    linear-gradient(180deg, #0b1020, #090d18);
+}
+
+.ruler {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  height: 32px;
+  border-bottom: 1px solid #26314c;
+  background: rgba(10, 15, 27, 0.96);
+  cursor: pointer;
+}
+
+.marker-lane {
+  position: sticky;
+  top: 32px;
+  z-index: 7;
+  height: 26px;
+  border-bottom: 1px solid #26314c;
+  background: rgba(12, 18, 32, 0.94);
+}
+
+.marker {
+  position: absolute;
+  top: 3px;
+  display: inline-flex;
+  max-width: 150px;
+  border-left: 2px solid;
+  background: #111827;
+  transform: translateX(2px);
+}
+
+.marker button {
+  min-height: 19px;
+  padding: 0 5px;
+  border-radius: 0;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.marker button:first-child {
+  overflow: hidden;
+  max-width: 112px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ruler span {
+  position: absolute;
+  top: 9px;
+  color: #93a3c6;
+  font-size: 11px;
+  transform: translateX(5px);
+}
+
+.timeline-row {
+  position: relative;
+  height: 72px;
+  border-bottom: 1px solid rgba(43, 54, 84, 0.7);
+}
+
+.timeline-row::before {
+  content: attr(data-row);
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  display: inline-grid;
+  place-items: center start;
+  width: 86px;
+  height: 100%;
+  padding-left: 10px;
+  color: #7886a8;
+  background: linear-gradient(90deg, #0b1020 70%, transparent);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.clip {
+  position: absolute;
+  top: 10px;
+  z-index: 2;
+  display: grid;
+  align-content: center;
+  min-width: 28px;
+  height: 52px;
+  padding: 6px 8px;
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: 6px;
+  text-align: left;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 20px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+}
+
+.clip strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.clip span {
+  overflow: hidden;
+  color: rgba(238, 244, 255, 0.72);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.clip.selected {
+  outline: 2px solid #ffc857;
+  outline-offset: 1px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 4px rgba(255, 200, 87, 0.12), 0 8px 20px rgba(0, 0, 0, 0.22);
+}
+
+.clip.muted {
+  opacity: 0.38;
+}
+
+.playhead {
+  position: absolute;
+  top: 58px;
+  bottom: 0;
+  z-index: 6;
+  width: 2px;
+  background: #40d8ff;
+  box-shadow: 0 0 12px rgba(64, 216, 255, 0.8);
+  pointer-events: none;
+}
+
+.cursor-line {
+  position: absolute;
+  top: 58px;
+  bottom: 0;
+  z-index: 5;
+  width: 2px;
+  border-left: 2px dashed rgba(255, 200, 87, 0.9);
+  pointer-events: none;
+}
+
+.loop-region {
+  position: absolute;
+  top: 58px;
+  bottom: 0;
+  z-index: 1;
+  display: none;
+  border-left: 1px solid rgba(255, 200, 87, 0.9);
+  border-right: 1px solid rgba(255, 200, 87, 0.9);
+  background: rgba(255, 200, 87, 0.08);
+  pointer-events: none;
+}
+
+.loop-region.on {
+  display: block;
+}

@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pocket Audio Core Game Runtime Demo</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0b1014;--panel:#141c24;--line:#2c3a47;--text:#edf7ff;--muted:#9bb1c1;--cyan:#54d7ff;--gold:#ffd166;--green:#8ef29b}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:#0b1014;color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
+    main{max-width:980px;margin:0 auto;display:grid;gap:12px}
+    header,.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
+    h1,h2{margin:0}
+    h1{font-size:1.25rem}
+    h2{font-size:1rem}
+    .sub{color:var(--muted);font-size:.88rem}
+    canvas{width:100%;height:260px;display:block;border:1px solid var(--line);border-radius:8px;background:#070b0f}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    button,input{font:inherit}
+    button{border:1px solid var(--line);background:#1d2934;color:var(--text);border-radius:8px;min-height:40px;padding:8px 12px;font-weight:700;cursor:pointer}
+    button.primary{border-color:var(--cyan);background:#123344}
+    button.good{border-color:var(--green);background:#153522}
+    button.hot{border-color:var(--gold);background:#3b2d12}
+    button.on{outline:2px solid rgba(84,215,255,.45)}
+    input[type="range"]{accent-color:var(--cyan)}
+    .readout{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+    .tile{background:#101821;border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
+    .k{font-size:.72rem;color:var(--muted);text-transform:uppercase}
+    .v{font-size:1.1rem;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    pre{margin:0;white-space:pre-wrap;background:#091017;border:1px solid var(--line);border-radius:8px;padding:10px;color:#d7edf9;min-height:88px}
+    @media (max-width:700px){.grid,.readout{grid-template-columns:1fr 1fr}canvas{height:220px}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Pocket Audio Core Game Runtime Demo</h1>
+    <div class="sub">Canvas loop, adaptive music states, stem controls and callbacks without the Pocket Chordsmith editor UI.</div>
+  </header>
+
+  <canvas id="game" width="960" height="320" aria-label="Tiny game loop demo"></canvas>
+
+  <section class="grid">
+    <div class="panel">
+      <h2>Runtime</h2>
+      <div class="row" style="margin-top:10px">
+        <button class="primary" id="startBtn">Start Audio</button>
+        <button id="stopBtn">Stop</button>
+        <button id="duckBtn">Duck</button>
+        <button id="lowpassBtn">Lowpass</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label class="sub">Intensity <input id="intensity" type="range" min="0" max="1" step="0.01" value="0.35"></label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Music States</h2>
+      <div class="row" style="margin-top:10px">
+        <button class="good" data-state="exploration">Exploration</button>
+        <button class="hot" data-state="combat">Combat</button>
+        <button data-state="victory">Victory</button>
+        <button data-stinger="danger">Danger Stinger</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="muteMelodyBtn">Mute Melody</button>
+        <button id="muteDrumsBtn">Mute Drums</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="readout">
+      <div class="tile"><div class="k">State</div><div class="v" id="stateText">idle</div></div>
+      <div class="tile"><div class="k">Section</div><div class="v" id="sectionText">-</div></div>
+      <div class="tile"><div class="k">Bar / Beat</div><div class="v" id="beatText">-</div></div>
+      <div class="tile"><div class="k">Intensity</div><div class="v" id="intensityText">0.35</div></div>
+    </div>
+    <pre id="log" style="margin-top:10px">Ready.</pre>
+  </section>
+</main>
+
+<script type="module">
+import { PocketAudio } from "../../src/index.js";
+
+const demoProject = {
+  projectVersion:16,
+  title:"Runtime Demo",
+  key:"D",
+  scale:"minor",
+  bpm:112,
+  timeSig:4,
+  resolution:4,
+  songSequence:["A","B","C","D"],
+  sectionBars:{A:1,B:1,C:1,D:1,E:1},
+  progressionA:[0,3,4,0],
+  progressionB:[0,5,3,4],
+  progressionC:[5,6,0,3],
+  progressionD:[4,3,0,0],
+  progressionE:[0,0,0,0],
+  gridA:{kick:[1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0],snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],hat:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],bass:[1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0]},
+  gridB:{kick:[1,0,1,0,1,0,0,0,1,0,1,0,1,0,0,0],snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],hat:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],bass:[1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0]},
+  gridC:{kick:[1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],snare:[0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],hat:[1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],bass:[1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0]},
+  gridD:{kick:[1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],snare:[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],hat:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],bass:[1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0]},
+  gridE:{kick:[1,0,0,0],snare:[0,0,1,0],hat:[1,0,1,0],bass:[1,0,0,0]},
+  melodyTracksA:[[0,null,2,null,3,null,2,null,0,null,2,null,5,null,3,null]],
+  melodyTracksB:[[5,null,7,null,8,null,7,null,5,null,3,null,2,null,0,null]],
+  melodyTracksC:[[0,null,null,null,3,null,null,null,5,null,null,null,7,null,null,null]],
+  melodyTracksD:[[7,6,5,3,5,3,2,0,7,6,5,3,2,0,0,null]],
+  melodyTracksE:[[12,null,7,null]]
+};
+
+const stateMap = {
+  exploration:{sequence:["A","B"],loop:true,intensity:0.35},
+  combat:{sequence:["C","D"],loop:true,intensity:0.8,stems:{melody:{mute:false},drums:{volume:0.95}}},
+  victory:{section:"E",thenReturnTo:"exploration"},
+  danger:{stinger:"crash",thenReturnTo:"combat"}
+};
+
+const music = new PocketAudio({ profile:"game", musicStates:stateMap });
+await music.loadProject(demoProject);
+
+const els = {
+  canvas:document.getElementById("game"),
+  log:document.getElementById("log"),
+  state:document.getElementById("stateText"),
+  section:document.getElementById("sectionText"),
+  beat:document.getElementById("beatText"),
+  intensity:document.getElementById("intensity"),
+  intensityText:document.getElementById("intensityText")
+};
+const ctx = els.canvas.getContext("2d");
+let playerX = 80;
+let pulse = 0;
+let melodyMuted = false;
+let drumsMuted = false;
+
+function log(message){ els.log.textContent = `${new Date().toLocaleTimeString()}  ${message}\n${els.log.textContent}`.slice(0,900); }
+function updateDiagnostics(){
+  const d = music.getDiagnostics();
+  els.state.textContent = d.currentMusicState || "idle";
+  els.section.textContent = d.currentSection || "-";
+  els.beat.textContent = `${music.getTransport().bar}/${music.getTransport().beat}`;
+  els.intensityText.textContent = music.intensity.toFixed(2);
+}
+
+music.on("beat", event => {
+  pulse = 1;
+  els.section.textContent = event.sectionId;
+  els.beat.textContent = `${event.bar}/${event.beat}`;
+});
+music.on("musicState", event => { log(`State -> ${event.name}`); updateDiagnostics(); });
+music.on("musicStateQueued", event => log(`Queued ${event.name} on ${event.quantize}`));
+music.on("stinger", event => log(`Stinger ${event.stinger}; return ${event.thenReturnTo || "none"}`));
+music.on("duck", event => log(`Duck ${event.enabled ? "on" : "off"} amount ${event.amount}`));
+music.on("lowpass", event => log(`Lowpass ${event.amount}`));
+
+document.getElementById("startBtn").addEventListener("click", async () => {
+  await music.resumeFromUserGesture();
+  music.setMusicState("exploration");
+  await music.play();
+  log("Audio started");
+});
+document.getElementById("stopBtn").addEventListener("click", () => { music.stop(); log("Stopped"); updateDiagnostics(); });
+document.getElementById("duckBtn").addEventListener("click", event => {
+  const on = !event.currentTarget.classList.contains("on");
+  event.currentTarget.classList.toggle("on", on);
+  music.duck(on, {amount:0.45, releaseMs:500});
+});
+document.getElementById("lowpassBtn").addEventListener("click", event => {
+  const on = !event.currentTarget.classList.contains("on");
+  event.currentTarget.classList.toggle("on", on);
+  music.lowpass(on ? 0.5 : 1);
+});
+document.querySelectorAll("[data-state]").forEach(button => {
+  button.addEventListener("click", () => music.queueMusicState(button.dataset.state, {quantize:button.dataset.state === "victory" ? "section" : "bar"}));
+});
+document.querySelectorAll("[data-stinger]").forEach(button => {
+  button.addEventListener("click", () => music.triggerStinger(button.dataset.stinger));
+});
+document.getElementById("muteMelodyBtn").addEventListener("click", event => {
+  melodyMuted = !melodyMuted;
+  event.currentTarget.classList.toggle("on", melodyMuted);
+  music.setStemMute("melody", melodyMuted);
+});
+document.getElementById("muteDrumsBtn").addEventListener("click", event => {
+  drumsMuted = !drumsMuted;
+  event.currentTarget.classList.toggle("on", drumsMuted);
+  music.setStemMute("drums", drumsMuted);
+});
+els.intensity.addEventListener("input", () => {
+  music.setIntensity(Number(els.intensity.value));
+  updateDiagnostics();
+});
+
+function draw(){
+  const w = els.canvas.width;
+  const h = els.canvas.height;
+  const d = music.getDiagnostics();
+  playerX = (playerX + 1.2 + music.intensity * 2.8) % w;
+  pulse *= 0.9;
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = "#070b0f";
+  ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle = "rgba(84,215,255,.25)";
+  for(let x=0;x<w;x+=48){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+  ctx.fillStyle = d.currentMusicState === "combat" ? "#ffd166" : d.currentMusicState === "victory" ? "#8ef29b" : "#54d7ff";
+  ctx.beginPath();
+  ctx.arc(playerX, h * 0.58, 16 + pulse * 10, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(237,247,255,.82)";
+  ctx.font = "20px system-ui";
+  ctx.fillText(`State: ${d.currentMusicState || "idle"}`, 24, 40);
+  ctx.fillText(`Scheduler missed ticks: ${d.missedSchedulerTickCount}`, 24, 68);
+  requestAnimationFrame(draw);
+}
+draw();
+updateDiagnostics();
+</script>
+</body>
+</html>

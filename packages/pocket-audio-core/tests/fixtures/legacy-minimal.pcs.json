@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "key": "A",
+  "scale": "minor",
+  "bpm": 90,
+  "progressionA": [
+    0,
+    3,
+    4,
+    6
+  ],
+  "gridA": {
+    "kick": [
+      1
+    ],
+    "snare": [
+      0
+    ],
+    "hat": [
+      1
+    ],
+    "bass": [
+      1
+    ]
+  }
+}
