@@ -6,12 +6,12 @@ export default defineConfig({
   fullyParallel: true,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://127.0.0.1:4174",
+    baseURL: "http://127.0.0.1:4180",
     trace: "retain-on-failure",
   },
   webServer: {
     command: "node ./scripts/serve-repo.mjs",
-    url: "http://127.0.0.1:4174/apps/chordsmith-web/",
+    url: "http://127.0.0.1:4180/apps/pocket-dj/",
     reuseExistingServer: false,
     timeout: 30_000,
   },
@@ -19,10 +19,6 @@ export default defineConfig({
     {
       name: "chromium-desktop",
       use: { ...devices["Desktop Chrome"] },
-    },
-    {
-      name: "mobile-chrome",
-      use: { ...devices["Pixel 7"] },
     },
   ],
 });

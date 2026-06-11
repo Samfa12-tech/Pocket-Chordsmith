@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
   });
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
-  await page.goto("/");
+  await page.goto("/apps/chordsmith-web/");
   await page.waitForLoadState("networkidle");
 
   expect(pageErrors, "page runtime errors").toEqual([]);
@@ -22,15 +22,16 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("loads the main app controls", async ({ page }) => {
-  await expect(page).toHaveURL(/pocket_chordsmith_v67_direct_godot_push\.html/);
+  await expect(page).toHaveURL(/pocket_chordsmith_v68_core_bridge\.html/);
   await expect(page.getByRole("heading", { name: "Pocket Chordsmith" })).toBeVisible();
+  await expect(page.getByText("Pocket Audio Core bridge build")).toBeVisible();
   await expect(page.getByRole("button", { name: "Play", exact: true }).first()).toBeVisible();
   await expect(page.locator("#progressionSlots .slot")).toHaveCount(4);
 });
 
 test("demo button loads the bundled starter song", async ({ page }) => {
   await page.getByRole("button", { name: "Demo" }).click();
-  await expect(page.locator("#statusText")).toContainText("Loaded Pocket Chordsmith v67 demo");
+  await expect(page.locator("#statusText")).toContainText("Loaded Pocket Chordsmith v68 demo");
   await expect(page.locator("#progressionSlots .slot").first()).toContainText(/C|Am|F|G/);
 });
 
@@ -40,4 +41,5 @@ test("settings modal opens import and handoff tools", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Export Compact JSON" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Send to DJ" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Push to Godot" })).toBeVisible();
+  await expect(page.locator("#pocketAudioCoreStatus")).toContainText("Pocket Audio Core");
 });

@@ -863,8 +863,10 @@ const PROJECT_SCHEMA_VERSION = 16;
 const POCKET_AUDIO_CORE_VERSION = "0.1.0-scaffold";
 const POCKET_AUDIO_CORE_SCHEMA_SUPPORT = "16";
 const POCKET_AUDIO_CORE_IMPORT_PATHS = [
-  "../packages/pocket-audio-core/src/index.js",
-  "./packages/pocket-audio-core/src/index.js"
+  "../../packages/pocket-audio-core/src/index.js",
+  "../../packages/pocket-audio-core/dist/pocket-audio-core.esm.js",
+  "./pocket-audio-core/src/index.js",
+  "./pocket-audio-core/dist/pocket-audio-core.esm.js"
 ];
 const POCKET_CHORDSMITH_URL = "https://samfa12.itch.io/pocket-chordsmith";
 const POCKET_DJ_URL = "https://samfa12.itch.io/pocket-dj";
@@ -1406,7 +1408,7 @@ function isLocalHandoffHost(){
 }
 function resolvePocketDjUrl(){
   if(isLocalHandoffHost()){
-    try{ return new URL("../pocket_dj/pocket_dj_v1g_core_bridge.html", window.location.href).href; }catch(e){}
+    try{ return new URL("../pocket-dj/index.html", window.location.href).href; }catch(e){}
   }
   return POCKET_DJ_URL;
 }
