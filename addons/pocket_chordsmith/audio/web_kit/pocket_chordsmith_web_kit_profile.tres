@@ -1,0 +1,75 @@
+[gd_resource type="Resource" script_class="PCSPlaybackProfile" format=3]
+
+[ext_resource type="Script" path="res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd" id="1_bgq2e"]
+
+[resource]
+script = ExtResource("1_bgq2e")
+playback_backend = 1
+max_polyphony = 24
+sample_preview_skip_late_audio_ticks = 120
+accent_streams = {
+"reward_hit": "res://addons/pocket_chordsmith/audio/web_kit/reward_hit.wav",
+"transition_hit": "res://addons/pocket_chordsmith/audio/web_kit/transition_hit.wav",
+"victory_hit": "res://addons/pocket_chordsmith/audio/web_kit/victory_hit.wav",
+"warning_hit": "res://addons/pocket_chordsmith/audio/web_kit/warning_hit.wav"
+}
+event_sample_streams = {
+"bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
+"bass:auto_bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
+"bass:manual_bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
+"chord": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:glass": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:harp": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:piano": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:pocket": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:saloon_piano": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:tone": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:warm_pad": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"guitar": "res://addons/pocket_chordsmith/audio/web_kit/guitar_open.wav",
+"guitar:accent": "res://addons/pocket_chordsmith/audio/web_kit/guitar_accent.wav",
+"guitar:chug": "res://addons/pocket_chordsmith/audio/web_kit/guitar_chug.wav",
+"guitar:open": "res://addons/pocket_chordsmith/audio/web_kit/guitar_open.wav",
+"guitar:scratch": "res://addons/pocket_chordsmith/audio/web_kit/guitar_scratch.wav",
+"melody": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
+"melody:banjo": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
+"melody:bell": "res://addons/pocket_chordsmith/audio/web_kit/melody_bell.wav",
+"melody:cowboy_whistle": "res://addons/pocket_chordsmith/audio/web_kit/melody_soft.wav",
+"melody:distorted_lead_guitar": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
+"melody:harmonica": "res://addons/pocket_chordsmith/audio/web_kit/melody_soft.wav",
+"melody:lead_guitar": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
+"melody:pulse": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
+"melody:saxophone": "res://addons/pocket_chordsmith/audio/web_kit/melody_soft.wav",
+"melody:soft": "res://addons/pocket_chordsmith/audio/web_kit/melody_soft.wav",
+"melody:synth": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
+"melody:trumpet": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav"
+}
+drum_kit = {
+"clap": "res://addons/pocket_chordsmith/audio/web_kit/clap.wav",
+"hat": "res://addons/pocket_chordsmith/audio/web_kit/hat.wav",
+"hat_accent": "res://addons/pocket_chordsmith/audio/web_kit/hat_accent.wav",
+"kick": "res://addons/pocket_chordsmith/audio/web_kit/kick.wav",
+"kick_accent": "res://addons/pocket_chordsmith/audio/web_kit/kick_accent.wav",
+"open_hat": "res://addons/pocket_chordsmith/audio/web_kit/open_hat.wav",
+"snare": "res://addons/pocket_chordsmith/audio/web_kit/snare.wav",
+"snare_accent": "res://addons/pocket_chordsmith/audio/web_kit/snare_accent.wav"
+}
+marker_stingers = {
+"boss_warning": "warning_hit",
+"reward": "reward_hit",
+"transition": "transition_hit"
+}
+sample_preview_gain_db = {
+"bass": -6.0,
+"chords": -26.0,
+"drums": -3.0,
+"guitar": -22.0,
+"hat": -12.0,
+"hat_accent": -13.0,
+"kick": 1.0,
+"kick_accent": 1.0,
+"melody": -20.0,
+"open_hat": -13.0,
+"snare": 0.0,
+"snare_accent": 0.0,
+"stingers": -8.0
+}

@@ -1,0 +1,32 @@
+{
+  "name": "pocket-daw",
+  "version": "0.5.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5177 --strictPort",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package:preview": "npm run build && node scripts/package-preview.mjs",
+    "verify:release": "node scripts/verify-release.mjs",
+    "verify:native-release": "node scripts/verify-release.mjs --native-release",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:debug": "tauri build --debug --no-bundle",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.5.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0",
+    "@types/adm-zip": "^0.5.8",
+    "@types/node": "^25.9.3",
+    "adm-zip": "^0.5.17",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^4.1.8"
+  }
+}

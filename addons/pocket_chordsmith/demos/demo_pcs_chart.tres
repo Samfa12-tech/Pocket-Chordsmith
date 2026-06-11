@@ -1,0 +1,5425 @@
+[gd_resource type="Resource" script_class="PCSChartResource" format=3]
+
+[ext_resource type="Script" path="res://addons/pocket_chordsmith/resources/pcs_chart_resource.gd" id="1_55psf"]
+[ext_resource type="Script" path="res://addons/pocket_chordsmith/resources/pcs_section_resource.gd" id="2_5tvtj"]
+
+[sub_resource type="Resource" id="Resource_pmo3b"]
+script = ExtResource("2_5tvtj")
+length_ticks = 7680
+chord_progression = [0, 4, 5, 3]
+track_summary = {
+"bass": {
+"mode": "auto",
+"triggers": 4
+},
+"chords": {
+"progression": [0, 4, 5, 3]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 16
+},
+"kick": {
+"accents": 2,
+"events": 4
+},
+"snare": {
+"accents": 0,
+"events": 4
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 8,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+
+[sub_resource type="Resource" id="Resource_yowf6"]
+script = ExtResource("2_5tvtj")
+id = "B"
+arrangement_index = 1
+start_tick = 7680
+length_ticks = 7680
+chord_progression = [5, 3, 4, 0]
+track_summary = {
+"bass": {
+"mode": "auto",
+"triggers": 6
+},
+"chords": {
+"progression": [5, 3, 4, 0]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 16
+},
+"kick": {
+"accents": 2,
+"events": 6
+},
+"snare": {
+"accents": 0,
+"events": 4
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 0,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+
+[sub_resource type="Resource" id="Resource_7yrrg"]
+script = ExtResource("2_5tvtj")
+id = "C"
+arrangement_index = 2
+start_tick = 15360
+length_ticks = 7680
+chord_progression = [0, 5, 3, 4]
+track_summary = {
+"bass": {
+"mode": "auto",
+"triggers": 6
+},
+"chords": {
+"progression": [0, 5, 3, 4]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 16
+},
+"kick": {
+"accents": 2,
+"events": 6
+},
+"snare": {
+"accents": 0,
+"events": 4
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 0,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+
+[sub_resource type="Resource" id="Resource_xua2u"]
+script = ExtResource("2_5tvtj")
+id = "D"
+arrangement_index = 3
+start_tick = 23040
+length_ticks = 7680
+chord_progression = [3, 4, 5, 0]
+track_summary = {
+"bass": {
+"mode": "auto",
+"triggers": 8
+},
+"chords": {
+"progression": [3, 4, 5, 0]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 16
+},
+"kick": {
+"accents": 4,
+"events": 8
+},
+"snare": {
+"accents": 4,
+"events": 4
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 0,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+
+[sub_resource type="Resource" id="Resource_d6ppy"]
+script = ExtResource("2_5tvtj")
+id = "E"
+arrangement_index = 4
+start_tick = 30720
+length_ticks = 7680
+chord_progression = [5, 6, 4, 3]
+track_summary = {
+"bass": {
+"mode": "auto",
+"triggers": 8
+},
+"chords": {
+"progression": [5, 6, 4, 3]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 16
+},
+"kick": {
+"accents": 6,
+"events": 8
+},
+"snare": {
+"accents": 4,
+"events": 4
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 0,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+
+[sub_resource type="Resource" id="Resource_t4c0p"]
+script = ExtResource("2_5tvtj")
+id = "F"
+arrangement_index = 5
+start_tick = 38400
+length_ticks = 7680
+chord_progression = [0, 0, 4, 5]
+track_summary = {
+"bass": {
+"mode": "auto",
+"triggers": 1
+},
+"chords": {
+"progression": [0, 0, 4, 5]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 1
+},
+"kick": {
+"accents": 1,
+"events": 1
+},
+"snare": {
+"accents": 1,
+"events": 1
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 0,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+
+[resource]
+script = ExtResource("1_55psf")
+source_path = "res://addons/pocket_chordsmith/demos/demo_pocket_chordsmith_project.json"
+source_project_version = 15
+imported_at_unix_time = 1779250962
+bpm = 112
+sections = Array[Resource]([SubResource("Resource_pmo3b"), SubResource("Resource_yowf6"), SubResource("Resource_7yrrg"), SubResource("Resource_xua2u"), SubResource("Resource_d6ppy"), SubResource("Resource_t4c0p")])
+section_library = {
+"A": {
+"bars": 4,
+"chord_progression": [0, 4, 5, 3],
+"id": "A",
+"length_ticks": 7680,
+"track_summary": {
+"bass": {
+"mode": "auto",
+"triggers": 4
+},
+"chords": {
+"progression": [0, 4, 5, 3]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 16
+},
+"kick": {
+"accents": 2,
+"events": 4
+},
+"snare": {
+"accents": 0,
+"events": 4
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 8,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+},
+"B": {
+"bars": 4,
+"chord_progression": [5, 3, 4, 0],
+"id": "B",
+"length_ticks": 7680,
+"track_summary": {
+"bass": {
+"mode": "auto",
+"triggers": 6
+},
+"chords": {
+"progression": [5, 3, 4, 0]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 16
+},
+"kick": {
+"accents": 2,
+"events": 6
+},
+"snare": {
+"accents": 0,
+"events": 4
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 0,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+},
+"C": {
+"bars": 4,
+"chord_progression": [0, 5, 3, 4],
+"id": "C",
+"length_ticks": 7680,
+"track_summary": {
+"bass": {
+"mode": "auto",
+"triggers": 6
+},
+"chords": {
+"progression": [0, 5, 3, 4]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 16
+},
+"kick": {
+"accents": 2,
+"events": 6
+},
+"snare": {
+"accents": 0,
+"events": 4
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 0,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+},
+"D": {
+"bars": 4,
+"chord_progression": [3, 4, 5, 0],
+"id": "D",
+"length_ticks": 7680,
+"track_summary": {
+"bass": {
+"mode": "auto",
+"triggers": 8
+},
+"chords": {
+"progression": [3, 4, 5, 0]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 16
+},
+"kick": {
+"accents": 4,
+"events": 8
+},
+"snare": {
+"accents": 4,
+"events": 4
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 0,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+},
+"E": {
+"bars": 4,
+"chord_progression": [5, 6, 4, 3],
+"id": "E",
+"length_ticks": 7680,
+"track_summary": {
+"bass": {
+"mode": "auto",
+"triggers": 8
+},
+"chords": {
+"progression": [5, 6, 4, 3]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 16
+},
+"kick": {
+"accents": 6,
+"events": 8
+},
+"snare": {
+"accents": 4,
+"events": 4
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 0,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+},
+"F": {
+"bars": 4,
+"chord_progression": [0, 0, 4, 5],
+"id": "F",
+"length_ticks": 7680,
+"track_summary": {
+"bass": {
+"mode": "auto",
+"triggers": 1
+},
+"chords": {
+"progression": [0, 0, 4, 5]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 1
+},
+"kick": {
+"accents": 1,
+"events": 1
+},
+"snare": {
+"accents": 1,
+"events": 1
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 0,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+},
+"G": {
+"bars": 4,
+"chord_progression": [0, 4, 5, 3],
+"id": "G",
+"length_ticks": 7680,
+"track_summary": {
+"bass": {
+"mode": "auto",
+"triggers": 0
+},
+"chords": {
+"progression": [0, 4, 5, 3]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 0
+},
+"kick": {
+"accents": 0,
+"events": 0
+},
+"snare": {
+"accents": 0,
+"events": 0
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 0,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+},
+"H": {
+"bars": 4,
+"chord_progression": [0, 4, 5, 3],
+"id": "H",
+"length_ticks": 7680,
+"track_summary": {
+"bass": {
+"mode": "auto",
+"triggers": 0
+},
+"chords": {
+"progression": [0, 4, 5, 3]
+},
+"drums": {
+"hat": {
+"accents": 0,
+"events": 0
+},
+"kick": {
+"accents": 0,
+"events": 0
+},
+"snare": {
+"accents": 0,
+"events": 0
+}
+},
+"melody_tracks": [{
+"instrument": "pulse",
+"muted": false,
+"notes": 0,
+"pan": 0.0,
+"solo": false,
+"track_index": 0
+}]
+}
+}
+}
+section_source_data = {
+"A": {
+"bars": 4,
+"bassAccent": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassHold": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassNotes": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+"bassSlide": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"grid": {
+"bass": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+"hat": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+"kick": [2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0],
+"snare": [0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1]
+},
+"gridTuplets": {
+"bass": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"hat": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"kick": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"snare": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+},
+"melodyHold": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodyInstruments": Array[String](["pulse"]),
+"melodyMute": Array[bool]([false]),
+"melodyOctaves": Array[int]([0]),
+"melodyPan": Array[float]([0.0]),
+"melodySlide": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodySolo": Array[bool]([false]),
+"melodyTracks": [[0, null, 2, null, 4, null, 5, null, 7, null, 5, null, 4, null, 2, null]],
+"melodyTuplets": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"progression": [0, 4, 5, 3]
+},
+"B": {
+"bars": 4,
+"bassAccent": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassHold": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassNotes": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+"bassSlide": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"grid": {
+"bass": [1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0],
+"hat": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+"kick": [2, 0, 1, 0, 1, 0, 0, 0, 2, 0, 1, 0, 1, 0, 0, 0],
+"snare": [0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1]
+},
+"gridTuplets": {
+"bass": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"hat": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"kick": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"snare": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+},
+"melodyHold": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodyInstruments": Array[String](["pulse"]),
+"melodyMute": Array[bool]([false]),
+"melodyOctaves": Array[int]([0]),
+"melodyPan": Array[float]([0.0]),
+"melodySlide": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodySolo": Array[bool]([false]),
+"melodyTracks": [[null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]],
+"melodyTuplets": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"progression": [5, 3, 4, 0]
+},
+"C": {
+"bars": 4,
+"bassAccent": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassHold": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassNotes": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+"bassSlide": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"grid": {
+"bass": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0],
+"hat": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+"kick": [2, 0, 0, 1, 1, 0, 0, 0, 2, 0, 0, 1, 1, 0, 0, 0],
+"snare": [0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1]
+},
+"gridTuplets": {
+"bass": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"hat": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"kick": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"snare": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+},
+"melodyHold": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodyInstruments": Array[String](["pulse"]),
+"melodyMute": Array[bool]([false]),
+"melodyOctaves": Array[int]([0]),
+"melodyPan": Array[float]([0.0]),
+"melodySlide": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodySolo": Array[bool]([false]),
+"melodyTracks": [[null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]],
+"melodyTuplets": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"progression": [0, 5, 3, 4]
+},
+"D": {
+"bars": 4,
+"bassAccent": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassHold": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassNotes": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+"bassSlide": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"grid": {
+"bass": [1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1],
+"hat": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+"kick": [2, 0, 2, 0, 1, 0, 0, 1, 2, 0, 2, 0, 1, 0, 0, 1],
+"snare": [0, 2, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 0, 2]
+},
+"gridTuplets": {
+"bass": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"hat": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"kick": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"snare": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+},
+"melodyHold": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodyInstruments": Array[String](["pulse"]),
+"melodyMute": Array[bool]([false]),
+"melodyOctaves": Array[int]([0]),
+"melodyPan": Array[float]([0.0]),
+"melodySlide": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodySolo": Array[bool]([false]),
+"melodyTracks": [[null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]],
+"melodyTuplets": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"progression": [3, 4, 5, 0]
+},
+"E": {
+"bars": 4,
+"bassAccent": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassHold": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassNotes": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+"bassSlide": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"grid": {
+"bass": [1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1],
+"hat": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+"kick": [2, 0, 2, 0, 2, 0, 0, 1, 2, 0, 2, 0, 2, 0, 0, 1],
+"snare": [0, 2, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 0, 2]
+},
+"gridTuplets": {
+"bass": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"hat": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"kick": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"snare": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+},
+"melodyHold": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodyInstruments": Array[String](["pulse"]),
+"melodyMute": Array[bool]([false]),
+"melodyOctaves": Array[int]([0]),
+"melodyPan": Array[float]([0.0]),
+"melodySlide": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodySolo": Array[bool]([false]),
+"melodyTracks": [[null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]],
+"melodyTuplets": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"progression": [5, 6, 4, 3]
+},
+"F": {
+"bars": 4,
+"bassAccent": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassHold": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassNotes": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+"bassSlide": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"grid": {
+"bass": [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+"hat": [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+"kick": [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+"snare": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2]
+},
+"gridTuplets": {
+"bass": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"hat": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"kick": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"snare": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+},
+"melodyHold": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodyInstruments": Array[String](["pulse"]),
+"melodyMute": Array[bool]([false]),
+"melodyOctaves": Array[int]([0]),
+"melodyPan": Array[float]([0.0]),
+"melodySlide": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodySolo": Array[bool]([false]),
+"melodyTracks": [[null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]],
+"melodyTuplets": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"progression": [0, 0, 4, 5]
+},
+"G": {
+"bars": 4,
+"bassAccent": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassHold": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassNotes": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+"bassSlide": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"grid": {
+"bass": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+"hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+"kick": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+"snare": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+},
+"gridTuplets": {
+"bass": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"hat": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"kick": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"snare": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+},
+"melodyHold": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodyInstruments": Array[String](["pulse"]),
+"melodyMute": Array[bool]([false]),
+"melodyOctaves": Array[int]([0]),
+"melodyPan": Array[float]([0.0]),
+"melodySlide": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodySolo": Array[bool]([false]),
+"melodyTracks": [[null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]],
+"melodyTuplets": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"progression": [0, 4, 5, 3]
+},
+"H": {
+"bars": 4,
+"bassAccent": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassHold": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"bassNotes": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+"bassSlide": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"grid": {
+"bass": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+"hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+"kick": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+"snare": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+},
+"gridTuplets": {
+"bass": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"hat": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"kick": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+"snare": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+},
+"melodyHold": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodyInstruments": Array[String](["pulse"]),
+"melodyMute": Array[bool]([false]),
+"melodyOctaves": Array[int]([0]),
+"melodyPan": Array[float]([0.0]),
+"melodySlide": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"melodySolo": Array[bool]([false]),
+"melodyTracks": [[null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]],
+"melodyTuplets": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+"progression": [0, 4, 5, 3]
+}
+}
+arrangement = Array[String](["A", "B", "C", "D", "E", "F"])
+arrangement_positions = Array[Dictionary]([{
+"arrangement_index": 0,
+"bars": 4,
+"id": "A",
+"length_ticks": 7680,
+"start_tick": 0
+}, {
+"arrangement_index": 1,
+"bars": 4,
+"id": "B",
+"length_ticks": 7680,
+"start_tick": 7680
+}, {
+"arrangement_index": 2,
+"bars": 4,
+"id": "C",
+"length_ticks": 7680,
+"start_tick": 15360
+}, {
+"arrangement_index": 3,
+"bars": 4,
+"id": "D",
+"length_ticks": 7680,
+"start_tick": 23040
+}, {
+"arrangement_index": 4,
+"bars": 4,
+"id": "E",
+"length_ticks": 7680,
+"start_tick": 30720
+}, {
+"arrangement_index": 5,
+"bars": 4,
+"id": "F",
+"length_ticks": 7680,
+"start_tick": 38400
+}])
+compiled_events = Array[Dictionary]([{
+"arrangement_index": 0,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 0,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([48, 64, 67]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "C",
+"midi_note": 48,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 0,
+"source_step": 0,
+"tick": 0,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 0,
+"source_step": 0,
+"tick": 0,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 0,
+"source_step": 0,
+"tick": 0,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 0,
+"source_step": 0,
+"tick": 0,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 0,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"note_index": 0,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "pulse",
+"midi_note": 72,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 0,
+"source_step": 0,
+"tick": 0,
+"track_index": 0,
+"track_type": "melody",
+"velocity": 88
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 0,
+"source_step": 1,
+"tick": 480,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 96
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 0,
+"source_step": 1,
+"tick": 480,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 0,
+"source_step": 2,
+"tick": 960,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"note_index": 2,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "pulse",
+"midi_note": 76,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 0,
+"source_step": 2,
+"tick": 960,
+"track_index": 0,
+"track_type": "melody",
+"velocity": 88
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 0,
+"source_step": 3,
+"tick": 1440,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 4,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([55, 71, 74]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "G",
+"midi_note": 55,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 1,
+"source_step": 0,
+"tick": 1920,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 1,
+"source_step": 4,
+"tick": 1920,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 1,
+"source_step": 4,
+"tick": 1920,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 43,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 1,
+"source_step": 4,
+"tick": 1920,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 0,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"note_index": 4,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "pulse",
+"midi_note": 79,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 1,
+"source_step": 4,
+"tick": 1920,
+"track_index": 0,
+"track_type": "melody",
+"velocity": 88
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 1,
+"source_step": 5,
+"tick": 2400,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 1,
+"source_step": 6,
+"tick": 2880,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"note_index": 5,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "pulse",
+"midi_note": 81,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 1,
+"source_step": 6,
+"tick": 2880,
+"track_index": 0,
+"track_type": "melody",
+"velocity": 88
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 1,
+"source_step": 7,
+"tick": 3360,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 1,
+"source_step": 7,
+"tick": 3360,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 96
+}, {
+"arrangement_index": 0,
+"duration_ticks": 1,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"marker": {
+"name": "spawn_wave",
+"payload": {},
+"tick": 3840
+},
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "spawn_wave",
+"midi_note": -1,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": -1,
+"source_step": -1,
+"tick": 3840,
+"track_index": 0,
+"track_type": "marker",
+"velocity": 0
+}, {
+"arrangement_index": 0,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 5,
+"chord_quality": "min",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([57, 72, 76]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "Am",
+"midi_note": 57,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 2,
+"source_step": 0,
+"tick": 3840,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 2,
+"source_step": 8,
+"tick": 3840,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 2,
+"source_step": 8,
+"tick": 3840,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 45,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 2,
+"source_step": 8,
+"tick": 3840,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 0,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"note_index": 7,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "pulse",
+"midi_note": 84,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 2,
+"source_step": 8,
+"tick": 3840,
+"track_index": 0,
+"track_type": "melody",
+"velocity": 88
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 2,
+"source_step": 9,
+"tick": 4320,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 2,
+"source_step": 9,
+"tick": 4320,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 96
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 2,
+"source_step": 10,
+"tick": 4800,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"note_index": 5,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "pulse",
+"midi_note": 81,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 2,
+"source_step": 10,
+"tick": 4800,
+"track_index": 0,
+"track_type": "melody",
+"velocity": 88
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 2,
+"source_step": 11,
+"tick": 5280,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 3,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([53, 69, 72]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "F",
+"midi_note": 53,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 3,
+"source_step": 0,
+"tick": 5760,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 3,
+"source_step": 12,
+"tick": 5760,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 3,
+"source_step": 12,
+"tick": 5760,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 0,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 41,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 3,
+"source_step": 12,
+"tick": 5760,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 0,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"note_index": 4,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "pulse",
+"midi_note": 79,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 3,
+"source_step": 12,
+"tick": 5760,
+"track_index": 0,
+"track_type": "melody",
+"velocity": 88
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 3,
+"source_step": 13,
+"tick": 6240,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 1,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"marker": {
+"name": "safe_transition",
+"payload": {},
+"tick": 6720
+},
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "safe_transition",
+"midi_note": -1,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": -1,
+"source_step": -1,
+"tick": 6720,
+"track_index": 0,
+"track_type": "marker",
+"velocity": 0
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 3,
+"source_step": 14,
+"tick": 6720,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 0,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"note_index": 2,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "pulse",
+"midi_note": 76,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 3,
+"source_step": 14,
+"tick": 6720,
+"track_index": 0,
+"track_type": "melody",
+"velocity": 88
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 3,
+"source_step": 15,
+"tick": 7200,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 96
+}, {
+"arrangement_index": 0,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "A",
+"source_bar": 3,
+"source_step": 15,
+"tick": 7200,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 5,
+"chord_quality": "min",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([57, 72, 76]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "Am",
+"midi_note": 57,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 0,
+"source_step": 0,
+"tick": 7680,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 0,
+"source_step": 0,
+"tick": 7680,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 0,
+"source_step": 0,
+"tick": 7680,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 45,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 0,
+"source_step": 0,
+"tick": 7680,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 0,
+"source_step": 1,
+"tick": 8160,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 96
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 0,
+"source_step": 1,
+"tick": 8160,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 0,
+"source_step": 2,
+"tick": 8640,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 0,
+"source_step": 2,
+"tick": 8640,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 45,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 0,
+"source_step": 2,
+"tick": 8640,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 0,
+"source_step": 3,
+"tick": 9120,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 3,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([53, 69, 72]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "F",
+"midi_note": 53,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 1,
+"source_step": 0,
+"tick": 9600,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 1,
+"source_step": 4,
+"tick": 9600,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 1,
+"source_step": 4,
+"tick": 9600,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 41,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 1,
+"source_step": 4,
+"tick": 9600,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 1,
+"source_step": 5,
+"tick": 10080,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 1,
+"source_step": 6,
+"tick": 10560,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 1,
+"source_step": 7,
+"tick": 11040,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 96
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 1,
+"source_step": 7,
+"tick": 11040,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 4,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([55, 71, 74]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "G",
+"midi_note": 55,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 2,
+"source_step": 0,
+"tick": 11520,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 2,
+"source_step": 8,
+"tick": 11520,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 2,
+"source_step": 8,
+"tick": 11520,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 43,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 2,
+"source_step": 8,
+"tick": 11520,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 2,
+"source_step": 9,
+"tick": 12000,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 96
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 2,
+"source_step": 9,
+"tick": 12000,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 2,
+"source_step": 10,
+"tick": 12480,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 2,
+"source_step": 10,
+"tick": 12480,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 43,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 2,
+"source_step": 10,
+"tick": 12480,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 2,
+"source_step": 11,
+"tick": 12960,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 0,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([48, 64, 67]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "C",
+"midi_note": 48,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 3,
+"source_step": 0,
+"tick": 13440,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 3,
+"source_step": 12,
+"tick": 13440,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 3,
+"source_step": 12,
+"tick": 13440,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 1,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 3,
+"source_step": 12,
+"tick": 13440,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 3,
+"source_step": 13,
+"tick": 13920,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 3,
+"source_step": 14,
+"tick": 14400,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 3,
+"source_step": 15,
+"tick": 14880,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 1,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "B",
+"source_bar": 3,
+"source_step": 15,
+"tick": 14880,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 96
+}, {
+"arrangement_index": 2,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 0,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([48, 64, 67]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "C",
+"midi_note": 48,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 0,
+"source_step": 0,
+"tick": 15360,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 0,
+"source_step": 0,
+"tick": 15360,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 0,
+"source_step": 0,
+"tick": 15360,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 0,
+"source_step": 0,
+"tick": 15360,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 0,
+"source_step": 1,
+"tick": 15840,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 96
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 0,
+"source_step": 1,
+"tick": 15840,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 0,
+"source_step": 2,
+"tick": 16320,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 0,
+"source_step": 3,
+"tick": 16800,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 0,
+"source_step": 3,
+"tick": 16800,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 0,
+"source_step": 3,
+"tick": 16800,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 2,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 5,
+"chord_quality": "min",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([57, 72, 76]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "Am",
+"midi_note": 57,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 1,
+"source_step": 0,
+"tick": 17280,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 1,
+"source_step": 4,
+"tick": 17280,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 1,
+"source_step": 4,
+"tick": 17280,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 45,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 1,
+"source_step": 4,
+"tick": 17280,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 1,
+"source_step": 5,
+"tick": 17760,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 1,
+"source_step": 6,
+"tick": 18240,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 1,
+"source_step": 7,
+"tick": 18720,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 96
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 1,
+"source_step": 7,
+"tick": 18720,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 3,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([53, 69, 72]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "F",
+"midi_note": 53,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 2,
+"source_step": 0,
+"tick": 19200,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 2,
+"source_step": 8,
+"tick": 19200,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 2,
+"source_step": 8,
+"tick": 19200,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 41,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 2,
+"source_step": 8,
+"tick": 19200,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 2,
+"source_step": 9,
+"tick": 19680,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 96
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 2,
+"source_step": 9,
+"tick": 19680,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 2,
+"source_step": 10,
+"tick": 20160,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 2,
+"source_step": 11,
+"tick": 20640,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 2,
+"source_step": 11,
+"tick": 20640,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 41,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 2,
+"source_step": 11,
+"tick": 20640,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 2,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 4,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([55, 71, 74]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "G",
+"midi_note": 55,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 3,
+"source_step": 0,
+"tick": 21120,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 3,
+"source_step": 12,
+"tick": 21120,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 3,
+"source_step": 12,
+"tick": 21120,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 2,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 43,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 3,
+"source_step": 12,
+"tick": 21120,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 3,
+"source_step": 13,
+"tick": 21600,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 3,
+"source_step": 14,
+"tick": 22080,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 3,
+"source_step": 15,
+"tick": 22560,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 96
+}, {
+"arrangement_index": 2,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "C",
+"source_bar": 3,
+"source_step": 15,
+"tick": 22560,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 3,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([53, 69, 72]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "F",
+"midi_note": 53,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 0,
+"source_step": 0,
+"tick": 23040,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 0,
+"source_step": 0,
+"tick": 23040,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 0,
+"source_step": 0,
+"tick": 23040,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 3,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 41,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 0,
+"source_step": 0,
+"tick": 23040,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 0,
+"source_step": 1,
+"tick": 23520,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 112
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 0,
+"source_step": 1,
+"tick": 23520,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 0,
+"source_step": 2,
+"tick": 24000,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 0,
+"source_step": 2,
+"tick": 24000,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 3,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 41,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 0,
+"source_step": 2,
+"tick": 24000,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 0,
+"source_step": 3,
+"tick": 24480,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 4,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([55, 71, 74]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "G",
+"midi_note": 55,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 1,
+"source_step": 0,
+"tick": 24960,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 1,
+"source_step": 4,
+"tick": 24960,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 1,
+"source_step": 4,
+"tick": 24960,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 43,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 1,
+"source_step": 4,
+"tick": 24960,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 1,
+"source_step": 5,
+"tick": 25440,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 1,
+"source_step": 6,
+"tick": 25920,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 1,
+"source_step": 7,
+"tick": 26400,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 1,
+"source_step": 7,
+"tick": 26400,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 1,
+"source_step": 7,
+"tick": 26400,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 112
+}, {
+"arrangement_index": 3,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 43,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 1,
+"source_step": 7,
+"tick": 26400,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 3,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 5,
+"chord_quality": "min",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([57, 72, 76]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "Am",
+"midi_note": 57,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 2,
+"source_step": 0,
+"tick": 26880,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 2,
+"source_step": 8,
+"tick": 26880,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 2,
+"source_step": 8,
+"tick": 26880,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 45,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 2,
+"source_step": 8,
+"tick": 26880,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 2,
+"source_step": 9,
+"tick": 27360,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 112
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 2,
+"source_step": 9,
+"tick": 27360,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 2,
+"source_step": 10,
+"tick": 27840,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 2,
+"source_step": 10,
+"tick": 27840,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 45,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 2,
+"source_step": 10,
+"tick": 27840,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 2,
+"source_step": 11,
+"tick": 28320,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 0,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([48, 64, 67]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "C",
+"midi_note": 48,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 3,
+"source_step": 0,
+"tick": 28800,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 3,
+"source_step": 12,
+"tick": 28800,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 3,
+"source_step": 12,
+"tick": 28800,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 3,
+"source_step": 12,
+"tick": 28800,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 3,
+"source_step": 13,
+"tick": 29280,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 3,
+"source_step": 14,
+"tick": 29760,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 3,
+"source_step": 15,
+"tick": 30240,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 3,
+"source_step": 15,
+"tick": 30240,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 112
+}, {
+"arrangement_index": 3,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 3,
+"source_step": 15,
+"tick": 30240,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 3,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "D",
+"source_bar": 3,
+"source_step": 15,
+"tick": 30240,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 4,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 5,
+"chord_quality": "min",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([57, 72, 76]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "Am",
+"midi_note": 57,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 0,
+"source_step": 0,
+"tick": 30720,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 0,
+"source_step": 0,
+"tick": 30720,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 0,
+"source_step": 0,
+"tick": 30720,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 45,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 0,
+"source_step": 0,
+"tick": 30720,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 0,
+"source_step": 1,
+"tick": 31200,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 112
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 0,
+"source_step": 1,
+"tick": 31200,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 0,
+"source_step": 2,
+"tick": 31680,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 0,
+"source_step": 2,
+"tick": 31680,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 45,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 0,
+"source_step": 2,
+"tick": 31680,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 0,
+"source_step": 3,
+"tick": 32160,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 6,
+"chord_quality": "dim",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([59, 74, 77]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "Bdim",
+"midi_note": 59,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 1,
+"source_step": 0,
+"tick": 32640,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 1,
+"source_step": 4,
+"tick": 32640,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 1,
+"source_step": 4,
+"tick": 32640,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 47,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 1,
+"source_step": 4,
+"tick": 32640,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 1,
+"source_step": 5,
+"tick": 33120,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 1,
+"source_step": 6,
+"tick": 33600,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 1,
+"source_step": 7,
+"tick": 34080,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 1,
+"source_step": 7,
+"tick": 34080,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 112
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 1,
+"source_step": 7,
+"tick": 34080,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 47,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 1,
+"source_step": 7,
+"tick": 34080,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 4,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 4,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([55, 71, 74]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "G",
+"midi_note": 55,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 2,
+"source_step": 0,
+"tick": 34560,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 2,
+"source_step": 8,
+"tick": 34560,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 2,
+"source_step": 8,
+"tick": 34560,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 4,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 43,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 2,
+"source_step": 8,
+"tick": 34560,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 2,
+"source_step": 9,
+"tick": 35040,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 112
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 2,
+"source_step": 9,
+"tick": 35040,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 2,
+"source_step": 10,
+"tick": 35520,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 2,
+"source_step": 10,
+"tick": 35520,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 43,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 2,
+"source_step": 10,
+"tick": 35520,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 2,
+"source_step": 11,
+"tick": 36000,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 3,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([53, 69, 72]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "F",
+"midi_note": 53,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 3,
+"source_step": 0,
+"tick": 36480,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 3,
+"source_step": 12,
+"tick": 36480,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 3,
+"source_step": 12,
+"tick": 36480,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 41,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 3,
+"source_step": 12,
+"tick": 36480,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 3,
+"source_step": 13,
+"tick": 36960,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 3,
+"source_step": 14,
+"tick": 37440,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 3,
+"source_step": 15,
+"tick": 37920,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 100
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 3,
+"source_step": 15,
+"tick": 37920,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 112
+}, {
+"arrangement_index": 4,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 3,
+"source_step": 15,
+"tick": 37920,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 4,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 41,
+"pan": 0.0,
+"section_id": "E",
+"source_bar": 3,
+"source_step": 15,
+"tick": 37920,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 5,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 0,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([48, 64, 67]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "C",
+"midi_note": 48,
+"pan": 0.0,
+"section_id": "F",
+"source_bar": 0,
+"source_step": 0,
+"tick": 38400,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 5,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "kick",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "F",
+"source_bar": 0,
+"source_step": 0,
+"tick": 38400,
+"track_index": 0,
+"track_type": "drum",
+"velocity": 118
+}, {
+"arrangement_index": 5,
+"duration_ticks": 336,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "hat",
+"midi_note": 42,
+"pan": 0.0,
+"section_id": "F",
+"source_bar": 0,
+"source_step": 0,
+"tick": 38400,
+"track_index": 2,
+"track_type": "drum",
+"velocity": 68
+}, {
+"arrangement_index": 5,
+"duration_ticks": 480,
+"flags": {
+"accent": false,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "auto_bass",
+"midi_note": 36,
+"pan": 0.0,
+"section_id": "F",
+"source_bar": 0,
+"source_step": 0,
+"tick": 38400,
+"track_index": 0,
+"track_type": "bass",
+"velocity": 82
+}, {
+"arrangement_index": 5,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 0,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([48, 64, 67]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "C",
+"midi_note": 48,
+"pan": 0.0,
+"section_id": "F",
+"source_bar": 1,
+"source_step": 0,
+"tick": 40320,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 5,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 4,
+"chord_quality": "maj",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([55, 71, 74]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "G",
+"midi_note": 55,
+"pan": 0.0,
+"section_id": "F",
+"source_bar": 2,
+"source_step": 0,
+"tick": 42240,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 5,
+"duration_ticks": 1920,
+"flags": {
+"accent": false,
+"chord_degree": 5,
+"chord_quality": "min",
+"generated": false,
+"hold": true,
+"midi_notes": Array[int]([57, 72, 76]),
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "Am",
+"midi_note": 57,
+"pan": 0.0,
+"section_id": "F",
+"source_bar": 3,
+"source_step": 0,
+"tick": 44160,
+"track_index": 0,
+"track_type": "chord",
+"velocity": 76
+}, {
+"arrangement_index": 5,
+"duration_ticks": 336,
+"flags": {
+"accent": true,
+"generated": false,
+"hold": false,
+"muted": false,
+"slide": false,
+"solo": false,
+"tuplet": false
+},
+"instrument_id": "snare",
+"midi_note": 38,
+"pan": 0.0,
+"section_id": "F",
+"source_bar": 3,
+"source_step": 15,
+"tick": 45600,
+"track_index": 1,
+"track_type": "drum",
+"velocity": 112
+}])
+markers = Array[Dictionary]([{
+"name": "spawn_wave",
+"payload": {},
+"tick": 3840
+}, {
+"name": "safe_transition",
+"payload": {},
+"tick": 6720
+}])
+music_states = {
+"boss_phase_1": {
+"entry": "D",
+"loop_sections": ["D"]
+},
+"boss_phase_2": {
+"entry": "E",
+"loop_sections": ["E"]
+},
+"exploration": {
+"loop_sections": ["A", "B", "C"]
+},
+"victory": {
+"entry": "F",
+"loop_sections": ["F"],
+"stinger": "victory_hit",
+"then_return_to": "exploration"
+}
+}
+default_music_state = "exploration"
+accent_map = {
+"kick": "camera_pulse",
+"snare_accent": "trap_trigger"
+}
+level_id = "pocket_chordsmith_demo"
+default_loop = "exploration"
+mood = "adaptive_demo"
+original_metadata = {
+"game_metadata": {
+"accent_map": {
+"kick": "camera_pulse",
+"snare_accent": "trap_trigger"
+},
+"default_loop": "exploration",
+"default_music_state": "exploration",
+"level_id": "pocket_chordsmith_demo",
+"markers": [{
+"name": "spawn_wave",
+"tick": 3840.0
+}, {
+"name": "safe_transition",
+"tick": 6720.0
+}],
+"mood": "adaptive_demo",
+"music_states": {
+"boss_phase_1": {
+"entry": "D",
+"loop_sections": ["D"]
+},
+"boss_phase_2": {
+"entry": "E",
+"loop_sections": ["E"]
+},
+"exploration": {
+"loop_sections": ["A", "B", "C"]
+},
+"victory": {
+"entry": "F",
+"loop_sections": ["F"],
+"stinger": "victory_hit",
+"then_return_to": "exploration"
+}
+}
+},
+"ignored_ui_fields": Array[String]([]),
+"source_path": "res://addons/pocket_chordsmith/demos/demo_pocket_chordsmith_project.json",
+"unknown_fields": {}
+}

@@ -1,0 +1,108 @@
+Pocket Chordsmith v65 - MIDI/Guitar Import Polish
+Generated from the uploaded v64 HTML baseline and the supplied v65 instruction file.
+
+Output build:
+- pocket_chordsmith_v65_midi_guitar_import_polish.html
+
+What was implemented
+
+1. Version/name polish
+- Updated the HTML title and app header from v64 Western Sounds to v65 MIDI/Guitar Import Polish.
+- Kept project/schema version at 16.
+
+2. Playback section visual following
+- Added followPlaybackSection state, default true.
+- During song-sequence playback, the visible editor section now follows the actual playback section.
+- When playback enters a new section, the app stores the old section, switches currentSection to the playback section, syncs section data and re-renders the editor.
+- Melody, drum, bass, guitar, chord slots, section chips and playhead highlighting are re-rendered for the section being played.
+- On stop, the editor is left on the last/current playback section rather than snapping back to the old editing section.
+
+3. Guitar workflow polish
+- Added Advanced guitar actions:
+  - Fill Guitar From Chords
+  - Apply Guitar Pattern to All Sections
+  - Clear Guitar
+  - Guitar fill style selector: Gentle strum, Sparse strum, Chug, Accents only
+- If guitar is enabled on a section with no audible guitar data, the app now auto-generates a guitar part from the chord progression instead of silently remaining inaudible.
+- Added generated pattern logic that respects time signature and resolution.
+- Explicitly implemented the requested 3/4, resolution 2 patterns:
+  - Gentle strum: accent, hold, open, hold, open, hold
+  - Sparse strum: accent, hold, off, hold, open, hold
+  - Chug: accent, off, chug, off, chug, off
+- Added overwrite safety with browser confirm prompts for replacing existing section guitar data.
+- Apply-to-all sections replaces all sections if confirmed, or fills empty sections only if cancelled.
+
+4. Held-note visual links
+- Improved melody hold rendering with connected visual styling.
+- Note starts, hold continuations and hold endings now get separate classes so holds appear physically connected rather than as detached dashes.
+- Orphaned hold cells are styled differently and are cleaned where safe during section sync.
+- Added validation to clear obvious orphan hold cells and invalid slide cells in the visible section range.
+
+5. Import UX auto-detection
+- Changed the main import button label to Import.
+- Import now auto-detects raw JSON and PCS1 share codes through one path.
+- The old Import Share Code button now also calls the auto-detect path, so pressing the “wrong” button with valid JSON should no longer produce a misleading invalid-share-code message.
+- Error messages are friendlier and more specific.
+
+6. MIDI import summary and faithful import separation
+- MIDI import summary now uses clearer wording.
+- Long MIDI imports now explicitly report:
+  - estimated source length in bars,
+  - bars imported,
+  - bars not imported,
+  - note counts by drums/bass/melody,
+  - melody track count,
+  - skipped event count,
+  - chord import status,
+  - guitar status.
+- MIDI import now clears generated/old guitar patterns and sets guitarEnabled false, so MIDI import remains faithful and does not imply generated guitar came from the MIDI.
+- Summary explicitly says guitar was not generated and directs the user to Fill Guitar From Chords.
+
+7. Export/paste safety
+- Export JSON now outputs compact JSON by default rather than pretty-printed JSON, reducing paste size for mobile workflows.
+- Share-code export remains available.
+- Companion arrays for melody holds/slides/tuplets remain included so lean exports do not lose hold linkage.
+
+8. Validation run here
+- JavaScript syntax check passed with node --check.
+- Static VM tests passed for:
+  - 3/4, resolution 2, 4-bar generated guitar length = 24,
+  - 3/4 gentle guitar pattern matches the requested bar pattern,
+  - 4/4, resolution 4, 4-bar generated guitar length = 64,
+  - raw JSON auto-import parsing,
+  - PCS1 share-code auto-import parsing.
+
+What I could not fully do here
+
+1. Full real-device audio testing
+- I could not test actual Web Audio output on your phone, desktop browser, or itch.io environment from this environment.
+- I could not confirm whether high-gain/metal guitar is audibly different on your phone speakers.
+
+2. Full interactive touch/UI QA
+- I could not manually tap through the app on Android portrait, drag melody holds, use long-press gestures, or test mobile paste behaviour on a real device.
+- I could only do static and syntax validation here.
+
+3. Exhaustive MIDI-file QA
+- I did not have a fresh MIDI test file attached in this request, so I could not run a real MIDI import through the UI and visually compare the result to the source MIDI.
+- The existing import logic was improved, but faithfulness still depends on the app’s grid resolution, six melody-track limit, and A-H section capacity.
+
+4. Full internal per-section array-length refactor
+- v64 internally stores many arrays at the current maximum 4-bar grid length and renders/schedules only the visible sectionBars length.
+- I improved generated guitar lengths for the tested 4-bar cases and kept section-aware playback/rendering, but I did not deeply refactor the entire app so every internal array is physically shortened for 1, 2 or 3-bar sections.
+- This was a deliberate risk-control choice because many existing v64 functions assume max-length arrays and a full refactor could break save/load, export, MIDI export or older project imports.
+
+5. All v64 regression tests
+- I could not fully regression-test every v64 feature, including WAV export, MIDI export, live drum recording, X-Y pad recording, undo across every control, all chord/melody instruments, and all older project/share-code imports.
+- The code has been kept conservative to preserve compatibility, but those still need browser testing.
+
+Recommended manual tests before calling this final
+
+1. Open v65 on desktop and phone.
+2. Load the demo and press Play Song. Confirm the visible section changes as A/B/C/D etc play.
+3. Import a raw JSON through the main Import button.
+4. Import a PCS1 share code through the same Import button.
+5. Import a MIDI-only project, turn guitar on, and confirm it generates/auditions a guitar pattern instead of staying silent.
+6. Use Fill Guitar From Chords in 3/4 resolution 2 and confirm the generated pattern is 24 cells for a 4-bar section.
+7. Import or create held melody notes, then confirm holds are visibly connected and survive export/re-import.
+8. Export compact JSON and PCS1 share code, then re-import both.
+9. Test MIDI export and WAV export with a project containing holds, guitar, bass and multiple melody tracks.

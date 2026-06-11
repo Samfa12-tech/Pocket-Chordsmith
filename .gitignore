@@ -1,31 +1,38 @@
-# Windows and editor clutter
-Thumbs.db
-Desktop.ini
-.DS_Store
-.vscode/
-.idea/
-
-# Local/generated exports
-*.zip
-*.wav
-*.mid
-*.midi
-*.log
-*.keystore
-*.jks
-*.p12
-
-# Local web tooling outputs
 node_modules/
 dist/
+build/
+coverage/
+.vite/
+*.log
+.DS_Store
+.env
+.env.*
+src-tauri/target/
+target/
+*.exe
+*.msi
+*.dmg
+*.app
+*.zip
+*.7z
+*.rar
+_incoming/
+_tmp/
+*.pocketdaw
+
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
 test-results/
 playwright-report/
 .codex-server-logs/
 
-# Organized local-only working folders
-archive/
-marketing-assets/
-releases/
-
-# Separate Godot add-on repo with its own Git history
-godot-addon/
+# Local source workspaces kept only as import references after consolidation.
+/archive/
+/godot-addon/
+/marketing-assets/
+/pocket_audio_core_handoff/
+/pocket_dj/
+/pocket-daw/
+/releases/

@@ -1,0 +1,1106 @@
+import { AudioEngine } from "../audio/audioEngine";
+import { audioBufferPeaks, setCachedAudioBuffer } from "../audio/audioBufferCache";
+import { exportProjectToMidiBlob } from "../audio/midiExport";
+import { renderProjectToWavBlob } from "../audio/offlineRender";
+import { createDemoProject } from "../demo/demoProject";
+import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../daw/dawProject";
+import { renderTimelineEvents } from "../audio/eventRenderer";
+import { downloadBlob, openProjectFileNative, safeName, saveProjectFile } from "../native/fileBridge";
+import { readPocketDawHandoff } from "../native/pocketHandoff";
+import { loadAutosave, loadRecentProjects, saveAutosave, saveRecentProject } from "../native/recentFiles";
+import {
+  addAutomationPointCommand,
+  addBusTrackCommand,
+  addTrackCommand,
+  addTrackFxCommand,
+  addMarkerAtPlayheadCommand,
+  addMidiNoteCommand,
+  addReturnTrackCommand,
+  clearLoopCommand,
+  commitProject,
+  copySelectedClip,
+  cycleDrumTupletCommand,
+  cycleBassStepCommand,
+  cycleDrumStepCommand,
+  cycleGuitarStepCommand,
+  cycleMelodyStepCommand,
+  deleteSelectedClip,
+  deleteMarkerCommand,
+  deleteAutomationPointCommand,
+  deleteMidiNoteCommand,
+  duplicateSelectedClip,
+  importTextToProject,
+  loadPocketDawRaw,
+  moveSelectedClip,
+  moveSelectedClipBySnap,
+  moveMidiNoteCommand,
+  pasteClipAtPlayhead,
+  placeAudioClipCommand,
+  pitchMidiNoteCommand,
+  redoCommand,
+  renameMarkerCommand,
+  removeTrackFxCommand,
+  routeTrackOutputCommand,
+  resizeMidiNoteCommand,
+  ensureAutomationLaneCommand,
+  setBassModeCommand,
+  setChordsmithGlobalsCommand,
+  setGuitarSettingsCommand,
+  setLoopToSelectedClipCommand,
+  setMelodyMuteCommand,
+  setMelodyOctaveCommand,
+  setMelodyPanCommand,
+  setMelodyInstrumentCommand,
+  setMelodySoloCommand,
+  setSectionBarsCommand,
+  setSectionChordCommand,
+  setLoopBars,
+  setLoopEnabled,
+  setTrackInputCommand,
+  setTrackPanCommand,
+  setTrackVolumeCommand,
+  setMidiNoteVelocityCommand,
+  setAutomationLaneEnabledCommand,
+  toggleTrackArmedCommand,
+  toggleTrackFxCommand,
+  toggleSelectedClipMute,
+  toggleTrackMuteCommand,
+  toggleTrackSoloCommand,
+  toggleBassAccentCommand,
+  toggleBassHoldCommand,
+  toggleBassSlideCommand,
+  toggleMelodyHoldCommand,
+  toggleMelodySlideCommand,
+  toggleMelodyTupletCommand,
+  splitSelectedClipAtPlayhead,
+  trimSelectedClipEndCommand,
+  trimSelectedClipStartCommand,
+  updateAutomationPointCommand,
+  undoCommand
+} from "./commands";
+import { commandFromKeyboardEvent } from "./keyboard";
+import { createInitialState, currentProject, type AppState } from "./state";
+import { renderAppShell } from "./ui";
+import { createUndoStack } from "../daw/undo";
+import { probeAudioDevices } from "../native/audioDevices";
+import { cloneProject } from "../daw/dawProject";
+import type { AddTrackKind } from "../daw/tracks";
+import { barFloatToPosition, snapBarValue } from "../daw/timeline";
+import { addImportedAudioMedia } from "../daw/audioClips";
+import { AUDIO_MEDIA_ACCEPT, importedAudioFromBrowserFile, importAudioMediaNative, type ImportedAudioBytes } from "../native/mediaBridge";
+import { importMidiFileToProject } from "../daw/midiClips";
+import { parseStandardMidiFile } from "../daw/midiParser";
+import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
+import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan, projectWithOnlyTracksAudible } from "../daw/exportJobs";
+
+export class App {
+  private root: HTMLElement;
+  private state: AppState;
+  private engine: AudioEngine;
+  private fileInput: HTMLInputElement;
+  private audioFileInput: HTMLInputElement;
+  private midiFileInput: HTMLInputElement;
+  private renderCount = 0;
+  private liveUpdateCount = 0;
+
+  constructor(root: HTMLElement) {
+    this.root = root;
+    this.state = createInitialState();
+    this.state.recent = loadRecentProjects();
+    this.engine = new AudioEngine(currentProject(this.state));
+    this.engine.setOnTick((tick) => {
+      const playingChanged = this.state.playing !== tick.playing;
+      this.state.playing = tick.playing;
+      this.state.playheadBar = tick.bar;
+      this.state.meterLevels = this.engine.getMeterLevels();
+      if (playingChanged) {
+        this.render();
+      } else {
+        this.updateLiveDom();
+      }
+    });
+    this.fileInput = document.createElement("input");
+    this.fileInput.type = "file";
+    this.fileInput.accept = ".pocketdaw,.json,text/plain,application/json";
+    this.fileInput.addEventListener("change", () => this.handleFileOpen());
+    document.body.appendChild(this.fileInput);
+    this.audioFileInput = document.createElement("input");
+    this.audioFileInput.type = "file";
+    this.audioFileInput.accept = AUDIO_MEDIA_ACCEPT;
+    this.audioFileInput.addEventListener("change", () => this.handleAudioFileImport());
+    document.body.appendChild(this.audioFileInput);
+    this.midiFileInput = document.createElement("input");
+    this.midiFileInput.type = "file";
+    this.midiFileInput.accept = MIDI_MEDIA_ACCEPT;
+    this.midiFileInput.addEventListener("change", () => this.handleMidiFileImport());
+    document.body.appendChild(this.midiFileInput);
+    this.root.addEventListener("click", (event) => this.handleDelegatedClick(event));
+    this.root.addEventListener("pointerdown", (event) => this.handlePointerDown(event));
+    window.addEventListener("keydown", (event) => this.handleKeyboard(event));
+  }
+
+  start() {
+    const handoff = readPocketDawHandoff();
+    if (handoff) {
+      const imported = this.importText(handoff.code, handoff.status);
+      if (imported) handoff.clear();
+    } else {
+      const autosave = loadAutosave();
+      if (autosave) {
+        try {
+          const project = loadPocketDawRaw(autosave);
+          this.state.undoStack = createUndoStack(project);
+          this.state.status = "Recovered autosaved Pocket DAW project.";
+        } catch {
+          this.state.status = "Demo project loaded. Autosave was present but could not be recovered.";
+        }
+      }
+    }
+    this.render();
+  }
+
+  private render() {
+    this.renderCount += 1;
+    this.root.innerHTML = renderAppShell(this.state);
+    this.root.dataset.renderCount = String(this.renderCount);
+    this.root.dataset.liveUpdateCount = String(this.liveUpdateCount);
+    this.bind();
+  }
+
+  private updateLiveDom() {
+    this.liveUpdateCount += 1;
+    this.root.dataset.liveUpdateCount = String(this.liveUpdateCount);
+    const project = currentProject(this.state);
+    const playheadLeft = (this.state.playheadBar - 1) * this.state.zoom;
+    const playhead = this.root.querySelector<HTMLElement>("[data-playhead]");
+    if (playhead) playhead.style.left = `${playheadLeft}px`;
+
+    const readout = this.root.querySelector<HTMLElement>("[data-playhead-readout]");
+    if (readout) readout.textContent = this.formatBarBeat(this.state.playheadBar);
+
+    const cursor = this.root.querySelector<HTMLElement>("[data-cursor]");
+    if (cursor) cursor.style.left = `${(this.state.cursorBar - 1) * this.state.zoom}px`;
+
+    const playing = this.root.querySelector<HTMLElement>("[data-playing-state]");
+    if (playing) {
+      playing.textContent = this.state.playing ? "Playing" : "Stopped";
+      playing.classList.toggle("playing", this.state.playing);
+    }
+
+    const toggle = this.root.querySelector<HTMLButtonElement>("[data-transport-toggle]");
+    if (toggle) {
+      toggle.dataset.action = this.state.playing ? "pause" : "play";
+      toggle.textContent = this.state.playing ? "Pause" : "Play";
+    }
+
+    project.tracks.forEach((track) => {
+      const level = Math.max(0, Math.min(1, this.state.meterLevels[track.id] || 0));
+      const percent = Math.round(level * 100);
+      const fill = this.root.querySelector<HTMLElement>(`[data-meter-fill="${track.id}"]`);
+      if (fill) fill.style.height = `${percent}%`;
+      const meter = this.root.querySelector<HTMLElement>(`[data-meter="${track.id}"]`);
+      if (meter) meter.setAttribute("aria-label", `${track.name} peak meter ${percent}%`);
+    });
+  }
+
+  private bind() {
+    this.root.querySelectorAll<HTMLElement>("[data-clip-id]").forEach((el) => {
+      el.addEventListener("click", () => {
+        this.state.selectedClipId = el.dataset.clipId || null;
+        const row = el.dataset.row || "";
+        const rowTrack = currentProject(this.state).tracks.find((track) => track.id === row) || currentProject(this.state).tracks.find((track) => track.role === row);
+        if (rowTrack) this.state.selectedTrackId = rowTrack.id;
+        this.state.status = `Selected ${this.state.selectedClipId}.`;
+        this.render();
+      });
+    });
+    this.root.querySelectorAll<HTMLElement>("[data-track-id]").forEach((el) => {
+      el.addEventListener("click", () => {
+        this.state.selectedTrackId = el.dataset.trackId || null;
+        this.render();
+      });
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-volume]").forEach((input) => {
+      input.addEventListener("change", () => this.applyProjectState(setTrackVolumeCommand(this.state, input.dataset.volume || "", Number(input.value))));
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-pan]").forEach((input) => {
+      input.addEventListener("change", () => this.applyProjectState(setTrackPanCommand(this.state, input.dataset.pan || "", Number(input.value))));
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-add-fx]").forEach((select) => {
+      select.addEventListener("change", () => {
+        if (!select.value) return;
+        this.applyProjectState(addTrackFxCommand(this.state, select.dataset.addFx || "", select.value));
+      });
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-track-input]").forEach((select) => {
+      select.addEventListener("change", () => this.applyProjectState(setTrackInputCommand(this.state, select.dataset.trackInput || "", select.value || null)));
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-track-output]").forEach((select) => {
+      select.addEventListener("change", () => this.applyProjectState(routeTrackOutputCommand(this.state, select.dataset.trackOutput || "", select.value || "master")));
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-automation-enabled]").forEach((input) => {
+      input.addEventListener("change", () => this.applyProjectState(setAutomationLaneEnabledCommand(this.state, input.dataset.automationEnabled || "", input.checked)));
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-automation-point-bar], [data-automation-point-value]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const packed = input.dataset.automationPointBar || input.dataset.automationPointValue || "";
+        const [laneId, indexText] = packed.split(":");
+        const index = Number(indexText);
+        const bar = Number(this.root.querySelector<HTMLInputElement>(`[data-automation-point-bar="${laneId}:${index}"]`)?.value || 1);
+        const value = Number(this.root.querySelector<HTMLInputElement>(`[data-automation-point-value="${laneId}:${index}"]`)?.value || 0);
+        this.applyProjectState(updateAutomationPointCommand(this.state, laneId, index, bar, value));
+      });
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-section-bars]").forEach((input) => {
+      input.addEventListener("change", () => this.applyProjectState(setSectionBarsCommand(this.state, input.dataset.sectionBars || "", Number(input.value))));
+    });
+    this.root.querySelector<HTMLInputElement>("#chordsmithFollowClip")?.addEventListener("change", (event) => {
+      this.state.chordsmithEditorFollowClip = (event.target as HTMLInputElement).checked;
+      this.state.chordsmithEditorStepPage = 0;
+      this.state.status = this.state.chordsmithEditorFollowClip ? "Chordsmith editor following selected clip." : "Chordsmith editor using manual section.";
+      this.render();
+    });
+    this.root.querySelector<HTMLSelectElement>("#chordsmithSectionSelect")?.addEventListener("change", (event) => {
+      this.state.chordsmithEditorSectionId = (event.target as HTMLSelectElement).value;
+      this.state.chordsmithEditorStepPage = 0;
+      this.state.chordsmithEditorFollowClip = false;
+      this.state.status = `Chordsmith editor set to Section ${this.state.chordsmithEditorSectionId}.`;
+      this.render();
+    });
+    this.root.querySelector<HTMLSelectElement>("#melodyTrackSelect")?.addEventListener("change", (event) => {
+      this.state.chordsmithEditorMelodyTrackIndex = Number((event.target as HTMLSelectElement).value || 0);
+      this.state.status = `Melody editor set to lane ${this.state.chordsmithEditorMelodyTrackIndex + 1}.`;
+      this.render();
+    });
+    this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-chordsmith-global]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const field = input.dataset.chordsmithGlobal || "";
+        const raw = input.value;
+        const patch: Parameters<typeof setChordsmithGlobalsCommand>[1] = field === "bpm" ? { bpm: Number(raw) } : field === "swing" ? { swing: Number(raw) } : field === "key" ? { key: raw } : field === "scale" ? { scale: raw } : {};
+        this.applyProjectState(setChordsmithGlobalsCommand(this.state, patch));
+      });
+    });
+    this.root.querySelector<HTMLSelectElement>("[data-bass-mode]")?.addEventListener("change", (event) => {
+      this.applyProjectState(setBassModeCommand(this.state, (event.target as HTMLSelectElement).value));
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-melody-instrument]").forEach((select) => {
+      select.addEventListener("change", () => {
+        const [sectionId, trackIndex] = String(select.dataset.melodyInstrument || "").split(":");
+        this.applyProjectState(setMelodyInstrumentCommand(this.state, sectionId, Number(trackIndex), select.value));
+      });
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-melody-octave]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const [sectionId, trackIndex] = String(input.dataset.melodyOctave || "").split(":");
+        this.applyProjectState(setMelodyOctaveCommand(this.state, sectionId, Number(trackIndex), Number(input.value)));
+      });
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-melody-pan]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const [sectionId, trackIndex] = String(input.dataset.melodyPan || "").split(":");
+        this.applyProjectState(setMelodyPanCommand(this.state, sectionId, Number(trackIndex), Number(input.value)));
+      });
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-melody-mute]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const [sectionId, trackIndex] = String(input.dataset.melodyMute || "").split(":");
+        this.applyProjectState(setMelodyMuteCommand(this.state, sectionId, Number(trackIndex), input.checked));
+      });
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-melody-solo]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const [sectionId, trackIndex] = String(input.dataset.melodySolo || "").split(":");
+        this.applyProjectState(setMelodySoloCommand(this.state, sectionId, Number(trackIndex), input.checked));
+      });
+    });
+    this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-guitar-setting]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const field = input.dataset.guitarSetting || "";
+        const value = input instanceof HTMLInputElement && input.type === "checkbox" ? input.checked : input.value;
+        this.applyProjectState(setGuitarSettingsCommand(this.state, { [field]: field === "guitarVolume" ? Number(value) : value }));
+      });
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-section-chord]").forEach((select) => {
+      select.addEventListener("change", () => {
+        const [sectionId, bar] = String(select.dataset.sectionChord || "").split(":");
+        this.applyProjectState(setSectionChordCommand(this.state, sectionId, Number(bar), Number(select.value)));
+      });
+    });
+    this.root.querySelector<HTMLInputElement>("#loopEnabled")?.addEventListener("change", (event) => {
+      this.applyProjectState(setLoopEnabled(this.state, (event.target as HTMLInputElement).checked));
+    });
+    ["loopStart", "loopEnd"].forEach((id) => {
+      this.root.querySelector<HTMLInputElement>(`#${id}`)?.addEventListener("change", () => {
+        const start = Number(this.root.querySelector<HTMLInputElement>("#loopStart")?.value || 1);
+        const end = Number(this.root.querySelector<HTMLInputElement>("#loopEnd")?.value || 2);
+        this.applyProjectState(setLoopBars(this.state, start, end));
+      });
+    });
+    this.root.querySelector<HTMLTextAreaElement>("#importText")?.addEventListener("input", (event) => {
+      this.state.importText = (event.target as HTMLTextAreaElement).value;
+    });
+    this.root.querySelector<HTMLSelectElement>("#snapMode")?.addEventListener("change", (event) => {
+      this.state.snapMode = (event.target as HTMLSelectElement).value as AppState["snapMode"];
+      this.state.status = `Snap set to ${this.state.snapMode}.`;
+      this.render();
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-midi-note-velocity]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const [clipId, noteId] = String(input.dataset.midiNoteVelocity || "").split(":");
+        this.applyProjectState(setMidiNoteVelocityCommand(this.state, clipId, noteId, Number(input.value)));
+      });
+    });
+  }
+
+  private handlePointerDown(event: PointerEvent) {
+    const target = event.target as HTMLElement | null;
+    const timeline = target?.closest<HTMLElement>("[data-timeline-surface]");
+    const seekable = timeline && (target?.closest("[data-seek-ruler]") || !target?.closest("[data-clip-id]"));
+    if (!timeline || !seekable) return;
+    event.preventDefault();
+    const scrub = (clientX: number, final = false) => {
+      const bar = this.seekTimelineFromClientX(timeline, clientX, final);
+      this.state.status = final ? `Seeked to ${this.formatBarBeat(bar)}.` : `Scrubbing ${this.formatBarBeat(bar)}.`;
+    };
+    scrub(event.clientX);
+    const move = (moveEvent: PointerEvent) => scrub(moveEvent.clientX);
+    const up = (upEvent: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      scrub(upEvent.clientX, true);
+      this.render();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  private handleDelegatedClick(event: Event) {
+    const target = event.target as HTMLElement | null;
+    if (target?.matches("[data-controls-backdrop]")) {
+      this.state.showControls = false;
+      this.render();
+      return;
+    }
+    if (target?.matches("[data-add-track-backdrop]")) {
+      this.state.showAddTrack = false;
+      this.render();
+      return;
+    }
+    if (target?.matches("[data-audio-settings-backdrop]")) {
+      this.state.showAudioSettings = false;
+      this.render();
+      return;
+    }
+    const addTrackButton = target?.closest<HTMLElement>("[data-add-track-kind]");
+    if (addTrackButton) {
+      this.applyProjectState(addTrackCommand(this.state, addTrackButton.dataset.addTrackKind as AddTrackKind));
+      return;
+    }
+    const armButton = target?.closest<HTMLElement>("[data-arm-track]");
+    if (armButton) {
+      this.applyProjectState(toggleTrackArmedCommand(this.state, armButton.dataset.armTrack || ""));
+      return;
+    }
+    const fxToggle = target?.closest<HTMLElement>("[data-fx-toggle]");
+    if (fxToggle) {
+      const [chainId, slotId] = String(fxToggle.dataset.fxToggle || "").split(":");
+      this.applyProjectState(toggleTrackFxCommand(this.state, chainId, slotId));
+      return;
+    }
+    const fxRemove = target?.closest<HTMLElement>("[data-fx-remove]");
+    if (fxRemove) {
+      const [chainId, slotId] = String(fxRemove.dataset.fxRemove || "").split(":");
+      this.applyProjectState(removeTrackFxCommand(this.state, chainId, slotId));
+      return;
+    }
+    const placeAudio = target?.closest<HTMLElement>("[data-place-audio]");
+    if (placeAudio) {
+      this.applyProjectState(placeAudioClipCommand(this.state, placeAudio.dataset.placeAudio || ""));
+      return;
+    }
+    const addMidiNote = target?.closest<HTMLElement>("[data-midi-note-add]");
+    if (addMidiNote) {
+      this.applyProjectState(addMidiNoteCommand(this.state, addMidiNote.dataset.midiNoteAdd || ""));
+      return;
+    }
+    const deleteMidiNote = target?.closest<HTMLElement>("[data-midi-note-delete]");
+    if (deleteMidiNote) {
+      const [clipId, noteId] = String(deleteMidiNote.dataset.midiNoteDelete || "").split(":");
+      this.applyProjectState(deleteMidiNoteCommand(this.state, clipId, noteId));
+      return;
+    }
+    const moveMidiNote = target?.closest<HTMLElement>("[data-midi-note-move]");
+    if (moveMidiNote) {
+      const [clipId, noteId, direction] = String(moveMidiNote.dataset.midiNoteMove || "").split(":");
+      this.applyProjectState(moveMidiNoteCommand(this.state, clipId, noteId, Number(direction) < 0 ? -1 : 1));
+      return;
+    }
+    const pitchMidiNote = target?.closest<HTMLElement>("[data-midi-note-pitch]");
+    if (pitchMidiNote) {
+      const [clipId, noteId, direction] = String(pitchMidiNote.dataset.midiNotePitch || "").split(":");
+      this.applyProjectState(pitchMidiNoteCommand(this.state, clipId, noteId, Number(direction) < 0 ? -1 : 1));
+      return;
+    }
+    const resizeMidiNote = target?.closest<HTMLElement>("[data-midi-note-duration]");
+    if (resizeMidiNote) {
+      const [clipId, noteId, direction] = String(resizeMidiNote.dataset.midiNoteDuration || "").split(":");
+      this.applyProjectState(resizeMidiNoteCommand(this.state, clipId, noteId, Number(direction) < 0 ? -1 : 1));
+      return;
+    }
+    const automationCreate = target?.closest<HTMLElement>("[data-automation-create]");
+    if (automationCreate) {
+      const [trackId, field] = String(automationCreate.dataset.automationCreate || "").split(":");
+      this.applyProjectState(ensureAutomationLaneCommand(this.state, trackId, field === "pan" ? "pan" : "volume"));
+      return;
+    }
+    const automationAddPoint = target?.closest<HTMLElement>("[data-automation-add-point]");
+    if (automationAddPoint) {
+      const [trackId, field] = String(automationAddPoint.dataset.automationAddPoint || "").split(":");
+      this.applyProjectState(addAutomationPointCommand(this.state, trackId, field === "pan" ? "pan" : "volume"));
+      return;
+    }
+    const automationDeletePoint = target?.closest<HTMLElement>("[data-automation-delete-point]");
+    if (automationDeletePoint) {
+      const [laneId, index] = String(automationDeletePoint.dataset.automationDeletePoint || "").split(":");
+      this.applyProjectState(deleteAutomationPointCommand(this.state, laneId, Number(index)));
+      return;
+    }
+    const stepPage = target?.closest<HTMLElement>("[data-step-page]");
+    if (stepPage) {
+      const direction = Number(stepPage.dataset.stepPage || 0);
+      this.state.chordsmithEditorStepPage = Math.max(0, this.state.chordsmithEditorStepPage + direction);
+      this.state.status = `Chordsmith step page ${this.state.chordsmithEditorStepPage + 1}.`;
+      this.render();
+      return;
+    }
+    const drumStep = target?.closest<HTMLElement>("[data-drum-step]");
+    if (drumStep) {
+      const [sectionId, lane, step] = String(drumStep.dataset.drumStep || "").split(":");
+      this.applyProjectState(cycleDrumStepCommand(this.state, sectionId, lane, Number(step)));
+      return;
+    }
+    const drumTuplet = target?.closest<HTMLElement>("[data-drum-tuplet]");
+    if (drumTuplet) {
+      const [sectionId, lane, step] = String(drumTuplet.dataset.drumTuplet || "").split(":");
+      this.applyProjectState(cycleDrumTupletCommand(this.state, sectionId, lane, Number(step)));
+      return;
+    }
+    const bassStep = target?.closest<HTMLElement>("[data-bass-step]");
+    if (bassStep) {
+      const [sectionId, step] = String(bassStep.dataset.bassStep || "").split(":");
+      this.applyProjectState(cycleBassStepCommand(this.state, sectionId, Number(step)));
+      return;
+    }
+    const bassHold = target?.closest<HTMLElement>("[data-bass-hold]");
+    if (bassHold) {
+      const [sectionId, step] = String(bassHold.dataset.bassHold || "").split(":");
+      this.applyProjectState(toggleBassHoldCommand(this.state, sectionId, Number(step)));
+      return;
+    }
+    const bassSlide = target?.closest<HTMLElement>("[data-bass-slide]");
+    if (bassSlide) {
+      const [sectionId, step] = String(bassSlide.dataset.bassSlide || "").split(":");
+      this.applyProjectState(toggleBassSlideCommand(this.state, sectionId, Number(step)));
+      return;
+    }
+    const bassAccent = target?.closest<HTMLElement>("[data-bass-accent]");
+    if (bassAccent) {
+      const [sectionId, step] = String(bassAccent.dataset.bassAccent || "").split(":");
+      this.applyProjectState(toggleBassAccentCommand(this.state, sectionId, Number(step)));
+      return;
+    }
+    const melodyStep = target?.closest<HTMLElement>("[data-melody-step]");
+    if (melodyStep) {
+      const [sectionId, trackIndex, step] = String(melodyStep.dataset.melodyStep || "").split(":");
+      this.applyProjectState(cycleMelodyStepCommand(this.state, sectionId, Number(trackIndex), Number(step)));
+      return;
+    }
+    const melodyHold = target?.closest<HTMLElement>("[data-melody-hold]");
+    if (melodyHold) {
+      const [sectionId, trackIndex, step] = String(melodyHold.dataset.melodyHold || "").split(":");
+      this.applyProjectState(toggleMelodyHoldCommand(this.state, sectionId, Number(trackIndex), Number(step)));
+      return;
+    }
+    const melodySlide = target?.closest<HTMLElement>("[data-melody-slide]");
+    if (melodySlide) {
+      const [sectionId, trackIndex, step] = String(melodySlide.dataset.melodySlide || "").split(":");
+      this.applyProjectState(toggleMelodySlideCommand(this.state, sectionId, Number(trackIndex), Number(step)));
+      return;
+    }
+    const melodyTuplet = target?.closest<HTMLElement>("[data-melody-tuplet]");
+    if (melodyTuplet) {
+      const [sectionId, trackIndex, step] = String(melodyTuplet.dataset.melodyTuplet || "").split(":");
+      this.applyProjectState(toggleMelodyTupletCommand(this.state, sectionId, Number(trackIndex), Number(step)));
+      return;
+    }
+    const guitarStep = target?.closest<HTMLElement>("[data-guitar-step]");
+    if (guitarStep) {
+      const [sectionId, step] = String(guitarStep.dataset.guitarStep || "").split(":");
+      this.applyProjectState(cycleGuitarStepCommand(this.state, sectionId, Number(step)));
+      return;
+    }
+    const actionButton = target?.closest<HTMLElement>("[data-action]");
+    if (actionButton) {
+      void this.dispatch(actionButton.dataset.action || "");
+      return;
+    }
+    const markerRename = target?.closest<HTMLElement>("[data-marker-rename]");
+    if (markerRename) {
+      const markerId = markerRename.dataset.markerRename || "";
+      const marker = currentProject(this.state).timeline.markers.find((item) => item.id === markerId);
+      const nextName = window.prompt("Marker name", marker?.name || "Marker");
+      if (nextName !== null) this.applyProjectState(renameMarkerCommand(this.state, markerId, nextName));
+      return;
+    }
+    const markerDelete = target?.closest<HTMLElement>("[data-marker-delete]");
+    if (markerDelete) {
+      this.applyProjectState(deleteMarkerCommand(this.state, markerDelete.dataset.markerDelete || ""));
+      return;
+    }
+    const muteButton = target?.closest<HTMLElement>("[data-mute-track]");
+    if (muteButton) {
+      this.applyProjectState(toggleTrackMuteCommand(this.state, muteButton.dataset.muteTrack || ""));
+      return;
+    }
+    const soloButton = target?.closest<HTMLElement>("[data-solo-track]");
+    if (soloButton) {
+      this.applyProjectState(toggleTrackSoloCommand(this.state, soloButton.dataset.soloTrack || ""));
+      return;
+    }
+    const timeline = target?.closest<HTMLElement>("[data-timeline-surface]");
+    const seekable = target?.closest("[data-seek-ruler]") || (timeline && !target?.closest("[data-clip-id]"));
+    if (timeline && seekable) {
+      const mouse = event as MouseEvent;
+      const bar = this.seekTimelineFromClientX(timeline, mouse.clientX, true);
+      this.state.status = `Seeked to ${this.formatBarBeat(bar)}.`;
+      this.render();
+    }
+  }
+
+  private async dispatch(action: string) {
+    if (action === "play") await this.engine.play();
+    if (action === "pause") this.engine.pause();
+    if (action === "stop") this.engine.stop();
+    if (action === "restart") await this.engine.restart();
+    if (action === "seek-start") this.seekToBar(1, true);
+    if (action === "controls-open") {
+      this.state.showControls = true;
+      this.render();
+    }
+    if (action === "controls-close") {
+      this.state.showControls = false;
+      this.render();
+    }
+    if (action === "add-track-open") {
+      this.state.showAddTrack = true;
+      this.render();
+    }
+    if (action === "add-bus-track") this.applyProjectState(addBusTrackCommand(this.state));
+    if (action === "add-return-track") this.applyProjectState(addReturnTrackCommand(this.state));
+    if (action === "add-track-close") {
+      this.state.showAddTrack = false;
+      this.render();
+    }
+    if (action === "audio-settings-open") {
+      this.state.showAudioSettings = true;
+      this.render();
+    }
+    if (action === "audio-settings-close") {
+      this.state.showAudioSettings = false;
+      this.render();
+    }
+    if (action === "media-pool-focus") {
+      this.state.status = "Media Pool visible.";
+      this.render();
+      this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "nearest" });
+    }
+    if (action === "import-audio") await this.importAudioMedia();
+    if (action === "import-midi") await this.importMidiMedia();
+    if (action === "audio-refresh") await this.refreshAudioDevices();
+    if (action === "undo") this.applyProjectState(undoCommand(this.state));
+    if (action === "redo") this.applyProjectState(redoCommand(this.state));
+    if (action === "clip-left") this.applyProjectState(moveSelectedClipBySnap(this.state, -1));
+    if (action === "clip-right") this.applyProjectState(moveSelectedClipBySnap(this.state, 1));
+    if (action === "clip-duplicate") this.applyProjectState(duplicateSelectedClip(this.state));
+    if (action === "clip-delete") this.applyProjectState(deleteSelectedClip(this.state));
+    if (action === "clip-mute") this.applyProjectState(toggleSelectedClipMute(this.state));
+    if (action === "clip-copy") {
+      this.state = copySelectedClip(this.state);
+      this.render();
+    }
+    if (action === "clip-paste") this.applyProjectState(pasteClipAtPlayhead(this.state));
+    if (action === "clip-split") this.applyProjectState(splitSelectedClipAtPlayhead(this.state));
+    if (action === "trim-start-right") this.applyProjectState(trimSelectedClipStartCommand(this.state, 1));
+    if (action === "trim-start-left") this.applyProjectState(trimSelectedClipStartCommand(this.state, -1));
+    if (action === "trim-end-left") this.applyProjectState(trimSelectedClipEndCommand(this.state, -1));
+    if (action === "trim-end-right") this.applyProjectState(trimSelectedClipEndCommand(this.state, 1));
+    if (action === "toggle-loop") this.applyProjectState(setLoopEnabled(this.state, !currentProject(this.state).timeline.loop.enabled));
+    if (action === "loop-selected") this.applyProjectState(setLoopToSelectedClipCommand(this.state));
+    if (action === "loop-clear") this.applyProjectState(clearLoopCommand(this.state));
+    if (action === "marker-add") this.applyProjectState(addMarkerAtPlayheadCommand(this.state));
+    if (action === "zoom-in") {
+      this.state.zoom = Math.min(80, this.state.zoom + 6);
+      this.render();
+    }
+    if (action === "zoom-out") {
+      this.state.zoom = Math.max(18, this.state.zoom - 6);
+      this.render();
+    }
+    if (action === "import-text") this.importText(this.state.importText);
+    if (action === "open-file" || action === "open-project") await this.openProject();
+    if (action === "new-project") this.newProject();
+    if (action === "load-demo") this.loadDemo();
+    if (action === "save-project") await this.saveProject(false);
+    if (action === "save-project-as") await this.saveProject(true);
+    if (action === "export-wav") await this.exportWav();
+    if (action === "export-midi") this.exportMidi();
+    if (action === "export-stems") await this.exportStems();
+    if (action === "export-section-manifest") this.exportSectionLoopManifest();
+    if (action === "export-godot-manifest") this.exportGameManifest("godot-adaptive-pack");
+    if (action === "export-web-game-manifest") this.exportGameManifest("web-game-pack");
+    if (action === "export-diagnostics") this.exportDiagnostics();
+  }
+
+  private async handleKeyboard(event: KeyboardEvent) {
+    const command = commandFromKeyboardEvent(event);
+    if (!command) return;
+    event.preventDefault();
+    if (command === "play-pause") {
+      if (this.state.playing) this.engine.pause();
+      else await this.engine.play();
+    }
+    if (command === "seek-start") {
+      this.seekToBar(1, true);
+      this.render();
+    }
+    if (command === "toggle-loop") this.applyProjectState(setLoopEnabled(this.state, !currentProject(this.state).timeline.loop.enabled));
+    if (command === "mute-selected-track" && this.state.selectedTrackId) this.applyProjectState(toggleTrackMuteCommand(this.state, this.state.selectedTrackId));
+    if (command === "solo-selected-track" && this.state.selectedTrackId) this.applyProjectState(toggleTrackSoloCommand(this.state, this.state.selectedTrackId));
+    if (command === "arm-selected-track" && this.state.selectedTrackId) this.applyProjectState(toggleTrackArmedCommand(this.state, this.state.selectedTrackId));
+    if (command === "duplicate-clip") this.applyProjectState(duplicateSelectedClip(this.state));
+    if (command === "copy-clip") {
+      this.state = copySelectedClip(this.state);
+      this.render();
+    }
+    if (command === "paste-clip") this.applyProjectState(pasteClipAtPlayhead(this.state));
+    if (command === "delete-clip") this.applyProjectState(deleteSelectedClip(this.state));
+    if (command === "split-clip") this.applyProjectState(splitSelectedClipAtPlayhead(this.state));
+    if (command === "loop-selected") this.applyProjectState(setLoopToSelectedClipCommand(this.state));
+    if (command === "add-marker") this.applyProjectState(addMarkerAtPlayheadCommand(this.state));
+    if (command === "move-clip-left") this.applyProjectState(moveSelectedClip(this.state, -1));
+    if (command === "move-clip-right") this.applyProjectState(moveSelectedClip(this.state, 1));
+    if (command === "zoom-in") {
+      this.state.zoom = Math.min(80, this.state.zoom + 6);
+      this.render();
+    }
+    if (command === "zoom-out") {
+      this.state.zoom = Math.max(18, this.state.zoom - 6);
+      this.render();
+    }
+    if (command === "undo") this.applyProjectState(undoCommand(this.state));
+    if (command === "redo") this.applyProjectState(redoCommand(this.state));
+    if (command === "save-project") await this.saveProject(false);
+    if (command === "open-file") await this.openProject();
+    if (command === "export-wav") await this.exportWav();
+    if (command === "add-track") {
+      this.state.showAddTrack = true;
+      this.render();
+    }
+  }
+
+  private applyProjectState(next: AppState, syncEngine = true) {
+    this.state = next;
+    const project = currentProject(this.state);
+    saveAutosave(buildPocketDawProjectFile(project));
+    if (syncEngine) this.engine.setProject(project);
+    this.render();
+  }
+
+  private seekTimelineFromClientX(timeline: HTMLElement, clientX: number, final: boolean) {
+    const rect = timeline.getBoundingClientRect();
+    const rawBar = (clientX - rect.left) / this.state.zoom + 1;
+    const project = currentProject(this.state);
+    const bar = Math.max(1, Math.min(project.timeline.bars + 1, snapBarValue(rawBar, this.state.snapMode, project.project.timeSig)));
+    this.seekToBar(bar, final);
+    return bar;
+  }
+
+  private seekToBar(bar: number, updateCursor: boolean) {
+    this.engine.seekToBar(bar);
+    this.state.playheadBar = bar;
+    if (updateCursor) this.state.cursorBar = bar;
+    this.updateLiveDom();
+  }
+
+  private formatBarBeat(barValue: number) {
+    const project = currentProject(this.state);
+    const pos = barFloatToPosition(barValue, project.project.timeSig, project.project.ppq);
+    return `Bar ${pos.bar} Beat ${pos.beat}`;
+  }
+
+  private importText(text: string, statusPrefix?: string): boolean {
+    try {
+      const { project, message } = importTextToProject(text);
+      const eventCount = renderTimelineEvents(project).length;
+      this.state.undoStack = createUndoStack(project);
+      this.state.selectedClipId = project.timeline.clips[0]?.id || null;
+      this.state.selectedTrackId = "drums";
+      this.state.importText = "";
+      this.state.status = `${statusPrefix || message} ${eventCount} events ready.`;
+      this.state.currentFile = { path: null, label: project.project.title };
+      this.state.playheadBar = 1;
+      this.state.cursorBar = 1;
+      this.engine.setProject(project);
+      saveAutosave(buildPocketDawProjectFile(project));
+      saveRecentProject(project.project.title);
+      this.state.recent = loadRecentProjects();
+      this.render();
+      return true;
+    } catch (error) {
+      this.state.status = error instanceof Error ? error.message : "Import failed.";
+      this.render();
+      return false;
+    }
+  }
+
+  private async handleFileOpen() {
+    const file = this.fileInput.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    if (file.name.endsWith(".pocketdaw")) {
+      try {
+        const project = loadPocketDawRaw(text);
+        this.state.undoStack = createUndoStack(project);
+        this.state.selectedClipId = project.timeline.clips[0]?.id || null;
+        this.state.selectedTrackId = "drums";
+        this.state.currentFile = { path: null, label: file.name };
+        this.state.status = `Opened ${file.name}.`;
+        this.state.playheadBar = 1;
+        this.state.cursorBar = 1;
+        this.engine.setProject(project);
+        saveRecentProject(file.name);
+        this.state.recent = loadRecentProjects();
+        saveAutosave(buildPocketDawProjectFile(project));
+        this.render();
+      } catch (error) {
+        this.state.status = error instanceof Error ? error.message : "Open failed.";
+        this.render();
+      }
+    } else {
+      this.state.importText = text;
+      this.importText(text);
+    }
+    this.fileInput.value = "";
+  }
+
+  private async importAudioMedia() {
+    try {
+      this.state.status = "Importing audio...";
+      this.render();
+      const native = await importAudioMediaNative();
+      if (native) {
+        await this.addDecodedAudioMedia(native);
+        return;
+      }
+    } catch (error) {
+      this.state.status = error instanceof Error ? `Native audio import failed: ${error.message}` : "Native audio import failed.";
+      this.render();
+      return;
+    }
+    this.audioFileInput.click();
+  }
+
+  private async handleAudioFileImport() {
+    const file = this.audioFileInput.files?.[0];
+    if (!file) return;
+    try {
+      await this.addDecodedAudioMedia(await importedAudioFromBrowserFile(file));
+    } catch (error) {
+      this.state.status = error instanceof Error ? error.message : "Audio import failed.";
+      this.render();
+    } finally {
+      this.audioFileInput.value = "";
+    }
+  }
+
+  private async addDecodedAudioMedia(source: ImportedAudioBytes) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx({ sampleRate: currentProject(this.state).project.sampleRate });
+    try {
+      const buffer = await ctx.decodeAudioData(source.bytes.slice(0));
+      const result = addImportedAudioMedia(currentProject(this.state), {
+        name: source.name,
+        uri: source.uri,
+        mimeType: source.mimeType,
+        durationSeconds: buffer.duration,
+        sampleRate: buffer.sampleRate,
+        channels: buffer.numberOfChannels,
+        sizeBytes: source.sizeBytes,
+        metadata: {
+          importMode: source.mode,
+          runtimeOnly: source.mode === "browser",
+          waveformPeaks: audioBufferPeaks(buffer)
+        }
+      });
+      setCachedAudioBuffer(result.item.id, buffer);
+      this.applyProjectState(commitProject(this.state, result.project, `Imported audio ${source.name}.`));
+      this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "nearest" });
+    } catch {
+      this.state.status = `Could not decode ${source.name}. This format may not be supported by this Web Audio runtime.`;
+      this.render();
+    } finally {
+      void ctx.close?.();
+    }
+  }
+
+  private async importMidiMedia() {
+    try {
+      this.state.status = "Importing MIDI...";
+      this.render();
+      const native = await importMidiNative();
+      if (native) {
+        this.addImportedMidiMedia(native);
+        return;
+      }
+    } catch (error) {
+      this.state.status = error instanceof Error ? `Native MIDI import failed: ${error.message}` : "Native MIDI import failed.";
+      this.render();
+      return;
+    }
+    this.midiFileInput.click();
+  }
+
+  private async handleMidiFileImport() {
+    const file = this.midiFileInput.files?.[0];
+    if (!file) return;
+    try {
+      this.addImportedMidiMedia(await importedMidiFromBrowserFile(file));
+    } catch (error) {
+      this.state.status = error instanceof Error ? error.message : "MIDI import failed.";
+      this.render();
+    } finally {
+      this.midiFileInput.value = "";
+    }
+  }
+
+  private addImportedMidiMedia(source: ImportedMidiBytes) {
+    try {
+      const parsed = parseStandardMidiFile(source.bytes);
+      const result = importMidiFileToProject(currentProject(this.state), parsed, source.name, source.uri, source.sizeBytes);
+      this.applyProjectState({
+        ...commitProject(this.state, result.project, `Imported MIDI ${source.name} with ${parsed.notes.length} note${parsed.notes.length === 1 ? "" : "s"}.`),
+        selectedClipId: result.clipId,
+        selectedTrackId: result.trackId
+      });
+      this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "nearest" });
+    } catch (error) {
+      this.state.status = error instanceof Error ? error.message : "MIDI import failed.";
+      this.render();
+    }
+  }
+
+  private async openProject() {
+    try {
+      const native = await openProjectFileNative();
+      if (native) {
+        this.openRawProjectText(native.contents, native.file.label, native.file.path);
+        return;
+      }
+    } catch (error) {
+      this.state.status = error instanceof Error ? `Native open failed: ${error.message}` : "Native open failed. Choose a file in the browser picker.";
+      this.render();
+    }
+    this.fileInput.click();
+  }
+
+  private openRawProjectText(text: string, label: string, path: string | null) {
+    try {
+      const project = loadPocketDawRaw(text);
+      this.state.undoStack = createUndoStack(project);
+      this.state.selectedClipId = project.timeline.clips[0]?.id || null;
+      this.state.selectedTrackId = "drums";
+      this.state.currentFile = { path, label };
+      this.state.status = `Opened ${label}.`;
+      this.state.playheadBar = 1;
+      this.state.cursorBar = 1;
+      this.engine.setProject(project);
+      saveRecentProject(label, path);
+      this.state.recent = loadRecentProjects();
+      saveAutosave(buildPocketDawProjectFile(project));
+      this.render();
+    } catch (error) {
+      this.state.status = error instanceof Error ? error.message : "Open failed.";
+      this.render();
+    }
+  }
+
+  private async saveProject(forceSaveAs: boolean) {
+    const project = currentProject(this.state);
+    const result = await saveProjectFile(project, this.state.currentFile.path, forceSaveAs);
+    if (result.file) {
+      this.state.currentFile = result.file;
+      saveRecentProject(result.file.label, result.file.path);
+      this.state.recent = loadRecentProjects();
+    }
+    this.state.status = result.message;
+    saveAutosave(buildPocketDawProjectFile(project));
+    this.render();
+  }
+
+  private async exportWav() {
+    try {
+      this.state.status = "Rendering WAV...";
+      this.render();
+      const blob = await renderProjectToWavBlob(currentProject(this.state));
+      downloadBlob(blob, safeName(currentProject(this.state).project.title, "wav"));
+      this.state.status = `Exported WAV (${Math.round(blob.size / 1024)} KB).`;
+      this.render();
+    } catch (error) {
+      this.state.status = error instanceof Error ? `WAV export failed: ${error.message}` : "WAV export failed.";
+      this.render();
+    }
+  }
+
+  private exportMidi() {
+    try {
+      const blob = exportProjectToMidiBlob(currentProject(this.state));
+      downloadBlob(blob, safeName(currentProject(this.state).project.title, "mid"));
+      this.state.status = `Exported MIDI (${Math.round(blob.size / 1024)} KB).`;
+      this.render();
+    } catch (error) {
+      this.state.status = error instanceof Error ? `MIDI export failed: ${error.message}` : "MIDI export failed.";
+      this.render();
+    }
+  }
+
+  private async exportStems() {
+    const project = currentProject(this.state);
+    const stems = createStemExportPlan(project);
+    if (!stems.length) {
+      this.state.status = "No stem groups are available for this project.";
+      this.render();
+      return;
+    }
+    this.state.status = `Rendering ${stems.length} stem WAV${stems.length === 1 ? "" : "s"}...`;
+    this.render();
+    try {
+      for (const stem of stems) {
+        const blob = await renderProjectToWavBlob(projectWithOnlyTracksAudible(project, stem.trackIds));
+        downloadBlob(blob, stem.fileName);
+      }
+      this.state.status = `Exported ${stems.length} stem WAV${stems.length === 1 ? "" : "s"} as sequential downloads.`;
+      this.render();
+    } catch (error) {
+      this.state.status = error instanceof Error ? `Stem export failed: ${error.message}` : "Stem export failed.";
+      this.render();
+    }
+  }
+
+  private exportSectionLoopManifest() {
+    const loops = createSectionLoopMetadata(currentProject(this.state));
+    const blob = new Blob([JSON.stringify({ loops }, null, 2)], { type: "application/json" });
+    downloadBlob(blob, safeName(`${currentProject(this.state).project.title}-section-loops`, "json"));
+    this.state.status = `Exported section loop manifest with ${loops.length} loop${loops.length === 1 ? "" : "s"}.`;
+    this.render();
+  }
+
+  private exportGameManifest(kind: "godot-adaptive-pack" | "web-game-pack") {
+    const manifest = createGameExportManifest(currentProject(this.state), kind);
+    const suffix = kind === "godot-adaptive-pack" ? "godot-manifest" : "web-game-manifest";
+    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
+    downloadBlob(blob, safeName(`${currentProject(this.state).project.title}-${suffix}`, "json"));
+    this.state.status = `Exported ${kind === "godot-adaptive-pack" ? "Godot" : "web game"} manifest preview.`;
+    this.render();
+  }
+
+  private exportDiagnostics() {
+    const project = currentProject(this.state);
+    const diagnostics = {
+      capturedAt: new Date().toISOString(),
+      appVersion: project.dawVersion,
+      project: {
+        id: project.project.id,
+        title: project.project.title,
+        bpm: project.project.bpm,
+        timeSig: project.project.timeSig,
+        bars: project.timeline.bars,
+        clipCount: project.timeline.clips.length,
+        trackCount: project.tracks.length
+      },
+      ui: {
+        playing: this.state.playing,
+        playheadBar: this.state.playheadBar,
+        renderCount: this.renderCount,
+        liveUpdateCount: this.liveUpdateCount,
+        selectedClipId: this.state.selectedClipId,
+        selectedTrackId: this.state.selectedTrackId
+      },
+      mixer: project.tracks.map((track) => ({
+        id: track.id,
+        name: track.name,
+        role: track.role,
+        volume: track.volume,
+        pan: track.pan,
+        mute: track.mute,
+        solo: track.solo,
+        active: track.active !== false,
+        meterLevel: this.state.meterLevels[track.id] || 0
+      })),
+      audio: this.engine.getDiagnostics()
+    };
+    const blob = new Blob([JSON.stringify(diagnostics, null, 2)], { type: "application/json" });
+    downloadBlob(blob, safeName(`${project.project.title}-diagnostics`, "json"));
+    this.state.status = "Exported diagnostics JSON.";
+    this.render();
+  }
+
+  private async refreshAudioDevices() {
+    this.state.audioProbeStatus = "Probing audio devices...";
+    this.render();
+    const project = cloneProject(currentProject(this.state));
+    const probe = await probeAudioDevices(project.audioDeviceSettings);
+    project.audioDeviceSettings = {
+      ...project.audioDeviceSettings,
+      host: probe.host,
+      inputDeviceId: project.audioDeviceSettings.inputDeviceId || probe.defaultInputId,
+      outputDeviceId: project.audioDeviceSettings.outputDeviceId || probe.defaultOutputId,
+      devices: probe.devices,
+      notes: probe.notes,
+      lastProbeAt: new Date().toISOString()
+    };
+    this.state.audioProbeStatus = `Found ${probe.devices.length} device${probe.devices.length === 1 ? "" : "s"}.`;
+    this.applyProjectState(commitProject(this.state, project, this.state.audioProbeStatus));
+  }
+
+  loadDemo() {
+    const project = createDemoProject();
+    this.state.undoStack = createUndoStack(project);
+    this.state.selectedClipId = project.timeline.clips[0]?.id || null;
+    this.state.selectedTrackId = "drums";
+    this.state.currentFile = { path: null, label: "Demo project" };
+    this.state.status = "Demo project loaded.";
+    this.state.playheadBar = 1;
+    this.state.cursorBar = 1;
+    this.state.meterLevels = {};
+    this.engine.setProject(project);
+    saveAutosave(buildPocketDawProjectFile(project));
+    this.render();
+  }
+
+  private newProject() {
+    this.engine.stop();
+    const project = createEmptyPocketDawProject();
+    project.project.title = "Untitled Project";
+    this.state.undoStack = createUndoStack(project);
+    this.state.selectedClipId = null;
+    this.state.selectedTrackId = "drums";
+    this.state.currentFile = { path: null, label: "Untitled project" };
+    this.state.status = "New project created from the starter template.";
+    this.state.playheadBar = 1;
+    this.state.cursorBar = 1;
+    this.state.meterLevels = {};
+    this.engine.setProject(project);
+    saveAutosave(buildPocketDawProjectFile(project));
+    this.render();
+  }
+}

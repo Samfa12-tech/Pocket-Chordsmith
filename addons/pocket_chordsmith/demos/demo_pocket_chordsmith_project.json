@@ -1,0 +1,101 @@
+{
+  "projectVersion": 15,
+  "key": "C",
+  "scale": "major",
+  "timeSig": 4,
+  "bpm": 112,
+  "swing": 0,
+  "resolution": 1,
+  "chordType": "triad",
+  "chordPlayMode": "block",
+  "chordRhythmMode": "sustain",
+  "chordOctave": 0,
+  "melodyPitchMode": "scale",
+  "melodyOctave": 0,
+  "bassMode": "auto",
+  "midiExportMode": "quantized",
+  "midiChordExport": "played",
+  "midiExactDurations": true,
+  "sectionBars": {
+    "A": 4,
+    "B": 4,
+    "C": 4,
+    "D": 4,
+    "E": 4,
+    "F": 4,
+    "G": 4,
+    "H": 4
+  },
+  "songSequence": ["A", "B", "C", "D", "E", "F"],
+  "progressionA": [0, 4, 5, 3],
+  "progressionB": [5, 3, 4, 0],
+  "progressionC": [0, 5, 3, 4],
+  "progressionD": [3, 4, 5, 0],
+  "progressionE": [5, 6, 4, 3],
+  "progressionF": [0, 0, 4, 5],
+  "gridA": {
+    "kick": [2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0],
+    "snare": [0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
+    "hat": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    "bass": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
+  },
+  "gridB": {
+    "kick": [2, 0, 1, 0, 1, 0, 0, 0, 2, 0, 1, 0, 1, 0, 0, 0],
+    "snare": [0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
+    "hat": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    "bass": [1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0]
+  },
+  "gridC": {
+    "kick": [2, 0, 0, 1, 1, 0, 0, 0, 2, 0, 0, 1, 1, 0, 0, 0],
+    "snare": [0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
+    "hat": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    "bass": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0]
+  },
+  "gridD": {
+    "kick": [2, 0, 2, 0, 1, 0, 0, 1, 2, 0, 2, 0, 1, 0, 0, 1],
+    "snare": [0, 2, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 0, 2],
+    "hat": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    "bass": [1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1]
+  },
+  "gridE": {
+    "kick": [2, 0, 2, 0, 2, 0, 0, 1, 2, 0, 2, 0, 2, 0, 0, 1],
+    "snare": [0, 2, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 0, 2],
+    "hat": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    "bass": [1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1]
+  },
+  "gridF": {
+    "kick": [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "snare": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+    "hat": [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "bass": [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  },
+  "melodyTracksA": [[0, null, 2, null, 4, null, 5, null, 7, null, 5, null, 4, null, 2, null]],
+  "melodyInstrumentsA": ["pulse"],
+  "melodyOctavesA": [0],
+  "melodyMuteA": [false],
+  "melodySoloA": [false],
+  "melodyPanA": [0],
+  "melodyHoldA": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+  "melodySlideA": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+  "melodyTupletsA": [[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]],
+  "gameMetadata": {
+    "level_id": "pocket_chordsmith_demo",
+    "mood": "adaptive_demo",
+    "default_loop": "exploration",
+    "markers": [
+      {"tick": 3840, "name": "spawn_wave"},
+      {"tick": 6720, "name": "safe_transition"}
+    ],
+    "music_states": {
+      "exploration": {"loop_sections": ["A", "B", "C"]},
+      "boss_phase_1": {"entry": "D", "loop_sections": ["D"]},
+      "boss_phase_2": {"entry": "E", "loop_sections": ["E"]},
+      "victory": {"entry": "F", "loop_sections": ["F"], "stinger": "victory_hit", "then_return_to": "exploration"}
+    },
+    "default_music_state": "exploration",
+    "accent_map": {
+      "kick": "camera_pulse",
+      "snare_accent": "trap_trigger"
+    }
+  }
+}
