@@ -8,7 +8,8 @@ Pocket Chordsmith is the studio. Pocket DJ is the stage: import a Pocket Chordsm
 
 - `pocket_dj_v1_planning_doc.md` - product concept, MVP scope, acceptance criteria, roadmap, and design warnings.
 - `pocket_dj_v1_codex_prompt.txt` - compact implementation prompt for building the prototype.
-- `pocket_dj_v1f_push_handoffs.html` - current standalone HTML prototype/build.
+- `pocket_dj_v1g_core_bridge.html` - current standalone HTML prototype/build with Pocket Audio Core bridge diagnostics.
+- `pocket_dj_v1f_push_handoffs.html` - previous push-handoff build.
 - `pocket_dj_v1e_help_polish.html` - previous help-polish build.
 
 ## v1 Boundary
@@ -28,14 +29,24 @@ Pocket DJ should not become a second composition editor. Deep chord, melody, MID
 
 ## Baseline Compatibility
 
-Use Pocket Chordsmith v66 as the current import baseline:
+Use Pocket Chordsmith v68 as the current import baseline:
 
 - Share-code prefix: `PCS1:`
 - Project schema version: `16`
 - Sections: `A` through `H`
 - Per-section chords, drums, bass, melody, guitar, time signature, and arrangement data
-- JSON/share-code import logic compatible with `web-app/pocket_chordsmith_v66_push_to_handoffs.html`
+- JSON/share-code import logic compatible with `web-app/pocket_chordsmith_v68_core_bridge.html`
 - Edit-back handoff opens Pocket Chordsmith with the original source song attached as `PCS1:` when possible, and still copies the code as fallback.
+
+## Release Notes
+
+### v1g Pocket Audio Core Bridge
+
+- New file/version: `pocket_dj_v1g_core_bridge.html`.
+- Updated to Pocket Audio Core `0.1.0-scaffold`.
+- Project schema remains `16`; imports and edit-back handoffs still use `PCS1:`.
+- Pocket Audio Core now handles local shared project load/timeline diagnostics and mirrors deck controls for play, stop, section queue, stem mute/volume, FX, build, and drop when the repo-local core module is available.
+- Known limitations: the legacy Pocket DJ Web Audio scheduler/synth remains the audible playback fallback until full sound parity is proven; public itch deployment needs the core bundled beside the HTML before the bridge can load outside the repo.
 
 ## Next Work
 

@@ -1,0 +1,37 @@
+We are starting a new architecture branch called Pocket Audio Core.
+
+Pocket Audio Core is a shared, headless Web Audio runtime for the Pocket Chordsmith family. It should eventually be used by Pocket Chordsmith, Pocket DJ, Pocket DAW, new HTML/Three/Babylon games, and the Godot export workflow.
+
+Do not immediately rewrite existing games. Do not rewrite Pocket Chordsmith or Pocket DJ yet. First inspect the repo and create a design/inventory report.
+
+Main goal:
+A Pocket Chordsmith project should sound the same in Pocket Chordsmith, Pocket DJ, Pocket DAW and new game runtimes because those apps use the same parser, normaliser, scheduler, instruments, FX, stem mixer and offline renderer.
+
+Important nuance:
+Pocket DAW is not limited to Pocket Audio Core. Pocket DAW should be more like Audacity/Fruity Loops plus Pocket Chordsmith. Pocket Audio Core provides Chordsmith-compatible lanes and render parity inside the DAW; the DAW can also have audio clips, samples, recordings, piano-roll clips, automation, mixer routing and DAW-only features.
+
+Godot nuance:
+For true sound parity in Godot, prefer Pocket Audio Core-rendered stems/loops/stingers/sample kits/event manifests. A separate Godot-native procedural preview is useful, but should be labelled as preview unless parity tests prove it matches.
+
+Please do this first:
+1. Inspect the current project structure.
+2. Locate Pocket Chordsmith and Pocket DJ audio-related code.
+3. Identify share-code parsing, project normalisation, scheduler, instrument playback, FX, stem mixer, WAV/offline rendering, MIDI import/export hooks, and Godot export hooks.
+4. Produce docs/POCKET_AUDIO_CORE_INVENTORY.md.
+5. Produce docs/POCKET_AUDIO_CORE_EXTRACTION_PLAN.md.
+6. Produce docs/POCKET_AUDIO_CORE_API_DRAFT.md.
+7. Do not modify app behaviour yet.
+8. Run syntax/static checks where practical and report commands run.
+
+The end-state architecture should support:
+- packages/pocket-audio-core as a reusable browser-first package
+- ESM and browser global/IIFE builds
+- raw Pocket Chordsmith JSON and PCS1 share-code import
+- schema normalisation
+- deterministic timeline/event generation
+- live Web Audio playback
+- offline WAV/stem rendering
+- stem mixer and FX controls
+- adaptive music API for games
+- parity/golden tests
+- versioning policy so every core update can be rolled into Pocket Chordsmith, Pocket DJ, Pocket DAW and Godot workflows.

@@ -2,12 +2,13 @@
 
 Pocket Chordsmith is a single-file, mobile-first music sketchpad for building chord progressions, beats, basslines, melodies, arrangements, MIDI exports, and WAV exports in the browser.
 
-The current app build is `pocket_chordsmith_v67_direct_godot_push.html`. `index.html` redirects to it so the project can be uploaded as a simple web app bundle, including on itch.io.
+The current app build is `pocket_chordsmith_v68_core_bridge.html`. `index.html` redirects to it so the project can be uploaded as a simple web app bundle, including on itch.io.
 
 ## Included Files
 
 - `index.html` - hosting entry point.
-- `pocket_chordsmith_v67_direct_godot_push.html` - current Pocket Chordsmith app.
+- `pocket_chordsmith_v68_core_bridge.html` - current Pocket Chordsmith app with Pocket Audio Core bridge diagnostics and core WAV export fallback.
+- `pocket_chordsmith_v67_direct_godot_push.html` - previous direct Godot push build.
 - `pocket_chordsmith_v65_midi_guitar_import_polish.html` - previous MIDI/guitar import polish build.
 - `pocket_chordsmith_v65_notes_and_limitations.txt` - implementation notes, limitations, and manual test recommendations for v65.
 - `pocket_chordsmith_v64_western_sounds.html` - previous western sound compatibility build.
@@ -22,7 +23,7 @@ The current app build is `pocket_chordsmith_v67_direct_godot_push.html`. `index.
 
 ## Local Use
 
-Open `web-app/index.html` or `web-app/pocket_chordsmith_v67_direct_godot_push.html` in a browser from this workspace. For stricter browser testing, serve the `web-app` folder locally:
+Open `web-app/index.html` or `web-app/pocket_chordsmith_v68_core_bridge.html` in a browser from this workspace. For stricter browser testing, serve the `web-app` folder locally:
 
 ```powershell
 cd web-app
@@ -48,6 +49,15 @@ npm run package:itch
 - `npm run package:itch` builds and writes `../releases/web-app/pocket-chordsmith-web.zip`.
 
 ## Release Notes
+
+### v68 Pocket Audio Core Bridge
+
+- New file/version: `pocket_chordsmith_v68_core_bridge.html`; `index.html` now redirects to v68.
+- Updated to Pocket Audio Core `0.1.0-scaffold`.
+- Project schema remains `16`.
+- Pocket Audio Core now handles local shared project load/timeline diagnostics and mirrors transport start/stop when the repo-local core module is available.
+- WAV export tries the Pocket Audio Core renderer first when available, then falls back to the legacy OfflineAudioContext exporter.
+- Known limitations: live audible playback, preview sounds, MIDI import/export, grid editing, Godot push, and rich editor behavior still use the existing Chordsmith app code; the core renderer is a first-pass deterministic renderer and is not yet sound-parity signed off.
 
 ### v67 Direct Godot Push
 
@@ -112,7 +122,7 @@ Recommended manual checks before calling v65 fully release-ready:
 For itch.io, upload a zip that contains at least:
 
 - `index.html`
-- `pocket_chordsmith_v67_direct_godot_push.html`
+- `pocket_chordsmith_v68_core_bridge.html`
 - `icon.png`
 
 Keep generated exports, old local snapshots, and add-on packaging zips out of Git unless they are intentional release artifacts.
