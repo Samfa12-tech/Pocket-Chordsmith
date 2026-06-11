@@ -1,15 +1,29 @@
-# Licensing
+# Licensing Matrix
 
-This repository consolidates several Pocket Audio family projects. The consolidation does not change the license status of each component.
+This repository is the public source home for the Pocket Audio family, but not
+every component is currently offered under the same license. Check this matrix
+before reusing, redistributing, or packaging any part of the tree.
 
-## Godot Addon
+| Component | Path | Status | License | Notes |
+| --- | --- | --- | --- | --- |
+| Repository docs and public project metadata | `README.md`, `docs/`, `CONTRIBUTING.md`, `SECURITY.md`, `PROJECT_MEMORY.md` | Open source | MIT | Covered by the root `LICENSE` unless a document states otherwise. |
+| Pocket Chordsmith web app | `apps/chordsmith-web/` | Source-available app | UNLICENSED | Public source for transparency and collaboration. Not yet licensed for broad reuse as an MIT/open-source app. Public app link already used in repo: `https://samfa12.itch.io/pocket-chordsmith`. |
+| Pocket DJ web app | `apps/pocket-dj/` | Source-available app | UNLICENSED | Public source for transparency and compatibility work. Not yet licensed for broad reuse as an MIT/open-source app. Public app link already used in repo: `https://samfa12.itch.io/pocket-dj`. |
+| Pocket DAW | `apps/pocket-daw/` | WIP/private-boundary source | UNLICENSED | Kept `private: true`. Public-facing docs may describe its role, but it is not release-ready or open-source licensed yet. |
+| Pocket Audio Core | `packages/pocket-audio-core/` | WIP/private package source | UNLICENSED | Shared runtime scaffold with tests and examples. Package metadata intentionally remains `private: true` and `UNLICENSED` until an explicit package license decision is made. |
+| PCS Format | `packages/pcs-format/` | WIP/private package scaffold | UNLICENSED | Future format helpers and fixtures. Package metadata intentionally remains `private: true` and `UNLICENSED`. |
+| Pocket Chordsmith Godot addon | `addons/pocket_chordsmith/` | Open source addon | MIT | Component license lives at `addons/pocket_chordsmith/LICENSE`. Preserve that file with addon releases. |
+| Pocket Chordsmith composer Codex skill | `apps/chordsmith-web/skills/pocket-chordsmith-composer/` | Source-available project tool | UNLICENSED | Treat as part of the Chordsmith app boundary unless a separate license is added. |
+| Test fixtures and examples | `packages/pocket-audio-core/tests/fixtures/`, `packages/pocket-audio-core/examples/`, `docs/examples/` | Mixed support material | Same as parent component unless stated | Core fixtures/examples follow the Pocket Audio Core license status; docs examples are MIT as documentation. |
 
-The Godot addon keeps its component license at `addons/pocket_chordsmith/LICENSE`. Preserve that file with addon releases.
+## Third-Party Notices
 
-## Apps
+Do not remove third-party notices, generated dependency lockfiles, package
+license metadata, or upstream license text. Dependency licenses are governed by
+their own package metadata and should be checked before redistribution.
 
-Unless a specific license file is later added inside an app folder, the applications under `apps/` are copyright Sam Small / Samfa12. Do not assume these apps are open-source merely because their source is present in this public repository.
+## Website Wording Guidance
 
-## Packages
-
-Unless a package declares a specific license in its own `package.json` or license file, packages under `packages/` are copyright Sam Small / Samfa12. `packages/pocket-audio-core/` currently declares `UNLICENSED`.
+Until the app/package rows above are intentionally relicensed, describe this
+repository as a public source home with mixed licensing, not as a fully MIT
+open-source monorepo.

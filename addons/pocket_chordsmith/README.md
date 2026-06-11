@@ -4,6 +4,9 @@ Pocket Chordsmith imports web-app JSON into compiled Godot resources, then drive
 
 Current release: `1.1.6`, with direct local Push-to-Godot browser handoff support.
 
+License/status: MIT. The component license is `LICENSE` in this addon folder.
+See the repository root `LICENSES.md` for the full monorepo matrix.
+
 Author charts in the Pocket Chordsmith web app:
 
 ```text

@@ -1,8 +1,26 @@
 {
   "name": "pocket-dj-web-app",
   "version": "1.0.0",
+  "description": "Pocket DJ live remix deck for Pocket Chordsmith PCS1 songs and Pocket Audio performance handoffs.",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Samfa12-tech/Pocket-Chordsmith.git",
+    "directory": "apps/pocket-dj"
+  },
+  "keywords": [
+    "pocket-dj",
+    "pocket-audio",
+    "pocket-chordsmith",
+    "web-audio",
+    "adaptive-music",
+    "game-audio",
+    "live-performance",
+    "pcs1",
+    "songwriting"
+  ],
   "scripts": {
     "test:e2e": "playwright test"
   },

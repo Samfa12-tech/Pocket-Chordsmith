@@ -4,6 +4,10 @@ Pocket Audio Core is the shared, headless Web Audio runtime planned for the Pock
 
 This package is currently a v0 extraction. It provides a real public API shape, defensive `PCS1:`/JSON parsing, a minimal normalised project model, deterministic timeline events, lightweight transport methods, event subscriptions, and a basic dependency-free WAV/stem render path. It does not claim exact timing, sound, instrument, FX, MIDI, or Godot parity yet.
 
+License/status: WIP private package source, `UNLICENSED`, and `private: true`.
+See the repository root `LICENSES.md` before reusing or redistributing package
+code.
+
 ## Current Status
 
 - Core version: `0.1.0-scaffold`
@@ -60,6 +64,8 @@ music.lowpass(0.5);
 ```
 
 See `examples/game-runtime-demo/`, `docs/NEW_GAME_AUDIO_RUNTIME_GUIDE.md`, and `docs/ADAPTIVE_MUSIC_API.md`.
+
+Minimal PCS data example: `../../docs/examples/minimal-pcs-project.md`.
 
 ## Godot Export Kits
 

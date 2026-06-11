@@ -1,57 +1,142 @@
-# Pocket Audio Family
+# Pocket Audio
 
-Pocket-Chordsmith is the canonical public monorepo for the Pocket Audio family: browser composition, live performance, desktop production, shared data/runtime packages, and the Godot game integration addon.
+Pocket Audio is a family of small music tools for sketching songs, performing
+them live, arranging them for production, and moving adaptive music into games.
+This repository is the public source home for the Pocket Audio family and the
+Pocket Chordsmith Godot addon.
 
-Current Godot addon release: `1.1.6`, with direct local Push-to-Godot browser handoff support.
+Licensing is mixed. Some parts are MIT, while several apps and packages are
+currently source-available or WIP rather than broadly open-source licensed. See
+`LICENSES.md` before reusing code.
 
-## Projects
+Project hub: `https://samfa12.com`
 
-- `apps/chordsmith-web/` - Pocket Chordsmith web, the composition sketchpad/studio for writing progressions, sections, drums, bass, melody, guitar, MIDI exports, WAV exports, and `PCS1:` share data.
-- `apps/pocket-dj/` - Pocket DJ, the standalone live performance/remix deck. It imports `PCS1:`, share-code, and raw Pocket Chordsmith JSON, then turns songs into section pads, stem controls, loops, and FX.
-- `apps/pocket-daw/` - Pocket DAW, the private desktop/native arrangement and production app built with Vite, TypeScript, and Tauri.
-- `addons/pocket_chordsmith/` - Pocket Chordsmith Godot addon. This path is intentionally preserved for Godot addon installs and release packaging.
-- `packages/pcs-format/` - future shared PCS format definitions, migrations, fixtures, and compatibility helpers.
-- `packages/pocket-audio-core/` - shared playback/export/runtime work for web, DJ, DAW, and game runtimes.
+## Components
 
-## Current App Entries
+| Component | Path | What it does | License status |
+| --- | --- | --- | --- |
+| Pocket Chordsmith | `apps/chordsmith-web/` | Browser music sketchpad for progressions, sections, drums, bass, melody, guitar, MIDI, WAV, JSON, and `PCS1:` share data. | Source-available, UNLICENSED |
+| Pocket DJ | `apps/pocket-dj/` | Live performance/remix deck that imports Pocket Chordsmith songs and turns them into section pads, stem controls, loops, builds, drops, and FX. | Source-available, UNLICENSED |
+| Pocket DAW | `apps/pocket-daw/` | WIP desktop/native arrangement app built with Vite, TypeScript, and Tauri. It is documented publicly but remains private-boundary and not release-ready. | WIP/private-boundary, UNLICENSED |
+| Pocket Audio Core | `packages/pocket-audio-core/` | Shared headless runtime/export scaffold for parsing, normalising, rendering timelines, Web Audio playback, WAV/stem output, and game-music APIs. | WIP/private package source, UNLICENSED |
+| PCS Format | `packages/pcs-format/` | Future shared format definitions, fixtures, migrations, and compatibility helpers for `PCS1:` and related JSON. | WIP/private package scaffold, UNLICENSED |
+| Pocket Chordsmith Godot addon | `addons/pocket_chordsmith/` | Godot editor/runtime addon that imports Pocket Chordsmith data, compiles chart resources, and drives conductor callbacks in games. | MIT |
 
-- Pocket Chordsmith web: `apps/chordsmith-web/index.html`
-- Pocket DJ: `apps/pocket-dj/index.html`
-- Pocket DAW: `apps/pocket-daw/package.json`
-- Godot addon plugin: `addons/pocket_chordsmith/plugin.cfg`
+Public app links already referenced in this repo:
 
-## Godot Addon
-
-The addon imports Pocket Chordsmith JSON/share-code data into compiled Godot chart resources, then drives runtime music callbacks through a lightweight conductor node.
-
-Pipeline:
-
-```text
-Pocket Chordsmith JSON -> importer/schema migrator -> PCSChartResource -> PocketChordsmithConductor
-```
-
-Push-to-Godot from the browser app:
-
-1. In Pocket Chordsmith, open Settings > Project & export.
-2. Click `Push to Godot`.
-3. If the addon is enabled in an open Godot editor, the browser app sends the `PCS1:` song code to the local receiver at `http://127.0.0.1:9087/pocket-chordsmith/push-to-godot`.
-4. The `Chordsmith` tab imports and compiles the song.
-5. Click `Save Chart Resource` to save the compiled `.tres` or `.res` chart.
-6. If local push is unavailable, paste the copied `PCS1:` code manually in the addon.
+- Pocket Chordsmith: `https://samfa12.itch.io/pocket-chordsmith`
+- Pocket DJ: `https://samfa12.itch.io/pocket-dj`
 
 ## Data Flow
 
-Pocket Chordsmith creates song projects and exports `PCS1:`/JSON. Pocket DJ imports those projects for live remixing, Pocket DAW imports them for native arrangement and production, and the Godot addon consumes compatible chart/runtime data for games.
+```text
+Pocket Chordsmith
+  -> PCS1 share code / JSON
+  -> Pocket DJ for live remixing
+  -> Pocket DAW for arrangement and production experiments
+  -> Pocket Chordsmith Godot addon for game integration
+  -> Pocket Audio Core / PCS packages as shared compatibility layers
+```
 
-Pocket Audio Core and PCS format packages are the long-term shared layer for making playback, conversion, export, and compatibility feel consistent across the family. This consolidation pass keeps that direction explicit without forcing every app onto one engine at once.
+Pocket Chordsmith is the current authoring source. Pocket DJ and Pocket DAW
+consume compatible song data rather than replacing the Chordsmith editor. The
+Godot addon compiles exported data into lightweight chart resources and runtime
+signals for games.
 
-## Development Notes
+## Run The Main Apps
 
-- Keep `addons/pocket_chordsmith/` stable for Godot users.
-- Keep Pocket DJ separate from the Chordsmith editor UI.
-- Keep Pocket DAW `private: true` unless licensing and release boundaries are deliberately changed.
-- Do not commit generated app output such as `node_modules/`, `dist/`, `src-tauri/target/`, installers, release zips, or local `.pocketdaw` demo saves.
+Pocket Chordsmith:
 
-See `docs/architecture/POCKET_AUDIO_FAMILY.md` and `docs/repo-consolidation/MIGRATION_PLAN.md` for the consolidation map.
+```powershell
+cd apps/chordsmith-web
+npm install
+npm run dev
+npm run build
+npm run test:e2e
+npm run package:itch
+```
 
-For future Codex/project-memory work, start with `PROJECT_MEMORY.md`.
+Pocket DJ:
+
+```powershell
+cd apps/pocket-dj
+npm install
+npm run test:e2e
+```
+
+Pocket DAW:
+
+```powershell
+cd apps/pocket-daw
+npm install
+npm test
+npm run build
+```
+
+Pocket Audio Core:
+
+```powershell
+cd packages/pocket-audio-core
+npm install
+npm test
+npm run build
+```
+
+## Godot Addon
+
+The addon path is intentionally stable:
+
+```text
+addons/pocket_chordsmith/
+```
+
+To use it in Godot:
+
+1. Copy or install `addons/pocket_chordsmith/` into a Godot project.
+2. Enable the `Pocket Chordsmith` plugin.
+3. Open the `Chordsmith` editor screen.
+4. Import Pocket Chordsmith JSON or paste a `PCS1:` share code.
+5. Save the compiled chart resource.
+6. Assign the chart to `PocketChordsmithConductor` in a scene.
+
+The browser app can also push to an open Godot editor through the local receiver
+at `http://127.0.0.1:9087/pocket-chordsmith/push-to-godot`, with clipboard/manual
+paste fallback if local push is blocked.
+
+More addon docs:
+
+- `addons/pocket_chordsmith/README.md`
+- `addons/pocket_chordsmith/docs/GETTING_STARTED.md`
+- `addons/pocket_chordsmith/docs/LEVEL_INTEGRATION.md`
+- `addons/pocket_chordsmith/docs/SHIPPING_CHECKLIST.md`
+
+## Examples
+
+- Minimal PCS data example: `docs/examples/minimal-pcs-project.md`
+- Pocket Audio Core browser examples: `packages/pocket-audio-core/examples/`
+- Godot export sketch: `packages/pocket-audio-core/examples/godot-export-demo/README.md`
+- Godot runtime bridge notes: `addons/pocket_chordsmith/docs/RUNTIME_BRIDGE.md`
+
+## Contributing
+
+Start with `CONTRIBUTING.md`. Good first areas are docs, examples, tests,
+import/export compatibility, fixture coverage, Godot examples, and small CI or
+metadata improvements. Avoid large product rewrites unless they are planned in
+`docs/public-roadmap.md` or discussed first.
+
+Security and responsible disclosure notes are in `SECURITY.md`.
+
+## Project Notes
+
+- Current Godot addon release: `1.1.6`.
+- Keep `addons/pocket_chordsmith/` stable for Godot installs and addon-only packaging.
+- Do not commit generated output: `node_modules/`, `dist/`, `src-tauri/target/`,
+  installers, release zips, Playwright reports, or local `.pocketdaw` saves.
+- GitHub source archives are full monorepo archives. Addon-only releases should
+  use `addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd`.
+
+For architecture context, see:
+
+- `docs/architecture/POCKET_AUDIO_FAMILY.md`
+- `docs/repo-consolidation/MIGRATION_PLAN.md`
+- `PROJECT_MEMORY.md`

@@ -4,5 +4,22 @@
   "private": true,
   "type": "module",
   "description": "Future shared PCS format definitions and compatibility helpers.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Samfa12-tech/Pocket-Chordsmith.git",
+    "directory": "packages/pcs-format"
+  },
+  "keywords": [
+    "pocket-audio",
+    "pocket-chordsmith",
+    "pcs1",
+    "music-composition",
+    "adaptive-music",
+    "game-audio",
+    "godot",
+    "midi",
+    "wav",
+    "songwriting"
+  ],
   "license": "UNLICENSED"
 }

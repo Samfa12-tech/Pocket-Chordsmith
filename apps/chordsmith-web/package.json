@@ -1,8 +1,27 @@
 {
   "name": "pocket-chordsmith-web-app",
   "version": "1.0.0",
+  "description": "Pocket Chordsmith browser music sketchpad for PCS1 share data, MIDI, WAV, and Pocket Audio handoffs.",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Samfa12-tech/Pocket-Chordsmith.git",
+    "directory": "apps/chordsmith-web"
+  },
+  "keywords": [
+    "pocket-chordsmith",
+    "pocket-audio",
+    "web-audio",
+    "music-composition",
+    "songwriting",
+    "adaptive-music",
+    "game-audio",
+    "midi",
+    "wav",
+    "pcs1"
+  ],
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",

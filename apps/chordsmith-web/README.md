@@ -4,6 +4,15 @@ Pocket Chordsmith is a single-file, mobile-first music sketchpad for building ch
 
 The current app build is `pocket_chordsmith_v68_core_bridge.html`. `index.html` redirects to it so the project can be uploaded as a simple web app bundle, including on itch.io.
 
+Public app page:
+
+```text
+https://samfa12.itch.io/pocket-chordsmith
+```
+
+License/status: source-available app, `UNLICENSED`. See the repository root
+`LICENSES.md` before reusing or redistributing app code.
+
 ## Included Files
 
 - `index.html` - hosting entry point.
@@ -47,6 +56,12 @@ npm run package:itch
 - `npm run preview` serves the built app on `0.0.0.0`.
 - `npm run test:e2e` runs Playwright from the project-local dependency.
 - `npm run package:itch` builds and writes a web upload zip for hosting.
+
+## Data Handoffs
+
+Pocket Chordsmith exports `PCS1:` share codes and JSON. Those payloads are the
+current bridge into Pocket DJ, Pocket DAW experiments, Pocket Audio Core tests,
+and the Pocket Chordsmith Godot addon.
 
 ## Release Notes
 

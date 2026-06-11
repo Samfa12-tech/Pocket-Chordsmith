@@ -2,6 +2,10 @@
 
 Pocket Audio is a family of focused tools that share project data and, over time, should share more playback/export logic.
 
+This public repository has mixed licensing. The Godot addon is MIT, while the
+current apps and shared package scaffolds are source-available or WIP/private
+unless their metadata says otherwise. See `../../LICENSES.md`.
+
 ```text
 Pocket Chordsmith
   -> PCS1 / JSON

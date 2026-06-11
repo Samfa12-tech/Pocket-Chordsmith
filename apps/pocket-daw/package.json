@@ -1,8 +1,26 @@
 {
   "name": "pocket-daw",
   "version": "0.5.1",
+  "description": "WIP Pocket Audio desktop arrangement and production app built with Vite, TypeScript, and Tauri.",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Samfa12-tech/Pocket-Chordsmith.git",
+    "directory": "apps/pocket-daw"
+  },
+  "keywords": [
+    "pocket-daw",
+    "pocket-audio",
+    "music-composition",
+    "songwriting",
+    "adaptive-music",
+    "game-audio",
+    "midi",
+    "wav",
+    "tauri"
+  ],
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5177 --strictPort",
     "build": "tsc && vite build",

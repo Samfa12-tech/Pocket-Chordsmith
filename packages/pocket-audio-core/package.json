@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "description": "Shared headless audio runtime scaffold for the Pocket Chordsmith family.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Samfa12-tech/Pocket-Chordsmith.git",
+    "directory": "packages/pocket-audio-core"
+  },
   "main": "./dist/pocket-audio-core.esm.js",
   "module": "./dist/pocket-audio-core.esm.js",
   "exports": {
@@ -27,9 +32,17 @@
     "README.md"
   ],
   "keywords": [
+    "pocket-audio",
     "pocket-chordsmith",
     "web-audio",
-    "adaptive-music"
+    "music-composition",
+    "adaptive-music",
+    "game-audio",
+    "godot",
+    "midi",
+    "wav",
+    "pcs1",
+    "songwriting"
   ],
   "license": "UNLICENSED"
 }
