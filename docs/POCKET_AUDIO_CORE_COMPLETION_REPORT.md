@@ -10,6 +10,8 @@ The Pocket Audio Core handoff prompts were processed sequentially from `00_maste
 
 Result: the repo now contains a first-pass `packages/pocket-audio-core` package, parity fixtures, app bridge builds, game runtime kit, Godot export workflow, and Pocket DAW architecture design.
 
+Post-consolidation note: this report was written on the pre-monorepo workspace branch. The canonical app paths are now `apps/chordsmith-web/` and `apps/pocket-dj/`; historical `web-app/` and `pocket_dj/` references below describe the source paths used during the original implementation pass.
+
 ## Prompt Results
 
 ### 00 Master Context
@@ -22,7 +24,7 @@ Used as implementation rules and scope guard. No direct code artifact was requir
 
 Status: complete.
 
-Created:
+Created, now located at:
 
 - `docs/POCKET_AUDIO_CORE_INVENTORY.md`
 - `docs/POCKET_AUDIO_CORE_EXTRACTION_PLAN.md`
@@ -62,15 +64,15 @@ Status: complete.
 
 Created:
 
-- `pocket_dj/pocket_dj_v1g_core_bridge.html`
-- `web-app/pocket_chordsmith_v68_core_bridge.html`
+- `apps/pocket-dj/pocket_dj_v1g_core_bridge.html`
+- `apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html`
 - `docs/POCKET_AUDIO_CORE_APP_INTEGRATION_REPORT.md`
 
 Updated:
 
-- `web-app/index.html`
-- `web-app/README.md`
-- `pocket_dj/README.md`
+- `apps/chordsmith-web/index.html`
+- `apps/chordsmith-web/README.md`
+- `apps/pocket-dj/README.md`
 
 What worked:
 

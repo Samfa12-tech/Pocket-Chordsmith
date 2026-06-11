@@ -6,15 +6,17 @@ Core version used: `0.1.0-scaffold`
 
 Project schema support: `16`
 
+Post-consolidation note: this report was written before the public monorepo layout was finalized. Canonical paths are now `apps/chordsmith-web/` and `apps/pocket-dj/`; historical `web-app/` and `pocket_dj/` references in test URLs describe the source layout used during the original smoke tests.
+
 ## Files Changed
 
 - `packages/pocket-audio-core/src/export/wav.js`
 - `packages/pocket-audio-core/tests/core.test.js`
-- `pocket_dj/pocket_dj_v1g_core_bridge.html`
-- `pocket_dj/README.md`
-- `web-app/pocket_chordsmith_v68_core_bridge.html`
-- `web-app/index.html`
-- `web-app/README.md`
+- `apps/pocket-dj/pocket_dj_v1g_core_bridge.html`
+- `apps/pocket-dj/README.md`
+- `apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html`
+- `apps/chordsmith-web/index.html`
+- `apps/chordsmith-web/README.md`
 
 ## Pocket DJ Integration
 
@@ -46,7 +48,7 @@ Still using legacy Pocket DJ app code:
 
 New app build: `pocket_chordsmith_v68_core_bridge.html`
 
-`web-app/index.html` now redirects to v68.
+`apps/chordsmith-web/index.html` redirects to v68.
 
 Core-backed or core-mirrored areas:
 
@@ -75,10 +77,10 @@ Still using legacy Pocket Chordsmith app code:
 ## Tests Run
 
 - `node` inline HTML script syntax check:
-  - `pocket_dj/pocket_dj_v1g_core_bridge.html` passed.
-  - `web-app/pocket_chordsmith_v68_core_bridge.html` passed.
+  - `apps/pocket-dj/pocket_dj_v1g_core_bridge.html` passed after consolidation.
+  - `apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html` passed after consolidation.
 - `npm test` in `packages/pocket-audio-core`: 38 tests passed.
-- Pocket DJ browser smoke on `http://127.0.0.1:8767/pocket_dj/pocket_dj_v1g_core_bridge.html`:
+- Historical Pocket DJ browser smoke on `http://127.0.0.1:8767/pocket_dj/pocket_dj_v1g_core_bridge.html`:
   - Load Demo passed.
   - Play passed.
   - Queue section passed.
@@ -86,7 +88,7 @@ Still using legacy Pocket Chordsmith app code:
   - Build/Drop passed.
   - Audio Core and Schema cards displayed.
   - Console errors: none.
-- Pocket Chordsmith browser smoke on `http://127.0.0.1:8767/web-app/pocket_chordsmith_v68_core_bridge.html`:
+- Historical Pocket Chordsmith browser smoke on `http://127.0.0.1:8767/web-app/pocket_chordsmith_v68_core_bridge.html`:
   - Demo load passed.
   - Play/Stop passed.
   - JSON export/import round trip passed.

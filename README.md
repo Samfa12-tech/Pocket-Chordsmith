@@ -53,3 +53,5 @@ Pocket Audio Core and PCS format packages are the long-term shared layer for mak
 - Do not commit generated app output such as `node_modules/`, `dist/`, `src-tauri/target/`, installers, release zips, or local `.pocketdaw` demo saves.
 
 See `docs/architecture/POCKET_AUDIO_FAMILY.md` and `docs/repo-consolidation/MIGRATION_PLAN.md` for the consolidation map.
+
+For future Codex/project-memory work, start with `PROJECT_MEMORY.md`.

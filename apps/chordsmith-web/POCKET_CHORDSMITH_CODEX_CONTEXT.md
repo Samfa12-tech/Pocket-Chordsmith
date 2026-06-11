@@ -2,7 +2,9 @@
 
 Use this file as stable project context for Codex before making any Pocket Chordsmith update.
 
-Current baseline: `pocket_chordsmith_v67_direct_godot_push.html`
+Current baseline: `pocket_chordsmith_v68_core_bridge.html`
+Previous direct-Godot baseline retained for fallback/reference: `pocket_chordsmith_v67_direct_godot_push.html`
+Canonical monorepo path: `apps/chordsmith-web/`
 Project type: single-file, mobile-first browser music sketchpad  
 Core build style: HTML, CSS and JavaScript in one file unless a specific update deliberately changes that  
 
@@ -85,9 +87,9 @@ Audio features must avoid painful harshness and clipping. Use sensible gain stag
 
 ## 3. Current known architecture facts
 
-These are the important current-v67 facts Codex should assume and verify in the file before editing:
+These are the important current-v68 facts Codex should assume and verify in the file before editing:
 
-- The app title is Pocket Chordsmith v67.
+- The app title is Pocket Chordsmith v68.
 - `PROJECT_SCHEMA_VERSION` is currently 16.
 - `SECTION_IDS` currently supports `["A","B","C","D","E","F","G","H"]`.
 - `MAX_MELODY_TRACKS` is currently 6.
@@ -97,7 +99,8 @@ These are the important current-v67 facts Codex should assume and verify in the 
 - Existing data normalisation and import/export functions are important. Do not bypass them.
 - Existing render, scheduler, playback and export functions are tightly connected. Changes must be tested across live playback, MIDI export and WAV export.
 - Recent compatibility features include western procedural instruments, playback-section visual following, guitar fill/generation helpers, compact JSON export, and `Push to DJ` / `Push to Godot` handoffs using existing `PCS1:` codes.
-- v67 upgrades `Push to Godot` to try the local Godot addon receiver first, then keep the v66 clipboard/paste fallback.
+- v67 upgraded `Push to Godot` to try the local Godot addon receiver first, then keep the v66 clipboard/paste fallback.
+- v68 adds the first Pocket Audio Core bridge for local project load/timeline diagnostics and a core-first WAV export path when the local module is available.
 - New fields must remain optional and backwards compatible.
 
 Useful areas to inspect before most changes:

@@ -4,19 +4,23 @@ Date: 2026-06-11
 
 Pocket Audio Core is intended to become the shared, headless audio/runtime layer for Pocket Chordsmith, Pocket DJ, Pocket DAW, new browser games, and parity-first Godot export workflows. This inventory captures the current audio, import/export, scheduling, and handoff code before extraction. No app behaviour was changed during this pass.
 
+Post-consolidation note: this report was written before the public monorepo layout was finalized. The canonical paths are now `apps/chordsmith-web/`, `apps/pocket-dj/`, `apps/pocket-daw/`, `addons/pocket_chordsmith/`, `packages/pocket-audio-core/`, and `packages/pcs-format/`. Historical references to `web-app/`, `pocket_dj/`, `godot-addon/`, `pocket-daw/`, and `pocket_audio_core_handoff/` describe the source layout at the time of this inventory.
+
 ## Current Project Structure
 
-- `web-app/` contains the current Pocket Chordsmith browser app. The active build is `pocket_chordsmith_v67_direct_godot_push.html`, with `index.html` redirecting to it.
-- `pocket_dj/` contains the standalone Pocket DJ prototype. The active build is `pocket_dj_v1f_push_handoffs.html`.
-- `pocket-daw/` is a nested Git checkout, not a mapped submodule. It already has TypeScript modules for Chordsmith import, event rendering, live playback, offline WAV, MIDI export, mixer, FX, media pool, and DAW schema.
-- `godot-addon/` is a nested Godot addon repository. It imports/compiles Pocket Chordsmith data, exposes a direct localhost Push-to-Godot receiver, and provides Godot-native conductor/runtime assets.
-- `pocket_audio_core_handoff/` contains the Pocket Audio Core brief, prompt sequence, and versioning policy for this architecture branch.
+- `apps/chordsmith-web/` contains the current Pocket Chordsmith browser app. The active build is now `pocket_chordsmith_v68_core_bridge.html`, with `index.html` redirecting to it.
+- `apps/pocket-dj/` contains the standalone Pocket DJ prototype. The active build is now `pocket_dj_v1g_core_bridge.html`.
+- `apps/pocket-daw/` contains the imported Pocket DAW app source.
+- `addons/pocket_chordsmith/` contains the Godot addon. It imports/compiles Pocket Chordsmith data, exposes a direct localhost Push-to-Godot receiver, and provides Godot-native conductor/runtime assets.
+- `packages/pocket-audio-core/` contains the shared package created from this architecture branch.
 
-Root Git status before this documentation pass showed the existing dirty `pocket-daw` entry plus the untracked `pocket_audio_core_handoff/` pack. The `pocket-daw` checkout itself already had unrelated dirty files; this inventory does not stage or alter them.
+Historical note: root Git status before the original documentation pass showed the old dirty `pocket-daw` gitlink plus the untracked `pocket_audio_core_handoff/` pack. Those folders are no longer canonical source paths after the monorepo consolidation.
 
 ## Pocket Chordsmith Browser App
 
-Main file: `web-app/pocket_chordsmith_v67_direct_godot_push.html`
+Main file now: `apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html`
+
+Historical source file for this inventory: `web-app/pocket_chordsmith_v67_direct_godot_push.html`
 
 Pocket Chordsmith is currently the canonical source for the musical project format and the richest procedural Web Audio implementation.
 
@@ -125,7 +129,9 @@ Extraction boundary: handoff transport is app-level. Core should expose share-co
 
 ## Pocket DJ Prototype
 
-Main file: `pocket_dj/pocket_dj_v1f_push_handoffs.html`
+Main file now: `apps/pocket-dj/pocket_dj_v1g_core_bridge.html`
+
+Historical source file for this inventory: `pocket_dj/pocket_dj_v1f_push_handoffs.html`
 
 Pocket DJ currently duplicates enough Chordsmith parsing and audio code to perform imported songs as a live deck.
 
@@ -199,7 +205,9 @@ Pocket DAW should host Pocket Audio Core lanes but must not be reduced to them. 
 
 ## Godot Addon
 
-Folder: `godot-addon/`
+Folder now: `addons/pocket_chordsmith/`
+
+Historical source folder for this inventory: `godot-addon/`
 
 Godot is currently an import/compiler/runtime ecosystem, not a Web Audio parity runtime.
 
@@ -306,6 +314,6 @@ Pocket DJ -> no offline render path yet
 - `git status --short --branch` inside `godot-addon`
 - Targeted `rg` searches over Chordsmith, DJ, DAW, and Godot source files for parser, normalizer, scheduler, audio, FX, WAV, MIDI, and handoff symbols
 - `git diff --check` from the root workspace: passed
-- Node `vm.Script` parse of scripts inside `web-app/pocket_chordsmith_v67_direct_godot_push.html` and `pocket_dj/pocket_dj_v1f_push_handoffs.html`: passed
+- Historical Node `vm.Script` parse of scripts inside `web-app/pocket_chordsmith_v67_direct_godot_push.html` and `pocket_dj/pocket_dj_v1f_push_handoffs.html`: passed
 - ASCII check for the three new docs with `rg -n "[^\x00-\x7F]"`: passed, no matches
 - `npm test` inside `pocket-daw`: passed, 16 test files and 57 tests
