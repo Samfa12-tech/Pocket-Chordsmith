@@ -258,7 +258,9 @@
 /* 1. Constants */
 const PCS_SHARE_PREFIX = "PCS1:";
 const PDJ_SHARE_PREFIX = "PDJ1:";
-const POCKET_CHORDSMITH_URL = "https://samfa12.itch.io/pocket-chordsmith";
+// Direct handoff target for the self-hosted Samfa12 web app.
+// itch.io remains a public mirror; local development still uses relative paths.
+const POCKET_CHORDSMITH_URL = "https://samfa12.com/apps/pocket-chordsmith/";
 const HANDOFF_PARAM = "pocketHandoff";
 const HANDOFF_WINDOW_PREFIX = "PocketHandoff:";
 const HANDOFF_TO_DJ_KEY = "pocket_chordsmith_to_dj_handoff_v1";
@@ -419,7 +421,7 @@ function isLocalHandoffHost(){
 }
 function resolvePocketChordsmithUrl(){
   if(isLocalHandoffHost()){
-    try{ return new URL("../web-app/index.html", window.location.href).href; }catch(e){}
+    try{ return new URL("../chordsmith-web/index.html", window.location.href).href; }catch(e){}
   }
   return POCKET_CHORDSMITH_URL;
 }

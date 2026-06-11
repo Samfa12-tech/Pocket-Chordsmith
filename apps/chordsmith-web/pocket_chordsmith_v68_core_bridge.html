@@ -868,8 +868,11 @@ const POCKET_AUDIO_CORE_IMPORT_PATHS = [
   "./pocket-audio-core/src/index.js",
   "./pocket-audio-core/dist/pocket-audio-core.esm.js"
 ];
+// itch.io remains a public mirror/storefront for Pocket Chordsmith.
 const POCKET_CHORDSMITH_URL = "https://samfa12.itch.io/pocket-chordsmith";
-const POCKET_DJ_URL = "https://samfa12.itch.io/pocket-dj";
+// Direct handoff target for the self-hosted Samfa12 web app.
+// Local development still uses relative paths.
+const POCKET_DJ_URL = "https://samfa12.com/apps/pocket-dj/";
 const GODOT_PUSH_ENDPOINTS = [
   "http://127.0.0.1:9087/pocket-chordsmith/push-to-godot",
   "http://localhost:9087/pocket-chordsmith/push-to-godot"
