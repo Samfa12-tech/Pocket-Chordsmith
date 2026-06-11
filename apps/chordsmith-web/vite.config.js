@@ -11,6 +11,10 @@ export default defineConfig({
           __dirname,
           "pocket_chordsmith_v67_direct_godot_push.html",
         ),
+        pocket_chordsmith_v68_core_bridge: resolve(
+          __dirname,
+          "pocket_chordsmith_v68_core_bridge.html",
+        ),
       },
     },
   },

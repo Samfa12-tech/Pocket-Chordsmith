@@ -7,6 +7,7 @@ Use these notes before tagging or publishing any Pocket Audio family artifact.
 - Confirm `apps/chordsmith-web/index.html` redirects to the intended current build.
 - Serve `apps/chordsmith-web/` locally and smoke test demo load, play/stop, JSON import/export, `PCS1:` import/export, WAV export, and mobile width.
 - Verify `Push to DJ` and `Push to Godot` still preserve handoff payloads.
+- Run `npm run package:itch` from `apps/chordsmith-web/` and confirm the zip contains `index.html`, `pocket_chordsmith_v68_core_bridge.html`, and `pocket-audio-core/` fallback files at the root.
 
 ## Pocket DJ
 
@@ -30,5 +31,7 @@ npm run build
 ## Godot Addon
 
 - Confirm `addons/pocket_chordsmith/plugin.cfg` exists and the version matches release docs.
+- Package addon-only releases through `addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd` or the equivalent Godot export workflow.
+- Treat GitHub source archives as full monorepo archives, not addon-only downloads.
 - Confirm release exports exclude Godot `.uid` and `.import` metadata.
 - Verify the local push receiver path still works in an open Godot editor.

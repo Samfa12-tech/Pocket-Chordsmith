@@ -33,6 +33,7 @@ This repository is now the canonical public monorepo for:
 - Do not commit generated outputs: `node_modules/`, `dist/`, `src-tauri/target/`, installers, release zips, Godot `.import`/`.uid`, or local `.pocketdaw` saves.
 - Keep Pocket DJ separate from the Chordsmith editor UI.
 - Keep Pocket DAW `private: true` unless licensing and release boundaries are deliberately changed.
+- Treat GitHub source archives as full monorepo archives; use `addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd` for addon-only release payloads.
 
 ## Useful Checks
 

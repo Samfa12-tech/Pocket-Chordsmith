@@ -18,7 +18,3 @@
 *.wav binary
 *.mid binary
 *.midi binary
-
-/**        export-ignore
-/addons    !export-ignore
-/addons/** !export-ignore
