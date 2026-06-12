@@ -284,9 +284,9 @@ const LOCAL_KEY = "pocket_dj_v1_last_session";
 const LOOKAHEAD_SECONDS = 0.22;
 const SCHEDULER_MS = 25;
 const DEFAULT_PROGRESSION = [0,4,5,3];
-const DEFAULT_STEM_VOLUMES = {drums:0.95,bass:0.90,chords:0.72,melody:0.82,guitar:0.76};
+const DEFAULT_STEM_VOLUMES = {drums:0.86,bass:0.86,chords:0.72,melody:0.65,guitar:0.66};
 const DEFAULT_STEM_MUTES = {drums:false,bass:false,chords:false,melody:false,guitar:false};
-const DEFAULT_FX = {filter:0.86,echo:0.04,reverb:0.08};
+const DEFAULT_FX = {filter:1,echo:0.12,chorus:0.18,flanger:0.06,reverb:0.18,mix:0.65};
 const CHORDSMITH_THEMES = {
   night:{bg:"#070711",panel:"#101222",panel2:"#171a2f",line:"#2d3154",text:"#f4f7ff",muted:"#98a2c8",cyan:"#48f5ff",magenta:"#ff4fd8",violet:"#9b6cff",lime:"#a8ff61",amber:"#ffd166",danger:"#ff6b8b",background:"radial-gradient(circle at 15% 5%,rgba(72,245,255,.18),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,79,216,.16),transparent 32%),radial-gradient(circle at 50% 95%,rgba(155,108,255,.14),transparent 32%),linear-gradient(180deg,#060711,#0b0c18 50%,#060711)"},
   ocean:{bg:"#06131b",panel:"#102536",panel2:"#18364a",line:"#2d5c73",text:"#edf9ff",muted:"#9cc6d4",cyan:"#63d8ff",magenta:"#7ef0d7",violet:"#6fa8ff",lime:"#99f5cf",amber:"#ffd27a",danger:"#ff7f9d",background:"radial-gradient(circle at 12% 7%,rgba(99,216,255,.20),transparent 30%),radial-gradient(circle at 90% 10%,rgba(126,240,215,.15),transparent 34%),radial-gradient(circle at 48% 95%,rgba(111,168,255,.15),transparent 34%),linear-gradient(180deg,#06131b,#0a1f2a 52%,#061018)"},
@@ -660,12 +660,15 @@ function sanitizePocketChordsmithProject(raw){
     guitarTone: safeChoice(raw.guitarTone,["clean","crunch","high_gain","metal","western_twang"],"high_gain"),
     guitarRegister: safeChoice(raw.guitarRegister,["low","mid","high"],"low"),
     guitarStrumMode: safeChoice(raw.guitarStrumMode,["down","up","alternate"],"down"),
-    guitarVolume: clamp(asNum(raw.guitarVolume,.76),0,1),
-    fxDelay: clamp(asNum(raw.fxDelay,.04),0,1),
-    fxReverb: clamp(asNum(raw.fxReverb,.08),0,1),
+    guitarVolume: clamp(asNum(raw.guitarVolume,.66),0,1),
+    fxDelay: clamp(asNum(raw.fxDelay,.12),0,1),
+    fxChorus: clamp(asNum(raw.fxChorus,.18),0,1),
+    fxFlanger: clamp(asNum(raw.fxFlanger,.06),0,1),
+    fxReverb: clamp(asNum(raw.fxReverb,.18),0,1),
     fxMix: clamp(asNum(raw.fxMix,.65),0,1),
+    humanizeOn: !!raw.humanizeOn,
     sidechainOn: !!(raw.sidechainOn ?? raw.pumpChordsEnabled),
-    sidechainAmount: clamp(asNum(raw.sidechainAmount ?? raw.pumpAmount,.35),0,1),
+    sidechainAmount: clamp(asNum(raw.sidechainAmount ?? raw.pumpAmount,.45),0,1),
     sectionBars: sanitizeSectionBars(raw.sectionBars || raw.sectionLengths),
     songSequence: sanitizeSequence(raw.songSequence || raw.sectionSequence),
     rawTitle: raw.title || raw.name || "Imported Chordsmith Project",
@@ -693,6 +696,7 @@ function createDjSessionFromChordsmithProject(project){
       chordPlayMode:project.chordPlayMode, chordRhythmMode:project.chordRhythmMode, chordOctave:project.chordOctave,
       melodyPitchMode:project.melodyPitchMode, bassMode:project.bassMode,
       guitarEnabled:project.guitarEnabled, guitarActive, guitarTone:project.guitarTone, guitarRegister:project.guitarRegister, guitarStrumMode:project.guitarStrumMode,
+      humanizeOn:project.humanizeOn,
       sidechainOn:project.sidechainOn, sidechainAmount:project.sidechainAmount
     },
     sections:project.sections,
@@ -708,8 +712,8 @@ function createDjSessionFromChordsmithProject(project){
       sequenceIndex:sequenceStart,
       stemVolumes:{...DEFAULT_STEM_VOLUMES, guitar:project.guitarVolume ?? DEFAULT_STEM_VOLUMES.guitar},
       stemMutes:{...DEFAULT_STEM_MUTES},
-      fx:{filter:DEFAULT_FX.filter, echo:Math.max(DEFAULT_FX.echo, project.fxDelay * (project.fxMix || .65)), reverb:Math.max(DEFAULT_FX.reverb, project.fxReverb * (project.fxMix || .65))},
-      masterVolume:.88,
+      fx:{filter:DEFAULT_FX.filter, echo:project.fxDelay, chorus:project.fxChorus, flanger:project.fxFlanger, reverb:project.fxReverb, mix:project.fxMix},
+      masterVolume:.82,
       buildActive:false
     }
   };
@@ -737,8 +741,11 @@ function normalizePocketDjSession(raw){
   base.performance.fx = {...base.performance.fx, ...(perf.fx || {})};
   base.performance.fx.filter = clamp(asNum(base.performance.fx.filter, DEFAULT_FX.filter),0,1);
   base.performance.fx.echo = clamp(asNum(base.performance.fx.echo, DEFAULT_FX.echo),0,1);
+  base.performance.fx.chorus = clamp(asNum(base.performance.fx.chorus, DEFAULT_FX.chorus),0,1);
+  base.performance.fx.flanger = clamp(asNum(base.performance.fx.flanger, DEFAULT_FX.flanger),0,1);
   base.performance.fx.reverb = clamp(asNum(base.performance.fx.reverb, DEFAULT_FX.reverb),0,1);
-  base.performance.masterVolume = clamp(asNum(perf.masterVolume,.88),0,1);
+  base.performance.fx.mix = clamp(asNum(base.performance.fx.mix, DEFAULT_FX.mix),0,1);
+  base.performance.masterVolume = clamp(asNum(perf.masterVolume,.82),0,1);
   return base;
 }
 function exportPocketDjSession(session){ return JSON.parse(JSON.stringify(session)); }
@@ -821,9 +828,15 @@ async function editSourceSongInChordsmith(){
 
 /* 5. Audio engine */
 let session = null;
-let audioCtx = null, masterGain, masterFilter, limiter, fxSend, delayNode, delayFeedback, delayWet, reverbConvolver, reverbWet;
+let audioCtx = null, masterGain, masterFilter, limiter,
+    synthBusGain, synthDryGain, fxWetMasterGain, fxToneFilter,
+    delayNode, delayFeedback, delayWet,
+    chorusDelay, chorusWetGain, chorusLfo, chorusDepthGain,
+    flangerDelay, flangerWetGain, flangerFeedbackGain, flangerLfo, flangerDepthGain,
+    reverbConvolver, reverbWet;
 const stemGains = {};
 let noiseBuffer = null;
+const liveNoiseBuffers = new Map();
 let schedulerId = null;
 let nextEventTime = 0;
 let visualTimers = [];
@@ -837,7 +850,7 @@ let state = {
   bar:1,
   beat:1,
   performanceStemScales:{drums:1,bass:1,chords:1,melody:1,guitar:1},
-  performanceFx:{filter:null,echo:null,reverb:null},
+  performanceFx:{filter:null,echo:null,chorus:null,flanger:null,reverb:null,mix:null},
   buildSavedVolumes:null,
   buildSavedFx:null,
   dropQueued:false,
@@ -863,25 +876,65 @@ function ensureAudio(){
   masterGain = audioCtx.createGain();
   masterFilter = audioCtx.createBiquadFilter();
   limiter = audioCtx.createDynamicsCompressor();
-  fxSend = audioCtx.createGain();
+  synthBusGain = audioCtx.createGain();
+  synthDryGain = audioCtx.createGain();
+  fxWetMasterGain = audioCtx.createGain();
+  fxToneFilter = audioCtx.createBiquadFilter();
   delayNode = audioCtx.createDelay(1.2);
   delayFeedback = audioCtx.createGain();
   delayWet = audioCtx.createGain();
   reverbConvolver = audioCtx.createConvolver();
   reverbWet = audioCtx.createGain();
   masterFilter.type = "lowpass";
-  limiter.threshold.value = -14; limiter.knee.value = 18; limiter.ratio.value = 3.5; limiter.attack.value = .003; limiter.release.value = .16;
+  masterFilter.frequency.value = 20000;
+  fxToneFilter.type = "highshelf";
+  fxToneFilter.frequency.value = 1800;
+  fxToneFilter.gain.value = 0;
+  limiter.threshold.value = -16; limiter.knee.value = 18; limiter.ratio.value = 3; limiter.attack.value = .003; limiter.release.value = .10;
   STEMS.forEach(id => {
     stemGains[id] = audioCtx.createGain();
-    stemGains[id].connect(masterFilter);
-    stemGains[id].connect(fxSend);
+    if(id === "chords" || id === "melody") stemGains[id].connect(synthBusGain);
+    else stemGains[id].connect(masterGain);
   });
-  fxSend.connect(delayNode);
-  delayNode.connect(delayFeedback); delayFeedback.connect(delayNode); delayNode.connect(delayWet); delayWet.connect(masterFilter);
-  fxSend.connect(reverbConvolver); reverbConvolver.connect(reverbWet); reverbWet.connect(masterFilter);
-  masterFilter.connect(masterGain); masterGain.connect(limiter); limiter.connect(audioCtx.destination);
-  reverbConvolver.buffer = createImpulse(1.8,2.5);
-  noiseBuffer = makeNoiseBuffer(2.0);
+  synthBusGain.connect(synthDryGain);
+  synthDryGain.connect(fxToneFilter);
+  delayNode.connect(delayFeedback); delayFeedback.connect(delayNode); delayNode.connect(delayWet); delayWet.connect(fxWetMasterGain);
+  synthBusGain.connect(delayNode);
+  chorusDelay = audioCtx.createDelay(0.08);
+  chorusWetGain = audioCtx.createGain();
+  chorusLfo = audioCtx.createOscillator();
+  chorusDepthGain = audioCtx.createGain();
+  chorusDelay.delayTime.value = 0.016;
+  chorusLfo.type = "sine";
+  chorusLfo.connect(chorusDepthGain);
+  chorusDepthGain.connect(chorusDelay.delayTime);
+  synthBusGain.connect(chorusDelay);
+  chorusDelay.connect(chorusWetGain);
+  chorusWetGain.connect(fxWetMasterGain);
+  chorusLfo.start();
+  flangerDelay = audioCtx.createDelay(0.02);
+  flangerWetGain = audioCtx.createGain();
+  flangerFeedbackGain = audioCtx.createGain();
+  flangerLfo = audioCtx.createOscillator();
+  flangerDepthGain = audioCtx.createGain();
+  flangerDelay.delayTime.value = 0.003;
+  flangerLfo.type = "sine";
+  flangerLfo.connect(flangerDepthGain);
+  flangerDepthGain.connect(flangerDelay.delayTime);
+  synthBusGain.connect(flangerDelay);
+  flangerDelay.connect(flangerFeedbackGain);
+  flangerFeedbackGain.connect(flangerDelay);
+  flangerDelay.connect(flangerWetGain);
+  flangerWetGain.connect(fxWetMasterGain);
+  flangerLfo.start();
+  reverbConvolver.buffer = createImpulse(1.6,2.4);
+  synthBusGain.connect(reverbConvolver); reverbConvolver.connect(reverbWet); reverbWet.connect(fxWetMasterGain);
+  fxWetMasterGain.connect(fxToneFilter);
+  fxToneFilter.connect(masterGain);
+  masterGain.connect(masterFilter);
+  masterFilter.connect(limiter);
+  limiter.connect(audioCtx.destination);
+  noiseBuffer = makeNoiseBuffer(2.0, false);
   applyMixerAndFx();
   return audioCtx.state === "suspended" ? audioCtx.resume() : Promise.resolve();
 }
@@ -894,15 +947,34 @@ function createImpulse(seconds, decay){
   }
   return buffer;
 }
-function makeNoiseBuffer(seconds){
+function makeNoiseBuffer(seconds, fade=false){
   const len = Math.floor(audioCtx.sampleRate * seconds);
   const buffer = audioCtx.createBuffer(1,len,audioCtx.sampleRate);
   const data = buffer.getChannelData(0);
-  for(let i=0;i<len;i++) data[i] = Math.random()*2-1;
+  for(let i=0;i<len;i++) data[i] = (Math.random()*2-1) * (fade ? (1 - i / len) : 1);
+  return buffer;
+}
+function liveNoiseBuffer(key, seconds=0.06, fade=false, poolSize=8){
+  const cacheKey = `${key}:${audioCtx.sampleRate}:${seconds}:${fade ? 1 : 0}`;
+  let entry = liveNoiseBuffers.get(cacheKey);
+  if(!entry){
+    entry = {index:0, buffers:Array.from({length:poolSize}, () => makeNoiseBuffer(seconds, fade))};
+    liveNoiseBuffers.set(cacheKey, entry);
+  }
+  const buffer = entry.buffers[entry.index % entry.buffers.length];
+  entry.index++;
   return buffer;
 }
 function midiToFreq(m){ return 440 * Math.pow(2,(m-69)/12); }
 function stemOutput(stem){ return stemGains[stem] || masterFilter; }
+function featureSeed(step, seed=0){
+  const x = Math.sin((step + 1) * 12.9898 + (seed + 1) * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+function humanizeOn(){ return !!session?.deck?.humanizeOn; }
+function humanizeOffset(step, seed=0){ return humanizeOn() ? (featureSeed(step, seed) - 0.5) * 0.018 : 0; }
+function humanizePeak(base, step, seed=0){ return humanizeOn() ? base * (0.88 + featureSeed(step, seed + 99) * 0.20) : base; }
+function safeAudioTime(t){ return Number.isFinite(t) ? Math.max(0, t) : 0; }
 function envGain(g,t,a,d,s,r,peak,dur){
   const end = t + Math.max(.015,dur);
   g.gain.cancelScheduledValues(t);
@@ -912,104 +984,238 @@ function envGain(g,t,a,d,s,r,peak,dur){
   g.gain.setValueAtTime(Math.max(.0001,peak*s), end);
   g.gain.exponentialRampToValueAtTime(.0001, end + Math.max(.02,r));
 }
+function connectWithPan(source, destination, pan=0, at=audioCtx?.currentTime || 0){
+  if(audioCtx.createStereoPanner){
+    const p = audioCtx.createStereoPanner();
+    p.pan.setValueAtTime(clamp(asNum(pan,0),-1,1), at);
+    source.connect(p);
+    p.connect(destination);
+    return p;
+  }
+  source.connect(destination);
+  return destination;
+}
 function playOsc(stem,midi,t,dur,wave="sawtooth",peak=.2,filterType=null,filterFreq=1500,pan=0){
+  return playOscFreq(stem,midiToFreq(midi),t,dur,wave,peak,filterType,filterFreq,pan);
+}
+function playOscFreq(stem,freq,t,dur,wave="sawtooth",peak=.2,filterType=null,filterFreq=1500,pan=0){
   if(!audioCtx) return;
   const osc = audioCtx.createOscillator();
   const g = audioCtx.createGain();
   let node = g;
-  osc.type = wave; osc.frequency.setValueAtTime(midiToFreq(midi), t);
+  osc.type = wave; osc.frequency.setValueAtTime(freq, t);
   osc.connect(g);
   if(filterType){
     const f = audioCtx.createBiquadFilter(); f.type = filterType; f.frequency.setValueAtTime(filterFreq,t); f.Q.value = .7; g.connect(f); node = f;
   }
-  if(audioCtx.createStereoPanner){ const p = audioCtx.createStereoPanner(); p.pan.setValueAtTime(clamp(pan,-1,1),t); node.connect(p); p.connect(stemOutput(stem)); }
-  else node.connect(stemOutput(stem));
-  envGain(g,t,.008,.06,.55,.10,peak,dur);
+  connectWithPan(node, stemOutput(stem), pan, t);
+  envGain(g,t,.01,.06,.7,.20,peak,dur);
   osc.start(t); osc.stop(t + dur + .25);
 }
-function playKick(t, level=1){
+function playKick(t, peak=0.95){
   const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
-  osc.type = "sine"; osc.frequency.setValueAtTime(150,t); osc.frequency.exponentialRampToValueAtTime(42,t+.15);
-  g.gain.setValueAtTime(.95*level,t); g.gain.exponentialRampToValueAtTime(.001,t+.18);
-  osc.connect(g); g.connect(stemOutput("drums")); osc.start(t); osc.stop(t+.2); flashStem("drums");
+  osc.type = "sine"; osc.frequency.setValueAtTime(155,t); osc.frequency.exponentialRampToValueAtTime(45,t+.14);
+  g.gain.setValueAtTime(Math.max(.08,peak),t); g.gain.exponentialRampToValueAtTime(.001,t+.16);
+  osc.connect(g); g.connect(stemOutput("drums")); osc.start(t); osc.stop(t+.17); flashStem("drums");
 }
-function playSnare(t, level=1){
-  const src = audioCtx.createBufferSource(), bp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
-  src.buffer = noiseBuffer; bp.type = "bandpass"; bp.frequency.setValueAtTime(1700,t); bp.Q.value = .9;
-  g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.48*level,t+.006); g.gain.exponentialRampToValueAtTime(.001,t+.14);
-  src.connect(bp); bp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+.18);
-  playOsc("drums",50,t,.08,"triangle",.11*level,"lowpass",900); flashStem("drums");
-}
-function playHat(t, level=1, open=false){
+function playSnare(t, peak=0.5){
   const src = audioCtx.createBufferSource(), hp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
-  src.buffer = noiseBuffer; hp.type = "highpass"; hp.frequency.setValueAtTime(open?5200:6900,t);
-  const dur = open ? .24 : .055;
-  g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime((open?.18:.13)*level,t+.003); g.gain.exponentialRampToValueAtTime(.001,t+dur);
-  src.connect(hp); hp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+dur+.02); flashStem("drums");
+  src.buffer = liveNoiseBuffer("snare", .12, false); hp.type = "highpass"; hp.frequency.value = 1700;
+  g.gain.setValueAtTime(Math.max(.05,peak),t); g.gain.exponentialRampToValueAtTime(.001,t+.12);
+  src.connect(hp); hp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+.13); flashStem("drums");
+}
+function playHat(t, peak=0.16, open=false){
+  const hatLen = open ? .16 : .05;
+  const src = audioCtx.createBufferSource(), hp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
+  src.buffer = liveNoiseBuffer(open ? "hat_open" : "hat_closed", hatLen, false);
+  hp.type = "highpass"; hp.frequency.value = open ? 3800 : 5600;
+  g.gain.setValueAtTime(Math.max(open ? .05 : .03, peak),t);
+  g.gain.exponentialRampToValueAtTime(.001,t + (open ? .14 : .05));
+  src.connect(hp); hp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+hatLen); flashStem("drums");
 }
 function playCrash(t){ playHat(t,1.55,true); }
-function playBass(midi,t,dur,accent=false){
-  const osc = audioCtx.createOscillator(), sub = audioCtx.createOscillator(), filter = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
-  osc.type = "sawtooth"; sub.type = "sine"; osc.frequency.setValueAtTime(midiToFreq(midi),t); sub.frequency.setValueAtTime(midiToFreq(midi-12),t);
-  filter.type = "lowpass"; filter.frequency.setValueAtTime(accent?960:640,t); filter.Q.value = .8;
-  g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(accent?.42:.33,t+.012); g.gain.exponentialRampToValueAtTime(.001,t+Math.max(.08,dur));
-  osc.connect(filter); sub.connect(filter); filter.connect(g); g.connect(stemOutput("bass")); osc.start(t); sub.start(t); osc.stop(t+dur+.08); sub.stop(t+dur+.08); flashStem("bass");
-  if(session.deck.sidechainOn) duckStem("chords", t, session.deck.sidechainAmount || .35);
+function playBass(midi,t,dur=.22,peak=.34,accent=false){
+  const bassDur = accent ? dur * 1.35 : dur;
+  const bassPeak = accent ? peak * 1.18 : peak;
+  playOsc("bass",midi,t,bassDur,"sawtooth",bassPeak,"lowpass",accent ? 520 : 420);
+  playOsc("bass",midi-12,t,bassDur*.8,"sine",bassPeak*.42,"lowpass",accent ? 260 : 220);
+  flashStem("bass");
+}
+function playBassPhrase(midi,t,dur=.22,peak=.34,accent=false,slideMidi=null,slideOffset=null){
+  if(slideMidi === null || slideOffset === null){
+    playBass(midi,t,dur,peak,accent);
+    return;
+  }
+  const endAt = t + Math.max(.08,dur) + .22;
+  const slideAt = Math.max(t + .02, t + slideOffset);
+  const makeVoice = (startMidi,targetMidi,wave,peakMul,cutoff) => {
+    const osc = audioCtx.createOscillator(), g = audioCtx.createGain(), f = audioCtx.createBiquadFilter();
+    osc.type = wave;
+    osc.frequency.setValueAtTime(midiToFreq(startMidi), t);
+    osc.frequency.linearRampToValueAtTime(midiToFreq(targetMidi), Math.min(endAt - .03, slideAt + .09));
+    f.type = "lowpass"; f.frequency.setValueAtTime(cutoff, t);
+    osc.connect(f); f.connect(g); g.connect(stemOutput("bass"));
+    envGain(g,t,.01,.06,.7,.20,peak*peakMul*(accent ? 1.18 : 1),dur);
+    osc.start(t); osc.stop(endAt);
+  };
+  makeVoice(midi,slideMidi,"sawtooth",1,accent ? 520 : 420);
+  makeVoice(midi-12,slideMidi-12,"sine",.42,accent ? 260 : 220);
+  flashStem("bass");
 }
 function playChord(chord,t,dur){
   const notes = chordMidiNotes(chord, session.deck.chordOctave || 0);
   const mode = session.deck.chordPlayMode || "block";
-  const inst = session.deck.chordInstrument || "pocket";
-  const cfg = chordSound(inst);
+  const cfg = chordInstrumentConfig(session.deck.chordInstrument || "pocket");
   const ordered = (mode === "strum_down" || mode === "arp_down") ? notes.slice().reverse() : notes.slice();
-  ordered.forEach((midi,i) => {
-    const offset = mode.startsWith("strum") ? i*.028 : mode.startsWith("arp") ? i*(Math.min(.12,dur/Math.max(3,notes.length))) : 0;
-    const noteDur = mode.startsWith("arp") ? Math.min(.42,dur*.6) : dur;
-    playOsc("chords",midi,t+offset,noteDur,cfg.wave,cfg.peak/Math.sqrt(notes.length),cfg.filter,cfg.freq,.02*(i-1));
-  });
+  const chordDur = Math.max(.08, Math.min(dur * cfg.durMul, cfg.maxLiveDur || 1.1));
+  if(mode === "block"){
+    ordered.forEach((midi,i) => {
+      const noteStart = t + i * .01 * cfg.spreadMul;
+      playChordTone(midiToFreq(midi), noteStart, chordDur, i===0 ? cfg.rootWave : cfg.wave, cfg.peak, cfg.filter, cfg.freq, cfg);
+      if(cfg.shimmer && i > 0) playChordTone(midiToFreq(midi + 12), noteStart + .014, Math.min(.12, chordDur*.35), "sine", cfg.peak*.08, "lowpass", 5200, {attack:.002, decay:.12, sustain:.06, release:.35, layers:[{wave:"sine", level:1}]});
+    });
+  }else{
+    const gap = (mode.startsWith("strum") ? .045 : .12) * cfg.spreadMul;
+    ordered.forEach((midi,i) => {
+      const noteStart = t + i * gap;
+      const noteDur = mode.startsWith("strum") ? chordDur : Math.min(.25, chordDur*.45);
+      playChordTone(midiToFreq(midi), noteStart, noteDur, i===0 ? cfg.rootWave : cfg.wave, cfg.peak*.92, cfg.filter, cfg.freq, cfg);
+    });
+  }
   flashStem("chords");
 }
-function chordSound(name){
-  if(name === "piano" || name === "saloon_piano") return {wave:"triangle", peak:.28, filter:"lowpass", freq:3000};
-  if(name === "harp") return {wave:"triangle", peak:.22, filter:"highpass", freq:620};
-  if(name === "warm_pad") return {wave:"sawtooth", peak:.16, filter:"lowpass", freq:1350};
-  if(name === "glass") return {wave:"sine", peak:.20, filter:"highpass", freq:900};
-  return {wave:"triangle", peak:.24, filter:"lowpass", freq:2200};
+function chordEnvelope(gain,t,dur,peak,cfg={}){
+  const attack = Math.max(.001, cfg.attack ?? .01);
+  const decay = Math.max(.001, cfg.decay ?? .06);
+  const sustain = clamp(cfg.sustain ?? .7, .001, 1);
+  const release = Math.max(.025, cfg.release ?? .2);
+  const endAt = t + Math.max(.02,dur);
+  gain.gain.cancelScheduledValues(t);
+  gain.gain.setValueAtTime(.0001,t);
+  gain.gain.linearRampToValueAtTime(Math.max(.0001,peak),t+attack);
+  gain.gain.linearRampToValueAtTime(Math.max(.0001,peak*sustain),t+attack+decay);
+  gain.gain.setValueAtTime(Math.max(.0001,peak*sustain),endAt);
+  gain.gain.exponentialRampToValueAtTime(.0001,endAt+release);
+  return endAt + release + .03;
 }
-function playMelody(midi,t,dur,instrument="pulse",pan=0){
-  let cfg = {wave:"square", peak:.20, filter:"lowpass", freq:2400};
-  if(instrument === "soft") cfg = {wave:"triangle",peak:.18,filter:"lowpass",freq:1700};
-  if(instrument === "synth") cfg = {wave:"sawtooth",peak:.18,filter:"lowpass",freq:2600};
-  if(instrument === "bell") cfg = {wave:"sine",peak:.16,filter:"highpass",freq:850};
-  if(instrument.includes("guitar")) cfg = {wave:"sawtooth",peak:.17,filter:"bandpass",freq:1450};
-  if(["banjo","harmonica","cowboy_whistle","trumpet","saxophone"].includes(instrument)) cfg = {wave:instrument === "cowboy_whistle" ? "sine" : "sawtooth",peak:.17,filter:"bandpass",freq:instrument === "saxophone" ? 900 : 1700};
-  playOsc("melody",midi,t,dur,cfg.wave,cfg.peak,cfg.filter,cfg.freq,pan); flashStem("melody");
+function playChordTone(freq,t,dur,type,peak,filterType,filterFreq,cfg={},pan=0){
+  const gain = audioCtx.createGain();
+  let output = gain;
+  if(filterType){
+    const f = audioCtx.createBiquadFilter();
+    f.type = filterType;
+    f.frequency.setValueAtTime(filterFreq,t);
+    f.Q.setValueAtTime(cfg.filterQ ?? .7,t);
+    if(cfg.filterSweep) f.frequency.linearRampToValueAtTime(cfg.filterSweep, t + Math.max(.04, Math.min(.22,dur*.5)));
+    gain.connect(f);
+    output = f;
+  }
+  connectWithPan(output, stemOutput("chords"), pan, t);
+  const stopAt = chordEnvelope(gain,t,dur,peak,cfg);
+  (cfg.layers || [{wave:type, freqMul:1, detune:cfg.detune ?? 0, level:1}]).forEach(layer => {
+    const osc = audioCtx.createOscillator(), layerGain = audioCtx.createGain();
+    osc.type = layer.wave || type;
+    osc.frequency.setValueAtTime(freq * (layer.freqMul || 1), t);
+    osc.detune.setValueAtTime(layer.detune ?? 0, t);
+    layerGain.gain.setValueAtTime(layer.level ?? 1, t);
+    osc.connect(layerGain); layerGain.connect(gain);
+    osc.start(t); osc.stop(stopAt);
+  });
+}
+function chordInstrumentConfig(name){
+  if(name === "piano") return {rootWave:"triangle",wave:"triangle",peak:.23,filter:"lowpass",freq:3100,filterQ:.9,attack:.003,decay:.18,sustain:.18,release:.16,durMul:.72,spreadMul:.45,shimmer:false,maxLiveDur:.82,layers:[{wave:"triangle",level:1},{wave:"sine",freqMul:2,level:.18,detune:3}]};
+  if(name === "saloon_piano") return {rootWave:"triangle",wave:"triangle",peak:.205,filter:"lowpass",freq:3600,filterQ:1,attack:.002,decay:.13,sustain:.12,release:.18,durMul:.62,spreadMul:.58,shimmer:false,maxLiveDur:.7,layers:[{wave:"triangle",level:.88,detune:-8},{wave:"triangle",level:.62,detune:9},{wave:"sine",freqMul:2,level:.16,detune:5}]};
+  if(name === "harp") return {rootWave:"triangle",wave:"sine",peak:.18,filter:"lowpass",freq:4600,filterQ:1.4,attack:.002,decay:.1,sustain:.03,release:.36,durMul:.5,spreadMul:1.45,shimmer:true,maxLiveDur:.58,layers:[{wave:"triangle",level:.9},{wave:"sine",freqMul:2,level:.26,detune:7}]};
+  if(name === "warm_pad") return {rootWave:"sine",wave:"triangle",peak:.14,filter:"lowpass",freq:1200,filterQ:.65,filterSweep:1700,attack:.11,decay:.24,sustain:.82,release:.62,durMul:1.35,spreadMul:.25,shimmer:false,maxLiveDur:1.65,layers:[{wave:"sine",level:.95,detune:-5},{wave:"triangle",level:.48,detune:6}]};
+  if(name === "glass") return {rootWave:"sine",wave:"sine",peak:.16,filter:"bandpass",freq:1500,filterQ:1.15,attack:.004,decay:.2,sustain:.1,release:.44,durMul:.9,spreadMul:.85,shimmer:true,maxLiveDur:.82,layers:[{wave:"sine",level:.36},{wave:"sine",freqMul:2.01,level:.64},{wave:"sine",freqMul:4.02,level:.34},{wave:"triangle",freqMul:6.01,level:.12}]};
+  return {rootWave:"triangle",wave:"sine",peak:.24,filter:"lowpass",freq:1800,filterQ:.8,attack:.01,decay:.06,sustain:.7,release:.2,durMul:1,spreadMul:1,shimmer:false,maxLiveDur:1.15,layers:[{wave:"triangle",level:.82},{wave:"sine",level:.35}]};
+}
+function playMelody(midi,t,dur,instrument="pulse",pan=0,peakMul=1){
+  playLeadInstrument(midi,t,dur,instrument,pan,peakMul);
+  flashStem("melody");
+}
+function leadInstrumentConfig(name){
+  if(name === "soft") return {wave:"triangle",peak:.16,filter:"lowpass",freq:1700,durMul:1};
+  if(name === "synth") return {wave:"sawtooth",peak:.18,filter:"lowpass",freq:1500,durMul:.95};
+  if(name === "bell") return {wave:"sine",peak:.105,filter:"lowpass",freq:2600,durMul:1.05};
+  if(name === "lead_guitar") return {wave:"sawtooth",peak:.16,filter:"bandpass",freq:1800,durMul:.92};
+  if(name === "distorted_lead_guitar") return {wave:"sawtooth",peak:.13,filter:"lowpass",freq:2400,durMul:.86};
+  if(name === "banjo") return {wave:"triangle",peak:.13,filter:"bandpass",freq:2100,durMul:.48};
+  if(name === "harmonica") return {wave:"square",peak:.115,filter:"bandpass",freq:1250,durMul:1.18};
+  if(name === "cowboy_whistle") return {wave:"sine",peak:.10,filter:"lowpass",freq:3200,durMul:1.12};
+  if(name === "trumpet") return {wave:"square",peak:.14,filter:"bandpass",freq:1650,durMul:1.05};
+  if(name === "saxophone") return {wave:"triangle",peak:.17,filter:"bandpass",freq:940,durMul:1.12};
+  return {wave:"square",peak:.20,filter:"lowpass",freq:2300,durMul:1};
+}
+function playLeadInstrument(midi,t,dur=.28,instrument="pulse",pan=0,peakMul=1){
+  const cfg = leadInstrumentConfig(instrument);
+  playOsc("melody",midi,t,dur*cfg.durMul,cfg.wave,cfg.peak*peakMul,cfg.filter,cfg.freq,pan);
+  if(instrument === "bell") playOsc("melody",midi+12,t+.012,dur*.42,"sine",.022*peakMul,"lowpass",3200,pan);
+  else if(instrument === "lead_guitar") playOscFreq("melody",midiToFreq(midi)*1.006,t+.006,dur*.72,"square",.035*peakMul,"lowpass",2600,pan);
+  else if(instrument === "distorted_lead_guitar") playOscFreq("melody",midiToFreq(midi)*.996,t+.004,dur*.68,"square",.05*peakMul,"bandpass",2100,pan);
+  else if(instrument === "banjo"){ playOscFreq("melody",midiToFreq(midi)*2.01,t+.004,Math.min(.09,dur*.38),"triangle",.028*peakMul,"highpass",1500,pan); playOscFreq("melody",midiToFreq(midi)*.997,t+.012,Math.min(.13,dur*.48),"square",.018*peakMul,"bandpass",2600,pan); }
+  else if(instrument === "harmonica"){ playOscFreq("melody",midiToFreq(midi)*1.004,t+.006,dur*.92,"triangle",.035*peakMul,"bandpass",860,pan); playOscFreq("melody",midiToFreq(midi)*2,t+.014,dur*.42,"square",.012*peakMul,"bandpass",2100,pan); }
+  else if(instrument === "cowboy_whistle") playOscFreq("melody",midiToFreq(midi)*2,t+.01,dur*.65,"sine",.014*peakMul,"lowpass",3600,pan);
+  else if(instrument === "trumpet") playOsc("melody",midi+12,t+.008,dur*.35,"sawtooth",.018*peakMul,"bandpass",2400,pan);
+  else if(instrument === "saxophone") playOsc("melody",midi-12,t+.004,dur*.42,"sine",.03*peakMul,"lowpass",760,pan);
 }
 function distortionCurve(amount=3){
-  const samples = 1024, curve = new Float32Array(samples);
-  for(let i=0;i<samples;i++){ const x = i*2/samples-1; curve[i] = Math.tanh(x*amount); }
+  const samples = 2048, curve = new Float32Array(samples);
+  const drive = Math.max(.1, amount);
+  for(let i=0;i<samples;i++){ const x = i*2/samples-1; curve[i] = Math.tanh(x*drive); }
   return curve;
 }
-function playGuitar(notes,t,dur,art="open"){
-  const bus = audioCtx.createGain(), shaper = audioCtx.createWaveShaper(), hp = audioCtx.createBiquadFilter(), lp = audioCtx.createBiquadFilter(), out = audioCtx.createGain();
-  const tone = session.deck.guitarTone;
-  shaper.curve = distortionCurve(tone === "metal" ? 6 : tone === "high_gain" ? 4.5 : tone === "crunch" ? 2.6 : 1.2);
-  hp.type = "highpass"; hp.frequency.value = art === "chug" ? 140 : 90;
-  lp.type = "lowpass"; lp.frequency.value = tone === "western_twang" ? 4700 : tone === "clean" ? 4300 : 3200;
-  out.gain.value = art === "accent" ? .9 : .74;
-  bus.connect(shaper); shaper.connect(hp); hp.connect(lp); lp.connect(out); out.connect(stemOutput("guitar"));
-  if(art === "scratch"){
+function guitarToneConfig(tone=session?.deck?.guitarTone){
+  if(tone === "clean") return {drive:.65,input:.62,peak:.086,lowpass:4300,highpass:90,body:1.4,mid:1,spread:.016,sustain:1.08,mute:.085,scratch:.040};
+  if(tone === "crunch") return {drive:2.4,input:.80,peak:.092,lowpass:3600,highpass:100,body:2.8,mid:2,spread:.013,sustain:.98,mute:.074,scratch:.044};
+  if(tone === "metal") return {drive:6.2,input:.92,peak:.088,lowpass:3050,highpass:115,body:4.5,mid:3,spread:.009,sustain:.86,mute:.060,scratch:.040};
+  if(tone === "western_twang") return {drive:1.25,input:.68,peak:.082,lowpass:4700,highpass:125,body:1.1,mid:2.4,spread:.020,sustain:.72,mute:.070,scratch:.034};
+  return {drive:4.2,input:.88,peak:.090,lowpass:3250,highpass:108,body:3.7,mid:2.6,spread:.010,sustain:.91,mute:.066,scratch:.042};
+}
+function guitarDirectionForStep(step){
+  const mode = session?.deck?.guitarStrumMode || "down";
+  if(mode === "up") return "up";
+  if(mode === "alternate") return step % 2 ? "up" : "down";
+  return "down";
+}
+function playGuitar(notes,t,dur,art="open",step=0){
+  t = safeAudioTime(t);
+  const cfg = guitarToneConfig(session.deck.guitarTone);
+  const isChug = art === "chug", isAccent = art === "accent", isScratch = art === "scratch";
+  const playDur = isChug ? Math.min(dur,cfg.mute) : isScratch ? cfg.scratch : Math.max(.12,dur*cfg.sustain);
+  const ordered = guitarDirectionForStep(step) === "up" ? notes.slice().reverse() : notes.slice();
+  const spread = isChug || isScratch ? .003 : cfg.spread;
+  const bus = audioCtx.createGain(), input = audioCtx.createGain(), shaper = audioCtx.createWaveShaper(), hp = audioCtx.createBiquadFilter(), lp = audioCtx.createBiquadFilter(), body = audioCtx.createBiquadFilter(), mid = audioCtx.createBiquadFilter(), out = audioCtx.createGain();
+  input.gain.setValueAtTime(cfg.input * (isAccent ? 1.18 : 1), t);
+  shaper.curve = distortionCurve(cfg.drive * (isAccent ? 1.12 : 1));
+  shaper.oversample = "2x";
+  hp.type = "highpass"; hp.frequency.setValueAtTime(isChug ? Math.max(135,cfg.highpass) : cfg.highpass,t);
+  lp.type = "lowpass"; lp.frequency.setValueAtTime(isChug ? Math.min(cfg.lowpass,2400) : cfg.lowpass,t);
+  body.type = "peaking"; body.frequency.setValueAtTime(isChug ? 170 : 240,t); body.Q.value = .75; body.gain.setValueAtTime(isChug ? 1.5 : cfg.body,t);
+  mid.type = "peaking"; mid.frequency.setValueAtTime(isChug ? 720 : 980,t); mid.Q.value = .85; mid.gain.setValueAtTime(isChug ? Math.max(1.8,cfg.mid) : cfg.mid,t);
+  out.gain.setValueAtTime(.82,t);
+  bus.connect(input); input.connect(shaper); shaper.connect(hp); hp.connect(body); body.connect(mid); mid.connect(lp); lp.connect(out); out.connect(stemOutput("guitar"));
+  if(isScratch){
     const src = audioCtx.createBufferSource(), g = audioCtx.createGain(), bp = audioCtx.createBiquadFilter();
-    src.buffer = noiseBuffer; bp.type = "bandpass"; bp.frequency.value = 1500;
-    g.gain.setValueAtTime(.001,t); g.gain.linearRampToValueAtTime(.14,t+.004); g.gain.exponentialRampToValueAtTime(.001,t+.065);
-    src.connect(bp); bp.connect(g); g.connect(bus); src.start(t); src.stop(t+.08); flashStem("guitar"); return;
+    src.buffer = liveNoiseBuffer(`guitar_scratch_${playDur}`, playDur, true); bp.type = "bandpass"; bp.frequency.value = 1450; bp.Q.value = .9;
+    g.gain.setValueAtTime(.001,t); g.gain.linearRampToValueAtTime(.11,t+.004); g.gain.exponentialRampToValueAtTime(.001,t+playDur);
+    src.connect(bp); bp.connect(g); g.connect(bus); src.start(t); src.stop(t+playDur+.02); flashStem("guitar"); return;
   }
-  const playDur = art === "chug" ? Math.min(dur,.085) : Math.max(.12,dur*.88);
-  notes.forEach((midi,i) => {
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = tone === "clean" ? "triangle" : "sawtooth"; o.frequency.setValueAtTime(midiToFreq(midi),t+i*.006);
-    g.gain.setValueAtTime(.001,t+i*.006); g.gain.linearRampToValueAtTime((art === "accent"?.12:.09)/Math.sqrt(notes.length),t+i*.006+.004); g.gain.exponentialRampToValueAtTime(.001,t+i*.006+playDur);
-    o.connect(g); g.connect(bus); o.start(t+i*.006); o.stop(t+i*.006+playDur+.12);
+  ordered.forEach((midi,i) => {
+    const start = t + i * spread;
+    const oscA = audioCtx.createOscillator(), oscB = audioCtx.createOscillator(), g = audioCtx.createGain();
+    oscA.type = "sawtooth"; oscB.type = session.deck.guitarTone === "clean" ? "triangle" : "square";
+    oscA.frequency.setValueAtTime(midiToFreq(midi),start);
+    oscB.frequency.setValueAtTime(midiToFreq(midi) * (1.003 + i*.0009),start);
+    oscA.detune.setValueAtTime((featureSeed(step, i+50)-.5)*4,start);
+    oscB.detune.setValueAtTime((featureSeed(step, i+70)-.5)*5,start);
+    const peak = cfg.peak * (isAccent ? 1.28 : 1) * (isChug ? 1.05 : 1) / Math.sqrt(ordered.length);
+    g.gain.setValueAtTime(.001,start);
+    g.gain.linearRampToValueAtTime(peak,start+(isChug ? .002 : .006));
+    g.gain.exponentialRampToValueAtTime(Math.max(.0001, peak*(isChug ? .10 : .52)), start + Math.max(.025, playDur*(isChug ? .45 : .35)));
+    g.gain.exponentialRampToValueAtTime(.0001,start+playDur+(isChug ? .035 : .18));
+    oscA.connect(g); oscB.connect(g); g.connect(bus);
+    oscA.start(start); oscB.start(start); oscA.stop(start+playDur+.22); oscB.stop(start+playDur+.22);
   });
   flashStem("guitar");
 }
@@ -1039,25 +1245,40 @@ function effectiveFxValues(){
   return {
     filter: clamp(asNum(perf.filter ?? base.filter, DEFAULT_FX.filter), 0, 1),
     echo: clamp(asNum(perf.echo ?? base.echo, DEFAULT_FX.echo), 0, 1),
-    reverb: clamp(asNum(perf.reverb ?? base.reverb, DEFAULT_FX.reverb), 0, 1)
+    chorus: clamp(asNum(perf.chorus ?? base.chorus, DEFAULT_FX.chorus), 0, 1),
+    flanger: clamp(asNum(perf.flanger ?? base.flanger, DEFAULT_FX.flanger), 0, 1),
+    reverb: clamp(asNum(perf.reverb ?? base.reverb, DEFAULT_FX.reverb), 0, 1),
+    mix: clamp(asNum(perf.mix ?? base.mix, DEFAULT_FX.mix), 0, 1)
   };
 }
 function clearPerformanceFx(){
-  state.performanceFx = {filter:null,echo:null,reverb:null};
+  state.performanceFx = {filter:null,echo:null,chorus:null,flanger:null,reverb:null,mix:null};
 }
 function applyMixerAndFx(){
   if(!audioCtx || !session) return;
   STEMS.forEach(stem => { if(stemGains[stem]) stemGains[stem].gain.setTargetAtTime(effectiveStemGain(stem), audioCtx.currentTime, .018); });
-  if(masterGain) masterGain.gain.setTargetAtTime(session.performance.masterVolume ?? .88, audioCtx.currentTime, .018);
+  if(masterGain) masterGain.gain.setTargetAtTime(session.performance.masterVolume ?? .82, audioCtx.currentTime, .018);
   const fx = effectiveFxValues();
-  const cutoff = 260 + Math.pow(clamp(fx.filter,0,1), 2.25) * 17700;
+  const cutoff = 260 + Math.pow(clamp(fx.filter,0,1), 2.25) * 19740;
   masterFilter.frequency.setTargetAtTime(cutoff, audioCtx.currentTime, .03);
   masterFilter.Q.setTargetAtTime(fx.filter < .2 ? 1.2 : .45, audioCtx.currentTime, .03);
-  delayNode.delayTime.setTargetAtTime(.12 + fx.echo*.34, audioCtx.currentTime, .02);
-  delayFeedback.gain.setTargetAtTime(.08 + fx.echo*.58, audioCtx.currentTime, .02);
-  delayWet.gain.setTargetAtTime(fx.echo*.55, audioCtx.currentTime, .02);
-  reverbWet.gain.setTargetAtTime(fx.reverb*.62, audioCtx.currentTime, .02);
-  fxSend.gain.setTargetAtTime(.6 + Math.max(fx.echo,fx.reverb)*.6, audioCtx.currentTime, .02);
+  if(synthDryGain) synthDryGain.gain.setTargetAtTime(Math.max(.52, 1.0 - (fx.mix * .48)), audioCtx.currentTime, .02);
+  if(fxWetMasterGain) fxWetMasterGain.gain.setTargetAtTime(fx.mix * 1.45, audioCtx.currentTime, .02);
+  if(fxToneFilter){
+    const brightness = (fx.chorus*.9) + (fx.flanger*1.1) + (fx.reverb*.35) - (fx.echo*.10);
+    fxToneFilter.gain.setTargetAtTime(clamp(brightness * 6, -2, 7), audioCtx.currentTime, .03);
+  }
+  delayNode.delayTime.setTargetAtTime(.10 + fx.echo*.42, audioCtx.currentTime, .02);
+  delayFeedback.gain.setTargetAtTime(.05 + fx.echo*.72, audioCtx.currentTime, .02);
+  delayWet.gain.setTargetAtTime(fx.echo*.95, audioCtx.currentTime, .02);
+  chorusWetGain.gain.setTargetAtTime(fx.chorus*.95, audioCtx.currentTime, .02);
+  chorusDepthGain.gain.setTargetAtTime(.0014 + fx.chorus*.030, audioCtx.currentTime, .02);
+  chorusLfo.frequency.setTargetAtTime(.25 + fx.chorus*1.9, audioCtx.currentTime, .02);
+  flangerWetGain.gain.setTargetAtTime(fx.flanger*.85, audioCtx.currentTime, .02);
+  flangerFeedbackGain.gain.setTargetAtTime(.08 + fx.flanger*.82, audioCtx.currentTime, .02);
+  flangerDepthGain.gain.setTargetAtTime(.0007 + fx.flanger*.0062, audioCtx.currentTime, .02);
+  flangerLfo.frequency.setTargetAtTime(.10 + fx.flanger*1.10, audioCtx.currentTime, .02);
+  reverbWet.gain.setTargetAtTime(fx.reverb*1.05, audioCtx.currentTime, .02);
 }
 
 /* 6. Scheduler */
@@ -1089,18 +1310,17 @@ function makeChord(degree){
   return {degree:deg,rootPc,quality,intervals:chordIntervals(quality)};
 }
 function chordMidiNotes(chord, octave=0){
-  let root = 60 + chord.rootPc + octave*12;
-  while(root > 72) root -= 12;
-  while(root < 48) root += 12;
-  return chord.intervals.map(i => root + i);
+  const root = 48 + chord.rootPc + octave*12;
+  return chord.intervals.map((interval,i) => clamp(root + interval + (i === 0 ? 0 : 12), 0, 127));
 }
 function powerChordNotes(chord){
   const reg = session.deck.guitarRegister || "low";
-  let root = (reg === "high" ? 48 : reg === "mid" ? 36 : 24) + chord.rootPc;
-  while(reg === "low" && root > 47) root -= 12;
-  while(reg === "mid" && root < 40) root += 12;
-  while(reg === "high" && root < 52) root += 12;
-  return [root,root+7,root+12];
+  const minByRegister = reg === "high" ? 52 : reg === "mid" ? 45 : 35;
+  const maxByRegister = reg === "high" ? 64 : reg === "mid" ? 57 : 47;
+  let root = 24 + chord.rootPc;
+  while(root < minByRegister) root += 12;
+  while(root > maxByRegister) root -= 12;
+  return [root,root+7,root+12].map(n => clamp(n,0,127));
 }
 function melodyIndexToMidi(idx, octave=0){
   const safe = normalizeMaybeNote(idx, session.deck.melodyPitchMode === "chromatic" ? 23 : 13) || 0;
@@ -1126,6 +1346,23 @@ function bassPhraseDuration(section, step){
   let dur = stepDuration(step), i = step + 1;
   while(i < sectionStepCount(section) && section.bassHold[i]){ dur += stepDuration(i); i++; }
   return Math.max(.07, dur*.86);
+}
+function bassPhraseSlideInfo(section, step){
+  let i = step + 1;
+  let offset = stepDuration(step);
+  while(i < sectionStepCount(section) && section.bassHold[i]){
+    if(section.bassSlide[i]) return {midi:bassMidiAt(section,i), offset};
+    offset += stepDuration(i);
+    i++;
+  }
+  return null;
+}
+function guitarStepDuration(section, step, art){
+  if(art === "chug") return Math.min(stepDuration(step)*.78, .12);
+  if(art === "scratch") return Math.min(stepDuration(step)*.42, .08);
+  let dur = stepDuration(step), i = step + 1;
+  while(i < sectionStepCount(section) && section.guitarPattern[i] === "hold"){ dur += stepDuration(i); i++; }
+  return Math.max(.10, dur*.90);
 }
 function bassMidiAt(section, step){
   if(session.deck.bassMode === "manual" && section.bassNotes[step] !== null && section.bassNotes[step] !== undefined) return bassManualIndexToMidi(section.bassNotes[step]);
@@ -1155,15 +1392,20 @@ function scheduleStep(section, step, time){
     const vals = section.grid[track] || [];
     const tuplets = section.gridTuplets[track] || [];
     if(isTupletSecond(tuplets, vals, step, v => normalizeBeat(v)>0)) return;
-    const playOne = (level, t) => {
-      if(track === "kick") playKick(t, level === 2 ? 1.14 : 1);
-      if(track === "snare") playSnare(t, level === 2 ? 1.18 : 1);
-      if(track === "hat") playHat(t, level === 2 ? 1.25 : 1, level === 2);
+    const playOne = (level, t, offsetStep=0) => {
+      const seed = track === "kick" ? 1 : track === "snare" ? 2 : 3;
+      const tt = t + humanizeOffset(step + offsetStep, seed);
+      if(track === "kick"){
+        playKick(tt, humanizePeak(level === 2 ? 1.12 : .95, step + offsetStep, seed));
+        if(session.deck.sidechainOn) duckStem("chords", tt + .001, session.deck.sidechainAmount || .45);
+      }
+      if(track === "snare") playSnare(tt, humanizePeak(level === 2 ? .72 : .5, step + offsetStep, seed));
+      if(track === "hat") playHat(tt, humanizePeak(level === 2 ? .24 : .16, step + offsetStep, seed), level === 2);
     };
     const level = normalizeBeat(vals[step]);
     if(isTupletStart(tuplets, vals, step, v => normalizeBeat(v)>0)){
       const levels = [level, level, normalizeBeat(vals[step+1]) || level];
-      tripletTimes(time, spanDuration(step,2)).forEach((tt,i) => playOne(levels[i],tt));
+      tripletTimes(time, spanDuration(step,2)).forEach((tt,i) => playOne(levels[i],tt,i));
     } else if(level > 0) playOne(level,time);
   });
   if(!session.performance.stemMutes.bass && !section.bassHold[step] && !section.bassSlide[step]){
@@ -1173,8 +1415,15 @@ function scheduleStep(section, step, time){
     if(!isTupletSecond(tuplets, vals, step, active) && bassTriggerAt(section, step)){
       if(isTupletStart(tuplets, vals, step, active)){
         const times = tripletTimes(time, spanDuration(step,2));
-        [step,step,step+1].forEach((s,i) => playBass(bassMidiAt(section,s),times[i],Math.max(.06,spanDuration(step,2)/3*.82),section.bassAccent[s]));
-      } else playBass(bassMidiAt(section,step), time, bassPhraseDuration(section,step), section.bassAccent[step] || normalizeBeat(section.grid.bass[step]) === 2);
+        [step,step,step+1].forEach((s,i) => {
+          const accent = !!section.bassAccent[s] || normalizeBeat(section.grid.bass[s]) === 2;
+          playBass(bassMidiAt(section,s), times[i] + humanizeOffset(step+i,4), Math.max(.06,spanDuration(step,2)/3*.82), humanizePeak(accent ? .42 : .34, step+i, 4), accent);
+        });
+      } else {
+        const accent = !!section.bassAccent[step] || normalizeBeat(section.grid.bass[step]) === 2;
+        const slide = bassPhraseSlideInfo(section,step);
+        playBassPhrase(bassMidiAt(section,step), time + humanizeOffset(step,4), bassPhraseDuration(section,step), humanizePeak(accent ? .42 : .34, step, 4), accent, slide?.midi ?? null, slide?.offset ?? null);
+      }
     }
   }
   if(!session.performance.stemMutes.chords && chordShouldPlay(step)) playChord(currentChord(section,step), time, chordDurationForStep(section,step));
@@ -1191,14 +1440,14 @@ function scheduleStep(section, step, time){
         if(isTupletStart(tuplets, track, step, active)){
           const times = tripletTimes(time, spanDuration(step,2));
           const mid = Math.round((track[step] + track[step+1]) / 2);
-          [track[step], mid, track[step+1]].forEach((note,i) => playMelody(melodyIndexToMidi(note,section.melodyOctaves[ti] || 0), times[i], Math.max(.06,spanDuration(step,2)/3*.82), section.melodyInstruments[ti], section.melodyPan[ti] || 0));
-        } else playMelody(melodyIndexToMidi(track[step],section.melodyOctaves[ti] || 0), time, melodyPhraseDuration(section,ti,step), section.melodyInstruments[ti], section.melodyPan[ti] || 0);
+          [track[step], mid, track[step+1]].forEach((note,i) => playMelody(melodyIndexToMidi(note,section.melodyOctaves[ti] || 0), times[i] + humanizeOffset(step+i,10+ti), Math.max(.06,spanDuration(step,2)/3*.82), section.melodyInstruments[ti], section.melodyPan[ti] || 0, humanizePeak(1, step+i, 10+ti)));
+        } else playMelody(melodyIndexToMidi(track[step],section.melodyOctaves[ti] || 0), time + humanizeOffset(step,10+ti), melodyPhraseDuration(section,ti,step), section.melodyInstruments[ti], section.melodyPan[ti] || 0, humanizePeak(1, step, 10+ti));
       }
     });
   }
   if(session.deck.guitarActive && !session.performance.stemMutes.guitar){
     const art = section.guitarPattern[step];
-    if(art && art !== "off" && art !== "hold") playGuitar(powerChordNotes(currentChord(section,step)), time, stepDuration(step)*.92, art);
+    if(art && art !== "off" && art !== "hold") playGuitar(powerChordNotes(currentChord(section,step)), time + humanizeOffset(step,17), guitarStepDuration(section,step,art), art, step);
   }
   scheduleVisual(section, step, time);
 }
