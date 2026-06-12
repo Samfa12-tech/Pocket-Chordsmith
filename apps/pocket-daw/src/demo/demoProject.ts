@@ -10,7 +10,7 @@ export function createDemoChordsmithProject() {
   const sectionIds = ["A", "B", "C", "D", "E", "F", "G", "H"];
   const timeSig = 4;
   const resolution = 4;
-  const steps = 16 * timeSig * resolution;
+  const sectionBars: Record<string, number> = { A: 4, B: 4, C: 4, D: 4, E: 2, F: 2, G: 2, H: 2 };
   const project: Record<string, unknown> = {
     projectVersion: 16,
     title: "Pocket DAW Demo - Neon Roads",
@@ -40,11 +40,12 @@ export function createDemoChordsmithProject() {
     unknownFutureChordsmithField: {
       preservedByPocketDaw: true
     },
-    sectionBars: { A: 4, B: 4, C: 4, D: 4, E: 2, F: 2, G: 2, H: 2 },
+    sectionBars,
     songSequence: ["A", "A", "B", "C", "D", "B", "A"]
   };
 
   sectionIds.forEach((id) => {
+    const steps = sectionBars[id] * timeSig * resolution;
     project[`progression${id}`] = progressionFor(id);
     project[`grid${id}`] = drumGrid(steps, id);
     project[`gridTuplets${id}`] = blankTuplets(steps);

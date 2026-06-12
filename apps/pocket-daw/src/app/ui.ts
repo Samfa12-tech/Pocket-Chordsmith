@@ -58,7 +58,8 @@ export function renderAppShell(state: AppState): string {
       <section class="import-panel" data-layout-zone="import">
         <textarea id="importText" spellcheck="false" placeholder="Paste PCS1 share code, raw Pocket Chordsmith JSON, Pocket DJ source session, or .pocketdaw JSON">${escapeHtml(state.importText)}</textarea>
         <div class="import-actions">
-          <button data-action="load-demo">Load Demo</button>
+          <button data-action="load-demo">Load Demo Copy</button>
+          <button data-action="reset-demo-template">Reload Demo Template</button>
           <button data-action="import-text">Import Paste</button>
           <button data-action="open-file">Open File</button>
           <button data-action="save-project">Save .pocketdaw</button>
@@ -983,7 +984,7 @@ function renderControlsPanel(state: AppState): string {
         </header>
         <div class="control-guide">
           <p><strong>Import</strong><span>Paste a PCS1 code, Chordsmith JSON, Pocket DJ source session, or .pocketdaw file.</span></p>
-          <p><strong>Demo</strong><span>Use Load Demo to reset to a known working song when testing playback, meters, save and export.</span></p>
+          <p><strong>Demo</strong><span>Load Demo Copy creates an editable autosaved copy. Reload Demo Template discards copy edits and starts fresh from the built-in demo.</span></p>
           <p><strong>Transport</strong><span>Play, Stop, Restart, or return to Bar 1 from the top bar.</span></p>
           <p><strong>Shortcuts</strong><span>Space play/pause, Home Bar 1, L loop, P loop selected, X split, G marker, Ctrl+C/V clip copy/paste, M mute, S solo, R arm, D duplicate, Delete remove, arrows move clips, plus/minus zoom.</span></p>
           <p><strong>Timeline</strong><span>Select a clip, click or drag the ruler/grid to seek and scrub, choose Bar or Beat snap, then use Move, Copy, Paste, Split, Trim, Loop Clip, Marker and Zoom controls.</span></p>

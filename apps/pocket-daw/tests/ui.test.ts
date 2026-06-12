@@ -55,6 +55,8 @@ describe("Pocket DAW UI rendering", () => {
     [
       "new-project",
       "open-project",
+      "load-demo",
+      "reset-demo-template",
       "save-project",
       "save-project-as",
       "clip-copy",
@@ -72,6 +74,19 @@ describe("Pocket DAW UI rendering", () => {
       expect(html).toContain(`data-action="${action}"`);
     });
     expect(html).toContain('id="snapMode"');
+  });
+
+  it("describes demo loading as an editable copy with an explicit template reload", () => {
+    const state = createInitialState();
+    state.showControls = true;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("Load Demo Copy");
+    expect(html).toContain("Reload Demo Template");
+    expect(html).toContain("Editable demo copy");
+    expect(html).toContain("Load Demo Copy creates an editable autosaved copy.");
+    expect(html).toContain("Reload Demo Template discards copy edits");
   });
 
   it("renders the shell as explicit non-overlapping layout zones", () => {

@@ -2,6 +2,30 @@ import { describe, expect, it } from "vitest";
 import { AudioEngine } from "../src/audio/audioEngine";
 import { setTrackPanCommand, setTrackVolumeCommand, toggleTrackMuteCommand, toggleTrackSoloCommand } from "../src/app/commands";
 import { createInitialState, currentProject } from "../src/app/state";
+import { createDemoProject } from "../src/demo/demoProject";
+
+function demoIdentity(project: ReturnType<typeof currentProject>) {
+  return {
+    title: project.project.title,
+    sourceRefTitles: project.sourceRefs.map((ref) => ref.title),
+    normalizedSectionBars: project.sourceRefs.map((ref) => {
+      const normalized = ref.normalized as { sections?: Record<string, { bars: number }> } | undefined;
+      return Object.fromEntries(Object.entries(normalized?.sections || {}).map(([id, section]) => [id, section.bars]));
+    }),
+    timelineClips: project.timeline.clips.map((clip) => ({
+      id: clip.id,
+      sectionId: clip.sectionId,
+      startBar: clip.startBar,
+      barLength: clip.barLength,
+      sourceRefId: clip.sourceRefId
+    })),
+    importHistory: project.importHistory.map((entry) => ({
+      sourceRefId: entry.sourceRefId,
+      importKind: entry.importKind,
+      message: entry.message
+    }))
+  };
+}
 
 describe("mixer fast path", () => {
   it("keeps live mixer previews out of undo history until final commit", () => {
@@ -41,6 +65,49 @@ describe("mixer fast path", () => {
     expect(bass?.volume).toBe(0.95);
   });
 
+  it("keeps demo identity stable and commits one undo entry after a pan drag", () => {
+    const state = createInitialState();
+    const engine = new AudioEngine(currentProject(state));
+    const beforeProject = currentProject(state);
+    const beforeIdentity = demoIdentity(beforeProject);
+    const beforeDiagnostics = engine.getDiagnostics();
+
+    engine.updateTrackMixerControl("bass", { pan: -1 });
+    engine.updateTrackMixerControl("bass", { pan: 0.5 });
+    const committed = setTrackPanCommand(state, "bass", 0.5);
+    const afterProject = currentProject(committed);
+    const afterDiagnostics = engine.getDiagnostics();
+
+    expect(committed.undoStack.past).toHaveLength(1);
+    expect(afterProject.tracks.find((track) => track.id === "bass")?.pan).toBe(0.5);
+    expect(demoIdentity(afterProject)).toEqual(beforeIdentity);
+    expect(afterDiagnostics.eventCount).toBe(beforeDiagnostics.eventCount);
+    expect(afterDiagnostics.sourceRefTitles).toEqual(beforeDiagnostics.sourceRefTitles);
+    expect(afterDiagnostics.timelineClipCount).toBe(beforeDiagnostics.timelineClipCount);
+    expect(createDemoProject().project.title).toBe(beforeProject.project.title);
+  });
+
+  it("keeps demo identity stable and commits one undo entry after a volume drag", () => {
+    const state = createInitialState();
+    const engine = new AudioEngine(currentProject(state));
+    const beforeProject = currentProject(state);
+    const beforeIdentity = demoIdentity(beforeProject);
+    const beforeDiagnostics = engine.getDiagnostics();
+
+    engine.updateTrackMixerControl("bass", { volume: 0.2 });
+    engine.updateTrackMixerControl("bass", { volume: 1.05 });
+    const committed = setTrackVolumeCommand(state, "bass", 1.05);
+    const afterProject = currentProject(committed);
+    const afterDiagnostics = engine.getDiagnostics();
+
+    expect(committed.undoStack.past).toHaveLength(1);
+    expect(afterProject.tracks.find((track) => track.id === "bass")?.volume).toBe(1.05);
+    expect(demoIdentity(afterProject)).toEqual(beforeIdentity);
+    expect(afterDiagnostics.eventCountsByTrack).toEqual(beforeDiagnostics.eventCountsByTrack);
+    expect(afterDiagnostics.importHistoryCount).toBe(beforeDiagnostics.importHistoryCount);
+    expect(createDemoProject().project.title).toBe(beforeProject.project.title);
+  });
+
   it("keeps mute and solo on the mixer fast path until their single click commits", () => {
     const state = createInitialState();
     const engine = new AudioEngine(currentProject(state));
@@ -68,5 +135,37 @@ describe("mixer fast path", () => {
     expect(afterSolo.eventCountsByTrack).toEqual(before.eventCountsByTrack);
     expect(afterSolo.projectTitle).toBe("Pocket DAW Demo - Neon Roads");
     expect(afterSolo.mixerControls.find((track) => track.id === "bass")).toMatchObject({ mute: false, solo: true });
+  });
+
+  it("keeps demo identity stable and commits one undo entry for mute or solo", () => {
+    const muteState = createInitialState();
+    const muteEngine = new AudioEngine(currentProject(muteState));
+    const muteIdentity = demoIdentity(currentProject(muteState));
+    const muteBefore = muteEngine.getDiagnostics();
+    const muted = toggleTrackMuteCommand(muteState, "chords");
+    muteEngine.updateTrackMixerControl("chords", { mute: true });
+    const muteAfter = muteEngine.getDiagnostics();
+
+    expect(muted.undoStack.past).toHaveLength(1);
+    expect(currentProject(muted).tracks.find((track) => track.id === "chords")?.mute).toBe(true);
+    expect(demoIdentity(currentProject(muted))).toEqual(muteIdentity);
+    expect(muteAfter.eventCount).toBe(muteBefore.eventCount);
+    expect(muteAfter.sourceRefTitles).toEqual(muteBefore.sourceRefTitles);
+    expect(muteAfter.chordsmithSectionCount).toBe(muteBefore.chordsmithSectionCount);
+
+    const soloState = createInitialState();
+    const soloEngine = new AudioEngine(currentProject(soloState));
+    const soloIdentity = demoIdentity(currentProject(soloState));
+    const soloBefore = soloEngine.getDiagnostics();
+    const soloed = toggleTrackSoloCommand(soloState, "bass");
+    soloEngine.updateTrackMixerControl("bass", { solo: true });
+    const soloAfter = soloEngine.getDiagnostics();
+
+    expect(soloed.undoStack.past).toHaveLength(1);
+    expect(currentProject(soloed).tracks.find((track) => track.id === "bass")?.solo).toBe(true);
+    expect(demoIdentity(currentProject(soloed))).toEqual(soloIdentity);
+    expect(soloAfter.timelineClipCount).toBe(soloBefore.timelineClipCount);
+    expect(soloAfter.importHistoryCount).toBe(soloBefore.importHistoryCount);
+    expect(soloAfter.projectTitle).toBe("Pocket DAW Demo - Neon Roads");
   });
 });

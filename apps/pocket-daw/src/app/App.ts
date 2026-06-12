@@ -156,7 +156,7 @@ export class App {
           this.state.undoStack = createUndoStack(project);
           this.state.status = "Recovered autosaved Pocket DAW project.";
         } catch {
-          this.state.status = "Demo project loaded. Autosave was present but could not be recovered.";
+          this.state.status = "Editable demo copy loaded. Autosave was present but could not be recovered.";
         }
       }
     }
@@ -720,6 +720,7 @@ export class App {
     if (action === "open-file" || action === "open-project") await this.openProject();
     if (action === "new-project") this.newProject();
     if (action === "load-demo") this.loadDemo();
+    if (action === "reset-demo-template") this.reloadDemoTemplate();
     if (action === "save-project") await this.saveProject(false);
     if (action === "save-project-as") await this.saveProject(true);
     if (action === "export-wav") await this.exportWav();
@@ -1175,12 +1176,20 @@ export class App {
   }
 
   loadDemo() {
+    this.loadDemoProject("Loaded an editable demo copy. Edits autosave to this copy.");
+  }
+
+  private reloadDemoTemplate() {
+    this.loadDemoProject("Reloaded the demo template into a fresh editable copy. Previous demo copy edits were discarded.");
+  }
+
+  private loadDemoProject(status: string) {
     const project = createDemoProject();
     this.state.undoStack = createUndoStack(project);
     this.state.selectedClipId = project.timeline.clips[0]?.id || null;
     this.state.selectedTrackId = "drums";
-    this.state.currentFile = { path: null, label: "Demo project" };
-    this.state.status = "Demo project loaded.";
+    this.state.currentFile = { path: null, label: "Editable demo copy" };
+    this.state.status = status;
     this.state.playheadBar = 1;
     this.state.cursorBar = 1;
     this.state.meterLevels = {};
