@@ -37,6 +37,12 @@ export interface AppState {
   chordsmithStepSelection: ChordsmithStepSelection | null;
 }
 
+export interface LoadProjectIntoStateOptions {
+  status: string;
+  currentFile?: ProjectFileState;
+  clearImportText?: boolean;
+}
+
 export function createInitialState(): AppState {
   const project = createDemoProject();
   return {
@@ -68,4 +74,32 @@ export function createInitialState(): AppState {
 
 export function currentProject(state: AppState): PocketDawProject {
   return state.undoStack.present;
+}
+
+export function loadProjectIntoState(
+  state: AppState,
+  project: PocketDawProject,
+  options: LoadProjectIntoStateOptions
+): AppState {
+  const selectedClip = project.timeline.clips.find((clip) => project.tracks.some((track) => track.id === clip.trackId)) || project.timeline.clips[0] || null;
+  return {
+    ...state,
+    undoStack: createUndoStack(project),
+    selectedClipId: selectedClip?.id || null,
+    selectedTrackId: preferredTrackId(project),
+    cursorBar: 1,
+    status: options.status,
+    playing: false,
+    playheadBar: 1,
+    meterLevels: {},
+    importText: options.clearImportText === false ? state.importText : "",
+    currentFile: options.currentFile || { path: null, label: project.project.title || "Untitled project" },
+    chordsmithEditorStepPage: 0,
+    chordsmithStepSelection: null
+  };
+}
+
+function preferredTrackId(project: PocketDawProject): string | null {
+  if (project.tracks.some((track) => track.id === "drums")) return "drums";
+  return project.tracks.find((track) => track.role !== "master")?.id || project.tracks[0]?.id || null;
 }

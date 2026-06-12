@@ -28,7 +28,8 @@ This repository is now the canonical public monorepo for:
 ## Working Rules
 
 - Do not move `addons/pocket_chordsmith/`.
-- Treat root-level `web-app/`, `pocket_dj/`, `godot-addon/`, `pocket-daw/`, `archive/`, `releases/`, and `marketing-assets/` as local ignored reference folders if they exist on disk.
+- Treat root-level `web-app/`, `pocket_dj/`, `godot-addon/`, `archive/`, `releases/`, and `marketing-assets/` as local ignored reference folders if they exist on disk.
+- The old standalone Pocket DAW checkout was archived to `archive/local-reference/pocket-daw-standalone-2026-06-13/`; do not use a root-level `pocket-daw/` folder for active work.
 - Canonical app changes belong under `apps/`.
 - Do not commit generated outputs: `node_modules/`, `dist/`, `src-tauri/target/`, installers, release zips, Godot `.import`/`.uid`, or local `.pocketdaw` saves.
 - Keep Pocket DJ separate from the Chordsmith editor UI.
