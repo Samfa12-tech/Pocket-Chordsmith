@@ -10,6 +10,7 @@ import { midiDataFromClip } from "../daw/midiClips";
 import { getTrackAutomationLane, trackHasAutomation } from "../daw/automation";
 import { availableTrackOutputs } from "../daw/routing";
 import { createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs";
+import { createCollectMediaPlan } from "../daw/mediaPool";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 
 const CHORD_LABELS = ["I", "II", "III", "IV", "V", "VI", "VII"];
@@ -51,7 +52,7 @@ export function renderAppShell(state: AppState): string {
       ${renderMixer(state)}
       ${renderExportPanel(state)}
       ${renderMediaPool(state)}
-      ${state.showControls ? renderControlsPanel() : ""}
+      ${state.showControls ? renderControlsPanel(state) : ""}
       ${state.showAddTrack ? renderAddTrackPanel() : ""}
       ${state.showAudioSettings ? renderAudioSettingsPanel(state) : ""}
       <section class="import-panel" data-layout-zone="import">
@@ -69,6 +70,7 @@ export function renderAppShell(state: AppState): string {
           <button data-action="export-section-manifest">Section Manifest</button>
           <button data-action="export-godot-manifest">Godot Manifest Preview</button>
           <button data-action="export-web-game-manifest">Web Manifest Preview</button>
+          <button data-action="export-media-plan">Collect Media Plan</button>
           <button data-action="export-diagnostics">Export Diagnostics</button>
         </div>
       </section>
@@ -137,6 +139,7 @@ function renderMenuGroup(label: string, actions: Array<[string, string]>): strin
 
 function renderTransport(state: AppState): string {
   const project = currentProject(state);
+  const env = environmentLabel();
   return `
     <header class="transport" data-layout-zone="transport">
       <div class="brand">
@@ -144,7 +147,7 @@ function renderTransport(state: AppState): string {
         <div>
           <h1>Pocket DAW</h1>
           <p>${escapeHtml(project.project.title)}</p>
-          <small>${escapeHtml(state.currentFile.path || state.currentFile.label)}</small>
+          <small>v${escapeHtml(project.dawVersion)} / ${escapeHtml(env)} / ${escapeHtml(state.currentFile.path || state.currentFile.label)}</small>
         </div>
       </div>
       <div class="transport-buttons">
@@ -733,6 +736,7 @@ function renderMixer(state: AppState): string {
 function renderMediaPool(state: AppState): string {
   const project = currentProject(state);
   const items = project.mediaPool;
+  const collectPlan = createCollectMediaPlan(project);
   return `
     <section class="media-pool" data-layout-zone="media" id="mediaPool" aria-label="Media Pool">
       <header>
@@ -743,6 +747,7 @@ function renderMediaPool(state: AppState): string {
         <div class="media-actions">
           <button data-action="import-audio" title="Import an audio file into the media pool">Import Audio</button>
           <button data-action="import-midi" title="Import a .mid or .midi file as a MIDI clip">Import MIDI</button>
+          <button data-action="export-media-plan" title="Export a JSON plan for collecting project media; native copy is still guarded">Collect Plan</button>
           <button disabled title="Freeze/stem rendering arrives after render cache is wired">Add Rendered Stem</button>
         </div>
       </header>
@@ -784,6 +789,8 @@ function renderMediaPool(state: AppState): string {
       <aside class="render-cache-summary">
         <strong>Render Cache</strong>
         <span>${project.renderCache.length ? project.renderCache.map((item) => `${escapeHtml(item.id)}${item.mediaPoolItemId ? ` -> ${escapeHtml(item.mediaPoolItemId)}` : ""}${item.invalidated ? " (invalidated)" : ""}`).join(" / ") : "No render cache entries yet. Freeze, stem and game-pack renders will link cache entries to media pool items here."}</span>
+        <strong>Collect Plan</strong>
+        <span>${collectPlan.copy.length} copy / ${collectPlan.alreadyProject.length} project / ${collectPlan.blocked.length} blocked</span>
       </aside>
     </section>
   `;
@@ -809,7 +816,7 @@ function renderExportPanel(state: AppState): string {
           <button data-action="export-web-game-manifest">Web Manifest Preview</button>
         </div>
       </header>
-      <p class="export-note">Stem WAVs download one file at a time. Section, Godot and web-game exports currently produce JSON manifest previews; zip pack assembly and push-to-Godot remain future work.</p>
+      <p class="export-note">Full mix and stem WAVs render real audio. Game manifests now use deterministic pack paths; section-loop audio and ZIP assembly remain planned-render/native follow-up work.</p>
     </section>
   `;
 }
@@ -828,6 +835,7 @@ function renderMixerStrip(track: Track, meterLevel: number): string {
   const isReturn = track.role === "fx-return";
   const canMuteSolo = !isMaster && !isReturn;
   const canArm = !!track.recordKind && track.recordKind !== "none";
+  const recordBlockedTitle = "Recording coming after media/device QA, latency setup, armed-track rules and reload-safe project media.";
   return `
     <div class="strip ${track.active === false ? "inactive" : ""}">
       <div class="strip-name">
@@ -848,7 +856,7 @@ function renderMixerStrip(track: Track, meterLevel: number): string {
             ? `<span class="strip-note">Limiter ${track.metadata?.limiter === false ? "Off" : "On"}</span>`
             : `${canMuteSolo ? `<button title="Mute ${escapeHtml(track.name)}" class="${track.mute ? "on" : ""}" data-mute-track="${track.id}">Mute</button>
                <button title="Solo ${escapeHtml(track.name)}" class="${track.solo ? "on" : ""}" data-solo-track="${track.id}">Solo</button>` : `<span class="strip-note">Return channel</span>`}
-               ${canArm ? `<button title="Arm ${escapeHtml(track.name)}" class="${track.armed ? "on record" : ""}" data-arm-track="${track.id}">Arm</button>` : ""}`
+               ${canArm ? `<button title="${recordBlockedTitle}" class="${track.armed ? "on record" : ""}" data-arm-track="${track.id}" disabled>Arm</button>` : ""}`
         }
       </div>
       ${!isMaster ? renderFxDropdown(track) : ""}
@@ -920,8 +928,8 @@ function renderAddTrackPanel(): string {
           <button data-action="add-track-close">Close</button>
         </header>
         <div class="add-track-grid">
-          <button data-add-track-kind="live-vocals"><strong>Live Vocals</strong><span>Audio track, record-ready later</span></button>
-          <button data-add-track-kind="live-instrument"><strong>Live Instrument</strong><span>Audio input track, no recording yet</span></button>
+          <button data-add-track-kind="live-vocals"><strong>Live Vocals</strong><span>Disabled recording stub; media/device QA first</span></button>
+          <button data-add-track-kind="live-instrument"><strong>Live Instrument</strong><span>Input placeholder only; no capture yet</span></button>
           <button data-add-track-kind="chordsmith-drums"><strong>Chordsmith Drums</strong><span>Select or enable generated drums</span></button>
           <button data-add-track-kind="chordsmith-bass"><strong>Chordsmith Bass</strong><span>Select or enable generated bass</span></button>
           <button data-add-track-kind="chordsmith-chords"><strong>Chordsmith Chords</strong><span>Select or enable generated chords</span></button>
@@ -947,7 +955,7 @@ function renderAudioSettingsPanel(state: AppState): string {
         </header>
         <div class="control-guide">
           <p><strong>Host</strong><span>${escapeHtml(project.audioDeviceSettings.host)} (${escapeHtml(state.audioProbeStatus)})</span></p>
-          <p><strong>Recording</strong><span>Device probing only in v0.1.3. Audio recording and ASIO arrive later.</span></p>
+          <p><strong>Recording</strong><span>Coming after media/device QA, input selection, latency, armed tracks, meters and reload-safe recorded media.</span></p>
         </div>
         <button data-action="audio-refresh">Refresh Devices</button>
         <div class="device-list">
@@ -963,7 +971,9 @@ function renderAudioSettingsPanel(state: AppState): string {
   `;
 }
 
-function renderControlsPanel(): string {
+function renderControlsPanel(state: AppState): string {
+  const project = currentProject(state);
+  const recent = state.recent.slice(0, 3).map((item) => item.path || item.label).join(" / ") || "No recent projects saved in this environment.";
   return `
     <div class="modal-backdrop" data-controls-backdrop="true">
       <section class="controls-panel" role="dialog" aria-modal="true" aria-labelledby="controls-title">
@@ -979,12 +989,18 @@ function renderControlsPanel(): string {
           <p><strong>Timeline</strong><span>Select a clip, click or drag the ruler/grid to seek and scrub, choose Bar or Beat snap, then use Move, Copy, Paste, Split, Trim, Loop Clip, Marker and Zoom controls.</span></p>
           <p><strong>Media Pool</strong><span>Import Audio decodes supported files into a runtime cache. Import MIDI parses .mid files into editable clips played by the preview synth.</span></p>
           <p><strong>Mixer</strong><span>Use Volume and Pan sliders. Meters show live peak audio. Mute silences a track; Solo isolates it.</span></p>
-          <p><strong>Diagnostics</strong><span>Export Diagnostics creates a JSON snapshot of playback, render, scheduler and event state for bug reports.</span></p>
+          <p><strong>Diagnostics</strong><span>v${escapeHtml(project.dawVersion)} / ${escapeHtml(environmentLabel())} / ${escapeHtml(state.currentFile.path || state.currentFile.label)} / recent: ${escapeHtml(recent)}</span></p>
           <p><strong>Save / Export</strong><span>Save .pocketdaw projects, export full-song WAV, or export multi-track MIDI.</span></p>
+          <p><strong>Private alpha</strong><span>Recording and native collect-media copy stay guarded until the v0.6 verification docs are complete.</span></p>
         </div>
+        <button data-action="export-diagnostics">Export Diagnostics</button>
       </section>
     </div>
   `;
+}
+
+function environmentLabel(): string {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window ? "Native/Tauri" : "Browser/dev";
 }
 
 function formatBarBeat(barValue: number, timeSig: number, ppq: number): string {

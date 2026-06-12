@@ -8,7 +8,13 @@ export const RELEASE_DOCS = [
   "WHAT_WORKS_AND_WHATS_NEXT.md",
   "POCKET_DAW_NORTH_STAR.md",
   "docs/V0_5_1_HARDENING_NOTES.md",
-  "docs/POCKET_AUDIO_CORE_CONVERGENCE_REVIEW.md"
+  "docs/POCKET_AUDIO_CORE_CONVERGENCE_REVIEW.md",
+  "docs/v0.5.1-verification.md",
+  "docs/PRIVATE_ALPHA_RELEASE_CHECKLIST.md",
+  "docs/RELEASE_NOTES_TEMPLATE.md",
+  "docs/WINDOWS_TESTING_CHECKLIST.md",
+  "docs/V0_6_FOUNDATION_NOTES.md",
+  "docs/RECORDING_PREP.md"
 ];
 
 export function previewZipName(version) {

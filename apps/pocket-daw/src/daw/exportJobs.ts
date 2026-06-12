@@ -6,6 +6,7 @@ export interface StemExportPlanItem {
   label: string;
   trackIds: string[];
   fileName: string;
+  packPath: string;
 }
 
 export interface SectionLoopExportItem {
@@ -21,6 +22,8 @@ export interface SectionLoopExportItem {
   lengthBars: number;
   lengthSeconds: number;
   fileName: string;
+  packPath: string;
+  status: "planned-render";
 }
 
 export interface GameExportManifest {
@@ -34,6 +37,14 @@ export interface GameExportManifest {
   sectionLoops: SectionLoopExportItem[];
   markers: Array<TimelineMarker & { seconds: number }>;
   files: string[];
+  folders: {
+    full: string;
+    stems: string;
+    sections: string;
+    manifests: string;
+    source: string;
+  };
+  warnings: string[];
   notes: string[];
 }
 
@@ -80,7 +91,9 @@ export function createSectionLoopMetadata(project: PocketDawProject): SectionLoo
         timeSig: project.project.timeSig,
         lengthBars,
         lengthSeconds: barsToSeconds(lengthBars, project.project.bpm, project.project.timeSig),
-        fileName: `${safeName(project.project.title)}-${safeName(name)}-loop.wav`
+        fileName: `${safeName(project.project.title)}-${safeName(name)}-loop.wav`,
+        packPath: `audio/sections/${safeName(project.project.title)}-${safeName(name)}-loop.wav`,
+        status: "planned-render"
       };
     });
 }
@@ -92,7 +105,9 @@ export function createGameExportManifest(project: PocketDawProject, kind: GameEx
     ...marker,
     seconds: barsToSeconds(Math.max(0, marker.bar - 1), project.project.bpm, project.project.timeSig)
   }));
-  const manifestFile = kind === "godot-adaptive-pack" ? "godot-adaptive-manifest.json" : "web-game-manifest.json";
+  const manifestFile = kind === "godot-adaptive-pack" ? "manifests/godot-adaptive-manifest.json" : "manifests/web-game-manifest.json";
+  const fullMixFile = `audio/full/${safeName(project.project.title)}-full-mix.wav`;
+  const warnings = collectExportWarnings(project);
   return {
     kind,
     projectTitle: project.project.title,
@@ -103,20 +118,43 @@ export function createGameExportManifest(project: PocketDawProject, kind: GameEx
     stems,
     sectionLoops,
     markers,
-    files: [manifestFile, ...stems.map((stem) => stem.fileName), ...sectionLoops.map((loop) => loop.fileName)],
+    files: [manifestFile, fullMixFile, ...stems.map((stem) => stem.packPath), ...sectionLoops.map((loop) => loop.packPath)],
+    folders: {
+      full: "audio/full/",
+      stems: "audio/stems/",
+      sections: "audio/sections/",
+      manifests: "manifests/",
+      source: "source/"
+    },
+    warnings,
     notes: [
-      "Manifest preview only: push-to-Godot and browser zip packaging are future work.",
-      "Stem and loop file names describe the intended export set for this project."
+      "Full mix and stem WAVs are renderable today through browser/native downloads.",
+      "Section loop and bundled ZIP assembly are planned-render paths until the section-only render writer lands.",
+      "Manifest paths use the target pack folder layout so exported files can be collected deterministically."
     ]
   };
 }
 
+export function collectExportWarnings(project: PocketDawProject): string[] {
+  const warnings: string[] = [];
+  project.mediaPool.forEach((item) => {
+    if (item.metadata?.missing === true || item.metadata?.unresolved === true) warnings.push(`${item.name}: media is missing or unresolved.`);
+    if (item.metadata?.runtimeOnly === true) warnings.push(`${item.name}: browser runtime-only media must be re-imported in native mode before a durable pack.`);
+  });
+  const mutedTracks = project.tracks.filter((track) => track.mute && track.role !== "master").map((track) => track.name);
+  if (mutedTracks.length) warnings.push(`Muted tracks are excluded from audible renders: ${mutedTracks.join(", ")}.`);
+  if (!createSectionLoopMetadata(project).length) warnings.push("No generated sections are available for section-loop export.");
+  return warnings;
+}
+
 function stemItem(id: string, label: string, trackIds: string[], project: PocketDawProject): StemExportPlanItem {
+  const fileName = `${safeName(project.project.title)}-${safeName(label)}-stem.wav`;
   return {
     id,
     label,
     trackIds,
-    fileName: `${safeName(project.project.title)}-${safeName(label)}-stem.wav`
+    fileName,
+    packPath: `audio/stems/${fileName}`
   };
 }
 

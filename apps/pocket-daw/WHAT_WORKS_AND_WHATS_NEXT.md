@@ -218,6 +218,17 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 - Expanded Media Pool status wording and added a disabled `Reload Media` scaffold for external audio that needs a future relink/reload flow.
 - Added `tauri:build` and `verify:native-release` so full native release bundling is available as an explicit release check.
 - Added `docs/V0_5_1_HARDENING_NOTES.md` and `docs/POCKET_AUDIO_CORE_CONVERGENCE_REVIEW.md`; preview packages now include those docs under `docs/`.
+
+## v0.6 Foundation Readiness
+
+- Added `docs/v0.5.1-verification.md` as the explicit verification gate with Windows installer/manual checks marked NOT RUN where they were not performed.
+- Added private-alpha release docs: `PRIVATE_ALPHA_RELEASE_CHECKLIST.md`, `RELEASE_NOTES_TEMPLATE.md` and `WINDOWS_TESTING_CHECKLIST.md`.
+- Added `docs/V0_6_FOUNDATION_NOTES.md` and `docs/RECORDING_PREP.md` to track media persistence, export pack, handoff, parity fixture and recording prerequisites.
+- Media Pool now has a deterministic collect-media plan export that separates copyable external files, project media and blocked runtime-only/missing media.
+- Game manifests now use deterministic pack paths under `audio/full/`, `audio/stems/`, `audio/sections/`, `manifests/` and include warnings for runtime-only/missing media and muted tracks.
+- Pocket Chordsmith now has a visible `Send to Pocket DAW` handoff path using PocketHandoff URL/window/localStorage/clipboard fallbacks.
+- Added PCS parity fixtures covering simple loops, multi-section timing, manual bass, multi-lane melody tuplets/slides and guitar/global metadata.
+- Recording remains disabled: live audio tracks are placeholders, Arm controls are guarded, and no microphone/native capture is requested.
 - Added a safe `src/audio/pocketAudioCoreAdapter.ts` bridge for future Pocket Audio Core alignment without replacing the current playback/render engine.
 
 ## Browser preview

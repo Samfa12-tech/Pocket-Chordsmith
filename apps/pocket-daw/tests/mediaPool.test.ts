@@ -3,6 +3,7 @@ import { migratePocketDawProject } from "../src/compatibility/migrations";
 import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
 import {
   addMediaPoolItem,
+  createCollectMediaPlan,
   createMediaPoolItem,
   findMediaPoolItem,
   markMediaPoolItemExternal,
@@ -37,6 +38,17 @@ describe("media pool helpers", () => {
     expect(found?.metadata).toMatchObject({ userNote: "keeper", analysed: true, peakDb: -3 });
     expect(mediaPoolStatus(found!).label).toBe("External unloaded");
     expect(mediaPoolStatus(found!)).toMatchObject({ external: true, runtimeAvailable: false, reloadable: true });
+  });
+
+  it("labels project-relative media as project media", () => {
+    const item = createMediaPoolItem({
+      kind: "audio",
+      name: "Collected Loop.wav",
+      uri: "project-media/Collected Loop.wav",
+      metadata: { mediaRefKind: "project", projectRelativePath: "project-media/Collected Loop.wav" }
+    });
+
+    expect(mediaPoolStatus(item)).toMatchObject({ label: "Project media", external: false, reloadable: false });
   });
 
   it("marks media missing and unresolved without dropping existing metadata", () => {
@@ -109,6 +121,21 @@ describe("media pool helpers", () => {
 
     expect(parsed.mediaPool).toEqual(project.mediaPool);
     expect(parsed.renderCache).toEqual(project.renderCache);
+  });
+
+  it("creates a deterministic collect-media plan with copy and blocked buckets", () => {
+    let project = createDemoProject();
+    const external = createMediaPoolItem({ kind: "audio", name: "Lead Vocal.wav", uri: "C:\\Sessions\\Lead Vocal.wav" });
+    const browserOnly = createMediaPoolItem({ kind: "audio", name: "Browser Take.wav", metadata: { runtimeOnly: true } }, [external]);
+    const missing = createMediaPoolItem({ kind: "audio", name: "Missing.wav", uri: "file:///lost/Missing.wav", metadata: { missing: true, unresolved: true } }, [external, browserOnly]);
+    project = addMediaPoolItem(addMediaPoolItem(addMediaPoolItem(project, external), browserOnly), missing);
+
+    const plan = createCollectMediaPlan(project);
+
+    expect(plan.targetFolder).toBe("project-media");
+    expect(plan.copy).toHaveLength(1);
+    expect(plan.copy[0]).toMatchObject({ id: external.id, targetRelativePath: "project-media/Lead Vocal.wav" });
+    expect(plan.blocked.map((item) => item.id)).toEqual(expect.arrayContaining([browserOnly.id, missing.id]));
   });
 
   it("initializes media pool and render cache when migrating older projects", () => {

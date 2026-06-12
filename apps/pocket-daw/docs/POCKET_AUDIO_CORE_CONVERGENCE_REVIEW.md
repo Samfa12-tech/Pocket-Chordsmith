@@ -34,6 +34,10 @@ Added `src/audio/pocketAudioCoreAdapter.ts` as a small convergence adapter. It n
 
 This is intentionally non-invasive. It does not change the current playback engine, event renderer or offline renderer.
 
+## v0.6 fixture guardrail
+
+`tests/pcsParityFixtures.ts` and `tests/parityFixtures.test.ts` now cover realistic Chordsmith source cases through DAW import, render events and the adapter shape. These fixtures are the first comparison target when the real Pocket Audio Core package/API arrives.
+
 ## Deferred
 
 Do not replace the audio engine or event renderer until the actual Pocket Audio Core code/API is available. The next safe step is to import or link the real core package/branch, compare its event model to `PocketAudioCoreEvent`, then migrate one narrow path at a time with playback/export tests.

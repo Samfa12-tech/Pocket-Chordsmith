@@ -625,6 +625,7 @@
             <div class="label" style="margin:8px 0 0">Send to</div>
             <div class="row">
               <button class="pill good" id="pushToDjBtn">Send to DJ</button>
+              <button class="pill good" id="pushToDawBtn">Send to Pocket DAW</button>
               <button class="pill" id="pushToGodotBtn">Push to Godot</button>
             </div>
             <div class="tiny" id="pushHandoffStatus">Send uses a PCS1 song code. It opens the target with the song attached when possible, and keeps a copy fallback.</div>
@@ -873,6 +874,7 @@ const POCKET_CHORDSMITH_URL = "https://samfa12.itch.io/pocket-chordsmith";
 // Direct handoff target for the self-hosted Samfa12 web app.
 // Local development still uses relative paths.
 const POCKET_DJ_URL = "https://samfa12.com/apps/pocket-dj/";
+const POCKET_DAW_URL = "https://samfa12.com/apps/pocket-daw/";
 const GODOT_PUSH_ENDPOINTS = [
   "http://127.0.0.1:9087/pocket-chordsmith/push-to-godot",
   "http://localhost:9087/pocket-chordsmith/push-to-godot"
@@ -880,6 +882,7 @@ const GODOT_PUSH_ENDPOINTS = [
 const HANDOFF_PARAM = "pocketHandoff";
 const HANDOFF_WINDOW_PREFIX = "PocketHandoff:";
 const HANDOFF_TO_DJ_KEY = "pocket_chordsmith_to_dj_handoff_v1";
+const HANDOFF_TO_DAW_KEY = "PocketHandoff";
 const HANDOFF_TO_CHORDSMITH_KEY = "pocket_dj_to_chordsmith_handoff_v1";
 const MIDI_TICKS_PER_QUARTER = 480;
 const MAX_SEQUENCE_SLOTS = 64;
@@ -1384,8 +1387,22 @@ function parseProjectText(text){
   }
   return sanitizeProjectData(parsed);
 }
-function buildPocketHandoff(kind, code){
-  return {app:"PocketHandoff", handoffVersion:1, kind, code, createdAt:Date.now()};
+function buildPocketHandoff(kind, code, options={}){
+  return {
+    app:"PocketHandoff",
+    handoffVersion:1,
+    kind,
+    code,
+    createdAt:new Date().toISOString(),
+    sourceApp:options.sourceApp || "Pocket Chordsmith",
+    targetApp:options.targetApp,
+    metadata:options.metadata || {
+      schemaVersion: PROJECT_SCHEMA_VERSION,
+      bpm: state.bpm,
+      key: state.key,
+      scale: state.scale
+    }
+  };
 }
 function encodePocketHandoff(payload){
   return utf8ToBase64Url(JSON.stringify(payload));
@@ -1414,6 +1431,12 @@ function resolvePocketDjUrl(){
     try{ return new URL("../pocket-dj/index.html", window.location.href).href; }catch(e){}
   }
   return POCKET_DJ_URL;
+}
+function resolvePocketDawUrl(){
+  if(isLocalHandoffHost()){
+    try{ return new URL("../pocket-daw/index.html", window.location.href).href; }catch(e){}
+  }
+  return POCKET_DAW_URL;
 }
 function saveHandoffPayload(storageKey, payload){
   try{
@@ -1676,6 +1699,47 @@ async function pushToPocketDj(){
   if(opened){
     setStatus(copied ? "Song sent to Pocket DJ. Opening Pocket DJ..." : "Song sent to Pocket DJ. Opening target...");
     setPushHandoffStatus(saved ? "Pocket DJ will import this song when it opens." : "Pocket DJ will import from the launch URL; clipboard is also ready as fallback.");
+  }else{
+    setPushHandoffStatus(`Open ${targetBaseUrl}, paste the PCS1 code, then press Import.`);
+  }
+}
+async function pushToPocketDaw(){
+  let code = "";
+  try{
+    code = buildShareCode();
+  }catch(e){
+    setStatus("Could not build Pocket DAW handoff code");
+    return;
+  }
+  setPushHandoffStatus("Preparing PCS1 song code for Pocket DAW...");
+  const payload = buildPocketHandoff("chordsmith-to-daw", code, {
+    targetApp: "PocketDAW",
+    metadata: {
+      schemaVersion: PROJECT_SCHEMA_VERSION,
+      bpm: state.bpm,
+      key: state.key,
+      scale: state.scale,
+      songSequenceLength: Array.isArray(state.songSequence) ? state.songSequence.length : 0
+    }
+  });
+  const saved = saveHandoffPayload(HANDOFF_TO_DAW_KEY, payload);
+  const targetBaseUrl = resolvePocketDawUrl();
+  const targetUrl = buildHandoffUrl(targetBaseUrl, payload);
+  const preparedWindow = openPreparedHandoffWindow(payload);
+  const copied = await copyTextForHandoff(
+    code,
+    "Pocket DAW song code copied",
+    "Pocket DAW song code is ready in the project box; clipboard was blocked"
+  );
+  const opened = openHandoffUrl(
+    targetUrl,
+    `Pocket DAW code copied. Pop-up blocked; open ${targetBaseUrl} and paste Import.`,
+    payload,
+    preparedWindow
+  );
+  if(opened){
+    setStatus(copied ? "Song sent to Pocket DAW. Opening Pocket DAW..." : "Song sent to Pocket DAW. Opening target...");
+    setPushHandoffStatus(saved ? "Pocket DAW will import this song when it opens." : "Pocket DAW will import from the launch URL; clipboard is also ready as fallback.");
   }else{
     setPushHandoffStatus(`Open ${targetBaseUrl}, paste the PCS1 code, then press Import.`);
   }
@@ -27338,6 +27402,7 @@ function bindControls(){
   if(els.copyShareCodeBtn) els.copyShareCodeBtn.addEventListener("click", copyShareCode);
   if(els.importShareCodeBtn) els.importShareCodeBtn.addEventListener("click", importShareCode);
   if(els.pushToDjBtn) els.pushToDjBtn.addEventListener("click", pushToPocketDj);
+  if(els.pushToDawBtn) els.pushToDawBtn.addEventListener("click", pushToPocketDaw);
   if(els.pushToGodotBtn) els.pushToGodotBtn.addEventListener("click", pushToGodot);
   els.exportMidiBtn.addEventListener("click", ()=>{
     rememberImmersiveModeBeforeExternalUi();
@@ -27404,7 +27469,7 @@ function bindControls(){
 }
 
 function init(){
-  ["statusText","miniStatusText","miniSectionText","miniPlayBtn","miniStopBtn","miniUndoBtn","miniSettingsBtn","playBtn","stopBtn","demoBtn","undoBtn","randomIdeaBtn","settingsBtn","settingsModal","closeSettingsBtn","bpmInput","swingInput","swingValue","keySelect","scaleSelect","timeSigSelect","uiModeSelect","themeSelect","chordTypeSelect","chordInstrumentSelect","progressionSlots","chordPalette","padGrid","drumPresetChips","drumPadsPanel","drumPadGrid","drumPadStatus","drumRecordToggle","drumClearRecordingBtn","melodyIdeaBtn","melodyDegreeSelect","melodyPitchModeSelect","melodyInputModeSelect","xyPlaybackModeSelect","xyPadModeSelect","xyScaleModeSelect","xyChordFollowToggle","xyRecordToggle","xyPadControls","xyPadWrap","xyPad","xyPadMarker","xyPadReadout","melodyGridControls","melodyDegreeChips","melodyOctaveChips","melodyTrackChips","melodyTrackControls","addMelodyTrackBtn","removeMelodyTrackBtn","melodyInstrumentSelect","melodyRows","resolutionLabel","resolutionSelect","seqHeader","seqRows","trackChips","guitarEnabledToggle","guitarEnabledToggleSettings","guitarToneSelect","guitarRegisterSelect","guitarStrumModeSelect","guitarVolume","guitarPresetChips","guitarFillStyleSelect","fillGuitarFromChordsBtn","applyGuitarAllBtn","clearGuitarBtn","guitarRow","chordOctaveSelect","chordPlayModeSelect","chordRhythmModeSelect","fillFullBtn","fillHalfBtn","fillQuarterBtn","fillTripletBtn","clearTrackBtn","sectionChips","sectionBarsSelect","copyTargetSectionSelect","copyAToBBtn","playSequenceBtn","addSequenceSlotBtn","removeSequenceSlotBtn","clearSequenceBtn","sectionSequence","projectBox","exportScopeSelect","midiExportModeSelect","midiChordExportSelect","midiExactDurationsToggle","exportJsonBtn","importJsonBtn","copyShareCodeBtn","importShareCodeBtn","pushToDjBtn","pushToGodotBtn","pushHandoffStatus","exportMidiBtn","exportWavBtn","cancelWavExportBtn","wavProgressText","importMidiBtn","midiImportInput","midiImportSummary","wavResultBox","wavPreview","wavOpenLink","wavDownloadLink","wavShareBtn","saveSlot1Btn","loadSlot1Btn","saveSlot2Btn","loadSlot2Btn","loadAutoBtn","autoSaveStatus","tooltipsToggle","masterVol","chordVol","beatVol","leadVol","metronomeToggle","chordsToggle","bassToggle","fxDelay","fxChorus","fxFlanger","fxReverb","fxMix","showMelodyPadsToggle","showDrumPadsToggle","showMelodyPickerToggle","showTrackControlsToggle","humanizeToggle","sidechainToggle","sidechainAmount","sidechainAmountRow","bassModeSelect","melodyPadsPanel","drumPadsPanel","melodyPickerPanel"].forEach(id => els[id] = document.getElementById(id));
+  ["statusText","miniStatusText","miniSectionText","miniPlayBtn","miniStopBtn","miniUndoBtn","miniSettingsBtn","playBtn","stopBtn","demoBtn","undoBtn","randomIdeaBtn","settingsBtn","settingsModal","closeSettingsBtn","bpmInput","swingInput","swingValue","keySelect","scaleSelect","timeSigSelect","uiModeSelect","themeSelect","chordTypeSelect","chordInstrumentSelect","progressionSlots","chordPalette","padGrid","drumPresetChips","drumPadsPanel","drumPadGrid","drumPadStatus","drumRecordToggle","drumClearRecordingBtn","melodyIdeaBtn","melodyDegreeSelect","melodyPitchModeSelect","melodyInputModeSelect","xyPlaybackModeSelect","xyPadModeSelect","xyScaleModeSelect","xyChordFollowToggle","xyRecordToggle","xyPadControls","xyPadWrap","xyPad","xyPadMarker","xyPadReadout","melodyGridControls","melodyDegreeChips","melodyOctaveChips","melodyTrackChips","melodyTrackControls","addMelodyTrackBtn","removeMelodyTrackBtn","melodyInstrumentSelect","melodyRows","resolutionLabel","resolutionSelect","seqHeader","seqRows","trackChips","guitarEnabledToggle","guitarEnabledToggleSettings","guitarToneSelect","guitarRegisterSelect","guitarStrumModeSelect","guitarVolume","guitarPresetChips","guitarFillStyleSelect","fillGuitarFromChordsBtn","applyGuitarAllBtn","clearGuitarBtn","guitarRow","chordOctaveSelect","chordPlayModeSelect","chordRhythmModeSelect","fillFullBtn","fillHalfBtn","fillQuarterBtn","fillTripletBtn","clearTrackBtn","sectionChips","sectionBarsSelect","copyTargetSectionSelect","copyAToBBtn","playSequenceBtn","addSequenceSlotBtn","removeSequenceSlotBtn","clearSequenceBtn","sectionSequence","projectBox","exportScopeSelect","midiExportModeSelect","midiChordExportSelect","midiExactDurationsToggle","exportJsonBtn","importJsonBtn","copyShareCodeBtn","importShareCodeBtn","pushToDjBtn","pushToDawBtn","pushToGodotBtn","pushHandoffStatus","exportMidiBtn","exportWavBtn","cancelWavExportBtn","wavProgressText","importMidiBtn","midiImportInput","midiImportSummary","wavResultBox","wavPreview","wavOpenLink","wavDownloadLink","wavShareBtn","saveSlot1Btn","loadSlot1Btn","saveSlot2Btn","loadSlot2Btn","loadAutoBtn","autoSaveStatus","tooltipsToggle","masterVol","chordVol","beatVol","leadVol","metronomeToggle","chordsToggle","bassToggle","fxDelay","fxChorus","fxFlanger","fxReverb","fxMix","showMelodyPadsToggle","showDrumPadsToggle","showMelodyPickerToggle","showTrackControlsToggle","humanizeToggle","sidechainToggle","sidechainAmount","sidechainAmountRow","bassModeSelect","melodyPadsPanel","drumPadsPanel","melodyPickerPanel"].forEach(id => els[id] = document.getElementById(id));
   els.pocketAudioCoreStatus = document.getElementById("pocketAudioCoreStatus");
   updatePocketAudioCoreStatusUi();
   loadPocketAudioCoreModule().catch(() => {});

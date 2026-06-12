@@ -38,6 +38,8 @@ export function addImportedAudioMedia(project: PocketDawProject, input: Imported
     sizeBytes: input.sizeBytes,
     metadata: {
       external: !!input.uri,
+      mediaRefKind: input.uri ? "external" : "browser-runtime-only",
+      ...(input.uri ? { originalUri: input.uri } : {}),
       unresolved: false,
       missing: false,
       waveformPeaks: [],

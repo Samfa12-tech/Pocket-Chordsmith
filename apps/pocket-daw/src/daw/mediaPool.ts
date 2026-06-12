@@ -24,6 +24,25 @@ export interface MediaPoolStatus {
   label: string;
 }
 
+export interface CollectMediaPlanItem {
+  id: string;
+  name: string;
+  kind: MediaPoolItem["kind"];
+  sourceUri?: string;
+  targetRelativePath?: string;
+  action: "copy-to-project-media" | "already-project-media" | "blocked";
+  reason?: string;
+}
+
+export interface CollectMediaPlan {
+  projectTitle: string;
+  targetFolder: "project-media";
+  copy: CollectMediaPlanItem[];
+  alreadyProject: CollectMediaPlanItem[];
+  blocked: CollectMediaPlanItem[];
+  notes: string[];
+}
+
 export function addMediaPoolItem(project: PocketDawProject, item: MediaPoolItem): PocketDawProject {
   const next = cloneProject(project);
   const existingIndex = next.mediaPool.findIndex((entry) => entry.id === item.id);
@@ -110,7 +129,8 @@ export function mediaPoolStatus(item: MediaPoolItem, runtimeAvailable = false): 
   const missing = metadata.missing === true;
   const unresolved = metadata.unresolved === true;
   const runtimeOnly = metadata.runtimeOnly === true;
-  const external = metadata.external === true || isExternalUri(item.uri);
+  const projectMedia = isProjectMediaItem(item);
+  const external = !projectMedia && (metadata.external === true || isExternalUri(item.uri));
   const reloadable = item.kind === "audio" && external && !runtimeOnly && !missing && !!item.uri;
   const label = missing
     ? "Missing"
@@ -122,8 +142,78 @@ export function mediaPoolStatus(item: MediaPoolItem, runtimeAvailable = false): 
           ? "Browser runtime-only"
           : external
             ? "External unloaded"
-            : "Project";
+            : "Project media";
   return { missing, unresolved, external, runtimeAvailable, runtimeOnly, reloadable, label };
+}
+
+export function createCollectMediaPlan(project: PocketDawProject): CollectMediaPlan {
+  const usedTargets = new Set<string>();
+  const items = project.mediaPool.map((item): CollectMediaPlanItem => {
+    const status = mediaPoolStatus(item);
+    if (isProjectMediaItem(item)) {
+      return {
+        id: item.id,
+        name: item.name,
+        kind: item.kind,
+        sourceUri: item.uri,
+        targetRelativePath: String(item.metadata?.projectRelativePath || item.uri || ""),
+        action: "already-project-media"
+      };
+    }
+    if (status.missing || status.unresolved) {
+      return blockedPlanItem(item, item.uri, status.missing ? "Media is missing. Relink it before collecting." : "Media path is unresolved. Relink it before collecting.");
+    }
+    if (status.runtimeOnly) {
+      return blockedPlanItem(item, item.uri, "Browser runtime-only media has no durable path. Re-import or save from the native app before collecting.");
+    }
+    if (!item.uri) {
+      return blockedPlanItem(item, undefined, "No source URI is stored for this media item.");
+    }
+    if (!status.external) {
+      return {
+        id: item.id,
+        name: item.name,
+        kind: item.kind,
+        sourceUri: item.uri,
+        targetRelativePath: projectMediaRelativePath(item, usedTargets),
+        action: "already-project-media"
+      };
+    }
+    return {
+      id: item.id,
+      name: item.name,
+      kind: item.kind,
+      sourceUri: item.uri,
+      targetRelativePath: projectMediaRelativePath(item, usedTargets),
+      action: "copy-to-project-media"
+    };
+  });
+  return {
+    projectTitle: project.project.title,
+    targetFolder: "project-media",
+    copy: items.filter((item) => item.action === "copy-to-project-media"),
+    alreadyProject: items.filter((item) => item.action === "already-project-media"),
+    blocked: items.filter((item) => item.action === "blocked"),
+    notes: [
+      "This is a deterministic collect-media plan. v0.6 native copy/relink is still guarded, so review the plan before moving files.",
+      "Browser runtime-only media cannot be collected because browsers do not expose a durable source path after import."
+    ]
+  };
+}
+
+export function projectMediaRelativePath(item: MediaPoolItem, usedTargets: Set<string> = new Set()): string {
+  const baseName = safeFileName(item.name || fileNameFromUri(item.uri) || item.id);
+  let target = `project-media/${baseName}`;
+  let suffix = 2;
+  while (usedTargets.has(target.toLowerCase())) {
+    const dot = baseName.lastIndexOf(".");
+    const stem = dot > 0 ? baseName.slice(0, dot) : baseName;
+    const ext = dot > 0 ? baseName.slice(dot) : "";
+    target = `project-media/${stem}-${suffix}${ext}`;
+    suffix += 1;
+  }
+  usedTargets.add(target.toLowerCase());
+  return target;
 }
 
 function mergeMediaPoolItem(existing: MediaPoolItem, incoming: MediaPoolItem): MediaPoolItem {
@@ -152,4 +242,31 @@ function cleanOptionalNumber(value: unknown): number | undefined {
 function isExternalUri(uri?: string): boolean {
   if (!uri) return false;
   return /^(file|https?):/i.test(uri) || /^[a-z]:[\\/]/i.test(uri) || uri.startsWith("\\\\");
+}
+
+function isProjectMediaItem(item: MediaPoolItem): boolean {
+  const metadata = item.metadata || {};
+  if (metadata.mediaRefKind === "project" || metadata.projectRelativePath) return true;
+  const uri = item.uri || "";
+  return uri.startsWith("project://media/") || uri.startsWith("project-media/");
+}
+
+function blockedPlanItem(item: MediaPoolItem, sourceUri: string | undefined, reason: string): CollectMediaPlanItem {
+  return {
+    id: item.id,
+    name: item.name,
+    kind: item.kind,
+    sourceUri,
+    action: "blocked",
+    reason
+  };
+}
+
+function fileNameFromUri(uri?: string): string {
+  return uri?.split(/[\\/]/).filter(Boolean).pop() || "";
+}
+
+function safeFileName(value: string): string {
+  const name = value.trim().replace(/[<>:"/\\|?*\x00-\x1f]+/g, "-").replace(/\s+/g, " ").replace(/^\.+/, "").slice(0, 96);
+  return name || "media-file";
 }

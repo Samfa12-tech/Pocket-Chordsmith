@@ -5,6 +5,7 @@ import { createUndoStack } from "../src/daw/undo";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 import { addMediaPoolItem, createMediaPoolItem } from "../src/daw/mediaPool";
+import { addTrackToProject } from "../src/daw/tracks";
 import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { simpleMidiBytes } from "./midiFixtures";
@@ -76,8 +77,11 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Add Rendered Stem");
     expect(html).toContain("Godot Manifest Preview");
     expect(html).toContain("Web Manifest Preview");
+    expect(html).toContain("Collect Media Plan");
+    expect(html).toContain("Collect Plan");
     expect(html).toContain('data-action="import-audio"');
     expect(html).toContain('data-action="import-midi"');
+    expect(html).toContain('data-action="export-media-plan"');
   });
 
   it("renders media pool item metadata and render cache links", () => {
@@ -120,6 +124,22 @@ describe("Pocket DAW UI rendering", () => {
 
     expect(html).toContain("External unloaded");
     expect(html).toContain(`data-reload-media="${item.id}" disabled`);
+  });
+
+  it("renders version diagnostics and disabled recording arm stubs", () => {
+    const state = createInitialState();
+    state.showControls = true;
+    const live = addTrackToProject(state.undoStack.present, "live-vocals");
+    state.undoStack = createUndoStack(live.project);
+    state.selectedTrackId = live.trackId;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("v0.5.1");
+    expect(html).toContain("Browser/dev");
+    expect(html).toContain('data-arm-track="live-vocals" disabled');
+    expect(html).toContain("Recording coming after");
+    expect(html).toContain("media/device QA");
   });
 
   it("renders the selected MIDI clip piano-roll editor", () => {

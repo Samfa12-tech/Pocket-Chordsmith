@@ -87,6 +87,7 @@ import { cloneProject } from "../daw/dawProject";
 import type { AddTrackKind } from "../daw/tracks";
 import { barFloatToPosition, snapBarValue } from "../daw/timeline";
 import { addImportedAudioMedia } from "../daw/audioClips";
+import { createCollectMediaPlan } from "../daw/mediaPool";
 import { AUDIO_MEDIA_ACCEPT, importedAudioFromBrowserFile, importAudioMediaNative, type ImportedAudioBytes } from "../native/mediaBridge";
 import { importMidiFileToProject } from "../daw/midiClips";
 import { parseStandardMidiFile } from "../daw/midiParser";
@@ -398,7 +399,8 @@ export class App {
     }
     const armButton = target?.closest<HTMLElement>("[data-arm-track]");
     if (armButton) {
-      this.applyProjectState(toggleTrackArmedCommand(this.state, armButton.dataset.armTrack || ""));
+      this.state.status = "Recording arms are disabled until media/device QA, latency setup and reload-safe recording paths are signed off.";
+      this.render();
       return;
     }
     const fxToggle = target?.closest<HTMLElement>("[data-fx-toggle]");
@@ -658,6 +660,7 @@ export class App {
     if (action === "export-section-manifest") this.exportSectionLoopManifest();
     if (action === "export-godot-manifest") this.exportGameManifest("godot-adaptive-pack");
     if (action === "export-web-game-manifest") this.exportGameManifest("web-game-pack");
+    if (action === "export-media-plan") this.exportMediaPlan();
     if (action === "export-diagnostics") this.exportDiagnostics();
   }
 
@@ -676,7 +679,10 @@ export class App {
     if (command === "toggle-loop") this.applyProjectState(setLoopEnabled(this.state, !currentProject(this.state).timeline.loop.enabled));
     if (command === "mute-selected-track" && this.state.selectedTrackId) this.applyProjectState(toggleTrackMuteCommand(this.state, this.state.selectedTrackId));
     if (command === "solo-selected-track" && this.state.selectedTrackId) this.applyProjectState(toggleTrackSoloCommand(this.state, this.state.selectedTrackId));
-    if (command === "arm-selected-track" && this.state.selectedTrackId) this.applyProjectState(toggleTrackArmedCommand(this.state, this.state.selectedTrackId));
+    if (command === "arm-selected-track" && this.state.selectedTrackId) {
+      this.state.status = "Recording arms are disabled until media/device QA, latency setup and reload-safe recording paths are signed off.";
+      this.render();
+    }
     if (command === "duplicate-clip") this.applyProjectState(duplicateSelectedClip(this.state));
     if (command === "copy-clip") {
       this.state = copySelectedClip(this.state);
@@ -838,6 +844,7 @@ export class App {
         sizeBytes: source.sizeBytes,
         metadata: {
           importMode: source.mode,
+          mediaRefKind: source.mode === "native" ? "external" : "browser-runtime-only",
           runtimeOnly: source.mode === "browser",
           waveformPeaks: audioBufferPeaks(buffer)
         }
@@ -1009,7 +1016,16 @@ export class App {
     const suffix = kind === "godot-adaptive-pack" ? "godot-manifest" : "web-game-manifest";
     const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
     downloadBlob(blob, safeName(`${currentProject(this.state).project.title}-${suffix}`, "json"));
-    this.state.status = `Exported ${kind === "godot-adaptive-pack" ? "Godot" : "web game"} manifest preview.`;
+    this.state.status = `Exported ${kind === "godot-adaptive-pack" ? "Godot" : "web game"} manifest preview${manifest.warnings.length ? ` with ${manifest.warnings.length} warning${manifest.warnings.length === 1 ? "" : "s"}` : ""}.`;
+    this.render();
+  }
+
+  private exportMediaPlan() {
+    const project = currentProject(this.state);
+    const plan = createCollectMediaPlan(project);
+    const blob = new Blob([JSON.stringify(plan, null, 2)], { type: "application/json" });
+    downloadBlob(blob, safeName(`${project.project.title}-collect-media-plan`, "json"));
+    this.state.status = `Exported collect-media plan: ${plan.copy.length} copy action${plan.copy.length === 1 ? "" : "s"}, ${plan.blocked.length} blocked item${plan.blocked.length === 1 ? "" : "s"}.`;
     this.render();
   }
 

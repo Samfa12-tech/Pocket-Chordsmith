@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addTrackCommand } from "../src/app/commands";
+import { addTrackCommand, toggleTrackArmedCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { toggleTrackMute, toggleTrackSolo } from "../src/daw/mixer";
 import { addTrackToProject } from "../src/daw/tracks";
@@ -51,5 +51,13 @@ describe("track workflow", () => {
     expect(next.undoStack.past.length).toBe(state.undoStack.past.length + 1);
     expect(next.selectedTrackId).toBe("live-instrument");
     expect(next.undoStack.present.tracks.some((track) => track.id === "live-instrument")).toBe(true);
+  });
+
+  it("keeps recording arm disabled until recording prerequisites are ready", () => {
+    const state = addTrackCommand(createInitialState(), "live-vocals");
+    const next = toggleTrackArmedCommand(state, "live-vocals");
+
+    expect(next.undoStack.present.tracks.find((track) => track.id === "live-vocals")?.armed).toBe(false);
+    expect(next.status).toContain("media/device QA");
   });
 });

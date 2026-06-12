@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createDemoProject } from "../src/demo/demoProject";
 import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan, projectWithOnlyTracksAudible } from "../src/daw/exportJobs";
+import { addMediaPoolItem, createMediaPoolItem } from "../src/daw/mediaPool";
 
 describe("export job helpers", () => {
   it("builds stem plans and track-filtered stem projects", () => {
@@ -11,6 +12,7 @@ describe("export job helpers", () => {
 
     expect(stems.map((stem) => stem.id)).toEqual(expect.arrayContaining(["drums", "bass", "chords", "melody", "guitar"]));
     expect(bass.fileName).toContain("bass-stem.wav");
+    expect(bass.packPath).toContain("audio/stems/");
     expect(stemProject.tracks.find((track) => track.id === "bass")?.mute).toBe(false);
     expect(stemProject.tracks.find((track) => track.id === "drums")?.mute).toBe(true);
   });
@@ -28,6 +30,8 @@ describe("export job helpers", () => {
     });
     expect(loops[0].lengthSeconds).toBeGreaterThan(0);
     expect(loops[0].fileName).toContain("loop.wav");
+    expect(loops[0].packPath).toContain("audio/sections/");
+    expect(loops[0].status).toBe("planned-render");
   });
 
   it("generates Godot and web game manifest previews", () => {
@@ -42,7 +46,20 @@ describe("export job helpers", () => {
     expect(godot.stems.length).toBeGreaterThan(0);
     expect(godot.sectionLoops.length).toBeGreaterThan(0);
     expect(godot.markers.find((marker) => marker.id === "combat")).toMatchObject({ id: "combat", seconds: expect.any(Number) });
-    expect(godot.files).toContain("godot-adaptive-manifest.json");
-    expect(web.files).toContain("web-game-manifest.json");
+    expect(godot.files).toContain("manifests/godot-adaptive-manifest.json");
+    expect(web.files).toContain("manifests/web-game-manifest.json");
+    expect(godot.folders).toMatchObject({ stems: "audio/stems/", sections: "audio/sections/" });
+  });
+
+  it("adds manifest warnings for unresolved runtime-only media and muted tracks", () => {
+    let project = createDemoProject();
+    const item = createMediaPoolItem({ kind: "audio", name: "Browser Only.wav", metadata: { runtimeOnly: true } });
+    project = addMediaPoolItem(project, item);
+    project.tracks.find((track) => track.id === "guitar")!.mute = true;
+
+    const manifest = createGameExportManifest(project, "web-game-pack");
+
+    expect(manifest.warnings.join("\n")).toContain("Browser Only.wav");
+    expect(manifest.warnings.join("\n")).toContain("Guitar");
   });
 });

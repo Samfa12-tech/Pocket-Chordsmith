@@ -149,6 +149,13 @@ export function toggleTrackSoloCommand(state: AppState, trackId: string): AppSta
 }
 
 export function toggleTrackArmedCommand(state: AppState, trackId: string): AppState {
+  const track = state.undoStack.present.tracks.find((item) => item.id === trackId);
+  if (track?.recordKind && track.recordKind !== "none") {
+    return {
+      ...state,
+      status: "Recording arms are disabled until media/device QA, latency setup and reload-safe recording paths are signed off."
+    };
+  }
   return commitProject(state, toggleTrackArmed(state.undoStack.present, trackId), "Toggled track arm.");
 }
 

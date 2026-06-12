@@ -40,6 +40,7 @@ test("settings modal opens import and handoff tools", async ({ page }) => {
   await expect(page.locator("#settingsModal")).toHaveAttribute("aria-hidden", "false");
   await expect(page.getByRole("button", { name: "Export Compact JSON" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Send to DJ" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send to Pocket DAW" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Push to Godot" })).toBeVisible();
   await expect(page.locator("#pocketAudioCoreStatus")).toContainText("Pocket Audio Core");
 });

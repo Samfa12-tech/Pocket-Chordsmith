@@ -22,6 +22,12 @@ describe("browser preview packaging", () => {
     mkdirSync(join(root, "docs"), { recursive: true });
     writeFileSync(join(root, "docs", "V0_5_1_HARDENING_NOTES.md"), "# Hardening notes");
     writeFileSync(join(root, "docs", "POCKET_AUDIO_CORE_CONVERGENCE_REVIEW.md"), "# Core review");
+    writeFileSync(join(root, "docs", "v0.5.1-verification.md"), "# Verification");
+    writeFileSync(join(root, "docs", "PRIVATE_ALPHA_RELEASE_CHECKLIST.md"), "# Checklist");
+    writeFileSync(join(root, "docs", "RELEASE_NOTES_TEMPLATE.md"), "# Release notes");
+    writeFileSync(join(root, "docs", "WINDOWS_TESTING_CHECKLIST.md"), "# Windows");
+    writeFileSync(join(root, "docs", "V0_6_FOUNDATION_NOTES.md"), "# Foundation");
+    writeFileSync(join(root, "docs", "RECORDING_PREP.md"), "# Recording");
 
     const zipPath = createPreviewZip({ root, version: "0.2.1" });
     const zip = new AdmZip(zipPath);
@@ -34,8 +40,12 @@ describe("browser preview packaging", () => {
     expect(names).toContain("POCKET_DAW_NORTH_STAR.md");
     expect(names).toContain("docs/V0_5_1_HARDENING_NOTES.md");
     expect(names).toContain("docs/POCKET_AUDIO_CORE_CONVERGENCE_REVIEW.md");
+    expect(names).toContain("docs/v0.5.1-verification.md");
+    expect(names).toContain("docs/PRIVATE_ALPHA_RELEASE_CHECKLIST.md");
+    expect(names).toContain("docs/RECORDING_PREP.md");
     expect(readFileSync(join(root, "releases", "WHAT_WORKS_AND_WHATS_NEXT.md"), "utf8")).toBe("# Current docs");
     expect(readFileSync(join(root, "releases", "docs", "V0_5_1_HARDENING_NOTES.md"), "utf8")).toBe("# Hardening notes");
+    expect(readFileSync(join(root, "releases", "docs", "PRIVATE_ALPHA_RELEASE_CHECKLIST.md"), "utf8")).toBe("# Checklist");
 
     rmSync(root, { recursive: true, force: true });
   });
