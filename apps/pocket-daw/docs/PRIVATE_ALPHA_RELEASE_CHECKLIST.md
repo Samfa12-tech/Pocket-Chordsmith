@@ -24,9 +24,11 @@ npm run verify:native-release
 
 `verify:release` runs tests, production build, browser preview packaging and a Tauri debug build. `verify:native-release` opts into full native bundling and should be used only when preparing a candidate installer.
 
+Pocket DAW itch uploads must use the native/installable output only. Do not publish the browser preview zip, `dist/`, or an HTML5/WebAudio channel for Pocket DAW.
+
 ## Expected Outputs
 
-- Browser preview: `releases/pocket-daw-browser-preview-v0.5.1.zip`
+- Local browser preview only, never itch: `releases/pocket-daw-browser-preview-v0.5.1.zip`
 - Debug app: `src-tauri/target/debug/pocket-daw.exe`
 - Windows installer: `src-tauri/target/release/bundle/nsis/Pocket DAW_0.5.1_x64-setup.exe`
 - MSI if produced: `src-tauri/target/release/bundle/msi/Pocket DAW_0.5.1_x64_en-US.msi`
@@ -39,7 +41,7 @@ PowerShell:
 
 ```powershell
 Get-FileHash "src-tauri\target\release\bundle\nsis\Pocket DAW_0.5.1_x64-setup.exe" -Algorithm SHA256
-Get-FileHash "releases\pocket-daw-browser-preview-v0.5.1.zip" -Algorithm SHA256
+Get-FileHash "src-tauri\target\release\bundle\msi\Pocket DAW_0.5.1_x64_en-US.msi" -Algorithm SHA256
 ```
 
 Node cross-platform:
@@ -64,7 +66,7 @@ node -e "const{createHash}=require('crypto');const{readFileSync}=require('fs');f
 - Native relink/copy media is not enabled; collect-media plan export is available.
 - Game packs are deterministic manifests plus current renderable assets, not bundled ZIP packs.
 - Unsigned installers may trigger Windows warnings.
-- Browser preview cannot persist local file paths.
+- Browser preview cannot persist local file paths and must not be used for itch distribution.
 
 ## Rollback
 

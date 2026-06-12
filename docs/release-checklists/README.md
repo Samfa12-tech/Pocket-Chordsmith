@@ -22,11 +22,14 @@ cd apps/pocket-daw
 npm install
 npm test
 npm run build
+npm run verify:native-release
 ```
 
 - Keep `package.json` `private: true`.
 - Do not commit `node_modules/`, `dist/`, `src-tauri/target/`, installers, or local `.pocketdaw` saves.
 - Run a clean native Tauri package check before publishing installers.
+- Publish Pocket DAW to itch only as a native/installable Windows build, normally the `windows` channel.
+- Do not upload the browser preview zip, `dist/`, or any HTML5/WebAudio build to itch for Pocket DAW.
 
 ## Godot Addon
 

@@ -5,9 +5,7 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 
-releases/*.exe
-releases/*.msi
-releases/*.zip
+releases/
 
 *.log
 npm-debug.log*
