@@ -1,4 +1,5 @@
 import type { PocketDawProject, Track } from "../daw/schema";
+import { cloneProject } from "../daw/dawProject";
 import { trackIsAudible } from "../daw/tracks";
 import { barsToSeconds, secondsToBars } from "../daw/timeline";
 import { renderTimelineEvents, type RenderedEvent } from "./eventRenderer";
@@ -15,6 +16,11 @@ interface TrackOutput {
   pan: StereoPannerNode | null;
   meterData: Uint8Array<ArrayBuffer>;
   cleanup: () => void;
+}
+
+export interface TrackMixerControlPatch {
+  volume?: number;
+  pan?: number;
 }
 
 export interface TransportSnapshot {
@@ -58,9 +64,9 @@ export class AudioEngine {
   private onTick: (snapshot: TransportSnapshot) => void = () => {};
 
   constructor(project: PocketDawProject) {
-    this.project = project;
-    this.events = renderTimelineEvents(project);
-    this.audioRegions = renderTimelineAudioRegions(project).audioRegions;
+    this.project = cloneProject(project);
+    this.events = renderTimelineEvents(this.project);
+    this.audioRegions = renderTimelineAudioRegions(this.project).audioRegions;
   }
 
   setOnTick(callback: (snapshot: TransportSnapshot) => void) {
@@ -69,9 +75,9 @@ export class AudioEngine {
 
   setProject(project: PocketDawProject) {
     const current = this.currentSeconds();
-    this.project = project;
-    this.events = renderTimelineEvents(project);
-    this.audioRegions = renderTimelineAudioRegions(project).audioRegions;
+    this.project = cloneProject(project);
+    this.events = renderTimelineEvents(this.project);
+    this.audioRegions = renderTimelineAudioRegions(this.project).audioRegions;
     this.scheduledEventCount = 0;
     this.skippedLateEventCount = 0;
     if (this.ctx && this.master) this.configureMixer();
@@ -79,6 +85,29 @@ export class AudioEngine {
       this.startedAt = this.ctx!.currentTime - current;
       this.seek(current);
     }
+  }
+
+  updateTrackMixerControl(trackId: string, patch: TrackMixerControlPatch): boolean {
+    const track = this.project.tracks.find((item) => item.id === trackId);
+    if (!track) return false;
+
+    if (patch.volume !== undefined) track.volume = clampNumber(patch.volume, 0, 1.2);
+    if (patch.pan !== undefined) track.pan = clampNumber(patch.pan, -1, 1);
+
+    if (!this.ctx) return true;
+    const now = this.ctx.currentTime;
+    if (track.role === "master") {
+      if (this.master && patch.volume !== undefined) this.master.gain.setTargetAtTime(track.volume, now, 0.018);
+      return true;
+    }
+
+    const output = this.trackOutputs.get(track.id);
+    if (!output) return true;
+    const currentBar = secondsToBars(this.currentSeconds(), this.project.project.bpm, this.project.project.timeSig) + 1;
+    const controls = getAutomatedTrackControls(this.project, track, currentBar);
+    output.gain.gain.setTargetAtTime(trackIsAudible(track, this.project.tracks) ? controls.volume : 0, now, 0.018);
+    if (output.pan) output.pan.pan.setTargetAtTime(controls.pan, now, 0.018);
+    return true;
   }
 
   async play() {
@@ -165,12 +194,16 @@ export class AudioEngine {
       scheduledEventCount: this.scheduledEventCount,
       skippedLateEventCount: this.skippedLateEventCount,
       schedulerActive: this.schedulerTimer !== null,
+      projectTitle: this.project.project.title,
+      timelineClipCount: this.project.timeline.clips.length,
+      importHistoryCount: this.project.importHistory.length,
       trackOutputIds: Array.from(this.trackOutputs.keys()),
       eventCountsByTrack: countEventsBy(this.events, "trackId"),
       eventCountsByKind: countEventsBy(this.events, "kind"),
       audioRegionCount: this.audioRegions.length,
       missingAudioRegionCount: this.audioRegions.filter((region) => !getCachedAudioBuffer(region.mediaPoolItemId)).length,
       activeAutomationLaneCount: activeAutomationLaneCount(this.project),
+      mixerControls: this.project.tracks.map((track) => ({ id: track.id, volume: track.volume, pan: track.pan })),
       fxChainCount: this.project.fx?.chains.length || 0,
       schedulerLookaheadSeconds: this.schedulerLookaheadSeconds,
       schedulerIntervalMs: this.schedulerIntervalMs,
@@ -470,4 +503,9 @@ function countEventsBy(events: RenderedEvent[], field: "trackId" | "kind"): Reco
     counts[event[field]] = (counts[event[field]] || 0) + 1;
     return counts;
   }, {});
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
 }

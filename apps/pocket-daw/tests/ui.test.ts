@@ -31,6 +31,15 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).not.toContain('data-pan="fx-return"');
   });
 
+  it("marks track volume and pan sliders as live mixer controls", () => {
+    const html = renderAppShell(createInitialState());
+
+    expect(html).toContain('data-volume="bass" data-mixer-control="volume" data-mixer-live="true"');
+    expect(html).toContain('data-pan="bass" data-mixer-control="pan" data-mixer-live="true"');
+    expect(html).toContain('aria-valuetext="86%"');
+    expect(html).toContain('aria-valuetext="C"');
+  });
+
   it("renders desktop menu actions through the shared action attributes", () => {
     const html = renderAppShell(createInitialState());
 

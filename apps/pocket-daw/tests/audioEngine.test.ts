@@ -34,4 +34,23 @@ describe("audio engine diagnostics", () => {
     project.timeline.loop.enabled = false;
     expect(calculateLoopSeekSeconds(project, secondsPerBar * 6)).toBeNull();
   });
+
+  it("updates mixer controls without rebuilding timeline diagnostics", () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    const before = engine.getDiagnostics();
+
+    expect(engine.updateTrackMixerControl("bass", { pan: 2, volume: -1 })).toBe(true);
+    const after = engine.getDiagnostics();
+    const bass = after.mixerControls.find((track) => track.id === "bass");
+
+    expect(after.eventCount).toBe(before.eventCount);
+    expect(after.audioRegionCount).toBe(before.audioRegionCount);
+    expect(after.eventCountsByTrack).toEqual(before.eventCountsByTrack);
+    expect(after.eventCountsByKind).toEqual(before.eventCountsByKind);
+    expect(after.projectTitle).toBe("Pocket DAW Demo - Neon Roads");
+    expect(after.timelineClipCount).toBe(before.timelineClipCount);
+    expect(after.importHistoryCount).toBe(before.importHistoryCount);
+    expect(bass).toMatchObject({ volume: 0, pan: 1 });
+  });
 });

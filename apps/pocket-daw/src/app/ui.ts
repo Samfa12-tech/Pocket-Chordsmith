@@ -847,7 +847,7 @@ function renderMixerStrip(track: Track, meterLevel: number): string {
       </div>
       <label class="strip-control">
         <span>Volume <strong>${volumeLabel}</strong></span>
-        <input aria-label="${escapeHtml(track.name)} volume" data-volume="${track.id}" type="range" min="0" max="1.2" step="0.01" value="${track.volume}">
+        <input aria-label="${escapeHtml(track.name)} volume" aria-valuetext="${volumeLabel}" data-volume="${track.id}" data-mixer-control="volume" data-mixer-live="true" type="range" min="0" max="1.2" step="0.01" value="${track.volume}">
       </label>
       ${renderPanControl(track, isMaster, isReturn, panLabel)}
       <div class="strip-buttons">
@@ -872,7 +872,7 @@ function renderPanControl(track: Track, isMaster: boolean, isReturn: boolean, pa
       ${
         isMaster
           ? `<input aria-label="${escapeHtml(track.name)} output" type="range" min="0" max="1" step="1" value="1" disabled>`
-          : `<input aria-label="${escapeHtml(track.name)} pan" data-pan="${track.id}" type="range" min="-1" max="1" step="0.01" value="${track.pan}">`
+          : `<input aria-label="${escapeHtml(track.name)} pan" aria-valuetext="${escapeHtml(panLabel)}" data-pan="${track.id}" data-mixer-control="pan" data-mixer-live="true" type="range" min="-1" max="1" step="0.01" value="${track.pan}">`
       }
     </label>
   `;

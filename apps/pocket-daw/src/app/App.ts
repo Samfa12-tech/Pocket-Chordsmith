@@ -1,4 +1,4 @@
-import { AudioEngine } from "../audio/audioEngine";
+import { AudioEngine, type TrackMixerControlPatch } from "../audio/audioEngine";
 import { audioBufferPeaks, setCachedAudioBuffer } from "../audio/audioBufferCache";
 import { exportProjectToMidiBlob } from "../audio/midiExport";
 import { renderProjectToWavBlob } from "../audio/offlineRender";
@@ -94,6 +94,8 @@ import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
 import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan, projectWithOnlyTracksAudible } from "../daw/exportJobs";
 
+type MixerControlField = "volume" | "pan";
+
 export class App {
   private root: HTMLElement;
   private state: AppState;
@@ -103,6 +105,7 @@ export class App {
   private midiFileInput: HTMLInputElement;
   private renderCount = 0;
   private liveUpdateCount = 0;
+  private mixerGestureStarts = new Map<string, number>();
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -221,12 +224,8 @@ export class App {
         this.render();
       });
     });
-    this.root.querySelectorAll<HTMLInputElement>("[data-volume]").forEach((input) => {
-      input.addEventListener("change", () => this.applyProjectState(setTrackVolumeCommand(this.state, input.dataset.volume || "", Number(input.value))));
-    });
-    this.root.querySelectorAll<HTMLInputElement>("[data-pan]").forEach((input) => {
-      input.addEventListener("change", () => this.applyProjectState(setTrackPanCommand(this.state, input.dataset.pan || "", Number(input.value))));
-    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-volume]").forEach((input) => this.bindMixerControl(input, "volume", input.dataset.volume || ""));
+    this.root.querySelectorAll<HTMLInputElement>("[data-pan]").forEach((input) => this.bindMixerControl(input, "pan", input.dataset.pan || ""));
     this.root.querySelectorAll<HTMLSelectElement>("[data-add-fx]").forEach((select) => {
       select.addEventListener("change", () => {
         if (!select.value) return;
@@ -351,6 +350,75 @@ export class App {
         this.applyProjectState(setMidiNoteVelocityCommand(this.state, clipId, noteId, Number(input.value)));
       });
     });
+  }
+
+  private bindMixerControl(input: HTMLInputElement, field: MixerControlField, trackId: string) {
+    if (!trackId) return;
+    const begin = () => this.beginMixerGesture(trackId, field);
+    const preview = () => this.previewMixerControl(input, trackId, field);
+    const commit = () => this.commitMixerControl(input, trackId, field);
+    input.addEventListener("pointerdown", begin);
+    input.addEventListener("focus", begin);
+    input.addEventListener("input", preview);
+    input.addEventListener("change", commit);
+    input.addEventListener("blur", commit);
+  }
+
+  private beginMixerGesture(trackId: string, field: MixerControlField) {
+    const key = this.mixerGestureKey(trackId, field);
+    if (!this.mixerGestureStarts.has(key)) this.mixerGestureStarts.set(key, this.currentMixerControlValue(trackId, field));
+  }
+
+  private previewMixerControl(input: HTMLInputElement, trackId: string, field: MixerControlField) {
+    this.beginMixerGesture(trackId, field);
+    const value = this.cleanMixerControlValue(field, Number(input.value));
+    input.value = String(value);
+    this.engine.updateTrackMixerControl(trackId, this.mixerControlPatch(field, value));
+    this.updateMixerControlLabel(input, field, value);
+  }
+
+  private commitMixerControl(input: HTMLInputElement, trackId: string, field: MixerControlField) {
+    const key = this.mixerGestureKey(trackId, field);
+    const startValue = this.mixerGestureStarts.get(key) ?? this.currentMixerControlValue(trackId, field);
+    const value = this.cleanMixerControlValue(field, Number(input.value));
+    this.previewMixerControl(input, trackId, field);
+    this.mixerGestureStarts.delete(key);
+    if (Math.abs(startValue - value) < 0.0001) return;
+    const next = field === "volume" ? setTrackVolumeCommand(this.state, trackId, value) : setTrackPanCommand(this.state, trackId, value);
+    this.applyProjectState(next, false);
+  }
+
+  private currentMixerControlValue(trackId: string, field: MixerControlField): number {
+    const track = currentProject(this.state).tracks.find((item) => item.id === trackId);
+    return this.cleanMixerControlValue(field, field === "volume" ? track?.volume ?? 0 : track?.pan ?? 0);
+  }
+
+  private mixerGestureKey(trackId: string, field: MixerControlField): string {
+    return `${field}:${trackId}`;
+  }
+
+  private mixerControlPatch(field: MixerControlField, value: number): TrackMixerControlPatch {
+    return field === "volume" ? { volume: value } : { pan: value };
+  }
+
+  private updateMixerControlLabel(input: HTMLInputElement, field: MixerControlField, value: number) {
+    const label = field === "volume" ? `${Math.round(value * 100)}%` : this.panReadout(value);
+    input.setAttribute("aria-valuetext", label);
+    const readout = input.closest(".strip-control")?.querySelector("strong");
+    if (readout) readout.textContent = label;
+  }
+
+  private panReadout(pan: number): string {
+    if (Math.abs(pan) < 0.01) return "C";
+    const side = pan < 0 ? "L" : "R";
+    return `${side} ${Math.round(Math.abs(pan) * 100)}`;
+  }
+
+  private cleanMixerControlValue(field: MixerControlField, value: number): number {
+    if (!Number.isFinite(value)) return field === "volume" ? 0 : 0;
+    const min = field === "volume" ? 0 : -1;
+    const max = field === "volume" ? 1.2 : 1;
+    return Math.max(min, Math.min(max, value));
   }
 
   private handlePointerDown(event: PointerEvent) {
