@@ -53,4 +53,29 @@ describe("audio engine diagnostics", () => {
     expect(after.importHistoryCount).toBe(before.importHistoryCount);
     expect(bass).toMatchObject({ volume: 0, pan: 1 });
   });
+
+  it("updates track mute and solo without changing the loaded demo data", () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    const before = engine.getDiagnostics();
+
+    expect(engine.updateTrackMixerControl("chords", { mute: true })).toBe(true);
+    expect(engine.updateTrackMixerControl("bass", { solo: true })).toBe(true);
+    const after = engine.getDiagnostics();
+    const chords = after.mixerControls.find((track) => track.id === "chords");
+    const bass = after.mixerControls.find((track) => track.id === "bass");
+
+    expect(after.eventCount).toBe(before.eventCount);
+    expect(after.audioRegionCount).toBe(before.audioRegionCount);
+    expect(after.eventCountsByTrack).toEqual(before.eventCountsByTrack);
+    expect(after.eventCountsByKind).toEqual(before.eventCountsByKind);
+    expect(after.projectTitle).toBe("Pocket DAW Demo - Neon Roads");
+    expect(after.timelineClipCount).toBe(before.timelineClipCount);
+    expect(after.importHistoryCount).toBe(before.importHistoryCount);
+    expect(after.sourceRefCount).toBe(before.sourceRefCount);
+    expect(after.sourceRefTitles).toEqual(before.sourceRefTitles);
+    expect(after.chordsmithSectionCount).toBe(before.chordsmithSectionCount);
+    expect(chords).toMatchObject({ mute: true, solo: false });
+    expect(bass).toMatchObject({ mute: false, solo: true });
+  });
 });

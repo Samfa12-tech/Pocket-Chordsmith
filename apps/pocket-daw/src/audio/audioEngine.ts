@@ -21,6 +21,8 @@ interface TrackOutput {
 export interface TrackMixerControlPatch {
   volume?: number;
   pan?: number;
+  mute?: boolean;
+  solo?: boolean;
 }
 
 export interface TransportSnapshot {
@@ -93,11 +95,18 @@ export class AudioEngine {
 
     if (patch.volume !== undefined) track.volume = clampNumber(patch.volume, 0, 1.2);
     if (patch.pan !== undefined) track.pan = clampNumber(patch.pan, -1, 1);
+    if (patch.mute !== undefined) track.mute = patch.mute;
+    if (patch.solo !== undefined) track.solo = patch.solo;
 
     if (!this.ctx) return true;
     const now = this.ctx.currentTime;
     if (track.role === "master") {
       if (this.master && patch.volume !== undefined) this.master.gain.setTargetAtTime(track.volume, now, 0.018);
+      return true;
+    }
+
+    if (patch.mute !== undefined || patch.solo !== undefined) {
+      this.updateTrackOutputControls(now);
       return true;
     }
 
@@ -203,7 +212,10 @@ export class AudioEngine {
       audioRegionCount: this.audioRegions.length,
       missingAudioRegionCount: this.audioRegions.filter((region) => !getCachedAudioBuffer(region.mediaPoolItemId)).length,
       activeAutomationLaneCount: activeAutomationLaneCount(this.project),
-      mixerControls: this.project.tracks.map((track) => ({ id: track.id, volume: track.volume, pan: track.pan })),
+      mixerControls: this.project.tracks.map((track) => ({ id: track.id, volume: track.volume, pan: track.pan, mute: track.mute, solo: track.solo })),
+      sourceRefCount: this.project.sourceRefs.length,
+      sourceRefTitles: this.project.sourceRefs.map((ref) => ref.title || ""),
+      chordsmithSectionCount: chordsmithSectionCount(this.project),
       fxChainCount: this.project.fx?.chains.length || 0,
       schedulerLookaheadSeconds: this.schedulerLookaheadSeconds,
       schedulerIntervalMs: this.schedulerIntervalMs,
@@ -301,6 +313,18 @@ export class AudioEngine {
         safelyDisconnect(output.analyser);
         if (output.pan) safelyDisconnect(output.pan);
       };
+    });
+  }
+
+  private updateTrackOutputControls(now: number) {
+    const currentBar = secondsToBars(this.currentSeconds(), this.project.project.bpm, this.project.project.timeSig) + 1;
+    this.project.tracks.forEach((track) => {
+      if (track.role === "master") return;
+      const output = this.trackOutputs.get(track.id);
+      if (!output) return;
+      const controls = getAutomatedTrackControls(this.project, track, currentBar);
+      output.gain.gain.setTargetAtTime(trackIsAudible(track, this.project.tracks) ? controls.volume : 0, now, 0.018);
+      if (output.pan) output.pan.pan.setTargetAtTime(controls.pan, now, 0.018);
     });
   }
 
@@ -508,4 +532,15 @@ function countEventsBy(events: RenderedEvent[], field: "trackId" | "kind"): Reco
 function clampNumber(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
+}
+
+function chordsmithSectionCount(project: PocketDawProject): number {
+  return project.sourceRefs.reduce((count, ref) => {
+    if (!isRecord(ref.normalized) || !isRecord(ref.normalized.sections)) return count;
+    return count + Object.keys(ref.normalized.sections).length;
+  }, 0);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }

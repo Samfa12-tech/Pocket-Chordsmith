@@ -854,9 +854,9 @@ function renderMixerStrip(track: Track, meterLevel: number): string {
         ${
           isMaster
             ? `<span class="strip-note">Limiter ${track.metadata?.limiter === false ? "Off" : "On"}</span>`
-            : `${canMuteSolo ? `<button title="Mute ${escapeHtml(track.name)}" class="${track.mute ? "on" : ""}" data-mute-track="${track.id}">Mute</button>
-               <button title="Solo ${escapeHtml(track.name)}" class="${track.solo ? "on" : ""}" data-solo-track="${track.id}">Solo</button>` : `<span class="strip-note">Return channel</span>`}
-               ${canArm ? `<button title="${recordBlockedTitle}" class="${track.armed ? "on record" : ""}" data-arm-track="${track.id}" disabled>Arm</button>` : ""}`
+            : `${canMuteSolo ? `<button type="button" title="Mute ${escapeHtml(track.name)}" class="${track.mute ? "on" : ""}" data-mute-track="${track.id}">Mute</button>
+               <button type="button" title="Solo ${escapeHtml(track.name)}" class="${track.solo ? "on" : ""}" data-solo-track="${track.id}">Solo</button>` : `<span class="strip-note">Return channel</span>`}
+               ${canArm ? `<button type="button" title="${recordBlockedTitle}" class="${track.armed ? "on record" : ""}" data-arm-track="${track.id}" disabled>Arm</button>` : ""}`
         }
       </div>
       ${!isMaster ? renderFxDropdown(track) : ""}

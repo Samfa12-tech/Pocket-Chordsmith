@@ -40,6 +40,15 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('aria-valuetext="C"');
   });
 
+  it("renders mixer mute and solo as explicit button controls", () => {
+    const html = renderAppShell(createInitialState());
+
+    expect(html).toContain('type="button" title="Mute Chords" class="" data-mute-track="chords"');
+    expect(html).toContain('type="button" title="Solo Chords" class="" data-solo-track="chords"');
+    expect(html).not.toContain('data-mute-track="fx-return"');
+    expect(html).not.toContain('data-solo-track="master"');
+  });
+
   it("renders desktop menu actions through the shared action attributes", () => {
     const html = renderAppShell(createInitialState());
 

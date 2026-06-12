@@ -913,8 +913,12 @@ h1 {
   grid-area: media;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 330px);
+  grid-template-rows: auto minmax(118px, auto);
   gap: 12px;
-  min-height: 144px;
+  align-items: stretch;
+  height: max-content;
+  min-height: 188px;
+  scroll-margin-block: 16px;
   padding: 10px 18px;
   border-top: 1px solid var(--line);
   background: #0a0f1c;
@@ -1111,6 +1115,7 @@ h1 {
   display: grid;
   gap: 4px;
   align-content: center;
+  min-height: 118px;
   padding: 14px;
 }
 
@@ -1118,6 +1123,7 @@ h1 {
   display: grid;
   gap: 5px;
   align-content: start;
+  min-height: 118px;
   padding: 10px;
   min-width: 0;
 }

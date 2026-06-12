@@ -629,12 +629,12 @@ export class App {
     }
     const muteButton = target?.closest<HTMLElement>("[data-mute-track]");
     if (muteButton) {
-      this.applyProjectState(toggleTrackMuteCommand(this.state, muteButton.dataset.muteTrack || ""));
+      this.toggleTrackMute(muteButton.dataset.muteTrack || "");
       return;
     }
     const soloButton = target?.closest<HTMLElement>("[data-solo-track]");
     if (soloButton) {
-      this.applyProjectState(toggleTrackSoloCommand(this.state, soloButton.dataset.soloTrack || ""));
+      this.toggleTrackSolo(soloButton.dataset.soloTrack || "");
       return;
     }
     const timeline = target?.closest<HTMLElement>("[data-timeline-surface]");
@@ -682,7 +682,7 @@ export class App {
     if (action === "media-pool-focus") {
       this.state.status = "Media Pool visible.";
       this.render();
-      this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "nearest" });
+      this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "start", inline: "nearest" });
     }
     if (action === "import-audio") await this.importAudioMedia();
     if (action === "import-midi") await this.importMidiMedia();
@@ -745,8 +745,8 @@ export class App {
       this.render();
     }
     if (command === "toggle-loop") this.applyProjectState(setLoopEnabled(this.state, !currentProject(this.state).timeline.loop.enabled));
-    if (command === "mute-selected-track" && this.state.selectedTrackId) this.applyProjectState(toggleTrackMuteCommand(this.state, this.state.selectedTrackId));
-    if (command === "solo-selected-track" && this.state.selectedTrackId) this.applyProjectState(toggleTrackSoloCommand(this.state, this.state.selectedTrackId));
+    if (command === "mute-selected-track" && this.state.selectedTrackId) this.toggleTrackMute(this.state.selectedTrackId);
+    if (command === "solo-selected-track" && this.state.selectedTrackId) this.toggleTrackSolo(this.state.selectedTrackId);
     if (command === "arm-selected-track" && this.state.selectedTrackId) {
       this.state.status = "Recording arms are disabled until media/device QA, latency setup and reload-safe recording paths are signed off.";
       this.render();
@@ -788,6 +788,24 @@ export class App {
     saveAutosave(buildPocketDawProjectFile(project));
     if (syncEngine) this.engine.setProject(project);
     this.render();
+  }
+
+  private toggleTrackMute(trackId: string) {
+    const next = toggleTrackMuteCommand(this.state, trackId);
+    this.syncTrackAudibilityFromState(next, trackId, "mute");
+    this.applyProjectState(next, false);
+  }
+
+  private toggleTrackSolo(trackId: string) {
+    const next = toggleTrackSoloCommand(this.state, trackId);
+    this.syncTrackAudibilityFromState(next, trackId, "solo");
+    this.applyProjectState(next, false);
+  }
+
+  private syncTrackAudibilityFromState(next: AppState, trackId: string, field: "mute" | "solo") {
+    const track = currentProject(next).tracks.find((item) => item.id === trackId);
+    if (!track) return;
+    this.engine.updateTrackMixerControl(trackId, field === "mute" ? { mute: track.mute } : { solo: track.solo });
   }
 
   private seekTimelineFromClientX(timeline: HTMLElement, clientX: number, final: boolean) {
