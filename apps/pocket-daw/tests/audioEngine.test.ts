@@ -8,6 +8,11 @@ describe("audio engine diagnostics", () => {
     const diagnostics = engine.getDiagnostics();
 
     expect(diagnostics.audioContextState).toBe("not-created");
+    expect(diagnostics.playbackBackend).toBe("idle");
+    expect(diagnostics.nativeAudio.requested).toBe(true);
+    expect(diagnostics.schedulerTickCount).toBe(0);
+    expect(diagnostics.missedSchedulerTickCount).toBe(0);
+    expect(diagnostics.audioGraphReconfigureCount).toBe(0);
     expect(diagnostics.eventCount).toBeGreaterThan(0);
     expect(diagnostics.fxChainCount).toBeGreaterThan(0);
     expect(diagnostics.schedulerLookaheadSeconds).toBeGreaterThanOrEqual(0.5);
@@ -45,6 +50,8 @@ describe("audio engine diagnostics", () => {
     const bass = after.mixerControls.find((track) => track.id === "bass");
 
     expect(after.eventCount).toBe(before.eventCount);
+    expect(after.audioGraphReconfigureCount).toBe(before.audioGraphReconfigureCount);
+    expect(after.projectSyncCount).toBe(before.projectSyncCount);
     expect(after.audioRegionCount).toBe(before.audioRegionCount);
     expect(after.eventCountsByTrack).toEqual(before.eventCountsByTrack);
     expect(after.eventCountsByKind).toEqual(before.eventCountsByKind);

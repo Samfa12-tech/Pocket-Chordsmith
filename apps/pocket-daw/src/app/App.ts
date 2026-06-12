@@ -1,4 +1,4 @@
-import { AudioEngine, type TrackMixerControlPatch } from "../audio/audioEngine";
+import { AudioEngine, type AudioProjectSyncMode, type TrackMixerControlPatch } from "../audio/audioEngine";
 import { audioBufferPeaks, setCachedAudioBuffer } from "../audio/audioBufferCache";
 import { exportProjectToMidiBlob } from "../audio/midiExport";
 import { renderProjectToWavBlob } from "../audio/offlineRender";
@@ -79,11 +79,13 @@ import {
   undoCommand
 } from "./commands";
 import { commandFromKeyboardEvent } from "./keyboard";
-import { createInitialState, currentProject, type AppState } from "./state";
+import { createInitialState, currentProject, type AppState, type ChordsmithStepSelection } from "./state";
+import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { renderAppShell } from "./ui";
 import { createUndoStack } from "../daw/undo";
 import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
+import { POCKET_DAW_VERSION } from "../daw/schema";
 import type { AddTrackKind } from "../daw/tracks";
 import { barFloatToPosition, snapBarValue } from "../daw/timeline";
 import { addImportedAudioMedia } from "../daw/audioClips";
@@ -95,6 +97,15 @@ import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type 
 import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan, projectWithOnlyTracksAudible } from "../daw/exportJobs";
 
 type MixerControlField = "volume" | "pan";
+type RenderSchedule = "none" | "live-dom" | "deferred" | "immediate";
+
+interface ApplyProjectOptions {
+  audio?: AudioProjectSyncMode | "none";
+  render?: RenderSchedule;
+  autosave?: "none" | "debounced" | "flush";
+  preservePlayback?: boolean;
+  reason?: string;
+}
 
 export class App {
   private root: HTMLElement;
@@ -104,8 +115,12 @@ export class App {
   private audioFileInput: HTMLInputElement;
   private midiFileInput: HTMLInputElement;
   private renderCount = 0;
+  private renderCountDuringPlayback = 0;
   private liveUpdateCount = 0;
   private mixerGestureStarts = new Map<string, number>();
+  private deferredRenderTimer: number | null = null;
+  private chordsmithDragStart: ChordsmithStepSelection | null = null;
+  private suppressNextStepClick = false;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -140,6 +155,7 @@ export class App {
     document.body.appendChild(this.midiFileInput);
     this.root.addEventListener("click", (event) => this.handleDelegatedClick(event));
     this.root.addEventListener("pointerdown", (event) => this.handlePointerDown(event));
+    this.root.addEventListener("mousedown", (event) => this.handleMouseDown(event));
     window.addEventListener("keydown", (event) => this.handleKeyboard(event));
   }
 
@@ -165,8 +181,10 @@ export class App {
 
   private render() {
     this.renderCount += 1;
+    if (this.state.playing || this.engine.isPlaying()) this.renderCountDuringPlayback += 1;
     this.root.innerHTML = renderAppShell(this.state);
     this.root.dataset.renderCount = String(this.renderCount);
+    this.root.dataset.renderCountDuringPlayback = String(this.renderCountDuringPlayback);
     this.root.dataset.liveUpdateCount = String(this.liveUpdateCount);
     this.bind();
   }
@@ -423,6 +441,7 @@ export class App {
 
   private handlePointerDown(event: PointerEvent) {
     const target = event.target as HTMLElement | null;
+    if (this.beginChordsmithStepDrag(target, "pointerup")) return;
     const timeline = target?.closest<HTMLElement>("[data-timeline-surface]");
     const seekable = timeline && (target?.closest("[data-seek-ruler]") || !target?.closest("[data-clip-id]"));
     if (!timeline || !seekable) return;
@@ -441,6 +460,29 @@ export class App {
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+  }
+
+  private handleMouseDown(event: MouseEvent) {
+    if (this.chordsmithDragStart) return;
+    const target = event.target as HTMLElement | null;
+    this.beginChordsmithStepDrag(target, "mouseup");
+  }
+
+  private beginChordsmithStepDrag(target: HTMLElement | null, endEventName: "pointerup" | "mouseup"): boolean {
+    const stepTarget = this.stepSelectionFromElement(target);
+    if (!stepTarget) return false;
+    this.chordsmithDragStart = stepTarget;
+    const up = (upEvent: PointerEvent | MouseEvent) => {
+      window.removeEventListener(endEventName, up);
+      const endElement = document.elementFromPoint(upEvent.clientX, upEvent.clientY) as HTMLElement | null;
+      const endTarget = this.stepSelectionFromElement(endElement);
+      if (endTarget && this.applyChordsmithStepDrag(stepTarget, endTarget)) {
+        this.suppressNextStepClick = true;
+      }
+      this.chordsmithDragStart = null;
+    };
+    window.addEventListener(endEventName, up);
+    return true;
   }
 
   private handleDelegatedClick(event: Event) {
@@ -545,7 +587,9 @@ export class App {
     }
     const drumStep = target?.closest<HTMLElement>("[data-drum-step]");
     if (drumStep) {
+      if (this.consumeSuppressedStepClick()) return;
       const [sectionId, lane, step] = String(drumStep.dataset.drumStep || "").split(":");
+      this.selectChordsmithStep({ kind: "drums", sectionId, lane: lane === "snare" || lane === "hat" ? lane : "kick", step: Number(step) });
       this.applyProjectState(cycleDrumStepCommand(this.state, sectionId, lane, Number(step)));
       return;
     }
@@ -557,7 +601,9 @@ export class App {
     }
     const bassStep = target?.closest<HTMLElement>("[data-bass-step]");
     if (bassStep) {
+      if (this.consumeSuppressedStepClick()) return;
       const [sectionId, step] = String(bassStep.dataset.bassStep || "").split(":");
+      this.selectChordsmithStep({ kind: "bass", sectionId, step: Number(step) });
       this.applyProjectState(cycleBassStepCommand(this.state, sectionId, Number(step)));
       return;
     }
@@ -581,7 +627,9 @@ export class App {
     }
     const melodyStep = target?.closest<HTMLElement>("[data-melody-step]");
     if (melodyStep) {
+      if (this.consumeSuppressedStepClick()) return;
       const [sectionId, trackIndex, step] = String(melodyStep.dataset.melodyStep || "").split(":");
+      this.selectChordsmithStep({ kind: "melody", sectionId, trackIndex: Number(trackIndex), step: Number(step) });
       this.applyProjectState(cycleMelodyStepCommand(this.state, sectionId, Number(trackIndex), Number(step)));
       return;
     }
@@ -734,6 +782,7 @@ export class App {
   }
 
   private async handleKeyboard(event: KeyboardEvent) {
+    if (this.handleChordsmithStepShortcut(event)) return;
     const command = commandFromKeyboardEvent(event);
     if (!command) return;
     event.preventDefault();
@@ -783,11 +832,141 @@ export class App {
     }
   }
 
-  private applyProjectState(next: AppState, syncEngine = true) {
+  private consumeSuppressedStepClick(): boolean {
+    if (!this.suppressNextStepClick) return false;
+    this.suppressNextStepClick = false;
+    return true;
+  }
+
+  private selectChordsmithStep(selection: ChordsmithStepSelection) {
+    this.state.chordsmithStepSelection = selection;
+    const roleTrack =
+      selection.kind === "melody"
+        ? currentProject(this.state).tracks.find((track) => track.role === "melody" && track.metadata?.chordsmithMelodyTrackIndex === selection.trackIndex)
+          || currentProject(this.state).tracks.find((track) => selection.trackIndex === 0 && track.role === "melody")
+        : currentProject(this.state).tracks.find((track) => track.role === selection.kind);
+    if (roleTrack) this.state.selectedTrackId = roleTrack.id;
+  }
+
+  private stepSelectionFromElement(target: HTMLElement | null): ChordsmithStepSelection | null {
+    const drum = target?.closest<HTMLElement>("[data-drum-step]");
+    if (drum) {
+      const [sectionId, lane, step] = String(drum.dataset.drumStep || "").split(":");
+      if (lane === "kick" || lane === "snare" || lane === "hat") return { kind: "drums", sectionId, lane, step: Number(step) };
+    }
+    const bass = target?.closest<HTMLElement>("[data-bass-step]");
+    if (bass) {
+      const [sectionId, step] = String(bass.dataset.bassStep || "").split(":");
+      return { kind: "bass", sectionId, step: Number(step) };
+    }
+    const melody = target?.closest<HTMLElement>("[data-melody-step]");
+    if (melody) {
+      const [sectionId, trackIndex, step] = String(melody.dataset.melodyStep || "").split(":");
+      return { kind: "melody", sectionId, trackIndex: Number(trackIndex), step: Number(step) };
+    }
+    return null;
+  }
+
+  private applyChordsmithStepDrag(start: ChordsmithStepSelection, end: ChordsmithStepSelection): boolean {
+    const drag = chordsmithStepDragAction(start, end);
+    if (!drag) return false;
+    this.selectChordsmithStep(drag.selection);
+    this.applySelectedStepArticulation(drag.articulation, drag.status);
+    return true;
+  }
+
+  private handleChordsmithStepShortcut(event: KeyboardEvent): boolean {
+    if (this.isEditableEventTarget(event.target)) return false;
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if (!["h", "s", "t"].includes(key) || event.ctrlKey || event.metaKey || event.altKey) return false;
+    if (!this.state.chordsmithStepSelection) return false;
+    event.preventDefault();
+    this.applySelectedStepArticulation(key === "h" ? "hold" : key === "s" ? "slide" : "tuplet");
+    return true;
+  }
+
+  private isEditableEventTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.dataset.noteInput === "true" || target.isContentEditable) return true;
+    const tag = target.tagName.toLowerCase();
+    return tag === "input" || tag === "textarea" || tag === "select";
+  }
+
+  private applySelectedStepArticulation(action: ChordsmithStepArticulation, status?: string) {
+    const selection = this.state.chordsmithStepSelection;
+    if (!selection) return;
+    if (selection.kind === "drums") {
+      if (action !== "tuplet") {
+        this.state.status = "Drum steps support T for tuplet here.";
+        this.render();
+        return;
+      }
+      const next = cycleDrumTupletCommand(this.state, selection.sectionId, selection.lane, selection.step);
+      this.applyProjectState(status ? { ...next, status } : next);
+      return;
+    }
+    if (selection.kind === "bass") {
+      let next: AppState | null = null;
+      if (action === "hold") next = toggleBassHoldCommand(this.state, selection.sectionId, selection.step);
+      else if (action === "slide") next = toggleBassSlideCommand(this.state, selection.sectionId, selection.step);
+      if (next) {
+        this.applyProjectState(status ? { ...next, status } : next);
+      } else {
+        this.state.status = "Bass tuplets are not exposed in this editor pass; use H for hold or S for slide.";
+        this.render();
+      }
+      return;
+    }
+    if (selection.kind === "melody") {
+      let next: AppState | null = null;
+      if (action === "hold") next = toggleMelodyHoldCommand(this.state, selection.sectionId, selection.trackIndex, selection.step);
+      if (action === "slide") next = toggleMelodySlideCommand(this.state, selection.sectionId, selection.trackIndex, selection.step);
+      if (action === "tuplet") next = toggleMelodyTupletCommand(this.state, selection.sectionId, selection.trackIndex, selection.step);
+      if (next) this.applyProjectState(status ? { ...next, status } : next);
+    }
+  }
+
+  private applyProjectState(next: AppState, options: ApplyProjectOptions | boolean = {}) {
+    const resolved = this.resolveApplyOptions(options);
     this.state = next;
     const project = currentProject(this.state);
-    saveAutosave(buildPocketDawProjectFile(project));
-    if (syncEngine) this.engine.setProject(project);
+    if (resolved.autosave !== "none") saveAutosave(buildPocketDawProjectFile(project));
+    if (resolved.audio && resolved.audio !== "none") this.engine.syncProject(project, resolved.audio, resolved.reason);
+    this.scheduleRender(resolved.render || "immediate");
+  }
+
+  private resolveApplyOptions(options: ApplyProjectOptions | boolean): Required<Omit<ApplyProjectOptions, "preservePlayback">> {
+    if (typeof options === "boolean") {
+      const playing = this.engine.isPlaying();
+      return {
+        audio: options ? (playing ? "composition-events" : "project-load") : "none",
+        render: playing ? "deferred" : "immediate",
+        autosave: "debounced",
+        reason: options ? (playing ? "legacy-playing-safe-sync" : "legacy-sync") : "ui-or-fast-path"
+      };
+    }
+    return {
+      audio: options.audio ?? "project-load",
+      render: options.render ?? (this.engine.isPlaying() ? "deferred" : "immediate"),
+      autosave: options.autosave ?? "debounced",
+      reason: options.reason ?? "project-edit"
+    };
+  }
+
+  private scheduleRender(schedule: RenderSchedule) {
+    if (schedule === "none") return;
+    if (schedule === "live-dom") {
+      this.updateLiveDom();
+      return;
+    }
+    if (schedule === "deferred") {
+      if (this.deferredRenderTimer !== null) window.clearTimeout(this.deferredRenderTimer);
+      this.deferredRenderTimer = window.setTimeout(() => {
+        this.deferredRenderTimer = null;
+        this.render();
+      }, 80);
+      return;
+    }
     this.render();
   }
 
@@ -1120,7 +1299,8 @@ export class App {
     const project = currentProject(this.state);
     const diagnostics = {
       capturedAt: new Date().toISOString(),
-      appVersion: project.dawVersion,
+      appVersion: POCKET_DAW_VERSION,
+      projectVersion: project.dawVersion,
       project: {
         id: project.project.id,
         title: project.project.title,
@@ -1134,6 +1314,7 @@ export class App {
         playing: this.state.playing,
         playheadBar: this.state.playheadBar,
         renderCount: this.renderCount,
+        renderCountDuringPlayback: this.renderCountDuringPlayback,
         liveUpdateCount: this.liveUpdateCount,
         selectedClipId: this.state.selectedClipId,
         selectedTrackId: this.state.selectedTrackId

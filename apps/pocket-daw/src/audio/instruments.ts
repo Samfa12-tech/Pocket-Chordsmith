@@ -51,24 +51,69 @@ interface GuitarConfig {
 const noiseBuffers = new WeakMap<BaseAudioContext, Map<string, AudioBuffer>>();
 const guitarCurves = new Map<string, Float32Array<ArrayBuffer>>();
 
-export function scheduleInstrumentEvent(ctx: BaseAudioContext, destination: AudioNode, event: RenderedEvent): void {
-  const t = Math.max(ctx.currentTime, event.time);
-  if (event.kind === "kick") return kick(ctx, destination, t, event.velocity);
-  if (event.kind === "snare") return snare(ctx, destination, t, event.velocity);
-  if (event.kind === "hat") return hat(ctx, destination, t, event.velocity, !!event.accent);
-  if (event.kind === "bass" && event.midi !== undefined) return bass(ctx, destination, event.midi, t, event.duration, event.velocity, !!event.accent, event.slideMidi, event.slideOffset);
+export interface ScheduleInstrumentEventOptions {
+  lateGuardSeconds?: number;
+  maxLateSeconds?: number;
+  onLate?: (latenessSeconds: number) => void;
+  onSkippedLate?: (latenessSeconds: number) => void;
+}
+
+export function scheduleInstrumentEvent(ctx: BaseAudioContext, destination: AudioNode, event: RenderedEvent, options: ScheduleInstrumentEventOptions = {}): boolean {
+  const lateness = ctx.currentTime - event.time;
+  const maxLateSeconds = options.maxLateSeconds ?? 0.12;
+  if (lateness > maxLateSeconds) {
+    options.onLate?.(lateness);
+    options.onSkippedLate?.(lateness);
+    return false;
+  }
+  if (lateness > 0) options.onLate?.(lateness);
+  const t = lateness > 0 ? ctx.currentTime + (options.lateGuardSeconds ?? 0.005) : event.time;
+  const duration = Math.max(0.025, event.duration - Math.max(0, lateness));
+  if (event.kind === "kick") {
+    if (lateness > 0.045) {
+      options.onSkippedLate?.(lateness);
+      return false;
+    }
+    kick(ctx, destination, t, event.velocity);
+    return true;
+  }
+  if (event.kind === "snare") {
+    if (lateness > 0.045) {
+      options.onSkippedLate?.(lateness);
+      return false;
+    }
+    snare(ctx, destination, t, event.velocity);
+    return true;
+  }
+  if (event.kind === "hat") {
+    if (lateness > 0.035) {
+      options.onSkippedLate?.(lateness);
+      return false;
+    }
+    hat(ctx, destination, t, event.velocity, !!event.accent);
+    return true;
+  }
+  if (event.kind === "bass" && event.midi !== undefined) {
+    bass(ctx, destination, event.midi, t, duration, event.velocity, !!event.accent, event.slideMidi, event.slideOffset);
+    return true;
+  }
   if (event.kind === "melody" && event.midi !== undefined) {
-    return leadPhrase(ctx, destination, event.midi, t, event.duration, event.instrument || "pulse", event.pan || 0, event.velocity, event.slideMidi, event.slideOffset);
+    leadPhrase(ctx, destination, event.midi, t, duration, event.instrument || "pulse", event.pan || 0, event.velocity, event.slideMidi, event.slideOffset);
+    return true;
   }
   if (event.kind === "midi" && event.midi !== undefined) {
-    return leadPhrase(ctx, destination, event.midi, t, event.duration, "soft", event.pan || 0, event.velocity);
+    leadPhrase(ctx, destination, event.midi, t, duration, "soft", event.pan || 0, event.velocity);
+    return true;
   }
   if (event.kind === "chord" && event.midiNotes) {
-    return chord(ctx, destination, event.midiNotes, t, event.duration, event.instrument || "pocket", event.velocity, event.articulation || "block");
+    chord(ctx, destination, event.midiNotes, t, duration, event.instrument || "pocket", event.velocity, event.articulation || "block");
+    return true;
   }
   if (event.kind === "guitar" && event.midiNotes) {
-    return guitar(ctx, destination, event.midiNotes, t, event.duration, event.articulation || "open", event.instrument || "high_gain", event.direction || "down", event.step);
+    guitar(ctx, destination, event.midiNotes, t, duration, event.articulation || "open", event.instrument || "high_gain", event.direction || "down", event.step);
+    return true;
   }
+  return false;
 }
 
 function tone(

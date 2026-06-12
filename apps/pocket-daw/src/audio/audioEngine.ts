@@ -9,6 +9,8 @@ import { getTrackFxChain } from "../daw/fx";
 import { connectFxChain } from "./fxProcessor";
 import { scheduleInstrumentEvent } from "./instruments";
 import { activeAutomationLaneCount, getAutomatedTrackControls } from "../daw/automation";
+import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioStatus } from "../native/audioPlayback";
+import { buildNativeRenderCache, nativeRenderCacheSignature, type NativeRenderCache } from "./nativeRenderCache";
 
 interface TrackOutput {
   gain: GainNode;
@@ -31,6 +33,17 @@ export interface TransportSnapshot {
   seconds: number;
 }
 
+export type AudioProjectSyncMode =
+  | "mixer-controls"
+  | "composition-events"
+  | "mixer-graph"
+  | "timeline-structure"
+  | "project-load";
+
+type PlaybackBackend = "native-cpal" | "web-audio" | "idle";
+type AudioDropCause = "seek" | "stop" | "project-load" | "graph-rebuild" | "loop" | "late-scheduler" | null;
+const safeSyncLeadSeconds = 0.2;
+
 export function calculateLoopSeekSeconds(project: PocketDawProject, currentSeconds: number): number | null {
   if (!project.timeline.loop.enabled) return null;
   const loop = project.timeline.loop;
@@ -50,6 +63,15 @@ export class AudioEngine {
   private masterAnalyser: AnalyserNode | null = null;
   private masterMeterData: Uint8Array<ArrayBuffer> | null = null;
   private schedulerTimer: number | null = null;
+  private nativeTickTimer: number | null = null;
+  private nativePlayback = new NativeAudioPlaybackBridge();
+  private nativeRenderCache: NativeRenderCache | null = null;
+  private nativeRenderCacheError: string | null = null;
+  private playbackBackend: PlaybackBackend = "idle";
+  private nativeStartedAtMs = 0;
+  private nativeStatus: NativeAudioStatus | null = null;
+  private nativeLastError: string | null = null;
+  private nativeMeterEventIndex = 0;
   private nextEventIndex = 0;
   private nextAudioRegionIndex = 0;
   private activeAudioSources: AudioBufferSourceNode[] = [];
@@ -61,6 +83,17 @@ export class AudioEngine {
   private lastTickEmit = 0;
   private scheduledEventCount = 0;
   private skippedLateEventCount = 0;
+  private lateEventCount = 0;
+  private schedulerTickCount = 0;
+  private missedSchedulerTickCount = 0;
+  private maxSchedulerGapMs = 0;
+  private lastSchedulerTickAt = 0;
+  private audioGraphReconfigureCount = 0;
+  private activeAudioSourcesStoppedByGraphReconfigureCount = 0;
+  private projectSyncCount = 0;
+  private lastProjectSyncMode: AudioProjectSyncMode | "none" = "none";
+  private lastProjectSyncReason = "initial-load";
+  private lastAudioDropCause: AudioDropCause = null;
   private schedulerLookaheadSeconds = 0.52;
   private schedulerIntervalMs = 35;
   private onTick: (snapshot: TransportSnapshot) => void = () => {};
@@ -76,16 +109,50 @@ export class AudioEngine {
   }
 
   setProject(project: PocketDawProject) {
+    this.syncProject(project, "project-load", "set-project");
+  }
+
+  syncProject(project: PocketDawProject, mode: AudioProjectSyncMode, reason: string = mode) {
     const current = this.currentSeconds();
     this.project = cloneProject(project);
-    this.events = renderTimelineEvents(this.project);
-    this.audioRegions = renderTimelineAudioRegions(this.project).audioRegions;
-    this.scheduledEventCount = 0;
-    this.skippedLateEventCount = 0;
-    if (this.ctx && this.master) this.configureMixer();
+    this.projectSyncCount += 1;
+    this.lastProjectSyncMode = mode;
+    this.lastProjectSyncReason = reason;
+
+    if (mode !== "mixer-controls") {
+      this.events = renderTimelineEvents(this.project);
+      this.audioRegions = renderTimelineAudioRegions(this.project).audioRegions;
+      this.nativeRenderCache = null;
+    }
+
+    if (mode === "project-load") {
+      this.scheduledEventCount = 0;
+      this.skippedLateEventCount = 0;
+      this.lateEventCount = 0;
+      if (this.playing) this.lastAudioDropCause = "project-load";
+    }
+
+    if (this.ctx && this.master) {
+      if (mode === "mixer-controls") this.updateTrackOutputControls(this.ctx.currentTime);
+      else if (mode === "composition-events" || mode === "timeline-structure") this.repositionWebScheduler(current + safeSyncLeadSeconds);
+      else this.configureMixer(mode === "mixer-graph" ? "graph-rebuild" : "project-load");
+    }
+
+    if (this.playbackBackend === "native-cpal" && this.playing) {
+      if (mode === "mixer-controls") {
+        this.syncNativeMixerControls();
+      } else {
+        void this.restartNativePlayback(current);
+      }
+    }
+
     if (this.playing) {
-      this.startedAt = this.ctx!.currentTime - current;
-      this.seek(current);
+      if (this.ctx && this.playbackBackend === "web-audio" && mode === "project-load") {
+        this.startedAt = this.ctx.currentTime - current;
+        this.seek(current);
+      } else if (mode !== "project-load") {
+        this.repositionPlaybackIndexes(current + safeSyncLeadSeconds);
+      }
     }
   }
 
@@ -97,6 +164,12 @@ export class AudioEngine {
     if (patch.pan !== undefined) track.pan = clampNumber(patch.pan, -1, 1);
     if (patch.mute !== undefined) track.mute = patch.mute;
     if (patch.solo !== undefined) track.solo = patch.solo;
+
+    if (this.playbackBackend === "native-cpal") {
+      void this.nativePlayback.updateTrack({ trackId, ...patch }).then((status) => {
+        if (status) this.nativeStatus = status;
+      });
+    }
 
     if (!this.ctx) return true;
     const now = this.ctx.currentTime;
@@ -120,6 +193,20 @@ export class AudioEngine {
   }
 
   async play() {
+    const nativeStarted = await this.tryStartNativePlayback();
+    if (nativeStarted) {
+      this.playing = true;
+      this.playbackBackend = "native-cpal";
+      this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
+      this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
+      this.nextEventIndex = this.nativeMeterEventIndex;
+      this.nextAudioRegionIndex = this.findAudioRegionIndex(this.offsetSeconds);
+      this.primeMeters(this.offsetSeconds);
+      this.startNativeTicker();
+      this.emitTick(true);
+      return;
+    }
+
     await this.ensureContext();
     if (!this.ctx) return;
     if (this.ctx.state === "suspended") {
@@ -132,6 +219,7 @@ export class AudioEngine {
       return;
     }
     this.playing = true;
+    this.playbackBackend = "web-audio";
     this.startedAt = this.ctx.currentTime - this.offsetSeconds;
     this.nextEventIndex = this.findEventIndex(this.offsetSeconds);
     this.nextAudioRegionIndex = this.findAudioRegionIndex(this.offsetSeconds);
@@ -142,24 +230,36 @@ export class AudioEngine {
 
   stop() {
     this.playing = false;
+    this.playbackBackend = "idle";
+    this.lastAudioDropCause = "stop";
     this.offsetSeconds = 0;
     this.nextEventIndex = 0;
     this.nextAudioRegionIndex = 0;
+    this.nativeMeterEventIndex = 0;
     this.meterPeaks = {};
+    this.stopNativeTicker();
+    void this.nativePlayback.stop().then((status) => {
+      if (status) this.nativeStatus = status;
+    });
     this.stopActiveAudioSources();
     if (this.schedulerTimer !== null) window.clearInterval(this.schedulerTimer);
     this.schedulerTimer = null;
     this.stopActiveAudioSources();
-    if (this.ctx && this.master) this.configureMixer();
+    if (this.ctx && this.master) this.configureMixer("stop");
     this.emitTick(true);
   }
 
   pause() {
     this.offsetSeconds = this.currentSeconds();
     this.playing = false;
+    this.playbackBackend = "idle";
+    this.stopNativeTicker();
+    void this.nativePlayback.pause().then((status) => {
+      if (status) this.nativeStatus = status;
+    });
     if (this.schedulerTimer !== null) window.clearInterval(this.schedulerTimer);
     this.schedulerTimer = null;
-    if (this.ctx && this.master) this.configureMixer();
+    if (this.ctx && this.master) this.configureMixer("stop");
     this.emitTick(true);
   }
 
@@ -175,9 +275,17 @@ export class AudioEngine {
 
   seek(seconds: number) {
     this.offsetSeconds = Math.max(0, seconds);
+    this.lastAudioDropCause = "seek";
+    if (this.playbackBackend === "native-cpal" && this.playing) {
+      this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
+      this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
+      void this.nativePlayback.seek(this.offsetSeconds).then((status) => {
+        if (status) this.nativeStatus = status;
+      });
+    }
     if (this.ctx && this.playing) {
       this.startedAt = this.ctx.currentTime - this.offsetSeconds;
-      this.configureMixer();
+      this.configureMixer("seek");
     }
     this.nextEventIndex = this.findEventIndex(this.offsetSeconds);
     this.nextAudioRegionIndex = this.findAudioRegionIndex(this.offsetSeconds);
@@ -185,6 +293,9 @@ export class AudioEngine {
   }
 
   currentSeconds(): number {
+    if (this.playbackBackend === "native-cpal" && this.playing) {
+      return Math.max(0, (performance.now() - this.nativeStartedAtMs) / 1000);
+    }
     if (!this.ctx || !this.playing) return this.offsetSeconds;
     if (this.ctx.state !== "running") return this.offsetSeconds;
     return Math.max(0, this.ctx.currentTime - this.startedAt);
@@ -196,13 +307,42 @@ export class AudioEngine {
 
   getDiagnostics() {
     return {
+      playbackBackend: this.playbackBackend,
+      nativeAudio: {
+        requested: true,
+        active: this.playbackBackend === "native-cpal",
+        status: this.nativeStatus,
+        lastError: this.nativeLastError,
+        fallback: this.playbackBackend === "web-audio" ? "web-audio" : null,
+        supportedMaterial: "generated-and-midi-events",
+        unsupportedMaterial: this.audioRegions.length ? "decoded-audio-regions-still-use-web-audio-cache" : null
+      },
+      nativeRenderCache: {
+        assetCount: this.nativeRenderCache?.assets.length || 0,
+        assetRegionCount: this.nativeRenderCache?.regions.length || 0,
+        cachedClipCount: this.nativeRenderCache?.cachedClipIds.size || 0,
+        renderCacheHitCount: this.nativeRenderCache?.renderCacheHitCount || 0,
+        renderCacheMissCount: this.nativeRenderCache?.renderCacheMissCount || 0,
+        proceduralFallbackEventCount: this.nativeRenderCache?.proceduralFallbackEventCount ?? this.events.length,
+        lastError: this.nativeRenderCacheError
+      },
       audioContextState: this.ctx?.state || "not-created",
       currentSeconds: this.currentSeconds(),
       eventCount: this.events.length,
       nextEventIndex: this.nextEventIndex,
       scheduledEventCount: this.scheduledEventCount,
+      schedulerTickCount: this.schedulerTickCount,
+      missedSchedulerTickCount: this.missedSchedulerTickCount,
+      maxSchedulerGapMs: this.maxSchedulerGapMs,
+      lateEventCount: this.lateEventCount,
       skippedLateEventCount: this.skippedLateEventCount,
       schedulerActive: this.schedulerTimer !== null,
+      audioGraphReconfigureCount: this.audioGraphReconfigureCount,
+      activeAudioSourcesStoppedByGraphReconfigureCount: this.activeAudioSourcesStoppedByGraphReconfigureCount,
+      projectSyncCount: this.projectSyncCount,
+      lastProjectSyncMode: this.lastProjectSyncMode,
+      lastProjectSyncReason: this.lastProjectSyncReason,
+      lastAudioDropCause: this.lastAudioDropCause,
       projectTitle: this.project.project.title,
       timelineClipCount: this.project.timeline.clips.length,
       importHistoryCount: this.project.importHistory.length,
@@ -256,6 +396,125 @@ export class AudioEngine {
     return levels;
   }
 
+  private async tryStartNativePlayback(): Promise<boolean> {
+    const cache = await this.ensureNativeRenderCache();
+    const events = cache ? this.events.filter((event) => !cache.cachedClipIds.has(event.clipId)) : this.events;
+    if (cache) cache.proceduralFallbackEventCount = events.length;
+    if (!events.length && !(cache?.regions.length)) return false;
+    const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, cache || undefined);
+    const result = await this.nativePlayback.start(payload);
+    if (!result.started) {
+      this.nativeLastError = result.error;
+      return false;
+    }
+    this.nativeStatus = result.status;
+    this.nativeLastError = null;
+    return true;
+  }
+
+  private async restartNativePlayback(seconds: number) {
+    if (this.playbackBackend !== "native-cpal") return;
+    this.offsetSeconds = Math.max(0, seconds);
+    this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
+    this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
+    const cache = await this.ensureNativeRenderCache();
+    const events = cache ? this.events.filter((event) => !cache.cachedClipIds.has(event.clipId)) : this.events;
+    if (cache) cache.proceduralFallbackEventCount = events.length;
+    const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, cache || undefined);
+    const result = await this.nativePlayback.start(payload);
+    if (result.started) {
+      this.nativeStatus = result.status;
+      this.nativeLastError = null;
+    } else {
+      this.nativeLastError = result.error;
+    }
+  }
+
+  private async ensureNativeRenderCache(): Promise<NativeRenderCache | null> {
+    const signature = nativeRenderCacheSignature(this.project);
+    if (this.nativeRenderCache?.signature === signature) return this.nativeRenderCache;
+    try {
+      this.nativeRenderCache = await buildNativeRenderCache(this.project, signature);
+      this.nativeRenderCacheError = null;
+      return this.nativeRenderCache;
+    } catch (error) {
+      this.nativeRenderCache = null;
+      this.nativeRenderCacheError = error instanceof Error ? error.message : "Native render cache failed.";
+      return null;
+    }
+  }
+
+  private syncNativeMixerControls() {
+    if (this.playbackBackend !== "native-cpal") return;
+    this.project.tracks.forEach((track) => {
+      void this.nativePlayback.updateTrack({
+        trackId: track.id,
+        volume: track.volume,
+        pan: track.pan,
+        mute: track.mute,
+        solo: track.solo
+      }).then((status) => {
+        if (status) this.nativeStatus = status;
+      });
+    });
+  }
+
+  private startNativeTicker() {
+    this.stopNativeTicker();
+    this.nativeTickTimer = window.setInterval(() => this.tickNativePlayback(), 35);
+  }
+
+  private stopNativeTicker() {
+    if (this.nativeTickTimer !== null) window.clearInterval(this.nativeTickTimer);
+    this.nativeTickTimer = null;
+  }
+
+  private tickNativePlayback() {
+    if (this.playbackBackend !== "native-cpal" || !this.playing) return;
+    const current = this.currentSeconds();
+    this.handleNativeLoop(current);
+    this.tapNativeMeters(current);
+    const songEnd = barsToSeconds(this.project.timeline.bars, this.project.project.bpm, this.project.project.timeSig) + 0.4;
+    if (!this.project.timeline.loop.enabled && current > songEnd) this.stop();
+    else this.emitTick();
+  }
+
+  private handleNativeLoop(current: number) {
+    if (!this.project.timeline.loop.enabled) return;
+    const next = calculateLoopSeekSeconds(this.project, current);
+    if (next !== null) {
+      this.lastAudioDropCause = "loop";
+      this.offsetSeconds = next;
+      this.nativeStartedAtMs = performance.now() - next * 1000;
+      this.repositionPlaybackIndexes(next);
+      this.meterPeaks = {};
+      void this.nativePlayback.seek(next).then((status) => {
+        if (status) this.nativeStatus = status;
+      });
+      this.emitTick(true);
+    }
+  }
+
+  private tapNativeMeters(current: number) {
+    const horizon = current + 0.08;
+    while (this.nativeMeterEventIndex < this.events.length && this.events[this.nativeMeterEventIndex].time <= horizon) {
+      const event = this.events[this.nativeMeterEventIndex];
+      if (event.time >= current - 0.04 && this.eventIsAudible(event)) this.tapMeter(event.trackId, event.velocity);
+      this.nativeMeterEventIndex += 1;
+    }
+  }
+
+  private repositionPlaybackIndexes(seconds: number) {
+    this.nextEventIndex = this.findEventIndex(seconds);
+    this.nextAudioRegionIndex = this.findAudioRegionIndex(seconds);
+    this.nativeMeterEventIndex = this.nextEventIndex;
+  }
+
+  private repositionWebScheduler(seconds: number) {
+    if (!this.ctx || !this.playing) return;
+    this.repositionPlaybackIndexes(seconds);
+  }
+
   private async ensureContext() {
     if (this.ctx) return;
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -267,11 +526,13 @@ export class AudioEngine {
     this.master.gain.value = 0.9;
     this.master.connect(this.masterAnalyser);
     this.masterAnalyser.connect(this.ctx.destination);
-    this.configureMixer();
+    this.configureMixer("project-load");
   }
 
-  private configureMixer() {
+  private configureMixer(cause: AudioDropCause = "graph-rebuild") {
     if (!this.ctx || !this.master) return;
+    this.audioGraphReconfigureCount += 1;
+    if (this.playing && cause) this.lastAudioDropCause = cause;
     this.disposeMixer();
     this.trackOutputs.clear();
     const currentBar = secondsToBars(this.currentSeconds(), this.project.project.bpm, this.project.project.timeSig) + 1;
@@ -330,17 +591,31 @@ export class AudioEngine {
 
   private disposeMixer() {
     this.trackOutputs.forEach((output) => output.cleanup());
+    this.activeAudioSourcesStoppedByGraphReconfigureCount += this.activeAudioSources.length;
     this.stopActiveAudioSources();
   }
 
   private startScheduler() {
     if (this.schedulerTimer !== null) window.clearInterval(this.schedulerTimer);
+    this.lastSchedulerTickAt = performance.now();
     this.schedulerTimer = window.setInterval(() => this.scheduleAhead(), this.schedulerIntervalMs);
     this.scheduleAhead();
   }
 
+  private recordSchedulerTick() {
+    const now = performance.now();
+    const gap = this.lastSchedulerTickAt > 0 ? now - this.lastSchedulerTickAt : 0;
+    if (gap > 0) {
+      this.maxSchedulerGapMs = Math.max(this.maxSchedulerGapMs, gap);
+      if (gap > this.schedulerIntervalMs * 2.5) this.missedSchedulerTickCount += 1;
+    }
+    this.lastSchedulerTickAt = now;
+    this.schedulerTickCount += 1;
+  }
+
   private scheduleAhead() {
     if (!this.ctx || !this.playing) return;
+    this.recordSchedulerTick();
     const current = this.currentSeconds();
     this.updateAutomationControls(current);
     this.handleLoop(current);
@@ -348,7 +623,11 @@ export class AudioEngine {
     while (this.nextEventIndex < this.events.length && this.events[this.nextEventIndex].time <= horizon) {
       const event = this.events[this.nextEventIndex];
       if (event.time >= this.currentSeconds() - 0.045) this.scheduleEvent(event);
-      else this.skippedLateEventCount += 1;
+      else {
+        this.lateEventCount += 1;
+        this.skippedLateEventCount += 1;
+        this.lastAudioDropCause = "late-scheduler";
+      }
       this.nextEventIndex += 1;
     }
     while (this.nextAudioRegionIndex < this.audioRegions.length && this.audioRegions[this.nextAudioRegionIndex].startTimeSeconds <= horizon) {
@@ -381,11 +660,20 @@ export class AudioEngine {
     const output = this.trackOutputs.get(event.trackId);
     if (!output) return;
     this.tapMeter(event.trackId, event.velocity);
-    this.scheduledEventCount += 1;
-    scheduleInstrumentEvent(this.ctx, output.gain, {
+    const scheduled = scheduleInstrumentEvent(this.ctx, output.gain, {
       ...event,
       time: this.startedAt + event.time
+    }, {
+      onLate: () => {
+        this.lateEventCount += 1;
+        this.lastAudioDropCause = "late-scheduler";
+      },
+      onSkippedLate: () => {
+        this.skippedLateEventCount += 1;
+        this.lastAudioDropCause = "late-scheduler";
+      }
     });
+    if (scheduled) this.scheduledEventCount += 1;
   }
 
   private scheduleAudioRegion(region: AudioRegion, currentSeconds: number) {

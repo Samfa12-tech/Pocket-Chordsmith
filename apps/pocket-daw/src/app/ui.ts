@@ -1,8 +1,8 @@
 import type { AppState } from "./state";
-import { currentProject } from "./state";
+import { currentProject, type ChordsmithStepSelection } from "./state";
 import { BUILT_IN_FX, getTrackFxChain } from "../daw/fx";
 import { getPrimaryChordsmithSource, totalEditorSteps, visibleEditorSteps } from "../daw/chordsmithEditor";
-import type { Clip, FxChain, Track } from "../daw/schema";
+import { POCKET_DAW_VERSION, type Clip, type FxChain, type Track } from "../daw/schema";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
 import { barFloatToPosition, sortClips } from "../daw/timeline";
 import { mediaPoolStatus, renderCacheItemsForMedia } from "../daw/mediaPool";
@@ -148,7 +148,7 @@ function renderTransport(state: AppState): string {
         <div>
           <h1>Pocket DAW</h1>
           <p>${escapeHtml(project.project.title)}</p>
-          <small>v${escapeHtml(project.dawVersion)} / ${escapeHtml(env)} / ${escapeHtml(state.currentFile.path || state.currentFile.label)}</small>
+          <small>v${escapeHtml(POCKET_DAW_VERSION)} / ${escapeHtml(env)} / ${escapeHtml(state.currentFile.path || state.currentFile.label)}</small>
         </div>
       </div>
       <div class="transport-buttons">
@@ -466,7 +466,7 @@ function renderChordsmithSequencer(state: AppState, project: ReturnType<typeof c
   const maxPage = Math.max(0, Math.ceil(totalSteps / windowSize) - 1);
   const page = Math.min(Math.max(0, state.chordsmithEditorStepPage), maxPage);
   const startStep = page * windowSize;
-  const body = renderSelectedSequencerBlock(project, pcs, section, selectedTrack, selectedRole, state.chordsmithEditorMelodyTrackIndex, startStep, windowSize);
+  const body = renderSelectedSequencerBlock(project, pcs, section, selectedTrack, selectedRole, state.chordsmithEditorMelodyTrackIndex, startStep, windowSize, state.chordsmithStepSelection);
   return `
     <div class="sequencer-editor">
       <header>
@@ -529,13 +529,14 @@ function renderSelectedSequencerBlock(
   role: Track["role"] | null,
   melodyTrackIndex: number,
   startStep: number,
-  steps: number
+  steps: number,
+  selection: ChordsmithStepSelection | null
 ): string {
   const stepNumbers = Array.from({ length: steps }, (_, i) => `<span>${startStep + i + 1}</span>`).join("");
   if (role === "chords") return `<div class="chord-editor">${Array.from({ length: section.bars }, (_, bar) => renderChordSelect(section, bar)).join("")}</div>`;
-  if (role === "drums") return `<div class="step-ruler">${stepNumbers}</div>${renderDrumEditor(section, startStep, steps)}`;
-  if (role === "bass") return `<div class="step-ruler">${stepNumbers}</div>${renderBassEditor(pcs, section, startStep, steps)}`;
-  if (role === "melody") return `<div class="step-ruler">${stepNumbers}</div>${renderMelodyEditor(section, selectedTrack?.role === "melody" ? selectedMelodyTrackIndex(selectedTrack) : melodyTrackIndex, startStep, steps)}`;
+  if (role === "drums") return `<div class="step-ruler">${stepNumbers}</div>${renderDrumEditor(section, startStep, steps, selection)}`;
+  if (role === "bass") return `<div class="step-ruler">${stepNumbers}</div>${renderBassEditor(pcs, section, startStep, steps, selection)}`;
+  if (role === "melody") return `<div class="step-ruler">${stepNumbers}</div>${renderMelodyEditor(section, selectedTrack?.role === "melody" ? selectedMelodyTrackIndex(selectedTrack) : melodyTrackIndex, startStep, steps, selection)}`;
   if (role === "guitar") return `<div class="step-ruler">${stepNumbers}</div>${renderGuitarEditor(project, pcs, section, startStep, steps)}`;
   return "";
 }
@@ -551,7 +552,7 @@ function renderChordSelect(section: SanitizedPcsSection, bar: number): string {
   `;
 }
 
-function renderDrumEditor(section: SanitizedPcsSection, startStep: number, steps: number): string {
+function renderDrumEditor(section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   return `
     <div class="sequencer-block">
       <strong>Drums</strong>
@@ -564,15 +565,8 @@ function renderDrumEditor(section: SanitizedPcsSection, startStep: number, steps
                 const actualStep = startStep + step;
                 const level = section.grid[lane][actualStep] || 0;
                 const tuplet = !!section.gridTuplets[lane][actualStep];
-                return `<button class="step step-${level} ${tuplet ? "tuplet" : ""}" title="${drumLaneLabel(lane)} step ${actualStep + 1}" data-drum-step="${section.id}:${lane}:${actualStep}">${level === 2 ? "!" : level === 1 ? "x" : ""}</button>`;
-              }).join("")}
-            </div>
-            <div class="sequencer-row sub-row">
-              <span>tuplet</span>
-              ${Array.from({ length: steps }, (_, step) => {
-                const actualStep = startStep + step;
-                const tuplet = !!section.gridTuplets[lane][actualStep];
-                return `<button class="step meta-step ${tuplet ? "on" : ""}" title="${drumLaneLabel(lane)} tuplet ${actualStep + 1}" data-drum-tuplet="${section.id}:${lane}:${actualStep}">${tuplet ? "T" : ""}</button>`;
+                const selected = selection?.kind === "drums" && selection.sectionId === section.id && selection.lane === lane && selection.step === actualStep;
+                return `<button class="step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet." data-drum-step="${section.id}:${lane}:${actualStep}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
               }).join("")}
             </div>
           `
@@ -582,7 +576,7 @@ function renderDrumEditor(section: SanitizedPcsSection, startStep: number, steps
   `;
 }
 
-function renderBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number): string {
+function renderBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   return `
     <div class="sequencer-block">
       <strong>Bass</strong>
@@ -597,17 +591,10 @@ function renderBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
           const note = section.bassNotes[actualStep];
-          return `<button class="step note-step ${note === null || note === undefined ? "" : "on"}" title="Bass note step ${actualStep + 1}" data-bass-step="${section.id}:${actualStep}">${note === null || note === undefined ? "" : BASS_LABELS[note] || String(note)}</button>`;
+          const selected = selection?.kind === "bass" && selection.sectionId === section.id && selection.step === actualStep;
+          return `<button class="step note-step ${note === null || note === undefined ? "" : "on"} ${selected ? "selected-step" : ""}" title="Bass note step ${actualStep + 1}. Select then press H for hold or S for slide." data-bass-step="${section.id}:${actualStep}">${note === null || note === undefined ? "" : BASS_LABELS[note] || String(note)}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep] })}</button>`;
         }).join("")}
       </div>
-      ${renderMetaStepRow("hold", steps, (step) => {
-        const actualStep = startStep + step;
-        return `<button class="step meta-step ${section.bassHold[actualStep] ? "on" : ""}" title="Bass hold step ${actualStep + 1}" data-bass-hold="${section.id}:${actualStep}">${section.bassHold[actualStep] ? "H" : ""}</button>`;
-      })}
-      ${renderMetaStepRow("slide", steps, (step) => {
-        const actualStep = startStep + step;
-        return `<button class="step meta-step ${section.bassSlide[actualStep] ? "on" : ""}" title="Bass slide step ${actualStep + 1}" data-bass-slide="${section.id}:${actualStep}">${section.bassSlide[actualStep] ? "S" : ""}</button>`;
-      })}
       ${renderMetaStepRow("accent", steps, (step) => {
         const actualStep = startStep + step;
         return `<button class="step meta-step ${section.bassAccent[actualStep] ? "on accent" : ""}" title="Bass accent step ${actualStep + 1}" data-bass-accent="${section.id}:${actualStep}">${section.bassAccent[actualStep] ? "!" : ""}</button>`;
@@ -616,7 +603,7 @@ function renderBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection
   `;
 }
 
-function renderMelodyEditor(section: SanitizedPcsSection, trackIndex: number, startStep: number, steps: number): string {
+function renderMelodyEditor(section: SanitizedPcsSection, trackIndex: number, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   const track = section.melodyTracks[trackIndex] || [];
   const instrument = section.melodyInstruments[trackIndex] || "synth";
   const octave = section.melodyOctaves[trackIndex] || 0;
@@ -641,21 +628,10 @@ function renderMelodyEditor(section: SanitizedPcsSection, trackIndex: number, st
           const actualStep = startStep + step;
           const note = track[actualStep];
           const tuplet = !!section.melodyTuplets[trackIndex]?.[actualStep];
-          return `<button class="step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""}" title="Melody ${trackIndex + 1} note step ${actualStep + 1}" data-melody-step="${section.id}:${trackIndex}:${actualStep}">${note === null || note === undefined ? "" : BASS_LABELS[note] || String(note)}</button>`;
+          const selected = selection?.kind === "melody" && selection.sectionId === section.id && selection.trackIndex === trackIndex && selection.step === actualStep;
+          return `<button class="step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Melody ${trackIndex + 1} note step ${actualStep + 1}. Select then press H, S or T." data-melody-step="${section.id}:${trackIndex}:${actualStep}">${note === null || note === undefined ? "" : BASS_LABELS[note] || String(note)}${stepBadges({ hold: !!section.melodyHold[trackIndex]?.[actualStep], slide: !!section.melodySlide[trackIndex]?.[actualStep], tuplet })}</button>`;
         }).join("")}
       </div>
-      ${renderMetaStepRow("hold", steps, (step) => {
-        const actualStep = startStep + step;
-        return `<button class="step meta-step ${section.melodyHold[trackIndex]?.[actualStep] ? "on" : ""}" title="Melody hold step ${actualStep + 1}" data-melody-hold="${section.id}:${trackIndex}:${actualStep}">${section.melodyHold[trackIndex]?.[actualStep] ? "H" : ""}</button>`;
-      })}
-      ${renderMetaStepRow("slide", steps, (step) => {
-        const actualStep = startStep + step;
-        return `<button class="step meta-step ${section.melodySlide[trackIndex]?.[actualStep] ? "on" : ""}" title="Melody slide step ${actualStep + 1}" data-melody-slide="${section.id}:${trackIndex}:${actualStep}">${section.melodySlide[trackIndex]?.[actualStep] ? "S" : ""}</button>`;
-      })}
-      ${renderMetaStepRow("tuplet", steps, (step) => {
-        const actualStep = startStep + step;
-        return `<button class="step meta-step ${section.melodyTuplets[trackIndex]?.[actualStep] ? "on" : ""}" title="Melody tuplet step ${actualStep + 1}" data-melody-tuplet="${section.id}:${trackIndex}:${actualStep}">${section.melodyTuplets[trackIndex]?.[actualStep] ? "T" : ""}</button>`;
-      })}
     </div>
   `;
 }
@@ -716,6 +692,15 @@ function renderMetaStepRow(label: string, steps: number, render: (step: number) 
       ${Array.from({ length: steps }, (_, step) => render(step)).join("")}
     </div>
   `;
+}
+
+function stepBadges(flags: { hold?: boolean; slide?: boolean; tuplet?: boolean }): string {
+  const badges = [
+    flags.hold ? "H" : "",
+    flags.slide ? "S" : "",
+    flags.tuplet ? "T" : ""
+  ].filter(Boolean);
+  return badges.length ? `<span class="step-badges">${badges.map((badge) => `<span>${badge}</span>`).join("")}</span>` : "";
 }
 
 function drumLaneLabel(lane: string) {
@@ -990,7 +975,7 @@ function renderControlsPanel(state: AppState): string {
           <p><strong>Timeline</strong><span>Select a clip, click or drag the ruler/grid to seek and scrub, choose Bar or Beat snap, then use Move, Copy, Paste, Split, Trim, Loop Clip, Marker and Zoom controls.</span></p>
           <p><strong>Media Pool</strong><span>Import Audio decodes supported files into a runtime cache. Import MIDI parses .mid files into editable clips played by the preview synth.</span></p>
           <p><strong>Mixer</strong><span>Use Volume and Pan sliders. Meters show live peak audio. Mute silences a track; Solo isolates it.</span></p>
-          <p><strong>Diagnostics</strong><span>v${escapeHtml(project.dawVersion)} / ${escapeHtml(environmentLabel())} / ${escapeHtml(state.currentFile.path || state.currentFile.label)} / recent: ${escapeHtml(recent)}</span></p>
+          <p><strong>Diagnostics</strong><span>v${escapeHtml(POCKET_DAW_VERSION)} / ${escapeHtml(environmentLabel())} / ${escapeHtml(state.currentFile.path || state.currentFile.label)} / recent: ${escapeHtml(recent)}</span></p>
           <p><strong>Save / Export</strong><span>Save .pocketdaw projects, export full-song WAV, or export multi-track MIDI.</span></p>
           <p><strong>Private alpha</strong><span>Recording and native collect-media copy stay guarded until the v0.6 verification docs are complete.</span></p>
         </div>

@@ -1,6 +1,6 @@
 {
   "name": "pocket-daw",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "WIP Pocket Audio desktop arrangement and production app built with Vite, TypeScript, and Tauri.",
   "private": true,
   "license": "UNLICENSED",

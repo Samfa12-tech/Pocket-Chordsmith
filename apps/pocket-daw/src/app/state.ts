@@ -6,6 +6,11 @@ import { createUndoStack, type UndoStack } from "../daw/undo";
 import type { ProjectFileState } from "../native/fileBridge";
 import type { RecentProject } from "../native/recentFiles";
 
+export type ChordsmithStepSelection =
+  | { kind: "drums"; sectionId: string; lane: "kick" | "snare" | "hat"; step: number }
+  | { kind: "bass"; sectionId: string; step: number }
+  | { kind: "melody"; sectionId: string; trackIndex: number; step: number };
+
 export interface AppState {
   undoStack: UndoStack<PocketDawProject>;
   selectedClipId: string | null;
@@ -29,6 +34,7 @@ export interface AppState {
   chordsmithEditorSectionId: string;
   chordsmithEditorMelodyTrackIndex: number;
   chordsmithEditorStepPage: number;
+  chordsmithStepSelection: ChordsmithStepSelection | null;
 }
 
 export function createInitialState(): AppState {
@@ -55,7 +61,8 @@ export function createInitialState(): AppState {
     chordsmithEditorFollowClip: true,
     chordsmithEditorSectionId: "A",
     chordsmithEditorMelodyTrackIndex: 0,
-    chordsmithEditorStepPage: 0
+    chordsmithEditorStepPage: 0,
+    chordsmithStepSelection: null
   };
 }
 

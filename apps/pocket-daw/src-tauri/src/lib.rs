@@ -1,10 +1,19 @@
 use cpal::traits::DeviceTrait;
 
+mod native_audio;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(native_audio::create_native_audio_runtime())
         .invoke_handler(tauri::generate_handler![
             probe_audio_devices,
+            native_audio::native_audio_status,
+            native_audio::native_audio_start,
+            native_audio::native_audio_pause,
+            native_audio::native_audio_seek,
+            native_audio::native_audio_stop,
+            native_audio::native_audio_update_track,
             open_project_file,
             open_audio_media_file,
             open_midi_file,

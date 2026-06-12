@@ -15,10 +15,18 @@
   --amber: #ffc857;
   --purple: #b88cff;
   --danger: #ff6b8b;
+  --menu-strip-height: 31px;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -83,6 +91,7 @@ button:disabled {
   min-height: 100vh;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .app-shell > * {
@@ -91,14 +100,17 @@ button:disabled {
 
 .menu-strip {
   grid-area: menu;
-  position: relative;
-  z-index: 30;
+  position: sticky;
+  top: 0;
+  z-index: 60;
   display: flex;
   gap: 2px;
   align-items: center;
+  min-height: var(--menu-strip-height);
   padding: 3px 10px;
   border-bottom: 1px solid #202944;
-  background: #090d18;
+  background: rgba(9, 13, 24, 0.98);
+  backdrop-filter: blur(10px);
 }
 
 .menu-group {
@@ -143,13 +155,16 @@ button:disabled {
 
 .transport {
   grid-area: transport;
+  position: sticky;
+  top: var(--menu-strip-height);
+  z-index: 50;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 330px minmax(160px, 240px);
   gap: 12px;
   align-items: center;
   padding: 12px 18px;
   border-bottom: 1px solid var(--line);
-  background: rgba(10, 14, 25, 0.92);
+  background: rgba(10, 14, 25, 0.97);
   backdrop-filter: blur(12px);
 }
 
@@ -263,6 +278,7 @@ h1 {
 .inspector {
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   padding: 14px;
   border-right: 1px solid var(--line);
   background: rgba(12, 17, 30, 0.86);
@@ -673,6 +689,7 @@ h1 {
 }
 
 .step {
+  position: relative;
   display: grid;
   place-items: center;
   width: 100%;
@@ -685,6 +702,33 @@ h1 {
   background: #0b1120;
   font-size: 8px;
   font-weight: 800;
+  line-height: 1;
+}
+
+.selected-step {
+  border-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(64, 216, 255, 0.46), 0 0 0 3px rgba(64, 216, 255, 0.13);
+}
+
+.step-badges {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  display: flex;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.step-badges span {
+  display: grid;
+  place-items: center;
+  min-width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  color: #07101b;
+  background: #ffc857;
+  font-size: 6px;
+  font-weight: 900;
   line-height: 1;
 }
 

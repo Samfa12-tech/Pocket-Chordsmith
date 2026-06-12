@@ -1,4 +1,4 @@
-# Pocket DAW v0.5.1 - What Works and What's Next
+# Pocket DAW v0.5.2 - What Works and What's Next
 
 ## North star
 
@@ -10,6 +10,7 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 
 - Browser-runnable Vite + TypeScript app in `pocket-daw`.
 - Native Windows Tauri v2 app wrapper in `src-tauri`.
+- Native CPAL playback backend for generated Pocket Chordsmith and MIDI-preview event playback in the installed app.
 - Future-ready `.pocketdaw` JSON schema with source refs, timeline clips, tracks, automation, routing, media pool, render cache, export profiles and import history.
 - Defensive Pocket Chordsmith import for `PCS1:` share codes and raw JSON.
 - `.pocketdaw` open/save roundtrip.
@@ -52,7 +53,7 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 - Live playback now returns to the loop start when the playhead reaches the loop end.
 - Track mute, solo, volume and pan editing.
 - Undo/redo for clip and mixer edits.
-- Web Audio lookahead playback scheduler.
+- Web Audio lookahead playback scheduler remains as a browser/dev fallback, not the product playback target.
 - Generated drums, bass, chords, melody and guitar are audible when source data exists.
 - Offline full-song WAV export.
 - Full-song MIDI export with separate drums, bass, chords, melody and guitar tracks.
@@ -394,11 +395,23 @@ Historical installers and debug executables may remain in `releases/`, but they 
 
 ## Current editor boundary
 
-v0.5.1 hardens the practical automation, bus routing and export foundations, but it is not a full professional mixing/export console yet. Automation is limited to track volume multiplier and pan; there are no drawn lanes, FX-parameter automation, tempo automation or automation clips. Bus routing is supported, but full send/return processing is still guarded. Stem export uses sequential browser WAV downloads rather than a browser zip. Section/Godot/web-game exports produce JSON manifest previews, not full asset packs yet. MIDI playback still uses the built-in preview synth. Audio clips still have no time-stretching/warping, no recording, no waveform editing, no completed project-relative media relink workflow and no persistent browser-side audio bytes.
+## v0.5.2 Desktop Audio Pivot
+
+- Pocket DAW is now treated as an installable computer app, not a Web Audio product.
+- Installed playback attempts the native CPAL backend first for generated Chordsmith and MIDI-preview rendered events.
+- Web Audio remains available only as a fallback when the Tauri/native command path is unavailable.
+- The diagnostics export reports `playbackBackend`, `nativeAudio`, scheduler gaps, late/skipped events, graph reconfigure counts, project sync mode and `renderCountDuringPlayback`.
+- Mixer volume, pan, mute and solo update native track controls without rebuilding the project.
+- Badly late Web Audio fallback drums/hats are skipped instead of bunched at the current audio time.
+- The native playback path is still a first event-synth implementation, not final parity instruments or native audio-file streaming.
+- Audio-file import still depends on WebView decoding and runtime buffers; native Symphonia-style decoding is the next desktop-grade step.
+
+v0.5.2 moves generated playback out of the browser timing path, but it is not a full professional mixing/export console yet. Automation is limited to track volume multiplier and pan; there are no drawn lanes, FX-parameter automation, tempo automation or automation clips. Bus routing is supported, but full send/return processing is still guarded. Stem export uses sequential browser WAV downloads rather than a browser zip. Section/Godot/web-game exports produce JSON manifest previews, not full asset packs yet. Audio clips still have no time-stretching/warping, no recording, no waveform editing, no completed project-relative media relink workflow and no persistent native decoded media cache.
 
 ## What should come next
 
 - Manually verify native Open, Save and Save As inside `npm run tauri:dev` or a packaged native build.
+- Manually verify that packaged playback diagnostics show `playbackBackend: native-cpal` while scrolling, dragging mixer controls and editing Chordsmith steps.
 - Add installer signing/version metadata polish.
 - Extend Pocket Chordsmith to Pocket DAW push/handoff into a polished cross-app button flow and live-host smoke test.
 - Add Pocket DAW to Godot push/export workflow.
@@ -418,7 +431,7 @@ v0.5.1 hardens the practical automation, bus routing and export foundations, but
 - Add voice/instrument recording once native file/audio persistence is ready, including simultaneous multitrack recording on multi-input hardware.
 - Add per-track mono/stereo recording mode and hardware input assignment for live audio tracks.
 - Expand MIDI import into a deeper DAW feature: robust multi-track import, channel/instrument mapping, tempo-map handling, controller preservation, drum-lane mapping and richer piano-roll editing.
-- Move performance-critical generated instruments toward cached samples, rendered voice assets or hybrid sample/synth playback where it improves desktop DAW reliability without removing editability.
+- Move imported audio-file decoding and streaming into Rust/native code, then replace the first CPAL event synth with cached samples, rendered voice assets or a hybrid sample/synth backend where it improves desktop DAW reliability without removing editability.
 
 ## Sample-backed playback lessons
 
