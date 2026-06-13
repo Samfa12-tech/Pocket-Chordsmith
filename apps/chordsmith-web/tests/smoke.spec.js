@@ -72,3 +72,28 @@ test("handoff buttons stop live playback before pushing", async ({ page }) => {
     .poll(() => page.evaluate(() => window.__pocketChordsmithOpenedUrls.length))
     .toBeGreaterThan(0);
 });
+
+test("Pocket DAW handoff targets the installed app protocol", async ({ page }) => {
+  await page.evaluate(() => {
+    window.__pocketChordsmithOpenedUrls = [];
+    window.open = (url, name) => {
+      const opened = {
+        closed: false,
+        name: name || "",
+        opener: null,
+        location: { href: url },
+      };
+      window.__pocketChordsmithOpenedUrls.push(opened);
+      return opened;
+    };
+  });
+
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await page.getByRole("button", { name: "Send to Pocket DAW" }).click();
+
+  const openedUrls = await page.evaluate(() =>
+    window.__pocketChordsmithOpenedUrls.map((item) => item.location.href),
+  );
+  expect(openedUrls).toContainEqual(expect.stringMatching(/^pocket-daw:\/\/handoff\?pocketHandoff=/));
+  await expect(page.locator("#pushHandoffStatus")).toContainText("paste the copied PCS1 code");
+});

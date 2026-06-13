@@ -874,7 +874,7 @@ const POCKET_CHORDSMITH_URL = "https://samfa12.itch.io/pocket-chordsmith";
 // Direct handoff target for the self-hosted Samfa12 web app.
 // Local development still uses relative paths.
 const POCKET_DJ_URL = "https://samfa12.com/apps/pocket-dj/";
-const POCKET_DAW_URL = "https://samfa12.com/apps/pocket-daw/";
+const POCKET_DAW_URL = "pocket-daw://handoff";
 const GODOT_PUSH_ENDPOINTS = [
   "http://127.0.0.1:9087/pocket-chordsmith/push-to-godot",
   "http://localhost:9087/pocket-chordsmith/push-to-godot"
@@ -882,7 +882,6 @@ const GODOT_PUSH_ENDPOINTS = [
 const HANDOFF_PARAM = "pocketHandoff";
 const HANDOFF_WINDOW_PREFIX = "PocketHandoff:";
 const HANDOFF_TO_DJ_KEY = "pocket_chordsmith_to_dj_handoff_v1";
-const HANDOFF_TO_DAW_KEY = "PocketHandoff";
 const HANDOFF_TO_CHORDSMITH_KEY = "pocket_dj_to_chordsmith_handoff_v1";
 const MIDI_TICKS_PER_QUARTER = 480;
 const MAX_SEQUENCE_SLOTS = 64;
@@ -1420,6 +1419,13 @@ function decodePocketHandoff(value){
 }
 function buildHandoffUrl(url, payload){
   const encoded = encodePocketHandoff(payload);
+  try{
+    const parsed = new URL(url);
+    if(parsed.protocol === "pocket-daw:"){
+      parsed.searchParams.set(HANDOFF_PARAM, encoded);
+      return parsed.href;
+    }
+  }catch(e){}
   const joiner = url.includes("#") ? (/[#&]$/.test(url) ? "" : "&") : "#";
   return `${url}${joiner}${HANDOFF_PARAM}=${encoded}`;
 }
@@ -1433,9 +1439,6 @@ function resolvePocketDjUrl(){
   return POCKET_DJ_URL;
 }
 function resolvePocketDawUrl(){
-  if(isLocalHandoffHost()){
-    try{ return new URL("../pocket-daw/index.html", window.location.href).href; }catch(e){}
-  }
   return POCKET_DAW_URL;
 }
 function saveHandoffPayload(storageKey, payload){
@@ -1598,6 +1601,22 @@ async function copyTextForHandoff(text, successMessage, fallbackMessage){
   setStatus(fallbackMessage);
   return false;
 }
+function downloadTextFallback(filename, text){
+  try{
+    const blob = new Blob([text], {type:"text/plain;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  }catch(e){
+    return false;
+  }
+}
 function setPushHandoffStatus(message){
   if(els.pushHandoffStatus) els.pushHandoffStatus.textContent = message;
 }
@@ -1730,7 +1749,6 @@ async function pushToPocketDaw(){
       songSequenceLength: Array.isArray(state.songSequence) ? state.songSequence.length : 0
     }
   });
-  const saved = saveHandoffPayload(HANDOFF_TO_DAW_KEY, payload);
   const targetBaseUrl = resolvePocketDawUrl();
   const targetUrl = buildHandoffUrl(targetBaseUrl, payload);
   const preparedWindow = openPreparedHandoffWindow(payload);
@@ -1741,15 +1759,16 @@ async function pushToPocketDaw(){
   );
   const opened = openHandoffUrl(
     targetUrl,
-    `Pocket DAW code copied. Pop-up blocked; open ${targetBaseUrl} and paste Import.`,
+    "Pocket DAW code copied. Browser blocked the app launch; paste the code into installed Pocket DAW.",
     payload,
     preparedWindow
   );
   if(opened){
-    setStatus(copied ? "Song sent to Pocket DAW. Opening Pocket DAW..." : "Song sent to Pocket DAW. Opening target...");
-    setPushHandoffStatus(saved ? "Pocket DAW will import this song when it opens." : "Pocket DAW will import from the launch URL; clipboard is also ready as fallback.");
+    setStatus(copied ? "Opening installed Pocket DAW..." : "Pocket DAW handoff ready. Opening installed app...");
+    setPushHandoffStatus("If Pocket DAW does not open, paste the copied PCS1 code into Import.");
   }else{
-    setPushHandoffStatus(`Open ${targetBaseUrl}, paste the PCS1 code, then press Import.`);
+    const downloaded = downloadTextFallback("pocket-chordsmith-to-pocket-daw.pcs1.txt", code);
+    setPushHandoffStatus(downloaded ? "Pocket DAW did not open. Share code copied and downloaded for manual import." : "Pocket DAW did not open. Share code is copied and ready in the project box.");
   }
 }
 async function pushToGodot(){
