@@ -40,6 +40,28 @@ describe("audio media and clips", () => {
     expect(parsed.mediaPool[0].metadata).toMatchObject({ runtimeOnly: true, waveformPeaks: [0.2, 0.7] });
   });
 
+  it("places additional imported audio on a visible new media lane", () => {
+    const first = addImportedAudioMedia(createDemoProject(), {
+      name: "First Loop.wav",
+      durationSeconds: 4,
+      sampleRate: 44100,
+      channels: 2
+    });
+    const firstPlaced = placeAudioClipOnTimeline(first.project, first.item.id, 1);
+    const second = addImportedAudioMedia(firstPlaced.project, {
+      name: "Second Loop.mp3",
+      durationSeconds: 8,
+      sampleRate: 44100,
+      channels: 2
+    });
+
+    const secondPlaced = placeAudioClipOnTimeline(second.project, second.item.id, 1);
+
+    expect(secondPlaced.trackId).toBe("audio-2");
+    expect(secondPlaced.project.tracks.find((track) => track.id === "audio-2")?.name).toContain("Second Loop");
+    expect(secondPlaced.project.timeline.clips.filter((clip) => clip.type === "audio").map((clip) => clip.trackId)).toEqual(["audio", "audio-2"]);
+  });
+
   it("calculates audio regions and reports missing media without crashing", () => {
     const imported = addImportedAudioMedia(createDemoProject(), {
       name: "Hit.wav",

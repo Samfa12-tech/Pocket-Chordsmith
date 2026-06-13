@@ -591,8 +591,9 @@ function renderBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
           const note = section.bassNotes[actualStep];
+          const tuplet = !!section.gridTuplets.bass[actualStep];
           const selected = selection?.kind === "bass" && selection.sectionId === section.id && selection.step === actualStep;
-          return `<button class="step note-step ${note === null || note === undefined ? "" : "on"} ${selected ? "selected-step" : ""}" title="Bass note step ${actualStep + 1}. Select then press H for hold or S for slide." data-bass-step="${section.id}:${actualStep}">${note === null || note === undefined ? "" : BASS_LABELS[note] || String(note)}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep] })}</button>`;
+          return `<button class="step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Bass note step ${actualStep + 1}. Select then press H, S or T." data-bass-step="${section.id}:${actualStep}">${note === null || note === undefined ? "" : BASS_LABELS[note] || String(note)}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep], tuplet })}</button>`;
         }).join("")}
       </div>
       ${renderMetaStepRow("accent", steps, (step) => {

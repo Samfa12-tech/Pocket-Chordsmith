@@ -34,4 +34,19 @@ describe("project load state hydration", () => {
     expect(recoveredDiagnostics.eventCount).toBe(renderTimelineEvents(recoveredProject).length);
     expect(recoveredDiagnostics.eventCount).not.toBe(initialDiagnostics.eventCount);
   });
+
+  it("preserves saved solo state through roundtrip load", () => {
+    const project = createDemoProject();
+    project.tracks.find((track) => track.id === "bass")!.solo = true;
+    const parsed = parsePocketDawProjectFile(buildPocketDawProjectFile(project));
+
+    const recoveredState = loadProjectIntoState(createInitialState(), parsed, {
+      status: "Opened solo test.",
+      currentFile: { path: "C:/Songs/solo-test.pocketdaw", label: "solo-test.pocketdaw" }
+    });
+    const engine = new AudioEngine(currentProject(recoveredState));
+
+    expect(currentProject(recoveredState).tracks.find((track) => track.id === "bass")?.solo).toBe(true);
+    expect(engine.getDiagnostics().mixerControls.find((track) => track.id === "bass")?.solo).toBe(true);
+  });
 });

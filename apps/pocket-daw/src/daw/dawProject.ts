@@ -63,7 +63,7 @@ export function createDefaultAudioDeviceSettings() {
 }
 
 export function buildPocketDawProjectFile(project: PocketDawProject): string {
-  return JSON.stringify(project, null, 2);
+  return JSON.stringify({ ...project, dawVersion: POCKET_DAW_VERSION }, null, 2);
 }
 
 export function parsePocketDawProjectFile(raw: unknown): PocketDawProject {

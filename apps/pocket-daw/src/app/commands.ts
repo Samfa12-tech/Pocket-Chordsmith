@@ -32,6 +32,7 @@ import {
   toggleBassAccent,
   toggleBassHold,
   toggleBassSlide,
+  toggleBassTuplet,
   toggleMelodyHold,
   toggleMelodySlide,
   toggleMelodyTuplet,
@@ -349,6 +350,11 @@ export function toggleBassHoldCommand(state: AppState, sectionId: string, step: 
 export function toggleBassSlideCommand(state: AppState, sectionId: string, step: number): AppState {
   if (!isSectionId(sectionId)) return state;
   return commitProject(state, toggleBassSlide(state.undoStack.present, sectionId, step), `Toggled Section ${sectionId} bass slide.`);
+}
+
+export function toggleBassTupletCommand(state: AppState, sectionId: string, step: number): AppState {
+  if (!isSectionId(sectionId)) return state;
+  return commitProject(state, toggleBassTuplet(state.undoStack.present, sectionId, step), `Toggled Section ${sectionId} bass tuplet.`);
 }
 
 export function toggleBassAccentCommand(state: AppState, sectionId: string, step: number): AppState {

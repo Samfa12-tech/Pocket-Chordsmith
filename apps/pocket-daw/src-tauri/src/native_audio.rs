@@ -161,7 +161,9 @@ struct DecodedAudioAsset {
 pub fn native_audio_status(state: tauri::State<'_, NativeAudioState>) -> NativeAudioStatus {
     match state.lock() {
         Ok(runtime) => runtime.status(),
-        Err(_) => NativeAudioStatus::unavailable(Some("Native audio runtime lock was poisoned.".to_string())),
+        Err(_) => NativeAudioStatus::unavailable(Some(
+            "Native audio runtime lock was poisoned.".to_string(),
+        )),
     }
 }
 
@@ -177,7 +179,9 @@ pub fn native_audio_start(
 }
 
 #[tauri::command]
-pub fn native_audio_pause(state: tauri::State<'_, NativeAudioState>) -> Result<NativeAudioStatus, String> {
+pub fn native_audio_pause(
+    state: tauri::State<'_, NativeAudioState>,
+) -> Result<NativeAudioStatus, String> {
     let runtime = state
         .lock()
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
@@ -190,21 +194,27 @@ pub fn native_audio_pause(state: tauri::State<'_, NativeAudioState>) -> Result<N
 }
 
 #[tauri::command]
-pub fn native_audio_seek(seconds: f64, state: tauri::State<'_, NativeAudioState>) -> Result<NativeAudioStatus, String> {
+pub fn native_audio_seek(
+    seconds: f64,
+    state: tauri::State<'_, NativeAudioState>,
+) -> Result<NativeAudioStatus, String> {
     let runtime = state
         .lock()
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
     if let Some(shared) = &runtime.shared {
         if let Ok(mut playback) = shared.lock() {
             playback.position_seconds = seconds.max(0.0);
-            playback.scan_start_index = find_scan_start(&playback.events, playback.position_seconds);
+            playback.scan_start_index =
+                find_scan_start(&playback.events, playback.position_seconds);
         }
     }
     Ok(runtime.status())
 }
 
 #[tauri::command]
-pub fn native_audio_stop(state: tauri::State<'_, NativeAudioState>) -> Result<NativeAudioStatus, String> {
+pub fn native_audio_stop(
+    state: tauri::State<'_, NativeAudioState>,
+) -> Result<NativeAudioStatus, String> {
     let mut runtime = state
         .lock()
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
@@ -256,7 +266,8 @@ impl NativeAudioRuntime {
         let device = output_device_for_id(&host, &host_name, payload.output_device_id.as_deref())
             .or_else(|| host.default_output_device())
             .ok_or_else(|| "No native output audio device is available.".to_string())?;
-        let device_name = device_name(&device).unwrap_or_else(|_| "Default native output".to_string());
+        let device_name =
+            device_name(&device).unwrap_or_else(|_| "Default native output".to_string());
         let supported_config = device
             .default_output_config()
             .map_err(|err| format!("Could not read default output config: {}", err))?;
@@ -265,9 +276,17 @@ impl NativeAudioRuntime {
         let channels = config.channels.max(1);
         let sample_rate = config.sample_rate;
         let mut events = payload.events;
-        events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+        events.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let mut regions = payload.regions;
-        regions.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap_or(std::cmp::Ordering::Equal));
+        regions.sort_by(|a, b| {
+            a.start_time
+                .partial_cmp(&b.start_time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         for region in &regions {
             validate_region(region)?;
         }
@@ -297,7 +316,8 @@ impl NativeAudioRuntime {
             generation: self.generation,
         }));
         if let Ok(mut playback) = shared.lock() {
-            playback.scan_start_index = find_scan_start(&playback.events, playback.position_seconds);
+            playback.scan_start_index =
+                find_scan_start(&playback.events, playback.position_seconds);
         }
 
         let err_shared = Arc::clone(&shared);
@@ -336,7 +356,12 @@ impl NativeAudioRuntime {
                     None,
                 )
             }
-            other => return Err(format!("Unsupported native output sample format: {:?}", other)),
+            other => {
+                return Err(format!(
+                    "Unsupported native output sample format: {:?}",
+                    other
+                ))
+            }
         }
         .map_err(|err| format!("Could not build native output stream: {}", err))?;
 
@@ -496,7 +521,8 @@ fn write_frame(frame: &mut [f32], left: f32, right: f32) {
 }
 
 fn f32_to_u16(value: f32) -> u16 {
-    (((value.clamp(-1.0, 1.0) * 0.5 + 0.5) * u16::MAX as f32).round() as i32).clamp(0, u16::MAX as i32) as u16
+    (((value.clamp(-1.0, 1.0) * 0.5 + 0.5) * u16::MAX as f32).round() as i32)
+        .clamp(0, u16::MAX as i32) as u16
 }
 
 fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
@@ -574,12 +600,20 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         right += sample * pan_right;
     }
 
+    let master = master_gain(playback);
     playback.position_seconds += 1.0 / playback.sample_rate.max(1) as f64;
     playback.rendered_frame_count = playback.rendered_frame_count.saturating_add(1);
-    (soft_limit(left * 0.72), soft_limit(right * 0.72))
+    (
+        soft_limit(left * 0.72 * master),
+        soft_limit(right * 0.72 * master),
+    )
 }
 
-fn render_region_sample(region: &NativeAudioRegion, asset: &DecodedAudioAsset, t: f64) -> Option<(f32, f32)> {
+fn render_region_sample(
+    region: &NativeAudioRegion,
+    asset: &DecodedAudioAsset,
+    t: f64,
+) -> Option<(f32, f32)> {
     let local = t - region.start_time;
     if local < 0.0 || local > region.duration {
         return None;
@@ -605,10 +639,17 @@ fn decode_payload_asset(asset: &NativeAudioAssetPayload) -> Result<DecodedAudioA
         return Err("Native cached WAV asset is missing an id.".to_string());
     }
     if !asset.duration_seconds.is_finite() || asset.duration_seconds < 0.0 {
-        return Err(format!("Native cached WAV asset {} has invalid duration metadata.", asset.name));
+        return Err(format!(
+            "Native cached WAV asset {} has invalid duration metadata.",
+            asset.name
+        ));
     }
-    let decoded = decode_pcm16_wav(&asset.bytes)
-        .map_err(|err| format!("Could not decode native cached WAV asset {}: {}", asset.name, err))?;
+    let decoded = decode_pcm16_wav(&asset.bytes).map_err(|err| {
+        format!(
+            "Could not decode native cached WAV asset {}: {}",
+            asset.name, err
+        )
+    })?;
     if asset.sample_rate != 0 && asset.sample_rate != decoded.sample_rate {
         return Err(format!(
             "Native cached WAV asset {} sample-rate metadata {} does not match decoded rate {}.",
@@ -629,10 +670,16 @@ fn validate_region(region: &NativeAudioRegion) -> Result<(), String> {
         return Err("Native cached WAV region is missing an id.".to_string());
     }
     if region.asset_id.trim().is_empty() {
-        return Err(format!("Native cached WAV region {} is missing an asset id.", region.id));
+        return Err(format!(
+            "Native cached WAV region {} is missing an asset id.",
+            region.id
+        ));
     }
     if region.track_id.trim().is_empty() {
-        return Err(format!("Native cached WAV region {} is missing a track id.", region.id));
+        return Err(format!(
+            "Native cached WAV region {} is missing a track id.",
+            region.id
+        ));
     }
     if !region.start_time.is_finite()
         || !region.source_offset.is_finite()
@@ -640,10 +687,16 @@ fn validate_region(region: &NativeAudioRegion) -> Result<(), String> {
         || !region.gain.is_finite()
         || !region.pan.is_finite()
     {
-        return Err(format!("Native cached WAV region {} contains non-finite timing or mix data.", region.id));
+        return Err(format!(
+            "Native cached WAV region {} contains non-finite timing or mix data.",
+            region.id
+        ));
     }
     if region.duration <= 0.0 {
-        return Err(format!("Native cached WAV region {} must have a positive duration.", region.id));
+        return Err(format!(
+            "Native cached WAV region {} must have a positive duration.",
+            region.id
+        ));
     }
     Ok(())
 }
@@ -714,12 +767,16 @@ fn decode_pcm16_wav(bytes: &[u8]) -> Result<DecodedAudioAsset, String> {
 }
 
 fn read_u16_le(bytes: &[u8], offset: usize) -> Result<u16, String> {
-    let slice = bytes.get(offset..offset + 2).ok_or_else(|| "unexpected end of file".to_string())?;
+    let slice = bytes
+        .get(offset..offset + 2)
+        .ok_or_else(|| "unexpected end of file".to_string())?;
     Ok(u16::from_le_bytes([slice[0], slice[1]]))
 }
 
 fn read_u32_le(bytes: &[u8], offset: usize) -> Result<u32, String> {
-    let slice = bytes.get(offset..offset + 4).ok_or_else(|| "unexpected end of file".to_string())?;
+    let slice = bytes
+        .get(offset..offset + 4)
+        .ok_or_else(|| "unexpected end of file".to_string())?;
     Ok(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
 }
 
@@ -771,14 +828,24 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
         }
         "chord" => render_notes(&event.midi_notes, event, local, velocity, 0.18),
         "guitar" => {
-            let gain = if event.articulation.as_deref() == Some("chug") { 0.25 } else { 0.21 };
+            let gain = if event.articulation.as_deref() == Some("chug") {
+                0.25
+            } else {
+                0.21
+            };
             render_notes(&event.midi_notes, event, local, velocity, gain)
         }
         _ => 0.0,
     }
 }
 
-fn render_notes(notes: &[f64], event: &NativeRenderedEvent, local: f64, velocity: f32, gain: f32) -> f32 {
+fn render_notes(
+    notes: &[f64],
+    event: &NativeRenderedEvent,
+    local: f64,
+    velocity: f32,
+    gain: f32,
+) -> f32 {
     let dur = event.duration.max(0.05);
     if local > dur + 0.22 {
         return 0.0;
@@ -793,7 +860,9 @@ fn render_notes(notes: &[f64], event: &NativeRenderedEvent, local: f64, velocity
             continue;
         }
         let freq = midi_to_freq(*midi) as f32;
-        sample += (triangle(freq, local - offset) * 0.68 + phase(freq * 2.0, local - offset) * 0.12) / scale;
+        sample += (triangle(freq, local - offset) * 0.68
+            + phase(freq * 2.0, local - offset) * 0.12)
+            / scale;
     }
     sample * env * velocity * gain
 }
@@ -820,6 +889,20 @@ fn track_gain(track: &NativeTrackControl, has_solo: bool) -> f64 {
         return 0.0;
     }
     track.volume.clamp(0.0, 1.2)
+}
+
+fn master_gain(playback: &PlaybackShared) -> f32 {
+    playback
+        .tracks
+        .get("master")
+        .map(|track| {
+            if track.mute {
+                0.0
+            } else {
+                track.volume.clamp(0.0, 1.2) as f32
+            }
+        })
+        .unwrap_or(1.0)
 }
 
 fn pan_gains(pan: f32) -> (f32, f32) {
@@ -895,7 +978,11 @@ impl EventSeed for NativeRenderedEvent {
     }
 }
 
-fn output_device_for_id(host: &cpal::Host, host_name: &str, id: Option<&str>) -> Option<cpal::Device> {
+fn output_device_for_id(
+    host: &cpal::Host,
+    host_name: &str,
+    id: Option<&str>,
+) -> Option<cpal::Device> {
     let target = id?;
     let devices = host.output_devices().ok()?;
     for device in devices {
@@ -909,12 +996,20 @@ fn output_device_for_id(host: &cpal::Host, host_name: &str, id: Option<&str>) ->
 }
 
 fn device_name(device: &cpal::Device) -> Result<String, cpal::DeviceNameError> {
-    device.description().map(|description| description.name().to_string())
+    device
+        .description()
+        .map(|description| description.name().to_string())
 }
 
 fn sanitize_id(name: &str) -> String {
     name.chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch.to_ascii_lowercase() } else { '-' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .to_string()
@@ -992,6 +1087,25 @@ mod tests {
     }
 
     #[test]
+    fn master_volume_controls_cached_region_output() {
+        let mut full_volume = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+        let (full_left, full_right) = render_next_frame(&mut full_volume);
+
+        let mut quiet = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+        quiet.tracks.insert(
+            "master".to_string(),
+            test_track("master", 0.25, 0.0, false, false),
+        );
+
+        let (quiet_left, quiet_right) = render_next_frame(&mut quiet);
+
+        assert!(quiet_left > 0.0);
+        assert!(quiet_right > 0.0);
+        assert!(quiet_left < full_left * 0.35);
+        assert!(quiet_right < full_right * 0.35);
+    }
+
+    #[test]
     fn rejects_invalid_cached_regions() {
         let region = test_region("", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0);
 
@@ -1011,7 +1125,9 @@ mod tests {
             project_title: Some("Test".to_string()),
             events: Vec::new(),
             assets: HashMap::from([("asset".to_string(), asset)]),
-            regions: vec![test_region("region", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0)],
+            regions: vec![test_region(
+                "region", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0,
+            )],
             tracks: HashMap::from([("bass".to_string(), track)]),
             has_solo: false,
             position_seconds: 0.0,

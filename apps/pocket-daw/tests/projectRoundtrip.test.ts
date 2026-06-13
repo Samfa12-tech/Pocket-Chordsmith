@@ -5,6 +5,7 @@ import { migratePocketDawProject } from "../src/compatibility/migrations";
 import { addFxSlot } from "../src/daw/fx";
 import { createAutomationLane } from "../src/daw/automation";
 import { addBusTrack, routeTrackToOutput } from "../src/daw/routing";
+import { POCKET_DAW_VERSION } from "../src/daw/schema";
 
 describe("project roundtrip", () => {
   it("saves and opens .pocketdaw JSON", () => {
@@ -18,6 +19,7 @@ describe("project roundtrip", () => {
     const raw = buildPocketDawProjectFile(project);
     const parsed = migratePocketDawProject(parsePocketDawProjectFile(raw));
     expect(parsed.app).toBe("PocketDAW");
+    expect(parsed.dawVersion).toBe(POCKET_DAW_VERSION);
     expect(parsed.timeline.clips.length).toBe(project.timeline.clips.length);
     expect(parsed.sourceRefs[0].original).toBeTruthy();
     expect(parsed.fx.chains.find((chain) => chain.ownerTrackId === "bass")?.slots[0]?.type).toBe("compressor");

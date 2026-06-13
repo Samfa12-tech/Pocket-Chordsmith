@@ -44,6 +44,7 @@ import { AudioEngine } from "../src/audio/audioEngine";
 import { clearAudioBufferCache, setCachedAudioBuffer } from "../src/audio/audioBufferCache";
 import {
   buildNativeRenderCache,
+  buildNativeRuntimeAudioCache,
   mergeNativeRenderCacheItems,
   nativeRenderCacheRelativePath,
   nativeRenderCacheSignature,
@@ -112,6 +113,19 @@ describe("native render cache", () => {
     });
     expect(cache.renderCacheItems.some((item) => item.metadata?.cacheKind === "native-runtime-audio")).toBe(true);
     expect(offlineRenderMock.encodeWav).toHaveBeenCalled();
+  });
+
+  it("builds runtime audio regions without rendering generated section stems", async () => {
+    const project = withAudioClip(createDemoProject());
+    setCachedAudioBuffer("media_audio", fakeAudioBuffer());
+
+    const cache = await buildNativeRuntimeAudioCache(project, "runtime-only-signature");
+
+    expect(cache.generatedRegionCount).toBe(0);
+    expect(cache.runtimeAudioRegionCount).toBe(1);
+    expect(cache.regions[0]).toMatchObject({ trackId: "bass", assetId: cache.assets[0].id });
+    expect(offlineRenderMock.encodeWav).toHaveBeenCalled();
+    expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
   });
 
   it("counts uncached audio clips as runtime cache misses", async () => {

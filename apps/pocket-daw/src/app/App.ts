@@ -1,5 +1,5 @@
 import { AudioEngine, type AudioProjectSyncMode, type TrackMixerControlPatch } from "../audio/audioEngine";
-import { audioBufferPeaks, setCachedAudioBuffer } from "../audio/audioBufferCache";
+import { audioBufferPeaks, getCachedAudioBuffer, setCachedAudioBuffer } from "../audio/audioBufferCache";
 import { exportProjectToMidiBlob } from "../audio/midiExport";
 import { mergeNativeRenderCacheItems } from "../audio/nativeRenderCache";
 import { renderProjectToWavBlob } from "../audio/offlineRender";
@@ -70,6 +70,7 @@ import {
   toggleBassAccentCommand,
   toggleBassHoldCommand,
   toggleBassSlideCommand,
+  toggleBassTupletCommand,
   toggleMelodyHoldCommand,
   toggleMelodySlideCommand,
   toggleMelodyTupletCommand,
@@ -80,14 +81,14 @@ import {
   undoCommand
 } from "./commands";
 import { commandFromKeyboardEvent } from "./keyboard";
-import { createInitialState, currentProject, type AppState, type ChordsmithStepSelection } from "./state";
+import { createInitialState, currentProject, loadProjectIntoState, type AppState, type ChordsmithStepSelection } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { renderAppShell } from "./ui";
 import { createUndoStack } from "../daw/undo";
 import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
 import { POCKET_DAW_VERSION } from "../daw/schema";
-import type { AddTrackKind } from "../daw/tracks";
+import { trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToPosition, snapBarValue } from "../daw/timeline";
 import { addImportedAudioMedia, updateAudioMediaAnalysis } from "../daw/audioClips";
 import { createCollectMediaPlan, findMediaPoolItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked } from "../daw/mediaPool";
@@ -755,10 +756,10 @@ export class App {
   }
 
   private async dispatch(action: string) {
-    if (action === "play") await this.engine.play();
+    if (action === "play") await this.playTransport();
     if (action === "pause") this.engine.pause();
     if (action === "stop") this.engine.stop();
-    if (action === "restart") await this.engine.restart();
+    if (action === "restart") await this.restartTransport();
     if (action === "seek-start") this.seekToBar(1, true);
     if (action === "controls-open") {
       this.state.showControls = true;
@@ -849,7 +850,7 @@ export class App {
     event.preventDefault();
     if (command === "play-pause") {
       if (this.state.playing) this.engine.pause();
-      else await this.engine.play();
+      else await this.playTransport();
     }
     if (command === "seek-start") {
       this.seekToBar(1, true);
@@ -891,6 +892,23 @@ export class App {
       this.state.showAddTrack = true;
       this.render();
     }
+  }
+
+  private async playTransport() {
+    const hydration = await this.hydrateTimelineAudioBuffers();
+    if (hydration.loaded > 0) {
+      this.state.status = `Loaded ${hydration.loaded} audio file${hydration.loaded === 1 ? "" : "s"} for native playback.`;
+      this.render({ preserveScroll: true });
+    } else if (hydration.missing.length) {
+      this.state.status = `Could not load ${hydration.missing.length} audio file${hydration.missing.length === 1 ? "" : "s"}; playback will use available material.`;
+      this.render({ preserveScroll: true });
+    }
+    await this.engine.play();
+  }
+
+  private async restartTransport() {
+    await this.hydrateTimelineAudioBuffers();
+    await this.engine.restart();
   }
 
   private consumeSuppressedStepClick(): boolean {
@@ -970,11 +988,9 @@ export class App {
       let next: AppState | null = null;
       if (action === "hold") next = toggleBassHoldCommand(this.state, selection.sectionId, selection.step);
       else if (action === "slide") next = toggleBassSlideCommand(this.state, selection.sectionId, selection.step);
+      else if (action === "tuplet") next = toggleBassTupletCommand(this.state, selection.sectionId, selection.step);
       if (next) {
         this.applyChordsmithEditorEdit(status ? { ...next, status } : next, `chordsmith-bass-${action}`, { step: selection });
-      } else {
-        this.state.status = "Bass tuplets are not exposed in this editor pass; use H for hold or S for slide.";
-        this.render({ preserveScroll: true });
       }
       return;
     }
@@ -1021,9 +1037,10 @@ export class App {
       if (!button) return false;
       const note = section.bassNotes[selection.step];
       const on = note !== null && note !== undefined;
-      button.className = `step note-step ${on ? "on" : ""} selected-step`;
-      button.title = `Bass note step ${selection.step + 1}. Select then press H for hold or S for slide.`;
-      button.innerHTML = `${on ? STEP_NOTE_LABELS[note] || String(note) : ""}${this.stepBadgesHtml({ hold: !!section.bassHold[selection.step], slide: !!section.bassSlide[selection.step] })}`;
+      const tuplet = !!section.gridTuplets.bass[selection.step];
+      button.className = `step note-step ${on ? "on" : ""} ${tuplet ? "tuplet" : ""} selected-step`;
+      button.title = `Bass note step ${selection.step + 1}. Select then press H, S or T.`;
+      button.innerHTML = `${on ? STEP_NOTE_LABELS[note] || String(note) : ""}${this.stepBadgesHtml({ hold: !!section.bassHold[selection.step], slide: !!section.bassSlide[selection.step], tuplet })}`;
     } else {
       button = this.root.querySelector<HTMLElement>(`[data-melody-step="${selection.sectionId}:${selection.trackIndex}:${selection.step}"]`);
       if (!button) return false;
@@ -1428,13 +1445,10 @@ export class App {
   private openRawProjectText(text: string, label: string, path: string | null) {
     try {
       const project = loadPocketDawRaw(text);
-      this.state.undoStack = createUndoStack(project);
-      this.state.selectedClipId = project.timeline.clips[0]?.id || null;
-      this.state.selectedTrackId = "drums";
-      this.state.currentFile = { path, label };
-      this.state.status = `Opened ${label}.`;
-      this.state.playheadBar = 1;
-      this.state.cursorBar = 1;
+      this.state = loadProjectIntoState(this.state, project, {
+        status: `Opened ${label}.`,
+        currentFile: { path, label }
+      });
       this.engine.setProject(project);
       saveRecentProject(label, path);
       this.state.recent = loadRecentProjects();
@@ -1463,6 +1477,8 @@ export class App {
     try {
       this.state.status = "Rendering WAV...";
       this.render();
+      const hydration = await this.hydrateTimelineAudioBuffers();
+      this.assertNoMissingAudibleAudioBuffers(hydration, "WAV export");
       const blob = await renderProjectToWavBlob(currentProject(this.state));
       downloadBlob(blob, safeName(currentProject(this.state).project.title, "wav"));
       this.state.status = `Exported WAV (${Math.round(blob.size / 1024)} KB).`;
@@ -1496,6 +1512,8 @@ export class App {
     this.state.status = `Rendering ${stems.length} stem WAV${stems.length === 1 ? "" : "s"}...`;
     this.render();
     try {
+      const hydration = await this.hydrateTimelineAudioBuffers();
+      this.assertNoMissingAudibleAudioBuffers(hydration, "Stem export");
       for (const stem of stems) {
         const blob = await renderProjectToWavBlob(projectWithOnlyTracksAudible(project, stem.trackIds));
         downloadBlob(blob, stem.fileName);
@@ -1616,6 +1634,56 @@ export class App {
     } catch (error) {
       this.state.status = error instanceof Error ? `Native cache build failed: ${error.message}` : "Native cache build failed.";
       this.render({ preserveScroll: true });
+    }
+  }
+
+  private async hydrateTimelineAudioBuffers(): Promise<{ total: number; loaded: number; cached: number; missing: string[] }> {
+    const project = currentProject(this.state);
+    const ids = Array.from(new Set(project.timeline.clips
+      .filter((clip) => clip.type === "audio" && clip.mediaPoolItemId)
+      .map((clip) => clip.mediaPoolItemId as string)));
+    let loaded = 0;
+    let cached = 0;
+    const missing: string[] = [];
+    for (const id of ids) {
+      if (getCachedAudioBuffer(id)) {
+        cached += 1;
+        continue;
+      }
+      const item = findMediaPoolItem(project, id);
+      const path = String(item?.metadata?.projectRelativePath || item?.uri || "");
+      if (!item || !path) {
+        missing.push(id);
+        continue;
+      }
+      try {
+        const source = await loadAudioMediaNative(path, this.state.currentFile.path);
+        if (!source) {
+          missing.push(item.name || id);
+          continue;
+        }
+        const decoded = await this.decodeAudioSource(source);
+        setCachedAudioBuffer(id, decoded.buffer);
+        loaded += 1;
+      } catch {
+        missing.push(item.name || id);
+      }
+    }
+    return { total: ids.length, loaded, cached, missing };
+  }
+
+  private assertNoMissingAudibleAudioBuffers(hydration: { missing: string[] }, label: string) {
+    if (!hydration.missing.length) return;
+    const project = currentProject(this.state);
+    const missing = new Set(hydration.missing);
+    const hasAudibleMissingClip = project.timeline.clips.some((clip) => {
+      if (clip.type !== "audio" || !clip.mediaPoolItemId || clip.muted || getCachedAudioBuffer(clip.mediaPoolItemId)) return false;
+      const item = findMediaPoolItem(project, clip.mediaPoolItemId);
+      const track = project.tracks.find((candidate) => candidate.id === clip.trackId);
+      return !!track && trackIsAudible(track, project.tracks) && (!item || missing.has(item.name) || missing.has(item.id));
+    });
+    if (hasAudibleMissingClip) {
+      throw new Error(`${label} needs audio files that are not loaded. Use Reload/Relink or check the saved file paths.`);
     }
   }
 

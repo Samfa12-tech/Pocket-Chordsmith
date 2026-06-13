@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { nativeRenderCacheSignature } from "../src/audio/nativeRenderCache";
-import { cycleDrumStepCommand } from "../src/app/commands";
+import { cycleDrumStepCommand, toggleBassTupletCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { getPrimaryChordsmithSource } from "../src/daw/chordsmithEditor";
 
@@ -21,5 +21,13 @@ describe("Chordsmith editor command integration", () => {
     const next = cycleDrumStepCommand(state, "A", "kick", 1);
 
     expect(nativeRenderCacheSignature(next.undoStack.present)).not.toBe(before);
+  });
+
+  it("toggles bass tuplets through the editor command path", () => {
+    const state = createInitialState();
+    const next = toggleBassTupletCommand(state, "A", 2);
+    const pcs = getPrimaryChordsmithSource(next.undoStack.present);
+
+    expect(pcs?.sections.A.gridTuplets.bass[2]).toBe(true);
   });
 });

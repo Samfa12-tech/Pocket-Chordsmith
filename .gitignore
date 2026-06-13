@@ -24,6 +24,8 @@ target/
 _incoming/
 _tmp/
 *.pocketdaw
+/project-cache/
+/project-media/
 
 Thumbs.db
 Desktop.ini

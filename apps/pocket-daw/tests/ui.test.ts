@@ -18,6 +18,7 @@ describe("Pocket DAW UI rendering", () => {
     const html = renderAppShell(state);
 
     expect(html).toContain("data-bass-step");
+    expect(html).toContain("Select then press H, S or T.");
     expect(html).not.toContain("data-drum-step");
     expect(html).not.toContain("data-melody-step");
     expect(html).not.toContain("data-guitar-step");
@@ -262,7 +263,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('data-chordsmith-global="bpm"');
     expect(html).toContain('data-bass-mode="true"');
     expect(html).toContain('data-bass-step="A:16"');
-    expect(html).toContain("Select then press H for hold or S for slide.");
+    expect(html).toContain("Select then press H, S or T.");
     expect(html).not.toContain('data-bass-hold="A:16"');
     expect(html).not.toContain('data-bass-slide="A:16"');
     expect(html).toContain('data-bass-accent="A:16"');

@@ -12,6 +12,7 @@ import { activeAutomationLaneCount, getAutomatedTrackControls } from "../daw/aut
 import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioStatus } from "../native/audioPlayback";
 import {
   buildNativeRenderCache,
+  buildNativeRuntimeAudioCache,
   nativeRenderCacheSignature,
   persistNativeRenderCacheAssets,
   type NativeRenderCache,
@@ -461,10 +462,11 @@ export class AudioEngine {
     const useRenderCache = options.useRenderCache !== false && !this.nativeRenderCacheBypassedForLiveEdits;
     const cache = useRenderCache ? this.readyNativeRenderCache() : null;
     if (useRenderCache && !cache) this.scheduleNativeRenderCachePrewarm(options.reason || "play-fallback-cache-build");
-    const events = cache ? this.events.filter((event) => !cache.cachedClipIds.has(event.clipId)) : this.events;
-    if (cache) cache.proceduralFallbackEventCount = events.length;
-    if (!events.length && !(cache?.regions.length)) return false;
-    const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, cache || undefined);
+    const playbackCache = useRenderCache ? await this.nativePlaybackCacheWithRuntimeAudio(cache) : cache;
+    const events = playbackCache ? this.events.filter((event) => !playbackCache.cachedClipIds.has(event.clipId)) : this.events;
+    if (playbackCache) playbackCache.proceduralFallbackEventCount = events.length;
+    if (!events.length && !(playbackCache?.regions.length)) return false;
+    const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, playbackCache || undefined);
     const result = await this.nativePlayback.start(payload);
     if (!result.started) {
       this.nativeLastError = result.error;
@@ -483,9 +485,10 @@ export class AudioEngine {
     const useRenderCache = options.useRenderCache !== false && !this.nativeRenderCacheBypassedForLiveEdits;
     const cache = useRenderCache ? this.readyNativeRenderCache() : null;
     if (useRenderCache && !cache) this.scheduleNativeRenderCachePrewarm(options.reason || this.lastProjectSyncReason || "restart-fallback-cache-build");
-    const events = cache ? this.events.filter((event) => !cache.cachedClipIds.has(event.clipId)) : this.events;
-    if (cache) cache.proceduralFallbackEventCount = events.length;
-    const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, cache || undefined);
+    const playbackCache = useRenderCache ? await this.nativePlaybackCacheWithRuntimeAudio(cache) : cache;
+    const events = playbackCache ? this.events.filter((event) => !playbackCache.cachedClipIds.has(event.clipId)) : this.events;
+    if (playbackCache) playbackCache.proceduralFallbackEventCount = events.length;
+    const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, playbackCache || undefined);
     const result = await this.nativePlayback.start(payload);
     if (result.started) {
       this.nativeStatus = result.status;
@@ -497,6 +500,15 @@ export class AudioEngine {
 
   private activeNativeRenderCache(): NativeRenderCache | null {
     return this.nativeRenderCacheBypassedForLiveEdits ? null : this.readyNativeRenderCache();
+  }
+
+  private async nativePlaybackCacheWithRuntimeAudio(cache: NativeRenderCache | null): Promise<NativeRenderCache | null> {
+    if (!this.audioRegions.length) return cache;
+    if (cache && cache.runtimeAudioRegionCount >= this.audioRegions.length) return cache;
+    const runtimeCache = await buildNativeRuntimeAudioCache(this.project);
+    if (!runtimeCache.regions.length) return cache;
+    if (!cache) return runtimeCache;
+    return mergeNativePlaybackCaches(cache, runtimeCache);
   }
 
   private readyNativeRenderCache(): NativeRenderCache | null {
@@ -964,6 +976,26 @@ function countEventsBy(events: RenderedEvent[], field: "trackId" | "kind"): Reco
     counts[event[field]] = (counts[event[field]] || 0) + 1;
     return counts;
   }, {});
+}
+
+function mergeNativePlaybackCaches(base: NativeRenderCache, runtime: NativeRenderCache): NativeRenderCache {
+  const assets = new Map(base.assets.map((asset) => [asset.id, asset]));
+  runtime.assets.forEach((asset) => assets.set(asset.id, asset));
+  const regionIds = new Set(base.regions.map((region) => region.id));
+  const regions = base.regions.concat(runtime.regions.filter((region) => !regionIds.has(region.id)));
+  const cachedClipIds = new Set([...base.cachedClipIds, ...runtime.cachedClipIds]);
+  return {
+    ...base,
+    assets: Array.from(assets.values()),
+    regions,
+    cachedClipIds,
+    renderCacheItems: base.renderCacheItems.concat(runtime.renderCacheItems.filter((item) => !base.renderCacheItems.some((existing) => existing.id === item.id))),
+    renderCacheHitCount: base.renderCacheHitCount + runtime.renderCacheHitCount,
+    renderCacheMissCount: base.renderCacheMissCount + runtime.renderCacheMissCount,
+    runtimeAudioRegionCount: Math.max(base.runtimeAudioRegionCount, runtime.runtimeAudioRegionCount),
+    missingRuntimeAudioRegionCount: runtime.missingRuntimeAudioRegionCount,
+    cachedAssetByteCount: Array.from(assets.values()).reduce((total, asset) => total + (asset.sizeBytes || asset.bytes.length), 0)
+  };
 }
 
 function clampNumber(value: number, min: number, max: number): number {

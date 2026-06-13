@@ -103,6 +103,13 @@ export function toggleBassSlide(project: PocketDawProject, sectionId: SectionId,
   });
 }
 
+export function toggleBassTuplet(project: PocketDawProject, sectionId: SectionId, step: number): PocketDawProject {
+  return editChordsmithSection(project, sectionId, (_pcs, section) => {
+    ensureStep(section.gridTuplets.bass, step, false);
+    section.gridTuplets.bass[step] = !section.gridTuplets.bass[step];
+  });
+}
+
 export function toggleBassAccent(project: PocketDawProject, sectionId: SectionId, step: number): PocketDawProject {
   return editChordsmithSection(project, sectionId, (pcs, section) => {
     ensureStep(section.bassAccent, step, false);

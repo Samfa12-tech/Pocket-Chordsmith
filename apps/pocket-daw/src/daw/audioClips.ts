@@ -68,7 +68,7 @@ export function placeAudioClipOnTimeline(project: PocketDawProject, mediaPoolIte
   const item = findMediaPoolItem(project, mediaPoolItemId);
   if (!item || item.kind !== "audio") return { project, clipId: "", trackId: "" };
   const next = cloneProject(project);
-  const track = ensureAudioTrack(next);
+  const track = ensureAudioTrack(next, item);
   const barLength = Math.max(1, secondsToBars(item.durationSeconds || secondsPerBar(next), next));
   const clipId = nextClipId(next);
   next.timeline.clips.push({
@@ -100,13 +100,17 @@ export function placeAudioClipOnTimeline(project: PocketDawProject, mediaPoolIte
   return { project: next, clipId, trackId: track.id };
 }
 
-function ensureAudioTrack(project: PocketDawProject): Track {
-  const existing = project.tracks.find((track) => track.trackType === "audio" && track.role === "media" && track.recordKind === "none");
+function ensureAudioTrack(project: PocketDawProject, item: MediaPoolItem): Track {
+  const existing = project.tracks.find((track) => {
+    if (track.trackType !== "audio" || track.role !== "media" || track.recordKind !== "none") return false;
+    return !project.timeline.clips.some((clip) => clip.trackId === track.id && clip.type === "audio");
+  });
   if (existing) return existing;
   const id = uniqueTrackId(project, "audio");
+  const audioTrackCount = project.tracks.filter((track) => track.trackType === "audio" && track.role === "media").length;
   const track: Track = {
     id,
-    name: "Audio",
+    name: audioTrackCount > 0 ? audioTrackName(item.name, audioTrackCount + 1) : "Audio",
     trackType: "audio",
     role: "media",
     volume: 0.82,
@@ -127,6 +131,11 @@ function ensureAudioTrack(project: PocketDawProject): Track {
   else project.tracks.splice(masterIndex, 0, track);
   project.fx.chains.push(createEmptyFxChain(track.id, `${track.name} FX`));
   return track;
+}
+
+function audioTrackName(name: string, fallbackIndex: number): string {
+  const base = name.replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+  return base ? `Audio ${fallbackIndex} - ${base.slice(0, 28)}` : `Audio ${fallbackIndex}`;
 }
 
 function secondsToBars(seconds: number, project: PocketDawProject): number {
