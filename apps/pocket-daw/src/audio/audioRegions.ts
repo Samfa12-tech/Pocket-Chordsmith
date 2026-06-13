@@ -19,7 +19,11 @@ export interface RenderedAudioTimeline {
   warnings: string[];
 }
 
-export function renderTimelineAudioRegions(project: PocketDawProject): RenderedAudioTimeline {
+export interface RenderTimelineAudioRegionsOptions {
+  includeMutedTracks?: boolean;
+}
+
+export function renderTimelineAudioRegions(project: PocketDawProject, options: RenderTimelineAudioRegionsOptions = {}): RenderedAudioTimeline {
   const warnings: string[] = [];
   const regions = project.timeline.clips
     .filter((clip) => clip.type === "audio" && !clip.muted)
@@ -30,7 +34,8 @@ export function renderTimelineAudioRegions(project: PocketDawProject): RenderedA
         return [];
       }
       const track = project.tracks.find((item) => item.id === clip.trackId);
-      if (!track || !trackIsAudible(track, project.tracks)) return [];
+      if (!track || track.active === false) return [];
+      if (!options.includeMutedTracks && !trackIsAudible(track, project.tracks)) return [];
       const region = audioRegionFromClip(project, clip, media);
       if (region.durationSeconds <= 0) return [];
       return [region];

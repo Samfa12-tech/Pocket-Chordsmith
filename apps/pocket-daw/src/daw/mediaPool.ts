@@ -21,6 +21,7 @@ export interface MediaPoolStatus {
   runtimeAvailable: boolean;
   runtimeOnly: boolean;
   reloadable: boolean;
+  relinkable: boolean;
   label: string;
 }
 
@@ -41,6 +42,14 @@ export interface CollectMediaPlan {
   alreadyProject: CollectMediaPlanItem[];
   blocked: CollectMediaPlanItem[];
   notes: string[];
+}
+
+export interface CollectedMediaItem {
+  id: string;
+  sourceUri: string;
+  targetPath: string;
+  targetRelativePath: string;
+  sizeBytes?: number;
 }
 
 export function addMediaPoolItem(project: PocketDawProject, item: MediaPoolItem): PocketDawProject {
@@ -107,6 +116,46 @@ export function markMediaPoolItemExternal(project: PocketDawProject, id: string,
   return updateMediaPoolItemMetadata(project, id, { external });
 }
 
+export function markMediaPoolItemCollected(project: PocketDawProject, collected: CollectedMediaItem): PocketDawProject {
+  const item = findMediaPoolItem(project, collected.id);
+  if (!item) return project;
+  return updateMediaPoolItem(project, collected.id, {
+    uri: collected.targetRelativePath,
+    sizeBytes: cleanOptionalNumber(collected.sizeBytes) ?? item.sizeBytes,
+    metadata: {
+      mediaRefKind: "project",
+      projectRelativePath: collected.targetRelativePath,
+      collectedAt: new Date().toISOString(),
+      originalUri: item.metadata?.originalUri || collected.sourceUri,
+      external: false,
+      runtimeOnly: false,
+      missing: false,
+      unresolved: false,
+      nativePath: collected.targetPath
+    }
+  });
+}
+
+export function markMediaPoolItemRelinked(project: PocketDawProject, id: string, source: { uri: string; name?: string; sizeBytes?: number; mimeType?: string }): PocketDawProject {
+  const item = findMediaPoolItem(project, id);
+  if (!item) return project;
+  return updateMediaPoolItem(project, id, {
+    name: source.name || item.name,
+    uri: source.uri,
+    sizeBytes: cleanOptionalNumber(source.sizeBytes) ?? item.sizeBytes,
+    mimeType: source.mimeType || item.mimeType,
+    metadata: {
+      mediaRefKind: "external",
+      originalUri: source.uri,
+      external: true,
+      runtimeOnly: false,
+      missing: false,
+      unresolved: false,
+      relinkedAt: new Date().toISOString()
+    }
+  });
+}
+
 export function removeUnusedMediaPoolItem(project: PocketDawProject, id: string): { project: PocketDawProject; removed: boolean; reason?: string } {
   const next = cloneProject(project);
   if (next.timeline.clips.some((clip) => clip.mediaPoolItemId === id)) {
@@ -131,7 +180,8 @@ export function mediaPoolStatus(item: MediaPoolItem, runtimeAvailable = false): 
   const runtimeOnly = metadata.runtimeOnly === true;
   const projectMedia = isProjectMediaItem(item);
   const external = !projectMedia && (metadata.external === true || isExternalUri(item.uri));
-  const reloadable = item.kind === "audio" && external && !runtimeOnly && !missing && !!item.uri;
+  const reloadable = item.kind === "audio" && !runtimeOnly && !missing && !!item.uri && (external || projectMedia);
+  const relinkable = item.kind === "audio" && !runtimeOnly && (external || projectMedia || missing || unresolved);
   const label = missing
     ? "Missing"
     : runtimeAvailable
@@ -143,7 +193,7 @@ export function mediaPoolStatus(item: MediaPoolItem, runtimeAvailable = false): 
           : external
             ? "External unloaded"
             : "Project media";
-  return { missing, unresolved, external, runtimeAvailable, runtimeOnly, reloadable, label };
+  return { missing, unresolved, external, runtimeAvailable, runtimeOnly, reloadable, relinkable, label };
 }
 
 export function createCollectMediaPlan(project: PocketDawProject): CollectMediaPlan {
@@ -195,7 +245,7 @@ export function createCollectMediaPlan(project: PocketDawProject): CollectMediaP
     alreadyProject: items.filter((item) => item.action === "already-project-media"),
     blocked: items.filter((item) => item.action === "blocked"),
     notes: [
-      "This is a deterministic collect-media plan. v0.6 native copy/relink is still guarded, so review the plan before moving files.",
+      "This is a deterministic collect-media plan. In the native app, Collect Media copies copyable files beside the saved project under project-media/.",
       "Browser runtime-only media cannot be collected because browsers do not expose a durable source path after import."
     ]
   };

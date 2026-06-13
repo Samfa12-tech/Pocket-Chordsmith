@@ -1,6 +1,7 @@
 import { AudioEngine, type AudioProjectSyncMode, type TrackMixerControlPatch } from "../audio/audioEngine";
 import { audioBufferPeaks, setCachedAudioBuffer } from "../audio/audioBufferCache";
 import { exportProjectToMidiBlob } from "../audio/midiExport";
+import { mergeNativeRenderCacheItems } from "../audio/nativeRenderCache";
 import { renderProjectToWavBlob } from "../audio/offlineRender";
 import { createDemoProject } from "../demo/demoProject";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../daw/dawProject";
@@ -88,9 +89,17 @@ import { cloneProject } from "../daw/dawProject";
 import { POCKET_DAW_VERSION } from "../daw/schema";
 import type { AddTrackKind } from "../daw/tracks";
 import { barFloatToPosition, snapBarValue } from "../daw/timeline";
-import { addImportedAudioMedia } from "../daw/audioClips";
-import { createCollectMediaPlan } from "../daw/mediaPool";
-import { AUDIO_MEDIA_ACCEPT, importedAudioFromBrowserFile, importAudioMediaNative, type ImportedAudioBytes } from "../native/mediaBridge";
+import { addImportedAudioMedia, updateAudioMediaAnalysis } from "../daw/audioClips";
+import { createCollectMediaPlan, findMediaPoolItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked } from "../daw/mediaPool";
+import {
+  AUDIO_MEDIA_ACCEPT,
+  collectProjectMediaNative,
+  importedAudioFromBrowserFile,
+  importAudioMediaNative,
+  loadAudioMediaNative,
+  relinkAudioMediaNative,
+  type ImportedAudioBytes
+} from "../native/mediaBridge";
 import { importMidiFileToProject } from "../daw/midiClips";
 import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
@@ -186,6 +195,7 @@ export class App {
       }
     }
     this.render();
+    this.engine.prewarmNativeRenderCache("app-start");
   }
 
   private render(options: RenderOptions = {}) {
@@ -566,6 +576,16 @@ export class App {
       this.applyProjectState(placeAudioClipCommand(this.state, placeAudio.dataset.placeAudio || ""));
       return;
     }
+    const reloadMedia = target?.closest<HTMLElement>("[data-reload-media]");
+    if (reloadMedia) {
+      void this.reloadAudioMedia(reloadMedia.dataset.reloadMedia || "");
+      return;
+    }
+    const relinkMedia = target?.closest<HTMLElement>("[data-relink-media]");
+    if (relinkMedia) {
+      void this.relinkAudioMedia(relinkMedia.dataset.relinkMedia || "");
+      return;
+    }
     const addMidiNote = target?.closest<HTMLElement>("[data-midi-note-add]");
     if (addMidiNote) {
       this.applyProjectState(addMidiNoteCommand(this.state, addMidiNote.dataset.midiNoteAdd || ""));
@@ -817,6 +837,8 @@ export class App {
     if (action === "export-godot-manifest") this.exportGameManifest("godot-adaptive-pack");
     if (action === "export-web-game-manifest") this.exportGameManifest("web-game-pack");
     if (action === "export-media-plan") this.exportMediaPlan();
+    if (action === "collect-media") await this.collectMedia();
+    if (action === "build-native-cache") await this.buildNativeCache();
     if (action === "export-diagnostics") this.exportDiagnostics();
   }
 
@@ -1218,33 +1240,128 @@ export class App {
   }
 
   private async addDecodedAudioMedia(source: ImportedAudioBytes) {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    const ctx = new Ctx({ sampleRate: currentProject(this.state).project.sampleRate });
     try {
-      const buffer = await ctx.decodeAudioData(source.bytes.slice(0));
+      const decoded = await this.decodeAudioSource(source);
       const result = addImportedAudioMedia(currentProject(this.state), {
         name: source.name,
         uri: source.uri,
         mimeType: source.mimeType,
-        durationSeconds: buffer.duration,
-        sampleRate: buffer.sampleRate,
-        channels: buffer.numberOfChannels,
+        durationSeconds: decoded.durationSeconds,
+        sampleRate: decoded.sampleRate,
+        channels: decoded.channels,
         sizeBytes: source.sizeBytes,
         metadata: {
           importMode: source.mode,
           mediaRefKind: source.mode === "native" ? "external" : "browser-runtime-only",
           runtimeOnly: source.mode === "browser",
-          waveformPeaks: audioBufferPeaks(buffer)
+          waveformPeaks: decoded.waveformPeaks
         }
       });
-      setCachedAudioBuffer(result.item.id, buffer);
+      setCachedAudioBuffer(result.item.id, decoded.buffer);
       this.applyProjectState(commitProject(this.state, result.project, `Imported audio ${source.name}.`));
       this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "nearest" });
     } catch {
       this.state.status = `Could not decode ${source.name}. This format may not be supported by this Web Audio runtime.`;
       this.render();
+    }
+  }
+
+  private async decodeAudioSource(source: ImportedAudioBytes) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx({ sampleRate: currentProject(this.state).project.sampleRate });
+    try {
+      const buffer = await ctx.decodeAudioData(source.bytes.slice(0));
+      return {
+        buffer,
+        durationSeconds: buffer.duration,
+        sampleRate: buffer.sampleRate,
+        channels: buffer.numberOfChannels,
+        waveformPeaks: audioBufferPeaks(buffer)
+      };
     } finally {
       void ctx.close?.();
+    }
+  }
+
+  private async reloadAudioMedia(mediaPoolItemId: string) {
+    const item = findMediaPoolItem(currentProject(this.state), mediaPoolItemId);
+    if (!item || item.kind !== "audio") {
+      this.state.status = "Choose an audio media item to reload.";
+      this.render();
+      return;
+    }
+    const path = String(item.metadata?.projectRelativePath || item.uri || "");
+    if (!path) {
+      this.state.status = `${item.name} has no stored path. Use Relink.`;
+      this.render();
+      return;
+    }
+    try {
+      this.state.status = `Reloading ${item.name}...`;
+      this.render();
+      const source = await loadAudioMediaNative(path, this.state.currentFile.path);
+      if (!source) {
+        this.state.status = "Native media reload is only available in the installed app.";
+        this.render();
+        return;
+      }
+      const decoded = await this.decodeAudioSource(source);
+      setCachedAudioBuffer(item.id, decoded.buffer);
+      const project = updateAudioMediaAnalysis(currentProject(this.state), item.id, {
+        name: item.name,
+        uri: item.uri,
+        mimeType: source.mimeType || item.mimeType,
+        durationSeconds: decoded.durationSeconds,
+        sampleRate: decoded.sampleRate,
+        channels: decoded.channels,
+        sizeBytes: source.sizeBytes,
+        waveformPeaks: decoded.waveformPeaks
+      });
+      this.applyProjectState(commitProject(this.state, project, `Reloaded ${item.name}.`), { audio: "timeline-structure", reason: "reload-media" });
+    } catch (error) {
+      const project = markMediaPoolItemMissing(currentProject(this.state), item.id, true, error instanceof Error ? error.message : "Reload failed.");
+      this.applyProjectState(commitProject(this.state, project, `Could not reload ${item.name}. Use Relink.`), { audio: "none", preserveScroll: true, reason: "reload-media-failed" });
+    }
+  }
+
+  private async relinkAudioMedia(mediaPoolItemId: string) {
+    const item = findMediaPoolItem(currentProject(this.state), mediaPoolItemId);
+    if (!item || item.kind !== "audio") {
+      this.state.status = "Choose an audio media item to relink.";
+      this.render();
+      return;
+    }
+    try {
+      this.state.status = `Relinking ${item.name}...`;
+      this.render();
+      const source = await relinkAudioMediaNative();
+      if (!source) {
+        this.state.status = "Relink cancelled or native picker unavailable.";
+        this.render();
+        return;
+      }
+      const decoded = await this.decodeAudioSource(source);
+      setCachedAudioBuffer(item.id, decoded.buffer);
+      let project = markMediaPoolItemRelinked(currentProject(this.state), item.id, {
+        uri: source.uri || "",
+        name: source.name || item.name,
+        sizeBytes: source.sizeBytes,
+        mimeType: source.mimeType
+      });
+      project = updateAudioMediaAnalysis(project, item.id, {
+        name: source.name || item.name,
+        uri: source.uri,
+        mimeType: source.mimeType,
+        durationSeconds: decoded.durationSeconds,
+        sampleRate: decoded.sampleRate,
+        channels: decoded.channels,
+        sizeBytes: source.sizeBytes,
+        waveformPeaks: decoded.waveformPeaks
+      });
+      this.applyProjectState(commitProject(this.state, project, `Relinked ${item.name} to ${source.name}.`), { audio: "timeline-structure", reason: "relink-media" });
+    } catch (error) {
+      this.state.status = error instanceof Error ? `Relink failed: ${error.message}` : "Relink failed.";
+      this.render({ preserveScroll: true });
     }
   }
 
@@ -1415,6 +1532,91 @@ export class App {
     downloadBlob(blob, safeName(`${project.project.title}-collect-media-plan`, "json"));
     this.state.status = `Exported collect-media plan: ${plan.copy.length} copy action${plan.copy.length === 1 ? "" : "s"}, ${plan.blocked.length} blocked item${plan.blocked.length === 1 ? "" : "s"}.`;
     this.render();
+  }
+
+  private async collectMedia() {
+    const project = currentProject(this.state);
+    const plan = createCollectMediaPlan(project);
+    if (!this.state.currentFile.path) {
+      this.state.status = "Save the project as a .pocketdaw file before collecting media.";
+      this.render();
+      return;
+    }
+    if (!plan.copy.length) {
+      this.state.status = plan.blocked.length
+        ? `No media could be collected yet; ${plan.blocked.length} item${plan.blocked.length === 1 ? "" : "s"} need relink or native import first.`
+        : "All media is already project media.";
+      this.render();
+      return;
+    }
+    try {
+      this.state.status = `Collecting ${plan.copy.length} media item${plan.copy.length === 1 ? "" : "s"}...`;
+      this.render();
+      const collected = await collectProjectMediaNative(this.state.currentFile.path, plan.copy.map((item) => ({
+        id: item.id,
+        sourceUri: item.sourceUri || "",
+        targetRelativePath: item.targetRelativePath || `project-media/${item.name}`
+      })));
+      if (!collected) {
+        this.state.status = "Collect Media is only available in the installed native app.";
+        this.render();
+        return;
+      }
+      let nextProject = currentProject(this.state);
+      collected.forEach((item) => {
+        nextProject = markMediaPoolItemCollected(nextProject, item);
+      });
+      this.applyProjectState(commitProject(this.state, nextProject, `Collected ${collected.length} media item${collected.length === 1 ? "" : "s"}.`), {
+        audio: "timeline-structure",
+        preserveScroll: true,
+        reason: "collect-media"
+      });
+      const saveResult = await saveProjectFile(currentProject(this.state), this.state.currentFile.path, false);
+      if (saveResult.file) {
+        this.state.currentFile = saveResult.file;
+        saveRecentProject(saveResult.file.label, saveResult.file.path);
+        this.state.recent = loadRecentProjects();
+      }
+      this.state.status = `Collected ${collected.length} media item${collected.length === 1 ? "" : "s"} into project-media and saved project refs.`;
+      saveAutosave(buildPocketDawProjectFile(currentProject(this.state)));
+      this.render({ preserveScroll: true });
+    } catch (error) {
+      this.state.status = error instanceof Error ? `Collect media failed: ${error.message}` : "Collect media failed.";
+      this.render({ preserveScroll: true });
+    }
+  }
+
+  private async buildNativeCache() {
+    const projectFilePath = this.state.currentFile.path;
+    if (!projectFilePath) {
+      this.state.status = "Save the project before building the native WAV cache.";
+      this.render({ preserveScroll: true });
+      return;
+    }
+    try {
+      this.state.status = "Building native WAV cache...";
+      this.render({ preserveScroll: true });
+      const result = await this.engine.persistNativeRenderCache(projectFilePath, "manual-build-native-cache");
+      if (!result) {
+        this.state.status = "No native cache assets were available to build.";
+        this.render({ preserveScroll: true });
+        return;
+      }
+      const project = mergeNativeRenderCacheItems(currentProject(this.state), result.renderCacheItems);
+      this.state = commitProject(this.state, project, `Built native WAV cache with ${result.writtenAssetCount} asset${result.writtenAssetCount === 1 ? "" : "s"}.`);
+      saveAutosave(buildPocketDawProjectFile(project));
+      const saveResult = await saveProjectFile(project, projectFilePath, false);
+      if (saveResult.file) this.state.currentFile = saveResult.file;
+      this.state.status = [
+        `Built native WAV cache: ${result.writtenAssetCount} asset${result.writtenAssetCount === 1 ? "" : "s"}`,
+        result.skippedAssetCount ? `${result.skippedAssetCount} skipped` : "",
+        result.errors.length ? `${result.errors.length} error${result.errors.length === 1 ? "" : "s"}` : ""
+      ].filter(Boolean).join(", ") + ".";
+      this.render({ preserveScroll: true });
+    } catch (error) {
+      this.state.status = error instanceof Error ? `Native cache build failed: ${error.message}` : "Native cache build failed.";
+      this.render({ preserveScroll: true });
+    }
   }
 
   private exportDiagnostics() {

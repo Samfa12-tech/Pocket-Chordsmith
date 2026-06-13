@@ -733,8 +733,9 @@ function renderMediaPool(state: AppState): string {
         <div class="media-actions">
           <button data-action="import-audio" title="Import an audio file into the media pool">Import Audio</button>
           <button data-action="import-midi" title="Import a .mid or .midi file as a MIDI clip">Import MIDI</button>
-          <button data-action="export-media-plan" title="Export a JSON plan for collecting project media; native copy is still guarded">Collect Plan</button>
-          <button disabled title="Freeze/stem rendering arrives after render cache is wired">Add Rendered Stem</button>
+          <button data-action="collect-media" title="Copy reloadable native media beside the saved .pocketdaw project">Collect Media</button>
+          <button data-action="build-native-cache" title="Render generated sections and runtime audio into project-cache/native-audio WAV assets">Build Native Cache</button>
+          <button data-action="export-media-plan" title="Export a JSON plan for collecting project media">Collect Plan</button>
         </div>
       </header>
       ${
@@ -759,7 +760,8 @@ function renderMediaPool(state: AppState): string {
                     </dl>
                     ${renderMediaWaveform(item)}
                     <div class="media-item-actions">
-                      ${status.reloadable ? `<button type="button" data-reload-media="${escapeHtml(item.id)}" disabled title="Native reload/relink is scaffolded; reopen or re-import the file in this build.">Reload Media</button>` : ""}
+                      ${status.reloadable ? `<button type="button" data-reload-media="${escapeHtml(item.id)}" title="Reload this audio file into the runtime buffer cache">Reload</button>` : ""}
+                      ${status.relinkable ? `<button type="button" data-relink-media="${escapeHtml(item.id)}" title="Choose a replacement file for this media item">Relink</button>` : ""}
                       ${item.kind === "audio" ? `<button type="button" data-place-audio="${escapeHtml(item.id)}">Place on Timeline</button>` : ""}
                       ${item.kind === "midi" ? `<span>MIDI clip created on import</span>` : ""}
                     </div>
@@ -977,7 +979,7 @@ function renderControlsPanel(state: AppState): string {
           <p><strong>Mixer</strong><span>Use Volume and Pan sliders. Meters show live peak audio. Mute silences a track; Solo isolates it.</span></p>
           <p><strong>Diagnostics</strong><span>v${escapeHtml(POCKET_DAW_VERSION)} / ${escapeHtml(environmentLabel())} / ${escapeHtml(state.currentFile.path || state.currentFile.label)} / recent: ${escapeHtml(recent)}</span></p>
           <p><strong>Save / Export</strong><span>Save .pocketdaw projects, export full-song WAV, or export multi-track MIDI.</span></p>
-          <p><strong>Private alpha</strong><span>Recording and native collect-media copy stay guarded until the v0.6 verification docs are complete.</span></p>
+          <p><strong>Private alpha</strong><span>Recording stays guarded. Native Collect Media can copy external audio beside a saved project; Relink/Reload can refresh audio buffers in the installed app.</span></p>
         </div>
         <button data-action="export-diagnostics">Export Diagnostics</button>
       </section>

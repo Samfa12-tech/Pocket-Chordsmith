@@ -1,4 +1,4 @@
-# Pocket DAW v0.5.3 - What Works and What's Next
+# Pocket DAW v0.5.4 - What Works and What's Next
 
 ## North star
 
@@ -49,6 +49,13 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 - Stem WAV export is available as sequential browser downloads for generated/audio/MIDI track groups.
 - Section loop, Godot adaptive pack and web game pack manifest JSON exports are available as manifest previews.
 - Media Pool status distinguishes runtime-loaded audio, external unloaded paths, browser runtime-only imports, missing/unresolved items and project media.
+- Native Collect Media copies external audio beside a saved `.pocketdaw` file under `project-media/` and updates media-pool refs to durable project media.
+- Native Reload and Relink can refresh project/external audio buffers in the installed app.
+- Build Native Cache writes generated-section and runtime-loaded audio WAV assets beside a saved project under `project-cache/native-audio/`.
+- Native render-cache metadata records stable `assetRelativePath`, `nativePath`, sample metadata, `sourceHash`, byte length and `durableCacheReady` state inside optional `project.renderCache` metadata.
+- Native render-cache prewarm can build generated-section stem WAV assets while idle in the installed app, so ready caches are preferred without blocking the Play command.
+- Runtime-loaded audio clips can be encoded into native WAV asset regions for CPAL playback when their decoded buffers are available.
+- Native playback diagnostics now report cached asset/region counts, render-cache metadata count, hit/miss counts, procedural fallback events, runtime-audio region misses, prewarm state and discarded stale builds.
 - Pocket Audio Core convergence is documented, with a small rendered-event adapter added while the real core package/branch remains absent from this checkout.
 - Live playback now returns to the loop start when the playhead reaches the loop end.
 - Track mute, solo, volume and pan editing.
@@ -406,7 +413,7 @@ Historical installers and debug executables may remain in `releases/`, but they 
 - The native playback path is still a first event-synth implementation, not final parity instruments or native audio-file streaming.
 - Audio-file import still depends on WebView decoding and runtime buffers; native Symphonia-style decoding is the next desktop-grade step.
 
-v0.5.2 moves generated playback out of the browser timing path, but it is not a full professional mixing/export console yet. Automation is limited to track volume multiplier and pan; there are no drawn lanes, FX-parameter automation, tempo automation or automation clips. Bus routing is supported, but full send/return processing is still guarded. Stem export uses sequential browser WAV downloads rather than a browser zip. Section/Godot/web-game exports produce JSON manifest previews, not full asset packs yet. Audio clips still have no time-stretching/warping, no recording, no waveform editing, no completed project-relative media relink workflow and no persistent native decoded media cache.
+v0.5.2 moves generated playback out of the browser timing path, but it is not a full professional mixing/export console yet. Automation is limited to track volume multiplier and pan; there are no drawn lanes, FX-parameter automation, tempo automation or automation clips. Bus routing is supported, but full send/return processing is still guarded. Stem export uses sequential browser WAV downloads rather than a browser zip. Section/Godot/web-game exports produce JSON manifest previews, not full asset packs yet. Audio clips still have no time-stretching/warping, no recording, no waveform editing and no persistent native decoded media cache. Runtime-loaded audio clips can now feed native WAV regions, but durable native decode/streaming is still a later desktop-grade step.
 
 ## What should come next
 
@@ -422,12 +429,12 @@ v0.5.2 moves generated playback out of the browser timing path, but it is not a 
 - Add a drum-track branch/explode workflow: double-click a generated Drums track or clip to create separate Kick, Snare, Hat and future kit-piece tracks with independent volume, pan, gate, FX and routing.
 - Bring over all live-playback Pocket Chordsmith drum instruments and kit variations so branched drum tracks can use the same source sounds rather than a reduced DAW-only kit.
 - Add longer-form performance tracing for expensive arrangements.
-- Add project-relative media path handling and missing-file relink workflow.
+- Manually verify project-relative media collect/reload/relink in the packaged app and harden edge cases from real projects.
 - Replace sequential stem downloads with browser-safe zip packaging or a native pack exporter.
 - Expand export profiles beyond WAV/MIDI to support multiple formats, sample rates, bit depths, channel modes and bitrate/quality targets.
 - Render individual section-loop WAVs and bundle them with Godot/web-game manifests.
 - Add richer clip transform behaviour for transpose, gain and stem mutes.
-- Add rendered audio cache entries when exporting or freezing generated clips.
+- Hydrate native playback from persisted `project-cache/native-audio` WAVs on project open, so reopening a cached project does not need to rebuild section stems.
 - Add voice/instrument recording once native file/audio persistence is ready, including simultaneous multitrack recording on multi-input hardware.
 - Add per-track mono/stereo recording mode and hardware input assignment for live audio tracks.
 - Expand MIDI import into a deeper DAW feature: robust multi-track import, channel/instrument mapping, tempo-map handling, controller preservation, drum-lane mapping and richer piano-roll editing.
@@ -448,4 +455,14 @@ Pocket Chordsmith web can borrow the same lightweight lessons without becoming a
 - Chordsmith editor changes now use the composition-event sync path, keeping project-load sync reserved for open/import/new/demo-style changes.
 - Native CPAL playback bypasses stale pre-render WAV regions after live Chordsmith edits and restarts from the current position using updated procedural events.
 - Diagnostics now report native render-cache bypass state, build count, last build duration and last build reason.
-- `docs/v0.5.3-editor-stability.md` tracks the manual smoke focus and the known limitation that cache builds still need to move off the main app path.
+- Native render-cache prewarm now avoids building cache assets directly inside the Play command; deeper worker/Rust cache building remains a follow-up.
+- `docs/v0.5.3-editor-stability.md` tracks the manual smoke focus and the remaining limitation that persistent cache storage/native decode still need a later pass.
+
+## v0.5.4 Native Cache Foundation
+
+- Bumped app/package/native metadata to v0.5.4 while keeping the persisted project schema at version 2.
+- Native cache assets now carry stable project-relative WAV targets under `project-cache/native-audio/`.
+- Added Tauri commands to write/read native cache WAV assets with path traversal protection.
+- Added a Build Native Cache media command for saved projects; it renders generated section stems and runtime-loaded audio clips, writes WAV assets, merges optional render-cache metadata, and saves the project refs.
+- Native playback payloads remain backward-compatible and still carry in-memory WAV bytes for the current CPAL region player.
+- Persistent cache hydration from disk is the next cache step; v0.5.4 creates the durable assets and metadata, but loaded playback still relies on a ready runtime cache or rebuild when needed.

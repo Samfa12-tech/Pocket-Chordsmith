@@ -7,7 +7,9 @@ import {
   createMediaPoolItem,
   findMediaPoolItem,
   markMediaPoolItemExternal,
+  markMediaPoolItemCollected,
   markMediaPoolItemMissing,
+  markMediaPoolItemRelinked,
   mediaPoolStatus,
   removeUnusedMediaPoolItem,
   renderCacheItemsForMedia,
@@ -48,7 +50,44 @@ describe("media pool helpers", () => {
       metadata: { mediaRefKind: "project", projectRelativePath: "project-media/Collected Loop.wav" }
     });
 
-    expect(mediaPoolStatus(item)).toMatchObject({ label: "Project media", external: false, reloadable: false });
+    expect(mediaPoolStatus(item)).toMatchObject({ label: "Project media", external: false, reloadable: true });
+  });
+
+  it("marks collected and relinked media as durable native media", () => {
+    let project = createDemoProject();
+    const item = createMediaPoolItem({
+      kind: "audio",
+      name: "Lead Vocal.wav",
+      uri: "C:\\Sessions\\Lead Vocal.wav",
+      metadata: { external: true, userNote: "keeper" }
+    });
+    project = addMediaPoolItem(project, item);
+    project = markMediaPoolItemCollected(project, {
+      id: item.id,
+      sourceUri: "C:\\Sessions\\Lead Vocal.wav",
+      targetPath: "C:\\Songs\\project-media\\Lead Vocal.wav",
+      targetRelativePath: "project-media/Lead Vocal.wav",
+      sizeBytes: 2048
+    });
+
+    let found = findMediaPoolItem(project, item.id)!;
+    expect(found.uri).toBe("project-media/Lead Vocal.wav");
+    expect(found.metadata).toMatchObject({
+      userNote: "keeper",
+      mediaRefKind: "project",
+      projectRelativePath: "project-media/Lead Vocal.wav",
+      originalUri: "C:\\Sessions\\Lead Vocal.wav",
+      external: false,
+      runtimeOnly: false,
+      missing: false,
+      unresolved: false
+    });
+    expect(mediaPoolStatus(found)).toMatchObject({ label: "Project media", relinkable: true, reloadable: true });
+
+    project = markMediaPoolItemRelinked(project, item.id, { uri: "D:\\Audio\\Lead Vocal.wav", sizeBytes: 4096, mimeType: "audio/wav" });
+    found = findMediaPoolItem(project, item.id)!;
+    expect(found).toMatchObject({ uri: "D:\\Audio\\Lead Vocal.wav", sizeBytes: 4096, mimeType: "audio/wav" });
+    expect(found.metadata).toMatchObject({ mediaRefKind: "external", external: true, missing: false, unresolved: false });
   });
 
   it("marks media missing and unresolved without dropping existing metadata", () => {

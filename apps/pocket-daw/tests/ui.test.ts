@@ -69,6 +69,8 @@ describe("Pocket DAW UI rendering", () => {
       "marker-add",
       "media-pool-focus",
       "toggle-loop",
+      "collect-media",
+      "build-native-cache",
       "export-diagnostics"
     ].forEach((action) => {
       expect(html).toContain(`data-action="${action}"`);
@@ -122,13 +124,15 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("No media pool items yet.");
     expect(html).toContain("Import Audio");
     expect(html).toContain("Import MIDI");
-    expect(html).toContain("Add Rendered Stem");
+    expect(html).toContain("Build Native Cache");
     expect(html).toContain("Godot Manifest Preview");
     expect(html).toContain("Web Manifest Preview");
     expect(html).toContain("Collect Media Plan");
+    expect(html).toContain("Collect Media");
     expect(html).toContain("Collect Plan");
     expect(html).toContain('data-action="import-audio"');
     expect(html).toContain('data-action="import-midi"');
+    expect(html).toContain('data-action="collect-media"');
     expect(html).toContain('data-action="export-media-plan"');
   });
 
@@ -157,7 +161,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain(`data-place-audio="${item.id}"`);
   });
 
-  it("renders unloaded external media with a guarded reload scaffold", () => {
+  it("renders unloaded external media with reload and relink actions", () => {
     const item = createMediaPoolItem({
       kind: "audio",
       name: "External Loop.wav",
@@ -171,7 +175,8 @@ describe("Pocket DAW UI rendering", () => {
     const html = renderAppShell(state);
 
     expect(html).toContain("External unloaded");
-    expect(html).toContain(`data-reload-media="${item.id}" disabled`);
+    expect(html).toContain(`data-reload-media="${item.id}"`);
+    expect(html).toContain(`data-relink-media="${item.id}"`);
   });
 
   it("renders version diagnostics and disabled recording arm stubs", () => {
@@ -183,7 +188,7 @@ describe("Pocket DAW UI rendering", () => {
 
     const html = renderAppShell(state);
 
-    expect(html).toContain("v0.5.3");
+    expect(html).toContain("v0.5.4");
     expect(html).toContain("Browser/dev");
     expect(html).toContain('data-arm-track="live-vocals" disabled');
     expect(html).toContain("Recording coming after");

@@ -19,9 +19,7 @@ Recording is intentionally disabled in v0.5.1/v0.6-foundation work.
 
 ## Prerequisites Before Enabling Recording
 
-- Durable project save/open with project-relative media.
-- Native relink/reload for external media.
-- Collect Project Media copy implementation.
+- Packaged-app QA for project-relative media, native relink/reload and Collect Media.
 - Input/output device selection.
 - Latency and buffer-size settings.
 - Armed-track rules.
@@ -34,7 +32,7 @@ Recording is intentionally disabled in v0.5.1/v0.6-foundation work.
 
 When prerequisites are ready, implement one narrow path first:
 
-1. Native-only mono input capture to a project media folder.
+1. Native-only mono input capture to the existing project media folder.
 2. Save a `.wav` under `project-media/`.
 3. Add a Media Pool item with `mediaRefKind: "project"`.
 4. Add an audio clip to the armed track.

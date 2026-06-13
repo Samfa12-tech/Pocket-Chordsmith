@@ -1,6 +1,6 @@
 export const POCKET_DAW_APP = "PocketDAW" as const;
 export const POCKET_DAW_SCHEMA_VERSION = 2;
-export const POCKET_DAW_VERSION = "0.5.3";
+export const POCKET_DAW_VERSION = "0.5.4";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];

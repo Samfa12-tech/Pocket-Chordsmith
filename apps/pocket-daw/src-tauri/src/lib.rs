@@ -16,6 +16,10 @@ pub fn run() {
             native_audio::native_audio_update_track,
             open_project_file,
             open_audio_media_file,
+            read_audio_media_file,
+            collect_project_media,
+            write_native_cache_asset,
+            read_native_cache_asset,
             open_midi_file,
             save_project_file_as,
             write_project_file
@@ -43,6 +47,51 @@ struct AudioMediaPayload {
     label: String,
     #[serde(rename = "mimeType")]
     mime_type: Option<String>,
+    #[serde(rename = "sizeBytes")]
+    size_bytes: u64,
+    bytes: Vec<u8>,
+}
+
+#[derive(serde::Deserialize)]
+struct CollectProjectMediaItem {
+    id: String,
+    #[serde(rename = "sourceUri")]
+    source_uri: String,
+    #[serde(rename = "targetRelativePath")]
+    target_relative_path: String,
+}
+
+#[derive(serde::Serialize)]
+struct CollectedProjectMediaItem {
+    id: String,
+    #[serde(rename = "sourceUri")]
+    source_uri: String,
+    #[serde(rename = "targetPath")]
+    target_path: String,
+    #[serde(rename = "targetRelativePath")]
+    target_relative_path: String,
+    #[serde(rename = "sizeBytes")]
+    size_bytes: u64,
+}
+
+#[derive(serde::Serialize)]
+struct NativeCacheAssetWriteResult {
+    #[serde(rename = "assetId")]
+    asset_id: String,
+    path: String,
+    #[serde(rename = "relativePath")]
+    relative_path: String,
+    #[serde(rename = "sizeBytes")]
+    size_bytes: u64,
+}
+
+#[derive(serde::Serialize)]
+struct NativeCacheAssetReadResult {
+    #[serde(rename = "assetId")]
+    asset_id: String,
+    path: String,
+    #[serde(rename = "relativePath")]
+    relative_path: String,
     #[serde(rename = "sizeBytes")]
     size_bytes: u64,
     bytes: Vec<u8>,
@@ -91,6 +140,87 @@ fn open_audio_media_file() -> Result<Option<AudioMediaPayload>, String> {
         size_bytes,
         bytes,
     }))
+}
+
+#[tauri::command]
+fn read_audio_media_file(path: String, project_file_path: Option<String>) -> Result<AudioMediaPayload, String> {
+    let path_buf = resolve_media_path(&path, project_file_path.as_deref())?;
+    let bytes = std::fs::read(&path_buf).map_err(|err| format!("Could not read audio media: {}", err))?;
+    let size_bytes = bytes.len() as u64;
+    Ok(AudioMediaPayload {
+        label: file_label(&path_buf),
+        path: path_buf.to_string_lossy().to_string(),
+        mime_type: audio_mime_type(&path_buf),
+        size_bytes,
+        bytes,
+    })
+}
+
+#[tauri::command]
+fn collect_project_media(project_file_path: String, items: Vec<CollectProjectMediaItem>) -> Result<Vec<CollectedProjectMediaItem>, String> {
+    let project_path = std::path::PathBuf::from(project_file_path);
+    let project_dir = project_path.parent().ok_or_else(|| "Save the project before collecting media.".to_string())?;
+    let mut collected = Vec::new();
+    for item in items {
+        let source = source_uri_to_path(&item.source_uri);
+        if !source.is_absolute() {
+            return Err(format!("{} is not an absolute media source path.", item.source_uri));
+        }
+        let target = resolve_project_relative_path(project_dir, &item.target_relative_path)?;
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).map_err(|err| format!("Could not create project media folder: {}", err))?;
+        }
+        let size_bytes = std::fs::copy(&source, &target).map_err(|err| format!("Could not copy {}: {}", item.source_uri, err))?;
+        collected.push(CollectedProjectMediaItem {
+            id: item.id,
+            source_uri: item.source_uri,
+            target_path: target.to_string_lossy().to_string(),
+            target_relative_path: item.target_relative_path,
+            size_bytes,
+        });
+    }
+    Ok(collected)
+}
+
+#[tauri::command]
+fn write_native_cache_asset(
+    project_file_path: String,
+    asset_id: String,
+    relative_path: String,
+    bytes: Vec<u8>,
+) -> Result<NativeCacheAssetWriteResult, String> {
+    if bytes.is_empty() {
+        return Err("Native cache asset has no bytes to write.".to_string());
+    }
+    let target = native_cache_asset_path(&project_file_path, &relative_path)?;
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| format!("Could not create native cache folder: {}", err))?;
+    }
+    std::fs::write(&target, &bytes).map_err(|err| format!("Could not write native cache asset: {}", err))?;
+    Ok(NativeCacheAssetWriteResult {
+        asset_id,
+        path: target.to_string_lossy().to_string(),
+        relative_path,
+        size_bytes: bytes.len() as u64,
+    })
+}
+
+#[tauri::command]
+fn read_native_cache_asset(
+    project_file_path: String,
+    asset_id: String,
+    relative_path: String,
+) -> Result<NativeCacheAssetReadResult, String> {
+    let target = native_cache_asset_path(&project_file_path, &relative_path)?;
+    let bytes = std::fs::read(&target).map_err(|err| format!("Could not read native cache asset: {}", err))?;
+    let size_bytes = bytes.len() as u64;
+    Ok(NativeCacheAssetReadResult {
+        asset_id,
+        path: target.to_string_lossy().to_string(),
+        relative_path,
+        size_bytes,
+        bytes,
+    })
 }
 
 #[tauri::command]
@@ -320,5 +450,88 @@ fn audio_mime_type(path: &std::path::Path) -> Option<String> {
         "flac" => Some("audio/flac".to_string()),
         "aiff" | "aif" => Some("audio/aiff".to_string()),
         _ => None,
+    }
+}
+
+fn resolve_media_path(path: &str, project_file_path: Option<&str>) -> Result<std::path::PathBuf, String> {
+    let normalized = if let Some(rest) = path.strip_prefix("project://media/") {
+        format!("project-media/{}", rest)
+    } else {
+        path.to_string()
+    };
+    let path_buf = source_uri_to_path(&normalized);
+    if path_buf.is_absolute() {
+        return Ok(path_buf);
+    }
+    let project_file_path = project_file_path.ok_or_else(|| "Project-relative media needs a saved project path.".to_string())?;
+    let project_path = std::path::PathBuf::from(project_file_path);
+    let project_dir = project_path.parent().ok_or_else(|| "Project-relative media needs a saved project folder.".to_string())?;
+    resolve_project_relative_path(project_dir, &normalized)
+}
+
+fn source_uri_to_path(uri: &str) -> std::path::PathBuf {
+    if let Some(rest) = uri.strip_prefix("file:///") {
+        return std::path::PathBuf::from(rest.replace('/', std::path::MAIN_SEPARATOR_STR));
+    }
+    if let Some(rest) = uri.strip_prefix("file://") {
+        return std::path::PathBuf::from(rest.replace('/', std::path::MAIN_SEPARATOR_STR));
+    }
+    std::path::PathBuf::from(uri)
+}
+
+fn resolve_project_relative_path(project_dir: &std::path::Path, relative: &str) -> Result<std::path::PathBuf, String> {
+    let relative_path = std::path::Path::new(relative);
+    if relative_path.is_absolute() {
+        return Err("Project media target must be relative.".to_string());
+    }
+    for component in relative_path.components() {
+        match component {
+            std::path::Component::Normal(_) => {}
+            std::path::Component::CurDir => {}
+            _ => return Err("Project media target cannot escape the project folder.".to_string()),
+        }
+    }
+    Ok(project_dir.join(relative_path))
+}
+
+fn native_cache_asset_path(project_file_path: &str, relative_path: &str) -> Result<std::path::PathBuf, String> {
+    validate_native_cache_relative_path(relative_path)?;
+    let project_path = std::path::PathBuf::from(project_file_path);
+    let project_dir = project_path.parent().ok_or_else(|| "Native cache needs a saved project folder.".to_string())?;
+    resolve_project_relative_path(project_dir, relative_path)
+}
+
+fn validate_native_cache_relative_path(relative_path: &str) -> Result<(), String> {
+    let normalized = relative_path.replace('\\', "/");
+    if !normalized.starts_with("project-cache/native-audio/") {
+        return Err("Native cache assets must live under project-cache/native-audio.".to_string());
+    }
+    if !normalized.to_ascii_lowercase().ends_with(".wav") {
+        return Err("Native cache assets must be WAV files.".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_cache_paths_stay_under_project_cache() {
+        let path = native_cache_asset_path(
+            r"C:\Songs\Song.pocketdaw",
+            "project-cache/native-audio/native-cache-a.wav",
+        )
+        .expect("cache path should resolve");
+
+        assert!(path.to_string_lossy().contains("project-cache"));
+        assert!(path.to_string_lossy().contains("native-audio"));
+    }
+
+    #[test]
+    fn native_cache_paths_reject_escape_or_wrong_folder() {
+        assert!(native_cache_asset_path(r"C:\Songs\Song.pocketdaw", "../asset.wav").is_err());
+        assert!(native_cache_asset_path(r"C:\Songs\Song.pocketdaw", "project-media/asset.wav").is_err());
+        assert!(native_cache_asset_path(r"C:\Songs\Song.pocketdaw", "project-cache/native-audio/asset.mp3").is_err());
     }
 }

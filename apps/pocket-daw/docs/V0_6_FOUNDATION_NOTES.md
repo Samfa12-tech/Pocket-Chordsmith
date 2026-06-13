@@ -8,7 +8,17 @@ This note tracks the v0.6-readiness work that follows the v0.5.1 hardening pass.
 - Imported native audio records the original URI and media reference kind.
 - Browser imports remain runtime-only because the browser does not expose a durable source path after import.
 - `createCollectMediaPlan()` produces a deterministic JSON plan with copy, already-project and blocked buckets.
-- Native copy/relink is still guarded; use the plan to review what would be collected before enabling mutation.
+- Native Collect Media can copy external audio beside a saved `.pocketdaw` project under `project-media/`, then update media-pool refs to project media.
+- Native Reload/Relink can refresh audio buffers for project/external media in the installed app.
+- Browser runtime-only media still cannot be collected because browsers do not expose a durable source path after import.
+
+## Native Playback Cache
+
+- Native playback payloads support optional cached WAV assets and timeline regions alongside procedural events.
+- Generated Chordsmith section clips can prewarm runtime stem WAV assets while the installed app is idle, then prefer those regions during native playback.
+- Runtime-loaded audio clips can be encoded as native WAV regions when decoded buffers are available.
+- Diagnostics report asset/region counts, hit/miss counts, procedural fallback events, runtime-audio misses, prewarm state and stale-build discards.
+- Persistent on-disk cache storage, native decode/streaming and worker/Rust cache builds remain follow-up work.
 
 ## Export Packs
 
@@ -42,4 +52,4 @@ This note tracks the v0.6-readiness work that follows the v0.5.1 hardening pass.
 - Track schema already has `recordKind`, `armed` and `inputDeviceId` placeholders.
 - Live vocal/instrument tracks can be created as future routing placeholders.
 - No microphone permissions, native capture, waveform recording or recorded clip generation are enabled.
-- Recording should wait for project media copy/relink, device selection, latency settings, armed-track rules, meters and reload-safe saved clips.
+- Recording should wait for device selection, latency settings, armed-track rules, input monitoring/meters and reload-safe recorded clip generation.

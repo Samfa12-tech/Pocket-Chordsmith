@@ -9,11 +9,61 @@ export interface ImportedAudioBytes {
   mode: "native" | "browser";
 }
 
+export interface CollectProjectMediaInput {
+  id: string;
+  sourceUri: string;
+  targetRelativePath: string;
+}
+
+export interface CollectedProjectMedia {
+  id: string;
+  sourceUri: string;
+  targetPath: string;
+  targetRelativePath: string;
+  sizeBytes: number;
+}
+
+export interface NativeCacheAssetWriteInput {
+  assetId: string;
+  relativePath: string;
+  bytes: number[] | Uint8Array | ArrayBuffer;
+}
+
+export interface NativeCacheAssetWriteResult {
+  assetId: string;
+  path: string;
+  relativePath: string;
+  sizeBytes: number;
+}
+
+export interface NativeCacheAssetReadResult extends NativeCacheAssetWriteResult {
+  bytes: ArrayBuffer;
+}
+
 interface NativeAudioPayload {
   path: string;
   label: string;
   mimeType?: string;
   sizeBytes?: number;
+  bytes: number[];
+}
+
+interface NativeCollectedProjectMediaPayload {
+  id: string;
+  sourceUri: string;
+  targetPath: string;
+  targetRelativePath: string;
+  sizeBytes: number;
+}
+
+interface NativeCacheAssetWritePayload {
+  assetId: string;
+  path: string;
+  relativePath: string;
+  sizeBytes: number;
+}
+
+interface NativeCacheAssetReadPayload extends NativeCacheAssetWritePayload {
   bytes: number[];
 }
 
@@ -26,6 +76,78 @@ export async function importAudioMediaNative(api = defaultNativeMediaApi): Promi
   if (!api.isAvailable()) return null;
   const result = await api.invoke<NativeAudioPayload | null>("open_audio_media_file");
   if (!result) return null;
+  return importedAudioFromNativePayload(result);
+}
+
+export async function relinkAudioMediaNative(api = defaultNativeMediaApi): Promise<ImportedAudioBytes | null> {
+  return importAudioMediaNative(api);
+}
+
+export async function loadAudioMediaNative(path: string, projectFilePath?: string | null, api = defaultNativeMediaApi): Promise<ImportedAudioBytes | null> {
+  if (!api.isAvailable()) return null;
+  const result = await api.invoke<NativeAudioPayload>("read_audio_media_file", { path, projectFilePath: projectFilePath || null });
+  return importedAudioFromNativePayload(result);
+}
+
+export async function collectProjectMediaNative(projectFilePath: string, items: CollectProjectMediaInput[], api = defaultNativeMediaApi): Promise<CollectedProjectMedia[] | null> {
+  if (!api.isAvailable()) return null;
+  const result = await api.invoke<NativeCollectedProjectMediaPayload[]>("collect_project_media", { projectFilePath, items });
+  if (!Array.isArray(result)) throw new Error("Native collect-media returned an invalid result.");
+  return result.map((item) => {
+    if (typeof item.id !== "string" || typeof item.sourceUri !== "string" || typeof item.targetPath !== "string" || typeof item.targetRelativePath !== "string") {
+      throw new Error("Native collect-media returned an invalid media item.");
+    }
+    return {
+      id: item.id,
+      sourceUri: item.sourceUri,
+      targetPath: item.targetPath,
+      targetRelativePath: item.targetRelativePath,
+      sizeBytes: Number(item.sizeBytes) || 0
+    };
+  });
+}
+
+export async function writeNativeCacheAsset(
+  projectFilePath: string,
+  asset: NativeCacheAssetWriteInput,
+  api = defaultNativeMediaApi
+): Promise<NativeCacheAssetWriteResult | null> {
+  if (!api.isAvailable()) return null;
+  const result = await api.invoke<NativeCacheAssetWritePayload>("write_native_cache_asset", {
+    projectFilePath,
+    assetId: asset.assetId,
+    relativePath: asset.relativePath,
+    bytes: bytesForNativeInvoke(asset.bytes)
+  });
+  assertNativeCacheAssetPayload(result);
+  return {
+    assetId: result.assetId,
+    path: result.path,
+    relativePath: result.relativePath,
+    sizeBytes: Number(result.sizeBytes) || 0
+  };
+}
+
+export async function readNativeCacheAsset(
+  projectFilePath: string,
+  assetId: string,
+  relativePath: string,
+  api = defaultNativeMediaApi
+): Promise<NativeCacheAssetReadResult | null> {
+  if (!api.isAvailable()) return null;
+  const result = await api.invoke<NativeCacheAssetReadPayload>("read_native_cache_asset", { projectFilePath, assetId, relativePath });
+  assertNativeCacheAssetPayload(result);
+  if (!Array.isArray(result.bytes)) throw new Error("Native cache read returned invalid bytes.");
+  return {
+    assetId: result.assetId,
+    path: result.path,
+    relativePath: result.relativePath,
+    sizeBytes: Number(result.sizeBytes) || 0,
+    bytes: new Uint8Array(result.bytes).buffer
+  };
+}
+
+function importedAudioFromNativePayload(result: NativeAudioPayload): ImportedAudioBytes {
   if (!Array.isArray(result.bytes) || typeof result.path !== "string") {
     throw new Error("Native audio import returned an invalid media payload.");
   }
@@ -58,6 +180,17 @@ export function mimeTypeForName(name: string): string | undefined {
   if (ext === "flac") return "audio/flac";
   if (ext === "aiff" || ext === "aif") return "audio/aiff";
   return undefined;
+}
+
+function bytesForNativeInvoke(bytes: number[] | Uint8Array | ArrayBuffer): number[] {
+  if (Array.isArray(bytes)) return bytes;
+  return Array.from(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+}
+
+function assertNativeCacheAssetPayload(value: NativeCacheAssetWritePayload): void {
+  if (!value || typeof value.assetId !== "string" || typeof value.path !== "string" || typeof value.relativePath !== "string") {
+    throw new Error("Native cache command returned an invalid asset payload.");
+  }
 }
 
 function fileNameFromPath(path: string): string {

@@ -28,10 +28,10 @@ Pocket DAW itch uploads must use the native/installable output only. Do not publ
 
 ## Expected Outputs
 
-- Local browser preview only, never itch: `releases/pocket-daw-browser-preview-v0.5.2.zip`
+- Local browser preview only, never itch: `releases/pocket-daw-browser-preview-v0.5.4.zip`
 - Debug app: `src-tauri/target/debug/pocket-daw.exe`
-- Windows installer: `src-tauri/target/release/bundle/nsis/Pocket DAW_0.5.2_x64-setup.exe`
-- MSI if produced: `src-tauri/target/release/bundle/msi/Pocket DAW_0.5.2_x64_en-US.msi`
+- Windows installer: `src-tauri/target/release/bundle/nsis/Pocket DAW_0.5.4_x64-setup.exe`
+- MSI if produced: `src-tauri/target/release/bundle/msi/Pocket DAW_0.5.4_x64_en-US.msi`
 
 Generated outputs must not be committed.
 
@@ -40,8 +40,8 @@ Generated outputs must not be committed.
 PowerShell:
 
 ```powershell
-Get-FileHash "src-tauri\target\release\bundle\nsis\Pocket DAW_0.5.2_x64-setup.exe" -Algorithm SHA256
-Get-FileHash "src-tauri\target\release\bundle\msi\Pocket DAW_0.5.2_x64_en-US.msi" -Algorithm SHA256
+Get-FileHash "src-tauri\target\release\bundle\nsis\Pocket DAW_0.5.4_x64-setup.exe" -Algorithm SHA256
+Get-FileHash "src-tauri\target\release\bundle\msi\Pocket DAW_0.5.4_x64_en-US.msi" -Algorithm SHA256
 ```
 
 Node cross-platform:
@@ -53,8 +53,10 @@ node -e "const{createHash}=require('crypto');const{readFileSync}=require('fs');f
 ## Manual QA
 
 - Complete `WINDOWS_TESTING_CHECKLIST.md`.
-- Confirm `v0.5.2` displays in the app.
+- Confirm `v0.5.4` displays in the app.
 - Export diagnostics during packaged playback and confirm `audio.playbackBackend` is `native-cpal`.
+- Confirm `audio.nativeRenderCache.assetRegionCount`, `proceduralFallbackEventCount`, `renderCacheHitCount` and `renderCacheMissCount` look sane for the project under test.
+- On a saved project, run Build Native Cache and confirm `project-cache/native-audio/*.wav` files plus `project.renderCache` metadata are written.
 - Stress playback by scrolling, dragging mixer controls and editing Chordsmith steps; do not accept a build that falls back to Web Audio for generated playback in the installed app.
 - Confirm `.pocketdaw` save/open and Save As paths.
 - Import audio and MIDI from real folders.
@@ -65,7 +67,7 @@ node -e "const{createHash}=require('crypto');const{readFileSync}=require('fs');f
 ## Known Limitations To Disclose
 
 - No real recording yet.
-- Native relink/copy media is not enabled; collect-media plan export is available.
+- Native Collect Media, Reload and Relink are enabled for packaged-app testing; browser runtime-only media still cannot be collected.
 - Game packs are deterministic manifests plus current renderable assets, not bundled ZIP packs.
 - Unsigned installers may trigger Windows warnings.
 - Browser preview cannot persist local file paths and must not be used for itch distribution.

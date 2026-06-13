@@ -46,9 +46,13 @@ export interface NativeAudioEvent {
 export interface NativeAudioAsset {
   id: string;
   name: string;
+  relativePath?: string;
+  mimeType?: string;
   sampleRate: number;
   channels: number;
   durationSeconds: number;
+  sizeBytes?: number;
+  sourceHash?: string;
   bytes: number[];
 }
 
