@@ -82,7 +82,9 @@ export function saveUpdaterAutoCheckPreference(enabled: boolean): void {
 }
 
 export function loadUpdaterAutoCheckPreference(): boolean {
-  return safeLocalStorage()?.getItem(UPDATER_AUTO_CHECK_KEY) === "1";
+  const stored = safeLocalStorage()?.getItem(UPDATER_AUTO_CHECK_KEY);
+  if (stored === "0") return false;
+  return true;
 }
 
 function recentKey(label: string, path: string | null) {

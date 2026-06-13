@@ -280,13 +280,13 @@ export class App {
     const project = currentProject(this.state);
     const playheadLeft = (this.state.playheadBar - 1) * this.state.zoom;
     const playhead = this.root.querySelector<HTMLElement>("[data-playhead]");
-    if (playhead) playhead.style.left = `${playheadLeft}px`;
+    if (playhead) playhead.style.left = this.timelineBarLeftPx(playheadLeft);
 
     const readout = this.root.querySelector<HTMLElement>("[data-playhead-readout]");
     if (readout) readout.textContent = this.formatBarBeat(this.state.playheadBar);
 
     const cursor = this.root.querySelector<HTMLElement>("[data-cursor]");
-    if (cursor) cursor.style.left = `${(this.state.cursorBar - 1) * this.state.zoom}px`;
+    if (cursor) cursor.style.left = this.timelineBarLeftPx((this.state.cursorBar - 1) * this.state.zoom);
 
     const playing = this.root.querySelector<HTMLElement>("[data-playing-state]");
     if (playing) {
@@ -1407,11 +1407,21 @@ export class App {
 
   private seekTimelineFromClientX(timeline: HTMLElement, clientX: number, final: boolean) {
     const rect = timeline.getBoundingClientRect();
-    const rawBar = (clientX - rect.left) / this.state.zoom + 1;
+    const rawBar = (clientX - rect.left - this.timelineTrackHeaderWidth(timeline)) / this.state.zoom + 1;
     const project = currentProject(this.state);
     const bar = Math.max(1, Math.min(project.timeline.bars + 1, snapBarValue(rawBar, this.state.snapMode, project.project.timeSig)));
     this.seekToBar(bar, final);
     return bar;
+  }
+
+  private timelineBarLeftPx(px: number): string {
+    return `calc(var(--track-header) + ${Math.round(px)}px)`;
+  }
+
+  private timelineTrackHeaderWidth(timeline: HTMLElement): number {
+    const raw = window.getComputedStyle(timeline).getPropertyValue("--track-header").trim();
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : 176;
   }
 
   private seekToBar(bar: number, updateCursor: boolean) {

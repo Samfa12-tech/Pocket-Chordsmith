@@ -59,6 +59,7 @@
   background:
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 1px, transparent 1px var(--bar)),
     linear-gradient(180deg, #0b1020, #090d18);
+  background-position: var(--track-header) 0, 0 0;
 }
 
 .ruler {
@@ -69,6 +70,20 @@
   border-bottom: 1px solid #26314c;
   background: rgba(10, 15, 27, 0.96);
   cursor: pointer;
+}
+
+.ruler::before,
+.marker-lane::before {
+  content: "";
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  display: block;
+  width: var(--track-header);
+  height: 100%;
+  border-right: 1px solid rgba(43, 54, 84, 0.78);
+  background: rgba(10, 15, 27, 0.98);
+  pointer-events: none;
 }
 
 .marker-lane {
@@ -82,12 +97,43 @@
 
 .marker {
   position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px solid var(--marker-colour);
+  transform: none;
+}
+
+.marker::after {
+  content: "";
+  position: absolute;
+  top: 25px;
+  left: -1px;
+  width: 2px;
+  height: 200vh;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--marker-colour) 72%, transparent), transparent 88%);
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.marker-rail {
+  position: absolute;
+  top: 0;
+  left: -5px;
+  width: 8px;
+  height: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--marker-colour) 35%, transparent);
+}
+
+.marker-actions {
+  position: absolute;
   top: 3px;
+  left: 5px;
   display: inline-flex;
   max-width: 150px;
-  border-left: 2px solid;
   background: #111827;
-  transform: translateX(2px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .marker button {
@@ -139,22 +185,40 @@
   background: linear-gradient(90deg, rgba(64, 216, 255, 0.08), transparent 45%);
 }
 
-.timeline-row::before {
-  content: attr(data-row);
+.timeline-track-header {
   position: sticky;
   left: 0;
-  z-index: 4;
-  display: inline-grid;
-  place-items: center start;
-  width: 86px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: var(--track-header);
   height: 100%;
+  min-height: 0;
   padding-left: 10px;
+  padding-right: 10px;
+  border: 0;
+  border-right: 1px solid rgba(43, 54, 84, 0.82);
+  border-radius: 0;
   color: #7886a8;
   background: linear-gradient(90deg, #0b1020 70%, transparent);
+  cursor: pointer;
   font-size: 11px;
   font-weight: 800;
-  pointer-events: none;
-  text-transform: uppercase;
+  text-align: left;
+}
+
+.timeline-track-header:hover,
+.timeline-track-header.selected {
+  color: #eef4ff;
+  background: linear-gradient(90deg, rgba(64, 216, 255, 0.18), rgba(11, 16, 32, 0.95) 72%, transparent);
+}
+
+.timeline-track-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .generated-edit-row {

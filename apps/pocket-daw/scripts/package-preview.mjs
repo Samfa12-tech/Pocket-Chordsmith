@@ -18,7 +18,7 @@ export const RELEASE_DOCS = [
   "docs/V0_6_FOUNDATION_NOTES.md",
   "docs/RECORDING_PREP.md",
   "docs/UPDATER_RELEASE_PIPELINE.md",
-  "docs/v0.5.5-itch-release-readiness.md",
+  "docs/v0.5.6-itch-release-readiness.md",
   "docs/v0.5.4-native-cache.md"
 ];
 

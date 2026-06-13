@@ -56,7 +56,6 @@ export function renderAppShell(state: AppState): string {
       ${renderMenuStrip(state)}
       ${renderTransport(state)}
       <main class="studio" data-layout-zone="studio">
-        ${renderTrackList(state)}
         ${renderTimeline(state)}
         ${renderInspector(state, project, selectedClip, selectedTrack)}
       </main>
@@ -191,34 +190,10 @@ function renderTransport(state: AppState): string {
   `;
 }
 
-function renderTrackList(state: AppState): string {
-  const project = currentProject(state);
-  return `
-    <aside class="track-list" data-scroll-key="track-list">
-      <div class="panel-title">Tracks</div>
-      <button class="add-track-button" data-action="add-track-open">Add Track</button>
-      ${project.tracks
-        .filter((track) => track.role !== "master" && track.role !== "fx-return")
-        .map((track) => renderTrackRow(track, state.selectedTrackId === track.id))
-        .join("")}
-    </aside>
-  `;
-}
-
-function renderTrackRow(track: Track, selected: boolean): string {
-  return `
-    <button class="track-row ${selected ? "selected" : ""} ${track.active === false ? "inactive" : ""}" data-track-id="${sanitizeDataAttr(track.id)}">
-      <span class="track-colour" style="background:${safeTrackColour(track.colour)}"></span>
-      <span>${escapeHtml(track.name)}</span>
-      <span class="track-state">${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
-    </button>
-  `;
-}
-
 function renderTimeline(state: AppState): string {
   const project = currentProject(state);
   const zoom = state.zoom;
-  const width = Math.max(900, (project.timeline.bars + 1) * zoom);
+  const width = Math.max(1100, 176 + (project.timeline.bars + 1) * zoom);
   const playheadLeft = (state.playheadBar - 1) * zoom;
   const cursorLeft = (state.cursorBar - 1) * zoom;
   return `
@@ -253,12 +228,12 @@ function renderTimeline(state: AppState): string {
         </div>
       </div>
       <div class="timeline-scroll" data-scroll-key="timeline-scroll">
-        <div class="timeline" data-timeline-surface="true" title="Click the grid to seek by bar" style="width:${width}px; --bar:${zoom}px;">
+        <div class="timeline" data-timeline-surface="true" title="Click the grid to seek by bar" style="width:${width}px; --bar:${zoom}px; --track-header:176px;">
           ${renderBarRuler(project)}
           ${renderMarkers(state)}
-          <div class="cursor-line" data-cursor="true" style="left:${cursorLeft}px"></div>
-          <div class="playhead" data-playhead="true" style="left:${playheadLeft}px"></div>
-          <div class="loop-region ${project.timeline.loop.enabled ? "on" : ""}" style="left:${(project.timeline.loop.startBar - 1) * zoom}px;width:${Math.max(1, project.timeline.loop.endBar - project.timeline.loop.startBar) * zoom}px"></div>
+          <div class="cursor-line" data-cursor="true" style="left:${barLeftPx(cursorLeft)}"></div>
+          <div class="playhead" data-playhead="true" style="left:${barLeftPx(playheadLeft)}"></div>
+          <div class="loop-region ${project.timeline.loop.enabled ? "on" : ""}" style="left:${barLeftPx((project.timeline.loop.startBar - 1) * zoom)};width:${Math.max(1, project.timeline.loop.endBar - project.timeline.loop.startBar) * zoom}px"></div>
           ${renderTimelineRows(state)}
         </div>
       </div>
@@ -270,7 +245,7 @@ function renderBarRuler(project: ReturnType<typeof currentProject>): string {
   return `<div class="ruler" data-seek-ruler="true" title="Click to seek by bar or time">${Array.from({ length: project.timeline.bars + 1 }, (_, i) => {
     const bar = i + 1;
     const seconds = barsToSeconds(i, project.project.bpm, project.project.timeSig);
-    return `<span class="ruler-tick" style="left:calc(${i} * var(--bar))"><b>${bar}</b><small>${formatDuration(seconds)}</small></span>`;
+    return `<span class="ruler-tick" style="left:${barLeftCalc(`${i} * var(--bar)`)}"><b>${bar}</b><small>${formatDuration(seconds)}</small></span>`;
   }).join("")}</div>`;
 }
 
@@ -280,9 +255,12 @@ function renderMarkers(state: AppState): string {
   return `
     <div class="marker-lane" aria-label="Markers">
       ${markers.map((marker) => `
-        <div class="marker" style="left:calc(${sanitizeCssLengthOrNumber(Number(marker.bar) - 1, 0)} * var(--bar));border-color:${sanitizeCssColor(marker.color, "#40d8ff")}">
-          <button title="Rename marker" data-marker-rename="${sanitizeDataAttr(marker.id)}">${escapeHtml(marker.name)}</button>
-          <button title="Delete marker" data-marker-delete="${sanitizeDataAttr(marker.id)}">x</button>
+        <div class="marker" style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(Number(marker.bar) - 1, 0)} * var(--bar)`)};--marker-colour:${sanitizeCssColor(marker.color, "#40d8ff")}">
+          <span class="marker-rail" aria-hidden="true"></span>
+          <span class="marker-actions">
+            <button title="Rename marker" data-marker-rename="${sanitizeDataAttr(marker.id)}">${escapeHtml(marker.name)}</button>
+            <button title="Delete marker" data-marker-delete="${sanitizeDataAttr(marker.id)}">x</button>
+          </span>
         </div>
       `).join("")}
     </div>
@@ -298,12 +276,23 @@ function renderTimelineRows(state: AppState): string {
     .map(
       (track) => `
         <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}">
+          ${renderTimelineTrackHeader(track, state.selectedTrackId === track.id)}
           ${clips.map((clip) => renderClip(project, clip, state.selectedClipId === clip.id, track)).join("")}
           ${renderInlineChordsmithEditor(state, pcs, track, clips)}
         </div>
       `
     )
     .join("");
+}
+
+function renderTimelineTrackHeader(track: Track, selected: boolean): string {
+  return `
+    <button class="timeline-track-header ${selected ? "selected" : ""} ${track.active === false ? "inactive" : ""}" data-track-id="${sanitizeDataAttr(track.id)}">
+      <span class="track-colour" style="background:${safeTrackColour(track.colour)}"></span>
+      <span class="timeline-track-name">${escapeHtml(track.name)}</span>
+      <span class="track-state">${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
+    </button>
+  `;
 }
 
 function renderInlineChordsmithEditor(
@@ -335,7 +324,7 @@ function renderInlineChordsmithClip(
   const sectionSteps = totalEditorSteps(pcs, section);
   const renderSteps = Math.max(0, Math.min(Math.round(clip.barLength * stepsPerBar), sectionSteps - sourceStartStep));
   if (renderSteps <= 0) return "";
-  const left = `calc(${clip.startBar - 1} * var(--bar))`;
+  const left = barLeftCalc(`${clip.startBar - 1} * var(--bar)`);
   const width = `calc(${clip.barLength} * var(--bar))`;
   const body =
     track.role === "drums"
@@ -457,13 +446,21 @@ function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, sele
   const peaks = Array.isArray(media?.metadata?.waveformPeaks) ? media.metadata.waveformPeaks.slice(0, 48) : [];
   const midi = clip.type === "midi" ? midiDataFromClip(clip) : null;
   return `
-    <button class="clip ${selected ? "selected" : ""} ${clip.muted ? "muted" : ""} ${clip.type === "audio" ? "audio-clip" : ""} ${clip.type === "midi" ? "midi-clip" : ""}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-row="${sanitizeDataAttr(track.id)}" style="left:calc(${sanitizeCssLengthOrNumber(Number(clip.startBar) - 1, 0)} * var(--bar));width:calc(${sanitizeCssLengthOrNumber(clip.barLength, 1, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(clip.color)};background:color-mix(in srgb, ${safeClipColour(clip.color)} 28%, #15192a);">
+    <button class="clip ${selected ? "selected" : ""} ${clip.muted ? "muted" : ""} ${clip.type === "audio" ? "audio-clip" : ""} ${clip.type === "midi" ? "midi-clip" : ""}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-row="${sanitizeDataAttr(track.id)}" style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(Number(clip.startBar) - 1, 0)} * var(--bar)`)};width:calc(${sanitizeCssLengthOrNumber(clip.barLength, 1, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(clip.color)};background:color-mix(in srgb, ${safeClipColour(clip.color)} 28%, #15192a);">
       <strong>${escapeHtml(clip.sectionId || clip.name)}</strong>
       <span>${escapeHtml(clip.type === "audio" ? media?.name || "Audio" : clip.type === "midi" ? `${midi?.notes.length || 0} MIDI notes` : track.name)}</span>
       ${peaks.length ? `<i class="clip-waveform">${peaks.map((peak) => `<b style="height:${Math.max(2, Math.round(Number(peak) * 18))}px"></b>`).join("")}</i>` : ""}
       ${midi?.notes.length ? `<i class="midi-note-strip">${midi.notes.slice(0, 32).map((note) => `<b style="left:${Math.max(0, Math.min(100, (note.startTick / Math.max(1, midi.ppq * clip.barLength * project.project.timeSig)) * 100))}%;width:${Math.max(3, Math.min(24, (note.durationTicks / Math.max(1, midi.ppq * clip.barLength * project.project.timeSig)) * 100))}%;bottom:${Math.max(2, Math.min(24, (note.pitch - 36) / 3))}px"></b>`).join("")}</i>` : ""}
     </button>
   `;
+}
+
+function barLeftPx(px: number): string {
+  return `calc(var(--track-header) + ${Math.round(px)}px)`;
+}
+
+function barLeftCalc(expression: string): string {
+  return `calc(var(--track-header) + (${expression}))`;
 }
 
 function renderInspector(state: AppState, project: ReturnType<typeof currentProject>, clip: Clip | null, track: Track | null): string {

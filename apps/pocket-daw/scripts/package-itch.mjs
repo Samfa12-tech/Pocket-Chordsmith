@@ -17,7 +17,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-x64";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = "Pocket DAW v0.5.5 - Itch Release Readiness";
+export const RELEASE_TITLE = "Pocket DAW v0.5.6 - Timeline Marker and Updater Test";
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -159,12 +159,15 @@ Older Windows systems may require Microsoft Edge WebView2 Runtime.
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN in the generated checklist until a tester completes it against this exact artifact.
 `,
-      "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Itch Release Readiness
+      "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Timeline Marker and Updater Test
 
 Pocket DAW is a free Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
 ## Highlights
 
+- Timeline markers now anchor to exact vertical rails at their bar positions, matching the Pocket Chordsmith-style grid alignment.
+- Default timeline zoom is much closer for first launch and reset/demo workflows.
+- Startup update checks now default to on; users can turn them off in the updater panel.
 - Portable Windows ZIP prepared as the primary itch artifact.
 - Optional NSIS/MSI installer artifacts are staged separately when Tauri builds them.
 - Release manifest and SHA-256 checksums are generated from actual files.

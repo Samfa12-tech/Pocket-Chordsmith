@@ -306,12 +306,11 @@ h1 {
 .studio {
   grid-area: studio;
   display: grid;
-  grid-template-columns: minmax(160px, 190px) minmax(0, 1fr) minmax(340px, 430px);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 430px);
   min-height: 0;
   overflow: hidden;
 }
 
-.track-list,
 .inspector {
   min-height: 0;
   overflow: auto;
@@ -333,22 +332,7 @@ h1 {
   text-transform: uppercase;
 }
 
-.track-row {
-  display: grid;
-  grid-template-columns: 12px 1fr auto;
-  gap: 10px;
-  align-items: center;
-  width: 100%;
-  margin-bottom: 8px;
-  padding: 10px;
-  text-align: left;
-}
-
-.track-row.selected {
-  border-color: rgba(64, 216, 255, 0.8);
-}
-
-.track-row.inactive,
+.timeline-track-header.inactive,
 .strip.inactive {
   opacity: 0.54;
 }

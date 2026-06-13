@@ -31,7 +31,7 @@ describe("browser preview packaging", () => {
     writeFileSync(join(root, "docs", "V0_6_FOUNDATION_NOTES.md"), "# Foundation");
     writeFileSync(join(root, "docs", "RECORDING_PREP.md"), "# Recording");
     writeFileSync(join(root, "docs", "UPDATER_RELEASE_PIPELINE.md"), "# Updater");
-    writeFileSync(join(root, "docs", "v0.5.5-itch-release-readiness.md"), "# Readiness");
+    writeFileSync(join(root, "docs", "v0.5.6-itch-release-readiness.md"), "# Readiness");
     writeFileSync(join(root, "docs", "v0.5.4-native-cache.md"), "# Native cache");
 
     const zipPath = createPreviewZip({ root, version: "0.2.1" });
@@ -51,7 +51,7 @@ describe("browser preview packaging", () => {
     expect(names).toContain("docs/ITCH_RELEASE_CHECKLIST.md");
     expect(names).toContain("docs/RECORDING_PREP.md");
     expect(names).toContain("docs/UPDATER_RELEASE_PIPELINE.md");
-    expect(names).toContain("docs/v0.5.5-itch-release-readiness.md");
+    expect(names).toContain("docs/v0.5.6-itch-release-readiness.md");
     expect(names).toContain("docs/v0.5.4-native-cache.md");
     expect(readFileSync(join(root, "releases", "WHAT_WORKS_AND_WHATS_NEXT.md"), "utf8")).toBe("# Current docs");
     expect(readFileSync(join(root, "releases", "docs", "V0_5_1_HARDENING_NOTES.md"), "utf8")).toBe("# Hardening notes");

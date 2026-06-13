@@ -19,7 +19,7 @@ describe("Pocket DAW updater bridge", () => {
     expect(relaunch.message).toContain("close and reopen");
   });
 
-  it("sets conservative updater state defaults", () => {
+  it("sets updater state defaults with startup checks enabled", () => {
     const state = createInitialState();
 
     expect(state.showUpdaterPanel).toBe(false);
@@ -28,7 +28,7 @@ describe("Pocket DAW updater bridge", () => {
     expect(state.updaterCurrentVersion).toBe(POCKET_DAW_VERSION);
     expect(state.updaterAvailableVersion).toBeNull();
     expect(state.updaterDownloadProgress).toBeNull();
-    expect(state.updaterAutoCheckOnStartup).toBe(false);
+    expect(state.updaterAutoCheckOnStartup).toBe(true);
   });
 
   it("renders the Help update action and updater panel states", () => {

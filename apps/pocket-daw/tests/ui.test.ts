@@ -212,7 +212,6 @@ describe("Pocket DAW UI rendering", () => {
 
     [
       'data-scroll-key="app-shell"',
-      'data-scroll-key="track-list"',
       'data-scroll-key="timeline-scroll"',
       'data-scroll-key="inspector"',
       'data-scroll-key="mixer"',
@@ -228,6 +227,19 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('class="ruler-tick"');
     expect(html).toContain("<b>1</b><small>0:00</small>");
     expect(html).toContain("Click to seek by bar or time");
+  });
+
+  it("renders closer default zoom and marker rails aligned to bar coordinates", () => {
+    const state = createInitialState();
+    const html = renderAppShell(state);
+
+    expect(state.zoom).toBe(96);
+    expect(html).toContain("--bar:96px");
+    expect(html).toContain("--track-header:176px");
+    expect(html).toContain('class="marker-rail"');
+    expect(html).toContain("--marker-colour:");
+    expect(html).toContain("timeline-track-header");
+    expect(html).toContain('data-track-id="drums"');
   });
 
   it("renders transport cooking feedback when the app is busy preparing audio", () => {
