@@ -5,7 +5,7 @@ This document is the operator checklist for publishing a Pocket DAW Windows buil
 ## Current Release
 
 - App: Pocket DAW
-- Version: `0.5.6`
+- Version: `0.5.7`
 - Schema version: `2`
 - Itch project: `samfa12/pocket-daw`
 - Primary install/update test channel: `windows-installer`
@@ -19,22 +19,22 @@ Pocket DAW is a desktop app. For normal playtesting, the portable ZIP is conveni
 The itch release should include:
 
 - Portable folder/ZIP for manual download:
-  - `releases/itch/pocket-daw-windows-x64-v0.5.6/`
-  - `releases/itch/pocket-daw-windows-x64-v0.5.6.zip`
+  - `releases/itch/pocket-daw-windows-x64-v0.5.7/`
+  - `releases/itch/pocket-daw-windows-x64-v0.5.7.zip`
 - Installer folder for update testing:
   - `releases/itch/installers/`
-  - `Pocket DAW_0.5.6_x64-setup.exe`
-  - `Pocket DAW_0.5.6_x64-setup.exe.sig`
-  - `Pocket DAW_0.5.6_x64_en-US.msi`
+  - `Pocket DAW_0.5.7_x64-setup.exe`
+  - `Pocket DAW_0.5.7_x64-setup.exe.sig`
+  - `Pocket DAW_0.5.7_x64_en-US.msi`
   - matching `.sig` if Tauri generates it
 - Release metadata:
-  - `CHECKSUMS_SHA256_v0.5.6.txt`
-  - `pocket-daw-release-manifest-v0.5.6.json`
-  - `RELEASE_NOTES_v0.5.6.md`
-  - `README_FIRST_v0.5.6.txt`
-  - `KNOWN_LIMITATIONS_v0.5.6.md`
-  - `WINDOWS_SMOKE_CHECKLIST_v0.5.6.md`
-  - `FINAL_RELEASE_VERDICT_v0.5.6.md`
+  - `CHECKSUMS_SHA256_v0.5.7.txt`
+  - `pocket-daw-release-manifest-v0.5.7.json`
+  - `RELEASE_NOTES_v0.5.7.md`
+  - `README_FIRST_v0.5.7.txt`
+  - `KNOWN_LIMITATIONS_v0.5.7.md`
+  - `WINDOWS_SMOKE_CHECKLIST_v0.5.7.md`
+  - `FINAL_RELEASE_VERDICT_v0.5.7.md`
 
 Do not upload raw source, private signing keys, `.env`, `.pfx`, `node_modules`, `target`, debug symbols, source maps, or local machine paths.
 
@@ -75,7 +75,7 @@ npm run verify:artifacts
 Preview the portable folder:
 
 ```powershell
-butler push-preview releases/itch/pocket-daw-windows-x64-v0.5.6 samfa12/pocket-daw:windows-x64
+butler push-preview releases/itch/pocket-daw-windows-x64-v0.5.7 samfa12/pocket-daw:windows-x64
 ```
 
 Butler `push-preview` in v15.27.0 does not accept `--userversion`; keep `--userversion` on the actual `push` commands below.
@@ -83,13 +83,13 @@ Butler `push-preview` in v15.27.0 does not accept `--userversion`; keep `--userv
 Push portable folder hidden:
 
 ```powershell
-butler push releases/itch/pocket-daw-windows-x64-v0.5.6 samfa12/pocket-daw:windows-x64 --userversion 0.5.6 --hidden
+butler push releases/itch/pocket-daw-windows-x64-v0.5.7 samfa12/pocket-daw:windows-x64 --userversion 0.5.7 --hidden
 ```
 
 Push installer folder hidden for updater testing:
 
 ```powershell
-butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion 0.5.6 --hidden
+butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion 0.5.7 --hidden
 ```
 
 After upload, inspect the itch page and make the build visible only when the manual smoke status is acceptable.
@@ -111,19 +111,19 @@ The GitHub commit should match the source used to produce the itch artifacts.
 
 After this build is uploaded:
 
-1. Start from an installed Pocket DAW `0.5.5` build.
+1. Start from an installed Pocket DAW `0.5.6` build.
 2. Confirm it opens normally.
 3. Open Pocket DAW.
 4. Confirm Help -> Check for Updates opens the updater panel.
-5. Confirm it reports Pocket DAW `0.5.6` after the GitHub Release and `pocket-daw-latest.json` are live.
+5. Confirm it reports Pocket DAW `0.5.7` after the GitHub Release and `pocket-daw-latest.json` are live.
 6. Build future update-test patches with the same updater private key.
 7. Generate a GitHub updater manifest for the next patch, for example:
 
 ```powershell
-npm run release:updater-manifest -- --artifact "src-tauri/target/release/bundle/nsis/Pocket DAW_0.5.6_x64-setup.exe" --signature "src-tauri/target/release/bundle/nsis/Pocket DAW_0.5.6_x64-setup.exe.sig" --url "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/download/pocket-daw-v0.5.6/Pocket%20DAW_0.5.6_x64-setup.exe" --notes "releases/itch/RELEASE_NOTES_v0.5.6.md"
+npm run release:updater-manifest -- --artifact "releases/updater/Pocket_DAW_0.5.7_x64-setup.exe" --signature "releases/updater/Pocket_DAW_0.5.7_x64-setup.exe.sig" --url "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/download/pocket-daw-v0.5.7-updater-test/Pocket_DAW_0.5.7_x64-setup.exe" --notes "releases/itch/RELEASE_NOTES_v0.5.7.md"
 ```
 
-8. Create a GitHub Release such as `pocket-daw-v0.5.6`.
+8. Create a GitHub Release such as `pocket-daw-v0.5.7`.
 9. Upload:
     - setup exe
     - setup exe `.sig`
@@ -131,10 +131,10 @@ npm run release:updater-manifest -- --artifact "src-tauri/target/release/bundle/
     - `pocket-daw-latest.json`
     - `SHA256SUMS.txt`
     - release notes
-10. Reopen the installed `0.5.5` build.
+10. Reopen the installed `0.5.6` build.
 11. Use Help -> Check for Updates, or wait for the startup auto-check.
 12. Download and install the update from inside Pocket DAW.
 13. Restart Pocket DAW.
-14. Confirm the app reports `0.5.6` and normal project open/save/playback still works.
+14. Confirm the app reports `0.5.7` and normal project open/save/playback still works.
 
 Do not mark the updater production-ready until an installed older build updates successfully to a newer signed GitHub Release build on Windows.

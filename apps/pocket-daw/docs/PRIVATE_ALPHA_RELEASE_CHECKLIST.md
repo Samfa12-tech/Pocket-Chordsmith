@@ -1,6 +1,6 @@
 # Pocket DAW Public Free Itch Release Checklist
 
-This file replaces the older private-alpha checklist. Pocket DAW v0.5.6 is prepared as a free Windows desktop itch release candidate.
+This file replaces the older private-alpha checklist. Pocket DAW v0.5.7 is prepared as a free Windows desktop itch release candidate.
 
 ## Required Before Upload
 
@@ -16,7 +16,7 @@ This file replaces the older private-alpha checklist. Pocket DAW v0.5.6 is prepa
 
 ## Artifact Rules
 
-- Primary itch artifact is the portable folder/ZIP: `releases/itch/pocket-daw-windows-x64-v0.5.6`.
+- Primary itch artifact is the portable folder/ZIP: `releases/itch/pocket-daw-windows-x64-v0.5.7`.
 - The portable ZIP must contain `Pocket DAW.exe` at the root with README, release notes, limitations, license/freeware notice and checksums.
 - The ZIP must not be just an installer.
 - NSIS/MSI installers are optional secondary downloads only.
@@ -33,19 +33,19 @@ This file replaces the older private-alpha checklist. Pocket DAW v0.5.6 is prepa
 Preview only:
 
 ```powershell
-butler push-preview releases/itch/pocket-daw-windows-x64-v0.5.6 samfa12/pocket-daw:windows-x64
+butler push-preview releases/itch/pocket-daw-windows-x64-v0.5.7 samfa12/pocket-daw:windows-x64
 ```
 
 First hidden upload:
 
 ```powershell
-butler push releases/itch/pocket-daw-windows-x64-v0.5.6 samfa12/pocket-daw:windows-x64 --userversion 0.5.6 --hidden
+butler push releases/itch/pocket-daw-windows-x64-v0.5.7 samfa12/pocket-daw:windows-x64 --userversion 0.5.7 --hidden
 ```
 
 Optional installer secondary channel:
 
 ```powershell
-butler push releases/itch/installers/<installer-file-or-folder> samfa12/pocket-daw:windows-installer --userversion 0.5.6 --hidden
+butler push releases/itch/installers/<installer-file-or-folder> samfa12/pocket-daw:windows-installer --userversion 0.5.7 --hidden
 ```
 
 Do not run upload commands from automation unless a separate manual action explicitly instructs it. `npm run itch:push:hidden` refuses to upload unless `PUBLISH=1` is set.

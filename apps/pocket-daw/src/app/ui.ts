@@ -219,6 +219,10 @@ function renderTimeline(state: AppState): string {
           </label>
           <button data-action="zoom-out">Zoom -</button>
           <button data-action="zoom-in">Zoom +</button>
+          <label class="timeline-zoom-control">Zoom
+            <input id="timelineZoom" type="range" min="48" max="360" step="2" value="${sanitizeCssLengthOrNumber(zoom, 144, 48, 360)}">
+            <span data-zoom-readout="true">${Math.round(zoom)} px/bar</span>
+          </label>
           <label><input type="checkbox" id="loopEnabled" ${project.timeline.loop.enabled ? "checked" : ""}> Loop</label>
           <input class="bar-input" id="loopStart" type="number" min="1" value="${project.timeline.loop.startBar}">
           <input class="bar-input" id="loopEnd" type="number" min="2" value="${project.timeline.loop.endBar}">

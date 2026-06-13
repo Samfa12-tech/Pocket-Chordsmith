@@ -454,6 +454,14 @@ export class App {
       this.state.status = `Snap set to ${this.state.snapMode}.`;
       this.render();
     });
+    this.root.querySelector<HTMLInputElement>("#timelineZoom")?.addEventListener("input", (event) => {
+      this.previewTimelineZoom(Number((event.target as HTMLInputElement).value));
+    });
+    this.root.querySelector<HTMLInputElement>("#timelineZoom")?.addEventListener("change", (event) => {
+      this.state.zoom = this.clampTimelineZoom(Number((event.target as HTMLInputElement).value));
+      this.state.status = `Timeline zoom set to ${Math.round(this.state.zoom)} px/bar.`;
+      this.render({ preserveScroll: true });
+    });
     this.root.querySelectorAll<HTMLInputElement>("[data-midi-note-velocity]").forEach((input) => {
       input.addEventListener("change", () => {
         const [clipId, noteId] = String(input.dataset.midiNoteVelocity || "").split(":");
@@ -889,11 +897,11 @@ export class App {
     if (action === "loop-clear") this.applyProjectState(clearLoopCommand(this.state));
     if (action === "marker-add") this.applyProjectState(addMarkerAtPlayheadCommand(this.state));
     if (action === "zoom-in") {
-      this.state.zoom = Math.min(260, this.state.zoom + 12);
+      this.state.zoom = this.clampTimelineZoom(this.state.zoom + 18);
       this.render({ preserveScroll: true });
     }
     if (action === "zoom-out") {
-      this.state.zoom = Math.max(18, this.state.zoom - 6);
+      this.state.zoom = this.clampTimelineZoom(this.state.zoom - 12);
       this.render({ preserveScroll: true });
     }
     if (action === "import-text") this.importText(this.state.importText);
@@ -1018,11 +1026,11 @@ export class App {
     if (command === "move-clip-left") this.applyProjectState(moveSelectedClip(this.state, -1));
     if (command === "move-clip-right") this.applyProjectState(moveSelectedClip(this.state, 1));
     if (command === "zoom-in") {
-      this.state.zoom = Math.min(260, this.state.zoom + 12);
+      this.state.zoom = this.clampTimelineZoom(this.state.zoom + 18);
       this.render({ preserveScroll: true });
     }
     if (command === "zoom-out") {
-      this.state.zoom = Math.max(18, this.state.zoom - 6);
+      this.state.zoom = this.clampTimelineZoom(this.state.zoom - 12);
       this.render({ preserveScroll: true });
     }
     if (command === "undo") this.applyProjectState(undoCommand(this.state));
@@ -1060,6 +1068,29 @@ export class App {
         this.render({ preserveScroll: true });
       }
     }
+  }
+
+  private clampTimelineZoom(value: number): number {
+    if (!Number.isFinite(value)) return 144;
+    return Math.max(48, Math.min(360, Math.round(value)));
+  }
+
+  private previewTimelineZoom(value: number) {
+    this.state.zoom = this.clampTimelineZoom(value);
+    const timeline = this.root.querySelector<HTMLElement>("[data-timeline-surface]");
+    if (timeline) {
+      timeline.style.setProperty("--bar", `${this.state.zoom}px`);
+      timeline.style.width = `${this.timelineWidthPx()}px`;
+    }
+    const input = this.root.querySelector<HTMLInputElement>("#timelineZoom");
+    if (input) input.value = String(this.state.zoom);
+    const readout = this.root.querySelector<HTMLElement>("[data-zoom-readout]");
+    if (readout) readout.textContent = `${Math.round(this.state.zoom)} px/bar`;
+    this.updateLiveDom();
+  }
+
+  private timelineWidthPx(): number {
+    return Math.max(1100, this.timelineTrackHeaderWidth() + (currentProject(this.state).timeline.bars + 1) * this.state.zoom);
   }
 
   private async restartTransport() {
@@ -1418,8 +1449,9 @@ export class App {
     return `calc(var(--track-header) + ${Math.round(px)}px)`;
   }
 
-  private timelineTrackHeaderWidth(timeline: HTMLElement): number {
-    const raw = window.getComputedStyle(timeline).getPropertyValue("--track-header").trim();
+  private timelineTrackHeaderWidth(timeline?: HTMLElement): number {
+    const surface = timeline || this.root.querySelector<HTMLElement>("[data-timeline-surface]");
+    const raw = surface ? window.getComputedStyle(surface).getPropertyValue("--track-header").trim() : "";
     const parsed = Number.parseFloat(raw);
     return Number.isFinite(parsed) ? parsed : 176;
   }

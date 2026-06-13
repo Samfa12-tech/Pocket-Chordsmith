@@ -233,9 +233,11 @@ describe("Pocket DAW UI rendering", () => {
     const state = createInitialState();
     const html = renderAppShell(state);
 
-    expect(state.zoom).toBe(96);
-    expect(html).toContain("--bar:96px");
+    expect(state.zoom).toBe(144);
+    expect(html).toContain("--bar:144px");
     expect(html).toContain("--track-header:176px");
+    expect(html).toContain('id="timelineZoom"');
+    expect(html).toContain("144 px/bar");
     expect(html).toContain('class="marker-rail"');
     expect(html).toContain("--marker-colour:");
     expect(html).toContain("timeline-track-header");

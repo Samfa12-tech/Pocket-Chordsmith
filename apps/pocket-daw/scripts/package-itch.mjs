@@ -17,7 +17,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-x64";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = "Pocket DAW v0.5.6 - Timeline Marker and Updater Test";
+export const RELEASE_TITLE = "Pocket DAW v0.5.7 - Timeline Zoom and Row Alignment Test";
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -159,15 +159,16 @@ Older Windows systems may require Microsoft Edge WebView2 Runtime.
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN in the generated checklist until a tester completes it against this exact artifact.
 `,
-      "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Timeline Marker and Updater Test
+      "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Timeline Zoom and Row Alignment Test
 
 Pocket DAW is a free Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
 ## Highlights
 
-- Timeline markers now anchor to exact vertical rails at their bar positions, matching the Pocket Chordsmith-style grid alignment.
-- Default timeline zoom is much closer for first launch and reset/demo workflows.
-- Startup update checks now default to on; users can turn them off in the updater panel.
+- Default timeline zoom is closer again for first launch and reset/demo workflows.
+- A fluid timeline zoom slider now resizes the bar grid live from the timeline toolbar.
+- Sticky timeline row headers stay horizontally aligned with their track rows while bar/time labels stay above scrolled rows.
+- Timeline markers remain anchored to exact vertical rails at their bar positions, matching the Pocket Chordsmith-style grid alignment.
 - Portable Windows ZIP prepared as the primary itch artifact.
 - Optional NSIS/MSI installer artifacts are staged separately when Tauri builds them.
 - Release manifest and SHA-256 checksums are generated from actual files.

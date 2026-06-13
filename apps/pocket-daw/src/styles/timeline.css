@@ -46,6 +46,21 @@
   font-size: 12px;
 }
 
+.timeline-zoom-control {
+  min-width: 220px;
+}
+
+.timeline-zoom-control input {
+  width: 124px;
+  accent-color: #40d8ff;
+}
+
+.timeline-zoom-control span {
+  min-width: 64px;
+  color: #dce8ff;
+  font-variant-numeric: tabular-nums;
+}
+
 .timeline-scroll {
   position: relative;
   overflow: auto;
@@ -65,11 +80,12 @@
 .ruler {
   position: sticky;
   top: 0;
-  z-index: 8;
+  z-index: 40;
   height: 32px;
   border-bottom: 1px solid #26314c;
-  background: rgba(10, 15, 27, 0.96);
+  background: #0a0f1b;
   cursor: pointer;
+  isolation: isolate;
 }
 
 .ruler::before,
@@ -89,10 +105,11 @@
 .marker-lane {
   position: sticky;
   top: 32px;
-  z-index: 7;
+  z-index: 39;
   height: 26px;
   border-bottom: 1px solid #26314c;
-  background: rgba(12, 18, 32, 0.94);
+  background: #0c1220;
+  isolation: isolate;
 }
 
 .marker {
@@ -153,6 +170,7 @@
 
 .ruler-tick {
   position: absolute;
+  z-index: 2;
   top: 4px;
   display: grid;
   gap: 1px;
@@ -177,6 +195,7 @@
 
 .timeline-row {
   position: relative;
+  z-index: 1;
   height: 72px;
   border-bottom: 1px solid rgba(43, 54, 84, 0.7);
 }
@@ -188,7 +207,7 @@
 .timeline-track-header {
   position: sticky;
   left: 0;
-  z-index: 5;
+  z-index: 6;
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto;
   gap: 10px;
