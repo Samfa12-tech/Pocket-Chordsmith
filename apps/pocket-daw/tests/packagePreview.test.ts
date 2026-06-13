@@ -31,6 +31,7 @@ describe("browser preview packaging", () => {
     writeFileSync(join(root, "docs", "V0_6_FOUNDATION_NOTES.md"), "# Foundation");
     writeFileSync(join(root, "docs", "RECORDING_PREP.md"), "# Recording");
     writeFileSync(join(root, "docs", "UPDATER_RELEASE_PIPELINE.md"), "# Updater");
+    writeFileSync(join(root, "docs", "ALPHA_TESTING_RELEASE_STATUS.md"), "# Alpha status");
     writeFileSync(join(root, "docs", "v0.5.8-itch-release-readiness.md"), "# Readiness");
     writeFileSync(join(root, "docs", "v0.5.4-native-cache.md"), "# Native cache");
 
@@ -51,6 +52,7 @@ describe("browser preview packaging", () => {
     expect(names).toContain("docs/ITCH_RELEASE_CHECKLIST.md");
     expect(names).toContain("docs/RECORDING_PREP.md");
     expect(names).toContain("docs/UPDATER_RELEASE_PIPELINE.md");
+    expect(names).toContain("docs/ALPHA_TESTING_RELEASE_STATUS.md");
     expect(names).toContain("docs/v0.5.8-itch-release-readiness.md");
     expect(names).toContain("docs/v0.5.4-native-cache.md");
     expect(readFileSync(join(root, "releases", "WHAT_WORKS_AND_WHATS_NEXT.md"), "utf8")).toBe("# Current docs");

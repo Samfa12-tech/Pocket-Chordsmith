@@ -147,7 +147,7 @@ function releaseTextFiles() {
     portable: {
       "README_FIRST.txt": `Pocket DAW v${VERSION}
 
-This is the free Windows desktop release candidate for itch.io.
+This is the free Windows desktop alpha-testing release for itch.io.
 
 Install:
 1. Extract this ZIP to a normal user folder.
@@ -288,7 +288,7 @@ Pocket DAW by Samfa12 / Pocket Chordsmith.
 - Pricing: Free, or Name Your Own Price with $0 minimum if preferred.
 - Classification/category: Tool.
 - Platform: Windows.
-- Release status: In development/public alpha unless manual QA justifies Released.
+- Release status: Alpha testing unless manual QA justifies stronger wording.
 - Tags: music, daw, midi, songwriting, music-production, game-audio, windows, tauri, tool.
 - AI disclosure: TODO - creator must fill this honestly before publishing.
 - Do not set the itch page to HTML unless intentionally uploading a separate browser preview build.
@@ -441,7 +441,7 @@ GO WITH CAVEATS - ready only if caveats are acceptable
 - Signature status: ${unsigned.length ? unsigned.map((artifact) => `${artifact.path}: ${artifact.signatureStatus}`).join("; ") : "signed"}
 - Windows smoke test status: NOT RUN.
 - Manual itch upload status: NOT RUN.
-- Release wording: free Windows desktop public-alpha/release-candidate tooling. Use "In development/public alpha" unless the manual smoke checklist passes.
+- Release wording: free Windows desktop alpha-testing tooling. Use stronger wording only if the manual smoke checklist passes.
 
 ## Key Known Limitations
 

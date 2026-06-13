@@ -1265,7 +1265,7 @@ function renderControlsPanel(state: AppState): string {
           <p><strong>Mixer</strong><span>Use Volume and Pan sliders. Meters show live peak audio. Mute silences a track; Solo isolates it.</span></p>
           <p><strong>Diagnostics</strong><span>v${escapeHtml(POCKET_DAW_VERSION)} / ${escapeHtml(environmentLabel())} / ${escapeHtml(state.currentFile.path || state.currentFile.label)} / recent: ${escapeHtml(recent)}</span></p>
           <p><strong>Save / Export</strong><span>Save .pocketdaw projects, export full-song WAV, or export multi-track MIDI.</span></p>
-          <p><strong>Private alpha</strong><span>Recording stays guarded. Native Collect Media can copy external audio beside a saved project; Relink/Reload can refresh audio buffers in the installed app.</span></p>
+          <p><strong>Alpha testing</strong><span>Recording stays guarded. Native Collect Media can copy external audio beside a saved project; Relink/Reload can refresh audio buffers in the installed app.</span></p>
         </div>
         <button data-action="export-diagnostics">Export Diagnostics</button>
       </section>

@@ -1,6 +1,13 @@
 # Pocket DAW Windows Smoke Checklist
 
-Run this against the exact packaged portable Windows ZIP, not only Vite dev mode or the browser preview. Fill every row before claiming Windows smoke passed.
+Run this against the exact packaged Windows alpha build from itch, not only Vite dev mode or the browser preview. Fill every row before claiming Windows smoke passed.
+
+Current alpha target:
+
+- Version: `0.5.9`
+- Itch page: `https://samfa12.itch.io/pocket-daw`
+- Portable ZIP hash: `e96d5dfff117a302fef1376c0a9ffa46bba80f4ca046a633dd5c09e189b61a72`
+- Updater setup EXE hash: `bd45352218567cb3a9ccf3166a3935c15182c6c53808b1234744858e9a7f9732`
 
 | Check | Expected result | Actual result | Pass/Fail/Not Run | Notes | Tester | Date | Artifact hash tested |
 | --- | --- | --- | --- | --- | --- | --- | --- |

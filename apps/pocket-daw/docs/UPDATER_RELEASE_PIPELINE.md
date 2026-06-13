@@ -63,13 +63,13 @@ Example for Windows x86_64:
 
 ```json
 {
-  "version": "0.5.4",
+  "version": "0.5.9",
   "notes": "Pocket DAW update notes here.",
   "pub_date": "2026-06-13T00:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "CONTENTS_OF_SIG_FILE_HERE_NOT_PATH",
-      "url": "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/download/pocket-daw-v0.5.4/Pocket_DAW_0.5.4_x64-setup.exe"
+      "url": "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/download/pocket-daw-v0.5.9-updater-test/Pocket_DAW_0.5.9_x64-setup.exe"
     }
   }
 }
@@ -78,7 +78,7 @@ Example for Windows x86_64:
 Helper command:
 
 ```powershell
-npm run release:updater-manifest -- --artifact "src-tauri/target/release/bundle/nsis/Pocket_DAW_0.5.4_x64-setup.exe" --signature "src-tauri/target/release/bundle/nsis/Pocket_DAW_0.5.4_x64-setup.exe.sig" --url "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/download/pocket-daw-v0.5.4/Pocket_DAW_0.5.4_x64-setup.exe" --notes "releases/itch/RELEASE_NOTES_v0.5.4.md"
+npm run release:updater-manifest -- --artifact "releases/updater/Pocket_DAW_0.5.9_x64-setup.exe" --signature "releases/updater/Pocket_DAW_0.5.9_x64-setup.exe.sig" --url "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/download/pocket-daw-v0.5.9-updater-test/Pocket_DAW_0.5.9_x64-setup.exe" --notes "releases/itch/RELEASE_NOTES_v0.5.9.md"
 ```
 
 This writes:
@@ -118,4 +118,4 @@ Do not mark the updater production-ready until this passes on Windows:
 9. Choose Restart Pocket DAW.
 10. Confirm the restarted app shows the newer version and projects still open/play/save correctly.
 
-Manual checks remain the primary update flow for this pass. The startup auto-check preference is present, defaults off, and must not auto-download or auto-install.
+Manual checks remain available. Startup auto-check is enabled for alpha testing, but it must not auto-download or auto-install.
