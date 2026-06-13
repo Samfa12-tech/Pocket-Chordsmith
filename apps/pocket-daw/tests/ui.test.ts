@@ -102,6 +102,10 @@ describe("Pocket DAW UI rendering", () => {
 
     expect(html).toContain('data-chordsmith-global="key"');
     expect(html).toContain('data-chordsmith-global="bpm"');
+    expect(html).toContain('data-chordsmith-global="timeSig"');
+    expect(html).toContain('data-chordsmith-global="resolution"');
+    expect(html).toContain('id="songSectionToAdd"');
+    expect(html).toContain('data-action="section-add"');
     expect(html).toContain('id="chordsmithSectionSelect"');
     expect(html).toContain('data-melody-step="A:0:0"');
     expect(html).toContain('data-drum-step="A:kick:0"');
@@ -110,6 +114,20 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('data-inline-sequencer-role="chords"');
     expect(html).toContain('data-inline-sequencer-role="melody"');
     expect(html).toContain('data-inline-sequencer-role="guitar"');
+  });
+
+  it("starts inline sequencer boxes at the bar edge without lane-label offsets", () => {
+    const html = renderAppShell(createInitialState());
+    const inline = html.match(/<div class="inline-sequencer inline-drums[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/)?.[0] || "";
+
+    expect(inline).toContain("left:calc(var(--track-header) + (0 * var(--bar)))");
+    expect(inline).toContain("--inline-steps:64");
+    expect(inline).toContain("grid-template-columns:repeat(64, minmax(0, 1fr))");
+    expect(inline).toContain('aria-label="Kick"');
+    expect(inline).not.toContain(">K<");
+    expect(inline).not.toContain(">S<");
+    expect(html).toContain("Kick / Snare / Hat");
+    expect(html).toContain("Bass steps");
   });
 
   it("keeps the selected generated instrument focused in the inspector", () => {
@@ -229,15 +247,15 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Click to seek by bar or time");
   });
 
-  it("renders closer default zoom and marker rails aligned to bar coordinates", () => {
+  it("renders close default zoom and marker rails aligned to bar coordinates", () => {
     const state = createInitialState();
     const html = renderAppShell(state);
 
-    expect(state.zoom).toBe(144);
-    expect(html).toContain("--bar:144px");
+    expect(state.zoom).toBe(240);
+    expect(html).toContain("--bar:240px");
     expect(html).toContain("--track-header:176px");
     expect(html).toContain('id="timelineZoom"');
-    expect(html).toContain("144 px/bar");
+    expect(html).toContain("240 px/bar");
     expect(html).toContain('class="marker-rail"');
     expect(html).toContain("--marker-colour:");
     expect(html).toContain("timeline-track-header");

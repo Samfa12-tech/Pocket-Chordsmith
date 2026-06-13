@@ -1,6 +1,6 @@
 {
   "name": "pocket-daw",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "Free Windows desktop arrangement and production app for Pocket Chordsmith projects, built with Vite, TypeScript, Tauri, and native audio playback.",
   "private": true,
   "license": "UNLICENSED",
@@ -34,7 +34,7 @@
     "verify:artifacts": "node scripts/verify-release-artifacts.mjs",
     "verify:itch": "node scripts/verify-itch.mjs",
     "release:itch:local": "npm run verify:itch",
-    "itch:preview": "butler push-preview releases/itch/pocket-daw-windows-x64-v0.5.7 samfa12/pocket-daw:windows-x64",
+    "itch:preview": "butler push-preview releases/itch/pocket-daw-windows-x64-v0.5.8 samfa12/pocket-daw:windows-x64",
     "itch:push:hidden": "node scripts/guarded-butler-push.mjs",
     "verify:release": "node scripts/verify-release.mjs",
     "verify:native-release": "node scripts/verify-release.mjs --native-release",

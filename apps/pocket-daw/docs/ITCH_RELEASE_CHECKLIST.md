@@ -1,6 +1,6 @@
 # Pocket DAW Itch Release Checklist
 
-Pocket DAW v0.5.7 is a free Windows desktop downloadable app. The portable Windows ZIP is the primary itch upload.
+Pocket DAW v0.5.8 is a free Windows desktop downloadable app. The portable Windows ZIP is the primary itch upload.
 
 ## Build And Verify
 
@@ -11,11 +11,11 @@ npm run verify:itch
 
 This produces:
 
-- `releases/itch/pocket-daw-windows-x64-v0.5.7/`
-- `releases/itch/pocket-daw-windows-x64-v0.5.7.zip`
-- `releases/itch/pocket-daw-release-manifest-v0.5.7.json`
-- `releases/itch/CHECKSUMS_SHA256_v0.5.7.txt`
-- `releases/itch/FINAL_RELEASE_VERDICT_v0.5.7.md`
+- `releases/itch/pocket-daw-windows-x64-v0.5.8/`
+- `releases/itch/pocket-daw-windows-x64-v0.5.8.zip`
+- `releases/itch/pocket-daw-release-manifest-v0.5.8.json`
+- `releases/itch/CHECKSUMS_SHA256_v0.5.8.txt`
+- `releases/itch/FINAL_RELEASE_VERDICT_v0.5.8.md`
 
 ## Itch Setup
 
@@ -32,20 +32,20 @@ This produces:
 Prefer pushing the portable folder with butler:
 
 ```powershell
-butler push-preview releases/itch/pocket-daw-windows-x64-v0.5.7 samfa12/pocket-daw:windows-x64
-butler push releases/itch/pocket-daw-windows-x64-v0.5.7 samfa12/pocket-daw:windows-x64 --userversion 0.5.7 --hidden
+butler push-preview releases/itch/pocket-daw-windows-x64-v0.5.8 samfa12/pocket-daw:windows-x64
+butler push releases/itch/pocket-daw-windows-x64-v0.5.8 samfa12/pocket-daw:windows-x64 --userversion 0.5.8 --hidden
 ```
 
-Manual browser upload may use `releases/itch/pocket-daw-windows-x64-v0.5.7.zip`.
+Manual browser upload may use `releases/itch/pocket-daw-windows-x64-v0.5.8.zip`.
 
 Optional installer secondary channel:
 
 ```powershell
-butler push releases/itch/installers/<installer-file-or-folder> samfa12/pocket-daw:windows-installer --userversion 0.5.7 --hidden
+butler push releases/itch/installers/<installer-file-or-folder> samfa12/pocket-daw:windows-installer --userversion 0.5.8 --hidden
 ```
 
 If the itch slug differs, replace `samfa12/pocket-daw`.
 
 ## Gate
 
-Do not publish publicly unless `FINAL_RELEASE_VERDICT_v0.5.7.md` is acceptable and the manual Windows smoke checklist is completed or the caveats are explicitly accepted.
+Do not publish publicly unless `FINAL_RELEASE_VERDICT_v0.5.8.md` is acceptable and the manual Windows smoke checklist is completed or the caveats are explicitly accepted.

@@ -18,6 +18,7 @@ import {
   setMelodyPan,
   setMelodySolo,
   setSectionBars,
+  appendChordsmithSection,
   setSectionChord,
   toggleBassAccent,
   toggleBassHold,
@@ -59,6 +60,20 @@ describe("Chordsmith visual sequencer edits", () => {
     const parsed = parsePocketDawProjectFile(raw);
     expect((parsed.sourceRefs[0].original as Record<string, unknown>).unknownFutureChordsmithField).toBeTruthy();
     expect(((parsed.sourceRefs[0].original as Record<string, unknown>).sectionBars as Record<string, unknown>).A).toBe(2);
+  });
+
+  it("appends Chordsmith sections and syncs timeline markers", () => {
+    let project = createDemoProject();
+    project = appendChordsmithSection(project, "B");
+
+    const pcs = getPrimaryChordsmithSource(project);
+    const sectionClips = project.timeline.clips.filter((clip) => clip.type === "generated-section");
+    const lastClip = sectionClips.at(-1)!;
+
+    expect(pcs?.songSequence.at(-1)).toBe("B");
+    expect(lastClip).toMatchObject({ sectionId: "B", name: "Section B", barLength: pcs?.sections.B.bars });
+    expect(project.timeline.markers.at(-1)).toMatchObject({ bar: lastClip.startBar, name: "Section B" });
+    expect((project.sourceRefs[0].original as Record<string, unknown>).songSequence).toEqual(pcs?.songSequence);
   });
 
   it("feeds drum, bass, melody and guitar grid edits into rendered events", () => {
@@ -129,7 +144,7 @@ describe("Chordsmith visual sequencer edits", () => {
 
   it("updates global, melody and guitar parity settings for playback and source roundtrip", () => {
     let project = createDemoProject();
-    project = setChordsmithGlobals(project, { key: "D", scale: "minor", bpm: 132, swing: 0.12 });
+    project = setChordsmithGlobals(project, { key: "D", scale: "minor", bpm: 132, swing: 0.12, timeSig: 3, resolution: 8 });
     project = setBassMode(project, "manual");
     project = setMelodyOctave(project, "A", 0, 1);
     project = setMelodyPan(project, "A", 0, -0.35);
@@ -141,15 +156,15 @@ describe("Chordsmith visual sequencer edits", () => {
     const original = project.sourceRefs[0].original as Record<string, unknown>;
     const guitarTrack = project.tracks.find((track) => track.role === "guitar");
 
-    expect(project.project).toMatchObject({ key: "D", scale: "minor", bpm: 132, swing: 0.12 });
-    expect(pcs).toMatchObject({ key: "D", scale: "minor", bpm: 132, swing: 0.12, bassMode: "manual", guitarTone: "crunch", guitarRegister: "high", guitarStrumMode: "alternate", guitarVolume: 0.42 });
+    expect(project.project).toMatchObject({ key: "D", scale: "minor", bpm: 132, swing: 0.12, timeSig: 3, resolution: 8 });
+    expect(pcs).toMatchObject({ key: "D", scale: "minor", bpm: 132, swing: 0.12, timeSig: 3, resolution: 8, bassMode: "manual", guitarTone: "crunch", guitarRegister: "high", guitarStrumMode: "alternate", guitarVolume: 0.42 });
     expect(pcs?.sections.A.melodyOctaves[0]).toBe(1);
     expect(pcs?.sections.A.melodyPan[0]).toBe(-0.35);
     expect(pcs?.sections.A.melodyMute[0]).toBe(true);
     expect(pcs?.sections.A.melodySolo[0]).toBe(true);
     expect(guitarTrack?.active).toBe(true);
     expect(guitarTrack?.volume).toBe(0.42);
-    expect(original).toMatchObject({ key: "D", scale: "minor", bpm: 132, swing: 0.12, bassMode: "manual", guitarTone: "crunch", guitarRegister: "high", guitarStrumMode: "alternate", guitarVolume: 0.42 });
+    expect(original).toMatchObject({ key: "D", scale: "minor", bpm: 132, swing: 0.12, timeSig: 3, resolution: 8, bassMode: "manual", guitarTone: "crunch", guitarRegister: "high", guitarStrumMode: "alternate", guitarVolume: 0.42 });
     expect((original.melodyMuteA as boolean[])[0]).toBe(true);
     expect((original.melodySoloA as boolean[])[0]).toBe(true);
   });

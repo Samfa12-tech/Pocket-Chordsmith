@@ -37,13 +37,13 @@ describe("Pocket DAW updater bridge", () => {
 
     state.showUpdaterPanel = true;
     state.updaterStatus = "available";
-    state.updaterAvailableVersion = "0.5.7";
+    state.updaterAvailableVersion = "0.5.8";
     state.updaterReleaseNotes = "A signed update is ready.";
     state.updaterDownloadProgress = 0.42;
     const html = renderAppShell(state);
 
     expect(html).toContain("Pocket DAW Updates");
-    expect(html).toContain("Pocket DAW 0.5.7 is available.");
+    expect(html).toContain("Pocket DAW 0.5.8 is available.");
     expect(html).toContain("A signed update is ready.");
     expect(html).toContain("Download and Install");
     expect(html).toContain("Check silently on startup");

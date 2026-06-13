@@ -25,6 +25,7 @@ import {
 } from "./renderSafety";
 
 const CHORD_LABELS = ["I", "II", "III", "IV", "V", "VI", "VII"];
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const BASS_LABELS = ["R", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"];
 const MELODY_INSTRUMENTS = [
   "pulse",
@@ -192,6 +193,7 @@ function renderTransport(state: AppState): string {
 
 function renderTimeline(state: AppState): string {
   const project = currentProject(state);
+  const pcs = getPrimaryChordsmithSource(project);
   const zoom = state.zoom;
   const width = Math.max(1100, 176 + (project.timeline.bars + 1) * zoom);
   const playheadLeft = (state.playheadBar - 1) * zoom;
@@ -211,6 +213,7 @@ function renderTimeline(state: AppState): string {
           <button data-action="clip-delete">Delete</button>
           <button data-action="clip-mute">Mute Clip</button>
         </div>
+        ${renderTimelineSongSettings(pcs)}
         <div class="timeline-options">
           <label>Snap
             <select id="snapMode">
@@ -220,7 +223,7 @@ function renderTimeline(state: AppState): string {
           <button data-action="zoom-out">Zoom -</button>
           <button data-action="zoom-in">Zoom +</button>
           <label class="timeline-zoom-control">Zoom
-            <input id="timelineZoom" type="range" min="48" max="360" step="2" value="${sanitizeCssLengthOrNumber(zoom, 144, 48, 360)}">
+            <input id="timelineZoom" type="range" min="48" max="360" step="2" value="${sanitizeCssLengthOrNumber(zoom, 240, 48, 360)}">
             <span data-zoom-readout="true">${Math.round(zoom)} px/bar</span>
           </label>
           <label><input type="checkbox" id="loopEnabled" ${project.timeline.loop.enabled ? "checked" : ""}> Loop</label>
@@ -242,6 +245,44 @@ function renderTimeline(state: AppState): string {
         </div>
       </div>
     </section>
+  `;
+}
+
+function renderTimelineSongSettings(pcs: SanitizedPcsProject | null): string {
+  if (!pcs) return "";
+  const sectionCounts = new Map<string, number>();
+  pcs.songSequence.forEach((id) => sectionCounts.set(id, (sectionCounts.get(id) || 0) + 1));
+  const nextUnused = SECTION_IDS.find((id) => !sectionCounts.has(id)) || pcs.songSequence.at(-1) || "A";
+  return `
+    <div class="song-settings-strip" aria-label="Song settings">
+      <label>BPM <input data-chordsmith-global="bpm" type="number" min="40" max="240" value="${sanitizeCssLengthOrNumber(pcs.bpm, 118, 40, 240)}"></label>
+      <label>Key
+        <select data-chordsmith-global="key">
+          ${NOTE_NAMES.map((key) => `<option value="${escapeAttr(key)}" ${pcs.key === key ? "selected" : ""}>${escapeHtml(key)}</option>`).join("")}
+        </select>
+      </label>
+      <label>Scale
+        <select data-chordsmith-global="scale">
+          ${(["major", "minor"] as const).map((scale) => `<option value="${scale}" ${pcs.scale === scale ? "selected" : ""}>${scale}</option>`).join("")}
+        </select>
+      </label>
+      <label>Time
+        <select data-chordsmith-global="timeSig">
+          ${[3, 4, 5, 6, 7].map((timeSig) => `<option value="${timeSig}" ${pcs.timeSig === timeSig ? "selected" : ""}>${timeSig}/4</option>`).join("")}
+        </select>
+      </label>
+      <label>Res
+        <select data-chordsmith-global="resolution">
+          ${[1, 2, 4, 8, 16].map((resolution) => `<option value="${resolution}" ${pcs.resolution === resolution ? "selected" : ""}>${resolution}/beat</option>`).join("")}
+        </select>
+      </label>
+      <label>Add
+        <select id="songSectionToAdd">
+          ${SECTION_IDS.map((id) => `<option value="${id}" ${id === nextUnused ? "selected" : ""}>Section ${id}${sectionCounts.has(id) ? ` (${sectionCounts.get(id)})` : ""}</option>`).join("")}
+        </select>
+      </label>
+      <button type="button" data-action="section-add">Add Section</button>
+    </div>
   `;
 }
 
@@ -280,7 +321,7 @@ function renderTimelineRows(state: AppState): string {
     .map(
       (track) => `
         <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}">
-          ${renderTimelineTrackHeader(track, state.selectedTrackId === track.id)}
+          ${renderTimelineTrackHeader(track, state.selectedTrackId === track.id, pcs)}
           ${clips.map((clip) => renderClip(project, clip, state.selectedClipId === clip.id, track)).join("")}
           ${renderInlineChordsmithEditor(state, pcs, track, clips)}
         </div>
@@ -289,14 +330,32 @@ function renderTimelineRows(state: AppState): string {
     .join("");
 }
 
-function renderTimelineTrackHeader(track: Track, selected: boolean): string {
+function renderTimelineTrackHeader(track: Track, selected: boolean, pcs: SanitizedPcsProject | null): string {
+  const lanes = trackHeaderLaneText(track, pcs);
   return `
     <button class="timeline-track-header ${selected ? "selected" : ""} ${track.active === false ? "inactive" : ""}" data-track-id="${sanitizeDataAttr(track.id)}">
       <span class="track-colour" style="background:${safeTrackColour(track.colour)}"></span>
-      <span class="timeline-track-name">${escapeHtml(track.name)}</span>
+      <span class="timeline-track-text">
+        <span class="timeline-track-name">${escapeHtml(track.name)}</span>
+        ${lanes ? `<span class="timeline-track-lanes">${escapeHtml(lanes)}</span>` : ""}
+      </span>
       <span class="track-state">${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
     </button>
   `;
+}
+
+function trackHeaderLaneText(track: Track, pcs: SanitizedPcsProject | null): string {
+  if (track.role === "drums") return "Kick / Snare / Hat";
+  if (track.role === "bass") return "Bass steps";
+  if (track.role === "chords") return "Chord bars";
+  if (track.role === "guitar") return "Guitar steps";
+  if (track.role === "melody") {
+    const index = selectedMelodyTrackIndex(track);
+    const firstSection = pcs?.songSequence[0] || "A";
+    const instrument = pcs?.sections[firstSection]?.melodyInstruments[index] || track.metadata?.chordsmithInstrument;
+    return instrument ? instrumentLabel(String(instrument)) : `Melody ${index + 1} steps`;
+  }
+  return "";
 }
 
 function renderInlineChordsmithEditor(
@@ -352,10 +411,9 @@ function renderInlineChordsmithClip(
 
 function renderInlineDrumEditor(section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   return `
-    <div class="inline-lane-grid drums-inline">
+    <div class="inline-lane-grid drums-inline" aria-label="Drum steps">
       ${(["kick", "snare", "hat"] as const).map((lane) => `
-        <div class="inline-lane">
-          <span>${drumLaneShortLabel(lane)}</span>
+        <div class="inline-lane" aria-label="${escapeAttr(drumLaneLabel(lane))}">
           <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
             ${Array.from({ length: steps }, (_, step) => {
               const actualStep = startStep + step;
@@ -373,8 +431,7 @@ function renderInlineDrumEditor(section: SanitizedPcsSection, startStep: number,
 
 function renderInlineBassEditor(section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   return `
-    <div class="inline-lane single-inline-lane">
-      <span>Bass</span>
+    <div class="inline-lane single-inline-lane" aria-label="Bass steps">
       <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
@@ -392,8 +449,7 @@ function renderInlineMelodyEditor(section: SanitizedPcsSection, trackIndex: numb
   const track = section.melodyTracks[trackIndex] || [];
   const instrument = section.melodyInstruments[trackIndex] || "synth";
   return `
-    <div class="inline-lane single-inline-lane">
-      <span>${escapeHtml(instrumentLabel(instrument))}</span>
+    <div class="inline-lane single-inline-lane" aria-label="${escapeAttr(`${instrumentLabel(instrument)} steps`)}">
       <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
@@ -409,8 +465,7 @@ function renderInlineMelodyEditor(section: SanitizedPcsSection, trackIndex: numb
 
 function renderInlineGuitarEditor(section: SanitizedPcsSection, startStep: number, steps: number): string {
   return `
-    <div class="inline-lane single-inline-lane">
-      <span>Guitar</span>
+    <div class="inline-lane single-inline-lane" aria-label="Guitar steps">
       <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
@@ -879,13 +934,6 @@ function drumLaneLabel(lane: string) {
   if (lane === "snare") return "Snare";
   if (lane === "hat") return "Hi-hat";
   return lane;
-}
-
-function drumLaneShortLabel(lane: string) {
-  if (lane === "kick") return "K";
-  if (lane === "snare") return "S";
-  if (lane === "hat") return "H";
-  return lane.slice(0, 1).toUpperCase();
 }
 
 function renderMixer(state: AppState): string {

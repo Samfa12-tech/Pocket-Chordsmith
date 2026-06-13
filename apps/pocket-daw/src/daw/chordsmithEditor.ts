@@ -1,4 +1,4 @@
-import type { PocketDawProject, SourceRef } from "./schema";
+import type { Clip, PocketDawProject, SourceRef } from "./schema";
 import { cloneProject } from "./dawProject";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
 
@@ -8,6 +8,8 @@ export interface ChordsmithGlobalPatch {
   scale?: string;
   bpm?: number;
   swing?: number;
+  timeSig?: number;
+  resolution?: number;
 }
 export type GuitarSettingsPatch = Partial<Pick<SanitizedPcsProject, "guitarEnabled" | "guitarTone" | "guitarRegister" | "guitarStrumMode" | "guitarVolume">>;
 
@@ -42,6 +44,32 @@ export function setSectionBars(project: PocketDawProject, sectionId: SectionId, 
   });
 }
 
+export function appendChordsmithSection(project: PocketDawProject, sectionId: SectionId): PocketDawProject {
+  return editChordsmithProject(project, (pcs, next) => {
+    const section = pcs.sections[sectionId];
+    if (!section) return;
+    section.active = true;
+    pcs.songSequence.push(sectionId);
+    const clip: Clip = {
+      id: nextGeneratedSectionClipId(next),
+      type: "generated-section",
+      trackId: "arrangement",
+      sourceRefId: getPrimaryChordsmithSourceRef(next)?.id,
+      sectionId,
+      startBar: next.timeline.clips.reduce((bar, item) => Math.max(bar, item.startBar + item.barLength), 1),
+      barLength: section.bars,
+      name: `Section ${sectionId}`,
+      muted: false,
+      color: SECTION_COLORS[sectionId] || "#40d8ff",
+      linked: true,
+      transforms: { transpose: 0, octave: 0, gain: 1, stemMutes: {} },
+      lane: 0,
+      metadata: { sourceIndex: pcs.songSequence.length - 1, sectionBars: section.bars }
+    };
+    next.timeline.clips.push(clip);
+  });
+}
+
 export function setSectionChord(project: PocketDawProject, sectionId: SectionId, barIndex: number, degree: number): PocketDawProject {
   return editChordsmithSection(project, sectionId, (_pcs, section) => {
     section.progression[barIndex] = clamp(Math.round(degree), 0, 6);
@@ -54,10 +82,14 @@ export function setChordsmithGlobals(project: PocketDawProject, patch: Chordsmit
     if (patch.scale !== undefined) pcs.scale = safeScale(patch.scale);
     if (patch.bpm !== undefined) pcs.bpm = clamp(Math.round(patch.bpm), 40, 240);
     if (patch.swing !== undefined) pcs.swing = clamp(Number(patch.swing), 0, 0.35);
+    if (patch.timeSig !== undefined) pcs.timeSig = safeTimeSig(patch.timeSig);
+    if (patch.resolution !== undefined) pcs.resolution = safeResolution(patch.resolution);
     next.project.key = pcs.key;
     next.project.scale = pcs.scale;
     next.project.bpm = pcs.bpm;
     next.project.swing = pcs.swing;
+    next.project.timeSig = pcs.timeSig;
+    next.project.resolution = pcs.resolution;
   });
 }
 
@@ -334,6 +366,8 @@ function syncChordsmithOriginalGlobals(ref: SourceRef, pcs: SanitizedPcsProject)
   target.swing = pcs.swing;
   target.timeSig = pcs.timeSig;
   target.resolution = pcs.resolution;
+  target.songSequence = pcs.songSequence.slice();
+  target.sectionSequence = pcs.songSequence.slice();
   target.bassMode = pcs.bassMode;
   target.guitarEnabled = pcs.guitarEnabled;
   target.guitarTone = pcs.guitarTone;
@@ -368,6 +402,31 @@ function ensureStep<T>(values: T[], step: number, fallback: T) {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
+}
+
+function safeTimeSig(value: number) {
+  const rounded = Math.round(Number(value));
+  return [3, 4, 5, 6, 7].includes(rounded) ? rounded : 4;
+}
+
+function safeResolution(value: number) {
+  const rounded = Math.round(Number(value));
+  return [1, 2, 4, 8, 16].includes(rounded) ? rounded : 4;
+}
+
+function nextGeneratedSectionClipId(project: PocketDawProject): string {
+  const max = project.timeline.clips.reduce((found, clip) => {
+    const match = /^clip_(\d+)$/.exec(clip.id);
+    return Math.max(found, match ? Number(match[1]) : 0);
+  }, 0);
+  let next = max + 1;
+  let id = `clip_${String(next).padStart(3, "0")}`;
+  const used = new Set(project.timeline.clips.map((clip) => clip.id));
+  while (used.has(id)) {
+    next += 1;
+    id = `clip_${String(next).padStart(3, "0")}`;
+  }
+  return id;
 }
 
 function safeInstrumentName(value: string) {

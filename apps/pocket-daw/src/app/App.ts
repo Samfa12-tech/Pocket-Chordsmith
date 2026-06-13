@@ -27,6 +27,7 @@ import {
 import {
   addAutomationPointCommand,
   addBusTrackCommand,
+  appendChordsmithSectionCommand,
   addTrackCommand,
   addTrackFxCommand,
   addMarkerAtPlayheadCommand,
@@ -379,7 +380,14 @@ export class App {
       input.addEventListener("change", () => {
         const field = input.dataset.chordsmithGlobal || "";
         const raw = input.value;
-        const patch: Parameters<typeof setChordsmithGlobalsCommand>[1] = field === "bpm" ? { bpm: Number(raw) } : field === "swing" ? { swing: Number(raw) } : field === "key" ? { key: raw } : field === "scale" ? { scale: raw } : {};
+        const patch: Parameters<typeof setChordsmithGlobalsCommand>[1] =
+          field === "bpm" ? { bpm: Number(raw) } :
+          field === "swing" ? { swing: Number(raw) } :
+          field === "timeSig" ? { timeSig: Number(raw) } :
+          field === "resolution" ? { resolution: Number(raw) } :
+          field === "key" ? { key: raw } :
+          field === "scale" ? { scale: raw } :
+          {};
         this.applyChordsmithEditorEdit(setChordsmithGlobalsCommand(this.state, patch), "chordsmith-globals");
       });
     });
@@ -896,6 +904,11 @@ export class App {
     if (action === "loop-selected") this.applyProjectState(setLoopToSelectedClipCommand(this.state));
     if (action === "loop-clear") this.applyProjectState(clearLoopCommand(this.state));
     if (action === "marker-add") this.applyProjectState(addMarkerAtPlayheadCommand(this.state));
+    if (action === "section-add") {
+      const sectionId = this.root.querySelector<HTMLSelectElement>("#songSectionToAdd")?.value || this.state.chordsmithEditorSectionId || "A";
+      this.state.chordsmithEditorSectionId = sectionId;
+      this.applyChordsmithEditorEdit(appendChordsmithSectionCommand(this.state, sectionId), "chordsmith-section-add");
+    }
     if (action === "zoom-in") {
       this.state.zoom = this.clampTimelineZoom(this.state.zoom + 18);
       this.render({ preserveScroll: true });

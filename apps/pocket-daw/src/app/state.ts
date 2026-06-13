@@ -64,7 +64,7 @@ export function createInitialState(): AppState {
     cursorBar: 1,
     snapMode: "bar",
     clipClipboard: null,
-    zoom: 144,
+    zoom: 240,
     status: "Editable demo copy loaded. Edits autosave to this copy.",
     playing: false,
     playheadBar: 1,

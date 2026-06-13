@@ -13,6 +13,7 @@ import { addBusTrack, addReturnTrack, routeTrackToOutput } from "../daw/routing"
 import { pushUndo, redo, undo } from "../daw/undo";
 import { addMarkerAtBar, clearLoop, deleteMarker, renameMarker, setLoopToClip, snapBarValue } from "../daw/timeline";
 import {
+  appendChordsmithSection,
   cycleBassStep,
   cycleDrumTuplet,
   cycleDrumStep,
@@ -312,6 +313,11 @@ export function deleteMarkerCommand(state: AppState, markerId: string): AppState
 export function setSectionBarsCommand(state: AppState, sectionId: string, bars: number): AppState {
   if (!isSectionId(sectionId)) return state;
   return commitProject(state, setSectionBars(state.undoStack.present, sectionId, bars), `Updated Section ${sectionId} length.`);
+}
+
+export function appendChordsmithSectionCommand(state: AppState, sectionId: string): AppState {
+  if (!isSectionId(sectionId)) return { ...state, status: "Choose a valid Chordsmith section to add." };
+  return commitProject(state, appendChordsmithSection(state.undoStack.present, sectionId), `Added Section ${sectionId} to the song.`);
 }
 
 export function setSectionChordCommand(state: AppState, sectionId: string, barIndex: number, degree: number): AppState {
