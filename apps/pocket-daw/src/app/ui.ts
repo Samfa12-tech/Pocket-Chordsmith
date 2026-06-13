@@ -13,6 +13,16 @@ import { createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJo
 import { createCollectMediaPlan } from "../daw/mediaPool";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { clipSourceStartBar } from "../daw/clips";
+import {
+  escapeAttr,
+  escapeHtml,
+  safeClipColour,
+  safeTrackColour,
+  sanitizeCssColor,
+  sanitizeCssLengthOrNumber,
+  sanitizeDataAttr,
+  sanitizeDomId
+} from "./renderSafety";
 
 const CHORD_LABELS = ["I", "II", "III", "IV", "V", "VI", "VII"];
 const BASS_LABELS = ["R", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"];
@@ -56,6 +66,7 @@ export function renderAppShell(state: AppState): string {
       ${state.showControls ? renderControlsPanel(state) : ""}
       ${state.showAddTrack ? renderAddTrackPanel() : ""}
       ${state.showAudioSettings ? renderAudioSettingsPanel(state) : ""}
+      ${state.showUpdaterPanel ? renderUpdaterPanel(state) : ""}
       <section class="import-panel" data-layout-zone="import">
         <textarea id="importText" spellcheck="false" placeholder="Paste PCS1 share code, raw Pocket Chordsmith JSON, Pocket DJ source session, or .pocketdaw JSON">${escapeHtml(state.importText)}</textarea>
         <div class="import-actions">
@@ -121,6 +132,7 @@ function renderMenuStrip(state: AppState): string {
         ["Add Marker", "marker-add"]
       ])}
       ${renderMenuGroup("Help", [
+        ["Check for Updates", "updater-open"],
         ["Controls", "controls-open"],
         ["Export Diagnostics", "export-diagnostics"]
       ])}
@@ -133,7 +145,7 @@ function renderMenuGroup(label: string, actions: Array<[string, string]>): strin
     <div class="menu-group">
       <button class="menu-root" type="button">${escapeHtml(label)}</button>
       <div class="menu-popover">
-        ${actions.map(([name, action]) => `<button type="button" data-action="${action}">${escapeHtml(name)}</button>`).join("")}
+        ${actions.map(([name, action]) => `<button type="button" data-action="${escapeAttr(action)}">${escapeHtml(name)}</button>`).join("")}
       </div>
     </div>
   `;
@@ -195,8 +207,8 @@ function renderTrackList(state: AppState): string {
 
 function renderTrackRow(track: Track, selected: boolean): string {
   return `
-    <button class="track-row ${selected ? "selected" : ""} ${track.active === false ? "inactive" : ""}" data-track-id="${track.id}">
-      <span class="track-colour" style="background:${track.colour}"></span>
+    <button class="track-row ${selected ? "selected" : ""} ${track.active === false ? "inactive" : ""}" data-track-id="${sanitizeDataAttr(track.id)}">
+      <span class="track-colour" style="background:${safeTrackColour(track.colour)}"></span>
       <span>${escapeHtml(track.name)}</span>
       <span class="track-state">${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
     </button>
@@ -268,9 +280,9 @@ function renderMarkers(state: AppState): string {
   return `
     <div class="marker-lane" aria-label="Markers">
       ${markers.map((marker) => `
-        <div class="marker" style="left:calc(${marker.bar - 1} * var(--bar));border-color:${escapeHtml(marker.color || "#40d8ff")}">
-          <button title="Rename marker" data-marker-rename="${marker.id}">${escapeHtml(marker.name)}</button>
-          <button title="Delete marker" data-marker-delete="${marker.id}">x</button>
+        <div class="marker" style="left:calc(${sanitizeCssLengthOrNumber(Number(marker.bar) - 1, 0)} * var(--bar));border-color:${sanitizeCssColor(marker.color, "#40d8ff")}">
+          <button title="Rename marker" data-marker-rename="${sanitizeDataAttr(marker.id)}">${escapeHtml(marker.name)}</button>
+          <button title="Delete marker" data-marker-delete="${sanitizeDataAttr(marker.id)}">x</button>
         </div>
       `).join("")}
     </div>
@@ -285,7 +297,7 @@ function renderTimelineRows(state: AppState): string {
   return rows
     .map(
       (track) => `
-        <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${track.id}">
+        <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}">
           ${clips.map((clip) => renderClip(project, clip, state.selectedClipId === clip.id, track)).join("")}
           ${renderInlineChordsmithEditor(state, pcs, track, clips)}
         </div>
@@ -339,7 +351,7 @@ function renderInlineChordsmithClip(
               : "";
   if (!body) return "";
   return `
-    <div class="inline-sequencer inline-${escapeHtml(track.role)} ${state.selectedClipId === clip.id ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${escapeHtml(clip.id)}" data-inline-row="${escapeHtml(track.id)}" data-inline-sequencer-role="${escapeHtml(track.role)}" data-inline-section="${escapeHtml(section.id)}" style="left:${left};width:${width};--inline-steps:${renderSteps};">
+    <div class="inline-sequencer inline-${sanitizeDomId(track.role, "role")} ${state.selectedClipId === clip.id ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${sanitizeDataAttr(clip.id)}" data-inline-row="${sanitizeDataAttr(track.id)}" data-inline-sequencer-role="${sanitizeDataAttr(track.role)}" data-inline-section="${sanitizeDataAttr(section.id)}" style="left:${left};width:${width};--inline-steps:${sanitizeCssLengthOrNumber(renderSteps, 0, 0, 256)};">
       ${body}
     </div>
   `;
@@ -357,7 +369,7 @@ function renderInlineDrumEditor(section: SanitizedPcsSection, startStep: number,
               const level = section.grid[lane][actualStep] || 0;
               const tuplet = !!section.gridTuplets[lane][actualStep];
               const selected = selection?.kind === "drums" && selection.sectionId === section.id && selection.lane === lane && selection.step === actualStep;
-              return `<button class="step timeline-step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet." data-drum-step="${section.id}:${lane}:${actualStep}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
+              return `<button class="step timeline-step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${escapeAttr(`${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet.`)}" data-drum-step="${sanitizeDataAttr(`${section.id}:${lane}:${actualStep}`)}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
             }).join("")}
           </div>
         </div>
@@ -376,7 +388,7 @@ function renderInlineBassEditor(section: SanitizedPcsSection, startStep: number,
           const note = section.bassNotes[actualStep];
           const tuplet = !!section.gridTuplets.bass[actualStep];
           const selected = selection?.kind === "bass" && selection.sectionId === section.id && selection.step === actualStep;
-          return `<button class="step timeline-step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Bass note step ${actualStep + 1}. Select then press H, S or T." data-bass-step="${section.id}:${actualStep}">${note === null || note === undefined ? "" : BASS_LABELS[note] || String(note)}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep], tuplet })}</button>`;
+          return `<button class="step timeline-step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Bass note step ${actualStep + 1}. Select then press H, S or T." data-bass-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${note === null || note === undefined ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep], tuplet })}</button>`;
         }).join("")}
       </div>
     </div>
@@ -395,7 +407,7 @@ function renderInlineMelodyEditor(section: SanitizedPcsSection, trackIndex: numb
           const note = track[actualStep];
           const tuplet = !!section.melodyTuplets[trackIndex]?.[actualStep];
           const selected = selection?.kind === "melody" && selection.sectionId === section.id && selection.trackIndex === trackIndex && selection.step === actualStep;
-          return `<button class="step timeline-step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Melody ${trackIndex + 1} note step ${actualStep + 1}. Select then press H, S or T." data-melody-step="${section.id}:${trackIndex}:${actualStep}">${note === null || note === undefined ? "" : BASS_LABELS[note] || String(note)}${stepBadges({ hold: !!section.melodyHold[trackIndex]?.[actualStep], slide: !!section.melodySlide[trackIndex]?.[actualStep], tuplet })}</button>`;
+          return `<button class="step timeline-step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Melody ${trackIndex + 1} note step ${actualStep + 1}. Select then press H, S or T." data-melody-step="${sanitizeDataAttr(`${section.id}:${trackIndex}:${actualStep}`)}">${note === null || note === undefined ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold: !!section.melodyHold[trackIndex]?.[actualStep], slide: !!section.melodySlide[trackIndex]?.[actualStep], tuplet })}</button>`;
         }).join("")}
       </div>
     </div>
@@ -410,7 +422,7 @@ function renderInlineGuitarEditor(section: SanitizedPcsSection, startStep: numbe
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
           const art = section.guitarPattern[actualStep] || "off";
-          return `<button class="step timeline-step guitar-step ${art !== "off" ? "on" : ""}" title="Guitar ${instrumentLabel(art)} step ${actualStep + 1}" data-guitar-step="${section.id}:${actualStep}">${GUITAR_LABELS[art] || art.slice(0, 2)}</button>`;
+          return `<button class="step timeline-step guitar-step ${art !== "off" ? "on" : ""}" title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
         }).join("")}
       </div>
     </div>
@@ -427,7 +439,7 @@ function renderInlineChordEditor(section: SanitizedPcsSection, startBar: number,
         return `
           <label title="Section ${section.id} bar ${bar + 1} chord">
             <span>${bar + 1}</span>
-            <select data-section-chord="${section.id}:${bar}">
+            <select data-section-chord="${sanitizeDataAttr(`${section.id}:${bar}`)}">
               ${CHORD_LABELS.map((label, value) => `<option value="${value}" ${degree === value ? "selected" : ""}>${label}</option>`).join("")}
             </select>
           </label>
@@ -445,7 +457,7 @@ function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, sele
   const peaks = Array.isArray(media?.metadata?.waveformPeaks) ? media.metadata.waveformPeaks.slice(0, 48) : [];
   const midi = clip.type === "midi" ? midiDataFromClip(clip) : null;
   return `
-    <button class="clip ${selected ? "selected" : ""} ${clip.muted ? "muted" : ""} ${clip.type === "audio" ? "audio-clip" : ""} ${clip.type === "midi" ? "midi-clip" : ""}" data-clip-id="${clip.id}" data-row="${track.id}" style="left:calc(${clip.startBar - 1} * var(--bar));width:calc(${clip.barLength} * var(--bar));border-color:${clip.color};background:color-mix(in srgb, ${clip.color} 28%, #15192a);">
+    <button class="clip ${selected ? "selected" : ""} ${clip.muted ? "muted" : ""} ${clip.type === "audio" ? "audio-clip" : ""} ${clip.type === "midi" ? "midi-clip" : ""}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-row="${sanitizeDataAttr(track.id)}" style="left:calc(${sanitizeCssLengthOrNumber(Number(clip.startBar) - 1, 0)} * var(--bar));width:calc(${sanitizeCssLengthOrNumber(clip.barLength, 1, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(clip.color)};background:color-mix(in srgb, ${safeClipColour(clip.color)} 28%, #15192a);">
       <strong>${escapeHtml(clip.sectionId || clip.name)}</strong>
       <span>${escapeHtml(clip.type === "audio" ? media?.name || "Audio" : clip.type === "midi" ? `${midi?.notes.length || 0} MIDI notes` : track.name)}</span>
       ${peaks.length ? `<i class="clip-waveform">${peaks.map((peak) => `<b style="height:${Math.max(2, Math.round(Number(peak) * 18))}px"></b>`).join("")}</i>` : ""}
@@ -520,23 +532,23 @@ function renderAutomationLane(project: ReturnType<typeof currentProject>, track:
   const lane = getTrackAutomationLane(project, track.id, field);
   const label = field === "volume" ? "Volume multiplier" : "Pan";
   if (!lane) {
-    return `<div class="automation-lane empty"><span>${label}</span><button type="button" data-automation-create="${escapeHtml(`${track.id}:${field}`)}">Create</button></div>`;
+    return `<div class="automation-lane empty"><span>${label}</span><button type="button" data-automation-create="${sanitizeDataAttr(`${track.id}:${field}`)}">Create</button></div>`;
   }
   const points = lane.points.slice().sort((a, b) => a.bar - b.bar);
   return `
     <div class="automation-lane">
       <header>
-        <label class="inline-toggle"><input data-automation-enabled="${escapeHtml(lane.id)}" type="checkbox" ${lane.enabled ? "checked" : ""}> ${label}</label>
-        <button type="button" data-automation-add-point="${escapeHtml(`${track.id}:${field}`)}">Add at Playhead</button>
+        <label class="inline-toggle"><input data-automation-enabled="${sanitizeDataAttr(lane.id)}" type="checkbox" ${lane.enabled ? "checked" : ""}> ${label}</label>
+        <button type="button" data-automation-add-point="${sanitizeDataAttr(`${track.id}:${field}`)}">Add at Playhead</button>
       </header>
       ${
         points.length
           ? `<div class="automation-points">
               ${points.map((point, index) => `
                 <div class="automation-point">
-                  <label>Bar <input data-automation-point-bar="${escapeHtml(`${lane.id}:${index}`)}" type="number" min="1" step="0.25" value="${point.bar}"></label>
-                  <label>Value <input data-automation-point-value="${escapeHtml(`${lane.id}:${index}`)}" type="number" min="${lane.min ?? (field === "pan" ? -1 : 0)}" max="${lane.max ?? (field === "pan" ? 1 : 1.2)}" step="${field === "pan" ? "0.05" : "0.01"}" value="${point.value}"></label>
-                  <button type="button" data-automation-delete-point="${escapeHtml(`${lane.id}:${index}`)}">Delete</button>
+                  <label>Bar <input data-automation-point-bar="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="1" step="0.25" value="${sanitizeCssLengthOrNumber(point.bar, 1, 1, 4096)}"></label>
+                  <label>Value <input data-automation-point-value="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="${sanitizeCssLengthOrNumber(lane.min ?? (field === "pan" ? -1 : 0), field === "pan" ? -1 : 0, -1, 1.2)}" max="${sanitizeCssLengthOrNumber(lane.max ?? (field === "pan" ? 1 : 1.2), field === "pan" ? 1 : 1.2, -1, 1.2)}" step="${field === "pan" ? "0.05" : "0.01"}" value="${sanitizeCssLengthOrNumber(point.value, 0, -1, 1.2)}"></label>
+                  <button type="button" data-automation-delete-point="${sanitizeDataAttr(`${lane.id}:${index}`)}">Delete</button>
                 </div>
               `).join("")}
             </div>`
@@ -551,8 +563,8 @@ function renderOutputSelector(project: ReturnType<typeof currentProject>, track:
   const outputs = availableTrackOutputs(project, track.id);
   return `
     <label>Output
-      <select data-track-output="${escapeHtml(track.id)}">
-        ${outputs.map((output) => `<option value="${escapeHtml(output.id)}" ${track.routing.outputId === output.id || (!track.routing.outputId && output.id === "master") ? "selected" : ""}>${escapeHtml(output.name)}</option>`).join("")}
+      <select data-track-output="${sanitizeDataAttr(track.id)}">
+        ${outputs.map((output) => `<option value="${escapeAttr(output.id)}" ${track.routing.outputId === output.id || (!track.routing.outputId && output.id === "master") ? "selected" : ""}>${escapeHtml(output.name)}</option>`).join("")}
       </select>
     </label>
   `;
@@ -575,7 +587,7 @@ function renderMidiClipEditor(clip: Clip): string {
     <div class="midi-editor">
       <header>
         <h3>Piano Roll</h3>
-        <button type="button" data-midi-note-add="${escapeHtml(clip.id)}">Add Note</button>
+        <button type="button" data-midi-note-add="${sanitizeDataAttr(clip.id)}">Add Note</button>
       </header>
       ${
         notes.length
@@ -585,15 +597,15 @@ function renderMidiClipEditor(clip: Clip): string {
                   <strong>${midiPitchLabel(note.pitch)}</strong>
                   <span>${note.startTick} ticks</span>
                   <span>${note.durationTicks} long</span>
-                  <label>Vel <input data-midi-note-velocity="${escapeHtml(`${clip.id}:${note.id}`)}" type="number" min="1" max="127" value="${note.velocity}"></label>
+                  <label>Vel <input data-midi-note-velocity="${sanitizeDataAttr(`${clip.id}:${note.id}`)}" type="number" min="1" max="127" value="${sanitizeCssLengthOrNumber(note.velocity, 96, 1, 127)}"></label>
                   <div class="midi-note-actions">
-                    <button type="button" title="Move note earlier" data-midi-note-move="${escapeHtml(`${clip.id}:${note.id}:-1`)}">&lt;</button>
-                    <button type="button" title="Move note later" data-midi-note-move="${escapeHtml(`${clip.id}:${note.id}:1`)}">&gt;</button>
-                    <button type="button" title="Pitch down" data-midi-note-pitch="${escapeHtml(`${clip.id}:${note.id}:-1`)}">-</button>
-                    <button type="button" title="Pitch up" data-midi-note-pitch="${escapeHtml(`${clip.id}:${note.id}:1`)}">+</button>
-                    <button type="button" title="Shorter" data-midi-note-duration="${escapeHtml(`${clip.id}:${note.id}:-1`)}">Short</button>
-                    <button type="button" title="Longer" data-midi-note-duration="${escapeHtml(`${clip.id}:${note.id}:1`)}">Long</button>
-                    <button type="button" title="Delete note" data-midi-note-delete="${escapeHtml(`${clip.id}:${note.id}`)}">Delete</button>
+                    <button type="button" title="Move note earlier" data-midi-note-move="${sanitizeDataAttr(`${clip.id}:${note.id}:-1`)}">&lt;</button>
+                    <button type="button" title="Move note later" data-midi-note-move="${sanitizeDataAttr(`${clip.id}:${note.id}:1`)}">&gt;</button>
+                    <button type="button" title="Pitch down" data-midi-note-pitch="${sanitizeDataAttr(`${clip.id}:${note.id}:-1`)}">-</button>
+                    <button type="button" title="Pitch up" data-midi-note-pitch="${sanitizeDataAttr(`${clip.id}:${note.id}:1`)}">+</button>
+                    <button type="button" title="Shorter" data-midi-note-duration="${sanitizeDataAttr(`${clip.id}:${note.id}:-1`)}">Short</button>
+                    <button type="button" title="Longer" data-midi-note-duration="${sanitizeDataAttr(`${clip.id}:${note.id}:1`)}">Long</button>
+                    <button type="button" title="Delete note" data-midi-note-delete="${sanitizeDataAttr(`${clip.id}:${note.id}`)}">Delete</button>
                   </div>
                 </div>
               `).join("")}
@@ -632,7 +644,7 @@ function renderChordsmithSequencer(state: AppState, project: ReturnType<typeof c
           <p>${section.bars} bar${section.bars === 1 ? "" : "s"} / steps ${startStep + 1}-${Math.min(totalSteps, startStep + windowSize)} of ${totalSteps} / edits feed playback and exports</p>
         </div>
         <label>Bars
-          <input data-section-bars="${section.id}" type="number" min="1" max="16" value="${section.bars}">
+          <input data-section-bars="${sanitizeDataAttr(section.id)}" type="number" min="1" max="16" value="${sanitizeCssLengthOrNumber(section.bars, 4, 1, 16)}">
         </label>
       </header>
       ${renderChordsmithScopeControls(state, pcs, section, selectedClipSection, page, maxPage)}
@@ -670,10 +682,10 @@ function renderChordsmithScopeControls(state: AppState, pcs: SanitizedPcsProject
 function renderChordsmithGlobals(pcs: SanitizedPcsProject): string {
   return `
     <div class="editor-controls globals">
-      <label>Key <input data-chordsmith-global="key" value="${escapeHtml(pcs.key)}"></label>
-      <label>Scale <input data-chordsmith-global="scale" value="${escapeHtml(pcs.scale)}"></label>
-      <label>BPM <input data-chordsmith-global="bpm" type="number" min="40" max="240" value="${pcs.bpm}"></label>
-      <label>Swing <input data-chordsmith-global="swing" type="number" min="0" max="0.35" step="0.01" value="${pcs.swing}"></label>
+      <label>Key <input data-chordsmith-global="key" value="${escapeAttr(pcs.key)}"></label>
+      <label>Scale <input data-chordsmith-global="scale" value="${escapeAttr(pcs.scale)}"></label>
+      <label>BPM <input data-chordsmith-global="bpm" type="number" min="40" max="240" value="${sanitizeCssLengthOrNumber(pcs.bpm, 118, 40, 240)}"></label>
+      <label>Swing <input data-chordsmith-global="swing" type="number" min="0" max="0.35" step="0.01" value="${sanitizeCssLengthOrNumber(pcs.swing, 0, 0, 0.35)}"></label>
     </div>
   `;
 }
@@ -702,7 +714,7 @@ function renderChordSelect(section: SanitizedPcsSection, bar: number): string {
   const degree = section.progression[bar] || 0;
   return `
     <label>Bar ${bar + 1}
-      <select data-section-chord="${section.id}:${bar}">
+      <select data-section-chord="${sanitizeDataAttr(`${section.id}:${bar}`)}">
         ${CHORD_LABELS.map((label, value) => `<option value="${value}" ${degree === value ? "selected" : ""}>${label}</option>`).join("")}
       </select>
     </label>
@@ -723,7 +735,7 @@ function renderDrumEditor(section: SanitizedPcsSection, startStep: number, steps
                 const level = section.grid[lane][actualStep] || 0;
                 const tuplet = !!section.gridTuplets[lane][actualStep];
                 const selected = selection?.kind === "drums" && selection.sectionId === section.id && selection.lane === lane && selection.step === actualStep;
-                return `<button class="step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet." data-drum-step="${section.id}:${lane}:${actualStep}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
+                return `<button class="step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${escapeAttr(`${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet.`)}" data-drum-step="${sanitizeDataAttr(`${section.id}:${lane}:${actualStep}`)}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
               }).join("")}
             </div>
           `
@@ -750,12 +762,12 @@ function renderBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection
           const note = section.bassNotes[actualStep];
           const tuplet = !!section.gridTuplets.bass[actualStep];
           const selected = selection?.kind === "bass" && selection.sectionId === section.id && selection.step === actualStep;
-          return `<button class="step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Bass note step ${actualStep + 1}. Select then press H, S or T." data-bass-step="${section.id}:${actualStep}">${note === null || note === undefined ? "" : BASS_LABELS[note] || String(note)}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep], tuplet })}</button>`;
+          return `<button class="step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Bass note step ${actualStep + 1}. Select then press H, S or T." data-bass-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${note === null || note === undefined ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep], tuplet })}</button>`;
         }).join("")}
       </div>
       ${renderMetaStepRow("accent", steps, (step) => {
         const actualStep = startStep + step;
-        return `<button class="step meta-step ${section.bassAccent[actualStep] ? "on accent" : ""}" title="Bass accent step ${actualStep + 1}" data-bass-accent="${section.id}:${actualStep}">${section.bassAccent[actualStep] ? "!" : ""}</button>`;
+        return `<button class="step meta-step ${section.bassAccent[actualStep] ? "on accent" : ""}" title="Bass accent step ${actualStep + 1}" data-bass-accent="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${section.bassAccent[actualStep] ? "!" : ""}</button>`;
       })}
     </div>
   `;
@@ -771,14 +783,14 @@ function renderMelodyEditor(section: SanitizedPcsSection, trackIndex: number, st
       <strong>Melody ${trackIndex + 1}</strong>
       <div class="editor-controls lane-controls">
         <label>Instrument
-          <select data-melody-instrument="${section.id}:${trackIndex}">
+          <select data-melody-instrument="${sanitizeDataAttr(`${section.id}:${trackIndex}`)}">
             ${MELODY_INSTRUMENTS.map((value) => `<option value="${value}" ${instrument === value ? "selected" : ""}>${escapeHtml(instrumentLabel(value))}</option>`).join("")}
           </select>
         </label>
-        <label>Octave <input data-melody-octave="${section.id}:${trackIndex}" type="number" min="-3" max="3" value="${octave}"></label>
-        <label>Pan <input data-melody-pan="${section.id}:${trackIndex}" type="range" min="-1" max="1" step="0.01" value="${pan}"></label>
-        <label class="inline-toggle"><input data-melody-mute="${section.id}:${trackIndex}" type="checkbox" ${section.melodyMute[trackIndex] ? "checked" : ""}> Mute</label>
-        <label class="inline-toggle"><input data-melody-solo="${section.id}:${trackIndex}" type="checkbox" ${section.melodySolo[trackIndex] ? "checked" : ""}> Solo</label>
+        <label>Octave <input data-melody-octave="${sanitizeDataAttr(`${section.id}:${trackIndex}`)}" type="number" min="-3" max="3" value="${sanitizeCssLengthOrNumber(octave, 0, -3, 3)}"></label>
+        <label>Pan <input data-melody-pan="${sanitizeDataAttr(`${section.id}:${trackIndex}`)}" type="range" min="-1" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(pan, 0, -1, 1)}"></label>
+        <label class="inline-toggle"><input data-melody-mute="${sanitizeDataAttr(`${section.id}:${trackIndex}`)}" type="checkbox" ${section.melodyMute[trackIndex] ? "checked" : ""}> Mute</label>
+        <label class="inline-toggle"><input data-melody-solo="${sanitizeDataAttr(`${section.id}:${trackIndex}`)}" type="checkbox" ${section.melodySolo[trackIndex] ? "checked" : ""}> Solo</label>
       </div>
       <div class="sequencer-row">
         <span>${escapeHtml(instrumentLabel(instrument))}</span>
@@ -787,7 +799,7 @@ function renderMelodyEditor(section: SanitizedPcsSection, trackIndex: number, st
           const note = track[actualStep];
           const tuplet = !!section.melodyTuplets[trackIndex]?.[actualStep];
           const selected = selection?.kind === "melody" && selection.sectionId === section.id && selection.trackIndex === trackIndex && selection.step === actualStep;
-          return `<button class="step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Melody ${trackIndex + 1} note step ${actualStep + 1}. Select then press H, S or T." data-melody-step="${section.id}:${trackIndex}:${actualStep}">${note === null || note === undefined ? "" : BASS_LABELS[note] || String(note)}${stepBadges({ hold: !!section.melodyHold[trackIndex]?.[actualStep], slide: !!section.melodySlide[trackIndex]?.[actualStep], tuplet })}</button>`;
+          return `<button class="step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Melody ${trackIndex + 1} note step ${actualStep + 1}. Select then press H, S or T." data-melody-step="${sanitizeDataAttr(`${section.id}:${trackIndex}:${actualStep}`)}">${note === null || note === undefined ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold: !!section.melodyHold[trackIndex]?.[actualStep], slide: !!section.melodySlide[trackIndex]?.[actualStep], tuplet })}</button>`;
         }).join("")}
       </div>
     </div>
@@ -829,14 +841,14 @@ function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: San
             ${["down", "up", "alternate"].map((mode) => `<option value="${mode}" ${pcs.guitarStrumMode === mode ? "selected" : ""}>${escapeHtml(instrumentLabel(mode))}</option>`).join("")}
           </select>
         </label>
-        <label>Volume <input data-guitar-setting="guitarVolume" type="range" min="0" max="1" step="0.01" value="${pcs.guitarVolume}"></label>
+        <label>Volume <input data-guitar-setting="guitarVolume" type="range" min="0" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(pcs.guitarVolume, 0.72, 0, 1)}"></label>
       </div>
       <div class="sequencer-row">
         <span>pattern</span>
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
           const art = section.guitarPattern[actualStep] || "off";
-          return `<button class="step guitar-step ${art !== "off" ? "on" : ""}" title="Guitar ${instrumentLabel(art)} step ${actualStep + 1}" data-guitar-step="${section.id}:${actualStep}">${GUITAR_LABELS[art] || art.slice(0, 2)}</button>`;
+          return `<button class="step guitar-step ${art !== "off" ? "on" : ""}" title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
         }).join("")}
       </div>
     </div>
@@ -920,14 +932,14 @@ function renderMediaPool(state: AppState): string {
                       <dt>Sample rate</dt><dd>${item.sampleRate ? `${item.sampleRate} Hz` : "-"}</dd>
                       <dt>Channels</dt><dd>${item.channels ?? "-"}</dd>
                       <dt>Size</dt><dd>${formatBytes(item.sizeBytes)}</dd>
-                      <dt>URI</dt><dd title="${escapeHtml(item.uri || "")}">${escapeHtml(item.uri || "-")}</dd>
+                      <dt>URI</dt><dd title="${escapeAttr(item.uri || "")}">${escapeHtml(item.uri || "-")}</dd>
                       <dt>Cache</dt><dd>${cacheItems.length ? cacheItems.map((cache) => `${escapeHtml(cache.id)}${cache.invalidated ? " invalid" : ""}`).join(", ") : "-"}</dd>
                     </dl>
                     ${renderMediaWaveform(item)}
                     <div class="media-item-actions">
-                      ${status.reloadable ? `<button type="button" data-reload-media="${escapeHtml(item.id)}" title="Reload this audio file into the runtime buffer cache">Reload</button>` : ""}
-                      ${status.relinkable ? `<button type="button" data-relink-media="${escapeHtml(item.id)}" title="Choose a replacement file for this media item">Relink</button>` : ""}
-                      ${item.kind === "audio" ? `<button type="button" data-place-audio="${escapeHtml(item.id)}">Place on Timeline</button>` : ""}
+                      ${status.reloadable ? `<button type="button" data-reload-media="${sanitizeDataAttr(item.id)}" title="Reload this audio file into the runtime buffer cache">Reload</button>` : ""}
+                      ${status.relinkable ? `<button type="button" data-relink-media="${sanitizeDataAttr(item.id)}" title="Choose a replacement file for this media item">Relink</button>` : ""}
+                      ${item.kind === "audio" ? `<button type="button" data-place-audio="${sanitizeDataAttr(item.id)}">Place on Timeline</button>` : ""}
                       ${item.kind === "midi" ? `<span>MIDI clip created on import</span>` : ""}
                     </div>
                   </article>
@@ -987,7 +999,7 @@ function renderExportPanel(state: AppState): string {
 function renderMediaWaveform(item: { metadata?: Record<string, unknown> }): string {
   const peaks = Array.isArray(item.metadata?.waveformPeaks) ? item.metadata.waveformPeaks.slice(0, 64) : [];
   if (!peaks.length) return "";
-  return `<div class="media-waveform">${peaks.map((peak) => `<span style="height:${Math.max(2, Math.round(Number(peak) * 28))}px"></span>`).join("")}</div>`;
+    return `<div class="media-waveform">${peaks.map((peak) => `<span style="height:${sanitizeCssLengthOrNumber(Math.max(2, Math.round(Number(peak) * 28)), 2, 2, 28)}px"></span>`).join("")}</div>`;
 }
 
 function renderMixerStrip(track: Track, meterLevel: number): string {
@@ -1005,21 +1017,21 @@ function renderMixerStrip(track: Track, meterLevel: number): string {
         <span>${escapeHtml(track.name)}</span>
         <small>${isMaster ? "Output" : track.active === false ? "Inactive" : track.solo ? "Solo" : track.mute ? "Muted" : "Active"}</small>
       </div>
-      <div class="meter" data-meter="${track.id}" aria-label="${escapeHtml(track.name)} peak meter ${meterLabel}" title="Live peak meter">
-        <span data-meter-fill="${track.id}" style="height:${Math.round(meterLevel * 100)}%"></span>
+      <div class="meter" data-meter="${sanitizeDataAttr(track.id)}" aria-label="${escapeAttr(`${track.name} peak meter ${meterLabel}`)}" title="Live peak meter">
+        <span data-meter-fill="${sanitizeDataAttr(track.id)}" style="height:${sanitizeCssLengthOrNumber(Math.round(meterLevel * 100), 0, 0, 100)}%"></span>
       </div>
       <label class="strip-control">
         <span>Volume <strong>${volumeLabel}</strong></span>
-        <input aria-label="${escapeHtml(track.name)} volume" aria-valuetext="${volumeLabel}" data-volume="${track.id}" data-mixer-control="volume" data-mixer-live="true" type="range" min="0" max="1.2" step="0.01" value="${track.volume}">
+        <input aria-label="${escapeAttr(`${track.name} volume`)}" aria-valuetext="${escapeAttr(volumeLabel)}" data-volume="${sanitizeDataAttr(track.id)}" data-mixer-control="volume" data-mixer-live="true" type="range" min="0" max="1.2" step="0.01" value="${sanitizeCssLengthOrNumber(track.volume, 1, 0, 1.2)}">
       </label>
       ${renderPanControl(track, isMaster, isReturn, panLabel)}
       <div class="strip-buttons">
         ${
           isMaster
             ? `<span class="strip-note">Limiter ${track.metadata?.limiter === false ? "Off" : "On"}</span>`
-            : `${canMuteSolo ? `<button type="button" title="Mute ${escapeHtml(track.name)}" class="${track.mute ? "on" : ""}" data-mute-track="${track.id}">Mute</button>
-               <button type="button" title="Solo ${escapeHtml(track.name)}" class="${track.solo ? "on" : ""}" data-solo-track="${track.id}">Solo</button>` : `<span class="strip-note">Return channel</span>`}
-               ${canArm ? `<button type="button" title="${recordBlockedTitle}" class="${track.armed ? "on record" : ""}" data-arm-track="${track.id}" disabled>Arm</button>` : ""}`
+            : `${canMuteSolo ? `<button type="button" title="${escapeAttr(`Mute ${track.name}`)}" class="${track.mute ? "on" : ""}" data-mute-track="${sanitizeDataAttr(track.id)}">Mute</button>
+               <button type="button" title="${escapeAttr(`Solo ${track.name}`)}" class="${track.solo ? "on" : ""}" data-solo-track="${sanitizeDataAttr(track.id)}">Solo</button>` : `<span class="strip-note">Return channel</span>`}
+               ${canArm ? `<button type="button" title="${escapeAttr(recordBlockedTitle)}" class="${track.armed ? "on record" : ""}" data-arm-track="${sanitizeDataAttr(track.id)}" disabled>Arm</button>` : ""}`
         }
       </div>
       ${!isMaster ? renderFxDropdown(track) : ""}
@@ -1034,8 +1046,8 @@ function renderPanControl(track: Track, isMaster: boolean, isReturn: boolean, pa
       <span>${isMaster ? "Output" : "Pan"} <strong>${isMaster ? "Main" : panLabel}</strong></span>
       ${
         isMaster
-          ? `<input aria-label="${escapeHtml(track.name)} output" type="range" min="0" max="1" step="1" value="1" disabled>`
-          : `<input aria-label="${escapeHtml(track.name)} pan" aria-valuetext="${escapeHtml(panLabel)}" data-pan="${track.id}" data-mixer-control="pan" data-mixer-live="true" type="range" min="-1" max="1" step="0.01" value="${track.pan}">`
+          ? `<input aria-label="${escapeAttr(`${track.name} output`)}" type="range" min="0" max="1" step="1" value="1" disabled>`
+          : `<input aria-label="${escapeAttr(`${track.name} pan`)}" aria-valuetext="${escapeAttr(panLabel)}" data-pan="${sanitizeDataAttr(track.id)}" data-mixer-control="pan" data-mixer-live="true" type="range" min="-1" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(track.pan, 0, -1, 1)}">`
       }
     </label>
   `;
@@ -1045,7 +1057,7 @@ function renderFxDropdown(track: Track): string {
   return `
     <label class="strip-control">
       <span>FX</span>
-      <select data-add-fx="${track.id}" aria-label="Add FX to ${escapeHtml(track.name)}">
+      <select data-add-fx="${sanitizeDataAttr(track.id)}" aria-label="${escapeAttr(`Add FX to ${track.name}`)}">
         <option value="">Add FX...</option>
         ${BUILT_IN_FX.map((fx) => `<option value="${fx.type}">${escapeHtml(fx.name)}</option>`).join("")}
       </select>
@@ -1061,8 +1073,8 @@ function renderFxInspector(chain: FxChain | null): string {
       ${chain.slots.length ? chain.slots.map((slot) => `
         <div class="fx-slot ${slot.enabled ? "" : "bypassed"}">
           <span>${escapeHtml(slot.name)}</span>
-          <button data-fx-toggle="${chain.id}:${slot.id}">${slot.enabled ? "Bypass" : "Enable"}</button>
-          <button data-fx-remove="${chain.id}:${slot.id}">Remove</button>
+          <button data-fx-toggle="${sanitizeDataAttr(`${chain.id}:${slot.id}`)}">${slot.enabled ? "Bypass" : "Enable"}</button>
+          <button data-fx-remove="${sanitizeDataAttr(`${chain.id}:${slot.id}`)}">Remove</button>
         </div>
       `).join("") : `<p>No FX yet.</p>`}
     </div>
@@ -1074,9 +1086,9 @@ function renderInputSelector(project: ReturnType<typeof currentProject> | null, 
   const inputs = (project.audioDeviceSettings.devices || []).filter((device) => device.kind === "input" || device.kind === "duplex");
   return `
     <label>Input
-      <select data-track-input="${track.id}">
+      <select data-track-input="${sanitizeDataAttr(track.id)}">
         <option value="">No input selected</option>
-        ${inputs.map((device) => `<option value="${escapeHtml(device.id)}" ${track.inputDeviceId === device.id ? "selected" : ""}>${escapeHtml(device.name)}</option>`).join("")}
+        ${inputs.map((device) => `<option value="${escapeAttr(device.id)}" ${track.inputDeviceId === device.id ? "selected" : ""}>${escapeHtml(device.name)}</option>`).join("")}
       </select>
     </label>
   `;
@@ -1134,6 +1146,51 @@ function renderAudioSettingsPanel(state: AppState): string {
   `;
 }
 
+function renderUpdaterPanel(state: AppState): string {
+  const hasUpdate = state.updaterStatus === "available";
+  const busy = state.updaterStatus === "checking" || state.updaterStatus === "downloading" || state.updaterStatus === "installing";
+  const readyToRestart = state.updaterStatus === "ready-to-restart";
+  const progressLabel = state.updaterDownloadProgress === null ? "" : `${Math.round(state.updaterDownloadProgress * 100)}%`;
+  return `
+    <div class="modal-backdrop" data-updater-backdrop="true">
+      <section class="controls-panel updater-panel" role="dialog" aria-modal="true" aria-labelledby="updater-title">
+        <header>
+          <h2 id="updater-title">Pocket DAW Updates</h2>
+          <button data-action="updater-close">Close</button>
+        </header>
+        <div class="control-guide">
+          <p><strong>Current version</strong><span>v${escapeHtml(state.updaterCurrentVersion)}</span></p>
+          <p><strong>Status</strong><span>${escapeHtml(updaterStatusText(state))}</span></p>
+          ${state.updaterAvailableVersion ? `<p><strong>Available version</strong><span>v${escapeHtml(state.updaterAvailableVersion)}</span></p>` : ""}
+          <p><strong>Source</strong><span>Signed GitHub Releases packages for the installed desktop app.</span></p>
+        </div>
+        ${state.updaterReleaseNotes ? `
+          <div class="updater-notes">
+            <strong>Release notes</strong>
+            <p>${escapeHtml(releaseNotesSummary(state.updaterReleaseNotes))}</p>
+          </div>
+        ` : ""}
+        ${state.updaterDownloadProgress !== null ? `
+          <div class="updater-progress" aria-label="Update download progress">
+            <span style="width:${sanitizeCssLengthOrNumber(Math.round(state.updaterDownloadProgress * 100), 0, 0, 100)}%"></span>
+            <strong>${escapeHtml(progressLabel)}</strong>
+          </div>
+        ` : ""}
+        <label class="inline-toggle updater-toggle">
+          <input type="checkbox" data-updater-auto-check="true" ${state.updaterAutoCheckOnStartup ? "checked" : ""}>
+          Check silently on startup
+        </label>
+        <div class="updater-actions">
+          <button data-action="updater-check" ${busy ? "disabled" : ""}>Check for Updates</button>
+          <button class="primary" data-action="updater-download-install" ${hasUpdate ? "" : "disabled"}>Download and Install</button>
+          <button data-action="updater-restart" ${readyToRestart ? "" : "disabled"}>Restart Pocket DAW</button>
+          <button data-action="updater-close">Close</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 function renderControlsPanel(state: AppState): string {
   const project = currentProject(state);
   const recent = state.recent.slice(0, 3).map((item) => item.path || item.label).join(" / ") || "No recent projects saved in this environment.";
@@ -1160,6 +1217,21 @@ function renderControlsPanel(state: AppState): string {
       </section>
     </div>
   `;
+}
+
+function updaterStatusText(state: AppState): string {
+  if (state.updaterStatus === "idle") return "Pocket DAW can check GitHub Releases for signed update packages.";
+  if (state.updaterStatus === "checking") return "Checking for updates...";
+  if (state.updaterStatus === "available") return state.updaterAvailableVersion ? `Pocket DAW ${state.updaterAvailableVersion} is available.` : "An update is available.";
+  if (state.updaterStatus === "not-available") return "You're on the latest available version.";
+  if (state.updaterStatus === "downloading") return state.updaterMessage || "Downloading update...";
+  if (state.updaterStatus === "installing") return "Installing update...";
+  if (state.updaterStatus === "ready-to-restart") return "Update installed. Restart Pocket DAW to finish.";
+  return state.updaterMessage || "Update check failed.";
+}
+
+function releaseNotesSummary(notes: string): string {
+  return notes.replace(/\s+/g, " ").trim().slice(0, 420) || "No release notes were provided.";
 }
 
 function environmentLabel(): string {
@@ -1196,8 +1268,4 @@ function panReadout(pan: number): string {
   if (Math.abs(pan) < 0.01) return "C";
   const side = pan < 0 ? "L" : "R";
   return `${side} ${Math.round(Math.abs(pan) * 100)}`;
-}
-
-function escapeHtml(str: unknown): string {
-  return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c] || c));
 }

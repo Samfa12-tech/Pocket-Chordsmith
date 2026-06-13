@@ -10,12 +10,87 @@ import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { simpleMidiBytes } from "./midiFixtures";
 import { createEmptyPocketDawProject } from "../src/daw/dawProject";
+import { POCKET_DAW_VERSION } from "../src/daw/schema";
 
 function inspectorHtml(html: string) {
   return html.match(/<aside class="inspector"[\s\S]*?<\/aside>/)?.[0] || "";
 }
 
 describe("Pocket DAW UI rendering", () => {
+  it("escapes malicious project fields before string-rendering the shell", () => {
+    const project = createEmptyPocketDawProject();
+    const badName = `<img src=x onerror=alert(1)>`;
+    const badId = `drums" onclick=alert(1)`;
+    const badClipId = `clip" onclick=alert(1)`;
+    const badColour = `red;background:url(javascript:alert(1))`;
+    const track = project.tracks.find((item) => item.id === "drums")!;
+    track.id = badId;
+    track.name = badName;
+    track.colour = badColour;
+    track.automationLaneIds = [`lane" onclick=alert(1)`];
+    project.project.title = badName;
+    project.timeline.markers = [{
+      id: `marker" onclick=alert(1)`,
+      bar: 1,
+      name: badName,
+      color: badColour,
+      markerType: "cue"
+    }];
+    project.mediaPool.push({
+      id: `media" onclick=alert(1)`,
+      kind: "audio",
+      name: `Loop ${badName}`,
+      uri: `C:\\Audio\\Loop ${badName}.wav`,
+      durationSeconds: 1,
+      sampleRate: 44100,
+      channels: 2,
+      sizeBytes: 1234,
+      metadata: { waveformPeaks: [1, 0.5] }
+    });
+    project.timeline.clips = [{
+      id: badClipId,
+      type: "audio",
+      trackId: badId,
+      startBar: 1,
+      barLength: 1,
+      name: `Clip ${badName}`,
+      muted: false,
+      color: badColour,
+      linked: false,
+      transforms: { transpose: 0, octave: 0, gain: 1, stemMutes: {} },
+      mediaPoolItemId: project.mediaPool[0].id
+    }];
+    project.automation.lanes = [{
+      id: track.automationLaneIds[0],
+      trackId: badId,
+      targetPath: `volume"><script>alert(1)</script>`,
+      points: [{ bar: 1, value: 0.5 }],
+      enabled: true
+    }];
+    project.renderCache.push({
+      id: `cache" onclick=alert(1)`,
+      mediaPoolItemId: project.mediaPool[0].id,
+      createdAt: "2026-06-13T00:00:00.000Z",
+      invalidated: false
+    });
+
+    const state = createInitialState();
+    state.undoStack = createUndoStack(project);
+    state.selectedTrackId = badId;
+    state.selectedClipId = badClipId;
+    const html = renderAppShell(state);
+    const lower = html.toLowerCase();
+
+    expect(lower).not.toContain("<script");
+    expect(lower).not.toContain("onerror=");
+    expect(lower).not.toContain("onclick=");
+    expect(lower).not.toContain("javascript:");
+    expect(lower).not.toContain("background:url");
+    expect(html).toContain("&lt;img src&#61;x onerror&#61;alert(1)&gt;");
+    expect(html).toContain("border-color:#40d8ff");
+    expect(html).toContain('data-track-id="drums&quot; onclick&#61;alert(1)"');
+  });
+
   it("renders song setup and direct generated-track sequencers in a new project", () => {
     const project = createEmptyPocketDawProject();
     const state = createInitialState();
@@ -251,7 +326,7 @@ describe("Pocket DAW UI rendering", () => {
 
     const html = renderAppShell(state);
 
-    expect(html).toContain("v0.5.4");
+    expect(html).toContain(`v${POCKET_DAW_VERSION}`);
     expect(html).toContain("Browser/dev");
     expect(html).toContain('data-arm-track="live-vocals" disabled');
     expect(html).toContain("Recording coming after");

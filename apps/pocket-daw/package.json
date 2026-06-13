@@ -1,7 +1,7 @@
 {
   "name": "pocket-daw",
-  "version": "0.5.4",
-  "description": "WIP Pocket Audio desktop arrangement and production app built with Vite, TypeScript, and Tauri.",
+  "version": "0.5.5",
+  "description": "Free Windows desktop arrangement and production app for Pocket Chordsmith projects, built with Vite, TypeScript, Tauri, and native audio playback.",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -28,6 +28,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "package:preview": "npm run build && node scripts/package-preview.mjs",
+    "release:updater-manifest": "node scripts/make-updater-manifest.mjs",
+    "verify:versions": "node scripts/verify-versions.mjs",
+    "package:itch": "node scripts/package-itch.mjs",
+    "verify:artifacts": "node scripts/verify-release-artifacts.mjs",
+    "verify:itch": "node scripts/verify-itch.mjs",
+    "release:itch:local": "npm run verify:itch",
+    "itch:preview": "butler push-preview releases/itch/pocket-daw-windows-x64-v0.5.5 samfa12/pocket-daw:windows-x64 --userversion 0.5.5",
+    "itch:push:hidden": "node scripts/guarded-butler-push.mjs",
     "verify:release": "node scripts/verify-release.mjs",
     "verify:native-release": "node scripts/verify-release.mjs --native-release",
     "tauri": "tauri",
@@ -36,7 +44,10 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.5.0"
+    "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/plugin-deep-link": "^2.4.9",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.5.0",

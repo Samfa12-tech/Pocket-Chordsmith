@@ -45,6 +45,7 @@ import { clearAudioBufferCache, setCachedAudioBuffer } from "../src/audio/audioB
 import {
   buildNativeRenderCache,
   buildNativeRuntimeAudioCache,
+  hydrateNativeRenderCacheAssets,
   mergeNativeRenderCacheItems,
   nativeRenderCacheRelativePath,
   nativeRenderCacheSignature,
@@ -223,6 +224,90 @@ describe("native render cache", () => {
       durableCacheReady: true,
       nativePath: expect.stringContaining("project-cache")
     });
+  });
+
+  it("hydrates current persisted native cache WAV assets from project render-cache metadata", async () => {
+    const project = createDemoProject();
+    const signature = nativeRenderCacheSignature(project);
+    const built = await buildNativeRenderCache(project, signature);
+    project.renderCache = built.renderCacheItems;
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeMediaApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return {
+          assetId: String(args?.assetId || ""),
+          path: `C:\\Songs\\${String(args?.relativePath || "").replace(/\//g, "\\")}`,
+          relativePath: String(args?.relativePath || ""),
+          sizeBytes: wavBytes().length,
+          bytes: Array.from(wavBytes())
+        } as never;
+      }
+    };
+
+    const result = await hydrateNativeRenderCacheAssets("C:\\Songs\\Song.pocketdaw", project, api);
+
+    expect(result.errors).toEqual([]);
+    expect(result.hydratedCacheItemCount).toBe(built.renderCacheItems.length);
+    expect(result.cache?.signature).toBe(signature);
+    expect(result.cache?.regions.length).toBeGreaterThan(0);
+    expect(result.cache?.cachedClipIds.has(project.timeline.clips[0].id)).toBe(true);
+    expect(result.cache?.hydratedCacheReadByteCount).toBeGreaterThan(0);
+    expect(calls[0]).toMatchObject({
+      command: "read_native_cache_asset",
+      args: {
+        projectFilePath: "C:\\Songs\\Song.pocketdaw",
+        relativePath: built.renderCacheItems[0].metadata?.assetRelativePath
+      }
+    });
+  });
+
+  it("skips stale or invalid persisted native cache metadata during hydration", async () => {
+    const project = createDemoProject();
+    project.renderCache = [
+      {
+        id: "stale",
+        sourceClipId: project.timeline.clips[0].id,
+        createdAt: "2026-06-13T00:00:00.000Z",
+        invalidated: false,
+        metadata: {
+          cacheKind: "native-generated-stem",
+          sourceHash: "old-signature",
+          assetId: "stale",
+          assetRelativePath: "project-cache/native-audio/stale.wav",
+          role: "drums",
+          trackId: "drums"
+        }
+      },
+      {
+        id: "bad-path",
+        sourceClipId: project.timeline.clips[0].id,
+        createdAt: "2026-06-13T00:00:00.000Z",
+        invalidated: false,
+        metadata: {
+          cacheKind: "native-generated-stem",
+          sourceHash: nativeRenderCacheSignature(project),
+          assetId: "bad-path",
+          assetRelativePath: "../bad.wav",
+          role: "drums",
+          trackId: "drums"
+        }
+      }
+    ];
+    const api: NativeMediaApi = {
+      isAvailable: () => true,
+      async invoke() {
+        throw new Error("read should not run for stale or invalid paths");
+      }
+    };
+
+    const result = await hydrateNativeRenderCacheAssets("C:\\Songs\\Song.pocketdaw", project, api);
+
+    expect(result.cache).toBeNull();
+    expect(result.staleSourceHashCount).toBe(1);
+    expect(result.skippedInvalidPathCount).toBe(1);
+    expect(result.hydrationFailureCount).toBe(0);
   });
 
   it("merges native render-cache items and invalidates stale native entries without touching other caches", async () => {

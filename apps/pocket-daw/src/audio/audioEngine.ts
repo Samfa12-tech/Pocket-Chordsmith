@@ -13,12 +13,15 @@ import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAud
 import {
   buildNativeRenderCache,
   buildNativeRuntimeAudioCache,
+  hydrateNativeRenderCacheAssets,
   nativeRenderCacheSignature,
   nativeRuntimeAudioCacheSignature,
   persistNativeRenderCacheAssets,
   type NativeRenderCache,
+  type NativeRenderCacheHydrationResult,
   type NativeRenderCachePersistResult
 } from "./nativeRenderCache";
+import type { NativeMediaApi } from "../native/mediaBridge";
 
 interface TrackOutput {
   gain: GainNode;
@@ -97,6 +100,11 @@ export class AudioEngine {
   private nativeRenderCacheDiscardedBuildCount = 0;
   private nativeRenderCacheLastBuildMs = 0;
   private nativeRenderCacheLastBuildReason: string | null = null;
+  private nativeRenderCacheHydratedCount = 0;
+  private nativeRenderCacheHydrationFailureCount = 0;
+  private nativeRenderCacheStaleSourceHashCount = 0;
+  private nativeRenderCacheSkippedInvalidPathCount = 0;
+  private nativeRenderCacheHydratedReadByteCount = 0;
   private nativeRenderCachePrewarmHandle: number | null = null;
   private nativeRenderCachePrewarmUsesIdleCallback = false;
   private nativeRenderCachePrewarmScheduled = false;
@@ -161,6 +169,22 @@ export class AudioEngine {
     const cache = await this.ensureNativeRenderCache(reason);
     if (!cache) return null;
     return persistNativeRenderCacheAssets(projectFilePath, cache);
+  }
+
+  async hydrateNativeRenderCache(projectFilePath: string, reason = "project-open-hydrate-native-cache", api?: NativeMediaApi): Promise<NativeRenderCacheHydrationResult> {
+    this.cancelNativeRenderCachePrewarm();
+    const result = await hydrateNativeRenderCacheAssets(projectFilePath, this.project, api);
+    this.nativeRenderCacheHydratedCount = result.hydratedCacheItemCount;
+    this.nativeRenderCacheHydrationFailureCount = result.hydrationFailureCount;
+    this.nativeRenderCacheStaleSourceHashCount = result.staleSourceHashCount;
+    this.nativeRenderCacheSkippedInvalidPathCount = result.skippedInvalidPathCount;
+    this.nativeRenderCacheHydratedReadByteCount = result.hydratedCacheReadByteCount;
+    this.nativeRenderCacheLastBuildReason = reason;
+    this.nativeRenderCacheError = result.errors[0] || null;
+    if (result.cache && result.cache.signature === nativeRenderCacheSignature(this.project)) {
+      this.nativeRenderCache = result.cache;
+    }
+    return result;
   }
 
   getNativeRuntimeAudioPreparationState(): {
@@ -443,7 +467,12 @@ export class AudioEngine {
         discardedBuildCount: this.nativeRenderCacheDiscardedBuildCount,
         lastBuildMs: this.nativeRenderCacheLastBuildMs,
         lastBuildReason: this.nativeRenderCacheLastBuildReason,
-        lastError: this.nativeRenderCacheError
+        lastError: this.nativeRenderCacheError,
+        hydratedCacheItemCount: this.nativeRenderCacheHydratedCount,
+        hydrationFailureCount: this.nativeRenderCacheHydrationFailureCount,
+        staleSourceHashCount: this.nativeRenderCacheStaleSourceHashCount,
+        skippedInvalidPathCount: this.nativeRenderCacheSkippedInvalidPathCount,
+        hydratedCacheReadByteCount: this.nativeRenderCacheHydratedReadByteCount
       },
       audioContextState: this.ctx?.state || "not-created",
       currentSeconds: this.currentSeconds(),

@@ -24,10 +24,15 @@ describe("browser preview packaging", () => {
     writeFileSync(join(root, "docs", "POCKET_AUDIO_CORE_CONVERGENCE_REVIEW.md"), "# Core review");
     writeFileSync(join(root, "docs", "v0.5.1-verification.md"), "# Verification");
     writeFileSync(join(root, "docs", "PRIVATE_ALPHA_RELEASE_CHECKLIST.md"), "# Checklist");
+    writeFileSync(join(root, "docs", "ITCH_BUILD_PUSH_AND_UPDATE_TEST.md"), "# Itch build push");
+    writeFileSync(join(root, "docs", "ITCH_RELEASE_CHECKLIST.md"), "# Itch checklist");
     writeFileSync(join(root, "docs", "RELEASE_NOTES_TEMPLATE.md"), "# Release notes");
     writeFileSync(join(root, "docs", "WINDOWS_TESTING_CHECKLIST.md"), "# Windows");
     writeFileSync(join(root, "docs", "V0_6_FOUNDATION_NOTES.md"), "# Foundation");
     writeFileSync(join(root, "docs", "RECORDING_PREP.md"), "# Recording");
+    writeFileSync(join(root, "docs", "UPDATER_RELEASE_PIPELINE.md"), "# Updater");
+    writeFileSync(join(root, "docs", "v0.5.5-itch-release-readiness.md"), "# Readiness");
+    writeFileSync(join(root, "docs", "v0.5.4-native-cache.md"), "# Native cache");
 
     const zipPath = createPreviewZip({ root, version: "0.2.1" });
     const zip = new AdmZip(zipPath);
@@ -42,7 +47,12 @@ describe("browser preview packaging", () => {
     expect(names).toContain("docs/POCKET_AUDIO_CORE_CONVERGENCE_REVIEW.md");
     expect(names).toContain("docs/v0.5.1-verification.md");
     expect(names).toContain("docs/PRIVATE_ALPHA_RELEASE_CHECKLIST.md");
+    expect(names).toContain("docs/ITCH_BUILD_PUSH_AND_UPDATE_TEST.md");
+    expect(names).toContain("docs/ITCH_RELEASE_CHECKLIST.md");
     expect(names).toContain("docs/RECORDING_PREP.md");
+    expect(names).toContain("docs/UPDATER_RELEASE_PIPELINE.md");
+    expect(names).toContain("docs/v0.5.5-itch-release-readiness.md");
+    expect(names).toContain("docs/v0.5.4-native-cache.md");
     expect(readFileSync(join(root, "releases", "WHAT_WORKS_AND_WHATS_NEXT.md"), "utf8")).toBe("# Current docs");
     expect(readFileSync(join(root, "releases", "docs", "V0_5_1_HARDENING_NOTES.md"), "utf8")).toBe("# Hardening notes");
     expect(readFileSync(join(root, "releases", "docs", "PRIVATE_ALPHA_RELEASE_CHECKLIST.md"), "utf8")).toBe("# Checklist");

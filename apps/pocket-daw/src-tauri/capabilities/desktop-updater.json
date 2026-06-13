@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-updater",
+  "description": "Allows the main Pocket DAW desktop window to check for signed Tauri updates, install a user-triggered update, and restart after installation.",
+  "windows": ["main"],
+  "permissions": [
+    "updater:allow-check",
+    "updater:allow-download-and-install",
+    "process:allow-restart"
+  ]
+}

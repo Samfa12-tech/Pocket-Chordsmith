@@ -8,7 +8,7 @@ export const HANDOFF_ENVELOPE_PARAMS = ["pocketHandoff", "handoff"] as const;
 export const HANDOFF_LEGACY_PARAMS = ["pcs1", "pcs", "code", "import"] as const;
 
 export type PocketHandoffKind = "pcs-to-daw" | "chordsmith-to-daw" | "dj-to-daw" | "import";
-export type PocketHandoffSource = "url" | "window.name" | "localStorage";
+export type PocketHandoffSource = "url" | "window.name" | "localStorage" | "deep-link";
 
 export interface PocketHandoffEnvelope {
   app: typeof HANDOFF_APP;
@@ -62,26 +62,36 @@ export function buildPocketHandoffUrl(baseUrl: string, payload: PocketHandoffEnv
   return url.toString();
 }
 
-export function readUrlHandoff(input: string | Pick<Location, "href" | "search" | "hash"> = getWindowLocation()): PocketDawHandoff | null {
+export function readUrlHandoff(
+  input: string | Pick<Location, "href" | "search" | "hash"> = getWindowLocation(),
+  options: { source?: PocketHandoffSource; clear?: () => void } = {}
+): PocketDawHandoff | null {
   const url = locationToUrl(input);
   const search = new URLSearchParams(url.search);
   const hash = hashParams(url.hash);
   const directHashEnvelope = decodePocketHandoff(url.hash.replace(/^#/, ""));
+  const source = options.source || "url";
+  const clear = options.clear || (() => clearPocketHandoffUrl());
 
   for (const name of HANDOFF_ENVELOPE_PARAMS) {
     const value = search.get(name) || hash.get(name);
     const payload = decodePocketHandoff(value);
-    if (payload) return makeHandoff(payload, "url", () => clearPocketHandoffUrl());
+    if (payload) return makeHandoff(payload, source, clear);
   }
 
-  if (directHashEnvelope) return makeHandoff(directHashEnvelope, "url", () => clearPocketHandoffUrl());
+  if (directHashEnvelope) return makeHandoff(directHashEnvelope, source, clear);
 
   for (const name of HANDOFF_LEGACY_PARAMS) {
     const value = search.get(name) || hash.get(name);
-    if (value) return makeHandoff(buildPocketHandoff(legacyKind(name), value, { sourceApp: legacySourceApp(name) }), "url", () => clearPocketHandoffUrl());
+    if (value) return makeHandoff(buildPocketHandoff(legacyKind(name), value, { sourceApp: legacySourceApp(name) }), source, clear);
   }
 
   return null;
+}
+
+export function readDeepLinkHandoff(input: string): PocketDawHandoff | null {
+  if (!isPocketDawDeepLink(input)) return null;
+  return readUrlHandoff(input, { source: "deep-link", clear: () => undefined });
 }
 
 export function readWindowNameHandoff(name = getWindowName()): PocketDawHandoff | null {
@@ -206,6 +216,14 @@ function legacyKind(name: string): PocketHandoffKind {
 
 function legacySourceApp(name: string): string {
   return name === "import" ? "Legacy Import" : "Pocket Chordsmith";
+}
+
+function isPocketDawDeepLink(value: string): boolean {
+  try {
+    return new URL(value).protocol === "pocket-daw:";
+  } catch {
+    return false;
+  }
 }
 
 function handoffKindLabel(kind: PocketHandoffKind): string {

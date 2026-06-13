@@ -6,9 +6,24 @@ import { renderProjectToWavBlob } from "../audio/offlineRender";
 import { createDemoProject } from "../demo/demoProject";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../daw/dawProject";
 import { renderTimelineEvents } from "../audio/eventRenderer";
+import { listenForDeepLinkHandoffs, readInitialDeepLinkHandoff } from "../native/deepLinkBridge";
 import { downloadBlob, openProjectFileNative, safeName, saveProjectFile } from "../native/fileBridge";
-import { readPocketDawHandoff } from "../native/pocketHandoff";
-import { loadAutosave, loadAutosaveFileState, loadRecentProjects, saveAutosave, saveRecentProject } from "../native/recentFiles";
+import { readPocketDawHandoff, type PocketDawHandoff } from "../native/pocketHandoff";
+import {
+  loadAutosave,
+  loadAutosaveFileState,
+  loadRecentProjects,
+  loadUpdaterAutoCheckPreference,
+  saveAutosave,
+  saveRecentProject,
+  saveUpdaterAutoCheckPreference
+} from "../native/recentFiles";
+import {
+  checkForPocketDawUpdate,
+  downloadAndInstallPocketDawUpdate,
+  relaunchPocketDaw,
+  type PocketDawUpdateProgress
+} from "../native/updaterBridge";
 import {
   addAutomationPointCommand,
   addBusTrackCommand,
@@ -125,6 +140,7 @@ interface ApplyProjectOptions {
 }
 
 const STEP_NOTE_LABELS = ["R", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"];
+const MAX_PROJECT_IMPORT_BYTES = 25 * 1024 * 1024;
 
 export class App {
   private root: HTMLElement;
@@ -141,11 +157,13 @@ export class App {
   private chordsmithDragStart: ChordsmithStepSelection | null = null;
   private suppressNextStepClick = false;
   private chordsmithStepChangedTrack = false;
+  private deepLinkUnlisten: (() => void) | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
     this.state = createInitialState();
     this.state.recent = loadRecentProjects();
+    this.state.updaterAutoCheckOnStartup = loadUpdaterAutoCheckPreference();
     this.engine = new AudioEngine(currentProject(this.state));
     this.engine.setOnTick((tick) => {
       const playingChanged = this.state.playing !== tick.playing;
@@ -182,8 +200,7 @@ export class App {
   start() {
     const handoff = readPocketDawHandoff();
     if (handoff) {
-      const imported = this.importText(handoff.code, handoff.status);
-      if (imported) handoff.clear();
+      this.consumeHandoff(handoff);
     } else {
       const autosave = loadAutosave();
       if (autosave) {
@@ -200,7 +217,24 @@ export class App {
       }
     }
     this.render();
+    this.bindDeepLinkHandoffs();
     this.engine.prewarmNativeRenderCache("app-start");
+    this.scheduleStartupUpdateCheck();
+  }
+
+  private consumeHandoff(handoff: PocketDawHandoff): boolean {
+    const imported = this.importText(handoff.code, handoff.status);
+    if (imported) handoff.clear();
+    return imported;
+  }
+
+  private async bindDeepLinkHandoffs() {
+    const startupHandoff = await readInitialDeepLinkHandoff();
+    if (startupHandoff) this.consumeHandoff(startupHandoff);
+    if (this.deepLinkUnlisten) return;
+    this.deepLinkUnlisten = await listenForDeepLinkHandoffs((handoff) => {
+      this.consumeHandoff(handoff);
+    });
   }
 
   private render(options: RenderOptions = {}) {
@@ -269,9 +303,9 @@ export class App {
     project.tracks.forEach((track) => {
       const level = Math.max(0, Math.min(1, this.state.meterLevels[track.id] || 0));
       const percent = Math.round(level * 100);
-      const fill = this.root.querySelector<HTMLElement>(`[data-meter-fill="${track.id}"]`);
+      const fill = findDataElement<HTMLElement>(this.root, "data-meter-fill", track.id);
       if (fill) fill.style.height = `${percent}%`;
-      const meter = this.root.querySelector<HTMLElement>(`[data-meter="${track.id}"]`);
+      const meter = findDataElement<HTMLElement>(this.root, "data-meter", track.id);
       if (meter) meter.setAttribute("aria-label", `${track.name} peak meter ${percent}%`);
     });
   }
@@ -315,8 +349,8 @@ export class App {
         const packed = input.dataset.automationPointBar || input.dataset.automationPointValue || "";
         const [laneId, indexText] = packed.split(":");
         const index = Number(indexText);
-        const bar = Number(this.root.querySelector<HTMLInputElement>(`[data-automation-point-bar="${laneId}:${index}"]`)?.value || 1);
-        const value = Number(this.root.querySelector<HTMLInputElement>(`[data-automation-point-value="${laneId}:${index}"]`)?.value || 0);
+        const bar = Number(findDataElement<HTMLInputElement>(this.root, "data-automation-point-bar", `${laneId}:${index}`)?.value || 1);
+        const value = Number(findDataElement<HTMLInputElement>(this.root, "data-automation-point-value", `${laneId}:${index}`)?.value || 0);
         this.applyProjectState(updateAutomationPointCommand(this.state, laneId, index, bar, value));
       });
     });
@@ -397,6 +431,13 @@ export class App {
     });
     this.root.querySelector<HTMLInputElement>("#loopEnabled")?.addEventListener("change", (event) => {
       this.applyProjectState(setLoopEnabled(this.state, (event.target as HTMLInputElement).checked));
+    });
+    this.root.querySelector<HTMLInputElement>("[data-updater-auto-check]")?.addEventListener("change", (event) => {
+      const input = event.target as HTMLInputElement;
+      this.state.updaterAutoCheckOnStartup = input.checked;
+      saveUpdaterAutoCheckPreference(input.checked);
+      this.state.updaterMessage = input.checked ? "Pocket DAW will check silently on startup." : "Startup update checks are off.";
+      this.render();
     });
     ["loopStart", "loopEnd"].forEach((id) => {
       this.root.querySelector<HTMLInputElement>(`#${id}`)?.addEventListener("change", () => {
@@ -551,6 +592,11 @@ export class App {
     }
     if (target?.matches("[data-audio-settings-backdrop]")) {
       this.state.showAudioSettings = false;
+      this.render();
+      return;
+    }
+    if (target?.matches("[data-updater-backdrop]")) {
+      this.state.showUpdaterPanel = false;
       this.render();
       return;
     }
@@ -802,6 +848,17 @@ export class App {
       this.state.showAudioSettings = false;
       this.render();
     }
+    if (action === "updater-open") {
+      this.state.showUpdaterPanel = true;
+      this.render();
+    }
+    if (action === "updater-close") {
+      this.state.showUpdaterPanel = false;
+      this.render();
+    }
+    if (action === "updater-check") await this.checkForUpdates(true);
+    if (action === "updater-download-install") await this.downloadAndInstallUpdate();
+    if (action === "updater-restart") await this.restartAfterUpdate();
     if (action === "media-pool-focus") {
       this.state.status = "Media Pool visible.";
       this.render();
@@ -856,6 +913,76 @@ export class App {
     if (action === "collect-media") await this.collectMedia();
     if (action === "build-native-cache") await this.buildNativeCache();
     if (action === "export-diagnostics") this.exportDiagnostics();
+  }
+
+  private scheduleStartupUpdateCheck() {
+    if (!this.state.updaterAutoCheckOnStartup) return;
+    window.setTimeout(() => {
+      void this.checkForUpdates(false);
+    }, 3500);
+  }
+
+  private async checkForUpdates(showPanel: boolean) {
+    this.state.showUpdaterPanel = showPanel || this.state.showUpdaterPanel;
+    this.state.updaterStatus = "checking";
+    this.state.updaterMessage = "Checking for updates...";
+    this.state.updaterAvailableVersion = null;
+    this.state.updaterReleaseNotes = null;
+    this.state.updaterDownloadProgress = null;
+    this.render({ preserveScroll: true });
+
+    const result = await checkForPocketDawUpdate();
+    this.state.updaterCurrentVersion = result.currentVersion || POCKET_DAW_VERSION;
+    this.state.updaterMessage = result.message;
+    if (!result.runtimeAvailable) {
+      this.state.updaterStatus = showPanel ? "error" : "idle";
+    } else if (result.available && result.update) {
+      this.state.updaterStatus = "available";
+      this.state.updaterAvailableVersion = result.update.version;
+      this.state.updaterReleaseNotes = result.update.notes;
+      this.state.status = `Pocket DAW ${result.update.version} is available. Open Help > Check for Updates.`;
+      if (!showPanel) this.state.showUpdaterPanel = false;
+    } else {
+      this.state.updaterStatus = "not-available";
+      this.state.updaterAvailableVersion = null;
+      this.state.updaterReleaseNotes = null;
+    }
+    this.render({ preserveScroll: true });
+  }
+
+  private async downloadAndInstallUpdate() {
+    if (this.state.updaterStatus !== "available") return;
+    this.state.updaterStatus = "downloading";
+    this.state.updaterMessage = this.state.playing ? "Downloading update while playback continues..." : "Downloading update...";
+    this.state.updaterDownloadProgress = 0;
+    this.render({ preserveScroll: true });
+
+    const result = await downloadAndInstallPocketDawUpdate((progress) => this.applyUpdaterProgress(progress));
+    this.state.updaterMessage = result.message;
+    if (result.installed) {
+      this.state.updaterStatus = "ready-to-restart";
+      this.state.updaterDownloadProgress = 1;
+      this.state.status = "Update installed. Restart Pocket DAW to finish.";
+    } else {
+      this.state.updaterStatus = "error";
+      this.state.updaterDownloadProgress = null;
+    }
+    this.render({ preserveScroll: true });
+  }
+
+  private applyUpdaterProgress(progress: PocketDawUpdateProgress) {
+    this.state.updaterStatus = progress.status;
+    this.state.updaterMessage = progress.message;
+    this.state.updaterDownloadProgress = progress.progress;
+    this.render({ preserveScroll: true });
+  }
+
+  private async restartAfterUpdate() {
+    const result = await relaunchPocketDaw();
+    this.state.updaterMessage = result.message;
+    this.state.status = result.message;
+    if (!result.relaunched) this.state.updaterStatus = "ready-to-restart";
+    this.render({ preserveScroll: true });
   }
 
   private async handleKeyboard(event: KeyboardEvent) {
@@ -1141,7 +1268,7 @@ export class App {
     let buttons: HTMLElement[] = [];
 
     if (selection.kind === "drums") {
-      buttons = Array.from(this.root.querySelectorAll<HTMLElement>(`[data-drum-step="${selection.sectionId}:${selection.lane}:${selection.step}"]`));
+      buttons = findDataElements<HTMLElement>(this.root, "data-drum-step", `${selection.sectionId}:${selection.lane}:${selection.step}`);
       if (!buttons.length) return false;
       const level = section.grid[selection.lane][selection.step] || 0;
       const tuplet = !!section.gridTuplets[selection.lane][selection.step];
@@ -1151,7 +1278,7 @@ export class App {
         button.innerHTML = `${level === 2 ? "!" : level === 1 ? "x" : ""}${this.stepBadgesHtml({ tuplet })}`;
       });
     } else if (selection.kind === "bass") {
-      buttons = Array.from(this.root.querySelectorAll<HTMLElement>(`[data-bass-step="${selection.sectionId}:${selection.step}"]`));
+      buttons = findDataElements<HTMLElement>(this.root, "data-bass-step", `${selection.sectionId}:${selection.step}`);
       if (!buttons.length) return false;
       const note = section.bassNotes[selection.step];
       const on = note !== null && note !== undefined;
@@ -1162,7 +1289,7 @@ export class App {
         button.innerHTML = `${on ? STEP_NOTE_LABELS[note] || String(note) : ""}${this.stepBadgesHtml({ hold: !!section.bassHold[selection.step], slide: !!section.bassSlide[selection.step], tuplet })}`;
       });
     } else {
-      buttons = Array.from(this.root.querySelectorAll<HTMLElement>(`[data-melody-step="${selection.sectionId}:${selection.trackIndex}:${selection.step}"]`));
+      buttons = findDataElements<HTMLElement>(this.root, "data-melody-step", `${selection.sectionId}:${selection.trackIndex}:${selection.step}`);
       if (!buttons.length) return false;
       const track = section.melodyTracks[selection.trackIndex] || [];
       const note = track[selection.step];
@@ -1328,6 +1455,12 @@ export class App {
   private async handleFileOpen() {
     const file = this.fileInput.files?.[0];
     if (!file) return;
+    if (file.size > MAX_PROJECT_IMPORT_BYTES) {
+      this.state.status = "Project file is too large for this release. Try a smaller .pocketdaw/JSON file.";
+      this.fileInput.value = "";
+      this.render();
+      return;
+    }
     const text = await file.text();
     if (file.name.endsWith(".pocketdaw")) {
       try {
@@ -1561,7 +1694,7 @@ export class App {
     try {
       const native = await openProjectFileNative();
       if (native) {
-        this.openRawProjectText(native.contents, native.file.label, native.file.path);
+        await this.openRawProjectText(native.contents, native.file.label, native.file.path);
         return;
       }
     } catch (error) {
@@ -1571,7 +1704,7 @@ export class App {
     this.fileInput.click();
   }
 
-  private openRawProjectText(text: string, label: string, path: string | null) {
+  private async openRawProjectText(text: string, label: string, path: string | null) {
     try {
       const project = loadPocketDawRaw(text);
       this.state = loadProjectIntoState(this.state, project, {
@@ -1583,9 +1716,29 @@ export class App {
       this.state.recent = loadRecentProjects();
       this.saveAutosaveSnapshot(project);
       this.render();
+      void this.hydrateNativeCacheFromProject(path);
     } catch (error) {
       this.state.status = error instanceof Error ? error.message : "Open failed.";
       this.render();
+    }
+  }
+
+  private async hydrateNativeCacheFromProject(path: string | null) {
+    if (!path) return;
+    try {
+      const result = await this.engine.hydrateNativeRenderCache(path, "project-open-hydrate-native-cache");
+      if (!result.hydratedCacheItemCount && !result.staleSourceHashCount && !result.skippedInvalidPathCount && !result.hydrationFailureCount) return;
+      this.state.status = [
+        `Opened ${this.state.currentFile.label}.`,
+        result.hydratedCacheItemCount ? `Hydrated ${result.hydratedCacheItemCount} native cache item${result.hydratedCacheItemCount === 1 ? "" : "s"}` : "",
+        result.staleSourceHashCount ? `${result.staleSourceHashCount} stale cache item${result.staleSourceHashCount === 1 ? "" : "s"} skipped` : "",
+        result.skippedInvalidPathCount ? `${result.skippedInvalidPathCount} invalid cache path${result.skippedInvalidPathCount === 1 ? "" : "s"} skipped` : "",
+        result.hydrationFailureCount ? `${result.hydrationFailureCount} cache read failure${result.hydrationFailureCount === 1 ? "" : "s"}` : ""
+      ].filter(Boolean).join(" ");
+      this.render({ preserveScroll: true });
+    } catch (error) {
+      this.state.status = error instanceof Error ? `Native cache hydration failed: ${error.message}` : "Native cache hydration failed.";
+      this.render({ preserveScroll: true });
     }
   }
 
@@ -1926,4 +2079,12 @@ export class App {
   private saveAutosaveSnapshot(project = currentProject(this.state)) {
     saveAutosave(buildPocketDawProjectFile(project), this.state.currentFile);
   }
+}
+
+function findDataElement<T extends HTMLElement>(root: ParentNode, attr: string, value: string): T | null {
+  return findDataElements<T>(root, attr, value)[0] || null;
+}
+
+function findDataElements<T extends HTMLElement>(root: ParentNode, attr: string, value: string): T[] {
+  return Array.from(root.querySelectorAll<T>(`[${attr}]`)).filter((node) => node.getAttribute(attr) === value);
 }

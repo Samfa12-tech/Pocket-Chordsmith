@@ -1,4 +1,5 @@
 export const MIDI_MEDIA_ACCEPT = ".mid,.midi,audio/midi";
+export const MAX_MIDI_IMPORT_BYTES = 25 * 1024 * 1024;
 
 export interface ImportedMidiBytes {
   name: string;
@@ -37,6 +38,9 @@ export async function importMidiNative(api = defaultNativeMidiApi): Promise<Impo
 }
 
 export async function importedMidiFromBrowserFile(file: File): Promise<ImportedMidiBytes> {
+  if (file.size > MAX_MIDI_IMPORT_BYTES) {
+    throw new Error("MIDI file is too large for this release. Try a smaller MIDI file.");
+  }
   return {
     name: file.name,
     sizeBytes: file.size,

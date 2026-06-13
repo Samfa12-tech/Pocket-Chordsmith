@@ -1,4 +1,5 @@
 export const AUDIO_MEDIA_ACCEPT = ".wav,.mp3,.ogg,.flac,.aiff,.aif,audio/*";
+export const MAX_AUDIO_IMPORT_BYTES = 250 * 1024 * 1024;
 
 export interface ImportedAudioBytes {
   name: string;
@@ -162,6 +163,9 @@ function importedAudioFromNativePayload(result: NativeAudioPayload): ImportedAud
 }
 
 export async function importedAudioFromBrowserFile(file: File): Promise<ImportedAudioBytes> {
+  if (file.size > MAX_AUDIO_IMPORT_BYTES) {
+    throw new Error("Audio file is too large for this release. Try a shorter file or wait for native streaming support.");
+  }
   return {
     name: file.name,
     uri: undefined,

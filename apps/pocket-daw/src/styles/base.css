@@ -946,6 +946,68 @@ h1 {
   font-size: 12px;
 }
 
+.updater-panel {
+  width: min(680px, 100%);
+}
+
+.updater-notes {
+  display: grid;
+  gap: 7px;
+  margin: 0 18px 14px;
+  padding: 12px;
+  border: 1px solid #2d3958;
+  border-radius: 6px;
+  background: #0d1322;
+}
+
+.updater-notes strong {
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.updater-notes p {
+  color: #c7d2ec;
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.updater-progress {
+  position: relative;
+  overflow: hidden;
+  height: 24px;
+  margin: 0 18px 14px;
+  border: 1px solid #2d3958;
+  border-radius: 6px;
+  background: #080d18;
+}
+
+.updater-progress span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #40d8ff, #7cff9b);
+}
+
+.updater-progress strong {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #eef4ff;
+  font-size: 12px;
+}
+
+.updater-toggle {
+  margin: 0 18px 14px;
+}
+
+.updater-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 0 18px 18px;
+}
+
 .export-panel {
   grid-area: export;
   display: grid;

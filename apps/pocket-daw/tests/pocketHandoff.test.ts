@@ -5,6 +5,7 @@ import {
   decodePocketHandoff,
   encodePocketHandoff,
   HANDOFF_WINDOW_PREFIX,
+  readDeepLinkHandoff,
   readStoredHandoff,
   readUrlHandoff,
   readWindowNameHandoff
@@ -85,5 +86,17 @@ describe("PocketHandoff compatibility", () => {
 
     expect(cleanedQuery).toBe("https://example.test/daw?keep=1");
     expect(cleanedHash).toBe("https://example.test/daw?keep=1");
+  });
+
+  it("reads installed-app deep links without accepting arbitrary schemes", () => {
+    const payload = buildPocketHandoff("chordsmith-to-daw", "PCS1:deep-link", { createdAt: "2026-06-11T00:00:00.000Z" });
+    const encoded = encodePocketHandoff(payload);
+
+    const handoff = readDeepLinkHandoff(`pocket-daw://handoff?pocketHandoff=${encoded}`);
+    const rejected = readDeepLinkHandoff(`https://example.test/daw?pocketHandoff=${encoded}`);
+
+    expect(handoff?.source).toBe("deep-link");
+    expect(handoff?.code).toBe("PCS1:deep-link");
+    expect(rejected).toBeNull();
   });
 });

@@ -2,10 +2,38 @@ use cpal::traits::DeviceTrait;
 
 mod native_audio;
 
+const MAX_PROJECT_FILE_BYTES: u64 = 25 * 1024 * 1024;
+const MAX_MIDI_FILE_BYTES: u64 = 25 * 1024 * 1024;
+const MAX_AUDIO_FILE_BYTES: u64 = 250 * 1024 * 1024;
+const MAX_NATIVE_CACHE_ASSET_BYTES: u64 = 512 * 1024 * 1024;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
+            println!("Pocket DAW received a second-instance launch: {argv:?}");
+        }));
+    }
+
+    builder
+        .plugin(tauri_plugin_deep_link::init())
         .manage(native_audio::create_native_audio_runtime())
+        .setup(|app| {
+            #[cfg(desktop)]
+            {
+                #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+                {
+                    use tauri_plugin_deep_link::DeepLinkExt;
+                    app.deep_link().register_all()?;
+                }
+                app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+                app.handle().plugin(tauri_plugin_process::init())?;
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             probe_audio_devices,
             native_audio::native_audio_status,
@@ -116,6 +144,7 @@ fn open_project_file() -> Result<Option<ProjectFilePayload>, String> {
     let Some(path) = file else {
         return Ok(None);
     };
+    ensure_file_size_at_most(&path, MAX_PROJECT_FILE_BYTES, "Project file is too large for this release. Try a smaller .pocketdaw/JSON file.")?;
     let contents = std::fs::read_to_string(&path).map_err(|err| format!("Could not read project file: {}", err))?;
     Ok(Some(ProjectFilePayload {
         label: file_label(&path),
@@ -132,6 +161,7 @@ fn open_audio_media_file() -> Result<Option<AudioMediaPayload>, String> {
     let Some(path) = file else {
         return Ok(None);
     };
+    ensure_file_size_at_most(&path, MAX_AUDIO_FILE_BYTES, "Audio file is too large for this release. Try a shorter file or wait for native streaming support.")?;
     let bytes = std::fs::read(&path).map_err(|err| format!("Could not read audio file: {}", err))?;
     let size_bytes = bytes.len() as u64;
     Ok(Some(AudioMediaPayload {
@@ -146,6 +176,7 @@ fn open_audio_media_file() -> Result<Option<AudioMediaPayload>, String> {
 #[tauri::command]
 fn read_audio_media_file(path: String, project_file_path: Option<String>) -> Result<AudioMediaPayload, String> {
     let path_buf = resolve_media_path(&path, project_file_path.as_deref())?;
+    ensure_file_size_at_most(&path_buf, MAX_AUDIO_FILE_BYTES, "Audio file is too large for this release. Try a shorter file or wait for native streaming support.")?;
     let bytes = std::fs::read(&path_buf).map_err(|err| format!("Could not read audio media: {}", err))?;
     let size_bytes = bytes.len() as u64;
     Ok(AudioMediaPayload {
@@ -167,6 +198,7 @@ fn collect_project_media(project_file_path: String, items: Vec<CollectProjectMed
         if !source.is_absolute() {
             return Err(format!("{} is not an absolute media source path.", item.source_uri));
         }
+        ensure_file_size_at_most(&source, MAX_AUDIO_FILE_BYTES, "Media file is too large to collect in this release. Try a shorter file or keep it external until native streaming support lands.")?;
         let target = resolve_project_relative_path(project_dir, &item.target_relative_path)?;
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent).map_err(|err| format!("Could not create project media folder: {}", err))?;
@@ -193,6 +225,7 @@ fn write_native_cache_asset(
     if bytes.is_empty() {
         return Err("Native cache asset has no bytes to write.".to_string());
     }
+    ensure_bytes_at_most(bytes.len() as u64, MAX_NATIVE_CACHE_ASSET_BYTES, "Native cache asset is too large for this release. Try a shorter project or rebuild after native streaming/cache improvements.")?;
     let target = native_cache_asset_path(&project_file_path, &relative_path)?;
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent).map_err(|err| format!("Could not create native cache folder: {}", err))?;
@@ -213,6 +246,7 @@ fn read_native_cache_asset(
     relative_path: String,
 ) -> Result<NativeCacheAssetReadResult, String> {
     let target = native_cache_asset_path(&project_file_path, &relative_path)?;
+    ensure_file_size_at_most(&target, MAX_NATIVE_CACHE_ASSET_BYTES, "Native cache asset is too large for this release. Rebuild the cache with shorter source material.")?;
     let bytes = std::fs::read(&target).map_err(|err| format!("Could not read native cache asset: {}", err))?;
     let size_bytes = bytes.len() as u64;
     Ok(NativeCacheAssetReadResult {
@@ -232,6 +266,7 @@ fn open_midi_file() -> Result<Option<MidiFilePayload>, String> {
     let Some(path) = file else {
         return Ok(None);
     };
+    ensure_file_size_at_most(&path, MAX_MIDI_FILE_BYTES, "MIDI file is too large for this release. Try a smaller MIDI file.")?;
     let bytes = std::fs::read(&path).map_err(|err| format!("Could not read MIDI file: {}", err))?;
     let size_bytes = bytes.len() as u64;
     Ok(Some(MidiFilePayload {
@@ -513,6 +548,25 @@ fn validate_native_cache_relative_path(relative_path: &str) -> Result<(), String
     Ok(())
 }
 
+fn ensure_file_size_at_most(path: &std::path::Path, max_bytes: u64, message: &str) -> Result<u64, String> {
+    let size = std::fs::metadata(path)
+        .map_err(|err| format!("Could not inspect file size: {}", err))?
+        .len();
+    ensure_bytes_at_most(size, max_bytes, message)?;
+    Ok(size)
+}
+
+fn ensure_bytes_at_most(size: u64, max_bytes: u64, message: &str) -> Result<(), String> {
+    if size > max_bytes {
+        return Err(format!("{} Limit: {} MB. Selected: {} MB.", message, bytes_to_mb(max_bytes), bytes_to_mb(size)));
+    }
+    Ok(())
+}
+
+fn bytes_to_mb(bytes: u64) -> u64 {
+    (bytes + (1024 * 1024 - 1)) / (1024 * 1024)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,5 +588,13 @@ mod tests {
         assert!(native_cache_asset_path(r"C:\Songs\Song.pocketdaw", "../asset.wav").is_err());
         assert!(native_cache_asset_path(r"C:\Songs\Song.pocketdaw", "project-media/asset.wav").is_err());
         assert!(native_cache_asset_path(r"C:\Songs\Song.pocketdaw", "project-cache/native-audio/asset.mp3").is_err());
+    }
+
+    #[test]
+    fn size_limit_helper_rejects_oversized_payloads() {
+        assert!(ensure_bytes_at_most(10, 10, "Too large").is_ok());
+        let error = ensure_bytes_at_most(11, 10, "Too large").expect_err("oversized payload should fail");
+        assert!(error.contains("Too large"));
+        assert!(error.contains("Limit"));
     }
 }

@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "deep-link",
+  "description": "Allows Pocket DAW to read pocket-daw:// handoff URLs from Pocket Chordsmith.",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:default",
+    "deep-link:default"
+  ]
+}

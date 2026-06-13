@@ -1,0 +1,141 @@
+# Pocket DAW Itch Build, Push, and Updater Test
+
+This document is the operator checklist for publishing a Pocket DAW Windows build to itch, pushing the matching source to GitHub, and then testing the in-app Tauri updater from an installed build.
+
+## Current Release
+
+- App: Pocket DAW
+- Version: `0.5.5`
+- Schema version: `2`
+- Itch project: `samfa12/pocket-daw`
+- Primary install/update test channel: `windows-installer`
+- Portable archive channel: `windows-x64`
+- Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
+
+## Package Requirements for Itch
+
+Pocket DAW is a desktop app. For normal playtesting, the portable ZIP is convenient. For updater testing, use the installer build because Tauri's Windows updater is designed around an installed app.
+
+The itch release should include:
+
+- Portable folder/ZIP for manual download:
+  - `releases/itch/pocket-daw-windows-x64-v0.5.5/`
+  - `releases/itch/pocket-daw-windows-x64-v0.5.5.zip`
+- Installer folder for update testing:
+  - `releases/itch/installers/`
+  - `Pocket DAW_0.5.5_x64-setup.exe`
+  - `Pocket DAW_0.5.5_x64-setup.exe.sig`
+  - `Pocket DAW_0.5.5_x64_en-US.msi`
+  - matching `.sig` if Tauri generates it
+- Release metadata:
+  - `CHECKSUMS_SHA256_v0.5.5.txt`
+  - `pocket-daw-release-manifest-v0.5.5.json`
+  - `RELEASE_NOTES_v0.5.5.md`
+  - `README_FIRST_v0.5.5.txt`
+  - `KNOWN_LIMITATIONS_v0.5.5.md`
+  - `WINDOWS_SMOKE_CHECKLIST_v0.5.5.md`
+  - `FINAL_RELEASE_VERDICT_v0.5.5.md`
+
+Do not upload raw source, private signing keys, `.env`, `.pfx`, `node_modules`, `target`, debug symbols, source maps, or local machine paths.
+
+## Signing Requirements
+
+The updater public key is committed in `src-tauri/tauri.conf.json`. The private key must remain outside the repo.
+
+On this machine the private key path is:
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.pocket-daw-secrets\tauri-updater.key"
+```
+
+No private key password is currently set for this local test key. If a password is added later:
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "<password>"
+```
+
+## Build Locally
+
+From `apps/pocket-daw`:
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.pocket-daw-secrets\tauri-updater.key"
+npm run verify:versions
+npm test
+npm run build
+npm run package:preview
+npm run package:itch
+npm run verify:artifacts
+```
+
+`npm run package:itch` builds the Tauri release, writes the portable itch folder/ZIP, stages installer artifacts, generates checksums, and writes the final verdict.
+
+## Push to Itch
+
+Preview the portable folder:
+
+```powershell
+butler push-preview releases/itch/pocket-daw-windows-x64-v0.5.5 samfa12/pocket-daw:windows-x64
+```
+
+Butler `push-preview` in v15.27.0 does not accept `--userversion`; keep `--userversion` on the actual `push` commands below.
+
+Push portable folder hidden:
+
+```powershell
+butler push releases/itch/pocket-daw-windows-x64-v0.5.5 samfa12/pocket-daw:windows-x64 --userversion 0.5.5 --hidden
+```
+
+Push installer folder hidden for updater testing:
+
+```powershell
+butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion 0.5.5 --hidden
+```
+
+After upload, inspect the itch page and make the build visible only when the manual smoke status is acceptable.
+
+## Push to GitHub
+
+From the repo root:
+
+```powershell
+git status --short
+git add apps/pocket-daw
+git commit -m "Add Pocket DAW updater release path"
+git push origin main
+```
+
+The GitHub commit should match the source used to produce the itch artifacts.
+
+## First Update Test Plan
+
+After this build is uploaded:
+
+1. Download the installer build from itch channel `windows-installer`.
+2. Install Pocket DAW `0.5.5`.
+3. Open Pocket DAW.
+4. Confirm Help -> Check for Updates opens the updater panel.
+5. Confirm no update is available until a newer GitHub Release is created.
+6. Bump Pocket DAW to a new patch version, for example `0.5.6`.
+7. Build with the same updater private key.
+8. Generate a GitHub updater manifest:
+
+```powershell
+npm run release:updater-manifest -- --artifact "src-tauri/target/release/bundle/nsis/Pocket DAW_0.5.6_x64-setup.exe" --signature "src-tauri/target/release/bundle/nsis/Pocket DAW_0.5.6_x64-setup.exe.sig" --url "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/download/pocket-daw-v0.5.6/Pocket%20DAW_0.5.6_x64-setup.exe" --notes "releases/itch/RELEASE_NOTES_v0.5.6.md"
+```
+
+9. Create a GitHub Release such as `pocket-daw-v0.5.6`.
+10. Upload:
+    - setup exe
+    - setup exe `.sig`
+    - optional MSI and `.sig`
+    - `pocket-daw-latest.json`
+    - `SHA256SUMS.txt`
+    - release notes
+11. Reopen the installed `0.5.5` build.
+12. Use Help -> Check for Updates.
+13. Download and install the update from inside Pocket DAW.
+14. Restart Pocket DAW.
+15. Confirm the app reports the newer version and normal project open/save/playback still works.
+
+Do not mark the updater production-ready until an installed older build updates successfully to a newer signed GitHub Release build on Windows.

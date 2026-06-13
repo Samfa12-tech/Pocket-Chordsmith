@@ -1,87 +1,65 @@
-# Pocket DAW Private Alpha Release Checklist
+# Pocket DAW Public Free Itch Release Checklist
 
-Use this checklist when preparing a trusted Windows private-alpha build. Do not publish a public release from this checklist alone.
+This file replaces the older private-alpha checklist. Pocket DAW v0.5.5 is prepared as a free Windows desktop itch release candidate.
 
-## Version Source Of Truth
+## Required Before Upload
 
-- `package.json` version
-- `src/daw/schema.ts` `POCKET_DAW_VERSION`
-- `src-tauri/Cargo.toml` package version
-- `src-tauri/tauri.conf.json` app version
-- Release notes and verification docs under `docs/`
+- `npm ci`
+- `npm run verify:versions`
+- `npm test`
+- `npm run build`
+- `npm run package:preview`
+- `cargo test` from `src-tauri` when Rust is available
+- `npm run package:itch`
+- `npm run verify:artifacts`
+- Manual Windows smoke checklist completed against the exact portable ZIP hash, or the final verdict remains `GO WITH CAVEATS` / `NO-GO`
 
-All version fields should match before packaging.
+## Artifact Rules
 
-## Build Commands
+- Primary itch artifact is the portable folder/ZIP: `releases/itch/pocket-daw-windows-x64-v0.5.5`.
+- The portable ZIP must contain `Pocket DAW.exe` at the root with README, release notes, limitations, license/freeware notice and checksums.
+- The ZIP must not be just an installer.
+- NSIS/MSI installers are optional secondary downloads only.
+- Browser preview ZIPs are not the main itch target.
 
-```powershell
-cd "C:\Users\sam_s\Documents\Pocket Chordsmith\apps\pocket-daw"
-npm test
-npm run build
-npm run verify:release
-npm run verify:native-release
-```
+## Signing
 
-`verify:release` runs tests, production build, browser preview packaging and a Tauri debug build. `verify:native-release` opts into full native bundling and should be used only when preparing a candidate installer.
+- Do not claim the app is signed unless signature verification records `signed`.
+- If signing is required for a release gate, set `POCKET_DAW_REQUIRE_SIGNING=1` before `npm run verify:artifacts`.
+- Do not commit `.pfx`, `.p12`, `.pem`, `.key`, secrets or signing credentials.
 
-Pocket DAW itch uploads must use the native/installable output only. Do not publish the browser preview zip, `dist/`, or an HTML5/WebAudio channel for Pocket DAW.
+## Upload Commands
 
-## Expected Outputs
-
-- Local browser preview only, never itch: `releases/pocket-daw-browser-preview-v0.5.4.zip`
-- Debug app: `src-tauri/target/debug/pocket-daw.exe`
-- Windows installer: `src-tauri/target/release/bundle/nsis/Pocket DAW_0.5.4_x64-setup.exe`
-- MSI if produced: `src-tauri/target/release/bundle/msi/Pocket DAW_0.5.4_x64_en-US.msi`
-
-Generated outputs must not be committed.
-
-## Checksums
-
-PowerShell:
+Preview only:
 
 ```powershell
-Get-FileHash "src-tauri\target\release\bundle\nsis\Pocket DAW_0.5.4_x64-setup.exe" -Algorithm SHA256
-Get-FileHash "src-tauri\target\release\bundle\msi\Pocket DAW_0.5.4_x64_en-US.msi" -Algorithm SHA256
+butler push-preview releases/itch/pocket-daw-windows-x64-v0.5.5 samfa12/pocket-daw:windows-x64
 ```
 
-Node cross-platform:
+First hidden upload:
 
 ```powershell
-node -e "const{createHash}=require('crypto');const{readFileSync}=require('fs');for(const f of process.argv.slice(1)){console.log(createHash('sha256').update(readFileSync(f)).digest('hex'), f)}" "path\to\artifact"
+butler push releases/itch/pocket-daw-windows-x64-v0.5.5 samfa12/pocket-daw:windows-x64 --userversion 0.5.5 --hidden
 ```
 
-## Manual QA
+Optional installer secondary channel:
 
-- Complete `WINDOWS_TESTING_CHECKLIST.md`.
-- Confirm `v0.5.4` displays in the app.
-- Export diagnostics during packaged playback and confirm `audio.playbackBackend` is `native-cpal`.
-- Confirm `audio.nativeRenderCache.assetRegionCount`, `proceduralFallbackEventCount`, `renderCacheHitCount` and `renderCacheMissCount` look sane for the project under test.
-- On a saved project, run Build Native Cache and confirm `project-cache/native-audio/*.wav` files plus `project.renderCache` metadata are written.
-- Stress playback by scrolling, dragging mixer controls and editing Chordsmith steps; do not accept a build that falls back to Web Audio for generated playback in the installed app.
-- Confirm `.pocketdaw` save/open and Save As paths.
-- Import audio and MIDI from real folders.
-- Reopen the project and confirm media status is honest.
-- Export full WAV, MIDI, stems, section manifest, Godot manifest and web manifest.
-- Export diagnostics and attach it to any tester bug report.
+```powershell
+butler push releases/itch/installers/<installer-file-or-folder> samfa12/pocket-daw:windows-installer --userversion 0.5.5 --hidden
+```
 
-## Known Limitations To Disclose
+Do not run upload commands from automation unless a separate manual action explicitly instructs it. `npm run itch:push:hidden` refuses to upload unless `PUBLISH=1` is set.
 
-- No real recording yet.
-- Native Collect Media, Reload and Relink are enabled for packaged-app testing; browser runtime-only media still cannot be collected.
-- Game packs are deterministic manifests plus current renderable assets, not bundled ZIP packs.
-- Unsigned installers may trigger Windows warnings.
-- Browser preview cannot persist local file paths and must not be used for itch distribution.
+## Do Not Package
 
-## Rollback
-
-- Keep the prior installer and SHA-256 in the private-alpha channel.
-- If the new installer fails launch/save/open tests, remove it from the channel and restore the previous package.
-- Keep tester project files; do not overwrite user `.pocketdaw` saves during rollback.
-
-## Do Not Commit
-
-- `node_modules/`
-- `dist/`
-- `src-tauri/target/`
-- `releases/*.zip`
-- installers, MSI files, Playwright reports, traces or local `.pocketdaw` saves
+- `.git`
+- `.env`
+- `node_modules`
+- `target`
+- source files
+- source maps
+- debug symbols
+- logs
+- private certificates or keys
+- local test projects or user media
+- absolute local machine paths in release text files

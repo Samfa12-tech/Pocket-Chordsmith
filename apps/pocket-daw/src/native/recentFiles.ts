@@ -1,6 +1,7 @@
 const RECENT_KEY = "pocket_daw_recent_v1";
 const AUTOSAVE_KEY = "pocket_daw_autosave_v1";
 const AUTOSAVE_FILE_KEY = "pocket_daw_autosave_file_v1";
+const UPDATER_AUTO_CHECK_KEY = "pocket_daw_updater_auto_check_v1";
 
 export interface RecentProject {
   label: string;
@@ -76,6 +77,22 @@ export function loadAutosaveFileState(): AutosaveFileState | null {
   }
 }
 
+export function saveUpdaterAutoCheckPreference(enabled: boolean): void {
+  safeLocalStorage()?.setItem(UPDATER_AUTO_CHECK_KEY, enabled ? "1" : "0");
+}
+
+export function loadUpdaterAutoCheckPreference(): boolean {
+  return safeLocalStorage()?.getItem(UPDATER_AUTO_CHECK_KEY) === "1";
+}
+
 function recentKey(label: string, path: string | null) {
   return `${path || ""}::${label}`;
+}
+
+function safeLocalStorage(): Storage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
 }

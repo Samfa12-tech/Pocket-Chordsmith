@@ -11,10 +11,15 @@ export const RELEASE_DOCS = [
   "docs/POCKET_AUDIO_CORE_CONVERGENCE_REVIEW.md",
   "docs/v0.5.1-verification.md",
   "docs/PRIVATE_ALPHA_RELEASE_CHECKLIST.md",
+  "docs/ITCH_BUILD_PUSH_AND_UPDATE_TEST.md",
+  "docs/ITCH_RELEASE_CHECKLIST.md",
   "docs/RELEASE_NOTES_TEMPLATE.md",
   "docs/WINDOWS_TESTING_CHECKLIST.md",
   "docs/V0_6_FOUNDATION_NOTES.md",
-  "docs/RECORDING_PREP.md"
+  "docs/RECORDING_PREP.md",
+  "docs/UPDATER_RELEASE_PIPELINE.md",
+  "docs/v0.5.5-itch-release-readiness.md",
+  "docs/v0.5.4-native-cache.md"
 ];
 
 export function previewZipName(version) {

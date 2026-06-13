@@ -1,10 +1,12 @@
 import { createDemoProject } from "../demo/demoProject";
 import type { PocketDawProject } from "../daw/schema";
 import type { Clip } from "../daw/schema";
+import { POCKET_DAW_VERSION } from "../daw/schema";
 import type { SnapMode } from "../daw/timeline";
 import { createUndoStack, type UndoStack } from "../daw/undo";
 import type { ProjectFileState } from "../native/fileBridge";
 import type { RecentProject } from "../native/recentFiles";
+import type { UpdaterState } from "../native/updaterBridge";
 
 export type ChordsmithStepSelection =
   | { kind: "drums"; sectionId: string; lane: "kick" | "snare" | "hat"; step: number }
@@ -31,6 +33,14 @@ export interface AppState {
   showControls: boolean;
   showAddTrack: boolean;
   showAudioSettings: boolean;
+  showUpdaterPanel: boolean;
+  updaterStatus: UpdaterState;
+  updaterMessage: string;
+  updaterCurrentVersion: string;
+  updaterAvailableVersion: string | null;
+  updaterReleaseNotes: string | null;
+  updaterDownloadProgress: number | null;
+  updaterAutoCheckOnStartup: boolean;
   audioProbeStatus: string;
   chordsmithEditorFollowClip: boolean;
   chordsmithEditorSectionId: string;
@@ -67,6 +77,14 @@ export function createInitialState(): AppState {
     showControls: false,
     showAddTrack: false,
     showAudioSettings: false,
+    showUpdaterPanel: false,
+    updaterStatus: "idle",
+    updaterMessage: "Updates not checked yet.",
+    updaterCurrentVersion: POCKET_DAW_VERSION,
+    updaterAvailableVersion: null,
+    updaterReleaseNotes: null,
+    updaterDownloadProgress: null,
+    updaterAutoCheckOnStartup: false,
     audioProbeStatus: "Audio devices not probed yet.",
     chordsmithEditorFollowClip: true,
     chordsmithEditorSectionId: "A",

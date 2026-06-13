@@ -2,8 +2,8 @@ import { cloneProject } from "../daw/dawProject";
 import type { Clip, PocketDawProject, RenderCacheItem, TrackRole } from "../daw/schema";
 import { barsToSeconds } from "../daw/timeline";
 import type { NativeAudioAsset, NativeAudioRegion } from "../native/audioPlayback";
-import { writeNativeCacheAsset, type NativeMediaApi } from "../native/mediaBridge";
-import { renderTimelineAudioRegions } from "./audioRegions";
+import { readNativeCacheAsset, writeNativeCacheAsset, type NativeMediaApi } from "../native/mediaBridge";
+import { audioRegionFromClip, renderTimelineAudioRegions } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
 import { encodeWav, renderProjectToWavBlob } from "./offlineRender";
 
@@ -23,6 +23,11 @@ export interface NativeRenderCache {
   runtimeAudioRegionCount: number;
   missingRuntimeAudioRegionCount: number;
   cachedAssetByteCount: number;
+  hydratedCacheItemCount?: number;
+  hydrationFailureCount?: number;
+  staleSourceHashCount?: number;
+  skippedInvalidPathCount?: number;
+  hydratedCacheReadByteCount?: number;
 }
 
 export interface NativeRenderCachePersistResult {
@@ -32,6 +37,25 @@ export interface NativeRenderCachePersistResult {
   writtenByteCount: number;
   errors: string[];
   renderCacheItems: RenderCacheItem[];
+}
+
+export interface NativeRenderCacheHydrationResult {
+  cache: NativeRenderCache | null;
+  hydratedCacheItemCount: number;
+  hydrationFailureCount: number;
+  staleSourceHashCount: number;
+  skippedInvalidPathCount: number;
+  skippedPartialGeneratedClipCount: number;
+  hydratedCacheReadByteCount: number;
+  errors: string[];
+}
+
+interface HydratedCacheEntry {
+  item: RenderCacheItem;
+  asset: NativeAudioAsset;
+  region: NativeAudioRegion | null;
+  cacheKind: string;
+  generatedKey?: string;
 }
 
 interface AssetBuildItem {
@@ -179,6 +203,124 @@ export async function persistNativeRenderCacheAssets(
     writtenByteCount,
     errors,
     renderCacheItems
+  };
+}
+
+export async function hydrateNativeRenderCacheAssets(
+  projectFilePath: string,
+  project: PocketDawProject,
+  api?: NativeMediaApi
+): Promise<NativeRenderCacheHydrationResult> {
+  const signature = nativeRenderCacheSignature(project);
+  const runtimeSignature = nativeRuntimeAudioCacheSignature(project);
+  const errors: string[] = [];
+  const hydrated: HydratedCacheEntry[] = [];
+  let hydrationFailureCount = 0;
+  let staleSourceHashCount = 0;
+  let skippedInvalidPathCount = 0;
+  let hydratedCacheReadByteCount = 0;
+  let skippedPartialGeneratedClipCount = 0;
+
+  for (const item of project.renderCache || []) {
+    const cacheKind = String(item.metadata?.cacheKind || "");
+    if (item.invalidated || !cacheKind.startsWith("native-")) continue;
+    const sourceHash = String(item.metadata?.sourceHash || "");
+    const expectedHash = cacheKind === "native-runtime-audio" ? runtimeSignature : signature;
+    if (sourceHash && sourceHash !== expectedHash) {
+      staleSourceHashCount += 1;
+      continue;
+    }
+    const relativePath = String(item.metadata?.assetRelativePath || "");
+    if (!isSafeNativeCacheRelativePath(relativePath)) {
+      skippedInvalidPathCount += 1;
+      continue;
+    }
+    const assetId = String(item.metadata?.assetId || item.id);
+    try {
+      const read = await readNativeCacheAsset(projectFilePath, assetId, relativePath, api);
+      if (!read) {
+        hydrationFailureCount += 1;
+        continue;
+      }
+      const bytes = Array.from(new Uint8Array(read.bytes));
+      hydratedCacheReadByteCount += read.sizeBytes || bytes.length;
+      const asset = nativeAssetFromHydratedItem(project, item, assetId, read.relativePath, bytes, read.sizeBytes);
+      hydrated.push({
+        item,
+        asset,
+        region: nativeRegionFromHydratedItem(project, item, asset),
+        cacheKind,
+        generatedKey: cacheKind === "native-generated-stem" ? generatedStemKey(item) : undefined
+      });
+    } catch (error) {
+      hydrationFailureCount += 1;
+      errors.push(error instanceof Error ? error.message : String(error || "Native cache hydration failed."));
+    }
+  }
+
+  const generatedGroups = new Map<string, HydratedCacheEntry[]>();
+  const runtimeEntries: HydratedCacheEntry[] = [];
+  hydrated.forEach((entry) => {
+    if (entry.cacheKind === "native-generated-stem" && entry.item.sourceClipId) {
+      const group = generatedGroups.get(entry.item.sourceClipId) || [];
+      group.push(entry);
+      generatedGroups.set(entry.item.sourceClipId, group);
+    } else if (entry.cacheKind === "native-runtime-audio") {
+      runtimeEntries.push(entry);
+    }
+  });
+
+  const acceptedEntries: HydratedCacheEntry[] = [...runtimeEntries];
+  generatedGroups.forEach((entries, clipId) => {
+    const clip = project.timeline.clips.find((item) => item.id === clipId);
+    const expected = clip ? expectedGeneratedStemKeys(project, clip) : new Set<string>();
+    const available = new Set(entries.map((entry) => entry.generatedKey || "").filter(Boolean));
+    const complete = expected.size > 0 && Array.from(expected).every((key) => available.has(key));
+    if (!complete) {
+      skippedPartialGeneratedClipCount += 1;
+      return;
+    }
+    acceptedEntries.push(...entries);
+  });
+
+  const regions = acceptedEntries.map((entry) => entry.region).filter((region): region is NativeAudioRegion => !!region);
+  const assets = acceptedEntries.map((entry) => entry.asset);
+  const cachedClipIds = new Set<string>();
+  acceptedEntries.forEach((entry) => {
+    if (entry.item.sourceClipId) cachedClipIds.add(entry.item.sourceClipId);
+  });
+
+  const cache: NativeRenderCache | null = assets.length || regions.length
+    ? {
+        signature,
+        assets,
+        regions,
+        cachedClipIds,
+        renderCacheItems: acceptedEntries.map((entry) => entry.item),
+        renderCacheHitCount: acceptedEntries.length,
+        renderCacheMissCount: 0,
+        proceduralFallbackEventCount: 0,
+        generatedRegionCount: acceptedEntries.filter((entry) => entry.cacheKind === "native-generated-stem").length,
+        runtimeAudioRegionCount: acceptedEntries.filter((entry) => entry.cacheKind === "native-runtime-audio").length,
+        missingRuntimeAudioRegionCount: 0,
+        cachedAssetByteCount: assets.reduce((total, asset) => total + nativeAssetByteLength(asset), 0),
+        hydratedCacheItemCount: acceptedEntries.length,
+        hydrationFailureCount,
+        staleSourceHashCount,
+        skippedInvalidPathCount,
+        hydratedCacheReadByteCount
+      }
+    : null;
+
+  return {
+    cache,
+    hydratedCacheItemCount: acceptedEntries.length,
+    hydrationFailureCount,
+    staleSourceHashCount,
+    skippedInvalidPathCount,
+    skippedPartialGeneratedClipCount,
+    hydratedCacheReadByteCount,
+    errors
   };
 }
 
@@ -398,6 +540,97 @@ function renderCacheItemForRuntimeAudio(asset: NativeAudioAsset, signature: stri
       durableCacheReady: false
     }
   };
+}
+
+function nativeAssetFromHydratedItem(
+  project: PocketDawProject,
+  item: RenderCacheItem,
+  assetId: string,
+  relativePath: string,
+  bytes: number[],
+  sizeBytes: number
+): NativeAudioAsset {
+  return {
+    id: assetId,
+    name: String(item.metadata?.name || item.id),
+    relativePath,
+    mimeType: String(item.metadata?.mimeType || "audio/wav"),
+    sampleRate: cleanPositiveNumber(item.metadata?.sampleRate, project.project.sampleRate),
+    channels: Math.max(1, Math.min(2, Math.round(cleanPositiveNumber(item.metadata?.channels, 2)))),
+    durationSeconds: cleanPositiveNumber(item.metadata?.durationSeconds, hydratedDurationFallback(project, item)),
+    sizeBytes: sizeBytes || bytes.length,
+    sourceHash: String(item.metadata?.sourceHash || ""),
+    bytes
+  };
+}
+
+function nativeRegionFromHydratedItem(project: PocketDawProject, item: RenderCacheItem, asset: NativeAudioAsset): NativeAudioRegion | null {
+  const clip = item.sourceClipId ? project.timeline.clips.find((entry) => entry.id === item.sourceClipId) : null;
+  if (!clip) return null;
+  const cacheKind = String(item.metadata?.cacheKind || "");
+  if (cacheKind === "native-runtime-audio") {
+    const media = item.mediaPoolItemId ? project.mediaPool.find((entry) => entry.id === item.mediaPoolItemId) : null;
+    if (!media) return null;
+    const region = audioRegionFromClip(project, clip, media);
+    return {
+      id: `${clip.id}_${region.trackId}_${asset.id}_hydrated`,
+      assetId: asset.id,
+      trackId: region.trackId,
+      startTime: region.startTimeSeconds,
+      sourceOffset: region.sourceOffsetSeconds,
+      duration: Math.min(region.durationSeconds, asset.durationSeconds),
+      gain: region.gain,
+      pan: 0
+    };
+  }
+
+  if (cacheKind === "native-generated-stem") {
+    const trackId = String(item.metadata?.trackId || clip.trackId);
+    return {
+      id: `${clip.id}_${trackId}_${asset.id}_hydrated`,
+      assetId: asset.id,
+      trackId,
+      startTime: barsToSeconds(clip.startBar - 1, project.project.bpm, project.project.timeSig),
+      sourceOffset: 0,
+      duration: Math.min(barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig), asset.durationSeconds),
+      gain: 1,
+      pan: 0
+    };
+  }
+
+  return null;
+}
+
+function hydratedDurationFallback(project: PocketDawProject, item: RenderCacheItem): number {
+  const clip = item.sourceClipId ? project.timeline.clips.find((entry) => entry.id === item.sourceClipId) : null;
+  if (!clip) return 0;
+  return barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig);
+}
+
+function expectedGeneratedStemKeys(project: PocketDawProject, clip: Clip): Set<string> {
+  const stemMutes = clip.transforms?.stemMutes || {};
+  return new Set(STEM_ROLES.flatMap((role) => {
+    if (stemMutes[role]) return [];
+    return project.tracks
+      .filter((track) => track.role === role && track.active !== false)
+      .map((track) => `${role}:${track.id}`);
+  }));
+}
+
+function generatedStemKey(item: RenderCacheItem): string {
+  return `${String(item.metadata?.role || "")}:${String(item.metadata?.trackId || "")}`;
+}
+
+function isSafeNativeCacheRelativePath(value: string): boolean {
+  const normalized = value.replace(/\\/g, "/");
+  if (!normalized.startsWith(`${NATIVE_RENDER_CACHE_ROOT}/`)) return false;
+  if (!normalized.toLowerCase().endsWith(".wav")) return false;
+  return normalized.split("/").every((part) => part && part !== "." && part !== "..");
+}
+
+function cleanPositiveNumber(value: unknown, fallback: number): number {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : fallback;
 }
 
 function nativeAssetByteLength(asset: NativeAudioAsset): number {
