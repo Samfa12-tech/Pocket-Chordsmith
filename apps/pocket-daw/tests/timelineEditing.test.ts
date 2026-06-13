@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
-import { clipSourceStartBar, splitClipAtBar, trimClipEnd, trimClipStart } from "../src/daw/clips";
+import { clipSourceStartBar, moveClipToBar, repeatGeneratedSectionClipToEnd, splitClipAtBar, trimClipEnd, trimClipStart } from "../src/daw/clips";
 import { addMarkerAtBar, clearLoop, deleteMarker, setLoopToClip, snapBarValue } from "../src/daw/timeline";
 import { createDemoProject } from "../src/demo/demoProject";
 
@@ -47,6 +47,42 @@ describe("timeline editing helpers", () => {
       endBar: clip.startBar + clip.barLength
     });
     expect(cleared.timeline.loop.enabled).toBe(false);
+  });
+
+  it("repeats generated sections as linked copies when loop-dragged longer", () => {
+    const project = createDemoProject();
+    const clip = project.timeline.clips[0];
+    const result = repeatGeneratedSectionClipToEnd(project, clip.id, clip.startBar + clip.barLength * 3);
+    const repeats = result.project.timeline.clips.filter((item) => item.metadata?.loopParentId === clip.id);
+
+    expect(result.repeatedCount).toBe(2);
+    expect(repeats.map((item) => item.startBar)).toEqual([clip.startBar + clip.barLength, clip.startBar + clip.barLength * 2]);
+    expect(repeats.every((item) => item.sectionId === clip.sectionId && item.linked)).toBe(true);
+  });
+
+  it("moves generated section repeats with their source clip", () => {
+    const project = createDemoProject();
+    const clip = project.timeline.clips[0];
+    const repeated = repeatGeneratedSectionClipToEnd(project, clip.id, clip.startBar + clip.barLength * 3).project;
+    const moved = moveClipToBar(repeated, clip.id, 5);
+    const movedSource = moved.timeline.clips.find((item) => item.id === clip.id)!;
+    const repeats = moved.timeline.clips.filter((item) => item.metadata?.loopParentId === clip.id);
+
+    expect(movedSource.startBar).toBe(5);
+    expect(repeats.map((item) => item.startBar)).toEqual([5 + clip.barLength, 5 + clip.barLength * 2]);
+  });
+
+  it("moves a generated section loop group when dragging one repeat", () => {
+    const project = createDemoProject();
+    const clip = project.timeline.clips[0];
+    const repeated = repeatGeneratedSectionClipToEnd(project, clip.id, clip.startBar + clip.barLength * 3).project;
+    const repeat = repeated.timeline.clips.find((item) => item.metadata?.loopParentId === clip.id)!;
+    const moved = moveClipToBar(repeated, repeat.id, 9);
+    const movedSource = moved.timeline.clips.find((item) => item.id === clip.id)!;
+    const movedRepeat = moved.timeline.clips.find((item) => item.id === repeat.id)!;
+
+    expect(movedRepeat.startBar).toBe(9);
+    expect(movedSource.startBar).toBe(9 - clip.barLength);
   });
 
   it("adds and deletes markers that survive project roundtrip", () => {

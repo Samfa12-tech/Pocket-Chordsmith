@@ -53,13 +53,14 @@ export function renderAppShell(state: AppState): string {
   const selectedClip = project.timeline.clips.find((clip) => clip.id === state.selectedClipId) || null;
   const selectedTrack = project.tracks.find((track) => track.id === state.selectedTrackId) || null;
   return `
-    <div class="app-shell" data-layout-shell="true" data-scroll-key="app-shell">
+    <div class="app-shell" data-layout-shell="true" data-scroll-key="app-shell" style="--studio-height:${sanitizeCssLengthOrNumber(state.timelineHeightPx, 430, 260, 760)}px;--inspector-width:${sanitizeCssLengthOrNumber(state.inspectorWidthPx, 420, 280, 620)}px;">
       ${renderMenuStrip(state)}
       ${renderTransport(state)}
-      <main class="studio" data-layout-zone="studio">
+      <main class="studio ${state.inspectorVisible ? "" : "inspector-hidden"}" data-layout-zone="studio">
         ${renderTimeline(state)}
-        ${renderInspector(state, project, selectedClip, selectedTrack)}
+        ${state.inspectorVisible ? `<div class="inspector-resize-handle" data-inspector-resize-handle="true" title="Drag to resize inspector"></div>${renderInspector(state, project, selectedClip, selectedTrack)}` : ""}
       </main>
+      <div class="studio-resize-handle" data-timeline-resize-handle="true" title="Drag to resize timeline and push mixer lower"><span></span></div>
       ${renderMixer(state)}
       ${renderExportPanel(state)}
       ${renderMediaPool(state)}
@@ -215,6 +216,7 @@ function renderTimeline(state: AppState): string {
         </div>
         ${renderTimelineSongSettings(pcs)}
         <div class="timeline-options">
+          <button data-action="toggle-inspector">${state.inspectorVisible ? "Hide Inspector" : "Show Inspector"}</button>
           <label>Snap
             <select id="snapMode">
               ${(["bar", "beat", "off"] as const).map((mode) => `<option value="${mode}" ${state.snapMode === mode ? "selected" : ""}>${modeLabel(mode)}</option>`).join("")}
@@ -403,8 +405,10 @@ function renderInlineChordsmithClip(
               : "";
   if (!body) return "";
   return `
-    <div class="inline-sequencer inline-${sanitizeDomId(track.role, "role")} ${state.selectedClipId === clip.id ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${sanitizeDataAttr(clip.id)}" data-inline-row="${sanitizeDataAttr(track.id)}" data-inline-sequencer-role="${sanitizeDataAttr(track.role)}" data-inline-section="${sanitizeDataAttr(section.id)}" style="left:${left};width:${width};--inline-steps:${sanitizeCssLengthOrNumber(renderSteps, 0, 0, 256)};">
+    <div class="inline-sequencer inline-${sanitizeDomId(track.role, "role")} ${state.selectedClipId === clip.id ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${sanitizeDataAttr(clip.id)}" data-inline-row="${sanitizeDataAttr(track.id)}" data-inline-sequencer-role="${sanitizeDataAttr(track.role)}" data-inline-section="${sanitizeDataAttr(section.id)}" title="Drag empty space to move with snap. Drag the right handle to repeat the section." style="left:${left};width:${width};--inline-steps:${sanitizeCssLengthOrNumber(renderSteps, 0, 0, 256)};">
+      <span class="clip-drag-handle" data-clip-drag-handle="${sanitizeDataAttr(clip.id)}" title="Drag to move this section with snap"></span>
       ${body}
+      <span class="clip-loop-handle" data-clip-loop-handle="${sanitizeDataAttr(clip.id)}" title="Drag right to repeat this section"></span>
     </div>
   `;
 }
@@ -505,11 +509,12 @@ function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, sele
   const peaks = Array.isArray(media?.metadata?.waveformPeaks) ? media.metadata.waveformPeaks.slice(0, 48) : [];
   const midi = clip.type === "midi" ? midiDataFromClip(clip) : null;
   return `
-    <button class="clip ${selected ? "selected" : ""} ${clip.muted ? "muted" : ""} ${clip.type === "audio" ? "audio-clip" : ""} ${clip.type === "midi" ? "midi-clip" : ""}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-row="${sanitizeDataAttr(track.id)}" style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(Number(clip.startBar) - 1, 0)} * var(--bar)`)};width:calc(${sanitizeCssLengthOrNumber(clip.barLength, 1, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(clip.color)};background:color-mix(in srgb, ${safeClipColour(clip.color)} 28%, #15192a);">
+    <button class="clip ${selected ? "selected" : ""} ${clip.muted ? "muted" : ""} ${clip.type === "audio" ? "audio-clip" : ""} ${clip.type === "midi" ? "midi-clip" : ""}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-row="${sanitizeDataAttr(track.id)}" title="Drag to move with snap. Drag the right handle to repeat generated sections." style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(Number(clip.startBar) - 1, 0)} * var(--bar)`)};width:calc(${sanitizeCssLengthOrNumber(clip.barLength, 1, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(clip.color)};background:color-mix(in srgb, ${safeClipColour(clip.color)} 28%, #15192a);">
       <strong>${escapeHtml(clip.sectionId || clip.name)}</strong>
       <span>${escapeHtml(clip.type === "audio" ? media?.name || "Audio" : clip.type === "midi" ? `${midi?.notes.length || 0} MIDI notes` : track.name)}</span>
       ${peaks.length ? `<i class="clip-waveform">${peaks.map((peak) => `<b style="height:${Math.max(2, Math.round(Number(peak) * 18))}px"></b>`).join("")}</i>` : ""}
       ${midi?.notes.length ? `<i class="midi-note-strip">${midi.notes.slice(0, 32).map((note) => `<b style="left:${Math.max(0, Math.min(100, (note.startTick / Math.max(1, midi.ppq * clip.barLength * project.project.timeSig)) * 100))}%;width:${Math.max(3, Math.min(24, (note.durationTicks / Math.max(1, midi.ppq * clip.barLength * project.project.timeSig)) * 100))}%;bottom:${Math.max(2, Math.min(24, (note.pitch - 36) / 3))}px"></b>`).join("")}</i>` : ""}
+      ${clip.type === "generated-section" ? `<span class="clip-drag-handle" data-clip-drag-handle="${sanitizeDataAttr(clip.id)}" title="Drag to move this section with snap"></span><span class="clip-loop-handle" data-clip-loop-handle="${sanitizeDataAttr(clip.id)}" title="Drag right to repeat this section"></span>` : ""}
     </button>
   `;
 }

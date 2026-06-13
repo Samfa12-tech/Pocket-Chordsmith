@@ -3,7 +3,7 @@ import { sanitizePocketChordsmithProject } from "../compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../compatibility/pcsToDaw";
 import { migratePocketDawProject } from "../compatibility/migrations";
 import { cloneProject, parsePocketDawProjectFile } from "../daw/dawProject";
-import { deleteClip, duplicateClip, moveClipByBars, pasteClip, splitClipAtBar, toggleClipMute, trimClipEnd, trimClipStart } from "../daw/clips";
+import { deleteClip, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, splitClipAtBar, toggleClipMute, trimClipEnd, trimClipStart } from "../daw/clips";
 import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
 import { addTrackToProject, type AddTrackKind } from "../daw/tracks";
 import { placeAudioClipOnTimeline } from "../daw/audioClips";
@@ -81,6 +81,34 @@ export function moveSelectedClipBySnap(state: AppState, direction: -1 | 1): AppS
   const project = state.undoStack.present;
   const delta = state.snapMode === "beat" ? direction / Math.max(1, project.project.timeSig) : direction;
   return moveSelectedClip(state, delta);
+}
+
+export function moveClipToBarCommand(state: AppState, clipId: string, startBar: number): AppState {
+  const project = state.undoStack.present;
+  const clip = project.timeline.clips.find((item) => item.id === clipId);
+  if (!clip) return { ...state, status: "Choose a clip before dragging." };
+  const snapped = snapBarValue(startBar, state.snapMode, project.project.timeSig);
+  const next = moveClipToBar(project, clipId, snapped);
+  if (next === project) return { ...state, selectedClipId: clipId, status: `Clip stayed at Bar ${clip.startBar}.` };
+  return {
+    ...commitProject(state, next, `Moved ${clip.name} to Bar ${snapped}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function repeatClipToEndCommand(state: AppState, clipId: string, endBar: number): AppState {
+  const project = state.undoStack.present;
+  const clip = project.timeline.clips.find((item) => item.id === clipId);
+  if (!clip) return { ...state, status: "Choose a section before repeating it." };
+  const snappedEnd = snapBarValue(endBar, state.snapMode, project.project.timeSig);
+  const result = repeatGeneratedSectionClipToEnd(project, clipId, snappedEnd);
+  if (result.project === project) return { ...state, selectedClipId: clipId, status: "Only generated section clips can be repeat-dragged." };
+  return {
+    ...commitProject(state, result.project, result.repeatedCount ? `Repeated ${clip.name} ${result.repeatedCount} time${result.repeatedCount === 1 ? "" : "s"}.` : `Cleared repeats for ${clip.name}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
 }
 
 export function duplicateSelectedClip(state: AppState): AppState {

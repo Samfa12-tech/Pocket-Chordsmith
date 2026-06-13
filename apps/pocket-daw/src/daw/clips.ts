@@ -18,6 +18,22 @@ export function moveClipByBars(project: PocketDawProject, clipId: string, deltaB
   return recomputeTimelineBars(next);
 }
 
+export function moveClipToBar(project: PocketDawProject, clipId: string, startBar: number): PocketDawProject {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip) return project;
+  const target = Math.max(1, startBar);
+  const delta = target - clip.startBar;
+  if (Math.abs(delta) < 0.0001) return project;
+  const loopParentId = typeof clip.metadata?.loopParentId === "string" ? clip.metadata.loopParentId : clip.id;
+  next.timeline.clips.forEach((item) => {
+    if (item.id === clip.id || item.id === loopParentId || item.metadata?.loopParentId === loopParentId) {
+      item.startBar = Math.max(1, item.startBar + delta);
+    }
+  });
+  return recomputeTimelineBars(next);
+}
+
 export function duplicateClip(project: PocketDawProject, clipId: string): { project: PocketDawProject; duplicatedId: string | null } {
   const next = cloneProject(project);
   const clip = next.timeline.clips.find((item) => item.id === clipId);
@@ -106,6 +122,39 @@ export function trimClipEnd(project: PocketDawProject, clipId: string, deltaBars
   if (delta === 0) return project;
   clip.barLength = Math.max(1, clip.barLength + delta);
   return recomputeTimelineBars(next);
+}
+
+export function repeatGeneratedSectionClipToEnd(project: PocketDawProject, clipId: string, requestedEndBar: number): { project: PocketDawProject; repeatedCount: number } {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "generated-section" || !clip.sectionId) return { project, repeatedCount: 0 };
+  const sourceLength = Math.max(0.25, clip.barLength);
+  const baseEnd = clip.startBar + sourceLength;
+  const endBar = Math.max(baseEnd, requestedEndBar);
+  next.timeline.clips = next.timeline.clips.filter((item) => item.metadata?.loopParentId !== clip.id);
+  let repeatedCount = 0;
+  let startBar = baseEnd;
+  while (startBar < endBar - 0.001 && repeatedCount < 128) {
+    const length = Math.min(sourceLength, endBar - startBar);
+    const loopClip: Clip = {
+      ...JSON.parse(JSON.stringify(clip)),
+      id: nextClipId(next.timeline.clips),
+      startBar,
+      barLength: length,
+      linked: true,
+      name: `${clip.name} repeat ${repeatedCount + 1}`,
+      metadata: {
+        ...(clip.metadata || {}),
+        loopParentId: clip.id,
+        sourceStartBar: 0,
+        loopIndex: repeatedCount + 1
+      }
+    };
+    next.timeline.clips.push(loopClip);
+    repeatedCount += 1;
+    startBar += length;
+  }
+  return { project: recomputeTimelineBars(next), repeatedCount };
 }
 
 export function pasteClip(project: PocketDawProject, source: Clip, startBar: number): { project: PocketDawProject; pastedId: string } {

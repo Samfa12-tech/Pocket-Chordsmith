@@ -16,6 +16,11 @@
   --purple: #b88cff;
   --danger: #ff6b8b;
   --menu-strip-height: 31px;
+  --native-titlebar-safe-top: 0px;
+}
+
+:root.native-desktop-shell {
+  --native-titlebar-safe-top: 31px;
 }
 
 * {
@@ -82,13 +87,15 @@ button:disabled {
     "menu"
     "transport"
     "studio"
+    "studio-resize"
     "mixer"
     "export"
     "media"
     "import";
-  grid-template-rows: auto auto minmax(320px, 1fr) auto auto auto auto;
-  height: 100vh;
-  min-height: 100vh;
+  grid-template-rows: auto auto var(--studio-height, 430px) 10px auto auto auto auto;
+  height: calc(100vh - var(--native-titlebar-safe-top, 0px));
+  min-height: calc(100vh - var(--native-titlebar-safe-top, 0px));
+  margin-top: var(--native-titlebar-safe-top, 0px);
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-gutter: stable;
@@ -306,9 +313,46 @@ h1 {
 .studio {
   grid-area: studio;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 430px);
+  grid-template-columns: minmax(0, 1fr) 8px minmax(280px, var(--inspector-width, 420px));
   min-height: 0;
   overflow: hidden;
+}
+
+.studio.inspector-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.studio-resize-handle {
+  grid-area: studio-resize;
+  display: grid;
+  place-items: center;
+  border-top: 1px solid #202944;
+  border-bottom: 1px solid #202944;
+  background: #080d18;
+  cursor: row-resize;
+}
+
+.studio-resize-handle span {
+  width: 74px;
+  height: 3px;
+  border-radius: 999px;
+  background: #33405e;
+}
+
+.studio-resize-handle:hover span {
+  background: #40d8ff;
+}
+
+.inspector-resize-handle {
+  min-width: 8px;
+  border-left: 1px solid rgba(43, 54, 84, 0.72);
+  border-right: 1px solid rgba(43, 54, 84, 0.72);
+  background: linear-gradient(90deg, #0a0f1b, #111827, #0a0f1b);
+  cursor: col-resize;
+}
+
+.inspector-resize-handle:hover {
+  background: #143044;
 }
 
 .inspector {
@@ -1317,7 +1361,11 @@ h1 {
   }
 
   .studio {
-    grid-template-columns: minmax(150px, 172px) minmax(0, 1fr) minmax(300px, 360px);
+    grid-template-columns: minmax(0, 1fr) 8px minmax(300px, min(var(--inspector-width, 360px), 38vw));
+  }
+
+  .studio.inspector-hidden {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .export-panel header,

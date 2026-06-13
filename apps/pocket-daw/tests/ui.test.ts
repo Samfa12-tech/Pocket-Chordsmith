@@ -239,6 +239,32 @@ describe("Pocket DAW UI rendering", () => {
     });
   });
 
+  it("renders resizable timeline workspace controls", () => {
+    const state = createInitialState();
+    const html = renderAppShell(state);
+
+    expect(html).toContain("--studio-height:430px");
+    expect(html).toContain("--inspector-width:420px");
+    expect(html).toContain('data-layout-zone="menu"');
+    expect(html).toContain('data-timeline-resize-handle="true"');
+    expect(html).toContain('data-inspector-resize-handle="true"');
+    expect(html).toContain('data-action="toggle-inspector"');
+    expect(html).toContain("Hide Inspector");
+    expect(html).toContain('data-clip-drag-handle="clip_001"');
+    expect(html).toContain('data-clip-loop-handle="clip_001"');
+  });
+
+  it("can render the timeline with the inspector hidden", () => {
+    const state = createInitialState();
+    state.inspectorVisible = false;
+    const html = renderAppShell(state);
+
+    expect(html).toContain('class="studio inspector-hidden"');
+    expect(html).toContain("Show Inspector");
+    expect(html).not.toContain('data-scroll-key="inspector"');
+    expect(html).not.toContain('data-inspector-resize-handle="true"');
+  });
+
   it("renders bar and time labels on the timeline ruler", () => {
     const html = renderAppShell(createInitialState());
 

@@ -48,6 +48,7 @@ import {
   duplicateSelectedClip,
   importTextToProject,
   loadPocketDawRaw,
+  moveClipToBarCommand,
   moveSelectedClip,
   moveSelectedClipBySnap,
   moveMidiNoteCommand,
@@ -56,6 +57,7 @@ import {
   pitchMidiNoteCommand,
   redoCommand,
   renameMarkerCommand,
+  repeatClipToEndCommand,
   removeTrackFxCommand,
   routeTrackOutputCommand,
   resizeMidiNoteCommand,
@@ -126,6 +128,7 @@ import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
 type MixerControlField = "volume" | "pan";
 type RenderSchedule = "none" | "live-dom" | "deferred" | "immediate";
 type ScrollSnapshot = Record<string, { top: number; left: number }>;
+type ClipDragMode = "move" | "repeat";
 
 interface RenderOptions {
   preserveScroll?: boolean;
@@ -157,8 +160,12 @@ export class App {
   private deferredRenderTimer: number | null = null;
   private chordsmithDragStart: ChordsmithStepSelection | null = null;
   private suppressNextStepClick = false;
+  private suppressNextClipClick = false;
   private chordsmithStepChangedTrack = false;
   private deepLinkUnlisten: (() => void) | null = null;
+  private pinchPointers = new Map<number, PointerEvent>();
+  private pinchStartDistance: number | null = null;
+  private pinchStartZoom = 240;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -194,11 +201,16 @@ export class App {
     document.body.appendChild(this.midiFileInput);
     this.root.addEventListener("click", (event) => this.handleDelegatedClick(event));
     this.root.addEventListener("pointerdown", (event) => this.handlePointerDown(event));
+    this.root.addEventListener("pointermove", (event) => this.handlePointerMove(event));
+    this.root.addEventListener("pointerup", (event) => this.handlePointerEnd(event));
+    this.root.addEventListener("pointercancel", (event) => this.handlePointerEnd(event));
     this.root.addEventListener("mousedown", (event) => this.handleMouseDown(event));
+    this.root.addEventListener("wheel", (event) => this.handleWheel(event), { passive: false });
     window.addEventListener("keydown", (event) => this.handleKeyboard(event));
   }
 
   start() {
+    this.applyNativeTitlebarOffset();
     const handoff = readPocketDawHandoff();
     if (handoff) {
       this.consumeHandoff(handoff);
@@ -314,6 +326,7 @@ export class App {
   private bind() {
     this.root.querySelectorAll<HTMLElement>("[data-clip-id]").forEach((el) => {
       el.addEventListener("click", () => {
+        if (this.consumeSuppressedClipClick()) return;
         this.state.selectedClipId = el.dataset.clipId || null;
         const row = el.dataset.row || "";
         const rowTrack = currentProject(this.state).tracks.find((track) => track.id === row) || currentProject(this.state).tracks.find((track) => track.role === row);
@@ -549,6 +562,10 @@ export class App {
 
   private handlePointerDown(event: PointerEvent) {
     const target = event.target as HTMLElement | null;
+    this.trackTimelinePinchPointer(event, target);
+    if (this.beginTimelineHeightResize(target, event)) return;
+    if (this.beginInspectorResize(target, event)) return;
+    if (this.beginTimelineClipDrag(target, event)) return;
     if (this.beginChordsmithStepDrag(target, "pointerup")) return;
     if (target?.closest("[data-inline-sequencer]")) return;
     const timeline = target?.closest<HTMLElement>("[data-timeline-surface]");
@@ -571,10 +588,176 @@ export class App {
     window.addEventListener("pointerup", up);
   }
 
+  private beginTimelineHeightResize(target: HTMLElement | null, event: PointerEvent): boolean {
+    if (!target?.closest("[data-timeline-resize-handle]")) return false;
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = this.state.timelineHeightPx;
+    const update = (clientY: number) => {
+      this.state.timelineHeightPx = this.clampTimelineHeight(startHeight + clientY - startY);
+      this.root.style.setProperty("--studio-height", `${this.state.timelineHeightPx}px`);
+      this.state.status = `Timeline height ${this.state.timelineHeightPx}px.`;
+    };
+    const move = (moveEvent: PointerEvent) => update(moveEvent.clientY);
+    const up = (upEvent: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      update(upEvent.clientY);
+      this.render({ preserveScroll: true });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return true;
+  }
+
+  private beginInspectorResize(target: HTMLElement | null, event: PointerEvent): boolean {
+    if (!target?.closest("[data-inspector-resize-handle]")) return false;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = this.state.inspectorWidthPx;
+    const update = (clientX: number) => {
+      this.state.inspectorWidthPx = this.clampInspectorWidth(startWidth - (clientX - startX));
+      this.root.style.setProperty("--inspector-width", `${this.state.inspectorWidthPx}px`);
+      this.state.status = `Inspector width ${this.state.inspectorWidthPx}px.`;
+    };
+    const move = (moveEvent: PointerEvent) => update(moveEvent.clientX);
+    const up = (upEvent: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      update(upEvent.clientX);
+      this.render({ preserveScroll: true });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return true;
+  }
+
+  private beginTimelineClipDrag(target: HTMLElement | null, event: PointerEvent): boolean {
+    if (!target) return false;
+    if (target.closest(".timeline-step, select, input, textarea")) return false;
+    const loopHandle = target.closest<HTMLElement>("[data-clip-loop-handle]");
+    const dragHandle = target.closest<HTMLElement>("[data-clip-drag-handle]");
+    const inlineClip = target.closest<HTMLElement>("[data-inline-clip-id]");
+    const visibleClip = target.closest<HTMLElement>("[data-clip-id]");
+    const clipId = loopHandle?.dataset.clipLoopHandle || dragHandle?.dataset.clipDragHandle || inlineClip?.dataset.inlineClipId || visibleClip?.dataset.clipId || "";
+    if (!clipId) return false;
+    const timeline = target.closest<HTMLElement>("[data-timeline-surface]") || this.root.querySelector<HTMLElement>("[data-timeline-surface]");
+    const clip = currentProject(this.state).timeline.clips.find((item) => item.id === clipId);
+    if (!timeline || !clip) return false;
+    event.preventDefault();
+    const mode: ClipDragMode = loopHandle ? "repeat" : "move";
+    const startClientX = event.clientX;
+    const startBar = clip.startBar;
+    const grabOffsetBars = mode === "move" ? Math.max(0, this.clientXToTimelineBar(timeline, event.clientX) - clip.startBar) : 0;
+    this.state.selectedClipId = clipId;
+    this.state.selectedTrackId = inlineClip?.dataset.inlineRow || visibleClip?.dataset.row || this.state.selectedTrackId;
+    this.render({ preserveScroll: true });
+    const dragNodes = () => [
+      ...findDataElements<HTMLElement>(this.root, "data-inline-clip-id", clipId),
+      ...findDataElements<HTMLElement>(this.root, "data-clip-id", clipId)
+    ];
+    let latestValue = mode === "move" ? startBar : clip.startBar + clip.barLength;
+    const preview = (clientX: number) => {
+      const currentTimeline = this.root.querySelector<HTMLElement>("[data-timeline-surface]") || timeline;
+      const rawBar = this.clientXToTimelineBar(currentTimeline, clientX);
+      latestValue = mode === "move"
+        ? this.snapTimelineBar(rawBar - grabOffsetBars)
+        : Math.max(clip.startBar + clip.barLength, this.snapTimelineBar(rawBar));
+      if (mode === "move") {
+        const dx = Math.round((latestValue - startBar) * this.state.zoom);
+        dragNodes().forEach((node) => {
+          node.style.transform = `translateX(${dx}px)`;
+          node.classList.add("dragging");
+        });
+        this.state.status = `Dragging ${clip.name} to Bar ${latestValue}.`;
+      } else {
+        const repeatBars = Math.max(0, latestValue - (clip.startBar + clip.barLength));
+        dragNodes().forEach((node) => {
+          node.classList.add("dragging", "loop-dragging");
+          node.style.boxShadow = `inset 0 0 0 1px rgba(124, 255, 155, 0.72), ${Math.max(0, repeatBars * this.state.zoom)}px 0 0 rgba(124, 255, 155, 0.12)`;
+        });
+        this.state.status = `Repeating ${clip.name} to Bar ${latestValue}.`;
+      }
+    };
+    preview(startClientX);
+    const move = (moveEvent: PointerEvent) => preview(moveEvent.clientX);
+    const up = (upEvent: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      preview(upEvent.clientX);
+      this.suppressNextClipClick = true;
+      if (mode === "move") {
+        this.applyProjectState(moveClipToBarCommand(this.state, clipId, latestValue), { audio: "composition-events", preserveScroll: true, reason: "clip-drag-move" });
+      } else {
+        this.applyProjectState(repeatClipToEndCommand(this.state, clipId, latestValue), { audio: "composition-events", preserveScroll: true, reason: "clip-drag-repeat" });
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return true;
+  }
+
+  private handleWheel(event: WheelEvent) {
+    const target = event.target as HTMLElement | null;
+    if (!target?.closest("[data-timeline-surface], .timeline-scroll")) return;
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? -1 : 1;
+    const amount = Math.max(8, Math.min(42, Math.abs(event.deltaY) / 3));
+    this.previewTimelineZoom(this.state.zoom + direction * amount);
+  }
+
+  private handlePointerMove(event: PointerEvent) {
+    if (this.pinchPointers.has(event.pointerId)) {
+      this.pinchPointers.set(event.pointerId, event);
+      this.updatePinchZoom();
+    }
+  }
+
+  private handlePointerEnd(event: PointerEvent) {
+    if (!this.pinchPointers.has(event.pointerId)) return;
+    this.pinchPointers.delete(event.pointerId);
+    if (this.pinchPointers.size < 2) {
+      this.pinchStartDistance = null;
+      this.state.status = `Timeline zoom set to ${Math.round(this.state.zoom)} px/bar.`;
+      this.render({ preserveScroll: true });
+    }
+  }
+
+  private updatePinchZoom() {
+    if (this.pinchPointers.size < 2) return;
+    const [a, b] = Array.from(this.pinchPointers.values());
+    const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    if (!this.pinchStartDistance) {
+      this.pinchStartDistance = distance;
+      this.pinchStartZoom = this.state.zoom;
+      return;
+    }
+    if (this.pinchStartDistance <= 0) return;
+    this.previewTimelineZoom(this.pinchStartZoom * (distance / this.pinchStartDistance));
+  }
+
+  private trackTimelinePinchPointer(event: PointerEvent, target: HTMLElement | null) {
+    if (!target?.closest("[data-timeline-surface], .timeline-scroll")) return;
+    if (event.pointerType !== "touch") return;
+    event.preventDefault();
+    this.pinchPointers.set(event.pointerId, event);
+    if (this.pinchPointers.size === 2) {
+      this.pinchStartDistance = null;
+      this.updatePinchZoom();
+    }
+  }
+
   private handleMouseDown(event: MouseEvent) {
     if (this.chordsmithDragStart) return;
     const target = event.target as HTMLElement | null;
     this.beginChordsmithStepDrag(target, "mouseup");
+  }
+
+  private applyNativeTitlebarOffset() {
+    const win = window as unknown as Record<string, unknown>;
+    const isTauri = "__TAURI_INTERNALS__" in win;
+    document.documentElement.classList.toggle("native-desktop-shell", isTauri);
   }
 
   private beginChordsmithStepDrag(target: HTMLElement | null, endEventName: "pointerup" | "mouseup"): boolean {
@@ -814,6 +997,7 @@ export class App {
     }
     const inlineClip = target?.closest<HTMLElement>("[data-inline-clip-id]");
     if (inlineClip) {
+      if (this.consumeSuppressedClipClick()) return;
       if (target?.closest("button, input, select, textarea")) return;
       this.state.selectedClipId = inlineClip.dataset.inlineClipId || null;
       this.state.selectedTrackId = inlineClip.dataset.inlineRow || this.state.selectedTrackId;
@@ -879,6 +1063,11 @@ export class App {
       this.state.status = "Media Pool visible.";
       this.render();
       this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "start", inline: "nearest" });
+    }
+    if (action === "toggle-inspector") {
+      this.state.inspectorVisible = !this.state.inspectorVisible;
+      this.state.status = this.state.inspectorVisible ? "Inspector shown." : "Inspector hidden.";
+      this.render({ preserveScroll: true });
     }
     if (action === "import-audio") await this.importAudioMedia();
     if (action === "import-midi") await this.importMidiMedia();
@@ -1084,8 +1273,18 @@ export class App {
   }
 
   private clampTimelineZoom(value: number): number {
-    if (!Number.isFinite(value)) return 144;
+    if (!Number.isFinite(value)) return 240;
     return Math.max(48, Math.min(360, Math.round(value)));
+  }
+
+  private clampTimelineHeight(value: number): number {
+    if (!Number.isFinite(value)) return 430;
+    return Math.max(260, Math.min(760, Math.round(value)));
+  }
+
+  private clampInspectorWidth(value: number): number {
+    if (!Number.isFinite(value)) return 420;
+    return Math.max(280, Math.min(620, Math.round(value)));
   }
 
   private previewTimelineZoom(value: number) {
@@ -1104,6 +1303,16 @@ export class App {
 
   private timelineWidthPx(): number {
     return Math.max(1100, this.timelineTrackHeaderWidth() + (currentProject(this.state).timeline.bars + 1) * this.state.zoom);
+  }
+
+  private clientXToTimelineBar(timeline: HTMLElement, clientX: number): number {
+    const rect = timeline.getBoundingClientRect();
+    return (clientX - rect.left - this.timelineTrackHeaderWidth(timeline)) / this.state.zoom + 1;
+  }
+
+  private snapTimelineBar(value: number): number {
+    const project = currentProject(this.state);
+    return snapBarValue(value, this.state.snapMode, project.project.timeSig);
   }
 
   private async restartTransport() {
@@ -1197,6 +1406,12 @@ export class App {
   private consumeSuppressedStepClick(): boolean {
     if (!this.suppressNextStepClick) return false;
     this.suppressNextStepClick = false;
+    return true;
+  }
+
+  private consumeSuppressedClipClick(): boolean {
+    if (!this.suppressNextClipClick) return false;
+    this.suppressNextClipClick = false;
     return true;
   }
 

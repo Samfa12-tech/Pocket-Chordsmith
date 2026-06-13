@@ -94,6 +94,7 @@
   position: relative;
   min-height: 100%;
   cursor: crosshair;
+  touch-action: none;
   background:
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 1px, transparent 1px var(--bar)),
     linear-gradient(180deg, #0b1020, #090d18);
@@ -302,6 +303,7 @@
   text-align: left;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 20px rgba(0, 0, 0, 0.22);
   cursor: pointer;
+  touch-action: none;
 }
 
 .clip strong {
@@ -344,11 +346,91 @@
   background: rgba(5, 9, 18, 0.48);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
 }
 
 .inline-sequencer.selected-clip-editor {
   background: rgba(11, 16, 32, 0.72);
   box-shadow: inset 0 0 0 1px rgba(255, 200, 87, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.clip.dragging,
+.inline-sequencer.dragging {
+  z-index: 18;
+  cursor: grabbing;
+  opacity: 0.92;
+}
+
+.clip-drag-handle {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  z-index: 21;
+  display: block;
+  width: 10px;
+  border-right: 1px solid rgba(64, 216, 255, 0.52);
+  background: linear-gradient(90deg, rgba(64, 216, 255, 0.3), transparent);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.clip-drag-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 3px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(64, 216, 255, 0.86);
+  transform: translateY(-50%);
+}
+
+.inline-sequencer .clip-drag-handle {
+  top: 0;
+  bottom: 0;
+}
+
+.dragging .clip-drag-handle {
+  cursor: grabbing;
+  background: rgba(64, 216, 255, 0.38);
+}
+
+.clip-loop-handle {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  bottom: 4px;
+  z-index: 20;
+  display: block;
+  width: 10px;
+  border-left: 1px solid rgba(124, 255, 155, 0.48);
+  background: linear-gradient(90deg, transparent, rgba(124, 255, 155, 0.24));
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+
+.clip-loop-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  width: 3px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(124, 255, 155, 0.86);
+  transform: translateY(-50%);
+}
+
+.inline-sequencer .clip-loop-handle {
+  top: 0;
+  bottom: 0;
+}
+
+.loop-dragging .clip-loop-handle {
+  background: rgba(124, 255, 155, 0.42);
 }
 
 .inline-lane-grid,

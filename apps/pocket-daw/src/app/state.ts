@@ -21,6 +21,9 @@ export interface AppState {
   snapMode: SnapMode;
   clipClipboard: Clip | null;
   zoom: number;
+  timelineHeightPx: number;
+  inspectorVisible: boolean;
+  inspectorWidthPx: number;
   status: string;
   playing: boolean;
   playheadBar: number;
@@ -65,6 +68,9 @@ export function createInitialState(): AppState {
     snapMode: "bar",
     clipClipboard: null,
     zoom: 240,
+    timelineHeightPx: 430,
+    inspectorVisible: true,
+    inspectorWidthPx: 420,
     status: "Editable demo copy loaded. Edits autosave to this copy.",
     playing: false,
     playheadBar: 1,

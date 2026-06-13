@@ -17,7 +17,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-x64";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = "Pocket DAW v0.5.8 - Sequencer Grid and Song Settings Test";
+export const RELEASE_TITLE = "Pocket DAW v0.5.9 - Resizable Timeline Workspace Test";
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -159,12 +159,19 @@ Older Windows systems may require Microsoft Edge WebView2 Runtime.
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN in the generated checklist until a tester completes it against this exact artifact.
 `,
-      "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Sequencer Grid and Song Settings Test
+      "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Resizable Timeline Workspace Test
 
 Pocket DAW is a free Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
 ## Highlights
 
+- Timeline workspace can now be resized by dragging the splitter below the timeline, pushing mixer/channel controls lower.
+- Inspector can be hidden from the timeline toolbar to give the arrangement full width.
+- Inspector width can be resized by dragging the vertical splitter.
+- Generated section clips now have a cyan drag rail for snap-aware horizontal moves.
+- Generated section clips now have a green right rail for GarageBand-style repeat/extend dragging.
+- Timeline zoom supports the visible controls plus Ctrl/Meta + mouse wheel and touch/pinch gestures.
+- Installed/native shells reserve top spacing so the File/Edit/View/Track/Transport/Help menu remains visible under the Windows titlebar.
 - Timeline inline sequencer boxes now start exactly at the section/bar edge with no label-column offset.
 - Inline drum, bass, melody and guitar grids use the song time signature and resolution for the exact number of boxes per bar.
 - Lane text moved into the sticky track header area so labels no longer push step boxes off the beat grid.
