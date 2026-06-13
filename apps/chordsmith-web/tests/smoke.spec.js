@@ -44,3 +44,31 @@ test("settings modal opens import and handoff tools", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Push to Godot" })).toBeVisible();
   await expect(page.locator("#pocketAudioCoreStatus")).toContainText("Pocket Audio Core");
 });
+
+test("handoff buttons stop live playback before pushing", async ({ page }) => {
+  await page.evaluate(() => {
+    window.__pocketChordsmithOpenedUrls = [];
+    window.open = (url, name) => {
+      const opened = {
+        closed: false,
+        name: name || "",
+        opener: null,
+        location: { href: url },
+      };
+      window.__pocketChordsmithOpenedUrls.push(opened);
+      return opened;
+    };
+  });
+
+  await page.getByRole("button", { name: "Play", exact: true }).first().click();
+  await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await page.getByRole("button", { name: "Send to DJ" }).click();
+
+  await expect(page.getByRole("button", { name: "Play", exact: true }).first()).toBeVisible();
+  await expect(page.locator("#statusText")).toContainText("Song sent to Pocket DJ");
+  await expect
+    .poll(() => page.evaluate(() => window.__pocketChordsmithOpenedUrls.length))
+    .toBeGreaterThan(0);
+});

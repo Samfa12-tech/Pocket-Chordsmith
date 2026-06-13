@@ -1601,6 +1601,12 @@ async function copyTextForHandoff(text, successMessage, fallbackMessage){
 function setPushHandoffStatus(message){
   if(els.pushHandoffStatus) els.pushHandoffStatus.textContent = message;
 }
+function stopLivePlaybackBeforeHandoff(){
+  if(!state.isPlaying) return false;
+  stopPlayback();
+  setPushHandoffStatus("Live playback stopped. Preparing handoff...");
+  return true;
+}
 function openPreparedHandoffWindow(payload=null){
   try{
     const opened = window.open("about:blank", "PocketHandoffTarget");
@@ -1672,6 +1678,7 @@ async function pushCodeDirectlyToGodot(code){
   return {ok:false, error: failures.filter(Boolean).join("; ") || "Godot receiver unavailable"};
 }
 async function pushToPocketDj(){
+  stopLivePlaybackBeforeHandoff();
   let code = "";
   try{
     code = buildShareCode();
@@ -1704,6 +1711,7 @@ async function pushToPocketDj(){
   }
 }
 async function pushToPocketDaw(){
+  stopLivePlaybackBeforeHandoff();
   let code = "";
   try{
     code = buildShareCode();
@@ -1745,6 +1753,7 @@ async function pushToPocketDaw(){
   }
 }
 async function pushToGodot(){
+  stopLivePlaybackBeforeHandoff();
   let code = "";
   try{
     code = buildShareCode();
