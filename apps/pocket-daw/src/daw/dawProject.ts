@@ -2,38 +2,54 @@ import {
   POCKET_DAW_APP,
   POCKET_DAW_SCHEMA_VERSION,
   POCKET_DAW_VERSION,
+  type Clip,
   type JsonObject,
-  type PocketDawProject
+  type PocketDawProject,
+  type ProjectMeta,
+  type SourceRef
 } from "./schema";
 import { createDefaultExportProfiles } from "./exportProfiles";
 import { createDefaultTracks } from "./tracks";
 import { createDefaultFxState } from "./fx";
+import { sanitizePocketChordsmithProject, SECTION_IDS, type SanitizedPcsProject } from "../compatibility/pcsSanitizer";
+
+const STARTER_SOURCE_REF_ID = "src_pcs_starter";
 
 export function createEmptyPocketDawProject(): PocketDawProject {
-  const tracks = createDefaultTracks();
+  const tracks = createDefaultTracks({ guitarActive: true });
+  const starter = createStarterChordsmithSource("Untitled Project");
+  const clip = createStarterGeneratedSectionClip(starter.ref.id, starter.pcs.sections.A.bars);
   return {
     app: POCKET_DAW_APP,
     schemaVersion: POCKET_DAW_SCHEMA_VERSION,
     dawVersion: POCKET_DAW_VERSION,
-    sourceRefs: [],
+    sourceRefs: [starter.ref],
     project: {
       id: "project_001",
-      title: "Imported Chordsmith Song",
-      bpm: 118,
-      key: "A",
-      scale: "minor",
-      timeSig: 4,
-      swing: 0.04,
-      resolution: 4,
+      title: starter.pcs.rawTitle,
+      bpm: starter.pcs.bpm,
+      key: starter.pcs.key,
+      scale: starter.pcs.scale,
+      timeSig: starter.pcs.timeSig,
+      swing: starter.pcs.swing,
+      resolution: starter.pcs.resolution,
       sampleRate: 44100,
       ppq: 480
     },
     timeline: {
-      bars: 32,
+      bars: 8,
       cursor: { bar: 1, beat: 1, tick: 0 },
-      loop: { enabled: false, startBar: 1, endBar: 9 },
-      markers: [],
-      clips: []
+      loop: { enabled: false, startBar: 1, endBar: clip.barLength + 1 },
+      markers: [
+        {
+          id: `marker_${clip.id}`,
+          bar: clip.startBar,
+          name: "Section A",
+          color: clip.color,
+          markerType: "section"
+        }
+      ],
+      clips: [clip]
     },
     tracks,
     automation: { lanes: [] },
@@ -46,6 +62,49 @@ export function createEmptyPocketDawProject(): PocketDawProject {
     exportProfiles: createDefaultExportProfiles(),
     importHistory: []
   };
+}
+
+export function ensureStarterChordsmithSource(project: PocketDawProject): PocketDawProject {
+  if (project.sourceRefs.some((ref) => ref.sourceType === "pocket-chordsmith")) return project;
+  const hasGeneratedTrack = project.tracks.some((track) => track.trackType === "generated" && ["drums", "bass", "chords", "melody", "guitar"].includes(track.role));
+  if (!hasGeneratedTrack) return project;
+
+  const next = cloneProject(project);
+  const refId = uniqueSourceRefId(next.sourceRefs, STARTER_SOURCE_REF_ID);
+  const starter = createStarterChordsmithSource(next.project.title || "Untitled Project", next.project, refId);
+  next.sourceRefs.push(starter.ref);
+  next.project.bpm = starter.pcs.bpm;
+  next.project.key = starter.pcs.key;
+  next.project.scale = starter.pcs.scale;
+  next.project.timeSig = starter.pcs.timeSig;
+  next.project.swing = starter.pcs.swing;
+  next.project.resolution = starter.pcs.resolution;
+
+  const generatedClips = next.timeline.clips.filter((clip) => clip.type === "generated-section");
+  if (generatedClips.length) {
+    generatedClips.forEach((clip) => {
+      clip.sourceRefId = clip.sourceRefId || refId;
+      clip.sectionId = clip.sectionId || "A";
+      clip.linked = clip.linked !== false;
+      clip.transforms = clip.transforms || { transpose: 0, octave: 0, gain: 1, stemMutes: {} };
+    });
+  } else {
+    const clip = createStarterGeneratedSectionClip(refId, starter.pcs.sections.A.bars, uniqueClipId(next.timeline.clips, "clip_001"));
+    next.timeline.clips.push(clip);
+    next.timeline.bars = Math.max(next.timeline.bars || 1, clip.startBar + clip.barLength - 1);
+    next.timeline.loop = next.timeline.loop || { enabled: false, startBar: 1, endBar: clip.barLength + 1 };
+    next.timeline.loop.endBar = Math.max(next.timeline.loop.endBar, clip.barLength + 1);
+    if (!next.timeline.markers.some((marker) => marker.name === "Section A" && marker.bar === 1)) {
+      next.timeline.markers.push({
+        id: `marker_${clip.id}`,
+        bar: clip.startBar,
+        name: "Section A",
+        color: clip.color,
+        markerType: "section"
+      });
+    }
+  }
+  return next;
 }
 
 export function createDefaultAudioDeviceSettings() {
@@ -79,4 +138,102 @@ export function parsePocketDawProjectFile(raw: unknown): PocketDawProject {
 
 export function cloneProject(project: PocketDawProject): PocketDawProject {
   return JSON.parse(JSON.stringify(project)) as PocketDawProject;
+}
+
+function createStarterChordsmithSource(title: string, meta: Partial<ProjectMeta> = {}, sourceRefId = STARTER_SOURCE_REF_ID): { pcs: SanitizedPcsProject; ref: SourceRef } {
+  const sectionBars = Object.fromEntries(SECTION_IDS.map((id) => [id, 4]));
+  const pcs = sanitizePocketChordsmithProject({
+    projectVersion: 16,
+    title,
+    key: meta.key || "A",
+    scale: meta.scale || "minor",
+    timeSig: meta.timeSig || 4,
+    bpm: meta.bpm || 118,
+    swing: meta.swing ?? 0.04,
+    resolution: meta.resolution || 4,
+    chordType: "seventh",
+    chordInstrument: "pocket",
+    chordPlayMode: "block",
+    chordRhythmMode: "sustain",
+    chordOctave: 0,
+    melodyPitchMode: "scale",
+    masterVolume: 0.9,
+    chordVolume: 0.74,
+    beatVolume: 0.86,
+    leadVolume: 0.82,
+    bassMode: "auto",
+    guitarEnabled: true,
+    guitarTone: "crunch",
+    guitarRegister: "low",
+    guitarStrumMode: "alternate",
+    guitarVolume: 0.72,
+    fxDelay: 0.04,
+    fxChorus: 0.18,
+    fxFlanger: 0.06,
+    fxReverb: 0.08,
+    fxMix: 0.65,
+    sectionBars,
+    songSequence: ["A"]
+  });
+  const ref: SourceRef = {
+    id: sourceRefId,
+    sourceType: "pocket-chordsmith",
+    sourcePrefix: "PCS1",
+    schemaVersion: pcs.projectVersion,
+    importedAt: new Date().toISOString(),
+    title: pcs.rawTitle,
+    original: pcs.original,
+    normalized: JSON.parse(JSON.stringify(pcs)),
+    notes: ["Created by Pocket DAW starter template so new projects can use the Chordsmith sequencer immediately."]
+  };
+  return { pcs, ref };
+}
+
+function createStarterGeneratedSectionClip(sourceRefId: string, barLength: number, id = "clip_001"): Clip {
+  return {
+    id,
+    type: "generated-section",
+    trackId: "arrangement",
+    sourceRefId,
+    sectionId: "A",
+    startBar: 1,
+    barLength,
+    name: "Section A",
+    muted: false,
+    color: "#40d8ff",
+    linked: true,
+    transforms: {
+      transpose: 0,
+      octave: 0,
+      gain: 1,
+      stemMutes: {}
+    },
+    lane: 0,
+    metadata: {
+      sourceIndex: 0,
+      sectionBars: barLength
+    }
+  };
+}
+
+function uniqueSourceRefId(sourceRefs: SourceRef[], base: string) {
+  const ids = new Set(sourceRefs.map((ref) => ref.id));
+  let id = base;
+  let n = 2;
+  while (ids.has(id)) {
+    id = `${base}_${n}`;
+    n += 1;
+  }
+  return id;
+}
+
+function uniqueClipId(clips: Clip[], base: string) {
+  const ids = new Set(clips.map((clip) => clip.id));
+  let id = base;
+  let n = 2;
+  while (ids.has(id)) {
+    id = `${base}_${n}`;
+    n += 1;
+  }
+  return id;
 }

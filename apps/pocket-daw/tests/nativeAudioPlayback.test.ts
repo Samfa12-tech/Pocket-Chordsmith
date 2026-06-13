@@ -67,7 +67,48 @@ describe("native audio playback bridge", () => {
     expect(payload.regions).toEqual(cache.regions);
   });
 
-  it("uses native Tauri commands for start, seek, mixer updates and stop", async () => {
+  it("omits already decoded native asset bytes on later starts", async () => {
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeAudioInvokeApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return status({ active: true }) as never;
+      }
+    };
+    const bridge = new NativeAudioPlaybackBridge(async () => api);
+    const cache = {
+      assets: [{
+        id: "asset_loop",
+        name: "Loop.wav",
+        sampleRate: 48000,
+        channels: 2,
+        durationSeconds: 8,
+        bytes: [82, 73, 70, 70]
+      }],
+      regions: [{
+        id: "region_loop",
+        assetId: "asset_loop",
+        trackId: "bass",
+        startTime: 0,
+        sourceOffset: 0,
+        duration: 8,
+        gain: 1,
+        pan: 0
+      }]
+    };
+    const payload = buildNativeAudioStartPayload(createDemoProject(), [], 0, cache);
+
+    await bridge.start(payload);
+    await bridge.start(payload);
+
+    const firstAssets = (calls[0].args?.payload as { assets: Array<{ bytes?: number[] }> }).assets;
+    const secondAssets = (calls[1].args?.payload as { assets: Array<{ bytes?: number[] }> }).assets;
+    expect(firstAssets[0].bytes).toEqual([82, 73, 70, 70]);
+    expect(secondAssets[0].bytes).toBeUndefined();
+  });
+
+  it("uses native Tauri commands for start, pause, resume, seek, mixer updates and stop", async () => {
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
     const api: NativeAudioInvokeApi = {
       isAvailable: () => true,
@@ -80,18 +121,22 @@ describe("native audio playback bridge", () => {
     const payload = buildNativeAudioStartPayload(createDemoProject(), [], 0);
 
     await expect(bridge.start(payload)).resolves.toMatchObject({ started: true, error: null });
+    await bridge.pause();
+    await bridge.resume();
     await bridge.seek(2);
     await bridge.updateTrack({ trackId: "bass", volume: 0.4, pan: -0.5 });
     await bridge.stop();
 
     expect(calls.map((call) => call.command)).toEqual([
       "native_audio_start",
+      "native_audio_pause",
+      "native_audio_resume",
       "native_audio_seek",
       "native_audio_update_track",
       "native_audio_stop"
     ]);
     expect(calls[0].args).toMatchObject({ payload: expect.objectContaining({ projectTitle: expect.any(String) }) });
-    expect(calls[2].args).toMatchObject({ patch: { trackId: "bass", volume: 0.4, pan: -0.5 } });
+    expect(calls[4].args).toMatchObject({ patch: { trackId: "bass", volume: 0.4, pan: -0.5 } });
   });
 
   it("reports unavailable native runtime without throwing", async () => {

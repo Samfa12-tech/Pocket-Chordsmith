@@ -9,6 +9,7 @@ type NativeAudioState = Mutex<NativeAudioRuntime>;
 pub struct NativeAudioRuntime {
     stream: Option<cpal::Stream>,
     shared: Option<Arc<Mutex<PlaybackShared>>>,
+    asset_cache: HashMap<String, DecodedAudioAsset>,
     generation: u64,
     last_error: Option<String>,
     device_name: Option<String>,
@@ -70,6 +71,7 @@ pub struct NativeAudioAssetPayload {
     channels: u16,
     #[serde(rename = "durationSeconds")]
     duration_seconds: f64,
+    #[serde(default)]
     bytes: Vec<u8>,
 }
 
@@ -194,6 +196,23 @@ pub fn native_audio_pause(
 }
 
 #[tauri::command]
+pub fn native_audio_resume(
+    state: tauri::State<'_, NativeAudioState>,
+) -> Result<NativeAudioStatus, String> {
+    let runtime = state
+        .lock()
+        .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
+    if let Some(shared) = &runtime.shared {
+        if let Ok(mut playback) = shared.lock() {
+            playback.playing = true;
+            playback.scan_start_index =
+                find_scan_start(&playback.events, playback.position_seconds);
+        }
+    }
+    Ok(runtime.status())
+}
+
+#[tauri::command]
 pub fn native_audio_seek(
     seconds: f64,
     state: tauri::State<'_, NativeAudioState>,
@@ -292,7 +311,7 @@ impl NativeAudioRuntime {
         }
         let mut assets = HashMap::new();
         for asset in payload.assets {
-            let decoded = decode_payload_asset(&asset)?;
+            let decoded = self.decode_or_reuse_asset(&asset)?;
             assets.insert(asset.id.clone(), decoded);
         }
         let tracks = payload
@@ -384,6 +403,26 @@ impl NativeAudioRuntime {
         }
         self.stream = None;
         self.shared = None;
+    }
+
+    fn decode_or_reuse_asset(
+        &mut self,
+        asset: &NativeAudioAssetPayload,
+    ) -> Result<DecodedAudioAsset, String> {
+        if asset.bytes.is_empty() {
+            let Some(decoded) = self.asset_cache.get(&asset.id) else {
+                return Err(format!(
+                    "Native cached asset {} was requested without bytes before it was decoded.",
+                    asset.id
+                ));
+            };
+            validate_asset_metadata(asset, decoded)?;
+            return Ok(decoded.clone());
+        }
+
+        let decoded = decode_payload_asset(asset)?;
+        self.asset_cache.insert(asset.id.clone(), decoded.clone());
+        Ok(decoded)
     }
 
     fn status(&self) -> NativeAudioStatus {
@@ -663,6 +702,34 @@ fn decode_payload_asset(asset: &NativeAudioAssetPayload) -> Result<DecodedAudioA
         ));
     }
     Ok(decoded)
+}
+
+fn validate_asset_metadata(
+    asset: &NativeAudioAssetPayload,
+    decoded: &DecodedAudioAsset,
+) -> Result<(), String> {
+    if asset.id.trim().is_empty() {
+        return Err("Native cached WAV asset is missing an id.".to_string());
+    }
+    if !asset.duration_seconds.is_finite() || asset.duration_seconds < 0.0 {
+        return Err(format!(
+            "Native cached WAV asset {} has invalid duration metadata.",
+            asset.name
+        ));
+    }
+    if asset.sample_rate != 0 && asset.sample_rate != decoded.sample_rate {
+        return Err(format!(
+            "Native cached WAV asset {} sample-rate metadata {} does not match decoded rate {}.",
+            asset.name, asset.sample_rate, decoded.sample_rate
+        ));
+    }
+    if asset.channels != 0 && asset.channels != decoded.channels {
+        return Err(format!(
+            "Native cached WAV asset {} channel metadata {} does not match decoded channels {}.",
+            asset.name, asset.channels, decoded.channels
+        ));
+    }
+    Ok(())
 }
 
 fn validate_region(region: &NativeAudioRegion) -> Result<(), String> {
@@ -1046,6 +1113,33 @@ mod tests {
         let error = decode_payload_asset(&asset).expect_err("metadata mismatch should fail");
 
         assert!(error.contains("sample-rate metadata"));
+    }
+
+    #[test]
+    fn reuses_decoded_assets_when_later_payloads_omit_bytes() {
+        let mut runtime = NativeAudioRuntime::default();
+        let full_asset = NativeAudioAssetPayload {
+            id: "asset".to_string(),
+            name: "Stem.wav".to_string(),
+            sample_rate: 48_000,
+            channels: 2,
+            duration_seconds: 0.5,
+            bytes: pcm16_wav(48_000, 2, &[16_384, -16_384]),
+        };
+        let metadata_only = NativeAudioAssetPayload {
+            bytes: Vec::new(),
+            ..full_asset.clone()
+        };
+
+        let first = runtime
+            .decode_or_reuse_asset(&full_asset)
+            .expect("full asset should decode");
+        let second = runtime
+            .decode_or_reuse_asset(&metadata_only)
+            .expect("metadata-only asset should reuse decoded cache");
+
+        assert_eq!(first.frame_count, second.frame_count);
+        assert_eq!(first.samples, second.samples);
     }
 
     #[test]

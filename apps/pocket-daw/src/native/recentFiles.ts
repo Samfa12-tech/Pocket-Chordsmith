@@ -1,10 +1,16 @@
 const RECENT_KEY = "pocket_daw_recent_v1";
 const AUTOSAVE_KEY = "pocket_daw_autosave_v1";
+const AUTOSAVE_FILE_KEY = "pocket_daw_autosave_file_v1";
 
 export interface RecentProject {
   label: string;
   path: string | null;
   openedAt: string;
+}
+
+export interface AutosaveFileState {
+  label: string;
+  path: string | null;
 }
 
 export function saveRecentProject(label: string, path: string | null = null): void {
@@ -42,12 +48,32 @@ export function loadRecentLabels(): string[] {
   return loadRecentProjects().map((item) => item.path ? `${item.label} - ${item.path}` : item.label);
 }
 
-export function saveAutosave(raw: string): void {
+export function saveAutosave(raw: string, currentFile?: AutosaveFileState): void {
   localStorage.setItem(AUTOSAVE_KEY, raw);
+  if (currentFile !== undefined) {
+    localStorage.setItem(AUTOSAVE_FILE_KEY, JSON.stringify({
+      label: currentFile.label || "Autosaved project",
+      path: currentFile.path || null
+    }));
+  }
 }
 
 export function loadAutosave(): string | null {
   return localStorage.getItem(AUTOSAVE_KEY);
+}
+
+export function loadAutosaveFileState(): AutosaveFileState | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(AUTOSAVE_FILE_KEY) || "null");
+    if (!parsed || typeof parsed !== "object") return null;
+    const raw = parsed as Record<string, unknown>;
+    const label = typeof raw.label === "string" && raw.label ? raw.label : null;
+    const path = typeof raw.path === "string" && raw.path ? raw.path : null;
+    if (!label && !path) return null;
+    return { label: label || path || "Autosaved project", path };
+  } catch {
+    return null;
+  }
 }
 
 function recentKey(label: string, path: string | null) {

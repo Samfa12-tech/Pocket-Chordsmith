@@ -97,11 +97,11 @@ export async function buildNativeRenderCache(project: PocketDawProject, signatur
     generatedRegionCount,
     runtimeAudioRegionCount,
     missingRuntimeAudioRegionCount,
-    cachedAssetByteCount: Array.from(assets.values()).reduce((total, asset) => total + asset.bytes.length, 0)
+    cachedAssetByteCount: Array.from(assets.values()).reduce((total, asset) => total + nativeAssetByteLength(asset), 0)
   };
 }
 
-export async function buildNativeRuntimeAudioCache(project: PocketDawProject, signature = nativeRenderCacheSignature(project)): Promise<NativeRenderCache> {
+export async function buildNativeRuntimeAudioCache(project: PocketDawProject, signature = nativeRuntimeAudioCacheSignature(project)): Promise<NativeRenderCache> {
   const assets = new Map<string, NativeAudioAsset>();
   const regions: NativeAudioRegion[] = [];
   const cachedClipIds = new Set<string>();
@@ -120,7 +120,7 @@ export async function buildNativeRuntimeAudioCache(project: PocketDawProject, si
     generatedRegionCount: 0,
     runtimeAudioRegionCount: stats.runtimeAudioRegionCount,
     missingRuntimeAudioRegionCount: stats.missingRuntimeAudioRegionCount,
-    cachedAssetByteCount: Array.from(assets.values()).reduce((total, asset) => total + (asset.sizeBytes || asset.bytes.length), 0)
+    cachedAssetByteCount: Array.from(assets.values()).reduce((total, asset) => total + nativeAssetByteLength(asset), 0)
   };
 }
 
@@ -141,7 +141,7 @@ export async function persistNativeRenderCacheAssets(
       const result = await writeNativeCacheAsset(projectFilePath, {
         assetId: asset.id,
         relativePath,
-        bytes: asset.bytes
+        bytes: asset.bytes || []
       }, api);
       if (!result) {
         skippedAssetCount += 1;
@@ -170,7 +170,7 @@ export async function persistNativeRenderCacheAssets(
     });
   });
   cache.renderCacheItems = renderCacheItems;
-  cache.cachedAssetByteCount = cache.assets.reduce((total, asset) => total + (asset.sizeBytes || asset.bytes.length), 0);
+  cache.cachedAssetByteCount = cache.assets.reduce((total, asset) => total + nativeAssetByteLength(asset), 0);
 
   return {
     cache,
@@ -261,6 +261,47 @@ export function nativeRenderCacheSignature(project: PocketDawProject): string {
   }));
 }
 
+export function nativeRuntimeAudioCacheSignature(project: PocketDawProject): string {
+  const audioClips = project.timeline.clips
+    .filter((clip) => clip.type === "audio")
+    .map((clip) => ({
+      id: clip.id,
+      trackId: clip.trackId,
+      mediaPoolItemId: clip.mediaPoolItemId,
+      startBar: clip.startBar,
+      barLength: clip.barLength,
+      muted: clip.muted,
+      transforms: clip.transforms,
+      metadata: clip.metadata
+    }));
+  const mediaIds = new Set(audioClips.map((clip) => clip.mediaPoolItemId).filter(Boolean));
+  return hashString(JSON.stringify({
+    project: {
+      bpm: project.project.bpm,
+      timeSig: project.project.timeSig,
+      sampleRate: project.project.sampleRate
+    },
+    audioClips,
+    mediaPool: project.mediaPool
+      .filter((item) => mediaIds.has(item.id))
+      .map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        uri: item.uri,
+        durationSeconds: item.durationSeconds,
+        sampleRate: item.sampleRate,
+        channels: item.channels,
+        sizeBytes: item.sizeBytes,
+        checksum: item.checksum,
+        mediaRefKind: item.metadata?.mediaRefKind,
+        projectRelativePath: item.metadata?.projectRelativePath,
+        nativePath: item.metadata?.nativePath,
+        missing: item.metadata?.missing,
+        unresolved: item.metadata?.unresolved
+      }))
+  }));
+}
+
 function assetBuildItems(project: PocketDawProject, clip: Clip, signature: string): AssetBuildItem[] {
   const stemMutes = clip.transforms.stemMutes || {};
   return STEM_ROLES.flatMap((role) => {
@@ -330,7 +371,7 @@ function renderCacheItemForAsset(asset: NativeAudioAsset, signature: string, cre
       sampleRate: asset.sampleRate,
       channels: asset.channels,
       durationSeconds: asset.durationSeconds,
-      byteLength: asset.sizeBytes || asset.bytes.length,
+      byteLength: nativeAssetByteLength(asset),
       durableCacheReady: false
     }
   };
@@ -353,10 +394,14 @@ function renderCacheItemForRuntimeAudio(asset: NativeAudioAsset, signature: stri
       sampleRate: asset.sampleRate,
       channels: asset.channels,
       durationSeconds: asset.durationSeconds,
-      byteLength: asset.sizeBytes || asset.bytes.length,
+      byteLength: nativeAssetByteLength(asset),
       durableCacheReady: false
     }
   };
+}
+
+function nativeAssetByteLength(asset: NativeAudioAsset): number {
+  return asset.sizeBytes || asset.bytes?.length || 0;
 }
 
 async function appendRuntimeAudioCache(
@@ -378,7 +423,7 @@ async function appendRuntimeAudioCache(
       missingRuntimeAudioRegionCount += 1;
       continue;
     }
-    const key = `${signature}_audio_${region.mediaPoolItemId}_${cached.sampleRate}_${cached.channels}_${cached.durationSeconds.toFixed(6)}`;
+    const key = runtimeAudioAssetKey(project, region.mediaPoolItemId, cached);
     let asset = assets.get(key);
     if (asset) {
       renderCacheHitCount += 1;
@@ -420,6 +465,22 @@ async function appendRuntimeAudioCache(
     cachedClipIds.add(region.clipId);
   }
   return { renderCacheHitCount, renderCacheMissCount, runtimeAudioRegionCount, missingRuntimeAudioRegionCount };
+}
+
+function runtimeAudioAssetKey(project: PocketDawProject, mediaPoolItemId: string, cached: { sampleRate: number; channels: number; durationSeconds: number }): string {
+  const item = project.mediaPool.find((entry) => entry.id === mediaPoolItemId);
+  return `audio_${hashString(JSON.stringify({
+    mediaPoolItemId,
+    uri: item?.uri,
+    sizeBytes: item?.sizeBytes,
+    checksum: item?.checksum,
+    mediaRefKind: item?.metadata?.mediaRefKind,
+    projectRelativePath: item?.metadata?.projectRelativePath,
+    nativePath: item?.metadata?.nativePath,
+    sampleRate: cached.sampleRate,
+    channels: cached.channels,
+    durationSeconds: cached.durationSeconds.toFixed(6)
+  }))}`;
 }
 
 function withCacheMetadata(item: RenderCacheItem, patch: Record<string, string | number | boolean>): RenderCacheItem {

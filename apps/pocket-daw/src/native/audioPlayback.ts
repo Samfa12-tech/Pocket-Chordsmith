@@ -53,7 +53,7 @@ export interface NativeAudioAsset {
   durationSeconds: number;
   sizeBytes?: number;
   sourceHash?: string;
-  bytes: number[];
+  bytes?: number[];
 }
 
 export interface NativeAudioRegion {
@@ -100,6 +100,8 @@ export interface NativeAudioStartResult {
 type NativeAudioApiFactory = () => Promise<NativeAudioInvokeApi | null>;
 
 export class NativeAudioPlaybackBridge {
+  private readonly knownNativeAssetIds = new Set<string>();
+
   constructor(private readonly apiFactory: NativeAudioApiFactory = defaultNativeAudioApi) {}
 
   async start(payload: NativeAudioStartPayload): Promise<NativeAudioStartResult> {
@@ -108,7 +110,8 @@ export class NativeAudioPlaybackBridge {
       return { started: false, status: null, error: "Native Tauri audio runtime is unavailable." };
     }
     try {
-      const status = await api.invoke<NativeAudioStatus>("native_audio_start", { payload });
+      const status = await api.invoke<NativeAudioStatus>("native_audio_start", { payload: this.withCachedAssetHints(payload) });
+      payload.assets?.forEach((asset) => this.knownNativeAssetIds.add(asset.id));
       return { started: true, status, error: null };
     } catch (error) {
       return { started: false, status: null, error: errorMessage(error) };
@@ -117,6 +120,10 @@ export class NativeAudioPlaybackBridge {
 
   async pause(): Promise<NativeAudioStatus | null> {
     return this.invokeIfAvailable("native_audio_pause");
+  }
+
+  async resume(): Promise<NativeAudioStatus | null> {
+    return this.invokeIfAvailable("native_audio_resume");
   }
 
   async stop(): Promise<NativeAudioStatus | null> {
@@ -143,6 +150,18 @@ export class NativeAudioPlaybackBridge {
     } catch {
       return null;
     }
+  }
+
+  private withCachedAssetHints(payload: NativeAudioStartPayload): NativeAudioStartPayload {
+    if (!payload.assets?.length) return payload;
+    return {
+      ...payload,
+      assets: payload.assets.map((asset) => {
+        if (!this.knownNativeAssetIds.has(asset.id)) return asset;
+        const { bytes: _bytes, ...metadataOnly } = asset;
+        return metadataOnly;
+      })
+    };
   }
 }
 

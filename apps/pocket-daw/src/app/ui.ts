@@ -4,7 +4,7 @@ import { BUILT_IN_FX, getTrackFxChain } from "../daw/fx";
 import { getPrimaryChordsmithSource, totalEditorSteps, visibleEditorSteps } from "../daw/chordsmithEditor";
 import { POCKET_DAW_VERSION, type Clip, type FxChain, type Track } from "../daw/schema";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
-import { barFloatToPosition, sortClips } from "../daw/timeline";
+import { barFloatToPosition, barsToSeconds, sortClips } from "../daw/timeline";
 import { mediaPoolStatus, renderCacheItemsForMedia } from "../daw/mediaPool";
 import { midiDataFromClip } from "../daw/midiClips";
 import { getTrackAutomationLane, trackHasAutomation } from "../daw/automation";
@@ -12,6 +12,7 @@ import { availableTrackOutputs } from "../daw/routing";
 import { createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs";
 import { createCollectMediaPlan } from "../daw/mediaPool";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
+import { clipSourceStartBar } from "../daw/clips";
 
 const CHORD_LABELS = ["I", "II", "III", "IV", "V", "VI", "VII"];
 const BASS_LABELS = ["R", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"];
@@ -168,6 +169,12 @@ function renderTransport(state: AppState): string {
         <span data-playhead-readout="true">${escapeHtml(formatBarBeat(state.playheadBar, project.project.timeSig, project.project.ppq))}</span>
       </div>
       <div class="status">${escapeHtml(state.status)}</div>
+      ${state.busyMessage ? `
+        <div class="transport-busy" role="status" aria-live="polite">
+          <span>${escapeHtml(state.busyMessage)}</span>
+          <i></i>
+        </div>
+      ` : ""}
     </header>
   `;
 }
@@ -235,7 +242,7 @@ function renderTimeline(state: AppState): string {
       </div>
       <div class="timeline-scroll" data-scroll-key="timeline-scroll">
         <div class="timeline" data-timeline-surface="true" title="Click the grid to seek by bar" style="width:${width}px; --bar:${zoom}px;">
-          ${renderBarRuler(project.timeline.bars)}
+          ${renderBarRuler(project)}
           ${renderMarkers(state)}
           <div class="cursor-line" data-cursor="true" style="left:${cursorLeft}px"></div>
           <div class="playhead" data-playhead="true" style="left:${playheadLeft}px"></div>
@@ -247,8 +254,12 @@ function renderTimeline(state: AppState): string {
   `;
 }
 
-function renderBarRuler(bars: number): string {
-  return `<div class="ruler" data-seek-ruler="true" title="Click to seek by bar">${Array.from({ length: bars + 1 }, (_, i) => `<span style="left:calc(${i} * var(--bar))">${i + 1}</span>`).join("")}</div>`;
+function renderBarRuler(project: ReturnType<typeof currentProject>): string {
+  return `<div class="ruler" data-seek-ruler="true" title="Click to seek by bar or time">${Array.from({ length: project.timeline.bars + 1 }, (_, i) => {
+    const bar = i + 1;
+    const seconds = barsToSeconds(i, project.project.bpm, project.project.timeSig);
+    return `<span class="ruler-tick" style="left:calc(${i} * var(--bar))"><b>${bar}</b><small>${formatDuration(seconds)}</small></span>`;
+  }).join("")}</div>`;
 }
 
 function renderMarkers(state: AppState): string {
@@ -270,15 +281,160 @@ function renderTimelineRows(state: AppState): string {
   const project = currentProject(state);
   const rows = project.tracks.filter((track) => (track.trackType === "generated" || track.trackType === "audio" || track.trackType === "midi") && track.role !== "arrangement");
   const clips = sortClips(project.timeline.clips);
+  const pcs = getPrimaryChordsmithSource(project);
   return rows
     .map(
       (track) => `
-        <div class="timeline-row" data-row="${track.id}">
+        <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${track.id}">
           ${clips.map((clip) => renderClip(project, clip, state.selectedClipId === clip.id, track)).join("")}
+          ${renderInlineChordsmithEditor(state, pcs, track, clips)}
         </div>
       `
     )
     .join("");
+}
+
+function renderInlineChordsmithEditor(
+  state: AppState,
+  pcs: SanitizedPcsProject | null,
+  track: Track,
+  clips: Clip[]
+): string {
+  if (!pcs || track.trackType !== "generated") return "";
+  if (!["drums", "bass", "chords", "melody", "guitar"].includes(track.role)) return "";
+  return clips
+    .filter((clip) => clip.type === "generated-section" && clip.sectionId)
+    .map((clip) => renderInlineChordsmithClip(state, pcs, track, clip))
+    .join("");
+}
+
+function renderInlineChordsmithClip(
+  state: AppState,
+  pcs: SanitizedPcsProject,
+  track: Track,
+  clip: Clip
+): string {
+  const sectionId = clip.sectionId as SectionId;
+  const section = pcs.sections[sectionId];
+  if (!section) return "";
+  const stepsPerBar = Math.max(1, pcs.timeSig * pcs.resolution);
+  const sourceStartBar = clipSourceStartBar(clip);
+  const sourceStartStep = sourceStartBar * stepsPerBar;
+  const sectionSteps = totalEditorSteps(pcs, section);
+  const renderSteps = Math.max(0, Math.min(Math.round(clip.barLength * stepsPerBar), sectionSteps - sourceStartStep));
+  if (renderSteps <= 0) return "";
+  const left = `calc(${clip.startBar - 1} * var(--bar))`;
+  const width = `calc(${clip.barLength} * var(--bar))`;
+  const body =
+    track.role === "drums"
+      ? renderInlineDrumEditor(section, sourceStartStep, renderSteps, state.chordsmithStepSelection)
+      : track.role === "bass"
+        ? renderInlineBassEditor(section, sourceStartStep, renderSteps, state.chordsmithStepSelection)
+        : track.role === "chords"
+          ? renderInlineChordEditor(section, sourceStartBar, Math.min(clip.barLength, section.bars - sourceStartBar))
+          : track.role === "melody"
+            ? renderInlineMelodyEditor(section, selectedMelodyTrackIndex(track), sourceStartStep, renderSteps, state.chordsmithStepSelection)
+            : track.role === "guitar"
+              ? renderInlineGuitarEditor(section, sourceStartStep, renderSteps)
+              : "";
+  if (!body) return "";
+  return `
+    <div class="inline-sequencer inline-${escapeHtml(track.role)} ${state.selectedClipId === clip.id ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${escapeHtml(clip.id)}" data-inline-row="${escapeHtml(track.id)}" data-inline-sequencer-role="${escapeHtml(track.role)}" data-inline-section="${escapeHtml(section.id)}" style="left:${left};width:${width};--inline-steps:${renderSteps};">
+      ${body}
+    </div>
+  `;
+}
+
+function renderInlineDrumEditor(section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
+  return `
+    <div class="inline-lane-grid drums-inline">
+      ${(["kick", "snare", "hat"] as const).map((lane) => `
+        <div class="inline-lane">
+          <span>${drumLaneShortLabel(lane)}</span>
+          <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
+            ${Array.from({ length: steps }, (_, step) => {
+              const actualStep = startStep + step;
+              const level = section.grid[lane][actualStep] || 0;
+              const tuplet = !!section.gridTuplets[lane][actualStep];
+              const selected = selection?.kind === "drums" && selection.sectionId === section.id && selection.lane === lane && selection.step === actualStep;
+              return `<button class="step timeline-step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet." data-drum-step="${section.id}:${lane}:${actualStep}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
+            }).join("")}
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderInlineBassEditor(section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
+  return `
+    <div class="inline-lane single-inline-lane">
+      <span>Bass</span>
+      <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
+        ${Array.from({ length: steps }, (_, step) => {
+          const actualStep = startStep + step;
+          const note = section.bassNotes[actualStep];
+          const tuplet = !!section.gridTuplets.bass[actualStep];
+          const selected = selection?.kind === "bass" && selection.sectionId === section.id && selection.step === actualStep;
+          return `<button class="step timeline-step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Bass note step ${actualStep + 1}. Select then press H, S or T." data-bass-step="${section.id}:${actualStep}">${note === null || note === undefined ? "" : BASS_LABELS[note] || String(note)}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep], tuplet })}</button>`;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderInlineMelodyEditor(section: SanitizedPcsSection, trackIndex: number, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
+  const track = section.melodyTracks[trackIndex] || [];
+  const instrument = section.melodyInstruments[trackIndex] || "synth";
+  return `
+    <div class="inline-lane single-inline-lane">
+      <span>${escapeHtml(instrumentLabel(instrument))}</span>
+      <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
+        ${Array.from({ length: steps }, (_, step) => {
+          const actualStep = startStep + step;
+          const note = track[actualStep];
+          const tuplet = !!section.melodyTuplets[trackIndex]?.[actualStep];
+          const selected = selection?.kind === "melody" && selection.sectionId === section.id && selection.trackIndex === trackIndex && selection.step === actualStep;
+          return `<button class="step timeline-step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Melody ${trackIndex + 1} note step ${actualStep + 1}. Select then press H, S or T." data-melody-step="${section.id}:${trackIndex}:${actualStep}">${note === null || note === undefined ? "" : BASS_LABELS[note] || String(note)}${stepBadges({ hold: !!section.melodyHold[trackIndex]?.[actualStep], slide: !!section.melodySlide[trackIndex]?.[actualStep], tuplet })}</button>`;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderInlineGuitarEditor(section: SanitizedPcsSection, startStep: number, steps: number): string {
+  return `
+    <div class="inline-lane single-inline-lane">
+      <span>Guitar</span>
+      <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
+        ${Array.from({ length: steps }, (_, step) => {
+          const actualStep = startStep + step;
+          const art = section.guitarPattern[actualStep] || "off";
+          return `<button class="step timeline-step guitar-step ${art !== "off" ? "on" : ""}" title="Guitar ${instrumentLabel(art)} step ${actualStep + 1}" data-guitar-step="${section.id}:${actualStep}">${GUITAR_LABELS[art] || art.slice(0, 2)}</button>`;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderInlineChordEditor(section: SanitizedPcsSection, startBar: number, bars: number): string {
+  if (bars <= 0) return "";
+  return `
+    <div class="inline-chord-grid" style="grid-template-columns:repeat(${bars}, minmax(38px, 1fr));">
+      ${Array.from({ length: bars }, (_, index) => {
+        const bar = startBar + index;
+        const degree = section.progression[bar] || 0;
+        return `
+          <label title="Section ${section.id} bar ${bar + 1} chord">
+            <span>${bar + 1}</span>
+            <select data-section-chord="${section.id}:${bar}">
+              ${CHORD_LABELS.map((label, value) => `<option value="${value}" ${degree === value ? "selected" : ""}>${label}</option>`).join("")}
+            </select>
+          </label>
+        `;
+      }).join("")}
+    </div>
+  `;
 }
 
 function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, selected: boolean, track: Track): string {
@@ -324,7 +480,6 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
               <button disabled>Freeze</button>
               <button disabled>Convert to MIDI</button>
               ${clip.type === "midi" ? renderMidiClipEditor(clip) : ""}
-              ${renderChordsmithSequencer(state, project, pcs, clip, track)}
             </section>`
           : `<p>Select a clip to inspect it.</p>`
       }
@@ -341,6 +496,7 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
               ${renderInputSelector(project, track)}
               ${renderOutputSelector(project, track)}
               ${renderAutomationPanel(project, track)}
+              ${renderChordsmithSequencer(state, project, pcs, clip, track)}
               ${renderFxInspector(chain)}
             </section>`
           : ""
@@ -454,13 +610,14 @@ function midiPitchLabel(pitch: number): string {
   return `${names[safe % 12]}${Math.floor(safe / 12) - 1}`;
 }
 
-function renderChordsmithSequencer(state: AppState, project: ReturnType<typeof currentProject>, pcs: SanitizedPcsProject | null, clip: Clip, selectedTrack: Track | null): string {
+function renderChordsmithSequencer(state: AppState, project: ReturnType<typeof currentProject>, pcs: SanitizedPcsProject | null, clip: Clip | null, selectedTrack: Track | null): string {
   if (!pcs) return "";
-  const selectedClipSection = clip.type === "generated-section" ? clip.sectionId || null : null;
+  const selectedRole = selectedTrack?.trackType === "generated" ? selectedTrack.role : null;
+  const selectedClipSection = clip?.type === "generated-section" ? clip.sectionId || null : null;
+  if (!selectedRole) return "";
   const sectionId = (state.chordsmithEditorFollowClip && selectedClipSection ? selectedClipSection : state.chordsmithEditorSectionId || selectedClipSection || "A") as SectionId;
   const section = pcs.sections[sectionId] as SanitizedPcsSection | undefined;
   if (!section) return "";
-  const selectedRole = selectedTrack?.trackType === "generated" ? selectedTrack.role : null;
   const windowSize = visibleEditorSteps(pcs);
   const totalSteps = totalEditorSteps(pcs, section);
   const maxPage = Math.max(0, Math.ceil(totalSteps / windowSize) - 1);
@@ -711,6 +868,13 @@ function drumLaneLabel(lane: string) {
   return lane;
 }
 
+function drumLaneShortLabel(lane: string) {
+  if (lane === "kick") return "K";
+  if (lane === "snare") return "S";
+  if (lane === "hat") return "H";
+  return lane.slice(0, 1).toUpperCase();
+}
+
 function renderMixer(state: AppState): string {
   const project = currentProject(state);
   return `
@@ -789,6 +953,7 @@ function renderExportPanel(state: AppState): string {
   const project = currentProject(state);
   const stems = createStemExportPlan(project);
   const loops = createSectionLoopMetadata(project);
+  const progress = state.exportProgress;
   return `
     <section class="export-panel" data-layout-zone="export" aria-label="Export Foundations">
       <header>
@@ -805,6 +970,15 @@ function renderExportPanel(state: AppState): string {
           <button data-action="export-web-game-manifest">Web Manifest Preview</button>
         </div>
       </header>
+      ${progress ? `
+        <div class="export-progress" role="status" aria-live="polite">
+          <div>
+            <strong>${escapeHtml(progress.message)}</strong>
+            ${progress.detail ? `<span>${escapeHtml(progress.detail)}</span>` : ""}
+          </div>
+          <i></i>
+        </div>
+      ` : ""}
       <p class="export-note">Full mix and stem WAVs render real audio. Game manifests now use deterministic pack paths; section-loop audio and ZIP assembly remain planned-render/native follow-up work.</p>
     </section>
   `;

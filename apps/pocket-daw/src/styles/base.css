@@ -266,6 +266,43 @@ h1 {
   font-size: 13px;
 }
 
+.transport-busy {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 5px;
+  color: #d9ffe5;
+  font-size: 12px;
+}
+
+.transport-busy i {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  height: 4px;
+  border-radius: 999px;
+  background: #1b2840;
+}
+
+.transport-busy i::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #40d8ff, #7cff9b);
+  animation: busy-scan 1.05s ease-in-out infinite;
+}
+
+@keyframes busy-scan {
+  0% {
+    transform: translateX(-105%);
+  }
+
+  100% {
+    transform: translateX(245%);
+  }
+}
+
 .studio {
   grid-area: studio;
   display: grid;
@@ -947,6 +984,52 @@ h1 {
   min-height: 30px;
   padding: 0 10px;
   font-size: 11px;
+}
+
+.export-progress {
+  display: grid;
+  gap: 7px;
+  max-width: 680px;
+  padding: 9px 10px;
+  border: 1px solid #244064;
+  border-radius: 6px;
+  background: #10192a;
+  color: #d9ffe5;
+}
+
+.export-progress div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+}
+
+.export-progress strong {
+  font-size: 12px;
+}
+
+.export-progress span {
+  color: #9ba9c9;
+  font-size: 12px;
+}
+
+.export-progress i {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  height: 5px;
+  border-radius: 999px;
+  background: #1b2840;
+}
+
+.export-progress i::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 36%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #40d8ff, #7cff9b);
+  animation: busy-scan 1.1s ease-in-out infinite;
 }
 
 .export-note {

@@ -25,6 +25,8 @@ export interface AppState {
   meterLevels: Record<string, number>;
   importText: string;
   currentFile: ProjectFileState;
+  busyMessage: string | null;
+  exportProgress: { message: string; detail?: string } | null;
   recent: RecentProject[];
   showControls: boolean;
   showAddTrack: boolean;
@@ -59,6 +61,8 @@ export function createInitialState(): AppState {
     meterLevels: {},
     importText: "",
     currentFile: { path: null, label: "Editable demo copy" },
+    busyMessage: null,
+    exportProgress: null,
     recent: [],
     showControls: false,
     showAddTrack: false,
@@ -94,6 +98,8 @@ export function loadProjectIntoState(
     meterLevels: {},
     importText: options.clearImportText === false ? state.importText : "",
     currentFile: options.currentFile || { path: null, label: project.project.title || "Untitled project" },
+    busyMessage: null,
+    exportProgress: null,
     chordsmithEditorStepPage: 0,
     chordsmithStepSelection: null
   };

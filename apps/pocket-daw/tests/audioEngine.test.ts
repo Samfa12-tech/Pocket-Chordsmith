@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AudioEngine, calculateLoopSeekSeconds } from "../src/audio/audioEngine";
 import { createDemoProject } from "../src/demo/demoProject";
+import type { NativeAudioStatus } from "../src/native/audioPlayback";
 
 describe("audio engine diagnostics", () => {
   it("reports event counts without starting playback", () => {
@@ -89,4 +90,79 @@ describe("audio engine diagnostics", () => {
     expect(chords).toMatchObject({ mute: true, solo: false });
     expect(bass).toMatchObject({ mute: false, solo: true });
   });
+
+  it("resumes paused native playback without sending a second native start", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    const calls: string[] = [];
+    const native = {
+      async start() {
+        calls.push("start");
+        return { started: true, status: nativeStatus({ playing: true, positionSeconds: 0 }), error: null };
+      },
+      async pause() {
+        calls.push("pause");
+        return nativeStatus({ active: true, playing: false, positionSeconds: 3.25 });
+      },
+      async resume() {
+        calls.push("resume");
+        return nativeStatus({ active: true, playing: true, positionSeconds: 3.25 });
+      },
+      async stop() {
+        calls.push("stop");
+        return nativeStatus({ active: false, playing: false });
+      },
+      async seek() {
+        calls.push("seek");
+        return nativeStatus({ active: true, playing: false });
+      },
+      async updateTrack() {
+        calls.push("updateTrack");
+        return nativeStatus({ active: true, playing: false });
+      },
+      async status() {
+        return nativeStatus({ active: true, playing: false });
+      }
+    };
+
+    try {
+      const engine = new AudioEngine(createDemoProject(), native);
+
+      await engine.play();
+      engine.pause();
+      await Promise.resolve();
+      expect(engine.canResumePausedNativePlayback()).toBe(true);
+      await engine.play();
+      engine.stop();
+
+      expect(calls.filter((call) => call === "start")).toHaveLength(1);
+      expect(calls).toContain("pause");
+      expect(calls).toContain("resume");
+    } finally {
+      (globalThis as any).window = previousWindow;
+    }
+  });
 });
+
+function nativeStatus(overrides: Partial<NativeAudioStatus> = {}): NativeAudioStatus {
+  return {
+    backend: "native-cpal",
+    available: true,
+    active: true,
+    playing: true,
+    positionSeconds: 0,
+    eventCount: 0,
+    sampleRate: 48000,
+    channels: 2,
+    renderedFrameCount: 0,
+    startedGeneration: 1,
+    projectTitle: "Test",
+    deviceName: "Default",
+    hostName: "wasapi",
+    lastError: null,
+    ...overrides
+  };
+}

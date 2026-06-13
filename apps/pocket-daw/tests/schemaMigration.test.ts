@@ -17,6 +17,8 @@ describe("schema migrations", () => {
     expect(migrated.routing.masterTrackId).toBe("master");
     expect(migrated.fx.chains.length).toBe(migrated.tracks.length);
     expect(migrated.audioDeviceSettings.host).toBe("wasapi");
+    expect(migrated.sourceRefs[0]).toMatchObject({ sourceType: "pocket-chordsmith", title: "Old" });
+    expect(migrated.timeline.clips[0]).toMatchObject({ type: "generated-section", sectionId: "A" });
     expect((migrated as unknown as Record<string, unknown>).futureRootField).toEqual({ keep: true });
     expect((migrated.project as unknown as Record<string, unknown>).futureProjectField).toBe("keep");
     expect((migrated.timeline as unknown as Record<string, unknown>).futureTimelineField).toBe("keep");

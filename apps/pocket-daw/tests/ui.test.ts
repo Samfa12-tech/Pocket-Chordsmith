@@ -9,20 +9,49 @@ import { addTrackToProject } from "../src/daw/tracks";
 import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { simpleMidiBytes } from "./midiFixtures";
+import { createEmptyPocketDawProject } from "../src/daw/dawProject";
+
+function inspectorHtml(html: string) {
+  return html.match(/<aside class="inspector"[\s\S]*?<\/aside>/)?.[0] || "";
+}
 
 describe("Pocket DAW UI rendering", () => {
-  it("shows only the selected generated instrument editor", () => {
+  it("renders song setup and direct generated-track sequencers in a new project", () => {
+    const project = createEmptyPocketDawProject();
+    const state = createInitialState();
+    state.undoStack = createUndoStack(project);
+    state.selectedClipId = null;
+    state.selectedTrackId = "melody";
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain('data-chordsmith-global="key"');
+    expect(html).toContain('data-chordsmith-global="bpm"');
+    expect(html).toContain('id="chordsmithSectionSelect"');
+    expect(html).toContain('data-melody-step="A:0:0"');
+    expect(html).toContain('data-drum-step="A:kick:0"');
+    expect(html).toContain('data-inline-sequencer-role="drums"');
+    expect(html).toContain('data-inline-sequencer-role="bass"');
+    expect(html).toContain('data-inline-sequencer-role="chords"');
+    expect(html).toContain('data-inline-sequencer-role="melody"');
+    expect(html).toContain('data-inline-sequencer-role="guitar"');
+  });
+
+  it("keeps the selected generated instrument focused in the inspector", () => {
     const state = createInitialState();
     state.selectedTrackId = "bass";
 
     const html = renderAppShell(state);
+    const inspector = inspectorHtml(html);
 
-    expect(html).toContain("data-bass-step");
-    expect(html).toContain("Select then press H, S or T.");
-    expect(html).not.toContain("data-drum-step");
-    expect(html).not.toContain("data-melody-step");
-    expect(html).not.toContain("data-guitar-step");
-    expect(html).not.toContain("data-section-chord");
+    expect(html).toContain('data-inline-sequencer-role="drums"');
+    expect(html).toContain('data-inline-sequencer-role="bass"');
+    expect(inspector).toContain("data-bass-step");
+    expect(inspector).toContain("Select then press H, S or T.");
+    expect(inspector).not.toContain("data-drum-step");
+    expect(inspector).not.toContain("data-melody-step");
+    expect(inspector).not.toContain("data-guitar-step");
+    expect(inspector).not.toContain("data-section-chord");
   });
 
   it("does not render an FX Return pan control", () => {
@@ -116,6 +145,39 @@ describe("Pocket DAW UI rendering", () => {
     ].forEach((scrollKey) => {
       expect(html).toContain(scrollKey);
     });
+  });
+
+  it("renders bar and time labels on the timeline ruler", () => {
+    const html = renderAppShell(createInitialState());
+
+    expect(html).toContain('class="ruler-tick"');
+    expect(html).toContain("<b>1</b><small>0:00</small>");
+    expect(html).toContain("Click to seek by bar or time");
+  });
+
+  it("renders transport cooking feedback when the app is busy preparing audio", () => {
+    const state = createInitialState();
+    state.busyMessage = "Cooking timeline audio for native playback...";
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain('class="transport-busy"');
+    expect(html).toContain("Cooking timeline audio for native playback...");
+  });
+
+  it("renders export progress feedback in the export panel", () => {
+    const state = createInitialState();
+    state.exportProgress = {
+      message: "Rendering WAV mix",
+      detail: "Longer songs and imported audio can take a little while"
+    };
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain('class="export-progress"');
+    expect(html).toContain("Rendering WAV mix");
+    expect(html).toContain("Longer songs and imported audio can take a little while");
+    expect(html).toContain('aria-live="polite"');
   });
 
   it("renders media pool empty state with audio and MIDI import enabled", () => {
@@ -245,8 +307,9 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("harmonica");
     expect(html).toContain(`data-melody-instrument="A:1"`);
     expect(html).toContain(`<option value="harmonica" selected>Harmonica</option>`);
-    expect(html).toContain(`data-melody-step="A:1:1"`);
-    expect(html).not.toContain(`data-melody-step="A:0:0"`);
+    const inspector = inspectorHtml(html);
+    expect(inspector).toContain(`data-melody-step="A:1:1"`);
+    expect(inspector).not.toContain(`data-melody-step="A:0:0"`);
   });
 
   it("renders Chordsmith section scope, globals and later step pages", () => {

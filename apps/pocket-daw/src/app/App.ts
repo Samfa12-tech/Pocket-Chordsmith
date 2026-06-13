@@ -8,7 +8,7 @@ import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../daw/d
 import { renderTimelineEvents } from "../audio/eventRenderer";
 import { downloadBlob, openProjectFileNative, safeName, saveProjectFile } from "../native/fileBridge";
 import { readPocketDawHandoff } from "../native/pocketHandoff";
-import { loadAutosave, loadRecentProjects, saveAutosave, saveRecentProject } from "../native/recentFiles";
+import { loadAutosave, loadAutosaveFileState, loadRecentProjects, saveAutosave, saveRecentProject } from "../native/recentFiles";
 import {
   addAutomationPointCommand,
   addBusTrackCommand,
@@ -91,7 +91,7 @@ import { POCKET_DAW_VERSION } from "../daw/schema";
 import { trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToPosition, snapBarValue } from "../daw/timeline";
 import { addImportedAudioMedia, updateAudioMediaAnalysis } from "../daw/audioClips";
-import { createCollectMediaPlan, findMediaPoolItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked } from "../daw/mediaPool";
+import { createCollectMediaPlan, findMediaPoolItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked, mediaPoolStatus } from "../daw/mediaPool";
 import {
   AUDIO_MEDIA_ACCEPT,
   collectProjectMediaNative,
@@ -140,6 +140,7 @@ export class App {
   private deferredRenderTimer: number | null = null;
   private chordsmithDragStart: ChordsmithStepSelection | null = null;
   private suppressNextStepClick = false;
+  private chordsmithStepChangedTrack = false;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -152,7 +153,7 @@ export class App {
       this.state.playheadBar = tick.bar;
       this.state.meterLevels = this.engine.getMeterLevels();
       if (playingChanged) {
-        this.render();
+        this.render({ preserveScroll: true });
       } else {
         this.updateLiveDom();
       }
@@ -188,8 +189,11 @@ export class App {
       if (autosave) {
         try {
           const project = loadPocketDawRaw(autosave);
-          this.state.undoStack = createUndoStack(project);
-          this.state.status = "Recovered autosaved Pocket DAW project.";
+          this.state = loadProjectIntoState(this.state, project, {
+            status: "Recovered autosaved Pocket DAW project.",
+            currentFile: loadAutosaveFileState() || { path: null, label: `Recovered autosave: ${project.project.title || "Untitled project"}` }
+          });
+          this.engine.setProject(project);
         } catch {
           this.state.status = "Editable demo copy loaded. Autosave was present but could not be recovered.";
         }
@@ -280,13 +284,13 @@ export class App {
         const rowTrack = currentProject(this.state).tracks.find((track) => track.id === row) || currentProject(this.state).tracks.find((track) => track.role === row);
         if (rowTrack) this.state.selectedTrackId = rowTrack.id;
         this.state.status = `Selected ${this.state.selectedClipId}.`;
-        this.render();
+        this.render({ preserveScroll: true });
       });
     });
     this.root.querySelectorAll<HTMLElement>("[data-track-id]").forEach((el) => {
       el.addEventListener("click", () => {
         this.state.selectedTrackId = el.dataset.trackId || null;
-        this.render();
+        this.render({ preserveScroll: true });
       });
     });
     this.root.querySelectorAll<HTMLInputElement>("[data-volume]").forEach((input) => this.bindMixerControl(input, "volume", input.dataset.volume || ""));
@@ -489,6 +493,7 @@ export class App {
   private handlePointerDown(event: PointerEvent) {
     const target = event.target as HTMLElement | null;
     if (this.beginChordsmithStepDrag(target, "pointerup")) return;
+    if (target?.closest("[data-inline-sequencer]")) return;
     const timeline = target?.closest<HTMLElement>("[data-timeline-surface]");
     const seekable = timeline && (target?.closest("[data-seek-ruler]") || !target?.closest("[data-clip-id]"));
     if (!timeline || !seekable) return;
@@ -503,7 +508,7 @@ export class App {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       scrub(upEvent.clientX, true);
-      this.render();
+      this.render({ preserveScroll: true });
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -745,13 +750,23 @@ export class App {
       this.toggleTrackSolo(soloButton.dataset.soloTrack || "");
       return;
     }
+    const inlineClip = target?.closest<HTMLElement>("[data-inline-clip-id]");
+    if (inlineClip) {
+      if (target?.closest("button, input, select, textarea")) return;
+      this.state.selectedClipId = inlineClip.dataset.inlineClipId || null;
+      this.state.selectedTrackId = inlineClip.dataset.inlineRow || this.state.selectedTrackId;
+      this.state.status = `Selected ${this.state.selectedClipId}.`;
+      this.render({ preserveScroll: true });
+      return;
+    }
+    if (target?.closest("[data-inline-sequencer]")) return;
     const timeline = target?.closest<HTMLElement>("[data-timeline-surface]");
     const seekable = target?.closest("[data-seek-ruler]") || (timeline && !target?.closest("[data-clip-id]"));
     if (timeline && seekable) {
       const mouse = event as MouseEvent;
       const bar = this.seekTimelineFromClientX(timeline, mouse.clientX, true);
       this.state.status = `Seeked to ${this.formatBarBeat(bar)}.`;
-      this.render();
+      this.render({ preserveScroll: true });
     }
   }
 
@@ -817,12 +832,12 @@ export class App {
     if (action === "loop-clear") this.applyProjectState(clearLoopCommand(this.state));
     if (action === "marker-add") this.applyProjectState(addMarkerAtPlayheadCommand(this.state));
     if (action === "zoom-in") {
-      this.state.zoom = Math.min(80, this.state.zoom + 6);
-      this.render();
+      this.state.zoom = Math.min(260, this.state.zoom + 12);
+      this.render({ preserveScroll: true });
     }
     if (action === "zoom-out") {
       this.state.zoom = Math.max(18, this.state.zoom - 6);
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "import-text") this.importText(this.state.importText);
     if (action === "open-file" || action === "open-project") await this.openProject();
@@ -876,12 +891,12 @@ export class App {
     if (command === "move-clip-left") this.applyProjectState(moveSelectedClip(this.state, -1));
     if (command === "move-clip-right") this.applyProjectState(moveSelectedClip(this.state, 1));
     if (command === "zoom-in") {
-      this.state.zoom = Math.min(80, this.state.zoom + 6);
-      this.render();
+      this.state.zoom = Math.min(260, this.state.zoom + 12);
+      this.render({ preserveScroll: true });
     }
     if (command === "zoom-out") {
       this.state.zoom = Math.max(18, this.state.zoom - 6);
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (command === "undo") this.applyProjectState(undoCommand(this.state));
     if (command === "redo") this.applyProjectState(redoCommand(this.state));
@@ -895,20 +910,117 @@ export class App {
   }
 
   private async playTransport() {
-    const hydration = await this.hydrateTimelineAudioBuffers();
-    if (hydration.loaded > 0) {
-      this.state.status = `Loaded ${hydration.loaded} audio file${hydration.loaded === 1 ? "" : "s"} for native playback.`;
-      this.render({ preserveScroll: true });
-    } else if (hydration.missing.length) {
-      this.state.status = `Could not load ${hydration.missing.length} audio file${hydration.missing.length === 1 ? "" : "s"}; playback will use available material.`;
-      this.render({ preserveScroll: true });
+    if (this.engine.canResumePausedNativePlayback()) {
+      await this.engine.play();
+      return;
     }
-    await this.engine.play();
+
+    let showedBusy = false;
+    let hydration: Awaited<ReturnType<typeof this.hydrateTimelineAudioBuffers>> = { total: 0, loaded: 0, cached: 0, missing: [] };
+    try {
+      const prepared = await this.prepareTimelineAudioForPlayback("native playback");
+      showedBusy = prepared.showedBusy;
+      hydration = prepared.hydration;
+      await this.engine.play();
+      if (hydration.loaded > 0) {
+        this.state.status = `Loaded ${hydration.loaded} audio file${hydration.loaded === 1 ? "" : "s"} for native playback.`;
+      } else if (hydration.missing.length) {
+        this.state.status = `Could not load ${hydration.missing.length} audio file${hydration.missing.length === 1 ? "" : "s"}; playback will use available material.`;
+      }
+    } finally {
+      if (showedBusy) {
+        this.state.busyMessage = null;
+        this.render({ preserveScroll: true });
+      }
+    }
   }
 
   private async restartTransport() {
-    await this.hydrateTimelineAudioBuffers();
-    await this.engine.restart();
+    let showedBusy = false;
+    try {
+      const prepared = await this.prepareTimelineAudioForPlayback("restart");
+      showedBusy = prepared.showedBusy;
+      await this.engine.restart();
+    } finally {
+      if (showedBusy) {
+        this.state.busyMessage = null;
+        this.render({ preserveScroll: true });
+      }
+    }
+  }
+
+  private async prepareTimelineAudioForPlayback(reason: string): Promise<{
+    hydration: { total: number; loaded: number; cached: number; missing: string[] };
+    showedBusy: boolean;
+  }> {
+    let showedBusy = false;
+    const before = this.timelineAudioPreparationState();
+    if (before.reloadableMissingBufferCount > 0) {
+      showedBusy = true;
+      await this.showTransportBusy(`Loading ${before.reloadableMissingBufferCount} timeline audio file${before.reloadableMissingBufferCount === 1 ? "" : "s"} for ${reason}...`);
+    } else if (before.native.needsPreparation) {
+      showedBusy = true;
+      await this.showTransportBusy(this.nativeAudioPreparationMessage(before.native));
+    }
+
+    const hydration = await this.hydrateTimelineAudioBuffers();
+    const after = this.engine.getNativeRuntimeAudioPreparationState();
+    if (after.needsPreparation && (before.reloadableMissingBufferCount > 0 || !showedBusy)) {
+      showedBusy = true;
+      await this.showTransportBusy(this.nativeAudioPreparationMessage(after));
+    }
+
+    return { hydration, showedBusy };
+  }
+
+  private async showTransportBusy(message: string) {
+    this.state.busyMessage = message;
+    this.state.status = message;
+    this.render({ preserveScroll: true });
+    await this.nextPaint();
+  }
+
+  private async showExportProgress(message: string, detail?: string) {
+    this.state.exportProgress = { message, detail };
+    this.state.status = `${message}...`;
+    this.render({ preserveScroll: true });
+    await this.nextPaint();
+  }
+
+  private async nextPaint(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      if (typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+      } else {
+        window.setTimeout(resolve, 0);
+      }
+    });
+  }
+
+  private nativeAudioPreparationMessage(prep: ReturnType<AudioEngine["getNativeRuntimeAudioPreparationState"]>): string {
+    const count = Math.max(1, prep.cachedAudioRegionCount - prep.preparedAudioRegionCount);
+    return `Preparing ${count} native audio region${count === 1 ? "" : "s"}...`;
+  }
+
+  private timelineAudioPreparationState(): {
+    audioClipCount: number;
+    reloadableMissingBufferCount: number;
+    native: ReturnType<AudioEngine["getNativeRuntimeAudioPreparationState"]>;
+  } {
+    const project = currentProject(this.state);
+    const audioClips = project.timeline.clips.filter((clip) => clip.type === "audio" && clip.mediaPoolItemId);
+    const mediaIds = new Set(audioClips.map((clip) => clip.mediaPoolItemId as string));
+    let reloadableMissingBufferCount = 0;
+    mediaIds.forEach((id) => {
+      if (getCachedAudioBuffer(id)) return;
+      const item = findMediaPoolItem(project, id);
+      if (item && mediaPoolStatus(item).reloadable) reloadableMissingBufferCount += 1;
+    });
+    return {
+      audioClipCount: audioClips.length,
+      reloadableMissingBufferCount,
+      native: this.engine.getNativeRuntimeAudioPreparationState()
+    };
   }
 
   private consumeSuppressedStepClick(): boolean {
@@ -918,6 +1030,7 @@ export class App {
   }
 
   private selectChordsmithStep(selection: ChordsmithStepSelection) {
+    const beforeTrackId = this.state.selectedTrackId;
     this.state.chordsmithStepSelection = selection;
     const roleTrack =
       selection.kind === "melody"
@@ -925,6 +1038,7 @@ export class App {
           || currentProject(this.state).tracks.find((track) => selection.trackIndex === 0 && track.role === "melody")
         : currentProject(this.state).tracks.find((track) => track.role === selection.kind);
     if (roleTrack) this.state.selectedTrackId = roleTrack.id;
+    this.chordsmithStepChangedTrack = beforeTrackId !== this.state.selectedTrackId;
   }
 
   private stepSelectionFromElement(target: HTMLElement | null): ChordsmithStepSelection | null {
@@ -1005,9 +1119,11 @@ export class App {
 
   private applyChordsmithEditorEdit(next: AppState, reason: string, options: { step?: ChordsmithStepSelection } = {}) {
     const useStepPatch = !!options.step;
+    const needsTrackRender = useStepPatch && this.chordsmithStepChangedTrack;
+    this.chordsmithStepChangedTrack = false;
     this.applyProjectState(next, {
       audio: "composition-events",
-      render: useStepPatch ? "none" : this.engine.isPlaying() ? "deferred" : "immediate",
+      render: useStepPatch ? (needsTrackRender ? "immediate" : "none") : this.engine.isPlaying() ? "deferred" : "immediate",
       autosave: "debounced",
       preserveScroll: true,
       reason
@@ -1022,39 +1138,45 @@ export class App {
     if (!section) return false;
 
     this.root.querySelectorAll<HTMLElement>(".selected-step").forEach((node) => node.classList.remove("selected-step"));
-    let button: HTMLElement | null = null;
+    let buttons: HTMLElement[] = [];
 
     if (selection.kind === "drums") {
-      button = this.root.querySelector<HTMLElement>(`[data-drum-step="${selection.sectionId}:${selection.lane}:${selection.step}"]`);
-      if (!button) return false;
+      buttons = Array.from(this.root.querySelectorAll<HTMLElement>(`[data-drum-step="${selection.sectionId}:${selection.lane}:${selection.step}"]`));
+      if (!buttons.length) return false;
       const level = section.grid[selection.lane][selection.step] || 0;
       const tuplet = !!section.gridTuplets[selection.lane][selection.step];
-      button.className = `step step-${level} ${tuplet ? "tuplet" : ""} selected-step`;
-      button.title = `${this.drumLaneLabel(selection.lane)} step ${selection.step + 1}. Select then press T for tuplet.`;
-      button.innerHTML = `${level === 2 ? "!" : level === 1 ? "x" : ""}${this.stepBadgesHtml({ tuplet })}`;
+      buttons.forEach((button) => {
+        button.className = `${this.stepBaseClass(button)} step-${level} ${tuplet ? "tuplet" : ""} selected-step`;
+        button.title = `${this.drumLaneLabel(selection.lane)} step ${selection.step + 1}. Select then press T for tuplet.`;
+        button.innerHTML = `${level === 2 ? "!" : level === 1 ? "x" : ""}${this.stepBadgesHtml({ tuplet })}`;
+      });
     } else if (selection.kind === "bass") {
-      button = this.root.querySelector<HTMLElement>(`[data-bass-step="${selection.sectionId}:${selection.step}"]`);
-      if (!button) return false;
+      buttons = Array.from(this.root.querySelectorAll<HTMLElement>(`[data-bass-step="${selection.sectionId}:${selection.step}"]`));
+      if (!buttons.length) return false;
       const note = section.bassNotes[selection.step];
       const on = note !== null && note !== undefined;
       const tuplet = !!section.gridTuplets.bass[selection.step];
-      button.className = `step note-step ${on ? "on" : ""} ${tuplet ? "tuplet" : ""} selected-step`;
-      button.title = `Bass note step ${selection.step + 1}. Select then press H, S or T.`;
-      button.innerHTML = `${on ? STEP_NOTE_LABELS[note] || String(note) : ""}${this.stepBadgesHtml({ hold: !!section.bassHold[selection.step], slide: !!section.bassSlide[selection.step], tuplet })}`;
+      buttons.forEach((button) => {
+        button.className = `${this.stepBaseClass(button)} note-step ${on ? "on" : ""} ${tuplet ? "tuplet" : ""} selected-step`;
+        button.title = `Bass note step ${selection.step + 1}. Select then press H, S or T.`;
+        button.innerHTML = `${on ? STEP_NOTE_LABELS[note] || String(note) : ""}${this.stepBadgesHtml({ hold: !!section.bassHold[selection.step], slide: !!section.bassSlide[selection.step], tuplet })}`;
+      });
     } else {
-      button = this.root.querySelector<HTMLElement>(`[data-melody-step="${selection.sectionId}:${selection.trackIndex}:${selection.step}"]`);
-      if (!button) return false;
+      buttons = Array.from(this.root.querySelectorAll<HTMLElement>(`[data-melody-step="${selection.sectionId}:${selection.trackIndex}:${selection.step}"]`));
+      if (!buttons.length) return false;
       const track = section.melodyTracks[selection.trackIndex] || [];
       const note = track[selection.step];
       const on = note !== null && note !== undefined;
       const tuplet = !!section.melodyTuplets[selection.trackIndex]?.[selection.step];
-      button.className = `step note-step ${on ? "on" : ""} ${tuplet ? "tuplet" : ""} selected-step`;
-      button.title = `Melody ${selection.trackIndex + 1} note step ${selection.step + 1}. Select then press H, S or T.`;
-      button.innerHTML = `${on ? STEP_NOTE_LABELS[note] || String(note) : ""}${this.stepBadgesHtml({
-        hold: !!section.melodyHold[selection.trackIndex]?.[selection.step],
-        slide: !!section.melodySlide[selection.trackIndex]?.[selection.step],
-        tuplet
-      })}`;
+      buttons.forEach((button) => {
+        button.className = `${this.stepBaseClass(button)} note-step ${on ? "on" : ""} ${tuplet ? "tuplet" : ""} selected-step`;
+        button.title = `Melody ${selection.trackIndex + 1} note step ${selection.step + 1}. Select then press H, S or T.`;
+        button.innerHTML = `${on ? STEP_NOTE_LABELS[note] || String(note) : ""}${this.stepBadgesHtml({
+          hold: !!section.melodyHold[selection.trackIndex]?.[selection.step],
+          slide: !!section.melodySlide[selection.trackIndex]?.[selection.step],
+          tuplet
+        })}`;
+      });
     }
 
     this.updateTrackSelectionDom();
@@ -1062,9 +1184,16 @@ export class App {
     return true;
   }
 
+  private stepBaseClass(button: HTMLElement) {
+    return button.classList.contains("timeline-step") ? "step timeline-step" : "step";
+  }
+
   private updateTrackSelectionDom() {
     this.root.querySelectorAll<HTMLElement>("[data-track-id]").forEach((row) => {
       row.classList.toggle("selected", row.dataset.trackId === this.state.selectedTrackId);
+    });
+    this.root.querySelectorAll<HTMLElement>("[data-row]").forEach((row) => {
+      row.classList.toggle("selected-row", row.dataset.row === this.state.selectedTrackId);
     });
   }
 
@@ -1089,7 +1218,7 @@ export class App {
     const resolved = this.resolveApplyOptions(options);
     this.state = next;
     const project = currentProject(this.state);
-    if (resolved.autosave !== "none") saveAutosave(buildPocketDawProjectFile(project));
+    if (resolved.autosave !== "none") this.saveAutosaveSnapshot(project);
     if (resolved.audio && resolved.audio !== "none") this.engine.syncProject(project, resolved.audio, resolved.reason);
     this.scheduleRender(resolved.render || "immediate", { preserveScroll: resolved.preserveScroll });
   }
@@ -1184,7 +1313,7 @@ export class App {
       this.state.playheadBar = 1;
       this.state.cursorBar = 1;
       this.engine.setProject(project);
-      saveAutosave(buildPocketDawProjectFile(project));
+      this.saveAutosaveSnapshot(project);
       saveRecentProject(project.project.title);
       this.state.recent = loadRecentProjects();
       this.render();
@@ -1213,7 +1342,7 @@ export class App {
         this.engine.setProject(project);
         saveRecentProject(file.name);
         this.state.recent = loadRecentProjects();
-        saveAutosave(buildPocketDawProjectFile(project));
+        this.saveAutosaveSnapshot(project);
         this.render();
       } catch (error) {
         this.state.status = error instanceof Error ? error.message : "Open failed.";
@@ -1452,7 +1581,7 @@ export class App {
       this.engine.setProject(project);
       saveRecentProject(label, path);
       this.state.recent = loadRecentProjects();
-      saveAutosave(buildPocketDawProjectFile(project));
+      this.saveAutosaveSnapshot(project);
       this.render();
     } catch (error) {
       this.state.status = error instanceof Error ? error.message : "Open failed.";
@@ -1469,23 +1598,26 @@ export class App {
       this.state.recent = loadRecentProjects();
     }
     this.state.status = result.message;
-    saveAutosave(buildPocketDawProjectFile(project));
-    this.render();
+    this.saveAutosaveSnapshot(project);
+    this.render({ preserveScroll: true });
   }
 
   private async exportWav() {
     try {
-      this.state.status = "Rendering WAV...";
-      this.render();
+      await this.showExportProgress("Preparing WAV export", "Loading timeline audio files");
       const hydration = await this.hydrateTimelineAudioBuffers();
       this.assertNoMissingAudibleAudioBuffers(hydration, "WAV export");
+      await this.showExportProgress("Rendering WAV mix", "Longer songs and imported audio can take a little while");
       const blob = await renderProjectToWavBlob(currentProject(this.state));
+      await this.showExportProgress("Preparing WAV download", `${Math.round(blob.size / 1024)} KB rendered`);
       downloadBlob(blob, safeName(currentProject(this.state).project.title, "wav"));
+      this.state.exportProgress = null;
       this.state.status = `Exported WAV (${Math.round(blob.size / 1024)} KB).`;
-      this.render();
+      this.render({ preserveScroll: true });
     } catch (error) {
+      this.state.exportProgress = null;
       this.state.status = error instanceof Error ? `WAV export failed: ${error.message}` : "WAV export failed.";
-      this.render();
+      this.render({ preserveScroll: true });
     }
   }
 
@@ -1509,20 +1641,23 @@ export class App {
       this.render();
       return;
     }
-    this.state.status = `Rendering ${stems.length} stem WAV${stems.length === 1 ? "" : "s"}...`;
-    this.render();
+    await this.showExportProgress(`Preparing ${stems.length} stem WAV${stems.length === 1 ? "" : "s"}`, "Loading timeline audio files");
     try {
       const hydration = await this.hydrateTimelineAudioBuffers();
       this.assertNoMissingAudibleAudioBuffers(hydration, "Stem export");
-      for (const stem of stems) {
+      for (const [index, stem] of stems.entries()) {
+        await this.showExportProgress(`Rendering stem ${index + 1} of ${stems.length}`, stem.label);
         const blob = await renderProjectToWavBlob(projectWithOnlyTracksAudible(project, stem.trackIds));
+        await this.showExportProgress(`Preparing stem download ${index + 1} of ${stems.length}`, `${Math.round(blob.size / 1024)} KB rendered`);
         downloadBlob(blob, stem.fileName);
       }
+      this.state.exportProgress = null;
       this.state.status = `Exported ${stems.length} stem WAV${stems.length === 1 ? "" : "s"} as sequential downloads.`;
-      this.render();
+      this.render({ preserveScroll: true });
     } catch (error) {
+      this.state.exportProgress = null;
       this.state.status = error instanceof Error ? `Stem export failed: ${error.message}` : "Stem export failed.";
-      this.render();
+      this.render({ preserveScroll: true });
     }
   }
 
@@ -1596,7 +1731,7 @@ export class App {
         this.state.recent = loadRecentProjects();
       }
       this.state.status = `Collected ${collected.length} media item${collected.length === 1 ? "" : "s"} into project-media and saved project refs.`;
-      saveAutosave(buildPocketDawProjectFile(currentProject(this.state)));
+      this.saveAutosaveSnapshot(currentProject(this.state));
       this.render({ preserveScroll: true });
     } catch (error) {
       this.state.status = error instanceof Error ? `Collect media failed: ${error.message}` : "Collect media failed.";
@@ -1622,7 +1757,7 @@ export class App {
       }
       const project = mergeNativeRenderCacheItems(currentProject(this.state), result.renderCacheItems);
       this.state = commitProject(this.state, project, `Built native WAV cache with ${result.writtenAssetCount} asset${result.writtenAssetCount === 1 ? "" : "s"}.`);
-      saveAutosave(buildPocketDawProjectFile(project));
+      this.saveAutosaveSnapshot(project);
       const saveResult = await saveProjectFile(project, projectFilePath, false);
       if (saveResult.file) this.state.currentFile = saveResult.file;
       this.state.status = [
@@ -1767,7 +1902,7 @@ export class App {
     this.state.cursorBar = 1;
     this.state.meterLevels = {};
     this.engine.setProject(project);
-    saveAutosave(buildPocketDawProjectFile(project));
+    this.saveAutosaveSnapshot(project);
     this.render();
   }
 
@@ -1776,7 +1911,7 @@ export class App {
     const project = createEmptyPocketDawProject();
     project.project.title = "Untitled Project";
     this.state.undoStack = createUndoStack(project);
-    this.state.selectedClipId = null;
+    this.state.selectedClipId = project.timeline.clips[0]?.id || null;
     this.state.selectedTrackId = "drums";
     this.state.currentFile = { path: null, label: "Untitled project" };
     this.state.status = "New project created from the starter template.";
@@ -1784,7 +1919,11 @@ export class App {
     this.state.cursorBar = 1;
     this.state.meterLevels = {};
     this.engine.setProject(project);
-    saveAutosave(buildPocketDawProjectFile(project));
+    this.saveAutosaveSnapshot(project);
     this.render();
+  }
+
+  private saveAutosaveSnapshot(project = currentProject(this.state)) {
+    saveAutosave(buildPocketDawProjectFile(project), this.state.currentFile);
   }
 }

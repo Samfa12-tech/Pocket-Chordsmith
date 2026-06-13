@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { createDemoProject } from "../src/demo/demoProject";
-import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
+import { buildPocketDawProjectFile, createEmptyPocketDawProject, parsePocketDawProjectFile } from "../src/daw/dawProject";
 import {
   cycleBassStep,
   cycleDrumStep,
@@ -28,6 +28,22 @@ import {
 } from "../src/daw/chordsmithEditor";
 
 describe("Chordsmith visual sequencer edits", () => {
+  it("starts new Pocket DAW projects with an editable Chordsmith source and Section A clip", () => {
+    let project = createEmptyPocketDawProject();
+
+    expect(getPrimaryChordsmithSource(project)?.sections.A.active).toBe(true);
+    expect(project.timeline.clips[0]).toMatchObject({
+      type: "generated-section",
+      sectionId: "A",
+      sourceRefId: project.sourceRefs[0].id,
+      barLength: 4
+    });
+
+    project = cycleDrumStep(project, "A", "kick", 0);
+
+    expect(renderTimelineEvents(project).some((event) => event.kind === "kick" && event.clipId === "clip_001")).toBe(true);
+  });
+
   it("edits chords and section length while preserving source unknown fields", () => {
     let project = createDemoProject();
     project = setSectionChord(project, "A", 0, 6);

@@ -48,6 +48,7 @@ import {
   mergeNativeRenderCacheItems,
   nativeRenderCacheRelativePath,
   nativeRenderCacheSignature,
+  nativeRuntimeAudioCacheSignature,
   persistNativeRenderCacheAssets
 } from "../src/audio/nativeRenderCache";
 import { createDemoProject } from "../src/demo/demoProject";
@@ -128,6 +129,19 @@ describe("native render cache", () => {
     expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
   });
 
+  it("keeps runtime audio cache stable across generated section edits", async () => {
+    const project = withAudioClip(createDemoProject());
+    setCachedAudioBuffer("media_audio", fakeAudioBuffer());
+
+    const beforeSignature = nativeRuntimeAudioCacheSignature(project);
+    const beforeCache = await buildNativeRuntimeAudioCache(project);
+    project.timeline.clips.find((clip) => clip.type === "generated-section")!.transforms.transpose += 7;
+    const afterCache = await buildNativeRuntimeAudioCache(project);
+
+    expect(nativeRuntimeAudioCacheSignature(project)).toBe(beforeSignature);
+    expect(afterCache.assets[0].id).toBe(beforeCache.assets[0].id);
+  });
+
   it("counts uncached audio clips as runtime cache misses", async () => {
     const project = withAudioClip(createDemoProject());
 
@@ -148,6 +162,36 @@ describe("native render cache", () => {
     expect(diagnostics.nativeRenderCache.renderCacheMetadataCount).toBeGreaterThan(0);
     expect(diagnostics.nativeRenderCache.lastBuildReason).toBe("test-rebuild");
     expect(diagnostics.nativeRenderCache.prewarmScheduled).toBe(false);
+  });
+
+  it("reports runtime audio preparation only until cached regions are ready", async () => {
+    const project = withAudioClip(createDemoProject());
+    const engine = new AudioEngine(project);
+
+    expect(engine.getNativeRuntimeAudioPreparationState()).toMatchObject({
+      audioRegionCount: 1,
+      cachedAudioRegionCount: 0,
+      preparedAudioRegionCount: 0,
+      needsPreparation: false
+    });
+
+    setCachedAudioBuffer("media_audio", fakeAudioBuffer());
+
+    expect(engine.getNativeRuntimeAudioPreparationState()).toMatchObject({
+      audioRegionCount: 1,
+      cachedAudioRegionCount: 1,
+      preparedAudioRegionCount: 0,
+      needsPreparation: true
+    });
+
+    await engine.rebuildNativeRenderCache("runtime-audio-ready");
+
+    expect(engine.getNativeRuntimeAudioPreparationState()).toMatchObject({
+      audioRegionCount: 1,
+      cachedAudioRegionCount: 1,
+      preparedAudioRegionCount: 1,
+      needsPreparation: false
+    });
   });
 
   it("persists native cache assets and marks render-cache metadata durable", async () => {
