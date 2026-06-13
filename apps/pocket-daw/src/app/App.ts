@@ -95,17 +95,26 @@ import { importMidiFileToProject } from "../daw/midiClips";
 import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
 import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan, projectWithOnlyTracksAudible } from "../daw/exportJobs";
+import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
 
 type MixerControlField = "volume" | "pan";
 type RenderSchedule = "none" | "live-dom" | "deferred" | "immediate";
+type ScrollSnapshot = Record<string, { top: number; left: number }>;
+
+interface RenderOptions {
+  preserveScroll?: boolean;
+}
 
 interface ApplyProjectOptions {
   audio?: AudioProjectSyncMode | "none";
   render?: RenderSchedule;
   autosave?: "none" | "debounced" | "flush";
   preservePlayback?: boolean;
+  preserveScroll?: boolean;
   reason?: string;
 }
+
+const STEP_NOTE_LABELS = ["R", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"];
 
 export class App {
   private root: HTMLElement;
@@ -179,7 +188,8 @@ export class App {
     this.render();
   }
 
-  private render() {
+  private render(options: RenderOptions = {}) {
+    const scroll = options.preserveScroll ? this.captureScrollSnapshot() : null;
     this.renderCount += 1;
     if (this.state.playing || this.engine.isPlaying()) this.renderCountDuringPlayback += 1;
     this.root.innerHTML = renderAppShell(this.state);
@@ -187,6 +197,32 @@ export class App {
     this.root.dataset.renderCountDuringPlayback = String(this.renderCountDuringPlayback);
     this.root.dataset.liveUpdateCount = String(this.liveUpdateCount);
     this.bind();
+    if (scroll) this.restoreScrollSnapshotSoon(scroll);
+  }
+
+  private captureScrollSnapshot(): ScrollSnapshot {
+    const snapshot: ScrollSnapshot = {};
+    this.root.querySelectorAll<HTMLElement>("[data-scroll-key]").forEach((node) => {
+      const key = node.dataset.scrollKey;
+      if (key) snapshot[key] = { top: node.scrollTop, left: node.scrollLeft };
+    });
+    return snapshot;
+  }
+
+  private restoreScrollSnapshotSoon(snapshot: ScrollSnapshot) {
+    const restore = () => this.restoreScrollSnapshot(snapshot);
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(restore);
+    else restore();
+  }
+
+  private restoreScrollSnapshot(snapshot: ScrollSnapshot) {
+    this.root.querySelectorAll<HTMLElement>("[data-scroll-key]").forEach((node) => {
+      const key = node.dataset.scrollKey;
+      const pos = key ? snapshot[key] : null;
+      if (!pos) return;
+      node.scrollTop = pos.top;
+      node.scrollLeft = pos.left;
+    });
   }
 
   private updateLiveDom() {
@@ -270,7 +306,7 @@ export class App {
       });
     });
     this.root.querySelectorAll<HTMLInputElement>("[data-section-bars]").forEach((input) => {
-      input.addEventListener("change", () => this.applyProjectState(setSectionBarsCommand(this.state, input.dataset.sectionBars || "", Number(input.value))));
+      input.addEventListener("change", () => this.applyChordsmithEditorEdit(setSectionBarsCommand(this.state, input.dataset.sectionBars || "", Number(input.value)), "chordsmith-section-bars"));
     });
     this.root.querySelector<HTMLInputElement>("#chordsmithFollowClip")?.addEventListener("change", (event) => {
       this.state.chordsmithEditorFollowClip = (event.target as HTMLInputElement).checked;
@@ -295,53 +331,53 @@ export class App {
         const field = input.dataset.chordsmithGlobal || "";
         const raw = input.value;
         const patch: Parameters<typeof setChordsmithGlobalsCommand>[1] = field === "bpm" ? { bpm: Number(raw) } : field === "swing" ? { swing: Number(raw) } : field === "key" ? { key: raw } : field === "scale" ? { scale: raw } : {};
-        this.applyProjectState(setChordsmithGlobalsCommand(this.state, patch));
+        this.applyChordsmithEditorEdit(setChordsmithGlobalsCommand(this.state, patch), "chordsmith-globals");
       });
     });
     this.root.querySelector<HTMLSelectElement>("[data-bass-mode]")?.addEventListener("change", (event) => {
-      this.applyProjectState(setBassModeCommand(this.state, (event.target as HTMLSelectElement).value));
+      this.applyChordsmithEditorEdit(setBassModeCommand(this.state, (event.target as HTMLSelectElement).value), "chordsmith-bass-mode");
     });
     this.root.querySelectorAll<HTMLSelectElement>("[data-melody-instrument]").forEach((select) => {
       select.addEventListener("change", () => {
         const [sectionId, trackIndex] = String(select.dataset.melodyInstrument || "").split(":");
-        this.applyProjectState(setMelodyInstrumentCommand(this.state, sectionId, Number(trackIndex), select.value));
+        this.applyChordsmithEditorEdit(setMelodyInstrumentCommand(this.state, sectionId, Number(trackIndex), select.value), "chordsmith-melody-instrument");
       });
     });
     this.root.querySelectorAll<HTMLInputElement>("[data-melody-octave]").forEach((input) => {
       input.addEventListener("change", () => {
         const [sectionId, trackIndex] = String(input.dataset.melodyOctave || "").split(":");
-        this.applyProjectState(setMelodyOctaveCommand(this.state, sectionId, Number(trackIndex), Number(input.value)));
+        this.applyChordsmithEditorEdit(setMelodyOctaveCommand(this.state, sectionId, Number(trackIndex), Number(input.value)), "chordsmith-melody-octave");
       });
     });
     this.root.querySelectorAll<HTMLInputElement>("[data-melody-pan]").forEach((input) => {
       input.addEventListener("change", () => {
         const [sectionId, trackIndex] = String(input.dataset.melodyPan || "").split(":");
-        this.applyProjectState(setMelodyPanCommand(this.state, sectionId, Number(trackIndex), Number(input.value)));
+        this.applyChordsmithEditorEdit(setMelodyPanCommand(this.state, sectionId, Number(trackIndex), Number(input.value)), "chordsmith-melody-pan");
       });
     });
     this.root.querySelectorAll<HTMLInputElement>("[data-melody-mute]").forEach((input) => {
       input.addEventListener("change", () => {
         const [sectionId, trackIndex] = String(input.dataset.melodyMute || "").split(":");
-        this.applyProjectState(setMelodyMuteCommand(this.state, sectionId, Number(trackIndex), input.checked));
+        this.applyChordsmithEditorEdit(setMelodyMuteCommand(this.state, sectionId, Number(trackIndex), input.checked), "chordsmith-melody-mute");
       });
     });
     this.root.querySelectorAll<HTMLInputElement>("[data-melody-solo]").forEach((input) => {
       input.addEventListener("change", () => {
         const [sectionId, trackIndex] = String(input.dataset.melodySolo || "").split(":");
-        this.applyProjectState(setMelodySoloCommand(this.state, sectionId, Number(trackIndex), input.checked));
+        this.applyChordsmithEditorEdit(setMelodySoloCommand(this.state, sectionId, Number(trackIndex), input.checked), "chordsmith-melody-solo");
       });
     });
     this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-guitar-setting]").forEach((input) => {
       input.addEventListener("change", () => {
         const field = input.dataset.guitarSetting || "";
         const value = input instanceof HTMLInputElement && input.type === "checkbox" ? input.checked : input.value;
-        this.applyProjectState(setGuitarSettingsCommand(this.state, { [field]: field === "guitarVolume" ? Number(value) : value }));
+        this.applyChordsmithEditorEdit(setGuitarSettingsCommand(this.state, { [field]: field === "guitarVolume" ? Number(value) : value }), "chordsmith-guitar-settings");
       });
     });
     this.root.querySelectorAll<HTMLSelectElement>("[data-section-chord]").forEach((select) => {
       select.addEventListener("change", () => {
         const [sectionId, bar] = String(select.dataset.sectionChord || "").split(":");
-        this.applyProjectState(setSectionChordCommand(this.state, sectionId, Number(bar), Number(select.value)));
+        this.applyChordsmithEditorEdit(setSectionChordCommand(this.state, sectionId, Number(bar), Number(select.value)), "chordsmith-section-chord");
       });
     });
     this.root.querySelector<HTMLInputElement>("#loopEnabled")?.addEventListener("change", (event) => {
@@ -589,72 +625,75 @@ export class App {
     if (drumStep) {
       if (this.consumeSuppressedStepClick()) return;
       const [sectionId, lane, step] = String(drumStep.dataset.drumStep || "").split(":");
-      this.selectChordsmithStep({ kind: "drums", sectionId, lane: lane === "snare" || lane === "hat" ? lane : "kick", step: Number(step) });
-      this.applyProjectState(cycleDrumStepCommand(this.state, sectionId, lane, Number(step)));
+      const selection: ChordsmithStepSelection = { kind: "drums", sectionId, lane: lane === "snare" || lane === "hat" ? lane : "kick", step: Number(step) };
+      this.selectChordsmithStep(selection);
+      this.applyChordsmithEditorEdit(cycleDrumStepCommand(this.state, sectionId, lane, Number(step)), "chordsmith-drum-step", { step: selection });
       return;
     }
     const drumTuplet = target?.closest<HTMLElement>("[data-drum-tuplet]");
     if (drumTuplet) {
       const [sectionId, lane, step] = String(drumTuplet.dataset.drumTuplet || "").split(":");
-      this.applyProjectState(cycleDrumTupletCommand(this.state, sectionId, lane, Number(step)));
+      this.applyChordsmithEditorEdit(cycleDrumTupletCommand(this.state, sectionId, lane, Number(step)), "chordsmith-drum-tuplet");
       return;
     }
     const bassStep = target?.closest<HTMLElement>("[data-bass-step]");
     if (bassStep) {
       if (this.consumeSuppressedStepClick()) return;
       const [sectionId, step] = String(bassStep.dataset.bassStep || "").split(":");
-      this.selectChordsmithStep({ kind: "bass", sectionId, step: Number(step) });
-      this.applyProjectState(cycleBassStepCommand(this.state, sectionId, Number(step)));
+      const selection: ChordsmithStepSelection = { kind: "bass", sectionId, step: Number(step) };
+      this.selectChordsmithStep(selection);
+      this.applyChordsmithEditorEdit(cycleBassStepCommand(this.state, sectionId, Number(step)), "chordsmith-bass-step", { step: selection });
       return;
     }
     const bassHold = target?.closest<HTMLElement>("[data-bass-hold]");
     if (bassHold) {
       const [sectionId, step] = String(bassHold.dataset.bassHold || "").split(":");
-      this.applyProjectState(toggleBassHoldCommand(this.state, sectionId, Number(step)));
+      this.applyChordsmithEditorEdit(toggleBassHoldCommand(this.state, sectionId, Number(step)), "chordsmith-bass-hold");
       return;
     }
     const bassSlide = target?.closest<HTMLElement>("[data-bass-slide]");
     if (bassSlide) {
       const [sectionId, step] = String(bassSlide.dataset.bassSlide || "").split(":");
-      this.applyProjectState(toggleBassSlideCommand(this.state, sectionId, Number(step)));
+      this.applyChordsmithEditorEdit(toggleBassSlideCommand(this.state, sectionId, Number(step)), "chordsmith-bass-slide");
       return;
     }
     const bassAccent = target?.closest<HTMLElement>("[data-bass-accent]");
     if (bassAccent) {
       const [sectionId, step] = String(bassAccent.dataset.bassAccent || "").split(":");
-      this.applyProjectState(toggleBassAccentCommand(this.state, sectionId, Number(step)));
+      this.applyChordsmithEditorEdit(toggleBassAccentCommand(this.state, sectionId, Number(step)), "chordsmith-bass-accent");
       return;
     }
     const melodyStep = target?.closest<HTMLElement>("[data-melody-step]");
     if (melodyStep) {
       if (this.consumeSuppressedStepClick()) return;
       const [sectionId, trackIndex, step] = String(melodyStep.dataset.melodyStep || "").split(":");
-      this.selectChordsmithStep({ kind: "melody", sectionId, trackIndex: Number(trackIndex), step: Number(step) });
-      this.applyProjectState(cycleMelodyStepCommand(this.state, sectionId, Number(trackIndex), Number(step)));
+      const selection: ChordsmithStepSelection = { kind: "melody", sectionId, trackIndex: Number(trackIndex), step: Number(step) };
+      this.selectChordsmithStep(selection);
+      this.applyChordsmithEditorEdit(cycleMelodyStepCommand(this.state, sectionId, Number(trackIndex), Number(step)), "chordsmith-melody-step", { step: selection });
       return;
     }
     const melodyHold = target?.closest<HTMLElement>("[data-melody-hold]");
     if (melodyHold) {
       const [sectionId, trackIndex, step] = String(melodyHold.dataset.melodyHold || "").split(":");
-      this.applyProjectState(toggleMelodyHoldCommand(this.state, sectionId, Number(trackIndex), Number(step)));
+      this.applyChordsmithEditorEdit(toggleMelodyHoldCommand(this.state, sectionId, Number(trackIndex), Number(step)), "chordsmith-melody-hold");
       return;
     }
     const melodySlide = target?.closest<HTMLElement>("[data-melody-slide]");
     if (melodySlide) {
       const [sectionId, trackIndex, step] = String(melodySlide.dataset.melodySlide || "").split(":");
-      this.applyProjectState(toggleMelodySlideCommand(this.state, sectionId, Number(trackIndex), Number(step)));
+      this.applyChordsmithEditorEdit(toggleMelodySlideCommand(this.state, sectionId, Number(trackIndex), Number(step)), "chordsmith-melody-slide");
       return;
     }
     const melodyTuplet = target?.closest<HTMLElement>("[data-melody-tuplet]");
     if (melodyTuplet) {
       const [sectionId, trackIndex, step] = String(melodyTuplet.dataset.melodyTuplet || "").split(":");
-      this.applyProjectState(toggleMelodyTupletCommand(this.state, sectionId, Number(trackIndex), Number(step)));
+      this.applyChordsmithEditorEdit(toggleMelodyTupletCommand(this.state, sectionId, Number(trackIndex), Number(step)), "chordsmith-melody-tuplet");
       return;
     }
     const guitarStep = target?.closest<HTMLElement>("[data-guitar-step]");
     if (guitarStep) {
       const [sectionId, step] = String(guitarStep.dataset.guitarStep || "").split(":");
-      this.applyProjectState(cycleGuitarStepCommand(this.state, sectionId, Number(step)));
+      this.applyChordsmithEditorEdit(cycleGuitarStepCommand(this.state, sectionId, Number(step)), "chordsmith-guitar-step");
       return;
     }
     const actionButton = target?.closest<HTMLElement>("[data-action]");
@@ -898,11 +937,11 @@ export class App {
     if (selection.kind === "drums") {
       if (action !== "tuplet") {
         this.state.status = "Drum steps support T for tuplet here.";
-        this.render();
+        this.render({ preserveScroll: true });
         return;
       }
       const next = cycleDrumTupletCommand(this.state, selection.sectionId, selection.lane, selection.step);
-      this.applyProjectState(status ? { ...next, status } : next);
+      this.applyChordsmithEditorEdit(status ? { ...next, status } : next, "chordsmith-drum-tuplet", { step: selection });
       return;
     }
     if (selection.kind === "bass") {
@@ -910,10 +949,10 @@ export class App {
       if (action === "hold") next = toggleBassHoldCommand(this.state, selection.sectionId, selection.step);
       else if (action === "slide") next = toggleBassSlideCommand(this.state, selection.sectionId, selection.step);
       if (next) {
-        this.applyProjectState(status ? { ...next, status } : next);
+        this.applyChordsmithEditorEdit(status ? { ...next, status } : next, `chordsmith-bass-${action}`, { step: selection });
       } else {
         this.state.status = "Bass tuplets are not exposed in this editor pass; use H for hold or S for slide.";
-        this.render();
+        this.render({ preserveScroll: true });
       }
       return;
     }
@@ -922,8 +961,89 @@ export class App {
       if (action === "hold") next = toggleMelodyHoldCommand(this.state, selection.sectionId, selection.trackIndex, selection.step);
       if (action === "slide") next = toggleMelodySlideCommand(this.state, selection.sectionId, selection.trackIndex, selection.step);
       if (action === "tuplet") next = toggleMelodyTupletCommand(this.state, selection.sectionId, selection.trackIndex, selection.step);
-      if (next) this.applyProjectState(status ? { ...next, status } : next);
+      if (next) this.applyChordsmithEditorEdit(status ? { ...next, status } : next, `chordsmith-melody-${action}`, { step: selection });
     }
+  }
+
+  private applyChordsmithEditorEdit(next: AppState, reason: string, options: { step?: ChordsmithStepSelection } = {}) {
+    const useStepPatch = !!options.step;
+    this.applyProjectState(next, {
+      audio: "composition-events",
+      render: useStepPatch ? "none" : this.engine.isPlaying() ? "deferred" : "immediate",
+      autosave: "debounced",
+      preserveScroll: true,
+      reason
+    });
+    if (!useStepPatch) return;
+    if (!this.updateChordsmithStepDom(options.step!)) this.render({ preserveScroll: true });
+  }
+
+  private updateChordsmithStepDom(selection: ChordsmithStepSelection): boolean {
+    const pcs = getPrimaryChordsmithSource(currentProject(this.state));
+    const section = pcs?.sections[selection.sectionId as keyof typeof pcs.sections];
+    if (!section) return false;
+
+    this.root.querySelectorAll<HTMLElement>(".selected-step").forEach((node) => node.classList.remove("selected-step"));
+    let button: HTMLElement | null = null;
+
+    if (selection.kind === "drums") {
+      button = this.root.querySelector<HTMLElement>(`[data-drum-step="${selection.sectionId}:${selection.lane}:${selection.step}"]`);
+      if (!button) return false;
+      const level = section.grid[selection.lane][selection.step] || 0;
+      const tuplet = !!section.gridTuplets[selection.lane][selection.step];
+      button.className = `step step-${level} ${tuplet ? "tuplet" : ""} selected-step`;
+      button.title = `${this.drumLaneLabel(selection.lane)} step ${selection.step + 1}. Select then press T for tuplet.`;
+      button.innerHTML = `${level === 2 ? "!" : level === 1 ? "x" : ""}${this.stepBadgesHtml({ tuplet })}`;
+    } else if (selection.kind === "bass") {
+      button = this.root.querySelector<HTMLElement>(`[data-bass-step="${selection.sectionId}:${selection.step}"]`);
+      if (!button) return false;
+      const note = section.bassNotes[selection.step];
+      const on = note !== null && note !== undefined;
+      button.className = `step note-step ${on ? "on" : ""} selected-step`;
+      button.title = `Bass note step ${selection.step + 1}. Select then press H for hold or S for slide.`;
+      button.innerHTML = `${on ? STEP_NOTE_LABELS[note] || String(note) : ""}${this.stepBadgesHtml({ hold: !!section.bassHold[selection.step], slide: !!section.bassSlide[selection.step] })}`;
+    } else {
+      button = this.root.querySelector<HTMLElement>(`[data-melody-step="${selection.sectionId}:${selection.trackIndex}:${selection.step}"]`);
+      if (!button) return false;
+      const track = section.melodyTracks[selection.trackIndex] || [];
+      const note = track[selection.step];
+      const on = note !== null && note !== undefined;
+      const tuplet = !!section.melodyTuplets[selection.trackIndex]?.[selection.step];
+      button.className = `step note-step ${on ? "on" : ""} ${tuplet ? "tuplet" : ""} selected-step`;
+      button.title = `Melody ${selection.trackIndex + 1} note step ${selection.step + 1}. Select then press H, S or T.`;
+      button.innerHTML = `${on ? STEP_NOTE_LABELS[note] || String(note) : ""}${this.stepBadgesHtml({
+        hold: !!section.melodyHold[selection.trackIndex]?.[selection.step],
+        slide: !!section.melodySlide[selection.trackIndex]?.[selection.step],
+        tuplet
+      })}`;
+    }
+
+    this.updateTrackSelectionDom();
+    this.updateStatusDom();
+    return true;
+  }
+
+  private updateTrackSelectionDom() {
+    this.root.querySelectorAll<HTMLElement>("[data-track-id]").forEach((row) => {
+      row.classList.toggle("selected", row.dataset.trackId === this.state.selectedTrackId);
+    });
+  }
+
+  private updateStatusDom() {
+    const status = this.root.querySelector<HTMLElement>(".status");
+    if (status) status.textContent = this.state.status;
+  }
+
+  private stepBadgesHtml(flags: { hold?: boolean; slide?: boolean; tuplet?: boolean }): string {
+    const badges = [flags.hold ? "H" : "", flags.slide ? "S" : "", flags.tuplet ? "T" : ""].filter(Boolean);
+    return badges.length ? `<span class="step-badges">${badges.map((badge) => `<span>${badge}</span>`).join("")}</span>` : "";
+  }
+
+  private drumLaneLabel(lane: string) {
+    if (lane === "kick") return "Kick";
+    if (lane === "snare") return "Snare";
+    if (lane === "hat") return "Hi-hat";
+    return lane;
   }
 
   private applyProjectState(next: AppState, options: ApplyProjectOptions | boolean = {}) {
@@ -932,7 +1052,7 @@ export class App {
     const project = currentProject(this.state);
     if (resolved.autosave !== "none") saveAutosave(buildPocketDawProjectFile(project));
     if (resolved.audio && resolved.audio !== "none") this.engine.syncProject(project, resolved.audio, resolved.reason);
-    this.scheduleRender(resolved.render || "immediate");
+    this.scheduleRender(resolved.render || "immediate", { preserveScroll: resolved.preserveScroll });
   }
 
   private resolveApplyOptions(options: ApplyProjectOptions | boolean): Required<Omit<ApplyProjectOptions, "preservePlayback">> {
@@ -942,6 +1062,7 @@ export class App {
         audio: options ? (playing ? "composition-events" : "project-load") : "none",
         render: playing ? "deferred" : "immediate",
         autosave: "debounced",
+        preserveScroll: false,
         reason: options ? (playing ? "legacy-playing-safe-sync" : "legacy-sync") : "ui-or-fast-path"
       };
     }
@@ -949,11 +1070,12 @@ export class App {
       audio: options.audio ?? "project-load",
       render: options.render ?? (this.engine.isPlaying() ? "deferred" : "immediate"),
       autosave: options.autosave ?? "debounced",
+      preserveScroll: options.preserveScroll ?? false,
       reason: options.reason ?? "project-edit"
     };
   }
 
-  private scheduleRender(schedule: RenderSchedule) {
+  private scheduleRender(schedule: RenderSchedule, options: RenderOptions = {}) {
     if (schedule === "none") return;
     if (schedule === "live-dom") {
       this.updateLiveDom();
@@ -963,11 +1085,11 @@ export class App {
       if (this.deferredRenderTimer !== null) window.clearTimeout(this.deferredRenderTimer);
       this.deferredRenderTimer = window.setTimeout(() => {
         this.deferredRenderTimer = null;
-        this.render();
+        this.render(options);
       }, 80);
       return;
     }
-    this.render();
+    this.render(options);
   }
 
   private toggleTrackMute(trackId: string) {

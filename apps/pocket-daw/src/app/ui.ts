@@ -41,7 +41,7 @@ export function renderAppShell(state: AppState): string {
   const selectedClip = project.timeline.clips.find((clip) => clip.id === state.selectedClipId) || null;
   const selectedTrack = project.tracks.find((track) => track.id === state.selectedTrackId) || null;
   return `
-    <div class="app-shell" data-layout-shell="true">
+    <div class="app-shell" data-layout-shell="true" data-scroll-key="app-shell">
       ${renderMenuStrip(state)}
       ${renderTransport(state)}
       <main class="studio" data-layout-zone="studio">
@@ -175,7 +175,7 @@ function renderTransport(state: AppState): string {
 function renderTrackList(state: AppState): string {
   const project = currentProject(state);
   return `
-    <aside class="track-list">
+    <aside class="track-list" data-scroll-key="track-list">
       <div class="panel-title">Tracks</div>
       <button class="add-track-button" data-action="add-track-open">Add Track</button>
       ${project.tracks
@@ -233,7 +233,7 @@ function renderTimeline(state: AppState): string {
           <button data-action="marker-add">Marker</button>
         </div>
       </div>
-      <div class="timeline-scroll">
+      <div class="timeline-scroll" data-scroll-key="timeline-scroll">
         <div class="timeline" data-timeline-surface="true" title="Click the grid to seek by bar" style="width:${width}px; --bar:${zoom}px;">
           ${renderBarRuler(project.timeline.bars)}
           ${renderMarkers(state)}
@@ -304,7 +304,7 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
   const clipMedia = clip?.mediaPoolItemId ? project.mediaPool.find((item) => item.id === clip.mediaPoolItemId) || null : null;
   const clipMediaStatus = clipMedia ? mediaPoolStatus(clipMedia) : null;
   return `
-    <aside class="inspector">
+    <aside class="inspector" data-scroll-key="inspector">
       <div class="panel-title">Inspector</div>
       ${
         clip
@@ -713,7 +713,7 @@ function drumLaneLabel(lane: string) {
 function renderMixer(state: AppState): string {
   const project = currentProject(state);
   return `
-    <footer class="mixer" data-layout-zone="mixer">
+    <footer class="mixer" data-layout-zone="mixer" data-scroll-key="mixer">
       ${project.tracks.map((track) => renderMixerStrip(track, state.meterLevels[track.id] || 0)).join("")}
     </footer>
   `;
@@ -724,7 +724,7 @@ function renderMediaPool(state: AppState): string {
   const items = project.mediaPool;
   const collectPlan = createCollectMediaPlan(project);
   return `
-    <section class="media-pool" data-layout-zone="media" id="mediaPool" aria-label="Media Pool">
+    <section class="media-pool" data-layout-zone="media" id="mediaPool" aria-label="Media Pool" data-scroll-key="media-pool">
       <header>
         <div>
           <h2>Media Pool</h2>

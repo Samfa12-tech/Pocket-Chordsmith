@@ -15,6 +15,10 @@ describe("audio engine diagnostics", () => {
     expect(diagnostics.audioGraphReconfigureCount).toBe(0);
     expect(diagnostics.eventCount).toBeGreaterThan(0);
     expect(diagnostics.fxChainCount).toBeGreaterThan(0);
+    expect(diagnostics.nativeRenderCache.nativeRenderCacheBypassedForLiveEdits).toBe(false);
+    expect(diagnostics.nativeRenderCache.buildCount).toBe(0);
+    expect(diagnostics.nativeRenderCache.lastBuildMs).toBe(0);
+    expect(diagnostics.nativeRenderCache.lastBuildReason).toBeNull();
     expect(diagnostics.schedulerLookaheadSeconds).toBeGreaterThanOrEqual(0.5);
     expect(diagnostics.schedulerIntervalMs).toBeLessThanOrEqual(40);
     expect(diagnostics.audioDeviceSettings.host).toBe("wasapi");

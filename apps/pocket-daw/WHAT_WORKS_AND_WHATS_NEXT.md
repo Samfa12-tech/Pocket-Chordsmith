@@ -1,4 +1,4 @@
-# Pocket DAW v0.5.2 - What Works and What's Next
+# Pocket DAW v0.5.3 - What Works and What's Next
 
 ## North star
 
@@ -440,3 +440,12 @@ Pocket DAW should reuse the Godot addon's `audio/web_kit` sample set as a seed l
 The Godot addon also gives Pocket DAW a proven implementation pattern: preload/cache small WAVs before playback, trim silent tails, keep gain maps per sample/layer, drop badly late hits instead of playing catch-up bursts, keep verbose pitch/sample logging off during playback, and route drum/guitar/melody/bass/chord material through stable buses instead of rebuilding work per note.
 
 Pocket Chordsmith web can borrow the same lightweight lessons without becoming a DAW: cache generated buffers, prewarm common kits after first user audio unlock, avoid console logging in dense playback, drop very late hits instead of bunching them, and prefer sample-backed drums/guitar articulations where they preserve the Pocket Chordsmith sound with less CPU.
+
+## v0.5.3 Editor Stability
+
+- Chordsmith sequencer edits snapshot/restore intentional scroll panes so the inspector no longer jumps to the top after step clicks.
+- Drum, bass and melody step clicks patch the visible step cell directly instead of replacing the whole shell for every edit.
+- Chordsmith editor changes now use the composition-event sync path, keeping project-load sync reserved for open/import/new/demo-style changes.
+- Native CPAL playback bypasses stale pre-render WAV regions after live Chordsmith edits and restarts from the current position using updated procedural events.
+- Diagnostics now report native render-cache bypass state, build count, last build duration and last build reason.
+- `docs/v0.5.3-editor-stability.md` tracks the manual smoke focus and the known limitation that cache builds still need to move off the main app path.

@@ -100,6 +100,21 @@ describe("Pocket DAW UI rendering", () => {
     expect(html.indexOf('class="media-pool"')).toBeLessThan(html.indexOf('class="import-panel"'));
   });
 
+  it("renders stable scroll keys for independently scrolling panes", () => {
+    const html = renderAppShell(createInitialState());
+
+    [
+      'data-scroll-key="app-shell"',
+      'data-scroll-key="track-list"',
+      'data-scroll-key="timeline-scroll"',
+      'data-scroll-key="inspector"',
+      'data-scroll-key="mixer"',
+      'data-scroll-key="media-pool"'
+    ].forEach((scrollKey) => {
+      expect(html).toContain(scrollKey);
+    });
+  });
+
   it("renders media pool empty state with audio and MIDI import enabled", () => {
     const html = renderAppShell(createInitialState());
 
@@ -168,7 +183,7 @@ describe("Pocket DAW UI rendering", () => {
 
     const html = renderAppShell(state);
 
-    expect(html).toContain("v0.5.2");
+    expect(html).toContain("v0.5.3");
     expect(html).toContain("Browser/dev");
     expect(html).toContain('data-arm-track="live-vocals" disabled');
     expect(html).toContain("Recording coming after");
