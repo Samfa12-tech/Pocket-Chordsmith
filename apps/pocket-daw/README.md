@@ -2,7 +2,7 @@
 
 Pocket DAW is a Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
-Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.0` recording alpha.
+Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.2` live recording polish alpha.
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`

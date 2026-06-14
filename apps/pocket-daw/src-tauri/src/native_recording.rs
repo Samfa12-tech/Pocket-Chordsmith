@@ -53,6 +53,18 @@ pub struct NativeRecordingStartPayload {
     _sample_rate: u32,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct NativeRecordingMonitorPayload {
+    #[serde(rename = "outputDeviceId")]
+    output_device_id: Option<String>,
+    #[serde(rename = "monitorEnabled")]
+    monitor_enabled: bool,
+    #[serde(rename = "monitorVolume")]
+    monitor_volume: f64,
+    #[serde(rename = "monitorPan")]
+    monitor_pan: f64,
+}
+
 #[derive(Clone, Serialize)]
 pub struct NativeRecordingStatus {
     backend: String,
@@ -307,6 +319,42 @@ pub fn native_recording_stop(
     })
 }
 
+#[tauri::command]
+pub fn native_recording_update_monitor(
+    payload: NativeRecordingMonitorPayload,
+    state: tauri::State<'_, NativeRecordingState>,
+) -> Result<NativeRecordingStatus, String> {
+    let mut runtime = state
+        .lock()
+        .map_err(|_| "Native recording state is unavailable.".to_string())?;
+    let shared = runtime
+        .shared
+        .as_ref()
+        .cloned()
+        .ok_or_else(|| "No active recording is available for input monitoring.".to_string())?;
+
+    if !payload.monitor_enabled {
+        apply_monitor_settings(&shared, false, payload.monitor_volume, payload.monitor_pan);
+        runtime.monitor_stream.take();
+        runtime.output_device_name = None;
+        return Ok(runtime_status(&runtime));
+    }
+
+    let host = preferred_host();
+    let output = select_output_device(&host, payload.output_device_id.as_deref())
+        .ok_or_else(|| "Input monitor was enabled, but no output device is available.".to_string())?;
+    let output_device_name = device_name(&output).unwrap_or_else(|_| "Output device".to_string());
+    let monitor_stream = build_monitor_stream(&output, Arc::clone(&shared))?;
+    monitor_stream
+        .play()
+        .map_err(|err| format!("Could not start input monitoring stream: {err}"))?;
+    apply_monitor_settings(&shared, true, payload.monitor_volume, payload.monitor_pan);
+    runtime.monitor_stream = Some(monitor_stream);
+    runtime.output_device_name = Some(output_device_name);
+    runtime.last_error = None;
+    Ok(runtime_status(&runtime))
+}
+
 fn runtime_status(runtime: &NativeRecordingRuntime) -> NativeRecordingStatus {
     let elapsed_seconds = runtime
         .started_at
@@ -330,6 +378,22 @@ fn runtime_status(runtime: &NativeRecordingRuntime) -> NativeRecordingStatus {
         peak,
         sample_count,
         last_error: runtime.last_error.clone(),
+    }
+}
+
+fn apply_monitor_settings(
+    shared: &Arc<Mutex<RecordingShared>>,
+    enabled: bool,
+    volume: f64,
+    pan: f64,
+) {
+    if let Ok(mut shared) = shared.lock() {
+        shared.monitor_enabled = enabled;
+        shared.monitor_gain = volume.clamp(0.0, 1.2) as f32;
+        shared.monitor_pan = pan.clamp(-1.0, 1.0) as f32;
+        if !enabled {
+            shared.monitor_samples.clear();
+        }
     }
 }
 
@@ -686,5 +750,34 @@ mod tests {
     #[test]
     fn rejects_projectless_recording_path() {
         assert!(recording_output_path("Song.pocketdaw", "Song", "Track").is_err());
+    }
+
+    #[test]
+    fn monitor_settings_clamp_and_clear_buffer_when_disabled() {
+        let shared = Arc::new(Mutex::new(RecordingShared {
+            samples: Vec::new(),
+            monitor_samples: VecDeque::from(vec![0.25, -0.25]),
+            sample_rate: 48_000,
+            monitor_enabled: true,
+            monitor_gain: 0.5,
+            monitor_pan: 0.0,
+            peak: 0.0,
+        }));
+
+        apply_monitor_settings(&shared, true, 2.0, -2.0);
+        {
+            let shared = shared.lock().expect("shared recording state");
+            assert!(shared.monitor_enabled);
+            assert_eq!(shared.monitor_gain, 1.2);
+            assert_eq!(shared.monitor_pan, -1.0);
+            assert_eq!(shared.monitor_samples.len(), 2);
+        }
+
+        apply_monitor_settings(&shared, false, 0.8, 0.4);
+        let shared = shared.lock().expect("shared recording state");
+        assert!(!shared.monitor_enabled);
+        assert_eq!(shared.monitor_gain, 0.8);
+        assert_eq!(shared.monitor_pan, 0.4);
+        assert!(shared.monitor_samples.is_empty());
     }
 }

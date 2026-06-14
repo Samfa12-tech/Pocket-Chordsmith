@@ -173,6 +173,35 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).not.toContain('data-solo-track="master"');
   });
 
+  it("renders live track input controls compactly and keeps recording previews non-seekable", () => {
+    const state = createInitialState();
+    const withLiveTrack = addTrackToProject(state.undoStack.present, "live-vocals");
+    const liveTrack = withLiveTrack.project.tracks.find((track) => track.id === withLiveTrack.trackId)!;
+    state.undoStack = createUndoStack(withLiveTrack.project);
+    state.selectedTrackId = withLiveTrack.trackId;
+    state.recording = {
+      status: "recording",
+      trackId: withLiveTrack.trackId,
+      startedAt: "2026-06-14T11:03:00.000Z",
+      startBar: 5,
+      elapsedSeconds: 2,
+      inputPeak: 0.5,
+      inputDeviceName: "Default input",
+      outputDeviceName: "Main output",
+      monitoring: true,
+      livePeaks: [0.25, 0.5],
+      message: "Recording Live Vocals; monitor on."
+    };
+
+    const html = renderAppShell(state);
+
+    expect(liveTrack.name).toBe("Live Vocals");
+    expect(html).toContain('class="strip-control strip-input"');
+    expect(html).toContain('title="Default input">Default</strong>');
+    expect(html).toContain(`data-track-input="${withLiveTrack.trackId}"`);
+    expect(html).toContain('data-recording-preview="true" data-timeline-non-seek="true"');
+  });
+
   it("renders desktop menu actions through the shared action attributes", () => {
     const html = renderAppShell(createInitialState());
 

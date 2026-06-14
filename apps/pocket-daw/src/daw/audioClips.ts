@@ -1,5 +1,5 @@
 import { addMediaPoolItem, createMediaPoolItem, findMediaPoolItem, updateMediaPoolItem } from "./mediaPool";
-import type { JsonObject, MediaPoolItem, PocketDawProject, Track } from "./schema";
+import type { Clip, JsonObject, MediaPoolItem, PocketDawProject, Track } from "./schema";
 import { cloneProject } from "./dawProject";
 import { createEmptyFxChain } from "./fx";
 import { recomputeTimelineBars } from "./timeline";
@@ -24,6 +24,10 @@ export interface PlaceAudioClipResult {
   project: PocketDawProject;
   clipId: string;
   trackId: string;
+}
+
+export interface PlaceAudioClipOptions {
+  overwriteOverlaps?: boolean;
 }
 
 export function addImportedAudioMedia(project: PocketDawProject, input: ImportedAudioMedia): AddAudioMediaResult {
@@ -72,20 +76,24 @@ export function placeAudioClipOnTimeline(project: PocketDawProject, mediaPoolIte
   return placeAudioClipOnTrack(next, item.id, track.id, startBar);
 }
 
-export function placeAudioClipOnTrack(project: PocketDawProject, mediaPoolItemId: string, trackId: string, startBar: number): PlaceAudioClipResult {
+export function placeAudioClipOnTrack(project: PocketDawProject, mediaPoolItemId: string, trackId: string, startBar: number, options: PlaceAudioClipOptions = {}): PlaceAudioClipResult {
   const item = findMediaPoolItem(project, mediaPoolItemId);
   if (!item || item.kind !== "audio") return { project, clipId: "", trackId: "" };
   const next = cloneProject(project);
   const track = next.tracks.find((candidate) => candidate.id === trackId && candidate.trackType === "audio");
   if (!track) return { project, clipId: "", trackId: "" };
+  const clipStartBar = Math.max(1, Math.round(startBar));
   const barLength = Math.max(1, secondsToBars(item.durationSeconds || secondsPerBar(next), next));
+  if (options.overwriteOverlaps) {
+    overwriteAudioClipsInRange(next, track.id, clipStartBar, clipStartBar + barLength);
+  }
   const clipId = nextClipId(next);
   next.timeline.clips.push({
     id: clipId,
     type: "audio",
     trackId: track.id,
     mediaPoolItemId: item.id,
-    startBar: Math.max(1, Math.round(startBar)),
+    startBar: clipStartBar,
     barLength,
     name: item.name,
     muted: false,
@@ -107,6 +115,51 @@ export function placeAudioClipOnTrack(project: PocketDawProject, mediaPoolItemId
   });
   recomputeTimelineBars(next);
   return { project: next, clipId, trackId: track.id };
+}
+
+export function placeRecordingClipOnTrack(project: PocketDawProject, mediaPoolItemId: string, trackId: string, startBar: number): PlaceAudioClipResult {
+  return placeAudioClipOnTrack(project, mediaPoolItemId, trackId, startBar, { overwriteOverlaps: true });
+}
+
+function overwriteAudioClipsInRange(project: PocketDawProject, trackId: string, startBar: number, endBar: number) {
+  const overwriteStart = Math.max(1, startBar);
+  const overwriteEnd = Math.max(overwriteStart, endBar);
+  const nextClips: Clip[] = [];
+  const usedClipIds = new Set(project.timeline.clips.map((clip) => clip.id));
+  project.timeline.clips.forEach((clip) => {
+    if (clip.trackId !== trackId || clip.type !== "audio") {
+      nextClips.push(clip);
+      return;
+    }
+    const clipStart = clip.startBar;
+    const clipEnd = clip.startBar + clip.barLength;
+    if (clipEnd <= overwriteStart || clipStart >= overwriteEnd) {
+      nextClips.push(clip);
+      return;
+    }
+    const leftLength = Math.max(0, overwriteStart - clipStart);
+    const rightLength = Math.max(0, clipEnd - overwriteEnd);
+    if (leftLength > 0.001) {
+      nextClips.push({
+        ...clip,
+        barLength: leftLength
+      });
+    }
+    if (rightLength > 0.001) {
+      const rightStart = overwriteEnd;
+      nextClips.push({
+        ...JSON.parse(JSON.stringify(clip)),
+        id: leftLength > 0.001 ? nextUniqueClipId(usedClipIds) : clip.id,
+        startBar: rightStart,
+        barLength: rightLength,
+        metadata: {
+          ...(clip.metadata || {}),
+          sourceOffsetSeconds: audioClipSourceOffsetSeconds(clip) + Math.max(0, rightStart - clipStart) * secondsPerBar(project)
+        }
+      });
+    }
+  });
+  project.timeline.clips = nextClips;
 }
 
 function ensureAudioTrack(project: PocketDawProject, item: MediaPoolItem): Track {
@@ -156,11 +209,24 @@ function secondsPerBar(project: PocketDawProject): number {
   return project.project.timeSig * (60 / project.project.bpm);
 }
 
+function audioClipSourceOffsetSeconds(clip: Clip): number {
+  const value = clip.metadata?.sourceOffsetSeconds;
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
 function nextClipId(project: PocketDawProject): string {
   let i = project.timeline.clips.length + 1;
   const ids = new Set(project.timeline.clips.map((clip) => clip.id));
   while (ids.has(`clip_${String(i).padStart(3, "0")}`)) i += 1;
   return `clip_${String(i).padStart(3, "0")}`;
+}
+
+function nextUniqueClipId(ids: Set<string>): string {
+  let i = ids.size + 1;
+  while (ids.has(`clip_${String(i).padStart(3, "0")}`)) i += 1;
+  const id = `clip_${String(i).padStart(3, "0")}`;
+  ids.add(id);
+  return id;
 }
 
 function uniqueTrackId(project: PocketDawProject, base: string) {

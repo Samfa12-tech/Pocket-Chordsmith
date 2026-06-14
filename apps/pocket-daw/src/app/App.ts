@@ -113,7 +113,7 @@ import { cloneProject } from "../daw/dawProject";
 import { POCKET_DAW_VERSION } from "../daw/schema";
 import { trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToPosition, snapBarValue } from "../daw/timeline";
-import { addImportedAudioMedia, placeAudioClipOnTrack, updateAudioMediaAnalysis } from "../daw/audioClips";
+import { addImportedAudioMedia, placeRecordingClipOnTrack, updateAudioMediaAnalysis } from "../daw/audioClips";
 import { createCollectMediaPlan, findMediaPoolItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked, mediaPoolStatus } from "../daw/mediaPool";
 import {
   AUDIO_MEDIA_ACCEPT,
@@ -127,7 +127,7 @@ import {
 import { importMidiFileToProject } from "../daw/midiClips";
 import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
-import { isNativeRecordingAvailable, nativeRecordingStatus, startNativeRecording, stopNativeRecording } from "../native/recordingBridge";
+import { isNativeRecordingAvailable, nativeRecordingStatus, startNativeRecording, stopNativeRecording, updateNativeRecordingMonitor } from "../native/recordingBridge";
 import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan, projectWithOnlyTracksAudible } from "../daw/exportJobs";
 import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
 import { buildTesterDiagnosticsPayload, diagnosticsJson, runtimeLabel, runtimePlatform } from "./diagnostics";
@@ -394,7 +394,9 @@ export class App {
       });
     });
     this.root.querySelectorAll<HTMLElement>("[data-track-id]").forEach((el) => {
-      el.addEventListener("click", () => {
+      el.addEventListener("click", (event) => {
+        const target = event.target as HTMLElement | null;
+        if (this.isTrackHeaderControlTarget(target)) return;
         this.state.selectedTrackId = el.dataset.trackId || null;
         this.render({ preserveScroll: true });
       });
@@ -408,7 +410,13 @@ export class App {
       });
     });
     this.root.querySelectorAll<HTMLSelectElement>("[data-track-input]").forEach((select) => {
-      select.addEventListener("change", () => this.applyProjectState(setTrackInputCommand(this.state, select.dataset.trackInput || "", select.value || null)));
+      select.addEventListener("change", () => {
+        this.applyProjectState(setTrackInputCommand(this.state, select.dataset.trackInput || "", select.value || null), {
+          audio: "none",
+          preserveScroll: true,
+          reason: "track-input"
+        });
+      });
     });
     this.root.querySelectorAll<HTMLSelectElement>("[data-track-output]").forEach((select) => {
       select.addEventListener("change", () => this.applyProjectState(routeTrackOutputCommand(this.state, select.dataset.trackOutput || "", select.value || "master")));
@@ -586,6 +594,7 @@ export class App {
     if (Math.abs(startValue - value) < 0.0001) return;
     const next = field === "volume" ? setTrackVolumeCommand(this.state, trackId, value) : setTrackPanCommand(this.state, trackId, value);
     this.applyProjectState(next, false);
+    void this.syncActiveRecordingMonitor(trackId);
   }
 
   private currentMixerControlValue(trackId: string, field: MixerControlField): number {
@@ -868,12 +877,16 @@ export class App {
     }
     const armButton = target?.closest<HTMLElement>("[data-arm-track]");
     if (armButton) {
-      this.applyProjectState(toggleTrackArmedCommand(this.state, armButton.dataset.armTrack || ""));
+      this.applyProjectState(toggleTrackArmedCommand(this.state, armButton.dataset.armTrack || ""), {
+        audio: "none",
+        preserveScroll: true,
+        reason: "track-arm"
+      });
       return;
     }
     const monitorButton = target?.closest<HTMLElement>("[data-monitor-track]");
     if (monitorButton) {
-      this.applyProjectState(toggleTrackMonitorCommand(this.state, monitorButton.dataset.monitorTrack || ""));
+      void this.toggleTrackMonitor(monitorButton.dataset.monitorTrack || "");
       return;
     }
     const fxToggle = target?.closest<HTMLElement>("[data-fx-toggle]");
@@ -1092,7 +1105,11 @@ export class App {
   }
 
   private isTimelineNonSeekTarget(target: HTMLElement | null): boolean {
-    return !!target?.closest("[data-track-id], [data-mute-track], [data-solo-track], [data-arm-track], [data-monitor-track], button, input, select, textarea");
+    return !!target?.closest("[data-track-id], [data-mute-track], [data-solo-track], [data-arm-track], [data-monitor-track], [data-timeline-non-seek], button, input, select, textarea");
+  }
+
+  private isTrackHeaderControlTarget(target: HTMLElement | null): boolean {
+    return !!target?.closest("[data-mute-track], [data-solo-track], [data-arm-track], [data-monitor-track], [data-timeline-non-seek], button, input, select, textarea");
   }
 
   private async dispatch(action: string) {
@@ -1331,7 +1348,11 @@ export class App {
     if (command === "mute-selected-track" && this.state.selectedTrackId) this.toggleTrackMute(this.state.selectedTrackId);
     if (command === "solo-selected-track" && this.state.selectedTrackId) this.toggleTrackSolo(this.state.selectedTrackId);
     if (command === "arm-selected-track" && this.state.selectedTrackId) {
-      this.applyProjectState(toggleTrackArmedCommand(this.state, this.state.selectedTrackId));
+      this.applyProjectState(toggleTrackArmedCommand(this.state, this.state.selectedTrackId), {
+        audio: "none",
+        preserveScroll: true,
+        reason: "track-arm-keyboard"
+      });
     }
     if (command === "duplicate-clip") this.applyProjectState(duplicateSelectedClip(this.state));
     if (command === "copy-clip") {
@@ -1465,6 +1486,8 @@ export class App {
         elapsedSeconds: 0,
         inputPeak: 0,
         inputDeviceName: null,
+        outputDeviceName: null,
+        monitoring: false,
         livePeaks: [],
         message: "Recording count-in cancelled."
       };
@@ -1487,6 +1510,8 @@ export class App {
         elapsedSeconds: 0,
         inputPeak: 0,
         inputDeviceName: null,
+        outputDeviceName: null,
+        monitoring: false,
         livePeaks: [],
         message: this.state.status
       };
@@ -1520,6 +1545,8 @@ export class App {
         elapsedSeconds: 0,
         inputPeak: 0,
         inputDeviceName: null,
+        outputDeviceName: null,
+        monitoring: false,
         livePeaks: [],
         message: `Count-in ${Math.max(1, Math.round(preRollSeconds))}s.`
       };
@@ -1529,7 +1556,16 @@ export class App {
       await new Promise<void>((resolve) => window.setTimeout(resolve, preRollSeconds * 1000));
       if (this.recordingStartToken !== token || this.state.recording.status !== "count-in") return;
     }
+    let nativeCaptureStarted = false;
+    let showedBusy = false;
     try {
+      const shouldStartBackingPlayback = !this.engine.isPlaying();
+      if (shouldStartBackingPlayback) {
+        this.seekToBar(startBar, true);
+        const prepared = await this.prepareTimelineAudioForPlayback("recording playback");
+        showedBusy = prepared.showedBusy;
+        if (this.recordingStartToken !== token) return;
+      }
       const status = await startNativeRecording({
         projectFilePath: this.state.currentFile.path,
         projectTitle: project.project.title,
@@ -1543,6 +1579,7 @@ export class App {
         startBar,
         sampleRate: project.project.sampleRate || project.audioDeviceSettings.sampleRate || 44100
       });
+      nativeCaptureStarted = true;
       this.state.recording = {
         status: "recording",
         trackId: track.id,
@@ -1551,16 +1588,29 @@ export class App {
         elapsedSeconds: 0,
         inputPeak: Math.max(0, Math.min(1, status.peak || 0)),
         inputDeviceName: status.inputDeviceName,
+        outputDeviceName: status.outputDeviceName,
+        monitoring: !!status.monitoring,
         livePeaks: [],
-        message: status.monitoring ? `Recording ${track.name}; monitor on.` : `Recording ${track.name}.`
+        message: recordingStatusMessage(track.name, status.monitoring, status.outputDeviceName)
       };
       this.state.status = this.state.recording.message;
+      if (shouldStartBackingPlayback) {
+        this.seekToBar(startBar, true);
+        await this.engine.play();
+      }
       if (metronomeSettings(project).enabled) this.startLiveMetronome(true);
       else this.stopLiveMetronome();
       this.startRecordingTimer();
       this.render({ preserveScroll: true });
     } catch (error) {
       this.stopLiveMetronome();
+      if (nativeCaptureStarted) {
+        try {
+          await stopNativeRecording();
+        } catch {
+          // The start error is more useful to surface here.
+        }
+      }
       const message = error instanceof Error ? error.message : "Could not start live recording.";
       this.state.recording = {
         status: "error",
@@ -1570,11 +1620,18 @@ export class App {
         elapsedSeconds: 0,
         inputPeak: 0,
         inputDeviceName: null,
+        outputDeviceName: null,
+        monitoring: false,
         livePeaks: [],
         message
       };
       this.state.status = message;
       this.render({ preserveScroll: true });
+    } finally {
+      if (showedBusy) {
+        this.state.busyMessage = null;
+        this.render({ preserveScroll: true });
+      }
     }
   }
 
@@ -1622,7 +1679,7 @@ export class App {
         }
       });
       if (decoded) setCachedAudioBuffer(media.item.id, decoded.buffer);
-      const placed = placeAudioClipOnTrack(media.project, media.item.id, trackId || result.trackId, startBar);
+      const placed = placeRecordingClipOnTrack(media.project, media.item.id, trackId || result.trackId, startBar);
       const clipMessage = placed.clipId
         ? `Recorded ${result.fileName} to ${result.targetRelativePath}.`
         : `Recorded ${result.fileName}, but no armed audio track was available for clip placement.`;
@@ -1635,6 +1692,8 @@ export class App {
         elapsedSeconds: 0,
         inputPeak: 0,
         inputDeviceName: null,
+        outputDeviceName: null,
+        monitoring: false,
         livePeaks: [],
         message: clipMessage
       };
@@ -1651,6 +1710,8 @@ export class App {
         elapsedSeconds: 0,
         inputPeak: 0,
         inputDeviceName: null,
+        outputDeviceName: null,
+        monitoring: false,
         livePeaks: [],
         message
       };
@@ -1687,8 +1748,12 @@ export class App {
       const peak = Math.max(0, Math.min(1, Number(status.peak) || 0));
       this.state.recording.inputPeak = peak;
       this.state.recording.inputDeviceName = status.inputDeviceName || this.state.recording.inputDeviceName;
+      this.state.recording.outputDeviceName = status.outputDeviceName || this.state.recording.outputDeviceName;
+      this.state.recording.monitoring = !!status.monitoring;
       this.state.recording.elapsedSeconds = status.elapsedSeconds || this.state.recording.elapsedSeconds;
       this.state.recording.livePeaks = [...this.state.recording.livePeaks, peak].slice(-64);
+      const track = currentProject(this.state).tracks.find((item) => item.id === this.state.recording.trackId);
+      if (track) this.state.recording.message = recordingStatusMessage(track.name, status.monitoring, this.state.recording.outputDeviceName);
       if (status.lastError) this.state.status = status.lastError;
     } catch {
       // Keep recording UI alive; stop/start calls surface actionable errors.
@@ -2064,19 +2129,67 @@ export class App {
   private toggleTrackMute(trackId: string) {
     const next = toggleTrackMuteCommand(this.state, trackId);
     this.syncTrackAudibilityFromState(next, trackId, "mute");
-    this.applyProjectState(next, false);
+    this.applyProjectState(next, {
+      audio: "none",
+      preserveScroll: true,
+      reason: "track-mute"
+    });
+    void this.syncActiveRecordingMonitor(trackId);
   }
 
   private toggleTrackSolo(trackId: string) {
     const next = toggleTrackSoloCommand(this.state, trackId);
     this.syncTrackAudibilityFromState(next, trackId, "solo");
-    this.applyProjectState(next, false);
+    this.applyProjectState(next, {
+      audio: "none",
+      preserveScroll: true,
+      reason: "track-solo"
+    });
+  }
+
+  private async toggleTrackMonitor(trackId: string) {
+    const next = toggleTrackMonitorCommand(this.state, trackId);
+    this.applyProjectState(next, {
+      audio: "none",
+      preserveScroll: true,
+      reason: "track-monitor"
+    });
+    await this.syncActiveRecordingMonitor(trackId);
   }
 
   private syncTrackAudibilityFromState(next: AppState, trackId: string, field: "mute" | "solo") {
     const track = currentProject(next).tracks.find((item) => item.id === trackId);
     if (!track) return;
     this.engine.updateTrackMixerControl(trackId, field === "mute" ? { mute: track.mute } : { solo: track.solo });
+  }
+
+  private async syncActiveRecordingMonitor(trackId: string) {
+    if (this.state.recording.status !== "recording" || this.state.recording.trackId !== trackId) return;
+    const project = currentProject(this.state);
+    const track = project.tracks.find((item) => item.id === trackId);
+    if (!track || !track.recordKind || track.recordKind === "none") return;
+    try {
+      const status = await updateNativeRecordingMonitor({
+        outputDeviceId: project.audioDeviceSettings.outputDeviceId,
+        monitorEnabled: !!track.monitorEnabled && !track.mute,
+        monitorVolume: track.mute ? 0 : track.volume,
+        monitorPan: track.pan
+      });
+      if (this.state.recording.status !== "recording" || this.state.recording.trackId !== trackId) return;
+      this.state.recording.monitoring = !!status.monitoring;
+      this.state.recording.outputDeviceName = status.outputDeviceName || this.state.recording.outputDeviceName;
+      this.state.recording.inputDeviceName = status.inputDeviceName || this.state.recording.inputDeviceName;
+      this.state.recording.message = recordingStatusMessage(track.name, status.monitoring, this.state.recording.outputDeviceName);
+      this.state.status = this.state.recording.message;
+      this.render({ preserveScroll: true });
+    } catch (error) {
+      if (this.state.recording.status !== "recording" || this.state.recording.trackId !== trackId) return;
+      const message = error instanceof Error ? error.message : "Could not update input monitoring.";
+      this.state.recording.monitoring = false;
+      this.state.recording.message = message;
+      this.state.status = message;
+      this.render({ preserveScroll: true });
+    }
   }
 
   private seekTimelineFromClientX(timeline: HTMLElement, clientX: number, final: boolean) {
@@ -2789,6 +2902,8 @@ export class App {
       elapsedSeconds: 0,
       inputPeak: 0,
       inputDeviceName: null,
+      outputDeviceName: null,
+      monitoring: false,
       livePeaks: [],
       message: "Ready to record one armed live track."
     };
@@ -2817,6 +2932,8 @@ export class App {
       elapsedSeconds: 0,
       inputPeak: 0,
       inputDeviceName: null,
+      outputDeviceName: null,
+      monitoring: false,
       livePeaks: [],
       message: "Ready to record one armed live track."
     };
@@ -2848,4 +2965,9 @@ function formatRecordingDuration(seconds: number | undefined): string {
   const s = Math.max(0, Math.floor(Number(seconds) || 0));
   const minutes = Math.floor(s / 60);
   return `${minutes}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function recordingStatusMessage(trackName: string, monitoring: boolean, outputDeviceName?: string | null): string {
+  if (!monitoring) return `Recording ${trackName}.`;
+  return outputDeviceName ? `Recording ${trackName}; monitor on via ${outputDeviceName}.` : `Recording ${trackName}; monitor on.`;
 }

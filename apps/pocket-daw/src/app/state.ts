@@ -75,6 +75,8 @@ export interface RecordingUiState {
   elapsedSeconds: number;
   inputPeak: number;
   inputDeviceName: string | null;
+  outputDeviceName: string | null;
+  monitoring: boolean;
   livePeaks: number[];
   message: string;
 }
@@ -141,6 +143,8 @@ export function createInitialState(): AppState {
       elapsedSeconds: 0,
       inputPeak: 0,
       inputDeviceName: null,
+      outputDeviceName: null,
+      monitoring: false,
       livePeaks: [],
       message: "Ready to record one armed live track."
     }
@@ -181,6 +185,8 @@ export function loadProjectIntoState(
       elapsedSeconds: 0,
       inputPeak: 0,
       inputDeviceName: null,
+      outputDeviceName: null,
+      monitoring: false,
       livePeaks: [],
       message: "Ready to record one armed live track."
     }

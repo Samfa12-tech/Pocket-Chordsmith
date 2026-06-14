@@ -14,6 +14,13 @@ export interface NativeRecordingStartPayload {
   sampleRate: number;
 }
 
+export interface NativeRecordingMonitorPayload {
+  outputDeviceId?: string | null;
+  monitorEnabled: boolean;
+  monitorVolume: number;
+  monitorPan: number;
+}
+
 export interface NativeRecordingStatus {
   backend: "native-cpal" | string;
   available: boolean;
@@ -53,6 +60,11 @@ export async function startNativeRecording(payload: NativeRecordingStartPayload)
 export async function stopNativeRecording(): Promise<NativeRecordingStopResult> {
   if (!isNativeRecordingAvailable()) throw new Error("Live recording is only available in the installed Pocket DAW app.");
   return invoke<NativeRecordingStopResult>("native_recording_stop");
+}
+
+export async function updateNativeRecordingMonitor(payload: NativeRecordingMonitorPayload): Promise<NativeRecordingStatus> {
+  if (!isNativeRecordingAvailable()) throw new Error("Live recording is only available in the installed Pocket DAW app.");
+  return invoke<NativeRecordingStatus>("native_recording_update_monitor", { payload });
 }
 
 export async function nativeRecordingStatus(): Promise<NativeRecordingStatus> {

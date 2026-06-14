@@ -51,6 +51,8 @@ export interface TesterDiagnosticsPayload {
     elapsedSeconds: number;
     inputPeak: number;
     inputDeviceName: string | null;
+    outputDeviceName: string | null;
+    monitoring: boolean;
     message: string;
   };
   updater: {
@@ -146,6 +148,8 @@ export function buildTesterDiagnosticsPayload(
       elapsedSeconds: state.recording.elapsedSeconds,
       inputPeak: state.recording.inputPeak,
       inputDeviceName: state.recording.inputDeviceName,
+      outputDeviceName: state.recording.outputDeviceName,
+      monitoring: state.recording.monitoring,
       message: state.recording.message
     },
     updater: {

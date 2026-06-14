@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildMetronomeClicks, countInSeconds } from "../src/audio/metronome";
 import { migratePocketDawProject } from "../src/compatibility/migrations";
-import { addImportedAudioMedia, placeAudioClipOnTrack } from "../src/daw/audioClips";
+import { addImportedAudioMedia, placeAudioClipOnTrack, placeRecordingClipOnTrack } from "../src/daw/audioClips";
 import { buildPocketDawProjectFile } from "../src/daw/dawProject";
 import { addTrackToProject } from "../src/daw/tracks";
 import { createDemoProject } from "../src/demo/demoProject";
@@ -59,5 +59,45 @@ describe("recording alpha foundations", () => {
       startBar: 5
     });
     expect(imported.item.metadata).toMatchObject({ mediaRefKind: "project", importMode: "native-recording" });
+  });
+
+  it("records over same-track audio while preserving material before and after the take", () => {
+    const withTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    const secondsPerBar = withTrack.project.project.timeSig * (60 / withTrack.project.project.bpm);
+    const bedMedia = addImportedAudioMedia(withTrack.project, {
+      name: "old-take.wav",
+      uri: "project-media/recordings/old-take.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 6,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { mediaRefKind: "project", projectRelativePath: "project-media/recordings/old-take.wav" }
+    });
+    const bedPlaced = placeAudioClipOnTrack(bedMedia.project, bedMedia.item.id, withTrack.trackId, 5);
+    const oldClip = bedPlaced.project.timeline.clips.find((clip) => clip.id === bedPlaced.clipId)!;
+    oldClip.barLength = 6;
+    oldClip.metadata = { ...(oldClip.metadata || {}), sourceOffsetSeconds: 0 };
+    const punchMedia = addImportedAudioMedia(bedPlaced.project, {
+      name: "new-take.wav",
+      uri: "project-media/recordings/new-take.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 2,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { mediaRefKind: "project", projectRelativePath: "project-media/recordings/new-take.wav" }
+    });
+
+    const punched = placeRecordingClipOnTrack(punchMedia.project, punchMedia.item.id, withTrack.trackId, 7);
+    const audioClips = punched.project.timeline.clips
+      .filter((clip) => clip.trackId === withTrack.trackId && clip.type === "audio")
+      .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+
+    expect(audioClips).toHaveLength(3);
+    expect(audioClips.map((clip) => ({ name: clip.name, startBar: clip.startBar, barLength: clip.barLength }))).toEqual([
+      { name: "old-take.wav", startBar: 5, barLength: 2 },
+      { name: "new-take.wav", startBar: 7, barLength: 2 },
+      { name: "old-take.wav", startBar: 9, barLength: 2 }
+    ]);
+    expect(audioClips[2].metadata?.sourceOffsetSeconds).toBeCloseTo(secondsPerBar * 4, 5);
   });
 });

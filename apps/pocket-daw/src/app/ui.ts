@@ -575,7 +575,7 @@ function renderRecordingPreview(state: AppState, track: Track): string {
   const peaks = recording.livePeaks.length ? recording.livePeaks : [recording.inputPeak || 0.05];
   const label = recording.status === "count-in" ? "Count-in" : recording.status === "stopping" ? "Writing take" : "Recording";
   return `
-    <div class="clip recording-preview" data-recording-preview="true" style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(startBar - 1, 0)} * var(--bar)`)};width:calc(${sanitizeCssLengthOrNumber(barLength, 0.25, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(track.colour)};">
+    <div class="clip recording-preview" data-recording-preview="true" data-timeline-non-seek="true" style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(startBar - 1, 0)} * var(--bar)`)};width:calc(${sanitizeCssLengthOrNumber(barLength, 0.25, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(track.colour)};">
       <strong>${escapeHtml(label)}</strong>
       <span>${escapeHtml(recording.inputDeviceName || "Default input")}</span>
       <i class="clip-waveform live-waveform">${peaks.map((peak) => `<b style="height:${Math.max(2, Math.round(Number(peak) * 20))}px"></b>`).join("")}</i>
@@ -1165,10 +1165,11 @@ function renderMixerInputSelector(project: ReturnType<typeof currentProject>, tr
   const inputLabel = active
     ? state.recording.inputDeviceName || "Default input"
     : inputs.find((device) => device.id === track.inputDeviceId)?.name || inputs.find((device) => device.id === project.audioDeviceSettings.inputDeviceId)?.name || "Default input";
+  const compactLabel = compactInputLabel(inputLabel);
   const peak = active ? state.recording.inputPeak : 0;
   return `
     <label class="strip-control strip-input">
-      <span>Input <strong>${escapeHtml(inputLabel)}</strong></span>
+      <span>Input <strong title="${escapeAttr(inputLabel)}">${escapeHtml(compactLabel)}</strong></span>
       <select data-track-input="${sanitizeDataAttr(track.id)}" aria-label="${escapeAttr(`Recording input for ${track.name}`)}">
         <option value="">Default input</option>
         ${inputs.map((device) => `<option value="${escapeAttr(device.id)}" ${track.inputDeviceId === device.id ? "selected" : ""}>${escapeHtml(device.name)}</option>`).join("")}
@@ -1176,6 +1177,12 @@ function renderMixerInputSelector(project: ReturnType<typeof currentProject>, tr
       <i class="input-activity" title="Recording input activity"><b style="width:${sanitizeCssLengthOrNumber(Math.round(peak * 100), 0, 0, 100)}%"></b></i>
     </label>
   `;
+}
+
+function compactInputLabel(label: string): string {
+  const clean = label.replace(/\s+/g, " ").trim() || "Default input";
+  if (clean.toLowerCase() === "default input") return "Default";
+  return clean.length > 20 ? `${clean.slice(0, 17)}...` : clean;
 }
 
 function renderPanControl(track: Track, isMaster: boolean, isReturn: boolean, panLabel: string): string {

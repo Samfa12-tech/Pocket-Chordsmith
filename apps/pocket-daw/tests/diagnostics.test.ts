@@ -49,6 +49,10 @@ describe("tester diagnostics", () => {
       sourceRefCount: project.sourceRefs.length
     });
     expect(payload.audio.playbackBackend).toBe("idle");
+    expect(payload.recording).toMatchObject({
+      monitoring: false,
+      outputDeviceName: null
+    });
     expect(payload.updater).toMatchObject({
       status: "available",
       availableVersion: "0.5.10"

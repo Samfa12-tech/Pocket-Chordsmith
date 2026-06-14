@@ -481,6 +481,7 @@ button.record:hover {
   min-height: 0;
   padding: 0;
   border: 0;
+  border-radius: 0;
   color: #eef4ff;
   background: transparent;
   font-size: 12px;
@@ -511,6 +512,7 @@ button.record:hover {
   min-width: 26px;
   min-height: 24px;
   padding: 0 5px;
+  border-radius: 2px;
   font-size: 10px;
   font-weight: 800;
 }
@@ -653,7 +655,8 @@ button.record:hover {
   grid-template-rows: auto auto 1fr;
   gap: 2px;
   z-index: 4;
-  pointer-events: none;
+  cursor: default;
+  pointer-events: auto;
   border-style: dashed;
   background: rgba(53, 17, 29, 0.88);
   box-shadow: 0 0 0 1px rgba(255, 107, 139, 0.18) inset;

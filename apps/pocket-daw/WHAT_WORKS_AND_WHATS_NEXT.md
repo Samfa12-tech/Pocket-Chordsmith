@@ -1,10 +1,10 @@
-# Pocket DAW v0.6.0 - What Works and What's Next
+# Pocket DAW v0.6.2 - What Works and What's Next
 
 ## Current public alpha
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current source target: `0.6.0` recording alpha
+- Current source target: `0.6.2` live recording polish alpha
 - Last installed public smoke evidence in this repo: `0.5.13`
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
@@ -12,7 +12,16 @@ Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
 
-## v0.6.0 Recording Alpha - source changes pending installed smoke
+## v0.6.2 Live Recording Polish Alpha - source changes pending installed smoke
+
+- Live-vocals mixer input controls are compact and stable, and small timeline track-label buttons no longer inherit rounded strip styling.
+- Timeline/mixer Mute, Solo, Arm, Monitor and input edits preserve scroll while playback/recording is running.
+- Timeline recording preview clicks are non-seeking so they cannot jump the playhead or scroll position.
+- Record now starts/resumes playback from the captured record start bar after count-in so unmuted backing tracks play while recording.
+- Monitor toggles and mixer gain/pan changes now update the active native CPAL monitor stream during an in-progress take.
+- Stopping a take records over overlapping same-track audio clips and preserves only the non-overlapping left/right material.
+
+## v0.6.0 Recording Alpha
 
 - Added installed-app-only native CPAL mono recording commands for one armed live audio track.
 - Recording now requires a saved `.pocketdaw` project so WAV takes are written under `project-media/recordings/`.

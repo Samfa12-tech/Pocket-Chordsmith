@@ -86,6 +86,8 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
       elapsedSeconds: 0,
       inputPeak: 0,
       inputDeviceName: null,
+      outputDeviceName: null,
+      monitoring: false,
       message: "Ready"
     },
     updater: {
