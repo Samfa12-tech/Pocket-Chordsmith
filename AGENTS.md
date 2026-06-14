@@ -40,3 +40,12 @@ Do not load broad design guidance by default.
 - Preserve JSON import/export, share codes, save slots, autosave, MIDI export/import, WAV export, handoffs, sections, tuplets, holds, slides, bass, drums, guitar, and melody playback unless the task explicitly targets them.
 - Keep generated outputs out of git: `node_modules/`, `dist/`, `src-tauri/target/`, installers, release zips, Godot `.import`/`.uid`, and local `.pocketdaw` saves.
 - For Godot addon releases, use `addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd` for addon-only payloads.
+
+## Pocket DAW Release Notes For Agents
+
+- For Pocket DAW, work from `apps/pocket-daw/` and keep release metadata aligned across `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/tauri.conf.json`, and `src/daw/schema.ts`.
+- Run the full release validation before publishing: `npm run verify:versions`, `npm test`, `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run verify:release`, and `npm run verify:itch`.
+- Commit release-script or doc fixes before the final `npm run package:itch`; the generated release manifest records the current commit and whether the working tree is dirty.
+- GitHub release uploads may normalize installer asset names with spaces to dots, for example `Pocket.DAW_0.6.3_x64-setup.exe`. Generate the updater manifest with the actual downloadable asset URL and verify it with `curl -L -I`.
+- The existing itch channel is `samfa12/pocket-daw:windows-installer`. Do not use `--hidden` for normal updates to that existing channel; run the guarded push with `PUBLISH=1 npm run itch:push`.
+- After uploading, verify `pocket-daw-latest.json` from the GitHub `latest/download` endpoint, verify the setup EXE URL resolves, check `gh release view`, and poll `butler status samfa12/pocket-daw:windows-installer` until the channel reports the new version.
