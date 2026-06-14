@@ -1,4 +1,4 @@
-# Pocket DAW v0.5.13 Alpha Testing Release Status
+# Pocket DAW v0.6.3 Alpha Testing Release Status
 
 Pocket DAW is now live for public Windows alpha testing on itch and linked from `samfa12.com`.
 
@@ -11,16 +11,16 @@ This file records the last completed public installed-release artifact set. Curr
 - Primary itch channel: `windows-installer`
 - GitHub updater release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.3`
 - Updater manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Source commit: see the `pocket-daw-v0.6.3` GitHub release and generated release manifest.
+- Source commit: `d61e787c620d75664cf870f04e31eb436535dfe0` in the generated release manifest.
 
 ## Current Artifact Hashes
 
-- Setup EXE `Pocket DAW_0.6.3_x64-setup.exe`: `3c77516f18578c6e83fbe83bc6629e42af27cc5d109958503e734048026acf2a`
-- Setup EXE Tauri updater signature `Pocket DAW_0.6.3_x64-setup.exe.sig`: `786ee2309d1f5cca80e3bb337ad04deef121ee9457b0491487c1d6241f9dff9f`
-- MSI `Pocket DAW_0.6.3_x64_en-US.msi`: `439d5e5d6db4522e2158415ecc2c3e26062c367ec7015a71736298ed3f253136`
-- MSI Tauri updater signature `Pocket DAW_0.6.3_x64_en-US.msi.sig`: `0459b1c9f4cc09a1e7cf93311e2c2d80b2baddfbebdd370a00922fed12aff41c`
-- Updater setup EXE: `3c77516f18578c6e83fbe83bc6629e42af27cc5d109958503e734048026acf2a`
-- Updater manifest `pocket-daw-latest.json`: `74361ebaad970002a3ad3bb7013a7b4d226411cd055eef46d62eafb4dd790d64`
+- Setup EXE `Pocket DAW_0.6.3_x64-setup.exe`: `e7e849c81323ef28d6f452ecfd45641c7a479a69285708ed92da252c1349f068`
+- Setup EXE Tauri updater signature `Pocket DAW_0.6.3_x64-setup.exe.sig`: `cede91b7a653414c3874e34593bd30d361981f68cea0c20a2db88f1dc1fc9d17`
+- MSI `Pocket DAW_0.6.3_x64_en-US.msi`: `8d9739143ff64f53fb177e6cb2160690da485f8a2ae5ef28e5e86b0663867dcc`
+- MSI Tauri updater signature `Pocket DAW_0.6.3_x64_en-US.msi.sig`: `88270feff1cbc434db2dc48df0fbeb45da3f9c28c292407fb385a4c226b3d20d`
+- Updater setup EXE: `e7e849c81323ef28d6f452ecfd45641c7a479a69285708ed92da252c1349f068`
+- Updater manifest `pocket-daw-latest.json`: `c9104f660e96c45258b9fce51e1ecbd50d5a361846ea1f7c4b10f4e79599e796`
 
 ## Alpha Testing Guidance
 
