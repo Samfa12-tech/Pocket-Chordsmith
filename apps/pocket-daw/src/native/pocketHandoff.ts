@@ -8,7 +8,7 @@ export const HANDOFF_ENVELOPE_PARAMS = ["pocketHandoff", "handoff"] as const;
 export const HANDOFF_LEGACY_PARAMS = ["pcs1", "pcs", "code", "import"] as const;
 
 export type PocketHandoffKind = "pcs-to-daw" | "chordsmith-to-daw" | "dj-to-daw" | "import";
-export type PocketHandoffSource = "url" | "window.name" | "localStorage" | "deep-link";
+export type PocketHandoffSource = "url" | "window.name" | "localStorage" | "deep-link" | "local-server";
 
 export interface PocketHandoffEnvelope {
   app: typeof HANDOFF_APP;
@@ -97,6 +97,12 @@ export function readUrlHandoff(
 export function readDeepLinkHandoff(input: string): PocketDawHandoff | null {
   const inspected = inspectDeepLinkHandoff(input);
   return inspected.result === "handoff" ? inspected.handoff : null;
+}
+
+export function readEncodedHandoff(raw: string, source: PocketHandoffSource): PocketDawHandoff | null {
+  const payload = decodePocketHandoff(raw);
+  if (!payload) return null;
+  return makeHandoff(payload, source, () => undefined);
 }
 
 export function inspectDeepLinkHandoff(input: string): DeepLinkHandoffInspection {

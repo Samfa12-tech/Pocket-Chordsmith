@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { extractDeepLinkUrlsFromSecondInstancePayload } from "../src/native/deepLinkBridge";
+import { extractDeepLinkUrlsFromSecondInstancePayload, handoffFromLocalServerPayload } from "../src/native/deepLinkBridge";
+import { buildPocketHandoff, encodePocketHandoff } from "../src/native/pocketHandoff";
 
 describe("deep link bridge", () => {
   it("extracts Pocket DAW protocol URLs from second-instance argv payloads", () => {
@@ -20,5 +21,25 @@ describe("deep link bridge", () => {
     expect(extractDeepLinkUrlsFromSecondInstancePayload(["pocket-daw://handoff?pcs1=PCS1%3Atest"])).toEqual([
       "pocket-daw://handoff?pcs1=PCS1%3Atest"
     ]);
+  });
+
+  it("decodes local loopback handoff payloads", () => {
+    const encodedHandoff = encodePocketHandoff(buildPocketHandoff("chordsmith-to-daw", "PCS1:local"));
+    const handoff = handoffFromLocalServerPayload({ encodedHandoff, receivedAt: "test" });
+
+    expect(handoff?.source).toBe("local-server");
+    expect(handoff?.code).toBe("PCS1:local");
+    expect(handoff?.payload.kind).toBe("chordsmith-to-daw");
+  });
+
+  it("reports invalid local loopback handoff payloads", () => {
+    const statuses: unknown[] = [];
+    const handoff = handoffFromLocalServerPayload({ encodedHandoff: "not-valid", receivedAt: "test" }, (status) => statuses.push(status));
+
+    expect(handoff).toBeNull();
+    expect(statuses).toContainEqual(expect.objectContaining({
+      source: "local-server",
+      result: "failed-parse"
+    }));
   });
 });

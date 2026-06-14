@@ -15,7 +15,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = "Pocket DAW v0.5.10 - Direct Pocket Chordsmith Handoff Fix";
+export const RELEASE_TITLE = "Pocket DAW v0.5.11 - Loopback Pocket Chordsmith Handoff Fix";
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -192,7 +192,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Direct Pocket Chordsmith Handoff Fix
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Loopback Pocket Chordsmith Handoff Fix
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -202,6 +202,8 @@ ${artifactTable}
 
 ## Highlights
 
+- Added a loopback-only installed-app handoff receiver so large Pocket Chordsmith projects are sent over localhost instead of oversized custom-protocol URLs.
+- Pocket Chordsmith can now use a small pocket-daw:// wake URL and then deliver the full PocketHandoff payload to the running installed app.
 - Pocket Chordsmith Send to Pocket DAW deep links are now forwarded into the running installed app when Windows reuses an existing Pocket DAW process.
 - About/Diagnostics now reports the last handoff source and result so testers can tell whether Windows delivered the protocol URL.
 - Timeline workspace can now be resized by dragging the splitter below the timeline, pushing mixer/channel controls lower.

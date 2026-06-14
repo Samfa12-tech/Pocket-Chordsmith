@@ -4,15 +4,26 @@ use tauri::{Emitter, Manager};
 mod native_audio;
 
 const SECOND_INSTANCE_DEEP_LINK_EVENT: &str = "pocket-daw-second-instance";
+const LOCAL_HANDOFF_EVENT: &str = "pocket-daw-local-handoff";
+const LOCAL_HANDOFF_PORT: u16 = 47858;
 const MAX_PROJECT_FILE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_MIDI_FILE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_AUDIO_FILE_BYTES: u64 = 250 * 1024 * 1024;
 const MAX_NATIVE_CACHE_ASSET_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_LOCAL_HANDOFF_BYTES: usize = 5 * 1024 * 1024;
 
 #[derive(Clone, serde::Serialize)]
 struct SecondInstanceLaunchPayload {
     argv: Vec<String>,
     cwd: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct LocalHandoffPayload {
+    #[serde(rename = "encodedHandoff")]
+    encoded_handoff: String,
+    #[serde(rename = "receivedAt")]
+    received_at: String,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -49,6 +60,7 @@ pub fn run() {
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
                 app.handle().plugin(tauri_plugin_process::init())?;
+                start_local_handoff_receiver(app.handle().clone());
             }
             Ok(())
         })
@@ -73,6 +85,166 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pocket DAW");
+}
+
+#[cfg(desktop)]
+fn start_local_handoff_receiver(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let listener = match std::net::TcpListener::bind(("127.0.0.1", LOCAL_HANDOFF_PORT)) {
+            Ok(listener) => listener,
+            Err(err) => {
+                eprintln!("Pocket DAW local handoff receiver unavailable: {err}");
+                return;
+            }
+        };
+        println!("Pocket DAW local handoff receiver listening on 127.0.0.1:{LOCAL_HANDOFF_PORT}");
+        for stream in listener.incoming() {
+            let app = app.clone();
+            match stream {
+                Ok(mut stream) => {
+                    std::thread::spawn(move || {
+                        if let Err(err) = handle_local_handoff_connection(&mut stream, &app) {
+                            eprintln!("Pocket DAW local handoff request failed: {err}");
+                        }
+                    });
+                }
+                Err(err) => eprintln!("Pocket DAW local handoff connection failed: {err}"),
+            }
+        }
+    });
+}
+
+#[cfg(desktop)]
+fn handle_local_handoff_connection(
+    stream: &mut std::net::TcpStream,
+    app: &tauri::AppHandle,
+) -> Result<(), String> {
+    let request = read_http_request(stream)?;
+    if request.starts_with("OPTIONS ") {
+        write_http_response(stream, 204, "No Content", "text/plain", "")?;
+        return Ok(());
+    }
+    if !request.starts_with("POST /pocket-daw/handoff ") {
+        write_http_response(stream, 404, "Not Found", "text/plain", "Not found")?;
+        return Ok(());
+    }
+    let body = http_request_body(&request)?;
+    if body.trim().is_empty() {
+        write_http_response(
+            stream,
+            400,
+            "Bad Request",
+            "text/plain",
+            "Missing handoff payload",
+        )?;
+        return Ok(());
+    }
+    app.emit(
+        LOCAL_HANDOFF_EVENT,
+        LocalHandoffPayload {
+            encoded_handoff: body.trim().to_string(),
+            received_at: iso_timestamp(),
+        },
+    )
+    .map_err(|err| format!("Could not emit local handoff: {err}"))?;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+    write_http_response(stream, 200, "OK", "application/json", r#"{"ok":true}"#)?;
+    Ok(())
+}
+
+#[cfg(desktop)]
+fn read_http_request(stream: &mut std::net::TcpStream) -> Result<String, String> {
+    use std::io::Read;
+    let mut buffer = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+        .map_err(|err| format!("Could not set read timeout: {err}"))?;
+    loop {
+        let read = stream
+            .read(&mut chunk)
+            .map_err(|err| format!("Could not read request: {err}"))?;
+        if read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+        if buffer.len() > MAX_LOCAL_HANDOFF_BYTES {
+            return Err("Local handoff payload is too large.".to_string());
+        }
+        if let Some(header_end) = find_header_end(&buffer) {
+            let headers = String::from_utf8_lossy(&buffer[..header_end]).to_string();
+            let content_length = content_length(&headers)?;
+            let expected = header_end + 4 + content_length;
+            if buffer.len() >= expected {
+                buffer.truncate(expected);
+                break;
+            }
+        }
+    }
+    String::from_utf8(buffer).map_err(|_| "Local handoff request was not UTF-8.".to_string())
+}
+
+#[cfg(desktop)]
+fn http_request_body(request: &str) -> Result<String, String> {
+    let Some(index) = request.find("\r\n\r\n") else {
+        return Err("Local handoff request is missing headers.".to_string());
+    };
+    Ok(request[index + 4..].to_string())
+}
+
+#[cfg(desktop)]
+fn find_header_end(buffer: &[u8]) -> Option<usize> {
+    buffer.windows(4).position(|window| window == b"\r\n\r\n")
+}
+
+#[cfg(desktop)]
+fn content_length(headers: &str) -> Result<usize, String> {
+    for line in headers.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if name.trim().eq_ignore_ascii_case("content-length") {
+            let length = value
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| "Invalid Content-Length for local handoff.".to_string())?;
+            if length > MAX_LOCAL_HANDOFF_BYTES {
+                return Err("Local handoff payload is too large.".to_string());
+            }
+            return Ok(length);
+        }
+    }
+    Ok(0)
+}
+
+#[cfg(desktop)]
+fn write_http_response(
+    stream: &mut std::net::TcpStream,
+    status: u16,
+    status_text: &str,
+    content_type: &str,
+    body: &str,
+) -> Result<(), String> {
+    use std::io::Write;
+    let response = format!(
+        "HTTP/1.1 {status} {status_text}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Allow-Private-Network: true\r\nConnection: close\r\n\r\n{body}",
+        body.as_bytes().len()
+    );
+    stream
+        .write_all(response.as_bytes())
+        .map_err(|err| format!("Could not write response: {err}"))
+}
+
+#[cfg(desktop)]
+fn iso_timestamp() -> String {
+    match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        Ok(duration) => format!("unix-ms:{}", duration.as_millis()),
+        Err(_) => "unix-ms:0".to_string(),
+    }
 }
 
 #[derive(serde::Serialize)]

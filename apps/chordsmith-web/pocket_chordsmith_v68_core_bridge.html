@@ -875,6 +875,7 @@ const POCKET_CHORDSMITH_URL = "https://samfa12.itch.io/pocket-chordsmith";
 // Local development still uses relative paths.
 const POCKET_DJ_URL = "https://samfa12.com/apps/pocket-dj/";
 const POCKET_DAW_URL = "pocket-daw://handoff";
+const POCKET_DAW_LOCAL_HANDOFF_URL = "http://127.0.0.1:47858/pocket-daw/handoff";
 const GODOT_PUSH_ENDPOINTS = [
   "http://127.0.0.1:9087/pocket-chordsmith/push-to-godot",
   "http://localhost:9087/pocket-chordsmith/push-to-godot"
@@ -1670,6 +1671,28 @@ function openInstalledAppProtocol(url, blockedMessage){
   setStatus(blockedMessage);
   return false;
 }
+async function postPocketDawLocalHandoff(encodedHandoff){
+  try{
+    const response = await fetch(POCKET_DAW_LOCAL_HANDOFF_URL, {
+      method: "POST",
+      mode: "cors",
+      headers: {"Content-Type":"text/plain;charset=utf-8"},
+      body: encodedHandoff
+    });
+    return response.ok;
+  }catch(e){
+    return false;
+  }
+}
+async function sendPocketDawLocalHandoff(encodedHandoff, options={}){
+  const attempts = Number.isFinite(options.attempts) ? options.attempts : 1;
+  const delayMs = Number.isFinite(options.delayMs) ? options.delayMs : 350;
+  for(let attempt=0; attempt<attempts; attempt++){
+    if(attempt > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
+    if(await postPocketDawLocalHandoff(encodedHandoff)) return true;
+  }
+  return false;
+}
 async function postCodeToGodotReceiver(endpoint, code){
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1400);
@@ -1765,19 +1788,31 @@ async function pushToPocketDaw(){
     }
   });
   const targetBaseUrl = resolvePocketDawUrl();
-  const targetUrl = buildHandoffUrl(targetBaseUrl, payload);
-  const opened = openInstalledAppProtocol(
-    targetUrl,
-    "Pocket DAW launch was blocked; paste the code into installed Pocket DAW."
-  );
+  const encodedHandoff = encodePocketHandoff(payload);
+  let delivered = await sendPocketDawLocalHandoff(encodedHandoff);
+  let opened = false;
+  if(!delivered){
+    const wakeUrl = `${targetBaseUrl}?source=loopback`;
+    opened = openInstalledAppProtocol(
+      wakeUrl,
+      "Pocket DAW launch was blocked; paste the code into installed Pocket DAW."
+    );
+    if(opened){
+      setPushHandoffStatus("Opening Pocket DAW, then sending the song locally...");
+      delivered = await sendPocketDawLocalHandoff(encodedHandoff, {attempts: 16, delayMs: 350});
+    }
+  }
   const copied = await copyTextForHandoff(
     code,
     "Pocket DAW song code copied",
     "Pocket DAW song code is ready in the project box; clipboard was blocked"
   );
-  if(opened){
-    setStatus(copied ? "Opening installed Pocket DAW..." : "Pocket DAW launch requested. Paste fallback is ready.");
-    setPushHandoffStatus("If Pocket DAW does not open, paste the copied PCS1 code into Import.");
+  if(delivered){
+    setStatus("Song sent to Pocket DAW.");
+    setPushHandoffStatus("Pocket DAW received the song through the installed-app local handoff.");
+  }else if(opened){
+    setStatus(copied ? "Opened Pocket DAW; paste fallback is ready." : "Pocket DAW launch requested. Paste fallback is ready.");
+    setPushHandoffStatus("Pocket DAW opened but did not confirm local receipt. Paste the PCS1 code into Import.");
   }else{
     const downloaded = downloadTextFallback("pocket-chordsmith-to-pocket-daw.pcs1.txt", code);
     setPushHandoffStatus(downloaded ? "Pocket DAW did not open. Share code copied and downloaded for manual import." : "Pocket DAW did not open. Share code is copied and ready in the project box.");
