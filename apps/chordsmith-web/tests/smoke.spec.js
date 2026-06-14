@@ -76,6 +76,7 @@ test("handoff buttons stop live playback before pushing", async ({ page }) => {
 test("Pocket DAW handoff targets the installed app protocol", async ({ page }) => {
   await page.evaluate(() => {
     window.__pocketChordsmithOpenedUrls = [];
+    window.__pocketChordsmithProtocolLaunches = [];
     window.open = (url, name) => {
       const opened = {
         closed: false,
@@ -86,14 +87,25 @@ test("Pocket DAW handoff targets the installed app protocol", async ({ page }) =
       window.__pocketChordsmithOpenedUrls.push(opened);
       return opened;
     };
+    const originalClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.href.startsWith("pocket-daw://")) {
+        window.__pocketChordsmithProtocolLaunches.push(this.href);
+        return;
+      }
+      return originalClick.call(this);
+    };
   });
 
   await page.getByRole("button", { name: "Settings" }).first().click();
   await page.getByRole("button", { name: "Send to Pocket DAW" }).click();
 
+  const protocolLaunches = await page.evaluate(() => window.__pocketChordsmithProtocolLaunches);
   const openedUrls = await page.evaluate(() =>
     window.__pocketChordsmithOpenedUrls.map((item) => item.location.href),
   );
-  expect(openedUrls).toContainEqual(expect.stringMatching(/^pocket-daw:\/\/handoff\?pocketHandoff=/));
+  expect(protocolLaunches).toContainEqual(expect.stringMatching(/^pocket-daw:\/\/handoff\?pocketHandoff=/));
+  expect(openedUrls).not.toContain("about:blank");
+  expect(openedUrls).toEqual([]);
   await expect(page.locator("#pushHandoffStatus")).toContainText("paste the copied PCS1 code");
 });

@@ -1655,6 +1655,21 @@ function openHandoffUrl(url, blockedMessage, payload=null, preparedWindow=null){
   setStatus(blockedMessage);
   return false;
 }
+function openInstalledAppProtocol(url, blockedMessage){
+  if(!url) return false;
+  try{
+    const link = document.createElement("a");
+    link.href = url;
+    link.style.display = "none";
+    link.rel = "noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    return true;
+  }catch(e){}
+  setStatus(blockedMessage);
+  return false;
+}
 async function postCodeToGodotReceiver(endpoint, code){
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1400);
@@ -1751,20 +1766,17 @@ async function pushToPocketDaw(){
   });
   const targetBaseUrl = resolvePocketDawUrl();
   const targetUrl = buildHandoffUrl(targetBaseUrl, payload);
-  const preparedWindow = openPreparedHandoffWindow(payload);
+  const opened = openInstalledAppProtocol(
+    targetUrl,
+    "Pocket DAW launch was blocked; paste the code into installed Pocket DAW."
+  );
   const copied = await copyTextForHandoff(
     code,
     "Pocket DAW song code copied",
     "Pocket DAW song code is ready in the project box; clipboard was blocked"
   );
-  const opened = openHandoffUrl(
-    targetUrl,
-    "Pocket DAW code copied. Browser blocked the app launch; paste the code into installed Pocket DAW.",
-    payload,
-    preparedWindow
-  );
   if(opened){
-    setStatus(copied ? "Opening installed Pocket DAW..." : "Pocket DAW handoff ready. Opening installed app...");
+    setStatus(copied ? "Opening installed Pocket DAW..." : "Pocket DAW launch requested. Paste fallback is ready.");
     setPushHandoffStatus("If Pocket DAW does not open, paste the copied PCS1 code into Import.");
   }else{
     const downloaded = downloadTextFallback("pocket-chordsmith-to-pocket-daw.pcs1.txt", code);
