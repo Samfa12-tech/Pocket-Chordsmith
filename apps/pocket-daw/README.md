@@ -2,7 +2,7 @@
 
 Pocket DAW is a Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
-Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.2` live recording polish alpha.
+Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.3` live recording and mixer polish alpha.
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
@@ -50,7 +50,8 @@ Release and update docs:
 ## Current Caveats
 
 - This is alpha-testing software, not a finished professional DAW.
-- Live recording is an installed-app-only alpha slice: one armed mono live audio track, project-relative WAV takes under `project-media/recordings`, metronome/count-in, and monitor on/off during recording.
+- Live recording is an installed-app-only alpha slice: one armed mono live audio track, project-relative WAV takes under `project-media/recordings`, metronome/count-in, monitor while armed/recording, and same-track overwrite placement for new takes.
+- v0.6.3 tightens the mixer/transport UI, keeps timeline scroll stable around track controls, restores live armed-input metering, and darkens Pocket DAW bass playback toward Pocket Chordsmith export parity.
 - ASIO, simultaneous multitrack capture, punch-in/out, comping, latency compensation UI, full send/return processing, bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
 - Windows Authenticode signing is not currently claimed unless a release manifest proves it.
 - Tauri updater signatures are generated separately as `.sig` files for updater validation.

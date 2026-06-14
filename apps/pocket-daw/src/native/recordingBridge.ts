@@ -21,6 +21,15 @@ export interface NativeRecordingMonitorPayload {
   monitorPan: number;
 }
 
+export interface NativeRecordingPreviewPayload {
+  trackId: string;
+  inputDeviceId?: string | null;
+  outputDeviceId?: string | null;
+  monitorEnabled: boolean;
+  monitorVolume: number;
+  monitorPan: number;
+}
+
 export interface NativeRecordingStatus {
   backend: "native-cpal" | string;
   available: boolean;
@@ -65,6 +74,16 @@ export async function stopNativeRecording(): Promise<NativeRecordingStopResult> 
 export async function updateNativeRecordingMonitor(payload: NativeRecordingMonitorPayload): Promise<NativeRecordingStatus> {
   if (!isNativeRecordingAvailable()) throw new Error("Live recording is only available in the installed Pocket DAW app.");
   return invoke<NativeRecordingStatus>("native_recording_update_monitor", { payload });
+}
+
+export async function startNativeRecordingPreview(payload: NativeRecordingPreviewPayload): Promise<NativeRecordingStatus> {
+  if (!isNativeRecordingAvailable()) throw new Error("Live recording is only available in the installed Pocket DAW app.");
+  return invoke<NativeRecordingStatus>("native_recording_start_preview", { payload });
+}
+
+export async function stopNativeRecordingPreview(): Promise<NativeRecordingStatus> {
+  if (!isNativeRecordingAvailable()) throw new Error("Live recording is only available in the installed Pocket DAW app.");
+  return invoke<NativeRecordingStatus>("native_recording_stop_preview");
 }
 
 export async function nativeRecordingStatus(): Promise<NativeRecordingStatus> {

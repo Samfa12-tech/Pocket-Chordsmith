@@ -2,25 +2,25 @@
 
 Pocket DAW is now live for public Windows alpha testing on itch and linked from `samfa12.com`.
 
-This file records the last completed public installed-release artifact set. Current source target is `0.6.0` recording alpha; do not reuse the v0.5.13 hashes for a v0.6.0 installer.
+This file records the last completed public installed-release artifact set. Current source target is `0.6.3` recording polish alpha.
 
 ## Current Public Build
 
-- Version: `0.5.13`
+- Version: `0.6.3`
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Primary itch channel: `windows-installer`
-- GitHub updater release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.5.13-updater-test`
+- GitHub updater release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.3`
 - Updater manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Source commit: see the `v0.5.13` GitHub release and generated release manifest.
+- Source commit: see the `pocket-daw-v0.6.3` GitHub release and generated release manifest.
 
 ## Current Artifact Hashes
 
-- Setup EXE `Pocket DAW_0.5.13_x64-setup.exe`: `f5c28e1280598cd5f0bd61258a6102affa08c9bd99b0a9706cec08eda7f87233`
-- Setup EXE Tauri updater signature `Pocket DAW_0.5.13_x64-setup.exe.sig`: `82277a2eb50f886b625e511816aa7e80ca06f1e3f9781eb53ced3508dfc2dedd`
-- MSI `Pocket DAW_0.5.13_x64_en-US.msi`: `49861de4120c9338deb342984299af8b3d87769dccb860aa7d3f24aa2002ad81`
-- MSI Tauri updater signature `Pocket DAW_0.5.13_x64_en-US.msi.sig`: `1478c20ec209952e4a14a86ac95f857f2d09961087039ec7f2a8ad819047633f`
-- Updater setup EXE: `f5c28e1280598cd5f0bd61258a6102affa08c9bd99b0a9706cec08eda7f87233`
-- Updater manifest: `f60cf66954a840296e6109a8f5a27b4b1f0c6536cdbf004ebc6849291ff901fa`
+- Setup EXE `Pocket DAW_0.6.3_x64-setup.exe`: `3c77516f18578c6e83fbe83bc6629e42af27cc5d109958503e734048026acf2a`
+- Setup EXE Tauri updater signature `Pocket DAW_0.6.3_x64-setup.exe.sig`: `786ee2309d1f5cca80e3bb337ad04deef121ee9457b0491487c1d6241f9dff9f`
+- MSI `Pocket DAW_0.6.3_x64_en-US.msi`: `439d5e5d6db4522e2158415ecc2c3e26062c367ec7015a71736298ed3f253136`
+- MSI Tauri updater signature `Pocket DAW_0.6.3_x64_en-US.msi.sig`: `0459b1c9f4cc09a1e7cf93311e2c2d80b2baddfbebdd370a00922fed12aff41c`
+- Updater setup EXE: `3c77516f18578c6e83fbe83bc6629e42af27cc5d109958503e734048026acf2a`
+- Updater manifest `pocket-daw-latest.json`: `1e670ffd13e19f74d18fd82e66330cef41e79794febe585278085dbbe9483e48`
 
 ## Alpha Testing Guidance
 
@@ -53,5 +53,6 @@ Partial installed-app smoke run by Sam on 2026-06-14 against v0.5.9:
 - Tauri updater signatures are present as `.sig` files for updater validation.
 - Pocket Chordsmith direct "Send to Pocket DAW" is passing in the v0.5.13 installed-app smoke run; keep paste/import as a fallback for browsers that block downloads or custom protocol launches.
 - v0.5.14 source changes fixed Chordsmith BPM/new-project import semantics, MIDI import/export structure, About/Diagnostics placement and update-available notification behavior, but those fixes still require installed artifact verification when publishing a newer public release.
-- v0.6.0 source changes add a narrow installed-app mono recording alpha: one armed live track, monitor toggle, metronome/count-in and project-media WAV take creation. Installed Windows recording smoke remains Manual / Not run until a v0.6.0 installer is built and tested.
+- v0.6.0 source changes add a narrow installed-app mono recording alpha: one armed live track, monitor toggle, metronome/count-in and project-media WAV take creation.
+- v0.6.3 source changes polish the live-recording path: armed input metering before recording, active monitor updates, timeline-scroll preservation around track controls/recording previews, transport/backing playback while recording, same-track overwrite placement for recorded takes, tidier mixer/transport UI, and darker bass playback closer to Pocket Chordsmith exported stems. Installed Windows recording smoke remains Manual / Not run until the v0.6.3 installer is tested.
 - ASIO support, simultaneous multitrack recording, full send/return processing, bundled game export packs, and professional DAW completeness remain out of scope for the current alpha.

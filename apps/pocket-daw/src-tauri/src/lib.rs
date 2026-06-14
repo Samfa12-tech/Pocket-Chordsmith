@@ -79,6 +79,8 @@ pub fn run() {
             native_audio::native_audio_update_track,
             native_recording::native_recording_status,
             native_recording::native_recording_start,
+            native_recording::native_recording_start_preview,
+            native_recording::native_recording_stop_preview,
             native_recording::native_recording_update_monitor,
             native_recording::native_recording_stop,
             open_project_file,

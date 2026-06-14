@@ -117,6 +117,25 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('data-inline-sequencer-role="guitar"');
   });
 
+  it("renders compact transport readouts with contained value and detail text", () => {
+    const state = createInitialState();
+    state.playheadBar = 1;
+    state.recording = {
+      ...state.recording,
+      status: "recording",
+      elapsedSeconds: 7
+    };
+
+    const html = renderAppShell(state);
+    const transport = html.match(/<div class="transport-readout">[\s\S]*?<\/div>/)?.[0] || "";
+
+    expect(transport).toContain('<span data-playing-state="true" class=""><strong>Stopped</strong></span>');
+    expect(transport).toContain('<span data-recording-state="true" class="recording"><strong>Recording</strong><small>0:07</small></span>');
+    expect(transport).toContain("<span><strong>118</strong><small>BPM</small></span>");
+    expect(transport).toContain("<span><strong>Metro</strong><small>off</small></span>");
+    expect(transport).toContain('<span data-playhead-readout="true"><strong>Bar 1</strong><small>Beat 1</small></span>');
+  });
+
   it("starts inline sequencer boxes at the bar edge without lane-label offsets", () => {
     const html = renderAppShell(createInitialState());
     const inline = html.match(/<div class="inline-sequencer inline-drums[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/)?.[0] || "";
@@ -196,10 +215,41 @@ describe("Pocket DAW UI rendering", () => {
     const html = renderAppShell(state);
 
     expect(liveTrack.name).toBe("Live Vocals");
+    expect(html).toContain('class="strip record-capable');
     expect(html).toContain('class="strip-control strip-input"');
     expect(html).toContain('title="Default input">Default</strong>');
     expect(html).toContain(`data-track-input="${withLiveTrack.trackId}"`);
+    expect(html).toContain(`data-input-activity-fill="${withLiveTrack.trackId}"`);
     expect(html).toContain('data-recording-preview="true" data-timeline-non-seek="true"');
+  });
+
+  it("shows armed input preview level before recording starts", () => {
+    const state = createInitialState();
+    const withLiveTrack = addTrackToProject(state.undoStack.present, "live-vocals");
+    const liveTrack = withLiveTrack.project.tracks.find((track) => track.id === withLiveTrack.trackId)!;
+    liveTrack.armed = true;
+    liveTrack.monitorEnabled = true;
+    state.undoStack = createUndoStack(withLiveTrack.project);
+    state.recording = {
+      status: "idle",
+      trackId: withLiveTrack.trackId,
+      startedAt: null,
+      startBar: null,
+      elapsedSeconds: 0,
+      inputPeak: 0.42,
+      inputDeviceName: "Default input",
+      outputDeviceName: "Main output",
+      monitoring: true,
+      livePeaks: [0.42],
+      message: "Monitoring Live Vocals input."
+    };
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain('title="Default input">Default</strong>');
+    expect(html).toContain(`data-meter-fill="${withLiveTrack.trackId}" style="height:42%"`);
+    expect(html).toContain(`data-input-activity-fill="${withLiveTrack.trackId}" style="width:42%"`);
+    expect(html).toContain('title="Monitor Live Vocals input while armed or recording"');
   });
 
   it("renders desktop menu actions through the shared action attributes", () => {
@@ -447,6 +497,24 @@ describe("Pocket DAW UI rendering", () => {
     expect(css).toContain("z-index: 120");
     expect(css).toContain("var(--menu-strip-height");
     expect(css).toContain("align-items: start");
+  });
+
+  it("gives record-capable mixer strips enough vertical space for input and FX controls", () => {
+    const css = readFileSync("src/styles/mixer.css", "utf8");
+
+    expect(css).toContain("min-height: 452px");
+    expect(css).toContain(".strip.record-capable");
+    expect(css).toContain("grid-template-rows: 28px 76px 48px 38px 38px 64px minmax(50px, auto)");
+    expect(css).toContain("padding: 10px 18px 28px");
+  });
+
+  it("keeps mixer track-name rename buttons flat and unclipped", () => {
+    const css = readFileSync("src/styles/mixer.css", "utf8");
+
+    expect(css).toContain(".strip-name button");
+    expect(css).toContain("border-radius: 0");
+    expect(css).toContain("appearance: none");
+    expect(css).toContain("line-height: 1.2");
   });
 
   it("renders the selected MIDI clip piano-roll editor", () => {

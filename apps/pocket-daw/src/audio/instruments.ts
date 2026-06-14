@@ -244,10 +244,11 @@ function bass(
   slideOffset: number | undefined
 ) {
   if (slideMidi === undefined || slideOffset === undefined) {
-    const bassDur = accent ? dur * 1.35 : dur;
-    const bassPeak = accent ? peak * 1.18 : peak;
-    tone(ctx, destination, midi, start, bassDur, "sawtooth", bassPeak, "lowpass", accent ? 520 : 420);
-    tone(ctx, destination, midi - 12, start, bassDur * 0.8, "sine", bassPeak * 0.42, "lowpass", accent ? 260 : 220);
+    const bassDur = Math.max(0.08, dur);
+    const sawPeak = peak * (accent ? 0.38 : 0.4);
+    const subPeak = peak * 0.12;
+    tone(ctx, destination, midi, start, bassDur, "sawtooth", sawPeak, "lowpass", accent ? 320 : 260);
+    tone(ctx, destination, midi - 12, start, Math.min(0.12, bassDur * 0.65), "sine", subPeak, "lowpass", 120);
     return;
   }
   bassSlide(ctx, destination, midi, slideMidi, start, dur, peak, accent, slideOffset);
@@ -256,7 +257,8 @@ function bass(
 function bassSlide(ctx: BaseAudioContext, destination: AudioNode, midi: number, targetMidi: number, start: number, dur: number, peak: number, accent: boolean, slideOffset: number) {
   const endAt = start + Math.max(0.08, dur) + 0.22;
   const slideAt = Math.max(start + 0.02, start + slideOffset);
-  const bassPeak = peak * (accent ? 1.18 : 1);
+  const bassPeak = peak * (accent ? 0.38 : 0.4);
+  const subPeak = peak * 0.12;
   const makeVoice = (from: number, to: number, wave: OscillatorType, peakMul: number, cutoff: number) => {
     const osc = ctx.createOscillator();
     const filter = ctx.createBiquadFilter();
@@ -273,8 +275,8 @@ function bassSlide(ctx: BaseAudioContext, destination: AudioNode, midi: number, 
     osc.start(start);
     osc.stop(endAt);
   };
-  makeVoice(midi, targetMidi, "sawtooth", 1, accent ? 520 : 420);
-  makeVoice(midi - 12, targetMidi - 12, "sine", 0.42, accent ? 260 : 220);
+  makeVoice(midi, targetMidi, "sawtooth", 1, accent ? 320 : 260);
+  makeVoice(midi - 12, targetMidi - 12, "sine", subPeak / Math.max(0.0001, bassPeak), 120);
 }
 
 function chord(ctx: BaseAudioContext, destination: AudioNode, notes: number[], start: number, dur: number, instrument: string, velocity: number, playMode: string) {

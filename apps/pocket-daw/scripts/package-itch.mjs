@@ -15,7 +15,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Recording Alpha`;
+export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Recording Polish Alpha`;
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -231,6 +231,14 @@ ${artifactTable}
 
 ## Highlights
 
+- Polished live-recording controls so armed input selectors, input activity and FX controls fit cleanly in mixer strips.
+- Added armed-track input preview metering, so live vocal/input tracks show signal before recording starts.
+- Monitor changes now apply to armed preview and active recording status, with clearer diagnostics for input/output/monitor state.
+- Track mute, solo, arm, monitor, input and recording-preview interactions preserve timeline scroll instead of jumping back to the top.
+- Pressing Record after the count-in starts the transport/backing tracks from the captured record-start bar.
+- New recorded takes overwrite overlapping audio on the same armed track while preserving non-overlapping clip remainders.
+- Transport readouts and mixer track titles were tightened to avoid clipped or spilling text in the installed app UI.
+- Pocket DAW bass playback was darkened toward Pocket Chordsmith export parity for imported songs.
 - Added the first installed-app live recording alpha: one armed mono live audio track at a time.
 - Added Record transport controls, recording status/timer, metronome toggle and one-bar count-in support.
 - Added live-track M/S/R/Monitor controls in the timeline and mixer.
@@ -292,7 +300,7 @@ function knownLimitations() {
   return [
     "Live recording is a narrow installed-app alpha: one armed mono live track at a time.",
     "No ASIO backend yet; native audio currently targets WASAPI/CPAL.",
-    "No simultaneous multitrack recording, stereo recording modes, punch-in/out, comping/take lanes, FX monitoring or latency compensation UI yet.",
+    "No simultaneous multitrack recording, stereo recording modes, punch-in/out, comping/take lanes, FX-through-monitoring or latency compensation UI yet.",
     "Imported audio decode/streaming is still limited and large files are rejected before whole-file reads.",
     "Full send/return processing and advanced pro DAW features are future work.",
     "Game/Godot/web exports are manifest previews unless full asset-pack assembly is implemented later.",

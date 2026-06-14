@@ -65,6 +65,22 @@ pub struct NativeRecordingMonitorPayload {
     monitor_pan: f64,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct NativeRecordingPreviewPayload {
+    #[serde(rename = "trackId")]
+    track_id: String,
+    #[serde(rename = "inputDeviceId")]
+    input_device_id: Option<String>,
+    #[serde(rename = "outputDeviceId")]
+    output_device_id: Option<String>,
+    #[serde(rename = "monitorEnabled")]
+    monitor_enabled: bool,
+    #[serde(rename = "monitorVolume")]
+    monitor_volume: f64,
+    #[serde(rename = "monitorPan")]
+    monitor_pan: f64,
+}
+
 #[derive(Clone, Serialize)]
 pub struct NativeRecordingStatus {
     backend: String,
@@ -115,6 +131,7 @@ struct RecordingShared {
     monitor_enabled: bool,
     monitor_gain: f32,
     monitor_pan: f32,
+    capture_enabled: bool,
     peak: f32,
 }
 
@@ -150,7 +167,10 @@ pub fn native_recording_start(
         .lock()
         .map_err(|_| "Native recording state is unavailable.".to_string())?;
     if runtime.input_stream.is_some() {
-        return Err("A recording is already active. Stop it before starting another take.".to_string());
+        if runtime.target_path.is_some() {
+            return Err("A recording is already active. Stop it before starting another take.".to_string());
+        }
+        clear_runtime_streams(&mut runtime);
     }
     if payload.project_file_path.trim().is_empty() {
         return Err("Save the .pocketdaw project before recording so audio can be stored under project-media/recordings.".to_string());
@@ -175,6 +195,7 @@ pub fn native_recording_start(
         monitor_enabled: payload.monitor_enabled,
         monitor_gain: payload.monitor_volume.clamp(0.0, 1.2) as f32,
         monitor_pan: payload.monitor_pan.clamp(-1.0, 1.0) as f32,
+        capture_enabled: true,
         peak: 0.0,
     }));
     let err_shared = Arc::clone(&shared);
@@ -250,6 +271,128 @@ pub fn native_recording_start(
     runtime.input_device_name = Some(input_device_name);
     runtime.output_device_name = output_device_name;
     runtime.last_error = None;
+    Ok(runtime_status(&runtime))
+}
+
+#[tauri::command]
+pub fn native_recording_start_preview(
+    payload: NativeRecordingPreviewPayload,
+    state: tauri::State<'_, NativeRecordingState>,
+) -> Result<NativeRecordingStatus, String> {
+    let mut runtime = state
+        .lock()
+        .map_err(|_| "Native recording state is unavailable.".to_string())?;
+    if runtime.target_path.is_some() {
+        return Err("A recording is active. Stop it before changing armed input monitoring.".to_string());
+    }
+    clear_runtime_streams(&mut runtime);
+
+    let host = preferred_host();
+    let input = select_input_device(&host, payload.input_device_id.as_deref())
+        .ok_or_else(|| "No input device is available for armed input metering. Refresh Audio Settings and choose an input.".to_string())?;
+    let input_device_name = device_name(&input).unwrap_or_else(|_| "Input device".to_string());
+    let config = input
+        .default_input_config()
+        .map_err(|err| format!("Could not use the selected input device for armed input metering: {err}"))?;
+    let sample_rate = config.sample_rate();
+    let input_channels = config.channels().max(1) as usize;
+    let stream_config: cpal::StreamConfig = config.clone().into();
+    let shared = Arc::new(Mutex::new(RecordingShared {
+        samples: Vec::new(),
+        monitor_samples: VecDeque::with_capacity(sample_rate as usize),
+        sample_rate,
+        monitor_enabled: payload.monitor_enabled,
+        monitor_gain: payload.monitor_volume.clamp(0.0, 1.2) as f32,
+        monitor_pan: payload.monitor_pan.clamp(-1.0, 1.0) as f32,
+        capture_enabled: false,
+        peak: 0.0,
+    }));
+    let err_shared = Arc::clone(&shared);
+    let error_callback = move |err| {
+        if let Ok(mut shared) = err_shared.lock() {
+            shared.monitor_enabled = false;
+        }
+        eprintln!("Pocket DAW armed input preview stream error: {err}");
+    };
+    let input_stream = match config.sample_format() {
+        cpal::SampleFormat::F32 => {
+            let shared = Arc::clone(&shared);
+            input.build_input_stream(
+                &stream_config,
+                move |data: &[f32], _| capture_f32(data, input_channels, &shared),
+                error_callback,
+                None,
+            )
+        }
+        cpal::SampleFormat::I16 => {
+            let shared = Arc::clone(&shared);
+            input.build_input_stream(
+                &stream_config,
+                move |data: &[i16], _| capture_i16(data, input_channels, &shared),
+                error_callback,
+                None,
+            )
+        }
+        cpal::SampleFormat::U16 => {
+            let shared = Arc::clone(&shared);
+            input.build_input_stream(
+                &stream_config,
+                move |data: &[u16], _| capture_u16(data, input_channels, &shared),
+                error_callback,
+                None,
+            )
+        }
+        other => {
+            return Err(format!(
+                "Input device uses unsupported sample format {other:?}; Pocket DAW input metering supports f32/i16/u16 PCM input."
+            ));
+        }
+    }
+    .map_err(|err| format!("Could not start the armed input metering stream: {err}"))?;
+
+    let mut output_device_name = None;
+    let monitor_stream = if payload.monitor_enabled {
+        let output = select_output_device(&host, payload.output_device_id.as_deref())
+            .ok_or_else(|| "Input monitor was enabled, but no output device is available.".to_string())?;
+        output_device_name = Some(device_name(&output).unwrap_or_else(|_| "Output device".to_string()));
+        Some(build_monitor_stream(&output, Arc::clone(&shared))?)
+    } else {
+        None
+    };
+
+    input_stream
+        .play()
+        .map_err(|err| format!("Could not start armed input metering stream: {err}"))?;
+    if let Some(stream) = monitor_stream.as_ref() {
+        stream
+            .play()
+            .map_err(|err| format!("Could not start input monitoring stream: {err}"))?;
+    }
+
+    runtime.input_stream = Some(input_stream);
+    runtime.monitor_stream = monitor_stream;
+    runtime.shared = Some(shared);
+    runtime.started_at = None;
+    runtime.target_path = None;
+    runtime.target_relative_path = None;
+    runtime.file_name = None;
+    runtime.track_id = Some(payload.track_id);
+    runtime.input_device_name = Some(input_device_name);
+    runtime.output_device_name = output_device_name;
+    runtime.last_error = None;
+    Ok(runtime_status(&runtime))
+}
+
+#[tauri::command]
+pub fn native_recording_stop_preview(
+    state: tauri::State<'_, NativeRecordingState>,
+) -> Result<NativeRecordingStatus, String> {
+    let mut runtime = state
+        .lock()
+        .map_err(|_| "Native recording state is unavailable.".to_string())?;
+    if runtime.target_path.is_none() {
+        clear_runtime_streams(&mut runtime);
+    }
     Ok(runtime_status(&runtime))
 }
 
@@ -331,7 +474,7 @@ pub fn native_recording_update_monitor(
         .shared
         .as_ref()
         .cloned()
-        .ok_or_else(|| "No active recording is available for input monitoring.".to_string())?;
+        .ok_or_else(|| "No active recording or armed input preview is available for input monitoring.".to_string())?;
 
     if !payload.monitor_enabled {
         apply_monitor_settings(&shared, false, payload.monitor_volume, payload.monitor_pan);
@@ -356,10 +499,15 @@ pub fn native_recording_update_monitor(
 }
 
 fn runtime_status(runtime: &NativeRecordingRuntime) -> NativeRecordingStatus {
-    let elapsed_seconds = runtime
-        .started_at
-        .map(|started| started.elapsed().as_secs_f64())
-        .unwrap_or(0.0);
+    let recording_active = runtime.target_path.is_some();
+    let elapsed_seconds = if recording_active {
+        runtime
+            .started_at
+            .map(|started| started.elapsed().as_secs_f64())
+            .unwrap_or(0.0)
+    } else {
+        0.0
+    };
     let (monitoring, sample_rate, peak, sample_count) = runtime
         .shared
         .as_ref()
@@ -368,7 +516,7 @@ fn runtime_status(runtime: &NativeRecordingRuntime) -> NativeRecordingStatus {
     NativeRecordingStatus {
         backend: "native-cpal".to_string(),
         available: true,
-        active: runtime.input_stream.is_some(),
+        active: recording_active,
         monitoring,
         track_id: runtime.track_id.clone(),
         elapsed_seconds,
@@ -379,6 +527,19 @@ fn runtime_status(runtime: &NativeRecordingRuntime) -> NativeRecordingStatus {
         sample_count,
         last_error: runtime.last_error.clone(),
     }
+}
+
+fn clear_runtime_streams(runtime: &mut NativeRecordingRuntime) {
+    runtime.input_stream.take();
+    runtime.monitor_stream.take();
+    runtime.shared.take();
+    runtime.started_at = None;
+    runtime.target_path = None;
+    runtime.target_relative_path = None;
+    runtime.file_name = None;
+    runtime.track_id = None;
+    runtime.input_device_name = None;
+    runtime.output_device_name = None;
 }
 
 fn apply_monitor_settings(
@@ -423,15 +584,19 @@ where
 {
     if let Ok(mut shared) = shared.lock() {
         let mut monitor_pushes = 0usize;
+        let mut block_peak = 0.0f32;
         for sample in samples {
             let mono = sample.clamp(-1.0, 1.0);
-            shared.peak = shared.peak.max(mono.abs());
-            shared.samples.push(mono);
+            block_peak = block_peak.max(mono.abs());
+            if shared.capture_enabled {
+                shared.samples.push(mono);
+            }
             if shared.monitor_enabled && monitor_pushes < 8192 {
                 shared.monitor_samples.push_back(mono);
                 monitor_pushes += 1;
             }
         }
+        shared.peak = block_peak.max(shared.peak * 0.82);
         let max_monitor = shared.sample_rate as usize * 2;
         while shared.monitor_samples.len() > max_monitor {
             shared.monitor_samples.pop_front();
@@ -761,6 +926,7 @@ mod tests {
             monitor_enabled: true,
             monitor_gain: 0.5,
             monitor_pan: 0.0,
+            capture_enabled: true,
             peak: 0.0,
         }));
 
@@ -779,5 +945,26 @@ mod tests {
         assert_eq!(shared.monitor_gain, 0.8);
         assert_eq!(shared.monitor_pan, 0.4);
         assert!(shared.monitor_samples.is_empty());
+    }
+
+    #[test]
+    fn input_preview_updates_peak_without_storing_recorded_samples() {
+        let shared = Arc::new(Mutex::new(RecordingShared {
+            samples: Vec::new(),
+            monitor_samples: VecDeque::new(),
+            sample_rate: 48_000,
+            monitor_enabled: true,
+            monitor_gain: 1.0,
+            monitor_pan: 0.0,
+            capture_enabled: false,
+            peak: 0.0,
+        }));
+
+        capture_samples([0.0, 0.75, -0.5].into_iter(), &shared);
+
+        let shared = shared.lock().expect("shared recording state");
+        assert!(shared.samples.is_empty());
+        assert_eq!(shared.monitor_samples.len(), 3);
+        assert_eq!(shared.peak, 0.75);
     }
 }

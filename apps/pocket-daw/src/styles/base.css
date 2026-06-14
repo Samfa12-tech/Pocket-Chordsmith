@@ -247,18 +247,49 @@ h1 {
 
 .transport-readout {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(6, minmax(58px, 1fr));
+  gap: 7px;
+  min-width: 0;
   font-size: 12px;
 }
 
 .transport-readout span {
-  display: block;
-  padding: 8px 10px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 66px;
+  padding: 7px 6px;
   border: 1px solid #28334f;
   border-radius: 6px;
   background: #0e1423;
+  overflow: hidden;
   text-align: center;
+  line-height: 1.12;
+}
+
+.transport-readout strong,
+.transport-readout small {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.transport-readout strong {
+  color: #f3f7ff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.transport-readout small {
+  color: #aebee2;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .transport-readout span.playing {
@@ -1679,7 +1710,7 @@ button.record:hover {
   }
 
   .transport-readout {
-    grid-template-columns: repeat(4, minmax(90px, 1fr));
+    grid-template-columns: repeat(4, minmax(72px, 1fr));
   }
 
   .quick-start {

@@ -169,6 +169,10 @@ function renderTransport(state: AppState): string {
       : state.recording.status === "stopping"
         ? "Stopping recording"
         : "Record";
+  const barBeat = formatBarBeatParts(state.playheadBar, project.project.timeSig, project.project.ppq);
+  const recordingPrimary = state.recording.status === "recording" ? "Recording" : recordingLabel;
+  const recordingSecondary = state.recording.status === "recording" ? formatDuration(state.recording.elapsedSeconds) : "";
+  const metroDetail = metronome.enabled ? `${metronome.countInBars} bar` : "off";
   return `
     <header class="transport" data-layout-zone="transport">
       <div class="brand">
@@ -192,12 +196,12 @@ function renderTransport(state: AppState): string {
         <button data-action="controls-open">About</button>
       </div>
       <div class="transport-readout">
-        <span data-playing-state="true" class="${state.playing ? "playing" : ""}">${state.playing ? "Playing" : "Stopped"}</span>
-        <span data-recording-state="true" class="${recordingActive ? "recording" : ""}">${escapeHtml(recordingLabel)}</span>
-        <span>${Math.round(project.project.bpm)} BPM</span>
-        <span>${metronome.enabled ? `Metro ${metronome.countInBars} bar` : "Metro off"}</span>
-        <span>${escapeHtml(project.project.key)} ${escapeHtml(project.project.scale)}</span>
-        <span data-playhead-readout="true">${escapeHtml(formatBarBeat(state.playheadBar, project.project.timeSig, project.project.ppq))}</span>
+        <span data-playing-state="true" class="${state.playing ? "playing" : ""}"><strong>${state.playing ? "Playing" : "Stopped"}</strong></span>
+        <span data-recording-state="true" class="${recordingActive ? "recording" : ""}"><strong>${escapeHtml(recordingPrimary)}</strong>${recordingSecondary ? `<small>${escapeHtml(recordingSecondary)}</small>` : ""}</span>
+        <span><strong>${Math.round(project.project.bpm)}</strong><small>BPM</small></span>
+        <span><strong>Metro</strong><small>${escapeHtml(metroDetail)}</small></span>
+        <span><strong>${escapeHtml(project.project.key)}</strong><small>${escapeHtml(project.project.scale)}</small></span>
+        <span data-playhead-readout="true"><strong>${escapeHtml(barBeat.bar)}</strong><small>${escapeHtml(barBeat.beat)}</small></span>
       </div>
       <div class="status">${escapeHtml(state.status)}</div>
       ${state.busyMessage ? `
@@ -1124,20 +1128,22 @@ function renderMediaWaveform(item: { metadata?: Record<string, unknown> }): stri
 function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Track, meterLevel: number, state: AppState): string {
   const panLabel = panReadout(track.pan);
   const volumeLabel = `${Math.round(track.volume * 100)}%`;
-  const meterLabel = `${Math.round(meterLevel * 100)}%`;
   const isMaster = track.role === "master";
   const isReturn = track.role === "fx-return";
   const canMuteSolo = !isMaster && !isReturn;
   const canArm = !!track.recordKind && track.recordKind !== "none";
+  const inputPreviewActive = track.id === state.recording.trackId && (track.armed || state.recording.status === "recording");
+  const displayMeterLevel = inputPreviewActive ? state.recording.inputPeak : meterLevel;
+  const meterLabel = `${Math.round(displayMeterLevel * 100)}%`;
   return `
-    <div class="strip ${track.active === false ? "inactive" : ""}">
+    <div class="strip ${canArm ? "record-capable" : ""} ${track.active === false ? "inactive" : ""}">
       <div class="strip-name">
         <button type="button" data-track-rename="${sanitizeDataAttr(track.id)}" title="${escapeAttr(`Rename ${track.name}`)}">${escapeHtml(track.name)}</button>
         <small>${isMaster ? "Output" : track.active === false ? "Inactive" : track.solo ? "Solo" : track.mute ? "Muted" : "Active"}</small>
       </div>
       ${canArm ? renderMixerInputSelector(project, track, state) : ""}
       <div class="meter" data-meter="${sanitizeDataAttr(track.id)}" aria-label="${escapeAttr(`${track.name} peak meter ${meterLabel}`)}" title="Live peak meter">
-        <span data-meter-fill="${sanitizeDataAttr(track.id)}" style="height:${sanitizeCssLengthOrNumber(Math.round(meterLevel * 100), 0, 0, 100)}%"></span>
+        <span data-meter-fill="${sanitizeDataAttr(track.id)}" style="height:${sanitizeCssLengthOrNumber(Math.round(displayMeterLevel * 100), 0, 0, 100)}%"></span>
       </div>
       <label class="strip-control">
         <span>Volume <strong>${volumeLabel}</strong></span>
@@ -1151,7 +1157,7 @@ function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Tra
             : `${canMuteSolo ? `<button type="button" title="${escapeAttr(`Mute ${track.name}`)}" class="${track.mute ? "on" : ""}" data-mute-track="${sanitizeDataAttr(track.id)}">Mute</button>
                <button type="button" title="${escapeAttr(`Solo ${track.name}`)}" class="${track.solo ? "on" : ""}" data-solo-track="${sanitizeDataAttr(track.id)}">Solo</button>` : `<span class="strip-note">Return channel</span>`}
                ${canArm ? `<button type="button" title="${escapeAttr(`Arm ${track.name} for mono recording`)}" class="${track.armed ? "on record" : ""}" data-arm-track="${sanitizeDataAttr(track.id)}">Arm</button>
-               <button type="button" title="${escapeAttr(`Monitor ${track.name} input during recording`)}" class="${track.monitorEnabled ? "on" : ""}" data-monitor-track="${sanitizeDataAttr(track.id)}">Monitor</button>` : ""}`
+               <button type="button" title="${escapeAttr(`Monitor ${track.name} input while armed or recording`)}" class="${track.monitorEnabled ? "on" : ""}" data-monitor-track="${sanitizeDataAttr(track.id)}">Monitor</button>` : ""}`
         }
       </div>
       ${!isMaster ? renderFxDropdown(track) : ""}
@@ -1161,7 +1167,7 @@ function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Tra
 
 function renderMixerInputSelector(project: ReturnType<typeof currentProject>, track: Track, state: AppState): string {
   const inputs = (project.audioDeviceSettings.devices || []).filter((device) => device.kind === "input" || device.kind === "duplex");
-  const active = state.recording.trackId === track.id && state.recording.status === "recording";
+  const active = state.recording.trackId === track.id && (track.armed || state.recording.status === "recording");
   const inputLabel = active
     ? state.recording.inputDeviceName || "Default input"
     : inputs.find((device) => device.id === track.inputDeviceId)?.name || inputs.find((device) => device.id === project.audioDeviceSettings.inputDeviceId)?.name || "Default input";
@@ -1174,7 +1180,7 @@ function renderMixerInputSelector(project: ReturnType<typeof currentProject>, tr
         <option value="">Default input</option>
         ${inputs.map((device) => `<option value="${escapeAttr(device.id)}" ${track.inputDeviceId === device.id ? "selected" : ""}>${escapeHtml(device.name)}</option>`).join("")}
       </select>
-      <i class="input-activity" title="Recording input activity"><b style="width:${sanitizeCssLengthOrNumber(Math.round(peak * 100), 0, 0, 100)}%"></b></i>
+      <i class="input-activity" title="Armed input activity"><b data-input-activity-fill="${sanitizeDataAttr(track.id)}" style="width:${sanitizeCssLengthOrNumber(Math.round(peak * 100), 0, 0, 100)}%"></b></i>
     </label>
   `;
 }
@@ -1430,8 +1436,13 @@ function releaseNotesSummary(notes: string): string {
 }
 
 function formatBarBeat(barValue: number, timeSig: number, ppq: number): string {
+  const parts = formatBarBeatParts(barValue, timeSig, ppq);
+  return `${parts.bar} ${parts.beat}`;
+}
+
+function formatBarBeatParts(barValue: number, timeSig: number, ppq: number): { bar: string; beat: string } {
   const pos = barFloatToPosition(barValue, timeSig, ppq);
-  return `Bar ${pos.bar} Beat ${pos.beat}`;
+  return { bar: `Bar ${pos.bar}`, beat: `Beat ${pos.beat}` };
 }
 
 function modeLabel(mode: AppState["snapMode"]): string {

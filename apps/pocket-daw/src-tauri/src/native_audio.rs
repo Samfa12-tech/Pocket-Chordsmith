@@ -885,9 +885,13 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
             if local > dur + 0.18 {
                 return 0.0;
             }
-            let env = note_envelope(local, dur, 0.006, 0.08, 0.55, 0.18);
+            let saw_env = note_envelope(local, dur, 0.006, 0.08, 0.55, 0.18);
+            let sub_dur = (dur * 0.65).min(0.12).max(0.02);
+            let sub_env = note_envelope(local, sub_dur, 0.006, 0.08, 0.45, 0.14);
             let freq = midi_to_freq(midi) as f32;
-            (saw(freq, local) * 0.62 + phase(freq * 0.5, local) * 0.38) * env * velocity * 0.48
+            let saw_layer = saw(freq, local) * saw_env * 0.72;
+            let sub_layer = phase(freq * 0.5, local) * sub_env * 0.28;
+            (saw_layer + sub_layer) * velocity * 0.22
         }
         "melody" | "midi" => {
             let midi = event.midi.unwrap_or(72.0);

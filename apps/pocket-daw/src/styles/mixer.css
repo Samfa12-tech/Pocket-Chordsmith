@@ -4,10 +4,10 @@
   grid-auto-flow: column;
   grid-auto-columns: minmax(174px, 190px);
   grid-template-columns: none;
+  align-items: stretch;
   gap: 10px;
-  min-height: 318px;
-  max-height: 340px;
-  padding: 10px 18px;
+  min-height: 452px;
+  padding: 10px 18px 28px;
   border-top: 1px solid var(--line);
   background: #0b1020;
   overflow-x: auto;
@@ -17,13 +17,19 @@
 
 .strip {
   display: grid;
-  grid-template-rows: 28px minmax(0, 58px) 32px 32px 30px auto;
+  grid-template-rows: 28px 48px 38px 38px 64px minmax(50px, auto);
   gap: 6px;
   min-width: 0;
+  min-height: 322px;
   padding: 8px;
   border: 1px solid #293550;
   border-radius: 8px;
   background: #111827;
+}
+
+.strip.record-capable {
+  grid-template-rows: 28px 76px 48px 38px 38px 64px minmax(50px, auto);
+  min-height: 406px;
 }
 
 .strip-name {
@@ -35,11 +41,34 @@
   font-weight: 800;
 }
 
-.strip-name span,
+.strip-name button,
 .strip-name small {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.strip-name button {
+  justify-self: start;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #eef4ff;
+  background: transparent;
+  font: inherit;
+  line-height: 1.2;
+  text-align: left;
+  box-shadow: none;
+  appearance: none;
+}
+
+.strip-name button:hover,
+.strip-name button:focus-visible {
+  color: #40d8ff;
+  background: transparent;
 }
 
 .strip-name small {
@@ -51,6 +80,7 @@
 .meter {
   position: relative;
   overflow: hidden;
+  min-height: 0;
   border: 1px solid #26314c;
   border-radius: 5px;
   background: #070b14;
@@ -104,6 +134,7 @@
 }
 
 .strip-input {
+  align-self: stretch;
   gap: 4px;
   min-height: 0;
   padding: 5px 6px;
@@ -127,6 +158,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
+  align-content: stretch;
 }
 
 .strip-buttons button {
