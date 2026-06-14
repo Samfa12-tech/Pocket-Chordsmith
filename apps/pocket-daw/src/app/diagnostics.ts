@@ -49,6 +49,8 @@ export interface TesterDiagnosticsPayload {
     countInBars: number;
     metronomeVolume: number;
     elapsedSeconds: number;
+    inputPeak: number;
+    inputDeviceName: string | null;
     message: string;
   };
   updater: {
@@ -142,6 +144,8 @@ export function buildTesterDiagnosticsPayload(
       countInBars: metronome.countInBars,
       metronomeVolume: metronome.volume,
       elapsedSeconds: state.recording.elapsedSeconds,
+      inputPeak: state.recording.inputPeak,
+      inputDeviceName: state.recording.inputDeviceName,
       message: state.recording.message
     },
     updater: {

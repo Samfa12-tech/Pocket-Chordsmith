@@ -5,7 +5,7 @@ import { migratePocketDawProject } from "../compatibility/migrations";
 import { cloneProject, createDefaultMetronomeSettings, parsePocketDawProjectFile } from "../daw/dawProject";
 import { deleteClip, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, splitClipAtBar, toggleClipMute, trimClipEnd, trimClipStart } from "../daw/clips";
 import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
-import { addTrackToProject, type AddTrackKind } from "../daw/tracks";
+import { addTrackToProject, renameTrack, type AddTrackKind } from "../daw/tracks";
 import { placeAudioClipOnTimeline } from "../daw/audioClips";
 import { addMidiNote, deleteMidiNote, moveMidiNote, resizeMidiNote, setMidiNoteVelocity, transposeMidiNote } from "../daw/midiClips";
 import { addAutomationPoint, deleteAutomationPoint, ensureTrackAutomationLane, setAutomationLaneEnabled, type TrackAutomationField, updateAutomationPoint } from "../daw/automation";
@@ -313,6 +313,17 @@ export function removeTrackFxCommand(state: AppState, chainId: string, slotId: s
 
 export function setTrackInputCommand(state: AppState, trackId: string, inputDeviceId: string | null): AppState {
   return commitProject(state, setTrackInput(state.undoStack.present, trackId, inputDeviceId), "Updated track input.");
+}
+
+export function renameTrackCommand(state: AppState, trackId: string, name: string): AppState {
+  const track = state.undoStack.present.tracks.find((item) => item.id === trackId);
+  if (!track) return { ...state, status: "Choose a track before renaming." };
+  const next = renameTrack(state.undoStack.present, trackId, name);
+  if (next === state.undoStack.present) return { ...state, selectedTrackId: trackId, status: "Track name unchanged." };
+  return {
+    ...commitProject(state, next, `Renamed track to ${next.tracks.find((item) => item.id === trackId)?.name || "Track"}.`),
+    selectedTrackId: trackId
+  };
 }
 
 export function setLoopEnabled(state: AppState, enabled: boolean): AppState {

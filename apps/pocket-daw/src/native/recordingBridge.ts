@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+
 export interface NativeRecordingStartPayload {
   projectFilePath: string;
   projectTitle: string;
@@ -22,6 +24,8 @@ export interface NativeRecordingStatus {
   sampleRate: number;
   inputDeviceName: string | null;
   outputDeviceName: string | null;
+  peak: number;
+  sampleCount: number;
   lastError: string | null;
 }
 
@@ -37,31 +41,22 @@ export interface NativeRecordingStopResult {
   peak: number;
 }
 
-interface NativeRecordingApi {
-  invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+export function isNativeRecordingAvailable(): boolean {
+  return typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
 }
 
-function defaultApi(): NativeRecordingApi | null {
-  const tauri = (window as unknown as { __TAURI__?: { core?: NativeRecordingApi } }).__TAURI__;
-  return tauri?.core || null;
+export async function startNativeRecording(payload: NativeRecordingStartPayload): Promise<NativeRecordingStatus> {
+  if (!isNativeRecordingAvailable()) throw new Error("Live recording is only available in the installed Pocket DAW app.");
+  return invoke<NativeRecordingStatus>("native_recording_start", { payload });
 }
 
-export function isNativeRecordingAvailable(api: NativeRecordingApi | null = defaultApi()): boolean {
-  return !!api;
+export async function stopNativeRecording(): Promise<NativeRecordingStopResult> {
+  if (!isNativeRecordingAvailable()) throw new Error("Live recording is only available in the installed Pocket DAW app.");
+  return invoke<NativeRecordingStopResult>("native_recording_stop");
 }
 
-export async function startNativeRecording(payload: NativeRecordingStartPayload, api: NativeRecordingApi | null = defaultApi()): Promise<NativeRecordingStatus> {
-  if (!api) throw new Error("Live recording is only available in the installed Pocket DAW app.");
-  return api.invoke<NativeRecordingStatus>("native_recording_start", { payload });
-}
-
-export async function stopNativeRecording(api: NativeRecordingApi | null = defaultApi()): Promise<NativeRecordingStopResult> {
-  if (!api) throw new Error("Live recording is only available in the installed Pocket DAW app.");
-  return api.invoke<NativeRecordingStopResult>("native_recording_stop");
-}
-
-export async function nativeRecordingStatus(api: NativeRecordingApi | null = defaultApi()): Promise<NativeRecordingStatus> {
-  if (!api) {
+export async function nativeRecordingStatus(): Promise<NativeRecordingStatus> {
+  if (!isNativeRecordingAvailable()) {
     return {
       backend: "browser",
       available: false,
@@ -72,8 +67,10 @@ export async function nativeRecordingStatus(api: NativeRecordingApi | null = def
       sampleRate: 0,
       inputDeviceName: null,
       outputDeviceName: null,
+      peak: 0,
+      sampleCount: 0,
       lastError: "Live recording is only available in the installed Pocket DAW app."
     };
   }
-  return api.invoke<NativeRecordingStatus>("native_recording_status");
+  return invoke<NativeRecordingStatus>("native_recording_status");
 }

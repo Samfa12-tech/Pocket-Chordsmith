@@ -478,8 +478,20 @@ button.record:hover {
 }
 
 .timeline-track-name {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  color: #eef4ff;
+  background: transparent;
   font-size: 12px;
   font-weight: 800;
+  text-align: left;
+}
+
+.timeline-track-name:hover,
+.strip-name button:hover {
+  color: #40d8ff;
+  background: transparent;
 }
 
 .timeline-track-lanes {
@@ -506,6 +518,162 @@ button.record:hover {
 .track-header-controls button.record,
 .strip-buttons button.record {
   border-color: rgba(255, 107, 139, 0.56);
+}
+
+.mixer {
+  grid-area: mixer;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(186px, 1fr);
+  gap: 12px;
+  min-height: 292px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 14px 14px 20px;
+  border-top: 1px solid var(--line);
+  background: #090f1d;
+  scrollbar-gutter: stable;
+}
+
+.strip {
+  display: grid;
+  grid-template-rows: auto auto 42px auto auto auto;
+  align-content: start;
+  gap: 10px;
+  min-height: 304px;
+  padding: 12px;
+  border: 1px solid #293550;
+  border-radius: 8px;
+  background: #101625;
+}
+
+.strip-name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.strip-name button,
+.strip-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strip-name button {
+  justify-self: start;
+  min-height: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  color: #eef4ff;
+  background: transparent;
+  font-weight: 800;
+  text-align: left;
+}
+
+.strip-name small {
+  color: #9fb4e6;
+  font-size: 12px;
+}
+
+.meter {
+  position: relative;
+  overflow: hidden;
+  min-height: 42px;
+  border: 1px solid #283552;
+  border-radius: 6px;
+  background: #070c17;
+}
+
+.meter span {
+  position: absolute;
+  inset: auto 0 0;
+  min-height: 2px;
+  background: linear-gradient(0deg, #168bff, #40d8ff);
+}
+
+.strip-control {
+  display: grid;
+  gap: 6px;
+}
+
+.strip-control span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #9fb4e6;
+  font-size: 12px;
+}
+
+.strip-control strong {
+  color: #eef4ff;
+}
+
+.strip-control select {
+  min-height: 34px;
+}
+
+.strip-input {
+  padding: 8px;
+  border: 1px solid #22304d;
+  border-radius: 6px;
+  background: #0a1020;
+}
+
+.input-activity {
+  position: relative;
+  overflow: hidden;
+  height: 5px;
+  border-radius: 999px;
+  background: #18233a;
+}
+
+.input-activity b {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 2px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #40d8ff, #7cff9b);
+}
+
+.strip-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.strip-buttons button,
+.strip-note {
+  min-height: 36px;
+}
+
+.recording-preview {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 2px;
+  z-index: 4;
+  pointer-events: none;
+  border-style: dashed;
+  background: rgba(53, 17, 29, 0.88);
+  box-shadow: 0 0 0 1px rgba(255, 107, 139, 0.18) inset;
+}
+
+.live-waveform b {
+  background: rgba(255, 229, 235, 0.86);
+}
+
+.strip-note {
+  display: grid;
+  grid-column: 1 / -1;
+  place-items: center;
+  padding: 0 10px;
+  border: 1px solid #293550;
+  border-radius: 6px;
+  color: #c7d2ec;
+  background: #0d1322;
+  font-weight: 800;
+  text-align: center;
 }
 
 .track-state {
@@ -1039,6 +1207,32 @@ button.record:hover {
   gap: 10px;
   justify-content: flex-end;
   padding: 0 18px 18px;
+}
+
+.feedback-panel {
+  width: min(700px, 100%);
+}
+
+.feedback-body {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px 18px;
+}
+
+.feedback-body label {
+  color: #eef4ff;
+  font-weight: 700;
+}
+
+.feedback-body textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+.feedback-body p {
+  color: #aab7d2;
+  font-size: 13px;
+  line-height: 1.42;
 }
 
 .add-track-panel {

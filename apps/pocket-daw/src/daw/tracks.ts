@@ -45,6 +45,18 @@ export function trackIsAudible(track: Track, allTracks: Track[]): boolean {
   return true;
 }
 
+export function renameTrack(project: PocketDawProject, trackId: string, name: string): PocketDawProject {
+  const cleaned = cleanTrackName(name);
+  if (!cleaned) return project;
+  const next = cloneProject(project);
+  const track = next.tracks.find((item) => item.id === trackId);
+  if (!track || track.name === cleaned) return project;
+  track.name = cleaned;
+  const chain = next.fx?.chains.find((item) => item.ownerTrackId === trackId || item.id === track.fxChainId);
+  if (chain) chain.name = `${cleaned} FX`;
+  return next;
+}
+
 export type AddTrackKind = "live-vocals" | "live-instrument" | "chordsmith-drums" | "chordsmith-bass" | "chordsmith-chords" | "chordsmith-melody" | "chordsmith-guitar";
 
 export function addTrackToProject(project: PocketDawProject, kind: AddTrackKind): { project: PocketDawProject; trackId: string } {
@@ -121,4 +133,8 @@ function uniqueTrackId(project: PocketDawProject, base: string) {
 
 function titleCase(value: string) {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function cleanTrackName(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, 64);
 }

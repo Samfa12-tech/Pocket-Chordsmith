@@ -70,6 +70,7 @@ export function renderAppShell(state: AppState): string {
       ${state.showAddTrack ? renderAddTrackPanel() : ""}
       ${state.showAudioSettings ? renderAudioSettingsPanel(state) : ""}
       ${state.showUpdaterPanel ? renderUpdaterPanel(state) : ""}
+      ${state.showFeedbackPanel ? renderFeedbackPanel(state) : ""}
       <section class="import-panel" data-layout-zone="import">
         <textarea id="importText" spellcheck="false" placeholder="Paste PCS1 share code, raw Pocket Chordsmith JSON, Pocket DJ source session, or .pocketdaw JSON">${escapeHtml(state.importText)}</textarea>
         <div class="import-actions">
@@ -136,6 +137,8 @@ function renderMenuStrip(state: AppState): string {
       ])}
       ${renderMenuGroup("Help", [
         ["Check for Updates", "updater-open"],
+        ["Send Feedback", "feedback-open"],
+        ["More by Samfa12", "more-by-samfa12"],
         ["About / Diagnostics", "controls-open"],
         ["Export Diagnostics", "export-diagnostics"]
       ])}
@@ -359,6 +362,7 @@ function renderTimelineRows(state: AppState): string {
         <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}">
           ${renderTimelineTrackHeader(track, state.selectedTrackId === track.id, pcs)}
           ${clips.map((clip) => renderClip(project, clip, state.selectedClipId === clip.id, track)).join("")}
+          ${renderRecordingPreview(state, track)}
           ${renderInlineChordsmithEditor(state, pcs, track, clips)}
         </div>
       `
@@ -374,7 +378,7 @@ function renderTimelineTrackHeader(track: Track, selected: boolean, pcs: Sanitiz
     <div class="timeline-track-header ${selected ? "selected" : ""} ${track.active === false ? "inactive" : ""}" data-track-id="${sanitizeDataAttr(track.id)}">
       <span class="track-colour" style="background:${safeTrackColour(track.colour)}"></span>
       <span class="timeline-track-text">
-        <span class="timeline-track-name">${escapeHtml(track.name)}</span>
+        <button type="button" class="timeline-track-name" data-track-rename="${sanitizeDataAttr(track.id)}" title="${escapeAttr(`Rename ${track.name}`)}">${escapeHtml(track.name)}</button>
         ${lanes ? `<span class="timeline-track-lanes">${escapeHtml(lanes)}</span>` : ""}
       </span>
       <span class="track-header-controls">
@@ -558,6 +562,24 @@ function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, sele
       ${midi?.notes.length ? `<i class="midi-note-strip">${midi.notes.slice(0, 32).map((note) => `<b style="left:${Math.max(0, Math.min(100, (note.startTick / Math.max(1, midi.ppq * clip.barLength * project.project.timeSig)) * 100))}%;width:${Math.max(3, Math.min(24, (note.durationTicks / Math.max(1, midi.ppq * clip.barLength * project.project.timeSig)) * 100))}%;bottom:${Math.max(2, Math.min(24, (note.pitch - 36) / 3))}px"></b>`).join("")}</i>` : ""}
       ${clip.type === "generated-section" ? `<span class="clip-drag-handle" data-clip-drag-handle="${sanitizeDataAttr(clip.id)}" title="Drag to move this section with snap"></span><span class="clip-loop-handle" data-clip-loop-handle="${sanitizeDataAttr(clip.id)}" title="Drag right to repeat this section"></span>` : ""}
     </button>
+  `;
+}
+
+function renderRecordingPreview(state: AppState, track: Track): string {
+  const project = currentProject(state);
+  const recording = state.recording;
+  if (recording.trackId !== track.id || !["count-in", "recording", "stopping"].includes(recording.status)) return "";
+  const startBar = recording.startBar || state.playheadBar || 1;
+  const secondsPerBar = Math.max(0.001, project.project.timeSig * (60 / Math.max(1, project.project.bpm)));
+  const barLength = recording.status === "count-in" ? 0.25 : Math.max(0.25, recording.elapsedSeconds / secondsPerBar);
+  const peaks = recording.livePeaks.length ? recording.livePeaks : [recording.inputPeak || 0.05];
+  const label = recording.status === "count-in" ? "Count-in" : recording.status === "stopping" ? "Writing take" : "Recording";
+  return `
+    <div class="clip recording-preview" data-recording-preview="true" style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(startBar - 1, 0)} * var(--bar)`)};width:calc(${sanitizeCssLengthOrNumber(barLength, 0.25, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(track.colour)};">
+      <strong>${escapeHtml(label)}</strong>
+      <span>${escapeHtml(recording.inputDeviceName || "Default input")}</span>
+      <i class="clip-waveform live-waveform">${peaks.map((peak) => `<b style="height:${Math.max(2, Math.round(Number(peak) * 20))}px"></b>`).join("")}</i>
+    </div>
   `;
 }
 
@@ -987,7 +1009,7 @@ function renderMixer(state: AppState): string {
   const project = currentProject(state);
   return `
     <footer class="mixer" data-layout-zone="mixer" data-scroll-key="mixer">
-      ${project.tracks.map((track) => renderMixerStrip(track, state.meterLevels[track.id] || 0)).join("")}
+      ${project.tracks.map((track) => renderMixerStrip(project, track, state.meterLevels[track.id] || 0, state)).join("")}
     </footer>
   `;
 }
@@ -1099,7 +1121,7 @@ function renderMediaWaveform(item: { metadata?: Record<string, unknown> }): stri
     return `<div class="media-waveform">${peaks.map((peak) => `<span style="height:${sanitizeCssLengthOrNumber(Math.max(2, Math.round(Number(peak) * 28)), 2, 2, 28)}px"></span>`).join("")}</div>`;
 }
 
-function renderMixerStrip(track: Track, meterLevel: number): string {
+function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Track, meterLevel: number, state: AppState): string {
   const panLabel = panReadout(track.pan);
   const volumeLabel = `${Math.round(track.volume * 100)}%`;
   const meterLabel = `${Math.round(meterLevel * 100)}%`;
@@ -1110,9 +1132,10 @@ function renderMixerStrip(track: Track, meterLevel: number): string {
   return `
     <div class="strip ${track.active === false ? "inactive" : ""}">
       <div class="strip-name">
-        <span>${escapeHtml(track.name)}</span>
+        <button type="button" data-track-rename="${sanitizeDataAttr(track.id)}" title="${escapeAttr(`Rename ${track.name}`)}">${escapeHtml(track.name)}</button>
         <small>${isMaster ? "Output" : track.active === false ? "Inactive" : track.solo ? "Solo" : track.mute ? "Muted" : "Active"}</small>
       </div>
+      ${canArm ? renderMixerInputSelector(project, track, state) : ""}
       <div class="meter" data-meter="${sanitizeDataAttr(track.id)}" aria-label="${escapeAttr(`${track.name} peak meter ${meterLabel}`)}" title="Live peak meter">
         <span data-meter-fill="${sanitizeDataAttr(track.id)}" style="height:${sanitizeCssLengthOrNumber(Math.round(meterLevel * 100), 0, 0, 100)}%"></span>
       </div>
@@ -1133,6 +1156,25 @@ function renderMixerStrip(track: Track, meterLevel: number): string {
       </div>
       ${!isMaster ? renderFxDropdown(track) : ""}
     </div>
+  `;
+}
+
+function renderMixerInputSelector(project: ReturnType<typeof currentProject>, track: Track, state: AppState): string {
+  const inputs = (project.audioDeviceSettings.devices || []).filter((device) => device.kind === "input" || device.kind === "duplex");
+  const active = state.recording.trackId === track.id && state.recording.status === "recording";
+  const inputLabel = active
+    ? state.recording.inputDeviceName || "Default input"
+    : inputs.find((device) => device.id === track.inputDeviceId)?.name || inputs.find((device) => device.id === project.audioDeviceSettings.inputDeviceId)?.name || "Default input";
+  const peak = active ? state.recording.inputPeak : 0;
+  return `
+    <label class="strip-control strip-input">
+      <span>Input <strong>${escapeHtml(inputLabel)}</strong></span>
+      <select data-track-input="${sanitizeDataAttr(track.id)}" aria-label="${escapeAttr(`Recording input for ${track.name}`)}">
+        <option value="">Default input</option>
+        ${inputs.map((device) => `<option value="${escapeAttr(device.id)}" ${track.inputDeviceId === device.id ? "selected" : ""}>${escapeHtml(device.name)}</option>`).join("")}
+      </select>
+      <i class="input-activity" title="Recording input activity"><b style="width:${sanitizeCssLengthOrNumber(Math.round(peak * 100), 0, 0, 100)}%"></b></i>
+    </label>
   `;
 }
 
@@ -1328,6 +1370,28 @@ function renderControlsPanel(state: AppState): string {
         <div class="diagnostic-actions">
           <button data-action="copy-diagnostics">Copy Diagnostics</button>
           <button data-action="export-diagnostics">Export Diagnostics JSON</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderFeedbackPanel(state: AppState): string {
+  return `
+    <div class="modal-backdrop" data-feedback-backdrop="true">
+      <section class="controls-panel feedback-panel" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+        <header>
+          <h2 id="feedback-title">Send Feedback</h2>
+          <button data-action="feedback-close">Close</button>
+        </header>
+        <div class="feedback-body">
+          <label for="feedbackText">Feedback</label>
+          <textarea id="feedbackText" data-feedback-text="true" spellcheck="true" placeholder="What happened? What did you expect?">${escapeHtml(state.feedbackText)}</textarea>
+          <p>Pocket DAW will open an email to Sam and include diagnostics in the body when it fits. Full diagnostics are also copied or exported for bug reports.</p>
+        </div>
+        <div class="diagnostic-actions">
+          <button data-action="feedback-copy-diagnostics">Copy Diagnostics</button>
+          <button data-action="feedback-send">Send Email</button>
         </div>
       </section>
     </div>

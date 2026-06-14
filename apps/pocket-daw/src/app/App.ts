@@ -59,6 +59,7 @@ import {
   pitchMidiNoteCommand,
   redoCommand,
   renameMarkerCommand,
+  renameTrackCommand,
   repeatClipToEndCommand,
   removeTrackFxCommand,
   routeTrackOutputCommand,
@@ -126,10 +127,11 @@ import {
 import { importMidiFileToProject } from "../daw/midiClips";
 import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
-import { isNativeRecordingAvailable, startNativeRecording, stopNativeRecording } from "../native/recordingBridge";
+import { isNativeRecordingAvailable, nativeRecordingStatus, startNativeRecording, stopNativeRecording } from "../native/recordingBridge";
 import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan, projectWithOnlyTracksAudible } from "../daw/exportJobs";
 import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
 import { buildTesterDiagnosticsPayload, diagnosticsJson, runtimeLabel, runtimePlatform } from "./diagnostics";
+import { buildFeedbackEmailDraft, MORE_BY_SAMFA12_URL } from "./feedback";
 
 type MixerControlField = "volume" | "pan";
 type RenderSchedule = "none" | "live-dom" | "deferred" | "immediate";
@@ -176,6 +178,7 @@ export class App {
   private metronomeTimer: number | null = null;
   private recordingTimer: number | null = null;
   private recordingStartToken = 0;
+  private recordingStatusBusy = false;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -524,6 +527,9 @@ export class App {
     });
     this.root.querySelector<HTMLTextAreaElement>("#importText")?.addEventListener("input", (event) => {
       this.state.importText = (event.target as HTMLTextAreaElement).value;
+    });
+    this.root.querySelector<HTMLTextAreaElement>("[data-feedback-text]")?.addEventListener("input", (event) => {
+      this.state.feedbackText = (event.target as HTMLTextAreaElement).value;
     });
     this.root.querySelector<HTMLSelectElement>("#snapMode")?.addEventListener("change", (event) => {
       this.state.snapMode = (event.target as HTMLSelectElement).value as AppState["snapMode"];
@@ -1040,6 +1046,14 @@ export class App {
       if (nextName !== null) this.applyProjectState(renameMarkerCommand(this.state, markerId, nextName));
       return;
     }
+    const trackRename = target?.closest<HTMLElement>("[data-track-rename]");
+    if (trackRename) {
+      const trackId = trackRename.dataset.trackRename || "";
+      const track = currentProject(this.state).tracks.find((item) => item.id === trackId);
+      const nextName = window.prompt("Track name", track?.name || "Track");
+      if (nextName !== null) this.applyProjectState(renameTrackCommand(this.state, trackId, nextName));
+      return;
+    }
     const markerDelete = target?.closest<HTMLElement>("[data-marker-delete]");
     if (markerDelete) {
       this.applyProjectState(deleteMarkerCommand(this.state, markerDelete.dataset.markerDelete || ""));
@@ -1139,6 +1153,18 @@ export class App {
     if (action === "updater-check") await this.checkForUpdates(true);
     if (action === "updater-download-install") await this.downloadAndInstallUpdate();
     if (action === "updater-restart") await this.restartAfterUpdate();
+    if (action === "feedback-open") {
+      this.state.showFeedbackPanel = true;
+      this.render();
+      this.root.querySelector<HTMLTextAreaElement>("[data-feedback-text]")?.focus();
+    }
+    if (action === "feedback-close") {
+      this.state.showFeedbackPanel = false;
+      this.render();
+    }
+    if (action === "feedback-copy-diagnostics") await this.copyDiagnostics();
+    if (action === "feedback-send") await this.sendFeedbackEmail();
+    if (action === "more-by-samfa12") this.openExternalUrl(MORE_BY_SAMFA12_URL);
     if (action === "media-pool-focus") {
       this.state.status = "Media Pool visible.";
       this.render();
@@ -1437,6 +1463,9 @@ export class App {
         startedAt: null,
         startBar: null,
         elapsedSeconds: 0,
+        inputPeak: 0,
+        inputDeviceName: null,
+        livePeaks: [],
         message: "Recording count-in cancelled."
       };
       this.state.status = "Recording count-in cancelled.";
@@ -1456,6 +1485,9 @@ export class App {
         startedAt: null,
         startBar: null,
         elapsedSeconds: 0,
+        inputPeak: 0,
+        inputDeviceName: null,
+        livePeaks: [],
         message: this.state.status
       };
       this.render({ preserveScroll: true });
@@ -1486,6 +1518,9 @@ export class App {
         startedAt: null,
         startBar,
         elapsedSeconds: 0,
+        inputPeak: 0,
+        inputDeviceName: null,
+        livePeaks: [],
         message: `Count-in ${Math.max(1, Math.round(preRollSeconds))}s.`
       };
       this.state.status = `Recording ${track.name} after count-in.`;
@@ -1514,6 +1549,9 @@ export class App {
         startedAt: new Date().toISOString(),
         startBar,
         elapsedSeconds: 0,
+        inputPeak: Math.max(0, Math.min(1, status.peak || 0)),
+        inputDeviceName: status.inputDeviceName,
+        livePeaks: [],
         message: status.monitoring ? `Recording ${track.name}; monitor on.` : `Recording ${track.name}.`
       };
       this.state.status = this.state.recording.message;
@@ -1530,6 +1568,9 @@ export class App {
         startedAt: null,
         startBar,
         elapsedSeconds: 0,
+        inputPeak: 0,
+        inputDeviceName: null,
+        livePeaks: [],
         message
       };
       this.state.status = message;
@@ -1592,6 +1633,9 @@ export class App {
         startedAt: null,
         startBar: null,
         elapsedSeconds: 0,
+        inputPeak: 0,
+        inputDeviceName: null,
+        livePeaks: [],
         message: clipMessage
       };
       this.state.selectedClipId = placed.clipId || this.state.selectedClipId;
@@ -1605,6 +1649,9 @@ export class App {
         startedAt: null,
         startBar,
         elapsedSeconds: 0,
+        inputPeak: 0,
+        inputDeviceName: null,
+        livePeaks: [],
         message
       };
       this.state.status = message;
@@ -1618,6 +1665,7 @@ export class App {
     this.recordingTimer = window.setInterval(() => {
       if (this.state.recording.status !== "recording") return;
       this.state.recording.elapsedSeconds = (Date.now() - started) / 1000;
+      void this.refreshRecordingStatus();
       this.updateLiveDom();
     }, 250);
   }
@@ -1626,6 +1674,26 @@ export class App {
     if (this.recordingTimer !== null) {
       window.clearInterval(this.recordingTimer);
       this.recordingTimer = null;
+    }
+    this.recordingStatusBusy = false;
+  }
+
+  private async refreshRecordingStatus() {
+    if (this.recordingStatusBusy || this.state.recording.status !== "recording") return;
+    this.recordingStatusBusy = true;
+    try {
+      const status = await nativeRecordingStatus();
+      if (this.state.recording.status !== "recording") return;
+      const peak = Math.max(0, Math.min(1, Number(status.peak) || 0));
+      this.state.recording.inputPeak = peak;
+      this.state.recording.inputDeviceName = status.inputDeviceName || this.state.recording.inputDeviceName;
+      this.state.recording.elapsedSeconds = status.elapsedSeconds || this.state.recording.elapsedSeconds;
+      this.state.recording.livePeaks = [...this.state.recording.livePeaks, peak].slice(-64);
+      if (status.lastError) this.state.status = status.lastError;
+    } catch {
+      // Keep recording UI alive; stop/start calls surface actionable errors.
+    } finally {
+      this.recordingStatusBusy = false;
     }
   }
 
@@ -2601,20 +2669,25 @@ export class App {
 
   private async copyDiagnostics() {
     const text = diagnosticsJson(this.buildDiagnosticsPayload());
+    const copied = await this.copyTextOrDownloadDiagnostics(text);
+    this.state.status = copied ? "Copied diagnostics to clipboard." : "Clipboard unavailable; downloaded diagnostics JSON instead.";
+    this.render({ preserveScroll: true });
+  }
+
+  private async copyTextOrDownloadDiagnostics(text: string): Promise<boolean> {
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
       } else if (!this.copyTextFallback(text)) {
         throw new Error("Clipboard API is not available.");
       }
-      this.state.status = "Copied diagnostics to clipboard.";
+      return true;
     } catch {
       const project = currentProject(this.state);
       const blob = new Blob([text], { type: "application/json" });
       downloadBlob(blob, safeName(`${project.project.title}-diagnostics`, "json"));
-      this.state.status = "Clipboard unavailable; downloaded diagnostics JSON instead.";
+      return false;
     }
-    this.render({ preserveScroll: true });
   }
 
   private copyTextFallback(text: string): boolean {
@@ -2642,6 +2715,34 @@ export class App {
       runtime: runtimeLabel(),
       platform: runtimePlatform()
     });
+  }
+
+  private async sendFeedbackEmail() {
+    const diagnostics = this.buildDiagnosticsPayload();
+    const text = diagnosticsJson(diagnostics);
+    const draft = buildFeedbackEmailDraft({
+      feedback: this.state.feedbackText,
+      diagnostics,
+      diagnosticsJson: text
+    });
+    let copied = false;
+    if (!draft.diagnosticsIncludedInBody) copied = await this.copyTextOrDownloadDiagnostics(text);
+    this.openExternalUrl(draft.mailtoUrl);
+    this.state.status = draft.diagnosticsIncludedInBody
+      ? "Opened feedback email with diagnostics included."
+      : copied
+        ? "Opened feedback email. Full diagnostics copied to clipboard."
+        : "Opened feedback email. Full diagnostics downloaded as JSON.";
+    this.render({ preserveScroll: true });
+  }
+
+  private openExternalUrl(url: string) {
+    if (url.startsWith("mailto:")) {
+      window.location.href = url;
+      return;
+    }
+    const opened = window.open(url, "_blank", "noopener,noreferrer");
+    if (!opened) window.location.href = url;
   }
 
   private async refreshAudioDevices() {
@@ -2686,6 +2787,9 @@ export class App {
       startedAt: null,
       startBar: null,
       elapsedSeconds: 0,
+      inputPeak: 0,
+      inputDeviceName: null,
+      livePeaks: [],
       message: "Ready to record one armed live track."
     };
     this.engine.setProject(project);
@@ -2711,6 +2815,9 @@ export class App {
       startedAt: null,
       startBar: null,
       elapsedSeconds: 0,
+      inputPeak: 0,
+      inputDeviceName: null,
+      livePeaks: [],
       message: "Ready to record one armed live track."
     };
     this.engine.setProject(project);

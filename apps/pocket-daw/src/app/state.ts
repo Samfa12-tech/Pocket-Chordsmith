@@ -38,6 +38,8 @@ export interface AppState {
   showAddTrack: boolean;
   showAudioSettings: boolean;
   showUpdaterPanel: boolean;
+  showFeedbackPanel: boolean;
+  feedbackText: string;
   updaterStatus: UpdaterState;
   updaterMessage: string;
   updaterCurrentVersion: string;
@@ -71,6 +73,9 @@ export interface RecordingUiState {
   startedAt: string | null;
   startBar: number | null;
   elapsedSeconds: number;
+  inputPeak: number;
+  inputDeviceName: string | null;
+  livePeaks: number[];
   message: string;
 }
 
@@ -106,6 +111,8 @@ export function createInitialState(): AppState {
     showAddTrack: false,
     showAudioSettings: false,
     showUpdaterPanel: false,
+    showFeedbackPanel: false,
+    feedbackText: "",
     updaterStatus: "idle",
     updaterMessage: "Updates not checked yet.",
     updaterCurrentVersion: POCKET_DAW_VERSION,
@@ -132,6 +139,9 @@ export function createInitialState(): AppState {
       startedAt: null,
       startBar: null,
       elapsedSeconds: 0,
+      inputPeak: 0,
+      inputDeviceName: null,
+      livePeaks: [],
       message: "Ready to record one armed live track."
     }
   };
@@ -169,6 +179,9 @@ export function loadProjectIntoState(
       startedAt: null,
       startBar: null,
       elapsedSeconds: 0,
+      inputPeak: 0,
+      inputDeviceName: null,
+      livePeaks: [],
       message: "Ready to record one armed live track."
     }
   };

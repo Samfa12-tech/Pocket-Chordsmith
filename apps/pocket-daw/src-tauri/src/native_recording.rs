@@ -69,6 +69,9 @@ pub struct NativeRecordingStatus {
     input_device_name: Option<String>,
     #[serde(rename = "outputDeviceName")]
     output_device_name: Option<String>,
+    peak: f32,
+    #[serde(rename = "sampleCount")]
+    sample_count: usize,
     #[serde(rename = "lastError")]
     last_error: Option<String>,
 }
@@ -119,6 +122,8 @@ pub fn native_recording_status(
             sample_rate: 0,
             input_device_name: None,
             output_device_name: None,
+            peak: 0.0,
+            sample_count: 0,
             last_error: Some("Native recording state is unavailable.".to_string()),
         },
     }
@@ -307,11 +312,11 @@ fn runtime_status(runtime: &NativeRecordingRuntime) -> NativeRecordingStatus {
         .started_at
         .map(|started| started.elapsed().as_secs_f64())
         .unwrap_or(0.0);
-    let (monitoring, sample_rate) = runtime
+    let (monitoring, sample_rate, peak, sample_count) = runtime
         .shared
         .as_ref()
-        .and_then(|shared| shared.lock().ok().map(|shared| (shared.monitor_enabled, shared.sample_rate)))
-        .unwrap_or((false, 0));
+        .and_then(|shared| shared.lock().ok().map(|shared| (shared.monitor_enabled, shared.sample_rate, shared.peak, shared.samples.len())))
+        .unwrap_or((false, 0, 0.0, 0));
     NativeRecordingStatus {
         backend: "native-cpal".to_string(),
         available: true,
@@ -322,6 +327,8 @@ fn runtime_status(runtime: &NativeRecordingRuntime) -> NativeRecordingStatus {
         sample_rate,
         input_device_name: runtime.input_device_name.clone(),
         output_device_name: runtime.output_device_name.clone(),
+        peak,
+        sample_count,
         last_error: runtime.last_error.clone(),
     }
 }
