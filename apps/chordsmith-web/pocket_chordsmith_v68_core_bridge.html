@@ -1618,6 +1618,11 @@ function downloadTextFallback(filename, text){
     return false;
   }
 }
+function makePocketDawDownloadHandoffFileName(){
+  const stamp = Date.now().toString(36);
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `pocket-chordsmith-to-pocket-daw-${stamp}-${suffix}.pcs1.txt`;
+}
 function setPushHandoffStatus(message){
   if(els.pushHandoffStatus) els.pushHandoffStatus.textContent = message;
 }
@@ -1821,18 +1826,25 @@ async function pushToPocketDaw(){
   const targetBaseUrl = resolvePocketDawUrl();
   const encodedHandoff = encodePocketHandoff(payload);
   let deliveryResult = await sendPocketDawLocalHandoff(encodedHandoff);
-  let delivered = deliveryResult !== "failed";
+  let delivered = deliveryResult === "confirmed";
+  let downloadedHandoff = false;
   let opened = false;
   if(!delivered){
-    const wakeUrl = `${targetBaseUrl}?source=loopback`;
+    const fileName = makePocketDawDownloadHandoffFileName();
+    downloadedHandoff = downloadTextFallback(fileName, code);
+    const wakeUrl = downloadedHandoff
+      ? `${targetBaseUrl}?source=download&file=${encodeURIComponent(fileName)}`
+      : `${targetBaseUrl}?source=loopback`;
     opened = openInstalledAppProtocol(
       wakeUrl,
       "Pocket DAW launch was blocked; paste the code into installed Pocket DAW."
     );
-    if(opened){
+    if(opened && !downloadedHandoff){
       setPushHandoffStatus("Opening Pocket DAW, then sending the song locally...");
-      deliveryResult = await sendPocketDawLocalHandoff(encodedHandoff, {attempts: 16, delayMs: 350, formFallback: true});
-      delivered = deliveryResult !== "failed";
+      deliveryResult = await sendPocketDawLocalHandoff(encodedHandoff, {attempts: 16, delayMs: 350});
+      delivered = deliveryResult === "confirmed";
+    }else if(opened && downloadedHandoff){
+      setPushHandoffStatus("Pocket DAW is opening and importing the downloaded handoff file.");
     }
   }
   const copied = await copyTextForHandoff(
@@ -1840,12 +1852,12 @@ async function pushToPocketDaw(){
     "Pocket DAW song code copied",
     "Pocket DAW song code is ready in the project box; clipboard was blocked"
   );
-  if(delivered && deliveryResult === "submitted"){
-    setStatus("Song sent to Pocket DAW.");
-    setPushHandoffStatus("Pocket DAW was given the song through the installed-app local handoff. Check Pocket DAW for the import.");
-  }else if(delivered){
+  if(delivered){
     setStatus("Song sent to Pocket DAW.");
     setPushHandoffStatus("Pocket DAW received the song through the installed-app local handoff.");
+  }else if(opened && downloadedHandoff){
+    setStatus(copied ? "Opened Pocket DAW with downloaded handoff fallback." : "Pocket DAW launch requested with downloaded handoff fallback.");
+    setPushHandoffStatus("Pocket DAW should import the downloaded handoff file. If it does not, paste the PCS1 code into Import.");
   }else if(opened){
     setStatus(copied ? "Opened Pocket DAW; paste fallback is ready." : "Pocket DAW launch requested. Paste fallback is ready.");
     setPushHandoffStatus("Pocket DAW opened but did not confirm local receipt. Paste the PCS1 code into Import.");

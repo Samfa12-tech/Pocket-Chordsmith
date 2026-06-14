@@ -15,7 +15,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = "Pocket DAW v0.5.12 - Chordsmith Handoff Delivery Fix";
+export const RELEASE_TITLE = "Pocket DAW v0.5.13 - Chordsmith Download Handoff Fix";
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -192,7 +192,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Chordsmith Handoff Delivery Fix
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Chordsmith Download Handoff Fix
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -202,9 +202,9 @@ ${artifactTable}
 
 ## Highlights
 
-- Added a browser form-post fallback for the loopback-only installed-app handoff receiver, covering itch/browser environments that block readable localhost fetches.
-- \`pocket-daw://handoff?source=loopback\` is now treated as a wake/focus signal instead of a malformed handoff payload.
-- Pocket DAW accepts both raw local handoff POST bodies and browser form POST bodies from Pocket Chordsmith.
+- Added a downloaded handoff-file fallback for browser/itch environments where localhost delivery does not reach Pocket DAW.
+- Pocket Chordsmith now downloads a uniquely named PCS1 handoff file and wakes Pocket DAW with a tiny \`pocket-daw://handoff?source=download&file=...\` URL when direct localhost delivery cannot be confirmed.
+- Pocket DAW reads only constrained Pocket Chordsmith handoff filenames from Downloads, then imports through the same PCS1 importer used by paste/share-code import.
 - Pocket Chordsmith Send to Pocket DAW deep links are now forwarded into the running installed app when Windows reuses an existing Pocket DAW process.
 - About/Diagnostics now reports the last handoff source and result so testers can tell whether Windows delivered the protocol URL.
 - Timeline workspace can now be resized by dragging the splitter below the timeline, pushing mixer/channel controls lower.

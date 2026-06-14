@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { extractDeepLinkUrlsFromSecondInstancePayload, handoffFromLocalServerPayload } from "../src/native/deepLinkBridge";
+import {
+  downloadHandoffFileNameFromUrl,
+  extractDeepLinkUrlsFromSecondInstancePayload,
+  handoffFromDownloadFilePayload,
+  handoffFromLocalServerPayload
+} from "../src/native/deepLinkBridge";
 import { buildPocketHandoff, encodePocketHandoff } from "../src/native/pocketHandoff";
 
 describe("deep link bridge", () => {
@@ -41,5 +46,23 @@ describe("deep link bridge", () => {
       source: "local-server",
       result: "failed-parse"
     }));
+  });
+
+  it("extracts downloaded handoff file names from tiny protocol URLs", () => {
+    const fileName = "pocket-chordsmith-to-pocket-daw-test-123.pcs1.txt";
+
+    expect(downloadHandoffFileNameFromUrl(`pocket-daw://handoff?source=download&file=${encodeURIComponent(fileName)}`)).toBe(fileName);
+    expect(downloadHandoffFileNameFromUrl("pocket-daw://handoff?source=loopback")).toBeNull();
+  });
+
+  it("wraps downloaded PCS1 handoff files for the existing importer", () => {
+    const handoff = handoffFromDownloadFilePayload({
+      fileName: "pocket-chordsmith-to-pocket-daw-test-123.pcs1.txt",
+      contents: "PCS1:downloaded"
+    });
+
+    expect(handoff?.source).toBe("download-file");
+    expect(handoff?.code).toBe("PCS1:downloaded");
+    expect(handoff?.payload.kind).toBe("chordsmith-to-daw");
   });
 });

@@ -124,12 +124,13 @@ test("Pocket DAW handoff targets the installed app protocol", async ({ page }) =
   await expect(page.locator("#pushHandoffStatus")).toContainText("Pocket DAW received the song");
 });
 
-test("Pocket DAW handoff wakes the installed app with a short protocol URL when local handoff is offline", async ({
+test("Pocket DAW handoff wakes the installed app with a downloaded handoff file when local handoff is offline", async ({
   page,
 }) => {
   await page.evaluate(() => {
     window.__pocketChordsmithProtocolLaunches = [];
     window.__pocketChordsmithFetches = [];
+    window.__pocketChordsmithDownloads = [];
     let calls = 0;
     window.fetch = async (url, options = {}) => {
       calls += 1;
@@ -138,12 +139,16 @@ test("Pocket DAW handoff wakes the installed app with a short protocol URL when 
         method: options.method || "GET",
         body: String(options.body || ""),
       });
-      return { ok: calls > 1, json: async () => ({ ok: calls > 1 }), text: async () => "ok" };
+      return { ok: false, json: async () => ({ ok: false }), text: async () => "offline" };
     };
     const originalClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function () {
       if (this.href.startsWith("pocket-daw://")) {
         window.__pocketChordsmithProtocolLaunches.push(this.href);
+        return;
+      }
+      if (this.download) {
+        window.__pocketChordsmithDownloads.push({ fileName: this.download, href: this.href });
         return;
       }
       return originalClick.call(this);
@@ -155,19 +160,24 @@ test("Pocket DAW handoff wakes the installed app with a short protocol URL when 
 
   const fetches = await page.evaluate(() => window.__pocketChordsmithFetches);
   const protocolLaunches = await page.evaluate(() => window.__pocketChordsmithProtocolLaunches);
-  expect(fetches.length).toBeGreaterThanOrEqual(2);
-  expect(protocolLaunches).toEqual(["pocket-daw://handoff?source=loopback"]);
+  const downloads = await page.evaluate(() => window.__pocketChordsmithDownloads);
+  expect(fetches.length).toBe(1);
+  expect(downloads).toHaveLength(1);
+  expect(downloads[0].fileName).toMatch(/^pocket-chordsmith-to-pocket-daw-.+\.pcs1\.txt$/);
+  expect(protocolLaunches).toHaveLength(1);
+  expect(protocolLaunches[0]).toContain("pocket-daw://handoff?source=download&file=");
   expect(protocolLaunches[0]).not.toContain("pocketHandoff=");
-  await expect(page.locator("#pushHandoffStatus")).toContainText("Pocket DAW received the song");
+  expect(decodeURIComponent(protocolLaunches[0])).toContain(downloads[0].fileName);
+  await expect(page.locator("#pushHandoffStatus")).toContainText("downloaded handoff file");
 });
 
-test("Pocket DAW handoff falls back to a local form post when fetch cannot confirm", async ({
+test("Pocket DAW handoff does not claim success when it falls back to a downloaded handoff file", async ({
   page,
 }) => {
   await page.evaluate(() => {
     window.__pocketChordsmithProtocolLaunches = [];
     window.__pocketChordsmithFetches = [];
-    window.__pocketChordsmithFormPosts = [];
+    window.__pocketChordsmithDownloads = [];
     window.fetch = async (url, options = {}) => {
       window.__pocketChordsmithFetches.push({
         url: String(url),
@@ -182,16 +192,11 @@ test("Pocket DAW handoff falls back to a local form post when fetch cannot confi
         window.__pocketChordsmithProtocolLaunches.push(this.href);
         return;
       }
+      if (this.download) {
+        window.__pocketChordsmithDownloads.push({ fileName: this.download, href: this.href });
+        return;
+      }
       return originalClick.call(this);
-    };
-    HTMLFormElement.prototype.submit = function () {
-      const data = new FormData(this);
-      window.__pocketChordsmithFormPosts.push({
-        action: this.action,
-        method: this.method,
-        target: this.target,
-        encodedHandoffLength: String(data.get("encodedHandoff") || "").length,
-      });
     };
   });
 
@@ -199,17 +204,14 @@ test("Pocket DAW handoff falls back to a local form post when fetch cannot confi
   await page.getByRole("button", { name: "Send to Pocket DAW" }).click();
 
   await expect
-    .poll(() => page.evaluate(() => window.__pocketChordsmithFormPosts.length), { timeout: 8000 })
+    .poll(() => page.evaluate(() => window.__pocketChordsmithProtocolLaunches.length), { timeout: 8000 })
     .toBe(1);
 
   const fetches = await page.evaluate(() => window.__pocketChordsmithFetches);
   const protocolLaunches = await page.evaluate(() => window.__pocketChordsmithProtocolLaunches);
-  const formPosts = await page.evaluate(() => window.__pocketChordsmithFormPosts);
-  expect(fetches.length).toBeGreaterThanOrEqual(2);
-  expect(protocolLaunches).toEqual(["pocket-daw://handoff?source=loopback"]);
-  expect(formPosts).toHaveLength(1);
-  expect(formPosts[0].action).toBe("http://127.0.0.1:47858/pocket-daw/handoff");
-  expect(formPosts[0].method).toBe("post");
-  expect(formPosts[0].encodedHandoffLength).toBeGreaterThan(100);
-  await expect(page.locator("#pushHandoffStatus")).toContainText("Pocket DAW was given the song");
+  const downloads = await page.evaluate(() => window.__pocketChordsmithDownloads);
+  expect(fetches.length).toBe(1);
+  expect(protocolLaunches[0]).toContain("source=download");
+  expect(downloads).toHaveLength(1);
+  await expect(page.locator("#pushHandoffStatus")).toContainText("should import the downloaded handoff file");
 });

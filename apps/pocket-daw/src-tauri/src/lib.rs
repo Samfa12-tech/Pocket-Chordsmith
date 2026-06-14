@@ -6,6 +6,8 @@ mod native_audio;
 const SECOND_INSTANCE_DEEP_LINK_EVENT: &str = "pocket-daw-second-instance";
 const LOCAL_HANDOFF_EVENT: &str = "pocket-daw-local-handoff";
 const LOCAL_HANDOFF_PORT: u16 = 47858;
+const DOWNLOAD_HANDOFF_PREFIX: &str = "pocket-chordsmith-to-pocket-daw-";
+const DOWNLOAD_HANDOFF_SUFFIX: &str = ".pcs1.txt";
 const MAX_PROJECT_FILE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_MIDI_FILE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_AUDIO_FILE_BYTES: u64 = 250 * 1024 * 1024;
@@ -79,6 +81,7 @@ pub fn run() {
             collect_project_media,
             write_native_cache_asset,
             read_native_cache_asset,
+            read_download_handoff_file,
             open_midi_file,
             save_project_file_as,
             write_project_file
@@ -275,6 +278,14 @@ struct ProjectFilePayload {
 }
 
 #[derive(serde::Serialize)]
+struct DownloadHandoffFilePayload {
+    #[serde(rename = "fileName")]
+    file_name: String,
+    path: String,
+    contents: String,
+}
+
+#[derive(serde::Serialize)]
 struct ProjectFileSaveResult {
     path: String,
     label: String,
@@ -366,6 +377,38 @@ fn open_project_file() -> Result<Option<ProjectFilePayload>, String> {
         path: path.to_string_lossy().to_string(),
         contents,
     }))
+}
+
+#[tauri::command]
+fn read_download_handoff_file(file_name: String) -> Result<DownloadHandoffFilePayload, String> {
+    let safe_name = validate_download_handoff_file_name(&file_name)?;
+    let downloads = downloads_dir().ok_or_else(|| {
+        "Could not find the Downloads folder for the Pocket Chordsmith handoff.".to_string()
+    })?;
+    let path = downloads.join(&safe_name);
+    for _ in 0..24 {
+        if path.exists() {
+            ensure_file_size_at_most(
+                &path,
+                MAX_PROJECT_FILE_BYTES,
+                "Pocket Chordsmith handoff file is too large for this release.",
+            )?;
+            let contents = std::fs::read_to_string(&path)
+                .map_err(|err| format!("Could not read Pocket Chordsmith handoff file: {}", err))?;
+            if !contents.trim().is_empty() {
+                return Ok(DownloadHandoffFilePayload {
+                    file_name: safe_name,
+                    path: path.to_string_lossy().to_string(),
+                    contents,
+                });
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    Err(format!(
+        "Could not find {} in Downloads. Use the paste/import fallback if the browser asked where to save the file.",
+        safe_name
+    ))
 }
 
 #[tauri::command]
@@ -761,6 +804,36 @@ fn audio_mime_type(path: &std::path::Path) -> Option<String> {
     }
 }
 
+fn downloads_dir() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
+    Some(std::path::PathBuf::from(home).join("Downloads"))
+}
+
+fn validate_download_handoff_file_name(file_name: &str) -> Result<String, String> {
+    let trimmed = file_name.trim();
+    if trimmed.is_empty()
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.contains("..")
+        || !trimmed.starts_with(DOWNLOAD_HANDOFF_PREFIX)
+        || !trimmed.ends_with(DOWNLOAD_HANDOFF_SUFFIX)
+    {
+        return Err(
+            "Pocket Chordsmith handoff file name was not a valid Downloads handoff file."
+                .to_string(),
+        );
+    }
+    if !trimmed
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    {
+        return Err(
+            "Pocket Chordsmith handoff file name contained unsupported characters.".to_string(),
+        );
+    }
+    Ok(trimmed.to_string())
+}
+
 fn resolve_media_path(
     path: &str,
     project_file_path: Option<&str>,
@@ -913,5 +986,22 @@ mod tests {
             local_handoff_payload_from_request(form_request).expect("form body should parse"),
             "abc-123"
         );
+    }
+
+    #[test]
+    fn download_handoff_file_names_are_constrained() {
+        assert!(validate_download_handoff_file_name(
+            "pocket-chordsmith-to-pocket-daw-test-123.pcs1.txt"
+        )
+        .is_ok());
+        assert!(validate_download_handoff_file_name(
+            "../pocket-chordsmith-to-pocket-daw-test.pcs1.txt"
+        )
+        .is_err());
+        assert!(
+            validate_download_handoff_file_name("pocket-chordsmith-to-pocket-daw-test.json")
+                .is_err()
+        );
+        assert!(validate_download_handoff_file_name("other-file.pcs1.txt").is_err());
     }
 }

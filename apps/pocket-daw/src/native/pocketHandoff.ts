@@ -8,7 +8,7 @@ export const HANDOFF_ENVELOPE_PARAMS = ["pocketHandoff", "handoff"] as const;
 export const HANDOFF_LEGACY_PARAMS = ["pcs1", "pcs", "code", "import"] as const;
 
 export type PocketHandoffKind = "pcs-to-daw" | "chordsmith-to-daw" | "dj-to-daw" | "import";
-export type PocketHandoffSource = "url" | "window.name" | "localStorage" | "deep-link" | "local-server";
+export type PocketHandoffSource = "url" | "window.name" | "localStorage" | "deep-link" | "local-server" | "download-file";
 
 export interface PocketHandoffEnvelope {
   app: typeof HANDOFF_APP;
