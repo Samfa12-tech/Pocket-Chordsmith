@@ -20,7 +20,7 @@ This file records the last completed public installed-release artifact set. Curr
 - MSI `Pocket DAW_0.6.3_x64_en-US.msi`: `439d5e5d6db4522e2158415ecc2c3e26062c367ec7015a71736298ed3f253136`
 - MSI Tauri updater signature `Pocket DAW_0.6.3_x64_en-US.msi.sig`: `0459b1c9f4cc09a1e7cf93311e2c2d80b2baddfbebdd370a00922fed12aff41c`
 - Updater setup EXE: `3c77516f18578c6e83fbe83bc6629e42af27cc5d109958503e734048026acf2a`
-- Updater manifest `pocket-daw-latest.json`: `1e670ffd13e19f74d18fd82e66330cef41e79794febe585278085dbbe9483e48`
+- Updater manifest `pocket-daw-latest.json`: `74361ebaad970002a3ad3bb7013a7b4d226411cd055eef46d62eafb4dd790d64`
 
 ## Alpha Testing Guidance
 
