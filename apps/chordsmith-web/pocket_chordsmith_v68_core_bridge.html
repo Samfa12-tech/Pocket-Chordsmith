@@ -1684,14 +1684,45 @@ async function postPocketDawLocalHandoff(encodedHandoff){
     return false;
   }
 }
+function submitPocketDawLocalHandoffForm(encodedHandoff){
+  try{
+    const frameName = `PocketDawLocalHandoff_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const iframe = document.createElement("iframe");
+    iframe.name = frameName;
+    iframe.style.display = "none";
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = POCKET_DAW_LOCAL_HANDOFF_URL;
+    form.target = frameName;
+    form.enctype = "application/x-www-form-urlencoded";
+    form.style.display = "none";
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "encodedHandoff";
+    input.value = encodedHandoff;
+    form.appendChild(input);
+    document.body.appendChild(iframe);
+    document.body.appendChild(form);
+    form.submit();
+    setTimeout(() => {
+      try{ form.remove(); }catch(e){}
+      try{ iframe.remove(); }catch(e){}
+    }, 10000);
+    return true;
+  }catch(e){
+    return false;
+  }
+}
 async function sendPocketDawLocalHandoff(encodedHandoff, options={}){
   const attempts = Number.isFinite(options.attempts) ? options.attempts : 1;
   const delayMs = Number.isFinite(options.delayMs) ? options.delayMs : 350;
+  const formFallback = options.formFallback === true;
   for(let attempt=0; attempt<attempts; attempt++){
     if(attempt > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
-    if(await postPocketDawLocalHandoff(encodedHandoff)) return true;
+    if(await postPocketDawLocalHandoff(encodedHandoff)) return "confirmed";
   }
-  return false;
+  if(formFallback && submitPocketDawLocalHandoffForm(encodedHandoff)) return "submitted";
+  return "failed";
 }
 async function postCodeToGodotReceiver(endpoint, code){
   const controller = new AbortController();
@@ -1789,7 +1820,8 @@ async function pushToPocketDaw(){
   });
   const targetBaseUrl = resolvePocketDawUrl();
   const encodedHandoff = encodePocketHandoff(payload);
-  let delivered = await sendPocketDawLocalHandoff(encodedHandoff);
+  let deliveryResult = await sendPocketDawLocalHandoff(encodedHandoff);
+  let delivered = deliveryResult !== "failed";
   let opened = false;
   if(!delivered){
     const wakeUrl = `${targetBaseUrl}?source=loopback`;
@@ -1799,7 +1831,8 @@ async function pushToPocketDaw(){
     );
     if(opened){
       setPushHandoffStatus("Opening Pocket DAW, then sending the song locally...");
-      delivered = await sendPocketDawLocalHandoff(encodedHandoff, {attempts: 16, delayMs: 350});
+      deliveryResult = await sendPocketDawLocalHandoff(encodedHandoff, {attempts: 16, delayMs: 350, formFallback: true});
+      delivered = deliveryResult !== "failed";
     }
   }
   const copied = await copyTextForHandoff(
@@ -1807,7 +1840,10 @@ async function pushToPocketDaw(){
     "Pocket DAW song code copied",
     "Pocket DAW song code is ready in the project box; clipboard was blocked"
   );
-  if(delivered){
+  if(delivered && deliveryResult === "submitted"){
+    setStatus("Song sent to Pocket DAW.");
+    setPushHandoffStatus("Pocket DAW was given the song through the installed-app local handoff. Check Pocket DAW for the import.");
+  }else if(delivered){
     setStatus("Song sent to Pocket DAW.");
     setPushHandoffStatus("Pocket DAW received the song through the installed-app local handoff.");
   }else if(opened){

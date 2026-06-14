@@ -109,6 +109,9 @@ export function inspectDeepLinkHandoff(input: string): DeepLinkHandoffInspection
   if (!isPocketDawDeepLink(input)) {
     return { result: "ignored", url: input, message: "Ignored non-Pocket DAW launch URL." };
   }
+  if (isLoopbackWakeDeepLink(input)) {
+    return { result: "ignored", url: input, message: "Pocket DAW opened from Chordsmith; waiting for the local handoff payload." };
+  }
   const handoff = readUrlHandoff(input, { source: "deep-link", clear: () => undefined });
   if (handoff) return { result: "handoff", handoff };
   return { result: "failed-parse", url: input, message: "Pocket DAW launch URL did not contain a valid PocketHandoff payload." };
@@ -241,6 +244,15 @@ function legacySourceApp(name: string): string {
 function isPocketDawDeepLink(value: string): boolean {
   try {
     return new URL(value).protocol === "pocket-daw:";
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackWakeDeepLink(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "pocket-daw:" && url.searchParams.get("source") === "loopback";
   } catch {
     return false;
   }

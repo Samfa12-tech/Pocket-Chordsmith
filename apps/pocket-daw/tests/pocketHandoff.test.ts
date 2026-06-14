@@ -104,6 +104,7 @@ describe("PocketHandoff compatibility", () => {
   it("classifies malformed installed-app deep links as failed parse", () => {
     const malformed = inspectDeepLinkHandoff("pocket-daw://handoff?pocketHandoff=not-a-valid-envelope");
     const ignored = inspectDeepLinkHandoff("https://example.test/daw?pocketHandoff=not-a-valid-envelope");
+    const wakeOnly = inspectDeepLinkHandoff("pocket-daw://handoff?source=loopback");
 
     expect(malformed).toMatchObject({
       result: "failed-parse",
@@ -111,6 +112,10 @@ describe("PocketHandoff compatibility", () => {
     });
     expect(ignored).toMatchObject({
       result: "ignored"
+    });
+    expect(wakeOnly).toMatchObject({
+      result: "ignored",
+      message: expect.stringContaining("waiting for the local handoff")
     });
   });
 });

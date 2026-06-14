@@ -128,8 +128,8 @@ fn handle_local_handoff_connection(
         write_http_response(stream, 404, "Not Found", "text/plain", "Not found")?;
         return Ok(());
     }
-    let body = http_request_body(&request)?;
-    if body.trim().is_empty() {
+    let encoded_handoff = local_handoff_payload_from_request(&request)?;
+    if encoded_handoff.is_empty() {
         write_http_response(
             stream,
             400,
@@ -142,7 +142,7 @@ fn handle_local_handoff_connection(
     app.emit(
         LOCAL_HANDOFF_EVENT,
         LocalHandoffPayload {
-            encoded_handoff: body.trim().to_string(),
+            encoded_handoff,
             received_at: iso_timestamp(),
         },
     )
@@ -194,6 +194,26 @@ fn http_request_body(request: &str) -> Result<String, String> {
         return Err("Local handoff request is missing headers.".to_string());
     };
     Ok(request[index + 4..].to_string())
+}
+
+#[cfg(desktop)]
+fn local_handoff_payload_from_request(request: &str) -> Result<String, String> {
+    let body = http_request_body(request)?;
+    let trimmed = body.trim();
+    if trimmed.starts_with("encodedHandoff=") || trimmed.starts_with("handoff=") {
+        return Ok(trimmed
+            .split('&')
+            .find_map(|pair| {
+                let (name, value) = pair.split_once('=')?;
+                if name == "encodedHandoff" || name == "handoff" {
+                    Some(value.trim().to_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default());
+    }
+    Ok(trimmed.to_string())
 }
 
 #[cfg(desktop)]
@@ -878,5 +898,20 @@ mod tests {
             ensure_bytes_at_most(11, 10, "Too large").expect_err("oversized payload should fail");
         assert!(error.contains("Too large"));
         assert!(error.contains("Limit"));
+    }
+
+    #[test]
+    fn local_handoff_payload_accepts_raw_and_form_bodies() {
+        let raw_request = "POST /pocket-daw/handoff HTTP/1.1\r\nContent-Length: 7\r\n\r\nabc-123";
+        let form_request = "POST /pocket-daw/handoff HTTP/1.1\r\nContent-Length: 25\r\n\r\nencodedHandoff=abc-123&x=1";
+
+        assert_eq!(
+            local_handoff_payload_from_request(raw_request).expect("raw body should parse"),
+            "abc-123"
+        );
+        assert_eq!(
+            local_handoff_payload_from_request(form_request).expect("form body should parse"),
+            "abc-123"
+        );
     }
 }
