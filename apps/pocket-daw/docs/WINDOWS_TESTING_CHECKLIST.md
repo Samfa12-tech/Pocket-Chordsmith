@@ -27,6 +27,9 @@ Manual evidence from Sam on 2026-06-14:
 - Pocket DAW updated successfully through the installed app updater to v0.5.13.
 - Demo loaded and played audibly.
 - Pocket Chordsmith "Send to Pocket DAW" worked in v0.5.13 after hard-refreshing Chordsmith; the installed app opened and the sent song imported.
+- Handoff/import BPM issue found: source Pocket Chordsmith project was 136 BPM, but Pocket DAW imported/exported it at 112 BPM, likely from the current DAW project/default.
+- WAV export created `C:\Users\sam_s\Downloads\imported-chordsmith-project.wav` and was confirmed working by Sam.
+- MIDI export created `C:\Users\sam_s\Downloads\imported-chordsmith-project.mid`; Codex structural inspection found parseable MIDI chunks/events, but playback quality was not externally verified.
 - Pasting a Pocket Chordsmith share code into Pocket DAW worked.
 - Importing raw Pocket Chordsmith JSON into Pocket DAW worked.
 - Saved `C:\Users\sam_s\Music\imported-chordsmith-project test.pocketdaw`, closed Pocket DAW, reopened Pocket DAW, reopened the saved project, and playback worked.
@@ -46,6 +49,7 @@ Manual evidence from Sam on 2026-06-14:
 | Chordsmith import | Import a PCS1 share code if supported by the public build. | Pocket Chordsmith project imports and timeline populates. | Pasted Pocket Chordsmith share code into Pocket DAW; import worked. | Pass | Sam / 2026-06-14 |  |
 | Chordsmith import | Import raw Pocket Chordsmith JSON. | Project imports without dropping source fields. | Imported Pocket Chordsmith JSON into Pocket DAW; import worked. | Pass | Sam / 2026-06-14 |  |
 | Chordsmith import | Import PocketHandoff if supported by the public build. | Handoff imports once and does not repeat after reload. | Pocket Chordsmith "Send to Pocket DAW" worked in v0.5.13 after hard-refreshing Chordsmith; the sent song imported into the installed app. | Pass | Sam / 2026-06-14 | Uses downloaded PCS1 handoff-file fallback when localhost delivery is unavailable; paste/import fallback still works. |
+| Chordsmith import | Import PocketHandoff tempo/project state. | Imported project keeps the exact source BPM and behaves as a new imported project; any open project is autosaved before replacement. | Source Chordsmith project was 136 BPM, but Pocket DAW imported/exported it at 112 BPM. Import replaced the currently open workspace. | Fail | Sam / 2026-06-14 | Fix next: preserve exported BPM exactly, import as a new project, and autosave the open project before loading handoff/import. |
 | Chordsmith import | Save, close, reopen, and inspect imported source data. | Source Chordsmith data remains preserved after saving/reopening. | Saved/reopened imported project and playback worked; diagnostics report `sourceRefCount: 1` and source title `Imported Chordsmith Project`. | Pass | Sam / 2026-06-14 | Saved file: `C:\Users\sam_s\Music\imported-chordsmith-project test.pocketdaw`. |
 | Project workflow | Create/open a project, save a `.pocketdaw` file, close app, reopen app, reopen saved `.pocketdaw`. | Timeline and imported source data remain intact. | Saved imported project, closed/reopened Pocket DAW, reopened saved `.pocketdaw`, and project played well. | Pass | Sam / 2026-06-14 | Evidence diagnostics after reopen: 7 clips, 12 tracks, 973 events. |
 | Editing | Move/trim/split/duplicate/delete a basic timeline clip. | Clip edits apply to the selected clip only and survive save/reopen. | Manual / Not run | Manual / Not run |  |  |
@@ -56,8 +60,8 @@ Manual evidence from Sam on 2026-06-14:
 | Mixer/audio state | Adjust FX controls, routing/bus controls and automation if exposed. | Controls persist, export safely, and guarded scaffolds stay honest where incomplete. | Manual / Not run | Manual / Not run |  |  |
 | Import/export | Import an audio clip if exposed and place it on the timeline. | Media appears with clear embedded/collected/referenced/cached/missing state; audible if loaded. | Manual / Not run | Manual / Not run |  |  |
 | Import/export | Import MIDI if exposed. | MIDI item/clip appears and is readable/editable. | Manual / Not run | Manual / Not run |  |  |
-| Import/export | Export WAV and open the file in a player. | WAV file is created and playable. | Manual / Not run | Manual / Not run |  |  |
-| Import/export | Export MIDI and open it in a MIDI-capable tool. | MIDI file is created and readable. | Manual / Not run | Manual / Not run |  |  |
+| Import/export | Export WAV and open the file in a player. | WAV file is created and playable. | Exported WAV at `C:\Users\sam_s\Downloads\imported-chordsmith-project.wav`; Sam confirmed it works correctly. | Pass | Sam / 2026-06-14 |  |
+| Import/export | Export MIDI and open it in a MIDI-capable tool. | MIDI file is created and readable. | Exported MIDI at `C:\Users\sam_s\Downloads\imported-chordsmith-project.mid`; Codex structural parse found 6 tracks, 869 note-ons with matching note-offs, 4/4 and clean end-of-track markers. | Partial | Sam + Codex / 2026-06-14 | Playback quality not externally verified. File inherited incorrect 112 BPM and declares format 0 with 6 tracks, so MIDI export needs follow-up. |
 | Import/export | Export stems if exposed. | Stem files are created and playable/readable. | Manual / Not run | Manual / Not run |  |  |
 | Safety | Try an oversized import for project, audio or MIDI. | Friendly rejection appears before whole-file read; app does not hang/crash. | Manual / Not run | Manual / Not run |  |  |
 | Safety | Open malicious/unsafe metadata fixture. | Unsafe HTML/script/event/CSS is not executed or rendered raw. | Manual / Not run | Manual / Not run |  |  |

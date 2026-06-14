@@ -41,6 +41,8 @@ Partial installed-app smoke run by Sam on 2026-06-14 against v0.5.9:
 - Re-exported diagnostics reported Imported Chordsmith Project with 7 clips, 12 tracks, 973 generated events, `sourceRefCount: 1`, and WASAPI/native device status available.
 - Updater rehearsal from v0.5.10 onward succeeded through Help -> Check for Updates; v0.5.13 is now served by the GitHub updater manifest.
 - Pocket Chordsmith "Send to Pocket DAW" now succeeds in the installed v0.5.13 app after hard-refreshing Chordsmith; Pocket DAW opens/imports through the downloaded PCS1 handoff-file fallback.
+- WAV export completed successfully for `C:\Users\sam_s\Downloads\imported-chordsmith-project.wav`.
+- MIDI export completed to `C:\Users\sam_s\Downloads\imported-chordsmith-project.mid`; Codex structural inspection found 6 parseable tracks, 869 note-on events with matching note-offs, 4/4 time signature and clean end-of-track markers. It still needs a real MIDI-player/DAW playback check.
 
 ## Current Caveats
 
@@ -48,4 +50,6 @@ Partial installed-app smoke run by Sam on 2026-06-14 against v0.5.9:
 - Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures are present as `.sig` files for updater validation.
 - Pocket Chordsmith direct "Send to Pocket DAW" is passing in the v0.5.13 installed-app smoke run; keep paste/import as a fallback for browsers that block downloads or custom protocol launches.
+- Pocket Chordsmith handoff/import BPM is not yet trustworthy: Sam's source project was 136 BPM, but Pocket DAW imported/exported it at 112 BPM, likely from the currently loaded DAW project/default. Imported Chordsmith handoffs should preserve the exported BPM exactly, load as a new imported project, and autosave any open project before replacing the workspace.
+- MIDI export is structurally parseable, but the inspected v0.5.13 file declared MIDI format 0 while containing 6 tracks and inherited the incorrect 112 BPM; fix/verify MIDI header format and tempo after the BPM import issue is corrected.
 - Live recording, ASIO support, full send/return processing, bundled game export packs, and professional DAW completeness remain out of scope for the current alpha.
