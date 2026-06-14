@@ -83,13 +83,13 @@ butler push-preview releases/itch/installers samfa12/pocket-daw:windows-installe
 
 Butler `push-preview` in v15.27.0 does not accept `--userversion`; keep `--userversion` on the actual `push` command below.
 
-Push installer folder hidden:
+Push installer folder to the public installed-app channel:
 
 ```powershell
-butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion 0.5.13 --hidden
+butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion 0.5.13
 ```
 
-After upload, inspect the itch page and keep the release wording as alpha testing until the manual installed-app smoke status justifies stronger wording.
+After upload, inspect the itch page and keep the release wording as alpha testing. The v0.5.13 handoff/update smoke evidence is recorded in `docs/WINDOWS_TESTING_CHECKLIST.md`; broader Windows QA remains partial.
 
 ## Push to GitHub
 

@@ -13,12 +13,12 @@ Pocket DAW is now live for public Windows alpha testing on itch and linked from 
 
 ## Current Artifact Hashes
 
-- Setup EXE `Pocket DAW_0.5.13_x64-setup.exe`: generated from the release artifact.
-- Setup EXE Tauri updater signature `Pocket DAW_0.5.13_x64-setup.exe.sig`: generated from the release artifact.
-- MSI `Pocket DAW_0.5.13_x64_en-US.msi`: generated from the release artifact.
-- MSI Tauri updater signature `Pocket DAW_0.5.13_x64_en-US.msi.sig`: generated from the release artifact.
-- Updater setup EXE: generated from the release artifact.
-- Updater manifest: generated as `releases/updater/pocket-daw-latest.json` for the `pocket-daw-v0.5.13-updater-test` release.
+- Setup EXE `Pocket DAW_0.5.13_x64-setup.exe`: `f5c28e1280598cd5f0bd61258a6102affa08c9bd99b0a9706cec08eda7f87233`
+- Setup EXE Tauri updater signature `Pocket DAW_0.5.13_x64-setup.exe.sig`: `82277a2eb50f886b625e511816aa7e80ca06f1e3f9781eb53ced3508dfc2dedd`
+- MSI `Pocket DAW_0.5.13_x64_en-US.msi`: `49861de4120c9338deb342984299af8b3d87769dccb860aa7d3f24aa2002ad81`
+- MSI Tauri updater signature `Pocket DAW_0.5.13_x64_en-US.msi.sig`: `1478c20ec209952e4a14a86ac95f857f2d09961087039ec7f2a8ad819047633f`
+- Updater setup EXE: `f5c28e1280598cd5f0bd61258a6102affa08c9bd99b0a9706cec08eda7f87233`
+- Updater manifest: `f60cf66954a840296e6109a8f5a27b4b1f0c6536cdbf004ebc6849291ff901fa`
 
 ## Alpha Testing Guidance
 
@@ -39,12 +39,13 @@ Partial installed-app smoke run by Sam on 2026-06-14 against v0.5.9:
 - Importing raw Pocket Chordsmith JSON into Pocket DAW worked.
 - Saved `C:\Users\sam_s\Music\imported-chordsmith-project test.pocketdaw`, closed/reopened Pocket DAW, reopened the saved project, and playback worked.
 - Re-exported diagnostics reported Imported Chordsmith Project with 7 clips, 12 tracks, 973 generated events, `sourceRefCount: 1`, and WASAPI/native device status available.
-- Pocket Chordsmith "Send to Pocket DAW" woke Pocket DAW in v0.5.11/v0.5.12, but localhost payload delivery still did not arrive in Sam's installed-app run. v0.5.13 adds a downloaded PCS1 handoff-file fallback that Pocket DAW reads from Downloads via a tiny protocol URL.
+- Updater rehearsal from v0.5.10 onward succeeded through Help -> Check for Updates; v0.5.13 is now served by the GitHub updater manifest.
+- Pocket Chordsmith "Send to Pocket DAW" now succeeds in the installed v0.5.13 app after hard-refreshing Chordsmith; Pocket DAW opens/imports through the downloaded PCS1 handoff-file fallback.
 
 ## Current Caveats
 
 - Manual Windows smoke testing is partially run and still tracked in `docs/WINDOWS_TESTING_CHECKLIST.md`.
 - Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures are present as `.sig` files for updater validation.
-- Pocket Chordsmith direct "Send to Pocket DAW" handoff failed in the 2026-06-14 v0.5.9/v0.5.10 manual runs and woke without importing in v0.5.11/v0.5.12; retest v0.5.13 before closing the issue.
+- Pocket Chordsmith direct "Send to Pocket DAW" is passing in the v0.5.13 installed-app smoke run; keep paste/import as a fallback for browsers that block downloads or custom protocol launches.
 - Live recording, ASIO support, full send/return processing, bundled game export packs, and professional DAW completeness remain out of scope for the current alpha.
