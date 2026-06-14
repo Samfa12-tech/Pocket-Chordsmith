@@ -6,7 +6,7 @@ import { renderProjectToWavBlob } from "../audio/offlineRender";
 import { createDemoProject } from "../demo/demoProject";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../daw/dawProject";
 import { renderTimelineEvents } from "../audio/eventRenderer";
-import { listenForDeepLinkHandoffs, readInitialDeepLinkHandoff } from "../native/deepLinkBridge";
+import { listenForDeepLinkHandoffs, readInitialDeepLinkHandoff, type HandoffBridgeStatus } from "../native/deepLinkBridge";
 import { downloadBlob, openProjectFileNative, safeName, saveProjectFile } from "../native/fileBridge";
 import { readPocketDawHandoff, type PocketDawHandoff } from "../native/pocketHandoff";
 import {
@@ -99,7 +99,7 @@ import {
   undoCommand
 } from "./commands";
 import { commandFromKeyboardEvent } from "./keyboard";
-import { createInitialState, currentProject, loadProjectIntoState, type AppState, type ChordsmithStepSelection } from "./state";
+import { createInitialState, currentProject, loadProjectIntoState, type AppState, type ChordsmithStepSelection, type HandoffResult } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { renderAppShell } from "./ui";
 import { createUndoStack } from "../daw/undo";
@@ -124,6 +124,7 @@ import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
 import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan, projectWithOnlyTracksAudible } from "../daw/exportJobs";
 import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
+import { buildTesterDiagnosticsPayload, diagnosticsJson, runtimeLabel, runtimePlatform } from "./diagnostics";
 
 type MixerControlField = "volume" | "pan";
 type RenderSchedule = "none" | "live-dom" | "deferred" | "immediate";
@@ -237,17 +238,45 @@ export class App {
 
   private consumeHandoff(handoff: PocketDawHandoff): boolean {
     const imported = this.importText(handoff.code, handoff.status);
+    this.recordHandoffResult(
+      handoff,
+      imported ? "imported" : "failed-parse",
+      imported ? handoff.status : `Received ${handoff.source} handoff, but Pocket DAW could not import its payload.`
+    );
     if (imported) handoff.clear();
+    this.render({ preserveScroll: true });
     return imported;
   }
 
   private async bindDeepLinkHandoffs() {
-    const startupHandoff = await readInitialDeepLinkHandoff();
+    const startupHandoff = await readInitialDeepLinkHandoff((status) => this.recordHandoffBridgeStatus(status));
     if (startupHandoff) this.consumeHandoff(startupHandoff);
     if (this.deepLinkUnlisten) return;
     this.deepLinkUnlisten = await listenForDeepLinkHandoffs((handoff) => {
       this.consumeHandoff(handoff);
-    });
+    }, (status) => this.recordHandoffBridgeStatus(status));
+  }
+
+  private recordHandoffResult(handoff: PocketDawHandoff, result: HandoffResult, message: string) {
+    this.state.lastHandoff = {
+      source: handoff.source,
+      result,
+      kind: handoff.payload.kind,
+      receivedAt: new Date().toISOString(),
+      message
+    };
+  }
+
+  private recordHandoffBridgeStatus(status: HandoffBridgeStatus) {
+    this.state.lastHandoff = {
+      source: status.source,
+      result: status.result,
+      kind: null,
+      receivedAt: status.receivedAt,
+      message: status.message
+    };
+    this.state.status = status.message;
+    this.render({ preserveScroll: true });
   }
 
   private render(options: RenderOptions = {}) {
@@ -1064,6 +1093,13 @@ export class App {
       this.render();
       this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "start", inline: "nearest" });
     }
+    if (action === "import-focus") {
+      this.state.status = "Paste a PCS1 share code, Pocket Chordsmith JSON, PocketHandoff payload or .pocketdaw JSON.";
+      this.render();
+      const importText = this.root.querySelector<HTMLTextAreaElement>("#importText");
+      importText?.scrollIntoView({ block: "center", inline: "nearest" });
+      importText?.focus();
+    }
     if (action === "toggle-inspector") {
       this.state.inspectorVisible = !this.state.inspectorVisible;
       this.state.status = this.state.inspectorVisible ? "Inspector shown." : "Inspector hidden.";
@@ -1122,6 +1158,7 @@ export class App {
     if (action === "export-media-plan") this.exportMediaPlan();
     if (action === "collect-media") await this.collectMedia();
     if (action === "build-native-cache") await this.buildNativeCache();
+    if (action === "copy-diagnostics") await this.copyDiagnostics();
     if (action === "export-diagnostics") this.exportDiagnostics();
   }
 
@@ -2247,45 +2284,56 @@ export class App {
 
   private exportDiagnostics() {
     const project = currentProject(this.state);
-    const diagnostics = {
-      capturedAt: new Date().toISOString(),
-      appVersion: POCKET_DAW_VERSION,
-      projectVersion: project.dawVersion,
-      project: {
-        id: project.project.id,
-        title: project.project.title,
-        bpm: project.project.bpm,
-        timeSig: project.project.timeSig,
-        bars: project.timeline.bars,
-        clipCount: project.timeline.clips.length,
-        trackCount: project.tracks.length
-      },
-      ui: {
-        playing: this.state.playing,
-        playheadBar: this.state.playheadBar,
-        renderCount: this.renderCount,
-        renderCountDuringPlayback: this.renderCountDuringPlayback,
-        liveUpdateCount: this.liveUpdateCount,
-        selectedClipId: this.state.selectedClipId,
-        selectedTrackId: this.state.selectedTrackId
-      },
-      mixer: project.tracks.map((track) => ({
-        id: track.id,
-        name: track.name,
-        role: track.role,
-        volume: track.volume,
-        pan: track.pan,
-        mute: track.mute,
-        solo: track.solo,
-        active: track.active !== false,
-        meterLevel: this.state.meterLevels[track.id] || 0
-      })),
-      audio: this.engine.getDiagnostics()
-    };
-    const blob = new Blob([JSON.stringify(diagnostics, null, 2)], { type: "application/json" });
+    const diagnostics = this.buildDiagnosticsPayload();
+    const blob = new Blob([diagnosticsJson(diagnostics)], { type: "application/json" });
     downloadBlob(blob, safeName(`${project.project.title}-diagnostics`, "json"));
     this.state.status = "Exported diagnostics JSON.";
     this.render();
+  }
+
+  private async copyDiagnostics() {
+    const text = diagnosticsJson(this.buildDiagnosticsPayload());
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else if (!this.copyTextFallback(text)) {
+        throw new Error("Clipboard API is not available.");
+      }
+      this.state.status = "Copied diagnostics to clipboard.";
+    } catch {
+      const project = currentProject(this.state);
+      const blob = new Blob([text], { type: "application/json" });
+      downloadBlob(blob, safeName(`${project.project.title}-diagnostics`, "json"));
+      this.state.status = "Clipboard unavailable; downloaded diagnostics JSON instead.";
+    }
+    this.render({ preserveScroll: true });
+  }
+
+  private copyTextFallback(text: string): boolean {
+    if (typeof document.execCommand !== "function") return false;
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } finally {
+      textarea.remove();
+    }
+    return copied;
+  }
+
+  private buildDiagnosticsPayload() {
+    return buildTesterDiagnosticsPayload(this.state, this.engine.getDiagnostics(), {
+      runtime: runtimeLabel(),
+      platform: runtimePlatform()
+    });
   }
 
   private async refreshAudioDevices() {

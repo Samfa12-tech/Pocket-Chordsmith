@@ -5,13 +5,12 @@ const isWindows = process.platform === "win32";
 run("npm", ["run", "verify:versions"]);
 run("npm", ["test"]);
 run("npm", ["run", "build"]);
-run("npm", ["run", "package:preview"]);
 run("cargo", ["test"], { cwd: "src-tauri", optional: true });
 run("npm", ["run", "package:itch"]);
 run("npm", ["run", "verify:artifacts"]);
 
 console.log(isWindows
-  ? "Windows automated release gate completed. Manual smoke checklist is still NOT RUN until a tester fills it against the exact portable artifact."
+  ? "Windows automated release gate completed. Manual smoke checklist is still NOT RUN until a tester fills it against the exact installed-app installer artifact."
   : "Non-Windows gate completed. Windows smoke testing is NOT RUN.");
 
 function run(command, args, options = {}) {

@@ -7,6 +7,7 @@ describe("release scripts", () => {
     const script = readFileSync("scripts/verify-release.mjs", "utf8");
     const itchScript = readFileSync("scripts/verify-itch.mjs", "utf8");
     const packageItch = readFileSync("scripts/package-itch.mjs", "utf8");
+    const verifyArtifacts = readFileSync("scripts/verify-release-artifacts.mjs", "utf8");
     const guardedPush = readFileSync("scripts/guarded-butler-push.mjs", "utf8");
     const updaterManifest = readFileSync("scripts/make-updater-manifest.mjs", "utf8");
 
@@ -22,9 +23,20 @@ describe("release scripts", () => {
     expect(script).toContain('"tauri:build"');
     expect(itchScript).toContain('"package:itch"');
     expect(itchScript).toContain('"verify:artifacts"');
-    expect(packageItch).toContain("pocket-daw-windows-x64-v");
+    expect(packageItch).toContain('ITCH_CHANNEL = "windows-installer"');
+    expect(packageItch).toContain("installerOnly: true");
+    expect(packageItch).toContain("publicPortableApp: false");
+    expect(packageItch).toContain("rmCurrentVersionReleaseFiles");
+    expect(packageItch).toContain("pocket-daw-windows-x64-v${VERSION}");
+    expect(packageItch).not.toContain("zip.writeZip");
+    expect(packageItch).not.toContain("new AdmZip");
     expect(packageItch).toContain("butler push-preview");
+    expect(packageItch).toContain("releases/itch/installers");
+    expect(packageItch).toContain("appears stale");
+    expect(verifyArtifacts).toContain("assertSignatureFreshness");
+    expect(verifyArtifacts).toContain("TAURI_SIGNING_PRIVATE_KEY");
     expect(guardedPush).toContain('PUBLISH !== "1"');
+    expect(guardedPush).toContain('"releases/itch/installers"');
     expect(updaterManifest).toContain("pocket-daw-latest.json");
     expect(updaterManifest).toContain("SHA256SUMS.txt");
   });

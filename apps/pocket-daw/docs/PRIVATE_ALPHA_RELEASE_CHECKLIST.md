@@ -1,65 +1,52 @@
-# Pocket DAW Alpha Testing Release Checklist
+# Pocket DAW Private/Public Alpha Release Checklist
 
-This file supersedes the older pre-public checklist. Pocket DAW v0.5.9 is live as a free Windows desktop alpha-testing release on itch.
+Pocket DAW public alpha distribution is installer-only.
 
-## Required Before Upload
+## Release Gate
 
-- `npm ci`
-- `npm run verify:versions`
-- `npm test`
-- `npm run build`
-- `npm run package:preview`
-- `cargo test` from `src-tauri` when Rust is available
-- `npm run package:itch`
-- `npm run verify:artifacts`
-- Manual Windows smoke checklist completed against the exact portable ZIP hash, or the final verdict remains `GO WITH CAVEATS` / `NO-GO`
+- Package/version/Tauri/Cargo versions match.
+- `npm test` passes.
+- `npm run build` passes.
+- `npm run package:itch` generates setup/MSI installer artifacts and `.sig` updater signatures.
+- `npm run verify:artifacts` passes.
+- Manual Windows installed-app smoke checklist is completed against the exact installer hash, or the final verdict remains `GO WITH CAVEATS` / `NO-GO`.
+- SmartScreen/AuthentiCode status is documented honestly.
+- Tauri updater `.sig` files are documented separately from Windows code signing.
 
-## Artifact Rules
+## Artifact Expectations
 
-- Primary itch artifact is the portable folder/ZIP: `releases/itch/pocket-daw-windows-x64-v0.5.9`.
-- The portable ZIP must contain `Pocket DAW.exe` at the root with README, release notes, limitations, license/freeware notice and checksums.
-- The ZIP must not be just an installer.
-- NSIS/MSI installers are optional secondary downloads only.
-- Browser preview ZIPs are not the main itch target.
+- Primary itch artifact folder: `releases/itch/installers/`.
+- Setup EXE: `Pocket DAW_0.5.9_x64-setup.exe`.
+- Setup EXE updater signature: `Pocket DAW_0.5.9_x64-setup.exe.sig`.
+- MSI: `Pocket DAW_0.5.9_x64_en-US.msi`.
+- MSI updater signature: `Pocket DAW_0.5.9_x64_en-US.msi.sig`.
+- Root release metadata includes checksum, release manifest, release notes, known limitations, installed-app smoke checklist and final verdict.
 
-## Signing
-
-- Do not claim the app is signed unless signature verification records `signed`.
-- If signing is required for a release gate, set `POCKET_DAW_REQUIRE_SIGNING=1` before `npm run verify:artifacts`.
-- Do not commit `.pfx`, `.p12`, `.pem`, `.key`, secrets or signing credentials.
+Do not package standalone `Pocket DAW.exe` or a public app archive as a release channel.
 
 ## Upload Commands
 
-Preview only:
+Preview:
 
 ```powershell
-butler push-preview releases/itch/pocket-daw-windows-x64-v0.5.9 samfa12/pocket-daw:windows-x64
+butler push-preview releases/itch/installers samfa12/pocket-daw:windows-installer
 ```
 
-First hidden upload:
+Hidden upload:
 
 ```powershell
-butler push releases/itch/pocket-daw-windows-x64-v0.5.9 samfa12/pocket-daw:windows-x64 --userversion 0.5.9
+butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion 0.5.9 --hidden
 ```
 
-Optional installer secondary channel:
+## Updater Rehearsal
 
-```powershell
-butler push releases/itch/installers/<installer-file-or-folder> samfa12/pocket-daw:windows-installer --userversion 0.5.9
-```
+1. Install the current public version normally.
+2. Stage or publish the next signed version on GitHub Releases.
+3. Open the installed current app.
+4. Check for updates.
+5. Download/install the update.
+6. Relaunch.
+7. Verify the version changed.
+8. Verify a previous project still opens.
 
-Do not run upload commands from automation unless a separate manual action explicitly instructs it. `npm run itch:push:hidden` refuses to upload unless `PUBLISH=1` is set.
-
-## Do Not Package
-
-- `.git`
-- `.env`
-- `node_modules`
-- `target`
-- source files
-- source maps
-- debug symbols
-- logs
-- private certificates or keys
-- local test projects or user media
-- absolute local machine paths in release text files
+Do not record updater success until the installed app actually updates and relaunches on Windows.

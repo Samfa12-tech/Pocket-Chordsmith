@@ -13,6 +13,7 @@ import { createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJo
 import { createCollectMediaPlan } from "../daw/mediaPool";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { clipSourceStartBar } from "../daw/clips";
+import { runtimeBuildId, runtimeCommit, runtimeLabel } from "./diagnostics";
 import {
   escapeAttr,
   escapeHtml,
@@ -56,6 +57,7 @@ export function renderAppShell(state: AppState): string {
     <div class="app-shell" data-layout-shell="true" data-scroll-key="app-shell" style="--studio-height:${sanitizeCssLengthOrNumber(state.timelineHeightPx, 430, 260, 760)}px;--inspector-width:${sanitizeCssLengthOrNumber(state.inspectorWidthPx, 420, 280, 620)}px;">
       ${renderMenuStrip(state)}
       ${renderTransport(state)}
+      ${renderQuickStart(state)}
       <main class="studio ${state.inspectorVisible ? "" : "inspector-hidden"}" data-layout-zone="studio">
         ${renderTimeline(state)}
         ${state.inspectorVisible ? `<div class="inspector-resize-handle" data-inspector-resize-handle="true" title="Drag to resize inspector"></div>${renderInspector(state, project, selectedClip, selectedTrack)}` : ""}
@@ -118,7 +120,7 @@ function renderMenuStrip(state: AppState): string {
       ${renderMenuGroup("View", [
         ["Zoom In", "zoom-in"],
         ["Zoom Out", "zoom-out"],
-        ["Show Controls", "controls-open"],
+        ["About / Diagnostics", "controls-open"],
         ["Show Audio Settings", "audio-settings-open"],
         ["Media Pool", "media-pool-focus"]
       ])}
@@ -134,7 +136,7 @@ function renderMenuStrip(state: AppState): string {
       ])}
       ${renderMenuGroup("Help", [
         ["Check for Updates", "updater-open"],
-        ["Controls", "controls-open"],
+        ["About / Diagnostics", "controls-open"],
         ["Export Diagnostics", "export-diagnostics"]
       ])}
     </nav>
@@ -154,7 +156,7 @@ function renderMenuGroup(label: string, actions: Array<[string, string]>): strin
 
 function renderTransport(state: AppState): string {
   const project = currentProject(state);
-  const env = environmentLabel();
+  const env = runtimeLabel();
   return `
     <header class="transport" data-layout-zone="transport">
       <div class="brand">
@@ -173,7 +175,7 @@ function renderTransport(state: AppState): string {
         <button data-action="add-track-open">Add Track</button>
         <button data-action="undo">Undo</button>
         <button data-action="redo">Redo</button>
-        <button data-action="controls-open">Controls</button>
+        <button data-action="controls-open">About</button>
       </div>
       <div class="transport-readout">
         <span data-playing-state="true" class="${state.playing ? "playing" : ""}">${state.playing ? "Playing" : "Stopped"}</span>
@@ -189,6 +191,25 @@ function renderTransport(state: AppState): string {
         </div>
       ` : ""}
     </header>
+  `;
+}
+
+function renderQuickStart(state: AppState): string {
+  const project = currentProject(state);
+  if (state.currentFile.path) return "";
+  const isStarter = state.currentFile.label === "Editable demo copy" || state.currentFile.label === "Untitled project";
+  if (!isStarter && project.timeline.clips.length > 0) return "";
+  return `
+    <section class="quick-start" data-layout-zone="quickstart" aria-label="First run actions">
+      <div>
+        <strong>${project.timeline.clips.length ? "Demo is ready" : "Start a project"}</strong>
+        <span>${project.timeline.clips.length ? "Press Play, import Chordsmith data, or open a saved project." : "Load the demo, import Chordsmith data, or open a saved project."}</span>
+      </div>
+      <button class="primary" data-action="${project.timeline.clips.length ? "play" : "load-demo"}">${project.timeline.clips.length ? "Play Demo" : "Load Demo"}</button>
+      <button data-action="load-demo">Load Demo</button>
+      <button data-action="import-focus">Import Chordsmith</button>
+      <button data-action="open-project">Open .pocketdaw</button>
+    </section>
   `;
 }
 
@@ -987,6 +1008,7 @@ function renderMediaPool(state: AppState): string {
                       <dt>Channels</dt><dd>${item.channels ?? "-"}</dd>
                       <dt>Size</dt><dd>${formatBytes(item.sizeBytes)}</dd>
                       <dt>URI</dt><dd title="${escapeAttr(item.uri || "")}">${escapeHtml(item.uri || "-")}</dd>
+                      <dt>Persistence</dt><dd title="${escapeAttr(mediaPersistenceDetail(status, cacheItems.length))}">${escapeHtml(mediaPersistenceLabel(status, cacheItems.length))}</dd>
                       <dt>Cache</dt><dd>${cacheItems.length ? cacheItems.map((cache) => `${escapeHtml(cache.id)}${cache.invalidated ? " invalid" : ""}`).join(", ") : "-"}</dd>
                     </dl>
                     ${renderMediaWaveform(item)}
@@ -1248,14 +1270,28 @@ function renderUpdaterPanel(state: AppState): string {
 function renderControlsPanel(state: AppState): string {
   const project = currentProject(state);
   const recent = state.recent.slice(0, 3).map((item) => item.path || item.label).join(" / ") || "No recent projects saved in this environment.";
+  const devices = project.audioDeviceSettings.devices || [];
+  const defaultOutput = devices.find((device) => device.id === project.audioDeviceSettings.outputDeviceId) || devices.find((device) => device.isDefaultOutput);
+  const statuses = project.mediaPool.map((item) => mediaPoolStatus(item, item.kind === "audio" && !!getCachedAudioBuffer(item.id)));
+  const mediaSummary = `${project.mediaPool.length} media / ${statuses.filter((status) => status.runtimeOnly).length} runtime-only / ${statuses.filter((status) => status.external).length} external / ${statuses.filter((status) => status.missing || status.unresolved).length} missing`;
+  const cacheSummary = `${project.renderCache.length} metadata item${project.renderCache.length === 1 ? "" : "s"}`;
   return `
     <div class="modal-backdrop" data-controls-backdrop="true">
       <section class="controls-panel" role="dialog" aria-modal="true" aria-labelledby="controls-title">
         <header>
-          <h2 id="controls-title">Controls</h2>
+          <h2 id="controls-title">About / Diagnostics</h2>
           <button data-action="controls-close">Close</button>
         </header>
         <div class="control-guide">
+          <p><strong>App</strong><span>Pocket DAW v${escapeHtml(POCKET_DAW_VERSION)} / build ${escapeHtml(runtimeBuildId())} / commit ${escapeHtml(runtimeCommit())}</span></p>
+          <p><strong>Runtime</strong><span>${escapeHtml(runtimeLabel())}</span></p>
+          <p><strong>Distribution</strong><span>Installed app only / installerOnly: true</span></p>
+          <p><strong>Project</strong><span>${escapeHtml(project.project.title || "Untitled")} / ${escapeHtml(state.currentFile.path || state.currentFile.label || "Unsaved")}</span></p>
+          <p><strong>Audio</strong><span>${escapeHtml(project.audioDeviceSettings.host)} / ${devices.length} device${devices.length === 1 ? "" : "s"}${defaultOutput ? ` / output ${escapeHtml(defaultOutput.name)}` : ""}</span></p>
+          <p><strong>Updater</strong><span>${escapeHtml(updaterStatusText(state))} / startup check ${state.updaterAutoCheckOnStartup ? "on" : "off"}</span></p>
+          <p><strong>Handoff</strong><span>${escapeHtml(handoffStatusText(state))}</span></p>
+          <p><strong>Media</strong><span>${escapeHtml(mediaSummary)} / render cache ${escapeHtml(cacheSummary)}</span></p>
+          <p><strong>Storage</strong><span>${escapeHtml(state.currentFile.path ? "Project media/cache folders sit beside the saved .pocketdaw file." : "Unsaved project; autosave/recent data uses the installed app or browser runtime store.")}</span></p>
           <p><strong>Import</strong><span>Paste a PCS1 code, Chordsmith JSON, Pocket DJ source session, or .pocketdaw file.</span></p>
           <p><strong>Demo</strong><span>Load Demo Copy creates an editable autosaved copy. Reload Demo Template discards copy edits and starts fresh from the built-in demo.</span></p>
           <p><strong>Transport</strong><span>Play, Stop, Restart, or return to Bar 1 from the top bar.</span></p>
@@ -1263,14 +1299,26 @@ function renderControlsPanel(state: AppState): string {
           <p><strong>Timeline</strong><span>Select a clip, click or drag the ruler/grid to seek and scrub, choose Bar or Beat snap, then use Move, Copy, Paste, Split, Trim, Loop Clip, Marker and Zoom controls.</span></p>
           <p><strong>Media Pool</strong><span>Import Audio decodes supported files into a runtime cache. Import MIDI parses .mid files into editable clips played by the preview synth.</span></p>
           <p><strong>Mixer</strong><span>Use Volume and Pan sliders. Meters show live peak audio. Mute silences a track; Solo isolates it.</span></p>
-          <p><strong>Diagnostics</strong><span>v${escapeHtml(POCKET_DAW_VERSION)} / ${escapeHtml(environmentLabel())} / ${escapeHtml(state.currentFile.path || state.currentFile.label)} / recent: ${escapeHtml(recent)}</span></p>
+          <p><strong>Recent</strong><span>${escapeHtml(recent)}</span></p>
           <p><strong>Save / Export</strong><span>Save .pocketdaw projects, export full-song WAV, or export multi-track MIDI.</span></p>
           <p><strong>Alpha testing</strong><span>Recording stays guarded. Native Collect Media can copy external audio beside a saved project; Relink/Reload can refresh audio buffers in the installed app.</span></p>
         </div>
-        <button data-action="export-diagnostics">Export Diagnostics</button>
+        <div class="diagnostic-actions">
+          <button data-action="copy-diagnostics">Copy Diagnostics</button>
+          <button data-action="export-diagnostics">Export Diagnostics JSON</button>
+        </div>
       </section>
     </div>
   `;
+}
+
+function handoffStatusText(state: AppState): string {
+  const handoff = state.lastHandoff;
+  if (handoff.result === "not-received") return handoff.message;
+  const source = handoff.source || "unknown source";
+  const kind = handoff.kind ? ` / ${handoff.kind}` : "";
+  const time = handoff.receivedAt ? ` / ${handoff.receivedAt}` : "";
+  return `${handoff.result} from ${source}${kind}${time}: ${handoff.message}`;
 }
 
 function updaterStatusText(state: AppState): string {
@@ -1286,10 +1334,6 @@ function updaterStatusText(state: AppState): string {
 
 function releaseNotesSummary(notes: string): string {
   return notes.replace(/\s+/g, " ").trim().slice(0, 420) || "No release notes were provided.";
-}
-
-function environmentLabel(): string {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window ? "Native/Tauri" : "Browser/dev";
 }
 
 function formatBarBeat(barValue: number, timeSig: number, ppq: number): string {
@@ -1316,6 +1360,25 @@ function formatBytes(bytes: number | undefined): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function mediaPersistenceLabel(status: ReturnType<typeof mediaPoolStatus>, cacheCount: number): string {
+  if (status.missing || status.unresolved) return "Missing - relink required";
+  if (status.runtimeOnly) return "Runtime-only";
+  if (status.external && status.runtimeAvailable) return "External reference loaded";
+  if (status.external) return "External reference";
+  if (status.runtimeAvailable) return "Project media loaded";
+  if (cacheCount) return "Cached render metadata";
+  return "Project media";
+}
+
+function mediaPersistenceDetail(status: ReturnType<typeof mediaPoolStatus>, cacheCount: number): string {
+  if (status.missing || status.unresolved) return "The project has metadata for this item, but the file is missing or unresolved. Use Relink before playback/export.";
+  if (status.runtimeOnly) return "Loaded into memory for this session only. Save/reopen will need re-import or Collect Media in the installed app.";
+  if (status.external && status.runtimeAvailable) return "Referenced from an external path and currently loaded into memory. Use Collect Media for project-relative persistence.";
+  if (status.external) return "Referenced from an external path. Reload or Collect Media before relying on it after moving the project.";
+  if (cacheCount) return "Project metadata has render-cache links. Rebuild cache if the source changes.";
+  return "Stored or collected as project-relative media.";
 }
 
 function panReadout(pan: number): string {

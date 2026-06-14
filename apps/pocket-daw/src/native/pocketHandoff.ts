@@ -29,6 +29,11 @@ export interface PocketDawHandoff {
   clear: () => void;
 }
 
+export type DeepLinkHandoffInspection =
+  | { result: "handoff"; handoff: PocketDawHandoff }
+  | { result: "failed-parse"; url: string; message: string }
+  | { result: "ignored"; url: string; message: string };
+
 export function buildPocketHandoff(kind: PocketHandoffKind, code: string, options: Partial<Omit<PocketHandoffEnvelope, "app" | "handoffVersion" | "kind" | "code" | "createdAt">> & { createdAt?: string } = {}): PocketHandoffEnvelope {
   return {
     app: HANDOFF_APP,
@@ -90,8 +95,17 @@ export function readUrlHandoff(
 }
 
 export function readDeepLinkHandoff(input: string): PocketDawHandoff | null {
-  if (!isPocketDawDeepLink(input)) return null;
-  return readUrlHandoff(input, { source: "deep-link", clear: () => undefined });
+  const inspected = inspectDeepLinkHandoff(input);
+  return inspected.result === "handoff" ? inspected.handoff : null;
+}
+
+export function inspectDeepLinkHandoff(input: string): DeepLinkHandoffInspection {
+  if (!isPocketDawDeepLink(input)) {
+    return { result: "ignored", url: input, message: "Ignored non-Pocket DAW launch URL." };
+  }
+  const handoff = readUrlHandoff(input, { source: "deep-link", clear: () => undefined });
+  if (handoff) return { result: "handoff", handoff };
+  return { result: "failed-parse", url: input, message: "Pocket DAW launch URL did not contain a valid PocketHandoff payload." };
 }
 
 export function readWindowNameHandoff(name = getWindowName()): PocketDawHandoff | null {

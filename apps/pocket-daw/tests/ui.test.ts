@@ -214,12 +214,23 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Reload Demo Template discards copy edits");
   });
 
+  it("renders first-run installed-app actions for demo, Chordsmith import and project open", () => {
+    const html = renderAppShell(createInitialState());
+
+    expect(html).toContain('class="quick-start"');
+    expect(html).toContain("Demo is ready");
+    expect(html).toContain('data-action="load-demo"');
+    expect(html).toContain('data-action="import-focus"');
+    expect(html).toContain('data-action="open-project"');
+    expect(html).toContain("Open .pocketdaw");
+  });
+
   it("renders the shell as explicit non-overlapping layout zones", () => {
     const html = renderAppShell(createInitialState());
     const zones = [...html.matchAll(/data-layout-zone="([^"]+)"/g)].map((match) => match[1]);
 
     expect(html).toContain('data-layout-shell="true"');
-    expect(zones).toEqual(["menu", "transport", "studio", "mixer", "export", "media", "import"]);
+    expect(zones).toEqual(["menu", "transport", "quickstart", "studio", "mixer", "export", "media", "import"]);
     expect(html.indexOf('class="mixer"')).toBeLessThan(html.indexOf('class="export-panel"'));
     expect(html.indexOf('class="export-panel"')).toBeLessThan(html.indexOf('class="media-pool"'));
     expect(html.indexOf('class="media-pool"')).toBeLessThan(html.indexOf('class="import-panel"'));
@@ -352,6 +363,7 @@ describe("Pocket DAW UI rendering", () => {
 
     expect(html).toContain("Battle Loop.wav");
     expect(html).toContain("Missing");
+    expect(html).toContain("Missing - relink required");
     expect(html).toContain("48000 Hz");
     expect(html).toContain("cache_loop");
     expect(html).toContain(`data-place-audio="${item.id}"`);
@@ -386,6 +398,11 @@ describe("Pocket DAW UI rendering", () => {
 
     expect(html).toContain(`v${POCKET_DAW_VERSION}`);
     expect(html).toContain("Browser/dev");
+    expect(html).toContain("About / Diagnostics");
+    expect(html).toContain("Copy Diagnostics");
+    expect(html).toContain("Export Diagnostics JSON");
+    expect(html).toContain("installerOnly");
+    expect(html).toContain("No Pocket DAW handoff received yet.");
     expect(html).toContain('data-arm-track="live-vocals" disabled');
     expect(html).toContain("Recording coming after");
     expect(html).toContain("media/device QA");

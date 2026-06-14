@@ -5,6 +5,7 @@ import {
   decodePocketHandoff,
   encodePocketHandoff,
   HANDOFF_WINDOW_PREFIX,
+  inspectDeepLinkHandoff,
   readDeepLinkHandoff,
   readStoredHandoff,
   readUrlHandoff,
@@ -98,5 +99,18 @@ describe("PocketHandoff compatibility", () => {
     expect(handoff?.source).toBe("deep-link");
     expect(handoff?.code).toBe("PCS1:deep-link");
     expect(rejected).toBeNull();
+  });
+
+  it("classifies malformed installed-app deep links as failed parse", () => {
+    const malformed = inspectDeepLinkHandoff("pocket-daw://handoff?pocketHandoff=not-a-valid-envelope");
+    const ignored = inspectDeepLinkHandoff("https://example.test/daw?pocketHandoff=not-a-valid-envelope");
+
+    expect(malformed).toMatchObject({
+      result: "failed-parse",
+      message: expect.stringContaining("valid PocketHandoff")
+    });
+    expect(ignored).toMatchObject({
+      result: "ignored"
+    });
   });
 });

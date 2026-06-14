@@ -5,6 +5,7 @@ import { POCKET_DAW_VERSION } from "../daw/schema";
 import type { SnapMode } from "../daw/timeline";
 import { createUndoStack, type UndoStack } from "../daw/undo";
 import type { ProjectFileState } from "../native/fileBridge";
+import type { PocketHandoffKind, PocketHandoffSource } from "../native/pocketHandoff";
 import type { RecentProject } from "../native/recentFiles";
 import type { UpdaterState } from "../native/updaterBridge";
 
@@ -50,6 +51,17 @@ export interface AppState {
   chordsmithEditorMelodyTrackIndex: number;
   chordsmithEditorStepPage: number;
   chordsmithStepSelection: ChordsmithStepSelection | null;
+  lastHandoff: HandoffStatus;
+}
+
+export type HandoffResult = "not-received" | "imported" | "ignored" | "failed-parse";
+
+export interface HandoffStatus {
+  source: PocketHandoffSource | null;
+  result: HandoffResult;
+  kind: PocketHandoffKind | null;
+  receivedAt: string | null;
+  message: string;
 }
 
 export interface LoadProjectIntoStateOptions {
@@ -96,7 +108,14 @@ export function createInitialState(): AppState {
     chordsmithEditorSectionId: "A",
     chordsmithEditorMelodyTrackIndex: 0,
     chordsmithEditorStepPage: 0,
-    chordsmithStepSelection: null
+    chordsmithStepSelection: null,
+    lastHandoff: {
+      source: null,
+      result: "not-received",
+      kind: null,
+      receivedAt: null,
+      message: "No Pocket DAW handoff received yet."
+    }
   };
 }
 

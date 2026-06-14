@@ -5,8 +5,7 @@
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
 - Current public alpha version: `0.5.9`
-- Primary itch channel: `windows-x64`
-- Optional installer/update-test channel: `windows-installer`
+- Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 - Current source commit: `5f67856b91a9155ad805931539719d56938d9b69`
 
@@ -48,7 +47,7 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 - Chordsmith step editors page through the full section length instead of only the first compact step slice.
 - Cross-platform browser preview packaging writes a versioned zip with current docs at the root.
 - Release verification can run tests, production build, browser preview packaging and native debug build when the Rust/Tauri toolchain is available.
-- Free public itch release automation now stages a portable Windows folder/ZIP as the primary artifact under `releases/itch/`.
+- Free public itch release automation now stages installed Windows setup/MSI artifacts and updater `.sig` files under `releases/itch/installers/`.
 - Release manifests and SHA-256 checksum files are generated from actual artifacts instead of copied by hand.
 - Untrusted `.pocketdaw`/JSON project rendering is hardened for names, IDs, data attributes and inline colors.
 - Native and browser fallback imports reject oversized project, MIDI and audio files before whole-file reads.
@@ -288,22 +287,24 @@ Current v0.5.9 local release verification target:
 - `npm run verify:versions`: checks package, lockfile, Tauri, Cargo and schema version sync.
 - `npm test`: runs the automated TypeScript/Vitest suite.
 - `npm run build`: runs TypeScript and Vite production build.
-- `npm run package:preview`: writes the browser preview zip for local/dev preview only.
-- `npm run package:itch`: builds/stages the portable Windows release folder/ZIP, optional installers, release docs, manifest and checksums.
+- `npm run package:preview`: writes the browser preview zip for local/dev preview only; it is not a public Pocket DAW app distribution channel.
+- `npm run package:itch`: builds/stages installer artifacts, updater `.sig` files, release docs, manifest and checksums.
 - `npm run verify:artifacts`: verifies generated hashes, ZIP layout, forbidden files and signing policy.
 - `npm run verify:itch`: runs the local release gate with no upload.
 
 Primary itch release artifacts are generated under:
 
 ```text
-releases/itch/pocket-daw-windows-x64-v0.5.9/
-releases/itch/pocket-daw-windows-x64-v0.5.9.zip
+releases/itch/installers/Pocket DAW_0.5.9_x64-setup.exe
+releases/itch/installers/Pocket DAW_0.5.9_x64-setup.exe.sig
+releases/itch/installers/Pocket DAW_0.5.9_x64_en-US.msi
+releases/itch/installers/Pocket DAW_0.5.9_x64_en-US.msi.sig
 releases/itch/pocket-daw-release-manifest-v0.5.9.json
 releases/itch/CHECKSUMS_SHA256_v0.5.9.txt
 releases/itch/FINAL_RELEASE_VERDICT_v0.5.9.md
 ```
 
-The portable Windows folder/ZIP is the primary itch artifact. Optional NSIS/MSI installers, when produced, are staged under `releases/itch/installers/` as secondary downloads only. The browser preview ZIP is not the main itch target.
+The installed Windows setup/MSI artifacts are the public itch artifacts. The browser preview ZIP is a local/dev preview helper, not the Pocket DAW public distribution target.
 
 The native Windows debug app can be checked with:
 
@@ -492,13 +493,13 @@ Pocket Chordsmith web can borrow the same lightweight lessons without becoming a
 ## v0.5.8 Itch Release Readiness
 
 - Bumped app/package/native metadata to v0.5.8 while keeping persisted project schema version 2.
-- Added portable Windows itch packaging under `releases/itch/pocket-daw-windows-x64-v0.5.8/`.
+- Added earlier Windows itch packaging experiments; current policy supersedes them with installer-only distribution under `releases/itch/installers/`.
 - Refined timeline defaults for the updater test build: 240 px/bar startup zoom, live zoom slider resizing, and row/ruler layering so track headers scroll under the bar/time ruler instead of covering it.
 - Fixed inline Chordsmith sequencer rows so drum, bass, melody and guitar grids start exactly on bar 1 with no text-label offset.
 - Moved inline lane labels into the left track header and added direct timeline controls for BPM, key, scale, time signature, sequencer resolution and Add Section.
 - Added release manifest, SHA-256 checksum generation, artifact verification and a final verdict file.
 - Added free itch page copy and a table-based Windows smoke checklist.
-- Kept installers optional and separate from the primary portable ZIP.
+- Current policy makes installers the only public Pocket DAW distribution path.
 - Added a guarded butler push script that refuses to upload unless `PUBLISH=1` is set.
 - Hardened string-rendered UI output against malicious project-controlled IDs, colors, names, media fields and automation IDs.
 - Normalized loaded `.pocketdaw`/JSON tracks, clips, media, markers and automation lanes to prevent render/layout crashes.
@@ -508,10 +509,10 @@ Pocket Chordsmith web can borrow the same lightweight lessons without becoming a
 ## v0.5.9 Alpha Testing Release
 
 - Updated app/package/native metadata to v0.5.9 while keeping persisted project schema version 2.
-- Published the alpha-testing itch channels at `samfa12/pocket-daw:windows-x64` and `samfa12/pocket-daw:windows-installer`.
+- Published/uses the alpha-testing itch installer channel at `samfa12/pocket-daw:windows-installer`.
 - Added `docs/ALPHA_TESTING_RELEASE_STATUS.md` as the current public alpha status anchor.
 - Added a Pocket DAW app README that points testers to itch, the updater endpoint and local verification commands.
-- Kept the portable Windows ZIP as the primary itch artifact and the installer channel as the update-test path.
+- Treats Pocket DAW as installed-app only for public alpha testing; updater confidence comes from the installed app.
 - Published the GitHub updater release `pocket-daw-v0.5.9-updater-test` with `pocket-daw-latest.json`, setup EXE, `.sig`, checksums and release notes.
 - Added resizable timeline workspace controls so the mixer moves lower as the timeline grows.
 - Added inspector hide/show and inspector width resize controls.

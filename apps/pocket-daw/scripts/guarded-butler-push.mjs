@@ -8,7 +8,7 @@ if (process.env.PUBLISH !== "1") {
 }
 
 const version = packageJson.version;
-const folder = `releases/itch/pocket-daw-windows-x64-v${version}`;
+const folder = "releases/itch/installers";
 const args = ["push", folder, `${ITCH_SLUG}:${ITCH_CHANNEL}`, "--userversion", version, "--hidden"];
 console.log(`> butler ${args.join(" ")}`);
 const result = spawnSync("butler", args, { stdio: "inherit", shell: false });

@@ -1,0 +1,181 @@
+import type { AudioEngine } from "../audio/audioEngine";
+import { getCachedAudioBuffer } from "../audio/audioBufferCache";
+import { mediaPoolStatus } from "../daw/mediaPool";
+import { POCKET_DAW_VERSION } from "../daw/schema";
+import { currentProject, type AppState } from "./state";
+
+export type AudioEngineDiagnostics = ReturnType<AudioEngine["getDiagnostics"]>;
+
+export interface TesterDiagnosticsPayload {
+  capturedAt: string;
+  app: {
+    name: "Pocket DAW";
+    version: string;
+    buildId: string;
+    commit: string;
+    runtime: string;
+    platform: string;
+    installerOnly: true;
+  };
+  project: {
+    id: string;
+    title: string;
+    fileLabel: string;
+    filePath: string | null;
+    dawVersion: string;
+    schemaVersion: number;
+    bpm: number;
+    timeSig: number;
+    bars: number;
+    clipCount: number;
+    trackCount: number;
+    sourceRefCount: number;
+  };
+  audio: {
+    playbackBackend: string;
+    nativeStatus: string | null;
+    nativeLastError: string | null;
+    deviceHost: string;
+    deviceCount: number;
+    defaultInputId: string | null;
+    defaultOutputId: string | null;
+  };
+  updater: {
+    status: string;
+    message: string;
+    currentVersion: string;
+    availableVersion: string | null;
+    autoCheckOnStartup: boolean;
+    endpoint: string;
+  };
+  handoff: {
+    source: string | null;
+    result: string;
+    kind: string | null;
+    receivedAt: string | null;
+    message: string;
+  };
+  media: {
+    poolCount: number;
+    projectMediaCount: number;
+    externalReferenceCount: number;
+    runtimeOnlyCount: number;
+    missingCount: number;
+    runtimeAvailableCount: number;
+    renderCacheCount: number;
+    nativeRenderCache: AudioEngineDiagnostics["nativeRenderCache"];
+  };
+  storage: {
+    projectPath: string | null;
+    userDataPath: string;
+  };
+}
+
+const UPDATER_ENDPOINT = "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json";
+
+export function buildTesterDiagnosticsPayload(
+  state: AppState,
+  audioDiagnostics: AudioEngineDiagnostics,
+  options: { capturedAt?: string; runtime?: string; platform?: string } = {}
+): TesterDiagnosticsPayload {
+  const project = currentProject(state);
+  const mediaStatuses = project.mediaPool.map((item) => mediaPoolStatus(item));
+  const projectMediaCount = mediaStatuses.filter((status) => !status.external && !status.runtimeOnly && !status.missing && !status.unresolved).length;
+  const externalReferenceCount = mediaStatuses.filter((status) => status.external).length;
+  const runtimeOnlyCount = mediaStatuses.filter((status) => status.runtimeOnly).length;
+  const missingCount = mediaStatuses.filter((status) => status.missing || status.unresolved).length;
+  const runtimeAvailableCount = project.mediaPool.filter((item) => item.kind === "audio" && !!getCachedAudioBuffer(item.id)).length;
+  const devices = project.audioDeviceSettings.devices || [];
+
+  return {
+    capturedAt: options.capturedAt || new Date().toISOString(),
+    app: {
+      name: "Pocket DAW",
+      version: POCKET_DAW_VERSION,
+      buildId: runtimeBuildId(),
+      commit: runtimeCommit(),
+      runtime: options.runtime || runtimeLabel(),
+      platform: options.platform || runtimePlatform(),
+      installerOnly: true
+    },
+    project: {
+      id: project.project.id,
+      title: project.project.title,
+      fileLabel: state.currentFile.label,
+      filePath: state.currentFile.path,
+      dawVersion: project.dawVersion,
+      schemaVersion: project.schemaVersion,
+      bpm: project.project.bpm,
+      timeSig: project.project.timeSig,
+      bars: project.timeline.bars,
+      clipCount: project.timeline.clips.length,
+      trackCount: project.tracks.length,
+      sourceRefCount: project.sourceRefs.length
+    },
+    audio: {
+      playbackBackend: String(audioDiagnostics.playbackBackend),
+      nativeStatus: audioDiagnostics.nativeAudio.status ? String(audioDiagnostics.nativeAudio.status) : null,
+      nativeLastError: audioDiagnostics.nativeAudio.lastError,
+      deviceHost: project.audioDeviceSettings.host,
+      deviceCount: devices.length,
+      defaultInputId: project.audioDeviceSettings.inputDeviceId || null,
+      defaultOutputId: project.audioDeviceSettings.outputDeviceId || null
+    },
+    updater: {
+      status: state.updaterStatus,
+      message: state.updaterMessage,
+      currentVersion: state.updaterCurrentVersion,
+      availableVersion: state.updaterAvailableVersion,
+      autoCheckOnStartup: state.updaterAutoCheckOnStartup,
+      endpoint: UPDATER_ENDPOINT
+    },
+    handoff: {
+      source: state.lastHandoff.source,
+      result: state.lastHandoff.result,
+      kind: state.lastHandoff.kind,
+      receivedAt: state.lastHandoff.receivedAt,
+      message: state.lastHandoff.message
+    },
+    media: {
+      poolCount: project.mediaPool.length,
+      projectMediaCount,
+      externalReferenceCount,
+      runtimeOnlyCount,
+      missingCount,
+      runtimeAvailableCount,
+      renderCacheCount: project.renderCache.length,
+      nativeRenderCache: audioDiagnostics.nativeRenderCache
+    },
+    storage: {
+      projectPath: state.currentFile.path,
+      userDataPath: state.currentFile.path
+        ? "Project-adjacent media/cache folders are relative to the saved .pocketdaw file."
+        : "Unsaved project; autosave/recent settings use the installed app or browser runtime storage."
+    }
+  };
+}
+
+export function diagnosticsJson(payload: TesterDiagnosticsPayload): string {
+  return JSON.stringify(payload, null, 2);
+}
+
+export function runtimeBuildId(): string {
+  return String(metaEnv().VITE_POCKET_DAW_BUILD_ID || metaEnv().VITE_BUILD_ID || "dev-or-unset");
+}
+
+export function runtimeCommit(): string {
+  return String(metaEnv().VITE_GIT_COMMIT || metaEnv().VITE_COMMIT_SHA || "unavailable");
+}
+
+export function runtimeLabel(): string {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window ? "Installed/Tauri" : "Browser/dev";
+}
+
+export function runtimePlatform(): string {
+  if (typeof navigator === "undefined") return "unknown";
+  return [navigator.platform, navigator.userAgent].filter(Boolean).join(" / ");
+}
+
+function metaEnv(): Record<string, string | boolean | undefined> {
+  return ((import.meta as ImportMeta & { env?: Record<string, string | boolean | undefined> }).env || {});
+}
