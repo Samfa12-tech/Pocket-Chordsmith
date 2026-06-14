@@ -38,10 +38,13 @@
     "itch:push:hidden": "node scripts/guarded-butler-push.mjs",
     "verify:release": "node scripts/verify-release.mjs",
     "verify:native-release": "node scripts/verify-release.mjs --native-release",
+    "signing:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-tauri-signing-env.ps1",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:debug": "tauri build --debug --no-bundle",
-    "tauri:build": "tauri build"
+    "tauri:build:installers": "tauri build --config src-tauri/tauri.package.conf.json",
+    "tauri:build": "tauri build",
+    "tauri:build:signed": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-tauri-signing-env.ps1 npx tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",

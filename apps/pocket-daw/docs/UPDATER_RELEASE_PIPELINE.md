@@ -35,6 +35,22 @@ $env:TAURI_SIGNING_PRIVATE_KEY = "<private key path or private key contents>"
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "<private key password if one was set>"
 ```
 
+On the local Windows release machine, the project can load the updater signing key through:
+
+```powershell
+npm run signing:check
+npm run tauri:build:installers
+npm run package:itch
+```
+
+The helper reads `.env.tauri-signing.local` when present, accepts `TAURI_SIGNING_PRIVATE_KEY` key contents or `TAURI_SIGNING_PRIVATE_KEY_FILE`, then falls back to:
+
+```text
+%USERPROFILE%\.pocket-daw-secrets\tauri-updater.key
+```
+
+`.env.tauri-signing.local` is ignored by git. Do not commit the private key or a file containing private key contents. `package:itch` builds installers with Tauri's built-in updater signing disabled, then signs the generated EXE/MSI updater artifacts directly with the local private key and an explicit empty password argument.
+
 ## Build Signed Updater Artifacts
 
 Run the normal Tauri release build with signing environment variables present:

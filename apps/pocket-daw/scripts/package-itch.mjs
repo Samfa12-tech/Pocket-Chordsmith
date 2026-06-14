@@ -37,7 +37,7 @@ const INSTALLERS_DIR = join(RELEASES_DIR, "installers");
 const UPDATER_ENDPOINT = "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json";
 
 export async function packageItchRelease({ buildNative = process.env.POCKET_DAW_SKIP_NATIVE_BUILD !== "1" } = {}) {
-  if (buildNative) run("npm", ["run", "tauri:build"]);
+  if (buildNative) run("npm", ["run", "tauri:build:installers"]);
 
   rmCurrentVersionReleaseFiles();
   mkdirSync(RELEASES_DIR, { recursive: true });
@@ -122,6 +122,7 @@ function copyInstallerArtifacts() {
   if (!candidates.length) {
     throw new Error(`No Pocket DAW ${VERSION} installer artifacts were found under ${bundleRoot}.`);
   }
+  ensureUpdaterSignatures(candidates);
   const copied = [];
   for (const source of candidates) {
     const target = join(INSTALLERS_DIR, basename(source));
@@ -129,6 +130,34 @@ function copyInstallerArtifacts() {
     copied.push(target);
   }
   return copied;
+}
+
+function ensureUpdaterSignatures(paths) {
+  const installers = paths.filter((path) => /\.(exe|msi)$/i.test(path));
+  for (const installer of installers) {
+    const signature = `${installer}.sig`;
+    if (!existsSync(signature) || statSync(signature).mtimeMs + 1000 < statSync(installer).mtimeMs) {
+      signUpdaterArtifact(installer);
+      if (!paths.includes(signature)) paths.push(signature);
+    }
+  }
+}
+
+function signUpdaterArtifact(installerPath) {
+  const keyPath = updaterSigningKeyPath();
+  const cliPath = join(ROOT, "node_modules", "@tauri-apps", "cli", "tauri.js");
+  if (!existsSync(cliPath)) throw new Error(`Tauri CLI was not found at ${cliPath}. Run npm install before packaging.`);
+  console.log(`Signing updater artifact ${basename(installerPath)}`);
+  runDirect(process.execPath, [cliPath, "signer", "sign", "--private-key-path", keyPath, "--password=", installerPath]);
+}
+
+function updaterSigningKeyPath() {
+  const configured = process.env.TAURI_SIGNING_PRIVATE_KEY_PATH || process.env.TAURI_SIGNING_PRIVATE_KEY_FILE;
+  if (configured && existsSync(configured)) return configured;
+  if (process.env.TAURI_SIGNING_PRIVATE_KEY && existsSync(process.env.TAURI_SIGNING_PRIVATE_KEY)) return process.env.TAURI_SIGNING_PRIVATE_KEY;
+  const fallback = join(process.env.USERPROFILE || "", ".pocket-daw-secrets", "tauri-updater.key");
+  if (existsSync(fallback)) return fallback;
+  throw new Error("Missing Tauri updater signing key file. Set TAURI_SIGNING_PRIVATE_KEY_PATH or place tauri-updater.key under %USERPROFILE%\\.pocket-daw-secrets.");
 }
 
 function classifyInstallers(paths) {
@@ -556,6 +585,13 @@ function run(command, args) {
   const result = process.platform === "win32"
     ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", commandLine(executable, args)], { cwd: ROOT, stdio: "inherit", shell: false })
     : spawnSync(executable, args, { cwd: ROOT, stdio: "inherit", shell: false });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed with status ${result.status}`);
+}
+
+function runDirect(command, args) {
+  console.log(`\n> ${command} ${args.join(" ")}`);
+  const result = spawnSync(command, args, { cwd: ROOT, stdio: "inherit", shell: false });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed with status ${result.status}`);
 }

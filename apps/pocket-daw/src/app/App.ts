@@ -622,6 +622,7 @@ export class App {
     if (this.beginInspectorResize(target, event)) return;
     if (this.beginTimelineClipDrag(target, event)) return;
     if (this.beginChordsmithStepDrag(target, "pointerup")) return;
+    if (this.isTimelineNonSeekTarget(target)) return;
     if (target?.closest("[data-inline-sequencer]")) return;
     const timeline = target?.closest<HTMLElement>("[data-timeline-surface]");
     const seekable = timeline && (target?.closest("[data-seek-ruler]") || !target?.closest("[data-clip-id]"));
@@ -1064,6 +1065,7 @@ export class App {
       this.render({ preserveScroll: true });
       return;
     }
+    if (this.isTimelineNonSeekTarget(target)) return;
     if (target?.closest("[data-inline-sequencer]")) return;
     const timeline = target?.closest<HTMLElement>("[data-timeline-surface]");
     const seekable = target?.closest("[data-seek-ruler]") || (timeline && !target?.closest("[data-clip-id]"));
@@ -1073,6 +1075,10 @@ export class App {
       this.state.status = `Seeked to ${this.formatBarBeat(bar)}.`;
       this.render({ preserveScroll: true });
     }
+  }
+
+  private isTimelineNonSeekTarget(target: HTMLElement | null): boolean {
+    return !!target?.closest("[data-track-id], [data-mute-track], [data-solo-track], [data-arm-track], [data-monitor-track], button, input, select, textarea");
   }
 
   private async dispatch(action: string) {
