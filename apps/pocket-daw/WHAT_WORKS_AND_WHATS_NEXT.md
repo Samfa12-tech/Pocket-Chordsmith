@@ -24,6 +24,7 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 - Handoff/import should behave like opening a new imported project, not silently mutate the currently open project. If a project is already open, Pocket DAW should autosave it before loading the imported handoff.
 - WAV export was manually confirmed working for `C:\Users\sam_s\Downloads\imported-chordsmith-project.wav`.
 - MIDI export produced `C:\Users\sam_s\Downloads\imported-chordsmith-project.mid`; structural inspection parsed 6 tracks and 869 note-on events with matching note-offs, but the file inherits the wrong 112 BPM and declares format 0 despite multiple tracks, so MIDI export needs external playback verification and a header/tempo follow-up.
+- About/Diagnostics panel placement needs a UI fix: in the installed Windows app it can render underneath the top control bar, leaving the close control unreachable. Move it down or constrain it to the visible content area in the next update.
 
 ## What works now
 
