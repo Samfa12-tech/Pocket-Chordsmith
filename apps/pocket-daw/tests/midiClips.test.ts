@@ -4,7 +4,7 @@ import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitiz
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 import { addMidiNote, deleteMidiNote, importMidiFileToProject, midiDataFromClip, moveMidiNote, resizeMidiNote, setMidiNoteVelocity, transposeMidiNote } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
-import { simpleMidiBytes } from "./midiFixtures";
+import { formatOneTempoAndPianoMidiBytes, simpleMidiBytes } from "./midiFixtures";
 
 describe("MIDI clips", () => {
   it("imports MIDI as a media-pool item and timeline clip", () => {
@@ -19,6 +19,27 @@ describe("MIDI clips", () => {
     expect(clip?.mediaPoolItemId).toBe(result.item.id);
     expect(result.project.tracks.find((track) => track.id === result.trackId)?.trackType).toBe("midi");
     expect(midiDataFromClip(clip!).notes[0]).toMatchObject({ pitch: 60, durationTicks: 480 });
+  });
+
+  it("imports format 1 MIDI metadata from separate tempo and note tracks", () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Test" }));
+    const parsed = parseStandardMidiFile(formatOneTempoAndPianoMidiBytes());
+    const result = importMidiFileToProject(project, parsed, "zelda-shape.mid", "file:///zelda-shape.mid", 256);
+    const clip = result.project.timeline.clips.find((item) => item.id === result.clipId)!;
+    const data = midiDataFromClip(clip);
+
+    expect(result.item.metadata).toMatchObject({
+      format: 1,
+      ppq: 1024,
+      tempoBpm: 136,
+      parsedTrackCount: 2,
+      noteCount: 1
+    });
+    expect(data.notes[0]).toMatchObject({ pitch: 60, durationTicks: 1024, trackIndex: 1 });
+    expect(data.metadata?.trackSummaries).toEqual([
+      expect.objectContaining({ name: "Tempo", noteCount: 0 }),
+      expect.objectContaining({ name: "Acoustic Grand Piano", noteCount: 1 })
+    ]);
   });
 
   it("round-trips MIDI note edits through clip metadata", () => {

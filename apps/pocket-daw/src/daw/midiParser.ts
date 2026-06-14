@@ -7,6 +7,7 @@ export interface ParsedMidiNote {
   durationTicks: number;
   velocity: number;
   channel?: number;
+  trackIndex?: number;
 }
 
 export interface ParsedMidiFile {
@@ -29,6 +30,7 @@ interface ActiveNote {
 export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMidiFile {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const reader = new MidiReader(data);
+  if (data.length < 4) throw new Error("MIDI file is missing an MThd header.");
   if (reader.readText(4) !== "MThd") throw new Error("MIDI file is missing an MThd header.");
   const headerLength = reader.readU32();
   const format = reader.readU16();
@@ -40,16 +42,25 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
 
   const notes: ParsedMidiNote[] = [];
   const trackNames: string[] = [];
-  const metadata: JsonObject = { ignoredEvents: 0, trackCount, format };
+  const trackSummaries: JsonObject[] = [];
+  const metadata: JsonObject = { ignoredEvents: 0, trackCount, format, ppq, trackSummaries };
   let tempoBpm: number | undefined;
   let timeSig: number | undefined;
 
   for (let trackIndex = 0; trackIndex < trackCount && !reader.done(); trackIndex += 1) {
-    if (reader.readText(4) !== "MTrk") throw new Error("MIDI track chunk is missing an MTrk header.");
-    const trackEnd = reader.position + reader.readU32();
+    const trackHeaderOffset = reader.position;
+    if (reader.remaining() < 8) throw new Error(`MIDI track ${trackIndex + 1} is incomplete; expected an MTrk header at byte ${trackHeaderOffset}.`);
+    const header = reader.readText(4);
+    if (header !== "MTrk") throw new Error(`MIDI track ${trackIndex + 1} is missing an MTrk header at byte ${trackHeaderOffset}. Found "${printableChunkId(header)}".`);
+    const trackLength = reader.readU32();
+    const trackStart = reader.position;
+    const trackEnd = trackStart + trackLength;
+    if (trackEnd > data.length) throw new Error(`MIDI track ${trackIndex + 1} declares ${trackLength} bytes, which extends past the end of the file.`);
     let tick = 0;
     let runningStatus = 0;
-    const active = new Map<string, ActiveNote>();
+    let trackName = "";
+    const firstNoteIndex = notes.length;
+    const active = new Map<string, ActiveNote[]>();
     while (reader.position < trackEnd) {
       tick += reader.readVarLen();
       let status = reader.readU8();
@@ -65,7 +76,10 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
         const type = reader.readU8();
         const length = reader.readVarLen();
         const payload = reader.readBytes(length);
-        if (type === 0x03) trackNames.push(ascii(payload));
+        if (type === 0x03) {
+          trackName = ascii(payload);
+          trackNames.push(trackName);
+        }
         else if (type === 0x51 && payload.length === 3) tempoBpm = Math.round(60000000 / ((payload[0] << 16) | (payload[1] << 8) | payload[2]));
         else if (type === 0x58 && payload.length >= 1) timeSig = payload[0];
         continue;
@@ -83,9 +97,12 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
         const velocity = reader.readU8();
         const key = `${channel}:${pitch}`;
         if (command === 0x90 && velocity > 0) {
-          active.set(key, { pitch, channel, startTick: tick, velocity });
+          const stacked = active.get(key) || [];
+          stacked.push({ pitch, channel, startTick: tick, velocity });
+          active.set(key, stacked);
         } else {
-          const start = active.get(key);
+          const stacked = active.get(key) || [];
+          const start = stacked.shift();
           if (start) {
             notes.push({
               id: `note_${trackIndex}_${notes.length + 1}`,
@@ -93,9 +110,11 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
               startTick: start.startTick,
               durationTicks: Math.max(1, tick - start.startTick),
               velocity: start.velocity,
-              channel: start.channel
+              channel: start.channel,
+              trackIndex
             });
-            active.delete(key);
+            if (stacked.length) active.set(key, stacked);
+            else active.delete(key);
           }
         }
       } else if (command === 0xa0 || command === 0xb0 || command === 0xe0) {
@@ -107,9 +126,19 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
       } else {
         metadata.ignoredEvents = Number(metadata.ignoredEvents || 0) + 1;
       }
+      if (reader.position > trackEnd) throw new Error(`MIDI track ${trackIndex + 1} event data overran its declared track length.`);
     }
+    trackSummaries.push({
+      trackIndex,
+      name: trackName || `Track ${trackIndex + 1}`,
+      lengthBytes: trackLength,
+      noteCount: notes.length - firstNoteIndex,
+      startOffset: trackStart,
+      endOffset: trackEnd
+    });
     reader.position = trackEnd;
   }
+  metadata.parsedTrackCount = trackSummaries.length;
 
   return {
     format,
@@ -127,6 +156,9 @@ class MidiReader {
   constructor(private data: Uint8Array) {}
   done() {
     return this.position >= this.data.length;
+  }
+  remaining() {
+    return Math.max(0, this.data.length - this.position);
   }
   unread() {
     this.position = Math.max(0, this.position - 1);
@@ -148,6 +180,7 @@ class MidiReader {
     return ascii(this.readBytes(length));
   }
   readBytes(length: number) {
+    if (length < 0 || this.position + length > this.data.length) throw new Error("Unexpected end of MIDI file.");
     const out = this.data.slice(this.position, this.position + length);
     this.position += length;
     return out;
@@ -165,4 +198,8 @@ class MidiReader {
 
 function ascii(bytes: Uint8Array): string {
   return Array.from(bytes).map((byte) => String.fromCharCode(byte)).join("");
+}
+
+function printableChunkId(value: string): string {
+  return value.replace(/[^\x20-\x7e]/g, "?");
 }

@@ -52,6 +52,7 @@ export interface AppState {
   chordsmithEditorStepPage: number;
   chordsmithStepSelection: ChordsmithStepSelection | null;
   lastHandoff: HandoffStatus;
+  recording: RecordingUiState;
 }
 
 export type HandoffResult = "not-received" | "imported" | "ignored" | "failed-parse";
@@ -61,6 +62,15 @@ export interface HandoffStatus {
   result: HandoffResult;
   kind: PocketHandoffKind | null;
   receivedAt: string | null;
+  message: string;
+}
+
+export interface RecordingUiState {
+  status: "idle" | "count-in" | "recording" | "stopping" | "error";
+  trackId: string | null;
+  startedAt: string | null;
+  startBar: number | null;
+  elapsedSeconds: number;
   message: string;
 }
 
@@ -115,6 +125,14 @@ export function createInitialState(): AppState {
       kind: null,
       receivedAt: null,
       message: "No Pocket DAW handoff received yet."
+    },
+    recording: {
+      status: "idle",
+      trackId: null,
+      startedAt: null,
+      startBar: null,
+      elapsedSeconds: 0,
+      message: "Ready to record one armed live track."
     }
   };
 }
@@ -144,7 +162,15 @@ export function loadProjectIntoState(
     busyMessage: null,
     exportProgress: null,
     chordsmithEditorStepPage: 0,
-    chordsmithStepSelection: null
+    chordsmithStepSelection: null,
+    recording: {
+      status: "idle",
+      trackId: null,
+      startedAt: null,
+      startBar: null,
+      elapsedSeconds: 0,
+      message: "Ready to record one armed live track."
+    }
   };
 }
 

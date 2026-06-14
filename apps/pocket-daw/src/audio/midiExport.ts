@@ -15,7 +15,7 @@ const DRUM_NOTES: Record<string, number> = {
 export function exportProjectToMidiBlob(project: PocketDawProject): Blob {
   const ppq = project.project.ppq || 480;
   const tracks = buildMidiTracks(project, ppq);
-  const header = chunk("MThd", [...u32(6), ...u16(1), ...u16(tracks.length), ...u16(ppq)]);
+  const header = chunk("MThd", [...u16(1), ...u16(tracks.length), ...u16(ppq)]);
   const body = tracks.map((messages) => chunk("MTrk", encodeTrack(messages))).flat();
   return new Blob([new Uint8Array([...header, ...body])], { type: "audio/midi" });
 }

@@ -2,9 +2,9 @@ import { parseAnyImportText } from "../compatibility/pcsParser";
 import { sanitizePocketChordsmithProject } from "../compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../compatibility/pcsToDaw";
 import { migratePocketDawProject } from "../compatibility/migrations";
-import { cloneProject, parsePocketDawProjectFile } from "../daw/dawProject";
+import { cloneProject, createDefaultMetronomeSettings, parsePocketDawProjectFile } from "../daw/dawProject";
 import { deleteClip, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, splitClipAtBar, toggleClipMute, trimClipEnd, trimClipStart } from "../daw/clips";
-import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
+import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
 import { addTrackToProject, type AddTrackKind } from "../daw/tracks";
 import { placeAudioClipOnTimeline } from "../daw/audioClips";
 import { addMidiNote, deleteMidiNote, moveMidiNote, resizeMidiNote, setMidiNoteVelocity, transposeMidiNote } from "../daw/midiClips";
@@ -180,13 +180,24 @@ export function toggleTrackSoloCommand(state: AppState, trackId: string): AppSta
 
 export function toggleTrackArmedCommand(state: AppState, trackId: string): AppState {
   const track = state.undoStack.present.tracks.find((item) => item.id === trackId);
-  if (track?.recordKind && track.recordKind !== "none") {
-    return {
-      ...state,
-      status: "Recording arms are disabled until media/device QA, latency setup and reload-safe recording paths are signed off."
-    };
-  }
-  return commitProject(state, toggleTrackArmed(state.undoStack.present, trackId), "Toggled track arm.");
+  if (!track?.recordKind || track.recordKind === "none") return { ...state, status: "Only live audio tracks can be armed." };
+  const willArm = !track.armed;
+  return commitProject(state, toggleTrackArmed(state.undoStack.present, trackId), willArm ? `Armed ${track.name}.` : `Disarmed ${track.name}.`);
+}
+
+export function toggleTrackMonitorCommand(state: AppState, trackId: string): AppState {
+  const track = state.undoStack.present.tracks.find((item) => item.id === trackId);
+  if (!track?.recordKind || track.recordKind === "none") return { ...state, status: "Only live audio tracks have input monitoring." };
+  const next = toggleTrackMonitor(state.undoStack.present, trackId);
+  const updated = next.tracks.find((item) => item.id === trackId);
+  return commitProject(state, next, `${track.name} monitor ${updated?.monitorEnabled ? "on" : "off"}.`);
+}
+
+export function toggleMetronomeCommand(state: AppState): AppState {
+  const project = cloneProject(state.undoStack.present);
+  const current = project.project.metronome || createDefaultMetronomeSettings();
+  project.project.metronome = { ...current, enabled: !current.enabled };
+  return commitProject(state, project, project.project.metronome.enabled ? "Metronome on." : "Metronome off.");
 }
 
 export function setTrackVolumeCommand(state: AppState, trackId: string, volume: number): AppState {

@@ -45,11 +45,13 @@ This note tracks the v0.6-readiness work that follows the v0.5.1 hardening pass.
 - Transport shows app version, environment and current file label/path.
 - Controls/help panel exposes copyable diagnostics via the existing diagnostics export.
 - Media and export actions report safer statuses instead of implying unfinished native behavior is complete.
-- Recording arm controls are disabled and route to a clear prerequisite message.
+- Recording controls now expose the v0.6.0 alpha slice: one armed live track, monitor toggle, metronome/count-in and project-media WAV clip creation in installed builds.
 
-## Recording Prep
+## Recording Alpha
 
-- Track schema already has `recordKind`, `armed` and `inputDeviceId` placeholders.
-- Live vocal/instrument tracks can be created as future routing placeholders.
-- No microphone permissions, native capture, waveform recording or recorded clip generation are enabled.
-- Recording should wait for device selection, latency settings, armed-track rules, input monitoring/meters and reload-safe recorded clip generation.
+- Track schema includes `recordKind`, `armed`, `inputDeviceId` and `monitorEnabled`.
+- Project metadata includes metronome settings for enabled state, count-in bars and volume.
+- Native CPAL recording commands can start/stop/status one mono input capture and write PCM WAV files under `project-media/recordings/`.
+- Stop-recording imports the take as project media and places an audio clip on the armed live track.
+- Browser/dev recording remains disabled.
+- Remaining work: ASIO, multitrack/stereo capture, input meters, latency compensation UI, punch-in/out, comping/take lanes and FX monitoring.

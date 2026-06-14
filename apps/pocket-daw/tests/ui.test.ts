@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { createInitialState } from "../src/app/state";
 import { renderAppShell } from "../src/app/ui";
 import { createUndoStack } from "../src/daw/undo";
@@ -387,7 +388,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain(`data-relink-media="${item.id}"`);
   });
 
-  it("renders version diagnostics and disabled recording arm stubs", () => {
+  it("renders version diagnostics and live recording alpha controls", () => {
     const state = createInitialState();
     state.showControls = true;
     const live = addTrackToProject(state.undoStack.present, "live-vocals");
@@ -403,9 +404,20 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Export Diagnostics JSON");
     expect(html).toContain("installerOnly");
     expect(html).toContain("No Pocket DAW handoff received yet.");
-    expect(html).toContain('data-arm-track="live-vocals" disabled');
-    expect(html).toContain("Recording coming after");
-    expect(html).toContain("media/device QA");
+    expect(html).toContain('data-action="record-toggle"');
+    expect(html).toContain('data-action="metronome-toggle"');
+    expect(html).toContain('data-arm-track="live-vocals"');
+    expect(html).toContain('data-monitor-track="live-vocals"');
+    expect(html).toContain("Arm Live Vocals for mono recording");
+  });
+
+  it("keeps modal panels above the menu and transport bars", () => {
+    const css = readFileSync("src/styles/base.css", "utf8");
+
+    expect(css).toContain(".modal-backdrop");
+    expect(css).toContain("z-index: 120");
+    expect(css).toContain("var(--menu-strip-height");
+    expect(css).toContain("align-items: start");
   });
 
   it("renders the selected MIDI clip piano-roll editor", () => {

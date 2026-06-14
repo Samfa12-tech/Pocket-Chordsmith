@@ -1,6 +1,6 @@
 import { createDefaultExportProfiles } from "../daw/exportProfiles";
 import { createDefaultTracks } from "../daw/tracks";
-import { createDefaultAudioDeviceSettings } from "../daw/dawProject";
+import { createDefaultAudioDeviceSettings, createDefaultMetronomeSettings } from "../daw/dawProject";
 import { createDefaultFxState } from "../daw/fx";
 import {
   POCKET_DAW_APP,
@@ -83,7 +83,8 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
       swing: project.swing,
       resolution: project.resolution,
       sampleRate: 44100,
-      ppq: 480
+      ppq: 480,
+      metronome: createDefaultMetronomeSettings()
     },
     timeline: {
       bars: totalBars,

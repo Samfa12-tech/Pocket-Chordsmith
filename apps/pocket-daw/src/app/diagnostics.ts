@@ -40,6 +40,17 @@ export interface TesterDiagnosticsPayload {
     defaultInputId: string | null;
     defaultOutputId: string | null;
   };
+  recording: {
+    status: string;
+    trackId: string | null;
+    armedTrackIds: string[];
+    monitorTrackIds: string[];
+    metronomeEnabled: boolean;
+    countInBars: number;
+    metronomeVolume: number;
+    elapsedSeconds: number;
+    message: string;
+  };
   updater: {
     status: string;
     message: string;
@@ -86,6 +97,7 @@ export function buildTesterDiagnosticsPayload(
   const missingCount = mediaStatuses.filter((status) => status.missing || status.unresolved).length;
   const runtimeAvailableCount = project.mediaPool.filter((item) => item.kind === "audio" && !!getCachedAudioBuffer(item.id)).length;
   const devices = project.audioDeviceSettings.devices || [];
+  const metronome = project.project.metronome || { enabled: false, countInBars: 1, volume: 0.55 };
 
   return {
     capturedAt: options.capturedAt || new Date().toISOString(),
@@ -120,6 +132,17 @@ export function buildTesterDiagnosticsPayload(
       deviceCount: devices.length,
       defaultInputId: project.audioDeviceSettings.inputDeviceId || null,
       defaultOutputId: project.audioDeviceSettings.outputDeviceId || null
+    },
+    recording: {
+      status: state.recording.status,
+      trackId: state.recording.trackId,
+      armedTrackIds: project.tracks.filter((track) => track.armed).map((track) => track.id),
+      monitorTrackIds: project.tracks.filter((track) => track.monitorEnabled).map((track) => track.id),
+      metronomeEnabled: metronome.enabled,
+      countInBars: metronome.countInBars,
+      metronomeVolume: metronome.volume,
+      elapsedSeconds: state.recording.elapsedSeconds,
+      message: state.recording.message
     },
     updater: {
       status: state.updaterStatus,

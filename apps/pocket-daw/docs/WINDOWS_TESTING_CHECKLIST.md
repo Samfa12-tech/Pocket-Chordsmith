@@ -5,7 +5,7 @@ Run this against the exact installed Windows alpha from itch/GitHub release arti
 Current alpha target:
 
 - App: Pocket DAW
-- Version: `0.5.13`
+- Version: `0.6.0` source target; latest completed installed-app smoke evidence remains `0.5.13`
 - Source commit: `24b2adcf8e8fa1c2241542e0b6e7777ed98dea85`
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Itch channel: `windows-installer`
@@ -59,6 +59,11 @@ Manual evidence from Sam on 2026-06-14:
 | Editing | Change one track/section, then inspect demo and unrelated sections. | Unrelated demo/sections do not mutate unexpectedly. | Manual / Not run | Manual / Not run |  |  |
 | Mixer/audio state | Adjust track volume, mute, solo if present, and pan. | Audio/state changes match the control without corrupting other tracks. | Manual / Not run | Manual / Not run |  |  |
 | Mixer/audio state | Adjust FX controls, routing/bus controls and automation if exposed. | Controls persist, export safely, and guarded scaffolds stay honest where incomplete. | Manual / Not run | Manual / Not run |  |  |
+| Live recording | Save the project as a `.pocketdaw` file, then press Record without an armed live track. | App gives a friendly "arm one live audio track" message and does not create media. | Manual / Not run | Manual / Not run |  | v0.6.0 installed app only. |
+| Live recording | Add Live Vocals and Live Instrument, arm one then the other. | Only one live audio track remains armed at a time; `M`, `S`, `R`, `Monitor` controls are reachable in timeline/mixer. | Manual / Not run | Manual / Not run |  | Unit-covered; installed UI still needs smoke. |
+| Live recording | Refresh audio devices, choose an input, enable Monitor, and toggle it off/on. | Monitor state changes; no feedback loop occurs when monitor is off. | Manual / Not run | Manual / Not run |  | Keep speakers/headphones safe while testing. |
+| Live recording | Enable metronome, press Record, wait for one-bar count-in, record 5-10 seconds, then Stop Rec. | Count-in/click is audible, WAV is written under `project-media/recordings/`, and a clip appears on the armed live track at the original start bar. | Manual / Not run | Manual / Not run |  | Mono capture only. |
+| Live recording | Save, close, reopen the `.pocketdaw`, then play the recorded clip. | Recorded project-media WAV reloads and plays. | Manual / Not run | Manual / Not run |  | Confirms durable take persistence. |
 | Import/export | Import an audio clip if exposed and place it on the timeline. | Media appears with clear embedded/collected/referenced/cached/missing state; audible if loaded. | Manual / Not run | Manual / Not run |  |  |
 | Import/export | Import MIDI if exposed. | MIDI item/clip appears and is readable/editable. | Manual / Not run | Manual / Not run |  |  |
 | Import/export | Export WAV and open the file in a player. | WAV file is created and playable. | Exported WAV at `C:\Users\sam_s\Downloads\imported-chordsmith-project.wav`; Sam confirmed it works correctly. | Pass | Sam / 2026-06-14 |  |

@@ -69,6 +69,15 @@ export function placeAudioClipOnTimeline(project: PocketDawProject, mediaPoolIte
   if (!item || item.kind !== "audio") return { project, clipId: "", trackId: "" };
   const next = cloneProject(project);
   const track = ensureAudioTrack(next, item);
+  return placeAudioClipOnTrack(next, item.id, track.id, startBar);
+}
+
+export function placeAudioClipOnTrack(project: PocketDawProject, mediaPoolItemId: string, trackId: string, startBar: number): PlaceAudioClipResult {
+  const item = findMediaPoolItem(project, mediaPoolItemId);
+  if (!item || item.kind !== "audio") return { project, clipId: "", trackId: "" };
+  const next = cloneProject(project);
+  const track = next.tracks.find((candidate) => candidate.id === trackId && candidate.trackType === "audio");
+  if (!track) return { project, clipId: "", trackId: "" };
   const barLength = Math.max(1, secondsToBars(item.durationSeconds || secondsPerBar(next), next));
   const clipId = nextClipId(next);
   next.timeline.clips.push({
@@ -124,6 +133,7 @@ function ensureAudioTrack(project: PocketDawProject, item: MediaPoolItem): Track
     fxChainId: `fx_${id}`,
     recordKind: "none",
     inputDeviceId: null,
+    monitorEnabled: false,
     active: true
   };
   const masterIndex = project.tracks.findIndex((item) => item.role === "master");

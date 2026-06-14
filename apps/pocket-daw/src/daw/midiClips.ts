@@ -36,6 +36,7 @@ export function importMidiFileToProject(project: PocketDawProject, parsed: Parse
       timeSig: parsed.timeSig || null,
       trackNames: parsed.trackNames,
       noteCount: parsed.notes.length,
+      parsedTrackCount: parsed.metadata.parsedTrackCount || null,
       ...(parsed.metadata || {})
     }
   }, project.mediaPool);
@@ -165,7 +166,8 @@ function cleanNote(value: unknown): ParsedMidiNote | null {
     startTick: cleanNumber(raw.startTick ?? raw.startBeat, 0),
     durationTicks: cleanNumber(raw.durationTicks ?? raw.durationBeat, 480, 1),
     velocity: cleanNumber(raw.velocity, 90, 1, 127),
-    channel: raw.channel === undefined ? undefined : cleanNumber(raw.channel, 0, 0, 15)
+    channel: raw.channel === undefined ? undefined : cleanNumber(raw.channel, 0, 0, 15),
+    trackIndex: raw.trackIndex === undefined ? undefined : cleanNumber(raw.trackIndex, 0, 0)
   };
 }
 

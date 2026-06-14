@@ -2,6 +2,7 @@ use cpal::traits::DeviceTrait;
 use tauri::{Emitter, Manager};
 
 mod native_audio;
+mod native_recording;
 
 const SECOND_INSTANCE_DEEP_LINK_EVENT: &str = "pocket-daw-second-instance";
 const LOCAL_HANDOFF_EVENT: &str = "pocket-daw-local-handoff";
@@ -51,6 +52,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_deep_link::init())
         .manage(native_audio::create_native_audio_runtime())
+        .manage(native_recording::create_native_recording_runtime())
         .setup(|app| {
             #[cfg(desktop)]
             {
@@ -75,6 +77,9 @@ pub fn run() {
             native_audio::native_audio_seek,
             native_audio::native_audio_stop,
             native_audio::native_audio_update_track,
+            native_recording::native_recording_status,
+            native_recording::native_recording_start,
+            native_recording::native_recording_stop,
             open_project_file,
             open_audio_media_file,
             read_audio_media_file,

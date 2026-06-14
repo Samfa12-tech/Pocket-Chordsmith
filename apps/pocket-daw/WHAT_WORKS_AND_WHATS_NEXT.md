@@ -1,15 +1,39 @@
-# Pocket DAW v0.5.13 - What Works and What's Next
+# Pocket DAW v0.6.0 - What Works and What's Next
 
 ## Current public alpha
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current public alpha version: `0.5.13`
+- Current source target: `0.6.0` recording alpha
+- Last installed public smoke evidence in this repo: `0.5.13`
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Current source commit: `24b2adcf8e8fa1c2241542e0b6e7777ed98dea85`
+- Current source commit: update this after the next release commit is created
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
+
+## v0.6.0 Recording Alpha - source changes pending installed smoke
+
+- Added installed-app-only native CPAL mono recording commands for one armed live audio track.
+- Recording now requires a saved `.pocketdaw` project so WAV takes are written under `project-media/recordings/`.
+- Stop Record imports the take as a project-media Media Pool item and places an audio clip on the armed track at the original record start bar.
+- Added transport `Record`, metronome toggle, recording timer/count-in status, and timeline/mixer `M`, `S`, `R`, `Monitor` controls for live tracks.
+- Added project metronome settings and `track.monitorEnabled` defaults/migration while preserving existing save compatibility.
+- Added metronome/count-in click playback that is not included in WAV/MIDI exports.
+- Added diagnostics fields for recording state, armed tracks, monitor-enabled tracks and metronome/count-in settings.
+- Added Rust tests for WAV writer/path safety and TypeScript tests for migration defaults, metronome timing, live track arm/monitor controls and recorded clip placement.
+- Still out of scope: ASIO, simultaneous multitrack recording, stereo recording modes, punch-in/out, comping/take lanes, latency compensation UI and FX monitoring.
+
+## v0.5.14 Stabilization Pass - source changes pending installed release
+
+- Fixed Standard MIDI File import for real-world format 1 files with a tempo/meta track followed by note tracks. The parser now reads each `MTrk` chunk length before calculating the track end, preserves overlapping same-pitch notes, validates chunk boundaries, and reports malformed track headers with track/byte context.
+- Added compact synthetic MIDI regression fixtures for the Zelda-style shape: format 1, PPQ 1024, metadata-only tempo track, and a separate piano note track. The full third-party MIDI file is not committed.
+- MIDI import metadata now keeps parsed track count and track summaries while preserving the existing single MIDI clip workflow for compatibility.
+- Fixed full-song MIDI export so multi-track exports declare SMF format 1 correctly and preserve the project BPM tempo event.
+- Chordsmith/PCS1/raw JSON import now saves a separate pre-import recovery snapshot before replacing the visible project, then opens the imported song as a fresh unsaved project.
+- Added regression coverage that PCS1 and raw Chordsmith JSON imports preserve source BPM, including the 136 BPM smoke-test case.
+- Raised and inset modal panels so About/Diagnostics and updater dialogs render above the installed-app menu/transport bars with reachable close controls.
+- Startup update checks now stay quiet when no update is available, but open the updater panel when an update is found.
 
 ## North star
 
@@ -31,6 +55,7 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 - Browser-runnable Vite + TypeScript app in `pocket-daw`.
 - Native Windows Tauri v2 app wrapper in `src-tauri`.
 - Native CPAL playback backend for generated Pocket Chordsmith and MIDI-preview event playback in the installed app.
+- Native CPAL recording alpha for one armed mono live track in installed builds, with saved-project prerequisite and project-media WAV take creation.
 - Future-ready `.pocketdaw` JSON schema with source refs, timeline clips, tracks, automation, routing, media pool, render cache, export profiles and import history.
 - Defensive Pocket Chordsmith import for `PCS1:` share codes and raw JSON.
 - `.pocketdaw` open/save roundtrip.
@@ -88,6 +113,7 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 - Pocket Audio Core convergence is documented, with a small rendered-event adapter added while the real core package/branch remains absent from this checkout.
 - Live playback now returns to the loop start when the playhead reaches the loop end.
 - Track mute, solo, volume and pan editing.
+- Timeline and mixer track headers expose `M`, `S`, `R` and `Monitor` controls for live audio tracks; arming is limited to one live track at a time.
 - Undo/redo for clip and mixer edits.
 - Web Audio lookahead playback scheduler remains as a browser/dev fallback, not the product playback target.
 - Generated drums, bass, chords, melody and guitar are audible when source data exists.
@@ -265,7 +291,7 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 - Game manifests now use deterministic pack paths under `audio/full/`, `audio/stems/`, `audio/sections/`, `manifests/` and include warnings for runtime-only/missing media and muted tracks.
 - Pocket Chordsmith now has a visible `Send to Pocket DAW` handoff path using PocketHandoff URL/window/localStorage/clipboard fallbacks.
 - Added PCS parity fixtures covering simple loops, multi-section timing, manual bass, multi-lane melody tuplets/slides and guitar/global metadata.
-- Recording remains disabled: live audio tracks are placeholders, Arm controls are guarded, and no microphone/native capture is requested.
+- Recording moved from placeholder to a v0.6.0 installed-app alpha slice: one armed mono live track, monitor toggle, metronome/count-in and project-media WAV clip creation.
 - Added a safe `src/audio/pocketAudioCoreAdapter.ts` bridge for future Pocket Audio Core alignment without replacing the current playback/render engine.
 
 ## Browser preview

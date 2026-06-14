@@ -46,6 +46,6 @@ describe("Pocket DAW updater bridge", () => {
     expect(html).toContain("Pocket DAW 0.5.8 is available.");
     expect(html).toContain("A signed update is ready.");
     expect(html).toContain("Download and Install");
-    expect(html).toContain("Check silently on startup");
+    expect(html).toContain("Check on startup and notify when updates are available");
   });
 });

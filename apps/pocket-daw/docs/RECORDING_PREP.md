@@ -1,39 +1,39 @@
-# Pocket DAW Recording Prep
+# Pocket DAW Recording Alpha
 
-Recording is intentionally disabled in v0.5.1/v0.6-foundation work.
+Recording is now a narrow installed-app alpha slice for v0.6.0 source builds. It is intentionally not a professional DAW recording system yet.
 
-## Existing Safe Hooks
+## Implemented Slice
 
-- Track model fields: `recordKind`, `armed`, `inputDeviceId`
-- Audio settings probe for native/browser devices
-- Live vocal and live instrument track placeholders
-- Mixer/routing scaffolds for future audio tracks
+- Installed/Tauri app only; browser/dev recording remains unavailable.
+- One armed live audio track at a time.
+- Live vocal and live instrument tracks expose `M`, `S`, `R`, and `Monitor` controls in the timeline and mixer.
+- Recording requires a saved `.pocketdaw` project before capture starts.
+- Native CPAL capture writes mono PCM WAV takes under `project-media/recordings/` beside the saved project.
+- Stopping a take adds a project-media Media Pool item and places an audio clip on the armed track at the original record start bar.
+- Project schema now defaults `track.monitorEnabled` to `false` and stores project metronome settings.
+- Metronome/count-in is audible in the installed app and is not included in WAV/MIDI exports.
+- Diagnostics export includes recording status, armed tracks, monitored tracks and metronome/count-in settings.
 
-## Disabled UI
+## Still Out Of Scope
 
-- Live audio tracks can be added as placeholders.
-- Arm controls are disabled with a prerequisite message.
-- No browser `getUserMedia` request is made.
-- No native recording command exists.
-- No fake recorded clips are created.
+- ASIO.
+- Simultaneous multitrack recording.
+- Stereo track recording modes.
+- Punch-in/out.
+- Comping or take lanes.
+- Latency compensation UI.
+- FX monitoring.
+- Input meters beyond current playback/mixer meters.
+- Browser `getUserMedia` recording.
 
-## Prerequisites Before Enabling Recording
+## Manual Installed Windows Smoke
 
-- Packaged-app QA for project-relative media, native relink/reload and Collect Media.
-- Input/output device selection.
-- Latency and buffer-size settings.
-- Armed-track rules.
-- Waveform capture and recorded clip metadata.
-- Meters for input monitoring.
-- Routing behavior for monitoring and recording.
-- Reload test for recorded clips after app restart.
-
-## First Real Recording Slice
-
-When prerequisites are ready, implement one narrow path first:
-
-1. Native-only mono input capture to the existing project media folder.
-2. Save a `.wav` under `project-media/`.
-3. Add a Media Pool item with `mediaRefKind: "project"`.
-4. Add an audio clip to the armed track.
-5. Save, close, reopen and verify the clip reloads.
+| Test area | Steps | Expected result | Actual result | Pass/fail | Tester/date | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Save prerequisite | Open or create a project, then Save As `.pocketdaw`. | Record can start only after a saved project path exists. | Manual / Not run | Manual / Not run |  | Browser/dev cannot verify native capture. |
+| Device setup | Open Audio Settings, refresh devices, choose an input. | WASAPI input appears or a friendly no-input error is shown. | Manual / Not run | Manual / Not run |  | No ASIO in this slice. |
+| Arm rule | Add Live Vocals and Live Instrument, arm one then the other. | Only one live track remains armed. | Manual / Not run | Manual / Not run |  | Covered by unit tests for state. |
+| Monitor | Toggle Monitor on the armed track. | Monitor state changes; if enabled during recording, input is routed to output without FX. | Manual / Not run | Manual / Not run |  | Keep speaker/mic feedback risk in mind. |
+| Count-in | Enable metronome/count-in and press Record. | One-bar count-in is heard before capture starts. | Manual / Not run | Manual / Not run |  | Click is not exported. |
+| Record take | Record 5-10 seconds, then Stop Rec. | WAV is written under `project-media/recordings/`; clip appears on the armed track. | Manual / Not run | Manual / Not run |  | First slice is mono only. |
+| Reload | Save, close, reopen the `.pocketdaw`. | Recorded clip reloads and plays. | Manual / Not run | Manual / Not run |  | Confirms durable project-media behavior. |

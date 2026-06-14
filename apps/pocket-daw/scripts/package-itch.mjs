@@ -15,7 +15,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = "Pocket DAW v0.5.13 - Chordsmith Download Handoff Fix";
+export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Recording Alpha`;
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -192,7 +192,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Chordsmith Download Handoff Fix
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Recording Alpha
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -202,25 +202,18 @@ ${artifactTable}
 
 ## Highlights
 
-- Added a downloaded handoff-file fallback for browser/itch environments where localhost delivery does not reach Pocket DAW.
-- Pocket Chordsmith now downloads a uniquely named PCS1 handoff file and wakes Pocket DAW with a tiny \`pocket-daw://handoff?source=download&file=...\` URL when direct localhost delivery cannot be confirmed.
-- Pocket DAW reads only constrained Pocket Chordsmith handoff filenames from Downloads, then imports through the same PCS1 importer used by paste/share-code import.
-- Pocket Chordsmith Send to Pocket DAW deep links are now forwarded into the running installed app when Windows reuses an existing Pocket DAW process.
-- About/Diagnostics now reports the last handoff source and result so testers can tell whether Windows delivered the protocol URL.
-- Timeline workspace can now be resized by dragging the splitter below the timeline, pushing mixer/channel controls lower.
-- Inspector can be hidden from the timeline toolbar to give the arrangement full width.
-- Inspector width can be resized by dragging the vertical splitter.
-- Generated section clips now have a cyan drag rail for snap-aware horizontal moves.
-- Generated section clips now have a green right rail for GarageBand-style repeat/extend dragging.
-- Timeline zoom supports the visible controls plus Ctrl/Meta + mouse wheel and touch/pinch gestures.
-- Installed/native shells reserve top spacing so the File/Edit/View/Track/Transport/Help menu remains visible under the Windows titlebar.
-- Timeline inline sequencer boxes now start exactly at the section/bar edge with no label-column offset.
-- Inline drum, bass, melody and guitar grids use the song time signature and resolution for the exact number of boxes per bar.
-- Lane text moved into the sticky track header area so labels no longer push step boxes off the beat grid.
-- Added direct timeline song settings for BPM, key, scale, time signature and sequencer resolution.
-- Added a direct Add Section control that appends real Pocket Chordsmith section clips and markers.
-- Default timeline zoom now opens much closer at 240 px/bar, with fluid zoom controls still available.
-- Timeline markers remain anchored to exact vertical rails at their bar positions, matching the Pocket Chordsmith-style grid alignment.
+- Added the first installed-app live recording alpha: one armed mono live audio track at a time.
+- Added Record transport controls, recording status/timer, metronome toggle and one-bar count-in support.
+- Added live-track M/S/R/Monitor controls in the timeline and mixer.
+- Recording requires a saved .pocketdaw file and writes PCM WAV takes under project-media/recordings beside the project.
+- Stopping a take imports the WAV as project media and places an audio clip on the armed track at the original record start bar.
+- Added native CPAL recording start/stop/status commands with project-media path safety checks and friendly no-input errors.
+- Added diagnostics fields for recording state, armed tracks, monitor-enabled tracks and metronome/count-in settings.
+- Fixed Standard MIDI File import for real-world format 1 files with tempo/meta tracks and separate note tracks.
+- Fixed full-song MIDI export structure so multi-track exports declare format 1 and preserve project tempo.
+- Chordsmith/PCS1/raw JSON imports now preserve source BPM and open as a fresh imported project after saving a pre-import recovery snapshot.
+- About/Diagnostics and updater dialogs are constrained below the installed-app menu/transport bars.
+- Startup update checks now stay quiet when current and surface the updater panel when an update is available.
 - Release manifest and SHA-256 checksums are generated from actual installer artifacts.
 - Untrusted .pocketdaw/JSON rendering is hardened for names, IDs, data attributes and colors.
 - Browser/dev and native import paths now reject oversized project, MIDI and audio files with friendly errors.
@@ -268,8 +261,9 @@ function writeInstallerUploadDocs(docs) {
 
 function knownLimitations() {
   return [
-    "No live recording yet; live vocal/instrument tracks are guarded placeholders.",
+    "Live recording is a narrow installed-app alpha: one armed mono live track at a time.",
     "No ASIO backend yet; native audio currently targets WASAPI/CPAL.",
+    "No simultaneous multitrack recording, stereo recording modes, punch-in/out, comping/take lanes, FX monitoring or latency compensation UI yet.",
     "Imported audio decode/streaming is still limited and large files are rejected before whole-file reads.",
     "Full send/return processing and advanced pro DAW features are future work.",
     "Game/Godot/web exports are manifest previews unless full asset-pack assembly is implemented later.",
@@ -308,6 +302,7 @@ Pocket DAW lets you import Pocket Chordsmith songs, arrange sections on a deskto
 - Arrange clips on a DAW-style timeline with markers, loop controls, split/trim/copy/paste/duplicate/delete.
 - Edit Chordsmith drums, bass, melody, guitar, section bars and chords.
 - Import audio and MIDI into a visible media pool.
+- Record one armed mono live audio track in the installed app, with project-media WAV takes.
 - Export full WAV, MIDI, stem WAVs, section manifests, Godot manifest previews and web-game manifest previews.
 - Native Windows/Tauri shell with native audio playback and project file dialogs.
 
@@ -326,7 +321,7 @@ Pocket Chordsmith users, song sketching, adaptive/game-audio planning, MIDI/WAV 
 
 ${limitations.map((item) => `- ${item}`).join("\n")}
 
-Live recording, ASIO, full send/return processing, full bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
+ASIO, simultaneous multitrack recording, full send/return processing, full bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
 
 ## Signing
 
@@ -385,6 +380,10 @@ function windowsSmokeChecklist(installerArtifacts = []) {
     ["Editing", "Change one track/section, then inspect demo and unrelated sections.", "Unrelated demo/sections do not mutate unexpectedly."],
     ["Mixer/audio state", "Adjust track volume, mute, solo if present, and pan.", "Audio/state changes match the control without corrupting other tracks."],
     ["Mixer/audio state", "Adjust FX controls, routing/bus controls and automation if exposed.", "Controls persist, export safely, and guarded scaffolds stay honest where incomplete."],
+    ["Live recording", "Save a .pocketdaw project, add a Live Vocals or Live Instrument track, then arm it.", "Exactly one live audio track is armed and the project must be saved before recording."],
+    ["Live recording", "Refresh Audio Settings, choose an input, toggle Monitor off/on, and keep speakers/headphones safe.", "Monitor state changes clearly and no feedback occurs when Monitor is off."],
+    ["Live recording", "Enable metronome, press Record, wait for count-in, record 5-10 seconds, then Stop Rec.", "A mono WAV is written under project-media/recordings and a clip appears on the armed track."],
+    ["Live recording", "Save, close, reopen the project, then play the recorded clip.", "Recorded project-media WAV reloads and plays."],
     ["Import/export", "Import an audio clip if exposed and place it on the timeline.", "Media appears with clear embedded/collected/referenced/cached/missing state; audible if loaded."],
     ["Import/export", "Import MIDI if exposed.", "MIDI item/clip appears and is readable/editable."],
     ["Import/export", "Export WAV and open the file in a player.", "WAV file is created and playable."],

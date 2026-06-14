@@ -2,6 +2,8 @@
 
 Pocket DAW is now live for public Windows alpha testing on itch and linked from `samfa12.com`.
 
+This file records the last completed public installed-release artifact set. Current source target is `0.6.0` recording alpha; do not reuse the v0.5.13 hashes for a v0.6.0 installer.
+
 ## Current Public Build
 
 - Version: `0.5.13`
@@ -50,7 +52,6 @@ Partial installed-app smoke run by Sam on 2026-06-14 against v0.5.9:
 - Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures are present as `.sig` files for updater validation.
 - Pocket Chordsmith direct "Send to Pocket DAW" is passing in the v0.5.13 installed-app smoke run; keep paste/import as a fallback for browsers that block downloads or custom protocol launches.
-- Pocket Chordsmith handoff/import BPM is not yet trustworthy: Sam's source project was 136 BPM, but Pocket DAW imported/exported it at 112 BPM, likely from the currently loaded DAW project/default. Imported Chordsmith handoffs should preserve the exported BPM exactly, load as a new imported project, and autosave any open project before replacing the workspace.
-- MIDI export is structurally parseable, but the inspected v0.5.13 file declared MIDI format 0 while containing 6 tracks and inherited the incorrect 112 BPM; fix/verify MIDI header format and tempo after the BPM import issue is corrected.
-- About/Diagnostics panel placement needs a v0.5.14 UI fix: on the installed Windows app it can render underneath the top control bar, hiding the close control and making the panel hard to dismiss.
-- Live recording, ASIO support, full send/return processing, bundled game export packs, and professional DAW completeness remain out of scope for the current alpha.
+- v0.5.14 source changes fixed Chordsmith BPM/new-project import semantics, MIDI import/export structure, About/Diagnostics placement and update-available notification behavior, but those fixes still require installed artifact verification when publishing a newer public release.
+- v0.6.0 source changes add a narrow installed-app mono recording alpha: one armed live track, monitor toggle, metronome/count-in and project-media WAV take creation. Installed Windows recording smoke remains Manual / Not run until a v0.6.0 installer is built and tested.
+- ASIO support, simultaneous multitrack recording, full send/return processing, bundled game export packs, and professional DAW completeness remain out of scope for the current alpha.

@@ -157,6 +157,15 @@ function renderMenuGroup(label: string, actions: Array<[string, string]>): strin
 function renderTransport(state: AppState): string {
   const project = currentProject(state);
   const env = runtimeLabel();
+  const metronome = project.project.metronome || { enabled: false, countInBars: 1, volume: 0.55 };
+  const recordingActive = state.recording.status === "count-in" || state.recording.status === "recording" || state.recording.status === "stopping";
+  const recordingLabel = state.recording.status === "recording"
+    ? `Recording ${formatDuration(state.recording.elapsedSeconds)}`
+    : state.recording.status === "count-in"
+      ? state.recording.message || "Count-in"
+      : state.recording.status === "stopping"
+        ? "Stopping recording"
+        : "Record";
   return `
     <header class="transport" data-layout-zone="transport">
       <div class="brand">
@@ -169,6 +178,8 @@ function renderTransport(state: AppState): string {
       </div>
       <div class="transport-buttons">
         <button class="primary" data-transport-toggle="true" data-action="${state.playing ? "pause" : "play"}">${state.playing ? "Pause" : "Play"}</button>
+        <button class="${recordingActive ? "record on" : "record"}" data-action="record-toggle">${recordingActive ? "Stop Rec" : "Record"}</button>
+        <button class="${metronome.enabled ? "on" : ""}" data-action="metronome-toggle" title="Metronome and one-bar recording count-in">Metro</button>
         <button data-action="stop">Stop</button>
         <button data-action="restart">Restart</button>
         <button data-action="seek-start">Bar 1</button>
@@ -179,7 +190,9 @@ function renderTransport(state: AppState): string {
       </div>
       <div class="transport-readout">
         <span data-playing-state="true" class="${state.playing ? "playing" : ""}">${state.playing ? "Playing" : "Stopped"}</span>
+        <span data-recording-state="true" class="${recordingActive ? "recording" : ""}">${escapeHtml(recordingLabel)}</span>
         <span>${Math.round(project.project.bpm)} BPM</span>
+        <span>${metronome.enabled ? `Metro ${metronome.countInBars} bar` : "Metro off"}</span>
         <span>${escapeHtml(project.project.key)} ${escapeHtml(project.project.scale)}</span>
         <span data-playhead-readout="true">${escapeHtml(formatBarBeat(state.playheadBar, project.project.timeSig, project.project.ppq))}</span>
       </div>
@@ -355,15 +368,23 @@ function renderTimelineRows(state: AppState): string {
 
 function renderTimelineTrackHeader(track: Track, selected: boolean, pcs: SanitizedPcsProject | null): string {
   const lanes = trackHeaderLaneText(track, pcs);
+  const canMuteSolo = track.role !== "master" && track.role !== "fx-return";
+  const canRecord = !!track.recordKind && track.recordKind !== "none";
   return `
-    <button class="timeline-track-header ${selected ? "selected" : ""} ${track.active === false ? "inactive" : ""}" data-track-id="${sanitizeDataAttr(track.id)}">
+    <div class="timeline-track-header ${selected ? "selected" : ""} ${track.active === false ? "inactive" : ""}" data-track-id="${sanitizeDataAttr(track.id)}">
       <span class="track-colour" style="background:${safeTrackColour(track.colour)}"></span>
       <span class="timeline-track-text">
         <span class="timeline-track-name">${escapeHtml(track.name)}</span>
         ${lanes ? `<span class="timeline-track-lanes">${escapeHtml(lanes)}</span>` : ""}
       </span>
-      <span class="track-state">${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
-    </button>
+      <span class="track-header-controls">
+        ${canMuteSolo ? `<button type="button" title="${escapeAttr(`Mute ${track.name}`)}" class="${track.mute ? "on" : ""}" data-mute-track="${sanitizeDataAttr(track.id)}">M</button>
+        <button type="button" title="${escapeAttr(`Solo ${track.name}`)}" class="${track.solo ? "on" : ""}" data-solo-track="${sanitizeDataAttr(track.id)}">S</button>` : ""}
+        ${canRecord ? `<button type="button" title="${escapeAttr(`Arm ${track.name} for mono recording`)}" class="${track.armed ? "on record" : ""}" data-arm-track="${sanitizeDataAttr(track.id)}">R</button>
+        <button type="button" title="${escapeAttr(`Monitor ${track.name} input during recording`)}" class="${track.monitorEnabled ? "on" : ""}" data-monitor-track="${sanitizeDataAttr(track.id)}">Mon</button>` : ""}
+      </span>
+      <span class="track-state">${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${track.monitorEnabled ? "Mon" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
+    </div>
   `;
 }
 
@@ -1086,7 +1107,6 @@ function renderMixerStrip(track: Track, meterLevel: number): string {
   const isReturn = track.role === "fx-return";
   const canMuteSolo = !isMaster && !isReturn;
   const canArm = !!track.recordKind && track.recordKind !== "none";
-  const recordBlockedTitle = "Recording coming after media/device QA, latency setup, armed-track rules and reload-safe project media.";
   return `
     <div class="strip ${track.active === false ? "inactive" : ""}">
       <div class="strip-name">
@@ -1107,7 +1127,8 @@ function renderMixerStrip(track: Track, meterLevel: number): string {
             ? `<span class="strip-note">Limiter ${track.metadata?.limiter === false ? "Off" : "On"}</span>`
             : `${canMuteSolo ? `<button type="button" title="${escapeAttr(`Mute ${track.name}`)}" class="${track.mute ? "on" : ""}" data-mute-track="${sanitizeDataAttr(track.id)}">Mute</button>
                <button type="button" title="${escapeAttr(`Solo ${track.name}`)}" class="${track.solo ? "on" : ""}" data-solo-track="${sanitizeDataAttr(track.id)}">Solo</button>` : `<span class="strip-note">Return channel</span>`}
-               ${canArm ? `<button type="button" title="${escapeAttr(recordBlockedTitle)}" class="${track.armed ? "on record" : ""}" data-arm-track="${sanitizeDataAttr(track.id)}" disabled>Arm</button>` : ""}`
+               ${canArm ? `<button type="button" title="${escapeAttr(`Arm ${track.name} for mono recording`)}" class="${track.armed ? "on record" : ""}" data-arm-track="${sanitizeDataAttr(track.id)}">Arm</button>
+               <button type="button" title="${escapeAttr(`Monitor ${track.name} input during recording`)}" class="${track.monitorEnabled ? "on" : ""}" data-monitor-track="${sanitizeDataAttr(track.id)}">Monitor</button>` : ""}`
         }
       </div>
       ${!isMaster ? renderFxDropdown(track) : ""}
@@ -1179,8 +1200,8 @@ function renderAddTrackPanel(): string {
           <button data-action="add-track-close">Close</button>
         </header>
         <div class="add-track-grid">
-          <button data-add-track-kind="live-vocals"><strong>Live Vocals</strong><span>Disabled recording stub; media/device QA first</span></button>
-          <button data-add-track-kind="live-instrument"><strong>Live Instrument</strong><span>Input placeholder only; no capture yet</span></button>
+          <button data-add-track-kind="live-vocals"><strong>Live Vocals</strong><span>Mono recording alpha track</span></button>
+          <button data-add-track-kind="live-instrument"><strong>Live Instrument</strong><span>Mono recording alpha track</span></button>
           <button data-add-track-kind="chordsmith-drums"><strong>Chordsmith Drums</strong><span>Select or enable generated drums</span></button>
           <button data-add-track-kind="chordsmith-bass"><strong>Chordsmith Bass</strong><span>Select or enable generated bass</span></button>
           <button data-add-track-kind="chordsmith-chords"><strong>Chordsmith Chords</strong><span>Select or enable generated chords</span></button>
@@ -1206,7 +1227,7 @@ function renderAudioSettingsPanel(state: AppState): string {
         </header>
         <div class="control-guide">
           <p><strong>Host</strong><span>${escapeHtml(project.audioDeviceSettings.host)} (${escapeHtml(state.audioProbeStatus)})</span></p>
-          <p><strong>Recording</strong><span>Coming after media/device QA, input selection, latency, armed tracks, meters and reload-safe recorded media.</span></p>
+          <p><strong>Recording</strong><span>Installed app only: refresh devices, choose an input, save the project, arm one live track, then Record writes mono WAV takes to project-media/recordings.</span></p>
         </div>
         <button data-action="audio-refresh">Refresh Devices</button>
         <div class="device-list">
@@ -1254,7 +1275,7 @@ function renderUpdaterPanel(state: AppState): string {
         ` : ""}
         <label class="inline-toggle updater-toggle">
           <input type="checkbox" data-updater-auto-check="true" ${state.updaterAutoCheckOnStartup ? "checked" : ""}>
-          Check silently on startup
+          Check on startup and notify when updates are available
         </label>
         <div class="updater-actions">
           <button data-action="updater-check" ${busy ? "disabled" : ""}>Check for Updates</button>
@@ -1301,7 +1322,8 @@ function renderControlsPanel(state: AppState): string {
           <p><strong>Mixer</strong><span>Use Volume and Pan sliders. Meters show live peak audio. Mute silences a track; Solo isolates it.</span></p>
           <p><strong>Recent</strong><span>${escapeHtml(recent)}</span></p>
           <p><strong>Save / Export</strong><span>Save .pocketdaw projects, export full-song WAV, or export multi-track MIDI.</span></p>
-          <p><strong>Alpha testing</strong><span>Recording stays guarded. Native Collect Media can copy external audio beside a saved project; Relink/Reload can refresh audio buffers in the installed app.</span></p>
+          <p><strong>Recording</strong><span>Installed app only: save the project, arm one live audio track, choose an input if needed, then Record writes a mono WAV under project-media/recordings.</span></p>
+          <p><strong>Alpha testing</strong><span>Recording is mono overdub only. ASIO, punch-in, comping, latency compensation UI and multitrack capture are future work.</span></p>
         </div>
         <div class="diagnostic-actions">
           <button data-action="copy-diagnostics">Copy Diagnostics</button>

@@ -20,3 +20,103 @@ export function simpleMidiBytes(includeController = false): Uint8Array {
     ...track
   ]);
 }
+
+export function formatOneTempoAndPianoMidiBytes(): Uint8Array {
+  const tempoTrack = [
+    0x00, 0xff, 0x03, 0x05, ...ascii("Tempo"),
+    0x00, 0xff, 0x51, 0x03, 0x06, 0xba, 0x98,
+    0x00, 0xff, 0x58, 0x04, 0x04, 0x02, 0x18, 0x08,
+    0x00, 0xff, 0x2f, 0x00
+  ];
+  const noteTrack = [
+    0x00, 0xff, 0x03, 0x14, ...ascii("Acoustic Grand Piano"),
+    0x00, 0x90, 0x3c, 0x64,
+    ...varLen(1024), 0x80, 0x3c, 0x00,
+    0x00, 0xff, 0x2f, 0x00
+  ];
+  return midiFile(1, 1024, [tempoTrack, noteTrack]);
+}
+
+export function overlongTrackMidiBytes(): Uint8Array {
+  return new Uint8Array([
+    0x4d, 0x54, 0x68, 0x64,
+    0x00, 0x00, 0x00, 0x06,
+    0x00, 0x00,
+    0x00, 0x01,
+    0x01, 0xe0,
+    0x4d, 0x54, 0x72, 0x6b,
+    0x00, 0x00, 0x10, 0x00,
+    0x00, 0xff, 0x2f, 0x00
+  ]);
+}
+
+export function overlappingSamePitchMidiBytes(): Uint8Array {
+  const track = [
+    0x00, 0x90, 0x3c, 0x64,
+    ...varLen(120), 0x90, 0x3c, 0x50,
+    ...varLen(120), 0x80, 0x3c, 0x00,
+    ...varLen(120), 0x80, 0x3c, 0x00,
+    0x00, 0xff, 0x2f, 0x00
+  ];
+  return midiFile(0, 480, [track]);
+}
+
+export function corruptSecondTrackHeader(bytes: Uint8Array): Uint8Array {
+  const copy = new Uint8Array(bytes);
+  const firstTrackAt = findChunk(copy, "MTrk", 0);
+  const firstLength = readU32(copy, firstTrackAt + 4);
+  const secondTrackAt = firstTrackAt + 8 + firstLength;
+  copy[secondTrackAt] = 0x58;
+  return copy;
+}
+
+function midiFile(format: number, ppq: number, tracks: number[][]): Uint8Array {
+  const body = tracks.flatMap((track) => chunk("MTrk", track));
+  return new Uint8Array([
+    ...chunk("MThd", [...u16(format), ...u16(tracks.length), ...u16(ppq)]),
+    ...body
+  ]);
+}
+
+function chunk(name: string, data: number[]): number[] {
+  return [...ascii(name), ...u32(data.length), ...data];
+}
+
+function ascii(text: string): number[] {
+  return Array.from(text).map((char) => char.charCodeAt(0) & 0x7f);
+}
+
+function u16(value: number): number[] {
+  return [(value >> 8) & 0xff, value & 0xff];
+}
+
+function u32(value: number): number[] {
+  return [(value >> 24) & 0xff, (value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
+}
+
+function varLen(value: number): number[] {
+  let buffer = value & 0x7f;
+  const bytes: number[] = [];
+  while ((value >>= 7)) {
+    buffer <<= 8;
+    buffer |= (value & 0x7f) | 0x80;
+  }
+  while (true) {
+    bytes.push(buffer & 0xff);
+    if (buffer & 0x80) buffer >>= 8;
+    else break;
+  }
+  return bytes;
+}
+
+function findChunk(bytes: Uint8Array, name: string, start: number): number {
+  const needle = ascii(name);
+  for (let index = start; index <= bytes.length - needle.length; index += 1) {
+    if (needle.every((byte, offset) => bytes[index + offset] === byte)) return index;
+  }
+  throw new Error(`Missing ${name} fixture chunk.`);
+}
+
+function readU32(bytes: Uint8Array, offset: number): number {
+  return ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
+}

@@ -4,6 +4,7 @@ import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitiz
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 import { createDemoChordsmithProject } from "../src/demo/demoProject";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
+import { importTextToProject } from "../src/app/commands";
 
 describe("Pocket Chordsmith import", () => {
   it("decodes PCS1 share codes", () => {
@@ -18,6 +19,17 @@ describe("Pocket Chordsmith import", () => {
     const parsed = parseAnyImportText(JSON.stringify(source));
     expect(parsed.kind).toBe("pcs");
     expect(parsed.kind === "pcs" ? parsed.importKind : "").toBe("raw-json");
+  });
+
+  it("preserves source BPM when importing PCS1 share codes or raw Chordsmith JSON", () => {
+    const source = { ...createCompactExportRegressionProject(), bpm: 136 };
+    const fromCode = importTextToProject(buildPocketChordsmithShareCode(source)).project;
+    const fromJson = importTextToProject(JSON.stringify(source)).project;
+
+    expect(fromCode.project.bpm).toBe(136);
+    expect(fromJson.project.bpm).toBe(136);
+    expect(fromCode.sourceRefs[0]?.normalized).toMatchObject({ bpm: 136 });
+    expect(fromJson.sourceRefs[0]?.normalized).toMatchObject({ bpm: 136 });
   });
 
   it("normalises missing fields and preserves unknown source fields", () => {

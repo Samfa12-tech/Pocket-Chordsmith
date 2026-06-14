@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addTrackCommand, toggleTrackArmedCommand } from "../src/app/commands";
+import { addTrackCommand, toggleTrackArmedCommand, toggleTrackMonitorCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { toggleTrackMute, toggleTrackSolo } from "../src/daw/mixer";
 import { addTrackToProject } from "../src/daw/tracks";
@@ -14,6 +14,7 @@ describe("track workflow", () => {
     expect(track?.trackType).toBe("audio");
     expect(track?.recordKind).toBe("live-vocals");
     expect(track?.inputDeviceId).toBeNull();
+    expect(track?.monitorEnabled).toBe(false);
     expect(result.project.fx.chains.some((chain) => chain.id === track?.fxChainId)).toBe(true);
   });
 
@@ -53,11 +54,24 @@ describe("track workflow", () => {
     expect(next.undoStack.present.tracks.some((track) => track.id === "live-instrument")).toBe(true);
   });
 
-  it("keeps recording arm disabled until recording prerequisites are ready", () => {
+  it("arms one live audio track and toggles monitor state", () => {
     const state = addTrackCommand(createInitialState(), "live-vocals");
     const next = toggleTrackArmedCommand(state, "live-vocals");
+    const monitored = toggleTrackMonitorCommand(next, "live-vocals");
 
-    expect(next.undoStack.present.tracks.find((track) => track.id === "live-vocals")?.armed).toBe(false);
-    expect(next.status).toContain("media/device QA");
+    expect(next.undoStack.present.tracks.find((track) => track.id === "live-vocals")?.armed).toBe(true);
+    expect(next.status).toContain("Armed Live Vocals");
+    expect(monitored.undoStack.present.tracks.find((track) => track.id === "live-vocals")?.monitorEnabled).toBe(true);
+    expect(monitored.status).toContain("monitor on");
+  });
+
+  it("keeps only one live audio track armed at a time", () => {
+    const withVocals = addTrackCommand(createInitialState(), "live-vocals");
+    const withInstrument = addTrackCommand(withVocals, "live-instrument");
+    const vocalsArmed = toggleTrackArmedCommand(withInstrument, "live-vocals");
+    const instrumentArmed = toggleTrackArmedCommand(vocalsArmed, "live-instrument");
+
+    expect(instrumentArmed.undoStack.present.tracks.find((track) => track.id === "live-vocals")?.armed).toBe(false);
+    expect(instrumentArmed.undoStack.present.tracks.find((track) => track.id === "live-instrument")?.armed).toBe(true);
   });
 });

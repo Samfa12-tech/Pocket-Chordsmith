@@ -1,6 +1,7 @@
 const RECENT_KEY = "pocket_daw_recent_v1";
 const AUTOSAVE_KEY = "pocket_daw_autosave_v1";
 const AUTOSAVE_FILE_KEY = "pocket_daw_autosave_file_v1";
+const PRE_IMPORT_RECOVERY_KEY = "pocket_daw_pre_import_recovery_v1";
 const UPDATER_AUTO_CHECK_KEY = "pocket_daw_updater_auto_check_v1";
 
 export interface RecentProject {
@@ -12,6 +13,13 @@ export interface RecentProject {
 export interface AutosaveFileState {
   label: string;
   path: string | null;
+}
+
+export interface PreImportRecoverySnapshot {
+  raw: string;
+  file: AutosaveFileState;
+  savedAt: string;
+  reason: string;
 }
 
 export function saveRecentProject(label: string, path: string | null = null): void {
@@ -72,6 +80,43 @@ export function loadAutosaveFileState(): AutosaveFileState | null {
     const path = typeof raw.path === "string" && raw.path ? raw.path : null;
     if (!label && !path) return null;
     return { label: label || path || "Autosaved project", path };
+  } catch {
+    return null;
+  }
+}
+
+export function savePreImportRecovery(raw: string, currentFile?: AutosaveFileState, reason = "Before import"): PreImportRecoverySnapshot | null {
+  const storage = safeLocalStorage();
+  if (!storage) return null;
+  const snapshot: PreImportRecoverySnapshot = {
+    raw,
+    file: {
+      label: currentFile?.label || "Pre-import recovery project",
+      path: currentFile?.path || null
+    },
+    savedAt: new Date().toISOString(),
+    reason
+  };
+  storage.setItem(PRE_IMPORT_RECOVERY_KEY, JSON.stringify(snapshot));
+  return snapshot;
+}
+
+export function loadPreImportRecovery(): PreImportRecoverySnapshot | null {
+  try {
+    const parsed = JSON.parse(safeLocalStorage()?.getItem(PRE_IMPORT_RECOVERY_KEY) || "null");
+    if (!parsed || typeof parsed !== "object") return null;
+    const raw = parsed as Record<string, unknown>;
+    if (typeof raw.raw !== "string" || !raw.raw) return null;
+    const file = raw.file && typeof raw.file === "object" ? raw.file as Record<string, unknown> : {};
+    return {
+      raw: raw.raw,
+      file: {
+        label: typeof file.label === "string" && file.label ? file.label : "Pre-import recovery project",
+        path: typeof file.path === "string" && file.path ? file.path : null
+      },
+      savedAt: typeof raw.savedAt === "string" ? raw.savedAt : "",
+      reason: typeof raw.reason === "string" ? raw.reason : "Before import"
+    };
   } catch {
     return null;
   }

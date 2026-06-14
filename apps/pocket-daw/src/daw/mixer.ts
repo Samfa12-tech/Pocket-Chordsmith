@@ -33,7 +33,19 @@ export function toggleTrackSolo(project: PocketDawProject, trackId: string): Poc
 export function toggleTrackArmed(project: PocketDawProject, trackId: string): PocketDawProject {
   const next = cloneProject(project);
   const track = next.tracks.find((item) => item.id === trackId);
-  if (track && track.recordKind && track.recordKind !== "none") track.armed = !track.armed;
+  if (track && track.recordKind && track.recordKind !== "none") {
+    const shouldArm = !track.armed;
+    next.tracks.forEach((item) => {
+      if (item.recordKind && item.recordKind !== "none") item.armed = item.id === trackId ? shouldArm : false;
+    });
+  }
+  return next;
+}
+
+export function toggleTrackMonitor(project: PocketDawProject, trackId: string): PocketDawProject {
+  const next = cloneProject(project);
+  const track = next.tracks.find((item) => item.id === trackId);
+  if (track && track.recordKind && track.recordKind !== "none") track.monitorEnabled = !track.monitorEnabled;
   return next;
 }
 

@@ -33,7 +33,8 @@ export function createDefaultTracks(options: { guitarActive?: boolean } = {}): T
     automationLaneIds: [],
     fxChainId: `fx_${def.id}`,
     recordKind: "none",
-    inputDeviceId: null
+    inputDeviceId: null,
+    monitorEnabled: false
   }));
 }
 
@@ -88,6 +89,7 @@ function makeTrack(id: string, name: string, trackType: Track["trackType"], role
     fxChainId: `fx_${id}`,
     recordKind,
     inputDeviceId: null,
+    monitorEnabled: false,
     active: true
   };
 }

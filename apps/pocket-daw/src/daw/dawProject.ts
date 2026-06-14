@@ -4,6 +4,7 @@ import {
   POCKET_DAW_VERSION,
   type Clip,
   type JsonObject,
+  type MetronomeSettings,
   type PocketDawProject,
   type ProjectMeta,
   type SourceRef
@@ -34,7 +35,8 @@ export function createEmptyPocketDawProject(): PocketDawProject {
       swing: starter.pcs.swing,
       resolution: starter.pcs.resolution,
       sampleRate: 44100,
-      ppq: 480
+      ppq: 480,
+      metronome: createDefaultMetronomeSettings()
     },
     timeline: {
       bars: 8,
@@ -118,6 +120,14 @@ export function createDefaultAudioDeviceSettings() {
     outputChannels: 2,
     devices: [],
     notes: ["WASAPI probe first. ASIO support is reserved for a later native-audio pass."]
+  };
+}
+
+export function createDefaultMetronomeSettings(): MetronomeSettings {
+  return {
+    enabled: false,
+    countInBars: 1,
+    volume: 0.55
   };
 }
 

@@ -247,7 +247,7 @@ h1 {
 
 .transport-readout {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
   font-size: 12px;
 }
@@ -265,6 +265,14 @@ h1 {
   border-color: rgba(124, 255, 155, 0.7);
   color: #d9ffe5;
   background: #102419;
+}
+
+.transport-readout span.recording,
+button.record.on,
+button.record:hover {
+  border-color: rgba(255, 107, 139, 0.82);
+  color: #ffe5eb;
+  background: #35111d;
 }
 
 .status {
@@ -428,7 +436,80 @@ h1 {
   border-radius: 4px;
 }
 
+.timeline-track-header {
+  position: sticky;
+  left: 0;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  grid-template-areas:
+    "colour text"
+    "colour controls";
+  gap: 4px 8px;
+  align-items: center;
+  min-height: 54px;
+  width: var(--track-header, 176px);
+  padding: 6px 8px;
+  border-right: 1px solid #26314c;
+  border-bottom: 1px solid #182139;
+  background: #0f1524;
+  cursor: pointer;
+}
+
+.timeline-track-header.selected {
+  background: #142038;
+}
+
+.timeline-track-header .track-colour {
+  grid-area: colour;
+}
+
+.timeline-track-text {
+  grid-area: text;
+  display: grid;
+  min-width: 0;
+}
+
+.timeline-track-name,
+.timeline-track-lanes {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-track-name {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.timeline-track-lanes {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.track-header-controls {
+  grid-area: controls;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.track-header-controls button {
+  min-width: 26px;
+  min-height: 24px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.track-header-controls button.record,
+.strip-buttons button.record {
+  border-color: rgba(255, 107, 139, 0.56);
+}
+
 .track-state {
+  display: none;
   color: var(--amber);
   font-size: 11px;
   font-weight: 800;
@@ -900,10 +981,11 @@ h1 {
 
 .modal-backdrop {
   position: fixed;
-  inset: 0;
-  z-index: 40;
+  inset: calc(var(--native-titlebar-safe-top, 0px) + var(--menu-strip-height, 31px) + 12px) 0 0;
+  z-index: 120;
   display: grid;
-  place-items: center;
+  align-items: start;
+  justify-items: center;
   padding: 24px;
   background: rgba(2, 5, 12, 0.72);
   backdrop-filter: blur(8px);
@@ -911,7 +993,7 @@ h1 {
 
 .controls-panel {
   width: min(640px, 100%);
-  max-height: min(760px, calc(100vh - 48px));
+  max-height: calc(100vh - var(--native-titlebar-safe-top, 0px) - var(--menu-strip-height, 31px) - 60px);
   overflow: auto;
   border: 1px solid #344263;
   border-radius: 8px;

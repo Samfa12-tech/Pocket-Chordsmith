@@ -1,6 +1,6 @@
 export const POCKET_DAW_APP = "PocketDAW" as const;
 export const POCKET_DAW_SCHEMA_VERSION = 2;
-export const POCKET_DAW_VERSION = "0.5.13";
+export const POCKET_DAW_VERSION = "0.6.0";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -61,6 +61,13 @@ export interface ProjectMeta {
   resolution: number;
   sampleRate: number;
   ppq: number;
+  metronome?: MetronomeSettings;
+}
+
+export interface MetronomeSettings {
+  enabled: boolean;
+  countInBars: number;
+  volume: number;
 }
 
 export interface TimelinePosition {
@@ -144,6 +151,7 @@ export interface Track {
   fxChainId?: string;
   recordKind?: "none" | "live-vocals" | "live-instrument";
   inputDeviceId?: string | null;
+  monitorEnabled?: boolean;
   active?: boolean;
   meter?: {
     peak: number;

@@ -1,5 +1,5 @@
 import { createDefaultExportProfiles } from "../daw/exportProfiles";
-import { createDefaultAudioDeviceSettings, ensureStarterChordsmithSource } from "../daw/dawProject";
+import { createDefaultAudioDeviceSettings, createDefaultMetronomeSettings, ensureStarterChordsmithSource } from "../daw/dawProject";
 import { createDefaultFxState, ensureProjectFx } from "../daw/fx";
 import { createDefaultTracks } from "../daw/tracks";
 import {
@@ -11,6 +11,7 @@ import {
 
 const TRACK_TYPES = ["generated", "midi", "audio", "bus", "return", "master"] as const;
 const TRACK_ROLES = ["arrangement", "drums", "bass", "chords", "melody", "guitar", "fx-return", "master", "bus", "media", "automation"] as const;
+const RECORD_KINDS = ["none", "live-vocals", "live-instrument"] as const;
 const CLIP_TYPES = ["generated-section", "generated-pattern", "midi", "audio", "automation", "marker"] as const;
 const MEDIA_KINDS = ["audio", "midi", "render", "image", "unknown"] as const;
 const MARKER_TYPES = ["section", "cue", "loop", "export", "game-state"] as const;
@@ -43,7 +44,8 @@ export function migratePocketDawProject(raw: unknown): PocketDawProject {
       swing: clampNumber(source.project?.swing, 0, 0.35, 0),
       resolution: clampNumber(source.project?.resolution, 1, 16, 4),
       sampleRate: clampNumber(source.project?.sampleRate, 22050, 96000, 44100),
-      ppq: clampNumber(source.project?.ppq, 96, 1920, 480)
+      ppq: clampNumber(source.project?.ppq, 96, 1920, 480),
+      metronome: normalizeMetronomeSettings(source.project?.metronome)
     },
     timeline: {
       ...(isRecord(source.timeline) ? source.timeline : {}),
@@ -109,6 +111,9 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
       colour: safeColour(track?.colour, fallback.colour || "#40d8ff"),
       routing: normalizeTrackRouting(track?.routing, trackIdMap),
       automationLaneIds: Array.isArray(track?.automationLaneIds) ? track.automationLaneIds.map(String).filter(Boolean) : [],
+      recordKind: safeEnum(track?.recordKind, RECORD_KINDS, fallback.recordKind || "none"),
+      inputDeviceId: track?.inputDeviceId === undefined || track?.inputDeviceId === null ? null : safeText(track.inputDeviceId, ""),
+      monitorEnabled: track?.monitorEnabled === true,
       active: track?.active === false ? false : true,
       metadata: isRecord(track?.metadata) ? track.metadata : undefined
     };
@@ -236,6 +241,16 @@ function normalizePosition(value: unknown) {
     bar: clampNumber(source.bar, 1, 4096, 1),
     beat: clampNumber(source.beat, 1, 16, 1),
     tick: clampNumber(source.tick, 0, 1920, 0)
+  };
+}
+
+function normalizeMetronomeSettings(value: unknown) {
+  const defaults = createDefaultMetronomeSettings();
+  const source = isRecord(value) ? value : {};
+  return {
+    enabled: source.enabled === true,
+    countInBars: Math.round(clampNumber(source.countInBars, 0, 4, defaults.countInBars)),
+    volume: clampNumber(source.volume, 0, 1, defaults.volume)
   };
 }
 
