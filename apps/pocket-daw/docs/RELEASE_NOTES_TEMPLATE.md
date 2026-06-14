@@ -57,7 +57,7 @@ The repo has mixed licensing/source-available boundaries; do not describe the wh
 
 ```powershell
 butler push-preview releases/itch/installers samfa12/pocket-daw:windows-installer
-butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion X.Y.Z --hidden
+butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion X.Y.Z
 ```
 
 Do not publish from automation without separate manual approval.

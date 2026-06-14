@@ -35,6 +35,7 @@
     "verify:itch": "node scripts/verify-itch.mjs",
     "release:itch:local": "npm run verify:itch",
     "itch:preview": "butler push-preview releases/itch/installers samfa12/pocket-daw:windows-installer",
+    "itch:push": "node scripts/guarded-butler-push.mjs",
     "itch:push:hidden": "node scripts/guarded-butler-push.mjs",
     "verify:release": "node scripts/verify-release.mjs",
     "verify:native-release": "node scripts/verify-release.mjs --native-release",

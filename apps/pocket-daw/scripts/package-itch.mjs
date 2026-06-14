@@ -200,7 +200,7 @@ async function releaseArtifactsWithSignatures(paths) {
 
 function releaseTextFiles(installerArtifacts, installers) {
   const previewCommand = butlerPreviewCommand();
-  const hiddenPushCommand = butlerHiddenPushCommand();
+  const pushCommand = butlerPushCommand();
   const limitations = knownLimitations();
   const smokeChecklist = windowsSmokeChecklist(installerArtifacts);
   const artifactTable = installerArtifactTable(installerArtifacts);
@@ -265,8 +265,8 @@ Windows Authenticode signing is not claimed unless the release manifest reports 
 Preview:
 \`${previewCommand}\`
 
-Hidden push:
-\`${hiddenPushCommand}\`
+Push:
+\`${pushCommand}\`
 `,
     "KNOWN_LIMITATIONS.md": limitationsMarkdown(limitations),
     "LICENSE_OR_FREEWARE_NOTICE.txt": `Pocket DAW is free to download and use.
@@ -276,7 +276,7 @@ Redistribution or modification of the app/source is not granted unless separatel
 No warranty is provided.
 `,
     "WINDOWS_SMOKE_CHECKLIST.md": smokeChecklist,
-    "ITCH_PAGE_COPY.md": itchPageCopy(previewCommand, hiddenPushCommand, limitations, artifactTable)
+    "ITCH_PAGE_COPY.md": itchPageCopy(previewCommand, pushCommand, limitations, artifactTable)
   };
 }
 
@@ -318,7 +318,7 @@ ${limitations.map((item) => `- ${item}`).join("\n")}
 `;
 }
 
-function itchPageCopy(previewCommand, hiddenPushCommand, limitations, artifactTable) {
+function itchPageCopy(previewCommand, pushCommand, limitations, artifactTable) {
   return `# Pocket DAW
 
 Free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects.
@@ -387,8 +387,8 @@ Please report launch issues, import/export bugs, audio-device problems, project 
 Preview:
 \`${previewCommand}\`
 
-First hidden installer upload:
-\`${hiddenPushCommand}\`
+Installer upload:
+\`${pushCommand}\`
 
 Adjust \`${ITCH_SLUG}\` if the itch slug is different. Upload the installer folder only after reviewing the generated checksums, updater signatures, release manifest and manual smoke status.
 `;
@@ -494,7 +494,7 @@ async function releaseManifest(artifacts) {
     knownLimitations: knownLimitations(),
     butlerCommands: {
       preview: butlerPreviewCommand(),
-      hiddenPush: butlerHiddenPushCommand()
+      push: butlerPushCommand()
     }
   };
 }
@@ -542,8 +542,8 @@ ${knownLimitations().map((item) => `- ${item}`).join("\n")}
 Preview:
 \`${butlerPreviewCommand()}\`
 
-Hidden installer upload:
-\`${butlerHiddenPushCommand()}\`
+Installer upload:
+\`${butlerPushCommand()}\`
 
 Do not publish publicly until the manual Windows smoke checklist is filled in for the exact installer hash above.
 `;
@@ -561,8 +561,8 @@ function butlerPreviewCommand() {
   return `butler push-preview releases/itch/installers ${ITCH_SLUG}:${ITCH_CHANNEL}`;
 }
 
-function butlerHiddenPushCommand() {
-  return `butler push releases/itch/installers ${ITCH_SLUG}:${ITCH_CHANNEL} --userversion ${VERSION} --hidden`;
+function butlerPushCommand() {
+  return `butler push releases/itch/installers ${ITCH_SLUG}:${ITCH_CHANNEL} --userversion ${VERSION}`;
 }
 
 function assertInstallerUploadContents(dir) {

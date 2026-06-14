@@ -32,10 +32,10 @@ Preview:
 butler push-preview releases/itch/installers samfa12/pocket-daw:windows-installer
 ```
 
-Hidden upload:
+Installer upload:
 
 ```powershell
-butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion 0.5.9 --hidden
+butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion 0.5.9
 ```
 
 ## Updater Rehearsal

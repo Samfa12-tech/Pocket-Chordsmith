@@ -9,7 +9,7 @@ if (process.env.PUBLISH !== "1") {
 
 const version = packageJson.version;
 const folder = "releases/itch/installers";
-const args = ["push", folder, `${ITCH_SLUG}:${ITCH_CHANNEL}`, "--userversion", version, "--hidden"];
+const args = ["push", folder, `${ITCH_SLUG}:${ITCH_CHANNEL}`, "--userversion", version];
 console.log(`> butler ${args.join(" ")}`);
 const result = spawnSync("butler", args, { stdio: "inherit", shell: false });
 if (result.error) throw result.error;
