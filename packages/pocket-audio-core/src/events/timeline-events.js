@@ -1,4 +1,4 @@
-import { DEFAULT_PPQ } from "../constants.js";
+import { DEFAULT_PPQ, SECTION_IDS } from "../constants.js";
 import { chordIntervals, chordQuality } from "../music/chords.js";
 import { scalePitchClasses } from "../music/scales.js";
 import { buildStepTimeline, stepDurationSeconds, stepsPerBar } from "../music/timeline.js";
@@ -6,7 +6,7 @@ import { buildStepTimeline, stepDurationSeconds, stepsPerBar } from "../music/ti
 export function buildPocketAudioTimeline(project, options = {}) {
   if (!project || project.app !== "PocketAudioProject") throw new Error("buildPocketAudioTimeline expects a normalised PocketAudioProject.");
   const scope = options.scope || "sequence";
-  const sectionIds = scope === "section" ? [options.sectionId || project.transport.currentSection || "A"] : project.sequence;
+  const sectionIds = resolveTimelineSectionIds(project, { ...options, scope });
   const events = [];
   let baseTime = options.startTime || 0;
   let baseTick = options.startTick || 0;
@@ -25,6 +25,22 @@ export function buildPocketAudioTimeline(project, options = {}) {
     ppq: project.meta.ppq || DEFAULT_PPQ,
     sectionIds: sectionIds.slice()
   };
+}
+
+function resolveTimelineSectionIds(project, options) {
+  if (Array.isArray(options.sectionIds) && options.sectionIds.length) {
+    const sectionIds = options.sectionIds.map(normaliseSectionId).filter(Boolean);
+    if (sectionIds.length) return sectionIds;
+  }
+  if (options.scope === "section") return [normaliseSectionId(options.sectionId || project.transport.currentSection || "A") || "A"];
+  if (options.scope === "all") return SECTION_IDS.slice();
+  const sequence = Array.isArray(project.sequence) ? project.sequence.map(normaliseSectionId).filter(Boolean) : [];
+  return sequence.length ? sequence : [normaliseSectionId(project.transport.currentSection || "A") || "A"];
+}
+
+function normaliseSectionId(value) {
+  const safe = String(value || "").toUpperCase();
+  return SECTION_IDS.includes(safe) ? safe : null;
 }
 
 export function buildSectionEvents(project, section, { baseTime = 0, baseTick = 0, arrangementIndex = 0 } = {}) {

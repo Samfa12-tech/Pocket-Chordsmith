@@ -22,9 +22,11 @@
     "songwriting"
   ],
   "scripts": {
+    "package:itch": "node scripts/package-itch.mjs",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.52.0"
+    "@playwright/test": "^1.52.0",
+    "bestzip": "^2.2.1"
   }
 }

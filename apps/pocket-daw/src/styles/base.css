@@ -167,8 +167,11 @@ button:disabled {
   top: var(--menu-strip-height);
   z-index: 50;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 330px minmax(160px, 240px);
-  gap: 12px;
+  grid-template-areas:
+    "brand buttons readout"
+    "status status status";
+  grid-template-columns: minmax(220px, 280px) minmax(360px, 1fr) minmax(390px, 520px);
+  gap: 10px 12px;
   align-items: center;
   padding: 12px 18px;
   border-bottom: 1px solid var(--line);
@@ -177,6 +180,7 @@ button:disabled {
 }
 
 .brand {
+  grid-area: brand;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -232,6 +236,7 @@ h1 {
 }
 
 .transport-buttons {
+  grid-area: buttons;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -246,9 +251,11 @@ h1 {
 }
 
 .transport-readout {
+  grid-area: readout;
   display: grid;
   grid-template-columns: repeat(6, minmax(58px, 1fr));
   gap: 7px;
+  width: 100%;
   min-width: 0;
   font-size: 12px;
 }
@@ -307,6 +314,9 @@ button.record:hover {
 }
 
 .status {
+  grid-area: status;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1705,6 +1715,11 @@ button.record:hover {
 
 @media (max-width: 1180px) {
   .transport {
+    grid-template-areas:
+      "brand"
+      "buttons"
+      "readout"
+      "status";
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
   }

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   PocketAudio,
+  SECTION_IDS,
   buildPocketAudioTimeline,
   buildPocketChordsmithShareCode,
   base64UrlToUtf8,
@@ -109,6 +110,41 @@ test("section sequence timing offsets later sections", () => {
   const timeline = buildPocketAudioTimeline(project);
   const bKick = timeline.events.find((event) => event.sectionId === "B" && event.type === "kick");
   assert.ok(bKick.time >= 60 / minimalProject.bpm * 4 - 0.000001);
+});
+
+test("section scope renders only the requested section", () => {
+  const project = normalisePocketChordsmithProject({
+    ...minimalProject,
+    songSequence: ["A", "B"],
+    sectionBars: { A: 1, B: 1 },
+    gridB: { kick: [1, 0, 0, 0], snare: [], hat: [], bass: [] },
+    progressionB: [3, 2, 1, 0]
+  });
+  const timeline = buildPocketAudioTimeline(project, { scope: "section", sectionId: "B" });
+  assert.deepEqual(timeline.sectionIds, ["B"]);
+  assert.ok(timeline.events.length > 0);
+  assert.ok(timeline.events.every((event) => event.sectionId === "B"));
+});
+
+test("all scope renders canonical A-H sections instead of the song sequence", () => {
+  const sectionBars = Object.fromEntries(SECTION_IDS.map((id) => [id, 1]));
+  const project = normalisePocketChordsmithProject({
+    ...minimalProject,
+    songSequence: ["B"],
+    sectionBars,
+    gridB: { kick: [1, 0, 0, 0], snare: [], hat: [], bass: [] }
+  });
+  const sequenceTimeline = buildPocketAudioTimeline(project, { scope: "sequence" });
+  const allTimeline = buildPocketAudioTimeline(project, { scope: "all" });
+  assert.deepEqual(sequenceTimeline.sectionIds, ["B"]);
+  assert.deepEqual(allTimeline.sectionIds, SECTION_IDS);
+  assert.ok(allTimeline.duration > sequenceTimeline.duration);
+});
+
+test("explicit sectionIds scope keeps the requested order", () => {
+  const project = normalisePocketChordsmithProject(minimalProject);
+  const timeline = buildPocketAudioTimeline(project, { scope: "all", sectionIds: ["H", "E", "B"] });
+  assert.deepEqual(timeline.sectionIds, ["H", "E", "B"]);
 });
 
 test("held melody extends duration", () => {

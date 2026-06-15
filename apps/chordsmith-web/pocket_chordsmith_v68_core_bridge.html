@@ -611,6 +611,10 @@
                 <option value="B">Export Section B</option>
                 <option value="C">Export Section C</option>
                 <option value="D">Export Section D</option>
+                <option value="E">Export Section E</option>
+                <option value="F">Export Section F</option>
+                <option value="G">Export Section G</option>
+                <option value="H">Export Section H</option>
                 <option value="ALL">Export All Sections</option>
                 <option value="SEQUENCE" selected>Export Song Sequence</option>
               </select>
@@ -25324,9 +25328,27 @@ function bytesVLQ(value){
 }
 function strBytes(s){ return Array.from(s).map(c => c.charCodeAt(0)); }
 
+function getSelectedExportScope(){
+  const raw = els.exportScopeSelect ? String(els.exportScopeSelect.value || "SEQUENCE").toUpperCase() : "SEQUENCE";
+  if(raw === "ALL" || raw === "SEQUENCE" || SECTION_IDS.includes(raw)) return raw;
+  return "SEQUENCE";
+}
+
+function exportScopeLabel(scope = getSelectedExportScope()){
+  if(scope === "ALL") return "all sections";
+  if(scope === "SEQUENCE") return "song sequence";
+  return `section ${scope}`;
+}
+
+function coreTimelineOptionsForExportScope(scope = getSelectedExportScope()){
+  if(SECTION_IDS.includes(scope)) return {scope:"section", sectionId:scope};
+  if(scope === "ALL") return {scope:"all"};
+  return {scope:"sequence"};
+}
+
 function projectSectionsForExport(){
   storeSection();
-  const scope = els.exportScopeSelect ? els.exportScopeSelect.value : "SEQUENCE";
+  const scope = getSelectedExportScope();
   const includeMelody = true;
   if(scope === "SEQUENCE") return sequenceList().map(id => getSectionData(id, includeMelody));
   if(scope === "ALL") return SECTION_IDS.map(id => getSectionData(id, includeMelody));
@@ -26491,19 +26513,23 @@ function makeOfflineHat(ctx, dest, t, open=false, peak=0.045){
 }
 
 async function renderCoreWavForCurrentProject(durationLabel, eventCount){
+  const exportScope = getSelectedExportScope();
+  const scopeLabel = exportScopeLabel(exportScope);
+  const timelineOptions = coreTimelineOptionsForExportScope(exportScope);
   try{
     const mod = await loadPocketAudioCoreModule();
     const project = await pocketAudioCore.loadProject(exportProject());
-    const timeline = mod.buildPocketAudioTimeline ? mod.buildPocketAudioTimeline(project, {scope:"sequence"}) : pocketAudioCore.timeline;
-    setWavProgress(`Rendering ${durationLabel} with Pocket Audio Core from ${timeline?.events?.length || eventCount} events.`);
-    pocketAudioCoreStatus = `WAV render: ${timeline?.events?.length || eventCount} timeline events`;
+    const timeline = mod.buildPocketAudioTimeline ? mod.buildPocketAudioTimeline(project, timelineOptions) : pocketAudioCore.timeline;
+    setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) with Pocket Audio Core from ${timeline?.events?.length || eventCount} events.`);
+    pocketAudioCoreStatus = `WAV render ${scopeLabel}: ${timeline?.events?.length || eventCount} timeline events`;
     updatePocketAudioCoreStatusUi();
-    const blob = await pocketAudioCore.renderWav({sampleRate:44100, scope:"sequence"});
+    const blob = await pocketAudioCore.renderWav({sampleRate:44100, ...timelineOptions});
     setWavOutput(blob);
-    setWavProgress(`WAV ready via Pocket Audio Core: ${durationLabel}, ${Math.round(blob.size / 1024 / 1024 * 10) / 10} MB.`);
-    setStatus(`WAV ready via Pocket Audio Core (${els.exportScopeSelect ? els.exportScopeSelect.value : "SEQUENCE"}). Preview, open, or download it from Settings.`);
+    setWavProgress(`WAV ready via Pocket Audio Core (${scopeLabel}): ${durationLabel}, ${Math.round(blob.size / 1024 / 1024 * 10) / 10} MB.`);
+    setStatus(`WAV ready via Pocket Audio Core (${scopeLabel}). Preview, open, or download it from Settings.`);
     return true;
   }catch(e){
+    setWavProgress(`Pocket Audio Core render unavailable for ${scopeLabel}; falling back to the Chordsmith WAV renderer.`);
     return false;
   }
 }
@@ -26537,8 +26563,9 @@ async function exportWavFile(){
     const totalDuration = Math.max(2.0, maxEventEnd + 1.0);
     const sampleRate = 44100;
     const durationLabel = `${Math.ceil(totalDuration)}s audio`;
-    setWavProgress(`Rendering ${durationLabel} from ${events.length} events. Keep this tab open.`);
-    setStatus(`Rendering WAV (${durationLabel})...`);
+    const scopeLabel = exportScopeLabel();
+    setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) from ${events.length} events. Keep this tab open.`);
+    setStatus(`Rendering WAV (${scopeLabel}, ${durationLabel})...`);
     await new Promise(resolve => setTimeout(resolve, 50));
     if(token !== state.wavExportToken) return;
     if(await renderCoreWavForCurrentProject(durationLabel, events.length)) return;
@@ -26623,8 +26650,8 @@ async function exportWavFile(){
     if(token !== state.wavExportToken) return;
     const blob = writeWavFromBuffer(rendered);
     setWavOutput(blob);
-    setWavProgress(`WAV ready: ${durationLabel}, ${Math.round(blob.size / 1024 / 1024 * 10) / 10} MB.`);
-    setStatus(`WAV ready (${els.exportScopeSelect ? els.exportScopeSelect.value : "SEQUENCE"}). Preview, open, or download it from Settings.`);
+    setWavProgress(`WAV ready via Chordsmith renderer (${scopeLabel}): ${durationLabel}, ${Math.round(blob.size / 1024 / 1024 * 10) / 10} MB.`);
+    setStatus(`WAV ready via Chordsmith renderer (${scopeLabel}). Preview, open, or download it from Settings.`);
   }catch(e){
     console.error(e);
     setWavProgress("");

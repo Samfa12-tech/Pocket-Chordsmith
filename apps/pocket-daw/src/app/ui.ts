@@ -203,7 +203,7 @@ function renderTransport(state: AppState): string {
         <span><strong>${escapeHtml(project.project.key)}</strong><small>${escapeHtml(project.project.scale)}</small></span>
         <span data-playhead-readout="true"><strong>${escapeHtml(barBeat.bar)}</strong><small>${escapeHtml(barBeat.beat)}</small></span>
       </div>
-      <div class="status">${escapeHtml(state.status)}</div>
+      <div class="status" data-transport-status="true" role="status" aria-live="polite" title="${escapeAttr(state.status)}">${escapeHtml(state.status)}</div>
       ${state.busyMessage ? `
         <div class="transport-busy" role="status" aria-live="polite">
           <span>${escapeHtml(state.busyMessage)}</span>

@@ -45,6 +45,42 @@ test("settings modal opens import and handoff tools", async ({ page }) => {
   await expect(page.locator("#pocketAudioCoreStatus")).toContainText("Pocket Audio Core");
 });
 
+test("settings export scope exposes A-H and maps to matching core scopes", async ({ page }) => {
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await expect(page.locator("#settingsModal")).toHaveAttribute("aria-hidden", "false");
+
+  const options = await page.locator("#exportScopeSelect option").evaluateAll((nodes) =>
+    nodes.map((node) => ({ value: node.value, label: node.textContent?.trim() })),
+  );
+  expect(options).toEqual([
+    { value: "A", label: "Export Section A" },
+    { value: "B", label: "Export Section B" },
+    { value: "C", label: "Export Section C" },
+    { value: "D", label: "Export Section D" },
+    { value: "E", label: "Export Section E" },
+    { value: "F", label: "Export Section F" },
+    { value: "G", label: "Export Section G" },
+    { value: "H", label: "Export Section H" },
+    { value: "ALL", label: "Export All Sections" },
+    { value: "SEQUENCE", label: "Export Song Sequence" },
+  ]);
+
+  await page.locator("#exportScopeSelect").selectOption("E");
+  await expect
+    .poll(() => page.evaluate(() => coreTimelineOptionsForExportScope(getSelectedExportScope())))
+    .toEqual({ scope: "section", sectionId: "E" });
+
+  await page.locator("#exportScopeSelect").selectOption("ALL");
+  await expect
+    .poll(() => page.evaluate(() => coreTimelineOptionsForExportScope(getSelectedExportScope())))
+    .toEqual({ scope: "all" });
+
+  await page.locator("#exportScopeSelect").selectOption("SEQUENCE");
+  await expect
+    .poll(() => page.evaluate(() => coreTimelineOptionsForExportScope(getSelectedExportScope())))
+    .toEqual({ scope: "sequence" });
+});
+
 test("handoff buttons stop live playback before pushing", async ({ page }) => {
   await page.evaluate(() => {
     window.__pocketChordsmithOpenedUrls = [];

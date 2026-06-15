@@ -2,10 +2,19 @@
 
 Use these notes before tagging or publishing any Pocket Audio family artifact.
 
+## Release-Hardening Patch Checks
+
+- Chordsmith: run `npm run build`, `npm run test:e2e`, and `npm run package:itch`; verify the Settings export dropdown lists Section A-H, Export All Sections, and Export Song Sequence; verify section WAV export maps to the selected section scope instead of the song sequence.
+- Pocket DJ: run `npm run test:e2e` and `npm run package:itch`; verify the packaged demo deck loads Pocket Audio Core from `./pocket-audio-core/...` rather than falling back to legacy-only status.
+- Pocket Audio Core: run `npm test` and `npm run build`; keep `scope:"section"`, `scope:"sequence"`, and `scope:"all"` timeline behavior covered by tests.
+- Pocket DAW: run `npm test`, `npm run build`, and `npm run verify:versions`; installer packaging still needs a Rust/Tauri-capable Windows release machine before publishing.
+- Godot addon: no runtime validation is implied by web/package checks; release validation still needs Godot 4.x and the active game project.
+
 ## Web App
 
 - Confirm `apps/chordsmith-web/index.html` redirects to the intended current build.
 - Serve `apps/chordsmith-web/` locally and smoke test demo load, play/stop, JSON import/export, `PCS1:` import/export, WAV export, and mobile width.
+- Verify the Settings export dropdown covers Section A-H plus all sections and song sequence, and that section WAV export uses the matching selected scope.
 - Verify `Push to DJ` and `Push to Godot` still preserve handoff payloads.
 - Run `npm run package:itch` from `apps/chordsmith-web/` and confirm the zip contains `index.html`, `pocket_chordsmith_v68_core_bridge.html`, and `pocket-audio-core/` fallback files at the root.
 
@@ -13,6 +22,7 @@ Use these notes before tagging or publishing any Pocket Audio family artifact.
 
 - Confirm `apps/pocket-dj/index.html` redirects to the intended current build.
 - Smoke test `PCS1:` import, raw JSON import, demo load, play/stop, section queueing, mutes, build/drop, and edit-back handoff.
+- Run `npm run package:itch` and confirm the zip contains `index.html`, `pocket_dj_v1g_core_bridge.html`, and `pocket-audio-core/` fallback files at the root.
 - Keep Pocket DJ as a performance/remix deck, not a second Chordsmith editor.
 
 ## Pocket DAW

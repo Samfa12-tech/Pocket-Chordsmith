@@ -136,6 +136,16 @@ describe("Pocket DAW UI rendering", () => {
     expect(transport).toContain('<span data-playhead-readout="true"><strong>Bar 1</strong><small>Beat 1</small></span>');
   });
 
+  it("keeps long transport feedback in a dedicated status region", () => {
+    const state = createInitialState();
+    state.status = "Monitoring Live Vocals input via Speakers while the transport controls remain usable.";
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain('data-transport-status="true" role="status" aria-live="polite"');
+    expect(html).toContain('title="Monitoring Live Vocals input via Speakers while the transport controls remain usable."');
+  });
+
   it("starts inline sequencer boxes at the bar edge without lane-label offsets", () => {
     const html = renderAppShell(createInitialState());
     const inline = html.match(/<div class="inline-sequencer inline-drums[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/)?.[0] || "";

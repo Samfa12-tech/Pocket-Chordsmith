@@ -19,6 +19,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install Playwright Chromium
+        run: npx --yes playwright@1.52.0 install --with-deps chromium
+
       - name: Repository hygiene
         shell: bash
         run: |
@@ -46,7 +49,6 @@ jobs:
         working-directory: apps/chordsmith-web
         run: |
           npm install
-          npx playwright install --with-deps chromium
           npm run build
           npm run test:e2e
           npm run package:itch
@@ -55,6 +57,7 @@ jobs:
         working-directory: apps/pocket-dj
         run: |
           npm install
+          npm run package:itch
           npm run test:e2e
 
       - name: Pocket DAW
