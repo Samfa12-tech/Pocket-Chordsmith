@@ -23,7 +23,7 @@ This repository is now the canonical public monorepo for:
 - Pocket DJ current build: `apps/pocket-dj/pocket_dj_v1g_core_bridge.html`.
 - Pocket DAW package root: `apps/pocket-daw/package.json`.
 - Godot addon plugin config: `addons/pocket_chordsmith/plugin.cfg`.
-- Godot addon release baseline: `1.1.6`.
+- Godot addon release baseline: `1.1.7`.
 
 ## Working Rules
 

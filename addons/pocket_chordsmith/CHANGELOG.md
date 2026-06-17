@@ -1,5 +1,21 @@
 # Pocket Chordsmith Godot Addon Changelog
 
+## 1.1.7
+
+Lofi/chillhop profile compatibility update.
+
+Added:
+
+- Import and chart-resource metadata for Pocket Chordsmith lofi/chillhop profile IDs, preset IDs, texture settings, adaptive music states, and game-state hints.
+- Web-kit playback profile mappings for lofi chord, melody, bass, and drum identifiers including dusty Rhodes, felt piano, cassette keys, warm pad, mellow vibes, tape bell, warm sub, soft upright, and lofi drum hits.
+- Recommended `Music_Texture` bus support for vinyl/tape texture routing and lofi-friendly preview effects.
+
+Changed:
+
+- Runtime conductor diagnostics and music-state helpers now preserve enough lofi metadata for menu, explore, night, rain, and fuller-loop game states without parsing the original Pocket Chordsmith JSON at runtime.
+- Import/build scripts are more robust in fresh or headless Godot projects by relying on explicit addon script paths instead of fragile class-name registration.
+- Missing preview WAV checks now allow generated web-kit files to be detected before Godot import metadata exists.
+
 ## 1.1.6
 
 Direct Push-to-Godot browser handoff update.

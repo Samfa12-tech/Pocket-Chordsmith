@@ -8,7 +8,7 @@ Compatibility notes for PCS/JSON interchange, handoffs, and app-to-runtime behav
 - Main interchange prefix: `PCS1:`.
 - Pocket Chordsmith current app: `apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html`.
 - Pocket DJ current app: `apps/pocket-dj/pocket_dj_v1g_core_bridge.html`.
-- Godot addon release baseline: `1.1.6`.
+- Godot addon release baseline: `1.1.7`.
 
 ## Handoff Rules
 

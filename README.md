@@ -135,7 +135,7 @@ Security and responsible disclosure notes are in `SECURITY.md`.
 
 ## Project Notes
 
-- Current Godot addon release: `1.1.6`.
+- Current Godot addon release: `1.1.7`.
 - Keep `addons/pocket_chordsmith/` stable for Godot installs and addon-only packaging.
 - Do not commit generated output: `node_modules/`, `dist/`, `src-tauri/target/`,
   installers, release zips, Playwright reports, or local `.pocketdaw` saves.
