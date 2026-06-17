@@ -2,6 +2,8 @@
 extends Node
 class_name PocketChordsmithConductor
 
+const PlaybackProfile := preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
+
 signal beat(bar: int, beat: int)
 signal bar_started(bar_index: int)
 signal section_started(section_id: String)
@@ -31,8 +33,8 @@ enum TransitionBoundary {
 	NEXT_MARKER,
 }
 
-@export var chart: PCSChartResource
-@export var playback_profile: PCSPlaybackProfile
+@export var chart: Resource
+@export var playback_profile: Resource
 @export var autoplay := false
 @export var loop_enabled := false
 @export var native_audio_router_path: NodePath
@@ -99,7 +101,7 @@ var _sample_preview_last_kick_tick := -2147483648
 
 func _ready() -> void:
 	if playback_profile == null:
-		playback_profile = PCSPlaybackProfile.new()
+		playback_profile = PlaybackProfile.new()
 	_setup_native_audio_players()
 	_apply_safe_default_buses()
 	if playback_profile.sample_preview_prewarm_on_ready:
@@ -156,10 +158,10 @@ func _stop_polyphonic_streams() -> void:
 	_last_stinger_stream_key = ""
 
 
-func set_playback_profile(profile: PCSPlaybackProfile, stop_active_samples := true) -> void:
+func set_playback_profile(profile: Resource, stop_active_samples := true) -> void:
 	if stop_active_samples:
 		_stop_polyphonic_streams()
-	playback_profile = profile if profile != null else PCSPlaybackProfile.new()
+	playback_profile = profile if profile != null else PlaybackProfile.new()
 	_audio_stream_cache.clear()
 	_last_playback_warning_signature = ""
 	_setup_native_audio_players()
@@ -236,7 +238,7 @@ func seek_tick(tick: int) -> void:
 func jump_to_section(section_id: String) -> void:
 	if chart == null:
 		return
-	var target_tick := chart.first_section_start_tick(section_id)
+	var target_tick: int = chart.first_section_start_tick(section_id)
 	if target_tick < 0:
 		push_warning("PocketChordsmithConductor could not find section '%s' in the arrangement." % section_id)
 		return
@@ -443,7 +445,7 @@ func get_diagnostics() -> Dictionary:
 	var backend := "none"
 	var stem_status := "inactive"
 	if playback_profile != null:
-		backend = PCSPlaybackProfile.PlaybackBackend.keys()[playback_profile.playback_backend]
+		backend = PlaybackProfile.PlaybackBackend.keys()[playback_profile.playback_backend]
 	if is_instance_valid(_stem_player) and _stem_player.stream != null:
 		stem_status = "playing" if _stem_player.playing else "ready"
 	return {
@@ -525,7 +527,7 @@ func _process_queued_transition(previous_tick: int, next_tick: int) -> bool:
 
 
 func _handle_end_of_chart() -> void:
-	var length_ticks := chart.get_length_ticks()
+	var length_ticks: int = chart.get_length_ticks()
 	if length_ticks <= 0 or current_tick < length_ticks:
 		return
 	if loop_enabled:
@@ -545,7 +547,7 @@ func _update_position_fields() -> void:
 	var bar_index := int(floor(float(current_tick) / float(bar_ticks)))
 	current_bar = bar_index + 1
 	current_beat = posmod(beat_index, max(1, chart.time_signature)) + 1
-	var section_info := chart.find_section_at_tick(current_tick)
+	var section_info: Dictionary = chart.find_section_at_tick(current_tick)
 	current_section = str(section_info.get("id", ""))
 	current_arrangement_index = int(section_info.get("arrangement_index", 0))
 
@@ -631,7 +633,7 @@ func _initialize_music_state() -> void:
 	if chart == null:
 		return
 	if playback_profile == null:
-		playback_profile = PCSPlaybackProfile.new()
+		playback_profile = PlaybackProfile.new()
 	if not current_music_state.is_empty():
 		_apply_state_definition(current_music_state, false)
 		return
@@ -760,7 +762,7 @@ func _state_definition(state_name: String) -> Dictionary:
 func _process_sequence_progression(previous_tick: int, next_tick: int) -> void:
 	if current_sequence.is_empty() or chart == null:
 		return
-	var section_info := chart.find_section_at_tick(previous_tick)
+	var section_info: Dictionary = chart.find_section_at_tick(previous_tick)
 	if section_info.is_empty():
 		return
 	var end_tick := int(section_info.get("start_tick", 0)) + int(section_info.get("length_ticks", 0))
@@ -785,7 +787,7 @@ func _boundary_reached(previous_tick: int, next_tick: int, boundary: int) -> boo
 			var bar_ticks := max(1, chart.time_signature * chart.ticks_per_quarter)
 			return int(floor(float(previous_tick) / float(bar_ticks))) != int(floor(float(next_tick) / float(bar_ticks)))
 		TransitionBoundary.NEXT_SECTION:
-			var section_info := chart.find_section_at_tick(previous_tick)
+			var section_info: Dictionary = chart.find_section_at_tick(previous_tick)
 			if section_info.is_empty():
 				return false
 			var end_tick := int(section_info.get("start_tick", 0)) + int(section_info.get("length_ticks", 0))
@@ -793,7 +795,7 @@ func _boundary_reached(previous_tick: int, next_tick: int, boundary: int) -> boo
 		TransitionBoundary.NEXT_LOOP:
 			if current_sequence.is_empty():
 				return _boundary_reached(previous_tick, next_tick, TransitionBoundary.NEXT_SECTION)
-			var section_info := chart.find_section_at_tick(previous_tick)
+			var section_info: Dictionary = chart.find_section_at_tick(previous_tick)
 			if section_info.is_empty():
 				return false
 			var end_tick := int(section_info.get("start_tick", 0)) + int(section_info.get("length_ticks", 0))
@@ -817,7 +819,7 @@ func _seek_to_sequence_index(index: int) -> void:
 		return
 	_current_sequence_index = posmod(index, current_sequence.size())
 	var section_id := str(current_sequence[_current_sequence_index])
-	var target_tick := _sequence_target_tick(_current_sequence_index, section_id)
+	var target_tick: int = _sequence_target_tick(_current_sequence_index, section_id)
 	if target_tick < 0:
 		push_warning("PocketChordsmithConductor could not find section '%s' for sequence playback." % section_id)
 		return
@@ -830,7 +832,7 @@ func _sequence_target_tick(index: int, section_id: String) -> int:
 	if chart == null:
 		return -1
 	if _sequence_matches_arrangement() and index < chart.arrangement_positions.size():
-		var arrangement_section := chart.arrangement_section_id(index)
+		var arrangement_section: String = chart.arrangement_section_id(index)
 		if arrangement_section == section_id:
 			return chart.arrangement_start_tick(index)
 	return chart.first_section_start_tick(section_id)
@@ -911,7 +913,7 @@ func _route_sample_preview_event(event: Dictionary, delay_ticks := 0) -> void:
 		return
 	if delay_ticks > 0 and chart != null and is_inside_tree():
 		var event_copy := event.duplicate(true)
-		var delay_seconds := float(delay_ticks) * chart.get_seconds_per_tick()
+		var delay_seconds: float = float(delay_ticks) * chart.get_seconds_per_tick()
 		get_tree().create_timer(delay_seconds, false).timeout.connect(func() -> void:
 			if _playing and not _paused:
 				_route_sample_preview_event(event_copy, 0)
@@ -965,7 +967,7 @@ func _route_sample_preview_chord(event: Dictionary) -> void:
 	var flags: Dictionary = event.get("flags", {})
 	var notes: Array = flags.get("midi_notes", [int(event.get("midi_note", 60))])
 	var track_type := str(event.get("track_type", "chord"))
-	var max_notes := playback_profile.sample_preview_max_chord_notes
+	var max_notes: int = playback_profile.sample_preview_max_chord_notes
 	if track_type == "guitar":
 		max_notes = max(max_notes, 3)
 	if max_notes > 0 and notes.size() > max_notes:
@@ -997,12 +999,12 @@ func _validate_playback_profile() -> Array[String]:
 	if playback_profile == null:
 		warnings.append("PocketChordsmithConductor has no playback profile; timing signals will work, but native audio routing will use defaults.")
 		return warnings
-	if playback_profile.playback_backend == PCSPlaybackProfile.PlaybackBackend.STEM_SYNC:
-		var has_profile_stems := not playback_profile.stem_paths.is_empty() or not playback_profile.stem_sets.is_empty()
-		var has_chart_stems := chart != null and not chart.stem_sets.is_empty()
+	if playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.STEM_SYNC:
+		var has_profile_stems: bool = not playback_profile.stem_paths.is_empty() or not playback_profile.stem_sets.is_empty()
+		var has_chart_stems: bool = chart != null and not chart.stem_sets.is_empty()
 		if not has_profile_stems and not has_chart_stems:
 			warnings.append("Pocket Chordsmith playback profile is STEM_SYNC, but no stems are assigned.")
-	if playback_profile.playback_backend == PCSPlaybackProfile.PlaybackBackend.HYBRID:
+	if playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.HYBRID:
 		if playback_profile.stem_paths.is_empty() and playback_profile.stem_sets.is_empty() and playback_profile.drum_kit.is_empty() and playback_profile.accent_streams.is_empty() and playback_profile.event_sample_streams.is_empty():
 			warnings.append("Pocket Chordsmith playback profile is HYBRID, but no stems, drum kit, accent samples, or event samples are assigned.")
 		warnings.append_array(_missing_drum_sample_warnings())
@@ -1253,7 +1255,7 @@ func _amount_to_effect_value(effect_name: String, amount: float):
 func _prepare_stem_sync_for_current_state() -> void:
 	if playback_profile == null or not playback_profile.use_audio_stream_synchronized:
 		return
-	if playback_profile.playback_backend == PCSPlaybackProfile.PlaybackBackend.PROCEDURAL_PREVIEW:
+	if playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.PROCEDURAL_PREVIEW:
 		return
 	_setup_native_audio_players()
 	var stem_map := _stem_map_for_current_state()
@@ -1276,7 +1278,7 @@ func _prepare_stem_sync_for_current_state() -> void:
 func _start_native_stems_from_current_tick() -> void:
 	if _stem_player == null or _stem_player.stream == null or chart == null:
 		return
-	if playback_profile != null and playback_profile.playback_backend == PCSPlaybackProfile.PlaybackBackend.PROCEDURAL_PREVIEW:
+	if playback_profile != null and playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.PROCEDURAL_PREVIEW:
 		return
 	_stem_player.play(float(current_tick) * chart.get_seconds_per_tick())
 
@@ -1300,8 +1302,11 @@ func _stem_map_for_current_state() -> Dictionary:
 func _load_audio_stream(value, prefer_uncompressed_wav := false) -> AudioStream:
 	if value is AudioStream:
 		return value
-	if value is String and ResourceLoader.exists(value):
+	if value is String:
 		var path := str(value)
+		var file_path := ProjectSettings.globalize_path(path)
+		if not ResourceLoader.exists(path) and not FileAccess.file_exists(file_path):
+			return null
 		var cache_key := _audio_cache_key(path, prefer_uncompressed_wav)
 		if _audio_stream_cache.has(cache_key):
 			return _audio_stream_cache[cache_key]
@@ -1319,7 +1324,7 @@ func _load_audio_stream(value, prefer_uncompressed_wav := false) -> AudioStream:
 
 
 func _audio_cache_key(path: String, prefer_uncompressed_wav := false) -> String:
-	var wants_raw_wav := prefer_uncompressed_wav and playback_profile != null and playback_profile.sample_preview_load_wavs_uncompressed and path.get_extension().to_lower() == "wav"
+	var wants_raw_wav: bool = prefer_uncompressed_wav and playback_profile != null and playback_profile.sample_preview_load_wavs_uncompressed and path.get_extension().to_lower() == "wav"
 	return "%s:%s" % ["wav_raw" if wants_raw_wav else "resource", path]
 
 
@@ -1433,6 +1438,10 @@ func _sample_key_for_event(event: Dictionary) -> String:
 	var instrument_id := str(event.get("instrument_id", ""))
 	var flags: Dictionary = event.get("flags", {})
 	var accent := bool(flags.get("accent", false))
+	if track_type == "drum" and str(flags.get("audio_profile", "")) == "lofi_chill":
+		var lofi_key := "lofi_open_hat" if instrument_id == "hat" and accent else "lofi_%s" % instrument_id
+		if playback_profile != null and playback_profile.drum_kit.has(lofi_key):
+			return lofi_key
 	if track_type == "drum" and accent:
 		var accent_key := "%s_accent" % instrument_id
 		if playback_profile != null and playback_profile.drum_kit.has(accent_key):
@@ -1689,7 +1698,7 @@ func _find_event_cursor(tick: int) -> int:
 	if chart == null:
 		return 0
 	var low := 0
-	var high := chart.compiled_events.size()
+	var high: int = chart.compiled_events.size()
 	while low < high:
 		var mid := int((low + high) / 2)
 		var event_tick := int(chart.compiled_events[mid].get("tick", 0))

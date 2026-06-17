@@ -12,10 +12,12 @@ import {
   SECTION_IDS,
   STEM_IDS
 } from "../constants.js";
+import { normaliseLofiProjectSettings } from "../presets/lofi.js";
 import { migratePocketChordsmithProject } from "./migrations.js";
 
 export function normalisePocketChordsmithProject(raw, options = {}) {
   const { project, sourceSchemaVersion, migrationNotes } = migratePocketChordsmithProject(raw);
+  const lofi = normaliseLofiProjectSettings(project);
   const timeSig = safeChoice(asInt(project.timeSig, DEFAULT_TIME_SIG), [3, 4, 5, 6, 7], DEFAULT_TIME_SIG);
   const resolution = sanitizeResolution(project.resolution ?? project.lastAdvancedResolution ?? DEFAULT_RESOLUTION);
   const sectionBars = normaliseSectionBars(project.sectionBars || project.sectionLengths);
@@ -45,8 +47,11 @@ export function normalisePocketChordsmithProject(raw, options = {}) {
       resolution,
       swing: clamp(asNumber(project.swing, 0), 0, 0.35),
       ppq: DEFAULT_PPQ,
-      melodyPitchMode: safeChoice(project.melodyPitchMode, ["scale", "chromatic"], "scale")
+      melodyPitchMode: safeChoice(project.melodyPitchMode, ["scale", "chromatic"], "scale"),
+      audioProfile: lofi.audioProfile,
+      stylePreset: lofi.presetId || ""
     },
+    lofi,
     transport: {
       scope: "sequence",
       currentSection: sequence[0] || "A"
@@ -137,6 +142,7 @@ function normaliseStemMix(project) {
 }
 
 function normaliseFx(project) {
+  const lofi = normaliseLofiProjectSettings(project);
   return {
     ...cloneJson(DEFAULT_FX),
     delay: clamp(asNumber(project.fxDelay, DEFAULT_FX.delay), 0, 1),
@@ -147,7 +153,8 @@ function normaliseFx(project) {
     sidechain: {
       enabled: Boolean(project.sidechainOn ?? project.pumpChordsEnabled),
       amount: clamp(asNumber(project.sidechainAmount ?? project.pumpAmount, DEFAULT_FX.sidechain.amount), 0, 1)
-    }
+    },
+    lofiTexture: lofi.texture
   };
 }
 

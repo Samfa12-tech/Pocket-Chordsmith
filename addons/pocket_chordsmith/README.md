@@ -122,6 +122,23 @@ conductor.lowpass_music(0.75)
 conductor.set_bus_effect_amount("Music_Master", "reverb", 0.25)
 ```
 
+## Lofi Chill Pack
+
+The importer/migrator accepts Pocket Chordsmith lofi metadata without requiring a schema bump: `audioProfile`, `lofiPreset`, `lofiTexture`, `drumKit`, `drumGroovePreset`, and `bassTone`. Compiled `PCSChartResource` files store that metadata so games can choose adaptive chill-game states from the lightweight chart resource.
+
+`Create Chordsmith Audio Buses` now also prepares a `Music_Texture` path under `Music_FX` for optional low-pass, reverb, and soft saturation-style texture. The generated preview sound kit includes practical lofi drum keys and profile mappings, but shipped games should still prefer stems, licensed samples, or the HYBRID path when production audio quality matters.
+
+Chill-game state example:
+
+```gdscript
+conductor.set_music_state("menu")
+conductor.set_music_state("explore")
+conductor.queue_music_state("night", PocketChordsmithConductor.TransitionBoundary.NEXT_BAR)
+conductor.queue_music_state("night", PocketChordsmithConductor.TransitionBoundary.NEXT_SECTION)
+conductor.lowpass_music(0.65)
+conductor.set_bus_effect_amount("Music_Texture", "lowpass", 0.35)
+```
+
 More docs:
 
 - `CHANGELOG.md`

@@ -13,10 +13,18 @@ code.
 - Core version: `0.1.0-scaffold`
 - Supported source prefix: `PCS1:`
 - Initial source schema target: Pocket Chordsmith schema `16`
-- Integration status: first-pass bridges exist for Pocket Chordsmith v68 and Pocket DJ v1g; Godot and Pocket DAW remain future prompts
+- Integration status: first-pass bridges exist for Pocket Chordsmith v68 and Pocket DJ v1g; Pocket DAW and Godot consume shared lofi metadata through their compatibility/import paths
 - Render status: basic PCM/WAV and stem output using simplified procedural events
 - Live playback status: browser event scheduler with simple Web Audio tones, not parity synths
 - Game runtime status: `profile:"game"` supports music states, stingers, intensity, ducking, lowpass, stem controls, and diagnostics
+
+## Lofi Chill Pack
+
+The shared lofi/chillhop preset spec lives in `src/presets/lofi.js` and is exported from the package root. It defines the `lofi_chill` audio profile, eight preset IDs, soft instrument/tone IDs, lofi drum kit and groove IDs, texture defaults, and game intensity hints.
+
+`normalisePocketChordsmithProject()` preserves optional lofi metadata without bumping schema `16`: `audioProfile`, `lofiPreset`, `stylePreset`, `lofiTexture`, `drumKit`, `drumGroovePreset`, and `bassTone`. Missing fields still normalise to the standard clean profile.
+
+The lofi sounds are procedural approximations. No external sample packs are bundled or required.
 
 ## Usage
 

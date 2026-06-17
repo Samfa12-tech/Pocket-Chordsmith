@@ -2,6 +2,9 @@
 extends RefCounted
 class_name PCSValidator
 
+const ChartResource := preload("res://addons/pocket_chordsmith/resources/pcs_chart_resource.gd")
+const PlaybackProfile := preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
+
 const SECTION_IDS := ["A", "B", "C", "D", "E", "F", "G", "H"]
 const TRACK_IDS := ["kick", "snare", "hat", "bass"]
 const RECOMMENDED_MUSIC_BUSES := [
@@ -55,7 +58,7 @@ func validate_project(project: Dictionary) -> Dictionary:
 	return {"warnings": warnings, "errors": errors}
 
 
-func validate_runtime_readiness(chart: PCSChartResource, playback_profile: PCSPlaybackProfile = null) -> Dictionary:
+func validate_runtime_readiness(chart, playback_profile = null) -> Dictionary:
 	var warnings: Array[String] = []
 	var errors: Array[String] = []
 	var info := {}
@@ -78,8 +81,8 @@ func validate_runtime_readiness(chart: PCSChartResource, playback_profile: PCSPl
 		errors.append("Chart BPM must be greater than zero.")
 	if chart.time_signature <= 0:
 		errors.append("Chart time signature must be greater than zero.")
-	if chart.ticks_per_quarter != PCSChartResource.TICKS_PER_QUARTER:
-		warnings.append("Chart ticks_per_quarter is %d; Pocket Chordsmith expects %d." % [chart.ticks_per_quarter, PCSChartResource.TICKS_PER_QUARTER])
+	if chart.ticks_per_quarter != ChartResource.TICKS_PER_QUARTER:
+		warnings.append("Chart ticks_per_quarter is %d; Pocket Chordsmith expects %d." % [chart.ticks_per_quarter, ChartResource.TICKS_PER_QUARTER])
 	if chart.arrangement.is_empty():
 		warnings.append("Chart arrangement is empty; conductor will have limited section playback.")
 	if chart.sections.is_empty() and chart.section_library.is_empty():
@@ -114,8 +117,8 @@ func validate_runtime_readiness(chart: PCSChartResource, playback_profile: PCSPl
 	return {"ok": errors.is_empty(), "warnings": warnings, "errors": errors, "info": info}
 
 
-func _validate_playback_profile(chart: PCSChartResource, playback_profile: PCSPlaybackProfile, warnings: Array[String], _errors: Array[String], info: Dictionary) -> void:
-	var backend_name: String = str(PCSPlaybackProfile.PlaybackBackend.keys()[playback_profile.playback_backend])
+func _validate_playback_profile(chart, playback_profile, warnings: Array[String], _errors: Array[String], info: Dictionary) -> void:
+	var backend_name: String = str(PlaybackProfile.PlaybackBackend.keys()[playback_profile.playback_backend])
 	info["playback_backend"] = backend_name
 	info["max_polyphony"] = playback_profile.max_polyphony
 	info["mobile_safe"] = playback_profile.mobile_safe
@@ -131,13 +134,13 @@ func _validate_playback_profile(chart: PCSChartResource, playback_profile: PCSPl
 	if playback_profile.mobile_safe and playback_profile.max_polyphony > 32:
 		warnings.append("Mobile-safe profile has max_polyphony above 32.")
 
-	if playback_profile.playback_backend == PCSPlaybackProfile.PlaybackBackend.STEM_SYNC:
-		var has_stems := not playback_profile.stem_paths.is_empty() or not playback_profile.stem_sets.is_empty() or not chart.stem_sets.is_empty()
+	if playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.STEM_SYNC:
+		var has_stems: bool = not playback_profile.stem_paths.is_empty() or not playback_profile.stem_sets.is_empty() or not chart.stem_sets.is_empty()
 		if not has_stems:
 			warnings.append("Profile is STEM_SYNC, but no stems are assigned.")
 
-	if playback_profile.playback_backend == PCSPlaybackProfile.PlaybackBackend.HYBRID:
-		var has_hybrid_audio := not playback_profile.stem_paths.is_empty() or not playback_profile.stem_sets.is_empty() or not playback_profile.drum_kit.is_empty() or not playback_profile.accent_streams.is_empty() or not playback_profile.event_sample_streams.is_empty()
+	if playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.HYBRID:
+		var has_hybrid_audio: bool = not playback_profile.stem_paths.is_empty() or not playback_profile.stem_sets.is_empty() or not playback_profile.drum_kit.is_empty() or not playback_profile.accent_streams.is_empty() or not playback_profile.event_sample_streams.is_empty()
 		if not has_hybrid_audio:
 			warnings.append("Profile is HYBRID, but no stems, drum kit, accent samples, or event samples are assigned.")
 
@@ -177,7 +180,7 @@ func _validate_playback_profile(chart: PCSChartResource, playback_profile: PCSPl
 				warnings.append("Audio bus '%s' does not exist yet. Use Create Chordsmith Audio Buses or choose an existing bus." % bus_name)
 
 
-func _missing_drum_sample_keys(chart: PCSChartResource, playback_profile: PCSPlaybackProfile) -> Array[String]:
+func _missing_drum_sample_keys(chart, playback_profile) -> Array[String]:
 	var missing: Array[String] = []
 	var seen := {}
 	for event in chart.compiled_events:
@@ -196,7 +199,7 @@ func _missing_drum_sample_keys(chart: PCSChartResource, playback_profile: PCSPla
 	return missing
 
 
-func _missing_stinger_keys(chart: PCSChartResource, playback_profile: PCSPlaybackProfile) -> Array[String]:
+func _missing_stinger_keys(chart, playback_profile) -> Array[String]:
 	var missing: Array[String] = []
 	var seen := {}
 	for state_name in chart.music_states.keys():
@@ -216,7 +219,7 @@ func _missing_stinger_keys(chart: PCSChartResource, playback_profile: PCSPlaybac
 	return missing
 
 
-func _missing_state_stem_sets(chart: PCSChartResource, playback_profile: PCSPlaybackProfile) -> Array[String]:
+func _missing_state_stem_sets(chart, playback_profile) -> Array[String]:
 	var missing: Array[String] = []
 	var seen := {}
 	for state_name in playback_profile.state_stem_sets.keys():
@@ -246,14 +249,15 @@ func _warn_missing_resource(label: String, value: Variant, warnings: Array[Strin
 	if path.is_empty():
 		return
 	if path.begins_with("res://") or path.begins_with("user://"):
-		if not ResourceLoader.exists(path):
+		var file_path := ProjectSettings.globalize_path(path)
+		if not ResourceLoader.exists(path) and not FileAccess.file_exists(file_path):
 			warnings.append("Assigned audio resource does not exist: %s = %s" % [label, path])
 		return
 	if not FileAccess.file_exists(path):
 		warnings.append("Assigned audio file does not exist: %s = %s" % [label, path])
 
 
-func _profile_bus_names(playback_profile: PCSPlaybackProfile) -> Array[String]:
+func _profile_bus_names(playback_profile) -> Array[String]:
 	var names: Array[String] = []
 	for value in [
 		playback_profile.master_music_bus,

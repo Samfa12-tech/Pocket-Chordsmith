@@ -55,6 +55,8 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
   alignTracksToChordsmithSource(tracks, project, guitarActive);
   const fx = createDefaultFxState(tracks);
   alignFxToChordsmithSource(fx, project);
+  applyLofiTrackPresets(tracks, project);
+  applyLofiMasterChain(fx, project);
 
   return {
     app: POCKET_DAW_APP,
@@ -70,7 +72,10 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
         title: project.rawTitle,
         original: project.original,
         normalized: JSON.parse(JSON.stringify(project)),
-        notes: ["Imported through Pocket DAW v0 compatibility sanitizer. Unknown source fields are preserved in original."]
+        notes: [
+          "Imported through Pocket DAW v0 compatibility sanitizer. Unknown source fields are preserved in original.",
+          ...(isLofiProject(project) ? [`Lofi profile detected: ${lofiPresetLabel(project)}. Track presets and a gentle lofi master chain were applied.`] : [])
+        ]
       }
     ],
     project: {
@@ -163,6 +168,110 @@ function alignTracksToChordsmithSource(tracks: ReturnType<typeof createDefaultTr
   tracks.forEach((track) => {
     if (["drums", "bass", "chords", "guitar"].includes(track.role)) track.pan = 0;
   });
+}
+
+function isLofiProject(project: SanitizedPcsProject) {
+  return project.audioProfile === "lofi_chill" || Boolean(project.lofiPreset);
+}
+
+function lofiPresetLabel(project: SanitizedPcsProject) {
+  return (project.lofiPreset || "lofi_chill")
+    .replace(/^lofi_/, "")
+    .split("_")
+    .map((part) => titleCase(part))
+    .join(" ");
+}
+
+function applyLofiTrackPresets(tracks: Track[], project: SanitizedPcsProject) {
+  if (!isLofiProject(project)) return;
+  tracks.forEach((track) => {
+    track.metadata = {
+      ...(track.metadata || {}),
+      audioProfile: "lofi_chill",
+      lofiPreset: project.lofiPreset || "lofi_chill"
+    };
+    if (track.role === "drums") {
+      track.name = "Lofi Drums";
+      track.volume = Math.min(track.volume, 0.74);
+      track.metadata = { ...(track.metadata || {}), drumKit: project.drumKit, drumGroovePreset: project.drumGroovePreset };
+    }
+    if (track.role === "bass") {
+      track.name = project.bassTone === "soft_upright" ? "Soft Upright Bass" : project.bassTone === "rounded_triangle_bass" ? "Rounded Triangle Bass" : "Warm Sub Bass";
+      track.volume = Math.min(track.volume, 0.72);
+      track.metadata = { ...(track.metadata || {}), bassTone: project.bassTone };
+    }
+    if (track.role === "chords") {
+      track.name = `${titleCase(project.chordInstrument.replace(/_/g, " "))} Chords`;
+      track.volume = Math.min(track.volume, 0.68);
+      track.metadata = { ...(track.metadata || {}), chordsmithInstrument: project.chordInstrument };
+    }
+    if (track.role === "melody") {
+      track.volume = Math.min(track.volume, 0.62);
+    }
+    if (track.role === "fx-return") {
+      track.name = "Lofi Space";
+      track.volume = Math.max(track.volume, 0.58);
+    }
+    if (track.role === "master") {
+      track.name = "Lofi Master";
+      track.volume = Math.min(track.volume, 0.88);
+    }
+  });
+}
+
+function applyLofiMasterChain(fx: FxState, project: SanitizedPcsProject) {
+  if (!isLofiProject(project)) return;
+  const master = fx.chains.find((chain) => chain.ownerTrackId === "master" || chain.id === "fx_master");
+  if (!master) return;
+  const texture = project.lofiTexture || {};
+  const warmth = typeof texture.warmth === "number" ? texture.warmth : 0.16;
+  const age = typeof texture.lowPassAge === "number" ? texture.lowPassAge : 0.22;
+  const bit = typeof texture.bitCrush === "number" ? texture.bitCrush : 0.01;
+  master.slots = [
+    ...master.slots,
+    {
+      id: "lofi_lowpass_master",
+      type: "low-pass",
+      name: "Lofi Age Low Pass",
+      enabled: true,
+      presetId: "lofi-master",
+      parameters: { frequency: Math.round(10500 - age * 5200), q: 0.62 }
+    },
+    {
+      id: "lofi_saturation_master",
+      type: "saturation",
+      name: "Lofi Warmth",
+      enabled: true,
+      presetId: "lofi-master",
+      parameters: { drive: 1.1 + warmth * 1.6, mix: 0.18 + warmth * 0.28 }
+    },
+    {
+      id: "lofi_glue_master",
+      type: "compressor",
+      name: "Lofi Glue",
+      enabled: true,
+      presetId: "lofi-master",
+      parameters: { threshold: -18, ratio: 2.2, attack: 0.01, release: 0.18 }
+    },
+    {
+      id: "lofi_limiter_master",
+      type: "limiter",
+      name: "Lofi Safety Limiter",
+      enabled: true,
+      presetId: "lofi-master",
+      parameters: { threshold: -5.5, ratio: 12, attack: 0.003, release: 0.1 }
+    },
+    ...(bit > 0.03
+      ? [{
+          id: "lofi_bit_colour_master",
+          type: "bitcrusher",
+          name: "Mild Sample Colour",
+          enabled: true,
+          presetId: "lofi-master",
+          parameters: { bits: 10, mix: Math.min(0.18, bit * 0.55) }
+        } satisfies FxPluginInstance]
+      : [])
+  ];
 }
 
 function alignFxToChordsmithSource(fx: FxState, project: SanitizedPcsProject) {

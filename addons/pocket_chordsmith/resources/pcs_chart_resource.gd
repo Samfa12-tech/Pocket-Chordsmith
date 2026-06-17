@@ -14,6 +14,13 @@ const TICKS_PER_QUARTER := 480
 @export var scale := "major"
 @export var resolution := 1
 @export var ticks_per_quarter := TICKS_PER_QUARTER
+@export var audio_profile := "standard"
+@export var lofi_preset := ""
+@export var lofi_texture: Dictionary = {}
+@export var drum_kit := "classic"
+@export var drum_groove_preset := ""
+@export var bass_tone := "classic"
+@export var lofi_intensity_hints: Dictionary = {}
 
 @export var sections: Array[Resource] = []
 @export var section_library: Dictionary = {}

@@ -11,6 +11,7 @@ const DEFAULT_LAYOUT := {
 	"Music_Melody": "Music_Master",
 	"Music_Stingers": "Music_Master",
 	"Music_FX": "Music_Master",
+	"Music_Texture": "Music_FX",
 	"SFX": "Master",
 	"UI": "Master",
 }
@@ -67,6 +68,11 @@ func create_missing_recommended_buses(save_layout := true, install_guitar_previe
 		for effect_name in effect_result.get("created_effects", []):
 			created_effects.append(str(effect_name))
 		for warning in effect_result.get("warnings", []):
+			warnings.append(str(warning))
+		var lofi_result := ensure_lofi_texture_effects(false)
+		for effect_name in lofi_result.get("created_effects", []):
+			created_effects.append(str(effect_name))
+		for warning in lofi_result.get("warnings", []):
 			warnings.append(str(warning))
 
 	var save_error := OK
@@ -145,6 +151,54 @@ static func ensure_guitar_preview_effects(save_layout := true) -> Dictionary:
 		_set_if_has(limiter, "soft_clip_ratio", 8.0)
 		AudioServer.add_bus_effect(bus_index, limiter, AudioServer.get_bus_effect_count(bus_index))
 		created_effects.append("guitar limiter")
+
+	var save_error := OK
+	if save_layout and not created_effects.is_empty():
+		var layout := AudioServer.generate_bus_layout()
+		save_error = ResourceSaver.save(layout, "res://default_bus_layout.tres")
+		if save_error != OK:
+			warnings.append("Could not save default_bus_layout.tres: %s" % error_string(save_error))
+
+	return {
+		"created_effects": created_effects,
+		"warnings": warnings,
+		"save_error": save_error,
+	}
+
+
+static func ensure_lofi_texture_effects(save_layout := true) -> Dictionary:
+	var created_effects: Array[String] = []
+	var warnings: Array[String] = []
+	var bus_index := AudioServer.get_bus_index("Music_Texture")
+	if bus_index < 0:
+		return {
+			"created_effects": created_effects,
+			"warnings": ["Music_Texture bus does not exist yet."],
+			"save_error": OK,
+		}
+
+	if _find_effect(bus_index, "AudioEffectLowPassFilter") == null:
+		var lowpass := AudioEffectLowPassFilter.new()
+		_set_if_has(lowpass, "cutoff_hz", 5600.0)
+		_set_if_has(lowpass, "resonance", 0.10)
+		AudioServer.add_bus_effect(bus_index, lowpass, AudioServer.get_bus_effect_count(bus_index))
+		created_effects.append("lofi texture low-pass")
+
+	if _find_effect(bus_index, "AudioEffectReverb") == null:
+		var reverb := AudioEffectReverb.new()
+		_set_if_has(reverb, "room_size", 0.28)
+		_set_if_has(reverb, "wet", 0.12)
+		_set_if_has(reverb, "dry", 0.86)
+		AudioServer.add_bus_effect(bus_index, reverb, AudioServer.get_bus_effect_count(bus_index))
+		created_effects.append("lofi texture room")
+
+	if _find_effect(bus_index, "AudioEffectDistortion") == null:
+		var saturation := AudioEffectDistortion.new()
+		_set_if_has(saturation, "mode", AudioEffectDistortion.MODE_ATAN)
+		_set_if_has(saturation, "drive", 0.16)
+		_set_if_has(saturation, "post_gain", -10.0)
+		AudioServer.add_bus_effect(bus_index, saturation, AudioServer.get_bus_effect_count(bus_index))
+		created_effects.append("lofi texture warmth")
 
 	var save_error := OK
 	if save_layout and not created_effects.is_empty():

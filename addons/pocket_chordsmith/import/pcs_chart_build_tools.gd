@@ -4,6 +4,8 @@ class_name PCSChartBuildTools
 
 const JsonImporter := preload("res://addons/pocket_chordsmith/import/pcs_json_importer.gd")
 const ChartCompiler := preload("res://addons/pocket_chordsmith/import/pcs_chart_compiler.gd")
+const ChartResource := preload("res://addons/pocket_chordsmith/resources/pcs_chart_resource.gd")
+const PlaybackProfile := preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
 const SoundKitGenerator := preload("res://addons/pocket_chordsmith/editor/pcs_sound_kit_generator.gd")
 const Validator := preload("res://addons/pocket_chordsmith/import/pcs_validator.gd")
 
@@ -57,8 +59,8 @@ func compile_folder(source_dir: String, output_dir := "", options := {}) -> Dict
 
 
 func create_playback_profile_template(save_path: String, options := {}) -> Dictionary:
-	var profile := PCSPlaybackProfile.new()
-	profile.playback_backend = int(options.get("playback_backend", PCSPlaybackProfile.PlaybackBackend.HYBRID))
+	var profile = PlaybackProfile.new()
+	profile.playback_backend = int(options.get("playback_backend", PlaybackProfile.PlaybackBackend.HYBRID))
 	profile.max_polyphony = int(options.get("max_polyphony", 24))
 	profile.mobile_safe = bool(options.get("mobile_safe", true))
 	profile.drum_kit = {
@@ -86,7 +88,7 @@ func create_playback_profile_template(save_path: String, options := {}) -> Dicti
 	}
 
 
-func generate_web_sound_kit(output_dir := PCSSoundKitGenerator.DEFAULT_OUTPUT_DIR) -> Dictionary:
+func generate_web_sound_kit(output_dir := SoundKitGenerator.DEFAULT_OUTPUT_DIR) -> Dictionary:
 	var generator = SoundKitGenerator.new()
 	return generator.generate_web_kit(output_dir)
 
@@ -101,21 +103,21 @@ func validate_runtime_files(chart_path: String, playback_profile_path := "") -> 
 		"playback_profile_path": playback_profile_path,
 	}
 	var chart_resource := ResourceLoader.load(chart_path)
-	if not (chart_resource is PCSChartResource):
+	if not _resource_uses_script(chart_resource, ChartResource):
 		result["errors"].append("Path is not a PCSChartResource: %s" % chart_path)
 		return result
 
-	var playback_profile: PCSPlaybackProfile = null
+	var playback_profile = null
 	if not playback_profile_path.is_empty():
 		var profile_resource := ResourceLoader.load(playback_profile_path)
-		if profile_resource is PCSPlaybackProfile:
+		if _resource_uses_script(profile_resource, PlaybackProfile):
 			playback_profile = profile_resource
 		else:
 			result["errors"].append("Path is not a PCSPlaybackProfile: %s" % playback_profile_path)
 			return result
 
 	var validator = Validator.new()
-	var validation: Dictionary = validator.validate_runtime_readiness(chart_resource, playback_profile)
+	var validation: Dictionary = validator.call("validate_runtime_readiness", chart_resource, playback_profile)
 	result["ok"] = bool(validation.get("ok", false))
 	result["warnings"] = validation.get("warnings", [])
 	result["errors"] = validation.get("errors", [])
@@ -188,7 +190,7 @@ func _compile_entry(entry: Dictionary, source_path: String, output_path: String,
 		return result
 
 	var compiler = ChartCompiler.new()
-	var chart: PCSChartResource = compiler.compile_project(import_result.get("project", {}), import_result)
+	var chart = compiler.call("compile_project", import_result.get("project", {}), import_result)
 	var save_path := _output_path_for_entry(entry, source_path, output_path, options)
 	var error := ResourceSaver.save(chart, _resource_save_path(save_path))
 	if error != OK:
@@ -315,6 +317,10 @@ func _resource_save_path(path: String) -> String:
 		return path
 	var localized := ProjectSettings.localize_path(path)
 	return localized if localized.begins_with("res://") else path
+
+
+func _resource_uses_script(resource: Variant, script: Script) -> bool:
+	return resource is Resource and (resource as Resource).get_script() == script
 
 
 func _empty_result() -> Dictionary:

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildPocketChordsmithShareCode, parseAnyImportText, parsePocketChordsmithShareCode } from "../src/compatibility/pcsParser";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
-import { createDemoChordsmithProject } from "../src/demo/demoProject";
+import { createDemoChordsmithProject, createLofiChordsmithTemplateProject } from "../src/demo/demoProject";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { importTextToProject } from "../src/app/commands";
 
@@ -30,6 +30,23 @@ describe("Pocket Chordsmith import", () => {
     expect(fromJson.project.bpm).toBe(136);
     expect(fromCode.sourceRefs[0]?.normalized).toMatchObject({ bpm: 136 });
     expect(fromJson.sourceRefs[0]?.normalized).toMatchObject({ bpm: 136 });
+  });
+
+  it("applies lofi track presets and master chain when importing lofi Chordsmith projects", () => {
+    const sanitized = sanitizePocketChordsmithProject(createLofiChordsmithTemplateProject());
+    const project = createDawProjectFromChordsmithProject(sanitized);
+    const byRole = new Map(project.tracks.map((track) => [track.role, track]));
+    const masterChain = project.fx.chains.find((chain) => chain.ownerTrackId === "master" || chain.id === "fx_master");
+
+    expect(sanitized.audioProfile).toBe("lofi_chill");
+    expect(sanitized.lofiPreset).toBe("lofi_study_room");
+    expect(project.sourceRefs[0]?.notes?.some((note) => note.includes("Lofi profile detected"))).toBe(true);
+    expect(byRole.get("drums")?.name).toBe("Lofi Drums");
+    expect(byRole.get("drums")?.metadata).toMatchObject({ audioProfile: "lofi_chill", drumKit: "lofi_dusty" });
+    expect(byRole.get("bass")?.name).toBe("Warm Sub Bass");
+    expect(byRole.get("bass")?.metadata).toMatchObject({ bassTone: "warm_sub" });
+    expect(masterChain?.slots.some((slot) => slot.id === "lofi_lowpass_master")).toBe(true);
+    expect(masterChain?.slots.some((slot) => slot.id === "lofi_saturation_master")).toBe(true);
   });
 
   it("normalises missing fields and preserves unknown source fields", () => {

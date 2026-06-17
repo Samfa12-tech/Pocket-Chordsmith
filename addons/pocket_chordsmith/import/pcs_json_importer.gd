@@ -50,11 +50,11 @@ func load_text(text: String, source_path := "") -> Dictionary:
 		return result
 
 	var migrator = Migrator.new()
-	var migrated: Dictionary = migrator.normalize(raw, source_path)
+	var migrated: Dictionary = migrator.call("normalize", raw, source_path)
 	var project: Dictionary = migrated.get("project", {})
 
 	var validator = Validator.new()
-	var validation: Dictionary = validator.validate_project(project)
+	var validation: Dictionary = validator.call("validate_project", project)
 
 	result["project"] = project
 	result["warnings"].append_array(migrated.get("warnings", []))
@@ -110,7 +110,7 @@ func _build_report(source_path: String, result: Dictionary) -> Dictionary:
 	var sequence: Array = project.get("songSequence", [])
 	var section_bars: Dictionary = project.get("sectionBars", {})
 	var section_count := 0
-	for section_id in PCSSchemaMigrator.SECTION_IDS:
+	for section_id in Migrator.SECTION_IDS:
 		if section_bars.has(section_id):
 			section_count += 1
 	return {

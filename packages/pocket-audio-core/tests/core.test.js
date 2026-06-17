@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   PocketAudio,
+  LOFI_STYLE_PRESETS,
   SECTION_IDS,
   buildPocketAudioTimeline,
   buildPocketChordsmithShareCode,
@@ -52,8 +53,32 @@ test("normalise minimal project", () => {
   assert.equal(normalised.app, "PocketAudioProject");
   assert.equal(normalised.meta.key, "D");
   assert.equal(normalised.meta.scale, "minor");
+  assert.equal(normalised.meta.audioProfile, "standard");
+  assert.equal(normalised.lofi.presetId, "");
+  assert.equal(normalised.mixer.fx.lofiTexture.enabled, false);
   assert.equal(normalised.sections.A.bars, 1);
   assert.equal(normalised.sections.A.drums.kick[0], 1);
+});
+
+test("normalise lofi metadata without schema bump", () => {
+  const normalised = normalisePocketChordsmithProject({
+    ...minimalProject,
+    audioProfile: "lofi_chill",
+    lofiPreset: "lofi_rainy_window",
+    lofiTexture: { enabled: true, vinylCrackle: 0.2, tapeHiss: 0.1, wowFlutter: 0.04 },
+    drumKit: "lofi_brush",
+    drumGroovePreset: "lofi_brush_shuffle",
+    bassTone: "soft_upright"
+  });
+  assert.equal(LOFI_STYLE_PRESETS.lofi_rainy_window.bpm.default, 72);
+  assert.equal(normalised.source.sourceSchemaVersion, 16);
+  assert.equal(normalised.meta.audioProfile, "lofi_chill");
+  assert.equal(normalised.meta.stylePreset, "lofi_rainy_window");
+  assert.equal(normalised.lofi.drumKit, "lofi_brush");
+  assert.equal(normalised.lofi.drumGroovePreset, "lofi_brush_shuffle");
+  assert.equal(normalised.lofi.bassTone, "soft_upright");
+  assert.equal(normalised.lofi.texture.enabled, true);
+  assert.equal(normalised.mixer.fx.lofiTexture.vinylCrackle, 0.2);
 });
 
 test("PocketAudio class constructs, loads, plays and stops", async () => {

@@ -23,6 +23,14 @@ Future Pocket DJ sessions can export a `PDJ1` format that captures performance s
 - `pocket_dj_v1f_push_handoffs.html` is retained as the direct push-handoff reference build.
 - Planning docs live in `docs/`.
 
+## Lofi Chill Pack
+
+Pocket DJ imports Pocket Chordsmith lofi projects and preserves `audioProfile`, `lofiPreset`, `lofiTexture`, `drumKit`, `drumGroovePreset`, and `bassTone` metadata on the live deck.
+
+The current app adds a `Lofi DJ Demo` plus lofi-aware macros: `Gentle Build`, `Rainy Drop`, `Filtered Study Mode`, and `Tape Stop`. These macros keep energy changes soft and warm instead of turning the mix into an EDM build/drop.
+
+Send a lofi project from Pocket Chordsmith by copying the normal `PCS1:` share code or using the existing handoff path. Stem mutes, section queueing, loops, build/drop, volume controls, and imports continue to use the same Chordsmith-compatible payload.
+
 ## Local Check
 
 ```powershell

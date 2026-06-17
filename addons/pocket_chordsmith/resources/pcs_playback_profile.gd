@@ -36,6 +36,16 @@ enum PlaybackBackend {
 @export var sample_preview_bass_duck_on_kick_db := -9.0
 @export var sample_preview_bass_duck_window_ticks := 0
 @export var guitar_preview_effects_enabled := true
+@export var audio_profile := "standard"
+@export var lofi_preset := ""
+@export var lofi_texture: Dictionary = {}
+@export var lofi_bus := "Music_Texture"
+@export var lofi_state_presets: Dictionary = {
+	"lofi_study_room": {"menu": 0.42, "explore": 0.58, "night": 0.72},
+	"lofi_rainy_window": {"menu": 0.48, "explore": 0.56, "rain": 0.78},
+	"lofi_koi_pond": {"menu": 0.36, "explore": 0.50, "night": 0.62},
+	"lofi_train_window": {"menu": 0.46, "explore": 0.64, "night": 0.70},
+}
 @export var sample_preview_gain_db: Dictionary = {
 	"drums": -3.0,
 	"kick": 1.0,

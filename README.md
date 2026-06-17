@@ -75,7 +75,7 @@ npm run build
 ```
 
 Pocket DAW is live for Windows alpha testing on itch. The current alpha is
-`v0.6.3`; install from itch for normal testing and use the in-app updater for
+`v0.6.4`; install from itch for normal testing and use the in-app updater for
 future update tests rather than redownloading manually each time. Installer
 packaging and smoke evidence should be recorded against the exact generated
 artifact before publishing a new build.

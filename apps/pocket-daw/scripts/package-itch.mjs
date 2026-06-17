@@ -15,7 +15,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Recording Polish Alpha`;
+export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Lofi Compatibility Alpha`;
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -221,7 +221,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Recording Alpha
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Lofi Compatibility Alpha
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -231,6 +231,9 @@ ${artifactTable}
 
 ## Highlights
 
+- Added lofi/chillhop Chordsmith import compatibility for dusty keys, warm basses, soft drum kits, swing, humanize and texture metadata.
+- Added lofi project and track defaults so imported Pocket Chordsmith beds open with a warmer DAW master chain.
+- Preserved lofi metadata in imported projects for Chordsmith, DJ, Godot and game-export workflows.
 - Polished live-recording controls so armed input selectors, input activity and FX controls fit cleanly in mixer strips.
 - Added armed-track input preview metering, so live vocal/input tracks show signal before recording starts.
 - Monitor changes now apply to armed preview and active recording status, with clearer diagnostics for input/output/monitor state.

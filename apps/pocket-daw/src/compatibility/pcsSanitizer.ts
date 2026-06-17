@@ -33,6 +33,12 @@ export interface SanitizedPcsProject {
   timeSig: number;
   bpm: number;
   swing: number;
+  audioProfile: "standard" | "lofi_chill";
+  lofiPreset: string;
+  lofiTexture: JsonObject;
+  drumKit: string;
+  drumGroovePreset: string;
+  bassTone: string;
   resolution: number;
   chordType: "triad" | "seventh" | "sus2" | "sus4";
   chordInstrument: string;
@@ -70,6 +76,10 @@ const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const DRUM_TRACKS = ["kick", "snare", "hat", "bass"] as const;
 const MAX_BARS = 16;
 const DEFAULT_PROGRESSION = [0, 4, 5, 3];
+const LOFI_AUDIO_PROFILE_ID = "lofi_chill";
+const LOFI_STYLE_PRESETS = ["lofi_study_room", "lofi_rainy_window", "lofi_moon_garden", "lofi_koi_pond", "lofi_train_window", "lofi_ant_farm_night", "lofi_menu_warmth", "lofi_sleepy_waltz"] as const;
+const LOFI_DRUM_KITS = ["classic", "lofi_dusty", "lofi_brush", "lofi_tape_soft"] as const;
+const LOFI_BASS_TONES = ["classic", "warm_sub", "soft_upright", "rounded_triangle_bass"] as const;
 
 export function sanitizePocketChordsmithProject(raw: unknown): SanitizedPcsProject {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -83,6 +93,12 @@ export function sanitizePocketChordsmithProject(raw: unknown): SanitizedPcsProje
     timeSig: safeChoice(asInt(obj.timeSig, 4), [3, 4, 5, 6, 7], 4),
     bpm: clamp(asInt(obj.bpm, 96), 40, 240),
     swing: clamp(asNum(obj.swing, 0), 0, 0.35),
+    audioProfile: (obj.audioProfile === LOFI_AUDIO_PROFILE_ID || obj.lofiPreset || obj.stylePreset ? LOFI_AUDIO_PROFILE_ID : "standard") as SanitizedPcsProject["audioProfile"],
+    lofiPreset: sanitizeLofiPresetId(obj.lofiPreset || obj.stylePreset),
+    lofiTexture: sanitizeLofiTexture(obj.lofiTexture),
+    drumKit: safeChoice(obj.drumKit, LOFI_DRUM_KITS, "classic"),
+    drumGroovePreset: String(obj.drumGroovePreset || ""),
+    bassTone: safeChoice(obj.bassTone, LOFI_BASS_TONES, "classic"),
     resolution: sanitizeResolution(obj.resolution ?? obj.lastAdvancedResolution ?? 4),
     chordType: safeChoice(obj.chordType, ["triad", "seventh", "sus2", "sus4"], "triad") as SanitizedPcsProject["chordType"],
     chordInstrument: String(obj.chordInstrument || "pocket"),
@@ -123,6 +139,24 @@ export function sanitizePocketChordsmithProject(raw: unknown): SanitizedPcsProje
     ...projectBase,
     sections,
     original: JSON.parse(JSON.stringify(raw)) as JsonValue
+  };
+}
+
+function sanitizeLofiPresetId(value: unknown): string {
+  const id = String(value || "");
+  return (LOFI_STYLE_PRESETS as readonly string[]).includes(id) ? id : "";
+}
+
+function sanitizeLofiTexture(raw: unknown): JsonObject {
+  const obj = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as JsonObject) : {};
+  return {
+    enabled: Boolean(obj.enabled),
+    vinylCrackle: clamp(asNum(obj.vinylCrackle, 0.08), 0, 1),
+    tapeHiss: clamp(asNum(obj.tapeHiss, 0.05), 0, 1),
+    wowFlutter: clamp(asNum(obj.wowFlutter, 0.03), 0, 1),
+    warmth: clamp(asNum(obj.warmth, 0.16), 0, 1),
+    lowPassAge: clamp(asNum(obj.lowPassAge, 0.22), 0, 1),
+    bitCrush: clamp(asNum(obj.bitCrush, 0.01), 0, 1)
   };
 }
 

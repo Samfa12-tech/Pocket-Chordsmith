@@ -30,6 +30,10 @@ func generate_web_kit(output_dir := DEFAULT_OUTPUT_DIR) -> Dictionary:
 		"hat": _hat(0.16, false, 3),
 		"open_hat": _hat(0.24, true, 4),
 		"hat_accent": _hat(0.24, true, 4),
+		"lofi_kick": _lofi_kick(),
+		"lofi_snare": _lofi_snare(),
+		"lofi_hat": _lofi_hat(false),
+		"lofi_open_hat": _lofi_hat(true),
 		"clap": _clap(0.34, 5),
 		"bass_tone": _bass_tone(),
 		"chord_tone": _chord_tone(),
@@ -93,6 +97,10 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 		"hat": -12.0,
 		"hat_accent": -13.0,
 		"open_hat": -13.0,
+		"lofi_kick": -2.0,
+		"lofi_snare": -4.0,
+		"lofi_hat": -16.0,
+		"lofi_open_hat": -16.0,
 		"bass": -6.0,
 		"chords": -26.0,
 		"guitar": -22.0,
@@ -107,6 +115,10 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 		"hat": sample_paths.get("hat", ""),
 		"hat_accent": sample_paths.get("hat_accent", sample_paths.get("open_hat", "")),
 		"open_hat": sample_paths.get("open_hat", ""),
+		"lofi_kick": sample_paths.get("lofi_kick", sample_paths.get("kick", "")),
+		"lofi_snare": sample_paths.get("lofi_snare", sample_paths.get("snare", "")),
+		"lofi_hat": sample_paths.get("lofi_hat", sample_paths.get("hat", "")),
+		"lofi_open_hat": sample_paths.get("lofi_open_hat", sample_paths.get("open_hat", "")),
 		"clap": sample_paths.get("clap", ""),
 	}
 	profile.accent_streams = {
@@ -119,9 +131,17 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 		"bass": sample_paths.get("bass_tone", ""),
 		"bass:auto_bass": sample_paths.get("bass_tone", ""),
 		"bass:manual_bass": sample_paths.get("bass_tone", ""),
+		"bass:warm_sub": sample_paths.get("bass_tone", ""),
+		"bass:soft_upright": sample_paths.get("bass_tone", ""),
+		"bass:rounded_triangle_bass": sample_paths.get("bass_tone", ""),
 		"chord": sample_paths.get("chord_tone", ""),
+		"chord:cassette_keys": sample_paths.get("chord_tone", ""),
+		"chord:dusty_rhodes": sample_paths.get("chord_tone", ""),
+		"chord:felt_piano": sample_paths.get("chord_tone", ""),
 		"chord:glass": sample_paths.get("chord_tone", ""),
 		"chord:harp": sample_paths.get("chord_tone", ""),
+		"chord:lofi_warm_pad": sample_paths.get("chord_tone", ""),
+		"chord:muted_jazz_guitar": sample_paths.get("chord_tone", ""),
 		"chord:piano": sample_paths.get("chord_tone", ""),
 		"chord:pocket": sample_paths.get("chord_tone", ""),
 		"chord:saloon_piano": sample_paths.get("chord_tone", ""),
@@ -139,10 +159,15 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 		"melody:distorted_lead_guitar": sample_paths.get("melody_pulse", ""),
 		"melody:harmonica": sample_paths.get("melody_soft", ""),
 		"melody:lead_guitar": sample_paths.get("melody_pulse", ""),
+		"melody:mellow_sax": sample_paths.get("melody_soft", ""),
+		"melody:mellow_vibes": sample_paths.get("melody_bell", ""),
+		"melody:muted_trumpet": sample_paths.get("melody_soft", ""),
 		"melody:pulse": sample_paths.get("melody_pulse", ""),
 		"melody:saxophone": sample_paths.get("melody_soft", ""),
 		"melody:soft": sample_paths.get("melody_soft", ""),
+		"melody:soft_pluck": sample_paths.get("melody_soft", ""),
 		"melody:synth": sample_paths.get("melody_pulse", ""),
+		"melody:tape_bell": sample_paths.get("melody_bell", ""),
 		"melody:trumpet": sample_paths.get("melody_pulse", ""),
 	}
 	profile.marker_stingers = {
@@ -186,6 +211,10 @@ func _kick(peak: float) -> PackedFloat32Array:
 	return _normalize(_lowpass(out, 7200.0), 0.90)
 
 
+func _lofi_kick() -> PackedFloat32Array:
+	return _normalize(_lowpass(_kick(0.52), 1800.0), 0.56)
+
+
 func _snare(peak: float, seed: int) -> PackedFloat32Array:
 	var duration := 0.16
 	var total := int(SAMPLE_RATE * duration)
@@ -218,6 +247,10 @@ func _snare(peak: float, seed: int) -> PackedFloat32Array:
 	return _normalize(out, 0.74 + clamp(peak - 0.5, 0.0, 0.35) * 0.28)
 
 
+func _lofi_snare() -> PackedFloat32Array:
+	return _normalize(_lowpass(_snare(0.34, 21), 3200.0), 0.46)
+
+
 func _hat(peak: float, open: bool, seed: int) -> PackedFloat32Array:
 	var duration := 0.42 if open else 0.095
 	var total := int(SAMPLE_RATE * duration)
@@ -238,6 +271,10 @@ func _hat(peak: float, open: bool, seed: int) -> PackedFloat32Array:
 		data[i] = (noise + metallic + tick) * env
 	var filtered := _lowpass(_highpass(data, 3300.0 if open else 4700.0), 13200.0)
 	return _normalize(filtered, 0.36 if open else 0.42)
+
+
+func _lofi_hat(open: bool) -> PackedFloat32Array:
+	return _normalize(_lowpass(_hat(0.12 if open else 0.08, open, 31 if open else 30), 5800.0), 0.22 if open else 0.18)
 
 
 func _clap(peak: float, seed: int) -> PackedFloat32Array:

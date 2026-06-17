@@ -10,6 +10,12 @@ const MAX_MELODY_TRACKS := 6
 const MAX_SEQUENCE_SLOTS := 64
 const PROJECT_SCHEMA_VERSION := 16
 const GUITAR_ARTICULATIONS := ["off", "open", "chug", "accent", "hold", "scratch"]
+const LOFI_AUDIO_PROFILE_ID := "lofi_chill"
+const LOFI_STYLE_PRESETS := ["lofi_study_room", "lofi_rainy_window", "lofi_moon_garden", "lofi_koi_pond", "lofi_train_window", "lofi_ant_farm_night", "lofi_menu_warmth", "lofi_sleepy_waltz"]
+const LOFI_CHORD_INSTRUMENTS := ["dusty_rhodes", "felt_piano", "cassette_keys", "muted_jazz_guitar", "lofi_warm_pad"]
+const LOFI_MELODY_INSTRUMENTS := ["mellow_vibes", "soft_pluck", "mellow_sax", "muted_trumpet", "tape_bell"]
+const LOFI_DRUM_KITS := ["classic", "lofi_dusty", "lofi_brush", "lofi_tape_soft"]
+const LOFI_BASS_TONES := ["classic", "warm_sub", "soft_upright", "rounded_triangle_bass"]
 
 const DEFAULT_SECTION_BARS := {
 	"A": 4, "B": 4, "C": 4, "D": 4,
@@ -21,6 +27,7 @@ const DEFAULT_MINOR_PROGRESSION := [0, 5, 2, 6]
 
 const TOP_LEVEL_SUPPORTED_KEYS := [
 	"projectVersion", "schemaVersion", "key", "scale", "timeSig", "bpm", "swing",
+	"audioProfile", "stylePreset", "lofiPreset", "lofiTexture", "drumKit", "drumGroovePreset", "bassTone",
 	"resolution", "chordType", "chordInstrument", "chordPlayMode", "chordRhythmMode", "chordOctave",
 	"melodyPitchMode", "melodyOctave", "bassMode", "midiExportMode",
 	"midiChordExport", "midiExactDurations", "guitarEnabled", "guitarTone",
@@ -72,9 +79,15 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 	data["timeSig"] = _sanitize_time_signature(raw.get("timeSig", 4), warnings)
 	data["bpm"] = _clamp_int(raw.get("bpm", 96), 40, 240, 96, "bpm", warnings)
 	data["swing"] = _clamp_float(raw.get("swing", 0.0), 0.0, 0.35, 0.0, "swing", warnings)
+	data["audioProfile"] = LOFI_AUDIO_PROFILE_ID if str(raw.get("audioProfile", "")) == LOFI_AUDIO_PROFILE_ID or raw.has("lofiPreset") or raw.has("stylePreset") else "standard"
+	data["lofiPreset"] = _sanitize_lofi_preset(str(raw.get("lofiPreset", raw.get("stylePreset", ""))))
+	data["lofiTexture"] = _sanitize_lofi_texture(raw.get("lofiTexture", {}))
+	data["drumKit"] = _safe_choice(str(raw.get("drumKit", "classic")), LOFI_DRUM_KITS, "classic", "drumKit", warnings)
+	data["drumGroovePreset"] = str(raw.get("drumGroovePreset", ""))
+	data["bassTone"] = _safe_choice(str(raw.get("bassTone", "classic")), LOFI_BASS_TONES, "classic", "bassTone", warnings)
 	data["resolution"] = _sanitize_resolution(raw.get("resolution", 1), warnings)
 	data["chordType"] = _safe_choice(str(raw.get("chordType", "triad")), ["triad", "seventh", "sus2", "sus4"], "triad", "chordType", warnings)
-	data["chordInstrument"] = _safe_choice(str(raw.get("chordInstrument", "pocket")), ["pocket", "piano", "harp", "warm_pad", "glass", "saloon_piano"], "pocket", "chordInstrument", warnings)
+	data["chordInstrument"] = _safe_choice(str(raw.get("chordInstrument", "pocket")), ["pocket", "piano", "harp", "warm_pad", "glass", "saloon_piano"] + LOFI_CHORD_INSTRUMENTS, "pocket", "chordInstrument", warnings)
 	data["chordPlayMode"] = _safe_choice(str(raw.get("chordPlayMode", "block")), ["block", "strum_up", "strum_down", "arp_up", "arp_down"], "block", "chordPlayMode", warnings)
 	data["chordRhythmMode"] = _safe_choice(str(raw.get("chordRhythmMode", "sustain")), ["sustain", "quarter", "half"], "sustain", "chordRhythmMode", warnings)
 	data["chordOctave"] = _clamp_int(raw.get("chordOctave", 0), -2, 2, 0, "chordOctave", warnings)
@@ -160,9 +173,12 @@ func _collect_metadata(raw: Dictionary, data: Dictionary, metadata: Dictionary, 
 		if raw.get(key) is Dictionary:
 			for meta_key in raw[key].keys():
 				game_metadata[meta_key] = raw[key][meta_key]
-	for key in ["level_id", "default_loop", "mood", "intensity_tags", "markers", "loop_regions", "gameplay_flags", "accent_map", "music_states", "default_music_state", "stem_sets", "state_stem_sets"]:
+	for key in ["level_id", "default_loop", "mood", "intensity_tags", "markers", "loop_regions", "gameplay_flags", "accent_map", "music_states", "default_music_state", "stem_sets", "state_stem_sets", "audioProfile", "lofiPreset", "lofiTexture", "drumKit", "drumGroovePreset", "bassTone"]:
 		if raw.has(key):
 			game_metadata[key] = raw[key]
+	for key in ["audioProfile", "lofiPreset", "lofiTexture", "drumKit", "drumGroovePreset", "bassTone"]:
+		if data.has(key):
+			game_metadata[key] = data[key]
 	metadata["game_metadata"] = game_metadata
 
 
@@ -306,8 +322,25 @@ func _sanitize_instruments(raw, track_count: int) -> Array[String]:
 	var out: Array[String] = []
 	for index in range(track_count):
 		var value := str(source[index]) if index < source.size() else "pulse"
-		out.append(value if ["pulse", "soft", "synth", "bell", "lead_guitar", "distorted_lead_guitar", "trumpet", "saxophone", "banjo", "harmonica", "cowboy_whistle"].has(value) else "pulse")
+		out.append(value if (["pulse", "soft", "synth", "bell", "lead_guitar", "distorted_lead_guitar", "trumpet", "saxophone", "banjo", "harmonica", "cowboy_whistle"] + LOFI_MELODY_INSTRUMENTS).has(value) else "pulse")
 	return out
+
+
+func _sanitize_lofi_preset(value: String) -> String:
+	return value if LOFI_STYLE_PRESETS.has(value) else ""
+
+
+func _sanitize_lofi_texture(raw) -> Dictionary:
+	var source: Dictionary = raw if raw is Dictionary else {}
+	return {
+		"enabled": bool(source.get("enabled", false)),
+		"vinylCrackle": clamp(_as_float(source.get("vinylCrackle", 0.08), 0.08), 0.0, 1.0),
+		"tapeHiss": clamp(_as_float(source.get("tapeHiss", 0.05), 0.05), 0.0, 1.0),
+		"wowFlutter": clamp(_as_float(source.get("wowFlutter", 0.03), 0.03), 0.0, 1.0),
+		"warmth": clamp(_as_float(source.get("warmth", 0.16), 0.16), 0.0, 1.0),
+		"lowPassAge": clamp(_as_float(source.get("lowPassAge", 0.22), 0.22), 0.0, 1.0),
+		"bitCrush": clamp(_as_float(source.get("bitCrush", 0.01), 0.01), 0.0, 1.0),
+	}
 
 
 func _sanitize_octaves(raw, track_count: int, fallback: int) -> Array[int]:

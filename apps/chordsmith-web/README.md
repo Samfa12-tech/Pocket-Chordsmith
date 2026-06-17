@@ -63,6 +63,16 @@ Pocket Chordsmith exports `PCS1:` share codes and JSON. Those payloads are the
 current bridge into Pocket DJ, Pocket DAW experiments, Pocket Audio Core tests,
 and the Pocket Chordsmith Godot addon.
 
+## Lofi Chill Pack
+
+`pocket_chordsmith_v68_core_bridge.html` includes a procedural lofi/chillhop profile for loopable study and chill-game background music. Simple mode exposes friendly `Lofi Chill` and `Lofi Game Loop` actions. Advanced mode exposes the lofi preset, lofi drum kit, lofi bass tone, and subtle texture controls.
+
+The new lofi fields are optional and schema `16` stays backwards compatible. JSON export/import and `PCS1:` share codes preserve lofi profile metadata; MIDI export remains note-focused and does not encode vinyl/tape texture.
+
+Three import-ready demos live in `demos/`: `lofi_study_room_loop.json`, `lofi_rainy_window_loop.json`, and `lofi_koi_pond_loop.json`.
+
+See `../../docs/LOFI_CHILL_PACK_IMPLEMENTATION.md` for the shared preset IDs, compatibility notes, and Godot/DAW handoff guidance.
+
 ## Release Notes
 
 ### v68 Pocket Audio Core Bridge

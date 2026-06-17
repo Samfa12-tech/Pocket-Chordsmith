@@ -2,7 +2,7 @@
 
 Pocket DAW is a Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
-Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.3` live recording and mixer polish alpha.
+Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.4` lofi/chillhop compatibility alpha.
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
@@ -29,6 +29,12 @@ npm run build
 npm run tauri:dev
 ```
 
+## Lofi Chill Pack
+
+Pocket DAW's Chordsmith compatibility layer accepts the optional lofi profile fields from Pocket Chordsmith JSON and `PCS1:` payloads. Imported lofi projects get soft track presets for drums, bass, chords, melody, ambience, and a gentle lofi master chain with conservative low-pass, saturation, compression/limiting, and optional texture metadata.
+
+The demo helpers expose a lofi Chordsmith template project for future template-picker UI and import/export tests. Rendered Chordsmith stems remain the recommended game handoff when exact live/export parity matters.
+
 ## Release Checks
 
 ```powershell
@@ -51,7 +57,7 @@ Release and update docs:
 
 - This is alpha-testing software, not a finished professional DAW.
 - Live recording is an installed-app-only alpha slice: one armed mono live audio track, project-relative WAV takes under `project-media/recordings`, metronome/count-in, monitor while armed/recording, and same-track overwrite placement for new takes.
-- v0.6.3 tightens the mixer/transport UI, keeps timeline scroll stable around track controls, restores live armed-input metering, and darkens Pocket DAW bass playback toward Pocket Chordsmith export parity.
+- v0.6.4 adds lofi/chillhop Chordsmith import compatibility, soft track presets, and a gentle lofi master-chain profile while preserving the v0.6.3 recording/mixer polish.
 - ASIO, simultaneous multitrack capture, punch-in/out, comping, latency compensation UI, full send/return processing, bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
 - Windows Authenticode signing is not currently claimed unless a release manifest proves it.
 - Tauri updater signatures are generated separately as `.sig` files for updater validation.
