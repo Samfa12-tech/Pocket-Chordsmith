@@ -6,21 +6,21 @@ Current alpha target:
 
 - App: Pocket DAW
 - Version: `0.6.13` AI / MCP bridge checkpoint
-- Source commit at packaging time: `ea14a2c0e519119e063571db57979ea2c41b714e`
+- Source commit at packaging time: `92e26d7b`
 - Generated manifest note: dirty working tree was `false`.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Itch channel: `windows-installer`
 - Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Setup EXE: `Pocket DAW_0.6.12_x64-setup.exe`
-- Setup EXE SHA-256: `5acd4f48b9f2c3b81999fa4ee058fce181932f84ef8d5b5abd2e5b0f9833a692`
-- Setup EXE updater signature: `Pocket DAW_0.6.12_x64-setup.exe.sig`
-- Setup EXE updater signature SHA-256: `0ac228dea3869f2b3997cbce6ad6636ded0d819ebf26373bf7563ff09cec5f22`
-- MSI: `Pocket DAW_0.6.12_x64_en-US.msi`
-- MSI SHA-256: `4eefaa67516add7d0ecf46a8addeb616125d41de8d2e25ad29e3d4266e5b7335`
-- MSI updater signature: `Pocket DAW_0.6.12_x64_en-US.msi.sig`
-- MSI updater signature SHA-256: `9766f7a2deb4610e44b58101bd3e0317f2b4d8b2160799aeec87cb441a5b9212`
-- Bootstrapper EXE: `Pocket_DAW_Itch_Bootstrapper_v0.6.12.exe`
-- Bootstrapper EXE SHA-256: `3e8ffcdceb9d76d622fe90194c52552384384a3fcc8ead0fb87cde4d976f1294`
+- Setup EXE: `Pocket.DAW_0.6.13_x64-setup.exe`
+- Setup EXE SHA-256: `a7ac2494b4bf3b96502bacfd58af3d06dc8efc17d75d297042a1ec10a0a37fc6`
+- Setup EXE updater signature: `Pocket.DAW_0.6.13_x64-setup.exe.sig`
+- Setup EXE updater signature SHA-256: `e90bad5f4a76d894f310c6574f25aa3a8be51c4ed8ee0d897ff8e845282e762a`
+- MSI: `Pocket.DAW_0.6.13_x64_en-US.msi`
+- MSI SHA-256: `8ecdf68d931caedc75ef5aa55b147e946226820ec3f37b17af620030bf469676`
+- MSI updater signature: `Pocket.DAW_0.6.13_x64_en-US.msi.sig`
+- MSI updater signature SHA-256: `a8eb2ca0e4dbd7d3930d83c607fb254dab93ba7695603ef7d2d3b5ad345e47c2`
+- Bootstrapper manifest: `pocket-daw-bootstrapper-latest.json` now points at `Pocket.DAW_0.6.13_x64-setup.exe`
+- Itch bootstrapper EXE: unchanged from the existing bootstrapper upload
 - SmartScreen/code signing: Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures: `.sig` files are updater-validation signatures and are separate from Windows code signing.
 
