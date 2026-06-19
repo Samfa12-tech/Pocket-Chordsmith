@@ -24,7 +24,7 @@ The current published artifact record is `0.6.10`. These artifacts passed automa
 - Setup EXE Tauri updater signature `Pocket.DAW_0.6.10_x64-setup.exe.sig`: `c29e36a9070d537952cac7487adb7e45af86cd70ca00bac00409d924d1c5f992`
 - MSI `Pocket.DAW_0.6.10_x64_en-US.msi`: `22572306809cabc05cef49324b7a36235c8257f01c6a653a748710fd8a03be24`
 - MSI Tauri updater signature `Pocket.DAW_0.6.10_x64_en-US.msi.sig`: `127f4d52cd85b4c76223d756e0b0ddd81a20dd3dada97e19cde908cb1bf59f4b`
-- Bootstrapper `Pocket_DAW_Itch_Bootstrapper_v0.6.10.exe`: `eb1056587975818d9ff5db35d1cf90ad4a1414b197066bdd4e81e24ae4998dcf`
+- Bootstrapper `Pocket_DAW_Itch_Bootstrapper_v0.6.10.exe`: `acb60b6c38226f67186b7a1d644504b4ffae7abb4e4d1f43fa13a3a2bbe8230f`
 - Release manifest `pocket-daw-release-manifest-v0.6.10.json`: `9f32807443c4c2927592bd35a00923fb24cf4a6a5e60f4d31993ccd26c85b350`
 
 Previous completed public updater artifact record:

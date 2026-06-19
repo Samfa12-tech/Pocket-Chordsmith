@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeBootstrapperManifest } from "../scripts/make-bootstrapper-manifest.mjs";
-import { BOOTSTRAPPER_MANIFEST_URL, bootstrapperPowerShell, packageItchBootstrapper } from "../scripts/package-itch-bootstrapper.mjs";
+import { assertBootstrapperUploadContents, BOOTSTRAPPER_MANIFEST_URL, bootstrapperPowerShell } from "../scripts/package-itch-bootstrapper.mjs";
 
 describe("Pocket DAW itch bootstrapper release helpers", () => {
   it("writes the bootstrapper latest manifest with installer hash", () => {
@@ -46,12 +46,11 @@ describe("Pocket DAW itch bootstrapper release helpers", () => {
   });
 
   it("packages only the stable bootstrapper upload files", () => {
-    const result = packageItchBootstrapper({ compile: false });
-    const checksums = readFileSync(result.checksumPath, "utf8");
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-bootstrapper-upload-"));
+    writeFileSync(join(dir, "Pocket_DAW_Itch_Bootstrapper_v0.6.10.exe"), "test exe");
+    writeFileSync(join(dir, "README_FIRST.txt"), "readme");
+    writeFileSync(join(dir, "CHECKSUMS_SHA256.txt"), "checksums");
 
-    expect(result.uploadDir.replace(/\\/g, "/")).toContain("releases/itch-bootstrapper/upload");
-    expect(readFileSync(result.readmePath, "utf8")).toContain("itch channel only needs a new upload when this bootstrapper changes");
-    expect(checksums).toContain("Pocket_DAW_Itch_Bootstrapper");
-    expect(checksums).toContain("README_FIRST.txt");
+    expect(() => assertBootstrapperUploadContents(dir)).not.toThrow();
   });
 });

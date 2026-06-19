@@ -20,7 +20,7 @@ Current alpha target:
 - MSI updater signature: `Pocket DAW_0.6.10_x64_en-US.msi.sig`
 - MSI updater signature SHA-256: `127f4d52cd85b4c76223d756e0b0ddd81a20dd3dada97e19cde908cb1bf59f4b`
 - Bootstrapper EXE: `Pocket_DAW_Itch_Bootstrapper_v0.6.10.exe`
-- Bootstrapper EXE SHA-256: `eb1056587975818d9ff5db35d1cf90ad4a1414b197066bdd4e81e24ae4998dcf`
+- Bootstrapper EXE SHA-256: `acb60b6c38226f67186b7a1d644504b4ffae7abb4e4d1f43fa13a3a2bbe8230f`
 - SmartScreen/code signing: Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures: `.sig` files are updater-validation signatures and are separate from Windows code signing.
 
