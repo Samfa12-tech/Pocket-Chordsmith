@@ -6,21 +6,21 @@ Current alpha target:
 
 - App: Pocket DAW
 - Version: `0.6.12` source target; installed-app smoke for `0.6.12` is Pending
-- Source commit at packaging time: pending this release commit
-- Generated manifest note: pending this release publish.
+- Source commit at packaging time: `ea14a2c0e519119e063571db57979ea2c41b714e`
+- Generated manifest note: dirty working tree was `false`.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Itch channel: `windows-installer`
 - Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Setup EXE: `Pocket DAW_0.6.11_x64-setup.exe`
-- Setup EXE SHA-256: `ac1e923662fef3f9df7f3e42d97607e5862a7c392b659cc84d89e343e45816f9`
-- Setup EXE updater signature: `Pocket DAW_0.6.11_x64-setup.exe.sig`
-- Setup EXE updater signature SHA-256: `fa8c07b3e14937523f57ea0c79851c5b1e059b37883d8ca381e5a162f07086d6`
-- MSI: `Pocket DAW_0.6.11_x64_en-US.msi`
-- MSI SHA-256: `ffb7d628049aacc2a97eb7828a9de0b46435109987870ee3ce9b146e0cbee185`
-- MSI updater signature: `Pocket DAW_0.6.11_x64_en-US.msi.sig`
-- MSI updater signature SHA-256: `6af89611708fec9d39dc5d6a86746518250c88804783252e913303043f80c7c5`
-- Bootstrapper EXE: `Pocket_DAW_Itch_Bootstrapper_v0.6.11.exe`
-- Bootstrapper EXE SHA-256: `c1e95390938153028640915fdf8f4ee2cceb67a3867679602cd606226a65c47d`
+- Setup EXE: `Pocket DAW_0.6.12_x64-setup.exe`
+- Setup EXE SHA-256: `5acd4f48b9f2c3b81999fa4ee058fce181932f84ef8d5b5abd2e5b0f9833a692`
+- Setup EXE updater signature: `Pocket DAW_0.6.12_x64-setup.exe.sig`
+- Setup EXE updater signature SHA-256: `0ac228dea3869f2b3997cbce6ad6636ded0d819ebf26373bf7563ff09cec5f22`
+- MSI: `Pocket DAW_0.6.12_x64_en-US.msi`
+- MSI SHA-256: `4eefaa67516add7d0ecf46a8addeb616125d41de8d2e25ad29e3d4266e5b7335`
+- MSI updater signature: `Pocket DAW_0.6.12_x64_en-US.msi.sig`
+- MSI updater signature SHA-256: `9766f7a2deb4610e44b58101bd3e0317f2b4d8b2160799aeec87cb441a5b9212`
+- Bootstrapper EXE: `Pocket_DAW_Itch_Bootstrapper_v0.6.12.exe`
+- Bootstrapper EXE SHA-256: `3e8ffcdceb9d76d622fe90194c52552384384a3fcc8ead0fb87cde4d976f1294`
 - SmartScreen/code signing: Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures: `.sig` files are updater-validation signatures and are separate from Windows code signing.
 

@@ -5,17 +5,24 @@
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
 - Current source target: `0.6.12` corrected in-app MCP bridge setup snippets
-- Last completed public artifact record in this repo: `0.6.11`; `0.6.12` publication pending
+- Last completed public artifact record in this repo: `0.6.12`
 - Last installed public smoke evidence in this repo: `0.6.10` bootstrapper install passed; `0.6.12` MCP setup/updater smoke remains pending
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Current source commit: pending this release commit
+- Current source commit: `ea14a2c0e519119e063571db57979ea2c41b714e`
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
 
-## v0.6.12 Corrected MCP Setup Snippets - publication pending
+## v0.6.12 Corrected MCP Setup Snippets - installed smoke pending
 
 `0.6.12` corrects `Help -> Setup MCP Bridge` so the copy-ready snippets use the tested Windows MCP launch shape: `cmd` with arguments `["/d", "/c", "npm", "--prefix", "<Pocket DAW workspace>", "run", "mcp:pocket-daw"]`.
+
+Published evidence as of 2026-06-19:
+
+- Itch channel `samfa12/pocket-daw:windows-installer` build `#1737936`, user version `bootstrapper-0.6.12`, carries the bootstrapper-only upload.
+- GitHub release `pocket-daw-v0.6.12` was published with setup EXE/MSI, updater signatures, release manifest, checksums, `pocket-daw-latest.json`, `pocket-daw-bootstrapper-latest.json`, and `Pocket_DAW_Itch_Bootstrapper_v0.6.12.exe`.
+- Remote setup EXE SHA-256 was verified as `5acd4f48b9f2c3b81999fa4ee058fce181932f84ef8d5b5abd2e5b0f9833a692`.
+- Bootstrapper EXE SHA-256 is `3e8ffcdceb9d76d622fe90194c52552384384a3fcc8ead0fb87cde4d976f1294`.
 
 ## v0.6.11 Bootstrapper Close And MCP Setup - installed smoke pending
 
