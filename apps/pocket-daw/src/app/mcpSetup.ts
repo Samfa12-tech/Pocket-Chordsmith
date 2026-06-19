@@ -1,4 +1,4 @@
-export const POCKET_DAW_MCP_SERVER_NAME = "pocket-daw";
+export const POCKET_DAW_MCP_SERVER_NAME = "pocket_daw";
 export const POCKET_DAW_MCP_WORKSPACE = "C:\\Users\\sam_s\\Documents\\Pocket Chordsmith\\apps\\pocket-daw";
 
 const MCP_ARGS = ["/d", "/c", "npm", "--silent", "--prefix", POCKET_DAW_MCP_WORKSPACE, "run", "mcp:pocket-daw"] as const;
