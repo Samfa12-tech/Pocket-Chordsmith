@@ -9,8 +9,9 @@ import {
 import { basename, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import packageJson from "../package.json" with { type: "json" };
-import { ITCH_CHANNEL, ITCH_SLUG, packageItchRelease } from "./package-itch.mjs";
+import { packageItchRelease } from "./package-itch.mjs";
 import { makeUpdaterManifest } from "./make-updater-manifest.mjs";
+import { DEFAULT_BOOTSTRAPPER_MANIFEST, makeBootstrapperManifest } from "./make-bootstrapper-manifest.mjs";
 
 const ROOT = process.cwd();
 const VERSION = packageJson.version;
@@ -49,20 +50,19 @@ const updaterManifest = makeUpdaterManifest({
   url: `${GITHUB_RELEASE_URL}/${basename(staged.setupExe)}`,
   notes: staged.releaseNotes
 });
+const bootstrapperManifest = makeBootstrapperManifest({
+  artifact: staged.setupExe,
+  url: `${GITHUB_RELEASE_URL}/${basename(staged.setupExe)}`,
+  out: join(UPDATER_DIR, DEFAULT_BOOTSTRAPPER_MANIFEST)
+});
 
 console.log(`Staged updater manifest: ${updaterManifest.out}`);
+console.log(`Staged bootstrapper manifest: ${bootstrapperManifest.out}`);
 console.log(`Staged updater setup: ${staged.setupExe}`);
 console.log(`Setup SHA-256: ${sha256File(staged.setupExe)}`);
 
 if (options.publish) {
   assertGithubReleaseMissing();
-  run("butler", [
-    "push",
-    "releases/itch/installers",
-    `${ITCH_SLUG}:${ITCH_CHANNEL}`,
-    "--userversion",
-    VERSION
-  ]);
   createGithubRelease(staged);
   await verifyPublishedRelease(staged);
 }
@@ -148,6 +148,7 @@ function createGithubRelease(staged) {
     staged.msi,
     staged.msiSig,
     join(UPDATER_DIR, "pocket-daw-latest.json"),
+    join(UPDATER_DIR, DEFAULT_BOOTSTRAPPER_MANIFEST),
     join(UPDATER_DIR, "SHA256SUMS.txt"),
     staged.checksums,
     staged.manifest,
@@ -164,7 +165,6 @@ function createGithubRelease(staged) {
 
 async function verifyPublishedRelease(staged) {
   run("gh", ["release", "view", RELEASE_TAG, "--repo", REPO, "--json", "tagName,url,publishedAt,assets"]);
-  run("butler", ["status", `${ITCH_SLUG}:${ITCH_CHANNEL}`]);
 
   const manifestResponse = await fetch(LATEST_MANIFEST_URL);
   if (!manifestResponse.ok) fail(`Updater manifest fetch failed: ${manifestResponse.status}`);
@@ -179,6 +179,12 @@ async function verifyPublishedRelease(staged) {
   const actualHash = await sha256Url(platform.url);
   if (actualHash !== expectedHash) fail(`Remote setup hash mismatch: expected ${expectedHash}, got ${actualHash}`);
   console.log(`Remote setup SHA-256 verified: ${actualHash}`);
+
+  const bootstrapperResponse = await fetch(`https://github.com/${REPO}/releases/latest/download/${DEFAULT_BOOTSTRAPPER_MANIFEST}`);
+  if (!bootstrapperResponse.ok) fail(`Bootstrapper manifest fetch failed: ${bootstrapperResponse.status}`);
+  const bootstrapper = await bootstrapperResponse.json();
+  if (bootstrapper.version !== VERSION) fail(`Bootstrapper manifest version ${bootstrapper.version} did not match ${VERSION}.`);
+  if (bootstrapper.installer?.sha256 !== expectedHash) fail("Bootstrapper manifest hash does not match the staged setup EXE.");
 }
 
 function assertGithubReleaseMissing() {

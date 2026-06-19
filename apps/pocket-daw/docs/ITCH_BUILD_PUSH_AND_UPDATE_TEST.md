@@ -2,6 +2,8 @@
 
 This is the operator checklist for publishing Pocket DAW as a free installed Windows alpha, pushing the matching source to GitHub, and rehearsing the in-app Tauri updater from an installed build.
 
+Current policy: normal Pocket DAW app checkpoints ship through GitHub Releases and the in-app Tauri updater. Itch should host the stable bootstrapper/downloader and only needs a new upload when the bootstrapper itself changes.
+
 ## Current Alpha Release
 
 - App: Pocket DAW
@@ -12,6 +14,7 @@ This is the operator checklist for publishing Pocket DAW as a free installed Win
 - Public site link: `https://samfa12.com`
 - Primary install/update test channel: `windows-installer`
 - Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
+- Bootstrapper endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-bootstrapper-latest.json`
 - Setup EXE: `Pocket DAW_0.5.13_x64-setup.exe`
 - MSI: `Pocket DAW_0.5.13_x64_en-US.msi`
 
@@ -19,7 +22,19 @@ Pocket DAW is installed-app only. Do not publish or test a user-facing portable 
 
 ## Package Requirements for Itch
 
-The itch release should include installer artifacts and release metadata:
+Normal itch upload:
+
+- Bootstrapper upload folder:
+  - `releases/itch-bootstrapper/upload/`
+  - `Pocket_DAW_Itch_Bootstrapper_v<version>.exe`
+  - `README_FIRST.txt`
+  - `CHECKSUMS_SHA256.txt`
+
+The bootstrapper fetches `pocket-daw-bootstrapper-latest.json`, downloads the latest setup EXE from GitHub Releases, verifies SHA-256, and launches the verified installer.
+
+Manual fallback only:
+
+The old full-installer itch release path still stages installer artifacts and release metadata for emergencies:
 
 - Installer upload folder:
   - `releases/itch/installers/`
@@ -67,26 +82,28 @@ $env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.pocket-daw-secrets\tauri-upd
 npm run verify:versions
 npm test
 npm run build
-npm run package:itch
-npm run verify:artifacts
+npm run release:update:full
+npm run package:itch-bootstrapper
+npm run verify:itch-bootstrapper
 ```
 
-`npm run package:itch` builds the Tauri release, stages setup/MSI installers plus `.sig` updater signatures, generates checksums, writes installed-app release docs, and writes the final verdict.
+`npm run release:update:full` builds and verifies the Tauri updater package. `npm run package:itch-bootstrapper` builds the small itch downloader. `npm run package:itch` remains available for the manual full-installer fallback.
 
 ## Push to Itch
 
-Preview the installer folder:
+Preview the bootstrapper folder:
 
 ```powershell
-butler push-preview releases/itch/installers samfa12/pocket-daw:windows-installer
+butler push-preview releases/itch-bootstrapper/upload samfa12/pocket-daw:windows-installer
 ```
 
 Butler `push-preview` in v15.27.0 does not accept `--userversion`; keep `--userversion` on the actual `push` command below.
 
-Push installer folder to the public installed-app channel:
+Push the bootstrapper folder to the public installed-app channel only when the bootstrapper changed:
 
 ```powershell
-butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion 0.5.13
+$env:PUBLISH = "1"
+npm run itch:push:bootstrapper
 ```
 
 After upload, inspect the itch page and keep the release wording as alpha testing. The v0.5.13 handoff/update smoke evidence is recorded in `docs/WINDOWS_TESTING_CHECKLIST.md`; broader Windows QA remains partial.

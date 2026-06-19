@@ -5,24 +5,24 @@ Run this against the exact installed Windows alpha from itch/GitHub release arti
 Current alpha target:
 
 - App: Pocket DAW
-- Version: `0.6.9` source target; installed-app smoke for `0.6.9` is Partial
+- Version: `0.6.10` source target; installed-app smoke for `0.6.10` is Pending
 - Source commit at packaging time: `e74cb5249505e0145b462ad7b19d4f24f666b826`
 - Generated manifest note: dirty working tree was `true` because the parity/release pass was uncommitted during local packaging.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Itch channel: `windows-installer`
 - Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Setup EXE: `Pocket DAW_0.6.9_x64-setup.exe`
+- Setup EXE: `Pocket DAW_0.6.10_x64-setup.exe`
 - Setup EXE SHA-256: `406bd7432dda5f4c3dfccb041c6e2362f5b683559476900f239ec46843d60f09`
-- Setup EXE updater signature: `Pocket DAW_0.6.9_x64-setup.exe.sig`
+- Setup EXE updater signature: `Pocket DAW_0.6.10_x64-setup.exe.sig`
 - Setup EXE updater signature SHA-256: `6b6ec01f1707e2b06d5a92c86d844de5db0e89b86868cd7bcfb8e28d29a2ed8f`
-- MSI: `Pocket DAW_0.6.9_x64_en-US.msi`
+- MSI: `Pocket DAW_0.6.10_x64_en-US.msi`
 - MSI SHA-256: `41220a60798fd95f9c41e2b5776f48234355203e4b3a28257b428a13bf4f085d`
-- MSI updater signature: `Pocket DAW_0.6.9_x64_en-US.msi.sig`
+- MSI updater signature: `Pocket DAW_0.6.10_x64_en-US.msi.sig`
 - MSI updater signature SHA-256: `dd1b90ff162ac69ebff91067ad9599ae9be73d4e7cd1d1cf7de0033d33db9df0`
 - SmartScreen/code signing: Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures: `.sig` files are updater-validation signatures and are separate from Windows code signing.
 
-Manual smoke status: `0.6.9` PARTIAL. Sam confirmed the reported soloed Warm Sub Bass is audible in installed `0.6.9`; the wider installed-app checklist remains pending. Historical evidence below is useful context but does not verify the current baseline.
+Manual smoke status: `0.6.10` PENDING. Historical `0.6.9` evidence remains useful context, but does not verify the current bootstrapper/updater baseline.
 
 Historical manual evidence from Sam on 2026-06-14:
 
@@ -45,7 +45,7 @@ Historical manual evidence from Sam on 2026-06-14:
 | Install / launch | Clean install from the current public setup EXE or MSI. | Installer completes and creates the expected installed app entries. | Manual / Not run | Manual / Not run |  |  |
 | Install / launch | Launch Pocket DAW from the Start Menu or installed shortcut. | Installed app opens without needing an extracted app folder. | App opened; exact launch surface not recorded. | Partial | Sam / 2026-06-14 | Confirm Start Menu/installed shortcut explicitly on next pass. |
 | Install / launch | Launch after reboot if practical. | Installed app still launches normally after Windows restart. | Manual / Not run | Manual / Not run |  |  |
-| Install / launch | Open About/Diagnostics and confirm app version/build id. | Version `0.6.9` and build/commit information are visible or explicitly unavailable. | Manual / Not run | Manual / Not run |  | Historical v0.5.13 diagnostics evidence exists, but does not verify v0.6.9. |
+| Install / launch | Open About/Diagnostics and confirm app version/build id. | Version `0.6.10` and build/commit information are visible or explicitly unavailable. | Manual / Not run | Manual / Not run |  | Historical v0.5.13 diagnostics evidence exists, but does not verify v0.6.10. |
 | Install / launch | Open and close the About/Diagnostics panel at installed-app desktop size. | Panel renders below the top menu/control bars and the close button remains clickable. | About panel rendered underneath the control bar; close control was not reachable. | Fail | Sam / 2026-06-14 | Fix next: move modal/panel down or constrain it within the visible app content area. |
 | Install / launch | Uninstall, reinstall, then open the app. | Expected user data is preserved or loss/caveat is documented; reinstall does not corrupt projects. | Manual / Not run | Manual / Not run |  |  |
 | Basic audio | Load Demo, press Play, then Stop and Restart. | Demo plays audibly, stops, and restarts from the expected position. | Demo loaded and played audibly. | Pass | Sam / 2026-06-14 | Stop/restart not separately recorded. |

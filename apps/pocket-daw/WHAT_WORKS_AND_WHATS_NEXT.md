@@ -1,17 +1,23 @@
-# Pocket DAW v0.6.9 - What Works and What's Next
+# Pocket DAW v0.6.10 - What Works and What's Next
 
 ## Current public alpha
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current source target: `0.6.9` native lofi-bass audibility hotfix for the lofi/chillhop parity alpha
-- Last completed public artifact record in this repo: `0.6.9`
+- Current source target: `0.6.10` bootstrapper/updater workflow and MCP bridge alpha
+- Last completed public artifact record in this repo: `0.6.9`; `0.6.10` publication pending this release pass
 - Last installed public smoke evidence in this repo: `0.6.9` partial; Sam confirmed the reported soloed Warm Sub Bass is audible, while broader installed smoke remains pending
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 - Current source commit: update this after the next release commit is created
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
+
+## v0.6.10 Bootstrapper And MCP Bridge - publication pending
+
+`0.6.10` moves normal public app updates to GitHub Releases plus the Tauri updater. The itch channel should now carry the small bootstrapper upload from `releases/itch-bootstrapper/upload/`; it downloads the latest GitHub setup EXE, verifies SHA-256 from `pocket-daw-bootstrapper-latest.json`, and launches the verified installer.
+
+This release also adds `npm run mcp:pocket-daw`, a local stdio MCP bridge for structured project read/validate/import/edit/export-plan tasks. Computer/browser control remains the right path for installed-app visual QA, playback confidence and updater smoke.
 
 ## v0.6.9 Native Lofi Bass Hotfix - installed smoke pending
 
