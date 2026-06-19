@@ -1,4 +1,7 @@
 use cpal::traits::DeviceTrait;
+use std::collections::HashMap;
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
 use tauri::{Emitter, Manager};
 
 mod native_audio;
@@ -6,7 +9,9 @@ mod native_recording;
 
 const SECOND_INSTANCE_DEEP_LINK_EVENT: &str = "pocket-daw-second-instance";
 const LOCAL_HANDOFF_EVENT: &str = "pocket-daw-local-handoff";
+const AI_BRIDGE_REQUEST_EVENT: &str = "pocket-daw-ai-request";
 const LOCAL_HANDOFF_PORT: u16 = 47858;
+const AI_BRIDGE_RESPONSE_TIMEOUT_MS: u64 = 5000;
 const DOWNLOAD_HANDOFF_PREFIX: &str = "pocket-chordsmith-to-pocket-daw-";
 const DOWNLOAD_HANDOFF_SUFFIX: &str = ".pcs1.txt";
 const MAX_PROJECT_FILE_BYTES: u64 = 25 * 1024 * 1024;
@@ -14,6 +19,7 @@ const MAX_MIDI_FILE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_AUDIO_FILE_BYTES: u64 = 250 * 1024 * 1024;
 const MAX_NATIVE_CACHE_ASSET_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_LOCAL_HANDOFF_BYTES: usize = 5 * 1024 * 1024;
+const MAX_AI_BRIDGE_BODY_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, serde::Serialize)]
 struct SecondInstanceLaunchPayload {
@@ -27,6 +33,161 @@ struct LocalHandoffPayload {
     encoded_handoff: String,
     #[serde(rename = "receivedAt")]
     received_at: String,
+}
+
+#[derive(Clone)]
+struct AiBridgeRuntime {
+    inner: Arc<AiBridgeRuntimeInner>,
+}
+
+struct AiBridgeRuntimeInner {
+    token: String,
+    enabled: Mutex<bool>,
+    session_path: std::path::PathBuf,
+    started_at: String,
+    pending: Mutex<HashMap<String, mpsc::Sender<String>>>,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct AiBridgeSessionPayload {
+    app: &'static str,
+    url: &'static str,
+    #[serde(rename = "statusUrl")]
+    status_url: &'static str,
+    #[serde(rename = "controlUrl")]
+    control_url: &'static str,
+    token: String,
+    enabled: bool,
+    #[serde(rename = "sessionPath")]
+    session_path: String,
+    #[serde(rename = "processId")]
+    process_id: u32,
+    #[serde(rename = "startedAt")]
+    started_at: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct AiBridgeRequestPayload {
+    #[serde(rename = "requestId")]
+    request_id: String,
+    kind: String,
+    body: String,
+    #[serde(rename = "receivedAt")]
+    received_at: String,
+}
+
+fn create_ai_bridge_runtime() -> AiBridgeRuntime {
+    let bytes: [u8; 32] = rand::random();
+    AiBridgeRuntime {
+        inner: Arc::new(AiBridgeRuntimeInner {
+            token: hex_token(bytes),
+            enabled: Mutex::new(false),
+            session_path: ai_bridge_session_path(),
+            started_at: iso_timestamp(),
+            pending: Mutex::new(HashMap::new()),
+        }),
+    }
+}
+
+impl AiBridgeRuntime {
+    fn session(&self) -> AiBridgeSessionPayload {
+        AiBridgeSessionPayload {
+            app: "Pocket DAW",
+            url: "http://127.0.0.1:47858",
+            status_url: "http://127.0.0.1:47858/pocket-daw/live/status",
+            control_url: "http://127.0.0.1:47858/pocket-daw/live/control",
+            token: self.inner.token.clone(),
+            enabled: self.is_enabled(),
+            session_path: self.inner.session_path.to_string_lossy().to_string(),
+            process_id: std::process::id(),
+            started_at: self.inner.started_at.clone(),
+        }
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.inner
+            .enabled
+            .lock()
+            .map(|guard| *guard)
+            .unwrap_or(false)
+    }
+
+    fn set_enabled(&self, enabled: bool) -> Result<AiBridgeSessionPayload, String> {
+        {
+            let mut guard = self
+                .inner
+                .enabled
+                .lock()
+                .map_err(|_| "AI bridge state lock is unavailable.".to_string())?;
+            *guard = enabled;
+        }
+        self.write_session_file()?;
+        Ok(self.session())
+    }
+
+    fn write_session_file(&self) -> Result<(), String> {
+        if let Some(parent) = self.inner.session_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|err| format!("Could not create AI bridge session folder: {err}"))?;
+        }
+        let json = serde_json::to_string_pretty(&self.session())
+            .map_err(|err| format!("Could not serialize AI bridge session: {err}"))?;
+        std::fs::write(&self.inner.session_path, json)
+            .map_err(|err| format!("Could not write AI bridge session file: {err}"))
+    }
+
+    fn token_matches(&self, token: Option<&str>) -> bool {
+        token.is_some_and(|value| value == self.inner.token)
+    }
+
+    fn register_pending(
+        &self,
+        request_id: &str,
+        sender: mpsc::Sender<String>,
+    ) -> Result<(), String> {
+        self.inner
+            .pending
+            .lock()
+            .map_err(|_| "AI bridge pending-request lock is unavailable.".to_string())?
+            .insert(request_id.to_string(), sender);
+        Ok(())
+    }
+
+    fn resolve_pending(&self, request_id: &str, response_json: String) -> Result<(), String> {
+        let sender = self
+            .inner
+            .pending
+            .lock()
+            .map_err(|_| "AI bridge pending-request lock is unavailable.".to_string())?
+            .remove(request_id);
+        match sender {
+            Some(sender) => sender
+                .send(response_json)
+                .map_err(|_| "AI bridge requester is no longer waiting.".to_string()),
+            None => Err(format!("No pending AI bridge request for {request_id}.")),
+        }
+    }
+
+    fn remove_pending(&self, request_id: &str) {
+        if let Ok(mut pending) = self.inner.pending.lock() {
+            pending.remove(request_id);
+        }
+    }
+}
+
+fn ai_bridge_session_path() -> std::path::PathBuf {
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        return std::path::PathBuf::from(local_app_data)
+            .join("Pocket DAW")
+            .join("ai-bridge-session.json");
+    }
+    std::env::temp_dir()
+        .join("Pocket DAW")
+        .join("ai-bridge-session.json")
+}
+
+fn hex_token(bytes: [u8; 32]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -53,6 +214,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .manage(native_audio::create_native_audio_runtime())
         .manage(native_recording::create_native_recording_runtime())
+        .manage(create_ai_bridge_runtime())
         .setup(|app| {
             #[cfg(desktop)]
             {
@@ -64,7 +226,9 @@ pub fn run() {
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
                 app.handle().plugin(tauri_plugin_process::init())?;
-                start_local_handoff_receiver(app.handle().clone());
+                let ai_bridge = app.state::<AiBridgeRuntime>().inner().clone();
+                ai_bridge.write_session_file()?;
+                start_local_handoff_receiver(app.handle().clone(), ai_bridge);
             }
             Ok(())
         })
@@ -92,14 +256,42 @@ pub fn run() {
             read_download_handoff_file,
             open_midi_file,
             save_project_file_as,
-            write_project_file
+            write_project_file,
+            ai_bridge_session,
+            ai_bridge_set_enabled,
+            ai_bridge_resolve_request
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pocket DAW");
 }
 
+#[tauri::command]
+fn ai_bridge_session(
+    state: tauri::State<'_, AiBridgeRuntime>,
+) -> Result<AiBridgeSessionPayload, String> {
+    state.write_session_file()?;
+    Ok(state.session())
+}
+
+#[tauri::command]
+fn ai_bridge_set_enabled(
+    enabled: bool,
+    state: tauri::State<'_, AiBridgeRuntime>,
+) -> Result<AiBridgeSessionPayload, String> {
+    state.set_enabled(enabled)
+}
+
+#[tauri::command]
+fn ai_bridge_resolve_request(
+    request_id: String,
+    response_json: String,
+    state: tauri::State<'_, AiBridgeRuntime>,
+) -> Result<(), String> {
+    state.resolve_pending(&request_id, response_json)
+}
+
 #[cfg(desktop)]
-fn start_local_handoff_receiver(app: tauri::AppHandle) {
+fn start_local_handoff_receiver(app: tauri::AppHandle, ai_bridge: AiBridgeRuntime) {
     std::thread::spawn(move || {
         let listener = match std::net::TcpListener::bind(("127.0.0.1", LOCAL_HANDOFF_PORT)) {
             Ok(listener) => listener,
@@ -111,10 +303,13 @@ fn start_local_handoff_receiver(app: tauri::AppHandle) {
         println!("Pocket DAW local handoff receiver listening on 127.0.0.1:{LOCAL_HANDOFF_PORT}");
         for stream in listener.incoming() {
             let app = app.clone();
+            let ai_bridge = ai_bridge.clone();
             match stream {
                 Ok(mut stream) => {
                     std::thread::spawn(move || {
-                        if let Err(err) = handle_local_handoff_connection(&mut stream, &app) {
+                        if let Err(err) =
+                            handle_local_handoff_connection(&mut stream, &app, &ai_bridge)
+                        {
                             eprintln!("Pocket DAW local handoff request failed: {err}");
                         }
                     });
@@ -129,11 +324,35 @@ fn start_local_handoff_receiver(app: tauri::AppHandle) {
 fn handle_local_handoff_connection(
     stream: &mut std::net::TcpStream,
     app: &tauri::AppHandle,
+    ai_bridge: &AiBridgeRuntime,
 ) -> Result<(), String> {
     let request = read_http_request(stream)?;
     if request.starts_with("OPTIONS ") {
         write_http_response(stream, 204, "No Content", "text/plain", "")?;
         return Ok(());
+    }
+    if request_path_matches(&request, "GET", "/pocket-daw/live/status") {
+        return handle_ai_bridge_http_request(
+            stream,
+            app,
+            ai_bridge,
+            &request,
+            "status",
+            "{}".to_string(),
+        );
+    }
+    if request_path_matches(&request, "POST", "/pocket-daw/live/control") {
+        let body = http_request_body(&request)?;
+        if body.len() > MAX_AI_BRIDGE_BODY_BYTES {
+            write_json_response(
+                stream,
+                413,
+                "Payload Too Large",
+                r#"{"ok":false,"code":"payload_too_large","message":"AI bridge request body is too large."}"#,
+            )?;
+            return Ok(());
+        }
+        return handle_ai_bridge_http_request(stream, app, ai_bridge, &request, "control", body);
     }
     if !request.starts_with("POST /pocket-daw/handoff ") {
         write_http_response(stream, 404, "Not Found", "text/plain", "Not found")?;
@@ -165,6 +384,119 @@ fn handle_local_handoff_connection(
     }
     write_http_response(stream, 200, "OK", "application/json", r#"{"ok":true}"#)?;
     Ok(())
+}
+
+#[cfg(desktop)]
+fn handle_ai_bridge_http_request(
+    stream: &mut std::net::TcpStream,
+    app: &tauri::AppHandle,
+    ai_bridge: &AiBridgeRuntime,
+    request: &str,
+    kind: &str,
+    body: String,
+) -> Result<(), String> {
+    if !ai_bridge.token_matches(authorization_bearer_token(request).as_deref()) {
+        write_json_response(
+            stream,
+            401,
+            "Unauthorized",
+            r#"{"ok":false,"available":true,"enabled":false,"code":"unauthorized","message":"Pocket DAW live bridge requires a valid bearer token."}"#,
+        )?;
+        return Ok(());
+    }
+    if !ai_bridge.is_enabled() {
+        write_json_response(
+            stream,
+            403,
+            "Forbidden",
+            r#"{"ok":false,"available":true,"enabled":false,"code":"bridge_disabled","message":"Pocket DAW live bridge is disabled in the app."}"#,
+        )?;
+        return Ok(());
+    }
+    match dispatch_ai_bridge_request(app, ai_bridge, kind, body) {
+        Ok(response) => write_json_response(stream, 200, "OK", &response)?,
+        Err(err) => {
+            let body = serde_json::json!({
+                "ok": false,
+                "available": true,
+                "enabled": true,
+                "code": "bridge_error",
+                "message": err
+            })
+            .to_string();
+            write_json_response(stream, 502, "Bad Gateway", &body)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(desktop)]
+fn dispatch_ai_bridge_request(
+    app: &tauri::AppHandle,
+    ai_bridge: &AiBridgeRuntime,
+    kind: &str,
+    body: String,
+) -> Result<String, String> {
+    let request_id = format!("ai-{}-{}", std::process::id(), next_ai_bridge_request_id());
+    let (sender, receiver) = mpsc::channel();
+    ai_bridge.register_pending(&request_id, sender)?;
+    let payload = AiBridgeRequestPayload {
+        request_id: request_id.clone(),
+        kind: kind.to_string(),
+        body,
+        received_at: iso_timestamp(),
+    };
+    if let Err(err) = app.emit(AI_BRIDGE_REQUEST_EVENT, payload) {
+        ai_bridge.remove_pending(&request_id);
+        return Err(format!("Could not emit AI bridge request: {err}"));
+    }
+    match receiver.recv_timeout(Duration::from_millis(AI_BRIDGE_RESPONSE_TIMEOUT_MS)) {
+        Ok(response) => Ok(response),
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            ai_bridge.remove_pending(&request_id);
+            Err("Pocket DAW live bridge request timed out.".to_string())
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            ai_bridge.remove_pending(&request_id);
+            Err("Pocket DAW live bridge response channel closed.".to_string())
+        }
+    }
+}
+
+#[cfg(desktop)]
+fn next_ai_bridge_request_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+#[cfg(desktop)]
+fn request_path_matches(request: &str, method: &str, path: &str) -> bool {
+    let Some(first_line) = request.lines().next() else {
+        return false;
+    };
+    let mut parts = first_line.split_whitespace();
+    matches!(
+        (parts.next(), parts.next()),
+        (Some(found_method), Some(found_path)) if found_method == method && found_path == path
+    )
+}
+
+#[cfg(desktop)]
+fn authorization_bearer_token(request: &str) -> Option<String> {
+    for line in request.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if name.trim().eq_ignore_ascii_case("authorization") {
+            let value = value.trim();
+            return value
+                .strip_prefix("Bearer ")
+                .map(|token| token.trim().to_string())
+                .filter(|token| !token.is_empty());
+        }
+    }
+    None
 }
 
 #[cfg(desktop)]
@@ -262,12 +594,22 @@ fn write_http_response(
 ) -> Result<(), String> {
     use std::io::Write;
     let response = format!(
-        "HTTP/1.1 {status} {status_text}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Allow-Private-Network: true\r\nConnection: close\r\n\r\n{body}",
+        "HTTP/1.1 {status} {status_text}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nAccess-Control-Allow-Private-Network: true\r\nConnection: close\r\n\r\n{body}",
         body.as_bytes().len()
     );
     stream
         .write_all(response.as_bytes())
         .map_err(|err| format!("Could not write response: {err}"))
+}
+
+#[cfg(desktop)]
+fn write_json_response(
+    stream: &mut std::net::TcpStream,
+    status: u16,
+    status_text: &str,
+    body: &str,
+) -> Result<(), String> {
+    write_http_response(stream, status, status_text, "application/json", body)
 }
 
 #[cfg(desktop)]
@@ -993,6 +1335,39 @@ mod tests {
         assert_eq!(
             local_handoff_payload_from_request(form_request).expect("form body should parse"),
             "abc-123"
+        );
+    }
+
+    #[test]
+    fn live_bridge_request_path_matching_is_exact() {
+        let status_request = "GET /pocket-daw/live/status HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
+        let handoff_request = "POST /pocket-daw/handoff HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
+
+        assert!(request_path_matches(
+            status_request,
+            "GET",
+            "/pocket-daw/live/status"
+        ));
+        assert!(!request_path_matches(
+            handoff_request,
+            "GET",
+            "/pocket-daw/live/status"
+        ));
+    }
+
+    #[test]
+    fn live_bridge_authorization_parses_bearer_token() {
+        let request = "POST /pocket-daw/live/control HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer abc123\r\nContent-Length: 2\r\n\r\n{}";
+
+        assert_eq!(
+            authorization_bearer_token(request).as_deref(),
+            Some("abc123")
+        );
+        assert_eq!(
+            authorization_bearer_token(
+                "GET /pocket-daw/live/status HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+            ),
+            None
         );
     }
 

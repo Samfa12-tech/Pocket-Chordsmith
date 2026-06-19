@@ -2,11 +2,12 @@
 
 Pocket DAW is now live for public Windows alpha testing on itch and linked from `samfa12.com`.
 
-This file records the current source baseline and the latest completed public installed-release evidence. Current source target is `0.6.12` corrected in-app MCP bridge setup snippets.
+This file records the current source baseline and the latest completed public installed-release evidence. Current source target is post-`0.6.12` AI / MCP bridge v1 source work pending the next updater-visible checkpoint.
 
 ## Current Source Baseline
 
 - Version: `0.6.12`
+- Source delta after published `0.6.12`: `Help -> AI / MCP Bridge`, token-protected live localhost bridge, and MCP live tools for status, transport, selection and safe mixer edits.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Primary itch channel: `windows-installer`
 - Updater manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
@@ -70,6 +71,8 @@ Older completed public updater artifact record:
 
 Current `0.6.12` installed-app smoke status: Pending. Sam should update/install to `0.6.12`, open Help -> Setup MCP Bridge, copy a config snippet, and verify the refreshed bootstrapper closes after launching setup.
 
+Post-`0.6.12` AI / MCP bridge smoke is pending until the next updater checkpoint is built. Required focus: open Help -> AI / MCP Bridge, enable the live bridge, run `pocket_daw_live_status` from Codex, test play/pause/stop/restart/seek, select a track/clip, apply Bass volume/pan/mute through MCP, save an already-saved project, then close Pocket DAW and confirm live tools return unavailable while file MCP tools still work.
+
 Required `0.6.12` focus:
 
 - Confirm About/Diagnostics reports app version `0.6.12` and the expected build/commit metadata.
@@ -98,7 +101,7 @@ Historical partial installed-app smoke run by Sam on 2026-06-14 against v0.5.9/v
 
 ## Current Caveats
 
-- Manual Windows smoke testing for `0.6.12` is pending and is tracked in `docs/WINDOWS_TESTING_CHECKLIST.md`; MCP setup panel and bootstrapper auto-close are the current focus.
+- Manual Windows smoke testing for `0.6.12` is pending and is tracked in `docs/WINDOWS_TESTING_CHECKLIST.md`; MCP setup panel and bootstrapper auto-close are the current published-artifact focus. Post-`0.6.12` AI / MCP live bridge smoke joins the next updater checkpoint gate.
 - Itch upload for `0.6.12` is complete on `samfa12/pocket-daw:windows-installer` build `#1737936`; GitHub latest updater assets and bootstrapper assets were published and the remote setup EXE hash was verified as `5acd4f48b9f2c3b81999fa4ee058fce181932f84ef8d5b5abd2e5b0f9833a692`.
 - Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures are present as `.sig` files for updater validation.

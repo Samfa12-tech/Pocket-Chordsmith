@@ -2845,6 +2845,7 @@ name = "pocket-daw"
 version = "0.6.12"
 dependencies = [
  "cpal",
+ "rand",
  "rfd",
  "serde",
  "serde_json",

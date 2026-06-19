@@ -8,6 +8,7 @@ import type { ProjectFileState } from "../native/fileBridge";
 import type { PocketHandoffKind, PocketHandoffSource } from "../native/pocketHandoff";
 import type { RecentProject } from "../native/recentFiles";
 import type { UpdaterState } from "../native/updaterBridge";
+import { defaultAiBridgeUiStatus, type AiBridgeUiStatus } from "../native/aiBridge";
 
 export type ChordsmithStepSelection =
   | { kind: "drums"; sectionId: string; lane: "kick" | "snare" | "hat"; step: number }
@@ -40,6 +41,7 @@ export interface AppState {
   showUpdaterPanel: boolean;
   showMcpSetupPanel: boolean;
   showFeedbackPanel: boolean;
+  aiBridge: AiBridgeUiStatus;
   feedbackText: string;
   updaterStatus: UpdaterState;
   updaterMessage: string;
@@ -130,6 +132,7 @@ export function createInitialState(): AppState {
     showUpdaterPanel: false,
     showMcpSetupPanel: false,
     showFeedbackPanel: false,
+    aiBridge: defaultAiBridgeUiStatus(),
     feedbackText: "",
     updaterStatus: "idle",
     updaterMessage: "Updates not checked yet.",

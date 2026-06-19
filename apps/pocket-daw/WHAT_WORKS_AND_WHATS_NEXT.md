@@ -1,17 +1,25 @@
-# Pocket DAW v0.6.12 - What Works and What's Next
+# Pocket DAW post-v0.6.12 - What Works and What's Next
 
 ## Current public alpha
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current source target: `0.6.12` corrected in-app MCP bridge setup snippets
+- Current source target: post-`0.6.12` AI / MCP bridge v1 source changes pending next updater checkpoint
 - Last completed public artifact record in this repo: `0.6.12`
 - Last installed public smoke evidence in this repo: `0.6.10` bootstrapper install passed; `0.6.12` MCP setup/updater smoke remains pending
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Current source commit: `ea14a2c0e519119e063571db57979ea2c41b714e`
+- Current source commit: pending next bridge commit
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
+
+## Post-v0.6.12 AI / MCP Bridge v1 - source implemented, installed smoke pending
+
+The next source slice expands `Help -> Setup MCP Bridge` into `Help -> AI / MCP Bridge`. The file MCP bridge remains the fast path for `.pocketdaw` inspection, validation, Chordsmith import, typed project edits and export planning while Pocket DAW is open or closed.
+
+The installed app now has an optional token-protected live bridge on the existing local handoff server at `127.0.0.1:47858`. When enabled from the Help panel, MCP live tools can read running-app status, control transport, select tracks/clips, save an already-saved project and apply deterministic mixer edits for track volume, pan, mute and solo. The live bridge writes a local session file for MCP discovery and returns clear unavailable/disabled/auth responses instead of relying on broad UI automation.
+
+Next checkpoint recommendation: bundle this bridge into the next updater-visible version after local validation. Do not push itch unless the bootstrapper itself changes.
 
 ## v0.6.12 Corrected MCP Setup Snippets - installed smoke pending
 

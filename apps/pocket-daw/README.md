@@ -2,7 +2,7 @@
 
 Pocket DAW is a Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
-Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.12` corrected in-app MCP bridge setup snippets.
+Current public status: **free Windows alpha testing on itch**. Current source target: post-`0.6.12` AI / MCP bridge source work pending the next updater-visible checkpoint.
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
@@ -51,7 +51,9 @@ Use `npm run package:itch-bootstrapper` and `npm run verify:itch-bootstrapper` t
 
 ## AI / MCP Integration
 
-Run `npm run mcp:pocket-daw` to start the local stdio MCP bridge. It exposes structured tools for reading, validating, converting, editing and export-planning `.pocketdaw` projects without driving the UI. The installed app also has `Help -> Setup MCP Bridge`, which shows copy-ready command, Claude/JSON and Codex TOML snippets. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
+Run `npm run mcp:pocket-daw` to start the local stdio MCP bridge. It exposes structured tools for reading, validating, converting, editing and export-planning `.pocketdaw` projects without driving the UI.
+
+The post-`0.6.12` source also adds `Help -> AI / MCP Bridge` in the installed app. The panel keeps copy-ready command, Claude/JSON and Codex TOML snippets, and can enable a token-protected live localhost bridge for the running app. Live MCP tools can read app status, control transport, select tracks/clips, save an already-saved project and apply safe mixer edits. File/project MCP tools still work while Pocket DAW is closed. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
 
 Release and update docs:
 
@@ -70,6 +72,7 @@ Release and update docs:
 - v0.6.10 moves normal app distribution to GitHub updater releases plus an itch bootstrapper, and adds the first local MCP bridge for structured project automation.
 - v0.6.11 makes the bootstrapper close after launching the verified setup EXE and adds `Help -> Setup MCP Bridge` with copy-ready MCP client snippets.
 - v0.6.12 corrects the MCP setup snippets to use a tested Windows `cmd` argument-array launch shape.
+- Post-v0.6.12 source adds `Help -> AI / MCP Bridge` and live app MCP tools for status, transport, selection and safe mixer edits. Publish this in the next updater checkpoint after local validation.
 - ASIO, simultaneous multitrack capture, punch-in/out, comping, latency compensation UI, full send/return processing, bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
 - Windows Authenticode signing is not currently claimed unless a release manifest proves it.
 - Tauri updater signatures are generated separately as `.sig` files for updater validation.

@@ -84,7 +84,7 @@ export function renderAppShell(state: AppState): string {
       ${state.showAddTrack ? renderAddTrackPanel() : ""}
       ${state.showAudioSettings ? renderAudioSettingsPanel(state) : ""}
       ${state.showUpdaterPanel ? renderUpdaterPanel(state) : ""}
-      ${state.showMcpSetupPanel ? renderMcpSetupPanel() : ""}
+      ${state.showMcpSetupPanel ? renderMcpSetupPanel(state) : ""}
       ${state.showFeedbackPanel ? renderFeedbackPanel(state) : ""}
       <section class="import-panel" data-layout-zone="import">
         <textarea id="importText" spellcheck="false" placeholder="Paste PCS1 share code, raw Pocket Chordsmith JSON, Pocket DJ source session, or .pocketdaw JSON">${escapeHtml(state.importText)}</textarea>
@@ -152,7 +152,7 @@ function renderMenuStrip(state: AppState): string {
       ])}
       ${renderMenuGroup("Help", [
         ["Check for Updates", "updater-open"],
-        ["Setup MCP Bridge", "mcp-setup-open"],
+        ["AI / MCP Bridge", "mcp-setup-open"],
         ["Send Feedback", "feedback-open"],
         ["More by Samfa12", "more-by-samfa12"],
         ["About / Diagnostics", "controls-open"],
@@ -1556,27 +1556,45 @@ function renderControlsPanel(state: AppState): string {
   `;
 }
 
-function renderMcpSetupPanel(): string {
+function renderMcpSetupPanel(state: AppState): string {
+  const project = currentProject(state);
   const command = pocketDawMcpCommandLine();
   const claudeConfig = pocketDawMcpClaudeConfig();
   const codexConfig = pocketDawMcpCodexConfig();
+  const bridge = state.aiBridge;
+  const liveStatus = bridge.runtimeAvailable
+    ? bridge.enabled ? "Enabled for this app session" : "Disabled"
+    : "Installed app runtime unavailable";
   return `
     <div class="modal-backdrop" data-mcp-setup-backdrop="true">
       <section class="controls-panel mcp-setup-panel" role="dialog" aria-modal="true" aria-labelledby="mcp-setup-title">
         <header>
-          <h2 id="mcp-setup-title">Setup MCP Bridge</h2>
+          <h2 id="mcp-setup-title">AI / MCP Bridge</h2>
           <button data-action="mcp-setup-close">Close</button>
         </header>
         <div class="control-guide">
-          <p><strong>Bridge</strong><span>Local stdio MCP server for reading, validating, creating, editing and export-planning Pocket DAW projects.</span></p>
+          <p><strong>Project</strong><span>${escapeHtml(project.project.title)} / ${escapeHtml(state.currentFile.path || state.currentFile.label)}</span></p>
+          <p><strong>File MCP</strong><span>Local stdio MCP server for reading, validating, creating, editing and export-planning Pocket DAW projects while the app is open or closed.</span></p>
+          <p><strong>Live bridge</strong><span>${escapeHtml(liveStatus)}. Live tools can read this running app, control transport, select tracks/clips and apply safe mixer edits.</span></p>
           <p><strong>Workspace</strong><span>${escapeHtml(POCKET_DAW_MCP_WORKSPACE)}</span></p>
           <p><strong>Writes</strong><span>MCP tools return proposed JSON by default and only write when an output path is provided.</span></p>
-          <p><strong>Use UI for</strong><span>Visual checks, playback confidence, updater smoke and anything that depends on the native app runtime.</span></p>
+          <p><strong>Session file</strong><span>${escapeHtml(bridge.sessionPath || "Created by the installed app at startup.")}</span></p>
+          <p><strong>Last live request</strong><span>${escapeHtml(bridge.lastRequestAt || "None this session.")}</span></p>
+          <p><strong>Live test</strong><span>${escapeHtml(bridge.lastError || bridge.testMessage)}</span></p>
+        </div>
+        <div class="control-guide">
+          <label class="checkbox-row">
+            <input type="checkbox" data-ai-bridge-enabled="true" ${bridge.enabled ? "checked" : ""} ${bridge.runtimeAvailable ? "" : "disabled"}>
+            <span>Enable live app bridge</span>
+          </label>
+          <p><strong>Endpoint</strong><span>${escapeHtml(bridge.url || "http://127.0.0.1:47858")}</span></p>
+          <p><strong>Auth</strong><span>Live endpoints require the bearer token from the local session file. File MCP tools do not need the app running.</span></p>
         </div>
         ${renderMcpConfigBlock("Command", "command", command)}
         ${renderMcpConfigBlock("Claude / JSON MCP clients", "claude-json", claudeConfig)}
         ${renderMcpConfigBlock("Codex config.toml", "codex-toml", codexConfig)}
         <div class="diagnostic-actions">
+          <button data-action="ai-bridge-test" ${bridge.enabled ? "" : "disabled"}>Test live bridge</button>
           <button data-action="copy-mcp-setup" data-copy-mcp-setup="all">Copy All</button>
           <button data-action="mcp-setup-close">Close</button>
         </div>

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -20,11 +20,15 @@ describe("Pocket DAW MCP tools", () => {
       "pocket_daw_validate_project",
       "pocket_daw_create_from_chordsmith",
       "pocket_daw_apply_commands",
-      "pocket_daw_export_plan"
+      "pocket_daw_export_plan",
+      "pocket_daw_live_status",
+      "pocket_daw_live_control",
+      "pocket_daw_live_apply_commands"
     ]));
     expect(toolList.every((tool) => tool.inputSchema.type === "object")).toBe(true);
     expect(toolList.every((tool) => tool.inputSchema.additionalProperties === false)).toBe(true);
-    expect(toolList.find((tool) => tool.name === "pocket_daw_apply_commands")?.inputSchema.properties.commands).toMatchObject({
+    const applySchema = toolList.find((tool) => tool.name === "pocket_daw_apply_commands")?.inputSchema as { properties: Record<string, unknown> } | undefined;
+    expect(applySchema?.properties.commands).toMatchObject({
       type: "array",
       items: {
         type: "object",
@@ -82,6 +86,50 @@ describe("Pocket DAW MCP tools", () => {
       raw: buildPocketDawProjectFile(createDemoProject()),
       commands: [{ type: "delete_everything" }]
     })).rejects.toThrow("Unsupported Pocket DAW MCP command");
+  });
+
+  it("reports live bridge unavailable when the app session file is missing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-live-missing-"));
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_live_status", {
+      sessionPath: join(dir, "missing-session.json")
+    }));
+
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe("app_not_running");
+  });
+
+  it("sends live control through the tokened app bridge", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-live-"));
+    const sessionPath = join(dir, "ai-bridge-session.json");
+    writeFileSync(sessionPath, JSON.stringify({
+      statusUrl: "http://127.0.0.1:47858/pocket-daw/live/status",
+      controlUrl: "http://127.0.0.1:47858/pocket-daw/live/control",
+      token: "test-token"
+    }));
+    const originalFetch = globalThis.fetch;
+    let requestBody = "";
+    let auth = "";
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      auth = String(init?.headers instanceof Headers ? init.headers.get("Authorization") : (init?.headers as Record<string, string>)?.Authorization || "");
+      requestBody = String(init?.body || "");
+      return new Response(JSON.stringify({ ok: true, transport: { playing: true } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_live_control", {
+        sessionPath,
+        action: "play"
+      }));
+
+      expect(result.ok).toBe(true);
+      expect(auth).toBe("Bearer test-token");
+      expect(JSON.parse(requestBody)).toMatchObject({ action: "play" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

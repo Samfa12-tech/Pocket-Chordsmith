@@ -11,6 +11,14 @@ import { listenForDeepLinkHandoffs, readInitialDeepLinkHandoff, type HandoffBrid
 import { downloadBlob, openProjectFileNative, safeName, saveProjectFile } from "../native/fileBridge";
 import { readPocketDawHandoff, type PocketDawHandoff } from "../native/pocketHandoff";
 import {
+  listenForAiBridgeRequests,
+  readAiBridgeEnabledPreference,
+  saveAiBridgeEnabledPreference,
+  setAiBridgeEnabled,
+  uiStatusFromSession,
+  type AiBridgeRequestPayload
+} from "../native/aiBridge";
+import {
   loadAutosave,
   loadAutosaveFileState,
   loadRecentProjects,
@@ -147,6 +155,12 @@ type MixerControlField = "volume" | "pan";
 type RenderSchedule = "none" | "live-dom" | "deferred" | "immediate";
 type ScrollSnapshot = Record<string, { top: number; left: number }>;
 type ClipDragMode = "move" | "repeat";
+type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "apply_commands";
+type AiBridgeLiveCommand =
+  | { type: "set_track_volume"; trackId: string; volume: number }
+  | { type: "set_track_pan"; trackId: string; pan: number }
+  | { type: "set_track_mute"; trackId: string; mute: boolean }
+  | { type: "set_track_solo"; trackId: string; solo: boolean };
 
 interface RenderOptions {
   preserveScroll?: boolean;
@@ -190,6 +204,7 @@ export class App {
   private recordingStartToken = 0;
   private recordingStatusBusy = false;
   private inputPreviewKey: string | null = null;
+  private aiBridgeUnlisten: (() => void) | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -257,6 +272,8 @@ export class App {
     }
     this.render();
     this.bindDeepLinkHandoffs();
+    void this.configureAiBridgeFromPreference();
+    void this.bindAiBridgeRequests();
     this.engine.prewarmNativeRenderCache("app-start");
     this.scheduleStartupUpdateCheck();
     void this.syncArmedInputPreview();
@@ -281,6 +298,224 @@ export class App {
     this.deepLinkUnlisten = await listenForDeepLinkHandoffs((handoff) => {
       this.consumeHandoff(handoff);
     }, (status) => this.recordHandoffBridgeStatus(status));
+  }
+
+  private async configureAiBridgeFromPreference() {
+    const enabled = readAiBridgeEnabledPreference();
+    try {
+      const session = await setAiBridgeEnabled(enabled);
+      this.state.aiBridge = uiStatusFromSession(session, {
+        testMessage: session?.enabled ? "Live app bridge is enabled." : "Live app bridge is disabled."
+      });
+    } catch (error) {
+      this.state.aiBridge = {
+        ...this.state.aiBridge,
+        runtimeAvailable: true,
+        enabled: false,
+        lastError: error instanceof Error ? error.message : String(error || "Could not initialize AI bridge."),
+        testMessage: "Could not initialize live app bridge."
+      };
+    }
+    if (this.state.showMcpSetupPanel) this.render({ preserveScroll: true });
+  }
+
+  private async toggleAiBridgeEnabled(enabled: boolean) {
+    saveAiBridgeEnabledPreference(enabled);
+    try {
+      const session = await setAiBridgeEnabled(enabled);
+      this.state.aiBridge = uiStatusFromSession(session, {
+        testMessage: session?.enabled ? "Live app bridge enabled. MCP live tools can now control this running app." : "Live app bridge disabled."
+      });
+    } catch (error) {
+      this.state.aiBridge = {
+        ...this.state.aiBridge,
+        enabled: false,
+        lastError: error instanceof Error ? error.message : String(error || "Could not update AI bridge."),
+        testMessage: "Could not update live app bridge."
+      };
+    }
+    this.render({ preserveScroll: true });
+  }
+
+  private async bindAiBridgeRequests() {
+    if (this.aiBridgeUnlisten) return;
+    this.aiBridgeUnlisten = await listenForAiBridgeRequests((payload) => this.handleAiBridgeRequest(payload));
+  }
+
+  private async handleAiBridgeRequest(payload: AiBridgeRequestPayload): Promise<unknown> {
+    this.state.aiBridge = {
+      ...this.state.aiBridge,
+      lastRequestAt: new Date().toISOString(),
+      lastError: null
+    };
+    try {
+      if (payload.kind === "status") return this.aiBridgeLiveStatus();
+      if (payload.kind === "control") return await this.handleAiBridgeControl(this.parseAiBridgeBody(payload.body));
+      return {
+        ok: false,
+        code: "unknown_request_kind",
+        message: `Unsupported Pocket DAW live bridge request kind: ${payload.kind}`
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || "Pocket DAW live bridge request failed.");
+      this.state.aiBridge = { ...this.state.aiBridge, lastError: message };
+      return { ok: false, code: "request_failed", message };
+    }
+  }
+
+  private parseAiBridgeBody(body: string): Record<string, unknown> {
+    if (!body.trim()) return {};
+    const parsed = JSON.parse(body);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("AI bridge control body must be a JSON object.");
+    return parsed as Record<string, unknown>;
+  }
+
+  private aiBridgeLiveStatus() {
+    const project = currentProject(this.state);
+    this.state.nativeCacheStatus = nativeCacheStatusFromDiagnostics(this.engine.getDiagnostics());
+    return {
+      ok: true,
+      available: true,
+      enabled: this.state.aiBridge.enabled,
+      app: "Pocket DAW",
+      project: {
+        title: project.project.title,
+        path: this.state.currentFile.path,
+        label: this.state.currentFile.label,
+        version: POCKET_DAW_VERSION,
+        schemaVersion: project.schemaVersion,
+        bars: project.timeline.bars,
+        trackCount: project.tracks.length,
+        clipCount: project.timeline.clips.length
+      },
+      transport: {
+        playing: this.state.playing || this.engine.isPlaying(),
+        playheadBar: this.state.playheadBar,
+        bpm: project.project.bpm,
+        loop: project.timeline.loop
+      },
+      selection: {
+        trackId: this.state.selectedTrackId,
+        clipId: this.state.selectedClipId,
+        trackName: project.tracks.find((track) => track.id === this.state.selectedTrackId)?.name || null,
+        clipName: project.timeline.clips.find((clip) => clip.id === this.state.selectedClipId)?.name || null
+      },
+      recording: this.state.recording,
+      nativeCache: this.state.nativeCacheStatus,
+      tracks: project.tracks.map((track) => ({
+        id: track.id,
+        name: track.name,
+        role: track.role,
+        type: track.trackType,
+        volume: track.volume,
+        pan: track.pan,
+        mute: track.mute,
+        solo: track.solo
+      })),
+      capabilities: {
+        control: ["play", "pause", "stop", "restart", "seek_bar", "save_current", "select_track", "select_clip"],
+        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo"]
+      }
+    };
+  }
+
+  private async handleAiBridgeControl(input: Record<string, unknown>): Promise<unknown> {
+    const action = typeof input.action === "string" ? input.action as AiBridgeControlAction : "";
+    if (!action) return { ok: false, code: "missing_action", message: "Pocket DAW live control requires an action." };
+    if (action === "play") {
+      await this.playTransport();
+      this.render({ preserveScroll: true });
+      return { ok: true, action, status: "playing", transport: this.aiBridgeLiveStatus().transport };
+    }
+    if (action === "pause") {
+      this.engine.pause();
+      this.stopLiveMetronome();
+      this.render({ preserveScroll: true });
+      return { ok: true, action, status: "paused", transport: this.aiBridgeLiveStatus().transport };
+    }
+    if (action === "stop") {
+      this.engine.stop();
+      this.stopLiveMetronome();
+      this.render({ preserveScroll: true });
+      return { ok: true, action, status: "stopped", transport: this.aiBridgeLiveStatus().transport };
+    }
+    if (action === "restart") {
+      await this.restartTransport();
+      this.render({ preserveScroll: true });
+      return { ok: true, action, status: "restarted", transport: this.aiBridgeLiveStatus().transport };
+    }
+    if (action === "seek_bar") {
+      const bar = numberInput(input.bar, "bar");
+      this.seekToBar(bar, true);
+      this.render({ preserveScroll: true });
+      return { ok: true, action, bar: this.state.playheadBar, transport: this.aiBridgeLiveStatus().transport };
+    }
+    if (action === "save_current") {
+      if (!this.state.currentFile.path) {
+        return { ok: false, code: "needs_save_as", message: "Current Pocket DAW project has no file path. Save As is not triggered through MCP v1." };
+      }
+      await this.saveProject(false);
+      return { ok: true, action, path: this.state.currentFile.path, message: this.state.status };
+    }
+    if (action === "select_track") {
+      const trackId = stringInput(input.trackId, "trackId");
+      const track = currentProject(this.state).tracks.find((item) => item.id === trackId);
+      if (!track) return { ok: false, code: "track_not_found", message: `Track not found: ${trackId}` };
+      this.state.selectedTrackId = trackId;
+      this.state.status = `Selected ${track.name}.`;
+      this.render({ preserveScroll: true });
+      return { ok: true, action, trackId, trackName: track.name };
+    }
+    if (action === "select_clip") {
+      const clipId = stringInput(input.clipId, "clipId");
+      const project = currentProject(this.state);
+      const clip = project.timeline.clips.find((item) => item.id === clipId);
+      if (!clip) return { ok: false, code: "clip_not_found", message: `Clip not found: ${clipId}` };
+      this.state.selectedClipId = clipId;
+      this.state.selectedTrackId = clip.trackId || this.state.selectedTrackId;
+      this.state.status = `Selected ${clip.name}.`;
+      this.render({ preserveScroll: true });
+      return { ok: true, action, clipId, clipName: clip.name, trackId: clip.trackId };
+    }
+    if (action === "apply_commands") {
+      const commands = Array.isArray(input.commands) ? input.commands as AiBridgeLiveCommand[] : [];
+      return this.applyAiBridgeLiveCommands(commands);
+    }
+    return { ok: false, code: "unknown_action", message: `Unsupported Pocket DAW live control action: ${action}` };
+  }
+
+  private applyAiBridgeLiveCommands(commands: AiBridgeLiveCommand[]) {
+    if (!commands.length) return { ok: false, code: "missing_commands", message: "apply_commands requires a non-empty commands array." };
+    const statuses: string[] = [];
+    for (const command of commands) {
+      const next = this.applyAiBridgeLiveCommand(command);
+      this.applyProjectState(next, { audio: "mixer-graph", autosave: "debounced", preserveScroll: true, reason: "ai-bridge-live-command" });
+      statuses.push(this.state.status);
+    }
+    return {
+      ok: true,
+      action: "apply_commands",
+      commandCount: commands.length,
+      statuses,
+      summary: this.aiBridgeLiveStatus()
+    };
+  }
+
+  private applyAiBridgeLiveCommand(command: AiBridgeLiveCommand): AppState {
+    const project = currentProject(this.state);
+    const trackId = typeof command.trackId === "string" ? command.trackId : "";
+    if (!project.tracks.some((track) => track.id === trackId)) throw new Error(`Track not found: ${trackId || "[missing trackId]"}`);
+    if (command.type === "set_track_volume") return setTrackVolumeCommand(this.state, trackId, numberInput(command.volume, "volume"));
+    if (command.type === "set_track_pan") return setTrackPanCommand(this.state, trackId, numberInput(command.pan, "pan"));
+    if (command.type === "set_track_mute") {
+      const track = project.tracks.find((item) => item.id === trackId);
+      return track?.mute === Boolean(command.mute) ? { ...this.state, status: "Track mute already matched." } : toggleTrackMuteCommand(this.state, trackId);
+    }
+    if (command.type === "set_track_solo") {
+      const track = project.tracks.find((item) => item.id === trackId);
+      return track?.solo === Boolean(command.solo) ? { ...this.state, status: "Track solo already matched." } : toggleTrackSoloCommand(this.state, trackId);
+    }
+    throw new Error(`Unsupported live command: ${(command as { type?: string }).type || "[missing type]"}`);
   }
 
   private recordHandoffResult(handoff: PocketDawHandoff, result: HandoffResult, message: string) {
@@ -569,6 +804,9 @@ export class App {
       saveUpdaterAutoCheckPreference(input.checked);
       this.state.updaterMessage = input.checked ? "Pocket DAW will check silently on startup." : "Startup update checks are off.";
       this.render();
+    });
+    this.root.querySelector<HTMLInputElement>("[data-ai-bridge-enabled]")?.addEventListener("change", (event) => {
+      void this.toggleAiBridgeEnabled((event.target as HTMLInputElement).checked);
     });
     ["loopStart", "loopEnd"].forEach((id) => {
       this.root.querySelector<HTMLInputElement>(`#${id}`)?.addEventListener("change", () => {
@@ -1299,12 +1537,14 @@ export class App {
     if (action === "mcp-setup-open") {
       this.state.showMcpSetupPanel = true;
       this.render();
+      void this.configureAiBridgeFromPreference();
     }
     if (action === "mcp-setup-close") {
       this.state.showMcpSetupPanel = false;
       this.render();
     }
     if (action === "copy-mcp-setup") await this.copyMcpSetup(actionSource?.dataset.copyMcpSetup || "all");
+    if (action === "ai-bridge-test") await this.testAiBridgeConnection();
     if (action === "updater-check") await this.checkForUpdates(true);
     if (action === "updater-download-install") await this.downloadAndInstallUpdate();
     if (action === "updater-restart") await this.restartAfterUpdate();
@@ -3160,6 +3400,41 @@ export class App {
     this.render({ preserveScroll: true });
   }
 
+  private async testAiBridgeConnection() {
+    const bridge = this.state.aiBridge;
+    if (!bridge.statusUrl || !bridge.enabled) {
+      this.state.aiBridge = {
+        ...bridge,
+        testMessage: bridge.runtimeAvailable ? "Enable the live app bridge before testing." : "Live app bridge is only available in the installed app."
+      };
+      this.render({ preserveScroll: true });
+      return;
+    }
+    try {
+      const session = await setAiBridgeEnabled(true);
+      const response = await fetch(session?.statusUrl || bridge.statusUrl, {
+        headers: {
+          Authorization: `Bearer ${session?.token || ""}`
+        }
+      });
+      const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; project?: { title?: string } } | null;
+      this.state.aiBridge = uiStatusFromSession(session, {
+        enabled: !!session?.enabled,
+        testMessage: response.ok && payload?.ok
+          ? `Live bridge OK: ${payload.project?.title || "current project"} is reachable.`
+          : payload?.message || `Live bridge test returned HTTP ${response.status}.`,
+        lastError: response.ok ? null : payload?.message || `HTTP ${response.status}`
+      });
+    } catch (error) {
+      this.state.aiBridge = {
+        ...bridge,
+        lastError: error instanceof Error ? error.message : String(error || "Live bridge test failed."),
+        testMessage: "Live bridge test failed."
+      };
+    }
+    this.render({ preserveScroll: true });
+  }
+
   private async sendFeedbackEmail() {
     const diagnostics = this.buildDiagnosticsPayload();
     const text = diagnosticsJson(diagnostics);
@@ -3290,6 +3565,17 @@ export class App {
     const snapshot = savePreImportRecovery(buildPocketDawProjectFile(project), this.state.currentFile, reason);
     return snapshot ? `Previous project recovery snapshot saved as ${snapshot.file.label}.` : "";
   }
+}
+
+function stringInput(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required.`);
+  return value;
+}
+
+function numberInput(value: unknown, label: string): number {
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(number)) throw new Error(`${label} must be a finite number.`);
+  return number;
 }
 
 function nativeCacheStatusFromDiagnostics(diagnostics: ReturnType<AudioEngine["getDiagnostics"]>): NativeCacheUiStatus {

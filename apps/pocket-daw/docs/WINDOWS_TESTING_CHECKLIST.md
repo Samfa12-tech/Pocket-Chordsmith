@@ -5,7 +5,7 @@ Run this against the exact installed Windows alpha from itch/GitHub release arti
 Current alpha target:
 
 - App: Pocket DAW
-- Version: `0.6.12` source target; installed-app smoke for `0.6.12` is Pending
+- Version: `0.6.12` public artifact target; post-`0.6.12` AI / MCP bridge source smoke is pending next updater checkpoint
 - Source commit at packaging time: `ea14a2c0e519119e063571db57979ea2c41b714e`
 - Generated manifest note: dirty working tree was `false`.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
@@ -25,6 +25,8 @@ Current alpha target:
 - Tauri updater signatures: `.sig` files are updater-validation signatures and are separate from Windows code signing.
 
 Manual smoke status: `0.6.12` PENDING. Historical `0.6.9` evidence remains useful context, and `0.6.10` verifies the basic bootstrapper install path but not the MCP setup panel or auto-close bootstrapper behavior.
+
+Post-`0.6.12` bridge rows apply after the next installer/updater checkpoint is built from current source.
 
 Historical manual evidence from Sam on 2026-06-14:
 
@@ -48,6 +50,12 @@ Historical manual evidence from Sam on 2026-06-14:
 | Install / launch | Launch Pocket DAW from the Start Menu or installed shortcut. | Installed app opens without needing an extracted app folder. | App opened; exact launch surface not recorded. | Partial | Sam / 2026-06-14 | Confirm Start Menu/installed shortcut explicitly on next pass. |
 | Install / launch | Launch after reboot if practical. | Installed app still launches normally after Windows restart. | Manual / Not run | Manual / Not run |  |  |
 | Install / launch | Open About/Diagnostics and confirm app version/build id. | Version `0.6.12` and build/commit information are visible or explicitly unavailable. | Manual / Not run | Manual / Not run |  | Historical v0.5.13 diagnostics evidence exists, but does not verify v0.6.12. |
+| AI / MCP bridge | Open Help -> AI / MCP Bridge. | Panel shows current file/project status, file MCP snippets, live bridge enabled state, session file path, and Test live bridge action. | Manual / Not run | Manual / Not run |  | Post-0.6.12 source checkpoint. |
+| AI / MCP bridge | Enable live app bridge, then run `pocket_daw_live_status` from Codex. | MCP reports current project, transport, selection, recording and native-cache status. | Manual / Not run | Manual / Not run |  | Session token should come from the local session file, not pasted manually. |
+| AI / MCP bridge | Run live control actions: play, pause, stop, restart and seek to bar. | App transport follows MCP actions and no broad UI automation is needed. | Manual / Not run | Manual / Not run |  | Playback confidence still needs human audio check. |
+| AI / MCP bridge | Use MCP live commands to change Bass volume/pan/mute/solo. | UI state and audio state update through existing app command paths. | Manual / Not run | Manual / Not run |  | Safe mixer edits only in v1. |
+| AI / MCP bridge | Save an already-saved project through MCP, then try from an unsaved project. | Saved project writes; unsaved project returns `needs_save_as` without opening a native Save As dialog. | Manual / Not run | Manual / Not run |  | v1 intentionally avoids native dialogs from MCP. |
+| AI / MCP bridge | Close Pocket DAW and run live/file MCP tools. | Live tools report app unavailable; file MCP tools still read/validate a `.pocketdaw` file. | Manual / Not run | Manual / Not run |  | Confirms live bridge is additive, not a replacement for file MCP. |
 | Install / launch | Open and close the About/Diagnostics panel at installed-app desktop size. | Panel renders below the top menu/control bars and the close button remains clickable. | About panel rendered underneath the control bar; close control was not reachable. | Fail | Sam / 2026-06-14 | Fix next: move modal/panel down or constrain it within the visible app content area. |
 | Install / launch | Uninstall, reinstall, then open the app. | Expected user data is preserved or loss/caveat is documented; reinstall does not corrupt projects. | Manual / Not run | Manual / Not run |  |  |
 | Basic audio | Load Demo, press Play, then Stop and Restart. | Demo plays audibly, stops, and restarts from the expected position. | Demo loaded and played audibly. | Pass | Sam / 2026-06-14 | Stop/restart not separately recorded. |

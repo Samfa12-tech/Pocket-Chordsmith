@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, normalize, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import {
   addMarkerAtPlayheadCommand,
   commitProject,
@@ -26,7 +27,10 @@ export const POCKET_DAW_MCP_TOOLS = [
   "pocket_daw_validate_project",
   "pocket_daw_create_from_chordsmith",
   "pocket_daw_apply_commands",
-  "pocket_daw_export_plan"
+  "pocket_daw_export_plan",
+  "pocket_daw_live_status",
+  "pocket_daw_live_control",
+  "pocket_daw_live_apply_commands"
 ] as const;
 
 export type PocketDawMcpTool = (typeof POCKET_DAW_MCP_TOOLS)[number];
@@ -43,6 +47,27 @@ export type PocketDawMcpCommand =
   | { type: "cycle_bass_step"; sectionId: string; step: number }
   | { type: "cycle_melody_step"; sectionId: string; trackIndex: number; step: number }
   | { type: "set_fx_parameter"; chainId: string; slotId: string; parameter: string; value: number | boolean };
+
+export type PocketDawLiveCommand =
+  | { type: "set_track_volume"; trackId: string; volume: number }
+  | { type: "set_track_pan"; trackId: string; pan: number }
+  | { type: "set_track_mute"; trackId: string; mute: boolean }
+  | { type: "set_track_solo"; trackId: string; solo: boolean };
+
+interface PocketDawLiveSession {
+  app?: string;
+  url?: string;
+  statusUrl?: string;
+  controlUrl?: string;
+  token?: string;
+  enabled?: boolean;
+  sessionPath?: string;
+  processId?: number;
+  startedAt?: string;
+}
+
+export const POCKET_DAW_LIVE_SESSION_FILE = process.env.POCKET_DAW_LIVE_BRIDGE_FILE ||
+  join(process.env.LOCALAPPDATA || tmpdir(), "Pocket DAW", "ai-bridge-session.json");
 
 interface ProjectInput {
   projectPath?: string;
@@ -65,6 +90,12 @@ export async function callPocketDawMcpTool(name: string, args: unknown = {}): Pr
       return jsonToolResult(applyCommands(args));
     case "pocket_daw_export_plan":
       return jsonToolResult(exportPlan(args));
+    case "pocket_daw_live_status":
+      return jsonToolResult(await liveStatus(args));
+    case "pocket_daw_live_control":
+      return jsonToolResult(await liveControl(args));
+    case "pocket_daw_live_apply_commands":
+      return jsonToolResult(await liveApplyCommands(args));
     default:
       throw new Error(`Unknown Pocket DAW MCP tool: ${name}`);
   }
@@ -104,6 +135,36 @@ export function pocketDawMcpToolList() {
       description: "Summarize stem, section-loop and game-pack export plans without WebAudio/native rendering.",
       inputSchema: objectSchema({ projectPath: stringSchema(), raw: stringSchema() }),
       annotations: readOnlyToolAnnotations()
+    },
+    {
+      name: "pocket_daw_live_status",
+      description: "Read status from a running installed Pocket DAW app when its live bridge is enabled.",
+      inputSchema: objectSchema({ sessionPath: stringSchema() }),
+      annotations: readOnlyToolAnnotations()
+    },
+    {
+      name: "pocket_daw_live_control",
+      description: "Control a running Pocket DAW app transport, selection, or saved-project save through the tokened local live bridge.",
+      inputSchema: objectSchema({
+        action: {
+          type: "string",
+          enum: ["play", "pause", "stop", "restart", "seek_bar", "save_current", "select_track", "select_clip"]
+        },
+        bar: numberSchema(),
+        trackId: stringSchema(),
+        clipId: stringSchema(),
+        sessionPath: stringSchema()
+      }, ["action"]),
+      annotations: liveControlToolAnnotations()
+    },
+    {
+      name: "pocket_daw_live_apply_commands",
+      description: "Apply deterministic safe mixer edits to a running Pocket DAW app through the tokened local live bridge.",
+      inputSchema: objectSchema({
+        commands: arraySchema(liveCommandSchema()),
+        sessionPath: stringSchema()
+      }, ["commands"]),
+      annotations: liveControlToolAnnotations()
     }
   ];
 }
@@ -177,6 +238,108 @@ function exportPlan(args: unknown) {
       web: createGameExportManifest(project, "web-game-pack")
     }
   };
+}
+
+async function liveStatus(args: unknown) {
+  const session = readLiveSession(asRecord(args));
+  if (!session.ok) return session;
+  return liveFetch(session.session.statusUrl, session.session, "GET");
+}
+
+async function liveControl(args: unknown) {
+  const options = asRecord(args);
+  const session = readLiveSession(options);
+  if (!session.ok) return session;
+  const body = { ...options };
+  delete body.sessionPath;
+  return liveFetch(session.session.controlUrl, session.session, "POST", body);
+}
+
+async function liveApplyCommands(args: unknown) {
+  const options = asRecord(args);
+  const session = readLiveSession(options);
+  if (!session.ok) return session;
+  const commands = Array.isArray(options.commands) ? options.commands as PocketDawLiveCommand[] : [];
+  if (!commands.length) throw new Error("pocket_daw_live_apply_commands requires a non-empty commands array.");
+  return liveFetch(session.session.controlUrl, session.session, "POST", {
+    action: "apply_commands",
+    commands
+  });
+}
+
+function readLiveSession(options: Record<string, unknown>): { ok: true; session: Required<Pick<PocketDawLiveSession, "statusUrl" | "controlUrl" | "token">> & PocketDawLiveSession } | { ok: false; available: false; code: string; message: string; sessionPath: string } {
+  const sessionPath = stringValue(options.sessionPath) || POCKET_DAW_LIVE_SESSION_FILE;
+  if (!existsSync(sessionPath)) {
+    return {
+      ok: false,
+      available: false,
+      code: "app_not_running",
+      message: "Pocket DAW live bridge session file was not found. Open the installed app and enable Help > AI / MCP Bridge.",
+      sessionPath
+    };
+  }
+  try {
+    const session = JSON.parse(readFileSync(sessionPath, "utf8")) as PocketDawLiveSession;
+    if (!session.statusUrl || !session.controlUrl || !session.token) {
+      return {
+        ok: false,
+        available: false,
+        code: "invalid_session",
+        message: "Pocket DAW live bridge session file is missing statusUrl, controlUrl, or token.",
+        sessionPath
+      };
+    }
+    return {
+      ok: true,
+      session: {
+        ...session,
+        statusUrl: session.statusUrl,
+        controlUrl: session.controlUrl,
+        token: session.token,
+        sessionPath
+      }
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      available: false,
+      code: "invalid_session",
+      message: error instanceof Error ? error.message : "Could not read Pocket DAW live bridge session file.",
+      sessionPath
+    };
+  }
+}
+
+async function liveFetch(url: string, session: Pick<PocketDawLiveSession, "token">, method: "GET" | "POST", body?: unknown) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3500);
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${session.token || ""}`,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" })
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal
+    });
+    const text = await response.text();
+    const parsed = (text.trim() ? JSON.parse(text) : {}) as Record<string, unknown>;
+    return {
+      ...parsed,
+      httpStatus: response.status,
+      ok: response.ok && parsed.ok !== false
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      available: false,
+      code: error instanceof Error && error.name === "AbortError" ? "app_timeout" : "app_unavailable",
+      message: error instanceof Error ? error.message : "Pocket DAW live bridge is unavailable."
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
@@ -377,6 +540,23 @@ function commandSchema() {
   );
 }
 
+function liveCommandSchema() {
+  return objectSchema(
+    {
+      type: {
+        type: "string",
+        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo"]
+      },
+      trackId: stringSchema(),
+      volume: numberSchema(),
+      pan: numberSchema(),
+      mute: booleanSchema(),
+      solo: booleanSchema()
+    },
+    ["type", "trackId"]
+  );
+}
+
 function numberSchema() {
   return { type: "number" };
 }
@@ -390,6 +570,14 @@ function readOnlyToolAnnotations() {
 }
 
 function writeOnlyWhenOutputPathAnnotations() {
+  return {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false
+  };
+}
+
+function liveControlToolAnnotations() {
   return {
     readOnlyHint: false,
     destructiveHint: false,
