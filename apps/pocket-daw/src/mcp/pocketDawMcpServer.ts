@@ -85,6 +85,5 @@ async function handleRequest(request: JsonRpcRequest) {
 }
 
 function writeMessage(message: unknown) {
-  const json = JSON.stringify(message);
-  stdout.write(`Content-Length: ${Buffer.byteLength(json, "utf8")}\r\n\r\n${json}`);
+  stdout.write(`${JSON.stringify(message)}\n`);
 }

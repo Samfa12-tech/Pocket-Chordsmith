@@ -125,5 +125,6 @@ describe("Pocket DAW MCP server handshake", () => {
     expect(output).toContain('"protocolVersion":"2025-06-18"');
     expect(output).toContain('"name":"pocket_daw"');
     expect(output).toContain('"listChanged":false');
+    expect(output).not.toContain("Content-Length:");
   });
 });
