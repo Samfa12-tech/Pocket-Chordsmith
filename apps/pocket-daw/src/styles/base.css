@@ -1569,6 +1569,48 @@ button.record:hover {
   padding: 0 18px 18px;
 }
 
+.mcp-setup-panel {
+  width: min(780px, 100%);
+}
+
+.mcp-config-block {
+  display: grid;
+  gap: 8px;
+  margin: 0 18px 14px;
+  padding: 12px;
+  border: 1px solid #2d3958;
+  border-radius: 6px;
+  background: #0d1322;
+}
+
+.mcp-config-block header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+}
+
+.mcp-config-block strong {
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.mcp-config-block textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid #293550;
+  border-radius: 6px;
+  padding: 10px;
+  color: #dbe7ff;
+  background: #080d18;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .export-panel {
   grid-area: export;
   display: grid;

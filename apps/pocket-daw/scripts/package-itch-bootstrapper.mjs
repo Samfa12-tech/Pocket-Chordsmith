@@ -51,7 +51,8 @@ try {
   }
 
   Write-Host "Verified Pocket DAW installer hash. Launching setup..."
-  Start-Process -FilePath $installerPath -Wait
+  Start-Process -FilePath $installerPath
+  Write-Host "Pocket DAW setup launched. The bootstrapper can close now."
   exit 0
 } catch {
   Write-Host ""
@@ -127,6 +128,7 @@ Name "Pocket DAW Bootstrapper"
 OutFile "${outFile}"
 RequestExecutionLevel user
 ShowInstDetails show
+AutoCloseWindow true
 
 Section "Download and install Pocket DAW"
   SetOutPath "$TEMP\\PocketDawBootstrapper"

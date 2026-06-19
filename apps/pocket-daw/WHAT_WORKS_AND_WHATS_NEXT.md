@@ -1,21 +1,25 @@
-# Pocket DAW v0.6.10 - What Works and What's Next
+# Pocket DAW v0.6.11 - What Works and What's Next
 
 ## Current public alpha
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current source target: `0.6.10` bootstrapper/updater workflow and MCP bridge alpha
+- Current source target: `0.6.11` bootstrapper close behavior and in-app MCP bridge setup
 - Last completed public artifact record in this repo: `0.6.10`
 - Last installed public smoke evidence in this repo: `0.6.9` partial; `0.6.10` bootstrapper install smoke remains pending
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Current source commit: `8fa90decbfb0c90bc4aef5e17963afc8028e9231`
+- Current source commit: pending this release commit
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
 
-## v0.6.10 Bootstrapper And MCP Bridge - bootstrapper smoke pending
+## v0.6.11 Bootstrapper Close And MCP Setup - publication pending
 
-`0.6.10` moves normal public app updates to GitHub Releases plus the Tauri updater. The itch channel should now carry the small bootstrapper upload from `releases/itch-bootstrapper/upload/`; it downloads the latest GitHub setup EXE, verifies SHA-256 from `pocket-daw-bootstrapper-latest.json`, and launches the verified installer.
+`0.6.11` keeps the `0.6.10` GitHub-updater/bootstrapper model, makes the bootstrapper close after launching the verified setup EXE, and adds `Help -> Setup MCP Bridge` in the installed app with copy-ready command, Claude/JSON and Codex TOML snippets.
+
+## v0.6.10 Bootstrapper And MCP Bridge - bootstrapper smoke passed
+
+`0.6.10` moves normal public app updates to GitHub Releases plus the Tauri updater. The itch channel should now carry the small bootstrapper upload from `releases/itch-bootstrapper/upload/`; it downloads the latest GitHub setup EXE, verifies SHA-256 from `pocket-daw-bootstrapper-latest.json`, launches the verified installer, and closes after setup launches.
 
 This release also adds `npm run mcp:pocket-daw`, a local stdio MCP bridge for structured project read/validate/import/edit/export-plan tasks. Computer/browser control remains the right path for installed-app visual QA, playback confidence and updater smoke.
 
@@ -24,7 +28,7 @@ Published evidence as of 2026-06-19:
 - Itch channel `samfa12/pocket-daw:windows-installer` build `#1737832`, user version `bootstrapper-0.6.10`, now carries the bootstrapper-only upload instead of the full setup/MSI installer pair.
 - GitHub release `pocket-daw-v0.6.10` was published with setup EXE/MSI, updater signatures, release manifest, checksums, `pocket-daw-latest.json`, `pocket-daw-bootstrapper-latest.json`, and `Pocket_DAW_Itch_Bootstrapper_v0.6.10.exe`.
 - Remote setup EXE SHA-256 was verified as `c893ddcc545738c79fb72bd486b75cbe263534b466fcd4d2f593574d509fd00e`.
-- Bootstrapper EXE SHA-256 is `acb60b6c38226f67186b7a1d644504b4ffae7abb4e4d1f43fa13a3a2bbe8230f`.
+- Bootstrapper EXE SHA-256 is `5e966c6a1ef1397484ded8d5ae1f9c9bbdb5a3f3d4dd5cbc451c41ec83570e68`.
 
 ## v0.6.9 Native Lofi Bass Hotfix - installed smoke pending
 

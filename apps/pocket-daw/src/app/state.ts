@@ -38,6 +38,7 @@ export interface AppState {
   showAddTrack: boolean;
   showAudioSettings: boolean;
   showUpdaterPanel: boolean;
+  showMcpSetupPanel: boolean;
   showFeedbackPanel: boolean;
   feedbackText: string;
   updaterStatus: UpdaterState;
@@ -127,6 +128,7 @@ export function createInitialState(): AppState {
     showAddTrack: false,
     showAudioSettings: false,
     showUpdaterPanel: false,
+    showMcpSetupPanel: false,
     showFeedbackPanel: false,
     feedbackText: "",
     updaterStatus: "idle",

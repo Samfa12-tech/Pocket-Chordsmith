@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import packageJson from "../package.json" with { type: "json" };
 import { makeBootstrapperManifest } from "../scripts/make-bootstrapper-manifest.mjs";
 import { assertBootstrapperUploadContents, BOOTSTRAPPER_MANIFEST_URL, bootstrapperPowerShell } from "../scripts/package-itch-bootstrapper.mjs";
 
@@ -41,13 +42,15 @@ describe("Pocket DAW itch bootstrapper release helpers", () => {
     expect(script).not.toContain("$manifestResponse.Content | ConvertFrom-Json");
     expect(script).toContain("Get-FileHash -Algorithm SHA256");
     expect(script).toContain("Installer SHA-256 mismatch");
-    expect(script).toContain("Start-Process -FilePath $installerPath -Wait");
+    expect(script).toContain("Start-Process -FilePath $installerPath");
+    expect(script).not.toContain("Start-Process -FilePath $installerPath -Wait");
+    expect(script).toContain("The bootstrapper can close now");
     expect(script).toContain("Manual fallback");
   });
 
   it("packages only the stable bootstrapper upload files", () => {
     const dir = mkdtempSync(join(tmpdir(), "pocket-daw-bootstrapper-upload-"));
-    writeFileSync(join(dir, "Pocket_DAW_Itch_Bootstrapper_v0.6.10.exe"), "test exe");
+    writeFileSync(join(dir, `Pocket_DAW_Itch_Bootstrapper_v${packageJson.version}.exe`), "test exe");
     writeFileSync(join(dir, "README_FIRST.txt"), "readme");
     writeFileSync(join(dir, "CHECKSUMS_SHA256.txt"), "checksums");
 

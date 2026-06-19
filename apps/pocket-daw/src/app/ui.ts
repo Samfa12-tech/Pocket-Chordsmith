@@ -20,6 +20,7 @@ import { createCollectMediaPlan } from "../daw/mediaPool";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { clipSourceStartBar } from "../daw/clips";
 import { runtimeBuildId, runtimeCommit, runtimeLabel } from "./diagnostics";
+import { pocketDawMcpClaudeConfig, pocketDawMcpCodexConfig, pocketDawMcpCommandLine, POCKET_DAW_MCP_WORKSPACE } from "./mcpSetup";
 import {
   escapeAttr,
   escapeHtml,
@@ -83,6 +84,7 @@ export function renderAppShell(state: AppState): string {
       ${state.showAddTrack ? renderAddTrackPanel() : ""}
       ${state.showAudioSettings ? renderAudioSettingsPanel(state) : ""}
       ${state.showUpdaterPanel ? renderUpdaterPanel(state) : ""}
+      ${state.showMcpSetupPanel ? renderMcpSetupPanel() : ""}
       ${state.showFeedbackPanel ? renderFeedbackPanel(state) : ""}
       <section class="import-panel" data-layout-zone="import">
         <textarea id="importText" spellcheck="false" placeholder="Paste PCS1 share code, raw Pocket Chordsmith JSON, Pocket DJ source session, or .pocketdaw JSON">${escapeHtml(state.importText)}</textarea>
@@ -150,6 +152,7 @@ function renderMenuStrip(state: AppState): string {
       ])}
       ${renderMenuGroup("Help", [
         ["Check for Updates", "updater-open"],
+        ["Setup MCP Bridge", "mcp-setup-open"],
         ["Send Feedback", "feedback-open"],
         ["More by Samfa12", "more-by-samfa12"],
         ["About / Diagnostics", "controls-open"],
@@ -1549,6 +1552,47 @@ function renderControlsPanel(state: AppState): string {
           <button data-action="export-diagnostics">Export Diagnostics JSON</button>
         </div>
       </section>
+    </div>
+  `;
+}
+
+function renderMcpSetupPanel(): string {
+  const command = pocketDawMcpCommandLine();
+  const claudeConfig = pocketDawMcpClaudeConfig();
+  const codexConfig = pocketDawMcpCodexConfig();
+  return `
+    <div class="modal-backdrop" data-mcp-setup-backdrop="true">
+      <section class="controls-panel mcp-setup-panel" role="dialog" aria-modal="true" aria-labelledby="mcp-setup-title">
+        <header>
+          <h2 id="mcp-setup-title">Setup MCP Bridge</h2>
+          <button data-action="mcp-setup-close">Close</button>
+        </header>
+        <div class="control-guide">
+          <p><strong>Bridge</strong><span>Local stdio MCP server for reading, validating, creating, editing and export-planning Pocket DAW projects.</span></p>
+          <p><strong>Workspace</strong><span>${escapeHtml(POCKET_DAW_MCP_WORKSPACE)}</span></p>
+          <p><strong>Writes</strong><span>MCP tools return proposed JSON by default and only write when an output path is provided.</span></p>
+          <p><strong>Use UI for</strong><span>Visual checks, playback confidence, updater smoke and anything that depends on the native app runtime.</span></p>
+        </div>
+        ${renderMcpConfigBlock("Command", "command", command)}
+        ${renderMcpConfigBlock("Claude / JSON MCP clients", "claude-json", claudeConfig)}
+        ${renderMcpConfigBlock("Codex config.toml", "codex-toml", codexConfig)}
+        <div class="diagnostic-actions">
+          <button data-action="copy-mcp-setup" data-copy-mcp-setup="all">Copy All</button>
+          <button data-action="mcp-setup-close">Close</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderMcpConfigBlock(label: string, copyKind: string, value: string): string {
+  return `
+    <div class="mcp-config-block">
+      <header>
+        <strong>${escapeHtml(label)}</strong>
+        <button data-action="copy-mcp-setup" data-copy-mcp-setup="${escapeAttr(copyKind)}">Copy</button>
+      </header>
+      <textarea readonly spellcheck="false">${escapeHtml(value)}</textarea>
     </div>
   `;
 }

@@ -63,7 +63,7 @@ describe("Pocket DAW parity against the live Chordsmith browser trace", () => {
 
   afterAll(async () => {
     await browser?.close();
-  });
+  }, 60_000);
 
   it.each(fixtureIndex)("renders DAW events matching Chordsmith browser import trace for $name", async ({ raw }) => {
     const rawProject = JSON.parse(

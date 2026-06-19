@@ -2,7 +2,7 @@
 
 Pocket DAW is a Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
-Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.10` bootstrapper/updater workflow and MCP bridge alpha.
+Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.11` bootstrapper close behavior and in-app MCP bridge setup.
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
@@ -51,7 +51,7 @@ Use `npm run package:itch-bootstrapper` and `npm run verify:itch-bootstrapper` t
 
 ## AI / MCP Integration
 
-Run `npm run mcp:pocket-daw` to start the local stdio MCP bridge. It exposes structured tools for reading, validating, converting, editing and export-planning `.pocketdaw` projects without driving the UI. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
+Run `npm run mcp:pocket-daw` to start the local stdio MCP bridge. It exposes structured tools for reading, validating, converting, editing and export-planning `.pocketdaw` projects without driving the UI. The installed app also has `Help -> Setup MCP Bridge`, which shows copy-ready command, Claude/JSON and Codex TOML snippets. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
 
 Release and update docs:
 
@@ -68,6 +68,7 @@ Release and update docs:
 - v0.6.8 is the updater-visible native-cache diagnostics patch. It keeps the lofi/chillhop parity work, keeps manual Build Native Cache swapping active native playback to cached WAV regions, adds Native Playback/Native Cache readouts for cached regions, cached clips and procedural fallback events, and keeps lofi texture/noise ticks from falsely driving the Drums mixer meter.
 - v0.6.9 is the native lofi-bass audibility hotfix. It removes the extra native-only bass output pad so procedural `warm_sub` bass matches the Chordsmith/WebAudio scale when the native cache is not active.
 - v0.6.10 moves normal app distribution to GitHub updater releases plus an itch bootstrapper, and adds the first local MCP bridge for structured project automation.
+- v0.6.11 makes the bootstrapper close after launching the verified setup EXE and adds `Help -> Setup MCP Bridge` with copy-ready MCP client snippets.
 - ASIO, simultaneous multitrack capture, punch-in/out, comping, latency compensation UI, full send/return processing, bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
 - Windows Authenticode signing is not currently claimed unless a release manifest proves it.
 - Tauri updater signatures are generated separately as `.sig` files for updater validation.

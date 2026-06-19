@@ -141,6 +141,7 @@ import { createGamePackZipBlob, createSectionLoopMetadata, createStemExportPlan,
 import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
 import { buildTesterDiagnosticsPayload, diagnosticsJson, runtimeLabel, runtimePlatform } from "./diagnostics";
 import { buildFeedbackEmailDraft, MORE_BY_SAMFA12_URL } from "./feedback";
+import { pocketDawMcpCopyText } from "./mcpSetup";
 
 type MixerControlField = "volume" | "pan";
 type RenderSchedule = "none" | "live-dom" | "deferred" | "immediate";
@@ -971,6 +972,11 @@ export class App {
       this.render();
       return;
     }
+    if (target?.matches("[data-mcp-setup-backdrop]")) {
+      this.state.showMcpSetupPanel = false;
+      this.render();
+      return;
+    }
     const addTrackButton = target?.closest<HTMLElement>("[data-add-track-kind]");
     if (addTrackButton) {
       this.applyProjectState(addTrackCommand(this.state, addTrackButton.dataset.addTrackKind as AddTrackKind));
@@ -1171,7 +1177,7 @@ export class App {
     }
     const actionButton = target?.closest<HTMLElement>("[data-action]");
     if (actionButton) {
-      void this.dispatch(actionButton.dataset.action || "");
+      void this.dispatch(actionButton.dataset.action || "", actionButton);
       return;
     }
     const markerRename = target?.closest<HTMLElement>("[data-marker-rename]");
@@ -1235,7 +1241,7 @@ export class App {
     return !!target?.closest("[data-mute-track], [data-solo-track], [data-arm-track], [data-monitor-track], [data-timeline-non-seek], button, input, select, textarea");
   }
 
-  private async dispatch(action: string) {
+  private async dispatch(action: string, actionSource?: HTMLElement) {
     if (action === "play") await this.playTransport();
     if (action === "pause") {
       this.engine.pause();
@@ -1290,6 +1296,15 @@ export class App {
       this.state.showUpdaterPanel = false;
       this.render();
     }
+    if (action === "mcp-setup-open") {
+      this.state.showMcpSetupPanel = true;
+      this.render();
+    }
+    if (action === "mcp-setup-close") {
+      this.state.showMcpSetupPanel = false;
+      this.render();
+    }
+    if (action === "copy-mcp-setup") await this.copyMcpSetup(actionSource?.dataset.copyMcpSetup || "all");
     if (action === "updater-check") await this.checkForUpdates(true);
     if (action === "updater-download-install") await this.downloadAndInstallUpdate();
     if (action === "updater-restart") await this.restartAfterUpdate();
@@ -3086,6 +3101,14 @@ export class App {
   }
 
   private async copyTextOrDownloadDiagnostics(text: string): Promise<boolean> {
+    if (await this.copyPlainText(text)) return true;
+    const project = currentProject(this.state);
+    const blob = new Blob([text], { type: "application/json" });
+    downloadBlob(blob, safeName(`${project.project.title}-diagnostics`, "json"));
+    return false;
+  }
+
+  private async copyPlainText(text: string): Promise<boolean> {
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
@@ -3094,9 +3117,6 @@ export class App {
       }
       return true;
     } catch {
-      const project = currentProject(this.state);
-      const blob = new Blob([text], { type: "application/json" });
-      downloadBlob(blob, safeName(`${project.project.title}-diagnostics`, "json"));
       return false;
     }
   }
@@ -3126,6 +3146,18 @@ export class App {
       runtime: runtimeLabel(),
       platform: runtimePlatform()
     });
+  }
+
+  private async copyMcpSetup(kind: string) {
+    const text = pocketDawMcpCopyText(kind);
+    if (!text) {
+      this.state.status = "Unknown MCP setup snippet.";
+      this.render({ preserveScroll: true });
+      return;
+    }
+    const copied = await this.copyPlainText(text);
+    this.state.status = copied ? "Copied MCP setup snippet to clipboard." : "Clipboard unavailable; select and copy the MCP setup text manually.";
+    this.render({ preserveScroll: true });
   }
 
   private async sendFeedbackEmail() {

@@ -61,7 +61,9 @@ describe("release scripts", () => {
     expect(bootstrapperManifest).toContain("pocket-daw-bootstrapper-latest.json");
     expect(bootstrapperManifest).toContain("sha256");
     expect(packageBootstrapper).toContain("Get-FileHash -Algorithm SHA256");
-    expect(packageBootstrapper).toContain("Start-Process -FilePath $installerPath -Wait");
+    expect(packageBootstrapper).toContain("Start-Process -FilePath $installerPath");
+    expect(packageBootstrapper).not.toContain("Start-Process -FilePath $installerPath -Wait");
+    expect(packageBootstrapper).toContain("AutoCloseWindow true");
     expect(guardedBootstrapperPush).toContain('PUBLISH !== "1"');
     expect(guardedBootstrapperPush).toContain('"releases/itch-bootstrapper/upload"');
     expect(releaseUpdaterBuild).toContain("packageItchRelease");

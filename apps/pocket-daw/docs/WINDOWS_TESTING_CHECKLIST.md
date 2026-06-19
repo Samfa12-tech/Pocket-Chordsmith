@@ -5,9 +5,9 @@ Run this against the exact installed Windows alpha from itch/GitHub release arti
 Current alpha target:
 
 - App: Pocket DAW
-- Version: `0.6.10` source target; installed-app smoke for `0.6.10` is Pending
-- Source commit at packaging time: `8fa90decbfb0c90bc4aef5e17963afc8028e9231`
-- Generated manifest note: dirty working tree was `false`.
+- Version: `0.6.11` source target; installed-app smoke for `0.6.11` is Pending
+- Source commit at packaging time: pending this release commit
+- Generated manifest note: pending this release publish.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Itch channel: `windows-installer`
 - Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
@@ -20,11 +20,11 @@ Current alpha target:
 - MSI updater signature: `Pocket DAW_0.6.10_x64_en-US.msi.sig`
 - MSI updater signature SHA-256: `127f4d52cd85b4c76223d756e0b0ddd81a20dd3dada97e19cde908cb1bf59f4b`
 - Bootstrapper EXE: `Pocket_DAW_Itch_Bootstrapper_v0.6.10.exe`
-- Bootstrapper EXE SHA-256: `acb60b6c38226f67186b7a1d644504b4ffae7abb4e4d1f43fa13a3a2bbe8230f`
+- Bootstrapper EXE SHA-256: `5e966c6a1ef1397484ded8d5ae1f9c9bbdb5a3f3d4dd5cbc451c41ec83570e68`
 - SmartScreen/code signing: Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures: `.sig` files are updater-validation signatures and are separate from Windows code signing.
 
-Manual smoke status: `0.6.10` PENDING. Historical `0.6.9` evidence remains useful context, but does not verify the current bootstrapper/updater baseline.
+Manual smoke status: `0.6.11` PENDING. Historical `0.6.9` evidence remains useful context, and `0.6.10` verifies the basic bootstrapper install path but not the MCP setup panel or auto-close bootstrapper behavior.
 
 Historical manual evidence from Sam on 2026-06-14:
 
@@ -47,7 +47,7 @@ Historical manual evidence from Sam on 2026-06-14:
 | Install / launch | Clean install from the current public setup EXE or MSI. | Installer completes and creates the expected installed app entries. | Manual / Not run | Manual / Not run |  |  |
 | Install / launch | Launch Pocket DAW from the Start Menu or installed shortcut. | Installed app opens without needing an extracted app folder. | App opened; exact launch surface not recorded. | Partial | Sam / 2026-06-14 | Confirm Start Menu/installed shortcut explicitly on next pass. |
 | Install / launch | Launch after reboot if practical. | Installed app still launches normally after Windows restart. | Manual / Not run | Manual / Not run |  |  |
-| Install / launch | Open About/Diagnostics and confirm app version/build id. | Version `0.6.10` and build/commit information are visible or explicitly unavailable. | Manual / Not run | Manual / Not run |  | Historical v0.5.13 diagnostics evidence exists, but does not verify v0.6.10. |
+| Install / launch | Open About/Diagnostics and confirm app version/build id. | Version `0.6.11` and build/commit information are visible or explicitly unavailable. | Manual / Not run | Manual / Not run |  | Historical v0.5.13 diagnostics evidence exists, but does not verify v0.6.11. |
 | Install / launch | Open and close the About/Diagnostics panel at installed-app desktop size. | Panel renders below the top menu/control bars and the close button remains clickable. | About panel rendered underneath the control bar; close control was not reachable. | Fail | Sam / 2026-06-14 | Fix next: move modal/panel down or constrain it within the visible app content area. |
 | Install / launch | Uninstall, reinstall, then open the app. | Expected user data is preserved or loss/caveat is documented; reinstall does not corrupt projects. | Manual / Not run | Manual / Not run |  |  |
 | Basic audio | Load Demo, press Play, then Stop and Restart. | Demo plays audibly, stops, and restarts from the expected position. | Demo loaded and played audibly. | Pass | Sam / 2026-06-14 | Stop/restart not separately recorded. |
