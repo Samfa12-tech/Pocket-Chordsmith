@@ -5,17 +5,24 @@
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
 - Current source target: `0.6.11` bootstrapper close behavior and in-app MCP bridge setup
-- Last completed public artifact record in this repo: `0.6.10`
-- Last installed public smoke evidence in this repo: `0.6.9` partial; `0.6.10` bootstrapper install smoke remains pending
+- Last completed public artifact record in this repo: `0.6.11`
+- Last installed public smoke evidence in this repo: `0.6.10` bootstrapper install passed; `0.6.11` MCP setup/updater smoke remains pending
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Current source commit: pending this release commit
+- Current source commit: `d3ba9aaad9cc1e5ced3b428c6df20787c0fd5c57`
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
 
-## v0.6.11 Bootstrapper Close And MCP Setup - publication pending
+## v0.6.11 Bootstrapper Close And MCP Setup - installed smoke pending
 
 `0.6.11` keeps the `0.6.10` GitHub-updater/bootstrapper model, makes the bootstrapper close after launching the verified setup EXE, and adds `Help -> Setup MCP Bridge` in the installed app with copy-ready command, Claude/JSON and Codex TOML snippets.
+
+Published evidence as of 2026-06-19:
+
+- Itch channel `samfa12/pocket-daw:windows-installer` build `#1737902`, user version `bootstrapper-0.6.11`, carries the bootstrapper-only upload.
+- GitHub release `pocket-daw-v0.6.11` was published with setup EXE/MSI, updater signatures, release manifest, checksums, `pocket-daw-latest.json`, `pocket-daw-bootstrapper-latest.json`, and `Pocket_DAW_Itch_Bootstrapper_v0.6.11.exe`.
+- Remote setup EXE SHA-256 was verified as `ac1e923662fef3f9df7f3e42d97607e5862a7c392b659cc84d89e343e45816f9`.
+- Bootstrapper EXE SHA-256 is `c1e95390938153028640915fdf8f4ee2cceb67a3867679602cd606226a65c47d`.
 
 ## v0.6.10 Bootstrapper And MCP Bridge - bootstrapper smoke passed
 

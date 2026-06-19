@@ -10,24 +10,32 @@ This file records the current source baseline and the latest completed public in
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Primary itch channel: `windows-installer`
 - Updater manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Release artifact status: `0.6.11` publication pending. This checkpoint should publish GitHub updater assets and refresh the itch bootstrapper with the auto-close fix.
-- Source commit at packaging time: pending this release commit.
-- Generated manifest note: pending this release publish.
+- Release artifact status: `0.6.11` GitHub updater assets and bootstrapper assets are published; itch channel `windows-installer` now points at bootstrapper build `#1737902` with user version `bootstrapper-0.6.11`.
+- Source commit at packaging time: `d3ba9aaad9cc1e5ced3b428c6df20787c0fd5c57`.
+- Generated manifest note: dirty working tree was `false`.
 
 ## Current Local Artifact Record
 
-The current published artifact record is `0.6.10`. These artifacts passed automated verification and upload checks. Manual installed-app smoke is pending for the bootstrapper path; Sam will download the bootstrapper from GitHub and verify it installs the latest DAW.
+The current published artifact record is `0.6.11`. These artifacts passed automated verification and upload checks. Manual installed-app smoke is pending for the updater-visible MCP setup panel and the refreshed bootstrapper auto-close behavior.
+
+- GitHub release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.11`
+- Itch channel `samfa12/pocket-daw:windows-installer` build `#1737902`, user version `bootstrapper-0.6.11`.
+- Setup EXE `Pocket.DAW_0.6.11_x64-setup.exe`: `ac1e923662fef3f9df7f3e42d97607e5862a7c392b659cc84d89e343e45816f9`
+- Setup EXE Tauri updater signature `Pocket.DAW_0.6.11_x64-setup.exe.sig`: `fa8c07b3e14937523f57ea0c79851c5b1e059b37883d8ca381e5a162f07086d6`
+- MSI `Pocket.DAW_0.6.11_x64_en-US.msi`: `ffb7d628049aacc2a97eb7828a9de0b46435109987870ee3ce9b146e0cbee185`
+- MSI Tauri updater signature `Pocket.DAW_0.6.11_x64_en-US.msi.sig`: `6af89611708fec9d39dc5d6a86746518250c88804783252e913303043f80c7c5`
+- Bootstrapper `Pocket_DAW_Itch_Bootstrapper_v0.6.11.exe`: `c1e95390938153028640915fdf8f4ee2cceb67a3867679602cd606226a65c47d`
+- Release manifest `pocket-daw-release-manifest-v0.6.11.json`: `27c55bc98f70ea3c7f2bbaa3f1af0f1711dd84d49e00475fe2567613709f34a4`
+
+Previous completed public updater artifact record:
 
 - GitHub release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.10`
 - Itch channel `samfa12/pocket-daw:windows-installer` build `#1737832`, user version `bootstrapper-0.6.10`.
 - Setup EXE `Pocket.DAW_0.6.10_x64-setup.exe`: `c893ddcc545738c79fb72bd486b75cbe263534b466fcd4d2f593574d509fd00e`
-- Setup EXE Tauri updater signature `Pocket.DAW_0.6.10_x64-setup.exe.sig`: `c29e36a9070d537952cac7487adb7e45af86cd70ca00bac00409d924d1c5f992`
-- MSI `Pocket.DAW_0.6.10_x64_en-US.msi`: `22572306809cabc05cef49324b7a36235c8257f01c6a653a748710fd8a03be24`
-- MSI Tauri updater signature `Pocket.DAW_0.6.10_x64_en-US.msi.sig`: `127f4d52cd85b4c76223d756e0b0ddd81a20dd3dada97e19cde908cb1bf59f4b`
 - Bootstrapper `Pocket_DAW_Itch_Bootstrapper_v0.6.10.exe`: `5e966c6a1ef1397484ded8d5ae1f9c9bbdb5a3f3d4dd5cbc451c41ec83570e68`
 - Release manifest `pocket-daw-release-manifest-v0.6.10.json`: `9f32807443c4c2927592bd35a00923fb24cf4a6a5e60f4d31993ccd26c85b350`
 
-Previous completed public updater artifact record:
+Older completed public updater artifact record:
 
 - Setup EXE `Pocket DAW_0.6.9_x64-setup.exe`: `406bd7432dda5f4c3dfccb041c6e2362f5b683559476900f239ec46843d60f09`
 - Setup EXE Tauri updater signature `Pocket DAW_0.6.9_x64-setup.exe.sig`: `6b6ec01f1707e2b06d5a92c86d844de5db0e89b86868cd7bcfb8e28d29a2ed8f`
@@ -52,11 +60,11 @@ Older completed public updater artifact record:
 
 ## Manual Smoke Evidence
 
-Current `0.6.10` installed-app smoke status: Pending. Sam will download the GitHub bootstrapper, verify it downloads and installs the latest setup EXE, then confirm About/Diagnostics reports `0.6.10`.
+Current `0.6.11` installed-app smoke status: Pending. Sam should update/install to `0.6.11`, open Help -> Setup MCP Bridge, copy a config snippet, and verify the refreshed bootstrapper closes after launching setup.
 
-Required `0.6.10` focus:
+Required `0.6.11` focus:
 
-- Confirm About/Diagnostics reports app version `0.6.10` and the expected build/commit metadata.
+- Confirm About/Diagnostics reports app version `0.6.11` and the expected build/commit metadata.
 - Re-open the reported `lofi demo project.pocketdaw`, solo Bass at 100-120%, and confirm native procedural Warm Sub Bass is audible when the native cache is not active. Passed by Sam on 2026-06-19 for installed `0.6.9`.
 - Import a known lofi/chillhop Chordsmith project and confirm lofi source notes, imported Chordsmith mix/volume values, soft track presets, gentle master-chain slots, playback, save/reopen, and WAV/MIDI export behavior.
 - Press Build Native Cache on the imported lofi project and confirm generated tracks play through cached WAV regions with low or zero procedural fallback events until a source-changing edit invalidates the cache.
@@ -82,8 +90,8 @@ Historical partial installed-app smoke run by Sam on 2026-06-14 against v0.5.9/v
 
 ## Current Caveats
 
-- Manual Windows smoke testing for `0.6.10` is pending and is tracked in `docs/WINDOWS_TESTING_CHECKLIST.md`; bootstrapper install/update flow is the current focus.
-- Itch upload for `0.6.10` is complete on `samfa12/pocket-daw:windows-installer` build `#1737832`; GitHub latest updater assets and bootstrapper assets were published and the remote setup EXE hash was verified as `c893ddcc545738c79fb72bd486b75cbe263534b466fcd4d2f593574d509fd00e`.
+- Manual Windows smoke testing for `0.6.11` is pending and is tracked in `docs/WINDOWS_TESTING_CHECKLIST.md`; MCP setup panel and bootstrapper auto-close are the current focus.
+- Itch upload for `0.6.11` is complete on `samfa12/pocket-daw:windows-installer` build `#1737902`; GitHub latest updater assets and bootstrapper assets were published and the remote setup EXE hash was verified as `ac1e923662fef3f9df7f3e42d97607e5862a7c392b659cc84d89e343e45816f9`.
 - Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures are present as `.sig` files for updater validation.
 - Pocket Chordsmith direct "Send to Pocket DAW" is passing in the v0.5.13 installed-app smoke run; keep paste/import as a fallback for browsers that block downloads or custom protocol launches.
