@@ -84,3 +84,46 @@ describe("Pocket DAW MCP tools", () => {
     })).rejects.toThrow("Unsupported Pocket DAW MCP command");
   });
 });
+
+describe("Pocket DAW MCP server handshake", () => {
+  it("reports a stable Codex-safe server identity", async () => {
+    const { spawn } = await import("node:child_process");
+    const serverPath = join(process.cwd(), "src", "mcp", "pocketDawMcpServer.ts");
+
+    const child = spawn(process.execPath, ["node_modules/tsx/dist/cli.mjs", serverPath], {
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    let output = "";
+    child.stdout.on("data", (chunk) => {
+      output += chunk.toString();
+      if (output.includes("serverInfo")) child.kill();
+    });
+
+    const message = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "vitest", version: "0" }
+      }
+    });
+    child.stdin.write(`Content-Length: ${Buffer.byteLength(message)}\r\n\r\n${message}`);
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        child.kill();
+        reject(new Error("Timed out waiting for MCP initialize response."));
+      }, 5000);
+      child.on("exit", () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+
+    expect(output).toContain('"protocolVersion":"2025-06-18"');
+    expect(output).toContain('"name":"pocket_daw"');
+    expect(output).toContain('"listChanged":false');
+  });
+});

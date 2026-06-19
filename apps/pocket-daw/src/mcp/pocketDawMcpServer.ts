@@ -60,10 +60,14 @@ async function handleJson(json: string) {
 
 async function handleRequest(request: JsonRpcRequest) {
   if (request.method === "initialize") {
+    const requestedProtocolVersion = typeof request.params?.protocolVersion === "string"
+      ? request.params.protocolVersion
+      : "2025-06-18";
     return {
-      protocolVersion: "2024-11-05",
-      capabilities: { tools: {} },
-      serverInfo: { name: "pocket-daw-mcp", version: "1.0.0" }
+      protocolVersion: requestedProtocolVersion,
+      capabilities: { tools: { listChanged: false } },
+      serverInfo: { name: "pocket_daw", version: "1.0.0" },
+      instructions: "Use Pocket DAW MCP tools to inspect, validate, convert, edit and plan exports for .pocketdaw projects. Tools only write files when an explicit outputPath is provided."
     };
   }
   if (request.method === "tools/list") {
