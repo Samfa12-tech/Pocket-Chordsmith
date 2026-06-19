@@ -12,7 +12,8 @@ function parseToolResult(result: Awaited<ReturnType<typeof callPocketDawMcpTool>
 
 describe("Pocket DAW MCP tools", () => {
   it("lists the structured Pocket DAW tools", () => {
-    const tools = pocketDawMcpToolList().map((tool) => tool.name);
+    const toolList = pocketDawMcpToolList();
+    const tools = toolList.map((tool) => tool.name);
 
     expect(tools).toEqual(expect.arrayContaining([
       "pocket_daw_read_project",
@@ -21,6 +22,15 @@ describe("Pocket DAW MCP tools", () => {
       "pocket_daw_apply_commands",
       "pocket_daw_export_plan"
     ]));
+    expect(toolList.every((tool) => tool.inputSchema.type === "object")).toBe(true);
+    expect(toolList.every((tool) => tool.inputSchema.additionalProperties === false)).toBe(true);
+    expect(toolList.find((tool) => tool.name === "pocket_daw_apply_commands")?.inputSchema.properties.commands).toMatchObject({
+      type: "array",
+      items: {
+        type: "object",
+        required: ["type"]
+      }
+    });
   });
 
   it("reads and summarizes a project without writing", async () => {

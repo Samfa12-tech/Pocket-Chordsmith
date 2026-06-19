@@ -1,10 +1,14 @@
 export const POCKET_DAW_MCP_SERVER_NAME = "pocket_daw";
 export const POCKET_DAW_MCP_WORKSPACE = "C:\\Users\\sam_s\\Documents\\Pocket Chordsmith\\apps\\pocket-daw";
 
-const MCP_ARGS = ["/d", "/c", "npm", "--silent", "--prefix", POCKET_DAW_MCP_WORKSPACE, "run", "mcp:pocket-daw"] as const;
+export const POCKET_DAW_MCP_NODE = "C:\\Program Files\\nodejs\\node.exe";
+export const POCKET_DAW_MCP_TSX = `${POCKET_DAW_MCP_WORKSPACE}\\node_modules\\tsx\\dist\\cli.mjs`;
+export const POCKET_DAW_MCP_SERVER = `${POCKET_DAW_MCP_WORKSPACE}\\src\\mcp\\pocketDawMcpServer.ts`;
+
+const MCP_ARGS = [POCKET_DAW_MCP_TSX, POCKET_DAW_MCP_SERVER] as const;
 
 export function pocketDawMcpCommandLine(): string {
-  return `cmd.exe ${MCP_ARGS.map(shellArg).join(" ")}`;
+  return `${shellArg(POCKET_DAW_MCP_NODE)} ${MCP_ARGS.map(shellArg).join(" ")}`;
 }
 
 export function pocketDawMcpClaudeConfig(): string {
@@ -12,7 +16,7 @@ export function pocketDawMcpClaudeConfig(): string {
     {
       mcpServers: {
         [POCKET_DAW_MCP_SERVER_NAME]: {
-          command: "cmd",
+          command: POCKET_DAW_MCP_NODE,
           args: [...MCP_ARGS]
         }
       }
@@ -25,7 +29,7 @@ export function pocketDawMcpClaudeConfig(): string {
 export function pocketDawMcpCodexConfig(): string {
   return [
     `[mcp_servers.${POCKET_DAW_MCP_SERVER_NAME}]`,
-    `command = "cmd"`,
+    `command = ${tomlString(POCKET_DAW_MCP_NODE)}`,
     `args = [${MCP_ARGS.map(tomlString).join(", ")}]`
   ].join("\n");
 }

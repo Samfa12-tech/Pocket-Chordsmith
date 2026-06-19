@@ -75,27 +75,35 @@ export function pocketDawMcpToolList() {
     {
       name: "pocket_daw_read_project",
       description: "Load, migrate and summarize a Pocket DAW project without modifying it.",
-      inputSchema: objectSchema({ projectPath: stringSchema(), raw: stringSchema(), includeProject: booleanSchema() })
+      inputSchema: objectSchema({ projectPath: stringSchema(), raw: stringSchema(), includeProject: booleanSchema() }),
+      annotations: readOnlyToolAnnotations()
     },
     {
       name: "pocket_daw_validate_project",
       description: "Validate a Pocket DAW project and return schema/invariant warnings without modifying it.",
-      inputSchema: objectSchema({ projectPath: stringSchema(), raw: stringSchema() })
+      inputSchema: objectSchema({ projectPath: stringSchema(), raw: stringSchema() }),
+      annotations: readOnlyToolAnnotations()
     },
     {
       name: "pocket_daw_create_from_chordsmith",
       description: "Convert PCS1/raw Pocket Chordsmith/Pocket DJ JSON into a Pocket DAW project.",
-      inputSchema: objectSchema({ text: stringSchema(), inputPath: stringSchema(), outputPath: stringSchema() })
+      inputSchema: objectSchema({ text: stringSchema(), inputPath: stringSchema(), outputPath: stringSchema() }),
+      annotations: writeOnlyWhenOutputPathAnnotations()
     },
     {
       name: "pocket_daw_apply_commands",
       description: "Apply a typed batch of safe Pocket DAW edit commands. Writes only when outputPath is provided.",
-      inputSchema: objectSchema({ projectPath: stringSchema(), raw: stringSchema(), commands: { type: "array" }, outputPath: stringSchema() })
+      inputSchema: objectSchema(
+        { projectPath: stringSchema(), raw: stringSchema(), commands: arraySchema(commandSchema()), outputPath: stringSchema() },
+        ["commands"]
+      ),
+      annotations: writeOnlyWhenOutputPathAnnotations()
     },
     {
       name: "pocket_daw_export_plan",
       description: "Summarize stem, section-loop and game-pack export plans without WebAudio/native rendering.",
-      inputSchema: objectSchema({ projectPath: stringSchema(), raw: stringSchema() })
+      inputSchema: objectSchema({ projectPath: stringSchema(), raw: stringSchema() }),
+      annotations: readOnlyToolAnnotations()
     }
   ];
 }
@@ -306,12 +314,14 @@ function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function objectSchema(properties: Record<string, unknown>) {
-  return {
+function objectSchema(properties: Record<string, unknown>, required: string[] = []) {
+  const schema: Record<string, unknown> = {
     type: "object",
     properties,
-    additionalProperties: true
+    additionalProperties: false
   };
+  if (required.length) schema.required = required;
+  return schema;
 }
 
 function stringSchema() {
@@ -320,4 +330,69 @@ function stringSchema() {
 
 function booleanSchema() {
   return { type: "boolean" };
+}
+
+function arraySchema(items: Record<string, unknown>) {
+  return { type: "array", items };
+}
+
+function commandSchema() {
+  return objectSchema(
+    {
+      type: {
+        type: "string",
+        enum: [
+          "set_track_volume",
+          "set_track_pan",
+          "toggle_track_mute",
+          "move_clip_to_bar",
+          "add_marker",
+          "set_section_bars",
+          "set_section_chord",
+          "cycle_drum_step",
+          "cycle_bass_step",
+          "cycle_melody_step",
+          "set_fx_parameter"
+        ]
+      },
+      trackId: stringSchema(),
+      clipId: stringSchema(),
+      sectionId: stringSchema(),
+      chainId: stringSchema(),
+      slotId: stringSchema(),
+      lane: { type: "string", enum: ["kick", "snare", "hat"] },
+      parameter: stringSchema(),
+      volume: numberSchema(),
+      pan: numberSchema(),
+      startBar: numberSchema(),
+      bar: numberSchema(),
+      bars: numberSchema(),
+      barIndex: numberSchema(),
+      degree: numberSchema(),
+      step: numberSchema(),
+      trackIndex: numberSchema(),
+      value: { oneOf: [numberSchema(), booleanSchema()] }
+    },
+    ["type"]
+  );
+}
+
+function numberSchema() {
+  return { type: "number" };
+}
+
+function readOnlyToolAnnotations() {
+  return {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false
+  };
+}
+
+function writeOnlyWhenOutputPathAnnotations() {
+  return {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false
+  };
 }
