@@ -37,6 +37,8 @@ describe("Pocket DAW itch bootstrapper release helpers", () => {
     const script = bootstrapperPowerShell();
 
     expect(script).toContain(BOOTSTRAPPER_MANIFEST_URL);
+    expect(script).toContain("$manifest = Invoke-RestMethod -Uri $ManifestUrl -UseBasicParsing");
+    expect(script).not.toContain("$manifestResponse.Content | ConvertFrom-Json");
     expect(script).toContain("Get-FileHash -Algorithm SHA256");
     expect(script).toContain("Installer SHA-256 mismatch");
     expect(script).toContain("Start-Process -FilePath $installerPath -Wait");

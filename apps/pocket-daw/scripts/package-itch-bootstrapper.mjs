@@ -30,8 +30,7 @@ New-Item -ItemType Directory -Force -Path $DownloadDir | Out-Null
 
 try {
   Write-Host "Fetching Pocket DAW latest installer manifest..."
-  $manifestResponse = Invoke-WebRequest -Uri $ManifestUrl -UseBasicParsing
-  $manifest = $manifestResponse.Content | ConvertFrom-Json
+  $manifest = Invoke-RestMethod -Uri $ManifestUrl -UseBasicParsing
   if (-not $manifest.installer -or -not $manifest.installer.url -or -not $manifest.installer.sha256) {
     throw "The bootstrapper manifest is missing installer url or sha256."
   }

@@ -24,7 +24,7 @@ Published evidence as of 2026-06-19:
 - Itch channel `samfa12/pocket-daw:windows-installer` build `#1737791`, user version `bootstrapper-0.6.10`, now carries the bootstrapper-only upload instead of the full setup/MSI installer pair.
 - GitHub release `pocket-daw-v0.6.10` was published with setup EXE/MSI, updater signatures, release manifest, checksums, `pocket-daw-latest.json`, `pocket-daw-bootstrapper-latest.json`, and `Pocket_DAW_Itch_Bootstrapper_v0.6.10.exe`.
 - Remote setup EXE SHA-256 was verified as `c893ddcc545738c79fb72bd486b75cbe263534b466fcd4d2f593574d509fd00e`.
-- Bootstrapper EXE SHA-256 is `ffc6ef0756cc548e3af1e2f032a6609fe578d8c32d3f76bddb9527f1b53e2b2e`.
+- Bootstrapper EXE SHA-256 is `eb1056587975818d9ff5db35d1cf90ad4a1414b197066bdd4e81e24ae4998dcf`.
 
 ## v0.6.9 Native Lofi Bass Hotfix - installed smoke pending
 
