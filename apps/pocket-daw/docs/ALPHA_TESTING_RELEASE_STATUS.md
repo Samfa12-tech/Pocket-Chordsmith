@@ -1,18 +1,18 @@
-# Pocket DAW v0.6.11 Alpha Testing Release Status
+# Pocket DAW v0.6.12 Alpha Testing Release Status
 
 Pocket DAW is now live for public Windows alpha testing on itch and linked from `samfa12.com`.
 
-This file records the current source baseline and the latest completed public installed-release evidence. Current source target is `0.6.11` bootstrapper close behavior and in-app MCP bridge setup.
+This file records the current source baseline and the latest completed public installed-release evidence. Current source target is `0.6.12` corrected in-app MCP bridge setup snippets.
 
 ## Current Source Baseline
 
-- Version: `0.6.11`
+- Version: `0.6.12`
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Primary itch channel: `windows-installer`
 - Updater manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Release artifact status: `0.6.11` GitHub updater assets and bootstrapper assets are published; itch channel `windows-installer` now points at bootstrapper build `#1737902` with user version `bootstrapper-0.6.11`.
-- Source commit at packaging time: `d3ba9aaad9cc1e5ced3b428c6df20787c0fd5c57`.
-- Generated manifest note: dirty working tree was `false`.
+- Release artifact status: `0.6.12` publication pending. This checkpoint should publish GitHub updater assets and refresh the itch bootstrapper with the corrected MCP setup snippet release target.
+- Source commit at packaging time: pending this release commit.
+- Generated manifest note: pending this release publish.
 
 ## Current Local Artifact Record
 

@@ -1,10 +1,10 @@
 export const POCKET_DAW_MCP_SERVER_NAME = "pocket-daw";
 export const POCKET_DAW_MCP_WORKSPACE = "C:\\Users\\sam_s\\Documents\\Pocket Chordsmith\\apps\\pocket-daw";
 
-const MCP_LAUNCH_SCRIPT = `cd /d "${POCKET_DAW_MCP_WORKSPACE}" && npm run mcp:pocket-daw`;
+const MCP_ARGS = ["/d", "/c", "npm", "--prefix", POCKET_DAW_MCP_WORKSPACE, "run", "mcp:pocket-daw"] as const;
 
 export function pocketDawMcpCommandLine(): string {
-  return `cd /d "${POCKET_DAW_MCP_WORKSPACE}" && npm run mcp:pocket-daw`;
+  return `cmd.exe ${MCP_ARGS.map(shellArg).join(" ")}`;
 }
 
 export function pocketDawMcpClaudeConfig(): string {
@@ -13,7 +13,7 @@ export function pocketDawMcpClaudeConfig(): string {
       mcpServers: {
         [POCKET_DAW_MCP_SERVER_NAME]: {
           command: "cmd",
-          args: ["/d", "/s", "/c", MCP_LAUNCH_SCRIPT]
+          args: [...MCP_ARGS]
         }
       }
     },
@@ -26,7 +26,7 @@ export function pocketDawMcpCodexConfig(): string {
   return [
     `[mcp_servers.${POCKET_DAW_MCP_SERVER_NAME}]`,
     `command = "cmd"`,
-    `args = ["/d", "/s", "/c", ${tomlString(MCP_LAUNCH_SCRIPT)}]`
+    `args = [${MCP_ARGS.map(tomlString).join(", ")}]`
   ].join("\n");
 }
 
@@ -57,4 +57,8 @@ export function pocketDawMcpCopyText(kind: string): string | null {
 
 function tomlString(value: string): string {
   return JSON.stringify(value);
+}
+
+function shellArg(value: string): string {
+  return /[\s"]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
 }

@@ -1,17 +1,21 @@
-# Pocket DAW v0.6.11 - What Works and What's Next
+# Pocket DAW v0.6.12 - What Works and What's Next
 
 ## Current public alpha
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current source target: `0.6.11` bootstrapper close behavior and in-app MCP bridge setup
-- Last completed public artifact record in this repo: `0.6.11`
-- Last installed public smoke evidence in this repo: `0.6.10` bootstrapper install passed; `0.6.11` MCP setup/updater smoke remains pending
+- Current source target: `0.6.12` corrected in-app MCP bridge setup snippets
+- Last completed public artifact record in this repo: `0.6.11`; `0.6.12` publication pending
+- Last installed public smoke evidence in this repo: `0.6.10` bootstrapper install passed; `0.6.12` MCP setup/updater smoke remains pending
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Current source commit: `d3ba9aaad9cc1e5ced3b428c6df20787c0fd5c57`
+- Current source commit: pending this release commit
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
+
+## v0.6.12 Corrected MCP Setup Snippets - publication pending
+
+`0.6.12` corrects `Help -> Setup MCP Bridge` so the copy-ready snippets use the tested Windows MCP launch shape: `cmd` with arguments `["/d", "/c", "npm", "--prefix", "<Pocket DAW workspace>", "run", "mcp:pocket-daw"]`.
 
 ## v0.6.11 Bootstrapper Close And MCP Setup - installed smoke pending
 
