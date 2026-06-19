@@ -6,19 +6,21 @@ Current alpha target:
 
 - App: Pocket DAW
 - Version: `0.6.10` source target; installed-app smoke for `0.6.10` is Pending
-- Source commit at packaging time: `e74cb5249505e0145b462ad7b19d4f24f666b826`
-- Generated manifest note: dirty working tree was `true` because the parity/release pass was uncommitted during local packaging.
+- Source commit at packaging time: `8fa90decbfb0c90bc4aef5e17963afc8028e9231`
+- Generated manifest note: dirty working tree was `false`.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Itch channel: `windows-installer`
 - Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 - Setup EXE: `Pocket DAW_0.6.10_x64-setup.exe`
-- Setup EXE SHA-256: `406bd7432dda5f4c3dfccb041c6e2362f5b683559476900f239ec46843d60f09`
+- Setup EXE SHA-256: `c893ddcc545738c79fb72bd486b75cbe263534b466fcd4d2f593574d509fd00e`
 - Setup EXE updater signature: `Pocket DAW_0.6.10_x64-setup.exe.sig`
-- Setup EXE updater signature SHA-256: `6b6ec01f1707e2b06d5a92c86d844de5db0e89b86868cd7bcfb8e28d29a2ed8f`
+- Setup EXE updater signature SHA-256: `c29e36a9070d537952cac7487adb7e45af86cd70ca00bac00409d924d1c5f992`
 - MSI: `Pocket DAW_0.6.10_x64_en-US.msi`
-- MSI SHA-256: `41220a60798fd95f9c41e2b5776f48234355203e4b3a28257b428a13bf4f085d`
+- MSI SHA-256: `22572306809cabc05cef49324b7a36235c8257f01c6a653a748710fd8a03be24`
 - MSI updater signature: `Pocket DAW_0.6.10_x64_en-US.msi.sig`
-- MSI updater signature SHA-256: `dd1b90ff162ac69ebff91067ad9599ae9be73d4e7cd1d1cf7de0033d33db9df0`
+- MSI updater signature SHA-256: `127f4d52cd85b4c76223d756e0b0ddd81a20dd3dada97e19cde908cb1bf59f4b`
+- Bootstrapper EXE: `Pocket_DAW_Itch_Bootstrapper_v0.6.10.exe`
+- Bootstrapper EXE SHA-256: `ffc6ef0756cc548e3af1e2f032a6609fe578d8c32d3f76bddb9527f1b53e2b2e`
 - SmartScreen/code signing: Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures: `.sig` files are updater-validation signatures and are separate from Windows code signing.
 
