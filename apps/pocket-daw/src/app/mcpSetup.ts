@@ -1,7 +1,7 @@
 export const POCKET_DAW_MCP_SERVER_NAME = "pocket-daw";
 export const POCKET_DAW_MCP_WORKSPACE = "C:\\Users\\sam_s\\Documents\\Pocket Chordsmith\\apps\\pocket-daw";
 
-const MCP_ARGS = ["/d", "/c", "npm", "--prefix", POCKET_DAW_MCP_WORKSPACE, "run", "mcp:pocket-daw"] as const;
+const MCP_ARGS = ["/d", "/c", "npm", "--silent", "--prefix", POCKET_DAW_MCP_WORKSPACE, "run", "mcp:pocket-daw"] as const;
 
 export function pocketDawMcpCommandLine(): string {
   return `cmd.exe ${MCP_ARGS.map(shellArg).join(" ")}`;
