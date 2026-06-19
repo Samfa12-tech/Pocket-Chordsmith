@@ -41,7 +41,7 @@ Tauri updater signatures are separate from Windows code signing. Do not claim th
 - No ASIO backend yet.
 - Imported audio decode/streaming remains limited.
 - Full send/return processing remains incomplete unless implemented.
-- Godot/web exports are manifest previews unless full asset packs are implemented.
+- Godot/web game-pack ZIP exports should be described with their current smoke status; note any target-project validation gaps.
 - Stem export limitations:
 - Native cache hydration status:
 - Automation limitations:

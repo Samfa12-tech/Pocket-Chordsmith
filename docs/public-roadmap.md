@@ -29,6 +29,11 @@ products.
 - Keep `apps/pocket-daw/` clearly marked WIP/private-boundary until licensing,
   packaging, and product scope are deliberately settled.
 - Improve tests, docs, and import/export clarity before calling it a public release.
+- Next product slice after the `v0.6.4` baseline: verify the new collected
+  Godot adaptive pack and web-game ZIP exports in real Godot/web import
+  workflows, then add push-to-Godot or native destination selection before
+  deeper recording, ASIO, simultaneous multitrack capture, or broad DAW editor
+  expansion.
 
 ## Pocket Audio Core And PCS Format
 
@@ -41,3 +46,9 @@ products.
 - Keep `addons/pocket_chordsmith/` stable.
 - Improve examples for runtime callbacks, chart resources, buses, and stem workflows.
 - Keep the addon release path separate from full monorepo source archives.
+- Revisit Chordsmith -> Godot direct browser push. The localhost receiver and
+  pasted `PCS1:` import path work in the editor, but the live browser button is
+  not verified as a reliable automatic import path yet.
+- Treat Godot editor preview as an audition kit. For closer sound parity, prefer
+  DAW Godot Adaptive Pack exports with rendered full mix, stems and section
+  loops.

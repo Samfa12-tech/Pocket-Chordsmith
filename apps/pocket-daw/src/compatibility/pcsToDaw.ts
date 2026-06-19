@@ -2,6 +2,9 @@ import { createDefaultExportProfiles } from "../daw/exportProfiles";
 import { createDefaultTracks } from "../daw/tracks";
 import { createDefaultAudioDeviceSettings, createDefaultMetronomeSettings } from "../daw/dawProject";
 import { createDefaultFxState } from "../daw/fx";
+import { ensureDrumLaneMixerInPlace } from "../daw/drumLanes";
+import { chordsmithDawSynthFxSlots } from "../../../../packages/pocket-audio-core/src/fx/chordsmith-fx.js";
+import { POCKET_PRO_EQ_TYPE, pocketProEqPresetParameters } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
 import {
   POCKET_DAW_APP,
   POCKET_DAW_SCHEMA_VERSION,
@@ -55,10 +58,11 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
   alignTracksToChordsmithSource(tracks, project, guitarActive);
   const fx = createDefaultFxState(tracks);
   alignFxToChordsmithSource(fx, project);
+  applyLofiTrackEq(fx, project);
   applyLofiTrackPresets(tracks, project);
   applyLofiMasterChain(fx, project);
 
-  return {
+  const daw: PocketDawProject = {
     app: POCKET_DAW_APP,
     schemaVersion: POCKET_DAW_SCHEMA_VERSION,
     dawVersion: POCKET_DAW_VERSION,
@@ -74,7 +78,7 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
         normalized: JSON.parse(JSON.stringify(project)),
         notes: [
           "Imported through Pocket DAW v0 compatibility sanitizer. Unknown source fields are preserved in original.",
-          ...(isLofiProject(project) ? [`Lofi profile detected: ${lofiPresetLabel(project)}. Track presets and a gentle lofi master chain were applied.`] : [])
+          ...(isLofiProject(project) ? [`Lofi profile detected: ${lofiPresetLabel(project)}. Track presets, editable Pocket Pro EQ curves and a gentle lofi master chain were applied.`] : [])
         ]
       }
     ],
@@ -123,6 +127,8 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
       }
     ]
   };
+  ensureDrumLaneMixerInPlace(daw);
+  return daw;
 }
 
 function alignTracksToChordsmithSource(tracks: ReturnType<typeof createDefaultTracks>, project: SanitizedPcsProject, guitarActive: boolean) {
@@ -134,16 +140,38 @@ function alignTracksToChordsmithSource(tracks: ReturnType<typeof createDefaultTr
   const master = byRole.get("master");
   const fxReturn = byRole.get("fx-return");
 
-  if (drums) drums.volume = project.beatVolume;
+  const sourceSoundMetadata = {
+    audioProfile: project.audioProfile,
+    lofiPreset: project.lofiPreset
+  };
+  if (drums) {
+    drums.volume = project.beatVolume;
+    drums.metadata = {
+      ...(drums.metadata || {}),
+      ...sourceSoundMetadata,
+      drumKit: project.drumKit,
+      drumGroovePreset: project.drumGroovePreset
+    };
+  }
   if (bass) {
     bass.volume = project.beatVolume;
     bass.active = project.bassOn;
     bass.mute = !project.bassOn;
+    bass.metadata = {
+      ...(bass.metadata || {}),
+      ...sourceSoundMetadata,
+      bassTone: project.bassTone
+    };
   }
   if (chords) {
     chords.volume = project.chordVolume;
     chords.active = project.chordsOn;
     chords.mute = !project.chordsOn;
+    chords.metadata = {
+      ...(chords.metadata || {}),
+      ...sourceSoundMetadata,
+      chordsmithInstrument: project.chordInstrument
+    };
   }
   tracks.filter((track) => track.role === "melody").forEach((track) => {
     const melodyIndex = melodyTrackIndex(track);
@@ -153,6 +181,7 @@ function alignTracksToChordsmithSource(tracks: ReturnType<typeof createDefaultTr
     track.active = true;
     track.metadata = {
       ...(track.metadata || {}),
+      ...sourceSoundMetadata,
       chordsmithMelodyTrackIndex: melodyIndex,
       chordsmithInstrument: firstMelodyInstrument(project, melodyIndex)
     };
@@ -161,6 +190,11 @@ function alignTracksToChordsmithSource(tracks: ReturnType<typeof createDefaultTr
     guitar.volume = project.guitarVolume;
     guitar.active = guitarActive;
     guitar.mute = !guitarActive;
+    guitar.metadata = {
+      ...(guitar.metadata || {}),
+      ...sourceSoundMetadata,
+      chordsmithInstrument: project.guitarTone
+    };
   }
   if (master) master.volume = project.masterVolume;
   if (fxReturn) fxReturn.pan = 0;
@@ -192,21 +226,15 @@ function applyLofiTrackPresets(tracks: Track[], project: SanitizedPcsProject) {
     };
     if (track.role === "drums") {
       track.name = "Lofi Drums";
-      track.volume = Math.min(track.volume, 0.74);
       track.metadata = { ...(track.metadata || {}), drumKit: project.drumKit, drumGroovePreset: project.drumGroovePreset };
     }
     if (track.role === "bass") {
       track.name = project.bassTone === "soft_upright" ? "Soft Upright Bass" : project.bassTone === "rounded_triangle_bass" ? "Rounded Triangle Bass" : "Warm Sub Bass";
-      track.volume = Math.min(track.volume, 0.72);
       track.metadata = { ...(track.metadata || {}), bassTone: project.bassTone };
     }
     if (track.role === "chords") {
       track.name = `${titleCase(project.chordInstrument.replace(/_/g, " "))} Chords`;
-      track.volume = Math.min(track.volume, 0.68);
       track.metadata = { ...(track.metadata || {}), chordsmithInstrument: project.chordInstrument };
-    }
-    if (track.role === "melody") {
-      track.volume = Math.min(track.volume, 0.62);
     }
     if (track.role === "fx-return") {
       track.name = "Lofi Space";
@@ -214,7 +242,6 @@ function applyLofiTrackPresets(tracks: Track[], project: SanitizedPcsProject) {
     }
     if (track.role === "master") {
       track.name = "Lofi Master";
-      track.volume = Math.min(track.volume, 0.88);
     }
   });
 }
@@ -229,6 +256,7 @@ function applyLofiMasterChain(fx: FxState, project: SanitizedPcsProject) {
   const bit = typeof texture.bitCrush === "number" ? texture.bitCrush : 0.01;
   master.slots = [
     ...master.slots,
+    pocketProEqSlot("lofi_pro_eq_master", "Lofi Master EQ", "lofi-soft-rolloff"),
     {
       id: "lofi_lowpass_master",
       type: "low-pass",
@@ -272,6 +300,35 @@ function applyLofiMasterChain(fx: FxState, project: SanitizedPcsProject) {
         } satisfies FxPluginInstance]
       : [])
   ];
+}
+
+function applyLofiTrackEq(fx: FxState, project: SanitizedPcsProject) {
+  if (!isLofiProject(project)) return;
+  const presetForRole = new Map([
+    ["drums", ["lofi_drum_eq", "Lofi Drum EQ", "lofi-drum-softener"]],
+    ["bass", ["lofi_bass_eq", "Warm Bass EQ", "warm-bass-pocket"]],
+    ["chords", ["lofi_chord_eq", "Soft Chord EQ", "soft-chord-bed"]],
+    ["guitar", ["lofi_guitar_eq", "Gentle Guitar EQ", "soft-chord-bed"]]
+  ]);
+  fx.chains.forEach((chain) => {
+    const owner = chain.ownerTrackId || "";
+    const melody = owner === "melody" || owner.startsWith("melody-");
+    const preset = melody ? ["lofi_melody_eq", "Gentle Lead EQ", "gentle-lead-presence"] : presetForRole.get(owner);
+    if (!preset || chain.slots.some((slot) => slot.type === POCKET_PRO_EQ_TYPE && slot.presetId === preset[2])) return;
+    const [id, name, presetId] = preset;
+    chain.slots = [pocketProEqSlot(`${id}_${owner || chain.id}`, name, presetId), ...chain.slots];
+  });
+}
+
+function pocketProEqSlot(id: string, name: string, presetId: string): FxPluginInstance {
+  return {
+    id,
+    type: POCKET_PRO_EQ_TYPE,
+    name,
+    enabled: true,
+    presetId,
+    parameters: pocketProEqPresetParameters(presetId)
+  };
 }
 
 function alignFxToChordsmithSource(fx: FxState, project: SanitizedPcsProject) {
@@ -370,54 +427,13 @@ function titleCase(value: string) {
 }
 
 function chordsmithSynthFxSlots(project: SanitizedPcsProject): FxPluginInstance[] {
-  const slots: FxPluginInstance[] = [];
-  const wetScale = project.fxMix * 1.45;
-  const delayMix = clamp(project.fxDelay * 0.95 * wetScale, 0, 1);
-  const chorusMix = clamp(project.fxChorus * 0.95 * wetScale, 0, 1);
-  const reverbMix = clamp(project.fxReverb * 1.05 * wetScale, 0, 1);
-
-  if (delayMix > 0.01) {
-    slots.push({
-      id: "pcs_delay",
-      type: "delay",
-      name: "Chordsmith Delay",
-      enabled: true,
-      presetId: "pocket-chordsmith",
-      parameters: {
-        time: 0.1 + project.fxDelay * 0.42,
-        feedback: 0.05 + project.fxDelay * 0.72,
-        mix: delayMix
-      }
-    });
-  }
-  if (chorusMix > 0.01 || project.fxFlanger > 0.01) {
-    slots.push({
-      id: "pcs_chorus",
-      type: "chorus",
-      name: "Chordsmith Mod",
-      enabled: true,
-      presetId: "pocket-chordsmith",
-      parameters: {
-        rate: 0.25 + project.fxChorus * 1.9 + project.fxFlanger * 0.55,
-        depth: 0.0014 + project.fxChorus * 0.03 + project.fxFlanger * 0.0062,
-        mix: clamp(chorusMix + project.fxFlanger * 0.35 * wetScale, 0, 1)
-      }
-    });
-  }
-  if (reverbMix > 0.01) {
-    slots.push({
-      id: "pcs_reverb",
-      type: "reverb",
-      name: "Chordsmith Reverb",
-      enabled: true,
-      presetId: "pocket-chordsmith",
-      parameters: {
-        decay: 1.6,
-        mix: reverbMix
-      }
-    });
-  }
-  return slots;
+  return chordsmithDawSynthFxSlots({
+    delay: project.fxDelay,
+    chorus: project.fxChorus,
+    flanger: project.fxFlanger,
+    reverb: project.fxReverb,
+    mix: project.fxMix
+  }) as FxPluginInstance[];
 }
 
 function clamp(value: number, min: number, max: number) {

@@ -396,10 +396,9 @@ export function nativeRenderCacheSignature(project: PocketDawProject): string {
     tracks: project.tracks.map((track) => ({
       id: track.id,
       role: track.role,
-      active: track.active,
-      fxChainId: track.fxChainId
+      active: track.active
     })),
-    fx: project.fx
+    drumLaneFx: nativeCacheStemFxState(project)
   }));
 }
 
@@ -459,25 +458,8 @@ function assetBuildItems(project: PocketDawProject, clip: Clip, signature: strin
 }
 
 async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Promise<NativeAudioAsset> {
-  const assetProject = cloneProject(project);
-  assetProject.timeline = {
-    ...assetProject.timeline,
-    bars: Math.max(1, Math.ceil(item.clip.barLength)),
-    loop: { enabled: false, startBar: 1, endBar: Math.max(2, Math.ceil(item.clip.barLength) + 1) },
-    markers: [],
-    clips: [{
-      ...item.clip,
-      id: `${item.clip.id}_cache_source`,
-      trackId: item.trackId,
-      startBar: 1
-    }]
-  };
-  assetProject.tracks = assetProject.tracks.map((track) => {
-    if (track.role === "master") return { ...track, volume: 1, pan: 0, mute: false, solo: false };
-    const active = track.id === item.trackId;
-    return { ...track, volume: active ? 1 : track.volume, pan: active ? 0 : track.pan, mute: !active, solo: false };
-  });
-  const blob = await renderProjectToWavBlob(assetProject);
+  const assetProject = projectForNativeGeneratedStemRender(project, item.clip, item.trackId);
+  const blob = await renderProjectToWavBlob(assetProject, { includeChordsmithOfflineLofiTexture: item.role === "drums" });
   const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
   const durationSeconds = barsToSeconds(item.clip.barLength, project.project.bpm, project.project.timeSig);
   const id = `native-cache-${hashString(item.key)}`;
@@ -492,6 +474,36 @@ async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Pro
     sizeBytes: bytes.length,
     sourceHash: item.key.split("_")[0] || undefined,
     bytes
+  };
+}
+
+export function projectForNativeGeneratedStemRender(project: PocketDawProject, clip: Clip, trackId: string): PocketDawProject {
+  const assetProject = cloneProject(project);
+  assetProject.timeline = {
+    ...assetProject.timeline,
+    bars: Math.max(1, Math.ceil(clip.barLength)),
+    loop: { enabled: false, startBar: 1, endBar: Math.max(2, Math.ceil(clip.barLength) + 1) },
+    markers: [],
+    clips: [{
+      ...clip,
+      id: `${clip.id}_cache_source`,
+      trackId,
+      startBar: 1
+    }]
+  };
+  assetProject.tracks = assetProject.tracks.map((track) => {
+    if (track.role === "master") return { ...track, volume: 1, pan: 0, mute: false, solo: false };
+    const active = track.id === trackId;
+    return { ...track, volume: active ? 1 : track.volume, pan: active ? 0 : track.pan, mute: !active, solo: false };
+  });
+  assetProject.fx = nativeCacheStemFxState(assetProject);
+  assetProject.mixer = { ...assetProject.mixer, masterLimiter: false };
+  return assetProject;
+}
+
+function nativeCacheStemFxState(project: PocketDawProject): PocketDawProject["fx"] {
+  return {
+    chains: (project.fx?.chains || []).filter((chain) => typeof chain.metadata?.drumLaneId === "string")
   };
 }
 

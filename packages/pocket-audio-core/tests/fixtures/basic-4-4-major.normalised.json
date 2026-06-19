@@ -104,7 +104,7 @@
         ]
       }
     },
-    "normalizedAt": "2026-06-11T06:28:48.758Z"
+    "normalizedAt": "2026-06-18T20:34:38.265Z"
   },
   "meta": {
     "title": "Basic 4/4 Major",
@@ -115,7 +115,75 @@
     "resolution": 4,
     "swing": 0,
     "ppq": 480,
-    "melodyPitchMode": "scale"
+    "melodyPitchMode": "scale",
+    "audioProfile": "standard",
+    "stylePreset": ""
+  },
+  "lofi": {
+    "audioProfile": "standard",
+    "presetId": "",
+    "preset": {
+      "id": "lofi_study_room",
+      "label": "Study Room Loop",
+      "description": "Warm, steady study/game bed with dusty Rhodes, soft hats and a small vinyl edge.",
+      "bpm": {
+        "min": 72,
+        "max": 80,
+        "default": 76
+      },
+      "timeSig": 4,
+      "preferredKeys": [
+        "A minor",
+        "C major",
+        "D minor"
+      ],
+      "scalePreference": "minor",
+      "swing": 0.12,
+      "humanize": 0.11,
+      "chordType": "seventh",
+      "chordStyle": "maj7/min7 loop",
+      "chordInstrument": "dusty_rhodes",
+      "melodyInstrument": "mellow_vibes",
+      "bassTone": "warm_sub",
+      "drumKit": "lofi_dusty",
+      "drumGroovePreset": "lofi_backbeat_76",
+      "fx": {
+        "delay": 0.12,
+        "chorus": 0.22,
+        "flanger": 0.02,
+        "reverb": 0.18,
+        "mix": 0.58,
+        "sidechain": 0.24
+      },
+      "texture": {
+        "vinylCrackle": 0.09,
+        "tapeHiss": 0.04,
+        "wowFlutter": 0.03,
+        "warmth": 0.18,
+        "lowPassAge": 0.24,
+        "bitCrush": 0.01
+      },
+      "intensityHints": {
+        "menu": "A",
+        "explore": "B",
+        "night": "C",
+        "rain": "C",
+        "full": "D"
+      }
+    },
+    "drumKit": "",
+    "drumGroovePreset": "",
+    "bassTone": "classic",
+    "texture": {
+      "enabled": false,
+      "vinylCrackle": 0.08,
+      "tapeHiss": 0.05,
+      "wowFlutter": 0.03,
+      "warmth": 0.16,
+      "lowPassAge": 0.22,
+      "bitCrush": 0.01
+    },
+    "intensityHints": {}
   },
   "transport": {
     "scope": "sequence",
@@ -153,14 +221,23 @@
     "fx": {
       "filter": 1,
       "delay": 0.12,
-      "echo": 0.04,
+      "echo": 0.12,
       "chorus": 0.18,
       "flanger": 0.06,
-      "reverb": 0.08,
+      "reverb": 0.18,
       "mix": 0.65,
       "sidechain": {
         "enabled": false,
         "amount": 0.45
+      },
+      "lofiTexture": {
+        "enabled": false,
+        "vinylCrackle": 0.08,
+        "tapeHiss": 0.05,
+        "wowFlutter": 0.03,
+        "warmth": 0.16,
+        "lowPassAge": 0.22,
+        "bitCrush": 0.01
       }
     }
   },

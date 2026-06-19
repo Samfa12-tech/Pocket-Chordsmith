@@ -1,6 +1,8 @@
 import { sanitizePocketChordsmithProject } from "../compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../compatibility/pcsToDaw";
 import type { PocketDawProject } from "../daw/schema";
+import { DEFAULT_FX } from "../../../../packages/pocket-audio-core/src/constants.js";
+import { DEFAULT_GUITAR_REGISTER } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 
 export function createDemoProject(): PocketDawProject {
   return createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject(createDemoChordsmithProject()));
@@ -33,12 +35,12 @@ export function createDemoChordsmithProject() {
     bassMode: "auto",
     guitarEnabled: true,
     guitarTone: "crunch",
-    guitarRegister: "low",
+    guitarRegister: DEFAULT_GUITAR_REGISTER,
     guitarStrumMode: "alternate",
     guitarVolume: 0.62,
     fxDelay: 0.08,
     fxReverb: 0.12,
-    fxMix: 0.65,
+    fxMix: DEFAULT_FX.mix,
     sidechainOn: true,
     sidechainAmount: 0.35,
     unknownFutureChordsmithField: {

@@ -168,7 +168,9 @@ pub fn native_recording_start(
         .map_err(|_| "Native recording state is unavailable.".to_string())?;
     if runtime.input_stream.is_some() {
         if runtime.target_path.is_some() {
-            return Err("A recording is already active. Stop it before starting another take.".to_string());
+            return Err(
+                "A recording is already active. Stop it before starting another take.".to_string(),
+            );
         }
         clear_runtime_streams(&mut runtime);
     }
@@ -186,8 +188,11 @@ pub fn native_recording_start(
     let sample_rate = config.sample_rate();
     let input_channels = config.channels().max(1) as usize;
     let stream_config: cpal::StreamConfig = config.clone().into();
-    let (target_path, target_relative_path, file_name) =
-        recording_output_path(&payload.project_file_path, &payload.project_title, &payload.track_name)?;
+    let (target_path, target_relative_path, file_name) = recording_output_path(
+        &payload.project_file_path,
+        &payload.project_title,
+        &payload.track_name,
+    )?;
     let shared = Arc::new(Mutex::new(RecordingShared {
         samples: Vec::new(),
         monitor_samples: VecDeque::with_capacity(sample_rate as usize),
@@ -243,9 +248,12 @@ pub fn native_recording_start(
 
     let mut output_device_name = None;
     let monitor_stream = if payload.monitor_enabled {
-        let output = select_output_device(&host, payload.output_device_id.as_deref())
-            .ok_or_else(|| "Input monitor was enabled, but no output device is available.".to_string())?;
-        output_device_name = Some(device_name(&output).unwrap_or_else(|_| "Output device".to_string()));
+        let output =
+            select_output_device(&host, payload.output_device_id.as_deref()).ok_or_else(|| {
+                "Input monitor was enabled, but no output device is available.".to_string()
+            })?;
+        output_device_name =
+            Some(device_name(&output).unwrap_or_else(|_| "Output device".to_string()));
         Some(build_monitor_stream(&output, Arc::clone(&shared))?)
     } else {
         None
@@ -283,7 +291,9 @@ pub fn native_recording_start_preview(
         .lock()
         .map_err(|_| "Native recording state is unavailable.".to_string())?;
     if runtime.target_path.is_some() {
-        return Err("A recording is active. Stop it before changing armed input monitoring.".to_string());
+        return Err(
+            "A recording is active. Stop it before changing armed input monitoring.".to_string(),
+        );
     }
     clear_runtime_streams(&mut runtime);
 
@@ -291,9 +301,9 @@ pub fn native_recording_start_preview(
     let input = select_input_device(&host, payload.input_device_id.as_deref())
         .ok_or_else(|| "No input device is available for armed input metering. Refresh Audio Settings and choose an input.".to_string())?;
     let input_device_name = device_name(&input).unwrap_or_else(|_| "Input device".to_string());
-    let config = input
-        .default_input_config()
-        .map_err(|err| format!("Could not use the selected input device for armed input metering: {err}"))?;
+    let config = input.default_input_config().map_err(|err| {
+        format!("Could not use the selected input device for armed input metering: {err}")
+    })?;
     let sample_rate = config.sample_rate();
     let input_channels = config.channels().max(1) as usize;
     let stream_config: cpal::StreamConfig = config.clone().into();
@@ -352,9 +362,12 @@ pub fn native_recording_start_preview(
 
     let mut output_device_name = None;
     let monitor_stream = if payload.monitor_enabled {
-        let output = select_output_device(&host, payload.output_device_id.as_deref())
-            .ok_or_else(|| "Input monitor was enabled, but no output device is available.".to_string())?;
-        output_device_name = Some(device_name(&output).unwrap_or_else(|_| "Output device".to_string()));
+        let output =
+            select_output_device(&host, payload.output_device_id.as_deref()).ok_or_else(|| {
+                "Input monitor was enabled, but no output device is available.".to_string()
+            })?;
+        output_device_name =
+            Some(device_name(&output).unwrap_or_else(|_| "Output device".to_string()));
         Some(build_monitor_stream(&output, Arc::clone(&shared))?)
     } else {
         None
@@ -425,9 +438,10 @@ pub fn native_recording_stop(
         .take()
         .ok_or_else(|| "Recording track id was not prepared.".to_string())?;
     let (samples, sample_rate, peak) = {
-        let shared = shared
-            .lock()
-            .map_err(|_| "Could not finalize recorded audio because the native buffer is unavailable.".to_string())?;
+        let shared = shared.lock().map_err(|_| {
+            "Could not finalize recorded audio because the native buffer is unavailable."
+                .to_string()
+        })?;
         (shared.samples.clone(), shared.sample_rate, shared.peak)
     };
     let duration_seconds = if sample_rate > 0 {
@@ -470,11 +484,9 @@ pub fn native_recording_update_monitor(
     let mut runtime = state
         .lock()
         .map_err(|_| "Native recording state is unavailable.".to_string())?;
-    let shared = runtime
-        .shared
-        .as_ref()
-        .cloned()
-        .ok_or_else(|| "No active recording or armed input preview is available for input monitoring.".to_string())?;
+    let shared = runtime.shared.as_ref().cloned().ok_or_else(|| {
+        "No active recording or armed input preview is available for input monitoring.".to_string()
+    })?;
 
     if !payload.monitor_enabled {
         apply_monitor_settings(&shared, false, payload.monitor_volume, payload.monitor_pan);
@@ -484,8 +496,10 @@ pub fn native_recording_update_monitor(
     }
 
     let host = preferred_host();
-    let output = select_output_device(&host, payload.output_device_id.as_deref())
-        .ok_or_else(|| "Input monitor was enabled, but no output device is available.".to_string())?;
+    let output =
+        select_output_device(&host, payload.output_device_id.as_deref()).ok_or_else(|| {
+            "Input monitor was enabled, but no output device is available.".to_string()
+        })?;
     let output_device_name = device_name(&output).unwrap_or_else(|_| "Output device".to_string());
     let monitor_stream = build_monitor_stream(&output, Arc::clone(&shared))?;
     monitor_stream
@@ -511,7 +525,16 @@ fn runtime_status(runtime: &NativeRecordingRuntime) -> NativeRecordingStatus {
     let (monitoring, sample_rate, peak, sample_count) = runtime
         .shared
         .as_ref()
-        .and_then(|shared| shared.lock().ok().map(|shared| (shared.monitor_enabled, shared.sample_rate, shared.peak, shared.samples.len())))
+        .and_then(|shared| {
+            shared.lock().ok().map(|shared| {
+                (
+                    shared.monitor_enabled,
+                    shared.sample_rate,
+                    shared.peak,
+                    shared.samples.len(),
+                )
+            })
+        })
         .unwrap_or((false, 0, 0.0, 0));
     NativeRecordingStatus {
         backend: "native-cpal".to_string(),
@@ -559,7 +582,11 @@ fn apply_monitor_settings(
 }
 
 fn capture_f32(data: &[f32], channels: usize, shared: &Arc<Mutex<RecordingShared>>) {
-    capture_samples(data.chunks(channels).map(|frame| *frame.first().unwrap_or(&0.0)), shared);
+    capture_samples(
+        data.chunks(channels)
+            .map(|frame| *frame.first().unwrap_or(&0.0)),
+        shared,
+    );
 }
 
 fn capture_i16(data: &[i16], channels: usize, shared: &Arc<Mutex<RecordingShared>>) {
@@ -572,8 +599,9 @@ fn capture_i16(data: &[i16], channels: usize, shared: &Arc<Mutex<RecordingShared
 
 fn capture_u16(data: &[u16], channels: usize, shared: &Arc<Mutex<RecordingShared>>) {
     capture_samples(
-        data.chunks(channels)
-            .map(|frame| (*frame.first().unwrap_or(&(u16::MAX / 2)) as f32 / u16::MAX as f32) * 2.0 - 1.0),
+        data.chunks(channels).map(|frame| {
+            (*frame.first().unwrap_or(&(u16::MAX / 2)) as f32 / u16::MAX as f32) * 2.0 - 1.0
+        }),
         shared,
     );
 }
@@ -824,13 +852,23 @@ fn ensure_child_path(parent: &Path, child: &Path) -> Result<(), String> {
 fn sanitize_file_stem(value: &str) -> String {
     let safe = value
         .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch.to_ascii_lowercase() } else { '-' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .split('-')
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("-");
-    safe.chars().take(36).collect::<String>().trim_matches('-').to_string()
+    safe.chars()
+        .take(36)
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
         .if_empty("take")
 }
 
@@ -851,7 +889,13 @@ impl IfEmpty for String {
 fn sanitize_id(value: &str) -> String {
     value
         .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch.to_ascii_lowercase() } else { '-' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .split('-')
         .filter(|part| !part.is_empty())
@@ -893,19 +937,22 @@ mod tests {
         assert_eq!(&bytes[0..4], b"RIFF");
         assert_eq!(&bytes[8..12], b"WAVE");
         assert_eq!(u16::from_le_bytes([bytes[22], bytes[23]]), 1);
-        assert_eq!(u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]), 48_000);
+        assert_eq!(
+            u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]),
+            48_000
+        );
         assert_eq!(u16::from_le_bytes([bytes[34], bytes[35]]), 16);
-        assert_eq!(u32::from_le_bytes([bytes[40], bytes[41], bytes[42], bytes[43]]), 6);
+        assert_eq!(
+            u32::from_le_bytes([bytes[40], bytes[41], bytes[42], bytes[43]]),
+            6
+        );
     }
 
     #[test]
     fn creates_recording_path_under_project_media_recordings() {
-        let (path, relative, file_name) = recording_output_path(
-            r"C:\Songs\Example.pocketdaw",
-            "My Song",
-            "Live Vocals",
-        )
-        .expect("path should be valid");
+        let (path, relative, file_name) =
+            recording_output_path(r"C:\Songs\Example.pocketdaw", "My Song", "Live Vocals")
+                .expect("path should be valid");
         let normalized = path.to_string_lossy().replace('\\', "/");
         assert!(normalized.contains("/project-media/recordings/"));
         assert!(file_name.ends_with(".wav"));

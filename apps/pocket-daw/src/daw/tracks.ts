@@ -1,15 +1,16 @@
 import type { PocketDawProject, Track, TrackRole } from "./schema";
 import { cloneProject } from "./dawProject";
 import { createEmptyFxChain } from "./fx";
+import { DEFAULT_MASTER_VOLUME, DEFAULT_STEM_MIX } from "../../../../packages/pocket-audio-core/src/constants.js";
 
 const TRACK_DEFS: Array<{ id: string; name: string; role: TrackRole; colour: string; volume: number; pan: number }> = [
-  { id: "drums", name: "Drums", role: "drums", colour: "#40d8ff", volume: 0.92, pan: 0 },
-  { id: "bass", name: "Bass", role: "bass", colour: "#7cff9b", volume: 0.86, pan: 0 },
-  { id: "chords", name: "Chords", role: "chords", colour: "#b88cff", volume: 0.74, pan: -0.08 },
-  { id: "melody", name: "Melody", role: "melody", colour: "#ff68c8", volume: 0.82, pan: 0.08 },
-  { id: "guitar", name: "Guitar", role: "guitar", colour: "#ffc857", volume: 0.72, pan: 0.05 },
+  { id: "drums", name: "Drums", role: "drums", colour: "#40d8ff", volume: DEFAULT_STEM_MIX.drums.volume, pan: DEFAULT_STEM_MIX.drums.pan },
+  { id: "bass", name: "Bass", role: "bass", colour: "#7cff9b", volume: DEFAULT_STEM_MIX.bass.volume, pan: DEFAULT_STEM_MIX.bass.pan },
+  { id: "chords", name: "Chords", role: "chords", colour: "#b88cff", volume: DEFAULT_STEM_MIX.chords.volume, pan: DEFAULT_STEM_MIX.chords.pan },
+  { id: "melody", name: "Melody", role: "melody", colour: "#ff68c8", volume: DEFAULT_STEM_MIX.melody.volume, pan: DEFAULT_STEM_MIX.melody.pan },
+  { id: "guitar", name: "Guitar", role: "guitar", colour: "#ffc857", volume: DEFAULT_STEM_MIX.guitar.volume, pan: DEFAULT_STEM_MIX.guitar.pan },
   { id: "fx-return", name: "FX Return", role: "fx-return", colour: "#8aa0ff", volume: 0.55, pan: 0 },
-  { id: "master", name: "Master", role: "master", colour: "#ffffff", volume: 0.9, pan: 0 }
+  { id: "master", name: "Master", role: "master", colour: "#ffffff", volume: DEFAULT_MASTER_VOLUME, pan: 0 }
 ];
 
 export function createDefaultTracks(options: { guitarActive?: boolean } = {}): Track[] {

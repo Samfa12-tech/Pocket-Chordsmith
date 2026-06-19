@@ -8,12 +8,14 @@ Use these notes before tagging or publishing any Pocket Audio family artifact.
 - Pocket DJ: run `npm run test:e2e` and `npm run package:itch`; verify the packaged demo deck loads Pocket Audio Core from `./pocket-audio-core/...` rather than falling back to legacy-only status.
 - Pocket Audio Core: run `npm test` and `npm run build`; keep `scope:"section"`, `scope:"sequence"`, and `scope:"all"` timeline behavior covered by tests.
 - Pocket DAW: run `npm test`, `npm run build`, and `npm run verify:versions`; installer packaging still needs a Rust/Tauri-capable Windows release machine before publishing.
+- Pocket DAW sound-parity release checks must include a known lofi/chillhop Chordsmith project with non-default master/chord/beat/lead/guitar volumes, a Chordsmith/DJ/DAW A/B, per-drum lane mixer/FX smoke, and a Godot Adaptive/Game Pack import smoke.
 - Godot addon: no runtime validation is implied by web/package checks; release validation still needs Godot 4.x and the active game project.
 
 ## Web App
 
 - Confirm `apps/chordsmith-web/index.html` redirects to the intended current build.
 - Serve `apps/chordsmith-web/` locally and smoke test demo load, play/stop, JSON import/export, `PCS1:` import/export, WAV export, and mobile width.
+- If port `4174` is already occupied, run the Chordsmith Playwright smoke with an alternate port, for example `$env:PORT='4184'; npm run test:e2e`.
 - Verify the Settings export dropdown covers Section A-H plus all sections and song sequence, and that section WAV export uses the matching selected scope.
 - Verify `Push to DJ` and `Push to Godot` still preserve handoff payloads.
 - Run `npm run package:itch` from `apps/chordsmith-web/` and confirm the zip contains `index.html`, `pocket_chordsmith_v68_core_bridge.html`, and `pocket-audio-core/` fallback files at the root.

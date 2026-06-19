@@ -5,6 +5,7 @@ import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsT
 import { createDemoChordsmithProject, createLofiChordsmithTemplateProject } from "../src/demo/demoProject";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { importTextToProject } from "../src/app/commands";
+import { DEFAULT_FX } from "../../../packages/pocket-audio-core/src/constants.js";
 
 describe("Pocket Chordsmith import", () => {
   it("decodes PCS1 share codes", () => {
@@ -37,16 +38,80 @@ describe("Pocket Chordsmith import", () => {
     const project = createDawProjectFromChordsmithProject(sanitized);
     const byRole = new Map(project.tracks.map((track) => [track.role, track]));
     const masterChain = project.fx.chains.find((chain) => chain.ownerTrackId === "master" || chain.id === "fx_master");
+    const drumsChain = project.fx.chains.find((chain) => chain.ownerTrackId === "drums");
+    const bassChain = project.fx.chains.find((chain) => chain.ownerTrackId === "bass");
+    const chordChain = project.fx.chains.find((chain) => chain.ownerTrackId === "chords");
+    const melodyChain = project.fx.chains.find((chain) => chain.ownerTrackId === "melody");
 
     expect(sanitized.audioProfile).toBe("lofi_chill");
     expect(sanitized.lofiPreset).toBe("lofi_study_room");
     expect(project.sourceRefs[0]?.notes?.some((note) => note.includes("Lofi profile detected"))).toBe(true);
+    expect(project.sourceRefs[0]?.notes?.some((note) => note.includes("Pocket Pro EQ"))).toBe(true);
     expect(byRole.get("drums")?.name).toBe("Lofi Drums");
     expect(byRole.get("drums")?.metadata).toMatchObject({ audioProfile: "lofi_chill", drumKit: "lofi_dusty" });
     expect(byRole.get("bass")?.name).toBe("Warm Sub Bass");
     expect(byRole.get("bass")?.metadata).toMatchObject({ bassTone: "warm_sub" });
+    expect(drumsChain?.slots[0]).toMatchObject({ type: "parametric-eq", presetId: "lofi-drum-softener" });
+    expect(bassChain?.slots[0]).toMatchObject({ type: "parametric-eq", presetId: "warm-bass-pocket" });
+    expect(chordChain?.slots[0]).toMatchObject({ type: "parametric-eq", presetId: "soft-chord-bed" });
+    expect(melodyChain?.slots[0]).toMatchObject({ type: "parametric-eq", presetId: "gentle-lead-presence" });
+    expect(masterChain?.slots[0]).toMatchObject({ type: "parametric-eq", presetId: "lofi-soft-rolloff" });
     expect(masterChain?.slots.some((slot) => slot.id === "lofi_lowpass_master")).toBe(true);
     expect(masterChain?.slots.some((slot) => slot.id === "lofi_saturation_master")).toBe(true);
+  });
+
+  it("normalises lofi drum groove presets through the shared Pocket Audio registry", () => {
+    const valid = sanitizePocketChordsmithProject({
+      title: "Valid Lofi Groove",
+      audioProfile: "lofi_chill",
+      lofiPreset: "lofi_koi_pond",
+      drumGroovePreset: "lofi_sparse_clicks"
+    });
+    const invalid = sanitizePocketChordsmithProject({
+      title: "Preset Fallback Groove",
+      audioProfile: "lofi_chill",
+      lofiPreset: "lofi_koi_pond",
+      drumGroovePreset: "definitely_not_a_groove"
+    });
+    const standard = sanitizePocketChordsmithProject({
+      title: "Standard Groove",
+      drumGroovePreset: "lofi_sparse_clicks",
+      lofiPreset: "definitely_not_a_preset"
+    });
+    const project = createDawProjectFromChordsmithProject(invalid);
+    const drumTrack = project.tracks.find((track) => track.role === "drums");
+
+    expect(valid.drumGroovePreset).toBe("lofi_sparse_clicks");
+    expect(invalid.lofiPreset).toBe("lofi_koi_pond");
+    expect(invalid.drumGroovePreset).toBe("lofi_sparse_clicks");
+    expect(standard.audioProfile).toBe("standard");
+    expect(standard.lofiPreset).toBe("");
+    expect(standard.drumGroovePreset).toBe("");
+    expect(drumTrack?.metadata).toMatchObject({ audioProfile: "lofi_chill", drumGroovePreset: "lofi_sparse_clicks" });
+    expect(project.sourceRefs[0]?.normalized).toMatchObject({ lofiPreset: "lofi_koi_pond", drumGroovePreset: "lofi_sparse_clicks" });
+  });
+
+  it("uses Chordsmith lofi preset texture defaults when imports omit explicit texture values", () => {
+    const sanitized = sanitizePocketChordsmithProject({
+      title: "Preset Texture Defaults",
+      audioProfile: "lofi_chill",
+      lofiPreset: "lofi_rainy_window"
+    });
+    const project = createDawProjectFromChordsmithProject(sanitized);
+    const events = renderTimelineEvents(project);
+    const textureEvent = events.find((event) => event.kind === "texture");
+
+    expect(sanitized.lofiTexture).toMatchObject({
+      enabled: true,
+      vinylCrackle: 0.04,
+      tapeHiss: 0.1,
+      wowFlutter: 0.025,
+      warmth: 0.14,
+      lowPassAge: 0.2,
+      bitCrush: 0
+    });
+    expect(textureEvent?.lofiTexture).toMatchObject({ enabled: true, tapeHiss: 0.1, vinylCrackle: 0.04 });
+    expect(project.sourceRefs[0]?.normalized).toMatchObject({ lofiTexture: { enabled: true, tapeHiss: 0.1 } });
   });
 
   it("normalises missing fields and preserves unknown source fields", () => {
@@ -58,7 +123,73 @@ describe("Pocket Chordsmith import", () => {
     });
     expect(sanitized.projectVersion).toBe(1);
     expect(sanitized.sections.A.active).toBe(true);
+    expect(sanitized.fxDelay).toBe(DEFAULT_FX.delay);
+    expect(sanitized.fxChorus).toBe(DEFAULT_FX.chorus);
+    expect(sanitized.fxFlanger).toBe(DEFAULT_FX.flanger);
+    expect(sanitized.fxReverb).toBe(DEFAULT_FX.reverb);
+    expect(sanitized.fxMix).toBe(DEFAULT_FX.mix);
+    expect(sanitized.sidechainAmount).toBe(DEFAULT_FX.sidechain.amount);
     expect((sanitized.original as Record<string, unknown>).unknownChordsmithField).toBe("keep me");
+  });
+
+  it("normalises Chordsmith instrument IDs through the shared Pocket Audio registry", () => {
+    const melodyA = new Array<number | null>(64).fill(null);
+    const melodyB = new Array<number | null>(64).fill(null);
+    melodyA[0] = 4;
+    melodyB[8] = 7;
+
+    const shared = sanitizePocketChordsmithProject({
+      title: "Shared Instruments",
+      chordInstrument: "dusty_rhodes",
+      chordPlayMode: "arp_down",
+      chordRhythmMode: "half",
+      melodyTracksA: [melodyA, melodyB],
+      melodyInstrumentsA: ["tape_bell", "definitely_not_a_voice"]
+    });
+    const invalid = sanitizePocketChordsmithProject({
+      title: "Invalid Instruments",
+      chordInstrument: "definitely_not_a_chord_voice",
+      chordPlayMode: "sideways_strum",
+      chordRhythmMode: "everywhere_all_at_once",
+      melodyTracksA: [melodyA],
+      melodyInstrumentsA: ["definitely_not_a_voice"]
+    });
+
+    expect(shared.chordInstrument).toBe("dusty_rhodes");
+    expect(shared.chordPlayMode).toBe("arp_down");
+    expect(shared.chordRhythmMode).toBe("half");
+    expect(shared.sections.A.melodyInstruments).toEqual(["tape_bell", "pulse"]);
+    expect(invalid.chordInstrument).toBe("pocket");
+    expect(invalid.chordPlayMode).toBe("block");
+    expect(invalid.chordRhythmMode).toBe("sustain");
+    expect(invalid.sections.A.melodyInstruments).toEqual(["pulse"]);
+  });
+
+  it("preserves explicit Chordsmith FX and pump settings for DAW playback chains", () => {
+    const sanitized = sanitizePocketChordsmithProject({
+      title: "FX Import",
+      fxDelay: 0.31,
+      fxChorus: 0.22,
+      fxFlanger: 0.11,
+      fxReverb: 0.27,
+      fxMix: 0.58,
+      humanizeOn: true,
+      sidechainOn: true,
+      sidechainAmount: 0.49
+    });
+    const project = createDawProjectFromChordsmithProject(sanitized);
+    const chordFxSlots = project.fx.chains.find((chain) => chain.id === "fx_chords")?.slots || [];
+
+    expect(sanitized.fxDelay).toBe(0.31);
+    expect(sanitized.fxReverb).toBe(0.27);
+    expect(sanitized.humanizeOn).toBe(true);
+    expect(project.sourceRefs[0]?.normalized).toMatchObject({ humanizeOn: true });
+    expect(sanitized.sidechainOn).toBe(true);
+    expect(sanitized.sidechainAmount).toBe(0.49);
+    expect(chordFxSlots.some((slot) => slot.id.startsWith("pcs_delay"))).toBe(true);
+    expect(chordFxSlots.some((slot) => slot.id.startsWith("pcs_chorus"))).toBe(true);
+    expect(chordFxSlots.some((slot) => slot.id.startsWith("pcs_reverb"))).toBe(true);
+    expect(chordFxSlots.some((slot) => slot.id.startsWith("pcs_tone") && slot.type === "parametric-eq")).toBe(true);
   });
 
   it("preserves compact section grid timing from v16 exports and share codes", () => {

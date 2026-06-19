@@ -10,6 +10,7 @@ describe("release scripts", () => {
     const verifyArtifacts = readFileSync("scripts/verify-release-artifacts.mjs", "utf8");
     const guardedPush = readFileSync("scripts/guarded-butler-push.mjs", "utf8");
     const updaterManifest = readFileSync("scripts/make-updater-manifest.mjs", "utf8");
+    const releaseUpdaterBuild = readFileSync("scripts/release-updater-build.mjs", "utf8");
 
     expect(packageJson.scripts["tauri:build"]).toBe("tauri build");
     expect(packageJson.scripts["verify:native-release"]).toContain("--native-release");
@@ -17,6 +18,10 @@ describe("release scripts", () => {
     expect(packageJson.scripts["verify:itch"]).toBe("node scripts/verify-itch.mjs");
     expect(packageJson.scripts["release:itch:local"]).toBe("npm run verify:itch");
     expect(packageJson.scripts["release:updater-manifest"]).toBe("node scripts/make-updater-manifest.mjs");
+    expect(packageJson.scripts["release:update"]).toBe("node scripts/release-updater-build.mjs");
+    expect(packageJson.scripts["release:update:fast"]).toBe("node scripts/release-updater-build.mjs --fast");
+    expect(packageJson.scripts["release:update:full"]).toBe("node scripts/release-updater-build.mjs --full");
+    expect(packageJson.scripts["release:update:publish"]).toBe("node scripts/release-updater-build.mjs --full --publish");
     expect(script).toContain('process.argv.includes("--native-release")');
     expect(script).toContain("POCKET_DAW_NATIVE_RELEASE");
     expect(script).toContain('"tauri:debug"');
@@ -33,11 +38,24 @@ describe("release scripts", () => {
     expect(packageItch).toContain("butler push-preview");
     expect(packageItch).toContain("releases/itch/installers");
     expect(packageItch).toContain("appears stale");
+    expect(packageItch).toContain("mix-slider values");
+    expect(packageItch).toContain("DAW-vs-Chordsmith browser event parity");
+    expect(packageItch).toContain("per-drum lane mixer/FX");
+    expect(packageItch).toContain("Godot addon accepts the DAW pack");
+    expect(packageItch).toContain("Manual Build Native Cache now immediately swaps active native playback");
+    expect(packageItch).toContain("low or zero procedural fallback events");
+    expect(packageItch).toContain("Native Playback and Native Cache readouts");
     expect(verifyArtifacts).toContain("assertSignatureFreshness");
     expect(verifyArtifacts).toContain("TAURI_SIGNING_PRIVATE_KEY");
     expect(guardedPush).toContain('PUBLISH !== "1"');
     expect(guardedPush).toContain('"releases/itch/installers"');
     expect(updaterManifest).toContain("pocket-daw-latest.json");
     expect(updaterManifest).toContain("SHA256SUMS.txt");
+    expect(releaseUpdaterBuild).toContain("packageItchRelease");
+    expect(releaseUpdaterBuild).toContain('process.env.PUBLISH !== "1"');
+    expect(releaseUpdaterBuild).toContain("--fast --publish is blocked");
+    expect(releaseUpdaterBuild).toContain("makeUpdaterManifest");
+    expect(releaseUpdaterBuild).toContain("assertGithubReleaseMissing");
+    expect(releaseUpdaterBuild).toContain("Remote setup SHA-256 verified");
   });
 });

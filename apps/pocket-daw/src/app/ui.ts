@@ -1,8 +1,14 @@
 import type { AppState } from "./state";
 import { currentProject, type ChordsmithStepSelection } from "./state";
 import { BUILT_IN_FX, getTrackFxChain } from "../daw/fx";
+import { DRUM_LANE_DEFS, getDrumLaneFxChain, getDrumLaneMix } from "../daw/drumLanes";
 import { getPrimaryChordsmithSource, totalEditorSteps, visibleEditorSteps } from "../daw/chordsmithEditor";
-import { POCKET_DAW_VERSION, type Clip, type FxChain, type Track } from "../daw/schema";
+import { drumPresetLabel, visibleDrumPresetsForProject } from "../daw/chordsmithDrumPresets";
+import { POCKET_DAW_VERSION, type Clip, type FxChain, type FxPluginInstance, type Track } from "../daw/schema";
+import { POCKET_PRO_EQ_BANDS, POCKET_PRO_EQ_PRESETS, POCKET_PRO_EQ_TYPE } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
+import { POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import { POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
+import { DEFAULT_STEM_MIX } from "../../../../packages/pocket-audio-core/src/constants.js";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
 import { barFloatToPosition, barsToSeconds, sortClips } from "../daw/timeline";
 import { mediaPoolStatus, renderCacheItemsForMedia } from "../daw/mediaPool";
@@ -25,22 +31,29 @@ import {
   sanitizeDomId
 } from "./renderSafety";
 
+interface ProEqBand {
+  id: string;
+  label: string;
+  frequencyParam: string;
+  enabledParam: string;
+  defaultEnabled: boolean;
+  defaultFrequency: number;
+  minFrequency: number;
+  maxFrequency: number;
+  gainParam?: string;
+  defaultGain?: number;
+  minGain?: number;
+  maxGain?: number;
+  qParam?: string;
+  defaultQ?: number;
+  minQ?: number;
+  maxQ?: number;
+}
+
+const PRO_EQ_BANDS = POCKET_PRO_EQ_BANDS as unknown as readonly ProEqBand[];
 const CHORD_LABELS = ["I", "II", "III", "IV", "V", "VI", "VII"];
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const BASS_LABELS = ["R", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"];
-const MELODY_INSTRUMENTS = [
-  "pulse",
-  "synth",
-  "soft",
-  "bell",
-  "lead_guitar",
-  "distorted_lead_guitar",
-  "banjo",
-  "harmonica",
-  "cowboy_whistle",
-  "trumpet",
-  "saxophone"
-];
 const GUITAR_LABELS: Record<string, string> = {
   off: "-",
   chug: "Ch",
@@ -84,9 +97,9 @@ export function renderAppShell(state: AppState): string {
           <button data-action="export-wav">Export WAV</button>
           <button data-action="export-midi">Export MIDI</button>
           <button data-action="export-stems">Export Stems</button>
-          <button data-action="export-section-manifest">Section Manifest</button>
-          <button data-action="export-godot-manifest">Godot Manifest Preview</button>
-          <button data-action="export-web-game-manifest">Web Manifest Preview</button>
+          <button data-action="export-section-manifest">Section Loop WAVs</button>
+          <button data-action="export-godot-manifest">Godot Game Pack</button>
+          <button data-action="export-web-game-manifest">Web Game Pack</button>
           <button data-action="export-media-plan">Collect Media Plan</button>
           <button data-action="export-diagnostics">Export Diagnostics</button>
         </div>
@@ -397,7 +410,7 @@ function renderTimelineTrackHeader(track: Track, selected: boolean, pcs: Sanitiz
 }
 
 function trackHeaderLaneText(track: Track, pcs: SanitizedPcsProject | null): string {
-  if (track.role === "drums") return "Kick / Snare / Hat";
+  if (track.role === "drums") return "Full kit lanes";
   if (track.role === "bass") return "Bass steps";
   if (track.role === "chords") return "Chord bars";
   if (track.role === "guitar") return "Guitar steps";
@@ -638,6 +651,7 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
               ${renderOutputSelector(project, track)}
               ${renderAutomationPanel(project, track)}
               ${renderChordsmithSequencer(state, project, pcs, clip, track)}
+              ${track.role === "drums" ? renderDrumLaneMixer(project) : ""}
               ${renderFxInspector(chain)}
             </section>`
           : ""
@@ -832,7 +846,7 @@ function renderSelectedSequencerBlock(
 ): string {
   const stepNumbers = Array.from({ length: steps }, (_, i) => `<span>${startStep + i + 1}</span>`).join("");
   if (role === "chords") return `<div class="chord-editor">${Array.from({ length: section.bars }, (_, bar) => renderChordSelect(section, bar)).join("")}</div>`;
-  if (role === "drums") return `<div class="step-ruler">${stepNumbers}</div>${renderDrumEditor(section, startStep, steps, selection)}`;
+  if (role === "drums") return `<div class="step-ruler">${stepNumbers}</div>${renderDrumEditor(pcs, section, startStep, steps, selection)}`;
   if (role === "bass") return `<div class="step-ruler">${stepNumbers}</div>${renderBassEditor(pcs, section, startStep, steps, selection)}`;
   if (role === "melody") return `<div class="step-ruler">${stepNumbers}</div>${renderMelodyEditor(section, selectedTrack?.role === "melody" ? selectedMelodyTrackIndex(selectedTrack) : melodyTrackIndex, startStep, steps, selection)}`;
   if (role === "guitar") return `<div class="step-ruler">${stepNumbers}</div>${renderGuitarEditor(project, pcs, section, startStep, steps)}`;
@@ -850,10 +864,24 @@ function renderChordSelect(section: SanitizedPcsSection, bar: number): string {
   `;
 }
 
-function renderDrumEditor(section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
+function renderDrumEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
+  const drumPresetOptions = visibleDrumPresetsForProject(pcs)
+    .map((preset) => {
+      const label = drumPresetLabel(preset, pcs);
+      return `<option value="${escapeAttr(preset.id)}" title="${escapeAttr(preset.tip)}">${escapeHtml(label)}</option>`;
+    })
+    .join("");
   return `
     <div class="sequencer-block">
-      <strong>Drums</strong>
+      <div class="sequencer-heading">
+        <strong>Drums</strong>
+        <label>Beat preset
+          <select data-drum-preset-section="${escapeAttr(section.id)}" title="Choose a Chordsmith beat preset to fill kick, snare and hats for this section.">
+            <option value="">Choose beat preset...</option>
+            ${drumPresetOptions}
+          </select>
+        </label>
+      </div>
       ${(["kick", "snare", "hat"] as const)
         .map(
           (lane) => `
@@ -913,7 +941,7 @@ function renderMelodyEditor(section: SanitizedPcsSection, trackIndex: number, st
       <div class="editor-controls lane-controls">
         <label>Instrument
           <select data-melody-instrument="${sanitizeDataAttr(`${section.id}:${trackIndex}`)}">
-            ${MELODY_INSTRUMENTS.map((value) => `<option value="${value}" ${instrument === value ? "selected" : ""}>${escapeHtml(instrumentLabel(value))}</option>`).join("")}
+            ${POCKET_MELODY_INSTRUMENTS.map((value) => `<option value="${value}" ${instrument === value ? "selected" : ""}>${escapeHtml(instrumentLabel(value))}</option>`).join("")}
           </select>
         </label>
         <label>Octave <input data-melody-octave="${sanitizeDataAttr(`${section.id}:${trackIndex}`)}" type="number" min="-3" max="3" value="${sanitizeCssLengthOrNumber(octave, 0, -3, 3)}"></label>
@@ -957,20 +985,20 @@ function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: San
         <label class="inline-toggle"><input data-guitar-setting="guitarEnabled" type="checkbox" ${pcs.guitarEnabled ? "checked" : ""}> Enabled</label>
         <label>Tone
           <select data-guitar-setting="guitarTone">
-            ${["clean", "crunch", "high_gain", "muted", "wide"].map((tone) => `<option value="${tone}" ${pcs.guitarTone === tone ? "selected" : ""}>${escapeHtml(instrumentLabel(tone))}</option>`).join("")}
+            ${POCKET_GUITAR_TONES.map((tone) => `<option value="${tone}" ${pcs.guitarTone === tone ? "selected" : ""}>${escapeHtml(instrumentLabel(tone))}</option>`).join("")}
           </select>
         </label>
         <label>Register
           <select data-guitar-setting="guitarRegister">
-            ${["low", "mid", "high"].map((register) => `<option value="${register}" ${pcs.guitarRegister === register ? "selected" : ""}>${escapeHtml(instrumentLabel(register))}</option>`).join("")}
+            ${POCKET_GUITAR_REGISTERS.map((register) => `<option value="${register}" ${pcs.guitarRegister === register ? "selected" : ""}>${escapeHtml(instrumentLabel(register))}</option>`).join("")}
           </select>
         </label>
         <label>Strum
           <select data-guitar-setting="guitarStrumMode">
-            ${["down", "up", "alternate"].map((mode) => `<option value="${mode}" ${pcs.guitarStrumMode === mode ? "selected" : ""}>${escapeHtml(instrumentLabel(mode))}</option>`).join("")}
+            ${POCKET_GUITAR_STRUM_MODES.map((mode) => `<option value="${mode}" ${pcs.guitarStrumMode === mode ? "selected" : ""}>${escapeHtml(instrumentLabel(mode))}</option>`).join("")}
           </select>
         </label>
-        <label>Volume <input data-guitar-setting="guitarVolume" type="range" min="0" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(pcs.guitarVolume, 0.72, 0, 1)}"></label>
+        <label>Volume <input data-guitar-setting="guitarVolume" type="range" min="0" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(pcs.guitarVolume, DEFAULT_STEM_MIX.guitar.volume, 0, 1)}"></label>
       </div>
       <div class="sequencer-row">
         <span>pattern</span>
@@ -1077,11 +1105,36 @@ function renderMediaPool(state: AppState): string {
       <aside class="render-cache-summary">
         <strong>Render Cache</strong>
         <span>${project.renderCache.length ? project.renderCache.map((item) => `${escapeHtml(item.id)}${item.mediaPoolItemId ? ` -> ${escapeHtml(item.mediaPoolItemId)}` : ""}${item.invalidated ? " (invalidated)" : ""}`).join(" / ") : "No render cache entries yet. Freeze, stem and game-pack renders will link cache entries to media pool items here."}</span>
+        <strong>Native Playback</strong>
+        <span>${escapeHtml(nativeCacheStatusText(state))}</span>
         <strong>Collect Plan</strong>
         <span>${collectPlan.copy.length} copy / ${collectPlan.alreadyProject.length} project / ${collectPlan.blocked.length} blocked</span>
       </aside>
     </section>
   `;
+}
+
+function nativeCacheStatusText(state: AppState): string {
+  const status = state.nativeCacheStatus;
+  if (status.lastError) return `Cache error: ${status.lastError}`;
+  if (status.buildPending) return "Building native cache...";
+  if (status.bypassedForLiveEdits) return "Procedural playback after live edit; rebuild cache to restore cached generated tracks.";
+  if (status.assetRegionCount > 0) {
+    const parts = [
+      `${status.assetRegionCount} cached region${status.assetRegionCount === 1 ? "" : "s"}`,
+      `${status.cachedClipCount} cached clip${status.cachedClipCount === 1 ? "" : "s"}`,
+      `${status.generatedRegionCount} generated`,
+      `${status.runtimeAudioRegionCount} audio`,
+      `${status.proceduralFallbackEventCount} procedural fallback event${status.proceduralFallbackEventCount === 1 ? "" : "s"}`
+    ];
+    const reason = status.lastBuildReason ? ` / ${status.lastBuildReason}` : "";
+    return `${parts.join(" / ")}${reason}`;
+  }
+  if (status.prewarmScheduled) return "Native cache prewarm scheduled.";
+  const cacheItems = currentProject(state).renderCache.filter((item) => String(item.metadata?.cacheKind || "").startsWith("native-"));
+  if (cacheItems.length) return `${cacheItems.length} native cache metadata item${cacheItems.length === 1 ? "" : "s"} saved; build or reopen to activate cached playback.`;
+  if (status.proceduralFallbackEventCount > 0) return `No native cache active; ${status.proceduralFallbackEventCount} procedural event${status.proceduralFallbackEventCount === 1 ? "" : "s"} ready.`;
+  return "No native cache active.";
 }
 
 function renderExportPanel(state: AppState): string {
@@ -1100,9 +1153,9 @@ function renderExportPanel(state: AppState): string {
           <button data-action="export-wav">Full WAV</button>
           <button data-action="export-midi">Full MIDI</button>
           <button data-action="export-stems" ${stems.length ? "" : "disabled"} title="Downloads one WAV per stem in sequence">Stem WAVs</button>
-          <button data-action="export-section-manifest" ${loops.length ? "" : "disabled"}>Section Manifest</button>
-          <button data-action="export-godot-manifest">Godot Manifest Preview</button>
-          <button data-action="export-web-game-manifest">Web Manifest Preview</button>
+          <button data-action="export-section-manifest" ${loops.length ? "" : "disabled"} title="Downloads one loop WAV per generated section plus a JSON manifest">Section Loop WAVs</button>
+          <button data-action="export-godot-manifest">Godot Game Pack</button>
+          <button data-action="export-web-game-manifest">Web Game Pack</button>
         </div>
       </header>
       ${progress ? `
@@ -1114,7 +1167,7 @@ function renderExportPanel(state: AppState): string {
           <i></i>
         </div>
       ` : ""}
-      <p class="export-note">Full mix and stem WAVs render real audio. Game manifests now use deterministic pack paths; section-loop audio and ZIP assembly remain planned-render/native follow-up work.</p>
+      <p class="export-note">Full mix, stem, section-loop and game-pack exports render real audio into deterministic pack paths.</p>
     </section>
   `;
 }
@@ -1217,20 +1270,130 @@ function renderFxDropdown(track: Track): string {
   `;
 }
 
+function renderDrumLaneMixer(project: ReturnType<typeof currentProject>): string {
+  return `
+    <div class="drum-lane-mixer">
+      <h3>Drum Kit Lanes</h3>
+      <div class="drum-lane-list">
+        ${DRUM_LANE_DEFS.map((lane) => {
+          const mix = getDrumLaneMix(project, lane.id);
+          const chain = getDrumLaneFxChain(project, lane.id);
+          return `
+            <div class="drum-lane-row ${mix.mute ? "muted-editor" : ""}">
+              <header>
+                <strong>${escapeHtml(lane.label)}</strong>
+                <span>${lane.sequenced ? "Sequenced" : "Live pad"}</span>
+                <label class="inline-toggle"><input data-drum-lane-mute="${escapeAttr(lane.id)}" type="checkbox" ${mix.mute ? "checked" : ""}> Mute</label>
+              </header>
+              <label>Volume
+                <input data-drum-lane-volume="${escapeAttr(lane.id)}" type="range" min="0" max="1.2" step="0.01" value="${sanitizeCssLengthOrNumber(mix.volume, 1, 0, 1.2)}">
+                <span>${Math.round(mix.volume * 100)}%</span>
+              </label>
+              <label>Pan
+                <input data-drum-lane-pan="${escapeAttr(lane.id)}" type="range" min="-1" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(mix.pan, 0, -1, 1)}">
+                <span>${escapeHtml(panReadout(mix.pan))}</span>
+              </label>
+              <label>FX
+                <select data-drum-lane-add-fx="${escapeAttr(lane.id)}" aria-label="${escapeAttr(`Add FX to ${lane.label}`)}">
+                  <option value="">Add FX...</option>
+                  ${BUILT_IN_FX.map((fx) => `<option value="${fx.type}">${escapeHtml(fx.name)}</option>`).join("")}
+                </select>
+              </label>
+              ${renderDrumLaneFxInspector(chain)}
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderDrumLaneFxInspector(chain: FxChain | null): string {
+  if (!chain?.slots.length) return `<p class="editor-note">No lane FX.</p>`;
+  return `
+    <div class="drum-lane-fx">
+      ${chain.slots.map((slot) => renderFxSlot(chain, slot, "data-drum-lane-fx-toggle", "data-drum-lane-fx-remove")).join("")}
+    </div>
+  `;
+}
+
 function renderFxInspector(chain: FxChain | null): string {
   if (!chain) return "";
   return `
     <div class="fx-inspector">
       <h3>FX Chain</h3>
-      ${chain.slots.length ? chain.slots.map((slot) => `
-        <div class="fx-slot ${slot.enabled ? "" : "bypassed"}">
-          <span>${escapeHtml(slot.name)}</span>
-          <button data-fx-toggle="${sanitizeDataAttr(`${chain.id}:${slot.id}`)}">${slot.enabled ? "Bypass" : "Enable"}</button>
-          <button data-fx-remove="${sanitizeDataAttr(`${chain.id}:${slot.id}`)}">Remove</button>
-        </div>
-      `).join("") : `<p>No FX yet.</p>`}
+      ${chain.slots.length ? chain.slots.map((slot) => renderFxSlot(chain, slot, "data-fx-toggle", "data-fx-remove")).join("") : `<p>No FX yet.</p>`}
     </div>
   `;
+}
+
+function renderFxSlot(chain: FxChain, slot: FxPluginInstance, toggleAttr: string, removeAttr: string): string {
+  return `
+    <div class="fx-slot ${slot.enabled ? "" : "bypassed"}">
+      <div class="fx-slot-heading">
+        <span>${escapeHtml(slot.name)}</span>
+        <div>
+          <button ${toggleAttr}="${sanitizeDataAttr(`${chain.id}:${slot.id}`)}">${slot.enabled ? "Bypass" : "Enable"}</button>
+          <button ${removeAttr}="${sanitizeDataAttr(`${chain.id}:${slot.id}`)}">Remove</button>
+        </div>
+      </div>
+      ${slot.type === POCKET_PRO_EQ_TYPE ? renderPocketProEqControls(chain.id, slot) : ""}
+    </div>
+  `;
+}
+
+function renderPocketProEqControls(chainId: string, slot: FxPluginInstance): string {
+  return `
+    <div class="pro-eq-editor">
+      <label>Preset
+        <select data-fx-eq-preset="${sanitizeDataAttr(`${chainId}:${slot.id}`)}">
+          ${POCKET_PRO_EQ_PRESETS.map((preset) => `<option value="${escapeAttr(preset.id)}" ${slot.presetId === preset.id ? "selected" : ""}>${escapeHtml(preset.name)}</option>`).join("")}
+        </select>
+      </label>
+      ${PRO_EQ_BANDS.map((band) => {
+        const enabled = boolParam(slot, band.enabledParam, band.defaultEnabled);
+        const defaultGain = band.defaultGain ?? 0;
+        const minGain = band.minGain ?? -12;
+        const maxGain = band.maxGain ?? 12;
+        const defaultQ = band.defaultQ ?? 1;
+        const minQ = band.minQ ?? 0.1;
+        const maxQ = band.maxQ ?? 8;
+        return `
+          <fieldset class="pro-eq-band ${enabled ? "" : "bypassed"}">
+            <legend>
+              <label><input data-fx-param="${sanitizeDataAttr(`${chainId}:${slot.id}:${band.enabledParam}`)}" type="checkbox" ${enabled ? "checked" : ""}> ${escapeHtml(band.label)}</label>
+            </legend>
+            <label>Freq
+              <input data-fx-param="${sanitizeDataAttr(`${chainId}:${slot.id}:${band.frequencyParam}`)}" type="range" min="${band.minFrequency}" max="${band.maxFrequency}" step="1" value="${sanitizeCssLengthOrNumber(numParam(slot, band.frequencyParam, band.defaultFrequency), band.defaultFrequency, band.minFrequency, band.maxFrequency)}">
+              <span>${Math.round(numParam(slot, band.frequencyParam, band.defaultFrequency))} Hz</span>
+            </label>
+            ${band.gainParam ? `
+              <label>Gain
+                <input data-fx-param="${sanitizeDataAttr(`${chainId}:${slot.id}:${band.gainParam}`)}" type="range" min="${minGain}" max="${maxGain}" step="0.1" value="${sanitizeCssLengthOrNumber(numParam(slot, band.gainParam, defaultGain), defaultGain, minGain, maxGain)}">
+                <span>${numParam(slot, band.gainParam, defaultGain).toFixed(1)} dB</span>
+              </label>
+            ` : ""}
+            ${band.qParam ? `
+              <label>Q
+                <input data-fx-param="${sanitizeDataAttr(`${chainId}:${slot.id}:${band.qParam}`)}" type="range" min="${minQ}" max="${maxQ}" step="0.1" value="${sanitizeCssLengthOrNumber(numParam(slot, band.qParam, defaultQ), defaultQ, minQ, maxQ)}">
+                <span>${numParam(slot, band.qParam, defaultQ).toFixed(1)}</span>
+              </label>
+            ` : ""}
+          </fieldset>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function numParam(slot: FxPluginInstance, key: string, fallback: number): number {
+  const value = Number(slot.parameters[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function boolParam(slot: FxPluginInstance, key: string, fallback: boolean): boolean {
+  const value = slot.parameters[key];
+  return typeof value === "boolean" ? value : fallback;
 }
 
 function renderInputSelector(project: ReturnType<typeof currentProject> | null, track: Track): string {
@@ -1367,6 +1530,7 @@ function renderControlsPanel(state: AppState): string {
           <p><strong>Updater</strong><span>${escapeHtml(updaterStatusText(state))} / startup check ${state.updaterAutoCheckOnStartup ? "on" : "off"}</span></p>
           <p><strong>Handoff</strong><span>${escapeHtml(handoffStatusText(state))}</span></p>
           <p><strong>Media</strong><span>${escapeHtml(mediaSummary)} / render cache ${escapeHtml(cacheSummary)}</span></p>
+          <p><strong>Native Cache</strong><span>${escapeHtml(nativeCacheStatusText(state))}</span></p>
           <p><strong>Storage</strong><span>${escapeHtml(state.currentFile.path ? "Project media/cache folders sit beside the saved .pocketdaw file." : "Unsaved project; autosave/recent data uses the installed app or browser runtime store.")}</span></p>
           <p><strong>Import</strong><span>Paste a PCS1 code, Chordsmith JSON, Pocket DJ source session, or .pocketdaw file.</span></p>
           <p><strong>Demo</strong><span>Load Demo Copy creates an editable autosaved copy. Reload Demo Template discards copy edits and starts fresh from the built-in demo.</span></p>

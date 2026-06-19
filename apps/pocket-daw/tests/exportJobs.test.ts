@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDemoProject } from "../src/demo/demoProject";
-import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan, projectWithOnlyTracksAudible } from "../src/daw/exportJobs";
+import { createGameExportManifest, createGamePackZipBlob, createSectionLoopMetadata, createStemExportPlan, projectForSectionLoopRender, projectWithOnlyTracksAudible } from "../src/daw/exportJobs";
 import { addMediaPoolItem, createMediaPoolItem } from "../src/daw/mediaPool";
 
 describe("export job helpers", () => {
@@ -31,7 +31,26 @@ describe("export job helpers", () => {
     expect(loops[0].lengthSeconds).toBeGreaterThan(0);
     expect(loops[0].fileName).toContain("loop.wav");
     expect(loops[0].packPath).toContain("audio/sections/");
-    expect(loops[0].status).toBe("planned-render");
+    expect(new Set(loops.map((loop) => loop.packPath)).size).toBe(loops.length);
+    expect(loops[0].status).toBe("renderable");
+    expect(loops[0].sourceClipId).toBeTruthy();
+  });
+
+  it("builds section-only render projects for loop WAV export", () => {
+    const project = createDemoProject();
+    const loop = createSectionLoopMetadata(project)[0];
+    const renderProject = projectForSectionLoopRender(project, loop);
+
+    expect(renderProject.timeline.clips).toHaveLength(1);
+    expect(renderProject.timeline.clips[0]).toMatchObject({
+      id: expect.stringContaining("loop_render"),
+      startBar: 1,
+      barLength: loop.lengthBars,
+      muted: false
+    });
+    expect(renderProject.timeline.bars).toBe(loop.lengthBars);
+    expect(renderProject.timeline.loop).toMatchObject({ enabled: true, startBar: 1, endBar: 1 + loop.lengthBars });
+    expect(renderProject.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings.tailSeconds).toBe(0);
   });
 
   it("generates Godot and web game manifest previews", () => {
@@ -48,7 +67,28 @@ describe("export job helpers", () => {
     expect(godot.markers.find((marker) => marker.id === "combat")).toMatchObject({ id: "combat", seconds: expect.any(Number) });
     expect(godot.files).toContain("manifests/godot-adaptive-manifest.json");
     expect(web.files).toContain("manifests/web-game-manifest.json");
+    expect(godot.files).toContain(godot.fullMix);
+    expect(godot.files).toContain(godot.sourceProject);
     expect(godot.folders).toMatchObject({ stems: "audio/stems/", sections: "audio/sections/" });
+    expect(godot.notes.join("\n")).toContain("section loop WAVs are rendered into this pack");
+  });
+
+  it("builds a downloadable game-pack ZIP with manifest, source, mix, stems and loops", async () => {
+    const project = createDemoProject();
+    const result = await createGamePackZipBlob(project, "web-game-pack", {
+      sourceProjectContents: JSON.stringify(project),
+      renderWav: async (renderProject) => new Blob([`bars:${renderProject.timeline.bars}`], { type: "audio/wav" })
+    });
+    const paths = result.entries.map((entry) => entry.path);
+
+    expect(result.blob.type).toBe("application/zip");
+    expect(result.blob.size).toBeGreaterThan(128);
+    expect(paths).toContain("manifests/web-game-manifest.json");
+    expect(paths).toContain(result.manifest.fullMix);
+    expect(paths).toContain(result.manifest.sourceProject);
+    expect(result.manifest.stems.every((stem) => paths.includes(stem.packPath))).toBe(true);
+    expect(result.manifest.sectionLoops.every((loop) => paths.includes(loop.packPath))).toBe(true);
+    expect(new Set(paths).size).toBe(paths.length);
   });
 
   it("adds manifest warnings for unresolved runtime-only media and muted tracks", () => {

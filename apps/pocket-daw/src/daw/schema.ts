@@ -1,6 +1,6 @@
 export const POCKET_DAW_APP = "PocketDAW" as const;
 export const POCKET_DAW_SCHEMA_VERSION = 2;
-export const POCKET_DAW_VERSION = "0.6.4";
+export const POCKET_DAW_VERSION = "0.6.9";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -165,6 +165,7 @@ export type FxPluginType =
   | "high-pass"
   | "low-pass"
   | "three-band-eq"
+  | "parametric-eq"
   | "compressor"
   | "limiter"
   | "noise-gate"

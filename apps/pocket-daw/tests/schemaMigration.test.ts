@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { migratePocketDawProject } from "../src/compatibility/migrations";
+import { DRUM_LANE_DEFS } from "../src/daw/drumLanes";
 
 describe("schema migrations", () => {
   it("fills required v2 future-ready containers", () => {
@@ -15,7 +16,10 @@ describe("schema migrations", () => {
     expect(migrated.renderCache).toEqual([]);
     expect(migrated.automation.lanes).toEqual([]);
     expect(migrated.routing.masterTrackId).toBe("master");
-    expect(migrated.fx.chains.length).toBe(migrated.tracks.length);
+    expect(migrated.fx.chains.length).toBe(migrated.tracks.length + DRUM_LANE_DEFS.length);
+    expect(migrated.fx.chains.filter((chain) => chain.metadata?.parentTrackId === "drums")).toHaveLength(DRUM_LANE_DEFS.length);
+    expect(Object.keys((migrated.tracks.find((track) => track.role === "drums")?.metadata?.drumLanes || {}) as Record<string, unknown>))
+      .toEqual(DRUM_LANE_DEFS.map((lane) => lane.id));
     expect(migrated.audioDeviceSettings.host).toBe("wasapi");
     expect(migrated.sourceRefs[0]).toMatchObject({ sourceType: "pocket-chordsmith", title: "Old" });
     expect(migrated.timeline.clips[0]).toMatchObject({ type: "generated-section", sectionId: "A" });

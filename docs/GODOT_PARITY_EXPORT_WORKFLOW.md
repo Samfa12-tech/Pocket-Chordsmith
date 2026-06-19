@@ -27,6 +27,7 @@ console.log([...kit.files.keys()]);
 ```
 
 `kit.files` is a `Map<string, Blob>` where each key is the filename referenced by the manifest.
+Pocket DAW packages this manifest at `manifests/godot-adaptive-manifest.json`; the shared pack folder and manifest names are generated into the Godot addon constants.
 
 ## Profiles
 
@@ -37,13 +38,13 @@ Use this when the Godot scene should play aligned full-song stems through native
 Generated assets:
 
 ```text
-drums.wav
-bass.wav
-chords.wav
-melody.wav
-guitar.wav
-full_mix.wav
-manifest.json
+audio/stems/drums.wav
+audio/stems/bass.wav
+audio/stems/chords.wav
+audio/stems/melody.wav
+audio/stems/guitar.wav
+audio/full/full_mix.wav
+manifests/godot-adaptive-manifest.json
 ```
 
 Best for:
@@ -60,14 +61,14 @@ Use this when Godot should transition between sections.
 Generated assets:
 
 ```text
-section_A_mix.wav
-section_B_mix.wav
-section_C_mix.wav
-section_D_mix.wav
-section_A_drums.wav
-section_A_bass.wav
+audio/sections/section_A_mix.wav
+audio/sections/section_B_mix.wav
+audio/sections/section_C_mix.wav
+audio/sections/section_D_mix.wav
+audio/stems/section_A_drums.wav
+audio/stems/section_A_bass.wav
 ...
-manifest.json
+manifests/godot-adaptive-manifest.json
 ```
 
 Best for:
@@ -84,16 +85,16 @@ Use this when the game needs a bed plus short accents/stingers/samples.
 Generated assets:
 
 ```text
-bed_drums.wav
-bed_bass.wav
-bed_chords.wav
-bed_melody.wav
-bed_guitar.wav
-kick.wav
-snare.wav
-crash.wav
-victory_stinger.wav
-manifest.json
+audio/stems/bed_drums.wav
+audio/stems/bed_bass.wav
+audio/stems/bed_chords.wav
+audio/stems/bed_melody.wav
+audio/stems/bed_guitar.wav
+audio/samples/kick.wav
+audio/samples/snare.wav
+audio/samples/crash.wav
+audio/samples/victory_stinger.wav
+manifests/godot-adaptive-manifest.json
 ```
 
 Best for:
@@ -112,7 +113,7 @@ Use this for editor convenience only.
 Generated assets:
 
 ```text
-manifest.json
+manifests/godot-adaptive-manifest.json
 ```
 
 This profile marks the manifest as `previewOnly: true`.
@@ -139,9 +140,9 @@ The generated manifest follows this shape:
       "loopStart": 0,
       "loopEnd": 8.135,
       "assets": {
-        "mix": "section_A_mix.wav",
-        "drums": "section_A_drums.wav",
-        "bass": "section_A_bass.wav"
+        "mix": "audio/sections/section_A_mix.wav",
+        "drums": "audio/stems/section_A_drums.wav",
+        "bass": "audio/stems/section_A_bass.wav"
       }
     }
   },
@@ -161,9 +162,21 @@ Loop points are section-relative and should be fed into the Godot conductor for 
 3. Write every `kit.files` entry to a Godot project folder.
 4. Write `kit.manifest` as `manifest.json`.
 5. Import WAVs into Godot.
-6. Let the addon or project conductor read `manifest.json`.
+6. Let `PCSGamePackManifest` or project code read `manifests/godot-adaptive-manifest.json`.
 7. Use native Godot `AudioStreamPlayer` nodes/buses to play stems or section loops.
 8. Use manifest `events` for section starts, beat/bar metadata, and gameplay signals.
+
+`addons/pocket_chordsmith/import/pcs_game_pack_manifest.gd` can turn a DAW/Core manifest into a `PCSPlaybackProfile` using the existing conductor fields:
+
+```gdscript
+var tools := PCSChartBuildTools.new()
+var result := tools.create_playback_profile_from_game_pack_manifest(
+	"res://music/my_song/manifests/godot-adaptive-manifest.json",
+	"res://music/my_song/my_song_profile.tres"
+)
+```
+
+For `LOOP_KIT`, section assets are mapped into `playback_profile.stem_sets`. For `STEM_SYNC`, full-song stems are mapped into `playback_profile.stem_paths`. For `HYBRID`, bed stems and sample/stinger assets are mapped into the existing profile dictionaries.
 
 Do not remove the existing chart import. The chart importer remains useful for editor inspection and procedural preview. The parity workflow adds rendered audio assets beside it.
 

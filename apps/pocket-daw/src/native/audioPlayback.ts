@@ -1,5 +1,6 @@
-import type { PocketDawProject } from "../daw/schema";
+import type { FxChain, JsonValue, PocketDawProject } from "../daw/schema";
 import type { RenderedEvent } from "../audio/eventRenderer";
+import { chordsmithSidechainSettings } from "../audio/sidechain";
 
 export interface NativeAudioStatus {
   backend: "native-cpal" | string;
@@ -23,6 +24,7 @@ export interface NativeAudioStatus {
 
 export interface NativeAudioTrack {
   id: string;
+  fxChainId?: string;
   volume: number;
   pan: number;
   mute: boolean;
@@ -38,9 +40,32 @@ export interface NativeAudioEvent {
   midi?: number;
   midiNotes: number[];
   velocity: number;
+  step?: number;
   pan?: number;
+  instrument?: string;
+  drumKit?: string;
+  bassTone?: string;
+  audioProfile?: string;
+  lofiPreset?: string;
+  lofiTexture?: JsonValue;
   accent?: boolean;
   articulation?: string;
+  drumLane?: string;
+}
+
+export interface NativeAudioFxSlot {
+  id: string;
+  type: string;
+  enabled: boolean;
+  presetId?: string;
+  parameters: Record<string, JsonValue>;
+}
+
+export interface NativeAudioFxChain {
+  id: string;
+  ownerTrackId?: string;
+  metadata?: Record<string, JsonValue>;
+  slots: NativeAudioFxSlot[];
 }
 
 export interface NativeAudioAsset {
@@ -72,10 +97,19 @@ export interface NativeAudioStartPayload {
   sampleRate: number;
   startSeconds: number;
   outputDeviceId: string | null;
+  sidechain?: NativeAudioSidechain | null;
   tracks: NativeAudioTrack[];
   events: NativeAudioEvent[];
+  fxChains: NativeAudioFxChain[];
   assets?: NativeAudioAsset[];
   regions?: NativeAudioRegion[];
+}
+
+export interface NativeAudioSidechain {
+  enabled: boolean;
+  amount: number;
+  targetTrackId: string;
+  triggerKind: string;
 }
 
 export interface NativeAudioTrackPatch {
@@ -176,8 +210,10 @@ export function buildNativeAudioStartPayload(
     sampleRate: project.project.sampleRate,
     startSeconds: Math.max(0, startSeconds),
     outputDeviceId: project.audioDeviceSettings.outputDeviceId,
+    sidechain: nativeSidechain(project),
     tracks: project.tracks.map((track) => ({
       id: track.id,
+      fxChainId: track.fxChainId,
       volume: clamp(track.volume, 0, 1.2),
       pan: clamp(track.pan, -1, 1),
       mute: track.mute,
@@ -192,13 +228,48 @@ export function buildNativeAudioStartPayload(
       midi: event.midi,
       midiNotes: event.midiNotes || [],
       velocity: clamp(event.velocity, 0, 1.4),
+      step: event.step,
       pan: event.pan,
+      instrument: event.instrument,
+      drumKit: event.drumKit,
+      bassTone: event.bassTone,
+      audioProfile: event.audioProfile,
+      lofiPreset: event.lofiPreset,
+      lofiTexture: event.lofiTexture,
       accent: event.accent,
-      articulation: event.articulation
+      articulation: event.articulation,
+      drumLane: event.drumLane
     })),
+    fxChains: nativeFxChains(project.fx?.chains || []),
     assets: cache?.assets || [],
     regions: cache?.regions || []
   };
+}
+
+function nativeSidechain(project: PocketDawProject): NativeAudioSidechain | null {
+  const settings = chordsmithSidechainSettings(project);
+  if (!settings?.enabled) return null;
+  return {
+    enabled: true,
+    amount: clamp(settings.amount, 0, 1),
+    targetTrackId: settings.targetTrackId,
+    triggerKind: "kick"
+  };
+}
+
+function nativeFxChains(chains: FxChain[]): NativeAudioFxChain[] {
+  return chains.map((chain) => ({
+    id: chain.id,
+    ownerTrackId: chain.ownerTrackId,
+    metadata: chain.metadata,
+    slots: chain.slots.map((slot) => ({
+      id: slot.id,
+      type: String(slot.type),
+      enabled: slot.enabled,
+      presetId: slot.presetId,
+      parameters: slot.parameters || {}
+    }))
+  }));
 }
 
 let defaultApiPromise: Promise<NativeAudioInvokeApi | null> | null = null;

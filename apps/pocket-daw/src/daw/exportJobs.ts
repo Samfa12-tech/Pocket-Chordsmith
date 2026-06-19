@@ -1,5 +1,16 @@
-import type { PocketDawProject, Track, TimelineMarker } from "./schema";
+import type { Clip, PocketDawProject, Track, TimelineMarker } from "./schema";
+import { cloneProject } from "./dawProject";
 import { barsToSeconds } from "./timeline";
+import { createZipBlob, type ZipArchiveEntry } from "./zipArchive";
+import {
+  GAME_PACK_FOLDERS,
+  gamePackFullMixPath,
+  gamePackManifestPath,
+  gamePackSectionLoopPath,
+  gamePackSourceProjectPath,
+  gamePackStemPath,
+  safeGamePackName
+} from "../../../../packages/pocket-audio-core/src/export/game-pack-paths.js";
 
 export interface StemExportPlanItem {
   id: string;
@@ -23,7 +34,8 @@ export interface SectionLoopExportItem {
   lengthSeconds: number;
   fileName: string;
   packPath: string;
-  status: "planned-render";
+  status: "renderable";
+  sourceClipId: string;
 }
 
 export interface GameExportManifest {
@@ -33,6 +45,9 @@ export interface GameExportManifest {
   key: string;
   scale: string;
   timeSig: number;
+  manifestFile: string;
+  fullMix: string;
+  sourceProject: string;
   stems: StemExportPlanItem[];
   sectionLoops: SectionLoopExportItem[];
   markers: Array<TimelineMarker & { seconds: number }>;
@@ -46,6 +61,18 @@ export interface GameExportManifest {
   };
   warnings: string[];
   notes: string[];
+}
+
+export interface GamePackZipResult {
+  manifest: GameExportManifest;
+  blob: Blob;
+  entries: Array<{ path: string; size: number }>;
+}
+
+export interface GamePackZipOptions {
+  renderWav: (project: PocketDawProject) => Promise<Blob>;
+  sourceProjectContents: string;
+  onProgress?: (label: string, detail: string) => Promise<void> | void;
 }
 
 export function createStemExportPlan(project: PocketDawProject): StemExportPlanItem[] {
@@ -78,7 +105,8 @@ export function createSectionLoopMetadata(project: PocketDawProject): SectionLoo
     .filter((clip) => clip.type === "generated-section" && clip.sectionId)
     .map((clip) => {
       const lengthBars = Math.max(0.25, clip.barLength);
-      const name = `Section ${clip.sectionId}`;
+      const name = `Section ${clip.sectionId} Bar ${formatBarSlug(clip.startBar)}`;
+      const packPath = gamePackSectionLoopPath(project.project.title, name);
       return {
         id: `loop_${clip.id}`,
         sectionId: clip.sectionId!,
@@ -91,11 +119,47 @@ export function createSectionLoopMetadata(project: PocketDawProject): SectionLoo
         timeSig: project.project.timeSig,
         lengthBars,
         lengthSeconds: barsToSeconds(lengthBars, project.project.bpm, project.project.timeSig),
-        fileName: `${safeName(project.project.title)}-${safeName(name)}-loop.wav`,
-        packPath: `audio/sections/${safeName(project.project.title)}-${safeName(name)}-loop.wav`,
-        status: "planned-render"
+        fileName: fileNameFromPackPath(packPath),
+        packPath,
+        status: "renderable",
+        sourceClipId: clip.id
       };
     });
+}
+
+export function projectForSectionLoopRender(project: PocketDawProject, loop: SectionLoopExportItem): PocketDawProject {
+  const source = project.timeline.clips.find((clip) => clip.id === loop.sourceClipId);
+  if (!source || source.type !== "generated-section" || !source.sectionId) return project;
+  const next = cloneProject(project);
+  const renderClip: Clip = {
+    ...JSON.parse(JSON.stringify(source)),
+    id: `${source.id}_loop_render`,
+    startBar: 1,
+    barLength: loop.lengthBars,
+    muted: false,
+    linked: false
+  };
+  next.timeline = {
+    ...next.timeline,
+    bars: loop.lengthBars,
+    clips: [renderClip],
+    loop: {
+      enabled: true,
+      startBar: 1,
+      endBar: 1 + loop.lengthBars
+    }
+  };
+  next.exportProfiles = next.exportProfiles.map((profile) => {
+    if (profile.id !== "full-song-wav") return profile;
+    return {
+      ...profile,
+      settings: {
+        ...(profile.settings || {}),
+        tailSeconds: 0
+      }
+    };
+  });
+  return next;
 }
 
 export function createGameExportManifest(project: PocketDawProject, kind: GameExportManifest["kind"]): GameExportManifest {
@@ -105,8 +169,9 @@ export function createGameExportManifest(project: PocketDawProject, kind: GameEx
     ...marker,
     seconds: barsToSeconds(Math.max(0, marker.bar - 1), project.project.bpm, project.project.timeSig)
   }));
-  const manifestFile = kind === "godot-adaptive-pack" ? "manifests/godot-adaptive-manifest.json" : "manifests/web-game-manifest.json";
-  const fullMixFile = `audio/full/${safeName(project.project.title)}-full-mix.wav`;
+  const manifestFile = gamePackManifestPath(kind);
+  const fullMixFile = gamePackFullMixPath(project.project.title);
+  const sourceProject = gamePackSourceProjectPath(project.project.title);
   const warnings = collectExportWarnings(project);
   return {
     kind,
@@ -115,23 +180,61 @@ export function createGameExportManifest(project: PocketDawProject, kind: GameEx
     key: project.project.key,
     scale: project.project.scale,
     timeSig: project.project.timeSig,
+    manifestFile,
+    fullMix: fullMixFile,
+    sourceProject,
     stems,
     sectionLoops,
     markers,
-    files: [manifestFile, fullMixFile, ...stems.map((stem) => stem.packPath), ...sectionLoops.map((loop) => loop.packPath)],
+    files: [manifestFile, fullMixFile, ...stems.map((stem) => stem.packPath), ...sectionLoops.map((loop) => loop.packPath), sourceProject],
     folders: {
-      full: "audio/full/",
-      stems: "audio/stems/",
-      sections: "audio/sections/",
-      manifests: "manifests/",
-      source: "source/"
+      full: GAME_PACK_FOLDERS.full,
+      stems: GAME_PACK_FOLDERS.stems,
+      sections: GAME_PACK_FOLDERS.sections,
+      manifests: GAME_PACK_FOLDERS.manifests,
+      source: GAME_PACK_FOLDERS.source
     },
     warnings,
     notes: [
-      "Full mix and stem WAVs are renderable today through browser/native downloads.",
-      "Section loop and bundled ZIP assembly are planned-render paths until the section-only render writer lands.",
-      "Manifest paths use the target pack folder layout so exported files can be collected deterministically."
+      "Full mix, stem WAVs and section loop WAVs are rendered into this pack.",
+      "Manifest paths use the target pack folder layout so Godot and web-game importers can collect files deterministically.",
+      "The source .pocketdaw JSON is included for round-trip edits."
     ]
+  };
+}
+
+export async function createGamePackZipBlob(project: PocketDawProject, kind: GameExportManifest["kind"], options: GamePackZipOptions): Promise<GamePackZipResult> {
+  const manifest = createGameExportManifest(project, kind);
+  const entries: ZipArchiveEntry[] = [];
+  const entrySummaries: Array<{ path: string; size: number }> = [];
+  const pushEntry = async (path: string, data: Blob | string) => {
+    const size = typeof data === "string" ? new TextEncoder().encode(data).byteLength : data.size;
+    entries.push({ path, data });
+    entrySummaries.push({ path, size });
+  };
+  const totalRenders = 1 + manifest.stems.length + manifest.sectionLoops.length;
+  let renderIndex = 0;
+
+  await options.onProgress?.(`Rendering game-pack audio ${++renderIndex} of ${totalRenders}`, "Full mix");
+  await pushEntry(manifest.fullMix, await options.renderWav(project));
+
+  for (const stem of manifest.stems) {
+    await options.onProgress?.(`Rendering game-pack audio ${++renderIndex} of ${totalRenders}`, stem.label);
+    await pushEntry(stem.packPath, await options.renderWav(projectWithOnlyTracksAudible(project, stem.trackIds)));
+  }
+
+  for (const loop of manifest.sectionLoops) {
+    await options.onProgress?.(`Rendering game-pack audio ${++renderIndex} of ${totalRenders}`, loop.name);
+    await pushEntry(loop.packPath, await options.renderWav(projectForSectionLoopRender(project, loop)));
+  }
+
+  await pushEntry(manifest.sourceProject, options.sourceProjectContents);
+  await pushEntry(manifest.manifestFile, JSON.stringify(manifest, null, 2));
+  await options.onProgress?.("Assembling game-pack ZIP", `${entries.length} file${entries.length === 1 ? "" : "s"}`);
+  return {
+    manifest,
+    blob: await createZipBlob(entries),
+    entries: entrySummaries
   };
 }
 
@@ -148,13 +251,13 @@ export function collectExportWarnings(project: PocketDawProject): string[] {
 }
 
 function stemItem(id: string, label: string, trackIds: string[], project: PocketDawProject): StemExportPlanItem {
-  const fileName = `${safeName(project.project.title)}-${safeName(label)}-stem.wav`;
+  const packPath = gamePackStemPath(project.project.title, label);
   return {
     id,
     label,
     trackIds,
-    fileName,
-    packPath: `audio/stems/${fileName}`
+    fileName: fileNameFromPackPath(packPath),
+    packPath
   };
 }
 
@@ -162,6 +265,11 @@ function titleCase(value: string): string {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
 }
 
-function safeName(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "pocket-daw";
+function formatBarSlug(value: number): string {
+  const safe = Number.isFinite(value) ? value : 1;
+  return Number.isInteger(safe) ? String(safe) : String(safe).replace(".", "-");
+}
+
+function fileNameFromPackPath(path: string): string {
+  return path.split("/").pop() || `${safeGamePackName(path, "pocket-daw")}.wav`;
 }

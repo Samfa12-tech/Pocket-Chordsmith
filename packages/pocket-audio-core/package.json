@@ -20,6 +20,12 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "generate:sound-surfaces": "node scripts/sync-shared-sound-surfaces.mjs",
+    "generate:godot-sound-metadata": "node scripts/generate-godot-sound-metadata.mjs",
+    "verify:sound-surfaces": "node scripts/sync-shared-sound-surfaces.mjs --check",
+    "verify:godot-sound-metadata": "node scripts/generate-godot-sound-metadata.mjs --check",
+    "verify:family-parity": "node scripts/verify-family-parity.mjs",
+    "compare:chordsmith-browser-trace": "node scripts/compare-chordsmith-browser-trace.mjs",
     "test": "node --test",
     "test:core": "node --test tests/core.test.js",
     "test:golden": "node --test tests/golden.test.js --test-name-pattern \"golden event trace|fixture index\"",

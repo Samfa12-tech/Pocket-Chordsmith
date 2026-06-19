@@ -1438,14 +1438,12 @@ func _sample_key_for_event(event: Dictionary) -> String:
 	var instrument_id := str(event.get("instrument_id", ""))
 	var flags: Dictionary = event.get("flags", {})
 	var accent := bool(flags.get("accent", false))
-	if track_type == "drum" and str(flags.get("audio_profile", "")) == "lofi_chill":
-		var lofi_key := "lofi_open_hat" if instrument_id == "hat" and accent else "lofi_%s" % instrument_id
-		if playback_profile != null and playback_profile.drum_kit.has(lofi_key):
-			return lofi_key
-	if track_type == "drum" and accent:
-		var accent_key := "%s_accent" % instrument_id
-		if playback_profile != null and playback_profile.drum_kit.has(accent_key):
-			return accent_key
+	if track_type == "drum":
+		var drum_candidates := _drum_sample_key_candidates(instrument_id, flags, accent)
+		for sample_key in drum_candidates:
+			if playback_profile != null and playback_profile.drum_kit.has(sample_key):
+				return sample_key
+		return str(drum_candidates[0])
 	if track_type == "accent":
 		var full_key := "accent:%s" % instrument_id
 		if playback_profile != null and playback_profile.event_sample_streams.has(full_key):
@@ -1478,6 +1476,26 @@ func _sample_key_for_event(event: Dictionary) -> String:
 			return melody_key
 		return "melody"
 	return instrument_id
+
+
+func _drum_sample_key_candidates(instrument_id: String, flags: Dictionary, accent: bool) -> Array[String]:
+	var lane := "open_hat" if instrument_id == "hat" and accent else instrument_id
+	var candidates: Array[String] = []
+	if str(flags.get("audio_profile", "")) == "lofi_chill":
+		var drum_kit := str(flags.get("drum_kit", ""))
+		if drum_kit.is_empty() and chart != null:
+			drum_kit = str(chart.get("drum_kit"))
+		if not drum_kit.is_empty() and drum_kit != "classic":
+			candidates.append("%s:%s" % [drum_kit, lane])
+			if lane != instrument_id:
+				candidates.append("%s:%s" % [drum_kit, instrument_id])
+		candidates.append("lofi_%s" % lane)
+		if lane != instrument_id:
+			candidates.append("lofi_%s" % instrument_id)
+	if accent:
+		candidates.append("%s_accent" % instrument_id)
+	candidates.append(instrument_id)
+	return candidates
 
 
 func _sample_preview_layer_for_event(event: Dictionary) -> String:

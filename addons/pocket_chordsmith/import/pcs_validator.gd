@@ -188,15 +188,40 @@ func _missing_drum_sample_keys(chart, playback_profile) -> Array[String]:
 			continue
 		var instrument_id := str(event.get("instrument_id", ""))
 		var flags: Dictionary = event.get("flags", {})
-		var sample_key := instrument_id
-		if bool(flags.get("accent", false)) and playback_profile.drum_kit.has("%s_accent" % instrument_id):
-			sample_key = "%s_accent" % instrument_id
-		if not playback_profile.drum_kit.has(sample_key) or str(playback_profile.drum_kit.get(sample_key, "")).is_empty():
-			seen[sample_key] = true
+		var candidates := _drum_sample_key_candidates(chart, instrument_id, flags, bool(flags.get("accent", false)))
+		if not _has_any_drum_sample(playback_profile, candidates):
+			seen[str(candidates[0])] = true
 	for key in seen.keys():
 		missing.append(str(key))
 	missing.sort()
 	return missing
+
+
+func _has_any_drum_sample(playback_profile, candidates: Array[String]) -> bool:
+	for sample_key in candidates:
+		if playback_profile.drum_kit.has(sample_key) and not str(playback_profile.drum_kit.get(sample_key, "")).is_empty():
+			return true
+	return false
+
+
+func _drum_sample_key_candidates(chart, instrument_id: String, flags: Dictionary, accent: bool) -> Array[String]:
+	var lane := "open_hat" if instrument_id == "hat" and accent else instrument_id
+	var candidates: Array[String] = []
+	if str(flags.get("audio_profile", "")) == "lofi_chill":
+		var drum_kit := str(flags.get("drum_kit", ""))
+		if drum_kit.is_empty() and chart != null:
+			drum_kit = str(chart.get("drum_kit"))
+		if not drum_kit.is_empty() and drum_kit != "classic":
+			candidates.append("%s:%s" % [drum_kit, lane])
+			if lane != instrument_id:
+				candidates.append("%s:%s" % [drum_kit, instrument_id])
+		candidates.append("lofi_%s" % lane)
+		if lane != instrument_id:
+			candidates.append("lofi_%s" % instrument_id)
+	if accent:
+		candidates.append("%s_accent" % instrument_id)
+	candidates.append(instrument_id)
+	return candidates
 
 
 func _missing_stinger_keys(chart, playback_profile) -> Array[String]:

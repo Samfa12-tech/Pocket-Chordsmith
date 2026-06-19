@@ -53,6 +53,7 @@ export interface AppState {
   chordsmithEditorMelodyTrackIndex: number;
   chordsmithEditorStepPage: number;
   chordsmithStepSelection: ChordsmithStepSelection | null;
+  nativeCacheStatus: NativeCacheUiStatus;
   lastHandoff: HandoffStatus;
   recording: RecordingUiState;
 }
@@ -65,6 +66,19 @@ export interface HandoffStatus {
   kind: PocketHandoffKind | null;
   receivedAt: string | null;
   message: string;
+}
+
+export interface NativeCacheUiStatus {
+  assetRegionCount: number;
+  cachedClipCount: number;
+  generatedRegionCount: number;
+  runtimeAudioRegionCount: number;
+  proceduralFallbackEventCount: number;
+  buildPending: boolean;
+  prewarmScheduled: boolean;
+  bypassedForLiveEdits: boolean;
+  lastBuildReason: string | null;
+  lastError: string | null;
 }
 
 export interface RecordingUiState {
@@ -128,6 +142,18 @@ export function createInitialState(): AppState {
     chordsmithEditorMelodyTrackIndex: 0,
     chordsmithEditorStepPage: 0,
     chordsmithStepSelection: null,
+    nativeCacheStatus: {
+      assetRegionCount: 0,
+      cachedClipCount: 0,
+      generatedRegionCount: 0,
+      runtimeAudioRegionCount: 0,
+      proceduralFallbackEventCount: 0,
+      buildPending: false,
+      prewarmScheduled: false,
+      bypassedForLiveEdits: false,
+      lastBuildReason: null,
+      lastError: null
+    },
     lastHandoff: {
       source: null,
       result: "not-received",

@@ -47,14 +47,16 @@ export function createDefaultExportProfiles(): ExportProfile[] {
     {
       id: "section-loops",
       name: "Section Loops",
-      format: "json",
+      format: "wav",
       enabled: true,
       scope: "sections",
       sampleRate: 44100,
       bitDepth: 16,
       includeMetadata: true,
       settings: {
-        renderWavs: false
+        renderWavs: true,
+        manifest: true,
+        mode: "sequential-downloads"
       }
     },
     {
@@ -65,7 +67,11 @@ export function createDefaultExportProfiles(): ExportProfile[] {
       scope: "game-pack",
       includeMetadata: true,
       settings: {
-        manifestOnly: true
+        renderAudio: true,
+        includeFullMix: true,
+        includeStems: true,
+        includeSectionLoops: true,
+        includeSourceProject: true
       }
     },
     {
@@ -76,7 +82,11 @@ export function createDefaultExportProfiles(): ExportProfile[] {
       scope: "game-pack",
       includeMetadata: true,
       settings: {
-        manifestOnly: true
+        renderAudio: true,
+        includeFullMix: true,
+        includeStems: true,
+        includeSectionLoops: true,
+        includeSourceProject: true
       }
     },
     {

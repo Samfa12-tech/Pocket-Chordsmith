@@ -233,7 +233,16 @@ ${artifactTable}
 
 - Added lofi/chillhop Chordsmith import compatibility for dusty keys, warm basses, soft drum kits, swing, humanize and texture metadata.
 - Added lofi project and track defaults so imported Pocket Chordsmith beds open with a warmer DAW master chain.
+- Preserved Chordsmith master/chord/beat/lead/guitar mix-slider values as DAW master and track volumes during import.
+- Added direct DAW-vs-Chordsmith browser event parity coverage so committed fixtures compare against the live Chordsmith browser importer.
 - Preserved lofi metadata in imported projects for Chordsmith, DJ, Godot and game-export workflows.
+- Added shared sound-surface freshness checks so Chordsmith, DJ, DAW native recipes and Godot preview metadata are updated from the same core registries.
+- Added per-drum lane mixer/FX scaffolding while keeping drums on one DAW track for the normal workflow.
+- Added Godot/web game-pack exports with shared path contracts, manifests, source project JSON and rendered audio assets for target-project import testing.
+- Manual Build Native Cache now immediately swaps active native playback to cached WAV regions for generated tracks until their source hash changes.
+- Added Native Playback and Native Cache readouts in the Media Pool and About/Diagnostics panels so testers can see cached regions, cached clips and procedural fallback events while A/B testing lofi projects.
+- Lofi texture ticks no longer drive the Drums mixer meter, so cached/native playback visualises real drum hits without making quiet lofi bed sections look like constant drum activity.
+- Native procedural warm_sub/lofi bass now uses Chordsmith-level bass output instead of an extra native-only pad, so soloed imported bass remains audible on low notes.
 - Polished live-recording controls so armed input selectors, input activity and FX controls fit cleanly in mixer strips.
 - Added armed-track input preview metering, so live vocal/input tracks show signal before recording starts.
 - Monitor changes now apply to armed preview and active recording status, with clearer diagnostics for input/output/monitor state.
@@ -306,9 +315,11 @@ function knownLimitations() {
     "No simultaneous multitrack recording, stereo recording modes, punch-in/out, comping/take lanes, FX-through-monitoring or latency compensation UI yet.",
     "Imported audio decode/streaming is still limited and large files are rejected before whole-file reads.",
     "Full send/return processing and advanced pro DAW features are future work.",
-    "Game/Godot/web exports are manifest previews unless full asset-pack assembly is implemented later.",
+    "Godot/web game-pack exports build ZIPs with manifest metadata, source project JSON and rendered audio, but still need target-project smoke testing before calling them production pipeline exports.",
+    "Godot editor sample preview is still an audition path, not exact DAW/Chordsmith/DJ synth parity; use DAW game-pack rendered audio for parity checks.",
     "Stem export is sequential and not yet a single bundled stem ZIP.",
     "Native cache hydration reads valid project-cache/native-audio WAV entries when source hashes match; stale, invalid or partial generated-stem cache groups are skipped.",
+    "Manual native-cache builds are intended to override generated-track playback until a source-changing edit invalidates the source hash; treat any continued procedural generated-track playback after a successful cache build as a bug.",
     "Automation is limited to first-pass track volume and pan lanes.",
     "Pocket DAW is not claimed to be a professional DAW replacement."
   ];
@@ -334,16 +345,18 @@ ${artifactTable}
 
 ## Short Description
 
-Pocket DAW lets you import Pocket Chordsmith songs, arrange sections on a desktop timeline, play back generated parts, import audio/MIDI, and export WAV, MIDI, stem WAVs and manifest previews.
+Pocket DAW lets you import Pocket Chordsmith songs, arrange sections on a desktop timeline, play back generated parts, import audio/MIDI, and export WAV, MIDI, stem WAVs and Godot/web game-pack ZIPs.
 
 ## Features
 
 - Import PCS1 codes, raw Pocket Chordsmith JSON, PocketHandoff payloads and .pocketdaw projects.
 - Arrange clips on a DAW-style timeline with markers, loop controls, split/trim/copy/paste/duplicate/delete.
 - Edit Chordsmith drums, bass, melody, guitar, section bars and chords.
+- Preserve imported Chordsmith mix volumes, lofi sound IDs and per-track source metadata for parity testing.
 - Import audio and MIDI into a visible media pool.
 - Record one armed mono live audio track in the installed app, with project-media WAV takes.
-- Export full WAV, MIDI, stem WAVs, section manifests, Godot manifest previews and web-game manifest previews.
+- Export full WAV, MIDI, stem WAVs, section-loop WAVs, Godot game-pack ZIPs and web-game ZIPs.
+- Use per-drum lane mixer/FX controls for advanced drum balancing while keeping the normal Drums track compact.
 - Native Windows/Tauri shell with native audio playback and project file dialogs.
 
 ## Install
@@ -411,6 +424,8 @@ function windowsSmokeChecklist(installerArtifacts = []) {
     ["Basic audio", "Move/scroll the timeline and open/close the inspector while playing.", "No crackle/glitch, no major hitch, and playback remains usable during basic UI movement."],
     ["Chordsmith import", "Import a PCS1 share code if supported by the public build.", "Pocket Chordsmith project imports and timeline populates."],
     ["Chordsmith import", "Import raw Pocket Chordsmith JSON.", "Project imports without dropping source fields."],
+    ["Chordsmith import", "Import a known lofi/chillhop Chordsmith project with non-default master/chord/beat/lead/guitar volumes.", "Lofi sound IDs, source notes and Chordsmith mix-slider values appear in DAW track/master volumes and metadata."],
+    ["Chordsmith import", "A/B the same lofi project in current Chordsmith, Pocket DJ and Pocket DAW.", "Timing, notes, drum pattern and relative mix feel match closely enough for release; differences are recorded with repro files."],
     ["Chordsmith import", "Import PocketHandoff if supported by the public build.", "Handoff imports once and does not repeat after reload."],
     ["Chordsmith import", "Save, close, reopen, and inspect imported source data.", "Source Chordsmith data remains preserved after saving/reopening."],
     ["Project workflow", "Create/open a project, save a .pocketdaw file, close app, reopen app, reopen saved .pocketdaw.", "Timeline and imported source data remain intact."],
@@ -419,7 +434,13 @@ function windowsSmokeChecklist(installerArtifacts = []) {
     ["Editing", "Edit drum sequencer steps while playing or after playback.", "Drum edits produce audible changes."],
     ["Editing", "Change one track/section, then inspect demo and unrelated sections.", "Unrelated demo/sections do not mutate unexpectedly."],
     ["Mixer/audio state", "Adjust track volume, mute, solo if present, and pan.", "Audio/state changes match the control without corrupting other tracks."],
+    ["Mixer/audio state", "Open Drums advanced/lane controls and adjust kick, snare, hat and extra live-drum lane volume/pan/FX where exposed.", "Per-lane controls change only the intended drum lane and persist through save/reopen/export."],
     ["Mixer/audio state", "Adjust FX controls, routing/bus controls and automation if exposed.", "Controls persist, export safely, and guarded scaffolds stay honest where incomplete."],
+    ["Native cache", "Open the imported lofi demo, press Build Native Cache, then play while watching About/Diagnostics.", "Generated tracks play from cached WAV regions with low or zero procedural fallback events until a source-changing edit invalidates the cache."],
+    ["Native cache", "While native playback is running, press Build Native Cache again after a generated-section edit.", "Playback restarts cleanly at the current position using the fresh cached WAV regions without ongoing crackle/slowdown."],
+    ["Native cache", "Inspect the Media Pool Native Playback line and About/Diagnostics Native Cache line before and after Build Native Cache.", "The readout changes from procedural or bypassed playback to cached regions/clips and reports low or zero procedural fallback events for generated tracks."],
+    ["Mixer meters", "Play an imported lofi project with native cache active, including a sparse or no-drum section.", "The Drums meter follows drum hits and does not stay active only because lofi texture/noise events are present."],
+    ["Mixer/audio state", "Solo the Bass track on the imported lofi demo and raise volume to 100-120%.", "Warm Sub Bass is audible and the Bass meter corresponds to audible low-end/body, not a silent procedural event."],
     ["Live recording", "Save a .pocketdaw project, add a Live Vocals or Live Instrument track, then arm it.", "Exactly one live audio track is armed and the project must be saved before recording."],
     ["Live recording", "Refresh Audio Settings, choose an input, toggle Monitor off/on, and keep speakers/headphones safe.", "Monitor state changes clearly and no feedback occurs when Monitor is off."],
     ["Live recording", "Enable metronome, press Record, wait for count-in, record 5-10 seconds, then Stop Rec.", "A mono WAV is written under project-media/recordings and a clip appears on the armed track."],
@@ -429,6 +450,7 @@ function windowsSmokeChecklist(installerArtifacts = []) {
     ["Import/export", "Export WAV and open the file in a player.", "WAV file is created and playable."],
     ["Import/export", "Export MIDI and open it in a MIDI-capable tool.", "MIDI file is created and readable."],
     ["Import/export", "Export stems if exposed.", "Stem files are created and playable/readable."],
+    ["Import/export", "Export a Godot Adaptive/Game Pack ZIP and import it in the Godot addon.", "Godot addon accepts the DAW pack, creates project assets, and preview/rendered audio matches the DAW export path."],
     ["Safety", "Try an oversized import for project, audio or MIDI.", "Friendly rejection appears before whole-file read; app does not hang/crash."],
     ["Safety", "Open malicious/unsafe metadata fixture.", "Unsafe HTML/script/event/CSS is not executed or rendered raw."],
     ["Safety", "Open a corrupted project file.", "Friendly error is shown and the app remains open."],

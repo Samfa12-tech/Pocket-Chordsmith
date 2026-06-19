@@ -9,6 +9,13 @@ export interface PcsParityFixture {
     eventKinds: string[];
     melodyTrackCount?: number;
     guitarTone?: string;
+    audioProfile?: string;
+    lofiPreset?: string;
+    lofiTexture?: Record<string, unknown>;
+    drumKit?: string;
+    bassTone?: string;
+    chordInstrument?: string;
+    melodyInstruments?: string[];
     hasSlide?: boolean;
     hasTuplet?: boolean;
   };
@@ -110,6 +117,33 @@ export const PCS_PARITY_FIXTURES: PcsParityFixture[] = [
       eventKinds: ["guitar", "chord"],
       guitarTone: "metal"
     }
+  },
+  {
+    name: "Glass Tank Afternoon lofi import",
+    raw: makeGlassTankAfternoonProject(),
+    expected: {
+      sequence: ["A", "B", "A", "C", "E", "B", "G", "H"],
+      bars: [4, 4, 4, 4, 4, 4, 4, 4],
+      eventKinds: ["texture", "kick", "snare", "hat", "bass", "chord", "melody"],
+      melodyTrackCount: 2,
+      audioProfile: "lofi_chill",
+      lofiPreset: "lofi_koi_pond",
+      lofiTexture: {
+        enabled: true,
+        vinylCrackle: 0.023,
+        tapeHiss: 0.045,
+        wowFlutter: 0.02,
+        warmth: 0.1832,
+        lowPassAge: 0.14,
+        bitCrush: 0
+      },
+      drumKit: "lofi_tape_soft",
+      bassTone: "rounded_triangle_bass",
+      chordInstrument: "dusty_rhodes",
+      melodyInstruments: ["tape_bell", "mellow_vibes"],
+      hasSlide: true,
+      hasTuplet: true
+    }
   }
 ];
 
@@ -159,6 +193,148 @@ function drumGrid(steps: number) {
     grid.bass[step] = 1;
   }
   return grid;
+}
+
+function makeGlassTankAfternoonProject() {
+  const sections = {
+    A: {
+      progression: [0, 5, 1, 4],
+      melodyA: [4, 7, 9, 11, 12, 11, 9, 7],
+      melodyB: [11, 9, 7, 4, 2, 4, 7, 9],
+      bass: [0, 0, 5, 5, 1, 1, 4, 4]
+    },
+    B: {
+      progression: [1, 4, 0, 5],
+      melodyA: [7, 9, 11, 14, 12, 11, 9, 7],
+      melodyB: [2, 4, 7, 9, 11, 9, 7, 4],
+      bass: [1, 1, 4, 4, 0, 0, 5, 5]
+    },
+    C: {
+      progression: [5, 4, 1, 0],
+      melodyA: [12, 11, 9, 7, 9, 11, 12, 14],
+      melodyB: [7, 4, 2, 0, 2, 4, 7, 9],
+      bass: [5, 5, 4, 4, 1, 1, 0, 0]
+    },
+    E: {
+      progression: [0, 1, 5, 4],
+      melodyA: [4, 7, 11, 12, 14, 12, 11, 7],
+      melodyB: [0, 2, 4, 7, 9, 7, 4, 2],
+      bass: [0, 0, 1, 1, 5, 5, 4, 4]
+    },
+    G: {
+      progression: [4, 5, 0, 1],
+      melodyA: [11, 12, 14, 16, 14, 12, 11, 9],
+      melodyB: [4, 7, 9, 11, 9, 7, 4, 2],
+      bass: [4, 4, 5, 5, 0, 0, 1, 1]
+    },
+    H: {
+      progression: [0, 5, 4, 0],
+      melodyA: [7, 9, 11, 12, 11, 9, 7, 4],
+      melodyB: [12, 11, 9, 7, 4, 2, 0, 2],
+      bass: [0, 0, 5, 5, 4, 4, 0, 0]
+    }
+  } as const;
+
+  const patch: Record<string, unknown> = {
+    format: "pocket-chordsmith-project-json",
+    projectVersion: 16,
+    schemaVersion: 16,
+    bpm: 72,
+    swing: 0.11,
+    audioProfile: "lofi_chill",
+    lofiPreset: "lofi_koi_pond",
+    lofiTexture: {
+      enabled: true,
+      vinylCrackle: 0.023,
+      tapeHiss: 0.045,
+      wowFlutter: 0.02,
+      warmth: 0.1832,
+      lowPassAge: 0.14,
+      bitCrush: 0
+    },
+    drumKit: "lofi_tape_soft",
+    drumGroovePreset: "lofi_sparse_clicks",
+    bassTone: "rounded_triangle_bass",
+    chordInstrument: "dusty_rhodes",
+    chordType: "seventh",
+    chordPlayMode: "block",
+    chordRhythmMode: "half",
+    bassMode: "manual",
+    humanizeOn: true,
+    sidechainOn: true,
+    sidechainAmount: 0.14,
+    songSequence: ["A", "B", "A", "C", "E", "B", "G", "H"],
+    defaultSceneIds: ["fish-tank", "koi-pond"],
+    mixNotes: "Sparse tape-soft drums, rounded triangle bass, dusty Rhodes, tape bell and mellow vibes."
+  };
+
+  Object.entries(sections).forEach(([id, section], sectionIndex) => {
+    patch[`progression${id}`] = section.progression;
+    patch[`grid${id}`] = sparseLofiGrid(64, sectionIndex);
+    patch[`gridTuplets${id}`] = sparseLofiTuplets(64, sectionIndex);
+    patch[`bassNotes${id}`] = lofiBassLine(64, section.bass);
+    patch[`bassHold${id}`] = boolEvery(64, [1, 2, 9, 10, 17, 18, 25, 26, 33, 34, 41, 42, 49, 50, 57, 58]);
+    patch[`bassSlide${id}`] = boolEvery(64, sectionIndex % 2 === 0 ? [3, 24] : [3, 40]);
+    patch[`bassAccent${id}`] = boolEvery(64, [0, 16, 32, 48]);
+    patch[`melodyTracks${id}`] = [
+      lofiLeadLine(64, section.melodyA),
+      repeatedPhrase(64, section.melodyB, 8, 4)
+    ];
+    patch[`melodyInstruments${id}`] = ["tape_bell", "mellow_vibes"];
+    patch[`melodyOctaves${id}`] = [0, -1];
+    patch[`melodyPan${id}`] = [-0.22, 0.24];
+    patch[`melodyHold${id}`] = [boolEvery(64, [1, 2, 17, 33, 49]), boolEvery(64, [13, 29, 45, 61])];
+    patch[`melodySlide${id}`] = [boolEvery(64, sectionIndex % 2 === 0 ? [3, 8] : [3, 24]), boolEvery(64, sectionIndex % 2 === 0 ? [36] : [52])];
+    patch[`melodyTuplets${id}`] = [boolEvery(64, sectionIndex === 0 ? [32] : []), boolEvery(64, sectionIndex === 1 ? [16] : [])];
+  });
+
+  return makeProject("Glass Tank Afternoon", patch);
+}
+
+function sparseLofiGrid(steps: number, variant: number) {
+  const grid = emptyGrid(steps);
+  for (let step = 0; step < steps; step += 8) grid.hat[step] = variant % 2 === 0 ? 1 : 2;
+  for (let step = 0; step < steps; step += 16) {
+    grid.kick[step] = 2;
+    grid.bass[step] = 1;
+  }
+  [12, 28, 44, 60].forEach((step) => {
+    grid.snare[step] = 1;
+  });
+  if (variant % 2 === 1) grid.kick[24] = 1;
+  return grid;
+}
+
+function sparseLofiTuplets(steps: number, variant: number) {
+  const tuplets = emptyTuplets(steps);
+  if (variant % 2 === 0) tuplets.hat[6] = true;
+  if (variant % 3 === 0) tuplets.snare[46] = true;
+  return tuplets;
+}
+
+function repeatedPhrase(steps: number, phrase: readonly number[], spacing: number, offset = 0) {
+  const out = new Array<number | null>(steps).fill(null);
+  phrase.forEach((note, index) => {
+    const step = offset + index * spacing;
+    if (step < steps) out[step] = note;
+  });
+  return out;
+}
+
+function lofiBassLine(steps: number, phrase: readonly number[]) {
+  const out = repeatedPhrase(steps, phrase, 8);
+  if (steps > 3) out[3] = phrase[1] ?? phrase[0] ?? 0;
+  return out;
+}
+
+function lofiLeadLine(steps: number, phrase: readonly number[]) {
+  const out = repeatedPhrase(steps, phrase, 8);
+  if (steps > 3) out[3] = phrase[1] ?? phrase[0] ?? 0;
+  return out;
+}
+
+function boolEvery(steps: number, enabledSteps: number[]) {
+  return boolArray(steps, enabledSteps.filter((step) => step < steps));
 }
 
 function emptyGrid(steps: number) {

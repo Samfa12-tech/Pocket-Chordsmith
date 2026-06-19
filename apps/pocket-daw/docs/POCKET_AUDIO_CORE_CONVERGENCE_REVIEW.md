@@ -20,7 +20,7 @@ Pocket DAW currently has its own working audio surface:
 - `src/audio/audioEngine.ts` schedules those events for live playback.
 - `src/audio/offlineRender.ts` renders full-song WAV output.
 - `src/audio/audioBufferCache.ts` stores runtime-only decoded audio buffers for imported audio clips.
-- `src/daw/exportJobs.ts` plans stems, section loops and game manifest previews.
+- `src/daw/exportJobs.ts` plans stems and section loops, and assembles Godot/web game-pack ZIPs with rendered audio, manifests and source project JSON.
 
 ## Adopted in v0.5.1
 

@@ -8,6 +8,10 @@ https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocke
 
 Do not point the updater at raw git source or unsigned files. The updater manifest must reference signed release artifacts attached to a GitHub Release.
 
+## Future Distribution Direction
+
+The intended long-term itch role is a stable Pocket DAW downloader/installer package rather than a manually redownloaded app for every patch. Testers should be able to install from itch once, then move to the newest signed build through the in-app Tauri updater served from GitHub Releases. Keep the itch installer channel healthy as the bootstrap path, but prefer GitHub/Tauri auto-update for routine version-to-version movement.
+
 ## Signing Keys
 
 Generate Tauri updater signing keys with the Tauri CLI:
@@ -50,6 +54,51 @@ The helper reads `.env.tauri-signing.local` when present, accepts `TAURI_SIGNING
 ```
 
 `.env.tauri-signing.local` is ignored by git. Do not commit the private key or a file containing private key contents. `package:itch` builds installers with Tauri's built-in updater signing disabled, then signs the generated EXE/MSI updater artifacts directly with the local private key and an explicit empty password argument.
+
+## Efficient Updater Package Commands
+
+Use accumulated DAW release checkpoints by default. Do not bump/publish a new public updater version for every local change unless the fix is urgent enough for testers immediately.
+
+Release frequency policy:
+
+- Keep ordinary DAW fixes and feature work local until they form a coherent tester slice.
+- Use local signed packages for private validation without publishing a new updater version.
+- Publish public updater versions for deliberate checkpoints, not every commit or small patch.
+- Allow immediate hotfix releases only for urgent blockers such as launch failure, broken updater flow, project save/open corruption, or a major unusable audio path.
+- Keep unreleased notes as "next build pending" until the checkpoint is intentionally packaged and published.
+
+For a normal local signed updater package, run:
+
+```powershell
+npm run release:update
+```
+
+This verifies version and native sound recipe sync, builds/signs the Windows installers once, packages the itch installer folder, verifies release artifacts, copies the updater files into `releases/updater/`, and writes `pocket-daw-latest.json` plus `SHA256SUMS.txt`. It does not upload to itch or GitHub.
+
+For a full pre-public gate before an intentional checkpoint release, run:
+
+```powershell
+npm run release:update:full
+```
+
+This adds `npm test` and `cargo test`, then builds/signs the installers once. It replaces the older manual habit of running a full gate and then repeating build/package/copy/manifest steps by hand.
+
+For release-note or manifest-only rehearsal using existing signed installers for the same version, run:
+
+```powershell
+npm run release:update:fast
+```
+
+The fast path reuses existing version-matched installers and is blocked from publishing. Use it only when the native app binary has not changed.
+
+For an intentional public release after deciding the accumulated slice should go out:
+
+```powershell
+$env:PUBLISH = "1"
+npm run release:update:publish
+```
+
+This runs the full gate, packages/stages the updater files, pushes the itch installer channel, creates the GitHub release, then verifies the live updater manifest, release asset hash and butler channel status. It refuses to publish if `PUBLISH=1` is not set, if `--fast` is used, or if the GitHub release tag already exists.
 
 ## Build Signed Updater Artifacts
 

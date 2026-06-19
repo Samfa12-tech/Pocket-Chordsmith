@@ -230,7 +230,7 @@
   <button class="btn primary play" id="playBtn">Play</button>
   <button class="btn stop" id="stopBtn">Stop</button>
   <button class="btn restart" id="restartBtn">Restart</button>
-  <label class="master-wrap small">Master <input id="masterVolume" type="range" min="0" max="1" step="0.01" value="0.88"></label>
+  <label class="master-wrap small">Master <input id="masterVolume" type="range" min="0" max="1" step="0.01" value="0.82"></label>
 </div>
 
 
@@ -301,6 +301,12 @@ const LOFI_DRUM_KITS = ["classic","lofi_dusty","lofi_brush","lofi_tape_soft"];
 const LOFI_BASS_TONES = ["classic","warm_sub","soft_upright","rounded_triangle_bass"];
 const LOFI_STYLE_PRESETS = ["lofi_study_room","lofi_rainy_window","lofi_moon_garden","lofi_koi_pond","lofi_train_window","lofi_ant_farm_night","lofi_menu_warmth","lofi_sleepy_waltz"];
 const DEFAULT_LOFI_TEXTURE = {enabled:false, vinylCrackle:0.08, tapeHiss:0.05, wowFlutter:0.03, warmth:0.16, lowPassAge:0.22, bitCrush:0.01};
+const FALLBACK_DRUM_KIT_CONFIGS = {
+  classic:{kick:{startFreq:155,endFreq:45,sweepSeconds:0.14,gainFloor:0.08,gainScale:1,length:0.17,rampSeconds:0.16},snare:{noiseSeconds:0.12,highpass:1700,gainFloor:0.05,gainScale:1,length:0.13,rampSeconds:0.12},hat:{closedLength:0.05,openLength:0.16,highpassClosed:5600,highpassOpen:3800,gainFloorClosed:0.03,gainFloorOpen:0.05,gainScaleClosed:1,gainScaleOpen:1,rampSecondsClosed:0.05,rampSecondsOpen:0.14}},
+  lofi_dusty:{kick:{startFreq:132,endFreq:42,sweepSeconds:0.18,filterFreq:170,gainFloor:0.04,gainScale:0.58,length:0.23,rampSeconds:0.21},snare:{noiseSeconds:0.13,highpass:980,lowpass:2800,gainFloor:0.035,gainScale:0.52,length:0.14,rampSeconds:0.12,bodyFreq:185,bodyGain:0.035,bodyLength:0.11,bodyRampSeconds:0.09},hat:{closedLength:0.065,openLength:0.2,highpassClosed:3400,highpassOpen:2600,lowpass:6200,gainFloorClosed:0.02,gainFloorOpen:0.035,gainScaleClosed:0.55,gainScaleOpen:0.62,rampSecondsClosed:0.055,rampSecondsOpen:0.18}},
+  lofi_brush:{kick:{startFreq:132,endFreq:42,sweepSeconds:0.18,filterFreq:135,gainFloor:0.04,gainScale:0.48,length:0.23,rampSeconds:0.21},snare:{noiseSeconds:0.18,highpass:720,lowpass:2800,gainFloor:0.035,gainScale:0.46,length:0.2,rampSeconds:0.18,bodyFreq:150,bodyGain:0.035,bodyLength:0.11,bodyRampSeconds:0.09},hat:{closedLength:0.065,openLength:0.2,highpassClosed:3400,highpassOpen:2600,lowpass:6200,gainFloorClosed:0.02,gainFloorOpen:0.035,gainScaleClosed:0.55,gainScaleOpen:0.62,rampSecondsClosed:0.055,rampSecondsOpen:0.18}},
+  lofi_tape_soft:{kick:{startFreq:118,endFreq:42,sweepSeconds:0.18,filterFreq:170,gainFloor:0.04,gainScale:0.58,length:0.23,rampSeconds:0.21},snare:{noiseSeconds:0.13,highpass:980,lowpass:2200,gainFloor:0.035,gainScale:0.52,length:0.14,rampSeconds:0.12,bodyFreq:185,bodyGain:0.035,bodyLength:0.11,bodyRampSeconds:0.09},hat:{closedLength:0.065,openLength:0.2,highpassClosed:3400,highpassOpen:2600,lowpass:5200,gainFloorClosed:0.02,gainFloorOpen:0.035,gainScaleClosed:0.55,gainScaleOpen:0.62,rampSecondsClosed:0.055,rampSecondsOpen:0.18}}
+};
 const CHORDSMITH_THEMES = {
   night:{bg:"#070711",panel:"#101222",panel2:"#171a2f",line:"#2d3154",text:"#f4f7ff",muted:"#98a2c8",cyan:"#48f5ff",magenta:"#ff4fd8",violet:"#9b6cff",lime:"#a8ff61",amber:"#ffd166",danger:"#ff6b8b",background:"radial-gradient(circle at 15% 5%,rgba(72,245,255,.18),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,79,216,.16),transparent 32%),radial-gradient(circle at 50% 95%,rgba(155,108,255,.14),transparent 32%),linear-gradient(180deg,#060711,#0b0c18 50%,#060711)"},
   ocean:{bg:"#06131b",panel:"#102536",panel2:"#18364a",line:"#2d5c73",text:"#edf9ff",muted:"#9cc6d4",cyan:"#63d8ff",magenta:"#7ef0d7",violet:"#6fa8ff",lime:"#99f5cf",amber:"#ffd27a",danger:"#ff7f9d",background:"radial-gradient(circle at 12% 7%,rgba(99,216,255,.20),transparent 30%),radial-gradient(circle at 90% 10%,rgba(126,240,215,.15),transparent 34%),radial-gradient(circle at 48% 95%,rgba(111,168,255,.15),transparent 34%),linear-gradient(180deg,#06131b,#0a1f2a 52%,#061018)"},
@@ -360,6 +366,43 @@ function callPocketAudioCore(method, ...args){
     const result = pocketAudioCore[method](...args);
     if(result && typeof result.catch === "function") result.catch(() => {});
   }catch(e){}
+}
+function coreArrayExport(name, fallback, options={}){
+  const value = pocketAudioCoreModule && pocketAudioCoreModule[name];
+  const items = Array.isArray(value) ? value.slice() : fallback.slice();
+  if(options.includeClassic && !items.includes("classic")) items.unshift("classic");
+  return items;
+}
+function lofiChordInstrumentIds(){ return coreArrayExport("LOFI_CHORD_INSTRUMENTS", LOFI_CHORD_INSTRUMENTS); }
+function lofiMelodyInstrumentIds(){ return coreArrayExport("LOFI_MELODY_INSTRUMENTS", LOFI_MELODY_INSTRUMENTS); }
+function lofiDrumKitIds(){ return coreArrayExport("LOFI_DRUM_KITS", LOFI_DRUM_KITS, {includeClassic:true}); }
+function lofiBassToneIds(){ return coreArrayExport("LOFI_BASS_TONES", LOFI_BASS_TONES, {includeClassic:true}); }
+function lofiStylePresetIds(){ return coreArrayExport("LOFI_STYLE_PRESET_IDS", LOFI_STYLE_PRESETS); }
+function fallbackChordsmithFxParameters(fx = {}){
+  const delay = clamp(asNum(fx.delay ?? fx.echo, DEFAULT_FX.echo), 0, 1);
+  const chorus = clamp(asNum(fx.chorus, DEFAULT_FX.chorus), 0, 1);
+  const flanger = clamp(asNum(fx.flanger, DEFAULT_FX.flanger), 0, 1);
+  const reverb = clamp(asNum(fx.reverb, DEFAULT_FX.reverb), 0, 1);
+  const mix = clamp(asNum(fx.mix, DEFAULT_FX.mix), 0, 1);
+  const brightness = (chorus * .9) + (flanger * 1.1) + (reverb * .35) - (delay * .10);
+  return {
+    source:{delay,chorus,flanger,reverb,mix},
+    dryGain:Math.max(.52, 1.0 - (mix * .48)),
+    wetMasterGain:mix * 1.45,
+    tone:{frequency:1800,gain:clamp(brightness * 6, -2, 7)},
+    delay:{time:.10 + delay * .42, feedback:.05 + delay * .72, mix:delay * .95},
+    chorus:{rate:.25 + chorus * 1.9, depth:.0014 + chorus * .030, mix:chorus * .95},
+    flanger:{rate:.10 + flanger * 1.10, depth:.0007 + flanger * .0062, feedback:.08 + flanger * .82, mix:flanger * .85},
+    reverb:{decay:1.6, impulseDecay:2.4, mix:reverb * 1.05}
+  };
+}
+function sharedChordsmithFxParameters(fx = {}){
+  if(!pocketAudioCoreModule || typeof pocketAudioCoreModule.chordsmithFxParameters !== "function") return null;
+  try{ return pocketAudioCoreModule.chordsmithFxParameters(fx); }
+  catch(e){ return null; }
+}
+function chordsmithFxParams(fx = {}){
+  return sharedChordsmithFxParameters(fx) || fallbackChordsmithFxParameters(fx);
 }
 
 /* 2. Compatibility parser */
@@ -637,7 +680,7 @@ function sanitizeSection(raw, project, id){
     grid,
     gridTuplets,
     melodyTracks,
-    melodyInstruments: ensureTrackArray(raw[sectionKey("melodyInstruments", id)], trackCount, "pulse", v => safeChoice(v,["pulse","soft","synth","bell","lead_guitar","distorted_lead_guitar","banjo","harmonica","cowboy_whistle","trumpet","saxophone",...LOFI_MELODY_INSTRUMENTS],"pulse")),
+    melodyInstruments: ensureTrackArray(raw[sectionKey("melodyInstruments", id)], trackCount, "pulse", v => safeChoice(v,["pulse","soft","synth","bell","lead_guitar","distorted_lead_guitar","banjo","harmonica","cowboy_whistle","trumpet","saxophone",...lofiMelodyInstrumentIds()],"pulse")),
     melodyOctaves: ensureTrackArray(raw[sectionKey("melodyOctaves", id)], trackCount, 0, v => clamp(asInt(v,0),-1,1)),
     melodyMute: ensureTrackArray(raw[sectionKey("melodyMute", id)], trackCount, false, v => !!v),
     melodySolo: ensureTrackArray(raw[sectionKey("melodySolo", id)], trackCount, false, v => !!v),
@@ -654,7 +697,7 @@ function sanitizeSection(raw, project, id){
 }
 function sanitizeLofiPresetId(value){
   const id = String(value || "");
-  return LOFI_STYLE_PRESETS.includes(id) ? id : "";
+  return lofiStylePresetIds().includes(id) ? id : "";
 }
 function sanitizeLofiTexture(raw){
   const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
@@ -681,12 +724,12 @@ function sanitizePocketChordsmithProject(raw){
     audioProfile: (raw.audioProfile === LOFI_AUDIO_PROFILE_ID || raw.lofiPreset || raw.stylePreset) ? LOFI_AUDIO_PROFILE_ID : "standard",
     lofiPreset: sanitizeLofiPresetId(raw.lofiPreset || raw.stylePreset || ""),
     lofiTexture: sanitizeLofiTexture(raw.lofiTexture),
-    drumKit: safeChoice(raw.drumKit, LOFI_DRUM_KITS, "classic"),
+    drumKit: safeChoice(raw.drumKit, lofiDrumKitIds(), "classic"),
     drumGroovePreset: String(raw.drumGroovePreset || ""),
-    bassTone: safeChoice(raw.bassTone, LOFI_BASS_TONES, "classic"),
+    bassTone: safeChoice(raw.bassTone, lofiBassToneIds(), "classic"),
     resolution: sanitizeResolution(raw.resolution ?? raw.lastAdvancedResolution ?? 4),
     chordType: safeChoice(raw.chordType,["triad","seventh","sus2","sus4"],"triad"),
-    chordInstrument: safeChoice(raw.chordInstrument,["pocket","piano","saloon_piano","harp","warm_pad","glass",...LOFI_CHORD_INSTRUMENTS],"pocket"),
+    chordInstrument: safeChoice(raw.chordInstrument,["pocket","piano","saloon_piano","harp","warm_pad","glass",...lofiChordInstrumentIds()],"pocket"),
     chordPlayMode: safeChoice(raw.chordPlayMode,["block","strum_up","strum_down","arp_up","arp_down"],"block"),
     chordRhythmMode: safeChoice(raw.chordRhythmMode,["sustain","quarter","half"],"sustain"),
     chordOctave: clamp(asInt(raw.chordOctave,0),-1,1),
@@ -902,7 +945,7 @@ function sectionStepCount(section){ return (section?.bars || 4) * stepsPerBar();
 function stepDuration(step){
   const base = beatDur() / resolution();
   const swing = session?.deck.swing || 0;
-  if(swing > 0 && resolution() >= 2){ return step % 2 ? base + base * swing : base - base * swing; }
+  if(swing > 0 && resolution() >= 2 && resolution() !== 3){ return step % 2 ? base + base * swing : base - base * swing; }
   return base;
 }
 function spanDuration(startStep, count){ let d=0; for(let i=0;i<count;i++) d += stepDuration(startStep+i); return d; }
@@ -1013,7 +1056,13 @@ function humanizeOn(){ return !!session?.deck?.humanizeOn; }
 function isLofiDeck(){ return session?.deck?.audioProfile === LOFI_AUDIO_PROFILE_ID || !!session?.deck?.lofiPreset; }
 function lofiDrumKit(){
   const kit = session?.deck?.drumKit || "classic";
-  return kit.startsWith("lofi_") ? kit : (isLofiDeck() ? "lofi_dusty" : "classic");
+  const resolver = pocketAudioCoreModule?.resolvePocketDrumKitId;
+  if(typeof resolver === "function") return resolver(kit, session?.deck?.audioProfile, session?.deck?.lofiPreset);
+  return FALLBACK_DRUM_KIT_CONFIGS[kit] ? kit : (isLofiDeck() ? "lofi_dusty" : "classic");
+}
+function pocketDrumKitConfig(kit){
+  const shared = pocketAudioCoreModule?.POCKET_DRUM_KIT_CONFIGS;
+  return (shared && shared[kit]) || FALLBACK_DRUM_KIT_CONFIGS[kit] || FALLBACK_DRUM_KIT_CONFIGS.classic;
 }
 function humanizeOffset(step, seed=0){ return humanizeOn() ? (featureSeed(step, seed) - 0.5) * 0.018 : 0; }
 function humanizePeak(base, step, seed=0){ return humanizeOn() ? base * (0.88 + featureSeed(step, seed + 99) * 0.20) : base; }
@@ -1057,59 +1106,62 @@ function playOscFreq(stem,freq,t,dur,wave="sawtooth",peak=.2,filterType=null,fil
 }
 function playKick(t, peak=0.95){
   const kit = lofiDrumKit();
-  if(kit !== "classic"){
-    const osc = audioCtx.createOscillator(), g = audioCtx.createGain(), f = audioCtx.createBiquadFilter();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(kit === "lofi_tape_soft" ? 118 : 132,t);
-    osc.frequency.exponentialRampToValueAtTime(42,t+.18);
-    f.type = "lowpass"; f.frequency.setValueAtTime(kit === "lofi_brush" ? 135 : 170,t);
-    g.gain.setValueAtTime(Math.max(.04, peak * (kit === "lofi_brush" ? .48 : .58)),t);
-    g.gain.exponentialRampToValueAtTime(.001,t+.21);
-    osc.connect(f); f.connect(g); g.connect(stemOutput("drums")); osc.start(t); osc.stop(t+.23); flashStem("drums");
-    return;
-  }
+  const cfg = pocketDrumKitConfig(kit).kick;
   const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
-  osc.type = "sine"; osc.frequency.setValueAtTime(155,t); osc.frequency.exponentialRampToValueAtTime(45,t+.14);
-  g.gain.setValueAtTime(Math.max(.08,peak),t); g.gain.exponentialRampToValueAtTime(.001,t+.16);
-  osc.connect(g); g.connect(stemOutput("drums")); osc.start(t); osc.stop(t+.17); flashStem("drums");
+  let node = osc;
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(cfg.startFreq,t);
+  osc.frequency.exponentialRampToValueAtTime(cfg.endFreq,t+cfg.sweepSeconds);
+  if(cfg.filterFreq){
+    const f = audioCtx.createBiquadFilter();
+    f.type = "lowpass"; f.frequency.setValueAtTime(cfg.filterFreq,t);
+    osc.connect(f); node = f;
+  }
+  g.gain.setValueAtTime(Math.max(cfg.gainFloor, peak * cfg.gainScale),t);
+  g.gain.exponentialRampToValueAtTime(.001,t+cfg.rampSeconds);
+  node.connect(g); g.connect(stemOutput("drums")); osc.start(t); osc.stop(t+cfg.length); flashStem("drums");
 }
 function playSnare(t, peak=0.5){
   const kit = lofiDrumKit();
-  if(kit !== "classic"){
-    const src = audioCtx.createBufferSource(), hp = audioCtx.createBiquadFilter(), lp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
-    src.buffer = liveNoiseBuffer(`snare_${kit}`, kit === "lofi_brush" ? .18 : .13, false);
-    hp.type = "highpass"; hp.frequency.value = kit === "lofi_brush" ? 720 : 980;
-    lp.type = "lowpass"; lp.frequency.value = kit === "lofi_tape_soft" ? 2200 : 2800;
-    g.gain.setValueAtTime(Math.max(.035, peak * (kit === "lofi_brush" ? .46 : .52)),t);
-    g.gain.exponentialRampToValueAtTime(.001,t+(kit === "lofi_brush" ? .18 : .12));
-    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+(kit === "lofi_brush" ? .2 : .14)); flashStem("drums");
-    return;
-  }
+  const cfg = pocketDrumKitConfig(kit).snare;
   const src = audioCtx.createBufferSource(), hp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
-  src.buffer = liveNoiseBuffer("snare", .12, false); hp.type = "highpass"; hp.frequency.value = 1700;
-  g.gain.setValueAtTime(Math.max(.05,peak),t); g.gain.exponentialRampToValueAtTime(.001,t+.12);
-  src.connect(hp); hp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+.13); flashStem("drums");
+  let node = hp;
+  src.buffer = liveNoiseBuffer(kit === "classic" ? "snare" : `snare_${kit}`, cfg.noiseSeconds, false);
+  hp.type = "highpass"; hp.frequency.value = cfg.highpass;
+  if(cfg.lowpass){
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = "lowpass"; lp.frequency.value = cfg.lowpass;
+    hp.connect(lp); node = lp;
+  }
+  g.gain.setValueAtTime(Math.max(cfg.gainFloor, peak * cfg.gainScale),t);
+  g.gain.exponentialRampToValueAtTime(.001,t+cfg.rampSeconds);
+  src.connect(hp); node.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+cfg.length);
+  if(cfg.bodyFreq){
+    const body = audioCtx.createOscillator(), bodyGain = audioCtx.createGain();
+    body.type = "triangle";
+    body.frequency.setValueAtTime(cfg.bodyFreq,t);
+    bodyGain.gain.setValueAtTime(cfg.bodyGain,t);
+    bodyGain.gain.exponentialRampToValueAtTime(.001,t+cfg.bodyRampSeconds);
+    body.connect(bodyGain); bodyGain.connect(stemOutput("drums")); body.start(t); body.stop(t+cfg.bodyLength);
+  }
+  flashStem("drums");
 }
 function playHat(t, peak=0.16, open=false){
   const kit = lofiDrumKit();
-  if(kit !== "classic"){
-    const hatLen = open ? .20 : .065;
-    const src = audioCtx.createBufferSource(), hp = audioCtx.createBiquadFilter(), lp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
-    src.buffer = liveNoiseBuffer(`${open ? "hat_open" : "hat_closed"}_${kit}`, hatLen, false);
-    hp.type = "highpass"; hp.frequency.value = open ? 2600 : 3400;
-    lp.type = "lowpass"; lp.frequency.value = kit === "lofi_tape_soft" ? 5200 : 6200;
-    g.gain.setValueAtTime(Math.max(open ? .035 : .02, peak * (open ? .62 : .55)),t);
-    g.gain.exponentialRampToValueAtTime(.001,t + (open ? .18 : .055));
-    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+hatLen); flashStem("drums");
-    return;
-  }
-  const hatLen = open ? .16 : .05;
+  const cfg = pocketDrumKitConfig(kit).hat;
+  const hatLen = open ? cfg.openLength : cfg.closedLength;
   const src = audioCtx.createBufferSource(), hp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
-  src.buffer = liveNoiseBuffer(open ? "hat_open" : "hat_closed", hatLen, false);
-  hp.type = "highpass"; hp.frequency.value = open ? 3800 : 5600;
-  g.gain.setValueAtTime(Math.max(open ? .05 : .03, peak),t);
-  g.gain.exponentialRampToValueAtTime(.001,t + (open ? .14 : .05));
-  src.connect(hp); hp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+hatLen); flashStem("drums");
+  let node = hp;
+  src.buffer = liveNoiseBuffer(kit === "classic" ? (open ? "hat_open" : "hat_closed") : `${open ? "hat_open" : "hat_closed"}_${kit}`, hatLen, false);
+  hp.type = "highpass"; hp.frequency.value = open ? cfg.highpassOpen : cfg.highpassClosed;
+  if(cfg.lowpass){
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = "lowpass"; lp.frequency.value = cfg.lowpass;
+    hp.connect(lp); node = lp;
+  }
+  g.gain.setValueAtTime(Math.max(open ? cfg.gainFloorOpen : cfg.gainFloorClosed, peak * (open ? cfg.gainScaleOpen : cfg.gainScaleClosed)),t);
+  g.gain.exponentialRampToValueAtTime(.001,t + (open ? cfg.rampSecondsOpen : cfg.rampSecondsClosed));
+  src.connect(hp); node.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+hatLen); flashStem("drums");
 }
 function playLofiTexture(t, step=0){
   const texture = session?.deck?.lofiTexture || {};
@@ -1119,17 +1171,17 @@ function playLofiTexture(t, step=0){
   const age = clamp(asNum(texture.lowPassAge, DEFAULT_LOFI_TEXTURE.lowPassAge),0,1);
   if(hiss > .005){
     const src = audioCtx.createBufferSource(), hp = audioCtx.createBiquadFilter(), lp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
-    src.buffer = liveNoiseBuffer(`lofi_hiss_${Math.round(hiss*100)}_${Math.round(age*100)}`, .2, false);
+    src.buffer = liveNoiseBuffer(`lofi_hiss_${Math.round(hiss*100)}_${Math.round(age*100)}`, .22, false);
     hp.type = "highpass"; hp.frequency.value = 520;
     lp.type = "lowpass"; lp.frequency.value = 3600 - age * 1800;
-    g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.0048*hiss,t+.018); g.gain.exponentialRampToValueAtTime(.0001,t+.18);
-    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+.2);
+    g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.0055*hiss,t+.018); g.gain.exponentialRampToValueAtTime(.0001,t+.2);
+    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+.22);
   }
-  if(crackle > .01 && featureSeed(step,43) < crackle * .65){
+  if(crackle > .01 && featureSeed(step,43) < crackle * .7){
     const src = audioCtx.createBufferSource(), bp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
     src.buffer = liveNoiseBuffer(`lofi_crackle_${step % 19}`, .026, false);
     bp.type = "bandpass"; bp.frequency.value = 1550 + featureSeed(step,44) * 1300; bp.Q.value = .95;
-    g.gain.setValueAtTime(.016*crackle,t); g.gain.exponentialRampToValueAtTime(.0001,t+.024);
+    g.gain.setValueAtTime(.018*crackle,t); g.gain.exponentialRampToValueAtTime(.0001,t+.024);
     src.connect(bp); bp.connect(g); g.connect(stemOutput("drums")); src.start(t); src.stop(t+.028);
   }
 }
@@ -1385,23 +1437,24 @@ function applyMixerAndFx(){
   const cutoff = 260 + Math.pow(clamp(fx.filter,0,1), 2.25) * 19740;
   masterFilter.frequency.setTargetAtTime(cutoff, audioCtx.currentTime, .03);
   masterFilter.Q.setTargetAtTime(fx.filter < .2 ? 1.2 : .45, audioCtx.currentTime, .03);
-  if(synthDryGain) synthDryGain.gain.setTargetAtTime(Math.max(.52, 1.0 - (fx.mix * .48)), audioCtx.currentTime, .02);
-  if(fxWetMasterGain) fxWetMasterGain.gain.setTargetAtTime(fx.mix * 1.45, audioCtx.currentTime, .02);
+  const mapped = chordsmithFxParams({delay:fx.echo, chorus:fx.chorus, flanger:fx.flanger, reverb:fx.reverb, mix:fx.mix});
+  if(synthDryGain) synthDryGain.gain.setTargetAtTime(mapped.dryGain, audioCtx.currentTime, .02);
+  if(fxWetMasterGain) fxWetMasterGain.gain.setTargetAtTime(mapped.wetMasterGain, audioCtx.currentTime, .02);
   if(fxToneFilter){
-    const brightness = (fx.chorus*.9) + (fx.flanger*1.1) + (fx.reverb*.35) - (fx.echo*.10);
-    fxToneFilter.gain.setTargetAtTime(clamp(brightness * 6, -2, 7), audioCtx.currentTime, .03);
+    fxToneFilter.frequency.setTargetAtTime(mapped.tone.frequency, audioCtx.currentTime, .03);
+    fxToneFilter.gain.setTargetAtTime(mapped.tone.gain, audioCtx.currentTime, .03);
   }
-  delayNode.delayTime.setTargetAtTime(.10 + fx.echo*.42, audioCtx.currentTime, .02);
-  delayFeedback.gain.setTargetAtTime(.05 + fx.echo*.72, audioCtx.currentTime, .02);
-  delayWet.gain.setTargetAtTime(fx.echo*.95, audioCtx.currentTime, .02);
-  chorusWetGain.gain.setTargetAtTime(fx.chorus*.95, audioCtx.currentTime, .02);
-  chorusDepthGain.gain.setTargetAtTime(.0014 + fx.chorus*.030, audioCtx.currentTime, .02);
-  chorusLfo.frequency.setTargetAtTime(.25 + fx.chorus*1.9, audioCtx.currentTime, .02);
-  flangerWetGain.gain.setTargetAtTime(fx.flanger*.85, audioCtx.currentTime, .02);
-  flangerFeedbackGain.gain.setTargetAtTime(.08 + fx.flanger*.82, audioCtx.currentTime, .02);
-  flangerDepthGain.gain.setTargetAtTime(.0007 + fx.flanger*.0062, audioCtx.currentTime, .02);
-  flangerLfo.frequency.setTargetAtTime(.10 + fx.flanger*1.10, audioCtx.currentTime, .02);
-  reverbWet.gain.setTargetAtTime(fx.reverb*1.05, audioCtx.currentTime, .02);
+  delayNode.delayTime.setTargetAtTime(mapped.delay.time, audioCtx.currentTime, .02);
+  delayFeedback.gain.setTargetAtTime(mapped.delay.feedback, audioCtx.currentTime, .02);
+  delayWet.gain.setTargetAtTime(mapped.source.delay * .95, audioCtx.currentTime, .02);
+  chorusWetGain.gain.setTargetAtTime(mapped.source.chorus * .95, audioCtx.currentTime, .02);
+  chorusDepthGain.gain.setTargetAtTime(mapped.chorus.depth, audioCtx.currentTime, .02);
+  chorusLfo.frequency.setTargetAtTime(mapped.chorus.rate, audioCtx.currentTime, .02);
+  flangerWetGain.gain.setTargetAtTime(mapped.source.flanger * .85, audioCtx.currentTime, .02);
+  flangerFeedbackGain.gain.setTargetAtTime(mapped.flanger.feedback, audioCtx.currentTime, .02);
+  flangerDepthGain.gain.setTargetAtTime(mapped.flanger.depth, audioCtx.currentTime, .02);
+  flangerLfo.frequency.setTargetAtTime(mapped.flanger.rate, audioCtx.currentTime, .02);
+  reverbWet.gain.setTargetAtTime(mapped.source.reverb * 1.05, audioCtx.currentTime, .02);
 }
 
 /* 6. Scheduler */
@@ -1463,29 +1516,30 @@ function melodyPhraseDuration(section, trackIndex, step){
   const hold = section.melodyHold[trackIndex] || [];
   let dur = stepDuration(step), i = step + 1;
   while(i < sectionStepCount(section) && hold[i]){ dur += stepDuration(i); i++; }
-  return Math.max(.08, dur*.88);
+  return Math.max(.18, dur*.92);
 }
 function bassPhraseDuration(section, step){
   let dur = stepDuration(step), i = step + 1;
   while(i < sectionStepCount(section) && section.bassHold[i]){ dur += stepDuration(i); i++; }
-  return Math.max(.07, dur*.86);
+  return Math.max(.18, dur*.94);
 }
 function bassPhraseSlideInfo(section, step){
   let i = step + 1;
   let offset = stepDuration(step);
   while(i < sectionStepCount(section) && section.bassHold[i]){
-    if(section.bassSlide[i]) return {midi:bassMidiAt(section,i), offset};
     offset += stepDuration(i);
     i++;
   }
+  if(i < sectionStepCount(section) && section.bassSlide[i] && bassTriggerAt(section,i)) return {midi:bassMidiAt(section,i), offset};
   return null;
 }
 function guitarStepDuration(section, step, art){
-  if(art === "chug") return Math.min(stepDuration(step)*.78, .12);
-  if(art === "scratch") return Math.min(stepDuration(step)*.42, .08);
+  const stepDur = stepDuration(step);
+  if(art === "chug") return Math.max(.055, Math.min(.16, stepDur*.58));
+  if(art === "scratch") return Math.max(.035, Math.min(.075, stepDur*.42));
   let dur = stepDuration(step), i = step + 1;
   while(i < sectionStepCount(section) && section.guitarPattern[i] === "hold"){ dur += stepDuration(i); i++; }
-  return Math.max(.10, dur*.90);
+  return Math.max(.16, Math.min(1.8, dur * (art === "accent" ? .98 : .92)));
 }
 function bassMidiAt(section, step){
   if(session.deck.bassMode === "manual" && section.bassNotes[step] !== null && section.bassNotes[step] !== undefined) return bassManualIndexToMidi(section.bassNotes[step]);
@@ -1503,8 +1557,8 @@ function chordShouldPlay(step){
 }
 function chordDurationForStep(section, step){
   const mode = session.deck.chordRhythmMode || "sustain";
-  if(mode === "quarter") return beatDur()*.86;
-  if(mode === "half") return beatDur()*2*.86;
+  if(mode === "quarter") return beatDur()*.9;
+  if(mode === "half") return beatDur()*1.8;
   return spanDuration(step, Math.min(stepsPerBar(), sectionStepCount(section)-step))*.92;
 }
 function scheduleStep(section, step, time){
@@ -2310,7 +2364,7 @@ function bindHandlers(){
   el.sequencePlayBtn.addEventListener("click", toggleSequencePlayback);
   el.sequenceRepeatBtn.addEventListener("click", toggleSequenceRepeat);
   el.launchModeSelect.addEventListener("change", () => { session.performance.launchQuantize = ["instant","bar","section"].includes(el.launchModeSelect.value) ? el.launchModeSelect.value : "bar"; autosave(); renderTransportState(); showStatus(`Launch mode: ${launchModeLabel()}`); });
-  el.masterVolume.addEventListener("input", () => { if(session){ session.performance.masterVolume = clamp(asNum(el.masterVolume.value,.88),0,1); applyMixerAndFx(); autosave(false); }});
+  el.masterVolume.addEventListener("input", () => { if(session){ session.performance.masterVolume = clamp(asNum(el.masterVolume.value,.82),0,1); applyMixerAndFx(); autosave(false); }});
   el.buildBtn.addEventListener("click", triggerBuild);
   el.dropBtn.addEventListener("click", triggerDrop);
   el.gentleBuildBtn?.addEventListener("click", () => triggerLofiMacro("gentle"));
@@ -2331,8 +2385,9 @@ function bindHandlers(){
     if(stem && session) setStemMute(stem, !session.performance.stemMutes[stem]);
   });
 }
-function handleImport(){
+async function handleImport(){
   try{
+    await loadPocketAudioCoreModule().catch(() => null);
     const parsed = parseAnyImportText(el.importText.value);
     session = parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data));
     state.currentSection = session.performance.currentSection;
@@ -2346,11 +2401,12 @@ function handleImport(){
     saveLocalSession(); renderAll(); showStatus(parsed.kind === "pdj" ? "Pocket DJ session loaded" : "Pocket Chordsmith project imported");
   }catch(e){ showStatus(e.message || "Import failed"); }
 }
-function consumeIncomingPocketDjHandoff(){
+async function consumeIncomingPocketDjHandoff(){
   const payload = readUrlHandoff() || readWindowNameHandoff() || readStoredHandoff(HANDOFF_TO_DJ_KEY);
   if(!isExpectedHandoff(payload, "pcs-to-dj")) return false;
   if(el.importText) el.importText.value = payload.code;
   try{
+    await loadPocketAudioCoreModule().catch(() => null);
     const parsed = parseAnyImportText(payload.code);
     session = parsed.kind === "pdj" ? normalizePocketDjSession(parsed.data) : createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(parsed.data));
     state.currentSection = session.performance.currentSection;
@@ -2507,7 +2563,7 @@ function loadLofiDemo(){
   saveLocalSession(); renderAll(); showStatus("Lofi DJ Demo loaded");
 }
 
-function init(){ bindElements(); bindHandlers(); applyImportedTheme("night"); renderShell(); loadPocketAudioCoreModule().catch(() => {}); consumeIncomingPocketDjHandoff(); }
+function init(){ bindElements(); bindHandlers(); applyImportedTheme("night"); renderShell(); loadPocketAudioCoreModule().catch(() => {}); consumeIncomingPocketDjHandoff().catch(() => {}); }
 init();
 </script>
 </body>

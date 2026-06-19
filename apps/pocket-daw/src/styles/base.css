@@ -910,7 +910,6 @@ button.record:hover {
 
 .fx-slot {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 6px;
   align-items: center;
   margin-bottom: 7px;
@@ -920,7 +919,19 @@ button.record:hover {
   background: #0d1322;
 }
 
-.fx-slot span {
+.fx-slot-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.fx-slot-heading div {
+  display: flex;
+  gap: 6px;
+}
+
+.fx-slot-heading span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -937,6 +948,77 @@ button.record:hover {
 
 .fx-slot.bypassed {
   opacity: 0.62;
+}
+
+.pro-eq-editor {
+  display: grid;
+  gap: 6px;
+}
+
+.pro-eq-editor > label {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  color: #9ba9c9;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pro-eq-editor select {
+  min-width: 0;
+  width: 100%;
+}
+
+.pro-eq-band {
+  display: grid;
+  grid-template-columns: minmax(78px, 1fr) minmax(0, 1.4fr);
+  gap: 6px 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 7px;
+  border: 1px solid #26314d;
+  border-radius: 6px;
+  background: #080e1a;
+}
+
+.pro-eq-band legend {
+  grid-row: 1 / span 3;
+  padding: 0;
+  color: #dce7ff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pro-eq-band label {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 58px;
+  gap: 6px;
+  align-items: center;
+  color: #9ba9c9;
+  font-size: 10px;
+}
+
+.pro-eq-band legend label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.pro-eq-band input[type="range"] {
+  min-width: 0;
+  width: 100%;
+}
+
+.pro-eq-band span {
+  color: #d9e4fb;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.pro-eq-band.bypassed {
+  opacity: 0.58;
 }
 
 .sequencer-editor {
@@ -1066,6 +1148,94 @@ button.record:hover {
   color: #e8f0ff;
   font-size: 11px;
   text-transform: uppercase;
+}
+
+.sequencer-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sequencer-heading strong {
+  color: #e8f0ff;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.sequencer-heading label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #9ba9c9;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.sequencer-heading select {
+  min-width: 150px;
+}
+
+.drum-lane-mixer {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.drum-lane-mixer h3 {
+  margin: 0;
+  color: #e8f0ff;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.drum-lane-list {
+  display: grid;
+  gap: 8px;
+}
+
+.drum-lane-row {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #26314d;
+  border-radius: 6px;
+  background: #11182a;
+}
+
+.drum-lane-row header,
+.drum-lane-row label {
+  display: grid;
+  grid-template-columns: minmax(66px, 0.7fr) minmax(0, 1.3fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.drum-lane-row header {
+  grid-template-columns: minmax(72px, 1fr) auto auto;
+}
+
+.drum-lane-row strong {
+  color: #f0f5ff;
+  font-size: 12px;
+}
+
+.drum-lane-row span,
+.drum-lane-row label {
+  color: #9ba9c9;
+  font-size: 10px;
+}
+
+.drum-lane-row input[type="range"],
+.drum-lane-row select {
+  min-width: 0;
+  width: 100%;
+}
+
+.drum-lane-fx {
+  display: grid;
+  gap: 4px;
 }
 
 .sequencer-row > span {

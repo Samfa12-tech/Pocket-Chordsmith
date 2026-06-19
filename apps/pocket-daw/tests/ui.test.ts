@@ -7,6 +7,7 @@ import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitiz
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 import { addMediaPoolItem, createMediaPoolItem } from "../src/daw/mediaPool";
 import { addTrackToProject } from "../src/daw/tracks";
+import { addFxSlot } from "../src/daw/fx";
 import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { simpleMidiBytes } from "./midiFixtures";
@@ -97,7 +98,7 @@ describe("Pocket DAW UI rendering", () => {
     const state = createInitialState();
     state.undoStack = createUndoStack(project);
     state.selectedClipId = null;
-    state.selectedTrackId = "melody";
+    state.selectedTrackId = "drums";
 
     const html = renderAppShell(state);
 
@@ -110,6 +111,14 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('id="chordsmithSectionSelect"');
     expect(html).toContain('data-melody-step="A:0:0"');
     expect(html).toContain('data-drum-step="A:kick:0"');
+    expect(html).toContain('data-drum-preset-section="A"');
+    expect(html).toContain("Choose beat preset...");
+    expect(html).toContain("Lofi backbeat");
+    expect(html).toContain("Drum Kit Lanes");
+    expect(html).toContain('data-drum-lane-volume="kick"');
+    expect(html).toContain('data-drum-lane-add-fx="clap"');
+    expect(html).toContain("Open Hat");
+    expect(html).toContain("Ride");
     expect(html).toContain('data-inline-sequencer-role="drums"');
     expect(html).toContain('data-inline-sequencer-role="bass"');
     expect(html).toContain('data-inline-sequencer-role="chords"');
@@ -136,6 +145,24 @@ describe("Pocket DAW UI rendering", () => {
     expect(transport).toContain('<span data-playhead-readout="true"><strong>Bar 1</strong><small>Beat 1</small></span>');
   });
 
+  it("renders editable Pocket Pro EQ controls for selected track FX", () => {
+    const project = addFxSlot(createEmptyPocketDawProject(), "master", "parametric-eq");
+    const state = createInitialState();
+    state.undoStack = createUndoStack(project);
+    state.selectedTrackId = "master";
+
+    const html = inspectorHtml(renderAppShell(state));
+
+    expect(html).toContain("Pocket Pro EQ");
+    expect(html).toContain('data-fx-eq-preset="fx_master:');
+    expect(html).toContain("Soft Chord Bed");
+    expect(html).toContain("High Pass");
+    expect(html).toContain("Low Mid");
+    expect(html).toContain('data-fx-param="fx_master:');
+    expect(html).toContain(":highMidGain");
+    expect(html).toContain(":lpFrequency");
+  });
+
   it("keeps long transport feedback in a dedicated status region", () => {
     const state = createInitialState();
     state.status = "Monitoring Live Vocals input via Speakers while the transport controls remain usable.";
@@ -156,7 +183,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(inline).toContain('aria-label="Kick"');
     expect(inline).not.toContain(">K<");
     expect(inline).not.toContain(">S<");
-    expect(html).toContain("Kick / Snare / Hat");
+    expect(html).toContain("Full kit lanes");
     expect(html).toContain("Bass steps");
   });
 
@@ -422,8 +449,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Import Audio");
     expect(html).toContain("Import MIDI");
     expect(html).toContain("Build Native Cache");
-    expect(html).toContain("Godot Manifest Preview");
-    expect(html).toContain("Web Manifest Preview");
+    expect(html).toContain("Godot Game Pack");
+    expect(html).toContain("Web Game Pack");
     expect(html).toContain("Collect Media Plan");
     expect(html).toContain("Collect Media");
     expect(html).toContain("Collect Plan");
@@ -431,6 +458,42 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('data-action="import-midi"');
     expect(html).toContain('data-action="collect-media"');
     expect(html).toContain('data-action="export-media-plan"');
+  });
+
+  it("renders native playback cache status for active cached generated tracks", () => {
+    const state = createInitialState();
+    state.nativeCacheStatus = {
+      assetRegionCount: 5,
+      cachedClipCount: 1,
+      generatedRegionCount: 5,
+      runtimeAudioRegionCount: 0,
+      proceduralFallbackEventCount: 0,
+      buildPending: false,
+      prewarmScheduled: false,
+      bypassedForLiveEdits: false,
+      lastBuildReason: "manual-build-native-cache",
+      lastError: null
+    };
+    state.showControls = true;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("Native Playback");
+    expect(html).toContain("5 cached regions / 1 cached clip / 5 generated / 0 audio / 0 procedural fallback events / manual-build-native-cache");
+    expect(html).toContain("Native Cache");
+  });
+
+  it("warns when native cache is bypassed after a live generated edit", () => {
+    const state = createInitialState();
+    state.nativeCacheStatus = {
+      ...state.nativeCacheStatus,
+      proceduralFallbackEventCount: 973,
+      bypassedForLiveEdits: true
+    };
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("Procedural playback after live edit; rebuild cache to restore cached generated tracks.");
   });
 
   it("renders media pool item metadata and render cache links", () => {

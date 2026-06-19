@@ -91,6 +91,32 @@ describe("audio engine diagnostics", () => {
     expect(bass).toMatchObject({ mute: false, solo: true });
   });
 
+  it("does not treat lofi texture ticks as drum meter hits", () => {
+    const engine = new AudioEngine(createDemoProject());
+    const baseEvent = {
+      id: "meter-test",
+      clipId: "clip-test",
+      trackId: "drums",
+      role: "drums",
+      time: 0,
+      duration: 0.1,
+      bar: 1,
+      step: 0,
+      velocity: 1,
+      midiNotes: []
+    };
+
+    (engine as any).lastMeterRead = performance.now() / 1000;
+    (engine as any).events = [{ ...baseEvent, kind: "texture" }];
+    (engine as any).primeMeters(0);
+    expect(engine.getMeterLevels().drums || 0).toBe(0);
+
+    (engine as any).lastMeterRead = performance.now() / 1000;
+    (engine as any).events = [{ ...baseEvent, kind: "kick" }];
+    (engine as any).primeMeters(0);
+    expect(engine.getMeterLevels().drums || 0).toBeGreaterThan(0.5);
+  });
+
   it("resumes paused native playback without sending a second native start", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {

@@ -13,6 +13,8 @@ export const STEM_IDS = Object.freeze(["drums", "bass", "chords", "melody", "gui
 export const DRUM_LANES = Object.freeze(["kick", "snare", "hat", "bass"]);
 export const NOTES = Object.freeze(["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]);
 
+export const DEFAULT_MASTER_VOLUME = 0.82;
+
 export const DEFAULT_STEM_MIX = Object.freeze({
   drums: { volume: 0.86, pan: 0, mute: false },
   bass: { volume: 0.86, pan: 0, mute: false },
@@ -24,10 +26,10 @@ export const DEFAULT_STEM_MIX = Object.freeze({
 export const DEFAULT_FX = Object.freeze({
   filter: 1,
   delay: 0.12,
-  echo: 0.04,
+  echo: 0.12,
   chorus: 0.18,
   flanger: 0.06,
-  reverb: 0.08,
+  reverb: 0.18,
   mix: 0.65,
   sidechain: { enabled: false, amount: 0.45 }
 });

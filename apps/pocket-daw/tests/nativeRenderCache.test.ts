@@ -50,10 +50,15 @@ import {
   nativeRenderCacheRelativePath,
   nativeRenderCacheSignature,
   nativeRuntimeAudioCacheSignature,
-  persistNativeRenderCacheAssets
+  persistNativeRenderCacheAssets,
+  projectForNativeGeneratedStemRender
 } from "../src/audio/nativeRenderCache";
-import { createDemoProject } from "../src/demo/demoProject";
+import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
+import { cycleBassStep } from "../src/daw/chordsmithEditor";
+import { addDrumLaneFx } from "../src/daw/drumLanes";
+import { addFxSlot, setFxSlotParameter } from "../src/daw/fx";
 import type { Clip, MediaPoolItem } from "../src/daw/schema";
+import type { NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
 import type { NativeMediaApi } from "../src/native/mediaBridge";
 
 describe("native render cache", () => {
@@ -77,6 +82,34 @@ describe("native render cache", () => {
     expect(nativeRenderCacheSignature(project)).not.toBe(signature);
   });
 
+  it("invalidates generated cache only for audio baked into cached stem assets", () => {
+    let project = createDemoProject();
+    const signature = nativeRenderCacheSignature(project);
+
+    project = addFxSlot(project, "master", "parametric-eq");
+    project = addFxSlot(project, "bass", "saturation");
+
+    expect(nativeRenderCacheSignature(project)).toBe(signature);
+
+    project = addDrumLaneFx(project, "snare", "parametric-eq");
+
+    expect(nativeRenderCacheSignature(project)).not.toBe(signature);
+  });
+
+  it("builds dry native generated-stem render projects and keeps only drum lane FX baked", () => {
+    let project = createLofiTemplateProject();
+    project = addDrumLaneFx(project, "snare", "parametric-eq");
+    const clip = project.timeline.clips.find((item) => item.type === "generated-section")!;
+    const renderProject = projectForNativeGeneratedStemRender(project, clip, "drums");
+
+    expect(renderProject.mixer.masterLimiter).toBe(false);
+    expect(renderProject.tracks.find((track) => track.id === "master")?.volume).toBe(1);
+    expect(renderProject.tracks.find((track) => track.id === "drums")?.volume).toBe(1);
+    expect(renderProject.tracks.find((track) => track.id === "bass")?.mute).toBe(true);
+    expect(renderProject.fx.chains.length).toBeGreaterThan(0);
+    expect(renderProject.fx.chains.every((chain) => typeof chain.metadata?.drumLaneId === "string")).toBe(true);
+  });
+
   it("builds generated-section WAV assets, regions and render-cache metadata", async () => {
     const project = createDemoProject();
     const cache = await buildNativeRenderCache(project, "test-signature");
@@ -96,6 +129,17 @@ describe("native render cache", () => {
     expect(cache.renderCacheItems[0].metadata?.assetRelativePath).toBe(cache.assets[0].relativePath);
     expect(cache.cachedAssetByteCount).toBeGreaterThan(44);
     expect(offlineRenderMock.renderProjectToWavBlob).toHaveBeenCalled();
+  });
+
+  it("renders native lofi texture only once into cached drum stems", async () => {
+    const project = createLofiTemplateProject();
+    await buildNativeRenderCache(project, "lofi-signature");
+
+    const renderOptions = (offlineRenderMock.renderProjectToWavBlob.mock.calls as unknown as Array<[unknown, { includeChordsmithOfflineLofiTexture?: boolean } | undefined]>)
+      .map((call) => call[1]);
+
+    expect(renderOptions.some((options) => options?.includeChordsmithOfflineLofiTexture === true)).toBe(true);
+    expect(renderOptions.some((options) => options?.includeChordsmithOfflineLofiTexture === false)).toBe(true);
   });
 
   it("adds runtime-loaded audio clips as native WAV asset regions", async () => {
@@ -163,6 +207,65 @@ describe("native render cache", () => {
     expect(diagnostics.nativeRenderCache.renderCacheMetadataCount).toBeGreaterThan(0);
     expect(diagnostics.nativeRenderCache.lastBuildReason).toBe("test-rebuild");
     expect(diagnostics.nativeRenderCache.prewarmScheduled).toBe(false);
+  });
+
+  it("makes a fresh manual native cache rebuild override active generated playback", async () => {
+    const previousWindow = (globalThis as { window?: unknown }).window;
+    (globalThis as { window?: unknown }).window = {
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    const starts: NativeAudioStartPayload[] = [];
+    const native = {
+      async start(payload: NativeAudioStartPayload) {
+        starts.push(payload);
+        return {
+          started: true,
+          status: nativeStatus({
+            active: true,
+            playing: true,
+            positionSeconds: payload.startSeconds,
+            eventCount: payload.events.length,
+            assetCount: payload.assets?.length || 0,
+            assetRegionCount: payload.regions?.length || 0,
+            proceduralEventCount: payload.events.length
+          }),
+          error: null
+        };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true }); }
+    };
+
+    try {
+      const project = createDemoProject();
+      const engine = new AudioEngine(project, native);
+
+      await engine.play();
+      const proceduralStart = starts.at(-1)!;
+      engine.syncProject(cycleBassStep(project, "A", 0), "composition-events", "live-bass-edit");
+      await Promise.resolve();
+      expect(engine.getDiagnostics().nativeRenderCache.nativeRenderCacheBypassedForLiveEdits).toBe(true);
+
+      await engine.rebuildNativeRenderCache("manual-cache-after-live-edit");
+      const cachedStart = starts.at(-1)!;
+      const diagnostics = engine.getDiagnostics();
+
+      expect(cachedStart.assets?.length || 0).toBeGreaterThan(0);
+      expect(cachedStart.regions?.length || 0).toBeGreaterThan(0);
+      expect(cachedStart.events.length).toBeLessThan(proceduralStart.events.length);
+      expect(diagnostics.nativeRenderCache.nativeRenderCacheBypassedForLiveEdits).toBe(false);
+      expect(diagnostics.nativeRenderCache.assetRegionCount).toBeGreaterThan(0);
+      expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBe(cachedStart.events.length);
+      expect(starts.length).toBeGreaterThanOrEqual(3);
+    } finally {
+      (globalThis as { window?: unknown }).window = previousWindow;
+      starts.length = 0;
+    }
   });
 
   it("reports runtime audio preparation only until cached regions are ready", async () => {
@@ -330,6 +433,26 @@ describe("native render cache", () => {
     expect(nativeRenderCacheRelativePath("../bad")).toBe("project-cache/native-audio/bad.wav");
   });
 });
+
+function nativeStatus(overrides: Partial<NativeAudioStatus> = {}): NativeAudioStatus {
+  return {
+    backend: "native-cpal",
+    available: true,
+    active: true,
+    playing: true,
+    positionSeconds: 0,
+    eventCount: 0,
+    sampleRate: 48_000,
+    channels: 2,
+    renderedFrameCount: 0,
+    startedGeneration: 1,
+    projectTitle: "Test",
+    deviceName: "Default",
+    hostName: "wasapi",
+    lastError: null,
+    ...overrides
+  };
+}
 
 function withAudioClip(project: ReturnType<typeof createDemoProject>): ReturnType<typeof createDemoProject> {
   const media: MediaPoolItem = {

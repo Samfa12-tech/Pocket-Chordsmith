@@ -1,14 +1,11 @@
-import { NOTES } from "../constants.js";
+import { chordsmithNoteIndex, chordsmithScalePitchClasses } from "./pitches.js";
 
 export function noteIndex(note) {
-  const index = NOTES.indexOf(note);
-  return index >= 0 ? index : 0;
+  return chordsmithNoteIndex(note);
 }
 
 export function scalePitchClasses(key = "C", scale = "major") {
-  const root = noteIndex(key);
-  const intervals = scale === "minor" ? [0, 2, 3, 5, 7, 8, 10] : [0, 2, 4, 5, 7, 9, 11];
-  return intervals.map((interval) => (root + interval) % 12);
+  return chordsmithScalePitchClasses({ key, scale });
 }
 
 export function scaleDegreeToMidi(project, degree, octaveBase = 60) {

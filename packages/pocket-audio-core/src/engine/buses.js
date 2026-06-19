@@ -1,4 +1,4 @@
-import { DEFAULT_STEM_MIX, STEM_IDS } from "../constants.js";
+import { DEFAULT_MASTER_VOLUME, DEFAULT_STEM_MIX, STEM_IDS } from "../constants.js";
 
 export function createMixerState(overrides = {}) {
   const stems = JSON.parse(JSON.stringify(DEFAULT_STEM_MIX));
@@ -6,7 +6,7 @@ export function createMixerState(overrides = {}) {
     stems[id] = { ...stems[id], ...(overrides.stems?.[id] || {}) };
   });
   return {
-    masterVolume: overrides.masterVolume ?? 0.82,
+    masterVolume: overrides.masterVolume ?? DEFAULT_MASTER_VOLUME,
     stems,
     fx: overrides.fx || {}
   };

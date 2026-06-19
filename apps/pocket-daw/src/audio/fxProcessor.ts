@@ -1,6 +1,27 @@
 import type { FxChain, FxPluginInstance } from "../daw/schema";
+import { POCKET_PRO_EQ_BANDS, POCKET_PRO_EQ_TYPE } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
 
 const impulseBuffers = new WeakMap<BaseAudioContext, Map<string, AudioBuffer>>();
+
+interface ProEqBand {
+  nodeType: BiquadFilterType;
+  frequencyParam: string;
+  enabledParam: string;
+  defaultEnabled: boolean;
+  defaultFrequency: number;
+  minFrequency: number;
+  maxFrequency: number;
+  gainParam?: string;
+  defaultGain?: number;
+  minGain?: number;
+  maxGain?: number;
+  qParam?: string;
+  defaultQ?: number;
+  minQ?: number;
+  maxQ?: number;
+}
+
+const PRO_EQ_BANDS = POCKET_PRO_EQ_BANDS as unknown as readonly ProEqBand[];
 
 export interface ConnectedFxChain {
   cleanup: () => void;
@@ -58,6 +79,9 @@ function connectFxSlot(ctx: BaseAudioContext, source: AudioNode, slot: FxPluginI
     low.connect(mid);
     mid.connect(high);
     return { output: high, cleanup: [] };
+  }
+  if (slot.type === POCKET_PRO_EQ_TYPE) {
+    return connectPocketProEq(ctx, source, slot);
   }
   if (slot.type === "compressor" || slot.type === "limiter") {
     const comp = ctx.createDynamicsCompressor();
@@ -135,6 +159,23 @@ function connectFxSlot(ctx: BaseAudioContext, source: AudioNode, slot: FxPluginI
   return { output: source, cleanup: [] };
 }
 
+function connectPocketProEq(ctx: BaseAudioContext, source: AudioNode, slot: FxPluginInstance): { output: AudioNode; cleanup: Array<() => void> } {
+  let current = source;
+  let hasBand = false;
+  PRO_EQ_BANDS.forEach((band) => {
+    if (!bool(slot, band.enabledParam, band.defaultEnabled)) return;
+    const filter = ctx.createBiquadFilter();
+    filter.type = band.nodeType;
+    filter.frequency.value = clamp(num(slot, band.frequencyParam, band.defaultFrequency), band.minFrequency, band.maxFrequency);
+    if (band.gainParam) filter.gain.value = clamp(num(slot, band.gainParam, band.defaultGain ?? 0), band.minGain ?? -12, band.maxGain ?? 12);
+    if (band.qParam) filter.Q.value = clamp(num(slot, band.qParam, band.defaultQ ?? 1), band.minQ ?? 0.1, band.maxQ ?? 8);
+    current.connect(filter);
+    current = filter;
+    hasBand = true;
+  });
+  return { output: hasBand ? current : source, cleanup: [] };
+}
+
 function wetDry(ctx: BaseAudioContext, source: AudioNode, effectInput: AudioNode, effectOutput: AudioNode, mix: number): AudioNode {
   const dry = ctx.createGain();
   const wet = ctx.createGain();
@@ -153,6 +194,11 @@ function wetDry(ctx: BaseAudioContext, source: AudioNode, effectInput: AudioNode
 function num(slot: FxPluginInstance, key: string, fallback: number) {
   const value = Number(slot.parameters[key]);
   return Number.isFinite(value) ? value : fallback;
+}
+
+function bool(slot: FxPluginInstance, key: string, fallback: boolean) {
+  const value = slot.parameters[key];
+  return typeof value === "boolean" ? value : fallback;
 }
 
 function clamp(value: number, min: number, max: number) {

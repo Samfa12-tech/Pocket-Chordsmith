@@ -2,6 +2,8 @@
 extends RefCounted
 class_name PCSSchemaMigrator
 
+const SharedSoundConstants := preload("res://addons/pocket_chordsmith/import/pcs_shared_sound_constants.gd")
+
 const SECTION_IDS := ["A", "B", "C", "D", "E", "F", "G", "H"]
 const TRACK_IDS := ["kick", "snare", "hat", "bass"]
 const NOTE_NAMES := ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -9,13 +11,23 @@ const MAX_BARS := 4
 const MAX_MELODY_TRACKS := 6
 const MAX_SEQUENCE_SLOTS := 64
 const PROJECT_SCHEMA_VERSION := 16
-const GUITAR_ARTICULATIONS := ["off", "open", "chug", "accent", "hold", "scratch"]
-const LOFI_AUDIO_PROFILE_ID := "lofi_chill"
-const LOFI_STYLE_PRESETS := ["lofi_study_room", "lofi_rainy_window", "lofi_moon_garden", "lofi_koi_pond", "lofi_train_window", "lofi_ant_farm_night", "lofi_menu_warmth", "lofi_sleepy_waltz"]
-const LOFI_CHORD_INSTRUMENTS := ["dusty_rhodes", "felt_piano", "cassette_keys", "muted_jazz_guitar", "lofi_warm_pad"]
-const LOFI_MELODY_INSTRUMENTS := ["mellow_vibes", "soft_pluck", "mellow_sax", "muted_trumpet", "tape_bell"]
-const LOFI_DRUM_KITS := ["classic", "lofi_dusty", "lofi_brush", "lofi_tape_soft"]
-const LOFI_BASS_TONES := ["classic", "warm_sub", "soft_upright", "rounded_triangle_bass"]
+const GUITAR_ARTICULATIONS := SharedSoundConstants.POCKET_GUITAR_ARTICULATIONS
+const LOFI_AUDIO_PROFILE_ID := SharedSoundConstants.LOFI_AUDIO_PROFILE_ID
+const LOFI_STYLE_PRESETS := SharedSoundConstants.LOFI_STYLE_PRESETS
+const LOFI_STYLE_PRESET_TEXTURES := SharedSoundConstants.LOFI_STYLE_PRESET_TEXTURES
+const POCKET_CHORD_INSTRUMENTS := SharedSoundConstants.POCKET_CHORD_INSTRUMENTS
+const POCKET_MELODY_INSTRUMENTS := SharedSoundConstants.POCKET_MELODY_INSTRUMENTS
+const POCKET_DRUM_KITS := SharedSoundConstants.POCKET_DRUM_KITS
+const POCKET_BASS_TONES := SharedSoundConstants.POCKET_BASS_TONES
+const POCKET_GUITAR_TONES := SharedSoundConstants.POCKET_GUITAR_TONES
+const POCKET_GUITAR_REGISTERS := SharedSoundConstants.POCKET_GUITAR_REGISTERS
+const POCKET_GUITAR_STRUM_MODES := SharedSoundConstants.POCKET_GUITAR_STRUM_MODES
+const POCKET_GUITAR_PATTERN_PRESETS := SharedSoundConstants.POCKET_GUITAR_PATTERN_PRESETS
+const DEFAULT_CHORD_INSTRUMENT := SharedSoundConstants.DEFAULT_CHORD_INSTRUMENT
+const DEFAULT_MELODY_INSTRUMENT := SharedSoundConstants.DEFAULT_MELODY_INSTRUMENT
+const DEFAULT_GUITAR_TONE := SharedSoundConstants.DEFAULT_GUITAR_TONE
+const DEFAULT_GUITAR_REGISTER := SharedSoundConstants.DEFAULT_GUITAR_REGISTER
+const DEFAULT_GUITAR_STRUM_MODE := SharedSoundConstants.DEFAULT_GUITAR_STRUM_MODE
 
 const DEFAULT_SECTION_BARS := {
 	"A": 4, "B": 4, "C": 4, "D": 4,
@@ -81,13 +93,13 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 	data["swing"] = _clamp_float(raw.get("swing", 0.0), 0.0, 0.35, 0.0, "swing", warnings)
 	data["audioProfile"] = LOFI_AUDIO_PROFILE_ID if str(raw.get("audioProfile", "")) == LOFI_AUDIO_PROFILE_ID or raw.has("lofiPreset") or raw.has("stylePreset") else "standard"
 	data["lofiPreset"] = _sanitize_lofi_preset(str(raw.get("lofiPreset", raw.get("stylePreset", ""))))
-	data["lofiTexture"] = _sanitize_lofi_texture(raw.get("lofiTexture", {}))
-	data["drumKit"] = _safe_choice(str(raw.get("drumKit", "classic")), LOFI_DRUM_KITS, "classic", "drumKit", warnings)
+	data["lofiTexture"] = _sanitize_lofi_texture(raw.get("lofiTexture", {}), str(data["lofiPreset"]))
+	data["drumKit"] = _safe_choice(str(raw.get("drumKit", "classic")), POCKET_DRUM_KITS, "classic", "drumKit", warnings)
 	data["drumGroovePreset"] = str(raw.get("drumGroovePreset", ""))
-	data["bassTone"] = _safe_choice(str(raw.get("bassTone", "classic")), LOFI_BASS_TONES, "classic", "bassTone", warnings)
+	data["bassTone"] = _safe_choice(str(raw.get("bassTone", "classic")), POCKET_BASS_TONES, "classic", "bassTone", warnings)
 	data["resolution"] = _sanitize_resolution(raw.get("resolution", 1), warnings)
 	data["chordType"] = _safe_choice(str(raw.get("chordType", "triad")), ["triad", "seventh", "sus2", "sus4"], "triad", "chordType", warnings)
-	data["chordInstrument"] = _safe_choice(str(raw.get("chordInstrument", "pocket")), ["pocket", "piano", "harp", "warm_pad", "glass", "saloon_piano"] + LOFI_CHORD_INSTRUMENTS, "pocket", "chordInstrument", warnings)
+	data["chordInstrument"] = _safe_choice(str(raw.get("chordInstrument", DEFAULT_CHORD_INSTRUMENT)), POCKET_CHORD_INSTRUMENTS, DEFAULT_CHORD_INSTRUMENT, "chordInstrument", warnings)
 	data["chordPlayMode"] = _safe_choice(str(raw.get("chordPlayMode", "block")), ["block", "strum_up", "strum_down", "arp_up", "arp_down"], "block", "chordPlayMode", warnings)
 	data["chordRhythmMode"] = _safe_choice(str(raw.get("chordRhythmMode", "sustain")), ["sustain", "quarter", "half"], "sustain", "chordRhythmMode", warnings)
 	data["chordOctave"] = _clamp_int(raw.get("chordOctave", 0), -2, 2, 0, "chordOctave", warnings)
@@ -98,10 +110,10 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 	data["midiChordExport"] = _safe_choice(str(raw.get("midiChordExport", "played")), ["played", "block", "none"], "played", "midiChordExport", warnings)
 	data["midiExactDurations"] = raw.get("midiExactDurations", true) != false
 	data["guitarEnabled"] = bool(raw.get("guitarEnabled", false))
-	data["guitarTone"] = _safe_choice(str(raw.get("guitarTone", "high_gain")), ["clean", "crunch", "high_gain", "metal", "western_twang"], "high_gain", "guitarTone", warnings)
-	data["guitarRegister"] = _safe_choice(str(raw.get("guitarRegister", "low")), ["low", "mid", "high"], "low", "guitarRegister", warnings)
-	data["guitarStrumMode"] = _safe_choice(str(raw.get("guitarStrumMode", "down")), ["down", "up", "alternate"], "down", "guitarStrumMode", warnings)
-	data["guitarPatternPreset"] = _safe_choice(str(raw.get("guitarPatternPreset", "metal_chug")), ["rock_eighths", "punk_downstrokes", "metal_chug", "gallop", "doom_slow", "verse_chorus", "boom_chick", "train_chop", "western_waltz"], "metal_chug", "guitarPatternPreset", warnings)
+	data["guitarTone"] = _safe_choice(str(raw.get("guitarTone", DEFAULT_GUITAR_TONE)), POCKET_GUITAR_TONES, DEFAULT_GUITAR_TONE, "guitarTone", warnings)
+	data["guitarRegister"] = _safe_choice(str(raw.get("guitarRegister", DEFAULT_GUITAR_REGISTER)), POCKET_GUITAR_REGISTERS, DEFAULT_GUITAR_REGISTER, "guitarRegister", warnings)
+	data["guitarStrumMode"] = _safe_choice(str(raw.get("guitarStrumMode", DEFAULT_GUITAR_STRUM_MODE)), POCKET_GUITAR_STRUM_MODES, DEFAULT_GUITAR_STRUM_MODE, "guitarStrumMode", warnings)
+	data["guitarPatternPreset"] = _safe_choice(str(raw.get("guitarPatternPreset", "metal_chug")), POCKET_GUITAR_PATTERN_PRESETS, "metal_chug", "guitarPatternPreset", warnings)
 	data["guitarVolume"] = _clamp_float(raw.get("guitarVolume", 0.58), 0.0, 1.0, 0.58, "guitarVolume", warnings)
 	data["sectionBars"] = _sanitize_section_bars(raw.get("sectionBars", raw.get("sectionLengths", {})), warnings)
 	data["songSequence"] = _sanitize_song_sequence(raw.get("songSequence", raw.get("sectionSequence", DEFAULT_SONG_SEQUENCE)), warnings)
@@ -321,8 +333,8 @@ func _sanitize_instruments(raw, track_count: int) -> Array[String]:
 	var source: Array = raw if raw is Array else []
 	var out: Array[String] = []
 	for index in range(track_count):
-		var value := str(source[index]) if index < source.size() else "pulse"
-		out.append(value if (["pulse", "soft", "synth", "bell", "lead_guitar", "distorted_lead_guitar", "trumpet", "saxophone", "banjo", "harmonica", "cowboy_whistle"] + LOFI_MELODY_INSTRUMENTS).has(value) else "pulse")
+		var value := str(source[index]) if index < source.size() else DEFAULT_MELODY_INSTRUMENT
+		out.append(value if POCKET_MELODY_INSTRUMENTS.has(value) else DEFAULT_MELODY_INSTRUMENT)
 	return out
 
 
@@ -330,16 +342,17 @@ func _sanitize_lofi_preset(value: String) -> String:
 	return value if LOFI_STYLE_PRESETS.has(value) else ""
 
 
-func _sanitize_lofi_texture(raw) -> Dictionary:
+func _sanitize_lofi_texture(raw, preset_id := "") -> Dictionary:
 	var source: Dictionary = raw if raw is Dictionary else {}
+	var preset_texture: Dictionary = LOFI_STYLE_PRESET_TEXTURES.get(preset_id, {})
 	return {
-		"enabled": bool(source.get("enabled", false)),
-		"vinylCrackle": clamp(_as_float(source.get("vinylCrackle", 0.08), 0.08), 0.0, 1.0),
-		"tapeHiss": clamp(_as_float(source.get("tapeHiss", 0.05), 0.05), 0.0, 1.0),
-		"wowFlutter": clamp(_as_float(source.get("wowFlutter", 0.03), 0.03), 0.0, 1.0),
-		"warmth": clamp(_as_float(source.get("warmth", 0.16), 0.16), 0.0, 1.0),
-		"lowPassAge": clamp(_as_float(source.get("lowPassAge", 0.22), 0.22), 0.0, 1.0),
-		"bitCrush": clamp(_as_float(source.get("bitCrush", 0.01), 0.01), 0.0, 1.0),
+		"enabled": bool(source.get("enabled", preset_texture.get("enabled", false))),
+		"vinylCrackle": clamp(_as_float(source.get("vinylCrackle", preset_texture.get("vinylCrackle", 0.08)), 0.08), 0.0, 1.0),
+		"tapeHiss": clamp(_as_float(source.get("tapeHiss", preset_texture.get("tapeHiss", 0.05)), 0.05), 0.0, 1.0),
+		"wowFlutter": clamp(_as_float(source.get("wowFlutter", preset_texture.get("wowFlutter", 0.03)), 0.03), 0.0, 1.0),
+		"warmth": clamp(_as_float(source.get("warmth", preset_texture.get("warmth", 0.16)), 0.16), 0.0, 1.0),
+		"lowPassAge": clamp(_as_float(source.get("lowPassAge", preset_texture.get("lowPassAge", 0.22)), 0.22), 0.0, 1.0),
+		"bitCrush": clamp(_as_float(source.get("bitCrush", preset_texture.get("bitCrush", 0.01)), 0.01), 0.0, 1.0),
 	}
 
 

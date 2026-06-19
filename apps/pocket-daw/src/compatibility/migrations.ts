@@ -1,6 +1,7 @@
 import { createDefaultExportProfiles } from "../daw/exportProfiles";
 import { createDefaultAudioDeviceSettings, createDefaultMetronomeSettings, ensureStarterChordsmithSource } from "../daw/dawProject";
 import { createDefaultFxState, ensureProjectFx } from "../daw/fx";
+import { ensureDrumLaneMixer } from "../daw/drumLanes";
 import { createDefaultTracks } from "../daw/tracks";
 import {
   POCKET_DAW_APP,
@@ -70,7 +71,7 @@ export function migratePocketDawProject(raw: unknown): PocketDawProject {
     importHistory: Array.isArray(source.importHistory) ? source.importHistory : []
   };
   migrated.schemaVersion = POCKET_DAW_SCHEMA_VERSION;
-  return ensureProjectFx(ensureStarterChordsmithSource(normalizeLoadedProject(migrated)));
+  return ensureDrumLaneMixer(ensureProjectFx(ensureStarterChordsmithSource(normalizeLoadedProject(migrated))));
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {

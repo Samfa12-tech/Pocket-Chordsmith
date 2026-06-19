@@ -122,13 +122,9 @@ func _handle_request(header_text: String, body_text: String) -> String:
 	if method != "POST" or path != PUSH_PATH:
 		return _json_response(404, {"ok": false, "error": "Pocket Chordsmith receiver path not found"})
 
-	var parser := JSON.new()
-	var error := parser.parse(body_text)
-	if error != OK:
-		return _json_response(400, {"ok": false, "error": "Push payload must be JSON"})
-	var payload = parser.data
+	var payload = _parse_payload(header_text, body_text)
 	if not (payload is Dictionary):
-		return _json_response(400, {"ok": false, "error": "Push payload must be a JSON object"})
+		return _json_response(400, {"ok": false, "error": "Push payload must be JSON or form data"})
 	var code := str(payload.get("code", "")).strip_edges()
 	if code.is_empty():
 		return _json_response(400, {"ok": false, "error": "Push payload is missing code"})
@@ -138,6 +134,47 @@ func _handle_request(header_text: String, body_text: String) -> String:
 	var result: Dictionary = import_callback.call(code, "browser Push to Godot")
 	var status := 200 if bool(result.get("ok", false)) else 422
 	return _json_response(status, result)
+
+
+func _parse_payload(header_text: String, body_text: String):
+	var content_type := _get_header(header_text, "content-type").to_lower()
+	if content_type.begins_with("application/x-www-form-urlencoded"):
+		return _parse_form_payload(body_text)
+	if content_type.begins_with("text/plain"):
+		return {"code": body_text.strip_edges()}
+	var parser := JSON.new()
+	var error := parser.parse(body_text)
+	if error != OK:
+		return null
+	return parser.data
+
+
+func _parse_form_payload(body_text: String) -> Dictionary:
+	var payload := {}
+	for pair in body_text.split("&", false):
+		if pair.is_empty():
+			continue
+		var separator := pair.find("=")
+		var key := pair if separator < 0 else pair.substr(0, separator)
+		var value := "" if separator < 0 else pair.substr(separator + 1)
+		payload[_decode_form_component(key)] = _decode_form_component(value)
+	return payload
+
+
+func _decode_form_component(value: String) -> String:
+	return value.replace("+", " ").uri_decode()
+
+
+func _get_header(header_text: String, header_name: String) -> String:
+	var wanted := header_name.to_lower()
+	for line in header_text.split("\r\n", false):
+		var separator := line.find(":")
+		if separator < 0:
+			continue
+		var key := line.substr(0, separator).strip_edges().to_lower()
+		if key == wanted:
+			return line.substr(separator + 1).strip_edges()
+	return ""
 
 
 func _get_content_length(header_text: String) -> int:

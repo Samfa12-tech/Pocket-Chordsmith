@@ -209,8 +209,8 @@ After v0.5.1 hardening, the next milestone should deepen media/export/native rel
 - Manually verify native Open, Save, Save As, audio import and MIDI import in `npm run tauri:dev` and a packaged Windows build.
 - Complete project-relative media path handling and a real relink/reload workflow for missing or external audio.
 - Replace sequential stem downloads with browser-safe zip packaging or native pack export.
-- Render individual section-loop WAVs and bundle them with Godot/web-game manifest previews.
-- Turn Godot/Web manifest previews into real asset packs, then add push-to-Godot.
+- Verify the Godot/Web game-pack ZIP exports, including manifest, source project, full mix, stems and section loops, in real target import workflows.
+- Add push-to-Godot or native pack destination selection after the ZIP pack smoke is solid.
 - Keep extending PocketHandoff into sender-side buttons and hosted smoke tests across Pocket Chordsmith, Pocket DJ and Pocket DAW.
 - Larger Chordsmith editor coverage and source-roundtrip confidence beyond the current compact parity controls.
 - Drum branching: double-click generated drums to explode them into separate kick, snare, hat and future kit-piece tracks with independent mixer, pan, gate, FX and routing control.

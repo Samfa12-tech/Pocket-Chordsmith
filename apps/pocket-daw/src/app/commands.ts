@@ -5,20 +5,24 @@ import { migratePocketDawProject } from "../compatibility/migrations";
 import { cloneProject, createDefaultMetronomeSettings, parsePocketDawProjectFile } from "../daw/dawProject";
 import { deleteClip, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, splitClipAtBar, toggleClipMute, trimClipEnd, trimClipStart } from "../daw/clips";
 import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
+import { addDrumLaneFx, isDrumLaneId, removeDrumLaneFx, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
 import { addTrackToProject, renameTrack, type AddTrackKind } from "../daw/tracks";
 import { placeAudioClipOnTimeline } from "../daw/audioClips";
 import { addMidiNote, deleteMidiNote, moveMidiNote, resizeMidiNote, setMidiNoteVelocity, transposeMidiNote } from "../daw/midiClips";
 import { addAutomationPoint, deleteAutomationPoint, ensureTrackAutomationLane, setAutomationLaneEnabled, type TrackAutomationField, updateAutomationPoint } from "../daw/automation";
 import { addBusTrack, addReturnTrack, routeTrackToOutput } from "../daw/routing";
+import { setFxSlotParameter, setPocketProEqPreset } from "../daw/fx";
 import { pushUndo, redo, undo } from "../daw/undo";
 import { addMarkerAtBar, clearLoop, deleteMarker, renameMarker, setLoopToClip, snapBarValue } from "../daw/timeline";
 import {
   appendChordsmithSection,
+  applyDrumPreset,
   cycleBassStep,
   cycleDrumTuplet,
   cycleDrumStep,
   cycleGuitarStep,
   cycleMelodyStep,
+  getPrimaryChordsmithSource,
   isSectionId,
   setBassMode,
   setChordsmithGlobals,
@@ -40,6 +44,7 @@ import {
   type ChordsmithGlobalPatch,
   type DrumLane
 } from "../daw/chordsmithEditor";
+import { drumPresetEventsForProject, drumPresetLabel, drumPresetVisibleForProject, findDrumPreset } from "../daw/chordsmithDrumPresets";
 import type { PocketDawProject } from "../daw/schema";
 import type { AppState } from "./state";
 
@@ -311,6 +316,42 @@ export function removeTrackFxCommand(state: AppState, chainId: string, slotId: s
   return commitProject(state, removeTrackFx(state.undoStack.present, chainId, slotId), "Removed FX slot.");
 }
 
+export function setFxSlotParameterCommand(state: AppState, chainId: string, slotId: string, parameter: string, value: number | boolean): AppState {
+  return commitProject(state, setFxSlotParameter(state.undoStack.present, chainId, slotId, parameter, value), "Updated FX setting.");
+}
+
+export function setPocketProEqPresetCommand(state: AppState, chainId: string, slotId: string, presetId: string): AppState {
+  return commitProject(state, setPocketProEqPreset(state.undoStack.present, chainId, slotId, presetId), "Applied EQ preset.");
+}
+
+export function setDrumLaneVolumeCommand(state: AppState, laneId: string, volume: number): AppState {
+  if (!isDrumLaneId(laneId)) return state;
+  return commitProject(state, setDrumLaneVolume(state.undoStack.present, laneId, volume), `Updated ${laneId} drum volume.`);
+}
+
+export function setDrumLanePanCommand(state: AppState, laneId: string, pan: number): AppState {
+  if (!isDrumLaneId(laneId)) return state;
+  return commitProject(state, setDrumLanePan(state.undoStack.present, laneId, pan), `Updated ${laneId} drum pan.`);
+}
+
+export function setDrumLaneMuteCommand(state: AppState, laneId: string, mute: boolean): AppState {
+  if (!isDrumLaneId(laneId)) return state;
+  return commitProject(state, setDrumLaneMute(state.undoStack.present, laneId, mute), `${laneId} drum ${mute ? "muted" : "unmuted"}.`);
+}
+
+export function addDrumLaneFxCommand(state: AppState, laneId: string, type: string): AppState {
+  if (!isDrumLaneId(laneId)) return state;
+  return commitProject(state, addDrumLaneFx(state.undoStack.present, laneId, type), `Added ${type} to ${laneId} drum.`);
+}
+
+export function toggleDrumLaneFxCommand(state: AppState, chainId: string, slotId: string): AppState {
+  return commitProject(state, toggleDrumLaneFx(state.undoStack.present, chainId, slotId), "Toggled drum lane FX bypass.");
+}
+
+export function removeDrumLaneFxCommand(state: AppState, chainId: string, slotId: string): AppState {
+  return commitProject(state, removeDrumLaneFx(state.undoStack.present, chainId, slotId), "Removed drum lane FX slot.");
+}
+
 export function setTrackInputCommand(state: AppState, trackId: string, inputDeviceId: string | null): AppState {
   return commitProject(state, setTrackInput(state.undoStack.present, trackId, inputDeviceId), "Updated track input.");
 }
@@ -387,6 +428,22 @@ export function cycleDrumStepCommand(state: AppState, sectionId: string, lane: s
 export function cycleDrumTupletCommand(state: AppState, sectionId: string, lane: string, step: number): AppState {
   if (!isSectionId(sectionId) || !["kick", "snare", "hat"].includes(lane)) return state;
   return commitProject(state, cycleDrumTuplet(state.undoStack.present, sectionId, lane as DrumLane, step), `Toggled Section ${sectionId} ${lane} tuplet.`);
+}
+
+export function applyDrumPresetCommand(state: AppState, sectionId: string, presetId: string): AppState {
+  if (!isSectionId(sectionId)) return { ...state, status: "Choose a valid Chordsmith section before applying a drum preset." };
+  const pcs = getPrimaryChordsmithSource(state.undoStack.present);
+  const preset = findDrumPreset(presetId);
+  if (!pcs || !preset) return { ...state, status: "Choose a valid drum preset." };
+  if (!drumPresetVisibleForProject(preset, pcs)) return { ...state, status: "Choose a drum preset available for this time signature." };
+  const pattern = drumPresetEventsForProject(preset.id, pcs);
+  if (!pattern.events.length) return { ...state, status: "No drum pattern is available for this preset and time signature." };
+  const note = pattern.note ? ` ${pattern.note}` : "";
+  return commitProject(
+    state,
+    applyDrumPreset(state.undoStack.present, sectionId, preset.id),
+    `Applied ${drumPresetLabel(preset, pcs)} drum preset to Section ${sectionId}.${note}`
+  );
 }
 
 export function cycleBassStepCommand(state: AppState, sectionId: string, step: number): AppState {

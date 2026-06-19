@@ -35,6 +35,8 @@ import {
   addMarkerAtPlayheadCommand,
   addMidiNoteCommand,
   addReturnTrackCommand,
+  addDrumLaneFxCommand,
+  applyDrumPresetCommand,
   clearLoopCommand,
   commitProject,
   copySelectedClip,
@@ -61,13 +63,19 @@ import {
   renameMarkerCommand,
   renameTrackCommand,
   repeatClipToEndCommand,
+  removeDrumLaneFxCommand,
   removeTrackFxCommand,
   routeTrackOutputCommand,
   resizeMidiNoteCommand,
   ensureAutomationLaneCommand,
   setBassModeCommand,
   setChordsmithGlobalsCommand,
+  setDrumLaneMuteCommand,
+  setDrumLanePanCommand,
+  setDrumLaneVolumeCommand,
   setGuitarSettingsCommand,
+  setFxSlotParameterCommand,
+  setPocketProEqPresetCommand,
   setLoopToSelectedClipCommand,
   setMelodyMuteCommand,
   setMelodyOctaveCommand,
@@ -83,6 +91,7 @@ import {
   setTrackVolumeCommand,
   setMidiNoteVelocityCommand,
   setAutomationLaneEnabledCommand,
+  toggleDrumLaneFxCommand,
   toggleTrackArmedCommand,
   toggleTrackFxCommand,
   toggleTrackMonitorCommand,
@@ -104,7 +113,7 @@ import {
   undoCommand
 } from "./commands";
 import { commandFromKeyboardEvent } from "./keyboard";
-import { createInitialState, currentProject, loadProjectIntoState, type AppState, type ChordsmithStepSelection, type HandoffResult } from "./state";
+import { createInitialState, currentProject, loadProjectIntoState, type AppState, type ChordsmithStepSelection, type HandoffResult, type NativeCacheUiStatus } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { renderAppShell } from "./ui";
 import { createUndoStack } from "../daw/undo";
@@ -128,7 +137,7 @@ import { importMidiFileToProject } from "../daw/midiClips";
 import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
 import { isNativeRecordingAvailable, nativeRecordingStatus, startNativeRecording, startNativeRecordingPreview, stopNativeRecording, stopNativeRecordingPreview, updateNativeRecordingMonitor } from "../native/recordingBridge";
-import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan, projectWithOnlyTracksAudible } from "../daw/exportJobs";
+import { createGamePackZipBlob, createSectionLoopMetadata, createStemExportPlan, projectForSectionLoopRender, projectWithOnlyTracksAudible } from "../daw/exportJobs";
 import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
 import { buildTesterDiagnosticsPayload, diagnosticsJson, runtimeLabel, runtimePlatform } from "./diagnostics";
 import { buildFeedbackEmailDraft, MORE_BY_SAMFA12_URL } from "./feedback";
@@ -299,6 +308,7 @@ export class App {
     const scroll = options.preserveScroll ? this.captureScrollSnapshot() : null;
     this.renderCount += 1;
     if (this.state.playing || this.engine.isPlaying()) this.renderCountDuringPlayback += 1;
+    this.state.nativeCacheStatus = nativeCacheStatusFromDiagnostics(this.engine.getDiagnostics());
     this.root.innerHTML = renderAppShell(this.state);
     this.root.dataset.renderCount = String(this.renderCount);
     this.root.dataset.renderCountDuringPlayback = String(this.renderCountDuringPlayback);
@@ -500,6 +510,12 @@ export class App {
     this.root.querySelector<HTMLSelectElement>("[data-bass-mode]")?.addEventListener("change", (event) => {
       this.applyChordsmithEditorEdit(setBassModeCommand(this.state, (event.target as HTMLSelectElement).value), "chordsmith-bass-mode");
     });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-drum-preset-section]").forEach((select) => {
+      select.addEventListener("change", () => {
+        if (!select.value) return;
+        this.applyChordsmithEditorEdit(applyDrumPresetCommand(this.state, select.dataset.drumPresetSection || "", select.value), "chordsmith-drum-preset");
+      });
+    });
     this.root.querySelectorAll<HTMLSelectElement>("[data-melody-instrument]").forEach((select) => {
       select.addEventListener("change", () => {
         const [sectionId, trackIndex] = String(select.dataset.melodyInstrument || "").split(":");
@@ -584,6 +600,64 @@ export class App {
         const [clipId, noteId] = String(input.dataset.midiNoteVelocity || "").split(":");
         this.applyProjectState(setMidiNoteVelocityCommand(this.state, clipId, noteId, Number(input.value)));
       });
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-drum-lane-volume]").forEach((input) => {
+      input.addEventListener("change", () => this.applyProjectState(setDrumLaneVolumeCommand(this.state, input.dataset.drumLaneVolume || "", Number(input.value)), {
+        audio: "mixer-graph",
+        preserveScroll: true,
+        reason: "drum-lane-volume"
+      }));
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-drum-lane-pan]").forEach((input) => {
+      input.addEventListener("change", () => this.applyProjectState(setDrumLanePanCommand(this.state, input.dataset.drumLanePan || "", Number(input.value)), {
+        audio: "mixer-graph",
+        preserveScroll: true,
+        reason: "drum-lane-pan"
+      }));
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-drum-lane-mute]").forEach((input) => {
+      input.addEventListener("change", () => this.applyProjectState(setDrumLaneMuteCommand(this.state, input.dataset.drumLaneMute || "", input.checked), {
+        audio: "mixer-graph",
+        preserveScroll: true,
+        reason: "drum-lane-mute"
+      }));
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-drum-lane-add-fx]").forEach((select) => {
+      select.addEventListener("change", () => {
+        if (!select.value) return;
+        this.applyProjectState(addDrumLaneFxCommand(this.state, select.dataset.drumLaneAddFx || "", select.value), {
+          audio: "mixer-graph",
+          preserveScroll: true,
+          reason: "drum-lane-add-fx"
+        });
+      });
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-fx-param]").forEach((input) => {
+      input.addEventListener("change", () => this.applyFxParameterInput(input, input.dataset.fxParam || ""));
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-fx-eq-preset]").forEach((select) => {
+      select.addEventListener("change", () => this.applyPocketProEqPresetInput(select));
+    });
+  }
+
+  private applyFxParameterInput(input: HTMLInputElement, encoded: string) {
+    const [chainId, slotId, parameter] = encoded.split(":");
+    if (!chainId || !slotId || !parameter) return;
+    const value = input.type === "checkbox" ? input.checked : Number(input.value);
+    this.applyProjectState(setFxSlotParameterCommand(this.state, chainId, slotId, parameter, value), {
+      audio: "mixer-graph",
+      preserveScroll: true,
+      reason: "fx-parameter"
+    });
+  }
+
+  private applyPocketProEqPresetInput(select: HTMLSelectElement) {
+    const [chainId, slotId] = String(select.dataset.fxEqPreset || "").split(":");
+    if (!chainId || !slotId || !select.value) return;
+    this.applyProjectState(setPocketProEqPresetCommand(this.state, chainId, slotId, select.value), {
+      audio: "mixer-graph",
+      preserveScroll: true,
+      reason: "fx-eq-preset"
     });
   }
 
@@ -928,6 +1002,26 @@ export class App {
     if (fxRemove) {
       const [chainId, slotId] = String(fxRemove.dataset.fxRemove || "").split(":");
       this.applyProjectState(removeTrackFxCommand(this.state, chainId, slotId));
+      return;
+    }
+    const drumLaneFxToggle = target?.closest<HTMLElement>("[data-drum-lane-fx-toggle]");
+    if (drumLaneFxToggle) {
+      const [chainId, slotId] = String(drumLaneFxToggle.dataset.drumLaneFxToggle || "").split(":");
+      this.applyProjectState(toggleDrumLaneFxCommand(this.state, chainId, slotId), {
+        audio: "mixer-graph",
+        preserveScroll: true,
+        reason: "drum-lane-fx-toggle"
+      });
+      return;
+    }
+    const drumLaneFxRemove = target?.closest<HTMLElement>("[data-drum-lane-fx-remove]");
+    if (drumLaneFxRemove) {
+      const [chainId, slotId] = String(drumLaneFxRemove.dataset.drumLaneFxRemove || "").split(":");
+      this.applyProjectState(removeDrumLaneFxCommand(this.state, chainId, slotId), {
+        audio: "mixer-graph",
+        preserveScroll: true,
+        reason: "drum-lane-fx-remove"
+      });
       return;
     }
     const placeAudio = target?.closest<HTMLElement>("[data-place-audio]");
@@ -1275,9 +1369,9 @@ export class App {
     if (action === "export-wav") await this.exportWav();
     if (action === "export-midi") this.exportMidi();
     if (action === "export-stems") await this.exportStems();
-    if (action === "export-section-manifest") this.exportSectionLoopManifest();
-    if (action === "export-godot-manifest") this.exportGameManifest("godot-adaptive-pack");
-    if (action === "export-web-game-manifest") this.exportGameManifest("web-game-pack");
+    if (action === "export-section-manifest") void this.exportSectionLoops();
+    if (action === "export-godot-manifest") await this.exportGamePack("godot-adaptive-pack");
+    if (action === "export-web-game-manifest") await this.exportGamePack("web-game-pack");
     if (action === "export-media-plan") this.exportMediaPlan();
     if (action === "collect-media") await this.collectMedia();
     if (action === "build-native-cache") await this.buildNativeCache();
@@ -2779,21 +2873,56 @@ export class App {
     }
   }
 
-  private exportSectionLoopManifest() {
-    const loops = createSectionLoopMetadata(currentProject(this.state));
-    const blob = new Blob([JSON.stringify({ loops }, null, 2)], { type: "application/json" });
-    downloadBlob(blob, safeName(`${currentProject(this.state).project.title}-section-loops`, "json"));
-    this.state.status = `Exported section loop manifest with ${loops.length} loop${loops.length === 1 ? "" : "s"}.`;
-    this.render();
+  private async exportSectionLoops() {
+    const project = currentProject(this.state);
+    const loops = createSectionLoopMetadata(project);
+    if (!loops.length) {
+      this.state.status = "No generated section loops are available for export.";
+      this.render();
+      return;
+    }
+    await this.showExportProgress(`Preparing ${loops.length} section loop${loops.length === 1 ? "" : "s"}`, "Rendering loop WAVs without export tails");
+    try {
+      for (const [index, loop] of loops.entries()) {
+        await this.showExportProgress(`Rendering section loop ${index + 1} of ${loops.length}`, loop.name);
+        const blob = await renderProjectToWavBlob(projectForSectionLoopRender(project, loop));
+        await this.showExportProgress(`Preparing section loop ${index + 1} of ${loops.length}`, `${Math.round(blob.size / 1024)} KB rendered`);
+        downloadBlob(blob, loop.fileName);
+      }
+      const manifestBlob = new Blob([JSON.stringify({ loops }, null, 2)], { type: "application/json" });
+      downloadBlob(manifestBlob, safeName(`${project.project.title}-section-loops`, "json"));
+      this.state.exportProgress = null;
+      this.state.status = `Exported ${loops.length} section loop WAV${loops.length === 1 ? "" : "s"} and a section-loop manifest.`;
+      this.render({ preserveScroll: true });
+    } catch (error) {
+      this.state.exportProgress = null;
+      this.state.status = error instanceof Error ? `Section loop export failed: ${error.message}` : "Section loop export failed.";
+      this.render({ preserveScroll: true });
+    }
   }
 
-  private exportGameManifest(kind: "godot-adaptive-pack" | "web-game-pack") {
-    const manifest = createGameExportManifest(currentProject(this.state), kind);
-    const suffix = kind === "godot-adaptive-pack" ? "godot-manifest" : "web-game-manifest";
-    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
-    downloadBlob(blob, safeName(`${currentProject(this.state).project.title}-${suffix}`, "json"));
-    this.state.status = `Exported ${kind === "godot-adaptive-pack" ? "Godot" : "web game"} manifest preview${manifest.warnings.length ? ` with ${manifest.warnings.length} warning${manifest.warnings.length === 1 ? "" : "s"}` : ""}.`;
-    this.render();
+  private async exportGamePack(kind: "godot-adaptive-pack" | "web-game-pack") {
+    const project = currentProject(this.state);
+    const label = kind === "godot-adaptive-pack" ? "Godot" : "web game";
+    try {
+      await this.showExportProgress(`Preparing ${label} game pack`, "Loading timeline audio files");
+      const hydration = await this.hydrateTimelineAudioBuffers();
+      this.assertNoMissingAudibleAudioBuffers(hydration, `${label} game-pack export`);
+      const result = await createGamePackZipBlob(project, kind, {
+        sourceProjectContents: buildPocketDawProjectFile(project),
+        renderWav: (renderProject) => renderProjectToWavBlob(renderProject),
+        onProgress: (title, detail) => this.showExportProgress(title, detail)
+      });
+      await this.showExportProgress(`Preparing ${label} pack download`, `${result.entries.length} files / ${Math.round(result.blob.size / 1024)} KB`);
+      downloadBlob(result.blob, safeName(`${project.project.title}-${kind}`, "zip"));
+      this.state.exportProgress = null;
+      this.state.status = `Exported ${label} game pack ZIP with ${result.entries.length} files${result.manifest.warnings.length ? ` and ${result.manifest.warnings.length} warning${result.manifest.warnings.length === 1 ? "" : "s"}` : ""}.`;
+      this.render({ preserveScroll: true });
+    } catch (error) {
+      this.state.exportProgress = null;
+      this.state.status = error instanceof Error ? `${label} game-pack export failed: ${error.message}` : `${label} game-pack export failed.`;
+      this.render({ preserveScroll: true });
+    }
   }
 
   private exportMediaPlan() {
@@ -3129,6 +3258,21 @@ export class App {
     const snapshot = savePreImportRecovery(buildPocketDawProjectFile(project), this.state.currentFile, reason);
     return snapshot ? `Previous project recovery snapshot saved as ${snapshot.file.label}.` : "";
   }
+}
+
+function nativeCacheStatusFromDiagnostics(diagnostics: ReturnType<AudioEngine["getDiagnostics"]>): NativeCacheUiStatus {
+  return {
+    assetRegionCount: diagnostics.nativeRenderCache.assetRegionCount,
+    cachedClipCount: diagnostics.nativeRenderCache.cachedClipCount,
+    generatedRegionCount: diagnostics.nativeRenderCache.generatedRegionCount,
+    runtimeAudioRegionCount: diagnostics.nativeRenderCache.runtimeAudioRegionCount,
+    proceduralFallbackEventCount: diagnostics.nativeRenderCache.proceduralFallbackEventCount,
+    buildPending: diagnostics.nativeRenderCache.buildPending,
+    prewarmScheduled: diagnostics.nativeRenderCache.prewarmScheduled,
+    bypassedForLiveEdits: diagnostics.nativeRenderCache.nativeRenderCacheBypassedForLiveEdits,
+    lastBuildReason: diagnostics.nativeRenderCache.lastBuildReason,
+    lastError: diagnostics.nativeRenderCache.lastError
+  };
 }
 
 function findDataElement<T extends HTMLElement>(root: ParentNode, attr: string, value: string): T | null {

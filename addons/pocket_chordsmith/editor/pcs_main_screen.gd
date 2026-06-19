@@ -33,12 +33,14 @@ var _timeline: PCSTimelineView
 var _section_list: PCSSectionList
 var _report: PCSImportReport
 var _import_dialog: FileDialog
+var _daw_pack_dialog: FileDialog
 var _save_dialog: FileDialog
 var _compile_folder_dialog: FileDialog
 var _profile_save_dialog: FileDialog
 var _paste_dialog: ConfirmationDialog
 var _paste_text: TextEdit
 var _push_receiver: PCSPushReceiver
+var _drop_window: Window
 
 
 func set_editor_interface(value: EditorInterface) -> void:
@@ -58,6 +60,7 @@ func _ready() -> void:
 	_assign_default_preview_profile(false)
 	_timeline.set_conductor(conductor)
 	_start_push_receiver()
+	_connect_file_drop_signal()
 	_update_actions()
 
 
@@ -69,6 +72,8 @@ func _process(_delta: float) -> void:
 func _exit_tree() -> void:
 	if _push_receiver != null:
 		_push_receiver.stop()
+	if _drop_window != null and _drop_window.files_dropped.is_connected(_handle_dropped_files):
+		_drop_window.files_dropped.disconnect(_handle_dropped_files)
 
 
 func _build_ui() -> void:
@@ -108,6 +113,13 @@ func _build_ui() -> void:
 		"Import JSON",
 		"Choose a Pocket Chordsmith JSON file or share-code text file from disk.",
 		_open_import_dialog
+	)
+
+	_toolbar_button(
+		toolbar,
+		"Import DAW Pack",
+		"Choose a Pocket DAW Godot Adaptive Pack ZIP, compile its embedded chart, and assign its rendered playback profile.",
+		_open_daw_pack_dialog
 	)
 
 	_toolbar_button(
@@ -237,6 +249,15 @@ func _build_ui() -> void:
 	_import_dialog.file_selected.connect(_import_file)
 	add_child(_import_dialog)
 
+	_daw_pack_dialog = FileDialog.new()
+	_daw_pack_dialog.title = "Import Pocket DAW Godot Adaptive Pack"
+	_daw_pack_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_daw_pack_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_daw_pack_dialog.use_native_dialog = true
+	_daw_pack_dialog.filters = PackedStringArray(["*.zip ; Pocket DAW Pack ZIP", "*.json ; Godot Adaptive Manifest JSON", "*.* ; All Files"])
+	_daw_pack_dialog.file_selected.connect(_import_daw_pack)
+	add_child(_daw_pack_dialog)
+
 	_save_dialog = FileDialog.new()
 	_save_dialog.title = "Save Compiled Pocket Chordsmith Chart"
 	_save_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -289,6 +310,14 @@ func _toolbar_button(parent: Control, text: String, tooltip: String, callback: C
 
 func _open_import_dialog() -> void:
 	_import_dialog.popup_file_dialog()
+
+
+func _open_daw_pack_dialog() -> void:
+	var downloads := OS.get_system_dir(OS.SYSTEM_DIR_DOWNLOADS)
+	if not downloads.is_empty() and DirAccess.dir_exists_absolute(downloads):
+		_daw_pack_dialog.current_dir = downloads
+		_daw_pack_dialog.current_path = downloads
+	_daw_pack_dialog.popup_file_dialog()
 
 
 func _open_paste_dialog() -> void:
@@ -389,6 +418,91 @@ func _import_file(path: String) -> void:
 	var importer = JsonImporter.new()
 	import_result = importer.load_file(path)
 	_compile_import_result(path)
+
+
+func _handle_dropped_files(files: PackedStringArray) -> void:
+	if not is_inside_tree() or not is_visible_in_tree():
+		return
+	for file_path in files:
+		var path := str(file_path)
+		if _is_daw_pack_candidate(path):
+			_import_daw_pack(path)
+			return
+		if _is_chordsmith_import_candidate(path):
+			_import_file(path)
+			return
+	_set_status("Drop a Pocket DAW pack ZIP, Godot adaptive manifest JSON, Pocket Chordsmith JSON, or PCS1 text file onto this tab.")
+
+
+func _import_daw_pack(path: String) -> void:
+	_stop_preview()
+	var tools = ChartBuildTools.new()
+	var result: Dictionary = tools.import_daw_game_pack(path)
+	if editor_interface != null:
+		editor_interface.get_resource_filesystem().scan()
+	var errors: Array = result.get("errors", [])
+	var warnings: Array = result.get("warnings", [])
+	if not errors.is_empty():
+		_report.set_import_result({
+			"ok": false,
+			"errors": errors,
+			"warnings": warnings,
+			"report": {},
+		})
+		_set_status("DAW pack import failed. See the report for details.")
+		return
+
+	var chart_path := str(result.get("chart_path", ""))
+	var profile_path := str(result.get("profile_path", ""))
+	var loaded_chart := ResourceLoader.load(chart_path) if not chart_path.is_empty() else null
+	if loaded_chart is PCSChartResource:
+		chart = loaded_chart
+		conductor.chart = chart
+	var loaded_profile := ResourceLoader.load(profile_path) if not profile_path.is_empty() else null
+	if loaded_profile is PCSPlaybackProfile:
+		conductor.playback_profile = loaded_profile
+
+	var compiled: Array = result.get("compiled", [])
+	var events := int(compiled[0].get("events", 0)) if not compiled.is_empty() else 0
+	import_result = {
+		"ok": true,
+		"errors": [],
+		"warnings": warnings,
+		"report": {
+			"source_path": result.get("source_project_path", path),
+			"chart_path": chart_path,
+			"profile_path": profile_path,
+			"events": events,
+		},
+	}
+	_report.set_import_result(import_result)
+	_refresh_chart_views()
+	_set_status("Imported DAW pack: %d events, chart %s, playback profile %s. Press Play Preview to hear the rendered pack audio." % [
+		events,
+		chart_path,
+		profile_path,
+	])
+
+
+func _connect_file_drop_signal() -> void:
+	_drop_window = get_window()
+	if _drop_window != null and not _drop_window.files_dropped.is_connected(_handle_dropped_files):
+		_drop_window.files_dropped.connect(_handle_dropped_files)
+
+
+func _is_daw_pack_candidate(path: String) -> bool:
+	var extension := path.get_extension().to_lower()
+	if extension == "zip":
+		return true
+	if extension == "json":
+		var file_name := path.get_file().to_lower()
+		return file_name.find("godot-adaptive-manifest") >= 0 or file_name.find("game-pack-manifest") >= 0
+	return false
+
+
+func _is_chordsmith_import_candidate(path: String) -> bool:
+	var extension := path.get_extension().to_lower()
+	return extension == "json" or extension == "txt"
 
 
 func _import_pasted_text() -> void:

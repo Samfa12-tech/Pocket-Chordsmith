@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { nativeRenderCacheSignature } from "../src/audio/nativeRenderCache";
-import { cycleDrumStepCommand, toggleBassTupletCommand } from "../src/app/commands";
+import { applyDrumPresetCommand, cycleDrumStepCommand, toggleBassTupletCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { getPrimaryChordsmithSource } from "../src/daw/chordsmithEditor";
 
@@ -21,6 +21,25 @@ describe("Chordsmith editor command integration", () => {
     const next = cycleDrumStepCommand(state, "A", "kick", 1);
 
     expect(nativeRenderCacheSignature(next.undoStack.present)).not.toBe(before);
+  });
+
+  it("applies drum presets through the editor command path", () => {
+    const state = createInitialState();
+    const next = applyDrumPresetCommand(state, "A", "money");
+    const pcs = getPrimaryChordsmithSource(next.undoStack.present);
+
+    expect(next.status).toBe("Applied Basic rock drum preset to Section A.");
+    expect(pcs?.sections.A.grid.kick[0]).toBe(1);
+    expect(pcs?.sections.A.grid.snare[4]).toBe(2);
+    expect(renderTimelineEvents(next.undoStack.present).some((event) => event.kind === "snare" && event.step === 4 && event.accent)).toBe(true);
+  });
+
+  it("rejects drum presets that do not match the current time signature", () => {
+    const state = createInitialState();
+    const threeFour = applyDrumPresetCommand(state, "A", "lofi_sleepy_waltz_3_4");
+
+    expect(threeFour.undoStack.present).toBe(state.undoStack.present);
+    expect(threeFour.status).toBe("Choose a drum preset available for this time signature.");
   });
 
   it("toggles bass tuplets through the editor command path", () => {

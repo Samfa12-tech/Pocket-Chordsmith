@@ -30,7 +30,7 @@ Editor workflow:
 
 1. Enable the `Pocket Chordsmith` addon.
 2. Open the `Chordsmith` main screen.
-3. Import a Pocket Chordsmith JSON, paste raw JSON, or paste a `PCS1:` share code.
+3. Import a Pocket Chordsmith JSON, paste raw JSON, paste a `PCS1:` share code, or click `Import DAW Pack` for a Pocket DAW Godot Adaptive Pack ZIP.
 4. Inspect the import report, sequence, sections, timeline, and event counts.
 5. Optional: click `Generate Web Sound Kit` to create Pocket Chordsmith-style drum/stinger WAVs and a HYBRID playback profile.
 6. Save the compiled chart as `.tres` or `.res`.
@@ -46,6 +46,19 @@ Push-to-Godot workflow from the browser app:
 6. If local push is unavailable, the browser app copies the same `PCS1:` code and shows the manual paste path: `Chordsmith` tab > `Paste JSON/Code` > paste > import.
 
 The addon does not require users to bring their own drum WAVs just to get started: the editor can generate a small built-in preview kit. At runtime, audio still uses Godot-native `AudioStream` playback. For a shipped game, use generated samples, your own licensed drum/stinger samples, rendered stems, or a mix of stems plus event-triggered samples.
+
+Pocket DAW pack workflow:
+
+1. Export `Godot Adaptive Pack` from Pocket DAW.
+2. In the Godot `Chordsmith` tab, click `Import DAW Pack` and choose the exported ZIP.
+3. The addon extracts the pack under `res://music/pocket_chordsmith_packs/`, compiles the embedded Pocket Chordsmith source into a chart resource, and creates a `PCSPlaybackProfile` pointing at the rendered full mix, stems, and section loops.
+4. Press `Play Preview` to audition the rendered pack audio, then use the saved chart/profile resources on `PocketChordsmithConductor`.
+
+Headless import:
+
+```text
+godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/import_daw_game_pack.gd -- --pack <godot-adaptive-pack.zip>
+```
 
 Visual track building stays in the web app for now. Godot receives the exported JSON/share code, compiles it to a lightweight `PCSChartResource`, then uses the conductor for timing, states, markers, cues, and Godot-native audio routing. A future Godot visual editor should build on the compiled chart/section data instead of porting the whole browser app into runtime.
 
@@ -127,6 +140,8 @@ conductor.set_bus_effect_amount("Music_Master", "reverb", 0.25)
 The importer/migrator accepts Pocket Chordsmith lofi metadata without requiring a schema bump: `audioProfile`, `lofiPreset`, `lofiTexture`, `drumKit`, `drumGroovePreset`, and `bassTone`. Compiled `PCSChartResource` files store that metadata so games can choose adaptive chill-game states from the lightweight chart resource.
 
 `Create Chordsmith Audio Buses` now also prepares a `Music_Texture` path under `Music_FX` for optional low-pass, reverb, and soft saturation-style texture. The generated preview sound kit includes practical lofi drum keys and profile mappings, but shipped games should still prefer stems, licensed samples, or the HYBRID path when production audio quality matters.
+
+For sample-preview lofi drums, prefer kit-specific playback-profile keys such as `lofi_tape_soft:kick`; the conductor falls back to legacy keys such as `lofi_kick` and then the plain lane name.
 
 Chill-game state example:
 

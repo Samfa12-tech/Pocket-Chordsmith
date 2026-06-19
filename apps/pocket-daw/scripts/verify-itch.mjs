@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 const isWindows = process.platform === "win32";
 
 run("npm", ["run", "verify:versions"]);
+run("npm", ["run", "verify:native-sound-recipes"]);
 run("npm", ["test"]);
 run("npm", ["run", "build"]);
 run("cargo", ["test"], { cwd: "src-tauri", optional: true });

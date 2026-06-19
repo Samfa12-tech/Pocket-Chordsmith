@@ -6,8 +6,10 @@ import { renderTimelineEvents, type RenderedEvent } from "./eventRenderer";
 import { renderTimelineAudioRegions, type AudioRegion } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
 import { getTrackFxChain } from "../daw/fx";
+import { DRUM_LANE_DEFS, getDrumLaneFxChain, isDrumEventKind } from "../daw/drumLanes";
 import { connectFxChain } from "./fxProcessor";
 import { scheduleInstrumentEvent } from "./instruments";
+import { chordsmithSidechainSettings, isChordsmithSidechainTrigger, scheduleChordsmithSidechainDuck } from "./sidechain";
 import { activeAutomationLaneCount, getAutomatedTrackControls } from "../daw/automation";
 import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioStatus } from "../native/audioPlayback";
 import {
@@ -26,8 +28,14 @@ import type { NativeMediaApi } from "../native/mediaBridge";
 interface TrackOutput {
   gain: GainNode;
   analyser: AnalyserNode;
+  sidechain: GainNode | null;
   pan: StereoPannerNode | null;
   meterData: Uint8Array<ArrayBuffer>;
+  cleanup: () => void;
+}
+
+interface DrumLaneOutput {
+  input: GainNode;
   cleanup: () => void;
 }
 
@@ -80,6 +88,7 @@ export class AudioEngine {
   private events: RenderedEvent[] = [];
   private audioRegions: AudioRegion[] = [];
   private trackOutputs = new Map<string, TrackOutput>();
+  private drumLaneOutputs = new Map<string, DrumLaneOutput>();
   private master: GainNode | null = null;
   private masterAnalyser: AnalyserNode | null = null;
   private masterMeterData: Uint8Array<ArrayBuffer> | null = null;
@@ -161,14 +170,18 @@ export class AudioEngine {
 
   async rebuildNativeRenderCache(reason = "manual-cache-build"): Promise<NativeRenderCache | null> {
     this.cancelNativeRenderCachePrewarm();
-    return this.ensureNativeRenderCache(reason);
+    const cache = await this.ensureNativeRenderCache(reason);
+    if (cache) await this.activateNativeRenderCacheForCurrentPlayback(reason);
+    return cache;
   }
 
   async persistNativeRenderCache(projectFilePath: string, reason = "persist-native-cache"): Promise<NativeRenderCachePersistResult | null> {
     this.cancelNativeRenderCachePrewarm();
     const cache = await this.ensureNativeRenderCache(reason);
     if (!cache) return null;
-    return persistNativeRenderCacheAssets(projectFilePath, cache);
+    const result = await persistNativeRenderCacheAssets(projectFilePath, cache);
+    if (result.cache.assets.length || result.cache.regions.length) await this.activateNativeRenderCacheForCurrentPlayback(reason);
+    return result;
   }
 
   async hydrateNativeRenderCache(projectFilePath: string, reason = "project-open-hydrate-native-cache", api?: NativeMediaApi): Promise<NativeRenderCacheHydrationResult> {
@@ -698,6 +711,12 @@ export class AudioEngine {
     return this.nativeRenderCacheBuildPromise;
   }
 
+  private async activateNativeRenderCacheForCurrentPlayback(reason: string): Promise<void> {
+    this.nativeRenderCacheBypassedForLiveEdits = false;
+    if (this.playbackBackend !== "native-cpal" || !this.playing) return;
+    await this.restartNativePlayback(this.currentSeconds(), { reason, useRenderCache: true });
+  }
+
   private scheduleNativeRenderCachePrewarm(reason: string): boolean {
     if (!this.shouldPrewarmNativeRenderCache()) return false;
     const signature = nativeRenderCacheSignature(this.project);
@@ -846,7 +865,7 @@ export class AudioEngine {
     const horizon = current + 0.08;
     while (this.nativeMeterEventIndex < this.events.length && this.events[this.nativeMeterEventIndex].time <= horizon) {
       const event = this.events[this.nativeMeterEventIndex];
-      if (event.time >= current - 0.04 && this.eventIsAudible(event)) this.tapMeter(event.trackId, event.velocity);
+      if (event.time >= current - 0.04 && this.eventShouldTapMeter(event)) this.tapMeter(event.trackId, event.velocity);
       this.nativeMeterEventIndex += 1;
     }
   }
@@ -882,6 +901,7 @@ export class AudioEngine {
     if (this.playing && cause) this.lastAudioDropCause = cause;
     this.disposeMixer();
     this.trackOutputs.clear();
+    this.drumLaneOutputs.clear();
     const currentBar = secondsToBars(this.currentSeconds(), this.project.project.bpm, this.project.project.timeSig) + 1;
     this.project.tracks.forEach((track) => {
       if (track.role === "master") {
@@ -890,14 +910,17 @@ export class AudioEngine {
       }
       const gain = this.ctx!.createGain();
       const analyser = this.ctx!.createAnalyser();
+      const sidechain = chordsmithSidechainSettings(this.project)?.targetTrackId === track.id ? this.ctx!.createGain() : null;
       const pan = "createStereoPanner" in this.ctx! ? this.ctx!.createStereoPanner() : null;
       const controls = getAutomatedTrackControls(this.project, track, currentBar);
       analyser.fftSize = 512;
       gain.gain.value = trackIsAudible(track, this.project.tracks) ? controls.volume : 0;
+      if (sidechain) sidechain.gain.value = 1;
       if (pan) pan.pan.value = controls.pan;
       this.trackOutputs.set(track.id, {
         gain,
         analyser,
+        sidechain,
         pan,
         meterData: new Uint8Array(analyser.fftSize),
         cleanup: () => {}
@@ -909,18 +932,38 @@ export class AudioEngine {
       if (!output) return;
       const fx = connectFxChain(this.ctx!, output.gain, output.analyser, getTrackFxChain(this.project, track));
       const destination = this.outputDestination(track);
+      const postFxOutput: AudioNode = output.sidechain || output.analyser;
+      if (output.sidechain) output.analyser.connect(output.sidechain);
       if (output.pan) {
-        output.analyser.connect(output.pan);
+        postFxOutput.connect(output.pan);
         output.pan.connect(destination);
       } else {
-        output.analyser.connect(destination);
+        postFxOutput.connect(destination);
       }
       output.cleanup = () => {
         fx.cleanup();
         safelyDisconnect(output.gain);
         safelyDisconnect(output.analyser);
+        if (output.sidechain) safelyDisconnect(output.sidechain);
         if (output.pan) safelyDisconnect(output.pan);
       };
+    });
+    this.configureDrumLaneOutputs();
+  }
+
+  private configureDrumLaneOutputs() {
+    const drumsOutput = this.trackOutputs.get("drums");
+    if (!this.ctx || !drumsOutput) return;
+    DRUM_LANE_DEFS.forEach((lane) => {
+      const input = this.ctx!.createGain();
+      const fx = connectFxChain(this.ctx!, input, drumsOutput.gain, getDrumLaneFxChain(this.project, lane.id));
+      this.drumLaneOutputs.set(lane.id, {
+        input,
+        cleanup: () => {
+          fx.cleanup();
+          safelyDisconnect(input);
+        }
+      });
     });
   }
 
@@ -937,6 +980,8 @@ export class AudioEngine {
   }
 
   private disposeMixer() {
+    this.drumLaneOutputs.forEach((output) => output.cleanup());
+    this.drumLaneOutputs.clear();
     this.trackOutputs.forEach((output) => output.cleanup());
     this.activeAudioSourcesStoppedByGraphReconfigureCount += this.activeAudioSources.length;
     this.stopActiveAudioSources();
@@ -1004,10 +1049,12 @@ export class AudioEngine {
   private scheduleEvent(event: RenderedEvent) {
     if (!this.ctx) return;
     if (!this.eventIsAudible(event)) return;
+    this.scheduleChordsmithSidechain(event);
     const output = this.trackOutputs.get(event.trackId);
     if (!output) return;
-    this.tapMeter(event.trackId, event.velocity);
-    const scheduled = scheduleInstrumentEvent(this.ctx, output.gain, {
+    if (this.eventShouldTapMeter(event)) this.tapMeter(event.trackId, event.velocity);
+    const destination = this.eventDestination(event, output);
+    const scheduled = scheduleInstrumentEvent(this.ctx, destination, {
       ...event,
       time: this.startedAt + event.time
     }, {
@@ -1021,6 +1068,22 @@ export class AudioEngine {
       }
     });
     if (scheduled) this.scheduledEventCount += 1;
+  }
+
+  private eventDestination(event: RenderedEvent, trackOutput: TrackOutput): AudioNode {
+    if (event.role === "drums" && isDrumEventKind(event.kind)) {
+      return this.drumLaneOutputs.get(event.drumLane || event.kind)?.input || trackOutput.gain;
+    }
+    return trackOutput.gain;
+  }
+
+  private scheduleChordsmithSidechain(event: RenderedEvent) {
+    if (!this.ctx || !isChordsmithSidechainTrigger(event)) return;
+    const settings = chordsmithSidechainSettings(this.project);
+    if (!settings?.enabled) return;
+    const output = this.trackOutputs.get(settings.targetTrackId);
+    if (!output?.sidechain) return;
+    scheduleChordsmithSidechainDuck(output.sidechain.gain, this.startedAt + event.time + 0.001, settings.amount);
   }
 
   private scheduleAudioRegion(region: AudioRegion, currentSeconds: number) {
@@ -1060,8 +1123,13 @@ export class AudioEngine {
     const horizon = seconds + 0.28;
     for (let index = this.findEventIndex(seconds); index < this.events.length && this.events[index].time <= horizon; index += 1) {
       const event = this.events[index];
-      if (this.eventIsAudible(event)) this.tapMeter(event.trackId, event.velocity);
+      if (this.eventShouldTapMeter(event)) this.tapMeter(event.trackId, event.velocity);
     }
+  }
+
+  private eventShouldTapMeter(event: RenderedEvent) {
+    if (event.kind === "texture") return false;
+    return this.eventIsAudible(event);
   }
 
   private eventIsAudible(event: RenderedEvent) {

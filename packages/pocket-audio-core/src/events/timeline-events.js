@@ -1,7 +1,21 @@
-import { DEFAULT_PPQ, SECTION_IDS } from "../constants.js";
-import { chordIntervals, chordQuality } from "../music/chords.js";
-import { scalePitchClasses } from "../music/scales.js";
-import { buildStepTimeline, stepDurationSeconds, stepsPerBar } from "../music/timeline.js";
+import { DEFAULT_PPQ, DEFAULT_STEM_MIX, SECTION_IDS } from "../constants.js";
+import {
+  chordsmithAutoBassMidi,
+  chordsmithBassIndexToMidi,
+  chordsmithChordForStep,
+  chordsmithChordMidiNotes,
+  chordsmithMelodyIndexToMidi,
+  chordsmithPowerChordNotes
+} from "../music/pitches.js";
+import { beatDurationSeconds, buildStepTimeline, spanDurationSeconds, stepDurationSeconds, stepsPerBar, tripletTimesForSpan } from "../music/timeline.js";
+import { chordsmithChordRhythmStarts } from "../performance/chord-rhythm.js";
+import { chordsmithDrumPeak, chordsmithDrumStepDuration, chordsmithDrumTupletDuration } from "../performance/drum-feel.js";
+import { chordsmithGuitarStepDuration } from "../performance/guitar-gates.js";
+import { chordsmithHumanizeOffset, chordsmithHumanizePeak } from "../performance/humanize.js";
+import { chordsmithPhraseInfo } from "../performance/phrases.js";
+import { chordsmithPitchedTupletDuration, chordsmithPitchedTupletMiddleIndex, chordsmithPitchedTupletMiddleMidi } from "../performance/tuplets.js";
+import { DEFAULT_GUITAR_STRUM_MODE } from "../sounds/guitar.js";
+import { CHORDSMITH_SEQUENCED_DRUM_LANE_IDS } from "../sounds/drum-lanes.js";
 
 export function buildPocketAudioTimeline(project, options = {}) {
   if (!project || project.app !== "PocketAudioProject") throw new Error("buildPocketAudioTimeline expects a normalised PocketAudioProject.");
@@ -74,13 +88,15 @@ export function buildSectionEvents(project, section, { baseTime = 0, baseTick = 
 }
 
 function addDrumEvents(events, project, section, context) {
-  ["kick", "snare", "hat"].forEach((lane) => {
+  const drumKit = project.lofi?.drumKit || "classic";
+  CHORDSMITH_SEQUENCED_DRUM_LANE_IDS.forEach((lane) => {
     const levels = section.drums[lane] || [];
     const tuplets = section.drumTuplets[lane] || [];
     if (isTupletSecond(tuplets, context.step)) return;
     const level = Number(levels[context.step] || 0);
     if (isTupletStart(tuplets, context.step, context.totalSteps)) {
       const nextLevel = Number(levels[context.step + 1] || level);
+      const spanDur = spanDuration(project, context.step, 2);
       tripletTimes(project, context.step, context.time).forEach((time, index) => {
         const tupletLevel = index === 2 ? nextLevel : level;
         if (tupletLevel > 0) events.push(baseEvent(project, section, context, {
@@ -88,19 +104,28 @@ function addDrumEvents(events, project, section, context) {
           tick: context.tick + tripletTickOffset(index, project.meta.resolution, project.meta.ppq),
           stem: "drums",
           type: lane,
-          duration: drumDuration(project, lane, tupletLevel) / 3,
-          velocity: drumVelocity(lane, tupletLevel),
+          duration: chordsmithDrumTupletDuration({ lane, level: tupletLevel, spanDuration: spanDur }),
+          velocity: chordsmithDrumPeak(lane, tupletLevel),
           accent: tupletLevel > 1,
-          tuplet: true
+          tuplet: true,
+          drumKit,
+          humanizeSeed: seedForDrum(lane),
+          humanizeStep: context.step + index
         }));
       });
     } else if (level > 0) {
       events.push(baseEvent(project, section, context, {
         stem: "drums",
         type: lane,
-        duration: drumDuration(project, lane, level),
-        velocity: drumVelocity(lane, level),
-        accent: level > 1
+        duration: chordsmithDrumStepDuration({
+          lane,
+          level,
+            stepDuration: stepDurationSeconds(project.meta, context.step)
+          }),
+        velocity: chordsmithDrumPeak(lane, level),
+        accent: level > 1,
+        drumKit,
+        humanizeSeed: seedForDrum(lane)
       }));
     }
   });
@@ -115,24 +140,34 @@ function addBassEvents(events, project, section, context) {
   const tuplets = section.drumTuplets.bass || [];
   if (isTupletSecond(tuplets, context.step)) return;
   if (isTupletStart(tuplets, context.step, context.totalSteps)) {
+    const leftMidi = bassMidiAt(project, section, context.step);
+    const rightMidi = bassMidiAt(project, section, context.step + 1);
+    const midMidi = chordsmithPitchedTupletMiddleMidi(leftMidi, rightMidi);
+    const spanDur = spanDuration(project, context.step, 2);
+    const notes = [leftMidi, midMidi, rightMidi ?? leftMidi];
     tripletTimes(project, context.step, context.time).forEach((time, index) => {
       const sourceStep = index === 2 ? context.step + 1 : context.step;
       if (!active(sourceStep)) return;
-      events.push(baseEvent(project, section, { ...context, step: sourceStep }, {
+      const midi = notes[index];
+      if (midi === null || midi === undefined) return;
+      events.push(baseEvent(project, section, context, {
         time,
         tick: context.tick + tripletTickOffset(index, project.meta.resolution, project.meta.ppq),
         stem: "bass",
         type: "bass",
-        duration: Math.max(0.08, spanDuration(project, context.step, 2) / 3 * 0.86),
+        duration: chordsmithPitchedTupletDuration(spanDur),
         velocity: bassAccent(section, sourceStep) ? 0.42 : 0.34,
         accent: bassAccent(section, sourceStep),
-        midi: bassMidiAt(project, section, sourceStep),
-        tuplet: true
+        midi,
+        tuplet: true,
+        bassTone: project.lofi?.bassTone || "classic",
+        humanizeSeed: 4,
+        humanizeStep: context.step + index
       }));
     });
     return;
   }
-  const phrase = phraseDuration(project, section.bass.hold, section.bass.slide, context.step, context.totalSteps);
+  const phrase = phraseDuration(project, section.bass.hold, section.bass.slide, context.step, context.totalSteps, "bass");
   events.push(baseEvent(project, section, context, {
     stem: "bass",
     type: "bass",
@@ -141,7 +176,9 @@ function addBassEvents(events, project, section, context) {
     accent: bassAccent(section, context.step),
     midi: bassMidiAt(project, section, context.step),
     slideMidi: phrase.slideStep === null ? undefined : bassMidiAt(project, section, phrase.slideStep),
-    slideOffset: phrase.slideOffset
+    slideOffset: phrase.slideOffset,
+    bassTone: project.lofi?.bassTone || "classic",
+    humanizeSeed: 4
   }));
 }
 
@@ -157,7 +194,7 @@ function addChordEvents(events, project, section, context) {
       stem: "chords",
       type: "chord",
       duration,
-      velocity: project.mixer.stems.chords?.volume ?? 0.72,
+      velocity: project.mixer.stems.chords?.volume ?? DEFAULT_STEM_MIX.chords.volume,
       midiNotes: chordMidiNotes(project, section, chord),
       instrument: section.chords.instrument,
       articulation: section.chords.playMode
@@ -175,7 +212,8 @@ function addMelodyEvents(events, project, section, context) {
     if (note === null || note === undefined) return;
     if (isTupletStart(track.tuplets, context.step, context.totalSteps)) {
       const next = track.notes[context.step + 1] ?? note;
-      const notes = [note, Math.round((note + next) / 2), next];
+      const notes = [note, chordsmithPitchedTupletMiddleIndex(note, next, { melodyPitchMode: project.meta.melodyPitchMode }), next];
+      const spanDur = spanDuration(project, context.step, 2);
       tripletTimes(project, context.step, context.time).forEach((time, index) => {
         events.push(baseEvent(project, section, context, {
           idSuffix: `_${trackIndex}_${index}`,
@@ -183,12 +221,14 @@ function addMelodyEvents(events, project, section, context) {
           tick: context.tick + tripletTickOffset(index, project.meta.resolution, project.meta.ppq),
           stem: "melody",
           type: "melody",
-          duration: Math.max(0.08, spanDuration(project, context.step, 2) / 3 * 0.86),
-          velocity: project.mixer.stems.melody?.volume ?? 0.65,
+          duration: chordsmithPitchedTupletDuration(spanDur),
+          velocity: project.mixer.stems.melody?.volume ?? DEFAULT_STEM_MIX.melody.volume,
           midi: melodyMidiAt(project, notes[index], track.octave),
           instrument: track.instrument,
           pan: track.pan,
-          tuplet: true
+          tuplet: true,
+          humanizeSeed: 10 + trackIndex,
+          humanizeStep: context.step + index
         }));
       });
       return;
@@ -199,12 +239,13 @@ function addMelodyEvents(events, project, section, context) {
       stem: "melody",
       type: "melody",
       duration: phrase.duration,
-      velocity: project.mixer.stems.melody?.volume ?? 0.65,
+      velocity: project.mixer.stems.melody?.volume ?? DEFAULT_STEM_MIX.melody.volume,
       midi: melodyMidiAt(project, note, track.octave),
       instrument: track.instrument,
       pan: track.pan,
       slideMidi: phrase.slideStep === null ? undefined : melodyMidiAt(project, track.notes[phrase.slideStep], track.octave),
-      slideOffset: phrase.slideOffset
+      slideOffset: phrase.slideOffset,
+      humanizeSeed: 10 + trackIndex
     }));
   });
 }
@@ -222,14 +263,19 @@ function addGuitarEvents(events, project, section, context) {
     midiNotes: powerChordNotes(project, section, chord),
     instrument: section.guitar.tone,
     articulation: art,
-    direction: guitarDirection(context.step, section.guitar.strumMode)
+    direction: guitarDirection(context.step, section.guitar.strumMode),
+    humanizeSeed: 17,
+    humanizeVelocity: false
   }));
 }
 
 function baseEvent(project, section, context, patch) {
+  const humanizeStep = patch.humanizeStep ?? context.step;
+  const time = patch.time ?? context.time;
+  const velocity = patch.velocity ?? 1;
   const event = {
     id: `${section.id}_${context.arrangementIndex}_${patch.stem}_${patch.type}_${context.step}${patch.idSuffix || ""}`,
-    time: patch.time ?? context.time,
+    time: humanizedTime(project, time, humanizeStep, patch.humanizeSeed),
     duration: patch.duration ?? stepDurationSeconds(project.meta, context.step),
     tick: patch.tick ?? context.tick,
     durationTicks: Math.max(1, Math.round(((patch.duration ?? stepDurationSeconds(project.meta, context.step)) / beatSeconds(project)) * project.meta.ppq)),
@@ -240,14 +286,37 @@ function baseEvent(project, section, context, patch) {
     arrangementIndex: context.arrangementIndex,
     stem: patch.stem,
     type: patch.type,
-    velocity: patch.velocity ?? 1,
+    velocity: patch.humanizeVelocity === false ? velocity : humanizedPeak(project, velocity, humanizeStep, patch.humanizeSeed),
     accent: Boolean(patch.accent),
-    tuplet: Boolean(patch.tuplet)
+    tuplet: Boolean(patch.tuplet),
+    audioProfile: project.meta.audioProfile || "standard",
+    lofiPreset: project.meta.stylePreset || project.lofi?.presetId || ""
   };
-  ["midi", "midiNotes", "instrument", "articulation", "pan", "slideMidi", "slideOffset", "direction"].forEach((key) => {
+  ["midi", "midiNotes", "instrument", "articulation", "pan", "slideMidi", "slideOffset", "direction", "drumKit", "bassTone"].forEach((key) => {
     if (patch[key] !== undefined) event[key] = patch[key];
   });
+  if (project.lofi?.texture?.enabled) event.lofiTexture = cloneJson(project.lofi.texture);
   return event;
+}
+
+function humanizedTime(project, time, step, seed) {
+  if (seed === undefined || seed === null) return time;
+  return Math.max(0, time + chordsmithHumanizeOffset(step, seed, project.meta.humanizeOn));
+}
+
+function humanizedPeak(project, value, step, seed) {
+  if (seed === undefined || seed === null) return value;
+  return chordsmithHumanizePeak(value, step, seed, project.meta.humanizeOn);
+}
+
+function seedForDrum(lane) {
+  if (lane === "kick") return 1;
+  if (lane === "snare") return 2;
+  return 3;
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 function roleOrder(stem) {
@@ -255,75 +324,68 @@ function roleOrder(stem) {
 }
 
 function currentChord(project, section, step) {
-  const barIndex = Math.floor(step / stepsPerBar(project));
-  const degree = Math.max(0, Math.min(6, Number(section.progression[barIndex] ?? 0)));
-  const pcs = scalePitchClasses(project.meta.key, project.meta.scale);
-  const quality = chordQuality(project.meta.scale, degree);
-  return { degree, rootPc: pcs[degree], quality, intervals: chordIntervals(section.chords.type, quality) };
+  return chordsmithChordForStep({
+    key: project.meta.key,
+    scale: project.meta.scale,
+    chordType: section.chords.type,
+    timeSig: project.meta.timeSig,
+    resolution: project.meta.resolution,
+    progression: section.progression,
+    step
+  });
 }
 
 function chordMidiNotes(project, section, chord) {
-  const root = 48 + chord.rootPc + (section.chords.octave || 0) * 12;
-  const notes = chord.intervals.map((interval, index) => root + interval + (index === 0 ? 0 : 12));
-  return section.chords.playMode === "strum_down" || section.chords.playMode === "arp_down" ? notes.reverse() : notes;
+  return chordsmithChordMidiNotes({
+    chord,
+    chordOctave: section.chords.octave,
+    chordPlayMode: section.chords.playMode
+  });
 }
 
 function powerChordNotes(_project, section, chord) {
-  const register = section.guitar.register || "low";
-  const min = register === "high" ? 52 : register === "mid" ? 45 : 35;
-  const max = register === "high" ? 64 : register === "mid" ? 57 : 47;
-  let root = 24 + chord.rootPc;
-  while (root < min) root += 12;
-  while (root > max) root -= 12;
-  return [root, root + 7, root + 12].map((note) => Math.max(0, Math.min(127, note)));
+  return chordsmithPowerChordNotes({ rootPc: chord.rootPc, guitarRegister: section.guitar.register });
 }
 
 function melodyMidiAt(project, noteIndex, octave = 0) {
-  const safe = Math.max(0, Math.min(23, Number(noteIndex) || 0));
-  if (project.meta.melodyPitchMode === "chromatic") return 72 + safe + octave * 12;
-  const pcs = scalePitchClasses(project.meta.key, project.meta.scale);
-  return 72 + pcs[safe % 7] + (Math.floor(safe / 7) + octave) * 12;
+  return chordsmithMelodyIndexToMidi({
+    key: project.meta.key,
+    scale: project.meta.scale,
+    melodyPitchMode: project.meta.melodyPitchMode,
+    noteIndex,
+    octave
+  });
 }
 
 function bassMidiAt(project, section, step) {
   if (section.bass.mode === "manual" && section.bass.notes[step] !== null && section.bass.notes[step] !== undefined) {
-    const pcs = scalePitchClasses(project.meta.key, project.meta.scale);
-    const safe = Math.max(0, Math.min(13, Number(section.bass.notes[step]) || 0));
-    return 36 + pcs[safe % 7] + Math.floor(safe / 7) * 12;
+    return chordsmithBassIndexToMidi({
+      key: project.meta.key,
+      scale: project.meta.scale,
+      noteIndex: section.bass.notes[step]
+    });
   }
-  return 36 + currentChord(project, section, step).rootPc;
+  return chordsmithAutoBassMidi({ rootPc: currentChord(project, section, step).rootPc });
 }
 
-function phraseDuration(project, holds, slides, step, totalSteps) {
-  let duration = 0;
-  let index = step;
-  do {
-    duration += stepDurationSeconds(project.meta, index);
-    index += 1;
-  } while (index < totalSteps && holds[index]);
-  let slideStep = null;
-  let slideOffset = null;
-  if (index < totalSteps && slides[index]) {
-    slideStep = index;
-    slideOffset = duration;
-    do {
-      duration += stepDurationSeconds(project.meta, index);
-      index += 1;
-    } while (index < totalSteps && holds[index]);
-  }
-  return { duration: Math.max(0.08, duration * 0.92), slideStep, slideOffset };
+function phraseDuration(project, holds, slides, step, totalSteps, role = "melody") {
+  return chordsmithPhraseInfo({
+    step,
+    totalSteps,
+    role,
+    stepDurationAt: (index) => stepDurationSeconds(project.meta, index),
+    holdAt: (index) => Boolean(holds[index]),
+    slideAt: (index) => Boolean(slides[index])
+  });
 }
 
 function chordRhythmStarts(project, barStart, mode) {
-  const beat = beatSeconds(project);
-  if (mode === "quarter") return Array.from({ length: project.meta.timeSig }, (_, index) => [barStart + index * beat, beat * 0.9]);
-  if (mode === "half") {
-    const starts = [[barStart, beat * 1.8]];
-    if (project.meta.timeSig >= 4) starts.push([barStart + beat * 2, beat * 1.8]);
-    else if (project.meta.timeSig === 3) starts.push([barStart + beat * 1.5, beat * 1.2]);
-    return starts;
-  }
-  return [[barStart, beat * project.meta.timeSig * 0.92]];
+  return chordsmithChordRhythmStarts({
+    mode,
+    barStart,
+    beatDuration: beatSeconds(project),
+    timeSig: project.meta.timeSig
+  });
 }
 
 function isTupletStart(tuplets, step, totalSteps) {
@@ -335,14 +397,11 @@ function isTupletSecond(tuplets, step) {
 }
 
 function tripletTimes(project, step, start) {
-  const span = spanDuration(project, step, 2);
-  return [start, start + span / 3, start + span * 2 / 3];
+  return tripletTimesForSpan(start, spanDuration(project, step, 2));
 }
 
 function spanDuration(project, step, span) {
-  let out = 0;
-  for (let offset = 0; offset < span; offset += 1) out += stepDurationSeconds(project.meta, step + offset);
-  return out;
+  return spanDurationSeconds(project.meta, step, span);
 }
 
 function stepToTicks(step, resolution, ppq = DEFAULT_PPQ) {
@@ -354,20 +413,7 @@ function tripletTickOffset(index, resolution, ppq) {
 }
 
 function beatSeconds(project) {
-  return 60 / project.meta.bpm;
-}
-
-function drumDuration(project, lane, level) {
-  const stepDur = stepDurationSeconds(project.meta, 0);
-  if (lane === "kick") return Math.min(0.1, stepDur * 0.7);
-  if (lane === "snare") return Math.min(0.08, stepDur * 0.7);
-  return Math.min(level > 1 ? 0.12 : 0.025, stepDur * (level > 1 ? 0.75 : 0.7));
-}
-
-function drumVelocity(lane, level) {
-  if (lane === "kick") return level > 1 ? 1.12 : 0.95;
-  if (lane === "snare") return level > 1 ? 0.72 : 0.5;
-  return level > 1 ? 0.24 : 0.16;
+  return beatDurationSeconds(project.meta);
 }
 
 function bassAccent(section, step) {
@@ -375,18 +421,18 @@ function bassAccent(section, step) {
 }
 
 function guitarDuration(project, section, step, articulation, totalSteps) {
-  if (articulation === "chug" || articulation === "scratch") return Math.min(0.16, stepDurationSeconds(project.meta, step) * 0.82);
-  let duration = stepDurationSeconds(project.meta, step);
+  const stepDur = stepDurationSeconds(project.meta, step);
+  let duration = stepDur;
   let index = step + 1;
   while (index < totalSteps && section.guitar.pattern[index] === "hold") {
     duration += stepDurationSeconds(project.meta, index);
     index += 1;
   }
-  return Math.max(0.18, duration * 0.92);
+  return chordsmithGuitarStepDuration({ stepDuration: stepDur, heldDuration: duration, articulation });
 }
 
 function guitarDirection(step, mode) {
   if (mode === "up") return "up";
-  if (mode === "alternate") return step % 2 ? "up" : "down";
-  return "down";
+  if (mode === "alternate") return step % 2 ? "up" : DEFAULT_GUITAR_STRUM_MODE;
+  return DEFAULT_GUITAR_STRUM_MODE;
 }

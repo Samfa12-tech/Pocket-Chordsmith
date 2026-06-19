@@ -62,9 +62,19 @@ profile.drum_kit = {
 	"snare_accent": "res://audio/drums/snare_heavy.wav",
 	"hat": "res://audio/drums/hat.wav",
 	"hat_accent": "res://audio/drums/open_hat.wav",
+	"lofi_kick": "res://audio/drums/lofi_kick.wav",
+	"lofi_snare": "res://audio/drums/lofi_snare.wav",
+	"lofi_hat": "res://audio/drums/lofi_hat.wav",
+	"lofi_open_hat": "res://audio/drums/lofi_open_hat.wav",
+	"lofi_tape_soft:kick": "res://audio/drums/tape_soft_kick.wav",
+	"lofi_tape_soft:snare": "res://audio/drums/tape_soft_snare.wav",
+	"lofi_tape_soft:hat": "res://audio/drums/tape_soft_hat.wav",
+	"lofi_tape_soft:open_hat": "res://audio/drums/tape_soft_open_hat.wav",
 }
 profile.max_polyphony = 24
 ```
+
+For lofi charts, the conductor first looks for kit-specific keys such as `lofi_tape_soft:kick`, then falls back to legacy profile keys such as `lofi_kick`, accent keys, and finally the plain lane name. Use the kit-specific form when adding new lofi drum-kit variants so Chordsmith, DAW, and Godot can keep the same sound IDs.
 
 Marker-triggered stingers:
 

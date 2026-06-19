@@ -6,6 +6,7 @@ const DEFAULT_OUTPUT_DIR := "res://addons/pocket_chordsmith/audio/web_kit"
 const SAMPLE_RATE := 44100
 const TWO_PI := PI * 2.0
 const PlaybackProfileScript := preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
+const SharedSoundConstants := preload("res://addons/pocket_chordsmith/import/pcs_shared_sound_constants.gd")
 
 
 func generate_web_kit(output_dir := DEFAULT_OUTPUT_DIR) -> Dictionary:
@@ -34,9 +35,29 @@ func generate_web_kit(output_dir := DEFAULT_OUTPUT_DIR) -> Dictionary:
 		"lofi_snare": _lofi_snare(),
 		"lofi_hat": _lofi_hat(false),
 		"lofi_open_hat": _lofi_hat(true),
+		"lofi_dusty_kick": _lofi_dusty_kick(),
+		"lofi_dusty_snare": _lofi_dusty_snare(),
+		"lofi_dusty_hat": _lofi_dusty_hat(false),
+		"lofi_dusty_open_hat": _lofi_dusty_hat(true),
+		"lofi_brush_kick": _lofi_brush_kick(),
+		"lofi_brush_snare": _lofi_brush_snare(),
+		"lofi_brush_hat": _lofi_brush_hat(false),
+		"lofi_brush_open_hat": _lofi_brush_hat(true),
+		"lofi_tape_soft_kick": _lofi_tape_soft_kick(),
+		"lofi_tape_soft_snare": _lofi_tape_soft_snare(),
+		"lofi_tape_soft_hat": _lofi_tape_soft_hat(false),
+		"lofi_tape_soft_open_hat": _lofi_tape_soft_hat(true),
 		"clap": _clap(0.34, 5),
 		"bass_tone": _bass_tone(),
+		"bass_warm_sub": _bass_warm_sub(),
+		"bass_soft_upright": _bass_soft_upright(),
+		"bass_rounded_triangle_bass": _bass_rounded_triangle_bass(),
 		"chord_tone": _chord_tone(),
+		"chord_dusty_rhodes": _chord_dusty_rhodes(),
+		"chord_felt_piano": _chord_felt_piano(),
+		"chord_cassette_keys": _chord_cassette_keys(),
+		"chord_muted_jazz_guitar": _chord_muted_jazz_guitar(),
+		"chord_lofi_warm_pad": _chord_lofi_warm_pad(),
 		"guitar_open": _guitar_open(),
 		"guitar_chug": _guitar_chug(),
 		"guitar_accent": _guitar_accent(),
@@ -44,6 +65,11 @@ func generate_web_kit(output_dir := DEFAULT_OUTPUT_DIR) -> Dictionary:
 		"melody_pulse": _melody_pulse(),
 		"melody_soft": _melody_soft(),
 		"melody_bell": _melody_bell(),
+		"melody_mellow_vibes": _melody_mellow_vibes(),
+		"melody_soft_pluck": _melody_soft_pluck(),
+		"melody_mellow_sax": _melody_mellow_sax(),
+		"melody_muted_trumpet": _melody_muted_trumpet(),
+		"melody_tape_bell": _melody_tape_bell(),
 		"warning_hit": _warning_hit(),
 		"reward_hit": _reward_hit(),
 		"victory_hit": _reward_hit(),
@@ -107,69 +133,14 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 		"melody": -20.0,
 		"stingers": -8.0,
 	}
-	profile.drum_kit = {
-		"kick": sample_paths.get("kick", ""),
-		"kick_accent": sample_paths.get("kick_accent", ""),
-		"snare": sample_paths.get("snare", ""),
-		"snare_accent": sample_paths.get("snare_accent", ""),
-		"hat": sample_paths.get("hat", ""),
-		"hat_accent": sample_paths.get("hat_accent", sample_paths.get("open_hat", "")),
-		"open_hat": sample_paths.get("open_hat", ""),
-		"lofi_kick": sample_paths.get("lofi_kick", sample_paths.get("kick", "")),
-		"lofi_snare": sample_paths.get("lofi_snare", sample_paths.get("snare", "")),
-		"lofi_hat": sample_paths.get("lofi_hat", sample_paths.get("hat", "")),
-		"lofi_open_hat": sample_paths.get("lofi_open_hat", sample_paths.get("open_hat", "")),
-		"clap": sample_paths.get("clap", ""),
-	}
+	profile.drum_kit = _mapped_sample_streams(sample_paths, _drum_sample_streams())
 	profile.accent_streams = {
 		"warning_hit": sample_paths.get("warning_hit", ""),
 		"reward_hit": sample_paths.get("reward_hit", ""),
 		"victory_hit": sample_paths.get("victory_hit", sample_paths.get("reward_hit", "")),
 		"transition_hit": sample_paths.get("transition_hit", ""),
 	}
-	profile.event_sample_streams = {
-		"bass": sample_paths.get("bass_tone", ""),
-		"bass:auto_bass": sample_paths.get("bass_tone", ""),
-		"bass:manual_bass": sample_paths.get("bass_tone", ""),
-		"bass:warm_sub": sample_paths.get("bass_tone", ""),
-		"bass:soft_upright": sample_paths.get("bass_tone", ""),
-		"bass:rounded_triangle_bass": sample_paths.get("bass_tone", ""),
-		"chord": sample_paths.get("chord_tone", ""),
-		"chord:cassette_keys": sample_paths.get("chord_tone", ""),
-		"chord:dusty_rhodes": sample_paths.get("chord_tone", ""),
-		"chord:felt_piano": sample_paths.get("chord_tone", ""),
-		"chord:glass": sample_paths.get("chord_tone", ""),
-		"chord:harp": sample_paths.get("chord_tone", ""),
-		"chord:lofi_warm_pad": sample_paths.get("chord_tone", ""),
-		"chord:muted_jazz_guitar": sample_paths.get("chord_tone", ""),
-		"chord:piano": sample_paths.get("chord_tone", ""),
-		"chord:pocket": sample_paths.get("chord_tone", ""),
-		"chord:saloon_piano": sample_paths.get("chord_tone", ""),
-		"chord:tone": sample_paths.get("chord_tone", ""),
-		"chord:warm_pad": sample_paths.get("chord_tone", ""),
-		"guitar": sample_paths.get("guitar_open", ""),
-		"guitar:open": sample_paths.get("guitar_open", ""),
-		"guitar:chug": sample_paths.get("guitar_chug", ""),
-		"guitar:accent": sample_paths.get("guitar_accent", ""),
-		"guitar:scratch": sample_paths.get("guitar_scratch", ""),
-		"melody": sample_paths.get("melody_pulse", ""),
-		"melody:banjo": sample_paths.get("melody_pulse", ""),
-		"melody:bell": sample_paths.get("melody_bell", ""),
-		"melody:cowboy_whistle": sample_paths.get("melody_soft", ""),
-		"melody:distorted_lead_guitar": sample_paths.get("melody_pulse", ""),
-		"melody:harmonica": sample_paths.get("melody_soft", ""),
-		"melody:lead_guitar": sample_paths.get("melody_pulse", ""),
-		"melody:mellow_sax": sample_paths.get("melody_soft", ""),
-		"melody:mellow_vibes": sample_paths.get("melody_bell", ""),
-		"melody:muted_trumpet": sample_paths.get("melody_soft", ""),
-		"melody:pulse": sample_paths.get("melody_pulse", ""),
-		"melody:saxophone": sample_paths.get("melody_soft", ""),
-		"melody:soft": sample_paths.get("melody_soft", ""),
-		"melody:soft_pluck": sample_paths.get("melody_soft", ""),
-		"melody:synth": sample_paths.get("melody_pulse", ""),
-		"melody:tape_bell": sample_paths.get("melody_bell", ""),
-		"melody:trumpet": sample_paths.get("melody_pulse", ""),
-	}
+	profile.event_sample_streams = _mapped_sample_streams(sample_paths, _event_sample_streams())
 	profile.marker_stingers = {
 		"boss_warning": "warning_hit",
 		"reward": "reward_hit",
@@ -188,6 +159,47 @@ func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary
 		"errors": [] if error == OK else ["Could not save playback profile %s: %s" % [profile_path, error_string(error)]],
 		"warnings": [],
 	}
+
+
+func _mapped_sample_streams(sample_paths: Dictionary, key_to_sample: Dictionary) -> Dictionary:
+	var out := {}
+	for key in key_to_sample.keys():
+		var sample_name := str(key_to_sample[key])
+		out[str(key)] = _sample_path(sample_paths, sample_name)
+	return out
+
+
+func _drum_sample_streams() -> Dictionary:
+	return (SharedSoundConstants.GODOT_DRUM_SAMPLE_STREAMS as Dictionary).duplicate(true)
+
+
+func _event_sample_streams() -> Dictionary:
+	return (SharedSoundConstants.GODOT_EVENT_SAMPLE_STREAMS as Dictionary).duplicate(true)
+
+
+func _sample_path(sample_paths: Dictionary, sample_name: String) -> String:
+	var path := str(sample_paths.get(sample_name, ""))
+	if not path.is_empty():
+		return path
+	var fallback := _sample_name_fallback(sample_name)
+	if fallback.is_empty():
+		return ""
+	return str(sample_paths.get(fallback, ""))
+
+
+func _sample_name_fallback(sample_name: String) -> String:
+	match sample_name:
+		"hat_accent":
+			return "open_hat"
+		"lofi_kick":
+			return "kick"
+		"lofi_snare":
+			return "snare"
+		"lofi_hat":
+			return "hat"
+		"lofi_open_hat":
+			return "open_hat"
+	return ""
 
 
 func _kick(peak: float) -> PackedFloat32Array:
@@ -277,6 +289,44 @@ func _lofi_hat(open: bool) -> PackedFloat32Array:
 	return _normalize(_lowpass(_hat(0.12 if open else 0.08, open, 31 if open else 30), 5800.0), 0.22 if open else 0.18)
 
 
+func _lofi_dusty_kick() -> PackedFloat32Array:
+	return _normalize(_lowpass(_kick(0.46), 1450.0), 0.48)
+
+
+func _lofi_dusty_snare() -> PackedFloat32Array:
+	return _normalize(_lowpass(_snare(0.32, 41), 3000.0), 0.42)
+
+
+func _lofi_dusty_hat(open: bool) -> PackedFloat32Array:
+	return _normalize(_lowpass(_hat(0.10 if open else 0.07, open, 42 if open else 43), 5200.0), 0.18 if open else 0.14)
+
+
+func _lofi_brush_kick() -> PackedFloat32Array:
+	return _normalize(_lowpass(_kick(0.36), 1100.0), 0.38)
+
+
+func _lofi_brush_snare() -> PackedFloat32Array:
+	var brush := _lowpass(_snare(0.26, 44), 2300.0)
+	return _normalize(_highpass(brush, 520.0), 0.34)
+
+
+func _lofi_brush_hat(open: bool) -> PackedFloat32Array:
+	var hat := _hat(0.075 if open else 0.052, open, 45 if open else 46)
+	return _normalize(_lowpass(_highpass(hat, 2100.0), 4300.0), 0.15 if open else 0.11)
+
+
+func _lofi_tape_soft_kick() -> PackedFloat32Array:
+	return _normalize(_lowpass(_kick(0.42), 1600.0), 0.42)
+
+
+func _lofi_tape_soft_snare() -> PackedFloat32Array:
+	return _normalize(_lowpass(_snare(0.28, 47), 2100.0), 0.36)
+
+
+func _lofi_tape_soft_hat(open: bool) -> PackedFloat32Array:
+	return _normalize(_lowpass(_hat(0.08 if open else 0.055, open, 48 if open else 49), 4800.0), 0.16 if open else 0.12)
+
+
 func _clap(peak: float, seed: int) -> PackedFloat32Array:
 	var duration := 0.18
 	var total := int(SAMPLE_RATE * duration)
@@ -309,6 +359,52 @@ func _bass_tone() -> PackedFloat32Array:
 	return _normalize(data, 0.82)
 
 
+func _bass_warm_sub() -> PackedFloat32Array:
+	var duration := 0.56
+	var total := int(SAMPLE_RATE * duration)
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.018) * exp(-3.7 * t)
+		var tone := sin(TWO_PI * 49.0 * t) * 0.82
+		tone += sin(TWO_PI * 98.0 * t) * 0.16
+		data[i] = _soft_clip(tone * 1.1) * env
+	return _normalize(_lowpass(data, 850.0), 0.72)
+
+
+func _bass_soft_upright() -> PackedFloat32Array:
+	var duration := 0.58
+	var total := int(SAMPLE_RATE * duration)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 52
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.006) * exp(-5.0 * t)
+		var pluck := exp(-52.0 * t) * (rng.randf() * 2.0 - 1.0) * 0.08
+		var tone := sin(TWO_PI * 55.0 * t) * 0.58
+		tone += sin(TWO_PI * 110.0 * t) * 0.28
+		tone += sin(TWO_PI * 165.0 * t) * 0.10
+		data[i] = (tone + pluck) * env
+	return _normalize(_lowpass(data, 1700.0), 0.68)
+
+
+func _bass_rounded_triangle_bass() -> PackedFloat32Array:
+	var duration := 0.48
+	var total := int(SAMPLE_RATE * duration)
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.012) * exp(-4.1 * t)
+		var tri := asin(sin(TWO_PI * 65.406 * t)) * (2.0 / PI)
+		var sub := sin(TWO_PI * 32.703 * t) * 0.20
+		data[i] = (tri * 0.72 + sub) * env
+	return _normalize(_lowpass(data, 1250.0), 0.70)
+
+
 func _chord_tone() -> PackedFloat32Array:
 	var duration := 0.62
 	var total := int(SAMPLE_RATE * duration)
@@ -321,6 +417,47 @@ func _chord_tone() -> PackedFloat32Array:
 		var tone := pulse * 0.36 + sin(TWO_PI * 261.626 * t) * 0.28 + sin(TWO_PI * 523.252 * t) * 0.08
 		data[i] = tone * env
 	return _normalize(_lowpass(data, 5200.0), 0.64)
+
+
+func _chord_dusty_rhodes() -> PackedFloat32Array:
+	return _warm_key_tone(261.626, 0.86, 2.35, 3400.0, 0.54, 0.10, 0.18)
+
+
+func _chord_felt_piano() -> PackedFloat32Array:
+	return _warm_key_tone(261.626, 0.72, 3.15, 2400.0, 0.50, 0.02, 0.08)
+
+
+func _chord_cassette_keys() -> PackedFloat32Array:
+	return _warm_key_tone(261.626, 0.82, 2.65, 2100.0, 0.48, 0.16, 0.05)
+
+
+func _chord_muted_jazz_guitar() -> PackedFloat32Array:
+	return _normalize(_lowpass(_guitar_tone(0.42, 5.8, 1.4, 53, 0.22, 0.48), 2400.0), 0.46)
+
+
+func _chord_lofi_warm_pad() -> PackedFloat32Array:
+	return _warm_key_tone(220.0, 1.12, 1.35, 1900.0, 0.42, 0.03, 0.22)
+
+
+func _warm_key_tone(base_freq: float, duration: float, decay_rate: float, cutoff_hz: float, peak: float, pulse_amount: float, bell_amount: float) -> PackedFloat32Array:
+	var total := int(SAMPLE_RATE * duration)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(base_freq + cutoff_hz)
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var wobble := 1.0 + sin(TWO_PI * 3.2 * t) * 0.004
+		var env: float = min(1.0, t / 0.035) * exp(-decay_rate * t)
+		var cycle := fmod(t * base_freq * wobble, 1.0)
+		var pulse := 1.0 if cycle < 0.50 else -1.0
+		var tone := sin(TWO_PI * base_freq * wobble * t) * 0.46
+		tone += sin(TWO_PI * base_freq * 2.0 * wobble * t) * 0.18
+		tone += pulse * pulse_amount
+		tone += sin(TWO_PI * base_freq * 3.02 * wobble * t) * bell_amount
+		tone += (rng.randf() * 2.0 - 1.0) * 0.006
+		data[i] = _soft_clip(tone * 1.35) * env
+	return _normalize(_lowpass(data, cutoff_hz), peak)
 
 
 func _guitar_open() -> PackedFloat32Array:
@@ -419,6 +556,49 @@ func _melody_bell() -> PackedFloat32Array:
 		tone += sin(TWO_PI * 1567.982 * t) * 0.08
 		data[i] = tone * env
 	return _normalize(data, 0.68)
+
+
+func _melody_mellow_vibes() -> PackedFloat32Array:
+	return _normalize(_lowpass(_melody_bell(), 3600.0), 0.52)
+
+
+func _melody_soft_pluck() -> PackedFloat32Array:
+	var duration := 0.34
+	var total := int(SAMPLE_RATE * duration)
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.006) * exp(-7.2 * t)
+		var tone := sin(TWO_PI * 329.628 * t) * 0.46 + sin(TWO_PI * 659.256 * t) * 0.11
+		data[i] = tone * env
+	return _normalize(_lowpass(data, 2900.0), 0.48)
+
+
+func _melody_mellow_sax() -> PackedFloat32Array:
+	return _nasal_melody_tone(293.665, 0.50, 0.54, 1900.0)
+
+
+func _melody_muted_trumpet() -> PackedFloat32Array:
+	return _nasal_melody_tone(349.228, 0.42, 0.50, 2400.0)
+
+
+func _melody_tape_bell() -> PackedFloat32Array:
+	return _normalize(_lowpass(_melody_bell(), 2600.0), 0.48)
+
+
+func _nasal_melody_tone(base_freq: float, duration: float, peak: float, cutoff_hz: float) -> PackedFloat32Array:
+	var total := int(SAMPLE_RATE * duration)
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.018) * exp(-4.7 * t)
+		var tone := sin(TWO_PI * base_freq * t) * 0.38
+		tone += sin(TWO_PI * base_freq * 2.0 * t) * 0.25
+		tone += sin(TWO_PI * base_freq * 3.0 * t) * 0.12
+		data[i] = _soft_clip(tone * 1.6) * env
+	return _normalize(_lowpass(data, cutoff_hz), peak)
 
 
 func _warning_hit() -> PackedFloat32Array:

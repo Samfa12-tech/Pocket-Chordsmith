@@ -12,7 +12,11 @@ import {
 import { createDefaultExportProfiles } from "./exportProfiles";
 import { createDefaultTracks } from "./tracks";
 import { createDefaultFxState } from "./fx";
+import { ensureDrumLaneMixerInPlace } from "./drumLanes";
 import { sanitizePocketChordsmithProject, SECTION_IDS, type SanitizedPcsProject } from "../compatibility/pcsSanitizer";
+import { DEFAULT_FX, DEFAULT_MASTER_VOLUME, DEFAULT_STEM_MIX } from "../../../../packages/pocket-audio-core/src/constants.js";
+import { DEFAULT_CHORD_INSTRUMENT } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
+import { DEFAULT_GUITAR_REGISTER } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 
 const STARTER_SOURCE_REF_ID = "src_pcs_starter";
 
@@ -20,7 +24,7 @@ export function createEmptyPocketDawProject(): PocketDawProject {
   const tracks = createDefaultTracks({ guitarActive: true });
   const starter = createStarterChordsmithSource("Untitled Project");
   const clip = createStarterGeneratedSectionClip(starter.ref.id, starter.pcs.sections.A.bars);
-  return {
+  const project: PocketDawProject = {
     app: POCKET_DAW_APP,
     schemaVersion: POCKET_DAW_SCHEMA_VERSION,
     dawVersion: POCKET_DAW_VERSION,
@@ -64,6 +68,8 @@ export function createEmptyPocketDawProject(): PocketDawProject {
     exportProfiles: createDefaultExportProfiles(),
     importHistory: []
   };
+  ensureDrumLaneMixerInPlace(project);
+  return project;
 }
 
 export function ensureStarterChordsmithSource(project: PocketDawProject): PocketDawProject {
@@ -162,26 +168,26 @@ function createStarterChordsmithSource(title: string, meta: Partial<ProjectMeta>
     swing: meta.swing ?? 0.04,
     resolution: meta.resolution || 4,
     chordType: "seventh",
-    chordInstrument: "pocket",
+    chordInstrument: DEFAULT_CHORD_INSTRUMENT,
     chordPlayMode: "block",
     chordRhythmMode: "sustain",
     chordOctave: 0,
     melodyPitchMode: "scale",
-    masterVolume: 0.9,
-    chordVolume: 0.74,
-    beatVolume: 0.86,
-    leadVolume: 0.82,
+    masterVolume: DEFAULT_MASTER_VOLUME,
+    chordVolume: DEFAULT_STEM_MIX.chords.volume,
+    beatVolume: DEFAULT_STEM_MIX.drums.volume,
+    leadVolume: DEFAULT_STEM_MIX.melody.volume,
     bassMode: "auto",
     guitarEnabled: true,
     guitarTone: "crunch",
-    guitarRegister: "low",
+    guitarRegister: DEFAULT_GUITAR_REGISTER,
     guitarStrumMode: "alternate",
-    guitarVolume: 0.72,
+    guitarVolume: DEFAULT_STEM_MIX.guitar.volume,
     fxDelay: 0.04,
     fxChorus: 0.18,
     fxFlanger: 0.06,
     fxReverb: 0.08,
-    fxMix: 0.65,
+    fxMix: DEFAULT_FX.mix,
     sectionBars,
     songSequence: ["A"]
   });

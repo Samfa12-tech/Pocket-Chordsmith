@@ -1,5 +1,7 @@
 import type { FxChain, FxPluginInstance, FxPluginType, FxState, JsonObject, PocketDawProject, Track } from "./schema";
 import { cloneProject } from "./dawProject";
+import { POCKET_BUILT_IN_FX } from "../../../../packages/pocket-audio-core/src/fx/built-in-fx.js";
+import { POCKET_PRO_EQ_TYPE, getPocketProEqPreset, pocketProEqPresetParameters } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
 
 export interface FxDefinition {
   type: FxPluginType;
@@ -7,23 +9,7 @@ export interface FxDefinition {
   defaultParameters: JsonObject;
 }
 
-export const BUILT_IN_FX: FxDefinition[] = [
-  { type: "utility-gain", name: "Utility Gain", defaultParameters: { gain: 1 } },
-  { type: "high-pass", name: "High Pass", defaultParameters: { frequency: 80, q: 0.7 } },
-  { type: "low-pass", name: "Low Pass", defaultParameters: { frequency: 12000, q: 0.7 } },
-  { type: "three-band-eq", name: "3-Band EQ", defaultParameters: { lowGain: 0, midGain: 0, highGain: 0, midFrequency: 1200 } },
-  { type: "compressor", name: "Compressor", defaultParameters: { threshold: -20, ratio: 3, attack: 0.006, release: 0.16 } },
-  { type: "limiter", name: "Limiter", defaultParameters: { threshold: -4, ratio: 18, attack: 0.002, release: 0.08 } },
-  { type: "noise-gate", name: "Noise Gate", defaultParameters: { threshold: -48, reduction: 0.18 } },
-  { type: "saturation", name: "Saturation", defaultParameters: { drive: 1.8, mix: 0.65 } },
-  { type: "bitcrusher", name: "Bitcrusher", defaultParameters: { bits: 8, mix: 0.45 } },
-  { type: "delay", name: "Delay", defaultParameters: { time: 0.22, feedback: 0.28, mix: 0.32 } },
-  { type: "ping-pong-delay", name: "Ping-Pong Delay", defaultParameters: { time: 0.28, feedback: 0.34, mix: 0.28 } },
-  { type: "reverb", name: "Reverb", defaultParameters: { decay: 1.8, mix: 0.24 } },
-  { type: "chorus", name: "Chorus", defaultParameters: { rate: 0.8, depth: 0.012, mix: 0.35 } },
-  { type: "phaser", name: "Phaser", defaultParameters: { rate: 0.45, depth: 650, mix: 0.32 } },
-  { type: "tremolo-autopan", name: "Tremolo / AutoPan", defaultParameters: { rate: 4, depth: 0.38 } }
-];
+export const BUILT_IN_FX = POCKET_BUILT_IN_FX as unknown as FxDefinition[];
 
 export function createDefaultFxState(tracks: Track[]): FxState {
   return {
@@ -59,6 +45,15 @@ export function addFxSlot(project: PocketDawProject, trackId: string, type: stri
   return next;
 }
 
+export function addFxSlotToChain(project: PocketDawProject, chainId: string, type: string): PocketDawProject {
+  const next = cloneProject(project);
+  const def = BUILT_IN_FX.find((item) => item.type === type);
+  const chain = next.fx?.chains.find((item) => item.id === chainId);
+  if (!def || !chain) return next;
+  chain.slots.push(createFxPluginInstance(def, chain.slots.length + 1));
+  return next;
+}
+
 export function toggleFxSlot(project: PocketDawProject, chainId: string, slotId: string): PocketDawProject {
   const next = cloneProject(project);
   const slot = next.fx?.chains.find((chain) => chain.id === chainId)?.slots.find((item) => item.id === slotId);
@@ -73,9 +68,34 @@ export function removeFxSlot(project: PocketDawProject, chainId: string, slotId:
   return next;
 }
 
+export function setFxSlotParameter(project: PocketDawProject, chainId: string, slotId: string, parameter: string, value: number | boolean): PocketDawProject {
+  const safeParameter = String(parameter || "").replace(/[^a-z0-9_-]+/gi, "");
+  if (!safeParameter) return project;
+  const next = cloneProject(project);
+  const slot = next.fx?.chains.find((chain) => chain.id === chainId)?.slots.find((item) => item.id === slotId);
+  if (!slot) return next;
+  slot.parameters = { ...(slot.parameters || {}), [safeParameter]: value };
+  return next;
+}
+
+export function setPocketProEqPreset(project: PocketDawProject, chainId: string, slotId: string, presetId: string): PocketDawProject {
+  const next = cloneProject(project);
+  const slot = next.fx?.chains.find((chain) => chain.id === chainId)?.slots.find((item) => item.id === slotId);
+  if (!slot || slot.type !== POCKET_PRO_EQ_TYPE) return next;
+  const preset = getPocketProEqPreset(presetId);
+  slot.presetId = preset.id;
+  slot.parameters = pocketProEqPresetParameters(preset.id);
+  return next;
+}
+
 export function getTrackFxChain(project: PocketDawProject, track: Track | null | undefined): FxChain | null {
   if (!track?.fxChainId) return null;
   return project.fx?.chains.find((chain) => chain.id === track.fxChainId) || null;
+}
+
+export function getFxChainById(project: PocketDawProject, chainId: string | null | undefined): FxChain | null {
+  if (!chainId) return null;
+  return project.fx?.chains.find((chain) => chain.id === chainId) || null;
 }
 
 function createFxPluginInstance(def: FxDefinition, index: number): FxPluginInstance {

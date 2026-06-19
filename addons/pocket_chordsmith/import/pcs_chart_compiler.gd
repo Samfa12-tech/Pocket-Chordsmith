@@ -185,7 +185,7 @@ func _compile_drum_events(project: Dictionary, section_id: String, arrangement_i
 					var hit_level := next_level if triplet_index == 2 else level
 					events.append(_make_drum_event(
 						tick + int(offsets[triplet_index]),
-						max(1, int(round(float(span_ticks) / 3.0 * 0.72))),
+						_drum_tuplet_duration_ticks(project, track_id, hit_level, span_ticks),
 						section_id,
 						arrangement_index,
 						track_index,
@@ -196,12 +196,13 @@ func _compile_drum_events(project: Dictionary, section_id: String, arrangement_i
 						true,
 						triplet_index == 1,
 						str(project.get("audioProfile", "standard")),
-						str(project.get("lofiPreset", ""))
+						str(project.get("lofiPreset", "")),
+						str(project.get("drumKit", "classic"))
 					))
 			else:
 				events.append(_make_drum_event(
 					tick,
-					max(1, int(round(float(_step_duration_ticks(project, step)) * 0.70))),
+					_drum_duration_ticks(project, track_id, level, step),
 					section_id,
 					arrangement_index,
 					track_index,
@@ -212,9 +213,28 @@ func _compile_drum_events(project: Dictionary, section_id: String, arrangement_i
 					false,
 					false,
 					str(project.get("audioProfile", "standard")),
-					str(project.get("lofiPreset", ""))
+					str(project.get("lofiPreset", "")),
+					str(project.get("drumKit", "classic"))
 				))
 	return events
+
+
+func _drum_duration_ticks(project: Dictionary, track_id: String, level: int, step: int) -> int:
+	var step_ticks := _step_duration_ticks(project, step)
+	var cap := _seconds_to_ticks(project, 0.025)
+	if track_id == "kick":
+		cap = _seconds_to_ticks(project, 0.10)
+	elif track_id == "snare":
+		cap = _seconds_to_ticks(project, 0.08)
+	elif level > 1:
+		cap = _seconds_to_ticks(project, 0.12)
+	var step_mul := 0.75 if track_id == "hat" and level > 1 else 0.70
+	return max(1, min(cap, int(round(float(step_ticks) * step_mul))))
+
+
+func _drum_tuplet_duration_ticks(project: Dictionary, track_id: String, level: int, span_ticks: int) -> int:
+	var cap := _seconds_to_ticks(project, 0.12) if track_id == "hat" and level > 1 else _seconds_to_ticks(project, 0.08)
+	return max(1, min(cap, int(round(float(span_ticks) / 3.0 * 0.70))))
 
 
 func _compile_bass_events(project: Dictionary, section_id: String, arrangement_index: int, section_start_tick: int) -> Array[Dictionary]:
@@ -467,7 +487,7 @@ func _compile_melody_events(project: Dictionary, section_id: String, arrangement
 	return events
 
 
-func _make_drum_event(tick: int, duration_ticks: int, section_id: String, arrangement_index: int, track_index: int, track_id: String, level: int, source_step: int, source_bar: int, tuplet: bool, generated: bool, audio_profile := "standard", lofi_preset := "") -> Dictionary:
+func _make_drum_event(tick: int, duration_ticks: int, section_id: String, arrangement_index: int, track_index: int, track_id: String, level: int, source_step: int, source_bar: int, tuplet: bool, generated: bool, audio_profile := "standard", lofi_preset := "", drum_kit := "classic") -> Dictionary:
 	var midi_note := 36
 	if track_id == "snare":
 		midi_note = 38
@@ -500,6 +520,7 @@ func _make_drum_event(tick: int, duration_ticks: int, section_id: String, arrang
 			"generated": generated,
 			"audio_profile": audio_profile,
 			"lofi_preset": lofi_preset,
+			"drum_kit": drum_kit,
 		},
 		source_step,
 		source_bar,
@@ -697,16 +718,16 @@ func _chord_rhythm_starts(project: Dictionary, bar_start_tick: int) -> Array:
 	var time_sig := int(project.get("timeSig", 4))
 	var mode := str(project.get("chordRhythmMode", "sustain"))
 	if mode == "sustain":
-		starts.append([bar_start_tick, time_sig * TICKS_PER_QUARTER])
+		starts.append([bar_start_tick, max(1, int(round(float(time_sig * TICKS_PER_QUARTER) * 0.92)))])
 	elif mode == "quarter":
 		for beat_index in range(time_sig):
-			starts.append([bar_start_tick + beat_index * TICKS_PER_QUARTER, TICKS_PER_QUARTER])
+			starts.append([bar_start_tick + beat_index * TICKS_PER_QUARTER, max(1, int(round(float(TICKS_PER_QUARTER) * 0.90)))])
 	else:
-		starts.append([bar_start_tick, TICKS_PER_QUARTER * 2])
+		starts.append([bar_start_tick, max(1, int(round(float(TICKS_PER_QUARTER) * 1.80)))])
 		if time_sig >= 4:
-			starts.append([bar_start_tick + TICKS_PER_QUARTER * 2, TICKS_PER_QUARTER * 2])
+			starts.append([bar_start_tick + TICKS_PER_QUARTER * 2, max(1, int(round(float(TICKS_PER_QUARTER) * 1.80)))])
 		elif time_sig == 3:
-			starts.append([bar_start_tick + int(round(1.5 * TICKS_PER_QUARTER)), int(round(1.5 * TICKS_PER_QUARTER))])
+			starts.append([bar_start_tick + int(round(1.5 * TICKS_PER_QUARTER)), max(1, int(round(float(TICKS_PER_QUARTER) * 1.20)))])
 	return starts
 
 
@@ -731,8 +752,7 @@ func _bass_phrase_info(project: Dictionary, section_id: String, step: int) -> Di
 		while index < step_count and _bool_at(hold_track, index):
 			duration_ticks += _step_duration_ticks(project, index)
 			index += 1
-	if not bool(project.get("midiExactDurations", true)):
-		duration_ticks = max(1, int(round(float(duration_ticks) * 0.94)))
+	duration_ticks = max(1, int(round(float(duration_ticks) * 0.94)))
 	return {"duration_ticks": max(1, duration_ticks), "slide_midi": slide_midi, "slide_offset_ticks": slide_offset_ticks}
 
 
@@ -763,8 +783,7 @@ func _melody_phrase_info(project: Dictionary, section_id: String, track_index: i
 		while index < step_count and _bool_at(hold_track, index):
 			duration_ticks += _step_duration_ticks(project, index)
 			index += 1
-	if not bool(project.get("midiExactDurations", true)):
-		duration_ticks = max(1, int(round(float(duration_ticks) * 0.92)))
+	duration_ticks = max(1, int(round(float(duration_ticks) * 0.92)))
 	return {"duration_ticks": max(1, duration_ticks), "slide_midi": slide_midi, "slide_offset_ticks": slide_offset_ticks}
 
 
@@ -889,18 +908,24 @@ func _guitar_power_chord_notes(project: Dictionary, degree: int) -> Array[int]:
 func _guitar_duration_ticks(project: Dictionary, section_id: String, pattern: Array, step: int, articulation: String) -> int:
 	var step_ticks := _step_duration_ticks(project, step)
 	if articulation == "chug":
-		return max(1, int(round(float(step_ticks) * 0.48)))
+		return max(_seconds_to_ticks(project, 0.055), min(_seconds_to_ticks(project, 0.16), int(round(float(step_ticks) * 0.58))))
 	if articulation == "scratch":
-		return max(1, int(round(float(step_ticks) * 0.25)))
+		return max(_seconds_to_ticks(project, 0.035), min(_seconds_to_ticks(project, 0.075), int(round(float(step_ticks) * 0.42))))
 	var duration_ticks := step_ticks
 	var index := step + 1
 	var step_count := _section_step_count(project, section_id)
 	while index < step_count and _guitar_articulation_at(pattern, index) == "hold":
 		duration_ticks += _step_duration_ticks(project, index)
 		index += 1
-	if not bool(project.get("midiExactDurations", true)):
-		duration_ticks = max(1, int(round(float(duration_ticks) * 0.90)))
+	var gate := 0.98 if articulation == "accent" else 0.92
+	duration_ticks = int(round(float(duration_ticks) * gate))
+	duration_ticks = max(_seconds_to_ticks(project, 0.16), min(_seconds_to_ticks(project, 1.8), duration_ticks))
 	return max(1, duration_ticks)
+
+
+func _seconds_to_ticks(project: Dictionary, seconds: float) -> int:
+	var bpm := max(1.0, float(project.get("bpm", 120)))
+	return max(1, int(round(seconds * bpm / 60.0 * float(TICKS_PER_QUARTER))))
 
 
 func _guitar_velocity(articulation: String) -> int:

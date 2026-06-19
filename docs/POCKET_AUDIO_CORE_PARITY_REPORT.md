@@ -2,7 +2,7 @@
 
 Date: 2026-06-11
 
-This report covers the first Pocket Audio Core parity harness. It proves deterministic core fixture handling and render metrics inside the new package. It does not yet prove exact parity against the live Pocket Chordsmith browser app.
+This report covers the first Pocket Audio Core parity harness. It proves deterministic core fixture handling, render metrics, and current Chordsmith browser trace agreement after Chordsmith imports and re-exports the fixture project.
 
 ## Fixtures
 
@@ -31,11 +31,13 @@ Each fixture has:
 
 ## Event Parity Status
 
-Status: core-internal golden event parity passes.
+Status: core-internal golden event parity passes, and Chordsmith-normalized browser trace parity passes.
 
 The strict golden layer compares section transitions, bar/beat positions, event time, duration, ticks, stem, type, pitch metadata, velocity/accent, tuplets, instrument/tone metadata, articulation and pan where present.
 
-Known limitation: these traces are generated from the new core, not yet extracted from the current Pocket Chordsmith v67 app. They prove deterministic behavior and regression safety inside the core. They do not yet prove exact agreement with the single-file app.
+`npm run compare:chordsmith-browser-trace` now opens Pocket Chordsmith v68 in Playwright, imports every committed raw fixture through `window.PocketChordsmithParityTrace.fromProject()`, and verifies that Pocket Audio Core reproduces the app-normalized event trace from the exported Chordsmith project. This proves the shared core can follow the current app's import/export surface.
+
+Known limitation: raw fixture JSON still drifts from Chordsmith's browser import interpretation for legacy/compact step grids. Chordsmith currently expands some older 16-step fixture grids into its 64-cell section canvas, while the raw core fixture normalizer treats them as one-bar advanced grids. The comparison command prints this raw drift intentionally; use `--strict-raw` only when that migration decision has been resolved.
 
 ## Audio Metrics Status
 
@@ -60,19 +62,17 @@ Known limitation: the renderer is a basic dependency-free PCM renderer. It is us
 - Chordsmith delay, chorus, flanger, reverb and sidechain are stored and exposed but not yet fully rendered with parity.
 - Pocket DJ build/drop macros are represented through API seams but not golden-tested as live macro automation yet.
 - Godot parity is not proven; Godot should still use generated assets/manifests later rather than native preview as exact parity.
-- App timeline extraction is still manual because the current browser app timeline logic is embedded inside a single HTML file with UI/global state.
+- Raw fixture interpretation still differs from Chordsmith browser import for some legacy/compact grids; app-normalized browser exports compare cleanly against core.
 
 ## App Comparison
 
-Automatic comparison against the current Pocket Chordsmith app is not implemented yet. The current app code is tangled with DOM state, global mutable state, Web Audio globals and export UI. The next parity step should add a dev-only app trace exporter or fixture adapter that can run `buildSequenceEvents()` from v67 under a controlled VM/browser harness.
+Pocket Chordsmith v68 exposes `window.PocketChordsmithParityTrace` for browser harnesses. `current()` returns the current app project plus the normalized `buildSequenceEvents()` trace, and `fromProject(rawProject, options)` imports a supplied project, traces it, then restores the user's current project. This gives DAW/Core work a direct current-app trace path without adding UI or changing saves.
 
-Manual comparison needed:
+`packages/pocket-audio-core/scripts/compare-chordsmith-browser-trace.mjs` runs the committed fixture set through that hook. The default check is strict for Chordsmith-normalized exports and diagnostic for raw fixture drift; `--strict-raw` can be used later when raw fixture migration semantics are expected to match too.
 
-- export the same fixture projects from Pocket Chordsmith v67
-- compare event counts by stem/type
-- compare section start times and durations
-- compare tuplets, holds, slides and guitar events
+- compare Pocket DAW imported event skeletons against the same Chordsmith browser trace
 - compare WAV duration and rough audio metrics
+- perform installed-app A/B listening with the same fixture exports
 
 ## Commands
 
@@ -84,6 +84,7 @@ npm run update:golden
 npm run test:core
 npm run test:golden
 npm run test:render
+npm run compare:chordsmith-browser-trace
 npm test
 npm run build
 ```
@@ -94,6 +95,7 @@ Results on this pass:
 - `npm run test:core`: passed 12 tests.
 - `npm run test:golden`: passed golden event trace coverage. On this Node build, the name-pattern command still executed the full golden test file, and all 25 checks passed.
 - `npm run test:render`: passed render metrics coverage. On this Node build, the name-pattern command still executed the full golden test file, and all 25 checks passed.
+- `npm run compare:chordsmith-browser-trace`: passed Chordsmith-normalized browser trace parity for all 12 fixtures; raw fixture drift remains printed as diagnostic evidence.
 - `npm test`: passed 37 tests.
 - `npm run build`: generated `dist/pocket-audio-core.esm.js` and `dist/pocket-audio-core.iife.js`.
 - Browser smoke: served `packages/pocket-audio-core` on `http://127.0.0.1:8766`, opened `examples/basic-html/index.html`, clicked `Load Demo`, `Play Events`, `Queue B`, `Drums -6 dB`, and `Render WAV`; all checks passed and browser console error logs were empty.
@@ -111,4 +113,4 @@ Pocket Chordsmith and Pocket DJ should not be integrated into the core until:
 - golden event tests pass
 - render duration tests pass for multiple fixtures
 - at least one browser smoke test plays the example without console errors
-- a current-app comparison path is added or the remaining manual comparison is explicitly accepted as a limitation
+- `npm run compare:chordsmith-browser-trace` passes, with raw drift reviewed when fixture/import migration behavior is being changed

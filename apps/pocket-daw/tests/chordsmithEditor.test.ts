@@ -19,6 +19,7 @@ import {
   setMelodySolo,
   setSectionBars,
   appendChordsmithSection,
+  applyDrumPreset,
   setSectionChord,
   toggleBassAccent,
   toggleBassHold,
@@ -27,6 +28,7 @@ import {
   toggleMelodySlide,
   toggleMelodyTuplet
 } from "../src/daw/chordsmithEditor";
+import { DEFAULT_MASTER_VOLUME, DEFAULT_STEM_MIX } from "../../../packages/pocket-audio-core/src/constants.js";
 
 describe("Chordsmith visual sequencer edits", () => {
   it("starts new Pocket DAW projects with an editable Chordsmith source and Section A clip", () => {
@@ -38,6 +40,16 @@ describe("Chordsmith visual sequencer edits", () => {
       sectionId: "A",
       sourceRefId: project.sourceRefs[0].id,
       barLength: 4
+    });
+    expect(project.tracks.find((track) => track.id === "master")?.volume).toBe(DEFAULT_MASTER_VOLUME);
+    expect(project.tracks.find((track) => track.id === "chords")?.volume).toBe(DEFAULT_STEM_MIX.chords.volume);
+    expect(project.tracks.find((track) => track.id === "melody")?.volume).toBe(DEFAULT_STEM_MIX.melody.volume);
+    expect(project.tracks.find((track) => track.id === "guitar")?.volume).toBe(DEFAULT_STEM_MIX.guitar.volume);
+    expect(getPrimaryChordsmithSource(project)).toMatchObject({
+      masterVolume: DEFAULT_MASTER_VOLUME,
+      chordVolume: DEFAULT_STEM_MIX.chords.volume,
+      leadVolume: DEFAULT_STEM_MIX.melody.volume,
+      guitarVolume: DEFAULT_STEM_MIX.guitar.volume
     });
 
     project = cycleDrumStep(project, "A", "kick", 0);
@@ -98,6 +110,25 @@ describe("Chordsmith visual sequencer edits", () => {
     expect(events.some((event) => event.kind === "guitar" && event.step === 1 && event.articulation === "chug")).toBe(true);
   });
 
+  it("applies Chordsmith drum presets to kick, snare and hat while preserving bass", () => {
+    let project = createDemoProject();
+    project = cycleDrumTuplet(project, "A", "hat", 1);
+    project = cycleBassStep(project, "A", 2);
+    project = applyDrumPreset(project, "A", "lofi_backbeat_76");
+
+    const pcs = getPrimaryChordsmithSource(project);
+    const section = pcs?.sections.A;
+    const original = project.sourceRefs[0].original as Record<string, unknown>;
+
+    expect(section?.grid.kick.slice(0, 16)).toEqual([1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0]);
+    expect(section?.grid.snare.slice(0, 16)).toEqual([0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1]);
+    expect(section?.grid.hat.slice(0, 16)).toEqual([2, 0, 1, 0, 1, 0, 1, 0, 2, 0, 1, 0, 1, 0, 1, 0]);
+    expect(section?.gridTuplets.hat.slice(0, 16).some(Boolean)).toBe(false);
+    expect(section?.bassNotes[2]).toBe(0);
+    expect(((original.gridA as Record<string, number[]>).kick).slice(0, 16)).toEqual(section?.grid.kick.slice(0, 16));
+    expect(((original.gridTupletsA as Record<string, boolean[]>).hat).slice(0, 16).some(Boolean)).toBe(false);
+  });
+
   it("changes a source-backed melody lane instrument", () => {
     let project = createDemoProject();
     project.tracks.find((track) => track.id === "melody")!.metadata = { chordsmithMelodyTrackIndex: 0 };
@@ -110,6 +141,26 @@ describe("Chordsmith visual sequencer edits", () => {
     expect((original.melodyInstrumentsA as string[])[0]).toBe("harmonica");
     expect(project.tracks.find((track) => track.id === "melody")?.name).toBe("Melody 1 - Harmonica");
     expect(renderTimelineEvents(project).some((event) => event.kind === "melody" && event.instrument === "harmonica")).toBe(true);
+  });
+
+  it("validates edited melody instruments against the shared Pocket Audio registry", () => {
+    let project = createDemoProject();
+    project.tracks.find((track) => track.id === "melody")!.metadata = { chordsmithMelodyTrackIndex: 0 };
+
+    project = setMelodyInstrument(project, "A", 0, "tape_bell");
+    let pcs = getPrimaryChordsmithSource(project);
+    let original = project.sourceRefs[0].original as Record<string, unknown>;
+    expect(pcs?.sections.A.melodyInstruments[0]).toBe("tape_bell");
+    expect((original.melodyInstrumentsA as string[])[0]).toBe("tape_bell");
+    expect(project.tracks.find((track) => track.id === "melody")?.metadata?.chordsmithInstrument).toBe("tape_bell");
+    expect(renderTimelineEvents(project).some((event) => event.kind === "melody" && event.instrument === "tape_bell")).toBe(true);
+
+    project = setMelodyInstrument(project, "A", 0, "definitely not a shared voice");
+    pcs = getPrimaryChordsmithSource(project);
+    original = project.sourceRefs[0].original as Record<string, unknown>;
+    expect(pcs?.sections.A.melodyInstruments[0]).toBe("pulse");
+    expect((original.melodyInstrumentsA as string[])[0]).toBe("pulse");
+    expect(project.tracks.find((track) => track.id === "melody")?.metadata?.chordsmithInstrument).toBe("pulse");
   });
 
   it("edits later-page Chordsmith steps and preserves articulations in the original source", () => {

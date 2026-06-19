@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
-import { createDemoProject } from "../src/demo/demoProject";
+import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
+import { addDrumLaneFx, DRUM_LANE_DEFS } from "../src/daw/drumLanes";
+import { addFxSlot, setFxSlotParameter } from "../src/daw/fx";
+import type { RenderedEvent } from "../src/audio/eventRenderer";
 import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioInvokeApi, type NativeAudioStatus } from "../src/native/audioPlayback";
 
 function status(overrides: Partial<NativeAudioStatus> = {}): NativeAudioStatus {
@@ -33,8 +36,78 @@ describe("native audio playback bridge", () => {
     expect(payload.startSeconds).toBe(1.25);
     expect(payload.sampleRate).toBe(project.project.sampleRate);
     expect(payload.tracks.find((track) => track.id === "bass")).toMatchObject({ mute: false, solo: false });
+    expect(payload.tracks.find((track) => track.id === "bass")?.fxChainId).toBe("fx_bass");
     expect(payload.events.length).toBe(events.length);
     expect(payload.events.some((event) => event.kind === "guitar" && event.midiNotes.length > 0)).toBe(true);
+    expect(payload.events.some((event) => event.kind === "guitar" && event.instrument === "crunch")).toBe(true);
+    expect(payload.fxChains.some((chain) => chain.ownerTrackId === "master")).toBe(true);
+    expect(payload.sidechain).toEqual({ enabled: true, amount: 0.35, targetTrackId: "chords", triggerKind: "kick" });
+  });
+
+  it("passes editable EQ chains and drum lane ownership to the native runtime", () => {
+    let project = addFxSlot(createDemoProject(), "master", "parametric-eq");
+    const masterChain = project.fx.chains.find((chain) => chain.ownerTrackId === "master");
+    const masterSlot = masterChain?.slots[0];
+    project = setFxSlotParameter(project, masterChain?.id || "", masterSlot?.id || "", "highMidGain", 2.4);
+    project = addDrumLaneFx(project, "snare", "parametric-eq");
+
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
+    const nativeMasterEq = payload.fxChains.find((chain) => chain.ownerTrackId === "master")?.slots.find((slot) => slot.type === "parametric-eq");
+    const nativeSnareEq = payload.fxChains.find((chain) => chain.metadata?.drumLaneId === "snare")?.slots.find((slot) => slot.type === "parametric-eq");
+
+    expect(nativeMasterEq?.parameters.highMidGain).toBe(2.4);
+    expect(nativeSnareEq?.type).toBe("parametric-eq");
+    expect(payload.events.some((event) => event.kind === "snare" && event.drumLane === "snare")).toBe(true);
+  });
+
+  it("can route every Chordsmith live drum pad lane through native per-lane FX", () => {
+    const project = DRUM_LANE_DEFS.reduce(
+      (next, lane) => addDrumLaneFx(next, lane.id, "parametric-eq"),
+      createDemoProject()
+    );
+    const livePadEvents: RenderedEvent[] = DRUM_LANE_DEFS.map((lane, index) => ({
+      id: `live_${lane.id}`,
+      clipId: "live-kit",
+      kind: lane.id,
+      trackId: "drums",
+      role: "drums",
+      time: index * 0.1,
+      duration: 0.12,
+      bar: 1,
+      step: index,
+      velocity: 0.7,
+      pan: lane.defaultPan,
+      drumLane: lane.id,
+      accent: lane.chordsmithRecordLevel > 1
+    }));
+
+    const payload = buildNativeAudioStartPayload(project, livePadEvents, 0);
+
+    expect(payload.events.map((event) => [event.kind, event.drumLane])).toEqual(DRUM_LANE_DEFS.map((lane) => [lane.id, lane.id]));
+    expect(
+      payload.fxChains
+        .filter((chain) => chain.metadata?.parentTrackId === "drums")
+        .map((chain) => chain.metadata?.drumLaneId)
+    ).toEqual(DRUM_LANE_DEFS.map((lane) => lane.id));
+    DRUM_LANE_DEFS.forEach((lane) => {
+      const chain = payload.fxChains.find((item) => item.metadata?.drumLaneId === lane.id);
+      expect(chain?.slots[0]?.type).toBe("parametric-eq");
+    });
+  });
+
+  it("preserves lofi sound metadata for the native installed-app synth", () => {
+    const project = createLofiTemplateProject();
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
+
+    expect(payload.events.some((event) => event.kind === "texture" && event.audioProfile === "lofi_chill" && event.lofiPreset === "lofi_study_room")).toBe(true);
+    expect(payload.events.find((event) => event.kind === "texture")?.lofiTexture).toMatchObject({ enabled: true, tapeHiss: 0.05, vinylCrackle: 0.08 });
+    expect(payload.events.find((event) => event.kind === "texture")?.step).toEqual(expect.any(Number));
+    expect(payload.events.some((event) => event.kind === "kick" && event.drumKit === "lofi_dusty")).toBe(true);
+    expect(payload.events.some((event) => event.kind === "bass" && event.bassTone === "warm_sub")).toBe(true);
+    expect(payload.events.some((event) => event.kind === "chord" && event.instrument === "dusty_rhodes")).toBe(true);
+    expect(payload.events.some((event) => event.kind === "melody" && event.instrument === "tape_bell")).toBe(true);
+    expect(payload.fxChains.find((chain) => chain.ownerTrackId === "drums")?.slots[0]).toMatchObject({ type: "parametric-eq", presetId: "lofi-drum-softener" });
+    expect(payload.fxChains.find((chain) => chain.ownerTrackId === "master")?.slots[0]).toMatchObject({ type: "parametric-eq", presetId: "lofi-soft-rolloff" });
   });
 
   it("passes cached WAV assets and timeline regions to the native runtime", () => {

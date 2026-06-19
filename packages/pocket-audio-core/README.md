@@ -13,7 +13,7 @@ code.
 - Core version: `0.1.0-scaffold`
 - Supported source prefix: `PCS1:`
 - Initial source schema target: Pocket Chordsmith schema `16`
-- Integration status: first-pass bridges exist for Pocket Chordsmith v68 and Pocket DJ v1g; Pocket DAW and Godot consume shared lofi metadata through their compatibility/import paths
+- Integration status: first-pass bridges exist for Pocket Chordsmith v68 and Pocket DJ v1g; Pocket DJ, Pocket DAW and Godot consume shared lofi metadata through their compatibility/import paths
 - Render status: basic PCM/WAV and stem output using simplified procedural events
 - Live playback status: browser event scheduler with simple Web Audio tones, not parity synths
 - Game runtime status: `profile:"game"` supports music states, stingers, intensity, ducking, lowpass, stem controls, and diagnostics
@@ -21,6 +21,22 @@ code.
 ## Lofi Chill Pack
 
 The shared lofi/chillhop preset spec lives in `src/presets/lofi.js` and is exported from the package root. It defines the `lofi_chill` audio profile, eight preset IDs, soft instrument/tone IDs, lofi drum kit and groove IDs, texture defaults, and game intensity hints.
+
+The shared procedural voice registries live in `src/sounds/lofi-registry.js` and `src/sounds/instruments.js`. They include the classic Chordsmith bass voice, lofi drum kits, bass tones, the full Chordsmith chord/melody instrument IDs, and the matching WebAudio voice curves. Add new sound IDs there first, then update app renderers against that registry. `validatePocketSoundRegistry()`, `validateLofiSoundRegistry()`, and `validatePocketInstrumentRegistry()` are covered by core and surface-drift tests so missing voice definitions are caught early.
+
+When changing shared sound IDs, voice curves, or Pocket Pro EQ bands, run `npm run generate:sound-surfaces` from this package. It refreshes the generated Godot sample-preview constants and Pocket DAW native Rust sound recipes from the same core registries. CI/local release checks can use `npm run verify:sound-surfaces` to catch stale generated files before DAW, Chordsmith, DJ, and Godot drift apart.
+
+For a fuller parity gate after changing sound features, run `npm run verify:family-parity` from this package. It checks generated sound surfaces, cross-app surface drift, Chordsmith browser trace parity, core render/Godot-pack fixtures, Pocket DAW Chordsmith import/render/export parity tests, and DAW-vs-Chordsmith browser event parity in one pass.
+
+The shared guitar surface lives in `src/sounds/guitar.js`. It defines Chordsmith-compatible guitar tones, tone curves, registers, strum modes, pattern presets, fill styles, and the DAW step-edit cycle. Pocket DAW imports these definitions for Chordsmith import sanitizing, editor UI options, and WebAudio guitar rendering so `metal` and `western_twang` stay available wherever Chordsmith projects are edited or played.
+
+Pocket DJ keeps local fallback constants for standalone use, but packaged/manual imports and handoffs now let Pocket Audio Core load before lofi project normalisation and read shared lofi preset, chord, melody, drum-kit, and bass-tone IDs from the package root when available.
+
+The shared drum groove preset table lives in `src/patterns/drum-presets.js`. Pocket DAW imports that module for its Chordsmith beat-preset picker, and the core surface-drift tests compare it against the current Pocket Chordsmith HTML constants so future groove additions do not quietly split across apps.
+
+The shared Chordsmith mix defaults live in `src/constants.js`, and Chordsmith WAV export staging lives in `src/performance/stem-mix.js`. Keep user-facing stem defaults and offline export headroom separate: DAW, DJ, Godot and Core should consume the shared helpers instead of copying stem gain ratios into app code.
+
+`npm run compare:chordsmith-browser-trace` opens the current Chordsmith v68 browser app in Playwright, imports each committed fixture through `window.PocketChordsmithParityTrace.fromProject()`, and checks that Pocket Audio Core reproduces the Chordsmith-normalized event trace. The command also prints raw fixture drift, which is expected while legacy/raw Chordsmith JSON and app import rescaling still differ.
 
 `normalisePocketChordsmithProject()` preserves optional lofi metadata without bumping schema `16`: `audioProfile`, `lofiPreset`, `stylePreset`, `lofiTexture`, `drumKit`, `drumGroovePreset`, and `bassTone`. Missing fields still normalise to the standard clean profile.
 
@@ -86,12 +102,13 @@ const kit = await createGodotExportKit(pcs1OrJson, {
 });
 ```
 
-The kit returns a manifest plus WAV blobs for `STEM_SYNC`, `LOOP_KIT`, `HYBRID`, or `PROCEDURAL_PREVIEW` workflows. See `docs/GODOT_PARITY_EXPORT_WORKFLOW.md` and `examples/godot-export-demo/README.md`.
+The kit returns a manifest plus WAV blobs for `STEM_SYNC`, `LOOP_KIT`, `HYBRID`, or `PROCEDURAL_PREVIEW` workflows. Lofi manifests preserve `audioProfile`, preset, texture, drum-kit, bass-tone, and instrument IDs, and include the shared lofi sound registry for game-pack tooling and preview runtimes. See `docs/GODOT_PARITY_EXPORT_WORKFLOW.md` and `examples/godot-export-demo/README.md`.
 
 ## Commands
 
 ```powershell
 npm test
+npm run compare:chordsmith-browser-trace
 npm run build
 ```
 

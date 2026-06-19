@@ -39,13 +39,13 @@ export const LOFI_DRUM_GROOVE_PRESETS = Object.freeze([
 ]);
 
 export const DEFAULT_LOFI_TEXTURE = Object.freeze({
-  enabled: true,
+  enabled: false,
   vinylCrackle: 0.08,
   tapeHiss: 0.05,
-  wowFlutter: 0.035,
+  wowFlutter: 0.03,
   warmth: 0.16,
   lowPassAge: 0.22,
-  bitCrush: 0.015
+  bitCrush: 0.01
 });
 
 export const LOFI_STYLE_PRESETS = Object.freeze({
@@ -67,7 +67,7 @@ export const LOFI_STYLE_PRESETS = Object.freeze({
     drumKit: "lofi_dusty",
     drumGroovePreset: "lofi_backbeat_76",
     fx: Object.freeze({ delay: 0.12, chorus: 0.22, flanger: 0.02, reverb: 0.18, mix: 0.58, sidechain: 0.24 }),
-    texture: Object.freeze({ vinylCrackle: 0.09, tapeHiss: 0.04, wowFlutter: 0.03, warmth: 0.18, lowPassAge: 0.24, bitCrush: 0.01 }),
+    texture: Object.freeze({ enabled: true, vinylCrackle: 0.09, tapeHiss: 0.04, wowFlutter: 0.03, warmth: 0.18, lowPassAge: 0.24, bitCrush: 0.01 }),
     intensityHints: Object.freeze({ menu: "A", explore: "B", night: "C", rain: "C", full: "D" })
   }),
   lofi_rainy_window: Object.freeze({
@@ -88,7 +88,7 @@ export const LOFI_STYLE_PRESETS = Object.freeze({
     drumKit: "lofi_brush",
     drumGroovePreset: "lofi_brush_shuffle",
     fx: Object.freeze({ delay: 0.18, chorus: 0.12, flanger: 0.02, reverb: 0.28, mix: 0.62, sidechain: 0.18 }),
-    texture: Object.freeze({ vinylCrackle: 0.04, tapeHiss: 0.1, wowFlutter: 0.025, warmth: 0.14, lowPassAge: 0.2, bitCrush: 0 }),
+    texture: Object.freeze({ enabled: true, vinylCrackle: 0.04, tapeHiss: 0.1, wowFlutter: 0.025, warmth: 0.14, lowPassAge: 0.2, bitCrush: 0 }),
     intensityHints: Object.freeze({ menu: "A", explore: "B", night: "C", rain: "C", full: "D" })
   }),
   lofi_moon_garden: Object.freeze({
@@ -109,7 +109,7 @@ export const LOFI_STYLE_PRESETS = Object.freeze({
     drumKit: "lofi_tape_soft",
     drumGroovePreset: "lofi_half_time_soft",
     fx: Object.freeze({ delay: 0.14, chorus: 0.26, flanger: 0.03, reverb: 0.24, mix: 0.62, sidechain: 0.2 }),
-    texture: Object.freeze({ vinylCrackle: 0.06, tapeHiss: 0.05, wowFlutter: 0.045, warmth: 0.22, lowPassAge: 0.18, bitCrush: 0.01 }),
+    texture: Object.freeze({ enabled: true, vinylCrackle: 0.06, tapeHiss: 0.05, wowFlutter: 0.045, warmth: 0.22, lowPassAge: 0.18, bitCrush: 0.01 }),
     intensityHints: Object.freeze({ menu: "A", explore: "B", night: "C", full: "D" })
   }),
   lofi_koi_pond: Object.freeze({
@@ -130,7 +130,7 @@ export const LOFI_STYLE_PRESETS = Object.freeze({
     drumKit: "lofi_tape_soft",
     drumGroovePreset: "lofi_sparse_clicks",
     fx: Object.freeze({ delay: 0.16, chorus: 0.2, flanger: 0.02, reverb: 0.26, mix: 0.58, sidechain: 0.14 }),
-    texture: Object.freeze({ vinylCrackle: 0.035, tapeHiss: 0.045, wowFlutter: 0.02, warmth: 0.18, lowPassAge: 0.16, bitCrush: 0 }),
+    texture: Object.freeze({ enabled: true, vinylCrackle: 0.035, tapeHiss: 0.045, wowFlutter: 0.02, warmth: 0.18, lowPassAge: 0.16, bitCrush: 0 }),
     intensityHints: Object.freeze({ menu: "A", explore: "B", night: "C", full: "D" })
   }),
   lofi_train_window: Object.freeze({
@@ -151,7 +151,7 @@ export const LOFI_STYLE_PRESETS = Object.freeze({
     drumKit: "lofi_dusty",
     drumGroovePreset: "lofi_lazy_boom_bap",
     fx: Object.freeze({ delay: 0.1, chorus: 0.18, flanger: 0.04, reverb: 0.16, mix: 0.52, sidechain: 0.28 }),
-    texture: Object.freeze({ vinylCrackle: 0.08, tapeHiss: 0.06, wowFlutter: 0.055, warmth: 0.2, lowPassAge: 0.28, bitCrush: 0.018 }),
+    texture: Object.freeze({ enabled: true, vinylCrackle: 0.08, tapeHiss: 0.06, wowFlutter: 0.055, warmth: 0.2, lowPassAge: 0.28, bitCrush: 0.018 }),
     intensityHints: Object.freeze({ menu: "A", explore: "B", travel: "D", night: "C", full: "D" })
   }),
   lofi_ant_farm_night: Object.freeze({
@@ -172,7 +172,7 @@ export const LOFI_STYLE_PRESETS = Object.freeze({
     drumKit: "lofi_tape_soft",
     drumGroovePreset: "lofi_sparse_clicks",
     fx: Object.freeze({ delay: 0.13, chorus: 0.22, flanger: 0.025, reverb: 0.18, mix: 0.55, sidechain: 0.22 }),
-    texture: Object.freeze({ vinylCrackle: 0.05, tapeHiss: 0.07, wowFlutter: 0.04, warmth: 0.18, lowPassAge: 0.22, bitCrush: 0.012 }),
+    texture: Object.freeze({ enabled: true, vinylCrackle: 0.05, tapeHiss: 0.07, wowFlutter: 0.04, warmth: 0.18, lowPassAge: 0.22, bitCrush: 0.012 }),
     intensityHints: Object.freeze({ menu: "A", explore: "B", night: "C", full: "D" })
   }),
   lofi_menu_warmth: Object.freeze({
@@ -193,7 +193,7 @@ export const LOFI_STYLE_PRESETS = Object.freeze({
     drumKit: "lofi_brush",
     drumGroovePreset: "lofi_half_time_soft",
     fx: Object.freeze({ delay: 0.08, chorus: 0.16, flanger: 0.01, reverb: 0.22, mix: 0.48, sidechain: 0.12 }),
-    texture: Object.freeze({ vinylCrackle: 0.03, tapeHiss: 0.04, wowFlutter: 0.02, warmth: 0.16, lowPassAge: 0.18, bitCrush: 0 }),
+    texture: Object.freeze({ enabled: true, vinylCrackle: 0.03, tapeHiss: 0.04, wowFlutter: 0.02, warmth: 0.16, lowPassAge: 0.18, bitCrush: 0 }),
     intensityHints: Object.freeze({ menu: "A", explore: "B", night: "C", full: "D" })
   }),
   lofi_sleepy_waltz: Object.freeze({
@@ -214,7 +214,7 @@ export const LOFI_STYLE_PRESETS = Object.freeze({
     drumKit: "lofi_brush",
     drumGroovePreset: "lofi_sleepy_waltz_3_4",
     fx: Object.freeze({ delay: 0.1, chorus: 0.14, flanger: 0.01, reverb: 0.28, mix: 0.5, sidechain: 0.08 }),
-    texture: Object.freeze({ vinylCrackle: 0.035, tapeHiss: 0.035, wowFlutter: 0.025, warmth: 0.14, lowPassAge: 0.2, bitCrush: 0 }),
+    texture: Object.freeze({ enabled: true, vinylCrackle: 0.035, tapeHiss: 0.035, wowFlutter: 0.025, warmth: 0.14, lowPassAge: 0.2, bitCrush: 0 }),
     intensityHints: Object.freeze({ menu: "A", explore: "B", night: "C", full: "D" })
   })
 });
@@ -233,7 +233,7 @@ export function normaliseLofiTexture(value = {}, preset = getLofiStylePreset()) 
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   const presetTexture = preset?.texture || {};
   return {
-    enabled: source.enabled !== false,
+    enabled: source.enabled ?? presetTexture.enabled ?? DEFAULT_LOFI_TEXTURE.enabled ? true : false,
     vinylCrackle: clamp01(source.vinylCrackle ?? presetTexture.vinylCrackle ?? DEFAULT_LOFI_TEXTURE.vinylCrackle),
     tapeHiss: clamp01(source.tapeHiss ?? presetTexture.tapeHiss ?? DEFAULT_LOFI_TEXTURE.tapeHiss),
     wowFlutter: clamp01(source.wowFlutter ?? presetTexture.wowFlutter ?? DEFAULT_LOFI_TEXTURE.wowFlutter),
@@ -248,18 +248,23 @@ export function normaliseLofiProjectSettings(project = {}) {
   const requestedPreset = project.lofiPreset || project.stylePreset || DEFAULT_LOFI_PRESET_ID;
   const preset = getLofiStylePreset(requestedPreset);
   const audioProfile = isLofiProfile(project.audioProfile) || (hasRequestedPreset && LOFI_STYLE_PRESETS[requestedPreset]) ? LOFI_AUDIO_PROFILE_ID : String(project.audioProfile || "standard");
+  const lofiActive = audioProfile === LOFI_AUDIO_PROFILE_ID;
   return {
     audioProfile,
-    presetId: audioProfile === LOFI_AUDIO_PROFILE_ID ? preset.id : "",
+    presetId: lofiActive ? preset.id : "",
     preset,
-    drumKit: project.drumKit || (audioProfile === LOFI_AUDIO_PROFILE_ID ? preset.drumKit : ""),
-    drumGroovePreset: project.drumGroovePreset || (audioProfile === LOFI_AUDIO_PROFILE_ID ? preset.drumGroovePreset : ""),
-    bassTone: project.bassTone || (audioProfile === LOFI_AUDIO_PROFILE_ID ? preset.bassTone : "classic"),
-    texture: audioProfile === LOFI_AUDIO_PROFILE_ID
+    drumKit: lofiActive ? safeChoice(project.drumKit, LOFI_DRUM_KITS, preset.drumKit) : "",
+    drumGroovePreset: lofiActive ? safeChoice(project.drumGroovePreset, LOFI_DRUM_GROOVE_PRESETS, preset.drumGroovePreset) : "",
+    bassTone: safeChoice(project.bassTone, lofiActive ? LOFI_BASS_TONES : ["classic"], lofiActive ? preset.bassTone : "classic"),
+    texture: lofiActive
       ? normaliseLofiTexture(project.lofiTexture, preset)
       : { ...DEFAULT_LOFI_TEXTURE, enabled: false },
-    intensityHints: audioProfile === LOFI_AUDIO_PROFILE_ID ? { ...preset.intensityHints } : {}
+    intensityHints: lofiActive ? { ...preset.intensityHints } : {}
   };
+}
+
+function safeChoice(value, allowed, fallback) {
+  return allowed.includes(value) ? value : fallback;
 }
 
 function clamp01(value) {

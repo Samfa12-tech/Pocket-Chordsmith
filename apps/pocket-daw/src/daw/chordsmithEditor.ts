@@ -1,6 +1,15 @@
 import type { Clip, PocketDawProject, SourceRef } from "./schema";
 import { cloneProject } from "./dawProject";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
+import { DEFAULT_MELODY_INSTRUMENT, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
+import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STEP_CYCLE, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import {
+  drumPresetEventsForProject,
+  drumPresetVisibleForProject,
+  findDrumPreset,
+  pos16ToStep,
+  shouldUsePresetEvent
+} from "./chordsmithDrumPresets";
 
 export type DrumLane = "kick" | "snare" | "hat";
 export interface ChordsmithGlobalPatch {
@@ -26,10 +35,10 @@ const SECTION_COLORS: Record<string, string> = {
 
 const BASS_CYCLE: Array<number | null> = [null, 0, 4, 7, 11];
 const MELODY_CYCLE: Array<number | null> = [null, 0, 2, 4, 7, 9, 12];
-const GUITAR_CYCLE = ["off", "chug", "accent", "hold", "scratch"];
-const GUITAR_TONES = ["clean", "crunch", "high_gain", "muted", "wide"];
-const GUITAR_REGISTERS = ["low", "mid", "high"];
-const GUITAR_STRUM_MODES = ["down", "up", "alternate"];
+const GUITAR_CYCLE = POCKET_GUITAR_STEP_CYCLE;
+const GUITAR_TONES = POCKET_GUITAR_TONES;
+const GUITAR_REGISTERS = POCKET_GUITAR_REGISTERS;
+const GUITAR_STRUM_MODES = POCKET_GUITAR_STRUM_MODES;
 
 export function getPrimaryChordsmithSource(project: PocketDawProject): SanitizedPcsProject | null {
   const ref = getPrimaryChordsmithSourceRef(project);
@@ -106,6 +115,31 @@ export function cycleDrumTuplet(project: PocketDawProject, sectionId: SectionId,
   });
 }
 
+export function applyDrumPreset(project: PocketDawProject, sectionId: SectionId, presetId: string): PocketDawProject {
+  const preset = findDrumPreset(presetId);
+  return editChordsmithSection(project, sectionId, (pcs, section) => {
+    if (!preset || !drumPresetVisibleForProject(preset, pcs)) return;
+    const pattern = drumPresetEventsForProject(preset.id, pcs);
+    if (!pattern.events.length) return;
+    const totalSteps = totalEditorSteps(pcs, section);
+    (["kick", "snare", "hat"] as const).forEach((lane) => {
+      ensureStep(section.grid[lane], totalSteps - 1, 0);
+      ensureStep(section.gridTuplets[lane], totalSteps - 1, false);
+      section.grid[lane].fill(0);
+      section.gridTuplets[lane].fill(false);
+    });
+    for (let bar = 0; bar < section.bars; bar += 1) {
+      pattern.events.forEach((event) => {
+        if (!shouldUsePresetEvent(event, pcs.resolution)) return;
+        const step = pos16ToStep(bar, event.pos16, pcs, totalSteps);
+        if (step < 0) return;
+        const level = clamp(Math.round(event.level || 1), 1, 2);
+        section.grid[event.track][step] = Math.max(section.grid[event.track][step] || 0, level);
+      });
+    }
+  });
+}
+
 export function cycleBassStep(project: PocketDawProject, sectionId: SectionId, step: number): PocketDawProject {
   return editChordsmithSection(project, sectionId, (pcs, section) => {
     const current = section.bassNotes[step] ?? null;
@@ -159,14 +193,15 @@ export function cycleMelodyStep(project: PocketDawProject, sectionId: SectionId,
 }
 
 export function setMelodyInstrument(project: PocketDawProject, sectionId: SectionId, trackIndex: number, instrument: string): PocketDawProject {
+  const safeInstrument = safeInstrumentName(instrument);
   return editChordsmithSection(project, sectionId, (_pcs, section) => {
     ensureMelodyTrack(section, trackIndex);
-    section.melodyInstruments[trackIndex] = safeInstrumentName(instrument);
+    section.melodyInstruments[trackIndex] = safeInstrument;
   }, (next) => {
     const track = next.tracks.find((item) => item.role === "melody" && item.metadata?.chordsmithMelodyTrackIndex === trackIndex);
     if (track) {
-      track.metadata = { ...(track.metadata || {}), chordsmithInstrument: safeInstrumentName(instrument) };
-      track.name = `Melody ${trackIndex + 1} - ${titleCase(safeInstrumentName(instrument).replace(/_/g, " "))}`;
+      track.metadata = { ...(track.metadata || {}), chordsmithInstrument: safeInstrument };
+      track.name = `Melody ${trackIndex + 1} - ${titleCase(safeInstrument.replace(/_/g, " "))}`;
     }
   });
 }
@@ -234,9 +269,9 @@ export function cycleGuitarStep(project: PocketDawProject, sectionId: SectionId,
 export function setGuitarSettings(project: PocketDawProject, patch: GuitarSettingsPatch): PocketDawProject {
   return editChordsmithProject(project, (pcs, next) => {
     if (patch.guitarEnabled !== undefined) pcs.guitarEnabled = !!patch.guitarEnabled;
-    if (patch.guitarTone !== undefined) pcs.guitarTone = safeChoiceText(patch.guitarTone, GUITAR_TONES, pcs.guitarTone || "high_gain");
-    if (patch.guitarRegister !== undefined) pcs.guitarRegister = safeChoiceText(patch.guitarRegister, GUITAR_REGISTERS, pcs.guitarRegister || "low");
-    if (patch.guitarStrumMode !== undefined) pcs.guitarStrumMode = safeChoiceText(patch.guitarStrumMode, GUITAR_STRUM_MODES, pcs.guitarStrumMode || "down");
+    if (patch.guitarTone !== undefined) pcs.guitarTone = safeChoiceText(patch.guitarTone, GUITAR_TONES, pcs.guitarTone || DEFAULT_GUITAR_TONE);
+    if (patch.guitarRegister !== undefined) pcs.guitarRegister = safeChoiceText(patch.guitarRegister, GUITAR_REGISTERS, pcs.guitarRegister || DEFAULT_GUITAR_REGISTER);
+    if (patch.guitarStrumMode !== undefined) pcs.guitarStrumMode = safeChoiceText(patch.guitarStrumMode, GUITAR_STRUM_MODES, pcs.guitarStrumMode || DEFAULT_GUITAR_STRUM_MODE);
     if (patch.guitarVolume !== undefined) pcs.guitarVolume = clamp(Number(patch.guitarVolume), 0, 1);
     const guitar = next.tracks.find((track) => track.role === "guitar");
     if (guitar) {
@@ -380,7 +415,7 @@ function ensureMelodyTrack(section: SanitizedPcsSection, trackIndex: number) {
   const len = section.melodyTracks[0]?.length || section.guitarPattern.length;
   while (section.melodyTracks.length <= trackIndex) {
     section.melodyTracks.push(new Array<number | null>(len).fill(null));
-    section.melodyInstruments.push("synth");
+    section.melodyInstruments.push(DEFAULT_MELODY_INSTRUMENT);
     section.melodyOctaves.push(0);
     section.melodyMute.push(false);
     section.melodySolo.push(false);
@@ -391,7 +426,7 @@ function ensureMelodyTrack(section: SanitizedPcsSection, trackIndex: number) {
   }
 }
 
-function nextCycleValue<T>(values: T[], current: T): T {
+function nextCycleValue<T>(values: readonly T[], current: T): T {
   const index = values.findIndex((value) => value === current);
   return values[(index + 1) % values.length];
 }
@@ -430,7 +465,7 @@ function nextGeneratedSectionClipId(project: PocketDawProject): string {
 }
 
 function safeInstrumentName(value: string) {
-  return String(value || "synth").replace(/[^a-z0-9_]+/gi, "_").toLowerCase();
+  return safeChoiceText(value, POCKET_MELODY_INSTRUMENTS, DEFAULT_MELODY_INSTRUMENT);
 }
 
 function safeText(value: string, fallback: string) {
@@ -442,7 +477,7 @@ function safeScale(value: string): SanitizedPcsProject["scale"] {
   return String(value).toLowerCase() === "minor" ? "minor" : "major";
 }
 
-function safeChoiceText(value: string, choices: string[], fallback: string) {
+function safeChoiceText(value: string, choices: readonly string[], fallback: string) {
   const safe = safeText(value, fallback).replace(/\s+/g, "_").toLowerCase();
   return choices.includes(safe) ? safe : fallback;
 }

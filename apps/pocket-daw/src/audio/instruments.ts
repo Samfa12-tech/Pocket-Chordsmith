@@ -1,4 +1,26 @@
 import type { RenderedEvent } from "./eventRenderer";
+import {
+  DEFAULT_CHORD_INSTRUMENT,
+  DEFAULT_MELODY_INSTRUMENT,
+  findPocketChordInstrumentConfig,
+  findPocketLeadInstrumentConfig,
+  pocketLeadExtraLayers
+} from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
+import { DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_TONE_CONFIGS } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import {
+  POCKET_DRUM_KIT_CONFIGS,
+  POCKET_BASS_TONE_CONFIGS,
+  resolvePocketBassToneId,
+  resolvePocketDrumKitId
+} from "../../../../packages/pocket-audio-core/src/sounds/lofi-registry.js";
+import { CHORDSMITH_LIVE_DRUM_VOICES } from "../../../../packages/pocket-audio-core/src/sounds/drum-lanes.js";
+import { chordsmithFeatureSeed } from "../../../../packages/pocket-audio-core/src/performance/humanize.js";
+import {
+  CHORDSMITH_LOFI_TEXTURE_LIVE,
+  chordsmithLofiTextureLiveCrackleFrequency,
+  chordsmithLofiTextureLiveCrackleShouldTrigger,
+  chordsmithLofiTextureLiveHissLowpass
+} from "../../../../packages/pocket-audio-core/src/performance/lofi-texture.js";
 
 interface LayerConfig {
   wave: OscillatorType;
@@ -32,6 +54,32 @@ interface LeadConfig {
   filter: BiquadFilterType;
   freq: number;
   durMul: number;
+  extra?: LeadExtraConfig;
+  extras?: LeadExtraConfig[];
+}
+
+interface LeadExtraConfig {
+  freqMul: number;
+  slideFreqMul?: number;
+  midiOffset?: number;
+  wave: OscillatorType;
+  peak: number;
+  peakScale: number;
+  filter: BiquadFilterType;
+  freq: number;
+  offset: number;
+  durMul: number;
+  maxDur?: number;
+}
+
+interface BassConfig {
+  mainWave: OscillatorType;
+  subWave: OscillatorType;
+  mainPeak: number;
+  subPeak: number;
+  cutoff: number;
+  subCutoff: number;
+  attack: number;
 }
 
 interface GuitarConfig {
@@ -50,6 +98,7 @@ interface GuitarConfig {
 
 const noiseBuffers = new WeakMap<BaseAudioContext, Map<string, AudioBuffer>>();
 const guitarCurves = new Map<string, Float32Array<ArrayBuffer>>();
+const LIVE_DRUM_VOICES = CHORDSMITH_LIVE_DRUM_VOICES as Record<string, Record<string, number | readonly number[] | boolean>>;
 
 export interface ScheduleInstrumentEventOptions {
   lateGuardSeconds?: number;
@@ -69,12 +118,13 @@ export function scheduleInstrumentEvent(ctx: BaseAudioContext, destination: Audi
   if (lateness > 0) options.onLate?.(lateness);
   const t = lateness > 0 ? ctx.currentTime + (options.lateGuardSeconds ?? 0.005) : event.time;
   const duration = Math.max(0.025, event.duration - Math.max(0, lateness));
+  const eventDestination = destinationForEventPan(ctx, destination, event.pan || 0);
   if (event.kind === "kick") {
     if (lateness > 0.045) {
       options.onSkippedLate?.(lateness);
       return false;
     }
-    kick(ctx, destination, t, event.velocity);
+    kick(ctx, eventDestination, t, event.velocity, event.drumKit, event.audioProfile, event.lofiPreset);
     return true;
   }
   if (event.kind === "snare") {
@@ -82,7 +132,11 @@ export function scheduleInstrumentEvent(ctx: BaseAudioContext, destination: Audi
       options.onSkippedLate?.(lateness);
       return false;
     }
-    snare(ctx, destination, t, event.velocity);
+    snare(ctx, eventDestination, t, event.velocity, event.drumKit, event.audioProfile, event.lofiPreset);
+    return true;
+  }
+  if (event.kind === "clap") {
+    clap(ctx, eventDestination, t, event.velocity);
     return true;
   }
   if (event.kind === "hat") {
@@ -90,15 +144,31 @@ export function scheduleInstrumentEvent(ctx: BaseAudioContext, destination: Audi
       options.onSkippedLate?.(lateness);
       return false;
     }
-    hat(ctx, destination, t, event.velocity, !!event.accent);
+    hat(ctx, eventDestination, t, event.velocity, !!event.accent, event.drumKit, event.audioProfile, event.lofiPreset);
+    return true;
+  }
+  if (event.kind === "openhat") {
+    hat(ctx, eventDestination, t, event.velocity, true, event.drumKit, event.audioProfile, event.lofiPreset);
+    return true;
+  }
+  if (event.kind === "tomlow" || event.kind === "tommid" || event.kind === "tomhi") {
+    tom(ctx, eventDestination, t, event.velocity, event.kind);
+    return true;
+  }
+  if (event.kind === "crash" || event.kind === "ride") {
+    cymbal(ctx, eventDestination, t, event.velocity, event.kind);
+    return true;
+  }
+  if (event.kind === "texture") {
+    lofiTexture(ctx, destination, t, event.duration, event.lofiTexture, event.step);
     return true;
   }
   if (event.kind === "bass" && event.midi !== undefined) {
-    bass(ctx, destination, event.midi, t, duration, event.velocity, !!event.accent, event.slideMidi, event.slideOffset);
+    bass(ctx, destination, event.midi, t, duration, event.velocity, !!event.accent, event.slideMidi, event.slideOffset, event.bassTone);
     return true;
   }
   if (event.kind === "melody" && event.midi !== undefined) {
-    leadPhrase(ctx, destination, event.midi, t, duration, event.instrument || "pulse", event.pan || 0, event.velocity, event.slideMidi, event.slideOffset);
+    leadPhrase(ctx, destination, event.midi, t, duration, event.instrument || DEFAULT_MELODY_INSTRUMENT, event.pan || 0, event.velocity, event.slideMidi, event.slideOffset);
     return true;
   }
   if (event.kind === "midi" && event.midi !== undefined) {
@@ -106,14 +176,22 @@ export function scheduleInstrumentEvent(ctx: BaseAudioContext, destination: Audi
     return true;
   }
   if (event.kind === "chord" && event.midiNotes) {
-    chord(ctx, destination, event.midiNotes, t, duration, event.instrument || "pocket", event.velocity, event.articulation || "block");
+    chord(ctx, destination, event.midiNotes, t, duration, event.instrument || DEFAULT_CHORD_INSTRUMENT, event.velocity, event.articulation || "block");
     return true;
   }
   if (event.kind === "guitar" && event.midiNotes) {
-    guitar(ctx, destination, event.midiNotes, t, duration, event.articulation || "open", event.instrument || "high_gain", event.direction || "down", event.step);
+    guitar(ctx, destination, event.midiNotes, t, duration, event.articulation || "open", event.instrument || DEFAULT_GUITAR_TONE, event.direction || DEFAULT_GUITAR_STRUM_MODE, event.step);
     return true;
   }
   return false;
+}
+
+function destinationForEventPan(ctx: BaseAudioContext, destination: AudioNode, pan: number): AudioNode {
+  if (Math.abs(pan) < 0.001 || !("createStereoPanner" in ctx)) return destination;
+  const panner = ctx.createStereoPanner();
+  panner.pan.setValueAtTime(clamp(pan, -1, 1), ctx.currentTime || 0);
+  panner.connect(destination);
+  return panner;
 }
 
 function tone(
@@ -185,51 +263,223 @@ function connectWithPan(ctx: BaseAudioContext, source: AudioNode, destination: A
   }
 }
 
-function kick(ctx: BaseAudioContext, destination: AudioNode, start: number, peak = 0.95) {
+function kick(ctx: BaseAudioContext, destination: AudioNode, start: number, peak = 0.95, drumKit?: string, audioProfile?: string, lofiPreset?: string) {
+  const kit = lofiDrumKit(drumKit, audioProfile, lofiPreset);
+  const cfg = POCKET_DRUM_KIT_CONFIGS[kit as keyof typeof POCKET_DRUM_KIT_CONFIGS];
+  if (cfg) {
+    const kickCfg = cfg.kick as Record<string, number>;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    let output: AudioNode = osc;
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(kickCfg.startFreq, start);
+    osc.frequency.exponentialRampToValueAtTime(kickCfg.endFreq, start + kickCfg.sweepSeconds);
+    if (kickCfg.filterFreq) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(kickCfg.filterFreq, start);
+      osc.connect(filter);
+      output = filter;
+    }
+    gain.gain.setValueAtTime(Math.max(kickCfg.gainFloor, peak * kickCfg.gainScale), start);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + kickCfg.rampSeconds);
+    output.connect(gain);
+    gain.connect(destination);
+    osc.start(start);
+    osc.stop(start + kickCfg.length);
+    return;
+  }
+}
+
+function snare(ctx: BaseAudioContext, destination: AudioNode, start: number, peak = 0.5, drumKit?: string, audioProfile?: string, lofiPreset?: string) {
+  const kit = lofiDrumKit(drumKit, audioProfile, lofiPreset);
+  const cfg = POCKET_DRUM_KIT_CONFIGS[kit as keyof typeof POCKET_DRUM_KIT_CONFIGS];
+  if (cfg) {
+    const snareCfg = cfg.snare as Record<string, number>;
+    const noise = ctx.createBufferSource();
+    const highpass = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    let output: AudioNode = highpass;
+    noise.buffer = getNoise(ctx, snareCfg.noiseSeconds, kit === "classic" ? "snare" : `snare_${kit}`);
+    highpass.type = "highpass";
+    highpass.frequency.value = snareCfg.highpass;
+    if (snareCfg.lowpass) {
+      const lowpass = ctx.createBiquadFilter();
+      lowpass.type = "lowpass";
+      lowpass.frequency.value = snareCfg.lowpass;
+      highpass.connect(lowpass);
+      output = lowpass;
+    }
+    gain.gain.setValueAtTime(Math.max(snareCfg.gainFloor, peak * snareCfg.gainScale), start);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + snareCfg.rampSeconds);
+    noise.connect(highpass);
+    output.connect(gain);
+    gain.connect(destination);
+    noise.start(start);
+    noise.stop(start + snareCfg.length);
+
+    if (snareCfg.bodyFreq) {
+      const body = ctx.createOscillator();
+      const bodyGain = ctx.createGain();
+      body.type = "triangle";
+      body.frequency.setValueAtTime(snareCfg.bodyFreq, start);
+      bodyGain.gain.setValueAtTime(snareCfg.bodyGain, start);
+      bodyGain.gain.exponentialRampToValueAtTime(0.001, start + snareCfg.bodyRampSeconds);
+      body.connect(bodyGain);
+      bodyGain.connect(destination);
+      body.start(start);
+      body.stop(start + snareCfg.bodyLength);
+    }
+    return;
+  }
+}
+
+function hat(ctx: BaseAudioContext, destination: AudioNode, start: number, peak = 0.16, open = false, drumKit?: string, audioProfile?: string, lofiPreset?: string) {
+  const kit = lofiDrumKit(drumKit, audioProfile, lofiPreset);
+  const cfg = POCKET_DRUM_KIT_CONFIGS[kit as keyof typeof POCKET_DRUM_KIT_CONFIGS];
+  if (cfg) {
+    const hatCfg = cfg.hat as Record<string, number>;
+    const hatLen = open ? hatCfg.openLength : hatCfg.closedLength;
+    const noise = ctx.createBufferSource();
+    const highpass = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    let output: AudioNode = highpass;
+    noise.buffer = getNoise(ctx, hatLen, kit === "classic" ? (open ? "hat_open" : "hat_closed") : `${open ? "hat_open" : "hat_closed"}_${kit}`);
+    highpass.type = "highpass";
+    highpass.frequency.value = open ? hatCfg.highpassOpen : hatCfg.highpassClosed;
+    if (hatCfg.lowpass) {
+      const lowpass = ctx.createBiquadFilter();
+      lowpass.type = "lowpass";
+      lowpass.frequency.value = hatCfg.lowpass;
+      highpass.connect(lowpass);
+      output = lowpass;
+    }
+    gain.gain.setValueAtTime(
+      Math.max(open ? hatCfg.gainFloorOpen : hatCfg.gainFloorClosed, peak * (open ? hatCfg.gainScaleOpen : hatCfg.gainScaleClosed)),
+      start
+    );
+    gain.gain.exponentialRampToValueAtTime(0.001, start + (open ? hatCfg.rampSecondsOpen : hatCfg.rampSecondsClosed));
+    noise.connect(highpass);
+    output.connect(gain);
+    gain.connect(destination);
+    noise.start(start);
+    noise.stop(start + hatLen);
+    return;
+  }
+}
+
+function clap(ctx: BaseAudioContext, destination: AudioNode, start: number, peak = Number(LIVE_DRUM_VOICES.clap.peak)) {
+  const voice = LIVE_DRUM_VOICES.clap;
+  const offsets = voice.burstOffsets as readonly number[];
+  offsets.forEach((offset, index) => {
+    const noise = ctx.createBufferSource();
+    const bandpass = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    noise.buffer = getNoise(ctx, Number(voice.noiseSeconds), `clap_${index}`);
+    bandpass.type = "bandpass";
+    bandpass.frequency.setValueAtTime(Number(voice.bandpassBase) + index * Number(voice.bandpassStep), start + offset);
+    bandpass.Q.value = Number(voice.bandpassQ);
+    gain.gain.setValueAtTime(0.0001, start + offset);
+    gain.gain.linearRampToValueAtTime(Math.max(Number(voice.gainFloor), peak), start + offset + Number(voice.attackSeconds));
+    gain.gain.exponentialRampToValueAtTime(0.001, start + offset + Number(voice.releaseSeconds));
+    noise.connect(bandpass);
+    bandpass.connect(gain);
+    gain.connect(destination);
+    noise.start(start + offset);
+    noise.stop(start + offset + Number(voice.noiseSeconds));
+  });
+}
+
+function tom(ctx: BaseAudioContext, destination: AudioNode, start: number, peak = 0.5, lane: "tomlow" | "tommid" | "tomhi") {
+  const voice = LIVE_DRUM_VOICES[lane];
+  const freq = Number(voice.frequency);
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = "sine";
-  osc.frequency.setValueAtTime(155, start);
-  osc.frequency.exponentialRampToValueAtTime(45, start + 0.14);
-  gain.gain.setValueAtTime(Math.max(0.08, peak), start);
-  gain.gain.exponentialRampToValueAtTime(0.001, start + 0.16);
+  osc.frequency.setValueAtTime(freq, start);
+  osc.frequency.exponentialRampToValueAtTime(freq * Number(voice.endFrequencyRatio), start + Number(voice.sweepSeconds));
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.linearRampToValueAtTime(Math.max(Number(voice.gainFloor), peak), start + Number(voice.attackSeconds));
+  gain.gain.exponentialRampToValueAtTime(0.001, start + Number(voice.releaseSeconds));
   osc.connect(gain);
   gain.connect(destination);
   osc.start(start);
-  osc.stop(start + 0.17);
+  osc.stop(start + Number(voice.stopSeconds));
 }
 
-function snare(ctx: BaseAudioContext, destination: AudioNode, start: number, peak = 0.5) {
+function cymbal(ctx: BaseAudioContext, destination: AudioNode, start: number, peak = 0.4, lane: "crash" | "ride") {
+  const voice = LIVE_DRUM_VOICES[lane];
+  const len = Number(voice.durationSeconds);
   const noise = ctx.createBufferSource();
-  const filter = ctx.createBiquadFilter();
+  const highpass = ctx.createBiquadFilter();
   const gain = ctx.createGain();
-  noise.buffer = getNoise(ctx, 0.12, "snare");
-  filter.type = "highpass";
-  filter.frequency.value = 1700;
-  gain.gain.setValueAtTime(Math.max(0.05, peak), start);
-  gain.gain.exponentialRampToValueAtTime(0.001, start + 0.12);
-  noise.connect(filter);
-  filter.connect(gain);
+  noise.buffer = getNoise(ctx, len, lane);
+  highpass.type = "highpass";
+  highpass.frequency.setValueAtTime(Number(voice.highpass), start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.linearRampToValueAtTime(Math.max(Number(voice.gainFloor), peak), start + Number(voice.attackSeconds));
+  gain.gain.exponentialRampToValueAtTime(0.001, start + len);
+  noise.connect(highpass);
+  highpass.connect(gain);
   gain.connect(destination);
   noise.start(start);
-  noise.stop(start + 0.13);
+  noise.stop(start + len);
+  if (lane === "ride") {
+    const bell = ctx.createOscillator();
+    const bellGain = ctx.createGain();
+    bell.type = "triangle";
+    bell.frequency.setValueAtTime(Number(voice.bellFrequency), start);
+    bellGain.gain.setValueAtTime(Number(voice.bellGain), start);
+    bellGain.gain.exponentialRampToValueAtTime(0.001, start + Number(voice.bellReleaseSeconds));
+    bell.connect(bellGain);
+    bellGain.connect(destination);
+    bell.start(start);
+    bell.stop(start + Number(voice.bellStopSeconds));
+  }
 }
 
-function hat(ctx: BaseAudioContext, destination: AudioNode, start: number, peak = 0.16, open = false) {
-  const hatLen = open ? 0.16 : 0.05;
-  const noise = ctx.createBufferSource();
-  const filter = ctx.createBiquadFilter();
-  const gain = ctx.createGain();
-  noise.buffer = getNoise(ctx, hatLen, open ? "hat_open" : "hat_closed");
-  filter.type = "highpass";
-  filter.frequency.value = open ? 3800 : 5600;
-  gain.gain.setValueAtTime(Math.max(open ? 0.05 : 0.03, peak), start);
-  gain.gain.exponentialRampToValueAtTime(0.001, start + (open ? 0.14 : 0.05));
-  noise.connect(filter);
-  filter.connect(gain);
-  gain.connect(destination);
-  noise.start(start);
-  noise.stop(start + hatLen);
+function lofiTexture(ctx: BaseAudioContext, destination: AudioNode, start: number, duration: number, texture: Record<string, unknown> | undefined, step: number) {
+  if (!texture?.enabled) return;
+  const hiss = lofiAmount(texture, "tapeHiss", 0.05);
+  const crackle = lofiAmount(texture, "vinylCrackle", 0.04);
+  const age = lofiAmount(texture, "lowPassAge", 0.18);
+  if (hiss > 0.005) {
+    const len = Math.max(0.08, Math.min(CHORDSMITH_LOFI_TEXTURE_LIVE.hissSeconds, duration || CHORDSMITH_LOFI_TEXTURE_LIVE.hissSeconds));
+    const noise = ctx.createBufferSource();
+    const highpass = ctx.createBiquadFilter();
+    const lowpass = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    noise.buffer = getNoise(ctx, len, `lofi_hiss_${Math.round(hiss * 100)}_${Math.round(age * 100)}`);
+    highpass.type = "highpass";
+    highpass.frequency.value = CHORDSMITH_LOFI_TEXTURE_LIVE.hissHighpassHz;
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = chordsmithLofiTextureLiveHissLowpass(age);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.linearRampToValueAtTime(CHORDSMITH_LOFI_TEXTURE_LIVE.hissGain * hiss, start + CHORDSMITH_LOFI_TEXTURE_LIVE.hissAttackSeconds);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + Math.min(CHORDSMITH_LOFI_TEXTURE_LIVE.hissReleaseSeconds, len));
+    noise.connect(highpass);
+    highpass.connect(lowpass);
+    lowpass.connect(gain);
+    gain.connect(destination);
+    noise.start(start);
+    noise.stop(start + len);
+  }
+  if (crackle > 0.01 && chordsmithLofiTextureLiveCrackleShouldTrigger(step, crackle)) {
+    const noise = ctx.createBufferSource();
+    const bandpass = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    noise.buffer = getNoise(ctx, CHORDSMITH_LOFI_TEXTURE_LIVE.crackleSeconds, `lofi_crackle_${step % 19}`);
+    bandpass.type = "bandpass";
+    bandpass.frequency.value = chordsmithLofiTextureLiveCrackleFrequency(step);
+    bandpass.Q.value = CHORDSMITH_LOFI_TEXTURE_LIVE.crackleBandpassQ;
+    gain.gain.setValueAtTime(CHORDSMITH_LOFI_TEXTURE_LIVE.crackleGain * crackle, start);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + CHORDSMITH_LOFI_TEXTURE_LIVE.crackleDecaySeconds);
+    noise.connect(bandpass);
+    bandpass.connect(gain);
+    gain.connect(destination);
+    noise.start(start);
+    noise.stop(start + CHORDSMITH_LOFI_TEXTURE_LIVE.crackleStopSeconds);
+  }
 }
 
 function bass(
@@ -241,24 +491,25 @@ function bass(
   peak = 0.34,
   accent = false,
   slideMidi: number | undefined,
-  slideOffset: number | undefined
+  slideOffset: number | undefined,
+  toneName?: string
 ) {
   if (slideMidi === undefined || slideOffset === undefined) {
     const bassDur = Math.max(0.08, dur);
-    const sawPeak = peak * (accent ? 0.38 : 0.4);
-    const subPeak = peak * 0.12;
-    tone(ctx, destination, midi, start, bassDur, "sawtooth", sawPeak, "lowpass", accent ? 320 : 260);
-    tone(ctx, destination, midi - 12, start, Math.min(0.12, bassDur * 0.65), "sine", subPeak, "lowpass", 120);
+    const cfg = bassToneConfig(toneName);
+    const mainCutoff = accent ? cfg.cutoff * 1.18 : cfg.cutoff;
+    tone(ctx, destination, midi, start, accent ? bassDur * 1.35 : bassDur, cfg.mainWave, peak * (accent ? 1.12 : 1) * cfg.mainPeak, "lowpass", mainCutoff);
+    tone(ctx, destination, midi - 12, start, Math.min(0.12, bassDur * 0.82), cfg.subWave, peak * cfg.subPeak, "lowpass", cfg.subCutoff);
     return;
   }
-  bassSlide(ctx, destination, midi, slideMidi, start, dur, peak, accent, slideOffset);
+  bassSlide(ctx, destination, midi, slideMidi, start, dur, peak, accent, slideOffset, toneName);
 }
 
-function bassSlide(ctx: BaseAudioContext, destination: AudioNode, midi: number, targetMidi: number, start: number, dur: number, peak: number, accent: boolean, slideOffset: number) {
+function bassSlide(ctx: BaseAudioContext, destination: AudioNode, midi: number, targetMidi: number, start: number, dur: number, peak: number, accent: boolean, slideOffset: number, toneName?: string) {
+  const cfg = bassToneConfig(toneName);
   const endAt = start + Math.max(0.08, dur) + 0.22;
   const slideAt = Math.max(start + 0.02, start + slideOffset);
-  const bassPeak = peak * (accent ? 0.38 : 0.4);
-  const subPeak = peak * 0.12;
+  const mainCutoff = accent ? cfg.cutoff * 1.18 : cfg.cutoff;
   const makeVoice = (from: number, to: number, wave: OscillatorType, peakMul: number, cutoff: number) => {
     const osc = ctx.createOscillator();
     const filter = ctx.createBiquadFilter();
@@ -271,12 +522,12 @@ function bassSlide(ctx: BaseAudioContext, destination: AudioNode, midi: number, 
     osc.connect(filter);
     filter.connect(gain);
     gain.connect(destination);
-    adsr(gain, start, 0.01, 0.06, 0.7, Math.max(0.08, dur), bassPeak * peakMul);
+    adsr(gain, start, 0.01, 0.06, 0.7, Math.max(0.08, dur), peak * (accent ? 1.18 : 1) * peakMul);
     osc.start(start);
     osc.stop(endAt);
   };
-  makeVoice(midi, targetMidi, "sawtooth", 1, accent ? 320 : 260);
-  makeVoice(midi - 12, targetMidi - 12, "sine", subPeak / Math.max(0.0001, bassPeak), 120);
+  makeVoice(midi, targetMidi, cfg.mainWave, cfg.mainPeak, mainCutoff);
+  makeVoice(midi - 12, targetMidi - 12, cfg.subWave, cfg.subPeak, cfg.subCutoff);
 }
 
 function chord(ctx: BaseAudioContext, destination: AudioNode, notes: number[], start: number, dur: number, instrument: string, velocity: number, playMode: string) {
@@ -366,7 +617,7 @@ function leadPhrase(
   midi: number,
   start: number,
   dur = 0.28,
-  instrument = "pulse",
+  instrument = DEFAULT_MELODY_INSTRUMENT,
   pan = 0,
   peakMul = 1,
   slideMidi?: number,
@@ -398,45 +649,29 @@ function leadPhrase(
     osc.stop(endAt);
   };
   makeVoice();
-  scheduleLeadExtraLayers(makeVoice, instrument);
+  scheduleLeadExtraLayers(makeVoice, cfg);
 }
 
-function lead(ctx: BaseAudioContext, destination: AudioNode, midi: number, start: number, dur = 0.28, instrument = "pulse", pan = 0, peakMul = 1) {
+function lead(ctx: BaseAudioContext, destination: AudioNode, midi: number, start: number, dur = 0.28, instrument = DEFAULT_MELODY_INSTRUMENT, pan = 0, peakMul = 1) {
   const cfg = leadInstrumentConfig(instrument);
   tone(ctx, destination, midi, start, dur * cfg.durMul, cfg.wave, cfg.peak * peakMul, cfg.filter, cfg.freq, pan);
   const makeVoice = (freqMul = 1, wave: OscillatorType, peakScale = 1, filterType: BiquadFilterType, filterFreq: number, offset = 0, durMul = 1) => {
     toneFreq(ctx, destination, midiToFreq(midi) * freqMul, start + offset, dur * durMul, wave, peakScale * peakMul, filterType, filterFreq, pan);
   };
-  if (instrument === "bell") makeVoice(2, "sine", 0.022, "lowpass", 3200, 0.012, 0.42);
-  else if (instrument === "lead_guitar") makeVoice(1.006, "square", 0.035, "lowpass", 2600, 0.006, 0.72);
-  else if (instrument === "distorted_lead_guitar") makeVoice(0.996, "square", 0.05, "bandpass", 2100, 0.004, 0.68);
-  else if (instrument === "banjo") {
-    makeVoice(2.01, "triangle", 0.028, "highpass", 1500, 0.004, Math.min(0.09, dur * 0.38) / dur);
-    makeVoice(0.997, "square", 0.018, "bandpass", 2600, 0.012, Math.min(0.13, dur * 0.48) / dur);
-  } else if (instrument === "harmonica") {
-    makeVoice(1.004, "triangle", 0.035, "bandpass", 860, 0.006, 0.92);
-    makeVoice(2, "square", 0.012, "bandpass", 2100, 0.014, 0.42);
-  } else if (instrument === "cowboy_whistle") makeVoice(2, "sine", 0.014, "lowpass", 3600, 0.01, 0.65);
-  else if (instrument === "trumpet") tone(ctx, destination, midi + 12, start + 0.008, dur * 0.35, "sawtooth", 0.018 * peakMul, "bandpass", 2400, pan);
-  else if (instrument === "saxophone") tone(ctx, destination, midi - 12, start + 0.004, dur * 0.42, "sine", 0.03 * peakMul, "lowpass", 760, pan);
+  for (const extra of leadExtraLayers(cfg)) {
+    const extraMidi = midi + (Number(extra.midiOffset) || 0);
+    const extraDur = Math.min(extra.maxDur ?? Number.POSITIVE_INFINITY, dur * extra.durMul);
+    toneFreq(ctx, destination, midiToFreq(extraMidi) * extra.freqMul, start + extra.offset, extraDur, extra.wave, extra.peak * peakMul, extra.filter, extra.freq, pan);
+  }
 }
 
 function scheduleLeadExtraLayers(
   makeVoice: (freqMul?: number, waveOverride?: OscillatorType | null, peakScale?: number, filterType?: BiquadFilterType, filterFreq?: number) => void,
-  instrument: string
+  cfg: LeadConfig
 ) {
-  if (instrument === "bell") makeVoice(2, "sine", 0.16, "lowpass", 3200);
-  else if (instrument === "lead_guitar") makeVoice(1.006, "square", 0.2, "lowpass", 2600);
-  else if (instrument === "distorted_lead_guitar") makeVoice(0.996, "square", 0.34, "bandpass", 2100);
-  else if (instrument === "banjo") {
-    makeVoice(2.01, "triangle", 0.18, "highpass", 1500);
-    makeVoice(0.997, "square", 0.13, "bandpass", 2600);
-  } else if (instrument === "harmonica") {
-    makeVoice(1.004, "triangle", 0.24, "bandpass", 860);
-    makeVoice(2, "square", 0.08, "bandpass", 2100);
-  } else if (instrument === "cowboy_whistle") makeVoice(2, "sine", 0.14, "lowpass", 3600);
-  else if (instrument === "trumpet") makeVoice(2, "sawtooth", 0.13, "bandpass", 2400);
-  else if (instrument === "saxophone") makeVoice(0.5, "sine", 0.18, "lowpass", 760);
+  for (const extra of leadExtraLayers(cfg)) {
+    makeVoice(extra.slideFreqMul ?? extra.freqMul, extra.wave, extra.peakScale, extra.filter, extra.freq);
+  }
 }
 
 function guitar(ctx: BaseAudioContext, destination: AudioNode, notes: number[], start: number, dur: number, articulation: string, toneName: string, direction: "down" | "up", step: number) {
@@ -513,8 +748,8 @@ function guitar(ctx: BaseAudioContext, destination: AudioNode, notes: number[], 
     oscB.type = toneName === "clean" ? "triangle" : "square";
     oscA.frequency.setValueAtTime(freq, noteStart);
     oscB.frequency.setValueAtTime(freq * (1.003 + index * 0.0009), noteStart);
-    oscA.detune.setValueAtTime((featureSeed(step, index + 50) - 0.5) * 4, noteStart);
-    oscB.detune.setValueAtTime((featureSeed(step, index + 70) - 0.5) * 5, noteStart);
+    oscA.detune.setValueAtTime((chordsmithFeatureSeed(step, index + 50) - 0.5) * 4, noteStart);
+    oscB.detune.setValueAtTime((chordsmithFeatureSeed(step, index + 70) - 0.5) * 5, noteStart);
     const peak = (cfg.peak * (isAccent ? 1.28 : 1) * (isChug ? 1.05 : 1)) / Math.sqrt(ordered.length);
     gain.gain.setValueAtTime(0.0001, noteStart);
     gain.gain.linearRampToValueAtTime(peak, noteStart + (isChug ? 0.002 : 0.006));
@@ -531,141 +766,99 @@ function guitar(ctx: BaseAudioContext, destination: AudioNode, notes: number[], 
 }
 
 function guitarToneConfig(tone: string): GuitarConfig {
-  if (tone === "clean") return { drive: 0.65, input: 0.62, peak: 0.086, lowpass: 4300, highpass: 90, body: 1.4, mid: 1.0, spread: 0.016, sustain: 1.08, mute: 0.085, scratch: 0.04 };
-  if (tone === "crunch") return { drive: 2.4, input: 0.8, peak: 0.092, lowpass: 3600, highpass: 100, body: 2.8, mid: 2.0, spread: 0.013, sustain: 0.98, mute: 0.074, scratch: 0.044 };
-  if (tone === "metal") return { drive: 6.2, input: 0.92, peak: 0.088, lowpass: 3050, highpass: 115, body: 4.5, mid: 3.0, spread: 0.009, sustain: 0.86, mute: 0.06, scratch: 0.04 };
-  if (tone === "western_twang") return { drive: 1.25, input: 0.68, peak: 0.082, lowpass: 4700, highpass: 125, body: 1.1, mid: 2.4, spread: 0.02, sustain: 0.72, mute: 0.07, scratch: 0.034 };
-  return { drive: 4.2, input: 0.88, peak: 0.09, lowpass: 3250, highpass: 108, body: 3.7, mid: 2.6, spread: 0.01, sustain: 0.91, mute: 0.066, scratch: 0.042 };
+  return {
+    ...(POCKET_GUITAR_TONE_CONFIGS[tone as keyof typeof POCKET_GUITAR_TONE_CONFIGS] || POCKET_GUITAR_TONE_CONFIGS[DEFAULT_GUITAR_TONE as keyof typeof POCKET_GUITAR_TONE_CONFIGS])
+  };
 }
 
 function leadInstrumentConfig(name: string): LeadConfig {
-  if (name === "soft") return { wave: "triangle", peak: 0.16, filter: "lowpass", freq: 1700, durMul: 1 };
-  if (name === "synth") return { wave: "sawtooth", peak: 0.18, filter: "lowpass", freq: 1500, durMul: 0.95 };
-  if (name === "bell") return { wave: "sine", peak: 0.105, filter: "lowpass", freq: 2600, durMul: 1.05 };
-  if (name === "lead_guitar") return { wave: "sawtooth", peak: 0.16, filter: "bandpass", freq: 1800, durMul: 0.92 };
-  if (name === "distorted_lead_guitar") return { wave: "sawtooth", peak: 0.13, filter: "lowpass", freq: 2400, durMul: 0.86 };
-  if (name === "banjo") return { wave: "triangle", peak: 0.13, filter: "bandpass", freq: 2100, durMul: 0.48 };
-  if (name === "harmonica") return { wave: "square", peak: 0.115, filter: "bandpass", freq: 1250, durMul: 1.18 };
-  if (name === "cowboy_whistle") return { wave: "sine", peak: 0.1, filter: "lowpass", freq: 3200, durMul: 1.12 };
-  if (name === "trumpet") return { wave: "square", peak: 0.14, filter: "bandpass", freq: 1650, durMul: 1.05 };
-  if (name === "saxophone") return { wave: "triangle", peak: 0.17, filter: "bandpass", freq: 940, durMul: 1.12 };
-  return { wave: "square", peak: 0.2, filter: "lowpass", freq: 2300, durMul: 1 };
+  return leadConfigFromRegistry(findPocketLeadInstrumentConfig(name));
+}
+
+function leadConfigFromRegistry(cfg: Record<string, unknown>): LeadConfig {
+  return {
+    wave: cfg.wave as OscillatorType,
+    peak: Number(cfg.peak),
+    filter: cfg.filter as BiquadFilterType,
+    freq: Number(cfg.freq),
+    durMul: Number(cfg.durMul),
+    extra: leadExtraFromRegistry(cfg.extra),
+    extras: Array.isArray(cfg.extras) ? (cfg.extras as unknown[]).map((extra: unknown) => leadExtraFromRegistry(extra)).filter((extra): extra is LeadExtraConfig => !!extra) : undefined
+  };
+}
+
+function leadExtraLayers(cfg: LeadConfig): LeadExtraConfig[] {
+  return (pocketLeadExtraLayers(cfg as unknown as Record<string, unknown>) as unknown[])
+    .map((extra: unknown) => leadExtraFromRegistry(extra))
+    .filter((extra): extra is LeadExtraConfig => !!extra);
+}
+
+function leadExtraFromRegistry(extra: unknown): LeadExtraConfig | undefined {
+  if (!extra || typeof extra !== "object") return undefined;
+  const item = extra as Record<string, unknown>;
+  return {
+    freqMul: Number(item.freqMul ?? 1),
+    slideFreqMul: item.slideFreqMul === undefined ? undefined : Number(item.slideFreqMul),
+    midiOffset: item.midiOffset === undefined ? undefined : Number(item.midiOffset),
+    wave: item.wave as OscillatorType,
+    peak: Number(item.peak ?? 0),
+    peakScale: Number(item.peakScale ?? item.peak ?? 0),
+    filter: item.filter as BiquadFilterType,
+    freq: Number(item.freq ?? 0),
+    offset: Number(item.offset ?? 0),
+    durMul: Number(item.durMul ?? 1),
+    maxDur: item.maxDur === undefined ? undefined : Number(item.maxDur)
+  };
+}
+
+function bassToneConfig(name?: string): BassConfig {
+  const cfg = POCKET_BASS_TONE_CONFIGS[resolvePocketBassToneId(name) as keyof typeof POCKET_BASS_TONE_CONFIGS];
+  return {
+    ...cfg,
+    mainWave: cfg.mainWave as OscillatorType,
+    subWave: cfg.subWave as OscillatorType
+  };
 }
 
 function chordInstrumentConfig(name: string): ChordConfig {
-  if (name === "piano") {
-    return {
-      rootWave: "triangle",
-      wave: "triangle",
-      peak: 0.23,
-      filter: "lowpass",
-      freq: 3100,
-      filterQ: 0.9,
-      attack: 0.003,
-      decay: 0.18,
-      sustain: 0.18,
-      release: 0.16,
-      durMul: 0.72,
-      spreadMul: 0.45,
-      shimmer: false,
-      maxLiveDur: 0.82,
-      layers: [{ wave: "triangle", level: 1 }, { wave: "sine", freqMul: 2, level: 0.18, detune: 3 }]
-    };
-  }
-  if (name === "saloon_piano") {
-    return {
-      rootWave: "triangle",
-      wave: "triangle",
-      peak: 0.205,
-      filter: "lowpass",
-      freq: 3600,
-      filterQ: 1,
-      attack: 0.002,
-      decay: 0.13,
-      sustain: 0.12,
-      release: 0.18,
-      durMul: 0.62,
-      spreadMul: 0.58,
-      shimmer: false,
-      maxLiveDur: 0.7,
-      layers: [{ wave: "triangle", level: 0.88, detune: -8 }, { wave: "triangle", level: 0.62, detune: 9 }, { wave: "sine", freqMul: 2, level: 0.16, detune: 5 }]
-    };
-  }
-  if (name === "harp") {
-    return {
-      rootWave: "triangle",
-      wave: "sine",
-      peak: 0.18,
-      filter: "lowpass",
-      freq: 4600,
-      filterQ: 1.4,
-      attack: 0.002,
-      decay: 0.1,
-      sustain: 0.03,
-      release: 0.36,
-      durMul: 0.5,
-      spreadMul: 1.45,
-      shimmer: true,
-      maxLiveDur: 0.58,
-      layers: [{ wave: "triangle", level: 0.9 }, { wave: "sine", freqMul: 2, level: 0.26, detune: 7 }]
-    };
-  }
-  if (name === "warm_pad") {
-    return {
-      rootWave: "sine",
-      wave: "triangle",
-      peak: 0.14,
-      filter: "lowpass",
-      freq: 1200,
-      filterQ: 0.65,
-      filterSweep: 1700,
-      attack: 0.11,
-      decay: 0.24,
-      sustain: 0.82,
-      release: 0.62,
-      durMul: 1.35,
-      spreadMul: 0.25,
-      shimmer: false,
-      maxLiveDur: 1.65,
-      layers: [{ wave: "sine", level: 0.95, detune: -5 }, { wave: "triangle", level: 0.48, detune: 6 }]
-    };
-  }
-  if (name === "glass") {
-    return {
-      rootWave: "sine",
-      wave: "sine",
-      peak: 0.16,
-      filter: "bandpass",
-      freq: 1500,
-      filterQ: 1.15,
-      attack: 0.004,
-      decay: 0.2,
-      sustain: 0.1,
-      release: 0.44,
-      durMul: 0.9,
-      spreadMul: 0.85,
-      shimmer: true,
-      maxLiveDur: 0.82,
-      layers: [{ wave: "sine", level: 0.36 }, { wave: "sine", freqMul: 2.01, level: 0.64 }, { wave: "sine", freqMul: 4.02, level: 0.34 }, { wave: "triangle", freqMul: 6.01, level: 0.12 }]
-    };
-  }
+  return chordConfigFromRegistry(findPocketChordInstrumentConfig(name));
+}
+
+function chordConfigFromRegistry(cfg: Record<string, unknown>): ChordConfig {
   return {
-    rootWave: "triangle",
-    wave: "sine",
-    peak: 0.24,
-    filter: "lowpass",
-    freq: 1800,
-    filterQ: 0.8,
-    attack: 0.01,
-    decay: 0.06,
-    sustain: 0.7,
-    release: 0.2,
-    durMul: 1,
-    spreadMul: 1,
-    shimmer: false,
-    maxLiveDur: 1.15,
-    layers: [{ wave: "triangle", level: 0.82 }, { wave: "sine", level: 0.35 }]
+    ...cfg,
+    rootWave: cfg.rootWave as OscillatorType,
+    wave: cfg.wave as OscillatorType,
+    filter: cfg.filter as BiquadFilterType,
+    peak: Number(cfg.peak),
+    freq: Number(cfg.freq),
+    filterQ: Number(cfg.filterQ),
+    attack: Number(cfg.attack),
+    decay: Number(cfg.decay),
+    sustain: Number(cfg.sustain),
+    release: Number(cfg.release),
+    durMul: Number(cfg.durMul),
+    spreadMul: Number(cfg.spreadMul),
+    shimmer: !!cfg.shimmer,
+    maxLiveDur: Number(cfg.maxLiveDur),
+    filterSweep: cfg.filterSweep === undefined ? undefined : Number(cfg.filterSweep),
+    layers: (cfg.layers as Record<string, unknown>[]).map((layer) => ({
+      ...layer,
+      wave: layer.wave as OscillatorType,
+      freqMul: layer.freqMul === undefined ? undefined : Number(layer.freqMul),
+      detune: layer.detune === undefined ? undefined : Number(layer.detune),
+      level: layer.level === undefined ? undefined : Number(layer.level)
+    }))
   };
+}
+
+function lofiDrumKit(drumKit?: string, audioProfile?: string, lofiPreset?: string) {
+  return resolvePocketDrumKitId(drumKit, audioProfile, lofiPreset);
+}
+
+function lofiAmount(texture: Record<string, unknown>, key: string, fallback: number) {
+  const value = Number(texture[key] ?? fallback);
+  return Number.isFinite(value) ? clamp(value, 0, 1) : fallback;
 }
 
 function getNoise(ctx: BaseAudioContext, seconds: number, key: string): AudioBuffer {
@@ -698,11 +891,6 @@ function guitarDistortionCurve(amount = 2.5) {
   }
   guitarCurves.set(key, curve);
   return curve;
-}
-
-function featureSeed(step: number, seed = 0) {
-  const x = Math.sin((step + 1) * 12.9898 + (seed + 1) * 78.233) * 43758.5453;
-  return x - Math.floor(x);
 }
 
 function clamp(value: number, min: number, max: number) {

@@ -1,18 +1,58 @@
-# Pocket DAW v0.6.3 - What Works and What's Next
+# Pocket DAW v0.6.9 - What Works and What's Next
 
 ## Current public alpha
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current source target: `0.6.3` live recording and mixer polish alpha
-- Last installed public smoke evidence in this repo: `0.5.13`
+- Current source target: `0.6.9` native lofi-bass audibility hotfix for the lofi/chillhop parity alpha
+- Last completed public artifact record in this repo: `0.6.9`
+- Last installed public smoke evidence in this repo: `0.6.9` partial; Sam confirmed the reported soloed Warm Sub Bass is audible, while broader installed smoke remains pending
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 - Current source commit: update this after the next release commit is created
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
 
-## v0.6.3 Live Recording And Mixer Polish Alpha - source changes pending installed smoke
+## v0.6.9 Native Lofi Bass Hotfix - installed smoke pending
+
+`0.6.9` is the current installer/updater test build. It keeps the `0.6.8` native-cache diagnostics patch and fixes native procedural `warm_sub`/lofi bass playback so soloed imported bass remains audible when the native cache is not active.
+
+Published evidence as of 2026-06-19:
+
+- Itch channel `samfa12/pocket-daw:windows-installer` build `#1736808`, user version `0.6.9`.
+- GitHub release `pocket-daw-v0.6.9` was published with the current setup EXE/MSI, updater signatures, release manifest, checksums and `pocket-daw-latest.json`.
+- The GitHub latest updater manifest points at `Pocket.DAW_0.6.9_x64-setup.exe`.
+- Remote setup EXE SHA-256 was verified as `406bd7432dda5f4c3dfccb041c6e2362f5b683559476900f239ec46843d60f09`.
+
+Installed-app smoke for `0.6.9` should re-open the reported `lofi demo project.pocketdaw`, confirm About/Diagnostics reports `0.6.9`, solo Bass at 100-120%, and verify the audible bass matches the moving Bass meter.
+
+Installed-app bass smoke result: Sam confirmed on 2026-06-19 that Bass is audible in installed `0.6.9`.
+
+Shared parity gate result: `npm run verify:family-parity` from `packages/pocket-audio-core/` passed on 2026-06-19, covering shared sound-surface freshness, cross-app drift tests, Chordsmith browser trace parity, core event/render/Godot pack fixtures, and DAW Chordsmith import/render/export parity tests.
+
+## v0.6.8 Native Cache Diagnostics Patch - installed smoke pending
+
+`0.6.8` was the previous installer/updater test build. It keeps the `0.6.7` native-cache performance patch, adds Native Playback/Native Cache readouts in the Media Pool and About/Diagnostics panels so testers can confirm cached regions, cached clips and procedural fallback events while A/B testing imported lofi projects, and stops lofi texture/noise ticks from falsely driving the Drums mixer meter.
+
+Published evidence as of 2026-06-19:
+
+- Itch channel `samfa12/pocket-daw:windows-installer` build `#1736802`, user version `0.6.8`.
+- GitHub release `pocket-daw-v0.6.8` was published with the then-current setup EXE/MSI, updater signatures, release manifest, checksums and `pocket-daw-latest.json`.
+- The GitHub latest updater manifest pointed at `Pocket.DAW_0.6.8_x64-setup.exe` before `0.6.9` replaced it.
+- Remote setup EXE SHA-256 was verified as `57635be4f5b509e27584e820956752155870709d9ad97ebcf619ecdeebd8c577`.
+
+The same native-cache and Drums-meter smoke remains part of the `0.6.9` installed-app pass before calling the baseline fully verified.
+
+## v0.6.4 Lofi/Chillhop Compatibility Alpha
+
+- Pocket DAW accepts optional lofi/chillhop Pocket Chordsmith fields such as `audioProfile`, `lofiPreset`, `stylePreset`, `lofiTexture`, `drumKit`, `drumGroovePreset`, and `bassTone` without changing the `.pocketdaw` schema.
+- Imported lofi projects receive soft DAW track presets for drums, bass, chords, melody, ambience, and master output while preserving original Chordsmith source fields.
+- Lofi imports add a gentle master chain with conservative low-pass, warmth/saturation, glue compression/limiting, and optional bit-colour metadata.
+- The lofi template helper creates a Study Room-style Chordsmith project for future template-picker UI and import/export tests.
+- The v0.6.3 live-recording and mixer polish remains part of the current baseline.
+- Required installed smoke for this baseline: lofi import, recording alpha, updater behavior, save/open/reopen, WAV/MIDI export sanity, and exact artifact-hash tracking.
+
+## v0.6.3 Live Recording And Mixer Polish Alpha
 
 - Live-vocals mixer input controls are compact and stable, and small timeline track-label buttons no longer inherit rounded strip styling.
 - Timeline/mixer Mute, Solo, Arm, Monitor and input edits preserve scroll while playback/recording is running.
@@ -111,7 +151,7 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 - Live playback and offline WAV export apply first-pass track volume/pan automation.
 - Tracks can be routed to master or to created bus tracks; return tracks are scaffolded with guarded send metadata.
 - Stem WAV export is available as sequential browser downloads for generated/audio/MIDI track groups.
-- Section loop, Godot adaptive pack and web game pack manifest JSON exports are available as manifest previews.
+- Section-loop WAV export is available as sequential browser downloads with a JSON loop manifest; Godot adaptive pack and web game pack exports now build collected ZIP packs with rendered audio, manifest metadata and the source `.pocketdaw` JSON.
 - Media Pool status distinguishes runtime-loaded audio, external unloaded paths, browser runtime-only imports, missing/unresolved items and project media.
 - Native Collect Media copies external audio beside a saved `.pocketdaw` file under `project-media/` and updates media-pool refs to durable project media.
 - Native Reload and Relink can refresh project/external audio buffers in the installed app.
@@ -274,8 +314,8 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 - Bus routing is respected in live playback and offline WAV export. Full send/return processing remains guarded.
 - Added stem export planning for Drums, Bass, Chords, Melody, Guitar, Audio tracks and MIDI tracks.
 - Stem WAV export renders each stem as a sequential browser download by reusing offline render with filtered audible tracks.
-- Added section loop metadata export with section ID/name, start/end bars, BPM, key, scale, time signature and loop duration.
-- Added Godot adaptive pack and web game pack JSON manifest previews with project metadata, stems, loops, markers and intended file names.
+- Added section-loop WAV export with section ID/name, start/end bars, BPM, key, scale, time signature, loop duration and intended pack paths.
+- Added Godot adaptive pack and web game pack ZIP exports with project metadata, source project JSON, rendered full mix, stems, section loops, markers and deterministic pack paths.
 - Added tests for automation helpers/evaluation, routing helpers/cycle prevention, export job helpers/manifests and roundtrip preservation.
 
 ## v0.5.1 Release Hardening, Layout and Handoff
@@ -286,7 +326,7 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 - Added UI smoke coverage for layout-zone order.
 - Added PocketHandoff envelope ingestion for URL query/hash, raw hash envelope, `window.name`, localStorage and legacy import params.
 - Added successful handoff cleanup so URL/window/storage payloads do not re-import on reload.
-- Updated Godot and web-game export labels/status text to "Manifest Preview" because the app produces JSON manifests, not full asset packs yet.
+- Historical v0.5.1 note: Godot and web-game exports were labelled as JSON-only previews at that point; current builds export collected pack ZIPs.
 - Clarified stem export as one WAV download per stem in sequence.
 - Expanded Media Pool status wording and added a disabled `Reload Media` scaffold for external audio that needs a future relink/reload flow.
 - Added `tauri:build` and `verify:native-release` so full native release bundling is available as an explicit release check.
@@ -320,18 +360,19 @@ Then open the local Vite URL shown in the terminal.
 Release hygiene commands for this pass:
 
 ```powershell
+npm run verify:versions
 npm test
 npm run build
-npm run package:preview
-npm run verify:release
-npm run verify:native-release
+cargo test --manifest-path src-tauri/Cargo.toml
+npm run verify:itch
 ```
 
-Current v0.6.3 local release verification target:
+Current v0.6.6 local release verification target:
 
 - `npm run verify:versions`: checks package, lockfile, Tauri, Cargo and schema version sync.
 - `npm test`: runs the automated TypeScript/Vitest suite.
 - `npm run build`: runs TypeScript and Vite production build.
+- `cargo test --manifest-path src-tauri/Cargo.toml`: runs the native Rust test suite.
 - `npm run package:preview`: writes the browser preview zip for local/dev preview only; it is not a public Pocket DAW app distribution channel.
 - `npm run package:itch`: builds/stages installer artifacts, updater `.sig` files, release docs, manifest and checksums.
 - `npm run verify:artifacts`: verifies generated hashes, ZIP layout, forbidden files and signing policy.
@@ -340,13 +381,13 @@ Current v0.6.3 local release verification target:
 Primary itch release artifacts are generated under:
 
 ```text
-releases/itch/installers/Pocket DAW_0.6.3_x64-setup.exe
-releases/itch/installers/Pocket DAW_0.6.3_x64-setup.exe.sig
-releases/itch/installers/Pocket DAW_0.6.3_x64_en-US.msi
-releases/itch/installers/Pocket DAW_0.6.3_x64_en-US.msi.sig
-releases/itch/pocket-daw-release-manifest-v0.6.3.json
-releases/itch/CHECKSUMS_SHA256_v0.6.3.txt
-releases/itch/FINAL_RELEASE_VERDICT_v0.6.3.md
+releases/itch/installers/Pocket DAW_0.6.6_x64-setup.exe
+releases/itch/installers/Pocket DAW_0.6.6_x64-setup.exe.sig
+releases/itch/installers/Pocket DAW_0.6.6_x64_en-US.msi
+releases/itch/installers/Pocket DAW_0.6.6_x64_en-US.msi.sig
+releases/itch/pocket-daw-release-manifest-v0.6.6.json
+releases/itch/CHECKSUMS_SHA256_v0.6.6.txt
+releases/itch/FINAL_RELEASE_VERDICT_v0.6.6.md
 ```
 
 The installed Windows setup/MSI artifacts are the public itch artifacts. The browser preview ZIP is a local/dev preview helper, not the Pocket DAW public distribution target.
@@ -364,7 +405,7 @@ $env:Path="$env:USERPROFILE\.cargo\bin;$env:Path"
 npm run tauri:debug
 ```
 
-Historical installers and debug executables may remain in `releases/`, but they are not current v0.6.3 alpha artifacts unless regenerated by `npm run package:itch`. Native save/open dialogs, native audio import and native MIDI import are implemented through defensive Tauri commands with browser fallbacks, and installed Windows smoke evidence is tracked in `docs/WINDOWS_TESTING_CHECKLIST.md`.
+Historical installers and debug executables may remain in `releases/`, but they are not current v0.6.6 alpha artifacts unless regenerated by `npm run package:itch`. Native save/open dialogs, native audio import and native MIDI import are implemented through defensive Tauri commands with browser fallbacks, and installed Windows smoke evidence is tracked in `docs/WINDOWS_TESTING_CHECKLIST.md`.
 
 ## Manual checklist
 
@@ -393,7 +434,7 @@ Historical installers and debug executables may remain in `releases/`, but they 
 - Select a track, create Volume automation, add/edit/delete a point and confirm playback volume changes.
 - Create a Bus track, route Bass or Melody to it, and confirm playback/export still works.
 - Export Stem WAVs and confirm sequential downloads are produced.
-- Export Section, Godot and Web Game manifest previews and inspect the JSON metadata.
+- Export Section Loop WAVs, Godot Game Pack and Web Game Pack; inspect the JSON metadata inside each pack.
 - Confirm Add Rendered Stem remains disabled/guarded.
 - Confirm external unloaded audio shows a guarded Reload Media scaffold instead of pretending relink is complete.
 - Open a project with media pool entries and confirm metadata/status/cache links survive save and reopen.
@@ -454,7 +495,7 @@ Historical installers and debug executables may remain in `releases/`, but they 
 - Add a Bus track and route Bass to the bus, then export WAV.
 - Add a Return track and confirm it is clearly scaffolded/guarded rather than pretending send processing is complete.
 - Export Stem WAVs; confirm the browser downloads each planned stem sequentially.
-- Export Section Manifest, Godot Manifest Preview and Web Manifest Preview; confirm stems, loops and markers appear in JSON.
+- Export Section Loop WAVs, Godot Game Pack and Web Game Pack; confirm section WAV downloads complete and the pack ZIPs contain manifest JSON, source `.pocketdaw`, full mix, stems, section loops and markers.
 
 ## v0.5.1 hardening QA checklist
 
@@ -463,7 +504,7 @@ Historical installers and debug executables may remain in `releases/`, but they 
 - Confirm export/media/import panels stay below the mixer and do not overlap each other.
 - Open a URL with `?pcs1=` or `#pcs1=` and confirm Pocket DAW imports the payload once.
 - Open a URL with a PocketHandoff envelope and confirm the URL is cleaned after successful import.
-- Confirm Godot/Web export controls say Manifest Preview and the downloaded files are JSON.
+- Historical v0.5.1 check: Godot/Web exports were JSON-only then; current builds should show game-pack ZIP export controls.
 - Confirm external audio with a known path but no runtime buffer shows `External unloaded`.
 - Confirm browser-only imports still show as runtime-only after reopening a project without embedded bytes.
 - Run `npm run verify:native-release` on a machine with Cargo/Tauri available before distributing native test builds.
@@ -481,10 +522,12 @@ Historical installers and debug executables may remain in `releases/`, but they 
 - The native playback path is still a first event-synth implementation, not final parity instruments or native audio-file streaming.
 - Audio-file import still depends on WebView decoding and runtime buffers; native Symphonia-style decoding is the next desktop-grade step.
 
-v0.5.2 moves generated playback out of the browser timing path, but it is not a full professional mixing/export console yet. Automation is limited to track volume multiplier and pan; there are no drawn lanes, FX-parameter automation, tempo automation or automation clips. Bus routing is supported, but full send/return processing is still guarded. Stem export uses sequential browser WAV downloads rather than a browser zip. Section/Godot/web-game exports produce JSON manifest previews, not full asset packs yet. Audio clips still have no time-stretching/warping, no recording, no waveform editing and no persistent native decoded media cache. Runtime-loaded audio clips can now feed native WAV regions, but durable native decode/streaming is still a later desktop-grade step.
+v0.5.2 moved generated playback out of the browser timing path, but Pocket DAW is still not a full professional mixing/export console. Automation is limited to track volume multiplier and pan; there are no drawn lanes, FX-parameter automation, tempo automation or automation clips. Bus routing is supported, but full send/return processing is still guarded. Stem and standalone section-loop export still use sequential browser WAV downloads; Godot/web-game exports now produce collected ZIP packs with manifest metadata, source project JSON, full mix, stems and section-loop WAVs. Audio clips still have no time-stretching/warping, no recording, no waveform editing and no persistent native decoded media cache. Runtime-loaded audio clips can now feed native WAV regions, but durable native decode/streaming is still a later desktop-grade step.
 
 ## What should come next
 
+- First priority after the collected Godot/Web pack slice: manually smoke the ZIP contents in Godot/web-game import workflows and then add push-to-Godot or native pack destination selection.
+- Keep this export-pack path ahead of deeper recording work, ASIO, simultaneous multitrack capture, or broad DAW editor expansion.
 - Manually verify native Open, Save and Save As inside `npm run tauri:dev` or a packaged native build.
 - Manually verify that packaged playback diagnostics show `playbackBackend: native-cpal` while scrolling, dragging mixer controls and editing Chordsmith steps.
 - Add installer signing/version metadata polish.
