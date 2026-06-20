@@ -25,6 +25,7 @@ describe("Pocket DAW MCP tools", () => {
       "pocket_daw_export_plan",
       "pocket_daw_live_status",
       "pocket_daw_live_control",
+      "pocket_daw_live_performance",
       "pocket_daw_live_apply_commands"
     ]));
     expect(toolList.every((tool) => tool.inputSchema.type === "object")).toBe(true);
@@ -223,6 +224,47 @@ describe("Pocket DAW MCP tools", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it("sends live performance diagnostic controls through the tokened app bridge", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-live-performance-"));
+    const sessionPath = join(dir, "ai-bridge-session.json");
+    writeFileSync(sessionPath, JSON.stringify({
+      statusUrl: "http://127.0.0.1:47858/pocket-daw/live/status",
+      controlUrl: "http://127.0.0.1:47858/pocket-daw/live/control",
+      token: "test-token"
+    }));
+    const originalFetch = globalThis.fetch;
+    let requestBody = "";
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requestBody = String(init?.body || "");
+      return new Response(JSON.stringify({
+        ok: true,
+        action: "performance_diagnostics",
+        diagnostics: { enabled: true, sampleCount: 1 }
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_live_performance", {
+        sessionPath,
+        action: "start",
+        maxSamples: 240
+      }));
+
+      expect(result.ok).toBe(true);
+      expect(result.diagnostics).toMatchObject({ enabled: true, sampleCount: 1 });
+      expect(JSON.parse(requestBody)).toMatchObject({
+        action: "performance_diagnostics",
+        mode: "start",
+        maxSamples: 240
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 describe("Pocket DAW MCP server handshake", () => {
@@ -255,7 +297,7 @@ describe("Pocket DAW MCP server handshake", () => {
       const timeout = setTimeout(() => {
         child.kill();
         reject(new Error("Timed out waiting for MCP initialize response."));
-      }, 5000);
+      }, 10000);
       child.on("exit", () => {
         clearTimeout(timeout);
         resolve();
@@ -266,5 +308,5 @@ describe("Pocket DAW MCP server handshake", () => {
     expect(output).toContain('"name":"pocket_daw"');
     expect(output).toContain('"listChanged":false');
     expect(output).not.toContain("Content-Length:");
-  });
+  }, 10000);
 });

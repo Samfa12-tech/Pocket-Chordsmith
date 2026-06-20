@@ -48,6 +48,8 @@ export interface RenderedEvent {
   audioProfile?: string;
   lofiPreset?: string;
   lofiTexture?: JsonObject;
+  chipPreset?: string;
+  chipTexture?: JsonObject;
   accent?: boolean;
   tuplet?: boolean;
   articulation?: string;
@@ -459,7 +461,9 @@ function sourceEventMetadata(pcs: SanitizedPcsProject) {
   return {
     audioProfile: pcs.audioProfile,
     lofiPreset: pcs.lofiPreset,
-    lofiTexture: pcs.lofiTexture
+    lofiTexture: pcs.lofiTexture,
+    chipPreset: pcs.chipPreset,
+    chipTexture: pcs.chipTexture
   };
 }
 

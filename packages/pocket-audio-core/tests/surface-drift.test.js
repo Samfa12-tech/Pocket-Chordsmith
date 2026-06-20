@@ -15,6 +15,13 @@ import {
   LOFI_DRUM_KITS,
   LOFI_MELODY_INSTRUMENTS,
   LOFI_STYLE_PRESET_IDS,
+  CHIP_AUDIO_PROFILE_ID,
+  CHIP_BASS_TONES,
+  CHIP_CHORD_INSTRUMENTS,
+  CHIP_DRUM_GROOVE_PRESETS,
+  CHIP_DRUM_KITS,
+  CHIP_MELODY_INSTRUMENTS,
+  CHIP_STYLE_PRESET_IDS,
   CHORDSMITH_CHORD_PLAY_MODES,
   CHORDSMITH_CHORD_RHYTHM,
   CHORDSMITH_CHORD_RHYTHM_MODES,
@@ -109,6 +116,8 @@ test("public lofi IDs stay aligned across Chordsmith, DJ, Godot and core", async
 
   const expectedDrumKits = ["classic", ...LOFI_DRUM_KITS];
   const expectedBassTones = ["classic", ...LOFI_BASS_TONES];
+  const expectedPocketDrumKits = ["classic", ...LOFI_DRUM_KITS, ...CHIP_DRUM_KITS];
+  const expectedPocketBassTones = ["classic", ...LOFI_BASS_TONES, ...CHIP_BASS_TONES];
   const expectedDrumGroovePresets = [...LOFI_DRUM_GROOVE_PRESETS];
 
   assert.equal(extractStringConst(chordsmith, "LOFI_AUDIO_PROFILE_ID"), LOFI_AUDIO_PROFILE_ID);
@@ -126,9 +135,13 @@ test("public lofi IDs stay aligned across Chordsmith, DJ, Godot and core", async
   assert.equal(extractGdStringConst(godotSharedSoundConstants, "LOFI_AUDIO_PROFILE_ID"), LOFI_AUDIO_PROFILE_ID);
   assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "LOFI_CHORD_INSTRUMENTS"), LOFI_CHORD_INSTRUMENTS);
   assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "LOFI_MELODY_INSTRUMENTS"), LOFI_MELODY_INSTRUMENTS);
-  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "POCKET_DRUM_KITS"), expectedDrumKits);
-  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "POCKET_BASS_TONES"), expectedBassTones);
+  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "POCKET_DRUM_KITS"), expectedPocketDrumKits);
+  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "POCKET_BASS_TONES"), expectedPocketBassTones);
   assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "LOFI_STYLE_PRESETS"), LOFI_STYLE_PRESET_IDS);
+  assert.equal(extractGdStringConst(godotSharedSoundConstants, "CHIP_AUDIO_PROFILE_ID"), CHIP_AUDIO_PROFILE_ID);
+  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "CHIP_CHORD_INSTRUMENTS"), CHIP_CHORD_INSTRUMENTS);
+  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "CHIP_MELODY_INSTRUMENTS"), CHIP_MELODY_INSTRUMENTS);
+  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "CHIP_STYLE_PRESETS"), CHIP_STYLE_PRESET_IDS);
   assert.ok(godotMigrator.includes("const SharedSoundConstants := preload"), "Godot migrator should consume generated shared sound constants");
   assert.ok(godotMigrator.includes("POCKET_CHORD_INSTRUMENTS := SharedSoundConstants.POCKET_CHORD_INSTRUMENTS"), "Godot migrator should validate chord IDs from generated shared sound constants");
   assert.ok(godotMigrator.includes("POCKET_MELODY_INSTRUMENTS := SharedSoundConstants.POCKET_MELODY_INSTRUMENTS"), "Godot migrator should validate melody IDs from generated shared sound constants");
@@ -143,7 +156,8 @@ test("public lofi IDs stay aligned across Chordsmith, DJ, Godot and core", async
   });
   assert.ok(pocketDawSanitizer.includes("LOFI_DRUM_GROOVE_PRESETS"), "Pocket DAW sanitizer should consume shared lofi drum groove IDs");
   assert.ok(pocketDawSanitizer.includes("getLofiStylePreset"), "Pocket DAW sanitizer should use shared lofi preset fallbacks");
-  assert.ok(pocketDawSanitizer.includes("sanitizeLofiDrumGroovePreset"), "Pocket DAW sanitizer should validate imported lofi drum grooves");
+  assert.ok(pocketDawSanitizer.includes("sanitizeDrumGroovePreset"), "Pocket DAW sanitizer should validate imported lofi drum grooves");
+  assert.ok(pocketDawSanitizer.includes("CHIP_DRUM_GROOVE_PRESETS"), "Pocket DAW sanitizer should validate imported chip drum grooves");
 });
 
 test("shared sound surface generation stays one-command across DAW and Godot", async () => {
@@ -270,7 +284,7 @@ test("Chordsmith composer consults shared core sound IDs before sanitizing proje
   assert.ok(chordsmith.includes('coreArrayExport("LOFI_BASS_TONES"'), "Chordsmith should read lofi bass-tone IDs from shared core when available");
   assert.ok(chordsmith.includes('coreArrayExport("LOFI_DRUM_GROOVE_PRESETS"'), "Chordsmith should read lofi drum groove IDs from shared core when available");
   assert.ok(chordsmith.includes('coreArrayExport("POCKET_GUITAR_TONES"'), "Chordsmith should read guitar tone IDs from shared core when available");
-  assert.match(chordsmith, /function sanitizeProjectData\(raw\)[\s\S]*?safeChoice\(raw\.drumKit,\s*lofiDrumKitIds\(\),\s*"classic"\)[\s\S]*?safeChoice\(raw\.chordInstrument,\s*chordInstrumentIds\(\),\s*"pocket"\)/, "Chordsmith import sanitizer should validate sound IDs through shared-core helpers");
+  assert.match(chordsmith, /function sanitizeProjectData\(raw\)[\s\S]*?safeChoice\(raw\.drumKit,\s*pocketDrumKitIds\(\),\s*"classic"\)[\s\S]*?safeChoice\(raw\.chordInstrument,\s*chordInstrumentIds\(\),\s*"pocket"\)/, "Chordsmith import sanitizer should validate sound IDs through shared-core helpers");
   assert.match(chordsmith, /function ensureMelodyInstrumentsLength\(list, trackCount\)[\s\S]*?const allowed = melodyInstrumentIds\(\);[\s\S]*?allowed\.includes\(v\)/, "Chordsmith melody track sanitizer should validate instrument IDs through shared-core helpers");
 });
 

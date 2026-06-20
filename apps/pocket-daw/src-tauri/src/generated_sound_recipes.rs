@@ -59,6 +59,9 @@ fn native_drum_kit_config(kit: &str) -> NativeDrumKitConfig {
         "lofi_dusty" => native_drum_kit_lofi_dusty(),
         "lofi_brush" => native_drum_kit_lofi_brush(),
         "lofi_tape_soft" => native_drum_kit_lofi_tape_soft(),
+        "chip_noise_kit" => native_drum_kit_chip_noise_kit(),
+        "chip_arcade_kit" => native_drum_kit_chip_arcade_kit(),
+        "modern_chip_punch" => native_drum_kit_modern_chip_punch(),
         _ => native_drum_kit_classic(),
     }
 }
@@ -69,6 +72,10 @@ fn generated_native_resolve_drum_kit(kit: Option<&str>, audio_profile: Option<&s
         "lofi_dusty" => "lofi_dusty",
         "lofi_brush" => "lofi_brush",
         "lofi_tape_soft" => "lofi_tape_soft",
+        "chip_noise_kit" => "chip_noise_kit",
+        "chip_arcade_kit" => "chip_arcade_kit",
+        "modern_chip_punch" => "modern_chip_punch",
+        _ if generated_native_chip_active(audio_profile, lofi_preset) => "chip_noise_kit",
         _ if generated_native_lofi_active(audio_profile, lofi_preset) => "lofi_dusty",
         _ => "classic",
     }
@@ -76,6 +83,10 @@ fn generated_native_resolve_drum_kit(kit: Option<&str>, audio_profile: Option<&s
 
 fn generated_native_lofi_active(audio_profile: Option<&str>, lofi_preset: Option<&str>) -> bool {
     audio_profile == Some("lofi_chill") || lofi_preset.unwrap_or("").starts_with("lofi_")
+}
+
+fn generated_native_chip_active(audio_profile: Option<&str>, chip_preset: Option<&str>) -> bool {
+    audio_profile == Some("chip_tune") || chip_preset.unwrap_or("").starts_with("chip_")
 }
 
 fn native_drum_kit_classic() -> NativeDrumKitConfig {
@@ -242,11 +253,138 @@ fn native_drum_kit_lofi_tape_soft() -> NativeDrumKitConfig {
     }
 }
 
+fn native_drum_kit_chip_noise_kit() -> NativeDrumKitConfig {
+    NativeDrumKitConfig {
+        kick: NativeKickConfig {
+            start_freq: 210.0,
+            end_freq: 55.0,
+            sweep_seconds: 0.075,
+            filter_freq: Some(1900.0),
+            gain_floor: 0.05,
+            gain_scale: 0.7,
+            length: 0.11,
+            ramp_seconds: 0.095,
+        },
+        snare: NativeSnareConfig {
+            noise_seconds: 0.075,
+            highpass: 1500.0,
+            lowpass: Some(6200.0),
+            gain_floor: 0.035,
+            gain_scale: 0.72,
+            length: 0.08,
+            ramp_seconds: 0.07,
+            body_freq: Some(260.0),
+            body_gain: 0.028,
+            body_length: 0.055,
+            body_ramp_seconds: 0.05,
+        },
+        hat: NativeHatConfig {
+            closed_length: 0.035,
+            open_length: 0.12,
+            highpass_closed: 5200.0,
+            highpass_open: 3600.0,
+            lowpass: Some(9400.0),
+            gain_floor_closed: 0.018,
+            gain_floor_open: 0.03,
+            gain_scale_closed: 0.68,
+            gain_scale_open: 0.72,
+            ramp_seconds_closed: 0.03,
+            ramp_seconds_open: 0.105,
+        },
+    }
+}
+
+fn native_drum_kit_chip_arcade_kit() -> NativeDrumKitConfig {
+    NativeDrumKitConfig {
+        kick: NativeKickConfig {
+            start_freq: 185.0,
+            end_freq: 48.0,
+            sweep_seconds: 0.095,
+            filter_freq: Some(1400.0),
+            gain_floor: 0.055,
+            gain_scale: 0.78,
+            length: 0.14,
+            ramp_seconds: 0.12,
+        },
+        snare: NativeSnareConfig {
+            noise_seconds: 0.09,
+            highpass: 1300.0,
+            lowpass: Some(5600.0),
+            gain_floor: 0.04,
+            gain_scale: 0.68,
+            length: 0.1,
+            ramp_seconds: 0.085,
+            body_freq: Some(220.0),
+            body_gain: 0.032,
+            body_length: 0.075,
+            body_ramp_seconds: 0.065,
+        },
+        hat: NativeHatConfig {
+            closed_length: 0.04,
+            open_length: 0.145,
+            highpass_closed: 5000.0,
+            highpass_open: 3300.0,
+            lowpass: Some(9000.0),
+            gain_floor_closed: 0.018,
+            gain_floor_open: 0.032,
+            gain_scale_closed: 0.66,
+            gain_scale_open: 0.72,
+            ramp_seconds_closed: 0.034,
+            ramp_seconds_open: 0.12,
+        },
+    }
+}
+
+fn native_drum_kit_modern_chip_punch() -> NativeDrumKitConfig {
+    NativeDrumKitConfig {
+        kick: NativeKickConfig {
+            start_freq: 150.0,
+            end_freq: 38.0,
+            sweep_seconds: 0.145,
+            filter_freq: Some(230.0),
+            gain_floor: 0.06,
+            gain_scale: 0.88,
+            length: 0.18,
+            ramp_seconds: 0.16,
+        },
+        snare: NativeSnareConfig {
+            noise_seconds: 0.105,
+            highpass: 980.0,
+            lowpass: Some(4800.0),
+            gain_floor: 0.04,
+            gain_scale: 0.76,
+            length: 0.12,
+            ramp_seconds: 0.1,
+            body_freq: Some(190.0),
+            body_gain: 0.046,
+            body_length: 0.095,
+            body_ramp_seconds: 0.08,
+        },
+        hat: NativeHatConfig {
+            closed_length: 0.045,
+            open_length: 0.17,
+            highpass_closed: 4300.0,
+            highpass_open: 3000.0,
+            lowpass: Some(7800.0),
+            gain_floor_closed: 0.02,
+            gain_floor_open: 0.035,
+            gain_scale_closed: 0.7,
+            gain_scale_open: 0.78,
+            ramp_seconds_closed: 0.04,
+            ramp_seconds_open: 0.145,
+        },
+    }
+}
+
 fn native_bass_tone_config(tone: Option<&str>) -> NativeBassToneConfig {
     match tone.unwrap_or("classic") {
         "warm_sub" => native_bass_tone_warm_sub(),
         "soft_upright" => native_bass_tone_soft_upright(),
         "rounded_triangle_bass" => native_bass_tone_rounded_triangle_bass(),
+        "chip_triangle_bass" => native_bass_tone_chip_triangle_bass(),
+        "chip_square_bass" => native_bass_tone_chip_square_bass(),
+        "modern_chip_sub" => native_bass_tone_modern_chip_sub(),
+        "bitcrush_bass" => native_bass_tone_bitcrush_bass(),
         _ => native_bass_tone_classic(),
     }
 }
@@ -299,6 +437,54 @@ fn native_bass_tone_rounded_triangle_bass() -> NativeBassToneConfig {
     }
 }
 
+fn native_bass_tone_chip_triangle_bass() -> NativeBassToneConfig {
+    NativeBassToneConfig {
+        main_wave: "triangle",
+        sub_wave: "sine",
+        main_peak: 0.88,
+        sub_peak: 0.25,
+        cutoff: 520.0,
+        sub_cutoff: 180.0,
+        attack: 0.004,
+    }
+}
+
+fn native_bass_tone_chip_square_bass() -> NativeBassToneConfig {
+    NativeBassToneConfig {
+        main_wave: "square",
+        sub_wave: "triangle",
+        main_peak: 0.72,
+        sub_peak: 0.22,
+        cutoff: 680.0,
+        sub_cutoff: 220.0,
+        attack: 0.002,
+    }
+}
+
+fn native_bass_tone_modern_chip_sub() -> NativeBassToneConfig {
+    NativeBassToneConfig {
+        main_wave: "square",
+        sub_wave: "sine",
+        main_peak: 0.64,
+        sub_peak: 0.62,
+        cutoff: 420.0,
+        sub_cutoff: 150.0,
+        attack: 0.006,
+    }
+}
+
+fn native_bass_tone_bitcrush_bass() -> NativeBassToneConfig {
+    NativeBassToneConfig {
+        main_wave: "sawtooth",
+        sub_wave: "square",
+        main_peak: 0.58,
+        sub_peak: 0.34,
+        cutoff: 560.0,
+        sub_cutoff: 210.0,
+        attack: 0.003,
+    }
+}
+
 fn generated_native_chord_config(instrument: Option<&str>) -> NativeChordConfig {
     match instrument.unwrap_or("pocket") {
         "piano" => generated_native_chord_piano(),
@@ -311,6 +497,10 @@ fn generated_native_chord_config(instrument: Option<&str>) -> NativeChordConfig 
         "cassette_keys" => generated_native_chord_cassette_keys(),
         "muted_jazz_guitar" => generated_native_chord_muted_jazz_guitar(),
         "lofi_warm_pad" => generated_native_chord_lofi_warm_pad(),
+        "chip_square_stack" => generated_native_chord_chip_square_stack(),
+        "chip_triangle_pad" => generated_native_chord_chip_triangle_pad(),
+        "chip_arp_keys" => generated_native_chord_chip_arp_keys(),
+        "modern_chip_poly" => generated_native_chord_modern_chip_poly(),
         _ => generated_native_chord_pocket(),
     }
 }
@@ -507,6 +697,78 @@ const GENERATED_CHORD_LOFI_WARM_PAD_LAYERS: [NativeChordLayerConfig; 2] = [
         freq_mul: 1.0,
         detune: 7.0,
         level: 0.42,
+    }
+];
+
+const GENERATED_CHORD_CHIP_SQUARE_STACK_LAYERS: [NativeChordLayerConfig; 3] = [
+    NativeChordLayerConfig {
+        wave: "square",
+        freq_mul: 1.0,
+        detune: 0.0,
+        level: 0.72,
+    },
+    NativeChordLayerConfig {
+        wave: "square",
+        freq_mul: 1.0,
+        detune: 6.0,
+        level: 0.38,
+    },
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 2.0,
+        detune: 0.0,
+        level: 0.12,
+    }
+];
+
+const GENERATED_CHORD_CHIP_TRIANGLE_PAD_LAYERS: [NativeChordLayerConfig; 2] = [
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 1.0,
+        detune: 0.0,
+        level: 0.8,
+    },
+    NativeChordLayerConfig {
+        wave: "sine",
+        freq_mul: 2.0,
+        detune: 0.0,
+        level: 0.18,
+    }
+];
+
+const GENERATED_CHORD_CHIP_ARP_KEYS_LAYERS: [NativeChordLayerConfig; 2] = [
+    NativeChordLayerConfig {
+        wave: "square",
+        freq_mul: 1.0,
+        detune: 0.0,
+        level: 0.74,
+    },
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 2.0,
+        detune: -4.0,
+        level: 0.16,
+    }
+];
+
+const GENERATED_CHORD_MODERN_CHIP_POLY_LAYERS: [NativeChordLayerConfig; 3] = [
+    NativeChordLayerConfig {
+        wave: "square",
+        freq_mul: 1.0,
+        detune: -7.0,
+        level: 0.62,
+    },
+    NativeChordLayerConfig {
+        wave: "sawtooth",
+        freq_mul: 1.0,
+        detune: 8.0,
+        level: 0.4,
+    },
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 0.5,
+        detune: 0.0,
+        level: 0.22,
     }
 ];
 
@@ -741,6 +1003,90 @@ fn generated_native_chord_lofi_warm_pad() -> NativeChordConfig {
     }
 }
 
+fn generated_native_chord_chip_square_stack() -> NativeChordConfig {
+    NativeChordConfig {
+        root_wave: "square",
+        wave: "square",
+        peak: 0.16,
+        filter: "lowpass",
+        freq: 3600.0,
+        filter_q: 0.8,
+        filter_sweep: None,
+        attack: 0.002,
+        decay: 0.08,
+        sustain: 0.48,
+        release: 0.14,
+        dur_mul: 0.82,
+        spread_mul: 0.16,
+        shimmer: false,
+        max_live_dur: 0.68,
+        layers: &GENERATED_CHORD_CHIP_SQUARE_STACK_LAYERS,
+    }
+}
+
+fn generated_native_chord_chip_triangle_pad() -> NativeChordConfig {
+    NativeChordConfig {
+        root_wave: "triangle",
+        wave: "triangle",
+        peak: 0.125,
+        filter: "lowpass",
+        freq: 2200.0,
+        filter_q: 0.62,
+        filter_sweep: None,
+        attack: 0.055,
+        decay: 0.16,
+        sustain: 0.72,
+        release: 0.34,
+        dur_mul: 1.18,
+        spread_mul: 0.12,
+        shimmer: false,
+        max_live_dur: 1.2,
+        layers: &GENERATED_CHORD_CHIP_TRIANGLE_PAD_LAYERS,
+    }
+}
+
+fn generated_native_chord_chip_arp_keys() -> NativeChordConfig {
+    NativeChordConfig {
+        root_wave: "square",
+        wave: "square",
+        peak: 0.135,
+        filter: "bandpass",
+        freq: 1850.0,
+        filter_q: 1.1,
+        filter_sweep: None,
+        attack: 0.001,
+        decay: 0.055,
+        sustain: 0.16,
+        release: 0.12,
+        dur_mul: 0.46,
+        spread_mul: 0.72,
+        shimmer: true,
+        max_live_dur: 0.36,
+        layers: &GENERATED_CHORD_CHIP_ARP_KEYS_LAYERS,
+    }
+}
+
+fn generated_native_chord_modern_chip_poly() -> NativeChordConfig {
+    NativeChordConfig {
+        root_wave: "square",
+        wave: "sawtooth",
+        peak: 0.142,
+        filter: "lowpass",
+        freq: 2550.0,
+        filter_q: 0.78,
+        filter_sweep: Some(3400.0),
+        attack: 0.008,
+        decay: 0.13,
+        sustain: 0.54,
+        release: 0.22,
+        dur_mul: 0.96,
+        spread_mul: 0.28,
+        shimmer: true,
+        max_live_dur: 0.92,
+        layers: &GENERATED_CHORD_MODERN_CHIP_POLY_LAYERS,
+    }
+}
+
 fn generated_native_lead_config(instrument: Option<&str>) -> NativeLeadConfig {
     match instrument.unwrap_or("pulse") {
         "soft" => generated_native_lead_soft(),
@@ -758,6 +1104,11 @@ fn generated_native_lead_config(instrument: Option<&str>) -> NativeLeadConfig {
         "mellow_sax" => generated_native_lead_mellow_sax(),
         "muted_trumpet" => generated_native_lead_muted_trumpet(),
         "tape_bell" => generated_native_lead_tape_bell(),
+        "chip_square_lead" => generated_native_lead_chip_square_lead(),
+        "chip_pulse_lead" => generated_native_lead_chip_pulse_lead(),
+        "chip_triangle_blip" => generated_native_lead_chip_triangle_blip(),
+        "chip_bell_stack" => generated_native_lead_chip_bell_stack(),
+        "modern_chip_lead" => generated_native_lead_modern_chip_lead(),
         _ => generated_native_lead_pulse(),
     }
 }
@@ -972,6 +1323,98 @@ const GENERATED_LEAD_TAPE_BELL_EXTRAS: [NativeLeadExtraConfig; 1] = [
     }
 ];
 
+const GENERATED_LEAD_CHIP_SQUARE_LEAD_EXTRAS: [NativeLeadExtraConfig; 1] = [
+    NativeLeadExtraConfig {
+        freq_mul: 2.0,
+        midi_offset: 0.0,
+        wave: "triangle",
+        peak: 0.018,
+        filter: "lowpass",
+        freq: 5200.0,
+        offset: 0.004,
+        dur_mul: 0.42,
+        max_dur: Some(0.12),
+    }
+];
+
+const GENERATED_LEAD_CHIP_PULSE_LEAD_EXTRAS: [NativeLeadExtraConfig; 1] = [
+    NativeLeadExtraConfig {
+        freq_mul: 1.005,
+        midi_offset: 0.0,
+        wave: "square",
+        peak: 0.026,
+        filter: "lowpass",
+        freq: 3600.0,
+        offset: 0.006,
+        dur_mul: 0.62,
+        max_dur: None,
+    }
+];
+
+const GENERATED_LEAD_CHIP_TRIANGLE_BLIP_EXTRAS: [NativeLeadExtraConfig; 1] = [
+    NativeLeadExtraConfig {
+        freq_mul: 2.0,
+        midi_offset: 0.0,
+        wave: "sine",
+        peak: 0.012,
+        filter: "lowpass",
+        freq: 4200.0,
+        offset: 0.004,
+        dur_mul: 0.28,
+        max_dur: Some(0.08),
+    }
+];
+
+const GENERATED_LEAD_CHIP_BELL_STACK_EXTRAS: [NativeLeadExtraConfig; 2] = [
+    NativeLeadExtraConfig {
+        freq_mul: 2.003,
+        midi_offset: 12.0,
+        wave: "sine",
+        peak: 0.024,
+        filter: "lowpass",
+        freq: 4800.0,
+        offset: 0.012,
+        dur_mul: 0.5,
+        max_dur: Some(0.18),
+    },
+    NativeLeadExtraConfig {
+        freq_mul: 3.01,
+        midi_offset: 0.0,
+        wave: "triangle",
+        peak: 0.01,
+        filter: "highpass",
+        freq: 2100.0,
+        offset: 0.018,
+        dur_mul: 0.38,
+        max_dur: Some(0.14),
+    }
+];
+
+const GENERATED_LEAD_MODERN_CHIP_LEAD_EXTRAS: [NativeLeadExtraConfig; 2] = [
+    NativeLeadExtraConfig {
+        freq_mul: 1.997,
+        midi_offset: 12.0,
+        wave: "triangle",
+        peak: 0.02,
+        filter: "lowpass",
+        freq: 4300.0,
+        offset: 0.005,
+        dur_mul: 0.58,
+        max_dur: Some(0.16),
+    },
+    NativeLeadExtraConfig {
+        freq_mul: 0.5,
+        midi_offset: -12.0,
+        wave: "square",
+        peak: 0.012,
+        filter: "lowpass",
+        freq: 1600.0,
+        offset: 0.002,
+        dur_mul: 0.68,
+        max_dur: Some(0.18),
+    }
+];
+
 fn generated_native_lead_pulse() -> NativeLeadConfig {
     NativeLeadConfig {
         wave: "square",
@@ -1145,6 +1588,61 @@ fn generated_native_lead_tape_bell() -> NativeLeadConfig {
         freq: 1900.0,
         dur_mul: 1.04,
         extras: &GENERATED_LEAD_TAPE_BELL_EXTRAS,
+    }
+}
+
+fn generated_native_lead_chip_square_lead() -> NativeLeadConfig {
+    NativeLeadConfig {
+        wave: "square",
+        peak: 0.155,
+        filter: "lowpass",
+        freq: 4200.0,
+        dur_mul: 0.88,
+        extras: &GENERATED_LEAD_CHIP_SQUARE_LEAD_EXTRAS,
+    }
+}
+
+fn generated_native_lead_chip_pulse_lead() -> NativeLeadConfig {
+    NativeLeadConfig {
+        wave: "square",
+        peak: 0.135,
+        filter: "bandpass",
+        freq: 2400.0,
+        dur_mul: 0.76,
+        extras: &GENERATED_LEAD_CHIP_PULSE_LEAD_EXTRAS,
+    }
+}
+
+fn generated_native_lead_chip_triangle_blip() -> NativeLeadConfig {
+    NativeLeadConfig {
+        wave: "triangle",
+        peak: 0.12,
+        filter: "lowpass",
+        freq: 3100.0,
+        dur_mul: 0.54,
+        extras: &GENERATED_LEAD_CHIP_TRIANGLE_BLIP_EXTRAS,
+    }
+}
+
+fn generated_native_lead_chip_bell_stack() -> NativeLeadConfig {
+    NativeLeadConfig {
+        wave: "sine",
+        peak: 0.108,
+        filter: "lowpass",
+        freq: 3900.0,
+        dur_mul: 1.05,
+        extras: &GENERATED_LEAD_CHIP_BELL_STACK_EXTRAS,
+    }
+}
+
+fn generated_native_lead_modern_chip_lead() -> NativeLeadConfig {
+    NativeLeadConfig {
+        wave: "square",
+        peak: 0.138,
+        filter: "lowpass",
+        freq: 3600.0,
+        dur_mul: 0.86,
+        extras: &GENERATED_LEAD_MODERN_CHIP_LEAD_EXTRAS,
     }
 }
 

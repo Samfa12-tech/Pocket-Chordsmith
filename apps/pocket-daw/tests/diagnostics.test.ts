@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AudioEngine } from "../src/audio/audioEngine";
 import { buildTesterDiagnosticsPayload, diagnosticsJson } from "../src/app/diagnostics";
+import { PerformanceDiagnosticsRecorder } from "../src/app/performanceDiagnostics";
 import { createInitialState, currentProject } from "../src/app/state";
 import { createUndoStack } from "../src/daw/undo";
 import { addMediaPoolItem, createMediaPoolItem, markMediaPoolItemMissing } from "../src/daw/mediaPool";
@@ -69,7 +70,63 @@ describe("tester diagnostics", () => {
       runtimeOnlyCount: 1,
       missingCount: 1
     });
+    expect(payload.performance).toBeNull();
     expect(diagnosticsJson(payload)).toContain('"installerOnly": true');
     expect(diagnosticsJson(payload)).toContain('"handoff"');
+  });
+
+  it("captures bounded live performance samples for MCP stress-test analysis", () => {
+    const state = createInitialState();
+    const engine = new AudioEngine(currentProject(state));
+    const recorder = new PerformanceDiagnosticsRecorder();
+    recorder.start(5);
+
+    const first = recorder.report(state, engine.getDiagnostics(), {
+      renderCount: 1,
+      renderCountDuringPlayback: 0,
+      liveUpdateCount: 0
+    }, { recordSample: true });
+    const second = recorder.report({ ...state, playing: true, playheadBar: 2 }, engine.getDiagnostics(), {
+      renderCount: 7,
+      renderCountDuringPlayback: 3,
+      liveUpdateCount: 11
+    }, { recordSample: true });
+    const third = recorder.report({ ...state, playing: true, playheadBar: 3 }, engine.getDiagnostics(), {
+      renderCount: 9,
+      renderCountDuringPlayback: 5,
+      liveUpdateCount: 17
+    }, { recordSample: true });
+    recorder.report({ ...state, playing: true, playheadBar: 4 }, engine.getDiagnostics(), {
+      renderCount: 10,
+      renderCountDuringPlayback: 6,
+      liveUpdateCount: 18
+    }, { recordSample: true });
+    recorder.report({ ...state, playing: true, playheadBar: 5 }, engine.getDiagnostics(), {
+      renderCount: 11,
+      renderCountDuringPlayback: 7,
+      liveUpdateCount: 19
+    }, { recordSample: true });
+    const bounded = recorder.report({ ...state, playing: true, playheadBar: 6 }, engine.getDiagnostics(), {
+      renderCount: 12,
+      renderCountDuringPlayback: 8,
+      liveUpdateCount: 20
+    }, { recordSample: true });
+
+    expect(first.enabled).toBe(true);
+    expect(first.baseline).toBeTruthy();
+    expect(bounded.sampleCount).toBe(5);
+    expect(bounded.droppedSampleCount).toBe(1);
+    expect(third.summary.renderCountDelta).toBe(8);
+    expect(third.summary.renderCountDuringPlaybackDelta).toBe(5);
+    expect(third.summary.liveUpdateCountDelta).toBe(17);
+    expect(third.current.features.trackCount).toBe(currentProject(state).tracks.length);
+    expect(second.recentSamples.at(-1)?.playing).toBe(true);
+
+    const payload = buildTesterDiagnosticsPayload(state, engine.getDiagnostics(), {
+      performance: bounded
+    });
+
+    expect(payload.performance?.sessionId).toMatch(/^perf-/);
+    expect(diagnosticsJson(payload)).toContain('"recentSamples"');
   });
 });

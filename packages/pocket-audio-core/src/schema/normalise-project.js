@@ -14,6 +14,7 @@ import {
   STEM_IDS
 } from "../constants.js";
 import { normaliseLofiProjectSettings } from "../presets/lofi.js";
+import { CHIP_AUDIO_PROFILE_ID, normaliseChipProjectSettings } from "../presets/chip.js";
 import { CHORDSMITH_CHORD_PLAY_MODES, CHORDSMITH_CHORD_RHYTHM_MODES } from "../performance/chord-rhythm.js";
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../sounds/instruments.js";
 import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_ARTICULATIONS, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../sounds/guitar.js";
@@ -23,7 +24,9 @@ const DEFAULT_PROGRESSION = Object.freeze([0, 4, 5, 3]);
 
 export function normalisePocketChordsmithProject(raw, options = {}) {
   const { project, sourceSchemaVersion, migrationNotes } = migratePocketChordsmithProject(raw);
-  const lofi = normaliseLofiProjectSettings(project);
+  const soundProfile = normaliseSoundProfile(project);
+  const lofi = soundProfile.lofi;
+  const chip = soundProfile.chip;
   const timeSig = safeChoice(asInt(project.timeSig, DEFAULT_TIME_SIG), [3, 4, 5, 6, 7], DEFAULT_TIME_SIG);
   const resolution = sanitizeResolution(project.resolution ?? project.lastAdvancedResolution ?? DEFAULT_RESOLUTION);
   const sectionBars = normaliseSectionBars(project.sectionBars || project.sectionLengths);
@@ -56,10 +59,11 @@ export function normalisePocketChordsmithProject(raw, options = {}) {
       ppq: DEFAULT_PPQ,
       melodyPitchMode: safeChoice(project.melodyPitchMode, ["scale", "chromatic"], "scale"),
       humanizeOn: Boolean(project.humanizeOn),
-      audioProfile: lofi.audioProfile,
-      stylePreset: lofi.presetId || ""
+      audioProfile: soundProfile.audioProfile,
+      stylePreset: chip.presetId || lofi.presetId || ""
     },
     lofi,
+    chip,
     transport: {
       scope: "sequence",
       currentSection: sequence[0] || "A"
@@ -142,6 +146,33 @@ function normaliseSection(project, id, context) {
       volume: clamp(asNumber(project.guitarVolume, DEFAULT_STEM_MIX.guitar.volume), 0, 1),
       pattern: guitarPattern
     }
+  };
+}
+
+function normaliseSoundProfile(project) {
+  const explicit = String(project.audioProfile || "").toLowerCase();
+  const chipCandidate = normaliseChipProjectSettings(project);
+  const lofiCandidate = normaliseLofiProjectSettings(project);
+  const chipActive = explicit === CHIP_AUDIO_PROFILE_ID || (!explicit && Boolean(chipCandidate.presetId));
+  const lofiActive = !chipActive && (explicit === "lofi_chill" || (!explicit && Boolean(lofiCandidate.presetId)));
+  if (chipActive) {
+    return {
+      audioProfile: CHIP_AUDIO_PROFILE_ID,
+      chip: chipCandidate,
+      lofi: normaliseLofiProjectSettings({ audioProfile: "standard" })
+    };
+  }
+  if (lofiActive) {
+    return {
+      audioProfile: "lofi_chill",
+      chip: normaliseChipProjectSettings({ audioProfile: "standard" }),
+      lofi: lofiCandidate
+    };
+  }
+  return {
+    audioProfile: "standard",
+    chip: normaliseChipProjectSettings({ audioProfile: "standard" }),
+    lofi: normaliseLofiProjectSettings({ audioProfile: "standard" })
   };
 }
 

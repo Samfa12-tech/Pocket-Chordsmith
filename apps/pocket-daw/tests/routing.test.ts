@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDemoProject } from "../src/demo/demoProject";
-import { addBusTrack, addReturnTrack, routeTrackToOutput, setTrackSendLevel } from "../src/daw/routing";
+import { activeTrackSendRoutes, addBusTrack, addReturnTrack, routeTrackToOutput, setTrackSendLevel } from "../src/daw/routing";
 
 describe("routing helpers", () => {
   it("creates bus and return tracks and routes a track to a bus", () => {
@@ -25,5 +25,6 @@ describe("routing helpers", () => {
     const ret = addReturnTrack(rejected, "Delay Return");
     const sent = setTrackSendLevel(ret.project, "bass", ret.trackId, 0.4);
     expect(sent.tracks.find((track) => track.id === "bass")?.metadata?.sendLevels).toMatchObject({ [ret.trackId]: 0.4 });
+    expect(activeTrackSendRoutes(sent, sent.tracks.find((track) => track.id === "bass")!)).toEqual([{ returnTrackId: ret.trackId, level: 0.4 }]);
   });
 });

@@ -3,6 +3,7 @@ import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
 import { addDrumLaneFx, DRUM_LANE_DEFS } from "../src/daw/drumLanes";
 import { addFxSlot, setFxSlotParameter } from "../src/daw/fx";
+import { setTrackSendLevel } from "../src/daw/routing";
 import type { RenderedEvent } from "../src/audio/eventRenderer";
 import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioInvokeApi, type NativeAudioStatus } from "../src/native/audioPlayback";
 
@@ -37,11 +38,20 @@ describe("native audio playback bridge", () => {
     expect(payload.sampleRate).toBe(project.project.sampleRate);
     expect(payload.tracks.find((track) => track.id === "bass")).toMatchObject({ mute: false, solo: false });
     expect(payload.tracks.find((track) => track.id === "bass")?.fxChainId).toBe("fx_bass");
+    expect(payload.tracks.find((track) => track.id === "bass")?.sends).toEqual([]);
     expect(payload.events.length).toBe(events.length);
     expect(payload.events.some((event) => event.kind === "guitar" && event.midiNotes.length > 0)).toBe(true);
     expect(payload.events.some((event) => event.kind === "guitar" && event.instrument === "crunch")).toBe(true);
     expect(payload.fxChains.some((chain) => chain.ownerTrackId === "master")).toBe(true);
     expect(payload.sidechain).toEqual({ enabled: true, amount: 0.35, targetTrackId: "chords", triggerKind: "kick" });
+  });
+
+  it("passes guarded send routes to native playback tracks", () => {
+    const project = setTrackSendLevel(createDemoProject(), "bass", "fx-return", 0.35);
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
+
+    expect(payload.tracks.find((track) => track.id === "fx-return")?.isReturn).toBe(true);
+    expect(payload.tracks.find((track) => track.id === "bass")?.sends).toEqual([{ returnTrackId: "fx-return", level: 0.35 }]);
   });
 
   it("passes editable EQ chains and drum lane ownership to the native runtime", () => {

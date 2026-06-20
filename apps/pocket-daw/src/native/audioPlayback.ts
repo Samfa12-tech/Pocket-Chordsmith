@@ -1,6 +1,7 @@
 import type { FxChain, JsonValue, PocketDawProject } from "../daw/schema";
 import type { RenderedEvent } from "../audio/eventRenderer";
 import { chordsmithSidechainSettings } from "../audio/sidechain";
+import { activeTrackSendRoutes } from "../daw/routing";
 
 export interface NativeAudioStatus {
   backend: "native-cpal" | string;
@@ -25,10 +26,17 @@ export interface NativeAudioStatus {
 export interface NativeAudioTrack {
   id: string;
   fxChainId?: string;
+  isReturn: boolean;
+  sends: NativeAudioTrackSend[];
   volume: number;
   pan: number;
   mute: boolean;
   solo: boolean;
+}
+
+export interface NativeAudioTrackSend {
+  returnTrackId: string;
+  level: number;
 }
 
 export interface NativeAudioEvent {
@@ -48,6 +56,8 @@ export interface NativeAudioEvent {
   audioProfile?: string;
   lofiPreset?: string;
   lofiTexture?: JsonValue;
+  chipPreset?: string;
+  chipTexture?: JsonValue;
   accent?: boolean;
   articulation?: string;
   drumLane?: string;
@@ -214,6 +224,8 @@ export function buildNativeAudioStartPayload(
     tracks: project.tracks.map((track) => ({
       id: track.id,
       fxChainId: track.fxChainId,
+      isReturn: track.trackType === "return" || track.role === "fx-return",
+      sends: activeTrackSendRoutes(project, track),
       volume: clamp(track.volume, 0, 1.2),
       pan: clamp(track.pan, -1, 1),
       mute: track.mute,
@@ -236,6 +248,8 @@ export function buildNativeAudioStartPayload(
       audioProfile: event.audioProfile,
       lofiPreset: event.lofiPreset,
       lofiTexture: event.lofiTexture,
+      chipPreset: event.chipPreset,
+      chipTexture: event.chipTexture,
       accent: event.accent,
       articulation: event.articulation,
       drumLane: event.drumLane

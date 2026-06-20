@@ -9,6 +9,7 @@ import {
   POCKET_BASS_TONE_CONFIGS,
   validateLofiSoundRegistry
 } from "../../../packages/pocket-audio-core/src/sounds/lofi-registry.js";
+import { CHIP_BASS_TONES } from "../../../packages/pocket-audio-core/src/presets/chip.js";
 
 class FakeParam {
   values: Array<{ method: string; value: number; time: number }> = [];
@@ -141,7 +142,7 @@ describe("Pocket DAW instruments", () => {
       missingChordInstruments: [],
       missingLeadInstruments: []
     });
-    expect(Object.keys(POCKET_BASS_TONE_CONFIGS)).toEqual(["classic", "warm_sub", "soft_upright", "rounded_triangle_bass"]);
+    expect(Object.keys(POCKET_BASS_TONE_CONFIGS)).toEqual(["classic", "warm_sub", "soft_upright", "rounded_triangle_bass", ...CHIP_BASS_TONES]);
     expect(POCKET_BASS_TONE_CONFIGS.classic).toMatchObject({ mainWave: "sawtooth", subWave: "sine", mainPeak: 1, subPeak: 0.42, cutoff: 420, subCutoff: 220 });
     expect(Object.keys(LOFI_DRUM_KIT_CONFIGS)).toEqual(["lofi_dusty", "lofi_brush", "lofi_tape_soft"]);
     expect(Object.keys(LOFI_BASS_TONE_CONFIGS)).toEqual(["warm_sub", "soft_upright", "rounded_triangle_bass"]);

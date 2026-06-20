@@ -39,6 +39,8 @@ enum PlaybackBackend {
 @export var audio_profile := "standard"
 @export var lofi_preset := ""
 @export var lofi_texture: Dictionary = {}
+@export var chip_preset := ""
+@export var chip_texture: Dictionary = {}
 @export var lofi_bus := "Music_Texture"
 @export var lofi_state_presets: Dictionary = {
 	"lofi_study_room": {"menu": 0.42, "explore": 0.58, "night": 0.72},

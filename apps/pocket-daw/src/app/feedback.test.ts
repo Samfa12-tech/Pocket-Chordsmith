@@ -144,6 +144,7 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
     storage: {
       projectPath: "C:\\Users\\sam_s\\Music\\Ocarina of Time Medley.pocketdaw",
       userDataPath: "Project-adjacent media/cache folders are relative to the saved .pocketdaw file."
-    }
+    },
+    performance: null
   };
 }

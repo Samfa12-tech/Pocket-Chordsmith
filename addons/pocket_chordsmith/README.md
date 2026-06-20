@@ -2,7 +2,7 @@
 
 Pocket Chordsmith imports web-app JSON into compiled Godot resources, then drives runtime music callbacks through one lightweight conductor node.
 
-Current release: `1.1.6`, with direct local Push-to-Godot browser handoff support.
+Current release: `1.1.7`, with lofi/chillhop and chip tune Pocket Audio profile metadata support.
 
 License/status: MIT. The component license is `LICENSE` in this addon folder.
 See the repository root `LICENSES.md` for the full monorepo matrix.
@@ -153,6 +153,12 @@ conductor.queue_music_state("night", PocketChordsmithConductor.TransitionBoundar
 conductor.lowpass_music(0.65)
 conductor.set_bus_effect_amount("Music_Texture", "lowpass", 0.35)
 ```
+
+## Chip Tune Pack
+
+The importer/migrator also accepts Pocket Chordsmith chip tune metadata without requiring a schema bump: `audioProfile`, `chipPreset`, `chipTexture`, `drumKit`, `drumGroovePreset`, `bassTone`, `chordInstrument`, and `melodyInstruments`. Compiled chart resources preserve this metadata for arcade menus, boss states, victory stingers, and modern chip-inspired loops while keeping shipped audio on the Godot-native stem/sample path.
+
+The bundled web-kit playback profile maps chip chord, melody, bass, and drum identifiers to safe preview aliases. These previews are for editor auditioning; production projects should still prefer rendered stems from Pocket DAW game packs, licensed samples, or a HYBRID playback profile.
 
 More docs:
 

@@ -101,6 +101,7 @@
           <button class="btn primary" id="importBtn">Import</button>
           <button class="btn good" id="demoBtn">Load Demo</button>
           <button class="btn good" id="lofiDemoBtn">Lofi DJ Demo</button>
+          <button class="btn good" id="chipDemoBtn">Chip DJ Demo</button>
           <button class="btn" id="loadLastBtn">Load Last Session</button>
         </div>
         <a class="small linkish" href="https://samfa12.itch.io/pocket-chordsmith" target="_blank" rel="noopener">Pocket Chordsmith on itch.io</a>
@@ -301,12 +302,23 @@ const LOFI_DRUM_KITS = ["classic","lofi_dusty","lofi_brush","lofi_tape_soft"];
 const LOFI_BASS_TONES = ["classic","warm_sub","soft_upright","rounded_triangle_bass"];
 const LOFI_STYLE_PRESETS = ["lofi_study_room","lofi_rainy_window","lofi_moon_garden","lofi_koi_pond","lofi_train_window","lofi_ant_farm_night","lofi_menu_warmth","lofi_sleepy_waltz"];
 const DEFAULT_LOFI_TEXTURE = {enabled:false, vinylCrackle:0.08, tapeHiss:0.05, wowFlutter:0.03, warmth:0.16, lowPassAge:0.22, bitCrush:0.01};
+const CHIP_AUDIO_PROFILE_ID = "chip_tune";
+const CHIP_CHORD_INSTRUMENTS = ["chip_square_stack","chip_triangle_pad","chip_arp_keys","modern_chip_poly"];
+const CHIP_MELODY_INSTRUMENTS = ["chip_square_lead","chip_pulse_lead","chip_triangle_blip","chip_bell_stack","modern_chip_lead"];
+const CHIP_DRUM_KITS = ["chip_noise_kit","chip_arcade_kit","modern_chip_punch"];
+const CHIP_BASS_TONES = ["chip_triangle_bass","chip_square_bass","modern_chip_sub","bitcrush_bass"];
+const CHIP_STYLE_PRESETS = ["chip_arcade_start","chip_bug_maze_pulse","chip_neon_boss","chip_tiny_quest","chip_modern_jam","chip_menu_glow","chip_dungeon_drive","chip_victory_burst"];
+const CHIP_DRUM_GROOVE_PRESETS = ["chip_run_128","chip_menu_bounce","chip_boss_half_time","chip_arp_jam","chip_dungeon_shuffle","chip_victory_stomp"];
+const DEFAULT_CHIP_TEXTURE = {enabled:false, bitDepth:0.18, sampleRateCrush:0.14, pulseWidth:0.5, pitchDrift:0.02, saturation:0.18, stereoSpread:0.12};
 const FALLBACK_DRUM_KIT_CONFIGS = {
   classic:{kick:{startFreq:155,endFreq:45,sweepSeconds:0.14,gainFloor:0.08,gainScale:1,length:0.17,rampSeconds:0.16},snare:{noiseSeconds:0.12,highpass:1700,gainFloor:0.05,gainScale:1,length:0.13,rampSeconds:0.12},hat:{closedLength:0.05,openLength:0.16,highpassClosed:5600,highpassOpen:3800,gainFloorClosed:0.03,gainFloorOpen:0.05,gainScaleClosed:1,gainScaleOpen:1,rampSecondsClosed:0.05,rampSecondsOpen:0.14}},
   lofi_dusty:{kick:{startFreq:132,endFreq:42,sweepSeconds:0.18,filterFreq:170,gainFloor:0.04,gainScale:0.58,length:0.23,rampSeconds:0.21},snare:{noiseSeconds:0.13,highpass:980,lowpass:2800,gainFloor:0.035,gainScale:0.52,length:0.14,rampSeconds:0.12,bodyFreq:185,bodyGain:0.035,bodyLength:0.11,bodyRampSeconds:0.09},hat:{closedLength:0.065,openLength:0.2,highpassClosed:3400,highpassOpen:2600,lowpass:6200,gainFloorClosed:0.02,gainFloorOpen:0.035,gainScaleClosed:0.55,gainScaleOpen:0.62,rampSecondsClosed:0.055,rampSecondsOpen:0.18}},
   lofi_brush:{kick:{startFreq:132,endFreq:42,sweepSeconds:0.18,filterFreq:135,gainFloor:0.04,gainScale:0.48,length:0.23,rampSeconds:0.21},snare:{noiseSeconds:0.18,highpass:720,lowpass:2800,gainFloor:0.035,gainScale:0.46,length:0.2,rampSeconds:0.18,bodyFreq:150,bodyGain:0.035,bodyLength:0.11,bodyRampSeconds:0.09},hat:{closedLength:0.065,openLength:0.2,highpassClosed:3400,highpassOpen:2600,lowpass:6200,gainFloorClosed:0.02,gainFloorOpen:0.035,gainScaleClosed:0.55,gainScaleOpen:0.62,rampSecondsClosed:0.055,rampSecondsOpen:0.18}},
   lofi_tape_soft:{kick:{startFreq:118,endFreq:42,sweepSeconds:0.18,filterFreq:170,gainFloor:0.04,gainScale:0.58,length:0.23,rampSeconds:0.21},snare:{noiseSeconds:0.13,highpass:980,lowpass:2200,gainFloor:0.035,gainScale:0.52,length:0.14,rampSeconds:0.12,bodyFreq:185,bodyGain:0.035,bodyLength:0.11,bodyRampSeconds:0.09},hat:{closedLength:0.065,openLength:0.2,highpassClosed:3400,highpassOpen:2600,lowpass:5200,gainFloorClosed:0.02,gainFloorOpen:0.035,gainScaleClosed:0.55,gainScaleOpen:0.62,rampSecondsClosed:0.055,rampSecondsOpen:0.18}}
 };
+FALLBACK_DRUM_KIT_CONFIGS.chip_noise_kit = {kick:{startFreq:210,endFreq:55,sweepSeconds:0.075,filterFreq:1900,gainFloor:0.05,gainScale:0.7,length:0.11,rampSeconds:0.095},snare:{noiseSeconds:0.075,highpass:1500,lowpass:6200,gainFloor:0.035,gainScale:0.72,length:0.08,rampSeconds:0.07,bodyFreq:260,bodyGain:0.028,bodyLength:0.055,bodyRampSeconds:0.05},hat:{closedLength:0.035,openLength:0.12,highpassClosed:5200,highpassOpen:3600,lowpass:9400,gainFloorClosed:0.018,gainFloorOpen:0.03,gainScaleClosed:0.68,gainScaleOpen:0.72,rampSecondsClosed:0.03,rampSecondsOpen:0.105}};
+FALLBACK_DRUM_KIT_CONFIGS.chip_arcade_kit = {kick:{startFreq:185,endFreq:48,sweepSeconds:0.095,filterFreq:1400,gainFloor:0.055,gainScale:0.78,length:0.14,rampSeconds:0.12},snare:{noiseSeconds:0.09,highpass:1300,lowpass:5600,gainFloor:0.04,gainScale:0.68,length:0.1,rampSeconds:0.085,bodyFreq:220,bodyGain:0.032,bodyLength:0.075,bodyRampSeconds:0.065},hat:{closedLength:0.04,openLength:0.145,highpassClosed:5000,highpassOpen:3300,lowpass:9000,gainFloorClosed:0.018,gainFloorOpen:0.032,gainScaleClosed:0.66,gainScaleOpen:0.72,rampSecondsClosed:0.034,rampSecondsOpen:0.12}};
+FALLBACK_DRUM_KIT_CONFIGS.modern_chip_punch = {kick:{startFreq:150,endFreq:38,sweepSeconds:0.145,filterFreq:230,gainFloor:0.06,gainScale:0.88,length:0.18,rampSeconds:0.16},snare:{noiseSeconds:0.105,highpass:980,lowpass:4800,gainFloor:0.04,gainScale:0.76,length:0.12,rampSeconds:0.1,bodyFreq:190,bodyGain:0.046,bodyLength:0.095,bodyRampSeconds:0.08},hat:{closedLength:0.045,openLength:0.17,highpassClosed:4300,highpassOpen:3000,lowpass:7800,gainFloorClosed:0.02,gainFloorOpen:0.035,gainScaleClosed:0.7,gainScaleOpen:0.78,rampSecondsClosed:0.04,rampSecondsOpen:0.145}};
 const CHORDSMITH_THEMES = {
   night:{bg:"#070711",panel:"#101222",panel2:"#171a2f",line:"#2d3154",text:"#f4f7ff",muted:"#98a2c8",cyan:"#48f5ff",magenta:"#ff4fd8",violet:"#9b6cff",lime:"#a8ff61",amber:"#ffd166",danger:"#ff6b8b",background:"radial-gradient(circle at 15% 5%,rgba(72,245,255,.18),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,79,216,.16),transparent 32%),radial-gradient(circle at 50% 95%,rgba(155,108,255,.14),transparent 32%),linear-gradient(180deg,#060711,#0b0c18 50%,#060711)"},
   ocean:{bg:"#06131b",panel:"#102536",panel2:"#18364a",line:"#2d5c73",text:"#edf9ff",muted:"#9cc6d4",cyan:"#63d8ff",magenta:"#7ef0d7",violet:"#6fa8ff",lime:"#99f5cf",amber:"#ffd27a",danger:"#ff7f9d",background:"radial-gradient(circle at 12% 7%,rgba(99,216,255,.20),transparent 30%),radial-gradient(circle at 90% 10%,rgba(126,240,215,.15),transparent 34%),radial-gradient(circle at 48% 95%,rgba(111,168,255,.15),transparent 34%),linear-gradient(180deg,#06131b,#0a1f2a 52%,#061018)"},
@@ -378,6 +390,15 @@ function lofiMelodyInstrumentIds(){ return coreArrayExport("LOFI_MELODY_INSTRUME
 function lofiDrumKitIds(){ return coreArrayExport("LOFI_DRUM_KITS", LOFI_DRUM_KITS, {includeClassic:true}); }
 function lofiBassToneIds(){ return coreArrayExport("LOFI_BASS_TONES", LOFI_BASS_TONES, {includeClassic:true}); }
 function lofiStylePresetIds(){ return coreArrayExport("LOFI_STYLE_PRESET_IDS", LOFI_STYLE_PRESETS); }
+function chipChordInstrumentIds(){ return coreArrayExport("CHIP_CHORD_INSTRUMENTS", CHIP_CHORD_INSTRUMENTS); }
+function chipMelodyInstrumentIds(){ return coreArrayExport("CHIP_MELODY_INSTRUMENTS", CHIP_MELODY_INSTRUMENTS); }
+function chipDrumKitIds(){ return coreArrayExport("CHIP_DRUM_KITS", CHIP_DRUM_KITS); }
+function chipBassToneIds(){ return coreArrayExport("CHIP_BASS_TONES", CHIP_BASS_TONES); }
+function chipStylePresetIds(){ return coreArrayExport("CHIP_STYLE_PRESET_IDS", CHIP_STYLE_PRESETS); }
+function pocketDrumKitIds(){ return Array.from(new Set([...lofiDrumKitIds(), ...chipDrumKitIds()])); }
+function pocketBassToneIds(){ return Array.from(new Set([...lofiBassToneIds(), ...chipBassToneIds()])); }
+function pocketChordInstrumentIds(){ return ["pocket","piano","saloon_piano","harp","warm_pad","glass",...lofiChordInstrumentIds(),...chipChordInstrumentIds()]; }
+function pocketMelodyInstrumentIds(){ return ["pulse","soft","synth","bell","lead_guitar","distorted_lead_guitar","banjo","harmonica","cowboy_whistle","trumpet","saxophone",...lofiMelodyInstrumentIds(),...chipMelodyInstrumentIds()]; }
 function fallbackChordsmithFxParameters(fx = {}){
   const delay = clamp(asNum(fx.delay ?? fx.echo, DEFAULT_FX.echo), 0, 1);
   const chorus = clamp(asNum(fx.chorus, DEFAULT_FX.chorus), 0, 1);
@@ -680,7 +701,7 @@ function sanitizeSection(raw, project, id){
     grid,
     gridTuplets,
     melodyTracks,
-    melodyInstruments: ensureTrackArray(raw[sectionKey("melodyInstruments", id)], trackCount, "pulse", v => safeChoice(v,["pulse","soft","synth","bell","lead_guitar","distorted_lead_guitar","banjo","harmonica","cowboy_whistle","trumpet","saxophone",...lofiMelodyInstrumentIds()],"pulse")),
+    melodyInstruments: ensureTrackArray(raw[sectionKey("melodyInstruments", id)], trackCount, "pulse", v => safeChoice(v,pocketMelodyInstrumentIds(),"pulse")),
     melodyOctaves: ensureTrackArray(raw[sectionKey("melodyOctaves", id)], trackCount, 0, v => clamp(asInt(v,0),-1,1)),
     melodyMute: ensureTrackArray(raw[sectionKey("melodyMute", id)], trackCount, false, v => !!v),
     melodySolo: ensureTrackArray(raw[sectionKey("melodySolo", id)], trackCount, false, v => !!v),
@@ -699,6 +720,10 @@ function sanitizeLofiPresetId(value){
   const id = String(value || "");
   return lofiStylePresetIds().includes(id) ? id : "";
 }
+function sanitizeChipPresetId(value){
+  const id = String(value || "");
+  return chipStylePresetIds().includes(id) ? id : "";
+}
 function sanitizeLofiTexture(raw){
   const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
   return {
@@ -711,8 +736,28 @@ function sanitizeLofiTexture(raw){
     bitCrush: clamp(asNum(source.bitCrush, DEFAULT_LOFI_TEXTURE.bitCrush), 0, 1)
   };
 }
+function sanitizeChipTexture(raw){
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  return {
+    enabled: !!source.enabled,
+    bitDepth: clamp(asNum(source.bitDepth, DEFAULT_CHIP_TEXTURE.bitDepth), 0, 1),
+    sampleRateCrush: clamp(asNum(source.sampleRateCrush, DEFAULT_CHIP_TEXTURE.sampleRateCrush), 0, 1),
+    pulseWidth: clamp(asNum(source.pulseWidth, DEFAULT_CHIP_TEXTURE.pulseWidth), 0, 1),
+    pitchDrift: clamp(asNum(source.pitchDrift, DEFAULT_CHIP_TEXTURE.pitchDrift), 0, 1),
+    saturation: clamp(asNum(source.saturation, DEFAULT_CHIP_TEXTURE.saturation), 0, 1),
+    stereoSpread: clamp(asNum(source.stereoSpread, DEFAULT_CHIP_TEXTURE.stereoSpread), 0, 1)
+  };
+}
 function sanitizePocketChordsmithProject(raw){
   if(!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("That project is not a valid Pocket Chordsmith JSON object.");
+  const rawStylePreset = raw.stylePreset || "";
+  const rawChipPreset = raw.chipPreset || (String(rawStylePreset).startsWith("chip_") ? rawStylePreset : "");
+  const rawLofiPreset = raw.lofiPreset || (String(rawStylePreset).startsWith("lofi_") ? rawStylePreset : "");
+  const chipPreset = sanitizeChipPresetId(rawChipPreset);
+  const lofiPreset = chipPreset ? "" : sanitizeLofiPresetId(rawLofiPreset);
+  const audioProfile = raw.audioProfile === CHIP_AUDIO_PROFILE_ID || chipPreset
+    ? CHIP_AUDIO_PROFILE_ID
+    : (raw.audioProfile === LOFI_AUDIO_PROFILE_ID || lofiPreset ? LOFI_AUDIO_PROFILE_ID : "standard");
   const project = {
     projectVersion: asInt(raw.projectVersion ?? raw.schemaVersion, 1),
     key: safeChoice(raw.key, NOTES, "C"),
@@ -721,15 +766,17 @@ function sanitizePocketChordsmithProject(raw){
     bpm: clamp(asInt(raw.bpm,96), 40, 240),
     theme: safeChoice(raw.theme, ["night","ocean","forest","sunset"], "night"),
     swing: clamp(asNum(raw.swing,0), 0, .3),
-    audioProfile: (raw.audioProfile === LOFI_AUDIO_PROFILE_ID || raw.lofiPreset || raw.stylePreset) ? LOFI_AUDIO_PROFILE_ID : "standard",
-    lofiPreset: sanitizeLofiPresetId(raw.lofiPreset || raw.stylePreset || ""),
+    audioProfile,
+    lofiPreset: audioProfile === LOFI_AUDIO_PROFILE_ID ? lofiPreset : "",
     lofiTexture: sanitizeLofiTexture(raw.lofiTexture),
-    drumKit: safeChoice(raw.drumKit, lofiDrumKitIds(), "classic"),
+    chipPreset: audioProfile === CHIP_AUDIO_PROFILE_ID ? (chipPreset || "chip_arcade_start") : "",
+    chipTexture: sanitizeChipTexture(raw.chipTexture),
+    drumKit: safeChoice(raw.drumKit, pocketDrumKitIds(), "classic"),
     drumGroovePreset: String(raw.drumGroovePreset || ""),
-    bassTone: safeChoice(raw.bassTone, lofiBassToneIds(), "classic"),
+    bassTone: safeChoice(raw.bassTone, pocketBassToneIds(), "classic"),
     resolution: sanitizeResolution(raw.resolution ?? raw.lastAdvancedResolution ?? 4),
     chordType: safeChoice(raw.chordType,["triad","seventh","sus2","sus4"],"triad"),
-    chordInstrument: safeChoice(raw.chordInstrument,["pocket","piano","saloon_piano","harp","warm_pad","glass",...lofiChordInstrumentIds()],"pocket"),
+    chordInstrument: safeChoice(raw.chordInstrument,pocketChordInstrumentIds(),"pocket"),
     chordPlayMode: safeChoice(raw.chordPlayMode,["block","strum_up","strum_down","arp_up","arp_down"],"block"),
     chordRhythmMode: safeChoice(raw.chordRhythmMode,["sustain","quarter","half"],"sustain"),
     chordOctave: clamp(asInt(raw.chordOctave,0),-1,1),
@@ -753,6 +800,8 @@ function sanitizePocketChordsmithProject(raw){
     rawTitle: raw.title || raw.name || "Imported Chordsmith Project",
     sections: {}
   };
+  if(project.audioProfile !== LOFI_AUDIO_PROFILE_ID) project.lofiTexture.enabled = false;
+  if(project.audioProfile !== CHIP_AUDIO_PROFILE_ID) project.chipTexture.enabled = false;
   SECTION_IDS.forEach(id => project.sections[id] = sanitizeSection(raw, project, id));
   return project;
 }
@@ -771,7 +820,7 @@ function createDjSessionFromChordsmithProject(project){
     deck:{
       name:project.rawTitle || "Imported Chordsmith Project",
       bpm:project.bpm, key:project.key, scale:project.scale, theme:project.theme || "night", timeSig:project.timeSig, swing:project.swing,
-      audioProfile:project.audioProfile, lofiPreset:project.lofiPreset, lofiTexture:project.lofiTexture,
+      audioProfile:project.audioProfile, lofiPreset:project.lofiPreset, lofiTexture:project.lofiTexture, chipPreset:project.chipPreset, chipTexture:project.chipTexture,
       drumKit:project.drumKit, drumGroovePreset:project.drumGroovePreset, bassTone:project.bassTone,
       resolution:project.resolution, chordType:project.chordType, chordInstrument:project.chordInstrument,
       chordPlayMode:project.chordPlayMode, chordRhythmMode:project.chordRhythmMode, chordOctave:project.chordOctave,
@@ -1054,11 +1103,12 @@ function featureSeed(step, seed=0){
 }
 function humanizeOn(){ return !!session?.deck?.humanizeOn; }
 function isLofiDeck(){ return session?.deck?.audioProfile === LOFI_AUDIO_PROFILE_ID || !!session?.deck?.lofiPreset; }
+function isChipDeck(){ return session?.deck?.audioProfile === CHIP_AUDIO_PROFILE_ID || String(session?.deck?.chipPreset || "").startsWith("chip_"); }
 function lofiDrumKit(){
   const kit = session?.deck?.drumKit || "classic";
   const resolver = pocketAudioCoreModule?.resolvePocketDrumKitId;
-  if(typeof resolver === "function") return resolver(kit, session?.deck?.audioProfile, session?.deck?.lofiPreset);
-  return FALLBACK_DRUM_KIT_CONFIGS[kit] ? kit : (isLofiDeck() ? "lofi_dusty" : "classic");
+  if(typeof resolver === "function") return resolver(kit, session?.deck?.audioProfile, session?.deck?.chipPreset || session?.deck?.lofiPreset);
+  return FALLBACK_DRUM_KIT_CONFIGS[kit] ? kit : (isChipDeck() ? "chip_noise_kit" : (isLofiDeck() ? "lofi_dusty" : "classic"));
 }
 function pocketDrumKitConfig(kit){
   const shared = pocketAudioCoreModule?.POCKET_DRUM_KIT_CONFIGS;
@@ -1187,6 +1237,10 @@ function playLofiTexture(t, step=0){
 }
 function playCrash(t){ playHat(t,1.55,true); }
 function bassToneConfig(tone=session?.deck?.bassTone){
+  if(tone === "chip_triangle_bass") return {mainWave:"triangle", subWave:"sine", mainPeak:.88, subPeak:.25, cutoff:520, subCutoff:180};
+  if(tone === "chip_square_bass") return {mainWave:"square", subWave:"triangle", mainPeak:.72, subPeak:.22, cutoff:680, subCutoff:220};
+  if(tone === "modern_chip_sub") return {mainWave:"square", subWave:"sine", mainPeak:.64, subPeak:.62, cutoff:420, subCutoff:150};
+  if(tone === "bitcrush_bass") return {mainWave:"sawtooth", subWave:"square", mainPeak:.58, subPeak:.34, cutoff:560, subCutoff:210};
   if(tone === "warm_sub") return {mainWave:"sine", subWave:"sine", mainPeak:.82, subPeak:.55, cutoff:210, subCutoff:120};
   if(tone === "soft_upright") return {mainWave:"triangle", subWave:"sine", mainPeak:.72, subPeak:.28, cutoff:360, subCutoff:140};
   if(tone === "rounded_triangle_bass") return {mainWave:"triangle", subWave:"sine", mainPeak:.84, subPeak:.34, cutoff:300, subCutoff:130};
@@ -1292,6 +1346,10 @@ function chordInstrumentConfig(name){
   if(name === "cassette_keys") return {rootWave:"triangle",wave:"triangle",peak:.135,filter:"lowpass",freq:1320,filterQ:.7,attack:.018,decay:.18,sustain:.54,release:.44,durMul:1.04,spreadMul:.45,shimmer:false,maxLiveDur:1.22,layers:[{wave:"triangle",level:.72,detune:-9},{wave:"triangle",level:.5,detune:10},{wave:"sine",freqMul:2,level:.12,detune:3}]};
   if(name === "muted_jazz_guitar") return {rootWave:"triangle",wave:"triangle",peak:.132,filter:"bandpass",freq:1180,filterQ:.95,attack:.004,decay:.09,sustain:.08,release:.16,durMul:.5,spreadMul:.72,shimmer:false,maxLiveDur:.42,layers:[{wave:"triangle",level:.8},{wave:"square",level:.11,detune:-5}]};
   if(name === "lofi_warm_pad") return {rootWave:"sine",wave:"triangle",peak:.115,filter:"lowpass",freq:930,filterQ:.58,filterSweep:1180,attack:.18,decay:.3,sustain:.86,release:.72,durMul:1.48,spreadMul:.22,shimmer:false,maxLiveDur:1.85,layers:[{wave:"sine",level:.92,detune:-7},{wave:"triangle",level:.42,detune:7}]};
+  if(name === "chip_square_stack") return {rootWave:"square",wave:"square",peak:.16,filter:"lowpass",freq:3600,filterQ:.8,attack:.002,decay:.08,sustain:.48,release:.14,durMul:.82,spreadMul:.16,shimmer:false,maxLiveDur:.68,layers:[{wave:"square",level:.72},{wave:"square",level:.38,detune:6},{wave:"triangle",level:.12,freqMul:2}]};
+  if(name === "chip_triangle_pad") return {rootWave:"triangle",wave:"triangle",peak:.125,filter:"lowpass",freq:2200,filterQ:.62,attack:.055,decay:.16,sustain:.72,release:.34,durMul:1.18,spreadMul:.12,shimmer:false,maxLiveDur:1.2,layers:[{wave:"triangle",level:.8},{wave:"sine",level:.18,freqMul:2}]};
+  if(name === "chip_arp_keys") return {rootWave:"square",wave:"square",peak:.135,filter:"bandpass",freq:1850,filterQ:1.1,attack:.001,decay:.055,sustain:.16,release:.12,durMul:.46,spreadMul:.72,shimmer:true,maxLiveDur:.36,layers:[{wave:"square",level:.74},{wave:"triangle",level:.16,freqMul:2,detune:-4}]};
+  if(name === "modern_chip_poly") return {rootWave:"square",wave:"sawtooth",peak:.142,filter:"lowpass",freq:2550,filterQ:.78,filterSweep:3400,attack:.008,decay:.13,sustain:.54,release:.22,durMul:.96,spreadMul:.28,shimmer:true,maxLiveDur:.92,layers:[{wave:"square",level:.62,detune:-7},{wave:"sawtooth",level:.4,detune:8},{wave:"triangle",level:.22,freqMul:.5}]};
   if(name === "glass") return {rootWave:"sine",wave:"sine",peak:.16,filter:"bandpass",freq:1500,filterQ:1.15,attack:.004,decay:.2,sustain:.1,release:.44,durMul:.9,spreadMul:.85,shimmer:true,maxLiveDur:.82,layers:[{wave:"sine",level:.36},{wave:"sine",freqMul:2.01,level:.64},{wave:"sine",freqMul:4.02,level:.34},{wave:"triangle",freqMul:6.01,level:.12}]};
   return {rootWave:"triangle",wave:"sine",peak:.24,filter:"lowpass",freq:1800,filterQ:.8,attack:.01,decay:.06,sustain:.7,release:.2,durMul:1,spreadMul:1,shimmer:false,maxLiveDur:1.15,layers:[{wave:"triangle",level:.82},{wave:"sine",level:.35}]};
 }
@@ -1315,6 +1373,11 @@ function leadInstrumentConfig(name){
   if(name === "mellow_sax") return {wave:"triangle",peak:.118,filter:"bandpass",freq:820,durMul:1.18};
   if(name === "muted_trumpet") return {wave:"square",peak:.095,filter:"bandpass",freq:1180,durMul:.98};
   if(name === "tape_bell") return {wave:"sine",peak:.088,filter:"lowpass",freq:1900,durMul:1.04};
+  if(name === "chip_square_lead") return {wave:"square",peak:.155,filter:"lowpass",freq:4200,durMul:.88};
+  if(name === "chip_pulse_lead") return {wave:"square",peak:.135,filter:"bandpass",freq:2400,durMul:.76};
+  if(name === "chip_triangle_blip") return {wave:"triangle",peak:.12,filter:"lowpass",freq:3100,durMul:.54};
+  if(name === "chip_bell_stack") return {wave:"sine",peak:.108,filter:"lowpass",freq:3900,durMul:1.05};
+  if(name === "modern_chip_lead") return {wave:"square",peak:.138,filter:"lowpass",freq:3600,durMul:.86};
   return {wave:"square",peak:.20,filter:"lowpass",freq:2300,durMul:1};
 }
 function playLeadInstrument(midi,t,dur=.28,instrument="pulse",pan=0,peakMul=1){
@@ -1333,6 +1396,9 @@ function playLeadInstrument(midi,t,dur=.28,instrument="pulse",pan=0,peakMul=1){
   else if(instrument === "mellow_sax") playOsc("melody",midi-12,t+.004,dur*.46,"sine",.018*peakMul,"lowpass",640,pan);
   else if(instrument === "muted_trumpet") playOsc("melody",midi+12,t+.006,dur*.28,"triangle",.012*peakMul,"bandpass",1700,pan);
   else if(instrument === "tape_bell") playOscFreq("melody",midiToFreq(midi+12)*.997,t+.016,dur*.38,"sine",.014*peakMul,"lowpass",2100,pan);
+  else if(instrument === "chip_pulse_lead") playOscFreq("melody",midiToFreq(midi)*1.5,t+.006,dur*.38,"square",.022*peakMul,"bandpass",2800,pan);
+  else if(instrument === "chip_bell_stack") playOsc("melody",midi+12,t+.012,dur*.32,"triangle",.018*peakMul,"lowpass",4200,pan);
+  else if(instrument === "modern_chip_lead") playOscFreq("melody",midiToFreq(midi)*.997,t+.004,dur*.72,"sawtooth",.032*peakMul,"lowpass",3000,pan);
 }
 function distortionCurve(amount=3){
   const samples = 2048, curve = new Float32Array(samples);
@@ -2039,7 +2105,7 @@ function resetFx(show=true){
 /* 10. UI renderer */
 const el = {};
 function bindElements(){
-  ["toast","helpOverlay","helpCloseBtn","importHelpBtn","deckHelpBtn","importScreen","deckScreen","transportBar","importText","importBtn","demoBtn","lofiDemoBtn","loadLastBtn","importStatus","statusText","deckName","metaGrid","currentSectionText","queuedSectionText","barBeatText","loopText","progressFill","beatDots","sectionPads","launchModeSelect","sequencePlayBtn","sequenceRepeatBtn","sequenceStrip","mixer","fxGrid","buildStateText","buildBtn","dropBtn","gentleBuildBtn","rainyDropBtn","filteredStudyBtn","tapeResetBtn","resetFxBtn","loopBtn","editSourceBtn","handoffBox","handoffText","handoffHelp","saveBtn","loadLastDeckBtn","clearSessionBtn","playBtn","stopBtn","restartBtn","masterVolume"].forEach(id => el[id] = document.getElementById(id));
+  ["toast","helpOverlay","helpCloseBtn","importHelpBtn","deckHelpBtn","importScreen","deckScreen","transportBar","importText","importBtn","demoBtn","lofiDemoBtn","chipDemoBtn","loadLastBtn","importStatus","statusText","deckName","metaGrid","currentSectionText","queuedSectionText","barBeatText","loopText","progressFill","beatDots","sectionPads","launchModeSelect","sequencePlayBtn","sequenceRepeatBtn","sequenceStrip","mixer","fxGrid","buildStateText","buildBtn","dropBtn","gentleBuildBtn","rainyDropBtn","filteredStudyBtn","tapeResetBtn","resetFxBtn","loopBtn","editSourceBtn","handoffBox","handoffText","handoffHelp","saveBtn","loadLastDeckBtn","clearSessionBtn","playBtn","stopBtn","restartBtn","masterVolume"].forEach(id => el[id] = document.getElementById(id));
 }
 function showStatus(msg){
   if(el.statusText) el.statusText.textContent = msg;
@@ -2058,8 +2124,13 @@ function renderShell(){
 }
 function niceThemeName(theme){ return String(theme || "night").replace(/^./, c => c.toUpperCase()); }
 function niceLofiPresetName(id){
+  if(isChipDeck()) return niceChipPresetName(session?.deck?.chipPreset);
   if(!id) return isLofiDeck() ? "Lofi Chill" : "Standard";
   return String(id).replace(/^lofi_/, "").split("_").map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+function niceChipPresetName(id){
+  if(!id) return "Chip Tune";
+  return String(id).replace(/^chip_/, "").split("_").map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 function renderMeta(){
   if(!session) return;
@@ -2352,6 +2423,7 @@ function bindHandlers(){
   document.addEventListener("keydown", e => { if(e.key === "Escape") closeHelp(); });
   el.demoBtn.addEventListener("click", loadDemo);
   el.lofiDemoBtn?.addEventListener("click", loadLofiDemo);
+  el.chipDemoBtn?.addEventListener("click", loadChipDemo);
   el.loadLastBtn.addEventListener("click", loadLocalSession);
   el.loadLastDeckBtn.addEventListener("click", loadLocalSession);
   el.saveBtn.addEventListener("click", () => { saveLocalSession(); showStatus("Session saved"); });
@@ -2550,6 +2622,78 @@ function makeLofiDemoProject(){
   fillLofi("A",0); fillLofi("B",1); fillLofi("C",2); fillLofi("D",3);
   return project;
 }
+function makeChipDemoProject(){
+  const project = makeDemoProject();
+  const len = MAX_BARS * 4 * 4;
+  project.title = "Chip DJ Demo - Bug Maze Pulse";
+  project.theme = "ocean";
+  project.key = "E";
+  project.scale = "minor";
+  project.bpm = 130;
+  project.swing = .04;
+  project.audioProfile = CHIP_AUDIO_PROFILE_ID;
+  project.chipPreset = "chip_bug_maze_pulse";
+  project.chipTexture = {enabled:true, bitDepth:.18, sampleRateCrush:.14, pulseWidth:.42, pitchDrift:.025, saturation:.32, stereoSpread:.2};
+  project.lofiPreset = "";
+  project.lofiTexture = {...DEFAULT_LOFI_TEXTURE, enabled:false};
+  project.drumKit = "modern_chip_punch";
+  project.drumGroovePreset = "chip_arp_jam";
+  project.bassTone = "modern_chip_sub";
+  project.chordInstrument = "modern_chip_poly";
+  project.chordPlayMode = "block";
+  project.chordRhythmMode = "quarter";
+  project.bassMode = "manual";
+  project.guitarEnabled = false;
+  project.fxDelay = .1;
+  project.fxChorus = .22;
+  project.fxReverb = .16;
+  project.fxMix = .62;
+  project.sidechainOn = true;
+  project.sidechainAmount = .36;
+  project.sectionBars = {A:2,B:2,C:2,D:2,E:1,F:1,G:1,H:1};
+  project.songSequence = ["A","A","B","A","C","B","D","A"];
+  SECTION_IDS.forEach(id => {
+    project[sectionKey("progression",id)] = id === "B" ? [0,6,5,3] : id === "C" ? [3,5,6,5] : id === "D" ? [0,3,5,6] : [0,6,5,3];
+    project[sectionKey("grid",id)] = {kick:new Array(len).fill(0),snare:new Array(len).fill(0),hat:new Array(len).fill(0),bass:new Array(len).fill(0)};
+    project[sectionKey("gridTuplets",id)] = {kick:new Array(len).fill(false),snare:new Array(len).fill(false),hat:new Array(len).fill(false),bass:new Array(len).fill(false)};
+    project[sectionKey("melodyTracks",id)] = [new Array(len).fill(null), new Array(len).fill(null)];
+    project[sectionKey("melodyInstruments",id)] = ["modern_chip_lead","chip_bell_stack"];
+    project[sectionKey("melodyOctaves",id)] = [0,1];
+    project[sectionKey("melodyMute",id)] = [false,false];
+    project[sectionKey("melodySolo",id)] = [false,false];
+    project[sectionKey("melodyPan",id)] = [-.22,.24];
+    project[sectionKey("melodyHold",id)] = [new Array(len).fill(false), new Array(len).fill(false)];
+    project[sectionKey("melodySlide",id)] = [new Array(len).fill(false), new Array(len).fill(false)];
+    project[sectionKey("melodyTuplets",id)] = [new Array(len).fill(false), new Array(len).fill(false)];
+    project[sectionKey("bassNotes",id)] = new Array(len).fill(null);
+    project[sectionKey("bassHold",id)] = new Array(len).fill(false);
+    project[sectionKey("bassSlide",id)] = new Array(len).fill(false);
+    project[sectionKey("bassAccent",id)] = new Array(len).fill(false);
+    project[sectionKey("guitarPattern",id)] = new Array(len).fill("off");
+  });
+  function fillChip(id, variant=0){
+    const g = project[sectionKey("grid",id)];
+    const m0 = project[sectionKey("melodyTracks",id)][0];
+    const m1 = project[sectionKey("melodyTracks",id)][1];
+    const bass = project[sectionKey("bassNotes",id)];
+    const accent = project[sectionKey("bassAccent",id)];
+    const motif = variant === 2 ? [7,9,10,9,7,null,4,5] : [0,2,4,7,9,7,4,2];
+    for(let bar=0; bar<2; bar++){
+      const o = bar * 16;
+      [0,6,8,14].forEach(p=>g.kick[o+p]=1);
+      [4,12].forEach(p=>g.snare[o+p]=2);
+      [0,2,4,6,8,10,12,14].forEach((p,i)=>g.hat[o+p]=i%3===0?2:1);
+      if(variant === 1){ [3,10].forEach(p=>g.kick[o+p]=1); [7,15].forEach(p=>g.hat[o+p]=2); }
+      if(variant === 2){ g.kick[o+6]=0; g.snare[o+8]=2; [1,5,9,13].forEach(p=>g.hat[o+p]=1); }
+      if(variant === 3){ [0,4,8,12].forEach(p=>g.kick[o+p]=1); [2,6,10,14].forEach(p=>g.hat[o+p]=2); }
+      [0,3,6,10,12].forEach((p,i)=>{ bass[o+p] = [0,0,7,4,7][i]; accent[o+p] = p === 0 || p === 12; });
+      [0,2,4,6,8,10,12,14].forEach((p,i)=>{ if(motif[i] !== null) m0[o+p] = motif[(i + variant + bar) % motif.length]; });
+      [3,7,11,15].forEach((p,i)=>{ m1[o+p] = [7,9,10,9][(i + variant + bar) % 4]; });
+    }
+  }
+  fillChip("A",0); fillChip("B",1); fillChip("C",2); fillChip("D",3);
+  return project;
+}
 function loadDemo(){
   session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeDemoProject()));
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
@@ -2561,6 +2705,12 @@ function loadLofiDemo(){
   state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
   primePocketAudioCore(session.source.project, "lofi demo");
   saveLocalSession(); renderAll(); showStatus("Lofi DJ Demo loaded");
+}
+function loadChipDemo(){
+  session = createDjSessionFromChordsmithProject(sanitizePocketChordsmithProject(makeChipDemoProject()));
+  state.currentSection = session.performance.currentSection; state.currentStepForSchedule = 0; state.currentStep = -1; state.dropQueued = false; state.dropBoundaryScheduled = false; state.dropLanding = false; resetPerformanceStemScales(1); clearPerformanceFx();
+  primePocketAudioCore(session.source.project, "chip demo");
+  saveLocalSession(); renderAll(); showStatus("Chip DJ Demo loaded");
 }
 
 function init(){ bindElements(); bindHandlers(); applyImportedTheme("night"); renderShell(); loadPocketAudioCoreModule().catch(() => {}); consumeIncomingPocketDjHandoff().catch(() => {}); }

@@ -78,34 +78,14 @@ export function renderAppShell(state: AppState): string {
       </main>
       <div class="studio-resize-handle" data-timeline-resize-handle="true" title="Drag to resize timeline and push mixer lower"><span></span></div>
       ${renderMixer(state)}
-      ${renderExportPanel(state)}
       ${renderMediaPool(state)}
+      ${state.showFilePanel ? renderFilePanel(state) : ""}
       ${state.showControls ? renderControlsPanel(state) : ""}
       ${state.showAddTrack ? renderAddTrackPanel() : ""}
       ${state.showAudioSettings ? renderAudioSettingsPanel(state) : ""}
       ${state.showUpdaterPanel ? renderUpdaterPanel(state) : ""}
       ${state.showMcpSetupPanel ? renderMcpSetupPanel(state) : ""}
       ${state.showFeedbackPanel ? renderFeedbackPanel(state) : ""}
-      <section class="import-panel" data-layout-zone="import">
-        <textarea id="importText" spellcheck="false" placeholder="Paste PCS1 share code, raw Pocket Chordsmith JSON, Pocket DJ source session, or .pocketdaw JSON">${escapeHtml(state.importText)}</textarea>
-        <div class="import-actions">
-          <button data-action="load-demo">Load Demo Copy</button>
-          <button data-action="reset-demo-template">Reload Demo Template</button>
-          <button data-action="import-text">Import Paste</button>
-          <button data-action="open-file">Open File</button>
-          <button data-action="save-project">Save .pocketdaw</button>
-          <button data-action="save-project-as">Save As</button>
-          <button data-action="audio-settings-open">Audio Settings</button>
-          <button data-action="export-wav">Export WAV</button>
-          <button data-action="export-midi">Export MIDI</button>
-          <button data-action="export-stems">Export Stems</button>
-          <button data-action="export-section-manifest">Section Loop WAVs</button>
-          <button data-action="export-godot-manifest">Godot Game Pack</button>
-          <button data-action="export-web-game-manifest">Web Game Pack</button>
-          <button data-action="export-media-plan">Collect Media Plan</button>
-          <button data-action="export-diagnostics">Export Diagnostics</button>
-        </div>
-      </section>
     </div>
   `;
 }
@@ -119,9 +99,8 @@ function renderMenuStrip(state: AppState): string {
         ["Open", "open-project"],
         ["Save", "save-project"],
         ["Save As", "save-project-as"],
-        ["Import Chordsmith", "import-text"],
-        ["Export WAV", "export-wav"],
-        ["Export MIDI", "export-midi"]
+        ["Imports / Exports...", "file-window-open"],
+        ["Audio Settings", "audio-settings-open"]
       ])}
       ${renderMenuGroup("Edit", [
         ["Undo", "undo"],
@@ -1060,13 +1039,6 @@ function renderMediaPool(state: AppState): string {
           <h2>Media Pool</h2>
           <p>${items.length ? `${items.length} item${items.length === 1 ? "" : "s"} tracked for audio, MIDI, renders and project-relative media.` : "Imported audio and MIDI appear here with timeline clips and runtime status."}</p>
         </div>
-        <div class="media-actions">
-          <button data-action="import-audio" title="Import an audio file into the media pool">Import Audio</button>
-          <button data-action="import-midi" title="Import a .mid or .midi file as a MIDI clip">Import MIDI</button>
-          <button data-action="collect-media" title="Copy reloadable native media beside the saved .pocketdaw project">Collect Media</button>
-          <button data-action="build-native-cache" title="Render generated sections and runtime audio into project-cache/native-audio WAV assets">Build Native Cache</button>
-          <button data-action="export-media-plan" title="Export a JSON plan for collecting project media">Collect Plan</button>
-        </div>
       </header>
       ${
         items.length
@@ -1140,38 +1112,91 @@ function nativeCacheStatusText(state: AppState): string {
   return "No native cache active.";
 }
 
-function renderExportPanel(state: AppState): string {
+function renderFilePanel(state: AppState): string {
   const project = currentProject(state);
   const stems = createStemExportPlan(project);
   const loops = createSectionLoopMetadata(project);
+  const collectPlan = createCollectMediaPlan(project);
   const progress = state.exportProgress;
   return `
-    <section class="export-panel" data-layout-zone="export" aria-label="Export Foundations">
+    <div class="modal-backdrop" data-file-backdrop="true">
+      <section class="controls-panel file-panel" role="dialog" aria-modal="true" aria-labelledby="file-window-title">
       <header>
         <div>
-          <h2>Exports</h2>
-          <p>${stems.length} stem group${stems.length === 1 ? "" : "s"} / ${loops.length} section loop${loops.length === 1 ? "" : "s"} available for first-pass export.</p>
+          <h2 id="file-window-title">File</h2>
+          <p>${escapeHtml(project.project.title || "Untitled project")} / ${escapeHtml(state.currentFile.path || state.currentFile.label || "Unsaved")}</p>
         </div>
-        <div class="export-actions">
-          <button data-action="export-wav">Full WAV</button>
-          <button data-action="export-midi">Full MIDI</button>
-          <button data-action="export-stems" ${stems.length ? "" : "disabled"} title="Downloads one WAV per stem in sequence">Stem WAVs</button>
-          <button data-action="export-section-manifest" ${loops.length ? "" : "disabled"} title="Downloads one loop WAV per generated section plus a JSON manifest">Section Loop WAVs</button>
-          <button data-action="export-godot-manifest">Godot Game Pack</button>
-          <button data-action="export-web-game-manifest">Web Game Pack</button>
-        </div>
+        <button data-action="file-window-close">Close</button>
       </header>
-      ${progress ? `
-        <div class="export-progress" role="status" aria-live="polite">
+      <div class="file-window-body">
+        <section class="file-window-section" aria-labelledby="file-project-title">
           <div>
-            <strong>${escapeHtml(progress.message)}</strong>
-            ${progress.detail ? `<span>${escapeHtml(progress.detail)}</span>` : ""}
+            <h3 id="file-project-title">Project</h3>
+            <p>Open, save, or reset the current .pocketdaw session.</p>
           </div>
-          <i></i>
-        </div>
-      ` : ""}
-      <p class="export-note">Full mix, stem, section-loop and game-pack exports render real audio into deterministic pack paths.</p>
-    </section>
+          <div class="file-command-grid">
+            <button data-action="new-project">New</button>
+            <button data-action="open-project">Open .pocketdaw</button>
+            <button data-action="save-project">Save .pocketdaw</button>
+            <button data-action="save-project-as">Save As</button>
+            <button data-action="load-demo">Load Demo Copy</button>
+            <button data-action="reset-demo-template">Reload Demo Template</button>
+          </div>
+        </section>
+        <section class="file-window-section" aria-labelledby="file-import-title">
+          <div>
+            <h3 id="file-import-title">Import</h3>
+            <p>Bring in Chordsmith text, project files, audio, or MIDI without keeping import controls on the mixer page.</p>
+          </div>
+          <textarea id="importText" class="file-import-text" spellcheck="false" placeholder="Paste PCS1 share code, raw Pocket Chordsmith JSON, Pocket DJ source session, or .pocketdaw JSON">${escapeHtml(state.importText)}</textarea>
+          <div class="file-command-grid">
+            <button data-action="import-text">Import Paste</button>
+            <button data-action="open-file">Open File</button>
+            <button data-action="import-audio" title="Import an audio file into the media pool">Import Audio</button>
+            <button data-action="import-midi" title="Import a .mid or .midi file as a MIDI clip">Import MIDI</button>
+          </div>
+        </section>
+        <section class="file-window-section" aria-labelledby="file-export-title">
+          <div>
+            <h3 id="file-export-title">Export</h3>
+            <p>${stems.length} stem group${stems.length === 1 ? "" : "s"} / ${loops.length} section loop${loops.length === 1 ? "" : "s"} ready.</p>
+          </div>
+          <div class="file-command-grid">
+            <button data-action="export-wav">Full WAV</button>
+            <button data-action="export-midi">Full MIDI</button>
+            <button data-action="export-stems" ${stems.length ? "" : "disabled"} title="Downloads one WAV per stem in sequence">Stem WAVs</button>
+            <button data-action="export-section-manifest" ${loops.length ? "" : "disabled"} title="Downloads one loop WAV per generated section plus a JSON manifest">Section Loop WAVs</button>
+            <button data-action="export-godot-manifest">Godot Game Pack</button>
+            <button data-action="export-web-game-manifest">Web Game Pack</button>
+            <button data-action="export-media-plan" title="Export a JSON plan for collecting project media">Collect Media Plan</button>
+            <button data-action="export-diagnostics">Diagnostics JSON</button>
+          </div>
+          ${progress ? `
+            <div class="export-progress" role="status" aria-live="polite">
+              <div>
+                <strong>${escapeHtml(progress.message)}</strong>
+                ${progress.detail ? `<span>${escapeHtml(progress.detail)}</span>` : ""}
+              </div>
+              <i></i>
+            </div>
+          ` : ""}
+          <p class="file-note">Full mix, stem, section-loop and game-pack exports render real audio into deterministic pack paths.</p>
+        </section>
+        <section class="file-window-section" aria-labelledby="file-media-title">
+          <div>
+            <h3 id="file-media-title">Media</h3>
+            <p>${project.mediaPool.length} media item${project.mediaPool.length === 1 ? "" : "s"} / ${collectPlan.copy.length} copy action${collectPlan.copy.length === 1 ? "" : "s"} / ${collectPlan.blocked.length} blocked.</p>
+          </div>
+          <div class="file-command-grid">
+            <button data-action="collect-media" title="Copy reloadable native media beside the saved .pocketdaw project">Collect Media</button>
+            <button data-action="build-native-cache" title="Render generated sections and runtime audio into project-cache/native-audio WAV assets">Build Native Cache</button>
+            <button data-action="media-pool-focus">Show Media Pool</button>
+            <button data-action="audio-settings-open">Audio Settings</button>
+          </div>
+        </section>
+      </div>
+      </section>
+    </div>
   `;
 }
 
@@ -1184,6 +1209,7 @@ function renderMediaWaveform(item: { metadata?: Record<string, unknown> }): stri
 function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Track, meterLevel: number, state: AppState): string {
   const panLabel = panReadout(track.pan);
   const volumeLabel = `${Math.round(track.volume * 100)}%`;
+  const chain = getTrackFxChain(project, track);
   const isMaster = track.role === "master";
   const isReturn = track.role === "fx-return";
   const canMuteSolo = !isMaster && !isReturn;
@@ -1216,7 +1242,7 @@ function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Tra
                <button type="button" title="${escapeAttr(`Monitor ${track.name} input while armed or recording`)}" class="${track.monitorEnabled ? "on" : ""}" data-monitor-track="${sanitizeDataAttr(track.id)}">Monitor</button>` : ""}`
         }
       </div>
-      ${!isMaster ? renderFxDropdown(track) : ""}
+      ${renderMixerFxArea(track, chain, isMaster)}
     </div>
   `;
 }
@@ -1259,6 +1285,40 @@ function renderPanControl(track: Track, isMaster: boolean, isReturn: boolean, pa
       }
     </label>
   `;
+}
+
+function renderMixerFxArea(track: Track, chain: FxChain | null, isMaster: boolean): string {
+  return `
+    <div class="strip-fx-area">
+      ${renderMixerFxSummary(chain)}
+      ${!isMaster ? renderFxDropdown(track) : ""}
+    </div>
+  `;
+}
+
+function renderMixerFxSummary(chain: FxChain | null): string {
+  if (!chain?.slots.length) return `<div class="strip-fx-empty">No FX</div>`;
+  const visible = chain.slots.slice(0, 3);
+  const hiddenCount = Math.max(0, chain.slots.length - visible.length);
+  return `
+    <div class="strip-fx-list" aria-label="${escapeAttr(`${chain.name} selected FX`)}">
+      ${visible.map((slot) => `
+        <button type="button" class="strip-fx-chip ${slot.enabled ? "" : "bypassed"}" data-fx-toggle="${sanitizeDataAttr(`${chain.id}:${slot.id}`)}" title="${escapeAttr(`${slot.enabled ? "Bypass" : "Enable"} ${slot.name}`)}">
+          ${escapeHtml(compactFxName(slot.name))}
+        </button>
+      `).join("")}
+      ${hiddenCount ? `<span class="strip-fx-more" title="${escapeAttr(`${hiddenCount} more FX slot${hiddenCount === 1 ? "" : "s"}`)}">+${hiddenCount}</span>` : ""}
+    </div>
+  `;
+}
+
+function compactFxName(name: string): string {
+  return name
+    .replace(/\bPocket\b/gi, "")
+    .replace(/\bPro\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 18) || "FX";
 }
 
 function renderFxDropdown(track: Track): string {
@@ -1575,7 +1635,7 @@ function renderMcpSetupPanel(state: AppState): string {
         <div class="control-guide">
           <p><strong>Project</strong><span>${escapeHtml(project.project.title)} / ${escapeHtml(state.currentFile.path || state.currentFile.label)}</span></p>
           <p><strong>File MCP</strong><span>Local stdio MCP server for reading, validating, creating, editing and export-planning Pocket DAW projects while the app is open or closed.</span></p>
-          <p><strong>Live bridge</strong><span>${escapeHtml(liveStatus)}. Live tools can read this running app, control transport, select tracks/clips and apply safe mixer edits.</span></p>
+          <p><strong>Live bridge</strong><span>${escapeHtml(liveStatus)}. Live tools can read this running app, control transport, select tracks/clips, apply safe mixer edits and capture bounded performance diagnostics.</span></p>
           <p><strong>Workspace</strong><span>${escapeHtml(POCKET_DAW_MCP_WORKSPACE)}</span></p>
           <p><strong>Writes</strong><span>MCP tools return proposed JSON by default and only write when an output path is provided.</span></p>
           <p><strong>Session file</strong><span>${escapeHtml(bridge.sessionPath || "Created by the installed app at startup.")}</span></p>

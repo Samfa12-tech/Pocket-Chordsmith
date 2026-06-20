@@ -11,6 +11,7 @@ import { connectFxChain } from "./fxProcessor";
 import { scheduleInstrumentEvent } from "./instruments";
 import { chordsmithSidechainSettings, isChordsmithSidechainTrigger, scheduleChordsmithSidechainDuck } from "./sidechain";
 import { activeAutomationLaneCount, getAutomatedTrackControls } from "../daw/automation";
+import { activeTrackSendRoutes } from "../daw/routing";
 import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioStatus } from "../native/audioPlayback";
 import {
   buildNativeRenderCache,
@@ -934,6 +935,7 @@ export class AudioEngine {
       const destination = this.outputDestination(track);
       const postFxOutput: AudioNode = output.sidechain || output.analyser;
       if (output.sidechain) output.analyser.connect(output.sidechain);
+      const sendCleanup = this.connectTrackSends(postFxOutput, track);
       if (output.pan) {
         postFxOutput.connect(output.pan);
         output.pan.connect(destination);
@@ -941,6 +943,7 @@ export class AudioEngine {
         postFxOutput.connect(destination);
       }
       output.cleanup = () => {
+        sendCleanup.forEach((fn) => fn());
         fx.cleanup();
         safelyDisconnect(output.gain);
         safelyDisconnect(output.analyser);
@@ -949,6 +952,19 @@ export class AudioEngine {
       };
     });
     this.configureDrumLaneOutputs();
+  }
+
+  private connectTrackSends(source: AudioNode, track: Track): Array<() => void> {
+    if (!this.ctx) return [];
+    return activeTrackSendRoutes(this.project, track).flatMap((send) => {
+      const target = this.trackOutputs.get(send.returnTrackId);
+      if (!target || target.gain === source) return [];
+      const sendGain = this.ctx!.createGain();
+      sendGain.gain.value = send.level;
+      source.connect(sendGain);
+      sendGain.connect(target.gain);
+      return [() => safelyDisconnect(sendGain)];
+    });
   }
 
   private configureDrumLaneOutputs() {

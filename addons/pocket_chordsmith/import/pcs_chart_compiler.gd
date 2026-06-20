@@ -37,6 +37,8 @@ func compile_project(project: Dictionary, import_result := {}) -> Resource:
 	chart.audio_profile = str(project.get("audioProfile", "standard"))
 	chart.lofi_preset = str(project.get("lofiPreset", ""))
 	chart.lofi_texture = _dictionary_or_empty(project.get("lofiTexture", {})).duplicate(true)
+	chart.chip_preset = str(project.get("chipPreset", ""))
+	chart.chip_texture = _dictionary_or_empty(project.get("chipTexture", {})).duplicate(true)
 	chart.drum_kit = str(project.get("drumKit", "classic"))
 	chart.drum_groove_preset = str(project.get("drumGroovePreset", ""))
 	chart.bass_tone = str(project.get("bassTone", "classic"))
@@ -51,6 +53,15 @@ func compile_project(project: Dictionary, import_result := {}) -> Resource:
 		}
 		if game_metadata.has("lofi_intensity_hints"):
 			chart.lofi_intensity_hints = _dictionary_or_empty(game_metadata.get("lofi_intensity_hints", {}))
+	if chart.audio_profile == "chip_tune":
+		chart.chip_intensity_hints = {
+			"menu": 0.48,
+			"explore": 0.66,
+			"boss": 0.84,
+			"victory": 0.92,
+		}
+		if game_metadata.has("chip_intensity_hints"):
+			chart.chip_intensity_hints = _dictionary_or_empty(game_metadata.get("chip_intensity_hints", {}))
 	chart.level_id = str(game_metadata.get("level_id", ""))
 	chart.default_loop = str(game_metadata.get("default_loop", ""))
 	chart.mood = str(game_metadata.get("mood", ""))
@@ -153,6 +164,7 @@ func _compile_chord_events(project: Dictionary, section_id: String, arrangement_
 					"chord_instrument": str(project.get("chordInstrument", "pocket")),
 					"audio_profile": str(project.get("audioProfile", "standard")),
 					"lofi_preset": str(project.get("lofiPreset", "")),
+					"chip_preset": str(project.get("chipPreset", "")),
 					"midi_notes": midi_notes,
 				},
 				0,
@@ -197,6 +209,7 @@ func _compile_drum_events(project: Dictionary, section_id: String, arrangement_i
 						triplet_index == 1,
 						str(project.get("audioProfile", "standard")),
 						str(project.get("lofiPreset", "")),
+						str(project.get("chipPreset", "")),
 						str(project.get("drumKit", "classic"))
 					))
 			else:
@@ -214,6 +227,7 @@ func _compile_drum_events(project: Dictionary, section_id: String, arrangement_i
 					false,
 					str(project.get("audioProfile", "standard")),
 					str(project.get("lofiPreset", "")),
+					str(project.get("chipPreset", "")),
 					str(project.get("drumKit", "classic"))
 				))
 	return events
@@ -285,6 +299,9 @@ func _compile_bass_events(project: Dictionary, section_id: String, arrangement_i
 						"muted": false,
 						"solo": false,
 						"generated": triplet_index == 1,
+						"audio_profile": str(project.get("audioProfile", "standard")),
+						"lofi_preset": str(project.get("lofiPreset", "")),
+						"chip_preset": str(project.get("chipPreset", "")),
 						"bass_tone": str(project.get("bassTone", "classic")),
 					},
 					step,
@@ -304,6 +321,9 @@ func _compile_bass_events(project: Dictionary, section_id: String, arrangement_i
 				"muted": false,
 				"solo": false,
 				"generated": false,
+				"audio_profile": str(project.get("audioProfile", "standard")),
+				"lofi_preset": str(project.get("lofiPreset", "")),
+				"chip_preset": str(project.get("chipPreset", "")),
 				"bass_tone": str(project.get("bassTone", "classic")),
 			}
 			if flags["slide"]:
@@ -361,6 +381,9 @@ func _compile_guitar_events(project: Dictionary, section_id: String, arrangement
 			"midi_notes": notes,
 			"chord_degree": degree,
 			"chord_quality": _triad_quality(project, degree),
+			"audio_profile": str(project.get("audioProfile", "standard")),
+			"lofi_preset": str(project.get("lofiPreset", "")),
+			"chip_preset": str(project.get("chipPreset", "")),
 		}
 		events.append(_make_event(
 			tick,
@@ -446,6 +469,7 @@ func _compile_melody_events(project: Dictionary, section_id: String, arrangement
 							"note_index": note_index,
 							"audio_profile": str(project.get("audioProfile", "standard")),
 							"lofi_preset": str(project.get("lofiPreset", "")),
+							"chip_preset": str(project.get("chipPreset", "")),
 						},
 						step,
 						_step_to_bar(project, step),
@@ -465,6 +489,7 @@ func _compile_melody_events(project: Dictionary, section_id: String, arrangement
 					"note_index": note_index,
 					"audio_profile": str(project.get("audioProfile", "standard")),
 					"lofi_preset": str(project.get("lofiPreset", "")),
+					"chip_preset": str(project.get("chipPreset", "")),
 				}
 				if flags["slide"]:
 					flags["slide_midi"] = int(phrase["slide_midi"])
@@ -487,7 +512,7 @@ func _compile_melody_events(project: Dictionary, section_id: String, arrangement
 	return events
 
 
-func _make_drum_event(tick: int, duration_ticks: int, section_id: String, arrangement_index: int, track_index: int, track_id: String, level: int, source_step: int, source_bar: int, tuplet: bool, generated: bool, audio_profile := "standard", lofi_preset := "", drum_kit := "classic") -> Dictionary:
+func _make_drum_event(tick: int, duration_ticks: int, section_id: String, arrangement_index: int, track_index: int, track_id: String, level: int, source_step: int, source_bar: int, tuplet: bool, generated: bool, audio_profile := "standard", lofi_preset := "", chip_preset := "", drum_kit := "classic") -> Dictionary:
 	var midi_note := 36
 	if track_id == "snare":
 		midi_note = 38
@@ -520,6 +545,7 @@ func _make_drum_event(tick: int, duration_ticks: int, section_id: String, arrang
 			"generated": generated,
 			"audio_profile": audio_profile,
 			"lofi_preset": lofi_preset,
+			"chip_preset": chip_preset,
 			"drum_kit": drum_kit,
 		},
 		source_step,

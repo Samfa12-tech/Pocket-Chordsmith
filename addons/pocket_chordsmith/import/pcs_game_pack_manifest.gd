@@ -50,6 +50,8 @@ static func create_playback_profile_from_manifest(manifest: Dictionary, pack_roo
 	profile.audio_profile = str(manifest.get("audioProfile", profile.audio_profile))
 	profile.lofi_preset = str(_dictionary_or_empty(manifest.get("lofi", {})).get("presetId", profile.lofi_preset))
 	profile.lofi_texture = _dictionary_or_empty(_dictionary_or_empty(manifest.get("lofi", {})).get("texture", {}))
+	profile.chip_preset = str(_dictionary_or_empty(manifest.get("chip", {})).get("presetId", profile.chip_preset))
+	profile.chip_texture = _dictionary_or_empty(_dictionary_or_empty(manifest.get("chip", {})).get("texture", {}))
 	profile.stem_paths = stem_paths_from_manifest(manifest, pack_root)
 	profile.stem_sets = section_stem_sets_from_manifest(manifest, pack_root)
 	profile.drum_kit = drum_kit_from_manifest(manifest, pack_root)

@@ -35,6 +35,7 @@ export interface AppState {
   busyMessage: string | null;
   exportProgress: { message: string; detail?: string } | null;
   recent: RecentProject[];
+  showFilePanel: boolean;
   showControls: boolean;
   showAddTrack: boolean;
   showAudioSettings: boolean;
@@ -127,6 +128,7 @@ export function createInitialState(): AppState {
     busyMessage: null,
     exportProgress: null,
     recent: [],
+    showFilePanel: false,
     showControls: false,
     showAddTrack: false,
     showAudioSettings: false,

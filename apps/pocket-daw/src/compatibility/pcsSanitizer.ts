@@ -11,6 +11,15 @@ import {
   LOFI_STYLE_PRESET_IDS,
   normaliseLofiTexture
 } from "../../../../packages/pocket-audio-core/src/presets/lofi.js";
+import {
+  CHIP_AUDIO_PROFILE_ID,
+  CHIP_BASS_TONES,
+  CHIP_DRUM_GROOVE_PRESETS,
+  CHIP_DRUM_KITS,
+  CHIP_STYLE_PRESET_IDS,
+  DEFAULT_CHIP_PRESET_ID,
+  normaliseChipTexture
+} from "../../../../packages/pocket-audio-core/src/presets/chip.js";
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 
@@ -47,9 +56,11 @@ export interface SanitizedPcsProject {
   timeSig: number;
   bpm: number;
   swing: number;
-  audioProfile: "standard" | "lofi_chill";
+  audioProfile: "standard" | "lofi_chill" | "chip_tune";
   lofiPreset: string;
   lofiTexture: JsonObject;
+  chipPreset: string;
+  chipTexture: JsonObject;
   drumKit: string;
   drumGroovePreset: string;
   bassTone: string;
@@ -91,18 +102,25 @@ const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const DRUM_TRACKS = ["kick", "snare", "hat", "bass"] as const;
 const MAX_BARS = 16;
 const DEFAULT_PROGRESSION = [0, 4, 5, 3];
-const PCS_LOFI_DRUM_KITS = ["classic", ...LOFI_DRUM_KITS] as const;
-const PCS_LOFI_BASS_TONES = ["classic", ...LOFI_BASS_TONES] as const;
+const PCS_DRUM_KITS = ["classic", ...LOFI_DRUM_KITS, ...CHIP_DRUM_KITS] as const;
+const PCS_BASS_TONES = ["classic", ...LOFI_BASS_TONES, ...CHIP_BASS_TONES] as const;
 
 export function sanitizePocketChordsmithProject(raw: unknown): SanitizedPcsProject {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("That project is not a valid Pocket Chordsmith JSON object.");
   }
   const obj = raw as JsonObject;
-  const requestedLofiPreset = obj.lofiPreset || obj.stylePreset;
+  const requestedChipPreset = obj.chipPreset || (String(obj.stylePreset || "").startsWith("chip_") ? obj.stylePreset : "");
+  const requestedLofiPreset = obj.lofiPreset || (String(obj.stylePreset || "").startsWith("lofi_") ? obj.stylePreset : "");
+  const sanitizedChipPreset = sanitizeChipPresetId(requestedChipPreset);
   const sanitizedLofiPreset = sanitizeLofiPresetId(requestedLofiPreset);
-  const audioProfile = (obj.audioProfile === LOFI_AUDIO_PROFILE_ID || sanitizedLofiPreset ? LOFI_AUDIO_PROFILE_ID : "standard") as SanitizedPcsProject["audioProfile"];
+  const audioProfile = (obj.audioProfile === CHIP_AUDIO_PROFILE_ID || sanitizedChipPreset
+    ? CHIP_AUDIO_PROFILE_ID
+    : obj.audioProfile === LOFI_AUDIO_PROFILE_ID || sanitizedLofiPreset
+      ? LOFI_AUDIO_PROFILE_ID
+      : "standard") as SanitizedPcsProject["audioProfile"];
   const lofiPreset = audioProfile === LOFI_AUDIO_PROFILE_ID ? getLofiStylePreset(sanitizedLofiPreset || undefined).id : "";
+  const chipPreset = audioProfile === CHIP_AUDIO_PROFILE_ID ? sanitizedChipPreset || DEFAULT_CHIP_PRESET_ID : "";
   const projectBase = {
     projectVersion: asInt(obj.projectVersion ?? obj.schemaVersion, 1),
     key: safeChoice(obj.key, NOTES, "C"),
@@ -113,9 +131,11 @@ export function sanitizePocketChordsmithProject(raw: unknown): SanitizedPcsProje
     audioProfile,
     lofiPreset,
     lofiTexture: sanitizeLofiTexture(obj.lofiTexture, lofiPreset, audioProfile),
-    drumKit: safeChoice(obj.drumKit, PCS_LOFI_DRUM_KITS, "classic"),
-    drumGroovePreset: sanitizeLofiDrumGroovePreset(obj.drumGroovePreset, lofiPreset, audioProfile),
-    bassTone: safeChoice(obj.bassTone, PCS_LOFI_BASS_TONES, "classic"),
+    chipPreset,
+    chipTexture: sanitizeChipTexture(obj.chipTexture, chipPreset, audioProfile),
+    drumKit: safeChoice(obj.drumKit, PCS_DRUM_KITS, "classic"),
+    drumGroovePreset: sanitizeDrumGroovePreset(obj.drumGroovePreset, lofiPreset, chipPreset, audioProfile),
+    bassTone: safeChoice(obj.bassTone, PCS_BASS_TONES, "classic"),
     resolution: sanitizeResolution(obj.resolution ?? obj.lastAdvancedResolution ?? 4),
     chordType: safeChoice(obj.chordType, ["triad", "seventh", "sus2", "sus4"], "triad") as SanitizedPcsProject["chordType"],
     chordInstrument: safeChoice(obj.chordInstrument, POCKET_CHORD_INSTRUMENTS, DEFAULT_CHORD_INSTRUMENT),
@@ -165,11 +185,22 @@ function sanitizeLofiPresetId(value: unknown): string {
   return (LOFI_STYLE_PRESET_IDS as readonly string[]).includes(id) ? id : "";
 }
 
-function sanitizeLofiDrumGroovePreset(value: unknown, lofiPreset: string, audioProfile: SanitizedPcsProject["audioProfile"]): string {
-  if (audioProfile !== LOFI_AUDIO_PROFILE_ID) return "";
+function sanitizeChipPresetId(value: unknown): string {
   const id = String(value || "");
-  if ((LOFI_DRUM_GROOVE_PRESETS as readonly string[]).includes(id)) return id;
-  return getLofiStylePreset(lofiPreset || undefined).drumGroovePreset || "";
+  return (CHIP_STYLE_PRESET_IDS as readonly string[]).includes(id) ? id : "";
+}
+
+function sanitizeDrumGroovePreset(value: unknown, lofiPreset: string, chipPreset: string, audioProfile: SanitizedPcsProject["audioProfile"]): string {
+  const id = String(value || "");
+  if (audioProfile === CHIP_AUDIO_PROFILE_ID) {
+    if ((CHIP_DRUM_GROOVE_PRESETS as readonly string[]).includes(id)) return id;
+    return chipPreset ? "chip_run_128" : "";
+  }
+  if (audioProfile === LOFI_AUDIO_PROFILE_ID) {
+    if ((LOFI_DRUM_GROOVE_PRESETS as readonly string[]).includes(id)) return id;
+    return getLofiStylePreset(lofiPreset || undefined).drumGroovePreset || "";
+  }
+  return "";
 }
 
 function sanitizeLofiTexture(raw: unknown, lofiPreset: string, audioProfile: SanitizedPcsProject["audioProfile"]): JsonObject {
@@ -178,6 +209,14 @@ function sanitizeLofiTexture(raw: unknown, lofiPreset: string, audioProfile: San
   }
   const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as JsonObject) : {};
   return normaliseLofiTexture(source, getLofiStylePreset(lofiPreset || undefined)) as JsonObject;
+}
+
+function sanitizeChipTexture(raw: unknown, chipPreset: string, audioProfile: SanitizedPcsProject["audioProfile"]): JsonObject {
+  if (audioProfile !== CHIP_AUDIO_PROFILE_ID) {
+    return normaliseChipTexture({ enabled: false }, chipPreset) as JsonObject;
+  }
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as JsonObject) : {};
+  return normaliseChipTexture(source, chipPreset) as JsonObject;
 }
 
 function sanitizeSection(raw: JsonObject, project: SanitizedPcsProject, id: SectionId): SanitizedPcsSection {

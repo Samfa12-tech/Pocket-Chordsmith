@@ -73,6 +73,12 @@ Three import-ready demos live in `demos/`: `lofi_study_room_loop.json`, `lofi_ra
 
 See `../../docs/LOFI_CHILL_PACK_IMPLEMENTATION.md` for the shared preset IDs, compatibility notes, and Godot/DAW handoff guidance.
 
+## Chip Tune Pack
+
+`pocket_chordsmith_v68_core_bridge.html` also includes a procedural `chip_tune` profile with classic square/triangle/noise colors, modern chip punch, phat bass, and harmonised lead/chord jams. Simple mode exposes friendly `Chip Tune` and `Chip Game Loop` actions. Advanced mode exposes chip preset, kit, bass, and texture controls.
+
+Three import-ready chip demos live in `demos/`: `chip_bug_maze_pulse_loop.json`, `chip_arcade_start_loop.json`, and `chip_menu_glow_loop.json`.
+
 ## Release Notes
 
 ### v68 Pocket Audio Core Bridge

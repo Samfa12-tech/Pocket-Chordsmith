@@ -32,6 +32,7 @@ export const POCKET_DAW_MCP_TOOLS = [
   "pocket_daw_export_plan",
   "pocket_daw_live_status",
   "pocket_daw_live_control",
+  "pocket_daw_live_performance",
   "pocket_daw_live_apply_commands"
 ] as const;
 
@@ -98,6 +99,8 @@ export async function callPocketDawMcpTool(name: string, args: unknown = {}): Pr
       return jsonToolResult(await liveStatus(args));
     case "pocket_daw_live_control":
       return jsonToolResult(await liveControl(args));
+    case "pocket_daw_live_performance":
+      return jsonToolResult(await livePerformance(args));
     case "pocket_daw_live_apply_commands":
       return jsonToolResult(await liveApplyCommands(args));
     default:
@@ -173,6 +176,19 @@ export function pocketDawMcpToolList() {
         clipId: stringSchema(),
         sessionPath: stringSchema()
       }, ["action"]),
+      annotations: liveControlToolAnnotations()
+    },
+    {
+      name: "pocket_daw_live_performance",
+      description: "Start, stop, reset, sample, or read bounded live performance diagnostics from a running Pocket DAW app through the tokened live bridge.",
+      inputSchema: objectSchema({
+        action: {
+          type: "string",
+          enum: ["status", "start", "sample", "stop", "reset"]
+        },
+        maxSamples: numberSchema(),
+        sessionPath: stringSchema()
+      }),
       annotations: liveControlToolAnnotations()
     },
     {
@@ -295,6 +311,19 @@ async function liveControl(args: unknown) {
   if (!session.ok) return session;
   const body = { ...options };
   delete body.sessionPath;
+  return liveFetch(session.session.controlUrl, session.session, "POST", body);
+}
+
+async function livePerformance(args: unknown) {
+  const options = asRecord(args);
+  const session = readLiveSession(options);
+  if (!session.ok) return session;
+  const mode = stringValue(options.action) || "status";
+  const body: Record<string, unknown> = {
+    action: "performance_diagnostics",
+    mode
+  };
+  if (options.maxSamples !== undefined) body.maxSamples = options.maxSamples;
   return liveFetch(session.session.controlUrl, session.session, "POST", body);
 }
 

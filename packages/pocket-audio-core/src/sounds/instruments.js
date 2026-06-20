@@ -2,6 +2,10 @@ import {
   LOFI_CHORD_INSTRUMENT_CONFIGS,
   LOFI_LEAD_INSTRUMENT_CONFIGS
 } from "./lofi-registry.js";
+import {
+  CHIP_CHORD_INSTRUMENT_CONFIGS,
+  CHIP_LEAD_INSTRUMENT_CONFIGS
+} from "./chip-registry.js";
 
 export const POCKET_CHORD_INSTRUMENTS = Object.freeze([
   "pocket",
@@ -14,7 +18,11 @@ export const POCKET_CHORD_INSTRUMENTS = Object.freeze([
   "felt_piano",
   "cassette_keys",
   "muted_jazz_guitar",
-  "lofi_warm_pad"
+  "lofi_warm_pad",
+  "chip_square_stack",
+  "chip_triangle_pad",
+  "chip_arp_keys",
+  "modern_chip_poly"
 ]);
 
 export const DEFAULT_CHORD_INSTRUMENT = "pocket";
@@ -35,7 +43,12 @@ export const POCKET_MELODY_INSTRUMENTS = Object.freeze([
   "soft_pluck",
   "mellow_sax",
   "muted_trumpet",
-  "tape_bell"
+  "tape_bell",
+  "chip_square_lead",
+  "chip_pulse_lead",
+  "chip_triangle_blip",
+  "chip_bell_stack",
+  "modern_chip_lead"
 ]);
 
 export const DEFAULT_MELODY_INSTRUMENT = "pulse";
@@ -169,7 +182,8 @@ export const CLASSIC_CHORD_INSTRUMENT_CONFIGS = Object.freeze({
 
 export const POCKET_CHORD_INSTRUMENT_CONFIGS = Object.freeze({
   ...CLASSIC_CHORD_INSTRUMENT_CONFIGS,
-  ...LOFI_CHORD_INSTRUMENT_CONFIGS
+  ...LOFI_CHORD_INSTRUMENT_CONFIGS,
+  ...CHIP_CHORD_INSTRUMENT_CONFIGS
 });
 
 export const CLASSIC_LEAD_INSTRUMENT_CONFIGS = Object.freeze({
@@ -280,7 +294,8 @@ export const CLASSIC_LEAD_INSTRUMENT_CONFIGS = Object.freeze({
 
 export const POCKET_LEAD_INSTRUMENT_CONFIGS = Object.freeze({
   ...CLASSIC_LEAD_INSTRUMENT_CONFIGS,
-  ...LOFI_LEAD_INSTRUMENT_CONFIGS
+  ...LOFI_LEAD_INSTRUMENT_CONFIGS,
+  ...CHIP_LEAD_INSTRUMENT_CONFIGS
 });
 
 export function findPocketChordInstrumentConfig(name) {

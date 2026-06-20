@@ -5,6 +5,7 @@ import { parsePocketChordsmithInput } from "../schema/parse-share-code.js";
 import { renderPocketAudioWav } from "../engine/offline-renderer.js";
 import { chordsmithFxParameters } from "../fx/chordsmith-fx.js";
 import { POCKET_LOFI_SOUND_REGISTRY } from "../sounds/lofi-registry.js";
+import { POCKET_CHIP_SOUND_REGISTRY } from "../sounds/chip-registry.js";
 import { GAME_PACK_FOLDERS, gamePackPath } from "./game-pack-paths.js";
 import { renderPocketAudioStems } from "./stems.js";
 import { createSilentWavBlob } from "./wav.js";
@@ -83,6 +84,7 @@ function createBaseManifest(project, { profile, sampleRate }) {
     audioProfile: project.meta.audioProfile || "standard",
     fx: createFxManifest(project),
     lofi: createLofiManifest(project),
+    chip: createChipManifest(project),
     soundRegistry: createSoundRegistryManifest(project),
     sampleRate,
     sequence: project.sequence.slice(),
@@ -204,6 +206,7 @@ function createManifestEvent(event) {
   [
     "audioProfile",
     "lofiPreset",
+    "chipPreset",
     "drumKit",
     "bassTone",
     "instrument",
@@ -221,6 +224,7 @@ function createManifestEvent(event) {
     if (event[key] !== undefined) out[key] = cloneJson(event[key]);
   });
   if (event.lofiTexture?.enabled) out.lofiTexture = cloneJson(event.lofiTexture);
+  if (event.chipTexture?.enabled) out.chipTexture = cloneJson(event.chipTexture);
   return out;
 }
 
@@ -236,11 +240,22 @@ function createLofiManifest(project) {
   };
 }
 
-function createSoundRegistryManifest(project) {
-  if (project.meta.audioProfile !== "lofi_chill") return {};
+function createChipManifest(project) {
+  const chip = project.chip || {};
   return {
-    lofi: cloneJson(POCKET_LOFI_SOUND_REGISTRY)
+    presetId: chip.presetId || "",
+    drumKit: chip.drumKit || "classic",
+    drumGroovePreset: chip.drumGroovePreset || "",
+    bassTone: chip.bassTone || "classic",
+    texture: cloneJson(chip.texture || {}),
+    intensityHints: cloneJson(chip.intensityHints || {})
   };
+}
+
+function createSoundRegistryManifest(project) {
+  if (project.meta.audioProfile === "lofi_chill") return { lofi: cloneJson(POCKET_LOFI_SOUND_REGISTRY) };
+  if (project.meta.audioProfile === "chip_tune") return { chip: cloneJson(POCKET_CHIP_SOUND_REGISTRY) };
+  return {};
 }
 
 function eventOrder(type) {

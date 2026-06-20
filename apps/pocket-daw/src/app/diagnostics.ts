@@ -3,6 +3,7 @@ import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { mediaPoolStatus } from "../daw/mediaPool";
 import { POCKET_DAW_VERSION } from "../daw/schema";
 import { currentProject, type AppState } from "./state";
+import type { PerformanceDiagnosticsReport } from "./performanceDiagnostics";
 
 export type AudioEngineDiagnostics = ReturnType<AudioEngine["getDiagnostics"]>;
 
@@ -84,6 +85,7 @@ export interface TesterDiagnosticsPayload {
     projectPath: string | null;
     userDataPath: string;
   };
+  performance: PerformanceDiagnosticsReport | null;
 }
 
 const UPDATER_ENDPOINT = "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json";
@@ -91,7 +93,7 @@ const UPDATER_ENDPOINT = "https://github.com/Samfa12-tech/Pocket-Chordsmith/rele
 export function buildTesterDiagnosticsPayload(
   state: AppState,
   audioDiagnostics: AudioEngineDiagnostics,
-  options: { capturedAt?: string; runtime?: string; platform?: string } = {}
+  options: { capturedAt?: string; runtime?: string; platform?: string; performance?: PerformanceDiagnosticsReport | null } = {}
 ): TesterDiagnosticsPayload {
   const project = currentProject(state);
   const mediaStatuses = project.mediaPool.map((item) => mediaPoolStatus(item));
@@ -182,7 +184,8 @@ export function buildTesterDiagnosticsPayload(
       userDataPath: state.currentFile.path
         ? "Project-adjacent media/cache folders are relative to the saved .pocketdaw file."
         : "Unsaved project; autosave/recent settings use the installed app or browser runtime storage."
-    }
+    },
+    performance: options.performance || null
   };
 }
 

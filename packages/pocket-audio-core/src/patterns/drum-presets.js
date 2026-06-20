@@ -20,7 +20,13 @@ export const DRUM_PRESETS = [
   { id: "lofi_half_time_soft", label: "Soft half-time", simple4: true, simple3: false, timeSigs: [4], tip: "Very gentle half-time pocket with sparse hats." },
   { id: "lofi_brush_shuffle", label: "Brush shuffle", simple4: false, simple3: false, timeSigs: [4], tip: "Brushy, humanised hat/snare motion for rainy lofi beds." },
   { id: "lofi_sparse_clicks", label: "Sparse clicks", simple4: true, simple3: false, timeSigs: [4], tip: "Minimal percussion for garden, menu and background game loops." },
-  { id: "lofi_sleepy_waltz_3_4", label: "Sleepy waltz", simple4: false, simple3: true, timeSigs: [3], tip: "Sparse 3/4 lofi brush pattern for sleepy waltz loops." }
+  { id: "lofi_sleepy_waltz_3_4", label: "Sleepy waltz", simple4: false, simple3: true, timeSigs: [3], tip: "Sparse 3/4 lofi brush pattern for sleepy waltz loops." },
+  { id: "chip_run_128", label: "Chip run", simple4: true, simple3: false, timeSigs: [4], tip: "Classic running game pulse with driving hats, simple backbeat and bright kick movement." },
+  { id: "chip_menu_bounce", label: "Chip menu bounce", simple4: true, simple3: false, timeSigs: [4], tip: "Bouncy menu rhythm with light kicks, snare taps and cheerful offbeat hats." },
+  { id: "chip_boss_half_time", label: "Chip boss half-time", simple4: true, simple3: false, timeSigs: [4], tip: "Half-time boss groove with heavy kick/snare anchors and tight noise hats." },
+  { id: "chip_arp_jam", label: "Chip arp jam", simple4: false, simple3: false, timeSigs: [4], tip: "Modern chip jam groove with 16th-note motion, syncopated kicks and punchy backbeat." },
+  { id: "chip_dungeon_shuffle", label: "Chip dungeon shuffle", simple4: false, simple3: false, timeSigs: [4], tip: "Uneasy dungeon shuffle with staggered hats and minor-key movement." },
+  { id: "chip_victory_stomp", label: "Chip victory stomp", simple4: true, simple3: false, timeSigs: [4], tip: "Bright victory stomp with accented hats, arcade kick hits and payoff snare." }
 ];
 
 function drumHits(track, pos16, level = 1, options = {}) {
@@ -141,6 +147,36 @@ export const DRUM_PATTERN_DEFS = {
       res1: drumGroove(drumHits("hat", [0, 8]), drumHits("kick", [0])),
       res2: drumGroove(drumHits("hat", [0, 6, 8, 14]), drumHits("kick", [0, 10]), drumHits("snare", [12])),
       res4: drumGroove(drumHits("hat", [0, 5, 8, 13]), drumHits("kick", [0, 10]), drumHits("snare", [12]), drumHits("hat", [15], 2, { minRes: 4 }))
+    },
+    chip_run_128: {
+      res1: drumGroove(drumHits("hat", [0, 4, 8, 12], 2), drumHits("kick", [0, 8]), drumHits("snare", [4, 12], 2)),
+      res2: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 8]), drumHits("kick", [0, 6, 8, 14]), drumHits("snare", [4, 12], 2)),
+      res4: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 4, 8, 12]), drumHits("kick", [0, 3, 6, 8, 11, 14], 1, { minRes: 4 }), drumHits("snare", [4, 12], 2))
+    },
+    chip_menu_bounce: {
+      res1: drumGroove(drumHits("hat", [0, 8]), drumHits("kick", [0]), drumHits("snare", [8])),
+      res2: drumGroove(drumHits("hat", [0, 2, 6, 8, 10, 14]), drumHits("kick", [0, 6, 10]), drumHits("snare", [8])),
+      res4: drumGroove(drumAccentHits("hat", [0, 2, 6, 8, 10, 14], [2, 10]), drumHits("kick", [0, 6, 10]), drumHits("snare", [8]), drumHits("hat", [15], 2, { minRes: 4 }))
+    },
+    chip_boss_half_time: {
+      res1: drumGroove(drumHits("hat", [0, 8]), drumHits("kick", [0, 12]), drumHits("snare", [8], 2)),
+      res2: drumGroove(drumHits("hat", [0, 2, 4, 8, 10, 12]), drumHits("kick", [0, 6, 12]), drumHits("snare", [8], 2)),
+      res4: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 8]), drumHits("kick", [0, 3, 6, 11, 12], 1, { minRes: 4 }), drumHits("snare", [8], 2), drumHits("snare", [15], 1, { minRes: 4 }))
+    },
+    chip_arp_jam: {
+      res1: drumGroove(drumHits("hat", [0, 4, 8, 12]), drumHits("kick", [0, 8]), drumHits("snare", [4, 12], 2)),
+      res2: drumGroove(drumHits("hat", [0, 2, 4, 6, 8, 10, 12, 14]), drumHits("kick", [0, 3, 8, 10], 1, { minRes: 2 }), drumHits("snare", [4, 12], 2)),
+      res4: drumGroove(drumAccentHits("hat", [0, 1, 2, 3, 4, 6, 8, 9, 10, 11, 12, 14], [0, 8]), drumHits("kick", [0, 3, 8, 10, 13], 1, { minRes: 4 }), drumHits("snare", [4, 12], 2), drumHits("snare", [7, 15], 1, { minRes: 4 }))
+    },
+    chip_dungeon_shuffle: {
+      res1: drumGroove(drumHits("hat", [0, 4, 8, 12]), drumHits("kick", [0, 8]), drumHits("snare", [12])),
+      res2: drumGroove(drumHits("hat", [0, 2, 5, 8, 10, 13]), drumHits("kick", [0, 7, 10]), drumHits("snare", [4, 12])),
+      res4: drumGroove(drumAccentHits("hat", [0, 2, 5, 8, 10, 13, 15], [5, 13]), drumHits("kick", [0, 7, 10], 1, { minRes: 4 }), drumHits("snare", [4, 12]), drumHits("snare", [14], 1, { minRes: 4 }))
+    },
+    chip_victory_stomp: {
+      res1: drumGroove(drumHits("hat", [0, 4, 8, 12], 2), drumHits("kick", [0, 4, 8]), drumHits("snare", [12], 2)),
+      res2: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 4, 8, 12]), drumHits("kick", [0, 4, 8, 10]), drumHits("snare", [12], 2)),
+      res4: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 4, 8, 12]), drumHits("kick", [0, 3, 4, 8, 10], 1, { minRes: 4 }), drumHits("snare", [12], 2), drumHits("snare", [15], 1, { minRes: 4 }))
     }
   },
   3: {

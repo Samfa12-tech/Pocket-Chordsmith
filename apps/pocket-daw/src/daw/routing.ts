@@ -58,6 +58,27 @@ export function setTrackSendLevel(project: PocketDawProject, trackId: string, re
   return next;
 }
 
+export interface ActiveTrackSendRoute {
+  returnTrackId: string;
+  level: number;
+}
+
+export function activeTrackSendRoutes(project: PocketDawProject, track: Track): ActiveTrackSendRoute[] {
+  if (track.role === "master") return [];
+  const levels = sendLevelMap(track);
+  const sendIds = new Set<string>([
+    ...(Array.isArray(track.routing?.sendIds) ? track.routing.sendIds : []),
+    ...Object.keys(levels)
+  ]);
+  return Array.from(sendIds).flatMap((returnTrackId) => {
+    if (!returnTrackId || returnTrackId === track.id) return [];
+    const target = project.tracks.find((item) => item.id === returnTrackId && item.trackType === "return");
+    if (!target) return [];
+    const level = clampSendLevel(levels[returnTrackId]);
+    return level > 0 ? [{ returnTrackId, level }] : [];
+  });
+}
+
 export function availableTrackOutputs(project: PocketDawProject, trackId: string): Array<{ id: string; name: string }> {
   return [
     { id: "master", name: "Master" },
@@ -126,6 +147,17 @@ function uniqueDisplayName(project: PocketDawProject, base: string): string {
 
 function slug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function sendLevelMap(track: Track): Record<string, unknown> {
+  const levels = track.metadata?.sendLevels;
+  return levels && typeof levels === "object" && !Array.isArray(levels) ? levels as Record<string, unknown> : {};
+}
+
+function clampSendLevel(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
 }
 
 function wouldCreateRoutingCycle(project: PocketDawProject, trackId: string, outputId: string | null): boolean {

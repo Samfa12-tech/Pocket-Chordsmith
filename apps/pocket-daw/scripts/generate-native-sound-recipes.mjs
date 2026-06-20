@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_CLASSIC_DRUM_KIT,
+  DEFAULT_CHIP_DRUM_KIT,
   DEFAULT_LOFI_DRUM_KIT,
   POCKET_BASS_TONE_CONFIGS,
   POCKET_DRUM_KIT_CONFIGS
@@ -58,6 +59,7 @@ ${drumIds.filter((id) => id !== "classic").map((id) => `        "${id}" => nativ
 fn generated_native_resolve_drum_kit(kit: Option<&str>, audio_profile: Option<&str>, lofi_preset: Option<&str>) -> &'static str {
     match kit.unwrap_or("") {
 ${drumIds.map((id) => `        "${id}" => "${id}",`).join("\n")}
+        _ if generated_native_chip_active(audio_profile, lofi_preset) => "${DEFAULT_CHIP_DRUM_KIT}",
         _ if generated_native_lofi_active(audio_profile, lofi_preset) => "${DEFAULT_LOFI_DRUM_KIT}",
         _ => "${DEFAULT_CLASSIC_DRUM_KIT}",
     }
@@ -65,6 +67,10 @@ ${drumIds.map((id) => `        "${id}" => "${id}",`).join("\n")}
 
 fn generated_native_lofi_active(audio_profile: Option<&str>, lofi_preset: Option<&str>) -> bool {
     audio_profile == Some("lofi_chill") || lofi_preset.unwrap_or("").starts_with("lofi_")
+}
+
+fn generated_native_chip_active(audio_profile: Option<&str>, chip_preset: Option<&str>) -> bool {
+    audio_profile == Some("chip_tune") || chip_preset.unwrap_or("").starts_with("chip_")
 }
 
 ${drumIds.map((id) => renderDrumKit(id, POCKET_DRUM_KIT_CONFIGS[id])).join("\n\n")}

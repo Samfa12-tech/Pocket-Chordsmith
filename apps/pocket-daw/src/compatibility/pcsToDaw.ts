@@ -61,6 +61,9 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
   applyLofiTrackEq(fx, project);
   applyLofiTrackPresets(tracks, project);
   applyLofiMasterChain(fx, project);
+  applyChipTrackEq(fx, project);
+  applyChipTrackPresets(tracks, project);
+  applyChipMasterChain(fx, project);
 
   const daw: PocketDawProject = {
     app: POCKET_DAW_APP,
@@ -78,7 +81,8 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
         normalized: JSON.parse(JSON.stringify(project)),
         notes: [
           "Imported through Pocket DAW v0 compatibility sanitizer. Unknown source fields are preserved in original.",
-          ...(isLofiProject(project) ? [`Lofi profile detected: ${lofiPresetLabel(project)}. Track presets, editable Pocket Pro EQ curves and a gentle lofi master chain were applied.`] : [])
+          ...(isLofiProject(project) ? [`Lofi profile detected: ${lofiPresetLabel(project)}. Track presets, editable Pocket Pro EQ curves and a gentle lofi master chain were applied.`] : []),
+          ...(isChipProject(project) ? [`Chip tune profile detected: ${chipPresetLabel(project)}. Chip track presets, punch EQ curves and a compact master chain were applied.`] : [])
         ]
       }
     ],
@@ -142,7 +146,8 @@ function alignTracksToChordsmithSource(tracks: ReturnType<typeof createDefaultTr
 
   const sourceSoundMetadata = {
     audioProfile: project.audioProfile,
-    lofiPreset: project.lofiPreset
+    lofiPreset: project.lofiPreset,
+    chipPreset: project.chipPreset
   };
   if (drums) {
     drums.volume = project.beatVolume;
@@ -208,9 +213,21 @@ function isLofiProject(project: SanitizedPcsProject) {
   return project.audioProfile === "lofi_chill" || Boolean(project.lofiPreset);
 }
 
+function isChipProject(project: SanitizedPcsProject) {
+  return project.audioProfile === "chip_tune" || Boolean(project.chipPreset);
+}
+
 function lofiPresetLabel(project: SanitizedPcsProject) {
   return (project.lofiPreset || "lofi_chill")
     .replace(/^lofi_/, "")
+    .split("_")
+    .map((part) => titleCase(part))
+    .join(" ");
+}
+
+function chipPresetLabel(project: SanitizedPcsProject) {
+  return (project.chipPreset || "chip_tune")
+    .replace(/^chip_/, "")
     .split("_")
     .map((part) => titleCase(part))
     .join(" ");
@@ -242,6 +259,36 @@ function applyLofiTrackPresets(tracks: Track[], project: SanitizedPcsProject) {
     }
     if (track.role === "master") {
       track.name = "Lofi Master";
+    }
+  });
+}
+
+function applyChipTrackPresets(tracks: Track[], project: SanitizedPcsProject) {
+  if (!isChipProject(project)) return;
+  tracks.forEach((track) => {
+    track.metadata = {
+      ...(track.metadata || {}),
+      audioProfile: "chip_tune",
+      chipPreset: project.chipPreset || "chip_tune"
+    };
+    if (track.role === "drums") {
+      track.name = "Chip Drums";
+      track.metadata = { ...(track.metadata || {}), drumKit: project.drumKit, drumGroovePreset: project.drumGroovePreset };
+    }
+    if (track.role === "bass") {
+      track.name = project.bassTone === "modern_chip_sub" ? "Modern Chip Sub" : project.bassTone === "bitcrush_bass" ? "Bitcrush Bass" : "Chip Bass";
+      track.metadata = { ...(track.metadata || {}), bassTone: project.bassTone };
+    }
+    if (track.role === "chords") {
+      track.name = `${titleCase(project.chordInstrument.replace(/_/g, " "))} Chords`;
+      track.metadata = { ...(track.metadata || {}), chordsmithInstrument: project.chordInstrument };
+    }
+    if (track.role === "fx-return") {
+      track.name = "Chip Delay";
+      track.volume = Math.max(track.volume, 0.52);
+    }
+    if (track.role === "master") {
+      track.name = "Chip Master";
     }
   });
 }
@@ -302,6 +349,53 @@ function applyLofiMasterChain(fx: FxState, project: SanitizedPcsProject) {
   ];
 }
 
+function applyChipMasterChain(fx: FxState, project: SanitizedPcsProject) {
+  if (!isChipProject(project)) return;
+  const master = fx.chains.find((chain) => chain.ownerTrackId === "master" || chain.id === "fx_master");
+  if (!master) return;
+  const texture = project.chipTexture || {};
+  const saturation = typeof texture.saturation === "number" ? texture.saturation : 0.18;
+  const crush = typeof texture.sampleRateCrush === "number" ? texture.sampleRateCrush : 0.14;
+  master.slots = [
+    ...master.slots,
+    pocketProEqSlot("chip_pro_eq_master", "Chip Master EQ", "gentle-lead-presence"),
+    {
+      id: "chip_saturation_master",
+      type: "saturation",
+      name: "Chip Drive",
+      enabled: true,
+      presetId: "chip-master",
+      parameters: { drive: 1.2 + saturation * 2.2, mix: 0.16 + saturation * 0.28 }
+    },
+    ...(crush > 0.08
+      ? [{
+          id: "chip_crush_master",
+          type: "bitcrusher",
+          name: "Chip Texture",
+          enabled: true,
+          presetId: "chip-master",
+          parameters: { bits: 9, mix: Math.min(0.22, crush * 0.75) }
+        } satisfies FxPluginInstance]
+      : []),
+    {
+      id: "chip_glue_master",
+      type: "compressor",
+      name: "Chip Glue",
+      enabled: true,
+      presetId: "chip-master",
+      parameters: { threshold: -17, ratio: 2.8, attack: 0.006, release: 0.12 }
+    },
+    {
+      id: "chip_limiter_master",
+      type: "limiter",
+      name: "Chip Safety Limiter",
+      enabled: true,
+      presetId: "chip-master",
+      parameters: { threshold: -5, ratio: 14, attack: 0.002, release: 0.08 }
+    }
+  ];
+}
+
 function applyLofiTrackEq(fx: FxState, project: SanitizedPcsProject) {
   if (!isLofiProject(project)) return;
   const presetForRole = new Map([
@@ -314,6 +408,24 @@ function applyLofiTrackEq(fx: FxState, project: SanitizedPcsProject) {
     const owner = chain.ownerTrackId || "";
     const melody = owner === "melody" || owner.startsWith("melody-");
     const preset = melody ? ["lofi_melody_eq", "Gentle Lead EQ", "gentle-lead-presence"] : presetForRole.get(owner);
+    if (!preset || chain.slots.some((slot) => slot.type === POCKET_PRO_EQ_TYPE && slot.presetId === preset[2])) return;
+    const [id, name, presetId] = preset;
+    chain.slots = [pocketProEqSlot(`${id}_${owner || chain.id}`, name, presetId), ...chain.slots];
+  });
+}
+
+function applyChipTrackEq(fx: FxState, project: SanitizedPcsProject) {
+  if (!isChipProject(project)) return;
+  const presetForRole = new Map([
+    ["drums", ["chip_drum_eq", "Chip Drum EQ", "drum-punch"]],
+    ["bass", ["chip_bass_eq", "Chip Bass EQ", "warm-bass-pocket"]],
+    ["chords", ["chip_chord_eq", "Chip Chord EQ", "soft-chord-bed"]],
+    ["guitar", ["chip_guitar_eq", "Chip Guitar EQ", "gentle-lead-presence"]]
+  ]);
+  fx.chains.forEach((chain) => {
+    const owner = chain.ownerTrackId || "";
+    const melody = owner === "melody" || owner.startsWith("melody-");
+    const preset = melody ? ["chip_melody_eq", "Chip Lead EQ", "gentle-lead-presence"] : presetForRole.get(owner);
     if (!preset || chain.slots.some((slot) => slot.type === POCKET_PRO_EQ_TYPE && slot.presetId === preset[2])) return;
     const [id, name, presetId] = preset;
     chain.slots = [pocketProEqSlot(`${id}_${owner || chain.id}`, name, presetId), ...chain.slots];

@@ -4,6 +4,13 @@ import {
   LOFI_DRUM_KITS,
   LOFI_MELODY_INSTRUMENTS
 } from "../presets/lofi.js";
+import { CHIP_BASS_TONES, CHIP_DRUM_KITS } from "../presets/chip.js";
+import {
+  CHIP_BASS_TONE_CONFIGS,
+  CHIP_DRUM_KIT_CONFIGS,
+  POCKET_CHIP_SOUND_REGISTRY,
+  validateChipSoundRegistry
+} from "./chip-registry.js";
 
 export const CLASSIC_DRUM_KIT_CONFIG = Object.freeze({
   kick: Object.freeze({ startFreq: 155, endFreq: 45, sweepSeconds: 0.14, gainFloor: 0.08, gainScale: 1, length: 0.17, rampSeconds: 0.16 }),
@@ -31,11 +38,13 @@ export const LOFI_DRUM_KIT_CONFIGS = Object.freeze({
 
 export const POCKET_DRUM_KIT_CONFIGS = Object.freeze({
   classic: CLASSIC_DRUM_KIT_CONFIG,
-  ...LOFI_DRUM_KIT_CONFIGS
+  ...LOFI_DRUM_KIT_CONFIGS,
+  ...CHIP_DRUM_KIT_CONFIGS
 });
 
 export const DEFAULT_CLASSIC_DRUM_KIT = "classic";
 export const DEFAULT_LOFI_DRUM_KIT = "lofi_dusty";
+export const DEFAULT_CHIP_DRUM_KIT = "chip_noise_kit";
 
 export const CLASSIC_BASS_TONE_CONFIG = Object.freeze({
   mainWave: "sawtooth",
@@ -55,7 +64,8 @@ export const LOFI_BASS_TONE_CONFIGS = Object.freeze({
 
 export const POCKET_BASS_TONE_CONFIGS = Object.freeze({
   classic: CLASSIC_BASS_TONE_CONFIG,
-  ...LOFI_BASS_TONE_CONFIGS
+  ...LOFI_BASS_TONE_CONFIGS,
+  ...CHIP_BASS_TONE_CONFIGS
 });
 
 export const DEFAULT_CLASSIC_BASS_TONE = "classic";
@@ -63,6 +73,7 @@ export const DEFAULT_CLASSIC_BASS_TONE = "classic";
 export function resolvePocketDrumKitId(drumKit, audioProfile = "", lofiPreset = "") {
   const requested = String(drumKit || "");
   if (POCKET_DRUM_KIT_CONFIGS[requested]) return requested;
+  if (isPocketChipActive(audioProfile, lofiPreset)) return DEFAULT_CHIP_DRUM_KIT;
   return isPocketLofiActive(audioProfile, lofiPreset) ? DEFAULT_LOFI_DRUM_KIT : DEFAULT_CLASSIC_DRUM_KIT;
 }
 
@@ -73,6 +84,10 @@ export function resolvePocketBassToneId(bassTone) {
 
 export function isPocketLofiActive(audioProfile = "", lofiPreset = "") {
   return audioProfile === "lofi_chill" || String(lofiPreset || "").startsWith("lofi_");
+}
+
+export function isPocketChipActive(audioProfile = "", chipPreset = "") {
+  return audioProfile === "chip_tune" || String(chipPreset || "").startsWith("chip_");
 }
 
 export const LOFI_CHORD_INSTRUMENT_CONFIGS = Object.freeze({
@@ -199,7 +214,8 @@ export const POCKET_LOFI_SOUND_REGISTRY = Object.freeze({
 export const POCKET_SOUND_REGISTRY = Object.freeze({
   drumKits: POCKET_DRUM_KIT_CONFIGS,
   bassTones: POCKET_BASS_TONE_CONFIGS,
-  lofi: POCKET_LOFI_SOUND_REGISTRY
+  lofi: POCKET_LOFI_SOUND_REGISTRY,
+  chip: POCKET_CHIP_SOUND_REGISTRY
 });
 
 export function validateLofiSoundRegistry() {
@@ -213,9 +229,10 @@ export function validateLofiSoundRegistry() {
 
 export function validatePocketSoundRegistry() {
   return {
-    missingDrumKits: missingKeys(["classic", ...LOFI_DRUM_KITS.filter((id) => id !== "classic")], POCKET_DRUM_KIT_CONFIGS),
-    missingBassTones: missingKeys(["classic", ...LOFI_BASS_TONES], POCKET_BASS_TONE_CONFIGS),
-    lofi: validateLofiSoundRegistry()
+    missingDrumKits: missingKeys(["classic", ...LOFI_DRUM_KITS.filter((id) => id !== "classic"), ...CHIP_DRUM_KITS], POCKET_DRUM_KIT_CONFIGS),
+    missingBassTones: missingKeys(["classic", ...LOFI_BASS_TONES, ...CHIP_BASS_TONES], POCKET_BASS_TONE_CONFIGS),
+    lofi: validateLofiSoundRegistry(),
+    chip: validateChipSoundRegistry()
   };
 }
 

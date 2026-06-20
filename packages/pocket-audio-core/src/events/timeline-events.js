@@ -88,7 +88,7 @@ export function buildSectionEvents(project, section, { baseTime = 0, baseTick = 
 }
 
 function addDrumEvents(events, project, section, context) {
-  const drumKit = project.lofi?.drumKit || "classic";
+  const drumKit = projectSoundDrumKit(project);
   CHORDSMITH_SEQUENCED_DRUM_LANE_IDS.forEach((lane) => {
     const levels = section.drums[lane] || [];
     const tuplets = section.drumTuplets[lane] || [];
@@ -160,7 +160,7 @@ function addBassEvents(events, project, section, context) {
         accent: bassAccent(section, sourceStep),
         midi,
         tuplet: true,
-        bassTone: project.lofi?.bassTone || "classic",
+        bassTone: projectSoundBassTone(project),
         humanizeSeed: 4,
         humanizeStep: context.step + index
       }));
@@ -177,7 +177,7 @@ function addBassEvents(events, project, section, context) {
     midi: bassMidiAt(project, section, context.step),
     slideMidi: phrase.slideStep === null ? undefined : bassMidiAt(project, section, phrase.slideStep),
     slideOffset: phrase.slideOffset,
-    bassTone: project.lofi?.bassTone || "classic",
+    bassTone: projectSoundBassTone(project),
     humanizeSeed: 4
   }));
 }
@@ -290,13 +290,25 @@ function baseEvent(project, section, context, patch) {
     accent: Boolean(patch.accent),
     tuplet: Boolean(patch.tuplet),
     audioProfile: project.meta.audioProfile || "standard",
-    lofiPreset: project.meta.stylePreset || project.lofi?.presetId || ""
+    lofiPreset: project.lofi?.presetId || "",
+    chipPreset: project.chip?.presetId || ""
   };
   ["midi", "midiNotes", "instrument", "articulation", "pan", "slideMidi", "slideOffset", "direction", "drumKit", "bassTone"].forEach((key) => {
     if (patch[key] !== undefined) event[key] = patch[key];
   });
   if (project.lofi?.texture?.enabled) event.lofiTexture = cloneJson(project.lofi.texture);
+  if (project.chip?.texture?.enabled) event.chipTexture = cloneJson(project.chip.texture);
   return event;
+}
+
+function projectSoundDrumKit(project) {
+  if (project.meta.audioProfile === "chip_tune") return project.chip?.drumKit || "chip_noise_kit";
+  return project.lofi?.drumKit || "classic";
+}
+
+function projectSoundBassTone(project) {
+  if (project.meta.audioProfile === "chip_tune") return project.chip?.bassTone || "chip_triangle_bass";
+  return project.lofi?.bassTone || "classic";
 }
 
 function humanizedTime(project, time, step, seed) {

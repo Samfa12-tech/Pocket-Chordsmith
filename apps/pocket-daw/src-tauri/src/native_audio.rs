@@ -87,6 +87,10 @@ pub struct NativeRenderedEvent {
     lofi_preset: Option<String>,
     #[serde(rename = "lofiTexture")]
     lofi_texture: Option<NativeLofiTexture>,
+    #[serde(rename = "chipPreset")]
+    chip_preset: Option<String>,
+    #[serde(rename = "chipTexture")]
+    chip_texture: Option<Value>,
     accent: Option<bool>,
     articulation: Option<String>,
     #[serde(rename = "drumLane")]
@@ -114,10 +118,21 @@ pub struct NativeTrackControl {
     id: String,
     #[serde(rename = "fxChainId")]
     fx_chain_id: Option<String>,
+    #[serde(rename = "isReturn", default)]
+    is_return: bool,
+    #[serde(default)]
+    sends: Vec<NativeTrackSend>,
     volume: f64,
     pan: f64,
     mute: bool,
     solo: bool,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct NativeTrackSend {
+    #[serde(rename = "returnTrackId")]
+    return_track_id: String,
+    level: f64,
 }
 
 #[derive(Clone, Deserialize)]
@@ -837,7 +852,28 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
 
     let mut left = 0.0_f32;
     let mut right = 0.0_f32;
+    let mut return_mixes: HashMap<String, (f32, f32)> = HashMap::new();
     for (track_id, (mut track_left, mut track_right)) in track_mixes {
+        let is_return = playback
+            .tracks
+            .get(&track_id)
+            .map(|track| track.is_return)
+            .unwrap_or(false);
+        if is_return {
+            add_track_mix(&mut return_mixes, &track_id, track_left, track_right);
+            continue;
+        }
+        if let Some(chain) = playback.fx.track_chains.get_mut(&track_id) {
+            (track_left, track_right) = chain.process(track_left, track_right);
+        }
+        let sidechain_gain = sidechain_gain(&playback, &track_id, t);
+        track_left *= sidechain_gain;
+        track_right *= sidechain_gain;
+        route_track_sends(playback, &track_id, track_left, track_right, &mut return_mixes);
+        left += track_left;
+        right += track_right;
+    }
+    for (track_id, (mut track_left, mut track_right)) in return_mixes {
         if let Some(chain) = playback.fx.track_chains.get_mut(&track_id) {
             (track_left, track_right) = chain.process(track_left, track_right);
         }
@@ -857,6 +893,44 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         soft_limit(left * 0.72 * master),
         soft_limit(right * 0.72 * master),
     )
+}
+
+fn route_track_sends(
+    playback: &PlaybackShared,
+    track_id: &str,
+    left: f32,
+    right: f32,
+    return_mixes: &mut HashMap<String, (f32, f32)>,
+) {
+    let Some(track) = playback.tracks.get(track_id) else {
+        return;
+    };
+    for send in &track.sends {
+        if send.return_track_id == track_id {
+            continue;
+        }
+        let Some(return_track) = playback.tracks.get(&send.return_track_id) else {
+            continue;
+        };
+        if !return_track.is_return {
+            continue;
+        }
+        let return_gain = track_gain(return_track, playback.has_solo);
+        if return_gain <= 0.0001 {
+            continue;
+        }
+        let level = send.level.clamp(0.0, 1.0) as f32;
+        if level <= 0.0001 {
+            continue;
+        }
+        let gain = level * return_gain as f32;
+        add_track_mix(
+            return_mixes,
+            &send.return_track_id,
+            left * gain,
+            right * gain,
+        );
+    }
 }
 
 fn sidechain_gain(playback: &PlaybackShared, track_id: &str, t: f64) -> f32 {
@@ -1942,7 +2016,7 @@ fn lofi_drum_kit(event: &NativeRenderedEvent) -> &str {
     generated_native_resolve_drum_kit(
         event.drum_kit.as_deref(),
         event.audio_profile.as_deref(),
-        event.lofi_preset.as_deref(),
+        event.chip_preset.as_deref().or(event.lofi_preset.as_deref()),
     )
 }
 
@@ -2600,6 +2674,39 @@ mod tests {
     }
 
     #[test]
+    fn native_return_send_adds_processed_return_output() {
+        let mut dry = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+        let dry_energy = render_energy(&mut dry, 1);
+
+        let mut bass = test_track("bass", 1.0, 0.0, false, false);
+        bass.sends.push(NativeTrackSend {
+            return_track_id: "fx-return".to_string(),
+            level: 0.5,
+        });
+        let mut sent = playback_with_region(bass);
+        let mut fx_return = test_track("fx-return", 1.0, 0.0, false, false);
+        fx_return.is_return = true;
+        sent.tracks.insert("fx-return".to_string(), fx_return);
+        sent.fx.track_chains.insert(
+            "fx-return".to_string(),
+            NativeFxChainState {
+                slots: vec![NativeFxSlotState::from_payload(
+                    &test_fx_slot("utility-gain", [("gain", 0.5)]),
+                    4.0,
+                )
+                .expect("return gain should build")],
+            },
+        );
+
+        let sent_energy = render_energy(&mut sent, 1);
+
+        assert!(
+            sent_energy > dry_energy * 1.1,
+            "expected return send to add processed output: dry={dry_energy}, sent={sent_energy}"
+        );
+    }
+
+    #[test]
     fn native_track_eq_chain_changes_rendered_output() {
         let mut dry = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
         dry.sample_rate = 48_000;
@@ -2889,6 +2996,8 @@ mod tests {
         NativeTrackControl {
             id: id.to_string(),
             fx_chain_id: Some(format!("fx_{id}")),
+            is_return: false,
+            sends: Vec::new(),
             volume,
             pan,
             mute,
@@ -3025,6 +3134,8 @@ mod tests {
             audio_profile: None,
             lofi_preset: None,
             lofi_texture: None,
+            chip_preset: None,
+            chip_texture: None,
             accent: None,
             articulation: None,
             drum_lane: None,
@@ -3049,6 +3160,8 @@ mod tests {
             audio_profile: None,
             lofi_preset: None,
             lofi_texture: None,
+            chip_preset: None,
+            chip_texture: None,
             accent: None,
             articulation: Some(articulation.to_string()),
             drum_lane: None,
@@ -3073,6 +3186,8 @@ mod tests {
             audio_profile: None,
             lofi_preset: None,
             lofi_texture: None,
+            chip_preset: None,
+            chip_texture: None,
             accent: None,
             articulation: None,
             drum_lane: Some("kick".to_string()),
@@ -3097,6 +3212,8 @@ mod tests {
             audio_profile: None,
             lofi_preset: None,
             lofi_texture: None,
+            chip_preset: None,
+            chip_texture: None,
             accent: None,
             articulation: None,
             drum_lane: None,

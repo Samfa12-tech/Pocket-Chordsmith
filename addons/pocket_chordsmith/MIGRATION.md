@@ -1,4 +1,4 @@
-# Migrating To Pocket Chordsmith Godot Addon 1.1.6
+# Migrating To Pocket Chordsmith Godot Addon 1.1.7
 
 This release keeps the core architecture stable:
 
@@ -19,6 +19,10 @@ res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.t
 ```
 
 6. Keep any previous procedural preview player out of shipped gameplay scenes unless it is intentionally used as a temporary fallback.
+
+## 1.1.7 Pocket Audio Sound-Pack Note
+
+Version 1.1.7 understands Pocket Chordsmith lofi/chillhop and chip tune profile metadata. Recompile imported JSON/share-code projects after updating; chart resources now preserve `audioProfile`, `lofiPreset`, `lofiTexture`, `chipPreset`, `chipTexture`, chip/lofi drum kits, bass tones, chord instruments, melody instruments, and groove preset hints for Godot-native routing and adaptive game states.
 
 ## 1.1.6 Direct Push-to-Godot Note
 

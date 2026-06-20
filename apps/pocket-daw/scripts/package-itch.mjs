@@ -15,7 +15,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Lofi Compatibility Alpha`;
+export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Chip Tune + AI Bridge Alpha`;
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -221,7 +221,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Lofi Compatibility Alpha
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Chip Tune + AI Bridge Alpha
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -231,6 +231,12 @@ ${artifactTable}
 
 ## Highlights
 
+- Added Pocket Audio chip tune import compatibility for chip presets, chip texture metadata, chip drums, basses, chords, melody instruments and groove presets.
+- Added chip-aware Chordsmith import metadata so DAW tracks preserve chip profile details for Chordsmith, DJ, Godot and game-export workflows.
+- Updated generated native sound recipes so chip drum, bass, chord and melody IDs can render through the native audio path.
+- Added a Chip Tune V1 family sound-pack path across Pocket Audio Core, Chordsmith, Pocket DJ, Pocket DAW and the Godot addon.
+- Added file-first AI/MCP bridge improvements for arranging MIDI into Pocket DAW projects and opening explicit .pocketdaw paths.
+- Improved performance diagnostics and routing/return-send groundwork for installed-app testing.
 - Added lofi/chillhop Chordsmith import compatibility for dusty keys, warm basses, soft drum kits, swing, humanize and texture metadata.
 - Added lofi project and track defaults so imported Pocket Chordsmith beds open with a warmer DAW master chain.
 - Preserved Chordsmith master/chord/beat/lead/guitar mix-slider values as DAW master and track volumes during import.

@@ -163,6 +163,20 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain(":lpFrequency");
   });
 
+  it("shows selected track FX directly on mixer strips", () => {
+    const project = addFxSlot(createEmptyPocketDawProject(), "bass", "delay");
+    const state = createInitialState();
+    state.undoStack = createUndoStack(project);
+    state.selectedTrackId = "bass";
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain('class="strip-fx-list"');
+    expect(html).toContain('data-fx-toggle="fx_bass:');
+    expect(html).toContain(">Delay<");
+    expect(html).toContain("No FX");
+  });
+
   it("keeps long transport feedback in a dedicated status region", () => {
     const state = createInitialState();
     state.status = "Monitoring Live Vocals input via Speakers while the transport controls remain usable.";
@@ -295,10 +309,9 @@ describe("Pocket DAW UI rendering", () => {
     [
       "new-project",
       "open-project",
-      "load-demo",
-      "reset-demo-template",
       "save-project",
       "save-project-as",
+      "file-window-open",
       "clip-copy",
       "clip-paste",
       "clip-duplicate",
@@ -309,13 +322,41 @@ describe("Pocket DAW UI rendering", () => {
       "marker-add",
       "media-pool-focus",
       "toggle-loop",
-      "collect-media",
-      "build-native-cache",
       "export-diagnostics"
     ].forEach((action) => {
       expect(html).toContain(`data-action="${action}"`);
     });
     expect(html).toContain('id="snapMode"');
+  });
+
+  it("moves imports and exports into the File window", () => {
+    const state = createInitialState();
+    state.showFilePanel = true;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain('class="controls-panel file-panel"');
+    expect(html).toContain('id="file-window-title"');
+    expect(html).toContain('id="importText"');
+    [
+      "load-demo",
+      "reset-demo-template",
+      "import-text",
+      "open-file",
+      "import-audio",
+      "import-midi",
+      "export-wav",
+      "export-midi",
+      "export-stems",
+      "export-section-manifest",
+      "export-godot-manifest",
+      "export-web-game-manifest",
+      "export-media-plan",
+      "collect-media",
+      "build-native-cache"
+    ].forEach((action) => {
+      expect(html).toContain(`data-action="${action}"`);
+    });
   });
 
   it("describes demo loading as an editable copy with an explicit template reload", () => {
@@ -347,10 +388,10 @@ describe("Pocket DAW UI rendering", () => {
     const zones = [...html.matchAll(/data-layout-zone="([^"]+)"/g)].map((match) => match[1]);
 
     expect(html).toContain('data-layout-shell="true"');
-    expect(zones).toEqual(["menu", "transport", "quickstart", "studio", "mixer", "export", "media", "import"]);
-    expect(html.indexOf('class="mixer"')).toBeLessThan(html.indexOf('class="export-panel"'));
-    expect(html.indexOf('class="export-panel"')).toBeLessThan(html.indexOf('class="media-pool"'));
-    expect(html.indexOf('class="media-pool"')).toBeLessThan(html.indexOf('class="import-panel"'));
+    expect(zones).toEqual(["menu", "transport", "quickstart", "studio", "mixer", "media"]);
+    expect(html.indexOf('class="mixer"')).toBeLessThan(html.indexOf('class="media-pool"'));
+    expect(html).not.toContain('class="export-panel"');
+    expect(html).not.toContain('class="import-panel"');
   });
 
   it("renders stable scroll keys for independently scrolling panes", () => {
@@ -426,8 +467,9 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Cooking timeline audio for native playback...");
   });
 
-  it("renders export progress feedback in the export panel", () => {
+  it("renders export progress feedback in the File window", () => {
     const state = createInitialState();
+    state.showFilePanel = true;
     state.exportProgress = {
       message: "Rendering WAV mix",
       detail: "Longer songs and imported audio can take a little while"
@@ -441,23 +483,15 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('aria-live="polite"');
   });
 
-  it("renders media pool empty state with audio and MIDI import enabled", () => {
+  it("renders media pool empty state without main-page import/export controls", () => {
     const html = renderAppShell(createInitialState());
 
     expect(html).toContain("Media Pool");
     expect(html).toContain("No media pool items yet.");
-    expect(html).toContain("Import Audio");
-    expect(html).toContain("Import MIDI");
-    expect(html).toContain("Build Native Cache");
-    expect(html).toContain("Godot Game Pack");
-    expect(html).toContain("Web Game Pack");
-    expect(html).toContain("Collect Media Plan");
-    expect(html).toContain("Collect Media");
-    expect(html).toContain("Collect Plan");
-    expect(html).toContain('data-action="import-audio"');
-    expect(html).toContain('data-action="import-midi"');
-    expect(html).toContain('data-action="collect-media"');
-    expect(html).toContain('data-action="export-media-plan"');
+    expect(html).not.toContain('data-action="import-audio"');
+    expect(html).not.toContain('data-action="import-midi"');
+    expect(html).not.toContain('data-action="collect-media"');
+    expect(html).not.toContain('data-action="export-media-plan"');
   });
 
   it("renders native playback cache status for active cached generated tracks", () => {

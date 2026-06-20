@@ -90,10 +90,8 @@ button:disabled {
     "studio"
     "studio-resize"
     "mixer"
-    "export"
-    "media"
-    "import";
-  grid-template-rows: auto auto auto var(--studio-height, 430px) 10px auto auto auto auto;
+    "media";
+  grid-template-rows: auto auto auto var(--studio-height, 430px) 10px auto auto;
   height: calc(100vh - var(--native-titlebar-safe-top, 0px));
   min-height: calc(100vh - var(--native-titlebar-safe-top, 0px));
   margin-top: var(--native-titlebar-safe-top, 0px);
@@ -1324,34 +1322,6 @@ button.record:hover {
   opacity: 0.72;
 }
 
-.import-panel {
-  grid-area: import;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, min(680px, 42vw));
-  gap: 12px;
-  align-items: stretch;
-  padding: 12px 18px;
-  border-top: 1px solid var(--line);
-  background: #080c16;
-}
-
-.import-panel textarea {
-  min-height: 86px;
-  resize: none;
-  border: 1px solid #293550;
-  border-radius: 6px;
-  padding: 10px;
-  color: #dfe8ff;
-  background: #0d1322;
-}
-
-.import-actions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-  gap: 8px;
-  align-content: center;
-}
-
 .bar-input {
   width: 58px;
   min-height: 32px;
@@ -1421,6 +1391,74 @@ button.record:hover {
   gap: 10px;
   justify-content: flex-end;
   padding: 0 18px 18px;
+}
+
+.file-panel {
+  width: min(920px, 100%);
+}
+
+.file-panel header p {
+  margin-top: 3px;
+  color: #9ba9c9;
+  font-size: 12px;
+}
+
+.file-window-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+}
+
+.file-window-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px 18px 18px;
+  border-top: 1px solid #26314c;
+}
+
+.file-window-section:nth-child(odd) {
+  border-right: 1px solid #26314c;
+}
+
+.file-window-section h3 {
+  margin: 0 0 3px;
+  font-size: 14px;
+}
+
+.file-window-section p,
+.file-note {
+  margin: 0;
+  color: #9ba9c9;
+  font-size: 12px;
+  line-height: 1.42;
+}
+
+.file-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.file-command-grid button {
+  min-height: 32px;
+  padding: 0 10px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.file-import-text {
+  width: 100%;
+  min-height: 118px;
+  resize: vertical;
+  border: 1px solid #293550;
+  border-radius: 6px;
+  padding: 10px;
+  color: #dfe8ff;
+  background: #0d1322;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .feedback-panel {
@@ -1611,50 +1649,9 @@ button.record:hover {
   line-height: 1.45;
 }
 
-.export-panel {
-  grid-area: export;
-  display: grid;
-  gap: 8px;
-  padding: 12px 18px;
-  border-top: 1px solid var(--line);
-  background: #0b101d;
-}
-
-.export-panel header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.export-panel h2 {
-  margin: 0 0 2px;
-  font-size: 14px;
-}
-
-.export-panel p {
-  margin: 0;
-  color: #9ba9c9;
-  font-size: 12px;
-}
-
-.export-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 7px;
-}
-
-.export-actions button {
-  min-height: 30px;
-  padding: 0 10px;
-  font-size: 11px;
-}
-
 .export-progress {
   display: grid;
   gap: 7px;
-  max-width: 680px;
   padding: 9px 10px;
   border: 1px solid #244064;
   border-radius: 6px;
@@ -1695,10 +1692,6 @@ button.record:hover {
   border-radius: inherit;
   background: linear-gradient(90deg, #40d8ff, #7cff9b);
   animation: busy-scan 1.1s ease-in-out infinite;
-}
-
-.export-note {
-  max-width: 920px;
 }
 
 .media-pool {
@@ -1952,20 +1945,19 @@ button.record:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .export-panel header,
   .media-pool header {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .export-actions,
-  .media-actions {
-    justify-content: flex-start;
+  .media-pool,
+  .file-window-body,
+  .file-command-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .media-pool,
-  .import-panel {
-    grid-template-columns: minmax(0, 1fr);
+  .file-window-section:nth-child(odd) {
+    border-right: 0;
   }
 
   .media-pool header,

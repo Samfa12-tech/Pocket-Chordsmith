@@ -10,6 +10,7 @@ import { connectFxChain } from "./fxProcessor";
 import { scheduleInstrumentEvent } from "./instruments";
 import { chordsmithSidechainSettings, isChordsmithSidechainTrigger, scheduleChordsmithSidechainDuck } from "./sidechain";
 import { activeAutomationLaneCount, getAutomatedTrackControls } from "../daw/automation";
+import { activeTrackSendRoutes } from "../daw/routing";
 import {
   CHORDSMITH_LOFI_TEXTURE_OFFLINE,
   chordsmithLofiTextureOfflineCrackleWindow,
@@ -77,8 +78,15 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
     const pan = panners.get(track.id);
     const destination = outputDestination(project, outputs, track, master);
     const duck = sidechainOutputs.get(track.id);
-    connectFxChain(ctx, gain, duck || pan || destination, getTrackFxChain(project, track));
-    if (duck) duck.connect(pan || destination);
+    const postFx = ctx.createGain();
+    connectFxChain(ctx, gain, postFx, getTrackFxChain(project, track));
+    if (duck) {
+      postFx.connect(duck);
+      duck.connect(pan || destination);
+    } else {
+      postFx.connect(pan || destination);
+    }
+    connectOfflineTrackSends(project, outputs, duck || postFx, track);
     if (pan) pan.connect(destination);
   });
   const drumsOutput = outputs.get("drums");
@@ -136,6 +144,17 @@ function offlineEventDestination(event: ReturnType<typeof renderTimelineEvents>[
     return drumLaneOutputs.get(event.drumLane || event.kind) || output;
   }
   return output;
+}
+
+function connectOfflineTrackSends(project: PocketDawProject, outputs: Map<string, GainNode>, source: AudioNode, track: Track) {
+  activeTrackSendRoutes(project, track).forEach((send) => {
+    const target = outputs.get(send.returnTrackId);
+    if (!target || target === source) return;
+    const sendGain = source.context.createGain();
+    sendGain.gain.value = send.level;
+    source.connect(sendGain);
+    sendGain.connect(target);
+  });
 }
 
 export function chordsmithOfflineLofiTextureForProject(project: PocketDawProject): Record<string, number | boolean> | null {

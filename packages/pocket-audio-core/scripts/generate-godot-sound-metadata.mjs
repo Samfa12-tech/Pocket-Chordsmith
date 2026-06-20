@@ -12,6 +12,17 @@ import {
   LOFI_STYLE_PRESET_IDS
 } from "../src/presets/lofi.js";
 import {
+  DEFAULT_CHIP_PRESET_ID,
+  CHIP_AUDIO_PROFILE_ID,
+  CHIP_BASS_TONES,
+  CHIP_CHORD_INSTRUMENTS,
+  CHIP_DRUM_GROOVE_PRESETS,
+  CHIP_DRUM_KITS,
+  CHIP_MELODY_INSTRUMENTS,
+  CHIP_STYLE_PRESETS,
+  CHIP_STYLE_PRESET_IDS
+} from "../src/presets/chip.js";
+import {
   DEFAULT_CHORD_INSTRUMENT,
   DEFAULT_MELODY_INSTRUMENT,
   POCKET_CHORD_INSTRUMENTS,
@@ -56,9 +67,18 @@ const generated = [
   `const LOFI_DRUM_GROOVE_PRESETS := ${gdArray(LOFI_DRUM_GROOVE_PRESETS)}`,
   `const LOFI_BASS_TONES := ${gdArray(LOFI_BASS_TONES)}`,
   `const LOFI_STYLE_PRESET_TEXTURES := ${gdValue(lofiStylePresetTextures())}`,
+  `const CHIP_AUDIO_PROFILE_ID := ${gdString(CHIP_AUDIO_PROFILE_ID)}`,
+  `const DEFAULT_CHIP_PRESET_ID := ${gdString(DEFAULT_CHIP_PRESET_ID)}`,
+  `const CHIP_STYLE_PRESETS := ${gdArray(CHIP_STYLE_PRESET_IDS)}`,
+  `const CHIP_CHORD_INSTRUMENTS := ${gdArray(CHIP_CHORD_INSTRUMENTS)}`,
+  `const CHIP_MELODY_INSTRUMENTS := ${gdArray(CHIP_MELODY_INSTRUMENTS)}`,
+  `const CHIP_DRUM_KITS := ${gdArray(CHIP_DRUM_KITS)}`,
+  `const CHIP_DRUM_GROOVE_PRESETS := ${gdArray(CHIP_DRUM_GROOVE_PRESETS)}`,
+  `const CHIP_BASS_TONES := ${gdArray(CHIP_BASS_TONES)}`,
+  `const CHIP_STYLE_PRESET_TEXTURES := ${gdValue(chipStylePresetTextures())}`,
   "",
-  `const POCKET_DRUM_KITS := ${gdArray(["classic", ...LOFI_DRUM_KITS.filter((id) => id !== "classic")])}`,
-  `const POCKET_BASS_TONES := ${gdArray(["classic", ...LOFI_BASS_TONES.filter((id) => id !== "classic")])}`,
+  `const POCKET_DRUM_KITS := ${gdArray(["classic", ...LOFI_DRUM_KITS.filter((id) => id !== "classic"), ...CHIP_DRUM_KITS])}`,
+  `const POCKET_BASS_TONES := ${gdArray(["classic", ...LOFI_BASS_TONES.filter((id) => id !== "classic"), ...CHIP_BASS_TONES])}`,
   `const POCKET_CHORD_INSTRUMENTS := ${gdArray(POCKET_CHORD_INSTRUMENTS)}`,
   `const POCKET_MELODY_INSTRUMENTS := ${gdArray(POCKET_MELODY_INSTRUMENTS)}`,
   `const DEFAULT_CHORD_INSTRUMENT := ${gdString(DEFAULT_CHORD_INSTRUMENT)}`,
@@ -118,6 +138,12 @@ function lofiStylePresetTextures() {
   );
 }
 
+function chipStylePresetTextures() {
+  return Object.fromEntries(
+    CHIP_STYLE_PRESET_IDS.map((id) => [id, CHIP_STYLE_PRESETS[id].texture || {}])
+  );
+}
+
 function godotDrumSampleStreams() {
   const streams = {
     kick: "kick",
@@ -138,6 +164,12 @@ function godotDrumSampleStreams() {
     streams[`${kit}:snare`] = `${kit}_snare`;
     streams[`${kit}:hat`] = `${kit}_hat`;
     streams[`${kit}:open_hat`] = `${kit}_open_hat`;
+  });
+  CHIP_DRUM_KITS.forEach((kit) => {
+    streams[`${kit}:kick`] = "kick";
+    streams[`${kit}:snare`] = "snare";
+    streams[`${kit}:hat`] = "hat";
+    streams[`${kit}:open_hat`] = "open_hat";
   });
   return streams;
 }
@@ -169,6 +201,7 @@ function godotEventSampleStreams() {
 }
 
 function godotBassSampleName(id) {
+  if (id.startsWith("chip_") || id === "modern_chip_sub" || id === "bitcrush_bass") return "bass_tone";
   if (id === "warm_sub") return "bass_warm_sub";
   if (id === "soft_upright") return "bass_soft_upright";
   if (id === "rounded_triangle_bass") return "bass_rounded_triangle_bass";
@@ -176,6 +209,7 @@ function godotBassSampleName(id) {
 }
 
 function godotChordSampleName(id) {
+  if (id.startsWith("chip_") || id === "modern_chip_poly") return "chord_tone";
   if (id === "dusty_rhodes") return "chord_dusty_rhodes";
   if (id === "felt_piano") return "chord_felt_piano";
   if (id === "cassette_keys") return "chord_cassette_keys";
@@ -185,6 +219,7 @@ function godotChordSampleName(id) {
 }
 
 function godotMelodySampleName(id) {
+  if (id.startsWith("chip_") || id === "modern_chip_lead") return "melody_pulse";
   if (id === "mellow_vibes") return "melody_mellow_vibes";
   if (id === "soft_pluck") return "melody_soft_pluck";
   if (id === "mellow_sax") return "melody_mellow_sax";

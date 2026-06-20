@@ -157,12 +157,13 @@ import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
 import { buildTesterDiagnosticsPayload, diagnosticsJson, runtimeLabel, runtimePlatform } from "./diagnostics";
 import { buildFeedbackEmailDraft, MORE_BY_SAMFA12_URL } from "./feedback";
 import { pocketDawMcpCopyText } from "./mcpSetup";
+import { PerformanceDiagnosticsRecorder, type UiPerformanceCounters } from "./performanceDiagnostics";
 
 type MixerControlField = "volume" | "pan";
 type RenderSchedule = "none" | "live-dom" | "deferred" | "immediate";
 type ScrollSnapshot = Record<string, { top: number; left: number }>;
 type ClipDragMode = "move" | "repeat";
-type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "apply_commands";
+type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "apply_commands" | "performance_diagnostics";
 type AiBridgeLiveCommand =
   | { type: "set_track_volume"; trackId: string; volume: number }
   | { type: "set_track_pan"; trackId: string; pan: number }
@@ -195,6 +196,7 @@ export class App {
   private renderCount = 0;
   private renderCountDuringPlayback = 0;
   private liveUpdateCount = 0;
+  private performanceDiagnostics = new PerformanceDiagnosticsRecorder();
   private mixerGestureStarts = new Map<string, number>();
   private deferredRenderTimer: number | null = null;
   private chordsmithDragStart: ChordsmithStepSelection | null = null;
@@ -413,7 +415,10 @@ export class App {
 
   private aiBridgeLiveStatus() {
     const project = currentProject(this.state);
-    this.state.nativeCacheStatus = nativeCacheStatusFromDiagnostics(this.engine.getDiagnostics());
+    const audioDiagnostics = this.engine.getDiagnostics();
+    this.state.nativeCacheStatus = nativeCacheStatusFromDiagnostics(audioDiagnostics);
+    const uiPerformance = this.uiPerformanceCounters();
+    const performanceDiagnostics = this.performanceDiagnostics.report(this.state, audioDiagnostics, uiPerformance, { recordSample: true });
     return {
       ok: true,
       available: true,
@@ -443,6 +448,11 @@ export class App {
       },
       recording: this.state.recording,
       nativeCache: this.state.nativeCacheStatus,
+      diagnostics: {
+        audio: audioDiagnostics,
+        ui: uiPerformance,
+        performance: performanceDiagnostics
+      },
       tracks: project.tracks.map((track) => ({
         id: track.id,
         name: track.name,
@@ -454,7 +464,7 @@ export class App {
         solo: track.solo
       })),
       capabilities: {
-        control: ["play", "pause", "stop", "restart", "seek_bar", "save_current", "select_track", "select_clip", "open_project"],
+        control: ["play", "pause", "stop", "restart", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics"],
         liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo"]
       }
     };
@@ -547,7 +557,37 @@ export class App {
       const commands = Array.isArray(input.commands) ? input.commands as AiBridgeLiveCommand[] : [];
       return this.applyAiBridgeLiveCommands(commands);
     }
+    if (action === "performance_diagnostics") return this.handleAiBridgePerformanceDiagnostics(input);
     return { ok: false, code: "unknown_action", message: `Unsupported Pocket DAW live control action: ${action}` };
+  }
+
+  private handleAiBridgePerformanceDiagnostics(input: Record<string, unknown>) {
+    const mode = typeof input.mode === "string" ? input.mode : "status";
+    const maxSamples = input.maxSamples === undefined ? undefined : numberInput(input.maxSamples, "maxSamples");
+    if (mode === "start") {
+      this.performanceDiagnostics.start(maxSamples);
+      this.state.status = "MCP performance diagnostics capture started.";
+      return { ok: true, action: "performance_diagnostics", mode, diagnostics: this.performanceDiagnosticsReport(true, maxSamples) };
+    }
+    if (mode === "stop") {
+      this.performanceDiagnosticsReport(true, maxSamples);
+      this.performanceDiagnostics.stop();
+      this.state.status = "MCP performance diagnostics capture stopped.";
+      return { ok: true, action: "performance_diagnostics", mode, diagnostics: this.performanceDiagnosticsReport(false, maxSamples) };
+    }
+    if (mode === "reset") {
+      this.performanceDiagnostics.reset(maxSamples);
+      this.state.status = "MCP performance diagnostics capture reset.";
+      return { ok: true, action: "performance_diagnostics", mode, diagnostics: this.performanceDiagnosticsReport(false, maxSamples) };
+    }
+    if (mode === "status" || mode === "sample") {
+      return { ok: true, action: "performance_diagnostics", mode, diagnostics: this.performanceDiagnosticsReport(true, maxSamples) };
+    }
+    return {
+      ok: false,
+      code: "unsupported_performance_diagnostics_mode",
+      message: `Unsupported performance diagnostics mode: ${mode}`
+    };
   }
 
   private applyAiBridgeLiveCommands(commands: AiBridgeLiveCommand[]) {
@@ -743,7 +783,11 @@ export class App {
     this.root.querySelectorAll<HTMLSelectElement>("[data-add-fx]").forEach((select) => {
       select.addEventListener("change", () => {
         if (!select.value) return;
-        this.applyProjectState(addTrackFxCommand(this.state, select.dataset.addFx || "", select.value));
+        this.applyProjectState(addTrackFxCommand(this.state, select.dataset.addFx || "", select.value), {
+          audio: "mixer-graph",
+          preserveScroll: true,
+          reason: "track-add-fx"
+        });
       });
     });
     this.root.querySelectorAll<HTMLSelectElement>("[data-track-input]").forEach((select) => {
@@ -1261,6 +1305,11 @@ export class App {
       this.render();
       return;
     }
+    if (target?.matches("[data-file-backdrop]")) {
+      this.state.showFilePanel = false;
+      this.render();
+      return;
+    }
     if (target?.matches("[data-add-track-backdrop]")) {
       this.state.showAddTrack = false;
       this.render();
@@ -1305,13 +1354,21 @@ export class App {
     const fxToggle = target?.closest<HTMLElement>("[data-fx-toggle]");
     if (fxToggle) {
       const [chainId, slotId] = String(fxToggle.dataset.fxToggle || "").split(":");
-      this.applyProjectState(toggleTrackFxCommand(this.state, chainId, slotId));
+      this.applyProjectState(toggleTrackFxCommand(this.state, chainId, slotId), {
+        audio: "mixer-graph",
+        preserveScroll: true,
+        reason: "track-fx-toggle"
+      });
       return;
     }
     const fxRemove = target?.closest<HTMLElement>("[data-fx-remove]");
     if (fxRemove) {
       const [chainId, slotId] = String(fxRemove.dataset.fxRemove || "").split(":");
-      this.applyProjectState(removeTrackFxCommand(this.state, chainId, slotId));
+      this.applyProjectState(removeTrackFxCommand(this.state, chainId, slotId), {
+        audio: "mixer-graph",
+        preserveScroll: true,
+        reason: "track-fx-remove"
+      });
       return;
     }
     const drumLaneFxToggle = target?.closest<HTMLElement>("[data-drum-lane-fx-toggle]");
@@ -1574,6 +1631,14 @@ export class App {
       this.state.showControls = false;
       this.render();
     }
+    if (action === "file-window-open") {
+      this.state.showFilePanel = true;
+      this.render();
+    }
+    if (action === "file-window-close") {
+      this.state.showFilePanel = false;
+      this.render();
+    }
     if (action === "add-track-open") {
       this.state.showAddTrack = true;
       this.render();
@@ -1628,11 +1693,13 @@ export class App {
     if (action === "more-by-samfa12") this.openExternalUrl(MORE_BY_SAMFA12_URL);
     if (action === "media-pool-focus") {
       this.state.status = "Media Pool visible.";
+      this.state.showFilePanel = false;
       this.render();
       this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "start", inline: "nearest" });
     }
     if (action === "import-focus") {
       this.state.status = "Paste a PCS1 share code, Pocket Chordsmith JSON, PocketHandoff payload or .pocketdaw JSON.";
+      this.state.showFilePanel = true;
       this.render();
       const importText = this.root.querySelector<HTMLTextAreaElement>("#importText");
       importText?.scrollIntoView({ block: "center", inline: "nearest" });
@@ -3431,10 +3498,24 @@ export class App {
   }
 
   private buildDiagnosticsPayload() {
-    return buildTesterDiagnosticsPayload(this.state, this.engine.getDiagnostics(), {
+    const audioDiagnostics = this.engine.getDiagnostics();
+    return buildTesterDiagnosticsPayload(this.state, audioDiagnostics, {
       runtime: runtimeLabel(),
-      platform: runtimePlatform()
+      platform: runtimePlatform(),
+      performance: this.performanceDiagnosticsReport(false, undefined, audioDiagnostics)
     });
+  }
+
+  private performanceDiagnosticsReport(recordSample: boolean, maxSamples?: number, audioDiagnostics = this.engine.getDiagnostics()) {
+    return this.performanceDiagnostics.report(this.state, audioDiagnostics, this.uiPerformanceCounters(), { recordSample, maxSamples });
+  }
+
+  private uiPerformanceCounters(): UiPerformanceCounters {
+    return {
+      renderCount: this.renderCount,
+      renderCountDuringPlayback: this.renderCountDuringPlayback,
+      liveUpdateCount: this.liveUpdateCount
+    };
   }
 
   private async copyMcpSetup(kind: string) {
