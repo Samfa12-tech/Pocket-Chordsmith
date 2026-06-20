@@ -224,7 +224,7 @@ describe("native render cache", () => {
     expect(diagnostics.nativeRenderCache.prewarmScheduled).toBe(false);
   });
 
-  it("prepares live composition edit caches without hot-swapping active native playback", async () => {
+  it("restarts live composition edits immediately while rebuilding native caches", async () => {
     const previousWindow = (globalThis as { window?: unknown }).window;
     (globalThis as { window?: unknown }).window = {
       setInterval: () => 1,
@@ -266,10 +266,15 @@ describe("native render cache", () => {
       expect(activeStart.assets?.length || 0).toBeGreaterThan(0);
       expect(activeStart.regions?.length || 0).toBeGreaterThan(0);
       engine.syncProject(cycleBassStep(project, "A", 0), "composition-events", "live-bass-edit");
+      await waitForAsyncCondition(() => starts.length >= 2);
       await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.buildCount >= 2);
       const diagnostics = engine.getDiagnostics();
+      const liveEditStart = starts.at(-1)!;
 
-      expect(starts).toHaveLength(1);
+      expect(starts).toHaveLength(2);
+      expect(liveEditStart.assets?.length || 0).toBe(0);
+      expect(liveEditStart.regions?.length || 0).toBe(0);
+      expect(liveEditStart.events.length).toBeGreaterThan(0);
       expect(diagnostics.nativeRenderCache.nativeRenderCacheBypassedForLiveEdits).toBe(false);
       expect(diagnostics.nativeRenderCache.assetRegionCount).toBeGreaterThan(0);
       expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBe(0);
@@ -375,6 +380,14 @@ describe("native render cache", () => {
       isAvailable: () => true,
       async invoke(command, args) {
         calls.push({ command, args });
+        if (command === "prune_native_cache_assets") {
+          return {
+            deletedCount: 2,
+            deletedByteCount: 2048,
+            skippedCount: 1,
+            errors: []
+          } as never;
+        }
         return {
           assetId: String(args?.assetId || ""),
           path: `C:\\Songs\\${String(args?.relativePath || "").replace(/\//g, "\\")}`,
@@ -387,6 +400,8 @@ describe("native render cache", () => {
     const result = await persistNativeRenderCacheAssets("C:\\Songs\\Song.pocketdaw", cache, api);
 
     expect(result.writtenAssetCount).toBe(cache.assets.length);
+    expect(result.prunedAssetCount).toBe(2);
+    expect(result.prunedByteCount).toBe(2048);
     expect(result.errors).toEqual([]);
     expect(calls[0].command).toBe("write_native_cache_asset");
     expect(calls[0].args).toMatchObject({
@@ -397,6 +412,43 @@ describe("native render cache", () => {
       durableCacheReady: true,
       nativePath: expect.stringContaining("project-cache")
     });
+    expect(calls.at(-1)).toMatchObject({
+      command: "prune_native_cache_assets",
+      args: {
+        projectFilePath: "C:\\Songs\\Song.pocketdaw",
+        keepRelativePaths: expect.arrayContaining([cache.assets[0].relativePath])
+      }
+    });
+  });
+
+  it("keeps current native cache paths when pruning stale persisted WAV assets", async () => {
+    const cache = await buildNativeRenderCache(createDemoProject(), "persist-signature");
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeMediaApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        if (command === "prune_native_cache_assets") {
+          const keep = args?.keepRelativePaths;
+          expect(Array.isArray(keep)).toBe(true);
+          expect(keep).toEqual(expect.arrayContaining(cache.assets.map((asset) => asset.relativePath)));
+          expect(keep).not.toContain("project-media/recordings/take.wav");
+          return { deletedCount: 1, deletedByteCount: 1234, skippedCount: cache.assets.length, errors: [] } as never;
+        }
+        return {
+          assetId: String(args?.assetId || ""),
+          path: `C:\\Songs\\${String(args?.relativePath || "").replace(/\//g, "\\")}`,
+          relativePath: String(args?.relativePath || ""),
+          sizeBytes: Array.isArray(args?.bytes) ? args.bytes.length : 0
+        } as never;
+      }
+    };
+
+    const result = await persistNativeRenderCacheAssets("C:\\Songs\\Song.pocketdaw", cache, api);
+
+    expect(result.prunedAssetCount).toBe(1);
+    expect(result.prunedByteCount).toBe(1234);
+    expect(calls.filter((call) => call.command === "prune_native_cache_assets")).toHaveLength(1);
   });
 
   it("hydrates current persisted native cache WAV assets from project render-cache metadata", async () => {
@@ -483,7 +535,7 @@ describe("native render cache", () => {
     expect(result.hydrationFailureCount).toBe(0);
   });
 
-  it("merges native render-cache items and invalidates stale native entries without touching other caches", async () => {
+  it("merges native render-cache items and drops stale native entries without touching other caches", async () => {
     const project = createDemoProject();
     project.renderCache.push(
       { id: "old-native", createdAt: "2026-06-01T00:00:00.000Z", invalidated: false, metadata: { cacheKind: "native-generated-stem", sourceHash: "old" } },
@@ -493,7 +545,7 @@ describe("native render cache", () => {
 
     const merged = mergeNativeRenderCacheItems(project, cache.renderCacheItems);
 
-    expect(merged.renderCache.find((item) => item.id === "old-native")?.invalidated).toBe(true);
+    expect(merged.renderCache.some((item) => item.id === "old-native")).toBe(false);
     expect(merged.renderCache.find((item) => item.id === "manual-cache")?.invalidated).toBe(false);
     expect(merged.renderCache.some((item) => item.id === cache.renderCacheItems[0].id)).toBe(true);
   });

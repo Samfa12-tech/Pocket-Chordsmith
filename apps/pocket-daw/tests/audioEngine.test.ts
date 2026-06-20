@@ -203,7 +203,7 @@ describe("audio engine diagnostics", () => {
     }
   });
 
-  it("coalesces rapid native composition edits without hot-swapping active playback", async () => {
+  it("coalesces rapid native composition edits into latest live playback restarts", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       setInterval: () => 1,
@@ -246,13 +246,62 @@ describe("audio engine diagnostics", () => {
       engine.syncProject(editA, "composition-events", "bass-edit-a");
       engine.syncProject(editB, "composition-events", "bass-edit-b");
       engine.syncProject(editC, "composition-events", "bass-edit-c");
+      await waitForAsyncCondition(() => starts.length >= 2);
+      expect(starts).toHaveLength(2);
+      expect(deferredRestarts).toHaveLength(1);
+
+      deferredRestarts[0].resolve();
+      await waitForAsyncCondition(() => starts.length >= 3);
       await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.buildCount >= 2);
 
-      expect(starts).toHaveLength(1);
-      expect(deferredRestarts).toHaveLength(0);
+      expect(starts).toHaveLength(3);
+      expect(deferredRestarts).toHaveLength(2);
       expect(engine.getDiagnostics().lastProjectSyncReason).toBe("bass-edit-c");
     } finally {
       deferredRestarts.forEach((deferred) => deferred.resolve());
+      (globalThis as any).window = previousWindow;
+    }
+  });
+
+  it("corrects native playhead estimates from backend status", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    let statusCalls = 0;
+    const native = {
+      async start(payload: { startSeconds: number; events: unknown[] }) {
+        return {
+          started: true,
+          status: nativeStatus({ playing: true, positionSeconds: payload.startSeconds, eventCount: payload.events.length }),
+          error: null
+        };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() {
+        statusCalls += 1;
+        return nativeStatus({ active: true, playing: true, positionSeconds: 8.25 });
+      }
+    };
+
+    try {
+      const engine = new AudioEngine(createDemoProject(), native);
+
+      await engine.play();
+      (engine as any).nativeStartedAtMs = performance.now() - 2_000;
+      (engine as any).nativeLastStatusRefreshAtMs = 0;
+      (engine as any).tickNativePlayback();
+      await waitForAsyncCondition(() => statusCalls > 0 && Math.abs(engine.currentSeconds() - 8.25) < 0.2);
+
+      expect(statusCalls).toBeGreaterThan(0);
+      expect(engine.currentSeconds()).toBeCloseTo(8.25, 0);
+      engine.stop();
+    } finally {
       (globalThis as any).window = previousWindow;
     }
   });

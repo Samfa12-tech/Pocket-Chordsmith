@@ -136,6 +136,8 @@ export class AudioEngine {
   private nativeRestartToken = 0;
   private pendingNativeRestart: NativeRestartRequest | null = null;
   private nativeRestartFlush: Promise<void> | null = null;
+  private nativeStatusRefreshInFlight = false;
+  private nativeLastStatusRefreshAtMs = 0;
   private nativeLiveCompositionCacheToken = 0;
   private nativeMeterEventIndex = 0;
   private nextEventIndex = 0;
@@ -286,6 +288,8 @@ export class AudioEngine {
       if (mode === "mixer-controls") {
         this.syncNativeMixerControls();
       } else if (mode === "composition-events") {
+        this.nativeRenderCacheBypassedForLiveEdits = true;
+        void this.restartNativePlayback(current, { reason, useRenderCache: false });
         void this.prepareNativeRenderCacheAfterLiveCompositionEdit("live-composition-edit");
       } else if (this.readyNativeRenderCache()) {
         void this.restartNativePlayback(current, { reason });
@@ -942,11 +946,34 @@ export class AudioEngine {
   private tickNativePlayback() {
     if (this.playbackBackend !== "native-cpal" || !this.playing) return;
     const current = this.currentSeconds();
+    this.refreshNativePositionEstimate(current);
     this.handleNativeLoop(current);
     this.tapNativeMeters(current);
     const songEnd = barsToSeconds(this.project.timeline.bars, this.project.project.bpm, this.project.project.timeSig) + 0.4;
     if (!this.project.timeline.loop.enabled && current > songEnd) this.stop();
     else this.emitTick();
+  }
+
+  private refreshNativePositionEstimate(estimatedSeconds: number) {
+    const now = performance.now();
+    if (this.nativeStatusRefreshInFlight || now - this.nativeLastStatusRefreshAtMs < 750) return;
+    this.nativeStatusRefreshInFlight = true;
+    this.nativeLastStatusRefreshAtMs = now;
+    void this.nativePlayback.status()
+      .then((status) => {
+        if (!status) return;
+        this.nativeStatus = status;
+        if (this.playbackBackend !== "native-cpal" || !this.playing || !status.active || !status.playing) return;
+        const nativeSeconds = Math.max(0, status.positionSeconds || 0);
+        if (Math.abs(nativeSeconds - estimatedSeconds) < 0.08) return;
+        this.offsetSeconds = nativeSeconds;
+        this.nativeStartedAtMs = performance.now() - nativeSeconds * 1000;
+        this.repositionPlaybackIndexes(nativeSeconds + safeSyncLeadSeconds);
+        this.emitTick(true);
+      })
+      .finally(() => {
+        this.nativeStatusRefreshInFlight = false;
+      });
   }
 
   private handleNativeLoop(current: number) {

@@ -9,6 +9,7 @@ import {
   cycleGuitarStep,
   cycleMelodyStep,
   getPrimaryChordsmithSource,
+  setChordInstrument,
   setBassMode,
   setChordsmithGlobals,
   setGuitarSettings,
@@ -160,6 +161,28 @@ describe("Chordsmith visual sequencer edits", () => {
     expect((original.melodyInstrumentsA as string[])[0]).toBe("harmonica");
     expect(project.tracks.find((track) => track.id === "melody")?.name).toBe("Melody 1 - Harmonica");
     expect(renderTimelineEvents(project).some((event) => event.kind === "melody" && event.instrument === "harmonica")).toBe(true);
+  });
+
+  it("changes the source-backed chord instrument", () => {
+    let project = createDemoProject();
+
+    project = setChordInstrument(project, "dusty_rhodes");
+
+    let pcs = getPrimaryChordsmithSource(project);
+    let original = project.sourceRefs[0].original as Record<string, unknown>;
+    const chordTrack = project.tracks.find((track) => track.id === "chords");
+    expect(pcs?.chordInstrument).toBe("dusty_rhodes");
+    expect(original.chordInstrument).toBe("dusty_rhodes");
+    expect(chordTrack?.metadata?.chordsmithInstrument).toBe("dusty_rhodes");
+    expect(chordTrack?.name).toBe("Dusty Rhodes Chords");
+    expect(renderTimelineEvents(project).some((event) => event.kind === "chord" && event.instrument === "dusty_rhodes")).toBe(true);
+
+    project = setChordInstrument(project, "definitely not a shared chord voice");
+    pcs = getPrimaryChordsmithSource(project);
+    original = project.sourceRefs[0].original as Record<string, unknown>;
+    expect(pcs?.chordInstrument).toBe("pocket");
+    expect(original.chordInstrument).toBe("pocket");
+    expect(project.tracks.find((track) => track.id === "chords")?.metadata?.chordsmithInstrument).toBe("pocket");
   });
 
   it("validates edited melody instruments against the shared Pocket Audio registry", () => {

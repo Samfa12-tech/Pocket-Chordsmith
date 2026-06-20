@@ -1021,7 +1021,7 @@ button.record:hover {
 
 .sequencer-editor {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid #26314c;
@@ -1058,7 +1058,7 @@ button.record:hover {
 
 .editor-controls.globals,
 .editor-controls.lane-controls {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
 }
 
 .editor-controls label {
@@ -1083,10 +1083,22 @@ button.record:hover {
 }
 
 .step-page-controls {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) 58px;
+  grid-template-columns: minmax(72px, 1fr) 58px minmax(46px, 0.7fr) 58px;
   gap: 6px;
   align-items: center;
+  padding: 6px;
+  border: 1px solid #28334f;
+  border-radius: 6px;
+  background: #0e1423;
+}
+
+.step-page-controls strong {
+  color: #d9e4fb;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .step-page-controls button {
@@ -1122,7 +1134,7 @@ button.record:hover {
 .step-ruler,
 .sequencer-row {
   display: grid;
-  grid-template-columns: 38px repeat(16, minmax(16px, 1fr));
+  grid-template-columns: 42px repeat(16, minmax(16px, 1fr));
   gap: 2px;
   align-items: center;
 }
@@ -1139,7 +1151,11 @@ button.record:hover {
 
 .sequencer-block {
   display: grid;
-  gap: 5px;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid #26314d;
+  border-radius: 6px;
+  background: #0d1424;
 }
 
 .sequencer-block > strong {

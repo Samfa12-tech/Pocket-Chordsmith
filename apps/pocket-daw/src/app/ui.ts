@@ -7,7 +7,7 @@ import { drumPresetLabel, visibleDrumPresetsForProject } from "../daw/chordsmith
 import { POCKET_DAW_VERSION, type Clip, type FxChain, type FxPluginInstance, type Track } from "../daw/schema";
 import { POCKET_PRO_EQ_BANDS, POCKET_PRO_EQ_PRESETS, POCKET_PRO_EQ_TYPE } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
 import { POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
-import { POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
+import { POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { DEFAULT_STEM_MIX } from "../../../../packages/pocket-audio-core/src/constants.js";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
 import { barFloatToPosition, barsToSeconds, sortClips } from "../daw/timeline";
@@ -803,14 +803,15 @@ function renderChordsmithScopeControls(state: AppState, pcs: SanitizedPcsProject
           ${SECTION_IDS.map((id) => `<option value="${id}" ${section.id === id ? "selected" : ""}>Section ${id}</option>`).join("")}
         </select>
       </label>
-      <label>Melody lane
+      <label>Melody track
         <select id="melodyTrackSelect">
-          ${Array.from({ length: melodyCount }, (_, index) => `<option value="${index}" ${state.chordsmithEditorMelodyTrackIndex === index ? "selected" : ""}>Melody ${index + 1}</option>`).join("")}
+          ${Array.from({ length: melodyCount }, (_, index) => `<option value="${index}" ${state.chordsmithEditorMelodyTrackIndex === index ? "selected" : ""}>Track ${index + 1}</option>`).join("")}
         </select>
       </label>
-      <div class="step-page-controls">
+      <div class="step-page-controls" aria-label="Sequencer step page">
+        <strong>Step page</strong>
         <button type="button" data-step-page="-1" ${page <= 0 ? "disabled" : ""}>Prev</button>
-        <span>Page ${page + 1} / ${maxPage + 1}</span>
+        <span>${page + 1} / ${maxPage + 1}</span>
         <button type="button" data-step-page="1" ${page >= maxPage ? "disabled" : ""}>Next</button>
       </div>
     </div>
@@ -840,13 +841,33 @@ function renderSelectedSequencerBlock(
   steps: number,
   selection: ChordsmithStepSelection | null
 ): string {
-  const stepNumbers = Array.from({ length: steps }, (_, i) => `<span>${startStep + i + 1}</span>`).join("");
-  if (role === "chords") return `<div class="chord-editor">${Array.from({ length: section.bars }, (_, bar) => renderChordSelect(section, bar)).join("")}</div>`;
-  if (role === "drums") return `<div class="step-ruler">${stepNumbers}</div>${renderDrumEditor(pcs, section, startStep, steps, selection)}`;
-  if (role === "bass") return `<div class="step-ruler">${stepNumbers}</div>${renderBassEditor(pcs, section, startStep, steps, selection)}`;
-  if (role === "melody") return `<div class="step-ruler">${stepNumbers}</div>${renderMelodyEditor(section, selectedTrack?.role === "melody" ? selectedMelodyTrackIndex(selectedTrack) : melodyTrackIndex, startStep, steps, selection)}`;
-  if (role === "guitar") return `<div class="step-ruler">${stepNumbers}</div>${renderGuitarEditor(project, pcs, section, startStep, steps)}`;
+  if (role === "chords") return renderChordEditor(pcs, section);
+  if (role === "drums") return renderDrumEditor(pcs, section, startStep, steps, selection);
+  if (role === "bass") return renderBassEditor(pcs, section, startStep, steps, selection);
+  if (role === "melody") return renderMelodyEditor(section, selectedTrack?.role === "melody" ? selectedMelodyTrackIndex(selectedTrack) : melodyTrackIndex, startStep, steps, selection);
+  if (role === "guitar") return renderGuitarEditor(project, pcs, section, startStep, steps);
   return "";
+}
+
+function renderStepRuler(startStep: number, steps: number): string {
+  return `<div class="step-ruler">${Array.from({ length: steps }, (_, i) => `<span>${startStep + i + 1}</span>`).join("")}</div>`;
+}
+
+function renderChordEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection): string {
+  const instrument = pcs.chordInstrument || "pocket";
+  return `
+    <div class="sequencer-block">
+      <div class="sequencer-heading">
+        <strong>Chords</strong>
+        <label>Chord sound
+          <select data-chord-instrument="true">
+            ${POCKET_CHORD_INSTRUMENTS.map((value) => `<option value="${value}" ${instrument === value ? "selected" : ""}>${escapeHtml(instrumentLabel(value))}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <div class="chord-editor">${Array.from({ length: section.bars }, (_, bar) => renderChordSelect(section, bar)).join("")}</div>
+    </div>
+  `;
 }
 
 function renderChordSelect(section: SanitizedPcsSection, bar: number): string {
@@ -878,6 +899,7 @@ function renderDrumEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection
           </select>
         </label>
       </div>
+      ${renderStepRuler(startStep, steps)}
       ${(["kick", "snare", "hat"] as const)
         .map(
           (lane) => `
@@ -908,6 +930,7 @@ function renderBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection
           <option value="manual" ${pcs.bassMode === "manual" ? "selected" : ""}>Manual notes</option>
         </select>
       </label>
+      ${renderStepRuler(startStep, steps)}
       <div class="sequencer-row">
         <span>note</span>
         ${Array.from({ length: steps }, (_, step) => {
@@ -945,8 +968,9 @@ function renderMelodyEditor(section: SanitizedPcsSection, trackIndex: number, st
         <label class="inline-toggle"><input data-melody-mute="${sanitizeDataAttr(`${section.id}:${trackIndex}`)}" type="checkbox" ${section.melodyMute[trackIndex] ? "checked" : ""}> Mute</label>
         <label class="inline-toggle"><input data-melody-solo="${sanitizeDataAttr(`${section.id}:${trackIndex}`)}" type="checkbox" ${section.melodySolo[trackIndex] ? "checked" : ""}> Solo</label>
       </div>
+      ${renderStepRuler(startStep, steps)}
       <div class="sequencer-row">
-        <span>${escapeHtml(instrumentLabel(instrument))}</span>
+        <span>notes</span>
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
           const note = track[actualStep];
@@ -996,6 +1020,7 @@ function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: San
         </label>
         <label>Volume <input data-guitar-setting="guitarVolume" type="range" min="0" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(pcs.guitarVolume, DEFAULT_STEM_MIX.guitar.volume, 0, 1)}"></label>
       </div>
+      ${renderStepRuler(startStep, steps)}
       <div class="sequencer-row">
         <span>pattern</span>
         ${Array.from({ length: steps }, (_, step) => {

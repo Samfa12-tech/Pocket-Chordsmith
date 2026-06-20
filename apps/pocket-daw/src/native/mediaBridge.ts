@@ -41,6 +41,13 @@ export interface NativeCacheAssetReadResult extends NativeCacheAssetWriteResult 
   bytes: ArrayBuffer;
 }
 
+export interface NativeCachePruneResult {
+  deletedCount: number;
+  deletedByteCount: number;
+  skippedCount: number;
+  errors: string[];
+}
+
 interface NativeAudioPayload {
   path: string;
   label: string;
@@ -66,6 +73,13 @@ interface NativeCacheAssetWritePayload {
 
 interface NativeCacheAssetReadPayload extends NativeCacheAssetWritePayload {
   bytes: number[];
+}
+
+interface NativeCachePrunePayload {
+  deletedCount: number;
+  deletedByteCount: number;
+  skippedCount: number;
+  errors: string[];
 }
 
 export interface NativeMediaApi {
@@ -145,6 +159,22 @@ export async function readNativeCacheAsset(
     relativePath: result.relativePath,
     sizeBytes: Number(result.sizeBytes) || 0,
     bytes: new Uint8Array(result.bytes).buffer
+  };
+}
+
+export async function pruneNativeCacheAssets(
+  projectFilePath: string,
+  keepRelativePaths: string[],
+  api = defaultNativeMediaApi
+): Promise<NativeCachePruneResult | null> {
+  if (!api.isAvailable()) return null;
+  const result = await api.invoke<NativeCachePrunePayload>("prune_native_cache_assets", { projectFilePath, keepRelativePaths });
+  if (!result || !Array.isArray(result.errors)) throw new Error("Native cache prune returned an invalid result.");
+  return {
+    deletedCount: Number(result.deletedCount) || 0,
+    deletedByteCount: Number(result.deletedByteCount) || 0,
+    skippedCount: Number(result.skippedCount) || 0,
+    errors: result.errors.map((error) => String(error))
   };
 }
 

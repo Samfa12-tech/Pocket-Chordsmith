@@ -1,5 +1,5 @@
 use cpal::traits::DeviceTrait;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tauri::{Emitter, Manager};
@@ -255,6 +255,7 @@ pub fn run() {
             collect_project_media,
             write_native_cache_asset,
             read_native_cache_asset,
+            prune_native_cache_assets,
             read_download_handoff_file,
             open_midi_file,
             save_project_file_as,
@@ -710,6 +711,17 @@ struct NativeCacheAssetReadResult {
 }
 
 #[derive(serde::Serialize)]
+struct NativeCachePruneResult {
+    #[serde(rename = "deletedCount")]
+    deleted_count: usize,
+    #[serde(rename = "deletedByteCount")]
+    deleted_byte_count: u64,
+    #[serde(rename = "skippedCount")]
+    skipped_count: usize,
+    errors: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
 struct MidiFilePayload {
     path: String,
     label: String,
@@ -902,6 +914,91 @@ fn read_native_cache_asset(
         relative_path,
         size_bytes,
         bytes,
+    })
+}
+
+#[tauri::command]
+fn prune_native_cache_assets(
+    project_file_path: String,
+    keep_relative_paths: Vec<String>,
+) -> Result<NativeCachePruneResult, String> {
+    let mut keep = HashSet::new();
+    for relative_path in keep_relative_paths {
+        validate_native_cache_relative_path(&relative_path)?;
+        keep.insert(normalize_native_cache_relative_path(&relative_path));
+    }
+
+    let cache_dir = native_cache_dir(&project_file_path)?;
+    if !cache_dir.exists() {
+        return Ok(NativeCachePruneResult {
+            deleted_count: 0,
+            deleted_byte_count: 0,
+            skipped_count: 0,
+            errors: Vec::new(),
+        });
+    }
+
+    let mut deleted_count = 0;
+    let mut deleted_byte_count = 0;
+    let mut skipped_count = 0;
+    let mut errors = Vec::new();
+    let entries = std::fs::read_dir(&cache_dir)
+        .map_err(|err| format!("Could not inspect native cache folder: {}", err))?;
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                errors.push(format!("Could not inspect native cache entry: {}", err));
+                continue;
+            }
+        };
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else {
+            skipped_count += 1;
+            continue;
+        };
+        if !file_type.is_file()
+            || path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| !ext.eq_ignore_ascii_case("wav"))
+                .unwrap_or(true)
+        {
+            skipped_count += 1;
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            skipped_count += 1;
+            continue;
+        };
+        let relative_path =
+            normalize_native_cache_relative_path(&format!("project-cache/native-audio/{}", name));
+        if keep.contains(&relative_path) {
+            skipped_count += 1;
+            continue;
+        }
+        let size = std::fs::metadata(&path)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        match std::fs::remove_file(&path) {
+            Ok(()) => {
+                deleted_count += 1;
+                deleted_byte_count += size;
+            }
+            Err(err) => errors.push(format!(
+                "Could not delete stale native cache asset {}: {}",
+                path.to_string_lossy(),
+                err
+            )),
+        }
+    }
+
+    Ok(NativeCachePruneResult {
+        deleted_count,
+        deleted_byte_count,
+        skipped_count,
+        errors,
     })
 }
 
@@ -1267,15 +1364,35 @@ fn native_cache_asset_path(
     resolve_project_relative_path(project_dir, relative_path)
 }
 
+fn native_cache_dir(project_file_path: &str) -> Result<std::path::PathBuf, String> {
+    let project_path = std::path::PathBuf::from(project_file_path);
+    let project_dir = project_path
+        .parent()
+        .ok_or_else(|| "Native cache needs a saved project folder.".to_string())?;
+    resolve_project_relative_path(project_dir, "project-cache/native-audio")
+}
+
 fn validate_native_cache_relative_path(relative_path: &str) -> Result<(), String> {
-    let normalized = relative_path.replace('\\', "/");
+    let normalized = normalize_native_cache_relative_path(relative_path);
     if !normalized.starts_with("project-cache/native-audio/") {
         return Err("Native cache assets must live under project-cache/native-audio.".to_string());
     }
     if !normalized.to_ascii_lowercase().ends_with(".wav") {
         return Err("Native cache assets must be WAV files.".to_string());
     }
+    if normalized
+        .split('/')
+        .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return Err(
+            "Native cache asset paths cannot contain empty or traversal segments.".to_string(),
+        );
+    }
     Ok(())
+}
+
+fn normalize_native_cache_relative_path(relative_path: &str) -> String {
+    relative_path.replace('\\', "/")
 }
 
 fn ensure_file_size_at_most(
@@ -1331,6 +1448,54 @@ mod tests {
         assert!(native_cache_asset_path(
             r"C:\Songs\Song.pocketdaw",
             "project-cache/native-audio/asset.mp3"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn prune_native_cache_assets_deletes_only_unreferenced_direct_wavs() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos();
+        let project_dir =
+            std::env::temp_dir().join(format!("pocket-daw-native-cache-prune-{stamp}"));
+        let cache_dir = project_dir.join("project-cache").join("native-audio");
+        std::fs::create_dir_all(&cache_dir).expect("cache dir");
+        let keep_path = cache_dir.join("native-cache-keep.wav");
+        let stale_path = cache_dir.join("native-cache-stale.wav");
+        let note_path = cache_dir.join("notes.txt");
+        let nested_dir = cache_dir.join("nested");
+        let nested_wav = nested_dir.join("nested.wav");
+        std::fs::write(&keep_path, [1, 2, 3]).expect("keep wav");
+        std::fs::write(&stale_path, [4, 5, 6, 7]).expect("stale wav");
+        std::fs::write(&note_path, "not cache audio").expect("non wav");
+        std::fs::create_dir_all(&nested_dir).expect("nested dir");
+        std::fs::write(&nested_wav, [8, 9]).expect("nested wav");
+        let project_path = project_dir.join("Song.pocketdaw");
+        std::fs::write(&project_path, "{}").expect("project file");
+
+        let result = prune_native_cache_assets(
+            project_path.to_string_lossy().to_string(),
+            vec!["project-cache/native-audio/native-cache-keep.wav".to_string()],
+        )
+        .expect("prune succeeds");
+
+        assert_eq!(result.deleted_count, 1);
+        assert_eq!(result.deleted_byte_count, 4);
+        assert!(result.errors.is_empty());
+        assert!(keep_path.exists());
+        assert!(!stale_path.exists());
+        assert!(note_path.exists());
+        assert!(nested_wav.exists());
+        let _ = std::fs::remove_dir_all(&project_dir);
+    }
+
+    #[test]
+    fn prune_native_cache_assets_rejects_unsafe_keep_paths() {
+        assert!(prune_native_cache_assets(
+            r"C:\Songs\Song.pocketdaw".to_string(),
+            vec!["project-cache/native-audio/../keep.wav".to_string()]
         )
         .is_err());
     }

@@ -1,7 +1,7 @@
 import type { Clip, PocketDawProject, SourceRef } from "./schema";
 import { cloneProject } from "./dawProject";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
-import { DEFAULT_MELODY_INSTRUMENT, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
+import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STEP_CYCLE, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 import {
   drumPresetEventsForProject,
@@ -99,6 +99,18 @@ export function setChordsmithGlobals(project: PocketDawProject, patch: Chordsmit
     next.project.swing = pcs.swing;
     next.project.timeSig = pcs.timeSig;
     next.project.resolution = pcs.resolution;
+  });
+}
+
+export function setChordInstrument(project: PocketDawProject, instrument: string): PocketDawProject {
+  const safeInstrument = safeChordInstrumentName(instrument);
+  return editChordsmithProject(project, (pcs, next) => {
+    pcs.chordInstrument = safeInstrument;
+    const track = next.tracks.find((item) => item.role === "chords");
+    if (track) {
+      track.metadata = { ...(track.metadata || {}), chordsmithInstrument: safeInstrument };
+      track.name = `${titleCase(safeInstrument.replace(/_/g, " "))} Chords`;
+    }
   });
 }
 
@@ -411,6 +423,7 @@ function syncChordsmithOriginalGlobals(ref: SourceRef, pcs: SanitizedPcsProject)
   target.swing = pcs.swing;
   target.timeSig = pcs.timeSig;
   target.resolution = pcs.resolution;
+  target.chordInstrument = pcs.chordInstrument;
   target.songSequence = pcs.songSequence.slice();
   target.sectionSequence = pcs.songSequence.slice();
   target.bassMode = pcs.bassMode;
@@ -472,6 +485,10 @@ function nextGeneratedSectionClipId(project: PocketDawProject): string {
     id = `clip_${String(next).padStart(3, "0")}`;
   }
   return id;
+}
+
+function safeChordInstrumentName(value: string) {
+  return safeChoiceText(value, POCKET_CHORD_INSTRUMENTS, DEFAULT_CHORD_INSTRUMENT);
 }
 
 function safeInstrumentName(value: string) {

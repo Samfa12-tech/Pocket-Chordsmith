@@ -237,6 +237,23 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).not.toContain("data-section-chord");
   });
 
+  it("shows Chordsmith chord sound choices when the chord track is selected", () => {
+    const state = createInitialState();
+    state.selectedTrackId = "chords";
+
+    const html = renderAppShell(state);
+    const inspector = inspectorHtml(html);
+
+    expect(inspector).toContain("Chord sound");
+    expect(inspector).toContain('data-chord-instrument="true"');
+    expect(inspector).toContain('<option value="pocket" >Pocket</option>');
+    expect(inspector).toContain('<option value="warm_pad" selected>Warm Pad</option>');
+    expect(inspector).toContain('<option value="dusty_rhodes"');
+    expect(inspector).toContain('<option value="chip_square_stack"');
+    expect(inspector).toContain('data-section-chord="A:0"');
+    expect(inspector).not.toContain('data-melody-instrument=');
+  });
+
   it("does not render an FX Return pan control", () => {
     const html = renderAppShell(createInitialState());
 
@@ -715,6 +732,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).not.toContain('data-bass-hold="A:16"');
     expect(html).not.toContain('data-bass-slide="A:16"');
     expect(html).toContain('data-bass-accent="A:16"');
-    expect(html).toContain("Page 2 /");
+    expect(html).toContain("Step page");
+    expect(html).toContain(">2 /");
   });
 });

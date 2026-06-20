@@ -231,7 +231,7 @@
 .timeline-track-header {
   position: sticky;
   left: 0;
-  z-index: 6;
+  z-index: 30;
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto;
   gap: 10px;
@@ -245,11 +245,12 @@
   border-right: 1px solid rgba(43, 54, 84, 0.82);
   border-radius: 0;
   color: #7886a8;
-  background: linear-gradient(90deg, #0b1020 70%, transparent);
+  background: #0b1020;
   cursor: pointer;
   font-size: 11px;
   font-weight: 800;
   text-align: left;
+  isolation: isolate;
 }
 
 .timeline-track-text {
@@ -261,7 +262,8 @@
 .timeline-track-header:hover,
 .timeline-track-header.selected {
   color: #eef4ff;
-  background: linear-gradient(90deg, rgba(64, 216, 255, 0.18), rgba(11, 16, 32, 0.95) 72%, transparent);
+  background-color: #0b1020;
+  background-image: linear-gradient(90deg, rgba(64, 216, 255, 0.18), rgba(64, 216, 255, 0) 72%);
 }
 
 .timeline-track-name {

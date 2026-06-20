@@ -25,6 +25,7 @@ import {
   getPrimaryChordsmithSource,
   isSectionId,
   setBassMode,
+  setChordInstrument,
   setChordsmithGlobals,
   setGuitarSettings,
   setMelodyMute,
@@ -418,6 +419,10 @@ export function setSectionChordCommand(state: AppState, sectionId: string, barIn
 
 export function setChordsmithGlobalsCommand(state: AppState, patch: ChordsmithGlobalPatch): AppState {
   return commitProject(state, setChordsmithGlobals(state.undoStack.present, patch), "Updated Chordsmith global settings.");
+}
+
+export function setChordInstrumentCommand(state: AppState, instrument: string): AppState {
+  return commitProject(state, setChordInstrument(state.undoStack.present, instrument), "Updated Chordsmith chord sound.");
 }
 
 export function cycleDrumStepCommand(state: AppState, sectionId: string, lane: string, step: number): AppState {

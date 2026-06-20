@@ -84,6 +84,7 @@ import {
   resizeMidiNoteCommand,
   ensureAutomationLaneCommand,
   setBassModeCommand,
+  setChordInstrumentCommand,
   setChordsmithGlobalsCommand,
   setDrumLaneMuteCommand,
   setDrumLanePanCommand,
@@ -829,19 +830,19 @@ export class App {
       this.state.chordsmithEditorFollowClip = (event.target as HTMLInputElement).checked;
       this.state.chordsmithEditorStepPage = 0;
       this.state.status = this.state.chordsmithEditorFollowClip ? "Chordsmith editor following selected clip." : "Chordsmith editor using manual section.";
-      this.render();
+      this.render({ preserveScroll: true });
     });
     this.root.querySelector<HTMLSelectElement>("#chordsmithSectionSelect")?.addEventListener("change", (event) => {
       this.state.chordsmithEditorSectionId = (event.target as HTMLSelectElement).value;
       this.state.chordsmithEditorStepPage = 0;
       this.state.chordsmithEditorFollowClip = false;
       this.state.status = `Chordsmith editor set to Section ${this.state.chordsmithEditorSectionId}.`;
-      this.render();
+      this.render({ preserveScroll: true });
     });
     this.root.querySelector<HTMLSelectElement>("#melodyTrackSelect")?.addEventListener("change", (event) => {
       this.state.chordsmithEditorMelodyTrackIndex = Number((event.target as HTMLSelectElement).value || 0);
-      this.state.status = `Melody editor set to lane ${this.state.chordsmithEditorMelodyTrackIndex + 1}.`;
-      this.render();
+      this.state.status = `Melody editor set to track ${this.state.chordsmithEditorMelodyTrackIndex + 1}.`;
+      this.render({ preserveScroll: true });
     });
     this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-chordsmith-global]").forEach((input) => {
       input.addEventListener("change", () => {
@@ -860,6 +861,9 @@ export class App {
     });
     this.root.querySelector<HTMLSelectElement>("[data-bass-mode]")?.addEventListener("change", (event) => {
       this.applyChordsmithEditorEdit(setBassModeCommand(this.state, (event.target as HTMLSelectElement).value), "chordsmith-bass-mode");
+    });
+    this.root.querySelector<HTMLSelectElement>("[data-chord-instrument]")?.addEventListener("change", (event) => {
+      this.applyChordsmithEditorEdit(setChordInstrumentCommand(this.state, (event.target as HTMLSelectElement).value), "chordsmith-chord-instrument");
     });
     this.root.querySelectorAll<HTMLSelectElement>("[data-drum-preset-section]").forEach((select) => {
       select.addEventListener("change", () => {
@@ -1471,7 +1475,7 @@ export class App {
       const direction = Number(stepPage.dataset.stepPage || 0);
       this.state.chordsmithEditorStepPage = Math.max(0, this.state.chordsmithEditorStepPage + direction);
       this.state.status = `Chordsmith step page ${this.state.chordsmithEditorStepPage + 1}.`;
-      this.render();
+      this.render({ preserveScroll: true });
       return;
     }
     const drumStep = target?.closest<HTMLElement>("[data-drum-step]");
@@ -3476,6 +3480,7 @@ export class App {
       if (saveResult.file) this.state.currentFile = saveResult.file;
       this.state.status = [
         `Built native WAV cache: ${result.writtenAssetCount} asset${result.writtenAssetCount === 1 ? "" : "s"}`,
+        result.prunedAssetCount ? `${result.prunedAssetCount} stale pruned` : "",
         result.skippedAssetCount ? `${result.skippedAssetCount} skipped` : "",
         result.errors.length ? `${result.errors.length} error${result.errors.length === 1 ? "" : "s"}` : ""
       ].filter(Boolean).join(", ") + ".";

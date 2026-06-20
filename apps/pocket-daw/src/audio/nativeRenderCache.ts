@@ -2,7 +2,7 @@ import { cloneProject } from "../daw/dawProject";
 import type { Clip, PocketDawProject, RenderCacheItem, TrackRole } from "../daw/schema";
 import { barsToSeconds } from "../daw/timeline";
 import type { NativeAudioAsset, NativeAudioRegion } from "../native/audioPlayback";
-import { readNativeCacheAsset, writeNativeCacheAsset, type NativeMediaApi } from "../native/mediaBridge";
+import { pruneNativeCacheAssets, readNativeCacheAsset, writeNativeCacheAsset, type NativeMediaApi } from "../native/mediaBridge";
 import { audioRegionFromClip, renderTimelineAudioRegions } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
 import { encodeWav, renderProjectToWavBlob } from "./offlineRender";
@@ -35,6 +35,9 @@ export interface NativeRenderCachePersistResult {
   writtenAssetCount: number;
   skippedAssetCount: number;
   writtenByteCount: number;
+  prunedAssetCount: number;
+  prunedByteCount: number;
+  pruneSkippedAssetCount: number;
   errors: string[];
   renderCacheItems: RenderCacheItem[];
 }
@@ -157,6 +160,9 @@ export async function persistNativeRenderCacheAssets(
   let writtenAssetCount = 0;
   let skippedAssetCount = 0;
   let writtenByteCount = 0;
+  let prunedAssetCount = 0;
+  let prunedByteCount = 0;
+  let pruneSkippedAssetCount = 0;
   const writes = new Map<string, Awaited<ReturnType<typeof writeNativeCacheAsset>>>();
 
   for (const asset of cache.assets) {
@@ -196,11 +202,26 @@ export async function persistNativeRenderCacheAssets(
   cache.renderCacheItems = renderCacheItems;
   cache.cachedAssetByteCount = cache.assets.reduce((total, asset) => total + nativeAssetByteLength(asset), 0);
 
+  const keepRelativePaths = Array.from(new Set([
+    ...cache.assets.map((asset) => asset.relativePath || nativeRenderCacheRelativePath(asset.id)),
+    ...renderCacheItems.map((item) => String(item.metadata?.assetRelativePath || "")).filter(Boolean)
+  ]));
+  const prune = keepRelativePaths.length ? await pruneNativeCacheAssets(projectFilePath, keepRelativePaths, api) : null;
+  if (prune) {
+    prunedAssetCount = prune.deletedCount;
+    prunedByteCount = prune.deletedByteCount;
+    pruneSkippedAssetCount = prune.skippedCount;
+    errors.push(...prune.errors);
+  }
+
   return {
     cache,
     writtenAssetCount,
     skippedAssetCount,
     writtenByteCount,
+    prunedAssetCount,
+    prunedByteCount,
+    pruneSkippedAssetCount,
     errors,
     renderCacheItems
   };
@@ -330,17 +351,7 @@ export function mergeNativeRenderCacheItems(project: PocketDawProject, items: Re
   const incomingIds = new Set(items.map((item) => item.id));
   const nextCache = project.renderCache
     .filter((item) => !incomingIds.has(item.id))
-    .map((item) => {
-      if (!isNativeCacheItem(item) || String(item.metadata?.sourceHash || "") === sourceHash) return item;
-      return {
-        ...item,
-        invalidated: true,
-        metadata: {
-          ...item.metadata,
-          invalidatedBySourceHash: sourceHash
-        }
-      };
-    });
+    .filter((item) => !isNativeCacheItem(item) || String(item.metadata?.sourceHash || "") === sourceHash);
   return {
     ...project,
     renderCache: [...nextCache, ...items]
