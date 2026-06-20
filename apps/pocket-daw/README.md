@@ -2,7 +2,7 @@
 
 Pocket DAW is a Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
-Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.13` AI / MCP bridge checkpoint.
+Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.19` native transport/cache checkpoint.
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
@@ -55,7 +55,9 @@ Run `npm run mcp:pocket-daw` to start the local stdio MCP bridge. It exposes str
 
 The file bridge can also arrange a `.mid` file into a generated Chordsmith-style heavy-metal Pocket DAW project with metal drums, bass, distorted lead, rhythm guitar and a muted raw-MIDI reference clip via `pocket_daw_arrange_midi`.
 
-Pocket DAW `0.6.13` adds `Help -> AI / MCP Bridge` in the installed app. The panel keeps copy-ready command, Claude/JSON and Codex TOML snippets, and can enable a token-protected live localhost bridge for the running app. Live MCP tools can read app status, control transport, select tracks/clips, save an already-saved project and apply safe mixer edits. File/project MCP tools still work while Pocket DAW is closed. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
+Pocket DAW `0.6.13` added `Help -> AI / MCP Bridge` in the installed app. The panel keeps copy-ready command, Claude/JSON and Codex TOML snippets, and can enable a token-protected live localhost bridge for the running app. Live MCP tools can read app status, control transport, select tracks/clips, save an already-saved project and apply safe mixer edits. File/project MCP tools still work while Pocket DAW is closed. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
+
+Pocket DAW `0.6.19` is the current updater-visible checkpoint. It focuses on native loop/metronome playback, latest-only native restarts during rapid live composition edits, better native-cache reuse after live edits, Save As title adoption from `.pocketdaw` filenames, and refreshed release/bootstrapper manifests.
 
 Release and update docs:
 
@@ -75,8 +77,8 @@ Release and update docs:
 - v0.6.11 makes the bootstrapper close after launching the verified setup EXE and adds `Help -> Setup MCP Bridge` with copy-ready MCP client snippets.
 - v0.6.12 corrects the MCP setup snippets to use a tested Windows `cmd` argument-array launch shape.
 - v0.6.13 adds `Help -> AI / MCP Bridge` and live app MCP tools for status, transport, selection and safe mixer edits.
-- Next build pending: MCP can arrange MIDI into a generated heavy-metal Chordsmith-style project, and live bridge control can open an explicit `.pocketdaw` project path.
-- Next build pending: register `.pocketdaw` with Windows and open project files passed from double-click/Open With; current installed `0.6.13` still needs File -> Open / Ctrl+O for saved projects.
+- v0.6.19 adds native loop/metronome playback, latest-only native restarts during rapid live composition edits, better native-cache reuse after live edits, Save As title adoption from `.pocketdaw` filenames, and refreshed release/bootstrapper manifests.
+- Current installed-app caveat: Windows `.pocketdaw` file association and double-click/Open With behavior still need explicit smoke on the latest installer; use File -> Open / Ctrl+O if association is unavailable.
 - ASIO, simultaneous multitrack capture, punch-in/out, comping, latency compensation UI, full send/return processing, bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
 - Windows Authenticode signing is not currently claimed unless a release manifest proves it.
 - Tauri updater signatures are generated separately as `.sig` files for updater validation.

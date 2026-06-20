@@ -1,15 +1,15 @@
-# Pocket DAW v0.6.14 - What Works and What's Next
+# Pocket DAW v0.6.19 - What Works and What's Next
 
 ## Current public alpha
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current source target: `0.6.14` chip tune + AI / MCP bridge updater checkpoint
-- Last completed public artifact record in this repo: `0.6.12`
-- Last installed public smoke evidence in this repo: `0.6.10` bootstrapper install passed; `0.6.12` MCP setup/updater smoke remains pending
+- Current source target: `0.6.19` native transport/cache updater checkpoint
+- Last completed public artifact record in this repo: `0.6.19`
+- Last installed public smoke evidence in this repo: `0.6.10` bootstrapper install passed; `0.6.19` native transport/cache and MCP/updater smoke remains pending
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- `0.6.14` release packaging commit: pending this release
+- `0.6.19` release packaging commit: `eee587c9afc39d89fa7893ea8a98e730c948a5e9`
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
 
@@ -21,17 +21,26 @@ The 2026-06-20 live MCP smoke exposed two user-facing workflow gaps that should 
 - Add a future live MCP/open-project workflow after the safe bridge v1: Codex can currently control the running app transport/mixer, but opening a project in the installed app still relies on user/native file-open flows unless the app was launched with the project file.
 - Keep the current MIDI import behavior clear: real `.mid` files import as editable MIDI media/clips. A separate future "Convert MIDI to Chordsmith arrangement" command should use simple heuristics to populate drums, bass, chord and melody lanes for users who expect Chordsmith-style decomposition.
 
-## Next build pending - MCP heavy-metal MIDI arrangement
+## Published in v0.6.19 - MCP heavy-metal MIDI arrangement
 
 The MCP bridge now has a file-first `pocket_daw_arrange_midi` workflow in source. It parses a MIDI file, infers a simple A-H Chordsmith arrangement, applies current metal drums/guitar/FX presets, optionally keeps the raw MIDI as a muted reference clip, and writes only when `outputPath` is explicit. The live bridge source also accepts `open_project` for explicit `.pocketdaw` paths, so the packaged next build can create a project through MCP and then load it into the running app without computer-use UI clicks.
 
 Smoke artifact generated from `C:\Users\sam_s\Downloads\Zelda - Ocarina of Time - Zelda Medley.mid`: `C:\Users\sam_s\Music\zelda-ocarina-medley-heavy-metal.pocketdaw`. It validates as a 96-bar A minor, 87 BPM project with Metal Drums, Picked Root Bass, Distorted Lead Melody, Metal Rhythm Guitar, a Metal Master chain, and a muted Raw MIDI Reference clip.
 
-## v0.6.14 Chip Tune + AI / MCP Bridge - packaging
+## v0.6.19 Native Transport + Cache - published
+
+`0.6.19` publishes the accumulated 0.6.14-0.6.19 work through GitHub updater assets and the bootstrapper manifest. The checkpoint adds native loop-region wrapping, native metronome rendering, latest-only native restart coalescing during rapid live composition edits, fresh native-cache reuse after live edits, narrower native-cache signatures, Save As title adoption from `.pocketdaw` filenames, guitar track metadata/active-state sync, and scroll-preserving routing/add/metronome interactions.
+
+- GitHub updater release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.19`
+- Setup EXE SHA-256: `511143d2533046339fef6d818c854a1e9e5968901b0abd1f3023aa32f36fa79f`
+- Bootstrapper manifest: `pocket-daw-bootstrapper-latest.json` reports version `0.6.19` and the same setup EXE hash.
+- Itch bootstrapper: no repush expected unless the bootstrapper itself changes; the existing itch channel remains the public downloader for the latest GitHub installer.
+
+## v0.6.14 Chip Tune + AI / MCP Bridge - included in v0.6.19
 
 `0.6.14` adds Pocket Audio chip tune metadata preservation through Chordsmith import, DAW source metadata, WebAudio/native event payloads, generated native sound recipes, and the shared sound-surface parity checks. It also carries the file-first AI/MCP bridge improvements for arranging MIDI into `.pocketdaw` projects and opening explicit project paths from the bridge.
 
-- GitHub updater release: pending this release.
+- GitHub updater release: included in `pocket-daw-v0.6.19`.
 - Itch bootstrapper: no repush expected unless the bootstrapper itself changes; the existing itch channel remains the public downloader for the latest GitHub installer.
 
 ## v0.6.13 AI / MCP Bridge v1 - published, installed smoke pending

@@ -5,28 +5,28 @@ Run this against the exact installed Windows alpha from itch/GitHub release arti
 Current alpha target:
 
 - App: Pocket DAW
-- Version: `0.6.13` AI / MCP bridge checkpoint
-- Source commit at packaging time: `92e26d7b`
+- Version: `0.6.19` native transport/cache checkpoint
+- Source commit at packaging time: `eee587c9afc39d89fa7893ea8a98e730c948a5e9`
 - Generated manifest note: dirty working tree was `false`.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Itch channel: `windows-installer`
 - Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Setup EXE: `Pocket.DAW_0.6.13_x64-setup.exe`
-- Setup EXE SHA-256: `a7ac2494b4bf3b96502bacfd58af3d06dc8efc17d75d297042a1ec10a0a37fc6`
-- Setup EXE updater signature: `Pocket.DAW_0.6.13_x64-setup.exe.sig`
-- Setup EXE updater signature SHA-256: `e90bad5f4a76d894f310c6574f25aa3a8be51c4ed8ee0d897ff8e845282e762a`
-- MSI: `Pocket.DAW_0.6.13_x64_en-US.msi`
-- MSI SHA-256: `8ecdf68d931caedc75ef5aa55b147e946226820ec3f37b17af620030bf469676`
-- MSI updater signature: `Pocket.DAW_0.6.13_x64_en-US.msi.sig`
-- MSI updater signature SHA-256: `a8eb2ca0e4dbd7d3930d83c607fb254dab93ba7695603ef7d2d3b5ad345e47c2`
-- Bootstrapper manifest: `pocket-daw-bootstrapper-latest.json` now points at `Pocket.DAW_0.6.13_x64-setup.exe`
+- Setup EXE: `Pocket.DAW_0.6.19_x64-setup.exe`
+- Setup EXE SHA-256: `511143d2533046339fef6d818c854a1e9e5968901b0abd1f3023aa32f36fa79f`
+- Setup EXE updater signature: `Pocket.DAW_0.6.19_x64-setup.exe.sig`
+- Setup EXE updater signature SHA-256: `f0afdfed173c5e9e8695835399da0c55554ecee4c61f23cbbc94ec5bc34d1c72`
+- MSI: `Pocket.DAW_0.6.19_x64_en-US.msi`
+- MSI SHA-256: `a0196e6d9fd9c76b1871a48b8e22057fada2f3ee0c03bd6347a3e58015f14a1d`
+- MSI updater signature: `Pocket.DAW_0.6.19_x64_en-US.msi.sig`
+- MSI updater signature SHA-256: `da88fc7b0e94efe919711101972c7aea779e7ef85a1b25d3282a14b4ad38fe1b`
+- Bootstrapper manifest: `pocket-daw-bootstrapper-latest.json` now points at `Pocket.DAW_0.6.19_x64-setup.exe`
 - Itch bootstrapper EXE: unchanged from the existing bootstrapper upload
 - SmartScreen/code signing: Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures: `.sig` files are updater-validation signatures and are separate from Windows code signing.
 
-Manual smoke status: `0.6.12` PENDING. Historical `0.6.9` evidence remains useful context, and `0.6.10` verifies the basic bootstrapper install path but not the MCP setup panel or auto-close bootstrapper behavior.
+Manual smoke status: `0.6.19` PENDING. Historical `0.6.9` evidence remains useful context, and `0.6.10` verifies the basic bootstrapper install path but not the latest native transport/cache behavior, MCP setup panel, or auto-close bootstrapper behavior.
 
-`0.6.13` bridge rows apply after the installer/updater checkpoint is installed.
+`0.6.19` native transport/cache and bridge rows apply after the installer/updater checkpoint is installed.
 
 Next-build lesson from 2026-06-20: current `0.6.13` does not register `.pocketdaw` as a Windows file type and does not open raw project file launch arguments. The next installer checkpoint should verify double-click/Open With after the association/open-argument fix ships.
 
@@ -52,7 +52,7 @@ Historical manual evidence from Sam on 2026-06-14:
 | Install / launch | Launch Pocket DAW from the Start Menu or installed shortcut. | Installed app opens without needing an extracted app folder. | App opened; exact launch surface not recorded. | Partial | Sam / 2026-06-14 | Confirm Start Menu/installed shortcut explicitly on next pass. |
 | Install / launch | Double-click a saved `.pocketdaw`, and use Windows Open With if the association is not already selected. | Windows offers/uses Pocket DAW for `.pocketdaw`, opens the installed app, focuses the main window and loads the clicked project. | Manual / Not run | Manual / Not run |  | Next checkpoint should include installer file association and startup/second-instance file argument handling. |
 | Install / launch | Launch after reboot if practical. | Installed app still launches normally after Windows restart. | Manual / Not run | Manual / Not run |  |  |
-| Install / launch | Open About/Diagnostics and confirm app version/build id. | Version `0.6.12` and build/commit information are visible or explicitly unavailable. | Manual / Not run | Manual / Not run |  | Historical v0.5.13 diagnostics evidence exists, but does not verify v0.6.12. |
+| Install / launch | Open About/Diagnostics and confirm app version/build id. | Version `0.6.19` and build/commit information are visible or explicitly unavailable. | Manual / Not run | Manual / Not run |  | Historical v0.5.13 diagnostics evidence exists, but does not verify v0.6.19. |
 | AI / MCP bridge | Open Help -> AI / MCP Bridge. | Panel shows current file/project status, file MCP snippets, live bridge enabled state, session file path, and Test live bridge action. | Manual / Not run | Manual / Not run |  | v0.6.13 checkpoint. |
 | AI / MCP bridge | Enable live app bridge, then run `pocket_daw_live_status` from Codex. | MCP reports current project, transport, selection, recording and native-cache status. | Manual / Not run | Manual / Not run |  | Session token should come from the local session file, not pasted manually. |
 | AI / MCP bridge | Run live control actions: play, pause, stop, restart and seek to bar. | App transport follows MCP actions and no broad UI automation is needed. | Manual / Not run | Manual / Not run |  | Playback confidence still needs human audio check. |
@@ -69,6 +69,9 @@ Historical manual evidence from Sam on 2026-06-14:
 | Native cache | Press Build Native Cache on the imported lofi project, then play while watching About/Diagnostics. | Generated tracks play from cached WAV regions with low or zero procedural fallback events until a source-changing edit invalidates the cache. | Manual / Not run | Manual / Not run |  | v0.6.7 performance patch focus. |
 | Native cache | While native playback is running, press Build Native Cache again after a generated-section edit. | Playback restarts cleanly at the current position using fresh cached WAV regions without ongoing crackle/slowdown. | Manual / Not run | Manual / Not run |  | v0.6.7 performance patch focus. |
 | Native cache | Inspect the Media Pool Native Playback line and About/Diagnostics Native Cache line before and after Build Native Cache. | The readout changes from procedural or bypassed playback to cached regions/clips and reports low or zero procedural fallback events for generated tracks. | Manual / Not run | Manual / Not run |  | v0.6.8 diagnostics patch focus. |
+| Native transport | Enable a loop range during native playback and let playback cross the loop end. | Native playback wraps on the audio clock and stays in the loop without a stalled or runaway playhead. | Manual / Not run | Manual / Not run |  | v0.6.19 native loop payload focus. |
+| Native transport | Enable the metronome and play through native playback. | Metronome clicks are audible/in sync without falling back to the WebAudio metronome path. | Manual / Not run | Manual / Not run |  | v0.6.19 native metronome payload focus. |
+| Native cache | While native playback is running, make rapid drum/bass/guitar/generated-section edits. | Restart requests collapse to the latest edit, playback remains stable, and fresh cache data is reused when available. | Manual / Not run | Manual / Not run |  | v0.6.19 live composition restart/cache focus. |
 | Mixer meters | Play an imported lofi project with native cache active, including a sparse or no-drum section. | The Drums meter follows drum hits and does not stay active only because lofi texture/noise events are present. | Manual / Not run | Manual / Not run |  | v0.6.8 mixer-meter patch focus. |
 | Mixer/audio state | Re-open the reported lofi demo project, solo Bass, and set Bass volume between 100-120%. | Warm Sub Bass is audible and the Bass meter corresponds to audible low-end/body, including when native cache diagnostics show procedural fallback events. | Bass is audible in installed `0.6.9`. | Pass | Sam / 2026-06-19 | v0.6.9 native bass hotfix focus. |
 | Chordsmith import | Import PocketHandoff if supported by the public build. | Handoff imports once and does not repeat after reload. | Pocket Chordsmith "Send to Pocket DAW" worked in v0.5.13 after hard-refreshing Chordsmith; the sent song imported into the installed app. | Pass | Sam / 2026-06-14 | Uses downloaded PCS1 handoff-file fallback when localhost delivery is unavailable; paste/import fallback still works. |
