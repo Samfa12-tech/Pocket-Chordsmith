@@ -1052,11 +1052,13 @@ const SHARE_CODE_PREFIX = "PCS1:";
 const PROJECT_SCHEMA_VERSION = 16;
 const POCKET_AUDIO_CORE_VERSION = "0.1.0-scaffold";
 const POCKET_AUDIO_CORE_SCHEMA_SUPPORT = "16";
-const POCKET_AUDIO_CORE_IMPORT_PATHS = [
+const POCKET_AUDIO_CORE_PACKAGED_IMPORT_PATHS = [
+  "./pocket-audio-core/dist/pocket-audio-core.esm.js",
+  "./pocket-audio-core/src/index.js"
+];
+const POCKET_AUDIO_CORE_REPO_IMPORT_PATHS = [
   "../../packages/pocket-audio-core/src/index.js",
-  "../../packages/pocket-audio-core/dist/pocket-audio-core.esm.js",
-  "./pocket-audio-core/src/index.js",
-  "./pocket-audio-core/dist/pocket-audio-core.esm.js"
+  "../../packages/pocket-audio-core/dist/pocket-audio-core.esm.js"
 ];
 // itch.io remains a public mirror/storefront for Pocket Chordsmith.
 const POCKET_CHORDSMITH_URL = "https://samfa12.itch.io/pocket-chordsmith";
@@ -1180,6 +1182,13 @@ let pocketAudioCoreModulePromise = null;
 let pocketAudioCoreModule = null;
 let pocketAudioCore = null;
 let pocketAudioCoreStatus = "legacy playback/WAV fallback active";
+function pocketAudioCoreImportPaths(){
+  const path = String(window.location.pathname || "").replace(/\\/g, "/").toLowerCase();
+  const sourceTree = path.includes("/apps/chordsmith-web/") || path.includes("/web-app/");
+  return sourceTree
+    ? [...POCKET_AUDIO_CORE_REPO_IMPORT_PATHS, ...POCKET_AUDIO_CORE_PACKAGED_IMPORT_PATHS]
+    : [...POCKET_AUDIO_CORE_PACKAGED_IMPORT_PATHS, ...POCKET_AUDIO_CORE_REPO_IMPORT_PATHS];
+}
 function pocketAudioCoreStatusLabel(){
   const diagnostics = pocketAudioCore?.getDiagnostics ? pocketAudioCore.getDiagnostics() : null;
   if(diagnostics?.projectLoaded) return `Pocket Audio Core ${POCKET_AUDIO_CORE_VERSION} - schema ${POCKET_AUDIO_CORE_SCHEMA_SUPPORT} - ${diagnostics.timelineEventCount || 0} timeline events`;
@@ -1193,7 +1202,7 @@ async function loadPocketAudioCoreModule(){
   if(!pocketAudioCoreModulePromise){
     pocketAudioCoreModulePromise = (async () => {
       let lastError = null;
-      for(const path of POCKET_AUDIO_CORE_IMPORT_PATHS){
+      for(const path of pocketAudioCoreImportPaths()){
         try{
           const mod = await import(path);
           pocketAudioCoreModule = mod;
