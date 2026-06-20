@@ -162,7 +162,7 @@ type MixerControlField = "volume" | "pan";
 type RenderSchedule = "none" | "live-dom" | "deferred" | "immediate";
 type ScrollSnapshot = Record<string, { top: number; left: number }>;
 type ClipDragMode = "move" | "repeat";
-type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "apply_commands";
+type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "apply_commands";
 type AiBridgeLiveCommand =
   | { type: "set_track_volume"; trackId: string; volume: number }
   | { type: "set_track_pan"; trackId: string; pan: number }
@@ -454,7 +454,7 @@ export class App {
         solo: track.solo
       })),
       capabilities: {
-        control: ["play", "pause", "stop", "restart", "seek_bar", "save_current", "select_track", "select_clip"],
+        control: ["play", "pause", "stop", "restart", "seek_bar", "save_current", "select_track", "select_clip", "open_project"],
         liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo"]
       }
     };
@@ -517,6 +517,31 @@ export class App {
       this.state.status = `Selected ${clip.name}.`;
       this.render({ preserveScroll: true });
       return { ok: true, action, clipId, clipName: clip.name, trackId: clip.trackId };
+    }
+    if (action === "open_project") {
+      const projectPath = stringInput(input.projectPath, "projectPath");
+      if (!/\.pocketdaw$/i.test(projectPath)) {
+        return { ok: false, code: "unsupported_project_path", message: "open_project only accepts explicit .pocketdaw files." };
+      }
+      const native = await readProjectFileNative(projectPath);
+      if (!native) return { ok: false, code: "native_open_unavailable", message: "Native project reads are unavailable in this runtime." };
+      this.engine.stop();
+      this.stopLiveMetronome();
+      await this.openRawProjectText(native.contents, native.file.label, native.file.path, {
+        status: `Opened ${native.file.label} through MCP.`
+      });
+      const openedProject = currentProject(this.state);
+      return {
+        ok: true,
+        action,
+        path: this.state.currentFile.path,
+        project: {
+          title: openedProject.project.title,
+          bars: openedProject.timeline.bars,
+          trackCount: openedProject.tracks.length,
+          clipCount: openedProject.timeline.clips.length
+        }
+      };
     }
     if (action === "apply_commands") {
       const commands = Array.isArray(input.commands) ? input.commands as AiBridgeLiveCommand[] : [];

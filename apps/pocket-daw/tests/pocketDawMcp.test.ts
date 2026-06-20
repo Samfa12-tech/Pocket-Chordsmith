@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { buildPocketDawProjectFile } from "../src/daw/dawProject";
 import { createDemoProject } from "../src/demo/demoProject";
 import { callPocketDawMcpTool, pocketDawMcpToolList } from "../src/mcp/pocketDawMcp";
+import { metalArrangementMidiBytes } from "./midiFixtures";
 
 function parseToolResult(result: Awaited<ReturnType<typeof callPocketDawMcpTool>>) {
   return JSON.parse(result.content[0].text);
@@ -19,6 +20,7 @@ describe("Pocket DAW MCP tools", () => {
       "pocket_daw_read_project",
       "pocket_daw_validate_project",
       "pocket_daw_create_from_chordsmith",
+      "pocket_daw_arrange_midi",
       "pocket_daw_apply_commands",
       "pocket_daw_export_plan",
       "pocket_daw_live_status",
@@ -68,6 +70,63 @@ describe("Pocket DAW MCP tools", () => {
     expect(result.project).toBeUndefined();
     expect(edited.tracks.find((track: { id: string }) => track.id === "bass").volume).toBe(0.42);
     expect(edited.timeline.markers.some((marker: { bar: number }) => marker.bar === 3)).toBe(true);
+  });
+
+  it("arranges MIDI into a heavy-metal Chordsmith-style project without writing by default", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-arrange-midi-"));
+    const midiPath = join(dir, "fixture.mid");
+    writeFileSync(midiPath, metalArrangementMidiBytes());
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_arrange_midi", {
+      midiPath,
+      title: "Fixture Metal"
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.written).toBeNull();
+    expect(result.extraction.style).toBe("heavy_metal");
+    expect(result.extraction.rawMidiClip).toBe("muted-reference");
+    expect(result.project).toBeTruthy();
+    expect(result.project.tracks.find((track: { id: string }) => track.id === "guitar")).toMatchObject({
+      name: "Metal Rhythm Guitar",
+      mute: false
+    });
+    expect(result.project.tracks.find((track: { id: string }) => track.id === "drums")).toMatchObject({
+      name: "Metal Drums",
+      mute: false
+    });
+    expect(result.project.tracks.find((track: { id: string }) => track.id === "midi")).toMatchObject({
+      name: "Raw MIDI Reference",
+      mute: true
+    });
+  });
+
+  it("writes arranged MIDI only when outputPath is explicit", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-arrange-midi-write-"));
+    const midiPath = join(dir, "fixture.mid");
+    const outputPath = join(dir, "fixture-metal.pocketdaw");
+    writeFileSync(midiPath, metalArrangementMidiBytes());
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_arrange_midi", {
+      midiPath,
+      outputPath,
+      keepRawMidiClip: false
+    }));
+    const written = JSON.parse(readFileSync(outputPath, "utf8"));
+
+    expect(result.written).toBe(outputPath);
+    expect(result.project).toBeUndefined();
+    expect(result.extraction.rawMidiClip).toBe("omitted");
+    expect(written.tracks.some((track: { id: string; mute?: boolean }) => track.id === "guitar" && track.mute === false)).toBe(true);
+    expect(written.tracks.some((track: { trackType: string }) => track.trackType === "midi")).toBe(false);
+  });
+
+  it("rejects missing MIDI paths for arrangement", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-arrange-midi-missing-"));
+
+    await expect(callPocketDawMcpTool("pocket_daw_arrange_midi", {
+      midiPath: join(dir, "missing.mid")
+    })).rejects.toThrow("File does not exist");
   });
 
   it("returns export plans without rendering audio", async () => {
@@ -127,6 +186,39 @@ describe("Pocket DAW MCP tools", () => {
       expect(result.ok).toBe(true);
       expect(auth).toBe("Bearer test-token");
       expect(JSON.parse(requestBody)).toMatchObject({ action: "play" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("sends live open_project through the tokened app bridge", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-live-open-"));
+    const sessionPath = join(dir, "ai-bridge-session.json");
+    const projectPath = join(dir, "fixture-metal.pocketdaw");
+    writeFileSync(sessionPath, JSON.stringify({
+      statusUrl: "http://127.0.0.1:47858/pocket-daw/live/status",
+      controlUrl: "http://127.0.0.1:47858/pocket-daw/live/control",
+      token: "test-token"
+    }));
+    const originalFetch = globalThis.fetch;
+    let requestBody = "";
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requestBody = String(init?.body || "");
+      return new Response(JSON.stringify({ ok: true, action: "open_project" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_live_control", {
+        sessionPath,
+        action: "open_project",
+        projectPath
+      }));
+
+      expect(result.ok).toBe(true);
+      expect(JSON.parse(requestBody)).toMatchObject({ action: "open_project", projectPath });
     } finally {
       globalThis.fetch = originalFetch;
     }

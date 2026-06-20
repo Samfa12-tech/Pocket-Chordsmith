@@ -53,6 +53,8 @@ Use `npm run package:itch-bootstrapper` and `npm run verify:itch-bootstrapper` t
 
 Run `npm run mcp:pocket-daw` to start the local stdio MCP bridge. It exposes structured tools for reading, validating, converting, editing and export-planning `.pocketdaw` projects without driving the UI.
 
+The file bridge can also arrange a `.mid` file into a generated Chordsmith-style heavy-metal Pocket DAW project with metal drums, bass, distorted lead, rhythm guitar and a muted raw-MIDI reference clip via `pocket_daw_arrange_midi`.
+
 Pocket DAW `0.6.13` adds `Help -> AI / MCP Bridge` in the installed app. The panel keeps copy-ready command, Claude/JSON and Codex TOML snippets, and can enable a token-protected live localhost bridge for the running app. Live MCP tools can read app status, control transport, select tracks/clips, save an already-saved project and apply safe mixer edits. File/project MCP tools still work while Pocket DAW is closed. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
 
 Release and update docs:
@@ -73,6 +75,7 @@ Release and update docs:
 - v0.6.11 makes the bootstrapper close after launching the verified setup EXE and adds `Help -> Setup MCP Bridge` with copy-ready MCP client snippets.
 - v0.6.12 corrects the MCP setup snippets to use a tested Windows `cmd` argument-array launch shape.
 - v0.6.13 adds `Help -> AI / MCP Bridge` and live app MCP tools for status, transport, selection and safe mixer edits.
+- Next build pending: MCP can arrange MIDI into a generated heavy-metal Chordsmith-style project, and live bridge control can open an explicit `.pocketdaw` project path.
 - Next build pending: register `.pocketdaw` with Windows and open project files passed from double-click/Open With; current installed `0.6.13` still needs File -> Open / Ctrl+O for saved projects.
 - ASIO, simultaneous multitrack capture, punch-in/out, comping, latency compensation UI, full send/return processing, bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
 - Windows Authenticode signing is not currently claimed unless a release manifest proves it.

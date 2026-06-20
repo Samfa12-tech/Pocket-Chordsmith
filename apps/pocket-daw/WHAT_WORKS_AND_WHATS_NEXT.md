@@ -21,6 +21,12 @@ The 2026-06-20 live MCP smoke exposed two user-facing workflow gaps that should 
 - Add a future live MCP/open-project workflow after the safe bridge v1: Codex can currently control the running app transport/mixer, but opening a project in the installed app still relies on user/native file-open flows unless the app was launched with the project file.
 - Keep the current MIDI import behavior clear: real `.mid` files import as editable MIDI media/clips. A separate future "Convert MIDI to Chordsmith arrangement" command should use simple heuristics to populate drums, bass, chord and melody lanes for users who expect Chordsmith-style decomposition.
 
+## Next build pending - MCP heavy-metal MIDI arrangement
+
+The MCP bridge now has a file-first `pocket_daw_arrange_midi` workflow in source. It parses a MIDI file, infers a simple A-H Chordsmith arrangement, applies current metal drums/guitar/FX presets, optionally keeps the raw MIDI as a muted reference clip, and writes only when `outputPath` is explicit. The live bridge source also accepts `open_project` for explicit `.pocketdaw` paths, so the packaged next build can create a project through MCP and then load it into the running app without computer-use UI clicks.
+
+Smoke artifact generated from `C:\Users\sam_s\Downloads\Zelda - Ocarina of Time - Zelda Medley.mid`: `C:\Users\sam_s\Music\zelda-ocarina-medley-heavy-metal.pocketdaw`. It validates as a 96-bar A minor, 87 BPM project with Metal Drums, Picked Root Bass, Distorted Lead Melody, Metal Rhythm Guitar, a Metal Master chain, and a muted Raw MIDI Reference clip.
+
 ## v0.6.13 AI / MCP Bridge v1 - published, installed smoke pending
 
 `0.6.13` expands `Help -> Setup MCP Bridge` into `Help -> AI / MCP Bridge`. The file MCP bridge remains the fast path for `.pocketdaw` inspection, validation, Chordsmith import, typed project edits and export planning while Pocket DAW is open or closed.

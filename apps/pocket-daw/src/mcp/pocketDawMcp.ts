@@ -20,12 +20,14 @@ import {
 import { createInitialState, loadProjectIntoState, type AppState } from "../app/state.ts";
 import { buildPocketDawProjectFile } from "../daw/dawProject.ts";
 import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs.ts";
+import { arrangeMidiToHeavyMetalProject } from "../daw/midiArrangement.ts";
 import { POCKET_DAW_SCHEMA_VERSION, POCKET_DAW_VERSION, type PocketDawProject } from "../daw/schema.ts";
 
 export const POCKET_DAW_MCP_TOOLS = [
   "pocket_daw_read_project",
   "pocket_daw_validate_project",
   "pocket_daw_create_from_chordsmith",
+  "pocket_daw_arrange_midi",
   "pocket_daw_apply_commands",
   "pocket_daw_export_plan",
   "pocket_daw_live_status",
@@ -86,6 +88,8 @@ export async function callPocketDawMcpTool(name: string, args: unknown = {}): Pr
       return jsonToolResult(validateProject(args));
     case "pocket_daw_create_from_chordsmith":
       return jsonToolResult(createFromChordsmith(args));
+    case "pocket_daw_arrange_midi":
+      return jsonToolResult(arrangeMidi(args));
     case "pocket_daw_apply_commands":
       return jsonToolResult(applyCommands(args));
     case "pocket_daw_export_plan":
@@ -122,6 +126,19 @@ export function pocketDawMcpToolList() {
       annotations: writeOnlyWhenOutputPathAnnotations()
     },
     {
+      name: "pocket_daw_arrange_midi",
+      description: "Arrange a MIDI file into a Chordsmith-style Pocket DAW project using a heavy-metal preset.",
+      inputSchema: objectSchema({
+        midiPath: stringSchema(),
+        baseProjectPath: stringSchema(),
+        outputPath: stringSchema(),
+        title: stringSchema(),
+        style: { type: "string", enum: ["heavy_metal"] },
+        keepRawMidiClip: booleanSchema()
+      }, ["midiPath"]),
+      annotations: writeOnlyWhenOutputPathAnnotations()
+    },
+    {
       name: "pocket_daw_apply_commands",
       description: "Apply a typed batch of safe Pocket DAW edit commands. Writes only when outputPath is provided.",
       inputSchema: objectSchema(
@@ -148,8 +165,9 @@ export function pocketDawMcpToolList() {
       inputSchema: objectSchema({
         action: {
           type: "string",
-          enum: ["play", "pause", "stop", "restart", "seek_bar", "save_current", "select_track", "select_clip"]
+          enum: ["play", "pause", "stop", "restart", "seek_bar", "save_current", "select_track", "select_clip", "open_project"]
         },
+        projectPath: stringSchema(),
         bar: numberSchema(),
         trackId: stringSchema(),
         clipId: stringSchema(),
@@ -198,6 +216,31 @@ function createFromChordsmith(args: unknown) {
     ok: true,
     message: result.message,
     written: outputPath || null,
+    summary: summarizeProject(result.project),
+    project: outputPath ? undefined : result.project
+  };
+}
+
+function arrangeMidi(args: unknown) {
+  const options = asRecord(args);
+  const midiPath = resolveUserPath(options.midiPath);
+  const baseProjectPath = stringValue(options.baseProjectPath);
+  const baseProject = baseProjectPath ? loadProject({ projectPath: baseProjectPath }) : null;
+  const bytes = new Uint8Array(readFileSync(midiPath));
+  const result = arrangeMidiToHeavyMetalProject(bytes, {
+    title: stringValue(options.title) || undefined,
+    fileName: midiPath,
+    style: stringValue(options.style) || "heavy_metal",
+    keepRawMidiClip: options.keepRawMidiClip === false ? false : true,
+    baseProject
+  });
+  const outputPath = stringValue(options.outputPath);
+  if (outputPath) writeProjectFile(outputPath, result.project);
+  return {
+    ok: true,
+    written: outputPath || null,
+    extraction: result.extraction,
+    warnings: result.warnings,
     summary: summarizeProject(result.project),
     project: outputPath ? undefined : result.project
   };
