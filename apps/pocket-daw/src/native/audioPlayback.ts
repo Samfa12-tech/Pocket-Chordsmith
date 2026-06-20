@@ -107,12 +107,27 @@ export interface NativeAudioStartPayload {
   sampleRate: number;
   startSeconds: number;
   outputDeviceId: string | null;
+  loop?: NativeAudioLoop | null;
+  metronome?: NativeAudioMetronome | null;
   sidechain?: NativeAudioSidechain | null;
   tracks: NativeAudioTrack[];
   events: NativeAudioEvent[];
   fxChains: NativeAudioFxChain[];
   assets?: NativeAudioAsset[];
   regions?: NativeAudioRegion[];
+}
+
+export interface NativeAudioLoop {
+  enabled: boolean;
+  startSeconds: number;
+  endSeconds: number;
+}
+
+export interface NativeAudioMetronome {
+  enabled: boolean;
+  beatSeconds: number;
+  timeSig: number;
+  volume: number;
 }
 
 export interface NativeAudioSidechain {
@@ -220,6 +235,8 @@ export function buildNativeAudioStartPayload(
     sampleRate: project.project.sampleRate,
     startSeconds: Math.max(0, startSeconds),
     outputDeviceId: project.audioDeviceSettings.outputDeviceId,
+    loop: nativeLoop(project),
+    metronome: nativeMetronome(project),
     sidechain: nativeSidechain(project),
     tracks: project.tracks.map((track) => ({
       id: track.id,
@@ -258,6 +275,28 @@ export function buildNativeAudioStartPayload(
     assets: cache?.assets || [],
     regions: cache?.regions || []
   };
+}
+
+function nativeMetronome(project: PocketDawProject): NativeAudioMetronome | null {
+  const settings = project.project.metronome;
+  if (!settings?.enabled) return null;
+  return {
+    enabled: true,
+    beatSeconds: 60 / Math.max(1, project.project.bpm || 120),
+    timeSig: Math.max(1, Math.round(project.project.timeSig || 4)),
+    volume: clamp(settings.volume, 0, 1)
+  };
+}
+
+function nativeLoop(project: PocketDawProject): NativeAudioLoop | null {
+  const loop = project.timeline.loop;
+  if (!loop?.enabled) return null;
+  const beatsPerBar = Math.max(1, project.project.timeSig || 4);
+  const secondsPerBar = beatsPerBar * (60 / Math.max(1, project.project.bpm || 120));
+  const startSeconds = Math.max(0, (loop.startBar - 1) * secondsPerBar);
+  const endSeconds = Math.max(startSeconds, (loop.endBar - 1) * secondsPerBar);
+  if (endSeconds <= startSeconds) return null;
+  return { enabled: true, startSeconds, endSeconds };
 }
 
 function nativeSidechain(project: PocketDawProject): NativeAudioSidechain | null {

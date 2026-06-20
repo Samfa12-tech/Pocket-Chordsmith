@@ -15,7 +15,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Chip Tune + AI Bridge Alpha`;
+export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Native Transport + Cache Alpha`;
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -221,7 +221,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Chip Tune + AI Bridge Alpha
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Native Transport + Cache Alpha
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -231,6 +231,14 @@ ${artifactTable}
 
 ## Highlights
 
+- Added native playback loop-region support so the installed native engine wraps active loop ranges on the audio clock.
+- Added native metronome payload/rendering support so the installed native engine can click in sync with transport playback.
+- Coalesced rapid live composition edits into latest-only native playback restarts, reducing restart overlap during drum, bass, guitar and section editing.
+- Rebuilds and reuses fresh native render cache data after live composition edits instead of leaving playback permanently bypassed.
+- Narrowed native render cache signatures to audio-affecting generated-stem fields so title, file and UI-only edits do not invalidate cache unnecessarily.
+- Save As can adopt a useful project title from the chosen .pocketdaw filename, and untitled projects display the saved file title in the transport.
+- Guitar editor changes now keep the DAW guitar track active/mute state and Chordsmith guitar metadata in sync.
+- Track output, add-track and metronome interactions preserve timeline scroll while updating the relevant audio graph.
 - Added Pocket Audio chip tune import compatibility for chip presets, chip texture metadata, chip drums, basses, chords, melody instruments and groove presets.
 - Added chip-aware Chordsmith import metadata so DAW tracks preserve chip profile details for Chordsmith, DJ, Godot and game-export workflows.
 - Updated generated native sound recipes so chip drum, bass, chord and melody IDs can render through the native audio path.

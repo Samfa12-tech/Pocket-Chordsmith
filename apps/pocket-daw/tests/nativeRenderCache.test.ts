@@ -42,6 +42,7 @@ vi.mock("../src/audio/offlineRender", () => offlineRenderMock);
 
 import { AudioEngine } from "../src/audio/audioEngine";
 import { clearAudioBufferCache, setCachedAudioBuffer } from "../src/audio/audioBufferCache";
+import { cloneProject } from "../src/daw/dawProject";
 import {
   buildNativeRenderCache,
   buildNativeRuntimeAudioCache,
@@ -78,6 +79,20 @@ describe("native render cache", () => {
     expect(nativeRenderCacheSignature(project)).toBe(signature);
 
     project.timeline.clips[0].transforms.transpose += 1;
+
+    expect(nativeRenderCacheSignature(project)).not.toBe(signature);
+  });
+
+  it("does not invalidate generated cache signatures for metadata or metronome changes", () => {
+    const project = createDemoProject();
+    const signature = nativeRenderCacheSignature(project);
+
+    project.project.title = "Renamed Session";
+    project.project.metronome = { enabled: true, countInBars: 2, volume: 0.2 };
+
+    expect(nativeRenderCacheSignature(project)).toBe(signature);
+
+    project.project.bpm += 1;
 
     expect(nativeRenderCacheSignature(project)).not.toBe(signature);
   });
@@ -209,7 +224,7 @@ describe("native render cache", () => {
     expect(diagnostics.nativeRenderCache.prewarmScheduled).toBe(false);
   });
 
-  it("makes a fresh manual native cache rebuild override active generated playback", async () => {
+  it("prepares live composition edit caches without hot-swapping active native playback", async () => {
     const previousWindow = (globalThis as { window?: unknown }).window;
     (globalThis as { window?: unknown }).window = {
       setInterval: () => 1,
@@ -245,26 +260,81 @@ describe("native render cache", () => {
       const project = createDemoProject();
       const engine = new AudioEngine(project, native);
 
+      await engine.rebuildNativeRenderCache("test-prebuild");
       await engine.play();
-      const proceduralStart = starts.at(-1)!;
+      const activeStart = starts.at(-1)!;
+      expect(activeStart.assets?.length || 0).toBeGreaterThan(0);
+      expect(activeStart.regions?.length || 0).toBeGreaterThan(0);
       engine.syncProject(cycleBassStep(project, "A", 0), "composition-events", "live-bass-edit");
-      await Promise.resolve();
-      expect(engine.getDiagnostics().nativeRenderCache.nativeRenderCacheBypassedForLiveEdits).toBe(true);
-
-      await engine.rebuildNativeRenderCache("manual-cache-after-live-edit");
-      const cachedStart = starts.at(-1)!;
+      await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.buildCount >= 2);
       const diagnostics = engine.getDiagnostics();
 
-      expect(cachedStart.assets?.length || 0).toBeGreaterThan(0);
-      expect(cachedStart.regions?.length || 0).toBeGreaterThan(0);
-      expect(cachedStart.events.length).toBeLessThan(proceduralStart.events.length);
+      expect(starts).toHaveLength(1);
       expect(diagnostics.nativeRenderCache.nativeRenderCacheBypassedForLiveEdits).toBe(false);
       expect(diagnostics.nativeRenderCache.assetRegionCount).toBeGreaterThan(0);
-      expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBe(cachedStart.events.length);
-      expect(starts.length).toBeGreaterThanOrEqual(3);
+      expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBe(0);
     } finally {
       (globalThis as { window?: unknown }).window = previousWindow;
       starts.length = 0;
+    }
+  });
+
+  it("keeps metadata-only project loads on cached native generated playback", async () => {
+    const previousWindow = (globalThis as { window?: unknown }).window;
+    (globalThis as { window?: unknown }).window = {
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    const starts: NativeAudioStartPayload[] = [];
+    const native = {
+      async start(payload: NativeAudioStartPayload) {
+        starts.push(payload);
+        return {
+          started: true,
+          status: nativeStatus({
+            active: true,
+            playing: true,
+            positionSeconds: payload.startSeconds,
+            eventCount: payload.events.length,
+            assetCount: payload.assets?.length || 0,
+            assetRegionCount: payload.regions?.length || 0,
+            proceduralEventCount: payload.events.length
+          }),
+          error: null
+        };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true }); }
+    };
+
+    try {
+      const project = createDemoProject();
+      const engine = new AudioEngine(project, native);
+
+      await engine.rebuildNativeRenderCache("test-prebuild");
+      await engine.play();
+      const cachedStart = starts.at(-1)!;
+      expect(cachedStart.regions?.length || 0).toBeGreaterThan(0);
+
+      const metadataOnly = cloneProject(project);
+      metadataOnly.project.title = "Renamed During Playback";
+      metadataOnly.project.metronome = { enabled: true, countInBars: 2, volume: 0.2 };
+      engine.syncProject(metadataOnly, "project-load", "metadata-only");
+      await waitForAsyncCondition(() => starts.length >= 2);
+      const restarted = starts.at(-1)!;
+      const diagnostics = engine.getDiagnostics();
+
+      expect(restarted.assets?.length || 0).toBeGreaterThan(0);
+      expect(restarted.regions?.length || 0).toBeGreaterThan(0);
+      expect(restarted.events.length).toBeLessThan(diagnostics.eventCount);
+      expect(diagnostics.nativeRenderCache.assetRegionCount).toBeGreaterThan(0);
+      expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBe(restarted.events.length);
+    } finally {
+      (globalThis as { window?: unknown }).window = previousWindow;
     }
   });
 
@@ -433,6 +503,13 @@ describe("native render cache", () => {
     expect(nativeRenderCacheRelativePath("../bad")).toBe("project-cache/native-audio/bad.wav");
   });
 });
+
+async function waitForAsyncCondition(condition: () => boolean, attempts = 25): Promise<void> {
+  for (let index = 0; index < attempts && !condition(); index += 1) {
+    await Promise.resolve();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+}
 
 function nativeStatus(overrides: Partial<NativeAudioStatus> = {}): NativeAudioStatus {
   return {

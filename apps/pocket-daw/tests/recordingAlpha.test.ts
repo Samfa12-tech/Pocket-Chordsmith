@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMetronomeClicks, countInSeconds } from "../src/audio/metronome";
+import { buildMetronomeClicks, buildTransportMetronomeSchedule, countInSeconds } from "../src/audio/metronome";
 import { migratePocketDawProject } from "../src/compatibility/migrations";
 import { addImportedAudioMedia, placeAudioClipOnTrack, placeRecordingClipOnTrack } from "../src/daw/audioClips";
 import { buildPocketDawProjectFile } from "../src/daw/dawProject";
@@ -29,6 +29,19 @@ describe("recording alpha foundations", () => {
     expect(clicks[0].accented).toBe(true);
     expect(clicks[1].accented).toBe(false);
     expect(countInSeconds(project)).toBe(2);
+  });
+
+  it("locks live metronome scheduling to transport seeks and loops", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+
+    const first = buildTransportMetronomeSchedule(project, 0, null, 0.55);
+    const afterLoop = buildTransportMetronomeSchedule(project, 0.02, 7, 0.55);
+
+    expect(first.clicks.map((click) => click.beatIndex)).toEqual([0, 1]);
+    expect(afterLoop.clicks.map((click) => click.beatIndex)).toEqual([0, 1]);
+    expect(afterLoop.clicks[0]).toMatchObject({ bar: 1, beat: 1, accented: true });
   });
 
   it("places recorded project-media audio on the armed live track", () => {

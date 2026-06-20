@@ -8,6 +8,11 @@ export interface MetronomeClick {
   accented: boolean;
 }
 
+export interface MetronomeSchedule {
+  clicks: MetronomeClick[];
+  scheduledBeatIndex: number | null;
+}
+
 export function metronomeSettings(project: PocketDawProject) {
   return project.project.metronome || { enabled: false, countInBars: 1, volume: 0.55 };
 }
@@ -43,4 +48,34 @@ export function buildMetronomeClicks(project: PocketDawProject, startSeconds: nu
     });
   }
   return clicks;
+}
+
+export function buildTransportMetronomeSchedule(
+  project: PocketDawProject,
+  transportSeconds: number,
+  scheduledBeatIndex: number | null,
+  horizonSeconds = 0.16,
+  lateGraceSeconds = 0.025
+): MetronomeSchedule {
+  const beatSeconds = secondsPerBeat(project);
+  const currentSeconds = Math.max(0, transportSeconds);
+  const currentBeat = Math.floor(currentSeconds / beatSeconds);
+  let lastScheduled = scheduledBeatIndex;
+
+  if (lastScheduled !== null && (currentBeat < lastScheduled - 1 || currentBeat > lastScheduled + 8)) {
+    lastScheduled = null;
+  }
+
+  let beatIndex = Math.max(currentBeat, (lastScheduled ?? -1) + 1);
+  while (beatIndex * beatSeconds < currentSeconds - lateGraceSeconds) beatIndex += 1;
+
+  const clicks = buildMetronomeClicks(project, beatIndex * beatSeconds, horizonSeconds)
+    .filter((click) => click.timeSeconds >= currentSeconds - lateGraceSeconds);
+  const bounded = clicks.filter((click) => click.timeSeconds <= currentSeconds + horizonSeconds);
+
+  if (bounded.length) {
+    lastScheduled = bounded[bounded.length - 1].beatIndex;
+  }
+
+  return { clicks: bounded, scheduledBeatIndex: lastScheduled };
 }

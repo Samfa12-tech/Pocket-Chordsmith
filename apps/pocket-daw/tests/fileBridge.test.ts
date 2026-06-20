@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openProjectFileNative, projectFileStateFromPath, saveProjectFile, type NativeFileApi } from "../src/native/fileBridge";
+import { openProjectFileNative, projectFileStateFromPath, projectTitleFromFileState, saveProjectFile, type NativeFileApi } from "../src/native/fileBridge";
 import { createDemoProject } from "../src/demo/demoProject";
 
 describe("native file bridge", () => {
@@ -7,6 +7,12 @@ describe("native file bridge", () => {
     expect(projectFileStateFromPath("C:\\Songs\\Pocket Demo.pocketdaw").label).toBe("Pocket Demo.pocketdaw");
     expect(projectFileStateFromPath("/tmp/session.json").label).toBe("session.json");
     expect(projectFileStateFromPath(null, "Untitled").label).toBe("Untitled");
+  });
+
+  it("derives display titles from saved Pocket DAW file labels", () => {
+    expect(projectTitleFromFileState({ path: "C:\\Songs\\Sam Jam.pocketdaw", label: "Sam Jam.pocketdaw" })).toBe("Sam Jam");
+    expect(projectTitleFromFileState({ path: "C:\\Songs\\Sketch", label: "Sketch" })).toBe("Sketch");
+    expect(projectTitleFromFileState(null)).toBeNull();
   });
 
   it("saves to the current native path before asking for save as", async () => {

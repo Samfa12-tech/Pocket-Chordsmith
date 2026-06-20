@@ -43,7 +43,30 @@ describe("native audio playback bridge", () => {
     expect(payload.events.some((event) => event.kind === "guitar" && event.midiNotes.length > 0)).toBe(true);
     expect(payload.events.some((event) => event.kind === "guitar" && event.instrument === "crunch")).toBe(true);
     expect(payload.fxChains.some((chain) => chain.ownerTrackId === "master")).toBe(true);
+    expect(payload.loop).toBeNull();
     expect(payload.sidechain).toEqual({ enabled: true, amount: 0.35, targetTrackId: "chords", triggerKind: "kick" });
+  });
+
+  it("passes timeline loop bounds to native playback for sample-accurate wrapping", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.timeline.loop = { enabled: true, startBar: 2, endBar: 4 };
+
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
+
+    expect(payload.loop).toEqual({ enabled: true, startSeconds: 2, endSeconds: 6 });
+  });
+
+  it("passes enabled metronome timing to native playback", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 3;
+    project.project.metronome = { enabled: true, countInBars: 1, volume: 0.4 };
+
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
+
+    expect(payload.metronome).toEqual({ enabled: true, beatSeconds: 0.5, timeSig: 3, volume: 0.4 });
   });
 
   it("passes guarded send routes to native playback tracks", () => {

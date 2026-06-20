@@ -263,6 +263,8 @@ export function cycleGuitarStep(project: PocketDawProject, sectionId: SectionId,
     const current = section.guitarPattern[step] || "off";
     section.guitarPattern[step] = nextCycleValue(GUITAR_CYCLE, current);
     if (section.guitarPattern[step] !== "off") pcs.guitarEnabled = true;
+  }, (next, pcs) => {
+    syncGuitarTrackFromSource(next, pcs, false);
   });
 }
 
@@ -275,16 +277,24 @@ export function setGuitarSettings(project: PocketDawProject, patch: GuitarSettin
     if (patch.guitarVolume !== undefined) pcs.guitarVolume = clamp(Number(patch.guitarVolume), 0, 1);
     const guitar = next.tracks.find((track) => track.role === "guitar");
     if (guitar) {
-      guitar.active = pcs.guitarEnabled;
-      guitar.volume = pcs.guitarVolume;
-      guitar.metadata = {
-        ...(guitar.metadata || {}),
-        chordsmithTone: pcs.guitarTone,
-        chordsmithRegister: pcs.guitarRegister,
-        chordsmithStrumMode: pcs.guitarStrumMode
-      };
+      syncGuitarTrackFromSource(next, pcs, true);
     }
   });
+}
+
+function syncGuitarTrackFromSource(project: PocketDawProject, pcs: SanitizedPcsProject, syncVolume: boolean) {
+  const guitar = project.tracks.find((track) => track.role === "guitar");
+  if (!guitar) return;
+  guitar.active = pcs.guitarEnabled;
+  guitar.mute = !pcs.guitarEnabled;
+  if (syncVolume) guitar.volume = pcs.guitarVolume;
+  guitar.metadata = {
+    ...(guitar.metadata || {}),
+    chordsmithInstrument: pcs.guitarTone,
+    chordsmithTone: pcs.guitarTone,
+    chordsmithRegister: pcs.guitarRegister,
+    chordsmithStrumMode: pcs.guitarStrumMode
+  };
 }
 
 function editChordsmithProject(

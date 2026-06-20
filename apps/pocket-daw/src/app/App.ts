@@ -1,6 +1,6 @@
 import { AudioEngine, type AudioProjectSyncMode, type TrackMixerControlPatch } from "../audio/audioEngine";
 import { audioBufferPeaks, getCachedAudioBuffer, setCachedAudioBuffer } from "../audio/audioBufferCache";
-import { countInSeconds, metronomeSettings, secondsPerBeat } from "../audio/metronome";
+import { buildTransportMetronomeSchedule, countInSeconds, metronomeSettings, secondsPerBar } from "../audio/metronome";
 import { exportProjectToMidiBlob } from "../audio/midiExport";
 import { mergeNativeRenderCacheItems } from "../audio/nativeRenderCache";
 import { renderProjectToWavBlob } from "../audio/offlineRender";
@@ -15,7 +15,7 @@ import {
   type HandoffBridgeStatus,
   type ProjectFileLaunch
 } from "../native/deepLinkBridge";
-import { downloadBlob, openProjectFileNative, readProjectFileNative, safeName, saveProjectFile } from "../native/fileBridge";
+import { downloadBlob, openProjectFileNative, projectTitleFromFileState, readProjectFileNative, safeName, saveProjectFile } from "../native/fileBridge";
 import { readPocketDawHandoff, type PocketDawHandoff } from "../native/pocketHandoff";
 import {
   listenForAiBridgeRequests,
@@ -802,7 +802,11 @@ export class App {
       });
     });
     this.root.querySelectorAll<HTMLSelectElement>("[data-track-output]").forEach((select) => {
-      select.addEventListener("change", () => this.applyProjectState(routeTrackOutputCommand(this.state, select.dataset.trackOutput || "", select.value || "master")));
+      select.addEventListener("change", () => this.applyProjectState(routeTrackOutputCommand(this.state, select.dataset.trackOutput || "", select.value || "master"), {
+        audio: "mixer-graph",
+        preserveScroll: true,
+        reason: "track-output"
+      }));
     });
     this.root.querySelectorAll<HTMLInputElement>("[data-automation-enabled]").forEach((input) => {
       input.addEventListener("change", () => this.applyProjectState(setAutomationLaneEnabledCommand(this.state, input.dataset.automationEnabled || "", input.checked)));
@@ -1043,7 +1047,11 @@ export class App {
     this.mixerGestureStarts.delete(key);
     if (Math.abs(startValue - value) < 0.0001) return;
     const next = field === "volume" ? setTrackVolumeCommand(this.state, trackId, value) : setTrackPanCommand(this.state, trackId, value);
-    this.applyProjectState(next, false);
+    this.applyProjectState(next, {
+      audio: "none",
+      preserveScroll: true,
+      reason: `track-${field}`
+    });
     void this.syncActiveOrArmedInputMonitor(trackId);
   }
 
@@ -1332,7 +1340,11 @@ export class App {
     }
     const addTrackButton = target?.closest<HTMLElement>("[data-add-track-kind]");
     if (addTrackButton) {
-      this.applyProjectState(addTrackCommand(this.state, addTrackButton.dataset.addTrackKind as AddTrackKind));
+      this.applyProjectState(addTrackCommand(this.state, addTrackButton.dataset.addTrackKind as AddTrackKind), {
+        audio: "mixer-graph",
+        preserveScroll: true,
+        reason: "add-track"
+      });
       return;
     }
     const armButton = target?.closest<HTMLElement>("[data-arm-track]");
@@ -1615,7 +1627,11 @@ export class App {
     if (action === "restart") await this.restartTransport();
     if (action === "record-toggle") await this.toggleRecording();
     if (action === "metronome-toggle") {
-      this.applyProjectState(toggleMetronomeCommand(this.state));
+      this.applyProjectState(toggleMetronomeCommand(this.state), {
+        audio: "project-load",
+        preserveScroll: true,
+        reason: "metronome-toggle"
+      });
       if (metronomeSettings(currentProject(this.state)).enabled && (this.state.playing || this.state.recording.status === "recording")) {
         this.startLiveMetronome(true);
       } else {
@@ -1643,8 +1659,8 @@ export class App {
       this.state.showAddTrack = true;
       this.render();
     }
-    if (action === "add-bus-track") this.applyProjectState(addBusTrackCommand(this.state));
-    if (action === "add-return-track") this.applyProjectState(addReturnTrackCommand(this.state));
+    if (action === "add-bus-track") this.applyProjectState(addBusTrackCommand(this.state), { audio: "mixer-graph", preserveScroll: true, reason: "add-bus-track" });
+    if (action === "add-return-track") this.applyProjectState(addReturnTrackCommand(this.state), { audio: "mixer-graph", preserveScroll: true, reason: "add-return-track" });
     if (action === "add-track-close") {
       this.state.showAddTrack = false;
       this.render();
@@ -2346,29 +2362,35 @@ export class App {
   }
 
   private startLiveMetronome(force = false) {
-    const project = currentProject(this.state);
-    const settings = metronomeSettings(project);
+    const settings = metronomeSettings(currentProject(this.state));
     if (!force && !settings.enabled) return;
+    if (this.engine.isNativePlaybackActive()) return;
     if (this.metronomeTimer !== null) return;
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
     this.metronomeContext = this.metronomeContext || new Ctx();
     void this.metronomeContext.resume?.();
     const ctx = this.metronomeContext;
-    const beatSeconds = secondsPerBeat(project);
-    const timeSig = Math.max(1, Math.round(project.project.timeSig || 4));
-    const volume = Math.max(0, Math.min(1, settings.volume || 0.55));
-    let beatIndex = Math.max(0, Math.floor((this.state.playheadBar - 1) * timeSig));
-    let nextClickAt = ctx.currentTime + 0.045;
+    let scheduledBeatIndex: number | null = null;
     const schedule = () => {
-      while (nextClickAt < ctx.currentTime + 0.16) {
-        this.scheduleMetronomeClick(ctx, nextClickAt, beatIndex % timeSig === 0, volume);
-        beatIndex += 1;
-        nextClickAt += beatSeconds;
-      }
+      const liveProject = currentProject(this.state);
+      const liveSettings = metronomeSettings(liveProject);
+      const volume = Math.max(0, Math.min(1, liveSettings.volume || 0.55));
+      const transportSeconds = this.metronomeTransportSeconds(liveProject);
+      const result = buildTransportMetronomeSchedule(liveProject, transportSeconds, scheduledBeatIndex, 0.16);
+      scheduledBeatIndex = result.scheduledBeatIndex;
+      result.clicks.forEach((click) => {
+        const when = ctx.currentTime + Math.max(0.006, click.timeSeconds - transportSeconds);
+        this.scheduleMetronomeClick(ctx, when, click.accented, volume);
+      });
     };
     schedule();
     this.metronomeTimer = window.setInterval(schedule, 25);
+  }
+
+  private metronomeTransportSeconds(project: ReturnType<typeof currentProject>): number {
+    if (this.engine.isPlaying()) return this.engine.currentSeconds();
+    return Math.max(0, (this.state.playheadBar - 1) * secondsPerBar(project));
   }
 
   private stopLiveMetronome() {
@@ -3177,12 +3199,34 @@ export class App {
     const result = await saveProjectFile(project, this.state.currentFile.path, forceSaveAs);
     if (result.file) {
       this.state.currentFile = result.file;
+      const adoptedTitle = this.adoptSavedFileTitle(result.file);
+      if (adoptedTitle && result.file.path) {
+        const rewrite = await saveProjectFile(currentProject(this.state), result.file.path, false);
+        if (rewrite.file) this.state.currentFile = rewrite.file;
+        result.message = `Saved ${adoptedTitle}.`;
+      }
       saveRecentProject(result.file.label, result.file.path);
       this.state.recent = loadRecentProjects();
     }
     this.state.status = result.message;
     this.saveAutosaveSnapshot(project);
     this.render({ preserveScroll: true });
+  }
+
+  private adoptSavedFileTitle(file: { label: string; path: string | null }): string | null {
+    const project = currentProject(this.state);
+    if (!this.isUntitledProjectTitle(project.project.title)) return null;
+    const title = projectTitleFromFileState(file);
+    if (!title || this.isUntitledProjectTitle(title)) return null;
+    const renamed = cloneProject(project);
+    renamed.project.title = title;
+    renamed.sourceRefs = renamed.sourceRefs.map((ref) => ref.sourceType === "pocket-chordsmith" ? { ...ref, title } : ref);
+    this.state.undoStack = { ...this.state.undoStack, present: renamed };
+    return title;
+  }
+
+  private isUntitledProjectTitle(title: string): boolean {
+    return /^untitled(?:\s+project)?$/i.test(String(title || "").trim());
   }
 
   private async exportWav() {

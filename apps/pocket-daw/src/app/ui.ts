@@ -21,6 +21,7 @@ import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { clipSourceStartBar } from "../daw/clips";
 import { runtimeBuildId, runtimeCommit, runtimeLabel } from "./diagnostics";
 import { pocketDawMcpClaudeConfig, pocketDawMcpCodexConfig, pocketDawMcpCommandLine, POCKET_DAW_MCP_WORKSPACE } from "./mcpSetup";
+import { projectTitleFromFileState } from "../native/fileBridge";
 import {
   escapeAttr,
   escapeHtml,
@@ -155,6 +156,7 @@ function renderMenuGroup(label: string, actions: Array<[string, string]>): strin
 function renderTransport(state: AppState): string {
   const project = currentProject(state);
   const env = runtimeLabel();
+  const displayTitle = projectDisplayTitle(state);
   const metronome = project.project.metronome || { enabled: false, countInBars: 1, volume: 0.55 };
   const recordingActive = state.recording.status === "count-in" || state.recording.status === "recording" || state.recording.status === "stopping";
   const recordingLabel = state.recording.status === "recording"
@@ -174,7 +176,7 @@ function renderTransport(state: AppState): string {
         <div class="mark">PD</div>
         <div>
           <h1>Pocket DAW</h1>
-          <p>${escapeHtml(project.project.title)}</p>
+          <p>${escapeHtml(displayTitle)}</p>
           <small>v${escapeHtml(POCKET_DAW_VERSION)} / ${escapeHtml(env)} / ${escapeHtml(state.currentFile.path || state.currentFile.label)}</small>
         </div>
       </div>
@@ -188,7 +190,6 @@ function renderTransport(state: AppState): string {
         <button data-action="add-track-open">Add Track</button>
         <button data-action="undo">Undo</button>
         <button data-action="redo">Redo</button>
-        <button data-action="controls-open">About</button>
       </div>
       <div class="transport-readout">
         <span data-playing-state="true" class="${state.playing ? "playing" : ""}"><strong>${state.playing ? "Playing" : "Stopped"}</strong></span>
@@ -207,6 +208,17 @@ function renderTransport(state: AppState): string {
       ` : ""}
     </header>
   `;
+}
+
+function projectDisplayTitle(state: AppState): string {
+  const project = currentProject(state);
+  const title = project.project.title || "";
+  if (!isUntitledProjectTitle(title)) return title;
+  return projectTitleFromFileState(state.currentFile) || title || "Untitled Project";
+}
+
+function isUntitledProjectTitle(title: string): boolean {
+  return /^untitled(?:\s+project)?$/i.test(title.trim());
 }
 
 function renderQuickStart(state: AppState): string {

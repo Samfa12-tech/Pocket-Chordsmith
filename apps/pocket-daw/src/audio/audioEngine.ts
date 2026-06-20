@@ -74,6 +74,15 @@ type PlaybackBackend = "native-cpal" | "native-cpal-paused" | "web-audio" | "idl
 type AudioDropCause = "seek" | "stop" | "project-load" | "graph-rebuild" | "loop" | "late-scheduler" | null;
 const safeSyncLeadSeconds = 0.2;
 
+interface NativeRestartRequest {
+  token: number;
+  seconds: number;
+  options: {
+    useRenderCache?: boolean;
+    reason?: string;
+  };
+}
+
 export function calculateLoopSeekSeconds(project: PocketDawProject, currentSeconds: number): number | null {
   if (!project.timeline.loop.enabled) return null;
   const loop = project.timeline.loop;
@@ -123,6 +132,10 @@ export class AudioEngine {
   private nativeStartedAtMs = 0;
   private nativeStatus: NativeAudioStatus | null = null;
   private nativeLastError: string | null = null;
+  private nativeRestartToken = 0;
+  private pendingNativeRestart: NativeRestartRequest | null = null;
+  private nativeRestartFlush: Promise<void> | null = null;
+  private nativeLiveCompositionCacheToken = 0;
   private nativeMeterEventIndex = 0;
   private nextEventIndex = 0;
   private nextAudioRegionIndex = 0;
@@ -223,6 +236,7 @@ export class AudioEngine {
 
   syncProject(project: PocketDawProject, mode: AudioProjectSyncMode, reason: string = mode) {
     const current = this.currentSeconds();
+    const previousNativeRenderCache = this.nativeRenderCache;
     this.project = cloneProject(project);
     this.projectSyncCount += 1;
     this.lastProjectSyncMode = mode;
@@ -233,7 +247,9 @@ export class AudioEngine {
     if (mode !== "mixer-controls") {
       this.events = renderTimelineEvents(this.project);
       this.audioRegions = renderTimelineAudioRegions(this.project).audioRegions;
-      this.nativeRenderCache = null;
+      this.nativeRenderCache = previousNativeRenderCache?.signature === nativeRenderCacheSignature(this.project)
+        ? previousNativeRenderCache
+        : null;
       this.cancelNativeRenderCachePrewarm();
       this.cancelNativeRuntimeAudioCachePrewarm();
       if (!this.runtimeAudioCacheStillValidFor(project)) this.nativeRuntimeAudioCache = null;
@@ -243,8 +259,7 @@ export class AudioEngine {
           if (status) this.nativeStatus = status;
         });
       }
-      if (liveNativeCompositionEdit) this.nativeRenderCacheBypassedForLiveEdits = true;
-      else if (mode === "project-load" || mode === "timeline-structure" || !this.playing) this.nativeRenderCacheBypassedForLiveEdits = false;
+      if (mode === "project-load" || mode === "timeline-structure" || !this.playing) this.nativeRenderCacheBypassedForLiveEdits = false;
     }
 
     if (mode === "project-load") {
@@ -264,10 +279,11 @@ export class AudioEngine {
       if (mode === "mixer-controls") {
         this.syncNativeMixerControls();
       } else if (mode === "composition-events") {
-        this.nativeRenderCacheBypassedForLiveEdits = true;
-        void this.restartNativePlayback(current, { reason: "live-composition-edit" });
+        void this.prepareNativeRenderCacheAfterLiveCompositionEdit("live-composition-edit");
+      } else if (this.readyNativeRenderCache()) {
+        void this.restartNativePlayback(current, { reason });
       } else {
-        void this.restartNativePlayback(current);
+        void this.restartNativePlaybackAfterFreshRenderCache(reason);
       }
     }
 
@@ -363,6 +379,7 @@ export class AudioEngine {
   }
 
   stop() {
+    this.cancelPendingNativeRestarts();
     this.playing = false;
     this.playbackBackend = "idle";
     this.nativeRenderCacheBypassedForLiveEdits = false;
@@ -386,6 +403,7 @@ export class AudioEngine {
   }
 
   pause() {
+    this.cancelPendingNativeRestarts();
     const wasNative = this.playbackBackend === "native-cpal";
     this.offsetSeconds = this.currentSeconds();
     this.playing = false;
@@ -443,6 +461,10 @@ export class AudioEngine {
 
   isPlaying() {
     return this.playing;
+  }
+
+  isNativePlaybackActive(): boolean {
+    return this.playbackBackend === "native-cpal" || this.playbackBackend === "native-cpal-paused";
   }
 
   canResumePausedNativePlayback(): boolean {
@@ -581,6 +603,7 @@ export class AudioEngine {
   }
 
   private async tryStartNativePlayback(options: { useRenderCache?: boolean; reason?: string } = {}): Promise<boolean> {
+    this.cancelPendingNativeRestarts();
     const useRenderCache = options.useRenderCache !== false;
     const cache = useRenderCache && !this.nativeRenderCacheBypassedForLiveEdits ? this.readyNativeRenderCache() : null;
     if (useRenderCache && !cache) this.scheduleNativeRenderCachePrewarm(options.reason || "play-fallback-cache-build");
@@ -599,25 +622,77 @@ export class AudioEngine {
     return true;
   }
 
-  private async restartNativePlayback(seconds: number, options: { useRenderCache?: boolean; reason?: string } = {}) {
-    if (this.playbackBackend !== "native-cpal") return;
-    this.offsetSeconds = Math.max(0, seconds);
+  private restartNativePlayback(seconds: number, options: { useRenderCache?: boolean; reason?: string } = {}): Promise<void> {
+    const request: NativeRestartRequest = {
+      token: this.nativeRestartToken + 1,
+      seconds: Math.max(0, seconds),
+      options
+    };
+    this.nativeRestartToken = request.token;
+    this.pendingNativeRestart = request;
+    if (!this.nativeRestartFlush) {
+      this.nativeRestartFlush = this.flushNativeRestarts().finally(() => {
+        this.nativeRestartFlush = null;
+      });
+    }
+    return this.nativeRestartFlush;
+  }
+
+  private async flushNativeRestarts(): Promise<void> {
+    while (this.pendingNativeRestart) {
+      const request = this.pendingNativeRestart;
+      this.pendingNativeRestart = null;
+      await this.performNativeRestart(request);
+    }
+  }
+
+  private async performNativeRestart(request: NativeRestartRequest): Promise<void> {
+    if (request.token !== this.nativeRestartToken || this.playbackBackend !== "native-cpal" || !this.playing) return;
+    this.offsetSeconds = request.seconds;
     this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
     this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
-    const useRenderCache = options.useRenderCache !== false;
+    const useRenderCache = request.options.useRenderCache !== false;
     const cache = useRenderCache && !this.nativeRenderCacheBypassedForLiveEdits ? this.readyNativeRenderCache() : null;
-    if (useRenderCache && !cache) this.scheduleNativeRenderCachePrewarm(options.reason || this.lastProjectSyncReason || "restart-fallback-cache-build");
+    if (useRenderCache && !cache) this.scheduleNativeRenderCachePrewarm(request.options.reason || this.lastProjectSyncReason || "restart-fallback-cache-build");
     const playbackCache = useRenderCache ? await this.nativePlaybackCacheWithRuntimeAudio(cache) : cache;
+    if (request.token !== this.nativeRestartToken || this.playbackBackend !== "native-cpal" || !this.playing) return;
     const events = playbackCache ? this.events.filter((event) => !playbackCache.cachedClipIds.has(event.clipId)) : this.events;
     if (playbackCache) playbackCache.proceduralFallbackEventCount = events.length;
     const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, playbackCache || undefined);
     const result = await this.nativePlayback.start(payload);
+    if (request.token !== this.nativeRestartToken) return;
     if (result.started) {
       this.nativeStatus = result.status;
       this.nativeLastError = null;
     } else {
       this.nativeLastError = result.error;
     }
+  }
+
+  private cancelPendingNativeRestarts() {
+    this.nativeRestartToken += 1;
+    this.pendingNativeRestart = null;
+  }
+
+  private async restartNativePlaybackAfterFreshRenderCache(reason: string): Promise<void> {
+    const token = this.nativeLiveCompositionCacheToken + 1;
+    this.nativeLiveCompositionCacheToken = token;
+    const cache = await this.ensureNativeRenderCache(reason);
+    if (token !== this.nativeLiveCompositionCacheToken || this.playbackBackend !== "native-cpal" || !this.playing) return;
+    if (cache) {
+      this.nativeRenderCacheBypassedForLiveEdits = false;
+      await this.restartNativePlayback(this.currentSeconds(), { reason, useRenderCache: true });
+      return;
+    }
+    await this.restartNativePlayback(this.currentSeconds(), { reason, useRenderCache: false });
+  }
+
+  private async prepareNativeRenderCacheAfterLiveCompositionEdit(reason: string): Promise<void> {
+    const token = this.nativeLiveCompositionCacheToken + 1;
+    this.nativeLiveCompositionCacheToken = token;
+    const cache = await this.ensureNativeRenderCache(reason);
+    if (token !== this.nativeLiveCompositionCacheToken || this.playbackBackend !== "native-cpal" || !this.playing) return;
+    if (cache) this.nativeRenderCacheBypassedForLiveEdits = false;
   }
 
   private activeNativeRenderCache(): NativeRenderCache | null {
@@ -855,9 +930,6 @@ export class AudioEngine {
       this.nativeStartedAtMs = performance.now() - next * 1000;
       this.repositionPlaybackIndexes(next);
       this.meterPeaks = {};
-      void this.nativePlayback.seek(next).then((status) => {
-        if (status) this.nativeStatus = status;
-      });
       this.emitTick(true);
     }
   }

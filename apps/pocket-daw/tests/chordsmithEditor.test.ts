@@ -110,6 +110,25 @@ describe("Chordsmith visual sequencer edits", () => {
     expect(events.some((event) => event.kind === "guitar" && event.step === 1 && event.articulation === "chug")).toBe(true);
   });
 
+  it("keeps live guitar edits audible when the source re-enables a stale muted guitar track", () => {
+    let project = createDemoProject();
+    const guitar = project.tracks.find((track) => track.role === "guitar")!;
+    guitar.active = false;
+    guitar.mute = true;
+    guitar.volume = 0.31;
+
+    project = cycleGuitarStep(project, "A", 1);
+
+    const guitarTrack = project.tracks.find((track) => track.role === "guitar");
+    expect(getPrimaryChordsmithSource(project)?.guitarEnabled).toBe(true);
+    expect(guitarTrack).toMatchObject({
+      active: true,
+      mute: false,
+      volume: 0.31
+    });
+    expect(guitarTrack?.metadata).toMatchObject({ chordsmithInstrument: getPrimaryChordsmithSource(project)?.guitarTone });
+  });
+
   it("applies Chordsmith drum presets to kick, snare and hat while preserving bass", () => {
     let project = createDemoProject();
     project = cycleDrumTuplet(project, "A", "hat", 1);
@@ -214,7 +233,9 @@ describe("Chordsmith visual sequencer edits", () => {
     expect(pcs?.sections.A.melodyMute[0]).toBe(true);
     expect(pcs?.sections.A.melodySolo[0]).toBe(true);
     expect(guitarTrack?.active).toBe(true);
+    expect(guitarTrack?.mute).toBe(false);
     expect(guitarTrack?.volume).toBe(0.42);
+    expect(guitarTrack?.metadata).toMatchObject({ chordsmithInstrument: "crunch" });
     expect(original).toMatchObject({ key: "D", scale: "minor", bpm: 132, swing: 0.12, timeSig: 3, resolution: 8, bassMode: "manual", guitarTone: "crunch", guitarRegister: "high", guitarStrumMode: "alternate", guitarVolume: 0.42 });
     expect((original.melodyMuteA as boolean[])[0]).toBe(true);
     expect((original.melodySoloA as boolean[])[0]).toBe(true);

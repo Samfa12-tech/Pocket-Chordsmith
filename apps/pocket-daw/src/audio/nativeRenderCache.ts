@@ -353,7 +353,16 @@ export function nativeRenderCacheRelativePath(assetId: string): string {
 
 export function nativeRenderCacheSignature(project: PocketDawProject): string {
   return hashString(JSON.stringify({
-    project: project.project,
+    project: {
+      bpm: project.project.bpm,
+      key: project.project.key,
+      scale: project.project.scale,
+      timeSig: project.project.timeSig,
+      swing: project.project.swing,
+      resolution: project.project.resolution,
+      sampleRate: project.project.sampleRate,
+      ppq: project.project.ppq
+    },
     sourceRefs: project.sourceRefs.map((ref) => ({ id: ref.id, checksum: ref.checksum, normalized: ref.normalized })),
     clips: project.timeline.clips
       .filter((clip) => clip.type === "generated-section")
@@ -393,11 +402,13 @@ export function nativeRenderCacheSignature(project: PocketDawProject): string {
       missing: item.metadata?.missing,
       unresolved: item.metadata?.unresolved
     })),
-    tracks: project.tracks.map((track) => ({
-      id: track.id,
-      role: track.role,
-      active: track.active
-    })),
+    tracks: project.tracks
+      .filter((track) => STEM_ROLES.includes(track.role))
+      .map((track) => ({
+        id: track.id,
+        role: track.role,
+        active: track.active
+      })),
     drumLaneFx: nativeCacheStemFxState(project)
   }));
 }

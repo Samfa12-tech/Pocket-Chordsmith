@@ -46,6 +46,13 @@ export function projectFileStateFromPath(path: string | null | undefined, fallba
   };
 }
 
+export function projectTitleFromFileState(file: ProjectFileState | null | undefined): string | null {
+  const label = String(file?.label || file?.path?.split(/[\\/]/).filter(Boolean).pop() || "").trim();
+  if (!label) return null;
+  const withoutExtension = label.replace(/\.pocketdaw$/i, "").trim();
+  return withoutExtension || label;
+}
+
 export async function openProjectFileNative(api = defaultNativeFileApi): Promise<OpenProjectFileResult | null> {
   if (!api.isAvailable()) return null;
   const result = await api.invoke<NativeOpenPayload | null>("open_project_file");

@@ -18,7 +18,26 @@ function inspectorHtml(html: string) {
   return html.match(/<aside class="inspector"[\s\S]*?<\/aside>/)?.[0] || "";
 }
 
+function transportHtml(html: string) {
+  return html.match(/<header class="transport"[\s\S]*?<\/header>/)?.[0] || "";
+}
+
 describe("Pocket DAW UI rendering", () => {
+  it("uses the saved file name for an untitled project and keeps About in Help only", () => {
+    const state = createInitialState();
+    const project = createEmptyPocketDawProject();
+    project.project.title = "Untitled Project";
+    state.undoStack = createUndoStack(project);
+    state.currentFile = { path: "C:\\Users\\sam_s\\Music\\Sam Jam.pocketdaw", label: "Sam Jam.pocketdaw" };
+
+    const html = renderAppShell(state);
+    const transport = transportHtml(html);
+
+    expect(transport).toContain("<p>Sam Jam</p>");
+    expect(transport).not.toContain('data-action="controls-open">About</button>');
+    expect(html).toContain("About / Diagnostics");
+  });
+
   it("escapes malicious project fields before string-rendering the shell", () => {
     const project = createEmptyPocketDawProject();
     const badName = `<img src=x onerror=alert(1)>`;

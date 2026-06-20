@@ -40,6 +40,10 @@ pub struct NativeAudioStartPayload {
     start_seconds: f64,
     #[serde(rename = "outputDeviceId")]
     output_device_id: Option<String>,
+    #[serde(rename = "loop", default)]
+    loop_region: Option<NativeLoopPayload>,
+    #[serde(default)]
+    metronome: Option<NativeMetronomePayload>,
     #[serde(default)]
     sidechain: Option<NativeSidechainPayload>,
     tracks: Vec<NativeTrackControl>,
@@ -50,6 +54,25 @@ pub struct NativeAudioStartPayload {
     assets: Vec<NativeAudioAssetPayload>,
     #[serde(default)]
     regions: Vec<NativeAudioRegion>,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct NativeLoopPayload {
+    enabled: bool,
+    #[serde(rename = "startSeconds")]
+    start_seconds: f64,
+    #[serde(rename = "endSeconds")]
+    end_seconds: f64,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct NativeMetronomePayload {
+    enabled: bool,
+    #[serde(rename = "beatSeconds")]
+    beat_seconds: f64,
+    #[serde(rename = "timeSig")]
+    time_sig: u32,
+    volume: f64,
 }
 
 #[derive(Clone, Deserialize)]
@@ -236,6 +259,8 @@ struct PlaybackShared {
     regions: Vec<NativeAudioRegion>,
     tracks: HashMap<String, NativeTrackControl>,
     fx: NativeFxRuntime,
+    loop_region: Option<NativeLoopPayload>,
+    metronome: Option<NativeMetronomePayload>,
     sidechain: Option<NativeSidechainPayload>,
     has_solo: bool,
     position_seconds: f64,
@@ -386,6 +411,7 @@ pub fn native_audio_resume(
     if let Some(shared) = &runtime.shared {
         if let Ok(mut playback) = shared.lock() {
             playback.playing = true;
+            apply_loop_wrap(&mut playback);
             playback.scan_start_index =
                 find_scan_start(&playback.events, playback.position_seconds);
         }
@@ -404,6 +430,7 @@ pub fn native_audio_seek(
     if let Some(shared) = &runtime.shared {
         if let Ok(mut playback) = shared.lock() {
             playback.position_seconds = seconds.max(0.0);
+            apply_loop_wrap(&mut playback);
             playback.scan_start_index =
                 find_scan_start(&playback.events, playback.position_seconds);
         }
@@ -509,6 +536,8 @@ impl NativeAudioRuntime {
             has_solo: tracks.values().any(|track| track.solo),
             tracks,
             fx,
+            loop_region: sanitize_loop_region(payload.loop_region),
+            metronome: sanitize_metronome(payload.metronome),
             sidechain: payload.sidechain,
             position_seconds: payload.start_seconds.max(0.0),
             sample_rate,
@@ -519,6 +548,7 @@ impl NativeAudioRuntime {
             generation: self.generation,
         }));
         if let Ok(mut playback) = shared.lock() {
+            apply_loop_wrap(&mut playback);
             playback.scan_start_index =
                 find_scan_start(&playback.events, playback.position_seconds);
         }
@@ -766,6 +796,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         return (0.0, 0.0);
     }
 
+    apply_loop_wrap(playback);
     let t = playback.position_seconds;
     while playback.scan_start_index < playback.events.len()
         && event_release_end(&playback.events[playback.scan_start_index]) < t
@@ -883,16 +914,90 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         left += track_left;
         right += track_right;
     }
+    let metronome = render_metronome_sample(playback, t);
+    left += metronome;
+    right += metronome;
     if let Some(chain) = &mut playback.fx.master_chain {
         (left, right) = chain.process(left, right);
     }
     let master = master_gain(playback);
     playback.position_seconds += 1.0 / playback.sample_rate.max(1) as f64;
+    apply_loop_wrap(playback);
     playback.rendered_frame_count = playback.rendered_frame_count.saturating_add(1);
     (
         soft_limit(left * 0.72 * master),
         soft_limit(right * 0.72 * master),
     )
+}
+
+fn sanitize_loop_region(loop_region: Option<NativeLoopPayload>) -> Option<NativeLoopPayload> {
+    let region = loop_region?;
+    if !region.enabled {
+        return None;
+    }
+    let start = region.start_seconds.max(0.0);
+    let end = region.end_seconds.max(0.0);
+    if !start.is_finite() || !end.is_finite() || end <= start {
+        return None;
+    }
+    Some(NativeLoopPayload {
+        enabled: true,
+        start_seconds: start,
+        end_seconds: end,
+    })
+}
+
+fn sanitize_metronome(metronome: Option<NativeMetronomePayload>) -> Option<NativeMetronomePayload> {
+    let metro = metronome?;
+    if !metro.enabled || !metro.beat_seconds.is_finite() || metro.beat_seconds <= 0.0 {
+        return None;
+    }
+    Some(NativeMetronomePayload {
+        enabled: true,
+        beat_seconds: metro.beat_seconds.clamp(0.05, 4.0),
+        time_sig: metro.time_sig.clamp(1, 16),
+        volume: metro.volume.clamp(0.0, 1.0),
+    })
+}
+
+fn render_metronome_sample(playback: &PlaybackShared, t: f64) -> f32 {
+    let Some(metronome) = playback.metronome.as_ref() else {
+        return 0.0;
+    };
+    if !metronome.enabled || metronome.volume <= 0.0001 {
+        return 0.0;
+    }
+    let beat_seconds = metronome.beat_seconds.max(0.001);
+    let beat_index = (t / beat_seconds).floor().max(0.0) as u64;
+    let beat_time = beat_index as f64 * beat_seconds;
+    let local = t - beat_time;
+    if !(0.0..=0.055).contains(&local) {
+        return 0.0;
+    }
+    let accented = beat_index % metronome.time_sig.max(1) as u64 == 0;
+    let freq = if accented { 1760.0 } else { 1120.0 };
+    let env = (-local * if accented { 95.0 } else { 115.0 }).exp() as f32;
+    let gain = metronome.volume as f32 * if accented { 0.34 } else { 0.24 };
+    phase(freq, local) * env * gain
+}
+
+fn apply_loop_wrap(playback: &mut PlaybackShared) {
+    let Some(loop_region) = playback.loop_region.as_ref() else {
+        return;
+    };
+    if !loop_region.enabled || loop_region.end_seconds <= loop_region.start_seconds {
+        return;
+    }
+    if playback.position_seconds < loop_region.end_seconds {
+        return;
+    }
+    let length = loop_region.end_seconds - loop_region.start_seconds;
+    if length <= 0.0 || !length.is_finite() {
+        return;
+    }
+    let overflow = (playback.position_seconds - loop_region.end_seconds).rem_euclid(length);
+    playback.position_seconds = loop_region.start_seconds + overflow;
+    playback.scan_start_index = find_scan_start(&playback.events, playback.position_seconds);
 }
 
 fn route_track_sends(
@@ -2927,6 +3032,94 @@ mod tests {
     }
 
     #[test]
+    fn native_loop_wraps_on_the_audio_frame_boundary() {
+        let mut event = test_generated_event("loop_bass", "bass", 0.0, 0.08, 1.0);
+        event.midi = Some(36.0);
+        let mut playback = playback_with_events(vec![event]);
+        playback.sample_rate = 4;
+        playback.position_seconds = 0.49;
+        playback.loop_region = Some(NativeLoopPayload {
+            enabled: true,
+            start_seconds: 0.0,
+            end_seconds: 0.5,
+        });
+
+        let _ = render_next_frame(&mut playback);
+
+        assert!(
+            playback.position_seconds < 0.251,
+            "expected playback to wrap to loop start plus one sample, got {}",
+            playback.position_seconds
+        );
+        assert_eq!(playback.scan_start_index, 0);
+    }
+
+    #[test]
+    fn native_start_payload_reads_loop_field_from_frontend() {
+        let payload: NativeAudioStartPayload = serde_json::from_value(serde_json::json!({
+            "projectTitle": "Loop Test",
+            "startSeconds": 0.0,
+            "outputDeviceId": null,
+            "loop": {
+                "enabled": true,
+                "startSeconds": 1.0,
+                "endSeconds": 3.0
+            },
+            "tracks": [],
+            "events": [],
+            "fxChains": [],
+            "assets": [],
+            "regions": []
+        })).expect("payload should deserialize with frontend loop field");
+
+        let loop_region = payload.loop_region.expect("loop payload should be present");
+        assert!(loop_region.enabled);
+        assert_eq!(loop_region.start_seconds, 1.0);
+        assert_eq!(loop_region.end_seconds, 3.0);
+    }
+
+    #[test]
+    fn native_start_payload_reads_metronome_field_from_frontend() {
+        let payload: NativeAudioStartPayload = serde_json::from_value(serde_json::json!({
+            "projectTitle": "Metro Test",
+            "startSeconds": 0.0,
+            "outputDeviceId": null,
+            "metronome": {
+                "enabled": true,
+                "beatSeconds": 0.5,
+                "timeSig": 4,
+                "volume": 0.6
+            },
+            "tracks": [],
+            "events": [],
+            "fxChains": [],
+            "assets": [],
+            "regions": []
+        })).expect("payload should deserialize with frontend metronome field");
+
+        let metronome = sanitize_metronome(payload.metronome).expect("metronome payload should be present");
+        assert!(metronome.enabled);
+        assert_eq!(metronome.beat_seconds, 0.5);
+        assert_eq!(metronome.time_sig, 4);
+        assert_eq!(metronome.volume, 0.6);
+    }
+
+    #[test]
+    fn native_metronome_renders_from_playback_clock() {
+        let mut playback = playback_with_events(Vec::new());
+        playback.metronome = Some(NativeMetronomePayload {
+            enabled: true,
+            beat_seconds: 0.25,
+            time_sig: 4,
+            volume: 0.8,
+        });
+
+        let energy = render_energy(&mut playback, 80);
+
+        assert!(energy > 0.0001, "expected native metronome click energy");
+    }
+
+    #[test]
     fn rejects_invalid_cached_regions() {
         let region = test_region("", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0);
 
@@ -2959,6 +3152,8 @@ mod tests {
             scan_start_index: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
+            loop_region: None,
+            metronome: None,
             sidechain: None,
         }
     }
@@ -2988,6 +3183,8 @@ mod tests {
             scan_start_index: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
+            loop_region: None,
+            metronome: None,
             sidechain: None,
         }
     }

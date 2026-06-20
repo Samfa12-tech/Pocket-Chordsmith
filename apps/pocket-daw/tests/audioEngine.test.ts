@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { AudioEngine, calculateLoopSeekSeconds } from "../src/audio/audioEngine";
 import { createDemoProject } from "../src/demo/demoProject";
 import type { NativeAudioStatus } from "../src/native/audioPlayback";
+import { cycleBassStep } from "../src/daw/chordsmithEditor";
+import { addTrackToProject } from "../src/daw/tracks";
+import { nativeRenderCacheSignature, type NativeRenderCache } from "../src/audio/nativeRenderCache";
 
 describe("audio engine diagnostics", () => {
   it("reports event counts without starting playback", () => {
@@ -91,6 +94,34 @@ describe("audio engine diagnostics", () => {
     expect(bass).toMatchObject({ mute: false, solo: true });
   });
 
+  it("preserves generated native cache across live mixer graph track additions", () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    const cache: NativeRenderCache = {
+      signature: nativeRenderCacheSignature(project),
+      assets: [],
+      regions: [{ id: "clip_001_bass", assetId: "asset_bass", trackId: "bass", startTime: 0, sourceOffset: 0, duration: 4, gain: 1, pan: 0 }],
+      cachedClipIds: new Set(["clip_001"]),
+      renderCacheItems: [],
+      renderCacheHitCount: 0,
+      renderCacheMissCount: 0,
+      proceduralFallbackEventCount: 0,
+      generatedRegionCount: 1,
+      runtimeAudioRegionCount: 0,
+      missingRuntimeAudioRegionCount: 0,
+      cachedAssetByteCount: 128
+    };
+    (engine as unknown as { nativeRenderCache: NativeRenderCache }).nativeRenderCache = cache;
+
+    const withLiveTrack = addTrackToProject(project, "live-vocals").project;
+    engine.syncProject(withLiveTrack, "mixer-graph", "add-track");
+
+    const diagnostics = engine.getDiagnostics();
+    expect(diagnostics.nativeRenderCache.generatedRegionCount).toBe(1);
+    expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBe(0);
+    expect(diagnostics.eventCountsByTrack.guitar).toBeGreaterThan(0);
+  });
+
   it("does not treat lofi texture ticks as drum meter hits", () => {
     const engine = new AudioEngine(createDemoProject());
     const baseEvent = {
@@ -171,7 +202,81 @@ describe("audio engine diagnostics", () => {
       (globalThis as any).window = previousWindow;
     }
   });
+
+  it("coalesces rapid native composition edits without hot-swapping active playback", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    const starts: Array<{ startSeconds: number; events: unknown[] }> = [];
+    const deferredRestarts: Deferred<void>[] = [];
+    const native = {
+      async start(payload: { startSeconds: number; events: unknown[] }) {
+        starts.push(payload);
+        if (starts.length > 1) {
+          const deferred = createDeferred<void>();
+          deferredRestarts.push(deferred);
+          await deferred.promise;
+        }
+        return {
+          started: true,
+          status: nativeStatus({ playing: true, positionSeconds: payload.startSeconds, eventCount: payload.events.length }),
+          error: null
+        };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true }); }
+    };
+
+    try {
+      const project = createDemoProject();
+      const engine = new AudioEngine(project, native);
+
+      await engine.rebuildNativeRenderCache("test-prebuild");
+      await engine.play();
+      const editA = cycleBassStep(project, "A", 0);
+      const editB = cycleBassStep(editA, "A", 1);
+      const editC = cycleBassStep(editB, "A", 2);
+
+      engine.syncProject(editA, "composition-events", "bass-edit-a");
+      engine.syncProject(editB, "composition-events", "bass-edit-b");
+      engine.syncProject(editC, "composition-events", "bass-edit-c");
+      await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.buildCount >= 2);
+
+      expect(starts).toHaveLength(1);
+      expect(deferredRestarts).toHaveLength(0);
+      expect(engine.getDiagnostics().lastProjectSyncReason).toBe("bass-edit-c");
+    } finally {
+      deferredRestarts.forEach((deferred) => deferred.resolve());
+      (globalThis as any).window = previousWindow;
+    }
+  });
 });
+
+async function waitForAsyncCondition(condition: () => boolean, attempts = 25): Promise<void> {
+  for (let index = 0; index < attempts && !condition(); index += 1) {
+    await Promise.resolve();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve: Deferred<T>["resolve"] = () => {};
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 function nativeStatus(overrides: Partial<NativeAudioStatus> = {}): NativeAudioStatus {
   return {

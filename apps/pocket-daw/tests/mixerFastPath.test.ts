@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { AudioEngine } from "../src/audio/audioEngine";
 import { setTrackPanCommand, setTrackVolumeCommand, toggleTrackMuteCommand, toggleTrackSoloCommand } from "../src/app/commands";
 import { createInitialState, currentProject } from "../src/app/state";
@@ -63,6 +64,33 @@ describe("mixer fast path", () => {
 
     expect(committed.undoStack.past).toHaveLength(1);
     expect(bass?.volume).toBe(0.95);
+  });
+
+  it("preserves scroll when committing mixer slider changes", () => {
+    const source = readFileSync("src/app/App.ts", "utf8");
+    const commitMixerControl = source.slice(source.indexOf("private commitMixerControl"), source.indexOf("private currentMixerControlValue"));
+
+    expect(commitMixerControl).toContain('audio: "none"');
+    expect(commitMixerControl).toContain("preserveScroll: true");
+    expect(commitMixerControl).not.toContain("this.applyProjectState(next, false)");
+  });
+
+  it("treats track graph edits as mixer graph changes instead of full project loads", () => {
+    const source = readFileSync("src/app/App.ts", "utf8");
+    const addTrackHandler = source.slice(source.indexOf("const addTrackButton"), source.indexOf("const muteButton"));
+
+    expect(addTrackHandler).toContain('audio: "mixer-graph"');
+    expect(addTrackHandler).toContain('reason: "add-track"');
+    expect(addTrackHandler).not.toContain("this.applyProjectState(addTrackCommand(this.state, addTrackButton.dataset.addTrackKind as AddTrackKind));");
+  });
+
+  it("syncs metronome toggles through the cached transport path", () => {
+    const source = readFileSync("src/app/App.ts", "utf8");
+    const metronomeHandler = source.slice(source.indexOf('if (action === "metronome-toggle")'), source.indexOf('if (action === "seek-start")'));
+
+    expect(metronomeHandler).toContain('audio: "project-load"');
+    expect(metronomeHandler).toContain('reason: "metronome-toggle"');
+    expect(metronomeHandler).not.toContain("this.applyProjectState(toggleMetronomeCommand(this.state));");
   });
 
   it("keeps demo identity stable and commits one undo entry after a pan drag", () => {
