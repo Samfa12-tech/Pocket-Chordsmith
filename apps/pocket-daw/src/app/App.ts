@@ -7,8 +7,15 @@ import { renderProjectToWavBlob } from "../audio/offlineRender";
 import { createDemoProject } from "../demo/demoProject";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../daw/dawProject";
 import { renderTimelineEvents } from "../audio/eventRenderer";
-import { listenForDeepLinkHandoffs, readInitialDeepLinkHandoff, type HandoffBridgeStatus } from "../native/deepLinkBridge";
-import { downloadBlob, openProjectFileNative, safeName, saveProjectFile } from "../native/fileBridge";
+import {
+  listenForDeepLinkHandoffs,
+  listenForProjectFileLaunches,
+  readInitialDeepLinkHandoff,
+  readInitialProjectFileLaunch,
+  type HandoffBridgeStatus,
+  type ProjectFileLaunch
+} from "../native/deepLinkBridge";
+import { downloadBlob, openProjectFileNative, readProjectFileNative, safeName, saveProjectFile } from "../native/fileBridge";
 import { readPocketDawHandoff, type PocketDawHandoff } from "../native/pocketHandoff";
 import {
   listenForAiBridgeRequests,
@@ -205,6 +212,7 @@ export class App {
   private recordingStatusBusy = false;
   private inputPreviewKey: string | null = null;
   private aiBridgeUnlisten: (() => void) | null = null;
+  private projectFileLaunchUnlisten: (() => void) | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -272,6 +280,8 @@ export class App {
     }
     this.render();
     this.bindDeepLinkHandoffs();
+    void this.bindProjectFileLaunches();
+    void this.openInitialProjectFileLaunch();
     void this.configureAiBridgeFromPreference();
     void this.bindAiBridgeRequests();
     this.engine.prewarmNativeRenderCache("app-start");
@@ -298,6 +308,37 @@ export class App {
     this.deepLinkUnlisten = await listenForDeepLinkHandoffs((handoff) => {
       this.consumeHandoff(handoff);
     }, (status) => this.recordHandoffBridgeStatus(status));
+  }
+
+  private async openInitialProjectFileLaunch() {
+    const launch = await readInitialProjectFileLaunch((status) => this.recordHandoffBridgeStatus(status));
+    if (launch) await this.openProjectFileLaunch(launch);
+  }
+
+  private async bindProjectFileLaunches() {
+    if (this.projectFileLaunchUnlisten) return;
+    this.projectFileLaunchUnlisten = await listenForProjectFileLaunches((launch) => {
+      void this.openProjectFileLaunch(launch);
+    }, (status) => this.recordHandoffBridgeStatus(status));
+  }
+
+  private async openProjectFileLaunch(launch: ProjectFileLaunch) {
+    try {
+      const native = await readProjectFileNative(launch.path);
+      if (!native) return;
+      await this.openRawProjectText(native.contents, native.file.label, native.file.path, {
+        status: `Opened ${native.file.label} from Windows.`
+      });
+    } catch (error) {
+      this.recordHandoffBridgeStatus({
+        source: "project-file",
+        result: "failed-parse",
+        message: error instanceof Error ? error.message : `Could not open ${launch.path}.`,
+        receivedAt: launch.receivedAt
+      });
+      this.state.status = error instanceof Error ? `Could not open ${launch.path}: ${error.message}` : `Could not open ${launch.path}.`;
+      this.render({ preserveScroll: true });
+    }
   }
 
   private async configureAiBridgeFromPreference() {
@@ -2775,24 +2816,7 @@ export class App {
     }
     const text = await file.text();
     if (file.name.endsWith(".pocketdaw")) {
-      try {
-        const project = loadPocketDawRaw(text);
-        this.state.undoStack = createUndoStack(project);
-        this.state.selectedClipId = project.timeline.clips[0]?.id || null;
-        this.state.selectedTrackId = "drums";
-        this.state.currentFile = { path: null, label: file.name };
-        this.state.status = `Opened ${file.name}.`;
-        this.state.playheadBar = 1;
-        this.state.cursorBar = 1;
-        this.engine.setProject(project);
-        saveRecentProject(file.name);
-        this.state.recent = loadRecentProjects();
-        this.saveAutosaveSnapshot(project);
-        this.render();
-      } catch (error) {
-        this.state.status = error instanceof Error ? error.message : "Open failed.";
-        this.render();
-      }
+      await this.openRawProjectText(text, file.name, null);
     } else {
       this.state.importText = text;
       this.importText(text);
@@ -3016,12 +3040,12 @@ export class App {
     this.fileInput.click();
   }
 
-  private async openRawProjectText(text: string, label: string, path: string | null) {
+  private async openRawProjectText(text: string, label: string, path: string | null, options?: { status?: string }) {
     try {
       const project = loadPocketDawRaw(text);
       this.cancelNativeInputPreviewForProjectReset();
       this.state = loadProjectIntoState(this.state, project, {
-        status: `Opened ${label}.`,
+        status: options?.status || `Opened ${label}.`,
         currentFile: { path, label }
       });
       this.engine.setProject(project);

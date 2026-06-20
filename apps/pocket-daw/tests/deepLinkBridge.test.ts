@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   downloadHandoffFileNameFromUrl,
   extractDeepLinkUrlsFromSecondInstancePayload,
+  extractPocketDawProjectPathsFromLaunchPayload,
   handoffFromDownloadFilePayload,
   handoffFromLocalServerPayload
 } from "../src/native/deepLinkBridge";
@@ -25,6 +26,31 @@ describe("deep link bridge", () => {
   it("also accepts a raw argv array for test harnesses", () => {
     expect(extractDeepLinkUrlsFromSecondInstancePayload(["pocket-daw://handoff?pcs1=PCS1%3Atest"])).toEqual([
       "pocket-daw://handoff?pcs1=PCS1%3Atest"
+    ]);
+  });
+
+  it("extracts Pocket DAW project paths from launch arguments", () => {
+    const paths = extractPocketDawProjectPathsFromLaunchPayload({
+      argv: [
+        "C:\\Users\\sam_s\\AppData\\Local\\Pocket DAW\\pocket-daw.exe",
+        "--some-flag",
+        "C:\\Users\\sam_s\\Music\\lofi demo project.pocketdaw",
+        "pocket-daw://handoff?pocketHandoff=abc123",
+        "C:\\Users\\sam_s\\Music\\notes.txt"
+      ],
+      cwd: "C:\\Users\\sam_s"
+    });
+
+    expect(paths).toEqual(["C:\\Users\\sam_s\\Music\\lofi demo project.pocketdaw"]);
+  });
+
+  it("accepts quoted and file URL project launch arguments", () => {
+    expect(extractPocketDawProjectPathsFromLaunchPayload([
+      "\"C:\\Users\\sam_s\\Music\\quoted project.pocketdaw\"",
+      "file:///C:/Users/sam_s/Music/url%20project.pocketdaw"
+    ])).toEqual([
+      "C:\\Users\\sam_s\\Music\\quoted project.pocketdaw",
+      "C:\\Users\\sam_s\\Music\\url project.pocketdaw"
     ]);
   });
 

@@ -50,9 +50,20 @@ export async function openProjectFileNative(api = defaultNativeFileApi): Promise
   if (!api.isAvailable()) return null;
   const result = await api.invoke<NativeOpenPayload | null>("open_project_file");
   if (!result) return null;
-  if (typeof result.contents !== "string" || typeof result.path !== "string") {
-    throw new Error("Native open returned an invalid project file payload.");
-  }
+  assertNativeOpenPayload(result);
+  return {
+    contents: result.contents,
+    file: {
+      path: result.path,
+      label: result.label || projectFileStateFromPath(result.path).label
+    }
+  };
+}
+
+export async function readProjectFileNative(path: string, api = defaultNativeFileApi): Promise<OpenProjectFileResult | null> {
+  if (!api.isAvailable()) return null;
+  const result = await api.invoke<NativeOpenPayload>("read_project_file", { path });
+  assertNativeOpenPayload(result);
   return {
     contents: result.contents,
     file: {
@@ -123,6 +134,12 @@ export function safeName(title: string, ext: string): string {
 function assertNativeSavePayload(value: NativeSavePayload): void {
   if (!value || typeof value.path !== "string") {
     throw new Error("Native save returned an invalid project file payload.");
+  }
+}
+
+function assertNativeOpenPayload(value: NativeOpenPayload): void {
+  if (!value || typeof value.contents !== "string" || typeof value.path !== "string") {
+    throw new Error("Native open returned an invalid project file payload.");
   }
 }
 

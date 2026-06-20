@@ -13,6 +13,14 @@ Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
 
+## Next build pending - Windows project open polish
+
+The 2026-06-20 live MCP smoke exposed two user-facing workflow gaps that should ship in the next updater checkpoint:
+
+- Register `.pocketdaw` as a Pocket DAW project file type in the Windows installer and support startup/second-instance file launch arguments, so double-click and Windows "Open with" load the project instead of only opening the app.
+- Add a future live MCP/open-project workflow after the safe bridge v1: Codex can currently control the running app transport/mixer, but opening a project in the installed app still relies on user/native file-open flows unless the app was launched with the project file.
+- Keep the current MIDI import behavior clear: real `.mid` files import as editable MIDI media/clips. A separate future "Convert MIDI to Chordsmith arrangement" command should use simple heuristics to populate drums, bass, chord and melody lanes for users who expect Chordsmith-style decomposition.
+
 ## v0.6.13 AI / MCP Bridge v1 - published, installed smoke pending
 
 `0.6.13` expands `Help -> Setup MCP Bridge` into `Help -> AI / MCP Bridge`. The file MCP bridge remains the fast path for `.pocketdaw` inspection, validation, Chordsmith import, typed project edits and export planning while Pocket DAW is open or closed.
@@ -575,6 +583,7 @@ v0.5.2 moved generated playback out of the browser timing path, but Pocket DAW i
 ## What should come next
 
 - First priority after the collected Godot/Web pack slice: manually smoke the ZIP contents in Godot/web-game import workflows and then add push-to-Godot or native pack destination selection.
+- Ship the Windows project-open polish found during live AI testing: installer `.pocketdaw` association, startup/second-instance file argument opening, and a checklist row for double-click/Open With.
 - Keep this export-pack path ahead of deeper recording work, ASIO, simultaneous multitrack capture, or broad DAW editor expansion.
 - Manually verify native Open, Save and Save As inside `npm run tauri:dev` or a packaged native build.
 - Manually verify that packaged playback diagnostics show `playbackBackend: native-cpal` while scrolling, dragging mixer controls and editing Chordsmith steps.
@@ -597,6 +606,7 @@ v0.5.2 moved generated playback out of the browser timing path, but Pocket DAW i
 - Add voice/instrument recording once native file/audio persistence is ready, including simultaneous multitrack recording on multi-input hardware.
 - Add per-track mono/stereo recording mode and hardware input assignment for live audio tracks.
 - Expand MIDI import into a deeper DAW feature: robust multi-track import, channel/instrument mapping, tempo-map handling, controller preservation, drum-lane mapping and richer piano-roll editing.
+- Add a simple optional MIDI-to-Chordsmith arrangement converter for "make this MIDI into drums/bass/chords/melody" workflows; keep raw MIDI clip import as the preserving/default DAW path.
 - Move imported audio-file decoding and streaming into Rust/native code, then replace the first CPAL event synth with cached samples, rendered voice assets or a hybrid sample/synth backend where it improves desktop DAW reliability without removing editability.
 
 ## Sample-backed playback lessons

@@ -73,6 +73,7 @@ Release and update docs:
 - v0.6.11 makes the bootstrapper close after launching the verified setup EXE and adds `Help -> Setup MCP Bridge` with copy-ready MCP client snippets.
 - v0.6.12 corrects the MCP setup snippets to use a tested Windows `cmd` argument-array launch shape.
 - v0.6.13 adds `Help -> AI / MCP Bridge` and live app MCP tools for status, transport, selection and safe mixer edits.
+- Next build pending: register `.pocketdaw` with Windows and open project files passed from double-click/Open With; current installed `0.6.13` still needs File -> Open / Ctrl+O for saved projects.
 - ASIO, simultaneous multitrack capture, punch-in/out, comping, latency compensation UI, full send/return processing, bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
 - Windows Authenticode signing is not currently claimed unless a release manifest proves it.
 - Tauri updater signatures are generated separately as `.sig` files for updater validation.

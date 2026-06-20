@@ -62,9 +62,10 @@ export interface AppState {
 }
 
 export type HandoffResult = "not-received" | "imported" | "ignored" | "failed-parse";
+export type HandoffStatusSource = PocketHandoffSource | "project-file";
 
 export interface HandoffStatus {
-  source: PocketHandoffSource | null;
+  source: HandoffStatusSource | null;
   result: HandoffResult;
   kind: PocketHandoffKind | null;
   receivedAt: string | null;

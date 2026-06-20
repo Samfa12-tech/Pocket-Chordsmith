@@ -28,6 +28,8 @@ Manual smoke status: `0.6.12` PENDING. Historical `0.6.9` evidence remains usefu
 
 `0.6.13` bridge rows apply after the installer/updater checkpoint is installed.
 
+Next-build lesson from 2026-06-20: current `0.6.13` does not register `.pocketdaw` as a Windows file type and does not open raw project file launch arguments. The next installer checkpoint should verify double-click/Open With after the association/open-argument fix ships.
+
 Historical manual evidence from Sam on 2026-06-14:
 
 - Pocket DAW opened and diagnostics export worked.
@@ -48,6 +50,7 @@ Historical manual evidence from Sam on 2026-06-14:
 | --- | --- | --- | --- | --- | --- | --- |
 | Install / launch | Clean install from the current public setup EXE or MSI. | Installer completes and creates the expected installed app entries. | Manual / Not run | Manual / Not run |  |  |
 | Install / launch | Launch Pocket DAW from the Start Menu or installed shortcut. | Installed app opens without needing an extracted app folder. | App opened; exact launch surface not recorded. | Partial | Sam / 2026-06-14 | Confirm Start Menu/installed shortcut explicitly on next pass. |
+| Install / launch | Double-click a saved `.pocketdaw`, and use Windows Open With if the association is not already selected. | Windows offers/uses Pocket DAW for `.pocketdaw`, opens the installed app, focuses the main window and loads the clicked project. | Manual / Not run | Manual / Not run |  | Next checkpoint should include installer file association and startup/second-instance file argument handling. |
 | Install / launch | Launch after reboot if practical. | Installed app still launches normally after Windows restart. | Manual / Not run | Manual / Not run |  |  |
 | Install / launch | Open About/Diagnostics and confirm app version/build id. | Version `0.6.12` and build/commit information are visible or explicitly unavailable. | Manual / Not run | Manual / Not run |  | Historical v0.5.13 diagnostics evidence exists, but does not verify v0.6.12. |
 | AI / MCP bridge | Open Help -> AI / MCP Bridge. | Panel shows current file/project status, file MCP snippets, live bridge enabled state, session file path, and Test live bridge action. | Manual / Not run | Manual / Not run |  | v0.6.13 checkpoint. |

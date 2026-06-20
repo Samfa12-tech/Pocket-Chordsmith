@@ -27,6 +27,15 @@
     "icon": [
       "icons/pocket-daw-icon.ico",
       "icons/pocket-daw-icon.png"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["pocketdaw"],
+        "name": "Pocket DAW Project",
+        "description": "Pocket DAW project",
+        "role": "Editor",
+        "mimeType": "application/vnd.pocketdaw.project"
+      }
     ]
   },
   "plugins": {

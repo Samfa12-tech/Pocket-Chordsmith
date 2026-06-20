@@ -247,7 +247,9 @@ pub fn run() {
             native_recording::native_recording_stop_preview,
             native_recording::native_recording_update_monitor,
             native_recording::native_recording_stop,
+            initial_launch_args,
             open_project_file,
+            read_project_file,
             open_audio_media_file,
             read_audio_media_file,
             collect_project_media,
@@ -263,6 +265,16 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pocket DAW");
+}
+
+#[tauri::command]
+fn initial_launch_args() -> SecondInstanceLaunchPayload {
+    SecondInstanceLaunchPayload {
+        argv: std::env::args().collect(),
+        cwd: std::env::current_dir()
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_default(),
+    }
 }
 
 #[tauri::command]
@@ -715,6 +727,15 @@ fn open_project_file() -> Result<Option<ProjectFilePayload>, String> {
     let Some(path) = file else {
         return Ok(None);
     };
+    read_project_file_payload(path).map(Some)
+}
+
+#[tauri::command]
+fn read_project_file(path: String) -> Result<ProjectFilePayload, String> {
+    read_project_file_payload(std::path::PathBuf::from(path))
+}
+
+fn read_project_file_payload(path: std::path::PathBuf) -> Result<ProjectFilePayload, String> {
     ensure_file_size_at_most(
         &path,
         MAX_PROJECT_FILE_BYTES,
@@ -722,11 +743,11 @@ fn open_project_file() -> Result<Option<ProjectFilePayload>, String> {
     )?;
     let contents = std::fs::read_to_string(&path)
         .map_err(|err| format!("Could not read project file: {}", err))?;
-    Ok(Some(ProjectFilePayload {
+    Ok(ProjectFilePayload {
         label: file_label(&path),
         path: path.to_string_lossy().to_string(),
         contents,
-    }))
+    })
 }
 
 #[tauri::command]

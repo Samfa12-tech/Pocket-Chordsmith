@@ -6,10 +6,16 @@ export const SECOND_INSTANCE_DEEP_LINK_EVENT = "pocket-daw-second-instance";
 export const LOCAL_HANDOFF_EVENT = "pocket-daw-local-handoff";
 
 export interface HandoffBridgeStatus {
-  source: "deep-link" | "local-server" | "download-file";
+  source: "deep-link" | "local-server" | "download-file" | "project-file";
   result: "ignored" | "failed-parse";
   message: string;
   receivedAt: string;
+}
+
+export interface ProjectFileLaunch {
+  path: string;
+  receivedAt: string;
+  source: "startup-args" | "second-instance";
 }
 
 interface SecondInstanceLaunchPayload {
@@ -38,6 +44,25 @@ export async function readInitialDeepLinkHandoff(onStatus?: (status: HandoffBrid
   }
 }
 
+export async function readInitialProjectFileLaunch(onStatus?: (status: HandoffBridgeStatus) => void): Promise<ProjectFileLaunch | null> {
+  if (!isTauriRuntimeAvailable()) return null;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const payload = await invoke<SecondInstanceLaunchPayload>("initial_launch_args");
+    const paths = extractPocketDawProjectPathsFromLaunchPayload(payload);
+    if (!paths.length) return null;
+    return { path: paths[0], receivedAt: new Date().toISOString(), source: "startup-args" };
+  } catch (error) {
+    onStatus?.({
+      source: "project-file",
+      result: "failed-parse",
+      message: error instanceof Error ? error.message : "Could not read Pocket DAW launch arguments.",
+      receivedAt: new Date().toISOString()
+    });
+    return null;
+  }
+}
+
 export async function listenForDeepLinkHandoffs(
   onHandoff: (handoff: PocketDawHandoff) => void,
   onStatus?: (status: HandoffBridgeStatus) => void
@@ -59,6 +84,7 @@ export async function listenForDeepLinkHandoffs(
     unlisten.push(await listen<SecondInstanceLaunchPayload>(SECOND_INSTANCE_DEEP_LINK_EVENT, (event) => {
       const urls = extractDeepLinkUrlsFromSecondInstancePayload(event.payload);
       if (!urls.length) {
+        if (extractPocketDawProjectPathsFromLaunchPayload(event.payload).length) return;
         onStatus?.({
           source: "deep-link",
           result: "ignored",
@@ -80,6 +106,29 @@ export async function listenForDeepLinkHandoffs(
   }
   if (!unlisten.length) return null;
   return () => unlisten.forEach((dispose) => dispose());
+}
+
+export async function listenForProjectFileLaunches(
+  onProjectFile: (launch: ProjectFileLaunch) => void,
+  onStatus?: (status: HandoffBridgeStatus) => void
+): Promise<DeepLinkUnlisten | null> {
+  if (!isTauriRuntimeAvailable()) return null;
+  try {
+    const { listen } = await import("@tauri-apps/api/event");
+    return await listen<SecondInstanceLaunchPayload>(SECOND_INSTANCE_DEEP_LINK_EVENT, (event) => {
+      const paths = extractPocketDawProjectPathsFromLaunchPayload(event.payload);
+      if (!paths.length) return;
+      onProjectFile({ path: paths[0], receivedAt: new Date().toISOString(), source: "second-instance" });
+    });
+  } catch (error) {
+    onStatus?.({
+      source: "project-file",
+      result: "failed-parse",
+      message: error instanceof Error ? error.message : "Could not listen for Pocket DAW project launches.",
+      receivedAt: new Date().toISOString()
+    });
+    return null;
+  }
 }
 
 export function handoffFromLocalServerPayload(payload: unknown, onStatus?: (status: HandoffBridgeStatus) => void): PocketDawHandoff | null {
@@ -108,8 +157,14 @@ export function handoffFromLocalServerPayload(payload: unknown, onStatus?: (stat
 }
 
 export function extractDeepLinkUrlsFromSecondInstancePayload(payload: unknown): string[] {
-  const argv = isSecondInstancePayload(payload) && Array.isArray(payload.argv) ? payload.argv : Array.isArray(payload) ? payload : [];
+  const argv = launchArgvFromPayload(payload);
   return argv.filter((value): value is string => typeof value === "string" && isPocketDawProtocol(value));
+}
+
+export function extractPocketDawProjectPathsFromLaunchPayload(payload: unknown): string[] {
+  return launchArgvFromPayload(payload)
+    .map((value) => typeof value === "string" ? projectPathFromLaunchArg(value) : null)
+    .filter((value): value is string => !!value);
 }
 
 export function downloadHandoffFileNameFromUrl(value: string): string | null {
@@ -206,10 +261,42 @@ function isDownloadHandoffFilePayload(value: unknown): value is DownloadHandoffF
   return !!value && typeof value === "object";
 }
 
+function launchArgvFromPayload(payload: unknown): unknown[] {
+  return isSecondInstancePayload(payload) && Array.isArray(payload.argv) ? payload.argv : Array.isArray(payload) ? payload : [];
+}
+
 function isPocketDawProtocol(value: string): boolean {
   try {
     return new URL(value).protocol === "pocket-daw:";
   } catch {
     return false;
   }
+}
+
+function projectPathFromLaunchArg(value: string): string | null {
+  const trimmed = stripOuterQuotes(value.trim());
+  if (!trimmed || trimmed.startsWith("-") || isPocketDawProtocol(trimmed)) return null;
+  if (/^file:/i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      if (url.protocol !== "file:") return null;
+      const pathname = decodeURIComponent(url.pathname);
+      const windowsPath = pathname.replace(/^\/([A-Za-z]:[\\/])/, "$1").replace(/\//g, "\\");
+      return isPocketDawProjectPath(windowsPath) ? windowsPath : null;
+    } catch {
+      return null;
+    }
+  }
+  return isPocketDawProjectPath(trimmed) ? trimmed : null;
+}
+
+function isPocketDawProjectPath(value: string): boolean {
+  return /\.pocketdaw$/i.test(value);
+}
+
+function stripOuterQuotes(value: string): string {
+  if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1);
+  }
+  return value;
 }
