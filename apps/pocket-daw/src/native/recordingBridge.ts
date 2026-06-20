@@ -10,7 +10,9 @@ export interface NativeRecordingStartPayload {
   monitorEnabled: boolean;
   monitorVolume: number;
   monitorPan: number;
+  recordingSessionId?: number | null;
   startBar: number;
+  requestedStartSeconds?: number | null;
   sampleRate: number;
 }
 
@@ -36,17 +38,36 @@ export interface NativeRecordingStatus {
   active: boolean;
   monitoring: boolean;
   trackId: string | null;
+  recordingSessionId: number | null;
+  requestedStartBar: number | null;
+  requestedStartSeconds: number | null;
+  requestedSampleRate: number;
+  captureSampleRate: number;
   elapsedSeconds: number;
   sampleRate: number;
+  captureStartedAtUnixMs: number | null;
   inputDeviceName: string | null;
   outputDeviceName: string | null;
   peak: number;
   sampleCount: number;
+  monitorBufferedFrameCount: number;
+  inputFrameCount: number;
+  capturedFrameCount: number;
+  captureStartInputFrame: number | null;
+  firstInputFrame: number | null;
+  droppedInputFrameCount: number;
+  monitorUnderrunCount: number;
+  monitorOverrunCount: number;
   lastError: string | null;
 }
 
 export interface NativeRecordingStopResult {
   trackId: string;
+  recordingSessionId: number | null;
+  requestedStartBar: number | null;
+  requestedStartSeconds: number | null;
+  requestedSampleRate: number;
+  captureSampleRate: number;
   targetPath: string;
   targetRelativePath: string;
   fileName: string;
@@ -55,6 +76,15 @@ export interface NativeRecordingStopResult {
   channels: number;
   sizeBytes: number;
   peak: number;
+  captureStartedAtUnixMs: number | null;
+  inputFrameCount: number;
+  capturedFrameCount: number;
+  captureStartInputFrame: number | null;
+  firstInputFrame: number | null;
+  droppedInputFrameCount: number;
+  monitorBufferedFrameCount: number;
+  monitorUnderrunCount: number;
+  monitorOverrunCount: number;
 }
 
 export function isNativeRecordingAvailable(): boolean {
@@ -94,12 +124,26 @@ export async function nativeRecordingStatus(): Promise<NativeRecordingStatus> {
       active: false,
       monitoring: false,
       trackId: null,
+      recordingSessionId: null,
+      requestedStartBar: null,
+      requestedStartSeconds: null,
+      requestedSampleRate: 0,
+      captureSampleRate: 0,
       elapsedSeconds: 0,
       sampleRate: 0,
+      captureStartedAtUnixMs: null,
       inputDeviceName: null,
       outputDeviceName: null,
       peak: 0,
       sampleCount: 0,
+      monitorBufferedFrameCount: 0,
+      inputFrameCount: 0,
+      capturedFrameCount: 0,
+      captureStartInputFrame: null,
+      firstInputFrame: null,
+      droppedInputFrameCount: 0,
+      monitorUnderrunCount: 0,
+      monitorOverrunCount: 0,
       lastError: "Live recording is only available in the installed Pocket DAW app."
     };
   }

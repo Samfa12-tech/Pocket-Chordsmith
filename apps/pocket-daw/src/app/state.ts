@@ -87,10 +87,17 @@ export interface NativeCacheUiStatus {
 }
 
 export interface RecordingUiState {
-  status: "idle" | "count-in" | "recording" | "stopping" | "error";
+  status: "idle" | "preparing" | "count-in" | "recording" | "stopping" | "error";
+  sessionId?: number | null;
   trackId: string | null;
   startedAt: string | null;
   startBar: number | null;
+  captureStartTransportSeconds?: number | null;
+  playbackStartedAtMonotonicMs?: number | null;
+  captureRequestedAtMonotonicMs?: number | null;
+  playbackCaptureAnchor?: RecordingNativePlaybackAnchor | null;
+  playbackStopAnchor?: RecordingNativePlaybackAnchor | null;
+  timingSource?: string | null;
   elapsedSeconds: number;
   inputPeak: number;
   inputDeviceName: string | null;
@@ -98,6 +105,52 @@ export interface RecordingUiState {
   monitoring: boolean;
   livePeaks: number[];
   message: string;
+}
+
+export interface RecordingNativePlaybackAnchor {
+  source: string;
+  snapshotMonotonicMs: number | null;
+  active: boolean;
+  playing: boolean;
+  positionSeconds: number | null;
+  renderedFrameCount: number | null;
+  startedGeneration: number | null;
+  sampleRate: number | null;
+  channels: number | null;
+}
+
+export const RECORDING_READY_MESSAGE = "Ready to record one armed live track.";
+
+export function createRecordingUiState(overrides: Partial<RecordingUiState> = {}): RecordingUiState {
+  return {
+    status: "idle",
+    sessionId: null,
+    trackId: null,
+    startedAt: null,
+    startBar: null,
+    captureStartTransportSeconds: null,
+    playbackStartedAtMonotonicMs: null,
+    captureRequestedAtMonotonicMs: null,
+    playbackCaptureAnchor: null,
+    playbackStopAnchor: null,
+    timingSource: null,
+    elapsedSeconds: 0,
+    inputPeak: 0,
+    inputDeviceName: null,
+    outputDeviceName: null,
+    monitoring: false,
+    livePeaks: [],
+    message: RECORDING_READY_MESSAGE,
+    ...overrides
+  };
+}
+
+export function recordingSessionMatches(
+  recording: RecordingUiState,
+  sessionId: number,
+  allowedStatuses: RecordingUiState["status"][]
+): boolean {
+  return recording.sessionId === sessionId && allowedStatuses.includes(recording.status);
 }
 
 export interface LoadProjectIntoStateOptions {
@@ -169,19 +222,7 @@ export function createInitialState(): AppState {
       receivedAt: null,
       message: "No Pocket DAW handoff received yet."
     },
-    recording: {
-      status: "idle",
-      trackId: null,
-      startedAt: null,
-      startBar: null,
-      elapsedSeconds: 0,
-      inputPeak: 0,
-      inputDeviceName: null,
-      outputDeviceName: null,
-      monitoring: false,
-      livePeaks: [],
-      message: "Ready to record one armed live track."
-    }
+    recording: createRecordingUiState()
   };
 }
 
@@ -211,19 +252,7 @@ export function loadProjectIntoState(
     exportProgress: null,
     chordsmithEditorStepPage: 0,
     chordsmithStepSelection: null,
-    recording: {
-      status: "idle",
-      trackId: null,
-      startedAt: null,
-      startBar: null,
-      elapsedSeconds: 0,
-      inputPeak: 0,
-      inputDeviceName: null,
-      outputDeviceName: null,
-      monitoring: false,
-      livePeaks: [],
-      message: "Ready to record one armed live track."
-    }
+    recording: createRecordingUiState()
   };
 }
 

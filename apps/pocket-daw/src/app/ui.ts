@@ -158,9 +158,11 @@ function renderTransport(state: AppState): string {
   const env = runtimeLabel();
   const displayTitle = projectDisplayTitle(state);
   const metronome = project.project.metronome || { enabled: false, countInBars: 1, volume: 0.55 };
-  const recordingActive = state.recording.status === "count-in" || state.recording.status === "recording" || state.recording.status === "stopping";
+  const recordingActive = state.recording.status === "preparing" || state.recording.status === "count-in" || state.recording.status === "recording" || state.recording.status === "stopping";
   const recordingLabel = state.recording.status === "recording"
     ? `Recording ${formatDuration(state.recording.elapsedSeconds)}`
+    : state.recording.status === "preparing"
+      ? state.recording.message || "Preparing"
     : state.recording.status === "count-in"
       ? state.recording.message || "Count-in"
       : state.recording.status === "stopping"
@@ -579,12 +581,12 @@ function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, sele
 function renderRecordingPreview(state: AppState, track: Track): string {
   const project = currentProject(state);
   const recording = state.recording;
-  if (recording.trackId !== track.id || !["count-in", "recording", "stopping"].includes(recording.status)) return "";
+  if (recording.trackId !== track.id || !["preparing", "count-in", "recording", "stopping"].includes(recording.status)) return "";
   const startBar = recording.startBar || state.playheadBar || 1;
   const secondsPerBar = Math.max(0.001, project.project.timeSig * (60 / Math.max(1, project.project.bpm)));
-  const barLength = recording.status === "count-in" ? 0.25 : Math.max(0.25, recording.elapsedSeconds / secondsPerBar);
+  const barLength = recording.status === "preparing" || recording.status === "count-in" ? 0.25 : Math.max(0.25, recording.elapsedSeconds / secondsPerBar);
   const peaks = recording.livePeaks.length ? recording.livePeaks : [recording.inputPeak || 0.05];
-  const label = recording.status === "count-in" ? "Count-in" : recording.status === "stopping" ? "Writing take" : "Recording";
+  const label = recording.status === "preparing" ? "Preparing" : recording.status === "count-in" ? "Count-in" : recording.status === "stopping" ? "Writing take" : "Recording";
   return `
     <div class="clip recording-preview" data-recording-preview="true" data-timeline-non-seek="true" style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(startBar - 1, 0)} * var(--bar)`)};width:calc(${sanitizeCssLengthOrNumber(barLength, 0.25, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(track.colour)};">
       <strong>${escapeHtml(label)}</strong>

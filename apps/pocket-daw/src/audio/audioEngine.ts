@@ -13,6 +13,7 @@ import { chordsmithSidechainSettings, isChordsmithSidechainTrigger, scheduleChor
 import { activeAutomationLaneCount, getAutomatedTrackControls } from "../daw/automation";
 import { activeTrackSendRoutes } from "../daw/routing";
 import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioStatus } from "../native/audioPlayback";
+import type { RecordingNativePlaybackAnchor } from "../app/state";
 import {
   buildNativeRenderCache,
   buildNativeRuntimeAudioCache,
@@ -234,6 +235,12 @@ export class AudioEngine {
     };
   }
 
+  async prepareNativeRuntimeAudioForPlayback(reason = "prepare-native-runtime-audio"): Promise<void> {
+    if (!this.audioRegions.length) return;
+    this.nativeRenderCacheLastBuildReason = reason;
+    await this.ensureNativeRuntimeAudioCache();
+  }
+
   syncProject(project: PocketDawProject, mode: AudioProjectSyncMode, reason: string = mode) {
     const current = this.currentSeconds();
     const previousNativeRenderCache = this.nativeRenderCache;
@@ -397,7 +404,6 @@ export class AudioEngine {
     this.stopActiveAudioSources();
     if (this.schedulerTimer !== null) window.clearInterval(this.schedulerTimer);
     this.schedulerTimer = null;
-    this.stopActiveAudioSources();
     if (this.ctx && this.master) this.configureMixer("stop");
     this.emitTick(true);
   }
@@ -469,6 +475,28 @@ export class AudioEngine {
 
   canResumePausedNativePlayback(): boolean {
     return this.playbackBackend === "native-cpal-paused" && !this.playing && !this.nativeRenderCacheBypassedForLiveEdits;
+  }
+
+  async nativePlaybackRecordingAnchor(source: string, snapshotMonotonicMs: number = performance.now()): Promise<RecordingNativePlaybackAnchor> {
+    let status = this.nativeStatus;
+    if (this.isNativePlaybackActive()) {
+      const refreshed = await this.nativePlayback.status();
+      if (refreshed) {
+        status = refreshed;
+        this.nativeStatus = refreshed;
+      }
+    }
+    return {
+      source,
+      snapshotMonotonicMs,
+      active: !!status?.active,
+      playing: !!status?.playing,
+      positionSeconds: finiteOrNull(status?.positionSeconds),
+      renderedFrameCount: finiteOrNull(status?.renderedFrameCount),
+      startedGeneration: finiteOrNull(status?.startedGeneration),
+      sampleRate: finiteOrNull(status?.sampleRate),
+      channels: finiteOrNull(status?.channels)
+    };
   }
 
   getDiagnostics() {
@@ -1348,6 +1376,10 @@ function mergeNativePlaybackCaches(base: NativeRenderCache, runtime: NativeRende
 function clampNumber(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
+}
+
+function finiteOrNull(value: number | null | undefined): number | null {
+  return Number.isFinite(value) && Number(value) >= 0 ? Number(value) : null;
 }
 
 function nowMs(): number {

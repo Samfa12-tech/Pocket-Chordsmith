@@ -128,7 +128,7 @@ import {
   undoCommand
 } from "./commands";
 import { commandFromKeyboardEvent } from "./keyboard";
-import { createInitialState, currentProject, loadProjectIntoState, type AppState, type ChordsmithStepSelection, type HandoffResult, type NativeCacheUiStatus } from "./state";
+import { createInitialState, createRecordingUiState, currentProject, loadProjectIntoState, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type NativeCacheUiStatus } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { renderAppShell } from "./ui";
 import { createUndoStack } from "../daw/undo";
@@ -158,6 +158,7 @@ import { buildTesterDiagnosticsPayload, diagnosticsJson, runtimeLabel, runtimePl
 import { buildFeedbackEmailDraft, MORE_BY_SAMFA12_URL } from "./feedback";
 import { pocketDawMcpCopyText } from "./mcpSetup";
 import { PerformanceDiagnosticsRecorder, type UiPerformanceCounters } from "./performanceDiagnostics";
+import { buildNativeRecordingDiagnosticsMetadata, buildRecordingCompletionMessage, buildRecordingStartupPlan, recordingStartFailureCleanupPlan } from "./recordingOrchestration";
 
 type MixerControlField = "volume" | "pan";
 type RenderSchedule = "none" | "live-dom" | "deferred" | "immediate";
@@ -713,7 +714,7 @@ export class App {
       toggle.textContent = this.state.playing ? "Pause" : "Play";
     }
 
-    const recordingActive = this.state.recording.status === "count-in" || this.state.recording.status === "recording" || this.state.recording.status === "stopping";
+    const recordingActive = this.state.recording.status === "preparing" || this.state.recording.status === "count-in" || this.state.recording.status === "recording" || this.state.recording.status === "stopping";
     const recordingReadout = this.root.querySelector<HTMLElement>("[data-recording-state]");
     if (recordingReadout) {
       const recordingPrimary = this.state.recording.status === "recording"
@@ -2004,24 +2005,13 @@ export class App {
       await this.stopRecording();
       return;
     }
-    if (this.state.recording.status === "count-in") {
+    if (this.state.recording.status === "preparing" || this.state.recording.status === "count-in") {
       this.recordingStartToken += 1;
       this.stopLiveMetronome();
       const trackId = this.state.recording.trackId || undefined;
-      this.state.recording = {
-        status: "idle",
-        trackId: null,
-        startedAt: null,
-        startBar: null,
-        elapsedSeconds: 0,
-        inputPeak: 0,
-        inputDeviceName: null,
-        outputDeviceName: null,
-        monitoring: false,
-        livePeaks: [],
-        message: "Recording count-in cancelled."
-      };
-      this.state.status = "Recording count-in cancelled.";
+      const message = this.state.recording.status === "preparing" ? "Recording preparation cancelled." : "Recording count-in cancelled.";
+      this.state.recording = createRecordingUiState({ message });
+      this.state.status = message;
       this.render({ preserveScroll: true });
       this.inputPreviewKey = null;
       void this.syncArmedInputPreview(trackId);
@@ -2034,19 +2024,7 @@ export class App {
     const project = currentProject(this.state);
     if (!isNativeRecordingAvailable()) {
       this.state.status = "Live recording is only available in the installed Pocket DAW app.";
-      this.state.recording = {
-        status: "error",
-        trackId: null,
-        startedAt: null,
-        startBar: null,
-        elapsedSeconds: 0,
-        inputPeak: 0,
-        inputDeviceName: null,
-        outputDeviceName: null,
-        monitoring: false,
-        livePeaks: [],
-        message: this.state.status
-      };
+      this.state.recording = createRecordingUiState({ status: "error", message: this.state.status });
       this.render({ preserveScroll: true });
       return;
     }
@@ -2065,39 +2043,73 @@ export class App {
     }
     const track = armedTracks[0];
     const startBar = Math.max(1, this.state.playheadBar || project.timeline.cursor.bar || 1);
-    const token = this.recordingStartToken + 1;
-    this.recordingStartToken = token;
+    const sessionId = this.recordingStartToken + 1;
+    this.recordingStartToken = sessionId;
     const preRollSeconds = countInSeconds(project);
-    if (preRollSeconds > 0) {
-      this.state.recording = {
-        status: "count-in",
-        trackId: track.id,
-        startedAt: null,
-        startBar,
-        elapsedSeconds: 0,
-        inputPeak: 0,
-        inputDeviceName: null,
-        outputDeviceName: null,
-        monitoring: false,
-        livePeaks: [],
-        message: `Count-in ${Math.max(1, Math.round(preRollSeconds))}s.`
-      };
-      this.state.status = `Recording ${track.name} after count-in.`;
-      this.render({ preserveScroll: true });
-      this.startLiveMetronome(true);
-      await new Promise<void>((resolve) => window.setTimeout(resolve, preRollSeconds * 1000));
-      if (this.recordingStartToken !== token || this.state.recording.status !== "count-in") return;
-    }
+    const captureStartTransportSeconds = Math.max(0, (startBar - 1) * secondsPerBar(project));
+    const shouldStartBackingPlayback = !this.engine.isPlaying();
+    const startupPlan = buildRecordingStartupPlan({
+      transportAlreadyPlaying: !shouldStartBackingPlayback,
+      countInSeconds: preRollSeconds
+    });
+    this.state.recording = createRecordingUiState({
+      status: "preparing",
+      sessionId,
+      trackId: track.id,
+      startBar,
+      captureStartTransportSeconds,
+      timingSource: shouldStartBackingPlayback ? "prepared-stopped-transport-estimate" : "already-playing-transport-estimate",
+      message: `Preparing ${track.name} recording...`
+    });
+    this.state.status = this.state.recording.message;
+    this.render({ preserveScroll: true });
+
     let nativeCaptureStarted = false;
     let showedBusy = false;
+    let startedBackingPlayback = false;
+    let playbackStartedAtMonotonicMs: number | null = null;
+    let captureRequestedAtMonotonicMs: number | null = null;
     try {
-      const shouldStartBackingPlayback = !this.engine.isPlaying();
       if (shouldStartBackingPlayback) {
         this.seekToBar(startBar, true);
-        const prepared = await this.prepareTimelineAudioForPlayback("recording playback");
-        showedBusy = prepared.showedBusy;
-        if (this.recordingStartToken !== token) return;
       }
+      const prepared = await this.prepareTimelineAudioForPlayback("recording startup");
+      showedBusy = prepared.showedBusy;
+      if (!recordingSessionMatches(this.state.recording, sessionId, ["preparing"])) return;
+
+      await this.syncArmedInputPreview(track.id);
+      if (!recordingSessionMatches(this.state.recording, sessionId, ["preparing"])) return;
+
+      if (startupPlan.includes("count-in")) {
+        this.state.recording = createRecordingUiState({
+          ...this.state.recording,
+          status: "count-in",
+          sessionId,
+          trackId: track.id,
+          startBar,
+          captureStartTransportSeconds,
+          message: `Count-in ${Math.max(1, Math.round(preRollSeconds))}s.`
+        });
+        this.state.status = `Recording ${track.name} after count-in.`;
+        this.render({ preserveScroll: true });
+        this.startCountInMetronome(project, preRollSeconds);
+        await new Promise<void>((resolve) => window.setTimeout(resolve, preRollSeconds * 1000));
+        if (!recordingSessionMatches(this.state.recording, sessionId, ["count-in"])) return;
+      }
+
+      if (startupPlan.includes("start-backing-playback")) {
+        this.seekToBar(startBar, true);
+        await this.engine.play();
+        startedBackingPlayback = true;
+        playbackStartedAtMonotonicMs = monotonicNowMs();
+        if (!recordingSessionMatches(this.state.recording, sessionId, preRollSeconds > 0 ? ["count-in"] : ["preparing"])) {
+          this.engine.stop();
+          return;
+        }
+      }
+
+      captureRequestedAtMonotonicMs = monotonicNowMs();
+      const playbackCaptureAnchor = await this.engine.nativePlaybackRecordingAnchor("capture-request", captureRequestedAtMonotonicMs);
       const status = await startNativeRecording({
         projectFilePath: this.state.currentFile.path,
         projectTitle: project.project.title,
@@ -2108,16 +2120,29 @@ export class App {
         monitorEnabled: !!track.monitorEnabled && !track.mute,
         monitorVolume: track.mute ? 0 : track.volume,
         monitorPan: track.pan,
+        recordingSessionId: sessionId,
         startBar,
+        requestedStartSeconds: captureStartTransportSeconds,
         sampleRate: project.project.sampleRate || project.audioDeviceSettings.sampleRate || 44100
       });
       nativeCaptureStarted = true;
+      if (!recordingSessionMatches(this.state.recording, sessionId, preRollSeconds > 0 ? ["count-in"] : ["preparing"])) {
+        await stopNativeRecording().catch(() => undefined);
+        if (startedBackingPlayback) this.engine.stop();
+        return;
+      }
       this.inputPreviewKey = null;
-      this.state.recording = {
+      this.state.recording = createRecordingUiState({
         status: "recording",
+        sessionId,
         trackId: track.id,
         startedAt: new Date().toISOString(),
         startBar,
+        captureStartTransportSeconds,
+        playbackStartedAtMonotonicMs,
+        captureRequestedAtMonotonicMs,
+        playbackCaptureAnchor,
+        timingSource: shouldStartBackingPlayback ? "playback-start-then-native-capture-estimate" : "already-playing-transport-estimate",
         elapsedSeconds: 0,
         inputPeak: Math.max(0, Math.min(1, status.peak || 0)),
         inputDeviceName: status.inputDeviceName,
@@ -2125,39 +2150,36 @@ export class App {
         monitoring: !!status.monitoring,
         livePeaks: [],
         message: recordingStatusMessage(track.name, status.monitoring, status.outputDeviceName)
-      };
+      });
       this.state.status = this.state.recording.message;
-      if (shouldStartBackingPlayback) {
-        this.seekToBar(startBar, true);
-        await this.engine.play();
-      }
       if (metronomeSettings(project).enabled) this.startLiveMetronome(true);
       else this.stopLiveMetronome();
       this.startRecordingTimer();
       this.render({ preserveScroll: true });
     } catch (error) {
+      if (!recordingSessionMatches(this.state.recording, sessionId, ["preparing", "count-in"])) return;
       this.stopLiveMetronome();
-      if (nativeCaptureStarted) {
+      const cleanup = recordingStartFailureCleanupPlan({
+        nativeCaptureStarted,
+        backingPlaybackStarted: startedBackingPlayback
+      });
+      if (cleanup.stopNativeCapture) {
         try {
           await stopNativeRecording();
         } catch {
           // The start error is more useful to surface here.
         }
       }
+      if (cleanup.stopBackingPlayback) this.engine.stop();
       const message = error instanceof Error ? error.message : "Could not start live recording.";
-      this.state.recording = {
+      this.state.recording = createRecordingUiState({
         status: "error",
+        sessionId,
         trackId: track.id,
-        startedAt: null,
         startBar,
-        elapsedSeconds: 0,
-        inputPeak: 0,
-        inputDeviceName: null,
-        outputDeviceName: null,
-        monitoring: false,
-        livePeaks: [],
+        captureStartTransportSeconds,
         message
-      };
+      });
       this.state.status = message;
       this.render({ preserveScroll: true });
     } finally {
@@ -2172,8 +2194,17 @@ export class App {
     if (this.state.recording.status !== "recording" && this.state.recording.status !== "stopping") return;
     const trackId = this.state.recording.trackId;
     const startBar = this.state.recording.startBar || this.state.playheadBar || 1;
+    const sessionId = this.state.recording.sessionId ?? this.recordingStartToken;
+    const captureStartTransportSeconds = this.state.recording.captureStartTransportSeconds;
+    const playbackStartedAtMonotonicMs = this.state.recording.playbackStartedAtMonotonicMs;
+    const captureRequestedAtMonotonicMs = this.state.recording.captureRequestedAtMonotonicMs;
+    const playbackCaptureAnchor = this.state.recording.playbackCaptureAnchor;
+    const timingSource = this.state.recording.timingSource || "ui-transport-boundary-estimate";
+    const playbackStopAnchor = await this.engine.nativePlaybackRecordingAnchor("stop-request", monotonicNowMs()).catch(() => null);
+    if (!recordingSessionMatches(this.state.recording, sessionId, ["recording", "stopping"])) return;
     this.state.recording = {
       ...this.state.recording,
+      playbackStopAnchor,
       status: "stopping",
       message: "Stopping recording and writing WAV..."
     };
@@ -2183,7 +2214,9 @@ export class App {
     this.stopLiveMetronome();
     try {
       const result = await stopNativeRecording();
+      if (!recordingSessionMatches(this.state.recording, sessionId, ["stopping"])) return;
       const source = await loadAudioMediaNative(result.targetRelativePath, this.state.currentFile.path);
+      if (!recordingSessionMatches(this.state.recording, sessionId, ["stopping"])) return;
       let decoded: Awaited<ReturnType<typeof this.decodeAudioSource>> | null = null;
       if (source) {
         try {
@@ -2192,6 +2225,7 @@ export class App {
           decoded = null;
         }
       }
+      if (!recordingSessionMatches(this.state.recording, sessionId, ["stopping"])) return;
       const media = addImportedAudioMedia(currentProject(this.state), {
         name: result.fileName,
         uri: result.targetRelativePath,
@@ -2207,48 +2241,47 @@ export class App {
           originalUri: result.targetPath,
           recordedAt: new Date().toISOString(),
           recordingTrackId: result.trackId,
+          requestedStartBar: startBar,
+          placementStartBar: startBar,
+          captureStartTransportSeconds: captureStartTransportSeconds ?? null,
+          playbackStartedAtMonotonicMs: playbackStartedAtMonotonicMs ?? null,
+          captureRequestedAtMonotonicMs: captureRequestedAtMonotonicMs ?? null,
+          timingSource,
+          recordingBackend: "native-cpal",
+          ...buildNativeRecordingDiagnosticsMetadata({
+            ...result,
+            playbackCaptureAnchor,
+            playbackStopAnchor
+          }),
           peak: result.peak,
           waveformPeaks: decoded?.waveformPeaks || []
         }
       });
       if (decoded) setCachedAudioBuffer(media.item.id, decoded.buffer);
       const placed = placeRecordingClipOnTrack(media.project, media.item.id, trackId || result.trackId, startBar);
-      const clipMessage = placed.clipId
+      const baseClipMessage = placed.clipId
         ? `Recorded ${result.fileName} to ${result.targetRelativePath}.`
         : `Recorded ${result.fileName}, but no armed audio track was available for clip placement.`;
+      const clipMessage = buildRecordingCompletionMessage({
+        baseMessage: baseClipMessage,
+        droppedInputFrameCount: result.droppedInputFrameCount
+      });
       this.applyProjectState(commitProject(this.state, placed.project, clipMessage), { autosave: "flush", preserveScroll: true });
-      this.state.recording = {
-        status: "idle",
-        trackId: null,
-        startedAt: null,
-        startBar: null,
-        elapsedSeconds: 0,
-        inputPeak: 0,
-        inputDeviceName: null,
-        outputDeviceName: null,
-        monitoring: false,
-        livePeaks: [],
-        message: clipMessage
-      };
+      this.state.recording = createRecordingUiState({ message: clipMessage });
       this.state.selectedClipId = placed.clipId || this.state.selectedClipId;
       this.state.selectedTrackId = placed.trackId || this.state.selectedTrackId;
       await this.saveProject(false);
       void this.syncArmedInputPreview(trackId || result.trackId);
     } catch (error) {
+      if (!recordingSessionMatches(this.state.recording, sessionId, ["stopping"])) return;
       const message = error instanceof Error ? error.message : "Could not stop live recording.";
-      this.state.recording = {
+      this.state.recording = createRecordingUiState({
         status: "error",
+        sessionId,
         trackId,
-        startedAt: null,
         startBar,
-        elapsedSeconds: 0,
-        inputPeak: 0,
-        inputDeviceName: null,
-        outputDeviceName: null,
-        monitoring: false,
-        livePeaks: [],
         message
-      };
+      });
       this.state.status = message;
       this.render({ preserveScroll: true });
     }
@@ -2333,6 +2366,9 @@ export class App {
       showedBusy = true;
       await this.showTransportBusy(this.nativeAudioPreparationMessage(after));
     }
+    if (after.needsPreparation) {
+      await this.engine.prepareNativeRuntimeAudioForPlayback(reason);
+    }
 
     return { hydration, showedBusy };
   }
@@ -2383,6 +2419,33 @@ export class App {
         const when = ctx.currentTime + Math.max(0.006, click.timeSeconds - transportSeconds);
         this.scheduleMetronomeClick(ctx, when, click.accented, volume);
       });
+    };
+    schedule();
+    this.metronomeTimer = window.setInterval(schedule, 25);
+  }
+
+  private startCountInMetronome(project: ReturnType<typeof currentProject>, durationSeconds: number) {
+    const settings = metronomeSettings(project);
+    if (this.engine.isNativePlaybackActive()) return;
+    this.stopLiveMetronome();
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    this.metronomeContext = this.metronomeContext || new Ctx();
+    void this.metronomeContext.resume?.();
+    const ctx = this.metronomeContext;
+    const startedAt = ctx.currentTime;
+    const volume = Math.max(0, Math.min(1, settings.volume || 0.55));
+    let scheduledBeatIndex: number | null = null;
+    const schedule = () => {
+      const elapsed = Math.max(0, Math.min(durationSeconds, ctx.currentTime - startedAt));
+      const result = buildTransportMetronomeSchedule(project, elapsed, scheduledBeatIndex, 0.16);
+      scheduledBeatIndex = result.scheduledBeatIndex;
+      result.clicks
+        .filter((click) => click.timeSeconds <= durationSeconds + 0.001)
+        .forEach((click) => {
+          const when = startedAt + click.timeSeconds;
+          if (when >= ctx.currentTime - 0.025) this.scheduleMetronomeClick(ctx, Math.max(ctx.currentTime + 0.006, when), click.accented, volume);
+        });
     };
     schedule();
     this.metronomeTimer = window.setInterval(schedule, 25);
@@ -2780,8 +2843,9 @@ export class App {
         monitorPan: track.pan
       });
       this.inputPreviewKey = key;
-      if (this.state.recording.status !== "idle" && this.state.recording.status !== "count-in") return;
-      this.state.recording = {
+      if (!["idle", "preparing", "count-in"].includes(this.state.recording.status)) return;
+      this.state.recording = createRecordingUiState({
+        ...this.state.recording,
         status: this.state.recording.status,
         trackId: track.id,
         startedAt: null,
@@ -2793,7 +2857,7 @@ export class App {
         monitoring: !!status.monitoring,
         livePeaks: this.state.recording.livePeaks,
         message: inputPreviewStatusMessage(track.name, status.monitoring, status.outputDeviceName)
-      };
+      });
       this.state.status = this.state.recording.message;
       this.startInputPreviewTimer();
       this.render({ preserveScroll: true });
@@ -2828,19 +2892,7 @@ export class App {
     }
     this.stopRecordingTimer();
     if (this.state.recording.status === "idle" && this.state.recording.trackId) {
-      this.state.recording = {
-        status: "idle",
-        trackId: null,
-        startedAt: null,
-        startBar: null,
-        elapsedSeconds: 0,
-        inputPeak: 0,
-        inputDeviceName: null,
-        outputDeviceName: null,
-        monitoring: false,
-        livePeaks: [],
-        message: "Ready to record one armed live track."
-      };
+      this.state.recording = createRecordingUiState();
       this.render({ preserveScroll: true });
     }
   }
@@ -3675,19 +3727,7 @@ export class App {
     this.state.playheadBar = 1;
     this.state.cursorBar = 1;
     this.state.meterLevels = {};
-    this.state.recording = {
-      status: "idle",
-      trackId: null,
-      startedAt: null,
-      startBar: null,
-      elapsedSeconds: 0,
-      inputPeak: 0,
-      inputDeviceName: null,
-      outputDeviceName: null,
-      monitoring: false,
-      livePeaks: [],
-      message: "Ready to record one armed live track."
-    };
+    this.state.recording = createRecordingUiState();
     this.engine.setProject(project);
     this.saveAutosaveSnapshot(project);
     this.render();
@@ -3706,19 +3746,7 @@ export class App {
     this.state.playheadBar = 1;
     this.state.cursorBar = 1;
     this.state.meterLevels = {};
-    this.state.recording = {
-      status: "idle",
-      trackId: null,
-      startedAt: null,
-      startBar: null,
-      elapsedSeconds: 0,
-      inputPeak: 0,
-      inputDeviceName: null,
-      outputDeviceName: null,
-      monitoring: false,
-      livePeaks: [],
-      message: "Ready to record one armed live track."
-    };
+    this.state.recording = createRecordingUiState();
     this.engine.setProject(project);
     this.saveAutosaveSnapshot(project);
     this.render();
@@ -3729,6 +3757,7 @@ export class App {
   }
 
   private cancelNativeInputPreviewForProjectReset() {
+    this.recordingStartToken += 1;
     this.inputPreviewKey = null;
     this.stopRecordingTimer();
     if (isNativeRecordingAvailable()) void stopNativeRecordingPreview().catch(() => {});
@@ -3789,4 +3818,8 @@ function recordingStatusMessage(trackName: string, monitoring: boolean, outputDe
 function inputPreviewStatusMessage(trackName: string, monitoring: boolean, outputDeviceName?: string | null): string {
   if (!monitoring) return `Metering ${trackName} input.`;
   return outputDeviceName ? `Monitoring ${trackName} input via ${outputDeviceName}.` : `Monitoring ${trackName} input.`;
+}
+
+function monotonicNowMs(): number {
+  return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
 }

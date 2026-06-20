@@ -113,6 +113,7 @@ pub struct NativeRenderedEvent {
     #[serde(rename = "chipPreset")]
     chip_preset: Option<String>,
     #[serde(rename = "chipTexture")]
+    #[allow(dead_code)]
     chip_texture: Option<Value>,
     accent: Option<bool>,
     articulation: Option<String>,
@@ -897,10 +898,16 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         if let Some(chain) = playback.fx.track_chains.get_mut(&track_id) {
             (track_left, track_right) = chain.process(track_left, track_right);
         }
-        let sidechain_gain = sidechain_gain(&playback, &track_id, t);
+        let sidechain_gain = sidechain_gain(playback, &track_id, t);
         track_left *= sidechain_gain;
         track_right *= sidechain_gain;
-        route_track_sends(playback, &track_id, track_left, track_right, &mut return_mixes);
+        route_track_sends(
+            playback,
+            &track_id,
+            track_left,
+            track_right,
+            &mut return_mixes,
+        );
         left += track_left;
         right += track_right;
     }
@@ -908,7 +915,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         if let Some(chain) = playback.fx.track_chains.get_mut(&track_id) {
             (track_left, track_right) = chain.process(track_left, track_right);
         }
-        let sidechain_gain = sidechain_gain(&playback, &track_id, t);
+        let sidechain_gain = sidechain_gain(playback, &track_id, t);
         track_left *= sidechain_gain;
         track_right *= sidechain_gain;
         left += track_left;
@@ -974,7 +981,7 @@ fn render_metronome_sample(playback: &PlaybackShared, t: f64) -> f32 {
     if !(0.0..=0.055).contains(&local) {
         return 0.0;
     }
-    let accented = beat_index % metronome.time_sig.max(1) as u64 == 0;
+    let accented = beat_index.is_multiple_of(metronome.time_sig.max(1) as u64);
     let freq = if accented { 1760.0 } else { 1120.0 };
     let env = (-local * if accented { 95.0 } else { 115.0 }).exp() as f32;
     let gain = metronome.volume as f32 * if accented { 0.34 } else { 0.24 };
@@ -2094,7 +2101,7 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
             }
             let cfg = native_bass_tone_config(event.bass_tone.as_deref());
             let main_env = note_envelope(local, dur, cfg.attack, 0.08, 0.55, 0.18);
-            let sub_dur = (dur * 0.65).min(0.12).max(0.02);
+            let sub_dur = (dur * 0.65).clamp(0.02, 0.12);
             let sub_env = note_envelope(local, sub_dur, 0.006, 0.08, 0.45, 0.14);
             let freq = midi_to_freq(midi) as f32;
             let main_layer = native_wave_sample(cfg.main_wave, freq, local)
@@ -2121,12 +2128,15 @@ fn lofi_drum_kit(event: &NativeRenderedEvent) -> &str {
     generated_native_resolve_drum_kit(
         event.drum_kit.as_deref(),
         event.audio_profile.as_deref(),
-        event.chip_preset.as_deref().or(event.lofi_preset.as_deref()),
+        event
+            .chip_preset
+            .as_deref()
+            .or(event.lofi_preset.as_deref()),
     )
 }
 
 fn render_lofi_texture(event: &NativeRenderedEvent, local: f64) -> f32 {
-    if local > event.duration.max(0.08).min(0.24) {
+    if local > event.duration.clamp(0.08, 0.24) {
         return 0.0;
     }
     let profile_on = event.audio_profile.as_deref() == Some("lofi_chill")
@@ -2249,7 +2259,7 @@ fn render_chord_notes(
         let note_dur = if play_mode == "block" || play_mode.starts_with("strum") {
             dur
         } else {
-            dur.min(0.25).max(0.04)
+            dur.clamp(0.04, 0.25)
         };
         let base_wave = if index == 0 { cfg.root_wave } else { cfg.wave };
         sample += render_chord_voice(*midi, note_local, note_dur, base_wave, &cfg) / scale;
@@ -2377,6 +2387,7 @@ fn render_lead_note(midi: f64, event: &NativeRenderedEvent, local: f64, velocity
     sample * velocity
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_lead_voice(
     midi: f64,
     freq_mul: f32,
@@ -2936,7 +2947,7 @@ mod tests {
         let saw_env = note_envelope(local, dur, 0.006, 0.08, 0.55, 0.18);
         let sub_env = note_envelope(
             local,
-            (dur * 0.65_f64).min(0.12).max(0.02),
+            (dur * 0.65_f64).clamp(0.02, 0.12),
             0.006,
             0.08,
             0.45,
@@ -3070,7 +3081,8 @@ mod tests {
             "fxChains": [],
             "assets": [],
             "regions": []
-        })).expect("payload should deserialize with frontend loop field");
+        }))
+        .expect("payload should deserialize with frontend loop field");
 
         let loop_region = payload.loop_region.expect("loop payload should be present");
         assert!(loop_region.enabled);
@@ -3095,9 +3107,11 @@ mod tests {
             "fxChains": [],
             "assets": [],
             "regions": []
-        })).expect("payload should deserialize with frontend metronome field");
+        }))
+        .expect("payload should deserialize with frontend metronome field");
 
-        let metronome = sanitize_metronome(payload.metronome).expect("metronome payload should be present");
+        let metronome =
+            sanitize_metronome(payload.metronome).expect("metronome payload should be present");
         assert!(metronome.enabled);
         assert_eq!(metronome.beat_seconds, 0.5);
         assert_eq!(metronome.time_sig, 4);
@@ -3285,6 +3299,7 @@ mod tests {
             .sum()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn test_region(
         id: &str,
         asset_id: &str,

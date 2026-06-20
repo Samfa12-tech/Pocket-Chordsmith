@@ -607,7 +607,7 @@ fn write_http_response(
     use std::io::Write;
     let response = format!(
         "HTTP/1.1 {status} {status_text}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nAccess-Control-Allow-Private-Network: true\r\nConnection: close\r\n\r\n{body}",
-        body.as_bytes().len()
+        body.len()
     );
     stream
         .write_all(response.as_bytes())
@@ -1303,7 +1303,7 @@ fn ensure_bytes_at_most(size: u64, max_bytes: u64, message: &str) -> Result<(), 
 }
 
 fn bytes_to_mb(bytes: u64) -> u64 {
-    (bytes + (1024 * 1024 - 1)) / (1024 * 1024)
+    bytes.div_ceil(1024 * 1024)
 }
 
 #[cfg(test)]

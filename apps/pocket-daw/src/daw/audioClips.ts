@@ -82,7 +82,7 @@ export function placeAudioClipOnTrack(project: PocketDawProject, mediaPoolItemId
   const next = cloneProject(project);
   const track = next.tracks.find((candidate) => candidate.id === trackId && candidate.trackType === "audio");
   if (!track) return { project, clipId: "", trackId: "" };
-  const clipStartBar = Math.max(1, Math.round(startBar));
+  const clipStartBar = cleanStartBar(startBar);
   const barLength = Math.max(1, secondsToBars(item.durationSeconds || secondsPerBar(next), next));
   if (options.overwriteOverlaps) {
     overwriteAudioClipsInRange(next, track.id, clipStartBar, clipStartBar + barLength);
@@ -207,6 +207,11 @@ function secondsToBars(seconds: number, project: PocketDawProject): number {
 
 function secondsPerBar(project: PocketDawProject): number {
   return project.project.timeSig * (60 / project.project.bpm);
+}
+
+function cleanStartBar(value: number): number {
+  const start = Number.isFinite(value) ? value : 1;
+  return Math.max(1, Math.round(start * 1000) / 1000);
 }
 
 function audioClipSourceOffsetSeconds(clip: Clip): number {

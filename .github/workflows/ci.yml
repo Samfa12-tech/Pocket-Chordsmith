@@ -44,6 +44,7 @@ jobs:
           npm install
           npm test
           npm run build
+          npm run verify:family-parity
 
       - name: Pocket Chordsmith web
         working-directory: apps/chordsmith-web
@@ -66,3 +67,29 @@ jobs:
           npm install
           npm test
           npm run build
+
+  pocket-daw-windows-native:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup component add clippy
+
+      - name: Pocket DAW frontend and native checks
+        working-directory: apps/pocket-daw
+        run: |
+          npm install
+          npm test
+          npm run build
+          cargo test --manifest-path src-tauri/Cargo.toml
+          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings

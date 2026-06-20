@@ -15,7 +15,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Native Transport + Cache Alpha`;
+export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Recording Hardening Alpha`;
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -231,6 +231,15 @@ ${artifactTable}
 
 ## Highlights
 
+- Hardened the installed-app live recording path for Windows smoke testing.
+- Preserved fractional recording placement and same-track overwrite splitting around recorded takes.
+- Moved heavy recording preparation before count-in, guards stale recording sessions, and keeps stopped-transport count-in coherent.
+- Reused the armed input preview stream when recording begins instead of rebuilding the input stream at the capture boundary.
+- Streamed native capture through bounded lock-free rings and a writer thread to .wav.part before final WAV rename.
+- Added native recording diagnostics for input/capture frame counters, dropped input frames, monitor underrun/overrun counters, playback anchors, requested start context, and actual capture sample rate.
+- Replaced monitor queue/status callback mutex use with atomics and SPSC rings.
+- Added explicit input-to-output sample-rate pacing for live input monitoring when devices use different default sample rates.
+- Added loopback calibration reporting tooling without applying hidden latency compensation.
 - Added native playback loop-region support so the installed native engine wraps active loop ranges on the audio clock.
 - Added native metronome payload/rendering support so the installed native engine can click in sync with transport playback.
 - Coalesced rapid live composition edits into latest-only native playback restarts, reducing restart overlap during drum, bass, guitar and section editing.
