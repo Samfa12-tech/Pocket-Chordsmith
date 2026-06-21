@@ -237,6 +237,34 @@ describe("native render cache", () => {
     expect(offlineRenderMock.encodeWav).toHaveBeenCalled();
   });
 
+  it("uses preserved original WAV bytes for native runtime audio assets", async () => {
+    const project = withAudioClip(createDemoProject());
+    const originalWav = wavBytes(44_100, 2, Array.from({ length: 44_100 * 2 }, (_, index) => index % 2 === 0 ? 1024 : -1024));
+    setCachedAudioBuffer("media_audio", fakeAudioBuffer(), {
+      sourceBytes: originalWav,
+      sourceMimeType: "audio/wav",
+      sourceName: "Loop.wav",
+      sourceUri: "C:\\Audio\\Loop.wav"
+    });
+
+    const cache = await buildNativeRuntimeAudioCache(project, "runtime-original-wav-signature");
+
+    expect(cache.runtimeAudioRegionCount).toBe(1);
+    expect(cache.assets[0]).toMatchObject({
+      sampleRate: 44_100,
+      channels: 2,
+      durationSeconds: 1,
+      sizeBytes: originalWav.length,
+      bytes: Array.from(originalWav)
+    });
+    expect(cache.renderCacheItems[0].metadata).toMatchObject({
+      cacheKind: "native-runtime-audio",
+      sourceEncoding: "original-wav",
+      sourceByteLength: originalWav.length
+    });
+    expect(offlineRenderMock.encodeWav).not.toHaveBeenCalled();
+  });
+
   it("builds runtime audio regions without rendering generated section stems", async () => {
     const project = withAudioClip(createDemoProject());
     setCachedAudioBuffer("media_audio", fakeAudioBuffer());

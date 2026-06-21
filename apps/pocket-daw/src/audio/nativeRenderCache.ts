@@ -4,7 +4,7 @@ import { barsToSeconds } from "../daw/timeline";
 import { buildNativeAudioStartPayload, type NativeAudioAsset, type NativeAudioRegion } from "../native/audioPlayback";
 import { pruneNativeCacheAssets, readNativeCacheAsset, renderNativeAudioWav, writeNativeCacheAsset, type NativeCachePruneResult, type NativeMediaApi } from "../native/mediaBridge";
 import { audioRegionFromClip, renderTimelineAudioRegions } from "./audioRegions";
-import { getCachedAudioBuffer } from "./audioBufferCache";
+import { getCachedAudioBuffer, type CachedAudioBuffer } from "./audioBufferCache";
 import { renderTimelineEvents } from "./eventRenderer";
 import { encodeWav } from "./offlineRender";
 
@@ -72,6 +72,17 @@ interface AssetBuildItem {
   clip: Clip;
   trackId: string;
   role: TrackRole;
+}
+
+interface RuntimeAudioAssetSource {
+  bytes: number[];
+  sampleRate: number;
+  channels: number;
+  durationSeconds: number;
+  sizeBytes: number;
+  sourceEncoding: "original-wav" | "decoded-buffer-wav";
+  sourceByteHash?: string;
+  sourceByteLength?: number;
 }
 
 export async function buildNativeRenderCache(project: PocketDawProject, signature = nativeRenderCacheSignature(project)): Promise<NativeRenderCache> {
@@ -609,7 +620,14 @@ function renderCacheItemForAsset(asset: NativeAudioAsset, signature: string, cre
   };
 }
 
-function renderCacheItemForRuntimeAudio(asset: NativeAudioAsset, signature: string, createdAt: string, clipId: string, mediaPoolItemId: string): RenderCacheItem {
+function renderCacheItemForRuntimeAudio(
+  asset: NativeAudioAsset,
+  signature: string,
+  createdAt: string,
+  clipId: string,
+  mediaPoolItemId: string,
+  source?: Pick<RuntimeAudioAssetSource, "sourceEncoding" | "sourceByteHash" | "sourceByteLength">
+): RenderCacheItem {
   return {
     id: asset.id,
     sourceClipId: clipId,
@@ -627,6 +645,9 @@ function renderCacheItemForRuntimeAudio(asset: NativeAudioAsset, signature: stri
       channels: asset.channels,
       durationSeconds: asset.durationSeconds,
       byteLength: nativeAssetByteLength(asset),
+      sourceEncoding: source?.sourceEncoding || "decoded-buffer-wav",
+      ...(source?.sourceByteHash ? { sourceByteHash: source.sourceByteHash } : {}),
+      ...(typeof source?.sourceByteLength === "number" ? { sourceByteLength: source.sourceByteLength } : {}),
       durableCacheReady: false
     }
   };
@@ -756,24 +777,24 @@ async function appendRuntimeAudioCache(
       renderCacheHitCount += 1;
     } else {
       renderCacheMissCount += 1;
+      const source = await runtimeAudioAssetSource(cached);
       const id = `native-audio-${hashString(key)}`;
-      const bytes = Array.from(new Uint8Array(await encodeWav(cached.buffer).arrayBuffer()));
       asset = {
         id,
         name: `${region.mediaPoolItemId} runtime audio`,
         relativePath: nativeRenderCacheRelativePath(id),
         mimeType: "audio/wav",
-        sampleRate: cached.sampleRate,
-        channels: cached.channels,
-        durationSeconds: cached.durationSeconds,
-        sizeBytes: bytes.length,
+        sampleRate: source.sampleRate,
+        channels: source.channels,
+        durationSeconds: source.durationSeconds,
+        sizeBytes: source.sizeBytes,
         sourceHash: signature,
-        bytes
+        bytes: source.bytes
       };
       assets.set(key, asset);
-      renderCacheItems.push(renderCacheItemForRuntimeAudio(asset, signature, createdAt, region.clipId, region.mediaPoolItemId));
+      renderCacheItems.push(renderCacheItemForRuntimeAudio(asset, signature, createdAt, region.clipId, region.mediaPoolItemId, source));
     }
-    const duration = Math.min(region.durationSeconds, Math.max(0, cached.durationSeconds - region.sourceOffsetSeconds));
+    const duration = Math.min(region.durationSeconds, Math.max(0, asset.durationSeconds - region.sourceOffsetSeconds));
     if (duration <= 0) {
       missingRuntimeAudioRegionCount += 1;
       continue;
@@ -796,7 +817,78 @@ async function appendRuntimeAudioCache(
   return { renderCacheHitCount, renderCacheMissCount, runtimeAudioRegionCount, missingRuntimeAudioRegionCount };
 }
 
-function runtimeAudioAssetKey(project: PocketDawProject, mediaPoolItemId: string, cached: { sampleRate: number; channels: number; durationSeconds: number }): string {
+async function runtimeAudioAssetSource(cached: CachedAudioBuffer): Promise<RuntimeAudioAssetSource> {
+  const sourceWav = sourceWavForNativeRuntime(cached);
+  if (sourceWav) return sourceWav;
+  const bytes = Array.from(new Uint8Array(await encodeWav(cached.buffer).arrayBuffer()));
+  return {
+    bytes,
+    sampleRate: cached.sampleRate,
+    channels: cached.channels,
+    durationSeconds: cached.durationSeconds,
+    sizeBytes: bytes.length,
+    sourceEncoding: "decoded-buffer-wav"
+  };
+}
+
+function sourceWavForNativeRuntime(cached: CachedAudioBuffer): RuntimeAudioAssetSource | null {
+  if (!cached.sourceBytes) return null;
+  const bytes = new Uint8Array(cached.sourceBytes);
+  const wav = parseSupportedNativeWav(bytes);
+  if (!wav) return null;
+  return {
+    bytes: Array.from(bytes),
+    sampleRate: wav.sampleRate,
+    channels: wav.channels,
+    durationSeconds: wav.durationSeconds,
+    sizeBytes: bytes.length,
+    sourceEncoding: "original-wav",
+    sourceByteHash: cached.sourceByteHash,
+    sourceByteLength: cached.sourceByteLength
+  };
+}
+
+function parseSupportedNativeWav(bytes: Uint8Array): { sampleRate: number; channels: number; durationSeconds: number } | null {
+  if (bytes.length < 44 || !bytesHaveAscii(bytes, 0, "RIFF") || !bytesHaveAscii(bytes, 8, "WAVE")) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let cursor = 12;
+  let channels = 0;
+  let sampleRate = 0;
+  let bitsPerSample = 0;
+  let format = 0;
+  let dataLength = 0;
+  while (cursor + 8 <= bytes.length) {
+    const id = String.fromCharCode(bytes[cursor], bytes[cursor + 1], bytes[cursor + 2], bytes[cursor + 3]);
+    const length = view.getUint32(cursor + 4, true);
+    const chunkStart = cursor + 8;
+    const chunkEnd = chunkStart + length;
+    if (chunkEnd > bytes.length) return null;
+    if (id === "fmt ") {
+      if (length < 16) return null;
+      format = view.getUint16(chunkStart, true);
+      channels = view.getUint16(chunkStart + 2, true);
+      sampleRate = view.getUint32(chunkStart + 4, true);
+      bitsPerSample = view.getUint16(chunkStart + 14, true);
+    } else if (id === "data") {
+      dataLength = length;
+    }
+    cursor = chunkEnd + (length % 2);
+  }
+  const supportedFormat = (format === 1 && bitsPerSample === 16) || (format === 3 && bitsPerSample === 32);
+  if (!supportedFormat || channels < 1 || channels > 2 || sampleRate <= 0 || dataLength <= 0) return null;
+  const bytesPerSample = bitsPerSample / 8;
+  const frameCount = Math.floor(dataLength / Math.max(1, bytesPerSample * channels));
+  return { sampleRate, channels, durationSeconds: frameCount / sampleRate };
+}
+
+function bytesHaveAscii(bytes: Uint8Array, offset: number, text: string): boolean {
+  for (let index = 0; index < text.length; index += 1) {
+    if (bytes[offset + index] !== text.charCodeAt(index)) return false;
+  }
+  return true;
+}
+
+function runtimeAudioAssetKey(project: PocketDawProject, mediaPoolItemId: string, cached: CachedAudioBuffer): string {
   const item = project.mediaPool.find((entry) => entry.id === mediaPoolItemId);
   return `audio_${hashString(JSON.stringify({
     mediaPoolItemId,
@@ -808,7 +900,10 @@ function runtimeAudioAssetKey(project: PocketDawProject, mediaPoolItemId: string
     nativePath: item?.metadata?.nativePath,
     sampleRate: cached.sampleRate,
     channels: cached.channels,
-    durationSeconds: cached.durationSeconds.toFixed(6)
+    durationSeconds: cached.durationSeconds.toFixed(6),
+    sourceByteHash: cached.sourceByteHash,
+    sourceByteLength: cached.sourceByteLength,
+    sourceMimeType: cached.sourceMimeType
   }))}`;
 }
 

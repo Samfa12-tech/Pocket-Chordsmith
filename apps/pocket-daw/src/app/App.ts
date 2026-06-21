@@ -2273,7 +2273,7 @@ export class App {
           waveformPeaks: decoded?.waveformPeaks || []
         }
       });
-      if (decoded) setCachedAudioBuffer(media.item.id, decoded.buffer);
+      if (decoded && source) setCachedAudioBuffer(media.item.id, decoded.buffer, sourceCacheOptions(source));
       const placed = placeRecordingClipOnTrack(media.project, media.item.id, trackId || result.trackId, startBar);
       const baseClipMessage = placed.clipId
         ? `Recorded ${result.fileName} to ${result.targetRelativePath}.`
@@ -3054,7 +3054,7 @@ export class App {
           waveformPeaks: decoded.waveformPeaks
         }
       });
-      setCachedAudioBuffer(result.item.id, decoded.buffer);
+      setCachedAudioBuffer(result.item.id, decoded.buffer, sourceCacheOptions(source));
       this.applyProjectState(commitProject(this.state, result.project, `Imported audio ${source.name}.`));
       this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "nearest" });
     } catch {
@@ -3103,7 +3103,7 @@ export class App {
         return;
       }
       const decoded = await this.decodeAudioSource(source);
-      setCachedAudioBuffer(item.id, decoded.buffer);
+      setCachedAudioBuffer(item.id, decoded.buffer, sourceCacheOptions(source));
       const project = updateAudioMediaAnalysis(currentProject(this.state), item.id, {
         name: item.name,
         uri: item.uri,
@@ -3138,7 +3138,7 @@ export class App {
         return;
       }
       const decoded = await this.decodeAudioSource(source);
-      setCachedAudioBuffer(item.id, decoded.buffer);
+      setCachedAudioBuffer(item.id, decoded.buffer, sourceCacheOptions(source));
       let project = markMediaPoolItemRelinked(currentProject(this.state), item.id, {
         uri: source.uri || "",
         name: source.name || item.name,
@@ -3586,7 +3586,7 @@ export class App {
           continue;
         }
         const decoded = await this.decodeAudioSource(source);
-        setCachedAudioBuffer(id, decoded.buffer);
+        setCachedAudioBuffer(id, decoded.buffer, sourceCacheOptions(source));
         loaded += 1;
       } catch {
         missing.push(item.name || id);
@@ -3842,6 +3842,34 @@ export class App {
     const snapshot = savePreImportRecovery(buildPocketDawProjectFile(project), this.state.currentFile, reason);
     return snapshot ? `Previous project recovery snapshot saved as ${snapshot.file.label}.` : "";
   }
+}
+
+function sourceCacheOptions(source: ImportedAudioBytes): Parameters<typeof setCachedAudioBuffer>[2] {
+  const sourceBytes = sourceBytesForNativeRuntime(source);
+  return sourceBytes ? {
+    sourceBytes,
+    sourceMimeType: source.mimeType,
+    sourceUri: source.uri,
+    sourceName: source.name
+  } : {};
+}
+
+function sourceBytesForNativeRuntime(source: ImportedAudioBytes): ArrayBuffer | undefined {
+  const bytes = new Uint8Array(source.bytes);
+  if (bytes.length < 12) return undefined;
+  const mime = (source.mimeType || "").toLowerCase();
+  const label = `${source.name || ""} ${source.uri || ""}`.toLowerCase();
+  const looksLikeWav = mime.includes("wav") || /\.wav(?:$|[?#])/i.test(label);
+  if (!looksLikeWav) return undefined;
+  if (!hasAscii(bytes, 0, "RIFF") || !hasAscii(bytes, 8, "WAVE")) return undefined;
+  return source.bytes.slice(0);
+}
+
+function hasAscii(bytes: Uint8Array, offset: number, text: string): boolean {
+  for (let index = 0; index < text.length; index += 1) {
+    if (bytes[offset + index] !== text.charCodeAt(index)) return false;
+  }
+  return true;
 }
 
 function stringInput(value: unknown, label: string): string {
