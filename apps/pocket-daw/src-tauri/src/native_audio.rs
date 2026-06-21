@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 type NativeAudioState = Mutex<NativeAudioRuntime>;
 const CHORDSMITH_SIDECHAIN_ATTACK_SECONDS: f64 = 0.012;
@@ -263,6 +264,14 @@ pub struct NativeAudioStatus {
     asset_region_count: usize,
     #[serde(rename = "proceduralEventCount")]
     procedural_event_count: usize,
+    #[serde(rename = "callbackCount")]
+    callback_count: u64,
+    #[serde(rename = "lastCallbackMicros")]
+    last_callback_micros: u64,
+    #[serde(rename = "maxCallbackMicros")]
+    max_callback_micros: u64,
+    #[serde(rename = "slowCallbackCount")]
+    slow_callback_count: u64,
 }
 
 #[derive(Serialize)]
@@ -289,6 +298,8 @@ struct PlaybackShared {
     assets: HashMap<String, DecodedAudioAsset>,
     regions: Vec<NativeAudioRegion>,
     tracks: HashMap<String, NativeTrackControl>,
+    track_order: Vec<String>,
+    track_indices: HashMap<String, usize>,
     fx: NativeFxRuntime,
     loop_region: Option<NativeLoopPayload>,
     metronome: Option<NativeMetronomePayload>,
@@ -300,6 +311,11 @@ struct PlaybackShared {
     playing: bool,
     rendered_frame_count: u64,
     scan_start_index: usize,
+    region_scan_start_index: usize,
+    callback_count: u64,
+    last_callback_micros: u64,
+    max_callback_micros: u64,
+    slow_callback_count: u64,
     generation: u64,
 }
 
@@ -464,8 +480,7 @@ pub fn native_audio_resume(
         if let Ok(mut playback) = shared.lock() {
             playback.playing = true;
             apply_loop_wrap(&mut playback);
-            playback.scan_start_index =
-                find_scan_start(&playback.events, playback.position_seconds);
+            reset_scan_starts(&mut playback);
         }
     }
     Ok(runtime.status())
@@ -483,8 +498,7 @@ pub fn native_audio_seek(
         if let Ok(mut playback) = shared.lock() {
             playback.position_seconds = seconds.max(0.0);
             apply_loop_wrap(&mut playback);
-            playback.scan_start_index =
-                find_scan_start(&playback.events, playback.position_seconds);
+            reset_scan_starts(&mut playback);
         }
     }
     Ok(runtime.status())
@@ -562,8 +576,7 @@ impl NativeAudioRuntime {
         )?));
         if let Ok(mut playback) = shared.lock() {
             apply_loop_wrap(&mut playback);
-            playback.scan_start_index =
-                find_scan_start(&playback.events, playback.position_seconds);
+            reset_scan_starts(&mut playback);
         }
 
         let err_shared = Arc::clone(&shared);
@@ -649,6 +662,16 @@ impl NativeAudioRuntime {
             let decoded = self.decode_or_reuse_asset(&asset)?;
             assets.insert(asset.id.clone(), decoded);
         }
+        let track_order = payload
+            .tracks
+            .iter()
+            .map(|track| track.id.clone())
+            .collect::<Vec<_>>();
+        let track_indices = track_order
+            .iter()
+            .enumerate()
+            .map(|(index, id)| (id.clone(), index))
+            .collect::<HashMap<_, _>>();
         let tracks = payload
             .tracks
             .into_iter()
@@ -662,6 +685,8 @@ impl NativeAudioRuntime {
             regions,
             has_solo: tracks.values().any(|track| track.solo),
             tracks,
+            track_order,
+            track_indices,
             fx,
             loop_region: sanitize_loop_region(payload.loop_region),
             metronome: sanitize_metronome(payload.metronome),
@@ -672,10 +697,15 @@ impl NativeAudioRuntime {
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
+            region_scan_start_index: 0,
+            callback_count: 0,
+            last_callback_micros: 0,
+            max_callback_micros: 0,
+            slow_callback_count: 0,
             generation,
         };
         apply_loop_wrap(&mut playback);
-        playback.scan_start_index = find_scan_start(&playback.events, playback.position_seconds);
+        reset_scan_starts(&mut playback);
         Ok(playback)
     }
 
@@ -730,6 +760,10 @@ impl NativeAudioRuntime {
                     asset_count: playback.assets.len(),
                     asset_region_count: playback.regions.len(),
                     procedural_event_count: playback.events.len(),
+                    callback_count: playback.callback_count,
+                    last_callback_micros: playback.last_callback_micros,
+                    max_callback_micros: playback.max_callback_micros,
+                    slow_callback_count: playback.slow_callback_count,
                 };
             }
         }
@@ -751,6 +785,10 @@ impl NativeAudioRuntime {
             asset_count: 0,
             asset_region_count: 0,
             procedural_event_count: 0,
+            callback_count: 0,
+            last_callback_micros: 0,
+            max_callback_micros: 0,
+            slow_callback_count: 0,
         }
     }
 }
@@ -775,25 +813,34 @@ impl NativeAudioStatus {
             asset_count: 0,
             asset_region_count: 0,
             procedural_event_count: 0,
+            callback_count: 0,
+            last_callback_micros: 0,
+            max_callback_micros: 0,
+            slow_callback_count: 0,
         }
     }
 }
 
 fn write_output(data: &mut [f32], shared: &Arc<Mutex<PlaybackShared>>) {
+    let started = Instant::now();
     if let Ok(mut playback) = shared.lock() {
         let channels = playback.channels as usize;
+        let frame_count = frame_count_for_output(data.len(), channels);
         for frame in data.chunks_mut(channels) {
             let (left, right) = render_next_frame(&mut playback);
             write_frame(frame, left, right);
         }
+        record_callback_timing(&mut playback, started, frame_count);
     } else {
         data.fill(0.0);
     }
 }
 
 fn write_output_i16(data: &mut [i16], shared: &Arc<Mutex<PlaybackShared>>) {
+    let started = Instant::now();
     if let Ok(mut playback) = shared.lock() {
         let channels = playback.channels as usize;
+        let frame_count = frame_count_for_output(data.len(), channels);
         for frame in data.chunks_mut(channels) {
             let (left, right) = render_next_frame(&mut playback);
             if let Some(sample) = frame.get_mut(0) {
@@ -806,14 +853,17 @@ fn write_output_i16(data: &mut [i16], shared: &Arc<Mutex<PlaybackShared>>) {
                 *sample = (((left + right) * 0.5).clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
             }
         }
+        record_callback_timing(&mut playback, started, frame_count);
     } else {
         data.fill(0);
     }
 }
 
 fn write_output_u16(data: &mut [u16], shared: &Arc<Mutex<PlaybackShared>>) {
+    let started = Instant::now();
     if let Ok(mut playback) = shared.lock() {
         let channels = playback.channels as usize;
+        let frame_count = frame_count_for_output(data.len(), channels);
         for frame in data.chunks_mut(channels) {
             let (left, right) = render_next_frame(&mut playback);
             if let Some(sample) = frame.get_mut(0) {
@@ -826,9 +876,32 @@ fn write_output_u16(data: &mut [u16], shared: &Arc<Mutex<PlaybackShared>>) {
                 *sample = f32_to_u16((left + right) * 0.5);
             }
         }
+        record_callback_timing(&mut playback, started, frame_count);
     } else {
         data.fill(u16::MAX / 2);
     }
+}
+
+fn frame_count_for_output(sample_count: usize, channels: usize) -> usize {
+    sample_count / channels.max(1)
+}
+
+fn record_callback_timing(playback: &mut PlaybackShared, started: Instant, frame_count: usize) {
+    let elapsed_micros = started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64;
+    playback.callback_count = playback.callback_count.saturating_add(1);
+    playback.last_callback_micros = elapsed_micros;
+    playback.max_callback_micros = playback.max_callback_micros.max(elapsed_micros);
+    let deadline_micros = callback_deadline_micros(playback.sample_rate, frame_count);
+    if deadline_micros > 0 && elapsed_micros > deadline_micros {
+        playback.slow_callback_count = playback.slow_callback_count.saturating_add(1);
+    }
+}
+
+fn callback_deadline_micros(sample_rate: u32, frame_count: usize) -> u64 {
+    if sample_rate == 0 || frame_count == 0 {
+        return 0;
+    }
+    ((frame_count as u128 * 1_000_000) / u128::from(sample_rate)).min(u128::from(u64::MAX)) as u64
 }
 
 fn write_frame(frame: &mut [f32], left: f32, right: f32) {
@@ -1048,48 +1121,62 @@ fn encode_float32_wav(sample_rate: u32, channels: u16, samples: &[f32]) -> Resul
     Ok(bytes)
 }
 
-fn add_track_mix(
-    track_mixes: &mut HashMap<String, (f32, f32)>,
-    track_id: &str,
+struct TrackMix {
+    track_index: usize,
     left: f32,
     right: f32,
-) {
-    let entry = track_mixes
-        .entry(track_id.to_string())
-        .or_insert((0.0, 0.0));
-    entry.0 += left;
-    entry.1 += right;
+}
+
+fn add_track_mix(track_mixes: &mut Vec<TrackMix>, track_index: usize, left: f32, right: f32) {
+    let Some(entry) = track_mixes
+        .iter_mut()
+        .find(|mix| mix.track_index == track_index)
+    else {
+        track_mixes.push(TrackMix {
+            track_index,
+            left,
+            right,
+        });
+        return;
+    };
+    entry.left += left;
+    entry.right += right;
 }
 
 #[derive(Default)]
 struct TrackSourceBudget {
-    counts: Vec<(String, usize)>,
+    counts: Vec<(usize, usize)>,
 }
 
 impl TrackSourceBudget {
-    fn allows(&mut self, track_id: &str) -> bool {
-        if let Some((_id, count)) = self.counts.iter_mut().find(|(id, _count)| id == track_id) {
+    fn allows(&mut self, track_index: usize) -> bool {
+        if let Some((_id, count)) = self
+            .counts
+            .iter_mut()
+            .find(|(id, _count)| *id == track_index)
+        {
             *count += 1;
             return *count <= NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK;
         }
-        self.counts.push((track_id.to_string(), 1));
+        self.counts.push((track_index, 1));
         true
     }
 }
 
-struct GeneratedEventSource<'a> {
-    track_id: &'a str,
+struct GeneratedEventSource {
+    track_index: usize,
     left: f32,
     right: f32,
     track_gain: f32,
 }
 
-fn render_generated_event_source<'a>(
+fn render_generated_event_source(
     playback: &mut PlaybackShared,
-    event: &'a NativeRenderedEvent,
+    event: &NativeRenderedEvent,
     t: f64,
     active_counts: &mut TrackSourceBudget,
-) -> Option<GeneratedEventSource<'a>> {
+) -> Option<GeneratedEventSource> {
+    let track_index = playback.track_indices.get(&event.track_id).copied()?;
     let track = playback.tracks.get(&event.track_id).cloned()?;
     let track_gain_value = track_gain(&track, playback.has_solo) as f32;
     if track_gain_value <= 0.0001 {
@@ -1099,7 +1186,7 @@ fn render_generated_event_source<'a>(
     if sample.abs() <= 0.000001 {
         return None;
     }
-    if !active_counts.allows(&event.track_id) {
+    if !active_counts.allows(track_index) {
         return None;
     }
 
@@ -1113,7 +1200,7 @@ fn render_generated_event_source<'a>(
         }
     }
     Some(GeneratedEventSource {
-        track_id: event.track_id.as_str(),
+        track_index,
         left: lane_left,
         right: lane_right,
         track_gain: track_gain_value,
@@ -1132,17 +1219,31 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     {
         playback.scan_start_index += 1;
     }
+    while playback.region_scan_start_index < playback.regions.len() {
+        let region = &playback.regions[playback.region_scan_start_index];
+        if region.start_time + region.duration >= t {
+            break;
+        }
+        playback.region_scan_start_index += 1;
+    }
 
-    let mut track_mixes: HashMap<String, (f32, f32)> = HashMap::new();
+    let mut track_mixes: Vec<TrackMix> = Vec::new();
     let mut active_counts_by_track = TrackSourceBudget::default();
 
-    for region in playback.regions.clone() {
+    for region in playback
+        .regions
+        .iter()
+        .skip(playback.region_scan_start_index)
+    {
         if region.start_time > t {
             break;
         }
         if region.start_time + region.duration < t {
             continue;
         }
+        let Some(track_index) = playback.track_indices.get(&region.track_id).copied() else {
+            continue;
+        };
         let Some(track) = playback.tracks.get(&region.track_id).cloned() else {
             continue;
         };
@@ -1156,14 +1257,14 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         let Some((asset_left, asset_right)) = render_region_sample(&region, asset, t) else {
             continue;
         };
-        if !active_counts_by_track.allows(&region.track_id) {
+        if !active_counts_by_track.allows(track_index) {
             continue;
         }
         let (pan_left, pan_right) = source_pan_gains(region.pan as f32);
         let gain = (track_gain * region.gain.clamp(0.0, 1.4)) as f32;
         add_track_mix(
             &mut track_mixes,
-            &region.track_id,
+            track_index,
             asset_left * gain * pan_left,
             asset_right * gain * pan_right,
         );
@@ -1184,7 +1285,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         {
             add_track_mix(
                 &mut track_mixes,
-                source.track_id,
+                source.track_index,
                 source.left * source.track_gain,
                 source.right * source.track_gain,
             );
@@ -1193,27 +1294,32 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
 
     let mut left = 0.0_f32;
     let mut right = 0.0_f32;
-    let mut return_mixes: HashMap<String, (f32, f32)> = HashMap::new();
-    for (track_id, (mut track_left, mut track_right)) in track_mixes {
+    let mut return_mixes: Vec<TrackMix> = Vec::new();
+    for mix in track_mixes {
+        let Some(track_id) = playback.track_order.get(mix.track_index) else {
+            continue;
+        };
+        let mut track_left = mix.left;
+        let mut track_right = mix.right;
         let is_return = playback
             .tracks
-            .get(&track_id)
+            .get(track_id)
             .map(|track| track.is_return)
             .unwrap_or(false);
         if is_return {
-            add_track_mix(&mut return_mixes, &track_id, track_left, track_right);
+            add_track_mix(&mut return_mixes, mix.track_index, track_left, track_right);
             continue;
         }
-        (track_left, track_right) = apply_bus_pan(track_left, track_right, &track_id, playback);
-        if let Some(chain) = playback.fx.track_chains.get_mut(&track_id) {
+        (track_left, track_right) = apply_bus_pan(track_left, track_right, track_id, playback);
+        if let Some(chain) = playback.fx.track_chains.get_mut(track_id) {
             (track_left, track_right) = chain.process(track_left, track_right);
         }
-        let sidechain_gain = sidechain_gain(playback, &track_id, t);
+        let sidechain_gain = sidechain_gain(playback, track_id, t);
         track_left *= sidechain_gain;
         track_right *= sidechain_gain;
         route_track_sends(
             playback,
-            &track_id,
+            track_id,
             track_left,
             track_right,
             &mut return_mixes,
@@ -1221,12 +1327,17 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         left += track_left;
         right += track_right;
     }
-    for (track_id, (mut track_left, mut track_right)) in return_mixes {
-        (track_left, track_right) = apply_bus_pan(track_left, track_right, &track_id, playback);
-        if let Some(chain) = playback.fx.track_chains.get_mut(&track_id) {
+    for mix in return_mixes {
+        let Some(track_id) = playback.track_order.get(mix.track_index) else {
+            continue;
+        };
+        let mut track_left = mix.left;
+        let mut track_right = mix.right;
+        (track_left, track_right) = apply_bus_pan(track_left, track_right, track_id, playback);
+        if let Some(chain) = playback.fx.track_chains.get_mut(track_id) {
             (track_left, track_right) = chain.process(track_left, track_right);
         }
-        let sidechain_gain = sidechain_gain(playback, &track_id, t);
+        let sidechain_gain = sidechain_gain(playback, track_id, t);
         track_left *= sidechain_gain;
         track_right *= sidechain_gain;
         left += track_left;
@@ -1365,7 +1476,13 @@ fn apply_loop_wrap(playback: &mut PlaybackShared) {
     }
     let overflow = (playback.position_seconds - loop_region.end_seconds).rem_euclid(length);
     playback.position_seconds = loop_region.start_seconds + overflow;
+    reset_scan_starts(playback);
+}
+
+fn reset_scan_starts(playback: &mut PlaybackShared) {
     playback.scan_start_index = find_scan_start(&playback.events, playback.position_seconds);
+    playback.region_scan_start_index =
+        find_region_scan_start(&playback.regions, playback.position_seconds);
 }
 
 fn route_track_sends(
@@ -1373,7 +1490,7 @@ fn route_track_sends(
     track_id: &str,
     left: f32,
     right: f32,
-    return_mixes: &mut HashMap<String, (f32, f32)>,
+    return_mixes: &mut Vec<TrackMix>,
 ) {
     let Some(track) = playback.tracks.get(track_id) else {
         return;
@@ -1396,13 +1513,12 @@ fn route_track_sends(
         if level <= 0.0001 {
             continue;
         }
+        let Some(return_track_index) = playback.track_indices.get(&send.return_track_id).copied()
+        else {
+            continue;
+        };
         let gain = level * return_gain as f32;
-        add_track_mix(
-            return_mixes,
-            &send.return_track_id,
-            left * gain,
-            right * gain,
-        );
+        add_track_mix(return_mixes, return_track_index, left * gain, right * gain);
     }
 }
 
@@ -3062,6 +3178,13 @@ fn find_scan_start(events: &[NativeRenderedEvent], seconds: f64) -> usize {
         .unwrap_or(events.len())
 }
 
+fn find_region_scan_start(regions: &[NativeAudioRegion], seconds: f64) -> usize {
+    regions
+        .iter()
+        .position(|region| region.start_time + region.duration >= seconds)
+        .unwrap_or(regions.len())
+}
+
 fn track_gain(track: &NativeTrackControl, has_solo: bool) -> f64 {
     if track.mute || (has_solo && !track.solo) {
         return 0.0;
@@ -3352,6 +3475,45 @@ mod tests {
     }
 
     #[test]
+    fn cached_region_cursor_skips_expired_regions_and_resets_on_loop_wrap() {
+        let mut playback = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+        playback.regions = vec![
+            test_region("expired", "asset", "bass", 0.0, 0.0, 0.25, 1.0, 0.0),
+            test_region("active", "asset", "bass", 0.5, 0.0, 0.5, 1.0, 0.0),
+            test_region("future", "asset", "bass", 1.5, 0.0, 0.25, 1.0, 0.0),
+        ];
+        playback.position_seconds = 0.75;
+
+        let _ = render_next_frame(&mut playback);
+
+        assert_eq!(playback.region_scan_start_index, 1);
+
+        playback.loop_region = Some(NativeLoopPayload {
+            enabled: true,
+            start_seconds: 0.0,
+            end_seconds: 1.0,
+        });
+        playback.position_seconds = 1.01;
+        apply_loop_wrap(&mut playback);
+
+        assert_eq!(playback.region_scan_start_index, 0);
+    }
+
+    #[test]
+    fn output_callback_records_timing_counters() {
+        let playback = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+        let shared = Arc::new(Mutex::new(playback));
+        let mut output = vec![0.0_f32; 16];
+
+        write_output(&mut output, &shared);
+
+        let playback = shared.lock().expect("playback lock");
+        assert_eq!(playback.callback_count, 1);
+        assert!(playback.last_callback_micros <= playback.max_callback_micros);
+        assert_eq!(playback.slow_callback_count, 0);
+    }
+
+    #[test]
     fn mute_and_solo_rules_silence_cached_regions() {
         let mut muted = playback_with_region(test_track("bass", 1.0, 0.0, true, false));
         assert_eq!(render_next_frame(&mut muted), (0.0, 0.0));
@@ -3367,10 +3529,7 @@ mod tests {
         let (full_left, full_right) = render_next_frame(&mut full_volume);
 
         let mut quiet = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
-        quiet.tracks.insert(
-            "master".to_string(),
-            test_track("master", 0.25, 0.0, false, false),
-        );
+        insert_playback_track(&mut quiet, test_track("master", 0.25, 0.0, false, false));
 
         let (quiet_left, quiet_right) = render_next_frame(&mut quiet);
 
@@ -3393,7 +3552,7 @@ mod tests {
         let mut sent = playback_with_region(bass);
         let mut fx_return = test_track("fx-return", 1.0, 0.0, false, false);
         fx_return.is_return = true;
-        sent.tracks.insert("fx-return".to_string(), fx_return);
+        insert_playback_track(&mut sent, fx_return);
         sent.fx.track_chains.insert(
             "fx-return".to_string(),
             NativeFxChainState {
@@ -3838,10 +3997,7 @@ mod tests {
         let mut event = test_generated_event("offline_bass", "bass", 0.0, 0.05, 1.0);
         event.bass_tone = Some("warm_sub".to_string());
         let mut playback = playback_with_events(vec![event]);
-        playback.tracks.insert(
-            "bass".to_string(),
-            test_track("bass", 1.0, 0.0, false, false),
-        );
+        insert_playback_track(&mut playback, test_track("bass", 1.0, 0.0, false, false));
         playback.sample_rate = 8_000;
 
         let rendered = render_playback_to_wav(&mut playback, 0.1, NativeAudioRenderMode::Mix)
@@ -3868,16 +4024,18 @@ mod tests {
         let track = test_track("bass", 0.62, 0.0, false, false);
 
         let mut procedural = playback_with_events(vec![event.clone()]);
-        procedural.tracks.insert("bass".to_string(), track.clone());
+        insert_playback_track(&mut procedural, track.clone());
         procedural.sample_rate = 8_000;
         let procedural_frames = render_frames(&mut procedural, 80);
 
         let mut stem_source = playback_with_events(vec![event]);
-        stem_source.tracks.insert("bass".to_string(), track.clone());
+        insert_playback_track(&mut stem_source, track.clone());
         stem_source.sample_rate = 8_000;
         let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem)
             .expect("cache stem render should work");
         let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
+        let tracks = HashMap::from([("bass".to_string(), track)]);
+        let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
             project_title: Some("Cached".to_string()),
             events: Vec::new(),
@@ -3885,7 +4043,9 @@ mod tests {
             regions: vec![test_region(
                 "region", "stem", "bass", 0.0, 0.0, 0.1, 1.0, 0.0,
             )],
-            tracks: HashMap::from([("bass".to_string(), track)]),
+            tracks,
+            track_order,
+            track_indices,
             has_solo: false,
             position_seconds: 0.0,
             sample_rate: 8_000,
@@ -3893,6 +4053,11 @@ mod tests {
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
+            region_scan_start_index: 0,
+            callback_count: 0,
+            last_callback_micros: 0,
+            max_callback_micros: 0,
+            slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
             loop_region: None,
@@ -3918,20 +4083,18 @@ mod tests {
         let track = test_track("melody", 0.72, 0.0, false, false);
 
         let mut procedural = playback_with_events(vec![event.clone()]);
-        procedural
-            .tracks
-            .insert("melody".to_string(), track.clone());
+        insert_playback_track(&mut procedural, track.clone());
         procedural.sample_rate = 8_000;
         let procedural_frames = render_frames(&mut procedural, 80);
 
         let mut stem_source = playback_with_events(vec![event]);
-        stem_source
-            .tracks
-            .insert("melody".to_string(), track.clone());
+        insert_playback_track(&mut stem_source, track.clone());
         stem_source.sample_rate = 8_000;
         let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem)
             .expect("cache stem render should work");
         let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
+        let tracks = HashMap::from([("melody".to_string(), track)]);
+        let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
             project_title: Some("Cached pan".to_string()),
             events: Vec::new(),
@@ -3939,7 +4102,9 @@ mod tests {
             regions: vec![test_region(
                 "region", "stem", "melody", 0.0, 0.0, 0.1, 1.0, 0.0,
             )],
-            tracks: HashMap::from([("melody".to_string(), track)]),
+            tracks,
+            track_order,
+            track_indices,
             has_solo: false,
             position_seconds: 0.0,
             sample_rate: 8_000,
@@ -3947,6 +4112,11 @@ mod tests {
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
+            region_scan_start_index: 0,
+            callback_count: 0,
+            last_callback_micros: 0,
+            max_callback_micros: 0,
+            slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
             loop_region: None,
@@ -3973,20 +4143,18 @@ mod tests {
         let track = test_track("melody", 0.72, 0.35, false, false);
 
         let mut procedural = playback_with_events(vec![event.clone()]);
-        procedural
-            .tracks
-            .insert("melody".to_string(), track.clone());
+        insert_playback_track(&mut procedural, track.clone());
         procedural.sample_rate = 8_000;
         let procedural_frames = render_frames(&mut procedural, 80);
 
         let mut stem_source = playback_with_events(vec![event]);
-        stem_source
-            .tracks
-            .insert("melody".to_string(), track.clone());
+        insert_playback_track(&mut stem_source, track.clone());
         stem_source.sample_rate = 8_000;
         let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem)
             .expect("cache stem render should work");
         let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
+        let tracks = HashMap::from([("melody".to_string(), track)]);
+        let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
             project_title: Some("Cached track pan".to_string()),
             events: Vec::new(),
@@ -3994,7 +4162,9 @@ mod tests {
             regions: vec![test_region(
                 "region", "stem", "melody", 0.0, 0.0, 0.1, 1.0, 0.0,
             )],
-            tracks: HashMap::from([("melody".to_string(), track)]),
+            tracks,
+            track_order,
+            track_indices,
             has_solo: false,
             position_seconds: 0.0,
             sample_rate: 8_000,
@@ -4002,6 +4172,11 @@ mod tests {
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
+            region_scan_start_index: 0,
+            callback_count: 0,
+            last_callback_micros: 0,
+            max_callback_micros: 0,
+            slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
             loop_region: None,
@@ -4055,6 +4230,17 @@ mod tests {
         let mut trigger_marker = kick;
         trigger_marker.id = "kick_cached_sidechain_trigger".to_string();
         trigger_marker.velocity = 0.0;
+        let tracks = HashMap::from([
+            (
+                "drums".to_string(),
+                test_track("drums", 1.0, 0.0, false, false),
+            ),
+            (
+                "chords".to_string(),
+                test_track("chords", 1.0, 0.0, false, false),
+            ),
+        ]);
+        let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
             project_title: Some("Cached sidechain".to_string()),
             events: vec![trigger_marker],
@@ -4075,16 +4261,9 @@ mod tests {
                     0.0,
                 ),
             ],
-            tracks: HashMap::from([
-                (
-                    "drums".to_string(),
-                    test_track("drums", 1.0, 0.0, false, false),
-                ),
-                (
-                    "chords".to_string(),
-                    test_track("chords", 1.0, 0.0, false, false),
-                ),
-            ]),
+            tracks,
+            track_order,
+            track_indices,
             has_solo: false,
             position_seconds: 0.0,
             sample_rate: 8_000,
@@ -4092,6 +4271,11 @@ mod tests {
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
+            region_scan_start_index: 0,
+            callback_count: 0,
+            last_callback_micros: 0,
+            max_callback_micros: 0,
+            slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
             loop_region: None,
@@ -4123,27 +4307,25 @@ mod tests {
 
         let mut procedural = playback_with_events(vec![event.clone()]);
         procedural.sample_rate = 8_000;
-        procedural
-            .tracks
-            .insert("bass".to_string(), bass_track.clone());
-        procedural
-            .tracks
-            .insert("fx-return".to_string(), return_track.clone());
-        procedural
-            .tracks
-            .insert("master".to_string(), master_track.clone());
+        insert_playback_track(&mut procedural, bass_track.clone());
+        insert_playback_track(&mut procedural, return_track.clone());
+        insert_playback_track(&mut procedural, master_track.clone());
         procedural.fx = test_live_mixer_fx_runtime();
         let procedural_frames = render_frames(&mut procedural, 80);
 
         let mut stem_source = playback_with_events(vec![event]);
         stem_source.sample_rate = 8_000;
-        stem_source
-            .tracks
-            .insert("bass".to_string(), bass_track.clone());
+        insert_playback_track(&mut stem_source, bass_track.clone());
         let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem)
             .expect("cache stem render should work");
         let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
 
+        let tracks = HashMap::from([
+            ("bass".to_string(), bass_track),
+            ("fx-return".to_string(), return_track),
+            ("master".to_string(), master_track),
+        ]);
+        let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
             project_title: Some("Cached live mixer".to_string()),
             events: Vec::new(),
@@ -4151,11 +4333,9 @@ mod tests {
             regions: vec![test_region(
                 "region", "stem", "bass", 0.0, 0.0, 0.1, 1.0, 0.0,
             )],
-            tracks: HashMap::from([
-                ("bass".to_string(), bass_track),
-                ("fx-return".to_string(), return_track),
-                ("master".to_string(), master_track),
-            ]),
+            tracks,
+            track_order,
+            track_indices,
             has_solo: false,
             position_seconds: 0.0,
             sample_rate: 8_000,
@@ -4163,6 +4343,11 @@ mod tests {
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
+            region_scan_start_index: 0,
+            callback_count: 0,
+            last_callback_micros: 0,
+            max_callback_micros: 0,
+            slow_callback_count: 0,
             generation: 1,
             fx: test_live_mixer_fx_runtime(),
             loop_region: None,
@@ -4182,13 +4367,13 @@ mod tests {
     fn native_source_budget_counts_tracks_independently() {
         let mut budget = TrackSourceBudget::default();
         for _ in 0..NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK {
-            assert!(budget.allows("bass"));
+            assert!(budget.allows(0));
         }
-        assert!(!budget.allows("bass"));
+        assert!(!budget.allows(0));
         for _ in 0..NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK {
-            assert!(budget.allows("melody"));
+            assert!(budget.allows(1));
         }
-        assert!(!budget.allows("melody"));
+        assert!(!budget.allows(1));
     }
 
     #[test]
@@ -4213,12 +4398,8 @@ mod tests {
         let melody_track = test_track("melody", 0.35, 0.0, false, false);
 
         let mut procedural = playback_with_events(events.clone());
-        procedural
-            .tracks
-            .insert("bass".to_string(), bass_track.clone());
-        procedural
-            .tracks
-            .insert("melody".to_string(), melody_track.clone());
+        insert_playback_track(&mut procedural, bass_track.clone());
+        insert_playback_track(&mut procedural, melody_track.clone());
         procedural.sample_rate = 8_000;
         let procedural_frames = render_frames(&mut procedural, 160);
 
@@ -4229,9 +4410,7 @@ mod tests {
                 .cloned()
                 .collect(),
         );
-        bass_stem_source
-            .tracks
-            .insert("bass".to_string(), bass_track.clone());
+        insert_playback_track(&mut bass_stem_source, bass_track.clone());
         bass_stem_source.sample_rate = 8_000;
         let bass_stem = render_playback_to_wav(
             &mut bass_stem_source,
@@ -4248,9 +4427,7 @@ mod tests {
                 .cloned()
                 .collect(),
         );
-        melody_stem_source
-            .tracks
-            .insert("melody".to_string(), melody_track.clone());
+        insert_playback_track(&mut melody_stem_source, melody_track.clone());
         melody_stem_source.sample_rate = 8_000;
         let melody_stem = render_playback_to_wav(
             &mut melody_stem_source,
@@ -4261,6 +4438,11 @@ mod tests {
         let melody_decoded =
             decode_pcm16_wav(&melody_stem.bytes).expect("melody stem should decode");
 
+        let tracks = HashMap::from([
+            ("bass".to_string(), bass_track),
+            ("melody".to_string(), melody_track),
+        ]);
+        let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
             project_title: Some("Cached dense stems".to_string()),
             events: Vec::new(),
@@ -4281,10 +4463,9 @@ mod tests {
                     0.0,
                 ),
             ],
-            tracks: HashMap::from([
-                ("bass".to_string(), bass_track),
-                ("melody".to_string(), melody_track),
-            ]),
+            tracks,
+            track_order,
+            track_indices,
             has_solo: false,
             position_seconds: 0.0,
             sample_rate: 8_000,
@@ -4292,6 +4473,11 @@ mod tests {
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
+            region_scan_start_index: 0,
+            callback_count: 0,
+            last_callback_micros: 0,
+            max_callback_micros: 0,
+            slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
             loop_region: None,
@@ -4323,6 +4509,8 @@ mod tests {
             samples: vec![1.0, 1.0, 1.0, 1.0],
             frame_count: 2,
         };
+        let tracks = HashMap::from([("bass".to_string(), track)]);
+        let (track_order, track_indices) = track_index_state(&tracks);
         PlaybackShared {
             project_title: Some("Test".to_string()),
             events: Vec::new(),
@@ -4330,7 +4518,9 @@ mod tests {
             regions: vec![test_region(
                 "region", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0,
             )],
-            tracks: HashMap::from([("bass".to_string(), track)]),
+            tracks,
+            track_order,
+            track_indices,
             has_solo: false,
             position_seconds: 0.0,
             sample_rate: 4,
@@ -4338,6 +4528,11 @@ mod tests {
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
+            region_scan_start_index: 0,
+            callback_count: 0,
+            last_callback_micros: 0,
+            max_callback_micros: 0,
+            slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
             loop_region: None,
@@ -4347,21 +4542,25 @@ mod tests {
     }
 
     fn playback_with_events(events: Vec<NativeRenderedEvent>) -> PlaybackShared {
+        let tracks = HashMap::from([
+            (
+                "drums".to_string(),
+                test_track("drums", 1.0, 0.0, false, false),
+            ),
+            (
+                "chords".to_string(),
+                test_track("chords", 1.0, 0.0, false, false),
+            ),
+        ]);
+        let (track_order, track_indices) = track_index_state(&tracks);
         PlaybackShared {
             project_title: Some("Test".to_string()),
             events,
             assets: HashMap::new(),
             regions: Vec::new(),
-            tracks: HashMap::from([
-                (
-                    "drums".to_string(),
-                    test_track("drums", 1.0, 0.0, false, false),
-                ),
-                (
-                    "chords".to_string(),
-                    test_track("chords", 1.0, 0.0, false, false),
-                ),
-            ]),
+            tracks,
+            track_order,
+            track_indices,
             has_solo: false,
             position_seconds: 0.0,
             sample_rate: 1000,
@@ -4369,12 +4568,40 @@ mod tests {
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
+            region_scan_start_index: 0,
+            callback_count: 0,
+            last_callback_micros: 0,
+            max_callback_micros: 0,
+            slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
             loop_region: None,
             metronome: None,
             sidechain: None,
         }
+    }
+
+    fn track_index_state(
+        tracks: &HashMap<String, NativeTrackControl>,
+    ) -> (Vec<String>, HashMap<String, usize>) {
+        let mut track_order = tracks.keys().cloned().collect::<Vec<_>>();
+        track_order.sort();
+        let track_indices = track_order
+            .iter()
+            .enumerate()
+            .map(|(index, id)| (id.clone(), index))
+            .collect::<HashMap<_, _>>();
+        (track_order, track_indices)
+    }
+
+    fn insert_playback_track(playback: &mut PlaybackShared, track: NativeTrackControl) {
+        let id = track.id.clone();
+        if !playback.track_indices.contains_key(&id) {
+            let index = playback.track_order.len();
+            playback.track_order.push(id.clone());
+            playback.track_indices.insert(id.clone(), index);
+        }
+        playback.tracks.insert(id, track);
     }
 
     fn test_track(id: &str, volume: f64, pan: f64, mute: bool, solo: bool) -> NativeTrackControl {

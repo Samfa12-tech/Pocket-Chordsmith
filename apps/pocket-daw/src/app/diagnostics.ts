@@ -41,6 +41,10 @@ export interface TesterDiagnosticsPayload {
     playbackBackend: string;
     nativeStatus: string | null;
     nativeLastError: string | null;
+    nativeCallbackCount: number | null;
+    nativeLastCallbackMicros: number | null;
+    nativeMaxCallbackMicros: number | null;
+    nativeSlowCallbackCount: number | null;
     deviceHost: string;
     deviceCount: number;
     defaultInputId: string | null;
@@ -150,6 +154,10 @@ export function buildTesterDiagnosticsPayload(
       playbackBackend: String(audioDiagnostics.playbackBackend),
       nativeStatus: audioDiagnostics.nativeAudio.status ? String(audioDiagnostics.nativeAudio.status) : null,
       nativeLastError: audioDiagnostics.nativeAudio.lastError,
+      nativeCallbackCount: audioDiagnostics.nativeAudio.status?.callbackCount ?? null,
+      nativeLastCallbackMicros: audioDiagnostics.nativeAudio.status?.lastCallbackMicros ?? null,
+      nativeMaxCallbackMicros: audioDiagnostics.nativeAudio.status?.maxCallbackMicros ?? null,
+      nativeSlowCallbackCount: audioDiagnostics.nativeAudio.status?.slowCallbackCount ?? null,
       deviceHost: project.audioDeviceSettings.host,
       deviceCount: devices.length,
       defaultInputId: project.audioDeviceSettings.inputDeviceId || null,

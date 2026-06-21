@@ -285,12 +285,14 @@ export class App {
       if (autosave) {
         try {
           const project = loadPocketDawRaw(autosave);
+          const autosaveFile = loadAutosaveFileState() || { path: null, label: `Recovered autosave: ${project.project.title || "Untitled project"}` };
           this.cancelNativeInputPreviewForProjectReset();
           this.state = loadProjectIntoState(this.state, project, {
             status: "Recovered autosaved Pocket DAW project.",
-            currentFile: loadAutosaveFileState() || { path: null, label: `Recovered autosave: ${project.project.title || "Untitled project"}` }
+            currentFile: autosaveFile
           });
           this.engine.setProject(project);
+          if (autosaveFile.path) void this.hydrateNativeCacheFromProject(autosaveFile.path);
         } catch {
           this.state.status = "Editable demo copy loaded. Autosave was present but could not be recovered.";
         }
@@ -302,7 +304,6 @@ export class App {
     void this.openInitialProjectFileLaunch();
     void this.configureAiBridgeFromPreference();
     void this.bindAiBridgeRequests();
-    this.engine.prewarmNativeRenderCache("app-start");
     this.scheduleStartupUpdateCheck();
     void this.syncArmedInputPreview();
   }

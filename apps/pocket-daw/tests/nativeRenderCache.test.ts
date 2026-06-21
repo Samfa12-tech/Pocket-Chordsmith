@@ -77,9 +77,12 @@ import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoPr
 import { cycleBassStep } from "../src/daw/chordsmithEditor";
 import { addDrumLaneFx, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume } from "../src/daw/drumLanes";
 import { addFxSlot, setFxSlotParameter } from "../src/daw/fx";
+import { importMidiFileToProject } from "../src/daw/midiClips";
+import { parseStandardMidiFile } from "../src/daw/midiParser";
 import type { Clip, MediaPoolItem } from "../src/daw/schema";
 import type { NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
 import type { NativeMediaApi } from "../src/native/mediaBridge";
+import { simpleMidiBytes } from "./midiFixtures";
 
 function nativeRenderResult(samples: number[] = [512, -512, 256, -256]) {
   const bytes = Array.from(wavBytes(48_000, 2, samples));
@@ -200,6 +203,33 @@ describe("native render cache", () => {
     expect(cache.cachedAssetByteCount).toBeGreaterThan(44);
     expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalled();
     expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
+  });
+
+  it("builds native cache-stem assets for MIDI clips through the same native event path", async () => {
+    const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(simpleMidiBytes()), "simple.mid");
+    const midiClip = imported.project.timeline.clips.find((clip) => clip.id === imported.clipId)!;
+
+    const cache = await buildNativeRenderCache(imported.project, nativeRenderCacheSignature(imported.project));
+
+    const midiItem = cache.renderCacheItems.find((item) => item.sourceClipId === imported.clipId);
+    const midiRegion = cache.regions.find((region) => region.trackId === imported.trackId && region.assetId === midiItem?.metadata?.assetId);
+    const renderCalls = nativeMediaBridgeMock.renderNativeAudioWav.mock.calls as unknown as Array<[NativeAudioStartPayload, number, string]>;
+    const midiRenderCall = renderCalls.find((call) => call[0].events.some((event) => event.kind === "midi" && event.id.startsWith(`${imported.clipId}_`)));
+
+    expect(midiClip.type).toBe("midi");
+    expect(cache.cachedClipIds.has(imported.clipId)).toBe(true);
+    expect(midiItem?.metadata).toMatchObject({
+      cacheKind: "native-generated-stem",
+      role: "media",
+      trackId: imported.trackId,
+      renderMode: NATIVE_CACHE_STEM_RENDER_MODE
+    });
+    expect(midiRegion).toMatchObject({
+      trackId: imported.trackId,
+      startTime: barsToSeconds(midiClip.startBar - 1, imported.project.project.bpm, imported.project.project.timeSig)
+    });
+    expect(midiRenderCall?.[2]).toBe(NATIVE_CACHE_STEM_RENDER_MODE);
+    expect(midiRenderCall?.[0].events.every((event) => event.kind === "midi")).toBe(true);
   });
 
   it("renders generated stem caches with the native release tail past clip boundaries", async () => {
@@ -943,11 +973,16 @@ describe("native render cache", () => {
     };
 
     const result = await hydrateNativeRenderCacheAssets("C:\\Songs\\Song.pocketdaw", project, api);
+    const generatedClips = project.timeline.clips.filter((item) => item.type === "generated-section" && !item.muted && item.sectionId);
 
     expect(result.errors).toEqual([]);
     expect(result.hydratedCacheItemCount).toBe(built.renderCacheItems.length);
     expect(result.cache?.signature).toBe(signature);
-    expect(result.cache?.regions.length).toBeGreaterThan(0);
+    expect(result.cache?.regions.length).toBe(built.regions.length);
+    expect(result.cache?.cachedClipIds.size).toBe(generatedClips.length);
+    generatedClips.forEach((generatedClip) => {
+      expect(result.cache?.cachedClipIds.has(generatedClip.id)).toBe(true);
+    });
     expect(result.cache?.regions[0].duration).toBeCloseTo(clipDuration + NATIVE_GENERATED_STEM_TAIL_SECONDS, 5);
     expect(result.cache?.cachedClipIds.has(project.timeline.clips[0].id)).toBe(true);
     expect(result.cache?.hydratedCacheReadByteCount).toBeGreaterThan(0);

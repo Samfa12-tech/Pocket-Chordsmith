@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { AudioEngine, calculateLoopSeekSeconds } from "../src/audio/audioEngine";
+import type { RenderedEvent } from "../src/audio/eventRenderer";
 import { createDemoProject } from "../src/demo/demoProject";
 import type { NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
 import { cycleBassStep } from "../src/daw/chordsmithEditor";
+import { importMidiFileToProject } from "../src/daw/midiClips";
+import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { addTrackToProject } from "../src/daw/tracks";
 import { nativeRenderCacheSignature, nativeRuntimeAudioCacheSignature, type NativeRenderCache } from "../src/audio/nativeRenderCache";
 import type { PocketDawProject } from "../src/daw/schema";
+import { simpleMidiBytes } from "./midiFixtures";
 
 describe("audio engine diagnostics", () => {
   it("reports event counts without starting playback", () => {
@@ -237,6 +241,36 @@ describe("audio engine diagnostics", () => {
 
     expect(playback.proceduralFallbackEventCount).toBe(internals.events.length);
     expect(playback.events.some((event) => event.trackId === "bass" && event.velocity > 0)).toBe(true);
+  });
+
+  it("suppresses MIDI events covered by native cache-stem regions", () => {
+    const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(simpleMidiBytes()), "simple.mid");
+    const engine = new AudioEngine(imported.project);
+    const internals = engine as unknown as {
+      events: RenderedEvent[];
+      nativePlaybackEvents(cache: NativeRenderCache | null): { events: RenderedEvent[]; proceduralFallbackEventCount: number };
+    };
+    const midiEvents = internals.events.filter((event) => event.clipId === imported.clipId && event.kind === "midi");
+    const cache: NativeRenderCache = {
+      signature: nativeRenderCacheSignature(imported.project),
+      assets: [],
+      regions: [{ id: "midi_region", assetId: "midi_asset", trackId: imported.trackId, startTime: 0, sourceOffset: 0, duration: 2, gain: 1, pan: 0, fadeIn: 0, fadeOut: 0 }],
+      cachedClipIds: new Set([imported.clipId]),
+      renderCacheItems: [generatedStemCacheItem(imported.clipId, "media", imported.trackId, "midi_asset")],
+      renderCacheHitCount: 1,
+      renderCacheMissCount: 0,
+      proceduralFallbackEventCount: 0,
+      generatedRegionCount: 1,
+      runtimeAudioRegionCount: 0,
+      missingRuntimeAudioRegionCount: 0,
+      cachedAssetByteCount: 128
+    };
+
+    const playback = internals.nativePlaybackEvents(cache);
+
+    expect(midiEvents.length).toBeGreaterThan(0);
+    expect(playback.events.some((event) => event.clipId === imported.clipId)).toBe(false);
+    expect(playback.proceduralFallbackEventCount).toBe(internals.events.length - midiEvents.length);
   });
 
   it("does not treat lofi texture ticks as drum meter hits", () => {

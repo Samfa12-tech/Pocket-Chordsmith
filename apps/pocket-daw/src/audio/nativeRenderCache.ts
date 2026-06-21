@@ -2,6 +2,7 @@ import { cloneProject } from "../daw/dawProject";
 import type { Clip, PocketDawProject, RenderCacheItem, TrackRole } from "../daw/schema";
 import { barsToSeconds } from "../daw/timeline";
 import { DRUM_LANE_DEFS, getDrumLaneMix } from "../daw/drumLanes";
+import { midiDataFromClip } from "../daw/midiClips";
 import { buildNativeAudioStartPayload, type NativeAudioAsset, type NativeAudioRegion } from "../native/audioPlayback";
 import { pruneNativeCacheAssets, readNativeCacheAsset, renderNativeAudioWav, writeNativeCacheAsset, type NativeCachePruneResult, type NativeMediaApi } from "../native/mediaBridge";
 import { POCKET_BASS_TONE_CONFIGS, POCKET_DRUM_KIT_CONFIGS } from "../../../../packages/pocket-audio-core/src/sounds/lofi-registry.js";
@@ -74,6 +75,7 @@ interface HydratedCacheEntry {
   asset: NativeAudioAsset;
   region: NativeAudioRegion | null;
   cacheKind: string;
+  clipId?: string;
   generatedKey?: string;
 }
 
@@ -98,7 +100,7 @@ interface RuntimeAudioAssetSource {
 }
 
 export async function buildNativeRenderCache(project: PocketDawProject, signature = nativeRenderCacheSignature(project), reuseCache: NativeRenderCache | null = null): Promise<NativeRenderCache> {
-  const generatedClips = project.timeline.clips.filter((clip) => clip.type === "generated-section" && !clip.muted && clip.sectionId);
+  const cacheableClips = project.timeline.clips.filter(isNativeStemCacheableClip);
   const assets = new Map<string, NativeAudioAsset>();
   const reusableAssets = nativeGeneratedStemReusableAssets(reuseCache);
   const regions: NativeAudioRegion[] = [];
@@ -113,7 +115,7 @@ export async function buildNativeRenderCache(project: PocketDawProject, signatur
   let lastGeneratedStemRenderError: string | null = null;
   const createdAt = new Date().toISOString();
 
-  for (const item of generatedClips.flatMap((clip) => assetBuildItems(project, clip))) {
+  for (const item of cacheableClips.flatMap((clip) => assetBuildItems(project, clip))) {
     let asset: NativeAudioAsset | null | undefined = assets.get(item.key);
     if (asset) {
       renderCacheHitCount += 1;
@@ -327,13 +329,17 @@ export async function hydrateNativeRenderCacheAssets(
       const bytes = Array.from(new Uint8Array(read.bytes));
       hydratedCacheReadByteCount += read.sizeBytes || bytes.length;
       const asset = nativeAssetFromHydratedItem(project, item, assetId, read.relativePath, bytes, read.sizeBytes);
-      hydrated.push({
-        item,
-        asset,
-        region: nativeRegionFromHydratedItem(project, item, asset),
-        cacheKind,
-        generatedKey: cacheKind === "native-generated-stem" ? generatedStemKey(item) : undefined
-      });
+      if (cacheKind === "native-generated-stem") {
+        hydrated.push(...hydratedGeneratedStemEntries(project, item, asset, assetId, cacheKind));
+      } else {
+        hydrated.push({
+          item,
+          asset,
+          region: nativeRegionFromHydratedItem(project, item, asset),
+          cacheKind,
+          clipId: item.sourceClipId
+        });
+      }
     } catch (error) {
       hydrationFailureCount += 1;
       errors.push(error instanceof Error ? error.message : String(error || "Native cache hydration failed."));
@@ -343,10 +349,10 @@ export async function hydrateNativeRenderCacheAssets(
   const generatedGroups = new Map<string, HydratedCacheEntry[]>();
   const runtimeEntries: HydratedCacheEntry[] = [];
   hydrated.forEach((entry) => {
-    if (entry.cacheKind === "native-generated-stem" && entry.item.sourceClipId) {
-      const group = generatedGroups.get(entry.item.sourceClipId) || [];
+    if (entry.cacheKind === "native-generated-stem" && entry.clipId) {
+      const group = generatedGroups.get(entry.clipId) || [];
       group.push(entry);
-      generatedGroups.set(entry.item.sourceClipId, group);
+      generatedGroups.set(entry.clipId, group);
     } else if (entry.cacheKind === "native-runtime-audio") {
       runtimeEntries.push(entry);
     }
@@ -365,11 +371,19 @@ export async function hydrateNativeRenderCacheAssets(
     acceptedEntries.push(...entries);
   });
 
+  const acceptedAssets = new Map<string, NativeAudioAsset>();
+  const acceptedRenderCacheItems = new Map<string, RenderCacheItem>();
+  acceptedEntries.forEach((entry) => {
+    acceptedAssets.set(entry.asset.id, entry.asset);
+    acceptedRenderCacheItems.set(entry.item.id, entry.item);
+  });
   const regions = acceptedEntries.map((entry) => entry.region).filter((region): region is NativeAudioRegion => !!region);
-  const assets = acceptedEntries.map((entry) => entry.asset);
+  const assets = Array.from(acceptedAssets.values());
+  const renderCacheItems = Array.from(acceptedRenderCacheItems.values());
   const cachedClipIds = new Set<string>();
   acceptedEntries.forEach((entry) => {
-    if (entry.item.sourceClipId) cachedClipIds.add(entry.item.sourceClipId);
+    if (entry.clipId) cachedClipIds.add(entry.clipId);
+    else if (entry.item.sourceClipId) cachedClipIds.add(entry.item.sourceClipId);
   });
 
   const cache: NativeRenderCache | null = assets.length || regions.length
@@ -378,15 +392,15 @@ export async function hydrateNativeRenderCacheAssets(
         assets,
         regions,
         cachedClipIds,
-        renderCacheItems: acceptedEntries.map((entry) => entry.item),
-        renderCacheHitCount: acceptedEntries.length,
+        renderCacheItems,
+        renderCacheHitCount: renderCacheItems.length,
         renderCacheMissCount: 0,
         proceduralFallbackEventCount: 0,
         generatedRegionCount: acceptedEntries.filter((entry) => entry.cacheKind === "native-generated-stem").length,
         runtimeAudioRegionCount: acceptedEntries.filter((entry) => entry.cacheKind === "native-runtime-audio").length,
         missingRuntimeAudioRegionCount: 0,
         cachedAssetByteCount: assets.reduce((total, asset) => total + nativeAssetByteLength(asset), 0),
-        hydratedCacheItemCount: acceptedEntries.length,
+        hydratedCacheItemCount: renderCacheItems.length,
         hydrationFailureCount,
         staleSourceHashCount,
         skippedInvalidPathCount,
@@ -396,7 +410,7 @@ export async function hydrateNativeRenderCacheAssets(
 
   return {
     cache,
-    hydratedCacheItemCount: acceptedEntries.length,
+    hydratedCacheItemCount: renderCacheItems.length,
     hydrationFailureCount,
     staleSourceHashCount,
     skippedInvalidPathCount,
@@ -491,6 +505,14 @@ function expectedNativeCacheSourceHashes(
   const clip = item.sourceClipId ? project.timeline.clips.find((entry) => entry.id === item.sourceClipId) : null;
   const trackId = String(item.metadata?.trackId || clip?.trackId || "");
   if (clip && trackId) hashes.add(nativeGeneratedStemSourceHash(project, clip, trackId));
+  if (!clip || !trackId) {
+    const assetId = String(item.metadata?.assetId || item.id);
+    project.timeline.clips
+      .filter(isNativeStemCacheableClip)
+      .flatMap((candidate) => assetBuildItems(project, candidate))
+      .filter((candidate) => candidate.assetId === assetId)
+      .forEach((candidate) => hashes.add(candidate.sourceHash));
+  }
   hashes.add(generatedSignature);
   return hashes;
 }
@@ -537,6 +559,18 @@ export function nativeRenderCacheSignature(project: PocketDawProject): string {
         muted: clip.muted,
         transforms: clip.transforms
       })),
+    midiClips: project.timeline.clips
+      .filter((clip) => clip.type === "midi")
+      .map((clip) => ({
+        id: clip.id,
+        trackId: clip.trackId,
+        mediaPoolItemId: clip.mediaPoolItemId,
+        startBar: clip.startBar,
+        barLength: clip.barLength,
+        muted: clip.muted,
+        transforms: clip.transforms,
+        metadata: clip.metadata
+      })),
     audioClips: project.timeline.clips
       .filter((clip) => clip.type === "audio")
       .map((clip) => ({
@@ -565,9 +599,10 @@ export function nativeRenderCacheSignature(project: PocketDawProject): string {
       unresolved: item.metadata?.unresolved
     })),
     tracks: project.tracks
-      .filter((track) => STEM_ROLES.includes(track.role))
+      .filter((track) => STEM_ROLES.includes(track.role) || track.trackType === "midi")
       .map((track) => ({
         id: track.id,
+        trackType: track.trackType,
         role: track.role,
         active: track.active
       })),
@@ -638,7 +673,19 @@ function nativeRendererRecipeHash(): string {
   }));
 }
 
+function isNativeStemCacheableClip(clip: Clip): boolean {
+  if (clip.muted) return false;
+  if (clip.type === "generated-section") return !!clip.sectionId;
+  if (clip.type === "midi") return midiDataFromClip(clip).notes.length > 0;
+  return false;
+}
+
 function assetBuildItems(project: PocketDawProject, clip: Clip): AssetBuildItem[] {
+  if (clip.type === "midi") return midiAssetBuildItems(project, clip);
+  return generatedSectionAssetBuildItems(project, clip);
+}
+
+function generatedSectionAssetBuildItems(project: PocketDawProject, clip: Clip): AssetBuildItem[] {
   const stemMutes = clip.transforms.stemMutes || {};
   return STEM_ROLES.flatMap((role) => {
     if (stemMutes[role]) return [];
@@ -656,6 +703,21 @@ function assetBuildItems(project: PocketDawProject, clip: Clip): AssetBuildItem[
       };
     });
   });
+}
+
+function midiAssetBuildItems(project: PocketDawProject, clip: Clip): AssetBuildItem[] {
+  const track = project.tracks.find((item) => item.id === clip.trackId && item.active !== false);
+  if (!track) return [];
+  const sourceHash = nativeGeneratedStemSourceHash(project, clip, track.id);
+  const key = `midi_${clip.id}_${clip.trackId}_${clip.barLength}_${hashString(JSON.stringify(clip.transforms))}_${sourceHash}`;
+  return [{
+    key,
+    assetId: nativeGeneratedStemAssetId(key),
+    sourceHash,
+    clip,
+    trackId: track.id,
+    role: track.role
+  }];
 }
 
 async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Promise<{ asset: NativeAudioAsset | null; error: string | null }> {
@@ -886,6 +948,40 @@ function nativeAssetFromHydratedItem(
   };
 }
 
+function hydratedGeneratedStemEntries(
+  project: PocketDawProject,
+  item: RenderCacheItem,
+  asset: NativeAudioAsset,
+  assetId: string,
+  cacheKind: string
+): HydratedCacheEntry[] {
+  const sourceHash = String(item.metadata?.sourceHash || "");
+  const matchingBuildItems = project.timeline.clips
+    .filter(isNativeStemCacheableClip)
+    .flatMap((clip) => assetBuildItems(project, clip))
+    .filter((buildItem) => buildItem.assetId === assetId && (!sourceHash || buildItem.sourceHash === sourceHash));
+
+  if (!matchingBuildItems.length) {
+    return [{
+      item,
+      asset,
+      region: nativeRegionFromHydratedItem(project, item, asset),
+      cacheKind,
+      clipId: item.sourceClipId,
+      generatedKey: generatedStemKey(item)
+    }];
+  }
+
+  return matchingBuildItems.map((buildItem) => ({
+    item,
+    asset,
+    region: nativeGeneratedRegionFromClip(project, buildItem.clip, buildItem.trackId, asset),
+    cacheKind,
+    clipId: buildItem.clip.id,
+    generatedKey: `${buildItem.role}:${buildItem.trackId}`
+  }));
+}
+
 function nativeRegionFromHydratedItem(project: PocketDawProject, item: RenderCacheItem, asset: NativeAudioAsset): NativeAudioRegion | null {
   const clip = item.sourceClipId ? project.timeline.clips.find((entry) => entry.id === item.sourceClipId) : null;
   if (!clip) return null;
@@ -910,22 +1006,26 @@ function nativeRegionFromHydratedItem(project: PocketDawProject, item: RenderCac
 
   if (cacheKind === "native-generated-stem") {
     const trackId = String(item.metadata?.trackId || clip.trackId);
-    const clipDuration = barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig);
-    return {
-      id: `${clip.id}_${trackId}_${asset.id}_hydrated`,
-      assetId: asset.id,
-      trackId,
-      startTime: barsToSeconds(clip.startBar - 1, project.project.bpm, project.project.timeSig),
-      sourceOffset: 0,
-      duration: Math.min(generatedStemRenderDuration(clipDuration), asset.durationSeconds),
-      gain: 1,
-      pan: 0,
-      fadeIn: 0,
-      fadeOut: 0
-    };
+    return nativeGeneratedRegionFromClip(project, clip, trackId, asset);
   }
 
   return null;
+}
+
+function nativeGeneratedRegionFromClip(project: PocketDawProject, clip: Clip, trackId: string, asset: NativeAudioAsset): NativeAudioRegion {
+  const clipDuration = barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig);
+  return {
+    id: `${clip.id}_${trackId}_${asset.id}_hydrated`,
+    assetId: asset.id,
+    trackId,
+    startTime: barsToSeconds(clip.startBar - 1, project.project.bpm, project.project.timeSig),
+    sourceOffset: 0,
+    duration: Math.min(generatedStemRenderDuration(clipDuration), asset.durationSeconds),
+    gain: 1,
+    pan: 0,
+    fadeIn: 0,
+    fadeOut: 0
+  };
 }
 
 function hydratedDurationFallback(project: PocketDawProject, item: RenderCacheItem): number {
@@ -938,6 +1038,10 @@ function hydratedDurationFallback(project: PocketDawProject, item: RenderCacheIt
 }
 
 function expectedGeneratedStemKeys(project: PocketDawProject, clip: Clip): Set<string> {
+  if (clip.type === "midi") {
+    const track = project.tracks.find((item) => item.id === clip.trackId && item.active !== false);
+    return track ? new Set([`${track.role}:${track.id}`]) : new Set();
+  }
   const stemMutes = clip.transforms?.stemMutes || {};
   return new Set(STEM_ROLES.flatMap((role) => {
     if (stemMutes[role]) return [];

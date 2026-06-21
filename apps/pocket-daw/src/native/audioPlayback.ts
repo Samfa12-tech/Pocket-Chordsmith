@@ -21,6 +21,10 @@ export interface NativeAudioStatus {
   assetCount?: number;
   assetRegionCount?: number;
   proceduralEventCount?: number;
+  callbackCount?: number;
+  lastCallbackMicros?: number;
+  maxCallbackMicros?: number;
+  slowCallbackCount?: number;
 }
 
 export interface NativeAudioTrack {
