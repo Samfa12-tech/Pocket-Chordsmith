@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderTimelineAudioRegions } from "../src/audio/audioRegions";
+import { audioRegionEnvelopeGainAt, normalizeAudioClipProperties, renderTimelineAudioRegions } from "../src/audio/audioRegions";
 import { createDemoProject } from "../src/demo/demoProject";
 import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../src/daw/audioClips";
 import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
@@ -38,6 +38,24 @@ describe("audio media and clips", () => {
     expect(placed.trackId).toBe("audio");
     expect(clip).toMatchObject({ type: "audio", mediaPoolItemId: imported.item.id, startBar: 5, trackId: "audio" });
     expect(parsed.mediaPool[0].metadata).toMatchObject({ runtimeOnly: true, waveformPeaks: [0.2, 0.7] });
+  });
+
+  it("uses exact fractional bar lengths for imported audio clips", () => {
+    const project = createDemoProject();
+    const secondsPerBar = project.project.timeSig * (60 / project.project.bpm);
+    for (const bars of [1.25, 2.5, 7.75]) {
+      const imported = addImportedAudioMedia(project, {
+        name: `${bars} Bars.wav`,
+        durationSeconds: secondsPerBar * bars,
+        sampleRate: 44100,
+        channels: 2
+      });
+
+      const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+      const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+
+      expect(clip.barLength).toBeCloseTo(bars, 5);
+    }
   });
 
   it("places additional imported audio on a visible new media lane", () => {
@@ -83,5 +101,73 @@ describe("audio media and clips", () => {
     expect(rendered.audioRegions[0]).toMatchObject({ clipId: placed.clipId, trackId: "audio", mediaPoolItemId: imported.item.id });
     expect(rendered.audioRegions[0].startTimeSeconds).toBeGreaterThan(0);
     expect(rendered.warnings[0]).toContain("Missing audio");
+  });
+
+  it("normalizes and evaluates linear audio clip fades", () => {
+    const imported = addImportedAudioMedia(createDemoProject(), {
+      name: "Fade.wav",
+      durationSeconds: 4,
+      sampleRate: 44100,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    clip.metadata = { ...(clip.metadata || {}), gain: 0.8, fadeInSeconds: 1, fadeOutSeconds: 1 };
+    const region = renderTimelineAudioRegions(placed.project).audioRegions[0];
+
+    expect(region.fadeInSeconds).toBe(1);
+    expect(audioRegionEnvelopeGainAt(region, 0)).toBeCloseTo(0, 5);
+    expect(audioRegionEnvelopeGainAt(region, 0.5)).toBeCloseTo(0.4, 5);
+    expect(audioRegionEnvelopeGainAt(region, 2)).toBeCloseTo(0.8, 5);
+    expect(audioRegionEnvelopeGainAt(region, 3.5)).toBeCloseTo(0.4, 5);
+  });
+
+  it("reports repaired audio clip metadata without changing the serialized layout", () => {
+    const imported = addImportedAudioMedia(createDemoProject(), {
+      name: "Repair.wav",
+      durationSeconds: 2,
+      sampleRate: 44100,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    const media = placed.project.mediaPool.find((item) => item.id === imported.item.id)!;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      sourceOffsetSeconds: 10,
+      durationSeconds: 10,
+      gain: "loud",
+      fadeInSeconds: 4,
+      fadeOutSeconds: 4
+    };
+
+    const properties = normalizeAudioClipProperties(placed.project, clip, media);
+
+    expect(properties.sourceOffsetSeconds).toBe(2);
+    expect(properties.durationSeconds).toBe(0);
+    expect(properties.gain).toBe(1);
+    expect(properties.fadeInSeconds).toBe(0);
+    expect(properties.fadeOutSeconds).toBe(0);
+    expect(properties.diagnostics.map((item) => item.code)).toEqual(expect.arrayContaining(["capped", "invalid"]));
+    expect(clip.metadata.durationSeconds).toBe(10);
+  });
+
+  it("scales overlong fades proportionally for non-zero audio regions", () => {
+    const imported = addImportedAudioMedia(createDemoProject(), {
+      name: "Overlong Fade.wav",
+      durationSeconds: 4,
+      sampleRate: 44100,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    const media = placed.project.mediaPool.find((item) => item.id === imported.item.id)!;
+    clip.metadata = { ...(clip.metadata || {}), fadeInSeconds: 3, fadeOutSeconds: 3 };
+
+    const properties = normalizeAudioClipProperties(placed.project, clip, media);
+
+    expect(properties.fadeInSeconds).toBeCloseTo(2, 5);
+    expect(properties.fadeOutSeconds).toBeCloseTo(2, 5);
+    expect(properties.diagnostics).toContainEqual(expect.objectContaining({ field: "fadeInSeconds", code: "scaled" }));
   });
 });

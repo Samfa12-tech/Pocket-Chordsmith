@@ -1,4 +1,5 @@
 import { buildPocketDawProjectFile } from "../daw/dawProject";
+import { validateProjectInvariants } from "../daw/projectInvariants";
 import type { PocketDawProject } from "../daw/schema";
 
 export interface ProjectFileState {
@@ -26,6 +27,31 @@ interface NativeOpenPayload {
 interface NativeSavePayload {
   path: string;
   label: string;
+  backupPath?: string | null;
+  bytesWritten?: number;
+  recoveryWarnings?: string[];
+}
+
+export interface NativeProjectRecoveryCandidate {
+  path: string;
+  sizeBytes: number;
+  modifiedUnixMs: number | null;
+  valid: boolean;
+  note: string;
+}
+
+export interface NativeProjectRecoveryState {
+  current: NativeProjectRecoveryCandidate | null;
+  temp: NativeProjectRecoveryCandidate | null;
+  backup: NativeProjectRecoveryCandidate | null;
+}
+
+export type ProjectRecoveryRecommendationKind = "none" | "offer-temp" | "offer-backup" | "current-invalid";
+
+export interface ProjectRecoveryRecommendation {
+  kind: ProjectRecoveryRecommendationKind;
+  candidate: "temp" | "backup" | "current" | null;
+  message: string;
 }
 
 export interface NativeFileApi {
@@ -80,12 +106,52 @@ export async function readProjectFileNative(path: string, api = defaultNativeFil
   };
 }
 
+export async function discoverProjectRecoveryNative(path: string, api = defaultNativeFileApi): Promise<NativeProjectRecoveryState | null> {
+  if (!api.isAvailable()) return null;
+  return api.invoke<NativeProjectRecoveryState>("discover_project_recovery", { path });
+}
+
+export function projectRecoveryRecommendation(state: NativeProjectRecoveryState | null): ProjectRecoveryRecommendation {
+  if (!state) return { kind: "none", candidate: null, message: "No native project recovery information is available." };
+  const current = state.current;
+  const temp = state.temp;
+  const backup = state.backup;
+  if (temp?.valid && isNewerThan(temp, current)) {
+    return {
+      kind: "offer-temp",
+      candidate: "temp",
+      message: "A newer valid temporary project save exists. Offer recovery before overwriting the current project."
+    };
+  }
+  if (backup?.valid && (!current?.valid || isNewerThan(backup, current))) {
+    return {
+      kind: "offer-backup",
+      candidate: "backup",
+      message: current?.valid
+        ? "A newer valid project backup exists. Offer recovery before continuing."
+        : "The current project is not valid, but a valid backup is available."
+    };
+  }
+  if (current && !current.valid) {
+    return {
+      kind: "current-invalid",
+      candidate: "current",
+      message: "The current project file is not a valid Pocket DAW project and no newer valid recovery candidate was found."
+    };
+  }
+  return { kind: "none", candidate: null, message: "No newer valid project recovery candidate was found." };
+}
+
 export async function saveProjectFile(
   project: PocketDawProject,
   currentPath?: string | null,
   forceSaveAs = false,
   api = defaultNativeFileApi
 ): Promise<SaveProjectFileResult> {
+  const invariants = validateProjectInvariants(project);
+  if (invariants.errors.length) {
+    throw new Error(`Project has ${invariants.errors.length} save-blocking invariant error(s): ${invariants.errors[0].message}`);
+  }
   const contents = buildPocketDawProjectFile(project);
   const defaultName = safeName(project.project.title, "pocketdaw");
   if (api.isAvailable()) {
@@ -148,6 +214,16 @@ function assertNativeOpenPayload(value: NativeOpenPayload): void {
   if (!value || typeof value.contents !== "string" || typeof value.path !== "string") {
     throw new Error("Native open returned an invalid project file payload.");
   }
+}
+
+function isNewerThan(
+  candidate: NativeProjectRecoveryCandidate,
+  current: NativeProjectRecoveryCandidate | null
+): boolean {
+  if (!current) return true;
+  if (!candidate.modifiedUnixMs) return false;
+  if (!current.modifiedUnixMs) return true;
+  return candidate.modifiedUnixMs > current.modifiedUnixMs;
 }
 
 const defaultNativeFileApi: NativeFileApi = {

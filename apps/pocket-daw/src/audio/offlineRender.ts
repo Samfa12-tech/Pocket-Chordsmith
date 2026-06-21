@@ -2,7 +2,7 @@ import type { PocketDawProject, Track } from "../daw/schema";
 import { trackIsAudible } from "../daw/tracks";
 import { barsToSeconds } from "../daw/timeline";
 import { renderTimelineEvents } from "./eventRenderer";
-import { renderTimelineAudioRegions } from "./audioRegions";
+import { renderTimelineAudioRegions, scheduleAudioRegionEnvelope } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
 import { getTrackFxChain } from "../daw/fx";
 import { DRUM_LANE_DEFS, getDrumLaneFxChain, isDrumEventKind } from "../daw/drumLanes";
@@ -128,11 +128,13 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
     const source = ctx.createBufferSource();
     const gain = ctx.createGain();
     source.buffer = cached.buffer;
-    gain.gain.value = Math.max(0, region.gain);
     source.connect(gain);
     gain.connect(output);
     const duration = Math.min(region.durationSeconds, Math.max(0, cached.buffer.duration - region.sourceOffsetSeconds));
-    if (duration > 0) source.start(region.startTimeSeconds, region.sourceOffsetSeconds, duration);
+    if (duration > 0) {
+      scheduleAudioRegionEnvelope(gain.gain, region, region.startTimeSeconds, 0, duration);
+      source.start(region.startTimeSeconds, region.sourceOffsetSeconds, duration);
+    }
   });
 
   const rendered = await ctx.startRendering();

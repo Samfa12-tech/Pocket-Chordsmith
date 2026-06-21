@@ -26,6 +26,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "mcp:pocket-daw": "tsx src/mcp/pocketDawMcpServer.ts",
     "generate:native-sound-recipes": "node scripts/generate-native-sound-recipes.mjs",
@@ -33,6 +34,8 @@
     "package:preview": "npm run build && node scripts/package-preview.mjs",
     "release:updater-manifest": "node scripts/make-updater-manifest.mjs",
     "verify:versions": "node scripts/verify-versions.mjs",
+    "status:release": "node scripts/render-release-status.mjs",
+    "verify:smoke-attestation": "node scripts/verify-smoke-attestation.mjs",
     "package:itch": "node scripts/package-itch.mjs",
     "verify:artifacts": "node scripts/verify-release-artifacts.mjs",
     "verify:itch": "node scripts/verify-itch.mjs",
@@ -64,6 +67,7 @@
     "@tauri-apps/plugin-updater": "^2.10.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "@tauri-apps/cli": "^2.5.0",
     "@types/adm-zip": "^0.5.8",
     "@types/node": "^25.9.3",

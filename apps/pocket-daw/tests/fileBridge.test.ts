@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openProjectFileNative, projectFileStateFromPath, projectTitleFromFileState, saveProjectFile, type NativeFileApi } from "../src/native/fileBridge";
+import { openProjectFileNative, projectFileStateFromPath, projectRecoveryRecommendation, projectTitleFromFileState, saveProjectFile, type NativeFileApi, type NativeProjectRecoveryCandidate } from "../src/native/fileBridge";
 import { createDemoProject } from "../src/demo/demoProject";
 
 describe("native file bridge", () => {
@@ -49,6 +49,22 @@ describe("native file bridge", () => {
     expect(result.file?.path).toBe("C:\\Songs\\New.pocketdaw");
   });
 
+  it("blocks saving projects with invariant errors before invoking native writes", async () => {
+    const calls: string[] = [];
+    const project = createDemoProject();
+    project.timeline.clips[0].trackId = "missing-track";
+    const api: NativeFileApi = {
+      isAvailable: () => true,
+      async invoke(command) {
+        calls.push(command);
+        return { path: "C:\\Songs\\Bad.pocketdaw", label: "Bad.pocketdaw" } as never;
+      }
+    };
+
+    await expect(saveProjectFile(project, "C:\\Songs\\Bad.pocketdaw", false, api)).rejects.toThrow("save-blocking invariant");
+    expect(calls).toEqual([]);
+  });
+
   it("opens native project payloads and treats cancel as null", async () => {
     const api: NativeFileApi = {
       isAvailable: () => true,
@@ -80,4 +96,33 @@ describe("native file bridge", () => {
 
     await expect(openProjectFileNative(api)).rejects.toThrow("invalid project file payload");
   });
+
+  it("recommends visible recovery for newer valid temp or backup candidates", () => {
+    const current = recoveryCandidate("C:\\Songs\\Song.pocketdaw", 100, true);
+    const temp = recoveryCandidate("C:\\Songs\\Song.pocketdaw.tmp", 200, true);
+    const backup = recoveryCandidate("C:\\Songs\\Song.pocketdaw.bak", 50, true);
+
+    expect(projectRecoveryRecommendation({ current, temp, backup })).toMatchObject({
+      kind: "offer-temp",
+      candidate: "temp"
+    });
+    expect(projectRecoveryRecommendation({ current: { ...current, valid: false }, temp: null, backup })).toMatchObject({
+      kind: "offer-backup",
+      candidate: "backup"
+    });
+    expect(projectRecoveryRecommendation({ current, temp: { ...temp, valid: false }, backup })).toMatchObject({
+      kind: "none",
+      candidate: null
+    });
+  });
 });
+
+function recoveryCandidate(path: string, modifiedUnixMs: number, valid: boolean): NativeProjectRecoveryCandidate {
+  return {
+    path,
+    sizeBytes: 128,
+    modifiedUnixMs,
+    valid,
+    note: valid ? "valid Pocket DAW project candidate" : "not a valid Pocket DAW project candidate"
+  };
+}

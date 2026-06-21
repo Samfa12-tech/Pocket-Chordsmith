@@ -3,7 +3,7 @@ import { cloneProject } from "../daw/dawProject";
 import { trackIsAudible } from "../daw/tracks";
 import { barsToSeconds, secondsToBars } from "../daw/timeline";
 import { renderTimelineEvents, type RenderedEvent } from "./eventRenderer";
-import { renderTimelineAudioRegions, type AudioRegion } from "./audioRegions";
+import { renderTimelineAudioRegions, scheduleAudioRegionEnvelope, type AudioRegion } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
 import { getTrackFxChain } from "../daw/fx";
 import { DRUM_LANE_DEFS, getDrumLaneFxChain, isDrumEventKind } from "../daw/drumLanes";
@@ -1247,10 +1247,10 @@ export class AudioEngine {
     const source = this.ctx.createBufferSource();
     const gain = this.ctx.createGain();
     source.buffer = cached.buffer;
-    gain.gain.value = Math.max(0, region.gain);
     source.connect(gain);
     gain.connect(output.gain);
     const when = this.startedAt + Math.max(region.startTimeSeconds, currentSeconds);
+    scheduleAudioRegionEnvelope(gain.gain, region, Math.max(this.ctx.currentTime, when), sourceElapsed, duration);
     source.start(Math.max(this.ctx.currentTime, when), offset, duration);
     source.onended = () => {
       safelyDisconnect(source);

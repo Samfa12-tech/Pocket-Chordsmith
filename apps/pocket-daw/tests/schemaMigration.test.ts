@@ -114,4 +114,22 @@ describe("schema migrations", () => {
     });
     expect(migrated.tracks[0].automationLaneIds).toEqual(["lane-onclick-alert-1"]);
   });
+
+  it("repairs duplicate marker ids across the whole migrated marker list", () => {
+    const migrated = migratePocketDawProject({
+      app: "PocketDAW",
+      schemaVersion: 2,
+      project: { title: "Duplicate Markers" },
+      timeline: {
+        markers: [
+          { id: "marker_same", bar: 1, name: "One" },
+          { id: "marker_same", bar: 2, name: "Two" },
+          { id: "marker_same", bar: 3, name: "Three" }
+        ],
+        clips: []
+      }
+    });
+
+    expect(migrated.timeline.markers.map((marker) => marker.id)).toEqual(expect.arrayContaining(["marker_same", "marker_same_2", "marker_same_3"]));
+  });
 });

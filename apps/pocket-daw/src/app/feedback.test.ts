@@ -64,7 +64,11 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
       bars: 32,
       clipCount: 8,
       trackCount: 11,
-      sourceRefCount: 1
+      sourceRefCount: 1,
+      invariantErrorCount: 0,
+      invariantWarningCount: 0,
+      invariantErrors: [],
+      invariantWarnings: []
     },
     audio: {
       playbackBackend: "native",
@@ -88,7 +92,13 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
       inputDeviceName: null,
       outputDeviceName: null,
       monitoring: false,
-      message: "Ready"
+      message: "Ready",
+      timingConfidence: "none",
+      appliedOffsetSeconds: 0,
+      playbackCaptureRenderedFrameCount: null,
+      playbackStopRenderedFrameCount: null,
+      playbackSampleRate: null,
+      timingNotes: []
     },
     updater: {
       status: "not-available",

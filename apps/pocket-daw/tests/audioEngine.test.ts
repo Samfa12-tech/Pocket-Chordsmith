@@ -100,7 +100,7 @@ describe("audio engine diagnostics", () => {
     const cache: NativeRenderCache = {
       signature: nativeRenderCacheSignature(project),
       assets: [],
-      regions: [{ id: "clip_001_bass", assetId: "asset_bass", trackId: "bass", startTime: 0, sourceOffset: 0, duration: 4, gain: 1, pan: 0 }],
+      regions: [{ id: "clip_001_bass", assetId: "asset_bass", trackId: "bass", startTime: 0, sourceOffset: 0, duration: 4, gain: 1, pan: 0, fadeIn: 0, fadeOut: 0 }],
       cachedClipIds: new Set(["clip_001"]),
       renderCacheItems: [],
       renderCacheHitCount: 0,

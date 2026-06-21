@@ -1,12 +1,13 @@
-# Pocket DAW v0.6.19 - What Works and What's Next
+# Pocket DAW v0.6.20 Source - What Works and What's Next
 
 ## Current public alpha
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current source target: `0.6.19` native transport/cache updater checkpoint
+- Current source target: `0.6.20` stabilization/integrity work
 - Last completed public artifact record in this repo: `0.6.19`
 - Last installed public smoke evidence in this repo: `0.6.10` bootstrapper install passed; `0.6.19` native transport/cache and MCP/updater smoke remains pending
+- Machine-readable release status: `release-status.json`
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 - `0.6.19` release packaging commit: `eee587c9afc39d89fa7893ea8a98e730c948a5e9`

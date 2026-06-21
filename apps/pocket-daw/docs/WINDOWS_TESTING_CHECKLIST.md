@@ -26,6 +26,8 @@ Current alpha target:
 
 Manual smoke status: `0.6.19` PENDING. Historical `0.6.9` evidence remains useful context, and `0.6.10` verifies the basic bootstrapper install path but not the latest native transport/cache behavior, MCP setup panel, or auto-close bootstrapper behavior.
 
+For a candidate installer, record exact-artifact smoke evidence with `releases/smoke-attestation.schema.json` and validate it with `npm run verify:smoke-attestation -- --attestation <path> --installer <setup.exe> --commit <full-sha>`. A source build is not installed-smoked until that attestation matches the installer filename and SHA-256.
+
 `0.6.19` native transport/cache and bridge rows apply after the installer/updater checkpoint is installed.
 
 Next-build lesson from 2026-06-20: current `0.6.13` does not register `.pocketdaw` as a Windows file type and does not open raw project file launch arguments. The next installer checkpoint should verify double-click/Open With after the association/open-argument fix ships.

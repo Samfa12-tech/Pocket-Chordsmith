@@ -12,6 +12,7 @@ import packageJson from "../package.json" with { type: "json" };
 import { packageItchRelease } from "./package-itch.mjs";
 import { makeUpdaterManifest } from "./make-updater-manifest.mjs";
 import { DEFAULT_BOOTSTRAPPER_MANIFEST, makeBootstrapperManifest } from "./make-bootstrapper-manifest.mjs";
+import { verifySmokeAttestationFile } from "./verify-smoke-attestation.mjs";
 
 const ROOT = process.cwd();
 const VERSION = packageJson.version;
@@ -63,6 +64,7 @@ console.log(`Setup SHA-256: ${sha256File(staged.setupExe)}`);
 
 if (options.publish) {
   assertGithubReleaseMissing();
+  verifySmokeAttestationForPublish(staged);
   createGithubRelease(staged);
   await verifyPublishedRelease(staged);
 }
@@ -194,6 +196,25 @@ function assertGithubReleaseMissing() {
   }
 }
 
+function verifySmokeAttestationForPublish(staged) {
+  const attestationPath = process.env.SMOKE_ATTESTATION;
+  if (!attestationPath) {
+    fail("Refusing to publish. Set SMOKE_ATTESTATION to a matching exact-artifact smoke attestation JSON.");
+  }
+  const commitResult = spawn("git", ["rev-parse", "HEAD"], { quiet: true });
+  if (commitResult.status !== 0) fail("Could not resolve current git commit for smoke attestation.");
+  const commit = String(commitResult.stdout || "").trim();
+  const result = verifySmokeAttestationFile({
+    attestationPath,
+    installerPath: staged.setupExe,
+    version: VERSION,
+    commit
+  });
+  if (!result.ok) {
+    fail(`Smoke attestation did not match staged installer:\n${result.failures.join("\n")}`);
+  }
+}
+
 function run(command, args, options = {}) {
   const result = spawn(command, args, options);
   if (result.error) throw result.error;
@@ -207,12 +228,14 @@ function spawn(command, args, options = {}) {
   return process.platform === "win32" && ["npm", "npx"].includes(command)
     ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", commandLine(executable, args)], {
         cwd,
-        stdio: options.quiet ? "ignore" : "inherit",
+        stdio: options.quiet ? "pipe" : "inherit",
+        encoding: options.quiet ? "utf8" : undefined,
         shell: false
       })
     : spawnSync(executable, args, {
         cwd,
-        stdio: options.quiet ? "ignore" : "inherit",
+        stdio: options.quiet ? "pipe" : "inherit",
+        encoding: options.quiet ? "utf8" : undefined,
         shell: false
       });
 }

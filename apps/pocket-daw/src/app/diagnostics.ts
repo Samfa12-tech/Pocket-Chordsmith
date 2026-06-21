@@ -1,6 +1,7 @@
 import type { AudioEngine } from "../audio/audioEngine";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { mediaPoolStatus } from "../daw/mediaPool";
+import { validateProjectInvariants, type ProjectInvariantIssue } from "../daw/projectInvariants";
 import { POCKET_DAW_VERSION } from "../daw/schema";
 import { currentProject, type AppState } from "./state";
 import type { PerformanceDiagnosticsReport } from "./performanceDiagnostics";
@@ -31,6 +32,10 @@ export interface TesterDiagnosticsPayload {
     clipCount: number;
     trackCount: number;
     sourceRefCount: number;
+    invariantErrorCount: number;
+    invariantWarningCount: number;
+    invariantErrors: ProjectInvariantIssue[];
+    invariantWarnings: ProjectInvariantIssue[];
   };
   audio: {
     playbackBackend: string;
@@ -55,6 +60,12 @@ export interface TesterDiagnosticsPayload {
     outputDeviceName: string | null;
     monitoring: boolean;
     message: string;
+    timingConfidence: "none" | "low" | "diagnostic";
+    appliedOffsetSeconds: number;
+    playbackCaptureRenderedFrameCount: number | null;
+    playbackStopRenderedFrameCount: number | null;
+    playbackSampleRate: number | null;
+    timingNotes: string[];
   };
   updater: {
     status: string;
@@ -104,6 +115,7 @@ export function buildTesterDiagnosticsPayload(
   const runtimeAvailableCount = project.mediaPool.filter((item) => item.kind === "audio" && !!getCachedAudioBuffer(item.id)).length;
   const devices = project.audioDeviceSettings.devices || [];
   const metronome = project.project.metronome || { enabled: false, countInBars: 1, volume: 0.55 };
+  const invariants = validateProjectInvariants(project);
 
   return {
     capturedAt: options.capturedAt || new Date().toISOString(),
@@ -128,7 +140,11 @@ export function buildTesterDiagnosticsPayload(
       bars: project.timeline.bars,
       clipCount: project.timeline.clips.length,
       trackCount: project.tracks.length,
-      sourceRefCount: project.sourceRefs.length
+      sourceRefCount: project.sourceRefs.length,
+      invariantErrorCount: invariants.errors.length,
+      invariantWarningCount: invariants.warnings.length,
+      invariantErrors: invariants.errors,
+      invariantWarnings: invariants.warnings
     },
     audio: {
       playbackBackend: String(audioDiagnostics.playbackBackend),
@@ -152,7 +168,13 @@ export function buildTesterDiagnosticsPayload(
       inputDeviceName: state.recording.inputDeviceName,
       outputDeviceName: state.recording.outputDeviceName,
       monitoring: state.recording.monitoring,
-      message: state.recording.message
+      message: state.recording.message,
+      timingConfidence: recordingTimingConfidence(state),
+      appliedOffsetSeconds: 0,
+      playbackCaptureRenderedFrameCount: state.recording.playbackCaptureAnchor?.renderedFrameCount ?? null,
+      playbackStopRenderedFrameCount: state.recording.playbackStopAnchor?.renderedFrameCount ?? null,
+      playbackSampleRate: state.recording.playbackCaptureAnchor?.sampleRate ?? state.recording.playbackStopAnchor?.sampleRate ?? null,
+      timingNotes: recordingTimingNotes(state)
     },
     updater: {
       status: state.updaterStatus,
@@ -187,6 +209,22 @@ export function buildTesterDiagnosticsPayload(
     },
     performance: options.performance || null
   };
+}
+
+function recordingTimingConfidence(state: AppState): "none" | "low" | "diagnostic" {
+  if (state.recording.status === "idle" && !state.recording.playbackCaptureAnchor && !state.recording.playbackStopAnchor) return "none";
+  if (state.recording.playbackCaptureAnchor?.renderedFrameCount !== null && state.recording.playbackCaptureAnchor?.renderedFrameCount !== undefined) return "diagnostic";
+  return "low";
+}
+
+function recordingTimingNotes(state: AppState): string[] {
+  const notes = [
+    "No automatic latency compensation is applied.",
+    "Browser monotonic timestamps are presentation estimates, not sample-clock anchors."
+  ];
+  if (!state.recording.playbackCaptureAnchor) notes.push("No native playback capture anchor is available for the current recording state.");
+  if (state.recording.playbackCaptureAnchor && state.recording.playbackStopAnchor) notes.push("Native playback frame anchors are available for diagnostic comparison.");
+  return notes;
 }
 
 export function diagnosticsJson(payload: TesterDiagnosticsPayload): string {

@@ -208,6 +208,10 @@ pub struct NativeAudioRegion {
     duration: f64,
     gain: f64,
     pan: f64,
+    #[serde(rename = "fadeIn", default)]
+    fade_in: f64,
+    #[serde(rename = "fadeOut", default)]
+    fade_out: f64,
 }
 
 #[derive(Clone, Deserialize)]
@@ -1688,7 +1692,31 @@ fn render_region_sample(
     } else {
         left
     };
-    Some((left, right))
+    let envelope = region_envelope_gain(region, local);
+    Some((left * envelope, right * envelope))
+}
+
+fn region_envelope_gain(region: &NativeAudioRegion, local: f64) -> f32 {
+    let duration = region.duration.max(0.0);
+    let mut fade_in = region.fade_in.max(0.0).min(duration);
+    let mut fade_out = region.fade_out.max(0.0).min(duration);
+    let total = fade_in + fade_out;
+    if duration > 0.0 && total > duration {
+        let scale = duration / total;
+        fade_in *= scale;
+        fade_out *= scale;
+    }
+    let mut multiplier = 1.0_f64;
+    if fade_in > 0.0 && local < fade_in {
+        multiplier = multiplier.min((local / fade_in).clamp(0.0, 1.0));
+    }
+    if fade_out > 0.0 {
+        let fade_out_start = duration - fade_out;
+        if local > fade_out_start {
+            multiplier = multiplier.min(((duration - local) / fade_out).clamp(0.0, 1.0));
+        }
+    }
+    multiplier as f32
 }
 
 fn decode_payload_asset(asset: &NativeAudioAssetPayload) -> Result<DecodedAudioAsset, String> {
@@ -2749,6 +2777,27 @@ mod tests {
     }
 
     #[test]
+    fn renders_region_samples_with_linear_fades() {
+        let asset = DecodedAudioAsset {
+            sample_rate: 4,
+            channels: 1,
+            samples: vec![1.0, 1.0, 1.0, 1.0],
+            frame_count: 4,
+        };
+        let mut region = test_region("region", "asset", "bass", 0.0, 0.0, 1.0, 1.0, 0.0);
+        region.fade_in = 0.5;
+        region.fade_out = 0.25;
+
+        let start = render_region_sample(&region, &asset, 0.0).expect("start sample");
+        let middle = render_region_sample(&region, &asset, 0.5).expect("middle sample");
+        let near_end = render_region_sample(&region, &asset, 0.875).expect("fade out sample");
+
+        assert!(start.0.abs() < 0.0001);
+        assert!((middle.0 - 1.0).abs() < 0.0001);
+        assert!(near_end.0 > 0.4 && near_end.0 < 0.6);
+    }
+
+    #[test]
     fn mixes_cached_regions_with_pan_volume_and_position_updates() {
         let mut playback = playback_with_region(test_track("bass", 0.5, -1.0, false, false));
 
@@ -3319,6 +3368,8 @@ mod tests {
             duration,
             gain,
             pan,
+            fade_in: 0.0,
+            fade_out: 0.0,
         }
     }
 

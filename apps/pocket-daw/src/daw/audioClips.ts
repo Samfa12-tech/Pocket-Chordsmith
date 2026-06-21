@@ -202,7 +202,8 @@ function audioTrackName(name: string, fallbackIndex: number): string {
 }
 
 function secondsToBars(seconds: number, project: PocketDawProject): number {
-  return Math.max(1, Math.ceil(seconds / secondsPerBar(project)));
+  const bars = seconds / secondsPerBar(project);
+  return Math.max(0.001, Math.round(bars * 1_000_000) / 1_000_000);
 }
 
 function secondsPerBar(project: PocketDawProject): number {

@@ -91,6 +91,7 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
   const usedMediaIds = new Set<string>();
   const usedClipIds = new Set<string>();
   const usedLaneIds = new Set<string>();
+  const usedMarkerIds = new Set<string>();
 
   next.tracks = (Array.isArray(next.tracks) && next.tracks.length ? next.tracks : defaultTracks).map((track, index) => {
     const fallback = defaultTracks[index] || defaultTracks[0];
@@ -154,7 +155,7 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
     },
     markers: (Array.isArray(next.timeline?.markers) ? next.timeline.markers : []).map((marker, index) => ({
       ...(isRecord(marker) ? marker : {}),
-      id: uniqueSafeId(marker?.id, `marker_${index + 1}`, new Set()),
+      id: uniqueSafeId(marker?.id, `marker_${index + 1}`, usedMarkerIds),
       bar: clampNumber(marker?.bar, 1, 4096, 1),
       name: safeText(marker?.name, `Marker ${index + 1}`),
       color: safeColour(marker?.color, "#40d8ff"),

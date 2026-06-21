@@ -18,6 +18,13 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/chordsmith-web/package-lock.json
+            apps/pocket-dj/package-lock.json
+            apps/pocket-daw/package-lock.json
+            packages/pocket-audio-core/package-lock.json
+            packages/pcs-format/package-lock.json
 
       - name: Install Playwright Chromium
         run: npx --yes playwright@1.52.0 install --with-deps chromium
@@ -41,15 +48,22 @@ jobs:
       - name: Pocket Audio Core
         working-directory: packages/pocket-audio-core
         run: |
-          npm install
+          npm ci
           npm test
           npm run build
           npm run verify:family-parity
 
+      - name: PCS Format
+        working-directory: packages/pcs-format
+        run: |
+          npm ci
+          npm test
+          npm run build
+
       - name: Pocket Chordsmith web
         working-directory: apps/chordsmith-web
         run: |
-          npm install
+          npm ci
           npm run build
           npm run test:e2e
           npm run package:itch
@@ -57,16 +71,32 @@ jobs:
       - name: Pocket DJ
         working-directory: apps/pocket-dj
         run: |
-          npm install
+          npm ci
           npm run package:itch
           npm run test:e2e
 
       - name: Pocket DAW
         working-directory: apps/pocket-daw
         run: |
-          npm install
+          npm ci
           npm test
           npm run build
+          npm run test:e2e
+
+      - name: Upload browser test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-test-reports-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            apps/chordsmith-web/playwright-report/
+            apps/chordsmith-web/test-results/
+            apps/pocket-dj/playwright-report/
+            apps/pocket-dj/test-results/
+            apps/pocket-daw/playwright-report/
+            apps/pocket-daw/test-results/
 
   pocket-daw-windows-native:
     runs-on: windows-latest
@@ -78,18 +108,42 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: apps/pocket-daw/package-lock.json
 
       - name: Setup Rust
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
+          rustup component add rustfmt
           rustup component add clippy
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/pocket-daw/src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('apps/pocket-daw/src-tauri/Cargo.lock') }}
 
       - name: Pocket DAW frontend and native checks
         working-directory: apps/pocket-daw
         run: |
-          npm install
+          npm ci
           npm test
           npm run build
+          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
           cargo test --manifest-path src-tauri/Cargo.toml
           cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Upload native check reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocket-daw-windows-native-reports-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            apps/pocket-daw/test-results/
+            apps/pocket-daw/playwright-report/

@@ -102,4 +102,14 @@ describe("export job helpers", () => {
     expect(manifest.warnings.join("\n")).toContain("Browser Only.wav");
     expect(manifest.warnings.join("\n")).toContain("Guitar");
   });
+
+  it("adds manifest warnings for project invariant errors", () => {
+    const project = createDemoProject();
+    project.timeline.clips[0].trackId = "missing-track";
+
+    const manifest = createGameExportManifest(project, "godot-adaptive-pack");
+
+    expect(manifest.warnings.join("\n")).toContain("Project invariant error");
+    expect(manifest.warnings.join("\n")).toContain("missing track");
+  });
 });

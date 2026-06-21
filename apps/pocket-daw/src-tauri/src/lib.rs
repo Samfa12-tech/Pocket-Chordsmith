@@ -6,6 +6,7 @@ use tauri::{Emitter, Manager};
 
 mod native_audio;
 mod native_recording;
+mod project_files;
 
 const SECOND_INSTANCE_DEEP_LINK_EVENT: &str = "pocket-daw-second-instance";
 const LOCAL_HANDOFF_EVENT: &str = "pocket-daw-local-handoff";
@@ -250,6 +251,7 @@ pub fn run() {
             initial_launch_args,
             open_project_file,
             read_project_file,
+            discover_project_recovery,
             open_audio_media_file,
             read_audio_media_file,
             collect_project_media,
@@ -340,6 +342,15 @@ fn handle_local_handoff_connection(
     ai_bridge: &AiBridgeRuntime,
 ) -> Result<(), String> {
     let request = read_http_request(stream)?;
+    if !local_bridge_request_headers_are_trusted(&request) {
+        write_json_response(
+            stream,
+            403,
+            "Forbidden",
+            r#"{"ok":false,"code":"untrusted_local_bridge_request","message":"Pocket DAW local bridge only accepts loopback hosts and trusted local origins."}"#,
+        )?;
+        return Ok(());
+    }
     if request.starts_with("OPTIONS ") {
         write_http_response(stream, 204, "No Content", "text/plain", "")?;
         return Ok(());
@@ -513,6 +524,59 @@ fn authorization_bearer_token(request: &str) -> Option<String> {
 }
 
 #[cfg(desktop)]
+fn request_header_value(request: &str, header_name: &str) -> Option<String> {
+    for line in request.lines().skip(1) {
+        if line.is_empty() {
+            break;
+        }
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if name.trim().eq_ignore_ascii_case(header_name) {
+            return Some(value.trim().to_string());
+        }
+    }
+    None
+}
+
+#[cfg(desktop)]
+fn local_bridge_request_headers_are_trusted(request: &str) -> bool {
+    local_bridge_host_is_loopback(request_header_value(request, "Host").as_deref())
+        && local_bridge_origin_is_trusted(request_header_value(request, "Origin").as_deref())
+}
+
+#[cfg(desktop)]
+fn local_bridge_host_is_loopback(host: Option<&str>) -> bool {
+    let Some(host) = host.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    let host_without_port = host
+        .strip_prefix('[')
+        .and_then(|value| value.split_once(']').map(|(inside, _)| inside))
+        .unwrap_or_else(|| host.split_once(':').map(|(name, _)| name).unwrap_or(host));
+    matches!(
+        host_without_port.to_ascii_lowercase().as_str(),
+        "127.0.0.1" | "localhost" | "::1"
+    )
+}
+
+#[cfg(desktop)]
+fn local_bridge_origin_is_trusted(origin: Option<&str>) -> bool {
+    let Some(origin) = origin.map(str::trim).filter(|value| !value.is_empty()) else {
+        return true;
+    };
+    if origin == "null" {
+        return true;
+    }
+    let lower = origin.to_ascii_lowercase();
+    lower == "tauri://localhost"
+        || lower.starts_with("http://127.0.0.1:")
+        || lower.starts_with("https://127.0.0.1:")
+        || lower.starts_with("http://localhost:")
+        || lower.starts_with("https://localhost:")
+}
+
+#[cfg(desktop)]
 fn read_http_request(stream: &mut std::net::TcpStream) -> Result<String, String> {
     use std::io::Read;
     let mut buffer = Vec::new();
@@ -652,6 +716,12 @@ struct DownloadHandoffFilePayload {
 struct ProjectFileSaveResult {
     path: String,
     label: String,
+    #[serde(rename = "backupPath")]
+    backup_path: Option<String>,
+    #[serde(rename = "bytesWritten")]
+    bytes_written: u64,
+    #[serde(rename = "recoveryWarnings")]
+    recovery_warnings: Vec<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -1037,23 +1107,37 @@ fn save_project_file_as(
     let Some(path) = file else {
         return Ok(None);
     };
-    std::fs::write(&path, contents)
+    let saved = project_files::save_project_transaction(&path, &contents, MAX_PROJECT_FILE_BYTES)
         .map_err(|err| format!("Could not save project file: {}", err))?;
     Ok(Some(ProjectFileSaveResult {
         label: file_label(&path),
         path: path.to_string_lossy().to_string(),
+        backup_path: saved.backup_path,
+        bytes_written: saved.bytes_written,
+        recovery_warnings: saved.recovery_warnings,
     }))
 }
 
 #[tauri::command]
 fn write_project_file(path: String, contents: String) -> Result<ProjectFileSaveResult, String> {
     let path_buf = std::path::PathBuf::from(path);
-    std::fs::write(&path_buf, contents)
-        .map_err(|err| format!("Could not save project file: {}", err))?;
+    let saved =
+        project_files::save_project_transaction(&path_buf, &contents, MAX_PROJECT_FILE_BYTES)
+            .map_err(|err| format!("Could not save project file: {}", err))?;
     Ok(ProjectFileSaveResult {
         label: file_label(&path_buf),
         path: path_buf.to_string_lossy().to_string(),
+        backup_path: saved.backup_path,
+        bytes_written: saved.bytes_written,
+        recovery_warnings: saved.recovery_warnings,
     })
+}
+
+#[tauri::command]
+fn discover_project_recovery(path: String) -> Result<project_files::ProjectRecoveryState, String> {
+    Ok(project_files::discover_project_recovery(
+        &std::path::PathBuf::from(path),
+    ))
 }
 
 #[derive(serde::Serialize)]
@@ -1555,6 +1639,24 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn local_bridge_headers_require_loopback_host_and_trusted_origin() {
+        let trusted_dev = "POST /pocket-daw/handoff HTTP/1.1\r\nHost: 127.0.0.1:47858\r\nOrigin: http://localhost:5173\r\nContent-Length: 7\r\n\r\nabc-123";
+        let trusted_file = "POST /pocket-daw/handoff HTTP/1.1\r\nHost: localhost:47858\r\nOrigin: null\r\nContent-Length: 7\r\n\r\nabc-123";
+        let trusted_tauri = "GET /pocket-daw/live/status HTTP/1.1\r\nHost: [::1]:47858\r\nOrigin: tauri://localhost\r\n\r\n";
+        let untrusted_host = "POST /pocket-daw/handoff HTTP/1.1\r\nHost: example.com\r\nOrigin: http://localhost:5173\r\nContent-Length: 7\r\n\r\nabc-123";
+        let untrusted_origin = "POST /pocket-daw/handoff HTTP/1.1\r\nHost: 127.0.0.1:47858\r\nOrigin: https://example.com\r\nContent-Length: 7\r\n\r\nabc-123";
+
+        assert!(local_bridge_request_headers_are_trusted(trusted_dev));
+        assert!(local_bridge_request_headers_are_trusted(trusted_file));
+        assert!(local_bridge_request_headers_are_trusted(trusted_tauri));
+        assert!(!local_bridge_request_headers_are_trusted(untrusted_host));
+        assert!(!local_bridge_request_headers_are_trusted(untrusted_origin));
+        assert!(!local_bridge_request_headers_are_trusted(
+            "POST /pocket-daw/handoff HTTP/1.1\r\nContent-Length: 7\r\n\r\nabc-123"
+        ));
     }
 
     #[test]

@@ -162,7 +162,9 @@ describe("native audio playback bridge", () => {
         sourceOffset: 0,
         duration: 8,
         gain: 0.9,
-        pan: -0.2
+        pan: -0.2,
+        fadeIn: 0,
+        fadeOut: 0
       }]
     };
 
@@ -200,7 +202,9 @@ describe("native audio playback bridge", () => {
         sourceOffset: 0,
         duration: 8,
         gain: 1,
-        pan: 0
+        pan: 0,
+        fadeIn: 0,
+        fadeOut: 0
       }]
     };
     const payload = buildNativeAudioStartPayload(createDemoProject(), [], 0, cache);

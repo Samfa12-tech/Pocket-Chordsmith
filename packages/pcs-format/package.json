@@ -4,6 +4,15 @@
   "private": true,
   "type": "module",
   "description": "Future shared PCS format definitions and compatibility helpers.",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./src": "./src/index.js"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Samfa12-tech/Pocket-Chordsmith.git",

@@ -5,7 +5,9 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 
-releases/
+releases/*
+!releases/
+!releases/smoke-attestation.schema.json
 
 *.log
 npm-debug.log*

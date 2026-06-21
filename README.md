@@ -74,11 +74,14 @@ npm test
 npm run build
 ```
 
-Pocket DAW is live for Windows alpha testing on itch. The current alpha target
-is `v0.6.19`; install from itch for normal testing and use the in-app updater
-for future update tests rather than redownloading manually each time. Installer
-packaging and smoke evidence should be recorded against the exact generated
-artifact before publishing a new build.
+Pocket DAW is live for Windows alpha testing on itch. The current source target
+is `0.6.20`, while the latest published updater checkpoint recorded by the
+project is `0.6.19`; install from itch for normal testing and use the in-app
+updater for future update tests rather than redownloading manually each time.
+Installer packaging and smoke evidence should be recorded against the exact
+generated artifact before publishing a new build. The current source/public/smoke
+split is generated from `apps/pocket-daw/release-status.json` into
+`apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md`.
 
 Pocket Audio Core:
 
@@ -145,5 +148,6 @@ Security and responsible disclosure notes are in `SECURITY.md`.
 For architecture context, see:
 
 - `docs/architecture/POCKET_AUDIO_FAMILY.md`
+- `docs/audits/POCKET_DAW_STABILIZATION_COVERAGE_2026-06-21.md`
 - `docs/repo-consolidation/MIGRATION_PLAN.md`
 - `PROJECT_MEMORY.md`

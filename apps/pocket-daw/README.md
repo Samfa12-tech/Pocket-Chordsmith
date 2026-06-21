@@ -2,7 +2,7 @@
 
 Pocket DAW is a Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
-Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.19` native transport/cache checkpoint.
+Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.20`; latest published updater checkpoint: `0.6.19`. The machine-readable status source is `release-status.json`, with generated Markdown in `docs/CURRENT_RELEASE_STATUS.md`.
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
@@ -57,10 +57,11 @@ The file bridge can also arrange a `.mid` file into a generated Chordsmith-style
 
 Pocket DAW `0.6.13` added `Help -> AI / MCP Bridge` in the installed app. The panel keeps copy-ready command, Claude/JSON and Codex TOML snippets, and can enable a token-protected live localhost bridge for the running app. Live MCP tools can read app status, control transport, select tracks/clips, save an already-saved project and apply safe mixer edits. File/project MCP tools still work while Pocket DAW is closed. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
 
-Pocket DAW `0.6.19` is the current updater-visible checkpoint. It focuses on native loop/metronome playback, latest-only native restarts during rapid live composition edits, better native-cache reuse after live edits, Save As title adoption from `.pocketdaw` filenames, and refreshed release/bootstrapper manifests.
+Pocket DAW `0.6.19` is the current updater-visible checkpoint. Source `0.6.20` is newer than the latest published checkpoint and must not be described as public until release metadata and exact-artifact smoke evidence say so. The `0.6.19` checkpoint focuses on native loop/metronome playback, latest-only native restarts during rapid live composition edits, better native-cache reuse after live edits, Save As title adoption from `.pocketdaw` filenames, and refreshed release/bootstrapper manifests.
 
 Release and update docs:
 
+- `docs/CURRENT_RELEASE_STATUS.md`
 - `docs/ALPHA_TESTING_RELEASE_STATUS.md`
 - `docs/ITCH_BUILD_PUSH_AND_UPDATE_TEST.md`
 - `docs/ITCH_RELEASE_CHECKLIST.md`

@@ -15,7 +15,18 @@ import {
   type HandoffBridgeStatus,
   type ProjectFileLaunch
 } from "../native/deepLinkBridge";
-import { downloadBlob, openProjectFileNative, projectTitleFromFileState, readProjectFileNative, safeName, saveProjectFile } from "../native/fileBridge";
+import {
+  discoverProjectRecoveryNative,
+  downloadBlob,
+  openProjectFileNative,
+  projectRecoveryRecommendation,
+  projectTitleFromFileState,
+  readProjectFileNative,
+  safeName,
+  saveProjectFile,
+  type NativeProjectRecoveryCandidate,
+  type OpenProjectFileResult
+} from "../native/fileBridge";
 import { readPocketDawHandoff, type PocketDawHandoff } from "../native/pocketHandoff";
 import {
   listenForAiBridgeRequests,
@@ -330,9 +341,7 @@ export class App {
     try {
       const native = await readProjectFileNative(launch.path);
       if (!native) return;
-      await this.openRawProjectText(native.contents, native.file.label, native.file.path, {
-        status: `Opened ${native.file.label} from Windows.`
-      });
+      await this.openNativeProjectWithRecovery(native, `Opened ${native.file.label} from Windows.`);
     } catch (error) {
       this.recordHandoffBridgeStatus({
         source: "project-file",
@@ -539,9 +548,7 @@ export class App {
       if (!native) return { ok: false, code: "native_open_unavailable", message: "Native project reads are unavailable in this runtime." };
       this.engine.stop();
       this.stopLiveMetronome();
-      await this.openRawProjectText(native.contents, native.file.label, native.file.path, {
-        status: `Opened ${native.file.label} through MCP.`
-      });
+      await this.openNativeProjectWithRecovery(native, `Opened ${native.file.label} through MCP.`, false);
       const openedProject = currentProject(this.state);
       return {
         ok: true,
@@ -3200,7 +3207,7 @@ export class App {
     try {
       const native = await openProjectFileNative();
       if (native) {
-        await this.openRawProjectText(native.contents, native.file.label, native.file.path);
+        await this.openNativeProjectWithRecovery(native);
         return;
       }
     } catch (error) {
@@ -3208,6 +3215,41 @@ export class App {
       this.render();
     }
     this.fileInput.click();
+  }
+
+  private async openNativeProjectWithRecovery(native: OpenProjectFileResult, status?: string, promptRecovery = true) {
+    const recovery = promptRecovery ? await this.recoveryCandidateForOpen(native.file.path) : null;
+    if (recovery) {
+      const recovered = await readProjectFileNative(recovery.path);
+      if (recovered) {
+        await this.openRawProjectText(recovered.contents, recovered.file.label, recovered.file.path, {
+          status: `Recovered ${recovered.file.label} before opening ${native.file.label}.`
+        });
+        return;
+      }
+    }
+    await this.openRawProjectText(native.contents, native.file.label, native.file.path, status ? { status } : undefined);
+  }
+
+  private async recoveryCandidateForOpen(path: string | null): Promise<NativeProjectRecoveryCandidate | null> {
+    if (!path) return null;
+    try {
+      const state = await discoverProjectRecoveryNative(path);
+      const recommendation = projectRecoveryRecommendation(state);
+      if (!recommendation.candidate) return null;
+      const candidate = state?.[recommendation.candidate] || null;
+      if (!candidate?.valid) return null;
+      const label = recommendation.candidate === "temp" ? "temporary save" : "backup save";
+      const currentLabel = state?.current?.valid ? "The selected project is valid." : "The selected project may be damaged.";
+      const useRecovery = window.confirm(
+        `${currentLabel}\n\nPocket DAW found a valid ${label} that may contain safer project data:\n${candidate.path}\n\nOpen this recovery candidate instead?`
+      );
+      return useRecovery ? candidate : null;
+    } catch (error) {
+      this.state.status = error instanceof Error ? `Recovery check failed: ${error.message}` : "Recovery check failed.";
+      this.render({ preserveScroll: true });
+      return null;
+    }
   }
 
   private async openRawProjectText(text: string, label: string, path: string | null, options?: { status?: string }) {

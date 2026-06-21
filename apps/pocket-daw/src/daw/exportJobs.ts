@@ -1,5 +1,6 @@
 import type { Clip, PocketDawProject, Track, TimelineMarker } from "./schema";
 import { cloneProject } from "./dawProject";
+import { validateProjectInvariants } from "./projectInvariants";
 import { barsToSeconds } from "./timeline";
 import { createZipBlob, type ZipArchiveEntry } from "./zipArchive";
 import {
@@ -172,7 +173,12 @@ export function createGameExportManifest(project: PocketDawProject, kind: GameEx
   const manifestFile = gamePackManifestPath(kind);
   const fullMixFile = gamePackFullMixPath(project.project.title);
   const sourceProject = gamePackSourceProjectPath(project.project.title);
-  const warnings = collectExportWarnings(project);
+  const invariantReport = validateProjectInvariants(project);
+  const warnings = [
+    ...collectExportWarnings(project),
+    ...invariantReport.errors.map((issue) => `Project invariant error: ${issue.message}`),
+    ...invariantReport.warnings.map((issue) => `Project invariant warning: ${issue.message}`)
+  ];
   return {
     kind,
     projectTitle: project.project.title,

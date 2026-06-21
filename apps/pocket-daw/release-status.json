@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "sourceVersion": "0.6.20",
+  "projectSchemaVersion": 2,
+  "latestPublishedVersion": "0.6.19",
+  "latestPublishedTag": "pocket-daw-v0.6.19",
+  "latestPublishedCommit": "eee587c9afc39d89fa7893ea8a98e730c948a5e9",
+  "lastInstalledSmoke": {
+    "version": "0.6.10",
+    "commit": null,
+    "installerFile": "Pocket.DAW_0.6.10_x64-setup.exe",
+    "installerSha256": "c893ddcc545738c79fb72bd486b75cbe263534b466fcd4d2f593574d509fd00e",
+    "testedAt": "2026-06-19",
+    "result": "pass",
+    "notes": [
+      "Bootstrapper install smoke evidence is recorded for 0.6.10.",
+      "Installed smoke for 0.6.19 and source 0.6.20 is not recorded in this status file."
+    ]
+  }
+}

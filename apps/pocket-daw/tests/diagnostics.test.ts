@@ -52,7 +52,9 @@ describe("tester diagnostics", () => {
     expect(payload.audio.playbackBackend).toBe("idle");
     expect(payload.recording).toMatchObject({
       monitoring: false,
-      outputDeviceName: null
+      outputDeviceName: null,
+      timingConfidence: "none",
+      appliedOffsetSeconds: 0
     });
     expect(payload.updater).toMatchObject({
       status: "available",
@@ -73,6 +75,38 @@ describe("tester diagnostics", () => {
     expect(payload.performance).toBeNull();
     expect(diagnosticsJson(payload)).toContain('"installerOnly": true');
     expect(diagnosticsJson(payload)).toContain('"handoff"');
+  });
+
+  it("reports recording timing anchors as diagnostics without applying offset", () => {
+    const state = {
+      ...createInitialState(),
+      recording: {
+        ...createInitialState().recording,
+        status: "recording" as const,
+        playbackCaptureAnchor: {
+          source: "native",
+          snapshotMonotonicMs: 10,
+          active: true,
+          playing: true,
+          positionSeconds: 1.5,
+          renderedFrameCount: 48000,
+          startedGeneration: 3,
+          sampleRate: 48000,
+          channels: 2
+        }
+      }
+    };
+    const engine = new AudioEngine(currentProject(state));
+
+    const payload = buildTesterDiagnosticsPayload(state, engine.getDiagnostics());
+
+    expect(payload.recording).toMatchObject({
+      timingConfidence: "diagnostic",
+      appliedOffsetSeconds: 0,
+      playbackCaptureRenderedFrameCount: 48000,
+      playbackSampleRate: 48000
+    });
+    expect(payload.recording.timingNotes.join("\n")).toContain("No automatic latency compensation");
   });
 
   it("captures bounded live performance samples for MCP stress-test analysis", () => {

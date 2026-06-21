@@ -21,6 +21,7 @@ import { createInitialState, loadProjectIntoState, type AppState } from "../app/
 import { buildPocketDawProjectFile } from "../daw/dawProject.ts";
 import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs.ts";
 import { arrangeMidiToHeavyMetalProject } from "../daw/midiArrangement.ts";
+import { validateProjectInvariants } from "../daw/projectInvariants.ts";
 import { POCKET_DAW_SCHEMA_VERSION, POCKET_DAW_VERSION, type PocketDawProject } from "../daw/schema.ts";
 
 export const POCKET_DAW_MCP_TOOLS = [
@@ -216,9 +217,8 @@ function readProject(args: unknown) {
 function validateProject(args: unknown) {
   const project = loadProject(asRecord(args));
   return {
-    ok: true,
     summary: summarizeProject(project),
-    warnings: validatePocketDawProject(project)
+    ...validatePocketDawProject(project)
   };
 }
 
@@ -512,17 +512,15 @@ function summarizeProject(project: PocketDawProject) {
   };
 }
 
-function validatePocketDawProject(project: PocketDawProject): string[] {
+function validatePocketDawProject(project: PocketDawProject): { ok: boolean; errors: string[]; warnings: string[] } {
+  const invariants = validateProjectInvariants(project);
   const warnings: string[] = [];
   if (project.schemaVersion !== POCKET_DAW_SCHEMA_VERSION) warnings.push(`Project schemaVersion ${project.schemaVersion} will migrate to ${POCKET_DAW_SCHEMA_VERSION}.`);
-  if (!project.tracks.some((track) => track.role === "master")) warnings.push("Project has no master track.");
-  const trackIds = new Set(project.tracks.map((track) => track.id));
-  for (const clip of project.timeline.clips) {
-    if (clip.trackId && !trackIds.has(clip.trackId)) warnings.push(`Clip ${clip.id} targets missing track ${clip.trackId}.`);
-    if (clip.barLength <= 0) warnings.push(`Clip ${clip.id} has non-positive barLength.`);
-  }
-  if (project.timeline.bars <= 0) warnings.push("Timeline bars must be greater than zero.");
-  return warnings;
+  return {
+    ok: invariants.ok,
+    errors: invariants.errors.map((issue) => issue.message),
+    warnings: [...warnings, ...invariants.warnings.map((issue) => issue.message)]
+  };
 }
 
 function jsonToolResult(value: unknown): ToolResult {

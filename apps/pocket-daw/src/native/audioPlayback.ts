@@ -100,6 +100,8 @@ export interface NativeAudioRegion {
   duration: number;
   gain: number;
   pan: number;
+  fadeIn: number;
+  fadeOut: number;
 }
 
 export interface NativeAudioStartPayload {

@@ -23,6 +23,8 @@ describe("release scripts", () => {
     expect(packageJson.scripts["verify:itch-bootstrapper"]).toBe("node scripts/verify-itch-bootstrapper.mjs");
     expect(packageJson.scripts["release:itch:local"]).toBe("npm run verify:itch");
     expect(packageJson.scripts["release:updater-manifest"]).toBe("node scripts/make-updater-manifest.mjs");
+    expect(packageJson.scripts["status:release"]).toBe("node scripts/render-release-status.mjs");
+    expect(packageJson.scripts["verify:smoke-attestation"]).toBe("node scripts/verify-smoke-attestation.mjs");
     expect(packageJson.scripts["release:update"]).toBe("node scripts/release-updater-build.mjs");
     expect(packageJson.scripts["release:update:fast"]).toBe("node scripts/release-updater-build.mjs --fast");
     expect(packageJson.scripts["release:update:full"]).toBe("node scripts/release-updater-build.mjs --full");
@@ -55,6 +57,8 @@ describe("release scripts", () => {
     expect(verifyArtifacts).toContain("assertSignatureFreshness");
     expect(verifyArtifacts).toContain("TAURI_SIGNING_PRIVATE_KEY");
     expect(guardedPush).toContain('PUBLISH !== "1"');
+    expect(guardedPush).toContain("SMOKE_ATTESTATION");
+    expect(guardedPush).toContain("verifySmokeAttestationFile");
     expect(guardedPush).toContain('"releases/itch/installers"');
     expect(updaterManifest).toContain("pocket-daw-latest.json");
     expect(updaterManifest).toContain("SHA256SUMS.txt");
@@ -68,6 +72,8 @@ describe("release scripts", () => {
     expect(guardedBootstrapperPush).toContain('"releases/itch-bootstrapper/upload"');
     expect(releaseUpdaterBuild).toContain("packageItchRelease");
     expect(releaseUpdaterBuild).toContain('process.env.PUBLISH !== "1"');
+    expect(releaseUpdaterBuild).toContain("SMOKE_ATTESTATION");
+    expect(releaseUpdaterBuild).toContain("verifySmokeAttestationFile");
     expect(releaseUpdaterBuild).toContain("--fast --publish is blocked");
     expect(releaseUpdaterBuild).toContain("makeUpdaterManifest");
     expect(releaseUpdaterBuild).toContain("makeBootstrapperManifest");

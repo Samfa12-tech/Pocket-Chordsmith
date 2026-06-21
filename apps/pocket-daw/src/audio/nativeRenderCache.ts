@@ -100,7 +100,9 @@ export async function buildNativeRenderCache(project: PocketDawProject, signatur
       sourceOffset: 0,
       duration: Math.min(duration, asset.durationSeconds),
       gain: 1,
-      pan: 0
+      pan: 0,
+      fadeIn: 0,
+      fadeOut: 0
     });
     generatedRegionCount += 1;
     cachedClipIds.add(item.clip.id);
@@ -614,7 +616,9 @@ function nativeRegionFromHydratedItem(project: PocketDawProject, item: RenderCac
       sourceOffset: region.sourceOffsetSeconds,
       duration: Math.min(region.durationSeconds, asset.durationSeconds),
       gain: region.gain,
-      pan: 0
+      pan: 0,
+      fadeIn: region.fadeInSeconds,
+      fadeOut: region.fadeOutSeconds
     };
   }
 
@@ -628,7 +632,9 @@ function nativeRegionFromHydratedItem(project: PocketDawProject, item: RenderCac
       sourceOffset: 0,
       duration: Math.min(barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig), asset.durationSeconds),
       gain: 1,
-      pan: 0
+      pan: 0,
+      fadeIn: 0,
+      fadeOut: 0
     };
   }
 
@@ -726,7 +732,9 @@ async function appendRuntimeAudioCache(
       sourceOffset: region.sourceOffsetSeconds,
       duration,
       gain: region.gain,
-      pan: 0
+      pan: 0,
+      fadeIn: region.fadeInSeconds,
+      fadeOut: region.fadeOutSeconds
     });
     runtimeAudioRegionCount += 1;
     cachedClipIds.add(region.clipId);
