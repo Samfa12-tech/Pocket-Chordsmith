@@ -2,19 +2,21 @@
   "schema": 1,
   "sourceVersion": "0.6.24",
   "projectSchemaVersion": 2,
-  "latestPublishedVersion": "0.6.23",
-  "latestPublishedTag": "pocket-daw-v0.6.23",
-  "latestPublishedCommit": "345615ca183c5e29563e6cfa1c600b4bdc67a712",
+  "latestPublishedVersion": "0.6.24",
+  "latestPublishedTag": "pocket-daw-v0.6.24",
+  "latestPublishedCommit": "a316eb8a207f0d77fd3c17aef4f0af1176de13d1",
   "lastInstalledSmoke": {
-    "version": "0.6.23",
-    "commit": "345615ca183c5e29563e6cfa1c600b4bdc67a712",
-    "installerFile": "Pocket.DAW_0.6.23_x64-setup.exe",
-    "installerSha256": "ae4a5f9e43f526091bb01da6218e2a1e2b5bbbb9236b182a1df26b40e1869bbf",
-    "testedAt": "2026-06-21T03:02:00Z",
+    "version": "0.6.24",
+    "commit": "a316eb8a207f0d77fd3c17aef4f0af1176de13d1",
+    "installerFile": "Pocket.DAW_0.6.24_x64-setup.exe",
+    "installerSha256": "b3d8f0a218b97f31984223b1069d3c2e8c73bd4d0c7a22cd21c026ddd1e70984",
+    "testedAt": "2026-06-21T03:21:10Z",
     "result": "not-run",
     "notes": [
-      "Pocket DAW 0.6.23 was published to GitHub latest for a manual auto-update smoke before merging to main.",
-      "The latest updater manifest resolves to pocket-daw-v0.6.23 and the remote setup SHA-256 matches the staged artifact.",
+      "Pocket DAW 0.6.24 was published to GitHub latest for a manual auto-update smoke before merging to main.",
+      "The latest updater manifest resolves to pocket-daw-v0.6.24 and the remote setup SHA-256 matches the staged artifact.",
+      "This tester build keeps the previous rendered native cache active during live composition rebuilds so discarded cache builds do not trigger full procedural fallback.",
+      "The guarded itch push refused without a passing exact-artifact smoke attestation, so the itch installer channel remains pending until manual smoke evidence is available.",
       "Installed-app/manual smoke is intentionally pending until Sam tests the auto-update path."
     ]
   }
