@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AudioEngine, calculateLoopSeekSeconds } from "../src/audio/audioEngine";
 import type { RenderedEvent } from "../src/audio/eventRenderer";
 import { createDemoProject } from "../src/demo/demoProject";
-import type { NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
+import type { NativeAudioAsset, NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
 import { cycleBassStep } from "../src/daw/chordsmithEditor";
 import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
@@ -667,6 +667,8 @@ describe("audio engine diagnostics", () => {
         nativePlaybackCachePayloadWindowEndSeconds: number;
         nativeStartedAtMs: number;
         nativeLastStatusRefreshAtMs: number;
+        nativeLastRestartReason: string | null;
+        nativeLastTickSeconds: number;
         tickNativePlayback(): void;
         nativeRestartFlush: Promise<void> | null;
       };
@@ -683,6 +685,60 @@ describe("audio engine diagnostics", () => {
       expect(starts[1].assets?.length || 0).toBeGreaterThan(0);
       expect(starts[1].assets?.length || 0).toBeLessThan(cache.assets.length);
       expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
+
+      internals.nativeLastRestartReason = "play-cache-window-advance";
+      internals.nativeLastTickSeconds = engine.currentSeconds() + 1;
+      internals.nativeLastStatusRefreshAtMs = performance.now();
+      internals.tickNativePlayback();
+      expect(engine.getDiagnostics().lastAudioDropCause).toBe("cache-window");
+    } finally {
+      (globalThis as any).window = previousWindow;
+    }
+  });
+
+  it("preloads only the nearby native cache window instead of the full song", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    const preloads: NativeAudioAsset[][] = [];
+    const native = {
+      async preloadAssets(assets: NativeAudioAsset[]) {
+        preloads.push(assets);
+        return assets.length;
+      },
+      async start(payload: NativeAudioStartPayload) {
+        return { started: true, status: nativeStatus({ playing: true, positionSeconds: payload.startSeconds }), error: null };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true, playing: true }); }
+    };
+
+    try {
+      const project = createDemoProject();
+      const cache = fakeTimedNativeRenderCache(project);
+      const engine = new AudioEngine(project, native);
+      const internals = engine as unknown as {
+        nativeRenderCache: NativeRenderCache;
+        preloadNativeRenderCacheAssetsNear(cache: NativeRenderCache, seconds: number): void;
+        nativeRenderCachePreloadPromise: Promise<void> | null;
+      };
+      internals.nativeRenderCache = cache;
+
+      internals.preloadNativeRenderCacheAssetsNear(cache, 0);
+      await internals.nativeRenderCachePreloadPromise;
+
+      expect(preloads).toHaveLength(1);
+      const firstPreload = preloads[0]!;
+      expect(firstPreload.length).toBeGreaterThan(0);
+      expect(firstPreload.length).toBeLessThan(cache.assets.length);
+      expect(engine.getDiagnostics().nativeRenderCache.preloadedAssetCount).toBe(firstPreload.length);
+      expect(engine.getDiagnostics().nativeRenderCache.preloadWindowEndSeconds).toBeGreaterThan(0);
     } finally {
       (globalThis as any).window = previousWindow;
     }

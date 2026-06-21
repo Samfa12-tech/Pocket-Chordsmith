@@ -145,6 +145,7 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
         lastGeneratedStemRenderError: null,
         preloadPending: false,
         preloadedAssetCount: 0,
+        preloadWindowEndSeconds: 0,
         preloadError: null,
         buildPending: false,
         prewarmScheduled: false,

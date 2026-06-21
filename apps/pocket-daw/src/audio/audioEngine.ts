@@ -78,11 +78,13 @@ export type AudioProjectSyncMode =
 
 type PlaybackBackend = "native-cpal" | "native-cpal-paused" | "web-audio" | "idle";
 type NativeStartOutcome = "started" | "unavailable" | "failed";
-type AudioDropCause = "seek" | "stop" | "project-load" | "graph-rebuild" | "loop" | "late-scheduler" | null;
+type AudioDropCause = "seek" | "stop" | "project-load" | "graph-rebuild" | "loop" | "cache-window" | "late-scheduler" | null;
 const safeSyncLeadSeconds = 0.2;
 const liveNativeCacheWindowBars = 4;
 const nativePlaybackCachePayloadWindowBars = 4;
+const nativePlaybackCachePreloadWindowBars = 8;
 const nativePlaybackCacheWindowAdvanceLeadSeconds = 0.8;
+const nativePlaybackCachePreloadLeadSeconds = 5;
 
 interface NativeRestartRequest {
   token: number;
@@ -139,6 +141,7 @@ export class AudioEngine {
   private nativeRenderCachePreloadPromise: Promise<void> | null = null;
   private nativeRenderCachePreloadSignature: string | null = null;
   private nativeRenderCachePreloadedAssetCount = 0;
+  private nativeRenderCachePreloadWindowEndSeconds = 0;
   private nativeRenderCachePreloadError: string | null = null;
   private nativeRenderCachePrewarmHandle: number | null = null;
   private nativeRenderCachePrewarmUsesIdleCallback = false;
@@ -155,6 +158,7 @@ export class AudioEngine {
   private nativeRestartToken = 0;
   private pendingNativeRestart: NativeRestartRequest | null = null;
   private nativeRestartFlush: Promise<void> | null = null;
+  private nativeLastRestartReason: string | null = null;
   private nativeStatusRefreshInFlight = false;
   private nativeLastStatusRefreshAtMs = 0;
   private nativeLastTickSeconds = 0;
@@ -234,7 +238,7 @@ export class AudioEngine {
     this.nativeRenderCacheError = result.errors[0] || null;
     if (result.cache && result.cache.signature === nativeRenderCacheSignature(this.project)) {
       this.nativeRenderCache = result.cache;
-      this.preloadNativeRenderCacheAssetsWhenIdle(result.cache);
+      this.preloadNativeRenderCacheAssetsNear(result.cache, this.offsetSeconds);
     }
     return result;
   }
@@ -591,6 +595,7 @@ export class AudioEngine {
         lastGeneratedStemRenderError: activeNativeRenderCache?.lastGeneratedStemRenderError || null,
         preloadPending: this.nativeRenderCachePreloadPromise !== null,
         preloadedAssetCount: this.nativeRenderCachePreloadedAssetCount,
+        preloadWindowEndSeconds: this.nativeRenderCachePreloadWindowEndSeconds,
         preloadError: this.nativeRenderCachePreloadError,
         buildPending: this.nativeRenderCacheBuildPromise !== null,
         prewarmScheduled: this.nativeRenderCachePrewarmScheduled,
@@ -759,6 +764,7 @@ export class AudioEngine {
     this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
     this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
     this.nativeLastTickSeconds = this.offsetSeconds;
+    this.nativeLastRestartReason = request.options.reason || null;
     const useRenderCache = request.options.useRenderCache !== false;
     const cache = useRenderCache && !this.nativeRenderCacheBypassedForLiveEdits ? this.playableNativeRenderCache() : null;
     if (useRenderCache && !cache) this.deferNativeRenderCacheRefresh(request.options.reason || this.lastProjectSyncReason || "restart-fallback-cache-build");
@@ -823,16 +829,27 @@ export class AudioEngine {
     return mergeNativePlaybackCaches(cache, runtimeCache, this.audioRegions.length);
   }
 
-  private preloadNativeRenderCacheAssetsWhenIdle(cache: NativeRenderCache | null): void {
-    if (!cache?.assets.length || this.playing || !this.nativePlayback.preloadAssets) return;
+  private preloadNativeRenderCacheAssetsNear(cache: NativeRenderCache | null, seconds: number): void {
+    if (!cache?.assets.length || !this.nativePlayback.preloadAssets) return;
     const signature = cache.signature;
-    if (this.nativeRenderCachePreloadPromise && this.nativeRenderCachePreloadSignature === signature) return;
-    this.nativeRenderCachePreloadSignature = signature;
+    const window = this.nativeRenderCacheTimeWindow(seconds, nativePlaybackCachePreloadWindowBars);
+    if (this.nativeRenderCachePreloadPromise) return;
+    if (!this.nativeRenderCachePreloadSignature?.startsWith(`${signature}:preload:`)) {
+      this.nativeRenderCachePreloadWindowEndSeconds = 0;
+      this.nativeRenderCachePreloadedAssetCount = 0;
+    }
+    if (window.endSeconds <= this.nativeRenderCachePreloadWindowEndSeconds) return;
+    const windowed = filterNativeRenderCacheForTimeWindow(cache, window.startSeconds, window.endSeconds);
+    if (!windowed?.assets.length) return;
+    const preloadSignature = `${cache.signature}:preload:${window.startSeconds.toFixed(3)}:${window.endSeconds.toFixed(3)}`;
+    if (this.nativeRenderCachePreloadPromise && this.nativeRenderCachePreloadSignature === preloadSignature) return;
+    this.nativeRenderCachePreloadSignature = preloadSignature;
     this.nativeRenderCachePreloadedAssetCount = 0;
+    this.nativeRenderCachePreloadWindowEndSeconds = window.endSeconds;
     this.nativeRenderCachePreloadError = null;
     this.nativeRenderCachePreloadPromise = (async () => {
       try {
-        const loaded = await this.nativePlayback.preloadAssets!(cache.assets);
+        const loaded = await this.nativePlayback.preloadAssets!(windowed.assets);
         if (this.nativeRenderCache?.signature === signature) {
           this.nativeRenderCachePreloadedAssetCount = loaded;
         }
@@ -841,7 +858,7 @@ export class AudioEngine {
           this.nativeRenderCachePreloadError = error instanceof Error ? error.message : "Native asset preload failed.";
         }
       } finally {
-        if (this.nativeRenderCachePreloadSignature === signature) {
+        if (this.nativeRenderCachePreloadSignature === preloadSignature) {
           this.nativeRenderCachePreloadPromise = null;
         }
       }
@@ -965,7 +982,7 @@ export class AudioEngine {
         }
         this.nativeRenderCache = cache;
         this.nativeRenderCacheStaleForLiveEdits = false;
-        this.preloadNativeRenderCacheAssetsWhenIdle(cache);
+        this.preloadNativeRenderCacheAssetsNear(cache, this.offsetSeconds);
         return this.nativeRenderCache;
       } catch (error) {
         if (!this.nativeRenderCacheStaleForLiveEdits) this.nativeRenderCache = null;
@@ -1188,7 +1205,11 @@ export class AudioEngine {
     if (this.playbackBackend !== "native-cpal" || !this.playing) return;
     const current = this.currentSeconds();
     if (current + 0.08 < this.nativeLastTickSeconds) {
-      this.lastAudioDropCause = "loop";
+      this.lastAudioDropCause = this.project.timeline.loop.enabled
+        ? "loop"
+        : this.nativeLastRestartReason === "play-cache-window-advance"
+          ? "cache-window"
+          : this.lastAudioDropCause;
       this.repositionPlaybackIndexes(current);
       this.meterPeaks = {};
       this.nativeRegionMeterLastTapAt = 0;
@@ -1198,6 +1219,7 @@ export class AudioEngine {
     this.refreshNativePositionEstimate(current);
     this.tapNativeMeters(current);
     this.tapNativeRegionMeters(current);
+    this.maybePreloadUpcomingNativePlaybackCachePayloadWindow(current);
     this.maybeAdvanceNativePlaybackCachePayloadWindow(current);
     this.maybeScheduleProgressiveNativeRenderCacheRefresh(current);
     const songEnd = barsToSeconds(this.project.timeline.bars, this.project.project.bpm, this.project.project.timeSig) + 0.4;
@@ -1226,6 +1248,14 @@ export class AudioEngine {
       useRenderCache: true,
       allowRuntimeAudioCacheBuild: false
     });
+  }
+
+  private maybePreloadUpcomingNativePlaybackCachePayloadWindow(current: number) {
+    if (!this.nativePlaybackStartedWithRenderCache || !this.nativePlaybackCachePayloadWindowEndSeconds) return;
+    if (current < this.nativePlaybackCachePayloadWindowEndSeconds - nativePlaybackCachePreloadLeadSeconds) return;
+    const cache = this.playableNativeRenderCache();
+    if (!cache?.regions.length) return;
+    this.preloadNativeRenderCacheAssetsNear(cache, current);
   }
 
   private nativeRenderCacheTimeWindow(seconds: number, windowBars: number): { startSeconds: number; endSeconds: number } {
