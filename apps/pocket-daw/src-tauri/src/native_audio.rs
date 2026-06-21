@@ -2313,6 +2313,9 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
         return 0.0;
     }
     let velocity = event.velocity.clamp(0.0, 1.4) as f32;
+    if velocity <= 0.0 {
+        return 0.0;
+    }
     let accent = event.accent.unwrap_or(false);
     match event.kind.as_str() {
         "kick" => {
@@ -3806,6 +3809,93 @@ mod tests {
         assert!(
             max_diff < 0.00008,
             "expected cache-stem playback to preserve event pan, max diff {max_diff}"
+        );
+    }
+
+    #[test]
+    fn native_cached_sidechain_triggers_match_procedural_mix() {
+        let mut kick = test_kick_trigger_event();
+        kick.velocity = 1.0;
+        let mut chord = test_chord_event();
+        chord.time = 0.018;
+        let sidechain = NativeSidechainPayload {
+            enabled: true,
+            amount: 0.5,
+            target_track_id: "chords".to_string(),
+            trigger_kind: "kick".to_string(),
+        };
+
+        let mut procedural = playback_with_events(vec![kick.clone(), chord.clone()]);
+        procedural.sample_rate = 8_000;
+        procedural.sidechain = Some(sidechain.clone());
+        let procedural_frames = render_frames(&mut procedural, 800);
+
+        let mut kick_stem_source = playback_with_events(vec![kick.clone()]);
+        kick_stem_source.sample_rate = 8_000;
+        let kick_stem =
+            render_playback_to_wav(&mut kick_stem_source, 0.1, NativeAudioRenderMode::CacheStem)
+                .expect("kick cache stem render should work");
+        let kick_decoded = decode_pcm16_wav(&kick_stem.bytes).expect("kick stem should decode");
+
+        let mut chord_stem_source = playback_with_events(vec![chord.clone()]);
+        chord_stem_source.sample_rate = 8_000;
+        let chord_stem =
+            render_playback_to_wav(&mut chord_stem_source, 0.1, NativeAudioRenderMode::CacheStem)
+                .expect("chord cache stem render should work");
+        let chord_decoded = decode_pcm16_wav(&chord_stem.bytes).expect("chord stem should decode");
+
+        let mut trigger_marker = kick;
+        trigger_marker.id = "kick_cached_sidechain_trigger".to_string();
+        trigger_marker.velocity = 0.0;
+        let mut cached = PlaybackShared {
+            project_title: Some("Cached sidechain".to_string()),
+            events: vec![trigger_marker],
+            assets: HashMap::from([
+                ("kick_stem".to_string(), kick_decoded),
+                ("chord_stem".to_string(), chord_decoded),
+            ]),
+            regions: vec![
+                test_region("kick_region", "kick_stem", "drums", 0.0, 0.0, 0.1, 1.0, 0.0),
+                test_region(
+                    "chord_region",
+                    "chord_stem",
+                    "chords",
+                    0.0,
+                    0.0,
+                    0.1,
+                    1.0,
+                    0.0,
+                ),
+            ],
+            tracks: HashMap::from([
+                (
+                    "drums".to_string(),
+                    test_track("drums", 1.0, 0.0, false, false),
+                ),
+                (
+                    "chords".to_string(),
+                    test_track("chords", 1.0, 0.0, false, false),
+                ),
+            ]),
+            has_solo: false,
+            position_seconds: 0.0,
+            sample_rate: 8_000,
+            channels: 2,
+            playing: true,
+            rendered_frame_count: 0,
+            scan_start_index: 0,
+            generation: 1,
+            fx: NativeFxRuntime::default(),
+            loop_region: None,
+            metronome: None,
+            sidechain: Some(sidechain),
+        };
+        let cached_frames = render_frames(&mut cached, 800);
+        let max_diff = max_frame_diff(&procedural_frames, &cached_frames);
+
+        assert!(
+            max_diff < 0.00008,
+            "expected cached sidechain marker playback to match procedural mix, max diff {max_diff}"
         );
     }
 

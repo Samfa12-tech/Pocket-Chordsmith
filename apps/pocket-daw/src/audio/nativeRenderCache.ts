@@ -6,7 +6,7 @@ import { pruneNativeCacheAssets, readNativeCacheAsset, renderNativeAudioWav, wri
 import { audioRegionFromClip, renderTimelineAudioRegions } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
 import { renderTimelineEvents } from "./eventRenderer";
-import { encodeWav, renderProjectToWavBlob } from "./offlineRender";
+import { encodeWav } from "./offlineRender";
 
 export const NATIVE_RENDER_CACHE_ROOT = "project-cache/native-audio";
 const STEM_ROLES: TrackRole[] = ["drums", "bass", "chords", "melody", "guitar"];
@@ -88,12 +88,13 @@ export async function buildNativeRenderCache(project: PocketDawProject, signatur
   const createdAt = new Date().toISOString();
 
   for (const item of generatedClips.flatMap((clip) => assetBuildItems(project, clip, signature))) {
-    let asset = assets.get(item.key);
+    let asset: NativeAudioAsset | null | undefined = assets.get(item.key);
     if (asset) {
       renderCacheHitCount += 1;
     } else {
       renderCacheMissCount += 1;
       asset = await renderAsset(project, item);
+      if (!asset) continue;
       assets.set(item.key, asset);
       renderCacheItems.push(renderCacheItemForAsset(asset, signature, createdAt, item));
     }
@@ -512,19 +513,14 @@ function assetBuildItems(project: PocketDawProject, clip: Clip, signature: strin
   });
 }
 
-async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Promise<NativeAudioAsset> {
+async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Promise<NativeAudioAsset | null> {
   const assetProject = projectForNativeGeneratedStemRender(project, item.clip, item.trackId);
   const durationSeconds = barsToSeconds(item.clip.barLength, project.project.bpm, project.project.timeSig);
   const nativeRender = await renderNativeGeneratedStemWav(assetProject, durationSeconds);
-  let bytes = nativeRender?.bytes;
-  let sampleRate = nativeRender?.sampleRate || project.project.sampleRate;
-  let channels = nativeRender?.channels || 2;
-  if (!bytes) {
-    const blob = await renderProjectToWavBlob(assetProject, { includeChordsmithOfflineLofiTexture: item.role === "drums" });
-    bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
-    sampleRate = project.project.sampleRate;
-    channels = 2;
-  }
+  if (!nativeRender?.bytes?.length) return null;
+  const bytes = nativeRender.bytes;
+  const sampleRate = nativeRender.sampleRate || project.project.sampleRate;
+  const channels = nativeRender.channels || 2;
   const id = `native-cache-${hashString(item.key)}`;
   return {
     id,

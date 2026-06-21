@@ -75,13 +75,24 @@ import type { Clip, MediaPoolItem } from "../src/daw/schema";
 import type { NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
 import type { NativeMediaApi } from "../src/native/mediaBridge";
 
+function nativeRenderResult(samples: number[] = [512, -512, 256, -256]) {
+  const bytes = Array.from(wavBytes(48_000, 2, samples));
+  return {
+    sampleRate: 48_000,
+    channels: 2,
+    durationSeconds: 1,
+    sizeBytes: bytes.length,
+    bytes
+  };
+}
+
 describe("native render cache", () => {
   beforeEach(() => {
     clearAudioBufferCache();
     offlineRenderMock.renderProjectToWavBlob.mockClear();
     offlineRenderMock.encodeWav.mockClear();
     nativeMediaBridgeMock.renderNativeAudioWav.mockReset();
-    nativeMediaBridgeMock.renderNativeAudioWav.mockResolvedValue(null);
+    nativeMediaBridgeMock.renderNativeAudioWav.mockResolvedValue(nativeRenderResult() as never);
   });
 
   it("does not invalidate cache signatures for live mixer mute and solo changes", () => {
@@ -160,7 +171,8 @@ describe("native render cache", () => {
     expect(cache.assets[0].relativePath).toMatch(/^project-cache\/native-audio\/native-cache-/);
     expect(cache.renderCacheItems[0].metadata?.assetRelativePath).toBe(cache.assets[0].relativePath);
     expect(cache.cachedAssetByteCount).toBeGreaterThan(44);
-    expect(offlineRenderMock.renderProjectToWavBlob).toHaveBeenCalled();
+    expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalled();
+    expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
   });
 
   it("uses native offline rendering for generated-section WAV assets when available", async () => {
@@ -183,15 +195,27 @@ describe("native render cache", () => {
     expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
   });
 
-  it("renders native lofi texture only once into cached drum stems", async () => {
+  it("skips generated-section cache when native stem rendering is unavailable", async () => {
+    nativeMediaBridgeMock.renderNativeAudioWav.mockResolvedValue(null);
+
+    const cache = await buildNativeRenderCache(createDemoProject(), "native-unavailable-signature");
+
+    expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalled();
+    expect(cache.assets.length).toBe(0);
+    expect(cache.regions.length).toBe(0);
+    expect(cache.generatedRegionCount).toBe(0);
+    expect(cache.renderCacheItems.length).toBe(0);
+    expect(cache.cachedClipIds.size).toBe(0);
+    expect(cache.renderCacheMissCount).toBeGreaterThan(0);
+    expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
+  });
+
+  it("keeps generated lofi cache stems on the native renderer", async () => {
     const project = createLofiTemplateProject();
     await buildNativeRenderCache(project, "lofi-signature");
 
-    const renderOptions = (offlineRenderMock.renderProjectToWavBlob.mock.calls as unknown as Array<[unknown, { includeChordsmithOfflineLofiTexture?: boolean } | undefined]>)
-      .map((call) => call[1]);
-
-    expect(renderOptions.some((options) => options?.includeChordsmithOfflineLofiTexture === true)).toBe(true);
-    expect(renderOptions.some((options) => options?.includeChordsmithOfflineLofiTexture === false)).toBe(true);
+    expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalled();
+    expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
   });
 
   it("adds runtime-loaded audio clips as native WAV asset regions", async () => {
