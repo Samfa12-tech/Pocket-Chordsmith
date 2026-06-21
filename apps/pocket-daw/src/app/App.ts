@@ -3,6 +3,7 @@ import { audioBufferPeaks, getCachedAudioBuffer, setCachedAudioBuffer } from "..
 import { buildTransportMetronomeSchedule, countInSeconds, metronomeSettings, secondsPerBar } from "../audio/metronome";
 import { exportProjectToMidiBlob } from "../audio/midiExport";
 import { mergeNativeRenderCacheItems, prunePersistedNativeRenderCacheAssets } from "../audio/nativeRenderCache";
+import { renderProjectToNativeWavBlob } from "../audio/nativeOfflineRender";
 import { renderProjectToWavBlob } from "../audio/offlineRender";
 import { createDemoProject } from "../demo/demoProject";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../daw/dawProject";
@@ -3337,9 +3338,10 @@ export class App {
       const hydration = await this.hydrateTimelineAudioBuffers();
       this.assertNoMissingAudibleAudioBuffers(hydration, "WAV export");
       await this.showExportProgress("Rendering WAV mix", "Longer songs and imported audio can take a little while");
-      const blob = await renderProjectToWavBlob(currentProject(this.state));
+      const project = currentProject(this.state);
+      const blob = await renderProjectToNativeWavBlob(project) || await renderProjectToWavBlob(project);
       await this.showExportProgress("Preparing WAV download", `${Math.round(blob.size / 1024)} KB rendered`);
-      downloadBlob(blob, safeName(currentProject(this.state).project.title, "wav"));
+      downloadBlob(blob, safeName(project.project.title, "wav"));
       this.state.exportProgress = null;
       this.state.status = `Exported WAV (${Math.round(blob.size / 1024)} KB).`;
       this.render({ preserveScroll: true });
