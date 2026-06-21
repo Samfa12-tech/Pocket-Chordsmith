@@ -6,21 +6,21 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 | --- | --- |
 | Source version | `0.6.25` |
 | Project schema version | `2` |
-| Latest published version | `0.6.24` |
-| Latest published tag | `pocket-daw-v0.6.24` |
-| Latest published commit | `a316eb8a207f0d77fd3c17aef4f0af1176de13d1` |
-| Last installed-smoke version | `0.6.24` |
+| Latest published version | `0.6.25` |
+| Latest published tag | `pocket-daw-v0.6.25` |
+| Latest published commit | `6253baabb2a29c4930427733cd2783502b89dec8` |
+| Last installed-smoke version | `0.6.25` |
 | Last installed-smoke result | `not-run` |
-| Last installed-smoke date | `2026-06-21T03:21:10Z` |
-| Last installed-smoke installer | `Pocket.DAW_0.6.24_x64-setup.exe` |
-| Last installed-smoke SHA-256 | `b3d8f0a218b97f31984223b1069d3c2e8c73bd4d0c7a22cd21c026ddd1e70984` |
+| Last installed-smoke date | `2026-06-21T12:33:00Z` |
+| Last installed-smoke installer | `Pocket.DAW_0.6.25_x64-setup.exe` |
+| Last installed-smoke SHA-256 | `2fe557a22410e1b4390c1023145266019f5b4e4d3a9570b64dc3ee48f29f0d75` |
 
 ## Installed-Smoke Notes
 
-- Pocket DAW 0.6.24 was published to GitHub latest for a manual auto-update smoke before merging to main.
-- The latest updater manifest resolves to pocket-daw-v0.6.24 and the remote setup SHA-256 matches the staged artifact.
-- This tester build keeps the previous rendered native cache active during live composition rebuilds so discarded cache builds do not trigger full procedural fallback.
-- The guarded itch push refused without a passing exact-artifact smoke attestation, so the itch installer channel remains pending until manual smoke evidence is available.
+- Pocket DAW 0.6.25 was published to GitHub latest for a manual auto-update smoke before merging to main.
+- The latest updater manifest resolves to pocket-daw-v0.6.25 and the remote setup SHA-256 matches the staged artifact.
+- This tester build includes the native cache/cached-stem diagnostics, native generated-source parity fixes, auto-bass handover protection, and DAW guitar rhythm presets.
+- The itch channel remains the bootstrapper/downloader path; no bootstrapper upload was needed for this app-update checkpoint.
 - Installed-app/manual smoke is intentionally pending until Sam tests the auto-update path.
 
 ## Release Truth
