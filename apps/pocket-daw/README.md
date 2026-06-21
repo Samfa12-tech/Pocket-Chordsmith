@@ -2,7 +2,7 @@
 
 Pocket DAW is a Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
-Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.21`; latest published updater checkpoint: `0.6.21`. The machine-readable status source is `release-status.json`, with generated Markdown in `docs/CURRENT_RELEASE_STATUS.md`.
+Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.22`; latest published updater checkpoint: `0.6.21`. The machine-readable status source is `release-status.json`, with generated Markdown in `docs/CURRENT_RELEASE_STATUS.md`.
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
@@ -57,7 +57,7 @@ The file bridge can also arrange a `.mid` file into a generated Chordsmith-style
 
 Pocket DAW `0.6.13` added `Help -> AI / MCP Bridge` in the installed app. The panel keeps copy-ready command, Claude/JSON and Codex TOML snippets, and can enable a token-protected live localhost bridge for the running app. Live MCP tools can read app status, control transport, select tracks/clips, save an already-saved project and apply safe mixer edits. File/project MCP tools still work while Pocket DAW is closed. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
 
-Pocket DAW `0.6.21` is the current updater-visible checkpoint. Installed-app smoke for the exact `0.6.21` artifact is not recorded in `release-status.json` yet, so do not describe it as installed-smoked until that exact-artifact evidence exists.
+Pocket DAW `0.6.21` is the current updater-visible checkpoint. Source `0.6.22` is the next updater candidate and must not be described as public or installed-smoked until matching release and exact-artifact smoke evidence exists in `release-status.json`.
 
 Release and update docs:
 

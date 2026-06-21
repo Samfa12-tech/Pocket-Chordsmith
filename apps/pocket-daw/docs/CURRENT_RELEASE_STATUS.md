@@ -4,7 +4,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.21` |
+| Source version | `0.6.22` |
 | Project schema version | `2` |
 | Latest published version | `0.6.21` |
 | Latest published tag | `pocket-daw-v0.6.21` |
@@ -18,7 +18,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 ## Installed-Smoke Notes
 
 - Bootstrapper install smoke evidence is recorded for 0.6.10.
-- Installed smoke for published 0.6.21 and current source 0.6.21 is not recorded in this status file.
+- Installed smoke for published 0.6.21 is not recorded in this status file. Current source 0.6.22 is not public or installed-smoked until a matching release and smoke attestation are recorded.
 
 ## Release Truth
 

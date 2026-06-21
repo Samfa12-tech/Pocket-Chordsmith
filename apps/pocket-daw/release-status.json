@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceVersion": "0.6.21",
+  "sourceVersion": "0.6.22",
   "projectSchemaVersion": 2,
   "latestPublishedVersion": "0.6.21",
   "latestPublishedTag": "pocket-daw-v0.6.21",
@@ -14,7 +14,7 @@
     "result": "pass",
     "notes": [
       "Bootstrapper install smoke evidence is recorded for 0.6.10.",
-      "Installed smoke for published 0.6.21 and current source 0.6.21 is not recorded in this status file."
+      "Installed smoke for published 0.6.21 is not recorded in this status file. Current source 0.6.22 is not public or installed-smoked until a matching release and smoke attestation are recorded."
     ]
   }
 }
