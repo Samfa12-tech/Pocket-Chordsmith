@@ -635,7 +635,7 @@ describe("audio engine diagnostics", () => {
     }
   });
 
-  it("promotes cold native fallback playback to fresh cached regions after play starts", async () => {
+  it("defers cold native fallback cache promotion until playback is idle", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       __TAURI__: {},
@@ -682,9 +682,7 @@ describe("audio engine diagnostics", () => {
         nativeRenderCacheError: string | null;
         ensureNativeRenderCache(reason: string, options?: { coverage?: "full" | "partial"; clipIds?: Set<string> }): Promise<NativeRenderCache | null>;
       };
-      let cacheBuildOptions: { coverage?: "full" | "partial"; clipIds?: Set<string> } | undefined;
       internals.ensureNativeRenderCache = async (reason: string, options?: { coverage?: "full" | "partial"; clipIds?: Set<string> }) => {
-        cacheBuildOptions = options;
         internals.nativeRenderCacheBuildCount += 1;
         internals.nativeRenderCacheLastBuildReason = reason;
         internals.nativeRenderCacheError = null;
@@ -700,23 +698,17 @@ describe("audio engine diagnostics", () => {
       expect(starts[0].assets?.length || 0).toBe(0);
       expect(starts[0].regions?.length || 0).toBe(0);
 
-      await waitForAsyncCondition(() => starts.length >= 2);
+      await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.pendingReason === "play-fallback-cache-build");
 
-      expect(starts).toHaveLength(2);
-      expect(starts[1].assets?.length || 0).toBeGreaterThan(0);
-      expect(starts[1].regions?.length || 0).toBeGreaterThan(0);
-      expect(starts[1].events.length).toBeLessThan(starts[0].events.length);
-      expect(cacheBuildOptions?.coverage).toBe("partial");
-      expect(cacheBuildOptions?.clipIds?.size || 0).toBeGreaterThan(0);
-      expect(cacheBuildOptions?.clipIds?.size || 0).toBeLessThanOrEqual(2);
-      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
+      expect(starts).toHaveLength(1);
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
       expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("play-fallback-cache-build");
     } finally {
       (globalThis as any).window = previousWindow;
     }
   });
 
-  it("promotes mixed runtime-audio playback to generated cache without dropping runtime regions", async () => {
+  it("defers mixed runtime-audio generated cache promotion without dropping runtime regions", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       __TAURI__: {},
@@ -784,13 +776,10 @@ describe("audio engine diagnostics", () => {
       expect(starts[0].regions?.length || 0).toBe(1);
       expect(starts[0].events.some((event) => event.velocity > 0)).toBe(true);
 
-      await waitForAsyncCondition(() => starts.length >= 2);
+      await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.pendingReason === "play-fallback-cache-build");
 
-      expect(starts).toHaveLength(2);
-      expect(starts[1].assets?.length || 0).toBeGreaterThan(starts[0].assets?.length || 0);
-      expect(starts[1].regions?.length || 0).toBeGreaterThan(starts[0].regions?.length || 0);
-      expect(starts[1].events.length).toBeLessThan(starts[0].events.length);
-      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
+      expect(starts).toHaveLength(1);
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
       expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("play-fallback-cache-build");
     } finally {
       (globalThis as any).window = previousWindow;
@@ -907,7 +896,7 @@ describe("audio engine diagnostics", () => {
     }
   });
 
-  it("keeps live native composition edits responsive before promoting them to fresh cached regions", async () => {
+  it("keeps live native composition edits responsive and defers fresh cached regions", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       setInterval: () => 1,
@@ -963,15 +952,12 @@ describe("audio engine diagnostics", () => {
 
       await engine.play();
       engine.syncProject(edited, "composition-events", "bass-edit-refresh");
-      await waitForAsyncCondition(() => starts.length >= 3);
+      await waitForAsyncCondition(() => starts.length >= 2);
 
-      expect(starts).toHaveLength(3);
-      const freshStart = starts.at(-1)!;
+      expect(starts).toHaveLength(2);
 
       expect(starts[1].events.some((event) => event.trackId === "bass" && event.velocity > 0)).toBe(true);
-      expect(freshStart.regions?.length || 0).toBeGreaterThan(0);
-      expect(freshStart.events.length).toBeLessThan(starts[1].events.length);
-      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
       expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("bass-edit-refresh");
     } finally {
       (globalThis as any).window = previousWindow;

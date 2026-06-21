@@ -318,7 +318,8 @@ export class AudioEngine {
       } else if (this.readyNativeRenderCache()) {
         void this.restartNativePlayback(current, { reason });
       } else {
-        void this.restartNativePlaybackAfterFreshRenderCache(reason);
+        this.deferNativeRenderCacheRefresh(reason, { scheduleWhenIdle: false });
+        void this.restartNativePlayback(current, { reason, useRenderCache: false });
       }
     }
 
@@ -977,13 +978,6 @@ export class AudioEngine {
     this.nativeRenderCachePendingReason = reason;
     this.cancelLiveNativeRenderCacheRefresh();
     if (!this.playing) this.scheduleNativeRenderCachePrewarm(reason);
-    else if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
-      this.nativeLiveRenderCacheRefreshHandle = window.setTimeout(() => {
-        this.nativeLiveRenderCacheRefreshHandle = null;
-        const buildReason = this.nativeRenderCachePendingReason || reason;
-        void this.restartNativePlaybackAfterFreshRenderCache(buildReason);
-      }, 160);
-    }
   }
 
   private activateReadyNativeRenderCacheAfterFallback(reason: string) {
