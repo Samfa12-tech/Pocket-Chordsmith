@@ -621,7 +621,7 @@ describe("native render cache", () => {
     }
   });
 
-  it("keeps filtered stale cache playback for live edits without hidden cache builds", async () => {
+  it("keeps filtered stale cache playback when the live cache refresh is discarded", async () => {
     const previousWindow = (globalThis as { window?: unknown }).window;
     (globalThis as { window?: unknown }).window = {
       setInterval: () => 1,
@@ -692,8 +692,8 @@ describe("native render cache", () => {
       expect(diagnostics.nativeRenderCache.assetRegionCount).toBeGreaterThan(0);
       expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBeGreaterThan(0);
       expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBeLessThan(diagnostics.eventCount);
-      expect(diagnostics.nativeRenderCache.buildCount).toBe(1);
-      expect(diagnostics.nativeRenderCache.discardedBuildCount).toBe(0);
+      expect(diagnostics.nativeRenderCache.buildCount).toBe(2);
+      expect(diagnostics.nativeRenderCache.discardedBuildCount).toBe(1);
       expect(diagnostics.nativeRenderCache.pendingReason).toBe("live-bass-edit-discarded");
     } finally {
       (globalThis as { window?: unknown }).window = previousWindow;

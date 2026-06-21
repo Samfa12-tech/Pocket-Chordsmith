@@ -928,6 +928,13 @@ export class AudioEngine {
     this.nativeRenderCachePendingReason = reason;
     this.cancelLiveNativeRenderCacheRefresh();
     if (!this.playing) this.scheduleNativeRenderCachePrewarm(reason);
+    else if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
+      this.nativeLiveRenderCacheRefreshHandle = window.setTimeout(() => {
+        this.nativeLiveRenderCacheRefreshHandle = null;
+        const buildReason = this.nativeRenderCachePendingReason || reason;
+        void this.restartNativePlaybackAfterFreshRenderCache(buildReason);
+      }, 160);
+    }
   }
 
   private activateReadyNativeRenderCacheAfterFallback(reason: string) {
