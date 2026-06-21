@@ -652,8 +652,9 @@ export class AudioEngine {
     const cache = useRenderCache && !this.nativeRenderCacheBypassedForLiveEdits ? this.playableNativeRenderCache() : null;
     if (useRenderCache && !cache) this.scheduleNativeRenderCachePrewarm(options.reason || "play-fallback-cache-build");
     const playbackCache = useRenderCache ? await this.nativePlaybackCacheWithRuntimeAudio(cache) : cache;
-    const events = playbackCache ? this.events.filter((event) => !playbackCache.cachedClipIds.has(event.clipId)) : this.events;
-    if (playbackCache) playbackCache.proceduralFallbackEventCount = events.length;
+    const playbackEvents = this.nativePlaybackEvents(playbackCache);
+    const events = playbackEvents.events;
+    if (playbackCache) playbackCache.proceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
     if (!events.length && !(playbackCache?.regions.length)) return false;
     const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, playbackCache || undefined);
     const result = await this.nativePlayback.start(payload);
@@ -700,8 +701,9 @@ export class AudioEngine {
     if (useRenderCache && !cache) this.scheduleNativeRenderCachePrewarm(request.options.reason || this.lastProjectSyncReason || "restart-fallback-cache-build");
     const playbackCache = useRenderCache ? await this.nativePlaybackCacheWithRuntimeAudio(cache) : cache;
     if (request.token !== this.nativeRestartToken || this.playbackBackend !== "native-cpal" || !this.playing) return;
-    const events = playbackCache ? this.events.filter((event) => !playbackCache.cachedClipIds.has(event.clipId)) : this.events;
-    if (playbackCache) playbackCache.proceduralFallbackEventCount = events.length;
+    const playbackEvents = this.nativePlaybackEvents(playbackCache);
+    const events = playbackEvents.events;
+    if (playbackCache) playbackCache.proceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
     const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, playbackCache || undefined);
     const result = await this.nativePlayback.start(payload);
     if (request.token !== this.nativeRestartToken) return;
@@ -750,6 +752,26 @@ export class AudioEngine {
     if (!runtimeCache.regions.length) return cache;
     if (!cache) return runtimeCache;
     return mergeNativePlaybackCaches(cache, runtimeCache);
+  }
+
+  private nativePlaybackEvents(cache: NativeRenderCache | null): { events: RenderedEvent[]; proceduralFallbackEventCount: number } {
+    if (!cache) return { events: this.events, proceduralFallbackEventCount: this.events.length };
+    const sidechain = chordsmithSidechainSettings(this.project);
+    const events: RenderedEvent[] = [];
+    let proceduralFallbackEventCount = 0;
+    for (const event of this.events) {
+      if (!cache.cachedClipIds.has(event.clipId)) {
+        events.push(event);
+        proceduralFallbackEventCount += 1;
+      } else if (sidechain?.enabled && isChordsmithSidechainTrigger(event)) {
+        events.push({
+          ...event,
+          id: `${event.id}_cached_sidechain_trigger`,
+          velocity: 0
+        });
+      }
+    }
+    return { events, proceduralFallbackEventCount };
   }
 
   private readyNativeRuntimeAudioCache(): NativeRenderCache | null {

@@ -312,7 +312,8 @@ describe("native render cache", () => {
       expect(starts).toHaveLength(2);
       expect(liveEditStart.assets?.length || 0).toBeGreaterThan(0);
       expect(liveEditStart.regions?.length || 0).toBeGreaterThan(0);
-      expect(liveEditStart.events.length).toBe(0);
+      expect(liveEditStart.events.length).toBeGreaterThan(0);
+      expect(liveEditStart.events.every(isSilentCachedSidechainTrigger)).toBe(true);
       expect(diagnostics.nativeRenderCache.nativeRenderCacheBypassedForLiveEdits).toBe(false);
       expect(diagnostics.nativeRenderCache.assetRegionCount).toBeGreaterThan(0);
       expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBe(0);
@@ -374,8 +375,10 @@ describe("native render cache", () => {
       expect(restarted.assets?.length || 0).toBeGreaterThan(0);
       expect(restarted.regions?.length || 0).toBeGreaterThan(0);
       expect(restarted.events.length).toBeLessThan(diagnostics.eventCount);
+      expect(restarted.events.length).toBeGreaterThan(0);
+      expect(restarted.events.every(isSilentCachedSidechainTrigger)).toBe(true);
       expect(diagnostics.nativeRenderCache.assetRegionCount).toBeGreaterThan(0);
-      expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBe(restarted.events.length);
+      expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBe(0);
     } finally {
       (globalThis as { window?: unknown }).window = previousWindow;
     }
@@ -673,6 +676,10 @@ async function waitForAsyncCondition(condition: () => boolean, attempts = 25): P
     await Promise.resolve();
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }
+}
+
+function isSilentCachedSidechainTrigger(event: NativeAudioStartPayload["events"][number]): boolean {
+  return event.kind === "kick" && event.velocity === 0 && event.id.endsWith("_cached_sidechain_trigger");
 }
 
 function nativeStatus(overrides: Partial<NativeAudioStatus> = {}): NativeAudioStatus {

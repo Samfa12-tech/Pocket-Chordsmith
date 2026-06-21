@@ -295,8 +295,10 @@ describe("audio engine diagnostics", () => {
       await waitForAsyncCondition(() => starts.length >= 2);
 
       expect(starts).toHaveLength(2);
-      expect(starts.slice(1).every((start) => start.events.length === 0)).toBe(true);
-      expect(starts.slice(1).every((start) => (start.regions?.length || 0) > 0)).toBe(true);
+      const restartStarts = starts.slice(1);
+      expect(restartStarts.every((start) => start.events.length > 0)).toBe(true);
+      expect(restartStarts.every((start) => start.events.every(isSilentCachedSidechainTrigger))).toBe(true);
+      expect(restartStarts.every((start) => (start.regions?.length || 0) > 0)).toBe(true);
       expect(engine.getDiagnostics().lastProjectSyncReason).toBe("bass-edit-c");
       expect(engine.getDiagnostics().nativeRenderCache.lastBuildReason).toBe("bass-edit-c");
       expect(engine.getDiagnostics().nativeRenderCache.nativeRenderCacheBypassedForLiveEdits).toBe(false);
@@ -350,7 +352,8 @@ describe("audio engine diagnostics", () => {
 
       await engine.play();
       expect(starts).toHaveLength(1);
-      expect(starts[0].events.length).toBe(0);
+      expect(starts[0].events.length).toBeGreaterThan(0);
+      expect(starts[0].events.every(isSilentCachedSidechainTrigger)).toBe(true);
 
       engine.syncProject(cycleBassStep(project, "A", 0), "composition-events", "bass-edit-discarded");
       await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.buildCount >= 1);
@@ -415,6 +418,10 @@ async function waitForAsyncCondition(condition: () => boolean, attempts = 25): P
     await Promise.resolve();
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }
+}
+
+function isSilentCachedSidechainTrigger(event: NativeAudioStartPayload["events"][number]): boolean {
+  return event.kind === "kick" && event.velocity === 0 && event.id.endsWith("_cached_sidechain_trigger");
 }
 
 function fakeNativeRenderCache(project: PocketDawProject): NativeRenderCache {
