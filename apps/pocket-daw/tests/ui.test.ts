@@ -256,6 +256,27 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).not.toContain("data-section-chord");
   });
 
+  it("shows Chordsmith guitar rhythm presets in the selected track inspector", () => {
+    const state = createInitialState();
+    state.selectedTrackId = "guitar";
+
+    const html = renderAppShell(state);
+    const inspector = inspectorHtml(html);
+
+    expect(inspector).toContain("Guitar Rhythm");
+    expect(inspector).toContain('data-guitar-preset-section="A"');
+    expect(inspector).toContain("Choose rhythm preset...");
+    expect(inspector).toContain('<option value="rock_eighths"');
+    expect(inspector).toContain(">Rock 8ths</option>");
+    expect(inspector).toContain('<option value="train_chop"');
+    expect(inspector).toContain(">Train chop</option>");
+    expect(inspector).toContain('<option value="western_waltz"');
+    expect(inspector).toContain(">Western waltz</option>");
+    expect(inspector).toContain("Current: Metal chug");
+    expect(inspector).toContain('data-guitar-step="A:0"');
+    expect(inspector).not.toContain("data-drum-preset-section");
+  });
+
   it("shows Chordsmith chord sound choices when the chord track is selected", () => {
     const state = createInitialState();
     state.selectedTrackId = "chords";

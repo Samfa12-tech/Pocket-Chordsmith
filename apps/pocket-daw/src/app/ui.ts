@@ -780,6 +780,7 @@ function renderChordsmithSequencer(state: AppState, project: ReturnType<typeof c
   const page = Math.min(Math.max(0, state.chordsmithEditorStepPage), maxPage);
   const startStep = page * windowSize;
   const body = renderSelectedSequencerBlock(project, pcs, section, selectedTrack, selectedRole, state.chordsmithEditorMelodyTrackIndex, startStep, windowSize, state.chordsmithStepSelection);
+  const presetPanel = renderChordsmithPresetPanel(pcs, section, selectedRole);
   return `
     <div class="sequencer-editor">
       <header>
@@ -792,10 +793,62 @@ function renderChordsmithSequencer(state: AppState, project: ReturnType<typeof c
         </label>
       </header>
       ${renderChordsmithScopeControls(state, pcs, section, selectedClipSection, page, maxPage)}
+      ${presetPanel}
       ${renderChordsmithGlobals(pcs)}
       ${body}
     </div>
   `;
+}
+
+function renderChordsmithPresetPanel(pcs: SanitizedPcsProject, section: SanitizedPcsSection, role: Track["role"] | null): string {
+  if (role === "drums") {
+    const presets = visibleDrumPresetsForProject(pcs);
+    const current = presets.find((preset) => preset.id === pcs.drumGroovePreset);
+    return `
+      <div class="inspector-preset-panel">
+        <h3>Drum Presets</h3>
+        <label>Beat preset
+          <select data-drum-preset-section="${escapeAttr(section.id)}" title="Choose a Chordsmith beat preset to fill kick, snare and hats for this section.">
+            <option value="">Choose beat preset...</option>
+            ${renderDrumPresetOptions(pcs, presets)}
+          </select>
+        </label>
+        ${current ? `<span class="preset-current">Imported: ${escapeHtml(drumPresetLabel(current, pcs))}</span>` : ""}
+      </div>
+    `;
+  }
+  if (role === "guitar") {
+    const presets = visibleGuitarPresetsForProject(pcs);
+    const current = presets.find((preset) => preset.id === pcs.guitarPatternPreset);
+    return `
+      <div class="inspector-preset-panel">
+        <h3>Guitar Rhythm</h3>
+        <label>Rhythm preset
+          <select data-guitar-preset-section="${escapeAttr(section.id)}" title="Choose a Chordsmith guitar rhythm preset to fill this section.">
+            <option value="">Choose rhythm preset...</option>
+            ${renderGuitarPresetOptions(presets)}
+          </select>
+        </label>
+        ${current ? `<span class="preset-current">Current: ${escapeHtml(guitarPresetLabel(current))}</span>` : ""}
+      </div>
+    `;
+  }
+  return "";
+}
+
+function renderDrumPresetOptions(pcs: SanitizedPcsProject, presets: ReturnType<typeof visibleDrumPresetsForProject>): string {
+  return presets
+    .map((preset) => {
+      const label = drumPresetLabel(preset, pcs);
+      return `<option value="${escapeAttr(preset.id)}" title="${escapeAttr(preset.tip)}">${escapeHtml(label)}</option>`;
+    })
+    .join("");
+}
+
+function renderGuitarPresetOptions(presets: ReturnType<typeof visibleGuitarPresetsForProject>): string {
+  return presets
+    .map((preset) => `<option value="${escapeAttr(preset.id)}" title="${escapeAttr(preset.tip)}">${escapeHtml(guitarPresetLabel(preset))}</option>`)
+    .join("");
 }
 
 function renderChordsmithScopeControls(state: AppState, pcs: SanitizedPcsProject, section: SanitizedPcsSection, selectedClipSection: string | null, page: number, maxPage: number): string {
@@ -887,22 +940,10 @@ function renderChordSelect(section: SanitizedPcsSection, bar: number): string {
 }
 
 function renderDrumEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
-  const drumPresetOptions = visibleDrumPresetsForProject(pcs)
-    .map((preset) => {
-      const label = drumPresetLabel(preset, pcs);
-      return `<option value="${escapeAttr(preset.id)}" title="${escapeAttr(preset.tip)}">${escapeHtml(label)}</option>`;
-    })
-    .join("");
   return `
     <div class="sequencer-block">
       <div class="sequencer-heading">
         <strong>Drums</strong>
-        <label>Beat preset
-          <select data-drum-preset-section="${escapeAttr(section.id)}" title="Choose a Chordsmith beat preset to fill kick, snare and hats for this section.">
-            <option value="">Choose beat preset...</option>
-            ${drumPresetOptions}
-          </select>
-        </label>
       </div>
       ${renderStepRuler(startStep, steps)}
       ${(["kick", "snare", "hat"] as const)
@@ -1008,19 +1049,10 @@ function selectedMelodyTrackIndex(track: Track | null) {
 function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number): string {
   const guitarTrack = project.tracks.find((track) => track.role === "guitar");
   const inactive = !pcs.guitarEnabled || guitarTrack?.active === false;
-  const guitarPresetOptions = visibleGuitarPresetsForProject(pcs)
-    .map((preset) => `<option value="${escapeAttr(preset.id)}" title="${escapeAttr(preset.tip)}">${escapeHtml(guitarPresetLabel(preset))}</option>`)
-    .join("");
   return `
     <div class="sequencer-block ${inactive ? "muted-editor" : ""}">
       <strong>Guitar</strong>
       <div class="editor-controls lane-controls">
-        <label>Rhythm preset
-          <select data-guitar-preset-section="${escapeAttr(section.id)}" title="Choose a Chordsmith guitar rhythm preset to fill this section.">
-            <option value="">Choose guitar preset...</option>
-            ${guitarPresetOptions}
-          </select>
-        </label>
         <label class="inline-toggle"><input data-guitar-setting="guitarEnabled" type="checkbox" ${pcs.guitarEnabled ? "checked" : ""}> Enabled</label>
         <label>Tone
           <select data-guitar-setting="guitarTone">

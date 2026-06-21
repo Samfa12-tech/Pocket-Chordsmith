@@ -774,6 +774,31 @@ button.record:hover {
   border-top: 1px solid #26314c;
 }
 
+.inspector-preset-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px;
+  border: 1px solid #2d3958;
+  border-radius: 6px;
+  background: #0d1322;
+}
+
+.inspector-preset-panel h3 {
+  margin: 0;
+  color: #e8f0ff;
+  font-size: 12px;
+}
+
+.inspector-preset-panel label {
+  margin: 0;
+}
+
+.preset-current {
+  color: #9ba9c9;
+  font-size: 11px;
+}
+
 .automation-panel {
   display: grid;
   gap: 9px;
