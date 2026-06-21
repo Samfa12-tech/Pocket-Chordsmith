@@ -231,10 +231,12 @@ ${artifactTable}
 
 ## Highlights
 
+- Disabled automatic hidden native render-cache builds on project load and during live playback, preventing runaway RAM/disk churn from stuck cache generation.
+- Loop toggles and loop range edits now restart native playback with transport-only sync, keeping the playhead, loop marker and mixer visualiser aligned with the native audio clock.
 - Imported auto-bass projects now show their audible auto bass in the bass timeline/editor instead of looking empty.
 - The first manual bass edit now fills the existing auto bass into editable manual notes across all sections, so changing one note does not erase the rest of the line.
 - Added a Bass inspector "Fill auto bass" button to intentionally copy the current auto-bass line into manual notes.
-- Live native composition edits keep cached playback running while a fresh native render cache is rebuilt, avoiding the previous all-track procedural handover during small edits.
+- Live native composition edits keep existing cached playback regions where possible and defer fresh cache generation instead of launching hidden rebuilds during playback.
 - Hardened the installed-app live recording path for Windows smoke testing.
 - Preserved fractional recording placement and same-track overwrite splitting around recorded takes.
 - Moved heavy recording preparation before count-in, guards stale recording sessions, and keeps stopped-transport count-in coherent.

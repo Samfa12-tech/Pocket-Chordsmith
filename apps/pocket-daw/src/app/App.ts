@@ -934,7 +934,7 @@ export class App {
       });
     });
     this.root.querySelector<HTMLInputElement>("#loopEnabled")?.addEventListener("change", (event) => {
-      this.applyProjectState(setLoopEnabled(this.state, (event.target as HTMLInputElement).checked));
+      this.applyProjectState(setLoopEnabled(this.state, (event.target as HTMLInputElement).checked), { audio: "transport-controls", reason: "loop-toggle" });
     });
     this.root.querySelector<HTMLInputElement>("[data-updater-auto-check]")?.addEventListener("change", (event) => {
       const input = event.target as HTMLInputElement;
@@ -950,7 +950,7 @@ export class App {
       this.root.querySelector<HTMLInputElement>(`#${id}`)?.addEventListener("change", () => {
         const start = Number(this.root.querySelector<HTMLInputElement>("#loopStart")?.value || 1);
         const end = Number(this.root.querySelector<HTMLInputElement>("#loopEnd")?.value || 2);
-        this.applyProjectState(setLoopBars(this.state, start, end));
+        this.applyProjectState(setLoopBars(this.state, start, end), { audio: "transport-controls", reason: "loop-bars" });
       });
     });
     this.root.querySelector<HTMLTextAreaElement>("#importText")?.addEventListener("input", (event) => {
@@ -1770,9 +1770,9 @@ export class App {
     if (action === "trim-start-left") this.applyProjectState(trimSelectedClipStartCommand(this.state, -1));
     if (action === "trim-end-left") this.applyProjectState(trimSelectedClipEndCommand(this.state, -1));
     if (action === "trim-end-right") this.applyProjectState(trimSelectedClipEndCommand(this.state, 1));
-    if (action === "toggle-loop") this.applyProjectState(setLoopEnabled(this.state, !currentProject(this.state).timeline.loop.enabled));
-    if (action === "loop-selected") this.applyProjectState(setLoopToSelectedClipCommand(this.state));
-    if (action === "loop-clear") this.applyProjectState(clearLoopCommand(this.state));
+    if (action === "toggle-loop") this.applyProjectState(setLoopEnabled(this.state, !currentProject(this.state).timeline.loop.enabled), { audio: "transport-controls", reason: "loop-toggle" });
+    if (action === "loop-selected") this.applyProjectState(setLoopToSelectedClipCommand(this.state), { audio: "transport-controls", reason: "loop-selected" });
+    if (action === "loop-clear") this.applyProjectState(clearLoopCommand(this.state), { audio: "transport-controls", reason: "loop-clear" });
     if (action === "marker-add") this.applyProjectState(addMarkerAtPlayheadCommand(this.state));
     if (action === "section-add") {
       const sectionId = this.root.querySelector<HTMLSelectElement>("#songSectionToAdd")?.value || this.state.chordsmithEditorSectionId || "A";
@@ -1895,7 +1895,7 @@ export class App {
       this.seekToBar(1, true);
       this.render();
     }
-    if (command === "toggle-loop") this.applyProjectState(setLoopEnabled(this.state, !currentProject(this.state).timeline.loop.enabled));
+    if (command === "toggle-loop") this.applyProjectState(setLoopEnabled(this.state, !currentProject(this.state).timeline.loop.enabled), { audio: "transport-controls", reason: "loop-toggle" });
     if (command === "mute-selected-track" && this.state.selectedTrackId) this.toggleTrackMute(this.state.selectedTrackId);
     if (command === "solo-selected-track" && this.state.selectedTrackId) this.toggleTrackSolo(this.state.selectedTrackId);
     if (command === "arm-selected-track" && this.state.selectedTrackId) {
@@ -1915,7 +1915,7 @@ export class App {
     if (command === "paste-clip") this.applyProjectState(pasteClipAtPlayhead(this.state));
     if (command === "delete-clip") this.applyProjectState(deleteSelectedClip(this.state));
     if (command === "split-clip") this.applyProjectState(splitSelectedClipAtPlayhead(this.state));
-    if (command === "loop-selected") this.applyProjectState(setLoopToSelectedClipCommand(this.state));
+    if (command === "loop-selected") this.applyProjectState(setLoopToSelectedClipCommand(this.state), { audio: "transport-controls", reason: "loop-selected" });
     if (command === "add-marker") this.applyProjectState(addMarkerAtPlayheadCommand(this.state));
     if (command === "move-clip-left") this.applyProjectState(moveSelectedClip(this.state, -1));
     if (command === "move-clip-right") this.applyProjectState(moveSelectedClip(this.state, 1));

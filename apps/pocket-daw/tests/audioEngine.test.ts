@@ -467,6 +467,81 @@ describe("audio engine diagnostics", () => {
     }
   });
 
+  it("keeps the native playhead estimate wrapped to the active loop", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      __TAURI__: {},
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    const project = createDemoProject();
+    project.timeline.loop = { enabled: true, startBar: 2, endBar: 3 };
+    const secondsPerBar = project.project.timeSig * (60 / project.project.bpm);
+    const native = {
+      async start(payload: NativeAudioStartPayload) {
+        return { started: true, status: nativeStatus({ playing: true, positionSeconds: payload.startSeconds }), error: null };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true, playing: true, positionSeconds: secondsPerBar }); }
+    };
+
+    try {
+      const engine = new AudioEngine(project, native);
+
+      await engine.play();
+      (engine as any).nativeStartedAtMs = performance.now() - secondsPerBar * 2 * 1000;
+
+      expect(engine.currentSeconds()).toBeCloseTo(secondsPerBar, 1);
+    } finally {
+      (globalThis as any).window = previousWindow;
+    }
+  });
+
+  it("restarts native playback with changed loop bounds through transport sync", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      __TAURI__: {},
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    const starts: NativeAudioStartPayload[] = [];
+    const native = {
+      async start(payload: NativeAudioStartPayload) {
+        starts.push(payload);
+        return { started: true, status: nativeStatus({ playing: true, positionSeconds: payload.startSeconds }), error: null };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true, playing: true }); }
+    };
+
+    try {
+      const project = createDemoProject();
+      const engine = new AudioEngine(project, native);
+      await engine.play();
+
+      const looped = structuredClone(project);
+      looped.timeline.loop = { enabled: true, startBar: 2, endBar: 4 };
+      engine.syncProject(looped, "transport-controls", "loop-toggle");
+      await (engine as any).nativeRestartFlush;
+
+      expect(starts).toHaveLength(2);
+      expect(starts[0].loop).toBeNull();
+      expect(starts[1].loop).toEqual({ enabled: true, startSeconds: expect.any(Number), endSeconds: expect.any(Number) });
+      expect(engine.getDiagnostics().lastProjectSyncMode).toBe("transport-controls");
+      expect(engine.getDiagnostics().nativeRenderCache.buildPending).toBe(false);
+    } finally {
+      (globalThis as any).window = previousWindow;
+    }
+  });
+
   it("does not fall back to WebAudio when native playback start fails", async () => {
     const native = {
       async start() {
@@ -526,7 +601,7 @@ describe("audio engine diagnostics", () => {
     }
   });
 
-  it("refreshes cold native fallback playback back to cached stems", async () => {
+  it("keeps cold native fallback playback stable until cache refresh is explicit", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       __TAURI__: {},
@@ -589,19 +664,17 @@ describe("audio engine diagnostics", () => {
       expect(starts[0].assets?.length || 0).toBe(0);
       expect(starts[0].regions?.length || 0).toBe(0);
 
-      await waitForAsyncCondition(() => starts.length >= 2 && engine.getDiagnostics().nativeRenderCache.buildCount >= 1);
+      await Promise.resolve();
 
-      expect(starts).toHaveLength(2);
-      expect(starts[1].assets?.length || 0).toBeGreaterThan(0);
-      expect(starts[1].regions?.length || 0).toBeGreaterThan(0);
-      expect(starts[1].events.every(isSilentCachedSidechainTrigger)).toBe(true);
-      expect(engine.getDiagnostics().nativeRenderCache.lastBuildReason).toBe("play-fallback-cache-build");
+      expect(starts).toHaveLength(1);
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
+      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("play-fallback-cache-build");
     } finally {
       (globalThis as any).window = previousWindow;
     }
   });
 
-  it("refreshes mixed runtime-audio native playback when generated tracks are procedural fallback", async () => {
+  it("keeps mixed runtime-audio playback stable until generated cache refresh is explicit", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       __TAURI__: {},
@@ -669,13 +742,11 @@ describe("audio engine diagnostics", () => {
       expect(starts[0].regions?.length || 0).toBe(1);
       expect(starts[0].events.some((event) => event.velocity > 0)).toBe(true);
 
-      await waitForAsyncCondition(() => starts.length >= 2 && engine.getDiagnostics().nativeRenderCache.buildCount >= 1);
+      await Promise.resolve();
 
-      const refreshedStart = starts.at(-1)!;
-      expect(refreshedStart.assets?.length || 0).toBeGreaterThan(1);
-      expect(refreshedStart.regions?.length || 0).toBeGreaterThan(1);
-      expect(refreshedStart.events.every(isSilentCachedSidechainTrigger)).toBe(true);
-      expect(engine.getDiagnostics().nativeRenderCache.lastBuildReason).toBe("play-fallback-cache-build");
+      expect(starts).toHaveLength(1);
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
+      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("play-fallback-cache-build");
     } finally {
       (globalThis as any).window = previousWindow;
     }
@@ -791,7 +862,7 @@ describe("audio engine diagnostics", () => {
     }
   });
 
-  it("refreshes live native composition edits back to cached playback", async () => {
+  it("keeps live native composition edits on the stale cache without hidden cache rebuilds", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       setInterval: () => 1,
@@ -847,17 +918,14 @@ describe("audio engine diagnostics", () => {
 
       await engine.play();
       engine.syncProject(edited, "composition-events", "bass-edit-refresh");
-      await waitForAsyncCondition(() => starts.length >= 3);
+      await waitForAsyncCondition(() => starts.length >= 2);
 
-      expect(starts.length).toBeGreaterThanOrEqual(3);
-      const staleStart = starts.at(-2)!;
-      const refreshedStart = starts.at(-1)!;
+      expect(starts).toHaveLength(2);
+      const staleStart = starts.at(-1)!;
 
       expect(staleStart.events.some((event) => event.trackId === "bass" && event.velocity > 0)).toBe(true);
-      expect(refreshedStart.regions?.length || 0).toBeGreaterThan(0);
-      expect(refreshedStart.events.every(isSilentCachedSidechainTrigger)).toBe(true);
-      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
-      expect(engine.getDiagnostics().nativeRenderCache.lastBuildReason).toBe("bass-edit-refresh");
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
+      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("bass-edit-refresh");
     } finally {
       (globalThis as any).window = previousWindow;
     }

@@ -68,6 +68,7 @@ export interface TransportSnapshot {
 
 export type AudioProjectSyncMode =
   | "mixer-controls"
+  | "transport-controls"
   | "composition-events"
   | "mixer-graph"
   | "timeline-structure"
@@ -83,6 +84,7 @@ interface NativeRestartRequest {
   seconds: number;
   options: {
     useRenderCache?: boolean;
+    allowRuntimeAudioCacheBuild?: boolean;
     reason?: string;
   };
 }
@@ -145,6 +147,7 @@ export class AudioEngine {
   private nativeRestartFlush: Promise<void> | null = null;
   private nativeStatusRefreshInFlight = false;
   private nativeLastStatusRefreshAtMs = 0;
+  private nativeLastTickSeconds = 0;
   private nativeLiveCompositionCacheToken = 0;
   private nativeMeterEventIndex = 0;
   private nativeRegionMeterLastTapAt = 0;
@@ -261,7 +264,7 @@ export class AudioEngine {
 
     const liveNativeCompositionEdit = mode === "composition-events" && this.playbackBackend === "native-cpal" && this.playing;
 
-    if (mode !== "mixer-controls") {
+    if (mode !== "mixer-controls" && mode !== "transport-controls") {
       this.events = renderTimelineEvents(this.project);
       this.audioRegions = renderTimelineAudioRegions(this.project).audioRegions;
       const renderCacheSignature = nativeRenderCacheSignature(this.project);
@@ -303,6 +306,8 @@ export class AudioEngine {
     if (this.playbackBackend === "native-cpal" && this.playing) {
       if (mode === "mixer-controls") {
         this.syncNativeMixerControls();
+      } else if (mode === "transport-controls") {
+        void this.restartNativePlayback(current, { reason, useRenderCache: true, allowRuntimeAudioCacheBuild: false });
       } else if (mode === "composition-events") {
         this.nativeRenderCacheBypassedForLiveEdits = false;
         const stalePlaybackCache = this.playableNativeRenderCache();
@@ -325,7 +330,7 @@ export class AudioEngine {
     }
 
     if (mode !== "mixer-controls" && !this.playing && !this.nativeRenderCacheBypassedForLiveEdits) {
-      if (!this.scheduleNativeRuntimeAudioCachePrewarm(reason)) this.scheduleNativeRenderCachePrewarm(reason);
+      this.nativeRenderCachePendingReason = reason;
     }
   }
 
@@ -498,7 +503,7 @@ export class AudioEngine {
 
   currentSeconds(): number {
     if (this.playbackBackend === "native-cpal" && this.playing) {
-      return Math.max(0, (performance.now() - this.nativeStartedAtMs) / 1000);
+      return this.projectNativePlaybackSeconds(Math.max(0, (performance.now() - this.nativeStartedAtMs) / 1000));
     }
     if (!this.ctx || !this.playing) return this.offsetSeconds;
     if (this.ctx.state !== "running") return this.offsetSeconds;
@@ -670,6 +675,7 @@ export class AudioEngine {
     this.playbackBackend = "native-cpal";
     this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
     this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
+    this.nativeLastTickSeconds = this.offsetSeconds;
     this.nextEventIndex = this.nativeMeterEventIndex;
     this.nextAudioRegionIndex = this.findAudioRegionIndex(this.offsetSeconds);
     this.primeMeters(this.offsetSeconds);
@@ -703,7 +709,7 @@ export class AudioEngine {
     return "started";
   }
 
-  private restartNativePlayback(seconds: number, options: { useRenderCache?: boolean; reason?: string } = {}): Promise<void> {
+  private restartNativePlayback(seconds: number, options: { useRenderCache?: boolean; allowRuntimeAudioCacheBuild?: boolean; reason?: string } = {}): Promise<void> {
     const request: NativeRestartRequest = {
       token: this.nativeRestartToken + 1,
       seconds: Math.max(0, seconds),
@@ -734,10 +740,11 @@ export class AudioEngine {
     this.offsetSeconds = request.seconds;
     this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
     this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
+    this.nativeLastTickSeconds = this.offsetSeconds;
     const useRenderCache = request.options.useRenderCache !== false;
     const cache = useRenderCache && !this.nativeRenderCacheBypassedForLiveEdits ? this.playableNativeRenderCache() : null;
     if (useRenderCache && !cache) this.deferNativeRenderCacheRefresh(request.options.reason || this.lastProjectSyncReason || "restart-fallback-cache-build");
-    const playbackCache = useRenderCache ? await this.nativePlaybackCacheWithRuntimeAudio(cache) : cache;
+    const playbackCache = useRenderCache ? await this.nativePlaybackCacheWithRuntimeAudio(cache, request.options.allowRuntimeAudioCacheBuild !== false) : cache;
     if (request.token !== this.nativeRestartToken || this.playbackBackend !== "native-cpal" || !this.playing) return;
     const playbackEvents = this.nativePlaybackEvents(playbackCache);
     const events = playbackEvents.events;
@@ -787,10 +794,10 @@ export class AudioEngine {
     return cache;
   }
 
-  private async nativePlaybackCacheWithRuntimeAudio(cache: NativeRenderCache | null): Promise<NativeRenderCache | null> {
+  private async nativePlaybackCacheWithRuntimeAudio(cache: NativeRenderCache | null, allowBuild = true): Promise<NativeRenderCache | null> {
     if (!this.audioRegions.length) return cache;
     if (cache && cache.runtimeAudioRegionCount >= this.audioRegions.length) return cache;
-    const runtimeCache = await this.ensureNativeRuntimeAudioCache();
+    const runtimeCache = allowBuild ? await this.ensureNativeRuntimeAudioCache() : this.readyNativeRuntimeAudioCache();
     if (!runtimeCache) return cache;
     if (!runtimeCache.regions.length) return cache;
     if (!cache) return runtimeCache;
@@ -920,18 +927,7 @@ export class AudioEngine {
   private scheduleLiveNativeRenderCacheRefresh(reason: string): void {
     this.nativeRenderCachePendingReason = reason;
     this.cancelLiveNativeRenderCacheRefresh();
-    const liveWindow = typeof window !== "undefined" ? window : null;
-    if (!liveWindow || typeof liveWindow.setTimeout !== "function") return;
-    this.nativeLiveRenderCacheRefreshHandle = liveWindow.setTimeout(() => {
-      this.nativeLiveRenderCacheRefreshHandle = null;
-      const buildReason = this.nativeRenderCachePendingReason || reason;
-      this.nativeRenderCachePendingReason = null;
-      if (this.playbackBackend === "native-cpal" && this.playing) {
-        void this.restartNativePlaybackAfterFreshRenderCache(buildReason);
-      } else if (!this.playing) {
-        this.scheduleNativeRenderCachePrewarm(buildReason);
-      }
-    }, 220);
+    if (!this.playing) this.scheduleNativeRenderCachePrewarm(reason);
   }
 
   private activateReadyNativeRenderCacheAfterFallback(reason: string) {
@@ -1083,8 +1079,15 @@ export class AudioEngine {
   private tickNativePlayback() {
     if (this.playbackBackend !== "native-cpal" || !this.playing) return;
     const current = this.currentSeconds();
+    if (current + 0.08 < this.nativeLastTickSeconds) {
+      this.lastAudioDropCause = "loop";
+      this.repositionPlaybackIndexes(current);
+      this.meterPeaks = {};
+      this.nativeRegionMeterLastTapAt = 0;
+      this.emitTick(true);
+    }
+    this.nativeLastTickSeconds = current;
     this.refreshNativePositionEstimate(current);
-    this.handleNativeLoop(current);
     this.tapNativeMeters(current);
     this.tapNativeRegionMeters(current);
     const songEnd = barsToSeconds(this.project.timeline.bars, this.project.project.bpm, this.project.project.timeSig) + 0.4;
@@ -1106,6 +1109,7 @@ export class AudioEngine {
         if (Math.abs(nativeSeconds - estimatedSeconds) < 0.08) return;
         this.offsetSeconds = nativeSeconds;
         this.nativeStartedAtMs = performance.now() - nativeSeconds * 1000;
+        this.nativeLastTickSeconds = nativeSeconds;
         this.repositionPlaybackIndexes(nativeSeconds + safeSyncLeadSeconds);
         this.emitTick(true);
       })
@@ -1114,18 +1118,10 @@ export class AudioEngine {
       });
   }
 
-  private handleNativeLoop(current: number) {
-    if (!this.project.timeline.loop.enabled) return;
-    const next = calculateLoopSeekSeconds(this.project, current);
-    if (next !== null) {
-      this.lastAudioDropCause = "loop";
-      this.offsetSeconds = next;
-      this.nativeStartedAtMs = performance.now() - next * 1000;
-      this.repositionPlaybackIndexes(next);
-      this.meterPeaks = {};
-      this.nativeRegionMeterLastTapAt = 0;
-      this.emitTick(true);
-    }
+  private projectNativePlaybackSeconds(seconds: number): number {
+    if (!this.project.timeline.loop.enabled) return seconds;
+    const next = calculateLoopSeekSeconds(this.project, seconds);
+    return next === null ? seconds : next;
   }
 
   private tapNativeMeters(current: number) {
