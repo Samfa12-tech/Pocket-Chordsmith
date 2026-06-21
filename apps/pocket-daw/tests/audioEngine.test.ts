@@ -149,7 +149,7 @@ describe("audio engine diagnostics", () => {
     expect(engine.getMeterLevels().drums || 0).toBeGreaterThan(0.5);
   });
 
-  it("keeps meters active for native cached regions without WebAudio analysers", () => {
+  it("keeps meters active for native runtime audio regions without WebAudio analysers", () => {
     const project = createDemoProject();
     const engine = new AudioEngine(project);
     const cache: NativeRenderCache = {
@@ -157,12 +157,21 @@ describe("audio engine diagnostics", () => {
       assets: [],
       regions: [{ id: "clip_001_bass", assetId: "asset_bass", trackId: "bass", startTime: 0, sourceOffset: 0, duration: 4, gain: 0.8, pan: 0, fadeIn: 0, fadeOut: 0 }],
       cachedClipIds: new Set(["clip_001"]),
-      renderCacheItems: [],
+      renderCacheItems: [{
+        id: "asset_bass",
+        sourceClipId: "clip_001",
+        createdAt: new Date().toISOString(),
+        invalidated: false,
+        metadata: {
+          cacheKind: "native-runtime-audio",
+          assetId: "asset_bass"
+        }
+      }],
       renderCacheHitCount: 0,
       renderCacheMissCount: 0,
       proceduralFallbackEventCount: 0,
-      generatedRegionCount: 1,
-      runtimeAudioRegionCount: 0,
+      generatedRegionCount: 0,
+      runtimeAudioRegionCount: 1,
       missingRuntimeAudioRegionCount: 0,
       cachedAssetByteCount: 128
     };
@@ -179,7 +188,7 @@ describe("audio engine diagnostics", () => {
     expect(levels.master || 0).toBeGreaterThan(0.18);
   });
 
-  it("does not double-tap procedural meters for cached native events", () => {
+  it("meters cached native generated stems from the underlying musical events", () => {
     const project = createDemoProject();
     const engine = new AudioEngine(project);
     const cache: NativeRenderCache = {
@@ -237,8 +246,54 @@ describe("audio engine diagnostics", () => {
     internals.lastMeterRead = performance.now() / 1000;
     const levels = engine.getMeterLevels();
 
-    expect(levels.bass || 0).toBeGreaterThan(0.2);
-    expect(levels.bass || 0).toBeLessThan(0.6);
+    expect(levels.bass || 0).toBeGreaterThan(0.8);
+    expect(levels.master || 0).toBeGreaterThan(0.7);
+  });
+
+  it("does not show continuous region meters for cached native generated stems", () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    const cache: NativeRenderCache = {
+      signature: nativeRenderCacheSignature(project),
+      assets: [],
+      regions: [{ id: "clip_001_bass", assetId: "asset_bass", trackId: "bass", startTime: 0, sourceOffset: 0, duration: 4, gain: 0.8, pan: 0, fadeIn: 0, fadeOut: 0 }],
+      cachedClipIds: new Set(["clip_001"]),
+      renderCacheItems: [{
+        id: "asset_bass",
+        sourceClipId: "clip_001",
+        createdAt: new Date().toISOString(),
+        invalidated: false,
+        metadata: {
+          cacheKind: "native-generated-stem",
+          trackId: "bass",
+          assetId: "asset_bass"
+        }
+      }],
+      renderCacheHitCount: 0,
+      renderCacheMissCount: 0,
+      proceduralFallbackEventCount: 0,
+      generatedRegionCount: 1,
+      runtimeAudioRegionCount: 0,
+      missingRuntimeAudioRegionCount: 0,
+      cachedAssetByteCount: 128
+    };
+    const internals = engine as unknown as {
+      nativeRenderCache: NativeRenderCache;
+      playbackBackend: string;
+      playing: boolean;
+      lastMeterRead: number;
+      tapNativeRegionMeters(current: number): void;
+    };
+    internals.nativeRenderCache = cache;
+    internals.playbackBackend = "native-cpal";
+    internals.playing = true;
+    internals.lastMeterRead = performance.now() / 1000;
+
+    internals.tapNativeRegionMeters(1);
+    const levels = engine.getMeterLevels();
+
+    expect(levels.bass || 0).toBe(0);
+    expect(levels.master || 0).toBe(0);
   });
 
   it("resumes paused native playback without sending a second native start", async () => {

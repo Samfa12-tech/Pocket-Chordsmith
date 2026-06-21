@@ -1094,10 +1094,9 @@ export class AudioEngine {
 
   private tapNativeMeters(current: number) {
     const horizon = current + 0.08;
-    const cache = this.activeNativeMeterEventCache();
     while (this.nativeMeterEventIndex < this.events.length && this.events[this.nativeMeterEventIndex].time <= horizon) {
       const event = this.events[this.nativeMeterEventIndex];
-      if (event.time >= current - 0.04 && this.eventShouldTapMeter(event) && !this.nativeCacheCoversEvent(cache, event)) this.tapMeter(event.trackId, event.velocity);
+      if (event.time >= current - 0.04 && this.eventShouldTapMeter(event)) this.tapMeter(event.trackId, event.velocity);
       this.nativeMeterEventIndex += 1;
     }
   }
@@ -1109,6 +1108,7 @@ export class AudioEngine {
     if (current - this.nativeRegionMeterLastTapAt < 0.12) return;
     this.nativeRegionMeterLastTapAt = current;
     cache.regions.forEach((region) => {
+      if (this.nativeRegionIsGeneratedStem(cache, region)) return;
       if (region.startTime > current || region.startTime + region.duration < current) return;
       const track = this.project.tracks.find((item) => item.id === region.trackId);
       if (!track || !trackIsAudible(track, this.project.tracks)) return;
@@ -1382,16 +1382,15 @@ export class AudioEngine {
 
   private primeMeters(seconds: number) {
     const horizon = seconds + 0.28;
-    const cache = this.activeNativeMeterEventCache();
     for (let index = this.findEventIndex(seconds); index < this.events.length && this.events[index].time <= horizon; index += 1) {
       const event = this.events[index];
-      if (this.eventShouldTapMeter(event) && !this.nativeCacheCoversEvent(cache, event)) this.tapMeter(event.trackId, event.velocity);
+      if (this.eventShouldTapMeter(event)) this.tapMeter(event.trackId, event.velocity);
     }
   }
 
-  private activeNativeMeterEventCache(): NativeRenderCache | null {
-    if (this.playbackBackend !== "native-cpal" || !this.nativePlaybackStartedWithRenderCache) return null;
-    return this.activeNativeRenderCache();
+  private nativeRegionIsGeneratedStem(cache: NativeRenderCache, region: { assetId: string }): boolean {
+    const item = cache.renderCacheItems.find((entry) => String(entry.metadata?.assetId || entry.id) === region.assetId);
+    return String(item?.metadata?.cacheKind || "") === "native-generated-stem";
   }
 
   private nativeCacheCoversEvent(cache: NativeRenderCache | null, event: RenderedEvent): boolean {
