@@ -708,6 +708,7 @@ describe("audio engine diagnostics", () => {
       expect(starts[1].events.length).toBeLessThan(starts[0].events.length);
       expect(cacheBuildOptions?.coverage).toBe("partial");
       expect(cacheBuildOptions?.clipIds?.size || 0).toBeGreaterThan(0);
+      expect(cacheBuildOptions?.clipIds?.size || 0).toBeLessThanOrEqual(2);
       expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
       expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("play-fallback-cache-build");
     } finally {
@@ -1008,7 +1009,7 @@ describe("audio engine diagnostics", () => {
 
       await engine.play();
       (engine as any).nativeStartedAtMs = performance.now() - 2_000;
-      (engine as any).nativeLastStatusRefreshAtMs = 0;
+      (engine as any).nativeLastStatusRefreshAtMs = performance.now() - 1_000;
       (engine as any).tickNativePlayback();
       await waitForAsyncCondition(() => statusCalls > 0 && Math.abs((engine as any).offsetSeconds - 8.25) < 0.001);
 

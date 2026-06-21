@@ -79,7 +79,7 @@ type PlaybackBackend = "native-cpal" | "native-cpal-paused" | "web-audio" | "idl
 type NativeStartOutcome = "started" | "unavailable" | "failed";
 type AudioDropCause = "seek" | "stop" | "project-load" | "graph-rebuild" | "loop" | "late-scheduler" | null;
 const safeSyncLeadSeconds = 0.2;
-const liveNativeCacheWindowBars = 8;
+const liveNativeCacheWindowBars = 4;
 
 interface NativeRestartRequest {
   token: number;
