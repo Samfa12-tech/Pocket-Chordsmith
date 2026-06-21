@@ -23,6 +23,8 @@ import {
   POCKET_BUILT_IN_FX,
   POCKET_BUILT_IN_FX_TYPES,
   POCKET_GUITAR_TONE_CONFIGS,
+  GUITAR_PRESETS,
+  guitarPresetPatternForProject,
   POCKET_GUITAR_STEP_CYCLE,
   POCKET_GUITAR_TONES,
   DEFAULT_GUITAR_REGISTER,
@@ -513,6 +515,22 @@ test("shared guitar tone registry matches Chordsmith tone surface", () => {
   assert.equal(POCKET_GUITAR_TONE_CONFIGS.high_gain.drive, 4.2);
   assert.equal(POCKET_GUITAR_TONE_CONFIGS.metal.lowpass, 3050);
   assert.equal(POCKET_GUITAR_TONE_CONFIGS.western_twang.spread, 0.02);
+});
+
+test("shared guitar preset helper mirrors Chordsmith named rhythm fills", () => {
+  assert.deepEqual(GUITAR_PRESETS.map((preset) => preset.id), [
+    "rock_eighths",
+    "punk_downstrokes",
+    "metal_chug",
+    "gallop",
+    "doom_slow",
+    "verse_chorus",
+    "boom_chick",
+    "train_chop",
+    "western_waltz"
+  ]);
+  const { pattern } = guitarPresetPatternForProject("boom_chick", { timeSig: 4, resolution: 4 }, { bars: 1 });
+  assert.deepEqual(pattern.slice(0, 16), ["accent", "off", "off", "off", "scratch", "off", "off", "off", "accent", "off", "off", "off", "scratch", "off", "off", "off"]);
 });
 
 test("shared guitar gate helper mirrors Chordsmith live playback", () => {

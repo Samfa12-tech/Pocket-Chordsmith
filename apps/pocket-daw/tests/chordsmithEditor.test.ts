@@ -23,6 +23,7 @@ import {
   setSectionBars,
   appendChordsmithSection,
   applyDrumPreset,
+  applyGuitarPreset,
   setSectionChord,
   toggleBassAccent,
   toggleBassHold,
@@ -189,6 +190,33 @@ describe("Chordsmith visual sequencer edits", () => {
     expect(section?.bassNotes[2]).toBe(0);
     expect(((original.gridA as Record<string, number[]>).kick).slice(0, 16)).toEqual(section?.grid.kick.slice(0, 16));
     expect(((original.gridTupletsA as Record<string, boolean[]>).hat).slice(0, 16).some(Boolean)).toBe(false);
+  });
+
+  it("applies Chordsmith guitar presets to the selected section and keeps source roundtrip fields", () => {
+    let project = createDemoProject();
+    const guitar = project.tracks.find((track) => track.role === "guitar")!;
+    guitar.active = false;
+    guitar.mute = true;
+    guitar.volume = 0.37;
+
+    project = applyGuitarPreset(project, "A", "boom_chick");
+
+    const pcs = getPrimaryChordsmithSource(project);
+    const section = pcs?.sections.A;
+    const original = project.sourceRefs[0].original as Record<string, unknown>;
+    const guitarTrack = project.tracks.find((track) => track.role === "guitar");
+
+    expect(pcs?.guitarEnabled).toBe(true);
+    expect(pcs?.guitarPatternPreset).toBe("boom_chick");
+    expect(section?.guitarPattern.slice(0, 16)).toEqual(["accent", "off", "off", "off", "scratch", "off", "off", "off", "accent", "off", "off", "off", "scratch", "off", "off", "off"]);
+    expect(original.guitarPatternPreset).toBe("boom_chick");
+    expect((original.guitarPatternA as string[]).slice(0, 16)).toEqual(section?.guitarPattern.slice(0, 16));
+    expect(guitarTrack).toMatchObject({
+      active: true,
+      mute: false,
+      volume: 0.37
+    });
+    expect(renderTimelineEvents(project).some((event) => event.kind === "guitar" && event.step === 0 && event.articulation === "accent")).toBe(true);
   });
 
   it("changes a source-backed melody lane instrument", () => {

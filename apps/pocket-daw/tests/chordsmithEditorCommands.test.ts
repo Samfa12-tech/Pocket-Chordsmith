@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { nativeRenderCacheSignature } from "../src/audio/nativeRenderCache";
-import { applyDrumPresetCommand, cycleDrumStepCommand, toggleBassTupletCommand } from "../src/app/commands";
+import { applyDrumPresetCommand, applyGuitarPresetCommand, cycleDrumStepCommand, toggleBassTupletCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { getPrimaryChordsmithSource } from "../src/daw/chordsmithEditor";
 
@@ -40,6 +40,19 @@ describe("Chordsmith editor command integration", () => {
 
     expect(threeFour.undoStack.present).toBe(state.undoStack.present);
     expect(threeFour.status).toBe("Choose a drum preset available for this time signature.");
+  });
+
+  it("applies guitar presets through the editor command path", () => {
+    const state = createInitialState();
+    const next = applyGuitarPresetCommand(state, "A", "metal_chug");
+    const pcs = getPrimaryChordsmithSource(next.undoStack.present);
+
+    expect(next.status).toBe("Applied Metal chug guitar preset to Section A.");
+    expect(pcs?.guitarEnabled).toBe(true);
+    expect(pcs?.guitarPatternPreset).toBe("metal_chug");
+    expect(pcs?.sections.A.guitarPattern[0]).toBe("accent");
+    expect(pcs?.sections.A.guitarPattern[1]).toBe("chug");
+    expect(renderTimelineEvents(next.undoStack.present).some((event) => event.kind === "guitar" && event.step === 1)).toBe(true);
   });
 
   it("toggles bass tuplets through the editor command path", () => {

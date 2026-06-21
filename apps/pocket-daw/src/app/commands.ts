@@ -17,6 +17,7 @@ import { addMarkerAtBar, clearLoop, deleteMarker, renameMarker, setLoopToClip, s
 import {
   appendChordsmithSection,
   applyDrumPreset,
+  applyGuitarPreset,
   cycleBassStep,
   cycleDrumTuplet,
   cycleDrumStep,
@@ -47,6 +48,7 @@ import {
   type DrumLane
 } from "../daw/chordsmithEditor";
 import { drumPresetEventsForProject, drumPresetLabel, drumPresetVisibleForProject, findDrumPreset } from "../daw/chordsmithDrumPresets";
+import { findGuitarPreset, guitarPresetLabel, guitarPresetPatternForProject, guitarPresetVisibleForProject } from "../daw/chordsmithGuitarPresets";
 import type { PocketDawProject } from "../daw/schema";
 import type { AppState } from "./state";
 
@@ -533,6 +535,22 @@ export function toggleMelodyTupletCommand(state: AppState, sectionId: string, tr
 export function cycleGuitarStepCommand(state: AppState, sectionId: string, step: number): AppState {
   if (!isSectionId(sectionId)) return state;
   return commitProject(state, cycleGuitarStep(state.undoStack.present, sectionId, step), `Edited Section ${sectionId} guitar.`);
+}
+
+export function applyGuitarPresetCommand(state: AppState, sectionId: string, presetId: string): AppState {
+  if (!isSectionId(sectionId)) return { ...state, status: "Choose a valid Chordsmith section before applying a guitar preset." };
+  const pcs = getPrimaryChordsmithSource(state.undoStack.present);
+  const section = pcs?.sections[sectionId];
+  const preset = findGuitarPreset(presetId);
+  if (!pcs || !section || !preset) return { ...state, status: "Choose a valid guitar preset." };
+  if (!guitarPresetVisibleForProject(preset, pcs)) return { ...state, status: "Choose a guitar preset available for this time signature." };
+  const pattern = guitarPresetPatternForProject(preset.id, pcs, section);
+  if (!pattern.pattern.some((art) => art !== "off")) return { ...state, status: "No guitar pattern is available for this preset and time signature." };
+  return commitProject(
+    state,
+    applyGuitarPreset(state.undoStack.present, sectionId, preset.id),
+    `Applied ${guitarPresetLabel(preset)} guitar preset to Section ${sectionId}.`
+  );
 }
 
 export function setGuitarSettingsCommand(state: AppState, patch: Parameters<typeof setGuitarSettings>[1]): AppState {

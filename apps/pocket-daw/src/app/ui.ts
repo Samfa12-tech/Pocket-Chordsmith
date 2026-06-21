@@ -4,6 +4,7 @@ import { BUILT_IN_FX, getTrackFxChain } from "../daw/fx";
 import { DRUM_LANE_DEFS, getDrumLaneFxChain, getDrumLaneMix } from "../daw/drumLanes";
 import { bassStepUsesAuto, bassVisibleNoteIndex, getPrimaryChordsmithSource, totalEditorSteps, visibleEditorSteps } from "../daw/chordsmithEditor";
 import { drumPresetLabel, visibleDrumPresetsForProject } from "../daw/chordsmithDrumPresets";
+import { guitarPresetLabel, visibleGuitarPresetsForProject } from "../daw/chordsmithGuitarPresets";
 import { POCKET_DAW_VERSION, type Clip, type FxChain, type FxPluginInstance, type Track } from "../daw/schema";
 import { POCKET_PRO_EQ_BANDS, POCKET_PRO_EQ_PRESETS, POCKET_PRO_EQ_TYPE } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
 import { POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
@@ -1007,10 +1008,19 @@ function selectedMelodyTrackIndex(track: Track | null) {
 function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number): string {
   const guitarTrack = project.tracks.find((track) => track.role === "guitar");
   const inactive = !pcs.guitarEnabled || guitarTrack?.active === false;
+  const guitarPresetOptions = visibleGuitarPresetsForProject(pcs)
+    .map((preset) => `<option value="${escapeAttr(preset.id)}" title="${escapeAttr(preset.tip)}">${escapeHtml(guitarPresetLabel(preset))}</option>`)
+    .join("");
   return `
     <div class="sequencer-block ${inactive ? "muted-editor" : ""}">
       <strong>Guitar</strong>
       <div class="editor-controls lane-controls">
+        <label>Rhythm preset
+          <select data-guitar-preset-section="${escapeAttr(section.id)}" title="Choose a Chordsmith guitar rhythm preset to fill this section.">
+            <option value="">Choose guitar preset...</option>
+            ${guitarPresetOptions}
+          </select>
+        </label>
         <label class="inline-toggle"><input data-guitar-setting="guitarEnabled" type="checkbox" ${pcs.guitarEnabled ? "checked" : ""}> Enabled</label>
         <label>Tone
           <select data-guitar-setting="guitarTone">

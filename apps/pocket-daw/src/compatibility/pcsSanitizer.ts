@@ -21,7 +21,7 @@ import {
   normaliseChipTexture
 } from "../../../../packages/pocket-audio-core/src/presets/chip.js";
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
-import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_PATTERN_PRESETS, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 
 export const SECTION_IDS = ["A", "B", "C", "D", "E", "F", "G", "H"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
@@ -82,6 +82,7 @@ export interface SanitizedPcsProject {
   guitarTone: string;
   guitarRegister: string;
   guitarStrumMode: string;
+  guitarPatternPreset: string;
   guitarVolume: number;
   fxDelay: number;
   fxChorus: number;
@@ -154,6 +155,7 @@ export function sanitizePocketChordsmithProject(raw: unknown): SanitizedPcsProje
     guitarTone: safeChoice(obj.guitarTone, POCKET_GUITAR_TONES, DEFAULT_GUITAR_TONE),
     guitarRegister: safeChoice(obj.guitarRegister, POCKET_GUITAR_REGISTERS, DEFAULT_GUITAR_REGISTER),
     guitarStrumMode: safeChoice(obj.guitarStrumMode, POCKET_GUITAR_STRUM_MODES, DEFAULT_GUITAR_STRUM_MODE),
+    guitarPatternPreset: safeChoice(obj.guitarPatternPreset, POCKET_GUITAR_PATTERN_PRESETS, "metal_chug"),
     guitarVolume: clamp(asNum(obj.guitarVolume, DEFAULT_STEM_MIX.guitar.volume), 0, 1),
     fxDelay: clamp(asNum(obj.fxDelay, DEFAULT_FX.delay), 0, 1),
     fxChorus: clamp(asNum(obj.fxChorus, DEFAULT_FX.chorus), 0, 1),

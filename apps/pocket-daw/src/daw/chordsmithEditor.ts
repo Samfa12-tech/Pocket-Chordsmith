@@ -11,6 +11,11 @@ import {
   pos16ToStep,
   shouldUsePresetEvent
 } from "./chordsmithDrumPresets";
+import {
+  findGuitarPreset,
+  guitarPresetPatternForProject,
+  guitarPresetVisibleForProject
+} from "./chordsmithGuitarPresets";
 
 export type DrumLane = "kick" | "snare" | "hat";
 export interface ChordsmithGlobalPatch {
@@ -170,6 +175,22 @@ export function applyDrumPreset(project: PocketDawProject, sectionId: SectionId,
         section.grid[event.track][step] = Math.max(section.grid[event.track][step] || 0, level);
       });
     }
+  });
+}
+
+export function applyGuitarPreset(project: PocketDawProject, sectionId: SectionId, presetId: string): PocketDawProject {
+  const preset = findGuitarPreset(presetId);
+  return editChordsmithSection(project, sectionId, (pcs, section) => {
+    if (!preset || !guitarPresetVisibleForProject(preset, pcs)) return;
+    const { pattern } = guitarPresetPatternForProject(preset.id, pcs, section);
+    if (!pattern.length) return;
+    const totalSteps = totalEditorSteps(pcs, section);
+    section.guitarPattern = pattern.slice(0, totalSteps);
+    while (section.guitarPattern.length < totalSteps) section.guitarPattern.push("off");
+    pcs.guitarEnabled = true;
+    pcs.guitarPatternPreset = preset.id;
+  }, (next, pcs) => {
+    syncGuitarTrackFromSource(next, pcs, false);
   });
 }
 
@@ -571,6 +592,7 @@ function syncChordsmithOriginalGlobals(ref: SourceRef, pcs: SanitizedPcsProject)
   target.guitarTone = pcs.guitarTone;
   target.guitarRegister = pcs.guitarRegister;
   target.guitarStrumMode = pcs.guitarStrumMode;
+  target.guitarPatternPreset = pcs.guitarPatternPreset;
   target.guitarVolume = pcs.guitarVolume;
 }
 

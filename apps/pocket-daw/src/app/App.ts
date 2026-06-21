@@ -64,6 +64,7 @@ import {
   addReturnTrackCommand,
   addDrumLaneFxCommand,
   applyDrumPresetCommand,
+  applyGuitarPresetCommand,
   clearLoopCommand,
   commitProject,
   copySelectedClip,
@@ -881,6 +882,12 @@ export class App {
       select.addEventListener("change", () => {
         if (!select.value) return;
         this.applyChordsmithEditorEdit(applyDrumPresetCommand(this.state, select.dataset.drumPresetSection || "", select.value), "chordsmith-drum-preset");
+      });
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-guitar-preset-section]").forEach((select) => {
+      select.addEventListener("change", () => {
+        if (!select.value) return;
+        this.applyChordsmithEditorEdit(applyGuitarPresetCommand(this.state, select.dataset.guitarPresetSection || "", select.value), "chordsmith-guitar-preset");
       });
     });
     this.root.querySelectorAll<HTMLSelectElement>("[data-melody-instrument]").forEach((select) => {

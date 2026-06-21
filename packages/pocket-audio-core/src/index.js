@@ -7,6 +7,7 @@ export * from "./sounds/instruments.js";
 export * from "./sounds/lofi-registry.js";
 export * from "./sounds/chip-registry.js";
 export * from "./patterns/drum-presets.js";
+export * from "./patterns/guitar-presets.js";
 export * from "./performance/humanize.js";
 export * from "./performance/chord-rhythm.js";
 export * from "./performance/drum-feel.js";
