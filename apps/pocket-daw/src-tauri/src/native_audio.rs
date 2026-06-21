@@ -1067,6 +1067,53 @@ fn track_source_budget_allows(active_counts: &mut HashMap<String, usize>, track_
     *count <= NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK
 }
 
+#[derive(Clone, Copy)]
+enum GeneratedEventRenderMode {
+    LiveMix,
+    CacheStem,
+}
+
+fn render_generated_event_source(
+    playback: &mut PlaybackShared,
+    event: &NativeRenderedEvent,
+    t: f64,
+    active_counts: &mut HashMap<String, usize>,
+    mode: GeneratedEventRenderMode,
+) -> Option<(String, f32, f32)> {
+    let track = playback.tracks.get(&event.track_id).cloned()?;
+    let track_gain_value = track_gain(&track, playback.has_solo);
+    if track_gain_value <= 0.0001 {
+        return None;
+    }
+    let mut sample = render_event_sample(event, t);
+    if matches!(mode, GeneratedEventRenderMode::LiveMix) {
+        sample *= track_gain_value as f32;
+    }
+    if sample.abs() <= 0.000001 {
+        return None;
+    }
+    if !track_source_budget_allows(active_counts, &event.track_id) {
+        return None;
+    }
+
+    let event_pan = match mode {
+        GeneratedEventRenderMode::LiveMix => event.pan.unwrap_or(0.0) as f32,
+        GeneratedEventRenderMode::CacheStem => event.pan.unwrap_or(0.0).clamp(-1.0, 1.0) as f32,
+    };
+    let (pan_left, pan_right) = match mode {
+        GeneratedEventRenderMode::LiveMix => source_pan_gains(event_pan),
+        GeneratedEventRenderMode::CacheStem => cache_stem_source_pan_gains(event_pan),
+    };
+    let mut lane_left = sample * pan_left;
+    let mut lane_right = sample * pan_right;
+    if let Some(lane) = &event.drum_lane {
+        if let Some(chain) = playback.fx.drum_lane_chains.get_mut(lane) {
+            (lane_left, lane_right) = chain.process(lane_left, lane_right);
+        }
+    }
+    Some((event.track_id.clone(), lane_left, lane_right))
+}
+
 fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     if !playback.playing {
         return (0.0, 0.0);
@@ -1116,41 +1163,25 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         );
     }
 
-    for event in playback
-        .events
-        .iter()
-        .skip(playback.scan_start_index)
-        .cloned()
-    {
+    let mut event_index = playback.scan_start_index;
+    while event_index < playback.events.len() {
+        let event = playback.events[event_index].clone();
+        event_index += 1;
         if event.time > t {
             break;
         }
         if event_release_end(&event) < t {
             continue;
         }
-        let Some(track) = playback.tracks.get(&event.track_id).cloned() else {
-            continue;
-        };
-        let track_gain = track_gain(&track, playback.has_solo);
-        if track_gain <= 0.0001 {
-            continue;
+        if let Some((track_id, lane_left, lane_right)) = render_generated_event_source(
+            playback,
+            &event,
+            t,
+            &mut active_counts_by_track,
+            GeneratedEventRenderMode::LiveMix,
+        ) {
+            add_track_mix(&mut track_mixes, &track_id, lane_left, lane_right);
         }
-        let sample = render_event_sample(&event, t) * track_gain as f32;
-        if sample.abs() <= 0.000001 {
-            continue;
-        }
-        if !track_source_budget_allows(&mut active_counts_by_track, &event.track_id) {
-            continue;
-        }
-        let (pan_left, pan_right) = source_pan_gains(event.pan.unwrap_or(0.0) as f32);
-        let mut lane_left = sample * pan_left;
-        let mut lane_right = sample * pan_right;
-        if let Some(lane) = &event.drum_lane {
-            if let Some(chain) = playback.fx.drum_lane_chains.get_mut(lane) {
-                (lane_left, lane_right) = chain.process(lane_left, lane_right);
-            }
-        }
-        add_track_mix(&mut track_mixes, &event.track_id, lane_left, lane_right);
     }
 
     let mut left = 0.0_f32;
@@ -1227,42 +1258,26 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     let mut right = 0.0_f32;
     let mut active_counts_by_track: HashMap<String, usize> = HashMap::new();
 
-    for event in playback
-        .events
-        .iter()
-        .skip(playback.scan_start_index)
-        .cloned()
-    {
+    let mut event_index = playback.scan_start_index;
+    while event_index < playback.events.len() {
+        let event = playback.events[event_index].clone();
+        event_index += 1;
         if event.time > t {
             break;
         }
         if event_release_end(&event) < t {
             continue;
         }
-        let Some(track) = playback.tracks.get(&event.track_id).cloned() else {
-            continue;
-        };
-        if track_gain(&track, playback.has_solo) <= 0.0001 {
-            continue;
+        if let Some((_track_id, lane_left, lane_right)) = render_generated_event_source(
+            playback,
+            &event,
+            t,
+            &mut active_counts_by_track,
+            GeneratedEventRenderMode::CacheStem,
+        ) {
+            left += lane_left;
+            right += lane_right;
         }
-        let sample = render_event_sample(&event, t);
-        if sample.abs() <= 0.000001 {
-            continue;
-        }
-        if !track_source_budget_allows(&mut active_counts_by_track, &event.track_id) {
-            continue;
-        }
-        let event_pan = event.pan.unwrap_or(0.0).clamp(-1.0, 1.0) as f32;
-        let (pan_left, pan_right) = cache_stem_source_pan_gains(event_pan);
-        let mut lane_left = sample * pan_left;
-        let mut lane_right = sample * pan_right;
-        if let Some(lane) = &event.drum_lane {
-            if let Some(chain) = playback.fx.drum_lane_chains.get_mut(lane) {
-                (lane_left, lane_right) = chain.process(lane_left, lane_right);
-            }
-        }
-        left += lane_left;
-        right += lane_right;
     }
 
     playback.position_seconds += 1.0 / playback.sample_rate.max(1) as f64;
