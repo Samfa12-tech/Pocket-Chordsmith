@@ -1042,8 +1042,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         if active_count > 96 {
             break;
         }
-        let pan = (track.pan + region.pan).clamp(-1.0, 1.0) as f32;
-        let (pan_left, pan_right) = pan_gains(pan);
+        let (pan_left, pan_right) = source_pan_gains(region.pan as f32);
         let gain = (track_gain * region.gain.clamp(0.0, 1.4)) as f32;
         add_track_mix(
             &mut track_mixes,
@@ -1080,8 +1079,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         if active_count > 96 {
             break;
         }
-        let pan = (track.pan + event.pan.unwrap_or(0.0)).clamp(-1.0, 1.0) as f32;
-        let (pan_left, pan_right) = pan_gains(pan);
+        let (pan_left, pan_right) = source_pan_gains(event.pan.unwrap_or(0.0) as f32);
         let mut lane_left = sample * pan_left;
         let mut lane_right = sample * pan_right;
         if let Some(lane) = &event.drum_lane {
@@ -1105,6 +1103,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
             add_track_mix(&mut return_mixes, &track_id, track_left, track_right);
             continue;
         }
+        (track_left, track_right) = apply_bus_pan(track_left, track_right, &track_id, playback);
         if let Some(chain) = playback.fx.track_chains.get_mut(&track_id) {
             (track_left, track_right) = chain.process(track_left, track_right);
         }
@@ -1122,6 +1121,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         right += track_right;
     }
     for (track_id, (mut track_left, mut track_right)) in return_mixes {
+        (track_left, track_right) = apply_bus_pan(track_left, track_right, &track_id, playback);
         if let Some(chain) = playback.fx.track_chains.get_mut(&track_id) {
             (track_left, track_right) = chain.process(track_left, track_right);
         }
@@ -1210,6 +1210,10 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
 }
 
 fn cache_stem_source_pan_gains(pan: f32) -> (f32, f32) {
+    source_pan_gains(pan)
+}
+
+fn source_pan_gains(pan: f32) -> (f32, f32) {
     let (left, right) = pan_gains(pan);
     let (center_left, center_right) = pan_gains(0.0);
     (
@@ -1324,6 +1328,17 @@ fn route_track_sends(
             right * gain,
         );
     }
+}
+
+fn apply_bus_pan(left: f32, right: f32, track_id: &str, playback: &PlaybackShared) -> (f32, f32) {
+    let pan = playback
+        .tracks
+        .get(track_id)
+        .map(|track| track.pan)
+        .unwrap_or(0.0)
+        .clamp(-1.0, 1.0) as f32;
+    let (pan_left, pan_right) = pan_gains(pan);
+    (left * pan_left, right * pan_right)
 }
 
 fn sidechain_gain(playback: &PlaybackShared, track_id: &str, t: f64) -> f32 {
@@ -3841,6 +3856,61 @@ mod tests {
     }
 
     #[test]
+    fn native_cache_stem_render_matches_procedural_event_and_track_pan() {
+        let mut event =
+            test_generated_event("cached_panned_track_melody", "melody", 0.0, 0.08, 0.8);
+        event.track_id = "melody".to_string();
+        event.instrument = Some("tape_bell".to_string());
+        event.midi = Some(72.0);
+        event.pan = Some(0.6);
+        let track = test_track("melody", 0.72, 0.35, false, false);
+
+        let mut procedural = playback_with_events(vec![event.clone()]);
+        procedural
+            .tracks
+            .insert("melody".to_string(), track.clone());
+        procedural.sample_rate = 8_000;
+        let procedural_frames = render_frames(&mut procedural, 80);
+
+        let mut stem_source = playback_with_events(vec![event]);
+        stem_source
+            .tracks
+            .insert("melody".to_string(), track.clone());
+        stem_source.sample_rate = 8_000;
+        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem)
+            .expect("cache stem render should work");
+        let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
+        let mut cached = PlaybackShared {
+            project_title: Some("Cached track pan".to_string()),
+            events: Vec::new(),
+            assets: HashMap::from([("stem".to_string(), decoded)]),
+            regions: vec![test_region(
+                "region", "stem", "melody", 0.0, 0.0, 0.1, 1.0, 0.0,
+            )],
+            tracks: HashMap::from([("melody".to_string(), track)]),
+            has_solo: false,
+            position_seconds: 0.0,
+            sample_rate: 8_000,
+            channels: 2,
+            playing: true,
+            rendered_frame_count: 0,
+            scan_start_index: 0,
+            generation: 1,
+            fx: NativeFxRuntime::default(),
+            loop_region: None,
+            metronome: None,
+            sidechain: None,
+        };
+        let cached_frames = render_frames(&mut cached, 80);
+        let max_diff = max_frame_diff(&procedural_frames, &cached_frames);
+
+        assert!(
+            max_diff < 0.00008,
+            "expected cache-stem playback to preserve event and track pan staging, max diff {max_diff}"
+        );
+    }
+
+    #[test]
     fn native_cached_sidechain_triggers_match_procedural_mix() {
         let mut kick = test_kick_trigger_event();
         kick.velocity = 1.0;
@@ -3867,9 +3937,12 @@ mod tests {
 
         let mut chord_stem_source = playback_with_events(vec![chord.clone()]);
         chord_stem_source.sample_rate = 8_000;
-        let chord_stem =
-            render_playback_to_wav(&mut chord_stem_source, 0.1, NativeAudioRenderMode::CacheStem)
-                .expect("chord cache stem render should work");
+        let chord_stem = render_playback_to_wav(
+            &mut chord_stem_source,
+            0.1,
+            NativeAudioRenderMode::CacheStem,
+        )
+        .expect("chord cache stem render should work");
         let chord_decoded = decode_pcm16_wav(&chord_stem.bytes).expect("chord stem should decode");
 
         let mut trigger_marker = kick;
