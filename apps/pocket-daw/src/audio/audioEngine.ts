@@ -844,14 +844,13 @@ export class AudioEngine {
     const preloadSignature = `${cache.signature}:preload:${window.startSeconds.toFixed(3)}:${window.endSeconds.toFixed(3)}`;
     if (this.nativeRenderCachePreloadPromise && this.nativeRenderCachePreloadSignature === preloadSignature) return;
     this.nativeRenderCachePreloadSignature = preloadSignature;
-    this.nativeRenderCachePreloadedAssetCount = 0;
-    this.nativeRenderCachePreloadWindowEndSeconds = window.endSeconds;
     this.nativeRenderCachePreloadError = null;
     this.nativeRenderCachePreloadPromise = (async () => {
       try {
         const loaded = await this.nativePlayback.preloadAssets!(windowed.assets);
         if (this.nativeRenderCache?.signature === signature) {
           this.nativeRenderCachePreloadedAssetCount = loaded;
+          this.nativeRenderCachePreloadWindowEndSeconds = window.endSeconds;
         }
       } catch (error) {
         if (this.nativeRenderCache?.signature === signature) {

@@ -703,9 +703,15 @@ describe("audio engine diagnostics", () => {
       clearInterval: () => undefined
     };
     const preloads: NativeAudioAsset[][] = [];
+    let releaseSecondPreload: () => void = () => undefined;
     const native = {
       async preloadAssets(assets: NativeAudioAsset[]) {
         preloads.push(assets);
+        if (preloads.length === 2) {
+          await new Promise<void>((resolve) => {
+            releaseSecondPreload = resolve;
+          });
+        }
         return assets.length;
       },
       async start(payload: NativeAudioStartPayload) {
@@ -738,7 +744,22 @@ describe("audio engine diagnostics", () => {
       expect(firstPreload.length).toBeGreaterThan(0);
       expect(firstPreload.length).toBeLessThan(cache.assets.length);
       expect(engine.getDiagnostics().nativeRenderCache.preloadedAssetCount).toBe(firstPreload.length);
-      expect(engine.getDiagnostics().nativeRenderCache.preloadWindowEndSeconds).toBeGreaterThan(0);
+      const firstPreloadWindowEnd = engine.getDiagnostics().nativeRenderCache.preloadWindowEndSeconds;
+      expect(firstPreloadWindowEnd).toBeGreaterThan(0);
+
+      internals.preloadNativeRenderCacheAssetsNear(cache, firstPreloadWindowEnd + 1);
+
+      expect(preloads).toHaveLength(2);
+      expect(engine.getDiagnostics().nativeRenderCache.preloadPending).toBe(true);
+      expect(engine.getDiagnostics().nativeRenderCache.preloadedAssetCount).toBe(firstPreload.length);
+      expect(engine.getDiagnostics().nativeRenderCache.preloadWindowEndSeconds).toBe(firstPreloadWindowEnd);
+
+      releaseSecondPreload();
+      await internals.nativeRenderCachePreloadPromise;
+
+      const secondPreload = preloads[1]!;
+      expect(engine.getDiagnostics().nativeRenderCache.preloadedAssetCount).toBe(secondPreload.length);
+      expect(engine.getDiagnostics().nativeRenderCache.preloadWindowEndSeconds).toBeGreaterThan(firstPreloadWindowEnd);
     } finally {
       (globalThis as any).window = previousWindow;
     }
