@@ -394,6 +394,27 @@ describe("native render cache", () => {
     expect(nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length).toBeLessThan(first.assets.length);
   });
 
+  it("invalidates non-canonical drum-role generated stems after drum-lane mix edits", async () => {
+    const project = createDemoProject();
+    const drumTrack = project.tracks.find((track) => track.id === "drums")!;
+    project.tracks.push({
+      ...drumTrack,
+      id: "drums-layer",
+      name: "Drums Layer"
+    });
+    const first = await buildNativeRenderCache(project, nativeRenderCacheSignature(project));
+    const firstLayerAssetId = nativeGeneratedAssetIdForTrack(first, "drums-layer");
+    nativeMediaBridgeMock.renderNativeAudioWav.mockClear();
+
+    const edited = setDrumLaneVolume(project, "snare", 0.25);
+    const second = await buildNativeRenderCache(edited, nativeRenderCacheSignature(edited), first);
+    const secondLayerAssetId = nativeGeneratedAssetIdForTrack(second, "drums-layer");
+
+    expect(firstLayerAssetId).toBeTruthy();
+    expect(secondLayerAssetId).toBeTruthy();
+    expect(secondLayerAssetId).not.toBe(firstLayerAssetId);
+  });
+
   it("adds runtime-loaded audio clips as native WAV asset regions", async () => {
     const project = withAudioClip(createDemoProject());
     setCachedAudioBuffer("media_audio", fakeAudioBuffer());
@@ -874,6 +895,15 @@ describe("native render cache", () => {
   it("hydrates current persisted native cache WAV assets from project render-cache metadata", async () => {
     const project = createDemoProject();
     const signature = nativeRenderCacheSignature(project);
+    const clip = project.timeline.clips.find((item) => item.type === "generated-section")!;
+    const clipDuration = barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig);
+    const renderMock = nativeMediaBridgeMock.renderNativeAudioWav as unknown as {
+      mockImplementation(fn: (_payload: unknown, durationSeconds: number) => Promise<unknown>): void;
+    };
+    renderMock.mockImplementation(async (_payload: unknown, durationSeconds: number) => ({
+      ...nativeRenderResult(),
+      durationSeconds
+    }));
     const built = await buildNativeRenderCache(project, signature);
     project.renderCache = built.renderCacheItems;
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
@@ -897,6 +927,7 @@ describe("native render cache", () => {
     expect(result.hydratedCacheItemCount).toBe(built.renderCacheItems.length);
     expect(result.cache?.signature).toBe(signature);
     expect(result.cache?.regions.length).toBeGreaterThan(0);
+    expect(result.cache?.regions[0].duration).toBeCloseTo(clipDuration + NATIVE_GENERATED_STEM_TAIL_SECONDS, 5);
     expect(result.cache?.cachedClipIds.has(project.timeline.clips[0].id)).toBe(true);
     expect(result.cache?.hydratedCacheReadByteCount).toBeGreaterThan(0);
     expect(calls[0]).toMatchObject({
@@ -1052,6 +1083,11 @@ function nativeGeneratedAssetsByRole(cache: Awaited<ReturnType<typeof buildNativ
     });
   Object.values(out).forEach((ids) => ids.sort());
   return out;
+}
+
+function nativeGeneratedAssetIdForTrack(cache: Awaited<ReturnType<typeof buildNativeRenderCache>>, trackId: string): string {
+  const item = cache.renderCacheItems.find((entry) => entry.metadata?.cacheKind === "native-generated-stem" && entry.metadata?.trackId === trackId);
+  return String(item?.metadata?.assetId || item?.id || "");
 }
 
 function toggleKickStep(project: ReturnType<typeof createDemoProject>, sectionId: string, step: number): ReturnType<typeof createDemoProject> {

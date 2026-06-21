@@ -688,6 +688,7 @@ function nativeGeneratedStemAssetId(key: string): string {
 function nativeGeneratedStemSourceHash(project: PocketDawProject, clip: Clip, trackId: string): string {
   const assetProject = projectForNativeGeneratedStemRender(project, clip, trackId);
   const events = renderTimelineEvents(assetProject).filter((event) => event.trackId === trackId);
+  const isDrumStem = isDrumRoleTrack(assetProject, trackId);
   return hashString(JSON.stringify({
     nativeRenderer: nativeAudioRendererContract(assetProject.project.sampleRate),
     project: {
@@ -702,7 +703,7 @@ function nativeGeneratedStemSourceHash(project: PocketDawProject, clip: Clip, tr
     },
     trackId,
     events,
-    drumLaneMix: trackId === "drums" ? nativeCacheStemDrumLaneMixState(assetProject) : [],
+    drumLaneMix: isDrumStem ? nativeCacheStemDrumLaneMixState(assetProject) : [],
     fx: nativeGeneratedStemBakedFxState(assetProject, trackId),
     renderTailSeconds: NATIVE_GENERATED_STEM_TAIL_SECONDS
   }));
@@ -773,7 +774,11 @@ function nativeCacheStemDrumLaneMixState(project: PocketDawProject) {
 }
 
 function nativeGeneratedStemBakedFxState(project: PocketDawProject, trackId: string): PocketDawProject["fx"] {
-  return trackId === "drums" ? nativeCacheStemFxState(project) : { chains: [] };
+  return isDrumRoleTrack(project, trackId) ? nativeCacheStemFxState(project) : { chains: [] };
+}
+
+function isDrumRoleTrack(project: PocketDawProject, trackId: string): boolean {
+  return project.tracks.some((track) => track.id === trackId && track.role === "drums");
 }
 
 function renderCacheItemForAsset(asset: NativeAudioAsset, createdAt: string, item: AssetBuildItem): RenderCacheItem {
@@ -884,13 +889,14 @@ function nativeRegionFromHydratedItem(project: PocketDawProject, item: RenderCac
 
   if (cacheKind === "native-generated-stem") {
     const trackId = String(item.metadata?.trackId || clip.trackId);
+    const clipDuration = barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig);
     return {
       id: `${clip.id}_${trackId}_${asset.id}_hydrated`,
       assetId: asset.id,
       trackId,
       startTime: barsToSeconds(clip.startBar - 1, project.project.bpm, project.project.timeSig),
       sourceOffset: 0,
-      duration: Math.min(barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig), asset.durationSeconds),
+      duration: Math.min(generatedStemRenderDuration(clipDuration), asset.durationSeconds),
       gain: 1,
       pan: 0,
       fadeIn: 0,
@@ -904,7 +910,10 @@ function nativeRegionFromHydratedItem(project: PocketDawProject, item: RenderCac
 function hydratedDurationFallback(project: PocketDawProject, item: RenderCacheItem): number {
   const clip = item.sourceClipId ? project.timeline.clips.find((entry) => entry.id === item.sourceClipId) : null;
   if (!clip) return 0;
-  return barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig);
+  const clipDuration = barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig);
+  return String(item.metadata?.cacheKind || "") === "native-generated-stem"
+    ? generatedStemRenderDuration(clipDuration)
+    : clipDuration;
 }
 
 function expectedGeneratedStemKeys(project: PocketDawProject, clip: Clip): Set<string> {
