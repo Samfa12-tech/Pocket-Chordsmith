@@ -170,6 +170,8 @@ export async function buildNativeRenderCache(
     cachedClipIds.add(item.clip.id);
   }
 
+  generatedRegionCount -= pruneOverlappingGeneratedStemRegionsForNativeParity(regions, cachedClipIds, renderCacheItems, assets);
+
   const runtimeStats = await appendRuntimeAudioCache(project, signature, assets, regions, cachedClipIds, renderCacheItems, createdAt);
   renderCacheHitCount += runtimeStats.renderCacheHitCount;
   renderCacheMissCount += runtimeStats.renderCacheMissCount;
@@ -194,6 +196,68 @@ export async function buildNativeRenderCache(
     generatedStemRenderFailureCount,
     lastGeneratedStemRenderError
   };
+}
+
+function pruneOverlappingGeneratedStemRegionsForNativeParity(
+  regions: NativeAudioRegion[],
+  cachedClipIds: Set<string>,
+  renderCacheItems: RenderCacheItem[],
+  assets: Map<string, NativeAudioAsset>
+): number {
+  const itemByAssetId = new Map<string, RenderCacheItem>();
+  for (const item of renderCacheItems) {
+    if (String(item.metadata?.cacheKind || "") !== "native-generated-stem") continue;
+    const assetId = String(item.metadata?.assetId || item.id || "");
+    if (assetId) itemByAssetId.set(assetId, item);
+  }
+  const generatedRegions = regions
+    .map((region, index) => ({ region, index, item: itemByAssetId.get(region.assetId) || null }))
+    .filter((entry): entry is { region: NativeAudioRegion; index: number; item: RenderCacheItem } => !!entry.item)
+    .sort((left, right) => {
+      if (left.region.trackId !== right.region.trackId) return left.region.trackId.localeCompare(right.region.trackId);
+      return left.region.startTime - right.region.startTime;
+    });
+
+  const rejectedAssetIds = new Set<string>();
+  for (let index = 0; index < generatedRegions.length; index += 1) {
+    const current = generatedRegions[index];
+    const currentEnd = generatedStemRegionBodyEnd(current.region);
+    for (let nextIndex = index + 1; nextIndex < generatedRegions.length; nextIndex += 1) {
+      const next = generatedRegions[nextIndex];
+      if (next.region.trackId !== current.region.trackId) break;
+      if (next.region.startTime >= currentEnd) break;
+      const nextEnd = generatedStemRegionBodyEnd(next.region);
+      if (nextEnd <= current.region.startTime) continue;
+      rejectedAssetIds.add(current.region.assetId);
+      rejectedAssetIds.add(next.region.assetId);
+    }
+  }
+  if (!rejectedAssetIds.size) return 0;
+
+  let removedRegionCount = 0;
+  for (let index = regions.length - 1; index >= 0; index -= 1) {
+    if (!rejectedAssetIds.has(regions[index].assetId)) continue;
+    regions.splice(index, 1);
+    removedRegionCount += 1;
+  }
+  for (let index = renderCacheItems.length - 1; index >= 0; index -= 1) {
+    const item = renderCacheItems[index];
+    const assetId = String(item.metadata?.assetId || item.id || "");
+    if (rejectedAssetIds.has(assetId)) renderCacheItems.splice(index, 1);
+  }
+  for (const [key, asset] of assets) {
+    if (rejectedAssetIds.has(asset.id)) assets.delete(key);
+  }
+
+  cachedClipIds.clear();
+  for (const item of renderCacheItems) {
+    if (item.sourceClipId) cachedClipIds.add(item.sourceClipId);
+  }
+  return removedRegionCount;
+}
+
+function generatedStemRegionBodyEnd(region: NativeAudioRegion): number {
+  return region.startTime + Math.max(0, region.duration - NATIVE_GENERATED_STEM_TAIL_SECONDS);
 }
 
 export async function buildNativeRuntimeAudioCache(project: PocketDawProject, signature = nativeRuntimeAudioCacheSignature(project)): Promise<NativeRenderCache> {
