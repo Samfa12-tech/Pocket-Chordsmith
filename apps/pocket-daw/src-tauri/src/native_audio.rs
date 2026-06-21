@@ -1077,10 +1077,11 @@ impl TrackSourceBudget {
     }
 }
 
-#[derive(Clone, Copy)]
-enum GeneratedEventRenderMode {
-    LiveMix,
-    CacheStem,
+struct GeneratedEventSource<'a> {
+    track_id: &'a str,
+    left: f32,
+    right: f32,
+    track_gain: f32,
 }
 
 fn render_generated_event_source<'a>(
@@ -1088,17 +1089,13 @@ fn render_generated_event_source<'a>(
     event: &'a NativeRenderedEvent,
     t: f64,
     active_counts: &mut TrackSourceBudget,
-    mode: GeneratedEventRenderMode,
-) -> Option<(&'a str, f32, f32)> {
+) -> Option<GeneratedEventSource<'a>> {
     let track = playback.tracks.get(&event.track_id).cloned()?;
-    let track_gain_value = track_gain(&track, playback.has_solo);
+    let track_gain_value = track_gain(&track, playback.has_solo) as f32;
     if track_gain_value <= 0.0001 {
         return None;
     }
-    let mut sample = render_event_sample(event, t);
-    if matches!(mode, GeneratedEventRenderMode::LiveMix) {
-        sample *= track_gain_value as f32;
-    }
+    let sample = render_event_sample(event, t);
     if sample.abs() <= 0.000001 {
         return None;
     }
@@ -1106,14 +1103,8 @@ fn render_generated_event_source<'a>(
         return None;
     }
 
-    let event_pan = match mode {
-        GeneratedEventRenderMode::LiveMix => event.pan.unwrap_or(0.0) as f32,
-        GeneratedEventRenderMode::CacheStem => event.pan.unwrap_or(0.0).clamp(-1.0, 1.0) as f32,
-    };
-    let (pan_left, pan_right) = match mode {
-        GeneratedEventRenderMode::LiveMix => source_pan_gains(event_pan),
-        GeneratedEventRenderMode::CacheStem => cache_stem_source_pan_gains(event_pan),
-    };
+    let event_pan = event.pan.unwrap_or(0.0) as f32;
+    let (pan_left, pan_right) = source_pan_gains(event_pan);
     let mut lane_left = sample * pan_left;
     let mut lane_right = sample * pan_right;
     if let Some(lane) = &event.drum_lane {
@@ -1121,7 +1112,12 @@ fn render_generated_event_source<'a>(
             (lane_left, lane_right) = chain.process(lane_left, lane_right);
         }
     }
-    Some((event.track_id.as_str(), lane_left, lane_right))
+    Some(GeneratedEventSource {
+        track_id: event.track_id.as_str(),
+        left: lane_left,
+        right: lane_right,
+        track_gain: track_gain_value,
+    })
 }
 
 fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
@@ -1183,14 +1179,15 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         if event_release_end(&event) < t {
             continue;
         }
-        if let Some((track_id, lane_left, lane_right)) = render_generated_event_source(
-            playback,
-            &event,
-            t,
-            &mut active_counts_by_track,
-            GeneratedEventRenderMode::LiveMix,
-        ) {
-            add_track_mix(&mut track_mixes, &track_id, lane_left, lane_right);
+        if let Some(source) =
+            render_generated_event_source(playback, &event, t, &mut active_counts_by_track)
+        {
+            add_track_mix(
+                &mut track_mixes,
+                source.track_id,
+                source.left * source.track_gain,
+                source.right * source.track_gain,
+            );
         }
     }
 
@@ -1278,15 +1275,11 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         if event_release_end(&event) < t {
             continue;
         }
-        if let Some((_track_id, lane_left, lane_right)) = render_generated_event_source(
-            playback,
-            &event,
-            t,
-            &mut active_counts_by_track,
-            GeneratedEventRenderMode::CacheStem,
-        ) {
-            left += lane_left;
-            right += lane_right;
+        if let Some(source) =
+            render_generated_event_source(playback, &event, t, &mut active_counts_by_track)
+        {
+            left += source.left;
+            right += source.right;
         }
     }
 
@@ -1296,12 +1289,8 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     (left, right)
 }
 
-fn cache_stem_source_pan_gains(pan: f32) -> (f32, f32) {
-    source_pan_gains(pan)
-}
-
 fn source_pan_gains(pan: f32) -> (f32, f32) {
-    let (left, right) = pan_gains(pan);
+    let (left, right) = pan_gains(pan.clamp(-1.0, 1.0));
     let (center_left, center_right) = pan_gains(0.0);
     (
         left / center_left.max(0.0001),
@@ -4119,6 +4108,77 @@ mod tests {
     }
 
     #[test]
+    fn native_cached_stems_match_procedural_mix_through_live_mixer_processing() {
+        let mut event = test_generated_event("cached_mixer_bass", "bass", 0.0, 0.08, 0.8);
+        event.bass_tone = Some("warm_sub".to_string());
+        event.midi = Some(40.0);
+        let mut bass_track = test_track("bass", 0.72, -0.2, false, false);
+        bass_track.sends.push(NativeTrackSend {
+            return_track_id: "fx-return".to_string(),
+            level: 0.35,
+        });
+        let mut return_track = test_track("fx-return", 0.55, 0.15, false, false);
+        return_track.is_return = true;
+        let master_track = test_track("master", 0.82, 0.0, false, false);
+
+        let mut procedural = playback_with_events(vec![event.clone()]);
+        procedural.sample_rate = 8_000;
+        procedural
+            .tracks
+            .insert("bass".to_string(), bass_track.clone());
+        procedural
+            .tracks
+            .insert("fx-return".to_string(), return_track.clone());
+        procedural
+            .tracks
+            .insert("master".to_string(), master_track.clone());
+        procedural.fx = test_live_mixer_fx_runtime();
+        let procedural_frames = render_frames(&mut procedural, 80);
+
+        let mut stem_source = playback_with_events(vec![event]);
+        stem_source.sample_rate = 8_000;
+        stem_source
+            .tracks
+            .insert("bass".to_string(), bass_track.clone());
+        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem)
+            .expect("cache stem render should work");
+        let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
+
+        let mut cached = PlaybackShared {
+            project_title: Some("Cached live mixer".to_string()),
+            events: Vec::new(),
+            assets: HashMap::from([("stem".to_string(), decoded)]),
+            regions: vec![test_region(
+                "region", "stem", "bass", 0.0, 0.0, 0.1, 1.0, 0.0,
+            )],
+            tracks: HashMap::from([
+                ("bass".to_string(), bass_track),
+                ("fx-return".to_string(), return_track),
+                ("master".to_string(), master_track),
+            ]),
+            has_solo: false,
+            position_seconds: 0.0,
+            sample_rate: 8_000,
+            channels: 2,
+            playing: true,
+            rendered_frame_count: 0,
+            scan_start_index: 0,
+            generation: 1,
+            fx: test_live_mixer_fx_runtime(),
+            loop_region: None,
+            metronome: None,
+            sidechain: None,
+        };
+        let cached_frames = render_frames(&mut cached, 80);
+        let max_diff = max_frame_diff(&procedural_frames, &cached_frames);
+
+        assert!(
+            max_diff < 0.00008,
+            "expected cached stems to re-enter the same live track/send/master processing as procedural events, max diff {max_diff}"
+        );
+    }
+
+    #[test]
     fn native_source_budget_counts_tracks_independently() {
         let mut budget = TrackSourceBudget::default();
         for _ in 0..NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK {
@@ -4351,6 +4411,38 @@ mod tests {
                 ]),
             }],
         }
+    }
+
+    fn test_live_mixer_fx_runtime() -> NativeFxRuntime {
+        let mut fx = NativeFxRuntime::default();
+        fx.track_chains.insert(
+            "bass".to_string(),
+            NativeFxChainState {
+                slots: vec![NativeFxSlotState::from_payload(
+                    &test_fx_slot("utility-gain", [("gain", 0.74)]),
+                    8_000.0,
+                )
+                .expect("bass gain should build")],
+            },
+        );
+        fx.track_chains.insert(
+            "fx-return".to_string(),
+            NativeFxChainState {
+                slots: vec![NativeFxSlotState::from_payload(
+                    &test_fx_slot("utility-gain", [("gain", 0.46)]),
+                    8_000.0,
+                )
+                .expect("return gain should build")],
+            },
+        );
+        fx.master_chain = Some(NativeFxChainState {
+            slots: vec![NativeFxSlotState::from_payload(
+                &test_fx_slot("utility-gain", [("gain", 0.88)]),
+                8_000.0,
+            )
+            .expect("master gain should build")],
+        });
+        fx
     }
 
     fn test_fx_slot<const N: usize>(
