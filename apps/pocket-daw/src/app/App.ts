@@ -2,7 +2,7 @@ import { AudioEngine, type AudioProjectSyncMode, type TrackMixerControlPatch } f
 import { audioBufferPeaks, getCachedAudioBuffer, setCachedAudioBuffer } from "../audio/audioBufferCache";
 import { buildTransportMetronomeSchedule, countInSeconds, metronomeSettings, secondsPerBar } from "../audio/metronome";
 import { exportProjectToMidiBlob } from "../audio/midiExport";
-import { mergeNativeRenderCacheItems } from "../audio/nativeRenderCache";
+import { mergeNativeRenderCacheItems, prunePersistedNativeRenderCacheAssets } from "../audio/nativeRenderCache";
 import { renderProjectToWavBlob } from "../audio/offlineRender";
 import { createDemoProject } from "../demo/demoProject";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../daw/dawProject";
@@ -3509,22 +3509,39 @@ export class App {
     try {
       this.state.status = "Building native WAV cache...";
       this.render({ preserveScroll: true });
-      const result = await this.engine.persistNativeRenderCache(projectFilePath, "manual-build-native-cache");
+      const result = await this.engine.persistNativeRenderCache(projectFilePath, "manual-build-native-cache", { prune: false });
       if (!result) {
         this.state.status = "No native cache assets were available to build.";
         this.render({ preserveScroll: true });
         return;
       }
+      if (result.errors.length || result.skippedAssetCount || result.writtenAssetCount < result.cache.assets.length) {
+        this.state.status = [
+          "Native cache build incomplete",
+          `${result.writtenAssetCount}/${result.cache.assets.length} asset${result.cache.assets.length === 1 ? "" : "s"} written`,
+          result.skippedAssetCount ? `${result.skippedAssetCount} skipped` : "",
+          result.errors.length ? `${result.errors.length} error${result.errors.length === 1 ? "" : "s"}` : ""
+        ].filter(Boolean).join(", ") + ". Project refs were not saved and no stale cache files were pruned.";
+        this.render({ preserveScroll: true });
+        return;
+      }
       const project = mergeNativeRenderCacheItems(currentProject(this.state), result.renderCacheItems);
-      this.state = commitProject(this.state, project, `Built native WAV cache with ${result.writtenAssetCount} asset${result.writtenAssetCount === 1 ? "" : "s"}.`);
-      this.saveAutosaveSnapshot(project);
       const saveResult = await saveProjectFile(project, projectFilePath, false);
+      if (saveResult.mode !== "native") {
+        this.state.status = `Native cache assets were written, but project save did not complete: ${saveResult.message} Project refs were not committed and no stale cache files were pruned.`;
+        this.render({ preserveScroll: true });
+        return;
+      }
+      this.state = commitProject(this.state, project, `Built native WAV cache with ${result.writtenAssetCount} asset${result.writtenAssetCount === 1 ? "" : "s"}.`);
       if (saveResult.file) this.state.currentFile = saveResult.file;
+      this.saveAutosaveSnapshot(project);
+      const prune = await prunePersistedNativeRenderCacheAssets(projectFilePath, result.renderCacheItems);
       this.state.status = [
         `Built native WAV cache: ${result.writtenAssetCount} asset${result.writtenAssetCount === 1 ? "" : "s"}`,
-        result.prunedAssetCount ? `${result.prunedAssetCount} stale pruned` : "",
-        result.skippedAssetCount ? `${result.skippedAssetCount} skipped` : "",
-        result.errors.length ? `${result.errors.length} error${result.errors.length === 1 ? "" : "s"}` : ""
+        prune?.deletedCount ? `${prune.deletedCount} stale pruned` : "",
+        prune?.skippedCount ? `${prune.skippedCount} kept/skipped` : "",
+        prune?.errors.length ? `${prune.errors.length} prune error${prune.errors.length === 1 ? "" : "s"}` : "",
+        saveResult.message
       ].filter(Boolean).join(", ") + ".";
       this.render({ preserveScroll: true });
     } catch (error) {

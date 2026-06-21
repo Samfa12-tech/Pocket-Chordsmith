@@ -21,6 +21,7 @@ import {
   nativeRenderCacheSignature,
   nativeRuntimeAudioCacheSignature,
   persistNativeRenderCacheAssets,
+  type NativeRenderCachePersistOptions,
   type NativeRenderCache,
   type NativeRenderCacheHydrationResult,
   type NativeRenderCachePersistResult
@@ -192,11 +193,11 @@ export class AudioEngine {
     return cache;
   }
 
-  async persistNativeRenderCache(projectFilePath: string, reason = "persist-native-cache"): Promise<NativeRenderCachePersistResult | null> {
+  async persistNativeRenderCache(projectFilePath: string, reason = "persist-native-cache", options?: NativeRenderCachePersistOptions): Promise<NativeRenderCachePersistResult | null> {
     this.cancelNativeRenderCachePrewarm();
     const cache = await this.ensureNativeRenderCache(reason);
     if (!cache) return null;
-    const result = await persistNativeRenderCacheAssets(projectFilePath, cache);
+    const result = await persistNativeRenderCacheAssets(projectFilePath, cache, undefined, options);
     if (result.cache.assets.length || result.cache.regions.length) await this.activateNativeRenderCacheForCurrentPlayback(reason);
     return result;
   }

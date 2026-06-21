@@ -1,4 +1,4 @@
-import type { Clip, PocketDawProject, SourceRef } from "./schema";
+import type { Clip, PocketDawProject, SourceRef, TimelineMarker } from "./schema";
 import { cloneProject } from "./dawProject";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
@@ -77,6 +77,15 @@ export function appendChordsmithSection(project: PocketDawProject, sectionId: Se
     };
     next.timeline.clips.push(clip);
   });
+}
+
+export function rebuildGeneratedSectionArrangement(project: PocketDawProject): PocketDawProject {
+  const next = cloneProject(project);
+  const ref = getPrimaryChordsmithSourceRef(next);
+  const pcs = (ref?.normalized as unknown as SanitizedPcsProject) || null;
+  if (!ref || !pcs) return project;
+  syncGeneratedSectionTimeline(next, pcs, { rebuildArrangement: true });
+  return next;
 }
 
 export function setSectionChord(project: PocketDawProject, sectionId: SectionId, barIndex: number, degree: number): PocketDawProject {
@@ -348,33 +357,84 @@ function getPrimaryChordsmithSourceRef(project: PocketDawProject): SourceRef | n
   return project.sourceRefs.find((ref) => ref.sourceType === "pocket-chordsmith") || null;
 }
 
-function syncGeneratedSectionTimeline(project: PocketDawProject, pcs: SanitizedPcsProject) {
+interface GeneratedSectionSyncOptions {
+  rebuildArrangement?: boolean;
+}
+
+function syncGeneratedSectionTimeline(project: PocketDawProject, pcs: SanitizedPcsProject, options: GeneratedSectionSyncOptions = {}) {
   let bar = 1;
-  const sorted = project.timeline.clips
-    .filter((clip) => clip.type === "generated-section")
+  const linked = project.timeline.clips
+    .filter((clip) => clip.type === "generated-section" && clip.linked !== false)
     .slice()
-    .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
-  sorted.forEach((clip) => {
+    .sort((a, b) => sourceIndex(a) - sourceIndex(b) || a.startBar - b.startBar || a.id.localeCompare(b.id));
+  const nextMarkers: TimelineMarker[] = [];
+  linked.forEach((clip) => {
     if (!clip.sectionId || !pcs.sections[clip.sectionId as SectionId]) return;
     const section = pcs.sections[clip.sectionId as SectionId];
-    clip.startBar = bar;
+    if (options.rebuildArrangement) {
+      clip.startBar = bar;
+    }
     clip.barLength = section.bars;
     clip.name = `Section ${section.id}`;
     clip.color = SECTION_COLORS[section.id] || clip.color;
     clip.metadata = { ...(clip.metadata || {}), sectionBars: section.bars };
-    bar += section.bars;
+    nextMarkers.push(sectionMarkerForClip(clip));
+    if (options.rebuildArrangement) {
+      bar += section.bars;
+    }
   });
-  const byId = new Map(sorted.map((clip) => [clip.id, clip]));
+  const byId = new Map(linked.map((clip) => [clip.id, clip]));
   project.timeline.clips = project.timeline.clips.map((clip) => byId.get(clip.id) || clip);
-  project.timeline.bars = Math.max(1, bar - 1);
-  project.timeline.loop.endBar = Math.min(Math.max(project.timeline.loop.endBar, project.timeline.loop.startBar + 1), project.timeline.bars + 1);
-  project.timeline.markers = sorted.map((clip) => ({
+  syncTimelineBounds(project);
+  mergeSectionMarkers(project, nextMarkers);
+}
+
+function sectionMarkerForClip(clip: Clip): TimelineMarker {
+  return {
     id: `marker_${clip.id}`,
     bar: clip.startBar,
     name: clip.sectionId ? `Section ${clip.sectionId}` : clip.name,
     color: clip.color,
     markerType: "section"
-  }));
+  };
+}
+
+function mergeSectionMarkers(project: PocketDawProject, sectionMarkers: TimelineMarker[]) {
+  const sectionMarkerIds = new Set(sectionMarkers.map((marker) => marker.id));
+  const used = new Set<string>();
+  const merged = sectionMarkers.map((marker) => {
+    const id = uniqueMarkerId(marker.id, used);
+    used.add(id);
+    return { ...marker, id };
+  });
+  const preserved = project.timeline.markers.filter((marker) => marker.markerType !== "section" || !sectionMarkerIds.has(marker.id)).map((marker) => {
+    const id = uniqueMarkerId(marker.id, used);
+    used.add(id);
+    return { ...marker, id };
+  });
+  project.timeline.markers = [...preserved, ...merged].sort((a, b) => a.bar - b.bar || a.id.localeCompare(b.id));
+}
+
+function uniqueMarkerId(id: string, used: Set<string>) {
+  if (!used.has(id)) return id;
+  let index = 2;
+  let next = `${id}_${index}`;
+  while (used.has(next)) {
+    index += 1;
+    next = `${id}_${index}`;
+  }
+  return next;
+}
+
+function syncTimelineBounds(project: PocketDawProject) {
+  const lastBar = project.timeline.clips.reduce((max, clip) => Math.max(max, clip.startBar + clip.barLength - 1), 1);
+  project.timeline.bars = Math.max(1, lastBar);
+  project.timeline.loop.endBar = Math.min(Math.max(project.timeline.loop.endBar, project.timeline.loop.startBar + 1), project.timeline.bars + 1);
+}
+
+function sourceIndex(clip: Clip): number {
+  const value = Number(clip.metadata?.sourceIndex);
+  return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
 }
 
 function syncChordsmithOriginalShadow(ref: SourceRef, pcs: SanitizedPcsProject, sectionId: SectionId) {

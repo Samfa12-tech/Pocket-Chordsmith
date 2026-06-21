@@ -2,7 +2,7 @@ import { cloneProject } from "../daw/dawProject";
 import type { Clip, PocketDawProject, RenderCacheItem, TrackRole } from "../daw/schema";
 import { barsToSeconds } from "../daw/timeline";
 import type { NativeAudioAsset, NativeAudioRegion } from "../native/audioPlayback";
-import { pruneNativeCacheAssets, readNativeCacheAsset, writeNativeCacheAsset, type NativeMediaApi } from "../native/mediaBridge";
+import { pruneNativeCacheAssets, readNativeCacheAsset, writeNativeCacheAsset, type NativeCachePruneResult, type NativeMediaApi } from "../native/mediaBridge";
 import { audioRegionFromClip, renderTimelineAudioRegions } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
 import { encodeWav, renderProjectToWavBlob } from "./offlineRender";
@@ -40,6 +40,11 @@ export interface NativeRenderCachePersistResult {
   pruneSkippedAssetCount: number;
   errors: string[];
   renderCacheItems: RenderCacheItem[];
+}
+
+export interface NativeRenderCachePersistOptions {
+  prune?: boolean;
+  namespace?: string;
 }
 
 export interface NativeRenderCacheHydrationResult {
@@ -156,7 +161,8 @@ export async function buildNativeRuntimeAudioCache(project: PocketDawProject, si
 export async function persistNativeRenderCacheAssets(
   projectFilePath: string,
   cache: NativeRenderCache,
-  api?: NativeMediaApi
+  api?: NativeMediaApi,
+  options: NativeRenderCachePersistOptions = {}
 ): Promise<NativeRenderCachePersistResult> {
   const errors: string[] = [];
   let writtenAssetCount = 0;
@@ -166,9 +172,10 @@ export async function persistNativeRenderCacheAssets(
   let prunedByteCount = 0;
   let pruneSkippedAssetCount = 0;
   const writes = new Map<string, Awaited<ReturnType<typeof writeNativeCacheAsset>>>();
+  const namespace = safeCacheNamespace(options.namespace || nativeRenderCacheProjectNamespace(projectFilePath));
 
   for (const asset of cache.assets) {
-    const relativePath = asset.relativePath || nativeRenderCacheRelativePath(asset.id);
+    const relativePath = nativeRenderCacheRelativePath(asset.id, namespace);
     try {
       const result = await writeNativeCacheAsset(projectFilePath, {
         assetId: asset.id,
@@ -198,17 +205,16 @@ export async function persistNativeRenderCacheAssets(
       nativePath: write.path,
       byteLength: write.sizeBytes,
       durableCacheReady: true,
+      cacheNamespace: namespace,
       persistedAt: new Date().toISOString()
     });
   });
   cache.renderCacheItems = renderCacheItems;
   cache.cachedAssetByteCount = cache.assets.reduce((total, asset) => total + nativeAssetByteLength(asset), 0);
 
-  const keepRelativePaths = Array.from(new Set([
-    ...cache.assets.map((asset) => asset.relativePath || nativeRenderCacheRelativePath(asset.id)),
-    ...renderCacheItems.map((item) => String(item.metadata?.assetRelativePath || "")).filter(Boolean)
-  ]));
-  const prune = keepRelativePaths.length ? await pruneNativeCacheAssets(projectFilePath, keepRelativePaths, api) : null;
+  const prune = options.prune === true && !errors.length && !skippedAssetCount
+    ? await prunePersistedNativeRenderCacheAssets(projectFilePath, renderCacheItems, api)
+    : null;
   if (prune) {
     prunedAssetCount = prune.deletedCount;
     prunedByteCount = prune.deletedByteCount;
@@ -227,6 +233,17 @@ export async function persistNativeRenderCacheAssets(
     errors,
     renderCacheItems
   };
+}
+
+export async function prunePersistedNativeRenderCacheAssets(
+  projectFilePath: string,
+  renderCacheItems: RenderCacheItem[],
+  api?: NativeMediaApi
+): Promise<NativeCachePruneResult | null> {
+  const keepRelativePaths = Array.from(new Set(renderCacheItems
+    .map((item) => String(item.metadata?.assetRelativePath || ""))
+    .filter((path) => path && isSafeNativeCacheRelativePath(path))));
+  return keepRelativePaths.length ? pruneNativeCacheAssets(projectFilePath, keepRelativePaths, api) : null;
 }
 
 export async function hydrateNativeRenderCacheAssets(
@@ -360,8 +377,21 @@ export function mergeNativeRenderCacheItems(project: PocketDawProject, items: Re
   };
 }
 
-export function nativeRenderCacheRelativePath(assetId: string): string {
-  return `${NATIVE_RENDER_CACHE_ROOT}/${safeCacheFileStem(assetId)}.wav`;
+export function nativeRenderCacheRelativePath(assetId: string, namespace?: string): string {
+  const stem = safeCacheFileStem(assetId);
+  const safeNamespace = namespace ? safeCacheNamespace(namespace) : "";
+  return safeNamespace
+    ? `${NATIVE_RENDER_CACHE_ROOT}/${safeNamespace}/${stem}.wav`
+    : `${NATIVE_RENDER_CACHE_ROOT}/${stem}.wav`;
+}
+
+export function nativeRenderCacheProjectNamespace(projectFilePath: string): string {
+  const normalized = String(projectFilePath || "unsaved")
+    .replace(/\\/g, "/")
+    .trim()
+    .toLowerCase();
+  const fileStem = (normalized.split("/").filter(Boolean).pop() || "project").replace(/\.pocketdaw$/i, "");
+  return safeCacheNamespace(`${safeCacheFileStem(fileStem).slice(0, 40)}-${hashString64(normalized)}`);
 }
 
 export function nativeRenderCacheSignature(project: PocketDawProject): string {
@@ -777,6 +807,11 @@ function safeCacheFileStem(value: string): string {
   return safe || `asset-${hashString(value)}`;
 }
 
+function safeCacheNamespace(value: string): string {
+  const safe = safeCacheFileStem(value).slice(0, 80);
+  return safe || `project-${hashString(value)}`;
+}
+
 function hashString(value: string): string {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
@@ -784,4 +819,8 @@ function hashString(value: string): string {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function hashString64(value: string): string {
+  return `${hashString(`a:${value}`)}${hashString(`b:${value}`)}`;
 }

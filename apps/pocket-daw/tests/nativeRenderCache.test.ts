@@ -47,11 +47,13 @@ import {
   buildNativeRenderCache,
   buildNativeRuntimeAudioCache,
   hydrateNativeRenderCacheAssets,
+  nativeRenderCacheProjectNamespace,
   mergeNativeRenderCacheItems,
   nativeRenderCacheRelativePath,
   nativeRenderCacheSignature,
   nativeRuntimeAudioCacheSignature,
   persistNativeRenderCacheAssets,
+  prunePersistedNativeRenderCacheAssets,
   projectForNativeGeneratedStemRender
 } from "../src/audio/nativeRenderCache";
 import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
@@ -397,7 +399,7 @@ describe("native render cache", () => {
       }
     };
 
-    const result = await persistNativeRenderCacheAssets("C:\\Songs\\Song.pocketdaw", cache, api);
+    const result = await persistNativeRenderCacheAssets("C:\\Songs\\Song.pocketdaw", cache, api, { prune: true });
 
     expect(result.writtenAssetCount).toBe(cache.assets.length);
     expect(result.prunedAssetCount).toBe(2);
@@ -444,11 +446,84 @@ describe("native render cache", () => {
       }
     };
 
-    const result = await persistNativeRenderCacheAssets("C:\\Songs\\Song.pocketdaw", cache, api);
+    const result = await persistNativeRenderCacheAssets("C:\\Songs\\Song.pocketdaw", cache, api, { prune: true });
 
     expect(result.prunedAssetCount).toBe(1);
     expect(result.prunedByteCount).toBe(1234);
     expect(calls.filter((call) => call.command === "prune_native_cache_assets")).toHaveLength(1);
+  });
+
+  it("namespaces persisted native cache assets by saved project path", async () => {
+    const songA = "C:\\Songs\\Song-A.pocketdaw";
+    const songB = "C:\\Songs\\Song-B.pocketdaw";
+    const namespaceA = nativeRenderCacheProjectNamespace(songA);
+    const namespaceB = nativeRenderCacheProjectNamespace(songB);
+    const cache = await buildNativeRenderCache(createDemoProject(), "namespace-signature");
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeMediaApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return {
+          assetId: String(args?.assetId || ""),
+          path: `C:\\Songs\\${String(args?.relativePath || "").replace(/\//g, "\\")}`,
+          relativePath: String(args?.relativePath || ""),
+          sizeBytes: Array.isArray(args?.bytes) ? args.bytes.length : 0
+        } as never;
+      }
+    };
+
+    const result = await persistNativeRenderCacheAssets(songA, cache, api, { prune: false });
+
+    expect(namespaceA).not.toBe(namespaceB);
+    expect(nativeRenderCacheProjectNamespace("c:\\songs\\SONG-A.pocketdaw")).toBe(namespaceA);
+    expect(result.renderCacheItems[0].metadata?.cacheNamespace).toBe(namespaceA);
+    expect(result.renderCacheItems[0].metadata?.assetRelativePath).toMatch(new RegExp(`^project-cache/native-audio/${namespaceA}/`));
+    expect(result.renderCacheItems[0].metadata?.assetRelativePath).not.toContain(namespaceB);
+    expect(calls.every((call) => call.command !== "prune_native_cache_assets")).toBe(true);
+  });
+
+  it("prunes only persisted native cache metadata paths after the project save succeeds", async () => {
+    const namespace = nativeRenderCacheProjectNamespace("C:\\Songs\\Song.pocketdaw");
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeMediaApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return { deletedCount: 1, deletedByteCount: 44, skippedCount: 2, errors: [] } as never;
+      }
+    };
+    const items = [
+      {
+        id: "good",
+        createdAt: "2026-06-21T00:00:00.000Z",
+        invalidated: false,
+        metadata: {
+          cacheKind: "native-generated-stem",
+          assetRelativePath: nativeRenderCacheRelativePath("native-cache-good", namespace)
+        }
+      },
+      {
+        id: "unsafe",
+        createdAt: "2026-06-21T00:00:00.000Z",
+        invalidated: false,
+        metadata: {
+          cacheKind: "native-generated-stem",
+          assetRelativePath: "../bad.wav"
+        }
+      }
+    ];
+
+    const result = await prunePersistedNativeRenderCacheAssets("C:\\Songs\\Song.pocketdaw", items, api);
+
+    expect(result).toMatchObject({ deletedCount: 1, skippedCount: 2 });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      command: "prune_native_cache_assets",
+      args: {
+        keepRelativePaths: [nativeRenderCacheRelativePath("native-cache-good", namespace)]
+      }
+    });
   });
 
   it("hydrates current persisted native cache WAV assets from project render-cache metadata", async () => {
@@ -552,6 +627,7 @@ describe("native render cache", () => {
 
   it("sanitizes durable native cache asset paths", () => {
     expect(nativeRenderCacheRelativePath("Native Cache 01")).toBe("project-cache/native-audio/native-cache-01.wav");
+    expect(nativeRenderCacheRelativePath("Native Cache 01", "Song A")).toBe("project-cache/native-audio/song-a/native-cache-01.wav");
     expect(nativeRenderCacheRelativePath("../bad")).toBe("project-cache/native-audio/bad.wav");
   });
 });

@@ -1,33 +1,33 @@
-# Pocket DAW v0.6.19 Alpha Testing Release Status
+# Pocket DAW v0.6.21 Alpha Testing Release Status
 
 Pocket DAW is now live for public Windows alpha testing on itch and linked from `samfa12.com`.
 
-This file records the current source baseline and the latest completed public installed-release evidence. Current source target is `0.6.19` native transport/cache alpha.
+This file records the current source baseline and the latest completed public installed-release evidence. Current source target is `0.6.21` native transport/cache alpha. The machine-readable current status is `../release-status.json`; regenerate `CURRENT_RELEASE_STATUS.md` with `npm run status:release`.
 
 ## Current Source Baseline
 
-- Version: `0.6.19`
-- Source delta after published `0.6.13`: native loop-region wrapping, native metronome rendering, latest-only native restart coalescing during rapid live composition edits, fresh native-cache reuse after live edits, narrower native-cache signatures, Save As title adoption from `.pocketdaw` filenames, guitar track metadata/active-state sync, and scroll-preserving routing/add/metronome interactions.
+- Version: `0.6.21`
+- Source delta after published `0.6.20`: integrity fixes for Chordsmith arrangement preservation, native-cache project ownership and safer cache save/prune ordering. Publish this source candidate only after a fresh signed build and exact-artifact smoke.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Primary itch channel: `windows-installer`
 - Updater manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 - Bootstrapper manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-bootstrapper-latest.json`
-- Release artifact status: `0.6.19` GitHub updater assets and bootstrapper manifest are published; itch channel `windows-installer` remains on the existing bootstrapper build because the bootstrapper executable itself did not change.
-- Source commit at packaging time: `eee587c9afc39d89fa7893ea8a98e730c948a5e9`.
+- Release artifact status: `0.6.20` GitHub updater assets and bootstrapper manifest are published; itch channel `windows-installer` remains on the existing bootstrapper build because the bootstrapper executable itself did not change.
+- Source commit at packaging time: `7f44aa6e247a78133845814434d7ec6493b5de23`.
 - Generated manifest note: dirty working tree was `false`.
 
 ## Current Local Artifact Record
 
-The current published artifact record is `0.6.19`. These artifacts passed automated verification and upload checks. Manual installed-app smoke is pending for native loop/metronome behavior, rapid live-edit native restart stability, cache reuse after live edits, Save As title adoption, and existing AI / MCP bridge coverage.
+The current published artifact record is `0.6.20`. These artifacts passed automated verification and upload checks. Manual installed-app smoke is pending for native loop/metronome behavior, rapid live-edit native restart stability, cache reuse after live edits, Save As title adoption, and existing AI / MCP bridge coverage.
 
-- GitHub release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.19`
-- Setup EXE `Pocket.DAW_0.6.19_x64-setup.exe`: `511143d2533046339fef6d818c854a1e9e5968901b0abd1f3023aa32f36fa79f`
-- Setup EXE Tauri updater signature `Pocket.DAW_0.6.19_x64-setup.exe.sig`: `f0afdfed173c5e9e8695835399da0c55554ecee4c61f23cbbc94ec5bc34d1c72`
-- MSI `Pocket.DAW_0.6.19_x64_en-US.msi`: `a0196e6d9fd9c76b1871a48b8e22057fada2f3ee0c03bd6347a3e58015f14a1d`
-- MSI Tauri updater signature `Pocket.DAW_0.6.19_x64_en-US.msi.sig`: `da88fc7b0e94efe919711101972c7aea779e7ef85a1b25d3282a14b4ad38fe1b`
-- Release manifest `pocket-daw-release-manifest-v0.6.19.json`: `c1dda1c78fa5e49a4541cccd542fddf68c29d196c6b408020f354f87538f670e`
-- Bootstrapper manifest `pocket-daw-bootstrapper-latest.json` reports version `0.6.19`, installer `Pocket.DAW_0.6.19_x64-setup.exe`, and installer SHA-256 `511143d2533046339fef6d818c854a1e9e5968901b0abd1f3023aa32f36fa79f`.
-- Latest updater and bootstrapper manifests both report version `0.6.19`.
+- GitHub release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.20`
+- Setup EXE `Pocket.DAW_0.6.20_x64-setup.exe`: `86a7495ee3a3c97d9b802aac9b97e52a32ffd1e53f69441d06d5f4a7f1d8e08c`
+- Setup EXE Tauri updater signature `Pocket.DAW_0.6.20_x64-setup.exe.sig`: `a978b0c03b00507824cb9d8b5f03f3fa8fa2de5e723e0ef97768ad7fc13d8565`
+- MSI `Pocket.DAW_0.6.20_x64_en-US.msi`: `d4f11499cd0b18c6ce3d96f71a5f6de94fa0349a1752efadf6f40709b794707b`
+- MSI Tauri updater signature `Pocket.DAW_0.6.20_x64_en-US.msi.sig`: `2a6f6d1aad22b90ba336092b947ef2ba7e56fd7e16a56e1b79320374c43d7a03`
+- Release manifest `pocket-daw-release-manifest-v0.6.20.json`: `36ce56dd09097f7fd63824a8c708b2256a5eeeccdbf7fd64dbc1d2344b5ab1e6`
+- Bootstrapper manifest `pocket-daw-bootstrapper-latest.json` reports version `0.6.20`, installer `Pocket.DAW_0.6.20_x64-setup.exe`, and installer SHA-256 `86a7495ee3a3c97d9b802aac9b97e52a32ffd1e53f69441d06d5f4a7f1d8e08c`.
+- Latest updater and bootstrapper manifests both report version `0.6.20`.
 
 Previous completed public updater artifact record:
 

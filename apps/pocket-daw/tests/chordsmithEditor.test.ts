@@ -9,6 +9,7 @@ import {
   cycleGuitarStep,
   cycleMelodyStep,
   getPrimaryChordsmithSource,
+  rebuildGeneratedSectionArrangement,
   setChordInstrument,
   setBassMode,
   setChordsmithGlobals,
@@ -185,6 +186,95 @@ describe("Chordsmith visual sequencer edits", () => {
     expect(project.tracks.find((track) => track.id === "chords")?.metadata?.chordsmithInstrument).toBe("pocket");
   });
 
+  it("preserves generated clip positions and non-section markers on source-backed musical edits", () => {
+    let project = manualTwoSectionArrangement();
+    const beforeStarts = sectionClipStarts(project);
+
+    project = setChordInstrument(project, "dusty_rhodes");
+    project = cycleDrumStep(project, "B", "kick", 0);
+    project = setChordsmithGlobals(project, { key: "D", bpm: 132 });
+
+    expect(sectionClipStarts(project)).toEqual(beforeStarts);
+    expect(project.timeline.clips.find((clip) => clip.sectionId === "B")?.startBar).toBe(17);
+    expect(project.timeline.markers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "cue_intro", markerType: "cue", bar: 9 }),
+      expect.objectContaining({ id: "export_loop", markerType: "export", bar: 13 }),
+      expect.objectContaining({ id: "combat", markerType: "game-state", bar: 17 })
+    ]));
+    expect(project.timeline.markers.find((marker) => marker.id === "marker_clip_002")).toMatchObject({
+      bar: 17,
+      name: "Section B",
+      markerType: "section"
+    });
+  });
+
+  it("keeps repeated generated clips independent when editing a melody instrument", () => {
+    let project = createEmptyPocketDawProject();
+    project = appendChordsmithSection(project, "A");
+    const repeated = project.timeline.clips.find((clip) => clip.id === "clip_002")!;
+    repeated.startBar = 13;
+    repeated.lane = 1;
+    const beforeStarts = sectionClipStarts(project);
+    project.tracks.find((track) => track.id === "melody")!.metadata = { chordsmithMelodyTrackIndex: 0 };
+
+    project = setMelodyInstrument(project, "A", 0, "harmonica");
+
+    expect(sectionClipStarts(project)).toEqual(beforeStarts);
+    expect(project.timeline.markers.filter((marker) => marker.id === "marker_clip_001")).toHaveLength(1);
+    expect(project.timeline.markers.filter((marker) => marker.id === "marker_clip_002")).toHaveLength(1);
+    expect(project.timeline.markers.find((marker) => marker.id === "marker_clip_002")).toMatchObject({ bar: 13 });
+  });
+
+  it("does not rewrite unlinked generated clips during Chordsmith section edits", () => {
+    let project = manualTwoSectionArrangement();
+    const unlinked = project.timeline.clips.find((clip) => clip.sectionId === "B")!;
+    unlinked.linked = false;
+    unlinked.name = "Manual B render";
+    unlinked.barLength = 9;
+    unlinked.color = "#abcdef";
+    project.timeline.markers.push({ id: `marker_${unlinked.id}`, bar: unlinked.startBar, name: unlinked.name, color: unlinked.color, markerType: "section" });
+
+    project = setSectionBars(project, "B", 2);
+
+    expect(project.timeline.clips.find((clip) => clip.id === unlinked.id)).toMatchObject({
+      linked: false,
+      name: "Manual B render",
+      startBar: 17,
+      barLength: 9,
+      color: "#abcdef"
+    });
+    expect(project.timeline.markers.filter((marker) => marker.id === `marker_${unlinked.id}`)).toHaveLength(1);
+    expect(project.timeline.markers.find((marker) => marker.id === "combat")).toBeTruthy();
+  });
+
+  it("deduplicates generated section markers without deleting user markers", () => {
+    let project = manualTwoSectionArrangement();
+    project.timeline.markers.push(
+      { id: "marker_clip_002", bar: 3, name: "Duplicate Section B", markerType: "section" },
+      { id: "cue_intro", bar: 10, name: "Duplicate Cue", markerType: "cue" }
+    );
+
+    project = setChordInstrument(project, "dusty_rhodes");
+
+    expect(project.timeline.markers.filter((marker) => marker.id === "marker_clip_002")).toHaveLength(1);
+    expect(project.timeline.markers.filter((marker) => marker.name === "Section B")).toHaveLength(1);
+    expect(new Set(project.timeline.markers.map((marker) => marker.id)).size).toBe(project.timeline.markers.length);
+    expect(project.timeline.markers.some((marker) => marker.markerType === "cue" && marker.name === "Intro cue")).toBe(true);
+    expect(project.timeline.markers.some((marker) => marker.markerType === "cue" && marker.name === "Duplicate Cue")).toBe(true);
+  });
+
+  it("explicitly rebuilds generated arrangement while preserving non-section markers", () => {
+    let project = manualTwoSectionArrangement();
+
+    project = rebuildGeneratedSectionArrangement(project);
+
+    const clips = project.timeline.clips.filter((clip) => clip.type === "generated-section");
+    expect(clips[0].startBar).toBe(1);
+    expect(clips[1].startBar).toBe(clips[0].startBar + clips[0].barLength);
+    expect(project.timeline.markers.find((marker) => marker.id === "combat")).toMatchObject({ markerType: "game-state", bar: 17 });
+    expect(project.timeline.markers.find((marker) => marker.id === "marker_clip_002")).toMatchObject({ bar: clips[1].startBar });
+  });
+
   it("validates edited melody instruments against the shared Pocket Audio registry", () => {
     let project = createDemoProject();
     project.tracks.find((track) => track.id === "melody")!.metadata = { chordsmithMelodyTrackIndex: 0 };
@@ -264,3 +354,23 @@ describe("Chordsmith visual sequencer edits", () => {
     expect((original.melodySoloA as boolean[])[0]).toBe(true);
   });
 });
+
+function manualTwoSectionArrangement() {
+  let project = createEmptyPocketDawProject();
+  project = appendChordsmithSection(project, "B");
+  const sectionB = project.timeline.clips.find((clip) => clip.sectionId === "B")!;
+  sectionB.startBar = 17;
+  project.timeline.bars = 24;
+  project.timeline.markers.push(
+    { id: "cue_intro", bar: 9, name: "Intro cue", markerType: "cue" },
+    { id: "export_loop", bar: 13, name: "Loop export", markerType: "export" },
+    { id: "combat", bar: 17, name: "Combat", markerType: "game-state" }
+  );
+  return project;
+}
+
+function sectionClipStarts(project: ReturnType<typeof createEmptyPocketDawProject>): Record<string, number> {
+  return Object.fromEntries(project.timeline.clips
+    .filter((clip) => clip.type === "generated-section")
+    .map((clip) => [clip.id, clip.startBar]));
+}
