@@ -36,6 +36,8 @@ pub fn create_native_audio_runtime() -> NativeAudioState {
 pub struct NativeAudioStartPayload {
     #[serde(rename = "projectTitle")]
     project_title: Option<String>,
+    #[serde(rename = "sampleRate", default)]
+    sample_rate: u32,
     #[serde(rename = "startSeconds")]
     start_seconds: f64,
     #[serde(rename = "outputDeviceId")]
@@ -262,6 +264,18 @@ pub struct NativeAudioStatus {
     procedural_event_count: usize,
 }
 
+#[derive(Serialize)]
+pub struct NativeAudioRenderedWav {
+    #[serde(rename = "sampleRate")]
+    sample_rate: u32,
+    channels: u16,
+    #[serde(rename = "durationSeconds")]
+    duration_seconds: f64,
+    #[serde(rename = "sizeBytes")]
+    size_bytes: usize,
+    bytes: Vec<u8>,
+}
+
 struct PlaybackShared {
     project_title: Option<String>,
     events: Vec<NativeRenderedEvent>,
@@ -397,6 +411,22 @@ pub fn native_audio_start(
 }
 
 #[tauri::command]
+pub fn native_audio_render_wav(
+    payload: NativeAudioStartPayload,
+    duration_seconds: f64,
+    state: tauri::State<'_, NativeAudioState>,
+) -> Result<NativeAudioRenderedWav, String> {
+    let mut runtime = state
+        .lock()
+        .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
+    let sample_rate = sanitize_offline_sample_rate(payload.sample_rate);
+    let generation = runtime.generation;
+    let mut playback = runtime.build_playback(payload, sample_rate, 2, generation)?;
+    drop(runtime);
+    render_playback_to_wav(&mut playback, duration_seconds)
+}
+
+#[tauri::command]
 pub fn native_audio_pause(
     state: tauri::State<'_, NativeAudioState>,
 ) -> Result<NativeAudioStatus, String> {
@@ -512,51 +542,12 @@ impl NativeAudioRuntime {
         let config = supported_config.config();
         let channels = config.channels.max(1);
         let sample_rate = config.sample_rate;
-        let mut events = payload.events;
-        events.sort_by(|a, b| {
-            a.time
-                .partial_cmp(&b.time)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        let mut regions = payload.regions;
-        regions.sort_by(|a, b| {
-            a.start_time
-                .partial_cmp(&b.start_time)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        for region in &regions {
-            validate_region(region)?;
-        }
-        let mut assets = HashMap::new();
-        for asset in payload.assets {
-            let decoded = self.decode_or_reuse_asset(&asset)?;
-            assets.insert(asset.id.clone(), decoded);
-        }
-        let tracks = payload
-            .tracks
-            .into_iter()
-            .map(|track| (track.id.clone(), track))
-            .collect::<HashMap<_, _>>();
-        let fx = build_native_fx_runtime(payload.fx_chains, &tracks, sample_rate as f32);
-        let shared = Arc::new(Mutex::new(PlaybackShared {
-            project_title: payload.project_title,
-            events,
-            assets,
-            regions,
-            has_solo: tracks.values().any(|track| track.solo),
-            tracks,
-            fx,
-            loop_region: sanitize_loop_region(payload.loop_region),
-            metronome: sanitize_metronome(payload.metronome),
-            sidechain: payload.sidechain,
-            position_seconds: payload.start_seconds.max(0.0),
+        let shared = Arc::new(Mutex::new(self.build_playback(
+            payload,
             sample_rate,
             channels,
-            playing: true,
-            rendered_frame_count: 0,
-            scan_start_index: 0,
-            generation: self.generation,
-        }));
+            self.generation,
+        )?));
         if let Ok(mut playback) = shared.lock() {
             apply_loop_wrap(&mut playback);
             playback.scan_start_index =
@@ -617,6 +608,63 @@ impl NativeAudioRuntime {
         self.host_name = Some(host_name);
         self.last_error = None;
         Ok(self.status())
+    }
+
+    fn build_playback(
+        &mut self,
+        payload: NativeAudioStartPayload,
+        sample_rate: u32,
+        channels: u16,
+        generation: u64,
+    ) -> Result<PlaybackShared, String> {
+        let mut events = payload.events;
+        events.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut regions = payload.regions;
+        regions.sort_by(|a, b| {
+            a.start_time
+                .partial_cmp(&b.start_time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for region in &regions {
+            validate_region(region)?;
+        }
+        let mut assets = HashMap::new();
+        for asset in payload.assets {
+            let decoded = self.decode_or_reuse_asset(&asset)?;
+            assets.insert(asset.id.clone(), decoded);
+        }
+        let tracks = payload
+            .tracks
+            .into_iter()
+            .map(|track| (track.id.clone(), track))
+            .collect::<HashMap<_, _>>();
+        let fx = build_native_fx_runtime(payload.fx_chains, &tracks, sample_rate as f32);
+        let mut playback = PlaybackShared {
+            project_title: payload.project_title,
+            events,
+            assets,
+            regions,
+            has_solo: tracks.values().any(|track| track.solo),
+            tracks,
+            fx,
+            loop_region: sanitize_loop_region(payload.loop_region),
+            metronome: sanitize_metronome(payload.metronome),
+            sidechain: payload.sidechain,
+            position_seconds: payload.start_seconds.max(0.0),
+            sample_rate,
+            channels,
+            playing: true,
+            rendered_frame_count: 0,
+            scan_start_index: 0,
+            generation,
+        };
+        apply_loop_wrap(&mut playback);
+        playback.scan_start_index = find_scan_start(&playback.events, playback.position_seconds);
+        Ok(playback)
     }
 
     fn stop(&mut self) {
@@ -786,6 +834,95 @@ fn write_frame(frame: &mut [f32], left: f32, right: f32) {
 fn f32_to_u16(value: f32) -> u16 {
     (((value.clamp(-1.0, 1.0) * 0.5 + 0.5) * u16::MAX as f32).round() as i32)
         .clamp(0, u16::MAX as i32) as u16
+}
+
+fn f32_to_i16(value: f32) -> i16 {
+    let clamped = value.clamp(-1.0, 1.0);
+    if clamped < 0.0 {
+        (clamped * 32768.0).round().clamp(i16::MIN as f32, 0.0) as i16
+    } else {
+        (clamped * 32767.0).round().clamp(0.0, i16::MAX as f32) as i16
+    }
+}
+
+fn sanitize_offline_sample_rate(sample_rate: u32) -> u32 {
+    if sample_rate == 0 {
+        return 48_000;
+    }
+    sample_rate.clamp(8_000, 192_000)
+}
+
+fn render_playback_to_wav(
+    playback: &mut PlaybackShared,
+    duration_seconds: f64,
+) -> Result<NativeAudioRenderedWav, String> {
+    if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
+        return Err("Native offline render duration must be positive and finite.".to_string());
+    }
+    const MAX_OFFLINE_RENDER_SECONDS: f64 = 600.0;
+    if duration_seconds > MAX_OFFLINE_RENDER_SECONDS {
+        return Err(format!(
+            "Native offline render duration exceeds {} seconds.",
+            MAX_OFFLINE_RENDER_SECONDS
+        ));
+    }
+    let sample_rate = sanitize_offline_sample_rate(playback.sample_rate);
+    playback.sample_rate = sample_rate;
+    playback.channels = 2;
+    let frame_count = (duration_seconds * sample_rate as f64).ceil().max(1.0) as usize;
+    let mut samples = Vec::with_capacity(frame_count.saturating_mul(2));
+    for _ in 0..frame_count {
+        let (left, right) = render_next_frame(playback);
+        samples.push(f32_to_i16(left));
+        samples.push(f32_to_i16(right));
+    }
+    let bytes = encode_pcm16_wav(sample_rate, 2, &samples)?;
+    Ok(NativeAudioRenderedWav {
+        sample_rate,
+        channels: 2,
+        duration_seconds: frame_count as f64 / sample_rate as f64,
+        size_bytes: bytes.len(),
+        bytes,
+    })
+}
+
+fn encode_pcm16_wav(sample_rate: u32, channels: u16, samples: &[i16]) -> Result<Vec<u8>, String> {
+    if channels == 0 || channels > 2 {
+        return Err("Native offline WAV render only supports mono or stereo output.".to_string());
+    }
+    let data_len = samples
+        .len()
+        .checked_mul(2)
+        .and_then(|len| u32::try_from(len).ok())
+        .ok_or_else(|| "Native offline WAV render is too large.".to_string())?;
+    let byte_rate = sample_rate
+        .checked_mul(channels as u32)
+        .and_then(|value| value.checked_mul(2))
+        .ok_or_else(|| "Native offline WAV byte rate overflowed.".to_string())?;
+    let block_align = channels
+        .checked_mul(2)
+        .ok_or_else(|| "Native offline WAV block alignment overflowed.".to_string())?;
+    let riff_len = 36_u32
+        .checked_add(data_len)
+        .ok_or_else(|| "Native offline WAV RIFF length overflowed.".to_string())?;
+    let mut bytes = Vec::with_capacity(44 + data_len as usize);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&riff_len.to_le_bytes());
+    bytes.extend_from_slice(b"WAVE");
+    bytes.extend_from_slice(b"fmt ");
+    bytes.extend_from_slice(&16_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&channels.to_le_bytes());
+    bytes.extend_from_slice(&sample_rate.to_le_bytes());
+    bytes.extend_from_slice(&byte_rate.to_le_bytes());
+    bytes.extend_from_slice(&block_align.to_le_bytes());
+    bytes.extend_from_slice(&16_u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_len.to_le_bytes());
+    for sample in samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    Ok(bytes)
 }
 
 fn add_track_mix(
@@ -3380,6 +3517,32 @@ mod tests {
         let energy = render_energy(&mut playback, 80);
 
         assert!(energy > 0.0001, "expected native metronome click energy");
+    }
+
+    #[test]
+    fn native_offline_render_writes_audible_pcm_wav() {
+        let mut event = test_generated_event("offline_bass", "bass", 0.0, 0.05, 1.0);
+        event.bass_tone = Some("warm_sub".to_string());
+        let mut playback = playback_with_events(vec![event]);
+        playback.tracks.insert(
+            "bass".to_string(),
+            test_track("bass", 1.0, 0.0, false, false),
+        );
+        playback.sample_rate = 8_000;
+
+        let rendered = render_playback_to_wav(&mut playback, 0.1).expect("wav render should work");
+        let decoded = decode_pcm16_wav(&rendered.bytes).expect("rendered wav should decode");
+        let energy: f32 = decoded.samples.iter().map(|sample| sample.abs()).sum();
+
+        assert_eq!(rendered.sample_rate, 8_000);
+        assert_eq!(rendered.channels, 2);
+        assert_eq!(decoded.sample_rate, 8_000);
+        assert_eq!(decoded.channels, 2);
+        assert!(rendered.size_bytes > 44);
+        assert!(
+            energy > 0.1,
+            "expected offline native render to contain audible bass energy"
+        );
     }
 
     #[test]

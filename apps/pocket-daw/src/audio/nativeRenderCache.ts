@@ -1,10 +1,11 @@
 import { cloneProject } from "../daw/dawProject";
 import type { Clip, PocketDawProject, RenderCacheItem, TrackRole } from "../daw/schema";
 import { barsToSeconds } from "../daw/timeline";
-import type { NativeAudioAsset, NativeAudioRegion } from "../native/audioPlayback";
-import { pruneNativeCacheAssets, readNativeCacheAsset, writeNativeCacheAsset, type NativeCachePruneResult, type NativeMediaApi } from "../native/mediaBridge";
+import { buildNativeAudioStartPayload, type NativeAudioAsset, type NativeAudioRegion } from "../native/audioPlayback";
+import { pruneNativeCacheAssets, readNativeCacheAsset, renderNativeAudioWav, writeNativeCacheAsset, type NativeCachePruneResult, type NativeMediaApi } from "../native/mediaBridge";
 import { audioRegionFromClip, renderTimelineAudioRegions } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
+import { renderTimelineEvents } from "./eventRenderer";
 import { encodeWav, renderProjectToWavBlob } from "./offlineRender";
 
 export const NATIVE_RENDER_CACHE_ROOT = "project-cache/native-audio";
@@ -513,17 +514,25 @@ function assetBuildItems(project: PocketDawProject, clip: Clip, signature: strin
 
 async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Promise<NativeAudioAsset> {
   const assetProject = projectForNativeGeneratedStemRender(project, item.clip, item.trackId);
-  const blob = await renderProjectToWavBlob(assetProject, { includeChordsmithOfflineLofiTexture: item.role === "drums" });
-  const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
   const durationSeconds = barsToSeconds(item.clip.barLength, project.project.bpm, project.project.timeSig);
+  const nativeRender = await renderNativeGeneratedStemWav(assetProject, durationSeconds);
+  let bytes = nativeRender?.bytes;
+  let sampleRate = nativeRender?.sampleRate || project.project.sampleRate;
+  let channels = nativeRender?.channels || 2;
+  if (!bytes) {
+    const blob = await renderProjectToWavBlob(assetProject, { includeChordsmithOfflineLofiTexture: item.role === "drums" });
+    bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+    sampleRate = project.project.sampleRate;
+    channels = 2;
+  }
   const id = `native-cache-${hashString(item.key)}`;
   return {
     id,
     name: `${item.clip.sectionId || "section"} ${item.role} ${item.trackId}`,
     relativePath: nativeRenderCacheRelativePath(id),
     mimeType: "audio/wav",
-    sampleRate: project.project.sampleRate,
-    channels: 2,
+    sampleRate,
+    channels,
     durationSeconds,
     sizeBytes: bytes.length,
     sourceHash: item.key.split("_")[0] || undefined,
@@ -531,8 +540,27 @@ async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Pro
   };
 }
 
+async function renderNativeGeneratedStemWav(assetProject: PocketDawProject, durationSeconds: number) {
+  try {
+    const events = renderTimelineEvents(assetProject);
+    const payload = buildNativeAudioStartPayload(assetProject, events, 0);
+    return await renderNativeAudioWav({ ...payload, loop: null, metronome: null }, durationSeconds);
+  } catch {
+    return null;
+  }
+}
+
 export function projectForNativeGeneratedStemRender(project: PocketDawProject, clip: Clip, trackId: string): PocketDawProject {
   const assetProject = cloneProject(project);
+  const metronome = assetProject.project.metronome;
+  assetProject.project = {
+    ...assetProject.project,
+    metronome: {
+      enabled: false,
+      countInBars: metronome?.countInBars ?? 0,
+      volume: metronome?.volume ?? 0
+    }
+  };
   assetProject.timeline = {
     ...assetProject.timeline,
     bars: Math.max(1, Math.ceil(clip.barLength)),

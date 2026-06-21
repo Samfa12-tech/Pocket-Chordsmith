@@ -38,7 +38,18 @@ const offlineRenderMock = vi.hoisted(() => ({
   })
 }));
 
+const nativeMediaBridgeMock = vi.hoisted(() => ({
+  renderNativeAudioWav: vi.fn(async () => null)
+}));
+
 vi.mock("../src/audio/offlineRender", () => offlineRenderMock);
+vi.mock("../src/native/mediaBridge", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/native/mediaBridge")>();
+  return {
+    ...actual,
+    renderNativeAudioWav: nativeMediaBridgeMock.renderNativeAudioWav
+  };
+});
 
 import { AudioEngine } from "../src/audio/audioEngine";
 import { clearAudioBufferCache, setCachedAudioBuffer } from "../src/audio/audioBufferCache";
@@ -69,6 +80,8 @@ describe("native render cache", () => {
     clearAudioBufferCache();
     offlineRenderMock.renderProjectToWavBlob.mockClear();
     offlineRenderMock.encodeWav.mockClear();
+    nativeMediaBridgeMock.renderNativeAudioWav.mockReset();
+    nativeMediaBridgeMock.renderNativeAudioWav.mockResolvedValue(null);
   });
 
   it("does not invalidate cache signatures for live mixer mute and solo changes", () => {
@@ -115,10 +128,12 @@ describe("native render cache", () => {
 
   it("builds dry native generated-stem render projects and keeps only drum lane FX baked", () => {
     let project = createLofiTemplateProject();
+    project.project.metronome = { enabled: true, countInBars: 1, volume: 0.5 };
     project = addDrumLaneFx(project, "snare", "parametric-eq");
     const clip = project.timeline.clips.find((item) => item.type === "generated-section")!;
     const renderProject = projectForNativeGeneratedStemRender(project, clip, "drums");
 
+    expect(renderProject.project.metronome?.enabled).toBe(false);
     expect(renderProject.mixer.masterLimiter).toBe(false);
     expect(renderProject.tracks.find((track) => track.id === "master")?.volume).toBe(1);
     expect(renderProject.tracks.find((track) => track.id === "drums")?.volume).toBe(1);
@@ -146,6 +161,24 @@ describe("native render cache", () => {
     expect(cache.renderCacheItems[0].metadata?.assetRelativePath).toBe(cache.assets[0].relativePath);
     expect(cache.cachedAssetByteCount).toBeGreaterThan(44);
     expect(offlineRenderMock.renderProjectToWavBlob).toHaveBeenCalled();
+  });
+
+  it("uses native offline rendering for generated-section WAV assets when available", async () => {
+    const nativeBytes = Array.from(wavBytes(48_000, 2, [512, -512, 256, -256]));
+    nativeMediaBridgeMock.renderNativeAudioWav.mockResolvedValue({
+      sampleRate: 48_000,
+      channels: 2,
+      durationSeconds: 1,
+      sizeBytes: nativeBytes.length,
+      bytes: nativeBytes
+    } as never);
+
+    const cache = await buildNativeRenderCache(createDemoProject(), "native-render-signature");
+
+    expect(cache.assets.length).toBeGreaterThan(0);
+    expect(cache.assets[0].bytes).toEqual(nativeBytes);
+    expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalled();
+    expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
   });
 
   it("renders native lofi texture only once into cached drum stems", async () => {

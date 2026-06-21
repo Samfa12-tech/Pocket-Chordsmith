@@ -1,3 +1,5 @@
+import type { NativeAudioStartPayload } from "./audioPlayback";
+
 export const AUDIO_MEDIA_ACCEPT = ".wav,.mp3,.ogg,.flac,.aiff,.aif,audio/*";
 export const MAX_AUDIO_IMPORT_BYTES = 250 * 1024 * 1024;
 
@@ -48,6 +50,14 @@ export interface NativeCachePruneResult {
   errors: string[];
 }
 
+export interface NativeRenderedWav {
+  sampleRate: number;
+  channels: number;
+  durationSeconds: number;
+  sizeBytes: number;
+  bytes: number[];
+}
+
 interface NativeAudioPayload {
   path: string;
   label: string;
@@ -80,6 +90,14 @@ interface NativeCachePrunePayload {
   deletedByteCount: number;
   skippedCount: number;
   errors: string[];
+}
+
+interface NativeRenderedWavPayload {
+  sampleRate: number;
+  channels: number;
+  durationSeconds: number;
+  sizeBytes: number;
+  bytes: number[];
 }
 
 export interface NativeMediaApi {
@@ -175,6 +193,23 @@ export async function pruneNativeCacheAssets(
     deletedByteCount: Number(result.deletedByteCount) || 0,
     skippedCount: Number(result.skippedCount) || 0,
     errors: result.errors.map((error) => String(error))
+  };
+}
+
+export async function renderNativeAudioWav(
+  payload: NativeAudioStartPayload,
+  durationSeconds: number,
+  api = defaultNativeMediaApi
+): Promise<NativeRenderedWav | null> {
+  if (!api.isAvailable()) return null;
+  const result = await api.invoke<NativeRenderedWavPayload>("native_audio_render_wav", { payload, durationSeconds });
+  if (!result || !Array.isArray(result.bytes)) throw new Error("Native audio render returned an invalid WAV payload.");
+  return {
+    sampleRate: Number(result.sampleRate) || payload.sampleRate || 48_000,
+    channels: Number(result.channels) || 2,
+    durationSeconds: Number(result.durationSeconds) || durationSeconds,
+    sizeBytes: Number(result.sizeBytes) || result.bytes.length,
+    bytes: result.bytes.map((byte) => Math.max(0, Math.min(255, Number(byte) || 0)))
   };
 }
 

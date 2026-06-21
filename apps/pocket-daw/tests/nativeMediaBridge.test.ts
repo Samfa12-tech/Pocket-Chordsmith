@@ -5,9 +5,11 @@ import {
   loadAudioMediaNative,
   readNativeCacheAsset,
   relinkAudioMediaNative,
+  renderNativeAudioWav,
   writeNativeCacheAsset,
   type NativeMediaApi
 } from "../src/native/mediaBridge";
+import type { NativeAudioStartPayload } from "../src/native/audioPlayback";
 
 describe("native media bridge", () => {
   it("reads native audio payloads for import, reload and relink", async () => {
@@ -103,6 +105,47 @@ describe("native media bridge", () => {
     });
   });
 
+  it("requests native offline WAV rendering with the native audio payload", async () => {
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const payload: NativeAudioStartPayload = {
+      projectTitle: "Render Test",
+      sampleRate: 48_000,
+      startSeconds: 0,
+      outputDeviceId: null,
+      loop: null,
+      metronome: null,
+      sidechain: null,
+      tracks: [],
+      events: [],
+      fxChains: [],
+      assets: [],
+      regions: []
+    };
+    const api: NativeMediaApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return {
+          sampleRate: 48_000,
+          channels: 2,
+          durationSeconds: 0.5,
+          sizeBytes: 48,
+          bytes: [82, 73, 70, 70]
+        } as never;
+      }
+    };
+
+    await expect(renderNativeAudioWav(payload, 0.5, api)).resolves.toMatchObject({
+      sampleRate: 48_000,
+      channels: 2,
+      bytes: [82, 73, 70, 70]
+    });
+    expect(calls).toEqual([{
+      command: "native_audio_render_wav",
+      args: { payload, durationSeconds: 0.5 }
+    }]);
+  });
+
   it("returns null outside the native runtime", async () => {
     const api: NativeMediaApi = { isAvailable: () => false, invoke: async () => null as never };
 
@@ -111,5 +154,14 @@ describe("native media bridge", () => {
     await expect(collectProjectMediaNative("C:\\Songs\\Song.pocketdaw", [], api)).resolves.toBeNull();
     await expect(writeNativeCacheAsset("C:\\Songs\\Song.pocketdaw", { assetId: "asset", relativePath: "project-cache/native-audio/asset.wav", bytes: [] }, api)).resolves.toBeNull();
     await expect(readNativeCacheAsset("C:\\Songs\\Song.pocketdaw", "asset", "project-cache/native-audio/asset.wav", api)).resolves.toBeNull();
+    await expect(renderNativeAudioWav({
+      projectTitle: "Unavailable",
+      sampleRate: 48_000,
+      startSeconds: 0,
+      outputDeviceId: null,
+      tracks: [],
+      events: [],
+      fxChains: []
+    }, 1, api)).resolves.toBeNull();
   });
 });

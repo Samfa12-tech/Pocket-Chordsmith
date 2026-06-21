@@ -236,6 +236,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             probe_audio_devices,
             native_audio::native_audio_status,
+            native_audio::native_audio_render_wav,
             native_audio::native_audio_start,
             native_audio::native_audio_pause,
             native_audio::native_audio_resume,
