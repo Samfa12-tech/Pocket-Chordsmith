@@ -199,10 +199,15 @@ export async function pruneNativeCacheAssets(
 export async function renderNativeAudioWav(
   payload: NativeAudioStartPayload,
   durationSeconds: number,
-  api = defaultNativeMediaApi
+  renderModeOrApi?: "mix" | "cache-stem" | NativeMediaApi,
+  injectedApi?: NativeMediaApi
 ): Promise<NativeRenderedWav | null> {
+  const renderMode = typeof renderModeOrApi === "string" ? renderModeOrApi : undefined;
+  const api = typeof renderModeOrApi === "object" && renderModeOrApi ? renderModeOrApi : injectedApi || defaultNativeMediaApi;
   if (!api.isAvailable()) return null;
-  const result = await api.invoke<NativeRenderedWavPayload>("native_audio_render_wav", { payload, durationSeconds });
+  const args: Record<string, unknown> = { payload, durationSeconds };
+  if (renderMode) args.renderMode = renderMode;
+  const result = await api.invoke<NativeRenderedWavPayload>("native_audio_render_wav", args);
   if (!result || !Array.isArray(result.bytes)) throw new Error("Native audio render returned an invalid WAV payload.");
   return {
     sampleRate: Number(result.sampleRate) || payload.sampleRate || 48_000,

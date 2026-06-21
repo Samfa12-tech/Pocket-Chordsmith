@@ -178,6 +178,8 @@ describe("native render cache", () => {
     expect(cache.assets.length).toBeGreaterThan(0);
     expect(cache.assets[0].bytes).toEqual(nativeBytes);
     expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalled();
+    const nativeRenderCalls = nativeMediaBridgeMock.renderNativeAudioWav.mock.calls as unknown as Array<unknown[]>;
+    expect(nativeRenderCalls[0]?.[2]).toBe("cache-stem");
     expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
   });
 

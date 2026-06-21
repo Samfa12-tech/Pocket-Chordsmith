@@ -146,6 +146,39 @@ describe("native media bridge", () => {
     }]);
   });
 
+  it("can request cache-stem native WAV rendering without changing the payload contract", async () => {
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const payload: NativeAudioStartPayload = {
+      projectTitle: "Stem Test",
+      sampleRate: 48_000,
+      startSeconds: 0,
+      outputDeviceId: null,
+      tracks: [],
+      events: [],
+      fxChains: []
+    };
+    const api: NativeMediaApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return {
+          sampleRate: 48_000,
+          channels: 2,
+          durationSeconds: 0.5,
+          sizeBytes: 48,
+          bytes: [82, 73, 70, 70]
+        } as never;
+      }
+    };
+
+    await renderNativeAudioWav(payload, 0.5, "cache-stem", api);
+
+    expect(calls).toEqual([{
+      command: "native_audio_render_wav",
+      args: { payload, durationSeconds: 0.5, renderMode: "cache-stem" }
+    }]);
+  });
+
   it("returns null outside the native runtime", async () => {
     const api: NativeMediaApi = { isAvailable: () => false, invoke: async () => null as never };
 

@@ -276,6 +276,12 @@ pub struct NativeAudioRenderedWav {
     bytes: Vec<u8>,
 }
 
+#[derive(Clone, Copy)]
+enum NativeAudioRenderMode {
+    Mix,
+    CacheStem,
+}
+
 struct PlaybackShared {
     project_title: Option<String>,
     events: Vec<NativeRenderedEvent>,
@@ -414,6 +420,7 @@ pub fn native_audio_start(
 pub fn native_audio_render_wav(
     payload: NativeAudioStartPayload,
     duration_seconds: f64,
+    render_mode: Option<String>,
     state: tauri::State<'_, NativeAudioState>,
 ) -> Result<NativeAudioRenderedWav, String> {
     let mut runtime = state
@@ -423,7 +430,11 @@ pub fn native_audio_render_wav(
     let generation = runtime.generation;
     let mut playback = runtime.build_playback(payload, sample_rate, 2, generation)?;
     drop(runtime);
-    render_playback_to_wav(&mut playback, duration_seconds)
+    render_playback_to_wav(
+        &mut playback,
+        duration_seconds,
+        parse_render_mode(render_mode.as_deref()),
+    )
 }
 
 #[tauri::command]
@@ -852,9 +863,17 @@ fn sanitize_offline_sample_rate(sample_rate: u32) -> u32 {
     sample_rate.clamp(8_000, 192_000)
 }
 
+fn parse_render_mode(value: Option<&str>) -> NativeAudioRenderMode {
+    match value {
+        Some("cache-stem") | Some("cacheStem") => NativeAudioRenderMode::CacheStem,
+        _ => NativeAudioRenderMode::Mix,
+    }
+}
+
 fn render_playback_to_wav(
     playback: &mut PlaybackShared,
     duration_seconds: f64,
+    mode: NativeAudioRenderMode,
 ) -> Result<NativeAudioRenderedWav, String> {
     if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
         return Err("Native offline render duration must be positive and finite.".to_string());
@@ -872,11 +891,17 @@ fn render_playback_to_wav(
     let frame_count = (duration_seconds * sample_rate as f64).ceil().max(1.0) as usize;
     let mut samples = Vec::with_capacity(frame_count.saturating_mul(2));
     for _ in 0..frame_count {
-        let (left, right) = render_next_frame(playback);
-        samples.push(f32_to_i16(left));
-        samples.push(f32_to_i16(right));
+        let (left, right) = match mode {
+            NativeAudioRenderMode::Mix => render_next_frame(playback),
+            NativeAudioRenderMode::CacheStem => render_next_cache_stem_frame(playback),
+        };
+        samples.push(left);
+        samples.push(right);
     }
-    let bytes = encode_pcm16_wav(sample_rate, 2, &samples)?;
+    let bytes = match mode {
+        NativeAudioRenderMode::Mix => encode_pcm16_wav(sample_rate, 2, &samples)?,
+        NativeAudioRenderMode::CacheStem => encode_float32_wav(sample_rate, 2, &samples)?,
+    };
     Ok(NativeAudioRenderedWav {
         sample_rate,
         channels: 2,
@@ -886,7 +911,7 @@ fn render_playback_to_wav(
     })
 }
 
-fn encode_pcm16_wav(sample_rate: u32, channels: u16, samples: &[i16]) -> Result<Vec<u8>, String> {
+fn encode_pcm16_wav(sample_rate: u32, channels: u16, samples: &[f32]) -> Result<Vec<u8>, String> {
     if channels == 0 || channels > 2 {
         return Err("Native offline WAV render only supports mono or stereo output.".to_string());
     }
@@ -917,6 +942,45 @@ fn encode_pcm16_wav(sample_rate: u32, channels: u16, samples: &[i16]) -> Result<
     bytes.extend_from_slice(&byte_rate.to_le_bytes());
     bytes.extend_from_slice(&block_align.to_le_bytes());
     bytes.extend_from_slice(&16_u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_len.to_le_bytes());
+    for sample in samples {
+        bytes.extend_from_slice(&f32_to_i16(*sample).to_le_bytes());
+    }
+    Ok(bytes)
+}
+
+fn encode_float32_wav(sample_rate: u32, channels: u16, samples: &[f32]) -> Result<Vec<u8>, String> {
+    if channels == 0 || channels > 2 {
+        return Err("Native offline WAV render only supports mono or stereo output.".to_string());
+    }
+    let data_len = samples
+        .len()
+        .checked_mul(4)
+        .and_then(|len| u32::try_from(len).ok())
+        .ok_or_else(|| "Native offline WAV render is too large.".to_string())?;
+    let byte_rate = sample_rate
+        .checked_mul(channels as u32)
+        .and_then(|value| value.checked_mul(4))
+        .ok_or_else(|| "Native offline WAV byte rate overflowed.".to_string())?;
+    let block_align = channels
+        .checked_mul(4)
+        .ok_or_else(|| "Native offline WAV block alignment overflowed.".to_string())?;
+    let riff_len = 36_u32
+        .checked_add(data_len)
+        .ok_or_else(|| "Native offline WAV RIFF length overflowed.".to_string())?;
+    let mut bytes = Vec::with_capacity(44 + data_len as usize);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&riff_len.to_le_bytes());
+    bytes.extend_from_slice(b"WAVE");
+    bytes.extend_from_slice(b"fmt ");
+    bytes.extend_from_slice(&16_u32.to_le_bytes());
+    bytes.extend_from_slice(&3_u16.to_le_bytes());
+    bytes.extend_from_slice(&channels.to_le_bytes());
+    bytes.extend_from_slice(&sample_rate.to_le_bytes());
+    bytes.extend_from_slice(&byte_rate.to_le_bytes());
+    bytes.extend_from_slice(&block_align.to_le_bytes());
+    bytes.extend_from_slice(&32_u16.to_le_bytes());
     bytes.extend_from_slice(b"data");
     bytes.extend_from_slice(&data_len.to_le_bytes());
     for sample in samples {
@@ -1081,6 +1145,66 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         soft_limit(left * 0.72 * master),
         soft_limit(right * 0.72 * master),
     )
+}
+
+fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
+    if !playback.playing {
+        return (0.0, 0.0);
+    }
+
+    apply_loop_wrap(playback);
+    let t = playback.position_seconds;
+    while playback.scan_start_index < playback.events.len()
+        && event_release_end(&playback.events[playback.scan_start_index]) < t
+    {
+        playback.scan_start_index += 1;
+    }
+
+    let mut left = 0.0_f32;
+    let mut right = 0.0_f32;
+    let mut active_count = 0usize;
+
+    for event in playback
+        .events
+        .iter()
+        .skip(playback.scan_start_index)
+        .cloned()
+    {
+        if event.time > t {
+            break;
+        }
+        if event_release_end(&event) < t {
+            continue;
+        }
+        let Some(track) = playback.tracks.get(&event.track_id).cloned() else {
+            continue;
+        };
+        if track_gain(&track, playback.has_solo) <= 0.0001 {
+            continue;
+        }
+        let sample = render_event_sample(&event, t);
+        if sample.abs() <= 0.000001 {
+            continue;
+        }
+        active_count += 1;
+        if active_count > 96 {
+            break;
+        }
+        let mut lane_left = sample;
+        let mut lane_right = sample;
+        if let Some(lane) = &event.drum_lane {
+            if let Some(chain) = playback.fx.drum_lane_chains.get_mut(lane) {
+                (lane_left, lane_right) = chain.process(lane_left, lane_right);
+            }
+        }
+        left += lane_left;
+        right += lane_right;
+    }
+
+    playback.position_seconds += 1.0 / playback.sample_rate.max(1) as f64;
+    apply_loop_wrap(playback);
+    playback.rendered_frame_count = playback.rendered_frame_count.saturating_add(1);
+    (left, right)
 }
 
 fn sanitize_loop_region(loop_region: Option<NativeLoopPayload>) -> Option<NativeLoopPayload> {
@@ -1958,7 +2082,7 @@ fn validate_region(region: &NativeAudioRegion) -> Result<(), String> {
 
 fn decode_pcm16_wav(bytes: &[u8]) -> Result<DecodedAudioAsset, String> {
     if bytes.len() < 44 {
-        return Err("file is too small to be a PCM WAV".to_string());
+        return Err("file is too small to be a WAV".to_string());
     }
     if bytes.get(0..4) != Some(b"RIFF") || bytes.get(8..12) != Some(b"WAVE") {
         return Err("missing RIFF/WAVE header".to_string());
@@ -1995,8 +2119,10 @@ fn decode_pcm16_wav(bytes: &[u8]) -> Result<DecodedAudioAsset, String> {
         cursor = chunk_end + (len % 2);
     }
 
-    if format != 1 || bits_per_sample != 16 {
-        return Err("only 16-bit PCM WAV assets are supported".to_string());
+    let is_pcm16 = format == 1 && bits_per_sample == 16;
+    let is_float32 = format == 3 && bits_per_sample == 32;
+    if !is_pcm16 && !is_float32 {
+        return Err("only 16-bit PCM or 32-bit float WAV assets are supported".to_string());
     }
     if channels == 0 || channels > 2 {
         return Err("only mono or stereo WAV assets are supported".to_string());
@@ -2005,12 +2131,22 @@ fn decode_pcm16_wav(bytes: &[u8]) -> Result<DecodedAudioAsset, String> {
         return Err("missing sample rate or data chunk".to_string());
     }
 
-    let sample_count = data_len / 2;
+    let bytes_per_sample = if is_float32 { 4 } else { 2 };
+    let sample_count = data_len / bytes_per_sample;
     let mut samples = Vec::with_capacity(sample_count);
     for index in 0..sample_count {
-        let offset = data_start + index * 2;
-        let raw = i16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
-        samples.push(raw as f32 / i16::MAX as f32);
+        let offset = data_start + index * bytes_per_sample;
+        if is_float32 {
+            samples.push(f32::from_le_bytes([
+                bytes[offset],
+                bytes[offset + 1],
+                bytes[offset + 2],
+                bytes[offset + 3],
+            ]));
+        } else {
+            let raw = i16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+            samples.push(raw as f32 / i16::MAX as f32);
+        }
     }
     let frame_count = samples.len() / channels as usize;
     Ok(DecodedAudioAsset {
@@ -2977,6 +3113,20 @@ mod tests {
     }
 
     #[test]
+    fn decodes_float32_stereo_wav_assets_with_cache_headroom() {
+        let bytes = encode_float32_wav(48_000, 2, &[1.25, -1.25, 0.25, -0.25])
+            .expect("float wav should encode");
+
+        let decoded = decode_pcm16_wav(&bytes).expect("float wav should decode");
+
+        assert_eq!(decoded.sample_rate, 48_000);
+        assert_eq!(decoded.channels, 2);
+        assert_eq!(decoded.frame_count, 2);
+        assert!((decoded.samples[0] - 1.25).abs() < 0.0001);
+        assert!((decoded.samples[1] + 1.25).abs() < 0.0001);
+    }
+
+    #[test]
     fn validates_cached_asset_metadata_before_playback() {
         let asset = NativeAudioAssetPayload {
             id: "asset".to_string(),
@@ -3530,7 +3680,8 @@ mod tests {
         );
         playback.sample_rate = 8_000;
 
-        let rendered = render_playback_to_wav(&mut playback, 0.1).expect("wav render should work");
+        let rendered = render_playback_to_wav(&mut playback, 0.1, NativeAudioRenderMode::Mix)
+            .expect("wav render should work");
         let decoded = decode_pcm16_wav(&rendered.bytes).expect("rendered wav should decode");
         let energy: f32 = decoded.samples.iter().map(|sample| sample.abs()).sum();
 
@@ -3542,6 +3693,54 @@ mod tests {
         assert!(
             energy > 0.1,
             "expected offline native render to contain audible bass energy"
+        );
+    }
+
+    #[test]
+    fn native_cache_stem_render_matches_procedural_region_playback() {
+        let mut event = test_generated_event("cached_bass", "bass", 0.0, 0.08, 0.8);
+        event.bass_tone = Some("warm_sub".to_string());
+        event.midi = Some(40.0);
+        let track = test_track("bass", 0.62, 0.0, false, false);
+
+        let mut procedural = playback_with_events(vec![event.clone()]);
+        procedural.tracks.insert("bass".to_string(), track.clone());
+        procedural.sample_rate = 8_000;
+        let procedural_frames = render_frames(&mut procedural, 80);
+
+        let mut stem_source = playback_with_events(vec![event]);
+        stem_source.tracks.insert("bass".to_string(), track.clone());
+        stem_source.sample_rate = 8_000;
+        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem)
+            .expect("cache stem render should work");
+        let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
+        let mut cached = PlaybackShared {
+            project_title: Some("Cached".to_string()),
+            events: Vec::new(),
+            assets: HashMap::from([("stem".to_string(), decoded)]),
+            regions: vec![test_region(
+                "region", "stem", "bass", 0.0, 0.0, 0.1, 1.0, 0.0,
+            )],
+            tracks: HashMap::from([("bass".to_string(), track)]),
+            has_solo: false,
+            position_seconds: 0.0,
+            sample_rate: 8_000,
+            channels: 2,
+            playing: true,
+            rendered_frame_count: 0,
+            scan_start_index: 0,
+            generation: 1,
+            fx: NativeFxRuntime::default(),
+            loop_region: None,
+            metronome: None,
+            sidechain: None,
+        };
+        let cached_frames = render_frames(&mut cached, 80);
+        let max_diff = max_frame_diff(&procedural_frames, &cached_frames);
+
+        assert!(
+            max_diff < 0.00008,
+            "expected cache-stem playback to match procedural playback, max diff {max_diff}"
         );
     }
 
@@ -3702,6 +3901,17 @@ mod tests {
             energy += left.abs() + right.abs();
         }
         energy
+    }
+
+    fn render_frames(playback: &mut PlaybackShared, frames: usize) -> Vec<(f32, f32)> {
+        (0..frames).map(|_| render_next_frame(playback)).collect()
+    }
+
+    fn max_frame_diff(left: &[(f32, f32)], right: &[(f32, f32)]) -> f32 {
+        left.iter()
+            .zip(right.iter())
+            .map(|(a, b)| (a.0 - b.0).abs().max((a.1 - b.1).abs()))
+            .fold(0.0, f32::max)
     }
 
     fn render_event_sample_energy(event: &NativeRenderedEvent, times: &[f64]) -> f32 {

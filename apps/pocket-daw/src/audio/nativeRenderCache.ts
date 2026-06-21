@@ -544,7 +544,7 @@ async function renderNativeGeneratedStemWav(assetProject: PocketDawProject, dura
   try {
     const events = renderTimelineEvents(assetProject);
     const payload = buildNativeAudioStartPayload(assetProject, events, 0);
-    return await renderNativeAudioWav({ ...payload, loop: null, metronome: null }, durationSeconds);
+    return await renderNativeAudioWav({ ...payload, loop: null, metronome: null }, durationSeconds, "cache-stem");
   } catch {
     return null;
   }
