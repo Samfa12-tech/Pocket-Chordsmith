@@ -1957,18 +1957,30 @@ fn render_region_sample(
         return None;
     }
     let source_seconds = region.source_offset.max(0.0) + local;
-    let frame = (source_seconds * asset.sample_rate.max(1) as f64).floor() as usize;
-    if frame >= asset.frame_count {
+    let frame_position = source_seconds * asset.sample_rate.max(1) as f64;
+    let frame = frame_position.floor() as usize;
+    if asset.frame_count == 0 || frame >= asset.frame_count {
         return None;
     }
+    let next_frame = (frame + 1).min(asset.frame_count - 1);
+    let fraction = (frame_position - frame as f64).clamp(0.0, 1.0) as f32;
     let channels = asset.channels.max(1) as usize;
     let index = frame.checked_mul(channels)?;
-    let left = *asset.samples.get(index)?;
-    let right = if channels > 1 {
-        *asset.samples.get(index + 1).unwrap_or(&left)
+    let next_index = next_frame.checked_mul(channels)?;
+    let left_a = *asset.samples.get(index)?;
+    let right_a = if channels > 1 {
+        *asset.samples.get(index + 1).unwrap_or(&left_a)
     } else {
-        left
+        left_a
     };
+    let left_b = *asset.samples.get(next_index).unwrap_or(&left_a);
+    let right_b = if channels > 1 {
+        *asset.samples.get(next_index + 1).unwrap_or(&left_b)
+    } else {
+        left_b
+    };
+    let left = left_a + (left_b - left_a) * fraction;
+    let right = right_a + (right_b - right_a) * fraction;
     let envelope = region_envelope_gain(region, local);
     Some((left * envelope, right * envelope))
 }
@@ -3197,6 +3209,22 @@ mod tests {
 
         assert!((sample.0 - 0.3).abs() < 0.0001);
         assert!((sample.1 - 0.4).abs() < 0.0001);
+    }
+
+    #[test]
+    fn interpolates_cached_region_samples_between_frames() {
+        let asset = DecodedAudioAsset {
+            sample_rate: 4,
+            channels: 2,
+            samples: vec![0.0, 0.2, 1.0, 0.8],
+            frame_count: 2,
+        };
+        let region = test_region("region", "asset", "bass", 0.0, 0.125, 0.25, 1.0, 0.0);
+
+        let sample = render_region_sample(&region, &asset, 0.0).expect("region should sample");
+
+        assert!((sample.0 - 0.5).abs() < 0.0001);
+        assert!((sample.1 - 0.5).abs() < 0.0001);
     }
 
     #[test]

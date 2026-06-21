@@ -258,6 +258,82 @@ describe("audio engine diagnostics", () => {
     expect(diagnostics.audioContextState).toBe("not-created");
   });
 
+  it("hands native fallback playback over to cache when the cache build completes", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    const starts: NativeAudioStartPayload[] = [];
+    const native = {
+      async start(payload: NativeAudioStartPayload) {
+        starts.push(payload);
+        return {
+          started: true,
+          status: nativeStatus({
+            playing: true,
+            positionSeconds: payload.startSeconds,
+            eventCount: payload.events.length,
+            assetCount: payload.assets?.length || 0,
+            assetRegionCount: payload.regions?.length || 0,
+            proceduralEventCount: payload.events.length
+          }),
+          error: null
+        };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true }); }
+    };
+
+    try {
+      const project = createDemoProject();
+      const engine = new AudioEngine(project, native);
+      let resolveCacheBuild: (cache: NativeRenderCache | null) => void = () => undefined;
+      const cacheBuild = new Promise<NativeRenderCache | null>((resolve) => {
+        resolveCacheBuild = resolve;
+      });
+      const internals = engine as unknown as {
+        nativeRenderCache: NativeRenderCache | null;
+        nativeRenderCacheBuildCount: number;
+        nativeRenderCacheLastBuildReason: string | null;
+        nativeRenderCacheError: string | null;
+        ensureNativeRenderCache(reason: string): Promise<NativeRenderCache | null>;
+      };
+      internals.ensureNativeRenderCache = async (reason: string) => {
+        internals.nativeRenderCacheBuildCount += 1;
+        internals.nativeRenderCacheLastBuildReason = reason;
+        internals.nativeRenderCacheError = null;
+        const cache = await cacheBuild;
+        internals.nativeRenderCache = cache;
+        return cache;
+      };
+
+      await engine.play();
+
+      expect(starts).toHaveLength(1);
+      expect(starts[0].events.length).toBeGreaterThan(0);
+      expect(starts[0].assets?.length || 0).toBe(0);
+      expect(starts[0].regions?.length || 0).toBe(0);
+
+      resolveCacheBuild(fakeNativeRenderCache(project));
+      await waitForAsyncCondition(() => starts.length >= 2);
+
+      const cachedStart = starts.at(-1)!;
+      expect(starts).toHaveLength(2);
+      expect(cachedStart.assets?.length || 0).toBeGreaterThan(0);
+      expect(cachedStart.regions?.length || 0).toBeGreaterThan(0);
+      expect(cachedStart.events.length).toBeGreaterThan(0);
+      expect(cachedStart.events.every(isSilentCachedSidechainTrigger)).toBe(true);
+      expect(engine.getDiagnostics().nativeRenderCache.proceduralFallbackEventCount).toBe(0);
+    } finally {
+      (globalThis as any).window = previousWindow;
+    }
+  });
+
   it("coalesces rapid native composition edits into latest live playback restarts", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {

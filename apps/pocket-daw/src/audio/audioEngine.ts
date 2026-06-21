@@ -132,8 +132,10 @@ export class AudioEngine {
   private nativeRenderCachePrewarmUsesIdleCallback = false;
   private nativeRenderCachePrewarmScheduled = false;
   private nativeRenderCachePendingReason: string | null = null;
+  private nativeRenderCacheHandoverSignature: string | null = null;
   private playbackBackend: PlaybackBackend = "idle";
   private nativeStartedAtMs = 0;
+  private nativePlaybackStartedWithRenderCache = false;
   private nativeStatus: NativeAudioStatus | null = null;
   private nativeLastError: string | null = null;
   private nativeRestartToken = 0;
@@ -374,6 +376,7 @@ export class AudioEngine {
       this.nextAudioRegionIndex = this.findAudioRegionIndex(this.offsetSeconds);
       this.primeMeters(this.offsetSeconds);
       this.startNativeTicker();
+      this.activateReadyNativeRenderCacheAfterFallback("play-cache-ready");
       this.emitTick(true);
       return;
     }
@@ -409,6 +412,7 @@ export class AudioEngine {
     this.cancelPendingNativeRestarts();
     this.playing = false;
     this.playbackBackend = "idle";
+    this.nativePlaybackStartedWithRenderCache = false;
     this.nativeRenderCacheBypassedForLiveEdits = false;
     this.nativeRenderCacheStaleForLiveEdits = false;
     this.scheduleNativeRenderCachePrewarm("stop-idle");
@@ -657,7 +661,7 @@ export class AudioEngine {
     this.cancelPendingNativeRestarts();
     const useRenderCache = options.useRenderCache !== false;
     const cache = useRenderCache && !this.nativeRenderCacheBypassedForLiveEdits ? this.playableNativeRenderCache() : null;
-    if (useRenderCache && !cache) this.scheduleNativeRenderCachePrewarm(options.reason || "play-fallback-cache-build");
+    if (useRenderCache && !cache) this.requestNativeRenderCacheHandoverWhenReady(options.reason || "play-fallback-cache-build");
     const playbackCache = useRenderCache ? await this.nativePlaybackCacheWithRuntimeAudio(cache) : cache;
     const playbackEvents = this.nativePlaybackEvents(playbackCache);
     const events = playbackEvents.events;
@@ -667,8 +671,10 @@ export class AudioEngine {
     const result = await this.nativePlayback.start(payload);
     if (!result.started) {
       this.nativeLastError = result.error;
+      this.nativePlaybackStartedWithRenderCache = false;
       return result.unavailable ? "unavailable" : "failed";
     }
+    this.nativePlaybackStartedWithRenderCache = !!playbackCache?.regions.length;
     this.nativeStatus = result.status;
     this.nativeLastError = null;
     return "started";
@@ -705,7 +711,7 @@ export class AudioEngine {
     this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
     const useRenderCache = request.options.useRenderCache !== false;
     const cache = useRenderCache && !this.nativeRenderCacheBypassedForLiveEdits ? this.playableNativeRenderCache() : null;
-    if (useRenderCache && !cache) this.scheduleNativeRenderCachePrewarm(request.options.reason || this.lastProjectSyncReason || "restart-fallback-cache-build");
+    if (useRenderCache && !cache) this.requestNativeRenderCacheHandoverWhenReady(request.options.reason || this.lastProjectSyncReason || "restart-fallback-cache-build");
     const playbackCache = useRenderCache ? await this.nativePlaybackCacheWithRuntimeAudio(cache) : cache;
     if (request.token !== this.nativeRestartToken || this.playbackBackend !== "native-cpal" || !this.playing) return;
     const playbackEvents = this.nativePlaybackEvents(playbackCache);
@@ -715,9 +721,11 @@ export class AudioEngine {
     const result = await this.nativePlayback.start(payload);
     if (request.token !== this.nativeRestartToken) return;
     if (result.started) {
+      this.nativePlaybackStartedWithRenderCache = !!playbackCache?.regions.length;
       this.nativeStatus = result.status;
       this.nativeLastError = null;
     } else {
+      this.nativePlaybackStartedWithRenderCache = false;
       this.nativeLastError = result.error;
     }
   }
@@ -865,10 +873,44 @@ export class AudioEngine {
     return this.nativeRenderCacheBuildPromise;
   }
 
-  private async activateNativeRenderCacheForCurrentPlayback(reason: string): Promise<void> {
+  private async activateNativeRenderCacheForCurrentPlayback(reason: string, options: { onlyIfProceduralFallback?: boolean } = {}): Promise<void> {
     this.nativeRenderCacheBypassedForLiveEdits = false;
     if (this.playbackBackend !== "native-cpal" || !this.playing) return;
+    const cache = this.playableNativeRenderCache();
+    if (!cache?.regions.length) return;
+    if (options.onlyIfProceduralFallback && !this.activeNativePlaybackLooksProceduralFallback()) return;
     await this.restartNativePlayback(this.currentSeconds(), { reason, useRenderCache: true });
+  }
+
+  private requestNativeRenderCacheHandoverWhenReady(reason: string): boolean {
+    if (this.nativeRenderCacheBypassedForLiveEdits) return false;
+    const signature = nativeRenderCacheSignature(this.project);
+    if (this.nativeRenderCacheHandoverSignature === signature) return true;
+    this.nativeRenderCacheHandoverSignature = signature;
+    void this.ensureNativeRenderCache(reason)
+      .then(async (cache) => {
+        if (this.nativeRenderCacheHandoverSignature !== signature) return;
+        if (!cache || cache.signature !== nativeRenderCacheSignature(this.project)) return;
+        await this.activateNativeRenderCacheForCurrentPlayback(reason, { onlyIfProceduralFallback: true });
+      })
+      .finally(() => {
+        if (this.nativeRenderCacheHandoverSignature === signature) this.nativeRenderCacheHandoverSignature = null;
+      });
+    return true;
+  }
+
+  private activateReadyNativeRenderCacheAfterFallback(reason: string) {
+    if (!this.readyNativeRenderCache()) return;
+    void this.activateNativeRenderCacheForCurrentPlayback(reason, { onlyIfProceduralFallback: true });
+  }
+
+  private activeNativePlaybackLooksProceduralFallback(): boolean {
+    if (!this.nativeStatus?.active || !this.nativeStatus.playing) return false;
+    if (this.nativePlaybackStartedWithRenderCache) return false;
+    const assetCount = Number(this.nativeStatus.assetCount || 0);
+    const assetRegionCount = Number(this.nativeStatus.assetRegionCount || 0);
+    const proceduralEventCount = Number(this.nativeStatus.proceduralEventCount ?? this.nativeStatus.eventCount ?? 0);
+    return assetCount <= 0 && assetRegionCount <= 0 && proceduralEventCount > 0;
   }
 
   private scheduleNativeRenderCachePrewarm(reason: string): boolean {
