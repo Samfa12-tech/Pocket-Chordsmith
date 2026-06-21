@@ -148,6 +148,36 @@ describe("audio engine diagnostics", () => {
     expect(engine.getMeterLevels().drums || 0).toBeGreaterThan(0.5);
   });
 
+  it("keeps meters active for native cached regions without WebAudio analysers", () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    const cache: NativeRenderCache = {
+      signature: nativeRenderCacheSignature(project),
+      assets: [],
+      regions: [{ id: "clip_001_bass", assetId: "asset_bass", trackId: "bass", startTime: 0, sourceOffset: 0, duration: 4, gain: 0.8, pan: 0, fadeIn: 0, fadeOut: 0 }],
+      cachedClipIds: new Set(["clip_001"]),
+      renderCacheItems: [],
+      renderCacheHitCount: 0,
+      renderCacheMissCount: 0,
+      proceduralFallbackEventCount: 0,
+      generatedRegionCount: 1,
+      runtimeAudioRegionCount: 0,
+      missingRuntimeAudioRegionCount: 0,
+      cachedAssetByteCount: 128
+    };
+    const internals = engine as unknown as { nativeRenderCache: NativeRenderCache; playbackBackend: string; playing: boolean; lastMeterRead: number; tapNativeRegionMeters(current: number): void };
+    internals.nativeRenderCache = cache;
+    internals.playbackBackend = "native-cpal";
+    internals.playing = true;
+    internals.lastMeterRead = performance.now() / 1000;
+
+    internals.tapNativeRegionMeters(1);
+    const levels = engine.getMeterLevels();
+
+    expect(levels.bass || 0).toBeGreaterThan(0.2);
+    expect(levels.master || 0).toBeGreaterThan(0.18);
+  });
+
   it("resumes paused native playback without sending a second native start", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {

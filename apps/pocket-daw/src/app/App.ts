@@ -768,7 +768,7 @@ export class App {
   }
 
   private bind() {
-    this.root.querySelectorAll<HTMLElement>("[data-clip-id]").forEach((el) => {
+    this.root.querySelectorAll<HTMLElement>("[data-clip-id]:not([data-inline-sequencer])").forEach((el) => {
       el.addEventListener("click", () => {
         if (this.consumeSuppressedClipClick()) return;
         this.state.selectedClipId = el.dataset.clipId || null;

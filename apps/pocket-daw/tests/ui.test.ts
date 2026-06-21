@@ -22,6 +22,14 @@ function transportHtml(html: string) {
   return html.match(/<header class="transport"[\s\S]*?<\/header>/)?.[0] || "";
 }
 
+function timelineRowHtml(html: string, rowId: string) {
+  const marker = `data-row="${rowId}"`;
+  const start = html.indexOf(marker);
+  if (start === -1) return "";
+  const next = html.indexOf('<div class="timeline-row', start + marker.length);
+  return html.slice(start, next === -1 ? undefined : next);
+}
+
 describe("Pocket DAW UI rendering", () => {
   it("uses the saved file name for an untitled project and keeps About in Help only", () => {
     const state = createInitialState();
@@ -218,6 +226,17 @@ describe("Pocket DAW UI rendering", () => {
     expect(inline).not.toContain(">S<");
     expect(html).toContain("Full kit lanes");
     expect(html).toContain("Bass steps");
+  });
+
+  it("uses the generated inline sequencer as the visible clip surface for bass rows", () => {
+    const html = renderAppShell(createInitialState());
+    const bassRow = timelineRowHtml(html, "bass");
+
+    expect(bassRow).toContain('data-inline-sequencer-role="bass"');
+    expect(bassRow).toContain('data-clip-id="clip_');
+    expect(bassRow).toContain('aria-label="Bass steps"');
+    expect(bassRow).toContain('data-bass-step="A:');
+    expect(bassRow).not.toContain('<button class="clip ');
   });
 
   it("keeps the selected generated instrument focused in the inspector", () => {

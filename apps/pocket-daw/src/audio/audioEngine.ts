@@ -141,6 +141,7 @@ export class AudioEngine {
   private nativeLastStatusRefreshAtMs = 0;
   private nativeLiveCompositionCacheToken = 0;
   private nativeMeterEventIndex = 0;
+  private nativeRegionMeterLastTapAt = 0;
   private nextEventIndex = 0;
   private nextAudioRegionIndex = 0;
   private activeAudioSources: AudioBufferSourceNode[] = [];
@@ -725,7 +726,10 @@ export class AudioEngine {
     this.nativeLiveCompositionCacheToken = token;
     const cache = await this.ensureNativeRenderCache(reason);
     if (token !== this.nativeLiveCompositionCacheToken || this.playbackBackend !== "native-cpal" || !this.playing) return;
-    if (cache) this.nativeRenderCacheBypassedForLiveEdits = false;
+    if (cache) {
+      this.nativeRenderCacheBypassedForLiveEdits = false;
+      await this.restartNativePlayback(this.currentSeconds(), { reason, useRenderCache: true });
+    }
   }
 
   private activeNativeRenderCache(): NativeRenderCache | null {
@@ -950,6 +954,7 @@ export class AudioEngine {
     this.refreshNativePositionEstimate(current);
     this.handleNativeLoop(current);
     this.tapNativeMeters(current);
+    this.tapNativeRegionMeters(current);
     const songEnd = barsToSeconds(this.project.timeline.bars, this.project.project.bpm, this.project.project.timeSig) + 0.4;
     if (!this.project.timeline.loop.enabled && current > songEnd) this.stop();
     else this.emitTick();
@@ -986,6 +991,7 @@ export class AudioEngine {
       this.nativeStartedAtMs = performance.now() - next * 1000;
       this.repositionPlaybackIndexes(next);
       this.meterPeaks = {};
+      this.nativeRegionMeterLastTapAt = 0;
       this.emitTick(true);
     }
   }
@@ -997,6 +1003,20 @@ export class AudioEngine {
       if (event.time >= current - 0.04 && this.eventShouldTapMeter(event)) this.tapMeter(event.trackId, event.velocity);
       this.nativeMeterEventIndex += 1;
     }
+  }
+
+  private tapNativeRegionMeters(current: number) {
+    const cache = this.activeNativeRenderCache();
+    if (!cache?.regions.length) return;
+    if (current < this.nativeRegionMeterLastTapAt) this.nativeRegionMeterLastTapAt = 0;
+    if (current - this.nativeRegionMeterLastTapAt < 0.12) return;
+    this.nativeRegionMeterLastTapAt = current;
+    cache.regions.forEach((region) => {
+      if (region.startTime > current || region.startTime + region.duration < current) return;
+      const track = this.project.tracks.find((item) => item.id === region.trackId);
+      if (!track || !trackIsAudible(track, this.project.tracks)) return;
+      this.tapMeter(region.trackId, Math.max(0.12, Math.min(0.55, region.gain * 0.32)));
+    });
   }
 
   private repositionPlaybackIndexes(seconds: number) {

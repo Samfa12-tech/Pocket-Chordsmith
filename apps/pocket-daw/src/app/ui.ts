@@ -374,7 +374,7 @@ function renderTimelineRows(state: AppState): string {
       (track) => `
         <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}">
           ${renderTimelineTrackHeader(track, state.selectedTrackId === track.id, pcs)}
-          ${clips.map((clip) => renderClip(project, clip, state.selectedClipId === clip.id, track)).join("")}
+          ${clips.map((clip) => renderClip(project, clip, state.selectedClipId === clip.id, track, !!pcs)).join("")}
           ${renderRecordingPreview(state, track)}
           ${renderInlineChordsmithEditor(state, pcs, track, clips)}
         </div>
@@ -464,7 +464,7 @@ function renderInlineChordsmithClip(
               : "";
   if (!body) return "";
   return `
-    <div class="inline-sequencer inline-${sanitizeDomId(track.role, "role")} ${state.selectedClipId === clip.id ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${sanitizeDataAttr(clip.id)}" data-inline-row="${sanitizeDataAttr(track.id)}" data-inline-sequencer-role="${sanitizeDataAttr(track.role)}" data-inline-section="${sanitizeDataAttr(section.id)}" title="Drag empty space to move with snap. Drag the right handle to repeat the section." style="left:${left};width:${width};--inline-steps:${sanitizeCssLengthOrNumber(renderSteps, 0, 0, 256)};">
+    <div class="inline-sequencer inline-${sanitizeDomId(track.role, "role")} ${state.selectedClipId === clip.id ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${sanitizeDataAttr(clip.id)}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-inline-row="${sanitizeDataAttr(track.id)}" data-row="${sanitizeDataAttr(track.id)}" data-inline-sequencer-role="${sanitizeDataAttr(track.role)}" data-inline-section="${sanitizeDataAttr(section.id)}" title="Drag empty space to move with snap. Drag the right handle to repeat the section." style="left:${left};width:${width};--inline-steps:${sanitizeCssLengthOrNumber(renderSteps, 0, 0, 256)};">
       <span class="clip-drag-handle" data-clip-drag-handle="${sanitizeDataAttr(clip.id)}" title="Drag to move this section with snap"></span>
       ${body}
       <span class="clip-loop-handle" data-clip-loop-handle="${sanitizeDataAttr(clip.id)}" title="Drag right to repeat this section"></span>
@@ -560,9 +560,10 @@ function renderInlineChordEditor(section: SanitizedPcsSection, startBar: number,
   `;
 }
 
-function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, selected: boolean, track: Track): string {
+function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, selected: boolean, track: Track, inlineGeneratedEditorAvailable = false): string {
   if (clip.type === "audio" && clip.trackId !== track.id) return "";
   if (clip.type === "midi" && clip.trackId !== track.id) return "";
+  if (inlineGeneratedEditorAvailable && clip.type === "generated-section" && track.trackType === "generated") return "";
   if (clip.type !== "audio" && clip.type !== "midi" && track.trackType !== "generated") return "";
   const media = clip.mediaPoolItemId ? project.mediaPool.find((item) => item.id === clip.mediaPoolItemId) : null;
   const peaks = Array.isArray(media?.metadata?.waveformPeaks) ? media.metadata.waveformPeaks.slice(0, 48) : [];
