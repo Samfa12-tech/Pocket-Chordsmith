@@ -42,9 +42,53 @@ describe("native audio playback bridge", () => {
     expect(payload.events.length).toBe(events.length);
     expect(payload.events.some((event) => event.kind === "guitar" && event.midiNotes.length > 0)).toBe(true);
     expect(payload.events.some((event) => event.kind === "guitar" && event.instrument === "crunch")).toBe(true);
+    expect(payload.events.some((event) => event.kind === "guitar" && event.direction)).toBe(true);
     expect(payload.fxChains.some((chain) => chain.ownerTrackId === "master")).toBe(true);
     expect(payload.loop).toBeNull();
     expect(payload.sidechain).toEqual({ enabled: true, amount: 0.35, targetTrackId: "chords", triggerKind: "kick" });
+  });
+
+  it("preserves bass and melody slide targets for the native installed-app synth", () => {
+    const project = createDemoProject();
+    const events: RenderedEvent[] = [
+      {
+        id: "slide_bass",
+        clipId: "clip",
+        kind: "bass",
+        trackId: "bass",
+        role: "bass",
+        time: 0,
+        duration: 0.5,
+        bar: 1,
+        step: 0,
+        velocity: 0.8,
+        midi: 36,
+        slideMidi: 43,
+        slideOffset: 0.125,
+        bassTone: "warm_sub"
+      },
+      {
+        id: "slide_melody",
+        clipId: "clip",
+        kind: "melody",
+        trackId: "melody",
+        role: "melody",
+        time: 0.5,
+        duration: 0.4,
+        bar: 1,
+        step: 2,
+        velocity: 0.7,
+        midi: 72,
+        slideMidi: 76,
+        slideOffset: 0.1,
+        instrument: "soft"
+      }
+    ];
+
+    const payload = buildNativeAudioStartPayload(project, events, 0);
+
+    expect(payload.events.find((event) => event.id === "slide_bass")).toMatchObject({ slideMidi: 43, slideOffset: 0.125 });
+    expect(payload.events.find((event) => event.id === "slide_melody")).toMatchObject({ slideMidi: 76, slideOffset: 0.1 });
   });
 
   it("passes timeline loop bounds to native playback for sample-accurate wrapping", () => {

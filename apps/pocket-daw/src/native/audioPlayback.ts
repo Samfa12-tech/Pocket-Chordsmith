@@ -46,6 +46,8 @@ export interface NativeAudioEvent {
   time: number;
   duration: number;
   midi?: number;
+  slideMidi?: number;
+  slideOffset?: number;
   midiNotes: number[];
   velocity: number;
   step?: number;
@@ -60,6 +62,7 @@ export interface NativeAudioEvent {
   chipTexture?: JsonValue;
   accent?: boolean;
   articulation?: string;
+  direction?: "down" | "up";
   drumLane?: string;
 }
 
@@ -257,6 +260,8 @@ export function buildNativeAudioStartPayload(
       time: event.time,
       duration: Math.max(0.01, event.duration),
       midi: event.midi,
+      slideMidi: event.slideMidi,
+      slideOffset: event.slideOffset,
       midiNotes: event.midiNotes || [],
       velocity: clamp(event.velocity, 0, 1.4),
       step: event.step,
@@ -271,6 +276,7 @@ export function buildNativeAudioStartPayload(
       chipTexture: event.chipTexture,
       accent: event.accent,
       articulation: event.articulation,
+      direction: event.direction,
       drumLane: event.drumLane
     })),
     fxChains: nativeFxChains(project.fx?.chains || []),

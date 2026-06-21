@@ -270,9 +270,11 @@ function renderLeadExtras(id, cfg) {
 function renderLeadExtra(extra) {
   return `    NativeLeadExtraConfig {
         freq_mul: ${num(extra.freqMul ?? 1)},
+        slide_freq_mul: ${optionNum(extra.slideFreqMul)},
         midi_offset: ${num(extra.midiOffset ?? 0)},
         wave: "${extra.wave}",
         peak: ${num(extra.peak ?? 0)},
+        peak_scale: ${num(extra.peakScale ?? 1)},
         filter: "${extra.filter}",
         freq: ${num(extra.freq ?? 0)},
         offset: ${num(extra.offset ?? 0)},

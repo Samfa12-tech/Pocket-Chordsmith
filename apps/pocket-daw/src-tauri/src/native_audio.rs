@@ -94,6 +94,10 @@ pub struct NativeRenderedEvent {
     time: f64,
     duration: f64,
     midi: Option<f64>,
+    #[serde(rename = "slideMidi")]
+    slide_midi: Option<f64>,
+    #[serde(rename = "slideOffset")]
+    slide_offset: Option<f64>,
     #[serde(rename = "midiNotes", default)]
     midi_notes: Vec<f64>,
     velocity: f64,
@@ -117,6 +121,7 @@ pub struct NativeRenderedEvent {
     chip_texture: Option<Value>,
     accent: Option<bool>,
     articulation: Option<String>,
+    direction: Option<String>,
     #[serde(rename = "drumLane")]
     drum_lane: Option<String>,
 }
@@ -1967,8 +1972,50 @@ fn native_wave_sample(wave: &str, freq: f32, local: f64) -> f32 {
     match wave {
         "sine" => phase(freq, local),
         "triangle" => triangle(freq, local),
+        "square" => square(freq, local),
         "sawtooth" => saw(freq, local),
         _ => saw(freq, local),
+    }
+}
+
+fn native_wave_sample_ramped(
+    wave: &str,
+    start_freq: f32,
+    target_freq: f32,
+    ramp_end: f64,
+    local: f64,
+) -> f32 {
+    let cycles = ramped_cycles(start_freq as f64, target_freq as f64, ramp_end, local);
+    match wave {
+        "sine" => (std::f64::consts::TAU * cycles).sin() as f32,
+        "triangle" => {
+            let cycle = cycles.fract() as f32;
+            4.0 * (cycle - 0.5).abs() - 1.0
+        }
+        "square" => {
+            if (std::f64::consts::TAU * cycles).sin() >= 0.0 {
+                1.0
+            } else {
+                -1.0
+            }
+        }
+        "sawtooth" => cycles.fract() as f32 * 2.0 - 1.0,
+        _ => cycles.fract() as f32 * 2.0 - 1.0,
+    }
+}
+
+fn ramped_cycles(start_freq: f64, target_freq: f64, ramp_end: f64, local: f64) -> f64 {
+    if local <= 0.0 {
+        return 0.0;
+    }
+    let ramp_end = ramp_end.max(0.0001);
+    if (start_freq - target_freq).abs() < f64::EPSILON {
+        return start_freq * local;
+    }
+    if local <= ramp_end {
+        start_freq * local + (target_freq - start_freq) * local * local / (2.0 * ramp_end)
+    } else {
+        ((start_freq + target_freq) * 0.5 * ramp_end) + target_freq * (local - ramp_end)
     }
 }
 
@@ -2132,11 +2179,32 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
             let sub_dur = (dur * 0.65).clamp(0.02, 0.12);
             let sub_env = note_envelope(local, sub_dur, 0.006, 0.08, 0.45, 0.14);
             let freq = midi_to_freq(midi) as f32;
-            let main_layer = native_wave_sample(cfg.main_wave, freq, local)
-                * main_env
-                * cfg.main_peak
-                * lowpass_tone_factor(freq, cfg.cutoff);
-            let sub_layer = native_wave_sample(cfg.sub_wave, freq * 0.5, local)
+            let slide = event
+                .slide_midi
+                .zip(event.slide_offset)
+                .map(|(target_midi, offset)| {
+                    let ramp_end = (offset.max(0.02) + 0.09).min((dur + 0.19).max(0.0001));
+                    (midi_to_freq(target_midi) as f32, ramp_end)
+                });
+            let main_sample = if let Some((target_freq, ramp_end)) = slide {
+                native_wave_sample_ramped(cfg.main_wave, freq, target_freq, ramp_end, local)
+            } else {
+                native_wave_sample(cfg.main_wave, freq, local)
+            };
+            let sub_sample = if let Some((target_freq, ramp_end)) = slide {
+                native_wave_sample_ramped(
+                    cfg.sub_wave,
+                    freq * 0.5,
+                    target_freq * 0.5,
+                    ramp_end,
+                    local,
+                )
+            } else {
+                native_wave_sample(cfg.sub_wave, freq * 0.5, local)
+            };
+            let main_layer =
+                main_sample * main_env * cfg.main_peak * lowpass_tone_factor(freq, cfg.cutoff);
+            let sub_layer = sub_sample
                 * sub_env
                 * cfg.sub_peak
                 * lowpass_tone_factor(freq * 0.5, cfg.sub_cutoff);
@@ -2368,9 +2436,11 @@ struct NativeLeadConfig {
 #[derive(Clone, Copy)]
 struct NativeLeadExtraConfig {
     freq_mul: f32,
+    slide_freq_mul: Option<f32>,
     midi_offset: f64,
     wave: &'static str,
     peak: f32,
+    peak_scale: f32,
     filter: &'static str,
     freq: f32,
     offset: f64,
@@ -2388,8 +2458,15 @@ fn render_lead_note(midi: f64, event: &NativeRenderedEvent, local: f64, velocity
     if local > dur + 0.22 {
         return 0.0;
     }
+    let slide = event
+        .slide_midi
+        .zip(event.slide_offset)
+        .map(|(target_midi, offset)| {
+            let ramp_end = (offset.max(0.02) * cfg.dur_mul + 0.08).min((dur + 0.19).max(0.0001));
+            (target_midi, ramp_end)
+        });
     let mut sample = render_lead_voice(
-        midi, 1.0, local, dur, cfg.wave, cfg.peak, cfg.filter, cfg.freq,
+        midi, 1.0, local, dur, cfg.wave, cfg.peak, cfg.filter, cfg.freq, slide,
     );
     for extra in cfg.extras {
         if local < extra.offset {
@@ -2401,15 +2478,35 @@ fn render_lead_note(midi: f64, event: &NativeRenderedEvent, local: f64, velocity
             .unwrap_or(f64::INFINITY)
             .min(event.duration.max(0.05) * extra.dur_mul)
             .max(0.025);
+        let slide_extra = slide.is_some();
+        let extra_midi = if slide_extra {
+            midi
+        } else {
+            midi + extra.midi_offset
+        };
+        let extra_freq_mul = if slide_extra {
+            extra.slide_freq_mul.unwrap_or(extra.freq_mul)
+        } else {
+            extra.freq_mul
+        };
+        let extra_peak = if slide_extra {
+            cfg.peak * extra.peak_scale
+        } else {
+            extra.peak
+        };
         sample += render_lead_voice(
-            midi + extra.midi_offset,
-            extra.freq_mul,
+            extra_midi,
+            extra_freq_mul,
             extra_local,
             extra_dur,
             extra.wave,
-            extra.peak,
+            extra_peak,
             extra.filter,
             extra.freq,
+            slide.map(|(target_midi, ramp_end)| {
+                let extra_ramp_end = (ramp_end - extra.offset).max(0.0001);
+                (target_midi, extra_ramp_end)
+            }),
         );
     }
     sample * velocity
@@ -2425,16 +2522,25 @@ fn render_lead_voice(
     peak: f32,
     filter: &str,
     filter_freq: f32,
+    slide: Option<(f64, f64)>,
 ) -> f32 {
     if local < 0.0 || local > dur + 0.2 {
         return 0.0;
     }
     let freq = midi_to_freq(midi) as f32 * freq_mul;
+    let sample = if let Some((target_midi, ramp_end)) = slide {
+        native_wave_sample_ramped(
+            wave,
+            freq,
+            midi_to_freq(target_midi) as f32 * freq_mul,
+            ramp_end,
+            local,
+        )
+    } else {
+        native_wave_sample(wave, freq, local)
+    };
     let filter_factor = native_filter_factor(filter, freq, filter_freq);
-    native_wave_sample(wave, freq, local)
-        * note_envelope(local, dur, 0.01, 0.06, 0.7, dur.max(0.08))
-        * peak
-        * filter_factor
+    sample * note_envelope(local, dur, 0.01, 0.06, 0.7, dur.max(0.08)) * peak * filter_factor
 }
 
 fn native_filter_factor(filter: &str, freq: f32, cutoff: f32) -> f32 {
@@ -2497,7 +2603,15 @@ fn render_guitar_notes(
         return noise(event, local, 91) * env * velocity * cfg.peak * 1.35;
     }
 
-    let source_notes = if notes.is_empty() { &[40.0][..] } else { notes };
+    let mut ordered_notes = Vec::new();
+    let source_notes = if notes.is_empty() {
+        &[40.0][..]
+    } else if event.direction.as_deref() == Some("up") {
+        ordered_notes.extend(notes.iter().rev().copied());
+        ordered_notes.as_slice()
+    } else {
+        notes
+    };
     let scale = (source_notes.len() as f32).sqrt().max(1.0);
     let mut sample = 0.0_f32;
     for (index, midi) in source_notes.iter().take(6).enumerate() {
@@ -2600,6 +2714,14 @@ fn saw(freq: f32, seconds: f64) -> f32 {
 fn triangle(freq: f32, seconds: f64) -> f32 {
     let cycle = (freq as f64 * seconds).fract() as f32;
     4.0 * (cycle - 0.5).abs() - 1.0
+}
+
+fn square(freq: f32, seconds: f64) -> f32 {
+    if phase(freq, seconds) >= 0.0 {
+        1.0
+    } else {
+        -1.0
+    }
 }
 
 fn note_envelope(local: f64, dur: f64, attack: f64, decay: f64, sustain: f32, release: f64) -> f32 {
@@ -3011,6 +3133,70 @@ mod tests {
     }
 
     #[test]
+    fn native_square_wave_recipes_do_not_fall_back_to_sawtooth() {
+        let square_sample = native_wave_sample("square", 110.0, 0.001);
+        let saw_sample = native_wave_sample("sawtooth", 110.0, 0.001);
+
+        assert_eq!(square_sample, 1.0);
+        assert!((square_sample - saw_sample).abs() > 1.0);
+    }
+
+    #[test]
+    fn generated_bass_slide_uses_rendered_event_target_pitch() {
+        let mut plain = test_generated_event("bass_plain", "bass", 0.0, 0.5, 0.8);
+        plain.midi = Some(36.0);
+        plain.bass_tone = Some("warm_sub".to_string());
+        let mut sliding = plain.clone();
+        sliding.id = "bass_slide".to_string();
+        sliding.slide_midi = Some(43.0);
+        sliding.slide_offset = Some(0.08);
+
+        let diff: f32 = [0.05, 0.11, 0.16, 0.22]
+            .iter()
+            .map(|time| {
+                (render_event_sample(&plain, *time) - render_event_sample(&sliding, *time)).abs()
+            })
+            .sum();
+
+        assert!(
+            diff > 0.03,
+            "expected bass slide to alter native samples, got diff {diff}"
+        );
+    }
+
+    #[test]
+    fn generated_melody_slide_uses_rendered_event_target_pitch() {
+        let mut plain = test_generated_event("melody_plain", "melody", 0.0, 0.45, 0.8);
+        plain.midi = Some(72.0);
+        plain.instrument = Some("soft".to_string());
+        let mut sliding = plain.clone();
+        sliding.id = "melody_slide".to_string();
+        sliding.slide_midi = Some(76.0);
+        sliding.slide_offset = Some(0.1);
+
+        let diff: f32 = [0.06, 0.13, 0.19, 0.27]
+            .iter()
+            .map(|time| {
+                (render_event_sample(&plain, *time) - render_event_sample(&sliding, *time)).abs()
+            })
+            .sum();
+
+        assert!(
+            diff > 0.01,
+            "expected melody slide to alter native samples, got diff {diff}"
+        );
+    }
+
+    #[test]
+    fn generated_lead_extra_recipes_preserve_slide_parameters() {
+        let cfg = native_lead_config(Some("tape_bell"));
+        let extra = cfg.extras.first().expect("tape bell has an extra layer");
+
+        assert!((extra.slide_freq_mul.unwrap_or_default() - 1.994).abs() < 0.001);
+        assert!((extra.peak_scale - 0.16).abs() < 0.001);
+    }
+
+    #[test]
     fn generated_warm_sub_bass_remains_audible_on_low_c() {
         let mut event = test_generated_event("warm_sub_low_c", "bass", 0.0, 0.34, 0.34);
         event.bass_tone = Some("warm_sub".to_string());
@@ -3036,6 +3222,20 @@ mod tests {
         assert!(
             (clean_energy - metal_energy).abs() > 0.01,
             "expected guitar tones to shape native output differently: clean={clean_energy}, metal={metal_energy}"
+        );
+    }
+
+    #[test]
+    fn generated_guitar_direction_changes_native_strum_order() {
+        let down = test_guitar_event("clean", "open");
+        let mut up = down.clone();
+        up.direction = Some("up".to_string());
+        let down_energy = render_event_sample_energy(&down, &[0.01, 0.027, 0.044, 0.061]);
+        let up_energy = render_event_sample_energy(&up, &[0.01, 0.027, 0.044, 0.061]);
+
+        assert!(
+            (down_energy - up_energy).abs() > 0.001,
+            "expected guitar direction to alter native strum order: down={down_energy}, up={up_energy}"
         );
     }
 
@@ -3387,6 +3587,8 @@ mod tests {
             time,
             duration,
             midi: Some(36.0),
+            slide_midi: None,
+            slide_offset: None,
             midi_notes: Vec::new(),
             velocity,
             step: Some(0.0),
@@ -3401,6 +3603,7 @@ mod tests {
             chip_texture: None,
             accent: None,
             articulation: None,
+            direction: None,
             drum_lane: None,
         }
     }
@@ -3413,6 +3616,8 @@ mod tests {
             time: 0.0,
             duration: 0.32,
             midi: None,
+            slide_midi: None,
+            slide_offset: None,
             midi_notes: vec![40.0, 47.0, 52.0],
             velocity: 1.0,
             step: Some(0.0),
@@ -3427,6 +3632,7 @@ mod tests {
             chip_texture: None,
             accent: None,
             articulation: Some(articulation.to_string()),
+            direction: None,
             drum_lane: None,
         }
     }
@@ -3439,6 +3645,8 @@ mod tests {
             time: 0.0,
             duration: 0.1,
             midi: None,
+            slide_midi: None,
+            slide_offset: None,
             midi_notes: Vec::new(),
             velocity: 0.0,
             step: Some(0.0),
@@ -3453,6 +3661,7 @@ mod tests {
             chip_texture: None,
             accent: None,
             articulation: None,
+            direction: None,
             drum_lane: Some("kick".to_string()),
         }
     }
@@ -3465,6 +3674,8 @@ mod tests {
             time: 0.0,
             duration: 0.4,
             midi: None,
+            slide_midi: None,
+            slide_offset: None,
             midi_notes: vec![48.0, 55.0, 64.0],
             velocity: 1.0,
             step: Some(0.0),
@@ -3479,6 +3690,7 @@ mod tests {
             chip_texture: None,
             accent: None,
             articulation: None,
+            direction: None,
             drum_lane: None,
         }
     }

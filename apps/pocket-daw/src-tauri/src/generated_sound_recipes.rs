@@ -1122,9 +1122,11 @@ const GENERATED_LEAD_SYNTH_EXTRAS: [NativeLeadExtraConfig; 0] = [];
 const GENERATED_LEAD_BELL_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 2.0,
+        slide_freq_mul: None,
         midi_offset: 0.0,
         wave: "sine",
         peak: 0.022,
+        peak_scale: 0.16,
         filter: "lowpass",
         freq: 3200.0,
         offset: 0.012,
@@ -1136,9 +1138,11 @@ const GENERATED_LEAD_BELL_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_LEAD_GUITAR_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 1.006,
+        slide_freq_mul: None,
         midi_offset: 0.0,
         wave: "square",
         peak: 0.035,
+        peak_scale: 0.2,
         filter: "lowpass",
         freq: 2600.0,
         offset: 0.006,
@@ -1150,9 +1154,11 @@ const GENERATED_LEAD_LEAD_GUITAR_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_DISTORTED_LEAD_GUITAR_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 0.996,
+        slide_freq_mul: None,
         midi_offset: 0.0,
         wave: "square",
         peak: 0.05,
+        peak_scale: 0.34,
         filter: "bandpass",
         freq: 2100.0,
         offset: 0.004,
@@ -1164,9 +1170,11 @@ const GENERATED_LEAD_DISTORTED_LEAD_GUITAR_EXTRAS: [NativeLeadExtraConfig; 1] = 
 const GENERATED_LEAD_BANJO_EXTRAS: [NativeLeadExtraConfig; 2] = [
     NativeLeadExtraConfig {
         freq_mul: 2.01,
+        slide_freq_mul: None,
         midi_offset: 0.0,
         wave: "triangle",
         peak: 0.028,
+        peak_scale: 0.18,
         filter: "highpass",
         freq: 1500.0,
         offset: 0.004,
@@ -1175,9 +1183,11 @@ const GENERATED_LEAD_BANJO_EXTRAS: [NativeLeadExtraConfig; 2] = [
     },
     NativeLeadExtraConfig {
         freq_mul: 0.997,
+        slide_freq_mul: None,
         midi_offset: 0.0,
         wave: "square",
         peak: 0.018,
+        peak_scale: 0.13,
         filter: "bandpass",
         freq: 2600.0,
         offset: 0.012,
@@ -1189,9 +1199,11 @@ const GENERATED_LEAD_BANJO_EXTRAS: [NativeLeadExtraConfig; 2] = [
 const GENERATED_LEAD_HARMONICA_EXTRAS: [NativeLeadExtraConfig; 2] = [
     NativeLeadExtraConfig {
         freq_mul: 1.004,
+        slide_freq_mul: None,
         midi_offset: 0.0,
         wave: "triangle",
         peak: 0.035,
+        peak_scale: 0.24,
         filter: "bandpass",
         freq: 860.0,
         offset: 0.006,
@@ -1200,9 +1212,11 @@ const GENERATED_LEAD_HARMONICA_EXTRAS: [NativeLeadExtraConfig; 2] = [
     },
     NativeLeadExtraConfig {
         freq_mul: 2.0,
+        slide_freq_mul: None,
         midi_offset: 0.0,
         wave: "square",
         peak: 0.012,
+        peak_scale: 0.08,
         filter: "bandpass",
         freq: 2100.0,
         offset: 0.014,
@@ -1214,9 +1228,11 @@ const GENERATED_LEAD_HARMONICA_EXTRAS: [NativeLeadExtraConfig; 2] = [
 const GENERATED_LEAD_COWBOY_WHISTLE_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 2.0,
+        slide_freq_mul: None,
         midi_offset: 0.0,
         wave: "sine",
         peak: 0.014,
+        peak_scale: 0.14,
         filter: "lowpass",
         freq: 3600.0,
         offset: 0.01,
@@ -1228,9 +1244,11 @@ const GENERATED_LEAD_COWBOY_WHISTLE_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_TRUMPET_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 1.0,
+        slide_freq_mul: Some(2.0),
         midi_offset: 12.0,
         wave: "sawtooth",
         peak: 0.018,
+        peak_scale: 0.13,
         filter: "bandpass",
         freq: 2400.0,
         offset: 0.008,
@@ -1242,9 +1260,11 @@ const GENERATED_LEAD_TRUMPET_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_SAXOPHONE_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 1.0,
+        slide_freq_mul: Some(0.5),
         midi_offset: -12.0,
         wave: "sine",
         peak: 0.03,
+        peak_scale: 0.18,
         filter: "lowpass",
         freq: 760.0,
         offset: 0.004,
@@ -1256,9 +1276,11 @@ const GENERATED_LEAD_SAXOPHONE_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_MELLOW_VIBES_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 1.0,
+        slide_freq_mul: Some(2.0),
         midi_offset: 12.0,
         wave: "sine",
         peak: 0.018,
+        peak_scale: 0.17,
         filter: "lowpass",
         freq: 2400.0,
         offset: 0.01,
@@ -1270,9 +1292,11 @@ const GENERATED_LEAD_MELLOW_VIBES_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_SOFT_PLUCK_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 2.0,
+        slide_freq_mul: None,
         midi_offset: 0.0,
         wave: "sine",
         peak: 0.014,
+        peak_scale: 0.13,
         filter: "lowpass",
         freq: 2200.0,
         offset: 0.004,
@@ -1284,9 +1308,11 @@ const GENERATED_LEAD_SOFT_PLUCK_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_MELLOW_SAX_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 1.0,
+        slide_freq_mul: Some(0.5),
         midi_offset: -12.0,
         wave: "sine",
         peak: 0.018,
+        peak_scale: 0.15,
         filter: "lowpass",
         freq: 640.0,
         offset: 0.004,
@@ -1298,9 +1324,11 @@ const GENERATED_LEAD_MELLOW_SAX_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_MUTED_TRUMPET_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 1.0,
+        slide_freq_mul: Some(2.0),
         midi_offset: 12.0,
         wave: "triangle",
         peak: 0.012,
+        peak_scale: 0.13,
         filter: "bandpass",
         freq: 1700.0,
         offset: 0.006,
@@ -1312,9 +1340,11 @@ const GENERATED_LEAD_MUTED_TRUMPET_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_TAPE_BELL_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 0.997,
+        slide_freq_mul: Some(1.994),
         midi_offset: 12.0,
         wave: "sine",
         peak: 0.014,
+        peak_scale: 0.16,
         filter: "lowpass",
         freq: 2100.0,
         offset: 0.016,
@@ -1326,9 +1356,11 @@ const GENERATED_LEAD_TAPE_BELL_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_CHIP_SQUARE_LEAD_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 2.0,
+        slide_freq_mul: None,
         midi_offset: 0.0,
         wave: "triangle",
         peak: 0.018,
+        peak_scale: 0.12,
         filter: "lowpass",
         freq: 5200.0,
         offset: 0.004,
@@ -1340,9 +1372,11 @@ const GENERATED_LEAD_CHIP_SQUARE_LEAD_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_CHIP_PULSE_LEAD_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 1.005,
+        slide_freq_mul: Some(1.008),
         midi_offset: 0.0,
         wave: "square",
         peak: 0.026,
+        peak_scale: 0.16,
         filter: "lowpass",
         freq: 3600.0,
         offset: 0.006,
@@ -1354,9 +1388,11 @@ const GENERATED_LEAD_CHIP_PULSE_LEAD_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_CHIP_TRIANGLE_BLIP_EXTRAS: [NativeLeadExtraConfig; 1] = [
     NativeLeadExtraConfig {
         freq_mul: 2.0,
+        slide_freq_mul: None,
         midi_offset: 0.0,
         wave: "sine",
         peak: 0.012,
+        peak_scale: 0.1,
         filter: "lowpass",
         freq: 4200.0,
         offset: 0.004,
@@ -1368,9 +1404,11 @@ const GENERATED_LEAD_CHIP_TRIANGLE_BLIP_EXTRAS: [NativeLeadExtraConfig; 1] = [
 const GENERATED_LEAD_CHIP_BELL_STACK_EXTRAS: [NativeLeadExtraConfig; 2] = [
     NativeLeadExtraConfig {
         freq_mul: 2.003,
+        slide_freq_mul: None,
         midi_offset: 12.0,
         wave: "sine",
         peak: 0.024,
+        peak_scale: 0.18,
         filter: "lowpass",
         freq: 4800.0,
         offset: 0.012,
@@ -1379,9 +1417,11 @@ const GENERATED_LEAD_CHIP_BELL_STACK_EXTRAS: [NativeLeadExtraConfig; 2] = [
     },
     NativeLeadExtraConfig {
         freq_mul: 3.01,
+        slide_freq_mul: None,
         midi_offset: 0.0,
         wave: "triangle",
         peak: 0.01,
+        peak_scale: 0.08,
         filter: "highpass",
         freq: 2100.0,
         offset: 0.018,
@@ -1393,9 +1433,11 @@ const GENERATED_LEAD_CHIP_BELL_STACK_EXTRAS: [NativeLeadExtraConfig; 2] = [
 const GENERATED_LEAD_MODERN_CHIP_LEAD_EXTRAS: [NativeLeadExtraConfig; 2] = [
     NativeLeadExtraConfig {
         freq_mul: 1.997,
+        slide_freq_mul: None,
         midi_offset: 12.0,
         wave: "triangle",
         peak: 0.02,
+        peak_scale: 0.14,
         filter: "lowpass",
         freq: 4300.0,
         offset: 0.005,
@@ -1404,9 +1446,11 @@ const GENERATED_LEAD_MODERN_CHIP_LEAD_EXTRAS: [NativeLeadExtraConfig; 2] = [
     },
     NativeLeadExtraConfig {
         freq_mul: 0.5,
+        slide_freq_mul: None,
         midi_offset: -12.0,
         wave: "square",
         peak: 0.012,
+        peak_scale: 0.09,
         filter: "lowpass",
         freq: 1600.0,
         offset: 0.002,
