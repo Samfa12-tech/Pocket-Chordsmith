@@ -139,6 +139,7 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
         prewarmScheduled: false,
         pendingReason: null,
         nativeRenderCacheBypassedForLiveEdits: false,
+        nativeRenderCacheStaleForLiveEdits: false,
         buildCount: 0,
         discardedBuildCount: 0,
         lastBuildMs: 0,
