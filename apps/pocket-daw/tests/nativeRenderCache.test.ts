@@ -165,7 +165,7 @@ describe("native render cache", () => {
     expect(cache.renderCacheItems[0].metadata).toMatchObject({
       cacheKind: "native-generated-stem",
       cacheScope: "project-native-audio",
-      sourceHash: "test-signature",
+      sourceHash: expect.any(String),
       durableCacheReady: false
     });
     expect(cache.assets[0].relativePath).toMatch(/^project-cache\/native-audio\/native-cache-/);
@@ -216,6 +216,26 @@ describe("native render cache", () => {
 
     expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalled();
     expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
+  });
+
+  it("reuses unchanged generated native stems after a single-lane edit", async () => {
+    const project = createDemoProject();
+    const first = await buildNativeRenderCache(project, nativeRenderCacheSignature(project));
+    const firstRenderCount = nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length;
+    nativeMediaBridgeMock.renderNativeAudioWav.mockClear();
+
+    const edited = cycleBassStep(project, "A", 0);
+    const second = await buildNativeRenderCache(edited, nativeRenderCacheSignature(edited), first);
+    const secondRenderCount = nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length;
+    const reusedAssetIds = new Set(first.assets.map((asset) => asset.id));
+    const reusedCount = second.assets.filter((asset) => reusedAssetIds.has(asset.id)).length;
+
+    expect(firstRenderCount).toBeGreaterThan(1);
+    expect(second.generatedRegionCount).toBe(first.generatedRegionCount);
+    expect(secondRenderCount).toBeGreaterThan(0);
+    expect(secondRenderCount).toBeLessThan(firstRenderCount);
+    expect(reusedCount).toBeGreaterThan(0);
+    expect(second.renderCacheHitCount).toBeGreaterThan(0);
   });
 
   it("adds runtime-loaded audio clips as native WAV asset regions", async () => {

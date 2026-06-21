@@ -835,10 +835,11 @@ export class AudioEngine {
     if (this.nativeRenderCacheBuildPromise && this.nativeRenderCacheBuildSignature === signature) return this.nativeRenderCacheBuildPromise;
     const projectSnapshot = cloneProject(this.project);
     this.nativeRenderCacheBuildSignature = signature;
+    const reusableCache = this.nativeRenderCache;
     this.nativeRenderCacheBuildPromise = (async () => {
       try {
         const started = nowMs();
-        const cache = await buildNativeRenderCache(projectSnapshot, signature);
+        const cache = await buildNativeRenderCache(projectSnapshot, signature, reusableCache);
         this.nativeRenderCacheBuildCount += 1;
         this.nativeRenderCacheLastBuildMs = Math.max(0, nowMs() - started);
         this.nativeRenderCacheLastBuildReason = reason;
