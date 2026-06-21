@@ -7,7 +7,7 @@ Current policy: normal Pocket DAW app checkpoints ship through GitHub Releases a
 ## Current Alpha Release
 
 - App: Pocket DAW
-- Version: `0.6.20`
+- Version: `0.6.21`
 - Schema version: `2`
 - Itch project: `samfa12/pocket-daw`
 - Itch page: `https://samfa12.itch.io/pocket-daw`
@@ -15,8 +15,8 @@ Current policy: normal Pocket DAW app checkpoints ship through GitHub Releases a
 - Primary install/update test channel: `windows-installer`
 - Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 - Bootstrapper endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-bootstrapper-latest.json`
-- Setup EXE: `Pocket.DAW_0.6.20_x64-setup.exe`
-- MSI: `Pocket.DAW_0.6.20_x64_en-US.msi`
+- Setup EXE: `Pocket.DAW_0.6.21_x64-setup.exe`
+- MSI: `Pocket.DAW_0.6.21_x64_en-US.msi`
 
 Pocket DAW is installed-app only. Do not publish or test a user-facing portable app workflow.
 

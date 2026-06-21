@@ -7,27 +7,27 @@ This file records the current source baseline and the latest completed public in
 ## Current Source Baseline
 
 - Version: `0.6.21`
-- Source delta after published `0.6.20`: integrity fixes for Chordsmith arrangement preservation, native-cache project ownership and safer cache save/prune ordering. Publish this source candidate only after a fresh signed build and exact-artifact smoke.
+- Source delta after published `0.6.20`: integrity fixes for Chordsmith arrangement preservation, native-cache project ownership and safer cache save/prune ordering.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Primary itch channel: `windows-installer`
 - Updater manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 - Bootstrapper manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-bootstrapper-latest.json`
-- Release artifact status: `0.6.20` GitHub updater assets and bootstrapper manifest are published; itch channel `windows-installer` remains on the existing bootstrapper build because the bootstrapper executable itself did not change.
-- Source commit at packaging time: `7f44aa6e247a78133845814434d7ec6493b5de23`.
+- Release artifact status: `0.6.21` GitHub updater assets and bootstrapper manifest are published; itch channel `windows-installer` remains on the existing bootstrapper build because the bootstrapper executable itself did not change.
+- Source commit at packaging time: `9dcd48749a497d7344678973be836c45597ebf65`.
 - Generated manifest note: dirty working tree was `false`.
 
 ## Current Local Artifact Record
 
-The current published artifact record is `0.6.20`. These artifacts passed automated verification and upload checks. Manual installed-app smoke is pending for native loop/metronome behavior, rapid live-edit native restart stability, cache reuse after live edits, Save As title adoption, and existing AI / MCP bridge coverage.
+The current published artifact record is `0.6.21`. These artifacts passed automated verification and upload checks. Manual installed-app smoke is pending for the exact setup hash.
 
-- GitHub release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.20`
-- Setup EXE `Pocket.DAW_0.6.20_x64-setup.exe`: `86a7495ee3a3c97d9b802aac9b97e52a32ffd1e53f69441d06d5f4a7f1d8e08c`
-- Setup EXE Tauri updater signature `Pocket.DAW_0.6.20_x64-setup.exe.sig`: `a978b0c03b00507824cb9d8b5f03f3fa8fa2de5e723e0ef97768ad7fc13d8565`
-- MSI `Pocket.DAW_0.6.20_x64_en-US.msi`: `d4f11499cd0b18c6ce3d96f71a5f6de94fa0349a1752efadf6f40709b794707b`
-- MSI Tauri updater signature `Pocket.DAW_0.6.20_x64_en-US.msi.sig`: `2a6f6d1aad22b90ba336092b947ef2ba7e56fd7e16a56e1b79320374c43d7a03`
-- Release manifest `pocket-daw-release-manifest-v0.6.20.json`: `36ce56dd09097f7fd63824a8c708b2256a5eeeccdbf7fd64dbc1d2344b5ab1e6`
-- Bootstrapper manifest `pocket-daw-bootstrapper-latest.json` reports version `0.6.20`, installer `Pocket.DAW_0.6.20_x64-setup.exe`, and installer SHA-256 `86a7495ee3a3c97d9b802aac9b97e52a32ffd1e53f69441d06d5f4a7f1d8e08c`.
-- Latest updater and bootstrapper manifests both report version `0.6.20`.
+- GitHub release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.21`
+- Setup EXE `Pocket.DAW_0.6.21_x64-setup.exe`: `e69c57292bbb4f29a9d3f6ec36bd78346249f30c4f48932f071dfffcdc1412d8`
+- Setup EXE Tauri updater signature `Pocket.DAW_0.6.21_x64-setup.exe.sig`: `63b1cab939c3b1c8f962da81c318349d5c821a08a5b5f4608f2b54c646b80c10`
+- MSI `Pocket.DAW_0.6.21_x64_en-US.msi`: `117cbb2b7b17f3c06cada3805175e5b2e482538d66cf240aca050e3368cccb7f`
+- MSI Tauri updater signature `Pocket.DAW_0.6.21_x64_en-US.msi.sig`: `52f1d17752d66e19a493db97031158395bf0f031c749fd8b19bc9691abd1afcd`
+- Release manifest `pocket-daw-release-manifest-v0.6.21.json`: `38a2d0eb3fc663654fe69044d5c28724149be8dbbc16cba6053911345b7a60fb`
+- Bootstrapper manifest `pocket-daw-bootstrapper-latest.json` reports version `0.6.21`, installer `Pocket.DAW_0.6.21_x64-setup.exe`, and installer SHA-256 `e69c57292bbb4f29a9d3f6ec36bd78346249f30c4f48932f071dfffcdc1412d8`.
+- Latest updater and bootstrapper manifests both report version `0.6.21`.
 
 Previous completed public updater artifact record:
 

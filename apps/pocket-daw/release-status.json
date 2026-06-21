@@ -2,9 +2,9 @@
   "schema": 1,
   "sourceVersion": "0.6.21",
   "projectSchemaVersion": 2,
-  "latestPublishedVersion": "0.6.20",
-  "latestPublishedTag": "pocket-daw-v0.6.20",
-  "latestPublishedCommit": "7f44aa6e247a78133845814434d7ec6493b5de23",
+  "latestPublishedVersion": "0.6.21",
+  "latestPublishedTag": "pocket-daw-v0.6.21",
+  "latestPublishedCommit": "9dcd48749a497d7344678973be836c45597ebf65",
   "lastInstalledSmoke": {
     "version": "0.6.10",
     "commit": null,
@@ -14,7 +14,7 @@
     "result": "pass",
     "notes": [
       "Bootstrapper install smoke evidence is recorded for 0.6.10.",
-      "Installed smoke for published 0.6.20 and current source 0.6.21 is not recorded in this status file."
+      "Installed smoke for published 0.6.21 and current source 0.6.21 is not recorded in this status file."
     ]
   }
 }

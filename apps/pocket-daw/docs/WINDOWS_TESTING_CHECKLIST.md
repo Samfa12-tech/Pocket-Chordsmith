@@ -5,30 +5,30 @@ Run this against the exact installed Windows alpha from itch/GitHub release arti
 Current alpha target:
 
 - App: Pocket DAW
-- Version: `0.6.20` native transport/cache checkpoint
-- Source commit at packaging time: `7f44aa6e247a78133845814434d7ec6493b5de23`
+- Version: `0.6.21` native transport/cache checkpoint
+- Source commit at packaging time: `9dcd48749a497d7344678973be836c45597ebf65`
 - Generated manifest note: dirty working tree was `false`.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Itch channel: `windows-installer`
 - Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Setup EXE: `Pocket.DAW_0.6.20_x64-setup.exe`
-- Setup EXE SHA-256: `86a7495ee3a3c97d9b802aac9b97e52a32ffd1e53f69441d06d5f4a7f1d8e08c`
-- Setup EXE updater signature: `Pocket.DAW_0.6.20_x64-setup.exe.sig`
-- Setup EXE updater signature SHA-256: `a978b0c03b00507824cb9d8b5f03f3fa8fa2de5e723e0ef97768ad7fc13d8565`
-- MSI: `Pocket.DAW_0.6.20_x64_en-US.msi`
-- MSI SHA-256: `d4f11499cd0b18c6ce3d96f71a5f6de94fa0349a1752efadf6f40709b794707b`
-- MSI updater signature: `Pocket.DAW_0.6.20_x64_en-US.msi.sig`
-- MSI updater signature SHA-256: `2a6f6d1aad22b90ba336092b947ef2ba7e56fd7e16a56e1b79320374c43d7a03`
-- Bootstrapper manifest: `pocket-daw-bootstrapper-latest.json` now points at `Pocket.DAW_0.6.20_x64-setup.exe`
+- Setup EXE: `Pocket.DAW_0.6.21_x64-setup.exe`
+- Setup EXE SHA-256: `e69c57292bbb4f29a9d3f6ec36bd78346249f30c4f48932f071dfffcdc1412d8`
+- Setup EXE updater signature: `Pocket.DAW_0.6.21_x64-setup.exe.sig`
+- Setup EXE updater signature SHA-256: `63b1cab939c3b1c8f962da81c318349d5c821a08a5b5f4608f2b54c646b80c10`
+- MSI: `Pocket.DAW_0.6.21_x64_en-US.msi`
+- MSI SHA-256: `117cbb2b7b17f3c06cada3805175e5b2e482538d66cf240aca050e3368cccb7f`
+- MSI updater signature: `Pocket.DAW_0.6.21_x64_en-US.msi.sig`
+- MSI updater signature SHA-256: `52f1d17752d66e19a493db97031158395bf0f031c749fd8b19bc9691abd1afcd`
+- Bootstrapper manifest: `pocket-daw-bootstrapper-latest.json` now points at `Pocket.DAW_0.6.21_x64-setup.exe`
 - Itch bootstrapper EXE: unchanged from the existing bootstrapper upload
 - SmartScreen/code signing: Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures: `.sig` files are updater-validation signatures and are separate from Windows code signing.
 
-Manual smoke status: `0.6.20` PENDING. Historical `0.6.9` evidence remains useful context, and `0.6.10` verifies the basic bootstrapper install path but not the latest native transport/cache behavior, MCP setup panel, or auto-close bootstrapper behavior.
+Manual smoke status: `0.6.21` PENDING. Historical `0.6.9` evidence remains useful context, and `0.6.10` verifies the basic bootstrapper install path but not the latest native transport/cache behavior, MCP setup panel, or auto-close bootstrapper behavior.
 
 For a candidate installer, record exact-artifact smoke evidence with `releases/smoke-attestation.schema.json` and validate it with `npm run verify:smoke-attestation -- --attestation <path> --installer <setup.exe> --commit <full-sha>`. A source build is not installed-smoked until that attestation matches the installer filename and SHA-256.
 
-`0.6.20` native transport/cache and bridge rows apply after the installer/updater checkpoint is installed.
+`0.6.21` native transport/cache and bridge rows apply after the installer/updater checkpoint is installed.
 
 Next-build lesson from 2026-06-20: current `0.6.13` does not register `.pocketdaw` as a Windows file type and does not open raw project file launch arguments. The next installer checkpoint should verify double-click/Open With after the association/open-argument fix ships.
 
