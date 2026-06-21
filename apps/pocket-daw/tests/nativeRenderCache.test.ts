@@ -59,6 +59,7 @@ import {
   buildNativeRuntimeAudioCache,
   filterNativeRenderCacheForProject,
   hydrateNativeRenderCacheAssets,
+  NATIVE_GENERATED_STEM_TAIL_SECONDS,
   nativeRenderCacheProjectNamespace,
   mergeNativeRenderCacheItems,
   nativeRenderCacheRelativePath,
@@ -68,9 +69,10 @@ import {
   prunePersistedNativeRenderCacheAssets,
   projectForNativeGeneratedStemRender
 } from "../src/audio/nativeRenderCache";
+import { barsToSeconds } from "../src/daw/timeline";
 import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
 import { cycleBassStep } from "../src/daw/chordsmithEditor";
-import { addDrumLaneFx } from "../src/daw/drumLanes";
+import { addDrumLaneFx, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume } from "../src/daw/drumLanes";
 import { addFxSlot, setFxSlotParameter } from "../src/daw/fx";
 import type { Clip, MediaPoolItem } from "../src/daw/schema";
 import type { NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
@@ -138,6 +140,15 @@ describe("native render cache", () => {
     expect(nativeRenderCacheSignature(project)).not.toBe(signature);
   });
 
+  it("invalidates generated cache for drum-lane mix baked into drum stems", () => {
+    const project = createDemoProject();
+    const signature = nativeRenderCacheSignature(project);
+
+    expect(nativeRenderCacheSignature(setDrumLaneVolume(project, "snare", 0.25))).not.toBe(signature);
+    expect(nativeRenderCacheSignature(setDrumLanePan(project, "snare", -0.75))).not.toBe(signature);
+    expect(nativeRenderCacheSignature(setDrumLaneMute(project, "snare", true))).not.toBe(signature);
+  });
+
   it("builds dry native generated-stem render projects and keeps only drum lane FX baked", () => {
     let project = createLofiTemplateProject();
     project.project.metronome = { enabled: true, countInBars: 1, volume: 0.5 };
@@ -174,6 +185,30 @@ describe("native render cache", () => {
     expect(cache.cachedAssetByteCount).toBeGreaterThan(44);
     expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalled();
     expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
+  });
+
+  it("renders generated stem caches with the native release tail past clip boundaries", async () => {
+    const project = createDemoProject();
+    const clip = project.timeline.clips.find((item) => item.type === "generated-section")!;
+    const clipDuration = barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig);
+    const renderMock = nativeMediaBridgeMock.renderNativeAudioWav as unknown as {
+      mockImplementation(fn: (_payload: unknown, durationSeconds: number) => Promise<unknown>): void;
+      mock: { calls: Array<[unknown, number, unknown?]> };
+    };
+    renderMock.mockImplementation(async (_payload: unknown, durationSeconds: number) => ({
+      ...nativeRenderResult(),
+      durationSeconds
+    }));
+
+    const cache = await buildNativeRenderCache(project, "tail-signature");
+    const requestedDurations = renderMock.mock.calls.map((call) => Number(call[1]));
+
+    expect(requestedDurations.length).toBeGreaterThan(0);
+    requestedDurations.forEach((duration) => {
+      expect(duration).toBeCloseTo(clipDuration + NATIVE_GENERATED_STEM_TAIL_SECONDS, 5);
+    });
+    expect(cache.regions[0].duration).toBeCloseTo(clipDuration + NATIVE_GENERATED_STEM_TAIL_SECONDS, 5);
+    expect(cache.renderCacheItems[0].metadata?.renderTailSeconds).toBe(NATIVE_GENERATED_STEM_TAIL_SECONDS);
   });
 
   it("uses native offline rendering for generated-section WAV assets when available", async () => {
@@ -283,6 +318,24 @@ describe("native render cache", () => {
     nativeMediaBridgeMock.renderNativeAudioWav.mockClear();
 
     const edited = addDrumLaneFx(project, "snare", "parametric-eq");
+    const second = await buildNativeRenderCache(edited, nativeRenderCacheSignature(edited), first);
+    const secondAssets = nativeGeneratedAssetsByRole(second);
+
+    expect(secondAssets.drums).not.toEqual(firstAssets.drums);
+    (["bass", "chords", "melody", "guitar"] as const).forEach((role) => {
+      expect(secondAssets[role]).toEqual(firstAssets[role]);
+    });
+    expect(nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length).toBeGreaterThan(0);
+    expect(nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length).toBeLessThan(first.assets.length);
+  });
+
+  it("reuses non-drum generated stems after drum-lane mix edits", async () => {
+    const project = createDemoProject();
+    const first = await buildNativeRenderCache(project, nativeRenderCacheSignature(project));
+    const firstAssets = nativeGeneratedAssetsByRole(first);
+    nativeMediaBridgeMock.renderNativeAudioWav.mockClear();
+
+    const edited = setDrumLanePan(setDrumLaneVolume(project, "snare", 0.25), "snare", -0.75);
     const second = await buildNativeRenderCache(edited, nativeRenderCacheSignature(edited), first);
     const secondAssets = nativeGeneratedAssetsByRole(second);
 

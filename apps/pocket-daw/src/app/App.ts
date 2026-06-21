@@ -973,21 +973,21 @@ export class App {
     });
     this.root.querySelectorAll<HTMLInputElement>("[data-drum-lane-volume]").forEach((input) => {
       input.addEventListener("change", () => this.applyProjectState(setDrumLaneVolumeCommand(this.state, input.dataset.drumLaneVolume || "", Number(input.value)), {
-        audio: "mixer-graph",
+        audio: "composition-events",
         preserveScroll: true,
         reason: "drum-lane-volume"
       }));
     });
     this.root.querySelectorAll<HTMLInputElement>("[data-drum-lane-pan]").forEach((input) => {
       input.addEventListener("change", () => this.applyProjectState(setDrumLanePanCommand(this.state, input.dataset.drumLanePan || "", Number(input.value)), {
-        audio: "mixer-graph",
+        audio: "composition-events",
         preserveScroll: true,
         reason: "drum-lane-pan"
       }));
     });
     this.root.querySelectorAll<HTMLInputElement>("[data-drum-lane-mute]").forEach((input) => {
       input.addEventListener("change", () => this.applyProjectState(setDrumLaneMuteCommand(this.state, input.dataset.drumLaneMute || "", input.checked), {
-        audio: "mixer-graph",
+        audio: "composition-events",
         preserveScroll: true,
         reason: "drum-lane-mute"
       }));

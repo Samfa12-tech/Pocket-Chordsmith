@@ -1,6 +1,7 @@
 import { cloneProject } from "../daw/dawProject";
 import type { Clip, PocketDawProject, RenderCacheItem, TrackRole } from "../daw/schema";
 import { barsToSeconds } from "../daw/timeline";
+import { DRUM_LANE_DEFS, getDrumLaneMix } from "../daw/drumLanes";
 import { buildNativeAudioStartPayload, type NativeAudioAsset, type NativeAudioRegion } from "../native/audioPlayback";
 import { pruneNativeCacheAssets, readNativeCacheAsset, renderNativeAudioWav, writeNativeCacheAsset, type NativeCachePruneResult, type NativeMediaApi } from "../native/mediaBridge";
 import { audioRegionFromClip, renderTimelineAudioRegions } from "./audioRegions";
@@ -9,6 +10,7 @@ import { renderTimelineEvents } from "./eventRenderer";
 import { encodeWav } from "./offlineRender";
 
 export const NATIVE_RENDER_CACHE_ROOT = "project-cache/native-audio";
+export const NATIVE_GENERATED_STEM_TAIL_SECONDS = 0.25;
 const STEM_ROLES: TrackRole[] = ["drums", "bass", "chords", "melody", "guitar"];
 
 export interface NativeRenderCache {
@@ -119,13 +121,14 @@ export async function buildNativeRenderCache(project: PocketDawProject, signatur
       renderCacheItems.push(renderCacheItemForAsset(asset, createdAt, item));
     }
     const duration = barsToSeconds(item.clip.barLength, project.project.bpm, project.project.timeSig);
+    const regionDuration = generatedStemRenderDuration(duration);
     regions.push({
       id: `${item.clip.id}_${item.trackId}_${item.role}`,
       assetId: asset.id,
       trackId: item.trackId,
       startTime: barsToSeconds(item.clip.startBar - 1, project.project.bpm, project.project.timeSig),
       sourceOffset: 0,
-      duration: Math.min(duration, asset.durationSeconds),
+      duration: Math.min(regionDuration, asset.durationSeconds),
       gain: 1,
       pan: 0,
       fadeIn: 0,
@@ -546,6 +549,7 @@ export function nativeRenderCacheSignature(project: PocketDawProject): string {
         role: track.role,
         active: track.active
       })),
+    drumLaneMix: nativeCacheStemDrumLaneMixState(project),
     drumLaneFx: nativeCacheStemFxState(project)
   }));
 }
@@ -613,12 +617,14 @@ function assetBuildItems(project: PocketDawProject, clip: Clip): AssetBuildItem[
 
 async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Promise<NativeAudioAsset | null> {
   const assetProject = projectForNativeGeneratedStemRender(project, item.clip, item.trackId);
-  const durationSeconds = barsToSeconds(item.clip.barLength, project.project.bpm, project.project.timeSig);
-  const nativeRender = await renderNativeGeneratedStemWav(assetProject, durationSeconds);
+  const clipDurationSeconds = barsToSeconds(item.clip.barLength, project.project.bpm, project.project.timeSig);
+  const renderDurationSeconds = generatedStemRenderDuration(clipDurationSeconds);
+  const nativeRender = await renderNativeGeneratedStemWav(assetProject, renderDurationSeconds);
   if (!nativeRender?.bytes?.length) return null;
   const bytes = nativeRender.bytes;
   const sampleRate = nativeRender.sampleRate || project.project.sampleRate;
   const channels = nativeRender.channels || 2;
+  const durationSeconds = nativeRender.durationSeconds || renderDurationSeconds;
   const id = item.assetId;
   return {
     id,
@@ -663,8 +669,14 @@ function nativeGeneratedStemSourceHash(project: PocketDawProject, clip: Clip, tr
     },
     trackId,
     events,
-    fx: nativeGeneratedStemBakedFxState(assetProject, trackId)
+    drumLaneMix: trackId === "drums" ? nativeCacheStemDrumLaneMixState(assetProject) : [],
+    fx: nativeGeneratedStemBakedFxState(assetProject, trackId),
+    renderTailSeconds: NATIVE_GENERATED_STEM_TAIL_SECONDS
   }));
+}
+
+function generatedStemRenderDuration(durationSeconds: number): number {
+  return Math.max(0, durationSeconds) + NATIVE_GENERATED_STEM_TAIL_SECONDS;
 }
 
 async function renderNativeGeneratedStemWav(assetProject: PocketDawProject, durationSeconds: number) {
@@ -716,6 +728,18 @@ function nativeCacheStemFxState(project: PocketDawProject): PocketDawProject["fx
   };
 }
 
+function nativeCacheStemDrumLaneMixState(project: PocketDawProject) {
+  return DRUM_LANE_DEFS.map((lane) => {
+    const mix = getDrumLaneMix(project, lane.id);
+    return {
+      id: lane.id,
+      volume: mix.volume,
+      pan: mix.pan,
+      mute: mix.mute
+    };
+  });
+}
+
 function nativeGeneratedStemBakedFxState(project: PocketDawProject, trackId: string): PocketDawProject["fx"] {
   return trackId === "drums" ? nativeCacheStemFxState(project) : { chains: [] };
 }
@@ -735,6 +759,7 @@ function renderCacheItemForAsset(asset: NativeAudioAsset, createdAt: string, ite
       mimeType: asset.mimeType || "audio/wav",
       role: item.role,
       trackId: item.trackId,
+      renderTailSeconds: NATIVE_GENERATED_STEM_TAIL_SECONDS,
       sampleRate: asset.sampleRate,
       channels: asset.channels,
       durationSeconds: asset.durationSeconds,
