@@ -1141,14 +1141,14 @@ function nativeCacheStatusText(state: AppState): string {
   const status = state.nativeCacheStatus;
   if (status.lastError) return `Cache error: ${status.lastError}`;
   if (status.buildPending) return "Building native cache...";
-  if (status.bypassedForLiveEdits) return "Procedural playback after live edit; rebuild cache to restore cached generated tracks.";
+  if (status.bypassedForLiveEdits) return "Native event playback after live edit; rebuild cache to restore cached generated stems.";
   if (status.assetRegionCount > 0) {
     const parts = [
       `${status.assetRegionCount} cached region${status.assetRegionCount === 1 ? "" : "s"}`,
       `${status.cachedClipCount} cached clip${status.cachedClipCount === 1 ? "" : "s"}`,
       `${status.generatedRegionCount} generated`,
       `${status.runtimeAudioRegionCount} audio`,
-      `${status.proceduralFallbackEventCount} procedural fallback event${status.proceduralFallbackEventCount === 1 ? "" : "s"}`
+      `${status.proceduralFallbackEventCount} native event fallback${status.proceduralFallbackEventCount === 1 ? "" : "s"}`
     ];
     const reason = status.lastBuildReason ? ` / ${status.lastBuildReason}` : "";
     return `${parts.join(" / ")}${reason}`;
@@ -1156,7 +1156,7 @@ function nativeCacheStatusText(state: AppState): string {
   if (status.prewarmScheduled) return "Native cache prewarm scheduled.";
   const cacheItems = currentProject(state).renderCache.filter((item) => String(item.metadata?.cacheKind || "").startsWith("native-"));
   if (cacheItems.length) return `${cacheItems.length} native cache metadata item${cacheItems.length === 1 ? "" : "s"} saved; build or reopen to activate cached playback.`;
-  if (status.proceduralFallbackEventCount > 0) return `No native cache active; ${status.proceduralFallbackEventCount} procedural event${status.proceduralFallbackEventCount === 1 ? "" : "s"} ready.`;
+  if (status.proceduralFallbackEventCount > 0) return `No native cache active; ${status.proceduralFallbackEventCount} native event${status.proceduralFallbackEventCount === 1 ? "" : "s"} ready.`;
   return "No native cache active.";
 }
 

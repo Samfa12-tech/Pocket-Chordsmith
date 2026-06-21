@@ -4,6 +4,10 @@ import { barsToSeconds } from "../daw/timeline";
 import { DRUM_LANE_DEFS, getDrumLaneMix } from "../daw/drumLanes";
 import { buildNativeAudioStartPayload, type NativeAudioAsset, type NativeAudioRegion } from "../native/audioPlayback";
 import { pruneNativeCacheAssets, readNativeCacheAsset, renderNativeAudioWav, writeNativeCacheAsset, type NativeCachePruneResult, type NativeMediaApi } from "../native/mediaBridge";
+import { POCKET_BASS_TONE_CONFIGS, POCKET_DRUM_KIT_CONFIGS } from "../../../../packages/pocket-audio-core/src/sounds/lofi-registry.js";
+import { POCKET_CHORD_INSTRUMENT_CONFIGS, POCKET_LEAD_INSTRUMENT_CONFIGS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
+import { POCKET_GUITAR_TONE_CONFIGS } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import { POCKET_PRO_EQ_BANDS } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
 import { audioRegionFromClip, renderTimelineAudioRegions } from "./audioRegions";
 import { getCachedAudioBuffer, type CachedAudioBuffer } from "./audioBufferCache";
 import { renderTimelineEvents } from "./eventRenderer";
@@ -11,6 +15,8 @@ import { encodeWav } from "./offlineRender";
 
 export const NATIVE_RENDER_CACHE_ROOT = "project-cache/native-audio";
 export const NATIVE_GENERATED_STEM_TAIL_SECONDS = 0.25;
+export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v7";
+export const NATIVE_CACHE_STEM_RENDER_MODE = "cache-stem";
 const STEM_ROLES: TrackRole[] = ["drums", "bass", "chords", "melody", "guitar"];
 
 export interface NativeRenderCache {
@@ -467,6 +473,10 @@ function expectedNativeCacheSourceHashes(
     hashes.add(generatedSignature);
     return hashes;
   }
+  const rendererContractVersion = String(item.metadata?.rendererContractVersion || "");
+  if (rendererContractVersion && rendererContractVersion !== NATIVE_AUDIO_RENDERER_CONTRACT_VERSION) return hashes;
+  const renderMode = String(item.metadata?.renderMode || "");
+  if (renderMode && renderMode !== NATIVE_CACHE_STEM_RENDER_MODE) return hashes;
   const clip = item.sourceClipId ? project.timeline.clips.find((entry) => entry.id === item.sourceClipId) : null;
   const trackId = String(item.metadata?.trackId || clip?.trackId || "");
   if (clip && trackId) hashes.add(nativeGeneratedStemSourceHash(project, clip, trackId));
@@ -493,6 +503,7 @@ export function nativeRenderCacheProjectNamespace(projectFilePath: string): stri
 
 export function nativeRenderCacheSignature(project: PocketDawProject): string {
   return hashString(JSON.stringify({
+    nativeRenderer: nativeAudioRendererContract(project.project.sampleRate),
     project: {
       bpm: project.project.bpm,
       key: project.project.key,
@@ -595,6 +606,27 @@ export function nativeRuntimeAudioCacheSignature(project: PocketDawProject): str
   }));
 }
 
+function nativeAudioRendererContract(sampleRate: number) {
+  return {
+    version: NATIVE_AUDIO_RENDERER_CONTRACT_VERSION,
+    recipeHash: nativeRendererRecipeHash(),
+    renderMode: NATIVE_CACHE_STEM_RENDER_MODE,
+    renderSampleRate: sampleRate,
+    stemTailSeconds: NATIVE_GENERATED_STEM_TAIL_SECONDS
+  };
+}
+
+function nativeRendererRecipeHash(): string {
+  return hashString(JSON.stringify({
+    drumKits: POCKET_DRUM_KIT_CONFIGS,
+    bassTones: POCKET_BASS_TONE_CONFIGS,
+    chordInstruments: POCKET_CHORD_INSTRUMENT_CONFIGS,
+    leadInstruments: POCKET_LEAD_INSTRUMENT_CONFIGS,
+    guitarTones: POCKET_GUITAR_TONE_CONFIGS,
+    proEqBands: POCKET_PRO_EQ_BANDS
+  }));
+}
+
 function assetBuildItems(project: PocketDawProject, clip: Clip): AssetBuildItem[] {
   const stemMutes = clip.transforms.stemMutes || {};
   return STEM_ROLES.flatMap((role) => {
@@ -657,6 +689,7 @@ function nativeGeneratedStemSourceHash(project: PocketDawProject, clip: Clip, tr
   const assetProject = projectForNativeGeneratedStemRender(project, clip, trackId);
   const events = renderTimelineEvents(assetProject).filter((event) => event.trackId === trackId);
   return hashString(JSON.stringify({
+    nativeRenderer: nativeAudioRendererContract(assetProject.project.sampleRate),
     project: {
       bpm: assetProject.project.bpm,
       key: assetProject.project.key,
@@ -683,7 +716,7 @@ async function renderNativeGeneratedStemWav(assetProject: PocketDawProject, dura
   try {
     const events = renderTimelineEvents(assetProject);
     const payload = buildNativeAudioStartPayload(assetProject, events, 0);
-    return await renderNativeAudioWav({ ...payload, loop: null, metronome: null }, durationSeconds, "cache-stem");
+    return await renderNativeAudioWav({ ...payload, loop: null, metronome: null }, durationSeconds, NATIVE_CACHE_STEM_RENDER_MODE);
   } catch {
     return null;
   }
@@ -753,6 +786,10 @@ function renderCacheItemForAsset(asset: NativeAudioAsset, createdAt: string, ite
       cacheKind: "native-generated-stem",
       cacheScope: "project-native-audio",
       sourceHash: item.sourceHash,
+      rendererContractVersion: NATIVE_AUDIO_RENDERER_CONTRACT_VERSION,
+      rendererRecipeHash: nativeRendererRecipeHash(),
+      renderMode: NATIVE_CACHE_STEM_RENDER_MODE,
+      renderSampleRate: asset.sampleRate,
       assetId: asset.id,
       assetRelativePath: asset.relativePath || nativeRenderCacheRelativePath(asset.id),
       mimeType: asset.mimeType || "audio/wav",

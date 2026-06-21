@@ -568,7 +568,7 @@ describe("Pocket DAW UI rendering", () => {
     const html = renderAppShell(state);
 
     expect(html).toContain("Native Playback");
-    expect(html).toContain("5 cached regions / 1 cached clip / 5 generated / 0 audio / 0 procedural fallback events / manual-build-native-cache");
+    expect(html).toContain("5 cached regions / 1 cached clip / 5 generated / 0 audio / 0 native event fallbacks / manual-build-native-cache");
     expect(html).toContain("Native Cache");
   });
 
@@ -582,7 +582,7 @@ describe("Pocket DAW UI rendering", () => {
 
     const html = renderAppShell(state);
 
-    expect(html).toContain("Procedural playback after live edit; rebuild cache to restore cached generated tracks.");
+    expect(html).toContain("Native event playback after live edit; rebuild cache to restore cached generated stems.");
   });
 
   it("renders media pool item metadata and render cache links", () => {
