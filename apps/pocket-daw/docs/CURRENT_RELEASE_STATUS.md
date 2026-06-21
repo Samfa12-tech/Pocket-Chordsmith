@@ -4,22 +4,24 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.22` |
+| Source version | `0.6.24` |
 | Project schema version | `2` |
-| Latest published version | `0.6.22` |
-| Latest published tag | `pocket-daw-v0.6.22` |
-| Latest published commit | `5cd186a22b6a8be9d706e1474b6a204ddbd065aa` |
-| Last installed-smoke version | `0.6.22` |
-| Last installed-smoke result | `pass` |
-| Last installed-smoke date | `2026-06-21T02:32:28Z` |
-| Last installed-smoke installer | `Pocket.DAW_0.6.22_x64-setup.exe` |
-| Last installed-smoke SHA-256 | `c7adc2aea5595490e55dbb720bed6735cd91348caef69ef249f3ff1c0868a6b7` |
+| Latest published version | `0.6.24` |
+| Latest published tag | `pocket-daw-v0.6.24` |
+| Latest published commit | `a316eb8a207f0d77fd3c17aef4f0af1176de13d1` |
+| Last installed-smoke version | `0.6.24` |
+| Last installed-smoke result | `not-run` |
+| Last installed-smoke date | `2026-06-21T03:21:10Z` |
+| Last installed-smoke installer | `Pocket.DAW_0.6.24_x64-setup.exe` |
+| Last installed-smoke SHA-256 | `b3d8f0a218b97f31984223b1069d3c2e8c73bd4d0c7a22cd21c026ddd1e70984` |
 
 ## Installed-Smoke Notes
 
-- Installed smoke for 0.6.22 used the exact staged GitHub updater setup artifact, then verified the same SHA-256 from the published latest updater manifest.
-- The smoke loaded the imported Chordsmith demo project, selected the Bass track, played through native-cpal with 24 cached assets, 60 cached regions, 0 procedural events, and no performance hotspot signals.
-- The same installer payload was pushed to the itch windows-installer channel as userversion 0.6.22.
+- Pocket DAW 0.6.24 was published to GitHub latest for a manual auto-update smoke before merging to main.
+- The latest updater manifest resolves to pocket-daw-v0.6.24 and the remote setup SHA-256 matches the staged artifact.
+- This tester build keeps the previous rendered native cache active during live composition rebuilds so discarded cache builds do not trigger full procedural fallback.
+- The guarded itch push refused without a passing exact-artifact smoke attestation, so the itch installer channel remains pending until manual smoke evidence is available.
+- Installed-app/manual smoke is intentionally pending until Sam tests the auto-update path.
 
 ## Release Truth
 
