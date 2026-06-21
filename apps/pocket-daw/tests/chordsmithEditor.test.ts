@@ -8,6 +8,7 @@ import {
   cycleDrumTuplet,
   cycleGuitarStep,
   cycleMelodyStep,
+  fillAutoBass,
   getPrimaryChordsmithSource,
   rebuildGeneratedSectionArrangement,
   setChordInstrument,
@@ -110,6 +111,46 @@ describe("Chordsmith visual sequencer edits", () => {
     expect(events.some((event) => event.kind === "bass" && event.step === 1)).toBe(true);
     expect(events.some((event) => event.kind === "melody" && event.step === 1)).toBe(true);
     expect(events.some((event) => event.kind === "guitar" && event.step === 1 && event.articulation === "chug")).toBe(true);
+  });
+
+  it("materializes auto bass across all sections before the first manual bass edit", () => {
+    let project = createDemoProject();
+    const beforeBassEvents = renderTimelineEvents(project).filter((event) => event.kind === "bass").length;
+    const before = getPrimaryChordsmithSource(project)!;
+
+    expect(before.bassMode).toBe("auto");
+    expect(before.sections.A.grid.bass.some(Boolean)).toBe(true);
+    expect(before.sections.B.grid.bass.some(Boolean)).toBe(true);
+    expect(before.sections.A.bassNotes.every((note) => note === null)).toBe(true);
+
+    project = cycleBassStep(project, "A", 1);
+
+    const pcs = getPrimaryChordsmithSource(project)!;
+    const original = project.sourceRefs[0].original as Record<string, unknown>;
+    expect(pcs.bassMode).toBe("manual");
+    expect(pcs.sections.A.bassNotes[1]).toBe(0);
+    expect(pcs.sections.A.grid.bass.every((level, step) => level <= 0 || pcs.sections.A.bassNotes[step] !== null)).toBe(true);
+    expect(pcs.sections.B.grid.bass.every((level, step) => level <= 0 || pcs.sections.B.bassNotes[step] !== null)).toBe(true);
+    expect((original.bassNotesB as Array<number | null>).some((note) => note !== null)).toBe(true);
+    expect(renderTimelineEvents(project).filter((event) => event.kind === "bass").length).toBeGreaterThanOrEqual(beforeBassEvents);
+  });
+
+  it("fills auto bass into editable manual notes without waiting for a step edit", () => {
+    let project = createDemoProject();
+    const before = getPrimaryChordsmithSource(project)!;
+
+    expect(before.bassMode).toBe("auto");
+    expect(before.sections.A.bassNotes.every((note) => note === null)).toBe(true);
+
+    project = fillAutoBass(project);
+
+    const pcs = getPrimaryChordsmithSource(project)!;
+    const original = project.sourceRefs[0].original as Record<string, unknown>;
+    expect(pcs.bassMode).toBe("manual");
+    expect(pcs.sections.A.grid.bass.every((level, step) => level <= 0 || pcs.sections.A.bassNotes[step] !== null)).toBe(true);
+    expect(pcs.sections.B.grid.bass.every((level, step) => level <= 0 || pcs.sections.B.bassNotes[step] !== null)).toBe(true);
+    expect(original.bassMode).toBe("manual");
+    expect((original.bassNotesA as Array<number | null>).some((note) => note !== null)).toBe(true);
   });
 
   it("keeps live guitar edits audible when the source re-enables a stale muted guitar track", () => {

@@ -226,7 +226,7 @@ describe("native render cache", () => {
     expect(diagnostics.nativeRenderCache.prewarmScheduled).toBe(false);
   });
 
-  it("restarts live composition edits immediately while rebuilding native caches", async () => {
+  it("keeps live composition edits cached while rebuilding native caches", async () => {
     const previousWindow = (globalThis as { window?: unknown }).window;
     (globalThis as { window?: unknown }).window = {
       setInterval: () => 1,
@@ -268,15 +268,13 @@ describe("native render cache", () => {
       expect(activeStart.assets?.length || 0).toBeGreaterThan(0);
       expect(activeStart.regions?.length || 0).toBeGreaterThan(0);
       engine.syncProject(cycleBassStep(project, "A", 0), "composition-events", "live-bass-edit");
-      await waitForAsyncCondition(() => starts.length >= 2);
-      await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.buildCount >= 2 && starts.length >= 3);
+      await Promise.resolve();
+      expect(starts).toHaveLength(1);
+      await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.buildCount >= 2 && starts.length >= 2);
       const diagnostics = engine.getDiagnostics();
       const liveEditStart = starts.at(-1)!;
 
-      expect(starts).toHaveLength(3);
-      expect(starts[1].assets?.length || 0).toBe(0);
-      expect(starts[1].regions?.length || 0).toBe(0);
-      expect(starts[1].events.length).toBeGreaterThan(0);
+      expect(starts).toHaveLength(2);
       expect(liveEditStart.assets?.length || 0).toBeGreaterThan(0);
       expect(liveEditStart.regions?.length || 0).toBeGreaterThan(0);
       expect(liveEditStart.events.length).toBe(0);

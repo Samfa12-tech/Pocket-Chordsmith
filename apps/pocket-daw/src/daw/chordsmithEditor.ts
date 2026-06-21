@@ -3,6 +3,7 @@ import { cloneProject } from "./dawProject";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STEP_CYCLE, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import { chordsmithAutoBassMidi, chordsmithBassIndexToMidi, chordsmithChordForStep } from "../../../../packages/pocket-audio-core/src/music/pitches.js";
 import {
   drumPresetEventsForProject,
   drumPresetVisibleForProject,
@@ -39,6 +40,17 @@ const GUITAR_CYCLE = POCKET_GUITAR_STEP_CYCLE;
 const GUITAR_TONES = POCKET_GUITAR_TONES;
 const GUITAR_REGISTERS = POCKET_GUITAR_REGISTERS;
 const GUITAR_STRUM_MODES = POCKET_GUITAR_STRUM_MODES;
+
+export function bassStepUsesAuto(project: SanitizedPcsProject, section: SanitizedPcsSection, step: number): boolean {
+  return project.bassMode !== "manual" && bassNoteValue(section, step) === null && (section.grid.bass[step] || 0) > 0;
+}
+
+export function bassVisibleNoteIndex(project: SanitizedPcsProject, section: SanitizedPcsSection, step: number): number | null {
+  const manual = bassNoteValue(section, step);
+  if (project.bassMode === "manual") return manual;
+  if ((section.grid.bass[step] || 0) > 0) return bassAutoStepIndex(project, section, step);
+  return null;
+}
 
 export function getPrimaryChordsmithSource(project: PocketDawProject): SanitizedPcsProject | null {
   const ref = getPrimaryChordsmithSourceRef(project);
@@ -163,16 +175,25 @@ export function applyDrumPreset(project: PocketDawProject, sectionId: SectionId,
 
 export function cycleBassStep(project: PocketDawProject, sectionId: SectionId, step: number): PocketDawProject {
   return editChordsmithSection(project, sectionId, (pcs, section) => {
+    if (pcs.bassMode !== "manual") materializeAutoBass(pcs);
     const current = section.bassNotes[step] ?? null;
     section.bassNotes[step] = nextCycleValue(BASS_CYCLE, current);
     section.bassAccent[step] = section.bassNotes[step] !== null && step % Math.max(1, pcs.resolution * pcs.timeSig) === 0;
-    pcs.bassMode = section.bassNotes.some((note) => note !== null) ? "manual" : pcs.bassMode;
+    pcs.bassMode = anyManualBassNotes(pcs) ? "manual" : pcs.bassMode;
   });
 }
 
 export function setBassMode(project: PocketDawProject, mode: string): PocketDawProject {
   return editChordsmithProject(project, (pcs) => {
+    if (mode === "manual" && pcs.bassMode !== "manual") materializeAutoBass(pcs);
     pcs.bassMode = mode === "manual" ? "manual" : "auto";
+  });
+}
+
+export function fillAutoBass(project: PocketDawProject): PocketDawProject {
+  return editChordsmithProject(project, (pcs) => {
+    materializeAutoBass(pcs);
+    pcs.bassMode = "manual";
   });
 }
 
@@ -199,6 +220,7 @@ export function toggleBassTuplet(project: PocketDawProject, sectionId: SectionId
 
 export function toggleBassAccent(project: PocketDawProject, sectionId: SectionId, step: number): PocketDawProject {
   return editChordsmithSection(project, sectionId, (pcs, section) => {
+    if (pcs.bassMode !== "manual") materializeAutoBass(pcs);
     ensureStep(section.bassAccent, step, false);
     section.bassAccent[step] = !section.bassAccent[step];
     pcs.bassMode = "manual";
@@ -318,6 +340,58 @@ function syncGuitarTrackFromSource(project: PocketDawProject, pcs: SanitizedPcsP
   };
 }
 
+function materializeAutoBass(project: SanitizedPcsProject) {
+  SECTION_IDS.forEach((sectionId) => {
+    const section = project.sections[sectionId];
+    if (!section) return;
+    const totalSteps = totalEditorSteps(project, section);
+    for (let step = 0; step < totalSteps; step += 1) {
+      const level = section.grid.bass[step] || 0;
+      if (level <= 0) continue;
+      ensureStep(section.bassNotes, step, null);
+      ensureStep(section.bassAccent, step, false);
+      if (section.bassNotes[step] === null || section.bassNotes[step] === undefined) {
+        section.bassNotes[step] = bassAutoStepIndex(project, section, step);
+      }
+      if (level === 2) section.bassAccent[step] = true;
+    }
+  });
+}
+
+function anyManualBassNotes(project: SanitizedPcsProject) {
+  return SECTION_IDS.some((sectionId) => project.sections[sectionId]?.bassNotes.some((note) => note !== null && note !== undefined));
+}
+
+function bassAutoStepIndex(project: SanitizedPcsProject, section: SanitizedPcsSection, step: number): number {
+  const chord = chordsmithChordForStep({
+    key: project.key,
+    scale: project.scale,
+    chordType: project.chordType,
+    timeSig: project.timeSig,
+    resolution: project.resolution,
+    progression: section.progression,
+    step
+  });
+  const targetMidi = chordsmithAutoBassMidi({ rootPc: chord.rootPc });
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let index = 0; index <= 13; index += 1) {
+    const midi = chordsmithBassIndexToMidi({ key: project.key, scale: project.scale, noteIndex: index });
+    const distance = Math.abs(midi - targetMidi);
+    if (distance < bestDistance) {
+      bestIndex = index;
+      bestDistance = distance;
+      if (distance === 0) break;
+    }
+  }
+  return bestIndex;
+}
+
+function bassNoteValue(section: SanitizedPcsSection, step: number): number | null {
+  const value = section.bassNotes[step];
+  return value === null || value === undefined ? null : value;
+}
+
 function editChordsmithProject(
   project: PocketDawProject,
   updater: (pcs: SanitizedPcsProject, project: PocketDawProject) => void
@@ -327,7 +401,8 @@ function editChordsmithProject(
   const pcs = (ref?.normalized as unknown as SanitizedPcsProject) || null;
   if (!ref || !pcs) return project;
   updater(pcs, next);
-  syncChordsmithOriginalGlobals(ref, pcs);
+  if (pcs.bassMode === "manual") syncChordsmithOriginalAllSections(ref, pcs);
+  else syncChordsmithOriginalGlobals(ref, pcs);
   ref.normalized = pcs as unknown as SourceRef["normalized"];
   syncGeneratedSectionTimeline(next, pcs);
   return next;
@@ -346,7 +421,8 @@ function editChordsmithSection(
   if (!ref || !pcs || !section) return project;
   updater(pcs, section);
   section.active = true;
-  syncChordsmithOriginalShadow(ref, pcs, sectionId);
+  if (pcs.bassMode === "manual") syncChordsmithOriginalAllSections(ref, pcs);
+  else syncChordsmithOriginalShadow(ref, pcs, sectionId);
   ref.normalized = pcs as unknown as SourceRef["normalized"];
   syncGeneratedSectionTimeline(next, pcs);
   afterSync?.(next, pcs);
@@ -413,6 +489,10 @@ function mergeSectionMarkers(project: PocketDawProject, sectionMarkers: Timeline
     return { ...marker, id };
   });
   project.timeline.markers = [...preserved, ...merged].sort((a, b) => a.bar - b.bar || a.id.localeCompare(b.id));
+}
+
+function syncChordsmithOriginalAllSections(ref: SourceRef, pcs: SanitizedPcsProject) {
+  SECTION_IDS.forEach((sectionId) => syncChordsmithOriginalShadow(ref, pcs, sectionId));
 }
 
 function uniqueMarkerId(id: string, used: Set<string>) {

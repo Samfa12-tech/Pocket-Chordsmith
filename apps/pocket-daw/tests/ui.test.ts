@@ -746,6 +746,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('id="chordsmithFollowClip"');
     expect(html).toContain('data-chordsmith-global="bpm"');
     expect(html).toContain('data-bass-mode="true"');
+    expect(html).toContain('data-bass-fill-auto="true"');
     expect(html).toContain('data-bass-step="A:16"');
     expect(html).toContain("Select then press H, S or T.");
     expect(html).not.toContain('data-bass-hold="A:16"');

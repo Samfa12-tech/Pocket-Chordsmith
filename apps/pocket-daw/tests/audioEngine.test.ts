@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { AudioEngine, calculateLoopSeekSeconds } from "../src/audio/audioEngine";
 import { createDemoProject } from "../src/demo/demoProject";
-import type { NativeAudioStatus } from "../src/native/audioPlayback";
+import type { NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
 import { cycleBassStep } from "../src/daw/chordsmithEditor";
 import { addTrackToProject } from "../src/daw/tracks";
 import { nativeRenderCacheSignature, type NativeRenderCache } from "../src/audio/nativeRenderCache";
+import type { PocketDawProject } from "../src/daw/schema";
 
 describe("audio engine diagnostics", () => {
   it("reports event counts without starting playback", () => {
@@ -239,16 +240,10 @@ describe("audio engine diagnostics", () => {
       setInterval: () => 1,
       clearInterval: () => undefined
     };
-    const starts: Array<{ startSeconds: number; events: unknown[] }> = [];
-    const deferredRestarts: Deferred<void>[] = [];
+    const starts: NativeAudioStartPayload[] = [];
     const native = {
-      async start(payload: { startSeconds: number; events: unknown[] }) {
+      async start(payload: NativeAudioStartPayload) {
         starts.push(payload);
-        if (starts.length > 1) {
-          const deferred = createDeferred<void>();
-          deferredRestarts.push(deferred);
-          await deferred.promise;
-        }
         return {
           started: true,
           status: nativeStatus({ playing: true, positionSeconds: payload.startSeconds, eventCount: payload.events.length }),
@@ -266,8 +261,25 @@ describe("audio engine diagnostics", () => {
     try {
       const project = createDemoProject();
       const engine = new AudioEngine(project, native);
+      const internals = engine as unknown as {
+        nativeRenderCache: NativeRenderCache | null;
+        nativeRenderCacheBuildCount: number;
+        nativeRenderCacheLastBuildReason: string | null;
+        nativeRenderCacheError: string | null;
+        project: PocketDawProject;
+        ensureNativeRenderCache(reason: string): Promise<NativeRenderCache | null>;
+      };
+      internals.nativeRenderCache = fakeNativeRenderCache(project);
+      internals.ensureNativeRenderCache = async (reason: string) => {
+        await Promise.resolve();
+        const cache = fakeNativeRenderCache(internals.project);
+        internals.nativeRenderCache = cache;
+        internals.nativeRenderCacheBuildCount += 1;
+        internals.nativeRenderCacheLastBuildReason = reason;
+        internals.nativeRenderCacheError = null;
+        return cache;
+      };
 
-      await engine.rebuildNativeRenderCache("test-prebuild");
       await engine.play();
       const editA = cycleBassStep(project, "A", 0);
       const editB = cycleBassStep(editA, "A", 1);
@@ -276,19 +288,19 @@ describe("audio engine diagnostics", () => {
       engine.syncProject(editA, "composition-events", "bass-edit-a");
       engine.syncProject(editB, "composition-events", "bass-edit-b");
       engine.syncProject(editC, "composition-events", "bass-edit-c");
-      await waitForAsyncCondition(() => starts.length >= 2);
-      expect(starts).toHaveLength(2);
-      expect(deferredRestarts).toHaveLength(1);
 
-      deferredRestarts[0].resolve();
-      await waitForAsyncCondition(() => starts.length >= 3);
+      await Promise.resolve();
+      expect(starts).toHaveLength(1);
       await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.buildCount >= 2);
+      await waitForAsyncCondition(() => starts.length >= 2);
 
-      expect(starts).toHaveLength(3);
-      expect(deferredRestarts).toHaveLength(2);
+      expect(starts).toHaveLength(2);
+      expect(starts.slice(1).every((start) => start.events.length === 0)).toBe(true);
+      expect(starts.slice(1).every((start) => (start.regions?.length || 0) > 0)).toBe(true);
       expect(engine.getDiagnostics().lastProjectSyncReason).toBe("bass-edit-c");
+      expect(engine.getDiagnostics().nativeRenderCache.lastBuildReason).toBe("bass-edit-c");
+      expect(engine.getDiagnostics().nativeRenderCache.nativeRenderCacheBypassedForLiveEdits).toBe(false);
     } finally {
-      deferredRestarts.forEach((deferred) => deferred.resolve());
       (globalThis as any).window = previousWindow;
     }
   });
@@ -344,17 +356,42 @@ async function waitForAsyncCondition(condition: () => boolean, attempts = 25): P
   }
 }
 
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve: (value: T | PromiseLike<T>) => void;
-}
-
-function createDeferred<T>(): Deferred<T> {
-  let resolve: Deferred<T>["resolve"] = () => {};
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
+function fakeNativeRenderCache(project: PocketDawProject): NativeRenderCache {
+  const signature = nativeRenderCacheSignature(project);
+  const assetId = `asset_${signature.slice(0, 8)}`;
+  return {
+    signature,
+    assets: [{
+      id: assetId,
+      name: "Test cached render",
+      sampleRate: project.project.sampleRate,
+      channels: 2,
+      durationSeconds: 1,
+      sizeBytes: 1,
+      bytes: [0]
+    }],
+    regions: [{
+      id: `region_${signature.slice(0, 8)}`,
+      assetId,
+      trackId: "bass",
+      startTime: 0,
+      sourceOffset: 0,
+      duration: 1,
+      gain: 1,
+      pan: 0,
+      fadeIn: 0,
+      fadeOut: 0
+    }],
+    cachedClipIds: new Set(project.timeline.clips.map((clip) => clip.id)),
+    renderCacheItems: [],
+    renderCacheHitCount: 0,
+    renderCacheMissCount: 0,
+    proceduralFallbackEventCount: 0,
+    generatedRegionCount: 1,
+    runtimeAudioRegionCount: 0,
+    missingRuntimeAudioRegionCount: 0,
+    cachedAssetByteCount: 1
+  };
 }
 
 function nativeStatus(overrides: Partial<NativeAudioStatus> = {}): NativeAudioStatus {

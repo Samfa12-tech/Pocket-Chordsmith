@@ -2842,7 +2842,7 @@ dependencies = [
 
 [[package]]
 name = "pocket-daw"
-version = "0.6.22"
+version = "0.6.23"
 dependencies = [
  "cpal",
  "rand",

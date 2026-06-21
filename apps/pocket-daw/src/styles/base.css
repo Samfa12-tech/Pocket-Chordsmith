@@ -1318,6 +1318,18 @@ button.record:hover {
   background: #173247;
 }
 
+.note-step.auto-bass {
+  border-style: dashed;
+  color: #dce7ff;
+  background: #13263a;
+}
+
+.note-step.auto-bass.accent {
+  border-color: rgba(255, 200, 87, 0.82);
+  color: #fff4c6;
+  background: #493711;
+}
+
 .meta-step.accent {
   border-color: rgba(255, 200, 87, 0.82);
   color: #fff4c6;

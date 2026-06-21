@@ -290,9 +290,8 @@ export class AudioEngine {
       if (mode === "mixer-controls") {
         this.syncNativeMixerControls();
       } else if (mode === "composition-events") {
-        this.nativeRenderCacheBypassedForLiveEdits = true;
-        void this.restartNativePlayback(current, { reason, useRenderCache: false });
-        void this.prepareNativeRenderCacheAfterLiveCompositionEdit("live-composition-edit");
+        this.nativeRenderCacheBypassedForLiveEdits = false;
+        void this.restartNativePlaybackAfterFreshRenderCache(reason);
       } else if (this.readyNativeRenderCache()) {
         void this.restartNativePlayback(current, { reason });
       } else {
@@ -719,17 +718,6 @@ export class AudioEngine {
       return;
     }
     await this.restartNativePlayback(this.currentSeconds(), { reason, useRenderCache: false });
-  }
-
-  private async prepareNativeRenderCacheAfterLiveCompositionEdit(reason: string): Promise<void> {
-    const token = this.nativeLiveCompositionCacheToken + 1;
-    this.nativeLiveCompositionCacheToken = token;
-    const cache = await this.ensureNativeRenderCache(reason);
-    if (token !== this.nativeLiveCompositionCacheToken || this.playbackBackend !== "native-cpal" || !this.playing) return;
-    if (cache) {
-      this.nativeRenderCacheBypassedForLiveEdits = false;
-      await this.restartNativePlayback(this.currentSeconds(), { reason, useRenderCache: true });
-    }
   }
 
   private activeNativeRenderCache(): NativeRenderCache | null {

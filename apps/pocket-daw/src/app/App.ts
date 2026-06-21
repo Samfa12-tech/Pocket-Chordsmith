@@ -76,6 +76,7 @@ import {
   deleteAutomationPointCommand,
   deleteMidiNoteCommand,
   duplicateSelectedClip,
+  fillAutoBassCommand,
   importTextToProject,
   loadPocketDawRaw,
   moveClipToBarCommand,
@@ -868,6 +869,9 @@ export class App {
     });
     this.root.querySelector<HTMLSelectElement>("[data-bass-mode]")?.addEventListener("change", (event) => {
       this.applyChordsmithEditorEdit(setBassModeCommand(this.state, (event.target as HTMLSelectElement).value), "chordsmith-bass-mode");
+    });
+    this.root.querySelector<HTMLButtonElement>("[data-bass-fill-auto]")?.addEventListener("click", () => {
+      this.applyChordsmithEditorEdit(fillAutoBassCommand(this.state), "chordsmith-bass-fill-auto");
     });
     this.root.querySelector<HTMLSelectElement>("[data-chord-instrument]")?.addEventListener("change", (event) => {
       this.applyChordsmithEditorEdit(setChordInstrumentCommand(this.state, (event.target as HTMLSelectElement).value), "chordsmith-chord-instrument");

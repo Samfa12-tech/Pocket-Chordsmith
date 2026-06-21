@@ -15,7 +15,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Recording Hardening Alpha`;
+export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Bass Handover + Cache Alpha`;
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -221,7 +221,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Native Transport + Cache Alpha
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Bass Handover + Cache Alpha
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -231,6 +231,10 @@ ${artifactTable}
 
 ## Highlights
 
+- Imported auto-bass projects now show their audible auto bass in the bass timeline/editor instead of looking empty.
+- The first manual bass edit now fills the existing auto bass into editable manual notes across all sections, so changing one note does not erase the rest of the line.
+- Added a Bass inspector "Fill auto bass" button to intentionally copy the current auto-bass line into manual notes.
+- Live native composition edits keep cached playback running while a fresh native render cache is rebuilt, avoiding the previous all-track procedural handover during small edits.
 - Hardened the installed-app live recording path for Windows smoke testing.
 - Preserved fractional recording placement and same-track overwrite splitting around recorded takes.
 - Moved heavy recording preparation before count-in, guards stale recording sessions, and keeps stopped-transport count-in coherent.

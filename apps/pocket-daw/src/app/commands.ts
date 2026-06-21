@@ -22,6 +22,7 @@ import {
   cycleDrumStep,
   cycleGuitarStep,
   cycleMelodyStep,
+  fillAutoBass,
   getPrimaryChordsmithSource,
   isSectionId,
   setBassMode,
@@ -458,6 +459,10 @@ export function cycleBassStepCommand(state: AppState, sectionId: string, step: n
 
 export function setBassModeCommand(state: AppState, mode: string): AppState {
   return commitProject(state, setBassMode(state.undoStack.present, mode), `Bass mode set to ${mode === "manual" ? "manual" : "auto"}.`);
+}
+
+export function fillAutoBassCommand(state: AppState): AppState {
+  return commitProject(state, fillAutoBass(state.undoStack.present), "Filled manual bass from auto bass.");
 }
 
 export function toggleBassHoldCommand(state: AppState, sectionId: string, step: number): AppState {

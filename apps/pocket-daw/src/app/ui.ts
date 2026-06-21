@@ -2,7 +2,7 @@ import type { AppState } from "./state";
 import { currentProject, type ChordsmithStepSelection } from "./state";
 import { BUILT_IN_FX, getTrackFxChain } from "../daw/fx";
 import { DRUM_LANE_DEFS, getDrumLaneFxChain, getDrumLaneMix } from "../daw/drumLanes";
-import { getPrimaryChordsmithSource, totalEditorSteps, visibleEditorSteps } from "../daw/chordsmithEditor";
+import { bassStepUsesAuto, bassVisibleNoteIndex, getPrimaryChordsmithSource, totalEditorSteps, visibleEditorSteps } from "../daw/chordsmithEditor";
 import { drumPresetLabel, visibleDrumPresetsForProject } from "../daw/chordsmithDrumPresets";
 import { POCKET_DAW_VERSION, type Clip, type FxChain, type FxPluginInstance, type Track } from "../daw/schema";
 import { POCKET_PRO_EQ_BANDS, POCKET_PRO_EQ_PRESETS, POCKET_PRO_EQ_TYPE } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
@@ -454,7 +454,7 @@ function renderInlineChordsmithClip(
     track.role === "drums"
       ? renderInlineDrumEditor(section, sourceStartStep, renderSteps, state.chordsmithStepSelection)
       : track.role === "bass"
-        ? renderInlineBassEditor(section, sourceStartStep, renderSteps, state.chordsmithStepSelection)
+        ? renderInlineBassEditor(pcs, section, sourceStartStep, renderSteps, state.chordsmithStepSelection)
         : track.role === "chords"
           ? renderInlineChordEditor(section, sourceStartBar, Math.min(clip.barLength, section.bars - sourceStartBar))
           : track.role === "melody"
@@ -492,16 +492,19 @@ function renderInlineDrumEditor(section: SanitizedPcsSection, startStep: number,
   `;
 }
 
-function renderInlineBassEditor(section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
+function renderInlineBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   return `
     <div class="inline-lane single-inline-lane" aria-label="Bass steps">
       <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
-          const note = section.bassNotes[actualStep];
+          const note = bassVisibleNoteIndex(pcs, section, actualStep);
+          const auto = bassStepUsesAuto(pcs, section, actualStep);
+          const accent = pcs.bassMode === "manual" ? !!section.bassAccent[actualStep] : (section.grid.bass[actualStep] || 0) === 2;
           const tuplet = !!section.gridTuplets.bass[actualStep];
           const selected = selection?.kind === "bass" && selection.sectionId === section.id && selection.step === actualStep;
-          return `<button class="step timeline-step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Bass note step ${actualStep + 1}. Select then press H, S or T." data-bass-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${note === null || note === undefined ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep], tuplet })}</button>`;
+          const title = auto ? `Auto bass step ${actualStep + 1}. Click to convert auto bass to editable manual notes.` : `Bass note step ${actualStep + 1}. Select then press H, S or T.`;
+          return `<button class="step timeline-step note-step ${note === null ? "" : "on"} ${auto ? "auto-bass" : ""} ${accent ? "accent" : ""} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${escapeAttr(title)}" data-bass-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${note === null ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep], tuplet })}</button>`;
         }).join("")}
       </div>
     </div>
@@ -931,20 +934,25 @@ function renderBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection
           <option value="manual" ${pcs.bassMode === "manual" ? "selected" : ""}>Manual notes</option>
         </select>
       </label>
+      <button type="button" data-bass-fill-auto="true" title="Copy the current auto bass line into editable manual bass notes without clearing existing manual notes.">Fill auto bass</button>
       ${renderStepRuler(startStep, steps)}
       <div class="sequencer-row">
         <span>note</span>
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
-          const note = section.bassNotes[actualStep];
+          const note = bassVisibleNoteIndex(pcs, section, actualStep);
+          const auto = bassStepUsesAuto(pcs, section, actualStep);
+          const accent = pcs.bassMode === "manual" ? !!section.bassAccent[actualStep] : (section.grid.bass[actualStep] || 0) === 2;
           const tuplet = !!section.gridTuplets.bass[actualStep];
           const selected = selection?.kind === "bass" && selection.sectionId === section.id && selection.step === actualStep;
-          return `<button class="step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Bass note step ${actualStep + 1}. Select then press H, S or T." data-bass-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${note === null || note === undefined ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep], tuplet })}</button>`;
+          const title = auto ? `Auto bass step ${actualStep + 1}. Click to convert auto bass to editable manual notes.` : `Bass note step ${actualStep + 1}. Select then press H, S or T.`;
+          return `<button class="step note-step ${note === null ? "" : "on"} ${auto ? "auto-bass" : ""} ${accent ? "accent" : ""} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${escapeAttr(title)}" data-bass-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${note === null ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep], tuplet })}</button>`;
         }).join("")}
       </div>
       ${renderMetaStepRow("accent", steps, (step) => {
         const actualStep = startStep + step;
-        return `<button class="step meta-step ${section.bassAccent[actualStep] ? "on accent" : ""}" title="Bass accent step ${actualStep + 1}" data-bass-accent="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${section.bassAccent[actualStep] ? "!" : ""}</button>`;
+        const accent = pcs.bassMode === "manual" ? !!section.bassAccent[actualStep] : (section.grid.bass[actualStep] || 0) === 2;
+        return `<button class="step meta-step ${accent ? "on accent" : ""}" title="Bass accent step ${actualStep + 1}" data-bass-accent="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${accent ? "!" : ""}</button>`;
       })}
     </div>
   `;
