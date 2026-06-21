@@ -12,7 +12,7 @@ import { scheduleInstrumentEvent } from "./instruments";
 import { chordsmithSidechainSettings, isChordsmithSidechainTrigger, scheduleChordsmithSidechainDuck } from "./sidechain";
 import { activeAutomationLaneCount, getAutomatedTrackControls } from "../daw/automation";
 import { activeTrackSendRoutes } from "../daw/routing";
-import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioStartResult, type NativeAudioStatus } from "../native/audioPlayback";
+import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioAsset, type NativeAudioStartResult, type NativeAudioStatus } from "../native/audioPlayback";
 import type { RecordingNativePlaybackAnchor } from "../app/state";
 import {
   buildNativeRenderCache,
@@ -46,6 +46,7 @@ interface DrumLaneOutput {
 
 interface NativePlaybackBridgeLike {
   start(payload: ReturnType<typeof buildNativeAudioStartPayload>): Promise<NativeAudioStartResult>;
+  preloadAssets?(assets: NativeAudioAsset[]): Promise<number>;
   pause(): Promise<NativeAudioStatus | null>;
   resume(): Promise<NativeAudioStatus | null>;
   stop(): Promise<NativeAudioStatus | null>;
@@ -135,6 +136,10 @@ export class AudioEngine {
   private nativeRenderCacheStaleSourceHashCount = 0;
   private nativeRenderCacheSkippedInvalidPathCount = 0;
   private nativeRenderCacheHydratedReadByteCount = 0;
+  private nativeRenderCachePreloadPromise: Promise<void> | null = null;
+  private nativeRenderCachePreloadSignature: string | null = null;
+  private nativeRenderCachePreloadedAssetCount = 0;
+  private nativeRenderCachePreloadError: string | null = null;
   private nativeRenderCachePrewarmHandle: number | null = null;
   private nativeRenderCachePrewarmUsesIdleCallback = false;
   private nativeRenderCachePrewarmScheduled = false;
@@ -229,6 +234,7 @@ export class AudioEngine {
     this.nativeRenderCacheError = result.errors[0] || null;
     if (result.cache && result.cache.signature === nativeRenderCacheSignature(this.project)) {
       this.nativeRenderCache = result.cache;
+      this.preloadNativeRenderCacheAssetsWhenIdle(result.cache);
     }
     return result;
   }
@@ -583,6 +589,9 @@ export class AudioEngine {
         cachedAssetByteCount: activeNativeRenderCache?.cachedAssetByteCount || 0,
         generatedStemRenderFailureCount: activeNativeRenderCache?.generatedStemRenderFailureCount || 0,
         lastGeneratedStemRenderError: activeNativeRenderCache?.lastGeneratedStemRenderError || null,
+        preloadPending: this.nativeRenderCachePreloadPromise !== null,
+        preloadedAssetCount: this.nativeRenderCachePreloadedAssetCount,
+        preloadError: this.nativeRenderCachePreloadError,
         buildPending: this.nativeRenderCacheBuildPromise !== null,
         prewarmScheduled: this.nativeRenderCachePrewarmScheduled,
         pendingReason: this.nativeRenderCachePendingReason,
@@ -814,6 +823,31 @@ export class AudioEngine {
     return mergeNativePlaybackCaches(cache, runtimeCache, this.audioRegions.length);
   }
 
+  private preloadNativeRenderCacheAssetsWhenIdle(cache: NativeRenderCache | null): void {
+    if (!cache?.assets.length || this.playing || !this.nativePlayback.preloadAssets) return;
+    const signature = cache.signature;
+    if (this.nativeRenderCachePreloadPromise && this.nativeRenderCachePreloadSignature === signature) return;
+    this.nativeRenderCachePreloadSignature = signature;
+    this.nativeRenderCachePreloadedAssetCount = 0;
+    this.nativeRenderCachePreloadError = null;
+    this.nativeRenderCachePreloadPromise = (async () => {
+      try {
+        const loaded = await this.nativePlayback.preloadAssets!(cache.assets);
+        if (this.nativeRenderCache?.signature === signature) {
+          this.nativeRenderCachePreloadedAssetCount = loaded;
+        }
+      } catch (error) {
+        if (this.nativeRenderCache?.signature === signature) {
+          this.nativeRenderCachePreloadError = error instanceof Error ? error.message : "Native asset preload failed.";
+        }
+      } finally {
+        if (this.nativeRenderCachePreloadSignature === signature) {
+          this.nativeRenderCachePreloadPromise = null;
+        }
+      }
+    })();
+  }
+
   private nativePlaybackCacheForPayload(cache: NativeRenderCache | null, seconds: number): NativeRenderCache | null {
     this.nativePlaybackCachePayloadWindowEndSeconds = 0;
     if (!cache?.regions.length || !cache.assets.length) return cache;
@@ -931,6 +965,7 @@ export class AudioEngine {
         }
         this.nativeRenderCache = cache;
         this.nativeRenderCacheStaleForLiveEdits = false;
+        this.preloadNativeRenderCacheAssetsWhenIdle(cache);
         return this.nativeRenderCache;
       } catch (error) {
         if (!this.nativeRenderCacheStaleForLiveEdits) this.nativeRenderCache = null;

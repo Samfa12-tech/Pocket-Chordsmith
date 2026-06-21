@@ -434,6 +434,18 @@ pub fn native_audio_start(
 }
 
 #[tauri::command]
+pub fn native_audio_preload_asset(
+    asset: NativeAudioAssetPayload,
+    state: tauri::State<'_, NativeAudioState>,
+) -> Result<NativeAudioStatus, String> {
+    let mut runtime = state
+        .lock()
+        .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
+    runtime.decode_or_reuse_asset(&asset)?;
+    Ok(runtime.status())
+}
+
+#[tauri::command]
 pub fn native_audio_render_wav(
     payload: NativeAudioStartPayload,
     duration_seconds: f64,

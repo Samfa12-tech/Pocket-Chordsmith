@@ -262,6 +262,50 @@ describe("native audio playback bridge", () => {
     expect(secondAssets[0].bytes).toBeUndefined();
   });
 
+  it("preloads native assets so the first cached start can send metadata only", async () => {
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeAudioInvokeApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return status({ active: true }) as never;
+      }
+    };
+    const bridge = new NativeAudioPlaybackBridge(async () => api);
+    const cache = {
+      assets: [{
+        id: "asset_preloaded_loop",
+        name: "Preloaded loop.wav",
+        sampleRate: 48000,
+        channels: 2,
+        durationSeconds: 8,
+        bytes: [82, 73, 70, 70]
+      }],
+      regions: [{
+        id: "region_preloaded_loop",
+        assetId: "asset_preloaded_loop",
+        trackId: "bass",
+        startTime: 0,
+        sourceOffset: 0,
+        duration: 8,
+        gain: 1,
+        pan: 0,
+        fadeIn: 0,
+        fadeOut: 0
+      }]
+    };
+    const payload = buildNativeAudioStartPayload(createDemoProject(), [], 0, cache);
+
+    await expect(bridge.preloadAssets(cache.assets)).resolves.toBe(1);
+    await bridge.start(payload);
+
+    expect(calls.map((call) => call.command)).toEqual(["native_audio_preload_asset", "native_audio_start"]);
+    const preloadedAsset = calls[0].args?.asset as { bytes?: number[] };
+    const startAssets = (calls[1].args?.payload as { assets: Array<{ bytes?: number[] }> }).assets;
+    expect(preloadedAsset.bytes).toEqual([82, 73, 70, 70]);
+    expect(startAssets[0].bytes).toBeUndefined();
+  });
+
   it("uses native Tauri commands for start, pause, resume, seek, mixer updates and stop", async () => {
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
     const api: NativeAudioInvokeApi = {

@@ -238,6 +238,7 @@ pub fn run() {
             native_audio::native_audio_status,
             native_audio::native_audio_render_wav,
             native_audio::native_audio_start,
+            native_audio::native_audio_preload_asset,
             native_audio::native_audio_pause,
             native_audio::native_audio_resume,
             native_audio::native_audio_seek,

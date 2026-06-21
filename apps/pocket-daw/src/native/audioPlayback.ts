@@ -187,6 +187,27 @@ export class NativeAudioPlaybackBridge {
     }
   }
 
+  async preloadAssets(assets: NativeAudioAsset[]): Promise<number> {
+    const api = await this.apiFactory();
+    if (!api?.isAvailable()) return 0;
+    let loaded = 0;
+    for (const asset of assets) {
+      if (this.knownNativeAssetIds.has(asset.id)) {
+        loaded += 1;
+        continue;
+      }
+      if (!asset.bytes?.length) continue;
+      try {
+        await api.invoke<NativeAudioStatus>("native_audio_preload_asset", { asset });
+        this.knownNativeAssetIds.add(asset.id);
+        loaded += 1;
+      } catch {
+        // Playback can still send bytes for assets that fail to preload.
+      }
+    }
+    return loaded;
+  }
+
   async pause(): Promise<NativeAudioStatus | null> {
     return this.invokeIfAvailable("native_audio_pause");
   }
