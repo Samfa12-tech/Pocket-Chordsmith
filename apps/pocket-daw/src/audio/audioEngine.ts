@@ -132,6 +132,7 @@ export class AudioEngine {
   private nativeRenderCachePrewarmHandle: number | null = null;
   private nativeRenderCachePrewarmUsesIdleCallback = false;
   private nativeRenderCachePrewarmScheduled = false;
+  private nativeLiveRenderCacheRefreshHandle: number | null = null;
   private nativeRenderCachePendingReason: string | null = null;
   private playbackBackend: PlaybackBackend = "idle";
   private nativeStartedAtMs = 0;
@@ -270,6 +271,7 @@ export class AudioEngine {
         && liveNativeCompositionEdit
         && previousNativeRenderCache.signature !== renderCacheSignature;
       this.cancelNativeRenderCachePrewarm();
+      if (mode !== "composition-events") this.cancelLiveNativeRenderCacheRefresh();
       this.cancelNativeRuntimeAudioCachePrewarm();
       if (!this.runtimeAudioCacheStillValidFor(project)) this.nativeRuntimeAudioCache = null;
       if (this.playbackBackend === "native-cpal-paused") {
@@ -304,7 +306,7 @@ export class AudioEngine {
         this.nativeRenderCacheBypassedForLiveEdits = false;
         const stalePlaybackCache = this.playableNativeRenderCache();
         void this.restartNativePlayback(current, { reason: `${reason}-stale-cache`, useRenderCache: !!stalePlaybackCache });
-        this.deferNativeRenderCacheRefresh(reason);
+        this.scheduleLiveNativeRenderCacheRefresh(reason);
       } else if (this.readyNativeRenderCache()) {
         void this.restartNativePlayback(current, { reason });
       } else {
@@ -412,12 +414,14 @@ export class AudioEngine {
 
   stop() {
     this.cancelPendingNativeRestarts();
+    const pendingCacheReason = this.nativeRenderCachePendingReason || "stop-idle";
+    this.cancelLiveNativeRenderCacheRefresh();
     this.playing = false;
     this.playbackBackend = "idle";
     this.nativePlaybackStartedWithRenderCache = false;
     this.nativeRenderCacheBypassedForLiveEdits = false;
     this.nativeRenderCacheStaleForLiveEdits = false;
-    this.scheduleNativeRenderCachePrewarm(this.nativeRenderCachePendingReason || "stop-idle");
+    this.scheduleNativeRenderCachePrewarm(pendingCacheReason);
     this.lastAudioDropCause = "stop";
     this.offsetSeconds = 0;
     this.nextEventIndex = 0;
@@ -437,6 +441,7 @@ export class AudioEngine {
 
   pause() {
     this.cancelPendingNativeRestarts();
+    this.cancelLiveNativeRenderCacheRefresh();
     const wasNative = this.playbackBackend === "native-cpal";
     this.offsetSeconds = this.currentSeconds();
     this.playing = false;
@@ -899,6 +904,23 @@ export class AudioEngine {
     if (options.scheduleWhenIdle !== false && !this.playing) this.scheduleNativeRenderCachePrewarm(reason);
   }
 
+  private scheduleLiveNativeRenderCacheRefresh(reason: string): void {
+    this.nativeRenderCachePendingReason = reason;
+    this.cancelLiveNativeRenderCacheRefresh();
+    const liveWindow = typeof window !== "undefined" ? window : null;
+    if (!liveWindow || typeof liveWindow.setTimeout !== "function") return;
+    this.nativeLiveRenderCacheRefreshHandle = liveWindow.setTimeout(() => {
+      this.nativeLiveRenderCacheRefreshHandle = null;
+      const buildReason = this.nativeRenderCachePendingReason || reason;
+      this.nativeRenderCachePendingReason = null;
+      if (this.playbackBackend === "native-cpal" && this.playing) {
+        void this.restartNativePlaybackAfterFreshRenderCache(buildReason);
+      } else if (!this.playing) {
+        this.scheduleNativeRenderCachePrewarm(buildReason);
+      }
+    }, 220);
+  }
+
   private activateReadyNativeRenderCacheAfterFallback(reason: string) {
     if (!this.readyNativeRenderCache()) return;
     void this.activateNativeRenderCacheForCurrentPlayback(reason, { onlyIfProceduralFallback: true });
@@ -980,6 +1002,13 @@ export class AudioEngine {
     this.nativeRenderCachePrewarmHandle = null;
     this.nativeRenderCachePrewarmScheduled = false;
     this.nativeRenderCachePendingReason = null;
+  }
+
+  private cancelLiveNativeRenderCacheRefresh() {
+    if (this.nativeLiveRenderCacheRefreshHandle !== null && typeof window !== "undefined") {
+      window.clearTimeout(this.nativeLiveRenderCacheRefreshHandle);
+    }
+    this.nativeLiveRenderCacheRefreshHandle = null;
   }
 
   private cancelNativeRuntimeAudioCachePrewarm() {

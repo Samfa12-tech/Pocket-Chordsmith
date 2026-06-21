@@ -594,6 +594,78 @@ describe("audio engine diagnostics", () => {
     }
   });
 
+  it("refreshes live native composition edits back to cached playback", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      setInterval: () => 1,
+      clearInterval: () => undefined,
+      setTimeout: (callback: () => void) => {
+        queueMicrotask(callback);
+        return 1;
+      },
+      clearTimeout: () => undefined
+    };
+    const starts: NativeAudioStartPayload[] = [];
+    const native = {
+      async start(payload: NativeAudioStartPayload) {
+        starts.push(payload);
+        return {
+          started: true,
+          status: nativeStatus({
+            playing: true,
+            positionSeconds: payload.startSeconds,
+            eventCount: payload.events.length,
+            assetCount: payload.assets?.length || 0,
+            assetRegionCount: payload.regions?.length || 0,
+            proceduralEventCount: payload.events.length
+          }),
+          error: null
+        };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true }); }
+    };
+
+    try {
+      const project = createDemoProject();
+      const edited = cycleBassStep(project, "A", 0);
+      const engine = new AudioEngine(project, native);
+      const internals = engine as unknown as {
+        nativeRenderCache: NativeRenderCache | null;
+        nativeRenderCacheBuildCount: number;
+        nativeRenderCacheLastBuildReason: string | null;
+        ensureNativeRenderCache(reason: string): Promise<NativeRenderCache | null>;
+      };
+      internals.nativeRenderCache = fakeNativeRenderCache(project);
+      internals.ensureNativeRenderCache = async (reason: string) => {
+        internals.nativeRenderCacheBuildCount += 1;
+        internals.nativeRenderCacheLastBuildReason = reason;
+        internals.nativeRenderCache = fakeNativeRenderCache(edited);
+        return internals.nativeRenderCache;
+      };
+
+      await engine.play();
+      engine.syncProject(edited, "composition-events", "bass-edit-refresh");
+      await waitForAsyncCondition(() => starts.length >= 3);
+
+      expect(starts.length).toBeGreaterThanOrEqual(3);
+      const staleStart = starts.at(-2)!;
+      const refreshedStart = starts.at(-1)!;
+
+      expect(staleStart.events.some((event) => event.trackId === "bass" && event.velocity > 0)).toBe(true);
+      expect(refreshedStart.regions?.length || 0).toBeGreaterThan(0);
+      expect(refreshedStart.events.every(isSilentCachedSidechainTrigger)).toBe(true);
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
+      expect(engine.getDiagnostics().nativeRenderCache.lastBuildReason).toBe("bass-edit-refresh");
+    } finally {
+      (globalThis as any).window = previousWindow;
+    }
+  });
+
   it("corrects native playhead estimates from backend status", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {

@@ -16,6 +16,7 @@ const CHORDSMITH_LOFI_TEXTURE_CRACKLE_THRESHOLD: f32 = 0.7;
 const CHORDSMITH_LOFI_TEXTURE_CRACKLE_GAIN: f32 = 0.018;
 const CHORDSMITH_LOFI_TEXTURE_CRACKLE_DECAY_SECONDS: f64 = 0.024;
 const CHORDSMITH_LOFI_TEXTURE_CRACKLE_STOP_SECONDS: f64 = 0.028;
+const NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK: usize = 96;
 
 #[derive(Default)]
 pub struct NativeAudioRuntime {
@@ -1060,6 +1061,12 @@ fn add_track_mix(
     entry.1 += right;
 }
 
+fn track_source_budget_allows(active_counts: &mut HashMap<String, usize>, track_id: &str) -> bool {
+    let count = active_counts.entry(track_id.to_string()).or_insert(0);
+    *count += 1;
+    *count <= NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK
+}
+
 fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     if !playback.playing {
         return (0.0, 0.0);
@@ -1074,7 +1081,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     }
 
     let mut track_mixes: HashMap<String, (f32, f32)> = HashMap::new();
-    let mut active_count = 0usize;
+    let mut active_counts_by_track: HashMap<String, usize> = HashMap::new();
 
     for region in playback.regions.clone() {
         if region.start_time > t {
@@ -1096,9 +1103,8 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         let Some((asset_left, asset_right)) = render_region_sample(&region, asset, t) else {
             continue;
         };
-        active_count += 1;
-        if active_count > 96 {
-            break;
+        if !track_source_budget_allows(&mut active_counts_by_track, &region.track_id) {
+            continue;
         }
         let (pan_left, pan_right) = source_pan_gains(region.pan as f32);
         let gain = (track_gain * region.gain.clamp(0.0, 1.4)) as f32;
@@ -1133,9 +1139,8 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         if sample.abs() <= 0.000001 {
             continue;
         }
-        active_count += 1;
-        if active_count > 96 {
-            break;
+        if !track_source_budget_allows(&mut active_counts_by_track, &event.track_id) {
+            continue;
         }
         let (pan_left, pan_right) = source_pan_gains(event.pan.unwrap_or(0.0) as f32);
         let mut lane_left = sample * pan_left;
@@ -1220,7 +1225,7 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
 
     let mut left = 0.0_f32;
     let mut right = 0.0_f32;
-    let mut active_count = 0usize;
+    let mut active_counts_by_track: HashMap<String, usize> = HashMap::new();
 
     for event in playback
         .events
@@ -1244,9 +1249,8 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         if sample.abs() <= 0.000001 {
             continue;
         }
-        active_count += 1;
-        if active_count > 96 {
-            break;
+        if !track_source_budget_allows(&mut active_counts_by_track, &event.track_id) {
+            continue;
         }
         let event_pan = event.pan.unwrap_or(0.0).clamp(-1.0, 1.0) as f32;
         let (pan_left, pan_right) = cache_stem_source_pan_gains(event_pan);
@@ -4086,6 +4090,122 @@ mod tests {
         assert!(
             max_diff < 0.00008,
             "expected cached sidechain marker playback to match procedural mix, max diff {max_diff}"
+        );
+    }
+
+    #[test]
+    fn native_cached_stems_match_procedural_mix_with_cross_track_voice_pressure() {
+        let mut events = Vec::new();
+        for index in 0..120 {
+            let mut event =
+                test_generated_event(&format!("dense_bass_{index}"), "bass", 0.0, 0.08, 0.12);
+            event.bass_tone = Some("warm_sub".to_string());
+            event.midi = Some(40.0 + (index % 3) as f64);
+            events.push(event);
+        }
+        for index in 0..120 {
+            let mut event =
+                test_generated_event(&format!("dense_melody_{index}"), "melody", 0.0, 0.08, 0.12);
+            event.track_id = "melody".to_string();
+            event.instrument = Some("tape_bell".to_string());
+            event.midi = Some(72.0 + (index % 4) as f64);
+            events.push(event);
+        }
+        let bass_track = test_track("bass", 0.35, 0.0, false, false);
+        let melody_track = test_track("melody", 0.35, 0.0, false, false);
+
+        let mut procedural = playback_with_events(events.clone());
+        procedural
+            .tracks
+            .insert("bass".to_string(), bass_track.clone());
+        procedural
+            .tracks
+            .insert("melody".to_string(), melody_track.clone());
+        procedural.sample_rate = 8_000;
+        let procedural_frames = render_frames(&mut procedural, 160);
+
+        let mut bass_stem_source = playback_with_events(
+            events
+                .iter()
+                .filter(|event| event.track_id == "bass")
+                .cloned()
+                .collect(),
+        );
+        bass_stem_source
+            .tracks
+            .insert("bass".to_string(), bass_track.clone());
+        bass_stem_source.sample_rate = 8_000;
+        let bass_stem = render_playback_to_wav(
+            &mut bass_stem_source,
+            0.08,
+            NativeAudioRenderMode::CacheStem,
+        )
+        .expect("bass cache stem render should work");
+        let bass_decoded = decode_pcm16_wav(&bass_stem.bytes).expect("bass stem should decode");
+
+        let mut melody_stem_source = playback_with_events(
+            events
+                .iter()
+                .filter(|event| event.track_id == "melody")
+                .cloned()
+                .collect(),
+        );
+        melody_stem_source
+            .tracks
+            .insert("melody".to_string(), melody_track.clone());
+        melody_stem_source.sample_rate = 8_000;
+        let melody_stem = render_playback_to_wav(
+            &mut melody_stem_source,
+            0.08,
+            NativeAudioRenderMode::CacheStem,
+        )
+        .expect("melody cache stem render should work");
+        let melody_decoded =
+            decode_pcm16_wav(&melody_stem.bytes).expect("melody stem should decode");
+
+        let mut cached = PlaybackShared {
+            project_title: Some("Cached dense stems".to_string()),
+            events: Vec::new(),
+            assets: HashMap::from([
+                ("bass_stem".to_string(), bass_decoded),
+                ("melody_stem".to_string(), melody_decoded),
+            ]),
+            regions: vec![
+                test_region("bass_region", "bass_stem", "bass", 0.0, 0.0, 0.08, 1.0, 0.0),
+                test_region(
+                    "melody_region",
+                    "melody_stem",
+                    "melody",
+                    0.0,
+                    0.0,
+                    0.08,
+                    1.0,
+                    0.0,
+                ),
+            ],
+            tracks: HashMap::from([
+                ("bass".to_string(), bass_track),
+                ("melody".to_string(), melody_track),
+            ]),
+            has_solo: false,
+            position_seconds: 0.0,
+            sample_rate: 8_000,
+            channels: 2,
+            playing: true,
+            rendered_frame_count: 0,
+            scan_start_index: 0,
+            generation: 1,
+            fx: NativeFxRuntime::default(),
+            loop_region: None,
+            metronome: None,
+            sidechain: None,
+        };
+        let cached_frames = render_frames(&mut cached, 160);
+        let max_diff = max_frame_diff(&procedural_frames, &cached_frames);
+
+        assert!(
+            max_diff < 0.00008,
+            "expected cached stems to match procedural mix under cross-track voice pressure, max diff {max_diff}"
         );
     }
 
