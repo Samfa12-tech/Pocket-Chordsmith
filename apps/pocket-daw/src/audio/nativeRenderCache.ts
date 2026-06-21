@@ -741,7 +741,7 @@ async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Pro
   const assetProject = projectForNativeGeneratedStemRender(project, item.clip, item.trackId);
   const clipDurationSeconds = barsToSeconds(item.clip.barLength, project.project.bpm, project.project.timeSig);
   const renderDurationSeconds = generatedStemRenderDuration(clipDurationSeconds);
-  const { rendered: nativeRender, error } = await renderNativeGeneratedStemWav(assetProject, renderDurationSeconds, item.trackId);
+  const { rendered: nativeRender, error } = await renderNativeGeneratedStemWav(assetProject, renderDurationSeconds);
   if (!nativeRender?.bytes?.length) return { asset: null, error: error || "Native cache-stem renderer returned no audio." };
   const bytes = nativeRender.bytes;
   const sampleRate = nativeRender.sampleRate || project.project.sampleRate;
@@ -806,9 +806,9 @@ function generatedStemRenderDuration(durationSeconds: number): number {
   return Math.max(0, durationSeconds) + NATIVE_GENERATED_STEM_TAIL_SECONDS;
 }
 
-async function renderNativeGeneratedStemWav(assetProject: PocketDawProject, durationSeconds: number, trackId: string) {
+async function renderNativeGeneratedStemWav(assetProject: PocketDawProject, durationSeconds: number) {
   try {
-    const events = renderTimelineEvents(assetProject).filter((event) => event.trackId === trackId);
+    const events = renderTimelineEvents(assetProject);
     const payload = buildNativeAudioStartPayload(assetProject, events, 0);
     const rendered = await renderNativeAudioWav({ ...payload, loop: null, metronome: null }, durationSeconds, NATIVE_CACHE_STEM_RENDER_MODE);
     return {

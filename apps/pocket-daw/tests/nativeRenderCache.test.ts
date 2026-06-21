@@ -222,24 +222,6 @@ describe("native render cache", () => {
     expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalled();
   });
 
-  it("renders generated cache stems with only the target track events", async () => {
-    const project = createDemoProject();
-
-    await buildNativeRenderCache(project, "target-track-events-signature", null, {
-      coverage: "partial",
-      clipIds: new Set([project.timeline.clips[0].id])
-    });
-
-    const renderCalls = nativeMediaBridgeMock.renderNativeAudioWav.mock.calls as unknown as Array<[NativeAudioStartPayload, number, string]>;
-    const generatedCalls = renderCalls.filter((call) => call[2] === NATIVE_CACHE_STEM_RENDER_MODE && call[0].events.length > 0);
-
-    expect(generatedCalls.length).toBeGreaterThan(1);
-    generatedCalls.forEach(([payload]) => {
-      const eventTrackIds = new Set(payload.events.map((event) => event.trackId));
-      expect(eventTrackIds.size).toBe(1);
-    });
-  });
-
   it("builds native cache-stem assets for MIDI clips through the same native event path", async () => {
     const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(simpleMidiBytes()), "simple.mid");
     const midiClip = imported.project.timeline.clips.find((clip) => clip.id === imported.clipId)!;
