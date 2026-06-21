@@ -550,7 +550,7 @@ impl NativeAudioRuntime {
             .default_output_config()
             .map_err(|err| format!("Could not read default output config: {}", err))?;
         let sample_format = supported_config.sample_format();
-        let config = supported_config.config();
+        let config = preferred_output_config(&device, &supported_config, payload.sample_rate);
         let channels = config.channels.max(1);
         let sample_rate = config.sample_rate;
         let shared = Arc::new(Mutex::new(self.build_playback(
@@ -861,6 +861,64 @@ fn sanitize_offline_sample_rate(sample_rate: u32) -> u32 {
         return 48_000;
     }
     sample_rate.clamp(8_000, 192_000)
+}
+
+fn preferred_output_config(
+    device: &cpal::Device,
+    default_config: &cpal::SupportedStreamConfig,
+    requested_sample_rate: u32,
+) -> cpal::StreamConfig {
+    let mut config = default_config.config();
+    let requested = sanitize_offline_sample_rate(requested_sample_rate);
+    if requested == config.sample_rate {
+        return config;
+    }
+    if output_device_supports_sample_rate(
+        device,
+        default_config.sample_format(),
+        config.channels,
+        requested,
+    ) {
+        config.sample_rate = requested;
+    }
+    config
+}
+
+fn output_device_supports_sample_rate(
+    device: &cpal::Device,
+    sample_format: cpal::SampleFormat,
+    channels: u16,
+    requested_sample_rate: u32,
+) -> bool {
+    let Ok(configs) = device.supported_output_configs() else {
+        return false;
+    };
+    configs.into_iter().any(|config| {
+        output_config_range_supports_sample_rate(
+            config.sample_format(),
+            config.channels(),
+            config.min_sample_rate(),
+            config.max_sample_rate(),
+            sample_format,
+            channels,
+            requested_sample_rate,
+        )
+    })
+}
+
+fn output_config_range_supports_sample_rate(
+    range_sample_format: cpal::SampleFormat,
+    range_channels: u16,
+    min_sample_rate: u32,
+    max_sample_rate: u32,
+    requested_sample_format: cpal::SampleFormat,
+    requested_channels: u16,
+    requested_sample_rate: u32,
+) -> bool {
+    range_sample_format == requested_sample_format
+        && range_channels == requested_channels
+        && min_sample_rate <= requested_sample_rate
+        && max_sample_rate >= requested_sample_rate
 }
 
 fn parse_render_mode(value: Option<&str>) -> NativeAudioRenderMode {
@@ -3681,6 +3739,37 @@ mod tests {
         assert!(loop_region.enabled);
         assert_eq!(loop_region.start_seconds, 1.0);
         assert_eq!(loop_region.end_seconds, 3.0);
+    }
+
+    #[test]
+    fn output_config_range_supports_requested_project_sample_rate() {
+        assert!(output_config_range_supports_sample_rate(
+            cpal::SampleFormat::F32,
+            2,
+            44_100,
+            96_000,
+            cpal::SampleFormat::F32,
+            2,
+            44_100,
+        ));
+        assert!(!output_config_range_supports_sample_rate(
+            cpal::SampleFormat::F32,
+            2,
+            48_000,
+            96_000,
+            cpal::SampleFormat::F32,
+            2,
+            44_100,
+        ));
+        assert!(!output_config_range_supports_sample_rate(
+            cpal::SampleFormat::I16,
+            2,
+            44_100,
+            96_000,
+            cpal::SampleFormat::F32,
+            2,
+            44_100,
+        ));
     }
 
     #[test]
