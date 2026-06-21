@@ -606,7 +606,7 @@ function nativeGeneratedStemAssetId(key: string): string {
 
 function nativeGeneratedStemSourceHash(project: PocketDawProject, clip: Clip, trackId: string): string {
   const assetProject = projectForNativeGeneratedStemRender(project, clip, trackId);
-  const events = renderTimelineEvents(assetProject).filter((event) => event.trackId === trackId || (event.kind === "kick" && trackId !== "drums"));
+  const events = renderTimelineEvents(assetProject).filter((event) => event.trackId === trackId);
   return hashString(JSON.stringify({
     project: {
       bpm: assetProject.project.bpm,
@@ -620,7 +620,7 @@ function nativeGeneratedStemSourceHash(project: PocketDawProject, clip: Clip, tr
     },
     trackId,
     events,
-    fx: nativeCacheStemFxState(assetProject)
+    fx: nativeGeneratedStemBakedFxState(assetProject, trackId)
   }));
 }
 
@@ -671,6 +671,10 @@ function nativeCacheStemFxState(project: PocketDawProject): PocketDawProject["fx
   return {
     chains: (project.fx?.chains || []).filter((chain) => typeof chain.metadata?.drumLaneId === "string")
   };
+}
+
+function nativeGeneratedStemBakedFxState(project: PocketDawProject, trackId: string): PocketDawProject["fx"] {
+  return trackId === "drums" ? nativeCacheStemFxState(project) : { chains: [] };
 }
 
 function renderCacheItemForAsset(asset: NativeAudioAsset, createdAt: string, item: AssetBuildItem): RenderCacheItem {

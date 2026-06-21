@@ -238,6 +238,42 @@ describe("native render cache", () => {
     expect(second.renderCacheHitCount).toBeGreaterThan(0);
   });
 
+  it("reuses non-drum generated stems after a drum-only pattern edit", async () => {
+    const project = createDemoProject();
+    const first = await buildNativeRenderCache(project, nativeRenderCacheSignature(project));
+    const firstAssets = nativeGeneratedAssetsByRole(first);
+    nativeMediaBridgeMock.renderNativeAudioWav.mockClear();
+
+    const edited = toggleKickStep(project, "A", 0);
+    const second = await buildNativeRenderCache(edited, nativeRenderCacheSignature(edited), first);
+    const secondAssets = nativeGeneratedAssetsByRole(second);
+
+    expect(secondAssets.drums).not.toEqual(firstAssets.drums);
+    (["bass", "chords", "melody", "guitar"] as const).forEach((role) => {
+      expect(secondAssets[role]).toEqual(firstAssets[role]);
+    });
+    expect(nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length).toBeGreaterThan(0);
+    expect(nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length).toBeLessThan(first.assets.length);
+  });
+
+  it("reuses non-drum generated stems after drum-lane FX edits", async () => {
+    const project = createDemoProject();
+    const first = await buildNativeRenderCache(project, nativeRenderCacheSignature(project));
+    const firstAssets = nativeGeneratedAssetsByRole(first);
+    nativeMediaBridgeMock.renderNativeAudioWav.mockClear();
+
+    const edited = addDrumLaneFx(project, "snare", "parametric-eq");
+    const second = await buildNativeRenderCache(edited, nativeRenderCacheSignature(edited), first);
+    const secondAssets = nativeGeneratedAssetsByRole(second);
+
+    expect(secondAssets.drums).not.toEqual(firstAssets.drums);
+    (["bass", "chords", "melody", "guitar"] as const).forEach((role) => {
+      expect(secondAssets[role]).toEqual(firstAssets[role]);
+    });
+    expect(nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length).toBeGreaterThan(0);
+    expect(nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length).toBeLessThan(first.assets.length);
+  });
+
   it("adds runtime-loaded audio clips as native WAV asset regions", async () => {
     const project = withAudioClip(createDemoProject());
     setCachedAudioBuffer("media_audio", fakeAudioBuffer());
@@ -805,6 +841,31 @@ function withAudioClip(project: ReturnType<typeof createDemoProject>): ReturnTyp
   project.mediaPool.push(media);
   project.timeline.clips.push(clip);
   return project;
+}
+
+function nativeGeneratedAssetsByRole(cache: Awaited<ReturnType<typeof buildNativeRenderCache>>) {
+  const out: Record<string, string[]> = {};
+  cache.renderCacheItems
+    .filter((item) => item.metadata?.cacheKind === "native-generated-stem")
+    .forEach((item) => {
+      const role = String(item.metadata?.role || "");
+      if (!out[role]) out[role] = [];
+      out[role].push(String(item.metadata?.assetId || item.id));
+    });
+  Object.values(out).forEach((ids) => ids.sort());
+  return out;
+}
+
+function toggleKickStep(project: ReturnType<typeof createDemoProject>, sectionId: string, step: number): ReturnType<typeof createDemoProject> {
+  const edited = cloneProject(project);
+  const source = edited.sourceRefs[0]?.normalized as unknown as {
+    sections?: Record<string, { grid?: { kick?: number[] } }>;
+  };
+  const kick = source.sections?.[sectionId]?.grid?.kick;
+  if (!kick) throw new Error(`Missing ${sectionId} kick grid`);
+  kick[step] = kick[step] ? 0 : 1;
+  edited.sourceRefs[0].checksum = `${edited.sourceRefs[0].checksum || "source"}-kick-${sectionId}-${step}`;
+  return edited;
 }
 
 function fakeAudioBuffer(): globalThis.AudioBuffer {
