@@ -410,7 +410,7 @@ describe("audio engine diagnostics", () => {
     }
   });
 
-  it("defers native fallback cache cooking until playback is idle", async () => {
+  it("refreshes cold native fallback playback back to cached stems", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       __TAURI__: {},
@@ -472,12 +472,13 @@ describe("audio engine diagnostics", () => {
       expect(starts[0].events.length).toBeGreaterThan(0);
       expect(starts[0].assets?.length || 0).toBe(0);
       expect(starts[0].regions?.length || 0).toBe(0);
-      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
 
-      engine.stop();
-      await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.buildCount >= 1);
+      await waitForAsyncCondition(() => starts.length >= 2 && engine.getDiagnostics().nativeRenderCache.buildCount >= 1);
 
-      expect(starts).toHaveLength(1);
+      expect(starts).toHaveLength(2);
+      expect(starts[1].assets?.length || 0).toBeGreaterThan(0);
+      expect(starts[1].regions?.length || 0).toBeGreaterThan(0);
+      expect(starts[1].events.every(isSilentCachedSidechainTrigger)).toBe(true);
       expect(engine.getDiagnostics().nativeRenderCache.lastBuildReason).toBe("play-fallback-cache-build");
     } finally {
       (globalThis as any).window = previousWindow;

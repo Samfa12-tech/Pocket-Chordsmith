@@ -372,6 +372,7 @@ export class AudioEngine {
 
     const nativeStart = await this.tryStartNativePlayback();
     if (nativeStart === "started") {
+      const fallbackCacheReason = this.nativeRenderCachePendingReason || "play-fallback-cache-build";
       this.playing = true;
       this.playbackBackend = "native-cpal";
       this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
@@ -380,7 +381,11 @@ export class AudioEngine {
       this.nextAudioRegionIndex = this.findAudioRegionIndex(this.offsetSeconds);
       this.primeMeters(this.offsetSeconds);
       this.startNativeTicker();
-      this.activateReadyNativeRenderCacheAfterFallback("play-cache-ready");
+      if (this.activeNativePlaybackLooksProceduralFallback()) {
+        this.scheduleLiveNativeRenderCacheRefresh(fallbackCacheReason);
+      } else {
+        this.activateReadyNativeRenderCacheAfterFallback("play-cache-ready");
+      }
       this.emitTick(true);
       return;
     }
