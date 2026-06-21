@@ -53,6 +53,7 @@ vi.mock("../src/native/mediaBridge", async (importOriginal) => {
 
 import { AudioEngine } from "../src/audio/audioEngine";
 import { clearAudioBufferCache, setCachedAudioBuffer } from "../src/audio/audioBufferCache";
+import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { cloneProject } from "../src/daw/dawProject";
 import {
   buildNativeRenderCache,
@@ -163,6 +164,18 @@ describe("native render cache", () => {
     expect(renderProject.tracks.find((track) => track.id === "bass")?.mute).toBe(true);
     expect(renderProject.fx.chains.length).toBeGreaterThan(0);
     expect(renderProject.fx.chains.every((chain) => typeof chain.metadata?.drumLaneId === "string")).toBe(true);
+  });
+
+  it("keeps cache-stem event identity aligned with procedural native events", () => {
+    const project = createDemoProject();
+    const clip = project.timeline.clips.find((item) => item.type === "generated-section")!;
+    const liveSnare = renderTimelineEvents(project).find((event) => event.clipId === clip.id && event.kind === "snare");
+    const renderProject = projectForNativeGeneratedStemRender(project, clip, "drums");
+    const cachedSnare = renderTimelineEvents(renderProject).find((event) => event.kind === "snare" && event.step === liveSnare?.step);
+
+    expect(liveSnare).toBeTruthy();
+    expect(cachedSnare?.id).toBe(liveSnare?.id);
+    expect(cachedSnare?.clipId).toBe(clip.id);
   });
 
   it("builds generated-section WAV assets, regions and render-cache metadata", async () => {

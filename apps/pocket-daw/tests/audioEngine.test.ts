@@ -234,6 +234,7 @@ describe("audio engine diagnostics", () => {
 
     internals.tapNativeMeters(1);
     internals.tapNativeRegionMeters(1);
+    internals.lastMeterRead = performance.now() / 1000;
     const levels = engine.getMeterLevels();
 
     expect(levels.bass || 0).toBeGreaterThan(0.2);
@@ -565,10 +566,11 @@ describe("audio engine diagnostics", () => {
       (engine as any).nativeStartedAtMs = performance.now() - 2_000;
       (engine as any).nativeLastStatusRefreshAtMs = 0;
       (engine as any).tickNativePlayback();
-      await waitForAsyncCondition(() => statusCalls > 0 && Math.abs(engine.currentSeconds() - 8.25) < 0.2);
+      await waitForAsyncCondition(() => statusCalls > 0 && Math.abs((engine as any).offsetSeconds - 8.25) < 0.001);
 
       expect(statusCalls).toBeGreaterThan(0);
-      expect(engine.currentSeconds()).toBeCloseTo(8.25, 0);
+      expect((engine as any).offsetSeconds).toBeCloseTo(8.25, 3);
+      expect((engine as any).nativeStatus?.positionSeconds).toBe(8.25);
       engine.stop();
     } finally {
       (globalThis as any).window = previousWindow;

@@ -707,7 +707,6 @@ export function projectForNativeGeneratedStemRender(project: PocketDawProject, c
     markers: [],
     clips: [{
       ...clip,
-      id: `${clip.id}_cache_source`,
       trackId,
       startBar: 1
     }]
