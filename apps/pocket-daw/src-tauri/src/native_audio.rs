@@ -1061,10 +1061,20 @@ fn add_track_mix(
     entry.1 += right;
 }
 
-fn track_source_budget_allows(active_counts: &mut HashMap<String, usize>, track_id: &str) -> bool {
-    let count = active_counts.entry(track_id.to_string()).or_insert(0);
-    *count += 1;
-    *count <= NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK
+#[derive(Default)]
+struct TrackSourceBudget {
+    counts: Vec<(String, usize)>,
+}
+
+impl TrackSourceBudget {
+    fn allows(&mut self, track_id: &str) -> bool {
+        if let Some((_id, count)) = self.counts.iter_mut().find(|(id, _count)| id == track_id) {
+            *count += 1;
+            return *count <= NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK;
+        }
+        self.counts.push((track_id.to_string(), 1));
+        true
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1073,13 +1083,13 @@ enum GeneratedEventRenderMode {
     CacheStem,
 }
 
-fn render_generated_event_source(
+fn render_generated_event_source<'a>(
     playback: &mut PlaybackShared,
-    event: &NativeRenderedEvent,
+    event: &'a NativeRenderedEvent,
     t: f64,
-    active_counts: &mut HashMap<String, usize>,
+    active_counts: &mut TrackSourceBudget,
     mode: GeneratedEventRenderMode,
-) -> Option<(String, f32, f32)> {
+) -> Option<(&'a str, f32, f32)> {
     let track = playback.tracks.get(&event.track_id).cloned()?;
     let track_gain_value = track_gain(&track, playback.has_solo);
     if track_gain_value <= 0.0001 {
@@ -1092,7 +1102,7 @@ fn render_generated_event_source(
     if sample.abs() <= 0.000001 {
         return None;
     }
-    if !track_source_budget_allows(active_counts, &event.track_id) {
+    if !active_counts.allows(&event.track_id) {
         return None;
     }
 
@@ -1111,7 +1121,7 @@ fn render_generated_event_source(
             (lane_left, lane_right) = chain.process(lane_left, lane_right);
         }
     }
-    Some((event.track_id.clone(), lane_left, lane_right))
+    Some((event.track_id.as_str(), lane_left, lane_right))
 }
 
 fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
@@ -1128,7 +1138,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     }
 
     let mut track_mixes: HashMap<String, (f32, f32)> = HashMap::new();
-    let mut active_counts_by_track: HashMap<String, usize> = HashMap::new();
+    let mut active_counts_by_track = TrackSourceBudget::default();
 
     for region in playback.regions.clone() {
         if region.start_time > t {
@@ -1150,7 +1160,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         let Some((asset_left, asset_right)) = render_region_sample(&region, asset, t) else {
             continue;
         };
-        if !track_source_budget_allows(&mut active_counts_by_track, &region.track_id) {
+        if !active_counts_by_track.allows(&region.track_id) {
             continue;
         }
         let (pan_left, pan_right) = source_pan_gains(region.pan as f32);
@@ -1256,7 +1266,7 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
 
     let mut left = 0.0_f32;
     let mut right = 0.0_f32;
-    let mut active_counts_by_track: HashMap<String, usize> = HashMap::new();
+    let mut active_counts_by_track = TrackSourceBudget::default();
 
     let mut event_index = playback.scan_start_index;
     while event_index < playback.events.len() {
@@ -4106,6 +4116,19 @@ mod tests {
             max_diff < 0.00008,
             "expected cached sidechain marker playback to match procedural mix, max diff {max_diff}"
         );
+    }
+
+    #[test]
+    fn native_source_budget_counts_tracks_independently() {
+        let mut budget = TrackSourceBudget::default();
+        for _ in 0..NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK {
+            assert!(budget.allows("bass"));
+        }
+        assert!(!budget.allows("bass"));
+        for _ in 0..NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK {
+            assert!(budget.allows("melody"));
+        }
+        assert!(!budget.allows("melody"));
     }
 
     #[test]
