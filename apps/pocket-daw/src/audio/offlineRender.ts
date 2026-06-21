@@ -27,7 +27,7 @@ export interface OfflineRenderOptions {
 export async function renderProjectToWavBlob(project: PocketDawProject, options: OfflineRenderOptions = {}): Promise<Blob> {
   const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (!OfflineCtx) throw new Error("Offline WAV rendering is not supported in this browser.");
-  const tailSeconds = Number(project.exportProfiles.find((p) => p.id === "full-song-wav")?.settings.tailSeconds || 1.2);
+  const tailSeconds = Number(project.exportProfiles.find((p) => p.id === "full-song-wav")?.settings.tailSeconds ?? 1.2);
   const duration = barsToSeconds(project.timeline.bars, project.project.bpm, project.project.timeSig) + tailSeconds;
   const sampleRate = project.project.sampleRate || 44100;
   const ctx = new OfflineCtx(2, Math.ceil(duration * sampleRate), sampleRate);

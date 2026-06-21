@@ -21,6 +21,6 @@ export async function renderProjectToNativeWavBlob(project: PocketDawProject, ap
 }
 
 export function nativeWavExportDurationSeconds(project: PocketDawProject): number {
-  const tailSeconds = Number(project.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings.tailSeconds || 1.2);
+  const tailSeconds = Number(project.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings.tailSeconds ?? 1.2);
   return barsToSeconds(project.timeline.bars, project.project.bpm, project.project.timeSig) + tailSeconds;
 }

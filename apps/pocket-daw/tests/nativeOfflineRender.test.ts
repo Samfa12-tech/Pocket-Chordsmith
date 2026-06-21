@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { nativeWavExportDurationSeconds, renderProjectToNativeWavBlob } from "../src/audio/nativeOfflineRender";
 import { createDemoProject } from "../src/demo/demoProject";
+import { createSectionLoopMetadata, projectForSectionLoopRender } from "../src/daw/exportJobs";
 import { barsToSeconds } from "../src/daw/timeline";
 import type { NativeMediaApi } from "../src/native/mediaBridge";
 
@@ -69,5 +70,13 @@ describe("native offline WAV rendering", () => {
       barsToSeconds(2, 120, 4) + 2.5,
       5
     );
+  });
+
+  it("keeps section loop native renders tail-free", () => {
+    const project = createDemoProject();
+    const loop = createSectionLoopMetadata(project)[0];
+    const renderProject = projectForSectionLoopRender(project, loop);
+
+    expect(nativeWavExportDurationSeconds(renderProject)).toBeCloseTo(loop.lengthSeconds, 5);
   });
 });

@@ -148,7 +148,7 @@ import { renderAppShell } from "./ui";
 import { createUndoStack } from "../daw/undo";
 import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
-import { POCKET_DAW_VERSION, type Track } from "../daw/schema";
+import { POCKET_DAW_VERSION, type PocketDawProject, type Track } from "../daw/schema";
 import { trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToPosition, snapBarValue } from "../daw/timeline";
 import { addImportedAudioMedia, placeRecordingClipOnTrack, updateAudioMediaAnalysis } from "../daw/audioClips";
@@ -3339,7 +3339,7 @@ export class App {
       this.assertNoMissingAudibleAudioBuffers(hydration, "WAV export");
       await this.showExportProgress("Rendering WAV mix", "Longer songs and imported audio can take a little while");
       const project = currentProject(this.state);
-      const blob = await renderProjectToNativeWavBlob(project) || await renderProjectToWavBlob(project);
+      const blob = await this.renderWavNativeFirst(project);
       await this.showExportProgress("Preparing WAV download", `${Math.round(blob.size / 1024)} KB rendered`);
       downloadBlob(blob, safeName(project.project.title, "wav"));
       this.state.exportProgress = null;
@@ -3378,7 +3378,7 @@ export class App {
       this.assertNoMissingAudibleAudioBuffers(hydration, "Stem export");
       for (const [index, stem] of stems.entries()) {
         await this.showExportProgress(`Rendering stem ${index + 1} of ${stems.length}`, stem.label);
-        const blob = await renderProjectToWavBlob(projectWithOnlyTracksAudible(project, stem.trackIds));
+        const blob = await this.renderWavNativeFirst(projectWithOnlyTracksAudible(project, stem.trackIds));
         await this.showExportProgress(`Preparing stem download ${index + 1} of ${stems.length}`, `${Math.round(blob.size / 1024)} KB rendered`);
         downloadBlob(blob, stem.fileName);
       }
@@ -3404,7 +3404,7 @@ export class App {
     try {
       for (const [index, loop] of loops.entries()) {
         await this.showExportProgress(`Rendering section loop ${index + 1} of ${loops.length}`, loop.name);
-        const blob = await renderProjectToWavBlob(projectForSectionLoopRender(project, loop));
+        const blob = await this.renderWavNativeFirst(projectForSectionLoopRender(project, loop));
         await this.showExportProgress(`Preparing section loop ${index + 1} of ${loops.length}`, `${Math.round(blob.size / 1024)} KB rendered`);
         downloadBlob(blob, loop.fileName);
       }
@@ -3429,7 +3429,7 @@ export class App {
       this.assertNoMissingAudibleAudioBuffers(hydration, `${label} game-pack export`);
       const result = await createGamePackZipBlob(project, kind, {
         sourceProjectContents: buildPocketDawProjectFile(project),
-        renderWav: (renderProject) => renderProjectToWavBlob(renderProject),
+        renderWav: (renderProject) => this.renderWavNativeFirst(renderProject),
         onProgress: (title, detail) => this.showExportProgress(title, detail)
       });
       await this.showExportProgress(`Preparing ${label} pack download`, `${result.entries.length} files / ${Math.round(result.blob.size / 1024)} KB`);
@@ -3442,6 +3442,10 @@ export class App {
       this.state.status = error instanceof Error ? `${label} game-pack export failed: ${error.message}` : `${label} game-pack export failed.`;
       this.render({ preserveScroll: true });
     }
+  }
+
+  private async renderWavNativeFirst(project: PocketDawProject): Promise<Blob> {
+    return await renderProjectToNativeWavBlob(project) || await renderProjectToWavBlob(project);
   }
 
   private exportMediaPlan() {
