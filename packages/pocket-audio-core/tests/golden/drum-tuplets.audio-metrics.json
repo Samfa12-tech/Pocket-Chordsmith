@@ -3,8 +3,8 @@
   "sampleRate": 16000,
   "channelCount": 2,
   "eventCount": 31,
-  "peak": 0.174164,
-  "rms": 0.031419,
-  "zeroCrossingRate": 0.031169,
-  "quantizedSampleHash": "d5440905"
+  "peak": 0.149069,
+  "rms": 0.021679,
+  "zeroCrossingRate": 0.052944,
+  "quantizedSampleHash": "28edcec9"
 }

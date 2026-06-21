@@ -5,6 +5,9 @@ import { parsePocketChordsmithInput } from "../schema/parse-share-code.js";
 import { normalisePocketChordsmithProject } from "../schema/normalise-project.js";
 import { renderPocketAudioWav } from "./offline-renderer.js";
 import { renderPocketAudioStems } from "../export/stems.js";
+import { findPocketChordInstrumentConfig, findPocketLeadInstrumentConfig } from "../sounds/instruments.js";
+import { findPocketGuitarTone } from "../sounds/guitar.js";
+import { POCKET_BASS_TONE_CONFIGS, POCKET_DRUM_KIT_CONFIGS, resolvePocketBassToneId, resolvePocketDrumKitId } from "../sounds/lofi-registry.js";
 
 export class PocketAudio {
   constructor(options = {}) {
@@ -339,18 +342,83 @@ function scheduleSimpleAudioEvent(context, event, project) {
   if (project?.mixer?.stems?.[event.stem]?.mute) return;
   const start = Math.max(context.currentTime + 0.005, context.currentTime + Math.max(0, event.time - ((performance.now() / 1000) % Math.max(event.time + 1, 1))));
   const gain = context.createGain();
-  const volume = (project?.mixer?.stems?.[event.stem]?.volume ?? 0.7) * Math.min(1, event.velocity || 0.5);
+  const voice = simpleVoiceRecipe(event);
+  const volume = (project?.mixer?.stems?.[event.stem]?.volume ?? 0.7) * Math.min(1, event.velocity || 0.5) * voice.peak;
   gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.linearRampToValueAtTime(volume * 0.18, start + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, start + Math.max(0.04, event.duration || 0.08));
+  gain.gain.linearRampToValueAtTime(volume, start + voice.attack);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + Math.max(0.04, (event.duration || 0.08) * voice.durationScale));
+  const filter = context.createBiquadFilter();
+  filter.type = voice.filterType;
+  filter.frequency.setValueAtTime(voice.filterFrequency, start);
+  filter.connect(gain);
   gain.connect(context.destination);
   const osc = context.createOscillator();
-  osc.type = event.type === "bass" || event.type === "guitar" ? "sawtooth" : event.type === "hat" ? "square" : "sine";
+  osc.type = voice.wave;
   const midi = event.midi || event.midiNotes?.[0] || (event.type === "kick" ? 36 : event.type === "snare" ? 38 : event.type === "hat" ? 72 : 60);
   osc.frequency.setValueAtTime(440 * Math.pow(2, (midi - 69) / 12), start);
-  osc.connect(gain);
+  osc.connect(filter);
   osc.start(start);
-  osc.stop(start + Math.max(0.04, event.duration || 0.08) + 0.02);
+  osc.stop(start + Math.max(0.04, (event.duration || 0.08) * voice.durationScale) + 0.02);
+}
+
+function simpleVoiceRecipe(event) {
+  if (event.type === "chord") {
+    const cfg = findPocketChordInstrumentConfig(event.instrument);
+    return {
+      wave: cfg.wave || "sine",
+      peak: Math.max(0.04, Number(cfg.peak || 0.2)),
+      attack: Math.max(0.002, Number(cfg.attack || 0.01)),
+      durationScale: Math.max(0.35, Number(cfg.durMul || 1)),
+      filterType: cfg.filter || "lowpass",
+      filterFrequency: Math.max(80, Number(cfg.freq || 1800))
+    };
+  }
+  if (event.type === "melody") {
+    const cfg = findPocketLeadInstrumentConfig(event.instrument);
+    return {
+      wave: cfg.wave || "sine",
+      peak: Math.max(0.04, Number(cfg.peak || 0.16)),
+      attack: 0.006,
+      durationScale: Math.max(0.35, Number(cfg.durMul || 1)),
+      filterType: cfg.filter || "lowpass",
+      filterFrequency: Math.max(80, Number(cfg.freq || 2200))
+    };
+  }
+  if (event.type === "bass") {
+    const cfg = POCKET_BASS_TONE_CONFIGS[resolvePocketBassToneId(event.bassTone)] || POCKET_BASS_TONE_CONFIGS.classic;
+    return {
+      wave: cfg.mainWave || "sawtooth",
+      peak: Math.max(0.04, Number(cfg.mainPeak || 1)) * 0.16,
+      attack: Math.max(0.002, Number(cfg.attack || 0.01)),
+      durationScale: 1,
+      filterType: "lowpass",
+      filterFrequency: Math.max(80, Number(cfg.cutoff || 420))
+    };
+  }
+  if (event.type === "guitar") {
+    const cfg = findPocketGuitarTone(event.instrument);
+    return {
+      wave: "sawtooth",
+      peak: Math.max(0.04, Number(cfg.peak || 0.09)) * Math.max(1, Number(cfg.drive || 1)),
+      attack: 0.004,
+      durationScale: event.articulation === "chug" ? 0.55 : Math.max(0.35, Number(cfg.sustain || 0.9)),
+      filterType: "lowpass",
+      filterFrequency: Math.max(80, Number(cfg.lowpass || 3200))
+    };
+  }
+  if (event.type === "kick" || event.type === "snare" || event.type === "hat") {
+    const kit = POCKET_DRUM_KIT_CONFIGS[resolvePocketDrumKitId(event.drumKit, event.audioProfile, event.lofiPreset)] || POCKET_DRUM_KIT_CONFIGS.classic;
+    const drum = event.type === "kick" ? kit.kick : event.type === "snare" ? kit.snare : kit.hat;
+    return {
+      wave: event.type === "hat" ? "square" : "sine",
+      peak: Math.max(0.04, Number(drum?.gainScale || 1)) * 0.18,
+      attack: 0.004,
+      durationScale: event.type === "hat" ? 0.65 : 1,
+      filterType: event.type === "snare" || event.type === "hat" ? "highpass" : "lowpass",
+      filterFrequency: Math.max(80, Number(drum?.filterFreq || drum?.highpass || drum?.highpassClosed || 1200))
+    };
+  }
+  return { wave: "sine", peak: 0.18, attack: 0.01, durationScale: 1, filterType: "lowpass", filterFrequency: 2200 };
 }
 
 function normaliseSectionId(value) {

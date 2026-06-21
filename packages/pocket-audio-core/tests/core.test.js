@@ -79,6 +79,7 @@ import {
   normalisePocketChordsmithProject,
   parsePocketChordsmithInput,
   renderPocketAudioBuffer,
+  renderPocketAudioEventBuffer,
   sidechainDuckCurve,
   sidechainDuckGainAt,
   validatePocketGuitarRegistry,
@@ -678,6 +679,31 @@ test("offline renderer adds Chordsmith lofi texture to exported buffers", () => 
   assert.ok(Math.abs(lofi.channels[0][0] - lofi.channels[1][0]) < 0.0000001);
 });
 
+test("offline event renderer keeps Chordsmith recipe metadata audible", () => {
+  const base = {
+    stem: "chords",
+    type: "chord",
+    time: 0,
+    duration: 0.45,
+    velocity: 0.8,
+    midiNotes: [60, 64, 67]
+  };
+  const pocket = renderPocketAudioEventBuffer([{ ...base, instrument: "pocket" }], { sampleRate: 8000, tailSeconds: 0 });
+  const rhodes = renderPocketAudioEventBuffer([{ ...base, instrument: "dusty_rhodes" }], { sampleRate: 8000, tailSeconds: 0 });
+
+  assert.notDeepEqual(audioSignature(pocket), audioSignature(rhodes));
+
+  const classicBass = renderPocketAudioEventBuffer([{ ...base, stem: "bass", type: "bass", midi: 36, midiNotes: undefined, bassTone: "classic" }], { sampleRate: 8000, tailSeconds: 0 });
+  const warmSubBass = renderPocketAudioEventBuffer([{ ...base, stem: "bass", type: "bass", midi: 36, midiNotes: undefined, bassTone: "warm_sub" }], { sampleRate: 8000, tailSeconds: 0 });
+
+  assert.notDeepEqual(audioSignature(classicBass), audioSignature(warmSubBass));
+
+  const cleanGuitar = renderPocketAudioEventBuffer([{ ...base, stem: "guitar", type: "guitar", instrument: "clean", articulation: "open" }], { sampleRate: 8000, tailSeconds: 0 });
+  const metalGuitar = renderPocketAudioEventBuffer([{ ...base, stem: "guitar", type: "guitar", instrument: "metal", articulation: "open" }], { sampleRate: 8000, tailSeconds: 0 });
+
+  assert.notDeepEqual(audioSignature(cleanGuitar), audioSignature(metalGuitar));
+});
+
 test("shared built-in FX catalog exposes DAW effect defaults", () => {
   assert.deepEqual(POCKET_BUILT_IN_FX_TYPES, [
     "utility-gain",
@@ -958,4 +984,17 @@ function richProject() {
 function stableNoiseSample(index, seed = 0) {
   const x = Math.sin((index + 1) * 12.9898 + (seed + 1) * 78.233) * 43758.5453;
   return (x - Math.floor(x)) * 2 - 1;
+}
+
+function audioSignature(buffer) {
+  const left = buffer.channels[0];
+  const points = [0, 47, 113, 251, 503, 997, 1597, 2609].filter((index) => index < left.length);
+  const peak = points.reduce((max, index) => Math.max(max, Math.abs(left[index] || 0)), 0);
+  const sum = points.reduce((total, index) => total + (left[index] || 0), 0);
+  const energy = points.reduce((total, index) => total + Math.abs(left[index] || 0), 0);
+  return {
+    peak: Number(peak.toFixed(6)),
+    sum: Number(sum.toFixed(6)),
+    energy: Number(energy.toFixed(6))
+  };
 }
