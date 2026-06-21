@@ -1423,12 +1423,13 @@ export class AudioEngine {
   private nativeCacheCoversEvent(cache: NativeRenderCache | null, event: RenderedEvent): boolean {
     if (!cache?.cachedClipIds.has(event.clipId)) return false;
     const matchingItems = cache.renderCacheItems.filter((item) => item.sourceClipId === event.clipId);
-    const generatedTrackIds = new Set(matchingItems
-      .filter((item) => String(item.metadata?.cacheKind || "") === "native-generated-stem")
-      .map((item) => String(item.metadata?.trackId || ""))
-      .filter(Boolean));
-    if (generatedTrackIds.size > 0) return generatedTrackIds.has(event.trackId);
-    return true;
+    return matchingItems.some((item) => {
+      if (String(item.metadata?.cacheKind || "") !== "native-generated-stem") return false;
+      const trackId = String(item.metadata?.trackId || "");
+      if (!trackId || trackId !== event.trackId) return false;
+      const assetId = String(item.metadata?.assetId || item.id || "");
+      return !!assetId && cache.regions.some((region) => region.assetId === assetId && region.trackId === trackId);
+    });
   }
 
   private eventShouldTapMeter(event: RenderedEvent) {

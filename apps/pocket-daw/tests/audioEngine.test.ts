@@ -103,7 +103,7 @@ describe("audio engine diagnostics", () => {
       assets: [],
       regions: [{ id: "clip_001_bass", assetId: "asset_bass", trackId: "bass", startTime: 0, sourceOffset: 0, duration: 4, gain: 1, pan: 0, fadeIn: 0, fadeOut: 0 }],
       cachedClipIds: new Set(["clip_001"]),
-      renderCacheItems: [],
+      renderCacheItems: [generatedStemCacheItem("clip_001", "bass", "bass", "asset_bass")],
       renderCacheHitCount: 0,
       renderCacheMissCount: 0,
       proceduralFallbackEventCount: 0,
@@ -121,6 +121,95 @@ describe("audio engine diagnostics", () => {
     expect(diagnostics.nativeRenderCache.generatedRegionCount).toBe(1);
     expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBe(0);
     expect(diagnostics.eventCountsByTrack.guitar).toBeGreaterThan(0);
+  });
+
+  it("does not suppress generated events with runtime-only native cache coverage", () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    const internals = engine as unknown as {
+      events: NativeAudioStartPayload["events"];
+      nativePlaybackEvents(cache: NativeRenderCache | null): { events: NativeAudioStartPayload["events"]; proceduralFallbackEventCount: number };
+    };
+    const firstGeneratedClip = project.timeline.clips.find((clip) => clip.type === "generated-section");
+    expect(firstGeneratedClip).toBeTruthy();
+    const runtimeOnlyCache: NativeRenderCache = {
+      signature: nativeRenderCacheSignature(project),
+      assets: [{
+        id: "runtime_audio_asset",
+        name: "Runtime audio only",
+        sampleRate: project.project.sampleRate,
+        channels: 2,
+        durationSeconds: 1,
+        sizeBytes: 1,
+        bytes: [0]
+      }],
+      regions: [{
+        id: "runtime_audio_region",
+        assetId: "runtime_audio_asset",
+        trackId: "bass",
+        startTime: 0,
+        sourceOffset: 0,
+        duration: 1,
+        gain: 1,
+        pan: 0,
+        fadeIn: 0,
+        fadeOut: 0
+      }],
+      cachedClipIds: new Set([firstGeneratedClip!.id]),
+      renderCacheItems: [{
+        id: "runtime_audio_item",
+        sourceClipId: firstGeneratedClip!.id,
+        mediaPoolItemId: "media_audio",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        invalidated: false,
+        metadata: {
+          cacheKind: "native-runtime-audio",
+          assetId: "runtime_audio_asset"
+        }
+      }],
+      renderCacheHitCount: 1,
+      renderCacheMissCount: 0,
+      proceduralFallbackEventCount: 0,
+      generatedRegionCount: 0,
+      runtimeAudioRegionCount: 1,
+      missingRuntimeAudioRegionCount: 0,
+      cachedAssetByteCount: 1
+    };
+
+    const playback = internals.nativePlaybackEvents(runtimeOnlyCache);
+
+    expect(playback.proceduralFallbackEventCount).toBe(internals.events.length);
+    expect(playback.events.some((event) => event.trackId === "bass" && event.velocity > 0)).toBe(true);
+  });
+
+  it("does not suppress generated events when generated cache metadata has no playable region", () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    const internals = engine as unknown as {
+      events: NativeAudioStartPayload["events"];
+      nativePlaybackEvents(cache: NativeRenderCache | null): { events: NativeAudioStartPayload["events"]; proceduralFallbackEventCount: number };
+    };
+    const firstGeneratedClip = project.timeline.clips.find((clip) => clip.type === "generated-section");
+    expect(firstGeneratedClip).toBeTruthy();
+    const metadataOnlyCache: NativeRenderCache = {
+      signature: nativeRenderCacheSignature(project),
+      assets: [],
+      regions: [],
+      cachedClipIds: new Set([firstGeneratedClip!.id]),
+      renderCacheItems: [generatedStemCacheItem(firstGeneratedClip!.id, "bass", "bass", "missing_bass_asset")],
+      renderCacheHitCount: 1,
+      renderCacheMissCount: 0,
+      proceduralFallbackEventCount: 0,
+      generatedRegionCount: 0,
+      runtimeAudioRegionCount: 0,
+      missingRuntimeAudioRegionCount: 0,
+      cachedAssetByteCount: 0
+    };
+
+    const playback = internals.nativePlaybackEvents(metadataOnlyCache);
+
+    expect(playback.proceduralFallbackEventCount).toBe(internals.events.length);
+    expect(playback.events.some((event) => event.trackId === "bass" && event.velocity > 0)).toBe(true);
   });
 
   it("does not treat lofi texture ticks as drum meter hits", () => {
@@ -725,22 +814,26 @@ function isSilentCachedSidechainTrigger(event: NativeAudioStartPayload["events"]
 
 function fakeNativeRenderCache(project: PocketDawProject): NativeRenderCache {
   const signature = nativeRenderCacheSignature(project);
-  const assetId = `asset_${signature.slice(0, 8)}`;
-  return {
-    signature,
-    assets: [{
+  const generatedClips = project.timeline.clips.filter((clip) => clip.type === "generated-section" && !clip.muted);
+  const generatedTracks = project.tracks.filter((track) => ["drums", "bass", "chords", "melody", "guitar"].includes(track.role) && track.active !== false);
+  const assets = generatedClips.flatMap((clip) => generatedTracks.map((track) => {
+    const assetId = `asset_${clip.id}_${track.id}_${signature.slice(0, 8)}`;
+    return {
       id: assetId,
-      name: "Test cached render",
+      name: `Test cached ${clip.id} ${track.id}`,
       sampleRate: project.project.sampleRate,
       channels: 2,
       durationSeconds: 1,
       sizeBytes: 1,
       bytes: [0]
-    }],
-    regions: [{
-      id: `region_${signature.slice(0, 8)}`,
+    };
+  }));
+  const regions = generatedClips.flatMap((clip) => generatedTracks.map((track) => {
+    const assetId = `asset_${clip.id}_${track.id}_${signature.slice(0, 8)}`;
+    return {
+      id: `region_${clip.id}_${track.id}_${signature.slice(0, 8)}`,
       assetId,
-      trackId: "bass",
+      trackId: track.id,
       startTime: 0,
       sourceOffset: 0,
       duration: 1,
@@ -748,16 +841,39 @@ function fakeNativeRenderCache(project: PocketDawProject): NativeRenderCache {
       pan: 0,
       fadeIn: 0,
       fadeOut: 0
-    }],
-    cachedClipIds: new Set(project.timeline.clips.map((clip) => clip.id)),
-    renderCacheItems: [],
+    };
+  }));
+  const renderCacheItems = generatedClips.flatMap((clip) => generatedTracks.map((track) =>
+    generatedStemCacheItem(clip.id, track.role, track.id, `asset_${clip.id}_${track.id}_${signature.slice(0, 8)}`)
+  ));
+  return {
+    signature,
+    assets,
+    regions,
+    cachedClipIds: new Set(generatedClips.map((clip) => clip.id)),
+    renderCacheItems,
     renderCacheHitCount: 0,
     renderCacheMissCount: 0,
     proceduralFallbackEventCount: 0,
-    generatedRegionCount: 1,
+    generatedRegionCount: regions.length,
     runtimeAudioRegionCount: 0,
     missingRuntimeAudioRegionCount: 0,
-    cachedAssetByteCount: 1
+    cachedAssetByteCount: assets.length
+  };
+}
+
+function generatedStemCacheItem(clipId: string, role: string, trackId: string, assetId: string) {
+  return {
+    id: assetId,
+    sourceClipId: clipId,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    invalidated: false,
+    metadata: {
+      cacheKind: "native-generated-stem",
+      role,
+      trackId,
+      assetId
+    }
   };
 }
 
