@@ -32,6 +32,8 @@ export interface NativeRenderCache {
   runtimeAudioRegionCount: number;
   missingRuntimeAudioRegionCount: number;
   cachedAssetByteCount: number;
+  generatedStemRenderFailureCount?: number;
+  lastGeneratedStemRenderError?: string | null;
   hydratedCacheItemCount?: number;
   hydrationFailureCount?: number;
   staleSourceHashCount?: number;
@@ -107,6 +109,8 @@ export async function buildNativeRenderCache(project: PocketDawProject, signatur
   let generatedRegionCount = 0;
   let runtimeAudioRegionCount = 0;
   let missingRuntimeAudioRegionCount = 0;
+  let generatedStemRenderFailureCount = 0;
+  let lastGeneratedStemRenderError: string | null = null;
   const createdAt = new Date().toISOString();
 
   for (const item of generatedClips.flatMap((clip) => assetBuildItems(project, clip))) {
@@ -120,8 +124,13 @@ export async function buildNativeRenderCache(project: PocketDawProject, signatur
         renderCacheHitCount += 1;
       } else {
         renderCacheMissCount += 1;
-        asset = await renderAsset(project, item);
-        if (!asset) continue;
+        const rendered = await renderAsset(project, item);
+        asset = rendered.asset;
+        if (!asset) {
+          generatedStemRenderFailureCount += 1;
+          lastGeneratedStemRenderError = rendered.error;
+          continue;
+        }
       }
       assets.set(item.key, asset);
       renderCacheItems.push(renderCacheItemForAsset(asset, createdAt, item));
@@ -162,7 +171,9 @@ export async function buildNativeRenderCache(project: PocketDawProject, signatur
     generatedRegionCount,
     runtimeAudioRegionCount,
     missingRuntimeAudioRegionCount,
-    cachedAssetByteCount: Array.from(assets.values()).reduce((total, asset) => total + nativeAssetByteLength(asset), 0)
+    cachedAssetByteCount: Array.from(assets.values()).reduce((total, asset) => total + nativeAssetByteLength(asset), 0),
+    generatedStemRenderFailureCount,
+    lastGeneratedStemRenderError
   };
 }
 
@@ -647,28 +658,31 @@ function assetBuildItems(project: PocketDawProject, clip: Clip): AssetBuildItem[
   });
 }
 
-async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Promise<NativeAudioAsset | null> {
+async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Promise<{ asset: NativeAudioAsset | null; error: string | null }> {
   const assetProject = projectForNativeGeneratedStemRender(project, item.clip, item.trackId);
   const clipDurationSeconds = barsToSeconds(item.clip.barLength, project.project.bpm, project.project.timeSig);
   const renderDurationSeconds = generatedStemRenderDuration(clipDurationSeconds);
-  const nativeRender = await renderNativeGeneratedStemWav(assetProject, renderDurationSeconds);
-  if (!nativeRender?.bytes?.length) return null;
+  const { rendered: nativeRender, error } = await renderNativeGeneratedStemWav(assetProject, renderDurationSeconds);
+  if (!nativeRender?.bytes?.length) return { asset: null, error: error || "Native cache-stem renderer returned no audio." };
   const bytes = nativeRender.bytes;
   const sampleRate = nativeRender.sampleRate || project.project.sampleRate;
   const channels = nativeRender.channels || 2;
   const durationSeconds = nativeRender.durationSeconds || renderDurationSeconds;
   const id = item.assetId;
   return {
-    id,
-    name: `${item.clip.sectionId || "section"} ${item.role} ${item.trackId}`,
-    relativePath: nativeRenderCacheRelativePath(id),
-    mimeType: "audio/wav",
-    sampleRate,
-    channels,
-    durationSeconds,
-    sizeBytes: bytes.length,
-    sourceHash: item.sourceHash,
-    bytes
+    asset: {
+      id,
+      name: `${item.clip.sectionId || "section"} ${item.role} ${item.trackId}`,
+      relativePath: nativeRenderCacheRelativePath(id),
+      mimeType: "audio/wav",
+      sampleRate,
+      channels,
+      durationSeconds,
+      sizeBytes: bytes.length,
+      sourceHash: item.sourceHash,
+      bytes
+    },
+    error: null
   };
 }
 
@@ -717,9 +731,16 @@ async function renderNativeGeneratedStemWav(assetProject: PocketDawProject, dura
   try {
     const events = renderTimelineEvents(assetProject);
     const payload = buildNativeAudioStartPayload(assetProject, events, 0);
-    return await renderNativeAudioWav({ ...payload, loop: null, metronome: null }, durationSeconds, NATIVE_CACHE_STEM_RENDER_MODE);
-  } catch {
-    return null;
+    const rendered = await renderNativeAudioWav({ ...payload, loop: null, metronome: null }, durationSeconds, NATIVE_CACHE_STEM_RENDER_MODE);
+    return {
+      rendered,
+      error: rendered ? null : "Native cache-stem renderer returned no audio."
+    };
+  } catch (error) {
+    return {
+      rendered: null,
+      error: error instanceof Error ? error.message : String(error || "Native cache-stem renderer failed.")
+    };
   }
 }
 

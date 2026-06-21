@@ -566,6 +566,8 @@ export class AudioEngine {
         runtimeAudioRegionCount: activeNativeRenderCache?.runtimeAudioRegionCount || 0,
         missingRuntimeAudioRegionCount: activeNativeRenderCache?.missingRuntimeAudioRegionCount || 0,
         cachedAssetByteCount: activeNativeRenderCache?.cachedAssetByteCount || 0,
+        generatedStemRenderFailureCount: activeNativeRenderCache?.generatedStemRenderFailureCount || 0,
+        lastGeneratedStemRenderError: activeNativeRenderCache?.lastGeneratedStemRenderError || null,
         buildPending: this.nativeRenderCacheBuildPromise !== null,
         prewarmScheduled: this.nativeRenderCachePrewarmScheduled,
         pendingReason: this.nativeRenderCachePendingReason,
@@ -1570,7 +1572,9 @@ function mergeNativePlaybackCaches(base: NativeRenderCache, runtime: NativeRende
     renderCacheMissCount: base.renderCacheMissCount + runtime.renderCacheMissCount,
     runtimeAudioRegionCount,
     missingRuntimeAudioRegionCount: Math.max(0, expectedRuntimeAudioRegions - runtimeAudioRegionCount),
-    cachedAssetByteCount: Array.from(assets.values()).reduce((total, asset) => total + (asset.sizeBytes || asset.bytes?.length || 0), 0)
+    cachedAssetByteCount: Array.from(assets.values()).reduce((total, asset) => total + (asset.sizeBytes || asset.bytes?.length || 0), 0),
+    generatedStemRenderFailureCount: (base.generatedStemRenderFailureCount || 0) + (runtime.generatedStemRenderFailureCount || 0),
+    lastGeneratedStemRenderError: runtime.lastGeneratedStemRenderError || base.lastGeneratedStemRenderError || null
   };
 }
 

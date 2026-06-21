@@ -1184,6 +1184,10 @@ function nativeCacheStatusText(state: AppState): string {
   if (status.lastError) return `Cache error: ${status.lastError}`;
   if (status.buildPending) return "Building native cache...";
   if (status.bypassedForLiveEdits) return "Native event playback after live edit; rebuild cache to restore cached generated stems.";
+  if (status.generatedStemRenderFailureCount > 0) {
+    const detail = status.lastGeneratedStemRenderError ? `: ${status.lastGeneratedStemRenderError}` : ".";
+    return `Native cache-stem render failed for ${status.generatedStemRenderFailureCount} generated stem${status.generatedStemRenderFailureCount === 1 ? "" : "s"}${detail}`;
+  }
   if (status.assetRegionCount > 0) {
     const parts = [
       `${status.assetRegionCount} cached region${status.assetRegionCount === 1 ? "" : "s"}`,

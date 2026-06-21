@@ -3901,7 +3901,9 @@ function nativeCacheStatusFromDiagnostics(diagnostics: ReturnType<AudioEngine["g
     prewarmScheduled: diagnostics.nativeRenderCache.prewarmScheduled,
     bypassedForLiveEdits: diagnostics.nativeRenderCache.nativeRenderCacheBypassedForLiveEdits,
     lastBuildReason: diagnostics.nativeRenderCache.lastBuildReason,
-    lastError: diagnostics.nativeRenderCache.lastError
+    lastError: diagnostics.nativeRenderCache.lastError,
+    generatedStemRenderFailureCount: diagnostics.nativeRenderCache.generatedStemRenderFailureCount,
+    lastGeneratedStemRenderError: diagnostics.nativeRenderCache.lastGeneratedStemRenderError
   };
 }
 

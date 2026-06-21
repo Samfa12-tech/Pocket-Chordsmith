@@ -135,6 +135,8 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
         runtimeAudioRegionCount: 0,
         missingRuntimeAudioRegionCount: 0,
         cachedAssetByteCount: 0,
+        generatedStemRenderFailureCount: 0,
+        lastGeneratedStemRenderError: null,
         buildPending: false,
         prewarmScheduled: false,
         pendingReason: null,

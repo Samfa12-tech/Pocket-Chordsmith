@@ -84,6 +84,8 @@ export interface NativeCacheUiStatus {
   bypassedForLiveEdits: boolean;
   lastBuildReason: string | null;
   lastError: string | null;
+  generatedStemRenderFailureCount: number;
+  lastGeneratedStemRenderError: string | null;
 }
 
 export interface RecordingUiState {
@@ -213,7 +215,9 @@ export function createInitialState(): AppState {
       prewarmScheduled: false,
       bypassedForLiveEdits: false,
       lastBuildReason: null,
-      lastError: null
+      lastError: null,
+      generatedStemRenderFailureCount: 0,
+      lastGeneratedStemRenderError: null
     },
     lastHandoff: {
       source: null,

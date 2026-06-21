@@ -582,7 +582,9 @@ describe("Pocket DAW UI rendering", () => {
       prewarmScheduled: false,
       bypassedForLiveEdits: false,
       lastBuildReason: "manual-build-native-cache",
-      lastError: null
+      lastError: null,
+      generatedStemRenderFailureCount: 0,
+      lastGeneratedStemRenderError: null
     };
     state.showControls = true;
 
@@ -591,6 +593,20 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Native Playback");
     expect(html).toContain("5 cached regions / 1 cached clip / 5 generated / 0 audio / 0 native event fallbacks / manual-build-native-cache");
     expect(html).toContain("Native Cache");
+  });
+
+  it("renders native cache-stem renderer failures before quiet procedural fallback", () => {
+    const state = createInitialState();
+    state.nativeCacheStatus = {
+      ...state.nativeCacheStatus,
+      generatedStemRenderFailureCount: 5,
+      lastGeneratedStemRenderError: "cache-stem render crashed"
+    };
+    state.showControls = true;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("Native cache-stem render failed for 5 generated stems: cache-stem render crashed");
   });
 
   it("warns when native cache is bypassed after a live generated edit", () => {

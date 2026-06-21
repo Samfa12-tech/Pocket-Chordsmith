@@ -258,7 +258,21 @@ describe("native render cache", () => {
     expect(cache.renderCacheItems.length).toBe(0);
     expect(cache.cachedClipIds.size).toBe(0);
     expect(cache.renderCacheMissCount).toBeGreaterThan(0);
+    expect(cache.generatedStemRenderFailureCount).toBe(cache.renderCacheMissCount);
+    expect(cache.lastGeneratedStemRenderError).toBe("Native cache-stem renderer returned no audio.");
     expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
+  });
+
+  it("exposes native stem render failures in audio engine diagnostics", async () => {
+    nativeMediaBridgeMock.renderNativeAudioWav.mockRejectedValue(new Error("cache-stem render crashed"));
+    const engine = new AudioEngine(createDemoProject());
+
+    await engine.rebuildNativeRenderCache("test-cache-stem-failure");
+    const diagnostics = engine.getDiagnostics();
+
+    expect(diagnostics.nativeRenderCache.generatedStemRenderFailureCount).toBeGreaterThan(0);
+    expect(diagnostics.nativeRenderCache.lastGeneratedStemRenderError).toBe("cache-stem render crashed");
+    expect(diagnostics.nativeRenderCache.lastBuildReason).toBe("test-cache-stem-failure");
   });
 
   it("keeps generated lofi cache stems on the native renderer", async () => {
@@ -581,7 +595,12 @@ describe("native render cache", () => {
     const previousWindow = (globalThis as { window?: unknown }).window;
     (globalThis as { window?: unknown }).window = {
       setInterval: () => 1,
-      clearInterval: () => undefined
+      clearInterval: () => undefined,
+      setTimeout: (callback: () => void) => {
+        void Promise.resolve().then(callback);
+        return 1;
+      },
+      clearTimeout: () => undefined
     };
     const starts: NativeAudioStartPayload[] = [];
     const native = {
