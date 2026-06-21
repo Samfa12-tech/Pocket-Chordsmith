@@ -26311,6 +26311,10 @@ function buildSequenceEvents(){
       const bar = Math.floor(step / stepsPerBar());
       const ch = section.progression[bar] || state.availableChords[0];
 
+      if(isLofiActive() && state.lofiTexture?.enabled){
+        events.push({type:"texture", time, dur: Math.max(0.08, Math.min(0.24, stepDur)), step, section:section.name, audioProfile:LOFI_AUDIO_PROFILE_ID, lofiPreset:state.lofiPreset || "", lofiTexture:sanitizeLofiTexture(state.lofiTexture, state.lofiPreset)});
+      }
+
       if(step % stepsPerBar() === 0){
         chordRhythmStarts(time).forEach(([st, dur]) => {
           events.push({type:"chord", chord: ch, time: st, dur: Math.min(dur, state.timeSig * beatDur()), step, section:section.name});
@@ -26452,6 +26456,9 @@ function normalizeChordsmithTraceEvent(ev){
   if(ev.notes !== undefined) out.midiNotes = ev.notes.slice();
   if(ev.tone !== undefined) out.tone = ev.tone;
   if(ev.direction !== undefined) out.direction = ev.direction;
+  if(ev.audioProfile !== undefined) out.audioProfile = ev.audioProfile;
+  if(ev.lofiPreset !== undefined) out.lofiPreset = ev.lofiPreset;
+  if(ev.lofiTexture !== undefined) out.lofiTexture = {...ev.lofiTexture};
   return out;
 }
 

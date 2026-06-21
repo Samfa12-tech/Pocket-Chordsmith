@@ -775,7 +775,7 @@ export class AudioEngine {
     const runtimeCache = this.readyNativeRuntimeAudioCache();
     if (this.nativeRenderCacheBypassedForLiveEdits) return runtimeCache;
     if (!cache) return runtimeCache;
-    if (runtimeCache && cache.runtimeAudioRegionCount < this.audioRegions.length) return mergeNativePlaybackCaches(cache, runtimeCache);
+    if (runtimeCache && cache.runtimeAudioRegionCount < this.audioRegions.length) return mergeNativePlaybackCaches(cache, runtimeCache, this.audioRegions.length);
     return cache;
   }
 
@@ -786,7 +786,7 @@ export class AudioEngine {
     if (!runtimeCache) return cache;
     if (!runtimeCache.regions.length) return cache;
     if (!cache) return runtimeCache;
-    return mergeNativePlaybackCaches(cache, runtimeCache);
+    return mergeNativePlaybackCaches(cache, runtimeCache, this.audioRegions.length);
   }
 
   private nativePlaybackEvents(cache: NativeRenderCache | null): { events: RenderedEvent[]; proceduralFallbackEventCount: number } {
@@ -1542,24 +1542,47 @@ function countEventsBy(events: RenderedEvent[], field: "trackId" | "kind"): Reco
   }, {});
 }
 
-function mergeNativePlaybackCaches(base: NativeRenderCache, runtime: NativeRenderCache): NativeRenderCache {
+function mergeNativePlaybackCaches(base: NativeRenderCache, runtime: NativeRenderCache, runtimeAudioRegionTotal = 0): NativeRenderCache {
   const assets = new Map(base.assets.map((asset) => [asset.id, asset]));
   runtime.assets.forEach((asset) => assets.set(asset.id, asset));
   const regionIds = new Set(base.regions.map((region) => region.id));
   const regions = base.regions.concat(runtime.regions.filter((region) => !regionIds.has(region.id)));
   const cachedClipIds = new Set([...base.cachedClipIds, ...runtime.cachedClipIds]);
+  const renderCacheItems = base.renderCacheItems.concat(runtime.renderCacheItems.filter((item) => !base.renderCacheItems.some((existing) => existing.id === item.id)));
+  const runtimeAudioRegionCount = Math.max(
+    countNativeRuntimeAudioRegions(renderCacheItems, regions),
+    base.runtimeAudioRegionCount,
+    runtime.runtimeAudioRegionCount
+  );
+  const expectedRuntimeAudioRegions = Math.max(
+    runtimeAudioRegionTotal,
+    base.runtimeAudioRegionCount + base.missingRuntimeAudioRegionCount,
+    runtime.runtimeAudioRegionCount + runtime.missingRuntimeAudioRegionCount,
+    runtimeAudioRegionCount
+  );
   return {
     ...base,
     assets: Array.from(assets.values()),
     regions,
     cachedClipIds,
-    renderCacheItems: base.renderCacheItems.concat(runtime.renderCacheItems.filter((item) => !base.renderCacheItems.some((existing) => existing.id === item.id))),
+    renderCacheItems,
     renderCacheHitCount: base.renderCacheHitCount + runtime.renderCacheHitCount,
     renderCacheMissCount: base.renderCacheMissCount + runtime.renderCacheMissCount,
-    runtimeAudioRegionCount: Math.max(base.runtimeAudioRegionCount, runtime.runtimeAudioRegionCount),
-    missingRuntimeAudioRegionCount: runtime.missingRuntimeAudioRegionCount,
+    runtimeAudioRegionCount,
+    missingRuntimeAudioRegionCount: Math.max(0, expectedRuntimeAudioRegions - runtimeAudioRegionCount),
     cachedAssetByteCount: Array.from(assets.values()).reduce((total, asset) => total + (asset.sizeBytes || asset.bytes?.length || 0), 0)
   };
+}
+
+function countNativeRuntimeAudioRegions(renderCacheItems: NativeRenderCache["renderCacheItems"], regions: NativeRenderCache["regions"]): number {
+  const runtimeAssetIds = new Set(renderCacheItems
+    .filter((item) => String(item.metadata?.cacheKind || "") === "native-runtime-audio")
+    .map((item) => String(item.metadata?.assetId || item.id || ""))
+    .filter(Boolean));
+  if (!runtimeAssetIds.size) return 0;
+  return new Set(regions
+    .filter((region) => runtimeAssetIds.has(region.assetId))
+    .map((region) => region.id)).size;
 }
 
 function clampNumber(value: number, min: number, max: number): number {

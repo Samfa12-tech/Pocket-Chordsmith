@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { renderTimelineEvents, type RenderedEvent } from "../src/audio/eventRenderer";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
+import { PCS_PARITY_FIXTURES } from "./pcsParityFixtures";
 
 interface CoreFixtureIndexEntry {
   name: string;
@@ -31,6 +32,9 @@ interface BrowserTraceEvent {
   pan?: number;
   direction?: string;
   midiNotes?: number[];
+  audioProfile?: string;
+  lofiPreset?: string;
+  lofiTexture?: Record<string, unknown>;
 }
 
 interface BrowserTrace {
@@ -79,7 +83,6 @@ describe("Pocket DAW parity against the live Chordsmith browser trace", () => {
     const daw = createDawProjectFromChordsmithProject(pcs);
     const sectionByClip = new Map(daw.timeline.clips.map((clip) => [clip.id, clip.sectionId || "A"]));
     const dawEvents = renderTimelineEvents(daw)
-      .filter((event) => event.kind !== "texture")
       .map((event) => compactDawEvent(event, sectionByClip))
       .sort(compareEvents);
     const browserEvents = browserTrace.events.map(compactBrowserEvent).sort(compareEvents);
@@ -87,6 +90,31 @@ describe("Pocket DAW parity against the live Chordsmith browser trace", () => {
     expect(pageErrors).toEqual([]);
     expect(firstDiff(dawEvents, browserEvents)).toBeNull();
     expectDawSoundSettingsFromBrowserProject(daw, browserTrace.project);
+  }, 60_000);
+
+  it("compares lofi texture ticks against the Chordsmith browser import trace", async () => {
+    const fixture = PCS_PARITY_FIXTURES.find((entry) => entry.name === "Glass Tank Afternoon lofi import");
+    expect(fixture).toBeTruthy();
+
+    const browserTrace = await page.evaluate(
+      (project: Record<string, unknown>) => window.PocketChordsmithParityTrace.fromProject(project),
+      fixture!.raw
+    ) as BrowserTrace;
+    const pcs = sanitizePocketChordsmithProject(browserTrace.project);
+    const daw = createDawProjectFromChordsmithProject(pcs);
+    const sectionByClip = new Map(daw.timeline.clips.map((clip) => [clip.id, clip.sectionId || "A"]));
+    const dawEvents = renderTimelineEvents(daw)
+      .filter((event) => event.kind === "texture")
+      .map((event) => compactDawEvent(event, sectionByClip))
+      .sort(compareEvents);
+    const browserEvents = browserTrace.events
+      .filter((event) => event.type === "texture")
+      .map(compactBrowserEvent)
+      .sort(compareEvents);
+
+    expect(browserEvents.length).toBeGreaterThan(0);
+    expect(dawEvents.length).toBeGreaterThan(0);
+    expect(firstDiff(dawEvents, browserEvents)).toBeNull();
   }, 60_000);
 
   it("preserves non-default Chordsmith browser mix slider values in DAW import", async () => {
@@ -139,6 +167,7 @@ function compactBrowserEvent(event: BrowserTraceEvent) {
   copyOptionalNumber(out, event, "pan");
   copyOptional(out, event, "direction");
   if (Array.isArray(event.midiNotes)) out.midiNotes = event.midiNotes.slice();
+  if (event.type === "texture") copyTextureMetadata(out, event);
   return out;
 }
 
@@ -160,7 +189,26 @@ function compactDawEvent(event: RenderedEvent, sectionByClip: Map<string, string
   copyOptionalNumber(out, event, "pan");
   copyOptional(out, event, "direction");
   if (Array.isArray(event.midiNotes)) out.midiNotes = event.midiNotes.slice();
+  if (event.kind === "texture") copyTextureMetadata(out, event);
   return out;
+}
+
+function copyTextureMetadata(target: Record<string, unknown>, source: { audioProfile?: string; lofiPreset?: string; lofiTexture?: Record<string, unknown> }) {
+  copyOptional(target, source, "audioProfile");
+  copyOptional(target, source, "lofiPreset");
+  if (source.lofiTexture) target.lofiTexture = cleanTexture(source.lofiTexture);
+}
+
+function cleanTexture(texture: Record<string, unknown>) {
+  return {
+    enabled: Boolean(texture.enabled),
+    vinylCrackle: round(texture.vinylCrackle),
+    tapeHiss: round(texture.tapeHiss),
+    wowFlutter: round(texture.wowFlutter),
+    warmth: round(texture.warmth),
+    lowPassAge: round(texture.lowPassAge),
+    bitCrush: round(texture.bitCrush)
+  };
 }
 
 function copyOptional(target: Record<string, unknown>, source: object, key: string) {

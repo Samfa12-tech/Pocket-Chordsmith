@@ -4,7 +4,7 @@ import { createDemoProject } from "../src/demo/demoProject";
 import type { NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
 import { cycleBassStep } from "../src/daw/chordsmithEditor";
 import { addTrackToProject } from "../src/daw/tracks";
-import { nativeRenderCacheSignature, type NativeRenderCache } from "../src/audio/nativeRenderCache";
+import { nativeRenderCacheSignature, nativeRuntimeAudioCacheSignature, type NativeRenderCache } from "../src/audio/nativeRenderCache";
 import type { PocketDawProject } from "../src/daw/schema";
 
 describe("audio engine diagnostics", () => {
@@ -180,6 +180,33 @@ describe("audio engine diagnostics", () => {
 
     expect(playback.proceduralFallbackEventCount).toBe(internals.events.length);
     expect(playback.events.some((event) => event.trackId === "bass" && event.velocity > 0)).toBe(true);
+  });
+
+  it("reports runtime audio coverage from merged native playback caches", () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    const base = runtimeOnlyNativeCache(project, nativeRenderCacheSignature(project), "audio_clip_a", "asset_a", {
+      runtimeAudioRegionCount: 1,
+      missingRuntimeAudioRegionCount: 1
+    });
+    const runtime = runtimeOnlyNativeCache(project, nativeRuntimeAudioCacheSignature(project), "audio_clip_b", "asset_b", {
+      runtimeAudioRegionCount: 1,
+      missingRuntimeAudioRegionCount: 1
+    });
+    const internals = engine as unknown as {
+      audioRegions: unknown[];
+      nativeRenderCache: NativeRenderCache;
+      nativeRuntimeAudioCache: NativeRenderCache;
+    };
+    internals.audioRegions = [{ id: "audio_clip_a" }, { id: "audio_clip_b" }];
+    internals.nativeRenderCache = base;
+    internals.nativeRuntimeAudioCache = runtime;
+
+    const diagnostics = engine.getDiagnostics();
+
+    expect(diagnostics.nativeRenderCache.assetRegionCount).toBe(2);
+    expect(diagnostics.nativeRenderCache.runtimeAudioRegionCount).toBe(2);
+    expect(diagnostics.nativeRenderCache.missingRuntimeAudioRegionCount).toBe(0);
   });
 
   it("does not suppress generated events when generated cache metadata has no playable region", () => {
@@ -859,6 +886,62 @@ function fakeNativeRenderCache(project: PocketDawProject): NativeRenderCache {
     runtimeAudioRegionCount: 0,
     missingRuntimeAudioRegionCount: 0,
     cachedAssetByteCount: assets.length
+  };
+}
+
+function runtimeOnlyNativeCache(
+  project: PocketDawProject,
+  signature: string,
+  clipId: string,
+  assetId: string,
+  stats: Pick<NativeRenderCache, "runtimeAudioRegionCount" | "missingRuntimeAudioRegionCount">
+): NativeRenderCache {
+  return {
+    signature,
+    assets: [{
+      id: assetId,
+      name: `${clipId} runtime audio`,
+      sampleRate: project.project.sampleRate,
+      channels: 2,
+      durationSeconds: 1,
+      sizeBytes: 1,
+      bytes: [0]
+    }],
+    regions: [{
+      id: `${clipId}_bass_media_audio`,
+      assetId,
+      trackId: "bass",
+      startTime: 0,
+      sourceOffset: 0,
+      duration: 1,
+      gain: 1,
+      pan: 0,
+      fadeIn: 0,
+      fadeOut: 0
+    }],
+    cachedClipIds: new Set([clipId]),
+    renderCacheItems: [runtimeAudioCacheItem(clipId, assetId)],
+    renderCacheHitCount: 0,
+    renderCacheMissCount: 0,
+    proceduralFallbackEventCount: 0,
+    generatedRegionCount: 0,
+    runtimeAudioRegionCount: stats.runtimeAudioRegionCount,
+    missingRuntimeAudioRegionCount: stats.missingRuntimeAudioRegionCount,
+    cachedAssetByteCount: 1
+  };
+}
+
+function runtimeAudioCacheItem(clipId: string, assetId: string) {
+  return {
+    id: assetId,
+    sourceClipId: clipId,
+    mediaPoolItemId: "media_audio",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    invalidated: false,
+    metadata: {
+      cacheKind: "native-runtime-audio",
+      assetId
+    }
   };
 }
 
