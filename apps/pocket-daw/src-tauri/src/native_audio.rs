@@ -1190,8 +1190,10 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         if active_count > 96 {
             break;
         }
-        let mut lane_left = sample;
-        let mut lane_right = sample;
+        let event_pan = event.pan.unwrap_or(0.0).clamp(-1.0, 1.0) as f32;
+        let (pan_left, pan_right) = cache_stem_source_pan_gains(event_pan);
+        let mut lane_left = sample * pan_left;
+        let mut lane_right = sample * pan_right;
         if let Some(lane) = &event.drum_lane {
             if let Some(chain) = playback.fx.drum_lane_chains.get_mut(lane) {
                 (lane_left, lane_right) = chain.process(lane_left, lane_right);
@@ -1205,6 +1207,15 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     apply_loop_wrap(playback);
     playback.rendered_frame_count = playback.rendered_frame_count.saturating_add(1);
     (left, right)
+}
+
+fn cache_stem_source_pan_gains(pan: f32) -> (f32, f32) {
+    let (left, right) = pan_gains(pan);
+    let (center_left, center_right) = pan_gains(0.0);
+    (
+        left / center_left.max(0.0001),
+        right / center_right.max(0.0001),
+    )
 }
 
 fn sanitize_loop_region(loop_region: Option<NativeLoopPayload>) -> Option<NativeLoopPayload> {
@@ -3741,6 +3752,60 @@ mod tests {
         assert!(
             max_diff < 0.00008,
             "expected cache-stem playback to match procedural playback, max diff {max_diff}"
+        );
+    }
+
+    #[test]
+    fn native_cache_stem_render_preserves_event_pan_before_region_playback() {
+        let mut event = test_generated_event("cached_panned_melody", "melody", 0.0, 0.08, 0.8);
+        event.track_id = "melody".to_string();
+        event.instrument = Some("tape_bell".to_string());
+        event.midi = Some(72.0);
+        event.pan = Some(0.6);
+        let track = test_track("melody", 0.72, 0.0, false, false);
+
+        let mut procedural = playback_with_events(vec![event.clone()]);
+        procedural
+            .tracks
+            .insert("melody".to_string(), track.clone());
+        procedural.sample_rate = 8_000;
+        let procedural_frames = render_frames(&mut procedural, 80);
+
+        let mut stem_source = playback_with_events(vec![event]);
+        stem_source
+            .tracks
+            .insert("melody".to_string(), track.clone());
+        stem_source.sample_rate = 8_000;
+        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem)
+            .expect("cache stem render should work");
+        let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
+        let mut cached = PlaybackShared {
+            project_title: Some("Cached pan".to_string()),
+            events: Vec::new(),
+            assets: HashMap::from([("stem".to_string(), decoded)]),
+            regions: vec![test_region(
+                "region", "stem", "melody", 0.0, 0.0, 0.1, 1.0, 0.0,
+            )],
+            tracks: HashMap::from([("melody".to_string(), track)]),
+            has_solo: false,
+            position_seconds: 0.0,
+            sample_rate: 8_000,
+            channels: 2,
+            playing: true,
+            rendered_frame_count: 0,
+            scan_start_index: 0,
+            generation: 1,
+            fx: NativeFxRuntime::default(),
+            loop_region: None,
+            metronome: None,
+            sidechain: None,
+        };
+        let cached_frames = render_frames(&mut cached, 80);
+        let max_diff = max_frame_diff(&procedural_frames, &cached_frames);
+
+        assert!(
+            max_diff < 0.00008,
+            "expected cache-stem playback to preserve event pan, max diff {max_diff}"
         );
     }
 
