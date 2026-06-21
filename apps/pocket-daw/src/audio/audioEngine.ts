@@ -137,6 +137,7 @@ export class AudioEngine {
   private playbackBackend: PlaybackBackend = "idle";
   private nativeStartedAtMs = 0;
   private nativePlaybackStartedWithRenderCache = false;
+  private nativePlaybackStartedWithProceduralFallbackEventCount = 0;
   private nativeStatus: NativeAudioStatus | null = null;
   private nativeLastError: string | null = null;
   private nativeRestartToken = 0;
@@ -424,6 +425,7 @@ export class AudioEngine {
     this.playing = false;
     this.playbackBackend = "idle";
     this.nativePlaybackStartedWithRenderCache = false;
+    this.nativePlaybackStartedWithProceduralFallbackEventCount = 0;
     this.nativeRenderCacheBypassedForLiveEdits = false;
     this.nativeRenderCacheStaleForLiveEdits = false;
     this.scheduleNativeRenderCachePrewarm(pendingCacheReason);
@@ -691,9 +693,11 @@ export class AudioEngine {
     if (!result.started) {
       this.nativeLastError = result.error;
       this.nativePlaybackStartedWithRenderCache = false;
+      this.nativePlaybackStartedWithProceduralFallbackEventCount = 0;
       return result.unavailable ? "unavailable" : "failed";
     }
     this.nativePlaybackStartedWithRenderCache = !!playbackCache?.regions.length;
+    this.nativePlaybackStartedWithProceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
     this.nativeStatus = result.status;
     this.nativeLastError = null;
     return "started";
@@ -743,10 +747,12 @@ export class AudioEngine {
     if (request.token !== this.nativeRestartToken) return;
     if (result.started) {
       this.nativePlaybackStartedWithRenderCache = !!playbackCache?.regions.length;
+      this.nativePlaybackStartedWithProceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
       this.nativeStatus = result.status;
       this.nativeLastError = null;
     } else {
       this.nativePlaybackStartedWithRenderCache = false;
+      this.nativePlaybackStartedWithProceduralFallbackEventCount = 0;
       this.nativeLastError = result.error;
     }
   }
@@ -935,6 +941,7 @@ export class AudioEngine {
 
   private activeNativePlaybackLooksProceduralFallback(): boolean {
     if (!this.nativeStatus?.active || !this.nativeStatus.playing) return false;
+    if (this.nativePlaybackStartedWithProceduralFallbackEventCount > 0) return true;
     if (this.nativePlaybackStartedWithRenderCache) return false;
     const assetCount = Number(this.nativeStatus.assetCount || 0);
     const assetRegionCount = Number(this.nativeStatus.assetRegionCount || 0);
