@@ -576,6 +576,118 @@ describe("audio engine diagnostics", () => {
     }
   });
 
+  it("windows warmed native render cache payloads on first cached start", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    const starts: NativeAudioStartPayload[] = [];
+    const native = {
+      async start(payload: NativeAudioStartPayload) {
+        starts.push(payload);
+        return {
+          started: true,
+          status: nativeStatus({
+            playing: true,
+            positionSeconds: payload.startSeconds,
+            eventCount: payload.events.length,
+            assetCount: payload.assets?.length || 0,
+            assetRegionCount: payload.regions?.length || 0,
+            proceduralEventCount: payload.events.length
+          }),
+          error: null
+        };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true, playing: true }); }
+    };
+
+    try {
+      const project = createDemoProject();
+      const cache = fakeTimedNativeRenderCache(project);
+      const engine = new AudioEngine(project, native);
+      (engine as unknown as { nativeRenderCache: NativeRenderCache }).nativeRenderCache = cache;
+
+      await engine.play();
+
+      expect(starts).toHaveLength(1);
+      expect(starts[0].assets?.length || 0).toBeGreaterThan(0);
+      expect(starts[0].assets?.length || 0).toBeLessThan(cache.assets.length);
+      expect(starts[0].regions?.length || 0).toBeLessThan(cache.regions.length);
+      expect(starts[0].events.length).toBeGreaterThan(0);
+      expect(starts[0].events.every(isSilentCachedSidechainTrigger)).toBe(true);
+      expect(engine.getDiagnostics().nativeRenderCache.assetCount).toBe(cache.assets.length);
+    } finally {
+      (globalThis as any).window = previousWindow;
+    }
+  });
+
+  it("advances warmed cache payload windows without building cache during playback", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    const starts: NativeAudioStartPayload[] = [];
+    const native = {
+      async start(payload: NativeAudioStartPayload) {
+        starts.push(payload);
+        return {
+          started: true,
+          status: nativeStatus({
+            playing: true,
+            positionSeconds: payload.startSeconds,
+            eventCount: payload.events.length,
+            assetCount: payload.assets?.length || 0,
+            assetRegionCount: payload.regions?.length || 0,
+            proceduralEventCount: payload.events.length
+          }),
+          error: null
+        };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true, playing: true, positionSeconds: 0 }); }
+    };
+
+    try {
+      const project = createDemoProject();
+      const cache = fakeTimedNativeRenderCache(project);
+      const engine = new AudioEngine(project, native);
+      const internals = engine as unknown as {
+        nativeRenderCache: NativeRenderCache;
+        nativePlaybackCachePayloadWindowEndSeconds: number;
+        nativeStartedAtMs: number;
+        nativeLastStatusRefreshAtMs: number;
+        tickNativePlayback(): void;
+        nativeRestartFlush: Promise<void> | null;
+      };
+      internals.nativeRenderCache = cache;
+
+      await engine.play();
+      const firstWindowEnd = internals.nativePlaybackCachePayloadWindowEndSeconds;
+      internals.nativeStartedAtMs = performance.now() - Math.max(0, firstWindowEnd - 0.3) * 1000;
+      internals.nativeLastStatusRefreshAtMs = performance.now();
+      internals.tickNativePlayback();
+      await internals.nativeRestartFlush;
+
+      expect(starts).toHaveLength(2);
+      expect(starts[1].assets?.length || 0).toBeGreaterThan(0);
+      expect(starts[1].assets?.length || 0).toBeLessThan(cache.assets.length);
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
+    } finally {
+      (globalThis as any).window = previousWindow;
+    }
+  });
+
   it("does not fall back to WebAudio when native playback start fails", async () => {
     const native = {
       async start() {
@@ -1053,6 +1165,57 @@ function fakeNativeRenderCache(project: PocketDawProject): NativeRenderCache {
   }));
   const renderCacheItems = generatedClips.flatMap((clip) => generatedTracks.map((track) =>
     generatedStemCacheItem(clip.id, track.role, track.id, `asset_${clip.id}_${track.id}_${signature.slice(0, 8)}`)
+  ));
+  return {
+    signature,
+    assets,
+    regions,
+    cachedClipIds: new Set(generatedClips.map((clip) => clip.id)),
+    renderCacheItems,
+    renderCacheHitCount: 0,
+    renderCacheMissCount: 0,
+    proceduralFallbackEventCount: 0,
+    generatedRegionCount: regions.length,
+    runtimeAudioRegionCount: 0,
+    missingRuntimeAudioRegionCount: 0,
+    cachedAssetByteCount: assets.length
+  };
+}
+
+function fakeTimedNativeRenderCache(project: PocketDawProject): NativeRenderCache {
+  const signature = nativeRenderCacheSignature(project);
+  const secondsPerBar = project.project.timeSig * (60 / project.project.bpm);
+  const generatedClips = project.timeline.clips.filter((clip) => clip.type === "generated-section" && !clip.muted);
+  const generatedTracks = project.tracks.filter((track) => ["drums", "bass", "chords", "melody", "guitar"].includes(track.role) && track.active !== false);
+  const assets = generatedClips.flatMap((clip) => generatedTracks.map((track) => {
+    const assetId = `timed_asset_${clip.id}_${track.id}_${signature.slice(0, 8)}`;
+    return {
+      id: assetId,
+      name: `Timed cached ${clip.id} ${track.id}`,
+      sampleRate: project.project.sampleRate,
+      channels: 2,
+      durationSeconds: Math.max(0.1, clip.barLength * secondsPerBar),
+      sizeBytes: 1,
+      bytes: [0]
+    };
+  }));
+  const regions = generatedClips.flatMap((clip) => generatedTracks.map((track) => {
+    const assetId = `timed_asset_${clip.id}_${track.id}_${signature.slice(0, 8)}`;
+    return {
+      id: `timed_region_${clip.id}_${track.id}_${signature.slice(0, 8)}`,
+      assetId,
+      trackId: track.id,
+      startTime: Math.max(0, clip.startBar - 1) * secondsPerBar,
+      sourceOffset: 0,
+      duration: Math.max(0.1, clip.barLength * secondsPerBar),
+      gain: 1,
+      pan: 0,
+      fadeIn: 0,
+      fadeOut: 0
+    };
+  }));
+  const renderCacheItems = generatedClips.flatMap((clip) => generatedTracks.map((track) =>
+    generatedStemCacheItem(clip.id, track.role, track.id, `timed_asset_${clip.id}_${track.id}_${signature.slice(0, 8)}`)
   ));
   return {
     signature,
