@@ -179,6 +179,67 @@ describe("audio engine diagnostics", () => {
     expect(levels.master || 0).toBeGreaterThan(0.18);
   });
 
+  it("does not double-tap procedural meters for cached native events", () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    const cache: NativeRenderCache = {
+      signature: nativeRenderCacheSignature(project),
+      assets: [],
+      regions: [{ id: "clip_001_bass", assetId: "asset_bass", trackId: "bass", startTime: 0, sourceOffset: 0, duration: 4, gain: 0.8, pan: 0, fadeIn: 0, fadeOut: 0 }],
+      cachedClipIds: new Set(["clip_001"]),
+      renderCacheItems: [{
+        id: "asset_bass",
+        sourceClipId: "clip_001",
+        createdAt: new Date().toISOString(),
+        invalidated: false,
+        metadata: {
+          cacheKind: "native-generated-stem",
+          trackId: "bass",
+          assetId: "asset_bass"
+        }
+      }],
+      renderCacheHitCount: 0,
+      renderCacheMissCount: 0,
+      proceduralFallbackEventCount: 0,
+      generatedRegionCount: 1,
+      runtimeAudioRegionCount: 0,
+      missingRuntimeAudioRegionCount: 0,
+      cachedAssetByteCount: 128
+    };
+    const internals = engine as unknown as {
+      nativeRenderCache: NativeRenderCache;
+      nativePlaybackStartedWithRenderCache: boolean;
+      playbackBackend: string;
+      playing: boolean;
+      lastMeterRead: number;
+      events: Array<Record<string, unknown>>;
+      tapNativeMeters(current: number): void;
+      tapNativeRegionMeters(current: number): void;
+    };
+    internals.nativeRenderCache = cache;
+    internals.nativePlaybackStartedWithRenderCache = true;
+    internals.playbackBackend = "native-cpal";
+    internals.playing = true;
+    internals.events = [{
+      id: "cached-bass-note",
+      clipId: "clip_001",
+      trackId: "bass",
+      kind: "bass",
+      time: 1,
+      duration: 0.25,
+      velocity: 1,
+      midiNotes: []
+    }];
+    internals.lastMeterRead = performance.now() / 1000;
+
+    internals.tapNativeMeters(1);
+    internals.tapNativeRegionMeters(1);
+    const levels = engine.getMeterLevels();
+
+    expect(levels.bass || 0).toBeGreaterThan(0.2);
+    expect(levels.bass || 0).toBeLessThan(0.6);
+  });
+
   it("resumes paused native playback without sending a second native start", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
@@ -389,16 +450,16 @@ describe("audio engine diagnostics", () => {
       engine.syncProject(editB, "composition-events", "bass-edit-b");
       engine.syncProject(editC, "composition-events", "bass-edit-c");
 
-      await Promise.resolve();
-      expect(starts).toHaveLength(1);
-      await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.buildCount >= 2);
       await waitForAsyncCondition(() => starts.length >= 2);
+      await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.buildCount >= 2);
+      await waitForAsyncCondition(() => starts.at(-1)!.events.every(isSilentCachedSidechainTrigger));
 
-      expect(starts).toHaveLength(2);
+      expect(starts.length).toBeGreaterThanOrEqual(2);
+      expect(starts.length).toBeLessThanOrEqual(3);
       const restartStarts = starts.slice(1);
       expect(restartStarts.every((start) => start.events.length > 0)).toBe(true);
-      expect(restartStarts.every((start) => start.events.every(isSilentCachedSidechainTrigger))).toBe(true);
-      expect(restartStarts.every((start) => (start.regions?.length || 0) > 0)).toBe(true);
+      expect(starts.at(-1)!.events.every(isSilentCachedSidechainTrigger)).toBe(true);
+      expect(starts.at(-1)!.regions?.length || 0).toBeGreaterThan(0);
       expect(engine.getDiagnostics().lastProjectSyncReason).toBe("bass-edit-c");
       expect(engine.getDiagnostics().nativeRenderCache.lastBuildReason).toBe("bass-edit-c");
       expect(engine.getDiagnostics().nativeRenderCache.nativeRenderCacheBypassedForLiveEdits).toBe(false);
@@ -460,9 +521,11 @@ describe("audio engine diagnostics", () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
       const diagnostics = engine.getDiagnostics();
-      expect(starts).toHaveLength(1);
-      expect(diagnostics.nativeRenderCache.assetRegionCount).toBeGreaterThan(0);
-      expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBe(0);
+      expect(starts).toHaveLength(2);
+      expect(starts.at(-1)!.events.length).toBeGreaterThan(0);
+      expect(starts.at(-1)!.events.every(isSilentCachedSidechainTrigger)).toBe(false);
+      expect(starts.at(-1)!.regions?.length || 0).toBe(0);
+      expect(diagnostics.nativeRenderCache.assetRegionCount).toBe(0);
       expect(diagnostics.nativeRenderCache.discardedBuildCount).toBe(1);
     } finally {
       (globalThis as any).window = previousWindow;

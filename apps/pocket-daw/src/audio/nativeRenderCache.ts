@@ -398,6 +398,49 @@ export function mergeNativeRenderCacheItems(project: PocketDawProject, items: Re
   };
 }
 
+export function filterNativeRenderCacheForProject(project: PocketDawProject, cache: NativeRenderCache, signature = nativeRenderCacheSignature(project)): NativeRenderCache | null {
+  const currentItems = cache.renderCacheItems.filter((item) => !isNativeCacheItem(item) || isNativeCacheItemCurrent(project, item));
+  if (!currentItems.length) return null;
+
+  const keptAssetIds = new Set(currentItems.map((item) => String(item.metadata?.assetId || item.id)));
+  const assets = cache.assets.filter((asset) => keptAssetIds.has(asset.id));
+  const availableAssetIds = new Set(assets.map((asset) => asset.id));
+  const regions = cache.regions.filter((region) => availableAssetIds.has(region.assetId));
+  if (!regions.length) return null;
+
+  const cachedClipIds = new Set<string>();
+  currentItems.forEach((item) => {
+    if (item.sourceClipId && regions.some((region) => region.assetId === String(item.metadata?.assetId || item.id))) {
+      cachedClipIds.add(item.sourceClipId);
+    }
+  });
+
+  const generatedRegionCount = regions.filter((region) => {
+    const item = currentItems.find((entry) => String(entry.metadata?.assetId || entry.id) === region.assetId);
+    return String(item?.metadata?.cacheKind || "") === "native-generated-stem";
+  }).length;
+  const runtimeAudioRegionCount = regions.filter((region) => {
+    const item = currentItems.find((entry) => String(entry.metadata?.assetId || entry.id) === region.assetId);
+    return String(item?.metadata?.cacheKind || "") === "native-runtime-audio";
+  }).length;
+
+  return {
+    ...cache,
+    signature,
+    assets,
+    regions,
+    cachedClipIds,
+    renderCacheItems: currentItems,
+    renderCacheHitCount: currentItems.length,
+    renderCacheMissCount: 0,
+    proceduralFallbackEventCount: 0,
+    generatedRegionCount,
+    runtimeAudioRegionCount,
+    missingRuntimeAudioRegionCount: 0,
+    cachedAssetByteCount: assets.reduce((total, asset) => total + nativeAssetByteLength(asset), 0)
+  };
+}
+
 function isNativeCacheItemCurrent(project: PocketDawProject, item: RenderCacheItem): boolean {
   const cacheKind = String(item.metadata?.cacheKind || "");
   const sourceHash = String(item.metadata?.sourceHash || "");

@@ -17,6 +17,7 @@ import type { RecordingNativePlaybackAnchor } from "../app/state";
 import {
   buildNativeRenderCache,
   buildNativeRuntimeAudioCache,
+  filterNativeRenderCacheForProject,
   hydrateNativeRenderCacheAssets,
   nativeRenderCacheSignature,
   nativeRuntimeAudioCacheSignature,
@@ -302,6 +303,8 @@ export class AudioEngine {
         this.syncNativeMixerControls();
       } else if (mode === "composition-events") {
         this.nativeRenderCacheBypassedForLiveEdits = false;
+        const stalePlaybackCache = this.playableNativeRenderCache();
+        void this.restartNativePlayback(current, { reason: `${reason}-stale-cache`, useRenderCache: !!stalePlaybackCache });
         void this.restartNativePlaybackAfterFreshRenderCache(reason);
       } else if (this.readyNativeRenderCache()) {
         void this.restartNativePlayback(current, { reason });
@@ -526,6 +529,11 @@ export class AudioEngine {
   }
 
   getDiagnostics() {
+    const activeNativeRenderCache = this.activeNativeRenderCache();
+    const nativePlaybackActive = this.playbackBackend === "native-cpal" || this.playbackBackend === "native-cpal-paused";
+    const proceduralFallbackEventCount = activeNativeRenderCache && nativePlaybackActive
+      ? this.nativePlaybackEvents(activeNativeRenderCache).proceduralFallbackEventCount
+      : activeNativeRenderCache?.proceduralFallbackEventCount ?? this.events.length;
     return {
       playbackBackend: this.playbackBackend,
       nativeAudio: {
@@ -534,21 +542,21 @@ export class AudioEngine {
         status: this.nativeStatus,
         lastError: this.nativeLastError,
         fallback: this.playbackBackend === "web-audio" ? "web-audio" : null,
-        supportedMaterial: this.activeNativeRenderCache()?.runtimeAudioRegionCount ? "generated-midi-events-and-loaded-audio-regions" : "generated-and-midi-events",
-        unsupportedMaterial: this.audioRegions.length && !this.activeNativeRenderCache()?.runtimeAudioRegionCount ? "audio-regions-need-runtime-buffer-or-native-cache" : null
+        supportedMaterial: activeNativeRenderCache?.runtimeAudioRegionCount ? "generated-midi-events-and-loaded-audio-regions" : "generated-and-midi-events",
+        unsupportedMaterial: this.audioRegions.length && !activeNativeRenderCache?.runtimeAudioRegionCount ? "audio-regions-need-runtime-buffer-or-native-cache" : null
       },
       nativeRenderCache: {
-        assetCount: this.activeNativeRenderCache()?.assets.length || 0,
-        assetRegionCount: this.activeNativeRenderCache()?.regions.length || 0,
-        cachedClipCount: this.activeNativeRenderCache()?.cachedClipIds.size || 0,
-        renderCacheMetadataCount: this.activeNativeRenderCache()?.renderCacheItems.length || 0,
-        renderCacheHitCount: this.activeNativeRenderCache()?.renderCacheHitCount || 0,
-        renderCacheMissCount: this.activeNativeRenderCache()?.renderCacheMissCount || 0,
-        proceduralFallbackEventCount: this.activeNativeRenderCache()?.proceduralFallbackEventCount ?? this.events.length,
-        generatedRegionCount: this.activeNativeRenderCache()?.generatedRegionCount || 0,
-        runtimeAudioRegionCount: this.activeNativeRenderCache()?.runtimeAudioRegionCount || 0,
-        missingRuntimeAudioRegionCount: this.activeNativeRenderCache()?.missingRuntimeAudioRegionCount || 0,
-        cachedAssetByteCount: this.activeNativeRenderCache()?.cachedAssetByteCount || 0,
+        assetCount: activeNativeRenderCache?.assets.length || 0,
+        assetRegionCount: activeNativeRenderCache?.regions.length || 0,
+        cachedClipCount: activeNativeRenderCache?.cachedClipIds.size || 0,
+        renderCacheMetadataCount: activeNativeRenderCache?.renderCacheItems.length || 0,
+        renderCacheHitCount: activeNativeRenderCache?.renderCacheHitCount || 0,
+        renderCacheMissCount: activeNativeRenderCache?.renderCacheMissCount || 0,
+        proceduralFallbackEventCount,
+        generatedRegionCount: activeNativeRenderCache?.generatedRegionCount || 0,
+        runtimeAudioRegionCount: activeNativeRenderCache?.runtimeAudioRegionCount || 0,
+        missingRuntimeAudioRegionCount: activeNativeRenderCache?.missingRuntimeAudioRegionCount || 0,
+        cachedAssetByteCount: activeNativeRenderCache?.cachedAssetByteCount || 0,
         buildPending: this.nativeRenderCacheBuildPromise !== null,
         prewarmScheduled: this.nativeRenderCachePrewarmScheduled,
         pendingReason: this.nativeRenderCachePendingReason,
@@ -689,9 +697,11 @@ export class AudioEngine {
     this.nativeRestartToken = request.token;
     this.pendingNativeRestart = request;
     if (!this.nativeRestartFlush) {
-      this.nativeRestartFlush = this.flushNativeRestarts().finally(() => {
-        this.nativeRestartFlush = null;
-      });
+      this.nativeRestartFlush = Promise.resolve()
+        .then(() => this.flushNativeRestarts())
+        .finally(() => {
+          this.nativeRestartFlush = null;
+        });
     }
     return this.nativeRestartFlush;
   }
@@ -747,6 +757,7 @@ export class AudioEngine {
       return;
     }
     if (this.playableNativeRenderCache()) return;
+    if (this.activeNativePlaybackLooksProceduralFallback()) return;
     await this.restartNativePlayback(this.currentSeconds(), { reason, useRenderCache: false });
   }
 
@@ -775,7 +786,7 @@ export class AudioEngine {
     const events: RenderedEvent[] = [];
     let proceduralFallbackEventCount = 0;
     for (const event of this.events) {
-      if (!cache.cachedClipIds.has(event.clipId)) {
+      if (!this.nativeCacheCoversEvent(cache, event)) {
         events.push(event);
         proceduralFallbackEventCount += 1;
       } else if (sidechain?.enabled && isChordsmithSidechainTrigger(event)) {
@@ -832,7 +843,9 @@ export class AudioEngine {
     const cache = this.readyNativeRenderCache();
     if (cache) return cache;
     if (this.nativeRenderCacheStaleForLiveEdits && this.playbackBackend === "native-cpal" && this.playing) {
-      return this.nativeRenderCache;
+      return this.nativeRenderCache
+        ? filterNativeRenderCacheForProject(this.project, this.nativeRenderCache, nativeRenderCacheSignature(this.project))
+        : null;
     }
     return null;
   }
@@ -1081,9 +1094,10 @@ export class AudioEngine {
 
   private tapNativeMeters(current: number) {
     const horizon = current + 0.08;
+    const cache = this.activeNativeMeterEventCache();
     while (this.nativeMeterEventIndex < this.events.length && this.events[this.nativeMeterEventIndex].time <= horizon) {
       const event = this.events[this.nativeMeterEventIndex];
-      if (event.time >= current - 0.04 && this.eventShouldTapMeter(event)) this.tapMeter(event.trackId, event.velocity);
+      if (event.time >= current - 0.04 && this.eventShouldTapMeter(event) && !this.nativeCacheCoversEvent(cache, event)) this.tapMeter(event.trackId, event.velocity);
       this.nativeMeterEventIndex += 1;
     }
   }
@@ -1368,10 +1382,27 @@ export class AudioEngine {
 
   private primeMeters(seconds: number) {
     const horizon = seconds + 0.28;
+    const cache = this.activeNativeMeterEventCache();
     for (let index = this.findEventIndex(seconds); index < this.events.length && this.events[index].time <= horizon; index += 1) {
       const event = this.events[index];
-      if (this.eventShouldTapMeter(event)) this.tapMeter(event.trackId, event.velocity);
+      if (this.eventShouldTapMeter(event) && !this.nativeCacheCoversEvent(cache, event)) this.tapMeter(event.trackId, event.velocity);
     }
+  }
+
+  private activeNativeMeterEventCache(): NativeRenderCache | null {
+    if (this.playbackBackend !== "native-cpal" || !this.nativePlaybackStartedWithRenderCache) return null;
+    return this.activeNativeRenderCache();
+  }
+
+  private nativeCacheCoversEvent(cache: NativeRenderCache | null, event: RenderedEvent): boolean {
+    if (!cache?.cachedClipIds.has(event.clipId)) return false;
+    const matchingItems = cache.renderCacheItems.filter((item) => item.sourceClipId === event.clipId);
+    const generatedTrackIds = new Set(matchingItems
+      .filter((item) => String(item.metadata?.cacheKind || "") === "native-generated-stem")
+      .map((item) => String(item.metadata?.trackId || ""))
+      .filter(Boolean));
+    if (generatedTrackIds.size > 0) return generatedTrackIds.has(event.trackId);
+    return true;
   }
 
   private eventShouldTapMeter(event: RenderedEvent) {
