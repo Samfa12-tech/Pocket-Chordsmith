@@ -4,7 +4,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.24` |
+| Source version | `0.6.25` |
 | Project schema version | `2` |
 | Latest published version | `0.6.24` |
 | Latest published tag | `pocket-daw-v0.6.24` |
