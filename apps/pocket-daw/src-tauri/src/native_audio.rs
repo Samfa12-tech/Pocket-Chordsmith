@@ -1021,18 +1021,16 @@ fn render_playback_to_wav(
     playback.sample_rate = sample_rate;
     playback.channels = 2;
     let frame_count = (duration_seconds * sample_rate as f64).ceil().max(1.0) as usize;
-    let mut samples = Vec::with_capacity(frame_count.saturating_mul(2));
-    for _ in 0..frame_count {
-        let (left, right) = match mode {
-            NativeAudioRenderMode::Mix => render_next_frame(playback),
-            NativeAudioRenderMode::CacheStem => render_next_cache_stem_frame(playback),
-        };
-        samples.push(left);
-        samples.push(right);
-    }
     let bytes = match mode {
-        NativeAudioRenderMode::Mix => encode_pcm16_wav(sample_rate, 2, &samples)?,
-        NativeAudioRenderMode::CacheStem => encode_float32_wav(sample_rate, 2, &samples)?,
+        NativeAudioRenderMode::Mix => {
+            render_pcm16_wav_frames(sample_rate, 2, frame_count, || render_next_frame(playback))?
+        }
+        NativeAudioRenderMode::CacheStem => {
+            prune_cache_stem_events(playback);
+            render_float32_wav_frames(sample_rate, 2, frame_count, || {
+                render_next_cache_stem_frame(playback)
+            })?
+        }
     };
     Ok(NativeAudioRenderedWav {
         sample_rate,
@@ -1043,45 +1041,61 @@ fn render_playback_to_wav(
     })
 }
 
-fn encode_pcm16_wav(sample_rate: u32, channels: u16, samples: &[f32]) -> Result<Vec<u8>, String> {
-    if channels == 0 || channels > 2 {
-        return Err("Native offline WAV render only supports mono or stereo output.".to_string());
-    }
-    let data_len = samples
-        .len()
-        .checked_mul(2)
-        .and_then(|len| u32::try_from(len).ok())
-        .ok_or_else(|| "Native offline WAV render is too large.".to_string())?;
-    let byte_rate = sample_rate
-        .checked_mul(channels as u32)
-        .and_then(|value| value.checked_mul(2))
-        .ok_or_else(|| "Native offline WAV byte rate overflowed.".to_string())?;
-    let block_align = channels
-        .checked_mul(2)
-        .ok_or_else(|| "Native offline WAV block alignment overflowed.".to_string())?;
-    let riff_len = 36_u32
-        .checked_add(data_len)
-        .ok_or_else(|| "Native offline WAV RIFF length overflowed.".to_string())?;
-    let mut bytes = Vec::with_capacity(44 + data_len as usize);
-    bytes.extend_from_slice(b"RIFF");
-    bytes.extend_from_slice(&riff_len.to_le_bytes());
-    bytes.extend_from_slice(b"WAVE");
-    bytes.extend_from_slice(b"fmt ");
-    bytes.extend_from_slice(&16_u32.to_le_bytes());
-    bytes.extend_from_slice(&1_u16.to_le_bytes());
-    bytes.extend_from_slice(&channels.to_le_bytes());
-    bytes.extend_from_slice(&sample_rate.to_le_bytes());
-    bytes.extend_from_slice(&byte_rate.to_le_bytes());
-    bytes.extend_from_slice(&block_align.to_le_bytes());
-    bytes.extend_from_slice(&16_u16.to_le_bytes());
-    bytes.extend_from_slice(b"data");
-    bytes.extend_from_slice(&data_len.to_le_bytes());
-    for sample in samples {
-        bytes.extend_from_slice(&f32_to_i16(*sample).to_le_bytes());
+fn prune_cache_stem_events(playback: &mut PlaybackShared) {
+    let has_solo = playback.has_solo;
+    let tracks = &playback.tracks;
+    playback.events.retain(|event| {
+        tracks
+            .get(&event.track_id)
+            .map(|track| track_gain(track, has_solo) > 0.0001)
+            .unwrap_or(false)
+    });
+    reset_scan_starts(playback);
+}
+
+fn render_pcm16_wav_frames<F>(
+    sample_rate: u32,
+    channels: u16,
+    frame_count: usize,
+    mut next_frame: F,
+) -> Result<Vec<u8>, String>
+where
+    F: FnMut() -> (f32, f32),
+{
+    let data_len = wav_data_len(frame_count, channels, 2)?;
+    let mut bytes = wav_header(sample_rate, channels, 1, 16, data_len)?;
+    for _ in 0..frame_count {
+        let (left, right) = next_frame();
+        bytes.extend_from_slice(&f32_to_i16(left).to_le_bytes());
+        if channels > 1 {
+            bytes.extend_from_slice(&f32_to_i16(right).to_le_bytes());
+        }
     }
     Ok(bytes)
 }
 
+fn render_float32_wav_frames<F>(
+    sample_rate: u32,
+    channels: u16,
+    frame_count: usize,
+    mut next_frame: F,
+) -> Result<Vec<u8>, String>
+where
+    F: FnMut() -> (f32, f32),
+{
+    let data_len = wav_data_len(frame_count, channels, 4)?;
+    let mut bytes = wav_header(sample_rate, channels, 3, 32, data_len)?;
+    for _ in 0..frame_count {
+        let (left, right) = next_frame();
+        bytes.extend_from_slice(&left.to_le_bytes());
+        if channels > 1 {
+            bytes.extend_from_slice(&right.to_le_bytes());
+        }
+    }
+    Ok(bytes)
+}
+
+#[cfg(test)]
 fn encode_float32_wav(sample_rate: u32, channels: u16, samples: &[f32]) -> Result<Vec<u8>, String> {
     if channels == 0 || channels > 2 {
         return Err("Native offline WAV render only supports mono or stereo output.".to_string());
@@ -1091,12 +1105,41 @@ fn encode_float32_wav(sample_rate: u32, channels: u16, samples: &[f32]) -> Resul
         .checked_mul(4)
         .and_then(|len| u32::try_from(len).ok())
         .ok_or_else(|| "Native offline WAV render is too large.".to_string())?;
+    let mut bytes = wav_header(sample_rate, channels, 3, 32, data_len)?;
+    for sample in samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    Ok(bytes)
+}
+
+fn wav_data_len(frame_count: usize, channels: u16, bytes_per_sample: usize) -> Result<u32, String> {
+    if channels == 0 || channels > 2 {
+        return Err("Native offline WAV render only supports mono or stereo output.".to_string());
+    }
+    frame_count
+        .checked_mul(channels as usize)
+        .and_then(|len| len.checked_mul(bytes_per_sample))
+        .and_then(|len| u32::try_from(len).ok())
+        .ok_or_else(|| "Native offline WAV render is too large.".to_string())
+}
+
+fn wav_header(
+    sample_rate: u32,
+    channels: u16,
+    format: u16,
+    bits_per_sample: u16,
+    data_len: u32,
+) -> Result<Vec<u8>, String> {
+    if channels == 0 || channels > 2 {
+        return Err("Native offline WAV render only supports mono or stereo output.".to_string());
+    }
+    let bytes_per_sample = u32::from(bits_per_sample / 8);
     let byte_rate = sample_rate
         .checked_mul(channels as u32)
-        .and_then(|value| value.checked_mul(4))
+        .and_then(|value| value.checked_mul(bytes_per_sample))
         .ok_or_else(|| "Native offline WAV byte rate overflowed.".to_string())?;
     let block_align = channels
-        .checked_mul(4)
+        .checked_mul(bits_per_sample / 8)
         .ok_or_else(|| "Native offline WAV block alignment overflowed.".to_string())?;
     let riff_len = 36_u32
         .checked_add(data_len)
@@ -1107,17 +1150,14 @@ fn encode_float32_wav(sample_rate: u32, channels: u16, samples: &[f32]) -> Resul
     bytes.extend_from_slice(b"WAVE");
     bytes.extend_from_slice(b"fmt ");
     bytes.extend_from_slice(&16_u32.to_le_bytes());
-    bytes.extend_from_slice(&3_u16.to_le_bytes());
+    bytes.extend_from_slice(&format.to_le_bytes());
     bytes.extend_from_slice(&channels.to_le_bytes());
     bytes.extend_from_slice(&sample_rate.to_le_bytes());
     bytes.extend_from_slice(&byte_rate.to_le_bytes());
     bytes.extend_from_slice(&block_align.to_le_bytes());
-    bytes.extend_from_slice(&32_u16.to_le_bytes());
+    bytes.extend_from_slice(&bits_per_sample.to_le_bytes());
     bytes.extend_from_slice(b"data");
     bytes.extend_from_slice(&data_len.to_le_bytes());
-    for sample in samples {
-        bytes.extend_from_slice(&sample.to_le_bytes());
-    }
     Ok(bytes)
 }
 
@@ -4014,6 +4054,25 @@ mod tests {
             energy > 0.1,
             "expected offline native render to contain audible bass energy"
         );
+    }
+
+    #[test]
+    fn cache_stem_pruning_drops_muted_and_missing_track_events() {
+        let target = test_generated_event("target_bass", "bass", 0.0, 0.1, 1.0);
+        let mut muted = test_generated_event("muted_melody", "melody", 0.0, 0.1, 1.0);
+        muted.track_id = "melody".to_string();
+        let mut missing = test_generated_event("missing_chords", "chord", 0.0, 0.1, 1.0);
+        missing.track_id = "missing".to_string();
+        let mut playback = playback_with_events(vec![target, muted, missing]);
+        insert_playback_track(&mut playback, test_track("bass", 1.0, 0.0, false, false));
+        insert_playback_track(&mut playback, test_track("melody", 1.0, 0.0, true, false));
+        playback.scan_start_index = 2;
+
+        prune_cache_stem_events(&mut playback);
+
+        assert_eq!(playback.events.len(), 1);
+        assert_eq!(playback.events[0].id, "target_bass");
+        assert_eq!(playback.scan_start_index, 0);
     }
 
     #[test]

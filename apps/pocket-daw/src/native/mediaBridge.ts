@@ -214,7 +214,7 @@ export async function renderNativeAudioWav(
     channels: Number(result.channels) || 2,
     durationSeconds: Number(result.durationSeconds) || durationSeconds,
     sizeBytes: Number(result.sizeBytes) || result.bytes.length,
-    bytes: result.bytes.map((byte) => Math.max(0, Math.min(255, Number(byte) || 0)))
+    bytes: result.bytes
   };
 }
 
