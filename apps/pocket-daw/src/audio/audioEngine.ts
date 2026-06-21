@@ -12,7 +12,7 @@ import { scheduleInstrumentEvent } from "./instruments";
 import { chordsmithSidechainSettings, isChordsmithSidechainTrigger, scheduleChordsmithSidechainDuck } from "./sidechain";
 import { activeAutomationLaneCount, getAutomatedTrackControls } from "../daw/automation";
 import { activeTrackSendRoutes } from "../daw/routing";
-import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioStatus } from "../native/audioPlayback";
+import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioStartResult, type NativeAudioStatus } from "../native/audioPlayback";
 import type { RecordingNativePlaybackAnchor } from "../app/state";
 import {
   buildNativeRenderCache,
@@ -43,7 +43,7 @@ interface DrumLaneOutput {
 }
 
 interface NativePlaybackBridgeLike {
-  start(payload: ReturnType<typeof buildNativeAudioStartPayload>): Promise<{ started: boolean; status: NativeAudioStatus | null; error: string | null }>;
+  start(payload: ReturnType<typeof buildNativeAudioStartPayload>): Promise<NativeAudioStartResult>;
   pause(): Promise<NativeAudioStatus | null>;
   resume(): Promise<NativeAudioStatus | null>;
   stop(): Promise<NativeAudioStatus | null>;
@@ -73,6 +73,7 @@ export type AudioProjectSyncMode =
   | "project-load";
 
 type PlaybackBackend = "native-cpal" | "native-cpal-paused" | "web-audio" | "idle";
+type NativeStartOutcome = "started" | "unavailable" | "failed";
 type AudioDropCause = "seek" | "stop" | "project-load" | "graph-rebuild" | "loop" | "late-scheduler" | null;
 const safeSyncLeadSeconds = 0.2;
 
@@ -363,8 +364,8 @@ export class AudioEngine {
       if (resumed) return;
     }
 
-    const nativeStarted = await this.tryStartNativePlayback();
-    if (nativeStarted) {
+    const nativeStart = await this.tryStartNativePlayback();
+    if (nativeStart === "started") {
       this.playing = true;
       this.playbackBackend = "native-cpal";
       this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
@@ -373,6 +374,12 @@ export class AudioEngine {
       this.nextAudioRegionIndex = this.findAudioRegionIndex(this.offsetSeconds);
       this.primeMeters(this.offsetSeconds);
       this.startNativeTicker();
+      this.emitTick(true);
+      return;
+    }
+    if (nativeStart === "failed") {
+      this.playing = false;
+      this.playbackBackend = "idle";
       this.emitTick(true);
       return;
     }
@@ -646,7 +653,7 @@ export class AudioEngine {
     return true;
   }
 
-  private async tryStartNativePlayback(options: { useRenderCache?: boolean; reason?: string } = {}): Promise<boolean> {
+  private async tryStartNativePlayback(options: { useRenderCache?: boolean; reason?: string } = {}): Promise<NativeStartOutcome> {
     this.cancelPendingNativeRestarts();
     const useRenderCache = options.useRenderCache !== false;
     const cache = useRenderCache && !this.nativeRenderCacheBypassedForLiveEdits ? this.playableNativeRenderCache() : null;
@@ -655,16 +662,16 @@ export class AudioEngine {
     const playbackEvents = this.nativePlaybackEvents(playbackCache);
     const events = playbackEvents.events;
     if (playbackCache) playbackCache.proceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
-    if (!events.length && !(playbackCache?.regions.length)) return false;
+    if (!events.length && !(playbackCache?.regions.length)) return "unavailable";
     const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, playbackCache || undefined);
     const result = await this.nativePlayback.start(payload);
     if (!result.started) {
       this.nativeLastError = result.error;
-      return false;
+      return result.unavailable ? "unavailable" : "failed";
     }
     this.nativeStatus = result.status;
     this.nativeLastError = null;
-    return true;
+    return "started";
   }
 
   private restartNativePlayback(seconds: number, options: { useRenderCache?: boolean; reason?: string } = {}): Promise<void> {

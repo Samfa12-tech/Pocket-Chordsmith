@@ -299,7 +299,8 @@ describe("native audio playback bridge", () => {
     await expect(bridge.start(buildNativeAudioStartPayload(createDemoProject(), [], 0))).resolves.toMatchObject({
       started: false,
       status: null,
-      error: "Native Tauri audio runtime is unavailable."
+      error: "Native Tauri audio runtime is unavailable.",
+      unavailable: true
     });
     await expect(bridge.status()).resolves.toBeNull();
   });

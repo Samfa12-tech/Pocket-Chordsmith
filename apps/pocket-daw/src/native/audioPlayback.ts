@@ -159,6 +159,7 @@ export interface NativeAudioStartResult {
   started: boolean;
   status: NativeAudioStatus | null;
   error: string | null;
+  unavailable?: boolean;
 }
 
 type NativeAudioApiFactory = () => Promise<NativeAudioInvokeApi | null>;
@@ -171,7 +172,7 @@ export class NativeAudioPlaybackBridge {
   async start(payload: NativeAudioStartPayload): Promise<NativeAudioStartResult> {
     const api = await this.apiFactory();
     if (!api?.isAvailable()) {
-      return { started: false, status: null, error: "Native Tauri audio runtime is unavailable." };
+      return { started: false, status: null, error: "Native Tauri audio runtime is unavailable.", unavailable: true };
     }
     try {
       const status = await api.invoke<NativeAudioStatus>("native_audio_start", { payload: this.withCachedAssetHints(payload) });

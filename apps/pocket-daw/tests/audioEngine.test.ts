@@ -234,6 +234,30 @@ describe("audio engine diagnostics", () => {
     }
   });
 
+  it("does not fall back to WebAudio when native playback start fails", async () => {
+    const native = {
+      async start() {
+        return { started: false, status: null, error: "Native output device failed." };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true }); }
+    };
+    const engine = new AudioEngine(createDemoProject(), native);
+
+    await expect(engine.play()).resolves.toBeUndefined();
+    const diagnostics = engine.getDiagnostics();
+
+    expect(engine.isPlaying()).toBe(false);
+    expect(diagnostics.playbackBackend).toBe("idle");
+    expect(diagnostics.nativeAudio.lastError).toBe("Native output device failed.");
+    expect(diagnostics.nativeAudio.fallback).toBeNull();
+    expect(diagnostics.audioContextState).toBe("not-created");
+  });
+
   it("coalesces rapid native composition edits into latest live playback restarts", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
