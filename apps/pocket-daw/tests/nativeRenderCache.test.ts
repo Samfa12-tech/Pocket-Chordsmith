@@ -205,6 +205,23 @@ describe("native render cache", () => {
     expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
   });
 
+  it("can build a partial generated-section cache for a live playback window", async () => {
+    const project = createLofiTemplateProject();
+    const requestedClip = project.timeline.clips.find((clip) => clip.type === "generated-section")!;
+    const cache = await buildNativeRenderCache(project, "partial-live-signature", null, {
+      coverage: "partial",
+      clipIds: new Set([requestedClip.id])
+    });
+
+    expect(cache.coverage).toBe("partial");
+    expect(cache.requestedClipIds).toEqual([requestedClip.id]);
+    expect(Array.from(cache.cachedClipIds)).toEqual([requestedClip.id]);
+    expect(cache.regions.every((region) => region.id.startsWith(`${requestedClip.id}_`))).toBe(true);
+    expect(cache.generatedRegionCount).toBeGreaterThan(0);
+    expect(cache.generatedRegionCount).toBeLessThan(project.timeline.clips.length * 5);
+    expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalled();
+  });
+
   it("builds native cache-stem assets for MIDI clips through the same native event path", async () => {
     const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(simpleMidiBytes()), "simple.mid");
     const midiClip = imported.project.timeline.clips.find((clip) => clip.id === imported.clipId)!;

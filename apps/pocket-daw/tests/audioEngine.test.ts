@@ -680,9 +680,11 @@ describe("audio engine diagnostics", () => {
         nativeRenderCacheBuildCount: number;
         nativeRenderCacheLastBuildReason: string | null;
         nativeRenderCacheError: string | null;
-        ensureNativeRenderCache(reason: string): Promise<NativeRenderCache | null>;
+        ensureNativeRenderCache(reason: string, options?: { coverage?: "full" | "partial"; clipIds?: Set<string> }): Promise<NativeRenderCache | null>;
       };
-      internals.ensureNativeRenderCache = async (reason: string) => {
+      let cacheBuildOptions: { coverage?: "full" | "partial"; clipIds?: Set<string> } | undefined;
+      internals.ensureNativeRenderCache = async (reason: string, options?: { coverage?: "full" | "partial"; clipIds?: Set<string> }) => {
+        cacheBuildOptions = options;
         internals.nativeRenderCacheBuildCount += 1;
         internals.nativeRenderCacheLastBuildReason = reason;
         internals.nativeRenderCacheError = null;
@@ -704,6 +706,8 @@ describe("audio engine diagnostics", () => {
       expect(starts[1].assets?.length || 0).toBeGreaterThan(0);
       expect(starts[1].regions?.length || 0).toBeGreaterThan(0);
       expect(starts[1].events.length).toBeLessThan(starts[0].events.length);
+      expect(cacheBuildOptions?.coverage).toBe("partial");
+      expect(cacheBuildOptions?.clipIds?.size || 0).toBeGreaterThan(0);
       expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
       expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("play-fallback-cache-build");
     } finally {

@@ -22,6 +22,8 @@ const STEM_ROLES: TrackRole[] = ["drums", "bass", "chords", "melody", "guitar"];
 
 export interface NativeRenderCache {
   signature: string;
+  coverage?: "full" | "partial";
+  requestedClipIds?: string[];
   assets: NativeAudioAsset[];
   regions: NativeAudioRegion[];
   cachedClipIds: Set<string>;
@@ -57,6 +59,11 @@ export interface NativeRenderCachePersistResult {
 export interface NativeRenderCachePersistOptions {
   prune?: boolean;
   namespace?: string;
+}
+
+export interface NativeRenderCacheBuildOptions {
+  clipIds?: Set<string>;
+  coverage?: "full" | "partial";
 }
 
 export interface NativeRenderCacheHydrationResult {
@@ -99,8 +106,16 @@ interface RuntimeAudioAssetSource {
   sourceByteLength?: number;
 }
 
-export async function buildNativeRenderCache(project: PocketDawProject, signature = nativeRenderCacheSignature(project), reuseCache: NativeRenderCache | null = null): Promise<NativeRenderCache> {
-  const cacheableClips = project.timeline.clips.filter(isNativeStemCacheableClip);
+export async function buildNativeRenderCache(
+  project: PocketDawProject,
+  signature = nativeRenderCacheSignature(project),
+  reuseCache: NativeRenderCache | null = null,
+  options: NativeRenderCacheBuildOptions = {}
+): Promise<NativeRenderCache> {
+  const requestedClipIds = options.clipIds ? new Set(options.clipIds) : null;
+  const cacheableClips = project.timeline.clips
+    .filter(isNativeStemCacheableClip)
+    .filter((clip) => !requestedClipIds || requestedClipIds.has(clip.id));
   const assets = new Map<string, NativeAudioAsset>();
   const reusableAssets = nativeGeneratedStemReusableAssets(reuseCache);
   const regions: NativeAudioRegion[] = [];
@@ -163,6 +178,8 @@ export async function buildNativeRenderCache(project: PocketDawProject, signatur
 
   return {
     signature,
+    coverage: options.coverage || (requestedClipIds ? "partial" : "full"),
+    requestedClipIds: requestedClipIds ? Array.from(requestedClipIds) : undefined,
     assets: Array.from(assets.values()),
     regions,
     cachedClipIds,

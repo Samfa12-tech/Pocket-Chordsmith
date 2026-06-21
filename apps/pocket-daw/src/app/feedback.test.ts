@@ -128,6 +128,8 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
       runtimeAvailableCount: 0,
       renderCacheCount: 0,
       nativeRenderCache: {
+        coverage: null,
+        requestedClipCount: 0,
         assetCount: 0,
         assetRegionCount: 0,
         cachedClipCount: 0,
