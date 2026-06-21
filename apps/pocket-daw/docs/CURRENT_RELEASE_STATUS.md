@@ -6,19 +6,20 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 | --- | --- |
 | Source version | `0.6.22` |
 | Project schema version | `2` |
-| Latest published version | `0.6.21` |
-| Latest published tag | `pocket-daw-v0.6.21` |
-| Latest published commit | `9dcd48749a497d7344678973be836c45597ebf65` |
-| Last installed-smoke version | `0.6.10` |
+| Latest published version | `0.6.22` |
+| Latest published tag | `pocket-daw-v0.6.22` |
+| Latest published commit | `5cd186a22b6a8be9d706e1474b6a204ddbd065aa` |
+| Last installed-smoke version | `0.6.22` |
 | Last installed-smoke result | `pass` |
-| Last installed-smoke date | `2026-06-19` |
-| Last installed-smoke installer | `Pocket.DAW_0.6.10_x64-setup.exe` |
-| Last installed-smoke SHA-256 | `c893ddcc545738c79fb72bd486b75cbe263534b466fcd4d2f593574d509fd00e` |
+| Last installed-smoke date | `2026-06-21T02:32:28Z` |
+| Last installed-smoke installer | `Pocket.DAW_0.6.22_x64-setup.exe` |
+| Last installed-smoke SHA-256 | `c7adc2aea5595490e55dbb720bed6735cd91348caef69ef249f3ff1c0868a6b7` |
 
 ## Installed-Smoke Notes
 
-- Bootstrapper install smoke evidence is recorded for 0.6.10.
-- Installed smoke for published 0.6.21 is not recorded in this status file. Current source 0.6.22 is not public or installed-smoked until a matching release and smoke attestation are recorded.
+- Installed smoke for 0.6.22 used the exact staged GitHub updater setup artifact, then verified the same SHA-256 from the published latest updater manifest.
+- The smoke loaded the imported Chordsmith demo project, selected the Bass track, played through native-cpal with 24 cached assets, 60 cached regions, 0 procedural events, and no performance hotspot signals.
+- The same installer payload was pushed to the itch windows-installer channel as userversion 0.6.22.
 
 ## Release Truth
 

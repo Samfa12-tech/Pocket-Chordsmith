@@ -2,7 +2,7 @@
 
 Pocket DAW is a Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
-Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.22`; latest published updater checkpoint: `0.6.21`. The machine-readable status source is `release-status.json`, with generated Markdown in `docs/CURRENT_RELEASE_STATUS.md`.
+Current public status: **free Windows alpha testing on itch**. Current source target: `0.6.22`; latest published updater checkpoint: `0.6.22`. The machine-readable status source is `release-status.json`, with generated Markdown in `docs/CURRENT_RELEASE_STATUS.md`.
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
@@ -57,7 +57,7 @@ The file bridge can also arrange a `.mid` file into a generated Chordsmith-style
 
 Pocket DAW `0.6.13` added `Help -> AI / MCP Bridge` in the installed app. The panel keeps copy-ready command, Claude/JSON and Codex TOML snippets, and can enable a token-protected live localhost bridge for the running app. Live MCP tools can read app status, control transport, select tracks/clips, save an already-saved project and apply safe mixer edits. File/project MCP tools still work while Pocket DAW is closed. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
 
-Pocket DAW `0.6.21` is the current updater-visible checkpoint. Source `0.6.22` is the next updater candidate and must not be described as public or installed-smoked until matching release and exact-artifact smoke evidence exists in `release-status.json`.
+Pocket DAW `0.6.22` is the current updater-visible checkpoint and has exact-artifact installed smoke recorded in `release-status.json`.
 
 Release and update docs:
 
@@ -79,7 +79,7 @@ Release and update docs:
 - v0.6.12 corrects the MCP setup snippets to use a tested Windows `cmd` argument-array launch shape.
 - v0.6.13 adds `Help -> AI / MCP Bridge` and live app MCP tools for status, transport, selection and safe mixer edits.
 - v0.6.19 adds native loop/metronome playback, latest-only native restarts during rapid live composition edits, better native-cache reuse after live edits, Save As title adoption from `.pocketdaw` filenames, and refreshed release/bootstrapper manifests.
-- v0.6.21 is the updater-visible stabilization checkpoint. It hardens Chordsmith timeline edits, native-cache ownership and cache save/prune ordering; installed-app smoke still needs to be recorded against the exact setup hash.
+- v0.6.22 is the updater-visible stabilization checkpoint. It includes the cached-playback UI fixes from source commit `5cd186a22b6a8be9d706e1474b6a204ddbd065aa` and exact-artifact installed smoke for setup SHA-256 `c7adc2aea5595490e55dbb720bed6735cd91348caef69ef249f3ff1c0868a6b7`.
 - Current installed-app caveat: Windows `.pocketdaw` file association and double-click/Open With behavior still need explicit smoke on the latest installer; use File -> Open / Ctrl+O if association is unavailable.
 - ASIO, simultaneous multitrack capture, punch-in/out, comping, latency compensation UI, full send/return processing, bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
 - Windows Authenticode signing is not currently claimed unless a release manifest proves it.
