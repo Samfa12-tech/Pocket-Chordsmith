@@ -912,8 +912,9 @@ export function projectForNativeGeneratedStemRender(project: PocketDawProject, c
   assetProject.tracks = assetProject.tracks.map((track) => {
     if (track.role === "master") return { ...track, volume: 1, pan: 0, mute: false, solo: false };
     const active = track.id === trackId;
-    return { ...track, volume: active ? 1 : track.volume, pan: active ? 0 : track.pan, mute: !active, solo: false };
+    return { ...track, volume: active ? 1 : track.volume, pan: active ? 0 : track.pan, mute: !active, solo: false, automationLaneIds: [] };
   });
+  assetProject.automation = { ...assetProject.automation, lanes: [] };
   assetProject.fx = nativeCacheStemFxState(assetProject);
   assetProject.mixer = { ...assetProject.mixer, masterLimiter: false };
   return assetProject;

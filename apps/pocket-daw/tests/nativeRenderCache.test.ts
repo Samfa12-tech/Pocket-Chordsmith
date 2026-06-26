@@ -77,6 +77,7 @@ import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoPr
 import { cycleBassStep } from "../src/daw/chordsmithEditor";
 import { addDrumLaneFx, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume } from "../src/daw/drumLanes";
 import { addFxSlot, setFxSlotParameter } from "../src/daw/fx";
+import { createAutomationLane } from "../src/daw/automation";
 import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import type { Clip, MediaPoolItem } from "../src/daw/schema";
@@ -159,13 +160,22 @@ describe("native render cache", () => {
     let project = createLofiTemplateProject();
     project.project.metronome = { enabled: true, countInBars: 1, volume: 0.5 };
     project = addDrumLaneFx(project, "snare", "parametric-eq");
+    project = createAutomationLane(project, "tracks.drums.volume", {
+      points: [{ bar: 1, value: 0, curve: "hold" }]
+    }).project;
+    project = createAutomationLane(project, "tracks.drums.pan", {
+      points: [{ bar: 1, value: -1, curve: "hold" }]
+    }).project;
     const clip = project.timeline.clips.find((item) => item.type === "generated-section")!;
     const renderProject = projectForNativeGeneratedStemRender(project, clip, "drums");
 
     expect(renderProject.project.metronome?.enabled).toBe(false);
     expect(renderProject.mixer.masterLimiter).toBe(false);
+    expect(renderProject.automation.lanes).toEqual([]);
     expect(renderProject.tracks.find((track) => track.id === "master")?.volume).toBe(1);
     expect(renderProject.tracks.find((track) => track.id === "drums")?.volume).toBe(1);
+    expect(renderProject.tracks.find((track) => track.id === "drums")?.pan).toBe(0);
+    expect(renderProject.tracks.find((track) => track.id === "drums")?.automationLaneIds).toEqual([]);
     expect(renderProject.tracks.find((track) => track.id === "bass")?.mute).toBe(true);
     expect(renderProject.fx.chains.length).toBeGreaterThan(0);
     expect(renderProject.fx.chains.every((chain) => typeof chain.metadata?.drumLaneId === "string")).toBe(true);
