@@ -312,6 +312,7 @@ struct PlaybackShared {
     rendered_frame_count: u64,
     scan_start_index: usize,
     region_scan_start_index: usize,
+    active_region_indices: Vec<usize>,
     track_mix_scratch: Vec<TrackMix>,
     return_mix_scratch: Vec<TrackMix>,
     source_budget_scratch: TrackSourceBudget,
@@ -694,6 +695,7 @@ impl NativeAudioRuntime {
             .collect::<HashMap<_, _>>();
         let fx = build_native_fx_runtime(payload.fx_chains, &tracks, sample_rate as f32);
         let scratch_track_capacity = tracks.len().max(1);
+        let active_region_capacity = regions.len().min(64);
         let mut playback = PlaybackShared {
             project_title: payload.project_title,
             events,
@@ -714,6 +716,7 @@ impl NativeAudioRuntime {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            active_region_indices: Vec::with_capacity(active_region_capacity),
             track_mix_scratch: Vec::with_capacity(scratch_track_capacity),
             return_mix_scratch: Vec::with_capacity(scratch_track_capacity),
             source_budget_scratch: TrackSourceBudget::with_capacity(scratch_track_capacity),
@@ -1300,13 +1303,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     {
         playback.scan_start_index += 1;
     }
-    while playback.region_scan_start_index < playback.regions.len() {
-        let region = &playback.regions[playback.region_scan_start_index];
-        if region.start_time + region.duration >= t {
-            break;
-        }
-        playback.region_scan_start_index += 1;
-    }
+    sync_active_regions(playback, t);
 
     let mut track_mixes = std::mem::take(&mut playback.track_mix_scratch);
     track_mixes.clear();
@@ -1315,17 +1312,10 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     let mut active_counts_by_track = std::mem::take(&mut playback.source_budget_scratch);
     active_counts_by_track.clear();
 
-    for region in playback
-        .regions
-        .iter()
-        .skip(playback.region_scan_start_index)
-    {
-        if region.start_time > t {
-            break;
-        }
-        if region.start_time + region.duration < t {
+    for region_index in playback.active_region_indices.iter().copied() {
+        let Some(region) = playback.regions.get(region_index) else {
             continue;
-        }
+        };
         let Some(track_index) = playback.track_indices.get(&region.track_id).copied() else {
             continue;
         };
@@ -1580,6 +1570,30 @@ fn reset_scan_starts(playback: &mut PlaybackShared) {
     playback.scan_start_index = find_scan_start(&playback.events, playback.position_seconds);
     playback.region_scan_start_index =
         find_region_scan_start(&playback.regions, playback.position_seconds);
+    playback.active_region_indices.clear();
+    sync_active_regions(playback, playback.position_seconds);
+}
+
+fn sync_active_regions(playback: &mut PlaybackShared, t: f64) {
+    playback.active_region_indices.retain(|index| {
+        playback
+            .regions
+            .get(*index)
+            .map(|region| region.start_time + region.duration >= t)
+            .unwrap_or(false)
+    });
+    while playback.region_scan_start_index < playback.regions.len() {
+        let region = &playback.regions[playback.region_scan_start_index];
+        if region.start_time > t {
+            break;
+        }
+        if region.start_time + region.duration >= t {
+            playback
+                .active_region_indices
+                .push(playback.region_scan_start_index);
+        }
+        playback.region_scan_start_index += 1;
+    }
 }
 
 fn route_track_sends(
@@ -3608,7 +3622,8 @@ mod tests {
 
         let _ = render_next_frame(&mut playback);
 
-        assert_eq!(playback.region_scan_start_index, 1);
+        assert_eq!(playback.active_region_indices, vec![1]);
+        assert_eq!(playback.region_scan_start_index, 2);
 
         playback.loop_region = Some(NativeLoopPayload {
             enabled: true,
@@ -3618,7 +3633,8 @@ mod tests {
         playback.position_seconds = 1.01;
         apply_loop_wrap(&mut playback);
 
-        assert_eq!(playback.region_scan_start_index, 0);
+        assert_eq!(playback.active_region_indices, vec![0]);
+        assert_eq!(playback.region_scan_start_index, 1);
     }
 
     #[test]
@@ -4195,6 +4211,7 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            active_region_indices: Vec::with_capacity(4),
             track_mix_scratch: Vec::with_capacity(4),
             return_mix_scratch: Vec::with_capacity(4),
             source_budget_scratch: TrackSourceBudget::with_capacity(4),
@@ -4257,6 +4274,7 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            active_region_indices: Vec::with_capacity(4),
             track_mix_scratch: Vec::with_capacity(4),
             return_mix_scratch: Vec::with_capacity(4),
             source_budget_scratch: TrackSourceBudget::with_capacity(4),
@@ -4320,6 +4338,7 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            active_region_indices: Vec::with_capacity(4),
             track_mix_scratch: Vec::with_capacity(4),
             return_mix_scratch: Vec::with_capacity(4),
             source_budget_scratch: TrackSourceBudget::with_capacity(4),
@@ -4422,6 +4441,7 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            active_region_indices: Vec::with_capacity(4),
             track_mix_scratch: Vec::with_capacity(4),
             return_mix_scratch: Vec::with_capacity(4),
             source_budget_scratch: TrackSourceBudget::with_capacity(4),
@@ -4497,6 +4517,7 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            active_region_indices: Vec::with_capacity(4),
             track_mix_scratch: Vec::with_capacity(4),
             return_mix_scratch: Vec::with_capacity(4),
             source_budget_scratch: TrackSourceBudget::with_capacity(4),
@@ -4630,6 +4651,7 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            active_region_indices: Vec::with_capacity(4),
             track_mix_scratch: Vec::with_capacity(4),
             return_mix_scratch: Vec::with_capacity(4),
             source_budget_scratch: TrackSourceBudget::with_capacity(4),
@@ -4688,6 +4710,7 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            active_region_indices: Vec::with_capacity(4),
             track_mix_scratch: Vec::with_capacity(4),
             return_mix_scratch: Vec::with_capacity(4),
             source_budget_scratch: TrackSourceBudget::with_capacity(4),
@@ -4731,6 +4754,7 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            active_region_indices: Vec::with_capacity(4),
             track_mix_scratch: Vec::with_capacity(4),
             return_mix_scratch: Vec::with_capacity(4),
             source_budget_scratch: TrackSourceBudget::with_capacity(4),
