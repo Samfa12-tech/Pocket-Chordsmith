@@ -2,6 +2,8 @@ import type { FxChain, JsonValue, PocketDawProject } from "../daw/schema";
 import type { RenderedEvent } from "../audio/eventRenderer";
 import { chordsmithSidechainSettings } from "../audio/sidechain";
 import { activeTrackSendRoutes } from "../daw/routing";
+import { getAutomatedTrackControls } from "../daw/automation";
+import { secondsToBars } from "../daw/timeline";
 
 export interface NativeAudioStatus {
   backend: "native-cpal" | string;
@@ -261,6 +263,7 @@ export function buildNativeAudioStartPayload(
   startSeconds: number,
   cache?: { assets: NativeAudioAsset[]; regions: NativeAudioRegion[] }
 ): NativeAudioStartPayload {
+  const startBar = secondsToBars(Math.max(0, startSeconds), project.project.bpm, project.project.timeSig) + 1;
   return {
     projectTitle: project.project.title,
     sampleRate: project.project.sampleRate,
@@ -269,16 +272,19 @@ export function buildNativeAudioStartPayload(
     loop: nativeLoop(project),
     metronome: nativeMetronome(project),
     sidechain: nativeSidechain(project),
-    tracks: project.tracks.map((track) => ({
-      id: track.id,
-      fxChainId: track.fxChainId,
-      isReturn: track.trackType === "return" || track.role === "fx-return",
-      sends: activeTrackSendRoutes(project, track),
-      volume: clamp(track.volume, 0, 1.2),
-      pan: clamp(track.pan, -1, 1),
-      mute: track.mute,
-      solo: track.solo
-    })),
+    tracks: project.tracks.map((track) => {
+      const controls = getAutomatedTrackControls(project, track, startBar);
+      return {
+        id: track.id,
+        fxChainId: track.fxChainId,
+        isReturn: track.trackType === "return" || track.role === "fx-return",
+        sends: activeTrackSendRoutes(project, track),
+        volume: controls.volume,
+        pan: controls.pan,
+        mute: track.mute,
+        solo: track.solo
+      };
+    }),
     events: events.map((event) => ({
       id: event.id,
       kind: event.kind,

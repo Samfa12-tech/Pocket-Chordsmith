@@ -153,6 +153,7 @@ export class AudioEngine {
   private nativePlaybackStartedWithRenderCache = false;
   private nativePlaybackStartedWithProceduralFallbackEventCount = 0;
   private nativePlaybackCachePayloadWindowEndSeconds = 0;
+  private nativeSyncedTrackControls = new Map<string, string>();
   private nativeStatus: NativeAudioStatus | null = null;
   private nativeLastError: string | null = null;
   private nativeRestartToken = 0;
@@ -359,11 +360,7 @@ export class AudioEngine {
     if (patch.mute !== undefined) track.mute = patch.mute;
     if (patch.solo !== undefined) track.solo = patch.solo;
 
-    if (this.playbackBackend === "native-cpal" || this.playbackBackend === "native-cpal-paused") {
-      void this.nativePlayback.updateTrack({ trackId, ...patch }).then((status) => {
-        if (status) this.nativeStatus = status;
-      });
-    }
+    if (this.playbackBackend === "native-cpal" || this.playbackBackend === "native-cpal-paused") this.syncNativeMixerControls(this.currentSeconds(), true);
 
     if (!this.ctx) return true;
     const now = this.ctx.currentTime;
@@ -449,6 +446,7 @@ export class AudioEngine {
     this.nativePlaybackStartedWithProceduralFallbackEventCount = 0;
     this.nativeRenderCacheBypassedForLiveEdits = false;
     this.nativeRenderCacheStaleForLiveEdits = false;
+    this.nativeSyncedTrackControls.clear();
     this.scheduleNativeRenderCachePrewarm(pendingCacheReason);
     this.lastAudioDropCause = "stop";
     this.offsetSeconds = 0;
@@ -504,6 +502,7 @@ export class AudioEngine {
     if ((this.playbackBackend === "native-cpal" && this.playing) || this.playbackBackend === "native-cpal-paused") {
       if (this.playing) this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
       this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
+      this.syncNativeMixerControls(this.offsetSeconds, true);
       void this.nativePlayback.seek(this.offsetSeconds).then((status) => {
         if (status) this.nativeStatus = status;
       });
@@ -718,6 +717,7 @@ export class AudioEngine {
     if (playbackCache) playbackCache.proceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
     if (!events.length && !(playbackCache?.regions.length)) return "unavailable";
     const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, playbackCache || undefined);
+    this.nativeSyncedTrackControls.clear();
     const result = await this.nativePlayback.start(payload);
     if (!result.started) {
       this.nativeLastError = result.error;
@@ -775,6 +775,7 @@ export class AudioEngine {
     const events = playbackEvents.events;
     if (playbackCache) playbackCache.proceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
     const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, playbackCache || undefined);
+    this.nativeSyncedTrackControls.clear();
     const result = await this.nativePlayback.start(payload);
     if (request.token !== this.nativeRestartToken) return;
     if (result.started) {
@@ -1203,13 +1204,18 @@ export class AudioEngine {
     return "__TAURI_INTERNALS__" in globalWindow || "__TAURI__" in globalWindow;
   }
 
-  private syncNativeMixerControls() {
-    if (this.playbackBackend !== "native-cpal") return;
+  private syncNativeMixerControls(seconds = this.currentSeconds(), force = false) {
+    if (this.playbackBackend !== "native-cpal" && this.playbackBackend !== "native-cpal-paused") return;
+    const currentBar = secondsToBars(seconds, this.project.project.bpm, this.project.project.timeSig) + 1;
     this.project.tracks.forEach((track) => {
+      const controls = getAutomatedTrackControls(this.project, track, currentBar);
+      const signature = `${controls.volume.toFixed(4)}:${controls.pan.toFixed(4)}:${track.mute ? 1 : 0}:${track.solo ? 1 : 0}`;
+      if (!force && this.nativeSyncedTrackControls.get(track.id) === signature) return;
+      this.nativeSyncedTrackControls.set(track.id, signature);
       void this.nativePlayback.updateTrack({
         trackId: track.id,
-        volume: track.volume,
-        pan: track.pan,
+        volume: controls.volume,
+        pan: controls.pan,
         mute: track.mute,
         solo: track.solo
       }).then((status) => {
@@ -1244,6 +1250,7 @@ export class AudioEngine {
       this.emitTick(true);
     }
     this.nativeLastTickSeconds = current;
+    this.syncNativeMixerControls(current);
     this.refreshNativePositionEstimate(current);
     this.tapNativeMeters(current);
     this.tapNativeRegionMeters(current);

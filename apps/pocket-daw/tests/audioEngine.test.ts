@@ -7,6 +7,7 @@ import { cycleBassStep } from "../src/daw/chordsmithEditor";
 import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { addTrackToProject } from "../src/daw/tracks";
+import { createAutomationLane } from "../src/daw/automation";
 import { nativeRenderCacheSignature, nativeRuntimeAudioCacheSignature, type NativeRenderCache } from "../src/audio/nativeRenderCache";
 import type { PocketDawProject } from "../src/daw/schema";
 import { simpleMidiBytes } from "./midiFixtures";
@@ -97,6 +98,57 @@ describe("audio engine diagnostics", () => {
     expect(after.chordsmithSectionCount).toBe(before.chordsmithSectionCount);
     expect(chords).toMatchObject({ mute: true, solo: false });
     expect(bass).toMatchObject({ mute: false, solo: true });
+  });
+
+  it("syncs automated mixer controls to native playback updates", async () => {
+    const updates: Array<{ trackId: string; volume?: number; pan?: number; mute?: boolean; solo?: boolean }> = [];
+    const native = {
+      async start() { return { started: true, status: nativeStatus({ active: true, playing: true }), error: null }; },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack(patch: { trackId: string; volume?: number; pan?: number; mute?: boolean; solo?: boolean }) {
+        updates.push(patch);
+        return nativeStatus({ active: true, playing: true });
+      },
+      async status() { return nativeStatus({ active: true, playing: true }); }
+    };
+    let project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const bassBaseVolume = project.tracks.find((track) => track.id === "bass")?.volume || 1;
+    project = createAutomationLane(project, "tracks.bass.volume", {
+      points: [
+        { bar: 1, value: 0.5, curve: "linear" },
+        { bar: 3, value: 1, curve: "linear" }
+      ]
+    }).project;
+    project = createAutomationLane(project, "tracks.bass.pan", {
+      points: [
+        { bar: 1, value: -0.5, curve: "linear" },
+        { bar: 3, value: 0.5, curve: "linear" }
+      ]
+    }).project;
+    const engine = new AudioEngine(project, native);
+    const internals = engine as unknown as {
+      playbackBackend: string;
+      syncNativeMixerControls(seconds?: number, force?: boolean): void;
+    };
+    internals.playbackBackend = "native-cpal";
+
+    internals.syncNativeMixerControls(2, true);
+    await Promise.resolve();
+    const bassUpdate = updates.find((update) => update.trackId === "bass");
+
+    expect(bassUpdate?.volume).toBeCloseTo(bassBaseVolume * 0.75, 5);
+    expect(bassUpdate?.pan).toBeCloseTo(0, 5);
+
+    updates.length = 0;
+    internals.syncNativeMixerControls(2);
+    await Promise.resolve();
+
+    expect(updates).toEqual([]);
   });
 
   it("preserves generated native cache across live mixer graph track additions", () => {

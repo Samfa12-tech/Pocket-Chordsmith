@@ -4,6 +4,7 @@ import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoPr
 import { addDrumLaneFx, DRUM_LANE_DEFS } from "../src/daw/drumLanes";
 import { addFxSlot, setFxSlotParameter } from "../src/daw/fx";
 import { setTrackSendLevel } from "../src/daw/routing";
+import { createAutomationLane } from "../src/daw/automation";
 import type { RenderedEvent } from "../src/audio/eventRenderer";
 import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioInvokeApi, type NativeAudioStatus } from "../src/native/audioPlayback";
 
@@ -46,6 +47,31 @@ describe("native audio playback bridge", () => {
     expect(payload.fxChains.some((chain) => chain.ownerTrackId === "master")).toBe(true);
     expect(payload.loop).toBeNull();
     expect(payload.sidechain).toEqual({ enabled: true, amount: 0.35, targetTrackId: "chords", triggerKind: "kick" });
+  });
+
+  it("applies track automation to native start mixer controls", () => {
+    let project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const bassBaseVolume = project.tracks.find((track) => track.id === "bass")?.volume || 1;
+    project = createAutomationLane(project, "tracks.bass.volume", {
+      points: [
+        { bar: 1, value: 0.5, curve: "linear" },
+        { bar: 3, value: 1, curve: "linear" }
+      ]
+    }).project;
+    project = createAutomationLane(project, "tracks.bass.pan", {
+      points: [
+        { bar: 1, value: -0.5, curve: "linear" },
+        { bar: 3, value: 0.5, curve: "linear" }
+      ]
+    }).project;
+
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 2);
+    const bass = payload.tracks.find((track) => track.id === "bass");
+
+    expect(bass?.volume).toBeCloseTo(bassBaseVolume * 0.75, 5);
+    expect(bass?.pan).toBeCloseTo(0, 5);
   });
 
   it("preserves bass and melody slide targets for the native installed-app synth", () => {
