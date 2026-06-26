@@ -100,6 +100,44 @@ describe("audio engine diagnostics", () => {
     expect(bass).toMatchObject({ mute: false, solo: true });
   });
 
+  it("does not schedule hidden generated-stem cache builds while idle", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      __TAURI__: {},
+      setTimeout: (callback: () => void) => {
+        queueMicrotask(callback);
+        return 1;
+      },
+      clearTimeout: () => undefined
+    };
+    try {
+      const engine = new AudioEngine(createDemoProject());
+      let buildCount = 0;
+      const internals = engine as unknown as {
+        ensureNativeRenderCache(reason: string): Promise<NativeRenderCache | null>;
+      };
+      internals.ensureNativeRenderCache = async () => {
+        buildCount += 1;
+        return fakeNativeRenderCache(createDemoProject());
+      };
+
+      expect(engine.prewarmNativeRenderCache("idle-hidden-build")).toBe(false);
+      await Promise.resolve();
+
+      expect(buildCount).toBe(0);
+      expect(engine.getDiagnostics().nativeRenderCache.prewarmScheduled).toBe(false);
+      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("idle-hidden-build");
+
+      engine.stop();
+      await Promise.resolve();
+
+      expect(buildCount).toBe(0);
+      expect(engine.getDiagnostics().nativeRenderCache.prewarmScheduled).toBe(false);
+    } finally {
+      (globalThis as any).window = previousWindow;
+    }
+  });
+
   it("syncs automated mixer controls to native playback updates", async () => {
     const updates: Array<{ trackId: string; volume?: number; pan?: number; mute?: boolean; solo?: boolean }> = [];
     const native = {

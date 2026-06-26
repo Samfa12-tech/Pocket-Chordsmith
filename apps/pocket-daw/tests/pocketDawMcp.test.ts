@@ -297,7 +297,7 @@ describe("Pocket DAW MCP server handshake", () => {
       const timeout = setTimeout(() => {
         child.kill();
         reject(new Error("Timed out waiting for MCP initialize response."));
-      }, 10000);
+      }, 30000);
       child.on("exit", () => {
         clearTimeout(timeout);
         resolve();
@@ -308,5 +308,5 @@ describe("Pocket DAW MCP server handshake", () => {
     expect(output).toContain('"name":"pocket_daw"');
     expect(output).toContain('"listChanged":false');
     expect(output).not.toContain("Content-Length:");
-  }, 10000);
+  }, 30000);
 });

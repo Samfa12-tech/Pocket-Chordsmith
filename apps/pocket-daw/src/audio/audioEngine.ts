@@ -208,7 +208,8 @@ export class AudioEngine {
   }
 
   prewarmNativeRenderCache(reason = "prewarm"): boolean {
-    return this.scheduleNativeRenderCachePrewarm(reason);
+    this.deferNativeRenderCacheRefresh(reason, { scheduleWhenIdle: false });
+    return false;
   }
 
   async rebuildNativeRenderCache(reason = "manual-cache-build"): Promise<NativeRenderCache | null> {
@@ -438,7 +439,6 @@ export class AudioEngine {
 
   stop() {
     this.cancelPendingNativeRestarts();
-    const pendingCacheReason = this.nativeRenderCachePendingReason || "stop-idle";
     this.cancelLiveNativeRenderCacheRefresh();
     this.playing = false;
     this.playbackBackend = "idle";
@@ -447,7 +447,6 @@ export class AudioEngine {
     this.nativeRenderCacheBypassedForLiveEdits = false;
     this.nativeRenderCacheStaleForLiveEdits = false;
     this.nativeSyncedTrackControls.clear();
-    this.scheduleNativeRenderCachePrewarm(pendingCacheReason);
     this.lastAudioDropCause = "stop";
     this.offsetSeconds = 0;
     this.nextEventIndex = 0;
@@ -1073,13 +1072,12 @@ export class AudioEngine {
 
   private deferNativeRenderCacheRefresh(reason: string, options: { scheduleWhenIdle?: boolean } = {}): void {
     this.nativeRenderCachePendingReason = reason;
-    if (options.scheduleWhenIdle !== false && !this.playing) this.scheduleNativeRenderCachePrewarm(reason);
+    void options;
   }
 
   private scheduleLiveNativeRenderCacheRefresh(reason: string): void {
     this.nativeRenderCachePendingReason = reason;
     this.cancelLiveNativeRenderCacheRefresh();
-    if (!this.playing) this.scheduleNativeRenderCachePrewarm(reason);
   }
 
   private activateReadyNativeRenderCacheAfterFallback(reason: string) {
