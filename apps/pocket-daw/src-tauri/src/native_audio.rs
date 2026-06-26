@@ -297,6 +297,7 @@ struct PlaybackShared {
     events: Vec<NativeRenderedEvent>,
     assets: HashMap<String, Arc<DecodedAudioAsset>>,
     regions: Vec<NativeAudioRegion>,
+    compiled_regions: Vec<CompiledAudioRegion>,
     tracks: HashMap<String, NativeTrackControl>,
     track_order: Vec<String>,
     track_indices: HashMap<String, usize>,
@@ -321,6 +322,12 @@ struct PlaybackShared {
     max_callback_micros: u64,
     slow_callback_count: u64,
     generation: u64,
+}
+
+struct CompiledAudioRegion {
+    region: NativeAudioRegion,
+    track_index: usize,
+    asset: Arc<DecodedAudioAsset>,
 }
 
 #[derive(Clone, Debug)]
@@ -695,12 +702,14 @@ impl NativeAudioRuntime {
             .collect::<HashMap<_, _>>();
         let fx = build_native_fx_runtime(payload.fx_chains, &tracks, sample_rate as f32);
         let scratch_track_capacity = tracks.len().max(1);
+        let compiled_regions = compile_audio_regions(&regions, &assets, &track_indices);
         let active_region_capacity = regions.len().min(64);
         let mut playback = PlaybackShared {
             project_title: payload.project_title,
             events,
             assets,
             regions,
+            compiled_regions,
             has_solo: tracks.values().any(|track| track.solo),
             tracks,
             track_order,
@@ -1313,33 +1322,30 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     active_counts_by_track.clear();
 
     for region_index in playback.active_region_indices.iter().copied() {
-        let Some(region) = playback.regions.get(region_index) else {
+        let Some(region) = playback.compiled_regions.get(region_index) else {
             continue;
         };
-        let Some(track_index) = playback.track_indices.get(&region.track_id).copied() else {
+        let Some(track_id) = playback.track_order.get(region.track_index) else {
             continue;
         };
-        let Some(track) = playback.tracks.get(&region.track_id) else {
+        let Some(track) = playback.tracks.get(track_id) else {
             continue;
         };
         let track_gain = track_gain(track, playback.has_solo);
         if track_gain <= 0.0001 {
             continue;
         }
-        let Some(asset) = playback.assets.get(&region.asset_id) else {
+        let Some((asset_left, asset_right)) = render_region_sample(&region.region, &region.asset, t) else {
             continue;
         };
-        let Some((asset_left, asset_right)) = render_region_sample(&region, asset, t) else {
-            continue;
-        };
-        if !active_counts_by_track.allows(track_index) {
+        if !active_counts_by_track.allows(region.track_index) {
             continue;
         }
-        let (pan_left, pan_right) = source_pan_gains(region.pan as f32);
-        let gain = (track_gain * region.gain.clamp(0.0, 1.4)) as f32;
+        let (pan_left, pan_right) = source_pan_gains(region.region.pan as f32);
+        let gain = (track_gain * region.region.gain.clamp(0.0, 1.4)) as f32;
         add_track_mix(
             &mut track_mixes,
-            track_index,
+            region.track_index,
             asset_left * gain * pan_left,
             asset_right * gain * pan_right,
         );
@@ -1567,23 +1573,25 @@ fn apply_loop_wrap(playback: &mut PlaybackShared) {
 }
 
 fn reset_scan_starts(playback: &mut PlaybackShared) {
+    ensure_compiled_regions(playback);
     playback.scan_start_index = find_scan_start(&playback.events, playback.position_seconds);
     playback.region_scan_start_index =
-        find_region_scan_start(&playback.regions, playback.position_seconds);
+        find_compiled_region_scan_start(&playback.compiled_regions, playback.position_seconds);
     playback.active_region_indices.clear();
     sync_active_regions(playback, playback.position_seconds);
 }
 
 fn sync_active_regions(playback: &mut PlaybackShared, t: f64) {
+    ensure_compiled_regions(playback);
     playback.active_region_indices.retain(|index| {
         playback
-            .regions
+            .compiled_regions
             .get(*index)
-            .map(|region| region.start_time + region.duration >= t)
+            .map(|region| region.region.start_time + region.region.duration >= t)
             .unwrap_or(false)
     });
-    while playback.region_scan_start_index < playback.regions.len() {
-        let region = &playback.regions[playback.region_scan_start_index];
+    while playback.region_scan_start_index < playback.compiled_regions.len() {
+        let region = &playback.compiled_regions[playback.region_scan_start_index].region;
         if region.start_time > t {
             break;
         }
@@ -1594,6 +1602,14 @@ fn sync_active_regions(playback: &mut PlaybackShared, t: f64) {
         }
         playback.region_scan_start_index += 1;
     }
+}
+
+fn ensure_compiled_regions(playback: &mut PlaybackShared) {
+    if !playback.compiled_regions.is_empty() || playback.regions.is_empty() {
+        return;
+    }
+    playback.compiled_regions =
+        compile_audio_regions(&playback.regions, &playback.assets, &playback.track_indices);
 }
 
 fn route_track_sends(
@@ -3289,10 +3305,29 @@ fn find_scan_start(events: &[NativeRenderedEvent], seconds: f64) -> usize {
         .unwrap_or(events.len())
 }
 
-fn find_region_scan_start(regions: &[NativeAudioRegion], seconds: f64) -> usize {
+fn compile_audio_regions(
+    regions: &[NativeAudioRegion],
+    assets: &HashMap<String, Arc<DecodedAudioAsset>>,
+    track_indices: &HashMap<String, usize>,
+) -> Vec<CompiledAudioRegion> {
     regions
         .iter()
-        .position(|region| region.start_time + region.duration >= seconds)
+        .filter_map(|region| {
+            let track_index = track_indices.get(&region.track_id).copied()?;
+            let asset = assets.get(&region.asset_id)?;
+            Some(CompiledAudioRegion {
+                region: region.clone(),
+                track_index,
+                asset: Arc::clone(asset),
+            })
+        })
+        .collect()
+}
+
+fn find_compiled_region_scan_start(regions: &[CompiledAudioRegion], seconds: f64) -> usize {
+    regions
+        .iter()
+        .position(|region| region.region.start_time + region.region.duration >= seconds)
         .unwrap_or(regions.len())
 }
 
@@ -4200,6 +4235,7 @@ mod tests {
             regions: vec![test_region(
                 "region", "stem", "bass", 0.0, 0.0, 0.1, 1.0, 0.0,
             )],
+            compiled_regions: Vec::new(),
             tracks,
             track_order,
             track_indices,
@@ -4263,6 +4299,7 @@ mod tests {
             regions: vec![test_region(
                 "region", "stem", "melody", 0.0, 0.0, 0.1, 1.0, 0.0,
             )],
+            compiled_regions: Vec::new(),
             tracks,
             track_order,
             track_indices,
@@ -4327,6 +4364,7 @@ mod tests {
             regions: vec![test_region(
                 "region", "stem", "melody", 0.0, 0.0, 0.1, 1.0, 0.0,
             )],
+            compiled_regions: Vec::new(),
             tracks,
             track_order,
             track_indices,
@@ -4430,6 +4468,7 @@ mod tests {
                     0.0,
                 ),
             ],
+            compiled_regions: Vec::new(),
             tracks,
             track_order,
             track_indices,
@@ -4506,6 +4545,7 @@ mod tests {
             regions: vec![test_region(
                 "region", "stem", "bass", 0.0, 0.0, 0.1, 1.0, 0.0,
             )],
+            compiled_regions: Vec::new(),
             tracks,
             track_order,
             track_indices,
@@ -4640,6 +4680,7 @@ mod tests {
                     0.0,
                 ),
             ],
+            compiled_regions: Vec::new(),
             tracks,
             track_order,
             track_indices,
@@ -4699,6 +4740,7 @@ mod tests {
             regions: vec![test_region(
                 "region", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0,
             )],
+            compiled_regions: Vec::new(),
             tracks,
             track_order,
             track_indices,
@@ -4743,6 +4785,7 @@ mod tests {
             events,
             assets: HashMap::new(),
             regions: Vec::new(),
+            compiled_regions: Vec::new(),
             tracks,
             track_order,
             track_indices,
