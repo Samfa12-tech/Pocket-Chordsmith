@@ -23,7 +23,7 @@ const NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK: usize = 96;
 pub struct NativeAudioRuntime {
     stream: Option<cpal::Stream>,
     shared: Option<Arc<Mutex<PlaybackShared>>>,
-    asset_cache: HashMap<String, DecodedAudioAsset>,
+    asset_cache: HashMap<String, Arc<DecodedAudioAsset>>,
     generation: u64,
     last_error: Option<String>,
     device_name: Option<String>,
@@ -295,7 +295,7 @@ enum NativeAudioRenderMode {
 struct PlaybackShared {
     project_title: Option<String>,
     events: Vec<NativeRenderedEvent>,
-    assets: HashMap<String, DecodedAudioAsset>,
+    assets: HashMap<String, Arc<DecodedAudioAsset>>,
     regions: Vec<NativeAudioRegion>,
     tracks: HashMap<String, NativeTrackControl>,
     track_order: Vec<String>,
@@ -734,7 +734,7 @@ impl NativeAudioRuntime {
     fn decode_or_reuse_asset(
         &mut self,
         asset: &NativeAudioAssetPayload,
-    ) -> Result<DecodedAudioAsset, String> {
+    ) -> Result<Arc<DecodedAudioAsset>, String> {
         if asset.bytes.is_empty() {
             let Some(decoded) = self.asset_cache.get(&asset.id) else {
                 return Err(format!(
@@ -743,11 +743,12 @@ impl NativeAudioRuntime {
                 ));
             };
             validate_asset_metadata(asset, decoded)?;
-            return Ok(decoded.clone());
+            return Ok(Arc::clone(decoded));
         }
 
-        let decoded = decode_payload_asset(asset)?;
-        self.asset_cache.insert(asset.id.clone(), decoded.clone());
+        let decoded = Arc::new(decode_payload_asset(asset)?);
+        self.asset_cache
+            .insert(asset.id.clone(), Arc::clone(&decoded));
         Ok(decoded)
     }
 
@@ -3459,6 +3460,10 @@ mod tests {
 
         assert_eq!(first.frame_count, second.frame_count);
         assert_eq!(first.samples, second.samples);
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "metadata-only payloads should share decoded PCM instead of cloning it"
+        );
     }
 
     #[test]
@@ -4110,7 +4115,7 @@ mod tests {
         let mut cached = PlaybackShared {
             project_title: Some("Cached".to_string()),
             events: Vec::new(),
-            assets: HashMap::from([("stem".to_string(), decoded)]),
+            assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
             regions: vec![test_region(
                 "region", "stem", "bass", 0.0, 0.0, 0.1, 1.0, 0.0,
             )],
@@ -4169,7 +4174,7 @@ mod tests {
         let mut cached = PlaybackShared {
             project_title: Some("Cached pan".to_string()),
             events: Vec::new(),
-            assets: HashMap::from([("stem".to_string(), decoded)]),
+            assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
             regions: vec![test_region(
                 "region", "stem", "melody", 0.0, 0.0, 0.1, 1.0, 0.0,
             )],
@@ -4229,7 +4234,7 @@ mod tests {
         let mut cached = PlaybackShared {
             project_title: Some("Cached track pan".to_string()),
             events: Vec::new(),
-            assets: HashMap::from([("stem".to_string(), decoded)]),
+            assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
             regions: vec![test_region(
                 "region", "stem", "melody", 0.0, 0.0, 0.1, 1.0, 0.0,
             )],
@@ -4316,8 +4321,8 @@ mod tests {
             project_title: Some("Cached sidechain".to_string()),
             events: vec![trigger_marker],
             assets: HashMap::from([
-                ("kick_stem".to_string(), kick_decoded),
-                ("chord_stem".to_string(), chord_decoded),
+                ("kick_stem".to_string(), Arc::new(kick_decoded)),
+                ("chord_stem".to_string(), Arc::new(chord_decoded)),
             ]),
             regions: vec![
                 test_region("kick_region", "kick_stem", "drums", 0.0, 0.0, 0.1, 1.0, 0.0),
@@ -4400,7 +4405,7 @@ mod tests {
         let mut cached = PlaybackShared {
             project_title: Some("Cached live mixer".to_string()),
             events: Vec::new(),
-            assets: HashMap::from([("stem".to_string(), decoded)]),
+            assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
             regions: vec![test_region(
                 "region", "stem", "bass", 0.0, 0.0, 0.1, 1.0, 0.0,
             )],
@@ -4518,8 +4523,8 @@ mod tests {
             project_title: Some("Cached dense stems".to_string()),
             events: Vec::new(),
             assets: HashMap::from([
-                ("bass_stem".to_string(), bass_decoded),
-                ("melody_stem".to_string(), melody_decoded),
+                ("bass_stem".to_string(), Arc::new(bass_decoded)),
+                ("melody_stem".to_string(), Arc::new(melody_decoded)),
             ]),
             regions: vec![
                 test_region("bass_region", "bass_stem", "bass", 0.0, 0.0, 0.08, 1.0, 0.0),
@@ -4585,7 +4590,7 @@ mod tests {
         PlaybackShared {
             project_title: Some("Test".to_string()),
             events: Vec::new(),
-            assets: HashMap::from([("asset".to_string(), asset)]),
+            assets: HashMap::from([("asset".to_string(), Arc::new(asset))]),
             regions: vec![test_region(
                 "region", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0,
             )],
