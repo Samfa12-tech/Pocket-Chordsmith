@@ -312,6 +312,9 @@ struct PlaybackShared {
     rendered_frame_count: u64,
     scan_start_index: usize,
     region_scan_start_index: usize,
+    track_mix_scratch: Vec<TrackMix>,
+    return_mix_scratch: Vec<TrackMix>,
+    source_budget_scratch: TrackSourceBudget,
     callback_count: u64,
     last_callback_micros: u64,
     max_callback_micros: u64,
@@ -690,6 +693,7 @@ impl NativeAudioRuntime {
             .map(|track| (track.id.clone(), track))
             .collect::<HashMap<_, _>>();
         let fx = build_native_fx_runtime(payload.fx_chains, &tracks, sample_rate as f32);
+        let scratch_track_capacity = tracks.len().max(1);
         let mut playback = PlaybackShared {
             project_title: payload.project_title,
             events,
@@ -710,6 +714,9 @@ impl NativeAudioRuntime {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            track_mix_scratch: Vec::with_capacity(scratch_track_capacity),
+            return_mix_scratch: Vec::with_capacity(scratch_track_capacity),
+            source_budget_scratch: TrackSourceBudget::with_capacity(scratch_track_capacity),
             callback_count: 0,
             last_callback_micros: 0,
             max_callback_micros: 0,
@@ -1202,6 +1209,16 @@ struct TrackSourceBudget {
 }
 
 impl TrackSourceBudget {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            counts: Vec::with_capacity(capacity),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.counts.clear();
+    }
+
     fn allows(&mut self, track_index: usize) -> bool {
         if let Some((_id, count)) = self
             .counts
@@ -1280,8 +1297,12 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         playback.region_scan_start_index += 1;
     }
 
-    let mut track_mixes: Vec<TrackMix> = Vec::new();
-    let mut active_counts_by_track = TrackSourceBudget::default();
+    let mut track_mixes = std::mem::take(&mut playback.track_mix_scratch);
+    track_mixes.clear();
+    let mut return_mixes = std::mem::take(&mut playback.return_mix_scratch);
+    return_mixes.clear();
+    let mut active_counts_by_track = std::mem::take(&mut playback.source_budget_scratch);
+    active_counts_by_track.clear();
 
     for region in playback
         .regions
@@ -1347,8 +1368,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
 
     let mut left = 0.0_f32;
     let mut right = 0.0_f32;
-    let mut return_mixes: Vec<TrackMix> = Vec::new();
-    for mix in track_mixes {
+    for mix in track_mixes.iter() {
         let Some(track_id) = playback.track_order.get(mix.track_index) else {
             continue;
         };
@@ -1380,7 +1400,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         left += track_left;
         right += track_right;
     }
-    for mix in return_mixes {
+    for mix in return_mixes.iter() {
         let Some(track_id) = playback.track_order.get(mix.track_index) else {
             continue;
         };
@@ -1406,6 +1426,12 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     playback.position_seconds += 1.0 / playback.sample_rate.max(1) as f64;
     apply_loop_wrap(playback);
     playback.rendered_frame_count = playback.rendered_frame_count.saturating_add(1);
+    track_mixes.clear();
+    return_mixes.clear();
+    active_counts_by_track.clear();
+    playback.track_mix_scratch = track_mixes;
+    playback.return_mix_scratch = return_mixes;
+    playback.source_budget_scratch = active_counts_by_track;
     (
         soft_limit(left * 0.72 * master),
         soft_limit(right * 0.72 * master),
@@ -1427,7 +1453,8 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
 
     let mut left = 0.0_f32;
     let mut right = 0.0_f32;
-    let mut active_counts_by_track = TrackSourceBudget::default();
+    let mut active_counts_by_track = std::mem::take(&mut playback.source_budget_scratch);
+    active_counts_by_track.clear();
 
     let mut event_index = playback.scan_start_index;
     while event_index < playback.events.len() {
@@ -1450,6 +1477,8 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     playback.position_seconds += 1.0 / playback.sample_rate.max(1) as f64;
     apply_loop_wrap(playback);
     playback.rendered_frame_count = playback.rendered_frame_count.saturating_add(1);
+    active_counts_by_track.clear();
+    playback.source_budget_scratch = active_counts_by_track;
     (left, right)
 }
 
@@ -3532,6 +3561,27 @@ mod tests {
     }
 
     #[test]
+    fn reuses_per_frame_mix_scratch_buffers() {
+        let mut playback = playback_with_region(test_track("bass", 0.5, 0.0, false, false));
+        let initial_track_capacity = playback.track_mix_scratch.capacity();
+        let initial_return_capacity = playback.return_mix_scratch.capacity();
+        let initial_budget_capacity = playback.source_budget_scratch.counts.capacity();
+
+        let _ = render_next_frame(&mut playback);
+        let _ = render_next_frame(&mut playback);
+
+        assert_eq!(playback.track_mix_scratch.len(), 0);
+        assert_eq!(playback.return_mix_scratch.len(), 0);
+        assert_eq!(playback.source_budget_scratch.counts.len(), 0);
+        assert_eq!(playback.track_mix_scratch.capacity(), initial_track_capacity);
+        assert_eq!(playback.return_mix_scratch.capacity(), initial_return_capacity);
+        assert_eq!(
+            playback.source_budget_scratch.counts.capacity(),
+            initial_budget_capacity
+        );
+    }
+
+    #[test]
     fn cached_region_cursor_skips_expired_regions_and_resets_on_loop_wrap() {
         let mut playback = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
         playback.regions = vec![
@@ -4130,6 +4180,9 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            track_mix_scratch: Vec::with_capacity(4),
+            return_mix_scratch: Vec::with_capacity(4),
+            source_budget_scratch: TrackSourceBudget::with_capacity(4),
             callback_count: 0,
             last_callback_micros: 0,
             max_callback_micros: 0,
@@ -4189,6 +4242,9 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            track_mix_scratch: Vec::with_capacity(4),
+            return_mix_scratch: Vec::with_capacity(4),
+            source_budget_scratch: TrackSourceBudget::with_capacity(4),
             callback_count: 0,
             last_callback_micros: 0,
             max_callback_micros: 0,
@@ -4249,6 +4305,9 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            track_mix_scratch: Vec::with_capacity(4),
+            return_mix_scratch: Vec::with_capacity(4),
+            source_budget_scratch: TrackSourceBudget::with_capacity(4),
             callback_count: 0,
             last_callback_micros: 0,
             max_callback_micros: 0,
@@ -4348,6 +4407,9 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            track_mix_scratch: Vec::with_capacity(4),
+            return_mix_scratch: Vec::with_capacity(4),
+            source_budget_scratch: TrackSourceBudget::with_capacity(4),
             callback_count: 0,
             last_callback_micros: 0,
             max_callback_micros: 0,
@@ -4420,6 +4482,9 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            track_mix_scratch: Vec::with_capacity(4),
+            return_mix_scratch: Vec::with_capacity(4),
+            source_budget_scratch: TrackSourceBudget::with_capacity(4),
             callback_count: 0,
             last_callback_micros: 0,
             max_callback_micros: 0,
@@ -4550,6 +4615,9 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            track_mix_scratch: Vec::with_capacity(4),
+            return_mix_scratch: Vec::with_capacity(4),
+            source_budget_scratch: TrackSourceBudget::with_capacity(4),
             callback_count: 0,
             last_callback_micros: 0,
             max_callback_micros: 0,
@@ -4605,6 +4673,9 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            track_mix_scratch: Vec::with_capacity(4),
+            return_mix_scratch: Vec::with_capacity(4),
+            source_budget_scratch: TrackSourceBudget::with_capacity(4),
             callback_count: 0,
             last_callback_micros: 0,
             max_callback_micros: 0,
@@ -4645,6 +4716,9 @@ mod tests {
             rendered_frame_count: 0,
             scan_start_index: 0,
             region_scan_start_index: 0,
+            track_mix_scratch: Vec::with_capacity(4),
+            return_mix_scratch: Vec::with_capacity(4),
+            source_budget_scratch: TrackSourceBudget::with_capacity(4),
             callback_count: 0,
             last_callback_micros: 0,
             max_callback_micros: 0,
