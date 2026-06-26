@@ -906,9 +906,7 @@ export class AudioEngine {
   }
 
   private nativePlaybackEventCoverageCache(preparedCache: NativeRenderCache | null, payloadCache: NativeRenderCache | null): NativeRenderCache | null {
-    if (!preparedCache || !payloadCache) return payloadCache;
-    if (preparedCache === payloadCache) return payloadCache;
-    return preparedCache.coverage === "partial" ? payloadCache : preparedCache;
+    return payloadCache || preparedCache;
   }
 
   private nativePlaybackEvents(cache: NativeRenderCache | null): { events: RenderedEvent[]; proceduralFallbackEventCount: number } {

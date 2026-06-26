@@ -273,6 +273,58 @@ describe("audio engine diagnostics", () => {
     expect(playback.proceduralFallbackEventCount).toBe(internals.events.length - midiEvents.length);
   });
 
+  it("keeps procedural events for clips that are cached in memory but absent from the native payload window", () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    const clipA = project.timeline.clips.find((clip) => clip.type === "generated-section")!;
+    const clipB = { ...clipA, id: `${clipA.id}_later`, startBar: clipA.startBar + 8 };
+    const eventA = renderedBassEvent(clipA.id, "bass", 0.25);
+    const eventB = renderedBassEvent(clipB.id, "bass", 16.25);
+    const fullCache: NativeRenderCache = {
+      signature: nativeRenderCacheSignature(project),
+      assets: [nativeAsset("asset_a"), nativeAsset("asset_b")],
+      regions: [
+        { id: "region_a", assetId: "asset_a", trackId: "bass", startTime: 0, sourceOffset: 0, duration: 4, gain: 1, pan: 0, fadeIn: 0, fadeOut: 0 },
+        { id: "region_b", assetId: "asset_b", trackId: "bass", startTime: 16, sourceOffset: 0, duration: 4, gain: 1, pan: 0, fadeIn: 0, fadeOut: 0 }
+      ],
+      cachedClipIds: new Set([clipA.id, clipB.id]),
+      renderCacheItems: [
+        generatedStemCacheItem(clipA.id, "bass", "bass", "asset_a"),
+        generatedStemCacheItem(clipB.id, "bass", "bass", "asset_b")
+      ],
+      renderCacheHitCount: 2,
+      renderCacheMissCount: 0,
+      proceduralFallbackEventCount: 0,
+      generatedRegionCount: 2,
+      runtimeAudioRegionCount: 0,
+      missingRuntimeAudioRegionCount: 0,
+      cachedAssetByteCount: 2
+    };
+    const payloadCache: NativeRenderCache = {
+      ...fullCache,
+      coverage: "partial",
+      assets: [fullCache.assets[0]],
+      regions: [fullCache.regions[0]],
+      cachedClipIds: new Set([clipA.id]),
+      renderCacheItems: [fullCache.renderCacheItems[0]],
+      generatedRegionCount: 1,
+      renderCacheHitCount: 1,
+      cachedAssetByteCount: 1
+    };
+    const internals = engine as unknown as {
+      events: RenderedEvent[];
+      nativePlaybackEventCoverageCache(preparedCache: NativeRenderCache | null, payloadCache: NativeRenderCache | null): NativeRenderCache | null;
+      nativePlaybackEvents(cache: NativeRenderCache | null): { events: RenderedEvent[]; proceduralFallbackEventCount: number };
+    };
+    internals.events = [eventA, eventB];
+
+    const coverageCache = internals.nativePlaybackEventCoverageCache(fullCache, payloadCache);
+    const playback = internals.nativePlaybackEvents(coverageCache);
+
+    expect(playback.events.map((event) => event.id)).toEqual([eventB.id]);
+    expect(playback.proceduralFallbackEventCount).toBe(1);
+  });
+
   it("includes loop-start cached regions when a native cache payload window crosses the loop end", () => {
     const project = createDemoProject();
     project.project.bpm = 120;
@@ -669,7 +721,7 @@ describe("audio engine diagnostics", () => {
       expect(starts[0].assets?.length || 0).toBeLessThan(cache.assets.length);
       expect(starts[0].regions?.length || 0).toBeLessThan(cache.regions.length);
       expect(starts[0].events.length).toBeGreaterThan(0);
-      expect(starts[0].events.every(isSilentCachedSidechainTrigger)).toBe(true);
+      expect(starts[0].events.every(isSilentCachedSidechainTrigger)).toBe(false);
       expect(engine.getDiagnostics().nativeRenderCache.assetCount).toBe(cache.assets.length);
     } finally {
       (globalThis as any).window = previousWindow;
@@ -1439,6 +1491,22 @@ function nativeAsset(id: string): NativeAudioAsset {
     durationSeconds: 1,
     sizeBytes: 1,
     bytes: [0]
+  };
+}
+
+function renderedBassEvent(clipId: string, trackId: string, time: number): RenderedEvent {
+  return {
+    id: `${clipId}_${trackId}_${time}`,
+    clipId,
+    kind: "bass",
+    trackId,
+    role: "bass",
+    time,
+    duration: 0.25,
+    bar: 1,
+    step: 0,
+    midi: 40,
+    velocity: 0.7
   };
 }
 
