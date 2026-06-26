@@ -868,11 +868,41 @@ export class AudioEngine {
     this.nativePlaybackCachePayloadWindowEndSeconds = 0;
     if (!cache?.regions.length || !cache.assets.length) return cache;
     const window = this.nativeRenderCacheTimeWindow(seconds, nativePlaybackCachePayloadWindowBars);
-    const windowed = filterNativeRenderCacheForTimeWindow(cache, window.startSeconds, window.endSeconds);
+    const loop = this.nativeLoopBoundsSeconds();
+    let windowed: NativeRenderCache | null;
+    if (loop && window.startSeconds < loop.endSeconds && window.endSeconds > loop.endSeconds) {
+      const wrappedWindowEndSeconds = loop.startSeconds + Math.min(loop.lengthSeconds, window.endSeconds - loop.endSeconds);
+      windowed = filterNativeRenderCacheForTimeRanges(cache, [
+        [window.startSeconds, loop.endSeconds],
+        [loop.startSeconds, wrappedWindowEndSeconds]
+      ]);
+    } else {
+      windowed = filterNativeRenderCacheForTimeWindow(cache, window.startSeconds, window.endSeconds);
+    }
     if (!windowed) return null;
     if (windowed.regions.length === cache.regions.length && windowed.assets.length === cache.assets.length) return cache;
     this.nativePlaybackCachePayloadWindowEndSeconds = window.endSeconds;
     return windowed;
+  }
+
+  private rebaseNativePlaybackCachePayloadWindowAfterLoopWrap(): void {
+    if (!this.nativePlaybackCachePayloadWindowEndSeconds) return;
+    const loop = this.nativeLoopBoundsSeconds();
+    if (!loop || this.nativePlaybackCachePayloadWindowEndSeconds <= loop.endSeconds) return;
+    const overflow = this.nativePlaybackCachePayloadWindowEndSeconds - loop.endSeconds;
+    const wrappedEnd = loop.startSeconds + (overflow % loop.lengthSeconds);
+    this.nativePlaybackCachePayloadWindowEndSeconds = wrappedEnd > loop.startSeconds ? wrappedEnd : loop.endSeconds;
+  }
+
+  private nativeLoopBoundsSeconds(): { startSeconds: number; endSeconds: number; lengthSeconds: number } | null {
+    const loop = this.project.timeline.loop;
+    if (!loop?.enabled) return null;
+    const secondsPerBar = barsToSeconds(1, this.project.project.bpm, this.project.project.timeSig);
+    const startSeconds = Math.max(0, (loop.startBar - 1) * secondsPerBar);
+    const endSeconds = Math.max(startSeconds, (loop.endBar - 1) * secondsPerBar);
+    const lengthSeconds = endSeconds - startSeconds;
+    if (lengthSeconds <= 0) return null;
+    return { startSeconds, endSeconds, lengthSeconds };
   }
 
   private nativePlaybackEventCoverageCache(preparedCache: NativeRenderCache | null, payloadCache: NativeRenderCache | null): NativeRenderCache | null {
@@ -1209,6 +1239,7 @@ export class AudioEngine {
         : this.nativeLastRestartReason === "play-cache-window-advance"
           ? "cache-window"
           : this.lastAudioDropCause;
+      this.rebaseNativePlaybackCachePayloadWindowAfterLoopWrap();
       this.repositionPlaybackIndexes(current);
       this.meterPeaks = {};
       this.nativeRegionMeterLastTapAt = 0;
@@ -1751,10 +1782,18 @@ function mergeNativePlaybackCaches(base: NativeRenderCache, runtime: NativeRende
 }
 
 function filterNativeRenderCacheForTimeWindow(cache: NativeRenderCache, startSeconds: number, endSeconds: number): NativeRenderCache | null {
+  return filterNativeRenderCacheForTimeRanges(cache, [[startSeconds, endSeconds]]);
+}
+
+function filterNativeRenderCacheForTimeRanges(cache: NativeRenderCache, ranges: Array<[number, number]>): NativeRenderCache | null {
+  const validRanges = ranges
+    .map(([startSeconds, endSeconds]) => [Math.max(0, startSeconds), Math.max(0, endSeconds)] as [number, number])
+    .filter(([startSeconds, endSeconds]) => endSeconds > startSeconds);
+  if (!validRanges.length) return null;
   const regions = cache.regions.filter((region) => {
     const regionStart = Math.max(0, region.startTime);
     const regionEnd = regionStart + Math.max(0, region.duration);
-    return regionEnd > startSeconds && regionStart < endSeconds;
+    return validRanges.some(([startSeconds, endSeconds]) => regionEnd > startSeconds && regionStart < endSeconds);
   });
   if (!regions.length) return null;
   const keptAssetIds = new Set(regions.map((region) => region.assetId));

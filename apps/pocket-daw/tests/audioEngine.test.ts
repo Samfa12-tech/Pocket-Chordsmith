@@ -273,6 +273,55 @@ describe("audio engine diagnostics", () => {
     expect(playback.proceduralFallbackEventCount).toBe(internals.events.length - midiEvents.length);
   });
 
+  it("includes loop-start cached regions when a native cache payload window crosses the loop end", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.timeline.loop = { enabled: true, startBar: 1, endBar: 5 };
+    const engine = new AudioEngine(project);
+    const cache: NativeRenderCache = {
+      signature: nativeRenderCacheSignature(project),
+      assets: [
+        nativeAsset("asset_start"),
+        nativeAsset("asset_end"),
+        nativeAsset("asset_outside")
+      ],
+      regions: [
+        { id: "region_start", assetId: "asset_start", trackId: "bass", startTime: 0.5, sourceOffset: 0, duration: 0.5, gain: 1, pan: 0, fadeIn: 0, fadeOut: 0 },
+        { id: "region_end", assetId: "asset_end", trackId: "bass", startTime: 7.75, sourceOffset: 0, duration: 0.5, gain: 1, pan: 0, fadeIn: 0, fadeOut: 0 },
+        { id: "region_outside", assetId: "asset_outside", trackId: "bass", startTime: 18, sourceOffset: 0, duration: 0.5, gain: 1, pan: 0, fadeIn: 0, fadeOut: 0 }
+      ],
+      cachedClipIds: new Set(["clip_001", "clip_outside"]),
+      renderCacheItems: [
+        generatedStemCacheItem("clip_001", "bass", "bass", "asset_start"),
+        generatedStemCacheItem("clip_001", "bass", "bass", "asset_end"),
+        generatedStemCacheItem("clip_outside", "bass", "bass", "asset_outside")
+      ],
+      renderCacheHitCount: 3,
+      renderCacheMissCount: 0,
+      proceduralFallbackEventCount: 0,
+      generatedRegionCount: 3,
+      runtimeAudioRegionCount: 0,
+      missingRuntimeAudioRegionCount: 0,
+      cachedAssetByteCount: 3
+    };
+    const internals = engine as unknown as {
+      nativePlaybackCachePayloadWindowEndSeconds: number;
+      nativePlaybackCacheForPayload(cache: NativeRenderCache, seconds: number): NativeRenderCache | null;
+      rebaseNativePlaybackCachePayloadWindowAfterLoopWrap(): void;
+    };
+
+    const payloadCache = internals.nativePlaybackCacheForPayload(cache, 7.8);
+
+    expect(payloadCache?.regions.map((region) => region.id).sort()).toEqual(["region_end", "region_start"]);
+    expect(payloadCache?.assets.map((asset) => asset.id).sort()).toEqual(["asset_end", "asset_start"]);
+    expect(internals.nativePlaybackCachePayloadWindowEndSeconds).toBeGreaterThan(8);
+
+    internals.rebaseNativePlaybackCachePayloadWindowAfterLoopWrap();
+    expect(internals.nativePlaybackCachePayloadWindowEndSeconds).toBeGreaterThan(0);
+    expect(internals.nativePlaybackCachePayloadWindowEndSeconds).toBeLessThan(8);
+  });
+
   it("does not treat lofi texture ticks as drum meter hits", () => {
     const engine = new AudioEngine(createDemoProject());
     const baseEvent = {
@@ -1378,6 +1427,18 @@ function generatedStemCacheItem(clipId: string, role: string, trackId: string, a
       trackId,
       assetId
     }
+  };
+}
+
+function nativeAsset(id: string): NativeAudioAsset {
+  return {
+    id,
+    name: id,
+    sampleRate: 48_000,
+    channels: 2,
+    durationSeconds: 1,
+    sizeBytes: 1,
+    bytes: [0]
   };
 }
 
