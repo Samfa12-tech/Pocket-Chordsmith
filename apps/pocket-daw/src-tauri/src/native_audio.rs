@@ -1242,17 +1242,29 @@ struct GeneratedEventSource {
 
 fn render_generated_event_source(
     playback: &mut PlaybackShared,
-    event: &NativeRenderedEvent,
+    event_index: usize,
     t: f64,
     active_counts: &mut TrackSourceBudget,
 ) -> Option<GeneratedEventSource> {
-    let track_index = playback.track_indices.get(&event.track_id).copied()?;
-    let track = playback.tracks.get(&event.track_id).cloned()?;
-    let track_gain_value = track_gain(&track, playback.has_solo) as f32;
+    let (track_index, track_gain_value, sample, event_pan, drum_lane) = {
+        let event = playback.events.get(event_index)?;
+        let track_index = playback.track_indices.get(&event.track_id).copied()?;
+        let track_gain_value = playback
+            .tracks
+            .get(&event.track_id)
+            .map(|track| track_gain(track, playback.has_solo) as f32)?;
+        let sample = render_event_sample(event, t);
+        (
+            track_index,
+            track_gain_value,
+            sample,
+            event.pan.unwrap_or(0.0) as f32,
+            event.drum_lane.clone(),
+        )
+    };
     if track_gain_value <= 0.0001 {
         return None;
     }
-    let sample = render_event_sample(event, t);
     if sample.abs() <= 0.000001 {
         return None;
     }
@@ -1260,12 +1272,11 @@ fn render_generated_event_source(
         return None;
     }
 
-    let event_pan = event.pan.unwrap_or(0.0) as f32;
     let (pan_left, pan_right) = source_pan_gains(event_pan);
     let mut lane_left = sample * pan_left;
     let mut lane_right = sample * pan_right;
-    if let Some(lane) = &event.drum_lane {
-        if let Some(chain) = playback.fx.drum_lane_chains.get_mut(lane) {
+    if let Some(lane) = drum_lane {
+        if let Some(chain) = playback.fx.drum_lane_chains.get_mut(&lane) {
             (lane_left, lane_right) = chain.process(lane_left, lane_right);
         }
     }
@@ -1318,10 +1329,10 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         let Some(track_index) = playback.track_indices.get(&region.track_id).copied() else {
             continue;
         };
-        let Some(track) = playback.tracks.get(&region.track_id).cloned() else {
+        let Some(track) = playback.tracks.get(&region.track_id) else {
             continue;
         };
-        let track_gain = track_gain(&track, playback.has_solo);
+        let track_gain = track_gain(track, playback.has_solo);
         if track_gain <= 0.0001 {
             continue;
         }
@@ -1346,16 +1357,17 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
 
     let mut event_index = playback.scan_start_index;
     while event_index < playback.events.len() {
-        let event = playback.events[event_index].clone();
-        event_index += 1;
-        if event.time > t {
+        let event_time = playback.events[event_index].time;
+        if event_time > t {
             break;
         }
-        if event_release_end(&event) < t {
+        let event_expired = event_release_end(&playback.events[event_index]) < t;
+        if event_expired {
+            event_index += 1;
             continue;
         }
         if let Some(source) =
-            render_generated_event_source(playback, &event, t, &mut active_counts_by_track)
+            render_generated_event_source(playback, event_index, t, &mut active_counts_by_track)
         {
             add_track_mix(
                 &mut track_mixes,
@@ -1364,6 +1376,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
                 source.right * source.track_gain,
             );
         }
+        event_index += 1;
     }
 
     let mut left = 0.0_f32;
@@ -1458,20 +1471,22 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
 
     let mut event_index = playback.scan_start_index;
     while event_index < playback.events.len() {
-        let event = playback.events[event_index].clone();
-        event_index += 1;
-        if event.time > t {
+        let event_time = playback.events[event_index].time;
+        if event_time > t {
             break;
         }
-        if event_release_end(&event) < t {
+        let event_expired = event_release_end(&playback.events[event_index]) < t;
+        if event_expired {
+            event_index += 1;
             continue;
         }
         if let Some(source) =
-            render_generated_event_source(playback, &event, t, &mut active_counts_by_track)
+            render_generated_event_source(playback, event_index, t, &mut active_counts_by_track)
         {
             left += source.left;
             right += source.right;
         }
+        event_index += 1;
     }
 
     playback.position_seconds += 1.0 / playback.sample_rate.max(1) as f64;
