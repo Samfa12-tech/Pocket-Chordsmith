@@ -22,6 +22,7 @@ import {
   setMelodySolo,
   setSectionBars,
   appendChordsmithSection,
+  applyBassPreset,
   applyDrumPreset,
   applyGuitarPreset,
   setSectionChord,
@@ -152,6 +153,81 @@ describe("Chordsmith visual sequencer edits", () => {
     expect(pcs.sections.B.grid.bass.every((level, step) => level <= 0 || pcs.sections.B.bassNotes[step] !== null)).toBe(true);
     expect(original.bassMode).toBe("manual");
     expect((original.bassNotesA as Array<number | null>).some((note) => note !== null)).toBe(true);
+  });
+
+  it("applies bass rhythm presets as editable manual notes", () => {
+    let project = createDemoProject();
+    const source = getPrimaryChordsmithSource(project)!;
+    source.sections.A.grid.kick.fill(0);
+    source.sections.A.grid.kick[0] = 2;
+    source.sections.A.grid.kick[8] = 1;
+    project = applyBassPreset(project, "A", "copy_kick");
+
+    const pcs = getPrimaryChordsmithSource(project)!;
+    const section = pcs.sections.A;
+    const original = project.sourceRefs[0].original as Record<string, unknown>;
+
+    expect(pcs.bassMode).toBe("manual");
+    expect(section.bassNotes[0]).toBe(0);
+    expect(section.bassNotes[8]).toBe(0);
+    expect(section.bassNotes[1]).toBe(null);
+    expect(section.grid.bass[0]).toBe(2);
+    expect(section.grid.bass[8]).toBe(1);
+    expect((original.bassNotesA as Array<number | null>)[0]).toBe(0);
+    expect(Array.from(new Set(renderTimelineEvents(project).filter((event) => event.kind === "bass").map((event) => event.step)))).toEqual([0, 8]);
+  });
+
+  it("applies a funky bass preset with audible roots and octave movement", () => {
+    let project = createDemoProject();
+    project = applyBassPreset(project, "A", "funky_groove");
+
+    const section = getPrimaryChordsmithSource(project)!.sections.A;
+    const notes = section.bassNotes.filter((note) => note !== null);
+
+    expect(notes.length).toBeGreaterThan(8);
+    expect(notes).toContain(0);
+    expect(notes).toContain(7);
+    expect(section.bassAccent.some(Boolean)).toBe(true);
+    expect(renderTimelineEvents(project).some((event) => event.kind === "bass" && event.midi && event.midi >= 48)).toBe(true);
+  });
+
+  it("does not switch to silent manual bass when there are no auto hits to fill", () => {
+    let project = createDemoProject();
+    const pcs = getPrimaryChordsmithSource(project)!;
+    Object.values(pcs.sections).forEach((section) => {
+      section.grid.bass.fill(0);
+      section.bassNotes.fill(null);
+    });
+    const beforeBassEvents = renderTimelineEvents(project).filter((event) => event.kind === "bass").length;
+
+    expect(beforeBassEvents).toBe(0);
+    expect(pcs.bassMode).toBe("auto");
+
+    project = fillAutoBass(project);
+
+    const after = getPrimaryChordsmithSource(project)!;
+    const original = project.sourceRefs[0].original as Record<string, unknown>;
+    expect(after.bassMode).toBe("auto");
+    expect(original.bassMode).toBe("auto");
+    expect(after.sections.A.bassNotes.every((note) => note === null)).toBe(true);
+    expect(renderTimelineEvents(project).filter((event) => event.kind === "bass").length).toBe(0);
+  });
+
+  it("keeps bass in auto mode when the manual mode selector has no playable notes to materialize", () => {
+    let project = createDemoProject();
+    const pcs = getPrimaryChordsmithSource(project)!;
+    Object.values(pcs.sections).forEach((section) => {
+      section.grid.bass.fill(0);
+      section.bassNotes.fill(null);
+    });
+
+    project = setBassMode(project, "manual");
+
+    const after = getPrimaryChordsmithSource(project)!;
+    const original = project.sourceRefs[0].original as Record<string, unknown>;
+    expect(after.bassMode).toBe("auto");
+    expect(original.bassMode).toBe("auto");
+    expect(renderTimelineEvents(project).filter((event) => event.kind === "bass")).toHaveLength(0);
   });
 
   it("keeps live guitar edits audible when the source re-enables a stale muted guitar track", () => {

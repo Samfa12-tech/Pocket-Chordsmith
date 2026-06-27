@@ -1,24 +1,32 @@
-# Pocket DAW v0.6.21 Alpha Testing Release Status
+# Pocket DAW v0.6.34 Alpha Testing Release Status
 
 Pocket DAW is now live for public Windows alpha testing on itch and linked from `samfa12.com`.
 
-This file records the current source baseline and the latest completed public installed-release evidence. Current source target is `0.6.21` native transport/cache alpha. The machine-readable current status is `../release-status.json`; regenerate `CURRENT_RELEASE_STATUS.md` with `npm run status:release`.
+This file records the current source baseline and the latest completed public installed-release evidence. Current source target is `0.6.34` bass parity/cache alpha. The machine-readable current status is `../release-status.json`; regenerate `CURRENT_RELEASE_STATUS.md` with `npm run status:release`.
 
 ## Current Source Baseline
 
-- Version: `0.6.21`
-- Source delta after published `0.6.20`: integrity fixes for Chordsmith arrangement preservation, native-cache project ownership and safer cache save/prune ordering.
+- Version: `0.6.34`
+- Source delta after published `0.6.31`: Pocket DAW generated bass parity work for the installed/native path. Native cached/procedural bass now uses Chordsmith-style harmonic low-pass filtering for richer waves, keeps accented release tails alive, and bumps the native render-cache contract so old generated bass stems are rebuilt.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Primary itch channel: `windows-installer`
 - Updater manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 - Bootstrapper manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-bootstrapper-latest.json`
-- Release artifact status: `0.6.21` GitHub updater assets and bootstrapper manifest are published; itch channel `windows-installer` remains on the existing bootstrapper build because the bootstrapper executable itself did not change.
-- Source commit at packaging time: `9dcd48749a497d7344678973be836c45597ebf65`.
-- Generated manifest note: dirty working tree was `false`.
+- Release artifact status: `0.6.34` local signed installer and updater artifact smoke passed; public GitHub updater release is not published until an intentional checkpoint publish is run.
+- Source commit at local installed smoke time: `6df2186334b365c3499616d69f86372c2f019e29` with dirty working tree noted in the generated local manifest because the bass-renderer/version/status changes were intentionally smoked before the final commit.
+- Generated manifest note: the next official updater build from clean `main` should record dirty working tree `false`.
 
 ## Current Local Artifact Record
 
-The current published artifact record is `0.6.21`. These artifacts passed automated verification and upload checks. Manual installed-app smoke is pending for the exact setup hash.
+The current local installed-smoke artifact record is `0.6.34`. These artifacts passed automated verification and installed-app smoke through MCP and user listening. Public updater publication is still pending unless `release:update:publish` is run intentionally.
+
+- Local installed-smoke setup EXE `Pocket DAW_0.6.34_x64-setup.exe`: `67665c5917a3b6c3a102daa066fd463ec2750ed1eed502d99577c62c6b58e20d`
+- Local smoke project: `C:\Users\sam_s\Music\imported-chordsmith-project test.pocketdaw`
+- MCP live bridge reported app/project version `0.6.34`, full generated native cache coverage after rebuilding stale cache entries, and no generated stem render failures.
+- Playback/performance smoke reported native-cpal playback with no scheduler misses, no late/skipped events, no graph rebuild spikes, no native fallback, and `slowCallbackCount` 0.
+- User listening smoke confirmed: "IT SOUNDS BETTER!!"
+
+Previous completed public updater artifact record:
 
 - GitHub release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.21`
 - Setup EXE `Pocket.DAW_0.6.21_x64-setup.exe`: `e69c57292bbb4f29a9d3f6ec36bd78346249f30c4f48932f071dfffcdc1412d8`
@@ -90,13 +98,15 @@ Older completed public updater artifact record:
 
 ## Manual Smoke Evidence
 
-Current `0.6.19` installed-app smoke status: Pending. Sam should update through the installed app, verify the updater-installed app reports version `0.6.19`, then smoke native loop/metronome behavior, rapid live-edit native restart stability, native-cache reuse after live edits, Save As title adoption, and the existing Help -> AI / MCP Bridge flow.
+Current `0.6.34` installed-app smoke status: Passed for local installer bass parity. Sam confirmed the installed DAW bass sounds better after the native renderer/cache rebuild. Public update-through-app smoke is still pending until `0.6.34` is intentionally published as a GitHub updater release.
 
-`0.6.19` smoke includes the `0.6.13` AI / MCP bridge gate. Required bridge focus: update through the installed app, open Help -> AI / MCP Bridge, enable the live bridge, run `pocket_daw_live_status` from Codex, test play/pause/stop/restart/seek, select a track/clip, apply Bass volume/pan/mute through MCP, save an already-saved project, then close Pocket DAW and confirm live tools return unavailable while file MCP tools still work.
+`0.6.34` smoke keeps the `0.6.13` AI / MCP bridge gate. Required bridge focus for the next public updater pass: update through the installed app, open Help -> AI / MCP Bridge, enable the live bridge, run `pocket_daw_live_status` from Codex, test play/pause/stop/restart/seek, select a track/clip, apply Bass volume/pan/mute through MCP, save an already-saved project, then close Pocket DAW and confirm live tools return unavailable while file MCP tools still work.
 
 Required installed smoke focus:
 
-- Confirm About/Diagnostics reports app version `0.6.19` and the expected build/commit metadata.
+- Confirm About/Diagnostics reports app version `0.6.34` and the expected build/commit metadata.
+- Re-open a Chordsmith-imported project with generated Bass, let stale native cache rebuild, and confirm the bass tone matches Chordsmith closely without the previous distorted/harsh upper harmonics.
+- Confirm accented generated bass notes do not click or vanish early during cached/native playback.
 - Re-open the reported `lofi demo project.pocketdaw`, solo Bass at 100-120%, and confirm native procedural Warm Sub Bass is audible when the native cache is not active. Passed by Sam on 2026-06-19 for installed `0.6.9`.
 - Import a known lofi/chillhop Chordsmith project and confirm lofi source notes, imported Chordsmith mix/volume values, soft track presets, gentle master-chain slots, playback, save/reopen, and WAV/MIDI export behavior.
 - Press Build Native Cache on the imported lofi project and confirm generated tracks play through cached WAV regions with low or zero procedural fallback events until a source-changing edit invalidates the cache.
@@ -122,8 +132,8 @@ Historical partial installed-app smoke run by Sam on 2026-06-14 against v0.5.9/v
 
 ## Current Caveats
 
-- Manual Windows smoke testing for `0.6.19` is pending and is tracked in `docs/WINDOWS_TESTING_CHECKLIST.md`; native transport/cache behavior, AI / MCP live bridge coverage, and bootstrapper-manifest awareness are the current published-artifact focus.
-- Itch remains on the existing bootstrapper upload; GitHub latest updater assets and bootstrapper manifest were published for `0.6.19`, and the remote setup EXE hash was verified as `511143d2533046339fef6d818c854a1e9e5968901b0abd1f3023aa32f36fa79f`.
+- Manual Windows update-through-app smoke testing for public `0.6.34` is pending until the updater release is intentionally published; local installed-app bass parity smoke passed and is tracked in `docs/CURRENT_RELEASE_STATUS.md`.
+- Itch remains on the existing bootstrapper upload unless the bootstrapper itself changes. The latest published GitHub updater assets remain older than the local `0.6.34` bass parity build until `release:update:publish` is run deliberately.
 - Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures are present as `.sig` files for updater validation.
 - Pocket Chordsmith direct "Send to Pocket DAW" is passing in the v0.5.13 installed-app smoke run; keep paste/import as a fallback for browsers that block downloads or custom protocol launches.

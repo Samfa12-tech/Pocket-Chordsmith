@@ -6,30 +6,43 @@ interface MidiMessage {
   data: number[];
 }
 
+export interface MidiExportOptions {
+  clipIds?: string[];
+  trackIds?: string[];
+  title?: string;
+}
+
 const DRUM_NOTES: Record<string, number> = {
   kick: 36,
   snare: 38,
   hat: 42
 };
 
-export function exportProjectToMidiBlob(project: PocketDawProject): Blob {
+export function exportProjectToMidiBlob(project: PocketDawProject, options: MidiExportOptions = {}): Blob {
   const ppq = project.project.ppq || 480;
-  const tracks = buildMidiTracks(project, ppq);
+  const tracks = buildMidiTracks(project, ppq, options);
   const header = chunk("MThd", [...u16(1), ...u16(tracks.length), ...u16(ppq)]);
   const body = tracks.map((messages) => chunk("MTrk", encodeTrack(messages))).flat();
   return new Blob([new Uint8Array([...header, ...body])], { type: "audio/midi" });
 }
 
-function buildMidiTracks(project: PocketDawProject, ppq: number): MidiMessage[][] {
+function buildMidiTracks(project: PocketDawProject, ppq: number, options: MidiExportOptions): MidiMessage[][] {
+  const title = options.title || project.project.title;
   const meta: MidiMessage[] = [
     { tick: 0, data: [0xff, 0x51, 0x03, ...u24(Math.round(60000000 / project.project.bpm))] },
     { tick: 0, data: [0xff, 0x58, 0x04, project.project.timeSig, 2, 24, 8] },
-    { tick: 0, data: [0xff, 0x03, project.project.title.length, ...ascii(project.project.title)] }
+    { tick: 0, data: [0xff, 0x03, ascii(title).length, ...ascii(title)] }
   ];
-  const eventTrackIds = Array.from(new Set(renderTimelineEvents(project).map((event) => event.trackId)));
+  const clipIds = options.clipIds?.length ? new Set(options.clipIds) : null;
+  const trackIds = options.trackIds?.length ? new Set(options.trackIds) : null;
+  const events = renderTimelineEvents(project).filter((event) => (
+    (!clipIds || clipIds.has(event.clipId)) &&
+    (!trackIds || trackIds.has(event.trackId))
+  ));
+  const eventTrackIds = Array.from(new Set(events.map((event) => event.trackId)));
   const musicalTracks = project.tracks.filter((track) => eventTrackIds.includes(track.id));
   const byTrack = new Map(musicalTracks.map((track) => [track.id, [] as MidiMessage[]]));
-  renderTimelineEvents(project).forEach((event) => {
+  events.forEach((event) => {
     const messages = byTrack.get(event.trackId);
     if (!messages) return;
     addEventMessages(messages, event, project, ppq);

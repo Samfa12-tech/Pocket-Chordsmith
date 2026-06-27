@@ -165,6 +165,7 @@ export class AudioEngine {
   private nativeRestartToken = 0;
   private pendingNativeRestart: NativeRestartRequest | null = null;
   private nativeRestartFlush: Promise<void> | null = null;
+  private nativeRestartCount = 0;
   private nativeLastRestartReason: string | null = null;
   private nativeStatusRefreshInFlight = false;
   private nativeLastStatusRefreshAtMs = 0;
@@ -214,8 +215,7 @@ export class AudioEngine {
   }
 
   prewarmNativeRenderCache(reason = "prewarm"): boolean {
-    this.deferNativeRenderCacheRefresh(reason, { scheduleWhenIdle: false });
-    return false;
+    return this.scheduleNativeRenderCachePrewarm(reason);
   }
 
   async rebuildNativeRenderCache(reason = "manual-cache-build"): Promise<NativeRenderCache | null> {
@@ -333,8 +333,6 @@ export class AudioEngine {
         void this.restartNativePlayback(current, { reason, useRenderCache: true, allowRuntimeAudioCacheBuild: false });
       } else if (mode === "composition-events") {
         this.nativeRenderCacheBypassedForLiveEdits = false;
-        const stalePlaybackCache = this.playableNativeRenderCache();
-        void this.restartNativePlayback(current, { reason: `${reason}-stale-cache`, useRenderCache: !!stalePlaybackCache });
         this.scheduleLiveNativeRenderCacheRefresh(reason);
       } else if (this.readyNativeRenderCache()) {
         void this.restartNativePlayback(current, { reason });
@@ -579,6 +577,9 @@ export class AudioEngine {
         active: this.playbackBackend === "native-cpal" || this.playbackBackend === "native-cpal-paused",
         status: this.nativeStatus,
         lastError: this.nativeLastError,
+        restartCount: this.nativeRestartCount,
+        lastRestartReason: this.nativeLastRestartReason,
+        restartPending: this.pendingNativeRestart !== null || this.nativeRestartFlush !== null,
         fallback: this.playbackBackend === "web-audio" ? "web-audio" : null,
         supportedMaterial: activeNativeRenderCache?.runtimeAudioRegionCount ? "generated-midi-events-and-loaded-audio-regions" : "generated-and-midi-events",
         unsupportedMaterial: this.audioRegions.length && !activeNativeRenderCache?.runtimeAudioRegionCount ? "audio-regions-need-runtime-buffer-or-native-cache" : null
@@ -795,6 +796,7 @@ export class AudioEngine {
     const result = await this.nativePlayback.start(payload);
     if (request.token !== this.nativeRestartToken) return;
     if (result.started) {
+      this.nativeRestartCount += 1;
       this.nativePlaybackStartedWithRenderCache = !!playbackCache?.regions.length;
       this.nativePlaybackStartedWithProceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
       this.nativeStatus = result.status;

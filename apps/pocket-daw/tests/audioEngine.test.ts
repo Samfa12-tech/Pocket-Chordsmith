@@ -20,6 +20,9 @@ describe("audio engine diagnostics", () => {
     expect(diagnostics.audioContextState).toBe("not-created");
     expect(diagnostics.playbackBackend).toBe("idle");
     expect(diagnostics.nativeAudio.requested).toBe(true);
+    expect(diagnostics.nativeAudio.restartCount).toBe(0);
+    expect(diagnostics.nativeAudio.lastRestartReason).toBeNull();
+    expect(diagnostics.nativeAudio.restartPending).toBe(false);
     expect(diagnostics.schedulerTickCount).toBe(0);
     expect(diagnostics.missedSchedulerTickCount).toBe(0);
     expect(diagnostics.audioGraphReconfigureCount).toBe(0);
@@ -100,7 +103,7 @@ describe("audio engine diagnostics", () => {
     expect(bass).toMatchObject({ mute: false, solo: true });
   });
 
-  it("does not schedule hidden generated-stem cache builds while idle", async () => {
+  it("prewarms generated-stem cache while idle", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       __TAURI__: {},
@@ -121,17 +124,18 @@ describe("audio engine diagnostics", () => {
         return fakeNativeRenderCache(createDemoProject());
       };
 
-      expect(engine.prewarmNativeRenderCache("idle-hidden-build")).toBe(false);
+      expect(engine.prewarmNativeRenderCache("idle-prewarm-build")).toBe(true);
+      await Promise.resolve();
       await Promise.resolve();
 
-      expect(buildCount).toBe(0);
+      expect(buildCount).toBe(1);
       expect(engine.getDiagnostics().nativeRenderCache.prewarmScheduled).toBe(false);
-      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("idle-hidden-build");
+      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBeNull();
 
       engine.stop();
       await Promise.resolve();
 
-      expect(buildCount).toBe(0);
+      expect(buildCount).toBe(1);
       expect(engine.getDiagnostics().nativeRenderCache.prewarmScheduled).toBe(false);
     } finally {
       (globalThis as any).window = previousWindow;
@@ -1391,7 +1395,7 @@ describe("audio engine diagnostics", () => {
     }
   });
 
-  it("coalesces rapid native composition edits into latest live playback restarts", async () => {
+  it("coalesces rapid native composition edits into a latest pending cache refresh", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       setInterval: () => 1,
@@ -1432,13 +1436,9 @@ describe("audio engine diagnostics", () => {
       engine.syncProject(editB, "composition-events", "bass-edit-b");
       engine.syncProject(editC, "composition-events", "bass-edit-c");
 
-      await waitForAsyncCondition(() => starts.length >= 2);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-      expect(starts.length).toBeGreaterThanOrEqual(2);
-      expect(starts.length).toBeLessThanOrEqual(4);
-      const restartStarts = starts.slice(1);
-      expect(restartStarts.every((start) => start.events.length > 0)).toBe(true);
-      expect(starts.at(-1)!.events.every(isSilentCachedSidechainTrigger)).toBe(false);
+      expect(starts).toHaveLength(1);
       expect(engine.getDiagnostics().lastProjectSyncReason).toBe("bass-edit-c");
       expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("bass-edit-c");
       expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
@@ -1450,9 +1450,15 @@ describe("audio engine diagnostics", () => {
 
   it("keeps native event playback active until live edit cache promotion restarts playback", async () => {
     const previousWindow = (globalThis as any).window;
+    let refreshCallback: (() => void) | null = null;
     (globalThis as any).window = {
       setInterval: () => 1,
-      clearInterval: () => undefined
+      clearInterval: () => undefined,
+      setTimeout: (callback: () => void) => {
+        refreshCallback = callback;
+        return 1;
+      },
+      clearTimeout: () => undefined
     };
     const starts: NativeAudioStartPayload[] = [];
     const native = {
@@ -1477,8 +1483,17 @@ describe("audio engine diagnostics", () => {
       const engine = new AudioEngine(project, native);
       const internals = engine as unknown as {
         nativeRenderCache: NativeRenderCache | null;
+        nativeRenderCacheBuildCount: number;
+        nativeRenderCacheLastBuildReason: string | null;
+        ensureNativeRenderCache(reason: string): Promise<NativeRenderCache | null>;
       };
       internals.nativeRenderCache = fakeNativeRenderCache(project);
+      internals.ensureNativeRenderCache = async (reason: string) => {
+        internals.nativeRenderCacheBuildCount += 1;
+        internals.nativeRenderCacheLastBuildReason = reason;
+        internals.nativeRenderCache = fakeNativeRenderCache(cycleBassStep(project, "A", 0));
+        return internals.nativeRenderCache;
+      };
 
       await engine.play();
       expect(starts).toHaveLength(1);
@@ -1489,13 +1504,23 @@ describe("audio engine diagnostics", () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
       const diagnostics = engine.getDiagnostics();
-      expect(starts).toHaveLength(2);
-      expect(starts.at(-1)!.events.length).toBeGreaterThan(0);
-      expect(starts.at(-1)!.events.every(isSilentCachedSidechainTrigger)).toBe(false);
-      expect(starts.at(-1)!.regions?.length || 0).toBe(0);
-      expect(diagnostics.nativeRenderCache.assetRegionCount).toBe(0);
+      expect(starts).toHaveLength(1);
       expect(diagnostics.nativeRenderCache.pendingReason).toBe("bass-edit-discarded");
       expect(diagnostics.nativeRenderCache.buildCount).toBe(0);
+
+      const scheduledRefresh = refreshCallback as (() => void) | null;
+      expect(typeof scheduledRefresh).toBe("function");
+      if (!scheduledRefresh) throw new Error("Expected live cache refresh callback to be scheduled.");
+      scheduledRefresh();
+      await waitForAsyncCondition(() => starts.length >= 2);
+
+      expect(starts).toHaveLength(2);
+      expect(starts.at(-1)!.regions?.length || 0).toBeGreaterThan(0);
+      expect(engine.getDiagnostics().nativeAudio.restartCount).toBe(1);
+      expect(engine.getDiagnostics().nativeAudio.lastRestartReason).toBe("bass-edit-discarded");
+      expect(engine.getDiagnostics().nativeAudio.restartPending).toBe(false);
+      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBeNull();
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
     } finally {
       (globalThis as any).window = previousWindow;
     }
@@ -1557,13 +1582,12 @@ describe("audio engine diagnostics", () => {
 
       await engine.play();
       engine.syncProject(edited, "composition-events", "bass-edit-refresh");
-      await waitForAsyncCondition(() => starts.length >= 3);
+      await waitForAsyncCondition(() => starts.length >= 2);
 
-      expect(starts).toHaveLength(3);
+      expect(starts).toHaveLength(2);
 
-      expect(starts[1].events.some((event) => event.trackId === "bass" && event.velocity > 0)).toBe(true);
-      expect(starts[2].assets?.length || 0).toBeGreaterThan(0);
-      expect(starts[2].regions?.length || 0).toBeGreaterThan(0);
+      expect(starts[1].assets?.length || 0).toBeGreaterThan(0);
+      expect(starts[1].regions?.length || 0).toBeGreaterThan(0);
       expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
       expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBeNull();
     } finally {

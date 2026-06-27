@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDemoProject } from "../src/demo/demoProject";
-import { createGameExportManifest, createGamePackZipBlob, createSectionLoopMetadata, createStemExportPlan, projectForSectionLoopRender, projectWithOnlyTracksAudible } from "../src/daw/exportJobs";
+import { createGameExportManifest, createGamePackZipBlob, createSectionLoopMetadata, createStemExportPlan, projectForClipRender, projectForSectionLoopRender, projectWithOnlyTracksAudible } from "../src/daw/exportJobs";
 import { addMediaPoolItem, createMediaPoolItem } from "../src/daw/mediaPool";
 
 describe("export job helpers", () => {
@@ -51,6 +51,26 @@ describe("export job helpers", () => {
     expect(renderProject.timeline.bars).toBe(loop.lengthBars);
     expect(renderProject.timeline.loop).toMatchObject({ enabled: true, startBar: 1, endBar: 1 + loop.lengthBars });
     expect(renderProject.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings.tailSeconds).toBe(0);
+  });
+
+  it("builds selected-clip render projects for freeze WAV export", () => {
+    const project = createDemoProject();
+    project.timeline.markers.push({ id: "cue", bar: 3, name: "Cue" });
+    project.timeline.loop.enabled = true;
+    const source = project.timeline.clips[0];
+    const result = projectForClipRender(project, source.id)!;
+
+    expect(result.clip.id).toBe(source.id);
+    expect(result.project.timeline.clips).toHaveLength(1);
+    expect(result.project.timeline.clips[0]).toMatchObject({
+      id: source.id,
+      startBar: 1,
+      muted: false
+    });
+    expect(result.project.timeline.markers).toEqual([]);
+    expect(result.project.timeline.loop.enabled).toBe(false);
+    expect(result.project.timeline.bars).toBe(Math.ceil(source.barLength));
+    expect(result.project.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings.tailSeconds).toBe(0.25);
   });
 
   it("generates Godot and web game manifest previews", () => {

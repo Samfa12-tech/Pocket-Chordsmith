@@ -256,6 +256,23 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).not.toContain("data-section-chord");
   });
 
+  it("renders selected clip inspector actions as working controls", () => {
+    const state = createInitialState();
+    const clip = state.undoStack.present.timeline.clips[0];
+    state.selectedClipId = clip.id;
+    state.selectedTrackId = "bass";
+
+    const inspector = inspectorHtml(renderAppShell(state));
+
+    expect(inspector).toContain(`data-clip-transform="${clip.id}:transpose"`);
+    expect(inspector).toContain(`data-clip-transform="${clip.id}:gain"`);
+    expect(inspector).toContain('data-action="freeze-selected-clip"');
+    expect(inspector).toContain('data-action="export-selected-clip-midi"');
+    expect(inspector).toContain('data-action="export-selected-track-midi"');
+    expect(inspector).not.toContain("<button disabled>Freeze</button>");
+    expect(inspector).not.toContain("<button disabled>Convert to MIDI</button>");
+  });
+
   it("shows Chordsmith guitar rhythm presets in the selected track inspector", () => {
     const state = createInitialState();
     state.selectedTrackId = "guitar";
@@ -783,7 +800,10 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('id="chordsmithFollowClip"');
     expect(html).toContain('data-chordsmith-global="bpm"');
     expect(html).toContain('data-bass-mode="true"');
-    expect(html).toContain('data-bass-fill-auto="true"');
+    expect(html).toContain('data-bass-preset-section="A"');
+    expect(html).toContain("Copy kick");
+    expect(html).toContain("Funky groove");
+    expect(html).not.toContain('data-bass-fill-auto="true"');
     expect(html).toContain('data-bass-step="A:16"');
     expect(html).toContain("Select then press H, S or T.");
     expect(html).not.toContain('data-bass-hold="A:16"');
@@ -791,5 +811,13 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('data-bass-accent="A:16"');
     expect(html).toContain("Step page");
     expect(html).toContain(">2 /");
+  });
+
+  it("binds the bass preset selector to the Chordsmith bass preset command", () => {
+    const source = readFileSync("src/app/App.ts", "utf8");
+    const handler = source.slice(source.indexOf("[data-bass-preset-section]"), source.indexOf("[data-chord-instrument]"));
+
+    expect(handler).toContain("applyBassPresetCommand(this.state");
+    expect(handler).toContain('"chordsmith-bass-preset"');
   });
 });

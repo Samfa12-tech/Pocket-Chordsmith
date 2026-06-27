@@ -979,6 +979,21 @@ test("live engine emits beat/event callbacks from timeline", async () => {
   assert.ok(events.length > 0);
 });
 
+test("live engine schedules bass at Chordsmith default level", async () => {
+  const audio = new PocketAudio();
+  const context = new FakeCoreAudioContext();
+  await audio.loadProject(minimalProject);
+  audio.audioContext = context;
+  const bass = buildPocketAudioTimeline(audio.project, { scope: "section", sectionId: "A" }).events.find((event) => event.type === "bass");
+
+  audio.dispatchTimelineEvent(bass);
+
+  const peaks = context.gains.map((gain) => gain.gain.values.find((entry) => entry.method === "linear")?.value);
+  assert.equal(peaks.length, 2);
+  assert.ok(Math.abs(peaks[0] - DEFAULT_STEM_MIX.bass.volume * 0.34) < 0.000001);
+  assert.ok(Math.abs(peaks[1] - DEFAULT_STEM_MIX.bass.volume * 0.34 * POCKET_BASS_TONE_CONFIGS.classic.subPeak) < 0.000001);
+});
+
 function richProject() {
   return {
     ...minimalProject,
@@ -1015,4 +1030,75 @@ function audioSignature(buffer) {
     sum: Number(sum.toFixed(6)),
     energy: Number(energy.toFixed(6))
   };
+}
+
+class FakeCoreParam {
+  constructor() {
+    this.values = [];
+  }
+
+  setValueAtTime(value, time) {
+    this.values.push({ method: "set", value, time });
+  }
+
+  linearRampToValueAtTime(value, time) {
+    this.values.push({ method: "linear", value, time });
+  }
+
+  exponentialRampToValueAtTime(value, time) {
+    this.values.push({ method: "exponential", value, time });
+  }
+}
+
+class FakeCoreNode {
+  connect() {}
+}
+
+class FakeCoreGain extends FakeCoreNode {
+  constructor() {
+    super();
+    this.gain = new FakeCoreParam();
+  }
+}
+
+class FakeCoreFilter extends FakeCoreNode {
+  constructor() {
+    super();
+    this.frequency = new FakeCoreParam();
+    this.type = "lowpass";
+  }
+}
+
+class FakeCoreOscillator extends FakeCoreNode {
+  constructor() {
+    super();
+    this.frequency = new FakeCoreParam();
+    this.type = "sine";
+  }
+
+  start() {}
+
+  stop() {}
+}
+
+class FakeCoreAudioContext {
+  constructor() {
+    this.currentTime = 0;
+    this.destination = new FakeCoreNode();
+    this.gains = [];
+  }
+
+  createGain() {
+    const gain = new FakeCoreGain();
+    this.gains.push(gain);
+    return gain;
+  }
+
+  createBiquadFilter() {
+    return new FakeCoreFilter();
+  }
+
+  createOscillator() {
+    return new FakeCoreOscillator();
+  }
 }

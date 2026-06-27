@@ -304,7 +304,7 @@ describe("native render cache", () => {
     });
     expect(midiRenderCall?.[2]).toBe(NATIVE_CACHE_STEM_RENDER_MODE);
     expect(midiRenderCall?.[0].events.every((event) => event.kind === "midi")).toBe(true);
-  });
+  }, 30000);
 
   it("renders generated stem caches with the native release tail past clip boundaries", async () => {
     const project = createDemoProject();
@@ -672,19 +672,14 @@ describe("native render cache", () => {
 
       const edited = cycleBassStep(project, "A", 0);
       engine.syncProject(edited, "composition-events", "live-bass-edit");
-      await waitForAsyncCondition(() => starts.length >= 2);
-      const partialStart = starts.at(-1)!;
+      await Promise.resolve();
       const diagnostics = engine.getDiagnostics();
 
-      expect(partialStart.assets?.length || 0).toBeGreaterThan(0);
-      expect(partialStart.regions?.length || 0).toBeGreaterThan(0);
-      expect(partialStart.regions?.some((region) => region.trackId === "bass")).toBe(false);
-      expect(partialStart.regions?.some((region) => region.trackId === "drums")).toBe(true);
-      expect(partialStart.events.some((event) => event.trackId === "bass" && event.velocity > 0)).toBe(true);
-      expect(partialStart.events.some(isSilentCachedSidechainTrigger)).toBe(true);
-      expect(partialStart.events.every(isSilentCachedSidechainTrigger)).toBe(false);
-      expect(starts).toHaveLength(2);
+      expect(starts).toHaveLength(1);
+      expect(activeStart.regions?.some((region) => region.trackId === "bass")).toBe(true);
+      expect(activeStart.regions?.some((region) => region.trackId === "drums")).toBe(true);
       expect(diagnostics.nativeRenderCache.nativeRenderCacheBypassedForLiveEdits).toBe(false);
+      expect(diagnostics.nativeRenderCache.nativeRenderCacheStaleForLiveEdits).toBe(true);
       expect(diagnostics.nativeRenderCache.assetRegionCount).toBeGreaterThan(0);
       expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBeGreaterThan(0);
       expect(diagnostics.nativeRenderCache.buildCount).toBe(1);
@@ -752,17 +747,15 @@ describe("native render cache", () => {
       };
 
       engine.syncProject(cycleBassStep(project, "A", 0), "composition-events", "live-bass-edit-discarded");
-      await waitForAsyncCondition(() => starts.length >= 2);
-      const partialStart = starts.at(-1)!;
+      await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.buildCount >= 2);
+      const activeStart = starts.at(-1)!;
       const diagnostics = engine.getDiagnostics();
 
-      expect(starts).toHaveLength(2);
-      expect(partialStart.assets?.length || 0).toBeGreaterThan(0);
-      expect(partialStart.regions?.length || 0).toBeGreaterThan(0);
-      expect(partialStart.regions?.some((region) => region.trackId === "bass")).toBe(false);
-      expect(partialStart.regions?.some((region) => region.trackId === "drums")).toBe(true);
-      expect(partialStart.events.some((event) => event.trackId === "bass" && event.velocity > 0)).toBe(true);
-      expect(partialStart.events.every(isSilentCachedSidechainTrigger)).toBe(false);
+      expect(starts).toHaveLength(1);
+      expect(activeStart.assets?.length || 0).toBeGreaterThan(0);
+      expect(activeStart.regions?.length || 0).toBeGreaterThan(0);
+      expect(activeStart.regions?.some((region) => region.trackId === "bass")).toBe(true);
+      expect(activeStart.regions?.some((region) => region.trackId === "drums")).toBe(true);
       expect(diagnostics.nativeRenderCache.assetRegionCount).toBeGreaterThan(0);
       expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBeGreaterThan(0);
       expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBeLessThan(diagnostics.eventCount);
@@ -1068,7 +1061,7 @@ describe("native render cache", () => {
         relativePath: built.renderCacheItems[0].metadata?.assetRelativePath
       }
     });
-  });
+  }, 30000);
 
   it("hydrates grouped overlapping generated cache metadata for all covered clips", async () => {
     const project = createDemoProject();

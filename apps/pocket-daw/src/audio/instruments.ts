@@ -499,7 +499,7 @@ function bass(
     const cfg = bassToneConfig(toneName);
     const mainCutoff = accent ? cfg.cutoff * 1.18 : cfg.cutoff;
     tone(ctx, destination, midi, start, accent ? bassDur * 1.35 : bassDur, cfg.mainWave, peak * (accent ? 1.12 : 1) * cfg.mainPeak, "lowpass", mainCutoff);
-    tone(ctx, destination, midi - 12, start, Math.min(0.12, bassDur * 0.82), cfg.subWave, peak * cfg.subPeak, "lowpass", cfg.subCutoff);
+    tone(ctx, destination, midi - 12, start, bassDur * 0.82, cfg.subWave, peak * cfg.subPeak, "lowpass", cfg.subCutoff);
     return;
   }
   bassSlide(ctx, destination, midi, slideMidi, start, dur, peak, accent, slideOffset, toneName);

@@ -39,6 +39,11 @@ export interface SectionLoopExportItem {
   sourceClipId: string;
 }
 
+export interface ClipRenderProject {
+  project: PocketDawProject;
+  clip: Clip;
+}
+
 export interface GameExportManifest {
   kind: "godot-adaptive-pack" | "web-game-pack";
   projectTitle: string;
@@ -99,6 +104,33 @@ export function projectWithOnlyTracksAudible(project: PocketDawProject, trackIds
       return { ...track, mute: !keep.has(track.id), solo: false };
     })
   };
+}
+
+export function projectForClipRender(project: PocketDawProject, clipId: string): ClipRenderProject | null {
+  const source = project.timeline.clips.find((clip) => clip.id === clipId);
+  if (!source) return null;
+  const next = cloneProject(project);
+  const renderClip: Clip = {
+    ...JSON.parse(JSON.stringify(source)),
+    startBar: 1,
+    muted: false,
+    metadata: {
+      ...(source.metadata || {}),
+      freezeSourceClipId: source.id,
+      freezeSourceStartBar: source.startBar
+    }
+  };
+  next.timeline.clips = [renderClip];
+  next.timeline.markers = [];
+  next.timeline.loop = { enabled: false, startBar: 1, endBar: Math.max(2, Math.ceil(renderClip.barLength) + 1) };
+  next.timeline.cursor = { bar: 1, beat: 1, tick: 0 };
+  next.timeline.bars = Math.max(1, Math.ceil(renderClip.barLength));
+  next.exportProfiles = next.exportProfiles.map((profile) => (
+    profile.id === "full-song-wav"
+      ? { ...profile, settings: { ...profile.settings, tailSeconds: 0.25 } }
+      : profile
+  ));
+  return { project: next, clip: source };
 }
 
 export function createSectionLoopMetadata(project: PocketDawProject): SectionLoopExportItem[] {

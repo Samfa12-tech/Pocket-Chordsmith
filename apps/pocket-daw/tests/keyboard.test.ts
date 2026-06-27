@@ -1,15 +1,16 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { commandFromKeyboardEvent, isEditableTarget } from "../src/app/keyboard";
 
-class FakeHTMLElement {
+class FakeHTMLElement extends EventTarget {
   dataset: Record<string, string> = {};
   isContentEditable = false;
   tagName = "div";
 }
 
-function keyboardEvent(key: string, options: Partial<Pick<KeyboardEvent, "ctrlKey" | "metaKey" | "shiftKey" | "altKey" | "target">> = {}) {
+function keyboardEvent(key: string, options: Partial<Pick<KeyboardEvent, "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey" | "target">> = {}) {
   return {
     key,
+    code: key === " " ? "Space" : key,
     ctrlKey: false,
     metaKey: false,
     shiftKey: false,
@@ -61,7 +62,7 @@ describe("keyboard command mapping", () => {
     expect(isEditableTarget(input as unknown as EventTarget)).toBe(true);
     expect(isEditableTarget(noteGrid as unknown as EventTarget)).toBe(true);
     expect(isEditableTarget(plain as unknown as EventTarget)).toBe(false);
-    expect(commandFromKeyboardEvent(keyboardEvent(" ", { target: input as unknown as EventTarget }))).toBeNull();
-    expect(commandFromKeyboardEvent(keyboardEvent("d", { target: noteGrid as unknown as EventTarget }))).toBeNull();
+    expect(commandFromKeyboardEvent(keyboardEvent(" ", { target: input }))).toBeNull();
+    expect(commandFromKeyboardEvent(keyboardEvent("d", { target: noteGrid }))).toBeNull();
   });
 });

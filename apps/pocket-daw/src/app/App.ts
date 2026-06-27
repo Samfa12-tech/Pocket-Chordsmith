@@ -63,6 +63,7 @@ import {
   addMidiNoteCommand,
   addReturnTrackCommand,
   addDrumLaneFxCommand,
+  applyBassPresetCommand,
   applyDrumPresetCommand,
   applyGuitarPresetCommand,
   clearLoopCommand,
@@ -78,7 +79,6 @@ import {
   deleteAutomationPointCommand,
   deleteMidiNoteCommand,
   duplicateSelectedClip,
-  fillAutoBassCommand,
   importTextToProject,
   loadPocketDawRaw,
   moveClipToBarCommand,
@@ -107,6 +107,7 @@ import {
   setFxSlotParameterCommand,
   setPocketProEqPresetCommand,
   setLoopToSelectedClipCommand,
+  setSelectedClipTransformCommand,
   setMelodyMuteCommand,
   setMelodyOctaveCommand,
   setMelodyPanCommand,
@@ -152,7 +153,7 @@ import { cloneProject } from "../daw/dawProject";
 import { POCKET_DAW_VERSION, type PocketDawProject, type Track } from "../daw/schema";
 import { trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToPosition, snapBarValue } from "../daw/timeline";
-import { addImportedAudioMedia, placeRecordingClipOnTrack, updateAudioMediaAnalysis } from "../daw/audioClips";
+import { addImportedAudioMedia, placeAudioClipOnTimeline, placeRecordingClipOnTrack, updateAudioMediaAnalysis } from "../daw/audioClips";
 import { createCollectMediaPlan, findMediaPoolItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked, mediaPoolStatus } from "../daw/mediaPool";
 import {
   AUDIO_MEDIA_ACCEPT,
@@ -161,22 +162,23 @@ import {
   importAudioMediaNative,
   loadAudioMediaNative,
   relinkAudioMediaNative,
+  writeNativeCacheAsset,
   type ImportedAudioBytes
 } from "../native/mediaBridge";
 import { importMidiFileToProject } from "../daw/midiClips";
 import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
 import { isNativeRecordingAvailable, nativeRecordingStatus, startNativeRecording, startNativeRecordingPreview, stopNativeRecording, stopNativeRecordingPreview, updateNativeRecordingMonitor } from "../native/recordingBridge";
-import { createGamePackZipBlob, createSectionLoopMetadata, createStemExportPlan, projectForSectionLoopRender, projectWithOnlyTracksAudible } from "../daw/exportJobs";
+import { createGamePackZipBlob, createSectionLoopMetadata, createStemExportPlan, projectForClipRender, projectForSectionLoopRender, projectWithOnlyTracksAudible } from "../daw/exportJobs";
 import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
 import { buildTesterDiagnosticsPayload, diagnosticsJson, runtimeLabel, runtimePlatform } from "./diagnostics";
 import { buildFeedbackEmailDraft, MORE_BY_SAMFA12_URL } from "./feedback";
 import { pocketDawMcpCopyText } from "./mcpSetup";
 import { PerformanceDiagnosticsRecorder, type UiPerformanceCounters } from "./performanceDiagnostics";
 import { buildNativeRecordingDiagnosticsMetadata, buildRecordingCompletionMessage, buildRecordingStartupPlan, recordingStartFailureCleanupPlan } from "./recordingOrchestration";
+import { PlaybackRenderScheduler, type RenderOptions, type RenderSchedule } from "./renderScheduler";
 
 type MixerControlField = "volume" | "pan";
-type RenderSchedule = "none" | "live-dom" | "deferred" | "immediate";
 type ScrollSnapshot = Record<string, { top: number; left: number }>;
 type ClipDragMode = "move" | "repeat";
 type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "apply_commands" | "performance_diagnostics";
@@ -185,10 +187,6 @@ type AiBridgeLiveCommand =
   | { type: "set_track_pan"; trackId: string; pan: number }
   | { type: "set_track_mute"; trackId: string; mute: boolean }
   | { type: "set_track_solo"; trackId: string; solo: boolean };
-
-interface RenderOptions {
-  preserveScroll?: boolean;
-}
 
 interface ApplyProjectOptions {
   audio?: AudioProjectSyncMode | "none";
@@ -214,7 +212,7 @@ export class App {
   private liveUpdateCount = 0;
   private performanceDiagnostics = new PerformanceDiagnosticsRecorder();
   private mixerGestureStarts = new Map<string, number>();
-  private deferredRenderTimer: number | null = null;
+  private playbackRenderScheduler = new PlaybackRenderScheduler();
   private chordsmithDragStart: ChordsmithStepSelection | null = null;
   private suppressNextStepClick = false;
   private suppressNextClipClick = false;
@@ -245,7 +243,11 @@ export class App {
       this.state.meterLevels = this.engine.getMeterLevels();
       if (!tick.playing && this.state.recording.status === "idle") this.stopLiveMetronome();
       if (playingChanged) {
-        this.render({ preserveScroll: true });
+        if (tick.playing) {
+          this.updateLiveDom();
+        } else {
+          this.playbackRenderScheduler.flushAfterPlaybackStops({ preserveScroll: true }, this.renderSchedulerCallbacks(), this.renderSchedulerTimers());
+        }
       } else {
         this.updateLiveDom();
       }
@@ -272,7 +274,7 @@ export class App {
     this.root.addEventListener("pointercancel", (event) => this.handlePointerEnd(event));
     this.root.addEventListener("mousedown", (event) => this.handleMouseDown(event));
     this.root.addEventListener("wheel", (event) => this.handleWheel(event), { passive: false });
-    window.addEventListener("keydown", (event) => this.handleKeyboard(event));
+    window.addEventListener("keydown", (event) => this.handleKeyboard(event), { capture: true });
   }
 
   start() {
@@ -660,6 +662,7 @@ export class App {
   }
 
   private render(options: RenderOptions = {}) {
+    this.playbackRenderScheduler.cancelPending(this.renderSchedulerTimers());
     const scroll = options.preserveScroll ? this.captureScrollSnapshot() : null;
     this.renderCount += 1;
     if (this.state.playing || this.engine.isPlaying()) this.renderCountDuringPlayback += 1;
@@ -824,6 +827,17 @@ export class App {
     this.root.querySelectorAll<HTMLInputElement>("[data-automation-enabled]").forEach((input) => {
       input.addEventListener("change", () => this.applyProjectState(setAutomationLaneEnabledCommand(this.state, input.dataset.automationEnabled || "", input.checked)));
     });
+    this.root.querySelectorAll<HTMLInputElement>("[data-clip-transform]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const [clipId, field] = String(input.dataset.clipTransform || "").split(":");
+        if (field !== "transpose" && field !== "gain") return;
+        this.applyProjectState(setSelectedClipTransformCommand(this.state, clipId, field, Number(input.value)), {
+          audio: "composition-events",
+          preserveScroll: true,
+          reason: `clip-${field}`
+        });
+      });
+    });
     this.root.querySelectorAll<HTMLInputElement>("[data-automation-point-bar], [data-automation-point-value]").forEach((input) => {
       input.addEventListener("change", () => {
         const packed = input.dataset.automationPointBar || input.dataset.automationPointValue || "";
@@ -873,8 +887,11 @@ export class App {
     this.root.querySelector<HTMLSelectElement>("[data-bass-mode]")?.addEventListener("change", (event) => {
       this.applyChordsmithEditorEdit(setBassModeCommand(this.state, (event.target as HTMLSelectElement).value), "chordsmith-bass-mode");
     });
-    this.root.querySelector<HTMLButtonElement>("[data-bass-fill-auto]")?.addEventListener("click", () => {
-      this.applyChordsmithEditorEdit(fillAutoBassCommand(this.state), "chordsmith-bass-fill-auto");
+    this.root.querySelectorAll<HTMLSelectElement>("[data-bass-preset-section]").forEach((select) => {
+      select.addEventListener("change", () => {
+        if (!select.value) return;
+        this.applyChordsmithEditorEdit(applyBassPresetCommand(this.state, select.dataset.bassPresetSection || "", select.value), "chordsmith-bass-preset");
+      });
     });
     this.root.querySelector<HTMLSelectElement>("[data-chord-instrument]")?.addEventListener("change", (event) => {
       this.applyChordsmithEditorEdit(setChordInstrumentCommand(this.state, (event.target as HTMLSelectElement).value), "chordsmith-chord-instrument");
@@ -1797,6 +1814,9 @@ export class App {
     if (action === "save-project-as") await this.saveProject(true);
     if (action === "export-wav") await this.exportWav();
     if (action === "export-midi") this.exportMidi();
+    if (action === "export-selected-clip-midi") this.exportSelectedClipMidi();
+    if (action === "export-selected-track-midi") this.exportSelectedTrackMidi();
+    if (action === "freeze-selected-clip") await this.freezeSelectedClip();
     if (action === "export-stems") await this.exportStems();
     if (action === "export-section-manifest") void this.exportSectionLoops();
     if (action === "export-godot-manifest") await this.exportGamePack("godot-adaptive-pack");
@@ -2754,20 +2774,22 @@ export class App {
   }
 
   private scheduleRender(schedule: RenderSchedule, options: RenderOptions = {}) {
-    if (schedule === "none") return;
-    if (schedule === "live-dom") {
-      this.updateLiveDom();
-      return;
-    }
-    if (schedule === "deferred") {
-      if (this.deferredRenderTimer !== null) window.clearTimeout(this.deferredRenderTimer);
-      this.deferredRenderTimer = window.setTimeout(() => {
-        this.deferredRenderTimer = null;
-        this.render(options);
-      }, 80);
-      return;
-    }
-    this.render(options);
+    this.playbackRenderScheduler.request(schedule, options, this.renderSchedulerCallbacks(), this.renderSchedulerTimers());
+  }
+
+  private renderSchedulerCallbacks() {
+    return {
+      isPlaybackActive: () => this.state.playing || this.engine.isPlaying(),
+      render: (options: RenderOptions) => this.render(options),
+      updateLiveDom: () => this.updateLiveDom()
+    };
+  }
+
+  private renderSchedulerTimers() {
+    return {
+      setTimeout: (callback: () => void, delayMs: number) => window.setTimeout(callback, delayMs),
+      clearTimeout: (handle: number) => window.clearTimeout(handle)
+    };
   }
 
   private toggleTrackMute(trackId: string) {
@@ -3290,6 +3312,7 @@ export class App {
     if (!path) return;
     try {
       const result = await this.engine.hydrateNativeRenderCache(path, "project-open-hydrate-native-cache");
+      if (!result.cache) this.engine.prewarmNativeRenderCache("project-open-prewarm-native-cache");
       if (!result.hydratedCacheItemCount && !result.staleSourceHashCount && !result.skippedInvalidPathCount && !result.hydrationFailureCount) return;
       this.state.status = [
         `Opened ${this.state.currentFile.label}.`,
@@ -3370,6 +3393,163 @@ export class App {
       this.state.status = error instanceof Error ? `MIDI export failed: ${error.message}` : "MIDI export failed.";
       this.render();
     }
+  }
+
+  private exportSelectedClipMidi() {
+    const project = currentProject(this.state);
+    const clip = project.timeline.clips.find((item) => item.id === this.state.selectedClipId);
+    if (!clip) {
+      this.state.status = "Select a clip before exporting clip MIDI.";
+      this.render();
+      return;
+    }
+    if (clip.type === "audio") {
+      this.state.status = "Audio clips do not contain MIDI events.";
+      this.render();
+      return;
+    }
+    const events = renderTimelineEvents(project).filter((event) => event.clipId === clip.id);
+    if (!events.length) {
+      this.state.status = `${clip.name} has no MIDI-exportable events.`;
+      this.render();
+      return;
+    }
+    try {
+      const blob = exportProjectToMidiBlob(project, { clipIds: [clip.id], title: `${project.project.title} - ${clip.name}` });
+      downloadBlob(blob, safeName(`${project.project.title}-${clip.name}`, "mid"));
+      this.state.status = `Exported ${clip.name} MIDI (${Math.round(blob.size / 1024)} KB).`;
+      this.render();
+    } catch (error) {
+      this.state.status = error instanceof Error ? `Clip MIDI export failed: ${error.message}` : "Clip MIDI export failed.";
+      this.render();
+    }
+  }
+
+  private exportSelectedTrackMidi() {
+    const project = currentProject(this.state);
+    const track = project.tracks.find((item) => item.id === this.state.selectedTrackId);
+    if (!track) {
+      this.state.status = "Select a track before exporting track MIDI.";
+      this.render();
+      return;
+    }
+    const events = renderTimelineEvents(project).filter((event) => event.trackId === track.id);
+    if (!events.length) {
+      this.state.status = `${track.name} has no MIDI-exportable events.`;
+      this.render();
+      return;
+    }
+    try {
+      const blob = exportProjectToMidiBlob(project, { trackIds: [track.id], title: `${project.project.title} - ${track.name}` });
+      downloadBlob(blob, safeName(`${project.project.title}-${track.name}`, "mid"));
+      this.state.status = `Exported ${track.name} MIDI (${Math.round(blob.size / 1024)} KB).`;
+      this.render();
+    } catch (error) {
+      this.state.status = error instanceof Error ? `Track MIDI export failed: ${error.message}` : "Track MIDI export failed.";
+      this.render();
+    }
+  }
+
+  private async freezeSelectedClip() {
+    const project = currentProject(this.state);
+    const clip = project.timeline.clips.find((item) => item.id === this.state.selectedClipId);
+    const renderTarget = clip ? projectForClipRender(project, clip.id) : null;
+    if (!clip || !renderTarget) {
+      this.state.status = "Select a clip before freezing.";
+      this.render();
+      return;
+    }
+    try {
+      await this.showExportProgress("Freezing selected clip", clip.name);
+      const hydration = await this.hydrateTimelineAudioBuffers();
+      if (clip.type === "audio" && clip.mediaPoolItemId && !getCachedAudioBuffer(clip.mediaPoolItemId)) {
+        const item = findMediaPoolItem(project, clip.mediaPoolItemId);
+        if (!item || hydration.missing.includes(item.name) || hydration.missing.includes(item.id)) {
+          throw new Error(`${clip.name} needs its source audio loaded before freezing.`);
+        }
+      }
+      const blob = await this.renderWavNativeFirst(renderTarget.project);
+      const source = await this.freezeBlobSource(blob, clip);
+      const decoded = await this.decodeAudioSource(source);
+      const media = addImportedAudioMedia(currentProject(this.state), {
+        name: source.name,
+        uri: source.uri,
+        mimeType: source.mimeType,
+        durationSeconds: decoded.durationSeconds,
+        sampleRate: decoded.sampleRate,
+        channels: decoded.channels,
+        sizeBytes: source.sizeBytes,
+        metadata: {
+          importMode: source.mode,
+          mediaRefKind: source.mode === "native" ? "external" : "browser-runtime-only",
+          runtimeOnly: source.mode === "browser",
+          ...(source.uri && !/^[a-z]+:\/\//i.test(source.uri) ? { projectRelativePath: source.uri } : {}),
+          freezeSourceClipId: clip.id,
+          freezeSourceClipName: clip.name,
+          waveformPeaks: decoded.waveformPeaks
+        }
+      });
+      setCachedAudioBuffer(media.item.id, decoded.buffer, sourceCacheOptions(source));
+      const placed = placeAudioClipOnTimeline(media.project, media.item.id, clip.startBar);
+      const nextProject = placed.project;
+      const sourceClip = nextProject.timeline.clips.find((item) => item.id === clip.id);
+      if (sourceClip) {
+        sourceClip.muted = true;
+        sourceClip.transforms = { ...sourceClip.transforms, freezeRenderId: media.item.id };
+      }
+      const frozenClip = nextProject.timeline.clips.find((item) => item.id === placed.clipId);
+      if (frozenClip) {
+        frozenClip.name = `Frozen ${clip.name}`;
+        frozenClip.linked = false;
+        frozenClip.metadata = {
+          ...(frozenClip.metadata || {}),
+          freezeSourceClipId: clip.id,
+          freezeSourceClipName: clip.name,
+          gain: 1
+        };
+      }
+      this.state.exportProgress = null;
+      this.applyProjectState({
+        ...commitProject(this.state, nextProject, `Froze ${clip.name} to audio and muted the source clip.`),
+        selectedClipId: placed.clipId || clip.id,
+        selectedTrackId: placed.trackId || clip.trackId
+      }, {
+        audio: "project-load",
+        preserveScroll: true,
+        reason: "freeze-selected-clip"
+      });
+    } catch (error) {
+      this.state.exportProgress = null;
+      this.state.status = error instanceof Error ? `Freeze failed: ${error.message}` : "Freeze failed.";
+      this.render({ preserveScroll: true });
+    }
+  }
+
+  private async freezeBlobSource(blob: Blob, clip: NonNullable<ReturnType<typeof currentProject>["timeline"]["clips"][number]>): Promise<ImportedAudioBytes> {
+    const bytes = await blob.arrayBuffer();
+    const name = safeName(`Frozen ${clip.name}`, "wav");
+    const source: ImportedAudioBytes = {
+      name,
+      mimeType: "audio/wav",
+      sizeBytes: bytes.byteLength,
+      bytes,
+      mode: "browser"
+    };
+    if (!this.state.currentFile.path) return source;
+    const relativePath = `project-cache/native-audio/freezes/${safeName(`${clip.id}-${Date.now()}`, "wav")}`;
+    const written = await writeNativeCacheAsset(this.state.currentFile.path, {
+      assetId: `freeze_${clip.id}_${Date.now()}`,
+      relativePath,
+      bytes
+    });
+    if (!written) return source;
+    return {
+      ...source,
+      uri: written.relativePath,
+      sizeBytes: written.sizeBytes,
+      bytes: bytes.slice(0),
+      mode: "native"
+    };
   }
 
   private async exportStems() {

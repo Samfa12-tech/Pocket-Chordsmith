@@ -341,6 +341,10 @@ function nowSeconds(context) {
 function scheduleSimpleAudioEvent(context, event, project) {
   if (project?.mixer?.stems?.[event.stem]?.mute) return;
   const start = Math.max(context.currentTime + 0.005, context.currentTime + Math.max(0, event.time - ((performance.now() / 1000) % Math.max(event.time + 1, 1))));
+  if (event.type === "bass") {
+    scheduleBassAudioEvent(context, event, project, start);
+    return;
+  }
   const gain = context.createGain();
   const voice = simpleVoiceRecipe(event);
   const volume = (project?.mixer?.stems?.[event.stem]?.volume ?? 0.7) * Math.min(1, event.velocity || 0.5) * voice.peak;
@@ -359,6 +363,34 @@ function scheduleSimpleAudioEvent(context, event, project) {
   osc.connect(filter);
   osc.start(start);
   osc.stop(start + Math.max(0.04, (event.duration || 0.08) * voice.durationScale) + 0.02);
+}
+
+function scheduleBassAudioEvent(context, event, project, start) {
+  const cfg = POCKET_BASS_TONE_CONFIGS[resolvePocketBassToneId(event.bassTone)] || POCKET_BASS_TONE_CONFIGS.classic;
+  const stemVolume = project?.mixer?.stems?.[event.stem]?.volume ?? 0.7;
+  const peak = stemVolume * Math.min(1, event.velocity || 0.5);
+  const midi = event.midi || event.midiNotes?.[0] || 36;
+  const bassDur = Math.max(0.08, event.duration || 0.22);
+  scheduleBassLayer(context, start, midi, bassDur, cfg.mainWave || "sawtooth", peak * Number(cfg.mainPeak || 1), cfg.cutoff || 420, cfg.attack || 0.01);
+  scheduleBassLayer(context, start, midi - 12, Math.min(0.12, bassDur * 0.82), cfg.subWave || "sine", peak * Number(cfg.subPeak || 0.35), cfg.subCutoff || 220, cfg.attack || 0.01);
+}
+
+function scheduleBassLayer(context, start, midi, duration, wave, volume, cutoff, attack) {
+  const gain = context.createGain();
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.linearRampToValueAtTime(Math.max(0.0001, volume), start + Math.max(0.002, Number(attack || 0.01)));
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + Math.max(0.04, duration));
+  const filter = context.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(Math.max(80, Number(cutoff || 420)), start);
+  filter.connect(gain);
+  gain.connect(context.destination);
+  const osc = context.createOscillator();
+  osc.type = wave || "sine";
+  osc.frequency.setValueAtTime(440 * Math.pow(2, (midi - 69) / 12), start);
+  osc.connect(filter);
+  osc.start(start);
+  osc.stop(start + Math.max(0.04, duration) + 0.02);
 }
 
 function simpleVoiceRecipe(event) {
@@ -388,7 +420,7 @@ function simpleVoiceRecipe(event) {
     const cfg = POCKET_BASS_TONE_CONFIGS[resolvePocketBassToneId(event.bassTone)] || POCKET_BASS_TONE_CONFIGS.classic;
     return {
       wave: cfg.mainWave || "sawtooth",
-      peak: Math.max(0.04, Number(cfg.mainPeak || 1)) * 0.16,
+      peak: Math.max(0.04, Number(cfg.mainPeak || 1)),
       attack: Math.max(0.002, Number(cfg.attack || 0.01)),
       durationScale: 1,
       filterType: "lowpass",

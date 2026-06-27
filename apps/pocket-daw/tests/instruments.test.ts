@@ -181,7 +181,23 @@ describe("Pocket DAW instruments", () => {
     });
 
     expect(scheduled).toBe(true);
+    expect(ctx.oscillators.map((oscillator) => oscillator.type).slice(0, 2)).toEqual(["sine", "sine"]);
+    expect(ctx.filters.map((filter) => filter.frequency.values.find((entry) => entry.method === "set")?.value).slice(0, 2)).toEqual([210, 120]);
+  });
+
+  it("keeps warm-sub bass to Chordsmith's root and sub layers", () => {
+    const ctx = new FakeAudioContext();
+
+    const scheduled = scheduleInstrumentEvent(ctx as unknown as BaseAudioContext, new FakeNode() as unknown as AudioNode, {
+      ...bassEvent(),
+      bassTone: "warm_sub"
+    });
+
+    expect(scheduled).toBe(true);
+    expect(ctx.oscillators).toHaveLength(2);
     expect(ctx.oscillators.map((oscillator) => oscillator.type)).toEqual(["sine", "sine"]);
+    expect(ctx.oscillators.map((oscillator) => oscillator.frequency.values.find((entry) => entry.method === "set")?.value))
+      .toEqual([65.40639132514966, 32.70319566257483]);
     expect(ctx.filters.map((filter) => filter.frequency.values.find((entry) => entry.method === "set")?.value)).toEqual([210, 120]);
   });
 

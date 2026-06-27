@@ -16,6 +16,11 @@ import {
   guitarPresetPatternForProject,
   guitarPresetVisibleForProject
 } from "./chordsmithGuitarPresets";
+import {
+  bassPresetPatternForProject,
+  bassPresetVisibleForProject,
+  findBassPreset
+} from "./chordsmithBassPresets";
 
 export type DrumLane = "kick" | "snare" | "hat";
 export interface ChordsmithGlobalPatch {
@@ -194,6 +199,34 @@ export function applyGuitarPreset(project: PocketDawProject, sectionId: SectionI
   });
 }
 
+export function applyBassPreset(project: PocketDawProject, sectionId: SectionId, presetId: string): PocketDawProject {
+  const preset = findBassPreset(presetId);
+  return editChordsmithSection(project, sectionId, (pcs, section) => {
+    if (!preset || !bassPresetVisibleForProject(preset, pcs)) return;
+    const pattern = bassPresetPatternForProject(preset.id, pcs, section);
+    if (!pattern.notes.some((note) => note !== null && note !== undefined)) return;
+    const totalSteps = totalEditorSteps(pcs, section);
+    ensureStep(section.bassNotes, totalSteps - 1, null);
+    ensureStep(section.bassAccent, totalSteps - 1, false);
+    ensureStep(section.bassHold, totalSteps - 1, false);
+    ensureStep(section.bassSlide, totalSteps - 1, false);
+    ensureStep(section.grid.bass, totalSteps - 1, 0);
+    ensureStep(section.gridTuplets.bass, totalSteps - 1, false);
+    section.bassNotes = pattern.notes.slice(0, totalSteps);
+    section.bassAccent = pattern.accent.slice(0, totalSteps);
+    section.bassHold = pattern.hold.slice(0, totalSteps);
+    section.bassSlide = pattern.slide.slice(0, totalSteps);
+    section.gridTuplets.bass = pattern.tuplets.slice(0, totalSteps);
+    while (section.bassNotes.length < totalSteps) section.bassNotes.push(null);
+    while (section.bassAccent.length < totalSteps) section.bassAccent.push(false);
+    while (section.bassHold.length < totalSteps) section.bassHold.push(false);
+    while (section.bassSlide.length < totalSteps) section.bassSlide.push(false);
+    while (section.gridTuplets.bass.length < totalSteps) section.gridTuplets.bass.push(false);
+    section.grid.bass = section.bassNotes.map((note, step) => (note === null || note === undefined ? 0 : section.bassAccent[step] ? 2 : 1));
+    pcs.bassMode = "manual";
+  });
+}
+
 export function cycleBassStep(project: PocketDawProject, sectionId: SectionId, step: number): PocketDawProject {
   return editChordsmithSection(project, sectionId, (pcs, section) => {
     if (pcs.bassMode !== "manual") materializeAutoBass(pcs);
@@ -206,15 +239,19 @@ export function cycleBassStep(project: PocketDawProject, sectionId: SectionId, s
 
 export function setBassMode(project: PocketDawProject, mode: string): PocketDawProject {
   return editChordsmithProject(project, (pcs) => {
-    if (mode === "manual" && pcs.bassMode !== "manual") materializeAutoBass(pcs);
-    pcs.bassMode = mode === "manual" ? "manual" : "auto";
+    if (mode === "manual") {
+      materializeAutoBass(pcs);
+      pcs.bassMode = anyManualBassNotes(pcs) ? "manual" : "auto";
+      return;
+    }
+    pcs.bassMode = "auto";
   });
 }
 
 export function fillAutoBass(project: PocketDawProject): PocketDawProject {
   return editChordsmithProject(project, (pcs) => {
     materializeAutoBass(pcs);
-    pcs.bassMode = "manual";
+    pcs.bassMode = anyManualBassNotes(pcs) ? "manual" : "auto";
   });
 }
 
