@@ -185,7 +185,7 @@ describe("Pocket DAW instruments", () => {
     expect(ctx.filters.map((filter) => filter.frequency.values.find((entry) => entry.method === "set")?.value).slice(0, 2)).toEqual([210, 120]);
   });
 
-  it("adds a quiet octave presence layer so low warm-sub roots remain monitorable", () => {
+  it("keeps warm-sub bass to Chordsmith's root and sub layers", () => {
     const ctx = new FakeAudioContext();
 
     const scheduled = scheduleInstrumentEvent(ctx as unknown as BaseAudioContext, new FakeNode() as unknown as AudioNode, {
@@ -194,11 +194,11 @@ describe("Pocket DAW instruments", () => {
     });
 
     expect(scheduled).toBe(true);
-    expect(ctx.oscillators).toHaveLength(3);
-    expect(ctx.oscillators[2].frequency.values.find((entry) => entry.method === "set")?.value).toBeCloseTo(130.8128, 3);
-    expect(ctx.filters[2].frequency.values.find((entry) => entry.method === "set")?.value).toBe(420);
-    expect(scheduledLinearPeaks(ctx)[2]).toBeGreaterThan(0.03);
-    expect(scheduledLinearPeaks(ctx)[2]).toBeLessThan(0.08);
+    expect(ctx.oscillators).toHaveLength(2);
+    expect(ctx.oscillators.map((oscillator) => oscillator.type)).toEqual(["sine", "sine"]);
+    expect(ctx.oscillators.map((oscillator) => oscillator.frequency.values.find((entry) => entry.method === "set")?.value))
+      .toEqual([65.40639132514966, 32.70319566257483]);
+    expect(ctx.filters.map((filter) => filter.frequency.values.find((entry) => entry.method === "set")?.value)).toEqual([210, 120]);
   });
 
   it("resolves missing imported lofi drum kits through the shared core fallback", () => {

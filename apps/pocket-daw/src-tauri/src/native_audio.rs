@@ -2656,6 +2656,7 @@ struct NativeBassToneConfig {
     sub_peak: f32,
     cutoff: f32,
     sub_cutoff: f32,
+    #[allow(dead_code)]
     attack: f64,
 }
 
@@ -2875,9 +2876,10 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
                 return 0.0;
             }
             let cfg = native_bass_tone_config(event.bass_tone.as_deref());
-            let main_env = note_envelope(local, dur, cfg.attack, 0.08, 0.55, 0.18);
-            let sub_dur = (dur * 0.82).min(0.12);
-            let sub_env = note_envelope(local, sub_dur, cfg.attack, 0.08, 0.55, 0.18);
+            let main_dur = if accent { dur * 1.35 } else { dur };
+            let main_env = note_envelope(local, main_dur, 0.01, 0.06, 0.7, 0.2);
+            let sub_dur = dur * 0.82;
+            let sub_env = note_envelope(local, sub_dur, 0.01, 0.06, 0.7, 0.2);
             let freq = midi_to_freq(midi) as f32;
             let slide = event
                 .slide_midi
@@ -2908,23 +2910,7 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
                 * sub_env
                 * cfg.sub_peak
                 * lowpass_tone_factor(freq * 0.5, cfg.sub_cutoff);
-            let presence_layer = if cfg.main_wave == "sine" && cfg.sub_wave == "sine" && midi < 48.0 {
-                let presence_freq = freq * 2.0;
-                let presence_dur = (dur * 0.72).min(0.16);
-                let presence_env = note_envelope(local, presence_dur, cfg.attack, 0.08, 0.55, 0.18);
-                let presence_sample = if let Some((target_freq, ramp_end)) = slide {
-                    native_wave_sample_ramped("triangle", presence_freq, target_freq * 2.0, ramp_end, local)
-                } else {
-                    native_wave_sample("triangle", presence_freq, local)
-                };
-                presence_sample
-                    * presence_env
-                    * 0.16
-                    * lowpass_tone_factor(presence_freq, (cfg.cutoff * 2.0).max(360.0))
-            } else {
-                0.0
-            };
-            (main_layer + sub_layer + presence_layer) * velocity
+            (main_layer + sub_layer) * velocity
         }
         "melody" | "midi" => {
             let midi = event.midi.unwrap_or(72.0);
@@ -4133,6 +4119,33 @@ mod tests {
             upper_energy > low_energy * 0.5,
             "upper bass row should stay audible against MIDI 29: low={low_energy}, upper={upper_energy}"
         );
+    }
+
+    #[test]
+    fn generated_warm_sub_bass_matches_chordsmith_two_layer_shape() {
+        let mut event = test_generated_event("warm_sub_chordsmith_shape", "bass", 0.0, 0.34, 0.34);
+        event.bass_tone = Some("warm_sub".to_string());
+        event.midi = Some(36.0);
+        let cfg = native_bass_tone_config(event.bass_tone.as_deref());
+        let freq = midi_to_freq(36.0) as f32;
+
+        for local in [0.026, 0.04, 0.08, 0.12] {
+            let main = native_wave_sample(cfg.main_wave, freq, local)
+                * note_envelope(local, 0.34, 0.01, 0.06, 0.7, 0.2)
+                * cfg.main_peak
+                * lowpass_tone_factor(freq, cfg.cutoff);
+            let sub = native_wave_sample(cfg.sub_wave, freq * 0.5, local)
+                * note_envelope(local, 0.34 * 0.82, 0.01, 0.06, 0.7, 0.2)
+                * cfg.sub_peak
+                * lowpass_tone_factor(freq * 0.5, cfg.sub_cutoff);
+            let expected = (main + sub) * 0.34;
+            let actual = render_event_sample(&event, local);
+
+            assert!(
+                (actual - expected).abs() < 0.00001,
+                "warm_sub should render only Chordsmith root+sub layers at {local}: actual={actual}, expected={expected}"
+            );
+        }
     }
 
     #[test]
