@@ -2,24 +2,24 @@
   "schema": 1,
   "sourceVersion": "0.6.30",
   "projectSchemaVersion": 2,
-  "latestPublishedVersion": "0.6.27",
-  "latestPublishedTag": "pocket-daw-v0.6.27",
-  "latestPublishedCommit": "ddb381682528d46ff2417e20d8cf04442a92781e",
+  "latestPublishedVersion": "0.6.30",
+  "latestPublishedTag": "pocket-daw-v0.6.30",
+  "latestPublishedCommit": "ad9a36fe5597e80b2a960425fda21723ebb04b11",
   "lastInstalledSmoke": {
-    "version": "0.6.27",
-    "commit": "ddb381682528d46ff2417e20d8cf04442a92781e",
-    "installerFile": "Pocket.DAW_0.6.27_x64-setup.exe",
-    "installerSha256": "c2e42956900bf7a546f34bb22e8bc6dea38a7346f5650455bb551256caa7bdba",
-    "testedAt": "2026-06-22T07:29:59.8316571+10:00",
+    "version": "0.6.30",
+    "commit": "ad9a36fe5597e80b2a960425fda21723ebb04b11",
+    "installerFile": "Pocket.DAW_0.6.30_x64-setup.exe",
+    "installerSha256": "15cc80cf3ab996a80be202f8423ac11634e023f20351427bfcea8529313c07fb",
+    "testedAt": "2026-06-27T10:45:13.5780752+10:00",
     "result": "pass",
     "notes": [
-      "Pocket DAW 0.6.27 was installed from the exact staged setup artifact and launched from C:\\Users\\sam_s\\AppData\\Local\\Pocket DAW\\pocket-daw.exe.",
-      "The latest updater manifest resolves to pocket-daw-v0.6.27 and the remote setup SHA-256 matches the staged artifact.",
-      "The installed smoke loaded C:\\Users\\sam_s\\Music\\lofi demo project.pocketdaw, confirmed app/project version 0.6.27, and played via native-cpal with WebAudio not-created.",
-      "Native callback diagnostics during the smoke reported callbackCount 1916, maxCallbackMicros 8135, slowCallbackCount 0, no scheduler misses, no audio graph reconfigures, and no performance hotspot signals.",
-      "This tester build includes the native cache hydration, native cache-stem MIDI coverage, native playback hot-path optimization, callback timing diagnostics, and startup prewarm removal.",
-      "The itch channel remains the bootstrapper/downloader path; no bootstrapper upload was needed for this app-update checkpoint.",
-      "Known residual: the lofi demo project still has stale cache refs, so this installed smoke exercised native procedural playback rather than hydrated cached stems for that existing file."
+      "Pocket DAW 0.6.30 was installed from the exact staged setup artifact and launched from C:\\Users\\sam_s\\AppData\\Local\\Pocket DAW\\pocket-daw.exe.",
+      "The latest updater manifest resolves to pocket-daw-v0.6.30 and the remote setup SHA-256 matches the smoked staged artifact.",
+      "The itch windows-installer channel reports version 0.6.30 on build #1753856.",
+      "The installed smoke loaded C:\\Users\\sam_s\\Music\\lofi demo project.pocketdaw, confirmed app/project version 0.6.30, and played via native-cpal with WebAudio not-created.",
+      "Cold stale-cache playback started with proceduralFallbackEventCount 1010, then built a full native render cache while playing: coverage full, assetRegionCount 50, cachedClipCount 10, buildCount 1, pendingReason null, and proceduralFallbackEventCount 0.",
+      "Native callback diagnostics during the smoke reported maxCallbackMicros 722, slowCallbackCount 0, no scheduler misses, no audio graph reconfigures, and no performance hotspot signals.",
+      "This tester build includes full-cache coverage during native payload windowing so cached generated tracks do not keep scheduling audible procedural fallback events outside the current WAV payload window."
     ]
   }
 }
