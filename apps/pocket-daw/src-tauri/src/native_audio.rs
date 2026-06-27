@@ -1367,7 +1367,9 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         if track_gain <= 0.0001 {
             continue;
         }
-        let Some((asset_left, asset_right)) = render_region_sample(&region.region, &region.asset, t) else {
+        let Some((asset_left, asset_right)) =
+            render_region_sample(&region.region, &region.asset, t)
+        else {
             continue;
         };
         if !active_counts_by_track.allows(region.track_index) {
@@ -3740,8 +3742,14 @@ mod tests {
         assert_eq!(playback.track_mix_scratch.len(), 0);
         assert_eq!(playback.return_mix_scratch.len(), 0);
         assert_eq!(playback.source_budget_scratch.counts.len(), 0);
-        assert_eq!(playback.track_mix_scratch.capacity(), initial_track_capacity);
-        assert_eq!(playback.return_mix_scratch.capacity(), initial_return_capacity);
+        assert_eq!(
+            playback.track_mix_scratch.capacity(),
+            initial_track_capacity
+        );
+        assert_eq!(
+            playback.return_mix_scratch.capacity(),
+            initial_return_capacity
+        );
         assert_eq!(
             playback.source_budget_scratch.counts.capacity(),
             initial_budget_capacity
@@ -4159,7 +4167,11 @@ mod tests {
         trigger.time = 0.012;
         trigger.velocity = 0.0;
         events.push(trigger);
-        events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+        events.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut playback = playback_with_events(events);
         playback.sidechain = Some(NativeSidechainPayload {

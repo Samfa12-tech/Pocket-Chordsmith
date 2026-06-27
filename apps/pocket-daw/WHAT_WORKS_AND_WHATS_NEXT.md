@@ -1,18 +1,20 @@
-# Pocket DAW v0.6.20 Source - What Works and What's Next
+# Pocket DAW Current Status, Historical Notes, and What's Next
 
 ## Current public alpha
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current source target: `0.6.20` stabilization/integrity work
-- Last completed public artifact record in this repo: `0.6.19`
-- Last installed public smoke evidence in this repo: `0.6.10` bootstrapper install passed; `0.6.19` native transport/cache and MCP/updater smoke remains pending
+- Current source target: `0.6.30` native render-cache/windowing stabilization
+- Last completed public artifact record in this repo: `0.6.30`
+- Last installed public smoke evidence in this repo: `0.6.30` installed smoke passed against `Pocket.DAW_0.6.30_x64-setup.exe`
 - Machine-readable release status: `release-status.json`
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- `0.6.19` release packaging commit: `eee587c9afc39d89fa7893ea8a98e730c948a5e9`
+- `0.6.30` published artifact commit: `ad9a36fe5597e80b2a960425fda21723ebb04b11`
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
+
+`docs/CURRENT_RELEASE_STATUS.md` is generated from `release-status.json` and is the release-truth anchor. Older version sections below are retained as historical implementation and QA notes; do not treat old version headings as current status unless the generated release-status doc agrees.
 
 ## Next build pending - Windows project open polish
 
