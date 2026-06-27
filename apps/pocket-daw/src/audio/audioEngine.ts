@@ -797,7 +797,10 @@ export class AudioEngine {
   private async restartNativePlaybackAfterFreshRenderCache(reason: string): Promise<void> {
     const token = this.nativeLiveCompositionCacheToken + 1;
     this.nativeLiveCompositionCacheToken = token;
-    const cache = await this.ensureNativeRenderCache(reason, this.liveNativeRenderCacheBuildOptions());
+    const buildOptions = reason === "play-progressive-cache-build"
+      ? this.liveNativeRenderCacheBuildOptions()
+      : {};
+    const cache = await this.ensureNativeRenderCache(reason, buildOptions);
     if (token !== this.nativeLiveCompositionCacheToken || this.playbackBackend !== "native-cpal" || !this.playing) return;
     if (cache) {
       this.nativeRenderCacheBypassedForLiveEdits = false;
@@ -906,7 +909,7 @@ export class AudioEngine {
   }
 
   private nativePlaybackEventCoverageCache(preparedCache: NativeRenderCache | null, payloadCache: NativeRenderCache | null): NativeRenderCache | null {
-    return payloadCache || preparedCache;
+    return preparedCache || payloadCache;
   }
 
   private nativePlaybackEvents(cache: NativeRenderCache | null): { events: RenderedEvent[]; proceduralFallbackEventCount: number } {

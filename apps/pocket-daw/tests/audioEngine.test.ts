@@ -412,7 +412,7 @@ describe("audio engine diagnostics", () => {
     expect(playback.proceduralFallbackEventCount).toBe(0);
   });
 
-  it("keeps procedural events for clips that are cached in memory but absent from the native payload window", () => {
+  it("suppresses procedural events covered by the prepared full cache even when absent from the native payload window", () => {
     const project = createDemoProject();
     const engine = new AudioEngine(project);
     const clipA = project.timeline.clips.find((clip) => clip.type === "generated-section")!;
@@ -460,8 +460,8 @@ describe("audio engine diagnostics", () => {
     const coverageCache = internals.nativePlaybackEventCoverageCache(fullCache, payloadCache);
     const playback = internals.nativePlaybackEvents(coverageCache);
 
-    expect(playback.events.map((event) => event.id)).toEqual([eventB.id]);
-    expect(playback.proceduralFallbackEventCount).toBe(1);
+    expect(playback.events.map((event) => event.id)).toEqual([]);
+    expect(playback.proceduralFallbackEventCount).toBe(0);
   });
 
   it("includes loop-start cached regions when a native cache payload window crosses the loop end", () => {
@@ -860,8 +860,9 @@ describe("audio engine diagnostics", () => {
       expect(starts[0].assets?.length || 0).toBeLessThan(cache.assets.length);
       expect(starts[0].regions?.length || 0).toBeLessThan(cache.regions.length);
       expect(starts[0].events.length).toBeGreaterThan(0);
-      expect(starts[0].events.every(isSilentCachedSidechainTrigger)).toBe(false);
+      expect(starts[0].events.every(isSilentCachedSidechainTrigger)).toBe(true);
       expect(engine.getDiagnostics().nativeRenderCache.assetCount).toBe(cache.assets.length);
+      expect(engine.getDiagnostics().nativeRenderCache.proceduralFallbackEventCount).toBe(0);
     } finally {
       (globalThis as any).window = previousWindow;
     }
@@ -1111,7 +1112,9 @@ describe("audio engine diagnostics", () => {
         nativeRenderCacheError: string | null;
         ensureNativeRenderCache(reason: string, options?: { coverage?: "full" | "partial"; clipIds?: Set<string> }): Promise<NativeRenderCache | null>;
       };
+      const buildOptions: Array<{ coverage?: "full" | "partial"; clipIds?: Set<string> }> = [];
       internals.ensureNativeRenderCache = async (reason: string, options?: { coverage?: "full" | "partial"; clipIds?: Set<string> }) => {
+        buildOptions.push(options || {});
         internals.nativeRenderCacheBuildCount += 1;
         internals.nativeRenderCacheLastBuildReason = reason;
         internals.nativeRenderCacheError = null;
@@ -1134,6 +1137,59 @@ describe("audio engine diagnostics", () => {
       expect(starts[1].regions?.length || 0).toBeGreaterThan(0);
       expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
       expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBeNull();
+      expect(buildOptions).toHaveLength(1);
+      expect(buildOptions[0].clipIds?.size || 0).toBe(0);
+      expect(buildOptions[0].coverage).not.toBe("partial");
+    } finally {
+      (globalThis as any).window = previousWindow;
+    }
+  });
+
+  it("uses full render-cache coverage even when native payload regions are windowed", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    const starts: NativeAudioStartPayload[] = [];
+    const native = {
+      async start(payload: NativeAudioStartPayload) {
+        starts.push(payload);
+        return {
+          started: true,
+          status: nativeStatus({
+            active: true,
+            playing: true,
+            positionSeconds: payload.startSeconds,
+            eventCount: payload.events.length,
+            assetCount: payload.assets?.length || 0,
+            assetRegionCount: payload.regions?.length || 0,
+            proceduralEventCount: payload.events.length
+          }),
+          error: null
+        };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true }); }
+    };
+
+    try {
+      const project = createDemoProject();
+      const engine = new AudioEngine(project, native);
+      const cache = fakeTimedNativeRenderCache(project);
+      (engine as unknown as { nativeRenderCache: NativeRenderCache }).nativeRenderCache = cache;
+
+      await engine.play();
+
+      expect(starts).toHaveLength(1);
+      expect(starts[0].regions?.length || 0).toBeGreaterThan(0);
+      expect(starts[0].regions?.length || 0).toBeLessThan(cache.regions.length);
+      expect(starts[0].events.every((event) => event.velocity === 0 && event.id.endsWith("_cached_sidechain_trigger"))).toBe(true);
+      expect(engine.getDiagnostics().nativeRenderCache.proceduralFallbackEventCount).toBe(0);
     } finally {
       (globalThis as any).window = previousWindow;
     }

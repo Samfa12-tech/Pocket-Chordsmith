@@ -828,8 +828,9 @@ describe("native render cache", () => {
       expect(restarted.regions?.length || 0).toBeGreaterThan(0);
       expect(restarted.events.length).toBeLessThan(diagnostics.eventCount);
       expect(restarted.events.length).toBeGreaterThan(0);
-      expect(restarted.events.every(isSilentCachedSidechainTrigger)).toBe(false);
+      expect(restarted.events.every(isSilentCachedSidechainTrigger)).toBe(true);
       expect(diagnostics.nativeRenderCache.assetRegionCount).toBeGreaterThan(0);
+      expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBe(0);
     } finally {
       (globalThis as { window?: unknown }).window = previousWindow;
     }
