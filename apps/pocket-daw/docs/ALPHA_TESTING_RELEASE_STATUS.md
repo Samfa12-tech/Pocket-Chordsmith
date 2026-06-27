@@ -37,6 +37,7 @@ Current completed public updater artifact record:
 - Release target commit: `1b89374ac9a7c53cca3ea936909db62984de9031`
 - Release asset count: `10`
 - Latest updater manifest reports version `0.6.34`.
+- Laptop itch bootstrapper smoke: Sam manually installed the bootstrapper from itch, used it to reinstall Pocket DAW on a laptop, and confirmed it works great.
 
 Previous completed public updater artifact record:
 
