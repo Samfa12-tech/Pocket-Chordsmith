@@ -368,7 +368,7 @@ function scheduleSimpleAudioEvent(context, event, project) {
 function scheduleBassAudioEvent(context, event, project, start) {
   const cfg = POCKET_BASS_TONE_CONFIGS[resolvePocketBassToneId(event.bassTone)] || POCKET_BASS_TONE_CONFIGS.classic;
   const stemVolume = project?.mixer?.stems?.[event.stem]?.volume ?? 0.7;
-  const peak = stemVolume * Math.min(1, event.velocity || 0.5) * 0.16;
+  const peak = stemVolume * Math.min(1, event.velocity || 0.5);
   const midi = event.midi || event.midiNotes?.[0] || 36;
   const bassDur = Math.max(0.08, event.duration || 0.22);
   scheduleBassLayer(context, start, midi, bassDur, cfg.mainWave || "sawtooth", peak * Number(cfg.mainPeak || 1), cfg.cutoff || 420, cfg.attack || 0.01);
@@ -420,7 +420,7 @@ function simpleVoiceRecipe(event) {
     const cfg = POCKET_BASS_TONE_CONFIGS[resolvePocketBassToneId(event.bassTone)] || POCKET_BASS_TONE_CONFIGS.classic;
     return {
       wave: cfg.mainWave || "sawtooth",
-      peak: Math.max(0.04, Number(cfg.mainPeak || 1)) * 0.16,
+      peak: Math.max(0.04, Number(cfg.mainPeak || 1)),
       attack: Math.max(0.002, Number(cfg.attack || 0.01)),
       durationScale: 1,
       filterType: "lowpass",

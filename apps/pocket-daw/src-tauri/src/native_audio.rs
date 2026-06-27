@@ -2713,7 +2713,11 @@ fn ramped_cycles(start_freq: f64, target_freq: f64, ramp_end: f64, local: f64) -
 }
 
 fn lowpass_tone_factor(freq: f32, cutoff: f32) -> f32 {
-    (cutoff / (freq * 2.0).max(1.0)).clamp(0.18, 1.0)
+    if !freq.is_finite() || !cutoff.is_finite() || cutoff <= 0.0 {
+        return 1.0;
+    }
+    let ratio = (freq.max(0.0) / cutoff.max(1.0)).max(0.0);
+    (1.0 / (1.0 + ratio.powi(4)).sqrt()).clamp(0.18, 1.0)
 }
 
 fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
@@ -4088,6 +4092,46 @@ mod tests {
         assert!(
             energy > 0.25,
             "expected low C warm_sub bass to produce audible native energy, got {energy}"
+        );
+    }
+
+    #[test]
+    fn native_lowpass_preserves_bass_notes_below_chordsmith_cutoff() {
+        let warm_sub_cutoff = 210.0;
+        let very_low_bass = midi_to_freq(29.0) as f32;
+        let upper_bass_row = midi_to_freq(52.0) as f32;
+        let near_cutoff = midi_to_freq(55.0) as f32;
+
+        assert!(lowpass_tone_factor(very_low_bass, warm_sub_cutoff) > 0.98);
+        assert!(
+            lowpass_tone_factor(upper_bass_row, warm_sub_cutoff) > 0.82,
+            "upper bass row notes should not disappear under the warm_sub cutoff"
+        );
+        assert!(
+            lowpass_tone_factor(near_cutoff, warm_sub_cutoff) > 0.7,
+            "notes near the cutoff should behave like Chordsmith's WebAudio low-pass shoulder"
+        );
+        assert!(lowpass_tone_factor(warm_sub_cutoff * 3.0, warm_sub_cutoff) < 0.2);
+    }
+
+    #[test]
+    fn generated_warm_sub_bass_keeps_upper_bass_row_audible() {
+        let mut low = test_generated_event("warm_sub_low_note", "bass", 0.0, 0.34, 0.34);
+        low.bass_tone = Some("warm_sub".to_string());
+        low.audio_profile = Some("lofi_chill".to_string());
+        low.lofi_preset = Some("lofi_menu_warmth".to_string());
+        low.midi = Some(29.0);
+        let mut upper = low.clone();
+        upper.id = "warm_sub_upper_note".to_string();
+        upper.midi = Some(52.0);
+
+        let sample_times = [0.026, 0.04, 0.055, 0.08, 0.12];
+        let low_energy = render_event_sample_energy(&low, &sample_times);
+        let upper_energy = render_event_sample_energy(&upper, &sample_times);
+
+        assert!(
+            upper_energy > low_energy * 0.5,
+            "upper bass row should stay audible against MIDI 29: low={low_energy}, upper={upper_energy}"
         );
     }
 
