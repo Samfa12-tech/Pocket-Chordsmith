@@ -193,7 +193,7 @@ describe("native render cache", () => {
     expect(cachedSnare?.clipId).toBe(clip.id);
   });
 
-  it("leaves overlapping same-track generated clips procedural instead of caching mismatched stems", async () => {
+  it("caches overlapping same-track generated clips as one grouped stem", async () => {
     const project = createDemoProject();
     const clip = project.timeline.clips.find((item) => item.type === "generated-section")!;
     const overlappingClip: Clip = {
@@ -207,14 +207,16 @@ describe("native render cache", () => {
     const cache = await buildNativeRenderCache(project);
     const generatedItems = cache.renderCacheItems.filter((item) => String(item.metadata?.cacheKind || "") === "native-generated-stem");
 
-    expect(cache.generatedRegionCount).toBe(0);
-    expect(generatedItems).toHaveLength(0);
-    expect(cache.regions).toHaveLength(0);
-    expect(cache.cachedClipIds.has(clip.id)).toBe(false);
-    expect(cache.cachedClipIds.has(overlappingClip.id)).toBe(false);
+    expect(cache.generatedRegionCount).toBeGreaterThan(1);
+    expect(generatedItems).toHaveLength(cache.generatedRegionCount);
+    expect(cache.regions).toHaveLength(cache.generatedRegionCount);
+    expect(cache.cachedClipIds.has(clip.id)).toBe(true);
+    expect(cache.cachedClipIds.has(overlappingClip.id)).toBe(true);
+    expect(generatedItems.every((item) => item.metadata?.overlapGroup === true)).toBe(true);
+    expect(generatedItems.every((item) => JSON.stringify(item.metadata?.sourceClipIds) === JSON.stringify([clip.id, overlappingClip.id]))).toBe(true);
   });
 
-  it("leaves overlapping same-track MIDI clips procedural instead of caching mismatched stems", async () => {
+  it("caches overlapping same-track MIDI clips as one grouped stem", async () => {
     const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(simpleMidiBytes()), "lead.mid");
     const project = imported.project;
     const clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
@@ -229,11 +231,13 @@ describe("native render cache", () => {
     const cache = await buildNativeRenderCache(project);
     const generatedItems = cache.renderCacheItems.filter((item) => String(item.metadata?.cacheKind || "") === "native-generated-stem");
 
-    expect(cache.generatedRegionCount).toBe(0);
-    expect(generatedItems).toHaveLength(0);
-    expect(cache.regions).toHaveLength(0);
-    expect(cache.cachedClipIds.has(clip.id)).toBe(false);
-    expect(cache.cachedClipIds.has(overlappingClip.id)).toBe(false);
+    expect(cache.generatedRegionCount).toBe(1);
+    expect(generatedItems).toHaveLength(1);
+    expect(cache.regions).toHaveLength(1);
+    expect(cache.cachedClipIds.has(clip.id)).toBe(true);
+    expect(cache.cachedClipIds.has(overlappingClip.id)).toBe(true);
+    expect(generatedItems[0].metadata?.overlapGroup).toBe(true);
+    expect(generatedItems[0].metadata?.sourceClipIds).toEqual([clip.id, overlappingClip.id]);
   });
 
   it("builds generated-section WAV assets, regions and render-cache metadata", async () => {

@@ -9,7 +9,7 @@ import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { addTrackToProject } from "../src/daw/tracks";
 import { createAutomationLane } from "../src/daw/automation";
 import { nativeRenderCacheSignature, nativeRuntimeAudioCacheSignature, type NativeRenderCache } from "../src/audio/nativeRenderCache";
-import type { PocketDawProject } from "../src/daw/schema";
+import type { Clip, PocketDawProject } from "../src/daw/schema";
 import { simpleMidiBytes } from "./midiFixtures";
 
 describe("audio engine diagnostics", () => {
@@ -361,6 +361,55 @@ describe("audio engine diagnostics", () => {
     expect(midiEvents.length).toBeGreaterThan(0);
     expect(playback.events.some((event) => event.clipId === imported.clipId)).toBe(false);
     expect(playback.proceduralFallbackEventCount).toBe(internals.events.length - midiEvents.length);
+  });
+
+  it("suppresses procedural fallback events for grouped overlapping generated cache clips", async () => {
+    const project = createDemoProject();
+    const clip = project.timeline.clips.find((item) => item.type === "generated-section")!;
+    const overlappingClip: Clip = {
+      ...clip,
+      id: `${clip.id}_overlap`,
+      name: `${clip.name} Overlap`,
+      startBar: clip.startBar
+    };
+    project.timeline.clips = [clip, overlappingClip];
+    const engine = new AudioEngine(project);
+    const internals = engine as unknown as {
+      events: RenderedEvent[];
+      nativePlaybackEvents(cache: NativeRenderCache | null): { events: RenderedEvent[]; proceduralFallbackEventCount: number };
+    };
+    const trackIds = Array.from(new Set(internals.events.map((event) => event.trackId)));
+    const cache: NativeRenderCache = {
+      signature: nativeRenderCacheSignature(project),
+      assets: trackIds.map((trackId) => nativeAsset(`asset_${trackId}`)),
+      regions: trackIds.map((trackId) => ({ id: `region_${trackId}`, assetId: `asset_${trackId}`, trackId, startTime: 0, sourceOffset: 0, duration: 4, gain: 1, pan: 0, fadeIn: 0, fadeOut: 0 })),
+      cachedClipIds: new Set([clip.id, overlappingClip.id]),
+      renderCacheItems: trackIds.map((trackId) => ({
+        id: `asset_${trackId}`,
+        sourceClipId: clip.id,
+        createdAt: new Date(0).toISOString(),
+        invalidated: false,
+        metadata: {
+          cacheKind: "native-generated-stem",
+          assetId: `asset_${trackId}`,
+          trackId,
+          sourceClipIds: [clip.id, overlappingClip.id]
+        }
+      })),
+      renderCacheHitCount: trackIds.length,
+      renderCacheMissCount: 0,
+      proceduralFallbackEventCount: 0,
+      generatedRegionCount: trackIds.length,
+      runtimeAudioRegionCount: 0,
+      missingRuntimeAudioRegionCount: 0,
+      cachedAssetByteCount: 128 * trackIds.length
+    };
+
+    const playback = internals.nativePlaybackEvents(cache);
+
+    expect(cache.cachedClipIds.has(clip.id)).toBe(true);
+    expect(cache.cachedClipIds.has(overlappingClip.id)).toBe(true);
+    expect(playback.proceduralFallbackEventCount).toBe(0);
   });
 
   it("keeps procedural events for clips that are cached in memory but absent from the native payload window", () => {

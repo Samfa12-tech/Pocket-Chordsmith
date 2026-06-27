@@ -1638,7 +1638,11 @@ export class AudioEngine {
 
   private nativeCacheCoversEvent(cache: NativeRenderCache | null, event: RenderedEvent): boolean {
     if (!cache?.cachedClipIds.has(event.clipId)) return false;
-    const matchingItems = cache.renderCacheItems.filter((item) => item.sourceClipId === event.clipId);
+    const matchingItems = cache.renderCacheItems.filter((item) => {
+      if (item.sourceClipId === event.clipId) return true;
+      const sourceClipIds = Array.isArray(item.metadata?.sourceClipIds) ? item.metadata.sourceClipIds : [];
+      return sourceClipIds.includes(event.clipId);
+    });
     return matchingItems.some((item) => {
       if (String(item.metadata?.cacheKind || "") !== "native-generated-stem") return false;
       const trackId = String(item.metadata?.trackId || "");

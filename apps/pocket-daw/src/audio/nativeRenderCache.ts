@@ -91,6 +91,10 @@ interface AssetBuildItem {
   assetId: string;
   sourceHash: string;
   clip: Clip;
+  clips?: Clip[];
+  sourceClipIds?: string[];
+  startBar?: number;
+  barLength?: number;
   trackId: string;
   role: TrackRole;
 }
@@ -130,7 +134,8 @@ export async function buildNativeRenderCache(
   let lastGeneratedStemRenderError: string | null = null;
   const createdAt = new Date().toISOString();
 
-  for (const item of cacheableClips.flatMap((clip) => assetBuildItems(project, clip))) {
+  const buildItems = groupOverlappingAssetBuildItems(project, cacheableClips.flatMap((clip) => assetBuildItems(project, clip)));
+  for (const item of buildItems) {
     let asset: NativeAudioAsset | null | undefined = assets.get(item.key);
     if (asset) {
       renderCacheHitCount += 1;
@@ -152,13 +157,16 @@ export async function buildNativeRenderCache(
       assets.set(item.key, asset);
       renderCacheItems.push(renderCacheItemForAsset(asset, createdAt, item));
     }
-    const duration = barsToSeconds(item.clip.barLength, project.project.bpm, project.project.timeSig);
+    const itemStartBar = item.startBar ?? item.clip.startBar;
+    const itemBarLength = item.barLength ?? item.clip.barLength;
+    const duration = barsToSeconds(itemBarLength, project.project.bpm, project.project.timeSig);
     const regionDuration = generatedStemRenderDuration(duration);
+    const sourceClipIds = sourceClipIdsForBuildItem(item);
     regions.push({
-      id: `${item.clip.id}_${item.trackId}_${item.role}`,
+      id: `${sourceClipIds.join("_")}_${item.trackId}_${item.role}`,
       assetId: asset.id,
       trackId: item.trackId,
-      startTime: barsToSeconds(item.clip.startBar - 1, project.project.bpm, project.project.timeSig),
+      startTime: barsToSeconds(itemStartBar - 1, project.project.bpm, project.project.timeSig),
       sourceOffset: 0,
       duration: Math.min(regionDuration, asset.durationSeconds),
       gain: 1,
@@ -167,7 +175,7 @@ export async function buildNativeRenderCache(
       fadeOut: 0
     });
     generatedRegionCount += 1;
-    cachedClipIds.add(item.clip.id);
+    for (const clipId of sourceClipIds) cachedClipIds.add(clipId);
   }
 
   generatedRegionCount -= pruneOverlappingGeneratedStemRegionsForNativeParity(regions, cachedClipIds, renderCacheItems, assets);
@@ -463,8 +471,7 @@ export async function hydrateNativeRenderCacheAssets(
   const renderCacheItems = Array.from(acceptedRenderCacheItems.values());
   const cachedClipIds = new Set<string>();
   acceptedEntries.forEach((entry) => {
-    if (entry.clipId) cachedClipIds.add(entry.clipId);
-    else if (entry.item.sourceClipId) cachedClipIds.add(entry.item.sourceClipId);
+    for (const clipId of sourceClipIdsForRenderCacheItem(entry.item, entry.clipId)) cachedClipIds.add(clipId);
   });
 
   const cache: NativeRenderCache | null = assets.length || regions.length
@@ -525,8 +532,8 @@ export function filterNativeRenderCacheForProject(project: PocketDawProject, cac
 
   const cachedClipIds = new Set<string>();
   currentItems.forEach((item) => {
-    if (item.sourceClipId && regions.some((region) => region.assetId === String(item.metadata?.assetId || item.id))) {
-      cachedClipIds.add(item.sourceClipId);
+    if (regions.some((region) => region.assetId === String(item.metadata?.assetId || item.id))) {
+      for (const clipId of sourceClipIdsForRenderCacheItem(item)) cachedClipIds.add(clipId);
     }
   });
 
@@ -766,6 +773,64 @@ function assetBuildItems(project: PocketDawProject, clip: Clip): AssetBuildItem[
   return generatedSectionAssetBuildItems(project, clip);
 }
 
+function groupOverlappingAssetBuildItems(project: PocketDawProject, items: AssetBuildItem[]): AssetBuildItem[] {
+  const sorted = [...items].sort((left, right) => {
+    if (left.trackId !== right.trackId) return left.trackId.localeCompare(right.trackId);
+    return left.clip.startBar - right.clip.startBar;
+  });
+  const grouped: AssetBuildItem[] = [];
+  let index = 0;
+  while (index < sorted.length) {
+    const group = [sorted[index]];
+    let groupEndBar = sorted[index].clip.startBar + sorted[index].clip.barLength;
+    index += 1;
+    while (index < sorted.length
+      && sorted[index].trackId === group[0].trackId
+      && sorted[index].clip.startBar < groupEndBar) {
+      group.push(sorted[index]);
+      groupEndBar = Math.max(groupEndBar, sorted[index].clip.startBar + sorted[index].clip.barLength);
+      index += 1;
+    }
+    grouped.push(group.length > 1 ? overlappingAssetBuildItem(project, group) : group[0]);
+  }
+  return grouped;
+}
+
+function overlappingAssetBuildItem(project: PocketDawProject, items: AssetBuildItem[]): AssetBuildItem {
+  const first = items[0];
+  const clips = items.map((item) => item.clip).sort((left, right) => left.startBar - right.startBar || left.id.localeCompare(right.id));
+  const startBar = Math.min(...clips.map((clip) => clip.startBar));
+  const endBar = Math.max(...clips.map((clip) => clip.startBar + clip.barLength));
+  const sourceClipIds = clips.map((clip) => clip.id);
+  const sourceHash = nativeGeneratedStemGroupSourceHash(project, clips, first.trackId, startBar, endBar - startBar);
+  const key = `overlap_${first.trackId}_${sourceClipIds.join("_")}_${startBar}_${endBar}_${sourceHash}`;
+  return {
+    key,
+    assetId: nativeGeneratedStemAssetId(key),
+    sourceHash,
+    clip: first.clip,
+    clips,
+    sourceClipIds,
+    startBar,
+    barLength: endBar - startBar,
+    trackId: first.trackId,
+    role: first.role
+  };
+}
+
+function sourceClipIdsForBuildItem(item: AssetBuildItem): string[] {
+  return item.sourceClipIds?.length ? item.sourceClipIds : [item.clip.id];
+}
+
+function sourceClipIdsForRenderCacheItem(item: RenderCacheItem, fallbackClipId?: string): string[] {
+  const sourceClipIds = Array.isArray(item.metadata?.sourceClipIds)
+    ? item.metadata.sourceClipIds.filter((clipId): clipId is string => typeof clipId === "string" && !!clipId)
+    : [];
+  if (sourceClipIds.length) return sourceClipIds;
+  if (fallbackClipId) return [fallbackClipId];
+  return item.sourceClipId ? [item.sourceClipId] : [];
+}
+
 function generatedSectionAssetBuildItems(project: PocketDawProject, clip: Clip): AssetBuildItem[] {
   const stemMutes = clip.transforms.stemMutes || {};
   return STEM_ROLES.flatMap((role) => {
@@ -802,8 +867,12 @@ function midiAssetBuildItems(project: PocketDawProject, clip: Clip): AssetBuildI
 }
 
 async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Promise<{ asset: NativeAudioAsset | null; error: string | null }> {
-  const assetProject = projectForNativeGeneratedStemRender(project, item.clip, item.trackId);
-  const clipDurationSeconds = barsToSeconds(item.clip.barLength, project.project.bpm, project.project.timeSig);
+  const itemStartBar = item.startBar ?? item.clip.startBar;
+  const itemBarLength = item.barLength ?? item.clip.barLength;
+  const assetProject = item.clips?.length
+    ? projectForNativeGeneratedStemGroupRender(project, item.clips, item.trackId, itemStartBar, itemBarLength)
+    : projectForNativeGeneratedStemRender(project, item.clip, item.trackId);
+  const clipDurationSeconds = barsToSeconds(itemBarLength, project.project.bpm, project.project.timeSig);
   const renderDurationSeconds = generatedStemRenderDuration(clipDurationSeconds);
   const { rendered: nativeRender, error } = await renderNativeGeneratedStemWav(assetProject, renderDurationSeconds);
   if (!nativeRender?.bytes?.length) return { asset: null, error: error || "Native cache-stem renderer returned no audio." };
@@ -815,7 +884,7 @@ async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Pro
   return {
     asset: {
       id,
-      name: `${item.clip.sectionId || "section"} ${item.role} ${item.trackId}`,
+      name: `${sourceClipIdsForBuildItem(item).join("+")} ${item.role} ${item.trackId}`,
       relativePath: nativeRenderCacheRelativePath(id),
       mimeType: "audio/wav",
       sampleRate,
@@ -866,6 +935,31 @@ function nativeGeneratedStemSourceHash(project: PocketDawProject, clip: Clip, tr
   }));
 }
 
+function nativeGeneratedStemGroupSourceHash(project: PocketDawProject, clips: Clip[], trackId: string, startBar: number, barLength: number): string {
+  const assetProject = projectForNativeGeneratedStemGroupRender(project, clips, trackId, startBar, barLength);
+  const events = renderTimelineEvents(assetProject).filter((event) => event.trackId === trackId);
+  const isDrumStem = isDrumRoleTrack(assetProject, trackId);
+  return hashString(JSON.stringify({
+    nativeRenderer: nativeAudioRendererContract(assetProject.project.sampleRate),
+    project: {
+      bpm: assetProject.project.bpm,
+      key: assetProject.project.key,
+      scale: assetProject.project.scale,
+      timeSig: assetProject.project.timeSig,
+      swing: assetProject.project.swing,
+      resolution: assetProject.project.resolution,
+      sampleRate: assetProject.project.sampleRate,
+      ppq: assetProject.project.ppq
+    },
+    trackId,
+    sourceClipIds: clips.map((clip) => clip.id),
+    events,
+    drumLaneMix: isDrumStem ? nativeCacheStemDrumLaneMixState(assetProject) : [],
+    fx: nativeGeneratedStemBakedFxState(assetProject, trackId),
+    renderTailSeconds: NATIVE_GENERATED_STEM_TAIL_SECONDS
+  }));
+}
+
 function generatedStemRenderDuration(durationSeconds: number): number {
   return Math.max(0, durationSeconds) + NATIVE_GENERATED_STEM_TAIL_SECONDS;
 }
@@ -888,6 +982,10 @@ async function renderNativeGeneratedStemWav(assetProject: PocketDawProject, dura
 }
 
 export function projectForNativeGeneratedStemRender(project: PocketDawProject, clip: Clip, trackId: string): PocketDawProject {
+  return projectForNativeGeneratedStemGroupRender(project, [clip], trackId, clip.startBar, clip.barLength);
+}
+
+function projectForNativeGeneratedStemGroupRender(project: PocketDawProject, clips: Clip[], trackId: string, startBar: number, barLength: number): PocketDawProject {
   const assetProject = cloneProject(project);
   const metronome = assetProject.project.metronome;
   assetProject.project = {
@@ -900,14 +998,14 @@ export function projectForNativeGeneratedStemRender(project: PocketDawProject, c
   };
   assetProject.timeline = {
     ...assetProject.timeline,
-    bars: Math.max(1, Math.ceil(clip.barLength)),
-    loop: { enabled: false, startBar: 1, endBar: Math.max(2, Math.ceil(clip.barLength) + 1) },
+    bars: Math.max(1, Math.ceil(barLength)),
+    loop: { enabled: false, startBar: 1, endBar: Math.max(2, Math.ceil(barLength) + 1) },
     markers: [],
-    clips: [{
+    clips: clips.map((clip) => ({
       ...clip,
       trackId,
-      startBar: 1
-    }]
+      startBar: Math.max(1, clip.startBar - startBar + 1)
+    }))
   };
   assetProject.tracks = assetProject.tracks.map((track) => {
     if (track.role === "master") return { ...track, volume: 1, pan: 0, mute: false, solo: false };
@@ -947,9 +1045,10 @@ function isDrumRoleTrack(project: PocketDawProject, trackId: string): boolean {
 }
 
 function renderCacheItemForAsset(asset: NativeAudioAsset, createdAt: string, item: AssetBuildItem): RenderCacheItem {
+  const sourceClipIds = sourceClipIdsForBuildItem(item);
   return {
     id: asset.id,
-    sourceClipId: item.clip.id,
+    sourceClipId: sourceClipIds[0],
     createdAt,
     invalidated: false,
     metadata: {
@@ -962,6 +1061,8 @@ function renderCacheItemForAsset(asset: NativeAudioAsset, createdAt: string, ite
       renderSampleRate: asset.sampleRate,
       assetId: asset.id,
       assetRelativePath: asset.relativePath || nativeRenderCacheRelativePath(asset.id),
+      sourceClipIds,
+      overlapGroup: sourceClipIds.length > 1,
       mimeType: asset.mimeType || "audio/wav",
       role: item.role,
       trackId: item.trackId,
