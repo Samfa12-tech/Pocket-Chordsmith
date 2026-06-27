@@ -412,7 +412,7 @@ describe("audio engine diagnostics", () => {
     expect(playback.proceduralFallbackEventCount).toBe(0);
   });
 
-  it("suppresses procedural events covered by the prepared full cache even when absent from the native payload window", () => {
+  it("does not suppress procedural events that are absent from the native payload window", () => {
     const project = createDemoProject();
     const engine = new AudioEngine(project);
     const clipA = project.timeline.clips.find((clip) => clip.type === "generated-section")!;
@@ -460,8 +460,51 @@ describe("audio engine diagnostics", () => {
     const coverageCache = internals.nativePlaybackEventCoverageCache(fullCache, payloadCache);
     const playback = internals.nativePlaybackEvents(coverageCache);
 
-    expect(playback.events.map((event) => event.id)).toEqual([]);
-    expect(playback.proceduralFallbackEventCount).toBe(0);
+    expect(playback.events.map((event) => event.id)).toEqual([eventB.id]);
+    expect(playback.proceduralFallbackEventCount).toBe(1);
+  });
+
+  it("uses procedural fallback when a long-song cache window has no native payload regions", () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    const earlyEvent = renderedBassEvent("clip_001", "bass", 0.25);
+    const laterEvent = renderedBassEvent("clip_001_later", "bass", 64.25);
+    const fullCache: NativeRenderCache = {
+      signature: nativeRenderCacheSignature(project),
+      coverage: "full",
+      assets: [nativeAsset("asset_a"), nativeAsset("asset_b")],
+      regions: [
+        { id: "region_a", assetId: "asset_a", trackId: "bass", startTime: 0, sourceOffset: 0, duration: 2, gain: 1, pan: 0, fadeIn: 0, fadeOut: 0 },
+        { id: "region_b", assetId: "asset_b", trackId: "bass", startTime: 64, sourceOffset: 0, duration: 2, gain: 1, pan: 0, fadeIn: 0, fadeOut: 0 }
+      ],
+      cachedClipIds: new Set([earlyEvent.clipId, laterEvent.clipId]),
+      renderCacheItems: [
+        generatedStemCacheItem(earlyEvent.clipId, "bass", "bass", "asset_a"),
+        generatedStemCacheItem(laterEvent.clipId, "bass", "bass", "asset_b")
+      ],
+      renderCacheHitCount: 2,
+      renderCacheMissCount: 0,
+      proceduralFallbackEventCount: 0,
+      generatedRegionCount: 2,
+      runtimeAudioRegionCount: 0,
+      missingRuntimeAudioRegionCount: 0,
+      cachedAssetByteCount: 2
+    };
+    const internals = engine as unknown as {
+      events: RenderedEvent[];
+      nativePlaybackCacheForPayload(cache: NativeRenderCache, seconds: number): NativeRenderCache | null;
+      nativePlaybackEventCoverageCache(preparedCache: NativeRenderCache | null, payloadCache: NativeRenderCache | null): NativeRenderCache | null;
+      nativePlaybackEvents(cache: NativeRenderCache | null): { events: RenderedEvent[]; proceduralFallbackEventCount: number };
+    };
+    internals.events = [earlyEvent, laterEvent];
+
+    const payloadCache = internals.nativePlaybackCacheForPayload(fullCache, 32);
+    const coverageCache = internals.nativePlaybackEventCoverageCache(fullCache, payloadCache);
+    const playback = internals.nativePlaybackEvents(coverageCache);
+
+    expect(payloadCache).toBeNull();
+    expect(playback.events.map((event) => event.id)).toEqual([earlyEvent.id, laterEvent.id]);
+    expect(playback.proceduralFallbackEventCount).toBe(2);
   });
 
   it("includes loop-start cached regions when a native cache payload window crosses the loop end", () => {
@@ -860,9 +903,12 @@ describe("audio engine diagnostics", () => {
       expect(starts[0].assets?.length || 0).toBeLessThan(cache.assets.length);
       expect(starts[0].regions?.length || 0).toBeLessThan(cache.regions.length);
       expect(starts[0].events.length).toBeGreaterThan(0);
-      expect(starts[0].events.every(isSilentCachedSidechainTrigger)).toBe(true);
-      expect(engine.getDiagnostics().nativeRenderCache.assetCount).toBe(cache.assets.length);
-      expect(engine.getDiagnostics().nativeRenderCache.proceduralFallbackEventCount).toBe(0);
+      expect(starts[0].events.some((event) => !isSilentCachedSidechainTrigger(event))).toBe(true);
+      const diagnostics = engine.getDiagnostics().nativeRenderCache;
+      expect(diagnostics.assetCount).toBe(cache.assets.length);
+      expect(diagnostics.proceduralFallbackEventCount).toBeGreaterThan(0);
+      expect(diagnostics.payloadCoverage).toBe("partial");
+      expect(diagnostics.payloadWindowEndSeconds).toBeGreaterThan(diagnostics.payloadWindowStartSeconds);
     } finally {
       (globalThis as any).window = previousWindow;
     }
@@ -932,6 +978,73 @@ describe("audio engine diagnostics", () => {
       internals.nativeLastStatusRefreshAtMs = performance.now();
       internals.tickNativePlayback();
       expect(engine.getDiagnostics().lastAudioDropCause).toBe("cache-window");
+    } finally {
+      (globalThis as any).window = previousWindow;
+    }
+  });
+
+  it("keeps fallback events available and reports diagnostics when cache window advance fails", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      setInterval: () => 1,
+      clearInterval: () => undefined
+    };
+    const starts: NativeAudioStartPayload[] = [];
+    const native = {
+      async start(payload: NativeAudioStartPayload) {
+        starts.push(payload);
+        if (starts.length > 1) {
+          return { started: false, status: null, error: "Native restart failed during cache window advance." };
+        }
+        return {
+          started: true,
+          status: nativeStatus({
+            playing: true,
+            positionSeconds: payload.startSeconds,
+            eventCount: payload.events.length,
+            assetCount: payload.assets?.length || 0,
+            assetRegionCount: payload.regions?.length || 0,
+            proceduralEventCount: payload.events.length
+          }),
+          error: null
+        };
+      },
+      async pause() { return nativeStatus({ active: true, playing: false }); },
+      async resume() { return nativeStatus({ active: true, playing: true }); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return nativeStatus({ active: true, positionSeconds: seconds }); },
+      async updateTrack() { return nativeStatus({ active: true }); },
+      async status() { return nativeStatus({ active: true, playing: true, positionSeconds: 0 }); }
+    };
+
+    try {
+      const project = createDemoProject();
+      const cache = fakeTimedNativeRenderCache(project);
+      const engine = new AudioEngine(project, native);
+      const internals = engine as unknown as {
+        nativeRenderCache: NativeRenderCache;
+        nativePlaybackCachePayloadWindowEndSeconds: number;
+        nativeStartedAtMs: number;
+        nativeLastStatusRefreshAtMs: number;
+        tickNativePlayback(): void;
+        nativeRestartFlush: Promise<void> | null;
+      };
+      internals.nativeRenderCache = cache;
+
+      await engine.play();
+      expect(starts[0].events.some((event) => !isSilentCachedSidechainTrigger(event))).toBe(true);
+      const firstWindowEnd = internals.nativePlaybackCachePayloadWindowEndSeconds;
+      internals.nativeStartedAtMs = performance.now() - Math.max(0, firstWindowEnd - 0.3) * 1000;
+      internals.nativeLastStatusRefreshAtMs = performance.now();
+      internals.tickNativePlayback();
+      await internals.nativeRestartFlush;
+
+      const diagnostics = engine.getDiagnostics().nativeRenderCache;
+      expect(starts).toHaveLength(2);
+      expect(diagnostics.windowAdvanceCount).toBe(1);
+      expect(diagnostics.windowAdvanceFailureCount).toBe(1);
+      expect(diagnostics.lastWindowAdvanceError).toBe("Native restart failed during cache window advance.");
+      expect(diagnostics.proceduralFallbackEventCount).toBeGreaterThan(0);
     } finally {
       (globalThis as any).window = previousWindow;
     }
@@ -1145,7 +1258,7 @@ describe("audio engine diagnostics", () => {
     }
   });
 
-  it("uses full render-cache coverage even when native payload regions are windowed", async () => {
+  it("uses payload render-cache coverage when native payload regions are windowed", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       setInterval: () => 1,
@@ -1188,8 +1301,11 @@ describe("audio engine diagnostics", () => {
       expect(starts).toHaveLength(1);
       expect(starts[0].regions?.length || 0).toBeGreaterThan(0);
       expect(starts[0].regions?.length || 0).toBeLessThan(cache.regions.length);
-      expect(starts[0].events.every((event) => event.velocity === 0 && event.id.endsWith("_cached_sidechain_trigger"))).toBe(true);
-      expect(engine.getDiagnostics().nativeRenderCache.proceduralFallbackEventCount).toBe(0);
+      expect(starts[0].events.some((event) => !(event.velocity === 0 && event.id.endsWith("_cached_sidechain_trigger")))).toBe(true);
+      const diagnostics = engine.getDiagnostics().nativeRenderCache;
+      expect(diagnostics.proceduralFallbackEventCount).toBeGreaterThan(0);
+      expect(diagnostics.preparedCoverage).toBe("full");
+      expect(diagnostics.payloadCoverage).toBe("partial");
     } finally {
       (globalThis as any).window = previousWindow;
     }

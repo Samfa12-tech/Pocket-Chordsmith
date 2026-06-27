@@ -152,7 +152,13 @@ export class AudioEngine {
   private nativeStartedAtMs = 0;
   private nativePlaybackStartedWithRenderCache = false;
   private nativePlaybackStartedWithProceduralFallbackEventCount = 0;
+  private nativePlaybackCachePayloadWindowStartSeconds = 0;
   private nativePlaybackCachePayloadWindowEndSeconds = 0;
+  private nativePlaybackPreparedCoverage: "full" | "partial" | null = null;
+  private nativePlaybackPayloadCoverage: "full" | "partial" | null = null;
+  private nativePlaybackCacheWindowAdvanceCount = 0;
+  private nativePlaybackCacheWindowAdvanceFailureCount = 0;
+  private nativePlaybackCacheWindowAdvanceLastError: string | null = null;
   private nativeSyncedTrackControls = new Map<string, string>();
   private nativeStatus: NativeAudioStatus | null = null;
   private nativeLastError: string | null = null;
@@ -562,7 +568,9 @@ export class AudioEngine {
     const activeNativeRenderCache = this.activeNativeRenderCache();
     const nativePlaybackActive = this.playbackBackend === "native-cpal" || this.playbackBackend === "native-cpal-paused";
     const proceduralFallbackEventCount = activeNativeRenderCache && nativePlaybackActive
-      ? this.nativePlaybackEvents(activeNativeRenderCache).proceduralFallbackEventCount
+      ? this.nativePlaybackPayloadCoverage === "partial"
+        ? this.nativePlaybackStartedWithProceduralFallbackEventCount
+        : this.nativePlaybackEvents(activeNativeRenderCache).proceduralFallbackEventCount
       : activeNativeRenderCache?.proceduralFallbackEventCount ?? this.events.length;
     return {
       playbackBackend: this.playbackBackend,
@@ -593,6 +601,13 @@ export class AudioEngine {
         lastGeneratedStemRenderError: activeNativeRenderCache?.lastGeneratedStemRenderError || null,
         preloadPending: this.nativeRenderCachePreloadPromise !== null,
         preloadedAssetCount: this.nativeRenderCachePreloadedAssetCount,
+        payloadWindowStartSeconds: this.nativePlaybackCachePayloadWindowStartSeconds,
+        payloadWindowEndSeconds: this.nativePlaybackCachePayloadWindowEndSeconds,
+        preparedCoverage: this.nativePlaybackPreparedCoverage,
+        payloadCoverage: this.nativePlaybackPayloadCoverage,
+        windowAdvanceCount: this.nativePlaybackCacheWindowAdvanceCount,
+        windowAdvanceFailureCount: this.nativePlaybackCacheWindowAdvanceFailureCount,
+        lastWindowAdvanceError: this.nativePlaybackCacheWindowAdvanceLastError,
         preloadWindowEndSeconds: this.nativeRenderCachePreloadWindowEndSeconds,
         preloadError: this.nativeRenderCachePreloadError,
         buildPending: this.nativeRenderCacheBuildPromise !== null,
@@ -711,6 +726,7 @@ export class AudioEngine {
     if (useRenderCache && !cache) this.deferNativeRenderCacheRefresh(options.reason || "play-fallback-cache-build", { scheduleWhenIdle: false });
     const preparedPlaybackCache = useRenderCache ? await this.nativePlaybackCacheWithRuntimeAudio(cache) : cache;
     const playbackCache = this.nativePlaybackCacheForPayload(preparedPlaybackCache, this.offsetSeconds);
+    this.recordNativePlaybackPayloadDiagnostics(preparedPlaybackCache, playbackCache);
     const playbackEvents = this.nativePlaybackEvents(this.nativePlaybackEventCoverageCache(preparedPlaybackCache, playbackCache));
     const events = playbackEvents.events;
     if (playbackCache) playbackCache.proceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
@@ -770,6 +786,7 @@ export class AudioEngine {
     const preparedPlaybackCache = useRenderCache ? await this.nativePlaybackCacheWithRuntimeAudio(cache, request.options.allowRuntimeAudioCacheBuild !== false) : cache;
     if (request.token !== this.nativeRestartToken || this.playbackBackend !== "native-cpal" || !this.playing) return;
     const playbackCache = this.nativePlaybackCacheForPayload(preparedPlaybackCache, this.offsetSeconds);
+    this.recordNativePlaybackPayloadDiagnostics(preparedPlaybackCache, playbackCache);
     const playbackEvents = this.nativePlaybackEvents(this.nativePlaybackEventCoverageCache(preparedPlaybackCache, playbackCache));
     const events = playbackEvents.events;
     if (playbackCache) playbackCache.proceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
@@ -782,10 +799,17 @@ export class AudioEngine {
       this.nativePlaybackStartedWithProceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
       this.nativeStatus = result.status;
       this.nativeLastError = null;
+      if (request.options.reason === "play-cache-window-advance") this.nativePlaybackCacheWindowAdvanceLastError = null;
     } else {
-      this.nativePlaybackStartedWithRenderCache = false;
-      this.nativePlaybackStartedWithProceduralFallbackEventCount = 0;
+      if (request.options.reason !== "play-cache-window-advance") {
+        this.nativePlaybackStartedWithRenderCache = false;
+        this.nativePlaybackStartedWithProceduralFallbackEventCount = 0;
+      }
       this.nativeLastError = result.error;
+      if (request.options.reason === "play-cache-window-advance") {
+        this.nativePlaybackCacheWindowAdvanceFailureCount += 1;
+        this.nativePlaybackCacheWindowAdvanceLastError = result.error || "Native cache window advance failed.";
+      }
     }
   }
 
@@ -868,9 +892,11 @@ export class AudioEngine {
   }
 
   private nativePlaybackCacheForPayload(cache: NativeRenderCache | null, seconds: number): NativeRenderCache | null {
+    this.nativePlaybackCachePayloadWindowStartSeconds = 0;
     this.nativePlaybackCachePayloadWindowEndSeconds = 0;
     if (!cache?.regions.length || !cache.assets.length) return cache;
     const window = this.nativeRenderCacheTimeWindow(seconds, nativePlaybackCachePayloadWindowBars);
+    this.nativePlaybackCachePayloadWindowStartSeconds = window.startSeconds;
     const loop = this.nativeLoopBoundsSeconds();
     let windowed: NativeRenderCache | null;
     if (loop && window.startSeconds < loop.endSeconds && window.endSeconds > loop.endSeconds) {
@@ -909,7 +935,9 @@ export class AudioEngine {
   }
 
   private nativePlaybackEventCoverageCache(preparedCache: NativeRenderCache | null, payloadCache: NativeRenderCache | null): NativeRenderCache | null {
-    return preparedCache || payloadCache;
+    if (payloadCache) return payloadCache;
+    if (preparedCache?.regions.length && preparedCache.assets.length) return null;
+    return preparedCache;
   }
 
   private nativePlaybackEvents(cache: NativeRenderCache | null): { events: RenderedEvent[]; proceduralFallbackEventCount: number } {
@@ -1287,11 +1315,17 @@ export class AudioEngine {
     if (current < this.nativePlaybackCachePayloadWindowEndSeconds - nativePlaybackCacheWindowAdvanceLeadSeconds) return;
     const cache = this.playableNativeRenderCache();
     if (!cache?.regions.length) return;
+    this.nativePlaybackCacheWindowAdvanceCount += 1;
     void this.restartNativePlayback(current, {
       reason: "play-cache-window-advance",
       useRenderCache: true,
       allowRuntimeAudioCacheBuild: false
     });
+  }
+
+  private recordNativePlaybackPayloadDiagnostics(preparedCache: NativeRenderCache | null, payloadCache: NativeRenderCache | null): void {
+    this.nativePlaybackPreparedCoverage = nativeCacheCoverage(preparedCache);
+    this.nativePlaybackPayloadCoverage = nativeCacheCoverage(payloadCache);
   }
 
   private maybePreloadUpcomingNativePlaybackCachePayloadWindow(current: number) {
@@ -1857,6 +1891,11 @@ function countNativeRuntimeAudioRegions(renderCacheItems: NativeRenderCache["ren
   return new Set(regions
     .filter((region) => runtimeAssetIds.has(region.assetId))
     .map((region) => region.id)).size;
+}
+
+function nativeCacheCoverage(cache: NativeRenderCache | null): "full" | "partial" | null {
+  if (!cache) return null;
+  return cache.coverage === "partial" ? "partial" : "full";
 }
 
 function clampNumber(value: number, min: number, max: number): number {
