@@ -100,6 +100,8 @@ npm run release:update:publish
 
 This runs the full gate, packages/stages the updater files, pushes the itch installer channel, creates the GitHub release, then verifies the live updater manifest, release asset hash and butler channel status. It refuses to publish if `PUBLISH=1` is not set, if `--fast` is used, or if the GitHub release tag already exists.
 
+Current itch policy is bootstrapper-first: GitHub Releases host the signed updater installers and manifests, while the itch `windows-installer` channel hosts `releases/itch-bootstrapper/upload/`. That upload contains the bootstrapper EXE, README, checksums, and an `index.html` fallback so itch browser-mode requests do not fail with `asset not found: index.html`. Use the full installer itch package only as a manual fallback.
+
 ## Build Signed Updater Artifacts
 
 Run the normal Tauri release build with signing environment variables present:

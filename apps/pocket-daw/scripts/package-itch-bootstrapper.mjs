@@ -17,6 +17,7 @@ const WORK_DIR = join(RELEASE_DIR, "work");
 const UPLOAD_DIR = join(RELEASE_DIR, "upload");
 const NSIS_PATH = process.env.MAKENSIS_PATH || join(process.env.LOCALAPPDATA || "", "tauri", "NSIS", "makensis.exe");
 const BOOTSTRAPPER_EXE = `Pocket_DAW_Itch_Bootstrapper_v${VERSION}.exe`;
+const FALLBACK_INDEX = "index.html";
 
 export function bootstrapperPowerShell({
   manifestUrl = BOOTSTRAPPER_MANIFEST_URL,
@@ -103,21 +104,94 @@ Normal Pocket DAW app updates are delivered by the installed app updater. The it
 Manual fallback: ${GITHUB_LATEST_RELEASE_URL}
 `);
 
-  const checksumEntries = [exePath, readmePath].filter(existsSync);
+  const indexPath = join(UPLOAD_DIR, FALLBACK_INDEX);
+  writeFileSync(indexPath, fallbackIndexHtml(BOOTSTRAPPER_EXE));
+
+  const checksumEntries = [exePath, readmePath, indexPath].filter(existsSync);
   const checksumPath = join(UPLOAD_DIR, "CHECKSUMS_SHA256.txt");
   writeFileSync(checksumPath, checksumEntries.map((path) => `${sha256File(path)}  ${basename(path)}`).join("\n") + "\n");
 
   assertBootstrapperUploadContents(UPLOAD_DIR);
-  return { uploadDir: UPLOAD_DIR, exePath, readmePath, checksumPath, nsisPath, psPath };
+  return { uploadDir: UPLOAD_DIR, exePath, readmePath, indexPath, checksumPath, nsisPath, psPath };
 }
 
 export function assertBootstrapperUploadContents(dir) {
-  const allowed = new Set([BOOTSTRAPPER_EXE.toLowerCase(), "readme_first.txt", "checksums_sha256.txt"]);
+  const allowed = new Set([BOOTSTRAPPER_EXE.toLowerCase(), "readme_first.txt", FALLBACK_INDEX, "checksums_sha256.txt"]);
   const entries = walkFiles(dir).map((path) => basename(path).toLowerCase());
   if (!entries.some((name) => name.endsWith(".exe"))) throw new Error("Bootstrapper upload is missing the bootstrapper EXE.");
   for (const name of entries) {
     if (!allowed.has(name)) throw new Error(`Unexpected bootstrapper upload file: ${name}`);
   }
+}
+
+function fallbackIndexHtml(exeName) {
+  const escapedExe = escapeHtml(exeName);
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pocket DAW Windows Installer</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #101418;
+      color: #f2f6f8;
+    }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    main {
+      width: min(560px, 100%);
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 7vw, 4rem);
+      line-height: 1;
+    }
+    p {
+      color: #c4ced5;
+      font-size: 1rem;
+      line-height: 1.55;
+    }
+    a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      margin-top: 10px;
+      padding: 0 18px;
+      border: 1px solid #8fd3ff;
+      color: #101418;
+      background: #8fd3ff;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Pocket DAW</h1>
+    <p>Pocket DAW is a Windows installed app. This itch page hosts a small downloader-installer that fetches the latest signed build from GitHub Releases and verifies its checksum before launching setup.</p>
+    <p><a href="./${escapedExe}" download>Download Windows installer</a></p>
+  </main>
+</body>
+</html>
+`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function nsisScript(psPath) {

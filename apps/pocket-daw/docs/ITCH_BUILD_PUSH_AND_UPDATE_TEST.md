@@ -27,10 +27,13 @@ Normal itch upload:
 - Bootstrapper upload folder:
   - `releases/itch-bootstrapper/upload/`
   - `Pocket_DAW_Itch_Bootstrapper_v<version>.exe`
+  - `index.html`
   - `README_FIRST.txt`
   - `CHECKSUMS_SHA256.txt`
 
 The bootstrapper fetches `pocket-daw-bootstrapper-latest.json`, downloads the latest setup EXE from GitHub Releases, verifies SHA-256, and launches the verified installer.
+
+`index.html` is included as a defensive itch launch fallback. Pocket DAW is still installed-app only, but if the itch page is accidentally left in browser/HTML launch mode the page should show a download link instead of failing with `asset not found: index.html`.
 
 Manual fallback only:
 
