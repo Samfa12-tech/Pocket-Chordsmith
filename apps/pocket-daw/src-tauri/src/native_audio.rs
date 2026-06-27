@@ -2721,6 +2721,99 @@ fn lowpass_tone_factor(freq: f32, cutoff: f32) -> f32 {
     (1.0 / (1.0 + ratio.powi(4)).sqrt()).clamp(0.18, 1.0)
 }
 
+fn lowpass_filter_gain(freq: f32, cutoff: f32) -> f32 {
+    if !freq.is_finite() || !cutoff.is_finite() || cutoff <= 0.0 {
+        return 1.0;
+    }
+    let ratio = (freq.max(0.0) / cutoff.max(1.0)).max(0.0);
+    (1.0 / (1.0 + ratio.powi(4)).sqrt()).clamp(0.0, 1.0)
+}
+
+fn native_filtered_wave_sample(wave: &str, freq: f32, cutoff: f32, local: f64) -> f32 {
+    if wave == "sine" {
+        return native_wave_sample(wave, freq, local) * lowpass_tone_factor(freq, cutoff);
+    }
+    native_filtered_harmonic_wave_sample(wave, cutoff, freq as f64 * local, freq)
+}
+
+fn native_filtered_wave_sample_ramped(
+    wave: &str,
+    start_freq: f32,
+    target_freq: f32,
+    cutoff: f32,
+    ramp_end: f64,
+    local: f64,
+) -> f32 {
+    if wave == "sine" {
+        let current_freq = ramped_freq(start_freq, target_freq, ramp_end, local);
+        return native_wave_sample_ramped(wave, start_freq, target_freq, ramp_end, local)
+            * lowpass_tone_factor(current_freq, cutoff);
+    }
+    let cycles = ramped_cycles(start_freq as f64, target_freq as f64, ramp_end, local);
+    let current_freq = ramped_freq(start_freq, target_freq, ramp_end, local);
+    native_filtered_harmonic_wave_sample(wave, cutoff, cycles, current_freq)
+}
+
+fn ramped_freq(start_freq: f32, target_freq: f32, ramp_end: f64, local: f64) -> f32 {
+    if local <= 0.0 || ramp_end <= 0.0001 {
+        return start_freq;
+    }
+    if local >= ramp_end {
+        return target_freq;
+    }
+    let progress = (local / ramp_end).clamp(0.0, 1.0) as f32;
+    start_freq + (target_freq - start_freq) * progress
+}
+
+fn native_filtered_harmonic_wave_sample(
+    wave: &str,
+    cutoff: f32,
+    cycles: f64,
+    current_freq: f32,
+) -> f32 {
+    let max_harmonic = 64;
+    let mut sum = 0.0_f32;
+    for harmonic in 1..=max_harmonic {
+        let Some(coefficient) = harmonic_wave_coefficient(wave, harmonic) else {
+            continue;
+        };
+        let harmonic_freq = current_freq * harmonic as f32;
+        let gain = lowpass_filter_gain(harmonic_freq, cutoff);
+        if gain < 0.0005 {
+            continue;
+        }
+        let phase = (std::f64::consts::TAU * cycles * harmonic as f64).sin() as f32;
+        sum += coefficient * gain * phase;
+    }
+    sum.clamp(-1.0, 1.0)
+}
+
+fn harmonic_wave_coefficient(wave: &str, harmonic: usize) -> Option<f32> {
+    match wave {
+        "sawtooth" => Some(-2.0 / (std::f32::consts::PI * harmonic as f32)),
+        "square" => {
+            if harmonic % 2 == 0 {
+                None
+            } else {
+                Some(4.0 / (std::f32::consts::PI * harmonic as f32))
+            }
+        }
+        "triangle" => {
+            if harmonic % 2 == 0 {
+                None
+            } else {
+                let sign = if ((harmonic - 1) / 2) % 2 == 0 {
+                    1.0
+                } else {
+                    -1.0
+                };
+                Some(sign * 8.0 / (std::f32::consts::PI.powi(2) * (harmonic * harmonic) as f32))
+            }
+        }
+        _ => Some(-2.0 / (std::f32::consts::PI * harmonic as f32)),
+    }
+}
+
 fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
     let local = t - event.time;
     if local < 0.0 {
@@ -2872,13 +2965,13 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
         "bass" => {
             let midi = event.midi.unwrap_or(36.0);
             let dur = event.duration.max(0.08);
-            if local > dur + 0.18 {
-                return 0.0;
-            }
             let cfg = native_bass_tone_config(event.bass_tone.as_deref());
             let main_dur = if accent { dur * 1.35 } else { dur };
-            let main_env = note_envelope(local, main_dur, 0.01, 0.06, 0.7, 0.2);
             let sub_dur = dur * 0.82;
+            if local > main_dur.max(sub_dur) + 0.25 {
+                return 0.0;
+            }
+            let main_env = note_envelope(local, main_dur, 0.01, 0.06, 0.7, 0.2);
             let sub_env = note_envelope(local, sub_dur, 0.01, 0.06, 0.7, 0.2);
             let freq = midi_to_freq(midi) as f32;
             let slide = event
@@ -2888,28 +2981,37 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
                     let ramp_end = (offset.max(0.02) + 0.09).min((dur + 0.19).max(0.0001));
                     (midi_to_freq(target_midi) as f32, ramp_end)
                 });
-            let main_sample = if let Some((target_freq, ramp_end)) = slide {
-                native_wave_sample_ramped(cfg.main_wave, freq, target_freq, ramp_end, local)
+            let main_cutoff = if accent {
+                cfg.cutoff * 1.18
             } else {
-                native_wave_sample(cfg.main_wave, freq, local)
+                cfg.cutoff
             };
-            let sub_sample = if let Some((target_freq, ramp_end)) = slide {
-                native_wave_sample_ramped(
-                    cfg.sub_wave,
-                    freq * 0.5,
-                    target_freq * 0.5,
+            let main_sample = if let Some((target_freq, ramp_end)) = slide {
+                native_filtered_wave_sample_ramped(
+                    cfg.main_wave,
+                    freq,
+                    target_freq,
+                    main_cutoff,
                     ramp_end,
                     local,
                 )
             } else {
-                native_wave_sample(cfg.sub_wave, freq * 0.5, local)
+                native_filtered_wave_sample(cfg.main_wave, freq, main_cutoff, local)
             };
-            let main_layer =
-                main_sample * main_env * cfg.main_peak * lowpass_tone_factor(freq, cfg.cutoff);
-            let sub_layer = sub_sample
-                * sub_env
-                * cfg.sub_peak
-                * lowpass_tone_factor(freq * 0.5, cfg.sub_cutoff);
+            let sub_sample = if let Some((target_freq, ramp_end)) = slide {
+                native_filtered_wave_sample_ramped(
+                    cfg.sub_wave,
+                    freq * 0.5,
+                    target_freq * 0.5,
+                    cfg.sub_cutoff,
+                    ramp_end,
+                    local,
+                )
+            } else {
+                native_filtered_wave_sample(cfg.sub_wave, freq * 0.5, cfg.sub_cutoff, local)
+            };
+            let main_layer = main_sample * main_env * cfg.main_peak;
+            let sub_layer = sub_sample * sub_env * cfg.sub_peak;
             (main_layer + sub_layer) * velocity
         }
         "melody" | "midi" => {
@@ -3999,6 +4101,50 @@ mod tests {
             * 0.22;
 
         assert!(sample.abs() > old_quiet_balance.abs() * 1.2);
+    }
+
+    #[test]
+    fn generated_classic_bass_filters_upper_harmonics_like_chordsmith() {
+        let mut event = test_generated_event("classic_bass_filter_shape", "bass", 0.0, 0.34, 0.34);
+        event.bass_tone = Some("classic".to_string());
+        event.midi = Some(40.0);
+        event.duration = 0.34;
+        let sample_rate = 44_100.0;
+        let start = 0.03;
+        let sample_count = 4096;
+        let mut samples = Vec::with_capacity(sample_count);
+        for index in 0..sample_count {
+            samples.push(render_event_sample(
+                &event,
+                start + index as f64 / sample_rate,
+            ));
+        }
+
+        let fundamental = midi_to_freq(40.0) as f32;
+        let low = sine_bin_magnitude(&samples, sample_rate as f32, fundamental * 2.0);
+        let high = sine_bin_magnitude(&samples, sample_rate as f32, fundamental * 18.0);
+
+        assert!(
+            high < low * 0.04,
+            "classic Chordsmith bass should be low-pass filtered, high/low harmonic ratio was {}",
+            high / low.max(0.000001)
+        );
+    }
+
+    #[test]
+    fn generated_accented_bass_keeps_chordsmith_release_tail() {
+        let mut event = test_generated_event("accented_bass_tail", "bass", 0.0, 0.34, 0.42);
+        event.bass_tone = Some("classic".to_string());
+        event.midi = Some(40.0);
+        event.duration = 0.34;
+        event.accent = Some(true);
+
+        let tail_energy = render_event_sample_energy(&event, &[0.535, 0.552, 0.581, 0.613]);
+
+        assert!(
+            tail_energy > 0.0005,
+            "accented Chordsmith bass should keep its release tail after the base duration: {tail_energy}"
+        );
     }
 
     #[test]
@@ -5227,6 +5373,17 @@ mod tests {
             .iter()
             .map(|time| render_event_sample(event, *time).abs())
             .sum()
+    }
+
+    fn sine_bin_magnitude(samples: &[f32], sample_rate: f32, freq: f32) -> f32 {
+        let mut real = 0.0_f32;
+        let mut imag = 0.0_f32;
+        for (index, sample) in samples.iter().enumerate() {
+            let phase = std::f32::consts::TAU * freq * index as f32 / sample_rate.max(1.0);
+            real += *sample * phase.cos();
+            imag -= *sample * phase.sin();
+        }
+        ((real * real + imag * imag).sqrt() * 2.0) / samples.len().max(1) as f32
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -23,7 +23,7 @@ export type KeyboardCommand =
   | "export-wav"
   | "add-track";
 
-export function commandFromKeyboardEvent(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey" | "target">): KeyboardCommand | null {
+export function commandFromKeyboardEvent(event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey" | "target">): KeyboardCommand | null {
   if (isEditableTarget(event.target)) return null;
   const ctrl = event.ctrlKey || event.metaKey;
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
@@ -35,7 +35,7 @@ export function commandFromKeyboardEvent(event: Pick<KeyboardEvent, "key" | "ctr
   if (ctrl && !event.altKey && !event.shiftKey && key === "c") return "copy-clip";
   if (ctrl && !event.altKey && !event.shiftKey && key === "v") return "paste-clip";
   if (ctrl || event.metaKey || event.altKey) return null;
-  if (event.key === " ") return "play-pause";
+  if (isSpacebarEvent(event)) return "play-pause";
   if (event.key === "Home") return "seek-start";
   if (event.key === "Delete" || event.key === "Backspace") return "delete-clip";
   if (event.key === "ArrowLeft") return "move-clip-left";
@@ -52,6 +52,10 @@ export function commandFromKeyboardEvent(event: Pick<KeyboardEvent, "key" | "ctr
   if (key === "+" || key === "=") return "zoom-in";
   if (key === "-" || key === "_") return "zoom-out";
   return null;
+}
+
+function isSpacebarEvent(event: Pick<KeyboardEvent, "key" | "code">): boolean {
+  return event.code === "Space" || event.key === " " || event.key === "Spacebar" || event.key === "Space";
 }
 
 export function isEditableTarget(target: EventTarget | null): boolean {

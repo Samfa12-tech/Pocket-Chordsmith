@@ -274,7 +274,7 @@ export class App {
     this.root.addEventListener("pointercancel", (event) => this.handlePointerEnd(event));
     this.root.addEventListener("mousedown", (event) => this.handleMouseDown(event));
     this.root.addEventListener("wheel", (event) => this.handleWheel(event), { passive: false });
-    window.addEventListener("keydown", (event) => this.handleKeyboard(event));
+    window.addEventListener("keydown", (event) => this.handleKeyboard(event), { capture: true });
   }
 
   start() {
