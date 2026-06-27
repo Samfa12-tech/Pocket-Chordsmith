@@ -691,7 +691,7 @@ describe("native render cache", () => {
     }
   });
 
-  it("keeps filtered stale cache playback while deferring fresh live cache refresh", async () => {
+  it("keeps filtered stale cache playback while attempting fresh live cache refresh", async () => {
     const previousWindow = (globalThis as { window?: unknown }).window;
     (globalThis as { window?: unknown }).window = {
       setInterval: () => 1,
@@ -762,9 +762,9 @@ describe("native render cache", () => {
       expect(diagnostics.nativeRenderCache.assetRegionCount).toBeGreaterThan(0);
       expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBeGreaterThan(0);
       expect(diagnostics.nativeRenderCache.proceduralFallbackEventCount).toBeLessThan(diagnostics.eventCount);
-      expect(diagnostics.nativeRenderCache.buildCount).toBe(1);
-      expect(diagnostics.nativeRenderCache.discardedBuildCount).toBe(0);
-      expect(diagnostics.nativeRenderCache.pendingReason).toBe("live-bass-edit-discarded");
+      expect(diagnostics.nativeRenderCache.buildCount).toBe(2);
+      expect(diagnostics.nativeRenderCache.discardedBuildCount).toBe(1);
+      expect(diagnostics.nativeRenderCache.pendingReason).toBeNull();
     } finally {
       (globalThis as { window?: unknown }).window = previousWindow;
       starts.length = 0;

@@ -295,6 +295,7 @@ enum NativeAudioRenderMode {
 struct PlaybackShared {
     project_title: Option<String>,
     events: Vec<NativeRenderedEvent>,
+    compiled_event_routes: Vec<Option<CompiledGeneratedEventRoute>>,
     assets: HashMap<String, Arc<DecodedAudioAsset>>,
     regions: Vec<NativeAudioRegion>,
     compiled_regions: Vec<CompiledAudioRegion>,
@@ -328,6 +329,11 @@ struct CompiledAudioRegion {
     region: NativeAudioRegion,
     track_index: usize,
     asset: Arc<DecodedAudioAsset>,
+}
+
+struct CompiledGeneratedEventRoute {
+    track_index: usize,
+    drum_lane: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -703,10 +709,12 @@ impl NativeAudioRuntime {
         let fx = build_native_fx_runtime(payload.fx_chains, &tracks, sample_rate as f32);
         let scratch_track_capacity = tracks.len().max(1);
         let compiled_regions = compile_audio_regions(&regions, &assets, &track_indices);
+        let compiled_event_routes = compile_generated_event_routes(&events, &track_indices);
         let active_region_capacity = regions.len().min(64);
         let mut playback = PlaybackShared {
             project_title: payload.project_title,
             events,
+            compiled_event_routes,
             assets,
             regions,
             compiled_regions,
@@ -1082,6 +1090,8 @@ fn prune_cache_stem_events(playback: &mut PlaybackShared) {
             .map(|track| track_gain(track, has_solo) > 0.0001)
             .unwrap_or(false)
     });
+    playback.compiled_event_routes =
+        compile_generated_event_routes(&playback.events, &playback.track_indices);
     reset_scan_starts(playback);
 }
 
@@ -1260,10 +1270,12 @@ fn render_generated_event_source(
 ) -> Option<GeneratedEventSource> {
     let (track_index, track_gain_value, sample, event_pan, drum_lane) = {
         let event = playback.events.get(event_index)?;
-        let track_index = playback.track_indices.get(&event.track_id).copied()?;
+        let route = playback.compiled_event_routes.get(event_index)?.as_ref()?;
+        let track_index = route.track_index;
         let track_gain_value = playback
-            .tracks
-            .get(&event.track_id)
+            .track_order
+            .get(track_index)
+            .and_then(|track_id| playback.tracks.get(track_id))
             .map(|track| track_gain(track, playback.has_solo) as f32)?;
         let sample = render_event_sample(event, t);
         (
@@ -1271,7 +1283,7 @@ fn render_generated_event_source(
             track_gain_value,
             sample,
             event.pan.unwrap_or(0.0) as f32,
-            event.drum_lane.clone(),
+            route.drum_lane.clone(),
         )
     };
     if track_gain_value <= 0.0001 {
@@ -1305,6 +1317,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         return (0.0, 0.0);
     }
 
+    ensure_compiled_event_routes(playback);
     apply_loop_wrap(playback);
     let t = playback.position_seconds;
     while playback.scan_start_index < playback.events.len()
@@ -1452,6 +1465,7 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         return (0.0, 0.0);
     }
 
+    ensure_compiled_event_routes(playback);
     apply_loop_wrap(playback);
     let t = playback.position_seconds;
     while playback.scan_start_index < playback.events.len()
@@ -1610,6 +1624,14 @@ fn ensure_compiled_regions(playback: &mut PlaybackShared) {
     }
     playback.compiled_regions =
         compile_audio_regions(&playback.regions, &playback.assets, &playback.track_indices);
+}
+
+fn ensure_compiled_event_routes(playback: &mut PlaybackShared) {
+    if playback.compiled_event_routes.len() == playback.events.len() {
+        return;
+    }
+    playback.compiled_event_routes =
+        compile_generated_event_routes(&playback.events, &playback.track_indices);
 }
 
 fn route_track_sends(
@@ -3324,6 +3346,22 @@ fn compile_audio_regions(
         .collect()
 }
 
+fn compile_generated_event_routes(
+    events: &[NativeRenderedEvent],
+    track_indices: &HashMap<String, usize>,
+) -> Vec<Option<CompiledGeneratedEventRoute>> {
+    events
+        .iter()
+        .map(|event| {
+            let track_index = track_indices.get(&event.track_id).copied()?;
+            Some(CompiledGeneratedEventRoute {
+                track_index,
+                drum_lane: event.drum_lane.clone(),
+            })
+        })
+        .collect()
+}
+
 fn find_compiled_region_scan_start(regions: &[CompiledAudioRegion], seconds: f64) -> usize {
     regions
         .iter()
@@ -4231,6 +4269,7 @@ mod tests {
         let mut cached = PlaybackShared {
             project_title: Some("Cached".to_string()),
             events: Vec::new(),
+            compiled_event_routes: Vec::new(),
             assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
             regions: vec![test_region(
                 "region", "stem", "bass", 0.0, 0.0, 0.1, 1.0, 0.0,
@@ -4295,6 +4334,7 @@ mod tests {
         let mut cached = PlaybackShared {
             project_title: Some("Cached pan".to_string()),
             events: Vec::new(),
+            compiled_event_routes: Vec::new(),
             assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
             regions: vec![test_region(
                 "region", "stem", "melody", 0.0, 0.0, 0.1, 1.0, 0.0,
@@ -4360,6 +4400,7 @@ mod tests {
         let mut cached = PlaybackShared {
             project_title: Some("Cached track pan".to_string()),
             events: Vec::new(),
+            compiled_event_routes: Vec::new(),
             assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
             regions: vec![test_region(
                 "region", "stem", "melody", 0.0, 0.0, 0.1, 1.0, 0.0,
@@ -4451,6 +4492,7 @@ mod tests {
         let mut cached = PlaybackShared {
             project_title: Some("Cached sidechain".to_string()),
             events: vec![trigger_marker],
+            compiled_event_routes: Vec::new(),
             assets: HashMap::from([
                 ("kick_stem".to_string(), Arc::new(kick_decoded)),
                 ("chord_stem".to_string(), Arc::new(chord_decoded)),
@@ -4541,6 +4583,7 @@ mod tests {
         let mut cached = PlaybackShared {
             project_title: Some("Cached live mixer".to_string()),
             events: Vec::new(),
+            compiled_event_routes: Vec::new(),
             assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
             regions: vec![test_region(
                 "region", "stem", "bass", 0.0, 0.0, 0.1, 1.0, 0.0,
@@ -4663,6 +4706,7 @@ mod tests {
         let mut cached = PlaybackShared {
             project_title: Some("Cached dense stems".to_string()),
             events: Vec::new(),
+            compiled_event_routes: Vec::new(),
             assets: HashMap::from([
                 ("bass_stem".to_string(), Arc::new(bass_decoded)),
                 ("melody_stem".to_string(), Arc::new(melody_decoded)),
@@ -4736,6 +4780,7 @@ mod tests {
         PlaybackShared {
             project_title: Some("Test".to_string()),
             events: Vec::new(),
+            compiled_event_routes: Vec::new(),
             assets: HashMap::from([("asset".to_string(), Arc::new(asset))]),
             regions: vec![test_region(
                 "region", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0,
@@ -4783,6 +4828,7 @@ mod tests {
         PlaybackShared {
             project_title: Some("Test".to_string()),
             events,
+            compiled_event_routes: Vec::new(),
             assets: HashMap::new(),
             regions: Vec::new(),
             compiled_regions: Vec::new(),
@@ -4834,6 +4880,7 @@ mod tests {
             playback.track_indices.insert(id.clone(), index);
         }
         playback.tracks.insert(id, track);
+        playback.compiled_event_routes.clear();
     }
 
     fn test_track(id: &str, volume: f64, pan: f64, mute: bool, solo: bool) -> NativeTrackControl {

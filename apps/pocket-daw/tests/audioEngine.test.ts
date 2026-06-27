@@ -1015,7 +1015,7 @@ describe("audio engine diagnostics", () => {
     }
   });
 
-  it("defers cold native fallback cache promotion until playback is idle", async () => {
+  it("promotes cold native fallback playback after a fresh cache build", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       __TAURI__: {},
@@ -1078,17 +1078,19 @@ describe("audio engine diagnostics", () => {
       expect(starts[0].assets?.length || 0).toBe(0);
       expect(starts[0].regions?.length || 0).toBe(0);
 
-      await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.pendingReason === "play-fallback-cache-build");
+      await waitForAsyncCondition(() => starts.length >= 2);
 
-      expect(starts).toHaveLength(1);
-      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
-      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("play-fallback-cache-build");
+      expect(starts).toHaveLength(2);
+      expect(starts[1].assets?.length || 0).toBeGreaterThan(0);
+      expect(starts[1].regions?.length || 0).toBeGreaterThan(0);
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
+      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBeNull();
     } finally {
       (globalThis as any).window = previousWindow;
     }
   });
 
-  it("defers mixed runtime-audio generated cache promotion without dropping runtime regions", async () => {
+  it("promotes mixed runtime-audio fallback without dropping runtime regions", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       __TAURI__: {},
@@ -1156,11 +1158,13 @@ describe("audio engine diagnostics", () => {
       expect(starts[0].regions?.length || 0).toBe(1);
       expect(starts[0].events.some((event) => event.velocity > 0)).toBe(true);
 
-      await waitForAsyncCondition(() => engine.getDiagnostics().nativeRenderCache.pendingReason === "play-fallback-cache-build");
+      await waitForAsyncCondition(() => starts.length >= 2);
 
-      expect(starts).toHaveLength(1);
-      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
-      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("play-fallback-cache-build");
+      expect(starts).toHaveLength(2);
+      expect(starts[1].assets?.length || 0).toBeGreaterThanOrEqual(1);
+      expect(starts[1].regions?.length || 0).toBeGreaterThanOrEqual(1);
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
+      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBeNull();
     } finally {
       (globalThis as any).window = previousWindow;
     }
@@ -1223,7 +1227,7 @@ describe("audio engine diagnostics", () => {
     }
   });
 
-  it("keeps native event playback active when live edit cache rebuilds are deferred", async () => {
+  it("keeps native event playback active until live edit cache promotion restarts playback", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       setInterval: () => 1,
@@ -1332,13 +1336,15 @@ describe("audio engine diagnostics", () => {
 
       await engine.play();
       engine.syncProject(edited, "composition-events", "bass-edit-refresh");
-      await waitForAsyncCondition(() => starts.length >= 2);
+      await waitForAsyncCondition(() => starts.length >= 3);
 
-      expect(starts).toHaveLength(2);
+      expect(starts).toHaveLength(3);
 
       expect(starts[1].events.some((event) => event.trackId === "bass" && event.velocity > 0)).toBe(true);
-      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
-      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("bass-edit-refresh");
+      expect(starts[2].assets?.length || 0).toBeGreaterThan(0);
+      expect(starts[2].regions?.length || 0).toBeGreaterThan(0);
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
+      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBeNull();
     } finally {
       (globalThis as any).window = previousWindow;
     }

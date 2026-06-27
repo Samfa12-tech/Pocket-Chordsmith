@@ -1078,6 +1078,13 @@ export class AudioEngine {
   private scheduleLiveNativeRenderCacheRefresh(reason: string): void {
     this.nativeRenderCachePendingReason = reason;
     this.cancelLiveNativeRenderCacheRefresh();
+    if (typeof window === "undefined" || typeof window.setTimeout !== "function") return;
+    this.nativeLiveRenderCacheRefreshHandle = window.setTimeout(() => {
+      this.nativeLiveRenderCacheRefreshHandle = null;
+      const buildReason = this.nativeRenderCachePendingReason || reason;
+      this.nativeRenderCachePendingReason = null;
+      void this.restartNativePlaybackAfterFreshRenderCache(buildReason);
+    }, 180);
   }
 
   private activateReadyNativeRenderCacheAfterFallback(reason: string) {
@@ -1170,6 +1177,7 @@ export class AudioEngine {
       window.clearTimeout(this.nativeLiveRenderCacheRefreshHandle);
     }
     this.nativeLiveRenderCacheRefreshHandle = null;
+    this.nativeLiveCompositionCacheToken += 1;
   }
 
   private cancelNativeRuntimeAudioCachePrewarm() {
