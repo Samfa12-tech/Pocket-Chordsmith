@@ -221,7 +221,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Bass Handover + Cache Alpha
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Bass Parity + Cache Alpha
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -231,6 +231,9 @@ ${artifactTable}
 
 ## Highlights
 
+- Pocket DAW bass tone now matches Pocket Chordsmith much more closely in the installed/native path by applying Chordsmith-style harmonic low-pass filtering to generated bass waves.
+- Accented generated bass notes now keep their Chordsmith release tail instead of being cut early in cached/native playback.
+- The native audio render-cache contract was bumped so older harsh/distorted generated bass stems are treated as stale and rebuilt automatically.
 - Disabled automatic hidden native render-cache builds on project load and during live playback, preventing runaway RAM/disk churn from stuck cache generation.
 - Loop toggles and loop range edits now restart native playback with transport-only sync, keeping the playhead, loop marker and mixer visualiser aligned with the native audio clock.
 - Imported auto-bass projects now show their audible auto bass in the bass timeline/editor instead of looking empty.
