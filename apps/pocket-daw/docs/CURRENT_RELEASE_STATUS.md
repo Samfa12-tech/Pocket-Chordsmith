@@ -4,25 +4,26 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.31` |
+| Source version | `0.6.32` |
 | Project schema version | `2` |
 | Latest published version | `0.6.31` |
 | Latest published tag | `pocket-daw-v0.6.31` |
 | Latest published commit | `75efd9157cdf24cfb3b4fd8b20ba1cc3c0c54571` |
-| Last installed-smoke version | `0.6.31` |
+| Last installed-smoke version | `0.6.32` |
 | Last installed-smoke result | `pass` |
-| Last installed-smoke date | `2026-06-27T16:57:06.2246129+10:00` |
-| Last installed-smoke installer | `Pocket DAW_0.6.31_x64-setup.exe` |
-| Last installed-smoke SHA-256 | `57115ae7701af0ad8831a6c601939f4b519edd86fbdf486f4bcf5b66a7bf36a1` |
+| Last installed-smoke date | `2026-06-27T19:41:13.6062321+10:00` |
+| Last installed-smoke installer | `Pocket DAW_0.6.32_x64-setup.exe` |
+| Last installed-smoke SHA-256 | `4c35e0bb9deb4fbb8e63b39b7cd80229287c0f2499f8a611a734974524051893` |
 
 ## Installed-Smoke Notes
 
-- Pocket DAW 0.6.31 was installed from the exact staged itch installer artifact and launched from C:\Users\sam_s\AppData\Local\Pocket DAW\pocket-daw.exe.
-- MCP live bridge reported Pocket DAW project/app version 0.6.31, schema 2, and loaded the Chordsmith-derived Codex Bass Live Smoke project.
-- The bass-solo smoke project played through native-cpal for a 27.7s diagnostics window with WebAudio not-created, full native cache coverage, 11 bass events, renderCountDuringPlaybackDelta 1, no scheduler misses, no late/skipped events, no graph rebuilds, and no hotspot signals.
-- The latest updater manifest resolves to pocket-daw-v0.6.31 and the remote setup SHA-256 matches the smoked staged artifact.
-- The itch windows-installer channel reports version 0.6.31 on processed revision #1754598 from upload #17913969.
-- MCP save_current succeeded for C:\Users\sam_s\AppData\Local\Temp\codex-bass-live-smoke.pocketdaw.
+- Pocket DAW 0.6.32 was installed locally from the staged itch installer artifact and launched from C:\Users\sam_s\AppData\Local\Pocket DAW\pocket-daw.exe.
+- The staged installer SHA-256 matched releases/itch/pocket-daw-release-manifest-v0.6.32.json. The manifest records gitCommitSha ab2d5d70f13d915698bc0839fee9dc09efa9dc1b and dirtyWorkingTree true because the 0.6.32 version/status bump had not yet been committed when this local tester artifact was built.
+- MCP live bridge reported Pocket DAW project/app version 0.6.32, schema 2, and loaded the Chordsmith-derived Codex Bass Live Smoke project.
+- Project inspection confirmed the smoke clip transform gain was 1, saved bass track volume was 0.86, and the bass tone was warm_sub.
+- Solo-bass smoke reset live bass volume from the user's 1.2 workaround back to 0.86, left clip gain at 1, and played through native-cpal with full native cache coverage, no scheduler misses, no late/skipped events, no graph rebuilds, no native fallback, and no hotspot signals.
+- Full-mix smoke disabled bass solo with bass volume still 0.86 and played through native-cpal with full native cache coverage, no scheduler misses, no late/skipped events, no graph rebuilds, no native fallback, and no hotspot signals.
+- Latest published version remains 0.6.31; 0.6.32 has not been pushed to GitHub or the itch windows-installer channel in this smoke pass.
 
 ## Release Truth
 
