@@ -590,8 +590,19 @@ function expectedNativeCacheSourceHashes(
   if (rendererContractVersion && rendererContractVersion !== NATIVE_AUDIO_RENDERER_CONTRACT_VERSION) return hashes;
   const renderMode = String(item.metadata?.renderMode || "");
   if (renderMode && renderMode !== NATIVE_CACHE_STEM_RENDER_MODE) return hashes;
+  const sourceClipIds = sourceClipIdsForRenderCacheItem(item);
   const clip = item.sourceClipId ? project.timeline.clips.find((entry) => entry.id === item.sourceClipId) : null;
   const trackId = String(item.metadata?.trackId || clip?.trackId || "");
+  if (sourceClipIds.length > 1 && trackId) {
+    const clips = sourceClipIds
+      .map((clipId) => project.timeline.clips.find((entry) => entry.id === clipId))
+      .filter((entry): entry is Clip => !!entry);
+    if (clips.length === sourceClipIds.length) {
+      const startBar = Math.min(...clips.map((entry) => entry.startBar));
+      const endBar = Math.max(...clips.map((entry) => entry.startBar + entry.barLength));
+      hashes.add(nativeGeneratedStemGroupSourceHash(project, clips, trackId, startBar, endBar - startBar));
+    }
+  }
   if (clip && trackId) hashes.add(nativeGeneratedStemSourceHash(project, clip, trackId));
   if (!clip || !trackId) {
     const assetId = String(item.metadata?.assetId || item.id);
@@ -1138,6 +1149,17 @@ function hydratedGeneratedStemEntries(
   assetId: string,
   cacheKind: string
 ): HydratedCacheEntry[] {
+  const sourceClipIds = sourceClipIdsForRenderCacheItem(item);
+  if (sourceClipIds.length > 1) {
+    return [{
+      item,
+      asset,
+      region: nativeGeneratedGroupRegionFromItem(project, item, asset),
+      cacheKind,
+      clipId: sourceClipIds[0],
+      generatedKey: generatedStemKey(item)
+    }];
+  }
   const sourceHash = String(item.metadata?.sourceHash || "");
   const matchingBuildItems = project.timeline.clips
     .filter(isNativeStemCacheableClip)
@@ -1188,11 +1210,37 @@ function nativeRegionFromHydratedItem(project: PocketDawProject, item: RenderCac
   }
 
   if (cacheKind === "native-generated-stem") {
+    const sourceClipIds = sourceClipIdsForRenderCacheItem(item);
+    if (sourceClipIds.length > 1) return nativeGeneratedGroupRegionFromItem(project, item, asset);
     const trackId = String(item.metadata?.trackId || clip.trackId);
     return nativeGeneratedRegionFromClip(project, clip, trackId, asset);
   }
 
   return null;
+}
+
+function nativeGeneratedGroupRegionFromItem(project: PocketDawProject, item: RenderCacheItem, asset: NativeAudioAsset): NativeAudioRegion | null {
+  const clips = sourceClipIdsForRenderCacheItem(item)
+    .map((clipId) => project.timeline.clips.find((entry) => entry.id === clipId))
+    .filter((entry): entry is Clip => !!entry);
+  if (!clips.length) return null;
+  const trackId = String(item.metadata?.trackId || clips[0].trackId);
+  if (!trackId) return null;
+  const startBar = Math.min(...clips.map((clip) => clip.startBar));
+  const endBar = Math.max(...clips.map((clip) => clip.startBar + clip.barLength));
+  const duration = barsToSeconds(endBar - startBar, project.project.bpm, project.project.timeSig);
+  return {
+    id: `${clips.map((clip) => clip.id).join("_")}_${trackId}_${asset.id}_hydrated`,
+    assetId: asset.id,
+    trackId,
+    startTime: barsToSeconds(startBar - 1, project.project.bpm, project.project.timeSig),
+    sourceOffset: 0,
+    duration: Math.min(generatedStemRenderDuration(duration), asset.durationSeconds),
+    gain: 1,
+    pan: 0,
+    fadeIn: 0,
+    fadeOut: 0
+  };
 }
 
 function nativeGeneratedRegionFromClip(project: PocketDawProject, clip: Clip, trackId: string, asset: NativeAudioAsset): NativeAudioRegion {

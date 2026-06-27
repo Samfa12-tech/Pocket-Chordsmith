@@ -1068,6 +1068,48 @@ describe("native render cache", () => {
     });
   });
 
+  it("hydrates grouped overlapping generated cache metadata for all covered clips", async () => {
+    const project = createDemoProject();
+    const clip = project.timeline.clips.find((item) => item.type === "generated-section")!;
+    const overlappingClip: Clip = {
+      ...clip,
+      id: `${clip.id}_overlap`,
+      name: `${clip.name} Overlap`,
+      startBar: clip.startBar
+    };
+    project.timeline.clips = [clip, overlappingClip];
+    const signature = nativeRenderCacheSignature(project);
+    const renderMock = nativeMediaBridgeMock.renderNativeAudioWav as unknown as {
+      mockImplementation(fn: (_payload: unknown, durationSeconds: number) => Promise<unknown>): void;
+    };
+    renderMock.mockImplementation(async (_payload: unknown, durationSeconds: number) => ({
+      ...nativeRenderResult(),
+      durationSeconds
+    }));
+    const built = await buildNativeRenderCache(project, signature);
+    project.renderCache = built.renderCacheItems;
+    const api: NativeMediaApi = {
+      isAvailable: () => true,
+      async invoke(_command, args) {
+        return {
+          assetId: String(args?.assetId || ""),
+          path: `C:\\Songs\\${String(args?.relativePath || "").replace(/\//g, "\\")}`,
+          relativePath: String(args?.relativePath || ""),
+          sizeBytes: wavBytes().length,
+          bytes: Array.from(wavBytes())
+        } as never;
+      }
+    };
+
+    const result = await hydrateNativeRenderCacheAssets("C:\\Songs\\Song.pocketdaw", project, api);
+
+    expect(result.errors).toEqual([]);
+    expect(result.cache?.cachedClipIds.has(clip.id)).toBe(true);
+    expect(result.cache?.cachedClipIds.has(overlappingClip.id)).toBe(true);
+    expect(result.cache?.regions.length).toBe(built.regions.length);
+    expect(result.cache?.regions.every((region) => region.id.includes(overlappingClip.id))).toBe(true);
+  });
+
   it("skips stale or invalid persisted native cache metadata during hydration", async () => {
     const project = createDemoProject();
     project.renderCache = [
