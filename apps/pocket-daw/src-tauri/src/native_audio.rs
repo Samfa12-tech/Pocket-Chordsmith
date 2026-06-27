@@ -296,6 +296,8 @@ struct PlaybackShared {
     project_title: Option<String>,
     events: Vec<NativeRenderedEvent>,
     compiled_event_routes: Vec<Option<CompiledGeneratedEventRoute>>,
+    compiled_sidechain_triggers: Vec<CompiledSidechainTrigger>,
+    compiled_sidechain_trigger_source_len: usize,
     assets: HashMap<String, Arc<DecodedAudioAsset>>,
     regions: Vec<NativeAudioRegion>,
     compiled_regions: Vec<CompiledAudioRegion>,
@@ -334,6 +336,11 @@ struct CompiledAudioRegion {
 struct CompiledGeneratedEventRoute {
     track_index: usize,
     drum_lane: Option<String>,
+}
+
+struct CompiledSidechainTrigger {
+    time: f64,
+    track_index: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -710,11 +717,16 @@ impl NativeAudioRuntime {
         let scratch_track_capacity = tracks.len().max(1);
         let compiled_regions = compile_audio_regions(&regions, &assets, &track_indices);
         let compiled_event_routes = compile_generated_event_routes(&events, &track_indices);
+        let compiled_sidechain_triggers =
+            compile_sidechain_triggers(&events, payload.sidechain.as_ref(), &track_indices);
+        let compiled_sidechain_trigger_source_len = events.len();
         let active_region_capacity = regions.len().min(64);
         let mut playback = PlaybackShared {
             project_title: payload.project_title,
             events,
             compiled_event_routes,
+            compiled_sidechain_triggers,
+            compiled_sidechain_trigger_source_len,
             assets,
             regions,
             compiled_regions,
@@ -1092,6 +1104,12 @@ fn prune_cache_stem_events(playback: &mut PlaybackShared) {
     });
     playback.compiled_event_routes =
         compile_generated_event_routes(&playback.events, &playback.track_indices);
+    playback.compiled_sidechain_triggers = compile_sidechain_triggers(
+        &playback.events,
+        playback.sidechain.as_ref(),
+        &playback.track_indices,
+    );
+    playback.compiled_sidechain_trigger_source_len = playback.events.len();
     reset_scan_starts(playback);
 }
 
@@ -1318,6 +1336,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     }
 
     ensure_compiled_event_routes(playback);
+    ensure_compiled_sidechain_triggers(playback);
     apply_loop_wrap(playback);
     let t = playback.position_seconds;
     while playback.scan_start_index < playback.events.len()
@@ -1466,6 +1485,7 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     }
 
     ensure_compiled_event_routes(playback);
+    ensure_compiled_sidechain_triggers(playback);
     apply_loop_wrap(playback);
     let t = playback.position_seconds;
     while playback.scan_start_index < playback.events.len()
@@ -1634,6 +1654,25 @@ fn ensure_compiled_event_routes(playback: &mut PlaybackShared) {
         compile_generated_event_routes(&playback.events, &playback.track_indices);
 }
 
+fn ensure_compiled_sidechain_triggers(playback: &mut PlaybackShared) {
+    let Some(sidechain) = playback.sidechain.as_ref() else {
+        playback.compiled_sidechain_triggers.clear();
+        playback.compiled_sidechain_trigger_source_len = playback.events.len();
+        return;
+    };
+    if !sidechain.enabled || sidechain.amount <= 0.0001 {
+        playback.compiled_sidechain_triggers.clear();
+        playback.compiled_sidechain_trigger_source_len = playback.events.len();
+        return;
+    }
+    if playback.compiled_sidechain_trigger_source_len == playback.events.len() {
+        return;
+    }
+    playback.compiled_sidechain_triggers =
+        compile_sidechain_triggers(&playback.events, Some(sidechain), &playback.track_indices);
+    playback.compiled_sidechain_trigger_source_len = playback.events.len();
+}
+
 fn route_track_sends(
     playback: &PlaybackShared,
     track_id: &str,
@@ -1694,23 +1733,23 @@ fn sidechain_gain(playback: &PlaybackShared, track_id: &str, t: f64) -> f32 {
         return 1.0;
     }
     let mut gain = 1.0_f64;
-    for event in playback.events.iter().rev() {
-        if event.time > t {
+    for trigger in playback.compiled_sidechain_triggers.iter().rev() {
+        if trigger.time > t {
             continue;
         }
-        if t - event.time > CHORDSMITH_SIDECHAIN_RELEASE_SECONDS {
+        if t - trigger.time > CHORDSMITH_SIDECHAIN_RELEASE_SECONDS {
             break;
         }
-        if event.kind != sidechain.trigger_kind {
+        let Some(track_id) = playback.track_order.get(trigger.track_index) else {
             continue;
-        }
-        let Some(trigger_track) = playback.tracks.get(&event.track_id) else {
+        };
+        let Some(trigger_track) = playback.tracks.get(track_id) else {
             continue;
         };
         if track_gain(trigger_track, playback.has_solo) <= 0.0001 {
             continue;
         }
-        gain = gain.min(chordsmith_sidechain_gain_at(amount, t - event.time));
+        gain = gain.min(chordsmith_sidechain_gain_at(amount, t - trigger.time));
     }
     gain as f32
 }
@@ -3362,6 +3401,32 @@ fn compile_generated_event_routes(
         .collect()
 }
 
+fn compile_sidechain_triggers(
+    events: &[NativeRenderedEvent],
+    sidechain: Option<&NativeSidechainPayload>,
+    track_indices: &HashMap<String, usize>,
+) -> Vec<CompiledSidechainTrigger> {
+    let Some(sidechain) = sidechain else {
+        return Vec::new();
+    };
+    if !sidechain.enabled || sidechain.amount <= 0.0001 {
+        return Vec::new();
+    }
+    events
+        .iter()
+        .filter_map(|event| {
+            if event.kind != sidechain.trigger_kind {
+                return None;
+            }
+            let track_index = track_indices.get(&event.track_id).copied()?;
+            Some(CompiledSidechainTrigger {
+                time: event.time,
+                track_index,
+            })
+        })
+        .collect()
+}
+
 fn find_compiled_region_scan_start(regions: &[CompiledAudioRegion], seconds: f64) -> usize {
     regions
         .iter()
@@ -4082,6 +4147,45 @@ mod tests {
     }
 
     #[test]
+    fn native_sidechain_uses_compiled_trigger_events_only() {
+        let mut events = Vec::new();
+        for index in 0..64 {
+            let mut chord = test_chord_event();
+            chord.id = format!("non_trigger_{index}");
+            chord.time = index as f64 * 0.001;
+            events.push(chord);
+        }
+        let mut trigger = test_kick_trigger_event();
+        trigger.time = 0.012;
+        trigger.velocity = 0.0;
+        events.push(trigger);
+        events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut playback = playback_with_events(events);
+        playback.sidechain = Some(NativeSidechainPayload {
+            enabled: true,
+            amount: 0.5,
+            target_track_id: "chords".to_string(),
+            trigger_kind: "kick".to_string(),
+        });
+
+        ensure_compiled_sidechain_triggers(&mut playback);
+
+        assert_eq!(playback.compiled_sidechain_triggers.len(), 1);
+        assert_eq!(
+            sidechain_gain(&playback, "chords", 0.018),
+            chordsmith_sidechain_gain_at(0.5, 0.006) as f32
+        );
+
+        playback
+            .tracks
+            .get_mut("drums")
+            .expect("drum trigger track should exist")
+            .mute = true;
+        assert_eq!(sidechain_gain(&playback, "chords", 0.018), 1.0);
+    }
+
+    #[test]
     fn native_loop_wraps_on_the_audio_frame_boundary() {
         let mut event = test_generated_event("loop_bass", "bass", 0.0, 0.08, 1.0);
         event.midi = Some(36.0);
@@ -4270,6 +4374,8 @@ mod tests {
             project_title: Some("Cached".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            compiled_sidechain_triggers: Vec::new(),
+            compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
             regions: vec![test_region(
                 "region", "stem", "bass", 0.0, 0.0, 0.1, 1.0, 0.0,
@@ -4335,6 +4441,8 @@ mod tests {
             project_title: Some("Cached pan".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            compiled_sidechain_triggers: Vec::new(),
+            compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
             regions: vec![test_region(
                 "region", "stem", "melody", 0.0, 0.0, 0.1, 1.0, 0.0,
@@ -4401,6 +4509,8 @@ mod tests {
             project_title: Some("Cached track pan".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            compiled_sidechain_triggers: Vec::new(),
+            compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
             regions: vec![test_region(
                 "region", "stem", "melody", 0.0, 0.0, 0.1, 1.0, 0.0,
@@ -4493,6 +4603,8 @@ mod tests {
             project_title: Some("Cached sidechain".to_string()),
             events: vec![trigger_marker],
             compiled_event_routes: Vec::new(),
+            compiled_sidechain_triggers: Vec::new(),
+            compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([
                 ("kick_stem".to_string(), Arc::new(kick_decoded)),
                 ("chord_stem".to_string(), Arc::new(chord_decoded)),
@@ -4584,6 +4696,8 @@ mod tests {
             project_title: Some("Cached live mixer".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            compiled_sidechain_triggers: Vec::new(),
+            compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
             regions: vec![test_region(
                 "region", "stem", "bass", 0.0, 0.0, 0.1, 1.0, 0.0,
@@ -4707,6 +4821,8 @@ mod tests {
             project_title: Some("Cached dense stems".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            compiled_sidechain_triggers: Vec::new(),
+            compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([
                 ("bass_stem".to_string(), Arc::new(bass_decoded)),
                 ("melody_stem".to_string(), Arc::new(melody_decoded)),
@@ -4781,6 +4897,8 @@ mod tests {
             project_title: Some("Test".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            compiled_sidechain_triggers: Vec::new(),
+            compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([("asset".to_string(), Arc::new(asset))]),
             regions: vec![test_region(
                 "region", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0,
@@ -4829,6 +4947,8 @@ mod tests {
             project_title: Some("Test".to_string()),
             events,
             compiled_event_routes: Vec::new(),
+            compiled_sidechain_triggers: Vec::new(),
+            compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::new(),
             regions: Vec::new(),
             compiled_regions: Vec::new(),
@@ -4881,6 +5001,8 @@ mod tests {
         }
         playback.tracks.insert(id, track);
         playback.compiled_event_routes.clear();
+        playback.compiled_sidechain_triggers.clear();
+        playback.compiled_sidechain_trigger_source_len = 0;
     }
 
     fn test_track(id: &str, volume: f64, pan: f64, mute: bool, solo: bool) -> NativeTrackControl {
