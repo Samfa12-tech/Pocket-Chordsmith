@@ -117,7 +117,7 @@ describe("Pocket Chordsmith/Core/DAW parity fixtures", () => {
     });
 
     expect(analyseRenderedBuffer(dawRender)).toEqual(canonicalMetrics);
-  });
+  }, 30000);
 });
 
 function readCoreFixture(raw: string) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
-import { clipSourceStartBar, moveClipToBar, repeatGeneratedSectionClipToEnd, splitClipAtBar, trimClipEnd, trimClipStart } from "../src/daw/clips";
+import { clipSourceStartBar, moveClipToBar, repeatGeneratedSectionClipToEnd, setClipTransform, splitClipAtBar, trimClipEnd, trimClipStart } from "../src/daw/clips";
 import { addMarkerAtBar, clearLoop, deleteMarker, setLoopToClip, snapBarValue } from "../src/daw/timeline";
 import { createDemoProject } from "../src/demo/demoProject";
 
@@ -113,5 +113,17 @@ describe("timeline editing helpers", () => {
     expect(leftEvents.length).toBeGreaterThan(0);
     expect(leftEvents.length).toBeLessThan(fullEvents.length);
     expect(Math.max(...leftEvents.map((event) => event.bar))).toBeLessThan(clip.startBar + clip.barLength - 1);
+  });
+
+  it("edits clip transform values with migration-compatible clamps", () => {
+    const project = createDemoProject();
+    const clip = project.timeline.clips[0];
+    const transposed = setClipTransform(project, clip.id, "transpose", 99);
+    const gained = setClipTransform(transposed, clip.id, "gain", 8);
+    const updated = gained.timeline.clips.find((item) => item.id === clip.id)!;
+
+    expect(updated.transforms.transpose).toBe(48);
+    expect(updated.transforms.gain).toBe(4);
+    expect(project.timeline.clips.find((item) => item.id === clip.id)?.transforms.transpose).toBe(0);
   });
 });

@@ -87,6 +87,7 @@ const surfaces = {
   pocketDawImport: new URL("apps/pocket-daw/src/compatibility/pcsToDaw.ts", repoRoot),
   pocketDawExportJobs: new URL("apps/pocket-daw/src/daw/exportJobs.ts", repoRoot),
   coreNormalizer: new URL("packages/pocket-audio-core/src/schema/normalise-project.js", repoRoot),
+  coreLiveEngine: new URL("packages/pocket-audio-core/src/engine/live-engine.js", repoRoot),
   coreGamePackPaths: new URL("packages/pocket-audio-core/src/export/game-pack-paths.js", repoRoot),
   godotSharedSoundConstants: new URL("addons/pocket_chordsmith/import/pcs_shared_sound_constants.gd", repoRoot),
   pocketAudioCorePackage: new URL("packages/pocket-audio-core/package.json", repoRoot),
@@ -260,7 +261,7 @@ test("Pocket DAW native sidechain curve stays aligned with shared Chordsmith pum
   assertRustConst(pocketDawNativeAudio, "CHORDSMITH_SIDECHAIN_RELEASE_SECONDS", CHORDSMITH_SIDECHAIN_RELEASE_SECONDS);
   assertRustConst(pocketDawNativeAudio, "CHORDSMITH_SIDECHAIN_DEPTH", CHORDSMITH_SIDECHAIN_DEPTH);
   assertRustConst(pocketDawNativeAudio, "CHORDSMITH_SIDECHAIN_FLOOR", CHORDSMITH_SIDECHAIN_FLOOR);
-  assert.ok(pocketDawNativeAudio.includes("chordsmith_sidechain_gain_at(amount, t - event.time)"), "Pocket DAW native sidechain should use the Chordsmith gain curve per trigger");
+  assert.ok(pocketDawNativeAudio.includes("chordsmith_sidechain_gain_at(amount, t - trigger.time)"), "Pocket DAW native sidechain should use the Chordsmith gain curve per compiled trigger");
 });
 
 test("Pocket DJ imports lofi IDs from shared core before normalising decks", async () => {
@@ -884,13 +885,14 @@ test("Chordsmith bass and melody phrase gates stay aligned across DJ, DAW, Godot
   assert.ok(!godotCompiler.includes('project.get("midiExactDurations", true)):\\n\\t\\tduration_ticks'), "Godot runtime phrase gates should not depend on MIDI exact-duration export settings");
 });
 
-test("bass voice recipes stay aligned across Chordsmith, DJ and DAW", async () => {
-  const [chordsmith, pocketDj, pocketDawInstruments, pocketDawNativeAudio, pocketDawGeneratedSoundRecipes] = await Promise.all([
+test("bass voice recipes stay aligned across Chordsmith, DJ, DAW and core live playback", async () => {
+  const [chordsmith, pocketDj, pocketDawInstruments, pocketDawNativeAudio, pocketDawGeneratedSoundRecipes, coreLiveEngine] = await Promise.all([
     readFile(surfaces.chordsmith, "utf8"),
     readFile(surfaces.pocketDj, "utf8"),
     readFile(surfaces.pocketDawInstruments, "utf8"),
     readFile(surfaces.pocketDawNativeAudio, "utf8"),
-    readFile(surfaces.pocketDawGeneratedSoundRecipes, "utf8")
+    readFile(surfaces.pocketDawGeneratedSoundRecipes, "utf8"),
+    readFile(surfaces.coreLiveEngine, "utf8")
   ]);
 
   Object.entries(POCKET_BASS_TONE_CONFIGS).forEach(([id, config]) => {
@@ -902,7 +904,12 @@ test("bass voice recipes stay aligned across Chordsmith, DJ and DAW", async () =
   assert.ok(pocketDawNativeAudio.includes('include!("generated_sound_recipes.rs")'), "Pocket DAW native playback should include generated shared sound recipes");
   assert.ok(pocketDawGeneratedSoundRecipes.includes("fn native_bass_tone_config"), "Pocket DAW generated native recipes should mirror the shared bass-tone registry");
   assert.ok(pocketDawNativeAudio.includes("lowpass_tone_factor(freq, cfg.cutoff)"), "Pocket DAW native bass should shape the main layer from shared cutoff values");
+  assert.ok(!pocketDawNativeAudio.includes("let sub_dur = (dur * 0.65)"), "Pocket DAW native bass should not keep the old short sub-layer envelope");
+  assert.ok(!pocketDawNativeAudio.includes("sub_dur, 0.006"), "Pocket DAW native bass should use the shared bass attack for the sub layer");
   assert.ok(pocketDawInstruments.includes("resolvePocketBassToneId"), "Pocket DAW should default missing bass tones through the shared resolver");
+  assert.ok(coreLiveEngine.includes("cfg.subWave"), "core live bass should schedule the shared sub layer like Chordsmith and DAW");
+  assert.ok(coreLiveEngine.includes("cfg.subPeak"), "core live bass should apply the shared sub-layer level");
+  assert.ok(coreLiveEngine.includes("cfg.subCutoff"), "core live bass should shape the shared sub layer separately from the main layer");
 });
 
 test("Chordsmith guitar tone surface stays aligned across DJ, DAW and core", async () => {

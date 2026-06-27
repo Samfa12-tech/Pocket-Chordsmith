@@ -2872,8 +2872,8 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
             }
             let cfg = native_bass_tone_config(event.bass_tone.as_deref());
             let main_env = note_envelope(local, dur, cfg.attack, 0.08, 0.55, 0.18);
-            let sub_dur = (dur * 0.65).clamp(0.02, 0.12);
-            let sub_env = note_envelope(local, sub_dur, 0.006, 0.08, 0.45, 0.14);
+            let sub_dur = (dur * 0.82).min(0.12);
+            let sub_env = note_envelope(local, sub_dur, cfg.attack, 0.08, 0.55, 0.18);
             let freq = midi_to_freq(midi) as f32;
             let slide = event
                 .slide_midi
@@ -2904,7 +2904,23 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
                 * sub_env
                 * cfg.sub_peak
                 * lowpass_tone_factor(freq * 0.5, cfg.sub_cutoff);
-            (main_layer + sub_layer) * velocity
+            let presence_layer = if cfg.main_wave == "sine" && cfg.sub_wave == "sine" && midi < 48.0 {
+                let presence_freq = freq * 2.0;
+                let presence_dur = (dur * 0.72).min(0.16);
+                let presence_env = note_envelope(local, presence_dur, cfg.attack, 0.08, 0.55, 0.18);
+                let presence_sample = if let Some((target_freq, ramp_end)) = slide {
+                    native_wave_sample_ramped("triangle", presence_freq, target_freq * 2.0, ramp_end, local)
+                } else {
+                    native_wave_sample("triangle", presence_freq, local)
+                };
+                presence_sample
+                    * presence_env
+                    * 0.16
+                    * lowpass_tone_factor(presence_freq, (cfg.cutoff * 2.0).max(360.0))
+            } else {
+                0.0
+            };
+            (main_layer + sub_layer + presence_layer) * velocity
         }
         "melody" | "midi" => {
             let midi = event.midi.unwrap_or(72.0);

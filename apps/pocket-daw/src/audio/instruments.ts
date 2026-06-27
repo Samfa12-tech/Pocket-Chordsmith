@@ -500,6 +500,9 @@ function bass(
     const mainCutoff = accent ? cfg.cutoff * 1.18 : cfg.cutoff;
     tone(ctx, destination, midi, start, accent ? bassDur * 1.35 : bassDur, cfg.mainWave, peak * (accent ? 1.12 : 1) * cfg.mainPeak, "lowpass", mainCutoff);
     tone(ctx, destination, midi - 12, start, Math.min(0.12, bassDur * 0.82), cfg.subWave, peak * cfg.subPeak, "lowpass", cfg.subCutoff);
+    if (cfg.mainWave === "sine" && cfg.subWave === "sine" && midi < 48) {
+      tone(ctx, destination, midi + 12, start, Math.min(0.16, bassDur * 0.72), "triangle", peak * 0.16, "lowpass", Math.max(360, cfg.cutoff * 2));
+    }
     return;
   }
   bassSlide(ctx, destination, midi, slideMidi, start, dur, peak, accent, slideOffset, toneName);

@@ -3,6 +3,7 @@ import { currentProject, type ChordsmithStepSelection } from "./state";
 import { BUILT_IN_FX, getTrackFxChain } from "../daw/fx";
 import { DRUM_LANE_DEFS, getDrumLaneFxChain, getDrumLaneMix } from "../daw/drumLanes";
 import { bassStepUsesAuto, bassVisibleNoteIndex, getPrimaryChordsmithSource, totalEditorSteps, visibleEditorSteps } from "../daw/chordsmithEditor";
+import { bassPresetLabel, visibleBassPresetsForProject } from "../daw/chordsmithBassPresets";
 import { drumPresetLabel, visibleDrumPresetsForProject } from "../daw/chordsmithDrumPresets";
 import { guitarPresetLabel, visibleGuitarPresetsForProject } from "../daw/chordsmithGuitarPresets";
 import { POCKET_DAW_VERSION, type Clip, type FxChain, type FxPluginInstance, type Track } from "../daw/schema";
@@ -630,10 +631,10 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
                 ${clip.type === "audio" ? `<dt>Media</dt><dd>${escapeHtml(clipMedia?.name || "Missing media")}</dd><dt>Status</dt><dd>${escapeHtml(clipMediaStatus?.label || "Missing")}</dd><dt>Duration</dt><dd>${formatDuration(clipMedia?.durationSeconds)}</dd>` : ""}
                 ${clip.type === "midi" ? renderMidiClipMetadata(clip, clipMedia, clipMediaStatus) : ""}
               </dl>
-              <label>Transpose <input disabled value="${clip.transforms.transpose}"></label>
-              <label>Gain <input disabled value="${clip.transforms.gain}"></label>
-              <button disabled>Freeze</button>
-              <button disabled>Convert to MIDI</button>
+              <label>Transpose <input data-clip-transform="${sanitizeDataAttr(`${clip.id}:transpose`)}" type="number" min="-48" max="48" step="1" value="${sanitizeCssLengthOrNumber(clip.transforms.transpose, 0, -48, 48)}" ${clip.type === "audio" ? "disabled title=\"Audio clip pitch shifting is not available yet.\"" : ""}></label>
+              <label>Gain <input data-clip-transform="${sanitizeDataAttr(`${clip.id}:gain`)}" type="number" min="0" max="4" step="0.05" value="${sanitizeCssLengthOrNumber(clip.transforms.gain, 1, 0, 4)}"></label>
+              <button type="button" data-action="freeze-selected-clip">Freeze</button>
+              <button type="button" data-action="export-selected-clip-midi" ${clip.type === "audio" ? "disabled title=\"Audio clips do not contain MIDI events.\"" : ""}>Export Clip MIDI</button>
               ${clip.type === "midi" ? renderMidiClipEditor(clip) : ""}
             </section>`
           : `<p>Select a clip to inspect it.</p>`
@@ -650,6 +651,7 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
               </dl>
               ${renderInputSelector(project, track)}
               ${renderOutputSelector(project, track)}
+              ${track.role !== "master" && track.trackType !== "audio" && track.trackType !== "bus" && track.trackType !== "return" ? `<button type="button" data-action="export-selected-track-midi">Export Track MIDI</button>` : ""}
               ${renderAutomationPanel(project, track)}
               ${renderChordsmithSequencer(state, project, pcs, clip, track)}
               ${track.role === "drums" ? renderDrumLaneMixer(project) : ""}
@@ -976,7 +978,12 @@ function renderBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection
           <option value="manual" ${pcs.bassMode === "manual" ? "selected" : ""}>Manual notes</option>
         </select>
       </label>
-      <button type="button" data-bass-fill-auto="true" title="Copy the current auto bass line into editable manual bass notes without clearing existing manual notes.">Fill auto bass</button>
+      <label>Bass rhythm
+        <select data-bass-preset-section="${escapeAttr(section.id)}" title="Choose a bass rhythm preset to fill editable manual notes for this section.">
+          <option value="">Choose bass preset...</option>
+          ${visibleBassPresetsForProject(pcs).map((preset) => `<option value="${escapeAttr(preset.id)}" title="${escapeAttr(preset.tip)}">${escapeHtml(bassPresetLabel(preset))}</option>`).join("")}
+        </select>
+      </label>
       ${renderStepRuler(startStep, steps)}
       <div class="sequencer-row">
         <span>note</span>

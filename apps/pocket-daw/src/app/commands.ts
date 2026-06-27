@@ -3,7 +3,7 @@ import { sanitizePocketChordsmithProject } from "../compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../compatibility/pcsToDaw";
 import { migratePocketDawProject } from "../compatibility/migrations";
 import { cloneProject, createDefaultMetronomeSettings, parsePocketDawProjectFile } from "../daw/dawProject";
-import { deleteClip, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, splitClipAtBar, toggleClipMute, trimClipEnd, trimClipStart } from "../daw/clips";
+import { deleteClip, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, setClipTransform, splitClipAtBar, toggleClipMute, trimClipEnd, trimClipStart, type ClipTransformField } from "../daw/clips";
 import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
 import { addDrumLaneFx, isDrumLaneId, removeDrumLaneFx, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
 import { addTrackToProject, renameTrack, type AddTrackKind } from "../daw/tracks";
@@ -16,6 +16,7 @@ import { pushUndo, redo, undo } from "../daw/undo";
 import { addMarkerAtBar, clearLoop, deleteMarker, renameMarker, setLoopToClip, snapBarValue } from "../daw/timeline";
 import {
   appendChordsmithSection,
+  applyBassPreset,
   applyDrumPreset,
   applyGuitarPreset,
   cycleBassStep,
@@ -48,6 +49,7 @@ import {
   type DrumLane
 } from "../daw/chordsmithEditor";
 import { drumPresetEventsForProject, drumPresetLabel, drumPresetVisibleForProject, findDrumPreset } from "../daw/chordsmithDrumPresets";
+import { bassPresetLabel, bassPresetPatternForProject, bassPresetVisibleForProject, findBassPreset } from "../daw/chordsmithBassPresets";
 import { findGuitarPreset, guitarPresetLabel, guitarPresetPatternForProject, guitarPresetVisibleForProject } from "../daw/chordsmithGuitarPresets";
 import type { PocketDawProject } from "../daw/schema";
 import type { AppState } from "./state";
@@ -141,6 +143,17 @@ export function deleteSelectedClip(state: AppState): AppState {
 export function toggleSelectedClipMute(state: AppState): AppState {
   if (!state.selectedClipId) return state;
   return commitProject(state, toggleClipMute(state.undoStack.present, state.selectedClipId), "Toggled clip mute.");
+}
+
+export function setSelectedClipTransformCommand(state: AppState, clipId: string, field: ClipTransformField, value: number): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip) return { ...state, status: "Choose a clip before editing transforms." };
+  const next = setClipTransform(state.undoStack.present, clipId, field, value);
+  return {
+    ...commitProject(state, next, field === "transpose" ? `Set ${clip.name} transpose to ${next.timeline.clips.find((item) => item.id === clipId)?.transforms.transpose ?? 0}.` : `Set ${clip.name} gain to ${next.timeline.clips.find((item) => item.id === clipId)?.transforms.gain ?? 1}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
 }
 
 export function splitSelectedClipAtPlayhead(state: AppState): AppState {
@@ -461,6 +474,22 @@ export function cycleBassStepCommand(state: AppState, sectionId: string, step: n
 
 export function setBassModeCommand(state: AppState, mode: string): AppState {
   return commitProject(state, setBassMode(state.undoStack.present, mode), `Bass mode set to ${mode === "manual" ? "manual" : "auto"}.`);
+}
+
+export function applyBassPresetCommand(state: AppState, sectionId: string, presetId: string): AppState {
+  if (!isSectionId(sectionId)) return { ...state, status: "Choose a valid Chordsmith section before applying a bass preset." };
+  const pcs = getPrimaryChordsmithSource(state.undoStack.present);
+  const section = pcs?.sections[sectionId];
+  const preset = findBassPreset(presetId);
+  if (!pcs || !section || !preset) return { ...state, status: "Choose a valid bass preset." };
+  if (!bassPresetVisibleForProject(preset, pcs)) return { ...state, status: "Choose a bass preset available for this time signature." };
+  const pattern = bassPresetPatternForProject(preset.id, pcs, section);
+  if (!pattern.notes.some((note) => note !== null && note !== undefined)) return { ...state, status: "No bass pattern is available for this preset and time signature." };
+  return commitProject(
+    state,
+    applyBassPreset(state.undoStack.present, sectionId, preset.id),
+    `Applied ${bassPresetLabel(preset)} bass preset to Section ${sectionId}.`
+  );
 }
 
 export function fillAutoBassCommand(state: AppState): AppState {

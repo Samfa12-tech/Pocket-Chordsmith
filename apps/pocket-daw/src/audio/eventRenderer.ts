@@ -248,7 +248,7 @@ function renderGeneratedSectionEvents(
             duration: chordsmithPitchedTupletDuration(spanDur),
             bar: eventBar,
             step,
-            midi,
+            midi: applyClipPitchTransform(midi, clip),
             velocity: humanizedPeak(pcs, (accent ? 0.42 : 0.34) * clipGain, step + tripletIndex, 4),
             accent,
             bassTone: pcs.bassTone,
@@ -270,10 +270,10 @@ function renderGeneratedSectionEvents(
             duration: phrase.dur,
             bar: eventBar,
             step,
-            midi,
+            midi: applyClipPitchTransform(midi, clip),
             velocity: humanizedPeak(pcs, (phrase.accent ? 0.42 : 0.34) * clipGain, step, 4),
             accent: phrase.accent,
-            slideMidi: phrase.slideMidi ?? undefined,
+            slideMidi: phrase.slideMidi === null ? undefined : applyClipPitchTransform(phrase.slideMidi, clip),
             slideOffset: phrase.slideOffset ?? undefined,
             bassTone: pcs.bassTone,
             ...sourceMeta
@@ -360,7 +360,7 @@ function renderGeneratedSectionEvents(
           duration: guitarStepDuration(section, step, art, secondsPerBeat, resolution, swing, sectionMaxSteps),
           bar: eventBar,
           step,
-          midiNotes: powerChordNotes(pcs, currentChord(pcs, section, step)),
+          midiNotes: powerChordNotes(pcs, currentChord(pcs, section, step)).map((midi) => applyClipPitchTransform(midi, clip)),
           velocity: clipGain,
           articulation: art,
           instrument: pcs.guitarTone,
@@ -595,6 +595,10 @@ function melodyEvent(
     instrument: section.melodyInstruments[trackIndex] || DEFAULT_MELODY_INSTRUMENT,
     ...sourceEventMetadata(pcs)
   };
+}
+
+function applyClipPitchTransform(midi: number, clip: Clip): number {
+  return Math.max(0, Math.min(127, midi + (clip.transforms.transpose || 0) + (clip.transforms.octave || 0) * 12));
 }
 
 function melodyTrackId(project: PocketDawProject, trackIndex: number) {

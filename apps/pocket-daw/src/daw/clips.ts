@@ -2,6 +2,8 @@ import type { Clip, PocketDawProject } from "./schema";
 import { cloneProject } from "./dawProject";
 import { recomputeTimelineBars } from "./timeline";
 
+export type ClipTransformField = "transpose" | "gain";
+
 export function selectClip(project: PocketDawProject, clipId: string | null): PocketDawProject {
   const next = cloneProject(project);
   next.timeline.clips.forEach((clip) => {
@@ -60,6 +62,23 @@ export function toggleClipMute(project: PocketDawProject, clipId: string): Pocke
   const next = cloneProject(project);
   const clip = next.timeline.clips.find((item) => item.id === clipId);
   if (clip) clip.muted = !clip.muted;
+  return next;
+}
+
+export function setClipTransform(project: PocketDawProject, clipId: string, field: ClipTransformField, value: number): PocketDawProject {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip) return project;
+  const current = clip.transforms || { transpose: 0, octave: 0, gain: 1, stemMutes: {} };
+  clip.transforms = {
+    ...current,
+    transpose: current.transpose ?? 0,
+    octave: current.octave ?? 0,
+    gain: current.gain ?? 1,
+    stemMutes: current.stemMutes || {}
+  };
+  if (field === "transpose") clip.transforms.transpose = clampNumber(value, -48, 48, 0, true);
+  if (field === "gain") clip.transforms.gain = clampNumber(value, 0, 4, 1, false);
   return next;
 }
 
@@ -181,4 +200,11 @@ function nextClipId(clips: Clip[]): string {
   const ids = new Set(clips.map((clip) => clip.id));
   while (ids.has(`clip_${String(i).padStart(3, "0")}`)) i += 1;
   return `clip_${String(i).padStart(3, "0")}`;
+}
+
+function clampNumber(value: number, min: number, max: number, fallback: number, integer: boolean): number {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  const clamped = Math.max(min, Math.min(max, number));
+  return integer ? Math.round(clamped) : Math.round(clamped * 1000) / 1000;
 }
