@@ -1985,6 +1985,11 @@ function makePocketDawDownloadHandoffFileName(){
   const suffix = Math.random().toString(36).slice(2, 8);
   return `pocket-chordsmith-to-pocket-daw-${stamp}-${suffix}.pcs1.txt`;
 }
+function makeGodotDownloadHandoffFileName(){
+  const stamp = Date.now().toString(36);
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `pocket-chordsmith-to-godot-${stamp}-${suffix}.pcs1.txt`;
+}
 function setPushHandoffStatus(message){
   if(els.pushHandoffStatus) els.pushHandoffStatus.textContent = message;
 }
@@ -2169,7 +2174,8 @@ async function pushCodeDirectlyToGodot(code){
     if(result.ok) return result;
     failures.push(result.error || endpoint);
   }
-  return {ok:false, error: failures.filter(Boolean).join("; ") || "Godot receiver unavailable"};
+  const uniqueFailures = [...new Set(failures.filter(Boolean))];
+  return {ok:false, error: uniqueFailures.join("; ") || "Godot receiver unavailable"};
 }
 function submitCodeToGodotReceiver(code){
   return submitGodotReceiverForm(GODOT_PUSH_ENDPOINTS[0], code);
@@ -2326,9 +2332,16 @@ async function pushToGodot(){
       "Godot import code copied",
       "Godot import code is ready in the project box; clipboard was blocked"
     );
+    const downloaded = copied ? false : downloadTextFallback(makeGodotDownloadHandoffFileName(), code);
     const message = godotLoopbackBlockMessage(direct.error);
     setStatus(copied ? "Godot push blocked by browser local-network permissions; PCS1 code copied." : "Godot push blocked by browser local-network permissions.");
-    setPushHandoffStatus(message);
+    if(copied){
+      setPushHandoffStatus(`${message} PCS1 code was copied.`);
+    }else if(downloaded){
+      setPushHandoffStatus(`${message} Clipboard was blocked by itch, so a PCS1 handoff text file was downloaded and the code remains in the project box.`);
+    }else{
+      setPushHandoffStatus(`${message} Clipboard and download fallback were blocked; select the PCS1 code from the project box manually.`);
+    }
     return;
   }
   if(submitCodeToGodotReceiver(code)){

@@ -619,6 +619,7 @@ test("Godot push reports browser loopback permission blocks without claiming fal
   await page.evaluate(() => {
     window.__pocketChordsmithFetches = [];
     window.__pocketChordsmithFormSubmits = 0;
+    window.__pocketChordsmithDownloads = [];
     const blockedPolicy = {
       allowsFeature: (name) =>
         name !== "loopback-network" && name !== "local-network-access",
@@ -650,6 +651,9 @@ test("Godot push reports browser loopback permission blocks without claiming fal
     HTMLFormElement.prototype.submit = function submit() {
       window.__pocketChordsmithFormSubmits += 1;
     };
+    HTMLAnchorElement.prototype.click = function click() {
+      window.__pocketChordsmithDownloads.push(this.download || "");
+    };
   });
 
   await page.locator("#pushToGodotBtn").click();
@@ -657,15 +661,21 @@ test("Godot push reports browser loopback permission blocks without claiming fal
   const result = await page.evaluate(() => ({
     fetches: window.__pocketChordsmithFetches,
     formSubmits: window.__pocketChordsmithFormSubmits,
+    downloads: window.__pocketChordsmithDownloads,
   }));
   expect(result.fetches).toHaveLength(2);
   expect(result.fetches[0].targetAddressSpace).toBe("loopback");
   expect(result.formSubmits).toBe(0);
+  expect(result.downloads).toHaveLength(1);
+  expect(result.downloads[0]).toMatch(/^pocket-chordsmith-to-godot-.+\.pcs1\.txt$/);
   await expect(page.locator("#statusText")).toContainText(
     "Godot push blocked by browser local-network permissions",
   );
   await expect(page.locator("#pushHandoffStatus")).toContainText(
-    "Chrome blocked hosted Pocket Chordsmith from reaching localhost",
+    "Chrome blocked hosted Pocket Chordsmith from reaching localhost. (Godot receiver unavailable) Open a local/standalone Chordsmith build",
+  );
+  await expect(page.locator("#pushHandoffStatus")).toContainText(
+    "Clipboard was blocked by itch, so a PCS1 handoff text file was downloaded",
   );
   await expect(page.locator("#projectBox")).toHaveValue(/^PCS1:/);
 });
