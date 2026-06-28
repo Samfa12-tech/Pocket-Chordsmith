@@ -475,7 +475,7 @@ for (const fixtureCase of FIXTURE_CASES) {
   });
 }
 
-test("exports a fixture WAV through Chordsmith and matches direct Pocket Audio Core output", async ({
+test("exports a fixture WAV through Chordsmith using the same Core WAV plumbing as direct Core output", async ({
   page,
 }) => {
   test.setTimeout(45_000);

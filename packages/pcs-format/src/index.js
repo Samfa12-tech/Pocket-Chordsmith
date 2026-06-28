@@ -5,7 +5,8 @@ export const PCS_FORMAT_STATUS = "0.1.0-scaffold";
 export const PCS_FORMAT_SCOPE = Object.freeze({
   owns: Object.freeze([
     "PCS1 prefix metadata",
-    "schema-16 version metadata",
+    "schema-16 projectVersion metadata",
+    "schemaVersion compatibility alias metadata",
     "parse/validate result shape",
     "required schema-16 section field names",
     "compatibility fixture metadata",
@@ -31,9 +32,10 @@ export const REQUIRED_SECTION_FIELDS = [
   "grid",
   "melodyTracks",
   "melodyInstruments",
-  "melodyHold",
   "bassNotes",
 ];
+
+export const OPTIONAL_SECTION_SUMMARY_FIELDS = ["melodyHold"];
 
 export const REQUIRED_SECTION_SUFFIXES = [
   "A",
@@ -90,29 +92,29 @@ export function validateSchema16Project(project) {
       warnings,
     };
   }
-  if (project.schemaVersion !== PCS_SCHEMA_VERSION)
-    errors.push(`schemaVersion must be ${PCS_SCHEMA_VERSION}.`);
+  const version = schema16ProjectVersion(project);
+  if (version !== PCS_SCHEMA_VERSION)
+    errors.push(`projectVersion must be ${PCS_SCHEMA_VERSION}.`);
   if (!Number.isFinite(Number(project.bpm)))
     errors.push("bpm must be numeric.");
   if (
-    typeof project.songSequence !== "string" &&
-    !Array.isArray(project.songSequence)
+    typeof (project.songSequence ?? project.sectionSequence) !== "string" &&
+    !Array.isArray(project.songSequence ?? project.sectionSequence)
   )
     errors.push("songSequence must be a string or array.");
-  if (
-    !project.sectionBars ||
-    typeof project.sectionBars !== "object" ||
-    Array.isArray(project.sectionBars)
-  )
-    errors.push("sectionBars must be an object.");
-  for (const suffix of REQUIRED_SECTION_SUFFIXES) {
+  const hasSectionsObject = isPlainObject(project.sections);
+  if (!isPlainObject(project.sectionBars) && !hasSectionsObject)
+    errors.push("sectionBars or sections must be an object.");
+  const sectionIds = schema16ProjectSectionIds(project);
+  if (!sectionIds.length)
+    errors.push("At least one schema-16 section is required.");
+  for (const suffix of sectionIds) {
     for (const field of REQUIRED_SECTION_FIELDS) {
-      const key = `${field}${suffix}`;
-      if (!(key in project)) errors.push(`Missing schema-16 field ${key}.`);
+      if (!hasSchema16SectionField(project, suffix, field))
+        errors.push(`Missing schema-16 field ${field}${suffix}.`);
     }
     if (
-      project.sectionBars &&
-      typeof project.sectionBars === "object" &&
+      isPlainObject(project.sectionBars) &&
       !(suffix in project.sectionBars)
     )
       warnings.push(`sectionBars is missing ${suffix}.`);
@@ -121,7 +123,7 @@ export function validateSchema16Project(project) {
 }
 
 export function schema16SongSequence(project) {
-  const raw = project?.songSequence;
+  const raw = project?.songSequence ?? project?.sectionSequence;
   const sections = Array.isArray(raw)
     ? raw
     : String(raw || "")
@@ -159,14 +161,67 @@ export function schema16SectionSummary(project, sectionId = "A") {
   return {
     ok: true,
     section: suffix,
-    bars: Number(project.sectionBars?.[suffix] || 0),
-    progression: project[`progression${suffix}`],
-    drumGrid: project[`grid${suffix}`],
-    melodyTracks: project[`melodyTracks${suffix}`],
-    melodyInstruments: project[`melodyInstruments${suffix}`],
-    melodyHold: project[`melodyHold${suffix}`],
-    bassNotes: project[`bassNotes${suffix}`],
+    bars: Number(
+      sectionField(project, suffix, "bars") ?? project.sectionBars?.[suffix] ?? 0,
+    ),
+    progression: sectionField(project, suffix, "progression"),
+    drumGrid: sectionField(project, suffix, "grid"),
+    melodyTracks: sectionField(project, suffix, "melodyTracks"),
+    melodyInstruments: sectionField(project, suffix, "melodyInstruments"),
+    melodyHold: sectionField(project, suffix, "melodyHold"),
+    bassNotes: sectionField(project, suffix, "bassNotes"),
   };
+}
+
+export function schema16ProjectVersion(project) {
+  return Number(project?.projectVersion ?? project?.schemaVersion);
+}
+
+export function schema16ProjectSectionIds(project) {
+  const ids = new Set();
+  for (const section of schema16SongSequence(project)) ids.add(section);
+  if (isPlainObject(project?.sectionBars)) {
+    for (const section of Object.keys(project.sectionBars)) {
+      const normalized = normalizeSectionId(section);
+      if (normalized) ids.add(normalized);
+    }
+  }
+  if (isPlainObject(project?.sections)) {
+    for (const section of Object.keys(project.sections)) {
+      const normalized = normalizeSectionId(section);
+      if (normalized) ids.add(normalized);
+    }
+  }
+  for (const suffix of REQUIRED_SECTION_SUFFIXES) {
+    if (
+      REQUIRED_SECTION_FIELDS.some(
+        (field) => `${field}${suffix}` in (project || {}),
+      )
+    )
+      ids.add(suffix);
+  }
+  return [...ids].filter((section) => REQUIRED_SECTION_SUFFIXES.includes(section));
+}
+
+function hasSchema16SectionField(project, suffix, field) {
+  return sectionField(project, suffix, field) !== undefined;
+}
+
+function sectionField(project, suffix, field) {
+  const section = project?.sections?.[suffix] ?? project?.sections?.[suffix.toLowerCase()];
+  if (isPlainObject(section) && field in section) return section[field];
+  return project?.[`${field}${suffix}`];
+}
+
+function normalizeSectionId(section) {
+  const normalized = String(section || "")
+    .trim()
+    .toUpperCase();
+  return REQUIRED_SECTION_SUFFIXES.includes(normalized) ? normalized : "";
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function decodePcs1Payload(payload) {

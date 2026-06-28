@@ -16,6 +16,10 @@ This is alpha-testing software, not a finished professional DAW. Future installe
 
 `docs/CURRENT_RELEASE_STATUS.md` is generated from `release-status.json` and is the release-truth anchor. Older version sections below are retained as historical implementation and QA notes; do not treat old version headings as current status unless the generated release-status doc agrees.
 
+Source commits after the published `0.6.34` checkpoint are unreleased until the
+next checkpoint is deliberately versioned, packaged, hashed, smoke-tested, and
+published. Do not create another `0.6.34` installer from a later commit.
+
 ## Windows project open polish
 
 The 2026-06-20 live MCP smoke exposed user-facing workflow gaps. The 2026-06-28 installed `0.6.34` smoke now verifies the local file-association path; keep these rows as regression gates for future public checkpoints:
@@ -24,6 +28,7 @@ The 2026-06-20 live MCP smoke exposed user-facing workflow gaps. The 2026-06-28 
 - Cold-start `.pocketdaw` launch opens the clicked project, and second-instance launch focuses the existing app before loading the clicked project.
 - The live bridge `open_project` action can reopen explicit `.pocketdaw` paths in the running installed app.
 - `pocket-daw://` Chordsmith handoff still imports after association testing.
+- DAW -> Godot game-asset export/import has manual smoke evidence from 2026-06-28: Sam exported a project from Pocket DAW as a game asset, imported it into Godot, and confirmed it worked. Repeat future release smoke with artifact names, Godot/addon versions, import path, and validator result.
 - Implementation and packaged-smoke plan: `docs/FILE_ASSOCIATION_IMPLEMENTATION_PLAN.md`.
 - Keep the current MIDI import behavior clear: real `.mid` files import as editable MIDI media/clips. A separate future "Convert MIDI to Chordsmith arrangement" command should use simple heuristics to populate drums, bass, chord and melody lanes for users who expect Chordsmith-style decomposition. Design anchor: `docs/MIDI_IMPORT_AND_CHORDSMITH_CONVERSION_PLAN.md`.
 - Keep recording scope honest: the current alpha remains one armed mono live track. Future stereo and simultaneous multitrack capture should follow `docs/STEREO_MULTITRACK_RECORDING_PLAN.md`.

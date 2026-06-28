@@ -31,11 +31,12 @@ products.
   settled.
 - Improve tests, docs, and import/export clarity before calling it a stable
   public release.
-- Next product slice from the current release-status baseline: verify collected
-  Godot adaptive pack and web-game ZIP exports in real Godot/web import
-  workflows, strengthen update-through-app smoke, then add push-to-Godot or
-  native destination selection before deeper ASIO, simultaneous multitrack
-  capture, or broad DAW editor expansion.
+- Next product slice from the current release-status baseline: repeat and
+  record collected Godot adaptive pack and web-game ZIP export smoke with named
+  artifacts and target versions, strengthen update-through-app smoke, then add
+  push-to-Godot or native destination selection before deeper ASIO,
+  simultaneous multitrack capture, or broad DAW editor expansion. A manual
+  DAW -> Godot game-asset export/import smoke passed on 2026-06-28.
 
 ## Pocket Audio Core And PCS Format
 

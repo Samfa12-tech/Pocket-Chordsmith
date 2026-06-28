@@ -21,6 +21,11 @@ Pocket DAW is installed-app only for public alpha testing. Do not document, test
 
 Pocket DAW uses signed Tauri updater artifacts from GitHub Releases. The app is not updated from raw git source.
 
+Source commits after the published `0.6.34` checkpoint are unreleased until a
+new checkpoint is deliberately versioned, packaged, hashed, smoke-tested, and
+published. Do not create a new installer from a later commit while leaving the
+app/package/Tauri metadata at `0.6.34`.
+
 ## Local Development
 
 ```powershell
@@ -84,6 +89,9 @@ Architecture docs:
 ## Current Caveats
 
 - This is alpha-testing software, not a finished professional DAW.
+- Current source may contain unreleased post-`0.6.34` docs, tests, or source
+  organization work. Publish the next binary only after bumping the checkpoint
+  version and updating the release truth with exact-artifact smoke evidence.
 - Live recording is an installed-app-only alpha slice: one armed mono live audio track, saved-project prerequisite, project-relative WAV takes under `project-media/recordings`, metronome/count-in, monitor while armed/recording, and same-track overwrite placement for new takes.
 - v0.6.8 is the updater-visible native-cache diagnostics patch. It keeps the lofi/chillhop parity work, keeps manual Build Native Cache swapping active native playback to cached WAV regions, adds Native Playback/Native Cache readouts for cached regions, cached clips and procedural fallback events, and keeps lofi texture/noise ticks from falsely driving the Drums mixer meter.
 - v0.6.9 is the native lofi-bass audibility hotfix. It removes the extra native-only bass output pad so procedural `warm_sub` bass matches the Chordsmith/WebAudio scale when the native cache is not active.

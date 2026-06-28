@@ -16,7 +16,7 @@
       "file": "schema16-invalid.json",
       "role": "invalid-schema16-error-contract",
       "expectedValid": false,
-      "expectedErrors": ["schemaVersion", "bpm", "sectionBars", "progressionA"]
+      "expectedErrors": ["projectVersion", "bpm", "sectionBars", "progressionA"]
     },
     {
       "file": "schema16-trace-smoke.json",
