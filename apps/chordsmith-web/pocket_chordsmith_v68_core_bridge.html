@@ -2136,6 +2136,7 @@ async function postCodeToGodotReceiver(endpoint, code){
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {"Content-Type":"application/json"},
+      targetAddressSpace: "loopback",
       body: JSON.stringify({
         type: "pocket-chordsmith.push-to-godot",
         format: "PCS1",
@@ -2172,6 +2173,22 @@ async function pushCodeDirectlyToGodot(code){
 }
 function submitCodeToGodotReceiver(code){
   return submitGodotReceiverForm(GODOT_PUSH_ENDPOINTS[0], code);
+}
+function localNetworkAccessPolicyState(){
+  const policy = document.permissionsPolicy || document.featurePolicy;
+  if(!policy || typeof policy.allowsFeature !== "function") return "unknown";
+  try{
+    if(policy.allowsFeature("loopback-network") === false) return "blocked";
+  }catch(e){}
+  try{
+    if(policy.allowsFeature("local-network-access") === false) return "blocked";
+  }catch(e){}
+  return "allowed";
+}
+function godotLoopbackBlockMessage(error){
+  const base = "Chrome blocked hosted Pocket Chordsmith from reaching localhost.";
+  const detail = error ? ` (${error})` : "";
+  return `${base}${detail} Open a local/standalone Chordsmith build or paste the PCS1 code in Godot > Chordsmith tab > Paste JSON/Code > Import.`;
 }
 async function pushToPocketDj(){
   stopLivePlaybackBeforeHandoff();
@@ -2303,8 +2320,19 @@ async function pushToGodot(){
     setPushHandoffStatus(message);
     return;
   }
+  if(localNetworkAccessPolicyState() === "blocked"){
+    const copied = await copyTextForHandoff(
+      code,
+      "Godot import code copied",
+      "Godot import code is ready in the project box; clipboard was blocked"
+    );
+    const message = godotLoopbackBlockMessage(direct.error);
+    setStatus(copied ? "Godot push blocked by browser local-network permissions; PCS1 code copied." : "Godot push blocked by browser local-network permissions.");
+    setPushHandoffStatus(message);
+    return;
+  }
   if(submitCodeToGodotReceiver(code)){
-    const message = "Godot push submitted through browser fallback. Check the Chordsmith tab, then Save Chart Resource.";
+    const message = "Godot push submitted through browser fallback. Check the Chordsmith tab, then Save Chart Resource. If nothing appears, paste the PCS1 code from the project box.";
     setStatus(message);
     setPushHandoffStatus(`${message} Fetch was unavailable (${direct.error}).`);
     return;

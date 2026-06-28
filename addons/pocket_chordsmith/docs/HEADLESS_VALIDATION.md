@@ -57,3 +57,10 @@ The editor receiver in `editor/pcs_push_receiver.gd` is intentionally narrow in 
 It also intentionally returns broad CORS headers, including `Access-Control-Allow-Origin: *`, so hosted Pocket Chordsmith pages can POST to the local editor receiver. This differs from Pocket DAW's stricter local bridge, which requires loopback hosts, trusted local origins, and bearer-token authorization for live control endpoints.
 
 Keep the current broad CORS stance only while the receiver remains editor-only, loopback-only, import-only, and bounded. Revisit origin allow-listing before adding any receiver action that writes outside chart import, controls runtime playback, reads project files, exposes filesystem paths, or stays active without the editor tab.
+
+Chrome may still block hosted itch iframe pages from reaching loopback before
+the receiver can accept the push. A console message such as `Permission was
+denied for this request to access the loopback address space` means the browser
+embedding policy blocked localhost access; it is not proof that Godot ignored a
+valid payload. In that case use a local/standalone Chordsmith build or paste the
+copied `PCS1:` code into the Chordsmith tab.

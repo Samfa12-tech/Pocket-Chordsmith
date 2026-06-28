@@ -612,6 +612,64 @@ test("Godot direct push sends a schema 16 PCS1 payload to the local receiver", a
   );
 });
 
+test("Godot push reports browser loopback permission blocks without claiming fallback success", async ({
+  page,
+}) => {
+  await importFixtureThroughSettings(page, FIXTURE_CASES[1].path);
+  await page.evaluate(() => {
+    window.__pocketChordsmithFetches = [];
+    window.__pocketChordsmithFormSubmits = 0;
+    const blockedPolicy = {
+      allowsFeature: (name) =>
+        name !== "loopback-network" && name !== "local-network-access",
+    };
+    try {
+      Object.defineProperty(document, "permissionsPolicy", {
+        configurable: true,
+        value: blockedPolicy,
+      });
+    } catch (error) {
+      window.__pocketChordsmithPolicyError = String(error);
+    }
+    try {
+      Object.defineProperty(document, "featurePolicy", {
+        configurable: true,
+        value: blockedPolicy,
+      });
+    } catch (error) {
+      window.__pocketChordsmithPolicyError = String(error);
+    }
+    window.fetch = async (url, options = {}) => {
+      window.__pocketChordsmithFetches.push({
+        url: String(url),
+        method: options.method || "GET",
+        targetAddressSpace: options.targetAddressSpace || "",
+      });
+      throw new TypeError("Failed to fetch");
+    };
+    HTMLFormElement.prototype.submit = function submit() {
+      window.__pocketChordsmithFormSubmits += 1;
+    };
+  });
+
+  await page.locator("#pushToGodotBtn").click();
+
+  const result = await page.evaluate(() => ({
+    fetches: window.__pocketChordsmithFetches,
+    formSubmits: window.__pocketChordsmithFormSubmits,
+  }));
+  expect(result.fetches).toHaveLength(2);
+  expect(result.fetches[0].targetAddressSpace).toBe("loopback");
+  expect(result.formSubmits).toBe(0);
+  await expect(page.locator("#statusText")).toContainText(
+    "Godot push blocked by browser local-network permissions",
+  );
+  await expect(page.locator("#pushHandoffStatus")).toContainText(
+    "Chrome blocked hosted Pocket Chordsmith from reaching localhost",
+  );
+  await expect(page.locator("#projectBox")).toHaveValue(/^PCS1:/);
+});
+
 test("settings import and handoff controls stay within the viewport", async ({
   page,
 }) => {

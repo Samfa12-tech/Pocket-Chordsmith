@@ -96,6 +96,10 @@ Three import-ready chip demos live in `demos/`: `chip_bug_maze_pulse_loop.json`,
 - New file/version: `pocket_chordsmith_v67_direct_godot_push.html`.
 - `Push to Godot` first posts the current `PCS1:` code to the local Godot addon receiver at `http://127.0.0.1:9087/pocket-chordsmith/push-to-godot`.
 - If the receiver is unavailable or the browser blocks local HTTP, the button falls back to the v66 clipboard/paste instructions.
+- Chrome may block hosted itch iframe pages from reaching loopback before the
+  Godot receiver can accept the push. If Chordsmith reports a loopback
+  permission block, use a local/standalone Chordsmith build or paste the copied
+  `PCS1:` code into Godot's Chordsmith tab.
 
 ### v66 Push to Handoffs
 
