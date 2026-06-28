@@ -24,7 +24,7 @@
     button.hot{border-color:var(--gold);background:#3b2d12}
     button.on{outline:2px solid rgba(84,215,255,.45)}
     input[type="range"]{accent-color:var(--cyan)}
-    .readout{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+    .readout{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
     .tile{background:#101821;border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
     .k{font-size:.72rem;color:var(--muted);text-transform:uppercase}
     .v{font-size:1.1rem;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -76,6 +76,7 @@
       <div class="tile"><div class="k">Section</div><div class="v" id="sectionText">-</div></div>
       <div class="tile"><div class="k">Bar / Beat</div><div class="v" id="beatText">-</div></div>
       <div class="tile"><div class="k">Intensity</div><div class="v" id="intensityText">0.35</div></div>
+      <div class="tile"><div class="k">Profile</div><div class="v" id="profileText">-</div></div>
     </div>
     <pre id="log" style="margin-top:10px">Ready.</pre>
   </section>
@@ -94,6 +95,13 @@ const demoProject = {
   resolution:4,
   songSequence:["A","B","C","D"],
   sectionBars:{A:1,B:1,C:1,D:1,E:1},
+  audioProfile:"lofi_chill",
+  lofiPreset:"lofi_koi_pond",
+  lofiTexture:{enabled:true,vinylCrackle:0.035,tapeHiss:0.045,wowFlutter:0.02,warmth:0.18,lowPassAge:0.16,bitCrush:0},
+  drumKit:"lofi_tape_soft",
+  drumGroovePreset:"lofi_sparse_clicks",
+  bassTone:"rounded_triangle_bass",
+  chordInstrument:"lofi_warm_pad",
   progressionA:[0,3,4,0],
   progressionB:[0,5,3,4],
   progressionC:[5,6,0,3],
@@ -105,9 +113,13 @@ const demoProject = {
   gridD:{kick:[1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],snare:[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0],hat:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],bass:[1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0]},
   gridE:{kick:[1,0,0,0],snare:[0,0,1,0],hat:[1,0,1,0],bass:[1,0,0,0]},
   melodyTracksA:[[0,null,2,null,3,null,2,null,0,null,2,null,5,null,3,null]],
+  melodyInstrumentsA:["tape_bell"],
   melodyTracksB:[[5,null,7,null,8,null,7,null,5,null,3,null,2,null,0,null]],
+  melodyInstrumentsB:["mellow_vibes"],
   melodyTracksC:[[0,null,null,null,3,null,null,null,5,null,null,null,7,null,null,null]],
+  melodyInstrumentsC:["mellow_sax"],
   melodyTracksD:[[7,6,5,3,5,3,2,0,7,6,5,3,2,0,0,null]],
+  melodyInstrumentsD:["muted_trumpet"],
   melodyTracksE:[[12,null,7,null]]
 };
 
@@ -128,7 +140,8 @@ const els = {
   section:document.getElementById("sectionText"),
   beat:document.getElementById("beatText"),
   intensity:document.getElementById("intensity"),
-  intensityText:document.getElementById("intensityText")
+  intensityText:document.getElementById("intensityText"),
+  profile:document.getElementById("profileText")
 };
 const ctx = els.canvas.getContext("2d");
 let playerX = 80;
@@ -143,6 +156,7 @@ function updateDiagnostics(){
   els.section.textContent = d.currentSection || "-";
   els.beat.textContent = `${music.getTransport().bar}/${music.getTransport().beat}`;
   els.intensityText.textContent = music.intensity.toFixed(2);
+  els.profile.textContent = music.project?.meta?.stylePreset || music.project?.meta?.audioProfile || "-";
 }
 
 music.on("beat", event => {

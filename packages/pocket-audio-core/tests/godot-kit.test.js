@@ -51,6 +51,20 @@ const lofiGodotFixture = {
   melodyInstrumentsB: ["tape_bell"]
 };
 
+const chipGodotFixture = {
+  ...godotFixture,
+  title: "Chip Godot Kit Test",
+  audioProfile: "chip_tune",
+  chipPreset: "chip_neon_boss",
+  chipTexture: { enabled: true, bitDepth: 0.32, sampleRateCrush: 0.22, pulseWidth: 0.36, pitchDrift: 0.02, saturation: 0.4, stereoSpread: 0.18 },
+  drumKit: "modern_chip_punch",
+  drumGroovePreset: "chip_boss_half_time",
+  bassTone: "bitcrush_bass",
+  chordInstrument: "modern_chip_poly",
+  melodyInstrumentsA: ["chip_pulse_lead"],
+  melodyInstrumentsB: ["chip_pulse_lead"]
+};
+
 test("Godot manifest includes section durations and loop points", () => {
   const manifest = createGodotManifest(godotFixture, { profile: GODOT_EXPORT_PROFILES.LOOP_KIT, sampleRate: 48000 });
   assert.equal(manifest.app, "PocketAudioCoreGodotKit");
@@ -88,6 +102,25 @@ test("Godot manifest preserves lofi sound identity for procedural previews and g
   assert.ok(manifest.events.some((event) => event.stem === "bass" && event.bassTone === "rounded_triangle_bass" && event.audioProfile === "lofi_chill"));
   assert.ok(manifest.events.some((event) => event.stem === "chords" && event.instrument === "lofi_warm_pad" && event.lofiTexture?.enabled));
   assert.ok(manifest.events.some((event) => event.stem === "melody" && event.instrument === "tape_bell"));
+});
+
+test("Godot manifest preserves chip sound identity for procedural previews and game-pack exports", () => {
+  const manifest = createGodotManifest(chipGodotFixture, { profile: GODOT_EXPORT_PROFILES.LOOP_KIT, sampleRate: 48000 });
+  assert.equal(manifest.audioProfile, "chip_tune");
+  assert.equal(manifest.chip.presetId, "chip_neon_boss");
+  assert.equal(manifest.chip.drumKit, "modern_chip_punch");
+  assert.equal(manifest.chip.drumGroovePreset, "chip_boss_half_time");
+  assert.equal(manifest.chip.bassTone, "bitcrush_bass");
+  assert.equal(manifest.chip.texture.sampleRateCrush, 0.22);
+  assert.ok(manifest.soundRegistry.chip.drumKits.modern_chip_punch);
+  assert.ok(manifest.soundRegistry.chip.bassTones.bitcrush_bass);
+  assert.ok(manifest.soundRegistry.chip.chordInstruments.modern_chip_poly);
+  assert.ok(manifest.soundRegistry.chip.leadInstruments.chip_pulse_lead);
+
+  assert.ok(manifest.events.some((event) => event.stem === "drums" && event.drumKit === "modern_chip_punch" && event.chipPreset === "chip_neon_boss"));
+  assert.ok(manifest.events.some((event) => event.stem === "bass" && event.bassTone === "bitcrush_bass" && event.audioProfile === "chip_tune"));
+  assert.ok(manifest.events.some((event) => event.stem === "chords" && event.instrument === "modern_chip_poly" && event.chipTexture?.enabled));
+  assert.ok(manifest.events.some((event) => event.stem === "melody" && event.instrument === "chip_pulse_lead"));
 });
 
 test("LOOP_KIT renders section mixes and aligned stems", async () => {

@@ -39,6 +39,8 @@ The strict golden layer compares section transitions, bar/beat positions, event 
 
 Known limitation: raw fixture JSON still drifts from Chordsmith's browser import interpretation for legacy/compact step grids. Chordsmith currently expands some older 16-step fixture grids into its 64-cell section canvas, while the raw core fixture normalizer treats them as one-bar advanced grids. The comparison command prints this raw drift intentionally; use `--strict-raw` only when that migration decision has been resolved.
 
+Decision note, 2026-06-28: keep `npm run compare:chordsmith-browser-trace` non-strict for raw fixture drift. The release gate is strict for Chordsmith-normalized browser exports because that is the compatibility contract users exercise through import/export. Raw fixture drift remains diagnostic evidence for a future migration pass, not a failure, until the project intentionally redefines legacy/compact-grid semantics and updates fixtures or core normalisation together.
+
 ## Audio Metrics Status
 
 Status: deterministic core render metrics pass.

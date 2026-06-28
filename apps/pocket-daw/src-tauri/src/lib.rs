@@ -1557,6 +1557,72 @@ mod tests {
     }
 
     #[test]
+    fn media_paths_resolve_project_media_aliases_under_saved_project() {
+        let project_path = r"C:\Songs\Song.pocketdaw";
+        let project_media = resolve_media_path("project-media/Loop.wav", Some(project_path))
+            .expect("project media should resolve");
+        let project_uri = resolve_media_path("project://media/Loop.wav", Some(project_path))
+            .expect("project media uri should resolve");
+
+        assert!(project_media.to_string_lossy().contains("project-media"));
+        assert!(project_media.to_string_lossy().ends_with("Loop.wav"));
+        assert_eq!(project_media, project_uri);
+    }
+
+    #[test]
+    fn media_paths_reject_project_relative_reload_without_saved_project() {
+        assert!(resolve_media_path("project-media/Loop.wav", None).is_err());
+        assert!(resolve_media_path("project://media/Loop.wav", None).is_err());
+    }
+
+    #[test]
+    fn collect_project_media_copies_absolute_sources_and_rejects_traversal_targets() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("pocket-daw-collect-media-{stamp}"));
+        let source_dir = root.join("source");
+        let project_dir = root.join("project");
+        std::fs::create_dir_all(&source_dir).expect("source dir");
+        std::fs::create_dir_all(&project_dir).expect("project dir");
+        let source = source_dir.join("Loop.wav");
+        std::fs::write(&source, [1, 2, 3, 4]).expect("source media");
+        let project = project_dir.join("Song.pocketdaw");
+        std::fs::write(&project, "{}").expect("project file");
+
+        let copied = collect_project_media(
+            project.to_string_lossy().to_string(),
+            vec![CollectProjectMediaItem {
+                id: "media_001".to_string(),
+                source_uri: source.to_string_lossy().to_string(),
+                target_relative_path: "project-media/Loop.wav".to_string(),
+            }],
+        )
+        .expect("collect should copy media");
+
+        assert_eq!(copied.len(), 1);
+        assert_eq!(copied[0].target_relative_path, "project-media/Loop.wav");
+        assert_eq!(copied[0].size_bytes, 4);
+        assert!(project_dir.join("project-media").join("Loop.wav").exists());
+
+        let blocked = match collect_project_media(
+            project.to_string_lossy().to_string(),
+            vec![CollectProjectMediaItem {
+                id: "media_002".to_string(),
+                source_uri: source.to_string_lossy().to_string(),
+                target_relative_path: "../escape.wav".to_string(),
+            }],
+        ) {
+            Ok(_) => panic!("collect should reject traversal targets"),
+            Err(error) => error,
+        };
+        assert!(blocked.contains("cannot escape"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn prune_native_cache_assets_deletes_only_unreferenced_direct_wavs() {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

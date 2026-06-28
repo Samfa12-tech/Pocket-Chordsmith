@@ -458,6 +458,22 @@ describe("native render cache", () => {
     expect(filtered).toBeNull();
   });
 
+  it("rejects generated stem cache metadata from an older native sound recipe hash", async () => {
+    const project = createDemoProject();
+    const first = await buildNativeRenderCache(project, nativeRenderCacheSignature(project));
+    const stale = {
+      ...first,
+      renderCacheItems: first.renderCacheItems.map((item) => ({
+        ...item,
+        metadata: { ...item.metadata, rendererRecipeHash: "old-native-sound-recipe" }
+      }))
+    };
+
+    const filtered = filterNativeRenderCacheForProject(project, stale, nativeRenderCacheSignature(project));
+
+    expect(filtered).toBeNull();
+  });
+
   it("reuses non-drum generated stems after a drum-only pattern edit", async () => {
     const project = createDemoProject();
     const first = await buildNativeRenderCache(project, nativeRenderCacheSignature(project));
@@ -1150,6 +1166,41 @@ describe("native render cache", () => {
     expect(result.staleSourceHashCount).toBe(1);
     expect(result.skippedInvalidPathCount).toBe(1);
     expect(result.hydrationFailureCount).toBe(0);
+  });
+
+  it("skips persisted generated stems when the recorded sound recipe hash is stale", async () => {
+    const project = createDemoProject();
+    const built = await buildNativeRenderCache(project, nativeRenderCacheSignature(project));
+    const bassItem = built.renderCacheItems.find((item) => item.metadata?.cacheKind === "native-generated-stem" && item.metadata?.role === "bass");
+    if (!bassItem) throw new Error("Expected demo project to build a bass stem cache item.");
+    project.renderCache = [{
+      ...bassItem,
+      metadata: {
+        ...bassItem.metadata,
+        rendererRecipeHash: "stale-bass-recipe"
+      }
+    }];
+    const readCalls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeMediaApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        readCalls.push({ command, args });
+        return {
+          assetId: String(args?.assetId || ""),
+          path: `C:\\Songs\\${String(args?.relativePath || "").replace(/\//g, "\\")}`,
+          relativePath: String(args?.relativePath || ""),
+          sizeBytes: wavBytes().length,
+          bytes: Array.from(wavBytes())
+        } as never;
+      }
+    };
+
+    const result = await hydrateNativeRenderCacheAssets("C:\\Songs\\Song.pocketdaw", project, api);
+
+    expect(result.cache).toBeNull();
+    expect(result.staleSourceHashCount).toBe(1);
+    expect(result.hydrationFailureCount).toBe(0);
+    expect(readCalls).toEqual([]);
   });
 
   it("merges native render-cache items and drops stale native entries without touching other caches", async () => {

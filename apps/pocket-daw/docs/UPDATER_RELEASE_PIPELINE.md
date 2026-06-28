@@ -172,17 +172,37 @@ https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocke
 
 ## Test an Update
 
-Do not mark the updater production-ready until this passes on Windows:
+Do not mark an updater checkpoint production-ready until this passes on Windows against exact artifacts.
+
+Before publishing or staging the candidate, run the release gate from `apps/pocket-daw/`:
+
+```powershell
+npm run verify:versions
+npm test
+cargo test --manifest-path src-tauri/Cargo.toml
+npm run release:update:full
+```
+
+After the candidate installer exists, validate the exact smoke attestation:
+
+```powershell
+npm run verify:smoke-attestation -- --attestation <path-to-smoke-attestation.json> --installer <setup.exe> --commit <full-source-sha>
+```
+
+Manual update-through-app smoke:
 
 1. Install an older signed Pocket DAW build normally.
 2. Confirm the older build opens and shows the older version.
-3. Create a newer signed GitHub Release with updater artifacts and `pocket-daw-latest.json`.
+3. Create or stage a newer signed GitHub Release with updater artifacts and `pocket-daw-latest.json`.
 4. Open the older installed build.
 5. Choose Help -> Check for Updates.
 6. Confirm the app reports the newer version and release notes.
 7. Choose Download and Install.
 8. Confirm the updater downloads and installs without requiring a manual itch redownload.
 9. Choose Restart Pocket DAW.
-10. Confirm the restarted app shows the newer version and projects still open/play/save correctly.
+10. Confirm the restarted app shows the newer version/build metadata.
+11. Open a `.pocketdaw` saved before the update.
+12. Confirm the project opens, plays, saves, and reopens after the update.
+13. Record the old version, new version, source commit, installer filename, installer SHA-256, updater manifest URL, release tag, smoke attestation path, tester, date, and result in `docs/WINDOWS_TESTING_CHECKLIST.md` or the generated release-status evidence.
 
 Manual checks remain available. Startup auto-check is enabled for alpha testing, but it must not auto-download or auto-install.

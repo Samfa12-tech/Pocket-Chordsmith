@@ -2193,17 +2193,22 @@ async function pushToPocketDj(){
     "Pocket DJ song code copied",
     "Pocket DJ song code is ready in the project box; clipboard was blocked"
   );
+  const blockedPopupMessage = copied
+    ? `Pocket DJ code copied. Pop-up blocked; open ${targetBaseUrl} and paste Import.`
+    : `Pocket DJ pop-up and clipboard were blocked. Copy the PCS1 code from the project box, open ${targetBaseUrl}, then paste Import.`;
   const opened = openHandoffUrl(
     targetUrl,
-    `Pocket DJ code copied. Pop-up blocked; open ${targetBaseUrl} and paste Import.`,
+    blockedPopupMessage,
     payload,
     preparedWindow
   );
   if(opened){
-    setStatus(copied ? "Song sent to Pocket DJ. Opening Pocket DJ..." : "Song sent to Pocket DJ. Opening target...");
-    setPushHandoffStatus(saved ? "Pocket DJ will import this song when it opens." : "Pocket DJ will import from the launch URL; clipboard is also ready as fallback.");
+    setStatus(copied ? "Song sent to Pocket DJ. Opening Pocket DJ..." : "Song sent to Pocket DJ. Opening target with manual paste fallback in the project box.");
+    setPushHandoffStatus(saved ? "Pocket DJ will import this song when it opens." : "Pocket DJ will import from the launch URL; the PCS1 code remains in the project box for manual paste.");
   }else{
-    setPushHandoffStatus(`Open ${targetBaseUrl}, paste the PCS1 code, then press Import.`);
+    setPushHandoffStatus(copied
+      ? `Open ${targetBaseUrl}, paste the copied PCS1 code, then press Import.`
+      : `Pop-up and clipboard were blocked. Copy the PCS1 code from the project box, open ${targetBaseUrl}, then press Import.`);
   }
 }
 async function pushToPocketDaw(){
@@ -2266,7 +2271,15 @@ async function pushToPocketDaw(){
     setPushHandoffStatus("Pocket DAW opened but did not confirm local receipt. Paste the PCS1 code into Import.");
   }else{
     const downloaded = downloadTextFallback("pocket-chordsmith-to-pocket-daw.pcs1.txt", code);
-    setPushHandoffStatus(downloaded ? "Pocket DAW did not open. Share code copied and downloaded for manual import." : "Pocket DAW did not open. Share code is copied and ready in the project box.");
+    if(downloaded && copied){
+      setPushHandoffStatus("Pocket DAW did not open. Share code was copied and downloaded for manual import.");
+    }else if(downloaded){
+      setPushHandoffStatus("Pocket DAW did not open and clipboard was blocked. A PCS1 handoff file was downloaded; the code is also in the project box for manual import.");
+    }else if(copied){
+      setPushHandoffStatus("Pocket DAW did not open. Share code is copied and ready in the project box for manual import.");
+    }else{
+      setPushHandoffStatus("Pocket DAW did not open and clipboard/download fallback failed. Copy the PCS1 code from the project box into Pocket DAW Import.");
+    }
   }
 }
 async function pushToGodot(){

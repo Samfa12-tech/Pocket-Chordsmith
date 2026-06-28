@@ -13,6 +13,7 @@
 
 - Compile JSON or share-code exports into `PCSChartResource`.
 - Generate the web-style sample kit and HYBRID playback profile.
+- Refresh the sample kit package report when preview assets or packaging rules change.
 - Validate chart/profile runtime readiness.
 - Export an integration report.
 - Package the clean addon zip.
@@ -33,6 +34,8 @@ Validate a compiled chart:
 godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/validate_pocket_chordsmith_runtime.gd -- --chart res://path/to/chart.tres --profile res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.tres --report res://pocket_chordsmith_integration_report.md
 ```
 
+Run the complete deterministic gate in `HEADLESS_VALIDATION.md` when chart compile/import, DAW pack import, runtime validation, direct browser push, or receiver behavior changes.
+
 For Godot Asset Library submission, rely on the repository `.gitattributes` export-ignore rules. The generated Asset Library download should include `addons/pocket_chordsmith/` only.
 
 ## RC Exit Criteria
@@ -44,4 +47,5 @@ For Godot Asset Library submission, rely on the repository `.gitattributes` expo
 - Runtime conductor emits beat/bar/section/marker/accent/event signals.
 - Generated HYBRID profile triggers sample hits.
 - STEM_SYNC warns clearly when stems are missing.
+- Direct Push-to-Godot is either verified against a named browser/Godot build or explicitly recorded as fallback-only.
 - No runtime gameplay code parses Pocket Chordsmith JSON.

@@ -9,6 +9,7 @@ Use these notes before tagging or publishing any Pocket Audio family artifact.
 - Pocket Audio Core: run `npm test` and `npm run build`; keep `scope:"section"`, `scope:"sequence"`, and `scope:"all"` timeline behavior covered by tests.
 - Pocket DAW: run `npm test`, `npm run build`, and `npm run verify:versions`; installer packaging still needs a Rust/Tauri-capable Windows release machine before publishing.
 - Pocket DAW sound-parity release checks must include a known lofi/chillhop Chordsmith project with non-default master/chord/beat/lead/guitar volumes, a Chordsmith/DJ/DAW A/B, per-drum lane mixer/FX smoke, and a Godot Adaptive/Game Pack import smoke.
+- Use `../POCKET_AUDIO_SOUND_PARITY_MATRIX.md` before writing sound-parity claims in release notes.
 - Godot addon: no runtime validation is implied by web/package checks; release validation still needs Godot 4.x and the active game project.
 
 ## Web App
@@ -40,7 +41,7 @@ npm run verify:native-release
 - Keep `package.json` `private: true`.
 - Do not commit `node_modules/`, `dist/`, `src-tauri/target/`, installers, or local `.pocketdaw` saves.
 - Run a clean native Tauri package check before publishing installers.
-- Publish Pocket DAW to itch only as a native/installable Windows build, normally the `windows` channel.
+- Publish Pocket DAW to itch only as a native/installable Windows build, normally the `windows-installer` channel.
 - Do not upload the browser preview zip, `dist/`, or any HTML5/WebAudio build to itch for Pocket DAW.
 
 ## Godot Addon

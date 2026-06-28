@@ -30,6 +30,7 @@ Before publishing a game or distributing the addon, check these.
 - Shipped music uses `STEM_SYNC` or `HYBRID`.
 - Stems are imported as Godot audio streams.
 - Drum/accent/stinger samples are assigned in `PCSPlaybackProfile`.
+- `SAMPLE_KIT_PACKAGE_REPORT.md` is current before addon release or Asset Library submission.
 - `Music_Drums`, `Music_Bass`, `Music_Chords`, `Music_Guitar`, `Music_Melody`, and `Music_Stingers` buses exist or profile falls back safely.
 - Drum bus has suitable Godot-native compression/limiting if needed.
 - Mobile-safe polyphony cap is set.
@@ -43,13 +44,16 @@ Before publishing a game or distributing the addon, check these.
 - Test on the target export platforms.
 - For web/mobile, test audio latency and polyphony under load.
 - Perform a clean project reopen after deleting stale `.godot` caches if UID warnings appear.
+- Run `HEADLESS_VALIDATION.md` for addon releases or any change touching import, compile, runtime validation, DAW pack import, direct push, or the localhost receiver.
 
 ## Documentation
 
 - Include `GETTING_STARTED.md`.
+- Include `HEADLESS_VALIDATION.md`.
 - Include `LEVEL_INTEGRATION.md`.
 - Include `STEM_WORKFLOW.md`.
 - Include `SAMPLE_PREVIEW.md`.
+- Include `SAMPLE_KIT_PACKAGE_REPORT.md`.
 - Include `CLI_COMPILE.md`.
 - Include `UID_CACHE_RECOVERY.md`.
 - Include `SKILL.md` for AI-assisted integration.

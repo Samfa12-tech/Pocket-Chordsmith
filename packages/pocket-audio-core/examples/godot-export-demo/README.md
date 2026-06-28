@@ -26,6 +26,58 @@ const manifestPath = gamePackManifestPath("godot-adaptive-pack");
 `files` is a `Map` of pack path to WAV `Blob`, using folders such as `audio/full/`, `audio/stems/`, `audio/sections/`, and `audio/samples/`.
 Write the manifest to `manifestPath`, which is currently `manifests/godot-adaptive-manifest.json`.
 
+## Profile Metadata Example
+
+Core preserves Pocket Chordsmith family profile metadata in the manifest so Godot importers, runtime preview profiles, and game code can make routing decisions without reparsing the source project.
+
+```js
+const lofiKit = await createGodotExportKit({
+  projectVersion: 16,
+  title: "Rainy Shop Loop",
+  audioProfile: "lofi_chill",
+  lofiPreset: "lofi_koi_pond",
+  lofiTexture: { enabled: true, tapeHiss: 0.045, vinylCrackle: 0.035 },
+  drumKit: "lofi_tape_soft",
+  drumGroovePreset: "lofi_sparse_clicks",
+  bassTone: "rounded_triangle_bass",
+  chordInstrument: "lofi_warm_pad",
+  melodyInstrumentsA: ["tape_bell"],
+  songSequence: ["A"],
+  sectionBars: { A: 1 },
+  progressionA: [0, 3, 4, 0],
+  gridA: { kick: [1], snare: [0], hat: [1], bass: [1] }
+});
+
+console.log(lofiKit.manifest.audioProfile); // "lofi_chill"
+console.log(lofiKit.manifest.lofi.drumKit); // "lofi_tape_soft"
+console.log(lofiKit.manifest.soundRegistry.lofi.drumKits.lofi_tape_soft);
+```
+
+```js
+const chipKit = await createGodotExportKit({
+  projectVersion: 16,
+  title: "Arcade Boss Loop",
+  audioProfile: "chip_tune",
+  chipPreset: "chip_neon_boss",
+  chipTexture: { enabled: true, bitDepth: 0.32, sampleRateCrush: 0.22 },
+  drumKit: "modern_chip_punch",
+  drumGroovePreset: "chip_boss_half_time",
+  bassTone: "bitcrush_bass",
+  chordInstrument: "modern_chip_poly",
+  melodyInstrumentsA: ["chip_pulse_lead"],
+  songSequence: ["A"],
+  sectionBars: { A: 1 },
+  progressionA: [0, 5, 6, 4],
+  gridA: { kick: [1], snare: [0], hat: [1], bass: [1] }
+});
+
+console.log(chipKit.manifest.audioProfile); // "chip_tune"
+console.log(chipKit.manifest.chip.presetId); // "chip_neon_boss"
+console.log(chipKit.manifest.soundRegistry.chip.drumKits.modern_chip_punch);
+```
+
+`manifest.events` also carries event-level `audioProfile`, `lofiPreset`, `chipPreset`, `drumKit`, `bassTone`, `instrument`, and enabled texture data where relevant. Godot can use those fields for preview routing, diagnostics, and adaptive state decisions while still treating rendered WAV assets as the parity-audio path.
+
 ## Profiles To Try
 
 - `STEM_SYNC`: full-song stems plus `audio/full/full_mix.wav`.

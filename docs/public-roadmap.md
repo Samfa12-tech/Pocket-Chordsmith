@@ -26,14 +26,16 @@ products.
 
 ## Pocket DAW
 
-- Keep `apps/pocket-daw/` clearly marked WIP/private-boundary until licensing,
-  packaging, and product scope are deliberately settled.
-- Improve tests, docs, and import/export clarity before calling it a public release.
-- Next product slice after the `v0.6.4` baseline: verify the new collected
+- Keep `apps/pocket-daw/` clearly marked public-alpha, source-available, and
+  private-license until licensing, packaging, and product scope are deliberately
+  settled.
+- Improve tests, docs, and import/export clarity before calling it a stable
+  public release.
+- Next product slice from the current release-status baseline: verify collected
   Godot adaptive pack and web-game ZIP exports in real Godot/web import
-  workflows, then add push-to-Godot or native destination selection before
-  deeper recording, ASIO, simultaneous multitrack capture, or broad DAW editor
-  expansion.
+  workflows, strengthen update-through-app smoke, then add push-to-Godot or
+  native destination selection before deeper ASIO, simultaneous multitrack
+  capture, or broad DAW editor expansion.
 
 ## Pocket Audio Core And PCS Format
 

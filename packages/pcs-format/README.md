@@ -9,6 +9,11 @@ schema-16 song-sequence and per-section summaries so fixtures can prove that
 Section A and song-sequence units are present without importing an app runtime.
 It does not own app UI defaults or full runtime normalization.
 
+The exported `PCS_FORMAT_SCOPE` and `PCS_FIXTURE_ROLES` constants are metadata
+guardrails for the current scaffold. `fixtures/index.json` records the committed
+fixture corpus and high-level expectations without making this package the
+canonical owner of every app's import behavior yet.
+
 License/status: WIP private package scaffold, `UNLICENSED`, and `private: true`.
 See the repository root `LICENSES.md` before reusing or redistributing package
 code.

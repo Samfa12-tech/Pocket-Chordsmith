@@ -13,8 +13,8 @@ code.
 - Core version: `0.1.0-scaffold`
 - Supported source prefix: `PCS1:`
 - Initial source schema target: Pocket Chordsmith schema `16`
-- Integration status: first-pass bridges exist for Pocket Chordsmith v68 and Pocket DJ v1g; Pocket DJ, Pocket DAW and Godot consume shared lofi metadata through their compatibility/import paths
-- Render status: basic PCM/WAV and stem output using simplified procedural events
+- Integration status: first-pass bridges exist for Pocket Chordsmith v68 and Pocket DJ v1g; Pocket DJ, Pocket DAW and Godot consume shared lofi metadata through their compatibility/import paths, but the shared family bridge is not full playback parity
+- Render status: basic PCM/WAV and stem output using simplified procedural events, not exact Chordsmith/DJ/DAW/Godot sound parity
 - Live playback status: browser event scheduler with simple Web Audio tones, not parity synths
 - Game runtime status: `profile:"game"` supports music states, stingers, intensity, ducking, lowpass, stem controls, and diagnostics
 
@@ -27,6 +27,10 @@ The shared procedural voice registries live in `src/sounds/lofi-registry.js` and
 When changing shared sound IDs, voice curves, or Pocket Pro EQ bands, run `npm run generate:sound-surfaces` from this package. It refreshes the generated Godot sample-preview constants and Pocket DAW native Rust sound recipes from the same core registries. CI/local release checks can use `npm run verify:sound-surfaces` to catch stale generated files before DAW, Chordsmith, DJ, and Godot drift apart.
 
 For a fuller parity gate after changing sound features, run `npm run verify:family-parity` from this package. It checks generated sound surfaces, cross-app surface drift, Chordsmith browser trace parity, core render/Godot-pack fixtures, Pocket DAW Chordsmith import/render/export parity tests, and DAW-vs-Chordsmith browser event parity in one pass.
+
+Use `../../docs/POCKET_AUDIO_SOUND_PARITY_MATRIX.md` before describing a change as sound parity. Core has deterministic event/render fixtures and first-pass exports, but exact app-to-app tone parity still needs the matrix's component gates and listening evidence.
+
+Use `../../docs/POCKET_AUDIO_CORE_LIVE_ENGINE_EXTRACTION_GATE.md` before moving Pocket Chordsmith audible live playback or preview sounds behind Core. That gate keeps the current v68 bridge in diagnostic/export mode until event, sound, mobile, listening and rollback evidence all exist.
 
 The shared guitar surface lives in `src/sounds/guitar.js`. It defines Chordsmith-compatible guitar tones, tone curves, registers, strum modes, pattern presets, fill styles, and the DAW step-edit cycle. Pocket DAW imports these definitions for Chordsmith import sanitizing, editor UI options, and WebAudio guitar rendering so `metal` and `western_twang` stay available wherever Chordsmith projects are edited or played.
 
@@ -79,6 +83,7 @@ const music = new PocketAudio({
 
 await music.loadProject(pcs1OrJson);
 await music.resumeFromUserGesture();
+console.log(music.project.meta.audioProfile, music.project.meta.stylePreset);
 music.play();
 music.queueMusicState("combat", { quantize: "bar" });
 music.triggerStinger("danger");
@@ -87,7 +92,7 @@ music.duck(true, { amount: 0.45, releaseMs: 500 });
 music.lowpass(0.5);
 ```
 
-See `examples/game-runtime-demo/`, `docs/NEW_GAME_AUDIO_RUNTIME_GUIDE.md`, and `docs/ADAPTIVE_MUSIC_API.md`.
+See `examples/game-runtime-demo/`, `../../docs/NEW_GAME_AUDIO_RUNTIME_GUIDE.md`, and `../../docs/ADAPTIVE_MUSIC_API.md`.
 
 Minimal PCS data example: `../../docs/examples/minimal-pcs-project.md`.
 
@@ -102,7 +107,10 @@ const kit = await createGodotExportKit(pcs1OrJson, {
 });
 ```
 
-The kit returns a manifest plus WAV blobs for `STEM_SYNC`, `LOOP_KIT`, `HYBRID`, or `PROCEDURAL_PREVIEW` workflows. Lofi manifests preserve `audioProfile`, preset, texture, drum-kit, bass-tone, and instrument IDs, and include the shared lofi sound registry for game-pack tooling and preview runtimes. See `docs/GODOT_PARITY_EXPORT_WORKFLOW.md` and `examples/godot-export-demo/README.md`.
+The first-pass kit returns a manifest plus WAV blobs for `STEM_SYNC` and `LOOP_KIT` workflows. `HYBRID` renders stem beds and placeholder sample/stinger assets for future kit work. `PROCEDURAL_PREVIEW` writes manifest metadata only, marks itself `previewOnly`, and is not a parity export. Lofi manifests preserve `audioProfile`, preset, texture, drum-kit, bass-tone, and instrument IDs, and include the shared lofi sound registry for game-pack tooling and preview runtimes.
+Chip manifests preserve the matching `chip_tune` profile fields, chip preset, texture, drum-kit, groove, bass-tone, chord, and melody IDs, plus the shared chip sound registry.
+
+This is a compatibility/export scaffold, not proof that Core renders the same sound as Chordsmith live playback, Pocket DAW native/cache output, or the Godot addon preview kit. Use it for deterministic metadata and fixture coverage; use DAW-rendered adaptive packs or app-specific smokes when production-grade audio parity matters. See `../../docs/GODOT_PARITY_EXPORT_WORKFLOW.md` and `examples/godot-export-demo/README.md`.
 
 ## Commands
 
@@ -128,6 +136,8 @@ The current build is intentionally simple and dependency-free. A later extractio
 - High-fidelity offline full-mix rendering
 - High-fidelity stem rendering
 - MIDI export
-- Godot stem/manifest export
+- Future/full Godot kit polish: high-fidelity sample kit assets, native procedural parity, editor import smoke, and production routing/conductor docs
 
 These are represented by modules and public API seams so the later extraction prompts can fill them in without changing the high-level package shape.
+
+See `../../docs/POCKET_AUDIO_CORE_MIDI_EXPORT_CHECKPOINT.md` before moving DAW or Chordsmith MIDI export behind Core; the exporter should wait for shared event-renderer parity gates rather than duplicating app-specific behavior early.

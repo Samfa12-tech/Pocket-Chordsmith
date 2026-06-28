@@ -5,32 +5,27 @@ Run this against the exact installed Windows alpha from itch/GitHub release arti
 Current alpha target:
 
 - App: Pocket DAW
-- Version: `0.6.21` native transport/cache checkpoint
-- Source commit at packaging time: `9dcd48749a497d7344678973be836c45597ebf65`
-- Generated manifest note: dirty working tree was `false`.
+- Current source/public/smoke truth: `docs/CURRENT_RELEASE_STATUS.md`
+- Before running a new smoke, copy the exact version, source commit, installer filename, installer SHA-256, release tag, and updater manifest URL from the candidate release/status evidence into the run notes.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Itch channel: `windows-installer`
 - Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- Setup EXE: `Pocket.DAW_0.6.21_x64-setup.exe`
-- Setup EXE SHA-256: `e69c57292bbb4f29a9d3f6ec36bd78346249f30c4f48932f071dfffcdc1412d8`
-- Setup EXE updater signature: `Pocket.DAW_0.6.21_x64-setup.exe.sig`
-- Setup EXE updater signature SHA-256: `63b1cab939c3b1c8f962da81c318349d5c821a08a5b5f4608f2b54c646b80c10`
-- MSI: `Pocket.DAW_0.6.21_x64_en-US.msi`
-- MSI SHA-256: `117cbb2b7b17f3c06cada3805175e5b2e482538d66cf240aca050e3368cccb7f`
-- MSI updater signature: `Pocket.DAW_0.6.21_x64_en-US.msi.sig`
-- MSI updater signature SHA-256: `52f1d17752d66e19a493db97031158395bf0f031c749fd8b19bc9691abd1afcd`
-- Bootstrapper manifest: `pocket-daw-bootstrapper-latest.json` now points at `Pocket.DAW_0.6.21_x64-setup.exe`
-- Itch bootstrapper EXE: unchanged from the existing bootstrapper upload
+- Setup EXE: record exact candidate filename
+- Setup EXE SHA-256: record exact candidate hash
+- Setup EXE updater signature: record exact `.sig` filename/hash when present
+- MSI: record exact candidate filename/hash when present
+- Bootstrapper manifest: `pocket-daw-bootstrapper-latest.json`
+- Itch bootstrapper EXE: record exact candidate filename/hash when the bootstrapper changes
 - SmartScreen/code signing: Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures: `.sig` files are updater-validation signatures and are separate from Windows code signing.
 
-Manual smoke status: `0.6.21` PENDING. Historical `0.6.9` evidence remains useful context, and `0.6.10` verifies the basic bootstrapper install path but not the latest native transport/cache behavior, MCP setup panel, or auto-close bootstrapper behavior.
+Manual smoke status: create a dated run note for each candidate. Historical rows below remain useful context only when their version/date matches the question being asked.
 
 For a candidate installer, record exact-artifact smoke evidence with `releases/smoke-attestation.schema.json` and validate it with `npm run verify:smoke-attestation -- --attestation <path> --installer <setup.exe> --commit <full-sha>`. A source build is not installed-smoked until that attestation matches the installer filename and SHA-256.
 
-`0.6.21` native transport/cache and bridge rows apply after the installer/updater checkpoint is installed.
+Native transport/cache and bridge rows apply after the candidate installer/updater checkpoint is installed.
 
-Next-build lesson from 2026-06-20: current `0.6.13` does not register `.pocketdaw` as a Windows file type and does not open raw project file launch arguments. The next installer checkpoint should verify double-click/Open With after the association/open-argument fix ships.
+Historical lesson from 2026-06-20: `0.6.13` did not register `.pocketdaw` as a Windows file type and did not open raw project file launch arguments. The 2026-06-28 installed `0.6.34` smoke below verifies the association/open-argument fix locally; future public release checkpoints should keep this as a regression row.
 
 Historical manual evidence from Sam on 2026-06-14:
 
@@ -52,9 +47,9 @@ Historical manual evidence from Sam on 2026-06-14:
 | --- | --- | --- | --- | --- | --- | --- |
 | Install / launch | Clean install from the current public setup EXE or MSI. | Installer completes and creates the expected installed app entries. | Manual / Not run | Manual / Not run |  |  |
 | Install / launch | Launch Pocket DAW from the Start Menu or installed shortcut. | Installed app opens without needing an extracted app folder. | App opened; exact launch surface not recorded. | Partial | Sam / 2026-06-14 | Confirm Start Menu/installed shortcut explicitly on next pass. |
-| Install / launch | Double-click a saved `.pocketdaw`, and use Windows Open With if the association is not already selected. | Windows offers/uses Pocket DAW for `.pocketdaw`, opens the installed app, focuses the main window and loads the clicked project. | Manual / Not run | Manual / Not run |  | Next checkpoint should include installer file association and startup/second-instance file argument handling. |
+| Install / launch | Double-click a saved `.pocketdaw`, and use Windows Open With if the association is not already selected. | Windows offers/uses Pocket DAW for `.pocketdaw`, opens the installed app, focuses the main window and loads the clicked project. | Installed `0.6.34` has HKCU/HKCR `.pocketdaw` ProgID/OpenWithProgids for `Pocket DAW Project`; cold-start shell launch loaded `C:\Users\sam_s\AppData\Local\Temp\pocket-daw-file-assoc-smoke\task18-second-instance-open.pocketdaw`; second-instance launch reused the existing process and loaded the clicked project; live open-project reopened `C:\Users\sam_s\Music\imported-chordsmith-project test.pocketdaw`; `pocket-daw://handoff` still imported the `Basic 4/4 Major` PCS1 fixture. | Pass | Codex / 2026-06-28 | Supporting gates: `npm test -- tests/deepLinkBridge.test.ts tests/fileBridge.test.ts tests/pocketHandoff.test.ts tests/pcsImport.test.ts`; `npm run verify:versions`; `cargo test --manifest-path src-tauri/Cargo.toml tests::native_cache_paths_stay_under_project_cache`. |
 | Install / launch | Launch after reboot if practical. | Installed app still launches normally after Windows restart. | Manual / Not run | Manual / Not run |  |  |
-| Install / launch | Open About/Diagnostics and confirm app version/build id. | Version `0.6.19` and build/commit information are visible or explicitly unavailable. | Manual / Not run | Manual / Not run |  | Historical v0.5.13 diagnostics evidence exists, but does not verify v0.6.19. |
+| Install / launch | Open About/Diagnostics and confirm app version/build id. | Candidate version and build/commit information are visible or explicitly unavailable. | Manual / Not run | Manual / Not run |  | Historical diagnostics evidence does not verify a newer candidate. |
 | AI / MCP bridge | Open Help -> AI / MCP Bridge. | Panel shows current file/project status, file MCP snippets, live bridge enabled state, session file path, and Test live bridge action. | Manual / Not run | Manual / Not run |  | v0.6.13 checkpoint. |
 | AI / MCP bridge | Enable live app bridge, then run `pocket_daw_live_status` from Codex. | MCP reports current project, transport, selection, recording and native-cache status. | Manual / Not run | Manual / Not run |  | Session token should come from the local session file, not pasted manually. |
 | AI / MCP bridge | Run live control actions: play, pause, stop, restart and seek to bar. | App transport follows MCP actions and no broad UI automation is needed. | Manual / Not run | Manual / Not run |  | Playback confidence still needs human audio check. |
@@ -103,3 +98,27 @@ Historical manual evidence from Sam on 2026-06-14:
 | Updater | Open installed app and check for updates. | Updater reports the staged newer version and release notes. | Help -> Check for Updates found newer releases during the v0.5.10-v0.5.13 rehearsal. | Pass | Sam / 2026-06-14 | Startup auto-notification was not observed; manual check worked. |
 | Updater | Download/install update, relaunch, and verify version. | Update installs/relaunches and version changes. | Update installed and relaunched successfully through the installed app updater; latest confirmed version is v0.5.13. | Pass | Sam / 2026-06-14 | Auto-check notification still needs separate polish. |
 | Updater | Open a project saved before the update. | Previous project still opens after update. | Manual / Not run | Manual / Not run |  |  |
+
+## Update-Through-App Evidence Template
+
+Use this template for the next public checkpoint update smoke:
+
+- Older installed version:
+- Older installer source:
+- Candidate version:
+- Candidate source commit:
+- Candidate release tag:
+- Candidate setup EXE:
+- Candidate setup SHA-256:
+- Candidate updater manifest URL:
+- Smoke attestation path:
+- Command gate run: `npm run verify:versions`, `npm test`, `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run release:update:full`
+- Attestation gate run: `npm run verify:smoke-attestation -- --attestation <path> --installer <setup.exe> --commit <full-sha>`
+- Help -> Check for Updates result:
+- Download/install result:
+- Restart result:
+- About/Diagnostics version after restart:
+- Pre-update project opened/played/saved/reopened:
+- Tester/date:
+- Result:
+- Notes:

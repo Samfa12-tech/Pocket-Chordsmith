@@ -1,0 +1,31 @@
+{
+  "package": "pcs-format",
+  "status": "0.1.0-scaffold",
+  "schemaVersion": 16,
+  "prefix": "PCS1:",
+  "fixtures": [
+    {
+      "file": "schema16-valid.json",
+      "role": "minimal-valid-schema16-preserves-unknown-fields",
+      "expectedValid": true,
+      "preservesUnknownFields": true,
+      "expectedSequence": ["A", "B"],
+      "summarySection": "A"
+    },
+    {
+      "file": "schema16-invalid.json",
+      "role": "invalid-schema16-error-contract",
+      "expectedValid": false,
+      "expectedErrors": ["schemaVersion", "bpm", "sectionBars", "progressionA"]
+    },
+    {
+      "file": "schema16-trace-smoke.json",
+      "role": "playable-sequence-and-section-summary-smoke",
+      "expectedValid": true,
+      "preservesUnknownFields": true,
+      "expectedSequence": ["A", "B", "A"],
+      "summarySection": "A",
+      "expectedSectionBars": 1
+    }
+  ]
+}

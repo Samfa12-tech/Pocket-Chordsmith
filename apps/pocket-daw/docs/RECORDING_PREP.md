@@ -1,6 +1,6 @@
 # Pocket DAW Recording Alpha
 
-Recording is now a narrow installed-app alpha slice for v0.6.0 source builds. It is intentionally not a professional DAW recording system yet.
+Recording is a narrow installed-app alpha slice in current v0.6.x builds. It is intentionally not a professional DAW recording system yet.
 
 ## Implemented Slice
 
@@ -10,6 +10,7 @@ Recording is now a narrow installed-app alpha slice for v0.6.0 source builds. It
 - Recording requires a saved `.pocketdaw` project before capture starts.
 - Native CPAL capture writes mono PCM WAV takes under `project-media/recordings/` beside the saved project.
 - Stopping a take adds a project-media Media Pool item and places an audio clip on the armed track at the original record start bar.
+- No hidden latency compensation or automatic take alignment is applied.
 - Project schema now defaults `track.monitorEnabled` to `false` and stores project metronome settings.
 - Metronome/count-in is audible in the installed app and is not included in WAV/MIDI exports.
 - Diagnostics export includes recording status, armed tracks, monitored tracks and metronome/count-in settings.

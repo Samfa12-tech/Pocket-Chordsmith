@@ -515,6 +515,8 @@ PDJ1:
 
 This should not replace `PCS1:`. It should wrap a source Pocket Chordsmith project with DJ performance settings.
 
+Current contract note: `PDJ1_SESSION_FORMAT.md` is the active design note for the live `pocket_dj_v1g_core_bridge.html` session shape. Keep this planning section aligned with that note when field names change.
+
 ### Recommended PDJ1 structure
 
 ```json
@@ -536,26 +538,23 @@ This should not replace `PCS1:`. It should wrap a source Pocket Chordsmith proje
     "swing": 0.05
   },
   "performance": {
-    "launchQuantize": "bar",
     "currentSection": "A",
     "queuedSection": null,
-    "loopMode": "off",
-    "loopSection": null,
-    "trackVolumes": {
+    "launchQuantize": "bar",
+    "loopCurrentSection": false,
+    "dropTarget": null,
+    "sequence": ["A", "B", "C", "D"],
+    "sequencePlaying": false,
+    "sequenceRepeat": true,
+    "sequenceIndex": 0,
+    "stemVolumes": {
       "drums": 1,
       "bass": 1,
       "chords": 1,
       "melody": 1,
       "guitar": 1
     },
-    "trackMutes": {
-      "drums": false,
-      "bass": false,
-      "chords": false,
-      "melody": false,
-      "guitar": false
-    },
-    "trackSolos": {
+    "stemMutes": {
       "drums": false,
       "bass": false,
       "chords": false,
@@ -563,11 +562,15 @@ This should not replace `PCS1:`. It should wrap a source Pocket Chordsmith proje
       "guitar": false
     },
     "fx": {
-      "filter": 0,
-      "echo": 0,
-      "reverb": 0,
-      "sidechain": 0
-    }
+      "filter": 1,
+      "echo": 0.12,
+      "chorus": 0.18,
+      "flanger": 0.06,
+      "reverb": 0.18,
+      "mix": 0.65
+    },
+    "masterVolume": 0.82,
+    "buildActive": false
   }
 }
 ```

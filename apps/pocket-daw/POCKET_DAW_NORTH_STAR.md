@@ -153,7 +153,7 @@ Future handoff flows should include:
 - Pocket DJ to Pocket DAW for captured performance/session arrangement.
 - Pocket DAW to Pocket DJ for performance-ready sessions when useful.
 
-As of v0.5.1, Pocket DAW can consume PocketHandoff envelopes and legacy Chordsmith import params from URL query/hash, `window.name` and localStorage. The remaining product work is the polished sender-side button flow, hosted smoke testing and richer handoff types.
+Pocket DAW can consume PocketHandoff envelopes and legacy Chordsmith import params from URL query/hash, `window.name` and localStorage. The remaining product work is the polished sender-side button flow, hosted smoke testing, richer handoff types, and exact update-through-app smoke for public checkpoints.
 
 ## Build sequencing rule
 
@@ -173,7 +173,7 @@ Preferred order:
 
 ## Current v0 boundary
 
-The current v0 is only the first vertical slice. It proves:
+The current v0 is an expanding alpha slice. Treat `docs/CURRENT_RELEASE_STATUS.md` as the exact version/status anchor; at the product-boundary level, v0 has proved:
 
 - Native Windows packaging.
 - Future-ready schema.
@@ -186,25 +186,26 @@ The current v0 is only the first vertical slice. It proves:
 - Audio and MIDI clip foundations.
 - Basic automation, bus routing and stem/manifest-preview export foundations.
 - Basic PocketHandoff ingestion into Pocket DAW.
+- Installed-app-only mono live recording alpha.
+- Collected Godot/web game-pack ZIP export foundations.
+- Native playback/cache and updater/bootstrapper release infrastructure.
 
 It does not yet prove:
 
 - Full Chordsmith editing parity.
-- Fully manually verified native file dialogs in packaged builds.
 - Polished sender-side push from Pocket Chordsmith to Pocket DAW.
 - Push to Godot.
-- Voice or instrument recording.
+- Full stereo or simultaneous multitrack recording.
 - Deep waveform/audio editing.
 - Deep MIDI clip editor behavior beyond the compact piano-roll foundation.
 - Full drawn automation editing and FX/tempo automation.
-- Bundled stem/game export packs.
 - Project-relative media relink/reload workflow.
 
 Those missing pieces are not optional product ideas. They are part of the long-term Pocket DAW destination.
 
 ## Current next milestone
 
-After v0.5.1 hardening, the next milestone should deepen media/export/native reliability:
+The next milestone should deepen media/export/native reliability from the current release-status baseline:
 
 - Manually verify native Open, Save, Save As, audio import and MIDI import in `npm run tauri:dev` and a packaged Windows build.
 - Complete project-relative media path handling and a real relink/reload workflow for missing or external audio.
@@ -217,4 +218,4 @@ After v0.5.1 hardening, the next milestone should deepen media/export/native rel
 - Serious MIDI import: unlike Pocket Chordsmith's deliberately limited sketchpad import, Pocket DAW should eventually handle multi-track MIDI, channels, tempo maps, controllers, drums and editable clip conversion well enough for finished-project work.
 - Desktop-grade generated playback: Pocket DAW may use a future Pocket Audio Core, cached samples, rendered voice assets or hybrid sample/synth playback when that gives more reliable performance.
 
-Recording should wait until native file/audio persistence, meters, timeline seek/scrub, media pool relink and packaged-build QA are stronger.
+Expanded recording should wait until native file/audio persistence, meters, timeline seek/scrub, media pool relink and packaged-build QA are stronger.

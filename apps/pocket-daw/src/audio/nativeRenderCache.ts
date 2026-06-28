@@ -588,6 +588,8 @@ function expectedNativeCacheSourceHashes(
   }
   const rendererContractVersion = String(item.metadata?.rendererContractVersion || "");
   if (rendererContractVersion && rendererContractVersion !== NATIVE_AUDIO_RENDERER_CONTRACT_VERSION) return hashes;
+  const rendererRecipeHash = String(item.metadata?.rendererRecipeHash || "");
+  if (rendererRecipeHash && rendererRecipeHash !== nativeRendererRecipeHash()) return hashes;
   const renderMode = String(item.metadata?.renderMode || "");
   if (renderMode && renderMode !== NATIVE_CACHE_STEM_RENDER_MODE) return hashes;
   const sourceClipIds = sourceClipIdsForRenderCacheItem(item);

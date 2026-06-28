@@ -683,6 +683,44 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain(`data-relink-media="${item.id}"`);
   });
 
+  it("renders media reload and relink actions by persistence state", () => {
+    const external = createMediaPoolItem({
+      kind: "audio",
+      name: "External Loop.wav",
+      uri: "file:///music/External Loop.wav",
+      metadata: { external: true }
+    });
+    const missing = createMediaPoolItem({
+      kind: "audio",
+      name: "Missing Loop.wav",
+      uri: "file:///lost/Missing Loop.wav",
+      metadata: { missing: true, unresolved: true, missingReason: "Drive missing" }
+    }, [external]);
+    const collected = createMediaPoolItem({
+      kind: "audio",
+      name: "Collected Loop.wav",
+      uri: "project-media/Collected Loop.wav",
+      metadata: { mediaRefKind: "project", projectRelativePath: "project-media/Collected Loop.wav" }
+    }, [external, missing]);
+    let project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "Media Actions" }));
+    project = addMediaPoolItem(addMediaPoolItem(addMediaPoolItem(project, external), missing), collected);
+    const state = createInitialState();
+    state.undoStack = createUndoStack(project);
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("External unloaded");
+    expect(html).toContain("Missing - relink required");
+    expect(html).toContain("Project media");
+    expect(html).toContain("Stored or collected as project-relative media.");
+    expect(html).toContain(`data-reload-media="${external.id}"`);
+    expect(html).toContain(`data-relink-media="${external.id}"`);
+    expect(html).not.toContain(`data-reload-media="${missing.id}"`);
+    expect(html).toContain(`data-relink-media="${missing.id}"`);
+    expect(html).toContain(`data-reload-media="${collected.id}"`);
+    expect(html).toContain(`data-relink-media="${collected.id}"`);
+  });
+
   it("renders version diagnostics and live recording alpha controls", () => {
     const state = createInitialState();
     state.showControls = true;
@@ -817,7 +855,7 @@ describe("Pocket DAW UI rendering", () => {
     const source = readFileSync("src/app/App.ts", "utf8");
     const handler = source.slice(source.indexOf("[data-bass-preset-section]"), source.indexOf("[data-chord-instrument]"));
 
-    expect(handler).toContain("applyBassPresetCommand(this.state");
+    expect(handler).toMatch(/applyBassPresetCommand\(\s*this\.state/s);
     expect(handler).toContain('"chordsmith-bass-preset"');
   });
 });

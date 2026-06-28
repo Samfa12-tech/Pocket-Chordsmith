@@ -15,7 +15,7 @@ License/status: source-available app, `UNLICENSED`. See the repository root
 
 Pocket DJ should remain separate from the Chordsmith editor UI. Composition, detailed chord editing, melody grids, MIDI editing, and arrangement authoring belong in Pocket Chordsmith or Pocket DAW.
 
-Future Pocket DJ sessions can export a `PDJ1` format that captures performance state, cue points, loop choices, FX moves, and remix metadata without rewriting the original Chordsmith composition.
+Future Pocket DJ sessions can export a `PDJ1` format that captures performance state, cue points, loop choices, FX moves, and remix metadata without rewriting the original Chordsmith composition. The session boundary is tracked in `docs/PDJ1_SESSION_FORMAT.md`.
 
 ## Current App
 

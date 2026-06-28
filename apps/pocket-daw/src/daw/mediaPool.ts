@@ -196,6 +196,13 @@ export function mediaPoolStatus(item: MediaPoolItem, runtimeAvailable = false): 
   return { missing, unresolved, external, runtimeAvailable, runtimeOnly, reloadable, relinkable, label };
 }
 
+export function mediaPoolReloadPath(item: MediaPoolItem): string | null {
+  const status = mediaPoolStatus(item);
+  if (!status.reloadable) return null;
+  const metadata = item.metadata || {};
+  return String(metadata.projectRelativePath || item.uri || "").trim() || null;
+}
+
 export function createCollectMediaPlan(project: PocketDawProject): CollectMediaPlan {
   const usedTargets = new Set<string>();
   const items = project.mediaPool.map((item): CollectMediaPlanItem => {

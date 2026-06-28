@@ -89,6 +89,7 @@ Three import-ready chip demos live in `demos/`: `chip_bug_maze_pulse_loop.json`,
 - Pocket Audio Core now handles local shared project load/timeline diagnostics and mirrors transport start/stop when the repo-local core module is available.
 - WAV export tries the Pocket Audio Core renderer first when available, then falls back to the legacy OfflineAudioContext exporter.
 - Known limitations: live audible playback, preview sounds, MIDI import/export, grid editing, Godot push, and rich editor behavior still use the existing Chordsmith app code; the core renderer is a first-pass deterministic renderer and is not yet sound-parity signed off.
+- Live-engine extraction is gated by `../../docs/POCKET_AUDIO_CORE_LIVE_ENGINE_EXTRACTION_GATE.md`; Core should not become default audible playback until parity, mobile, listening and rollback evidence exist.
 
 ### v67 Direct Godot Push
 

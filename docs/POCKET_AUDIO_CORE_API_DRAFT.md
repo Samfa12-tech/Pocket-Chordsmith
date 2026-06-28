@@ -458,6 +458,8 @@ interface MidiExportResult {
 
 MIDI import is not required in the first core milestone. It may remain Pocket Chordsmith or Pocket DAW app logic until core parity is stable.
 
+Implementation checkpoint: `POCKET_AUDIO_CORE_MIDI_EXPORT_CHECKPOINT.md` records the readiness gates for moving DAW/Chordsmith MIDI export behind the shared event renderer.
+
 ## Game/Adaptive API
 
 ```ts

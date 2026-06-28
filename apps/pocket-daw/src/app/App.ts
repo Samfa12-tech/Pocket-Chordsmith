@@ -154,7 +154,7 @@ import { POCKET_DAW_VERSION, type PocketDawProject, type Track } from "../daw/sc
 import { trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToPosition, snapBarValue } from "../daw/timeline";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeRecordingClipOnTrack, updateAudioMediaAnalysis } from "../daw/audioClips";
-import { createCollectMediaPlan, findMediaPoolItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked, mediaPoolStatus } from "../daw/mediaPool";
+import { createCollectMediaPlan, findMediaPoolItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked, mediaPoolReloadPath, mediaPoolStatus } from "../daw/mediaPool";
 import {
   AUDIO_MEDIA_ACCEPT,
   collectProjectMediaNative,
@@ -177,6 +177,7 @@ import { pocketDawMcpCopyText } from "./mcpSetup";
 import { PerformanceDiagnosticsRecorder, type UiPerformanceCounters } from "./performanceDiagnostics";
 import { buildNativeRecordingDiagnosticsMetadata, buildRecordingCompletionMessage, buildRecordingStartupPlan, recordingStartFailureCleanupPlan } from "./recordingOrchestration";
 import { PlaybackRenderScheduler, type RenderOptions, type RenderSchedule } from "./renderScheduler";
+import { applyUpdaterCheckResult, applyUpdaterInstallResult, applyUpdaterProgress as updaterProgressPatch, applyUpdaterRelaunchResult, beginUpdaterCheck, beginUpdaterDownload } from "./updaterOrchestration";
 
 type MixerControlField = "volume" | "pan";
 type ScrollSnapshot = Record<string, { top: number; left: number }>;
@@ -1836,66 +1837,32 @@ export class App {
   }
 
   private async checkForUpdates(showPanel: boolean) {
-    this.state.showUpdaterPanel = showPanel || this.state.showUpdaterPanel;
-    this.state.updaterStatus = "checking";
-    this.state.updaterMessage = "Checking for updates...";
-    this.state.updaterAvailableVersion = null;
-    this.state.updaterReleaseNotes = null;
-    this.state.updaterDownloadProgress = null;
+    Object.assign(this.state, beginUpdaterCheck(this.state, showPanel));
     this.render({ preserveScroll: true });
 
     const result = await checkForPocketDawUpdate();
-    this.state.updaterCurrentVersion = result.currentVersion || POCKET_DAW_VERSION;
-    this.state.updaterMessage = result.message;
-    if (!result.runtimeAvailable) {
-      this.state.updaterStatus = showPanel ? "error" : "idle";
-    } else if (result.available && result.update) {
-      this.state.updaterStatus = "available";
-      this.state.updaterAvailableVersion = result.update.version;
-      this.state.updaterReleaseNotes = result.update.notes;
-      this.state.status = `Pocket DAW ${result.update.version} is available. Open Help > Check for Updates.`;
-      if (!showPanel) this.state.showUpdaterPanel = true;
-    } else {
-      this.state.updaterStatus = "not-available";
-      this.state.updaterAvailableVersion = null;
-      this.state.updaterReleaseNotes = null;
-      if (!showPanel) this.state.showUpdaterPanel = false;
-    }
+    Object.assign(this.state, applyUpdaterCheckResult(this.state, result, showPanel));
     this.render({ preserveScroll: true });
   }
 
   private async downloadAndInstallUpdate() {
     if (this.state.updaterStatus !== "available") return;
-    this.state.updaterStatus = "downloading";
-    this.state.updaterMessage = this.state.playing ? "Downloading update while playback continues..." : "Downloading update...";
-    this.state.updaterDownloadProgress = 0;
+    Object.assign(this.state, beginUpdaterDownload(this.state));
     this.render({ preserveScroll: true });
 
     const result = await downloadAndInstallPocketDawUpdate((progress) => this.applyUpdaterProgress(progress));
-    this.state.updaterMessage = result.message;
-    if (result.installed) {
-      this.state.updaterStatus = "ready-to-restart";
-      this.state.updaterDownloadProgress = 1;
-      this.state.status = "Update installed. Restart Pocket DAW to finish.";
-    } else {
-      this.state.updaterStatus = "error";
-      this.state.updaterDownloadProgress = null;
-    }
+    Object.assign(this.state, applyUpdaterInstallResult(this.state, result));
     this.render({ preserveScroll: true });
   }
 
   private applyUpdaterProgress(progress: PocketDawUpdateProgress) {
-    this.state.updaterStatus = progress.status;
-    this.state.updaterMessage = progress.message;
-    this.state.updaterDownloadProgress = progress.progress;
+    Object.assign(this.state, updaterProgressPatch(this.state, progress));
     this.render({ preserveScroll: true });
   }
 
   private async restartAfterUpdate() {
     const result = await relaunchPocketDaw();
-    this.state.updaterMessage = result.message;
-    this.state.status = result.message;
-    if (!result.relaunched) this.state.updaterStatus = "ready-to-restart";
+    Object.assign(this.state, applyUpdaterRelaunchResult(this.state, result));
     this.render({ preserveScroll: true });
   }
 
@@ -3117,9 +3084,12 @@ export class App {
       this.render();
       return;
     }
-    const path = String(item.metadata?.projectRelativePath || item.uri || "");
+    const path = mediaPoolReloadPath(item);
     if (!path) {
-      this.state.status = `${item.name} has no stored path. Use Relink.`;
+      const status = mediaPoolStatus(item);
+      this.state.status = status.missing || status.unresolved
+        ? `${item.name} is missing or unresolved. Use Relink.`
+        : `${item.name} has no reloadable stored path. Use Relink.`;
       this.render();
       return;
     }

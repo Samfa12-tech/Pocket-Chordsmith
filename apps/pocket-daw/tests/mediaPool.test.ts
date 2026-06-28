@@ -10,6 +10,7 @@ import {
   markMediaPoolItemCollected,
   markMediaPoolItemMissing,
   markMediaPoolItemRelinked,
+  mediaPoolReloadPath,
   mediaPoolStatus,
   removeUnusedMediaPoolItem,
   renderCacheItemsForMedia,
@@ -125,6 +126,32 @@ describe("media pool helpers", () => {
     });
   });
 
+  it("selects native reload paths only for external or collected project media", () => {
+    const external = createMediaPoolItem({ kind: "audio", name: "External.wav", uri: "C:\\Sessions\\External.wav" });
+    const browserOnly = createMediaPoolItem({ kind: "audio", name: "Browser.wav", metadata: { runtimeOnly: true } }, [external]);
+    const missing = createMediaPoolItem({ kind: "audio", name: "Missing.wav", uri: "C:\\Sessions\\Missing.wav", metadata: { missing: true, unresolved: true } }, [external, browserOnly]);
+    const collected = createMediaPoolItem({
+      kind: "audio",
+      name: "Collected.wav",
+      uri: "C:\\Sessions\\Collected.wav",
+      metadata: {
+        mediaRefKind: "project",
+        projectRelativePath: "project-media/Collected.wav",
+        nativePath: "C:\\Songs\\project-media\\Collected.wav",
+        external: false
+      }
+    }, [external, browserOnly, missing]);
+
+    expect(mediaPoolStatus(external)).toMatchObject({ reloadable: true, relinkable: true, label: "External unloaded" });
+    expect(mediaPoolReloadPath(external)).toBe("C:\\Sessions\\External.wav");
+    expect(mediaPoolStatus(collected)).toMatchObject({ reloadable: true, relinkable: true, label: "Project media" });
+    expect(mediaPoolReloadPath(collected)).toBe("project-media/Collected.wav");
+    expect(mediaPoolStatus(missing)).toMatchObject({ reloadable: false, relinkable: true, label: "Missing" });
+    expect(mediaPoolReloadPath(missing)).toBeNull();
+    expect(mediaPoolStatus(browserOnly)).toMatchObject({ reloadable: false, relinkable: false, label: "Browser runtime-only" });
+    expect(mediaPoolReloadPath(browserOnly)).toBeNull();
+  });
+
   it("removes unused media but keeps media referenced by clips or render cache", () => {
     const base = createDemoProject();
     const unused = createMediaPoolItem({ kind: "midi", name: "Scratch.mid" });
@@ -167,7 +194,13 @@ describe("media pool helpers", () => {
     const external = createMediaPoolItem({ kind: "audio", name: "Lead Vocal.wav", uri: "C:\\Sessions\\Lead Vocal.wav" });
     const browserOnly = createMediaPoolItem({ kind: "audio", name: "Browser Take.wav", metadata: { runtimeOnly: true } }, [external]);
     const missing = createMediaPoolItem({ kind: "audio", name: "Missing.wav", uri: "file:///lost/Missing.wav", metadata: { missing: true, unresolved: true } }, [external, browserOnly]);
-    project = addMediaPoolItem(addMediaPoolItem(addMediaPoolItem(project, external), browserOnly), missing);
+    const collected = createMediaPoolItem({
+      kind: "audio",
+      name: "Collected.wav",
+      uri: "project-media/Collected.wav",
+      metadata: { mediaRefKind: "project", projectRelativePath: "project-media/Collected.wav" }
+    }, [external, browserOnly, missing]);
+    project = addMediaPoolItem(addMediaPoolItem(addMediaPoolItem(addMediaPoolItem(project, external), browserOnly), missing), collected);
 
     const plan = createCollectMediaPlan(project);
 
@@ -175,6 +208,8 @@ describe("media pool helpers", () => {
     expect(plan.copy).toHaveLength(1);
     expect(plan.copy[0]).toMatchObject({ id: external.id, targetRelativePath: "project-media/Lead Vocal.wav" });
     expect(plan.blocked.map((item) => item.id)).toEqual(expect.arrayContaining([browserOnly.id, missing.id]));
+    expect(plan.alreadyProject).toContainEqual(expect.objectContaining({ id: collected.id, targetRelativePath: "project-media/Collected.wav" }));
+    expect(plan.blocked.find((item) => item.id === missing.id)?.reason).toContain("Relink");
   });
 
   it("initializes media pool and render cache when migrating older projects", () => {

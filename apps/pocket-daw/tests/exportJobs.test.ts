@@ -111,6 +111,32 @@ describe("export job helpers", () => {
     expect(new Set(paths).size).toBe(paths.length);
   });
 
+  it("builds a Godot game-pack ZIP with addon manifest paths and source project", async () => {
+    const project = createDemoProject();
+    const result = await createGamePackZipBlob(project, "godot-adaptive-pack", {
+      sourceProjectContents: JSON.stringify(project),
+      renderWav: async (renderProject) => new Blob([`bars:${renderProject.timeline.bars}`], { type: "audio/wav" })
+    });
+    const paths = result.entries.map((entry) => entry.path);
+
+    expect(result.manifest.kind).toBe("godot-adaptive-pack");
+    expect(result.manifest.manifestFile).toBe("manifests/godot-adaptive-manifest.json");
+    expect(paths).toContain("manifests/godot-adaptive-manifest.json");
+    expect(paths).toContain(result.manifest.sourceProject);
+    expect(result.manifest.sourceProject).toMatch(/^source\/.+\.pocketdaw\.json$/);
+    expect(paths).toContain(result.manifest.fullMix);
+    expect(result.manifest.fullMix).toMatch(/^audio\/full\/.+-full-mix\.wav$/);
+    expect(result.manifest.stems.map((stem) => stem.packPath)).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^audio\/stems\/.+-drums-stem\.wav$/),
+      expect.stringMatching(/^audio\/stems\/.+-bass-stem\.wav$/),
+      expect.stringMatching(/^audio\/stems\/.+-chords-stem\.wav$/),
+      expect.stringMatching(/^audio\/stems\/.+-melody-stem\.wav$/),
+      expect.stringMatching(/^audio\/stems\/.+-guitar-stem\.wav$/)
+    ]));
+    expect(result.manifest.stems.every((stem) => paths.includes(stem.packPath))).toBe(true);
+    expect(result.manifest.sectionLoops.every((loop) => paths.includes(loop.packPath))).toBe(true);
+  });
+
   it("adds manifest warnings for unresolved runtime-only media and muted tracks", () => {
     let project = createDemoProject();
     const item = createMediaPoolItem({ kind: "audio", name: "Browser Only.wav", metadata: { runtimeOnly: true } });

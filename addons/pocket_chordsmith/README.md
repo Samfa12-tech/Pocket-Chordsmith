@@ -62,6 +62,8 @@ godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/
 
 Visual track building stays in the web app for now. Godot receives the exported JSON/share code, compiles it to a lightweight `PCSChartResource`, then uses the conductor for timing, states, markers, cues, and Godot-native audio routing. A future Godot visual editor should build on the compiled chart/section data instead of porting the whole browser app into runtime.
 
+Design anchor: `docs/VISUAL_EDITOR_EXPLORATION.md` explores a Godot-native chart inspector and adaptive-state editor while keeping musical authoring in Pocket Chordsmith and production/stem work in Pocket DAW.
+
 For batch migration, use the editor `Compile Folder` button or the headless compiler:
 
 ```text
@@ -165,6 +167,7 @@ More docs:
 - `CHANGELOG.md`
 - `MIGRATION.md`
 - `docs/GETTING_STARTED.md`
+- `docs/HEADLESS_VALIDATION.md`
 - `docs/LEVEL_INTEGRATION.md`
 - `docs/SHIPPING_CHECKLIST.md`
 - `docs/RELEASE_CANDIDATE.md`
@@ -172,14 +175,19 @@ More docs:
 - `docs/RUNTIME_BRIDGE.md`
 - `docs/STEM_WORKFLOW.md`
 - `docs/SAMPLE_PREVIEW.md`
+- `docs/SAMPLE_KIT_PACKAGE_REPORT.md`
 - `docs/UID_CACHE_RECOVERY.md`
+- `docs/VISUAL_EDITOR_EXPLORATION.md`
 - `SKILL.md` for AI-assisted project integration
 
 Release-candidate tools:
 
 ```text
+godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/compile_pocket_chordsmith_charts.gd -- --source <json-or-folder> [--output <folder-or-file>] [--beside-source]
 godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/validate_pocket_chordsmith_runtime.gd -- --chart <chart.tres> [--profile <profile.tres>] [--report <report.md>]
 ```
+
+Use `docs/HEADLESS_VALIDATION.md` for the complete headless gate, direct Push-to-Godot smoke checklist, and receiver security review.
 
 Godot Asset Library release checklist:
 

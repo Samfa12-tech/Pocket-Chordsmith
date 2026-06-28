@@ -12,6 +12,18 @@ This note tracks the v0.6-readiness work that follows the v0.5.1 hardening pass.
 - Native Reload/Relink can refresh audio buffers for project/external media in the installed app.
 - Browser runtime-only media still cannot be collected because browsers do not expose a durable source path after import.
 
+## MIDI Import Boundary
+
+- Current MIDI import creates editable MIDI media/clips and preserves parsed track, channel, PPQ, tempo/time-signature and note metadata.
+- Full multitrack/channel/controller/tempo-map import and automatic Chordsmith arrangement conversion remain future work.
+- `MIDI_IMPORT_AND_CHORDSMITH_CONVERSION_PLAN.md` keeps ordinary import and future Chordsmith conversion as separate commands.
+
+## Drum Branching Boundary
+
+- Current generated Drums stay compact by default, with per-lane mix/FX metadata on the parent Drums track.
+- `DRUM_BRANCHING_PLAN.md` defines a future source-preserving branch workflow for Kick, Snare, Hat and future kit-piece child tracks.
+- Branch views should edit the same Chordsmith source data instead of duplicating unsynced drum grids.
+
 ## Native Playback Cache
 
 - Native playback payloads support optional cached WAV assets and timeline regions alongside procedural events.
@@ -54,4 +66,7 @@ This note tracks the v0.6-readiness work that follows the v0.5.1 hardening pass.
 - Native CPAL recording commands can start/stop/status one mono input capture and write PCM WAV files under `project-media/recordings/`.
 - Stop-recording imports the take as project media and places an audio clip on the armed live track.
 - Browser/dev recording remains disabled.
-- Remaining work: ASIO, multitrack/stereo capture, input meters, latency compensation UI, punch-in/out, comping/take lanes and FX monitoring.
+- Remaining work: ASIO, simultaneous multitrack/stereo capture, punch-in/out, comping/take lanes, latency compensation UI and FX monitoring.
+- Future stereo/multitrack recording design is tracked in `STEREO_MULTITRACK_RECORDING_PLAN.md`; it keeps the no-hidden-compensation rule and requires explicit channel assignment plus grouped take metadata before implementation.
+- ASIO/low-latency backend research is tracked in `ASIO_LOW_LATENCY_BACKEND_SPIKE.md`; the current release path remains CPAL/WASAPI-first.
+- Punch-in/out, non-destructive take lanes and comping are tracked in `PUNCH_COMPING_TAKE_LANES_PLAN.md`; the current release still uses same-track overwrite placement for recorded takes.

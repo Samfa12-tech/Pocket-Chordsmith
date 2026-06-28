@@ -34,6 +34,8 @@ Then click `Save Chart Resource` and save a `.tres`, for example:
 res://music/charts/level_01_pcs_chart.tres
 ```
 
+Future Godot visual editing is scoped as compiled-chart inspection and runtime/adaptive metadata editing, not a port of the browser composer. See `VISUAL_EDITOR_EXPLORATION.md`.
+
 ## 3. Add The Conductor To A Level
 
 In your level scene:

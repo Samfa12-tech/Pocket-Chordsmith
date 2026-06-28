@@ -4,25 +4,38 @@
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current source target: `0.6.30` native render-cache/windowing stabilization
-- Last completed public artifact record in this repo: `0.6.30`
-- Last installed public smoke evidence in this repo: `0.6.30` installed smoke passed against `Pocket.DAW_0.6.30_x64-setup.exe`
+- Current release truth: see `docs/CURRENT_RELEASE_STATUS.md`; current audited source/public/smoke checkpoint is `0.6.34`
+- Last completed public artifact record in this repo: tracked in `release-status.json`
+- Last installed public smoke evidence in this repo: tracked in `release-status.json`
 - Machine-readable release status: `release-status.json`
 - Primary itch channel: `windows-installer`
 - GitHub updater manifest: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
-- `0.6.30` published artifact commit: `ad9a36fe5597e80b2a960425fda21723ebb04b11`
+- Current published artifact commit: tracked in `release-status.json`
 
 This is alpha-testing software, not a finished professional DAW. Future installed-app updates should be tested through the Tauri updater flow instead of requiring testers to manually redownload every build.
 
 `docs/CURRENT_RELEASE_STATUS.md` is generated from `release-status.json` and is the release-truth anchor. Older version sections below are retained as historical implementation and QA notes; do not treat old version headings as current status unless the generated release-status doc agrees.
 
-## Next build pending - Windows project open polish
+## Windows project open polish
 
-The 2026-06-20 live MCP smoke exposed two user-facing workflow gaps that should ship in the next updater checkpoint:
+The 2026-06-20 live MCP smoke exposed user-facing workflow gaps. The 2026-06-28 installed `0.6.34` smoke now verifies the local file-association path; keep these rows as regression gates for future public checkpoints:
 
-- Register `.pocketdaw` as a Pocket DAW project file type in the Windows installer and support startup/second-instance file launch arguments, so double-click and Windows "Open with" load the project instead of only opening the app.
-- Add a future live MCP/open-project workflow after the safe bridge v1: Codex can currently control the running app transport/mixer, but opening a project in the installed app still relies on user/native file-open flows unless the app was launched with the project file.
-- Keep the current MIDI import behavior clear: real `.mid` files import as editable MIDI media/clips. A separate future "Convert MIDI to Chordsmith arrangement" command should use simple heuristics to populate drums, bass, chord and melody lanes for users who expect Chordsmith-style decomposition.
+- `.pocketdaw` is registered as a Pocket DAW project file type for the installed app on this machine, with HKCU/HKCR ProgID and OpenWithProgids evidence.
+- Cold-start `.pocketdaw` launch opens the clicked project, and second-instance launch focuses the existing app before loading the clicked project.
+- The live bridge `open_project` action can reopen explicit `.pocketdaw` paths in the running installed app.
+- `pocket-daw://` Chordsmith handoff still imports after association testing.
+- Implementation and packaged-smoke plan: `docs/FILE_ASSOCIATION_IMPLEMENTATION_PLAN.md`.
+- Keep the current MIDI import behavior clear: real `.mid` files import as editable MIDI media/clips. A separate future "Convert MIDI to Chordsmith arrangement" command should use simple heuristics to populate drums, bass, chord and melody lanes for users who expect Chordsmith-style decomposition. Design anchor: `docs/MIDI_IMPORT_AND_CHORDSMITH_CONVERSION_PLAN.md`.
+- Keep recording scope honest: the current alpha remains one armed mono live track. Future stereo and simultaneous multitrack capture should follow `docs/STEREO_MULTITRACK_RECORDING_PLAN.md`.
+- Keep ASIO out of the default release path until host selection, diagnostics and installed-app evidence exist. Research anchor: `docs/ASIO_LOW_LATENCY_BACKEND_SPIKE.md`.
+- Keep punch-in/out, comping and take lanes out of release claims until the explicit design path in `docs/PUNCH_COMPING_TAKE_LANES_PLAN.md` has command, UI, save/reopen and installed-smoke evidence.
+- Keep MP3, FLAC and compressed game-pack export out of release claims until codec dependencies, profile validation, manifest metadata and real target-runtime smoke follow `docs/MULTI_FORMAT_EXPORT_PLAN.md`.
+
+## Architecture notes
+
+- The current `src/app/App.ts` responsibility map and first extraction record live in `docs/APP_TS_RESPONSIBILITY_MAP.md`.
+- The first low-risk extraction moved updater panel state transitions into `src/app/updaterOrchestration.ts`, while `App.ts` still owns native bridge calls and render timing.
+- Future architecture slices should keep avoiding recording, file open/save, native cache, and game-pack export flows until each seam has focused state/behavior tests.
 
 ## Published in v0.6.19 - MCP heavy-metal MIDI arrangement
 
@@ -96,13 +109,13 @@ Published evidence as of 2026-06-19:
 
 ## v0.6.9 Native Lofi Bass Hotfix - installed smoke pending
 
-`0.6.9` is the current installer/updater test build. It keeps the `0.6.8` native-cache diagnostics patch and fixes native procedural `warm_sub`/lofi bass playback so soloed imported bass remains audible when the native cache is not active.
+`0.6.9` was the native lofi-bass audibility hotfix. It kept the `0.6.8` native-cache diagnostics patch and fixed native procedural `warm_sub`/lofi bass playback so soloed imported bass remained audible when the native cache was not active.
 
 Published evidence as of 2026-06-19:
 
 - Itch channel `samfa12/pocket-daw:windows-installer` build `#1736808`, user version `0.6.9`.
-- GitHub release `pocket-daw-v0.6.9` was published with the current setup EXE/MSI, updater signatures, release manifest, checksums and `pocket-daw-latest.json`.
-- The GitHub latest updater manifest points at `Pocket.DAW_0.6.9_x64-setup.exe`.
+- GitHub release `pocket-daw-v0.6.9` was published with the then-current setup EXE/MSI, updater signatures, release manifest, checksums and `pocket-daw-latest.json`.
+- The GitHub latest updater manifest pointed at `Pocket.DAW_0.6.9_x64-setup.exe` before later checkpoints replaced it.
 - Remote setup EXE SHA-256 was verified as `406bd7432dda5f4c3dfccb041c6e2362f5b683559476900f239ec46843d60f09`.
 
 Installed-app smoke for `0.6.9` should re-open the reported `lofi demo project.pocketdaw`, confirm About/Diagnostics reports `0.6.9`, solo Bass at 100-120%, and verify the audible bass matches the moving Bass meter.
@@ -153,7 +166,7 @@ The same native-cache and Drums-meter smoke remains part of the `0.6.9` installe
 - Added metronome/count-in click playback that is not included in WAV/MIDI exports.
 - Added diagnostics fields for recording state, armed tracks, monitor-enabled tracks and metronome/count-in settings.
 - Added Rust tests for WAV writer/path safety and TypeScript tests for migration defaults, metronome timing, live track arm/monitor controls and recorded clip placement.
-- Still out of scope: ASIO, simultaneous multitrack recording, stereo recording modes, punch-in/out, comping/take lanes, latency compensation UI and FX monitoring.
+- Still out of scope: ASIO, simultaneous multitrack recording, stereo recording modes, punch-in/out, comping/take lanes, latency compensation UI and FX monitoring. The punch/comping/take-lane design anchor is `docs/PUNCH_COMPING_TAKE_LANES_PLAN.md`.
 
 ## v0.5.14 Stabilization Pass - source changes pending installed release
 
@@ -170,7 +183,7 @@ The same native-cache and Drums-meter smoke remains part of the `0.6.9` installe
 
 The durable product destination is tracked in `POCKET_DAW_NORTH_STAR.md`.
 
-Pocket DAW should eventually do everything Pocket Chordsmith can do for song creation, plus real DAW work: native timeline arrangement, simultaneous mono/stereo multitrack recording with suitable hardware, MIDI/audio clips, imported audio-file tracks, mixing, automation, live preview, timeline scrub, multi-format export with bitrate/quality controls, stem export, Godot/web-game packs, push from Pocket Chordsmith to Pocket DAW, and push from Pocket DAW to Godot.
+Pocket DAW should eventually do everything Pocket Chordsmith can do for song creation, plus real DAW work: native timeline arrangement, simultaneous mono/stereo multitrack recording with suitable hardware, MIDI/audio clips, imported audio-file tracks, mixing, automation, live preview, timeline scrub, multi-format export with bitrate/quality controls, stem export, Godot/web-game packs, push from Pocket Chordsmith to Pocket DAW, and push from Pocket DAW to Godot. Multi-format export planning is tracked in `docs/MULTI_FORMAT_EXPORT_PLAN.md`; current implemented audio export remains WAV-based unless a release manifest proves installed codec support.
 
 ## v0.5.13 Public Alpha Follow-Up Notes
 
@@ -422,7 +435,7 @@ Pocket DAW should eventually do everything Pocket Chordsmith can do for song cre
 - Game manifests now use deterministic pack paths under `audio/full/`, `audio/stems/`, `audio/sections/`, `manifests/` and include warnings for runtime-only/missing media and muted tracks.
 - Pocket Chordsmith now has a visible `Send to Pocket DAW` handoff path using PocketHandoff URL/window/localStorage/clipboard fallbacks.
 - Added PCS parity fixtures covering simple loops, multi-section timing, manual bass, multi-lane melody tuplets/slides and guitar/global metadata.
-- Recording moved from placeholder to a v0.6.0 installed-app alpha slice: one armed mono live track, monitor toggle, metronome/count-in and project-media WAV clip creation.
+- Recording moved from placeholder to a v0.6.0 installed-app alpha slice: one armed mono live track, saved-project prerequisite, monitor toggle, metronome/count-in and project-media WAV clip creation.
 - Added a safe `src/audio/pocketAudioCoreAdapter.ts` bridge for future Pocket Audio Core alignment without replacing the current playback/render engine.
 
 ## Browser preview
@@ -448,7 +461,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 npm run verify:itch
 ```
 
-Current v0.6.6 local release verification target:
+Historical v0.6.6 local release verification target:
 
 - `npm run verify:versions`: checks package, lockfile, Tauri, Cargo and schema version sync.
 - `npm test`: runs the automated TypeScript/Vitest suite.
@@ -486,7 +499,7 @@ $env:Path="$env:USERPROFILE\.cargo\bin;$env:Path"
 npm run tauri:debug
 ```
 
-Historical installers and debug executables may remain in `releases/`, but they are not current v0.6.6 alpha artifacts unless regenerated by `npm run package:itch`. Native save/open dialogs, native audio import and native MIDI import are implemented through defensive Tauri commands with browser fallbacks, and installed Windows smoke evidence is tracked in `docs/WINDOWS_TESTING_CHECKLIST.md`.
+Historical installers and debug executables may remain in `releases/`, but they are not current release artifacts unless regenerated by the current release pipeline. Native save/open dialogs, native audio import and native MIDI import are implemented through defensive Tauri commands with browser fallbacks, and installed Windows smoke evidence is tracked in `docs/WINDOWS_TESTING_CHECKLIST.md`.
 
 ## Manual checklist
 
@@ -619,7 +632,7 @@ v0.5.2 moved generated playback out of the browser timing path, but Pocket DAW i
 - Add stronger live preview from any clip edge/selection and better scrub-audition behavior.
 - Add Chordsmith FX and sidechain parity controls after the core musical lanes stay stable.
 - Add timeline visualisation for generated and audio material: waveform-style previews for audio clips, plus useful energy/note-density lanes for generated Chordsmith tracks.
-- Add a drum-track branch/explode workflow: double-click a generated Drums track or clip to create separate Kick, Snare, Hat and future kit-piece tracks with independent volume, pan, gate, FX and routing.
+- Add a drum-track branch/explode workflow: double-click a generated Drums track or clip to create separate Kick, Snare, Hat and future kit-piece tracks with independent volume, pan, gate, FX and routing. Design anchor: `docs/DRUM_BRANCHING_PLAN.md`.
 - Bring over all live-playback Pocket Chordsmith drum instruments and kit variations so branched drum tracks can use the same source sounds rather than a reduced DAW-only kit.
 - Add longer-form performance tracing for expensive arrangements.
 - Manually verify project-relative media collect/reload/relink in the packaged app and harden edge cases from real projects.
@@ -628,7 +641,7 @@ v0.5.2 moved generated playback out of the browser timing path, but Pocket DAW i
 - Render individual section-loop WAVs and bundle them with Godot/web-game manifests.
 - Add richer clip transform behaviour for transpose, gain and stem mutes.
 - Hydrate native playback from persisted `project-cache/native-audio` WAVs on project open, so reopening a cached project does not need to rebuild section stems.
-- Add voice/instrument recording once native file/audio persistence is ready, including simultaneous multitrack recording on multi-input hardware.
+- Expand the current one-armed mono voice/instrument recording alpha toward simultaneous multitrack recording on multi-input hardware.
 - Add per-track mono/stereo recording mode and hardware input assignment for live audio tracks.
 - Expand MIDI import into a deeper DAW feature: robust multi-track import, channel/instrument mapping, tempo-map handling, controller preservation, drum-lane mapping and richer piano-roll editing.
 - Add a simple optional MIDI-to-Chordsmith arrangement converter for "make this MIDI into drums/bass/chords/melody" workflows; keep raw MIDI clip import as the preserving/default DAW path.
@@ -681,7 +694,7 @@ Pocket Chordsmith web can borrow the same lightweight lessons without becoming a
 
 - Updated app/package/native metadata to v0.5.9 while keeping persisted project schema version 2.
 - Published/uses the alpha-testing itch installer channel at `samfa12/pocket-daw:windows-installer`.
-- Added `docs/ALPHA_TESTING_RELEASE_STATUS.md` as the current public alpha status anchor.
+- Added `docs/ALPHA_TESTING_RELEASE_STATUS.md` as the then-current public alpha status anchor.
 - Added a Pocket DAW app README that points testers to itch, the updater endpoint and local verification commands.
 - Treats Pocket DAW as installed-app only for public alpha testing; updater confidence comes from the installed app.
 - Published the GitHub updater release `pocket-daw-v0.5.9-updater-test` with `pocket-daw-latest.json`, setup EXE, `.sig`, checksums and release notes.

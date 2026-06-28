@@ -189,6 +189,8 @@ Exit criteria:
 
 Purpose: provide shared browser playback for apps and games.
 
+TASK-35 gate: `POCKET_AUDIO_CORE_LIVE_ENGINE_EXTRACTION_GATE.md` is the current decision record for when this phase is allowed to replace Pocket Chordsmith's audible live engine. Until those parity and rollback gates pass, app integration should stay in diagnostic, shadow or opt-in mode.
+
 Source material:
 
 - Pocket Chordsmith `ensureAudio`, procedural instruments, FX graph, voice pools, sidechain, and scheduler.
@@ -451,3 +453,4 @@ Pocket Audio Core `0.1.0` should be considered done when:
 - Preserve the current single-file Chordsmith and DJ builds until parity tests and manual playback checks pass.
 - Keep previous core builds under `core-releases/<version>/` or package tags.
 - Do not migrate saved project schemas as part of core adoption unless a separate schema bump is explicitly planned.
+- For Chordsmith live playback specifically, follow `POCKET_AUDIO_CORE_LIVE_ENGINE_EXTRACTION_GATE.md`: legacy playback must stay available until Core default playback has fixture, mobile, listening and rollback evidence.
