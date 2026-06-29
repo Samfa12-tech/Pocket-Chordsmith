@@ -199,6 +199,7 @@ test("MIDI import trims one-bar pre-roll, auto-selects resolution, maps drums, a
       firstMelodyTrack: state.melodyTracksA[0].slice(0, 16),
       summary: els.midiImportSummary.textContent,
       progressionNames: state.progressionA.map((ch) => ch && ch.name),
+      exportedProgressionA: exportProject().progressionA,
     };
   }, Array.from(midi));
 
@@ -213,14 +214,22 @@ test("MIDI import trims one-bar pre-roll, auto-selects resolution, maps drums, a
   expect(result.firstMelodyTrack.every((note) => note === null)).toBe(true);
   expect(result.summary).toContain("Trimmed 1 pre-roll bar");
   expect(result.summary).toContain("Resolution auto-set to 4×");
+  expect(result.summary).toContain("Time signature: not found in MIDI; using 4/4");
   expect(result.summary).toContain("Approx source bars after trim: 2");
-  expect(result.summary).toContain("Drums mapped/skipped: 4/0");
+  expect(result.summary).toContain("Source note pairs analysed: 8");
+  expect(result.summary).toContain("Drum MIDI hits mapped: 4");
+  expect(result.summary).toContain("Drum MIDI hits skipped: 0");
+  expect(result.summary).toContain("Drum grid cells written: 4");
+  expect(result.summary).toContain("Drum hits merged by same lane/step: 0");
   expect(result.summary).toContain("Ignored 1 guide/near-silent notes");
   expect(result.summary).toContain("lyrics 1");
   expect(result.summary).toContain("program changes 1");
   expect(result.summary).toContain("pitch bends 1 ignored");
   expect(result.summary).toContain("CCs 1");
-  expect(result.summary).toContain("Chords: updated");
+  expect(result.summary).toContain("chord bars detected 1");
+  expect(result.summary).toContain("chord bars blank due no harmonic material 1");
+  expect(result.progressionNames[0]).toBeNull();
+  expect(result.exportedProgressionA[0]).toBeNull();
 });
 
 test("MIDI timing normalization does not trim pickups or old tick-zero files", async ({

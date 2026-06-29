@@ -1471,10 +1471,17 @@ function beatCellLabel(trackId, value){
 function safeChoice(value, allowed, fallback){
   return allowed.includes(value) ? value : fallback;
 }
-function sanitizeProgressionDegrees(arr){
+function sanitizeProgressionDegrees(arr, options={}){
   const source = Array.isArray(arr) ? arr : [0,4,5,3];
+  const preserveNull = !!options.preserveNull;
   const out = [];
-  for(let i = 0; i < MAX_BARS; i++) out.push(clamp(asInt(source[i], [0,4,5,3][i] ?? 0), 0, 6));
+  for(let i = 0; i < MAX_BARS; i++){
+    if(preserveNull && (source[i] === null || source[i] === undefined)){
+      out.push(null);
+    } else {
+      out.push(clamp(asInt(source[i], [0,4,5,3][i] ?? 0), 0, 6));
+    }
+  }
   return out;
 }
 function sanitizeGridData(grid){
@@ -1673,7 +1680,9 @@ function sanitizeProjectData(raw){
   }
 
   SECTION_IDS.forEach(id => {
-    data[`progression${id}`] = sanitizeProgressionDegrees(raw[`progression${id}`]);
+    const rawProgression = raw[`progression${id}`];
+    const preserveNullProgression = Array.isArray(rawProgression) && rawProgression.some(value => value === null);
+    data[`progression${id}`] = sanitizeProgressionDegrees(rawProgression, {preserveNull:preserveNullProgression});
     data[`grid${id}`] = sanitizeGridData(raw[`grid${id}`]);
     data[`gridTuplets${id}`] = sanitizeGridTuplets(raw[`gridTuplets${id}`]);
     data[`melodyTracks${id}`] = sanitizeMelodyTrackData(raw[`melodyTracks${id}`], raw[`melody${id}`]);
@@ -2402,8 +2411,8 @@ function generateAvailableChords(){
   const scaleNotes = buildScale(state.key, state.scale);
   state.availableChords = Array.from({length:7}, (_,i)=>makeChord(scaleNotes, i));
   const defaults = state.scale === "major" ? [0,4,5,3] : [0,5,2,6];
-  const remap = (prog) => (!prog || prog.every(x=>x===null)) ? defaults.map(d=>state.availableChords[d]) :
-    prog.map(ch => state.availableChords[ch?.degree ?? 0] || state.availableChords[0]);
+  const remap = (prog) => (!Array.isArray(prog) || !prog.length) ? defaults.map(d=>state.availableChords[d]) :
+    prog.map(ch => ch === null ? null : (state.availableChords[ch?.degree ?? 0] || state.availableChords[0]));
   SECTION_IDS.forEach(id => { state[sectionPropKey("progression", id)] = remap(state[sectionPropKey("progression", id)]); });
   syncSection();
   updateSuggestions();
@@ -27099,10 +27108,20 @@ function midiProgramSuggestsBass(program){
 function midiProgramSuggestsGuitar(program){
   return Number.isFinite(program) && program >= 24 && program <= 31;
 }
+function midiProgramSuggestsDistortedGuitar(program){
+  return Number.isFinite(program) && program >= 29 && program <= 31;
+}
+function midiProgramSuggestsBrass(program){
+  return Number.isFinite(program) && program >= 56 && program <= 63;
+}
+function midiProgramSuggestsKeysOrgan(program){
+  return Number.isFinite(program) && program >= 0 && program <= 23;
+}
 function midiProgramToMelodyInstrument(program){
-  if(program === 61 || program === 60 || program === 62 || program === 63) return "trumpet";
-  if((program >= 16 && program <= 23) || (program >= 0 && program <= 7)) return "soft";
-  if(midiProgramSuggestsGuitar(program)) return "pulse";
+  if(midiProgramSuggestsDistortedGuitar(program)) return "distorted_lead_guitar";
+  if(midiProgramSuggestsGuitar(program)) return "lead_guitar";
+  if(midiProgramSuggestsBrass(program)) return "trumpet";
+  if(midiProgramSuggestsKeysOrgan(program)) return program >= 16 ? "soft" : "synth";
   return null;
 }
 function midiToBassManualIndex(midi){
@@ -27243,8 +27262,134 @@ function likelyMidiChordForWeights(weights, bassWeights){
   });
   return best && best.score > 0 ? mapMidiChordCandidateToPocketChord(best.candidate) : null;
 }
-function tryImportChordProgressionFromMidi(notes, ticksPerQuarter, sectionId, maxSteps, startStepOffset=0){
-  const nextProgression = state[sectionPropKey("progression", sectionId)].slice();
+function midiChordFingerprintForBar(notes, barStartTick, barEndTick){
+  const weights = new Array(12).fill(0);
+  const bassWeights = new Array(12).fill(0);
+  (notes || []).forEach(note => {
+    if(note.channel === 9 || midiNoteIsGuide(note) || note.note < 36) return;
+    const start = asNumber(note.startTick, 0);
+    const end = Math.max(start + 1, asNumber(note.endTick, start + 1));
+    const overlap = Math.max(0, Math.min(end, barEndTick) - Math.max(start, barStartTick));
+    if(overlap <= 0) return;
+    const pc = ((note.note % 12) + 12) % 12;
+    const weight = overlap * (Math.max(8, asInt(note.velocity, 64)) / 64);
+    weights[pc] += weight;
+    if(note.note < 60) bassWeights[pc] += weight * 1.4;
+  });
+  const chord = likelyMidiChordForWeights(weights, bassWeights);
+  if(chord) return `ch:${chord.root}:${chord.quality}`;
+  return weights.some(Boolean) ? `pc:${weights.map((v, pc) => v > 0 ? pc : "-").filter(v => v !== "-").join(".")}` : "ch:-";
+}
+function midiChunkFingerprint(notes, parsed, timing, chunkIndex){
+  const chunkStartBar = chunkIndex * MAX_BARS;
+  const chunkEndBar = chunkStartBar + MAX_BARS;
+  const stepsInChunk = MAX_BARS * stepsPerBar();
+  const drums = new Set();
+  const bass = new Set();
+  const melody = new Set();
+  const channels = new Set();
+  const chordParts = [];
+  for(let bar = chunkStartBar; bar < chunkEndBar; bar++){
+    chordParts.push(midiChordFingerprintForBar(notes, bar * timing.barTicks, (bar + 1) * timing.barTicks));
+  }
+  (notes || []).forEach(note => {
+    const step = quantizeMidiTickToStep(note.startTick, parsed.ticksPerQuarter, activeResolution());
+    const bar = Math.floor(step / stepsPerBar());
+    if(bar < chunkStartBar || bar >= chunkEndBar) return;
+    const localStep = step - (chunkStartBar * stepsPerBar());
+    if(localStep < 0 || localStep >= stepsInChunk) return;
+    const coarse = Math.floor(localStep / Math.max(1, activeResolution()));
+    if(note.channel === 9){
+      const drum = midiDrumTarget(note.note);
+      if(drum) drums.add(`${drum.track}:${coarse}`);
+      return;
+    }
+    const program = midiProgramForChannel(parsed, note.channel, note.rawStartTick ?? note.startTick);
+    channels.add(`${note.channel}:${Number.isFinite(program) ? program : "?"}`);
+    if((midiProgramSuggestsBass(program) && note.note <= 76) || note.note < 52) bass.add(coarse);
+    else if(note.note >= 55) melody.add(`${note.channel}:${coarse}`);
+  });
+  return [
+    chordParts.join(","),
+    `d:${Array.from(drums).sort().join(".")}`,
+    `b:${Array.from(bass).sort((a,b)=>a-b).join(".")}`,
+    `m:${Array.from(melody).sort().join(".")}`,
+    `c:${Array.from(channels).sort().join(".")}`
+  ].join("|");
+}
+function midiFingerprintSimilarity(a, b){
+  const aSet = new Set(String(a || "").split(/[|,.]/).filter(Boolean));
+  const bSet = new Set(String(b || "").split(/[|,.]/).filter(Boolean));
+  if(!aSet.size && !bSet.size) return 1;
+  let shared = 0;
+  aSet.forEach(token => { if(bSet.has(token)) shared++; });
+  return shared / Math.max(1, Math.max(aSet.size, bSet.size));
+}
+function planMidiImportSections(normalizedNotes, parsed, timing, estimatedBars){
+  const chunkCount = clamp(Math.ceil(Math.max(1, estimatedBars) / MAX_BARS), 1, 256);
+  const representatives = [];
+  const chunkToSection = [];
+  const exact = new Map();
+  let approximatedChunks = 0;
+  for(let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++){
+    const sourceStartBar = chunkIndex * MAX_BARS;
+    const barCount = clamp(estimatedBars - sourceStartBar, 1, MAX_BARS);
+    const fingerprint = midiChunkFingerprint(normalizedNotes, parsed, timing, chunkIndex);
+    if(exact.has(fingerprint)){
+      chunkToSection[chunkIndex] = exact.get(fingerprint);
+      continue;
+    }
+    if(representatives.length < SECTION_IDS.length){
+      const sectionIndex = representatives.length;
+      representatives.push({chunkIndex, sourceStartBar, barCount, fingerprint});
+      exact.set(fingerprint, sectionIndex);
+      chunkToSection[chunkIndex] = sectionIndex;
+      continue;
+    }
+    let best = {sectionIndex:0, score:-Infinity};
+    representatives.forEach((rep, sectionIndex) => {
+      const score = midiFingerprintSimilarity(fingerprint, rep.fingerprint);
+      if(score > best.score) best = {sectionIndex, score};
+    });
+    chunkToSection[chunkIndex] = best.sectionIndex;
+    approximatedChunks++;
+  }
+  return {
+    chunkCount,
+    representatives,
+    chunkToSection,
+    usedSectionCount:clamp(representatives.length || 1, 1, SECTION_IDS.length),
+    approximatedChunks,
+    songSequence:chunkToSection.map(sectionIndex => SECTION_IDS[sectionIndex]).filter(Boolean)
+  };
+}
+function midiChannelProgramSummary(parsed){
+  const channels = new Map();
+  (parsed?.programChanges || []).forEach(ev => {
+    if(!channels.has(ev.channel)) channels.set(ev.channel, new Set());
+    channels.get(ev.channel).add(ev.program);
+  });
+  if(!channels.size) return "";
+  return Array.from(channels.entries())
+    .sort((a,b) => a[0] - b[0])
+    .map(([channel, programs]) => `ch ${channel + 1}: ${Array.from(programs).sort((a,b)=>a-b).join("/")}`)
+    .join("; ");
+}
+function midiPitchBendSummary(parsed){
+  const counts = new Map();
+  (parsed?.pitchBends || []).forEach(ev => {
+    const key = ev.channel;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  if(!counts.size) return "";
+  return Array.from(counts.entries())
+    .sort((a,b) => a[0] - b[0])
+    .map(([channel, count]) => `ch ${channel + 1}: ${count}`)
+    .join("; ");
+}
+function tryImportChordProgressionFromMidi(notes, ticksPerQuarter, sectionId, maxSteps, startStepOffset=0, options={}){
+  const fillMissingChords = options.fillMissingChords === true;
+  const nextProgression = new Array(MAX_BARS).fill(null);
   let updated = 0;
   let carried = 0;
   let empty = 0;
@@ -27274,16 +27419,14 @@ function tryImportChordProgressionFromMidi(notes, ticksPerQuarter, sectionId, ma
       nextProgression[bar] = chord;
       previousChord = chord;
       updated++;
-    } else if(previousChord){
+    } else if(fillMissingChords && previousChord){
       nextProgression[bar] = previousChord;
       carried++;
     } else {
       empty++;
     }
   }
-  if(updated > 0 || carried > 0){
-    state[sectionPropKey("progression", sectionId)] = nextProgression;
-  }
+  state[sectionPropKey("progression", sectionId)] = nextProgression;
   return {updated, carried, empty, changed:updated > 0 || carried > 0};
 }
 function setMidiImportSummary(text){
@@ -27307,7 +27450,9 @@ function makeMidiImportSectionData(){
     bassAccent:blankBassAccent(),
     melodyCandidates:Array.from({length:melodyTrackCount}, () => new Map()),
     bassCandidates:new Map(),
-    melodyOctaves:blankMelodyOctaves(melodyTrackCount)
+    melodyOctaves:blankMelodyOctaves(melodyTrackCount),
+    melodyProgramCounts:Array.from({length:melodyTrackCount}, () => new Map()),
+    melodyPanValues:Array.from({length:melodyTrackCount}, () => [])
   };
 }
 function applyHeldMidiLength(note, startStep, targetTrack, holdTrack, maxSteps, ticksPerQuarter, tickOffset=0){
@@ -27367,16 +27512,15 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
 
   const latestTick = normalizedNotes.reduce((m,n) => Math.max(m, n.endTick || n.startTick || 0), 0);
   const estimatedBars = latestTick ? Math.ceil(latestTick / timing.barTicks) : 1;
-  const maxImportBars = SECTION_IDS.length * MAX_BARS;
-  const importBars = clamp(estimatedBars, 1, maxImportBars);
-  const usedSectionCount = clamp(Math.ceil(importBars / MAX_BARS), 1, SECTION_IDS.length);
-  const sectionSteps = MAX_BARS * stepsPerBar();
-  const maxGlobalSteps = importBars * stepsPerBar();
+  const importPlan = planMidiImportSections(normalizedNotes, parsed, timing, estimatedBars);
+  const usedSectionCount = importPlan.usedSectionCount;
+  const importBars = importPlan.representatives.reduce((sum, rep) => sum + (rep.barCount || MAX_BARS), 0);
+  const maxGlobalSteps = Math.max(1, estimatedBars) * stepsPerBar();
   const stepTicks = parsed.ticksPerQuarter / activeResolution();
   const sections = {};
   SECTION_IDS.forEach((id, sectionIndex) => {
-    const remainingBars = importBars - (sectionIndex * MAX_BARS);
-    state.sectionBars[id] = sectionIndex < usedSectionCount ? clamp(remainingBars, 1, MAX_BARS) : MAX_BARS;
+    const rep = importPlan.representatives[sectionIndex];
+    state.sectionBars[id] = rep ? clamp(rep.barCount, 1, MAX_BARS) : MAX_BARS;
     sections[id] = makeMidiImportSectionData();
   });
 
@@ -27384,34 +27528,55 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
   let skipped = 0;
   let drumImported = 0;
   let drumSkipped = 0;
+  let drumCellsMerged = 0;
   let bassImported = 0;
   let melodyImported = 0;
   let melodyCollapsed = 0;
   let outOfRangeSkipped = 0;
+  let notesWithinImportWindow = 0;
+  let notesRepresentedByPhraseReuse = 0;
+  let notesBeyondArrangementCapacity = 0;
   let highestMelodyLaneUsed = 0;
   const melodyTrackCount = MAX_MELODY_TRACKS;
   const laneProgramCounts = Array.from({length:melodyTrackCount}, () => new Map());
   const lanePanValues = Array.from({length:melodyTrackCount}, () => []);
+  const drumCellKeys = new Set();
+  const channelLaneMap = new Map();
+  const directImportChunks = new Set(importPlan.representatives.map(rep => rep.chunkIndex));
+  const representativeSourceStepForSection = (sectionIndex) => (importPlan.representatives[sectionIndex]?.sourceStartBar || 0) * stepsPerBar();
   const routeByStep = (globalStep) => {
     if(globalStep < 0 || globalStep >= maxGlobalSteps) return null;
-    const sectionIndex = Math.floor(globalStep / sectionSteps);
+    const sourceBar = Math.floor(globalStep / stepsPerBar());
+    const chunkIndex = Math.floor(sourceBar / MAX_BARS);
+    if(!directImportChunks.has(chunkIndex)) return null;
+    const sectionIndex = importPlan.chunkToSection[chunkIndex];
     const sectionId = SECTION_IDS[sectionIndex];
     if(!sectionId || sectionIndex >= usedSectionCount) return null;
-    const localStep = globalStep - (sectionIndex * sectionSteps);
+    const localStep = globalStep - representativeSourceStepForSection(sectionIndex);
     const localMaxSteps = visibleSectionSteps(sectionId);
     if(localStep < 0 || localStep >= localMaxSteps) return null;
-    return {sectionId, sectionIndex, localStep, localMaxSteps, tickOffset:(sectionIndex * sectionSteps * stepTicks)};
+    return {sectionId, sectionIndex, localStep, localMaxSteps, tickOffset:(representativeSourceStepForSection(sectionIndex) * stepTicks)};
   };
 
   const pitchedByGlobalStep = new Map();
   normalizedNotes.forEach(note => {
     const globalStep = quantizeMidiTickToStep(note.startTick, parsed.ticksPerQuarter, activeResolution());
+    if(globalStep >= 0 && globalStep < maxGlobalSteps) notesWithinImportWindow++;
     const route = routeByStep(globalStep);
-    if(!route){ skipped++; outOfRangeSkipped++; return; }
+    if(!route){
+      skipped++;
+      outOfRangeSkipped++;
+      if(globalStep >= 0 && globalStep < maxGlobalSteps) notesRepresentedByPhraseReuse++;
+      else notesBeyondArrangementCapacity++;
+      return;
+    }
     const data = sections[route.sectionId];
     if(note.channel === 9){
       const drum = midiDrumTarget(note.note);
       if(!drum){ skipped++; drumSkipped++; return; }
+      const cellKey = `${route.sectionId}:${drum.track}:${route.localStep}`;
+      if(drumCellKeys.has(cellKey)) drumCellsMerged++;
+      else drumCellKeys.add(cellKey);
       data.grid[drum.track][route.localStep] = mergeBeatLevel(data.grid[drum.track][route.localStep], drum.level);
       imported++; drumImported++;
       return;
@@ -27435,16 +27600,45 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
     const melodyItems = items
       .filter(item => item !== bassItem && item.note.note >= 55)
       .sort((a,b) => b.note.note - a.note.note || a.note.startTick - b.note.startTick);
-    const usable = melodyItems.slice(0, melodyTrackCount);
-    melodyCollapsed += Math.max(0, melodyItems.length - usable.length);
-    usable.forEach((item, lane) => {
+    const occupiedLanes = new Set();
+    melodyItems.forEach(item => {
+      const program = midiProgramForChannel(parsed, item.note.channel, item.note.rawStartTick ?? item.note.startTick);
+      let lane = channelLaneMap.get(item.note.channel);
+      if(lane === undefined || occupiedLanes.has(lane)){
+        lane = null;
+        for(let candidate = 0; candidate < melodyTrackCount; candidate++){
+          if(!occupiedLanes.has(candidate) && (!channelLaneMap.has(item.note.channel) || candidate === channelLaneMap.get(item.note.channel))){
+            lane = candidate;
+            break;
+          }
+        }
+        if(lane === null){
+          for(let candidate = 0; candidate < melodyTrackCount; candidate++){
+            if(!occupiedLanes.has(candidate)){
+              lane = candidate;
+              break;
+            }
+          }
+        }
+      }
+      if(lane === null || lane === undefined){
+        melodyCollapsed++;
+        return;
+      }
+      if(!channelLaneMap.has(item.note.channel)) channelLaneMap.set(item.note.channel, lane);
+      occupiedLanes.add(lane);
       const data = sections[item.route.sectionId];
       const existing = data.melodyCandidates[lane].get(item.route.localStep);
       if(!existing || item.note.note > existing.note.note) data.melodyCandidates[lane].set(item.route.localStep, item);
-      const program = midiProgramForChannel(parsed, item.note.channel, item.note.rawStartTick ?? item.note.startTick);
-      if(Number.isFinite(program)) laneProgramCounts[lane].set(program, (laneProgramCounts[lane].get(program) || 0) + 1);
+      if(Number.isFinite(program)){
+        laneProgramCounts[lane].set(program, (laneProgramCounts[lane].get(program) || 0) + 1);
+        data.melodyProgramCounts[lane].set(program, (data.melodyProgramCounts[lane].get(program) || 0) + 1);
+      }
       const pan = midiPanForChannel(parsed, item.note.channel);
-      if(pan !== null) lanePanValues[lane].push(pan);
+      if(pan !== null){
+        lanePanValues[lane].push(pan);
+        data.melodyPanValues[lane].push(pan);
+      }
       highestMelodyLaneUsed = Math.max(highestMelodyLaneUsed, lane + 1);
     });
   });
@@ -27489,6 +27683,15 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
   let progressionBarsEmpty = 0;
   SECTION_IDS.forEach((sectionId, sectionIndex) => {
     const data = sections[sectionId];
+    const sectionImportInstruments = defaultImportInstruments.slice(0, importedMelodyTrackCount);
+    const sectionImportPans = defaultImportPans.slice(0, importedMelodyTrackCount);
+    for(let lane = 0; lane < importedMelodyTrackCount; lane++){
+      const programs = Array.from((data.melodyProgramCounts[lane] || new Map()).entries()).sort((a,b) => b[1] - a[1]);
+      const instrument = midiProgramToMelodyInstrument(programs[0]?.[0]);
+      if(instrument && melodyInstrumentIds().includes(instrument)) sectionImportInstruments[lane] = instrument;
+      const pans = data.melodyPanValues[lane] || [];
+      if(pans.length) sectionImportPans[lane] = clamp(pans.reduce((a,b)=>a+b, 0) / pans.length, -1, 1);
+    }
     state[sectionPropKey("grid", sectionId)] = data.grid;
     state[sectionPropKey("gridTuplets", sectionId)] = data.gridTuplets;
     state[sectionPropKey("bassNotes", sectionId)] = data.bassNotes;
@@ -27497,47 +27700,82 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
     state[sectionPropKey("bassAccent", sectionId)] = data.bassAccent;
     state[sectionPropKey("guitarPattern", sectionId)] = createGuitarState();
     state[sectionPropKey("melodyTracks", sectionId)] = data.melodyTracks.slice(0, importedMelodyTrackCount);
-    state[sectionPropKey("melodyInstruments", sectionId)] = defaultImportInstruments.slice(0, importedMelodyTrackCount);
+    state[sectionPropKey("melodyInstruments", sectionId)] = sectionImportInstruments;
     state[sectionPropKey("melodyOctaves", sectionId)] = data.melodyOctaves.slice(0, importedMelodyTrackCount);
     state[sectionPropKey("melodyMute", sectionId)] = blankMelodyMute(importedMelodyTrackCount);
     state[sectionPropKey("melodySolo", sectionId)] = blankMelodySolo(importedMelodyTrackCount);
-    state[sectionPropKey("melodyPan", sectionId)] = defaultImportPans.slice(0, importedMelodyTrackCount);
+    state[sectionPropKey("melodyPan", sectionId)] = sectionImportPans;
     state[sectionPropKey("melodyHold", sectionId)] = data.melodyHold.slice(0, importedMelodyTrackCount);
     state[sectionPropKey("melodySlide", sectionId)] = data.melodySlide.slice(0, importedMelodyTrackCount);
     state[sectionPropKey("melodyTuplets", sectionId)] = data.melodyTuplets.slice(0, importedMelodyTrackCount);
     if(sectionIndex < usedSectionCount){
-      const startStepOffset = sectionIndex * sectionSteps;
+      const rep = importPlan.representatives[sectionIndex];
+      const startStepOffset = (rep?.sourceStartBar || 0) * stepsPerBar();
       const progressionImported = tryImportChordProgressionFromMidi(normalizedNotes, parsed.ticksPerQuarter, sectionId, visibleSectionSteps(sectionId), startStepOffset);
       if(progressionImported.changed) progressionSections++;
       progressionBarsUpdated += progressionImported.updated || 0;
       progressionBarsCarried += progressionImported.carried || 0;
       progressionBarsEmpty += progressionImported.empty || 0;
+    } else {
+      state[sectionPropKey("progression", sectionId)] = new Array(MAX_BARS).fill(null);
     }
     clearInvalidGridTuplets(sectionId);
     clearInvalidMelodyTuplets(sectionId);
   });
 
-  state.songSequence = SECTION_IDS.slice(0, usedSectionCount);
-  state.guitarEnabled = false;
+  state.songSequence = importPlan.songSequence.length ? importPlan.songSequence : SECTION_IDS.slice(0, usedSectionCount);
+  const guitarPrograms = new Set((parsed.programChanges || []).map(ev => ev.program).filter(program => midiProgramSuggestsGuitar(program)));
+  const guitarStyle = Array.from(guitarPrograms).some(program => midiProgramSuggestsDistortedGuitar(program)) ? "chug" : "sparse_strum";
+  let guitarGeneratedSections = 0;
+  if(guitarPrograms.size){
+    SECTION_IDS.slice(0, usedSectionCount).forEach(sectionId => {
+      const progression = state[sectionPropKey("progression", sectionId)] || [];
+      if(!progression.some(Boolean)) return;
+      const pattern = buildGeneratedGuitarPattern(sectionId, guitarStyle);
+      const barSteps = stepsPerBar();
+      progression.forEach((chord, bar) => {
+        if(chord) return;
+        const start = bar * barSteps;
+        for(let step = start; step < Math.min(pattern.length, start + barSteps); step++) pattern[step] = "off";
+      });
+      state[sectionPropKey("guitarPattern", sectionId)] = ensureGuitarPatternLength(pattern);
+      guitarGeneratedSections++;
+    });
+  }
+  state.guitarEnabled = guitarGeneratedSections > 0;
+  if(guitarGeneratedSections){
+    state.guitarPatternPreset = guitarStyle;
+    state.guitarTone = guitarStyle === "chug" ? "high_gain" : "clean";
+  }
   state.activeMelodyTrack = 0;
   syncSection();
   renderAll();
 
-  const sigNote = timeSig && ![3,4].includes(timeSig.numerator) ? `${foundTimeSigLabel} found, using ${state.timeSig}/4` : foundTimeSigLabel;
-  const truncatedBars = Math.max(0, estimatedBars - importBars);
-  const lengthNote = truncatedBars ? `Source length about ${estimatedBars} bars. Imported first ${importBars} bars into ${state.songSequence.join("-")}; ${truncatedBars} bar${truncatedBars === 1 ? "" : "s"} not imported.` : `Imported ${importBars} bar${importBars === 1 ? "" : "s"} into ${state.songSequence.join("-")}.`;
-  const rangeNote = outOfRangeSkipped ? ` (${outOfRangeSkipped} events beyond section limit)` : "";
-  const collapseNote = melodyCollapsed ? ` ${melodyCollapsed} extra simultaneous melody notes were collapsed beyond ${MAX_MELODY_TRACKS} tracks.` : "";
-  const warningNote = truncatedBars ? " Warning: this MIDI is longer than the current A-H arrangement capacity, so it was truncated." : "";
+  const timeSigNote = timeSig
+    ? (timeSig.numerator === state.timeSig && timeSig.denominator === 4 ? `Time signature: ${foundTimeSigLabel}.` : `Time signature: ${foundTimeSigLabel} found; using ${state.timeSig}/4.`)
+    : `Time signature: not found in MIDI; using ${state.timeSig}/4.`;
+  const phraseNote = importPlan.chunkCount > usedSectionCount
+    ? `Stored ${usedSectionCount} representative 4-bar section${usedSectionCount === 1 ? "" : "s"} from ${importPlan.chunkCount} source phrase${importPlan.chunkCount === 1 ? "" : "s"}; song sequence has ${state.songSequence.length} slot${state.songSequence.length === 1 ? "" : "s"}.`
+    : `Imported ${importBars} bar${importBars === 1 ? "" : "s"} into ${state.songSequence.join("-")}.`;
+  const approximationNote = importPlan.approximatedChunks ? ` Warning: ${importPlan.approximatedChunks} source phrase${importPlan.approximatedChunks === 1 ? "" : "s"} exceeded the 8-section limit and were mapped to the closest stored section.` : "";
+  const collapseNote = melodyCollapsed ? ` Melody notes collapsed beyond available tracks: ${melodyCollapsed}.` : " Melody notes collapsed beyond available tracks: 0.";
   const trimNote = timing.leadingTrimBars ? `Trimmed ${timing.leadingTrimBars} pre-roll bar${timing.leadingTrimBars === 1 ? "" : "s"}.` : "No pre-roll trim.";
   const resolutionNote = importResolution !== previousResolution ? `Resolution auto-set to ${importResolution}×.` : `Resolution kept at ${importResolution}×.`;
   const sourceBarsNote = `Approx source bars after trim: ${estimatedBars}.`;
-  const drumNote = `Drums mapped/skipped: ${drumImported}/${drumSkipped}.`;
+  const sourceCountNote = `Source note pairs analysed: ${parsed.notes.length}. Notes within import window: ${notesWithinImportWindow}. Notes beyond arrangement capacity: ${notesBeyondArrangementCapacity}.`;
+  const reuseNote = notesRepresentedByPhraseReuse ? ` Notes represented by songSequence phrase reuse rather than direct section storage: ${notesRepresentedByPhraseReuse}.` : "";
+  const drumNote = `Drum MIDI hits mapped: ${drumImported}. Drum MIDI hits skipped: ${drumSkipped}. Drum grid cells written: ${drumCellKeys.size}. Drum hits merged by same lane/step: ${drumCellsMerged}.`;
+  const bassNote = `Bass notes written: ${bassImported}. Melody notes written: ${melodyImported} across ${importedMelodyTrackCount} track${importedMelodyTrackCount === 1 ? "" : "s"}.`;
   const guideNote = timing.ignoredGuideNotes ? `Ignored ${timing.ignoredGuideNotes} guide/near-silent notes.` : "No guide/near-silent notes ignored.";
   const keyMeta = firstMidiEvent(parsed.keySignatures || []);
-  const metadataNote = `Metadata: ${keyMeta ? "key signature used" : "key inferred"} (${state.key} ${state.scale}); lyrics ${parsed.lyrics?.length || 0}; program changes ${parsed.programChanges?.length || 0}; pitch bends ${parsed.pitchBends?.length || 0} ignored; CCs ${parsed.controlChanges?.length || 0}; SysEx ${parsed.sysexCount || 0}.`;
-  const chordNote = progressionSections ? `Chords: updated ${progressionBarsUpdated} bar${progressionBarsUpdated === 1 ? "" : "s"} in ${progressionSections} section${progressionSections === 1 ? "" : "s"}${progressionBarsCarried ? `, carried ${progressionBarsCarried}` : ""}${progressionBarsEmpty ? `, left ${progressionBarsEmpty} blank/existing` : ""}.` : `Chords: unchanged${progressionBarsEmpty ? ` (${progressionBarsEmpty} blank/no-harmony bar${progressionBarsEmpty === 1 ? "" : "s"})` : ""}.`;
-  const summary = `Imported ${fileName}. BPM: ${foundBpm ? foundBpm + (foundBpm !== state.bpm ? " -> " + state.bpm : "") : "not found, kept " + state.bpm}. Time: ${sigNote}. ${trimNote} ${resolutionNote} ${sourceBarsNote} Format: ${parsed.format}. Tracks read: ${parsed.tracksRead}/${parsed.trackCount}. ${lengthNote} Notes imported: ${imported} (${drumImported} drums, ${bassImported} bass, ${melodyImported} melody across ${importedMelodyTrackCount} track${importedMelodyTrackCount === 1 ? "" : "s"}). Skipped: ${skipped}${rangeNote}. ${drumNote} ${guideNote}${collapseNote} ${metadataNote} ${chordNote} Guitar: not generated; use Fill Guitar From Chords if you want accompaniment.${warningNote}`;
+  const channelMeta = midiChannelProgramSummary(parsed);
+  const bendMeta = midiPitchBendSummary(parsed);
+  const metadataNote = `Metadata: ${keyMeta ? "key signature used" : "key inferred"} (${state.key} ${state.scale}); lyrics ${parsed.lyrics?.length || 0}; program changes ${parsed.programChanges?.length || 0}${channelMeta ? ` (${channelMeta})` : ""}; pitch bends ${parsed.pitchBends?.length || 0}${bendMeta ? ` ignored by channel (${bendMeta})` : " ignored"}; CCs ${parsed.controlChanges?.length || 0}; SysEx ${parsed.sysexCount || 0}.`;
+  const chordNote = progressionSections
+    ? `Chords: sections updated ${progressionSections}; chord bars detected ${progressionBarsUpdated}; chord bars blank due no harmonic material ${progressionBarsEmpty}; chord bars filled from carry-forward/inference ${progressionBarsCarried}.`
+    : `Chords: no harmonic bars detected; chord bars blank due no harmonic material ${progressionBarsEmpty}; chord bars filled from carry-forward/inference 0.`;
+  const guitarNote = guitarGeneratedSections ? `Guitar: generated conservative ${guitarStyle.replace("_", " ")} accompaniment in ${guitarGeneratedSections} section${guitarGeneratedSections === 1 ? "" : "s"}.` : "Guitar: not generated; no guitar-program channels with detected section chords.";
+  const summary = `Imported ${fileName}. BPM: ${foundBpm ? foundBpm + (foundBpm !== state.bpm ? " -> " + state.bpm : "") : "not found, kept " + state.bpm}. ${timeSigNote} ${trimNote} ${resolutionNote} ${sourceBarsNote} Format: ${parsed.format}. Tracks read: ${parsed.tracksRead}/${parsed.trackCount}. ${phraseNote} ${sourceCountNote}${reuseNote} Notes imported into stored sections: ${imported}. Skipped from direct section storage: ${skipped}. ${drumNote} ${bassNote}${collapseNote} ${guideNote} ${metadataNote} ${chordNote} ${guitarNote}${approximationNote}`;
   setMidiImportSummary(summary);
   markProjectDirty();
   setStatus(summary);
@@ -28126,7 +28364,7 @@ function exportProject(){
     sectionBars:state.sectionBars, songSequence:sequenceList(), followPlaybackSection:state.followPlaybackSection !== false
   };
   SECTION_IDS.forEach(id => {
-    out[sectionPropKey("progression", id)] = state[sectionPropKey("progression", id)].map(ch => ch?.degree ?? 0);
+    out[sectionPropKey("progression", id)] = state[sectionPropKey("progression", id)].map(ch => ch === null ? null : (ch?.degree ?? 0));
     out[sectionPropKey("grid", id)] = state[sectionPropKey("grid", id)];
     out[sectionPropKey("gridTuplets", id)] = state[sectionPropKey("gridTuplets", id)] || blankGridTuplets();
     out[sectionPropKey("melodyTracks", id)] = state[sectionPropKey("melodyTracks", id)];
@@ -28261,7 +28499,7 @@ function importProject(rawData){
   if(els.guitarVolume) els.guitarVolume.value = String(state.guitarVolume ?? 0.66);
 
   generateAvailableChords();
-  const remap = arr => arr.map(d => state.availableChords[d] || state.availableChords[0]);
+  const remap = arr => arr.map(d => d === null ? null : (state.availableChords[d] || state.availableChords[0]));
   state.sectionBars = data.sectionBars;
   state.songSequence = data.songSequence;
   state.followPlaybackSection = data.followPlaybackSection !== false;
