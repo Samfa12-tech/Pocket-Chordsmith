@@ -181,6 +181,17 @@
   .cell.triplet-start{position:relative; border-color:var(--accent2)}
   .cell.triplet-start::after{content:"3"; position:absolute; top:-7px; right:-5px; width:15px; height:15px; border-radius:999px; background:var(--accent2); color:#081018; font-size:.64rem; font-weight:900; line-height:15px; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,.28)}
   .subsection{border:1px solid var(--line); background:var(--panel2); border-radius:14px; padding:10px; display:grid; gap:8px}
+  .compact-title{align-items:center; gap:10px}
+  .genre-settings{grid-column:1 / -1}
+  .genre-drawer{display:none; border:1px solid rgba(122,162,255,.24); border-radius:14px; background:rgba(15,18,26,.72); padding:10px; gap:10px}
+  .genre-drawer.open{display:grid}
+  .genre-drawer-head{display:flex; align-items:flex-start; justify-content:space-between; gap:10px}
+  .genre-drawer-body{display:grid; grid-template-columns:minmax(150px,.34fr) 1fr; gap:10px; align-items:start}
+  .genre-tabs{display:grid; gap:6px}
+  .genre-tab{width:100%; text-align:left}
+  .genre-panel{display:none; gap:8px; min-width:0}
+  .genre-panel.active{display:grid}
+  .genre-panels{min-width:0}
   .two-col{display:grid; grid-template-columns:1fr 1fr; gap:8px}
   .stack{display:grid; gap:8px}
   .textarea{width:100%; min-height:120px; resize:vertical; border:1px solid var(--line); background:#111722; color:var(--text); border-radius:12px; padding:10px; font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -206,10 +217,14 @@
   input[type="range"]{width:106px}
   @media (max-width: 760px){
     .two-col,.progression,.chord-palette,.pad-grid,.drum-kit-grid,.stats{grid-template-columns:1fr 1fr}
+    .genre-drawer-body{grid-template-columns:1fr}
+    .genre-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}
     .toolbar{align-items:flex-start}
   }
   @media (max-width: 560px){
     .two-col,.progression,.chord-palette,.pad-grid,.stats{grid-template-columns:1fr}
+    .genre-tabs{grid-template-columns:1fr}
+    .genre-drawer-head{display:grid}
     .seq-header,.seq-row,.melody-row,.guitar-row{grid-template-columns:56px repeat(var(--steps), minmax(30px, 1fr))}
     input[type="range"]{width:90px}
     .melody-sequencer-head{flex-direction:column; align-items:flex-start}
@@ -593,100 +608,174 @@
             </div>
             <div class="tiny">Humanise adds tiny timing and level variation. Pump ducks chords around kick hits for a sidechain feel.</div>
           </div>
-          <div class="subsection adv-only">
-            <div class="label" style="margin:0">Lofi / Chill</div>
-            <div class="row">
-              <label class="sub">Preset
-                <select class="select" id="lofiPresetSelect">
-                  <option value="">Off / Clean</option>
-                  <option value="lofi_study_room">Study Room</option>
-                  <option value="lofi_rainy_window">Rainy Window</option>
-                  <option value="lofi_moon_garden">Moon Garden</option>
-                  <option value="lofi_koi_pond">Koi Pond</option>
-                  <option value="lofi_train_window">Train Window</option>
-                  <option value="lofi_ant_farm_night">Ant Farm Night</option>
-                  <option value="lofi_menu_warmth">Menu Warmth</option>
-                  <option value="lofi_sleepy_waltz">Sleepy Waltz</option>
-                </select>
-              </label>
-              <label class="sub">Kit
-                <select class="select" id="drumKitSelect">
-                  <option value="classic">Classic</option>
-                  <option value="lofi_dusty">Lofi Dusty</option>
-                  <option value="lofi_brush">Lofi Brush</option>
-                  <option value="lofi_tape_soft">Lofi Tape Soft</option>
-                </select>
-              </label>
-              <label class="sub">Bass
-                <select class="select" id="bassToneSelect">
-                  <option value="classic">Classic</option>
-                  <option value="warm_sub">Warm Sub</option>
-                  <option value="soft_upright">Soft Upright</option>
-                  <option value="rounded_triangle_bass">Rounded Triangle</option>
-                </select>
-              </label>
+          <div class="subsection genre-settings">
+            <div class="section-title compact-title">
+              <div>
+                <div class="label" style="margin:0">Genre</div>
+                <div class="tiny" id="genreSummary">Choose a sound family, then open details for presets and tone controls.</div>
+              </div>
+              <button class="pill" id="genreDrawerBtn" aria-expanded="false" aria-controls="genreDrawer">Genre</button>
             </div>
-            <div class="toggle-grid compact">
-              <label><input id="lofiTextureToggle" type="checkbox"> Texture</label>
+            <div class="genre-drawer" id="genreDrawer" aria-hidden="true">
+              <div class="genre-drawer-head">
+                <div>
+                  <div class="label" style="margin:0">Genre Studio</div>
+                  <div class="tiny">Pick a family first. Advanced mode unlocks kit, bass, and character controls.</div>
+                </div>
+                <button class="mini-chip" id="closeGenreDrawerBtn">Close</button>
+              </div>
+              <div class="genre-drawer-body">
+                <div class="genre-tabs" role="tablist" aria-label="Genre families">
+                  <button class="mini-chip genre-tab" id="genreTabClean" data-genre="clean" role="tab" aria-controls="genrePanelClean">Clean</button>
+                  <button class="mini-chip genre-tab" id="genreTabLofi" data-genre="lofi" role="tab" aria-controls="genrePanelLofi">Lofi / Chill</button>
+                  <button class="mini-chip genre-tab" id="genreTabChip" data-genre="chip" role="tab" aria-controls="genrePanelChip">Chip Tune</button>
+                  <button class="mini-chip genre-tab" id="genreTabWestern" data-genre="western" role="tab" aria-controls="genrePanelWestern">Western</button>
+                </div>
+                <div class="genre-panels">
+                  <div class="genre-panel" id="genrePanelClean" data-genre-panel="clean" role="tabpanel" aria-labelledby="genreTabClean">
+                    <div class="label" style="margin:0">Clean</div>
+                    <div class="tiny">Return to the classic Pocket Chordsmith sound and clear genre texture flags.</div>
+                    <div class="row">
+                      <button class="pill" id="cleanGenreBtn">Use Clean Sound</button>
+                    </div>
+                  </div>
+                  <div class="genre-panel" id="genrePanelLofi" data-genre-panel="lofi" role="tabpanel" aria-labelledby="genreTabLofi">
+                    <div class="label" style="margin:0">Lofi / Chill</div>
+                    <div class="row">
+                      <label class="sub">Preset
+                        <select class="select" id="lofiPresetSelect">
+                          <option value="">Off / Clean</option>
+                          <option value="lofi_study_room">Study Room</option>
+                          <option value="lofi_rainy_window">Rainy Window</option>
+                          <option value="lofi_moon_garden">Moon Garden</option>
+                          <option value="lofi_koi_pond">Koi Pond</option>
+                          <option value="lofi_train_window">Train Window</option>
+                          <option value="lofi_ant_farm_night">Ant Farm Night</option>
+                          <option value="lofi_menu_warmth">Menu Warmth</option>
+                          <option value="lofi_sleepy_waltz">Sleepy Waltz</option>
+                        </select>
+                      </label>
+                      <button class="mini-chip" id="lofiApplyIdeaBtn">Apply Idea</button>
+                      <button class="mini-chip" id="lofiApplyLoopBtn">Game Loop</button>
+                    </div>
+                    <div class="row adv-only genre-advanced">
+                      <label class="sub">Kit
+                        <select class="select" id="drumKitSelect">
+                          <option value="classic">Classic</option>
+                          <option value="lofi_dusty">Lofi Dusty</option>
+                          <option value="lofi_brush">Lofi Brush</option>
+                          <option value="lofi_tape_soft">Lofi Tape Soft</option>
+                        </select>
+                      </label>
+                      <label class="sub">Bass
+                        <select class="select" id="bassToneSelect">
+                          <option value="classic">Classic</option>
+                          <option value="warm_sub">Warm Sub</option>
+                          <option value="soft_upright">Soft Upright</option>
+                          <option value="rounded_triangle_bass">Rounded Triangle</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="toggle-grid compact adv-only genre-advanced">
+                      <label><input id="lofiTextureToggle" type="checkbox"> Texture</label>
+                    </div>
+                    <div class="row adv-only genre-advanced">
+                      <label class="sub">Crackle <input id="lofiVinylCrackle" type="range" min="0" max="1" step="0.01" value="0.08"></label>
+                      <label class="sub">Hiss <input id="lofiTapeHiss" type="range" min="0" max="1" step="0.01" value="0.05"></label>
+                      <label class="sub">Wobble <input id="lofiWowFlutter" type="range" min="0" max="1" step="0.01" value="0.03"></label>
+                    </div>
+                    <div class="row adv-only genre-advanced">
+                      <label class="sub">Warmth <input id="lofiWarmth" type="range" min="0" max="1" step="0.01" value="0.16"></label>
+                      <label class="sub">Age <input id="lofiLowPassAge" type="range" min="0" max="1" step="0.01" value="0.22"></label>
+                      <label class="sub">Bit <input id="lofiBitCrush" type="range" min="0" max="1" step="0.01" value="0.01"></label>
+                    </div>
+                    <div class="tiny adv-only genre-advanced">Texture is procedural and subtle. Turn it off for clean exports or performance checks.</div>
+                  </div>
+                  <div class="genre-panel" id="genrePanelChip" data-genre-panel="chip" role="tabpanel" aria-labelledby="genreTabChip">
+                    <div class="label" style="margin:0">Chip Tune</div>
+                    <div class="row">
+                      <label class="sub">Preset
+                        <select class="select" id="chipPresetSelect">
+                          <option value="">Off / Clean</option>
+                          <option value="chip_arcade_start">Arcade Start</option>
+                          <option value="chip_bug_maze_pulse">Bug Maze Pulse</option>
+                          <option value="chip_neon_boss">Neon Boss</option>
+                          <option value="chip_tiny_quest">Tiny Quest</option>
+                          <option value="chip_modern_jam">Modern Jam</option>
+                          <option value="chip_menu_glow">Menu Glow</option>
+                          <option value="chip_dungeon_drive">Dungeon Drive</option>
+                          <option value="chip_victory_burst">Victory Burst</option>
+                        </select>
+                      </label>
+                      <button class="mini-chip" id="chipApplyIdeaBtn">Apply Idea</button>
+                      <button class="mini-chip" id="chipApplyLoopBtn">Game Loop</button>
+                    </div>
+                    <div class="row adv-only genre-advanced">
+                      <label class="sub">Kit
+                        <select class="select" id="chipDrumKitSelect">
+                          <option value="chip_noise_kit">Chip Noise</option>
+                          <option value="chip_arcade_kit">Chip Arcade</option>
+                          <option value="modern_chip_punch">Modern Punch</option>
+                        </select>
+                      </label>
+                      <label class="sub">Bass
+                        <select class="select" id="chipBassToneSelect">
+                          <option value="chip_triangle_bass">Triangle</option>
+                          <option value="chip_square_bass">Square</option>
+                          <option value="modern_chip_sub">Modern Sub</option>
+                          <option value="bitcrush_bass">Bitcrush</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="toggle-grid compact adv-only genre-advanced">
+                      <label><input id="chipTextureToggle" type="checkbox"> Texture</label>
+                    </div>
+                    <div class="row adv-only genre-advanced">
+                      <label class="sub">Bits <input id="chipBitDepth" type="range" min="0" max="1" step="0.01" value="0.22"></label>
+                      <label class="sub">Rate <input id="chipSampleRateCrush" type="range" min="0" max="1" step="0.01" value="0.18"></label>
+                      <label class="sub">Pulse <input id="chipPulseWidth" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+                    </div>
+                    <div class="row adv-only genre-advanced">
+                      <label class="sub">Drift <input id="chipPitchDrift" type="range" min="0" max="1" step="0.01" value="0.03"></label>
+                      <label class="sub">Drive <input id="chipSaturation" type="range" min="0" max="1" step="0.01" value="0.16"></label>
+                      <label class="sub">Spread <input id="chipStereoSpread" type="range" min="0" max="1" step="0.01" value="0.12"></label>
+                    </div>
+                    <div class="tiny adv-only genre-advanced">Chip texture adds subtle bit, pulse and stereo colour while keeping the pack procedural.</div>
+                  </div>
+                  <div class="genre-panel" id="genrePanelWestern" data-genre-panel="western" role="tabpanel" aria-labelledby="genreTabWestern">
+                    <div class="label" style="margin:0">Western</div>
+                    <div class="row">
+                      <label class="sub">Preset
+                        <select class="select" id="westernPresetSelect">
+                          <option value="western_frontier_ride">Frontier Ride</option>
+                          <option value="western_train_chase">Train Chase</option>
+                          <option value="western_cowboy_waltz">Cowboy Waltz</option>
+                        </select>
+                      </label>
+                      <button class="mini-chip" id="westernApplyIdeaBtn">Apply Idea</button>
+                      <button class="mini-chip" id="westernApplyLoopBtn">Game Loop</button>
+                    </div>
+                    <div class="row adv-only genre-advanced">
+                      <label class="sub">Drums
+                        <select class="select" id="westernDrumPresetSelect">
+                          <option value="boom_chick">Boom-chick</option>
+                          <option value="train_beat">Train Beat</option>
+                          <option value="cowboy_waltz">Cowboy Waltz</option>
+                        </select>
+                      </label>
+                      <label class="sub">Guitar
+                        <select class="select" id="westernGuitarPresetSelect">
+                          <option value="boom_chick">Boom-chick</option>
+                          <option value="train_chop">Train Chop</option>
+                          <option value="western_waltz">Western Waltz</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="tiny adv-only genre-advanced">Western uses saloon piano, twang guitar, banjo, harmonica and whistle with existing schema-16 fields.</div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="row">
-              <label class="sub">Crackle <input id="lofiVinylCrackle" type="range" min="0" max="1" step="0.01" value="0.08"></label>
-              <label class="sub">Hiss <input id="lofiTapeHiss" type="range" min="0" max="1" step="0.01" value="0.05"></label>
-              <label class="sub">Wobble <input id="lofiWowFlutter" type="range" min="0" max="1" step="0.01" value="0.03"></label>
-            </div>
-            <div class="row">
-              <label class="sub">Warmth <input id="lofiWarmth" type="range" min="0" max="1" step="0.01" value="0.16"></label>
-              <label class="sub">Age <input id="lofiLowPassAge" type="range" min="0" max="1" step="0.01" value="0.22"></label>
-              <label class="sub">Bit <input id="lofiBitCrush" type="range" min="0" max="1" step="0.01" value="0.01"></label>
-            </div>
-            <div class="tiny">Texture is procedural and subtle. Turn it off for clean exports or performance checks.</div>
-          </div>
-          <div class="subsection adv-only">
-            <div class="label" style="margin:0">Chip Tune</div>
-            <div class="row">
-              <label class="sub">Preset
-                <select class="select" id="chipPresetSelect">
-                  <option value="">Off / Clean</option>
-                  <option value="chip_arcade_start">Arcade Start</option>
-                  <option value="chip_bug_maze_pulse">Bug Maze Pulse</option>
-                  <option value="chip_neon_boss">Neon Boss</option>
-                  <option value="chip_tiny_quest">Tiny Quest</option>
-                  <option value="chip_modern_jam">Modern Jam</option>
-                  <option value="chip_menu_glow">Menu Glow</option>
-                  <option value="chip_dungeon_drive">Dungeon Drive</option>
-                  <option value="chip_victory_burst">Victory Burst</option>
-                </select>
-              </label>
-              <label class="sub">Kit
-                <select class="select" id="chipDrumKitSelect">
-                  <option value="chip_noise_kit">Chip Noise</option>
-                  <option value="chip_arcade_kit">Chip Arcade</option>
-                  <option value="modern_chip_punch">Modern Punch</option>
-                </select>
-              </label>
-              <label class="sub">Bass
-                <select class="select" id="chipBassToneSelect">
-                  <option value="chip_triangle_bass">Triangle</option>
-                  <option value="chip_square_bass">Square</option>
-                  <option value="modern_chip_sub">Modern Sub</option>
-                  <option value="bitcrush_bass">Bitcrush</option>
-                </select>
-              </label>
-            </div>
-            <div class="toggle-grid compact">
-              <label><input id="chipTextureToggle" type="checkbox"> Texture</label>
-            </div>
-            <div class="row">
-              <label class="sub">Bits <input id="chipBitDepth" type="range" min="0" max="1" step="0.01" value="0.22"></label>
-              <label class="sub">Rate <input id="chipSampleRateCrush" type="range" min="0" max="1" step="0.01" value="0.18"></label>
-              <label class="sub">Pulse <input id="chipPulseWidth" type="range" min="0" max="1" step="0.01" value="0.5"></label>
-            </div>
-            <div class="row">
-              <label class="sub">Drift <input id="chipPitchDrift" type="range" min="0" max="1" step="0.01" value="0.03"></label>
-              <label class="sub">Drive <input id="chipSaturation" type="range" min="0" max="1" step="0.01" value="0.16"></label>
-              <label class="sub">Spread <input id="chipStereoSpread" type="range" min="0" max="1" step="0.01" value="0.12"></label>
-            </div>
-            <div class="tiny">Chip texture adds subtle bit, pulse and stereo colour while keeping the pack procedural.</div>
           </div>
           <div class="subsection">
             <div class="label" style="margin:0">Interface</div>
@@ -1126,6 +1215,12 @@ const CHIP_STYLE_PRESETS = {
   chip_victory_burst:{label:"Victory Burst", bpm:136, range:[126,148], key:"C", scale:"major", timeSig:4, progression:[0,4,5,0], swing:0.01, humanize:0.03, chordInstrument:"chip_square_stack", melodyInstrument:"chip_bell_stack", bassTone:"chip_square_bass", drumKit:"chip_arcade_kit", drumGroovePreset:"chip_victory_stomp", texture:{enabled:true, bitDepth:0.20, sampleRateCrush:0.14, pulseWidth:0.56, pitchDrift:0.015, saturation:0.18, stereoSpread:0.20}}
 };
 const CHIP_STYLE_PRESET_IDS = Object.keys(CHIP_STYLE_PRESETS);
+const WESTERN_STYLE_PRESETS = {
+  western_frontier_ride:{label:"Frontier Ride", bpm:112, key:"G", scale:"major", timeSig:4, progression:[0,3,4,0], swing:0.05, chordInstrument:"saloon_piano", chordPlayMode:"strum_up", chordRhythmMode:"quarter", drumGroovePreset:"boom_chick", altDrumGroovePreset:"train_beat", guitarPatternPreset:"boom_chick", altGuitarPatternPreset:"train_chop", guitarTone:"western_twang", guitarRegister:"mid", guitarStrumMode:"alternate"},
+  western_train_chase:{label:"Train Chase", bpm:124, key:"D", scale:"major", timeSig:4, progression:[0,4,3,4], swing:0.03, chordInstrument:"saloon_piano", chordPlayMode:"strum_down", chordRhythmMode:"quarter", drumGroovePreset:"train_beat", altDrumGroovePreset:"boom_chick", guitarPatternPreset:"train_chop", altGuitarPatternPreset:"boom_chick", guitarTone:"western_twang", guitarRegister:"mid", guitarStrumMode:"alternate"},
+  western_cowboy_waltz:{label:"Cowboy Waltz", bpm:88, key:"C", scale:"major", timeSig:3, progression:[0,3,4,0], swing:0.04, chordInstrument:"saloon_piano", chordPlayMode:"strum_up", chordRhythmMode:"quarter", drumGroovePreset:"cowboy_waltz", altDrumGroovePreset:"cowboy_waltz", guitarPatternPreset:"western_waltz", altGuitarPatternPreset:"western_waltz", guitarTone:"western_twang", guitarRegister:"mid", guitarStrumMode:"alternate"}
+};
+const WESTERN_STYLE_PRESET_IDS = Object.keys(WESTERN_STYLE_PRESETS);
 const LIVE_DRUM_RECORD_LOOKAHEAD_SECONDS = 0.09;
 const LIVE_CHORD_VOICE_LIMIT = 40;
 const LIVE_LEAD_VOICE_LIMIT = 56;
@@ -1169,7 +1264,7 @@ const state = {
   melodyTracksA:[], melodyTracksB:[], melodyTracksC:[], melodyTracksD:[], melodyTracks:[], melodyInstrumentsA:[], melodyInstrumentsB:[], melodyInstrumentsC:[], melodyInstrumentsD:[], melodyInstruments:[], melodyOctavesA:[], melodyOctavesB:[], melodyOctavesC:[], melodyOctavesD:[], melodyOctaves:[], melodyMuteA:[], melodyMuteB:[], melodyMuteC:[], melodyMuteD:[], melodyMute:[], melodySoloA:[], melodySoloB:[], melodySoloC:[], melodySoloD:[], melodySolo:[], melodyPanA:[], melodyPanB:[], melodyPanC:[], melodyPanD:[], melodyPan:[], melodyHoldA:[], melodyHoldB:[], melodyHoldC:[], melodyHoldD:[], melodyHold:[], melodySlideA:[], melodySlideB:[], melodySlideC:[], melodySlideD:[], melodySlide:[], melodyTupletsA:[], melodyTupletsB:[], melodyTupletsC:[], melodyTupletsD:[], melodyTuplets:[], bassHoldA:[], bassHoldB:[], bassHoldC:[], bassHoldD:[], bassHold:[], bassSlideA:[], bassSlideB:[], bassSlideC:[], bassSlideD:[], bassSlide:[], bassNotesA:[], bassNotesB:[], bassNotesC:[], bassNotesD:[], bassNotes:[], bassAccentA:[], bassAccentB:[], bassAccentC:[], bassAccentD:[], bassAccent:[], activeMelodyTrack:0, selectedMelodyDegree:0,
   guitarPatternA:[], guitarPatternB:[], guitarPatternC:[], guitarPatternD:[], guitarPattern:[],
   melodyInputMode:"grid", xyPlaybackMode:"sustain", xyPadMode:"sustain", xyScaleMode:"song", xyChordFollow:true, xyRecordToGrid:false, xyLastWriteStep:-1, xyLiveActive:false, xyLiveMidi:null, xyLiveBrightness:1800, xyLiveGate:0.18, xyLivePulseInterval:0.5, xyLivePulseLabel:"Quarter", xyLiveInstrument:"pulse", xyLivePan:0, undoStack:[], suspendUndo:false,
-  lastAdvancedResolution:2, pendingUiTimers:[], liveRecordStepClock:[], lastHighlightedStep:-1, advancedFxPrimed:false,
+  lastAdvancedResolution:2, pendingUiTimers:[], liveRecordStepClock:[], lastHighlightedStep:-1, advancedFxPrimed:false, settingsGenreDrawerOpen:false, settingsGenre:"clean", westernPreset:"western_frontier_ride",
   transportPlan:[], autosaveDirty:false, wavExporting:false, wavExportToken:0, pendingImmersiveRestore:false,
   availableChords:[], nextSuggested:[]
 };
@@ -1576,6 +1671,19 @@ function sanitizeChipPresetId(value){
 }
 function chipPresetConfig(id=state.chipPreset){
   return CHIP_STYLE_PRESETS[sanitizeChipPresetId(id)] || null;
+}
+function sanitizeWesternPresetId(value){
+  const id = String(value || "").trim();
+  return WESTERN_STYLE_PRESETS[id] ? id : "";
+}
+function westernPresetConfig(id="western_frontier_ride"){
+  return WESTERN_STYLE_PRESETS[sanitizeWesternPresetId(id)] || WESTERN_STYLE_PRESETS.western_frontier_ride;
+}
+function detectActiveGenre(){
+  if(state.chipPreset || state.audioProfile === CHIP_AUDIO_PROFILE_ID) return "chip";
+  if(state.lofiPreset || state.audioProfile === LOFI_AUDIO_PROFILE_ID || state.lofiTexture?.enabled) return "lofi";
+  if(state.guitarTone === "western_twang" || state.chordInstrument === "saloon_piano") return "western";
+  return "clean";
 }
 function chipTextureDefaultForPreset(presetId){
   const preset = chipPresetConfig(presetId);
@@ -6191,15 +6299,96 @@ function toggleSettings(open=null){
   els.settingsModal.setAttribute("aria-hidden", state.settingsOpen ? "false" : "true");
   document.body.classList.toggle("modal-open", state.settingsOpen);
   if(state.settingsOpen && !wasOpen){
+    state.settingsGenre = detectActiveGenre();
+    renderGenreDrawer();
     settingsFocusReturn = document.activeElement && document.activeElement !== document.body ? document.activeElement : els.settingsBtn;
     requestAnimationFrame(() => {
       const target = els.closeSettingsBtn || els.settingsModal.querySelector(".modal-window");
       if(target && target.focus) target.focus({preventScroll:true});
     });
   } else if(!state.settingsOpen && wasOpen && settingsFocusReturn && settingsFocusReturn.focus){
+    state.settingsGenreDrawerOpen = false;
+    renderGenreDrawer();
     settingsFocusReturn.focus({preventScroll:true});
     settingsFocusReturn = null;
   }
+}
+function genreDisplayName(genre){
+  return {clean:"Clean", lofi:"Lofi / Chill", chip:"Chip Tune", western:"Western"}[genre] || "Clean";
+}
+function renderGenreDrawer(){
+  const activeGenre = safeChoice(state.settingsGenre || detectActiveGenre(), ["clean","lofi","chip","western"], "clean");
+  state.settingsGenre = activeGenre;
+  if(els.genreDrawer){
+    els.genreDrawer.classList.toggle("open", !!state.settingsGenreDrawerOpen);
+    els.genreDrawer.setAttribute("aria-hidden", state.settingsGenreDrawerOpen ? "false" : "true");
+  }
+  if(els.genreDrawerBtn){
+    els.genreDrawerBtn.setAttribute("aria-expanded", state.settingsGenreDrawerOpen ? "true" : "false");
+    els.genreDrawerBtn.textContent = state.settingsGenreDrawerOpen ? "Hide Genre" : "Genre";
+  }
+  if(els.genreSummary){
+    const projectGenre = detectActiveGenre();
+    els.genreSummary.textContent = state.settingsGenreDrawerOpen
+      ? `${genreDisplayName(activeGenre)} controls are open.`
+      : `Current sound family: ${genreDisplayName(projectGenre)}.`;
+  }
+  document.querySelectorAll(".genre-tab").forEach(tab => {
+    const selected = tab.dataset.genre === activeGenre;
+    tab.classList.toggle("active", selected);
+    tab.setAttribute("aria-selected", selected ? "true" : "false");
+    tab.tabIndex = selected ? 0 : -1;
+  });
+  document.querySelectorAll(".genre-panel").forEach(panel => {
+    const selected = panel.dataset.genrePanel === activeGenre;
+    panel.classList.toggle("active", selected);
+    panel.toggleAttribute("hidden", !selected);
+  });
+  const westernPreset = westernPresetConfig(state.westernPreset);
+  if(els.westernPresetSelect) els.westernPresetSelect.value = sanitizeWesternPresetId(state.westernPreset) || "western_frontier_ride";
+  if(els.westernDrumPresetSelect){
+    els.westernDrumPresetSelect.value = safeChoice(state.drumGroovePreset || westernPreset.drumGroovePreset, ["boom_chick","train_beat","cowboy_waltz"], westernPreset.drumGroovePreset);
+  }
+  if(els.westernGuitarPresetSelect){
+    els.westernGuitarPresetSelect.value = safeChoice(state.guitarPatternPreset || westernPreset.guitarPatternPreset, ["boom_chick","train_chop","western_waltz"], westernPreset.guitarPatternPreset);
+  }
+}
+function openGenreDrawer(genreId=null){
+  state.settingsGenre = safeChoice(genreId || state.settingsGenre || detectActiveGenre(), ["clean","lofi","chip","western"], "clean");
+  state.settingsGenreDrawerOpen = true;
+  renderGenreDrawer();
+  requestAnimationFrame(() => {
+    const activeTab = els.genreDrawer?.querySelector(".genre-tab.active");
+    if(activeTab && activeTab.focus) activeTab.focus({preventScroll:true});
+  });
+}
+function closeGenreDrawer(){
+  state.settingsGenreDrawerOpen = false;
+  renderGenreDrawer();
+  if(els.genreDrawerBtn && els.genreDrawerBtn.focus) els.genreDrawerBtn.focus({preventScroll:true});
+}
+function selectSettingsGenre(genreId){
+  state.settingsGenre = safeChoice(genreId, ["clean","lofi","chip","western"], "clean");
+  state.settingsGenreDrawerOpen = true;
+  renderGenreDrawer();
+}
+function applyCleanGenreToProject(){
+  pushUndoState();
+  state.audioProfile = "standard";
+  state.lofiPreset = "";
+  state.lofiTexture = {...DEFAULT_LOFI_TEXTURE, enabled:false};
+  state.chipPreset = "";
+  state.chipTexture = {...DEFAULT_CHIP_TEXTURE, enabled:false};
+  state.drumKit = "classic";
+  state.drumGroovePreset = "";
+  state.bassTone = "classic";
+  state.chordInstrument = "pocket";
+  state.guitarTone = "high_gain";
+  state.westernPreset = "western_frontier_ride";
+  state.settingsGenre = "clean";
+  markProjectDirty();
+  renderAll();
+  setStatus("Clean Pocket Chordsmith sound restored");
 }
 function bindHorizontalWheelScroll(){
   document.querySelectorAll(".sequencer-wrap").forEach(wrap => {
@@ -26034,6 +26223,7 @@ function applyLofiPresetToProject(presetId, options={}){
   if(wasPlaying) stopPlayback();
   state.audioProfile = LOFI_AUDIO_PROFILE_ID;
   state.lofiPreset = sanitizeLofiPresetId(presetId) || "lofi_study_room";
+  state.settingsGenre = "lofi";
   state.lofiTexture = sanitizeLofiTexture(preset.texture, state.lofiPreset);
   state.drumKit = safeChoice(preset.drumKit, lofiDrumKitIds(), "lofi_dusty");
   state.drumGroovePreset = safeChoice(preset.drumGroovePreset, lofiDrumGroovePresetIds(), "lofi_backbeat_76");
@@ -26156,6 +26346,7 @@ function applyChipPresetToProject(presetId, options={}){
   if(wasPlaying) stopPlayback();
   state.audioProfile = CHIP_AUDIO_PROFILE_ID;
   state.chipPreset = sanitizeChipPresetId(presetId) || "chip_arcade_start";
+  state.settingsGenre = "chip";
   state.chipTexture = sanitizeChipTexture(preset.texture, state.chipPreset);
   state.lofiPreset = "";
   state.lofiTexture = {...DEFAULT_LOFI_TEXTURE, enabled:false};
@@ -26268,40 +26459,82 @@ function applyWesternMelodyShowcase(sectionId, rotate=0){
   state[sectionPropKey("melodySlide", id)] = slide;
   state[sectionPropKey("melodyTuplets", id)] = tuplets;
 }
+function applyWesternPresetToProject(presetId="western_frontier_ride", options={}){
+  const preset = westernPresetConfig(presetId);
+  const fullLoop = !!options.fullLoop;
+  const shouldPushUndo = options.pushUndo !== false;
+  const shouldRender = options.render !== false;
+  const shouldSetStatus = options.status !== false;
+  const shouldPreview = options.preview !== false;
+  const wasPlaying = !!state.isPlaying;
+  const previousMode = state.playbackMode || "section";
+  if(shouldPushUndo) pushUndoState();
+  if(wasPlaying) stopPlayback();
+  state.audioProfile = "standard";
+  state.lofiPreset = "";
+  state.lofiTexture = {...DEFAULT_LOFI_TEXTURE, enabled:false};
+  state.chipPreset = "";
+  state.chipTexture = {...DEFAULT_CHIP_TEXTURE, enabled:false};
+  state.westernPreset = sanitizeWesternPresetId(presetId) || "western_frontier_ride";
+  state.key = preset.key || state.key;
+  state.scale = preset.scale || state.scale;
+  state.timeSig = safeChoice(preset.timeSig, [3,4], state.timeSig);
+  state.bpm = clamp(asInt(preset.bpm, 112), 60, 180);
+  state.swing = clamp(asNumber(preset.swing, 0.04), 0, 0.18);
+  state.chordType = "triad";
+  state.chordInstrument = safeChoice(preset.chordInstrument, chordInstrumentIds(), "saloon_piano");
+  state.chordPlayMode = safeChoice(preset.chordPlayMode, ["block","strum_up","strum_down","arp_up","arp_down"], "strum_up");
+  state.chordRhythmMode = safeChoice(preset.chordRhythmMode, ["sustain","quarter","half"], "quarter");
+  state.drumKit = "classic";
+  state.drumGroovePreset = safeChoice(preset.drumGroovePreset, ["boom_chick","train_beat","cowboy_waltz"], "boom_chick");
+  state.bassTone = "classic";
+  state.guitarEnabled = true;
+  state.guitarTone = safeChoice(preset.guitarTone, guitarToneIds(), "western_twang");
+  state.guitarRegister = safeChoice(preset.guitarRegister, guitarRegisterIds(), "mid");
+  state.guitarStrumMode = safeChoice(preset.guitarStrumMode, guitarStrumModeIds(), "alternate");
+  state.guitarVolume = 0.62;
+  state.settingsGenre = "western";
+  generateAvailableChords();
+  const sections = fullLoop ? ["A","B","C","D"] : [state.currentSection || "A"];
+  sections.forEach((id, idx) => {
+    state.sectionBars[id] = 4;
+    clearSectionPerformance(id);
+    const rotate = idx % Math.max(1, preset.progression.length);
+    const degrees = preset.progression.map((_, pidx) => preset.progression[(pidx + rotate) % preset.progression.length]);
+    setSectionProgressionDegrees(id, degrees);
+    fillDrumPresetForSection(idx % 2 === 1 ? preset.altDrumGroovePreset : preset.drumGroovePreset, id);
+    applyGuitarPreset(idx % 2 === 1 ? preset.altGuitarPatternPreset : preset.guitarPatternPreset, id);
+    applyWesternMelodyShowcase(id, idx);
+    if(id === state.currentSection) syncSection();
+  });
+  if(fullLoop) state.songSequence = ["A","A","B","B","C","D","A"];
+  state.currentSection = sections[0];
+  syncSection();
+  state.selectedSlot = 0;
+  state.activeMelodyTrack = 0;
+  updateSuggestions();
+  markProjectDirty();
+  if(shouldRender) renderAll();
+  const label = preset.label || "Western";
+  const message = fullLoop ? `${label} western game loop generated across A-D` : `${label} western idea generated`;
+  if(wasPlaying){
+    state.playbackMode = previousMode;
+    restartPlaybackPlanAfterStructureChange(`${message}; playback restarted`);
+  } else if(shouldSetStatus) {
+    setStatus(message);
+  }
+  if(shouldPreview){
+    try{
+      ensureAudio().then(() => {
+        const firstChord = state.progression[0] || state.availableChords[0];
+        playChord(firstChord, audioCtx.currentTime, 0.6);
+      }).catch(() => {});
+    }catch(e){}
+  }
+}
 function loadDemo(){
   importProject(JSON.parse(JSON.stringify(POCKET_CHORDSMITH_V61_SHOWCASE_DEMO)));
-  state.key = "G";
-  state.scale = "major";
-  state.timeSig = 4;
-  state.bpm = 112;
-  state.swing = 0.05;
-  state.chordInstrument = "saloon_piano";
-  state.chordPlayMode = "strum_up";
-  state.chordRhythmMode = "quarter";
-  state.guitarEnabled = true;
-  state.guitarTone = "western_twang";
-  state.guitarRegister = "mid";
-  state.guitarStrumMode = "alternate";
-  state.guitarVolume = 0.62;
-  generateAvailableChords();
-  setSectionProgressionDegrees("A", [0,3,4,0]);
-  setSectionProgressionDegrees("B", [0,4,5,3]);
-  setSectionProgressionDegrees("C", [5,3,0,4]);
-  setSectionProgressionDegrees("D", [0,2,3,4]);
-  state.currentSection = "A";
-  syncSection();
-  fillDrumPresetForSection("boom_chick", "A");
-  fillDrumPresetForSection("train_beat", "B");
-  fillDrumPresetForSection("boom_chick", "C");
-  fillDrumPresetForSection("train_beat", "D");
-  applyGuitarPreset("boom_chick", "A");
-  applyGuitarPreset("train_chop", "B");
-  applyGuitarPreset("boom_chick", "C");
-  applyGuitarPreset("train_chop", "D");
-  ["A","B","C","D"].forEach((id, idx) => applyWesternMelodyShowcase(id, idx));
-  state.songSequence = ["A","A","B","B","C","D","A"];
-  state.currentSection = "A";
-  syncSection();
+  applyWesternPresetToProject("western_frontier_ride", {fullLoop:true, pushUndo:false, render:false, status:false, preview:false});
   renderAll();
   primePocketAudioCoreFromCurrentProject("demo").catch(() => {});
   setStatus("Loaded Pocket Chordsmith v68 demo");
@@ -28825,6 +29058,7 @@ function renderAll(){
   if(els.chipPitchDrift) els.chipPitchDrift.value = String(state.chipTexture?.pitchDrift ?? DEFAULT_CHIP_TEXTURE.pitchDrift);
   if(els.chipSaturation) els.chipSaturation.value = String(state.chipTexture?.saturation ?? DEFAULT_CHIP_TEXTURE.saturation);
   if(els.chipStereoSpread) els.chipStereoSpread.value = String(state.chipTexture?.stereoSpread ?? DEFAULT_CHIP_TEXTURE.stereoSpread);
+  renderGenreDrawer();
   if(els.showMelodyPadsToggle) els.showMelodyPadsToggle.checked = !!state.showMelodyPads;
   if(els.showDrumPadsToggle) els.showDrumPadsToggle.checked = !!state.showDrumPads;
   if(els.drumRecordToggle) els.drumRecordToggle.checked = !!state.drumRecordToGrid;
@@ -28898,6 +29132,56 @@ function bindControls(){
     els.chipGameLoopBtn.dataset.tip = "Generate an A/B/C/D chip tune game loop with harmonised leads.";
     els.chipGameLoopBtn.addEventListener("click", () => applyChipPresetToProject(state.chipPreset || "chip_bug_maze_pulse", {fullLoop:true}));
   }
+  if(els.genreDrawerBtn) els.genreDrawerBtn.addEventListener("click", () => {
+    if(state.settingsGenreDrawerOpen) closeGenreDrawer();
+    else openGenreDrawer(detectActiveGenre());
+  });
+  if(els.closeGenreDrawerBtn) els.closeGenreDrawerBtn.addEventListener("click", closeGenreDrawer);
+  document.querySelectorAll(".genre-tab").forEach(tab => {
+    tab.addEventListener("click", () => selectSettingsGenre(tab.dataset.genre));
+  });
+  if(els.cleanGenreBtn) els.cleanGenreBtn.addEventListener("click", applyCleanGenreToProject);
+  if(els.lofiApplyIdeaBtn) els.lofiApplyIdeaBtn.addEventListener("click", () => {
+    applyLofiPresetToProject(sanitizeLofiPresetId(els.lofiPresetSelect?.value) || state.lofiPreset || "lofi_study_room", {fullLoop:false});
+  });
+  if(els.lofiApplyLoopBtn) els.lofiApplyLoopBtn.addEventListener("click", () => {
+    applyLofiPresetToProject(sanitizeLofiPresetId(els.lofiPresetSelect?.value) || state.lofiPreset || "lofi_study_room", {fullLoop:true});
+  });
+  if(els.chipApplyIdeaBtn) els.chipApplyIdeaBtn.addEventListener("click", () => {
+    applyChipPresetToProject(sanitizeChipPresetId(els.chipPresetSelect?.value) || state.chipPreset || "chip_arcade_start", {fullLoop:false});
+  });
+  if(els.chipApplyLoopBtn) els.chipApplyLoopBtn.addEventListener("click", () => {
+    applyChipPresetToProject(sanitizeChipPresetId(els.chipPresetSelect?.value) || state.chipPreset || "chip_arcade_start", {fullLoop:true});
+  });
+  if(els.westernPresetSelect) els.westernPresetSelect.addEventListener("change", () => {
+    const value = sanitizeWesternPresetId(els.westernPresetSelect.value) || "western_frontier_ride";
+    applyWesternPresetToProject(value, {fullLoop:false});
+  });
+  if(els.westernApplyIdeaBtn) els.westernApplyIdeaBtn.addEventListener("click", () => {
+    applyWesternPresetToProject(sanitizeWesternPresetId(els.westernPresetSelect?.value) || state.westernPreset || "western_frontier_ride", {fullLoop:false});
+  });
+  if(els.westernApplyLoopBtn) els.westernApplyLoopBtn.addEventListener("click", () => {
+    applyWesternPresetToProject(sanitizeWesternPresetId(els.westernPresetSelect?.value) || state.westernPreset || "western_frontier_ride", {fullLoop:true});
+  });
+  if(els.westernDrumPresetSelect) els.westernDrumPresetSelect.addEventListener("change", () => {
+    pushUndoState();
+    const preset = safeChoice(els.westernDrumPresetSelect.value, ["boom_chick","train_beat","cowboy_waltz"], "boom_chick");
+    state.drumGroovePreset = preset;
+    fillDrumPresetForSection(preset, state.currentSection);
+    markProjectDirty();
+    renderAll();
+    setStatus(`Western drums: ${els.westernDrumPresetSelect.options[els.westernDrumPresetSelect.selectedIndex].text}`);
+  });
+  if(els.westernGuitarPresetSelect) els.westernGuitarPresetSelect.addEventListener("change", () => {
+    pushUndoState();
+    const preset = safeChoice(els.westernGuitarPresetSelect.value, ["boom_chick","train_chop","western_waltz"], "boom_chick");
+    state.guitarEnabled = true;
+    state.guitarTone = "western_twang";
+    applyGuitarPreset(preset, state.currentSection);
+    markProjectDirty();
+    renderAll();
+    setStatus(`Western guitar: ${els.westernGuitarPresetSelect.options[els.westernGuitarPresetSelect.selectedIndex].text}`);
+  });
   if(els.lofiPresetSelect) els.lofiPresetSelect.addEventListener("change", () => {
     const value = sanitizeLofiPresetId(els.lofiPresetSelect.value);
     if(value){
@@ -28911,6 +29195,7 @@ function bindControls(){
     state.drumKit = "classic";
     state.drumGroovePreset = "";
     state.bassTone = "classic";
+    state.settingsGenre = "clean";
     markProjectDirty();
     renderAll();
     setStatus("Lofi profile off; clean project settings restored");
@@ -28928,6 +29213,7 @@ function bindControls(){
     state.drumKit = "classic";
     state.drumGroovePreset = "";
     state.bassTone = "classic";
+    state.settingsGenre = "clean";
     markProjectDirty();
     renderAll();
     setStatus("Chip tune profile off; clean project settings restored");
@@ -29044,7 +29330,10 @@ function bindControls(){
     if(e.target === els.settingsModal) toggleSettings(false);
   });
   document.addEventListener("keydown", async (e)=>{
-    if(e.key === "Escape" && state.settingsOpen) toggleSettings(false);
+    if(e.key === "Escape" && state.settingsOpen){
+      if(state.settingsGenreDrawerOpen) closeGenreDrawer();
+      else toggleSettings(false);
+    }
     if(e.key === "Tab" && state.settingsOpen){
       const focusable = Array.from(els.settingsModal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
         .filter(el => !el.disabled && el.offsetParent !== null);
@@ -29496,8 +29785,9 @@ function bindControls(){
 
 function init(){
   ["statusText","miniStatusText","miniSectionText","miniPlayBtn","miniStopBtn","miniUndoBtn","miniSettingsBtn","playBtn","stopBtn","demoBtn","undoBtn","randomIdeaBtn","settingsBtn","settingsModal","closeSettingsBtn","bpmInput","swingInput","swingValue","keySelect","scaleSelect","timeSigSelect","uiModeSelect","themeSelect","chordTypeSelect","chordInstrumentSelect","progressionSlots","chordPalette","padGrid","drumPresetChips","drumPadsPanel","drumPadGrid","drumPadStatus","drumRecordToggle","drumClearRecordingBtn","melodyIdeaBtn","melodyDegreeSelect","melodyPitchModeSelect","melodyInputModeSelect","xyPlaybackModeSelect","xyPadModeSelect","xyScaleModeSelect","xyChordFollowToggle","xyRecordToggle","xyPadControls","xyPadWrap","xyPad","xyPadMarker","xyPadReadout","melodyGridControls","melodyDegreeChips","melodyOctaveChips","melodyTrackChips","melodyTrackControls","addMelodyTrackBtn","removeMelodyTrackBtn","melodyInstrumentSelect","melodyRows","resolutionLabel","resolutionSelect","seqHeader","seqRows","trackChips","guitarEnabledToggle","guitarEnabledToggleSettings","guitarToneSelect","guitarRegisterSelect","guitarStrumModeSelect","guitarVolume","guitarPresetChips","guitarFillStyleSelect","fillGuitarFromChordsBtn","applyGuitarAllBtn","clearGuitarBtn","guitarRow","chordOctaveSelect","chordPlayModeSelect","chordRhythmModeSelect","fillFullBtn","fillHalfBtn","fillQuarterBtn","fillTripletBtn","clearTrackBtn","sectionChips","sectionBarsSelect","copyTargetSectionSelect","copyAToBBtn","playSequenceBtn","addSequenceSlotBtn","removeSequenceSlotBtn","clearSequenceBtn","sectionSequence","projectBox","exportScopeSelect","midiExportModeSelect","midiChordExportSelect","midiExactDurationsToggle","exportJsonBtn","importJsonBtn","copyShareCodeBtn","importShareCodeBtn","pushToDjBtn","pushToDawBtn","pushToGodotBtn","pushHandoffStatus","exportMidiBtn","exportWavBtn","cancelWavExportBtn","wavProgressText","importMidiBtn","midiImportInput","midiImportSummary","wavResultBox","wavPreview","wavOpenLink","wavDownloadLink","wavShareBtn","saveSlot1Btn","loadSlot1Btn","saveSlot2Btn","loadSlot2Btn","loadAutoBtn","autoSaveStatus","tooltipsToggle","masterVol","chordVol","beatVol","leadVol","metronomeToggle","chordsToggle","bassToggle","fxDelay","fxChorus","fxFlanger","fxReverb","fxMix","showMelodyPadsToggle","showDrumPadsToggle","showMelodyPickerToggle","showTrackControlsToggle","humanizeToggle","sidechainToggle","sidechainAmount","sidechainAmountRow","bassModeSelect","melodyPadsPanel","drumPadsPanel","melodyPickerPanel"].forEach(id => els[id] = document.getElementById(id));
-  ["lofiChillBtn","lofiGameLoopBtn","lofiPresetSelect","drumKitSelect","bassToneSelect","lofiTextureToggle","lofiVinylCrackle","lofiTapeHiss","lofiWowFlutter","lofiWarmth","lofiLowPassAge","lofiBitCrush"].forEach(id => els[id] = document.getElementById(id));
-  ["chipTuneBtn","chipGameLoopBtn","chipPresetSelect","chipDrumKitSelect","chipBassToneSelect","chipTextureToggle","chipBitDepth","chipSampleRateCrush","chipPulseWidth","chipPitchDrift","chipSaturation","chipStereoSpread"].forEach(id => els[id] = document.getElementById(id));
+  ["lofiChillBtn","lofiGameLoopBtn","lofiPresetSelect","drumKitSelect","bassToneSelect","lofiTextureToggle","lofiVinylCrackle","lofiTapeHiss","lofiWowFlutter","lofiWarmth","lofiLowPassAge","lofiBitCrush","lofiApplyIdeaBtn","lofiApplyLoopBtn"].forEach(id => els[id] = document.getElementById(id));
+  ["chipTuneBtn","chipGameLoopBtn","chipPresetSelect","chipDrumKitSelect","chipBassToneSelect","chipTextureToggle","chipBitDepth","chipSampleRateCrush","chipPulseWidth","chipPitchDrift","chipSaturation","chipStereoSpread","chipApplyIdeaBtn","chipApplyLoopBtn"].forEach(id => els[id] = document.getElementById(id));
+  ["genreDrawerBtn","genreDrawer","closeGenreDrawerBtn","genreSummary","cleanGenreBtn","westernPresetSelect","westernApplyIdeaBtn","westernApplyLoopBtn","westernDrumPresetSelect","westernGuitarPresetSelect"].forEach(id => els[id] = document.getElementById(id));
   els.drumPresetSelect = document.getElementById("drumPresetSelect");
   els.guitarPresetSelect = document.getElementById("guitarPresetSelect");
   els.pocketAudioCoreStatus = document.getElementById("pocketAudioCoreStatus");

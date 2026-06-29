@@ -156,6 +156,61 @@ test("settings modal opens import and handoff tools", async ({ page }) => {
   await expect(page.locator("#pocketAudioCoreStatus")).toContainText(
     "Pocket Audio Core",
   );
+  await expect(page.locator("#genreDrawerBtn")).toBeVisible();
+  await expect(page.locator("#lofiPresetSelect")).toBeHidden();
+  await expect(page.locator("#chipPresetSelect")).toBeHidden();
+});
+
+test("settings genre drawer switches genre panels and keeps simple controls light", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await page.locator("#genreDrawerBtn").click();
+  await expect(page.locator("#genreDrawer")).toHaveAttribute(
+    "aria-hidden",
+    "false",
+  );
+
+  await page.locator("#genreTabLofi").click();
+  await expect(page.locator("#genrePanelLofi")).toBeVisible();
+  await expect(page.locator("#lofiPresetSelect")).toBeVisible();
+  await expect(page.locator("#drumKitSelect")).toBeHidden();
+
+  await page.locator("#uiModeSelect").selectOption("advanced");
+  await expect(page.locator("#drumKitSelect")).toBeVisible();
+
+  await page.locator("#genreTabChip").click();
+  await expect(page.locator("#genrePanelChip")).toBeVisible();
+  await expect(page.locator("#chipPresetSelect")).toBeVisible();
+  await expect(page.locator("#lofiPresetSelect")).toBeHidden();
+
+  await page.locator("#genreTabWestern").click();
+  await expect(page.locator("#genrePanelWestern")).toBeVisible();
+  await page.locator("#westernPresetSelect").selectOption("western_train_chase");
+
+  const result = await page.evaluate(() => {
+    const exported = exportProject();
+    importProject(exported);
+    return {
+      projectVersion: exported.projectVersion,
+      chordInstrument: exported.chordInstrument,
+      guitarTone: exported.guitarTone,
+      guitarEnabled: exported.guitarEnabled,
+      songSequence: exported.songSequence,
+      melodyInstrumentsA: exported.melodyInstrumentsA,
+      roundTripChordInstrument: state.chordInstrument,
+      roundTripGuitarTone: state.guitarTone,
+    };
+  });
+
+  expect(result.projectVersion).toBe(16);
+  expect(result.chordInstrument).toBe("saloon_piano");
+  expect(result.guitarTone).toBe("western_twang");
+  expect(result.guitarEnabled).toBe(true);
+  expect(result.songSequence[0]).toBe("A");
+  expect(result.melodyInstrumentsA).toContain("banjo");
+  expect(result.roundTripChordInstrument).toBe("saloon_piano");
+  expect(result.roundTripGuitarTone).toBe("western_twang");
 });
 
 test("MIDI import trims one-bar pre-roll, auto-selects resolution, maps drums, and ignores guide notes", async ({
@@ -877,9 +932,14 @@ test("settings import and handoff controls stay within the viewport", async ({
     "aria-hidden",
     "false",
   );
+  await page.locator("#genreDrawerBtn").click();
+  await page.locator("#genreTabWestern").click();
 
   const overflow = await page.evaluate(() => {
     const ids = [
+      "genreDrawer",
+      "westernPresetSelect",
+      "westernApplyLoopBtn",
       "projectBox",
       "exportScopeSelect",
       "exportJsonBtn",
