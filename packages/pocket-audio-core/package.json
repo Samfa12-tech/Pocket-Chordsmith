@@ -26,6 +26,7 @@
     "verify:godot-sound-metadata": "node scripts/generate-godot-sound-metadata.mjs --check",
     "verify:family-parity": "node scripts/verify-family-parity.mjs",
     "compare:chordsmith-browser-trace": "node scripts/compare-chordsmith-browser-trace.mjs",
+    "compare:chordsmith-godot-trace": "node scripts/compare-chordsmith-godot-trace.mjs",
     "test": "node --test",
     "test:core": "node --test tests/core.test.js",
     "test:golden": "node --test tests/golden.test.js --test-name-pattern \"golden event trace|fixture index\"",

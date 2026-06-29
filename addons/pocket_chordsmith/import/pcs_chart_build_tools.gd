@@ -311,6 +311,22 @@ func _compile_entry(entry: Dictionary, source_path: String, output_path: String,
 
 
 func _project_entries_from_text(text: String, source_path: String) -> Dictionary:
+	var stripped := text.strip_edges()
+	if stripped.begins_with("PCS1:"):
+		var importer = JsonImporter.new()
+		var import_result: Dictionary = importer.load_text(stripped, source_path)
+		if not bool(import_result.get("ok", false)):
+			return {
+				"projects": [],
+				"errors": import_result.get("errors", ["Invalid PCS1 handoff file: %s" % source_path]),
+			}
+		var project: Dictionary = import_result.get("project", {})
+		var id := str(project.get("title", source_path.get_file().get_basename()))
+		return {
+			"projects": [{"id": id, "project": project}],
+			"errors": [],
+		}
+
 	var parser := JSON.new()
 	var error := parser.parse(text)
 	if error != OK:

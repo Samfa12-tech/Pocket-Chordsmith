@@ -101,6 +101,13 @@ const surfaces = {
   godotBuildTools: new URL("addons/pocket_chordsmith/import/pcs_chart_build_tools.gd", repoRoot),
   godotKitExport: new URL("packages/pocket-audio-core/src/export/godot-kit.js", repoRoot),
   godotConductor: new URL("addons/pocket_chordsmith/runtime/pocket_chordsmith_conductor.gd", repoRoot),
+  godotAudioBusTools: new URL("addons/pocket_chordsmith/editor/pcs_audio_bus_tools.gd", repoRoot),
+  godotMainScreen: new URL("addons/pocket_chordsmith/editor/pcs_main_screen.gd", repoRoot),
+  godotPlaybackProfile: new URL("addons/pocket_chordsmith/resources/pcs_playback_profile.gd", repoRoot),
+  godotPreviewMixValidator: new URL("addons/pocket_chordsmith/tools/validate_pocket_chordsmith_preview_mix.gd", repoRoot),
+  godotPreviewMixRepair: new URL("addons/pocket_chordsmith/tools/repair_pocket_chordsmith_preview_mix.gd", repoRoot),
+  godotNativePreviewValidator: new URL("addons/pocket_chordsmith/tools/validate_pocket_chordsmith_native_preview.gd", repoRoot),
+  godotEventTraceExporter: new URL("addons/pocket_chordsmith/tools/export_pocket_chordsmith_event_trace.gd", repoRoot),
   godotSoundKitGenerator: new URL("addons/pocket_chordsmith/editor/pcs_sound_kit_generator.gd", repoRoot),
   godotWebKitProfile: new URL("addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.tres", repoRoot)
 };
@@ -301,9 +308,11 @@ test("Chordsmith app exposes a browser parity trace hook for current live export
 });
 
 test("Chordsmith browser trace comparison stays available as a package command", async () => {
-  const [packageJson, comparisonScript, chordsmith] = await Promise.all([
+  const [packageJson, comparisonScript, godotComparisonScript, godotNativePreviewValidator, chordsmith] = await Promise.all([
     readFile(surfaces.pocketAudioCorePackage, "utf8"),
     readFile(new URL("packages/pocket-audio-core/scripts/compare-chordsmith-browser-trace.mjs", repoRoot), "utf8"),
+    readFile(new URL("packages/pocket-audio-core/scripts/compare-chordsmith-godot-trace.mjs", repoRoot), "utf8"),
+    readFile(surfaces.godotNativePreviewValidator, "utf8"),
     readFile(surfaces.chordsmith, "utf8")
   ]);
   const scripts = JSON.parse(packageJson).scripts;
@@ -313,8 +322,26 @@ test("Chordsmith browser trace comparison stays available as a package command",
     "node scripts/compare-chordsmith-browser-trace.mjs",
     "Pocket Audio Core should expose the browser-vs-core Chordsmith trace comparison"
   );
+  assert.equal(
+    scripts["compare:chordsmith-godot-trace"],
+    "node scripts/compare-chordsmith-godot-trace.mjs",
+    "Pocket Audio Core should expose the browser-vs-Godot Chordsmith event trace comparison"
+  );
   assert.ok(comparisonScript.includes("PocketChordsmithParityTrace.fromProject"), "comparison script should drive the real browser parity hook");
   assert.ok(comparisonScript.includes("normalisePocketChordsmithProject(browserTrace.project)"), "comparison script should verify core against the Chordsmith-normalized export");
+  assert.ok(godotComparisonScript.includes("PocketChordsmithParityTrace.fromProject"), "Godot comparison script should drive the real browser parity hook");
+  assert.ok(godotComparisonScript.includes("export_pocket_chordsmith_event_trace.gd"), "Godot comparison script should consume the Godot compiled-event trace exporter");
+  assert.ok(godotComparisonScript.includes("--voice-metrics"), "Godot comparison script should expose browser-vs-native preview voice metrics");
+  assert.ok(godotComparisonScript.includes("compareBrowserAndGodotVoiceMetrics"), "Godot comparison script should compare browser and Godot native preview voice metrics");
+  assert.ok(godotComparisonScript.includes("voice_metric_comparison.json"), "Godot comparison script should write a voice metric report when reports are kept");
+  assert.ok(godotComparisonScript.includes("topVoiceMetricDrifts"), "Godot comparison script should print the largest voice metric drifts for targeted tuning");
+  assert.ok(godotComparisonScript.includes("mean_abs_delta"), "Godot comparison script should report brightness/roughness proxy metrics");
+  assert.ok(godotComparisonScript.includes("attack_peak"), "Godot comparison script should compare attack-window metrics for transient parity");
+  assert.ok(godotComparisonScript.includes("active_duration_seconds"), "Godot comparison script should compare active voice duration, not only full-buffer duration");
+  assert.ok(godotComparisonScript.includes("parsePocketChordsmithInput"), "Godot comparison script should accept PCS1 handoff files directly");
+  assert.ok(godotNativePreviewValidator.includes("_read_i16_le_sample"), "Godot native preview metrics should read WAV samples through a helper");
+  assert.ok(godotNativePreviewValidator.includes("(frame_count - 1) * channels"), "Godot native preview metrics should compare deltas per channel, not left/right interleaved samples");
+  assert.ok(godotNativePreviewValidator.includes("_wav_active_metrics"), "Godot native preview metrics should report attack and active-duration windows");
   assert.ok(chordsmith.includes("function inferProjectUiMode("), "Chordsmith should infer advanced mode for legacy/imported high-resolution projects");
 });
 
@@ -420,10 +447,11 @@ test("Chordsmith offline stem export staging stays shared with core", async () =
 });
 
 test("Chordsmith FX graph constants stay shared for DAW imports and DJ live FX", async () => {
-  const [chordsmith, pocketDawImport, pocketDj] = await Promise.all([
+  const [chordsmith, pocketDawImport, pocketDj, godotCompiler] = await Promise.all([
     readFile(surfaces.chordsmith, "utf8"),
     readFile(surfaces.pocketDawImport, "utf8"),
-    readFile(surfaces.pocketDj, "utf8")
+    readFile(surfaces.pocketDj, "utf8"),
+    readFile(surfaces.godotCompiler, "utf8")
   ]);
 
   assert.ok(chordsmith.includes(`Math.max(${numberLiteral(CHORDSMITH_FX_GRAPH.dryGainFloor)}, 1.0 - (fxMixAmt * ${numberLiteral(CHORDSMITH_FX_GRAPH.dryGainMixDepth)})`), "Chordsmith dry gain floor should match shared FX graph");
@@ -438,6 +466,17 @@ test("Chordsmith FX graph constants stay shared for DAW imports and DJ live FX",
   assert.ok(pocketDj.includes("fxWetMasterGain.gain.setTargetAtTime(mapped.wetMasterGain"), "Pocket DJ wet master should use mapped Chordsmith gain");
   assert.ok(pocketDj.includes("delayNode.delayTime.setTargetAtTime(mapped.delay.time"), "Pocket DJ delay should use mapped Chordsmith timing");
   assert.ok(pocketDj.includes("flangerFeedbackGain.gain.setTargetAtTime(mapped.flanger.feedback"), "Pocket DJ flanger feedback should use mapped Chordsmith feedback");
+  assert.ok(godotCompiler.includes(`mix * ${numberLiteral(CHORDSMITH_FX_GRAPH.wetMasterGain)}`), "Godot compiler should preserve Chordsmith FX wet scale");
+  assert.ok(godotCompiler.includes(`max(${numberLiteral(CHORDSMITH_FX_GRAPH.dryGainFloor)}, 1.0 - mix * ${numberLiteral(CHORDSMITH_FX_GRAPH.dryGainMixDepth)})`), "Godot compiler should preserve Chordsmith FX dry gain floor");
+  assert.ok(godotCompiler.includes(`chorus * ${numberLiteral(CHORDSMITH_FX_GRAPH.toneBrightness.chorus)}`), "Godot compiler should preserve Chordsmith FX chorus brightness");
+  assert.ok(godotCompiler.includes(`flanger * ${numberLiteral(CHORDSMITH_FX_GRAPH.toneBrightness.flanger)}`), "Godot compiler should preserve Chordsmith FX flanger brightness");
+  assert.ok(godotCompiler.includes("delay * 0.10"), "Godot compiler should preserve Chordsmith FX delay brightness reduction");
+  assert.ok(godotCompiler.includes(`"frequency": ${numberLiteral(CHORDSMITH_FX_GRAPH.toneFrequency)}.0`), "Godot compiler should preserve Chordsmith FX tone frequency");
+  assert.ok(godotCompiler.includes(`0.10 + delay * ${numberLiteral(CHORDSMITH_FX_GRAPH.delay.timeRange)}`), "Godot compiler should preserve Chordsmith FX delay time range");
+  assert.ok(godotCompiler.includes(`0.05 + delay * ${numberLiteral(CHORDSMITH_FX_GRAPH.delay.feedbackRange)}`), "Godot compiler should preserve Chordsmith FX delay feedback range");
+  assert.ok(godotCompiler.includes(`chorus * ${numberLiteral(CHORDSMITH_FX_GRAPH.chorus.wetGain)} * wet_scale`), "Godot compiler should preserve Chordsmith FX chorus wet gain");
+  assert.ok(godotCompiler.includes(`flanger * ${numberLiteral(CHORDSMITH_FX_GRAPH.flanger.wetGain)} * wet_scale`), "Godot compiler should preserve Chordsmith FX flanger wet gain");
+  assert.ok(godotCompiler.includes(`reverb * ${numberLiteral(CHORDSMITH_FX_GRAPH.reverb.wetGain)} * wet_scale`), "Godot compiler should preserve Chordsmith FX reverb wet gain");
 });
 
 test("Godot game-pack manifests expose the shared Chordsmith FX profile", async () => {
@@ -635,11 +674,13 @@ test("Godot generated sound metadata stays in sync with shared core", () => {
 });
 
 test("Chordsmith performance humanise constants stay aligned across apps", async () => {
-  const [chordsmith, pocketDj, pocketDawRenderer, coreTimeline] = await Promise.all([
+  const [chordsmith, pocketDj, pocketDawRenderer, coreTimeline, godotCompiler, godotMigrator] = await Promise.all([
     readFile(surfaces.chordsmith, "utf8"),
     readFile(surfaces.pocketDj, "utf8"),
     readFile(surfaces.pocketDawRenderer, "utf8"),
-    readFile(new URL("packages/pocket-audio-core/src/events/timeline-events.js", repoRoot), "utf8")
+    readFile(new URL("packages/pocket-audio-core/src/events/timeline-events.js", repoRoot), "utf8"),
+    readFile(surfaces.godotCompiler, "utf8"),
+    readFile(surfaces.godotMigrator, "utf8")
   ]);
 
   assert.ok(chordsmith.includes(`* ${CHORDSMITH_HUMANIZE_TIMING_SECONDS}`), "Chordsmith timing humanise should match shared core");
@@ -650,6 +691,14 @@ test("Chordsmith performance humanise constants stay aligned across apps", async
   assert.ok(pocketDawRenderer.includes("chordsmithHumanizePeak"), "Pocket DAW renderer should consume shared peak humanise");
   assert.ok(coreTimeline.includes("chordsmithHumanizeOffset"), "core timeline should consume shared timing humanise");
   assert.ok(coreTimeline.includes("chordsmithHumanizePeak"), "core timeline should consume shared peak humanise");
+  assert.ok(godotMigrator.includes('"humanizeOn"'), "Godot migrator should preserve Chordsmith humanize flag");
+  assert.ok(godotCompiler.includes("_humanized_tick"), "Godot compiler should bake Chordsmith humanize timing into compiled preview events");
+  assert.ok(godotCompiler.includes("_humanized_velocity"), "Godot compiler should bake Chordsmith humanize velocity into compiled preview events");
+  assert.ok(godotCompiler.includes("event_flags[\"humanized\"] = true"), "Godot compiler should mark humanized events for validation/debugging");
+  assert.ok(godotMigrator.includes('"sidechainOn"'), "Godot migrator should preserve Chordsmith sidechain flag");
+  assert.ok(godotCompiler.includes('"attack_seconds": 0.012'), "Godot compiler should preserve Chordsmith sidechain attack timing");
+  assert.ok(godotCompiler.includes('"release_seconds": 0.22'), "Godot compiler should preserve Chordsmith sidechain release timing");
+  assert.ok(godotCompiler.includes('"depth": 0.72'), "Godot compiler should preserve Chordsmith sidechain duck depth");
 });
 
 test("Chordsmith swing timing stays aligned across DJ, DAW, Godot and core", async () => {
@@ -720,6 +769,8 @@ test("Chordsmith pitched tuplet gates stay aligned across DAW, Godot and core", 
   assert.ok(chordsmith.includes("Math.max(0.08, spanDur / 3 * 0.86)"), "Chordsmith live pitched tuplets should keep source gate formula");
   assert.ok(chordsmith.includes("Math.round((leftMidi + rightMidi) / 2)"), "Chordsmith bass tuplets should keep midpoint MIDI formula");
   assert.ok(chordsmith.includes("function melodyTripletMiddleIndex"), "Chordsmith melody tuplets should keep midpoint note-index helper");
+  assert.ok(godotCompiler.includes("const PITCHED_TUPLET_MINIMUM_SECONDS := 0.08"), "Godot compiler should carry the shared pitched tuplet floor");
+  assert.ok(godotCompiler.includes("_pitched_tuplet_duration_ticks(project, span_ticks)"), "Godot compiler should use the shared pitched tuplet gate helper");
   assert.ok(godotCompiler.includes("float(span_ticks) / 3.0 * 0.86"), "Godot compiler should keep Chordsmith pitched tuplet gate formula");
   assert.match(tupletHelper, new RegExp(`gateFloorSeconds\\s*:\\s*${numberPattern(CHORDSMITH_PITCHED_TUPLET.gateFloorSeconds)}`), "shared pitched tuplet floor should match Chordsmith");
   assert.match(tupletHelper, new RegExp(`gateSpanMul\\s*:\\s*${numberPattern(CHORDSMITH_PITCHED_TUPLET.gateSpanMul)}`), "shared pitched tuplet multiplier should match Chordsmith");
@@ -820,7 +871,7 @@ test("Chordsmith drum event gates and peaks stay aligned across DAW, Godot and c
 });
 
 test("Chordsmith chord rhythm gates stay aligned across DJ, DAW, Godot and core", async () => {
-  const [chordsmith, pocketDj, pocketDawRenderer, pocketDawSanitizer, coreTimeline, coreNormalizer, chordRhythm, godotCompiler] = await Promise.all([
+  const [chordsmith, pocketDj, pocketDawRenderer, pocketDawSanitizer, coreTimeline, coreNormalizer, chordRhythm, godotCompiler, godotConductor] = await Promise.all([
     readFile(surfaces.chordsmith, "utf8"),
     readFile(surfaces.pocketDj, "utf8"),
     readFile(surfaces.pocketDawRenderer, "utf8"),
@@ -828,7 +879,8 @@ test("Chordsmith chord rhythm gates stay aligned across DJ, DAW, Godot and core"
     readFile(new URL("packages/pocket-audio-core/src/events/timeline-events.js", repoRoot), "utf8"),
     readFile(surfaces.coreNormalizer, "utf8"),
     readFile(new URL("packages/pocket-audio-core/src/performance/chord-rhythm.js", repoRoot), "utf8"),
-    readFile(surfaces.godotCompiler, "utf8")
+    readFile(surfaces.godotCompiler, "utf8"),
+    readFile(surfaces.godotConductor, "utf8")
   ]);
 
   assert.deepEqual(CHORDSMITH_CHORD_PLAY_MODES, ["block", "strum_up", "strum_down", "arp_up", "arp_down"]);
@@ -858,6 +910,10 @@ test("Chordsmith chord rhythm gates stay aligned across DJ, DAW, Godot and core"
   assert.ok(godotCompiler.includes("* 0.90"), "Godot compiler should preserve Chordsmith quarter chord gate");
   assert.ok(godotCompiler.includes("* 1.80"), "Godot compiler should preserve Chordsmith half chord gate");
   assert.ok(godotCompiler.includes("* 1.20"), "Godot compiler should preserve Chordsmith 3/4 half chord gate");
+  assert.match(godotCompiler, /if str\(project\.get\("chordPlayMode", "block"\)\) in \["strum_down", "arp_down"\]:\s+notes\.reverse\(\)/, "Godot compiler should store chord notes in Chordsmith playback order");
+  assert.ok(!godotConductor.includes("func _ordered_chord_preview_notes"), "Godot conductor should not reverse already ordered compiled chord notes again");
+  assert.match(godotConductor, /"saloon_piano":\s+return 0\.58/, "Godot sample preview should use the shared saloon piano chord spread");
+  assert.match(godotConductor, /play_mode\.begins_with\("strum"\):\s+return float\(note_index\) \* 0\.045 \* spread/s, "Godot sample preview should apply Chordsmith strum delay spacing");
 });
 
 test("Chordsmith bass and melody phrase gates stay aligned across DJ, DAW, Godot and core", async () => {
@@ -880,8 +936,9 @@ test("Chordsmith bass and melody phrase gates stay aligned across DJ, DAW, Godot
   Object.entries(CHORDSMITH_PHRASE_GATES).forEach(([key, value]) => {
     assert.match(phrases, new RegExp(`${key}\\s*:\\s*${numberPattern(value)}`), `shared phrase gate ${key} should match Chordsmith`);
   });
-  assert.ok(godotCompiler.includes("duration_ticks = max(1, int(round(float(duration_ticks) * 0.94)))"), "Godot compiler should always apply Chordsmith bass phrase gate");
-  assert.ok(godotCompiler.includes("duration_ticks = max(1, int(round(float(duration_ticks) * 0.92)))"), "Godot compiler should always apply Chordsmith melody phrase gate");
+  assert.ok(godotCompiler.includes("const PHRASE_MINIMUM_SECONDS := 0.18"), "Godot compiler should carry the shared Chordsmith phrase duration floor");
+  assert.ok(godotCompiler.includes("max(_seconds_to_ticks(project, PHRASE_MINIMUM_SECONDS), int(round(float(duration_ticks) * 0.94)))"), "Godot compiler should always apply Chordsmith bass phrase gate and floor");
+  assert.ok(godotCompiler.includes("max(_seconds_to_ticks(project, PHRASE_MINIMUM_SECONDS), int(round(float(duration_ticks) * 0.92)))"), "Godot compiler should always apply Chordsmith melody phrase gate and floor");
   assert.ok(!godotCompiler.includes('project.get("midiExactDurations", true)):\\n\\t\\tduration_ticks'), "Godot runtime phrase gates should not depend on MIDI exact-duration export settings");
 });
 
@@ -942,13 +999,14 @@ test("Chordsmith guitar tone surface stays aligned across DJ, DAW and core", asy
 });
 
 test("Chordsmith guitar event gates stay aligned across DJ, DAW, Godot and core", async () => {
-  const [chordsmith, pocketDj, pocketDawRenderer, coreTimeline, guitarGates, godotCompiler] = await Promise.all([
+  const [chordsmith, pocketDj, pocketDawRenderer, coreTimeline, guitarGates, godotCompiler, godotConductor] = await Promise.all([
     readFile(surfaces.chordsmith, "utf8"),
     readFile(surfaces.pocketDj, "utf8"),
     readFile(surfaces.pocketDawRenderer, "utf8"),
     readFile(new URL("packages/pocket-audio-core/src/events/timeline-events.js", repoRoot), "utf8"),
     readFile(new URL("packages/pocket-audio-core/src/performance/guitar-gates.js", repoRoot), "utf8"),
-    readFile(surfaces.godotCompiler, "utf8")
+    readFile(surfaces.godotCompiler, "utf8"),
+    readFile(surfaces.godotConductor, "utf8")
   ]);
   const chugFormula = "Math.max(0.055, Math.min(0.16, stepDur * 0.58))";
   const scratchFormula = "Math.max(0.035, Math.min(0.075, stepDur * 0.42))";
@@ -968,6 +1026,10 @@ test("Chordsmith guitar event gates stay aligned across DJ, DAW, Godot and core"
   assert.ok(godotCompiler.includes("_seconds_to_ticks(project, 0.055)"), "Godot compiler should preserve Chordsmith chug floor in ticks");
   assert.ok(godotCompiler.includes("_seconds_to_ticks(project, 0.075)"), "Godot compiler should preserve Chordsmith scratch ceiling in ticks");
   assert.ok(godotCompiler.includes('var gate := 0.98 if articulation == "accent" else 0.92'), "Godot compiler should preserve Chordsmith accent/open gate ratio");
+  assert.match(godotConductor, /if str\(flags\.get\("direction", "down"\)\) == "up":\s+ordered\.reverse\(\)/, "Godot sample preview should respect Chordsmith guitar strum direction");
+  assert.match(godotConductor, /"western_twang":\s+return 0\.020/, "Godot sample preview should preserve western twang guitar spread");
+  assert.match(godotConductor, /articulation == "chug" or articulation == "scratch":\s+return float\(note_index\) \* 0\.003/s, "Godot sample preview should keep tight chug/scratch spread");
+  assert.ok(godotConductor.includes('var tone_guitar_key := "guitar:%s:%s"'), "Godot sample preview should prefer tone-specific guitar sample keys");
 });
 
 test("Chordsmith default sound IDs stay shared across core and DAW", async () => {
@@ -1078,12 +1140,24 @@ test("Godot lofi drum sample aliases stay aligned with core drum-kit IDs", async
 });
 
 test("Godot sample-preview event streams cover shared pitched sound IDs", async () => {
-  const [soundKitGenerator, webKitProfile, conductor, godotSharedSoundConstants] = await Promise.all([
+  const [soundKitGenerator, webKitProfile, conductor, validator, godotSharedSoundConstants, migrator, compiler, buildTools, playbackProfile, audioBusTools, mainScreen, previewMixValidator, previewMixRepair, nativePreviewValidator, eventTraceExporter] = await Promise.all([
     readFile(surfaces.godotSoundKitGenerator, "utf8"),
     readFile(surfaces.godotWebKitProfile, "utf8"),
     readFile(surfaces.godotConductor, "utf8"),
-    readFile(surfaces.godotSharedSoundConstants, "utf8")
+    readFile(surfaces.godotValidator, "utf8"),
+    readFile(surfaces.godotSharedSoundConstants, "utf8"),
+    readFile(surfaces.godotMigrator, "utf8"),
+    readFile(surfaces.godotCompiler, "utf8"),
+    readFile(surfaces.godotBuildTools, "utf8"),
+    readFile(surfaces.godotPlaybackProfile, "utf8"),
+    readFile(surfaces.godotAudioBusTools, "utf8"),
+    readFile(surfaces.godotMainScreen, "utf8"),
+    readFile(surfaces.godotPreviewMixValidator, "utf8"),
+    readFile(surfaces.godotPreviewMixRepair, "utf8"),
+    readFile(surfaces.godotNativePreviewValidator, "utf8"),
+    readFile(surfaces.godotEventTraceExporter, "utf8")
   ]);
+  const westernGuitarKeys = ["open", "chug", "accent", "scratch"].map((id) => `guitar:western_twang:${id}`);
   const expectedKeys = [
     "bass",
     "bass:auto_bass",
@@ -1097,6 +1171,7 @@ test("Godot sample-preview event streams cover shared pitched sound IDs", async 
     "guitar:chug",
     "guitar:accent",
     "guitar:scratch",
+    ...westernGuitarKeys,
     "melody",
     ...POCKET_MELODY_INSTRUMENTS.map((id) => `melody:${id}`)
   ];
@@ -1113,13 +1188,125 @@ test("Godot sample-preview event streams cover shared pitched sound IDs", async 
     conductor.includes('var melody_key := "melody:%s" % instrument_id'),
     "Godot conductor should resolve melody sample-preview keys from event instrument IDs"
   );
+  assert.ok(validator.includes("bass slides need sample_preview_native_bass_enabled"), "Godot validator should distinguish native bass slides from remaining sample-preview slide approximations");
+  assert.ok(validator.includes("melody slides still use stepped pitch updates"), "Godot validator should keep warning about approximate melody sample-preview slides");
+  assert.ok(conductor.includes("set_stream_pitch_scale"), "Godot sample preview should pitch-ramp active bass/melody sample streams for slide metadata");
+  assert.ok(playbackProfile.includes("sample_preview_native_bass_enabled := true"), "Godot playback profile should enable native bass preview by default");
+  assert.ok(playbackProfile.includes("sample_preview_native_bass_gain_db := 2.0"), "Godot playback profile should give native bass its own gain trim instead of sample preamp");
+  assert.ok(conductor.includes("_native_bass_tone_config"), "Godot conductor should carry Chordsmith bass-tone recipes for native bass preview");
+  assert.ok(conductor.includes('"modern_chip_sub"'), "Godot native bass preview should include Chordsmith chip/modern bass tone IDs");
+  assert.ok(conductor.includes('"attack": 0.018'), "Godot native bass preview should carry shared warm_sub attack timing");
+  assert.ok(conductor.includes('_native_bass_adsr_gain(t, voice_seconds, attack)'), "Godot native bass preview should use bass-specific attack/body timing for main and sub layers");
+  assert.ok(conductor.includes("_native_bass_adsr_gain"), "Godot native bass preview should shape bass body separately from pitched melody/chord ADSR");
+  assert.ok(conductor.includes("body_trim := lerp(0.76, 0.44, ratio)"), "Godot native bass preview should trim sustained body without reducing the initial bass peak");
+  assert.ok(conductor.includes("native://pocket_chordsmith/bass"), "Godot native bass preview should be identifiable in pitch debug logs");
+  assert.ok(playbackProfile.includes("sample_preview_native_melody_enabled := true"), "Godot playback profile should enable native melody preview by default");
+  assert.ok(playbackProfile.includes("sample_preview_native_melody_gain_db := 4.5"), "Godot playback profile should keep native melody at the calibrated preview gain");
+  assert.ok(conductor.includes("_prewarm_native_sample_preview_event(event)"), "Godot conductor should warm native preview streams during lookahead scheduling");
+  assert.ok(conductor.includes("_native_melody_instrument_config"), "Godot conductor should carry Chordsmith lead-instrument recipes for native melody preview");
+  assert.ok(conductor.includes('match safe_filter:'), "Godot native melody preview should apply a lightweight filter instead of only scaling the waveform");
+  assert.ok(conductor.includes('filtered_sample *= _native_filter_factor(safe_filter'), "Godot native melody preview should keep filter gain shaping while smoothing the voice");
+  assert.ok(conductor.includes("_audio_stream_wav_from_stereo_panned_samples"), "Godot native melody preview should bake melody pan into stereo streams");
+  assert.ok(conductor.includes("native://pocket_chordsmith/melody"), "Godot native melody preview should be identifiable in pitch debug logs");
+  assert.ok(conductor.includes("sample_preview_native_melody_enabled"), "Godot conductor should route melody events through native melody preview when enabled");
+  assert.ok(playbackProfile.includes("sample_preview_native_guitar_enabled := true"), "Godot playback profile should enable native guitar preview by default");
+  assert.ok(playbackProfile.includes("sample_preview_native_guitar_gain_db := 0.0"), "Godot playback profile should keep native guitar gain flat for mixer control");
+  assert.ok(conductor.includes("_native_guitar_tone_config"), "Godot conductor should carry Chordsmith guitar tone recipes for native guitar preview");
+  assert.ok(conductor.includes("_route_native_guitar_preview_event"), "Godot conductor should route guitar events through native guitar preview when enabled");
+  assert.ok(conductor.includes("native://pocket_chordsmith/guitar"), "Godot native guitar preview should be identifiable in pitch debug logs");
+  assert.ok(conductor.includes('"western_twang"'), "Godot native guitar preview should cover Chordsmith western_twang tone");
+  assert.ok(playbackProfile.includes("sample_preview_native_chords_enabled := true"), "Godot playback profile should enable native chord preview by default");
+  assert.ok(playbackProfile.includes("sample_preview_native_chords_gain_db := 0.0"), "Godot playback profile should keep native chord gain flat for mixer control");
+  assert.ok(conductor.includes("_native_chord_instrument_config"), "Godot conductor should carry Chordsmith chord instrument recipes for native chord preview");
+  assert.ok(conductor.includes("_route_native_chord_preview_event"), "Godot conductor should route chord events through native chord preview when enabled");
+  assert.ok(conductor.includes("native://pocket_chordsmith/chord"), "Godot native chord preview should be identifiable in pitch debug logs");
+  assert.ok(conductor.includes('"saloon_piano"'), "Godot native chord preview should cover Chordsmith western saloon piano");
+  assert.ok(nativePreviewValidator.includes("validate_native_preview"), "Godot addon should ship a headless native preview validator");
+  assert.ok(nativePreviewValidator.includes("_native_melody_stream_for_event"), "Godot native preview validator should generate melody streams");
+  assert.ok(nativePreviewValidator.includes("_native_guitar_stream_for_event"), "Godot native preview validator should generate guitar streams");
+  assert.ok(nativePreviewValidator.includes("_native_chord_stream_for_event"), "Godot native preview validator should generate chord streams");
+  assert.ok(nativePreviewValidator.includes("expect_stereo"), "Godot native preview validator should catch mono/stereo packing regressions");
+  assert.ok(nativePreviewValidator.includes("near-silent audio"), "Godot native preview validator should catch generated native preview silence");
+  assert.ok(nativePreviewValidator.includes('"metrics"'), "Godot native preview validator should optionally emit per-event preview metrics");
+  assert.ok(nativePreviewValidator.includes("_wav_metrics"), "Godot native preview validator should report peak/RMS/duration for native streams");
+  assert.ok(nativePreviewValidator.includes("mean_abs_delta"), "Godot native preview validator should report a brightness/roughness proxy for voice parity checks");
+  assert.ok(nativePreviewValidator.includes("zero_crossing_rate"), "Godot native preview validator should report zero-crossing rate for voice parity checks");
+  assert.ok(nativePreviewValidator.includes("--report"), "Godot native preview validator should expose a JSON report path for parity debugging");
+  assert.ok(eventTraceExporter.includes("export_event_trace"), "Godot addon should ship a headless compiled-event trace exporter");
+  assert.ok(eventTraceExporter.includes("_compact_event"), "Godot compiled-event trace should normalize events for browser/core comparison");
+  assert.ok(eventTraceExporter.includes('"midiNotes"'), "Godot compiled-event trace should preserve chord/guitar note arrays");
+  assert.ok(eventTraceExporter.includes("--report"), "Godot compiled-event trace should write a JSON report for comparator harnesses");
+  assert.ok(conductor.includes("AudioEffectPanner"), "Godot sample preview should use panner effects for non-centered melody pan");
+  assert.ok(conductor.includes("_bus_for_sample_preview_event"), "Godot sample preview should route melody events through event-aware pan buses");
+  assert.ok(validator.includes("sample_preview_pan_buses_enabled is off"), "Godot validator should only warn about melody pan when preview pan buses are disabled");
+  assert.ok(conductor.includes("_trigger_sample_preview_sidechain"), "Godot sample preview should trigger Chordsmith sidechain ducking from kick events");
+  assert.ok(conductor.includes("1.0 - amount * depth"), "Godot sample preview should use the Chordsmith sidechain duck depth formula");
+  assert.ok(migrator.includes('"fxDelay", "fxChorus", "fxFlanger", "fxReverb", "fxMix"'), "Godot migrator should preserve Chordsmith FX controls as supported playback data");
+  assert.ok(compiler.includes('"fx": _fx_settings(project)'), "Godot compiler should carry Chordsmith FX settings into chart performance metadata");
+  assert.ok(buildTools.includes('stripped.begins_with("PCS1:")'), "Godot headless chart compiler should accept downloaded PCS1 handoff files");
+  assert.ok(conductor.includes("_apply_sample_preview_fx_settings"), "Godot sample preview should apply compiled Chordsmith FX settings");
+  assert.ok(conductor.includes("_clear_sample_preview_fx_from_bus"), "Godot sample preview should remove stale Chordsmith FX from Music_Master before applying current FX");
+  assert.ok(conductor.includes("AudioEffectChorus"), "Godot sample preview should use chorus effects for Chordsmith modulation");
+  assert.ok(conductor.includes('return ""'), "Godot sample preview FX should not fall back to the master bus and wash drums in reverb");
+  assert.ok(playbackProfile.includes("sample_preview_fx_enabled"), "Godot playback profile should allow Chordsmith sample-preview FX to be toggled");
+  assert.ok(playbackProfile.includes("sample_preview_fx_enabled := false"), "Godot playback profile should leave Chordsmith preview FX off by default for dry mixer control");
+  assert.ok(playbackProfile.includes("guitar_preview_effects_enabled := false"), "Godot playback profile should not auto-install guitar effects by default");
+  assert.ok(audioBusTools.includes("install_guitar_preview_effects := false"), "Godot bus setup should not auto-install guitar effects by default");
+  assert.ok(soundKitGenerator.includes("profile.sample_preview_bass_duck_on_kick_db = 0.0"), "Godot generated web kit profile should not hide bass under kick hits by default");
+  assert.ok(previewMixValidator.includes("validate_preview_mix"), "Godot addon should ship a headless preview mix validator for dry default checks");
+  assert.ok(previewMixValidator.includes("sample_preview_fx_enabled should be false"), "Godot preview mix validator should catch hidden Chordsmith FX defaults");
+  assert.ok(previewMixValidator.includes('"Music_Texture"'), "Godot preview mix validator should inspect all Chordsmith music buses for stale effects");
+  assert.ok(audioBusTools.includes("reset_dry_preview_mix"), "Godot bus tools should provide an explicit dry preview repair path for stale project bus state");
+  assert.ok(audioBusTools.includes("AudioServer.set_bus_mute(bus_index, false)"), "Godot dry preview repair should unmute Chordsmith buses after manual mixer tests");
+  assert.ok(audioBusTools.includes("AudioServer.remove_bus_effect(bus_index, effect_index)"), "Godot dry preview repair should remove legacy reverb/distortion from Chordsmith buses");
+  assert.ok(mainScreen.includes('"Reset Preview Mix"'), "Godot editor tab should expose dry preview mixer repair");
+  assert.ok(previewMixRepair.includes("reset_dry_preview_mix"), "Godot addon should ship a headless dry preview mixer repair tool");
+  assert.ok(previewMixRepair.includes("validate_preview_mix"), "Godot repair tool should validate the dry preview mix after applying repairs");
+  assert.ok(playbackProfile.includes("sample_preview_pan_buses_enabled := false"), "Godot playback profile should leave generated pan buses off by default for preview performance");
+  assert.ok(playbackProfile.includes("sample_preview_slide_steps := 3"), "Godot playback profile should use a lightweight default slide approximation");
+  assert.ok(previewMixValidator.includes("sample_preview_gain_db.bass should stay between -3 dB and +8 dB"), "Godot preview mix validator should catch bass defaults that are too quiet or clipping");
+  ["Music_Bass", "Music_Chords", "Music_Guitar", "Music_Melody"].forEach((busName) => {
+    assert.ok(audioBusTools.includes(`"${busName}": "Music_FX"`), `Godot recommended bus layout should route tonal ${busName} through Music_FX`);
+  });
+  assert.ok(audioBusTools.includes('"Music_Drums": "Music_Master"'), "Godot recommended bus layout should keep drums out of the Chordsmith FX bus");
+  ["drums", "kick", "snare", "hat", "open_hat", "stingers"].forEach((key) => {
+    assert.ok(playbackProfile.includes(`"${key}": 0.0`), `Godot playback profile should leave ${key} sample gain flat for mixer control`);
+    assert.ok(webKitProfile.includes(`"${key}": 0.0`), `Godot web kit profile should leave ${key} sample gain flat for mixer control`);
+  });
+  [
+    ["bass", -1.0],
+    ["chords", -4.0],
+    ["guitar", -8.0],
+    ["guitar:western_twang:scratch", -23.0],
+    ["melody", -9.0],
+    ["melody:banjo", -27.0]
+  ].forEach(([key, value]) => {
+    assert.ok(playbackProfile.includes(`"${key}": ${value.toFixed(1)}`), `Godot playback profile should keep ${key} at the calibrated preview gain`);
+    assert.ok(webKitProfile.includes(`"${key}": ${value.toFixed(1)}`), `Godot web kit profile should keep ${key} at the calibrated preview gain`);
+  });
+  assertGodotChordSampleRecipe(soundKitGenerator, "saloon_piano", POCKET_CHORD_INSTRUMENT_CONFIGS.saloon_piano);
+  ["banjo", "harmonica", "cowboy_whistle", "trumpet", "saxophone"].forEach((id) => {
+    assertGodotWesternLeadSampleRecipe(soundKitGenerator, id, POCKET_LEAD_INSTRUMENT_CONFIGS[id]);
+  });
+  assertGodotWesternGuitarSampleRecipe(soundKitGenerator, POCKET_GUITAR_TONE_CONFIGS.western_twang);
   assert.ok(godotSharedSoundConstants.includes("const GODOT_EVENT_SAMPLE_STREAMS :="), "Godot generated constants should expose event sample-preview streams");
   assert.ok(soundKitGenerator.includes("SharedSoundConstants.GODOT_EVENT_SAMPLE_STREAMS"), "Godot sound-kit generator should consume generated event sample stream keys");
+  ["open", "chug", "accent", "scratch"].forEach((id) => {
+    assert.ok(soundKitGenerator.includes(`"guitar_western_twang_${id}"`), `Godot sound-kit generator missing western guitar sample function guitar_western_twang_${id}`);
+    assert.ok(godotSharedSoundConstants.includes(`"guitar:western_twang:${id}": "guitar_western_twang_${id}"`), `Godot generated constants should map western guitar ${id} to its sample file`);
+  });
   expectedKeys.forEach((key) => {
     assert.ok(godotSharedSoundConstants.includes(`"${key}"`), `Godot generated event sample stream constants missing ${key}`);
     assert.ok(webKitProfile.includes(`"${key}"`), `Godot checked-in web kit profile missing event sample stream ${key}`);
   });
 });
+
+function extractGdFunction(source, name) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = source.match(new RegExp(`func\\s+${escapedName}\\s*\\([^)]*\\)\\s*->[^{\\n]+:[\\s\\S]*?(?=\\nfunc\\s|\\n$)`, "s"));
+  assert.ok(match, `${name} GDScript function missing`);
+  return match[0];
+}
 
 function extractStringConst(source, name) {
   const match = source.match(new RegExp(`const\\s+${name}\\s*=\\s*"([^"]+)"`));
@@ -1326,6 +1513,38 @@ function assertLeadInstrumentConfig(source, label, id, expected) {
   });
 }
 
+function assertGodotChordSampleRecipe(source, id, expected) {
+  const fnSource = extractGdFunction(source, `_chord_${id}`);
+  assert.match(fnSource, new RegExp(`_lowpass\\(data,\\s*${numberPattern(expected.freq)}`), `Godot ${id} sample lowpass should match shared chord frequency`);
+  expected.layers.forEach((layer) => {
+    assert.match(fnSource, new RegExp(`_wave_sample\\("${layer.wave}"|_${layer.wave}_sample|sin\\(TWO_PI`), `Godot ${id} sample should include ${layer.wave} layer character`);
+    if (layer.freqMul || layer.detune) {
+      const multiplier = (layer.freqMul ?? 1) * Math.pow(2, (layer.detune ?? 0) / 1200);
+      assert.match(fnSource, new RegExp(numberPatternAlternatives(numberToleranceValues(multiplier))), `Godot ${id} sample should approximate layer frequency multiplier ${multiplier}`);
+    }
+  });
+}
+
+function assertGodotWesternLeadSampleRecipe(source, id, expected) {
+  const fnSource = extractGdFunction(source, `_melody_${id}`);
+  assert.match(fnSource, new RegExp(`"${expected.wave}"`), `Godot ${id} sample wave should match shared lead config`);
+  assert.match(fnSource, new RegExp(`"${expected.filter}"`), `Godot ${id} sample filter should match shared lead config`);
+  assert.match(fnSource, new RegExp(`${numberPattern(expected.freq)}`), `Godot ${id} sample filter frequency should match shared lead config`);
+  for (const extra of expected.extras || []) {
+    const frequencyMultiplier = (extra.freqMul ?? 1) * Math.pow(2, (extra.midiOffset ?? 0) / 12);
+    assert.match(fnSource, new RegExp(`"freq_mul":\\s*${numberPatternAlternatives(numberToleranceValues(frequencyMultiplier))}`), `Godot ${id} sample should include extra frequency multiplier`);
+    assert.match(fnSource, new RegExp(`"wave":\\s*"${extra.wave}"`), `Godot ${id} sample should include extra ${extra.wave} layer`);
+    assert.match(fnSource, new RegExp(`"delay":\\s*${gdNumberPattern(extra.offset || 0)}`), `Godot ${id} sample should include extra offset`);
+  }
+}
+
+function assertGodotWesternGuitarSampleRecipe(source, expected) {
+  const openSource = extractGdFunction(source, "_guitar_western_twang_open");
+  assert.match(openSource, new RegExp(`${numberPattern(expected.drive)}`), "Godot western twang open sample drive should match shared guitar tone");
+  assert.match(openSource, new RegExp(`${numberPattern(expected.highpass)}`), "Godot western twang open sample highpass should match shared guitar tone");
+  assert.match(openSource, new RegExp(`${numberPattern(expected.lowpass)}`), "Godot western twang open sample lowpass should match shared guitar tone");
+}
+
 function assertNativeLeadInstrumentConfig(source, label, id, expected) {
   const fnName = `generated_native_lead_${id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
   const configPattern = new RegExp(
@@ -1406,6 +1625,25 @@ function numberPattern(value) {
     return `(?:${fixed})`;
   }
   return String(value).replace(".", "\\.");
+}
+
+function numberPatternAlternatives(values) {
+  return `(?:${[...new Set(values)].map(numberPattern).join("|")})`;
+}
+
+function numberToleranceValues(value) {
+  return [
+    Math.floor(value * 1000) / 1000,
+    Number(value.toFixed(3)),
+    Math.ceil(value * 1000) / 1000,
+    Math.floor(value * 100) / 100,
+    Number(value.toFixed(2)),
+    Math.ceil(value * 100) / 100
+  ];
+}
+
+function gdNumberPattern(value) {
+  return `${numberPattern(value)}0*`;
 }
 
 function numberLiteral(value) {

@@ -5,16 +5,29 @@ class_name PCSAudioBusTools
 const DEFAULT_LAYOUT := {
 	"Music_Master": "Master",
 	"Music_Drums": "Music_Master",
-	"Music_Bass": "Music_Master",
-	"Music_Chords": "Music_Master",
-	"Music_Guitar": "Music_Master",
-	"Music_Melody": "Music_Master",
+	"Music_Bass": "Music_FX",
+	"Music_Chords": "Music_FX",
+	"Music_Guitar": "Music_FX",
+	"Music_Melody": "Music_FX",
 	"Music_Stingers": "Music_Master",
 	"Music_FX": "Music_Master",
 	"Music_Texture": "Music_FX",
 	"SFX": "Master",
 	"UI": "Master",
 }
+const DEFAULT_MUSIC_BUSES := [
+	"Music_Master",
+	"Music_Drums",
+	"Music_Bass",
+	"Music_Chords",
+	"Music_Guitar",
+	"Music_Melody",
+	"Music_Stingers",
+	"Music_FX",
+	"Music_Texture",
+]
+const DEFAULT_BUS_LAYOUT_PATH := "res://default_bus_layout.tres"
+const DEFAULT_BUS_LAYOUT_SETTING := "audio/buses/default_bus_layout"
 
 
 func get_recommended_layout_report() -> Dictionary:
@@ -45,9 +58,10 @@ func get_recommended_layout_report() -> Dictionary:
 	}
 
 
-func create_missing_recommended_buses(save_layout := true, install_guitar_preview_effects := true) -> Dictionary:
+func create_missing_recommended_buses(save_layout := true, install_guitar_preview_effects := false) -> Dictionary:
 	var report := get_recommended_layout_report()
 	var created: Array[String] = []
+	var updated_sends: Array[String] = []
 	var warnings: Array[String] = []
 
 	for bus_name in DEFAULT_LAYOUT.keys():
@@ -56,8 +70,18 @@ func create_missing_recommended_buses(save_layout := true, install_guitar_previe
 		var index := AudioServer.get_bus_count()
 		AudioServer.add_bus(index)
 		AudioServer.set_bus_name(index, bus_name)
-		AudioServer.set_bus_send(index, StringName(DEFAULT_LAYOUT[bus_name]))
+		AudioServer.set_bus_send(index, StringName("Master"))
 		created.append(bus_name)
+
+	for bus_name in DEFAULT_LAYOUT.keys():
+		var index := AudioServer.get_bus_index(bus_name)
+		if index < 0:
+			continue
+		var expected_send := str(DEFAULT_LAYOUT[bus_name])
+		if str(AudioServer.get_bus_send(index)) == expected_send:
+			continue
+		AudioServer.set_bus_send(index, StringName(expected_send))
+		updated_sends.append("%s -> %s" % [bus_name, expected_send])
 
 	for warning in get_recommended_layout_report().get("mismatched_sends", []):
 		warnings.append(str(warning))
@@ -76,15 +100,53 @@ func create_missing_recommended_buses(save_layout := true, install_guitar_previe
 			warnings.append(str(warning))
 
 	var save_error := OK
-	if save_layout and (not created.is_empty() or not created_effects.is_empty()):
-		var layout := AudioServer.generate_bus_layout()
-		save_error = ResourceSaver.save(layout, "res://default_bus_layout.tres")
-		if save_error != OK:
-			warnings.append("Could not save default_bus_layout.tres: %s" % error_string(save_error))
+	if save_layout and (not created.is_empty() or not updated_sends.is_empty() or not created_effects.is_empty()):
+		save_error = _save_default_bus_layout(warnings)
 
 	return {
 		"created": created,
+		"updated_sends": updated_sends,
 		"created_effects": created_effects,
+		"warnings": warnings,
+		"save_error": save_error,
+		"report": get_recommended_layout_report(),
+	}
+
+
+func reset_dry_preview_mix(save_layout := true) -> Dictionary:
+	var setup_result := create_missing_recommended_buses(false, false)
+	var unmuted: Array[String] = []
+	var cleared_effects: Array[String] = []
+	var warnings: Array[String] = []
+
+	for warning in setup_result.get("warnings", []):
+		warnings.append(str(warning))
+
+	for bus_name in DEFAULT_MUSIC_BUSES:
+		var bus_index := AudioServer.get_bus_index(bus_name)
+		if bus_index < 0:
+			warnings.append("Missing Chordsmith bus during dry preview reset: %s" % bus_name)
+			continue
+
+		if AudioServer.is_bus_mute(bus_index):
+			AudioServer.set_bus_mute(bus_index, false)
+			unmuted.append(bus_name)
+
+		for effect_index in range(AudioServer.get_bus_effect_count(bus_index) - 1, -1, -1):
+			var effect := AudioServer.get_bus_effect(bus_index, effect_index)
+			var effect_name := effect.get_class() if effect != null else "AudioEffect"
+			AudioServer.remove_bus_effect(bus_index, effect_index)
+			cleared_effects.append("%s:%s" % [bus_name, effect_name])
+
+	var save_error := OK
+	if save_layout and (not setup_result.get("created", []).is_empty() or not setup_result.get("updated_sends", []).is_empty() or not unmuted.is_empty() or not cleared_effects.is_empty()):
+		save_error = _save_default_bus_layout(warnings)
+
+	return {
+		"created": setup_result.get("created", []),
+		"updated_sends": setup_result.get("updated_sends", []),
+		"unmuted": unmuted,
+		"cleared_effects": cleared_effects,
 		"warnings": warnings,
 		"save_error": save_error,
 		"report": get_recommended_layout_report(),
@@ -154,10 +216,7 @@ static func ensure_guitar_preview_effects(save_layout := true) -> Dictionary:
 
 	var save_error := OK
 	if save_layout and not created_effects.is_empty():
-		var layout := AudioServer.generate_bus_layout()
-		save_error = ResourceSaver.save(layout, "res://default_bus_layout.tres")
-		if save_error != OK:
-			warnings.append("Could not save default_bus_layout.tres: %s" % error_string(save_error))
+		save_error = _save_default_bus_layout(warnings)
 
 	return {
 		"created_effects": created_effects,
@@ -202,10 +261,7 @@ static func ensure_lofi_texture_effects(save_layout := true) -> Dictionary:
 
 	var save_error := OK
 	if save_layout and not created_effects.is_empty():
-		var layout := AudioServer.generate_bus_layout()
-		save_error = ResourceSaver.save(layout, "res://default_bus_layout.tres")
-		if save_error != OK:
-			warnings.append("Could not save default_bus_layout.tres: %s" % error_string(save_error))
+		save_error = _save_default_bus_layout(warnings)
 
 	return {
 		"created_effects": created_effects,
@@ -216,6 +272,19 @@ static func ensure_lofi_texture_effects(save_layout := true) -> Dictionary:
 
 static func fallback_bus(preferred: String, fallback := "Master") -> String:
 	return preferred if AudioServer.get_bus_index(preferred) >= 0 else fallback
+
+
+static func _save_default_bus_layout(warnings: Array[String]) -> int:
+	var layout := AudioServer.generate_bus_layout()
+	var save_error := ResourceSaver.save(layout, DEFAULT_BUS_LAYOUT_PATH)
+	if save_error != OK:
+		warnings.append("Could not save default_bus_layout.tres: %s" % error_string(save_error))
+		return save_error
+	ProjectSettings.set_setting(DEFAULT_BUS_LAYOUT_SETTING, DEFAULT_BUS_LAYOUT_PATH)
+	var project_save_error := ProjectSettings.save()
+	if project_save_error != OK:
+		warnings.append("Could not save project setting %s: %s" % [DEFAULT_BUS_LAYOUT_SETTING, error_string(project_save_error)])
+	return project_save_error
 
 
 static func _find_effect(bus_index: int, effect_class: String) -> AudioEffect:

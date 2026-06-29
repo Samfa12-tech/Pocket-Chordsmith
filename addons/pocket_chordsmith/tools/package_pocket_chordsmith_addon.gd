@@ -2,8 +2,11 @@
 extends SceneTree
 
 const ADDON_DIR := "res://addons/pocket_chordsmith"
-const DEFAULT_VERSION := "1.1.7"
+const DEFAULT_VERSION := "1.1.8"
 const DEFAULT_OUTPUT := "res://pocket_chordsmith_godot_addon_%s.zip" % DEFAULT_VERSION
+const EXCLUDED_PACKAGE_DIRS := {
+	"_trace_compare": true,
+}
 
 
 func _init() -> void:
@@ -89,6 +92,9 @@ static func _collect_files(root: String, include_import_metadata: bool) -> Array
 			continue
 		var path := root.path_join(name)
 		if dir.current_is_dir():
+			if EXCLUDED_PACKAGE_DIRS.has(name):
+				name = dir.get_next()
+				continue
 			out.append_array(_collect_files(path, include_import_metadata))
 		elif _should_package_file(path, include_import_metadata):
 			out.append(path)

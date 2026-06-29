@@ -1,5 +1,29 @@
 # Pocket Chordsmith Godot Addon Changelog
 
+## 1.1.8
+
+Pocket Chordsmith-to-Godot sample-preview sound parity update.
+
+Added:
+
+- Bundled web-kit preview WAVs and playback-profile mappings for `saloon_piano`, `banjo`, `harmonica`, `cowboy_whistle`, `trumpet`, `saxophone`, and `western_twang` guitar articulations.
+- Chart performance metadata for Chordsmith FX, humanize, sidechain, mix, and pan settings so Godot previews can reproduce more of the browser playback character.
+- A visible `Render Preview Audio` workflow that bakes text-only Chordsmith imports into per-section and full-song WAV stems before preview playback.
+- Headless tools for rendering preview stems, validating native preview audio, validating/repairing the dry preview mix, exporting compiled-event traces, and profiling preview performance.
+- Drift tests covering Godot preview sample recipes, western sound IDs, FX graph settings, humanize, guitar gates, and chord rhythm parity.
+
+Changed:
+
+- Godot chord, guitar, bass, and melody preview events now preserve Chordsmith voicing order, pitch mapping, mix-volume scaling, deterministic humanize feel, melody pan buses, sidechain ducking, and stepped slide approximations.
+- The conductor applies Chordsmith-style delay, chorus, flanger, reverb, and tone shaping to the sample-preview bus when compiled FX settings are present.
+- Generated preview stems stay split by role so drums, bass, chords, guitar, and melody continue to route through the usual Godot music buses for volume and FX control.
+- Recommended music buses are dry by default, with a `Reset Preview Mix` action and repair tool for removing stale preview reverb/distortion from older project bus layouts.
+- Live preview startup no longer performs full-song native tonal stream synthesis. Cached native streams are still used, explicit loading-screen prewarm can still build them, and live cache misses fall back to bundled Web Kit samples instead of freezing the editor.
+- Native tonal preview cache keys now include chart timing, preventing streams generated for one tempo from being reused with another imported chart.
+- `prewarm_audio()` is safe by default and skips full native tonal stream generation unless called as `prewarm_audio(false, true)`.
+- Added `prewarm_native_preview_slice()` and diagnostics for native cache hits/fallbacks so projects can warm higher-fidelity preview streams from loading/progress screens while keeping live playback non-blocking.
+- Runtime validation now warns about known preview approximations while accepting the updated web-kit profile and sample set.
+
 ## 1.1.7
 
 Pocket Audio sound-pack compatibility update.
@@ -76,7 +100,7 @@ Guitar preview audio update for the v60 rock guitar import path.
 Added:
 
 - Dedicated `Music_Guitar` bus support through `PCSPlaybackProfile.guitar_bus`.
-- A conservative native guitar preview chain for the recommended bus layout: high-pass, drive, cab-style EQ, low-pass, compression, and limiting.
+- Dry-by-default `Music_Guitar` setup for the recommended bus layout, leaving guitar tone and effects to Godot's native audio mixer unless a playback profile explicitly opts in.
 - Generated web-kit guitar samples for open strums, palm-muted chugs, accents, and scratches.
 
 Changed:

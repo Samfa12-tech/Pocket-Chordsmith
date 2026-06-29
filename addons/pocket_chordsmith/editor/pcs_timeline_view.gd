@@ -21,7 +21,7 @@ func set_conductor(value: PocketChordsmithConductor) -> void:
 
 
 func _process(_delta: float) -> void:
-	if conductor != null and conductor.is_playing():
+	if _conductor_is_playing():
 		queue_redraw()
 
 
@@ -100,3 +100,9 @@ func _event_color(track_type: String) -> Color:
 			return Color(1.0, 1.0, 1.0)
 		_:
 			return Color(0.7, 0.7, 0.7)
+
+
+func _conductor_is_playing() -> bool:
+	if conductor == null or not conductor.has_method("is_playing"):
+		return false
+	return bool(conductor.call("is_playing"))

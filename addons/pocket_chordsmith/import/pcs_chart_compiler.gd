@@ -15,9 +15,14 @@ const MINOR_SCALE := [0, 2, 3, 5, 7, 8, 10]
 const MAJOR_QUALITIES := ["maj", "min", "min", "maj", "maj", "min", "dim"]
 const MINOR_QUALITIES := ["min", "dim", "maj", "min", "min", "maj", "maj"]
 const TICKS_PER_QUARTER := 480
+const PHRASE_MINIMUM_SECONDS := 0.18
+const PITCHED_TUPLET_MINIMUM_SECONDS := 0.08
+
+var _active_project := {}
 
 
 func compile_project(project: Dictionary, import_result := {}) -> Resource:
+	_active_project = project
 	var warnings: Array[String] = []
 	if import_result is Dictionary:
 		warnings.append_array(import_result.get("warnings", []))
@@ -42,6 +47,8 @@ func compile_project(project: Dictionary, import_result := {}) -> Resource:
 	chart.drum_kit = str(project.get("drumKit", "classic"))
 	chart.drum_groove_preset = str(project.get("drumGroovePreset", ""))
 	chart.bass_tone = str(project.get("bassTone", "classic"))
+	chart.mix_volumes = _mix_volumes(project)
+	chart.performance_settings = _performance_settings(project)
 
 	var game_metadata := _game_metadata(import_result)
 	if chart.audio_profile == "lofi_chill":
@@ -137,6 +144,7 @@ func _compile_chord_events(project: Dictionary, section_id: String, arrangement_
 	for bar in range(bars):
 		var degree := int(progression[bar % progression.size()])
 		var bar_tick := section_start_tick + bar * int(project.get("timeSig", 4)) * TICKS_PER_QUARTER
+		var source_step: int = bar * max(1, int(project.get("timeSig", 4)) * int(project.get("resolution", 1)))
 		for rhythm in _chord_rhythm_starts(project, bar_tick):
 			var start_tick := int(rhythm[0])
 			var duration_ticks := int(rhythm[1])
@@ -162,12 +170,13 @@ func _compile_chord_events(project: Dictionary, section_id: String, arrangement_
 					"chord_degree": degree,
 					"chord_quality": _triad_quality(project, degree),
 					"chord_instrument": str(project.get("chordInstrument", "pocket")),
+					"chord_play_mode": str(project.get("chordPlayMode", "block")),
 					"audio_profile": str(project.get("audioProfile", "standard")),
 					"lofi_preset": str(project.get("lofiPreset", "")),
 					"chip_preset": str(project.get("chipPreset", "")),
 					"midi_notes": midi_notes,
 				},
-				0,
+				source_step,
 				bar,
 				arrangement_index
 			))
@@ -210,7 +219,8 @@ func _compile_drum_events(project: Dictionary, section_id: String, arrangement_i
 						str(project.get("audioProfile", "standard")),
 						str(project.get("lofiPreset", "")),
 						str(project.get("chipPreset", "")),
-						str(project.get("drumKit", "classic"))
+						str(project.get("drumKit", "classic")),
+						step + triplet_index
 					))
 			else:
 				events.append(_make_drum_event(
@@ -228,7 +238,8 @@ func _compile_drum_events(project: Dictionary, section_id: String, arrangement_i
 					str(project.get("audioProfile", "standard")),
 					str(project.get("lofiPreset", "")),
 					str(project.get("chipPreset", "")),
-					str(project.get("drumKit", "classic"))
+					str(project.get("drumKit", "classic")),
+					step
 				))
 	return events
 
@@ -249,6 +260,10 @@ func _drum_duration_ticks(project: Dictionary, track_id: String, level: int, ste
 func _drum_tuplet_duration_ticks(project: Dictionary, track_id: String, level: int, span_ticks: int) -> int:
 	var cap := _seconds_to_ticks(project, 0.12) if track_id == "hat" and level > 1 else _seconds_to_ticks(project, 0.08)
 	return max(1, min(cap, int(round(float(span_ticks) / 3.0 * 0.70))))
+
+
+func _pitched_tuplet_duration_ticks(project: Dictionary, span_ticks: int) -> int:
+	return max(_seconds_to_ticks(project, PITCHED_TUPLET_MINIMUM_SECONDS), int(round(float(span_ticks) / 3.0 * 0.86)))
 
 
 func _compile_bass_events(project: Dictionary, section_id: String, arrangement_index: int, section_start_tick: int) -> Array[Dictionary]:
@@ -283,7 +298,7 @@ func _compile_bass_events(project: Dictionary, section_id: String, arrangement_i
 				var accent := _bass_accent_at(project, section_id, step + 1) if triplet_index == 2 else _bass_accent_at(project, section_id, step)
 				events.append(_make_event(
 					tick + int(offsets[triplet_index]),
-					max(1, int(round(float(span_ticks) / 3.0 * 0.86))),
+					_pitched_tuplet_duration_ticks(project, span_ticks),
 					section_id,
 					"bass",
 					0,
@@ -306,7 +321,9 @@ func _compile_bass_events(project: Dictionary, section_id: String, arrangement_i
 					},
 					step,
 					_step_to_bar(project, step),
-					arrangement_index
+					arrangement_index,
+					4,
+					step + triplet_index
 				))
 		else:
 			var midi_note := _bass_midi_at(project, section_id, step)
@@ -342,7 +359,9 @@ func _compile_bass_events(project: Dictionary, section_id: String, arrangement_i
 				flags,
 				step,
 				_step_to_bar(project, step),
-				arrangement_index
+				arrangement_index,
+				4,
+				step
 			))
 	return events
 
@@ -363,9 +382,8 @@ func _compile_guitar_events(project: Dictionary, section_id: String, arrangement
 		var degree := int(progression[bar % progression.size()])
 		var notes := _guitar_power_chord_notes(project, degree)
 		var duration_ticks := _guitar_duration_ticks(project, section_id, pattern, step, articulation)
-		var accent := articulation == "accent"
 		var flags := {
-			"accent": accent,
+			"accent": false,
 			"tuplet": false,
 			"hold": duration_ticks > _step_duration_ticks(project, step),
 			"slide": false,
@@ -398,7 +416,9 @@ func _compile_guitar_events(project: Dictionary, section_id: String, arrangement
 			flags,
 			step,
 			bar,
-			arrangement_index
+			arrangement_index,
+			17,
+			step
 		))
 	return events
 
@@ -450,7 +470,7 @@ func _compile_melody_events(project: Dictionary, section_id: String, arrangement
 					var note_index := int(notes[triplet_index])
 					events.append(_make_event(
 						tick + int(offsets[triplet_index]),
-						max(1, int(round(float(span_ticks) / 3.0 * 0.86))),
+						_pitched_tuplet_duration_ticks(project, span_ticks),
 						section_id,
 						"melody",
 						track_index,
@@ -473,7 +493,9 @@ func _compile_melody_events(project: Dictionary, section_id: String, arrangement
 						},
 						step,
 						_step_to_bar(project, step),
-						arrangement_index
+						arrangement_index,
+						10 + track_index,
+						step + triplet_index
 					))
 			else:
 				var note_index := int(_value_at(track, step))
@@ -507,12 +529,14 @@ func _compile_melody_events(project: Dictionary, section_id: String, arrangement
 					flags,
 					step,
 					_step_to_bar(project, step),
-					arrangement_index
+					arrangement_index,
+					10 + track_index,
+					step
 				))
 	return events
 
 
-func _make_drum_event(tick: int, duration_ticks: int, section_id: String, arrangement_index: int, track_index: int, track_id: String, level: int, source_step: int, source_bar: int, tuplet: bool, generated: bool, audio_profile := "standard", lofi_preset := "", chip_preset := "", drum_kit := "classic") -> Dictionary:
+func _make_drum_event(tick: int, duration_ticks: int, section_id: String, arrangement_index: int, track_index: int, track_id: String, level: int, source_step: int, source_bar: int, tuplet: bool, generated: bool, audio_profile := "standard", lofi_preset := "", chip_preset := "", drum_kit := "classic", humanize_step := -1) -> Dictionary:
 	var midi_note := 36
 	if track_id == "snare":
 		midi_note = 38
@@ -550,13 +574,24 @@ func _make_drum_event(tick: int, duration_ticks: int, section_id: String, arrang
 		},
 		source_step,
 		source_bar,
-		arrangement_index
+		arrangement_index,
+		_drum_humanize_seed(track_id),
+		source_step if humanize_step < 0 else humanize_step
 	)
 
 
-func _make_event(tick: int, duration_ticks: int, section_id: String, track_type: String, track_index: int, instrument_id: String, midi_note: int, velocity: int, pan: float, flags: Dictionary, source_step: int, source_bar: int, arrangement_index: int) -> Dictionary:
+func _make_event(tick: int, duration_ticks: int, section_id: String, track_type: String, track_index: int, instrument_id: String, midi_note: int, velocity: int, pan: float, flags: Dictionary, source_step: int, source_bar: int, arrangement_index: int, humanize_seed := -1, humanize_step := -1) -> Dictionary:
+	var event_flags := flags.duplicate(true)
+	var event_tick := tick
+	var event_velocity := velocity
+	if humanize_seed >= 0 and bool(_active_project.get("humanizeOn", false)):
+		var effective_step := source_step if humanize_step < 0 else humanize_step
+		event_tick = _humanized_tick(tick, effective_step, humanize_seed)
+		event_velocity = _humanized_velocity(velocity, effective_step, humanize_seed)
+		event_flags["humanized"] = true
+		event_flags["humanize_seed"] = humanize_seed
 	return {
-		"tick": max(0, tick),
+		"tick": max(0, event_tick),
 		"duration_ticks": max(1, duration_ticks),
 		"section_id": section_id,
 		"arrangement_index": arrangement_index,
@@ -564,12 +599,44 @@ func _make_event(tick: int, duration_ticks: int, section_id: String, track_type:
 		"track_index": track_index,
 		"instrument_id": instrument_id,
 		"midi_note": clamp(midi_note, -1, 127),
-		"velocity": clamp(velocity, 0, 127),
+		"velocity": clamp(event_velocity, 0, 127),
 		"pan": clamp(pan, -1.0, 1.0),
-		"flags": flags,
+		"flags": event_flags,
 		"source_step": source_step,
 		"source_bar": source_bar,
 	}
+
+
+func _drum_humanize_seed(track_id: String) -> int:
+	match track_id:
+		"kick":
+			return 1
+		"snare":
+			return 2
+		_:
+			return 3
+
+
+func _humanized_tick(tick: int, step: int, seed: int) -> int:
+	return tick + int(round(_humanize_offset_seconds(step, seed) * _ticks_per_second_for_project(_active_project)))
+
+
+func _humanized_velocity(velocity: int, step: int, seed: int) -> int:
+	var scale := 0.9 + _feature_seed(step, seed + 199) * 0.18
+	return clamp(int(round(float(velocity) * scale)), 1, 127)
+
+
+func _humanize_offset_seconds(step: int, seed: int) -> float:
+	return (_feature_seed(step, seed) - 0.5) * 0.018
+
+
+func _feature_seed(step: int, seed: int) -> float:
+	var x := sin(float(step + 1) * 12.9898 + float(seed + 1) * 78.233) * 43758.5453
+	return x - floor(x)
+
+
+func _ticks_per_second_for_project(project: Dictionary) -> float:
+	return float(project.get("bpm", 120)) / 60.0 * float(TICKS_PER_QUARTER)
 
 
 func _build_section_library(project: Dictionary) -> Dictionary:
@@ -778,7 +845,7 @@ func _bass_phrase_info(project: Dictionary, section_id: String, step: int) -> Di
 		while index < step_count and _bool_at(hold_track, index):
 			duration_ticks += _step_duration_ticks(project, index)
 			index += 1
-	duration_ticks = max(1, int(round(float(duration_ticks) * 0.94)))
+	duration_ticks = max(_seconds_to_ticks(project, PHRASE_MINIMUM_SECONDS), int(round(float(duration_ticks) * 0.94)))
 	return {"duration_ticks": max(1, duration_ticks), "slide_midi": slide_midi, "slide_offset_ticks": slide_offset_ticks}
 
 
@@ -809,7 +876,7 @@ func _melody_phrase_info(project: Dictionary, section_id: String, track_index: i
 		while index < step_count and _bool_at(hold_track, index):
 			duration_ticks += _step_duration_ticks(project, index)
 			index += 1
-	duration_ticks = max(1, int(round(float(duration_ticks) * 0.92)))
+	duration_ticks = max(_seconds_to_ticks(project, PHRASE_MINIMUM_SECONDS), int(round(float(duration_ticks) * 0.92)))
 	return {"duration_ticks": max(1, duration_ticks), "slide_midi": slide_midi, "slide_offset_ticks": slide_offset_ticks}
 
 
@@ -1153,6 +1220,87 @@ func _metadata_source_path(import_result) -> String:
 func _game_metadata(import_result) -> Dictionary:
 	var metadata := _metadata(import_result)
 	return _dictionary_or_empty(metadata.get("game_metadata", {}))
+
+
+func _mix_volumes(project: Dictionary) -> Dictionary:
+	var beat_volume := _clamp_volume(project.get("beatVolume", 0.86), 0.86)
+	return {
+		"master": _clamp_volume(project.get("masterVolume", 0.82), 0.82),
+		"chords": _clamp_volume(project.get("chordVolume", 0.72), 0.72),
+		"drums": beat_volume,
+		"bass": beat_volume,
+		"melody": _clamp_volume(project.get("leadVolume", 0.65), 0.65),
+		"guitar": _clamp_volume(project.get("guitarVolume", 0.66), 0.66),
+	}
+
+
+func _clamp_volume(value, fallback: float) -> float:
+	if typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT:
+		return clamp(float(value), 0.0, 1.0)
+	if str(value).is_valid_float():
+		return clamp(str(value).to_float(), 0.0, 1.0)
+	return fallback
+
+
+func _performance_settings(project: Dictionary) -> Dictionary:
+	return {
+		"humanize_on": bool(project.get("humanizeOn", false)),
+		"fx": _fx_settings(project),
+		"sidechain": {
+			"enabled": bool(project.get("sidechainOn", false)),
+			"amount": _clamp_volume(project.get("sidechainAmount", 0.45), 0.45),
+			"attack_seconds": 0.012,
+			"release_seconds": 0.22,
+			"depth": 0.72,
+			"floor": 0.18,
+		},
+	}
+
+
+func _fx_settings(project: Dictionary) -> Dictionary:
+	var delay := _clamp_volume(project.get("fxDelay", 0.12), 0.12)
+	var chorus := _clamp_volume(project.get("fxChorus", 0.18), 0.18)
+	var flanger := _clamp_volume(project.get("fxFlanger", 0.06), 0.06)
+	var reverb := _clamp_volume(project.get("fxReverb", 0.18), 0.18)
+	var mix := _clamp_volume(project.get("fxMix", 0.65), 0.65)
+	var wet_scale := mix * 1.45
+	var brightness := (chorus * 0.9) + (flanger * 1.1) + (reverb * 0.35) - (delay * 0.10)
+	return {
+		"source": {
+			"delay": delay,
+			"chorus": chorus,
+			"flanger": flanger,
+			"reverb": reverb,
+			"mix": mix,
+		},
+		"dry_gain": max(0.52, 1.0 - mix * 0.48),
+		"wet_master_gain": wet_scale,
+		"tone": {
+			"frequency": 1800.0,
+			"gain": clamp(brightness * 6.0, -2.0, 7.0),
+		},
+		"delay": {
+			"time": 0.10 + delay * 0.42,
+			"feedback": 0.05 + delay * 0.72,
+			"mix": clamp(delay * 0.95 * wet_scale, 0.0, 1.0),
+		},
+		"chorus": {
+			"rate": 0.25 + chorus * 1.9,
+			"depth": 0.0014 + chorus * 0.030,
+			"mix": clamp(chorus * 0.95 * wet_scale, 0.0, 1.0),
+		},
+		"flanger": {
+			"rate": 0.10 + flanger * 1.10,
+			"depth": 0.0007 + flanger * 0.0062,
+			"feedback": 0.08 + flanger * 0.82,
+			"mix": clamp(flanger * 0.85 * wet_scale, 0.0, 1.0),
+		},
+		"reverb": {
+			"decay": 1.6,
+			"impulse_decay": 2.4,
+			"mix": clamp(reverb * 1.05 * wet_scale, 0.0, 1.0),
+		},
+	}
 
 
 func _dictionary_or_empty(value) -> Dictionary:

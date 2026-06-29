@@ -80,13 +80,24 @@ This keeps one chart clock per level and avoids drift.
 Pocket Chordsmith has two separate preparation steps:
 
 - Compile/cook the chart in the editor or with the headless build tool. This turns Pocket Chordsmith JSON/share codes into a lightweight `PCSChartResource`; gameplay should load this `.tres`, not parse JSON.
-- Prewarm audio streams before playback. `PocketChordsmithConductor.prewarm_audio()` loads the playback profile's drum kit, preview notes, and stingers into the conductor cache so the first beat does not pay the load cost.
+- Prewarm audio streams before playback. `PocketChordsmithConductor.prewarm_audio()` loads the playback profile's drum kit, event samples, and stingers into the conductor cache so the first beat does not pay file-loading cost.
 
-`PCSPlaybackProfile.sample_preview_prewarm_on_ready` defaults to `true`, so normal level-owned conductors prewarm automatically when they enter the scene. For loading screens or autoload bridges, calling `prewarm_audio()` explicitly after assigning the chart/profile is still useful. Pass `true` only when you also want to prewarm the current stem map:
+If the song is authored in Pocket Chordsmith or Pocket DAW and is not edited in Godot, treat import as a build-preparation step. Import or export rendered stems/loops, compile the chart, validate the playback profile, and let gameplay load those prepared resources. The runtime conductor should only coordinate already-prepared audio: play stems, mute layers, change buses, trigger stingers, and transition on chart boundaries.
+
+`PCSPlaybackProfile.sample_preview_prewarm_on_ready` defaults to `true`, so normal level-owned conductors prewarm automatically when they enter the scene. Automatic prewarm skips full native tonal stream synthesis because dense charts can spend seconds generating those streams. For loading screens or autoload bridges, calling `prewarm_audio()` explicitly after assigning the chart/profile is still useful. Pass `true` as the first argument when you also want to prewarm the current stem map, and pass `true` as the second argument only when you deliberately want to build native bass, melody, guitar, and chord preview streams before playback:
 
 ```gdscript
 var report := conductor.prewarm_audio()
 print(report)
+
+var native_report := conductor.prewarm_audio(false, true)
+print(native_report)
+
+while true:
+	var slice := conductor.prewarm_native_preview_slice(1, 8.0)
+	if bool(slice.get("complete", false)):
+		break
+	await get_tree().process_frame
 ```
 
 ## Common Gameplay Calls

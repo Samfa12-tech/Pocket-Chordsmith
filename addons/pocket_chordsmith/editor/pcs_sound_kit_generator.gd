@@ -53,6 +53,7 @@ func generate_web_kit(output_dir := DEFAULT_OUTPUT_DIR) -> Dictionary:
 		"bass_soft_upright": _bass_soft_upright(),
 		"bass_rounded_triangle_bass": _bass_rounded_triangle_bass(),
 		"chord_tone": _chord_tone(),
+		"chord_saloon_piano": _chord_saloon_piano(),
 		"chord_dusty_rhodes": _chord_dusty_rhodes(),
 		"chord_felt_piano": _chord_felt_piano(),
 		"chord_cassette_keys": _chord_cassette_keys(),
@@ -62,9 +63,18 @@ func generate_web_kit(output_dir := DEFAULT_OUTPUT_DIR) -> Dictionary:
 		"guitar_chug": _guitar_chug(),
 		"guitar_accent": _guitar_accent(),
 		"guitar_scratch": _guitar_scratch(),
+		"guitar_western_twang_open": _guitar_western_twang_open(),
+		"guitar_western_twang_chug": _guitar_western_twang_chug(),
+		"guitar_western_twang_accent": _guitar_western_twang_accent(),
+		"guitar_western_twang_scratch": _guitar_western_twang_scratch(),
 		"melody_pulse": _melody_pulse(),
 		"melody_soft": _melody_soft(),
 		"melody_bell": _melody_bell(),
+		"melody_banjo": _melody_banjo(),
+		"melody_harmonica": _melody_harmonica(),
+		"melody_cowboy_whistle": _melody_cowboy_whistle(),
+		"melody_trumpet": _melody_trumpet(),
+		"melody_saxophone": _melody_saxophone(),
 		"melody_mellow_vibes": _melody_mellow_vibes(),
 		"melody_soft_pluck": _melody_soft_pluck(),
 		"melody_mellow_sax": _melody_mellow_sax(),
@@ -101,37 +111,48 @@ func generate_web_kit(output_dir := DEFAULT_OUTPUT_DIR) -> Dictionary:
 func _save_profile(profile_path: String, sample_paths: Dictionary) -> Dictionary:
 	var profile: Resource = PlaybackProfileScript.new()
 	profile.playback_backend = PlaybackProfileScript.PlaybackBackend.HYBRID
-	profile.max_polyphony = 24
+	profile.max_polyphony = 64
 	profile.mobile_safe = true
 	profile.sample_preview_enabled = true
 	profile.sample_preview_velocity_scale = true
 	profile.sample_preview_tonal_enabled = true
-	profile.sample_preview_wall_clock_timing = true
+	profile.sample_preview_wall_clock_timing = false
 	profile.sample_preview_load_wavs_uncompressed = true
 	profile.sample_preview_prewarm_on_ready = true
-	profile.sample_preview_max_chord_notes = 2
+	profile.sample_preview_native_bass_enabled = true
+	profile.sample_preview_native_bass_gain_db = 2.0
+	profile.sample_preview_native_bass_cache_limit = 192
+	profile.sample_preview_native_melody_enabled = true
+	profile.sample_preview_native_melody_gain_db = 4.5
+	profile.sample_preview_native_melody_cache_limit = 256
+	profile.sample_preview_max_chord_notes = 4
+	profile.sample_preview_slide_steps = 3
+	profile.sample_preview_pan_buses_enabled = false
 	profile.sample_preview_skip_late_audio_ticks = 120
-	profile.sample_preview_bass_duck_on_kick_db = -9.0
+	profile.sample_preview_fx_enabled = false
+	profile.sample_preview_bass_duck_on_kick_db = 0.0
 	profile.sample_preview_bass_duck_window_ticks = 0
-	profile.guitar_preview_effects_enabled = true
+	profile.guitar_preview_effects_enabled = false
 	profile.sample_preview_gain_db = {
-		"drums": -3.0,
-		"kick": 1.0,
-		"kick_accent": 1.0,
+		"drums": 0.0,
+		"kick": 0.0,
+		"kick_accent": 0.0,
 		"snare": 0.0,
 		"snare_accent": 0.0,
-		"hat": -12.0,
-		"hat_accent": -13.0,
-		"open_hat": -13.0,
-		"lofi_kick": -2.0,
-		"lofi_snare": -4.0,
-		"lofi_hat": -16.0,
-		"lofi_open_hat": -16.0,
-		"bass": -6.0,
-		"chords": -26.0,
-		"guitar": -22.0,
-		"melody": -20.0,
-		"stingers": -8.0,
+		"hat": 0.0,
+		"hat_accent": 0.0,
+		"open_hat": 0.0,
+		"lofi_kick": 0.0,
+		"lofi_snare": 0.0,
+		"lofi_hat": 0.0,
+		"lofi_open_hat": 0.0,
+		"bass": -1.0,
+		"chords": -4.0,
+		"guitar": -8.0,
+		"guitar:western_twang:scratch": -23.0,
+		"melody": -9.0,
+		"melody:banjo": -27.0,
+		"stingers": 0.0,
 	}
 	profile.drum_kit = _mapped_sample_streams(sample_paths, _drum_sample_streams())
 	profile.accent_streams = {
@@ -345,18 +366,20 @@ func _clap(peak: float, seed: int) -> PackedFloat32Array:
 
 
 func _bass_tone() -> PackedFloat32Array:
-	var duration := 0.46
+	var duration := 0.56
 	var total := int(SAMPLE_RATE * duration)
 	var data := PackedFloat32Array()
 	data.resize(total)
 	for i in range(total):
 		var t := float(i) / float(SAMPLE_RATE)
-		var env: float = min(1.0, t / 0.012) * exp(-4.6 * t)
-		var tone := sin(TWO_PI * 65.406 * t) * 0.74
-		tone += sin(TWO_PI * 130.812 * t) * 0.22
-		tone += _soft_clip(sin(TWO_PI * 65.406 * t) * 2.4) * 0.16
+		var env: float = min(1.0, t / 0.012) * (exp(-4.7 * t) * 0.86 + exp(-12.0 * t) * 0.14)
+		var base := sin(TWO_PI * 65.406 * t)
+		var saw := fmod(65.406 * t, 1.0) * 2.0 - 1.0
+		var tone := saw * 0.12 + base * 0.62
+		tone += sin(TWO_PI * 32.703 * t) * 0.22
+		tone += sin(TWO_PI * 130.812 * t) * 0.025
 		data[i] = tone * env
-	return _normalize(data, 0.82)
+	return _normalize(_lowpass(data, 260.0), 0.68)
 
 
 func _bass_warm_sub() -> PackedFloat32Array:
@@ -419,6 +442,23 @@ func _chord_tone() -> PackedFloat32Array:
 	return _normalize(_lowpass(data, 5200.0), 0.64)
 
 
+func _chord_saloon_piano() -> PackedFloat32Array:
+	var duration := 0.70
+	var total := int(SAMPLE_RATE * duration)
+	var data := PackedFloat32Array()
+	data.resize(total)
+	var base_freq := 261.626
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.002) * (exp(-7.7 * t) * 0.82 + exp(-1.85 * t) * 0.18)
+		var tone := _triangle_sample(base_freq * 0.996, t) * 0.88
+		tone += _triangle_sample(base_freq * 1.005, t) * 0.62
+		tone += sin(TWO_PI * base_freq * 2.01 * t) * 0.16
+		var hammer := sin(TWO_PI * 2450.0 * t) * exp(-105.0 * t) * 0.06
+		data[i] = _soft_clip((tone + hammer) * 1.24) * env
+	return _normalize(_lowpass(data, 3600.0), 0.58)
+
+
 func _chord_dusty_rhodes() -> PackedFloat32Array:
 	return _warm_key_tone(261.626, 0.86, 2.35, 3400.0, 0.54, 0.10, 0.18)
 
@@ -461,15 +501,15 @@ func _warm_key_tone(base_freq: float, duration: float, decay_rate: float, cutoff
 
 
 func _guitar_open() -> PackedFloat32Array:
-	return _guitar_tone(0.78, 2.05, 3.2, 7, 0.36, 0.70)
+	return _guitar_tone(0.78, 2.05, 1.15, 7, 0.22, 0.54)
 
 
 func _guitar_chug() -> PackedFloat32Array:
-	return _guitar_tone(0.16, 16.0, 3.8, 8, 0.58, 0.74)
+	return _guitar_tone(0.16, 16.0, 1.25, 8, 0.28, 0.56)
 
 
 func _guitar_accent() -> PackedFloat32Array:
-	return _guitar_tone(0.44, 3.8, 4.1, 9, 0.52, 0.82)
+	return _guitar_tone(0.44, 3.8, 1.35, 9, 0.30, 0.62)
 
 
 func _guitar_tone(duration: float, decay_rate: float, drive: float, seed: int, pick_amount: float, peak: float) -> PackedFloat32Array:
@@ -490,12 +530,13 @@ func _guitar_tone(duration: float, decay_rate: float, drive: float, seed: int, p
 		var saw_a := cycle_a * 2.0 - 1.0
 		var saw_b := cycle_b * 2.0 - 1.0
 		var square := 1.0 if cycle_a < 0.52 else -1.0
-		var string_body := saw_a * 0.46 + saw_b * 0.34 + square * 0.18
-		string_body += sin(phase_a * 2.0) * 0.14 + sin(phase_a * 3.01) * 0.08
+		var tri_a := asin(sin(phase_a)) * (2.0 / PI)
+		var string_body := tri_a * 0.44 + saw_a * 0.24 + saw_b * 0.18 + square * 0.04
+		string_body += sin(phase_a * 2.0) * 0.10 + sin(phase_a * 3.01) * 0.05
 		var amp_env: float = min(1.0, t / 0.004) * exp(-decay_rate * t)
 		var pick_env := exp(-85.0 * t)
 		var pick_noise := (rng.randf() * 2.0 - 1.0) * pick_amount * pick_env
-		var value := _soft_clip((string_body + pick_noise) * drive) * amp_env
+		var value := _soft_clip((string_body + pick_noise) * drive * 0.72) * amp_env
 		data[i] = value
 	var filtered := _lowpass(_highpass(data, 80.0), 5600.0)
 	return _normalize(_limit_peak(filtered, 0.92), peak)
@@ -517,45 +558,164 @@ func _guitar_scratch() -> PackedFloat32Array:
 	return _normalize(_lowpass(_highpass(data, 320.0), 4200.0), 0.48)
 
 
+func _guitar_western_twang_open() -> PackedFloat32Array:
+	return _guitar_twang_tone(0.54, 3.5, 1.25, 71, 0.24, 0.38, 125.0, 4700.0)
+
+
+func _guitar_western_twang_chug() -> PackedFloat32Array:
+	return _guitar_twang_tone(0.24, 26.0, 0.44, 72, 0.18, 0.30, 145.0, 950.0)
+
+
+func _guitar_western_twang_accent() -> PackedFloat32Array:
+	return _guitar_twang_tone(0.32, 7.4, 1.32, 73, 0.36, 0.62, 125.0, 5400.0)
+
+
+func _guitar_western_twang_scratch() -> PackedFloat32Array:
+	var duration := 0.046
+	var total := int(SAMPLE_RATE * duration)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 74
+	var data := PackedFloat32Array()
+	data.resize(total)
+	var smoothed: float = 0.0
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.004) * exp(-64.0 * t)
+		smoothed += ((rng.randf() * 2.0 - 1.0) - smoothed) * 0.075
+		var wood_tick: float = sin(TWO_PI * 560.0 * t) * exp(-105.0 * t) * 0.22
+		var pick_click: float = sin(TWO_PI * 1120.0 * t) * exp(-170.0 * t) * 0.08
+		data[i] = _soft_clip((smoothed * 0.38 + wood_tick + pick_click) * env)
+	return _normalize(_lowpass(_highpass(data, 160.0), 1200.0), 0.24)
+
+
+func _guitar_twang_tone(duration: float, decay_rate: float, drive: float, seed: int, pick_amount: float, peak: float, highpass_hz: float, lowpass_hz: float) -> PackedFloat32Array:
+	var total := int(SAMPLE_RATE * duration)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var data := PackedFloat32Array()
+	data.resize(total)
+	var phase_a := 0.0
+	var phase_b := 0.0
+	var base_freq := 82.407
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		phase_a += TWO_PI * base_freq / float(SAMPLE_RATE)
+		phase_b += TWO_PI * (base_freq * 1.004) / float(SAMPLE_RATE)
+		var cycle_a := fmod(phase_a / TWO_PI, 1.0)
+		var cycle_b := fmod(phase_b / TWO_PI, 1.0)
+		var saw_a := cycle_a * 2.0 - 1.0
+		var saw_b := cycle_b * 2.0 - 1.0
+		var square_b := 1.0 if cycle_b < 0.50 else -1.0
+		var tri_a := asin(sin(phase_a)) * (2.0 / PI)
+		var string_body := saw_a * 0.34 + saw_b * 0.16 + square_b * 0.16 + tri_a * 0.18
+		string_body += sin(phase_a * 2.0) * 0.09 + sin(phase_a * 3.01) * 0.05
+		var amp_env: float = min(1.0, t / 0.005) * exp(-decay_rate * t)
+		var pick_env := exp(-92.0 * t)
+		var pick_noise := (rng.randf() * 2.0 - 1.0) * pick_amount * pick_env
+		data[i] = _soft_clip((string_body + pick_noise) * drive * 0.50) * amp_env
+	var filtered := _lowpass(_highpass(data, highpass_hz), lowpass_hz)
+	return _normalize(_limit_peak(filtered, 0.76), peak)
+
+
 func _melody_pulse() -> PackedFloat32Array:
-	var duration := 0.38
+	var duration := 1.10
 	var total := int(SAMPLE_RATE * duration)
 	var data := PackedFloat32Array()
 	data.resize(total)
 	for i in range(total):
 		var t := float(i) / float(SAMPLE_RATE)
-		var env: float = min(1.0, t / 0.009) * exp(-5.8 * t)
-		var pulse := 1.0 if fmod(t * 261.626, 1.0) < 0.46 else -1.0
-		data[i] = (pulse * 0.42 + sin(TWO_PI * 523.252 * t) * 0.12) * env
-	return _normalize(_lowpass(data, 6200.0), 0.70)
+		var env: float = min(1.0, t / 0.012) * (exp(-2.3 * t) * 0.84 + exp(-6.8 * t) * 0.16)
+		var cycle := fmod(t * 261.626, 1.0)
+		var saw := (cycle * 2.0) - 1.0
+		var pulse := 1.0 if cycle < 0.46 else -1.0
+		data[i] = (saw * 0.20 + pulse * 0.07 + sin(TWO_PI * 523.252 * t) * 0.030) * env
+	return _normalize(_lowpass(data, 1450.0), 0.52)
 
 
 func _melody_soft() -> PackedFloat32Array:
-	var duration := 0.46
+	var duration := 0.86
 	var total := int(SAMPLE_RATE * duration)
 	var data := PackedFloat32Array()
 	data.resize(total)
 	for i in range(total):
 		var t := float(i) / float(SAMPLE_RATE)
-		var env: float = min(1.0, t / 0.024) * exp(-4.2 * t)
-		var tone := sin(TWO_PI * 261.626 * t) * 0.55 + sin(TWO_PI * 392.0 * t) * 0.13
+		var env: float = min(1.0, t / 0.018) * (exp(-2.6 * t) * 0.82 + exp(-6.0 * t) * 0.18)
+		var tone := asin(sin(TWO_PI * 261.626 * t)) * (2.0 / PI) * 0.22
+		tone += sin(TWO_PI * 261.626 * t) * 0.34 + sin(TWO_PI * 392.0 * t) * 0.08
 		data[i] = tone * env
-	return _normalize(data, 0.66)
+	return _normalize(_lowpass(data, 1800.0), 0.52)
 
 
 func _melody_bell() -> PackedFloat32Array:
-	var duration := 0.72
+	var duration := 0.88
 	var total := int(SAMPLE_RATE * duration)
 	var data := PackedFloat32Array()
 	data.resize(total)
 	for i in range(total):
 		var t := float(i) / float(SAMPLE_RATE)
-		var env: float = min(1.0, t / 0.004) * exp(-5.4 * t)
-		var tone := sin(TWO_PI * 523.252 * t) * 0.52
-		tone += sin(TWO_PI * 1046.504 * t) * 0.20
-		tone += sin(TWO_PI * 1567.982 * t) * 0.08
+		var env: float = min(1.0, t / 0.010) * (exp(-3.4 * t) * 0.70 + exp(-7.0 * t) * 0.30)
+		var tone := sin(TWO_PI * 261.626 * t) * 0.46
+		tone += sin(TWO_PI * 523.252 * t) * 0.16
+		tone += sin(TWO_PI * 784.0 * t) * 0.035
 		data[i] = tone * env
-	return _normalize(data, 0.68)
+	return _normalize(_lowpass(data, 2600.0), 0.50)
+
+
+func _melody_banjo() -> PackedFloat32Array:
+	return _western_melody_tone(261.626, 0.24, 9.4, 0.56, "triangle", "bandpass", 2100.0, [
+		{"freq_mul": 2.01, "wave": "triangle", "level": 0.22, "delay": 0.004, "decay": 14.0},
+		{"freq_mul": 0.997, "wave": "square", "level": 0.14, "delay": 0.012, "decay": 11.0},
+	])
+
+
+func _melody_harmonica() -> PackedFloat32Array:
+	return _western_melody_tone(261.626, 0.64, 3.5, 0.50, "square", "bandpass", 1250.0, [
+		{"freq_mul": 1.004, "wave": "triangle", "level": 0.30, "delay": 0.006, "decay": 3.2},
+		{"freq_mul": 2.0, "wave": "square", "level": 0.10, "delay": 0.014, "decay": 5.8},
+	])
+
+
+func _melody_cowboy_whistle() -> PackedFloat32Array:
+	return _western_melody_tone(261.626, 0.60, 3.8, 0.42, "sine", "lowpass", 3200.0, [
+		{"freq_mul": 2.0, "wave": "sine", "level": 0.14, "delay": 0.010, "decay": 4.8},
+	])
+
+
+func _melody_trumpet() -> PackedFloat32Array:
+	return _western_melody_tone(261.626, 0.54, 4.1, 0.54, "square", "bandpass", 1650.0, [
+		{"freq_mul": 2.0, "wave": "sawtooth", "level": 0.13, "delay": 0.008, "decay": 6.0},
+	])
+
+
+func _melody_saxophone() -> PackedFloat32Array:
+	return _western_melody_tone(261.626, 0.58, 3.6, 0.56, "triangle", "bandpass", 940.0, [
+		{"freq_mul": 0.5, "wave": "sine", "level": 0.18, "delay": 0.004, "decay": 4.4},
+	])
+
+
+func _western_melody_tone(base_freq: float, duration: float, decay_rate: float, peak: float, wave: String, filter_type: String, filter_hz: float, layers: Array) -> PackedFloat32Array:
+	var total := int(SAMPLE_RATE * duration)
+	var data := PackedFloat32Array()
+	data.resize(total)
+	for i in range(total):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = min(1.0, t / 0.010) * exp(-decay_rate * t)
+		var tone := _wave_sample(wave, base_freq, t)
+		for layer in layers:
+			var delay := float(layer.get("delay", 0.0))
+			if t < delay:
+				continue
+			var local_t := t - delay
+			var layer_env: float = min(1.0, local_t / 0.006) * exp(-float(layer.get("decay", decay_rate)) * local_t)
+			tone += _wave_sample(str(layer.get("wave", wave)), base_freq * float(layer.get("freq_mul", 1.0)), local_t) * float(layer.get("level", 0.0)) * layer_env
+		data[i] = _soft_clip(tone * 1.4) * env
+	match filter_type:
+		"bandpass":
+			return _normalize(_lowpass(_highpass(data, max(40.0, filter_hz * 0.45)), filter_hz * 1.85), peak)
+		"highpass":
+			return _normalize(_highpass(data, filter_hz), peak)
+		_:
+			return _normalize(_lowpass(data, filter_hz), peak)
 
 
 func _melody_mellow_vibes() -> PackedFloat32Array:
@@ -665,6 +825,22 @@ func _lowpass(input: PackedFloat32Array, cutoff_hz: float) -> PackedFloat32Array
 
 func _soft_clip(value: float) -> float:
 	return value / (1.0 + absf(value))
+
+
+func _wave_sample(wave: String, freq: float, t: float) -> float:
+	match wave:
+		"square":
+			return 1.0 if fmod(t * freq, 1.0) < 0.5 else -1.0
+		"triangle":
+			return _triangle_sample(freq, t)
+		"saw", "sawtooth":
+			return fmod(t * freq, 1.0) * 2.0 - 1.0
+		_:
+			return sin(TWO_PI * freq * t)
+
+
+func _triangle_sample(freq: float, t: float) -> float:
+	return asin(sin(TWO_PI * freq * t)) * (2.0 / PI)
 
 
 func _exp_ramp(start: float, end: float, progress: float) -> float:

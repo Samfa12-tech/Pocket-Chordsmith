@@ -31,11 +31,27 @@ enum PlaybackBackend {
 @export var sample_preview_prewarm_on_ready := true
 @export var sample_preview_force_web_stream_for_pitched := true
 @export var sample_preview_log_pitched_events := false
-@export var sample_preview_max_chord_notes := 2
+@export var sample_preview_native_bass_enabled := true
+@export var sample_preview_native_bass_gain_db := 2.0
+@export var sample_preview_native_bass_cache_limit := 192
+@export var sample_preview_native_melody_enabled := true
+@export var sample_preview_native_melody_gain_db := 4.5
+@export var sample_preview_native_melody_cache_limit := 256
+@export var sample_preview_native_guitar_enabled := true
+@export var sample_preview_native_guitar_gain_db := 0.0
+@export var sample_preview_native_guitar_cache_limit := 192
+@export var sample_preview_native_chords_enabled := true
+@export var sample_preview_native_chords_gain_db := 0.0
+@export var sample_preview_native_chords_cache_limit := 192
+@export var sample_preview_build_native_streams_during_playback := false
+@export var sample_preview_max_chord_notes := 4
+@export var sample_preview_slide_steps := 3
+@export var sample_preview_pan_buses_enabled := false
+@export var sample_preview_fx_enabled := false
 @export var sample_preview_skip_late_audio_ticks := 120
-@export var sample_preview_bass_duck_on_kick_db := -9.0
+@export var sample_preview_bass_duck_on_kick_db := 0.0
 @export var sample_preview_bass_duck_window_ticks := 0
-@export var guitar_preview_effects_enabled := true
+@export var guitar_preview_effects_enabled := false
 @export var audio_profile := "standard"
 @export var lofi_preset := ""
 @export var lofi_texture: Dictionary = {}
@@ -49,19 +65,21 @@ enum PlaybackBackend {
 	"lofi_train_window": {"menu": 0.46, "explore": 0.64, "night": 0.70},
 }
 @export var sample_preview_gain_db: Dictionary = {
-	"drums": -3.0,
-	"kick": 1.0,
-	"kick_accent": 1.0,
+	"drums": 0.0,
+	"kick": 0.0,
+	"kick_accent": 0.0,
 	"snare": 0.0,
 	"snare_accent": 0.0,
-	"hat": -12.0,
-	"hat_accent": -13.0,
-	"open_hat": -13.0,
-	"bass": -6.0,
-	"chords": -26.0,
-	"guitar": -24.0,
-	"melody": -20.0,
-	"stingers": -8.0,
+	"hat": 0.0,
+	"hat_accent": 0.0,
+	"open_hat": 0.0,
+	"bass": -1.0,
+	"chords": -4.0,
+	"guitar": -8.0,
+	"guitar:western_twang:scratch": -23.0,
+	"melody": -9.0,
+	"melody:banjo": -27.0,
+	"stingers": 0.0,
 }
 @export var master_music_bus := "Music_Master"
 @export var drums_bus := "Music_Drums"

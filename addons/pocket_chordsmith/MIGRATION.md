@@ -1,4 +1,4 @@
-# Migrating To Pocket Chordsmith Godot Addon 1.1.7
+# Migrating To Pocket Chordsmith Godot Addon 1.1.8
 
 This release keeps the core architecture stable:
 
@@ -19,6 +19,10 @@ res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.t
 ```
 
 6. Keep any previous procedural preview player out of shipped gameplay scenes unless it is intentionally used as a temporary fallback.
+
+## 1.1.8 Sample Preview Sound-Parity Note
+
+Version 1.1.8 improves Godot sample-preview parity for Pocket Chordsmith charts that use western sounds, live mix controls, performance feel, sidechain pump, pan, and FX. Recompile imported JSON/share-code projects after updating so chart resources include the new performance metadata and event flags, then preview with the bundled web-kit profile.
 
 ## 1.1.7 Pocket Audio Sound-Pack Note
 
@@ -46,7 +50,7 @@ Version 1.1.1 understands Pocket Chordsmith v60 rock-guitar projects. Recompile 
 
 ## 1.1.2 Guitar Preview Note
 
-Version 1.1.2 adds a dedicated `Music_Guitar` bus plus generated guitar preview samples. Run `Create Chordsmith Audio Buses` after updating if your project does not already have `Music_Guitar`; the tool will add a safe native amp/cab-style preview chain without removing existing buses. Existing playback profiles still load, but regenerate the web sound kit or use the bundled web-kit profile to get the new guitar sample mappings.
+Version 1.1.2 adds a dedicated `Music_Guitar` bus plus generated guitar preview samples. Run `Create Chordsmith Audio Buses` after updating if your project does not already have `Music_Guitar`; the tool creates/reroutes the recommended buses dry by default so Godot's mixer remains the place for guitar tone and ambience. Existing playback profiles still load, but regenerate the web sound kit or use the bundled web-kit profile to get the new guitar sample mappings.
 
 ## 1.1.3 Pocket Chordsmith v63 Sound Options Note
 

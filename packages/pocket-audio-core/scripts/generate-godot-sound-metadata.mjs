@@ -188,6 +188,11 @@ function godotEventSampleStreams() {
     "guitar:scratch": "guitar_scratch",
     melody: "melody_pulse"
   };
+  POCKET_GUITAR_TONES.forEach((tone) => {
+    ["open", "chug", "accent", "scratch"].forEach((articulation) => {
+      streams[`guitar:${tone}:${articulation}`] = godotGuitarSampleName(tone, articulation);
+    });
+  });
   Object.keys(POCKET_BASS_TONE_CONFIGS).forEach((id) => {
     streams[`bass:${id}`] = godotBassSampleName(id);
   });
@@ -200,6 +205,11 @@ function godotEventSampleStreams() {
   return streams;
 }
 
+function godotGuitarSampleName(tone, articulation) {
+  if (tone === "western_twang") return `guitar_western_twang_${articulation}`;
+  return `guitar_${articulation}`;
+}
+
 function godotBassSampleName(id) {
   if (id.startsWith("chip_") || id === "modern_chip_sub" || id === "bitcrush_bass") return "bass_tone";
   if (id === "warm_sub") return "bass_warm_sub";
@@ -210,6 +220,7 @@ function godotBassSampleName(id) {
 
 function godotChordSampleName(id) {
   if (id.startsWith("chip_") || id === "modern_chip_poly") return "chord_tone";
+  if (id === "saloon_piano") return "chord_saloon_piano";
   if (id === "dusty_rhodes") return "chord_dusty_rhodes";
   if (id === "felt_piano") return "chord_felt_piano";
   if (id === "cassette_keys") return "chord_cassette_keys";
@@ -226,7 +237,12 @@ function godotMelodySampleName(id) {
   if (id === "muted_trumpet") return "melody_muted_trumpet";
   if (id === "tape_bell") return "melody_tape_bell";
   if (id === "bell") return "melody_bell";
-  if (["cowboy_whistle", "harmonica", "saxophone", "soft"].includes(id)) {
+  if (id === "banjo") return "melody_banjo";
+  if (id === "harmonica") return "melody_harmonica";
+  if (id === "cowboy_whistle") return "melody_cowboy_whistle";
+  if (id === "trumpet") return "melody_trumpet";
+  if (id === "saxophone") return "melody_saxophone";
+  if (id === "soft") {
     return "melody_soft";
   }
   return "melody_pulse";

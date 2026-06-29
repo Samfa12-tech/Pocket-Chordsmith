@@ -3,11 +3,19 @@
 Recommended shipping path:
 
 1. Author in Pocket Chordsmith.
-2. Export JSON/share code for chart timing.
+2. Export JSON/share code for chart timing, or send the same chart into Pocket DAW.
 3. Render stems from the same arrangement at the chart BPM.
-4. Import JSON into `PCSChartResource`.
+4. Import JSON into `PCSChartResource`, or import a Pocket DAW Godot Adaptive Pack ZIP when rendered audio is already available.
 5. Assign stems through `PCSPlaybackProfile`.
 6. Let `PocketChordsmithConductor` drive sections, markers, game events, bus volumes, effects, and adaptive state changes.
+
+## Source Formats
+
+Pocket Chordsmith JSON and `PCS1:` share codes are score data: notes, sections, timing, sound IDs, mix metadata, and adaptive hints. They are enough for Godot to compile a chart and run an editor preview, but they are not stem audio.
+
+Pocket DAW Godot Adaptive Packs are game-audio asset bundles. They include the chart source plus rendered full mixes, stems, section loops, and a generated playback profile. This path does less work inside Godot and should be preferred when the goal is shipped mix parity.
+
+Do not make gameplay render stems from Chordsmith text. That would require porting or embedding a music renderer in Godot and would compete with game CPU/audio budgets. If Pocket Chordsmith grows a direct game-pack export later, it should export rendered audio assets alongside the chart, similar to the DAW pack path.
 
 Suggested full-arrangement stem names:
 

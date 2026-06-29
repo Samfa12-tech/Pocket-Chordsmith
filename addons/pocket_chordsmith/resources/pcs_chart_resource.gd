@@ -22,6 +22,8 @@ const TICKS_PER_QUARTER := 480
 @export var drum_kit := "classic"
 @export var drum_groove_preset := ""
 @export var bass_tone := "classic"
+@export var mix_volumes: Dictionary = {}
+@export var performance_settings: Dictionary = {}
 @export var lofi_intensity_hints: Dictionary = {}
 @export var chip_intensity_hints: Dictionary = {}
 

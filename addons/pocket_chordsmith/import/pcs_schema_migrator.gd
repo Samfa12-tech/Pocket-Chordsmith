@@ -45,6 +45,8 @@ const TOP_LEVEL_SUPPORTED_KEYS := [
 	"projectVersion", "schemaVersion", "key", "scale", "timeSig", "bpm", "swing",
 	"audioProfile", "stylePreset", "lofiPreset", "lofiTexture", "chipPreset", "chipTexture", "drumKit", "drumGroovePreset", "bassTone",
 	"resolution", "chordType", "chordInstrument", "chordPlayMode", "chordRhythmMode", "chordOctave",
+	"humanizeOn", "sidechainOn", "sidechainAmount", "fxDelay", "fxChorus", "fxFlanger", "fxReverb", "fxMix",
+	"masterVolume", "masterVol", "chordVolume", "chordVol", "beatVolume", "beatVol", "leadVolume", "leadVol",
 	"melodyPitchMode", "melodyOctave", "bassMode", "midiExportMode",
 	"midiChordExport", "midiExactDurations", "guitarEnabled", "guitarTone",
 	"guitarRegister", "guitarStrumMode", "guitarPatternPreset", "guitarVolume",
@@ -57,10 +59,9 @@ const TOP_LEVEL_SUPPORTED_KEYS := [
 
 const UI_ONLY_KEYS := [
 	"theme", "uiMode", "currentStep", "isPlaying", "selectedSlot", "selectedTrack",
-	"settingsOpen", "tooltipsOn", "wavUrl", "wavBlob", "wavFile", "fxDelay",
-	"fxChorus", "fxFlanger", "fxReverb", "fxMix", "showMelodyPads",
+	"settingsOpen", "tooltipsOn", "wavUrl", "wavBlob", "wavFile", "showMelodyPads",
 	"showDrumPads", "drumRecordToGrid", "showMelodyPicker", "showTrackControls",
-	"humanizeOn", "sidechainOn", "sidechainAmount", "lastAdvancedResolution",
+	"lastAdvancedResolution",
 	"currentSection", "currentPlaybackSection", "currentSequenceIndex",
 	"playbackMode", "melodyInputMode", "xyPlaybackMode", "xyPadMode",
 	"xyScaleMode", "xyChordFollow", "xyRecordToGrid", "xyLastWriteStep",
@@ -116,6 +117,18 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 	data["chordPlayMode"] = _safe_choice(str(raw.get("chordPlayMode", "block")), ["block", "strum_up", "strum_down", "arp_up", "arp_down"], "block", "chordPlayMode", warnings)
 	data["chordRhythmMode"] = _safe_choice(str(raw.get("chordRhythmMode", "sustain")), ["sustain", "quarter", "half"], "sustain", "chordRhythmMode", warnings)
 	data["chordOctave"] = _clamp_int(raw.get("chordOctave", 0), -2, 2, 0, "chordOctave", warnings)
+	data["humanizeOn"] = bool(raw.get("humanizeOn", false))
+	data["sidechainOn"] = bool(raw.get("sidechainOn", raw.get("pumpChordsEnabled", false)))
+	data["sidechainAmount"] = _clamp_float(raw.get("sidechainAmount", raw.get("pumpAmount", 0.45)), 0.0, 1.0, 0.45, "sidechainAmount", warnings)
+	data["fxDelay"] = _clamp_float(raw.get("fxDelay", 0.12), 0.0, 1.0, 0.12, "fxDelay", warnings)
+	data["fxChorus"] = _clamp_float(raw.get("fxChorus", 0.18), 0.0, 1.0, 0.18, "fxChorus", warnings)
+	data["fxFlanger"] = _clamp_float(raw.get("fxFlanger", 0.06), 0.0, 1.0, 0.06, "fxFlanger", warnings)
+	data["fxReverb"] = _clamp_float(raw.get("fxReverb", 0.18), 0.0, 1.0, 0.18, "fxReverb", warnings)
+	data["fxMix"] = _clamp_float(raw.get("fxMix", 0.65), 0.0, 1.0, 0.65, "fxMix", warnings)
+	data["masterVolume"] = _clamp_float(raw.get("masterVolume", raw.get("masterVol", 0.82)), 0.0, 1.0, 0.82, "masterVolume", warnings)
+	data["chordVolume"] = _clamp_float(raw.get("chordVolume", raw.get("chordVol", 0.72)), 0.0, 1.0, 0.72, "chordVolume", warnings)
+	data["beatVolume"] = _clamp_float(raw.get("beatVolume", raw.get("beatVol", 0.86)), 0.0, 1.0, 0.86, "beatVolume", warnings)
+	data["leadVolume"] = _clamp_float(raw.get("leadVolume", raw.get("leadVol", 0.65)), 0.0, 1.0, 0.65, "leadVolume", warnings)
 	data["melodyPitchMode"] = _safe_choice(str(raw.get("melodyPitchMode", "scale")), ["scale", "chromatic"], "scale", "melodyPitchMode", warnings)
 	data["melodyOctave"] = _clamp_int(raw.get("melodyOctave", 0), -2, 2, 0, "melodyOctave", warnings)
 	data["bassMode"] = _safe_choice(str(raw.get("bassMode", "auto")), ["auto", "manual"], "auto", "bassMode", warnings)
@@ -127,7 +140,7 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 	data["guitarRegister"] = _safe_choice(str(raw.get("guitarRegister", DEFAULT_GUITAR_REGISTER)), POCKET_GUITAR_REGISTERS, DEFAULT_GUITAR_REGISTER, "guitarRegister", warnings)
 	data["guitarStrumMode"] = _safe_choice(str(raw.get("guitarStrumMode", DEFAULT_GUITAR_STRUM_MODE)), POCKET_GUITAR_STRUM_MODES, DEFAULT_GUITAR_STRUM_MODE, "guitarStrumMode", warnings)
 	data["guitarPatternPreset"] = _safe_choice(str(raw.get("guitarPatternPreset", "metal_chug")), POCKET_GUITAR_PATTERN_PRESETS, "metal_chug", "guitarPatternPreset", warnings)
-	data["guitarVolume"] = _clamp_float(raw.get("guitarVolume", 0.58), 0.0, 1.0, 0.58, "guitarVolume", warnings)
+	data["guitarVolume"] = _clamp_float(raw.get("guitarVolume", 0.66), 0.0, 1.0, 0.66, "guitarVolume", warnings)
 	data["sectionBars"] = _sanitize_section_bars(raw.get("sectionBars", raw.get("sectionLengths", {})), warnings)
 	data["songSequence"] = _sanitize_song_sequence(raw.get("songSequence", raw.get("sectionSequence", DEFAULT_SONG_SEQUENCE)), warnings)
 

@@ -9,6 +9,7 @@ const TimelineView := preload("res://addons/pocket_chordsmith/editor/pcs_timelin
 const SectionList := preload("res://addons/pocket_chordsmith/editor/pcs_section_list.gd")
 const ImportReport := preload("res://addons/pocket_chordsmith/editor/pcs_import_report.gd")
 const AudioBusTools := preload("res://addons/pocket_chordsmith/editor/pcs_audio_bus_tools.gd")
+const SectionStemRenderer := preload("res://addons/pocket_chordsmith/editor/pcs_section_stem_renderer.gd")
 const ChartBuildTools := preload("res://addons/pocket_chordsmith/import/pcs_chart_build_tools.gd")
 const PushReceiver := preload("res://addons/pocket_chordsmith/editor/pcs_push_receiver.gd")
 
@@ -26,7 +27,9 @@ var _position_label: Label
 var _event_count_label: Label
 var _track_summary_label: Label
 var _status_label: Label
+var _preview_diagnostics_label: Label
 var _save_button: Button
+var _render_preview_audio_button: Button
 var _play_button: Button
 var _stop_button: Button
 var _timeline: PCSTimelineView
@@ -65,8 +68,9 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if conductor != null and conductor.is_playing():
+	if _conductor_is_playing():
 		_update_position_label()
+		_update_preview_diagnostics_label()
 
 
 func _exit_tree() -> void:
@@ -145,6 +149,13 @@ func _build_ui() -> void:
 
 	_toolbar_button(
 		toolbar,
+		"Reset Preview Mix",
+		"Unmute Chordsmith music buses and remove effects from those buses for a dry Pocket Chordsmith preview check.",
+		_reset_preview_mix
+	)
+
+	_toolbar_button(
+		toolbar,
 		"Playback Profile Template",
 		"Generate a starter PCSPlaybackProfile with stem, sample, and bus fields.",
 		_open_profile_save_dialog
@@ -155,6 +166,13 @@ func _build_ui() -> void:
 		"Generate Web Sound Kit",
 		"Generate Pocket Chordsmith-style drum/stinger WAVs and a HYBRID playback profile.",
 		_generate_web_sound_kit
+	)
+
+	_render_preview_audio_button = _toolbar_button(
+		toolbar,
+		"Render Preview Audio",
+		"Render the imported chart into visible WAV stems, then assign the generated stem playback profile for Play Preview.",
+		_render_preview_audio
 	)
 
 	_save_button = _toolbar_button(
@@ -189,6 +207,11 @@ func _build_ui() -> void:
 	_status_label.text = "Import a Pocket Chordsmith JSON or Share Code file to begin."
 	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	root.add_child(_status_label)
+
+	_preview_diagnostics_label = Label.new()
+	_preview_diagnostics_label.text = "Preview diagnostics: idle"
+	_preview_diagnostics_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(_preview_diagnostics_label)
 
 	var split := HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -341,15 +364,46 @@ func _open_profile_save_dialog() -> void:
 
 func _create_chordsmith_audio_buses() -> void:
 	var tools = AudioBusTools.new()
-	var result: Dictionary = tools.create_missing_recommended_buses(true)
+	var result: Dictionary = tools.create_missing_recommended_buses(true, false)
 	var created: Array = result.get("created", [])
+	var updated_sends: Array = result.get("updated_sends", [])
 	var warnings: Array = result.get("warnings", [])
 	if editor_interface != null:
 		editor_interface.get_resource_filesystem().scan()
-	if created.is_empty():
+	if created.is_empty() and updated_sends.is_empty():
 		_set_status("Chordsmith audio buses already exist. %s" % ("Warnings: %s" % str(warnings) if not warnings.is_empty() else ""))
 	else:
-		_set_status("Created Chordsmith audio buses: %s. %s" % [", ".join(created), "Warnings: %s" % str(warnings) if not warnings.is_empty() else "Saved to default_bus_layout.tres."])
+		var changes := []
+		if not created.is_empty():
+			changes.append("created: %s" % ", ".join(created))
+		if not updated_sends.is_empty():
+			changes.append("routed: %s" % ", ".join(updated_sends))
+		_set_status("Updated Chordsmith audio buses (%s). %s" % ["; ".join(changes), "Warnings: %s" % str(warnings) if not warnings.is_empty() else "Saved to default_bus_layout.tres."])
+
+
+func _reset_preview_mix() -> void:
+	var tools = AudioBusTools.new()
+	var result: Dictionary = tools.reset_dry_preview_mix(true)
+	var created: Array = result.get("created", [])
+	var updated_sends: Array = result.get("updated_sends", [])
+	var unmuted: Array = result.get("unmuted", [])
+	var cleared_effects: Array = result.get("cleared_effects", [])
+	var warnings: Array = result.get("warnings", [])
+	if editor_interface != null:
+		editor_interface.get_resource_filesystem().scan()
+	var changes := []
+	if not created.is_empty():
+		changes.append("created %d bus(es)" % created.size())
+	if not updated_sends.is_empty():
+		changes.append("routed %d bus(es)" % updated_sends.size())
+	if not unmuted.is_empty():
+		changes.append("unmuted %s" % ", ".join(unmuted))
+	if not cleared_effects.is_empty():
+		changes.append("removed %d effect(s)" % cleared_effects.size())
+	if changes.is_empty():
+		_set_status("Preview mix is already dry. %s" % ("Warnings: %s" % str(warnings) if not warnings.is_empty() else ""))
+	else:
+		_set_status("Reset Chordsmith preview mix: %s. %s" % ["; ".join(changes), "Warnings: %s" % str(warnings) if not warnings.is_empty() else "Saved to default_bus_layout.tres."])
 
 
 func _open_save_dialog() -> void:
@@ -413,6 +467,73 @@ func _generate_web_sound_kit() -> void:
 	])
 
 
+func _render_preview_audio() -> void:
+	if chart == null:
+		_set_status("Import or load a chart before rendering preview audio.")
+		return
+	_stop_preview()
+	conductor.chart = chart
+	if not _assign_default_preview_profile(true):
+		_set_status("Render needs a preview profile. Click Generate Web Sound Kit, then try again.")
+		return
+	_render_preview_audio_button.disabled = true
+	_play_button.disabled = true
+	var renderer = SectionStemRenderer.new()
+	var output_root := SectionStemRenderer.default_output_root(chart)
+	var jobs: Array[Dictionary] = renderer.build_render_jobs(chart, output_root)
+	if jobs.is_empty():
+		_set_status("No playable section or full-song events were found to render.")
+		_render_preview_audio_button.disabled = false
+		_update_actions()
+		return
+
+	var full_stem_paths := {}
+	var section_stem_sets := {}
+	var warnings: Array = []
+	var rendered_count := 0
+	for index in range(jobs.size()):
+		var job: Dictionary = jobs[index]
+		_set_status("Rendering preview audio %d/%d: %s..." % [index + 1, jobs.size(), str(job.get("label", "stem"))])
+		await get_tree().process_frame
+		var result: Dictionary = renderer.render_job(chart, conductor.playback_profile, conductor, job)
+		warnings.append_array(result.get("warnings", []))
+		if not bool(result.get("ok", false)):
+			_set_status("Preview audio render failed at %s: %s" % [str(job.get("label", "stem")), str(result.get("errors", []))])
+			_render_preview_audio_button.disabled = false
+			_update_actions()
+			return
+		rendered_count += 1
+		var layer := str(job.get("layer", ""))
+		var path := str(job.get("path", ""))
+		if str(job.get("scope", "")) == "full":
+			full_stem_paths[layer] = path
+		else:
+			var section_key := str(job.get("key", "section"))
+			if not section_stem_sets.has(section_key):
+				section_stem_sets[section_key] = {}
+			(section_stem_sets[section_key] as Dictionary)[layer] = path
+
+	_set_status("Preview audio render complete. Saving generated playback profile...")
+	await get_tree().process_frame
+	var rendered_profile := renderer.create_rendered_profile(conductor.playback_profile, full_stem_paths, section_stem_sets)
+	var profile_path := SectionStemRenderer.profile_path_for_output_root(output_root)
+	var save_error := ResourceSaver.save(rendered_profile, profile_path)
+	if save_error != OK:
+		_set_status("Rendered WAVs, but could not save playback profile: %s" % error_string(save_error))
+		_render_preview_audio_button.disabled = false
+		_update_actions()
+		return
+	conductor.set_playback_profile(rendered_profile, false)
+	_render_preview_audio_button.disabled = false
+	_update_actions()
+	_set_status("Rendered %d preview WAV stem(s) into %s and assigned %s. Press Play Preview to hear cached stems. Godot import scan was skipped so the editor stays responsive.%s" % [
+		rendered_count,
+		output_root,
+		profile_path,
+		" Warnings: %s" % str(warnings.slice(0, 4)) if not warnings.is_empty() else "",
+	])
+
+
 func _import_file(path: String) -> void:
 	_stop_preview()
 	var importer = JsonImporter.new()
@@ -460,7 +581,7 @@ func _import_daw_pack(path: String) -> void:
 		conductor.chart = chart
 	var loaded_profile := ResourceLoader.load(profile_path) if not profile_path.is_empty() else null
 	if loaded_profile is PCSPlaybackProfile:
-		conductor.playback_profile = loaded_profile
+		conductor.set_playback_profile(loaded_profile, false)
 
 	var compiled: Array = result.get("compiled", [])
 	var events := int(compiled[0].get("events", 0)) if not compiled.is_empty() else 0
@@ -609,18 +730,20 @@ func _play_preview() -> void:
 		_set_status("Preview timing will play, but this profile is STEM_SYNC with no stems assigned.")
 	conductor.play()
 	_update_position_label()
+	_update_preview_diagnostics_label()
 
 
 func _stop_preview() -> void:
 	if conductor != null:
 		conductor.stop()
 	_update_position_label()
+	_update_preview_diagnostics_label()
 
 
 func _jump_preview_to_section(section_id: String) -> void:
 	if chart == null:
 		return
-	if not conductor.is_playing():
+	if not _conductor_is_playing():
 		conductor.chart = chart
 	conductor.jump_to_section(section_id)
 	_update_position_label()
@@ -641,6 +764,8 @@ func _update_actions() -> void:
 	var has_chart := chart != null
 	if _save_button != null:
 		_save_button.disabled = not has_chart
+	if _render_preview_audio_button != null:
+		_render_preview_audio_button.disabled = not has_chart
 	if _play_button != null:
 		_play_button.disabled = not has_chart
 	if _stop_button != null:
@@ -690,6 +815,48 @@ func _update_position_label() -> void:
 		conductor.current_beat,
 		conductor.current_tick,
 	]
+
+
+func _update_preview_diagnostics_label() -> void:
+	if _preview_diagnostics_label == null:
+		return
+	if conductor == null:
+		_preview_diagnostics_label.text = "Preview diagnostics: no conductor"
+		return
+	var diagnostics: Dictionary = conductor.get_diagnostics() if conductor.has_method("get_diagnostics") else {}
+	if diagnostics.is_empty():
+		_preview_diagnostics_label.text = "Preview diagnostics: unavailable"
+		return
+	var failures := int(diagnostics.get("sample_play_failures_total", 0))
+	var skipped := int(diagnostics.get("sample_play_skipped_late_total", 0))
+	var active_polyphony := int(diagnostics.get("active_polyphony", 0))
+	var max_polyphony := int(diagnostics.get("max_polyphony", 0))
+	var timing_mode := "wall" if bool(diagnostics.get("sample_preview_wall_clock_timing", false)) else "delta"
+	var fallbacks_by_track: Dictionary = diagnostics.get("sample_preview_native_fallbacks_by_track", {}) if diagnostics.get("sample_preview_native_fallbacks_by_track", {}) is Dictionary else {}
+	var cache_hits_by_track: Dictionary = diagnostics.get("sample_preview_native_cache_hits_by_track", {}) if diagnostics.get("sample_preview_native_cache_hits_by_track", {}) is Dictionary else {}
+	var recent: Array = diagnostics.get("sample_preview_recent_native_fallbacks", []) if diagnostics.get("sample_preview_recent_native_fallbacks", []) is Array else []
+	var recent_keys := []
+	for index in range(min(4, recent.size())):
+		var entry: Dictionary = recent[recent.size() - 1 - index] if recent[recent.size() - 1 - index] is Dictionary else {}
+		recent_keys.append("%s@%s" % [str(entry.get("sample_key", "")), str(entry.get("tick", ""))])
+	var state := "playing" if _conductor_is_playing() else "idle"
+	_preview_diagnostics_label.text = "Preview diagnostics: %s/%s | voices %d/%d | play failures %d | skipped late %d | native hits %s | fallbacks %s | recent %s" % [
+		state,
+		timing_mode,
+		active_polyphony,
+		max_polyphony,
+		failures,
+		skipped,
+		str(cache_hits_by_track),
+		str(fallbacks_by_track),
+		", ".join(recent_keys) if not recent_keys.is_empty() else "-",
+	]
+
+
+func _conductor_is_playing() -> bool:
+	if conductor == null or not conductor.has_method("is_playing"):
+		return false
+	return bool(conductor.call("is_playing"))
 
 
 func _update_track_summary() -> void:
@@ -748,7 +915,7 @@ func _assign_default_preview_profile(update_status: bool) -> bool:
 	var profile := ResourceLoader.load(WEB_KIT_PROFILE_PATH)
 	if not (profile is PCSPlaybackProfile):
 		return false
-	conductor.playback_profile = profile
+	conductor.set_playback_profile(profile, false)
 	if update_status:
 		_set_status("Using generated Pocket Chordsmith Web Sound Kit profile for preview.")
 	return true
@@ -777,7 +944,7 @@ func _ensure_preview_audio_buses() -> void:
 	for bus_name in required:
 		if AudioServer.get_bus_index(str(bus_name)) == -1:
 			var tools = AudioBusTools.new()
-			var result: Dictionary = tools.create_missing_recommended_buses(true)
+			var result: Dictionary = tools.create_missing_recommended_buses(true, false)
 			if editor_interface != null:
 				editor_interface.get_resource_filesystem().scan()
 			var warnings: Array = result.get("warnings", [])

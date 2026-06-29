@@ -2,17 +2,17 @@
 
 This report records the checked-in Pocket Chordsmith web sound kit so addon releases and Godot Asset Library submissions stay explicit about size, generation source, and license expectations.
 
-Measured on 2026-06-28 from the default addon package selection rules in `tools/package_pocket_chordsmith_addon.gd`.
+Measured on 2026-06-30 from the default addon package selection rules in `tools/package_pocket_chordsmith_addon.gd`.
 
 ## Current Payload
 
 | Payload | Count | Bytes | Notes |
 | --- | ---: | ---: | --- |
-| Default addon package input | 102 files | 2,247,998 | Excludes `.uid`, `.import`, hidden files, and `tmp_*` files. |
-| `audio/web_kit/` | 51 files | 1,719,739 | 50 generated WAVs plus `pocket_chordsmith_web_kit_profile.tres`. |
-| Compressed addon ZIP estimate | 1 ZIP | 1,675,901 | Measured with the same file set using ZIP compression outside Godot. |
+| Default addon package input | 122 files | 3,004,225 | Excludes `.uid`, `.import`, hidden files, `_trace_compare/`, and `tmp_*` files. |
+| `audio/web_kit/` | 61 files | 2,265,227 | 60 generated WAVs plus `pocket_chordsmith_web_kit_profile.tres`. |
+| Compressed addon ZIP | 1 ZIP | about 2.06 MiB | Measured from `releases/godot-addon/pocket_chordsmith_godot_addon_1.1.8.zip` built by `tools/package_pocket_chordsmith_addon.gd`; exact bytes vary because this report is packaged inside the ZIP. |
 
-The web kit is intentionally bundled because it lets a new Godot project audition charts without finding third-party samples first. It is still a preview/onboarding kit, not a promise of full Pocket Chordsmith sound parity.
+The web kit is intentionally bundled because it lets a new Godot project audition charts without finding third-party samples first. Version 1.1.8 improves parity for western charts and Chordsmith performance settings, but this remains a preview/onboarding kit rather than a bit-identical WebAudio renderer.
 
 ## Included Preview WAVs
 
@@ -53,6 +53,7 @@ bass_warm_sub.wav
 bass_soft_upright.wav
 bass_rounded_triangle_bass.wav
 chord_tone.wav
+chord_saloon_piano.wav
 chord_felt_piano.wav
 chord_dusty_rhodes.wav
 chord_cassette_keys.wav
@@ -64,12 +65,21 @@ melody_tape_bell.wav
 melody_mellow_vibes.wav
 melody_mellow_sax.wav
 melody_muted_trumpet.wav
+melody_banjo.wav
+melody_harmonica.wav
+melody_cowboy_whistle.wav
+melody_trumpet.wav
+melody_saxophone.wav
 melody_pulse.wav
 melody_soft_pluck.wav
 guitar_chug.wav
 guitar_open.wav
 guitar_accent.wav
 guitar_scratch.wav
+guitar_western_twang_chug.wav
+guitar_western_twang_open.wav
+guitar_western_twang_accent.wav
+guitar_western_twang_scratch.wav
 warning_hit.wav
 reward_hit.wav
 victory_hit.wav

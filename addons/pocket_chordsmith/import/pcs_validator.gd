@@ -74,6 +74,8 @@ func validate_runtime_readiness(chart, playback_profile = null) -> Dictionary:
 	info["arrangement"] = chart.arrangement.duplicate()
 	info["event_count"] = chart.compiled_events.size()
 	info["event_counts_by_type"] = chart.get_event_count_by_type()
+	info["mix_volumes"] = chart.mix_volumes.duplicate()
+	info["performance_settings"] = chart.performance_settings.duplicate(true)
 	info["music_states"] = chart.music_states.keys()
 	info["has_slide_events"] = chart.has_slide_events()
 
@@ -133,6 +135,12 @@ func _validate_playback_profile(chart, playback_profile, warnings: Array[String]
 		warnings.append("Playback profile max_polyphony should be greater than zero.")
 	if playback_profile.mobile_safe and playback_profile.max_polyphony > 32:
 		warnings.append("Mobile-safe profile has max_polyphony above 32.")
+	if playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.PROCEDURAL_PREVIEW:
+		warnings.append("Profile is PROCEDURAL_PREVIEW. Use this for editor auditioning only; shipped gameplay should use STEM_SYNC or HYBRID with prepared audio assets.")
+	if bool(playback_profile.get("sample_preview_build_native_streams_during_playback")):
+		warnings.append("sample_preview_build_native_streams_during_playback is enabled. Dense charts can hitch while native tonal streams are generated; keep this off for gameplay and prewarm during a loading/import step instead.")
+	if bool(playback_profile.get("sample_preview_log_pitched_events")):
+		warnings.append("sample_preview_log_pitched_events is enabled. Dense charts can produce enough console output to stall preview timing; keep this off outside short diagnostics.")
 
 	if playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.STEM_SYNC:
 		var has_stems: bool = not playback_profile.stem_paths.is_empty() or not playback_profile.stem_sets.is_empty() or not chart.stem_sets.is_empty()
@@ -143,6 +151,8 @@ func _validate_playback_profile(chart, playback_profile, warnings: Array[String]
 		var has_hybrid_audio: bool = not playback_profile.stem_paths.is_empty() or not playback_profile.stem_sets.is_empty() or not playback_profile.drum_kit.is_empty() or not playback_profile.accent_streams.is_empty() or not playback_profile.event_sample_streams.is_empty()
 		if not has_hybrid_audio:
 			warnings.append("Profile is HYBRID, but no stems, drum kit, accent samples, or event samples are assigned.")
+		elif playback_profile.stem_paths.is_empty() and playback_profile.stem_sets.is_empty() and chart.stem_sets.is_empty() and playback_profile.sample_preview_tonal_enabled:
+			warnings.append("Profile uses HYBRID sample/native preview without stems. This is useful for authoring checks, but rendered stems are the recommended path when exact Chordsmith mix parity matters in a shipped game.")
 
 	var missing_sample_keys := _missing_drum_sample_keys(chart, playback_profile)
 	for key in missing_sample_keys:
@@ -159,8 +169,20 @@ func _validate_playback_profile(chart, playback_profile, warnings: Array[String]
 		warnings.append("State stem set '%s' is referenced but not assigned in playback_profile.stem_sets or chart.stem_sets." % key)
 	info["missing_state_stem_sets"] = missing_state_stems
 
-	if chart.has_slide_events() and playback_profile.sample_preview_enabled and playback_profile.sample_preview_tonal_enabled:
-		warnings.append("Chart includes bass/melody slide events. The sample preview preserves slide metadata but cannot reproduce continuous pitch glides; use stems or a native audio router for accurate slides.")
+	var slide_track_types := _slide_track_types(chart)
+	if not slide_track_types.is_empty() and playback_profile.sample_preview_enabled and playback_profile.sample_preview_tonal_enabled:
+		var native_bass_enabled := bool(playback_profile.get("sample_preview_native_bass_enabled"))
+		var native_melody_enabled := bool(playback_profile.get("sample_preview_native_melody_enabled"))
+		var approximate_slide_notes: Array[String] = []
+		if slide_track_types.has("bass") and not native_bass_enabled:
+			approximate_slide_notes.append("bass slides need sample_preview_native_bass_enabled for native bass-note rendering")
+		if slide_track_types.has("melody") and not native_melody_enabled:
+			approximate_slide_notes.append("melody slides still use stepped pitch updates")
+		if not approximate_slide_notes.is_empty():
+			warnings.append("Chart includes sample-preview slide events with approximation: %s. Use stems or a native audio router when exact melody slides matter." % "; ".join(approximate_slide_notes))
+
+	if _has_nonzero_melody_pan(chart) and playback_profile.sample_preview_enabled and playback_profile.sample_preview_tonal_enabled and not bool(playback_profile.get("sample_preview_native_melody_enabled")) and not playback_profile.sample_preview_pan_buses_enabled:
+		warnings.append("Chart includes non-centered melody pan, but sample_preview_pan_buses_enabled is off; use stems, pan preview buses, or a native audio router for accurate pan.")
 
 	if playback_profile.lookahead_ticks <= 0 and playback_profile.is_event_mode_enabled():
 		warnings.append("Playback profile lookahead_ticks is 0; sample preview hits will be triggered on the frame they become due.")
@@ -195,6 +217,28 @@ func _missing_drum_sample_keys(chart, playback_profile) -> Array[String]:
 		missing.append(str(key))
 	missing.sort()
 	return missing
+
+
+func _slide_track_types(chart) -> Array[String]:
+	var out: Array[String] = []
+	if chart == null:
+		return out
+	for event in chart.compiled_events:
+		var flags: Dictionary = event.get("flags", {})
+		if not bool(flags.get("slide", false)):
+			continue
+		var track_type := str(event.get("track_type", ""))
+		if not out.has(track_type):
+			out.append(track_type)
+	out.sort()
+	return out
+
+
+func _has_nonzero_melody_pan(chart) -> bool:
+	for event in chart.compiled_events:
+		if str(event.get("track_type", "")) == "melody" and abs(float(event.get("pan", 0.0))) > 0.001:
+			return true
+	return false
 
 
 func _has_any_drum_sample(playback_profile, candidates: Array[String]) -> bool:

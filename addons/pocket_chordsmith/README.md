@@ -2,7 +2,7 @@
 
 Pocket Chordsmith imports web-app JSON into compiled Godot resources, then drives runtime music callbacks through one lightweight conductor node.
 
-Current release: `1.1.7`, with lofi/chillhop and chip tune Pocket Audio profile metadata support.
+Current release: `1.1.8`, with improved Pocket Chordsmith-to-Godot sample-preview sound parity for western charts.
 
 License/status: MIT. The component license is `LICENSE` in this addon folder.
 See the repository root `LICENSES.md` for the full monorepo matrix.
@@ -19,6 +19,8 @@ Pipeline:
 Pocket Chordsmith JSON -> importer/schema migrator -> PCSChartResource -> PocketChordsmithConductor
 ```
 
+Pocket Chordsmith JSON and `PCS1:` share codes are chart/score data, not rendered stems. They let Godot compile timing, events, markers, and preview metadata. For shipped audio parity, import a Pocket DAW Godot Adaptive Pack or another prepared stem/sample bundle so Godot plays audio assets instead of rendering a full mix from text.
+
 Runtime rules:
 
 - Gameplay uses `PCSChartResource`, not full JSON.
@@ -33,8 +35,9 @@ Editor workflow:
 3. Import a Pocket Chordsmith JSON, paste raw JSON, paste a `PCS1:` share code, or click `Import DAW Pack` for a Pocket DAW Godot Adaptive Pack ZIP.
 4. Inspect the import report, sequence, sections, timeline, and event counts.
 5. Optional: click `Generate Web Sound Kit` to create Pocket Chordsmith-style drum/stinger WAVs and a HYBRID playback profile.
-6. Save the compiled chart as `.tres` or `.res`.
-7. Assign the chart and playback profile to `PocketChordsmithConductor` in a level or demo scene.
+6. Optional for dense text-only imports: click `Render Preview Audio` to bake visible WAV stems for each section and for the full-song preview from the current Godot preview kit before pressing `Play Preview`.
+7. Save the compiled chart as `.tres` or `.res`.
+8. Assign the chart and playback profile to `PocketChordsmithConductor` in a level or demo scene.
 
 Push-to-Godot workflow from the browser app:
 
@@ -54,11 +57,21 @@ Pocket DAW pack workflow:
 3. The addon extracts the pack under `res://music/pocket_chordsmith_packs/`, compiles the embedded Pocket Chordsmith source into a chart resource, and creates a `PCSPlaybackProfile` pointing at the rendered full mix, stems, and section loops.
 4. Press `Play Preview` to audition the rendered pack audio, then use the saved chart/profile resources on `PocketChordsmithConductor`.
 
+This DAW pack path is intentionally lighter for Godot than a text-only Chordsmith import: the expensive rendering work has already happened, and the addon mostly extracts files, compiles the chart, creates references, and routes audio through Godot buses.
+
 Headless import:
 
 ```text
 godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/import_daw_game_pack.gd -- --pack <godot-adaptive-pack.zip>
 ```
+
+Headless cached preview render for text-only Pocket Chordsmith imports:
+
+```text
+godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/render_pocket_chordsmith_preview_audio.gd -- --chart <chart.tres> --profile <profile.tres>
+```
+
+This creates preview/cache WAV stems under `res://music/pocket_chordsmith_generated/` by default and saves a generated `PCSPlaybackProfile` pointing at the full-song role stems. These generated WAVs are useful for editor preview stability and route through the usual Chordsmith music buses; use DAW-rendered packs or your own production stems for final shipped mix identity.
 
 Visual track building stays in the web app for now. Godot receives the exported JSON/share code, compiles it to a lightweight `PCSChartResource`, then uses the conductor for timing, states, markers, cues, and Godot-native audio routing. A future Godot visual editor should build on the compiled chart/section data instead of porting the whole browser app into runtime.
 
@@ -86,8 +99,7 @@ Master
   UI
 ```
 
-Existing buses are reused. Existing sends are reported as warnings instead of being overwritten.
-The guitar bus also gets a conservative native amp/cab-style preview chain when created: high-pass, distortion, EQ, low-pass, compression, and limiting.
+Existing buses are reused. Recommended sends are repaired, and the buses remain dry by default so you can tune instrument volumes, guitar tone, and ambience in Godot's native audio mixer.
 
 Runtime signal example:
 
