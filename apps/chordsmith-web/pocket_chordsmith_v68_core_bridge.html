@@ -26846,7 +26846,23 @@ function parseStandardMidi(buffer){
   const notes = [];
   const tempos = [];
   const timeSignatures = [];
+  const trackNames = [];
+  const keySignatures = [];
+  const lyrics = [];
+  const programChanges = [];
+  const controlChanges = [];
+  const pitchBends = [];
+  let sysexCount = 0;
   let tracksRead = 0;
+  const decodeMidiText = (bytes, start, len) => {
+    const chunk = bytes.slice(start, start + len);
+    try{
+      return new TextDecoder("utf-8").decode(chunk).replace(/\0/g, "").trim();
+    }catch(e){
+      return Array.from(chunk).map(b => b >= 32 && b <= 126 ? String.fromCharCode(b) : "").join("").trim();
+    }
+  };
+  const signedByte = (value) => value > 127 ? value - 256 : value;
 
   const readTrack = (trackBytes, trackIndex) => {
     const ref = {pos:0};
@@ -26890,6 +26906,14 @@ function parseStandardMidi(buffer){
           const numerator = trackBytes[start];
           const denominator = Math.pow(2, trackBytes[start + 1]);
           timeSignatures.push({tick, numerator, denominator, trackIndex});
+        } else if(metaType === 0x03 && len > 0){
+          const name = decodeMidiText(trackBytes, start, len);
+          if(name) trackNames.push({tick, trackIndex, name});
+        } else if(metaType === 0x05 && len > 0){
+          const text = decodeMidiText(trackBytes, start, len);
+          if(text) lyrics.push({tick, trackIndex, text});
+        } else if(metaType === 0x59 && len >= 2){
+          keySignatures.push({tick, trackIndex, sharpsFlats:signedByte(trackBytes[start]), minor:trackBytes[start + 1] === 1});
         }
         ref.pos = start + len;
         if(metaType === 0x2F) break;
@@ -26899,6 +26923,7 @@ function parseStandardMidi(buffer){
       if(status === 0xF0 || status === 0xF7){
         const len = readMidiVLQ(trackBytes, ref);
         ref.pos += len;
+        sysexCount++;
         continue;
       }
 
@@ -26914,6 +26939,12 @@ function parseStandardMidi(buffer){
         active.get(key).push({tick, velocity:d2, channel, note:d1});
       } else if(command === 0x80 || (command === 0x90 && d2 === 0)){
         closeNote(channel, d1, d2);
+      } else if(command === 0xC0){
+        programChanges.push({tick, trackIndex, channel, program:d1});
+      } else if(command === 0xB0){
+        controlChanges.push({tick, trackIndex, channel, controller:d1, value:d2});
+      } else if(command === 0xE0){
+        pitchBends.push({tick, trackIndex, channel, value:(((d2 << 7) | d1) - 8192)});
       }
     }
 
@@ -26940,7 +26971,7 @@ function parseStandardMidi(buffer){
     offset += length;
   }
 
-  return {format, trackCount, tracksRead, ticksPerQuarter, notes, tempos, timeSignatures};
+  return {format, trackCount, tracksRead, ticksPerQuarter, notes, tempos, timeSignatures, trackNames, keySignatures, lyrics, programChanges, controlChanges, pitchBends, sysexCount};
 }
 function firstMidiEvent(list){
   const events = (list || []).map((ev, idx) => Object.assign({__order:idx}, ev));
@@ -26954,11 +26985,124 @@ function quantizeMidiTickToStep(tick, ticksPerQuarter, resolution=activeResoluti
   const stepTicks = ticksPerQuarter / resolution;
   return Math.round(tick / stepTicks);
 }
+function midiNoteIsGuide(note){
+  if(!note || !Number.isFinite(note.note) || note.note < 0 || note.note > 127) return true;
+  return note.channel !== 9 && asInt(note.velocity, 0) <= 2;
+}
+function midiTimeSignatureForImport(parsed, currentState=state){
+  const timeSig = firstMidiEvent(parsed?.timeSignatures || []);
+  if(timeSig && Number.isFinite(timeSig.numerator) && Number.isFinite(timeSig.denominator) && timeSig.denominator > 0){
+    return {numerator:timeSig.numerator, denominator:timeSig.denominator, source:"midi"};
+  }
+  const fallback = safeChoice(asInt(currentState?.timeSig, 4), [3,4], 4);
+  return {numerator:fallback, denominator:4, source:"state"};
+}
+function midiBarTicks(parsed, currentState=state){
+  const sig = midiTimeSignatureForImport(parsed, currentState);
+  return Math.max(1, Math.round((parsed?.ticksPerQuarter || MIDI_TICKS_PER_QUARTER) * 4 * (sig.numerator / sig.denominator)));
+}
+function detectMidiImportTiming(parsed, currentState=state){
+  const ticksPerQuarter = parsed?.ticksPerQuarter || MIDI_TICKS_PER_QUARTER;
+  const barTicks = midiBarTicks(parsed, currentState);
+  const notes = Array.isArray(parsed?.notes) ? parsed.notes : [];
+  let firstAudibleTick = null;
+  let ignoredGuideNotes = 0;
+  notes.forEach(note => {
+    if(midiNoteIsGuide(note)){
+      ignoredGuideNotes++;
+      return;
+    }
+    const tick = Math.max(0, asInt(note.startTick, 0));
+    firstAudibleTick = firstAudibleTick === null ? tick : Math.min(firstAudibleTick, tick);
+  });
+  const tolerance = Math.max(24, ticksPerQuarter / 16);
+  let leadingTrimBars = 0;
+  if(firstAudibleTick !== null && firstAudibleTick >= barTicks){
+    const nearestBars = Math.max(1, Math.round(firstAudibleTick / barTicks));
+    const boundary = nearestBars * barTicks;
+    if(Math.abs(firstAudibleTick - boundary) <= tolerance) leadingTrimBars = nearestBars;
+  }
+  return {
+    sourceStartTick:leadingTrimBars * barTicks,
+    leadingTrimBars,
+    firstAudibleTick:firstAudibleTick ?? 0,
+    barTicks,
+    resolution:activeResolution(),
+    ignoredGuideNotes
+  };
+}
+function normalizedMidiNotesForImport(parsed, timing){
+  const sourceStartTick = timing?.sourceStartTick || 0;
+  return (parsed?.notes || [])
+    .filter(note => !midiNoteIsGuide(note))
+    .map(note => Object.assign({}, note, {
+      rawStartTick:note.startTick,
+      rawEndTick:note.endTick,
+      startTick:(note.startTick || 0) - sourceStartTick,
+      endTick:(note.endTick || note.startTick || 0) - sourceStartTick
+    }))
+    .filter(note => note.endTick > 0);
+}
+function chooseMidiImportResolution(notes, ticksPerQuarter){
+  const candidates = [1,2,4,8,16];
+  const onsets = (notes || [])
+    .map(note => asNumber(note.startTick, 0))
+    .filter(tick => Number.isFinite(tick) && tick >= -ticksPerQuarter);
+  if(!onsets.length) return activeResolution();
+  const scores = candidates.map(resolution => {
+    const stepTicks = ticksPerQuarter / resolution;
+    let fit = 0;
+    let error = 0;
+    const steps = new Set();
+    onsets.forEach(tick => {
+      const rounded = Math.round(tick / stepTicks);
+      const dist = Math.abs(tick - rounded * stepTicks);
+      const tolerance = Math.max(8, Math.min(ticksPerQuarter / 16, stepTicks * 0.26));
+      if(dist <= tolerance) fit++;
+      error += dist / stepTicks;
+      steps.add(rounded);
+    });
+    const fitRatio = fit / onsets.length;
+    const collisionRatio = steps.size / onsets.length;
+    return {resolution, fitRatio, avgError:error / onsets.length, collisionRatio};
+  });
+  const usable = scores.filter(score => score.fitRatio >= 0.86 && score.avgError <= 0.18);
+  if(usable.length) return usable[0].resolution;
+  scores.sort((a,b) => b.fitRatio - a.fitRatio || a.avgError - b.avgError || b.collisionRatio - a.collisionRatio || a.resolution - b.resolution);
+  return scores[0]?.resolution || activeResolution();
+}
 function midiDrumTarget(note){
   if([35,36].includes(note)) return {track:"kick", level:1};
   if([37,38,39,40].includes(note)) return {track:"snare", level:1};
   if([42,44].includes(note)) return {track:"hat", level:1};
   if([46].includes(note)) return {track:"hat", level:2};
+  if([51,53,59].includes(note)) return {track:"hat", level:2};
+  if([54].includes(note)) return {track:"hat", level:1};
+  if([49,55,57].includes(note)) return {track:"hat", level:2};
+  return null;
+}
+function midiProgramForChannel(parsed, channel, tick=Infinity){
+  const changes = (parsed?.programChanges || [])
+    .filter(ev => ev.channel === channel && ev.tick <= tick)
+    .sort((a,b) => a.tick - b.tick || a.trackIndex - b.trackIndex);
+  return changes.length ? changes[changes.length - 1].program : null;
+}
+function midiPanForChannel(parsed, channel){
+  const pans = (parsed?.controlChanges || []).filter(ev => ev.channel === channel && ev.controller === 10);
+  if(!pans.length) return null;
+  const value = pans[pans.length - 1].value;
+  return clamp(((value / 127) * 2) - 1, -1, 1);
+}
+function midiProgramSuggestsBass(program){
+  return Number.isFinite(program) && program >= 32 && program <= 39;
+}
+function midiProgramSuggestsGuitar(program){
+  return Number.isFinite(program) && program >= 24 && program <= 31;
+}
+function midiProgramToMelodyInstrument(program){
+  if(program === 61 || program === 60 || program === 62 || program === 63) return "trumpet";
+  if((program >= 16 && program <= 23) || (program >= 0 && program <= 7)) return "soft";
+  if(midiProgramSuggestsGuitar(program)) return "pulse";
   return null;
 }
 function midiToBassManualIndex(midi){
@@ -27012,48 +27156,135 @@ function applyHeldMidiLength(note, startStep, targetTrack, holdTrack, maxSteps, 
     holdTrack[s] = true;
   }
 }
-function likelyChordForPitchClasses(pitchClasses){
-  const pcs = uniquePitchClasses(pitchClasses || []);
-  if(pcs.length < 3 || !state.availableChords.length) return null;
-  let best = null;
-  state.availableChords.forEach(ch => {
-    const chordPcs = uniquePitchClasses(ch.intervals.map(i => ch.root + i));
-    const rootPresent = pcs.includes(((ch.root % 12) + 12) % 12);
-    const hits = chordPcs.filter(pc => pcs.includes(pc)).length;
-    const extras = pcs.filter(pc => !chordPcs.includes(pc)).length;
-    const score = hits - extras * 0.35 + (rootPresent ? 0.5 : 0);
-    if(rootPresent && hits >= 3 && (!best || score > best.score)) best = {ch, score, hits, extras};
+function midiKeySignatureToProjectKey(sig){
+  if(!sig) return null;
+  const majorBySf = {"-7":"Cb","-6":"Gb","-5":"Db","-4":"Ab","-3":"Eb","-2":"Bb","-1":"F","0":"C","1":"G","2":"D","3":"A","4":"E","5":"B","6":"F#","7":"C#"};
+  const minorBySf = {"-7":"Ab","-6":"Eb","-5":"Bb","-4":"F","-3":"C","-2":"G","-1":"D","0":"A","1":"E","2":"B","3":"F#","4":"C#","5":"G#","6":"D#","7":"A#"};
+  const sf = clamp(asInt(sig.sharpsFlats, 0), -7, 7);
+  return {key:(sig.minor ? minorBySf[sf] : majorBySf[sf]) || "C", scale:sig.minor ? "minor" : "major"};
+}
+function inferMidiKeyScale(notes, parsed){
+  const explicit = midiKeySignatureToProjectKey(firstMidiEvent(parsed?.keySignatures || []));
+  if(explicit && NOTES.includes(explicit.key)) return explicit;
+  const pitchWeights = new Array(12).fill(0);
+  const bassWeights = new Array(12).fill(0);
+  (notes || []).forEach(note => {
+    if(note.channel === 9 || midiNoteIsGuide(note)) return;
+    const pc = ((note.note % 12) + 12) % 12;
+    const duration = Math.max(1, (note.endTick || note.startTick || 0) - (note.startTick || 0));
+    const weight = duration * Math.max(8, asInt(note.velocity, 64)) / 64;
+    pitchWeights[pc] += weight;
+    if(note.note < 60) bassWeights[pc] += weight * 1.35;
   });
-  return best && best.score >= 2.6 ? best.ch : null;
+  if(!pitchWeights.some(Boolean)) return {key:state.key, scale:state.scale};
+  const modes = [
+    {scale:"major", intervals:[0,2,4,5,7,9,11]},
+    {scale:"minor", intervals:[0,2,3,5,7,8,10]}
+  ];
+  let best = null;
+  NOTES.forEach((key, root) => {
+    modes.forEach(mode => {
+      const scalePcs = mode.intervals.map(i => (root + i) % 12);
+      let score = bassWeights[root] * 1.6 + pitchWeights[root] * 0.5;
+      pitchWeights.forEach((weight, pc) => {
+        score += scalePcs.includes(pc) ? weight : -weight * 0.42;
+      });
+      if(!best || score > best.score) best = {key, scale:mode.scale, score};
+    });
+  });
+  return best ? {key:best.key, scale:best.scale} : {key:state.key, scale:state.scale};
+}
+function midiChordCandidatesForCurrentType(){
+  const qualities = state.chordType === "seventh"
+    ? [
+        {quality:"maj", intervals:[0,4,7,11]},
+        {quality:"min", intervals:[0,3,7,10]},
+        {quality:"dim", intervals:[0,3,6,10]}
+      ]
+    : [
+        {quality:"maj", intervals:[0,4,7]},
+        {quality:"min", intervals:[0,3,7]},
+        {quality:"dim", intervals:[0,3,6]},
+        {quality:"sus2", intervals:[0,2,7]},
+        {quality:"sus4", intervals:[0,5,7]}
+      ];
+  const out = [];
+  for(let root = 0; root < 12; root++){
+    qualities.forEach(q => out.push({root, quality:q.quality, intervals:q.intervals, pcs:q.intervals.map(i => (root + i) % 12)}));
+  }
+  return out;
+}
+function mapMidiChordCandidateToPocketChord(candidate){
+  if(!candidate || !state.availableChords.length) return null;
+  const exact = state.availableChords.find(ch => ((ch.root % 12) + 12) % 12 === candidate.root && (ch.quality === candidate.quality || candidate.quality.startsWith(ch.quality)));
+  if(exact) return exact;
+  const rootOnly = state.availableChords.find(ch => ((ch.root % 12) + 12) % 12 === candidate.root);
+  if(rootOnly) return rootOnly;
+  return null;
+}
+function likelyMidiChordForWeights(weights, bassWeights){
+  if(!weights || !weights.some(Boolean)) return null;
+  const total = weights.reduce((a,b)=>a+b, 0);
+  if(total <= 0) return null;
+  let best = null;
+  midiChordCandidatesForCurrentType().forEach(candidate => {
+    let chordToneWeight = 0;
+    let extraWeight = 0;
+    weights.forEach((weight, pc) => {
+      if(!weight) return;
+      if(candidate.pcs.includes(pc)) chordToneWeight += weight;
+      else extraWeight += weight;
+    });
+    const thirdPresent = candidate.pcs.slice(1).some(pc => weights[pc] > 0);
+    const rootWeight = weights[candidate.root] || 0;
+    const bassRoot = bassWeights[candidate.root] || 0;
+    const score = chordToneWeight - extraWeight * 0.55 + rootWeight * 0.35 + bassRoot * 0.8 + (thirdPresent ? total * 0.12 : -total * 0.25);
+    if(chordToneWeight >= total * 0.58 && (!best || score > best.score)) best = {candidate, score};
+  });
+  return best && best.score > 0 ? mapMidiChordCandidateToPocketChord(best.candidate) : null;
 }
 function tryImportChordProgressionFromMidi(notes, ticksPerQuarter, sectionId, maxSteps, startStepOffset=0){
-  const stepGroups = new Map();
-  notes.forEach(note => {
-    if(note.channel === 9 || note.note < 48) return;
-    const step = quantizeMidiTickToStep(note.startTick, ticksPerQuarter, activeResolution()) - startStepOffset;
-    if(step < 0 || step >= maxSteps) return;
-    if(!stepGroups.has(step)) stepGroups.set(step, []);
-    stepGroups.get(step).push(note.note % 12);
-  });
   const nextProgression = state[sectionPropKey("progression", sectionId)].slice();
-  let matched = 0;
+  let updated = 0;
+  let carried = 0;
+  let empty = 0;
+  let previousChord = null;
+  const sectionStartTick = startStepOffset * (ticksPerQuarter / activeResolution());
+  const stepTicks = ticksPerQuarter / activeResolution();
+  const barTickLength = stepsPerBar() * stepTicks;
   for(let bar = 0; bar < sectionBarCount(sectionId); bar++){
-    const start = bar * stepsPerBar();
-    let bestCluster = [];
-    for(let step = start; step < Math.min(start + activeResolution(), maxSteps); step++){
-      const cluster = stepGroups.get(step) || [];
-      if(uniquePitchClasses(cluster).length > uniquePitchClasses(bestCluster).length) bestCluster = cluster;
+    const barStart = sectionStartTick + bar * barTickLength;
+    const barEnd = barStart + barTickLength;
+    const weights = new Array(12).fill(0);
+    const bassWeights = new Array(12).fill(0);
+    (notes || []).forEach(note => {
+      if(note.channel === 9 || midiNoteIsGuide(note) || note.note < 36) return;
+      const start = asNumber(note.startTick, 0);
+      const end = Math.max(start + 1, asNumber(note.endTick, start + 1));
+      const overlap = Math.max(0, Math.min(end, barEnd) - Math.max(start, barStart));
+      if(overlap <= 0) return;
+      const pc = ((note.note % 12) + 12) % 12;
+      const velocity = Math.max(8, asInt(note.velocity, 64));
+      const weight = overlap * (velocity / 64);
+      weights[pc] += weight;
+      if(note.note < 60) bassWeights[pc] += weight * 1.4;
+    });
+    const chord = likelyMidiChordForWeights(weights, bassWeights);
+    if(chord){
+      nextProgression[bar] = chord;
+      previousChord = chord;
+      updated++;
+    } else if(previousChord){
+      nextProgression[bar] = previousChord;
+      carried++;
+    } else {
+      empty++;
     }
-    const chord = likelyChordForPitchClasses(bestCluster);
-    if(!chord) return false;
-    nextProgression[bar] = chord;
-    matched++;
   }
-  if(matched > 0){
+  if(updated > 0 || carried > 0){
     state[sectionPropKey("progression", sectionId)] = nextProgression;
-    return true;
   }
-  return false;
+  return {updated, carried, empty, changed:updated > 0 || carried > 0};
 }
 function setMidiImportSummary(text){
   if(els.midiImportSummary){
@@ -27110,6 +27341,23 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
   state.timeSig = timeSig && timeSig.numerator === 3 ? 3 : 4;
   if(els.timeSigSelect) els.timeSigSelect.value = String(state.timeSig);
 
+  const timing = detectMidiImportTiming(parsed, state);
+  const normalizedNotes = normalizedMidiNotesForImport(parsed, timing);
+  const previousResolution = activeResolution();
+  const importResolution = chooseMidiImportResolution(normalizedNotes, parsed.ticksPerQuarter);
+  timing.resolution = importResolution;
+  if(importResolution !== previousResolution){
+    state.resolution = importResolution;
+    state.lastAdvancedResolution = importResolution;
+    if(els.resolutionSelect) els.resolutionSelect.value = String(state.resolution);
+  }
+  const inferredKey = inferMidiKeyScale(normalizedNotes, parsed);
+  if(inferredKey && NOTES.includes(inferredKey.key)){
+    state.key = inferredKey.key;
+    state.scale = safeChoice(inferredKey.scale, ["major","minor"], state.scale);
+    if(els.keySelect) els.keySelect.value = state.key;
+    if(els.scaleSelect) els.scaleSelect.value = state.scale;
+  }
   state.melodyPitchMode = "chromatic";
   state.bassMode = "manual";
   state.currentStep = -1;
@@ -27117,8 +27365,8 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
   state.currentSection = "A";
   generateAvailableChords();
 
-  const latestTick = parsed.notes.reduce((m,n) => Math.max(m, n.endTick || n.startTick || 0), 0);
-  const estimatedBars = latestTick ? Math.ceil(latestTick / (parsed.ticksPerQuarter * state.timeSig)) : 1;
+  const latestTick = normalizedNotes.reduce((m,n) => Math.max(m, n.endTick || n.startTick || 0), 0);
+  const estimatedBars = latestTick ? Math.ceil(latestTick / timing.barTicks) : 1;
   const maxImportBars = SECTION_IDS.length * MAX_BARS;
   const importBars = clamp(estimatedBars, 1, maxImportBars);
   const usedSectionCount = clamp(Math.ceil(importBars / MAX_BARS), 1, SECTION_IDS.length);
@@ -27135,12 +27383,15 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
   let imported = 0;
   let skipped = 0;
   let drumImported = 0;
+  let drumSkipped = 0;
   let bassImported = 0;
   let melodyImported = 0;
   let melodyCollapsed = 0;
   let outOfRangeSkipped = 0;
   let highestMelodyLaneUsed = 0;
   const melodyTrackCount = MAX_MELODY_TRACKS;
+  const laneProgramCounts = Array.from({length:melodyTrackCount}, () => new Map());
+  const lanePanValues = Array.from({length:melodyTrackCount}, () => []);
   const routeByStep = (globalStep) => {
     if(globalStep < 0 || globalStep >= maxGlobalSteps) return null;
     const sectionIndex = Math.floor(globalStep / sectionSteps);
@@ -27153,14 +27404,14 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
   };
 
   const pitchedByGlobalStep = new Map();
-  parsed.notes.forEach(note => {
+  normalizedNotes.forEach(note => {
     const globalStep = quantizeMidiTickToStep(note.startTick, parsed.ticksPerQuarter, activeResolution());
     const route = routeByStep(globalStep);
     if(!route){ skipped++; outOfRangeSkipped++; return; }
     const data = sections[route.sectionId];
     if(note.channel === 9){
       const drum = midiDrumTarget(note.note);
-      if(!drum){ skipped++; return; }
+      if(!drum){ skipped++; drumSkipped++; return; }
       data.grid[drum.track][route.localStep] = mergeBeatLevel(data.grid[drum.track][route.localStep], drum.level);
       imported++; drumImported++;
       return;
@@ -27171,7 +27422,10 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
 
   pitchedByGlobalStep.forEach((items, globalStep) => {
     const sortedLow = items.slice().sort((a,b) => a.note.note - b.note.note || a.note.startTick - b.note.startTick);
-    const bassItem = sortedLow.find(item => item.note.note < 64) || null;
+    const bassItem = sortedLow.find(item => {
+      const program = midiProgramForChannel(parsed, item.note.channel, item.note.rawStartTick ?? item.note.startTick);
+      return midiProgramSuggestsBass(program) && item.note.note <= 76;
+    }) || sortedLow.find(item => item.note.note < 64) || null;
     if(bassItem){
       const data = sections[bassItem.route.sectionId];
       const existing = data.bassCandidates.get(bassItem.route.localStep);
@@ -27187,6 +27441,10 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
       const data = sections[item.route.sectionId];
       const existing = data.melodyCandidates[lane].get(item.route.localStep);
       if(!existing || item.note.note > existing.note.note) data.melodyCandidates[lane].set(item.route.localStep, item);
+      const program = midiProgramForChannel(parsed, item.note.channel, item.note.rawStartTick ?? item.note.startTick);
+      if(Number.isFinite(program)) laneProgramCounts[lane].set(program, (laneProgramCounts[lane].get(program) || 0) + 1);
+      const pan = midiPanForChannel(parsed, item.note.channel);
+      if(pan !== null) lanePanValues[lane].push(pan);
       highestMelodyLaneUsed = Math.max(highestMelodyLaneUsed, lane + 1);
     });
   });
@@ -27216,8 +27474,19 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
   const importedMelodyTrackCount = clamp(highestMelodyLaneUsed || 1, 1, melodyTrackCount);
   const defaultImportInstruments = ["pulse", "soft", "synth", "bell", "pulse", "soft"];
   const defaultImportPans = importedMelodyTrackCount === 1 ? [0] : [-0.55, 0.55, -0.32, 0.32, -0.12, 0.12];
+  for(let lane = 0; lane < importedMelodyTrackCount; lane++){
+    const programs = Array.from(laneProgramCounts[lane].entries()).sort((a,b) => b[1] - a[1]);
+    const instrument = midiProgramToMelodyInstrument(programs[0]?.[0]);
+    if(instrument && melodyInstrumentIds().includes(instrument)) defaultImportInstruments[lane] = instrument;
+    if(lanePanValues[lane].length){
+      defaultImportPans[lane] = clamp(lanePanValues[lane].reduce((a,b)=>a+b, 0) / lanePanValues[lane].length, -1, 1);
+    }
+  }
 
   let progressionSections = 0;
+  let progressionBarsUpdated = 0;
+  let progressionBarsCarried = 0;
+  let progressionBarsEmpty = 0;
   SECTION_IDS.forEach((sectionId, sectionIndex) => {
     const data = sections[sectionId];
     state[sectionPropKey("grid", sectionId)] = data.grid;
@@ -27238,8 +27507,11 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
     state[sectionPropKey("melodyTuplets", sectionId)] = data.melodyTuplets.slice(0, importedMelodyTrackCount);
     if(sectionIndex < usedSectionCount){
       const startStepOffset = sectionIndex * sectionSteps;
-      const progressionImported = tryImportChordProgressionFromMidi(parsed.notes, parsed.ticksPerQuarter, sectionId, visibleSectionSteps(sectionId), startStepOffset);
-      if(progressionImported) progressionSections++;
+      const progressionImported = tryImportChordProgressionFromMidi(normalizedNotes, parsed.ticksPerQuarter, sectionId, visibleSectionSteps(sectionId), startStepOffset);
+      if(progressionImported.changed) progressionSections++;
+      progressionBarsUpdated += progressionImported.updated || 0;
+      progressionBarsCarried += progressionImported.carried || 0;
+      progressionBarsEmpty += progressionImported.empty || 0;
     }
     clearInvalidGridTuplets(sectionId);
     clearInvalidMelodyTuplets(sectionId);
@@ -27257,7 +27529,15 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
   const rangeNote = outOfRangeSkipped ? ` (${outOfRangeSkipped} events beyond section limit)` : "";
   const collapseNote = melodyCollapsed ? ` ${melodyCollapsed} extra simultaneous melody notes were collapsed beyond ${MAX_MELODY_TRACKS} tracks.` : "";
   const warningNote = truncatedBars ? " Warning: this MIDI is longer than the current A-H arrangement capacity, so it was truncated." : "";
-  const summary = `Imported ${fileName}. BPM: ${foundBpm ? foundBpm + (foundBpm !== state.bpm ? " -> " + state.bpm : "") : "not found, kept " + state.bpm}. Time: ${sigNote}. Format: ${parsed.format}. Tracks read: ${parsed.tracksRead}/${parsed.trackCount}. ${lengthNote} Notes imported: ${imported} (${drumImported} drums, ${bassImported} bass, ${melodyImported} melody across ${importedMelodyTrackCount} track${importedMelodyTrackCount === 1 ? "" : "s"}). Skipped: ${skipped}${rangeNote}.${collapseNote} Chords: ${progressionSections ? "updated in " + progressionSections + " section" + (progressionSections === 1 ? "" : "s") : "unchanged"}. Guitar: not generated; use Fill Guitar From Chords if you want accompaniment.${warningNote}`;
+  const trimNote = timing.leadingTrimBars ? `Trimmed ${timing.leadingTrimBars} pre-roll bar${timing.leadingTrimBars === 1 ? "" : "s"}.` : "No pre-roll trim.";
+  const resolutionNote = importResolution !== previousResolution ? `Resolution auto-set to ${importResolution}×.` : `Resolution kept at ${importResolution}×.`;
+  const sourceBarsNote = `Approx source bars after trim: ${estimatedBars}.`;
+  const drumNote = `Drums mapped/skipped: ${drumImported}/${drumSkipped}.`;
+  const guideNote = timing.ignoredGuideNotes ? `Ignored ${timing.ignoredGuideNotes} guide/near-silent notes.` : "No guide/near-silent notes ignored.";
+  const keyMeta = firstMidiEvent(parsed.keySignatures || []);
+  const metadataNote = `Metadata: ${keyMeta ? "key signature used" : "key inferred"} (${state.key} ${state.scale}); lyrics ${parsed.lyrics?.length || 0}; program changes ${parsed.programChanges?.length || 0}; pitch bends ${parsed.pitchBends?.length || 0} ignored; CCs ${parsed.controlChanges?.length || 0}; SysEx ${parsed.sysexCount || 0}.`;
+  const chordNote = progressionSections ? `Chords: updated ${progressionBarsUpdated} bar${progressionBarsUpdated === 1 ? "" : "s"} in ${progressionSections} section${progressionSections === 1 ? "" : "s"}${progressionBarsCarried ? `, carried ${progressionBarsCarried}` : ""}${progressionBarsEmpty ? `, left ${progressionBarsEmpty} blank/existing` : ""}.` : `Chords: unchanged${progressionBarsEmpty ? ` (${progressionBarsEmpty} blank/no-harmony bar${progressionBarsEmpty === 1 ? "" : "s"})` : ""}.`;
+  const summary = `Imported ${fileName}. BPM: ${foundBpm ? foundBpm + (foundBpm !== state.bpm ? " -> " + state.bpm : "") : "not found, kept " + state.bpm}. Time: ${sigNote}. ${trimNote} ${resolutionNote} ${sourceBarsNote} Format: ${parsed.format}. Tracks read: ${parsed.tracksRead}/${parsed.trackCount}. ${lengthNote} Notes imported: ${imported} (${drumImported} drums, ${bassImported} bass, ${melodyImported} melody across ${importedMelodyTrackCount} track${importedMelodyTrackCount === 1 ? "" : "s"}). Skipped: ${skipped}${rangeNote}. ${drumNote} ${guideNote}${collapseNote} ${metadataNote} ${chordNote} Guitar: not generated; use Fill Guitar From Chords if you want accompaniment.${warningNote}`;
   setMidiImportSummary(summary);
   markProjectDirty();
   setStatus(summary);

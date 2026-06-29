@@ -56,6 +56,65 @@ async function importFixtureThroughSettings(page, fixturePath) {
   return fixture;
 }
 
+function vlq(value) {
+  let buffer = value & 0x7f;
+  const bytes = [];
+  while ((value >>= 7)) {
+    buffer <<= 8;
+    buffer |= (value & 0x7f) | 0x80;
+  }
+  while (true) {
+    bytes.push(buffer & 0xff);
+    if (buffer & 0x80) buffer >>= 8;
+    else break;
+  }
+  return bytes;
+}
+
+function asciiBytes(text) {
+  return Array.from(text).map((char) => char.charCodeAt(0));
+}
+
+function buildMidi(events, { ppq = 480, format = 0 } = {}) {
+  const sorted = events.slice().sort((a, b) => a.tick - b.tick);
+  const track = [];
+  let lastTick = 0;
+  for (const event of sorted) {
+    track.push(...vlq(event.tick - lastTick), ...event.bytes);
+    lastTick = event.tick;
+  }
+  track.push(0x00, 0xff, 0x2f, 0x00);
+  const header = [
+    ...asciiBytes("MThd"),
+    0x00,
+    0x00,
+    0x00,
+    0x06,
+    0x00,
+    format,
+    0x00,
+    0x01,
+    (ppq >> 8) & 0xff,
+    ppq & 0xff,
+  ];
+  return new Uint8Array([
+    ...header,
+    ...asciiBytes("MTrk"),
+    (track.length >> 24) & 0xff,
+    (track.length >> 16) & 0xff,
+    (track.length >> 8) & 0xff,
+    track.length & 0xff,
+    ...track,
+  ]);
+}
+
+function noteEvents(tick, channel, note, velocity, duration = 120) {
+  return [
+    { tick, bytes: [0x90 | channel, note, velocity] },
+    { tick: tick + duration, bytes: [0x80 | channel, note, 0] },
+  ];
+}
+
 test("loads the main app controls", async ({ page }) => {
   await expect(page).toHaveURL(/pocket_chordsmith_v68_core_bridge\.html/);
   await expect(
@@ -97,6 +156,127 @@ test("settings modal opens import and handoff tools", async ({ page }) => {
   await expect(page.locator("#pocketAudioCoreStatus")).toContainText(
     "Pocket Audio Core",
   );
+});
+
+test("MIDI import trims one-bar pre-roll, auto-selects resolution, maps drums, and ignores guide notes", async ({
+  page,
+}) => {
+  const midi = buildMidi([
+    { tick: 0, bytes: [0xff, 0x51, 0x03, 0x08, 0xcd, 0x9b] },
+    { tick: 0, bytes: [0xff, 0x03, 0x08, ...asciiBytes("KATARINA")] },
+    { tick: 0, bytes: [0xc0, 0x00] },
+    { tick: 0, bytes: [0xb0, 0x0a, 0x20] },
+    { tick: 0, bytes: [0xe0, 0x00, 0x40] },
+    { tick: 0, bytes: [0xff, 0x05, 0x02, ...asciiBytes("la")] },
+    ...noteEvents(1920, 9, 36, 105, 60),
+    ...noteEvents(1920, 9, 51, 96, 60),
+    ...noteEvents(2040, 9, 54, 72, 60),
+    ...noteEvents(2160, 9, 49, 112, 60),
+    ...noteEvents(2000, 15, 76, 1, 120),
+    ...noteEvents(3840, 0, 60, 86, 960),
+    ...noteEvents(3840, 0, 64, 82, 960),
+    ...noteEvents(3840, 0, 67, 80, 960),
+  ]);
+
+  const result = await page.evaluate((bytes) => {
+    state.uiMode = "advanced";
+    state.resolution = 1;
+    state.lastAdvancedResolution = 1;
+    if (els.uiModeSelect) els.uiModeSelect.value = "advanced";
+    if (els.resolutionSelect) els.resolutionSelect.value = "1";
+    const input = new Uint8Array(bytes);
+    const parsed = parseStandardMidi(input.buffer);
+    const timing = detectMidiImportTiming(parsed, state);
+    importParsedMidiToProject(parsed, "synthetic-pre-roll.mid");
+    return {
+      timing,
+      resolution: state.resolution,
+      sectionBarsA: state.sectionBars.A,
+      kick0: state.gridA.kick[0],
+      hat0: state.gridA.hat[0],
+      hat1: state.gridA.hat[1],
+      hat2: state.gridA.hat[2],
+      firstMelodyTrack: state.melodyTracksA[0].slice(0, 16),
+      summary: els.midiImportSummary.textContent,
+      progressionNames: state.progressionA.map((ch) => ch && ch.name),
+    };
+  }, Array.from(midi));
+
+  expect(result.timing.sourceStartTick).toBe(1920);
+  expect(result.timing.leadingTrimBars).toBe(1);
+  expect(result.resolution).toBe(4);
+  expect(result.sectionBarsA).toBe(2);
+  expect(result.kick0).toBe(1);
+  expect(result.hat0).toBe(2);
+  expect(result.hat1).toBe(1);
+  expect(result.hat2).toBe(2);
+  expect(result.firstMelodyTrack.every((note) => note === null)).toBe(true);
+  expect(result.summary).toContain("Trimmed 1 pre-roll bar");
+  expect(result.summary).toContain("Resolution auto-set to 4×");
+  expect(result.summary).toContain("Approx source bars after trim: 2");
+  expect(result.summary).toContain("Drums mapped/skipped: 4/0");
+  expect(result.summary).toContain("Ignored 1 guide/near-silent notes");
+  expect(result.summary).toContain("lyrics 1");
+  expect(result.summary).toContain("program changes 1");
+  expect(result.summary).toContain("pitch bends 1 ignored");
+  expect(result.summary).toContain("CCs 1");
+  expect(result.summary).toContain("Chords: updated");
+});
+
+test("MIDI timing normalization does not trim pickups or old tick-zero files", async ({
+  page,
+}) => {
+  const pickupMidi = buildMidi([
+    { tick: 0, bytes: [0xff, 0x51, 0x03, 0x07, 0xa1, 0x20] },
+    ...noteEvents(960, 0, 64, 84, 120),
+    ...noteEvents(1920, 9, 36, 96, 60),
+  ]);
+  const simpleMidi = buildMidi([
+    { tick: 0, bytes: [0xff, 0x51, 0x03, 0x07, 0xa1, 0x20] },
+    ...noteEvents(0, 0, 60, 84, 240),
+    ...noteEvents(480, 9, 38, 96, 60),
+  ]);
+
+  const result = await page.evaluate(
+    ({ pickupBytes, simpleBytes }) => {
+      state.uiMode = "advanced";
+      state.timeSig = 4;
+      const pickupParsed = parseStandardMidi(
+        new Uint8Array(pickupBytes).buffer,
+      );
+      const simpleParsed = parseStandardMidi(
+        new Uint8Array(simpleBytes).buffer,
+      );
+      return {
+        pickup: detectMidiImportTiming(pickupParsed, state),
+        simple: detectMidiImportTiming(simpleParsed, state),
+      };
+    },
+    { pickupBytes: Array.from(pickupMidi), simpleBytes: Array.from(simpleMidi) },
+  );
+
+  expect(result.pickup.sourceStartTick).toBe(0);
+  expect(result.pickup.leadingTrimBars).toBe(0);
+  expect(result.simple.sourceStartTick).toBe(0);
+  expect(result.simple.leadingTrimBars).toBe(0);
+});
+
+test("MIDI import remains gated to Advanced mode", async ({ page }) => {
+  const midi = buildMidi([...noteEvents(0, 0, 60, 90, 240)]);
+
+  const result = await page.evaluate((bytes) => {
+    state.uiMode = "simple";
+    if (els.uiModeSelect) els.uiModeSelect.value = "simple";
+    const parsed = parseStandardMidi(new Uint8Array(bytes).buffer);
+    importParsedMidiToProject(parsed, "simple-mode.mid");
+    return {
+      summary: els.midiImportSummary.textContent,
+      status: els.statusText.textContent,
+    };
+  }, Array.from(midi));
+
+  expect(result.summary).toContain("Advanced mode only");
+  expect(result.status).toContain("Switch to Advanced mode");
 });
 
 test("settings export scope exposes A-H and maps to matching core scopes", async ({
