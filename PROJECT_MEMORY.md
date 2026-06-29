@@ -23,7 +23,7 @@ This repository is now the canonical public monorepo for:
 - Pocket DJ current build: `apps/pocket-dj/pocket_dj_v1g_core_bridge.html`.
 - Pocket DAW package root: `apps/pocket-daw/package.json`.
 - Godot addon plugin config: `addons/pocket_chordsmith/plugin.cfg`.
-- Godot addon release baseline: `1.1.7`.
+- Godot addon release baseline: `1.1.8`.
 
 ## Current Notes And Known Gaps
 
@@ -35,6 +35,7 @@ This repository is now the canonical public monorepo for:
 - Sam manually exported a Pocket DAW project as a game asset and imported it into Godot on 2026-06-28; it worked. Treat this as manual DAW -> Godot game-asset smoke evidence, not hosted CI and not proof of Chordsmith direct browser push.
 - Chordsmith -> Godot direct browser push is not verified working from the live itch build. As of 2026-06-19, the Godot receiver can answer on localhost and pasted `PCS1:` share codes import in the Godot Chordsmith tab, but the browser button falls back to a form submit and still should be treated as not working until a fresh browser/Godot smoke proves the chart appears automatically.
 - Godot editor preview is an audition/sample-kit path, not exact Chordsmith/DAW/DJ synth parity. Use pasted share-code import for chart timing checks and Pocket DAW Godot Adaptive Pack export for rendered audio parity checks.
+- Godot addon `1.1.8` adds visible rendered preview stems, dry default Chordsmith buses, Godot-facing trace/performance validation tools, and an explicit performance roadmap in `addons/pocket_chordsmith/docs/PERFORMANT_AUDIO_ROADMAP.md`. Treat text-only Chordsmith import rendering as an editor/import preparation step with progress, not a gameplay runtime job.
 
 ### Historical Release Context
 

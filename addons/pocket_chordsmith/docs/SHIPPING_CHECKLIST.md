@@ -30,6 +30,7 @@ Before publishing a game or distributing the addon, check these.
 - Shipped music uses `STEM_SYNC` or `HYBRID`.
 - Stems are imported as Godot audio streams.
 - Drum/accent/stinger samples are assigned in `PCSPlaybackProfile`.
+- Text-only Chordsmith imports are rendered or imported before gameplay; the level runtime does not generate dense tonal streams on the fly.
 - `SAMPLE_KIT_PACKAGE_REPORT.md` is current before addon release or Asset Library submission.
 - `Music_Drums`, `Music_Bass`, `Music_Chords`, `Music_Guitar`, `Music_Melody`, and `Music_Stingers` buses exist or profile falls back safely.
 - Drum bus has suitable Godot-native compression/limiting if needed.
@@ -53,6 +54,7 @@ Before publishing a game or distributing the addon, check these.
 - Include `LEVEL_INTEGRATION.md`.
 - Include `STEM_WORKFLOW.md`.
 - Include `SAMPLE_PREVIEW.md`.
+- Include `PERFORMANT_AUDIO_ROADMAP.md`.
 - Include `SAMPLE_KIT_PACKAGE_REPORT.md`.
 - Include `CLI_COMPILE.md`.
 - Include `UID_CACHE_RECOVERY.md`.

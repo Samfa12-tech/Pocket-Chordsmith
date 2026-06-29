@@ -2,7 +2,7 @@
 
 Pocket Chordsmith imports web-app JSON into compiled Godot resources, then drives runtime music callbacks through one lightweight conductor node.
 
-Current release: `1.1.8`, with improved Pocket Chordsmith-to-Godot sample-preview sound parity for western charts.
+Current release: `1.1.8`, with improved Pocket Chordsmith-to-Godot sample-preview sound parity, visible rendered preview stems, dry default buses, and Godot mixer-friendly stem routing.
 
 License/status: MIT. The component license is `LICENSE` in this addon folder.
 See the repository root `LICENSES.md` for the full monorepo matrix.
@@ -20,6 +20,8 @@ Pocket Chordsmith JSON -> importer/schema migrator -> PCSChartResource -> Pocket
 ```
 
 Pocket Chordsmith JSON and `PCS1:` share codes are chart/score data, not rendered stems. They let Godot compile timing, events, markers, and preview metadata. For shipped audio parity, import a Pocket DAW Godot Adaptive Pack or another prepared stem/sample bundle so Godot plays audio assets instead of rendering a full mix from text.
+
+Current audio direction: keep the runtime conductor lightweight, prepare audio before gameplay, and let Godot's native players, buses, and effects do the shipping playback work. See `docs/PERFORMANT_AUDIO_ROADMAP.md` for the current state and future work.
 
 Runtime rules:
 
@@ -71,11 +73,13 @@ Headless cached preview render for text-only Pocket Chordsmith imports:
 godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/render_pocket_chordsmith_preview_audio.gd -- --chart <chart.tres> --profile <profile.tres>
 ```
 
-This creates preview/cache WAV stems under `res://music/pocket_chordsmith_generated/` by default and saves a generated `PCSPlaybackProfile` pointing at the full-song role stems. These generated WAVs are useful for editor preview stability and route through the usual Chordsmith music buses; use DAW-rendered packs or your own production stems for final shipped mix identity.
+This creates preview/cache WAV stems under `res://music/pocket_chordsmith_generated/` by default and saves a generated `PCSPlaybackProfile` pointing at full-song role stems and section stem sets. These generated WAVs are useful for editor preview stability and route through the usual Chordsmith music buses; use DAW-rendered packs or your own production stems for final shipped mix identity.
 
 Visual track building stays in the web app for now. Godot receives the exported JSON/share code, compiles it to a lightweight `PCSChartResource`, then uses the conductor for timing, states, markers, cues, and Godot-native audio routing. A future Godot visual editor should build on the compiled chart/section data instead of porting the whole browser app into runtime.
 
 Design anchor: `docs/VISUAL_EDITOR_EXPLORATION.md` explores a Godot-native chart inspector and adaptive-state editor while keeping musical authoring in Pocket Chordsmith and production/stem work in Pocket DAW.
+
+Performance anchor: `docs/PERFORMANT_AUDIO_ROADMAP.md` records the current 1.1.8 audio architecture and the planned import/render/runtime path for a performant Godot game-audio system.
 
 For batch migration, use the editor `Compile Folder` button or the headless compiler:
 
@@ -187,6 +191,7 @@ More docs:
 - `docs/RUNTIME_BRIDGE.md`
 - `docs/STEM_WORKFLOW.md`
 - `docs/SAMPLE_PREVIEW.md`
+- `docs/PERFORMANT_AUDIO_ROADMAP.md`
 - `docs/SAMPLE_KIT_PACKAGE_REPORT.md`
 - `docs/UID_CACHE_RECOVERY.md`
 - `docs/VISUAL_EDITOR_EXPLORATION.md`

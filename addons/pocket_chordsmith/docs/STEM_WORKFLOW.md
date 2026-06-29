@@ -17,6 +17,8 @@ Pocket DAW Godot Adaptive Packs are game-audio asset bundles. They include the c
 
 Do not make gameplay render stems from Chordsmith text. That would require porting or embedding a music renderer in Godot and would compete with game CPU/audio budgets. If Pocket Chordsmith grows a direct game-pack export later, it should export rendered audio assets alongside the chart, similar to the DAW pack path.
 
+For text-only imports, the addon can render preview/cache stems before playback through `Render Preview Audio` or `tools/render_pocket_chordsmith_preview_audio.gd`. Treat these as prepared preview assets: they are useful for stable editor auditioning and can be routed/mixed like stems, but they are generated from the addon preview kit/native preview voices rather than a mastered DAW render.
+
 Suggested full-arrangement stem names:
 
 ```text
@@ -62,3 +64,5 @@ profile.stem_sets = {
 Use `STEM_SYNC` for released builds, `HYBRID` when stems plus event-triggered samples/stingers are needed, and `PROCEDURAL_PREVIEW` only for editor auditioning.
 
 For sample-accurate transitions, render stems on bar/section boundaries using the same BPM and loop length as the chart. Queue music states on `NEXT_BAR`, `NEXT_SECTION`, or `NEXT_LOOP` so the conductor switches at integer chart ticks. Future work should add crossfade stem players for overlapping state changes.
+
+The current performance roadmap is `PERFORMANT_AUDIO_ROADMAP.md`: prepare/import/render audio visibly, cache generated assets with clear invalidation, and keep gameplay focused on synchronized stem/sample playback through Godot's mixer.

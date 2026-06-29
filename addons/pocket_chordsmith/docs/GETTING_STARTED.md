@@ -120,8 +120,9 @@ Recommended shipped-game path:
 No-stems-yet development path:
 
 - `HYBRID` with `drum_kit`, `accent_streams`, and `marker_stingers` on a `PCSPlaybackProfile`.
+- `Render Preview Audio` after import when a dense text-only chart needs stable preview playback before final stems exist.
 
-Avoid using `PocketChordsmithPlayer.gd` for shipped runtime music. It is kept for editor/demo fallback only.
+Avoid using `PocketChordsmithPlayer.gd` for shipped runtime music. It is kept for editor/demo fallback only. The current performance direction is in `PERFORMANT_AUDIO_ROADMAP.md`: prepare generated audio before gameplay, then let the conductor play prepared stems/samples through Godot buses.
 
 ## 6. Switch Music States
 
