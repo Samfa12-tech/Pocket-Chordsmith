@@ -2,10 +2,15 @@
 
 ## 1.1.8
 
-Pocket Chordsmith-to-Godot sample-preview sound parity update.
+Pocket Chordsmith-to-Godot adaptive stems and sample-preview sound parity update.
 
 Added:
 
+- First-class `PCSPlaybackProfile.section_stem_sets` for prepared section-specific stems, with helpers for section aliases such as `01_A`, `section_A`, and `A_loop`.
+- Runtime section audio switching: `PocketChordsmithConductor.queue_section("B")` and `jump_to_section("B")` now resolve the matching section stem map instead of only moving chart timing.
+- Audio prewarm and diagnostics APIs for section/state/full-song stems: `prewarm_section()`, `prewarm_sections()`, `get_missing_audio_assets()`, and `validate_audio_assets()`.
+- Flexible prepared game-pack manifest handling for section assets, section loops, state stems, stem-key aliases such as `lead` to `melody`, and embedded source project JSON.
+- `tools/validate_adaptive_stems.gd` for headless validation of section-stem profile serialization, DAW/game-pack import, PCS1 compile, conductor section switching, and prewarm missing-asset diagnostics.
 - Bundled web-kit preview WAVs and playback-profile mappings for `saloon_piano`, `banjo`, `harmonica`, `cowboy_whistle`, `trumpet`, `saxophone`, and `western_twang` guitar articulations.
 - Chart performance metadata for Chordsmith FX, humanize, sidechain, mix, and pan settings so Godot previews can reproduce more of the browser playback character.
 - A visible `Render Preview Audio` workflow that bakes text-only Chordsmith imports into per-section and full-song WAV stems before preview playback.
@@ -14,6 +19,9 @@ Added:
 
 Changed:
 
+- Prepared DAW/Godot game packs now populate `section_stem_sets` while keeping legacy `stem_sets` compatibility.
+- Per-stem and per-layer volume/mute APIs now normalize names through the same runtime path, so `set_stem_volume("drums", -6.0)` and `set_layer_volume("drums", -6.0)` affect the same layer controls.
+- The addon UI now labels generated sample-kit output as preview audio, and the demo scene button reports missing/open failures instead of silently doing nothing.
 - Godot chord, guitar, bass, and melody preview events now preserve Chordsmith voicing order, pitch mapping, mix-volume scaling, deterministic humanize feel, melody pan buses, sidechain ducking, and stepped slide approximations.
 - The conductor applies Chordsmith-style delay, chorus, flanger, reverb, and tone shaping to the sample-preview bus when compiled FX settings are present.
 - Generated preview stems stay split by role so drums, bass, chords, guitar, and melody continue to route through the usual Godot music buses for volume and FX control.
