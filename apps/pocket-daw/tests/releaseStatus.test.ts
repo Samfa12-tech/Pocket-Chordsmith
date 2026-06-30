@@ -63,12 +63,22 @@ describe("release status source", () => {
     expect(validation.failures).toContain("release-status.json lastInstalledSmoke.installerSha256 must be a 64-character SHA-256 hex string");
   });
 
+  it("allows optional unreleased source-only notes when they are an array", () => {
+    expect(validateReleaseStatus({ ...baseStatus, unreleasedSourceNotes: ["Implemented in source, not installed-smoked yet."] }, baseContext).ok).toBe(true);
+    const validation = validateReleaseStatus({ ...baseStatus, unreleasedSourceNotes: "not-array" }, baseContext);
+
+    expect(validation.ok).toBe(false);
+    expect(validation.failures).toContain("release-status.json unreleasedSourceNotes must be an array when present");
+  });
+
   it("renders a Markdown status block from the machine-readable source", () => {
-    const markdown = renderReleaseStatusMarkdown(baseStatus);
+    const markdown = renderReleaseStatusMarkdown({ ...baseStatus, unreleasedSourceNotes: ["Stem ZIP source work is pending installed smoke."] });
 
     expect(markdown).toContain("Source version | `0.6.20`");
     expect(markdown).toContain("Latest published version | `0.6.19`");
     expect(markdown).toContain("Last installed-smoke version | `0.6.10`");
+    expect(markdown).toContain("## Unreleased Source-Only Notes");
+    expect(markdown).toContain("Stem ZIP source work is pending installed smoke.");
     expect(markdown).toContain("must not be described as public or installed-smoked");
   });
 });

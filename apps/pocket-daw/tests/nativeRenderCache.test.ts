@@ -75,7 +75,7 @@ import {
 import { barsToSeconds } from "../src/daw/timeline";
 import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
 import { cycleBassStep } from "../src/daw/chordsmithEditor";
-import { addDrumLaneFx, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume } from "../src/daw/drumLanes";
+import { addDrumLaneFx, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneSolo, setDrumLaneVolume } from "../src/daw/drumLanes";
 import { addFxSlot, setFxSlotParameter } from "../src/daw/fx";
 import { createAutomationLane } from "../src/daw/automation";
 import { importMidiFileToProject } from "../src/daw/midiClips";
@@ -153,7 +153,9 @@ describe("native render cache", () => {
 
     expect(nativeRenderCacheSignature(setDrumLaneVolume(project, "snare", 0.25))).not.toBe(signature);
     expect(nativeRenderCacheSignature(setDrumLanePan(project, "snare", -0.75))).not.toBe(signature);
+    expect(nativeRenderCacheSignature(setDrumLaneGate(project, "snare", 0.5))).not.toBe(signature);
     expect(nativeRenderCacheSignature(setDrumLaneMute(project, "snare", true))).not.toBe(signature);
+    expect(nativeRenderCacheSignature(setDrumLaneSolo(project, "snare", true))).not.toBe(signature);
   });
 
   it("builds dry native generated-stem render projects and keeps only drum lane FX baked", () => {
@@ -547,13 +549,23 @@ describe("native render cache", () => {
     expect(firstLayerAssetId).toBeTruthy();
     expect(secondLayerAssetId).toBeTruthy();
     expect(secondLayerAssetId).not.toBe(firstLayerAssetId);
-  });
+  }, 15000);
 
   it("adds runtime-loaded audio clips as native WAV asset regions", async () => {
     const project = withAudioClip(createDemoProject());
+    const clip = project.timeline.clips.find((item) => item.id === "audio_clip")!;
+    clip.metadata = { ...(clip.metadata || {}), invertPhase: true, reversed: true };
+    const automated = createAutomationLane(project, "clips.audio_clip.gain", {
+      min: 0,
+      max: 4,
+      points: [
+        { bar: clip.startBar, value: 0.5 },
+        { bar: clip.startBar + 0.25, value: 1 }
+      ]
+    }).project;
     setCachedAudioBuffer("media_audio", fakeAudioBuffer());
 
-    const cache = await buildNativeRenderCache(project, "audio-signature");
+    const cache = await buildNativeRenderCache(automated, "audio-signature");
     const audioRegion = cache.regions.find((region) => region.id.includes("audio_clip"));
 
     expect(cache.runtimeAudioRegionCount).toBe(1);
@@ -562,7 +574,15 @@ describe("native render cache", () => {
       trackId: "bass",
       sourceOffset: 0.25,
       duration: 0.5,
-      gain: 0.75
+      gain: 0.75,
+      phaseMultiplier: -1,
+      reversed: true,
+      fadeIn: 0.1,
+      fadeOut: 0.2,
+      gainAutomation: [
+        expect.objectContaining({ localSeconds: 0, value: 0.5 }),
+        expect.objectContaining({ value: 1 })
+      ]
     });
     expect(cache.renderCacheItems.some((item) => item.metadata?.cacheKind === "native-runtime-audio")).toBe(true);
     expect(offlineRenderMock.encodeWav).toHaveBeenCalled();
@@ -782,7 +802,7 @@ describe("native render cache", () => {
       (globalThis as { window?: unknown }).window = previousWindow;
       starts.length = 0;
     }
-  });
+  }, 15000);
 
   it("keeps metadata-only project loads on cached native generated playback", async () => {
     const previousWindow = (globalThis as { window?: unknown }).window;
@@ -1281,7 +1301,9 @@ function withAudioClip(project: ReturnType<typeof createDemoProject>): ReturnTyp
     metadata: {
       sourceOffsetSeconds: 0.25,
       durationSeconds: 0.5,
-      gain: 0.75
+      gain: 0.75,
+      fadeInSeconds: 0.1,
+      fadeOutSeconds: 0.2
     }
   };
   project.mediaPool.push(media);

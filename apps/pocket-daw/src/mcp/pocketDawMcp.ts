@@ -3,26 +3,48 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import {
   addMarkerAtPlayheadCommand,
+  addGameStateMarkerAtPlayheadCommand,
+  activateAudioTakeCommand,
+  branchGeneratedDrumsCommand,
+  clearTimelineSelectionCommand,
+  compAudioTakeFromPlayheadCommand,
+  convertMidiDrumsToBranchOverlaysCommand,
+  convertMidiMelodyToGeneratedOverlaysCommand,
   commitProject,
+  cropSelectedClipToTimelineSelectionCommand,
   cycleBassStepCommand,
+  cycleDrumBranchStepCommand,
   cycleDrumStepCommand,
   cycleMelodyStepCommand,
+  deleteSelectedClipRangeCommand,
   importTextToProject,
   loadPocketDawRaw,
   moveClipToBarCommand,
+  rippleDeleteSelectedClipRangeCommand,
+  rippleDeleteTimelineSelectionCommand,
+  setTimelineSelectionRangeCommand,
+  setTimelineSelectionToLoopCommand,
+  setTimelineSelectionToSelectedClipCommand,
+  setDrumLaneGateCommand,
+  setDrumLaneMuteCommand,
+  setDrumLanePanCommand,
+  setDrumLaneVolumeCommand,
   setFxSlotParameterCommand,
+  setAudioTakeArchivedCommand,
   setSectionBarsCommand,
   setSectionChordCommand,
   setTrackPanCommand,
   setTrackVolumeCommand,
+  splitTimelineSelectionCommand,
   toggleTrackMuteCommand
 } from "../app/commands.ts";
 import { createInitialState, loadProjectIntoState, type AppState } from "../app/state.ts";
 import { buildPocketDawProjectFile } from "../daw/dawProject.ts";
-import { createGameExportManifest, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs.ts";
+import { DRUM_LANE_IDS, type DrumLaneId } from "../daw/drumLanes.ts";
+import { createGameExportManifest, createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs.ts";
 import { arrangeMidiToHeavyMetalProject } from "../daw/midiArrangement.ts";
 import { validateProjectInvariants } from "../daw/projectInvariants.ts";
-import { POCKET_DAW_SCHEMA_VERSION, POCKET_DAW_VERSION, type PocketDawProject } from "../daw/schema.ts";
+import { GAME_STATE_MARKERS, POCKET_DAW_SCHEMA_VERSION, POCKET_DAW_VERSION, type GameStateMarkerId, type PocketDawProject } from "../daw/schema.ts";
 
 export const POCKET_DAW_MCP_TOOLS = [
   "pocket_daw_read_project",
@@ -44,10 +66,31 @@ export type PocketDawMcpCommand =
   | { type: "set_track_pan"; trackId: string; pan: number }
   | { type: "toggle_track_mute"; trackId: string }
   | { type: "move_clip_to_bar"; clipId: string; startBar: number }
+  | { type: "set_timeline_selection"; startBar: number; endBar: number }
+  | { type: "set_timeline_selection_to_clip"; clipId: string }
+  | { type: "set_timeline_selection_to_loop" }
+  | { type: "clear_timeline_selection" }
+  | { type: "split_timeline_selection" }
+  | { type: "crop_clip_to_timeline_selection"; clipId: string }
+  | { type: "delete_clip_range"; clipId: string }
+  | { type: "ripple_delete_clip_range"; clipId: string }
+  | { type: "ripple_delete_timeline_selection" }
+  | { type: "activate_audio_take"; clipId: string }
+  | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
+  | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
   | { type: "add_marker"; bar: number }
+  | { type: "add_game_state_marker"; bar: number; gameState: GameStateMarkerId }
   | { type: "set_section_bars"; sectionId: string; bars: number }
   | { type: "set_section_chord"; sectionId: string; barIndex: number; degree: number }
   | { type: "cycle_drum_step"; sectionId: string; lane: "kick" | "snare" | "hat"; step: number }
+  | { type: "branch_generated_drums" }
+  | { type: "convert_midi_drums"; clipId: string; sectionId?: string }
+  | { type: "convert_midi_melody"; clipId: string; sectionId?: string; trackIndex?: number }
+  | { type: "cycle_drum_branch_step"; sectionId: string; lane: DrumLaneId; step: number }
+  | { type: "set_drum_lane_volume"; lane: DrumLaneId; volume: number }
+  | { type: "set_drum_lane_pan"; lane: DrumLaneId; pan: number }
+  | { type: "set_drum_lane_gate"; lane: DrumLaneId; gate: number }
+  | { type: "set_drum_lane_mute"; lane: DrumLaneId; mute: boolean }
   | { type: "cycle_bass_step"; sectionId: string; step: number }
   | { type: "cycle_melody_step"; sectionId: string; trackIndex: number; step: number }
   | { type: "set_fx_parameter"; chainId: string; slotId: string; parameter: string; value: number | boolean };
@@ -169,7 +212,7 @@ export function pocketDawMcpToolList() {
       inputSchema: objectSchema({
         action: {
           type: "string",
-          enum: ["play", "pause", "stop", "restart", "seek_bar", "save_current", "select_track", "select_clip", "open_project"]
+          enum: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project"]
         },
         projectPath: stringSchema(),
         bar: numberSchema(),
@@ -295,7 +338,8 @@ function exportPlan(args: unknown) {
     gamePacks: {
       godot: createGameExportManifest(project, "godot-adaptive-pack"),
       web: createGameExportManifest(project, "web-game-pack")
-    }
+    },
+    gamePackDeliveryTargets: createGamePackDeliveryTargets()
   };
 }
 
@@ -424,14 +468,56 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return toggleTrackMuteCommand(state, command.trackId);
     case "move_clip_to_bar":
       return moveClipToBarCommand(state, command.clipId, command.startBar);
+    case "set_timeline_selection":
+      return setTimelineSelectionRangeCommand(state, command.startBar, command.endBar);
+    case "set_timeline_selection_to_clip":
+      return setTimelineSelectionToSelectedClipCommand({ ...state, selectedClipId: command.clipId });
+    case "set_timeline_selection_to_loop":
+      return setTimelineSelectionToLoopCommand(state);
+    case "clear_timeline_selection":
+      return clearTimelineSelectionCommand(state);
+    case "split_timeline_selection":
+      return splitTimelineSelectionCommand(state);
+    case "crop_clip_to_timeline_selection":
+      return cropSelectedClipToTimelineSelectionCommand({ ...state, selectedClipId: command.clipId });
+    case "delete_clip_range":
+      return deleteSelectedClipRangeCommand({ ...state, selectedClipId: command.clipId });
+    case "ripple_delete_clip_range":
+      return rippleDeleteSelectedClipRangeCommand({ ...state, selectedClipId: command.clipId });
+    case "ripple_delete_timeline_selection":
+      return rippleDeleteTimelineSelectionCommand(state);
+    case "activate_audio_take":
+      return activateAudioTakeCommand(state, command.clipId);
+    case "set_audio_take_archived":
+      return setAudioTakeArchivedCommand(state, command.clipId, command.archived);
+    case "comp_audio_take_from_bar":
+      return compAudioTakeFromPlayheadCommand({ ...state, playheadBar: command.bar }, command.clipId);
     case "add_marker":
       return addMarkerAtPlayheadCommand({ ...state, playheadBar: command.bar });
+    case "add_game_state_marker":
+      return addGameStateMarkerAtPlayheadCommand({ ...state, playheadBar: command.bar }, command.gameState);
     case "set_section_bars":
       return setSectionBarsCommand(state, command.sectionId, command.bars);
     case "set_section_chord":
       return setSectionChordCommand(state, command.sectionId, command.barIndex, command.degree);
     case "cycle_drum_step":
       return cycleDrumStepCommand(state, command.sectionId, command.lane, command.step);
+    case "branch_generated_drums":
+      return branchGeneratedDrumsCommand(state);
+    case "convert_midi_drums":
+      return convertMidiDrumsToBranchOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A");
+    case "convert_midi_melody":
+      return convertMidiMelodyToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A", command.trackIndex || 0);
+    case "cycle_drum_branch_step":
+      return cycleDrumBranchStepCommand(state, command.sectionId, command.lane, command.step);
+    case "set_drum_lane_volume":
+      return setDrumLaneVolumeCommand(state, command.lane, command.volume);
+    case "set_drum_lane_pan":
+      return setDrumLanePanCommand(state, command.lane, command.pan);
+    case "set_drum_lane_gate":
+      return setDrumLaneGateCommand(state, command.lane, command.gate);
+    case "set_drum_lane_mute":
+      return setDrumLaneMuteCommand(state, command.lane, command.mute);
     case "cycle_bass_step":
       return cycleBassStepCommand(state, command.sectionId, command.step);
     case "cycle_melody_step":
@@ -487,9 +573,11 @@ function summarizeProject(project: PocketDawProject) {
     scale: project.project.scale,
     timeSig: project.project.timeSig,
     bars: project.timeline.bars,
+    timelineSelection: project.timeline.selection || null,
     trackCount: project.tracks.length,
     clipCount: project.timeline.clips.length,
     mediaPoolCount: project.mediaPool.length,
+    audioTakeSummary: summarizeAudioTakes(project),
     tracks: project.tracks.map((track) => ({
       id: track.id,
       name: track.name,
@@ -507,8 +595,35 @@ function summarizeProject(project: PocketDawProject) {
       trackId: clip.trackId,
       startBar: clip.startBar,
       barLength: clip.barLength,
-      sectionId: clip.sectionId
+      sectionId: clip.sectionId,
+      takeGroupId: typeof clip.metadata?.recordingTakeGroupId === "string" ? clip.metadata.recordingTakeGroupId : clip.metadata?.takeGroupId,
+      takeStatus: clip.metadata?.takeStatus,
+      takeLaneId: clip.metadata?.takeLaneId
     }))
+  };
+}
+
+function summarizeAudioTakes(project: PocketDawProject) {
+  const audioTakeClips = project.timeline.clips.filter((clip) => clip.type === "audio" && (clip.metadata?.recordingTakeGroupId || clip.metadata?.takeGroupId));
+  const groups = new Map<string, { groupId: string; clipCount: number; activeCount: number; mutedCount: number; archivedCount: number }>();
+  audioTakeClips.forEach((clip) => {
+    const groupId = String(clip.metadata?.recordingTakeGroupId || clip.metadata?.takeGroupId || "");
+    const current = groups.get(groupId) || { groupId, clipCount: 0, activeCount: 0, mutedCount: 0, archivedCount: 0 };
+    const status = clip.metadata?.takeStatus === "archived-take" || clip.metadata?.takeStatus === "muted-take" || clip.metadata?.takeStatus === "active"
+      ? clip.metadata.takeStatus
+      : clip.muted || clip.metadata?.takeActive === false
+        ? "muted-take"
+        : "active";
+    current.clipCount += 1;
+    if (status === "active" && !clip.muted) current.activeCount += 1;
+    if (status === "archived-take") current.archivedCount += 1;
+    if (status === "muted-take" || clip.muted) current.mutedCount += 1;
+    groups.set(groupId, current);
+  });
+  return {
+    groupedClipCount: audioTakeClips.length,
+    groupCount: groups.size,
+    groups: [...groups.values()].sort((a, b) => a.groupId.localeCompare(b.groupId))
   };
 }
 
@@ -576,13 +691,34 @@ function commandSchema() {
         type: "string",
         enum: [
           "set_track_volume",
-          "set_track_pan",
-          "toggle_track_mute",
-          "move_clip_to_bar",
-          "add_marker",
+         "set_track_pan",
+         "toggle_track_mute",
+         "move_clip_to_bar",
+          "set_timeline_selection",
+          "set_timeline_selection_to_clip",
+          "set_timeline_selection_to_loop",
+          "clear_timeline_selection",
+          "split_timeline_selection",
+          "crop_clip_to_timeline_selection",
+          "delete_clip_range",
+          "ripple_delete_clip_range",
+          "ripple_delete_timeline_selection",
+          "activate_audio_take",
+          "set_audio_take_archived",
+          "comp_audio_take_from_bar",
+         "add_marker",
+          "add_game_state_marker",
           "set_section_bars",
           "set_section_chord",
           "cycle_drum_step",
+          "branch_generated_drums",
+          "convert_midi_drums",
+          "convert_midi_melody",
+          "cycle_drum_branch_step",
+          "set_drum_lane_volume",
+          "set_drum_lane_pan",
+          "set_drum_lane_gate",
+          "set_drum_lane_mute",
           "cycle_bass_step",
           "cycle_melody_step",
           "set_fx_parameter"
@@ -593,11 +729,16 @@ function commandSchema() {
       sectionId: stringSchema(),
       chainId: stringSchema(),
       slotId: stringSchema(),
-      lane: { type: "string", enum: ["kick", "snare", "hat"] },
+      lane: { type: "string", enum: [...DRUM_LANE_IDS] },
+      gameState: { type: "string", enum: [...GAME_STATE_MARKERS] },
       parameter: stringSchema(),
       volume: numberSchema(),
       pan: numberSchema(),
+      gate: numberSchema(),
+      mute: booleanSchema(),
+      archived: booleanSchema(),
       startBar: numberSchema(),
+      endBar: numberSchema(),
       bar: numberSchema(),
       bars: numberSchema(),
       barIndex: numberSchema(),

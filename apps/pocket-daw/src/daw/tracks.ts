@@ -35,7 +35,8 @@ export function createDefaultTracks(options: { guitarActive?: boolean } = {}): T
     fxChainId: `fx_${def.id}`,
     recordKind: "none",
     inputDeviceId: null,
-    monitorEnabled: false
+    monitorEnabled: false,
+    recordingChannelMode: "mono"
   }));
 }
 
@@ -58,7 +59,7 @@ export function renameTrack(project: PocketDawProject, trackId: string, name: st
   return next;
 }
 
-export type AddTrackKind = "live-vocals" | "live-instrument" | "chordsmith-drums" | "chordsmith-bass" | "chordsmith-chords" | "chordsmith-melody" | "chordsmith-guitar";
+export type AddTrackKind = "live-vocals" | "live-instrument" | "midi-instrument" | "chordsmith-drums" | "chordsmith-bass" | "chordsmith-chords" | "chordsmith-melody" | "chordsmith-guitar";
 
 export function addTrackToProject(project: PocketDawProject, kind: AddTrackKind): { project: PocketDawProject; trackId: string } {
   const generatedRole = kind.replace("chordsmith-", "") as TrackRole;
@@ -72,6 +73,13 @@ export function addTrackToProject(project: PocketDawProject, kind: AddTrackKind)
     }
     const id = uniqueTrackId(next, generatedRole);
     const track = makeTrack(id, titleCase(generatedRole), "generated", generatedRole, "#40d8ff", "none");
+    insertBeforeMaster(next, track);
+    return { project: withFxChain(next, track), trackId: id };
+  }
+  if (kind === "midi-instrument") {
+    const id = uniqueTrackId(project, "midi");
+    const track = makeTrack(id, "MIDI Instrument", "midi", "media", "#b88cff", "none");
+    const next = cloneProject(project);
     insertBeforeMaster(next, track);
     return { project: withFxChain(next, track), trackId: id };
   }
@@ -103,6 +111,7 @@ function makeTrack(id: string, name: string, trackType: Track["trackType"], role
     recordKind,
     inputDeviceId: null,
     monitorEnabled: false,
+    recordingChannelMode: "mono",
     active: true
   };
 }

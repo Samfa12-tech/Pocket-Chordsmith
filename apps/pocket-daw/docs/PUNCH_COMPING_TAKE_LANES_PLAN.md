@@ -1,11 +1,13 @@
 # Punch, Comping And Take Lanes Plan
 
-This is the design anchor for punch-in/out, non-destructive take lanes and comping. It does not change the current shipped behavior: Pocket DAW still records one armed mono live track in the installed app, writes a project-relative WAV take, and places that take on the armed track with same-track overwrite.
+This is the design anchor for punch-in/out, non-destructive take lanes and comping. It does not change the current shipped behavior: Pocket DAW still records one armed live track at a time in the installed app, writes a project-relative WAV take, and places that take on the armed track with same-track overwrite.
 
 ## Current Baseline
 
 - `src/app/App.ts` stops native recording, imports the WAV through `addImportedAudioMedia`, places it with `placeRecordingClipOnTrack`, flushes autosave, then saves the project file.
 - `src/daw/audioClips.ts` implements `placeRecordingClipOnTrack` as `placeAudioClipOnTrack(..., { overwriteOverlaps: true })`.
+- Placed audio clips now preserve source recording/take metadata such as `takeGroupId`, `recordingTakeGroupId`, `takeLaneId`, `takeLaneIndex`, `takeStatus`, `inputMode`, `channelMap` and latency evidence from the media item.
+- `src/daw/clips.ts` has grouped-take helpers that activate same-track sibling takes, archive/restore takes without deleting media, and split overlap-aligned grouped takes at the playhead for a first source-preserving comp segment foundation through normal undoable command/UI paths.
 - Current same-track overwrite is destructive at the clip level: overlapped audio clips are split away from the new recording range, and the right-hand remainder advances `metadata.sourceOffsetSeconds`.
 - `src/daw/schema.ts` already has optional `Clip.lane`, `Clip.metadata`, `Track.metadata` and `MediaPoolItem.metadata`.
 - `src/compatibility/migrations.ts` preserves clip, track and media metadata and clamps optional `Clip.lane` without requiring a schema-version bump for metadata-only planning.
@@ -81,8 +83,8 @@ Use `Clip.lane` only as an optional visual lane index until the UI contract is p
 ## Take Lane And Comping Flow
 
 - A take lane belongs to one track and one `recordingTakeGroupId`.
-- The first implementation should allow lane collapse/expand, mute/solo for auditioning, choose-active-take and delete/archive take.
-- Comping can start as split audio clips that reference source take metadata. It does not need a new clip type if each comp segment is an audio clip with `takeStatus: "comp-segment"`.
+- The first foundation can already choose an active same-track grouped take by clip mute state, archive/restore rejected takes, and split grouped takes at the playhead for source-preserving comp decisions. The full implementation should still add explicit lane collapse/expand, mute/solo for lane auditioning, dedicated punch regions, richer comp segment metadata and clearer lane identities.
+- Comping has started as split audio clips that reference source take metadata and preserve source offsets. It does not need a new clip type if later comp segments become audio clips with `takeStatus: "comp-segment"`.
 - Crossfades should use existing audio fade metadata first (`fadeInSeconds`, `fadeOutSeconds`) and only add comp-specific crossfade metadata when the UI needs to distinguish edit fades from comp boundaries.
 - Undo/autosave must treat take-lane edits as normal project edits through `commitProject` and autosave flushes, matching current recording completion behavior.
 - Save/reopen must preserve inactive lanes, comp segment metadata, source offsets and raw media references.
@@ -107,10 +109,10 @@ Use `Clip.lane` only as an optional visual lane index until the UI contract is p
 - Existing recording alpha tests still pass for current same-track overwrite behavior.
 - Metadata roundtrip test preserves `recordingTakeId`, `recordingTakeGroupId`, `takeLaneId`, `takeStatus`, `punchStartBar`, `punchEndBar` and comp fields.
 - Audio-clip region tests prove inactive take lanes do not render and active comp segments do render with correct `sourceOffsetSeconds`.
-- Undo/autosave tests prove record completion, take activation, lane archive and comp edits are committed as project changes.
+- Undo/autosave tests prove record completion, take activation, lane archive and comp edits are committed as project changes. Source already has unit coverage for grouped take activation, archive/restore, comp-from-playhead splitting and save/reopen metadata preservation; installed smoke and full punch-flow coverage remain future work.
 - Migration tests prove old projects without take metadata load unchanged and future metadata survives normalization.
 - Installed smoke records a punch take, saves, reopens, audits media references under `project-media/recordings`, and exports the same audible comp/take result.
 
 ## Release Boundary
 
-Until these command paths, UI states and tests exist, release notes should continue to say: no punch-in/out, no comping and no take lanes. The only current recording implementation remains one armed mono live track with same-track overwrite placement.
+Until the full command paths, UI states and installed smoke exist, release notes should continue to say: no punch-in/out, no full comping and no full take-lane workflow. The current recording implementation remains one armed live track at a time with same-track overwrite placement, plus source-only grouped-take activation, archive/restore and comp-from-playhead foundations for clips that already share a take group.

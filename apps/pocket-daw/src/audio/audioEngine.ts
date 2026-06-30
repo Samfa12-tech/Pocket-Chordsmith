@@ -3,10 +3,10 @@ import { cloneProject } from "../daw/dawProject";
 import { trackIsAudible } from "../daw/tracks";
 import { barsToSeconds, secondsToBars } from "../daw/timeline";
 import { renderTimelineEvents, type RenderedEvent } from "./eventRenderer";
-import { renderTimelineAudioRegions, scheduleAudioRegionEnvelope, type AudioRegion } from "./audioRegions";
+import { audioBufferForRegionPlayback, audioRegionPlaybackWindow, renderTimelineAudioRegions, scheduleAudioRegionEnvelope, type AudioRegion } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
 import { getTrackFxChain } from "../daw/fx";
-import { DRUM_LANE_DEFS, getDrumLaneFxChain, isDrumEventKind } from "../daw/drumLanes";
+import { DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumLaneFxChain, isDrumEventKind } from "../daw/drumLanes";
 import { connectFxChain } from "./fxProcessor";
 import { scheduleInstrumentEvent } from "./instruments";
 import { chordsmithSidechainSettings, isChordsmithSidechainTrigger, scheduleChordsmithSidechainDuck } from "./sidechain";
@@ -31,10 +31,12 @@ import {
 import type { NativeMediaApi } from "../native/mediaBridge";
 
 interface TrackOutput {
+  input: GainNode;
   gain: GainNode;
   analyser: AnalyserNode;
   sidechain: GainNode | null;
   pan: StereoPannerNode | null;
+  sendGains: Map<string, GainNode>;
   meterData: Uint8Array<ArrayBuffer>;
   cleanup: () => void;
 }
@@ -1378,7 +1380,7 @@ export class AudioEngine {
     const horizon = current + 0.08;
     while (this.nativeMeterEventIndex < this.events.length && this.events[this.nativeMeterEventIndex].time <= horizon) {
       const event = this.events[this.nativeMeterEventIndex];
-      if (event.time >= current - 0.04 && this.eventShouldTapMeter(event)) this.tapMeter(event.trackId, event.velocity);
+      if (event.time >= current - 0.04 && this.eventShouldTapMeter(event)) this.tapEventMeter(event);
       this.nativeMeterEventIndex += 1;
     }
   }
@@ -1436,6 +1438,7 @@ export class AudioEngine {
         this.master!.gain.setTargetAtTime(track.volume, this.ctx!.currentTime, 0.02);
         return;
       }
+      const input = this.ctx!.createGain();
       const gain = this.ctx!.createGain();
       const analyser = this.ctx!.createAnalyser();
       const sidechain = chordsmithSidechainSettings(this.project)?.targetTrackId === track.id ? this.ctx!.createGain() : null;
@@ -1446,10 +1449,12 @@ export class AudioEngine {
       if (sidechain) sidechain.gain.value = 1;
       if (pan) pan.pan.value = controls.pan;
       this.trackOutputs.set(track.id, {
+        input,
         gain,
         analyser,
         sidechain,
         pan,
+        sendGains: new Map(),
         meterData: new Uint8Array(analyser.fftSize),
         cleanup: () => {}
       });
@@ -1459,10 +1464,11 @@ export class AudioEngine {
       const output = this.trackOutputs.get(track.id);
       if (!output) return;
       const fx = connectFxChain(this.ctx!, output.gain, output.analyser, getTrackFxChain(this.project, track));
+      output.input.connect(output.gain);
       const destination = this.outputDestination(track);
       const postFxOutput: AudioNode = output.sidechain || output.analyser;
       if (output.sidechain) output.analyser.connect(output.sidechain);
-      const sendCleanup = this.connectTrackSends(postFxOutput, track);
+      const sendCleanup = this.connectTrackSends(output.input, postFxOutput, track);
       if (output.pan) {
         postFxOutput.connect(output.pan);
         output.pan.connect(destination);
@@ -1472,6 +1478,7 @@ export class AudioEngine {
       output.cleanup = () => {
         sendCleanup.forEach((fn) => fn());
         fx.cleanup();
+        safelyDisconnect(output.input);
         safelyDisconnect(output.gain);
         safelyDisconnect(output.analyser);
         if (output.sidechain) safelyDisconnect(output.sidechain);
@@ -1481,15 +1488,19 @@ export class AudioEngine {
     this.configureDrumLaneOutputs();
   }
 
-  private connectTrackSends(source: AudioNode, track: Track): Array<() => void> {
+  private connectTrackSends(preFaderSource: AudioNode, postFaderSource: AudioNode, track: Track): Array<() => void> {
     if (!this.ctx) return [];
-    return activeTrackSendRoutes(this.project, track).flatMap((send) => {
+    const currentBar = secondsToBars(this.currentSeconds(), this.project.project.bpm, this.project.project.timeSig) + 1;
+    const sourceOutput = this.trackOutputs.get(track.id);
+    return activeTrackSendRoutes(this.project, track, currentBar).flatMap((send) => {
       const target = this.trackOutputs.get(send.returnTrackId);
-      if (!target || target.gain === source) return [];
+      const source = send.mode === "pre-fader" ? preFaderSource : postFaderSource;
+      if (!target || target.input === source || target.gain === source) return [];
       const sendGain = this.ctx!.createGain();
       sendGain.gain.value = send.level;
       source.connect(sendGain);
-      sendGain.connect(target.gain);
+      sendGain.connect(target.input);
+      sourceOutput?.sendGains.set(send.returnTrackId, sendGain);
       return [() => safelyDisconnect(sendGain)];
     });
   }
@@ -1499,7 +1510,7 @@ export class AudioEngine {
     if (!this.ctx || !drumsOutput) return;
     DRUM_LANE_DEFS.forEach((lane) => {
       const input = this.ctx!.createGain();
-      const fx = connectFxChain(this.ctx!, input, drumsOutput.gain, getDrumLaneFxChain(this.project, lane.id));
+      const fx = connectFxChain(this.ctx!, input, drumsOutput.input, getDrumLaneFxChain(this.project, lane.id));
       this.drumLaneOutputs.set(lane.id, {
         input,
         cleanup: () => {
@@ -1519,6 +1530,10 @@ export class AudioEngine {
       const controls = getAutomatedTrackControls(this.project, track, currentBar);
       output.gain.gain.setTargetAtTime(trackIsAudible(track, this.project.tracks) ? controls.volume : 0, now, 0.018);
       if (output.pan) output.pan.pan.setTargetAtTime(controls.pan, now, 0.018);
+      activeTrackSendRoutes(this.project, track, currentBar).forEach((send) => {
+        const sendGain = output.sendGains.get(send.returnTrackId);
+        if (sendGain) sendGain.gain.setTargetAtTime(send.level, now, 0.018);
+      });
     });
   }
 
@@ -1595,7 +1610,7 @@ export class AudioEngine {
     this.scheduleChordsmithSidechain(event);
     const output = this.trackOutputs.get(event.trackId);
     if (!output) return;
-    if (this.eventShouldTapMeter(event)) this.tapMeter(event.trackId, event.velocity);
+    if (this.eventShouldTapMeter(event)) this.tapEventMeter(event);
     const destination = this.eventDestination(event, output);
     const scheduled = scheduleInstrumentEvent(this.ctx, destination, {
       ...event,
@@ -1615,9 +1630,11 @@ export class AudioEngine {
 
   private eventDestination(event: RenderedEvent, trackOutput: TrackOutput): AudioNode {
     if (event.role === "drums" && isDrumEventKind(event.kind)) {
-      return this.drumLaneOutputs.get(event.drumLane || event.kind)?.input || trackOutput.gain;
+      const track = this.project.tracks.find((item) => item.id === event.trackId);
+      if (generatedDrumBranchLane(track)) return trackOutput.input;
+      return this.drumLaneOutputs.get(event.drumLane || event.kind)?.input || trackOutput.input;
     }
-    return trackOutput.gain;
+    return trackOutput.input;
   }
 
   private scheduleChordsmithSidechain(event: RenderedEvent) {
@@ -1639,19 +1656,16 @@ export class AudioEngine {
     const output = this.trackOutputs.get(region.trackId);
     if (!output) return;
     const sourceElapsed = Math.max(0, currentSeconds - region.startTimeSeconds);
-    const offset = Math.max(0, region.sourceOffsetSeconds + sourceElapsed);
-    if (offset >= cached.buffer.duration) return;
-    const remainingRegion = Math.max(0, region.durationSeconds - sourceElapsed);
-    const duration = Math.min(remainingRegion, cached.buffer.duration - offset);
-    if (duration <= 0) return;
+    const playbackWindow = audioRegionPlaybackWindow(region, cached.buffer.duration, sourceElapsed);
+    if (!playbackWindow) return;
     const source = this.ctx.createBufferSource();
     const gain = this.ctx.createGain();
-    source.buffer = cached.buffer;
+    source.buffer = audioBufferForRegionPlayback(this.ctx, cached.buffer, region);
     source.connect(gain);
-    gain.connect(output.gain);
+    gain.connect(output.input);
     const when = this.startedAt + Math.max(region.startTimeSeconds, currentSeconds);
-    scheduleAudioRegionEnvelope(gain.gain, region, Math.max(this.ctx.currentTime, when), sourceElapsed, duration);
-    source.start(Math.max(this.ctx.currentTime, when), offset, duration);
+    scheduleAudioRegionEnvelope(gain.gain, region, Math.max(this.ctx.currentTime, when), sourceElapsed, playbackWindow.durationSeconds);
+    source.start(Math.max(this.ctx.currentTime, when), playbackWindow.sourceOffsetSeconds, playbackWindow.durationSeconds);
     source.onended = () => {
       safelyDisconnect(source);
       safelyDisconnect(gain);
@@ -1666,7 +1680,7 @@ export class AudioEngine {
     const horizon = seconds + 0.28;
     for (let index = this.findEventIndex(seconds); index < this.events.length && this.events[index].time <= horizon; index += 1) {
       const event = this.events[index];
-      if (this.eventShouldTapMeter(event)) this.tapMeter(event.trackId, event.velocity);
+      if (this.eventShouldTapMeter(event)) this.tapEventMeter(event);
     }
   }
 
@@ -1729,6 +1743,19 @@ export class AudioEngine {
     const value = Math.max(0.12, Math.min(1, velocity));
     this.meterPeaks[trackId] = Math.max(this.meterPeaks[trackId] || 0, value);
     this.meterPeaks.master = Math.max(this.meterPeaks.master || 0, value * 0.9);
+  }
+
+  private tapEventMeter(event: RenderedEvent) {
+    this.tapMeter(event.trackId, event.velocity);
+    if (event.role !== "drums" || !event.drumLane) return;
+    const eventTrack = this.project.tracks.find((track) => track.id === event.trackId);
+    const parentTrackId = generatedDrumBranchLane(eventTrack) ? String(eventTrack?.metadata?.parentGeneratedTrackId || "drums") : "";
+    if (parentTrackId && parentTrackId !== event.trackId) this.tapMeter(parentTrackId, event.velocity);
+    this.project.tracks.forEach((track) => {
+      if (generatedDrumBranchLane(track) === event.drumLane && trackIsAudible(track, this.project.tracks)) {
+        this.tapMeter(track.id, event.velocity);
+      }
+    });
   }
 
   private findEventIndex(seconds: number) {

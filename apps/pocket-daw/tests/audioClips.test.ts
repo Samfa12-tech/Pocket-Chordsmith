@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { audioRegionEnvelopeGainAt, normalizeAudioClipProperties, renderTimelineAudioRegions } from "../src/audio/audioRegions";
+import { audioRegionEnvelopeGainAt, audioRegionPlaybackWindow, normalizeAudioClipProperties, renderTimelineAudioRegions } from "../src/audio/audioRegions";
 import { createDemoProject } from "../src/demo/demoProject";
-import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../src/daw/audioClips";
+import { addImportedAudioMedia, detectAudioTransientsFromPeaks, placeAudioClipOnTimeline, placeAudioClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../src/daw/audioClips";
 import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
+import { createAutomationLane } from "../src/daw/automation";
+import { activateAudioTake, setAudioTakeArchived } from "../src/daw/clips";
 
 describe("audio media and clips", () => {
   it("creates audio media pool items with lightweight waveform metadata", () => {
@@ -23,12 +25,21 @@ describe("audio media and clips", () => {
   });
 
   it("places imported audio on a media track and preserves metadata through project roundtrip", () => {
-    const imported = addImportedAudioMedia(createDemoProject(), {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    const imported = addImportedAudioMedia(project, {
       name: "Room Loop.ogg",
       durationSeconds: 4,
       sampleRate: 44100,
       channels: 1,
-      metadata: { runtimeOnly: true, waveformPeaks: [0.2, 0.7] }
+      metadata: {
+        runtimeOnly: true,
+        waveformPeaks: [0.2, 0.7],
+        sourceEncoding: "ogg",
+        decodedMimeType: "audio/wav",
+        nativeDecoder: "symphonia-0.6",
+        nativeDecoded: true
+      }
     });
 
     const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 5);
@@ -37,7 +48,123 @@ describe("audio media and clips", () => {
 
     expect(placed.trackId).toBe("audio");
     expect(clip).toMatchObject({ type: "audio", mediaPoolItemId: imported.item.id, startBar: 5, trackId: "audio" });
-    expect(parsed.mediaPool[0].metadata).toMatchObject({ runtimeOnly: true, waveformPeaks: [0.2, 0.7] });
+    expect(parsed.mediaPool[0].metadata).toMatchObject({
+      runtimeOnly: true,
+      waveformPeaks: [0.2, 0.7],
+      sourceEncoding: "ogg",
+      decodedMimeType: "audio/wav",
+      nativeDecoder: "symphonia-0.6",
+      nativeDecoded: true
+    });
+  });
+
+  it("clears stale waveform flags when fresh audio analysis is written", () => {
+    const imported = addImportedAudioMedia(createDemoProject(), {
+      name: "Relinked Vocal.wav",
+      durationSeconds: 4,
+      sampleRate: 44100,
+      channels: 1,
+      metadata: {
+        waveformPeaks: [0.1],
+        audioTransientMarkersSeconds: [0.4, 0.9],
+        audioTransientThreshold: 0.42,
+        audioTransientPeakCount: 12,
+        audioTransientMaxPeak: 0.91,
+        audioTransientUpdatedAt: "2026-01-01T00:00:00.000Z",
+        analysisInvalidated: true,
+        waveformNeedsRefresh: true
+      }
+    });
+
+    const updated = updateAudioMediaAnalysis(imported.project, imported.item.id, {
+      durationSeconds: 5,
+      sampleRate: 48000,
+      channels: 2,
+      waveformPeaks: [0.2, 0.8]
+    });
+
+    const metadata = updated.mediaPool.find((item) => item.id === imported.item.id)?.metadata;
+    expect(metadata).toMatchObject({
+      waveformPeaks: [0.2, 0.8],
+      analysisInvalidated: false,
+      waveformNeedsRefresh: false,
+      missing: false,
+      unresolved: false
+    });
+    expect(metadata?.audioTransientMarkersSeconds).toBeUndefined();
+    expect(metadata?.audioTransientThreshold).toBeUndefined();
+    expect(metadata?.audioTransientPeakCount).toBeUndefined();
+    expect(metadata?.audioTransientMaxPeak).toBeUndefined();
+    expect(metadata?.audioTransientUpdatedAt).toBeUndefined();
+    expect(updated.mediaPool.find((item) => item.id === imported.item.id)).toMatchObject({
+      durationSeconds: 5,
+      sampleRate: 48000,
+      channels: 2
+    });
+  });
+
+  it("records successful decoded-cache reload repairs without replacing source annotations", () => {
+    const imported = addImportedAudioMedia(createDemoProject(), {
+      name: "Missing FLAC.flac",
+      uri: "D:\\Lost\\Missing FLAC.flac",
+      mimeType: "audio/flac",
+      durationSeconds: 3,
+      sampleRate: 44100,
+      channels: 2,
+      metadata: {
+        external: true,
+        missing: true,
+        unresolved: true,
+        nativeDecodedCacheRelativePath: "project-cache/native-audio/imports/media-002-missing-flac.wav",
+        userNote: "keep this annotation",
+        waveformNeedsRefresh: true
+      }
+    });
+
+    const updated = updateAudioMediaReloadAnalysis(imported.project, imported.item.id, {
+      mimeType: "audio/wav",
+      durationSeconds: 3.5,
+      sampleRate: 48000,
+      channels: 1,
+      sizeBytes: 168000,
+      waveformPeaks: [0.1, 0.6, 0.2],
+      metadata: {
+        sourceEncoding: "flac",
+        decodedMimeType: "audio/wav",
+        nativeDecoded: true
+      }
+    }, {
+      kind: "decoded-cache",
+      path: "project-cache/native-audio/imports/media-002-missing-flac.wav"
+    });
+    const item = updated.mediaPool.find((entry) => entry.id === imported.item.id)!;
+
+    expect(item.uri).toBe("D:\\Lost\\Missing FLAC.flac");
+    expect(item).toMatchObject({ mimeType: "audio/wav", durationSeconds: 3.5, sampleRate: 48000, channels: 1, sizeBytes: 168000 });
+    expect(item.metadata).toMatchObject({
+      userNote: "keep this annotation",
+      waveformPeaks: [0.1, 0.6, 0.2],
+      missing: false,
+      unresolved: false,
+      waveformNeedsRefresh: false,
+      sourceEncoding: "flac",
+      decodedMimeType: "audio/wav",
+      nativeDecoded: true,
+      lastReloadSourceKind: "decoded-cache",
+      lastReloadSourcePath: "project-cache/native-audio/imports/media-002-missing-flac.wav",
+      restoredFromNativeDecodedCache: true
+    });
+  });
+
+  it("detects source-preserving transient candidates from waveform peaks", () => {
+    const analysis = detectAudioTransientsFromPeaks([0.05, 0.72, 0.2, 0.15, 0.86, 0.3], 6);
+
+    expect(analysis).toEqual({
+      markersSeconds: [1.5, 4.5],
+      threshold: 0.473,
+      peakCount: 6,
+      maxPeak: 0.86
+    });
   });
 
   it("uses exact fractional bar lengths for imported audio clips", () => {
@@ -103,6 +230,36 @@ describe("audio media and clips", () => {
     expect(rendered.warnings[0]).toContain("Missing audio");
   });
 
+  it("keeps archived grouped takes out of audible audio regions while preserving media", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const firstImport = addImportedAudioMedia(project, {
+      name: "Lead keep.wav",
+      durationSeconds: 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "region-takes-a" }
+    });
+    const firstPlaced = placeAudioClipOnTimeline(firstImport.project, firstImport.item.id, 1);
+    const secondImport = addImportedAudioMedia(firstPlaced.project, {
+      name: "Lead archive.wav",
+      durationSeconds: 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "region-takes-a" }
+    });
+    const secondPlaced = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, firstPlaced.trackId, 1);
+    const activeSecond = activateAudioTake(secondPlaced.project, secondPlaced.clipId).project;
+    const archived = setAudioTakeArchived(activeSecond, secondPlaced.clipId, true).project;
+    const restored = setAudioTakeArchived(archived, secondPlaced.clipId, false).project;
+    const reactivated = activateAudioTake(restored, secondPlaced.clipId).project;
+
+    expect(renderTimelineAudioRegions(archived).audioRegions.map((region) => region.clipId)).not.toContain(secondPlaced.clipId);
+    expect(archived.mediaPool.find((item) => item.id === secondImport.item.id)).toBeTruthy();
+    expect(renderTimelineAudioRegions(reactivated).audioRegions.map((region) => region.clipId)).toContain(secondPlaced.clipId);
+  });
+
   it("normalizes and evaluates linear audio clip fades", () => {
     const imported = addImportedAudioMedia(createDemoProject(), {
       name: "Fade.wav",
@@ -120,6 +277,109 @@ describe("audio media and clips", () => {
     expect(audioRegionEnvelopeGainAt(region, 0.5)).toBeCloseTo(0.4, 5);
     expect(audioRegionEnvelopeGainAt(region, 2)).toBeCloseTo(0.8, 5);
     expect(audioRegionEnvelopeGainAt(region, 3.5)).toBeCloseTo(0.4, 5);
+  });
+
+  it("applies non-destructive phase inversion to audio region gain envelopes", () => {
+    const imported = addImportedAudioMedia(createDemoProject(), {
+      name: "Phase.wav",
+      durationSeconds: 4,
+      sampleRate: 44100,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    clip.metadata = { ...(clip.metadata || {}), gain: 0.8, invertPhase: true };
+
+    const region = renderTimelineAudioRegions(placed.project).audioRegions[0];
+
+    expect(region.phaseMultiplier).toBe(-1);
+    expect(audioRegionEnvelopeGainAt(region, 2)).toBeCloseTo(-0.8, 5);
+  });
+
+  it("maps reversed audio regions onto the selected source window", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const imported = addImportedAudioMedia(project, {
+      name: "Reverse Window.wav",
+      durationSeconds: 10,
+      sampleRate: 48000,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    clip.barLength = 1;
+    clip.metadata = { ...(clip.metadata || {}), sourceOffsetSeconds: 2, reversed: true };
+
+    const region = renderTimelineAudioRegions(placed.project).audioRegions[0];
+
+    expect(region.reversed).toBe(true);
+    expect(region.durationSeconds).toBe(2);
+    expect(audioRegionPlaybackWindow(region, 10, 0)).toEqual({ sourceOffsetSeconds: 6, durationSeconds: 2 });
+    expect(audioRegionPlaybackWindow(region, 10, 0.5)).toEqual({ sourceOffsetSeconds: 6.5, durationSeconds: 1.5 });
+  });
+
+  it("applies clip gain automation to audio region envelopes", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const imported = addImportedAudioMedia(project, {
+      name: "Automated.wav",
+      durationSeconds: 4,
+      sampleRate: 44100,
+      channels: 2
+    });
+    let placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    placed = {
+      ...placed,
+      project: createAutomationLane(placed.project, `clips.${placed.clipId}.gain`, {
+        min: 0,
+        max: 4,
+        points: [
+          { bar: 1, value: 0.5 },
+          { bar: 2, value: 1 }
+        ]
+      }).project
+    };
+
+    const region = renderTimelineAudioRegions(placed.project).audioRegions[0];
+
+    expect(region.gain).toBe(1);
+    expect(region.gainAutomation).toEqual([
+      expect.objectContaining({ localSeconds: 0, value: 0.5 }),
+      expect.objectContaining({ localSeconds: 2, value: 1 }),
+      expect.objectContaining({ localSeconds: 4, value: 1 })
+    ]);
+    expect(audioRegionEnvelopeGainAt(region, 0)).toBeCloseTo(0.5, 5);
+    expect(audioRegionEnvelopeGainAt(region, 1)).toBeCloseTo(0.75, 5);
+  });
+
+  it("applies ease curves to clip gain automation envelopes", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const imported = addImportedAudioMedia(project, {
+      name: "Curved.wav",
+      durationSeconds: 4,
+      sampleRate: 44100,
+      channels: 2
+    });
+    let placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    placed = {
+      ...placed,
+      project: createAutomationLane(placed.project, `clips.${placed.clipId}.gain`, {
+        min: 0,
+        max: 4,
+        points: [
+          { bar: 1, value: 0, curve: "ease-out" },
+          { bar: 2, value: 1, curve: "linear" }
+        ]
+      }).project
+    };
+
+    const region = renderTimelineAudioRegions(placed.project).audioRegions[0];
+
+    expect(audioRegionEnvelopeGainAt(region, 1)).toBeCloseTo(0.75, 5);
   });
 
   it("reports repaired audio clip metadata without changing the serialized layout", () => {

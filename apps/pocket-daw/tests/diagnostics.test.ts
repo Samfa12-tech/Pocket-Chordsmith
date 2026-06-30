@@ -4,7 +4,10 @@ import { buildTesterDiagnosticsPayload, diagnosticsJson } from "../src/app/diagn
 import { PerformanceDiagnosticsRecorder } from "../src/app/performanceDiagnostics";
 import { createInitialState, currentProject } from "../src/app/state";
 import { createUndoStack } from "../src/daw/undo";
-import { addMediaPoolItem, createMediaPoolItem, markMediaPoolItemMissing } from "../src/daw/mediaPool";
+import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
+import { activateAudioTake, setAudioTakeArchived } from "../src/daw/clips";
+import { addMediaPoolItem, createMediaPoolItem, linkFreezeRenderCacheItem, markMediaPoolItemMissing } from "../src/daw/mediaPool";
+import { addReturnTrack, setTrackSendLevel, setTrackSendMode } from "../src/daw/routing";
 
 describe("tester diagnostics", () => {
   it("builds an installed-alpha payload with project, updater, audio and media state", () => {
@@ -162,5 +165,140 @@ describe("tester diagnostics", () => {
 
     expect(payload.performance?.sessionId).toMatch(/^perf-/);
     expect(diagnosticsJson(payload)).toContain('"recentSamples"');
+  });
+
+  it("includes routing export diagnostics for support and game-pack smoke review", () => {
+    let state = createInitialState();
+    const ret = addReturnTrack(currentProject(state), "Delay Return");
+    const sent = setTrackSendLevel(ret.project, "bass", ret.trackId, 0.35);
+    const pre = setTrackSendMode(sent, "bass", ret.trackId, "pre-fader");
+    state = { ...state, undoStack: createUndoStack(pre) };
+    const engine = new AudioEngine(currentProject(state));
+
+    const payload = buildTesterDiagnosticsPayload(state, engine.getDiagnostics());
+
+    expect(payload.routing).toMatchObject({
+      returnCount: expect.any(Number),
+      sendCount: expect.any(Number),
+      preFaderSendCount: 1
+    });
+    expect(payload.routing.warnings.join("\n")).not.toContain("pre-fader send");
+    expect(diagnosticsJson(payload)).toContain('"routing"');
+  });
+
+  it("includes grouped audio take diagnostics for comping smoke review", () => {
+    let state = createInitialState();
+    let project = currentProject(state);
+    const firstImport = addImportedAudioMedia(project, {
+      name: "Diagnostic take 1.wav",
+      durationSeconds: 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "diagnostic-takes-a" }
+    });
+    const firstPlaced = placeAudioClipOnTimeline(firstImport.project, firstImport.item.id, 1);
+    const secondImport = addImportedAudioMedia(firstPlaced.project, {
+      name: "Diagnostic take 2.wav",
+      durationSeconds: 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "diagnostic-takes-a" }
+    });
+    const secondPlaced = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, firstPlaced.trackId, 1);
+    project = setAudioTakeArchived(activateAudioTake(secondPlaced.project, secondPlaced.clipId).project, firstPlaced.clipId, true).project;
+    state = { ...state, undoStack: createUndoStack(project) };
+    const engine = new AudioEngine(currentProject(state));
+
+    const payload = buildTesterDiagnosticsPayload(state, engine.getDiagnostics());
+
+    expect(payload.project.audioTakes).toMatchObject({
+      groupedClipCount: 2,
+      groupCount: 1,
+      activeCount: 1,
+      archivedCount: 1,
+      groups: [{ groupId: "diagnostic-takes-a", clipCount: 2, activeCount: 1, archivedCount: 1 }]
+    });
+    expect(diagnosticsJson(payload)).toContain('"audioTakes"');
+  });
+
+  it("includes render cache summaries for freeze and native-cache smoke review", () => {
+    let state = createInitialState();
+    const source = currentProject(state).timeline.clips[0];
+    const frozen = createMediaPoolItem({ kind: "audio", name: "Frozen Intro.wav", durationSeconds: 8, sampleRate: 48000, channels: 2 });
+    let project = addMediaPoolItem(currentProject(state), frozen);
+    project = linkFreezeRenderCacheItem(project, {
+      sourceClipId: source.id,
+      mediaPoolItemId: frozen.id,
+      createdAt: "2026-06-29T00:00:00.000Z"
+    });
+    project.renderCache.push({ id: "native_stem", createdAt: "2026-06-29T00:01:00.000Z", invalidated: false, metadata: { cacheKind: "native-generated-stem" } });
+    state = { ...state, undoStack: createUndoStack(project) };
+    const engine = new AudioEngine(currentProject(state));
+
+    const payload = buildTesterDiagnosticsPayload(state, engine.getDiagnostics());
+
+    expect(payload.media.renderCache).toMatchObject({
+      totalCount: 2,
+      freezeRenderCount: 1,
+      nativeGeneratedStemCount: 1,
+      linkedMediaCount: 1,
+      latestCreatedAt: "2026-06-29T00:01:00.000Z",
+      byKind: {
+        "freeze-render": 1,
+        "native-generated-stem": 1
+      }
+    });
+    expect(diagnosticsJson(payload)).toContain('"renderCache"');
+  });
+
+  it("exports live-edit native cache diagnostics for stale-cache smoke review", () => {
+    const state = createInitialState();
+    const engine = new AudioEngine(currentProject(state));
+    const audioDiagnostics = engine.getDiagnostics();
+    audioDiagnostics.nativeRenderCache = {
+      ...audioDiagnostics.nativeRenderCache,
+      nativeRenderCacheStaleForLiveEdits: true,
+      pendingReason: "live-bass-edit",
+      discardedBuildCount: 2
+    };
+
+    const payload = buildTesterDiagnosticsPayload(state, audioDiagnostics);
+
+    expect(payload.media.nativeRenderCache).toMatchObject({
+      nativeRenderCacheStaleForLiveEdits: true,
+      pendingReason: "live-bass-edit",
+      discardedBuildCount: 2
+    });
+    expect(diagnosticsJson(payload)).toContain('"nativeRenderCacheStaleForLiveEdits": true');
+  });
+
+  it("includes audio media analysis readiness for waveform and normalize smoke review", () => {
+    let state = createInitialState();
+    const imported = addImportedAudioMedia(currentProject(state), {
+      name: "Vocal Take.wav",
+      durationSeconds: 5,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { waveformPeaks: [0.2, 0.7, 0.4], audioTransientMarkersSeconds: [0.5, 1.75] }
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    state = { ...state, undoStack: createUndoStack(placed.project) };
+    const engine = new AudioEngine(currentProject(state));
+
+    const payload = buildTesterDiagnosticsPayload(state, engine.getDiagnostics());
+
+    expect(payload.media.analysis).toMatchObject({
+      audioMediaCount: 1,
+      audioClipCount: 1,
+      waveformReadyCount: 1,
+      waveformMissingCount: 0,
+      waveformPeakPointCount: 3,
+      maxPeak: 0.7,
+      normalizeReadyClipCount: 1,
+      clipsMissingWaveformCount: 0,
+      transientReadyCount: 1,
+      transientMarkerCount: 2
+    });
+    expect(diagnosticsJson(payload)).toContain('"analysis"');
   });
 });

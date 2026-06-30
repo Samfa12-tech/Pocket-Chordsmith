@@ -18,6 +18,13 @@ export interface SaveProjectFileResult {
   message: string;
 }
 
+export interface SaveBinaryFileResult {
+  file: ProjectFileState | null;
+  mode: "native" | "browser-fallback" | "cancelled";
+  message: string;
+  bytesWritten?: number;
+}
+
 interface NativeOpenPayload {
   path: string;
   label: string;
@@ -30,6 +37,12 @@ interface NativeSavePayload {
   backupPath?: string | null;
   bytesWritten?: number;
   recoveryWarnings?: string[];
+}
+
+interface NativeBinarySavePayload {
+  path: string;
+  label: string;
+  bytesWritten: number;
 }
 
 export interface NativeProjectRecoveryCandidate {
@@ -189,6 +202,46 @@ export async function saveProjectFile(
   return { file: null, mode: "browser-fallback", message: "Downloaded browser fallback .pocketdaw file." };
 }
 
+export async function saveBlobFileAs(
+  blob: Blob,
+  defaultName: string,
+  api = defaultNativeFileApi
+): Promise<SaveBinaryFileResult> {
+  if (api.isAvailable()) {
+    try {
+      const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+      const saved = await api.invoke<NativeBinarySavePayload | null>("save_binary_file_as", {
+        defaultName,
+        bytes
+      });
+      if (!saved) return { file: null, mode: "cancelled", message: "Save cancelled." };
+      assertNativeBinarySavePayload(saved);
+      return {
+        file: projectFileStateFromPath(saved.path, saved.label),
+        mode: "native",
+        message: `Saved ${saved.label || projectFileStateFromPath(saved.path).label}.`,
+        bytesWritten: saved.bytesWritten
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error || "Native save failed.");
+      downloadBlob(blob, defaultName);
+      return {
+        file: null,
+        mode: "browser-fallback",
+        message: `Native save failed (${reason}). Downloaded browser fallback.`,
+        bytesWritten: blob.size
+      };
+    }
+  }
+  downloadBlob(blob, defaultName);
+  return {
+    file: null,
+    mode: "browser-fallback",
+    message: "Downloaded browser fallback file.",
+    bytesWritten: blob.size
+  };
+}
+
 export function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -207,6 +260,12 @@ export function safeName(title: string, ext: string): string {
 function assertNativeSavePayload(value: NativeSavePayload): void {
   if (!value || typeof value.path !== "string") {
     throw new Error("Native save returned an invalid project file payload.");
+  }
+}
+
+function assertNativeBinarySavePayload(value: NativeBinarySavePayload): void {
+  if (!value || typeof value.path !== "string" || typeof value.bytesWritten !== "number") {
+    throw new Error("Native save returned an invalid binary file payload.");
   }
 }
 

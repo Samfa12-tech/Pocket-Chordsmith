@@ -31,6 +31,11 @@ describe("feedback email drafts", () => {
 
     expect(draft.diagnosticsIncludedInBody).toBe(false);
     expect(draft.body).toContain("Diagnostics summary");
+    expect(draft.body).toContain("Routing: 1 buses, 1 returns, 2 sends");
+    expect(draft.body).toContain("Take lanes: 0 grouped clips");
+    expect(draft.body).toContain("Analysis: 1/2 waveform-ready media");
+    expect(draft.body).toContain("4 transient markers");
+    expect(draft.body).toContain("Render cache: 3 total, 1 freeze");
     expect(draft.body).toContain("Full diagnostics JSON was copied");
     expect(draft.body).not.toContain("x".repeat(1000));
   });
@@ -68,7 +73,15 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
       invariantErrorCount: 0,
       invariantWarningCount: 0,
       invariantErrors: [],
-      invariantWarnings: []
+      invariantWarnings: [],
+      audioTakes: {
+        groupedClipCount: 0,
+        groupCount: 0,
+        activeCount: 0,
+        mutedCount: 0,
+        archivedCount: 0,
+        groups: []
+      }
     },
     audio: {
       playbackBackend: "native",
@@ -119,6 +132,15 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
       receivedAt: "2026-06-14T07:00:00.000Z",
       message: "Imported."
     },
+    routing: {
+      busCount: 1,
+      returnCount: 1,
+      sendCount: 2,
+      postFaderSendCount: 1,
+      preFaderSendCount: 1,
+      routedTrackCount: 3,
+      warnings: []
+    },
     media: {
       poolCount: 0,
       projectMediaCount: 0,
@@ -126,7 +148,37 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
       runtimeOnlyCount: 0,
       missingCount: 0,
       runtimeAvailableCount: 0,
-      renderCacheCount: 0,
+      renderCacheCount: 3,
+      analysis: {
+        audioMediaCount: 2,
+        audioClipCount: 1,
+        waveformReadyCount: 1,
+        waveformMissingCount: 1,
+        waveformPeakPointCount: 32,
+        maxPeak: 0.9,
+        normalizeReadyClipCount: 1,
+        clipsMissingWaveformCount: 0,
+        staleAnalysisCount: 0,
+        decodedCacheCount: 1,
+        transientReadyCount: 1,
+        transientMarkerCount: 4
+      },
+      renderCache: {
+        totalCount: 3,
+        activeCount: 2,
+        invalidatedCount: 1,
+        linkedMediaCount: 2,
+        unlinkedCount: 1,
+        freezeRenderCount: 1,
+        nativeGeneratedStemCount: 1,
+        nativeRuntimeAudioCount: 1,
+        latestCreatedAt: "2026-06-14T08:00:00.000Z",
+        byKind: {
+          "freeze-render": 1,
+          "native-generated-stem": 1,
+          "native-runtime-audio": 1
+        }
+      },
       nativeRenderCache: {
         coverage: null,
         requestedClipCount: 0,

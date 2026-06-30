@@ -10,6 +10,41 @@ export interface ParsedMidiNote {
   trackIndex?: number;
 }
 
+export interface ParsedMidiController {
+  id: string;
+  controller: number;
+  value: number;
+  tick: number;
+  channel?: number;
+  trackIndex?: number;
+}
+
+export interface ParsedMidiProgramChange {
+  id: string;
+  program: number;
+  tick: number;
+  channel?: number;
+  trackIndex?: number;
+}
+
+export interface ParsedMidiPitchBend {
+  id: string;
+  value: number;
+  tick: number;
+  channel?: number;
+  trackIndex?: number;
+}
+
+export interface ParsedMidiAftertouch {
+  id: string;
+  kind: "poly" | "channel";
+  value: number;
+  tick: number;
+  channel?: number;
+  note?: number;
+  trackIndex?: number;
+}
+
 export interface ParsedMidiFile {
   format: number;
   ppq: number;
@@ -17,6 +52,10 @@ export interface ParsedMidiFile {
   timeSig?: number;
   trackNames: string[];
   notes: ParsedMidiNote[];
+  controllers: ParsedMidiController[];
+  programChanges: ParsedMidiProgramChange[];
+  pitchBends: ParsedMidiPitchBend[];
+  aftertouch: ParsedMidiAftertouch[];
   metadata: JsonObject;
 }
 
@@ -41,9 +80,17 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
   reader.skip(Math.max(0, headerLength - 6));
 
   const notes: ParsedMidiNote[] = [];
+  const controllers: ParsedMidiController[] = [];
+  const programChanges: ParsedMidiProgramChange[] = [];
+  const pitchBends: ParsedMidiPitchBend[] = [];
+  const aftertouch: ParsedMidiAftertouch[] = [];
   const trackNames: string[] = [];
   const trackSummaries: JsonObject[] = [];
-  const metadata: JsonObject = { ignoredEvents: 0, trackCount, format, ppq, trackSummaries };
+  const tempoEvents: JsonObject[] = [];
+  const timeSignatureEvents: JsonObject[] = [];
+  const keySignatures: JsonObject[] = [];
+  const lyrics: JsonObject[] = [];
+  const metadata: JsonObject = { ignoredEvents: 0, sysexCount: 0, trackCount, format, ppq, trackSummaries };
   let tempoBpm: number | undefined;
   let timeSig: number | undefined;
 
@@ -60,6 +107,10 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
     let runningStatus = 0;
     let trackName = "";
     const firstNoteIndex = notes.length;
+    const firstControllerIndex = controllers.length;
+    const firstProgramChangeIndex = programChanges.length;
+    const firstPitchBendIndex = pitchBends.length;
+    const firstAftertouchIndex = aftertouch.length;
     const active = new Map<string, ActiveNote[]>();
     while (reader.position < trackEnd) {
       tick += reader.readVarLen();
@@ -80,13 +131,28 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
           trackName = ascii(payload);
           trackNames.push(trackName);
         }
-        else if (type === 0x51 && payload.length === 3) tempoBpm = Math.round(60000000 / ((payload[0] << 16) | (payload[1] << 8) | payload[2]));
-        else if (type === 0x58 && payload.length >= 1) timeSig = payload[0];
+        else if (type === 0x51 && payload.length === 3) {
+          const microsecondsPerQuarter = (payload[0] << 16) | (payload[1] << 8) | payload[2];
+          const bpm = Math.round(60000000 / microsecondsPerQuarter);
+          tempoBpm = bpm;
+          tempoEvents.push({ tick, trackIndex, bpm, microsecondsPerQuarter });
+        } else if (type === 0x58 && payload.length >= 2) {
+          const numerator = payload[0];
+          const denominator = 2 ** payload[1];
+          timeSig = numerator;
+          timeSignatureEvents.push({ tick, trackIndex, numerator, denominator });
+        } else if (type === 0x59 && payload.length >= 2) {
+          keySignatures.push({ tick, trackIndex, sharpsFlats: signedByte(payload[0]), minor: payload[1] === 1 });
+        } else if (type === 0x05 && payload.length > 0) {
+          const text = ascii(payload).replace(/\0/g, "").trim();
+          if (text) lyrics.push({ tick, trackIndex, text });
+        }
         continue;
       }
       if (status === 0xf0 || status === 0xf7) {
         reader.skip(reader.readVarLen());
         metadata.ignoredEvents = Number(metadata.ignoredEvents || 0) + 1;
+        metadata.sysexCount = Number(metadata.sysexCount || 0) + 1;
         continue;
       }
 
@@ -117,12 +183,58 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
             else active.delete(key);
           }
         }
-      } else if (command === 0xa0 || command === 0xb0 || command === 0xe0) {
-        reader.skip(2);
-        metadata.ignoredEvents = Number(metadata.ignoredEvents || 0) + 1;
-      } else if (command === 0xc0 || command === 0xd0) {
-        reader.skip(1);
-        metadata.ignoredEvents = Number(metadata.ignoredEvents || 0) + 1;
+      } else if (command === 0xb0) {
+        const controller = reader.readU8();
+        const value = reader.readU8();
+        controllers.push({
+          id: `cc_${trackIndex}_${controllers.length + 1}`,
+          controller,
+          value,
+          tick,
+          channel,
+          trackIndex
+        });
+      } else if (command === 0xc0) {
+        const program = reader.readU8();
+        programChanges.push({
+          id: `program_${trackIndex}_${programChanges.length + 1}`,
+          program,
+          tick,
+          channel,
+          trackIndex
+        });
+      } else if (command === 0xa0) {
+        const note = reader.readU8();
+        const value = reader.readU8();
+        aftertouch.push({
+          id: `aftertouch_${trackIndex}_${aftertouch.length + 1}`,
+          kind: "poly",
+          note,
+          value,
+          tick,
+          channel,
+          trackIndex
+        });
+      } else if (command === 0xe0) {
+        const lsb = reader.readU8();
+        const msb = reader.readU8();
+        pitchBends.push({
+          id: `pitchbend_${trackIndex}_${pitchBends.length + 1}`,
+          value: Math.max(0, Math.min(16383, (msb << 7) | lsb)),
+          tick,
+          channel,
+          trackIndex
+        });
+      } else if (command === 0xd0) {
+        const value = reader.readU8();
+        aftertouch.push({
+          id: `aftertouch_${trackIndex}_${aftertouch.length + 1}`,
+          kind: "channel",
+          value,
+          tick,
+          channel,
+          trackIndex
+        });
       } else {
         metadata.ignoredEvents = Number(metadata.ignoredEvents || 0) + 1;
       }
@@ -133,12 +245,26 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
       name: trackName || `Track ${trackIndex + 1}`,
       lengthBytes: trackLength,
       noteCount: notes.length - firstNoteIndex,
+      controllerCount: controllers.length - firstControllerIndex,
+      programChangeCount: programChanges.length - firstProgramChangeIndex,
+      pitchBendCount: pitchBends.length - firstPitchBendIndex,
+      aftertouchCount: aftertouch.length - firstAftertouchIndex,
       startOffset: trackStart,
       endOffset: trackEnd
     });
     reader.position = trackEnd;
   }
   metadata.parsedTrackCount = trackSummaries.length;
+  metadata.controllerCount = controllers.length;
+  metadata.programChangeCount = programChanges.length;
+  metadata.pitchBendCount = pitchBends.length;
+  metadata.aftertouchCount = aftertouch.length;
+  metadata.tempoEvents = tempoEvents;
+  metadata.timeSignatureEvents = timeSignatureEvents;
+  metadata.keySignatures = keySignatures;
+  metadata.lyrics = lyrics;
+  metadata.keySignatureCount = keySignatures.length;
+  metadata.lyricCount = lyrics.length;
 
   return {
     format,
@@ -147,8 +273,17 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
     timeSig,
     trackNames,
     notes: notes.sort((a, b) => a.startTick - b.startTick || a.pitch - b.pitch),
+    controllers: controllers.sort((a, b) => a.tick - b.tick || a.controller - b.controller),
+    programChanges: programChanges.sort((a, b) => a.tick - b.tick || a.program - b.program),
+    pitchBends: pitchBends.sort((a, b) => a.tick - b.tick || a.value - b.value),
+    aftertouch: aftertouch.sort((a, b) => a.tick - b.tick || (a.channel ?? 0) - (b.channel ?? 0) || midiEventOrder(a.id) - midiEventOrder(b.id)),
     metadata
   };
+}
+
+function midiEventOrder(id: string): number {
+  const match = id.match(/(\d+)$/);
+  return match ? Number(match[1]) : 0;
 }
 
 class MidiReader {
@@ -198,6 +333,10 @@ class MidiReader {
 
 function ascii(bytes: Uint8Array): string {
   return Array.from(bytes).map((byte) => String.fromCharCode(byte)).join("");
+}
+
+function signedByte(value: number): number {
+  return value > 127 ? value - 256 : value;
 }
 
 function printableChunkId(value: string): string {

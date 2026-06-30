@@ -2,6 +2,8 @@
 
 Pocket DAW public alpha distribution is installer-only.
 
+Current release truth lives in `release-status.json` and generated `docs/CURRENT_RELEASE_STATUS.md`. The versioned artifact names below are historical examples from the old full-installer itch flow; do not publish a current build from this checklist without first bumping the checkpoint metadata and recording exact-artifact smoke evidence.
+
 ## Release Gate
 
 - Package/version/Tauri/Cargo versions match.
@@ -13,9 +15,9 @@ Pocket DAW public alpha distribution is installer-only.
 - SmartScreen/AuthentiCode status is documented honestly.
 - Tauri updater `.sig` files are documented separately from Windows code signing.
 
-## Artifact Expectations
+## Historical Full-Installer Artifact Expectations
 
-- Primary itch artifact folder: `releases/itch/installers/`.
+- Historical fallback itch artifact folder: `releases/itch/installers/`.
 - Setup EXE: `Pocket DAW_0.5.9_x64-setup.exe`.
 - Setup EXE updater signature: `Pocket DAW_0.5.9_x64-setup.exe.sig`.
 - MSI: `Pocket DAW_0.5.9_x64_en-US.msi`.
@@ -24,7 +26,9 @@ Pocket DAW public alpha distribution is installer-only.
 
 Do not package standalone `Pocket DAW.exe` or a public app archive as a release channel.
 
-## Upload Commands
+## Historical Upload Commands
+
+These commands are retained for emergency full-installer fallback context only. Normal public checkpoints use GitHub updater releases plus the itch bootstrapper unless the bootstrapper itself changes.
 
 Preview:
 
@@ -32,7 +36,7 @@ Preview:
 butler push-preview releases/itch/installers samfa12/pocket-daw:windows-installer
 ```
 
-Installer upload:
+Historical installer upload:
 
 ```powershell
 butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion 0.5.9

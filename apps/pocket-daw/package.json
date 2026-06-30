@@ -37,6 +37,7 @@
     "status:release": "node scripts/render-release-status.mjs",
     "verify:release-status-doc": "node scripts/verify-release-status-doc.mjs",
     "verify:smoke-attestation": "node scripts/verify-smoke-attestation.mjs",
+    "verify:game-pack": "node scripts/verify-game-pack.mjs",
     "package:itch": "node scripts/package-itch.mjs",
     "verify:artifacts": "node scripts/verify-release-artifacts.mjs",
     "verify:itch": "node scripts/verify-itch.mjs",

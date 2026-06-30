@@ -15,6 +15,185 @@
   scrollbar-gutter: stable;
 }
 
+.mixer.lower-dock {
+  grid-auto-flow: row;
+  grid-auto-columns: initial;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  overflow: hidden;
+}
+
+.lower-dock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #26314c;
+}
+
+.lower-dock-header h2,
+.lower-dock-header p {
+  margin: 0;
+}
+
+.lower-dock-header h2 {
+  color: #eef4ff;
+  font-size: 14px;
+}
+
+.lower-dock-header p {
+  color: #9ba9c9;
+  font-size: 11px;
+}
+
+.lower-dock-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.lower-dock-tabs button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #30405f;
+  border-radius: 6px;
+  color: #c9d6f2;
+  background: #111827;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.lower-dock-tabs button.active {
+  border-color: rgba(64, 216, 255, 0.72);
+  color: #eefbff;
+  background: #102235;
+}
+
+.lower-dock-body {
+  min-width: 0;
+  min-height: 0;
+}
+
+.mixer-strips {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(174px, 190px);
+  align-items: stretch;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+
+.lower-dock-detail {
+  display: grid;
+  grid-template-columns: minmax(190px, 260px) minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+}
+
+.lower-dock-editor {
+  display: grid;
+  grid-template-columns: minmax(190px, 260px) minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+}
+
+.dock-track-context,
+.lower-dock-empty,
+.dock-export-summary {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #293550;
+  border-radius: 8px;
+  background: #111827;
+}
+
+.dock-track-context h3,
+.dock-track-context p,
+.dock-export-summary h3,
+.dock-export-summary dl,
+.lower-dock-empty strong,
+.lower-dock-empty span {
+  margin: 0;
+}
+
+.dock-track-context h3,
+.dock-export-summary h3,
+.lower-dock-empty strong {
+  color: #eef4ff;
+  font-size: 13px;
+}
+
+.dock-track-context p,
+.lower-dock-empty span {
+  color: #9ba9c9;
+  font-size: 11px;
+}
+
+.dock-export-summary dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 5px 10px;
+  color: #dbe5ff;
+  font-size: 11px;
+}
+
+.dock-export-summary dt {
+  color: #8ea0c4;
+}
+
+.dock-routing-warnings {
+  display: grid;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid rgba(255, 200, 87, 0.35);
+  border-radius: 6px;
+  color: #ffd98a;
+  background: rgba(255, 200, 87, 0.08);
+  font-size: 11px;
+}
+
+.export-profile-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.export-profile-controls label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: #8ea0c4;
+  font-size: 10px;
+}
+
+.export-profile-controls select,
+.export-profile-controls input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  font-size: 11px;
+}
+
+.lower-dock-export {
+  grid-template-columns: minmax(190px, 260px) minmax(360px, 640px);
+}
+
+.lower-dock-empty {
+  max-width: 520px;
+}
+
 .strip {
   display: grid;
   grid-template-rows: 28px 48px 38px 38px 64px minmax(50px, auto);

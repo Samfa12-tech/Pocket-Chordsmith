@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createDemoProject } from "../src/demo/demoProject";
-import { addAutomationPoint, createAutomationLane, deleteAutomationPoint, evaluateAutomationLane, getAutomatedTrackControls, updateAutomationPoint } from "../src/daw/automation";
+import { addAutomationPoint, createAutomationLane, deleteAutomationPoint, ensureClipAutomationLane, ensureTrackSendAutomationLane, evaluateAutomationLane, getAutomatedTrackControls, getTrackSendAutomationLane, updateAutomationPoint } from "../src/daw/automation";
+import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../src/daw/audioClips";
+import { addReturnTrack, setTrackSendLevel } from "../src/daw/routing";
 
 describe("automation helpers", () => {
   it("creates, evaluates, updates and deletes clamped automation points", () => {
@@ -29,6 +31,24 @@ describe("automation helpers", () => {
     expect(deleted.automation.lanes.find((item) => item.id === created.laneId)?.points).toHaveLength(2);
   });
 
+  it("evaluates ease-in and ease-out automation curves", () => {
+    const easeIn = createAutomationLane(createDemoProject(), "tracks.bass.volume", {
+      points: [
+        { bar: 1, value: 0, curve: "ease-in" },
+        { bar: 3, value: 1, curve: "linear" }
+      ]
+    }).project.automation.lanes[0];
+    const easeOut = createAutomationLane(createDemoProject(), "tracks.bass.volume", {
+      points: [
+        { bar: 1, value: 0, curve: "ease-out" },
+        { bar: 3, value: 1, curve: "linear" }
+      ]
+    }).project.automation.lanes[0];
+
+    expect(evaluateAutomationLane(easeIn, 2, 0)).toBeCloseTo(0.25, 5);
+    expect(evaluateAutomationLane(easeOut, 2, 0)).toBeCloseTo(0.75, 5);
+  });
+
   it("applies volume automation as a multiplier and pan automation as an override", () => {
     let project = createDemoProject();
     project = createAutomationLane(project, "tracks.bass.volume", { points: [{ bar: 1, value: 0.5 }, { bar: 2, value: 1 }] }).project;
@@ -39,5 +59,38 @@ describe("automation helpers", () => {
 
     expect(controls.volume).toBeCloseTo(bass.volume * 0.75, 5);
     expect(controls.pan).toBeCloseTo(0, 5);
+  });
+
+  it("creates clip gain automation lanes attached to audio clips", () => {
+    const imported = addImportedAudioMedia(createDemoProject(), {
+      name: "Automation.wav",
+      durationSeconds: 4,
+      sampleRate: 44100,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    clip.metadata = { ...(clip.metadata || {}), gain: 1.5 };
+
+    const ensured = ensureClipAutomationLane(placed.project, placed.clipId, "gain");
+    const lane = ensured.project.automation.lanes.find((item) => item.id === ensured.laneId)!;
+    const updatedClip = ensured.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+
+    expect(lane).toMatchObject({ targetPath: `clips.${placed.clipId}.gain`, min: 0, max: 4 });
+    expect(lane.points[0]).toMatchObject({ bar: 2, value: 1.5 });
+    expect(updatedClip.automationLaneId).toBe(lane.id);
+  });
+
+  it("creates send-level automation lanes attached to source tracks", () => {
+    const withReturn = addReturnTrack(createDemoProject(), "Verb Return");
+    const sent = setTrackSendLevel(withReturn.project, "bass", withReturn.trackId, 0.45);
+
+    const ensured = ensureTrackSendAutomationLane(sent, "bass", withReturn.trackId, "level");
+    const lane = getTrackSendAutomationLane(ensured.project, "bass", withReturn.trackId, "level")!;
+    const bass = ensured.project.tracks.find((track) => track.id === "bass")!;
+
+    expect(lane).toMatchObject({ targetPath: `tracks.bass.sends.${withReturn.trackId}.level`, min: 0, max: 1 });
+    expect(lane.points[0]).toMatchObject({ bar: 1, value: 0.45 });
+    expect(bass.automationLaneIds).toContain(ensured.laneId);
   });
 });

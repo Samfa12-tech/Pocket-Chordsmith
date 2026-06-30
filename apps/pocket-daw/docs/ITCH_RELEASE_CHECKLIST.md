@@ -1,9 +1,11 @@
-# Pocket DAW Itch Alpha Release Checklist
+# Pocket DAW Itch Alpha Release Checklist (Historical v0.5.9)
 
-Pocket DAW v0.5.9 is live for public Windows alpha testing on itch. It is distributed as an installed Windows app only.
+Historical note: this checklist records the original `v0.5.9` full-installer itch release path. It is not the current release procedure and must not be used to publish a new Pocket DAW build. For current release truth and candidate packaging status, use `release-status.json` and `docs/CURRENT_RELEASE_STATUS.md`.
+
+Pocket DAW v0.5.9 was distributed as an installed Windows app only.
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
-- Current version: `0.5.9`
+- Historical version: `0.5.9`
 - Primary channel: `windows-installer`
 - Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 
@@ -41,15 +43,15 @@ Do not upload or document a user-facing portable app.
 - Mention that Tauri updater `.sig` files are separate from Windows code signing.
 - Do not describe the whole repo as fully MIT/open-source; licensing is mixed/source-available unless license files say otherwise.
 
-## Upload Commands
+## Historical Upload Commands
 
-Preview the installer folder with butler:
+These commands are retained only to explain the old full-installer flow. Do not run them for a current release without first updating the checkpoint version and following the current release-status docs.
 
 ```powershell
 butler push-preview releases/itch/installers samfa12/pocket-daw:windows-installer
 ```
 
-Installer upload:
+Historical installer upload:
 
 ```powershell
 butler push releases/itch/installers samfa12/pocket-daw:windows-installer --userversion 0.5.9
@@ -57,6 +59,6 @@ butler push releases/itch/installers samfa12/pocket-daw:windows-installer --user
 
 If the itch slug differs, replace `samfa12/pocket-daw`.
 
-## Gate
+## Historical Gate
 
 Do not promote beyond alpha testing unless `FINAL_RELEASE_VERDICT_v0.5.9.md` is acceptable and the manual installed-app Windows smoke checklist is completed or the caveats are explicitly accepted.

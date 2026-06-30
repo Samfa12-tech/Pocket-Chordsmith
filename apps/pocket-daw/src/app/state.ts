@@ -9,9 +9,11 @@ import type { PocketHandoffKind, PocketHandoffSource } from "../native/pocketHan
 import type { RecentProject } from "../native/recentFiles";
 import type { UpdaterState } from "../native/updaterBridge";
 import { defaultAiBridgeUiStatus, type AiBridgeUiStatus } from "../native/aiBridge";
+import type { DrumLaneId } from "../daw/drumLanes";
+import type { MidiImportPlacementMode } from "../daw/midiClips";
 
 export type ChordsmithStepSelection =
-  | { kind: "drums"; sectionId: string; lane: "kick" | "snare" | "hat"; step: number }
+  | { kind: "drums"; sectionId: string; lane: DrumLaneId; step: number }
   | { kind: "bass"; sectionId: string; step: number }
   | { kind: "melody"; sectionId: string; trackIndex: number; step: number };
 
@@ -26,11 +28,13 @@ export interface AppState {
   timelineHeightPx: number;
   inspectorVisible: boolean;
   inspectorWidthPx: number;
+  lowerDockTab: LowerDockTab;
   status: string;
   playing: boolean;
   playheadBar: number;
   meterLevels: Record<string, number>;
   importText: string;
+  midiImportPlacementMode: MidiImportPlacementMode;
   currentFile: ProjectFileState;
   busyMessage: string | null;
   exportProgress: { message: string; detail?: string } | null;
@@ -61,6 +65,8 @@ export interface AppState {
   lastHandoff: HandoffStatus;
   recording: RecordingUiState;
 }
+
+export type LowerDockTab = "mixer" | "inserts" | "sends" | "automation" | "piano-roll" | "audio-editor" | "export-details";
 
 export type HandoffResult = "not-received" | "imported" | "ignored" | "failed-parse";
 export type HandoffStatusSource = PocketHandoffSource | "project-file";
@@ -123,6 +129,24 @@ export interface RecordingNativePlaybackAnchor {
 
 export const RECORDING_READY_MESSAGE = "Ready to record one armed live track.";
 
+export function createNativeCacheUiStatus(overrides: Partial<NativeCacheUiStatus> = {}): NativeCacheUiStatus {
+  return {
+    assetRegionCount: 0,
+    cachedClipCount: 0,
+    generatedRegionCount: 0,
+    runtimeAudioRegionCount: 0,
+    proceduralFallbackEventCount: 0,
+    buildPending: false,
+    prewarmScheduled: false,
+    bypassedForLiveEdits: false,
+    lastBuildReason: null,
+    lastError: null,
+    generatedStemRenderFailureCount: 0,
+    lastGeneratedStemRenderError: null,
+    ...overrides
+  };
+}
+
 export function createRecordingUiState(overrides: Partial<RecordingUiState> = {}): RecordingUiState {
   return {
     status: "idle",
@@ -174,11 +198,13 @@ export function createInitialState(): AppState {
     timelineHeightPx: 430,
     inspectorVisible: true,
     inspectorWidthPx: 420,
+    lowerDockTab: "mixer",
     status: "Editable demo copy loaded. Edits autosave to this copy.",
     playing: false,
     playheadBar: 1,
     meterLevels: {},
     importText: "",
+    midiImportPlacementMode: "single-clip",
     currentFile: { path: null, label: "Editable demo copy" },
     busyMessage: null,
     exportProgress: null,
@@ -205,20 +231,7 @@ export function createInitialState(): AppState {
     chordsmithEditorMelodyTrackIndex: 0,
     chordsmithEditorStepPage: 0,
     chordsmithStepSelection: null,
-    nativeCacheStatus: {
-      assetRegionCount: 0,
-      cachedClipCount: 0,
-      generatedRegionCount: 0,
-      runtimeAudioRegionCount: 0,
-      proceduralFallbackEventCount: 0,
-      buildPending: false,
-      prewarmScheduled: false,
-      bypassedForLiveEdits: false,
-      lastBuildReason: null,
-      lastError: null,
-      generatedStemRenderFailureCount: 0,
-      lastGeneratedStemRenderError: null
-    },
+    nativeCacheStatus: createNativeCacheUiStatus(),
     lastHandoff: {
       source: null,
       result: "not-received",
@@ -251,9 +264,11 @@ export function loadProjectIntoState(
     playheadBar: 1,
     meterLevels: {},
     importText: options.clearImportText === false ? state.importText : "",
+    midiImportPlacementMode: state.midiImportPlacementMode,
     currentFile: options.currentFile || { path: null, label: project.project.title || "Untitled project" },
     busyMessage: null,
     exportProgress: null,
+    nativeCacheStatus: createNativeCacheUiStatus(),
     chordsmithEditorStepPage: 0,
     chordsmithStepSelection: null,
     recording: createRecordingUiState()

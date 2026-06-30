@@ -1,8 +1,68 @@
 import type { Clip, PocketDawProject } from "./schema";
 import { cloneProject } from "./dawProject";
-import { recomputeTimelineBars } from "./timeline";
+import { barsToSeconds, recomputeTimelineBars } from "./timeline";
+import { detectAudioTransientsFromPeaks } from "./audioClips";
 
 export type ClipTransformField = "transpose" | "gain";
+export type GeneratedStemRole = "drums" | "bass" | "chords" | "melody" | "guitar";
+export type AudioClipPropertyField = "gain" | "sourceOffsetSeconds" | "durationSeconds" | "fadeInSeconds" | "fadeOutSeconds";
+export type AudioClipAction = "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients";
+export type AudioTakeStatus = "active" | "muted-take" | "archived-take";
+
+export interface AudioClipActionResult {
+  project: PocketDawProject;
+  changed: boolean;
+  status: string;
+}
+
+export interface AudioTakeCompSplitResult extends AudioClipActionResult {
+  rightClipId: string | null;
+  splitCount: number;
+}
+
+export interface ClipRangeSplitResult {
+  project: PocketDawProject;
+  splitCount: number;
+  rightClipIds: string[];
+}
+
+export interface ClipRangeCropResult extends AudioClipActionResult {
+  clipId: string | null;
+}
+
+export interface ClipRangeDeleteResult extends AudioClipActionResult {
+  deletedClipId: string | null;
+  rightClipId: string | null;
+}
+
+export interface ClipRangeRippleDeleteResult extends ClipRangeDeleteResult {
+  rippleBars: number;
+  movedClipIds: string[];
+}
+
+export interface TimelineRippleDeleteResult extends AudioClipActionResult {
+  rippleBars: number;
+  affectedClipIds: string[];
+  movedClipIds: string[];
+  rightClipIds: string[];
+}
+
+export interface AudioTakeSummary {
+  groupId: string;
+  takeNumber: number;
+  takeCount: number;
+  active: boolean;
+  siblings: Array<{
+    clipId: string;
+    name: string;
+    takeNumber: number;
+    takeLaneId: string;
+    takeStatus: AudioTakeStatus;
+    active: boolean;
+    archived: boolean;
+    muted: boolean;
+  }>;
+}
 
 export function selectClip(project: PocketDawProject, clipId: string | null): PocketDawProject {
   const next = cloneProject(project);
@@ -82,6 +142,468 @@ export function setClipTransform(project: PocketDawProject, clipId: string, fiel
   return next;
 }
 
+export function setGeneratedClipStemMute(project: PocketDawProject, clipId: string, stem: GeneratedStemRole, muted: boolean): PocketDawProject {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "generated-section") return project;
+  const current = clip.transforms || { transpose: 0, octave: 0, gain: 1, stemMutes: {} };
+  clip.transforms = {
+    ...current,
+    transpose: current.transpose ?? 0,
+    octave: current.octave ?? 0,
+    gain: current.gain ?? 1,
+    stemMutes: {
+      ...(current.stemMutes || {}),
+      [stem]: muted
+    }
+  };
+  return next;
+}
+
+export function setAudioClipProperty(project: PocketDawProject, clipId: string, field: AudioClipPropertyField, value: number): PocketDawProject {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") return project;
+  const max = field === "gain" ? 4 : 24 * 60 * 60;
+  const fallback = field === "gain" ? 1 : field === "durationSeconds" ? barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig) : 0;
+  clip.metadata = {
+    ...(clip.metadata || {}),
+    [field]: clampNumber(value, 0, max, fallback, false)
+  };
+  return next;
+}
+
+export function applyAudioClipAction(project: PocketDawProject, clipId: string, action: AudioClipAction): AudioClipActionResult {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") {
+    return { project, changed: false, status: "Choose an audio clip before editing audio properties." };
+  }
+
+  if (action === "quick-fade") {
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      fadeInSeconds: 0.05,
+      fadeOutSeconds: 0.05
+    };
+    return { project: next, changed: true, status: `Applied short fades to ${clip.name}.` };
+  }
+
+  if (action === "reset-fades") {
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      fadeInSeconds: 0,
+      fadeOutSeconds: 0
+    };
+    return { project: next, changed: true, status: `Reset fades for ${clip.name}.` };
+  }
+
+  if (action === "crossfade-overlap") {
+    return applyOverlapCrossfade(project, next, clip);
+  }
+
+  if (action === "create-crossfade-left") {
+    return createLeftOverlapCrossfade(project, next, clip);
+  }
+
+  if (action === "invert-phase") {
+    const inverted = clip.metadata?.invertPhase !== true;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      invertPhase: inverted
+    };
+    return {
+      project: next,
+      changed: true,
+      status: inverted ? `Inverted phase for ${clip.name}.` : `Restored phase for ${clip.name}.`
+    };
+  }
+
+  if (action === "reverse") {
+    const reversed = clip.metadata?.reversed !== true;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      reversed
+    };
+    return {
+      project: next,
+      changed: true,
+      status: reversed ? `Reversed ${clip.name}.` : `Restored forward playback for ${clip.name}.`
+    };
+  }
+
+  const media = clip.mediaPoolItemId ? next.mediaPool.find((item) => item.id === clip.mediaPoolItemId) : null;
+  if (action === "analyze-transients") {
+    if (!media) return { project, changed: false, status: `Reload or relink ${clip.name} before analyzing transients.` };
+    const analysis = detectAudioTransientsFromPeaks(media.metadata?.waveformPeaks, media.durationSeconds || 0);
+    if (!analysis.markersSeconds.length) {
+      return { project, changed: false, status: `Analyze or reload ${clip.name} with stronger waveform peaks before detecting transients.` };
+    }
+    media.metadata = {
+      ...(media.metadata || {}),
+      audioTransientMarkersSeconds: analysis.markersSeconds,
+      audioTransientThreshold: analysis.threshold,
+      audioTransientPeakCount: analysis.peakCount,
+      audioTransientMaxPeak: analysis.maxPeak,
+      audioTransientUpdatedAt: new Date().toISOString()
+    };
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      transientSourceMediaId: media.id,
+      transientMarkerCount: analysis.markersSeconds.length,
+      transientAnalysisReady: true,
+      transientAnalysisUpdatedAt: media.metadata.audioTransientUpdatedAt
+    };
+    return {
+      project: next,
+      changed: true,
+      status: `Detected ${analysis.markersSeconds.length} transient marker${analysis.markersSeconds.length === 1 ? "" : "s"} for ${clip.name}.`
+    };
+  }
+  const maxPeak = maxWaveformPeak(media?.metadata?.waveformPeaks);
+  if (!media || maxPeak <= 0) {
+    return { project, changed: false, status: `Analyze or reload ${clip.name} before normalizing gain.` };
+  }
+  const targetPeak = 0.95;
+  const gain = clampNumber(targetPeak / maxPeak, 0, 4, 1, false);
+  clip.metadata = {
+    ...(clip.metadata || {}),
+    gain,
+    normalizedPeakTarget: targetPeak,
+    normalizedFromPeak: clampNumber(maxPeak, 0, 1, maxPeak, false)
+  };
+  return { project: next, changed: true, status: `Normalized ${clip.name} gain to ${gain}.` };
+}
+
+export function audioClipTakeSummary(project: PocketDawProject, clipId: string): AudioTakeSummary | null {
+  const clip = project.timeline.clips.find((item) => item.id === clipId);
+  const groupId = audioClipTakeGroupId(clip);
+  if (!clip || clip.type !== "audio" || !groupId) return null;
+  const siblings = audioTakeSiblings(project, clip)
+    .filter((item) => clipsOverlap(item, clip))
+    .map((item, index) => ({
+      clipId: item.id,
+      name: item.name,
+      takeNumber: takeIndexForClip(item, index),
+      takeLaneId: takeLaneIdForClip(item, index),
+      takeStatus: audioTakeStatus(item),
+      active: audioTakeStatus(item) === "active" && !item.muted,
+      archived: audioTakeStatus(item) === "archived-take",
+      muted: item.muted
+    }))
+    .sort((a, b) => a.takeNumber - b.takeNumber || a.clipId.localeCompare(b.clipId));
+  const selected = siblings.find((item) => item.clipId === clip.id);
+  if (!selected) return null;
+  return {
+    groupId,
+    takeNumber: selected.takeNumber,
+    takeCount: siblings.length,
+    active: selected.active,
+    siblings
+  };
+}
+
+export function activateAudioTake(project: PocketDawProject, clipId: string): AudioClipActionResult {
+  const selected = project.timeline.clips.find((item) => item.id === clipId);
+  const groupId = audioClipTakeGroupId(selected);
+  if (!selected || selected.type !== "audio" || !groupId) {
+    return { project, changed: false, status: "Choose a grouped audio take before activating a take." };
+  }
+  const siblings = audioTakeSiblings(project, selected).filter((clip) => clipsOverlap(clip, selected) && audioTakeStatus(clip) !== "archived-take");
+  if (siblings.length < 2) {
+    return { project, changed: false, status: "No alternate takes are available for this audio clip." };
+  }
+  const next = cloneProject(project);
+  let changed = false;
+  next.timeline.clips.forEach((clip) => {
+    if (clip.type !== "audio" || clip.trackId !== selected.trackId || audioClipTakeGroupId(clip) !== groupId) return;
+    if (!clipsOverlap(clip, selected)) return;
+    if (audioTakeStatus(clip) === "archived-take") return;
+    const active = clip.id === selected.id;
+    const nextMuted = !active;
+    const takeStatus: AudioTakeStatus = active ? "active" : "muted-take";
+    if (clip.muted !== nextMuted || clip.metadata?.takeActive !== active || clip.metadata?.takeStatus !== takeStatus) changed = true;
+    clip.muted = nextMuted;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      takeActive: active,
+      takeStatus
+    };
+  });
+  if (!changed) return { project, changed: false, status: `${selected.name} is already the active take.` };
+  const summary = audioClipTakeSummary(next, clipId);
+  return {
+    project: next,
+    changed: true,
+    status: `Activated Take ${summary?.takeNumber ?? ""} for ${selected.name}.`.replace("  ", " ")
+  };
+}
+
+export function splitGroupedAudioTakesAtBar(project: PocketDawProject, clipId: string, splitBar: number): AudioTakeCompSplitResult {
+  const selected = project.timeline.clips.find((item) => item.id === clipId);
+  const groupId = audioClipTakeGroupId(selected);
+  if (!selected || selected.type !== "audio" || !groupId) {
+    return { project, changed: false, status: "Choose a grouped audio take before comping.", rightClipId: null, splitCount: 0 };
+  }
+  const siblings = audioTakeSiblings(project, selected).filter((clip) => clipsOverlap(clip, selected) && audioTakeStatus(clip) !== "archived-take");
+  if (siblings.length < 2) {
+    return { project, changed: false, status: "No alternate takes are available for this audio clip.", rightClipId: null, splitCount: 0 };
+  }
+  if (!clipSpansBar(selected, splitBar)) {
+    return { project, changed: false, status: "Move the playhead inside the selected take before comping.", rightClipId: null, splitCount: 0 };
+  }
+  const splitIds = siblings
+    .filter((clip) => clipSpansBar(clip, splitBar))
+    .map((clip) => clip.id);
+  let next = project;
+  let rightClipId: string | null = null;
+  let splitCount = 0;
+  splitIds.forEach((id) => {
+    const split = splitClipAtBar(next, id, splitBar);
+    if (split.rightClipId) {
+      splitCount += 1;
+      if (id === clipId) rightClipId = split.rightClipId;
+      next = split.project;
+    }
+  });
+  if (!rightClipId || splitCount === 0) {
+    return { project, changed: false, status: "Move the playhead inside the selected take before comping.", rightClipId: null, splitCount: 0 };
+  }
+  const activated = activateAudioTake(next, rightClipId);
+  const take = activated.project.timeline.clips.find((clip) => clip.id === rightClipId);
+  return {
+    project: activated.changed ? activated.project : next,
+    changed: true,
+    status: `Comped ${take?.name || "selected take"} from bar ${formatBarForStatus(splitBar)}.`,
+    rightClipId,
+    splitCount
+  };
+}
+
+export function setAudioTakeArchived(project: PocketDawProject, clipId: string, archived: boolean): AudioClipActionResult {
+  const selected = project.timeline.clips.find((item) => item.id === clipId);
+  const groupId = audioClipTakeGroupId(selected);
+  if (!selected || selected.type !== "audio" || !groupId) {
+    return { project, changed: false, status: "Choose a grouped audio take before archiving." };
+  }
+  const currentStatus = audioTakeStatus(selected);
+  const targetStatus: AudioTakeStatus = archived ? "archived-take" : "muted-take";
+  if (currentStatus === targetStatus && selected.muted) {
+    return {
+      project,
+      changed: false,
+      status: archived ? `${selected.name} is already archived.` : `${selected.name} is already restored.`
+    };
+  }
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId)!;
+  clip.muted = true;
+  clip.metadata = {
+    ...(clip.metadata || {}),
+    takeActive: false,
+    takeStatus: targetStatus
+  };
+  return {
+    project: next,
+    changed: true,
+    status: archived ? `Archived ${selected.name}.` : `Restored ${selected.name} as an available muted take.`
+  };
+}
+
+function audioClipTakeGroupId(clip: Clip | undefined): string | null {
+  const groupId = clip?.metadata?.recordingTakeGroupId || clip?.metadata?.takeGroupId;
+  return typeof groupId === "string" && groupId.trim() ? groupId : null;
+}
+
+function audioTakeSiblings(project: PocketDawProject, clip: Clip): Clip[] {
+  const groupId = audioClipTakeGroupId(clip);
+  if (!groupId) return [];
+  return project.timeline.clips
+    .filter((item) => item.type === "audio" && item.trackId === clip.trackId && audioClipTakeGroupId(item) === groupId)
+    .sort((a, b) => takeSortKey(a) - takeSortKey(b) || a.startBar - b.startBar || a.id.localeCompare(b.id));
+}
+
+function takeIndexForClip(clip: Clip, fallbackIndex: number): number {
+  const takeIndex = Number(clip.metadata?.takeLaneIndex ?? clip.metadata?.takeIndex);
+  return Number.isFinite(takeIndex) && takeIndex > 0 ? Math.round(takeIndex) : fallbackIndex + 1;
+}
+
+function takeSortKey(clip: Clip): number {
+  const takeIndex = Number(clip.metadata?.takeLaneIndex ?? clip.metadata?.takeIndex);
+  return Number.isFinite(takeIndex) && takeIndex > 0 ? takeIndex : Number.MAX_SAFE_INTEGER;
+}
+
+function takeLaneIdForClip(clip: Clip, fallbackIndex: number): string {
+  const value = clip.metadata?.takeLaneId;
+  if (typeof value === "string" && value.trim()) return value;
+  const groupId = audioClipTakeGroupId(clip) || "take";
+  return `${groupId}-lane-${takeIndexForClip(clip, fallbackIndex)}`;
+}
+
+function audioTakeStatus(clip: Clip): AudioTakeStatus {
+  const value = clip.metadata?.takeStatus;
+  if (value === "archived-take" || value === "muted-take" || value === "active") return value;
+  return clip.metadata?.takeActive === false || clip.muted ? "muted-take" : "active";
+}
+
+function clipEndBar(clip: Clip): number {
+  return clip.startBar + clip.barLength;
+}
+
+function clipsOverlap(a: Clip, b: Clip): boolean {
+  const epsilon = 0.0001;
+  return a.startBar < clipEndBar(b) - epsilon && b.startBar < clipEndBar(a) - epsilon;
+}
+
+function clipSpansBar(clip: Clip, bar: number): boolean {
+  const epsilon = 0.0001;
+  return bar > clip.startBar + epsilon && bar < clipEndBar(clip) - epsilon;
+}
+
+function canSplitAtRangeBoundary(clip: Clip, bar: number): boolean {
+  if (!canRangeEditClip(clip)) return false;
+  return clipSpansBar(clip, bar);
+}
+
+function canRangeEditClip(clip: Clip): boolean {
+  return clip.type === "generated-section" || clip.type === "generated-pattern" || clip.type === "audio";
+}
+
+function nextClipIdFromSet(ids: Set<string>): string {
+  let index = ids.size + 1;
+  while (ids.has(`clip_${String(index).padStart(3, "0")}`)) index += 1;
+  const id = `clip_${String(index).padStart(3, "0")}`;
+  ids.add(id);
+  return id;
+}
+
+function shiftedClipMetadata(project: PocketDawProject, clip: Clip, deltaBars: number): NonNullable<Clip["metadata"]> {
+  if (clip.type === "audio") {
+    const metadata: NonNullable<Clip["metadata"]> = {
+      ...(clip.metadata || {}),
+      sourceOffsetSeconds: audioClipSourceOffsetSeconds(clip) + barsToSeconds(deltaBars, project.project.bpm, project.project.timeSig)
+    };
+    delete metadata.sourceStartBar;
+    return metadata;
+  }
+  return {
+    ...(clip.metadata || {}),
+    sourceStartBar: clipSourceStartBar(clip) + deltaBars
+  };
+}
+
+function shiftClipSourceStart(project: PocketDawProject, clip: Clip, deltaBars: number): void {
+  clip.metadata = shiftedClipMetadata(project, clip, deltaBars);
+}
+
+function formatBarForStatus(bar: number): string {
+  return Number.isInteger(bar) ? String(bar) : bar.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function applyOverlapCrossfade(original: PocketDawProject, next: PocketDawProject, selected: Clip): AudioClipActionResult {
+  const selectedStart = selected.startBar;
+  const selectedEnd = selected.startBar + selected.barLength;
+  const candidates = next.timeline.clips
+    .filter((clip) => clip.id !== selected.id && clip.type === "audio" && clip.trackId === selected.trackId)
+    .map((clip) => {
+      const overlapStart = Math.max(selectedStart, clip.startBar);
+      const overlapEnd = Math.min(selectedEnd, clip.startBar + clip.barLength);
+      return { clip, overlapBars: Math.max(0, overlapEnd - overlapStart) };
+    })
+    .filter((item) => item.overlapBars > 0.001);
+
+  const left = candidates
+    .filter((item) => item.clip.startBar < selected.startBar)
+    .sort((a, b) => b.clip.startBar - a.clip.startBar)[0];
+  if (left) {
+    const seconds = crossfadeSeconds(original, left.overlapBars);
+    left.clip.metadata = {
+      ...(left.clip.metadata || {}),
+      fadeOutSeconds: seconds,
+      crossfadeOutClipId: selected.id,
+      crossfadeSeconds: seconds
+    };
+    selected.metadata = {
+      ...(selected.metadata || {}),
+      fadeInSeconds: seconds,
+      crossfadeInClipId: left.clip.id,
+      crossfadeSeconds: seconds
+    };
+    return { project: next, changed: true, status: `Applied ${formatSeconds(seconds)} crossfade between ${left.clip.name} and ${selected.name}.` };
+  }
+
+  const right = candidates
+    .filter((item) => item.clip.startBar > selected.startBar)
+    .sort((a, b) => a.clip.startBar - b.clip.startBar)[0];
+  if (right) {
+    const seconds = crossfadeSeconds(original, right.overlapBars);
+    selected.metadata = {
+      ...(selected.metadata || {}),
+      fadeOutSeconds: seconds,
+      crossfadeOutClipId: right.clip.id,
+      crossfadeSeconds: seconds
+    };
+    right.clip.metadata = {
+      ...(right.clip.metadata || {}),
+      fadeInSeconds: seconds,
+      crossfadeInClipId: selected.id,
+      crossfadeSeconds: seconds
+    };
+    return { project: next, changed: true, status: `Applied ${formatSeconds(seconds)} crossfade between ${selected.name} and ${right.clip.name}.` };
+  }
+
+  return { project: original, changed: false, status: "Overlap audio clips on the same track before creating a crossfade." };
+}
+
+function createLeftOverlapCrossfade(original: PocketDawProject, next: PocketDawProject, selected: Clip): AudioClipActionResult {
+  const selectedStart = selected.startBar;
+  const previous = next.timeline.clips
+    .filter((clip) => clip.id !== selected.id && clip.type === "audio" && clip.trackId === selected.trackId)
+    .map((clip) => ({ clip, endBar: clip.startBar + clip.barLength }))
+    .filter((item) => item.endBar <= selectedStart + 0.001)
+    .sort((a, b) => b.endBar - a.endBar)[0];
+
+  if (!previous) {
+    return { project: original, changed: false, status: "Place the selected audio clip directly after another audio clip on the same track before creating an overlap crossfade." };
+  }
+
+  const gapBars = selectedStart - previous.endBar;
+  if (gapBars > 0.001) {
+    return { project: original, changed: false, status: "Place audio clips edge-to-edge before creating an overlap crossfade." };
+  }
+
+  const sourceOffsetSeconds = audioClipSourceOffsetSeconds(selected);
+  if (sourceOffsetSeconds <= 0.001) {
+    return { project: original, changed: false, status: "Select a right-hand audio clip with earlier source material before creating an overlap crossfade." };
+  }
+
+  const secondsPerBar = barsToSeconds(1, original.project.bpm, original.project.timeSig);
+  if (secondsPerBar <= 0) {
+    return { project: original, changed: false, status: "Project timing is unavailable for creating an overlap crossfade." };
+  }
+
+  const overlapBars = Math.min(0.25, sourceOffsetSeconds / secondsPerBar, Math.max(0, selected.startBar - 1));
+  if (overlapBars <= 0.001) {
+    return { project: original, changed: false, status: "Select a right-hand audio clip with earlier source material before creating an overlap crossfade." };
+  }
+
+  const overlapSeconds = crossfadeSeconds(original, overlapBars);
+  selected.startBar = Math.max(1, selected.startBar - overlapBars);
+  selected.barLength += overlapBars;
+  selected.metadata = {
+    ...(selected.metadata || {}),
+    sourceOffsetSeconds: Math.max(0, sourceOffsetSeconds - overlapSeconds)
+  };
+  recomputeTimelineBars(next);
+
+  const result = applyOverlapCrossfade(original, next, selected);
+  if (!result.changed) return result;
+  return {
+    ...result,
+    status: `Created ${formatSeconds(overlapSeconds)} overlap crossfade between ${previous.clip.name} and ${selected.name}.`
+  };
+}
+
 export function splitClipAtBar(project: PocketDawProject, clipId: string, splitBar: number): { project: PocketDawProject; rightClipId: string | null } {
   const next = cloneProject(project);
   const clip = next.timeline.clips.find((item) => item.id === clipId);
@@ -94,6 +616,17 @@ export function splitClipAtBar(project: PocketDawProject, clipId: string, splitB
   const rightLength = originalLength - leftLength;
   const sourceOffset = clipSourceStartBar(clip);
   clip.barLength = leftLength;
+  const rightMetadata = clip.type === "audio"
+    ? {
+        ...(clip.metadata || {}),
+        sourceOffsetSeconds: audioClipSourceOffsetSeconds(clip) + barsToSeconds(leftLength, project.project.bpm, project.project.timeSig),
+        sourceStartBar: undefined
+      }
+    : {
+        ...(clip.metadata || {}),
+        sourceStartBar: sourceOffset + leftLength
+      };
+  if (clip.type === "audio") delete rightMetadata.sourceStartBar;
   const rightClip: Clip = {
     ...JSON.parse(JSON.stringify(clip)),
     id: nextClipId(next.timeline.clips),
@@ -101,22 +634,293 @@ export function splitClipAtBar(project: PocketDawProject, clipId: string, splitB
     barLength: rightLength,
     linked: clip.linked,
     name: `${clip.name} split`,
-    metadata: {
-      ...(clip.metadata || {}),
-      sourceStartBar: sourceOffset + leftLength
-    }
+    metadata: rightMetadata
   };
   next.timeline.clips.push(rightClip);
   recomputeTimelineBars(next);
   return { project: next, rightClipId: rightClip.id };
 }
 
+export function splitClipsAtRange(project: PocketDawProject, startBar: number, endBar: number): ClipRangeSplitResult {
+  const rawStart = Number(startBar);
+  const rawEnd = Number(endBar);
+  if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd)) {
+    return { project, splitCount: 0, rightClipIds: [] };
+  }
+  const start = Math.max(1, Math.min(rawStart, rawEnd));
+  const end = Math.max(start, Math.max(rawStart, rawEnd));
+  if (end <= start) return { project, splitCount: 0, rightClipIds: [] };
+
+  let next = project;
+  const rightClipIds: string[] = [];
+  [start, end].forEach((bar) => {
+    const clipIds = next.timeline.clips
+      .filter((clip) => canSplitAtRangeBoundary(clip, bar))
+      .map((clip) => clip.id);
+    clipIds.forEach((clipId) => {
+      const split = splitClipAtBar(next, clipId, bar);
+      if (split.rightClipId) {
+        rightClipIds.push(split.rightClipId);
+        next = split.project;
+      }
+    });
+  });
+
+  return { project: next, splitCount: rightClipIds.length, rightClipIds };
+}
+
+export function cropClipToRange(project: PocketDawProject, clipId: string, startBar: number, endBar: number): ClipRangeCropResult {
+  const rawStart = Number(startBar);
+  const rawEnd = Number(endBar);
+  if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd)) {
+    return { project, changed: false, clipId: null, status: "Set a valid edit range before cropping." };
+  }
+  const rangeStart = Math.max(1, Math.min(rawStart, rawEnd));
+  const rangeEnd = Math.max(rangeStart, Math.max(rawStart, rawEnd));
+  if (rangeEnd <= rangeStart) return { project, changed: false, clipId: null, status: "Set a longer edit range before cropping." };
+
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || !canRangeEditClip(clip)) {
+    return { project, changed: false, clipId: null, status: "Choose a generated, pattern or audio clip before cropping to range." };
+  }
+  const clipEnd = clipEndBar(clip);
+  const cropStart = Math.max(clip.startBar, rangeStart);
+  const cropEnd = Math.min(clipEnd, rangeEnd);
+  const minLength = clip.type === "audio" ? 0.125 : 0.125;
+  if (cropEnd - cropStart < minLength) {
+    return { project, changed: false, clipId, status: "The selected clip does not overlap the edit range." };
+  }
+
+  const sourceDeltaBars = cropStart - clip.startBar;
+  if (clip.type === "audio") {
+    const sourceOffsetSeconds = audioClipSourceOffsetSeconds(clip);
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      sourceOffsetSeconds: sourceOffsetSeconds + barsToSeconds(sourceDeltaBars, project.project.bpm, project.project.timeSig)
+    };
+    delete clip.metadata.sourceStartBar;
+  } else {
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      sourceStartBar: clipSourceStartBar(clip) + sourceDeltaBars
+    };
+  }
+  clip.startBar = cropStart;
+  clip.barLength = cropEnd - cropStart;
+  recomputeTimelineBars(next);
+  return { project: next, changed: true, clipId, status: `Cropped ${clip.name} to edit range.` };
+}
+
+export function deleteClipRange(project: PocketDawProject, clipId: string, startBar: number, endBar: number): ClipRangeDeleteResult {
+  const rawStart = Number(startBar);
+  const rawEnd = Number(endBar);
+  if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd)) {
+    return { project, changed: false, deletedClipId: null, rightClipId: null, status: "Set a valid edit range before deleting range." };
+  }
+  const rangeStart = Math.max(1, Math.min(rawStart, rawEnd));
+  const rangeEnd = Math.max(rangeStart, Math.max(rawStart, rawEnd));
+  if (rangeEnd <= rangeStart) return { project, changed: false, deletedClipId: null, rightClipId: null, status: "Set a longer edit range before deleting range." };
+
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || !canRangeEditClip(clip)) {
+    return { project, changed: false, deletedClipId: null, rightClipId: null, status: "Choose a generated, pattern or audio clip before deleting range." };
+  }
+  const epsilon = 0.0001;
+  const clipStart = clip.startBar;
+  const clipEnd = clipEndBar(clip);
+  const removeStart = Math.max(clipStart, rangeStart);
+  const removeEnd = Math.min(clipEnd, rangeEnd);
+  if (removeEnd - removeStart <= epsilon) {
+    return { project, changed: false, deletedClipId: null, rightClipId: null, status: "The selected clip does not overlap the edit range." };
+  }
+
+  if (removeStart <= clipStart + epsilon && removeEnd >= clipEnd - epsilon) {
+    next.timeline.clips = next.timeline.clips.filter((item) => item.id !== clipId);
+    recomputeTimelineBars(next);
+    return { project: next, changed: true, deletedClipId: clipId, rightClipId: null, status: `Deleted ${clip.name} range.` };
+  }
+
+  if (removeStart <= clipStart + epsilon) {
+    const sourceDeltaBars = removeEnd - clipStart;
+    shiftClipSourceStart(project, clip, sourceDeltaBars);
+    clip.startBar = removeEnd;
+    clip.barLength = clipEnd - removeEnd;
+    recomputeTimelineBars(next);
+    return { project: next, changed: true, deletedClipId: null, rightClipId: clip.id, status: `Deleted range from ${clip.name}.` };
+  }
+
+  if (removeEnd >= clipEnd - epsilon) {
+    clip.barLength = removeStart - clipStart;
+    recomputeTimelineBars(next);
+    return { project: next, changed: true, deletedClipId: null, rightClipId: null, status: `Deleted range from ${clip.name}.` };
+  }
+
+  const rightClip: Clip = {
+    ...JSON.parse(JSON.stringify(clip)),
+    id: nextClipId(next.timeline.clips),
+    startBar: removeEnd,
+    barLength: clipEnd - removeEnd,
+    linked: clip.linked,
+    name: `${clip.name} range`,
+    metadata: shiftedClipMetadata(project, clip, removeEnd - clipStart)
+  };
+  clip.barLength = removeStart - clipStart;
+  next.timeline.clips.push(rightClip);
+  recomputeTimelineBars(next);
+  return { project: next, changed: true, deletedClipId: null, rightClipId: rightClip.id, status: `Deleted range from ${clip.name}.` };
+}
+
+export function rippleDeleteClipRange(project: PocketDawProject, clipId: string, startBar: number, endBar: number): ClipRangeRippleDeleteResult {
+  const rawStart = Number(startBar);
+  const rawEnd = Number(endBar);
+  const baseFailure = { rippleBars: 0, movedClipIds: [] };
+  if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd)) {
+    return { project, changed: false, deletedClipId: null, rightClipId: null, status: "Set a valid edit range before ripple deleting range.", ...baseFailure };
+  }
+  const rangeStart = Math.max(1, Math.min(rawStart, rawEnd));
+  const rangeEnd = Math.max(rangeStart, Math.max(rawStart, rawEnd));
+  if (rangeEnd <= rangeStart) {
+    return { project, changed: false, deletedClipId: null, rightClipId: null, status: "Set a longer edit range before ripple deleting range.", ...baseFailure };
+  }
+  const originalClip = project.timeline.clips.find((item) => item.id === clipId);
+  if (!originalClip || !canRangeEditClip(originalClip)) {
+    return { project, changed: false, deletedClipId: null, rightClipId: null, status: "Choose a generated, pattern or audio clip before ripple deleting range.", ...baseFailure };
+  }
+  const removeStart = Math.max(originalClip.startBar, rangeStart);
+  const removeEnd = Math.min(clipEndBar(originalClip), rangeEnd);
+  const rippleBars = removeEnd - removeStart;
+  if (rippleBars <= 0.0001) {
+    return { project, changed: false, deletedClipId: null, rightClipId: null, status: "The selected clip does not overlap the edit range.", ...baseFailure };
+  }
+
+  const deleted = deleteClipRange(project, clipId, startBar, endBar);
+  if (!deleted.changed) return { ...deleted, ...baseFailure };
+  const next = cloneProject(deleted.project);
+  const movedClipIds: string[] = [];
+  next.timeline.clips.forEach((clip) => {
+    if (clip.trackId !== originalClip.trackId) return;
+    if (clip.startBar < removeEnd - 0.0001) return;
+    clip.startBar = Math.max(1, clip.startBar - rippleBars);
+    movedClipIds.push(clip.id);
+  });
+  recomputeTimelineBars(next);
+  const movedLabel = movedClipIds.length === 1 ? "clip" : "clips";
+  return {
+    project: next,
+    changed: true,
+    deletedClipId: deleted.deletedClipId,
+    rightClipId: deleted.rightClipId,
+    rippleBars,
+    movedClipIds,
+    status: `Ripple deleted range from ${originalClip.name}; moved ${movedClipIds.length} ${movedLabel}.`
+  };
+}
+
+export function rippleDeleteTimelineRange(project: PocketDawProject, startBar: number, endBar: number): TimelineRippleDeleteResult {
+  const rawStart = Number(startBar);
+  const rawEnd = Number(endBar);
+  const empty = { rippleBars: 0, affectedClipIds: [], movedClipIds: [], rightClipIds: [] };
+  if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd)) {
+    return { project, changed: false, status: "Set a valid edit range before ripple deleting all tracks.", ...empty };
+  }
+  const rangeStart = Math.max(1, Math.min(rawStart, rawEnd));
+  const rangeEnd = Math.max(rangeStart, Math.max(rawStart, rawEnd));
+  const rippleBars = rangeEnd - rangeStart;
+  if (rippleBars <= 0.0001) {
+    return { project, changed: false, status: "Set a longer edit range before ripple deleting all tracks.", ...empty };
+  }
+
+  const next = cloneProject(project);
+  const originalClips = new Map(next.timeline.clips.map((clip) => [clip.id, { startBar: clip.startBar, endBar: clipEndBar(clip) }]));
+  const usedClipIds = new Set(next.timeline.clips.map((clip) => clip.id));
+  const nextClips: Clip[] = [];
+  const affectedClipIds: string[] = [];
+  const rightClipIds: string[] = [];
+
+  next.timeline.clips.forEach((clip) => {
+    const clipStart = clip.startBar;
+    const clipEnd = clipEndBar(clip);
+    if (clipEnd <= rangeStart + 0.0001 || clipStart >= rangeEnd - 0.0001 || !canRangeEditClip(clip)) {
+      nextClips.push(clip);
+      return;
+    }
+
+    affectedClipIds.push(clip.id);
+    const leftLength = Math.max(0, rangeStart - clipStart);
+    const rightLength = Math.max(0, clipEnd - rangeEnd);
+    if (leftLength > 0.0001) {
+      clip.barLength = leftLength;
+      nextClips.push(clip);
+    }
+    if (rightLength > 0.0001) {
+      const rightId = leftLength > 0.0001 ? nextClipIdFromSet(usedClipIds) : clip.id;
+      const rightClip: Clip = {
+        ...JSON.parse(JSON.stringify(clip)),
+        id: rightId,
+        startBar: rangeStart,
+        barLength: rightLength,
+        linked: clip.linked,
+        name: leftLength > 0.0001 ? `${clip.name} ripple` : clip.name,
+        metadata: shiftedClipMetadata(project, clip, rangeEnd - clipStart)
+      };
+      nextClips.push(rightClip);
+      if (rightId !== clip.id) rightClipIds.push(rightId);
+    }
+  });
+
+  next.timeline.clips = nextClips;
+  const movedClipIds: string[] = [];
+  next.timeline.clips.forEach((clip) => {
+    if (!canRangeEditClip(clip)) return;
+    const original = originalClips.get(clip.id);
+    if (!original) return;
+    if (original.startBar < rangeEnd - 0.0001) return;
+    clip.startBar = Math.max(1, clip.startBar - rippleBars);
+    movedClipIds.push(clip.id);
+  });
+  recomputeTimelineBars(next);
+  if (!affectedClipIds.length && !movedClipIds.length) {
+    return { project, changed: false, status: "No generated, pattern or audio clips were affected by the edit range.", ...empty };
+  }
+  const affectedLabel = affectedClipIds.length === 1 ? "clip" : "clips";
+  const movedLabel = movedClipIds.length === 1 ? "later clip" : "later clips";
+  return {
+    project: next,
+    changed: true,
+    status: `Ripple deleted edit range across all tracks; edited ${affectedClipIds.length} ${affectedLabel} and moved ${movedClipIds.length} ${movedLabel}.`,
+    rippleBars,
+    affectedClipIds,
+    movedClipIds,
+    rightClipIds
+  };
+}
+
 export function trimClipStart(project: PocketDawProject, clipId: string, deltaBars: number): PocketDawProject {
   const next = cloneProject(project);
   const clip = next.timeline.clips.find((item) => item.id === clipId);
-  if (!clip || clip.type !== "generated-section") return project;
+  if (!clip || !canRangeEditClip(clip)) return project;
   const delta = Math.round(deltaBars);
   if (delta === 0) return project;
+  if (clip.type === "audio") {
+    const secondsPerBar = barsToSeconds(1, project.project.bpm, project.project.timeSig);
+    const sourceOffsetSeconds = audioClipSourceOffsetSeconds(clip);
+    if (delta > 0) {
+      const trim = Math.min(delta, Math.max(0, clip.barLength - 0.125));
+      if (trim <= 0) return project;
+      clip.startBar += trim;
+      clip.barLength -= trim;
+      clip.metadata = { ...(clip.metadata || {}), sourceOffsetSeconds: sourceOffsetSeconds + trim * secondsPerBar };
+    } else {
+      const extend = Math.min(Math.abs(delta), clip.startBar - 1, secondsPerBar > 0 ? sourceOffsetSeconds / secondsPerBar : 0);
+      if (extend <= 0) return project;
+      clip.startBar -= extend;
+      clip.barLength += extend;
+      clip.metadata = { ...(clip.metadata || {}), sourceOffsetSeconds: Math.max(0, sourceOffsetSeconds - extend * secondsPerBar) };
+    }
+    return recomputeTimelineBars(next);
+  }
   const sourceOffset = clipSourceStartBar(clip);
   if (delta > 0) {
     const trim = Math.min(delta, clip.barLength - 1);
@@ -136,10 +940,10 @@ export function trimClipStart(project: PocketDawProject, clipId: string, deltaBa
 export function trimClipEnd(project: PocketDawProject, clipId: string, deltaBars: number): PocketDawProject {
   const next = cloneProject(project);
   const clip = next.timeline.clips.find((item) => item.id === clipId);
-  if (!clip || clip.type !== "generated-section") return project;
+  if (!clip || !canRangeEditClip(clip)) return project;
   const delta = Math.round(deltaBars);
   if (delta === 0) return project;
-  clip.barLength = Math.max(1, clip.barLength + delta);
+  clip.barLength = Math.max(clip.type === "audio" ? 0.125 : 1, clip.barLength + delta);
   return recomputeTimelineBars(next);
 }
 
@@ -193,6 +997,27 @@ export function pasteClip(project: PocketDawProject, source: Clip, startBar: num
 export function clipSourceStartBar(clip: Clip): number {
   const value = clip.metadata?.sourceStartBar;
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+}
+
+function audioClipSourceOffsetSeconds(clip: Clip): number {
+  const value = clip.metadata?.sourceOffsetSeconds;
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function maxWaveformPeak(value: unknown): number {
+  if (!Array.isArray(value)) return 0;
+  return value.reduce((max, item) => {
+    const peak = Math.abs(Number(item));
+    return Number.isFinite(peak) ? Math.max(max, peak) : max;
+  }, 0);
+}
+
+function crossfadeSeconds(project: PocketDawProject, overlapBars: number): number {
+  return clampNumber(barsToSeconds(overlapBars, project.project.bpm, project.project.timeSig), 0, 24 * 60 * 60, 0, false);
+}
+
+function formatSeconds(seconds: number): string {
+  return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}s`;
 }
 
 function nextClipId(clips: Clip[]): string {

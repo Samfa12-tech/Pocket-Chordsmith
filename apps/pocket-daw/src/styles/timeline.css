@@ -52,6 +52,24 @@
   padding: 0 7px;
 }
 
+.range-controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 6px;
+  border: 1px solid rgba(64, 216, 255, 0.28);
+  border-radius: 6px;
+  background: rgba(64, 216, 255, 0.07);
+}
+
+.range-label {
+  color: #bfeeff;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .song-settings-strip {
   flex: 1 1 520px;
   min-width: 360px;
@@ -563,4 +581,21 @@
 
 .loop-region.on {
   display: block;
+}
+
+.range-region {
+  position: absolute;
+  top: 58px;
+  bottom: 0;
+  z-index: 2;
+  border-left: 1px solid rgba(124, 255, 155, 0.9);
+  border-right: 1px solid rgba(124, 255, 155, 0.9);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(124, 255, 155, 0.09) 0 8px,
+      rgba(64, 216, 255, 0.11) 8px 16px
+    );
+  box-shadow: inset 0 0 0 1px rgba(64, 216, 255, 0.14);
+  pointer-events: none;
 }

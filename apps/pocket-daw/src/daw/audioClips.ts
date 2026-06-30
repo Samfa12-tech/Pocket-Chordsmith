@@ -1,4 +1,4 @@
-import { addMediaPoolItem, createMediaPoolItem, findMediaPoolItem, updateMediaPoolItem } from "./mediaPool";
+import { addMediaPoolItem, createMediaPoolItem, findMediaPoolItem, type MediaPoolReloadCandidate } from "./mediaPool";
 import type { Clip, JsonObject, MediaPoolItem, PocketDawProject, Track } from "./schema";
 import { cloneProject } from "./dawProject";
 import { createEmptyFxChain } from "./fx";
@@ -30,6 +30,17 @@ export interface PlaceAudioClipOptions {
   overwriteOverlaps?: boolean;
 }
 
+export interface AudioTransientAnalysis {
+  markersSeconds: number[];
+  threshold: number;
+  peakCount: number;
+  maxPeak: number;
+}
+
+export interface AudioMediaReloadAnalysis extends Partial<ImportedAudioMedia> {
+  waveformPeaks?: number[];
+}
+
 export function addImportedAudioMedia(project: PocketDawProject, input: ImportedAudioMedia): AddAudioMediaResult {
   const item = createMediaPoolItem({
     kind: "audio",
@@ -53,19 +64,88 @@ export function addImportedAudioMedia(project: PocketDawProject, input: Imported
   return { project: addMediaPoolItem(project, item), item };
 }
 
-export function updateAudioMediaAnalysis(project: PocketDawProject, id: string, analysis: Partial<ImportedAudioMedia> & { waveformPeaks?: number[] }): PocketDawProject {
-  return updateMediaPoolItem(project, id, {
-    durationSeconds: analysis.durationSeconds,
-    sampleRate: analysis.sampleRate,
-    channels: analysis.channels,
-    sizeBytes: analysis.sizeBytes,
-    mimeType: analysis.mimeType,
-    metadata: {
-      waveformPeaks: analysis.waveformPeaks || [],
-      missing: false,
-      unresolved: false
+export function detectAudioTransientsFromPeaks(peaks: unknown, durationSeconds: number, threshold = 0.45): AudioTransientAnalysis {
+  const cleanPeaks = Array.isArray(peaks)
+    ? peaks
+      .map((peak) => Math.abs(Number(peak)))
+      .filter((peak) => Number.isFinite(peak) && peak >= 0)
+      .map((peak) => Math.min(1, peak))
+    : [];
+  const duration = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : 0;
+  const cleanThreshold = Math.max(0.05, Math.min(1, Number.isFinite(threshold) ? threshold : 0.45));
+  const maxPeak = cleanPeaks.reduce((max, peak) => Math.max(max, peak), 0);
+  if (!cleanPeaks.length || duration <= 0 || maxPeak <= 0) {
+    return { markersSeconds: [], threshold: cleanThreshold, peakCount: cleanPeaks.length, maxPeak };
+  }
+  const adaptiveThreshold = Math.max(cleanThreshold, maxPeak * 0.55);
+  const markersSeconds: number[] = [];
+  cleanPeaks.forEach((peak, index) => {
+    const previous = cleanPeaks[index - 1] ?? 0;
+    const next = cleanPeaks[index + 1] ?? 0;
+    const localMaximum = peak >= previous && peak > next;
+    const sharpRise = peak - previous >= 0.18 && peak >= next * 0.75;
+    if (peak >= adaptiveThreshold && (localMaximum || sharpRise)) {
+      markersSeconds.push(roundSeconds(((index + 0.5) / cleanPeaks.length) * duration));
     }
   });
+  return {
+    markersSeconds: dedupeNearbyMarkers(markersSeconds, 0.05),
+    threshold: roundNumber(adaptiveThreshold),
+    peakCount: cleanPeaks.length,
+    maxPeak: roundNumber(maxPeak)
+  };
+}
+
+export function updateAudioMediaAnalysis(project: PocketDawProject, id: string, analysis: Partial<ImportedAudioMedia> & { waveformPeaks?: number[] }): PocketDawProject {
+  const next = cloneProject(project);
+  const item = next.mediaPool.find((entry) => entry.id === id);
+  if (!item) return project;
+  if (analysis.durationSeconds !== undefined) item.durationSeconds = analysis.durationSeconds;
+  if (analysis.sampleRate !== undefined) item.sampleRate = analysis.sampleRate;
+  if (analysis.channels !== undefined) item.channels = analysis.channels;
+  if (analysis.sizeBytes !== undefined) item.sizeBytes = analysis.sizeBytes;
+  if (analysis.mimeType !== undefined) item.mimeType = analysis.mimeType;
+  item.metadata = {
+    ...metadataWithoutStaleAudioAnalysis(item.metadata),
+    ...(analysis.metadata || {}),
+    waveformPeaks: analysis.waveformPeaks || [],
+    missing: false,
+    unresolved: false,
+    analysisInvalidated: false,
+    waveformNeedsRefresh: false
+  };
+  return next;
+}
+
+export function updateAudioMediaReloadAnalysis(
+  project: PocketDawProject,
+  id: string,
+  analysis: AudioMediaReloadAnalysis,
+  loadedFrom: Pick<MediaPoolReloadCandidate, "kind" | "path">
+): PocketDawProject {
+  return updateAudioMediaAnalysis(project, id, {
+    ...analysis,
+    metadata: {
+      ...(analysis.metadata || {}),
+      lastReloadSourceKind: loadedFrom.kind,
+      lastReloadSourcePath: loadedFrom.path,
+      restoredFromNativeDecodedCache: loadedFrom.kind === "decoded-cache"
+    }
+  });
+}
+
+function metadataWithoutStaleAudioAnalysis(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
+  const next = { ...(metadata || {}) };
+  [
+    "audioTransientMarkersSeconds",
+    "audioTransientThreshold",
+    "audioTransientPeakCount",
+    "audioTransientMaxPeak",
+    "audioTransientUpdatedAt"
+  ].forEach((key) => {
+    delete next[key];
+  });
+  return next;
 }
 
 export function placeAudioClipOnTimeline(project: PocketDawProject, mediaPoolItemId: string, startBar: number): PlaceAudioClipResult {
@@ -105,13 +185,7 @@ export function placeAudioClipOnTrack(project: PocketDawProject, mediaPoolItemId
       gain: 1,
       stemMutes: {}
     },
-    metadata: {
-      durationSeconds: item.durationSeconds || 0,
-      sourceOffsetSeconds: 0,
-      gain: 1,
-      fadeInSeconds: 0,
-      fadeOutSeconds: 0
-    }
+    metadata: createPlacedAudioClipMetadata(item, next, track.id)
   });
   recomputeTimelineBars(next);
   return { project: next, clipId, trackId: track.id };
@@ -119,6 +193,74 @@ export function placeAudioClipOnTrack(project: PocketDawProject, mediaPoolItemId
 
 export function placeRecordingClipOnTrack(project: PocketDawProject, mediaPoolItemId: string, trackId: string, startBar: number): PlaceAudioClipResult {
   return placeAudioClipOnTrack(project, mediaPoolItemId, trackId, startBar, { overwriteOverlaps: true });
+}
+
+function createPlacedAudioClipMetadata(item: MediaPoolItem, project: PocketDawProject, trackId: string): JsonObject {
+  const metadata: JsonObject = {
+    durationSeconds: item.durationSeconds || 0,
+    sourceOffsetSeconds: 0,
+    gain: 1,
+    fadeInSeconds: 0,
+    fadeOutSeconds: 0
+  };
+  const source = item.metadata || {};
+  [
+    "takeGroupId",
+    "takeIndex",
+    "recordingTakeId",
+    "recordingTakeGroupId",
+    "takeLaneId",
+    "takeLaneIndex",
+    "takeStatus",
+    "inputMode",
+    "channelMap",
+    "latencyCompensationAppliedSeconds",
+    "nativeRecordingSessionId",
+    "nativeRequestedStartBar",
+    "nativeRequestedStartSeconds",
+    "nativeRequestedSampleRate",
+    "nativeCaptureSampleRate"
+  ].forEach((key) => {
+    const value = source[key];
+    if (value !== undefined) metadata[key] = value;
+  });
+  if (typeof metadata.takeGroupId === "string" && typeof metadata.takeIndex !== "number") {
+    const siblingCount = project.timeline.clips.filter((clip) => (
+      clip.type === "audio" &&
+      clip.trackId === trackId &&
+      clip.metadata?.takeGroupId === metadata.takeGroupId
+    )).length;
+    metadata.takeIndex = siblingCount + 1;
+  }
+  const groupId = typeof metadata.recordingTakeGroupId === "string" && metadata.recordingTakeGroupId.trim()
+    ? metadata.recordingTakeGroupId
+    : typeof metadata.takeGroupId === "string" && metadata.takeGroupId.trim()
+      ? metadata.takeGroupId
+      : "";
+  if (groupId) {
+    metadata.takeGroupId = groupId;
+    metadata.recordingTakeGroupId = groupId;
+    const takeIndex = typeof metadata.takeLaneIndex === "number" && Number.isFinite(metadata.takeLaneIndex)
+      ? Math.max(1, Math.round(metadata.takeLaneIndex))
+      : typeof metadata.takeIndex === "number" && Number.isFinite(metadata.takeIndex)
+        ? Math.max(1, Math.round(metadata.takeIndex))
+        : 1;
+    metadata.takeIndex = takeIndex;
+    metadata.takeLaneIndex = takeIndex;
+    if (typeof metadata.recordingTakeId !== "string" || !metadata.recordingTakeId.trim()) {
+      metadata.recordingTakeId = `${groupId}-take-${takeIndex}`;
+    }
+    if (typeof metadata.takeLaneId !== "string" || !metadata.takeLaneId.trim()) {
+      metadata.takeLaneId = `${groupId}-lane-${takeIndex}`;
+    }
+  }
+  if (typeof metadata.takeGroupId === "string" && typeof metadata.takeActive !== "boolean") {
+    metadata.takeActive = true;
+  }
+  if (typeof metadata.takeGroupId === "string" && typeof metadata.takeStatus !== "string") {
+    metadata.takeStatus = metadata.takeActive === false ? "muted-take" : "active";
+  }
+  return metadata;
 }
 
 function overwriteAudioClipsInRange(project: PocketDawProject, trackId: string, startBar: number, endBar: number) {
@@ -213,6 +355,22 @@ function secondsPerBar(project: PocketDawProject): number {
 function cleanStartBar(value: number): number {
   const start = Number.isFinite(value) ? value : 1;
   return Math.max(1, Math.round(start * 1000) / 1000);
+}
+
+function dedupeNearbyMarkers(markers: number[], minSpacingSeconds: number): number[] {
+  const out: number[] = [];
+  markers.forEach((marker) => {
+    if (!out.length || marker - out[out.length - 1] >= minSpacingSeconds) out.push(marker);
+  });
+  return out;
+}
+
+function roundSeconds(value: number): number {
+  return Math.max(0, Math.round(value * 1000) / 1000);
+}
+
+function roundNumber(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 function audioClipSourceOffsetSeconds(clip: Clip): number {

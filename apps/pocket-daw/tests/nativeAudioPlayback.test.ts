@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
-import { addDrumLaneFx, DRUM_LANE_DEFS } from "../src/daw/drumLanes";
+import { addDrumLaneFx, branchGeneratedDrumsToTracks, DRUM_LANE_DEFS } from "../src/daw/drumLanes";
 import { addFxSlot, setFxSlotParameter } from "../src/daw/fx";
 import { setTrackSendLevel } from "../src/daw/routing";
-import { createAutomationLane } from "../src/daw/automation";
+import { addAutomationPoint, createAutomationLane, ensureTrackSendAutomationLane } from "../src/daw/automation";
 import type { RenderedEvent } from "../src/audio/eventRenderer";
 import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioInvokeApi, type NativeAudioStatus } from "../src/native/audioPlayback";
 
@@ -144,7 +144,28 @@ describe("native audio playback bridge", () => {
     const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
 
     expect(payload.tracks.find((track) => track.id === "fx-return")?.isReturn).toBe(true);
-    expect(payload.tracks.find((track) => track.id === "bass")?.sends).toEqual([{ returnTrackId: "fx-return", level: 0.35 }]);
+    expect(payload.tracks.find((track) => track.id === "bass")?.sends).toEqual([{ returnTrackId: "fx-return", level: 0.35, mode: "post-fader" }]);
+  });
+
+  it("passes generated drum branch events and sends to native playback tracks", () => {
+    const branched = branchGeneratedDrumsToTracks(createDemoProject());
+    const project = setTrackSendLevel(branched, "drums-kick", "fx-return", 0.25);
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
+
+    expect(payload.events.some((event) => event.kind === "kick" && event.trackId === "drums-kick")).toBe(true);
+    expect(payload.tracks.find((track) => track.id === "drums-kick")?.sends).toEqual([{ returnTrackId: "fx-return", level: 0.25, mode: "post-fader" }]);
+  });
+
+  it("evaluates send automation at the native playback start bar", () => {
+    let project = setTrackSendLevel(createDemoProject(), "bass", "fx-return", 0);
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const ensured = ensureTrackSendAutomationLane(project, "bass", "fx-return", "level");
+    project = addAutomationPoint(ensured.project, ensured.laneId, { bar: 3, value: 0.8, curve: "linear" });
+
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 2);
+
+    expect(payload.tracks.find((track) => track.id === "bass")?.sends).toEqual([{ returnTrackId: "fx-return", level: 0.4, mode: "post-fader" }]);
   });
 
   it("passes editable EQ chains and drum lane ownership to the native runtime", () => {

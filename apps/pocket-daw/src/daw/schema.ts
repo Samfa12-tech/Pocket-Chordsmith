@@ -37,6 +37,9 @@ export type TrackRole =
   | "media"
   | "automation";
 
+export const RECORDING_CHANNEL_MODES = ["mono", "stereo"] as const;
+export type RecordingChannelMode = typeof RECORDING_CHANNEL_MODES[number];
+
 export interface SourceRef {
   id: string;
   sourceType: "pocket-chordsmith" | "pocket-dj" | "manual" | "unknown";
@@ -82,12 +85,22 @@ export interface TimelineLoop {
   endBar: number;
 }
 
+export interface TimelineSelection {
+  startBar: number;
+  endBar: number;
+  source: "manual" | "loop" | "clip" | "punch";
+}
+
+export const GAME_STATE_MARKERS = ["calm", "danger", "combat", "win", "lose", "menu"] as const;
+export type GameStateMarkerId = (typeof GAME_STATE_MARKERS)[number];
+
 export interface TimelineMarker {
   id: string;
   bar: number;
   name: string;
   color?: string;
   markerType?: "section" | "cue" | "loop" | "export" | "game-state";
+  gameState?: GameStateMarkerId;
 }
 
 export interface ClipTransforms {
@@ -124,6 +137,7 @@ export interface Timeline {
   bars: number;
   cursor: TimelinePosition;
   loop: TimelineLoop;
+  selection?: TimelineSelection | null;
   markers: TimelineMarker[];
   clips: Clip[];
 }
@@ -152,6 +166,7 @@ export interface Track {
   recordKind?: "none" | "live-vocals" | "live-instrument";
   inputDeviceId?: string | null;
   monitorEnabled?: boolean;
+  recordingChannelMode?: RecordingChannelMode;
   active?: boolean;
   meter?: {
     peak: number;
@@ -290,16 +305,34 @@ export interface RenderCacheItem {
 export type ExportProfileKind =
   | "full-song-wav"
   | "full-song-midi"
+  | "full-song-flac"
+  | "stem-flacs"
+  | "full-song-mp3"
+  | "aiff-interchange"
   | "stem-wavs"
   | "section-loops"
   | "godot-adaptive-pack"
   | "web-game-pack"
+  | "godot-ogg-pack"
+  | "web-ogg-pack"
   | "pocket-dj-session";
+
+export type ExportProfileFormat =
+  | "wav"
+  | "midi"
+  | "zip"
+  | "json"
+  | "flac"
+  | "ogg-vorbis"
+  | "mp3"
+  | "aiff"
+  | "aif"
+  | "mpg";
 
 export interface ExportProfile {
   id: ExportProfileKind | string;
   name: string;
-  format: "wav" | "midi" | "zip" | "json";
+  format: ExportProfileFormat;
   enabled: boolean;
   scope: "full-song" | "selection" | "sections" | "stems" | "game-pack";
   sampleRate?: number;

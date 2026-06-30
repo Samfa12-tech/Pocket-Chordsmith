@@ -66,6 +66,10 @@ export function feedbackDiagnosticsSummary(diagnostics: TesterDiagnosticsPayload
     `Recording: ${diagnostics.recording.status}, input ${diagnostics.recording.inputDeviceName || "none"}, peak ${Math.round(diagnostics.recording.inputPeak * 100)}%, armed ${diagnostics.recording.armedTrackIds.join(", ") || "none"}, monitor ${diagnostics.recording.monitorTrackIds.join(", ") || "none"}`,
     `Updater: ${diagnostics.updater.status} / ${diagnostics.updater.currentVersion} -> ${diagnostics.updater.availableVersion || "none"}`,
     `Handoff: ${diagnostics.handoff.result} from ${diagnostics.handoff.source || "none"} - ${diagnostics.handoff.message}`,
-    `Media: ${diagnostics.media.poolCount} pool, ${diagnostics.media.missingCount} missing, ${diagnostics.media.externalReferenceCount} external`
+    `Routing: ${diagnostics.routing.busCount} buses, ${diagnostics.routing.returnCount} returns, ${diagnostics.routing.sendCount} sends (${diagnostics.routing.postFaderSendCount} post-fader, ${diagnostics.routing.preFaderSendCount} pre-fader), ${diagnostics.routing.warnings.length} warnings`,
+    `Take lanes: ${diagnostics.project.audioTakes.groupedClipCount} grouped clips, ${diagnostics.project.audioTakes.groupCount} groups, ${diagnostics.project.audioTakes.activeCount} active, ${diagnostics.project.audioTakes.archivedCount} archived`,
+    `Media: ${diagnostics.media.poolCount} pool, ${diagnostics.media.missingCount} missing, ${diagnostics.media.externalReferenceCount} external`,
+    `Analysis: ${diagnostics.media.analysis.waveformReadyCount}/${diagnostics.media.analysis.audioMediaCount} waveform-ready media, ${diagnostics.media.analysis.normalizeReadyClipCount}/${diagnostics.media.analysis.audioClipCount} normalize-ready clips, ${diagnostics.media.analysis.transientMarkerCount} transient markers, ${diagnostics.media.analysis.staleAnalysisCount} stale`,
+    `Render cache: ${diagnostics.media.renderCache.totalCount} total, ${diagnostics.media.renderCache.freezeRenderCount} freeze, ${diagnostics.media.renderCache.nativeGeneratedStemCount} native stems, ${diagnostics.media.renderCache.nativeRuntimeAudioCount} runtime audio, ${diagnostics.media.renderCache.invalidatedCount} invalidated`
   ].join("\n");
 }

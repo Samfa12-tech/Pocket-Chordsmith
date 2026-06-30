@@ -1,6 +1,7 @@
 import type { JsonObject, PocketDawProject, RoutingGraph, Track } from "./schema";
 import { cloneProject } from "./dawProject";
 import { createEmptyFxChain } from "./fx";
+import { evaluateAutomationValue, getTrackSendAutomationLane, trackSendAutomationPath } from "./automation";
 
 export function createRoutingGraph(tracks: Track[]): RoutingGraph {
   return {
@@ -61,22 +62,107 @@ export function setTrackSendLevel(project: PocketDawProject, trackId: string, re
 export interface ActiveTrackSendRoute {
   returnTrackId: string;
   level: number;
+  mode: TrackSendMode;
 }
 
-export function activeTrackSendRoutes(project: PocketDawProject, track: Track): ActiveTrackSendRoute[] {
+export type TrackSendMode = "post-fader" | "pre-fader";
+
+export interface RoutingExportSummary {
+  busCount: number;
+  returnCount: number;
+  sendCount: number;
+  postFaderSendCount: number;
+  preFaderSendCount: number;
+  routedTrackCount: number;
+  warnings: string[];
+}
+
+export function setTrackSendMode(project: PocketDawProject, trackId: string, returnTrackId: string, mode: TrackSendMode): PocketDawProject {
+  const next = cloneProject(project);
+  const track = next.tracks.find((item) => item.id === trackId);
+  const ret = next.tracks.find((item) => item.id === returnTrackId && item.trackType === "return");
+  if (!track || !ret) return project;
+  const modes = { ...(sendModeMap(track) as Record<string, TrackSendMode>) };
+  modes[returnTrackId] = cleanSendMode(mode);
+  track.metadata = { ...(track.metadata || {}), sendModes: modes };
+  if (!track.routing.sendIds.includes(returnTrackId)) track.routing.sendIds.push(returnTrackId);
+  syncRoutingGraph(next);
+  return next;
+}
+
+export function activeTrackSendRoutes(project: PocketDawProject, track: Track, bar = 1): ActiveTrackSendRoute[] {
   if (track.role === "master") return [];
   const levels = sendLevelMap(track);
   const sendIds = new Set<string>([
     ...(Array.isArray(track.routing?.sendIds) ? track.routing.sendIds : []),
-    ...Object.keys(levels)
+    ...Object.keys(levels),
+    ...project.automation.lanes.flatMap((lane) => {
+      if (!lane.enabled || !lane.points.length) return [];
+      const match = lane.targetPath.match(new RegExp(`^tracks\\.${escapeRegExp(track.id)}\\.sends\\.([^.]+)\\.level$`));
+      return match ? [match[1]] : [];
+    })
   ]);
   return Array.from(sendIds).flatMap((returnTrackId) => {
     if (!returnTrackId || returnTrackId === track.id) return [];
     const target = project.tracks.find((item) => item.id === returnTrackId && item.trackType === "return");
     if (!target) return [];
-    const level = clampSendLevel(levels[returnTrackId]);
-    return level > 0 ? [{ returnTrackId, level }] : [];
+    const baseLevel = clampSendLevel(levels[returnTrackId]);
+    const level = getAutomatedTrackSendLevel(project, track, returnTrackId, bar);
+    const lane = getTrackSendAutomationLane(project, track.id, returnTrackId, "level");
+    const automated = Boolean(lane?.enabled && lane.points.length);
+    return level > 0 || (automated && baseLevel >= 0) ? [{ returnTrackId, level, mode: trackSendMode(track, returnTrackId) }] : [];
   });
+}
+
+export function trackSendLevel(track: Track, returnTrackId: string): number {
+  return clampSendLevel(sendLevelMap(track)[returnTrackId]);
+}
+
+export function trackSendMode(track: Track, returnTrackId: string): TrackSendMode {
+  return cleanSendMode(sendModeMap(track)[returnTrackId]);
+}
+
+export function getAutomatedTrackSendLevel(project: PocketDawProject, track: Track, returnTrackId: string, bar = 1): number {
+  return clampSendLevel(evaluateAutomationValue(project, trackSendAutomationPath(track.id, returnTrackId, "level"), bar, trackSendLevel(track, returnTrackId)));
+}
+
+export function createRoutingExportSummary(project: PocketDawProject): RoutingExportSummary {
+  const warnings: string[] = [];
+  let sendCount = 0;
+  let postFaderSendCount = 0;
+  let preFaderSendCount = 0;
+  const returns = new Set(project.tracks.filter((track) => track.trackType === "return").map((track) => track.id));
+  project.tracks.forEach((track) => {
+    if (track.role === "master") return;
+    const sendIds = new Set([
+      ...(track.routing.sendIds || []),
+      ...Object.keys(sendLevelMap(track)),
+      ...Object.keys(sendModeMap(track))
+    ]);
+    sendIds.forEach((returnTrackId) => {
+      if (!returnTrackId) return;
+      if (!returns.has(returnTrackId)) {
+        warnings.push(`${track.name}: send target ${returnTrackId} is not a return track.`);
+        return;
+      }
+      sendCount += 1;
+      const mode = trackSendMode(track, returnTrackId);
+      if (mode === "pre-fader") {
+        preFaderSendCount += 1;
+      } else {
+        postFaderSendCount += 1;
+      }
+    });
+  });
+  return {
+    busCount: project.tracks.filter((track) => track.trackType === "bus").length,
+    returnCount: returns.size,
+    sendCount,
+    postFaderSendCount,
+    preFaderSendCount,
+    routedTrackCount: project.tracks.filter((track) => track.routing.outputId && track.routing.outputId !== "master").length,
+    warnings
+  };
 }
 
 export function availableTrackOutputs(project: PocketDawProject, trackId: string): Array<{ id: string; name: string }> {
@@ -154,10 +240,23 @@ function sendLevelMap(track: Track): Record<string, unknown> {
   return levels && typeof levels === "object" && !Array.isArray(levels) ? levels as Record<string, unknown> : {};
 }
 
+function sendModeMap(track: Track): Record<string, unknown> {
+  const modes = track.metadata?.sendModes;
+  return modes && typeof modes === "object" && !Array.isArray(modes) ? modes as Record<string, unknown> : {};
+}
+
 function clampSendLevel(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(1, n));
+}
+
+function cleanSendMode(value: unknown): TrackSendMode {
+  return value === "pre-fader" ? "pre-fader" : "post-fader";
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function wouldCreateRoutingCycle(project: PocketDawProject, trackId: string, outputId: string | null): boolean {

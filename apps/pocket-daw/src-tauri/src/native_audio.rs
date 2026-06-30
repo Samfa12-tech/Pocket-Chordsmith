@@ -166,6 +166,12 @@ pub struct NativeTrackSend {
     #[serde(rename = "returnTrackId")]
     return_track_id: String,
     level: f64,
+    #[serde(default = "default_track_send_mode")]
+    mode: String,
+}
+
+fn default_track_send_mode() -> String {
+    "post-fader".to_string()
 }
 
 #[derive(Clone, Deserialize)]
@@ -216,11 +222,26 @@ pub struct NativeAudioRegion {
     source_offset: f64,
     duration: f64,
     gain: f64,
+    #[serde(rename = "phaseMultiplier", default = "default_phase_multiplier")]
+    phase_multiplier: f64,
+    #[serde(default)]
+    reversed: bool,
     pan: f64,
     #[serde(rename = "fadeIn", default)]
     fade_in: f64,
     #[serde(rename = "fadeOut", default)]
     fade_out: f64,
+    #[serde(rename = "gainAutomation", default)]
+    gain_automation: Vec<NativeRegionGainAutomationPoint>,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct NativeRegionGainAutomationPoint {
+    #[serde(rename = "localSeconds")]
+    local_seconds: f64,
+    value: f64,
+    #[serde(default)]
+    curve: Option<String>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -1277,7 +1298,6 @@ struct GeneratedEventSource {
     track_index: usize,
     left: f32,
     right: f32,
-    track_gain: f32,
 }
 
 fn render_generated_event_source(
@@ -1286,25 +1306,25 @@ fn render_generated_event_source(
     t: f64,
     active_counts: &mut TrackSourceBudget,
 ) -> Option<GeneratedEventSource> {
-    let (track_index, track_gain_value, sample, event_pan, drum_lane) = {
+    let (track_index, track_enabled, sample, event_pan, drum_lane) = {
         let event = playback.events.get(event_index)?;
         let route = playback.compiled_event_routes.get(event_index)?.as_ref()?;
         let track_index = route.track_index;
-        let track_gain_value = playback
+        let track_enabled = playback
             .track_order
             .get(track_index)
             .and_then(|track_id| playback.tracks.get(track_id))
-            .map(|track| track_gain(track, playback.has_solo) as f32)?;
+            .map(|track| track_is_enabled(track, playback.has_solo))?;
         let sample = render_event_sample(event, t);
         (
             track_index,
-            track_gain_value,
+            track_enabled,
             sample,
             event.pan.unwrap_or(0.0) as f32,
             route.drum_lane.clone(),
         )
     };
-    if track_gain_value <= 0.0001 {
+    if !track_enabled {
         return None;
     }
     if sample.abs() <= 0.000001 {
@@ -1326,7 +1346,6 @@ fn render_generated_event_source(
         track_index,
         left: lane_left,
         right: lane_right,
-        track_gain: track_gain_value,
     })
 }
 
@@ -1363,8 +1382,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         let Some(track) = playback.tracks.get(track_id) else {
             continue;
         };
-        let track_gain = track_gain(track, playback.has_solo);
-        if track_gain <= 0.0001 {
+        if !track_is_enabled(track, playback.has_solo) {
             continue;
         }
         let Some((asset_left, asset_right)) =
@@ -1376,7 +1394,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
             continue;
         }
         let (pan_left, pan_right) = source_pan_gains(region.region.pan as f32);
-        let gain = (track_gain * region.region.gain.clamp(0.0, 1.4)) as f32;
+        let gain = region.region.gain.clamp(0.0, 1.4) as f32;
         add_track_mix(
             &mut track_mixes,
             region.track_index,
@@ -1402,8 +1420,8 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
             add_track_mix(
                 &mut track_mixes,
                 source.track_index,
-                source.left * source.track_gain,
-                source.right * source.track_gain,
+                source.left,
+                source.right,
             );
         }
         event_index += 1;
@@ -1415,8 +1433,15 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         let Some(track_id) = playback.track_order.get(mix.track_index) else {
             continue;
         };
-        let mut track_left = mix.left;
-        let mut track_right = mix.right;
+        let track_gain = playback
+            .tracks
+            .get(track_id)
+            .map(|track| track_gain(track, playback.has_solo) as f32)
+            .unwrap_or(0.0);
+        let pre_fader_left = mix.left;
+        let pre_fader_right = mix.right;
+        let mut track_left = pre_fader_left * track_gain;
+        let mut track_right = pre_fader_right * track_gain;
         let is_return = playback
             .tracks
             .get(track_id)
@@ -1436,6 +1461,8 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         route_track_sends(
             playback,
             track_id,
+            pre_fader_left,
+            pre_fader_right,
             track_left,
             track_right,
             &mut return_mixes,
@@ -1678,8 +1705,10 @@ fn ensure_compiled_sidechain_triggers(playback: &mut PlaybackShared) {
 fn route_track_sends(
     playback: &PlaybackShared,
     track_id: &str,
-    left: f32,
-    right: f32,
+    pre_fader_left: f32,
+    pre_fader_right: f32,
+    post_fader_left: f32,
+    post_fader_right: f32,
     return_mixes: &mut Vec<TrackMix>,
 ) {
     let Some(track) = playback.tracks.get(track_id) else {
@@ -1708,6 +1737,11 @@ fn route_track_sends(
             continue;
         };
         let gain = level * return_gain as f32;
+        let (left, right) = if send.mode == "pre-fader" {
+            (pre_fader_left, pre_fader_right)
+        } else {
+            (post_fader_left, post_fader_right)
+        };
         add_track_mix(return_mixes, return_track_index, left * gain, right * gain);
     }
 }
@@ -2353,8 +2387,16 @@ fn render_region_sample(
     if local < 0.0 || local > region.duration {
         return None;
     }
-    let source_seconds = region.source_offset.max(0.0) + local;
-    let frame_position = source_seconds * asset.sample_rate.max(1) as f64;
+    let sample_rate = asset.sample_rate.max(1) as f64;
+    let frame_position = if region.reversed {
+        ((region.source_offset.max(0.0) + region.duration.max(0.0)) * sample_rate - 1.0)
+            - local * sample_rate
+    } else {
+        (region.source_offset.max(0.0) + local) * sample_rate
+    };
+    if !frame_position.is_finite() || frame_position < 0.0 {
+        return None;
+    }
     let frame = frame_position.floor() as usize;
     if asset.frame_count == 0 || frame >= asset.frame_count {
         return None;
@@ -2402,7 +2444,58 @@ fn region_envelope_gain(region: &NativeAudioRegion, local: f64) -> f32 {
             multiplier = multiplier.min(((duration - local) / fade_out).clamp(0.0, 1.0));
         }
     }
-    multiplier as f32
+    let phase_multiplier = if region.phase_multiplier < 0.0 {
+        -1.0
+    } else {
+        1.0
+    };
+    (multiplier * phase_multiplier * region_automation_gain(region, local)) as f32
+}
+
+fn region_automation_gain(region: &NativeAudioRegion, local: f64) -> f64 {
+    if region.gain_automation.is_empty() {
+        return 1.0;
+    }
+    let mut points = region.gain_automation.clone();
+    points.sort_by(|a, b| {
+        a.local_seconds
+            .partial_cmp(&b.local_seconds)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if local <= points[0].local_seconds {
+        return points[0].value.clamp(0.0, 4.0);
+    }
+    for pair in points.windows(2) {
+        let a = &pair[0];
+        let b = &pair[1];
+        if local >= a.local_seconds && local <= b.local_seconds {
+            if a.curve.as_deref() == Some("hold") {
+                return a.value.clamp(0.0, 4.0);
+            }
+            let t = ((local - a.local_seconds) / (b.local_seconds - a.local_seconds).max(0.0001))
+                .clamp(0.0, 1.0);
+            return interpolate_automation_value(a.value, b.value, t, a.curve.as_deref())
+                .clamp(0.0, 4.0);
+        }
+    }
+    points
+        .last()
+        .map(|point| point.value.clamp(0.0, 4.0))
+        .unwrap_or(1.0)
+}
+
+fn interpolate_automation_value(start: f64, end: f64, t: f64, curve: Option<&str>) -> f64 {
+    let x = t.clamp(0.0, 1.0);
+    let shaped = match curve {
+        Some("ease-in") => x * x,
+        Some("ease-out") => 1.0 - (1.0 - x) * (1.0 - x),
+        _ => x,
+    };
+    start + (end - start) * shaped
+}
+
+fn default_phase_multiplier() -> f64 {
+    1.0
 }
 
 fn decode_payload_asset(asset: &NativeAudioAssetPayload) -> Result<DecodedAudioAsset, String> {
@@ -2484,6 +2577,7 @@ fn validate_region(region: &NativeAudioRegion) -> Result<(), String> {
         || !region.source_offset.is_finite()
         || !region.duration.is_finite()
         || !region.gain.is_finite()
+        || !region.phase_multiplier.is_finite()
         || !region.pan.is_finite()
     {
         return Err(format!(
@@ -3545,10 +3639,14 @@ fn find_compiled_region_scan_start(regions: &[CompiledAudioRegion], seconds: f64
 }
 
 fn track_gain(track: &NativeTrackControl, has_solo: bool) -> f64 {
-    if track.mute || (has_solo && !track.solo) {
+    if !track_is_enabled(track, has_solo) {
         return 0.0;
     }
     track.volume.clamp(0.0, 1.2)
+}
+
+fn track_is_enabled(track: &NativeTrackControl, has_solo: bool) -> bool {
+    !track.mute && (!has_solo || track.solo)
 }
 
 fn master_gain(playback: &PlaybackShared) -> f32 {
@@ -3789,6 +3887,26 @@ mod tests {
     }
 
     #[test]
+    fn renders_reversed_region_samples_from_selected_source_window() {
+        let asset = DecodedAudioAsset {
+            sample_rate: 4,
+            channels: 2,
+            samples: vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            frame_count: 3,
+        };
+        let mut region = test_region("region", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0);
+        region.reversed = true;
+
+        let start = render_region_sample(&region, &asset, 0.0).expect("start sample");
+        let later = render_region_sample(&region, &asset, 0.25).expect("later sample");
+
+        assert!((start.0 - 0.3).abs() < 0.0001);
+        assert!((start.1 - 0.4).abs() < 0.0001);
+        assert!((later.0 - 0.1).abs() < 0.0001);
+        assert!((later.1 - 0.2).abs() < 0.0001);
+    }
+
+    #[test]
     fn interpolates_cached_region_samples_between_frames() {
         let asset = DecodedAudioAsset {
             sample_rate: 4,
@@ -3823,6 +3941,79 @@ mod tests {
         assert!(start.0.abs() < 0.0001);
         assert!((middle.0 - 1.0).abs() < 0.0001);
         assert!(near_end.0 > 0.4 && near_end.0 < 0.6);
+    }
+
+    #[test]
+    fn renders_region_samples_with_phase_multiplier() {
+        let asset = DecodedAudioAsset {
+            sample_rate: 4,
+            channels: 2,
+            samples: vec![0.25, -0.5],
+            frame_count: 1,
+        };
+        let mut region = test_region("region", "asset", "bass", 0.0, 0.0, 0.25, 1.0, 0.0);
+        region.phase_multiplier = -1.0;
+
+        let sample = render_region_sample(&region, &asset, 0.0).expect("region should sample");
+
+        assert!((sample.0 + 0.25).abs() < 0.0001);
+        assert!((sample.1 - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
+    fn renders_region_samples_with_gain_automation() {
+        let asset = DecodedAudioAsset {
+            sample_rate: 4,
+            channels: 1,
+            samples: vec![1.0, 1.0, 1.0, 1.0],
+            frame_count: 4,
+        };
+        let mut region = test_region("region", "asset", "bass", 0.0, 0.0, 1.0, 1.0, 0.0);
+        region.gain_automation = vec![
+            NativeRegionGainAutomationPoint {
+                local_seconds: 0.0,
+                value: 0.5,
+                curve: Some("linear".to_string()),
+            },
+            NativeRegionGainAutomationPoint {
+                local_seconds: 1.0,
+                value: 1.0,
+                curve: Some("linear".to_string()),
+            },
+        ];
+
+        let start = render_region_sample(&region, &asset, 0.0).expect("start sample");
+        let middle = render_region_sample(&region, &asset, 0.5).expect("middle sample");
+
+        assert!((start.0 - 0.5).abs() < 0.0001);
+        assert!((middle.0 - 0.75).abs() < 0.0001);
+    }
+
+    #[test]
+    fn renders_region_samples_with_curved_gain_automation() {
+        let asset = DecodedAudioAsset {
+            sample_rate: 4,
+            channels: 1,
+            samples: vec![1.0, 1.0, 1.0, 1.0],
+            frame_count: 4,
+        };
+        let mut region = test_region("region", "asset", "bass", 0.0, 0.0, 1.0, 1.0, 0.0);
+        region.gain_automation = vec![
+            NativeRegionGainAutomationPoint {
+                local_seconds: 0.0,
+                value: 0.0,
+                curve: Some("ease-out".to_string()),
+            },
+            NativeRegionGainAutomationPoint {
+                local_seconds: 1.0,
+                value: 1.0,
+                curve: Some("linear".to_string()),
+            },
+        ];
+
+        let middle = render_region_sample(&region, &asset, 0.5).expect("middle sample");
+
+        assert!((middle.0 - 0.75).abs() < 0.0001);
     }
 
     #[test]
@@ -3940,6 +4131,7 @@ mod tests {
         bass.sends.push(NativeTrackSend {
             return_track_id: "fx-return".to_string(),
             level: 0.5,
+            mode: "post-fader".to_string(),
         });
         let mut sent = playback_with_region(bass);
         let mut fx_return = test_track("fx-return", 1.0, 0.0, false, false);
@@ -3961,6 +4153,43 @@ mod tests {
         assert!(
             sent_energy > dry_energy * 1.1,
             "expected return send to add processed output: dry={dry_energy}, sent={sent_energy}"
+        );
+    }
+
+    #[test]
+    fn native_pre_fader_send_uses_source_before_track_volume() {
+        let mut post_bass = test_track("bass", 0.0, 0.0, false, false);
+        post_bass.sends.push(NativeTrackSend {
+            return_track_id: "fx-return".to_string(),
+            level: 1.0,
+            mode: "post-fader".to_string(),
+        });
+        let mut post = playback_with_region(post_bass);
+        let mut post_return = test_track("fx-return", 1.0, 0.0, false, false);
+        post_return.is_return = true;
+        insert_playback_track(&mut post, post_return);
+
+        let mut pre_bass = test_track("bass", 0.0, 0.0, false, false);
+        pre_bass.sends.push(NativeTrackSend {
+            return_track_id: "fx-return".to_string(),
+            level: 1.0,
+            mode: "pre-fader".to_string(),
+        });
+        let mut pre = playback_with_region(pre_bass);
+        let mut pre_return = test_track("fx-return", 1.0, 0.0, false, false);
+        pre_return.is_return = true;
+        insert_playback_track(&mut pre, pre_return);
+
+        let post_energy = render_energy(&mut post, 1);
+        let pre_energy = render_energy(&mut pre, 1);
+
+        assert!(
+            post_energy <= 0.000001,
+            "post-fader send should follow a closed fader"
+        );
+        assert!(
+            pre_energy > 0.0001,
+            "pre-fader send should feed the return before source track volume, got {pre_energy}"
         );
     }
 
@@ -4897,6 +5126,7 @@ mod tests {
         bass_track.sends.push(NativeTrackSend {
             return_track_id: "fx-return".to_string(),
             level: 0.35,
+            mode: "post-fader".to_string(),
         });
         let mut return_track = test_track("fx-return", 0.55, 0.15, false, false);
         return_track.is_return = true;
@@ -5405,9 +5635,12 @@ mod tests {
             source_offset,
             duration,
             gain,
+            phase_multiplier: 1.0,
+            reversed: false,
             pan,
             fade_in: 0.0,
             fade_out: 0.0,
+            gain_automation: Vec::new(),
         }
     }
 

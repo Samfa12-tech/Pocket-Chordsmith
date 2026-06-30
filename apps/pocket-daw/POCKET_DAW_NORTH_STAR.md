@@ -14,6 +14,8 @@ Pocket DAW should eventually become the full desktop studio for the Pocket music
 
 Pocket Chordsmith remains the fast sketchpad. Pocket DJ remains the live performance/remix surface. Pocket DAW becomes the deeper finishing, recording, mixing and export workspace.
 
+Pocket DAW should not become an AI-generation-first product. Its center is a capable, free DAW that makes Pocket Chordsmith, Pocket DJ and Godot workflows stronger through native timeline, editing, mixing, recording and export features.
+
 ## Non-negotiable long-term promise
 
 A user should be able to start and finish a song inside Pocket DAW without needing to return to Pocket Chordsmith, while still being able to import, preserve and round-trip Pocket Chordsmith projects.
@@ -34,7 +36,7 @@ Pocket DAW should support:
 - Record multiple live tracks simultaneously when the connected audio hardware exposes enough inputs.
 - Choose mono or stereo recording mode per live audio track, so vocals, guitars, synths and stereo instrument feeds can be captured correctly.
 - Import common audio files such as `.wav`, `.mp3`, `.flac`, `.ogg`, `.aiff` and other practical desktop formats as timeline tracks/clips.
-- Add and edit MIDI clips.
+- Add MIDI tracks, add and edit MIDI clips.
 - Add and edit audio clips.
 - Mix tracks, buses, returns and master output.
 - Use automation lanes.
@@ -82,6 +84,11 @@ Pocket DAW should grow toward these DAW features:
 - Return tracks.
 - Master track.
 - Built-in FX chains.
+- Insert effects and instrument chains that are stored as normal project data, exposed in the mixer/editor UI and respected by playback/export.
+- MIDI quantization, swing/groove tools, controller editing and deeper piano-roll workflows.
+- Audio transient quantization, warp markers, time-stretch, pitch-shift and source-preserving clip analysis.
+- Vocal pitch correction/autotune-style correction after pitch analysis, audio preservation and monitoring latency are reliable.
+- Plugin hosting research for CLAP, VST3, LV2 or other formats, only after the native mixer, automation, render and crash-boundary contracts are mature.
 - Shared Pocket Audio Core integration when the real core package/API is available, with Pocket DAW timeline events adapted into that engine rather than guessed from memory.
 - Stem rendering.
 - Full-song rendering.
@@ -105,6 +112,8 @@ Pocket DAW should support real live recording workflows once the native audio la
 ## Desktop app shell target
 
 Pocket DAW should feel like a real Windows desktop DAW, not only a web page wrapped in a window.
+
+The shell should borrow useful non-AI DAW patterns from tools such as Greysound: a persistent left studio rail for Library, Clips, Media Pool, Project, Export, Diagnostics, Pocket handoff and Godot tools; a compact always-visible top transport/status strip; and a lower dock that flips between Mixer, Inserts, Sends, Automation, Piano Roll, Audio Editor and Export Details for the same selected tracks.
 
 The app should grow a native-style top menu bar with familiar categories:
 
@@ -161,15 +170,19 @@ Do not jump to flashy DAW surface area before the foundations are solid.
 
 Preferred order:
 
-1. Stabilise native project save/open and recent files.
-2. Stabilise Chordsmith import and source preservation.
-3. Add Chordsmith parity editing inside Pocket DAW.
-4. Improve timeline play, scrub, seek and loop.
-5. Add stronger mixer, meters and routing.
-6. Add recording only after timeline/audio persistence is ready.
-7. Add MIDI/audio clips and editors.
-8. Add stem, section loop and Godot/web-game export packs.
-9. Add Pocket DJ performance handoff.
+1. Release-state hygiene and installed reliability: Open, Save, Save As, recent files, media relink/reload, diagnostics, updater checks and exact release smoke tests.
+2. Pocket ecosystem polish: Chordsmith import/edit parity, Pocket DJ handoff, Godot/web-game ZIP packs, manifest correctness and push-to-Godot after ZIP smoke is reliable.
+3. Non-destructive editing foundation: clip gain, fades/crossfades, source offsets, contextual edit menus, stronger split/trim/range selection and source-preserving destructive-looking operations. Source now has a first-class timeline edit range plus Range Clip, Range Loop, Clear Range, generated-section/generated-pattern/audio/MIDI Split Range, Crop Range, Delete Range, same-track Ripple Delete and source-safe Ripple All commands; remaining work includes full take-lane comping and source-safe time/pitch tools.
+4. Media pool and waveform editing: better waveform display, audio analysis cache, project-relative media storage, relink UX, clip analysis commands and per-clip metadata.
+5. MIDI sequencing and quantization: controller input, fuller piano roll, velocity/controller/program/pitch-bend/aftertouch lanes, quantize/swing/groove, MIDI transform tools and first-class sampler/instrument tracks. The current foundation can author notes, CC points, program changes, pitch bends and aftertouch through undoable piano-roll controls, persist them through save/reopen, re-export them as MIDI, and map selected General MIDI drum clips plus non-drum MIDI notes into generated Drums/Melody overlays without mutating the source clip or Chordsmith grids.
+6. Mixer/routing dock: Mixer/Inserts/Sends/Automation tabs, full send/return processing, bus folders, meters, pre/post-fader choices, latency calibration and routing-aware exports.
+7. Deep automation: drawn and recorded automation for volume, pan, clip gain, sends, FX, tempo and instrument parameters, with curves and reliable export playback.
+8. Export and bounce expansion: MP3/FLAC, bounce profiles, freeze/print tracks, routing-aware stems, batch exports and release-grade package verification.
+9. Stereo and simultaneous multitrack recording: explicit input assignment, stereo tracks, monitoring controls, low-latency device paths, take lanes, punch recording and comping.
+10. Audio quantization and pitch tools: transient detection, warp markers, time-stretch, pitch-shift, groove matching and vocal pitch correction/autotune after preservation and latency are dependable.
+11. Plugin hosting or bridge: evaluate CLAP/VST3/LV2 and related open-source host code only after the native mixer, automation, preset, render and crash-boundary contracts are ready.
+
+Every feature in this list should become part of the project schema, command model, undo/redo stack, UI, playback engine, save/open path, render/export path and smoke tests. Pocket Chordsmith, Pocket DJ and Godot integrations should use those same primitives rather than separate add-on flows.
 
 ## Current v0 boundary
 
@@ -183,11 +196,12 @@ The current v0 is an expanding alpha slice. Treat `docs/CURRENT_RELEASE_STATUS.m
 - Simple mixer.
 - `.pocketdaw` save/open.
 - WAV/MIDI export.
-- Audio and MIDI clip foundations.
-- Basic automation, bus routing and stem/manifest-preview export foundations.
+- Audio and MIDI clip foundations, including direct empty MIDI track/clip creation, undoable MIDI clip bar-length editing, and raw MIDI import placement as one clip, per-source-track clips, per-channel clips, or raw channel-10 drum-note clips.
+- First timeline edit-range foundation for source-preserving range split/crop/delete/ripple workflows, including selected MIDI split/crop/delete/ripple that trims/retimes note and expression events.
+- Basic track automation, clip-gain automation, send-level automation, bus routing, first Mixer/Inserts/Sends/Automation/Piano Roll/Audio Editor/Export lower dock, Stem WAV ZIP, Section Loop ZIP and manifest-backed export foundations.
 - Basic PocketHandoff ingestion into Pocket DAW.
-- Installed-app-only mono live recording alpha.
-- Collected Godot/web game-pack ZIP export foundations.
+- Installed-app-only one-track live recording alpha with source-level mono/stereo mode support and source-only grouped-take activation/archive/restore/comp-from-playhead foundations.
+- Collected standalone stem, standalone section-loop and Godot/web game-pack ZIP export foundations.
 - Native playback/cache and updater/bootstrapper release infrastructure.
 
 It does not yet prove:
@@ -195,11 +209,16 @@ It does not yet prove:
 - Full Chordsmith editing parity.
 - Polished sender-side push from Pocket Chordsmith to Pocket DAW.
 - Push to Godot.
-- Full stereo or simultaneous multitrack recording.
+- Simultaneous multitrack recording and installed-hardware proof for stereo recording.
 - Deep waveform/audio editing.
 - Deep MIDI clip editor behavior beyond the compact piano-roll foundation.
-- Full drawn automation editing and FX/tempo automation.
-- Project-relative media relink/reload workflow.
+- MIDI quantization and audio transient quantization.
+- Time-stretch, pitch-shift and vocal pitch correction/autotune.
+- Plugin hosting or a plugin-host bridge.
+- Full drawn automation editing, FX/tempo automation, deeper send/pre-post automation and hosted-parameter automation.
+- Full insert/send processing and third-party plugin latency/compensation handling.
+- Installed-app proof for project-relative media relink/reload workflow. Source now has native relink/reload, decoded-cache recovery, quiet hydration metadata repair, and project-relative path hardening.
+- Full punch-in/out, take-lane organization and comp editing. Source now has grouped-take activation/archive/restore and first comp-from-playhead split helpers, but no installed punch workflow or full take-lane release claim.
 
 Those missing pieces are not optional product ideas. They are part of the long-term Pocket DAW destination.
 
@@ -208,14 +227,16 @@ Those missing pieces are not optional product ideas. They are part of the long-t
 The next milestone should deepen media/export/native reliability from the current release-status baseline:
 
 - Manually verify native Open, Save, Save As, audio import and MIDI import in `npm run tauri:dev` and a packaged Windows build.
-- Complete project-relative media path handling and a real relink/reload workflow for missing or external audio.
-- Replace sequential stem downloads with browser-safe zip packaging or native pack export.
+- Manually smoke project-relative media path handling and the real relink/reload workflow for missing or external audio in packaged builds, including decoded-cache recovery and source-switch metadata cleanup.
+- Manually smoke standalone Stem WAV ZIP and Section Loop ZIP exports, including manifest, deterministic paths, byte-size summaries and playable WAV contents.
 - Verify the Godot/Web game-pack ZIP exports, including manifest, source project, full mix, stems and section loops, in real target import workflows.
 - Add push-to-Godot or native pack destination selection after the ZIP pack smoke is solid.
 - Keep extending PocketHandoff into sender-side buttons and hosted smoke tests across Pocket Chordsmith, Pocket DJ and Pocket DAW.
 - Larger Chordsmith editor coverage and source-roundtrip confidence beyond the current compact parity controls.
 - Drum branching: double-click generated drums to explode them into separate kick, snare, hat and future kit-piece tracks with independent mixer, pan, gate, FX and routing control.
-- Serious MIDI import: unlike Pocket Chordsmith's deliberately limited sketchpad import, Pocket DAW should eventually handle multi-track MIDI, channels, tempo maps, controllers, drums and editable clip conversion well enough for finished-project work.
+- Serious MIDI import: unlike Pocket Chordsmith's deliberately limited sketchpad import, Pocket DAW should keep raw multi-track MIDI, channels, tempo maps, controllers, drums and editable clip data intact for finished-project work. Source now has a first raw-placement pass for single-clip, per-source-track, per-channel and channel-10 drum-note split imports while sharing one source media item, plus optional selected-clip commands that map MIDI drums and melodic notes into generated overlays without replacing the preserving raw-MIDI import path. Chordsmith's smarter musical import remains a useful source for deeper optional DAW commands that interpret MIDI into sections, chords and bass lanes.
 - Desktop-grade generated playback: Pocket DAW may use a future Pocket Audio Core, cached samples, rendered voice assets or hybrid sample/synth playback when that gives more reliable performance.
+- Fold Greysound-derived non-AI ergonomics into the native shell: left studio rail, deeper lower dock tabs, Add Track dialog, visible transport/project truth and deterministic context menus for clip/audio edit actions.
+- Keep open-source acceleration license-reviewed before embedding code. Prefer compatible focused libraries or native-service boundaries for decoding/encoding, waveform analysis, pitch detection, time-stretching, MIDI parsing and plugin-format experiments.
 
 Expanded recording should wait until native file/audio persistence, meters, timeline seek/scrub, media pool relink and packaged-build QA are stronger.

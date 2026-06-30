@@ -16,7 +16,7 @@ import { encodeWav } from "./offlineRender";
 
 export const NATIVE_RENDER_CACHE_ROOT = "project-cache/native-audio";
 export const NATIVE_GENERATED_STEM_TAIL_SECONDS = 0.25;
-export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v19-b07e26b2-bass-filter-tail";
+export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v25-915a6014-prefader-sends";
 export const NATIVE_CACHE_STEM_RENDER_MODE = "cache-stem";
 const STEM_ROLES: TrackRole[] = ["drums", "bass", "chords", "melody", "guitar"];
 
@@ -170,6 +170,8 @@ export async function buildNativeRenderCache(
       sourceOffset: 0,
       duration: Math.min(regionDuration, asset.durationSeconds),
       gain: 1,
+      phaseMultiplier: 1,
+      reversed: false,
       pan: 0,
       fadeIn: 0,
       fadeOut: 0
@@ -1044,7 +1046,9 @@ function nativeCacheStemDrumLaneMixState(project: PocketDawProject) {
       id: lane.id,
       volume: mix.volume,
       pan: mix.pan,
-      mute: mix.mute
+      gate: mix.gate,
+      mute: mix.mute,
+      solo: mix.solo
     };
   });
 }
@@ -1205,6 +1209,8 @@ function nativeRegionFromHydratedItem(project: PocketDawProject, item: RenderCac
       sourceOffset: region.sourceOffsetSeconds,
       duration: Math.min(region.durationSeconds, asset.durationSeconds),
       gain: region.gain,
+      phaseMultiplier: region.phaseMultiplier,
+      reversed: region.reversed,
       pan: 0,
       fadeIn: region.fadeInSeconds,
       fadeOut: region.fadeOutSeconds
@@ -1239,6 +1245,8 @@ function nativeGeneratedGroupRegionFromItem(project: PocketDawProject, item: Ren
     sourceOffset: 0,
     duration: Math.min(generatedStemRenderDuration(duration), asset.durationSeconds),
     gain: 1,
+    phaseMultiplier: 1,
+    reversed: false,
     pan: 0,
     fadeIn: 0,
     fadeOut: 0
@@ -1255,6 +1263,8 @@ function nativeGeneratedRegionFromClip(project: PocketDawProject, clip: Clip, tr
     sourceOffset: 0,
     duration: Math.min(generatedStemRenderDuration(clipDuration), asset.durationSeconds),
     gain: 1,
+    phaseMultiplier: 1,
+    reversed: false,
     pan: 0,
     fadeIn: 0,
     fadeOut: 0
@@ -1359,9 +1369,12 @@ async function appendRuntimeAudioCache(
       sourceOffset: region.sourceOffsetSeconds,
       duration,
       gain: region.gain,
+      phaseMultiplier: region.phaseMultiplier,
+      reversed: region.reversed,
       pan: 0,
       fadeIn: region.fadeInSeconds,
-      fadeOut: region.fadeOutSeconds
+      fadeOut: region.fadeOutSeconds,
+      gainAutomation: region.gainAutomation
     });
     runtimeAudioRegionCount += 1;
     cachedClipIds.add(region.clipId);

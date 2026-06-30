@@ -99,6 +99,28 @@ describe("smoke attestation verifier", () => {
     }
   });
 
+  it("requires native media reliability and game-pack target smoke checks", () => {
+    expect(REQUIRED_SMOKE_CHECK_IDS).toEqual(expect.arrayContaining([
+      "native-media-reliability",
+      "game-pack-target-smoke"
+    ]));
+
+    const validation = validateSmokeAttestation(buildAttestation({
+      checks: REQUIRED_SMOKE_CHECK_IDS
+        .filter((id) => id !== "native-media-reliability" && id !== "game-pack-target-smoke")
+        .map((id) => ({ id, result: "pass" }))
+    }), {
+      version: "0.6.20",
+      commit: "e".repeat(40),
+      installerFile: "Pocket.DAW_0.6.20_x64-setup.exe",
+      installerSha256: sha256("installer bytes")
+    });
+
+    expect(validation.ok).toBe(false);
+    expect(validation.failures.join("\n")).toContain("native-media-reliability");
+    expect(validation.failures.join("\n")).toContain("game-pack-target-smoke");
+  });
+
   it("rejects a rebuilt installer when the attestation hash is stale", () => {
     const original = sha256("installer bytes v1");
     const rebuilt = sha256("installer bytes v2");

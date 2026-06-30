@@ -1,27 +1,27 @@
 import type { AppState } from "./state";
-import { currentProject, type ChordsmithStepSelection } from "./state";
+import { currentProject, type ChordsmithStepSelection, type LowerDockTab } from "./state";
 import { BUILT_IN_FX, getTrackFxChain } from "../daw/fx";
-import { DRUM_LANE_DEFS, getDrumLaneFxChain, getDrumLaneMix } from "../daw/drumLanes";
+import { DRUM_LANE_DEFS, drumBranchGroupCollapsed, generatedDrumBranchLane, getDrumBranchStepLevel, getDrumLaneFxChain, getDrumLaneMix, type DrumLaneId } from "../daw/drumLanes";
 import { bassStepUsesAuto, bassVisibleNoteIndex, getPrimaryChordsmithSource, totalEditorSteps, visibleEditorSteps } from "../daw/chordsmithEditor";
 import { bassPresetLabel, visibleBassPresetsForProject } from "../daw/chordsmithBassPresets";
 import { drumPresetLabel, visibleDrumPresetsForProject } from "../daw/chordsmithDrumPresets";
 import { guitarPresetLabel, visibleGuitarPresetsForProject } from "../daw/chordsmithGuitarPresets";
-import { POCKET_DAW_VERSION, type Clip, type FxChain, type FxPluginInstance, type Track } from "../daw/schema";
+import { GAME_STATE_MARKERS, POCKET_DAW_VERSION, type Clip, type FxChain, type FxPluginInstance, type GameStateMarkerId, type Track } from "../daw/schema";
 import { POCKET_PRO_EQ_BANDS, POCKET_PRO_EQ_PRESETS, POCKET_PRO_EQ_TYPE } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
 import { POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 import { POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { DEFAULT_STEM_MIX } from "../../../../packages/pocket-audio-core/src/constants.js";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
-import { barFloatToPosition, barsToSeconds, sortClips } from "../daw/timeline";
-import { mediaPoolStatus, renderCacheItemsForMedia } from "../daw/mediaPool";
-import { midiDataFromClip } from "../daw/midiClips";
-import { getTrackAutomationLane, trackHasAutomation } from "../daw/automation";
-import { availableTrackOutputs } from "../daw/routing";
-import { createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs";
-import { createCollectMediaPlan } from "../daw/mediaPool";
+import { barFloatToPosition, barsToSeconds, gameStateMarkerLabel, sortClips } from "../daw/timeline";
+import { createAudioMediaAnalysisSummary, createCollectMediaPlan, createMediaPortabilitySummary, createRenderCacheSummary, mediaPoolStatus, renderCacheItemsForMedia } from "../daw/mediaPool";
+import { MIDI_GROOVE_TEMPLATES, MIDI_IMPORT_PLACEMENT_MODES, midiDataFromClip } from "../daw/midiClips";
+import { clipHasAutomation, getClipAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, trackHasAutomation } from "../daw/automation";
+import { availableTrackOutputs, createRoutingExportSummary, trackSendLevel, trackSendMode } from "../daw/routing";
+import { createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs";
+import { validateExportProfile } from "../daw/exportProfiles";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
-import { clipSourceStartBar } from "../daw/clips";
-import { runtimeBuildId, runtimeCommit, runtimeLabel } from "./diagnostics";
+import { audioClipTakeSummary, clipSourceStartBar } from "../daw/clips";
+import { createAudioTakeDiagnosticsSummary, runtimeBuildId, runtimeCommit, runtimeLabel } from "./diagnostics";
 import { pocketDawMcpClaudeConfig, pocketDawMcpCodexConfig, pocketDawMcpCommandLine, POCKET_DAW_MCP_WORKSPACE } from "./mcpSetup";
 import { projectTitleFromFileState } from "../native/fileBridge";
 import {
@@ -112,6 +112,13 @@ function renderMenuStrip(state: AppState): string {
         ["Paste Clip", "clip-paste"],
         ["Duplicate Clip", "clip-duplicate"],
         ["Split Clip", "clip-split"],
+        ["Range Clip", "range-selected"],
+        ["Split Range", "range-split"],
+        ["Crop Range", "range-crop"],
+        ["Delete Range", "range-delete"],
+        ["Ripple Delete", "range-ripple-delete"],
+        ["Ripple All", "range-ripple-all"],
+        ["Clear Range", "range-clear"],
         ["Delete Clip", "clip-delete"],
         ["Mute Clip", "clip-mute"]
       ])}
@@ -127,6 +134,7 @@ function renderMenuStrip(state: AppState): string {
         [state.playing ? "Pause" : "Play", state.playing ? "pause" : "play"],
         ["Stop", "stop"],
         ["Restart", "restart"],
+        ["MIDI Panic", "midi-panic"],
         [`Loop ${loopOn ? "Off" : "On"}`, "toggle-loop"],
         ["Loop Selected", "loop-selected"],
         ["Clear Loop", "loop-clear"],
@@ -190,6 +198,7 @@ function renderTransport(state: AppState): string {
         <button class="${metronome.enabled ? "on" : ""}" data-action="metronome-toggle" title="Metronome and one-bar recording count-in">Metro</button>
         <button data-action="stop">Stop</button>
         <button data-action="restart">Restart</button>
+        <button data-action="midi-panic" title="Immediately stop preview playback and clear stuck notes">Panic</button>
         <button data-action="seek-start">Bar 1</button>
         <button data-action="add-track-open">Add Track</button>
         <button data-action="undo">Undo</button>
@@ -251,6 +260,9 @@ function renderTimeline(state: AppState): string {
   const width = Math.max(1100, 176 + (project.timeline.bars + 1) * zoom);
   const playheadLeft = (state.playheadBar - 1) * zoom;
   const cursorLeft = (state.cursorBar - 1) * zoom;
+  const selection = project.timeline.selection || null;
+  const rangeStart = selection?.startBar ?? project.timeline.loop.startBar;
+  const rangeEnd = selection?.endBar ?? project.timeline.loop.endBar;
   return `
     <section class="timeline-wrap">
       <div class="timeline-toolbar">
@@ -285,7 +297,24 @@ function renderTimeline(state: AppState): string {
           <input class="bar-input" id="loopEnd" type="number" min="2" value="${project.timeline.loop.endBar}">
           <button data-action="loop-selected">Loop Clip</button>
           <button data-action="loop-clear">Clear</button>
+          <span class="range-controls" aria-label="Edit range controls">
+            <span class="range-label">Range</span>
+            <input class="bar-input" id="rangeStart" type="number" min="1" step="0.25" value="${sanitizeCssLengthOrNumber(rangeStart, 1, 1, 4096)}" aria-label="Edit range start bar">
+            <input class="bar-input" id="rangeEnd" type="number" min="1.125" step="0.25" value="${sanitizeCssLengthOrNumber(rangeEnd, 2, 1.125, 4097)}" aria-label="Edit range end bar">
+            <button data-action="range-selected">Range Clip</button>
+            <button data-action="range-loop">Range Loop</button>
+            <button data-action="range-split" ${selection ? "" : "disabled"}>Split Range</button>
+            <button data-action="range-crop" ${selection ? "" : "disabled"}>Crop Range</button>
+            <button data-action="range-delete" ${selection ? "" : "disabled"}>Delete Range</button>
+            <button data-action="range-ripple-delete" ${selection ? "" : "disabled"}>Ripple Delete</button>
+            <button data-action="range-ripple-all" ${selection ? "" : "disabled"}>Ripple All</button>
+            <button data-action="range-clear" ${selection ? "" : "disabled"}>Clear Range</button>
+          </span>
           <button data-action="marker-add">Marker</button>
+          <select id="gameStateMarker" aria-label="Game-state marker">
+            ${GAME_STATE_MARKERS.map((state) => `<option value="${escapeAttr(state)}">${escapeHtml(gameStateMarkerLabel(state))}</option>`).join("")}
+          </select>
+          <button data-action="game-state-marker-add">Game Cue</button>
         </div>
       </div>
       <div class="timeline-scroll" data-scroll-key="timeline-scroll">
@@ -295,6 +324,7 @@ function renderTimeline(state: AppState): string {
           <div class="cursor-line" data-cursor="true" style="left:${barLeftPx(cursorLeft)}"></div>
           <div class="playhead" data-playhead="true" style="left:${barLeftPx(playheadLeft)}"></div>
           <div class="loop-region ${project.timeline.loop.enabled ? "on" : ""}" style="left:${barLeftPx((project.timeline.loop.startBar - 1) * zoom)};width:${Math.max(1, project.timeline.loop.endBar - project.timeline.loop.startBar) * zoom}px"></div>
+          ${selection ? `<div class="range-region ${sanitizeDataAttr(selection.source)}" data-range-region="true" style="left:${barLeftPx((selection.startBar - 1) * zoom)};width:${Math.max(1, selection.endBar - selection.startBar) * zoom}px"></div>` : ""}
           ${renderTimelineRows(state)}
         </div>
       </div>
@@ -357,7 +387,7 @@ function renderMarkers(state: AppState): string {
         <div class="marker" style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(Number(marker.bar) - 1, 0)} * var(--bar)`)};--marker-colour:${sanitizeCssColor(marker.color, "#40d8ff")}">
           <span class="marker-rail" aria-hidden="true"></span>
           <span class="marker-actions">
-            <button title="Rename marker" data-marker-rename="${sanitizeDataAttr(marker.id)}">${escapeHtml(marker.name)}</button>
+            <button title="Rename marker" data-marker-rename="${sanitizeDataAttr(marker.id)}">${escapeHtml(markerDisplayName(marker))}</button>
             <button title="Delete marker" data-marker-delete="${sanitizeDataAttr(marker.id)}">x</button>
           </span>
         </div>
@@ -366,31 +396,45 @@ function renderMarkers(state: AppState): string {
   `;
 }
 
+function markerDisplayName(marker: { name: string; markerType?: string; gameState?: GameStateMarkerId }): string {
+  if (marker.markerType === "game-state" && marker.gameState) return `${gameStateMarkerLabel(marker.gameState)}: ${marker.name}`;
+  return marker.name;
+}
+
 function renderTimelineRows(state: AppState): string {
   const project = currentProject(state);
-  const rows = project.tracks.filter((track) => (track.trackType === "generated" || track.trackType === "audio" || track.trackType === "midi") && track.role !== "arrangement");
+  const branchCollapsed = drumBranchGroupCollapsed(project);
+  const rows = project.tracks.filter((track) => {
+    if (!((track.trackType === "generated" || track.trackType === "audio" || track.trackType === "midi") && track.role !== "arrangement")) return false;
+    return !(branchCollapsed && generatedDrumBranchLane(track));
+  });
   const clips = sortClips(project.timeline.clips);
   const pcs = getPrimaryChordsmithSource(project);
   return rows
-    .map(
-      (track) => `
-        <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}">
+    .map((track) => {
+      const branchLane = generatedDrumBranchLane(track);
+      const branchAttrs = branchLane ? ` data-branch-group="drums" data-drum-branch-lane="${sanitizeDataAttr(branchLane)}"` : "";
+      return `
+        <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${branchLane ? "drum-branch-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}"${branchAttrs}>
           ${renderTimelineTrackHeader(track, state.selectedTrackId === track.id, pcs)}
           ${clips.map((clip) => renderClip(project, clip, state.selectedClipId === clip.id, track, !!pcs)).join("")}
           ${renderRecordingPreview(state, track)}
           ${renderInlineChordsmithEditor(state, pcs, track, clips)}
         </div>
-      `
-    )
+      `;
+    })
     .join("");
 }
 
 function renderTimelineTrackHeader(track: Track, selected: boolean, pcs: SanitizedPcsProject | null): string {
   const lanes = trackHeaderLaneText(track, pcs);
+  const branchEntry = track.role === "drums" && !generatedDrumBranchLane(track) ? ` data-drum-branch-entry="track" title="Double-click or right-click to branch generated drums"` : "";
   const canMuteSolo = track.role !== "master" && track.role !== "fx-return";
+  const canSolo = canMuteSolo;
   const canRecord = !!track.recordKind && track.recordKind !== "none";
+  const recordChannelLabel = recordingChannelLabel(track);
   return `
-    <div class="timeline-track-header ${selected ? "selected" : ""} ${track.active === false ? "inactive" : ""}" data-track-id="${sanitizeDataAttr(track.id)}">
+    <div class="timeline-track-header ${selected ? "selected" : ""} ${track.active === false ? "inactive" : ""}" data-track-id="${sanitizeDataAttr(track.id)}"${branchEntry}>
       <span class="track-colour" style="background:${safeTrackColour(track.colour)}"></span>
       <span class="timeline-track-text">
         <button type="button" class="timeline-track-name" data-track-rename="${sanitizeDataAttr(track.id)}" title="${escapeAttr(`Rename ${track.name}`)}">${escapeHtml(track.name)}</button>
@@ -398,16 +442,18 @@ function renderTimelineTrackHeader(track: Track, selected: boolean, pcs: Sanitiz
       </span>
       <span class="track-header-controls">
         ${canMuteSolo ? `<button type="button" title="${escapeAttr(`Mute ${track.name}`)}" class="${track.mute ? "on" : ""}" data-mute-track="${sanitizeDataAttr(track.id)}">M</button>
-        <button type="button" title="${escapeAttr(`Solo ${track.name}`)}" class="${track.solo ? "on" : ""}" data-solo-track="${sanitizeDataAttr(track.id)}">S</button>` : ""}
-        ${canRecord ? `<button type="button" title="${escapeAttr(`Arm ${track.name} for mono recording`)}" class="${track.armed ? "on record" : ""}" data-arm-track="${sanitizeDataAttr(track.id)}">R</button>
+        ${canSolo ? `<button type="button" title="${escapeAttr(`Solo ${track.name}`)}" class="${track.solo ? "on" : ""}" data-solo-track="${sanitizeDataAttr(track.id)}">S</button>` : ""}` : ""}
+        ${canRecord ? `<button type="button" title="${escapeAttr(`Arm ${track.name} for ${recordChannelLabel.toLowerCase()} recording`)}" class="${track.armed ? "on record" : ""}" data-arm-track="${sanitizeDataAttr(track.id)}">R</button>
         <button type="button" title="${escapeAttr(`Monitor ${track.name} input during recording`)}" class="${track.monitorEnabled ? "on" : ""}" data-monitor-track="${sanitizeDataAttr(track.id)}">Mon</button>` : ""}
       </span>
-      <span class="track-state">${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${track.monitorEnabled ? "Mon" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
+      <span class="track-state">${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${canRecord ? recordChannelLabel.slice(0, 2) : ""}${track.monitorEnabled ? "Mon" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
     </div>
   `;
 }
 
 function trackHeaderLaneText(track: Track, pcs: SanitizedPcsProject | null): string {
+  const branchLane = generatedDrumBranchLane(track);
+  if (branchLane) return `Drum branch: ${drumLaneLabel(branchLane)}`;
   if (track.role === "drums") return "Full kit lanes";
   if (track.role === "bass") return "Bass steps";
   if (track.role === "chords") return "Chord bars";
@@ -452,9 +498,13 @@ function renderInlineChordsmithClip(
   if (renderSteps <= 0) return "";
   const left = barLeftCalc(`${clip.startBar - 1} * var(--bar)`);
   const width = `calc(${clip.barLength} * var(--bar))`;
+  const project = currentProject(state);
+  const branchLane = generatedDrumBranchLane(track);
   const body =
     track.role === "drums"
-      ? renderInlineDrumEditor(section, sourceStartStep, renderSteps, state.chordsmithStepSelection)
+      ? branchLane
+        ? renderInlineDrumBranchEditor(project, section, branchLane, sourceStartStep, renderSteps, state.chordsmithStepSelection)
+        : renderInlineDrumEditor(section, sourceStartStep, renderSteps, state.chordsmithStepSelection)
       : track.role === "bass"
         ? renderInlineBassEditor(pcs, section, sourceStartStep, renderSteps, state.chordsmithStepSelection)
         : track.role === "chords"
@@ -466,7 +516,7 @@ function renderInlineChordsmithClip(
               : "";
   if (!body) return "";
   return `
-    <div class="inline-sequencer inline-${sanitizeDomId(track.role, "role")} ${state.selectedClipId === clip.id ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${sanitizeDataAttr(clip.id)}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-inline-row="${sanitizeDataAttr(track.id)}" data-row="${sanitizeDataAttr(track.id)}" data-inline-sequencer-role="${sanitizeDataAttr(track.role)}" data-inline-section="${sanitizeDataAttr(section.id)}" title="Drag empty space to move with snap. Drag the right handle to repeat the section." style="left:${left};width:${width};--inline-steps:${sanitizeCssLengthOrNumber(renderSteps, 0, 0, 256)};">
+    <div class="inline-sequencer inline-${sanitizeDomId(track.role, "role")} ${state.selectedClipId === clip.id ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${sanitizeDataAttr(clip.id)}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-inline-row="${sanitizeDataAttr(track.id)}" data-row="${sanitizeDataAttr(track.id)}" data-inline-sequencer-role="${sanitizeDataAttr(track.role)}" data-inline-section="${sanitizeDataAttr(section.id)}"${track.role === "drums" ? ` data-drum-branch-entry="inline"` : ""} title="Drag empty space to move with snap. Drag the right handle to repeat the section.${track.role === "drums" ? " Double-click or right-click empty space to branch generated drums." : ""}" style="left:${left};width:${width};--inline-steps:${sanitizeCssLengthOrNumber(renderSteps, 0, 0, 256)};">
       <span class="clip-drag-handle" data-clip-drag-handle="${sanitizeDataAttr(clip.id)}" title="Drag to move this section with snap"></span>
       ${body}
       <span class="clip-loop-handle" data-clip-loop-handle="${sanitizeDataAttr(clip.id)}" title="Drag right to repeat this section"></span>
@@ -490,6 +540,28 @@ function renderInlineDrumEditor(section: SanitizedPcsSection, startStep: number,
           </div>
         </div>
       `).join("")}
+    </div>
+  `;
+}
+
+function renderInlineDrumBranchEditor(project: ReturnType<typeof currentProject>, section: SanitizedPcsSection, lane: DrumLaneId, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
+  return `
+    <div class="inline-lane-grid drums-inline branch-inline" aria-label="${escapeAttr(`${drumLaneLabel(lane)} branch steps`)}">
+      <div class="inline-lane" aria-label="${escapeAttr(drumLaneLabel(lane))}">
+        <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
+          ${Array.from({ length: steps }, (_, step) => {
+            const actualStep = startStep + step;
+            const level = branchDrumStepLevel(project, section, lane, actualStep);
+            const tuplet = sourceDrumLane(lane) ? !!section.gridTuplets[lane][actualStep] : false;
+            const selected = selection?.kind === "drums" && selection.sectionId === section.id && selection.lane === lane && selection.step === actualStep;
+            const dataAttr = sourceDrumLane(lane) ? "data-drum-step" : "data-drum-branch-step";
+            const title = sourceDrumLane(lane)
+              ? `${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet.`
+              : `${drumLaneLabel(lane)} branch step ${actualStep + 1}. DAW-only source overlay.`;
+            return `<button class="step timeline-step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${escapeAttr(title)}" ${dataAttr}="${sanitizeDataAttr(`${section.id}:${lane}:${actualStep}`)}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
+          }).join("")}
+        </div>
+      </div>
     </div>
   `;
 }
@@ -573,8 +645,10 @@ function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, sele
   const media = clip.mediaPoolItemId ? project.mediaPool.find((item) => item.id === clip.mediaPoolItemId) : null;
   const peaks = Array.isArray(media?.metadata?.waveformPeaks) ? media.metadata.waveformPeaks.slice(0, 48) : [];
   const midi = clip.type === "midi" ? midiDataFromClip(clip) : null;
+  const branchEntry = clip.type === "generated-section" && track.role === "drums" ? ` data-drum-branch-entry="clip"` : "";
+  const title = `Drag to move with snap. Drag the right handle to repeat generated sections.${branchEntry ? " Double-click or right-click to branch generated drums." : ""}`;
   return `
-    <button class="clip ${selected ? "selected" : ""} ${clip.muted ? "muted" : ""} ${clip.type === "audio" ? "audio-clip" : ""} ${clip.type === "midi" ? "midi-clip" : ""}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-row="${sanitizeDataAttr(track.id)}" title="Drag to move with snap. Drag the right handle to repeat generated sections." style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(Number(clip.startBar) - 1, 0)} * var(--bar)`)};width:calc(${sanitizeCssLengthOrNumber(clip.barLength, 1, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(clip.color)};background:color-mix(in srgb, ${safeClipColour(clip.color)} 28%, #15192a);">
+    <button class="clip ${selected ? "selected" : ""} ${clip.muted ? "muted" : ""} ${clip.type === "audio" ? "audio-clip" : ""} ${clip.type === "midi" ? "midi-clip" : ""}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-row="${sanitizeDataAttr(track.id)}"${branchEntry} title="${escapeAttr(title)}" style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(Number(clip.startBar) - 1, 0)} * var(--bar)`)};width:calc(${sanitizeCssLengthOrNumber(clip.barLength, 1, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(clip.color)};background:color-mix(in srgb, ${safeClipColour(clip.color)} 28%, #15192a);">
       <strong>${escapeHtml(clip.sectionId || clip.name)}</strong>
       <span>${escapeHtml(clip.type === "audio" ? media?.name || "Audio" : clip.type === "midi" ? `${midi?.notes.length || 0} MIDI notes` : track.name)}</span>
       ${peaks.length ? `<i class="clip-waveform">${peaks.map((peak) => `<b style="height:${Math.max(2, Math.round(Number(peak) * 18))}px"></b>`).join("")}</i>` : ""}
@@ -632,7 +706,9 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
                 ${clip.type === "midi" ? renderMidiClipMetadata(clip, clipMedia, clipMediaStatus) : ""}
               </dl>
               <label>Transpose <input data-clip-transform="${sanitizeDataAttr(`${clip.id}:transpose`)}" type="number" min="-48" max="48" step="1" value="${sanitizeCssLengthOrNumber(clip.transforms.transpose, 0, -48, 48)}" ${clip.type === "audio" ? "disabled title=\"Audio clip pitch shifting is not available yet.\"" : ""}></label>
-              <label>Gain <input data-clip-transform="${sanitizeDataAttr(`${clip.id}:gain`)}" type="number" min="0" max="4" step="0.05" value="${sanitizeCssLengthOrNumber(clip.transforms.gain, 1, 0, 4)}"></label>
+              ${clip.type === "audio" ? renderAudioClipProperties(project, clip) : `<label>Gain <input data-clip-transform="${sanitizeDataAttr(`${clip.id}:gain`)}" type="number" min="0" max="4" step="0.05" value="${sanitizeCssLengthOrNumber(clip.transforms.gain, 1, 0, 4)}"></label>`}
+              ${clip.type === "generated-section" ? renderGeneratedClipStemMutes(clip) : ""}
+              ${renderClipEditPalette()}
               <button type="button" data-action="freeze-selected-clip">Freeze</button>
               <button type="button" data-action="export-selected-clip-midi" ${clip.type === "audio" ? "disabled title=\"Audio clips do not contain MIDI events.\"" : ""}>Export Clip MIDI</button>
               ${clip.type === "midi" ? renderMidiClipEditor(clip) : ""}
@@ -651,6 +727,7 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
               </dl>
               ${renderInputSelector(project, track)}
               ${renderOutputSelector(project, track)}
+              ${renderSendPanel(project, track)}
               ${track.role !== "master" && track.trackType !== "audio" && track.trackType !== "bus" && track.trackType !== "return" ? `<button type="button" data-action="export-selected-track-midi">Export Track MIDI</button>` : ""}
               ${renderAutomationPanel(project, track)}
               ${renderChordsmithSequencer(state, project, pcs, clip, track)}
@@ -660,6 +737,153 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
           : ""
       }
     </aside>
+  `;
+}
+
+function renderGeneratedClipStemMutes(clip: Clip): string {
+  const stems = [
+    ["drums", "Drums"],
+    ["bass", "Bass"],
+    ["chords", "Chords"],
+    ["melody", "Melody"],
+    ["guitar", "Guitar"]
+  ] as const;
+  const mutes = clip.transforms.stemMutes || {};
+  return `
+    <div class="clip-stem-mutes" aria-label="Generated clip stem mutes">
+      ${stems.map(([stem, label]) => `
+        <label class="checkbox-row">
+          <input type="checkbox" data-clip-stem-mute="${sanitizeDataAttr(`${clip.id}:${stem}`)}" ${mutes[stem] ? "checked" : ""}>
+          <span>${label}</span>
+        </label>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderClipEditPalette(): string {
+  return `
+    <div class="clip-edit-palette" aria-label="Selected clip edit actions">
+      <h3>Edit</h3>
+      <div class="clip-edit-grid">
+        <button type="button" data-action="clip-copy">Copy</button>
+        <button type="button" data-action="clip-paste">Paste</button>
+        <button type="button" data-action="clip-duplicate">Duplicate</button>
+        <button type="button" data-action="clip-split">Split</button>
+        <button type="button" data-action="range-selected">Range Clip</button>
+        <button type="button" data-action="range-split">Split Range</button>
+        <button type="button" data-action="range-crop">Crop Range</button>
+        <button type="button" data-action="range-delete">Delete Range</button>
+        <button type="button" data-action="range-ripple-delete">Ripple Delete</button>
+        <button type="button" data-action="range-ripple-all">Ripple All</button>
+        <button type="button" data-action="trim-start-left">Start left</button>
+        <button type="button" data-action="trim-start-right">Start right</button>
+        <button type="button" data-action="trim-end-left">End left</button>
+        <button type="button" data-action="trim-end-right">End right</button>
+        <button type="button" data-action="clip-mute">Mute</button>
+        <button type="button" data-action="clip-delete">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderAudioClipProperties(project: ReturnType<typeof currentProject>, clip: Clip): string {
+  const metadata = clip.metadata || {};
+  const gain = typeof metadata.gain === "number" ? metadata.gain : clip.transforms.gain;
+  const sourceOffsetSeconds = typeof metadata.sourceOffsetSeconds === "number" ? metadata.sourceOffsetSeconds : 0;
+  const fadeInSeconds = typeof metadata.fadeInSeconds === "number" ? metadata.fadeInSeconds : 0;
+  const fadeOutSeconds = typeof metadata.fadeOutSeconds === "number" ? metadata.fadeOutSeconds : 0;
+  const media = clip.mediaPoolItemId ? project.mediaPool.find((item) => item.id === clip.mediaPoolItemId) || null : null;
+  const durationSeconds = typeof metadata.durationSeconds === "number"
+    ? metadata.durationSeconds
+    : Math.min(
+      barsToSeconds(clip.barLength || 0, project.project.bpm, project.project.timeSig),
+      Math.max(0, (media?.durationSeconds || barsToSeconds(clip.barLength || 0, project.project.bpm, project.project.timeSig)) - sourceOffsetSeconds)
+    );
+  return `
+    <div class="audio-clip-properties" aria-label="Audio clip properties">
+      <label>Gain <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:gain`)}" type="number" min="0" max="4" step="0.05" value="${sanitizeCssLengthOrNumber(gain, 1, 0, 4)}"></label>
+      <label>Fade in <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:fadeInSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(fadeInSeconds, 0, 0, 86400)}"></label>
+      <label>Fade out <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:fadeOutSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(fadeOutSeconds, 0, 0, 86400)}"></label>
+      <label>Source offset <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:sourceOffsetSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(sourceOffsetSeconds, 0, 0, 86400)}"></label>
+      <label>Duration <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:durationSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(durationSeconds, 0, 0, 86400)}"></label>
+      ${renderAudioTakePanel(project, clip)}
+      <div class="audio-clip-actions" aria-label="Audio clip actions">
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:quick-fade`)}">Short fades</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:reset-fades`)}">Reset fades</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:normalize-gain`)}">Normalize</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:analyze-transients`)}">Analyze</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:crossfade-overlap`)}">Crossfade</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:create-crossfade-left`)}">Overlap fade</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:invert-phase`)}">Invert phase</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:reverse`)}">Reverse</button>
+      </div>
+      ${renderAudioClipAutomationPanel(project, clip)}
+    </div>
+  `;
+}
+
+function renderAudioTakePanel(project: ReturnType<typeof currentProject>, clip: Clip): string {
+  const summary = audioClipTakeSummary(project, clip.id);
+  if (!summary || summary.takeCount < 2) return "";
+  return `
+    <div class="audio-take-panel" aria-label="Audio take lanes">
+      <h3>Take Lanes</h3>
+      <p class="editor-note">${escapeHtml(summary.groupId)} - Take ${summary.takeNumber} of ${summary.takeCount}${summary.active ? " active" : " muted"}</p>
+      <div class="audio-take-buttons">
+        ${summary.siblings.map((take) => `
+          <span class="audio-take-row" data-audio-take-status="${sanitizeDataAttr(`${take.clipId}:${take.takeStatus}`)}">
+            <button type="button" data-audio-take-activate="${sanitizeDataAttr(take.clipId)}" ${take.clipId === clip.id || take.archived ? "disabled" : ""}>
+              Take ${take.takeNumber} ${take.archived ? "archived" : take.active ? "active" : "muted"}
+            </button>
+            ${
+              take.archived
+                ? `<button type="button" data-audio-take-restore="${sanitizeDataAttr(take.clipId)}">Restore</button>`
+                : `<button type="button" data-audio-take-archive="${sanitizeDataAttr(take.clipId)}">Archive</button>`
+            }
+          </span>
+        `).join("")}
+      </div>
+      <button type="button" data-action="audio-take-comp-from-playhead">Comp from playhead</button>
+    </div>
+  `;
+}
+
+function renderAudioClipAutomationPanel(project: ReturnType<typeof currentProject>, clip: Clip): string {
+  const lane = getClipAutomationLane(project, clip.id, "gain");
+  return `
+    <div class="automation-panel clip-automation ${clipHasAutomation(project, clip.id) ? "active" : ""}">
+      <h3>Clip Automation</h3>
+      ${renderClipAutomationLane(clip, lane)}
+    </div>
+  `;
+}
+
+function renderClipAutomationLane(clip: Clip, lane: ReturnType<typeof getClipAutomationLane>): string {
+  if (!lane) {
+    return `<div class="automation-lane empty"><span>Gain</span><button type="button" data-clip-automation-create="${sanitizeDataAttr(`${clip.id}:gain`)}">Create</button></div>`;
+  }
+  const points = lane.points.slice().sort((a, b) => a.bar - b.bar);
+  return `
+    <div class="automation-lane">
+      <header>
+        <label class="inline-toggle"><input data-automation-enabled="${sanitizeDataAttr(lane.id)}" type="checkbox" ${lane.enabled ? "checked" : ""}> Gain</label>
+        <button type="button" data-clip-automation-add-point="${sanitizeDataAttr(`${clip.id}:gain`)}">Add at Playhead</button>
+      </header>
+      ${
+        points.length
+          ? `<div class="automation-points">
+              ${points.map((point, index) => `
+                <div class="automation-point">
+                  <label>Bar <input data-automation-point-bar="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="1" step="0.25" value="${sanitizeCssLengthOrNumber(point.bar, 1, 1, 4096)}"></label>
+                  <label>Value <input data-automation-point-value="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="0" max="4" step="0.01" value="${sanitizeCssLengthOrNumber(point.value, 1, 0, 4)}"></label>
+                  <button type="button" data-automation-delete-point="${sanitizeDataAttr(`${lane.id}:${index}`)}">Delete</button>
+                </div>
+              `).join("")}
+            </div>`
+          : `<p class="editor-note">No points yet.</p>`
+      }
+    </div>
   `;
 }
 
@@ -716,12 +940,76 @@ function renderOutputSelector(project: ReturnType<typeof currentProject>, track:
   `;
 }
 
+function renderSendPanel(project: ReturnType<typeof currentProject>, track: Track): string {
+  if (track.role === "master" || track.trackType === "return") return "";
+  const returns = project.tracks.filter((item) => item.trackType === "return");
+  return `
+    <div class="send-panel" aria-label="Track sends">
+      <h3>Sends</h3>
+      ${
+        returns.length
+          ? returns.map((ret) => {
+              const level = trackSendLevel(track, ret.id);
+              const mode = trackSendMode(track, ret.id);
+              return `
+                <div class="send-row">
+                  <label>${escapeHtml(ret.name)}
+                    <input aria-label="${escapeAttr(`${track.name} send to ${ret.name}`)}" data-track-send-level="${sanitizeDataAttr(`${track.id}:${ret.id}`)}" type="range" min="0" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(level, 0, 0, 1)}">
+                    <span>${Math.round(level * 100)}%</span>
+                  </label>
+                  <label>Mode
+                    <select data-track-send-mode="${sanitizeDataAttr(`${track.id}:${ret.id}`)}" aria-label="${escapeAttr(`${track.name} send mode to ${ret.name}`)}">
+                      <option value="post-fader" ${mode === "post-fader" ? "selected" : ""}>Post-fader</option>
+                      <option value="pre-fader" ${mode === "pre-fader" ? "selected" : ""}>Pre-fader</option>
+                    </select>
+                  </label>
+                  ${renderSendAutomationLane(project, track, ret)}
+                </div>
+              `;
+            }).join("")
+          : `<p class="editor-note">Add a return track to use sends.</p>`
+      }
+    </div>
+  `;
+}
+
+function renderSendAutomationLane(project: ReturnType<typeof currentProject>, track: Track, ret: Track): string {
+  const lane = getTrackSendAutomationLane(project, track.id, ret.id, "level");
+  if (!lane) {
+    return `<div class="automation-lane empty"><span>Automation</span><button type="button" data-send-automation-create="${sanitizeDataAttr(`${track.id}:${ret.id}:level`)}">Create</button></div>`;
+  }
+  return `
+    <div class="automation-lane">
+      <div class="automation-lane-header">
+        <label class="inline-toggle"><input data-automation-enabled="${sanitizeDataAttr(lane.id)}" type="checkbox" ${lane.enabled ? "checked" : ""}> Send automation</label>
+        <button type="button" data-send-automation-add-point="${sanitizeDataAttr(`${track.id}:${ret.id}:level`)}">Add at Playhead</button>
+      </div>
+      ${
+        lane.points.length
+          ? `<div class="automation-points">
+              ${lane.points.map((point, index) => `
+                <div class="automation-point">
+                  <label>Bar <input data-automation-point-bar="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="1" step="0.25" value="${sanitizeCssLengthOrNumber(point.bar, 1, 1, 4096)}"></label>
+                  <label>Value <input data-automation-point-value="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="0" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(point.value, 0, 0, 1)}"></label>
+                  <button type="button" data-automation-delete-point="${sanitizeDataAttr(`${lane.id}:${index}`)}">Delete</button>
+                </div>
+              `).join("")}
+            </div>`
+          : `<p class="editor-note">No points yet.</p>`
+      }
+    </div>
+  `;
+}
+
 function renderMidiClipMetadata(clip: Clip, media: ReturnType<typeof currentProject>["mediaPool"][number] | null, status: ReturnType<typeof mediaPoolStatus> | null): string {
   const midi = midiDataFromClip(clip);
   return `
     <dt>Media</dt><dd>${escapeHtml(media?.name || midi.sourceName || "Inline MIDI")}</dd>
     <dt>Status</dt><dd>${escapeHtml(status?.label || "Stored in project")}</dd>
     <dt>Notes</dt><dd>${midi.notes.length}</dd>
+    <dt>Programs</dt><dd>${midi.programChanges.length}</dd>
+    <dt>Pitch bends</dt><dd>${midi.pitchBends.length}</dd>
+    <dt>Aftertouch</dt><dd>${midi.aftertouch.length}</dd>
     <dt>PPQ</dt><dd>${midi.ppq}</dd>
   `;
 }
@@ -729,10 +1017,53 @@ function renderMidiClipMetadata(clip: Clip, media: ReturnType<typeof currentProj
 function renderMidiClipEditor(clip: Clip): string {
   const midi = midiDataFromClip(clip);
   const notes = midi.notes.slice().sort((a, b) => a.startTick - b.startTick || a.pitch - b.pitch);
+  const controllers = midi.controllers.slice().sort((a, b) => a.tick - b.tick || a.controller - b.controller);
+  const programs = midi.programChanges.slice().sort((a, b) => a.tick - b.tick || (a.channel ?? 0) - (b.channel ?? 0) || a.program - b.program);
+  const pitchBends = midi.pitchBends.slice().sort((a, b) => a.tick - b.tick || (a.channel ?? 0) - (b.channel ?? 0) || a.value - b.value);
+  const aftertouch = midi.aftertouch.slice().sort((a, b) => a.tick - b.tick || (a.channel ?? 0) - (b.channel ?? 0) || (a.note ?? -1) - (b.note ?? -1));
+  const lastGrid = typeof midi.metadata?.lastQuantizeGrid === "string" ? midi.metadata.lastQuantizeGrid : "";
+  const lastSwingPercent = typeof midi.metadata?.lastSwingPercent === "number" ? midi.metadata.lastSwingPercent : null;
+  const lastGrooveTemplate = typeof midi.metadata?.lastGrooveTemplate === "string" ? midi.metadata.lastGrooveTemplate : "";
+  const lastVelocityTransform = typeof midi.metadata?.lastVelocityTransform === "string" ? midi.metadata.lastVelocityTransform : "";
+  const lastPitchTransform = typeof midi.metadata?.lastPitchTransform === "string" ? midi.metadata.lastPitchTransform : "";
+  const grids = ["1/4", "1/8", "1/16", "1/32"];
+  const swings = [50, 55, 60, 65];
+  const velocityTransforms: Array<[string, string, string]> = [
+    ["level-96", "Level 96", "Set all notes in this MIDI clip to velocity 96"],
+    ["humanize-12", "Humanize", "Apply deterministic +/-12 velocity variation"]
+  ];
+  const pitchTransforms: Array<[string, string, string]> = [
+    ["semitone-down", "Semi -", "Transpose every note in this MIDI clip down one semitone"],
+    ["semitone-up", "Semi +", "Transpose every note in this MIDI clip up one semitone"],
+    ["octave-down", "Oct -", "Transpose every note in this MIDI clip down one octave"],
+    ["octave-up", "Oct +", "Transpose every note in this MIDI clip up one octave"]
+  ];
   return `
     <div class="midi-editor">
       <header>
         <h3>Piano Roll</h3>
+        <label class="midi-clip-length-control">Bars <input data-midi-clip-property="${sanitizeDataAttr(`${clip.id}:barLength`)}" type="number" min="0.25" max="4096" step="0.25" value="${sanitizeCssLengthOrNumber(clip.barLength, 1, 0.25, 4096)}"></label>
+        <div class="midi-quantize-actions" aria-label="Quantize">
+          ${grids.map((grid) => `<button type="button" class="${lastGrid === grid ? "selected" : ""}" title="Quantize to ${escapeAttr(grid)}" data-midi-quantize="${sanitizeDataAttr(`${clip.id}:${grid}`)}">Q ${escapeHtml(grid)}</button>`).join("")}
+        </div>
+        <div class="midi-swing-actions" aria-label="Swing">
+          ${swings.map((percent) => `<button type="button" class="${lastSwingPercent === percent ? "selected" : ""}" title="${percent === 50 ? "Straight eighth notes" : `Apply ${percent}% eighth-note swing`}" data-midi-swing="${sanitizeDataAttr(`${clip.id}:${percent}`)}">${percent === 50 ? "Straight" : `Swing ${percent}`}</button>`).join("")}
+        </div>
+        <div class="midi-groove-actions" aria-label="Groove templates">
+          ${MIDI_GROOVE_TEMPLATES.map((template) => `<button type="button" class="${lastGrooveTemplate === template.id ? "selected" : ""}" title="${escapeAttr(`Apply ${template.name}: ${template.grid}, ${template.swingPercent}% swing`)}" data-midi-groove="${sanitizeDataAttr(`${clip.id}:${template.id}`)}">${escapeHtml(template.name)}</button>`).join("")}
+        </div>
+        <div class="midi-velocity-actions" aria-label="Velocity">
+          ${velocityTransforms.map(([id, label, title]) => `<button type="button" class="${lastVelocityTransform === id ? "selected" : ""}" title="${escapeAttr(title)}" data-midi-velocity-transform="${sanitizeDataAttr(`${clip.id}:${id}`)}">${escapeHtml(label)}</button>`).join("")}
+        </div>
+        <div class="midi-pitch-actions" aria-label="Pitch">
+          ${pitchTransforms.map(([id, label, title]) => `<button type="button" class="${lastPitchTransform === id ? "selected" : ""}" title="${escapeAttr(title)}" data-midi-pitch-transform="${sanitizeDataAttr(`${clip.id}:${id}`)}">${escapeHtml(label)}</button>`).join("")}
+        </div>
+        <button type="button" data-midi-controller-add="${sanitizeDataAttr(clip.id)}">Add CC</button>
+        <button type="button" data-midi-program-add="${sanitizeDataAttr(clip.id)}">Add Program</button>
+        <button type="button" data-midi-pitch-bend-add="${sanitizeDataAttr(clip.id)}">Add Bend</button>
+        <button type="button" data-midi-aftertouch-add="${sanitizeDataAttr(clip.id)}">Add Touch</button>
+        <button type="button" title="Map General MIDI drum notes into generated drum branch overlays" data-action="convert-midi-drums">Map Drums</button>
+        <button type="button" title="Map non-drum MIDI notes into generated melody overlays" data-action="convert-midi-melody">Map Melody</button>
         <button type="button" data-midi-note-add="${sanitizeDataAttr(clip.id)}">Add Note</button>
       </header>
       ${
@@ -741,9 +1072,11 @@ function renderMidiClipEditor(clip: Clip): string {
               ${notes.map((note) => `
                 <div class="midi-note-row">
                   <strong>${midiPitchLabel(note.pitch)}</strong>
-                  <span>${note.startTick} ticks</span>
-                  <span>${note.durationTicks} long</span>
-                  <label>Vel <input data-midi-note-velocity="${sanitizeDataAttr(`${clip.id}:${note.id}`)}" type="number" min="1" max="127" value="${sanitizeCssLengthOrNumber(note.velocity, 96, 1, 127)}"></label>
+                  <label>Pitch <input data-midi-note-field="${sanitizeDataAttr(`${clip.id}:${note.id}:pitch`)}" type="number" min="0" max="127" value="${sanitizeCssLengthOrNumber(note.pitch, 60, 0, 127)}"></label>
+                  <label>Tick <input data-midi-note-field="${sanitizeDataAttr(`${clip.id}:${note.id}:startTick`)}" type="number" min="0" step="1" value="${sanitizeCssLengthOrNumber(note.startTick, 0, 0)}"></label>
+                  <label>Len <input data-midi-note-field="${sanitizeDataAttr(`${clip.id}:${note.id}:durationTicks`)}" type="number" min="1" step="1" value="${sanitizeCssLengthOrNumber(note.durationTicks, midi.ppq, 1)}"></label>
+                  <label>Vel <input data-midi-note-field="${sanitizeDataAttr(`${clip.id}:${note.id}:velocity`)}" type="number" min="1" max="127" value="${sanitizeCssLengthOrNumber(note.velocity, 96, 1, 127)}"></label>
+                  <label>Ch <input data-midi-note-field="${sanitizeDataAttr(`${clip.id}:${note.id}:channel`)}" type="number" min="0" max="15" value="${sanitizeCssLengthOrNumber(note.channel ?? 0, 0, 0, 15)}"></label>
                   <div class="midi-note-actions">
                     <button type="button" title="Move note earlier" data-midi-note-move="${sanitizeDataAttr(`${clip.id}:${note.id}:-1`)}">&lt;</button>
                     <button type="button" title="Move note later" data-midi-note-move="${sanitizeDataAttr(`${clip.id}:${note.id}:1`)}">&gt;</button>
@@ -751,6 +1084,7 @@ function renderMidiClipEditor(clip: Clip): string {
                     <button type="button" title="Pitch up" data-midi-note-pitch="${sanitizeDataAttr(`${clip.id}:${note.id}:1`)}">+</button>
                     <button type="button" title="Shorter" data-midi-note-duration="${sanitizeDataAttr(`${clip.id}:${note.id}:-1`)}">Short</button>
                     <button type="button" title="Longer" data-midi-note-duration="${sanitizeDataAttr(`${clip.id}:${note.id}:1`)}">Long</button>
+                    <button type="button" title="Duplicate note" data-midi-note-duplicate="${sanitizeDataAttr(`${clip.id}:${note.id}`)}">Dup</button>
                     <button type="button" title="Delete note" data-midi-note-delete="${sanitizeDataAttr(`${clip.id}:${note.id}`)}">Delete</button>
                   </div>
                 </div>
@@ -758,6 +1092,84 @@ function renderMidiClipEditor(clip: Clip): string {
             </div>`
           : `<p class="editor-note">No notes yet.</p>`
       }
+      <section class="midi-controller-lane" aria-label="MIDI controller lane">
+        <h4>Controller Lane</h4>
+        ${
+          controllers.length
+            ? `<div class="midi-controller-list">
+                ${controllers.map((point) => `
+                  <div class="midi-controller-row">
+                    <strong>CC ${point.controller}</strong>
+                    <label>CC <input data-midi-controller-field="${sanitizeDataAttr(`${clip.id}:${point.id}:controller`)}" type="number" min="0" max="127" value="${sanitizeCssLengthOrNumber(point.controller, 1, 0, 127)}"></label>
+                    <label>Tick <input data-midi-controller-field="${sanitizeDataAttr(`${clip.id}:${point.id}:tick`)}" type="number" min="0" step="1" value="${sanitizeCssLengthOrNumber(point.tick, 0, 0)}"></label>
+                    <label>Value <input data-midi-controller-field="${sanitizeDataAttr(`${clip.id}:${point.id}:value`)}" type="number" min="0" max="127" value="${sanitizeCssLengthOrNumber(point.value, 64, 0, 127)}"></label>
+                    <label>Ch <input data-midi-controller-field="${sanitizeDataAttr(`${clip.id}:${point.id}:channel`)}" type="number" min="0" max="15" value="${sanitizeCssLengthOrNumber(point.channel ?? 0, 0, 0, 15)}"></label>
+                    <button type="button" title="Duplicate controller point" data-midi-controller-duplicate="${sanitizeDataAttr(`${clip.id}:${point.id}`)}">Dup</button>
+                    <button type="button" title="Delete controller point" data-midi-controller-delete="${sanitizeDataAttr(`${clip.id}:${point.id}`)}">Delete</button>
+                  </div>
+                `).join("")}
+              </div>`
+            : `<p class="editor-note">No controller points yet.</p>`
+        }
+      </section>
+      <section class="midi-pitch-bend-lane" aria-label="MIDI pitch-bend lane">
+        <h4>Pitch Bend</h4>
+        ${
+          pitchBends.length
+            ? `<div class="midi-pitch-bend-list">
+                ${pitchBends.map((point) => `
+                  <div class="midi-controller-row midi-pitch-bend-row">
+                    <strong>Bend ${point.value}</strong>
+                    <label>Value <input data-midi-pitch-bend-field="${sanitizeDataAttr(`${clip.id}:${point.id}:value`)}" type="number" min="0" max="16383" value="${sanitizeCssLengthOrNumber(point.value, 8192, 0, 16383)}"></label>
+                    <label>Tick <input data-midi-pitch-bend-field="${sanitizeDataAttr(`${clip.id}:${point.id}:tick`)}" type="number" min="0" step="1" value="${sanitizeCssLengthOrNumber(point.tick, 0, 0)}"></label>
+                    <label>Ch <input data-midi-pitch-bend-field="${sanitizeDataAttr(`${clip.id}:${point.id}:channel`)}" type="number" min="0" max="15" value="${sanitizeCssLengthOrNumber(point.channel ?? 0, 0, 0, 15)}"></label>
+                    <button type="button" title="Duplicate pitch bend" data-midi-pitch-bend-duplicate="${sanitizeDataAttr(`${clip.id}:${point.id}`)}">Dup</button>
+                    <button type="button" title="Delete pitch bend" data-midi-pitch-bend-delete="${sanitizeDataAttr(`${clip.id}:${point.id}`)}">Delete</button>
+                  </div>
+                `).join("")}
+              </div>`
+            : `<p class="editor-note">No pitch bends yet.</p>`
+        }
+      </section>
+      <section class="midi-aftertouch-lane" aria-label="MIDI aftertouch lane">
+        <h4>Aftertouch</h4>
+        ${
+          aftertouch.length
+            ? `<div class="midi-aftertouch-list">
+                ${aftertouch.map((point) => `
+                  <div class="midi-controller-row midi-aftertouch-row">
+                    <strong>${point.kind === "poly" ? `Poly ${midiPitchLabel(point.note ?? 60)}` : "Channel Touch"}</strong>
+                    <label>Value <input data-midi-aftertouch-field="${sanitizeDataAttr(`${clip.id}:${point.id}:value`)}" type="number" min="0" max="127" value="${sanitizeCssLengthOrNumber(point.value, 64, 0, 127)}"></label>
+                    <label>Tick <input data-midi-aftertouch-field="${sanitizeDataAttr(`${clip.id}:${point.id}:tick`)}" type="number" min="0" step="1" value="${sanitizeCssLengthOrNumber(point.tick, 0, 0)}"></label>
+                    <label>Ch <input data-midi-aftertouch-field="${sanitizeDataAttr(`${clip.id}:${point.id}:channel`)}" type="number" min="0" max="15" value="${sanitizeCssLengthOrNumber(point.channel ?? 0, 0, 0, 15)}"></label>
+                    ${point.kind === "poly" ? `<label>Note <input data-midi-aftertouch-field="${sanitizeDataAttr(`${clip.id}:${point.id}:note`)}" type="number" min="0" max="127" value="${sanitizeCssLengthOrNumber(point.note ?? 60, 60, 0, 127)}"></label>` : ""}
+                    <button type="button" title="Duplicate aftertouch" data-midi-aftertouch-duplicate="${sanitizeDataAttr(`${clip.id}:${point.id}`)}">Dup</button>
+                    <button type="button" title="Delete aftertouch" data-midi-aftertouch-delete="${sanitizeDataAttr(`${clip.id}:${point.id}`)}">Delete</button>
+                  </div>
+                `).join("")}
+              </div>`
+            : `<p class="editor-note">No aftertouch yet.</p>`
+        }
+      </section>
+      <section class="midi-program-lane" aria-label="MIDI program lane">
+        <h4>Program Changes</h4>
+        ${
+          programs.length
+            ? `<div class="midi-program-list">
+                ${programs.map((point) => `
+                  <div class="midi-controller-row midi-program-row">
+                    <strong>Program ${point.program}</strong>
+                    <label>Program <input data-midi-program-field="${sanitizeDataAttr(`${clip.id}:${point.id}:program`)}" type="number" min="0" max="127" value="${sanitizeCssLengthOrNumber(point.program, 0, 0, 127)}"></label>
+                    <label>Tick <input data-midi-program-field="${sanitizeDataAttr(`${clip.id}:${point.id}:tick`)}" type="number" min="0" step="1" value="${sanitizeCssLengthOrNumber(point.tick, 0, 0)}"></label>
+                    <label>Ch <input data-midi-program-field="${sanitizeDataAttr(`${clip.id}:${point.id}:channel`)}" type="number" min="0" max="15" value="${sanitizeCssLengthOrNumber(point.channel ?? 0, 0, 0, 15)}"></label>
+                    <button type="button" title="Duplicate program change" data-midi-program-duplicate="${sanitizeDataAttr(`${clip.id}:${point.id}`)}">Dup</button>
+                    <button type="button" title="Delete program change" data-midi-program-delete="${sanitizeDataAttr(`${clip.id}:${point.id}`)}">Delete</button>
+                  </div>
+                `).join("")}
+              </div>`
+            : `<p class="editor-note">No program changes yet.</p>`
+        }
+      </section>
     </div>
   `;
 }
@@ -902,7 +1314,10 @@ function renderSelectedSequencerBlock(
   selection: ChordsmithStepSelection | null
 ): string {
   if (role === "chords") return renderChordEditor(pcs, section);
-  if (role === "drums") return renderDrumEditor(pcs, section, startStep, steps, selection);
+  if (role === "drums") {
+    const branchLane = generatedDrumBranchLane(selectedTrack);
+    return branchLane ? renderDrumBranchEditor(project, section, branchLane, startStep, steps, selection) : renderDrumEditor(pcs, section, startStep, steps, selection);
+  }
   if (role === "bass") return renderBassEditor(pcs, section, startStep, steps, selection);
   if (role === "melody") return renderMelodyEditor(section, selectedTrack?.role === "melody" ? selectedMelodyTrackIndex(selectedTrack) : melodyTrackIndex, startStep, steps, selection);
   if (role === "guitar") return renderGuitarEditor(project, pcs, section, startStep, steps);
@@ -964,6 +1379,33 @@ function renderDrumEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection
           `
         )
         .join("")}
+    </div>
+  `;
+}
+
+function renderDrumBranchEditor(project: ReturnType<typeof currentProject>, section: SanitizedPcsSection, lane: DrumLaneId, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
+  const liveOnly = !sourceDrumLane(lane);
+  return `
+    <div class="sequencer-block">
+      <div class="sequencer-heading">
+        <strong>${escapeHtml(drumLaneLabel(lane))} Branch</strong>
+        ${liveOnly ? `<span class="editor-note">DAW-only source overlay</span>` : ""}
+      </div>
+      ${renderStepRuler(startStep, steps)}
+      <div class="sequencer-row">
+        <span>${drumLaneLabel(lane)}</span>
+        ${Array.from({ length: steps }, (_, step) => {
+          const actualStep = startStep + step;
+          const level = branchDrumStepLevel(project, section, lane, actualStep);
+          const tuplet = sourceDrumLane(lane) ? !!section.gridTuplets[lane][actualStep] : false;
+          const selected = selection?.kind === "drums" && selection.sectionId === section.id && selection.lane === lane && selection.step === actualStep;
+          const dataAttr = sourceDrumLane(lane) ? "data-drum-step" : "data-drum-branch-step";
+          const title = liveOnly
+            ? `${drumLaneLabel(lane)} branch step ${actualStep + 1}. Click to write a DAW-only drum source event.`
+            : `${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet.`;
+          return `<button class="step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${escapeAttr(title)}" ${dataAttr}="${sanitizeDataAttr(`${section.id}:${lane}:${actualStep}`)}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
+        }).join("")}
+      </div>
     </div>
   `;
 }
@@ -1110,19 +1552,295 @@ function stepBadges(flags: { hold?: boolean; slide?: boolean; tuplet?: boolean }
 }
 
 function drumLaneLabel(lane: string) {
-  if (lane === "kick") return "Kick";
-  if (lane === "snare") return "Snare";
-  if (lane === "hat") return "Hi-hat";
-  return lane;
+  return DRUM_LANE_DEFS.find((def) => def.id === lane)?.label || lane;
+}
+
+function sourceDrumLane(lane: string): lane is "kick" | "snare" | "hat" {
+  return lane === "kick" || lane === "snare" || lane === "hat";
+}
+
+function branchDrumStepLevel(project: ReturnType<typeof currentProject>, section: SanitizedPcsSection, lane: DrumLaneId, step: number): number {
+  return sourceDrumLane(lane) ? section.grid[lane][step] || 0 : getDrumBranchStepLevel(project, section.id, lane, step);
 }
 
 function renderMixer(state: AppState): string {
   const project = currentProject(state);
+  const selectedTrack = project.tracks.find((track) => track.id === state.selectedTrackId) || null;
+  const tab = state.lowerDockTab || "mixer";
   return `
-    <footer class="mixer" data-layout-zone="mixer" data-scroll-key="mixer">
-      ${project.tracks.map((track) => renderMixerStrip(project, track, state.meterLevels[track.id] || 0, state)).join("")}
+    <footer class="mixer lower-dock" data-layout-zone="mixer" data-scroll-key="mixer" data-lower-dock="${sanitizeDataAttr(tab)}">
+      <header class="lower-dock-header">
+        <div>
+          <h2>${escapeHtml(lowerDockTitle(tab))}</h2>
+          <p>${escapeHtml(lowerDockSubtitle(tab, selectedTrack))}</p>
+        </div>
+        <nav class="lower-dock-tabs" aria-label="Lower dock">
+          ${(["mixer", "inserts", "sends", "automation", "piano-roll", "audio-editor", "export-details"] as LowerDockTab[]).map((item) => `
+            <button type="button" data-action="lower-dock-${item}" class="${tab === item ? "active" : ""}" aria-pressed="${tab === item ? "true" : "false"}">${escapeHtml(lowerDockTitle(item))}</button>
+          `).join("")}
+        </nav>
+      </header>
+      ${renderLowerDockBody(state, project, selectedTrack, tab)}
     </footer>
   `;
+}
+
+function renderLowerDockBody(state: AppState, project: ReturnType<typeof currentProject>, selectedTrack: Track | null, tab: LowerDockTab): string {
+  if (tab === "inserts") return renderLowerDockInserts(project, selectedTrack);
+  if (tab === "sends") return renderLowerDockSends(project, selectedTrack);
+  if (tab === "automation") return renderLowerDockAutomation(project, selectedTrack);
+  if (tab === "piano-roll") return renderLowerDockPianoRoll(project, state);
+  if (tab === "audio-editor") return renderLowerDockAudioEditor(project, state);
+  if (tab === "export-details") return renderLowerDockExportDetails(project);
+  return `<div class="lower-dock-body mixer-strips">${project.tracks.map((track) => renderMixerStrip(project, track, state.meterLevels[track.id] || 0, state)).join("")}</div>`;
+}
+
+function renderLowerDockInserts(project: ReturnType<typeof currentProject>, selectedTrack: Track | null): string {
+  if (!selectedTrack) {
+    return `<div class="lower-dock-body lower-dock-empty"><strong>Select a track</strong><span>Inserts show the selected track FX chain and add-FX controls.</span></div>`;
+  }
+  const chain = getTrackFxChain(project, selectedTrack);
+  return `
+    <div class="lower-dock-body lower-dock-detail">
+      <section class="dock-track-context">
+        <h3>${escapeHtml(selectedTrack.name)}</h3>
+        <p>${chain?.slots.length || 0} insert${chain?.slots.length === 1 ? "" : "s"} / ${selectedTrack.fxChainId || "no chain"}</p>
+        ${selectedTrack.role !== "master" ? renderFxDropdown(selectedTrack) : ""}
+      </section>
+      ${renderFxInspector(chain)}
+    </div>
+  `;
+}
+
+function renderLowerDockSends(project: ReturnType<typeof currentProject>, selectedTrack: Track | null): string {
+  if (!selectedTrack || selectedTrack.role === "master" || selectedTrack.trackType === "return") {
+    return `<div class="lower-dock-body lower-dock-empty"><strong>Select a source track</strong><span>Sends are edited on generated, audio, MIDI or bus source tracks and routed into return tracks.</span></div>`;
+  }
+  return `
+    <div class="lower-dock-body lower-dock-detail">
+      <section class="dock-track-context">
+        <h3>${escapeHtml(selectedTrack.name)}</h3>
+        ${renderOutputSelector(project, selectedTrack)}
+      </section>
+      ${renderSendPanel(project, selectedTrack)}
+    </div>
+  `;
+}
+
+function renderLowerDockAutomation(project: ReturnType<typeof currentProject>, selectedTrack: Track | null): string {
+  if (!selectedTrack || selectedTrack.role === "master" || selectedTrack.trackType === "return") {
+    return `<div class="lower-dock-body lower-dock-empty"><strong>Select a source track</strong><span>Track automation lanes are available for volume, pan and selected sends.</span></div>`;
+  }
+  return `
+    <div class="lower-dock-body lower-dock-detail">
+      <section class="dock-track-context">
+        <h3>${escapeHtml(selectedTrack.name)}</h3>
+        <p>${trackHasAutomation(project, selectedTrack.id) ? "Automation lanes are active for this track." : "Create a lane to automate this track."}</p>
+      </section>
+      ${renderAutomationPanel(project, selectedTrack)}
+      ${renderSendPanel(project, selectedTrack)}
+    </div>
+  `;
+}
+
+function renderLowerDockPianoRoll(project: ReturnType<typeof currentProject>, state: AppState): string {
+  const clip = selectedClipForDock(project, state, "midi");
+  if (!clip) {
+    const selectedTrack = project.tracks.find((track) => track.id === state.selectedTrackId);
+    return `<div class="lower-dock-body lower-dock-empty"><strong>${selectedTrack?.trackType === "midi" ? "Add a MIDI clip" : "Select a MIDI clip"}</strong><span>The Piano Roll tab edits MIDI notes, controllers, quantize, swing, velocity and pitch transforms for the selected MIDI clip.</span>${selectedTrack?.trackType === "midi" ? `<button type="button" data-action="add-empty-midi-clip">Add MIDI Clip</button>` : ""}</div>`;
+  }
+  return `
+    <div class="lower-dock-body lower-dock-editor">
+      <section class="dock-track-context">
+        <h3>${escapeHtml(clip.name)}</h3>
+        <p>${midiDataFromClip(clip).notes.length} notes / ${midiDataFromClip(clip).controllers.length} CC points</p>
+      </section>
+      ${renderMidiClipEditor(clip)}
+    </div>
+  `;
+}
+
+function renderLowerDockAudioEditor(project: ReturnType<typeof currentProject>, state: AppState): string {
+  const clip = selectedClipForDock(project, state, "audio");
+  if (!clip) {
+    return `<div class="lower-dock-body lower-dock-empty"><strong>Select an audio clip</strong><span>The Audio Editor tab edits clip gain, fades, source offset, source-safe actions and clip-gain automation for the selected audio clip.</span></div>`;
+  }
+  const media = project.mediaPool.find((item) => item.id === clip.mediaPoolItemId) || null;
+  return `
+    <div class="lower-dock-body lower-dock-editor">
+      <section class="dock-track-context">
+        <h3>${escapeHtml(clip.name)}</h3>
+        <p>${escapeHtml(media?.name || "Audio clip")} / ${formatDuration(media?.durationSeconds || barsToSeconds(clip.barLength || 0, project.project.bpm, project.project.timeSig))}</p>
+      </section>
+      ${renderAudioClipProperties(project, clip)}
+    </div>
+  `;
+}
+
+function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>): string {
+  const stems = createStemExportPlan(project);
+  const loops = createSectionLoopMetadata(project);
+  const enabledProfiles = project.exportProfiles.filter((profile) => profile.enabled);
+  const routing = createRoutingExportSummary(project);
+  const portability = createMediaPortabilitySummary(project);
+  const deliveryTargets = createGamePackDeliveryTargets();
+  return `
+    <div class="lower-dock-body lower-dock-detail lower-dock-export">
+      <section class="dock-track-context">
+        <h3>${escapeHtml(project.project.title || "Untitled project")}</h3>
+        <p>${project.timeline.bars} bars / ${project.project.bpm} BPM / ${project.project.sampleRate} Hz</p>
+      </section>
+      <section class="dock-export-summary">
+        <h3>Export Details</h3>
+        <dl>
+          <dt>Stems</dt><dd>${stems.length}</dd>
+          <dt>Section loops</dt><dd>${loops.length}</dd>
+          <dt>Profiles</dt><dd>${enabledProfiles.length}</dd>
+          <dt>Media</dt><dd>${project.mediaPool.length}</dd>
+          <dt>Buses</dt><dd>${routing.busCount}</dd>
+          <dt>Returns</dt><dd>${routing.returnCount}</dd>
+          <dt>Sends</dt><dd>${routing.sendCount} (${routing.postFaderSendCount} post / ${routing.preFaderSendCount} pre)</dd>
+        </dl>
+        <div class="dock-export-portability">
+          <h3>Media Portability</h3>
+          <p>${portability.embeddedSourceProjectPortable ? "Embedded source project is portable." : `${portability.needsCollectionOrRelinkCount} media item${portability.needsCollectionOrRelinkCount === 1 ? "" : "s"} need collection or relink before the embedded source project is portable.`}</p>
+          <dl>
+            <dt>Project media</dt><dd>${portability.alreadyProjectCount}</dd>
+            <dt>Copyable external</dt><dd>${portability.copyableExternalCount}</dd>
+            <dt>Runtime-only</dt><dd>${portability.runtimeOnlyCount}</dd>
+            <dt>Missing</dt><dd>${portability.missingOrUnresolvedCount}</dd>
+            <dt>Blocked</dt><dd>${portability.blockedCount}</dd>
+          </dl>
+        </div>
+        ${routing.warnings.length ? `<div class="dock-routing-warnings">${routing.warnings.map((warning) => `<span>${escapeHtml(warning)}</span>`).join("")}</div>` : ""}
+        <div class="dock-export-portability">
+          <h3>Game Delivery</h3>
+          <dl>
+            ${deliveryTargets.map((target) => `
+              <dt>${escapeHtml(target.label)}</dt>
+              <dd>
+                ${escapeHtml(target.delivery)} / ${escapeHtml(target.supportedAudioFormats.join(", ").toUpperCase())}
+                <br>Kind: ${escapeHtml(target.kind)}
+                <br>Action: ${escapeHtml(target.action)}
+                <br>Verifier: ${escapeHtml(target.verifierCommand)}
+                <br>Target smoke: ${escapeHtml(target.targetRuntimeSmoke)}
+                ${target.endpointUrl ? `<br>Endpoint: ${escapeHtml(target.endpointUrl)}` : ""}
+                ${target.notes.length ? `<ul>${target.notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul>` : ""}
+              </dd>
+            `).join("")}
+          </dl>
+        </div>
+        ${renderFullSongWavExportProfileControls(project)}
+        ${renderWavZipExportProfileControls(project, "stem-wavs", "Stem WAV ZIP")}
+        ${renderWavZipExportProfileControls(project, "section-loops", "Section Loop ZIP")}
+        <div class="file-command-grid">
+          <button data-action="export-wav">Full WAV</button>
+          <button data-action="export-midi">Full MIDI</button>
+          <button data-action="export-stems" ${stems.length ? "" : "disabled"}>Stem WAV ZIP</button>
+          <button data-action="export-section-manifest" ${loops.length ? "" : "disabled"}>Section Loop ZIP</button>
+          <button data-action="export-godot-manifest">Godot Pack</button>
+          <button data-action="push-godot-pack" title="Try a local Godot receiver first, then save the ZIP if unavailable">Push Godot Pack</button>
+          <button data-action="export-web-game-manifest">Web Pack</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderFullSongWavExportProfileControls(project: ReturnType<typeof currentProject>): string {
+  const profile = project.exportProfiles.find((item) => item.id === "full-song-wav");
+  if (!profile) return "";
+  const sampleRate = Number(profile.sampleRate || project.project.sampleRate || 44100);
+  const tailSeconds = Number(profile.settings?.tailSeconds ?? 1.2);
+  const channelMode = profile.settings?.channelMode === "mono" ? "mono" : "stereo";
+  const normalize = profile.settings?.normalize === true || profile.settings?.normalize === "peak" ? "peak" : "off";
+  const sampleRates = [44100, 48000, 88200, 96000];
+  return `
+    <div class="export-profile-controls" data-export-profile="full-song-wav">
+      <label>WAV rate
+        <select data-export-profile-setting="${sanitizeDataAttr("full-song-wav:sampleRate")}">
+          ${sampleRates.map((rate) => `<option value="${rate}" ${Math.round(sampleRate) === rate ? "selected" : ""}>${rate} Hz</option>`).join("")}
+        </select>
+      </label>
+      <label>Tail
+        <input type="number" min="0" max="30" step="0.1" value="${sanitizeCssLengthOrNumber(tailSeconds, 1.2, 0, 30)}" data-export-profile-setting="${sanitizeDataAttr("full-song-wav:tailSeconds")}">
+      </label>
+      <label>Channels
+        <select data-export-profile-setting="${sanitizeDataAttr("full-song-wav:channelMode")}">
+          <option value="stereo" ${channelMode === "stereo" ? "selected" : ""}>Stereo</option>
+          <option value="mono" ${channelMode === "mono" ? "selected" : ""}>Mono</option>
+        </select>
+      </label>
+      <label>Normalize
+        <select data-export-profile-setting="${sanitizeDataAttr("full-song-wav:normalize")}">
+          <option value="off" ${normalize === "off" ? "selected" : ""}>Off</option>
+          <option value="peak" ${normalize === "peak" ? "selected" : ""}>Peak</option>
+        </select>
+      </label>
+      <label>Depth
+        <input type="text" value="${escapeAttr(`${profile.bitDepth || 16}-bit PCM`)}" disabled title="Current WAV encoder writes 16-bit PCM. Wider bit-depth export remains planned.">
+      </label>
+    </div>
+  `;
+}
+
+function renderWavZipExportProfileControls(project: ReturnType<typeof currentProject>, profileId: "stem-wavs" | "section-loops", label: string): string {
+  const profile = project.exportProfiles.find((item) => item.id === profileId);
+  if (!profile) return "";
+  const sampleRate = Number(profile.sampleRate || project.project.sampleRate || 44100);
+  const channelMode = profile.settings?.channelMode === "mono" ? "mono" : "stereo";
+  const normalize = profile.settings?.normalize === true || profile.settings?.normalize === "peak" ? "peak" : "off";
+  const sampleRates = [44100, 48000, 88200, 96000];
+  return `
+    <div class="export-profile-controls" data-export-profile="${sanitizeDataAttr(profileId)}">
+      <label>${escapeHtml(label)} rate
+        <select data-export-profile-setting="${sanitizeDataAttr(`${profileId}:sampleRate`)}">
+          ${sampleRates.map((rate) => `<option value="${rate}" ${Math.round(sampleRate) === rate ? "selected" : ""}>${rate} Hz</option>`).join("")}
+        </select>
+      </label>
+      <label>Channels
+        <select data-export-profile-setting="${sanitizeDataAttr(`${profileId}:channelMode`)}">
+          <option value="stereo" ${channelMode === "stereo" ? "selected" : ""}>Stereo</option>
+          <option value="mono" ${channelMode === "mono" ? "selected" : ""}>Mono</option>
+        </select>
+      </label>
+      <label>Normalize
+        <select data-export-profile-setting="${sanitizeDataAttr(`${profileId}:normalize`)}">
+          <option value="off" ${normalize === "off" ? "selected" : ""}>Off</option>
+          <option value="peak" ${normalize === "peak" ? "selected" : ""}>Peak</option>
+        </select>
+      </label>
+      <label>Depth
+        <input type="text" value="${escapeAttr(`${profile.bitDepth || 16}-bit PCM`)}" disabled title="Current WAV encoder writes 16-bit PCM. Wider bit-depth export remains planned.">
+      </label>
+    </div>
+  `;
+}
+
+function selectedClipForDock(project: ReturnType<typeof currentProject>, state: AppState, type: "midi" | "audio"): Clip | null {
+  const selected = project.timeline.clips.find((clip) => clip.id === state.selectedClipId && clip.type === type);
+  if (selected) return selected;
+  return project.timeline.clips.find((clip) => clip.type === type && (!state.selectedTrackId || clip.trackId === state.selectedTrackId)) || null;
+}
+
+function lowerDockTitle(tab: LowerDockTab): string {
+  if (tab === "inserts") return "Inserts";
+  if (tab === "piano-roll") return "Piano Roll";
+  if (tab === "audio-editor") return "Audio Editor";
+  if (tab === "export-details") return "Export";
+  if (tab === "sends") return "Sends";
+  if (tab === "automation") return "Automation";
+  return "Mixer";
+}
+
+function lowerDockSubtitle(tab: LowerDockTab, selectedTrack: Track | null): string {
+  if (tab === "inserts") return selectedTrack ? `${selectedTrack.name} FX chain` : "Select a track to edit inserts";
+  if (tab === "piano-roll") return "Selected MIDI clip editing";
+  if (tab === "audio-editor") return "Selected audio clip editing";
+  if (tab === "export-details") return "Full mix, stems, loops and game packs";
+  if (tab === "sends") return selectedTrack ? `${selectedTrack.name} return routing` : "Select a track to edit return sends";
+  if (tab === "automation") return selectedTrack ? `${selectedTrack.name} track automation` : "Select a track to edit automation";
+  return "Track levels, pan, mute, solo, record and FX";
 }
 
 function renderMediaPool(state: AppState): string {
@@ -1143,6 +1861,8 @@ function renderMediaPool(state: AppState): string {
               ${items.map((item) => {
                 const status = mediaPoolStatus(item, item.kind === "audio" && !!getCachedAudioBuffer(item.id));
                 const cacheItems = renderCacheItemsForMedia(project, item.id);
+                const analysisLabel = item.kind === "audio" ? mediaItemAnalysisLabel(item) : "";
+                const warnings = mediaItemWarnings(item);
                 return `
                   <article class="media-item ${status.missing ? "missing" : ""} ${status.runtimeAvailable ? "runtime-available" : ""}">
                     <div class="media-name">
@@ -1156,6 +1876,8 @@ function renderMediaPool(state: AppState): string {
                       <dt>Size</dt><dd>${formatBytes(item.sizeBytes)}</dd>
                       <dt>URI</dt><dd title="${escapeAttr(item.uri || "")}">${escapeHtml(item.uri || "-")}</dd>
                       <dt>Persistence</dt><dd title="${escapeAttr(mediaPersistenceDetail(status, cacheItems.length))}">${escapeHtml(mediaPersistenceLabel(status, cacheItems.length))}</dd>
+                      ${analysisLabel ? `<dt>Analysis</dt><dd>${escapeHtml(analysisLabel)}</dd>` : ""}
+                      ${warnings.length ? `<dt>Warnings</dt><dd>${warnings.map(escapeHtml).join(" / ")}</dd>` : ""}
                       <dt>Cache</dt><dd>${cacheItems.length ? cacheItems.map((cache) => `${escapeHtml(cache.id)}${cache.invalidated ? " invalid" : ""}`).join(", ") : "-"}</dd>
                     </dl>
                     ${renderMediaWaveform(item)}
@@ -1163,7 +1885,7 @@ function renderMediaPool(state: AppState): string {
                       ${status.reloadable ? `<button type="button" data-reload-media="${sanitizeDataAttr(item.id)}" title="Reload this audio file into the runtime buffer cache">Reload</button>` : ""}
                       ${status.relinkable ? `<button type="button" data-relink-media="${sanitizeDataAttr(item.id)}" title="Choose a replacement file for this media item">Relink</button>` : ""}
                       ${item.kind === "audio" ? `<button type="button" data-place-audio="${sanitizeDataAttr(item.id)}">Place on Timeline</button>` : ""}
-                      ${item.kind === "midi" ? `<span>MIDI clip created on import</span>` : ""}
+                      ${item.kind === "midi" ? `<span>MIDI clips are created from the selected import placement</span>` : ""}
                     </div>
                   </article>
                 `;
@@ -1213,12 +1935,18 @@ function nativeCacheStatusText(state: AppState): string {
   return "No native cache active.";
 }
 
+function mediaItemWarnings(item: ReturnType<typeof currentProject>["mediaPool"][number]): string[] {
+  const warnings = item.metadata?.importWarnings;
+  return Array.isArray(warnings) ? warnings.filter((warning): warning is string => typeof warning === "string" && warning.trim().length > 0) : [];
+}
+
 function renderFilePanel(state: AppState): string {
   const project = currentProject(state);
   const stems = createStemExportPlan(project);
   const loops = createSectionLoopMetadata(project);
   const collectPlan = createCollectMediaPlan(project);
   const progress = state.exportProgress;
+  const futureExportButtons = renderFutureExportButtons(project);
   return `
     <div class="modal-backdrop" data-file-backdrop="true">
       <section class="controls-panel file-panel" role="dialog" aria-modal="true" aria-labelledby="file-window-title">
@@ -1250,6 +1978,11 @@ function renderFilePanel(state: AppState): string {
             <p>Bring in Chordsmith text, project files, audio, or MIDI without keeping import controls on the mixer page.</p>
           </div>
           <textarea id="importText" class="file-import-text" spellcheck="false" placeholder="Paste PCS1 share code, raw Pocket Chordsmith JSON, Pocket DJ source session, or .pocketdaw JSON">${escapeHtml(state.importText)}</textarea>
+          <label class="file-inline-control">MIDI placement
+            <select id="midiImportPlacementMode" title="Choose how imported MIDI files are placed on DAW tracks">
+              ${MIDI_IMPORT_PLACEMENT_MODES.map((mode) => `<option value="${mode.id}" ${state.midiImportPlacementMode === mode.id ? "selected" : ""}>${escapeHtml(mode.name)}</option>`).join("")}
+            </select>
+          </label>
           <div class="file-command-grid">
             <button data-action="import-text">Import Paste</button>
             <button data-action="open-file">Open File</button>
@@ -1265,13 +1998,15 @@ function renderFilePanel(state: AppState): string {
           <div class="file-command-grid">
             <button data-action="export-wav">Full WAV</button>
             <button data-action="export-midi">Full MIDI</button>
-            <button data-action="export-stems" ${stems.length ? "" : "disabled"} title="Downloads one WAV per stem in sequence">Stem WAVs</button>
-            <button data-action="export-section-manifest" ${loops.length ? "" : "disabled"} title="Downloads one loop WAV per generated section plus a JSON manifest">Section Loop WAVs</button>
+            <button data-action="export-stems" ${stems.length ? "" : "disabled"} title="Downloads a ZIP containing one WAV per stem plus a manifest">Stem WAV ZIP</button>
+            <button data-action="export-section-manifest" ${loops.length ? "" : "disabled"} title="Downloads a ZIP containing one loop WAV per generated section plus a manifest">Section Loop ZIP</button>
             <button data-action="export-godot-manifest">Godot Game Pack</button>
+            <button data-action="push-godot-pack" title="Try a local Godot receiver first, then save the ZIP if unavailable">Push Godot Pack</button>
             <button data-action="export-web-game-manifest">Web Game Pack</button>
             <button data-action="export-media-plan" title="Export a JSON plan for collecting project media">Collect Media Plan</button>
             <button data-action="export-diagnostics">Diagnostics JSON</button>
           </div>
+          ${futureExportButtons}
           ${progress ? `
             <div class="export-progress" role="status" aria-live="polite">
               <div>
@@ -1301,10 +2036,73 @@ function renderFilePanel(state: AppState): string {
   `;
 }
 
-function renderMediaWaveform(item: { metadata?: Record<string, unknown> }): string {
-  const peaks = Array.isArray(item.metadata?.waveformPeaks) ? item.metadata.waveformPeaks.slice(0, 64) : [];
+function renderFutureExportButtons(project: ReturnType<typeof currentProject>): string {
+  const futureExportActions: Record<string, string> = {
+    "full-song-flac": "export-full-flac",
+    "stem-flacs": "export-stem-flacs",
+    "full-song-mp3": "export-full-mp3",
+    "godot-ogg-pack": "export-godot-ogg-pack",
+    "web-ogg-pack": "export-web-ogg-pack",
+    "aiff-interchange": "export-aiff-interchange"
+  };
+  const plannedIds = ["full-song-flac", "stem-flacs", "godot-ogg-pack", "web-ogg-pack", "full-song-mp3", "aiff-interchange"];
+  const profiles = plannedIds
+    .map((id) => project.exportProfiles.find((profile) => profile.id === id))
+    .filter(Boolean);
+  if (!profiles.length) return "";
+  return `
+    <div class="file-command-grid future-export-grid" aria-label="Planned export formats">
+      ${profiles.map((profile) => {
+        const validation = validateExportProfile(profile!);
+        const title = [...validation.errors, ...validation.warnings].join(" ") || `${profile!.name} is planned for a later codec-enabled build.`;
+        const action = futureExportActions[profile!.id] || "export-wav";
+        return `<button data-action="${action}" disabled title="${escapeAttr(title)}">${escapeHtml(profile!.name)} planned</button>`;
+      }).join("")}
+    </div>
+    <p class="file-note">FLAC, Ogg, MP3 and AIFF exports are visible as future profiles only; this build exports WAV-based game packs until encoders and target-runtime smoke are proven.</p>
+  `;
+}
+
+function mediaItemAnalysisLabel(item: { metadata?: Record<string, unknown> }): string {
+  const peaks = mediaWaveformPeaks(item);
+  const stale = item.metadata?.analysisInvalidated === true || item.metadata?.waveformNeedsRefresh === true;
+  const cache = typeof item.metadata?.nativeDecodedCacheRelativePath === "string" && item.metadata.nativeDecodedCacheRelativePath.trim() ? " / decoded cache" : "";
+  const transients = mediaTransientMarkers(item);
+  const transientLabel = transients.length ? ` / ${transients.length} transients` : "";
+  if (!peaks.length) return `Waveform missing${stale ? " / stale flag" : ""}${cache}${transientLabel}`;
+  const maxPeak = peaks.reduce((peak, value) => Math.max(peak, value), 0);
+  return `Waveform ready (${peaks.length} peaks, max ${Math.round(maxPeak * 100)}%)${stale ? " / stale flag" : ""}${cache}${transientLabel}`;
+}
+
+function renderMediaWaveform(item: { durationSeconds?: number; metadata?: Record<string, unknown> }): string {
+  const peaks = mediaWaveformPeaks(item).slice(0, 64);
   if (!peaks.length) return "";
-    return `<div class="media-waveform">${peaks.map((peak) => `<span style="height:${sanitizeCssLengthOrNumber(Math.max(2, Math.round(Number(peak) * 28)), 2, 2, 28)}px"></span>`).join("")}</div>`;
+  const duration = Number(item.durationSeconds || 0);
+  const markerHtml = duration > 0
+    ? mediaTransientMarkers(item)
+      .filter((marker) => marker <= duration)
+      .slice(0, 64)
+      .map((marker) => `<i class="media-transient-marker" title="Transient ${escapeAttr(`${marker.toFixed(2)}s`)}" style="left:${sanitizeCssLengthOrNumber((marker / duration) * 100, 0, 0, 100)}%"></i>`)
+      .join("")
+    : "";
+  return `<div class="media-waveform${markerHtml ? " has-transients" : ""}">${peaks.map((peak) => `<span style="height:${sanitizeCssLengthOrNumber(Math.max(2, Math.round(peak * 28)), 2, 2, 28)}px"></span>`).join("")}${markerHtml}</div>`;
+}
+
+function mediaWaveformPeaks(item: { metadata?: Record<string, unknown> }): number[] {
+  const peaks = item.metadata?.waveformPeaks;
+  if (!Array.isArray(peaks)) return [];
+  return peaks
+    .map((peak) => Number(peak))
+    .filter((peak) => Number.isFinite(peak) && peak >= 0)
+    .map((peak) => Math.min(1, peak));
+}
+
+function mediaTransientMarkers(item: { metadata?: Record<string, unknown> }): number[] {
+  const markers = item.metadata?.audioTransientMarkersSeconds;
+  if (!Array.isArray(markers)) return [];
+  return markers
+    .map((marker) => Number(marker))
+    .filter((marker) => Number.isFinite(marker) && marker >= 0);
 }
 
 function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Track, meterLevel: number, state: AppState): string {
@@ -1314,6 +2112,7 @@ function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Tra
   const isMaster = track.role === "master";
   const isReturn = track.role === "fx-return";
   const canMuteSolo = !isMaster && !isReturn;
+  const canSolo = canMuteSolo;
   const canArm = !!track.recordKind && track.recordKind !== "none";
   const inputPreviewActive = track.id === state.recording.trackId && (track.armed || state.recording.status === "recording");
   const displayMeterLevel = inputPreviewActive ? state.recording.inputPeak : meterLevel;
@@ -1338,7 +2137,7 @@ function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Tra
           isMaster
             ? `<span class="strip-note">Limiter ${track.metadata?.limiter === false ? "Off" : "On"}</span>`
             : `${canMuteSolo ? `<button type="button" title="${escapeAttr(`Mute ${track.name}`)}" class="${track.mute ? "on" : ""}" data-mute-track="${sanitizeDataAttr(track.id)}">Mute</button>
-               <button type="button" title="${escapeAttr(`Solo ${track.name}`)}" class="${track.solo ? "on" : ""}" data-solo-track="${sanitizeDataAttr(track.id)}">Solo</button>` : `<span class="strip-note">Return channel</span>`}
+               ${canSolo ? `<button type="button" title="${escapeAttr(`Solo ${track.name}`)}" class="${track.solo ? "on" : ""}" data-solo-track="${sanitizeDataAttr(track.id)}">Solo</button>` : ""}` : `<span class="strip-note">Return channel</span>`}
                ${canArm ? `<button type="button" title="${escapeAttr(`Arm ${track.name} for mono recording`)}" class="${track.armed ? "on record" : ""}" data-arm-track="${sanitizeDataAttr(track.id)}">Arm</button>
                <button type="button" title="${escapeAttr(`Monitor ${track.name} input while armed or recording`)}" class="${track.monitorEnabled ? "on" : ""}" data-monitor-track="${sanitizeDataAttr(track.id)}">Monitor</button>` : ""}`
         }
@@ -1355,6 +2154,7 @@ function renderMixerInputSelector(project: ReturnType<typeof currentProject>, tr
     ? state.recording.inputDeviceName || "Default input"
     : inputs.find((device) => device.id === track.inputDeviceId)?.name || inputs.find((device) => device.id === project.audioDeviceSettings.inputDeviceId)?.name || "Default input";
   const compactLabel = compactInputLabel(inputLabel);
+  const channelMode = track.recordingChannelMode === "stereo" ? "stereo" : "mono";
   const peak = active ? state.recording.inputPeak : 0;
   return `
     <label class="strip-control strip-input">
@@ -1365,7 +2165,18 @@ function renderMixerInputSelector(project: ReturnType<typeof currentProject>, tr
       </select>
       <i class="input-activity" title="Armed input activity"><b data-input-activity-fill="${sanitizeDataAttr(track.id)}" style="width:${sanitizeCssLengthOrNumber(Math.round(peak * 100), 0, 0, 100)}%"></b></i>
     </label>
+    <label class="strip-control strip-input">
+      <span>Record <strong>${recordingChannelLabel(track)}</strong></span>
+      <select data-track-record-channel-mode="${sanitizeDataAttr(track.id)}" aria-label="${escapeAttr(`Recording channel mode for ${track.name}`)}">
+        <option value="mono" ${channelMode === "mono" ? "selected" : ""}>Mono</option>
+        <option value="stereo" ${channelMode === "stereo" ? "selected" : ""}>Stereo</option>
+      </select>
+    </label>
   `;
+}
+
+function recordingChannelLabel(track: Track): "Mono" | "Stereo" {
+  return track.recordingChannelMode === "stereo" ? "Stereo" : "Mono";
 }
 
 function compactInputLabel(label: string): string {
@@ -1435,9 +2246,18 @@ function renderFxDropdown(track: Track): string {
 }
 
 function renderDrumLaneMixer(project: ReturnType<typeof currentProject>): string {
+  const branchCount = project.tracks.filter((track) => generatedDrumBranchLane(track)).length;
+  const branchesHidden = drumBranchGroupCollapsed(project);
   return `
     <div class="drum-lane-mixer">
-      <h3>Drum Kit Lanes</h3>
+      <header class="drum-lane-heading">
+        <h3>Drum Kit Lanes</h3>
+        <div>
+          <button type="button" data-action="branch-generated-drums">Branch Drums</button>
+          <button type="button" data-action="toggle-drum-branch-group" ${branchCount ? "" : "disabled"}>${branchesHidden ? "Show Branch Rows" : "Hide Branch Rows"}</button>
+          <button type="button" data-action="collapse-generated-drum-branches" ${branchCount ? "" : "disabled"}>Collapse Branches</button>
+        </div>
+      </header>
       <div class="drum-lane-list">
         ${DRUM_LANE_DEFS.map((lane) => {
           const mix = getDrumLaneMix(project, lane.id);
@@ -1456,6 +2276,10 @@ function renderDrumLaneMixer(project: ReturnType<typeof currentProject>): string
               <label>Pan
                 <input data-drum-lane-pan="${escapeAttr(lane.id)}" type="range" min="-1" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(mix.pan, 0, -1, 1)}">
                 <span>${escapeHtml(panReadout(mix.pan))}</span>
+              </label>
+              <label>Gate
+                <input data-drum-lane-gate="${escapeAttr(lane.id)}" type="range" min="0.2" max="1.5" step="0.01" value="${sanitizeCssLengthOrNumber(mix.gate, 1, 0.2, 1.5)}">
+                <span>${Math.round(mix.gate * 100)}%</span>
               </label>
               <label>FX
                 <select data-drum-lane-add-fx="${escapeAttr(lane.id)}" aria-label="${escapeAttr(`Add FX to ${lane.label}`)}">
@@ -1563,11 +2387,18 @@ function boolParam(slot: FxPluginInstance, key: string, fallback: boolean): bool
 function renderInputSelector(project: ReturnType<typeof currentProject> | null, track: Track): string {
   if (!project || !track.recordKind || track.recordKind === "none") return "";
   const inputs = (project.audioDeviceSettings.devices || []).filter((device) => device.kind === "input" || device.kind === "duplex");
+  const channelMode = track.recordingChannelMode === "stereo" ? "stereo" : "mono";
   return `
     <label>Input
       <select data-track-input="${sanitizeDataAttr(track.id)}">
         <option value="">No input selected</option>
         ${inputs.map((device) => `<option value="${escapeAttr(device.id)}" ${track.inputDeviceId === device.id ? "selected" : ""}>${escapeHtml(device.name)}</option>`).join("")}
+      </select>
+    </label>
+    <label>Record
+      <select data-track-record-channel-mode="${sanitizeDataAttr(track.id)}">
+        <option value="mono" ${channelMode === "mono" ? "selected" : ""}>Mono</option>
+        <option value="stereo" ${channelMode === "stereo" ? "selected" : ""}>Stereo</option>
       </select>
     </label>
   `;
@@ -1584,6 +2415,7 @@ function renderAddTrackPanel(): string {
         <div class="add-track-grid">
           <button data-add-track-kind="live-vocals"><strong>Live Vocals</strong><span>Mono recording alpha track</span></button>
           <button data-add-track-kind="live-instrument"><strong>Live Instrument</strong><span>Mono recording alpha track</span></button>
+          <button data-add-track-kind="midi-instrument"><strong>MIDI Instrument</strong><span>Empty MIDI track for piano-roll clips</span></button>
           <button data-add-track-kind="chordsmith-drums"><strong>Chordsmith Drums</strong><span>Select or enable generated drums</span></button>
           <button data-add-track-kind="chordsmith-bass"><strong>Chordsmith Bass</strong><span>Select or enable generated bass</span></button>
           <button data-add-track-kind="chordsmith-chords"><strong>Chordsmith Chords</strong><span>Select or enable generated chords</span></button>
@@ -1609,7 +2441,7 @@ function renderAudioSettingsPanel(state: AppState): string {
         </header>
         <div class="control-guide">
           <p><strong>Host</strong><span>${escapeHtml(project.audioDeviceSettings.host)} (${escapeHtml(state.audioProbeStatus)})</span></p>
-          <p><strong>Recording</strong><span>Installed app only: refresh devices, choose an input, save the project, arm one live track, then Record writes mono WAV takes to project-media/recordings.</span></p>
+          <p><strong>Recording</strong><span>Installed app only: refresh devices, choose an input and Mono/Stereo mode, save the project, arm one live track, then Record writes WAV takes to project-media/recordings.</span></p>
         </div>
         <button data-action="audio-refresh">Refresh Devices</button>
         <div class="device-list">
@@ -1677,7 +2509,14 @@ function renderControlsPanel(state: AppState): string {
   const defaultOutput = devices.find((device) => device.id === project.audioDeviceSettings.outputDeviceId) || devices.find((device) => device.isDefaultOutput);
   const statuses = project.mediaPool.map((item) => mediaPoolStatus(item, item.kind === "audio" && !!getCachedAudioBuffer(item.id)));
   const mediaSummary = `${project.mediaPool.length} media / ${statuses.filter((status) => status.runtimeOnly).length} runtime-only / ${statuses.filter((status) => status.external).length} external / ${statuses.filter((status) => status.missing || status.unresolved).length} missing`;
-  const cacheSummary = `${project.renderCache.length} metadata item${project.renderCache.length === 1 ? "" : "s"}`;
+  const renderCache = createRenderCacheSummary(project);
+  const cacheSummary = `${renderCache.totalCount} total / ${renderCache.freezeRenderCount} freeze / ${renderCache.nativeGeneratedStemCount} native stems / ${renderCache.nativeRuntimeAudioCount} runtime audio / ${renderCache.invalidatedCount} invalidated`;
+  const mediaAnalysis = createAudioMediaAnalysisSummary(project);
+  const analysisSummary = `${mediaAnalysis.waveformReadyCount}/${mediaAnalysis.audioMediaCount} waveform-ready media / ${mediaAnalysis.normalizeReadyClipCount}/${mediaAnalysis.audioClipCount} normalize-ready clips / ${mediaAnalysis.transientMarkerCount} transient markers / ${mediaAnalysis.staleAnalysisCount} stale`;
+  const routing = createRoutingExportSummary(project);
+  const routingSummary = `${routing.busCount} buses / ${routing.returnCount} returns / ${routing.sendCount} sends (${routing.postFaderSendCount} post-fader, ${routing.preFaderSendCount} pre-fader) / ${routing.routedTrackCount} routed tracks${routing.warnings.length ? ` / ${routing.warnings.length} warning${routing.warnings.length === 1 ? "" : "s"}: ${routing.warnings.join(" ")}` : ""}`;
+  const takeSummary = createAudioTakeDiagnosticsSummary(project);
+  const takeSummaryText = `${takeSummary.groupedClipCount} grouped clips / ${takeSummary.groupCount} groups / ${takeSummary.activeCount} active / ${takeSummary.archivedCount} archived`;
   return `
     <div class="modal-backdrop" data-controls-backdrop="true">
       <section class="controls-panel" role="dialog" aria-modal="true" aria-labelledby="controls-title">
@@ -1693,20 +2532,23 @@ function renderControlsPanel(state: AppState): string {
           <p><strong>Audio</strong><span>${escapeHtml(project.audioDeviceSettings.host)} / ${devices.length} device${devices.length === 1 ? "" : "s"}${defaultOutput ? ` / output ${escapeHtml(defaultOutput.name)}` : ""}</span></p>
           <p><strong>Updater</strong><span>${escapeHtml(updaterStatusText(state))} / startup check ${state.updaterAutoCheckOnStartup ? "on" : "off"}</span></p>
           <p><strong>Handoff</strong><span>${escapeHtml(handoffStatusText(state))}</span></p>
+          <p><strong>Routing</strong><span>${escapeHtml(routingSummary)}</span></p>
+          <p><strong>Take Lanes</strong><span>${escapeHtml(takeSummaryText)}</span></p>
           <p><strong>Media</strong><span>${escapeHtml(mediaSummary)} / render cache ${escapeHtml(cacheSummary)}</span></p>
+          <p><strong>Analysis</strong><span>${escapeHtml(analysisSummary)}</span></p>
           <p><strong>Native Cache</strong><span>${escapeHtml(nativeCacheStatusText(state))}</span></p>
           <p><strong>Storage</strong><span>${escapeHtml(state.currentFile.path ? "Project media/cache folders sit beside the saved .pocketdaw file." : "Unsaved project; autosave/recent data uses the installed app or browser runtime store.")}</span></p>
           <p><strong>Import</strong><span>Paste a PCS1 code, Chordsmith JSON, Pocket DJ source session, or .pocketdaw file.</span></p>
           <p><strong>Demo</strong><span>Load Demo Copy creates an editable autosaved copy. Reload Demo Template discards copy edits and starts fresh from the built-in demo.</span></p>
-          <p><strong>Transport</strong><span>Play, Stop, Restart, or return to Bar 1 from the top bar.</span></p>
+          <p><strong>Transport</strong><span>Play, Stop, Restart, Panic, or return to Bar 1 from the top bar.</span></p>
           <p><strong>Shortcuts</strong><span>Space play/pause, Home Bar 1, L loop, P loop selected, X split, G marker, Ctrl+C/V clip copy/paste, M mute, S solo, R arm, D duplicate, Delete remove, arrows move clips, plus/minus zoom.</span></p>
           <p><strong>Timeline</strong><span>Select a clip, click or drag the ruler/grid to seek and scrub, choose Bar or Beat snap, then use Move, Copy, Paste, Split, Trim, Loop Clip, Marker and Zoom controls.</span></p>
           <p><strong>Media Pool</strong><span>Import Audio decodes supported files into a runtime cache. Import MIDI parses .mid files into editable clips played by the preview synth.</span></p>
           <p><strong>Mixer</strong><span>Use Volume and Pan sliders. Meters show live peak audio. Mute silences a track; Solo isolates it.</span></p>
           <p><strong>Recent</strong><span>${escapeHtml(recent)}</span></p>
           <p><strong>Save / Export</strong><span>Save .pocketdaw projects, export full-song WAV, or export multi-track MIDI.</span></p>
-          <p><strong>Recording</strong><span>Installed app only: save the project, arm one live audio track, choose an input if needed, then Record writes a mono WAV under project-media/recordings.</span></p>
-          <p><strong>Alpha testing</strong><span>Recording is mono overdub only. ASIO, punch-in, comping, latency compensation UI and multitrack capture are future work.</span></p>
+          <p><strong>Recording</strong><span>Installed app only: save the project, arm one live audio track, choose Mono or Stereo and an input if needed, then Record writes a project-media WAV under project-media/recordings.</span></p>
+          <p><strong>Alpha testing</strong><span>Recording is one armed track at a time. ASIO, punch-in, comping, latency compensation UI and simultaneous multitrack capture are future work.</span></p>
         </div>
         <div class="diagnostic-actions">
           <button data-action="copy-diagnostics">Copy Diagnostics</button>
@@ -1854,6 +2696,7 @@ function formatBytes(bytes: number | undefined): string {
 }
 
 function mediaPersistenceLabel(status: ReturnType<typeof mediaPoolStatus>, cacheCount: number): string {
+  if ((status.missing || status.unresolved) && status.cacheReloadable) return "Missing source - decoded cache available";
   if (status.missing || status.unresolved) return "Missing - relink required";
   if (status.runtimeOnly) return "Runtime-only";
   if (status.external && status.runtimeAvailable) return "External reference loaded";
@@ -1864,8 +2707,9 @@ function mediaPersistenceLabel(status: ReturnType<typeof mediaPoolStatus>, cache
 }
 
 function mediaPersistenceDetail(status: ReturnType<typeof mediaPoolStatus>, cacheCount: number): string {
+  if ((status.missing || status.unresolved) && status.cacheReloadable) return "The original source path is missing, but a project-relative decoded WAV cache is available. Reload can restore playback from the cache; Relink should still be used to point at the source file.";
   if (status.missing || status.unresolved) return "The project has metadata for this item, but the file is missing or unresolved. Use Relink before playback/export.";
-  if (status.runtimeOnly) return "Loaded into memory for this session only. Save/reopen will need re-import or Collect Media in the installed app.";
+  if (status.runtimeOnly) return "Loaded into memory for this session only. Save/reopen will need re-import or Relink in the installed app before Collect Media can make it durable.";
   if (status.external && status.runtimeAvailable) return "Referenced from an external path and currently loaded into memory. Use Collect Media for project-relative persistence.";
   if (status.external) return "Referenced from an external path. Reload or Collect Media before relying on it after moving the project.";
   if (cacheCount) return "Project metadata has render-cache links. Rebuild cache if the source changes.";

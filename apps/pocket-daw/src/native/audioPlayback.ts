@@ -43,6 +43,7 @@ export interface NativeAudioTrack {
 export interface NativeAudioTrackSend {
   returnTrackId: string;
   level: number;
+  mode?: "post-fader" | "pre-fader";
 }
 
 export interface NativeAudioEvent {
@@ -108,9 +109,12 @@ export interface NativeAudioRegion {
   sourceOffset: number;
   duration: number;
   gain: number;
+  phaseMultiplier?: number;
+  reversed?: boolean;
   pan: number;
   fadeIn: number;
   fadeOut: number;
+  gainAutomation?: Array<{ localSeconds: number; value: number; curve?: "linear" | "hold" | "ease-in" | "ease-out" }>;
 }
 
 export interface NativeAudioStartPayload {
@@ -278,7 +282,7 @@ export function buildNativeAudioStartPayload(
         id: track.id,
         fxChainId: track.fxChainId,
         isReturn: track.trackType === "return" || track.role === "fx-return",
-        sends: activeTrackSendRoutes(project, track),
+        sends: activeTrackSendRoutes(project, track, startBar),
         volume: controls.volume,
         pan: controls.pan,
         mute: track.mute,

@@ -33,6 +33,10 @@ Tauri updater signatures are separate from Windows code signing. Do not claim th
 - Automated tests:
 - Artifact verification:
 - Windows installed-app manual smoke: NOT RUN / PASSED / FAILED
+- Native media reliability installed smoke: NOT RUN / PASSED / FAILED
+- Game-pack ZIP automated smoke: NOT RUN / PASSED / FAILED
+- Godot target import smoke: NOT RUN / PASSED / FAILED
+- Web target harness smoke: NOT RUN / PASSED / FAILED
 - Installer hash tested:
 
 ## Known Limitations

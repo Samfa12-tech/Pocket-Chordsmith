@@ -4,10 +4,10 @@ This is the operator checklist for publishing Pocket DAW as a free installed Win
 
 Current policy: normal Pocket DAW app checkpoints ship through GitHub Releases and the in-app Tauri updater. Itch should host the stable bootstrapper/downloader and only needs a new upload when the bootstrapper itself changes.
 
-## Current Alpha Release
+## Release Truth Guardrail
 
 - App: Pocket DAW
-- Version: `0.6.21`
+- Current version/source/public status: see `release-status.json` and generated `docs/CURRENT_RELEASE_STATUS.md`
 - Schema version: `2`
 - Itch project: `samfa12/pocket-daw`
 - Itch page: `https://samfa12.itch.io/pocket-daw`
@@ -15,10 +15,11 @@ Current policy: normal Pocket DAW app checkpoints ship through GitHub Releases a
 - Primary install/update test channel: `windows-installer`
 - Updater endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 - Bootstrapper endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-bootstrapper-latest.json`
-- Setup EXE: `Pocket.DAW_0.6.21_x64-setup.exe`
-- MSI: `Pocket.DAW_0.6.21_x64_en-US.msi`
+- Setup EXE/MSI names: read from the current release artifact manifest for the checkpoint being validated.
 
 Pocket DAW is installed-app only. Do not publish or test a user-facing portable app workflow.
+
+Do not create or upload another installer from post-release source while package, Tauri, Cargo, schema, and release metadata still identify the already-published `0.6.34` checkpoint. Bump the next checkpoint first, then rebuild from a clean tree.
 
 ## Package Requirements for Itch
 
@@ -35,9 +36,9 @@ The bootstrapper fetches `pocket-daw-bootstrapper-latest.json`, downloads the la
 
 `index.html` is included as a defensive itch launch fallback. Pocket DAW is still installed-app only, but if the itch page is accidentally left in browser/HTML launch mode the page should show a download link instead of failing with `asset not found: index.html`.
 
-Manual fallback only:
+Historical manual fallback only:
 
-The old full-installer itch release path still stages installer artifacts and release metadata for emergencies:
+The old full-installer itch release path still stages installer artifacts and release metadata for emergencies. The versioned names below are historical examples and are not current release targets:
 
 - Installer upload folder:
   - `releases/itch/installers/`
@@ -109,7 +110,7 @@ $env:PUBLISH = "1"
 npm run itch:push:bootstrapper
 ```
 
-After upload, inspect the itch page and keep the release wording as alpha testing. The v0.5.13 handoff/update smoke evidence is recorded in `docs/WINDOWS_TESTING_CHECKLIST.md`; broader Windows QA remains partial.
+After upload, inspect the itch page and keep the release wording as alpha testing. Historical v0.5.13 handoff/update smoke evidence is recorded in `docs/WINDOWS_TESTING_CHECKLIST.md`; current release readiness must come from `release-status.json`, `docs/CURRENT_RELEASE_STATUS.md`, and exact-artifact smoke for the candidate.
 
 ## Push to GitHub
 
@@ -138,7 +139,7 @@ Do not mark the updater production-ready until this passes on Windows:
 8. Verify the visible version changed.
 9. Verify a project saved by the previous version still opens, plays and saves.
 
-Generate a GitHub updater manifest for the next patch, for example:
+Historical updater-manifest example from the old full-installer flow:
 
 ```powershell
 npm run release:updater-manifest -- --artifact "releases/updater/Pocket_DAW_0.5.13_x64-setup.exe" --signature "releases/updater/Pocket_DAW_0.5.13_x64-setup.exe.sig" --url "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/download/pocket-daw-v0.5.13-updater-test/Pocket_DAW_0.5.13_x64-setup.exe" --notes "releases/itch/RELEASE_NOTES_v0.5.13.md"

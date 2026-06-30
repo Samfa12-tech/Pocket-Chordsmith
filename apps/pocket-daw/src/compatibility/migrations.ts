@@ -7,6 +7,8 @@ import {
   POCKET_DAW_APP,
   POCKET_DAW_SCHEMA_VERSION,
   POCKET_DAW_VERSION,
+  GAME_STATE_MARKERS,
+  RECORDING_CHANNEL_MODES,
   type PocketDawProject
 } from "../daw/schema";
 
@@ -116,6 +118,7 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
       recordKind: safeEnum(track?.recordKind, RECORD_KINDS, fallback.recordKind || "none"),
       inputDeviceId: track?.inputDeviceId === undefined || track?.inputDeviceId === null ? null : safeText(track.inputDeviceId, ""),
       monitorEnabled: track?.monitorEnabled === true,
+      recordingChannelMode: safeEnum(track?.recordingChannelMode, RECORDING_CHANNEL_MODES, fallback.recordingChannelMode || "mono"),
       active: track?.active === false ? false : true,
       metadata: isRecord(track?.metadata) ? track.metadata : undefined
     };
@@ -153,13 +156,15 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
       startBar: clampNumber(next.timeline?.loop?.startBar, 1, 4096, 1),
       endBar: clampNumber(next.timeline?.loop?.endBar, 2, 4097, 9)
     },
+    selection: normalizeTimelineSelection(next.timeline?.selection),
     markers: (Array.isArray(next.timeline?.markers) ? next.timeline.markers : []).map((marker, index) => ({
       ...(isRecord(marker) ? marker : {}),
       id: uniqueSafeId(marker?.id, `marker_${index + 1}`, usedMarkerIds),
       bar: clampNumber(marker?.bar, 1, 4096, 1),
       name: safeText(marker?.name, `Marker ${index + 1}`),
       color: safeColour(marker?.color, "#40d8ff"),
-      markerType: safeEnum(marker?.markerType, MARKER_TYPES, "cue")
+      markerType: safeEnum(marker?.markerType, MARKER_TYPES, "cue"),
+      gameState: safeOptionalEnum(marker?.gameState, GAME_STATE_MARKERS)
     })),
     clips: (Array.isArray(next.timeline?.clips) ? next.timeline.clips : []).map((clip, index) => {
       const originalId = String(clip?.id || `clip_${index + 1}`);
@@ -189,6 +194,7 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
     })
   };
   if (next.timeline.loop.endBar <= next.timeline.loop.startBar) next.timeline.loop.endBar = next.timeline.loop.startBar + 1;
+  if (next.timeline.selection && next.timeline.selection.endBar <= next.timeline.selection.startBar) next.timeline.selection.endBar = next.timeline.selection.startBar + 1;
   next.timeline.bars = Math.max(next.timeline.bars, Math.ceil(next.timeline.clips.reduce((end, clip) => Math.max(end, clip.startBar + clip.barLength - 1), 1)));
 
   next.automation = {
@@ -243,6 +249,19 @@ function normalizePosition(value: unknown) {
     bar: clampNumber(source.bar, 1, 4096, 1),
     beat: clampNumber(source.beat, 1, 16, 1),
     tick: clampNumber(source.tick, 0, 1920, 0)
+  };
+}
+
+function normalizeTimelineSelection(value: unknown) {
+  if (!isRecord(value)) return null;
+  const startBar = clampNumber(value.startBar, 1, 4096, 1);
+  const rawEndValue = Number(value.endBar);
+  const rawEndBar = clampNumber(value.endBar, 1.125, 4097, startBar + 1);
+  const endBar = !Number.isFinite(rawEndValue) || rawEndValue <= startBar ? startBar + 1 : rawEndBar;
+  return {
+    startBar,
+    endBar,
+    source: safeEnum(value.source, ["manual", "loop", "clip", "punch"] as const, "manual")
   };
 }
 
@@ -348,6 +367,10 @@ function optionalClampNumber(value: unknown, min: number, max: number): number |
 
 function safeEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return allowed.includes(value as T) ? value as T : fallback;
+}
+
+function safeOptionalEnum<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
+  return allowed.includes(value as T) ? value as T : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,14 +1,14 @@
 # Stereo And Multitrack Recording Plan
 
-This is the design anchor for moving beyond the current recording alpha. It does not change the current shipped behavior: Pocket DAW still records one armed mono live track in the installed app, requires a saved project, writes project-relative WAV takes under `project-media/recordings/`, and does not apply hidden latency compensation.
+This is the design anchor for moving beyond the current recording alpha. It does not change the current shipped behavior: Pocket DAW still records one armed live track at a time in the installed app, requires a saved project, writes project-relative WAV takes under `project-media/recordings/`, and does not apply hidden latency compensation.
 
 ## Current Baseline
 
-- `src/daw/schema.ts` already has `Track.recordKind`, `Track.armed`, `Track.inputDeviceId`, `Track.monitorEnabled`, and `MediaPoolItem.channels`.
+- `src/daw/schema.ts` already has `Track.recordKind`, `Track.armed`, `Track.inputDeviceId`, `Track.monitorEnabled`, `Track.recordingChannelMode`, and `MediaPoolItem.channels`.
 - `src/daw/mixer.ts` currently enforces a single armed record-capable track.
 - `src/app/App.ts` starts recording only when exactly one live track is armed and the project has a saved file path.
-- `src/native/recordingBridge.ts` exposes one `trackId`, one input device, one monitor route, capture counters, dropped-frame counters, and one stop result.
-- `src-tauri/src/native_recording.rs` owns one native input stream/writer and currently collapses input frames to mono channel 0.
+- `src/native/recordingBridge.ts` exposes one `trackId`, one input device, one monitor route, one mono/stereo channel mode, capture counters, dropped-frame counters, and one stop result.
+- `src-tauri/src/native_recording.rs` owns one native input stream/writer and can write mono channel 0 or stereo channel pair 0/1 for the single armed track.
 - `docs/RECORDING_SESSION_CLOCK.md` is the timing contract: placement stays at the requested start, diagnostic clock evidence is stored, and no automatic compensation is applied.
 
 ## Design Goals
@@ -80,7 +80,7 @@ The actual capture sample rate from the device remains authoritative. If it diff
 
 ## UI And Safety
 
-- Keep the current one-track mono UI until the native grouped result path exists.
+- Keep the current one-track mono/stereo UI until the native grouped result path exists.
 - When stereo/multitrack controls appear, label input mode and channel assignment directly, for example `Mono Ch 1`, `Stereo Ch 1-2`, or `Split Ch 1 -> Vocals, Ch 2 -> Guitar`.
 - Warn when a saved channel assignment is unavailable on the current device.
 - Allow multiple armed tracks only after channel assignments are valid and non-overlapping, unless the user deliberately chooses duplicated monitoring/capture.
@@ -108,4 +108,4 @@ The current no-hidden-compensation rule stays in force:
 
 ## Release Boundary
 
-Until the grouped native capture path and tests exist, release notes should continue to say: one armed mono live track only; no stereo modes, simultaneous multitrack capture, punch-in/out, comping, latency compensation UI, ASIO, or FX monitoring.
+Until the grouped native capture path and tests exist, release notes should continue to say: one armed live track at a time only; no simultaneous multitrack capture, punch-in/out, comping, latency compensation UI, ASIO, or FX monitoring. Source-level mono/stereo mode support still requires installed hardware smoke before release copy should lean on it.

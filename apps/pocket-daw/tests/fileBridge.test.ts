@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { openProjectFileNative, projectFileStateFromPath, projectRecoveryRecommendation, projectTitleFromFileState, saveProjectFile, type NativeFileApi, type NativeProjectRecoveryCandidate } from "../src/native/fileBridge";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { openProjectFileNative, projectFileStateFromPath, projectRecoveryRecommendation, projectTitleFromFileState, saveBlobFileAs, saveProjectFile, type NativeFileApi, type NativeProjectRecoveryCandidate } from "../src/native/fileBridge";
 import { createDemoProject } from "../src/demo/demoProject";
 
 describe("native file bridge", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("creates friendly labels from native paths", () => {
     expect(projectFileStateFromPath("C:\\Songs\\Pocket Demo.pocketdaw").label).toBe("Pocket Demo.pocketdaw");
     expect(projectFileStateFromPath("/tmp/session.json").label).toBe("session.json");
@@ -97,6 +101,57 @@ describe("native file bridge", () => {
     await expect(openProjectFileNative(api)).rejects.toThrow("invalid project file payload");
   });
 
+  it("saves binary blobs through native save-as with byte payloads", async () => {
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeFileApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return { path: "C:\\Songs\\Pack.zip", label: "Pack.zip", bytesWritten: 3 } as never;
+      }
+    };
+
+    const result = await saveBlobFileAs(new Blob([new Uint8Array([1, 2, 3])], { type: "application/zip" }), "Pack.zip", api);
+
+    expect(result).toMatchObject({ mode: "native", bytesWritten: 3, file: { label: "Pack.zip" } });
+    expect(calls).toEqual([{
+      command: "save_binary_file_as",
+      args: {
+        defaultName: "Pack.zip",
+        bytes: [1, 2, 3]
+      }
+    }]);
+  });
+
+  it("treats cancelled native binary save as cancelled without fallback", async () => {
+    const api: NativeFileApi = {
+      isAvailable: () => true,
+      async invoke() {
+        return null as never;
+      }
+    };
+
+    await expect(saveBlobFileAs(new Blob(["zip"]), "Pack.zip", api)).resolves.toMatchObject({
+      mode: "cancelled",
+      file: null
+    });
+  });
+
+  it("reports malformed native binary save payloads clearly", async () => {
+    stubDownloadEnvironment();
+    const api: NativeFileApi = {
+      isAvailable: () => true,
+      async invoke() {
+        return { path: null, bytesWritten: "many" } as never;
+      }
+    };
+
+    await expect(saveBlobFileAs(new Blob(["zip"]), "Pack.zip", api)).resolves.toMatchObject({
+      mode: "browser-fallback",
+      message: expect.stringContaining("invalid binary file payload")
+    });
+  });
+
   it("recommends visible recovery for newer valid temp or backup candidates", () => {
     const current = recoveryCandidate("C:\\Songs\\Song.pocketdaw", 100, true);
     const temp = recoveryCandidate("C:\\Songs\\Song.pocketdaw.tmp", 200, true);
@@ -116,6 +171,28 @@ describe("native file bridge", () => {
     });
   });
 });
+
+function stubDownloadEnvironment() {
+  const anchor = {
+    href: "",
+    download: "",
+    click: vi.fn(),
+    remove: vi.fn()
+  };
+  vi.stubGlobal("URL", {
+    createObjectURL: vi.fn(() => "blob:test"),
+    revokeObjectURL: vi.fn()
+  });
+  vi.stubGlobal("document", {
+    createElement: vi.fn(() => anchor),
+    body: {
+      appendChild: vi.fn()
+    }
+  });
+  vi.stubGlobal("window", {
+    setTimeout: vi.fn()
+  });
+}
 
 function recoveryCandidate(path: string, modifiedUnixMs: number, valid: boolean): NativeProjectRecoveryCandidate {
   return {

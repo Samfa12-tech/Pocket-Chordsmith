@@ -1,3 +1,5 @@
+import { createRecordingUiState, recordingSessionMatches, type RecordingUiState } from "./state";
+
 export type RecordingStartupStep =
   | "prepare-timeline-audio"
   | "open-input-preview"
@@ -34,9 +36,31 @@ export interface NativeRecordingDiagnosticsSource {
   playbackStopAnchor?: NativePlaybackRecordingAnchor | null;
 }
 
+export interface NativeRecordingTakeMetadataInput {
+  recordingSessionId?: number | null;
+  trackId?: string | null;
+  channelMode?: "mono" | "stereo" | string | null;
+}
+
 export interface RecordingCompletionMessageInput {
   baseMessage: string;
   droppedInputFrameCount?: number | null;
+}
+
+export interface RecordingSessionBeginInput {
+  sessionId: number;
+  trackId: string;
+  startBar: number;
+  captureStartTransportSeconds: number;
+  timingSource: string;
+  message: string;
+}
+
+export interface RecordingSessionTransitionInput {
+  recording: RecordingUiState;
+  sessionId: number;
+  allowedStatuses: RecordingUiState["status"][];
+  patch: Partial<RecordingUiState> & Pick<RecordingUiState, "status" | "message">;
 }
 
 export interface NativePlaybackRecordingAnchor {
@@ -83,6 +107,34 @@ export function buildRecordingStartupPlan(input: RecordingStartupPlanInput): Rec
   return steps;
 }
 
+export function beginRecordingSession(input: RecordingSessionBeginInput): RecordingUiState {
+  return createRecordingUiState({
+    status: "preparing",
+    sessionId: input.sessionId,
+    trackId: input.trackId,
+    startBar: input.startBar,
+    captureStartTransportSeconds: input.captureStartTransportSeconds,
+    timingSource: input.timingSource,
+    message: input.message
+  });
+}
+
+export function transitionRecordingSession(input: RecordingSessionTransitionInput): RecordingUiState | null {
+  if (!recordingSessionMatches(input.recording, input.sessionId, input.allowedStatuses)) return null;
+  return createRecordingUiState({
+    ...input.recording,
+    ...input.patch,
+    sessionId: input.sessionId,
+    trackId: input.patch.trackId === undefined ? input.recording.trackId : input.patch.trackId,
+    startBar: input.patch.startBar === undefined ? input.recording.startBar : input.patch.startBar,
+    livePeaks: input.patch.livePeaks === undefined ? input.recording.livePeaks : input.patch.livePeaks
+  });
+}
+
+export function cancelRecordingSession(message: string): RecordingUiState {
+  return createRecordingUiState({ message });
+}
+
 export function recordingStartFailureCleanupPlan(input: RecordingStartFailureCleanupInput) {
   return {
     stopNativeCapture: input.nativeCaptureStarted,
@@ -108,6 +160,23 @@ export function buildNativeRecordingDiagnosticsMetadata(source: NativeRecordingD
     nativeMonitorOverrunCount: finiteCount(source.monitorOverrunCount),
     ...buildNativePlaybackAnchorMetadata("Capture", source.playbackCaptureAnchor),
     ...buildNativePlaybackAnchorMetadata("Stop", source.playbackStopAnchor)
+  };
+}
+
+export function buildNativeRecordingTakeMetadata(input: NativeRecordingTakeMetadataInput) {
+  const channelMode = input.channelMode === "stereo" ? "stereo" : "mono";
+  const recordingSessionId = nullableFinite(input.recordingSessionId);
+  const trackId = nullableText(input.trackId);
+  const takeGroupId = recordingSessionId !== null
+    ? `recording-session-${recordingSessionId}`
+    : `recording-track-${trackId || "unknown"}`;
+  return {
+    takeGroupId,
+    recordingTakeGroupId: takeGroupId,
+    takeStatus: "active",
+    inputMode: channelMode,
+    channelMap: channelMode === "stereo" ? [0, 1] : [0],
+    latencyCompensationAppliedSeconds: 0
   };
 }
 

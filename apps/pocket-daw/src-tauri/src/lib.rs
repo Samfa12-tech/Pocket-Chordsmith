@@ -5,6 +5,7 @@ use std::time::Duration;
 use tauri::{Emitter, Manager};
 
 mod native_audio;
+mod native_decode;
 mod native_recording;
 mod project_files;
 
@@ -19,6 +20,7 @@ const MAX_PROJECT_FILE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_MIDI_FILE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_AUDIO_FILE_BYTES: u64 = 250 * 1024 * 1024;
 const MAX_NATIVE_CACHE_ASSET_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_BINARY_EXPORT_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_LOCAL_HANDOFF_BYTES: usize = 5 * 1024 * 1024;
 const MAX_AI_BRIDGE_BODY_BYTES: usize = 1024 * 1024;
 
@@ -264,6 +266,7 @@ pub fn run() {
             open_midi_file,
             save_project_file_as,
             write_project_file,
+            save_binary_file_as,
             ai_bridge_session,
             ai_bridge_set_enabled,
             ai_bridge_resolve_request
@@ -735,6 +738,26 @@ struct AudioMediaPayload {
     #[serde(rename = "sizeBytes")]
     size_bytes: u64,
     bytes: Vec<u8>,
+    #[serde(rename = "sourceMimeType")]
+    source_mime_type: Option<String>,
+    #[serde(rename = "sourceSizeBytes")]
+    source_size_bytes: u64,
+    #[serde(rename = "sourceEncoding")]
+    source_encoding: String,
+    #[serde(rename = "decodedMimeType")]
+    decoded_mime_type: Option<String>,
+    #[serde(rename = "decodedSizeBytes")]
+    decoded_size_bytes: u64,
+    #[serde(rename = "sampleRate")]
+    sample_rate: u32,
+    channels: u16,
+    #[serde(rename = "durationSeconds")]
+    duration_seconds: f64,
+    #[serde(rename = "frameCount")]
+    frame_count: usize,
+    decoder: String,
+    #[serde(rename = "nativeDecodeError")]
+    native_decode_error: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -875,16 +898,7 @@ fn open_audio_media_file() -> Result<Option<AudioMediaPayload>, String> {
         return Ok(None);
     };
     ensure_file_size_at_most(&path, MAX_AUDIO_FILE_BYTES, "Audio file is too large for this release. Try a shorter file or wait for native streaming support.")?;
-    let bytes =
-        std::fs::read(&path).map_err(|err| format!("Could not read audio file: {}", err))?;
-    let size_bytes = bytes.len() as u64;
-    Ok(Some(AudioMediaPayload {
-        label: file_label(&path),
-        path: path.to_string_lossy().to_string(),
-        mime_type: audio_mime_type(&path),
-        size_bytes,
-        bytes,
-    }))
+    read_audio_media_payload(path).map(Some)
 }
 
 #[tauri::command]
@@ -894,15 +908,78 @@ fn read_audio_media_file(
 ) -> Result<AudioMediaPayload, String> {
     let path_buf = resolve_media_path(&path, project_file_path.as_deref())?;
     ensure_file_size_at_most(&path_buf, MAX_AUDIO_FILE_BYTES, "Audio file is too large for this release. Try a shorter file or wait for native streaming support.")?;
-    let bytes =
+    read_audio_media_payload(path_buf)
+}
+
+fn read_audio_media_payload(path_buf: std::path::PathBuf) -> Result<AudioMediaPayload, String> {
+    let source_bytes =
         std::fs::read(&path_buf).map_err(|err| format!("Could not read audio media: {}", err))?;
-    let size_bytes = bytes.len() as u64;
+    let source_size_bytes = source_bytes.len() as u64;
+    ensure_bytes_at_most(source_size_bytes, MAX_AUDIO_FILE_BYTES, "Audio file is too large for this release. Try a shorter file or wait for native streaming support.")?;
+    let source_mime_type = audio_mime_type(&path_buf);
+    let decoded =
+        native_decode::decode_audio_to_wav(&source_bytes, audio_extension(&path_buf).as_deref());
+    let (
+        bytes,
+        mime_type,
+        decoded_mime_type,
+        decoded_size_bytes,
+        sample_rate,
+        channels,
+        duration_seconds,
+        frame_count,
+        source_encoding,
+        decoder,
+        native_decode_error,
+    ) = match decoded {
+        Ok(decoded) => {
+            ensure_bytes_at_most(decoded.wav_bytes.len() as u64, MAX_NATIVE_CACHE_ASSET_BYTES, "Decoded audio is too large for this release. Try a shorter file or wait for native streaming support.")?;
+            let decoded_size_bytes = decoded.wav_bytes.len() as u64;
+            (
+                decoded.wav_bytes,
+                Some("audio/wav".to_string()),
+                Some("audio/wav".to_string()),
+                decoded_size_bytes,
+                decoded.sample_rate,
+                decoded.channels,
+                decoded.duration_seconds,
+                decoded.frame_count,
+                decoded.format,
+                native_decode::SYMPHONIA_DECODER_LABEL.to_string(),
+                None,
+            )
+        }
+        Err(err) => (
+            source_bytes,
+            source_mime_type.clone(),
+            None,
+            0,
+            0,
+            0,
+            0.0,
+            0,
+            audio_extension(&path_buf).unwrap_or_else(|| "unknown".to_string()),
+            "browser-decode-fallback".to_string(),
+            Some(err),
+        ),
+    };
     Ok(AudioMediaPayload {
         label: file_label(&path_buf),
         path: path_buf.to_string_lossy().to_string(),
-        mime_type: audio_mime_type(&path_buf),
-        size_bytes,
+        mime_type,
+        size_bytes: bytes.len() as u64,
         bytes,
+        source_mime_type,
+        source_size_bytes,
+        source_encoding,
+        decoded_mime_type,
+        decoded_size_bytes,
+        sample_rate,
+        channels,
+        duration_seconds,
+        frame_count,
+        decoder,
+        native_decode_error,
     })
 }
 
@@ -925,7 +1002,8 @@ fn collect_project_media(
             ));
         }
         ensure_file_size_at_most(&source, MAX_AUDIO_FILE_BYTES, "Media file is too large to collect in this release. Try a shorter file or keep it external until native streaming support lands.")?;
-        let target = resolve_project_relative_path(project_dir, &item.target_relative_path)?;
+        let target_relative_path = normalize_project_media_relative_path(&item.target_relative_path)?;
+        let target = resolve_project_relative_path(project_dir, &target_relative_path)?;
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|err| format!("Could not create project media folder: {}", err))?;
@@ -936,7 +1014,7 @@ fn collect_project_media(
             id: item.id,
             source_uri: item.source_uri,
             target_path: target.to_string_lossy().to_string(),
-            target_relative_path: item.target_relative_path,
+            target_relative_path,
             size_bytes,
         });
     }
@@ -1150,6 +1228,46 @@ fn write_project_file(path: String, contents: String) -> Result<ProjectFileSaveR
     })
 }
 
+#[derive(serde::Serialize)]
+struct BinaryFileSaveResult {
+    label: String,
+    path: String,
+    #[serde(rename = "bytesWritten")]
+    bytes_written: u64,
+}
+
+#[tauri::command]
+fn save_binary_file_as(
+    default_name: String,
+    bytes: Vec<u8>,
+) -> Result<Option<BinaryFileSaveResult>, String> {
+    ensure_bytes_at_most(
+        bytes.len() as u64,
+        MAX_BINARY_EXPORT_BYTES,
+        "Export file is too large for this release.",
+    )?;
+    ensure_zip_payload(&bytes)?;
+    let default_name = safe_binary_export_name(&default_name);
+    let file = rfd::FileDialog::new()
+        .add_filter("ZIP archive", &["zip"])
+        .set_file_name(default_name)
+        .save_file();
+    let Some(path) = file else {
+        return Ok(None);
+    };
+    let path = ensure_extension(path, "zip");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|err| format!("Could not create export folder: {err}"))?;
+    }
+    std::fs::write(&path, &bytes).map_err(|err| format!("Could not save export file: {err}"))?;
+    Ok(Some(BinaryFileSaveResult {
+        label: file_label(&path),
+        path: path.to_string_lossy().to_string(),
+        bytes_written: bytes.len() as u64,
+    }))
+}
+
 #[tauri::command]
 fn discover_project_recovery(path: String) -> Result<project_files::ProjectRecoveryState, String> {
     Ok(project_files::discover_project_recovery(
@@ -1358,11 +1476,50 @@ fn file_label(path: &std::path::Path) -> String {
         .to_string()
 }
 
-fn audio_mime_type(path: &std::path::Path) -> Option<String> {
-    let ext = path
+fn safe_binary_export_name(default_name: &str) -> String {
+    let file_name = std::path::Path::new(default_name)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("pocket-daw-export.zip");
+    let cleaned = file_name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ' ') {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches([' ', '.', '-'])
+        .to_string();
+    let with_fallback = if cleaned.is_empty() {
+        "pocket-daw-export.zip".to_string()
+    } else {
+        cleaned
+    };
+    if with_fallback.to_ascii_lowercase().ends_with(".zip") {
+        with_fallback
+    } else {
+        format!("{with_fallback}.zip")
+    }
+}
+
+fn ensure_extension(path: std::path::PathBuf, ext: &str) -> std::path::PathBuf {
+    if path
         .extension()
-        .and_then(|value| value.to_str())?
-        .to_ascii_lowercase();
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case(ext))
+    {
+        return path;
+    }
+    let mut next = path;
+    next.set_extension(ext);
+    next
+}
+
+fn audio_mime_type(path: &std::path::Path) -> Option<String> {
+    let ext = audio_extension(path)?;
     match ext.as_str() {
         "wav" => Some("audio/wav".to_string()),
         "mp3" => Some("audio/mpeg".to_string()),
@@ -1371,6 +1528,13 @@ fn audio_mime_type(path: &std::path::Path) -> Option<String> {
         "aiff" | "aif" => Some("audio/aiff".to_string()),
         _ => None,
     }
+}
+
+fn audio_extension(path: &std::path::Path) -> Option<String> {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.trim_start_matches('.').to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
 }
 
 fn downloads_dir() -> Option<std::path::PathBuf> {
@@ -1453,6 +1617,24 @@ fn resolve_project_relative_path(
     Ok(project_dir.join(relative_path))
 }
 
+fn normalize_project_media_relative_path(relative: &str) -> Result<String, String> {
+    let normalized = relative.replace('\\', "/");
+    let mut parts = Vec::new();
+    for part in normalized.split('/') {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        if part == ".." {
+            return Err("Project media target cannot escape the project folder.".to_string());
+        }
+        parts.push(part);
+    }
+    if parts.is_empty() {
+        return Err("Project media target must include a file name.".to_string());
+    }
+    Ok(parts.join("/"))
+}
+
 fn native_cache_asset_path(
     project_file_path: &str,
     relative_path: &str,
@@ -1521,6 +1703,20 @@ fn ensure_bytes_at_most(size: u64, max_bytes: u64, message: &str) -> Result<(), 
         ));
     }
     Ok(())
+}
+
+fn ensure_zip_payload(bytes: &[u8]) -> Result<(), String> {
+    if bytes.len() >= 4
+        && bytes[0] == b'P'
+        && bytes[1] == b'K'
+        && matches!(
+            (bytes[2], bytes[3]),
+            (0x03, 0x04) | (0x05, 0x06) | (0x07, 0x08)
+        )
+    {
+        return Ok(());
+    }
+    Err("Export file must be a ZIP archive.".to_string())
 }
 
 fn bytes_to_mb(bytes: u64) -> u64 {
@@ -1596,7 +1792,7 @@ mod tests {
             vec![CollectProjectMediaItem {
                 id: "media_001".to_string(),
                 source_uri: source.to_string_lossy().to_string(),
-                target_relative_path: "project-media/Loop.wav".to_string(),
+                target_relative_path: r".\project-media\Loop.wav".to_string(),
             }],
         )
         .expect("collect should copy media");
@@ -1720,6 +1916,36 @@ mod tests {
             ensure_bytes_at_most(11, 10, "Too large").expect_err("oversized payload should fail");
         assert!(error.contains("Too large"));
         assert!(error.contains("Limit"));
+    }
+
+    #[test]
+    fn binary_export_payloads_must_be_zip_archives() {
+        assert!(ensure_zip_payload(&[b'P', b'K', 0x03, 0x04, 0]).is_ok());
+        assert!(ensure_zip_payload(&[b'P', b'K', 0x05, 0x06, 0]).is_ok());
+
+        let error = ensure_zip_payload(b"not a zip").expect_err("plain bytes should be rejected");
+        assert!(error.contains("ZIP archive"));
+        assert!(ensure_zip_payload(&[]).is_err());
+    }
+
+    #[test]
+    fn binary_export_names_are_sanitized_and_zip_suffixed() {
+        assert_eq!(safe_binary_export_name("My Pack.zip"), "My Pack.zip");
+        assert_eq!(safe_binary_export_name(r"..\bad/name"), "name.zip");
+        assert_eq!(safe_binary_export_name("bad:name"), "bad-name.zip");
+        assert_eq!(safe_binary_export_name(""), "pocket-daw-export.zip");
+    }
+
+    #[test]
+    fn binary_export_paths_keep_or_add_zip_extension() {
+        assert!(
+            ensure_extension(std::path::PathBuf::from("Pack.zip"), "zip")
+                .to_string_lossy()
+                .ends_with("Pack.zip")
+        );
+        assert!(ensure_extension(std::path::PathBuf::from("Pack"), "zip")
+            .to_string_lossy()
+            .ends_with("Pack.zip"));
     }
 
     #[test]

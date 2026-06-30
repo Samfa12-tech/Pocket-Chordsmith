@@ -1,6 +1,13 @@
 import type { Clip, MediaPoolItem, PocketDawProject } from "../daw/schema";
 import { barsToSeconds } from "../daw/timeline";
 import { trackIsAudible } from "../daw/tracks";
+import { clipAutomationPath, evaluateAutomationLane, interpolateAutomationValue } from "../daw/automation";
+
+export interface AudioRegionGainAutomationPoint {
+  localSeconds: number;
+  value: number;
+  curve?: "linear" | "hold" | "ease-in" | "ease-out";
+}
 
 export interface AudioRegion {
   clipId: string;
@@ -10,8 +17,11 @@ export interface AudioRegion {
   sourceOffsetSeconds: number;
   durationSeconds: number;
   gain: number;
+  phaseMultiplier: number;
+  reversed: boolean;
   fadeInSeconds: number;
   fadeOutSeconds: number;
+  gainAutomation?: AudioRegionGainAutomationPoint[];
 }
 
 export interface AudioFadeEnvelope {
@@ -29,6 +39,8 @@ export interface AudioClipProperties extends AudioFadeEnvelope {
   sourceOffsetSeconds: number;
   durationSeconds: number;
   gain: number;
+  phaseMultiplier: number;
+  reversed: boolean;
   diagnostics: AudioClipPropertyDiagnostic[];
 }
 
@@ -39,6 +51,11 @@ export interface RenderedAudioTimeline {
 
 export interface RenderTimelineAudioRegionsOptions {
   includeMutedTracks?: boolean;
+}
+
+export interface AudioRegionPlaybackWindow {
+  sourceOffsetSeconds: number;
+  durationSeconds: number;
 }
 
 export function renderTimelineAudioRegions(project: PocketDawProject, options: RenderTimelineAudioRegionsOptions = {}): RenderedAudioTimeline {
@@ -72,8 +89,11 @@ export function audioRegionFromClip(project: PocketDawProject, clip: Clip, media
     sourceOffsetSeconds: properties.sourceOffsetSeconds,
     durationSeconds: properties.durationSeconds,
     gain: properties.gain,
+    phaseMultiplier: properties.phaseMultiplier,
+    reversed: properties.reversed,
     fadeInSeconds: properties.fadeInSeconds,
-    fadeOutSeconds: properties.fadeOutSeconds
+    fadeOutSeconds: properties.fadeOutSeconds,
+    gainAutomation: gainAutomationFromClip(project, clip, properties.gain, properties.durationSeconds)
   };
 }
 
@@ -104,6 +124,8 @@ export function normalizeAudioClipProperties(project: PocketDawProject, clip: Cl
     sourceOffsetSeconds,
     durationSeconds,
     gain,
+    phaseMultiplier: metadata.invertPhase === true ? -1 : 1,
+    reversed: metadata.reversed === true,
     fadeInSeconds: fade.fadeInSeconds,
     fadeOutSeconds: fade.fadeOutSeconds,
     diagnostics
@@ -123,10 +145,11 @@ export function normalizeAudioFade(durationSeconds: number, fadeInSeconds: numbe
   return { fadeInSeconds: fadeIn, fadeOutSeconds: fadeOut };
 }
 
-export function audioRegionEnvelopeGainAt(region: Pick<AudioRegion, "durationSeconds" | "gain" | "fadeInSeconds" | "fadeOutSeconds">, localSeconds: number): number {
+export function audioRegionEnvelopeGainAt(region: Pick<AudioRegion, "durationSeconds" | "gain" | "fadeInSeconds" | "fadeOutSeconds"> & Partial<Pick<AudioRegion, "phaseMultiplier" | "gainAutomation">>, localSeconds: number): number {
   const duration = Math.max(0, region.durationSeconds);
   const local = Math.max(0, Math.min(duration, localSeconds));
-  const baseGain = Math.max(0, region.gain);
+  const baseGain = Math.max(0, audioRegionGainAutomationAt(region, local));
+  const phaseMultiplier = region.phaseMultiplier === -1 ? -1 : 1;
   const fade = normalizeAudioFade(duration, region.fadeInSeconds, region.fadeOutSeconds);
   if (duration <= 0 || baseGain <= 0) return 0;
   let multiplier = 1;
@@ -139,7 +162,7 @@ export function audioRegionEnvelopeGainAt(region: Pick<AudioRegion, "durationSec
       multiplier = Math.min(multiplier, Math.max(0, (duration - local) / fade.fadeOutSeconds));
     }
   }
-  return baseGain * multiplier;
+  return baseGain * multiplier * phaseMultiplier;
 }
 
 export function scheduleAudioRegionEnvelope(param: AudioParam, region: AudioRegion, when: number, sourceElapsed: number, scheduledDuration: number): void {
@@ -148,17 +171,102 @@ export function scheduleAudioRegionEnvelope(param: AudioParam, region: AudioRegi
   if (endLocal <= startLocal) return;
   param.cancelScheduledValues(when);
   param.setValueAtTime(audioRegionEnvelopeGainAt(region, startLocal), when);
+  const schedulePoints = audioRegionEnvelopeSchedulePoints(region, startLocal, endLocal);
+  schedulePoints.forEach((local) => {
+    if (local <= startLocal || local >= endLocal) return;
+    param.linearRampToValueAtTime(audioRegionEnvelopeGainAt(region, local), when + local - startLocal);
+  });
   const fade = normalizeAudioFade(region.durationSeconds, region.fadeInSeconds, region.fadeOutSeconds);
+  const signedGain = Math.max(0, audioRegionGainAutomationAt(region, Math.min(fade.fadeInSeconds, endLocal))) * (region.phaseMultiplier === -1 ? -1 : 1);
   if (fade.fadeInSeconds > startLocal && fade.fadeInSeconds < endLocal) {
-    param.linearRampToValueAtTime(Math.max(0, region.gain), when + fade.fadeInSeconds - startLocal);
+    param.linearRampToValueAtTime(signedGain, when + fade.fadeInSeconds - startLocal);
   }
   const fadeOutStart = region.durationSeconds - fade.fadeOutSeconds;
   if (fade.fadeOutSeconds > 0 && fadeOutStart > startLocal && fadeOutStart < endLocal) {
-    param.setValueAtTime(Math.max(0, region.gain), when + fadeOutStart - startLocal);
+    param.setValueAtTime(signedGain, when + fadeOutStart - startLocal);
   }
   if (fade.fadeOutSeconds > 0 && endLocal > fadeOutStart) {
     param.linearRampToValueAtTime(audioRegionEnvelopeGainAt(region, endLocal), when + endLocal - startLocal);
   }
+}
+
+export function audioRegionPlaybackWindow(region: AudioRegion, sourceDurationSeconds: number, sourceElapsed: number): AudioRegionPlaybackWindow | null {
+  const elapsed = Math.max(0, sourceElapsed);
+  const sourceDuration = Math.max(0, sourceDurationSeconds);
+  const remainingRegion = Math.max(0, region.durationSeconds - elapsed);
+  if (remainingRegion <= 0 || sourceDuration <= 0) return null;
+  const offset = region.reversed
+    ? sourceDuration - (region.sourceOffsetSeconds + region.durationSeconds) + elapsed
+    : region.sourceOffsetSeconds + elapsed;
+  const sourceOffsetSeconds = Math.max(0, offset);
+  if (sourceOffsetSeconds >= sourceDuration) return null;
+  const durationSeconds = Math.min(remainingRegion, Math.max(0, sourceDuration - sourceOffsetSeconds));
+  return durationSeconds > 0 ? { sourceOffsetSeconds, durationSeconds } : null;
+}
+
+export function audioBufferForRegionPlayback(ctx: BaseAudioContext, buffer: AudioBuffer, region: Pick<AudioRegion, "reversed">): AudioBuffer {
+  if (!region.reversed) return buffer;
+  const reversed = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+  for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+    const source = buffer.getChannelData(channel);
+    const target = reversed.getChannelData(channel);
+    for (let index = 0; index < source.length; index += 1) {
+      target[index] = source[source.length - 1 - index] || 0;
+    }
+  }
+  return reversed;
+}
+
+function gainAutomationFromClip(project: PocketDawProject, clip: Clip, fallbackGain: number, durationSeconds: number): AudioRegionGainAutomationPoint[] | undefined {
+  const lane = project.automation.lanes.find((item) => item.targetPath === clipAutomationPath(clip.id, "gain"));
+  if (!lane?.enabled || !lane.points.length) return undefined;
+  const points = lane.points.slice().sort((a, b) => a.bar - b.bar || (a.beat || 0) - (b.beat || 0) || (a.tick || 0) - (b.tick || 0));
+  const duration = Math.max(0, durationSeconds);
+  const startCurve = points.filter((point) => point.bar <= clip.startBar).at(-1)?.curve || points[0]?.curve || "linear";
+  const localPoints = [
+    { localSeconds: 0, value: evaluateAutomationLane(lane, clip.startBar, fallbackGain), curve: startCurve },
+    ...points
+      .map((point) => ({
+        localSeconds: barsToSeconds(point.bar - clip.startBar, project.project.bpm, project.project.timeSig),
+        value: point.value,
+        curve: point.curve
+      }))
+      .filter((point) => point.localSeconds > 0 && point.localSeconds < duration),
+    { localSeconds: duration, value: evaluateAutomationLane(lane, clip.startBar + clip.barLength, fallbackGain), curve: "linear" as const }
+  ];
+  return localPoints.map((point) => ({
+    localSeconds: Math.max(0, Math.min(duration, point.localSeconds)),
+    value: Math.max(0, Math.min(4, Number.isFinite(point.value) ? point.value : fallbackGain)),
+    curve: point.curve === "hold" ? "hold" : point.curve === "ease-in" || point.curve === "ease-out" ? point.curve : "linear"
+  }));
+}
+
+function audioRegionGainAutomationAt(region: Pick<AudioRegion, "gain"> & Partial<Pick<AudioRegion, "gainAutomation">>, localSeconds: number): number {
+  const points = (region.gainAutomation || []).slice().sort((a, b) => a.localSeconds - b.localSeconds);
+  if (!points.length) return region.gain;
+  const local = Math.max(0, localSeconds);
+  if (local <= points[0].localSeconds) return points[0].value;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (local >= a.localSeconds && local <= b.localSeconds) {
+      if (a.curve === "hold") return a.value;
+      const t = (local - a.localSeconds) / Math.max(0.0001, b.localSeconds - a.localSeconds);
+      return interpolateAutomationValue(a.value, b.value, t, a.curve);
+    }
+  }
+  return points[points.length - 1].value;
+}
+
+function audioRegionEnvelopeSchedulePoints(region: AudioRegion, startLocal: number, endLocal: number): number[] {
+  const points = new Set<number>();
+  const fade = normalizeAudioFade(region.durationSeconds, region.fadeInSeconds, region.fadeOutSeconds);
+  points.add(fade.fadeInSeconds);
+  points.add(region.durationSeconds - fade.fadeOutSeconds);
+  (region.gainAutomation || []).forEach((point) => points.add(point.localSeconds));
+  const step = 0.1;
+  for (let local = Math.ceil(startLocal / step) * step; local < endLocal; local += step) points.add(Number(local.toFixed(3)));
+  return Array.from(points).filter((point) => point > startLocal && point < endLocal).sort((a, b) => a - b);
 }
 
 function cleanNumber(value: unknown, fallback: number): number {

@@ -18,16 +18,75 @@ describe("native media bridge", () => {
       isAvailable: () => true,
       async invoke(command, args) {
         calls.push({ command, args });
-        return { path: "C:\\Audio\\Loop.wav", label: "Loop.wav", mimeType: "audio/wav", sizeBytes: 4, bytes: [1, 2, 3, 4] } as never;
+        const isRead = command === "read_audio_media_file";
+        return {
+          path: isRead ? "C:\\Songs\\project-media\\Loop.wav" : "C:\\Audio\\Loop.flac",
+          label: isRead ? "Loop.wav" : "Loop.flac",
+          mimeType: "audio/wav",
+          sizeBytes: 44,
+          bytes: [82, 73, 70, 70],
+          sourceMimeType: "audio/flac",
+          sourceSizeBytes: 4,
+          sourceEncoding: "flac",
+          decodedMimeType: "audio/wav",
+          decodedSizeBytes: 44,
+          sampleRate: 48000,
+          channels: 2,
+          durationSeconds: 1.5,
+          frameCount: 72000,
+          decoder: "symphonia-0.6"
+        } as never;
       }
     };
 
-    await expect(importAudioMediaNative(api)).resolves.toMatchObject({ name: "Loop.wav", uri: "C:\\Audio\\Loop.wav", mode: "native" });
-    await expect(relinkAudioMediaNative(api)).resolves.toMatchObject({ name: "Loop.wav", uri: "C:\\Audio\\Loop.wav", mode: "native" });
+    await expect(importAudioMediaNative(api)).resolves.toMatchObject({
+      name: "Loop.flac",
+      uri: "C:\\Audio\\Loop.flac",
+      mode: "native",
+      mimeType: "audio/wav",
+      sourceMimeType: "audio/flac",
+      sourceSizeBytes: 4,
+      sourceEncoding: "flac",
+      decodedMimeType: "audio/wav",
+      decodedSizeBytes: 44,
+      sampleRate: 48000,
+      channels: 2,
+      durationSeconds: 1.5,
+      frameCount: 72000,
+      decoder: "symphonia-0.6"
+    });
+    await expect(relinkAudioMediaNative(api)).resolves.toMatchObject({ name: "Loop.flac", uri: "C:\\Audio\\Loop.flac", mode: "native" });
     await expect(loadAudioMediaNative("project-media/Loop.wav", "C:\\Songs\\Song.pocketdaw", api)).resolves.toMatchObject({ name: "Loop.wav", mode: "native" });
 
     expect(calls.map((call) => call.command)).toEqual(["open_audio_media_file", "open_audio_media_file", "read_audio_media_file"]);
     expect(calls[2].args).toMatchObject({ path: "project-media/Loop.wav", projectFilePath: "C:\\Songs\\Song.pocketdaw" });
+  });
+
+  it("passes native decode fallback errors through for browser decoding", async () => {
+    const api: NativeMediaApi = {
+      isAvailable: () => true,
+      async invoke() {
+        return {
+          path: "C:\\Audio\\Odd.mp3",
+          label: "Odd.mp3",
+          mimeType: "audio/mpeg",
+          sizeBytes: 4,
+          bytes: [1, 2, 3, 4],
+          sourceMimeType: "audio/mpeg",
+          sourceSizeBytes: 4,
+          sourceEncoding: "mp3",
+          decoder: "browser-decode-fallback",
+          nativeDecodeError: "Symphonia could not decode audio packet"
+        } as never;
+      }
+    };
+
+    await expect(importAudioMediaNative(api)).resolves.toMatchObject({
+      mimeType: "audio/mpeg",
+      decodedMimeType: undefined,
+      decoder: "browser-decode-fallback",
+      nativeDecodeError: "Symphonia could not decode audio packet"
+    });
   });
 
   it("sends collect-media requests to the native runtime", async () => {

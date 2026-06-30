@@ -20,9 +20,17 @@ export interface MediaPoolStatus {
   unresolved: boolean;
   runtimeAvailable: boolean;
   runtimeOnly: boolean;
+  cacheReloadable: boolean;
   reloadable: boolean;
   relinkable: boolean;
   label: string;
+}
+
+export interface MediaPoolReloadCandidate {
+  path: string;
+  kind: "source" | "decoded-cache";
+  label: string;
+  projectRelative: boolean;
 }
 
 export interface CollectMediaPlanItem {
@@ -44,12 +52,60 @@ export interface CollectMediaPlan {
   notes: string[];
 }
 
+export interface MediaPortabilitySummary {
+  totalMediaCount: number;
+  audioMediaCount: number;
+  alreadyProjectCount: number;
+  copyableExternalCount: number;
+  blockedCount: number;
+  runtimeOnlyCount: number;
+  missingOrUnresolvedCount: number;
+  needsCollectionOrRelinkCount: number;
+  embeddedSourceProjectPortable: boolean;
+}
+
 export interface CollectedMediaItem {
   id: string;
   sourceUri: string;
   targetPath: string;
   targetRelativePath: string;
   sizeBytes?: number;
+}
+
+export interface LinkFreezeRenderCacheInput {
+  sourceClipId: string;
+  mediaPoolItemId: string;
+  createdAt?: string;
+  profileId?: string;
+  metadata?: JsonObject;
+}
+
+export interface RenderCacheSummary {
+  totalCount: number;
+  activeCount: number;
+  invalidatedCount: number;
+  linkedMediaCount: number;
+  unlinkedCount: number;
+  freezeRenderCount: number;
+  nativeGeneratedStemCount: number;
+  nativeRuntimeAudioCount: number;
+  latestCreatedAt: string | null;
+  byKind: Record<string, number>;
+}
+
+export interface AudioMediaAnalysisSummary {
+  audioMediaCount: number;
+  audioClipCount: number;
+  waveformReadyCount: number;
+  waveformMissingCount: number;
+  waveformPeakPointCount: number;
+  maxPeak: number | null;
+  normalizeReadyClipCount: number;
+  clipsMissingWaveformCount: number;
+  staleAnalysisCount: number;
+  decodedCacheCount: number;
+  transientReadyCount: number;
+  transientMarkerCount: number;
 }
 
 export function addMediaPoolItem(project: PocketDawProject, item: MediaPoolItem): PocketDawProject {
@@ -119,12 +175,13 @@ export function markMediaPoolItemExternal(project: PocketDawProject, id: string,
 export function markMediaPoolItemCollected(project: PocketDawProject, collected: CollectedMediaItem): PocketDawProject {
   const item = findMediaPoolItem(project, collected.id);
   if (!item) return project;
+  const targetRelativePath = normalizeProjectRelativeMediaPath(collected.targetRelativePath) || projectMediaRelativePath(item);
   return updateMediaPoolItem(project, collected.id, {
-    uri: collected.targetRelativePath,
+    uri: targetRelativePath,
     sizeBytes: cleanOptionalNumber(collected.sizeBytes) ?? item.sizeBytes,
     metadata: {
       mediaRefKind: "project",
-      projectRelativePath: collected.targetRelativePath,
+      projectRelativePath: targetRelativePath,
       collectedAt: new Date().toISOString(),
       originalUri: item.metadata?.originalUri || collected.sourceUri,
       external: false,
@@ -136,24 +193,44 @@ export function markMediaPoolItemCollected(project: PocketDawProject, collected:
   });
 }
 
+export function normalizeProjectRelativeMediaPath(path: string): string {
+  const raw = String(path || "").trim().replace(/^project:\/\/media\//i, "project-media/");
+  if (!raw || /^[a-z]+:/i.test(raw) || /^[a-z]:[\\/]/i.test(raw) || raw.startsWith("/") || raw.startsWith("\\\\")) return "";
+  const normalized = raw
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part && part !== ".")
+    .join("/");
+  const parts = normalized.split("/");
+  if (parts.some((part) => part === "..")) return "";
+  if (!normalized.startsWith("project-media/") && !normalized.startsWith("project-cache/")) return "";
+  return normalized;
+}
+
 export function markMediaPoolItemRelinked(project: PocketDawProject, id: string, source: { uri: string; name?: string; sizeBytes?: number; mimeType?: string }): PocketDawProject {
   const item = findMediaPoolItem(project, id);
   if (!item) return project;
-  return updateMediaPoolItem(project, id, {
-    name: source.name || item.name,
-    uri: source.uri,
-    sizeBytes: cleanOptionalNumber(source.sizeBytes) ?? item.sizeBytes,
-    mimeType: source.mimeType || item.mimeType,
-    metadata: {
-      mediaRefKind: "external",
-      originalUri: source.uri,
-      external: true,
-      runtimeOnly: false,
-      missing: false,
-      unresolved: false,
-      relinkedAt: new Date().toISOString()
-    }
-  });
+  const next = cloneProject(project);
+  const nextItem = next.mediaPool.find((entry) => entry.id === id);
+  if (!nextItem) return project;
+  nextItem.name = source.name || item.name;
+  nextItem.uri = source.uri;
+  nextItem.sizeBytes = cleanOptionalNumber(source.sizeBytes) ?? item.sizeBytes;
+  nextItem.mimeType = source.mimeType || item.mimeType;
+  nextItem.metadata = {
+    ...metadataWithoutSourceDerivedFields(item.metadata),
+    mediaRefKind: "external",
+    originalUri: source.uri,
+    external: true,
+    runtimeOnly: false,
+    missing: false,
+    unresolved: false,
+    relinkedAt: new Date().toISOString(),
+    analysisInvalidated: true,
+    waveformNeedsRefresh: true
+  };
+  return next;
 }
 
 export function removeUnusedMediaPoolItem(project: PocketDawProject, id: string): { project: PocketDawProject; removed: boolean; reason?: string } {
@@ -173,6 +250,92 @@ export function renderCacheItemsForMedia(project: PocketDawProject, mediaPoolIte
   return project.renderCache.filter((item) => item.mediaPoolItemId === mediaPoolItemId);
 }
 
+export function createRenderCacheSummary(project: PocketDawProject): RenderCacheSummary {
+  const byKind: Record<string, number> = {};
+  let latestCreatedAt: string | null = null;
+  project.renderCache.forEach((item) => {
+    const kind = metadataString(item.metadata?.cacheKind) || "unknown";
+    byKind[kind] = (byKind[kind] || 0) + 1;
+    if (item.createdAt && (!latestCreatedAt || item.createdAt > latestCreatedAt)) latestCreatedAt = item.createdAt;
+  });
+  return {
+    totalCount: project.renderCache.length,
+    activeCount: project.renderCache.filter((item) => !item.invalidated).length,
+    invalidatedCount: project.renderCache.filter((item) => item.invalidated).length,
+    linkedMediaCount: project.renderCache.filter((item) => !!item.mediaPoolItemId).length,
+    unlinkedCount: project.renderCache.filter((item) => !item.mediaPoolItemId).length,
+    freezeRenderCount: byKind["freeze-render"] || 0,
+    nativeGeneratedStemCount: byKind["native-generated-stem"] || 0,
+    nativeRuntimeAudioCount: byKind["native-runtime-audio"] || 0,
+    latestCreatedAt,
+    byKind
+  };
+}
+
+export function createAudioMediaAnalysisSummary(project: PocketDawProject): AudioMediaAnalysisSummary {
+  const audioItems = project.mediaPool.filter((item) => item.kind === "audio");
+  const peaksByMediaId = new Map(audioItems.map((item) => [item.id, waveformPeaksFromMetadata(item.metadata?.waveformPeaks)]));
+  const waveformReady = audioItems.filter((item) => (peaksByMediaId.get(item.id) || []).length > 0);
+  const transientMarkersByMediaId = new Map(audioItems.map((item) => [item.id, transientMarkersFromMetadata(item.metadata?.audioTransientMarkersSeconds)]));
+  const transientReady = audioItems.filter((item) => (transientMarkersByMediaId.get(item.id) || []).length > 0);
+  const peakPointCount = waveformReady.reduce((sum, item) => sum + (peaksByMediaId.get(item.id) || []).length, 0);
+  const transientMarkerCount = transientReady.reduce((sum, item) => sum + (transientMarkersByMediaId.get(item.id) || []).length, 0);
+  const maxPeak = waveformReady.reduce<number | null>((current, item) => {
+    const peaks = peaksByMediaId.get(item.id) || [];
+    const itemPeak = peaks.reduce((peak, value) => Math.max(peak, value), 0);
+    return current === null ? itemPeak : Math.max(current, itemPeak);
+  }, null);
+  const audioClips = project.timeline.clips.filter((clip) => clip.type === "audio" && !!clip.mediaPoolItemId);
+  const normalizeReadyClipCount = audioClips.filter((clip) => !!clip.mediaPoolItemId && (peaksByMediaId.get(clip.mediaPoolItemId) || []).length > 0).length;
+  return {
+    audioMediaCount: audioItems.length,
+    audioClipCount: audioClips.length,
+    waveformReadyCount: waveformReady.length,
+    waveformMissingCount: audioItems.length - waveformReady.length,
+    waveformPeakPointCount: peakPointCount,
+    maxPeak,
+    normalizeReadyClipCount,
+    clipsMissingWaveformCount: audioClips.length - normalizeReadyClipCount,
+    staleAnalysisCount: audioItems.filter((item) => item.metadata?.analysisInvalidated === true || item.metadata?.waveformNeedsRefresh === true).length,
+    decodedCacheCount: audioItems.filter((item) => !!metadataString(item.metadata?.nativeDecodedCacheRelativePath)).length,
+    transientReadyCount: transientReady.length,
+    transientMarkerCount
+  };
+}
+
+export function linkFreezeRenderCacheItem(project: PocketDawProject, input: LinkFreezeRenderCacheInput): PocketDawProject {
+  const media = findMediaPoolItem(project, input.mediaPoolItemId);
+  const sourceClip = project.timeline.clips.find((clip) => clip.id === input.sourceClipId);
+  if (!media || !sourceClip) return project;
+  const next = cloneProject(project);
+  const id = `freeze_${safeCacheId(input.sourceClipId)}_${safeCacheId(input.mediaPoolItemId)}`;
+  const item: RenderCacheItem = {
+    id,
+    sourceClipId: input.sourceClipId,
+    mediaPoolItemId: input.mediaPoolItemId,
+    profileId: input.profileId || "freeze-selected-clip-wav",
+    createdAt: input.createdAt || new Date().toISOString(),
+    invalidated: false,
+    metadata: {
+      cacheKind: "freeze-render",
+      sourceClipName: sourceClip.name,
+      sourceTrackId: sourceClip.trackId,
+      sourceStartBar: sourceClip.startBar,
+      sourceBarLength: sourceClip.barLength,
+      renderedMediaName: media.name,
+      renderedMediaUri: media.uri || "",
+      renderedDurationSeconds: media.durationSeconds || 0,
+      renderedSampleRate: media.sampleRate || 0,
+      renderedChannels: media.channels || 0,
+      renderedSizeBytes: media.sizeBytes || 0,
+      ...(input.metadata || {})
+    }
+  };
+  next.renderCache = next.renderCache.filter((entry) => entry.id !== id);
+  next.renderCache.push(item);
+  return next;
+}
+
 export function mediaPoolStatus(item: MediaPoolItem, runtimeAvailable = false): MediaPoolStatus {
   const metadata = item.metadata || {};
   const missing = metadata.missing === true;
@@ -180,8 +343,10 @@ export function mediaPoolStatus(item: MediaPoolItem, runtimeAvailable = false): 
   const runtimeOnly = metadata.runtimeOnly === true;
   const projectMedia = isProjectMediaItem(item);
   const external = !projectMedia && (metadata.external === true || isExternalUri(item.uri));
-  const reloadable = item.kind === "audio" && !runtimeOnly && !missing && !!item.uri && (external || projectMedia);
-  const relinkable = item.kind === "audio" && !runtimeOnly && (external || projectMedia || missing || unresolved);
+  const cacheReloadable = item.kind === "audio" && !runtimeOnly && !!normalizeProjectRelativeMediaPath(metadataString(metadata.nativeDecodedCacheRelativePath));
+  const sourceReloadable = item.kind === "audio" && !runtimeOnly && !missing && !!item.uri && (external || projectMedia);
+  const reloadable = sourceReloadable || cacheReloadable;
+  const relinkable = item.kind === "audio" && (runtimeOnly || external || projectMedia || missing || unresolved);
   const label = missing
     ? "Missing"
     : runtimeAvailable
@@ -193,14 +358,41 @@ export function mediaPoolStatus(item: MediaPoolItem, runtimeAvailable = false): 
           : external
             ? "External unloaded"
             : "Project media";
-  return { missing, unresolved, external, runtimeAvailable, runtimeOnly, reloadable, relinkable, label };
+  return { missing, unresolved, external, runtimeAvailable, runtimeOnly, cacheReloadable, reloadable, relinkable, label };
 }
 
 export function mediaPoolReloadPath(item: MediaPoolItem): string | null {
+  return mediaPoolReloadCandidates(item)[0]?.path || null;
+}
+
+export function mediaPoolReloadCandidates(item: MediaPoolItem): MediaPoolReloadCandidate[] {
   const status = mediaPoolStatus(item);
-  if (!status.reloadable) return null;
+  if (!status.reloadable || status.runtimeOnly || item.kind !== "audio") return [];
   const metadata = item.metadata || {};
-  return String(metadata.projectRelativePath || item.uri || "").trim() || null;
+  const candidates: MediaPoolReloadCandidate[] = [];
+  if (!status.missing && !status.unresolved && item.uri && (status.external || isProjectMediaItem(item))) {
+    const sourcePath = status.external
+      ? String(item.uri || "").trim()
+      : normalizeProjectRelativeMediaPath(String(metadata.projectRelativePath || item.uri || ""));
+    if (sourcePath) {
+      candidates.push({
+        path: sourcePath,
+        kind: "source",
+        label: status.external ? "original source" : "project media",
+        projectRelative: !status.external
+      });
+    }
+  }
+  const cachePath = normalizeProjectRelativeMediaPath(metadataString(metadata.nativeDecodedCacheRelativePath));
+  if (cachePath && !candidates.some((candidate) => sameReloadPath(candidate.path, cachePath))) {
+    candidates.push({
+      path: cachePath,
+      kind: "decoded-cache",
+      label: "decoded native cache",
+      projectRelative: true
+    });
+  }
+  return candidates;
 }
 
 export function createCollectMediaPlan(project: PocketDawProject): CollectMediaPlan {
@@ -221,7 +413,7 @@ export function createCollectMediaPlan(project: PocketDawProject): CollectMediaP
       return blockedPlanItem(item, item.uri, status.missing ? "Media is missing. Relink it before collecting." : "Media path is unresolved. Relink it before collecting.");
     }
     if (status.runtimeOnly) {
-      return blockedPlanItem(item, item.uri, "Browser runtime-only media has no durable path. Re-import or save from the native app before collecting.");
+      return blockedPlanItem(item, item.uri, "Browser runtime-only media has no durable path. Relink it in the installed app before collecting.");
     }
     if (!item.uri) {
       return blockedPlanItem(item, undefined, "No source URI is stored for this media item.");
@@ -255,6 +447,26 @@ export function createCollectMediaPlan(project: PocketDawProject): CollectMediaP
       "This is a deterministic collect-media plan. In the native app, Collect Media copies copyable files beside the saved project under project-media/.",
       "Browser runtime-only media cannot be collected because browsers do not expose a durable source path after import."
     ]
+  };
+}
+
+export function createMediaPortabilitySummary(project: PocketDawProject): MediaPortabilitySummary {
+  const plan = createCollectMediaPlan(project);
+  const audioItems = project.mediaPool.filter((item) => item.kind === "audio");
+  const statuses = project.mediaPool.map((item) => mediaPoolStatus(item));
+  const missingOrUnresolvedCount = statuses.filter((status) => status.missing || status.unresolved).length;
+  const runtimeOnlyCount = statuses.filter((status) => status.runtimeOnly).length;
+  const needsCollectionOrRelinkCount = plan.copy.length + plan.blocked.length;
+  return {
+    totalMediaCount: project.mediaPool.length,
+    audioMediaCount: audioItems.length,
+    alreadyProjectCount: plan.alreadyProject.length,
+    copyableExternalCount: plan.copy.length,
+    blockedCount: plan.blocked.length,
+    runtimeOnlyCount,
+    missingOrUnresolvedCount,
+    needsCollectionOrRelinkCount,
+    embeddedSourceProjectPortable: needsCollectionOrRelinkCount === 0
   };
 }
 
@@ -301,11 +513,73 @@ function isExternalUri(uri?: string): boolean {
   return /^(file|https?):/i.test(uri) || /^[a-z]:[\\/]/i.test(uri) || uri.startsWith("\\\\");
 }
 
+function metadataString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function metadataWithoutSourceDerivedFields(metadata: JsonObject | undefined): JsonObject {
+  const next = { ...(metadata || {}) };
+  [
+    "projectRelativePath",
+    "collectedAt",
+    "nativePath",
+    "waveformPeaks",
+    "sourceMimeType",
+    "sourceSizeBytes",
+    "sourceEncoding",
+    "decodedMimeType",
+    "decodedSizeBytes",
+    "nativeDecodedSampleRate",
+    "nativeDecodedChannels",
+    "nativeDecodedDurationSeconds",
+    "nativeDecodedFrameCount",
+    "nativeDecoder",
+    "nativeDecodeError",
+    "nativeDecoded",
+    "nativeDecodedCacheRelativePath",
+    "nativeDecodedCachePath",
+    "nativeDecodedCacheSizeBytes",
+    "nativeDecodedCacheKind",
+    "nativeDecodedCacheUpdatedAt",
+    "nativeDecodedCacheError",
+    "lastReloadSourceKind",
+    "lastReloadSourcePath",
+    "restoredFromNativeDecodedCache",
+    "audioTransientMarkersSeconds",
+    "audioTransientThreshold",
+    "audioTransientPeakCount",
+    "audioTransientMaxPeak",
+    "audioTransientUpdatedAt"
+  ].forEach((key) => {
+    delete next[key];
+  });
+  return next;
+}
+
+function waveformPeaksFromMetadata(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item) && item >= 0)
+    .map((item) => Math.min(1, item));
+}
+
+function transientMarkersFromMetadata(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item) && item >= 0);
+}
+
+function sameReloadPath(a: string, b: string): boolean {
+  return a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
+}
+
 function isProjectMediaItem(item: MediaPoolItem): boolean {
   const metadata = item.metadata || {};
-  if (metadata.mediaRefKind === "project" || metadata.projectRelativePath) return true;
+  if (normalizeProjectRelativeMediaPath(metadataString(metadata.projectRelativePath))) return true;
   const uri = item.uri || "";
-  return uri.startsWith("project://media/") || uri.startsWith("project-media/");
+  return !!normalizeProjectRelativeMediaPath(uri);
 }
 
 function blockedPlanItem(item: MediaPoolItem, sourceUri: string | undefined, reason: string): CollectMediaPlanItem {
@@ -326,4 +600,8 @@ function fileNameFromUri(uri?: string): string {
 function safeFileName(value: string): string {
   const name = value.trim().replace(/[<>:"/\\|?*\x00-\x1f]+/g, "-").replace(/\s+/g, " ").replace(/^\.+/, "").slice(0, 96);
   return name || "media-file";
+}
+
+function safeCacheId(value: string): string {
+  return value.trim().replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "").slice(0, 80) || "item";
 }

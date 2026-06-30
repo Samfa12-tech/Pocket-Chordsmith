@@ -10,6 +10,7 @@ export interface NativeRecordingStartPayload {
   monitorEnabled: boolean;
   monitorVolume: number;
   monitorPan: number;
+  channelMode: "mono" | "stereo";
   recordingSessionId?: number | null;
   startBar: number;
   requestedStartSeconds?: number | null;

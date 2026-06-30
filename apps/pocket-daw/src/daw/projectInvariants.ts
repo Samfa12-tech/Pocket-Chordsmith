@@ -1,4 +1,5 @@
 import type { ClipType, PocketDawProject } from "./schema";
+import { normalizeProjectRelativeMediaPath } from "./mediaPool";
 
 export type ProjectInvariantSeverity = "error" | "warning";
 
@@ -28,6 +29,7 @@ export function validateProjectInvariants(project: PocketDawProject): ProjectInv
   const clipIds = collectDuplicateIds(project.timeline.clips, "timeline.clips", add);
   const markerIds = collectDuplicateIds(project.timeline.markers, "timeline.markers", add);
   const mediaIds = collectDuplicateIds(project.mediaPool, "mediaPool", add);
+  const mediaById = new Map(project.mediaPool.map((item) => [item.id, item]));
   const laneIds = collectDuplicateIds(project.automation.lanes, "automation.lanes", add);
   collectDuplicateIds(project.sourceRefs, "sourceRefs", add);
 
@@ -81,6 +83,14 @@ export function validateProjectInvariants(project: PocketDawProject): ProjectInv
     if (clip.type === "audio") {
       if (!clip.mediaPoolItemId || !mediaIds.has(clip.mediaPoolItemId)) {
         add("error", "missing-clip-media", `${base}.mediaPoolItemId`, `Audio clip ${clip.id} references missing media ${clip.mediaPoolItemId || "(none)"}.`);
+      } else {
+        const media = mediaById.get(clip.mediaPoolItemId);
+        if (media?.metadata?.analysisInvalidated === true || media?.metadata?.waveformNeedsRefresh === true) {
+          add("warning", "stale-audio-waveform-analysis", `${base}.mediaPoolItemId`, `Audio clip ${clip.id} uses media ${media.id} with stale waveform analysis.`);
+        }
+        if (!hasWaveformPeaks(media?.metadata?.waveformPeaks)) {
+          add("warning", "missing-audio-waveform-analysis", `${base}.mediaPoolItemId`, `Audio clip ${clip.id} uses media ${clip.mediaPoolItemId} without waveform analysis.`);
+        }
       }
       const metadata = clip.metadata || {};
       for (const field of ["sourceOffsetSeconds", "durationSeconds", "fadeInSeconds", "fadeOutSeconds"] as const) {
@@ -88,6 +98,9 @@ export function validateProjectInvariants(project: PocketDawProject): ProjectInv
         if (value !== undefined && (!isFiniteNumber(value) || value < 0)) {
           add("error", "invalid-audio-clip-metadata", `${base}.metadata.${field}`, `Audio clip ${clip.id} has invalid ${field}.`);
         }
+      }
+      if (metadata.takeStatus !== undefined && metadata.takeStatus !== "active" && metadata.takeStatus !== "muted-take" && metadata.takeStatus !== "archived-take") {
+        add("warning", "invalid-audio-take-status", `${base}.metadata.takeStatus`, `Audio clip ${clip.id} has an unknown take status.`);
       }
     }
     if (clip.automationLaneId && !laneIds.has(clip.automationLaneId)) {
@@ -99,8 +112,21 @@ export function validateProjectInvariants(project: PocketDawProject): ProjectInv
   });
 
   project.mediaPool.forEach((item, index) => {
+    const base = `mediaPool[${index}]`;
     if (item.durationSeconds !== undefined && (!isFiniteNumber(item.durationSeconds) || item.durationSeconds < 0)) {
-      add("error", "invalid-media-duration", `mediaPool[${index}].durationSeconds`, `Media item ${item.id} has an invalid duration.`);
+      add("error", "invalid-media-duration", `${base}.durationSeconds`, `Media item ${item.id} has an invalid duration.`);
+    }
+    const projectRelativePath = metadataString(item.metadata?.projectRelativePath);
+    if (projectRelativePath && !normalizeProjectRelativeMediaPath(projectRelativePath)) {
+      add("warning", "unsafe-project-media-path", `${base}.metadata.projectRelativePath`, `Media item ${item.id} has an unsafe project-relative media path.`);
+    }
+    const decodedCachePath = metadataString(item.metadata?.nativeDecodedCacheRelativePath);
+    if (decodedCachePath && !normalizeProjectRelativeMediaPath(decodedCachePath)) {
+      add("warning", "unsafe-decoded-cache-path", `${base}.metadata.nativeDecodedCacheRelativePath`, `Media item ${item.id} has an unsafe decoded-cache path.`);
+    }
+    const uri = metadataString(item.uri);
+    if ((uri.startsWith("project-media") || uri.startsWith("project://media/") || uri.startsWith("project-cache")) && !normalizeProjectRelativeMediaPath(uri)) {
+      add("warning", "unsafe-project-media-uri", `${base}.uri`, `Media item ${item.id} has an unsafe project-relative URI.`);
     }
   });
 
@@ -149,6 +175,17 @@ function hasRoutingCycle(project: PocketDawProject, startId: string): boolean {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function hasWaveformPeaks(value: unknown): boolean {
+  return Array.isArray(value) && value.some((item) => {
+    const peak = Number(item);
+    return Number.isFinite(peak) && peak >= 0;
+  });
+}
+
+function metadataString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function isAllowedVirtualClipTrack(type: ClipType, trackId: string): boolean {

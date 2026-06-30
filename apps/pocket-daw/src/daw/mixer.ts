@@ -1,10 +1,13 @@
-import type { PocketDawProject } from "./schema";
+import type { PocketDawProject, RecordingChannelMode } from "./schema";
 import { cloneProject } from "./dawProject";
 import { addFxSlot, removeFxSlot, toggleFxSlot } from "./fx";
+import { generatedDrumBranchLane, setDrumLaneMute, setDrumLanePan, setDrumLaneSolo, setDrumLaneVolume, syncDrumBranchTrackMix } from "./drumLanes";
 
 export function setTrackVolume(project: PocketDawProject, trackId: string, volume: number): PocketDawProject {
   const next = cloneProject(project);
   const track = next.tracks.find((item) => item.id === trackId);
+  const branchLane = generatedDrumBranchLane(track);
+  if (branchLane) return syncDrumBranchTrackMix(setDrumLaneVolume(project, branchLane, volume), branchLane);
   if (track) track.volume = clamp(volume, 0, 1.2);
   return next;
 }
@@ -12,6 +15,8 @@ export function setTrackVolume(project: PocketDawProject, trackId: string, volum
 export function setTrackPan(project: PocketDawProject, trackId: string, pan: number): PocketDawProject {
   const next = cloneProject(project);
   const track = next.tracks.find((item) => item.id === trackId);
+  const branchLane = generatedDrumBranchLane(track);
+  if (branchLane) return syncDrumBranchTrackMix(setDrumLanePan(project, branchLane, pan), branchLane);
   if (track) track.pan = clamp(pan, -1, 1);
   return next;
 }
@@ -19,6 +24,8 @@ export function setTrackPan(project: PocketDawProject, trackId: string, pan: num
 export function toggleTrackMute(project: PocketDawProject, trackId: string): PocketDawProject {
   const next = cloneProject(project);
   const track = next.tracks.find((item) => item.id === trackId);
+  const branchLane = generatedDrumBranchLane(track);
+  if (branchLane) return syncDrumBranchTrackMix(setDrumLaneMute(project, branchLane, !track?.mute), branchLane);
   if (track && track.role !== "fx-return" && track.role !== "master") track.mute = !track.mute;
   return next;
 }
@@ -26,6 +33,8 @@ export function toggleTrackMute(project: PocketDawProject, trackId: string): Poc
 export function toggleTrackSolo(project: PocketDawProject, trackId: string): PocketDawProject {
   const next = cloneProject(project);
   const track = next.tracks.find((item) => item.id === trackId);
+  const branchLane = generatedDrumBranchLane(track);
+  if (branchLane) return syncDrumBranchTrackMix(setDrumLaneSolo(project, branchLane, !track?.solo), branchLane);
   if (track && track.role !== "fx-return" && track.role !== "master") track.solo = !track.solo;
   return next;
 }
@@ -65,6 +74,13 @@ export function setTrackInput(project: PocketDawProject, trackId: string, inputD
   const next = cloneProject(project);
   const track = next.tracks.find((item) => item.id === trackId);
   if (track) track.inputDeviceId = inputDeviceId;
+  return next;
+}
+
+export function setTrackRecordingChannelMode(project: PocketDawProject, trackId: string, mode: RecordingChannelMode): PocketDawProject {
+  const next = cloneProject(project);
+  const track = next.tracks.find((item) => item.id === trackId);
+  if (track && track.recordKind && track.recordKind !== "none") track.recordingChannelMode = mode;
   return next;
 }
 

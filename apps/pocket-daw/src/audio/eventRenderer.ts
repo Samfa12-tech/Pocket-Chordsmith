@@ -2,7 +2,8 @@ import type { Clip, JsonObject, PocketDawProject, TrackRole } from "../daw/schem
 import { sortClips } from "../daw/timeline";
 import { clipSourceStartBar } from "../daw/clips";
 import { midiDataFromClip } from "../daw/midiClips";
-import { getDrumLaneMix, type DrumLaneId } from "../daw/drumLanes";
+import { anyDrumLaneSolo, DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumBranchLaneSteps, getDrumLaneMix, type DrumLaneId } from "../daw/drumLanes";
+import { getMelodyOverlayEvents } from "../daw/melodyOverlays";
 import type { SanitizedPcsProject, SanitizedPcsSection } from "../compatibility/pcsSanitizer";
 import { chordsmithChordRhythmStarts } from "../../../../packages/pocket-audio-core/src/performance/chord-rhythm.js";
 import { chordsmithDrumPeak, chordsmithDrumStepDuration, chordsmithDrumTupletDuration } from "../../../../packages/pocket-audio-core/src/performance/drum-feel.js";
@@ -21,7 +22,7 @@ import {
 } from "../../../../packages/pocket-audio-core/src/music/pitches.js";
 import { DEFAULT_MELODY_INSTRUMENT } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { DEFAULT_GUITAR_STRUM_MODE } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
-import { CHORDSMITH_SEQUENCED_DRUM_LANE_IDS } from "../../../../packages/pocket-audio-core/src/sounds/drum-lanes.js";
+import { CHORDSMITH_SEQUENCED_DRUM_LANE_IDS, chordsmithLiveDrumPadPeak } from "../../../../packages/pocket-audio-core/src/sounds/drum-lanes.js";
 
 export type RenderedEventKind = DrumLaneId | "texture" | "bass" | "chord" | "melody" | "guitar" | "midi";
 type SequencedDrumLane = Exclude<keyof SanitizedPcsSection["grid"], "bass">;
@@ -39,6 +40,8 @@ export interface RenderedEvent {
   step: number;
   midi?: number;
   midiNotes?: number[];
+  channel?: number;
+  midiExportVelocity?: number;
   velocity: number;
   pan?: number;
   instrument?: string;
@@ -123,6 +126,10 @@ export function resolveMidiClip(project: PocketDawProject, clip: Clip, _context:
       const localStartTick = clippedStartTick - sourceStartTick;
       const skippedTicks = Math.max(0, sourceStartTick - note.startTick);
       const durationTicks = Math.max(1, Math.min(note.durationTicks - skippedTicks, renderTicks - localStartTick));
+      const channel = typeof note.channel === "number" ? note.channel : 0;
+      const midiExportVelocity = Math.max(0.05, Math.min(1, (note.velocity / 127) * (clip.transforms.gain ?? 1)));
+      const controllerVolume = midiControllerUnitAt(data.controllers, 7, clippedStartTick, channel, 1);
+      const controllerPan = midiControllerPanAt(data.controllers, clippedStartTick, channel);
       return {
         id: `${clip.id}_${note.id}`,
         clipId: clip.id,
@@ -134,13 +141,45 @@ export function resolveMidiClip(project: PocketDawProject, clip: Clip, _context:
         bar: clip.startBar + Math.floor(localStartTick / (data.ppq * project.project.timeSig)),
         step: Math.round(localStartTick),
         midi: Math.max(0, Math.min(127, note.pitch + (clip.transforms.transpose || 0) + (clip.transforms.octave || 0) * 12)),
-        velocity: Math.max(0.05, Math.min(1, (note.velocity / 127) * (clip.transforms.gain ?? 1))),
-        pan: 0,
+        channel,
+        midiExportVelocity,
+        velocity: Math.max(0, Math.min(1, midiExportVelocity * controllerVolume)),
+        pan: controllerPan,
         instrument: "midi_preview",
         articulation: "note",
         accent: note.velocity >= 104
       };
     });
+}
+
+function midiControllerUnitAt(controllers: ReturnType<typeof midiDataFromClip>["controllers"], controller: number, tick: number, channel: number, fallback: number): number {
+  const point = latestMidiControllerAt(controllers, controller, tick, channel);
+  return point ? Math.max(0, Math.min(1, point.value / 127)) : fallback;
+}
+
+function midiControllerPanAt(controllers: ReturnType<typeof midiDataFromClip>["controllers"], tick: number, channel: number): number {
+  const point = latestMidiControllerAt(controllers, 10, tick, channel);
+  if (!point) return 0;
+  return Math.max(-1, Math.min(1, ((point.value - 64) / 63)));
+}
+
+function latestMidiControllerAt(
+  controllers: ReturnType<typeof midiDataFromClip>["controllers"],
+  controller: number,
+  tick: number,
+  channel: number
+): ReturnType<typeof midiDataFromClip>["controllers"][number] | null {
+  let latest: ReturnType<typeof midiDataFromClip>["controllers"][number] | null = null;
+  for (const point of controllers) {
+    if (point.controller !== controller || (point.channel ?? 0) !== channel || point.tick > tick) continue;
+    if (!latest || point.tick > latest.tick || (point.tick === latest.tick && midiControllerOrder(point.id) >= midiControllerOrder(latest.id))) latest = point;
+  }
+  return latest;
+}
+
+function midiControllerOrder(id: string): number {
+  const match = id.match(/(\d+)$/);
+  return match ? Number(match[1]) : 0;
 }
 
 export function resolveAudioClip(_project: PocketDawProject, _clip: Clip, _context: RenderContext): RenderedEvent[] {
@@ -192,11 +231,12 @@ function renderGeneratedSectionEvents(
           tripletTimesForSpan(eventTime, spanDur).forEach((time, tripletIndex) => {
             const tripletLevel = tripletIndex === 2 ? nextLevel : level;
             if (tripletLevel <= 0) return;
+            const branchDrum = branchTargetDrumLane(project, drum, tripletLevel);
             const event = drumEvent(
               project,
               clip,
               pcs,
-              drum,
+              branchDrum,
               step,
               eventBar,
               humanizedTime(pcs, time, step + tripletIndex, seedForDrum(drum)),
@@ -204,16 +244,18 @@ function renderGeneratedSectionEvents(
               tripletLevel,
               clipGain,
               true,
-              step + tripletIndex
+              step + tripletIndex,
+              drum
             );
             if (event) out.push(event);
           });
         } else if (level > 0) {
+          const branchDrum = branchTargetDrumLane(project, drum, level);
           const event = drumEvent(
             project,
             clip,
             pcs,
-            drum,
+            branchDrum,
             step,
             eventBar,
             humanizedTime(pcs, eventTime, step, seedForDrum(drum)),
@@ -221,10 +263,33 @@ function renderGeneratedSectionEvents(
             level,
             clipGain,
             false,
-            step
+            step,
+            drum
           );
           if (event) out.push(event);
         }
+      });
+      DRUM_LANE_DEFS.forEach((lane) => {
+        const level = getDrumBranchLaneSteps(project, section.id, lane.id)[step] || 0;
+        if (level <= 0) return;
+        const event = drumEvent(
+          project,
+          clip,
+          pcs,
+          lane.id,
+          step,
+          eventBar,
+          humanizedTime(pcs, eventTime, step, seedForDrum(lane.id)),
+          branchDrumOverlayDuration(lane.id, stepDur),
+          level,
+          clipGain,
+          false,
+          step,
+          lane.id,
+          chordsmithLiveDrumPadPeak(lane.id, level),
+          "_branch_overlay"
+        );
+        if (event) out.push(event);
       });
     }
 
@@ -345,6 +410,30 @@ function renderGeneratedSectionEvents(
           slideOffset: phrase.slideOffset ?? undefined
         });
       });
+      section.melodyTracks.forEach((_track, trackIndex) => {
+        if (section.melodyMute[trackIndex]) return;
+        const hasSolo = section.melodySolo.some(Boolean);
+        if (hasSolo && !section.melodySolo[trackIndex]) return;
+        getMelodyOverlayEvents(project, section.id, trackIndex, step).forEach((overlay, overlayIndex) => {
+          out.push({
+            id: `${clip.id}_melody_overlay_${trackIndex}_${step}_${overlayIndex}_${overlay.midi}`,
+            clipId: clip.id,
+            kind: "melody",
+            trackId: melodyTrackId(project, trackIndex),
+            role: "melody",
+            time: humanizedTime(pcs, eventTime, step + overlayIndex, 22 + trackIndex),
+            duration: spanDurationForSteps(localStep, Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)), secondsPerBeat, resolution, swing),
+            bar: eventBar,
+            step,
+            midi: applyClipPitchTransform(overlay.midi, clip),
+            velocity: humanizedPeak(pcs, overlay.velocity * clipGain, step + overlayIndex, 22 + trackIndex),
+            pan: section.melodyPan[trackIndex] || 0,
+            instrument: section.melodyInstruments[trackIndex] || DEFAULT_MELODY_INSTRUMENT,
+            articulation: "midi-overlay",
+            ...sourceMeta
+          });
+        });
+      });
     }
 
     if (!stemMutes.guitar && pcs.guitarEnabled) {
@@ -417,27 +506,50 @@ function drumEvent(
   level: number,
   clipGain: number,
   triplet: boolean,
-  humanizeStep = step
+  humanizeStep = step,
+  sourceDrum: DrumLaneId = drum,
+  basePeak?: number,
+  idSuffix = ""
 ): RenderedEvent | null {
   const mix = getDrumLaneMix(project, drum);
   if (mix.mute || mix.volume <= 0) return null;
+  if (anyDrumLaneSolo(project) && !mix.solo) return null;
+  const branchTrack = project.tracks.find((track) => generatedDrumBranchLane(track) === drum && track.active !== false);
+  const usesBranchTrack = !!branchTrack;
   return {
-    id: `${clip.id}_${drum}_${step}${triplet ? "_tuplet" : ""}`,
+    id: `${clip.id}_${drum}_${step}${triplet ? "_tuplet" : ""}${idSuffix}`,
     clipId: clip.id,
     kind: drum,
     drumLane: drum,
-    trackId: "drums",
+    trackId: branchTrack?.id || "drums",
     role: "drums",
     time,
-    duration,
+    duration: Math.max(0.01, duration * mix.gate),
     bar,
     step,
-    velocity: humanizedPeak(pcs, chordsmithDrumPeak(drum, level) * clipGain * mix.volume, humanizeStep, seedForDrum(drum)),
-    pan: mix.pan,
+    velocity: humanizedPeak(pcs, (basePeak ?? chordsmithDrumPeak(sourceDrum, level)) * clipGain * (usesBranchTrack ? 1 : mix.volume), humanizeStep, seedForDrum(sourceDrum)),
+    pan: usesBranchTrack ? 0 : mix.pan,
     accent: level > 1,
     drumKit: pcs.drumKit,
     ...sourceEventMetadata(pcs)
   };
+}
+
+function branchDrumOverlayDuration(laneId: DrumLaneId, stepDuration: number): number {
+  if (laneId === "crash") return 0.9;
+  if (laneId === "ride") return 0.42;
+  if (laneId === "tomlow" || laneId === "tommid" || laneId === "tomhi") return 0.31;
+  if (laneId === "clap") return 0.12;
+  if (laneId === "openhat") return 0.12;
+  return chordsmithDrumStepDuration({ lane: laneId, level: 1, stepDuration });
+}
+
+function branchTargetDrumLane(project: PocketDawProject, sourceLane: SequencedDrumLane, level: number): DrumLaneId {
+  const sourceDrum = sourceLane as DrumLaneId;
+  if (level <= 1) return sourceDrum;
+  const accentBranch = DRUM_LANE_DEFS.find((lane) => lane.chordsmithRecordTrack === sourceLane && lane.chordsmithRecordLevel === level);
+  if (!accentBranch || accentBranch.id === sourceLane) return sourceDrum;
+  return project.tracks.some((track) => generatedDrumBranchLane(track) === accentBranch.id && track.active !== false) ? accentBranch.id : sourceDrum;
 }
 
 function lofiTextureEvent(clip: Clip, pcs: SanitizedPcsProject, step: number, bar: number, time: number, duration: number): RenderedEvent | null {

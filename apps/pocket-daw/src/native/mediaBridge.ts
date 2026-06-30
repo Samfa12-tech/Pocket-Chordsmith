@@ -10,6 +10,17 @@ export interface ImportedAudioBytes {
   sizeBytes?: number;
   bytes: ArrayBuffer;
   mode: "native" | "browser";
+  sourceMimeType?: string;
+  sourceSizeBytes?: number;
+  sourceEncoding?: string;
+  decodedMimeType?: string;
+  decodedSizeBytes?: number;
+  sampleRate?: number;
+  channels?: number;
+  durationSeconds?: number;
+  frameCount?: number;
+  decoder?: string;
+  nativeDecodeError?: string;
 }
 
 export interface CollectProjectMediaInput {
@@ -64,6 +75,17 @@ interface NativeAudioPayload {
   mimeType?: string;
   sizeBytes?: number;
   bytes: number[];
+  sourceMimeType?: string;
+  sourceSizeBytes?: number;
+  sourceEncoding?: string;
+  decodedMimeType?: string;
+  decodedSizeBytes?: number;
+  sampleRate?: number;
+  channels?: number;
+  durationSeconds?: number;
+  frameCount?: number;
+  decoder?: string;
+  nativeDecodeError?: string;
 }
 
 interface NativeCollectedProjectMediaPayload {
@@ -228,7 +250,18 @@ function importedAudioFromNativePayload(result: NativeAudioPayload): ImportedAud
     mimeType: result.mimeType,
     sizeBytes: result.sizeBytes,
     bytes: new Uint8Array(result.bytes).buffer,
-    mode: "native"
+    mode: "native",
+    sourceMimeType: result.sourceMimeType,
+    sourceSizeBytes: cleanPositiveNumber(result.sourceSizeBytes),
+    sourceEncoding: result.sourceEncoding,
+    decodedMimeType: result.decodedMimeType,
+    decodedSizeBytes: cleanPositiveNumber(result.decodedSizeBytes),
+    sampleRate: cleanPositiveNumber(result.sampleRate),
+    channels: cleanPositiveNumber(result.channels),
+    durationSeconds: cleanPositiveNumber(result.durationSeconds),
+    frameCount: cleanPositiveNumber(result.frameCount),
+    decoder: result.decoder,
+    nativeDecodeError: result.nativeDecodeError
   };
 }
 
@@ -242,7 +275,10 @@ export async function importedAudioFromBrowserFile(file: File): Promise<Imported
     mimeType: file.type || mimeTypeForName(file.name),
     sizeBytes: file.size,
     bytes: await file.arrayBuffer(),
-    mode: "browser"
+    mode: "browser",
+    sourceMimeType: file.type || mimeTypeForName(file.name),
+    sourceSizeBytes: file.size,
+    sourceEncoding: file.name.split(".").pop()?.toLowerCase() || "unknown"
   };
 }
 
@@ -269,6 +305,11 @@ function assertNativeCacheAssetPayload(value: NativeCacheAssetWritePayload): voi
 
 function fileNameFromPath(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() || "Imported audio";
+}
+
+function cleanPositiveNumber(value: unknown): number | undefined {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : undefined;
 }
 
 const defaultNativeMediaApi: NativeMediaApi = {

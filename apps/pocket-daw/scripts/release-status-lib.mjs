@@ -60,6 +60,9 @@ export function validateReleaseStatus(releaseStatus, context) {
   if (releaseStatus.latestPublishedCommit && !/^[a-f0-9]{40}$/i.test(String(releaseStatus.latestPublishedCommit))) {
     failures.push("release-status.json latestPublishedCommit must be a 40-character git SHA when present");
   }
+  if (releaseStatus.unreleasedSourceNotes !== undefined && !Array.isArray(releaseStatus.unreleasedSourceNotes)) {
+    failures.push("release-status.json unreleasedSourceNotes must be an array when present");
+  }
 
   const smoke = releaseStatus.lastInstalledSmoke;
   if (!smoke || typeof smoke !== "object" || Array.isArray(smoke)) {
@@ -96,6 +99,9 @@ export function renderReleaseStatusMarkdown(releaseStatus) {
   const notes = Array.isArray(smoke.notes) && smoke.notes.length
     ? smoke.notes.map((note) => `- ${note}`).join("\n")
     : "- No installed-smoke notes recorded.";
+  const unreleasedNotes = Array.isArray(releaseStatus.unreleasedSourceNotes) && releaseStatus.unreleasedSourceNotes.length
+    ? releaseStatus.unreleasedSourceNotes.map((note) => `- ${note}`).join("\n")
+    : "- No unreleased source-only notes recorded.";
   return `# Pocket DAW Current Release Status
 
 Generated from \`release-status.json\`. Refresh with \`npm run status:release\`.
@@ -116,6 +122,10 @@ Generated from \`release-status.json\`. Refresh with \`npm run status:release\`.
 ## Installed-Smoke Notes
 
 ${notes}
+
+## Unreleased Source-Only Notes
+
+${unreleasedNotes}
 
 ## Release Truth
 

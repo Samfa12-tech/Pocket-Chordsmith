@@ -145,8 +145,8 @@ Historical partial installed-app smoke run by Sam on 2026-06-14 against v0.5.9/v
 
 ## Current Caveats
 
-- Manual Windows update-through-app smoke testing for public `0.6.34` is pending until the updater release is intentionally published; local installed-app bass parity smoke passed and is tracked in `docs/CURRENT_RELEASE_STATUS.md`.
-- Itch remains on the existing bootstrapper upload unless the bootstrapper itself changes. The latest published GitHub updater assets remain older than the local `0.6.34` bass parity build until `release:update:publish` is run deliberately.
+- Public `0.6.34` GitHub updater publication is complete and tracked in `docs/CURRENT_RELEASE_STATUS.md`; do not republish a later source tree as another `0.6.34` artifact. Update-through-app smoke from an older installed build remains a useful follow-up for the next checkpoint.
+- Itch remains on the existing bootstrapper upload unless the bootstrapper itself changes. Future source changes after `0.6.34` are unreleased until the next checkpoint metadata is bumped and exact-artifact smoke is recorded.
 - Windows Authenticode signing is not currently claimed.
 - Tauri updater signatures are present as `.sig` files for updater validation.
 - Pocket Chordsmith direct "Send to Pocket DAW" is passing in the v0.5.13 installed-app smoke run; keep paste/import as a fallback for browsers that block downloads or custom protocol launches.

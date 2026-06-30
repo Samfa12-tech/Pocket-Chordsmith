@@ -3,17 +3,19 @@ import { sanitizePocketChordsmithProject } from "../compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../compatibility/pcsToDaw";
 import { migratePocketDawProject } from "../compatibility/migrations";
 import { cloneProject, createDefaultMetronomeSettings, parsePocketDawProjectFile } from "../daw/dawProject";
-import { deleteClip, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, setClipTransform, splitClipAtBar, toggleClipMute, trimClipEnd, trimClipStart, type ClipTransformField } from "../daw/clips";
-import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
-import { addDrumLaneFx, isDrumLaneId, removeDrumLaneFx, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
+import { activateAudioTake, applyAudioClipAction, cropClipToRange, deleteClip, deleteClipRange, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
+import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackRecordingChannelMode, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
+import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
 import { addTrackToProject, renameTrack, type AddTrackKind } from "../daw/tracks";
 import { placeAudioClipOnTimeline } from "../daw/audioClips";
-import { addMidiNote, deleteMidiNote, moveMidiNote, resizeMidiNote, setMidiNoteVelocity, transposeMidiNote } from "../daw/midiClips";
-import { addAutomationPoint, deleteAutomationPoint, ensureTrackAutomationLane, setAutomationLaneEnabled, type TrackAutomationField, updateAutomationPoint } from "../daw/automation";
-import { addBusTrack, addReturnTrack, routeTrackToOutput } from "../daw/routing";
+import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createEmptyMidiClip, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, midiDataFromClip, midiGrooveTemplateById, moveMidiNote, quantizeMidiClip, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote, type MidiAftertouchField, type MidiControllerField, type MidiGrooveTemplateId, type MidiNoteField, type MidiPitchBendField, type MidiPitchTransform, type MidiProgramChangeField, type MidiQuantizeGrid, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
+import { convertMidiClipToDrumBranchOverlays } from "../daw/midiDrumConversion";
+import { convertMidiClipToMelodyOverlays } from "../daw/midiMelodyConversion";
+import { addAutomationPoint, deleteAutomationPoint, ensureClipAutomationLane, ensureTrackAutomationLane, ensureTrackSendAutomationLane, setAutomationLaneEnabled, type ClipAutomationField, type TrackAutomationField, type TrackSendAutomationField, updateAutomationPoint } from "../daw/automation";
+import { addBusTrack, addReturnTrack, routeTrackToOutput, setTrackSendLevel, setTrackSendMode, type TrackSendMode } from "../daw/routing";
 import { setFxSlotParameter, setPocketProEqPreset } from "../daw/fx";
 import { pushUndo, redo, undo } from "../daw/undo";
-import { addMarkerAtBar, clearLoop, deleteMarker, renameMarker, setLoopToClip, snapBarValue } from "../daw/timeline";
+import { addGameStateMarkerAtBar, addMarkerAtBar, clearLoop, clearTimelineSelection, deleteMarker, gameStateMarkerLabel, isGameStateMarkerId, renameMarker, setLoopToClip, setTimelineSelectionRange, setTimelineSelectionToClip, setTimelineSelectionToLoop, snapBarValue } from "../daw/timeline";
 import {
   appendChordsmithSection,
   applyBassPreset,
@@ -51,7 +53,7 @@ import {
 import { drumPresetEventsForProject, drumPresetLabel, drumPresetVisibleForProject, findDrumPreset } from "../daw/chordsmithDrumPresets";
 import { bassPresetLabel, bassPresetPatternForProject, bassPresetVisibleForProject, findBassPreset } from "../daw/chordsmithBassPresets";
 import { findGuitarPreset, guitarPresetLabel, guitarPresetPatternForProject, guitarPresetVisibleForProject } from "../daw/chordsmithGuitarPresets";
-import type { PocketDawProject } from "../daw/schema";
+import type { PocketDawProject, RecordingChannelMode } from "../daw/schema";
 import type { AppState } from "./state";
 
 export function importTextToProject(text: string): { project: PocketDawProject; message: string } {
@@ -81,6 +83,49 @@ export function commitProject(state: AppState, project: PocketDawProject, status
     undoStack: pushUndo(state.undoStack, project),
     status
   };
+}
+
+export type ExportProfileSettingField = "sampleRate" | "tailSeconds" | "channelMode" | "normalize";
+
+export function setExportProfileSettingCommand(state: AppState, profileId: string, field: ExportProfileSettingField, value: number | string): AppState {
+  const project = state.undoStack.present;
+  const profile = project.exportProfiles.find((item) => item.id === profileId);
+  if (!profile) return { ...state, status: "Choose an export profile before editing render settings." };
+  const next = cloneProject(project);
+  const nextProfile = next.exportProfiles.find((item) => item.id === profileId);
+  if (!nextProfile) return state;
+  if (field === "sampleRate") {
+    nextProfile.sampleRate = clampExportSampleRate(Number(value));
+    return commitProject(state, next, `Set ${profile.name} sample rate to ${nextProfile.sampleRate} Hz.`);
+  }
+  if (field === "channelMode") {
+    const channelMode = String(value).toLowerCase() === "mono" ? "mono" : "stereo";
+    nextProfile.settings = {
+      ...(nextProfile.settings || {}),
+      channelMode
+    };
+    return commitProject(state, next, `Set ${profile.name} channel mode to ${channelMode}.`);
+  }
+  if (field === "normalize") {
+    const normalize = String(value).toLowerCase() === "peak" ? "peak" : false;
+    nextProfile.settings = {
+      ...(nextProfile.settings || {}),
+      normalize
+    };
+    return commitProject(state, next, `Set ${profile.name} normalization to ${normalize === "peak" ? "peak" : "off"}.`);
+  }
+  const tailValue = Number(value);
+  const tailSeconds = Math.round(Math.max(0, Math.min(30, Number.isFinite(tailValue) ? tailValue : 0)) * 100) / 100;
+  nextProfile.settings = {
+    ...(nextProfile.settings || {}),
+    tailSeconds
+  };
+  return commitProject(state, next, `Set ${profile.name} tail to ${tailSeconds} seconds.`);
+}
+
+function clampExportSampleRate(value: number): number {
+  const sampleRate = Math.round(Number.isFinite(value) ? value : 44100);
+  return Math.max(22050, Math.min(192000, sampleRate));
 }
 
 export function moveSelectedClip(state: AppState, delta: number): AppState {
@@ -152,6 +197,113 @@ export function setSelectedClipTransformCommand(state: AppState, clipId: string,
   return {
     ...commitProject(state, next, field === "transpose" ? `Set ${clip.name} transpose to ${next.timeline.clips.find((item) => item.id === clipId)?.transforms.transpose ?? 0}.` : `Set ${clip.name} gain to ${next.timeline.clips.find((item) => item.id === clipId)?.transforms.gain ?? 1}.`),
     selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function setSelectedGeneratedClipStemMuteCommand(state: AppState, clipId: string, stem: GeneratedStemRole, muted: boolean): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "generated-section") return { ...state, status: "Choose a generated section before editing stem mutes." };
+  const next = setGeneratedClipStemMute(state.undoStack.present, clipId, stem, muted);
+  return {
+    ...commitProject(state, next, `${muted ? "Muted" : "Unmuted"} ${stem} in ${clip.name}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function setSelectedAudioClipPropertyCommand(state: AppState, clipId: string, field: AudioClipPropertyField, value: number): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio clip before editing audio properties." };
+  const next = setAudioClipProperty(state.undoStack.present, clipId, field, value);
+  const updated = next.timeline.clips.find((item) => item.id === clipId);
+  const labels: Record<AudioClipPropertyField, string> = {
+    gain: "gain",
+    sourceOffsetSeconds: "source offset",
+    durationSeconds: "duration",
+    fadeInSeconds: "fade in",
+    fadeOutSeconds: "fade out"
+  };
+  return {
+    ...commitProject(state, next, `Set ${clip.name} ${labels[field]} to ${updated?.metadata?.[field] ?? value}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function applySelectedAudioClipActionCommand(state: AppState, clipId: string, action: AudioClipAction): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio clip before editing audio properties." };
+  const result = applyAudioClipAction(state.undoStack.present, clipId, action);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.status
+    };
+  }
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function activateAudioTakeCommand(state: AppState, clipId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio take before activating it." };
+  const result = activateAudioTake(state.undoStack.present, clipId);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.status
+    };
+  }
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function setAudioTakeArchivedCommand(state: AppState, clipId: string, archived: boolean): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio take before archiving it." };
+  const result = setAudioTakeArchived(state.undoStack.present, clipId, archived);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.status
+    };
+  }
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function compAudioTakeFromPlayheadCommand(state: AppState, clipId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio take before comping." };
+  const splitBar = snapBarValue(state.playheadBar, "bar", state.undoStack.present.project.timeSig);
+  const result = splitGroupedAudioTakesAtBar(state.undoStack.present, clipId, splitBar);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.status
+    };
+  }
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: result.rightClipId || clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId
   };
 }
@@ -239,6 +391,19 @@ export function addTrackCommand(state: AppState, kind: AddTrackKind): AppState {
   };
 }
 
+export function addEmptyMidiClipCommand(state: AppState, trackId = state.selectedTrackId || "", startBar = state.playheadBar): AppState {
+  const track = state.undoStack.present.tracks.find((item) => item.id === trackId);
+  if (!track || track.trackType !== "midi") return { ...state, status: "Select a MIDI track before adding an empty MIDI clip." };
+  const result = createEmptyMidiClip(state.undoStack.present, track.id, Math.max(1, startBar), `${track.name} Clip`);
+  if (!result.clipId) return { ...state, status: "Could not add a MIDI clip to the selected track." };
+  return {
+    ...commitProject(state, result.project, `Added MIDI clip to ${track.name}.`),
+    selectedClipId: result.clipId,
+    selectedTrackId: result.trackId,
+    lowerDockTab: "piano-roll"
+  };
+}
+
 export function addBusTrackCommand(state: AppState): AppState {
   const result = addBusTrack(state.undoStack.present);
   return {
@@ -261,6 +426,33 @@ export function routeTrackOutputCommand(state: AppState, trackId: string, output
   return commitProject(state, routeTrackToOutput(state.undoStack.present, trackId, outputId || "master"), "Updated track output routing.");
 }
 
+export function setTrackSendLevelCommand(state: AppState, trackId: string, returnTrackId: string, level: number): AppState {
+  const project = state.undoStack.present;
+  const track = project.tracks.find((item) => item.id === trackId);
+  const ret = project.tracks.find((item) => item.id === returnTrackId && item.trackType === "return");
+  if (!track || !ret || track.role === "master" || track.trackType === "return") {
+    return { ...state, status: "Choose a source track and return before editing sends." };
+  }
+  return {
+    ...commitProject(state, setTrackSendLevel(project, trackId, returnTrackId, level), `Set ${track.name} send to ${ret.name}.`),
+    selectedTrackId: trackId
+  };
+}
+
+export function setTrackSendModeCommand(state: AppState, trackId: string, returnTrackId: string, mode: TrackSendMode): AppState {
+  const project = state.undoStack.present;
+  const track = project.tracks.find((item) => item.id === trackId);
+  const ret = project.tracks.find((item) => item.id === returnTrackId && item.trackType === "return");
+  if (!track || !ret || track.role === "master" || track.trackType === "return") {
+    return { ...state, status: "Choose a source track and return before editing send mode." };
+  }
+  const label = mode === "pre-fader" ? "pre-fader" : "post-fader";
+  return {
+    ...commitProject(state, setTrackSendMode(project, trackId, returnTrackId, mode), `Set ${track.name} send to ${ret.name} ${label}.`),
+    selectedTrackId: trackId
+  };
+}
+
 export function ensureAutomationLaneCommand(state: AppState, trackId: string, field: TrackAutomationField): AppState {
   const result = ensureTrackAutomationLane(state.undoStack.present, trackId, field);
   return commitProject(state, result.project, `Enabled ${field} automation lane.`);
@@ -272,6 +464,62 @@ export function addAutomationPointCommand(state: AppState, trackId: string, fiel
   const value = field === "pan" ? track?.pan || 0 : 1;
   const next = addAutomationPoint(ensured.project, ensured.laneId, { bar: state.playheadBar || 1, value, curve: "linear" });
   return commitProject(state, next, `Added ${field} automation point.`);
+}
+
+export function ensureTrackSendAutomationLaneCommand(state: AppState, trackId: string, returnTrackId: string, field: TrackSendAutomationField): AppState {
+  const project = state.undoStack.present;
+  const track = project.tracks.find((item) => item.id === trackId);
+  const ret = project.tracks.find((item) => item.id === returnTrackId && item.trackType === "return");
+  if (!track || !ret || track.role === "master" || track.trackType === "return") {
+    return { ...state, status: "Choose a source track and return before automating sends." };
+  }
+  const result = ensureTrackSendAutomationLane(project, trackId, returnTrackId, field);
+  return {
+    ...commitProject(state, result.project, `Enabled ${track.name} send automation to ${ret.name}.`),
+    selectedTrackId: trackId
+  };
+}
+
+export function addTrackSendAutomationPointCommand(state: AppState, trackId: string, returnTrackId: string, field: TrackSendAutomationField): AppState {
+  const project = state.undoStack.present;
+  const track = project.tracks.find((item) => item.id === trackId);
+  const ret = project.tracks.find((item) => item.id === returnTrackId && item.trackType === "return");
+  if (!track || !ret || track.role === "master" || track.trackType === "return") {
+    return { ...state, status: "Choose a source track and return before automating sends." };
+  }
+  const ensured = ensureTrackSendAutomationLane(project, trackId, returnTrackId, field);
+  const levels = track.metadata?.sendLevels;
+  const fallbackLevel = levels && typeof levels === "object" && !Array.isArray(levels) ? Number((levels as Record<string, unknown>)[returnTrackId]) : 0;
+  const next = addAutomationPoint(ensured.project, ensured.laneId, { bar: state.playheadBar || 1, value: Number.isFinite(fallbackLevel) ? fallbackLevel : 0, curve: "linear" });
+  return {
+    ...commitProject(state, next, `Added ${track.name} send automation point to ${ret.name}.`),
+    selectedTrackId: trackId
+  };
+}
+
+export function ensureClipAutomationLaneCommand(state: AppState, clipId: string, field: ClipAutomationField): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio clip before automating clip gain." };
+  const result = ensureClipAutomationLane(state.undoStack.present, clipId, field);
+  return {
+    ...commitProject(state, result.project, `Enabled ${clip.name} gain automation.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function addClipAutomationPointCommand(state: AppState, clipId: string, field: ClipAutomationField): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio clip before automating clip gain." };
+  const ensured = ensureClipAutomationLane(state.undoStack.present, clipId, field);
+  const updatedClip = ensured.project.timeline.clips.find((item) => item.id === clipId);
+  const fallbackGain = typeof updatedClip?.metadata?.gain === "number" ? updatedClip.metadata.gain : updatedClip?.transforms.gain ?? 1;
+  const next = addAutomationPoint(ensured.project, ensured.laneId, { bar: state.playheadBar || clip.startBar || 1, value: fallbackGain, curve: "linear" });
+  return {
+    ...commitProject(state, next, `Added ${clip.name} gain automation point.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
 }
 
 export function updateAutomationPointCommand(state: AppState, laneId: string, pointIndex: number, bar: number, value: number): AppState {
@@ -297,12 +545,40 @@ export function placeAudioClipCommand(state: AppState, mediaPoolItemId: string):
 }
 
 export function addMidiNoteCommand(state: AppState, clipId: string): AppState {
-  const tick = Math.max(0, Math.round((state.playheadBar - 1) * state.undoStack.present.project.timeSig * state.undoStack.present.project.ppq));
-  return commitProject(state, addMidiNote(state.undoStack.present, clipId, tick), "Added MIDI note.");
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before adding notes." };
+  const tick = Math.max(0, Math.round((state.playheadBar - clip.startBar) * state.undoStack.present.project.timeSig * midiDataFromClip(clip).ppq));
+  return {
+    ...commitProject(state, addMidiNote(state.undoStack.present, clipId, tick), `Added MIDI note to ${clip.name}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function setMidiClipBarLengthCommand(state: AppState, clipId: string, barLength: number): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before editing clip length." };
+  const next = setMidiClipBarLength(state.undoStack.present, clipId, barLength);
+  const updated = next.timeline.clips.find((item) => item.id === clipId);
+  return {
+    ...commitProject(state, next, `Set ${clip.name} length to ${updated?.barLength ?? clip.barLength} bars.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
 }
 
 export function deleteMidiNoteCommand(state: AppState, clipId: string, noteId: string): AppState {
   return commitProject(state, deleteMidiNote(state.undoStack.present, clipId, noteId), "Deleted MIDI note.");
+}
+
+export function duplicateMidiNoteCommand(state: AppState, clipId: string, noteId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before duplicating notes." };
+  return {
+    ...commitProject(state, duplicateMidiNote(state.undoStack.present, clipId, noteId), `Duplicated ${clip.name} note.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
 }
 
 export function moveMidiNoteCommand(state: AppState, clipId: string, noteId: string, direction: -1 | 1): AppState {
@@ -319,6 +595,279 @@ export function resizeMidiNoteCommand(state: AppState, clipId: string, noteId: s
 
 export function setMidiNoteVelocityCommand(state: AppState, clipId: string, noteId: string, velocity: number): AppState {
   return commitProject(state, setMidiNoteVelocity(state.undoStack.present, clipId, noteId, velocity), "Changed MIDI note velocity.");
+}
+
+export function setMidiNoteFieldCommand(state: AppState, clipId: string, noteId: string, field: MidiNoteField, value: number): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before editing note data." };
+  return {
+    ...commitProject(state, setMidiNoteField(state.undoStack.present, clipId, noteId, field, value), `Updated ${clip.name} note ${field}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function addMidiControllerCommand(state: AppState, clipId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before adding controller data." };
+  const tick = Math.max(0, Math.round((state.playheadBar - clip.startBar) * state.undoStack.present.project.timeSig * midiDataFromClip(clip).ppq));
+  return {
+    ...commitProject(state, addMidiController(state.undoStack.present, clipId, tick), `Added CC1 controller point to ${clip.name}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function setMidiControllerFieldCommand(state: AppState, clipId: string, controllerId: string, field: MidiControllerField, value: number): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before editing controller data." };
+  return {
+    ...commitProject(state, setMidiControllerField(state.undoStack.present, clipId, controllerId, field, value), `Updated ${clip.name} controller ${field}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function duplicateMidiControllerCommand(state: AppState, clipId: string, controllerId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before duplicating controller data." };
+  return {
+    ...commitProject(state, duplicateMidiController(state.undoStack.present, clipId, controllerId), `Duplicated ${clip.name} controller point.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function deleteMidiControllerCommand(state: AppState, clipId: string, controllerId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before deleting controller data." };
+  return {
+    ...commitProject(state, deleteMidiController(state.undoStack.present, clipId, controllerId), `Deleted ${clip.name} controller point.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function addMidiProgramChangeCommand(state: AppState, clipId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before adding program changes." };
+  const tick = Math.max(0, Math.round((state.playheadBar - clip.startBar) * state.undoStack.present.project.timeSig * midiDataFromClip(clip).ppq));
+  return {
+    ...commitProject(state, addMidiProgramChange(state.undoStack.present, clipId, tick), `Added program change to ${clip.name}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function setMidiProgramChangeFieldCommand(state: AppState, clipId: string, programId: string, field: MidiProgramChangeField, value: number): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before editing program changes." };
+  return {
+    ...commitProject(state, setMidiProgramChangeField(state.undoStack.present, clipId, programId, field, value), `Updated ${clip.name} program ${field}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function duplicateMidiProgramChangeCommand(state: AppState, clipId: string, programId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before duplicating program changes." };
+  return {
+    ...commitProject(state, duplicateMidiProgramChange(state.undoStack.present, clipId, programId), `Duplicated ${clip.name} program change.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function deleteMidiProgramChangeCommand(state: AppState, clipId: string, programId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before deleting program changes." };
+  return {
+    ...commitProject(state, deleteMidiProgramChange(state.undoStack.present, clipId, programId), `Deleted ${clip.name} program change.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function addMidiPitchBendCommand(state: AppState, clipId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before adding pitch bends." };
+  const tick = Math.max(0, Math.round((state.playheadBar - clip.startBar) * state.undoStack.present.project.timeSig * midiDataFromClip(clip).ppq));
+  return {
+    ...commitProject(state, addMidiPitchBend(state.undoStack.present, clipId, tick), `Added pitch bend to ${clip.name}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function setMidiPitchBendFieldCommand(state: AppState, clipId: string, bendId: string, field: MidiPitchBendField, value: number): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before editing pitch bends." };
+  return {
+    ...commitProject(state, setMidiPitchBendField(state.undoStack.present, clipId, bendId, field, value), `Updated ${clip.name} pitch bend ${field}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function duplicateMidiPitchBendCommand(state: AppState, clipId: string, bendId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before duplicating pitch bends." };
+  return {
+    ...commitProject(state, duplicateMidiPitchBend(state.undoStack.present, clipId, bendId), `Duplicated ${clip.name} pitch bend.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function deleteMidiPitchBendCommand(state: AppState, clipId: string, bendId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before deleting pitch bends." };
+  return {
+    ...commitProject(state, deleteMidiPitchBend(state.undoStack.present, clipId, bendId), `Deleted ${clip.name} pitch bend.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function addMidiAftertouchCommand(state: AppState, clipId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before adding aftertouch." };
+  const tick = Math.max(0, Math.round((state.playheadBar - clip.startBar) * state.undoStack.present.project.timeSig * midiDataFromClip(clip).ppq));
+  return {
+    ...commitProject(state, addMidiAftertouch(state.undoStack.present, clipId, tick), `Added aftertouch to ${clip.name}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function setMidiAftertouchFieldCommand(state: AppState, clipId: string, aftertouchId: string, field: MidiAftertouchField, value: number): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before editing aftertouch." };
+  return {
+    ...commitProject(state, setMidiAftertouchField(state.undoStack.present, clipId, aftertouchId, field, value), `Updated ${clip.name} aftertouch ${field}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function duplicateMidiAftertouchCommand(state: AppState, clipId: string, aftertouchId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before duplicating aftertouch." };
+  return {
+    ...commitProject(state, duplicateMidiAftertouch(state.undoStack.present, clipId, aftertouchId), `Duplicated ${clip.name} aftertouch.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function deleteMidiAftertouchCommand(state: AppState, clipId: string, aftertouchId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before deleting aftertouch." };
+  return {
+    ...commitProject(state, deleteMidiAftertouch(state.undoStack.present, clipId, aftertouchId), `Deleted ${clip.name} aftertouch.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function convertMidiDrumsToBranchOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A"): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping drums." };
+  const result = convertMidiClipToDrumBranchOverlays(state.undoStack.present, clipId, sectionId);
+  if (!result.written) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.skipped ? `No supported drum hits found in ${clip.name}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name}.`
+    };
+  }
+  return {
+    ...commitProject(state, result.project, `Mapped ${result.written} MIDI drum cell${result.written === 1 ? "" : "s"} from ${clip.name} to Section ${result.sectionId} branch overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId,
+    chordsmithEditorSectionId: result.sectionId
+  };
+}
+
+export function convertMidiMelodyToGeneratedOverlaysCommand(
+  state: AppState,
+  clipId = state.selectedClipId || "",
+  sectionId = state.chordsmithEditorSectionId || "A",
+  trackIndex = 0
+): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping melody." };
+  const result = convertMidiClipToMelodyOverlays(state.undoStack.present, clipId, sectionId, trackIndex);
+  if (!result.written) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.skipped ? `No supported melodic MIDI notes found in ${clip.name}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name}.`
+    };
+  }
+  return {
+    ...commitProject(state, result.project, `Mapped ${result.written} MIDI melodic note${result.written === 1 ? "" : "s"} from ${clip.name} to Section ${result.sectionId} Melody ${result.trackIndex + 1} overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId,
+    chordsmithEditorSectionId: result.sectionId
+  };
+}
+
+export function quantizeMidiClipCommand(state: AppState, clipId: string, grid: MidiQuantizeGrid): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before quantizing." };
+  return {
+    ...commitProject(state, quantizeMidiClip(state.undoStack.present, clipId, grid), `Quantized ${clip.name} to ${grid}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function swingMidiClipCommand(state: AppState, clipId: string, percent: MidiSwingPercent): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before applying swing." };
+  return {
+    ...commitProject(state, swingMidiClip(state.undoStack.present, clipId, percent), `Applied ${percent}% swing to ${clip.name}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function applyMidiGrooveTemplateCommand(state: AppState, clipId: string, templateId: MidiGrooveTemplateId): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before applying a groove template." };
+  const template = midiGrooveTemplateById(templateId);
+  return {
+    ...commitProject(state, applyMidiGrooveTemplate(state.undoStack.present, clipId, template.id), `Applied ${template.name} groove to ${clip.name}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function transformMidiVelocityCommand(state: AppState, clipId: string, transform: MidiVelocityTransform): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before editing velocities." };
+  const label = transform === "level-96" ? "Leveled" : "Humanized";
+  return {
+    ...commitProject(state, transformMidiClipVelocity(state.undoStack.present, clipId, transform), `${label} ${clip.name} velocities.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function transformMidiPitchCommand(state: AppState, clipId: string, transform: MidiPitchTransform): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before transposing notes." };
+  const direction = transform.endsWith("up") ? "up" : "down";
+  const interval = transform.startsWith("octave") ? "an octave" : "a semitone";
+  return {
+    ...commitProject(state, transformMidiClipPitch(state.undoStack.present, clipId, transform), `Transposed ${clip.name} ${direction} ${interval}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
 }
 
 export function addTrackFxCommand(state: AppState, trackId: string, type: string): AppState {
@@ -351,6 +900,11 @@ export function setDrumLanePanCommand(state: AppState, laneId: string, pan: numb
   return commitProject(state, setDrumLanePan(state.undoStack.present, laneId, pan), `Updated ${laneId} drum pan.`);
 }
 
+export function setDrumLaneGateCommand(state: AppState, laneId: string, gate: number): AppState {
+  if (!isDrumLaneId(laneId)) return state;
+  return commitProject(state, setDrumLaneGate(state.undoStack.present, laneId, gate), `Updated ${laneId} drum gate.`);
+}
+
 export function setDrumLaneMuteCommand(state: AppState, laneId: string, mute: boolean): AppState {
   if (!isDrumLaneId(laneId)) return state;
   return commitProject(state, setDrumLaneMute(state.undoStack.present, laneId, mute), `${laneId} drum ${mute ? "muted" : "unmuted"}.`);
@@ -369,8 +923,44 @@ export function removeDrumLaneFxCommand(state: AppState, chainId: string, slotId
   return commitProject(state, removeDrumLaneFx(state.undoStack.present, chainId, slotId), "Removed drum lane FX slot.");
 }
 
+export function branchGeneratedDrumsCommand(state: AppState): AppState {
+  const before = state.undoStack.present.tracks.length;
+  const next = branchGeneratedDrumsToTracks(state.undoStack.present);
+  const added = Math.max(0, next.tracks.length - before);
+  return commitProject(state, next, added ? `Branched generated drums into ${added} lane track${added === 1 ? "" : "s"}.` : "Generated drum branches are already visible.");
+}
+
+export function collapseGeneratedDrumBranchesCommand(state: AppState): AppState {
+  const before = state.undoStack.present.tracks.length;
+  const next = collapseGeneratedDrumBranches(state.undoStack.present);
+  const removed = Math.max(0, before - next.tracks.length);
+  return commitProject(state, next, removed ? `Collapsed ${removed} generated drum branch track${removed === 1 ? "" : "s"}.` : "No generated drum branch tracks were visible.");
+}
+
+export function toggleDrumBranchGroupCollapsedCommand(state: AppState): AppState {
+  const branchCount = state.undoStack.present.tracks.filter((track) => Boolean(track.metadata?.generatedDrumLane)).length;
+  if (!branchCount) return { ...state, status: "Branch generated drums before hiding branch rows." };
+  const collapsed = !drumBranchGroupCollapsed(state.undoStack.present);
+  return commitProject(
+    state,
+    setDrumBranchGroupCollapsed(state.undoStack.present, collapsed),
+    collapsed ? "Hid generated drum branch rows." : "Showed generated drum branch rows."
+  );
+}
+
 export function setTrackInputCommand(state: AppState, trackId: string, inputDeviceId: string | null): AppState {
   return commitProject(state, setTrackInput(state.undoStack.present, trackId, inputDeviceId), "Updated track input.");
+}
+
+export function setTrackRecordingChannelModeCommand(state: AppState, trackId: string, mode: RecordingChannelMode): AppState {
+  const track = state.undoStack.present.tracks.find((item) => item.id === trackId);
+  if (!track?.recordKind || track.recordKind === "none") return { ...state, status: "Only live audio tracks have recording channel modes." };
+  if (mode !== "mono" && mode !== "stereo") return { ...state, status: "Choose Mono or Stereo recording." };
+  return commitProject(
+    state,
+    setTrackRecordingChannelMode(state.undoStack.present, trackId, mode),
+    `${track.name} recording set to ${mode}.`
+  );
 }
 
 export function renameTrackCommand(state: AppState, trackId: string, name: string): AppState {
@@ -406,8 +996,135 @@ export function clearLoopCommand(state: AppState): AppState {
   return commitProject(state, clearLoop(state.undoStack.present), "Loop cleared.");
 }
 
+export function setTimelineSelectionRangeCommand(state: AppState, startBar: number, endBar: number): AppState {
+  return commitProject(state, setTimelineSelectionRange(state.undoStack.present, startBar, endBar, "manual"), "Updated edit range.");
+}
+
+export function setTimelineSelectionToSelectedClipCommand(state: AppState): AppState {
+  if (!state.selectedClipId) return { ...state, status: "Select a clip before setting edit range." };
+  const project = state.undoStack.present;
+  const clip = project.timeline.clips.find((item) => item.id === state.selectedClipId);
+  return {
+    ...commitProject(state, setTimelineSelectionToClip(project, state.selectedClipId), "Edit range set to selected clip."),
+    selectedClipId: state.selectedClipId,
+    selectedTrackId: clip?.trackId || state.selectedTrackId
+  };
+}
+
+export function setTimelineSelectionToLoopCommand(state: AppState): AppState {
+  return commitProject(state, setTimelineSelectionToLoop(state.undoStack.present), "Edit range set to loop.");
+}
+
+export function clearTimelineSelectionCommand(state: AppState): AppState {
+  return commitProject(state, clearTimelineSelection(state.undoStack.present), "Edit range cleared.");
+}
+
+export function splitTimelineSelectionCommand(state: AppState): AppState {
+  const selection = state.undoStack.present.timeline.selection;
+  if (!selection) return { ...state, status: "Set an edit range before splitting range." };
+  const clipResult = splitClipsAtRange(state.undoStack.present, selection.startBar, selection.endBar);
+  const midiResult = splitMidiClipsAtRange(clipResult.project, selection.startBar, selection.endBar);
+  const splitCount = clipResult.splitCount + midiResult.splitCount;
+  if (!splitCount) return { ...state, status: "No clips crossed the edit range boundaries." };
+  const boundaryLabel = splitCount === 1 ? "boundary" : "boundaries";
+  return commitProject(state, midiResult.project, `Split ${splitCount} clip ${boundaryLabel} at edit range.`);
+}
+
+export function cropSelectedClipToTimelineSelectionCommand(state: AppState): AppState {
+  const selection = state.undoStack.present.timeline.selection;
+  if (!selection) return { ...state, status: "Set an edit range before cropping." };
+  if (!state.selectedClipId) return { ...state, status: "Select a clip before cropping to range." };
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === state.selectedClipId);
+  const result = clip?.type === "midi"
+    ? cropMidiClipToRange(state.undoStack.present, state.selectedClipId, selection.startBar, selection.endBar)
+    : cropClipToRange(state.undoStack.present, state.selectedClipId, selection.startBar, selection.endBar);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipId: state.selectedClipId,
+      selectedTrackId: clip?.trackId || state.selectedTrackId,
+      status: result.status
+    };
+  }
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: state.selectedClipId,
+    selectedTrackId: clip?.trackId || state.selectedTrackId
+  };
+}
+
+export function deleteSelectedClipRangeCommand(state: AppState): AppState {
+  const selection = state.undoStack.present.timeline.selection;
+  if (!selection) return { ...state, status: "Set an edit range before deleting range." };
+  if (!state.selectedClipId) return { ...state, status: "Select a clip before deleting range." };
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === state.selectedClipId);
+  const result = clip?.type === "midi"
+    ? deleteMidiClipRange(state.undoStack.present, state.selectedClipId, selection.startBar, selection.endBar)
+    : deleteClipRange(state.undoStack.present, state.selectedClipId, selection.startBar, selection.endBar);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipId: state.selectedClipId,
+      selectedTrackId: clip?.trackId || state.selectedTrackId,
+      status: result.status
+    };
+  }
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: result.rightClipId || (result.deletedClipId ? null : state.selectedClipId),
+    selectedTrackId: clip?.trackId || state.selectedTrackId
+  };
+}
+
+export function rippleDeleteSelectedClipRangeCommand(state: AppState): AppState {
+  const selection = state.undoStack.present.timeline.selection;
+  if (!selection) return { ...state, status: "Set an edit range before ripple deleting range." };
+  if (!state.selectedClipId) return { ...state, status: "Select a clip before ripple deleting range." };
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === state.selectedClipId);
+  const result = clip?.type === "midi"
+    ? rippleDeleteMidiClipRange(state.undoStack.present, state.selectedClipId, selection.startBar, selection.endBar)
+    : rippleDeleteClipRange(state.undoStack.present, state.selectedClipId, selection.startBar, selection.endBar);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipId: state.selectedClipId,
+      selectedTrackId: clip?.trackId || state.selectedTrackId,
+      status: result.status
+    };
+  }
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: result.rightClipId || (result.deletedClipId ? null : state.selectedClipId),
+    selectedTrackId: clip?.trackId || state.selectedTrackId
+  };
+}
+
+export function rippleDeleteTimelineSelectionCommand(state: AppState): AppState {
+  const selection = state.undoStack.present.timeline.selection;
+  if (!selection) return { ...state, status: "Set an edit range before ripple deleting all tracks." };
+  const clipResult = rippleDeleteTimelineRange(state.undoStack.present, selection.startBar, selection.endBar);
+  const midiResult = rippleDeleteMidiTimelineRange(clipResult.project, selection.startBar, selection.endBar);
+  if (!clipResult.changed && !midiResult.changed) return { ...state, status: clipResult.status };
+  const selectedClipStillExists = state.selectedClipId
+    ? midiResult.project.timeline.clips.some((clip) => clip.id === state.selectedClipId)
+    : false;
+  const affectedCount = clipResult.affectedClipIds.length + midiResult.affectedClipIds.length;
+  const movedCount = clipResult.movedClipIds.length + midiResult.movedClipIds.length;
+  const affectedLabel = affectedCount === 1 ? "clip" : "clips";
+  const movedLabel = movedCount === 1 ? "later clip" : "later clips";
+  return {
+    ...commitProject(state, midiResult.project, `Ripple deleted edit range across all tracks; edited ${affectedCount} ${affectedLabel} and moved ${movedCount} ${movedLabel}.`),
+    selectedClipId: selectedClipStillExists ? state.selectedClipId : midiResult.rightClipIds[0] || clipResult.rightClipIds[0] || midiResult.movedClipIds[0] || clipResult.movedClipIds[0] || null
+  };
+}
+
 export function addMarkerAtPlayheadCommand(state: AppState): AppState {
   return commitProject(state, addMarkerAtBar(state.undoStack.present, state.playheadBar), "Added marker at playhead.");
+}
+
+export function addGameStateMarkerAtPlayheadCommand(state: AppState, gameState: string): AppState {
+  if (!isGameStateMarkerId(gameState)) return { ...state, status: "Choose a valid game-state marker." };
+  return commitProject(state, addGameStateMarkerAtBar(state.undoStack.present, state.playheadBar, gameState), `Added ${gameStateMarkerLabel(gameState)} game-state marker.`);
 }
 
 export function renameMarkerCommand(state: AppState, markerId: string, name: string): AppState {
@@ -444,6 +1161,11 @@ export function setChordInstrumentCommand(state: AppState, instrument: string): 
 export function cycleDrumStepCommand(state: AppState, sectionId: string, lane: string, step: number): AppState {
   if (!isSectionId(sectionId) || !["kick", "snare", "hat"].includes(lane)) return state;
   return commitProject(state, cycleDrumStep(state.undoStack.present, sectionId, lane as DrumLane, step), `Edited Section ${sectionId} ${lane}.`);
+}
+
+export function cycleDrumBranchStepCommand(state: AppState, sectionId: string, lane: string, step: number): AppState {
+  if (!isSectionId(sectionId) || !isDrumLaneId(lane)) return state;
+  return commitProject(state, cycleDrumBranchStep(state.undoStack.present, sectionId, lane, step), `Edited Section ${sectionId} ${lane} branch drum.`);
 }
 
 export function cycleDrumTupletCommand(state: AppState, sectionId: string, lane: string, step: number): AppState {

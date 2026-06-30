@@ -50,6 +50,7 @@ describe("schema migrations", () => {
       timeline: {
         bars: -5,
         loop: { enabled: true, startBar: 8, endBar: 2 },
+        selection: { startBar: -12, endBar: 1, source: "bad-source" },
         markers: [{ id: `marker" onclick=alert(1)`, bar: -1, name: `<script>bad</script>`, color: "url(javascript:bad)" }],
         clips: [{
           id: `clip" onclick=alert(1)`,
@@ -96,6 +97,7 @@ describe("schema migrations", () => {
       colour: "#40d8ff"
     });
     expect(migrated.timeline.loop.endBar).toBeGreaterThan(migrated.timeline.loop.startBar);
+    expect(migrated.timeline.selection).toMatchObject({ startBar: 1, endBar: 2, source: "manual" });
     expect(migrated.timeline.clips[0]).toMatchObject({
       id: "clip-onclick-alert-1",
       trackId: "track-onclick-alert-1",

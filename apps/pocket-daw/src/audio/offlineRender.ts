@@ -2,10 +2,10 @@ import type { PocketDawProject, Track } from "../daw/schema";
 import { trackIsAudible } from "../daw/tracks";
 import { barsToSeconds } from "../daw/timeline";
 import { renderTimelineEvents } from "./eventRenderer";
-import { renderTimelineAudioRegions, scheduleAudioRegionEnvelope } from "./audioRegions";
+import { audioBufferForRegionPlayback, audioRegionPlaybackWindow, renderTimelineAudioRegions, scheduleAudioRegionEnvelope } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
 import { getTrackFxChain } from "../daw/fx";
-import { DRUM_LANE_DEFS, getDrumLaneFxChain, isDrumEventKind } from "../daw/drumLanes";
+import { DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumLaneFxChain, isDrumEventKind } from "../daw/drumLanes";
 import { connectFxChain } from "./fxProcessor";
 import { scheduleInstrumentEvent } from "./instruments";
 import { chordsmithSidechainSettings, isChordsmithSidechainTrigger, scheduleChordsmithSidechainDuck } from "./sidechain";
@@ -21,15 +21,20 @@ import { CHORDSMITH_OFFLINE_STEM_GAIN } from "../../../../packages/pocket-audio-
 const CHORDSMITH_GENERATED_EXPORT_ROLES = new Set(["drums", "bass", "chords", "melody", "guitar"]);
 
 export interface OfflineRenderOptions {
+  channelMode?: WavChannelMode;
   includeChordsmithOfflineLofiTexture?: boolean;
+  normalizePeak?: boolean;
 }
+
+export type WavChannelMode = "stereo" | "mono";
+const WAV_PEAK_NORMALIZE_TARGET = 0.95;
 
 export async function renderProjectToWavBlob(project: PocketDawProject, options: OfflineRenderOptions = {}): Promise<Blob> {
   const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (!OfflineCtx) throw new Error("Offline WAV rendering is not supported in this browser.");
   const tailSeconds = Number(project.exportProfiles.find((p) => p.id === "full-song-wav")?.settings.tailSeconds ?? 1.2);
   const duration = barsToSeconds(project.timeline.bars, project.project.bpm, project.project.timeSig) + tailSeconds;
-  const sampleRate = project.project.sampleRate || 44100;
+  const sampleRate = fullSongWavSampleRate(project);
   const ctx = new OfflineCtx(2, Math.ceil(duration * sampleRate), sampleRate);
   const master = ctx.createGain();
   const compressor = ctx.createDynamicsCompressor();
@@ -45,7 +50,9 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
   const offlineLofiTexture = options.includeChordsmithOfflineLofiTexture === false ? null : chordsmithOfflineLofiTextureForProject(project);
   if (offlineLofiTexture) scheduleChordsmithOfflineLofiTexture(ctx, master, duration, offlineLofiTexture);
 
+  const inputs = new Map<string, GainNode>();
   const outputs = new Map<string, GainNode>();
+  const sendGains = new Map<string, GainNode>();
   const sidechainOutputs = new Map<string, GainNode>();
   const panners = new Map<string, StereoPannerNode>();
   const drumLaneOutputs = new Map<string, GainNode>();
@@ -55,6 +62,7 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
       master.gain.value = track.volume;
       return;
     }
+    const input = ctx.createGain();
     const gain = ctx.createGain();
     const duck = sidechain?.targetTrackId === track.id ? ctx.createGain() : null;
     const pan = "createStereoPanner" in ctx ? ctx.createStereoPanner() : null;
@@ -69,16 +77,19 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
       pan.pan.value = controls.pan;
       panners.set(track.id, pan);
     }
+    inputs.set(track.id, input);
     outputs.set(track.id, gain);
   });
   project.tracks.forEach((track) => {
     if (track.role === "master") return;
+    const input = inputs.get(track.id);
     const gain = outputs.get(track.id);
-    if (!gain) return;
+    if (!input || !gain) return;
     const pan = panners.get(track.id);
-    const destination = outputDestination(project, outputs, track, master);
+    const destination = outputDestination(project, inputs, track, master);
     const duck = sidechainOutputs.get(track.id);
     const postFx = ctx.createGain();
+    input.connect(gain);
     connectFxChain(ctx, gain, postFx, getTrackFxChain(project, track));
     if (duck) {
       postFx.connect(duck);
@@ -86,10 +97,10 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
     } else {
       postFx.connect(pan || destination);
     }
-    connectOfflineTrackSends(project, outputs, duck || postFx, track);
+    connectOfflineTrackSends(project, inputs, sendGains, input, duck || postFx, track);
     if (pan) pan.connect(destination);
   });
-  const drumsOutput = outputs.get("drums");
+  const drumsOutput = inputs.get("drums");
   if (drumsOutput) {
     DRUM_LANE_DEFS.forEach((lane) => {
       const input = ctx.createGain();
@@ -99,7 +110,7 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
   }
 
   if (activeAutomationLaneCount(project)) {
-    applyOfflineAutomation(project, outputs, panners, duration);
+    applyOfflineAutomation(project, outputs, panners, sendGains, duration);
   }
 
   const events = renderTimelineEvents(project);
@@ -117,45 +128,67 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
     if (offlineLofiTexture && event.kind === "texture") return;
     const track = project.tracks.find((item) => item.id === event.trackId) as Track | undefined;
     if (!track || !trackIsAudible(track, project.tracks)) return;
-    const output = outputs.get(event.trackId);
-    if (output) scheduleInstrumentEvent(ctx, offlineEventDestination(event, output, drumLaneOutputs), event);
+    const output = inputs.get(event.trackId);
+    if (output) scheduleInstrumentEvent(ctx, offlineEventDestination(project, event, output, drumLaneOutputs), event);
   });
 
   renderTimelineAudioRegions(project).audioRegions.forEach((region) => {
     const cached = getCachedAudioBuffer(region.mediaPoolItemId);
-    const output = outputs.get(region.trackId);
+    const output = inputs.get(region.trackId);
     if (!cached || !output) return;
+    const playbackWindow = audioRegionPlaybackWindow(region, cached.buffer.duration, 0);
+    if (!playbackWindow) return;
     const source = ctx.createBufferSource();
     const gain = ctx.createGain();
-    source.buffer = cached.buffer;
+    source.buffer = audioBufferForRegionPlayback(ctx, cached.buffer, region);
     source.connect(gain);
     gain.connect(output);
-    const duration = Math.min(region.durationSeconds, Math.max(0, cached.buffer.duration - region.sourceOffsetSeconds));
-    if (duration > 0) {
-      scheduleAudioRegionEnvelope(gain.gain, region, region.startTimeSeconds, 0, duration);
-      source.start(region.startTimeSeconds, region.sourceOffsetSeconds, duration);
-    }
+    scheduleAudioRegionEnvelope(gain.gain, region, region.startTimeSeconds, 0, playbackWindow.durationSeconds);
+    source.start(region.startTimeSeconds, playbackWindow.sourceOffsetSeconds, playbackWindow.durationSeconds);
   });
 
   const rendered = await ctx.startRendering();
-  return encodeWav(rendered);
+  return encodeWav(rendered, {
+    channelMode: options.channelMode || fullSongWavChannelMode(project),
+    normalizePeak: options.normalizePeak ?? fullSongWavPeakNormalize(project)
+  });
 }
 
-function offlineEventDestination(event: ReturnType<typeof renderTimelineEvents>[number], output: GainNode, drumLaneOutputs: Map<string, GainNode>): AudioNode {
+export function fullSongWavSampleRate(project: PocketDawProject): number {
+  const profileRate = Number(project.exportProfiles.find((profile) => profile.id === "full-song-wav")?.sampleRate);
+  if (Number.isFinite(profileRate) && profileRate >= 22050 && profileRate <= 192000) return Math.round(profileRate);
+  return project.project.sampleRate || 44100;
+}
+
+export function fullSongWavChannelMode(project: PocketDawProject): WavChannelMode {
+  const mode = project.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings?.channelMode;
+  return mode === "mono" ? "mono" : "stereo";
+}
+
+export function fullSongWavPeakNormalize(project: PocketDawProject): boolean {
+  const normalize = project.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings?.normalize;
+  return normalize === true || normalize === "peak";
+}
+
+function offlineEventDestination(project: PocketDawProject, event: ReturnType<typeof renderTimelineEvents>[number], output: GainNode, drumLaneOutputs: Map<string, GainNode>): AudioNode {
   if (event.role === "drums" && isDrumEventKind(event.kind)) {
+    const track = project.tracks.find((item) => item.id === event.trackId);
+    if (generatedDrumBranchLane(track)) return output;
     return drumLaneOutputs.get(event.drumLane || event.kind) || output;
   }
   return output;
 }
 
-function connectOfflineTrackSends(project: PocketDawProject, outputs: Map<string, GainNode>, source: AudioNode, track: Track) {
-  activeTrackSendRoutes(project, track).forEach((send) => {
-    const target = outputs.get(send.returnTrackId);
+function connectOfflineTrackSends(project: PocketDawProject, inputs: Map<string, GainNode>, sendGains: Map<string, GainNode>, preFaderSource: AudioNode, postFaderSource: AudioNode, track: Track) {
+  activeTrackSendRoutes(project, track, 1).forEach((send) => {
+    const target = inputs.get(send.returnTrackId);
+    const source = send.mode === "pre-fader" ? preFaderSource : postFaderSource;
     if (!target || target === source) return;
     const sendGain = source.context.createGain();
     sendGain.gain.value = send.level;
     source.connect(sendGain);
     sendGain.connect(target);
+    sendGains.set(`${track.id}:${send.returnTrackId}`, sendGain);
   });
 }
 
@@ -218,7 +251,7 @@ function scheduleChordsmithOfflineLofiTexture(ctx: OfflineAudioContext, destinat
   source.stop(totalDuration);
 }
 
-function applyOfflineAutomation(project: PocketDawProject, outputs: Map<string, GainNode>, panners: Map<string, StereoPannerNode>, duration: number) {
+function applyOfflineAutomation(project: PocketDawProject, outputs: Map<string, GainNode>, panners: Map<string, StereoPannerNode>, sendGains: Map<string, GainNode>, duration: number) {
   const steps = Math.max(8, Math.ceil(duration / 0.125));
   for (let i = 0; i <= steps; i += 1) {
     const seconds = (duration * i) / steps;
@@ -232,6 +265,10 @@ function applyOfflineAutomation(project: PocketDawProject, outputs: Map<string, 
       output.gain.setValueAtTime(chordsmithOfflineTrackExportGain(project, track, audibleVolume), seconds);
       const pan = panners.get(track.id);
       if (pan) pan.pan.setValueAtTime(controls.pan, seconds);
+      activeTrackSendRoutes(project, track, bar).forEach((send) => {
+        const sendGain = sendGains.get(`${track.id}:${send.returnTrackId}`);
+        if (sendGain) sendGain.gain.setValueAtTime(send.level, seconds);
+      });
     });
   }
 }
@@ -261,8 +298,8 @@ function outputDestination(project: PocketDawProject, outputs: Map<string, GainN
   return master;
 }
 
-export function encodeWav(buffer: AudioBuffer): Blob {
-  const channels = buffer.numberOfChannels;
+export function encodeWav(buffer: AudioBuffer, options: { channelMode?: WavChannelMode; normalizePeak?: boolean } = {}): Blob {
+  const channels = options.channelMode === "mono" ? 1 : buffer.numberOfChannels;
   const sampleRate = buffer.sampleRate;
   const length = buffer.length * channels * 2;
   const out = new ArrayBuffer(44 + length);
@@ -281,15 +318,165 @@ export function encodeWav(buffer: AudioBuffer): Blob {
   writeAscii(view, 36, "data");
   view.setUint32(40, length, true);
   let offset = 44;
-  const data = Array.from({ length: channels }, (_, i) => buffer.getChannelData(i));
+  const data = Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i));
+  const gain = options.normalizePeak ? peakNormalizeGainForFloatChannels(data, buffer.length, channels, WAV_PEAK_NORMALIZE_TARGET) : 1;
   for (let i = 0; i < buffer.length; i += 1) {
     for (let ch = 0; ch < channels; ch += 1) {
-      const sample = Math.max(-1, Math.min(1, data[ch][i]));
+      const sample = Math.max(-1, Math.min(1, (channels === 1 ? monoSampleAt(data, i) : data[ch][i]) * gain));
       view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
       offset += 2;
     }
   }
   return new Blob([out], { type: "audio/wav" });
+}
+
+export async function wavBlobWithChannelMode(blob: Blob, channelMode: WavChannelMode, options: { normalizePeak?: boolean } = {}): Promise<Blob> {
+  if (channelMode !== "mono" && !options.normalizePeak) return blob;
+  const source = new Uint8Array(await blob.arrayBuffer());
+  const channelAdjusted = channelMode === "mono" ? downmixPcm16WavToMono(source) : source;
+  if (!channelAdjusted) throw new Error("Native WAV export returned a format that cannot be downmixed to mono.");
+  const converted = options.normalizePeak ? peakNormalizePcm16Wav(channelAdjusted) : channelAdjusted;
+  if (!converted) throw new Error("Native WAV export returned a PCM format that cannot be peak-normalized.");
+  const out = new ArrayBuffer(converted.byteLength);
+  new Uint8Array(out).set(converted);
+  return new Blob([out], { type: "audio/wav" });
+}
+
+export function downmixPcm16WavToMono(bytes: Uint8Array): Uint8Array | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.byteLength < 44 || readAscii(view, 0, 4) !== "RIFF" || readAscii(view, 8, 4) !== "WAVE") return null;
+  let offset = 12;
+  let fmtOffset = -1;
+  let fmtSize = 0;
+  let dataOffset = -1;
+  let dataSize = 0;
+  while (offset + 8 <= bytes.byteLength) {
+    const id = readAscii(view, offset, 4);
+    const size = view.getUint32(offset + 4, true);
+    const payloadOffset = offset + 8;
+    if (payloadOffset + size > bytes.byteLength) return null;
+    if (id === "fmt ") {
+      fmtOffset = payloadOffset;
+      fmtSize = size;
+    } else if (id === "data") {
+      dataOffset = payloadOffset;
+      dataSize = size;
+      break;
+    }
+    offset = payloadOffset + size + (size % 2);
+  }
+  if (fmtOffset < 0 || fmtSize < 16 || dataOffset < 0) return null;
+  const audioFormat = view.getUint16(fmtOffset, true);
+  const channels = view.getUint16(fmtOffset + 2, true);
+  const sampleRate = view.getUint32(fmtOffset + 4, true);
+  const bitsPerSample = view.getUint16(fmtOffset + 14, true);
+  if (audioFormat !== 1 || bitsPerSample !== 16 || channels < 1) return null;
+  if (channels === 1) return bytes;
+  const frameCount = Math.floor(dataSize / (channels * 2));
+  const monoDataSize = frameCount * 2;
+  const out = new ArrayBuffer(44 + monoDataSize);
+  const outView = new DataView(out);
+  writeAscii(outView, 0, "RIFF");
+  outView.setUint32(4, 36 + monoDataSize, true);
+  writeAscii(outView, 8, "WAVE");
+  writeAscii(outView, 12, "fmt ");
+  outView.setUint32(16, 16, true);
+  outView.setUint16(20, 1, true);
+  outView.setUint16(22, 1, true);
+  outView.setUint32(24, sampleRate, true);
+  outView.setUint32(28, sampleRate * 2, true);
+  outView.setUint16(32, 2, true);
+  outView.setUint16(34, 16, true);
+  writeAscii(outView, 36, "data");
+  outView.setUint32(40, monoDataSize, true);
+  let outOffset = 44;
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    let sum = 0;
+    for (let channel = 0; channel < channels; channel += 1) {
+      sum += view.getInt16(dataOffset + (frame * channels + channel) * 2, true);
+    }
+    outView.setInt16(outOffset, Math.max(-32768, Math.min(32767, Math.round(sum / channels))), true);
+    outOffset += 2;
+  }
+  return new Uint8Array(out);
+}
+
+export function peakNormalizePcm16Wav(bytes: Uint8Array, targetPeak = WAV_PEAK_NORMALIZE_TARGET): Uint8Array | null {
+  const parsed = parsePcm16Wav(bytes);
+  if (!parsed) return null;
+  const peak = pcm16Peak(parsed.view, parsed.dataOffset, parsed.dataSize);
+  if (peak <= 0) return bytes;
+  const gain = targetPeak * 32767 / peak;
+  if (!Number.isFinite(gain) || gain <= 0 || Math.abs(gain - 1) < 0.000001) return bytes;
+  const out = new Uint8Array(bytes);
+  const outView = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  for (let offset = parsed.dataOffset; offset + 1 < parsed.dataOffset + parsed.dataSize; offset += 2) {
+    const sample = parsed.view.getInt16(offset, true);
+    outView.setInt16(offset, Math.max(-32768, Math.min(32767, Math.round(sample * gain))), true);
+  }
+  return out;
+}
+
+function peakNormalizeGainForFloatChannels(channels: Float32Array[], length: number, outputChannels: number, targetPeak: number): number {
+  let peak = 0;
+  for (let i = 0; i < length; i += 1) {
+    for (let ch = 0; ch < outputChannels; ch += 1) {
+      const sample = outputChannels === 1 ? monoSampleAt(channels, i) : channels[ch][i];
+      peak = Math.max(peak, Math.abs(sample));
+    }
+  }
+  if (peak <= 0) return 1;
+  const gain = targetPeak / peak;
+  return Number.isFinite(gain) && gain > 0 ? gain : 1;
+}
+
+function pcm16Peak(view: DataView, dataOffset: number, dataSize: number): number {
+  let peak = 0;
+  for (let offset = dataOffset; offset + 1 < dataOffset + dataSize; offset += 2) {
+    peak = Math.max(peak, Math.abs(view.getInt16(offset, true)));
+  }
+  return peak;
+}
+
+function parsePcm16Wav(bytes: Uint8Array): { view: DataView; dataOffset: number; dataSize: number } | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.byteLength < 44 || readAscii(view, 0, 4) !== "RIFF" || readAscii(view, 8, 4) !== "WAVE") return null;
+  let offset = 12;
+  let fmtOffset = -1;
+  let fmtSize = 0;
+  let dataOffset = -1;
+  let dataSize = 0;
+  while (offset + 8 <= bytes.byteLength) {
+    const id = readAscii(view, offset, 4);
+    const size = view.getUint32(offset + 4, true);
+    const payloadOffset = offset + 8;
+    if (payloadOffset + size > bytes.byteLength) return null;
+    if (id === "fmt ") {
+      fmtOffset = payloadOffset;
+      fmtSize = size;
+    } else if (id === "data") {
+      dataOffset = payloadOffset;
+      dataSize = size;
+      break;
+    }
+    offset = payloadOffset + size + (size % 2);
+  }
+  if (fmtOffset < 0 || fmtSize < 16 || dataOffset < 0) return null;
+  const audioFormat = view.getUint16(fmtOffset, true);
+  const bitsPerSample = view.getUint16(fmtOffset + 14, true);
+  if (audioFormat !== 1 || bitsPerSample !== 16) return null;
+  return { view, dataOffset, dataSize };
+}
+
+function monoSampleAt(channels: Float32Array[], index: number): number {
+  if (!channels.length) return 0;
+  return channels.reduce((sum, channel) => sum + channel[index], 0) / channels.length;
+}
+
+function readAscii(view: DataView, offset: number, length: number): string {
+  let text = "";
+  for (let i = 0; i < length; i += 1) text += String.fromCharCode(view.getUint8(offset + i));
+  return text;
 }
 
 function writeAscii(view: DataView, offset: number, text: string) {

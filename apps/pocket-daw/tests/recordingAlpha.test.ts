@@ -8,8 +8,12 @@ import { createDemoProject } from "../src/demo/demoProject";
 import {
   buildLoopbackCalibrationReport,
   buildNativeRecordingDiagnosticsMetadata,
+  buildNativeRecordingTakeMetadata,
   buildRecordingCompletionMessage,
   buildRecordingStartupPlan,
+  beginRecordingSession,
+  cancelRecordingSession,
+  transitionRecordingSession,
   recordingStartFailureCleanupPlan
 } from "../src/app/recordingOrchestration";
 import { createRecordingUiState, recordingSessionMatches } from "../src/app/state";
@@ -25,6 +29,7 @@ describe("recording alpha foundations", () => {
 
     expect(migrated.project.metronome).toMatchObject({ enabled: false, countInBars: 1, volume: 0.55 });
     expect(migrated.tracks.every((track) => track.monitorEnabled === false)).toBe(true);
+    expect(migrated.tracks.every((track) => track.recordingChannelMode === "mono")).toBe(true);
   });
 
   it("generates metronome click timing from project BPM and time signature", () => {
@@ -66,7 +71,11 @@ describe("recording alpha foundations", () => {
       metadata: {
         mediaRefKind: "project",
         projectRelativePath: "project-media/recordings/take.wav",
-        importMode: "native-recording"
+        importMode: "native-recording",
+        takeGroupId: "recording-session-99",
+        inputMode: "mono",
+        channelMap: [0],
+        latencyCompensationAppliedSeconds: 0
       }
     });
 
@@ -81,6 +90,14 @@ describe("recording alpha foundations", () => {
       startBar: 5
     });
     expect(imported.item.metadata).toMatchObject({ mediaRefKind: "project", importMode: "native-recording" });
+    expect(clip?.metadata).toMatchObject({
+      takeGroupId: "recording-session-99",
+      takeIndex: 1,
+      takeActive: true,
+      inputMode: "mono",
+      channelMap: [0],
+      latencyCompensationAppliedSeconds: 0
+    });
   });
 
   it("preserves fractional recording placement at beat-level starts", () => {
@@ -212,6 +229,40 @@ describe("recording alpha foundations", () => {
     expect(recordingSessionMatches(cancelled, 12, ["count-in", "recording", "stopping"])).toBe(false);
   });
 
+  it("centralizes recording session transitions and rejects stale async completions", () => {
+    const preparing = beginRecordingSession({
+      sessionId: 77,
+      trackId: "live-vocals",
+      startBar: 3.5,
+      captureStartTransportSeconds: 5,
+      timingSource: "prepared-stopped-transport-estimate",
+      message: "Preparing Live Vocals recording..."
+    });
+
+    const countingIn = transitionRecordingSession({
+      recording: preparing,
+      sessionId: 77,
+      allowedStatuses: ["preparing"],
+      patch: { status: "count-in", message: "Count-in 2s." }
+    });
+    expect(countingIn).toMatchObject({
+      status: "count-in",
+      sessionId: 77,
+      trackId: "live-vocals",
+      startBar: 3.5,
+      captureStartTransportSeconds: 5,
+      livePeaks: []
+    });
+
+    const cancelled = cancelRecordingSession("Recording count-in cancelled.");
+    expect(transitionRecordingSession({
+      recording: cancelled,
+      sessionId: 77,
+      allowedStatuses: ["count-in"],
+      patch: { status: "recording", message: "Stale capture completion." }
+    })).toBeNull();
+  });
+
   it("plans recording start failure cleanup for capture and backing playback independently", () => {
     expect(recordingStartFailureCleanupPlan({ nativeCaptureStarted: false, backingPlaybackStarted: true })).toEqual({
       stopNativeCapture: false,
@@ -254,6 +305,33 @@ describe("recording alpha foundations", () => {
       nativeMonitorBufferedFrameCount: 8,
       nativeMonitorUnderrunCount: 3,
       nativeMonitorOverrunCount: 4
+    });
+  });
+
+  it("builds durable take grouping and channel metadata for native recordings", () => {
+    expect(buildNativeRecordingTakeMetadata({
+      recordingSessionId: 42,
+      trackId: "live-vocals",
+      channelMode: "mono"
+    })).toEqual({
+      takeGroupId: "recording-session-42",
+      recordingTakeGroupId: "recording-session-42",
+      takeStatus: "active",
+      inputMode: "mono",
+      channelMap: [0],
+      latencyCompensationAppliedSeconds: 0
+    });
+
+    expect(buildNativeRecordingTakeMetadata({
+      recordingSessionId: 43,
+      trackId: "live-instrument",
+      channelMode: "stereo"
+    })).toMatchObject({
+      takeGroupId: "recording-session-43",
+      recordingTakeGroupId: "recording-session-43",
+      takeStatus: "active",
+      inputMode: "stereo",
+      channelMap: [0, 1]
     });
   });
 

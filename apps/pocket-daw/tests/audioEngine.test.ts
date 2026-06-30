@@ -8,6 +8,7 @@ import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { addTrackToProject } from "../src/daw/tracks";
 import { createAutomationLane } from "../src/daw/automation";
+import { branchGeneratedDrumsToTracks } from "../src/daw/drumLanes";
 import { nativeRenderCacheSignature, nativeRuntimeAudioCacheSignature, type NativeRenderCache } from "../src/audio/nativeRenderCache";
 import type { Clip, PocketDawProject } from "../src/daw/schema";
 import { simpleMidiBytes } from "./midiFixtures";
@@ -101,6 +102,19 @@ describe("audio engine diagnostics", () => {
     expect(after.chordsmithSectionCount).toBe(before.chordsmithSectionCount);
     expect(chords).toMatchObject({ mute: true, solo: false });
     expect(bass).toMatchObject({ mute: false, solo: true });
+  });
+
+  it("taps generated drum branch meters from parent drum events", () => {
+    const project = branchGeneratedDrumsToTracks(createDemoProject());
+    const engine = new AudioEngine(project);
+    const internals = engine as unknown as { primeMeters(seconds: number): void; lastMeterRead: number };
+
+    internals.lastMeterRead = performance.now() / 1000;
+    internals.primeMeters(0);
+    const levels = engine.getMeterLevels();
+
+    expect(levels.drums).toBeGreaterThan(0);
+    expect(levels["drums-kick"]).toBeGreaterThan(0);
   });
 
   it("prewarms generated-stem cache while idle", async () => {
@@ -1505,6 +1519,7 @@ describe("audio engine diagnostics", () => {
 
       const diagnostics = engine.getDiagnostics();
       expect(starts).toHaveLength(1);
+      expect(diagnostics.nativeRenderCache.nativeRenderCacheStaleForLiveEdits).toBe(true);
       expect(diagnostics.nativeRenderCache.pendingReason).toBe("bass-edit-discarded");
       expect(diagnostics.nativeRenderCache.buildCount).toBe(0);
 
@@ -1519,6 +1534,7 @@ describe("audio engine diagnostics", () => {
       expect(engine.getDiagnostics().nativeAudio.restartCount).toBe(1);
       expect(engine.getDiagnostics().nativeAudio.lastRestartReason).toBe("bass-edit-discarded");
       expect(engine.getDiagnostics().nativeAudio.restartPending).toBe(false);
+      expect(engine.getDiagnostics().nativeRenderCache.nativeRenderCacheStaleForLiveEdits).toBe(false);
       expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBeNull();
       expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
     } finally {

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents, resolveClipEvents } from "../src/audio/eventRenderer";
 import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
-import { setDrumLaneMute, setDrumLanePan, setDrumLaneVolume } from "../src/daw/drumLanes";
+import { setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneSolo, setDrumLaneVolume } from "../src/daw/drumLanes";
 import type { Clip, ClipType } from "../src/daw/schema";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
+import { addMidiController, importMidiFileToProject, midiDataFromClip, setMidiControllerField, setMidiNoteField } from "../src/daw/midiClips";
+import { parseStandardMidiFile } from "../src/daw/midiParser";
+import { simpleMidiBytes } from "./midiFixtures";
 import { buildPocketAudioTimeline, normalisePocketChordsmithProject } from "../../../packages/pocket-audio-core/src/index.js";
 import { chordsmithHumanizeOffset, chordsmithHumanizePeak } from "../../../packages/pocket-audio-core/src/performance/humanize.js";
 
@@ -63,6 +66,25 @@ describe("event renderer", () => {
     expect(renderTimelineEvents(project).some((event) => event.kind === "snare")).toBe(false);
   });
 
+  it("applies per-drum lane gate to generated drum event durations", () => {
+    const project = createDemoProject();
+    const before = renderTimelineEvents(project).find((event) => event.kind === "snare");
+    const gated = renderTimelineEvents(setDrumLaneGate(project, "snare", 0.5)).find((event) => event.kind === "snare");
+
+    expect(before?.duration).toBeGreaterThan(0);
+    expect(gated?.duration).toBeCloseTo((before?.duration || 0) * 0.5, 5);
+  });
+
+  it("filters generated drums to soloed drum lanes", () => {
+    const project = setDrumLaneSolo(createDemoProject(), "kick", true);
+    const events = renderTimelineEvents(project);
+
+    expect(events.some((event) => event.kind === "kick")).toBe(true);
+    expect(events.some((event) => event.kind === "snare")).toBe(false);
+    expect(events.some((event) => event.kind === "hat")).toBe(false);
+    expect(events.some((event) => event.trackId === "bass")).toBe(true);
+  });
+
   it("uses Chordsmith humanise timing and peaks when imported projects request it", () => {
     const plain = renderTimelineEvents(chordsmithFixture(false));
     const human = renderTimelineEvents(chordsmithFixture(true));
@@ -106,6 +128,127 @@ describe("event renderer", () => {
     });
 
     expect(resolveClipEvents(project, { ...base, id: "midi-empty", type: "midi", muted: false, metadata: {} })).toEqual([]);
+  });
+
+  it("applies MIDI CC7 volume and CC10 pan to rendered MIDI preview events", () => {
+    const imported = importMidiFileToProject(
+      createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI CC Render" })),
+      parseStandardMidiFile(simpleMidiBytes()),
+      "lead.mid"
+    );
+    let project = addMidiController(imported.project, imported.clipId, 0);
+    let clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const volumeId = midiDataFromClip(clip).controllers[0].id;
+    project = setMidiControllerField(project, imported.clipId, volumeId, "controller", 7);
+    project = setMidiControllerField(project, imported.clipId, volumeId, "value", 64);
+    project = addMidiController(project, imported.clipId, 0);
+    clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const panId = midiDataFromClip(clip).controllers.find((point) => point.id !== volumeId)!.id;
+    project = setMidiControllerField(project, imported.clipId, panId, "controller", 10);
+    project = setMidiControllerField(project, imported.clipId, panId, "value", 127);
+
+    const event = renderTimelineEvents(project).find((item) => item.kind === "midi")!;
+
+    expect(event.midi).toBe(60);
+    expect(event.channel).toBe(0);
+    expect(event.velocity).toBeCloseTo((100 / 127) * (64 / 127), 5);
+    expect(event.pan).toBe(1);
+  });
+
+  it("lets MIDI CC7 value zero silence rendered MIDI preview events", () => {
+    const imported = importMidiFileToProject(
+      createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI CC Silence" })),
+      parseStandardMidiFile(simpleMidiBytes()),
+      "lead.mid"
+    );
+    let project = addMidiController(imported.project, imported.clipId, 0);
+    const clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const volumeId = midiDataFromClip(clip).controllers[0].id;
+    project = setMidiControllerField(project, imported.clipId, volumeId, "controller", 7);
+    project = setMidiControllerField(project, imported.clipId, volumeId, "value", 0);
+
+    const event = renderTimelineEvents(project).find((item) => item.kind === "midi")!;
+
+    expect(event.velocity).toBe(0);
+  });
+
+  it("renders precise MIDI note field edits", () => {
+    const imported = importMidiFileToProject(
+      createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Note Fields" })),
+      parseStandardMidiFile(simpleMidiBytes()),
+      "lead.mid"
+    );
+    const noteId = midiDataFromClip(imported.project.timeline.clips.find((item) => item.id === imported.clipId)!).notes[0].id;
+    let project = setMidiNoteField(imported.project, imported.clipId, noteId, "pitch", 72);
+    project = setMidiNoteField(project, imported.clipId, noteId, "startTick", 240);
+    project = setMidiNoteField(project, imported.clipId, noteId, "durationTicks", 960);
+    project = setMidiNoteField(project, imported.clipId, noteId, "velocity", 81);
+    project = setMidiNoteField(project, imported.clipId, noteId, "channel", 2);
+
+    const event = renderTimelineEvents(project).find((item) => item.kind === "midi")!;
+
+    expect(event.midi).toBe(72);
+    expect(event.step).toBe(240);
+    expect(event.duration).toBeCloseTo((960 / 480) * (60 / project.project.bpm), 5);
+    expect(event.velocity).toBeCloseTo(81 / 127, 5);
+    expect(event.channel).toBe(2);
+  });
+
+  it("matches MIDI controller playback to the note channel", () => {
+    const imported = importMidiFileToProject(
+      createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI CC Channel" })),
+      parseStandardMidiFile(simpleMidiBytes()),
+      "lead.mid"
+    );
+    const noteId = midiDataFromClip(imported.project.timeline.clips.find((item) => item.id === imported.clipId)!).notes[0].id;
+    let project = setMidiNoteField(imported.project, imported.clipId, noteId, "channel", 2);
+    project = addMidiController(project, imported.clipId, 0);
+    let clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const channelZeroVolumeId = midiDataFromClip(clip).controllers[0].id;
+    project = setMidiControllerField(project, imported.clipId, channelZeroVolumeId, "controller", 7);
+    project = setMidiControllerField(project, imported.clipId, channelZeroVolumeId, "value", 12);
+    project = setMidiControllerField(project, imported.clipId, channelZeroVolumeId, "channel", 0);
+    project = addMidiController(project, imported.clipId, 0);
+    clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const channelTwoVolumeId = midiDataFromClip(clip).controllers.find((point) => point.id !== channelZeroVolumeId)!.id;
+    project = setMidiControllerField(project, imported.clipId, channelTwoVolumeId, "controller", 7);
+    project = setMidiControllerField(project, imported.clipId, channelTwoVolumeId, "value", 96);
+    project = setMidiControllerField(project, imported.clipId, channelTwoVolumeId, "channel", 2);
+
+    const event = renderTimelineEvents(project).find((item) => item.kind === "midi")!;
+
+    expect(event.channel).toBe(2);
+    expect(event.velocity).toBeCloseTo((100 / 127) * (96 / 127), 5);
+  });
+
+  it("uses clipped MIDI note start and later same-tick controller values for CC playback", () => {
+    const imported = importMidiFileToProject(
+      createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI CC Trim" })),
+      parseStandardMidiFile(simpleMidiBytes()),
+      "lead.mid"
+    );
+    let project = addMidiController(imported.project, imported.clipId, 0);
+    let clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const firstVolumeId = midiDataFromClip(clip).controllers[0].id;
+    project = setMidiControllerField(project, imported.clipId, firstVolumeId, "controller", 7);
+    project = setMidiControllerField(project, imported.clipId, firstVolumeId, "value", 32);
+    project = addMidiController(project, imported.clipId, 240);
+    clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const clippedVolumeId = midiDataFromClip(clip).controllers.find((point) => point.id !== firstVolumeId)!.id;
+    project = setMidiControllerField(project, imported.clipId, clippedVolumeId, "controller", 7);
+    project = setMidiControllerField(project, imported.clipId, clippedVolumeId, "value", 64);
+    project = addMidiController(project, imported.clipId, 240);
+    clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const laterSameTickId = midiDataFromClip(clip).controllers.find((point) => point.id !== firstVolumeId && point.id !== clippedVolumeId)!.id;
+    project = setMidiControllerField(project, imported.clipId, laterSameTickId, "controller", 7);
+    project = setMidiControllerField(project, imported.clipId, laterSameTickId, "value", 96);
+    clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    clip.metadata = { ...(clip.metadata || {}), sourceStartTick: 240 };
+
+    const event = renderTimelineEvents(project).find((item) => item.kind === "midi")!;
+
+    expect(event.step).toBe(0);
+    expect(event.velocity).toBeCloseTo((100 / 127) * (96 / 127), 5);
   });
 });
 

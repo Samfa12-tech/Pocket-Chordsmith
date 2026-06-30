@@ -24,6 +24,18 @@ const CAPTURE_BUFFER_FULL_WARNING: &str =
 const CAPTURE_WRITER_STOPPED_WARNING: &str =
     "Native recording writer stopped before the input stream finished; additional input frames are being dropped.";
 
+fn sanitize_capture_channels(channels: u16) -> u16 {
+    if channels == 2 { 2 } else { 1 }
+}
+
+fn channel_count_for_mode(mode: Option<&str>) -> u16 {
+    if matches!(mode, Some(value) if value.eq_ignore_ascii_case("stereo")) {
+        2
+    } else {
+        1
+    }
+}
+
 struct RecordingWriterRuntime {
     handle: JoinHandle<Result<RecordingWriterSummary, String>>,
     queue: Arc<CaptureWriterRing>,
@@ -31,6 +43,7 @@ struct RecordingWriterRuntime {
 
 struct RecordingWriterSummary {
     sample_count: u64,
+    channels: u16,
     size_bytes: u64,
 }
 
@@ -52,6 +65,7 @@ pub struct NativeRecordingRuntime {
     capture_started_at_unix_ms: Option<u64>,
     input_device_name: Option<String>,
     output_device_name: Option<String>,
+    capture_channels: u16,
     last_error: Option<String>,
 }
 
@@ -79,6 +93,8 @@ pub struct NativeRecordingStartPayload {
     monitor_volume: f64,
     #[serde(rename = "monitorPan")]
     monitor_pan: f64,
+    #[serde(rename = "channelMode")]
+    channel_mode: Option<String>,
     #[serde(rename = "recordingSessionId")]
     recording_session_id: Option<u64>,
     #[serde(rename = "startBar")]
@@ -392,18 +408,24 @@ impl CaptureWriterRing {
         self.available.notify_all();
     }
 
-    fn push(&self, sample: f32) -> Result<(), CaptureWriterPushError> {
+    fn push_frame(&self, samples: &[f32]) -> Result<(), CaptureWriterPushError> {
         if self.cancelled.load(Ordering::Acquire) || self.closed.load(Ordering::Acquire) {
             return Err(CaptureWriterPushError::Closed);
         }
+        let samples = if samples.is_empty() { &[0.0][..] } else { samples };
         let write = self.write_index.load(Ordering::Relaxed);
         let read = self.read_index.load(Ordering::Acquire);
-        if write.wrapping_sub(read) >= self.capacity {
+        if write.wrapping_sub(read).saturating_add(samples.len()) > self.capacity {
             return Err(CaptureWriterPushError::Full);
         }
-        self.samples[write % self.capacity].store(sample.to_bits(), Ordering::Relaxed);
-        self.write_index
-            .store(write.wrapping_add(1), Ordering::Release);
+        for (offset, sample) in samples.iter().enumerate() {
+            self.samples[(write + offset) % self.capacity]
+                .store(sample.clamp(-1.0, 1.0).to_bits(), Ordering::Relaxed);
+        }
+        self.write_index.store(
+            write.wrapping_add(samples.len()),
+            Ordering::Release,
+        );
         Ok(())
     }
 
@@ -481,6 +503,7 @@ struct RecordingShared {
     writer_ring: Arc<CaptureWriterRing>,
     monitor_ring: MonitorRing,
     sample_rate: u32,
+    capture_channels: AtomicU8,
     monitor_enabled: AtomicBool,
     monitor_gain_bits: AtomicU32,
     monitor_pan_bits: AtomicU32,
@@ -501,33 +524,39 @@ struct RecordingShared {
 impl RecordingShared {
     fn new(
         sample_rate: u32,
+        capture_channels: u16,
         monitor_enabled: bool,
         monitor_volume: f64,
         monitor_pan: f64,
         capture_enabled: bool,
     ) -> Self {
+        let capture_channels = sanitize_capture_channels(capture_channels);
         Self::new_with_writer_capacity(
             sample_rate,
+            capture_channels,
             monitor_enabled,
             monitor_volume,
             monitor_pan,
             capture_enabled,
-            sample_rate as usize * WRITER_RING_SECONDS,
+            sample_rate as usize * WRITER_RING_SECONDS * capture_channels as usize,
         )
     }
 
     fn new_with_writer_capacity(
         sample_rate: u32,
+        capture_channels: u16,
         monitor_enabled: bool,
         monitor_volume: f64,
         monitor_pan: f64,
         capture_enabled: bool,
         writer_sample_capacity: usize,
     ) -> Self {
+        let capture_channels = sanitize_capture_channels(capture_channels);
         Self {
             writer_ring: Arc::new(CaptureWriterRing::new(writer_sample_capacity)),
             monitor_ring: MonitorRing::new(sample_rate as usize * MONITOR_BUFFER_SECONDS),
             sample_rate,
+            capture_channels: AtomicU8::new(capture_channels as u8),
             monitor_enabled: AtomicBool::new(monitor_enabled),
             monitor_gain_bits: AtomicU32::new(clamp_monitor_gain(monitor_volume).to_bits()),
             monitor_pan_bits: AtomicU32::new(clamp_monitor_pan(monitor_pan).to_bits()),
@@ -556,6 +585,15 @@ impl RecordingShared {
 
     fn peak(&self) -> f32 {
         f32::from_bits(self.peak_bits.load(Ordering::Relaxed))
+    }
+
+    fn capture_channels(&self) -> u16 {
+        sanitize_capture_channels(self.capture_channels.load(Ordering::Acquire) as u16)
+    }
+
+    fn set_capture_channels(&self, channels: u16) {
+        self.capture_channels
+            .store(sanitize_capture_channels(channels) as u8, Ordering::Release);
     }
 
     fn update_peak(&self, block_peak: f32) {
@@ -746,6 +784,7 @@ pub fn native_recording_start(
         .map_err(|err| format!("Could not use the selected input device for recording: {err}"))?;
     let sample_rate = config.sample_rate();
     let input_channels = config.channels().max(1) as usize;
+    let capture_channels = channel_count_for_mode(payload.channel_mode.as_deref());
     let stream_config: cpal::StreamConfig = config.clone().into();
     let (target_path, target_relative_path, file_name) = recording_output_path(
         &payload.project_file_path,
@@ -754,6 +793,7 @@ pub fn native_recording_start(
     )?;
     let shared = Arc::new(RecordingShared::new(
         sample_rate,
+        capture_channels,
         payload.monitor_enabled,
         payload.monitor_volume,
         payload.monitor_pan,
@@ -814,8 +854,12 @@ pub fn native_recording_start(
         None
     };
 
-    let writer =
-        start_recording_writer(&target_path, sample_rate, Arc::clone(&shared.writer_ring))?;
+    let writer = start_recording_writer(
+        &target_path,
+        sample_rate,
+        capture_channels,
+        Arc::clone(&shared.writer_ring),
+    )?;
     enable_capture_on_shared(
         &shared,
         payload.monitor_enabled,
@@ -857,6 +901,7 @@ pub fn native_recording_start(
     runtime.capture_started_at_unix_ms = unix_now_ms();
     runtime.input_device_name = Some(input_device_name);
     runtime.output_device_name = output_device_name;
+    runtime.capture_channels = 0;
     runtime.last_error = None;
     Ok(runtime_status(&runtime))
 }
@@ -905,8 +950,14 @@ fn promote_preview_to_recording(
     }
 
     let sample_rate = shared_sample_rate(&shared)?;
-    let writer =
-        start_recording_writer(&target_path, sample_rate, Arc::clone(&shared.writer_ring))?;
+    let capture_channels = channel_count_for_mode(payload.channel_mode.as_deref());
+    shared.set_capture_channels(capture_channels);
+    let writer = start_recording_writer(
+        &target_path,
+        sample_rate,
+        capture_channels,
+        Arc::clone(&shared.writer_ring),
+    )?;
 
     enable_capture_on_shared(
         &shared,
@@ -965,6 +1016,7 @@ pub fn native_recording_start_preview(
     let stream_config: cpal::StreamConfig = config.clone().into();
     let shared = Arc::new(RecordingShared::new(
         sample_rate,
+        2,
         payload.monitor_enabled,
         payload.monitor_volume,
         payload.monitor_pan,
@@ -1051,6 +1103,7 @@ pub fn native_recording_start_preview(
     runtime.capture_started_at_unix_ms = None;
     runtime.input_device_name = Some(input_device_name);
     runtime.output_device_name = output_device_name;
+    runtime.capture_channels = 0;
     runtime.last_error = None;
     Ok(runtime_status(&runtime))
 }
@@ -1186,7 +1239,7 @@ fn stop_recording_runtime_with_callback_drain_timeout(
         file_name,
         duration_seconds,
         sample_rate,
-        channels: 1,
+        channels: writer_summary.channels,
         size_bytes,
         peak,
         capture_started_at_unix_ms,
@@ -1260,6 +1313,7 @@ fn reset_recording_runtime_after_stop(
     runtime.capture_started_at_unix_ms = None;
     runtime.input_device_name = None;
     runtime.output_device_name = None;
+    runtime.capture_channels = 0;
     runtime.last_error = last_error;
 }
 
@@ -1370,6 +1424,7 @@ fn clear_runtime_streams(runtime: &mut NativeRecordingRuntime) {
     runtime.capture_started_at_unix_ms = None;
     runtime.input_device_name = None;
     runtime.output_device_name = None;
+    runtime.capture_channels = 0;
 }
 
 fn apply_monitor_settings(shared: &Arc<RecordingShared>, enabled: bool, volume: f64, pan: f64) {
@@ -1419,45 +1474,76 @@ fn enable_capture_on_shared_with_before_enable<F>(
 }
 
 fn capture_f32(data: &[f32], channels: usize, shared: &Arc<RecordingShared>) {
-    capture_samples(
-        data.chunks(channels)
-            .map(|frame| *frame.first().unwrap_or(&0.0)),
-        shared,
-    );
+    capture_samples(data.chunks(channels).map(capture_frame_f32), shared);
 }
 
 fn capture_i16(data: &[i16], channels: usize, shared: &Arc<RecordingShared>) {
-    capture_samples(
-        data.chunks(channels)
-            .map(|frame| *frame.first().unwrap_or(&0) as f32 / i16::MAX as f32),
-        shared,
-    );
+    capture_samples(data.chunks(channels).map(capture_frame_i16), shared);
 }
 
 fn capture_u16(data: &[u16], channels: usize, shared: &Arc<RecordingShared>) {
-    capture_samples(
-        data.chunks(channels).map(|frame| {
-            (*frame.first().unwrap_or(&(u16::MAX / 2)) as f32 / u16::MAX as f32) * 2.0 - 1.0
-        }),
-        shared,
-    );
+    capture_samples(data.chunks(channels).map(capture_frame_u16), shared);
 }
 
-fn capture_samples<I>(samples: I, shared: &Arc<RecordingShared>)
+fn capture_frame_f32(frame: &[f32]) -> [f32; 2] {
+    let left = *frame.first().unwrap_or(&0.0);
+    let right = *frame.get(1).unwrap_or(&left);
+    [left.clamp(-1.0, 1.0), right.clamp(-1.0, 1.0)]
+}
+
+fn capture_frame_i16(frame: &[i16]) -> [f32; 2] {
+    let left = *frame.first().unwrap_or(&0) as f32 / i16::MAX as f32;
+    let right = *frame.get(1).unwrap_or(frame.first().unwrap_or(&0)) as f32 / i16::MAX as f32;
+    [left.clamp(-1.0, 1.0), right.clamp(-1.0, 1.0)]
+}
+
+fn capture_frame_u16(frame: &[u16]) -> [f32; 2] {
+    let default = u16::MAX / 2;
+    let to_f32 = |sample: u16| (sample as f32 / u16::MAX as f32) * 2.0 - 1.0;
+    let left = to_f32(*frame.first().unwrap_or(&default));
+    let right = to_f32(*frame.get(1).unwrap_or(frame.first().unwrap_or(&default)));
+    [left.clamp(-1.0, 1.0), right.clamp(-1.0, 1.0)]
+}
+
+trait IntoCaptureFrame {
+    fn into_capture_frame(self) -> [f32; 2];
+}
+
+impl IntoCaptureFrame for f32 {
+    fn into_capture_frame(self) -> [f32; 2] {
+        [self, self]
+    }
+}
+
+impl IntoCaptureFrame for [f32; 2] {
+    fn into_capture_frame(self) -> [f32; 2] {
+        self
+    }
+}
+
+fn capture_samples<I, T>(samples: I, shared: &Arc<RecordingShared>)
 where
-    I: Iterator<Item = f32>,
+    I: Iterator<Item = T>,
+    T: IntoCaptureFrame,
 {
     let _callback_guard = InputCallbackGuard::new(shared);
+    let capture_channels = shared.capture_channels();
     let mut block_peak = 0.0f32;
     let mut captured_frame_count = 0u64;
     let mut dropped_frame_count = 0u64;
     let mut first_captured_input_frame = None;
     let mut warning_code = None;
     let mut wrote_to_writer_ring = false;
-    for sample in samples {
+    for frame in samples.map(IntoCaptureFrame::into_capture_frame) {
         let input_frame = shared.input_frame_count.fetch_add(1, Ordering::AcqRel);
-        let mono = sample.clamp(-1.0, 1.0);
-        block_peak = block_peak.max(mono.abs());
+        let left = frame[0].clamp(-1.0, 1.0);
+        let right = frame[1].clamp(-1.0, 1.0);
+        let mono = if capture_channels == 2 {
+            ((left + right) * 0.5).clamp(-1.0, 1.0)
+        } else {
+            left
+        };
+        block_peak = block_peak.max(left.abs()).max(if capture_channels == 2 { right.abs() } else { 0.0 });
         if shared.capture_enabled.load(Ordering::Acquire) {
             let _ = shared.capture_start_input_frame.compare_exchange(
                 NO_FRAME,
@@ -1465,7 +1551,12 @@ where
                 Ordering::AcqRel,
                 Ordering::Relaxed,
             );
-            match shared.writer_ring.push(mono) {
+            let writer_frame = if capture_channels == 2 {
+                [left, right]
+            } else {
+                [mono, mono]
+            };
+            match shared.writer_ring.push_frame(&writer_frame[..capture_channels as usize]) {
                 Ok(()) => {
                     if first_captured_input_frame.is_none() {
                         first_captured_input_frame = Some(input_frame);
@@ -1868,8 +1959,10 @@ fn sanitize_id(value: &str) -> String {
 fn start_recording_writer(
     target_path: &Path,
     sample_rate: u32,
+    channels: u16,
     queue: Arc<CaptureWriterRing>,
 ) -> Result<RecordingWriterRuntime, String> {
+    let channels = sanitize_capture_channels(channels);
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|err| format!("Could not create project-media/recordings folder: {err}"))?;
@@ -1882,14 +1975,14 @@ fn start_recording_writer(
     }
     let mut file = File::create(&part_path)
         .map_err(|err| format!("Could not create recording part file: {err}"))?;
-    write_wav_header(&mut file, sample_rate, 0)
+    write_wav_header(&mut file, sample_rate, channels, 0)
         .map_err(|err| format!("Could not prepare recording WAV header: {err}"))?;
 
     let target_path = target_path.to_path_buf();
     queue.reset_for_recording();
     let writer_queue = Arc::clone(&queue);
     let handle = thread::spawn(move || {
-        run_recording_writer(file, writer_queue, sample_rate, part_path, target_path)
+        run_recording_writer(file, writer_queue, sample_rate, channels, part_path, target_path)
     });
     Ok(RecordingWriterRuntime { handle, queue })
 }
@@ -1907,10 +2000,12 @@ fn run_recording_writer(
     file: File,
     queue: Arc<CaptureWriterRing>,
     sample_rate: u32,
+    channels: u16,
     part_path: PathBuf,
     target_path: PathBuf,
 ) -> Result<RecordingWriterSummary, String> {
     let mut file = BufWriter::with_capacity(64 * 1024, file);
+    let channels = sanitize_capture_channels(channels);
     let mut sample_count = 0u64;
     loop {
         match queue.pop_or_wait() {
@@ -1930,7 +2025,8 @@ fn run_recording_writer(
         }
     }
 
-    patch_wav_header(&mut file, sample_rate, sample_count)
+    let frame_count = sample_count / u64::from(channels);
+    patch_wav_header(&mut file, sample_rate, channels, frame_count)
         .map_err(|err| format!("Could not finalize recorded WAV header: {err}"))?;
     file.flush()
         .map_err(|err| format!("Could not flush recorded WAV file: {err}"))?;
@@ -1944,7 +2040,8 @@ fn run_recording_writer(
         .map(|metadata| metadata.len())
         .unwrap_or(44u64.saturating_add(sample_count.saturating_mul(2)));
     Ok(RecordingWriterSummary {
-        sample_count,
+        sample_count: frame_count,
+        channels,
         size_bytes,
     })
 }
@@ -1961,10 +2058,12 @@ fn recording_part_path(target_path: &Path) -> PathBuf {
 fn write_wav_header<W: Write>(
     writer: &mut W,
     sample_rate: u32,
-    sample_count: u64,
+    channels: u16,
+    frame_count: u64,
 ) -> std::io::Result<()> {
     let sample_rate = sample_rate.max(1);
-    let data_len = wav_data_len(sample_count);
+    let channels = sanitize_capture_channels(channels);
+    let data_len = wav_data_len(frame_count, channels);
     let riff_len = 36u32.saturating_add(data_len);
     writer.write_all(b"RIFF")?;
     writer.write_all(&riff_len.to_le_bytes())?;
@@ -1972,10 +2071,10 @@ fn write_wav_header<W: Write>(
     writer.write_all(b"fmt ")?;
     writer.write_all(&16u32.to_le_bytes())?;
     writer.write_all(&1u16.to_le_bytes())?;
-    writer.write_all(&1u16.to_le_bytes())?;
+    writer.write_all(&channels.to_le_bytes())?;
     writer.write_all(&sample_rate.to_le_bytes())?;
-    writer.write_all(&(sample_rate * 2).to_le_bytes())?;
-    writer.write_all(&2u16.to_le_bytes())?;
+    writer.write_all(&(sample_rate * u32::from(channels) * 2).to_le_bytes())?;
+    writer.write_all(&(channels * 2).to_le_bytes())?;
     writer.write_all(&16u16.to_le_bytes())?;
     writer.write_all(b"data")?;
     writer.write_all(&data_len.to_le_bytes())?;
@@ -1985,9 +2084,11 @@ fn write_wav_header<W: Write>(
 fn patch_wav_header<W: Seek + Write>(
     file: &mut W,
     sample_rate: u32,
-    sample_count: u64,
+    channels: u16,
+    frame_count: u64,
 ) -> std::io::Result<()> {
-    let data_len = wav_data_len(sample_count);
+    let channels = sanitize_capture_channels(channels);
+    let data_len = wav_data_len(frame_count, channels);
     let riff_len = 36u32.saturating_add(data_len);
     file.seek(SeekFrom::Start(4))?;
     file.write_all(&riff_len.to_le_bytes())?;
@@ -1995,15 +2096,20 @@ fn patch_wav_header<W: Seek + Write>(
     let sample_rate = sample_rate.max(1);
     file.write_all(&sample_rate.to_le_bytes())?;
     file.seek(SeekFrom::Start(28))?;
-    file.write_all(&(sample_rate * 2).to_le_bytes())?;
+    file.write_all(&(sample_rate * u32::from(channels) * 2).to_le_bytes())?;
+    file.seek(SeekFrom::Start(32))?;
+    file.write_all(&(channels * 2).to_le_bytes())?;
     file.seek(SeekFrom::Start(40))?;
     file.write_all(&data_len.to_le_bytes())?;
     file.seek(SeekFrom::End(0))?;
     Ok(())
 }
 
-fn wav_data_len(sample_count: u64) -> u32 {
-    sample_count.saturating_mul(2).min(u32::MAX as u64) as u32
+fn wav_data_len(frame_count: u64, channels: u16) -> u32 {
+    frame_count
+        .saturating_mul(u64::from(sanitize_capture_channels(channels)))
+        .saturating_mul(2)
+        .min(u32::MAX as u64) as u32
 }
 
 #[cfg(test)]
@@ -2050,6 +2156,7 @@ mod tests {
     ) -> Arc<RecordingShared> {
         Arc::new(RecordingShared::new_with_writer_capacity(
             sample_rate,
+            1,
             true,
             1.0,
             0.0,
@@ -2110,9 +2217,9 @@ mod tests {
 
         let queue = Arc::new(CaptureWriterRing::new(4));
         let writer =
-            start_recording_writer(&target_path, 48_000, Arc::clone(&queue)).expect("writer");
-        assert!(queue.push(0.0).is_ok());
-        assert!(queue.push(1.0).is_ok());
+            start_recording_writer(&target_path, 48_000, 1, Arc::clone(&queue)).expect("writer");
+        assert!(queue.push_frame(&[0.0]).is_ok());
+        assert!(queue.push_frame(&[1.0]).is_ok());
         queue.close();
 
         let summary = finalize_recording_writer(writer).expect("writer summary");
@@ -2127,6 +2234,39 @@ mod tests {
             u32::from_le_bytes([bytes[40], bytes[41], bytes[42], bytes[43]]),
             4
         );
+
+        let _ = fs::remove_dir_all(&target_dir);
+    }
+
+    #[test]
+    fn recording_writer_streams_stereo_frames_to_wav() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos();
+        let target_dir = std::env::temp_dir().join(format!(
+            "pocket-daw-recording-writer-stereo-{}-{stamp}",
+            std::process::id()
+        ));
+        let target_path = target_dir.join("take-stereo.wav");
+
+        let queue = Arc::new(CaptureWriterRing::new(8));
+        let writer =
+            start_recording_writer(&target_path, 48_000, 2, Arc::clone(&queue)).expect("writer");
+        assert!(queue.push_frame(&[0.5, -0.5]).is_ok());
+        assert!(queue.push_frame(&[1.0, 0.0]).is_ok());
+        queue.close();
+
+        let summary = finalize_recording_writer(writer).expect("writer summary");
+
+        assert_eq!(summary.sample_count, 2);
+        assert_eq!(summary.channels, 2);
+        assert_eq!(summary.size_bytes, 52);
+        let bytes = fs::read(&target_path).expect("recorded wav");
+        assert_eq!(u16::from_le_bytes([bytes[22], bytes[23]]), 2);
+        assert_eq!(u32::from_le_bytes([bytes[28], bytes[29], bytes[30], bytes[31]]), 192_000);
+        assert_eq!(u16::from_le_bytes([bytes[32], bytes[33]]), 4);
+        assert_eq!(u32::from_le_bytes([bytes[40], bytes[41], bytes[42], bytes[43]]), 8);
 
         let _ = fs::remove_dir_all(&target_dir);
     }
@@ -2396,6 +2536,19 @@ mod tests {
     }
 
     #[test]
+    fn capture_samples_writes_stereo_frames_when_requested() {
+        let shared = test_shared(true, 48_000);
+        shared.set_capture_channels(2);
+        let queue = attach_test_writer(&shared);
+
+        capture_samples([[0.25, -0.5], [0.75, 0.5]].into_iter(), &shared);
+
+        assert_eq!(load_count(&shared.input_frame_count), 2);
+        assert_eq!(load_count(&shared.captured_frame_count), 2);
+        assert_eq!(drain_writer_ring(&queue), vec![0.25, -0.5, 0.75, 0.5]);
+    }
+
+    #[test]
     fn monitor_output_does_not_wait_on_recording_control_mutex() {
         let shared = test_shared(false, 4);
         capture_samples([0.5].into_iter(), &shared);
@@ -2520,7 +2673,7 @@ mod tests {
         let target_path = target_dir.join("take.wav");
 
         let shared = test_shared(true, 48_000);
-        let writer = start_recording_writer(&target_path, 48_000, Arc::clone(&shared.writer_ring))
+        let writer = start_recording_writer(&target_path, 48_000, 1, Arc::clone(&shared.writer_ring))
             .expect("recording writer");
         shared
             .active_input_callback_count
@@ -2574,7 +2727,7 @@ mod tests {
         fs::create_dir_all(&target_path).expect("directory blocking final wav rename");
 
         let shared = test_shared(true, 48_000);
-        let writer = start_recording_writer(&target_path, 48_000, Arc::clone(&shared.writer_ring))
+        let writer = start_recording_writer(&target_path, 48_000, 1, Arc::clone(&shared.writer_ring))
             .expect("recording writer");
         capture_samples([0.0, 0.25].into_iter(), &shared);
         let mut runtime = NativeRecordingRuntime {
@@ -2622,6 +2775,7 @@ mod tests {
                 }
                 Ok(RecordingWriterSummary {
                     sample_count: 1,
+                    channels: 1,
                     size_bytes: 46,
                 })
             }),
@@ -2646,7 +2800,7 @@ mod tests {
         let target_path = target_dir.join("take.wav");
 
         let shared = test_shared(true, 48_000);
-        let writer = start_recording_writer(&target_path, 48_000, Arc::clone(&shared.writer_ring))
+        let writer = start_recording_writer(&target_path, 48_000, 1, Arc::clone(&shared.writer_ring))
             .expect("recording writer");
         capture_samples([0.0, 0.25].into_iter(), &shared);
         shared.dropped_input_frame_count.store(2, Ordering::Release);

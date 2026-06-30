@@ -11,12 +11,14 @@ Keeping these as separate commands prevents the MIDI import path from silently t
 
 Current Pocket DAW builds parse a MIDI file into:
 
-- one Media Pool item with format, PPQ, tempo, time signature, track names, parsed track count, note count, and track summaries
-- one editable MIDI timeline clip
+- one Media Pool item with format, PPQ, tempo, time signature, track names, parsed track count, note count, track summaries, tempo events, time-signature events, key signatures, lyrics, SysEx count, and expressive-event counts
+- import warnings when a file contains tempo or meter maps that are preserved as metadata but not yet rendered as DAW tempo/meter lanes
+- editable MIDI timeline clips using the selected placement mode: one compatible clip by default, one clip per source track, one clip per MIDI channel, or raw channel-10 drum notes split by pitch
 - note metadata with pitch, start tick, duration, velocity, channel, and source track index
+- controller, program-change, pitch-bend, poly-aftertouch and channel-aftertouch metadata that can roundtrip through MIDI export even before the piano roll exposes every lane as a polished editor
 - preview-synth playback through the normal timeline render/event path
 
-This is intentionally conservative. Controller, program-change, pitch-bend, sysex, and richer tempo-map details are counted or ignored rather than promoted into editable DAW lanes.
+This is intentionally conservative. Import preserves raw DAW material and useful diagnostics without silently converting the file into Chordsmith drums, bass, chords or melody lanes.
 
 ## Command Boundary
 
@@ -30,7 +32,7 @@ Responsibilities:
 
 - Parse SMF format 0 and format 1 files defensively.
 - Keep source track, channel, PPQ, tempo/time-signature, and note metadata available on the media item and MIDI clip.
-- Create editable MIDI clips without forcing Chordsmith drums/bass/chords/melody semantics.
+- Create editable MIDI clips without forcing Chordsmith drums/bass/chords/melody semantics, optionally split by source track or MIDI channel.
 - Preserve or summarize non-note data that cannot be edited yet.
 - Keep imported MIDI exportable and playable through preview/native paths as those paths mature.
 
@@ -63,17 +65,17 @@ Non-goals:
 
 ## Import Roadmap
 
-1. Preserve richer MIDI facts.
+1. Preserve richer MIDI facts. `Current source status: first pass implemented for tempo events, time-signature events, key signatures, lyrics, SysEx counts, track summaries and core expressive-event lists.`
    - Track names, channels, programs, controller counts, pitch-bend counts, tempo events, time-signature events, lyric/text marker counts, and drum-channel summaries.
    - Keep raw-ish summaries in metadata even before the UI can edit them.
 
-2. Split import placement options.
+2. Split import placement options. `Current source status: first pass implemented for single compatible clip, one clip per source track, one clip per MIDI channel, and raw drum-channel split. Each mode shares one source media-pool item and preserves notes, CCs, programs, pitch bends and aftertouch in the created clips.`
    - `Single MIDI Clip`: current compatible behavior.
    - `One Clip Per Source Track`: creates separate clips/tracks from `trackIndex`.
    - `One Clip Per Channel`: useful for format 0 files.
-   - `Drum Channel Split`: optional view that groups channel 10 notes without converting to Chordsmith drums.
+   - `Drum Channel Split`: optional raw-MIDI view that groups channel 10 notes by pitch without converting to Chordsmith drums and keeps non-drum channels in an ordinary MIDI clip.
 
-3. Represent tempo maps explicitly.
+3. Represent tempo maps explicitly. `Current source status: tempo and meter event lists are preserved, and imports now warn when multiple tempo or time-signature events are present while playback/export still use the project tempo/meter model.`
    - Keep first-tempo behavior for the current project tempo until tempo lanes exist.
    - Store tempo/time-signature event lists on the MIDI media item.
    - Warn when a file has multiple tempo or time-signature changes.
@@ -115,7 +117,7 @@ Import tests:
 - channel 10 drum notes preserved as MIDI notes with channel metadata
 - multiple tempo/time-signature events summarized without changing project tempo silently
 - controller/program/pitch-bend counts preserved in metadata
-- one-clip, per-track, and per-channel import placement options when those modes are implemented
+- one-clip, per-track, per-channel and drum-channel split import placement options share one media-pool source item and export as separate DAW tracks
 
 Conversion tests:
 
@@ -133,4 +135,4 @@ Until the roadmap above is implemented, describe current MIDI import as:
 MIDI import creates editable MIDI media/clips for preview playback and export. It does not yet perform full multitrack arrangement import or automatic Chordsmith conversion.
 ```
 
-Do not describe current import as a complete MIDI sequencer, controller editor, tempo-map editor, or Chordsmith converter.
+It is now accurate to say the source build can place imported MIDI as one clip, one clip per source track, one clip per channel, or raw channel-10 drum-note clips. Do not describe current import as a complete MIDI sequencer, tempo-map editor, generated drum mapper, or Chordsmith converter.

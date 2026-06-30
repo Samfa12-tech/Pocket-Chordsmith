@@ -9,6 +9,8 @@ export const REQUIRED_SMOKE_CHECK_IDS = Object.freeze([
   "basic-audio",
   "chordsmith-import",
   "project-workflow",
+  "native-media-reliability",
+  "game-pack-target-smoke",
   "updater-check"
 ]);
 

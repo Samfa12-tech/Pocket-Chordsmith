@@ -1,8 +1,9 @@
 import type { AudioEngine } from "../audio/audioEngine";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
-import { mediaPoolStatus } from "../daw/mediaPool";
+import { createAudioMediaAnalysisSummary, createRenderCacheSummary, mediaPoolStatus, type AudioMediaAnalysisSummary, type RenderCacheSummary } from "../daw/mediaPool";
 import { validateProjectInvariants, type ProjectInvariantIssue } from "../daw/projectInvariants";
-import { POCKET_DAW_VERSION } from "../daw/schema";
+import { createRoutingExportSummary, type RoutingExportSummary } from "../daw/routing";
+import { POCKET_DAW_VERSION, type PocketDawProject } from "../daw/schema";
 import { currentProject, type AppState } from "./state";
 import type { PerformanceDiagnosticsReport } from "./performanceDiagnostics";
 
@@ -36,6 +37,7 @@ export interface TesterDiagnosticsPayload {
     invariantWarningCount: number;
     invariantErrors: ProjectInvariantIssue[];
     invariantWarnings: ProjectInvariantIssue[];
+    audioTakes: AudioTakeDiagnosticsSummary;
   };
   audio: {
     playbackBackend: string;
@@ -86,6 +88,7 @@ export interface TesterDiagnosticsPayload {
     receivedAt: string | null;
     message: string;
   };
+  routing: RoutingExportSummary;
   media: {
     poolCount: number;
     projectMediaCount: number;
@@ -94,6 +97,8 @@ export interface TesterDiagnosticsPayload {
     missingCount: number;
     runtimeAvailableCount: number;
     renderCacheCount: number;
+    renderCache: RenderCacheSummary;
+    analysis: AudioMediaAnalysisSummary;
     nativeRenderCache: AudioEngineDiagnostics["nativeRenderCache"];
   };
   storage: {
@@ -101,6 +106,21 @@ export interface TesterDiagnosticsPayload {
     userDataPath: string;
   };
   performance: PerformanceDiagnosticsReport | null;
+}
+
+export interface AudioTakeDiagnosticsSummary {
+  groupedClipCount: number;
+  groupCount: number;
+  activeCount: number;
+  mutedCount: number;
+  archivedCount: number;
+  groups: Array<{
+    groupId: string;
+    clipCount: number;
+    activeCount: number;
+    mutedCount: number;
+    archivedCount: number;
+  }>;
 }
 
 const UPDATER_ENDPOINT = "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json";
@@ -120,6 +140,7 @@ export function buildTesterDiagnosticsPayload(
   const devices = project.audioDeviceSettings.devices || [];
   const metronome = project.project.metronome || { enabled: false, countInBars: 1, volume: 0.55 };
   const invariants = validateProjectInvariants(project);
+  const routing = createRoutingExportSummary(project);
 
   return {
     capturedAt: options.capturedAt || new Date().toISOString(),
@@ -148,7 +169,8 @@ export function buildTesterDiagnosticsPayload(
       invariantErrorCount: invariants.errors.length,
       invariantWarningCount: invariants.warnings.length,
       invariantErrors: invariants.errors,
-      invariantWarnings: invariants.warnings
+      invariantWarnings: invariants.warnings,
+      audioTakes: createAudioTakeDiagnosticsSummary(project)
     },
     audio: {
       playbackBackend: String(audioDiagnostics.playbackBackend),
@@ -199,6 +221,7 @@ export function buildTesterDiagnosticsPayload(
       receivedAt: state.lastHandoff.receivedAt,
       message: state.lastHandoff.message
     },
+    routing,
     media: {
       poolCount: project.mediaPool.length,
       projectMediaCount,
@@ -207,6 +230,8 @@ export function buildTesterDiagnosticsPayload(
       missingCount,
       runtimeAvailableCount,
       renderCacheCount: project.renderCache.length,
+      renderCache: createRenderCacheSummary(project),
+      analysis: createAudioMediaAnalysisSummary(project),
       nativeRenderCache: audioDiagnostics.nativeRenderCache
     },
     storage: {
@@ -216,6 +241,45 @@ export function buildTesterDiagnosticsPayload(
         : "Unsaved project; autosave/recent settings use the installed app or browser runtime storage."
     },
     performance: options.performance || null
+  };
+}
+
+export function createAudioTakeDiagnosticsSummary(project: PocketDawProject): AudioTakeDiagnosticsSummary {
+  const audioTakeClips = project.timeline.clips.filter((clip) => clip.type === "audio" && (clip.metadata?.recordingTakeGroupId || clip.metadata?.takeGroupId));
+  const groups = new Map<string, AudioTakeDiagnosticsSummary["groups"][number]>();
+  let activeCount = 0;
+  let mutedCount = 0;
+  let archivedCount = 0;
+  audioTakeClips.forEach((clip) => {
+    const groupId = String(clip.metadata?.recordingTakeGroupId || clip.metadata?.takeGroupId || "");
+    const current = groups.get(groupId) || { groupId, clipCount: 0, activeCount: 0, mutedCount: 0, archivedCount: 0 };
+    const status = clip.metadata?.takeStatus === "archived-take" || clip.metadata?.takeStatus === "muted-take" || clip.metadata?.takeStatus === "active"
+      ? clip.metadata.takeStatus
+      : clip.muted || clip.metadata?.takeActive === false
+        ? "muted-take"
+        : "active";
+    current.clipCount += 1;
+    if (status === "active" && !clip.muted) {
+      current.activeCount += 1;
+      activeCount += 1;
+    }
+    if (status === "archived-take") {
+      current.archivedCount += 1;
+      archivedCount += 1;
+    }
+    if (status === "muted-take" || clip.muted) {
+      current.mutedCount += 1;
+      mutedCount += 1;
+    }
+    groups.set(groupId, current);
+  });
+  return {
+    groupedClipCount: audioTakeClips.length,
+    groupCount: groups.size,
+    activeCount,
+    mutedCount,
+    archivedCount,
+    groups: [...groups.values()].sort((a, b) => a.groupId.localeCompare(b.groupId))
   };
 }
 

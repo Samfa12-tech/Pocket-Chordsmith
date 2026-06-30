@@ -16,6 +16,7 @@
   --purple: #b88cff;
   --danger: #ff6b8b;
   --menu-strip-height: 31px;
+  --transport-strip-height: 96px;
   --native-titlebar-safe-top: 0px;
 }
 
@@ -499,6 +500,15 @@ button.record:hover {
   background: #142038;
 }
 
+.timeline-row.drum-branch-row .timeline-track-header {
+  border-left: 3px solid rgba(64, 216, 255, 0.46);
+  background: #0b1320;
+}
+
+.timeline-row.drum-branch-row .timeline-track-lanes {
+  color: #a9dff0;
+}
+
 .timeline-track-header .track-colour {
   grid-area: colour;
 }
@@ -768,6 +778,61 @@ button.record:hover {
   background: #0e1423;
 }
 
+.clip-stem-mutes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid #2d3958;
+  border-radius: 6px;
+  background: #0d1322;
+}
+
+.inspector .clip-stem-mutes label {
+  margin: 0;
+}
+
+.clip-stem-mutes .checkbox-row {
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+}
+
+.clip-stem-mutes input {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+}
+
+.clip-edit-palette {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid #2d3958;
+  border-radius: 6px;
+  background: #0d1322;
+}
+
+.clip-edit-palette h3 {
+  margin: 0;
+  color: #e8f0ff;
+  font-size: 12px;
+}
+
+.clip-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.clip-edit-grid button {
+  min-width: 0;
+  padding-inline: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .fx-inspector {
   margin-top: 14px;
   padding-top: 12px;
@@ -812,6 +877,16 @@ button.record:hover {
   font-size: 13px;
 }
 
+.send-panel {
+  display: grid;
+  gap: 9px;
+}
+
+.send-row {
+  display: grid;
+  gap: 7px;
+}
+
 .automation-lane {
   display: grid;
   gap: 7px;
@@ -826,14 +901,16 @@ button.record:hover {
   align-items: center;
 }
 
-.automation-lane header {
+.automation-lane header,
+.automation-lane-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.automation-lane header label {
+.automation-lane header label,
+.automation-lane-header label {
   margin: 0;
 }
 
@@ -893,6 +970,21 @@ button.record:hover {
   padding: 0 10px;
 }
 
+.midi-clip-length-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 11px;
+  color: #c4cce0;
+}
+
+.midi-clip-length-control input {
+  width: 68px;
+  min-height: 30px;
+  padding: 4px 6px;
+}
+
 .midi-note-list {
   display: grid;
   gap: 7px;
@@ -926,6 +1018,49 @@ button.record:hover {
 }
 
 .midi-note-actions button {
+  min-height: 26px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.midi-controller-lane {
+  display: grid;
+  gap: 7px;
+  padding-top: 10px;
+  border-top: 1px solid #25314d;
+}
+
+.midi-controller-lane h4 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.midi-controller-list {
+  display: grid;
+  gap: 7px;
+}
+
+.midi-controller-row {
+  display: grid;
+  grid-template-columns: 52px repeat(3, minmax(64px, 1fr)) auto;
+  gap: 6px;
+  align-items: center;
+  padding: 7px;
+  border: 1px solid #2d3958;
+  border-radius: 6px;
+  background: #0d1322;
+  font-size: 11px;
+}
+
+.midi-controller-row label {
+  margin: 0;
+}
+
+.midi-controller-row input {
+  padding: 5px;
+}
+
+.midi-controller-row button {
   min-height: 26px;
   padding: 0 7px;
   font-size: 11px;
@@ -1222,6 +1357,26 @@ button.record:hover {
   margin-top: 10px;
 }
 
+.drum-lane-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.drum-lane-heading > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.drum-lane-heading button {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
 .drum-lane-mixer h3 {
   margin: 0;
   color: #e8f0ff;
@@ -1386,11 +1541,12 @@ button.record:hover {
 
 .modal-backdrop {
   position: fixed;
-  inset: calc(var(--native-titlebar-safe-top, 0px) + var(--menu-strip-height, 31px) + 12px) 0 0;
+  inset: calc(var(--native-titlebar-safe-top, 0px) + var(--menu-strip-height, 31px) + var(--transport-strip-height, 96px) + 8px) 0 0;
   z-index: 120;
   display: grid;
   align-items: start;
   justify-items: center;
+  overflow: auto;
   padding: 24px;
   background: rgba(2, 5, 12, 0.72);
   backdrop-filter: blur(8px);
@@ -1398,7 +1554,7 @@ button.record:hover {
 
 .controls-panel {
   width: min(640px, 100%);
-  max-height: calc(100vh - var(--native-titlebar-safe-top, 0px) - var(--menu-strip-height, 31px) - 60px);
+  max-height: max(280px, calc(100dvh - var(--native-titlebar-safe-top, 0px) - var(--menu-strip-height, 31px) - var(--transport-strip-height, 96px) - 56px));
   overflow: auto;
   border: 1px solid #344263;
   border-radius: 8px;
@@ -1512,6 +1668,24 @@ button.record:hover {
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.file-inline-control {
+  display: grid;
+  grid-template-columns: minmax(112px, max-content) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: #b9c7e6;
+  font-size: 12px;
+}
+
+.file-inline-control select {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid #293550;
+  border-radius: 6px;
+  color: #dfe8ff;
+  background: #0d1322;
 }
 
 .feedback-panel {
@@ -1915,6 +2089,7 @@ button.record:hover {
 }
 
 .media-waveform {
+  position: relative;
   min-height: 32px;
   padding: 5px;
   border: 1px solid #25304a;
@@ -1926,6 +2101,17 @@ button.record:hover {
   flex: 1;
   min-width: 1px;
   background: rgba(64, 216, 255, 0.72);
+}
+
+.media-transient-marker {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 999px;
+  background: #ffdc6b;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
 }
 
 .media-item-actions {
@@ -1972,6 +2158,10 @@ button.record:hover {
 }
 
 @media (max-width: 1180px) {
+  :root {
+    --transport-strip-height: 184px;
+  }
+
   .transport {
     grid-template-areas:
       "brand"

@@ -11,32 +11,44 @@ export function evaluateAutomationLane(lane: AutomationLane, bar: number, fallba
     if (bar >= a.bar && bar <= b.bar) {
       if (a.curve === "hold") return clamp(a.value, lane.min, lane.max);
       const t = (bar - a.bar) / Math.max(0.0001, b.bar - a.bar);
-      return clamp(a.value + (b.value - a.value) * t, lane.min, lane.max);
+      return clamp(interpolateAutomationValue(a.value, b.value, t, a.curve), lane.min, lane.max);
     }
   }
   return clamp(points[points.length - 1].value, lane.min, lane.max);
 }
 
 export type TrackAutomationField = "volume" | "pan";
+export type ClipAutomationField = "gain";
+export type TrackSendAutomationField = "level";
 
 export function trackAutomationPath(trackId: string, field: TrackAutomationField): string {
   return `tracks.${trackId}.${field}`;
 }
 
+export function trackSendAutomationPath(trackId: string, returnTrackId: string, field: TrackSendAutomationField): string {
+  return `tracks.${trackId}.sends.${returnTrackId}.${field}`;
+}
+
+export function clipAutomationPath(clipId: string, field: ClipAutomationField): string {
+  return `clips.${clipId}.${field}`;
+}
+
 export function createAutomationLane(project: PocketDawProject, targetPath: string, options: Partial<AutomationLane> = {}): { project: PocketDawProject; laneId: string } {
   const next = cloneProject(project);
   const laneId = uniqueLaneId(next, options.id || laneIdFromTarget(targetPath));
+  const defaults = automationDefaultsForTarget(targetPath);
   const lane: AutomationLane = {
     id: laneId,
     targetPath,
-    unit: options.unit || (targetPath.endsWith(".pan") ? "linear" : "percent"),
-    min: options.min ?? (targetPath.endsWith(".pan") ? -1 : 0),
-    max: options.max ?? (targetPath.endsWith(".pan") ? 1 : 1.2),
-    points: (options.points || []).map((point) => cleanPoint(point, options.min, options.max)).sort(pointSort),
+    unit: options.unit || defaults.unit,
+    min: options.min ?? defaults.min,
+    max: options.max ?? defaults.max,
+    points: (options.points || []).map((point) => cleanPoint(point, options.min ?? defaults.min, options.max ?? defaults.max)).sort(pointSort),
     enabled: options.enabled ?? true
   };
   next.automation.lanes.push(lane);
   attachLaneToTrack(next, lane);
+  attachLaneToClip(next, lane);
   return { project: next, laneId };
 }
 
@@ -81,6 +93,35 @@ export function setAutomationLaneEnabled(project: PocketDawProject, laneId: stri
   });
 }
 
+export function ensureClipAutomationLane(project: PocketDawProject, clipId: string, field: ClipAutomationField): { project: PocketDawProject; laneId: string } {
+  const targetPath = clipAutomationPath(clipId, field);
+  const existing = project.automation.lanes.find((lane) => lane.targetPath === targetPath);
+  if (existing) return { project, laneId: existing.id };
+  const clip = project.timeline.clips.find((item) => item.id === clipId);
+  const fallbackGain = typeof clip?.metadata?.gain === "number" ? clip.metadata.gain : clip?.transforms.gain ?? 1;
+  return createAutomationLane(project, targetPath, {
+    id: `auto_${clipId}_${field}`,
+    min: 0,
+    max: 4,
+    points: [{ bar: clip?.startBar || 1, value: fallbackGain, curve: "linear" }]
+  });
+}
+
+export function ensureTrackSendAutomationLane(project: PocketDawProject, trackId: string, returnTrackId: string, field: TrackSendAutomationField): { project: PocketDawProject; laneId: string } {
+  const targetPath = trackSendAutomationPath(trackId, returnTrackId, field);
+  const existing = project.automation.lanes.find((lane) => lane.targetPath === targetPath);
+  if (existing) return { project, laneId: existing.id };
+  const track = project.tracks.find((item) => item.id === trackId);
+  const levels = track?.metadata?.sendLevels;
+  const fallbackLevel = levels && typeof levels === "object" && !Array.isArray(levels) ? Number((levels as Record<string, unknown>)[returnTrackId]) : 0;
+  return createAutomationLane(project, targetPath, {
+    id: `auto_${trackId}_send_${returnTrackId}_${field}`,
+    min: 0,
+    max: 1,
+    points: [{ bar: 1, value: Number.isFinite(fallbackLevel) ? fallbackLevel : 0, curve: "linear" }]
+  });
+}
+
 export function evaluateAutomationValue(project: PocketDawProject, targetPath: string, bar: number, fallback: number): number {
   const lane = project.automation.lanes.find((item) => item.targetPath === targetPath);
   return lane ? evaluateAutomationLane(lane, bar, fallback) : fallback;
@@ -88,6 +129,14 @@ export function evaluateAutomationValue(project: PocketDawProject, targetPath: s
 
 export function getTrackAutomationLane(project: PocketDawProject, trackId: string, field: TrackAutomationField): AutomationLane | null {
   return project.automation.lanes.find((lane) => lane.targetPath === trackAutomationPath(trackId, field)) || null;
+}
+
+export function getClipAutomationLane(project: PocketDawProject, clipId: string, field: ClipAutomationField): AutomationLane | null {
+  return project.automation.lanes.find((lane) => lane.targetPath === clipAutomationPath(clipId, field)) || null;
+}
+
+export function getTrackSendAutomationLane(project: PocketDawProject, trackId: string, returnTrackId: string, field: TrackSendAutomationField): AutomationLane | null {
+  return project.automation.lanes.find((lane) => lane.targetPath === trackSendAutomationPath(trackId, returnTrackId, field)) || null;
 }
 
 export function getAutomatedTrackControls(project: PocketDawProject, track: Track, bar: number): { volume: number; pan: number } {
@@ -107,12 +156,17 @@ export function trackHasAutomation(project: PocketDawProject, trackId: string): 
   return project.automation.lanes.some((lane) => lane.enabled && lane.targetPath.startsWith(`tracks.${trackId}.`) && lane.points.length > 0);
 }
 
+export function clipHasAutomation(project: PocketDawProject, clipId: string): boolean {
+  return project.automation.lanes.some((lane) => lane.enabled && lane.targetPath.startsWith(`clips.${clipId}.`) && lane.points.length > 0);
+}
+
 function editLane(project: PocketDawProject, laneId: string, updater: (lane: AutomationLane) => void): PocketDawProject {
   const next = cloneProject(project);
   const lane = next.automation.lanes.find((item) => item.id === laneId);
   if (!lane) return project;
   updater(lane);
   attachLaneToTrack(next, lane);
+  attachLaneToClip(next, lane);
   return next;
 }
 
@@ -123,9 +177,30 @@ function attachLaneToTrack(project: PocketDawProject, lane: AutomationLane) {
   if (track && !track.automationLaneIds.includes(lane.id)) track.automationLaneIds.push(lane.id);
 }
 
-function parseTrackTarget(targetPath: string): { trackId: string; field: TrackAutomationField } | null {
-  const match = targetPath.match(/^tracks\.([^.]+)\.(volume|pan)$/);
-  return match ? { trackId: match[1], field: match[2] as TrackAutomationField } : null;
+function attachLaneToClip(project: PocketDawProject, lane: AutomationLane) {
+  const parsed = parseClipTarget(lane.targetPath);
+  if (!parsed) return;
+  const clip = project.timeline.clips.find((item) => item.id === parsed.clipId);
+  if (clip) clip.automationLaneId = lane.id;
+}
+
+function parseTrackTarget(targetPath: string): { trackId: string; field: TrackAutomationField | TrackSendAutomationField } | null {
+  const direct = targetPath.match(/^tracks\.([^.]+)\.(volume|pan)$/);
+  if (direct) return { trackId: direct[1], field: direct[2] as TrackAutomationField };
+  const send = targetPath.match(/^tracks\.([^.]+)\.sends\.([^.]+)\.(level)$/);
+  return send ? { trackId: send[1], field: send[3] as TrackSendAutomationField } : null;
+}
+
+function parseClipTarget(targetPath: string): { clipId: string; field: ClipAutomationField } | null {
+  const match = targetPath.match(/^clips\.([^.]+)\.(gain)$/);
+  return match ? { clipId: match[1], field: match[2] as ClipAutomationField } : null;
+}
+
+function automationDefaultsForTarget(targetPath: string): { unit: AutomationLane["unit"]; min: number; max: number } {
+  if (targetPath.endsWith(".pan")) return { unit: "linear", min: -1, max: 1 };
+  if (/^tracks\.[^.]+\.sends\.[^.]+\.level$/.test(targetPath)) return { unit: "percent", min: 0, max: 1 };
+  if (targetPath.startsWith("clips.") && targetPath.endsWith(".gain")) return { unit: "percent", min: 0, max: 4 };
+  return { unit: "percent", min: 0, max: 1.2 };
 }
 
 function cleanPoint(point: Partial<AutomationPoint>, min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY): AutomationPoint {
@@ -140,6 +215,12 @@ function cleanPoint(point: Partial<AutomationPoint>, min = Number.NEGATIVE_INFIN
 
 function pointSort(a: AutomationPoint, b: AutomationPoint): number {
   return a.bar - b.bar || (a.beat || 0) - (b.beat || 0) || (a.tick || 0) - (b.tick || 0);
+}
+
+export function interpolateAutomationValue(start: number, end: number, t: number, curve: AutomationPoint["curve"] = "linear"): number {
+  const x = clamp(t, 0, 1);
+  const shaped = curve === "ease-in" ? x * x : curve === "ease-out" ? 1 - (1 - x) * (1 - x) : x;
+  return start + (end - start) * shaped;
 }
 
 function laneIdFromTarget(targetPath: string): string {
