@@ -114,6 +114,7 @@ var _stinger_play_requests_total := 0
 var _stinger_play_failures_total := 0
 var _audio_stream_cache := {}
 var _last_audio_prewarm_signature := ""
+var _warned_missing_stem_sections := {}
 var _native_bass_stream_cache := {}
 var _native_melody_stream_cache := {}
 var _native_guitar_stream_cache := {}
@@ -291,21 +292,23 @@ func seek_tick(tick: int) -> void:
 func jump_to_section(section_id: String) -> void:
 	if chart == null:
 		return
-	var target_tick: int = chart.first_section_start_tick(section_id)
+	var canonical_section := _canonical_section_id(section_id)
+	var target_tick: int = chart.first_section_start_tick(canonical_section)
 	if target_tick < 0:
 		push_warning("PocketChordsmithConductor could not find section '%s' in the arrangement." % section_id)
 		return
 	seek_tick(target_tick)
 	_emit_current_section_started()
-	_sync_sequence_index_to_section(section_id)
+	_sync_sequence_index_to_section(canonical_section)
+	_prepare_stem_sync_for_current_state()
 	_start_native_stems_from_current_tick()
 
 
 func queue_section(section_id: String, boundary := TransitionBoundary.NEXT_BAR) -> void:
-	_queued_section = section_id
+	_queued_section = _canonical_section_id(section_id)
 	_queue_transition({
 		"type": "section",
-		"section_id": section_id,
+		"section_id": _queued_section,
 		"boundary": boundary,
 		"loop": true,
 	})
@@ -331,30 +334,50 @@ func set_track_muted(track_type: String, track_index: int, muted: bool) -> void:
 
 
 func set_stem_volume(stem_name: String, volume_db: float) -> void:
-	_stem_volumes[stem_name] = volume_db
-	stem_volume_changed.emit(stem_name, volume_db)
-	if playback_profile == null:
-		return
-	var bus_name := str(playback_profile.stem_bus_names.get(stem_name, stem_name))
-	var bus_index := AudioServer.get_bus_index(bus_name)
-	if bus_index >= 0:
-		AudioServer.set_bus_volume_db(bus_index, volume_db)
+	var layer_name := normalize_layer_name(stem_name)
+	_stem_volumes[layer_name] = volume_db
+	stem_volume_changed.emit(layer_name, volume_db)
+	set_layer_volume(layer_name, volume_db)
 
 
 func set_layer_volume(layer_name: String, db: float) -> void:
-	_layer_volumes[layer_name] = db
-	layer_volume_changed.emit(layer_name, db)
-	var bus_name := _bus_for_layer(layer_name)
+	var normalized := normalize_layer_name(layer_name)
+	_layer_volumes[normalized] = db
+	layer_volume_changed.emit(normalized, db)
+	var bus_name := _bus_for_layer(normalized)
 	_set_bus_volume_smooth(bus_name, db, 0.0)
-	_set_sync_stream_volume(layer_name, db)
+	_set_sync_stream_volume(normalized, db)
 
 
 func mute_layer(layer_name: String, muted: bool) -> void:
-	_layer_mutes[layer_name] = muted
-	layer_mute_changed.emit(layer_name, muted)
-	var bus_index := AudioServer.get_bus_index(_bus_for_layer(layer_name))
+	var normalized := normalize_layer_name(layer_name)
+	_layer_mutes[normalized] = muted
+	layer_mute_changed.emit(normalized, muted)
+	var bus_index := AudioServer.get_bus_index(_bus_for_layer(normalized))
 	if bus_index >= 0:
 		AudioServer.set_bus_mute(bus_index, muted)
+	if _stem_layer_players.has(normalized):
+		var player := _stem_layer_players[normalized] as AudioStreamPlayer
+		if is_instance_valid(player):
+			player.volume_db = -80.0 if muted else float(_layer_volumes.get(normalized, _stem_volumes.get(normalized, 0.0)))
+
+
+func mute_stem(stem_name: String, muted: bool) -> void:
+	mute_layer(stem_name, muted)
+
+
+func normalize_layer_name(name: String) -> String:
+	if playback_profile != null and playback_profile.has_method("normalize_layer_name"):
+		return str(playback_profile.call("normalize_layer_name", name))
+	return name.strip_edges().to_lower().replace("-", "_").replace(" ", "_")
+
+
+func has_section_stems(section_id: String) -> bool:
+	return playback_profile != null and playback_profile.has_method("has_section_stems") and bool(playback_profile.call("has_section_stems", section_id))
+
+
+func active_stem_map() -> Dictionary:
+	return _stem_map_for_current_state().duplicate(true)
 
 
 func duck_music(enabled: bool, amount := 0.5, transition_time := 0.25) -> void:
@@ -471,7 +494,7 @@ func get_active_intensity() -> String:
 	return _active_intensity
 
 
-func prewarm_audio(include_stems := false, include_native_preview := false) -> Dictionary:
+func prewarm_audio(include_stems := true, include_native_preview := false) -> Dictionary:
 	var report := {
 		"ok": true,
 		"loaded": 0,
@@ -495,7 +518,8 @@ func prewarm_audio(include_stems := false, include_native_preview := false) -> D
 	_prewarm_audio_dictionary(playback_profile.event_sample_streams, seen, report, true)
 	_prewarm_audio_dictionary(playback_profile.accent_streams, seen, report, true)
 	if include_stems:
-		_prewarm_audio_dictionary(_stem_map_for_current_state(), seen, report, false)
+		for stem_map in _all_stem_maps_for_prewarm():
+			_prewarm_audio_dictionary(stem_map, seen, report, false)
 	if include_native_preview:
 		_sync_native_preview_cache_signature()
 		_prewarm_native_preview_streams(report)
@@ -505,6 +529,61 @@ func prewarm_audio(include_stems := false, include_native_preview := false) -> D
 	if report["ok"] and not include_native_preview:
 		_last_audio_prewarm_signature = prewarm_signature
 	return report
+
+
+func prewarm_section(section_id: String) -> bool:
+	if playback_profile == null:
+		return false
+	var report := {
+		"ok": true,
+		"loaded": 0,
+		"failed": 0,
+		"warnings": [],
+	}
+	var seen := {}
+	var stem_map := _section_stem_map(section_id)
+	if stem_map.is_empty():
+		return false
+	_prewarm_audio_dictionary(stem_map, seen, report, false)
+	return bool(report.get("ok", false)) and int(report.get("failed", 0)) == 0
+
+
+func prewarm_sections(section_ids: Array) -> Dictionary:
+	var out := {}
+	for section_value in section_ids:
+		var section_id := _canonical_section_id(str(section_value))
+		if not section_id.is_empty():
+			out[section_id] = prewarm_section(section_id)
+	return out
+
+
+func get_missing_audio_assets() -> Array[String]:
+	var missing: Array[String] = []
+	if playback_profile == null:
+		return missing
+	var seen := {}
+	for value in _all_audio_asset_values():
+		if not (value is String):
+			continue
+		var path := str(value)
+		if path.is_empty() or seen.has(path):
+			continue
+		seen[path] = true
+		var file_path := ProjectSettings.globalize_path(path)
+		if not ResourceLoader.exists(path) and not FileAccess.file_exists(file_path):
+			missing.append(path)
+	missing.sort()
+	return missing
+
+
+func validate_audio_assets() -> Dictionary:
+	var missing := get_missing_audio_assets()
+	return {
+		"ok": missing.is_empty(),
+		"missing": missing,
+		"missing_count": missing.size(),
+		"cached_streams": _audio_stream_cache.size(),
+	}
 
 
 func reset_native_preview_prewarm_cursor(tick := -1) -> void:
@@ -1097,6 +1176,7 @@ func _seek_to_sequence_index(index: int) -> void:
 		return
 	seek_tick(target_tick)
 	_emit_current_section_started()
+	_prepare_stem_sync_for_current_state()
 	_start_native_stems_from_current_tick()
 
 
@@ -1458,12 +1538,12 @@ func _validate_playback_profile() -> Array[String]:
 		warnings.append("PocketChordsmithConductor has no playback profile; timing signals will work, but native audio routing will use defaults.")
 		return warnings
 	if playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.STEM_SYNC:
-		var has_profile_stems: bool = not playback_profile.stem_paths.is_empty() or not playback_profile.stem_sets.is_empty()
+		var has_profile_stems: bool = not playback_profile.stem_paths.is_empty() or not playback_profile.stem_sets.is_empty() or (_profile_has_property("section_stem_sets") and not playback_profile.section_stem_sets.is_empty())
 		var has_chart_stems: bool = chart != null and not chart.stem_sets.is_empty()
 		if not has_profile_stems and not has_chart_stems:
 			warnings.append("Pocket Chordsmith playback profile is STEM_SYNC, but no stems are assigned.")
 	if playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.HYBRID:
-		if playback_profile.stem_paths.is_empty() and playback_profile.stem_sets.is_empty() and playback_profile.drum_kit.is_empty() and playback_profile.accent_streams.is_empty() and playback_profile.event_sample_streams.is_empty():
+		if playback_profile.stem_paths.is_empty() and playback_profile.stem_sets.is_empty() and (not _profile_has_property("section_stem_sets") or playback_profile.section_stem_sets.is_empty()) and playback_profile.drum_kit.is_empty() and playback_profile.accent_streams.is_empty() and playback_profile.event_sample_streams.is_empty():
 			warnings.append("Pocket Chordsmith playback profile is HYBRID, but no stems, drum kit, accent samples, or event samples are assigned.")
 		warnings.append_array(_missing_drum_sample_warnings())
 	if playback_profile.sample_preview_enabled and playback_profile.sample_preview_log_pitched_events:
@@ -1952,14 +2032,14 @@ func _prepare_layer_stem_players(stem_map: Dictionary) -> void:
 	var layers := stem_map.keys()
 	layers.sort()
 	for layer_value in layers:
-		var layer_name := str(layer_value)
+		var layer_name := normalize_layer_name(str(layer_value))
 		var stream := _load_audio_stream(stem_map[layer_name])
 		if stream == null:
 			continue
 		var player := _stem_player_for_layer(layer_name)
 		player.stream = stream
 		player.bus = _bus_for_layer(layer_name)
-		player.volume_db = float(_layer_volumes.get(layer_name, _stem_volumes.get(layer_name, 0.0)))
+		player.volume_db = -80.0 if bool(_layer_mutes.get(layer_name, false)) else float(_layer_volumes.get(layer_name, _stem_volumes.get(layer_name, 0.0)))
 		active_layers[layer_name] = true
 	for existing_layer in _stem_layer_players.keys():
 		if active_layers.has(str(existing_layer)):
@@ -2005,17 +2085,87 @@ func _start_native_stems_from_current_tick() -> void:
 func _stem_map_for_current_state() -> Dictionary:
 	if playback_profile == null:
 		return {}
-	if not current_music_state.is_empty() and playback_profile.state_stem_sets.has(current_music_state):
-		var state_key := str(playback_profile.state_stem_sets[current_music_state])
-		if playback_profile.stem_sets.has(state_key) and playback_profile.stem_sets[state_key] is Dictionary:
-			return playback_profile.stem_sets[state_key]
+	if not current_music_state.is_empty():
+		var state_map := _state_stem_map(current_music_state)
+		if not state_map.is_empty():
+			return state_map
+	var section_map := _section_stem_map(current_section)
+	if not section_map.is_empty():
+		return section_map
 	if not current_music_state.is_empty() and playback_profile.stem_sets.has(current_music_state) and playback_profile.stem_sets[current_music_state] is Dictionary:
-		return playback_profile.stem_sets[current_music_state]
+		return _normalize_stem_map(playback_profile.stem_sets[current_music_state])
 	if not playback_profile.stem_paths.is_empty():
-		return playback_profile.stem_paths
+		return _normalize_stem_map(playback_profile.stem_paths)
 	if chart != null and not current_music_state.is_empty() and chart.stem_sets.has(current_music_state) and chart.stem_sets[current_music_state] is Dictionary:
-		return chart.stem_sets[current_music_state]
+		return _normalize_stem_map(chart.stem_sets[current_music_state])
 	return {}
+
+
+func _state_stem_map(state_name: String) -> Dictionary:
+	if playback_profile == null or state_name.is_empty():
+		return {}
+	if playback_profile.has_method("get_state_stems"):
+		var state_map = playback_profile.call("get_state_stems", state_name)
+		if state_map is Dictionary and not (state_map as Dictionary).is_empty():
+			return _normalize_stem_map(state_map)
+	if playback_profile.state_stem_sets.has(state_name):
+		var value = playback_profile.state_stem_sets[state_name]
+		if value is Dictionary:
+			return _normalize_stem_map(value)
+		if value is String and playback_profile.stem_sets.has(str(value)) and playback_profile.stem_sets[str(value)] is Dictionary:
+			return _normalize_stem_map(playback_profile.stem_sets[str(value)])
+	return {}
+
+
+func _section_stem_map(section_id: String) -> Dictionary:
+	if playback_profile == null:
+		return {}
+	var canonical := _canonical_section_id(section_id)
+	if canonical.is_empty():
+		return {}
+	if playback_profile.has_method("get_section_stems"):
+		var section_map = playback_profile.call("get_section_stems", canonical)
+		if section_map is Dictionary and not (section_map as Dictionary).is_empty():
+			return _normalize_stem_map(section_map)
+	if _profile_has_property("section_stem_sets"):
+		var sets: Dictionary = playback_profile.section_stem_sets
+		if sets.has(canonical) and sets[canonical] is Dictionary:
+			return _normalize_stem_map(sets[canonical])
+	if not _warned_missing_stem_sections.has(canonical) and _profile_has_property("section_stem_sets") and not playback_profile.section_stem_sets.is_empty():
+		_warned_missing_stem_sections[canonical] = true
+		push_warning("PocketChordsmithConductor has no prepared stems for section '%s'; falling back to state or full-song stems." % canonical)
+	return {}
+
+
+func _normalize_stem_map(stem_map: Dictionary) -> Dictionary:
+	var out := {}
+	for key in stem_map.keys():
+		var normalized := normalize_layer_name(str(key))
+		if not normalized.is_empty():
+			out[normalized] = stem_map[key]
+	return out
+
+
+func _canonical_section_id(section_id: String) -> String:
+	if playback_profile != null and playback_profile.has_method("canonical_section_id"):
+		return str(playback_profile.call("canonical_section_id", section_id))
+	var normalized := section_id.strip_edges().to_upper()
+	if normalized.length() == 1:
+		return normalized
+	for index in range(normalized.length()):
+		var letter := normalized.substr(index, 1)
+		if letter >= "A" and letter <= "H":
+			return letter
+	return ""
+
+
+func _profile_has_property(property_name: String) -> bool:
+	if playback_profile == null:
+		return false
+	for property in playback_profile.get_property_list():
+		if str(property.get("name", "")) == property_name:
+			return true
+	return false
 
 
 func _load_audio_stream(value, prefer_uncompressed_wav := false) -> AudioStream:
@@ -2064,8 +2214,45 @@ func _audio_prewarm_signature(include_stems := false, include_native_preview := 
 	_append_audio_prewarm_map_signature(parts, playback_profile.event_sample_streams, true)
 	_append_audio_prewarm_map_signature(parts, playback_profile.accent_streams, true)
 	if include_stems:
-		_append_audio_prewarm_map_signature(parts, _stem_map_for_current_state(), false)
+		for stem_map in _all_stem_maps_for_prewarm():
+			_append_audio_prewarm_map_signature(parts, stem_map, false)
 	return "|".join(parts)
+
+
+func _all_stem_maps_for_prewarm() -> Array[Dictionary]:
+	var maps: Array[Dictionary] = []
+	if playback_profile == null:
+		return maps
+	if not playback_profile.stem_paths.is_empty():
+		maps.append(_normalize_stem_map(playback_profile.stem_paths))
+	for key in playback_profile.stem_sets.keys():
+		if playback_profile.stem_sets[key] is Dictionary:
+			maps.append(_normalize_stem_map(playback_profile.stem_sets[key]))
+	if _profile_has_property("section_stem_sets"):
+		for key in playback_profile.section_stem_sets.keys():
+			if playback_profile.section_stem_sets[key] is Dictionary:
+				maps.append(_normalize_stem_map(playback_profile.section_stem_sets[key]))
+	for key in playback_profile.state_stem_sets.keys():
+		var state_map := _state_stem_map(str(key))
+		if not state_map.is_empty():
+			maps.append(state_map)
+	var active_map := _stem_map_for_current_state()
+	if not active_map.is_empty():
+		maps.append(active_map)
+	return maps
+
+
+func _all_audio_asset_values() -> Array:
+	var values := []
+	if playback_profile == null:
+		return values
+	values.append_array(playback_profile.drum_kit.values())
+	values.append_array(playback_profile.event_sample_streams.values())
+	values.append_array(playback_profile.accent_streams.values())
+	values.append_array(playback_profile.marker_stingers.values())
+	for stem_map in _all_stem_maps_for_prewarm():
+		values.append_array(stem_map.values())
+	return values
 
 
 func _append_audio_prewarm_map_signature(parts: Array, stream_map: Dictionary, prefer_uncompressed_wav := false) -> void:

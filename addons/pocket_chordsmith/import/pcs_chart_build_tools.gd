@@ -161,6 +161,12 @@ func import_daw_game_pack(pack_path: String, destination_root := DEFAULT_DAW_PAC
 		return result
 
 	var source_project_path: String = GamePackManifest.source_project_path_from_manifest(manifest, pack_root)
+	if source_project_path.is_empty() and manifest.get("project", null) is Dictionary:
+		source_project_path = _resource_path_join(pack_root, "source_project.json")
+		var write_error := _write_text_to_resource_path(source_project_path, JSON.stringify(manifest.get("project", {}), "\t"))
+		if write_error != OK:
+			result["errors"].append("Could not write embedded source project JSON: %s" % error_string(write_error))
+			return result
 	if source_project_path.is_empty() or not FileAccess.file_exists(source_project_path):
 		result["errors"].append("DAW pack manifest does not include a readable source project JSON.")
 		return result
@@ -185,6 +191,7 @@ func import_daw_game_pack(pack_path: String, destination_root := DEFAULT_DAW_PAC
 	result["chart_path"] = chart_path
 	result["source_project_path"] = source_project_path
 	result["playback_profile"] = profile_result.get("profile", null)
+	result["profile"] = profile_result.get("profile", null)
 	result["entries"] = entries
 	return result
 
@@ -438,7 +445,7 @@ func _json_files(source_dir: String, recursive: bool) -> Array[String]:
 		if dir.current_is_dir():
 			if recursive:
 				out.append_array(_json_files(path, recursive))
-		elif name.get_extension().to_lower() == "json":
+		elif name.get_extension().to_lower() in ["json", "pcs1", "txt"]:
 			out.append(path)
 		name = dir.get_next()
 	return out
@@ -490,7 +497,7 @@ func _extract_game_pack_zip(zip_path: String, destination_root: String, options:
 			_ensure_resource_dir(_resource_path_join(pack_root, entry))
 			continue
 		if not _is_safe_pack_relative_path(entry):
-			result["warnings"].append("Skipped unsafe pack entry: %s" % entry)
+			result["errors"].append("Unsafe path in DAW pack ZIP: %s" % entry)
 			continue
 		var out_path := _resource_path_join(pack_root, entry)
 		_ensure_resource_dir(out_path.get_base_dir())
@@ -520,7 +527,7 @@ func _find_manifest_in_pack(pack_root: String) -> String:
 
 
 func _looks_like_daw_game_pack_manifest(manifest: Dictionary) -> bool:
-	return str(manifest.get("kind", "")) == "godot-adaptive-pack" or manifest.has("stems") or manifest.has("sectionLoops") or manifest.has("fullMix")
+	return str(manifest.get("kind", "")) == "godot-adaptive-pack" or manifest.has("stems") or manifest.has("sectionLoops") or manifest.has("sections") or manifest.has("states") or manifest.has("fullMix")
 
 
 func _resource_path_join(base_path: String, relative_path: String) -> String:
@@ -550,6 +557,10 @@ func _write_bytes_to_resource_path(path: String, bytes: PackedByteArray) -> int:
 	file.store_buffer(bytes)
 	file.close()
 	return OK
+
+
+func _write_text_to_resource_path(path: String, text: String) -> int:
+	return _write_bytes_to_resource_path(path, text.to_utf8_buffer())
 
 
 func _is_safe_pack_relative_path(path: String) -> bool:

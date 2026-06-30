@@ -96,7 +96,12 @@ enum PlaybackBackend {
 @export var intensity_mix_targets: Dictionary = {}
 @export var native_audio_router_script: Script
 @export var stem_sets: Dictionary = {}
+@export var section_stem_sets: Dictionary = {}
 @export var state_stem_sets: Dictionary = {}
+@export var stem_playback_mode := "mixer_routed_stems"
+@export var section_transition_quantize := "bar"
+@export var transition_mode := "cut"
+@export var crossfade_seconds := 0.08
 @export var default_stem_layers: Array[String] = ["drums", "bass", "chords", "guitar", "melody_1", "melody_2", "melody_3", "fx"]
 
 
@@ -105,7 +110,7 @@ func is_event_mode_enabled() -> bool:
 
 
 func get_bus_for_layer(layer_name: String) -> String:
-	match layer_name:
+	match normalize_layer_name(layer_name):
 		"drums":
 			return drums_bus
 		"bass":
@@ -124,3 +129,102 @@ func get_bus_for_layer(layer_name: String) -> String:
 			return master_music_bus
 		_:
 			return str(stem_bus_names.get(layer_name, master_music_bus))
+
+
+func has_section_stems(section_id: String) -> bool:
+	return not get_section_stems(section_id).is_empty()
+
+
+func get_section_stems(section_id: String) -> Dictionary:
+	var canonical := canonical_section_id(section_id)
+	if canonical.is_empty():
+		return {}
+	if section_stem_sets.has(canonical) and section_stem_sets[canonical] is Dictionary:
+		return (section_stem_sets[canonical] as Dictionary).duplicate(true)
+	for key in section_stem_sets.keys():
+		if canonical_section_id(str(key)) == canonical and section_stem_sets[key] is Dictionary:
+			return (section_stem_sets[key] as Dictionary).duplicate(true)
+	if stem_sets.has(canonical) and stem_sets[canonical] is Dictionary:
+		return (stem_sets[canonical] as Dictionary).duplicate(true)
+	for key in stem_sets.keys():
+		if canonical_section_id(str(key)) == canonical and stem_sets[key] is Dictionary:
+			return (stem_sets[key] as Dictionary).duplicate(true)
+	return {}
+
+
+func set_section_stems(section_id: String, stems: Dictionary) -> void:
+	var canonical := canonical_section_id(section_id)
+	if canonical.is_empty():
+		return
+	var normalized := {}
+	for key in stems.keys():
+		var stem_key := normalize_stem_key(str(key))
+		if not stem_key.is_empty():
+			normalized[stem_key] = stems[key]
+	section_stem_sets[canonical] = normalized
+
+
+func get_state_stems(state_name: String) -> Dictionary:
+	if state_name.is_empty() or not state_stem_sets.has(state_name):
+		return {}
+	var value = state_stem_sets[state_name]
+	if value is Dictionary:
+		return (value as Dictionary).duplicate(true)
+	if value is String and stem_sets.has(str(value)) and stem_sets[str(value)] is Dictionary:
+		return (stem_sets[str(value)] as Dictionary).duplicate(true)
+	return {}
+
+
+func set_state_stems(state_name: String, stems: Dictionary) -> void:
+	if state_name.strip_edges().is_empty():
+		return
+	var normalized := {}
+	for key in stems.keys():
+		var stem_key := normalize_stem_key(str(key))
+		if not stem_key.is_empty():
+			normalized[stem_key] = stems[key]
+	state_stem_sets[state_name.strip_edges()] = normalized
+
+
+func normalize_layer_name(name: String) -> String:
+	return normalize_stem_key(name)
+
+
+func normalize_stem_key(key: String) -> String:
+	var normalized := key.strip_edges().to_lower().replace("-", "_").replace(" ", "_")
+	match normalized:
+		"drum", "drumkit", "drum_kit", "beat", "beats":
+			return "drums"
+		"bassline", "bass_line":
+			return "bass"
+		"chord", "keys", "pad", "pads", "harmony":
+			return "chords"
+		"guitars", "rhythm_guitar":
+			return "guitar"
+		"lead", "lead_melody", "melody_lead", "topline":
+			return "melody"
+		"amb", "ambient":
+			return "ambience"
+		"section", "loop", "mix", "full_mix", "full_loop", "music":
+			return "full"
+		_:
+			return normalized
+
+
+func canonical_section_id(key: String) -> String:
+	var normalized := key.strip_edges().to_upper().replace("-", "_").replace(" ", "_")
+	if normalized.is_empty():
+		return ""
+	if normalized.begins_with("SECTION_"):
+		normalized = normalized.substr("SECTION_".length())
+	if normalized.find("_") >= 0:
+		for part in normalized.split("_", false):
+			if part.length() == 1 and part >= "A" and part <= "H":
+				return part
+	if normalized.length() == 1 and normalized >= "A" and normalized <= "H":
+		return normalized
+	for index in range(normalized.length()):
+		var letter := normalized.substr(index, 1)
+		if letter >= "A" and letter <= "H":
+			return letter
+	return ""

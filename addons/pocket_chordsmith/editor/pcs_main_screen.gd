@@ -163,7 +163,7 @@ func _build_ui() -> void:
 
 	_toolbar_button(
 		toolbar,
-		"Generate Web Sound Kit",
+		"Generate Preview Sound Kit",
 		"Generate Pocket Chordsmith-style drum/stinger WAVs and a HYBRID playback profile.",
 		_generate_web_sound_kit
 	)
@@ -474,7 +474,7 @@ func _render_preview_audio() -> void:
 	_stop_preview()
 	conductor.chart = chart
 	if not _assign_default_preview_profile(true):
-		_set_status("Render needs a preview profile. Click Generate Web Sound Kit, then try again.")
+		_set_status("Render needs a preview profile. Click Generate Preview Sound Kit, then try again.")
 		return
 	_render_preview_audio_button.disabled = true
 	_play_button.disabled = true
@@ -713,7 +713,21 @@ func _open_demo_scene() -> void:
 	if editor_interface == null:
 		_set_status("Editor interface is unavailable.")
 		return
-	editor_interface.open_scene_from_path("res://addons/pocket_chordsmith/demos/demo_music_level.tscn")
+	var demo_path := "res://addons/pocket_chordsmith/demos/demo_music_level.tscn"
+	if not ResourceLoader.exists(demo_path) and not FileAccess.file_exists(ProjectSettings.globalize_path(demo_path)):
+		_set_status("Demo scene is missing: %s" % demo_path)
+		return
+	if editor_interface.has_method("open_scene_from_path"):
+		var open_result = editor_interface.call("open_scene_from_path", demo_path)
+		var error := OK if open_result == null else int(open_result)
+		if error == OK:
+			_set_status("Opened demo scene: %s" % demo_path)
+			return
+		_set_status("Could not open demo scene directly (%s). Selecting it in the FileSystem dock." % error_string(error))
+	var filesystem := editor_interface.get_resource_filesystem()
+	if filesystem != null:
+		filesystem.scan()
+	editor_interface.select_file(demo_path)
 
 
 func _play_preview() -> void:
@@ -723,7 +737,7 @@ func _play_preview() -> void:
 	conductor.chart = chart
 	conductor.loop_enabled = true
 	if not _assign_default_preview_profile(true):
-		_set_status("Preview timing is ready, but no audio profile is assigned. Click Generate Web Sound Kit, then press Play Preview again.")
+		_set_status("Preview timing is ready, but no audio profile is assigned. Click Generate Preview Sound Kit, then press Play Preview again.")
 		return
 	_ensure_preview_audio_buses()
 	if conductor.playback_profile != null and conductor.playback_profile.playback_backend == PCSPlaybackProfile.PlaybackBackend.STEM_SYNC and conductor.playback_profile.stem_paths.is_empty() and conductor.playback_profile.stem_sets.is_empty():

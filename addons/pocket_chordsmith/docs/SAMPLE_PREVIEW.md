@@ -10,7 +10,7 @@ It uses Godot `AudioStreamPolyphonic` through one player instead of spawning nod
 
 ## One-Click Web Sound Kit
 
-In the `Chordsmith` main screen, click `Generate Web Sound Kit`.
+In the `Chordsmith` main screen, click `Generate Preview Sound Kit`.
 
 This creates Pocket Chordsmith-style WAV assets and a ready-to-use HYBRID playback profile:
 

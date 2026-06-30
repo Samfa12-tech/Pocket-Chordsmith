@@ -19,6 +19,26 @@ Do not make gameplay render stems from Chordsmith text. That would require porti
 
 For text-only imports, the addon can render preview/cache stems before playback through `Render Preview Audio` or `tools/render_pocket_chordsmith_preview_audio.gd`. Treat these as prepared preview assets: they are useful for stable editor auditioning and can be routed/mixed like stems, but they are generated from the addon preview kit/native preview voices rather than a mastered DAW render.
 
+Prepared section stems live in `PCSPlaybackProfile.section_stem_sets`:
+
+```gdscript
+{
+	"A": {
+		"drums": "res://music/packs/level_01/stems/A_drums.ogg",
+		"bass": "res://music/packs/level_01/stems/A_bass.ogg",
+		"chords": "res://music/packs/level_01/stems/A_chords.ogg",
+		"guitar": "res://music/packs/level_01/stems/A_guitar.ogg",
+		"melody": "res://music/packs/level_01/stems/A_melody.ogg",
+	},
+	"B": {
+		"drums": "res://music/packs/level_01/stems/B_drums.ogg",
+		"bass": "res://music/packs/level_01/stems/B_bass.ogg",
+	}
+}
+```
+
+At runtime, `PocketChordsmithConductor.queue_section("B")` changes the chart section and resolves the matching section stem map. Call `conductor.prewarm_audio()` during loading so section/state/full-song stems are imported or diagnosed before gameplay.
+
 Suggested full-arrangement stem names:
 
 ```text

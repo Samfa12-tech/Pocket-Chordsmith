@@ -124,6 +124,7 @@ func create_rendered_profile(source_profile, full_stem_paths: Dictionary, sectio
 	profile.use_audio_stream_synchronized = false
 	profile.stem_paths = full_stem_paths.duplicate(true)
 	profile.stem_sets = section_stem_sets.duplicate(true)
+	profile.section_stem_sets = section_stem_sets.duplicate(true)
 	return profile
 
 

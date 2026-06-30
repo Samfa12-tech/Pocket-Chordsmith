@@ -36,7 +36,7 @@ Editor workflow:
 2. Open the `Chordsmith` main screen.
 3. Import a Pocket Chordsmith JSON, paste raw JSON, paste a `PCS1:` share code, or click `Import DAW Pack` for a Pocket DAW Godot Adaptive Pack ZIP.
 4. Inspect the import report, sequence, sections, timeline, and event counts.
-5. Optional: click `Generate Web Sound Kit` to create Pocket Chordsmith-style drum/stinger WAVs and a HYBRID playback profile.
+5. Optional: click `Generate Preview Sound Kit` to create Pocket Chordsmith-style drum/stinger WAVs and a HYBRID playback profile.
 6. Optional for dense text-only imports: click `Render Preview Audio` to bake visible WAV stems for each section and for the full-song preview from the current Godot preview kit before pressing `Play Preview`.
 7. Save the compiled chart as `.tres` or `.res`.
 8. Assign the chart and playback profile to `PocketChordsmithConductor` in a level or demo scene.
@@ -57,7 +57,8 @@ Pocket DAW pack workflow:
 1. Export `Godot Adaptive Pack` from Pocket DAW.
 2. In the Godot `Chordsmith` tab, click `Import DAW Pack` and choose the exported ZIP.
 3. The addon extracts the pack under `res://music/pocket_chordsmith_packs/`, compiles the embedded Pocket Chordsmith source into a chart resource, and creates a `PCSPlaybackProfile` pointing at the rendered full mix, stems, and section loops.
-4. Press `Play Preview` to audition the rendered pack audio, then use the saved chart/profile resources on `PocketChordsmithConductor`.
+4. Adaptive section stems are stored in `PCSPlaybackProfile.section_stem_sets` by canonical section (`A`-`H`) and normalized stem name (`drums`, `bass`, `chords`, `guitar`, `melody`, etc.).
+5. Press `Play Preview` to audition the rendered pack audio, then use the saved chart/profile resources on `PocketChordsmithConductor`.
 
 This DAW pack path is intentionally lighter for Godot than a text-only Chordsmith import: the expensive rendering work has already happened, and the addon mostly extracts files, compiles the chart, creates references, and routes audio through Godot buses.
 
