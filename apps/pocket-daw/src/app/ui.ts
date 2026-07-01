@@ -1,5 +1,5 @@
 import type { AppState } from "./state";
-import { currentProject, type ChordsmithStepSelection, type LowerDockTab } from "./state";
+import { currentProject, isUiSectionCollapsed, type ChordsmithStepSelection, type LowerDockTab, type UiCollapseSection } from "./state";
 import { BUILT_IN_FX, getTrackFxChain } from "../daw/fx";
 import { DRUM_LANE_DEFS, drumBranchGroupCollapsed, generatedDrumBranchLane, getDrumBranchStepLevel, getDrumLaneFxChain, getDrumLaneMix, type DrumLaneId } from "../daw/drumLanes";
 import { bassStepUsesAuto, bassVisibleNoteIndex, getPrimaryChordsmithSource, totalEditorSteps, visibleEditorSteps } from "../daw/chordsmithEditor";
@@ -22,6 +22,7 @@ import { validateExportProfile } from "../daw/exportProfiles";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { audioClipTakeSummary, clipSourceStartBar } from "../daw/clips";
 import { createAudioTakeDiagnosticsSummary, runtimeBuildId, runtimeCommit, runtimeLabel } from "./diagnostics";
+import { FUNCTION_ACTION_CATALOG_DOC, FUNCTION_ACTION_REFERENCE, FUNCTION_GUIDE_SECTIONS, FUNCTION_REFERENCE_DOC } from "./functionGuide";
 import { pocketDawMcpClaudeConfig, pocketDawMcpCodexConfig, pocketDawMcpCommandLine, POCKET_DAW_MCP_WORKSPACE } from "./mcpSetup";
 import { projectTitleFromFileState } from "../native/fileBridge";
 import {
@@ -54,6 +55,14 @@ interface ProEqBand {
   maxQ?: number;
 }
 
+const UI_COLLAPSE_LABELS: Record<UiCollapseSection, string> = {
+  "timeline-tools": "Timeline tools",
+  "inspector-clip": "Clip section",
+  "inspector-track": "Track section",
+  "lower-dock": "Lower dock",
+  "media-pool": "Media pool"
+};
+
 const PRO_EQ_BANDS = POCKET_PRO_EQ_BANDS as unknown as readonly ProEqBand[];
 const CHORD_LABELS = ["I", "II", "III", "IV", "V", "VI", "VII"];
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -71,7 +80,7 @@ export function renderAppShell(state: AppState): string {
   const selectedClip = project.timeline.clips.find((clip) => clip.id === state.selectedClipId) || null;
   const selectedTrack = project.tracks.find((track) => track.id === state.selectedTrackId) || null;
   return `
-    <div class="app-shell" data-layout-shell="true" data-scroll-key="app-shell" style="--studio-height:${sanitizeCssLengthOrNumber(state.timelineHeightPx, 430, 260, 760)}px;--inspector-width:${sanitizeCssLengthOrNumber(state.inspectorWidthPx, 420, 280, 620)}px;">
+    <div class="app-shell" data-layout-shell="true" data-scroll-key="app-shell" data-ui-preset="${escapeAttr(state.uiCreationPreset)}" style="--studio-height:${sanitizeCssLengthOrNumber(state.timelineHeightPx, 430, 260, 760)}px;--inspector-width:${sanitizeCssLengthOrNumber(state.inspectorWidthPx, 420, 280, 620)}px;">
       ${renderMenuStrip(state)}
       ${renderTransport(state)}
       ${renderQuickStart(state)}
@@ -88,6 +97,7 @@ export function renderAppShell(state: AppState): string {
       ${state.showAudioSettings ? renderAudioSettingsPanel(state) : ""}
       ${state.showUpdaterPanel ? renderUpdaterPanel(state) : ""}
       ${state.showMcpSetupPanel ? renderMcpSetupPanel(state) : ""}
+      ${state.showFunctionGuidePanel ? renderFunctionGuidePanel() : ""}
       ${state.showFeedbackPanel ? renderFeedbackPanel(state) : ""}
     </div>
   `;
@@ -108,11 +118,14 @@ function renderMenuStrip(state: AppState): string {
       ${renderMenuGroup("Edit", [
         ["Undo", "undo"],
         ["Redo", "redo"],
+        ["Cut Clip", "clip-cut"],
         ["Copy Clip", "clip-copy"],
         ["Paste Clip", "clip-paste"],
         ["Duplicate Clip", "clip-duplicate"],
         ["Split Clip", "clip-split"],
         ["Range Clip", "range-selected"],
+        ["Copy Range", "range-copy"],
+        ["Cut Range", "range-cut"],
         ["Split Range", "range-split"],
         ["Crop Range", "range-crop"],
         ["Delete Range", "range-delete"],
@@ -141,6 +154,7 @@ function renderMenuStrip(state: AppState): string {
         ["Add Marker", "marker-add"]
       ])}
       ${renderMenuGroup("Help", [
+        ["Function Guide", "function-guide-open"],
         ["Check for Updates", "updater-open"],
         ["AI / MCP Bridge", "mcp-setup-open"],
         ["Send Feedback", "feedback-open"],
@@ -194,7 +208,7 @@ function renderTransport(state: AppState): string {
       </div>
       <div class="transport-buttons">
         <button class="primary" data-transport-toggle="true" data-action="${state.playing ? "pause" : "play"}">${state.playing ? "Pause" : "Play"}</button>
-        <button class="${recordingActive ? "record on" : "record"}" data-action="record-toggle">${recordingActive ? "Stop Rec" : "Record"}</button>
+        <button class="${recordingActive ? "record on" : "record"}" data-action="record-toggle" data-ui-scope="recording">${recordingActive ? "Stop Rec" : "Record"}</button>
         <button class="${metronome.enabled ? "on" : ""}" data-action="metronome-toggle" title="Metronome and one-bar recording count-in">Metro</button>
         <button data-action="stop">Stop</button>
         <button data-action="restart">Restart</button>
@@ -203,10 +217,11 @@ function renderTransport(state: AppState): string {
         <button data-action="add-track-open">Add Track</button>
         <button data-action="undo">Undo</button>
         <button data-action="redo">Redo</button>
+        ${renderCreationPresets(state)}
       </div>
       <div class="transport-readout">
         <span data-playing-state="true" class="${state.playing ? "playing" : ""}"><strong>${state.playing ? "Playing" : "Stopped"}</strong></span>
-        <span data-recording-state="true" class="${recordingActive ? "recording" : ""}"><strong>${escapeHtml(recordingPrimary)}</strong>${recordingSecondary ? `<small>${escapeHtml(recordingSecondary)}</small>` : ""}</span>
+        <span data-recording-state="true" data-ui-scope="recording" class="${recordingActive ? "recording" : ""}"><strong>${escapeHtml(recordingPrimary)}</strong>${recordingSecondary ? `<small>${escapeHtml(recordingSecondary)}</small>` : ""}</span>
         <span><strong>${Math.round(project.project.bpm)}</strong><small>BPM</small></span>
         <span><strong>Metro</strong><small>${escapeHtml(metroDetail)}</small></span>
         <span><strong>${escapeHtml(project.project.key)}</strong><small>${escapeHtml(project.project.scale)}</small></span>
@@ -221,6 +236,28 @@ function renderTransport(state: AppState): string {
       ` : ""}
     </header>
   `;
+}
+
+function renderCreationPresets(state: AppState): string {
+  const musicActive = state.uiCreationPreset === "music";
+  const gameActive = state.uiCreationPreset === "game-music";
+  return `
+    <span class="creation-presets" role="group" aria-label="Creation focus preset">
+      <span class="creation-presets-label">Focus</span>
+      <button type="button" class="${musicActive ? "on" : ""}" data-action="preset-music" aria-pressed="${musicActive ? "true" : "false"}" title="Music preset: keep composition, editing and mix controls prominent while hiding game cue/export clutter">Music</button>
+      <button type="button" class="${gameActive ? "on" : ""}" data-action="preset-game-music" aria-pressed="${gameActive ? "true" : "false"}" title="Game music preset: keep cue and game-pack export controls visible while hiding live-recording take tools">Game music</button>
+    </span>
+  `;
+}
+
+function renderUiSectionToggle(state: AppState, section: UiCollapseSection, label = UI_COLLAPSE_LABELS[section]): string {
+  const collapsed = isUiSectionCollapsed(state, section);
+  const action = collapsed ? "Show" : "Hide";
+  return `<button type="button" class="section-collapse-toggle" data-action="toggle-ui-section" data-ui-section="${sanitizeDataAttr(section)}" aria-expanded="${collapsed ? "false" : "true"}" title="${action} ${escapeAttr(label.toLowerCase())}">${action}</button>`;
+}
+
+function renderCollapsedNotice(summary: string): string {
+  return `<div class="collapsed-section-notice"><span>${escapeHtml(summary)}</span></div>`;
 }
 
 function projectDisplayTitle(state: AppState): string {
@@ -263,59 +300,78 @@ function renderTimeline(state: AppState): string {
   const selection = project.timeline.selection || null;
   const rangeStart = selection?.startBar ?? project.timeline.loop.startBar;
   const rangeEnd = selection?.endBar ?? project.timeline.loop.endBar;
+  const toolsCollapsed = isUiSectionCollapsed(state, "timeline-tools");
   return `
     <section class="timeline-wrap">
-      <div class="timeline-toolbar">
-        <div class="edit-tools">
-          <button data-action="clip-left">Move Left</button>
-          <button data-action="clip-right">Move Right</button>
-          <button data-action="clip-copy">Copy</button>
-          <button data-action="clip-paste">Paste</button>
-          <button data-action="clip-duplicate">Duplicate</button>
-          <button data-action="clip-split">Split</button>
-          <button data-action="trim-start-right">Trim Start</button>
-          <button data-action="trim-end-left">Trim End</button>
-          <button data-action="clip-delete">Delete</button>
-          <button data-action="clip-mute">Mute Clip</button>
+      <div class="timeline-toolbar ${toolsCollapsed ? "collapsed" : ""}" data-ui-collapse-section="timeline-tools">
+        <div class="section-collapse-head timeline-tools-head">
+          <div>
+            <strong>Timeline tools</strong>
+            <span>${escapeHtml(state.snapMode === "off" ? "Snap off" : `${modeLabel(state.snapMode)} snap`)} / ${Math.round(zoom)} px/bar</span>
+          </div>
+          ${renderUiSectionToggle(state, "timeline-tools")}
         </div>
-        ${renderTimelineSongSettings(pcs)}
-        <div class="timeline-options">
-          <button data-action="toggle-inspector">${state.inspectorVisible ? "Hide Inspector" : "Show Inspector"}</button>
-          <label>Snap
-            <select id="snapMode">
-              ${(["bar", "beat", "off"] as const).map((mode) => `<option value="${mode}" ${state.snapMode === mode ? "selected" : ""}>${modeLabel(mode)}</option>`).join("")}
-            </select>
-          </label>
-          <button data-action="zoom-out">Zoom -</button>
-          <button data-action="zoom-in">Zoom +</button>
-          <label class="timeline-zoom-control">Zoom
-            <input id="timelineZoom" type="range" min="48" max="360" step="2" value="${sanitizeCssLengthOrNumber(zoom, 240, 48, 360)}">
-            <span data-zoom-readout="true">${Math.round(zoom)} px/bar</span>
-          </label>
-          <label><input type="checkbox" id="loopEnabled" ${project.timeline.loop.enabled ? "checked" : ""}> Loop</label>
-          <input class="bar-input" id="loopStart" type="number" min="1" value="${project.timeline.loop.startBar}">
-          <input class="bar-input" id="loopEnd" type="number" min="2" value="${project.timeline.loop.endBar}">
-          <button data-action="loop-selected">Loop Clip</button>
-          <button data-action="loop-clear">Clear</button>
-          <span class="range-controls" aria-label="Edit range controls">
-            <span class="range-label">Range</span>
-            <input class="bar-input" id="rangeStart" type="number" min="1" step="0.25" value="${sanitizeCssLengthOrNumber(rangeStart, 1, 1, 4096)}" aria-label="Edit range start bar">
-            <input class="bar-input" id="rangeEnd" type="number" min="1.125" step="0.25" value="${sanitizeCssLengthOrNumber(rangeEnd, 2, 1.125, 4097)}" aria-label="Edit range end bar">
-            <button data-action="range-selected">Range Clip</button>
-            <button data-action="range-loop">Range Loop</button>
-            <button data-action="range-split" ${selection ? "" : "disabled"}>Split Range</button>
-            <button data-action="range-crop" ${selection ? "" : "disabled"}>Crop Range</button>
-            <button data-action="range-delete" ${selection ? "" : "disabled"}>Delete Range</button>
-            <button data-action="range-ripple-delete" ${selection ? "" : "disabled"}>Ripple Delete</button>
-            <button data-action="range-ripple-all" ${selection ? "" : "disabled"}>Ripple All</button>
-            <button data-action="range-clear" ${selection ? "" : "disabled"}>Clear Range</button>
-          </span>
-          <button data-action="marker-add">Marker</button>
-          <select id="gameStateMarker" aria-label="Game-state marker">
-            ${GAME_STATE_MARKERS.map((state) => `<option value="${escapeAttr(state)}">${escapeHtml(gameStateMarkerLabel(state))}</option>`).join("")}
-          </select>
-          <button data-action="game-state-marker-add">Game Cue</button>
-        </div>
+        ${
+          toolsCollapsed
+            ? renderCollapsedNotice("Timeline editing, zoom, loop and range controls are hidden.")
+            : `
+              <div class="edit-tools">
+                <button data-action="clip-left" title="Move the selected clip one snap step earlier">Move Left</button>
+                <button data-action="clip-right" title="Move the selected clip one snap step later">Move Right</button>
+                <button data-action="clip-cut" title="Cut the selected clip to the clipboard">Cut</button>
+                <button data-action="clip-copy" title="Copy the selected clip to the clipboard">Copy</button>
+                <button data-action="clip-paste" title="Paste the copied clip at the cursor">Paste</button>
+                <button data-action="clip-duplicate" title="Duplicate the selected clip after itself">Duplicate</button>
+                <button data-action="clip-split" title="Split the selected clip at the playhead">Split</button>
+                <button data-action="trim-start-right" title="Trim the selected clip start later by one snap step">Trim Start</button>
+                <button data-action="trim-end-left" title="Trim the selected clip end earlier by one snap step">Trim End</button>
+                <button data-action="clip-delete" title="Delete the selected clip">Delete</button>
+                <button data-action="clip-mute" title="Mute or unmute the selected clip without deleting it">Mute Clip</button>
+              </div>
+              ${renderTimelineSongSettings(pcs)}
+              <div class="timeline-options">
+                <button data-action="toggle-inspector" title="${state.inspectorVisible ? "Hide" : "Show"} the selected clip and track inspector">${state.inspectorVisible ? "Hide Inspector" : "Show Inspector"}</button>
+                <label>Snap
+                  <select id="snapMode">
+                    ${(["bar", "beat", "off"] as const).map((mode) => `<option value="${mode}" ${state.snapMode === mode ? "selected" : ""}>${modeLabel(mode)}</option>`).join("")}
+                  </select>
+                </label>
+                <button data-action="zoom-out" title="Zoom the timeline out">Zoom -</button>
+                <button data-action="zoom-in" title="Zoom the timeline in">Zoom +</button>
+                <label class="timeline-zoom-control">Zoom
+                  <input id="timelineZoom" type="range" min="48" max="360" step="2" value="${sanitizeCssLengthOrNumber(zoom, 240, 48, 360)}">
+                  <span data-zoom-readout="true">${Math.round(zoom)} px/bar</span>
+                </label>
+                <label><input type="checkbox" id="loopEnabled" ${project.timeline.loop.enabled ? "checked" : ""}> Loop</label>
+                <input class="bar-input" id="loopStart" type="number" min="1" value="${project.timeline.loop.startBar}">
+                <input class="bar-input" id="loopEnd" type="number" min="2" value="${project.timeline.loop.endBar}">
+                <button data-action="loop-selected" title="Set the loop region to the selected clip">Loop Clip</button>
+                <button data-action="loop-clear" title="Clear the active loop region">Clear</button>
+                <span class="range-controls" aria-label="Edit range controls">
+                  <span class="range-label">Range</span>
+                  <input class="bar-input" id="rangeStart" type="number" min="1" step="0.25" value="${sanitizeCssLengthOrNumber(rangeStart, 1, 1, 4096)}" aria-label="Edit range start bar">
+                  <input class="bar-input" id="rangeEnd" type="number" min="1.125" step="0.25" value="${sanitizeCssLengthOrNumber(rangeEnd, 2, 1.125, 4097)}" aria-label="Edit range end bar">
+                  <button data-action="range-selected" title="Select the current clip as the edit range">Range Clip</button>
+                  <button data-action="range-loop" title="Set the active edit range to the current loop">Range Loop</button>
+                  <button data-action="range-copy" ${selection ? "" : "disabled"} title="Copy the selected clip material inside the edit range">Copy Range</button>
+                  <button data-action="range-cut" ${selection ? "" : "disabled"} title="Cut the selected clip material inside the edit range">Cut Range</button>
+                  <button data-action="range-split" ${selection ? "" : "disabled"} title="Split clips at the edit range boundaries">Split Range</button>
+                  <button data-action="range-crop" ${selection ? "" : "disabled"} title="Keep only the selected range inside affected clips">Crop Range</button>
+                  <button data-action="range-delete" ${selection ? "" : "disabled"} title="Delete material inside the selected range">Delete Range</button>
+                  <button data-action="range-ripple-delete" ${selection ? "" : "disabled"} title="Delete the selected range and close the gap on selected tracks">Ripple Delete</button>
+                  <button data-action="range-ripple-all" ${selection ? "" : "disabled"} title="Delete the selected range and close the gap across all tracks">Ripple All</button>
+                  <button data-action="range-clear" ${selection ? "" : "disabled"} title="Clear the active edit range">Clear Range</button>
+                </span>
+                <button data-action="marker-add" title="Add a timeline marker at the playhead">Marker</button>
+                <span class="game-cue-controls" data-ui-scope="game" aria-label="Game cue controls">
+                  <select id="gameStateMarker" aria-label="Game-state marker" title="Choose the adaptive game-state label for the next cue">
+                    ${GAME_STATE_MARKERS.map((state) => `<option value="${escapeAttr(state)}">${escapeHtml(gameStateMarkerLabel(state))}</option>`).join("")}
+                  </select>
+                  <button data-action="game-state-marker-add" title="Add a game-state cue marker at the playhead">Game Cue</button>
+                </span>
+              </div>
+            `
+        }
       </div>
       <div class="timeline-scroll" data-scroll-key="timeline-scroll">
         <div class="timeline" data-timeline-surface="true" title="Click the grid to seek by bar" style="width:${width}px; --bar:${zoom}px; --track-header:176px;">
@@ -704,50 +760,80 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
   const pcs = getPrimaryChordsmithSource(project);
   const clipMedia = clip?.mediaPoolItemId ? project.mediaPool.find((item) => item.id === clip.mediaPoolItemId) || null : null;
   const clipMediaStatus = clipMedia ? mediaPoolStatus(clipMedia) : null;
+  const clipCollapsed = isUiSectionCollapsed(state, "inspector-clip");
+  const trackCollapsed = isUiSectionCollapsed(state, "inspector-track");
   return `
     <aside class="inspector" data-scroll-key="inspector">
       <div class="panel-title">Inspector</div>
       ${
         clip
-          ? `<section>
-              <h2>${escapeHtml(clip.name)}</h2>
-              <dl>
-                <dt>Type</dt><dd>${clip.type}</dd>
-                <dt>Section</dt><dd>${escapeHtml(clip.sectionId || "-")}</dd>
-                <dt>Start</dt><dd>Bar ${clip.startBar}</dd>
-                <dt>Length</dt><dd>${clip.barLength} bars</dd>
-                <dt>Linked</dt><dd>${clip.linked ? "Yes" : "No"}</dd>
-                ${clip.type === "audio" ? `<dt>Media</dt><dd>${escapeHtml(clipMedia?.name || "Missing media")}</dd><dt>Status</dt><dd>${escapeHtml(clipMediaStatus?.label || "Missing")}</dd><dt>Duration</dt><dd>${formatDuration(clipMedia?.durationSeconds)}</dd>` : ""}
-                ${clip.type === "midi" ? renderMidiClipMetadata(clip, clipMedia, clipMediaStatus) : ""}
-              </dl>
-              <label>Transpose <input data-clip-transform="${sanitizeDataAttr(`${clip.id}:transpose`)}" type="number" min="-48" max="48" step="1" value="${sanitizeCssLengthOrNumber(clip.transforms.transpose, 0, -48, 48)}" ${clip.type === "audio" ? "disabled title=\"Audio clip pitch shifting is not available yet.\"" : ""}></label>
-              ${clip.type === "audio" ? renderAudioClipProperties(project, clip) : `<label>Gain <input data-clip-transform="${sanitizeDataAttr(`${clip.id}:gain`)}" type="number" min="0" max="4" step="0.05" value="${sanitizeCssLengthOrNumber(clip.transforms.gain, 1, 0, 4)}"></label>`}
-              ${clip.type === "generated-section" ? renderGeneratedClipStemMutes(clip) : ""}
-              ${renderClipEditPalette()}
-              <button type="button" data-action="freeze-selected-clip">Freeze</button>
-              <button type="button" data-action="export-selected-clip-midi" ${clip.type === "audio" ? "disabled title=\"Audio clips do not contain MIDI events.\"" : ""}>Export Clip MIDI</button>
-              ${clip.type === "midi" ? renderMidiClipEditor(clip) : ""}
+          ? `<section class="inspector-section ${clipCollapsed ? "collapsed" : ""}" data-ui-collapse-section="inspector-clip">
+              <header class="section-collapse-head">
+                <div>
+                  <h2>${escapeHtml(clip.name)}</h2>
+                  <span>${escapeHtml(clip.type)} / Bar ${clip.startBar} / ${clip.barLength} bars</span>
+                </div>
+                ${renderUiSectionToggle(state, "inspector-clip")}
+              </header>
+              ${
+                clipCollapsed
+                  ? renderCollapsedNotice("Selected clip details, mix controls and edit actions are hidden.")
+                  : `
+                    <dl>
+                      <dt>Type</dt><dd>${clip.type}</dd>
+                      <dt>Section</dt><dd>${escapeHtml(clip.sectionId || "-")}</dd>
+                      <dt>Start</dt><dd>Bar ${clip.startBar}</dd>
+                      <dt>Length</dt><dd>${clip.barLength} bars</dd>
+                      <dt>Linked</dt><dd>${clip.linked ? "Yes" : "No"}</dd>
+                      ${clip.type === "audio" ? `<dt>Media</dt><dd>${escapeHtml(clipMedia?.name || "Missing media")}</dd><dt>Status</dt><dd>${escapeHtml(clipMediaStatus?.label || "Missing")}</dd><dt>Duration</dt><dd>${formatDuration(clipMedia?.durationSeconds)}</dd>` : ""}
+                      ${clip.type === "midi" ? renderMidiClipMetadata(clip, clipMedia, clipMediaStatus) : ""}
+                    </dl>
+                    <div class="inspector-field-group" aria-label="Clip mix controls">
+                      <h3>Clip mix</h3>
+                      <p class="editor-note">These values affect this selected clip only.</p>
+                      <label>Transpose <input data-clip-transform="${sanitizeDataAttr(`${clip.id}:transpose`)}" type="number" min="-48" max="48" step="1" value="${sanitizeCssLengthOrNumber(clip.transforms.transpose, 0, -48, 48)}" ${clip.type === "audio" ? "disabled title=\"Audio clip pitch shifting is not available yet.\"" : "title=\"Transpose this clip in semitones\""}></label>
+                      ${clip.type === "audio" ? renderAudioClipProperties(project, clip) : `<label>Gain <input data-clip-transform="${sanitizeDataAttr(`${clip.id}:gain`)}" type="number" min="0" max="4" step="0.05" value="${sanitizeCssLengthOrNumber(clip.transforms.gain, 1, 0, 4)}" title="Scale this clip's playback gain without changing the source material"></label>`}
+                    </div>
+                    ${clip.type === "generated-section" ? renderGeneratedClipStemMutes(clip) : ""}
+                    ${renderClipEditPalette()}
+                    <button type="button" data-action="freeze-selected-clip" title="Render the selected clip into a reusable audio asset">Freeze</button>
+                    <button type="button" data-action="export-selected-clip-midi" ${clip.type === "audio" ? "disabled title=\"Audio clips do not contain MIDI events.\"" : "title=\"Export the selected clip as a MIDI file\""}>Export Clip MIDI</button>
+                    ${clip.type === "midi" ? renderMidiClipEditor(clip) : ""}
+                  `
+              }
             </section>`
           : `<p>Select a clip to inspect it.</p>`
       }
       ${
         track
-          ? `<section>
-              <h2>${escapeHtml(track.name)}</h2>
-              <dl>
-                <dt>Type</dt><dd>${track.trackType}</dd>
-                <dt>Role</dt><dd>${track.role}</dd>
-                <dt>Arm</dt><dd>${track.recordKind && track.recordKind !== "none" ? (track.armed ? "Armed" : "Available") : "Not record-capable"}</dd>
-                <dt>Routing</dt><dd>${escapeHtml(track.routing.outputId || "none")}</dd>
-              </dl>
-              ${renderInputSelector(project, track)}
-              ${renderOutputSelector(project, track)}
-              ${renderSendPanel(project, track)}
-              ${track.role !== "master" && track.trackType !== "audio" && track.trackType !== "bus" && track.trackType !== "return" ? `<button type="button" data-action="export-selected-track-midi">Export Track MIDI</button>` : ""}
-              ${renderAutomationPanel(project, track)}
-              ${renderChordsmithSequencer(state, project, pcs, clip, track)}
-              ${track.role === "drums" ? renderDrumLaneMixer(project) : ""}
-              ${renderFxInspector(project, chain)}
+          ? `<section class="inspector-section ${trackCollapsed ? "collapsed" : ""}" data-ui-collapse-section="inspector-track">
+              <header class="section-collapse-head">
+                <div>
+                  <h2>${escapeHtml(track.name)}</h2>
+                  <span>${escapeHtml(track.trackType)} / ${escapeHtml(track.role)}</span>
+                </div>
+                ${renderUiSectionToggle(state, "inspector-track")}
+              </header>
+              ${
+                trackCollapsed
+                  ? renderCollapsedNotice("Selected track routing, automation and Chordsmith editors are hidden.")
+                  : `
+                    <dl>
+                      <dt>Type</dt><dd>${track.trackType}</dd>
+                      <dt>Role</dt><dd>${track.role}</dd>
+                      <dt>Arm</dt><dd>${track.recordKind && track.recordKind !== "none" ? (track.armed ? "Armed" : "Available") : "Not record-capable"}</dd>
+                      <dt>Routing</dt><dd>${escapeHtml(track.routing.outputId || "none")}</dd>
+                    </dl>
+                    ${renderInputSelector(project, track)}
+                    ${renderOutputSelector(project, track)}
+                    ${renderSendPanel(project, track)}
+                    ${track.role !== "master" && track.trackType !== "audio" && track.trackType !== "bus" && track.trackType !== "return" ? `<button type="button" data-action="export-selected-track-midi" title="Export all MIDI-capable clips on this track">Export Track MIDI</button>` : ""}
+                    ${renderAutomationPanel(project, track)}
+                    ${renderChordsmithSequencer(state, project, pcs, clip, track)}
+                    ${track.role === "drums" ? renderDrumLaneMixer(project) : ""}
+                    ${renderFxInspector(project, chain)}
+                  `
+              }
             </section>`
           : ""
       }
@@ -766,10 +852,14 @@ function renderGeneratedClipStemMutes(clip: Clip): string {
   const mutes = clip.transforms.stemMutes || {};
   return `
     <div class="clip-stem-mutes" aria-label="Generated clip stem mutes">
+      <div class="inspector-subhead">
+        <h3>Section stem mutes</h3>
+        <p>Checked roles are muted only for this generated clip. The original Chordsmith source stays unchanged.</p>
+      </div>
       ${stems.map(([stem, label]) => `
-        <label class="checkbox-row">
-          <input type="checkbox" data-clip-stem-mute="${sanitizeDataAttr(`${clip.id}:${stem}`)}" ${mutes[stem] ? "checked" : ""}>
-          <span>${label}</span>
+        <label class="checkbox-row" title="Mute or unmute ${label} in this generated clip only">
+          <input type="checkbox" data-clip-stem-mute="${sanitizeDataAttr(`${clip.id}:${stem}`)}" ${mutes[stem] ? "checked" : ""} title="Checked means ${label} is muted in this clip">
+          <span>Mute ${label}</span>
         </label>
       `).join("")}
     </div>
@@ -780,23 +870,27 @@ function renderClipEditPalette(): string {
   return `
     <div class="clip-edit-palette" aria-label="Selected clip edit actions">
       <h3>Edit</h3>
+      <p class="editor-note">These edit the selected clip or the active edit range and can be undone.</p>
       <div class="clip-edit-grid">
-        <button type="button" data-action="clip-copy">Copy</button>
-        <button type="button" data-action="clip-paste">Paste</button>
-        <button type="button" data-action="clip-duplicate">Duplicate</button>
-        <button type="button" data-action="clip-split">Split</button>
-        <button type="button" data-action="range-selected">Range Clip</button>
-        <button type="button" data-action="range-split">Split Range</button>
-        <button type="button" data-action="range-crop">Crop Range</button>
-        <button type="button" data-action="range-delete">Delete Range</button>
-        <button type="button" data-action="range-ripple-delete">Ripple Delete</button>
-        <button type="button" data-action="range-ripple-all">Ripple All</button>
-        <button type="button" data-action="trim-start-left">Start left</button>
-        <button type="button" data-action="trim-start-right">Start right</button>
-        <button type="button" data-action="trim-end-left">End left</button>
-        <button type="button" data-action="trim-end-right">End right</button>
-        <button type="button" data-action="clip-mute">Mute</button>
-        <button type="button" data-action="clip-delete">Delete</button>
+        <button type="button" data-action="clip-copy" title="Copy the selected clip to the clipboard">Copy</button>
+        <button type="button" data-action="clip-cut" title="Cut the selected clip to the clipboard">Cut</button>
+        <button type="button" data-action="clip-paste" title="Paste the copied clip at the cursor">Paste</button>
+        <button type="button" data-action="clip-duplicate" title="Duplicate the selected clip after itself">Duplicate</button>
+        <button type="button" data-action="clip-split" title="Split the selected clip at the playhead">Split</button>
+        <button type="button" data-action="range-selected" title="Use the selected clip as the edit range">Range Clip</button>
+        <button type="button" data-action="range-copy" title="Copy the selected clip material inside the active edit range">Copy Range</button>
+        <button type="button" data-action="range-cut" title="Cut the selected clip material inside the active edit range">Cut Range</button>
+        <button type="button" data-action="range-split" title="Split clips at the edit range boundaries">Split Range</button>
+        <button type="button" data-action="range-crop" title="Keep only the active edit range">Crop Range</button>
+        <button type="button" data-action="range-delete" title="Delete material inside the active edit range">Delete Range</button>
+        <button type="button" data-action="range-ripple-delete" title="Delete the active range and close the gap on selected tracks">Ripple Delete</button>
+        <button type="button" data-action="range-ripple-all" title="Delete the active range and close the gap across all tracks">Ripple All</button>
+        <button type="button" data-action="trim-start-left" title="Move the clip start earlier by one snap step">Start left</button>
+        <button type="button" data-action="trim-start-right" title="Move the clip start later by one snap step">Start right</button>
+        <button type="button" data-action="trim-end-left" title="Move the clip end earlier by one snap step">End left</button>
+        <button type="button" data-action="trim-end-right" title="Move the clip end later by one snap step">End right</button>
+        <button type="button" data-action="clip-mute" title="Mute or unmute the selected clip without deleting it">Mute</button>
+        <button type="button" data-action="clip-delete" title="Delete the selected clip">Delete</button>
       </div>
     </div>
   `;
@@ -828,16 +922,16 @@ function renderAudioClipProperties(project: ReturnType<typeof currentProject>, c
       <label>Pitch <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:pitchSemitones`)}" type="number" min="-48" max="48" step="1" value="${sanitizeCssLengthOrNumber(pitchSemitones, 0, -48, 48)}"></label>
       ${renderAudioTakePanel(project, clip)}
       <div class="audio-clip-actions" aria-label="Audio clip actions">
-        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:quick-fade`)}">Short fades</button>
-        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:reset-fades`)}">Reset fades</button>
-        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:normalize-gain`)}">Normalize</button>
-        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:analyze-transients`)}">Analyze</button>
-        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:create-warp-markers`)}">Warp markers</button>
-        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:clear-warp-markers`)}">Clear warp</button>
-        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:crossfade-overlap`)}">Crossfade</button>
-        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:create-crossfade-left`)}">Overlap fade</button>
-        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:invert-phase`)}">Invert phase</button>
-        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:reverse`)}">Reverse</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:quick-fade`)}" title="Apply short fade in and fade out to this audio clip">Short fades</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:reset-fades`)}" title="Clear this audio clip's fades">Reset fades</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:normalize-gain`)}" title="Set clip gain from the analyzed peak level">Normalize</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:analyze-transients`)}" title="Analyze likely transient points in this clip">Analyze</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:create-warp-markers`)}" title="Create metadata warp markers from analyzed transients">Warp markers</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:clear-warp-markers`)}" title="Clear metadata warp markers from this clip">Clear warp</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:crossfade-overlap`)}" title="Create a crossfade with an overlapping neighboring clip">Crossfade</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:create-crossfade-left`)}" title="Create an overlap fade at the left edge of this clip">Overlap fade</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:invert-phase`)}" title="Invert this clip's phase">Invert phase</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:reverse`)}" title="Reverse this audio clip nondestructively">Reverse</button>
       </div>
       ${renderAudioWarpMarkerPanel(clip)}
       ${renderAudioClipAutomationPanel(project, clip)}
@@ -864,24 +958,24 @@ function renderAudioTakePanel(project: ReturnType<typeof currentProject>, clip: 
   const summary = audioClipTakeSummary(project, clip.id);
   if (!summary || summary.takeCount < 2) return "";
   return `
-    <div class="audio-take-panel" aria-label="Audio take lanes">
+    <div class="audio-take-panel" aria-label="Audio take lanes" data-ui-scope="recording">
       <h3>Take Lanes</h3>
       <p class="editor-note">${escapeHtml(summary.groupId)} - Take ${summary.takeNumber} of ${summary.takeCount}${summary.active ? " active" : " muted"}</p>
       <div class="audio-take-buttons">
         ${summary.siblings.map((take) => `
           <span class="audio-take-row" data-audio-take-status="${sanitizeDataAttr(`${take.clipId}:${take.takeStatus}`)}">
-            <button type="button" data-audio-take-activate="${sanitizeDataAttr(take.clipId)}" ${take.clipId === clip.id || take.archived ? "disabled" : ""}>
+            <button type="button" data-audio-take-activate="${sanitizeDataAttr(take.clipId)}" ${take.clipId === clip.id || take.archived ? "disabled" : ""} title="Make this take the active clip in the take group">
               Take ${take.takeNumber} ${take.archived ? "archived" : take.active ? "active" : "muted"}
             </button>
             ${
               take.archived
-                ? `<button type="button" data-audio-take-restore="${sanitizeDataAttr(take.clipId)}">Restore</button>`
-                : `<button type="button" data-audio-take-archive="${sanitizeDataAttr(take.clipId)}">Archive</button>`
+                ? `<button type="button" data-audio-take-restore="${sanitizeDataAttr(take.clipId)}" title="Restore this archived take to the take group">Restore</button>`
+                : `<button type="button" data-audio-take-archive="${sanitizeDataAttr(take.clipId)}" title="Archive this take without deleting the source media">Archive</button>`
             }
           </span>
         `).join("")}
       </div>
-      <button type="button" data-action="audio-take-comp-from-playhead">Comp from playhead</button>
+      <button type="button" data-action="audio-take-comp-from-playhead" title="Comp this take group starting at the current playhead">Comp from playhead</button>
     </div>
   `;
 }
@@ -1705,20 +1799,24 @@ function renderMixer(state: AppState): string {
   const project = currentProject(state);
   const selectedTrack = project.tracks.find((track) => track.id === state.selectedTrackId) || null;
   const tab = state.lowerDockTab || "mixer";
+  const collapsed = isUiSectionCollapsed(state, "lower-dock");
   return `
-    <footer class="mixer lower-dock" data-layout-zone="mixer" data-scroll-key="mixer" data-lower-dock="${sanitizeDataAttr(tab)}">
+    <footer class="${collapsed ? "mixer lower-dock collapsed" : "mixer lower-dock"}" data-layout-zone="mixer" data-scroll-key="mixer" data-lower-dock="${sanitizeDataAttr(tab)}" data-ui-collapse-section="lower-dock">
       <header class="lower-dock-header">
         <div>
           <h2>${escapeHtml(lowerDockTitle(tab))}</h2>
           <p>${escapeHtml(lowerDockSubtitle(tab, selectedTrack))}</p>
         </div>
-        <nav class="lower-dock-tabs" aria-label="Lower dock">
-          ${(["mixer", "inserts", "sends", "automation", "piano-roll", "audio-editor", "export-details"] as LowerDockTab[]).map((item) => `
-            <button type="button" data-action="lower-dock-${item}" class="${tab === item ? "active" : ""}" aria-pressed="${tab === item ? "true" : "false"}">${escapeHtml(lowerDockTitle(item))}</button>
-          `).join("")}
-        </nav>
+        <div class="lower-dock-controls">
+          <nav class="lower-dock-tabs" aria-label="Lower dock">
+            ${(["mixer", "inserts", "sends", "automation", "piano-roll", "audio-editor", "export-details"] as LowerDockTab[]).map((item) => `
+              <button type="button" data-action="lower-dock-${item}" class="${tab === item ? "active" : ""}" aria-pressed="${tab === item ? "true" : "false"}">${escapeHtml(lowerDockTitle(item))}</button>
+            `).join("")}
+          </nav>
+          ${renderUiSectionToggle(state, "lower-dock")}
+        </div>
       </header>
-      ${renderLowerDockBody(state, project, selectedTrack, tab)}
+      ${collapsed ? `<div class="lower-dock-body lower-dock-collapsed">${renderCollapsedNotice(`${lowerDockTitle(tab)} controls are hidden.`)}</div>` : renderLowerDockBody(state, project, selectedTrack, tab)}
     </footer>
   `;
 }
@@ -1930,7 +2028,7 @@ function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>
           ${sharedPortability.portableForSharing ? `<p>Embedded source project is share-safe.</p>` : `<p>${sharedPortability.localReferenceFieldCount} local reference field${sharedPortability.localReferenceFieldCount === 1 ? "" : "s"} remain in the embedded source project.</p>`}
         </div>
         ${routing.warnings.length ? `<div class="dock-routing-warnings">${routing.warnings.map((warning) => `<span>${escapeHtml(warning)}</span>`).join("")}</div>` : ""}
-        <div class="dock-export-portability">
+        <div class="dock-export-portability" data-ui-scope="game">
           <h3>Game Delivery</h3>
           <dl>
             ${deliveryTargets.map((target) => `
@@ -1951,13 +2049,13 @@ function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>
         ${renderWavZipExportProfileControls(project, "stem-wavs", "Stem WAV ZIP")}
         ${renderWavZipExportProfileControls(project, "section-loops", "Section Loop ZIP")}
         <div class="file-command-grid">
-          <button data-action="export-wav">Full WAV</button>
-          <button data-action="export-midi">Full MIDI</button>
-          <button data-action="export-stems" ${stems.length ? "" : "disabled"}>Stem WAV ZIP</button>
-          <button data-action="export-section-manifest" ${loops.length ? "" : "disabled"}>Section Loop ZIP</button>
-          <button data-action="export-godot-manifest">Godot Pack</button>
-          <button data-action="push-godot-pack" title="Try a local Godot receiver first, then save the ZIP if unavailable">Push Godot Pack</button>
-          <button data-action="export-web-game-manifest">Web Pack</button>
+          <button data-action="export-wav" title="Render the full mix as a WAV file">Full WAV</button>
+          <button data-action="export-midi" title="Export the full project MIDI arrangement">Full MIDI</button>
+          <button data-action="export-stems" ${stems.length ? "" : "disabled"} title="Download a ZIP containing one WAV per stem plus a manifest">Stem WAV ZIP</button>
+          <button data-action="export-section-manifest" ${loops.length ? "" : "disabled"} title="Download a ZIP containing one loop WAV per generated section plus a manifest">Section Loop ZIP</button>
+          <button data-action="export-godot-manifest" data-ui-scope="game" title="Export a WAV-based adaptive audio pack for Godot">Godot Pack</button>
+          <button data-action="push-godot-pack" data-ui-scope="game" title="Try a local Godot receiver first, then save the ZIP if unavailable">Push Godot Pack</button>
+          <button data-action="export-web-game-manifest" data-ui-scope="game" title="Export a WAV-based adaptive audio pack for web games">Web Pack</button>
         </div>
       </section>
     </div>
@@ -2089,17 +2187,21 @@ function renderMediaPool(state: AppState): string {
   const items = project.mediaPool;
   const collectPlan = createCollectMediaPlan(project);
   const portability = verifyMediaPortability(project);
+  const collapsed = isUiSectionCollapsed(state, "media-pool");
   return `
-    <section class="media-pool" data-layout-zone="media" id="mediaPool" aria-label="Media Pool" data-scroll-key="media-pool">
+    <section class="${collapsed ? "media-pool collapsed" : "media-pool"}" data-layout-zone="media" id="mediaPool" aria-label="Media Pool" data-scroll-key="media-pool" data-ui-collapse-section="media-pool">
       <header>
         <div>
           <h2>Media Pool</h2>
           <p>${items.length ? `${items.length} item${items.length === 1 ? "" : "s"} tracked for audio, MIDI, renders and project-relative media.` : "Imported audio and MIDI appear here with timeline clips and runtime status."}</p>
         </div>
+        ${renderUiSectionToggle(state, "media-pool")}
       </header>
       ${
-        items.length
-          ? `<div class="media-grid">
+        collapsed
+          ? renderCollapsedNotice("Media pool items, render cache and portability details are hidden.")
+          : items.length
+            ? `<div class="media-grid">
               ${items.map((item) => {
                 const status = mediaPoolStatus(item, item.kind === "audio" && !!getCachedAudioBuffer(item.id));
                 const cacheItems = renderCacheItemsForMedia(project, item.id);
@@ -2135,21 +2237,25 @@ function renderMediaPool(state: AppState): string {
                 `;
               }).join("")}
             </div>`
-          : `<div class="media-empty">
+            : `<div class="media-empty">
               <strong>No media pool items yet.</strong>
               <span>Import Audio adds decoded runtime buffers and timeline-placeable clips. Import MIDI adds a media-pool item, MIDI clip and piano-roll note editor.</span>
             </div>`
       }
-      <aside class="render-cache-summary">
-        <strong>Render Cache</strong>
-        <span>${project.renderCache.length ? project.renderCache.map((item) => `${escapeHtml(item.id)}${item.mediaPoolItemId ? ` -> ${escapeHtml(item.mediaPoolItemId)}` : ""}${item.invalidated ? " (invalidated)" : ""}`).join(" / ") : "No render cache entries yet. Freeze, stem and game-pack renders will link cache entries to media pool items here."}</span>
-        <strong>Native Playback</strong>
-        <span>${escapeHtml(nativeCacheStatusText(state))}</span>
-        <strong>Collect Plan</strong>
-        <span>${collectPlan.copy.length} copy / ${collectPlan.alreadyProject.length} project / ${collectPlan.blocked.length} blocked</span>
-        <strong>Portability Check</strong>
-        <span>${portability.embeddedSourceProjectPortable ? "Embedded source portable" : `${portability.needsCollectionOrRelinkCount} need action${portability.cacheOnlyCount ? ` / ${portability.cacheOnlyCount} cache-only` : ""}`}</span>
-      </aside>
+      ${
+        collapsed
+          ? ""
+          : `<aside class="render-cache-summary">
+              <strong>Render Cache</strong>
+              <span>${project.renderCache.length ? project.renderCache.map((item) => `${escapeHtml(item.id)}${item.mediaPoolItemId ? ` -> ${escapeHtml(item.mediaPoolItemId)}` : ""}${item.invalidated ? " (invalidated)" : ""}`).join(" / ") : "No render cache entries yet. Freeze, stem and game-pack renders will link cache entries to media pool items here."}</span>
+              <strong>Native Playback</strong>
+              <span>${escapeHtml(nativeCacheStatusText(state))}</span>
+              <strong>Collect Plan</strong>
+              <span>${collectPlan.copy.length} copy / ${collectPlan.alreadyProject.length} project / ${collectPlan.blocked.length} blocked</span>
+              <strong>Portability Check</strong>
+              <span>${portability.embeddedSourceProjectPortable ? "Embedded source portable" : `${portability.needsCollectionOrRelinkCount} need action${portability.cacheOnlyCount ? ` / ${portability.cacheOnlyCount} cache-only` : ""}`}</span>
+            </aside>`
+      }
     </section>
   `;
 }
@@ -2257,13 +2363,13 @@ function renderFilePanel(state: AppState): string {
             <p>${stems.length} stem group${stems.length === 1 ? "" : "s"} / ${loops.length} section loop${loops.length === 1 ? "" : "s"} ready.</p>
           </div>
           <div class="file-command-grid">
-            <button data-action="export-wav">Full WAV</button>
-            <button data-action="export-midi">Full MIDI</button>
+            <button data-action="export-wav" title="Render the full mix as a WAV file">Full WAV</button>
+            <button data-action="export-midi" title="Export the full project MIDI arrangement">Full MIDI</button>
             <button data-action="export-stems" ${stems.length ? "" : "disabled"} title="Downloads a ZIP containing one WAV per stem plus a manifest">Stem WAV ZIP</button>
             <button data-action="export-section-manifest" ${loops.length ? "" : "disabled"} title="Downloads a ZIP containing one loop WAV per generated section plus a manifest">Section Loop ZIP</button>
-            <button data-action="export-godot-manifest">Godot Game Pack</button>
-            <button data-action="push-godot-pack" title="Try a local Godot receiver first, then save the ZIP if unavailable">Push Godot Pack</button>
-            <button data-action="export-web-game-manifest">Web Game Pack</button>
+            <button data-action="export-godot-manifest" data-ui-scope="game" title="Export a WAV-based adaptive audio pack for Godot">Godot Game Pack</button>
+            <button data-action="push-godot-pack" data-ui-scope="game" title="Try a local Godot receiver first, then save the ZIP if unavailable">Push Godot Pack</button>
+            <button data-action="export-web-game-manifest" data-ui-scope="game" title="Export a WAV-based adaptive audio pack for web games">Web Game Pack</button>
             <button data-action="export-media-plan" title="Export a JSON plan for collecting project media">Collect Media Plan</button>
             <button data-action="export-diagnostics">Diagnostics JSON</button>
           </div>
@@ -2729,16 +2835,16 @@ function renderAddTrackPanel(): string {
           <button data-action="add-track-close">Close</button>
         </header>
         <div class="add-track-grid">
-          <button data-add-track-kind="live-vocals"><strong>Live Vocals</strong><span>Mono recording alpha track</span></button>
-          <button data-add-track-kind="live-instrument"><strong>Live Instrument</strong><span>Mono recording alpha track</span></button>
-          <button data-add-track-kind="midi-instrument"><strong>MIDI Instrument</strong><span>Empty MIDI track for piano-roll clips</span></button>
-          <button data-add-track-kind="chordsmith-drums"><strong>Chordsmith Drums</strong><span>Select or enable generated drums</span></button>
-          <button data-add-track-kind="chordsmith-bass"><strong>Chordsmith Bass</strong><span>Select or enable generated bass</span></button>
-          <button data-add-track-kind="chordsmith-chords"><strong>Chordsmith Chords</strong><span>Select or enable generated chords</span></button>
-          <button data-add-track-kind="chordsmith-melody"><strong>Chordsmith Melody</strong><span>Select or enable generated melody</span></button>
-          <button data-add-track-kind="chordsmith-guitar"><strong>Chordsmith Guitar</strong><span>Select or reactivate guitar</span></button>
-          <button data-action="add-bus-track"><strong>Bus</strong><span>Route tracks through a grouped output</span></button>
-          <button data-action="add-return-track"><strong>Return</strong><span>FX return scaffold; sends stay guarded</span></button>
+          <button data-add-track-kind="live-vocals" data-ui-scope="recording" title="Add a mono audio track intended for vocal recording"><strong>Live Vocals</strong><span>Mono recording alpha track</span></button>
+          <button data-add-track-kind="live-instrument" data-ui-scope="recording" title="Add a mono audio track intended for instrument recording"><strong>Live Instrument</strong><span>Mono recording alpha track</span></button>
+          <button data-add-track-kind="midi-instrument" title="Add an empty MIDI instrument track for piano-roll clips"><strong>MIDI Instrument</strong><span>Empty MIDI track for piano-roll clips</span></button>
+          <button data-add-track-kind="chordsmith-drums" title="Select or enable the generated Chordsmith drums track"><strong>Chordsmith Drums</strong><span>Select or enable generated drums</span></button>
+          <button data-add-track-kind="chordsmith-bass" title="Select or enable the generated Chordsmith bass track"><strong>Chordsmith Bass</strong><span>Select or enable generated bass</span></button>
+          <button data-add-track-kind="chordsmith-chords" title="Select or enable the generated Chordsmith chords track"><strong>Chordsmith Chords</strong><span>Select or enable generated chords</span></button>
+          <button data-add-track-kind="chordsmith-melody" title="Select or enable the generated Chordsmith melody track"><strong>Chordsmith Melody</strong><span>Select or enable generated melody</span></button>
+          <button data-add-track-kind="chordsmith-guitar" title="Select or reactivate the generated Chordsmith guitar track"><strong>Chordsmith Guitar</strong><span>Select or reactivate guitar</span></button>
+          <button data-action="add-bus-track" title="Add a bus track for grouped routing"><strong>Bus</strong><span>Route tracks through a grouped output</span></button>
+          <button data-action="add-return-track" title="Add a return track for send effects"><strong>Return</strong><span>FX return scaffold; sends stay guarded</span></button>
         </div>
       </section>
     </div>
@@ -2857,7 +2963,7 @@ function renderControlsPanel(state: AppState): string {
           <p><strong>Import</strong><span>Paste a PCS1 code, Chordsmith JSON, Pocket DJ source session, or .pocketdaw file.</span></p>
           <p><strong>Demo</strong><span>Load Demo Copy creates an editable autosaved copy. Reload Demo Template discards copy edits and starts fresh from the built-in demo.</span></p>
           <p><strong>Transport</strong><span>Play, Stop, Restart, Panic, or return to Bar 1 from the top bar.</span></p>
-          <p><strong>Shortcuts</strong><span>Space play/pause, Home Bar 1, L loop, P loop selected, X split, G marker, Ctrl+C/V clip copy/paste, M mute, S solo, R arm, D duplicate, Delete remove, arrows move clips, plus/minus zoom.</span></p>
+          <p><strong>Shortcuts</strong><span>Space play/pause, Home Bar 1, L loop, P loop selected, X split, G marker, Ctrl+X/C/V clip cut/copy/paste, Ctrl+Shift+X/C range cut/copy, M mute, S solo, R arm, D duplicate, Delete remove, arrows move clips, plus/minus zoom.</span></p>
           <p><strong>Timeline</strong><span>Select a clip, click or drag the ruler/grid to seek and scrub, choose Bar or Beat snap, then use Move, Copy, Paste, Split, Trim, Loop Clip, Marker and Zoom controls.</span></p>
           <p><strong>Media Pool</strong><span>Import Audio decodes supported files into a runtime cache. Import MIDI parses .mid files into editable clips played by the preview synth.</span></p>
           <p><strong>Mixer</strong><span>Use Volume and Pan sliders. Meters show live peak audio. Mute silences a track; Solo isolates it.</span></p>
@@ -2872,6 +2978,83 @@ function renderControlsPanel(state: AppState): string {
         </div>
       </section>
     </div>
+  `;
+}
+
+function renderFunctionGuidePanel(): string {
+  return `
+    <div class="modal-backdrop" data-function-guide-backdrop="true">
+      <section class="controls-panel function-guide-panel" role="dialog" aria-modal="true" aria-labelledby="function-guide-title">
+        <header>
+          <div>
+            <h2 id="function-guide-title">Function Guide</h2>
+            <p>Plain-language reference for Pocket DAW controls, workflows and AI-assisted operation.</p>
+          </div>
+          <button data-action="function-guide-close">Close</button>
+        </header>
+        <div class="function-guide-intro">
+          <p><strong>Full document</strong><span>${escapeHtml(FUNCTION_REFERENCE_DOC)}</span></p>
+          <p><strong>Action catalog</strong><span>${escapeHtml(FUNCTION_ACTION_CATALOG_DOC)}</span></p>
+          <p><strong>How to use</strong><span>Find the surface you are using, read what it does, when to use it, and the AI counterpart note before changing project data.</span></p>
+        </div>
+        <div class="function-guide-body">
+          ${FUNCTION_GUIDE_SECTIONS.map((section) => `
+            <section class="function-guide-section" aria-label="${escapeAttr(section.title)}">
+              <header>
+                <h3>${escapeHtml(section.title)}</h3>
+                <p>${escapeHtml(section.summary)}</p>
+              </header>
+              <div class="function-guide-grid">
+                ${section.entries.map((entry) => `
+                  <article class="function-guide-entry">
+                    <h4>${escapeHtml(entry.name)}</h4>
+                    <p><strong>Does</strong><span>${escapeHtml(entry.does)}</span></p>
+                    <p><strong>Use when</strong><span>${escapeHtml(entry.useWhen)}</span></p>
+                    <p class="function-guide-ai-note"><strong>AI note</strong><span>${escapeHtml(entry.aiNote)}</span></p>
+                  </article>
+                `).join("")}
+              </div>
+            </section>
+          `).join("")}
+          ${renderFunctionActionCatalog()}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderFunctionActionCatalog(): string {
+  const surfaces = Array.from(new Set(FUNCTION_ACTION_REFERENCE.map((entry) => entry.surface)));
+  return `
+    <section class="function-guide-section function-action-catalog" aria-label="Button and action catalog">
+      <header>
+        <h3>Button And Action Catalog</h3>
+        <p>Explicit map of visible commands, shortcuts and dense data-driven controls. Use this when a human or AI helper needs the exact control purpose.</p>
+      </header>
+      <div class="function-action-groups">
+        ${surfaces.map((surface) => {
+          const entries = FUNCTION_ACTION_REFERENCE.filter((entry) => entry.surface === surface);
+          return `
+            <section class="function-action-group" aria-label="${escapeAttr(surface)}">
+              <h4>${escapeHtml(surface)}</h4>
+              <div class="function-action-list">
+                ${entries.map((entry) => `
+                  <article class="function-action-entry">
+                    <header>
+                      <strong>${escapeHtml(entry.control)}</strong>
+                      <span>${escapeHtml([entry.actionId ? `data-action=${entry.actionId}` : "", entry.selector || "", entry.shortcut ? `Shortcut ${entry.shortcut}` : ""].filter(Boolean).join(" / ") || "Context control")}</span>
+                    </header>
+                    <p><b>Does</b><span>${escapeHtml(entry.does)}</span></p>
+                    <p><b>Use when</b><span>${escapeHtml(entry.useWhen)}</span></p>
+                    <p><b>AI note</b><span>${escapeHtml(entry.aiNote)}</span></p>
+                  </article>
+                `).join("")}
+              </div>
+            </section>
+          `;
+        }).join("")}
+      </div>
+    </section>
   `;
 }
 

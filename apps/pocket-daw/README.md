@@ -66,6 +66,11 @@ Pocket DAW `0.6.13` added `Help -> AI / MCP Bridge` in the installed app. The pa
 
 Pocket DAW current updater-visible checkpoint and exact-artifact smoke evidence are recorded in `release-status.json` and `docs/CURRENT_RELEASE_STATUS.md`.
 
+User and agent help docs:
+
+- `docs/POCKET_DAW_FUNCTION_REFERENCE.md`
+- `docs/POCKET_DAW_ACTION_CATALOG.md`
+
 Release and update docs:
 
 - `docs/CURRENT_RELEASE_STATUS.md`

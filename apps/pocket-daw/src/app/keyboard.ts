@@ -7,6 +7,9 @@ export type KeyboardCommand =
   | "arm-selected-track"
   | "duplicate-clip"
   | "copy-clip"
+  | "cut-clip"
+  | "copy-range"
+  | "cut-range"
   | "paste-clip"
   | "delete-clip"
   | "split-clip"
@@ -32,7 +35,10 @@ export function commandFromKeyboardEvent(event: Pick<KeyboardEvent, "key" | "cod
   if (ctrl && !event.altKey && !event.shiftKey && key === "s") return "save-project";
   if (ctrl && !event.altKey && !event.shiftKey && key === "o") return "open-file";
   if (ctrl && !event.altKey && !event.shiftKey && key === "e") return "export-wav";
+  if (ctrl && !event.altKey && event.shiftKey && key === "c") return "copy-range";
+  if (ctrl && !event.altKey && event.shiftKey && key === "x") return "cut-range";
   if (ctrl && !event.altKey && !event.shiftKey && key === "c") return "copy-clip";
+  if (ctrl && !event.altKey && !event.shiftKey && key === "x") return "cut-clip";
   if (ctrl && !event.altKey && !event.shiftKey && key === "v") return "paste-clip";
   if (ctrl || event.metaKey || event.altKey) return null;
   if (isSpacebarEvent(event)) return "play-pause";
