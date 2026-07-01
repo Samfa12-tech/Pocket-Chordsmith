@@ -7,6 +7,8 @@ import { setTrackSendLevel } from "../src/daw/routing";
 import { addAutomationPoint, createAutomationLane, ensureFxParameterAutomationLane, ensureTrackSendAutomationLane } from "../src/daw/automation";
 import type { RenderedEvent } from "../src/audio/eventRenderer";
 import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioInvokeApi, type NativeAudioStatus } from "../src/native/audioPlayback";
+import { toggleTrackSolo } from "../src/daw/mixer";
+import { addTrackToProject, setTrackFolder } from "../src/daw/tracks";
 
 function status(overrides: Partial<NativeAudioStatus> = {}): NativeAudioStatus {
   return {
@@ -72,6 +74,17 @@ describe("native audio playback bridge", () => {
 
     expect(bass?.volume).toBeCloseTo(bassBaseVolume * 0.75, 5);
     expect(bass?.pan).toBeCloseTo(0, 5);
+  });
+
+  it("applies folder group solo to native start mixer controls", () => {
+    const withFolder = addTrackToProject(createDemoProject(), "folder");
+    const assigned = setTrackFolder(withFolder.project, "bass", withFolder.trackId);
+    const soloed = toggleTrackSolo(assigned, withFolder.trackId);
+    const payload = buildNativeAudioStartPayload(soloed, renderTimelineEvents(soloed), 0);
+
+    expect(payload.tracks.find((track) => track.id === "bass")).toMatchObject({ mute: false, solo: false });
+    expect(payload.tracks.find((track) => track.id === "drums")).toMatchObject({ mute: true, solo: false });
+    expect(payload.tracks.find((track) => track.id === withFolder.trackId)).toMatchObject({ mute: false, solo: false });
   });
 
   it("preserves bass and melody slide targets for the native installed-app synth", () => {

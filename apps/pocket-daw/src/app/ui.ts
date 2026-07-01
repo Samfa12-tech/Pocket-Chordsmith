@@ -623,7 +623,7 @@ function renderTimelineRows(state: AppState): string {
 function renderTimelineTrackHeader(project: ReturnType<typeof currentProject>, track: Track, selected: boolean, pcs: SanitizedPcsProject | null): string {
   const lanes = trackHeaderLaneText(project, track, pcs);
   const branchEntry = track.role === "drums" && !generatedDrumBranchLane(track) ? ` data-drum-branch-entry="track" title="Double-click or right-click to branch generated drums"` : "";
-  const canMuteSolo = track.role !== "master" && track.role !== "fx-return" && track.role !== "folder";
+  const canMuteSolo = track.role !== "master" && track.role !== "fx-return";
   const canSolo = canMuteSolo;
   const canRecord = !!track.recordKind && track.recordKind !== "none";
   const recordChannelLabel = recordingChannelLabel(track);
@@ -981,9 +981,11 @@ function renderFolderTrackNote(track: Track): string {
   return `
     <div class="folder-track-note" aria-label="Folder track behavior">
       <p class="editor-note">${escapeHtml(track.name)} organizes timeline lanes and can be renamed like any other track.</p>
-      <p class="editor-note">It does not process audio, carry FX, mute child tracks, or change exports yet; folder-bus behavior should come later through the normal routing model.</p>
+      <p class="editor-note">Mute and Solo act as group controls for child lanes. The folder itself still does not process audio, carry FX, route sends, or create export stems.</p>
       <dl>
         <dt>Folder state</dt><dd>${expanded ? "Expanded" : "Collapsed"}</dd>
+        <dt>Group mute</dt><dd>${track.mute ? "On" : "Off"}</dd>
+        <dt>Group solo</dt><dd>${track.solo ? "On" : "Off"}</dd>
         <dt>Audio routing</dt><dd>None</dd>
       </dl>
     </div>
@@ -2697,13 +2699,17 @@ function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Tra
 
 function renderFolderMixerStrip(track: Track): string {
   return `
-    <div class="strip folder-strip">
+    <div class="strip folder-strip ${track.solo ? "solo" : ""} ${track.mute ? "muted" : ""}">
       <div class="strip-name">
         <button type="button" data-track-rename="${sanitizeDataAttr(track.id)}" title="${escapeAttr(`Rename ${track.name}`)}">${escapeHtml(track.name)}</button>
-        <small>Folder</small>
+        <small>${track.solo ? "Solo group" : track.mute ? "Muted group" : "Folder group"}</small>
       </div>
-      <div class="strip-note folder-strip-note">Organizes timeline lanes only.</div>
-      <div class="strip-note">No audio routing, sends or FX yet.</div>
+      <div class="strip-buttons">
+        <button type="button" title="${escapeAttr(`Mute child lanes in ${track.name}`)}" class="${track.mute ? "on" : ""}" data-mute-track="${sanitizeDataAttr(track.id)}">Mute</button>
+        <button type="button" title="${escapeAttr(`Solo child lanes in ${track.name}`)}" class="${track.solo ? "on" : ""}" data-solo-track="${sanitizeDataAttr(track.id)}">Solo</button>
+      </div>
+      <div class="strip-note folder-strip-note">Group Mute/Solo controls child lanes.</div>
+      <div class="strip-note">No fader, pan, sends, FX or folder stem yet.</div>
     </div>
   `;
 }

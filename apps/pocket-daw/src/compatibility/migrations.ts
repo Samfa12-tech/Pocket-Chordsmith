@@ -132,8 +132,6 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
       normalized.recordKind = "none";
       normalized.folderId = null;
       normalized.armed = false;
-      normalized.mute = false;
-      normalized.solo = false;
       normalized.inputDeviceId = null;
       normalized.monitorEnabled = false;
       normalized.metadata = {

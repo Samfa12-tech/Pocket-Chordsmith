@@ -2,6 +2,7 @@ import type { PocketDawProject } from "../daw/schema";
 import { effectiveMeterAtBar, timelineBarAtSeconds, timelineQuarterNoteBeatsBetweenBars } from "../daw/timeline";
 import { midiDataFromClip } from "../daw/midiClips";
 import { renderTimelineEvents, type RenderedEvent } from "./eventRenderer";
+import { trackIsAudible } from "../daw/tracks";
 
 interface MidiMessage {
   tick: number;
@@ -39,19 +40,20 @@ function buildMidiTracks(project: PocketDawProject, ppq: number, options: MidiEx
   const trackIds = options.trackIds?.length ? new Set(options.trackIds) : null;
   const events = renderTimelineEvents(project).filter((event) => (
     (!clipIds || clipIds.has(event.clipId)) &&
-    (!trackIds || trackIds.has(event.trackId))
+    (!trackIds || trackIds.has(event.trackId)) &&
+    trackIdIsAudible(project, event.trackId)
   ));
   const controllerClipTrackIds = project.timeline.clips
-    .filter((clip) => clip.type === "midi" && !clip.muted && (!clipIds || clipIds.has(clip.id)) && (!trackIds || trackIds.has(clip.trackId)) && midiDataFromClip(clip).controllers.length)
+    .filter((clip) => midiClipCanExport(project, clip, clipIds, trackIds) && midiDataFromClip(clip).controllers.length)
     .map((clip) => clip.trackId);
   const programChangeClipTrackIds = project.timeline.clips
-    .filter((clip) => clip.type === "midi" && !clip.muted && (!clipIds || clipIds.has(clip.id)) && (!trackIds || trackIds.has(clip.trackId)) && midiDataFromClip(clip).programChanges.length)
+    .filter((clip) => midiClipCanExport(project, clip, clipIds, trackIds) && midiDataFromClip(clip).programChanges.length)
     .map((clip) => clip.trackId);
   const pitchBendClipTrackIds = project.timeline.clips
-    .filter((clip) => clip.type === "midi" && !clip.muted && (!clipIds || clipIds.has(clip.id)) && (!trackIds || trackIds.has(clip.trackId)) && midiDataFromClip(clip).pitchBends.length)
+    .filter((clip) => midiClipCanExport(project, clip, clipIds, trackIds) && midiDataFromClip(clip).pitchBends.length)
     .map((clip) => clip.trackId);
   const aftertouchClipTrackIds = project.timeline.clips
-    .filter((clip) => clip.type === "midi" && !clip.muted && (!clipIds || clipIds.has(clip.id)) && (!trackIds || trackIds.has(clip.trackId)) && midiDataFromClip(clip).aftertouch.length)
+    .filter((clip) => midiClipCanExport(project, clip, clipIds, trackIds) && midiDataFromClip(clip).aftertouch.length)
     .map((clip) => clip.trackId);
   const eventTrackIds = Array.from(new Set([...events.map((event) => event.trackId), ...controllerClipTrackIds, ...programChangeClipTrackIds, ...pitchBendClipTrackIds, ...aftertouchClipTrackIds]));
   const musicalTracks = project.tracks.filter((track) => eventTrackIds.includes(track.id));
@@ -76,6 +78,19 @@ function trackNameMessage(name: string): MidiMessage {
   return { tick: 0, data: [0xff, 0x03, bytes.length, ...bytes] };
 }
 
+function trackIdIsAudible(project: PocketDawProject, trackId: string): boolean {
+  const track = project.tracks.find((item) => item.id === trackId);
+  return !!track && trackIsAudible(track, project.tracks);
+}
+
+function midiClipCanExport(project: PocketDawProject, clip: PocketDawProject["timeline"]["clips"][number], clipIds: Set<string> | null, trackIds: Set<string> | null): boolean {
+  if (clip.type !== "midi") return false;
+  if (clip.muted) return false;
+  if (clipIds && !clipIds.has(clip.id)) return false;
+  if (trackIds && !trackIds.has(clip.trackId)) return false;
+  return trackIdIsAudible(project, clip.trackId);
+}
+
 function addEventMessages(messages: MidiMessage[], event: RenderedEvent, project: PocketDawProject, ppq: number) {
   const startTick = secondsToTimelineTicks(event.time, project, ppq);
   const endTick = Math.max(startTick + 12, secondsToTimelineTicks(event.time + event.duration, project, ppq));
@@ -91,10 +106,7 @@ function addEventMessages(messages: MidiMessage[], event: RenderedEvent, project
 
 function addMidiControllerMessages(project: PocketDawProject, ppq: number, byTrack: Map<string, MidiMessage[]>, clipIds: Set<string> | null, trackIds: Set<string> | null) {
   project.timeline.clips.forEach((clip) => {
-    if (clip.type !== "midi") return;
-    if (clip.muted) return;
-    if (clipIds && !clipIds.has(clip.id)) return;
-    if (trackIds && !trackIds.has(clip.trackId)) return;
+    if (!midiClipCanExport(project, clip, clipIds, trackIds)) return;
     const messages = byTrack.get(clip.trackId);
     if (!messages) return;
     const data = midiDataFromClip(clip);
@@ -137,10 +149,7 @@ function activeControllerStateBefore(controllers: ReturnType<typeof midiDataFrom
 
 function addMidiProgramChangeMessages(project: PocketDawProject, ppq: number, byTrack: Map<string, MidiMessage[]>, clipIds: Set<string> | null, trackIds: Set<string> | null) {
   project.timeline.clips.forEach((clip) => {
-    if (clip.type !== "midi") return;
-    if (clip.muted) return;
-    if (clipIds && !clipIds.has(clip.id)) return;
-    if (trackIds && !trackIds.has(clip.trackId)) return;
+    if (!midiClipCanExport(project, clip, clipIds, trackIds)) return;
     const messages = byTrack.get(clip.trackId);
     if (!messages) return;
     const data = midiDataFromClip(clip);
@@ -183,10 +192,7 @@ function activeProgramStateBefore(programChanges: ReturnType<typeof midiDataFrom
 
 function addMidiPitchBendMessages(project: PocketDawProject, ppq: number, byTrack: Map<string, MidiMessage[]>, clipIds: Set<string> | null, trackIds: Set<string> | null) {
   project.timeline.clips.forEach((clip) => {
-    if (clip.type !== "midi") return;
-    if (clip.muted) return;
-    if (clipIds && !clipIds.has(clip.id)) return;
-    if (trackIds && !trackIds.has(clip.trackId)) return;
+    if (!midiClipCanExport(project, clip, clipIds, trackIds)) return;
     const messages = byTrack.get(clip.trackId);
     if (!messages) return;
     const data = midiDataFromClip(clip);
@@ -227,10 +233,7 @@ function pitchBendMessage(value: number, channel: number): number[] {
 
 function addMidiAftertouchMessages(project: PocketDawProject, ppq: number, byTrack: Map<string, MidiMessage[]>, clipIds: Set<string> | null, trackIds: Set<string> | null) {
   project.timeline.clips.forEach((clip) => {
-    if (clip.type !== "midi") return;
-    if (clip.muted) return;
-    if (clipIds && !clipIds.has(clip.id)) return;
-    if (trackIds && !trackIds.has(clip.trackId)) return;
+    if (!midiClipCanExport(project, clip, clipIds, trackIds)) return;
     const messages = byTrack.get(clip.trackId);
     if (!messages) return;
     const data = midiDataFromClip(clip);

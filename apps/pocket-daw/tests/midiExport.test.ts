@@ -9,6 +9,8 @@ import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { createDemoChordsmithProject, createDemoProject } from "../src/demo/demoProject";
 import { createAutomationLane } from "../src/daw/automation";
 import { aftertouchMidiBytes, controllerOnlyMidiBytes, metalArrangementMidiBytes, multiTrackChannelMidiBytes, pitchBendMidiBytes, programChangeMidiBytes, shortNoteLateControllerMidiBytes, simpleMidiBytes } from "./midiFixtures";
+import { toggleTrackMute } from "../src/daw/mixer";
+import { addTrackToProject, setTrackFolder } from "../src/daw/tracks";
 
 describe("MIDI export", () => {
   it("writes format 1 when exporting multiple tracks and preserves project tempo", async () => {
@@ -199,6 +201,20 @@ describe("MIDI export", () => {
     clip.muted = true;
 
     const bytes = new Uint8Array(await exportProjectToMidiBlob(imported.project, { clipIds: [imported.clipId], trackIds: [imported.trackId] }).arrayBuffer());
+    const exported = parseStandardMidiFile(bytes);
+
+    expect(exported.notes).toEqual([]);
+    expect(exported.controllers).toEqual([]);
+  });
+
+  it("does not export MIDI note or controller data from folder-muted tracks", async () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "Folder Muted MIDI Export" }));
+    const imported = importMidiFileToProject(project, parseStandardMidiFile(simpleMidiBytes(true)), "folder-muted.mid");
+    const withFolder = addTrackToProject(imported.project, "folder");
+    const assigned = setTrackFolder(withFolder.project, imported.trackId, withFolder.trackId);
+    const folderMuted = toggleTrackMute(assigned, withFolder.trackId);
+
+    const bytes = new Uint8Array(await exportProjectToMidiBlob(folderMuted, { clipIds: [imported.clipId], trackIds: [imported.trackId] }).arrayBuffer());
     const exported = parseStandardMidiFile(bytes);
 
     expect(exported.notes).toEqual([]);

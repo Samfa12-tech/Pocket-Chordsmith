@@ -425,7 +425,7 @@ export function projectWithOnlyTracksAudible(project: PocketDawProject, trackIds
     });
   }
   next.tracks = next.tracks.map((track) => {
-      if (track.role === "master" || track.trackType === "bus" || track.trackType === "return") return { ...track, mute: false, solo: false, active: track.active };
+      if (track.role === "master" || track.trackType === "bus" || track.trackType === "return" || track.trackType === "folder") return { ...track, mute: false, solo: false, active: track.active };
       return { ...track, mute: !(keep.has(track.id) || branchParentTrackIds.has(track.id)), solo: false };
     });
   return projectWithWavRenderProfile(next, wavProfileId);
@@ -450,6 +450,11 @@ export function projectForClipRender(project: PocketDawProject, clipId: string):
   next.timeline.loop = { enabled: false, startBar: 1, endBar: Math.max(2, Math.ceil(renderClip.barLength) + 1) };
   next.timeline.cursor = { bar: 1, beat: 1, tick: 0 };
   next.timeline.bars = Math.max(1, Math.ceil(renderClip.barLength));
+  next.tracks = next.tracks.map((track) => {
+    if (track.trackType === "folder") return { ...track, mute: false, solo: false };
+    if (track.id === source.trackId) return { ...track, mute: false, solo: false, active: true };
+    return { ...track, solo: false };
+  });
   next.exportProfiles = next.exportProfiles.map((profile) => (
     profile.id === "full-song-wav"
       ? { ...profile, settings: { ...profile.settings, tailSeconds: 0.25 } }
@@ -812,8 +817,20 @@ export function collectExportWarnings(project: PocketDawProject, options: { incl
     if (item.metadata?.missing === true || item.metadata?.unresolved === true) warnings.push(`${item.name}: media is missing or unresolved.`);
     if (item.metadata?.runtimeOnly === true) warnings.push(`${item.name}: browser runtime-only media must be re-imported in native mode before a durable pack.`);
   });
-  const mutedTracks = project.tracks.filter((track) => track.mute && track.role !== "master").map((track) => track.name);
+  const mutedTracks = project.tracks.filter((track) => track.mute && track.role !== "master" && track.trackType !== "folder").map((track) => track.name);
   if (mutedTracks.length) warnings.push(`Muted tracks are excluded from audible renders: ${mutedTracks.join(", ")}.`);
+  const mutedFolderGroups = project.tracks
+    .filter((track) => track.trackType === "folder" && track.mute)
+    .map((folder) => ({
+      folder,
+      children: project.tracks.filter((track) => track.folderId === folder.id).map((track) => track.name)
+    }))
+    .filter((item) => item.children.length);
+  mutedFolderGroups.forEach((item) => {
+    warnings.push(`Folder ${item.folder.name} mutes child lanes in audible renders: ${item.children.join(", ")}.`);
+  });
+  const soloedTracks = project.tracks.filter((track) => track.solo && track.role !== "master" && track.role !== "fx-return").map((track) => track.name);
+  if (soloedTracks.length) warnings.push(`Soloed tracks and folders restrict audible renders to their solo scope: ${soloedTracks.join(", ")}.`);
   if (includeSectionLoopWarning && !createSectionLoopMetadata(project).length) warnings.push("No generated sections are available for section-loop export.");
   const invalidatedRenderCacheCount = createRenderCacheSummary(project).invalidatedCount;
   if (invalidatedRenderCacheCount) warnings.push(`${invalidatedRenderCacheCount} render-cache item${invalidatedRenderCacheCount === 1 ? " is" : "s are"} invalidated; rebuild or refreeze before relying on cached game-pack assets.`);

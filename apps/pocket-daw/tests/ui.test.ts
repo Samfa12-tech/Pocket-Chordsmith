@@ -1481,15 +1481,16 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).toContain("folder / folder");
     expect(inspector).toContain('class="folder-track-note"');
     expect(inspector).toContain("organizes timeline lanes and can be renamed like any other track");
-    expect(inspector).toContain("It does not process audio, carry FX, mute child tracks, or change exports yet");
+    expect(inspector).toContain("Mute and Solo act as group controls for child lanes");
     expect(inspector).not.toContain('data-track-output="folder"');
     expect(inspector).not.toContain('data-automation-create="folder:volume"');
-    expect(lower).toContain('class="strip folder-strip"');
-    expect(lower).toContain("Organizes timeline lanes only.");
-    expect(lower).toContain("No audio routing, sends or FX yet.");
+    expect(lower).toContain('class="strip folder-strip');
+    expect(lower).toContain("Group Mute/Solo controls child lanes.");
+    expect(lower).toContain("No fader, pan, sends, FX or folder stem yet.");
     expect(lower).not.toContain('data-volume="folder"');
     expect(lower).not.toContain('data-pan="folder"');
-    expect(lower).not.toContain('data-mute-track="folder"');
+    expect(lower).toContain('data-mute-track="folder"');
+    expect(lower).toContain('data-solo-track="folder"');
 
     const collapsed = toggleFolderExpandedCommand(state, folderId);
     const collapsedHtml = renderAppShell(collapsed);

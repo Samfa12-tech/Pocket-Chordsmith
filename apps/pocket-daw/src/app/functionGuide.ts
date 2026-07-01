@@ -454,7 +454,7 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
         name: "Folder Tracks",
         does: "Adds visible timeline organizer tracks that save/reopen, can be renamed, can hold child lanes, and can collapse or expand without processing audio.",
         useWhen: "Use to structure larger arrangements before folder-bus routing is implemented.",
-        aiNote: "Folder tracks are project data, but current behavior is organizational only: no child mute, audio routing, sends or FX."
+        aiNote: "Folder Mute/Solo now controls child-lane audibility. Folders still do not process audio, own sends, host FX, inherit FX, or create export stems."
       },
       {
         name: "Sends",
@@ -1291,15 +1291,15 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     selector: "data-add-track-kind:folder",
     does: "Adds a timeline organizer track that can be renamed and saved without processing audio.",
     useWhen: "Use when a growing arrangement needs visible structure before folder-bus routing exists.",
-    aiNote: "Folder tracks are project data, but current behavior is organizational only: no child mute, no audio routing, no sends and no FX."
+    aiNote: "Folder Mute/Solo controls child-lane audibility. Folder routing, sends, FX and export grouping are still future work."
   },
   {
     surface: "Track And Routing",
     control: "Assign Track Folder",
     selector: "data-track-folder",
     does: "Moves a generated, audio, or MIDI timeline lane into or out of an organizational folder.",
-    useWhen: "Use to group lanes visually and reduce timeline clutter without changing audio behavior.",
-    aiNote: "This is organizational metadata only. Do not infer bus routing, child mute, child solo, sends, FX inheritance, or export grouping from the folder assignment yet."
+    useWhen: "Use to group lanes visually, collapse busy timelines, and let the parent folder Mute/Solo the assigned child lanes.",
+    aiNote: "This is group-control metadata only. Do not infer bus routing, sends, FX inheritance, or export grouping from the folder assignment yet."
   },
   {
     surface: "Track And Routing",
@@ -1346,18 +1346,18 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     control: "Mute Track",
     selector: "data-mute-track",
     shortcut: "M",
-    does: "Silences a track without deleting clips or routing.",
-    useWhen: "Use to audition arrangements or isolate problems.",
-    aiNote: "Mute affects playback/render, so inspect it before judging missing audio."
+    does: "Silences a track without deleting clips or routing; on folder tracks it mutes assigned child lanes as a group.",
+    useWhen: "Use to audition arrangements, isolate problems, or temporarily silence a folder group.",
+    aiNote: "Mute affects playback/render, including folder child lanes, so inspect it before judging missing audio."
   },
   {
     surface: "Track And Routing",
     control: "Solo Track",
     selector: "data-solo-track",
     shortcut: "S",
-    does: "Auditions one or more soloed tracks while suppressing non-soloed tracks.",
-    useWhen: "Use for focused mix checks.",
-    aiNote: "Solo state can make healthy tracks seem silent; check before bug reports."
+    does: "Auditions one or more soloed tracks while suppressing non-soloed tracks; on folder tracks it solos assigned child lanes as a group.",
+    useWhen: "Use for focused mix checks or to audition a folder group.",
+    aiNote: "Solo state can make healthy tracks seem silent; folder solo intentionally keeps child lanes audible and suppresses unrelated tracks."
   },
   {
     surface: "Track And Routing",

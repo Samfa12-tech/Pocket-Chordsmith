@@ -16,6 +16,7 @@ import { createUndoStack } from "../src/daw/undo";
 import { aftertouchMidiBytes, pitchBendMidiBytes, programChangeMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 import { branchGeneratedDrumsToTracks, cycleDrumBranchStep, drumBranchGroupCollapsed, generatedDrumBranchLane, getDrumBranchStepLevel, setDrumBranchGroupCollapsed } from "../src/daw/drumLanes";
 import { addTrackToProject, setTrackFolder, toggleFolderExpanded } from "../src/daw/tracks";
+import { toggleTrackSolo } from "../src/daw/mixer";
 
 describe("project roundtrip", () => {
   it("saves and opens .pocketdaw JSON", () => {
@@ -27,6 +28,7 @@ describe("project roundtrip", () => {
     project = setTrackSendMode(project, "bass", ret.trackId, "post-fader");
     const folder = addTrackToProject(project, "folder");
     project = toggleFolderExpanded(setTrackFolder(folder.project, "bass", folder.trackId), folder.trackId);
+    project = toggleTrackSolo(project, folder.trackId);
     project = createAutomationLane(project, "tracks.bass.volume", { points: [{ bar: 1, value: 0.5 }, { bar: 2, value: 1 }] }).project;
     project = createAutomationLane(project, `tracks.bass.sends.${ret.trackId}.level`, { points: [{ bar: 1, value: 0.2 }, { bar: 3, value: 0.7 }] }).project;
     project.audioDeviceSettings.devices = [
@@ -48,6 +50,7 @@ describe("project roundtrip", () => {
     expect(parsed.tracks.find((track) => track.id === folder.trackId)).toMatchObject({
       trackType: "folder",
       role: "folder",
+      solo: true,
       routing: { inputIds: [], outputId: null, sendIds: [] },
       metadata: { folderExpanded: false, folderMode: "organizational" }
     });

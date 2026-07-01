@@ -41,9 +41,10 @@ export function createDefaultTracks(options: { guitarActive?: boolean } = {}): T
 }
 
 export function trackIsAudible(track: Track, allTracks: Track[]): boolean {
-  const anySolo = allTracks.some((t) => t.solo && t.role !== "master" && t.role !== "fx-return" && t.role !== "folder");
-  if (track.mute || track.active === false) return false;
-  if (anySolo && !track.solo && track.role !== "master" && track.role !== "fx-return" && track.role !== "folder") return false;
+  const folder = track.folderId ? allTracks.find((item) => item.id === track.folderId && item.trackType === "folder") : null;
+  const anySolo = allTracks.some((t) => t.solo && t.role !== "master" && t.role !== "fx-return");
+  if (track.mute || folder?.mute || track.active === false) return false;
+  if (anySolo && !track.solo && !folder?.solo && track.role !== "master" && track.role !== "fx-return") return false;
   return true;
 }
 
@@ -63,7 +64,7 @@ export function setTrackFolder(project: PocketDawProject, trackId: string, folde
   const next = cloneProject(project);
   const track = next.tracks.find((item) => item.id === trackId);
   const folder = folderId ? next.tracks.find((item) => item.id === folderId && item.trackType === "folder") : null;
-  if (!track || track.trackType === "folder" || track.role === "master") return project;
+  if (!track || !["generated", "audio", "midi"].includes(track.trackType) || track.role === "master") return project;
   const nextFolderId = folder?.id || null;
   if ((track.folderId || null) === nextFolderId) return project;
   track.folderId = nextFolderId;

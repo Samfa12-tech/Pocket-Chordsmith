@@ -3,7 +3,7 @@ import { addEmptyMidiClipCommand, addTrackCommand, setTrackFolderCommand, setTra
 import { createInitialState } from "../src/app/state";
 import { toggleTrackMute, toggleTrackSolo } from "../src/daw/mixer";
 import { midiDataFromClip } from "../src/daw/midiClips";
-import { addTrackToProject, setTrackFolder, toggleFolderExpanded } from "../src/daw/tracks";
+import { addTrackToProject, setTrackFolder, toggleFolderExpanded, trackIsAudible } from "../src/daw/tracks";
 import { createDemoProject } from "../src/demo/demoProject";
 
 describe("track workflow", () => {
@@ -85,19 +85,34 @@ describe("track workflow", () => {
     expect(collapsed.undoStack.present.tracks.find((track) => track.id === withFolder.selectedTrackId)?.metadata?.folderExpanded).toBe(false);
   });
 
-  it("ignores mute and solo commands for FX Return, Folder and Master", () => {
+  it("uses folder mute and solo as child group controls", () => {
+    const withFolder = addTrackToProject(createDemoProject(), "folder");
+    const assigned = setTrackFolder(withFolder.project, "bass", withFolder.trackId);
+    const folderMuted = toggleTrackMute(assigned, withFolder.trackId);
+    const folderSoloed = toggleTrackSolo(assigned, withFolder.trackId);
+
+    const mutedBass = folderMuted.tracks.find((track) => track.id === "bass")!;
+    const mutedDrums = folderMuted.tracks.find((track) => track.id === "drums")!;
+    const soloedBass = folderSoloed.tracks.find((track) => track.id === "bass")!;
+    const soloedDrums = folderSoloed.tracks.find((track) => track.id === "drums")!;
+
+    expect(folderMuted.tracks.find((track) => track.id === withFolder.trackId)?.mute).toBe(true);
+    expect(trackIsAudible(mutedBass, folderMuted.tracks)).toBe(false);
+    expect(trackIsAudible(mutedDrums, folderMuted.tracks)).toBe(true);
+    expect(folderSoloed.tracks.find((track) => track.id === withFolder.trackId)?.solo).toBe(true);
+    expect(trackIsAudible(soloedBass, folderSoloed.tracks)).toBe(true);
+    expect(trackIsAudible(soloedDrums, folderSoloed.tracks)).toBe(false);
+  });
+
+  it("ignores mute and solo commands for FX Return and Master", () => {
     const project = addTrackToProject(createDemoProject(), "folder").project;
     const muted = toggleTrackMute(toggleTrackMute(project, "fx-return"), "master");
-    const mutedFolder = toggleTrackMute(muted, "folder");
     const soloed = toggleTrackSolo(toggleTrackSolo(project, "fx-return"), "master");
-    const soloedFolder = toggleTrackSolo(soloed, "folder");
 
-    expect(mutedFolder.tracks.find((track) => track.id === "fx-return")?.mute).toBe(false);
-    expect(mutedFolder.tracks.find((track) => track.id === "folder")?.mute).toBe(false);
-    expect(mutedFolder.tracks.find((track) => track.id === "master")?.mute).toBe(false);
-    expect(soloedFolder.tracks.find((track) => track.id === "fx-return")?.solo).toBe(false);
-    expect(soloedFolder.tracks.find((track) => track.id === "folder")?.solo).toBe(false);
-    expect(soloedFolder.tracks.find((track) => track.id === "master")?.solo).toBe(false);
+    expect(muted.tracks.find((track) => track.id === "fx-return")?.mute).toBe(false);
+    expect(muted.tracks.find((track) => track.id === "master")?.mute).toBe(false);
+    expect(soloed.tracks.find((track) => track.id === "fx-return")?.solo).toBe(false);
+    expect(soloed.tracks.find((track) => track.id === "master")?.solo).toBe(false);
   });
 
   it("records Add Track changes in undo history", () => {

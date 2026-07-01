@@ -26,7 +26,7 @@ export function toggleTrackMute(project: PocketDawProject, trackId: string): Poc
   const track = next.tracks.find((item) => item.id === trackId);
   const branchLane = generatedDrumBranchLane(track);
   if (branchLane) return syncDrumBranchTrackMix(setDrumLaneMute(project, branchLane, !track?.mute), branchLane);
-  if (track && track.role !== "fx-return" && track.role !== "master" && track.role !== "folder") track.mute = !track.mute;
+  if (track && track.role !== "fx-return" && track.role !== "master") track.mute = !track.mute;
   return next;
 }
 
@@ -35,7 +35,7 @@ export function toggleTrackSolo(project: PocketDawProject, trackId: string): Poc
   const track = next.tracks.find((item) => item.id === trackId);
   const branchLane = generatedDrumBranchLane(track);
   if (branchLane) return syncDrumBranchTrackMix(setDrumLaneSolo(project, branchLane, !track?.solo), branchLane);
-  if (track && track.role !== "fx-return" && track.role !== "master" && track.role !== "folder") track.solo = !track.solo;
+  if (track && track.role !== "fx-return" && track.role !== "master") track.solo = !track.solo;
   return next;
 }
 

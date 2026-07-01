@@ -5,6 +5,7 @@ import { chordsmithSidechainSettings } from "../audio/sidechain";
 import { activeTrackSendRoutes } from "../daw/routing";
 import { getAutomatedFxChains, getAutomatedTrackControls, getProjectAutomationLane } from "../daw/automation";
 import { timelineBarAtSeconds, timelineDurationSeconds, timelineSecondsAtBar } from "../daw/timeline";
+import { trackIsAudible } from "../daw/tracks";
 
 export interface NativeAudioStatus {
   backend: "native-cpal" | string;
@@ -286,6 +287,7 @@ export function buildNativeAudioStartPayload(
     sidechain: nativeSidechain(project),
     tracks: project.tracks.map((track) => {
       const controls = getAutomatedTrackControls(project, track, startBar);
+      const audible = trackIsAudible(track, project.tracks);
       return {
         id: track.id,
         fxChainId: track.fxChainId,
@@ -293,8 +295,8 @@ export function buildNativeAudioStartPayload(
         sends: activeTrackSendRoutes(project, track, startBar),
         volume: controls.volume,
         pan: controls.pan,
-        mute: track.mute,
-        solo: track.solo
+        mute: !audible,
+        solo: false
       };
     }),
     events: events.map((event) => ({

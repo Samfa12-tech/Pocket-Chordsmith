@@ -1249,15 +1249,16 @@ export class AudioEngine {
     const currentBar = this.barAtSeconds(seconds);
     this.project.tracks.forEach((track) => {
       const controls = getAutomatedTrackControls(this.project, track, currentBar);
-      const signature = `${controls.volume.toFixed(4)}:${controls.pan.toFixed(4)}:${track.mute ? 1 : 0}:${track.solo ? 1 : 0}`;
+      const audible = trackIsAudible(track, this.project.tracks);
+      const signature = `${controls.volume.toFixed(4)}:${controls.pan.toFixed(4)}:${audible ? 1 : 0}`;
       if (!force && this.nativeSyncedTrackControls.get(track.id) === signature) return;
       this.nativeSyncedTrackControls.set(track.id, signature);
       void this.nativePlayback.updateTrack({
         trackId: track.id,
         volume: controls.volume,
         pan: controls.pan,
-        mute: track.mute,
-        solo: track.solo
+        mute: !audible,
+        solo: false
       }).then((status) => {
         if (status) this.nativeStatus = status;
       });

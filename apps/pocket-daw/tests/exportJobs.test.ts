@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createDemoProject } from "../src/demo/demoProject";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
-import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../src/daw/audioClips";
+import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
 import { buildPortableGamePackSourceProjectFile, createGameExportManifest, createGamePackDeliveryTargets, createGamePackZipBlob, createSectionLoopExportManifest, createSectionLoopMetadata, createSectionLoopZipBlob, createStemExportManifest, createStemExportPlan, createStemZipBlob, gamePackAudioCodecMetadata, projectForClipRender, projectForSectionLoopRender, projectWithOnlyTracksAudible, verifyExportPackageEntries } from "../src/daw/exportJobs";
 import { branchGeneratedDrumsToTracks, cycleDrumBranchStep, DRUM_LANE_DEFS, getDrumLaneMix, setDrumBranchGroupCollapsed } from "../src/daw/drumLanes";
 import { addMediaPoolItem, createMediaPoolItem } from "../src/daw/mediaPool";
 import { addReturnTrack, setTrackSendLevel, setTrackSendMode } from "../src/daw/routing";
+import { toggleTrackMute, toggleTrackSolo } from "../src/daw/mixer";
+import { addTrackToProject, setTrackFolder, trackIsAudible } from "../src/daw/tracks";
 
 describe("export job helpers", () => {
   it("builds stem plans and track-filtered stem projects", () => {
@@ -19,6 +21,20 @@ describe("export job helpers", () => {
     expect(bass.packPath).toContain("audio/stems/");
     expect(stemProject.tracks.find((track) => track.id === "bass")?.mute).toBe(false);
     expect(stemProject.tracks.find((track) => track.id === "drums")?.mute).toBe(true);
+  });
+
+  it("keeps folder group controls neutral inside isolated stem render projects", () => {
+    const withFolder = addTrackToProject(createDemoProject(), "folder");
+    const assigned = setTrackFolder(withFolder.project, "bass", withFolder.trackId);
+    const folderMuted = toggleTrackMute(assigned, withFolder.trackId);
+    const bassStemProject = projectWithOnlyTracksAudible(folderMuted, ["bass"]);
+    const bass = bassStemProject.tracks.find((track) => track.id === "bass")!;
+    const folder = bassStemProject.tracks.find((track) => track.id === withFolder.trackId)!;
+
+    expect(folder.mute).toBe(false);
+    expect(folder.solo).toBe(false);
+    expect(bass.mute).toBe(false);
+    expect(trackIsAudible(bass, bassStemProject.tracks)).toBe(true);
   });
 
   it("builds branch-aware drum stem plans and filtered render projects", () => {
@@ -280,6 +296,31 @@ describe("export job helpers", () => {
     expect(result.project.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings.tailSeconds).toBe(0.25);
   });
 
+  it("keeps selected-clip freeze render projects audible when the source folder is muted", () => {
+    const audioTrack = addTrackToProject(createDemoProject(), "live-instrument");
+    const imported = addImportedAudioMedia(audioTrack.project, {
+      name: "Freeze Source.wav",
+      durationSeconds: 2,
+      sampleRate: 44100,
+      channels: 2,
+      sizeBytes: 2048
+    });
+    const placed = placeAudioClipOnTrack(imported.project, imported.item.id, audioTrack.trackId, 1);
+    const source = placed.project.timeline.clips.find((clip) => clip.id === placed.clipId)!;
+    const withFolder = addTrackToProject(placed.project, "folder");
+    const assigned = setTrackFolder(withFolder.project, audioTrack.trackId, withFolder.trackId);
+    const folderMuted = toggleTrackMute(assigned, withFolder.trackId);
+    const result = projectForClipRender(folderMuted, source.id)!;
+    const sourceTrack = result.project.tracks.find((track) => track.id === audioTrack.trackId)!;
+    const folder = result.project.tracks.find((track) => track.id === withFolder.trackId)!;
+
+    expect(folder.mute).toBe(false);
+    expect(folder.solo).toBe(false);
+    expect(sourceTrack.mute).toBe(false);
+    expect(sourceTrack.active).toBe(true);
+    expect(trackIsAudible(sourceTrack, result.project.tracks)).toBe(true);
+  });
+
   it("generates Godot and web game manifest previews", () => {
     const project = createDemoProject();
     project.timeline.markers.push({ id: "combat", bar: 5, name: "Combat", markerType: "game-state", gameState: "combat" });
@@ -518,6 +559,19 @@ describe("export job helpers", () => {
       portableForSharing: false
     });
     expect(JSON.stringify(manifest.mediaPortability)).not.toContain("C:\\");
+  });
+
+  it("adds manifest warnings for folder group mute and solo scope", () => {
+    const withFolder = addTrackToProject(createDemoProject(), "folder");
+    let project = setTrackFolder(withFolder.project, "bass", withFolder.trackId);
+    project = toggleTrackMute(project, withFolder.trackId);
+    project = toggleTrackSolo(project, withFolder.trackId);
+
+    const manifest = createGameExportManifest(project, "godot-adaptive-pack");
+    const warnings = manifest.warnings.join("\n");
+
+    expect(warnings).toContain("Folder Folder mutes child lanes in audible renders: Bass");
+    expect(warnings).toContain("Soloed tracks and folders restrict audible renders to their solo scope: Folder");
   });
 
   it("builds portable embedded source projects without collected local provenance", () => {
