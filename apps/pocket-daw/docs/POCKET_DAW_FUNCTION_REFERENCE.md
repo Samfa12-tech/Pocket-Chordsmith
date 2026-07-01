@@ -113,7 +113,7 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 
 | Function | What it does | Use when | AI counterpart notes |
 | --- | --- | --- | --- |
-| Add Live Vocals / Live Instrument | Creates a mono live audio recording track scaffold. | Preparing vocals/instruments for capture. | Installed-app-only; smoke against packaged app. |
+| Add Live Vocals / Live Instrument | Creates a record-capable live audio track scaffold; input and mono/stereo channel mode are set on the mixer strip. | Preparing vocals/instruments for capture. | Installed-app-only; smoke against packaged app. |
 | Arm / Monitor | Arms a record-capable track and optionally monitors input. | Preparing one live track for capture/input metering. | Only one armed recording target is expected currently. |
 | Record | Captures audio to project-relative WAV media and places the take on timeline. | After saving the project and arming the intended track. | Confirm saved path, count-in, take placement, media pool item and reopen persistence. |
 | Take Lanes | Groups alternate takes, activates one, archives/restores takes and comps from playhead. | Managing repeated passes without deleting source media. | Archive is not delete. Preserve source media unless cleanup is explicit. |
@@ -167,6 +167,7 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 
 | Function | What it does | Use when | AI counterpart notes |
 | --- | --- | --- | --- |
+| Studio Rail | Provides persistent left-side navigation for Library, Project, Clips, Media, Mixer, MIDI, Audio, Export, Godot, Pocket handoff, Diagnostics and Help. | The DAW surface feels busy or a human/AI helper needs to jump to a major work area quickly. | Rail buttons reuse the normal command layer; they focus work areas rather than adding parallel workflows. |
 | Music Focus | Shows composition/edit/mix controls and hides game cue/export clutter. | Writing or mixing music. | UI-only view filter. |
 | Game Music Focus | Shows game cues/game-pack exports and hides live-recording take tools. | Preparing adaptive music and packs. | WAV game packs remain baseline. |
 | Collapsible UI Sections | Minimizes timeline tools, inspector sections, lower dock and media pool. | Reducing visual density. | UI-only; should not affect save/export. |

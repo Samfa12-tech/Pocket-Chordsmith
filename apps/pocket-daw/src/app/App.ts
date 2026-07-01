@@ -2483,6 +2483,19 @@ export class App {
     if (action === "feedback-copy-diagnostics") await this.copyDiagnostics();
     if (action === "feedback-send") await this.sendFeedbackEmail();
     if (action === "more-by-samfa12") this.openExternalUrl(MORE_BY_SAMFA12_URL);
+    if (action === "studio-focus-timeline") {
+      this.state.showFilePanel = false;
+      this.state.showControls = false;
+      this.state.showAddTrack = false;
+      this.state.showAudioSettings = false;
+      this.state.showUpdaterPanel = false;
+      this.state.showMcpSetupPanel = false;
+      this.state.showFunctionGuidePanel = false;
+      this.state.showFeedbackPanel = false;
+      this.state.status = "Timeline clips visible.";
+      this.render({ preserveScroll: true });
+      this.root.querySelector<HTMLElement>(".timeline-wrap")?.scrollIntoView({ block: "start", inline: "nearest" });
+    }
     if (action === "media-pool-focus") {
       this.state.status = "Media Pool visible.";
       this.state.showFilePanel = false;
@@ -2506,6 +2519,21 @@ export class App {
       this.state.lowerDockTab = action.replace("lower-dock-", "") as typeof this.state.lowerDockTab;
       this.state.status = `${this.state.lowerDockTab[0].toUpperCase()}${this.state.lowerDockTab.slice(1)} dock selected.`;
       this.render({ preserveScroll: true });
+    }
+    if (action === "studio-focus-godot") {
+      this.state.showFilePanel = false;
+      this.state.showControls = false;
+      this.state.showAddTrack = false;
+      this.state.showAudioSettings = false;
+      this.state.showUpdaterPanel = false;
+      this.state.showMcpSetupPanel = false;
+      this.state.showFunctionGuidePanel = false;
+      this.state.showFeedbackPanel = false;
+      this.state.uiCreationPreset = "game-music";
+      this.state.lowerDockTab = "export-details";
+      this.state.status = "Godot focus: game cue and game-pack export controls are visible.";
+      this.render({ preserveScroll: true });
+      this.root.querySelector<HTMLElement>(".mixer.lower-dock")?.scrollIntoView({ block: "start", inline: "nearest" });
     }
     if (action === "import-audio") await this.importAudioMedia();
     if (action === "import-midi") await this.importMidiMedia();

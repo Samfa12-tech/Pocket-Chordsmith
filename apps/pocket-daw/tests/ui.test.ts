@@ -238,6 +238,42 @@ describe("Pocket DAW UI rendering", () => {
     expect(gameTransport).toContain('data-action="preset-game-music" aria-pressed="true"');
   });
 
+  it("renders a persistent studio rail for major DAW work areas", () => {
+    const state = createInitialState();
+
+    let html = renderAppShell(state);
+
+    expect(html).toContain('class="studio-rail" data-layout-zone="studio-rail" aria-label="Studio rail"');
+    [
+      ["library", "add-track-open"],
+      ["project", "file-window-open"],
+      ["clips", "studio-focus-timeline"],
+      ["media", "media-pool-focus"],
+      ["mixer", "lower-dock-mixer"],
+      ["midi", "lower-dock-piano-roll"],
+      ["audio", "lower-dock-audio-editor"],
+      ["export", "lower-dock-export-details"],
+      ["godot", "studio-focus-godot"],
+      ["pocket", "import-focus"],
+      ["diagnostics", "controls-open"],
+      ["help", "function-guide-open"]
+    ].forEach(([target, action]) => {
+      expect(html).toContain(`data-action="${action}"`);
+      expect(html).toContain(`data-studio-rail-target="${target}"`);
+    });
+    expect(html).toContain("Library: Open track and source choices for live audio, MIDI, Chordsmith roles, buses and returns.");
+    expect(html).toContain("Project: Open project, import, export and media actions.");
+    expect(html).toContain("Godot: Show game music focus and Godot/web pack controls.");
+
+    state.uiCreationPreset = "game-music";
+    state.lowerDockTab = "export-details";
+    html = renderAppShell(state);
+
+    expect(html).toContain('data-studio-rail-target="godot"');
+    expect(html).toContain('aria-label="Godot: Show game music focus and Godot/web pack controls."');
+    expect(html).toContain('aria-pressed="true"');
+  });
+
   it("renders minimisable UI sections with collapsed notices", () => {
     const state = createInitialState();
     const clip = state.undoStack.present.timeline.clips[0];
@@ -302,11 +338,14 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("data-marker-rename");
     expect(html).toContain("data-track-input");
     expect(html).toContain("data-section-chord");
+    expect(html).toContain("Studio Rail Navigation");
+    expect(html).toContain("Library, Project, Clips, Media, Mixer");
+    expect(html).toContain("data-action&#61;studio-focus-godot");
     expect(html).toContain("selected bass step + H/S/T");
     expect(html).toContain("data-automation-enabled");
     expect(FUNCTION_GUIDE_SECTIONS.length).toBeGreaterThan(10);
     expect(FUNCTION_GUIDE_SECTIONS.every((section) => section.entries.length > 0)).toBe(true);
-    expect(FUNCTION_ACTION_REFERENCE.length).toBeGreaterThan(190);
+    expect(FUNCTION_ACTION_REFERENCE.length).toBeGreaterThan(200);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "collect-media")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "convert-midi-drums")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-ai-bridge-enabled")).toBe(true);
@@ -338,6 +377,9 @@ describe("Pocket DAW UI rendering", () => {
     expect(source).toContain("FUNCTION_ACTION_TOOLTIPS");
     expect(source).toContain('if (action === "toggle-ui-section")');
     expect(source).toContain('if (action === "function-guide-open")');
+    expect(source).toContain('if (action === "studio-focus-timeline")');
+    expect(source).toContain('if (action === "studio-focus-godot")');
+    expect(source).toContain('this.state.lowerDockTab = "export-details";');
     expect(source).toContain('"function-guide-open": "Open the Pocket DAW function guide."');
     expect(source).toContain('"range-loop": "Set the active edit range to the current loop."');
   });
@@ -356,8 +398,12 @@ describe("Pocket DAW UI rendering", () => {
     expect(doc).toContain("Copy/Cut Range");
     expect(doc).toContain("| Godot Game Pack |");
     expect(doc).toContain("| Music Focus |");
+    expect(doc).toContain("| Studio Rail |");
     expect(doc).toContain("Current Non-Claims");
     expect(catalog).toContain("# Pocket DAW Action Catalog");
+    expect(catalog).toContain("| Studio Rail Navigation | `studio-rail / data-studio-rail-target`");
+    expect(catalog).toContain("| Studio Rail Clips | `data-action=studio-focus-timeline`");
+    expect(catalog).toContain("| Studio Rail Godot | `data-action=studio-focus-godot`");
     expect(catalog).toContain("| Collect Media | `data-action=collect-media`");
     expect(catalog).toContain("| Map Drums | `data-action=convert-midi-drums`");
     expect(catalog).toContain("| Download And Install Update | `data-action=updater-download-install`");
@@ -861,7 +907,7 @@ describe("Pocket DAW UI rendering", () => {
     const zones = [...html.matchAll(/data-layout-zone="([^"]+)"/g)].map((match) => match[1]);
 
     expect(html).toContain('data-layout-shell="true"');
-    expect(zones).toEqual(["menu", "transport", "quickstart", "studio", "mixer", "media"]);
+    expect(zones).toEqual(["menu", "studio-rail", "transport", "quickstart", "studio", "mixer", "media"]);
     expect(html.indexOf('class="mixer lower-dock"')).toBeLessThan(html.indexOf('class="media-pool"'));
     expect(html).not.toContain('class="export-panel"');
     expect(html).not.toContain('class="import-panel"');
@@ -1388,6 +1434,15 @@ describe("Pocket DAW UI rendering", () => {
     const html = renderAppShell(state);
     const lower = lowerDockHtml(html);
 
+    expect(html).toContain('id="add-track-title">Library / Add Track</h2>');
+    expect(html).toContain("Recording input and mono/stereo mode appear on record-capable mixer strips after the track is created.");
+    expect(html).toContain('class="add-track-library"');
+    expect(html).toContain("Audio Recording");
+    expect(html).toContain("Record-capable vocal audio track");
+    expect(html).toContain("Record-capable instrument audio track");
+    expect(html).toContain("Instrument / MIDI");
+    expect(html).toContain("Chordsmith Roles");
+    expect(html).toContain("Routing");
     expect(html).toContain('data-add-track-kind="midi-instrument"');
     expect(html).toContain("MIDI Instrument");
     expect(lower).toContain("Add a MIDI clip");
@@ -1639,6 +1694,12 @@ describe("Pocket DAW UI rendering", () => {
     expect(css).toContain("overflow: auto");
     expect(css).toContain("max(280px");
     expect(css).toContain("align-items: start");
+    expect(css).toContain("--studio-rail-width: 68px");
+    expect(css).toContain('"studio-rail transport"');
+    expect(css).toContain(".studio-rail");
+    expect(css).toContain("grid-area: studio-rail");
+    expect(css).toContain(".add-track-library");
+    expect(css).toContain(".add-track-group");
     expect(css).toContain('.app-shell[data-ui-preset="music"] [data-ui-scope~="game"]');
     expect(css).toContain('.app-shell[data-ui-preset="game-music"] [data-ui-scope~="recording"]');
   });

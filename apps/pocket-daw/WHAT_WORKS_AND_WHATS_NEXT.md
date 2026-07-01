@@ -24,7 +24,7 @@ published. Do not create another `0.6.34` installer from a later commit.
 
 Pocket DAW's direction is a robust, free, native Windows-first DAW that works directly with Pocket Chordsmith, Pocket DJ, Godot, and web-game export workflows. Direct generative-AI music creation is not a product goal. Local diagnostics, import helpers, and MCP bridges may remain useful, but they should support deterministic DAW work rather than become the product identity.
 
-Help/status note: user-facing DAW functions now have a broad human/AI guide in `docs/POCKET_DAW_FUNCTION_REFERENCE.md` plus an explicit 198-entry button/selector/shortcut catalog in `docs/POCKET_DAW_ACTION_CATALOG.md`, both sourced from `src/app/functionGuide.ts` and rendered in the in-app Help -> Function Guide panel. New controls should update that catalog and tests so crowded UI areas remain explainable.
+Help/status note: user-facing DAW functions now have a broad human/AI guide in `docs/POCKET_DAW_FUNCTION_REFERENCE.md` plus an explicit 201-entry button/selector/shortcut catalog in `docs/POCKET_DAW_ACTION_CATALOG.md`, both sourced from `src/app/functionGuide.ts` and rendered in the in-app Help -> Function Guide panel. New controls should update that catalog and tests so crowded UI areas remain explainable.
 
 ### Capability map
 
@@ -40,7 +40,7 @@ Help/status note: user-facing DAW functions now have a broad human/AI guide in `
 
 ### Greysound non-AI lessons worth borrowing
 
-- Keep a persistent left studio rail for Library, Clips, Media Pool, Project, Export, Diagnostics, Pocket handoff, and Godot/web-game tools. The useful pattern is fast navigation, not AI generation.
+- Keep a persistent left studio rail for Library, Clips, Media Pool, Project, Export, Diagnostics, Pocket handoff, and Godot/web-game tools. The useful pattern is fast navigation, not AI generation. The first left rail now provides Library, Project, Clips, Media, Mixer, MIDI, Audio, Export, Godot, Pocket, Diagnostics and Help navigation through the normal command path.
 - Use a compact top strip with transport, time, tempo, key, meter, loop, click, count-off, and latency status visible without stealing timeline space.
 - Make the lower area a single dock that can flip between Mixer, Inserts, Sends, Automation, Piano Roll, Audio Editor, and Export Details for the same selected tracks. The first lower dock now flips between Mixer, Inserts, Sends, Automation, Piano Roll, Audio Editor and Export while reusing existing selected-track/clip controls.
 - Use a clear Add Track dialog for Audio, Instrument, Bus/Aux, Return, Chordsmith, MIDI, and Folder tracks, with mono/stereo/input choices where relevant.

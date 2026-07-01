@@ -16,6 +16,7 @@
   --purple: #b88cff;
   --danger: #ff6b8b;
   --menu-strip-height: 31px;
+  --studio-rail-width: 68px;
   --transport-strip-height: 96px;
   --native-titlebar-safe-top: 0px;
 }
@@ -85,13 +86,14 @@ button:disabled {
 .app-shell {
   display: grid;
   grid-template-areas:
-    "menu"
-    "transport"
-    "quickstart"
-    "studio"
-    "studio-resize"
-    "mixer"
-    "media";
+    "menu menu"
+    "studio-rail transport"
+    "studio-rail quickstart"
+    "studio-rail studio"
+    "studio-rail studio-resize"
+    "studio-rail mixer"
+    "studio-rail media";
+  grid-template-columns: var(--studio-rail-width, 68px) minmax(0, 1fr);
   grid-template-rows: auto auto auto var(--studio-height, 430px) 10px auto auto;
   height: calc(100vh - var(--native-titlebar-safe-top, 0px));
   min-height: calc(100vh - var(--native-titlebar-safe-top, 0px));
@@ -158,6 +160,64 @@ button:disabled {
   padding: 0 9px;
   text-align: left;
   font-size: 12px;
+}
+
+.studio-rail {
+  grid-area: studio-rail;
+  position: sticky;
+  top: var(--menu-strip-height);
+  z-index: 45;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  align-self: start;
+  min-height: calc(100dvh - var(--native-titlebar-safe-top, 0px) - var(--menu-strip-height, 31px));
+  padding: 8px 6px;
+  border-right: 1px solid #202944;
+  background: rgba(9, 13, 24, 0.96);
+  backdrop-filter: blur(10px);
+}
+
+.studio-rail button {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 2px;
+  border-color: #26314e;
+  border-radius: 6px;
+  color: #cbd8f6;
+  background: #101625;
+  text-align: center;
+  line-height: 1;
+}
+
+.studio-rail button:hover:not(:disabled),
+.studio-rail button.active {
+  border-color: rgba(64, 216, 255, 0.72);
+  color: #eef4ff;
+  background: #17243a;
+}
+
+.studio-rail strong,
+.studio-rail span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.studio-rail strong {
+  color: var(--cyan);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.studio-rail span {
+  font-size: 10px;
+  white-space: normal;
 }
 
 .transport {
@@ -2112,14 +2172,42 @@ button.record:hover {
 }
 
 .add-track-panel {
-  width: min(720px, 100%);
+  width: min(820px, 100%);
+}
+
+.add-track-library {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px 18px;
+}
+
+.add-track-group {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #2d3958;
+  border-radius: 8px;
+  background: #111827;
+}
+
+.add-track-group h3 {
+  margin: 0;
+  color: #eef4ff;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.add-track-group p {
+  margin: 0;
+  color: #95a2bf;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .add-track-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  padding: 16px 18px 18px;
 }
 
 .add-track-grid button {
@@ -2566,6 +2654,7 @@ button.record:hover {
 
 @media (max-width: 1180px) {
   :root {
+    --studio-rail-width: 62px;
     --transport-strip-height: 184px;
   }
 

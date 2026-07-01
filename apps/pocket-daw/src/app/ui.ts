@@ -82,6 +82,7 @@ export function renderAppShell(state: AppState): string {
   return `
     <div class="app-shell" data-layout-shell="true" data-scroll-key="app-shell" data-ui-preset="${escapeAttr(state.uiCreationPreset)}" style="--studio-height:${sanitizeCssLengthOrNumber(state.timelineHeightPx, 430, 260, 760)}px;--inspector-width:${sanitizeCssLengthOrNumber(state.inspectorWidthPx, 420, 280, 620)}px;">
       ${renderMenuStrip(state)}
+      ${renderStudioRail(state)}
       ${renderTransport(state)}
       ${renderQuickStart(state)}
       <main class="studio ${state.inspectorVisible ? "" : "inspector-hidden"}" data-layout-zone="studio">
@@ -100,6 +101,124 @@ export function renderAppShell(state: AppState): string {
       ${state.showFunctionGuidePanel ? renderFunctionGuidePanel() : ""}
       ${state.showFeedbackPanel ? renderFeedbackPanel(state) : ""}
     </div>
+  `;
+}
+
+function renderStudioRail(state: AppState): string {
+  const items = [
+    {
+      key: "library",
+      code: "Li",
+      label: "Library",
+      action: "add-track-open",
+      description: "Open track and source choices for live audio, MIDI, Chordsmith roles, buses and returns.",
+      active: state.showAddTrack
+    },
+    {
+      key: "project",
+      code: "Pr",
+      label: "Project",
+      action: "file-window-open",
+      description: "Open project, import, export and media actions.",
+      active: state.showFilePanel
+    },
+    {
+      key: "clips",
+      code: "Cl",
+      label: "Clips",
+      action: "studio-focus-timeline",
+      description: "Jump to the timeline and clip editing surface.",
+      active: false
+    },
+    {
+      key: "media",
+      code: "Me",
+      label: "Media",
+      action: "media-pool-focus",
+      description: "Jump to imported media, cache and portability details.",
+      active: false
+    },
+    {
+      key: "mixer",
+      code: "Mx",
+      label: "Mixer",
+      action: "lower-dock-mixer",
+      description: "Open the lower-dock mixer.",
+      active: state.lowerDockTab === "mixer"
+    },
+    {
+      key: "midi",
+      code: "Mi",
+      label: "MIDI",
+      action: "lower-dock-piano-roll",
+      description: "Open MIDI piano-roll editing.",
+      active: state.lowerDockTab === "piano-roll"
+    },
+    {
+      key: "audio",
+      code: "Au",
+      label: "Audio",
+      action: "lower-dock-audio-editor",
+      description: "Open selected audio-clip editing.",
+      active: state.lowerDockTab === "audio-editor"
+    },
+    {
+      key: "export",
+      code: "Ex",
+      label: "Export",
+      action: "lower-dock-export-details",
+      description: "Open export profiles, warnings and package details.",
+      active: state.lowerDockTab === "export-details" && state.uiCreationPreset !== "game-music"
+    },
+    {
+      key: "godot",
+      code: "Gd",
+      label: "Godot",
+      action: "studio-focus-godot",
+      description: "Show game music focus and Godot/web pack controls.",
+      active: state.uiCreationPreset === "game-music" && state.lowerDockTab === "export-details"
+    },
+    {
+      key: "pocket",
+      code: "Po",
+      label: "Pocket",
+      action: "import-focus",
+      description: "Open Pocket Chordsmith, Pocket DJ and handoff import tools.",
+      active: false
+    },
+    {
+      key: "diagnostics",
+      code: "Dx",
+      label: "Diag",
+      action: "controls-open",
+      description: "Open diagnostics, cache, routing and support status.",
+      active: state.showControls
+    },
+    {
+      key: "help",
+      code: "?",
+      label: "Help",
+      action: "function-guide-open",
+      description: "Open human and AI counterpart help.",
+      active: state.showFunctionGuidePanel
+    }
+  ];
+  return `
+    <nav class="studio-rail" data-layout-zone="studio-rail" aria-label="Studio rail">
+      ${items.map((item) => `
+        <button
+          type="button"
+          class="${item.active ? "active" : ""}"
+          data-action="${escapeAttr(item.action)}"
+          data-studio-rail-target="${sanitizeDataAttr(item.key)}"
+          aria-pressed="${item.active ? "true" : "false"}"
+          aria-label="${escapeAttr(`${item.label}: ${item.description}`)}"
+          title="${escapeAttr(item.description)}">
+          <strong>${escapeHtml(item.code)}</strong>
+          <span>${escapeHtml(item.label)}</span>
+        </button>
+      `).join("")}
+    </nav>
   `;
 }
 
@@ -2831,20 +2950,47 @@ function renderAddTrackPanel(): string {
     <div class="modal-backdrop" data-add-track-backdrop="true">
       <section class="controls-panel add-track-panel" role="dialog" aria-modal="true" aria-labelledby="add-track-title">
         <header>
-          <h2 id="add-track-title">Add Track</h2>
+          <div>
+            <h2 id="add-track-title">Library / Add Track</h2>
+            <p>Choose a track source. Recording input and mono/stereo mode appear on record-capable mixer strips after the track is created.</p>
+          </div>
           <button data-action="add-track-close">Close</button>
         </header>
-        <div class="add-track-grid">
-          <button data-add-track-kind="live-vocals" data-ui-scope="recording" title="Add a mono audio track intended for vocal recording"><strong>Live Vocals</strong><span>Mono recording alpha track</span></button>
-          <button data-add-track-kind="live-instrument" data-ui-scope="recording" title="Add a mono audio track intended for instrument recording"><strong>Live Instrument</strong><span>Mono recording alpha track</span></button>
-          <button data-add-track-kind="midi-instrument" title="Add an empty MIDI instrument track for piano-roll clips"><strong>MIDI Instrument</strong><span>Empty MIDI track for piano-roll clips</span></button>
-          <button data-add-track-kind="chordsmith-drums" title="Select or enable the generated Chordsmith drums track"><strong>Chordsmith Drums</strong><span>Select or enable generated drums</span></button>
-          <button data-add-track-kind="chordsmith-bass" title="Select or enable the generated Chordsmith bass track"><strong>Chordsmith Bass</strong><span>Select or enable generated bass</span></button>
-          <button data-add-track-kind="chordsmith-chords" title="Select or enable the generated Chordsmith chords track"><strong>Chordsmith Chords</strong><span>Select or enable generated chords</span></button>
-          <button data-add-track-kind="chordsmith-melody" title="Select or enable the generated Chordsmith melody track"><strong>Chordsmith Melody</strong><span>Select or enable generated melody</span></button>
-          <button data-add-track-kind="chordsmith-guitar" title="Select or reactivate the generated Chordsmith guitar track"><strong>Chordsmith Guitar</strong><span>Select or reactivate guitar</span></button>
-          <button data-action="add-bus-track" title="Add a bus track for grouped routing"><strong>Bus</strong><span>Route tracks through a grouped output</span></button>
-          <button data-action="add-return-track" title="Add a return track for send effects"><strong>Return</strong><span>FX return scaffold; sends stay guarded</span></button>
+        <div class="add-track-library">
+          <section class="add-track-group" aria-label="Audio recording tracks">
+            <h3>Audio Recording</h3>
+            <p>Creates record-capable audio tracks. Set input device and mono/stereo mode on the mixer strip.</p>
+            <div class="add-track-grid">
+              <button data-add-track-kind="live-vocals" data-ui-scope="recording" title="Add an audio track intended for vocal recording"><strong>Live Vocals</strong><span>Record-capable vocal audio track</span></button>
+              <button data-add-track-kind="live-instrument" data-ui-scope="recording" title="Add an audio track intended for instrument recording"><strong>Live Instrument</strong><span>Record-capable instrument audio track</span></button>
+            </div>
+          </section>
+          <section class="add-track-group" aria-label="Instrument and MIDI tracks">
+            <h3>Instrument / MIDI</h3>
+            <p>Creates editable MIDI material for piano-roll composition.</p>
+            <div class="add-track-grid">
+              <button data-add-track-kind="midi-instrument" title="Add an empty MIDI instrument track for piano-roll clips"><strong>MIDI Instrument</strong><span>Empty MIDI track for piano-roll clips</span></button>
+            </div>
+          </section>
+          <section class="add-track-group" aria-label="Chordsmith generated role tracks">
+            <h3>Chordsmith Roles</h3>
+            <p>Selects or reactivates generated source roles while preserving imported Chordsmith data.</p>
+            <div class="add-track-grid">
+              <button data-add-track-kind="chordsmith-drums" title="Select or enable the generated Chordsmith drums track"><strong>Chordsmith Drums</strong><span>Select or enable generated drums</span></button>
+              <button data-add-track-kind="chordsmith-bass" title="Select or enable the generated Chordsmith bass track"><strong>Chordsmith Bass</strong><span>Select or enable generated bass</span></button>
+              <button data-add-track-kind="chordsmith-chords" title="Select or enable the generated Chordsmith chords track"><strong>Chordsmith Chords</strong><span>Select or enable generated chords</span></button>
+              <button data-add-track-kind="chordsmith-melody" title="Select or enable the generated Chordsmith melody track"><strong>Chordsmith Melody</strong><span>Select or enable generated melody</span></button>
+              <button data-add-track-kind="chordsmith-guitar" title="Select or reactivate the generated Chordsmith guitar track"><strong>Chordsmith Guitar</strong><span>Select or reactivate guitar</span></button>
+            </div>
+          </section>
+          <section class="add-track-group" aria-label="Routing tracks">
+            <h3>Routing</h3>
+            <p>Adds project routing tracks for grouped outputs and return-effect workflows.</p>
+            <div class="add-track-grid">
+              <button data-action="add-bus-track" title="Add a bus track for grouped routing"><strong>Bus</strong><span>Route tracks through a grouped output</span></button>
+              <button data-action="add-return-track" title="Add a return track for send effects"><strong>Return</strong><span>FX return scaffold; sends stay guarded</span></button>
+            </div>
+          </section>
         </div>
       </section>
     </div>

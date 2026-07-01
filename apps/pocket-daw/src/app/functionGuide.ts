@@ -398,7 +398,7 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
     entries: [
       {
         name: "Add Live Vocals / Live Instrument",
-        does: "Creates a mono live audio recording track scaffold.",
+        does: "Creates a record-capable live audio track scaffold; input and mono/stereo channel mode are set on the mixer strip.",
         useWhen: "Use before recording vocals, guitar, keys or external instruments.",
         aiNote: "Recording is installed-app-only and should be smoke-tested against the packaged app."
       },
@@ -594,6 +594,12 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
     title: "View, Focus And Help",
     summary: "Reduce visual load and keep instructions discoverable.",
     entries: [
+      {
+        name: "Studio Rail",
+        does: "Keeps persistent one-click navigation for Library, Project, Clips, Media, Mixer, MIDI, Audio, Export, Godot, Pocket handoff, Diagnostics and Help.",
+        useWhen: "Use when the DAW surface feels busy and the user needs to jump between major work areas without hunting through menus.",
+        aiNote: "Rail buttons reuse existing command surfaces; they should focus work areas, not create parallel add-on workflows."
+      },
       {
         name: "Music Focus",
         does: "Keeps composition, editing and mix controls visible while hiding game cue/export clutter.",
@@ -1136,6 +1142,30 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "View And Focus",
+    control: "Studio Rail Navigation",
+    selector: "studio-rail / data-studio-rail-target",
+    does: "Provides persistent left-rail shortcuts to Library, Project, Clips, Media, Mixer, MIDI, Audio, Export, Godot, Pocket handoff, Diagnostics and Help.",
+    useWhen: "Use to move between major DAW work areas without opening menus or adding more toolbar clutter.",
+    aiNote: "Rail navigation must reuse the normal action/command path so behavior stays deterministic."
+  },
+  {
+    surface: "View And Focus",
+    control: "Studio Rail Clips",
+    actionId: "studio-focus-timeline",
+    does: "Closes transient panels and scrolls back to the timeline clip-editing surface.",
+    useWhen: "Use when the user needs to return to clip arrangement from a modal, lower panel or help surface.",
+    aiNote: "Focus action only; it does not edit clips or project data."
+  },
+  {
+    surface: "View And Focus",
+    control: "Studio Rail Godot",
+    actionId: "studio-focus-godot",
+    does: "Switches to Game music focus, selects Export Details and scrolls to the Godot/web game-pack export controls.",
+    useWhen: "Use when preparing adaptive music or checking game-pack export state.",
+    aiNote: "WAV remains the supported game-pack baseline; this should not edit the Godot addon."
+  },
+  {
+    surface: "View And Focus",
     control: "Music Focus",
     actionId: "preset-music",
     does: "Keeps composition, editing, and mixing controls prominent while hiding game-export clutter.",
@@ -1213,9 +1243,9 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     control: "Add Track",
     actionId: "add-track-open",
     shortcut: "T",
-    does: "Opens the add-track panel.",
-    useWhen: "Use to add live audio, MIDI, generated role, bus, or return tracks.",
-    aiNote: "Opening the panel is UI-only; choose a track kind to mutate the project."
+    does: "Opens the Library / Add Track panel grouped by Audio Recording, Instrument / MIDI, Chordsmith Roles, and Routing.",
+    useWhen: "Use to add live audio, MIDI, generated role, bus, or return tracks without hunting through the busier DAW surface.",
+    aiNote: "Opening the panel is UI-only; choose a track kind to mutate the project. Input device and mono/stereo mode are set on record-capable mixer strips after creation."
   },
   {
     surface: "Track And Routing",
@@ -1229,17 +1259,17 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "Track And Routing",
     control: "Add Live Vocals",
     selector: "data-add-track-kind:live-vocals",
-    does: "Adds a mono live audio track intended for vocal recording.",
+    does: "Adds a record-capable audio track intended for vocal recording.",
     useWhen: "Use before recording vocals in the installed app.",
-    aiNote: "Recording needs a saved project, input selection, arm state, and human audio smoke."
+    aiNote: "Recording needs a saved project, input selection, mono/stereo channel mode, arm state, and human audio smoke."
   },
   {
     surface: "Track And Routing",
     control: "Add Live Instrument",
     selector: "data-add-track-kind:live-instrument",
-    does: "Adds a mono live audio track intended for external instruments.",
+    does: "Adds a record-capable audio track intended for external instruments.",
     useWhen: "Use before recording guitar, keys, microphone, or line input.",
-    aiNote: "Avoid monitor feedback; check input/output devices."
+    aiNote: "Avoid monitor feedback; check input/output devices and mono/stereo channel mode."
   },
   {
     surface: "Track And Routing",
