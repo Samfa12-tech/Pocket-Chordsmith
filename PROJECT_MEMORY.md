@@ -27,6 +27,17 @@ This repository is now the canonical public monorepo for:
 
 ## Current Notes And Known Gaps
 
+### Current 2026-07-01 Notes
+
+- Lofi & Chill CD Baby upload was completed on 2026-07-01 from the Pocket Release Mastering Assistant output. The final local archive is `release/archive/cd-baby/lofi-and-chill-cd-baby-uploaded-2026-07-01.zip` with SHA-256 `611079EFE35C44ECFC03F06F57BC596F5AB9B920BE951DAFE50FB4D5AFCB84C5`. The archive includes the uploaded 16-bit/44.1 kHz stereo WAV set, manifests, reports, mix patches, master settings, source-project copies, extended source-project copies, and short-track extension notes.
+- The Lofi & Chill closeout reclaimed local disk space by deleting rebuildable/generated working folders from `release/cd-baby-lofi-and-chill/`: stems, premaster WAVs, duplicate WAV24 masters, Spotify-native WAV24 copies, extended remaster scratch output, and the unpacked CD Baby upload WAV folder. Keep the archive plus small reports/settings/source JSON as the local release evidence.
+- Current Lofi & Chill mastering QC is `7 PASS`, `19 WARN`, `0 FAIL`; every final uploaded track is at least 120 seconds, has no clipped samples, no non-finite samples, and stays within true-peak ceiling. WARNs are transient-limited or album-consistency warnings.
+- Pocket Fish Tank Original release copy intentionally sets `melodyInstrumentsA` to `mellow_vibes` because the source JSON omitted the field and defaulted to `pulse`. The original source JSON remains untouched.
+- Treat this phase as complete for the generated lofi/chill pack and CD Baby upload, but do not mark the mastering assistant broadly solid until real-world tests cover live instruments, vocals, wider panning, denser arrangements, phase-heavy stereo sources, and non-lofi material.
+- Samfa12's Compilation Album #1 was harvested and packaged on 2026-07-01 from Spin Vector, Dust on the River, and Possum Cafe Pocket Chordsmith/Pocket Audio data. The run found 71 usable source cues/songs, selected 18 album tracks, expanded every selected track to at least 120 seconds, created 18 Pocket DAW projects, and rendered 18 mastered WAVs.
+- The compilation closeout archive lives at `release/archive/samfa12-compilation-album-1/`. Keep the three ZIPs plus `.sha256.txt` files as local evidence: CD Baby WAV16 upload package, Spotify WAV24 master package, and Pocket DAW/source archive. Also keep `release/archive/samfa12-compilation-album-1/pocketdaw-projects/` as loose direct-open `.pocketdaw` copies and `release/archive/samfa12-compilation-album-1/cdbaby-wav16/` as loose CD Baby upload WAVs. The rebuildable staging folder `releases/samfa12-compilation-album-1/` was deleted after archive verification to reclaim about 3.8 GB.
+- Compilation mastering QC: 18 tracks, 3 PASS, 15 WARN, 0 FAIL; every delivered WAV is stereo 44.1 kHz, at least 120.6 seconds, and has no clipped samples. WARNs are transient-limited/preserved-dynamics notes, not failed exports. Final store metadata still needs human legal/store values such as songwriter, genre, cover art, and ISRC where applicable.
+
 ### Current 2026-06-28 Notes
 
 - 2026-06-28 post-reaudit anchors: use `docs/CROSS_APP_RELEASE_DASHBOARD.md` for the cross-app baseline and `docs/audits/2026-06-27-deep-audit-workplan.md` for the deep-audit loop. The workplan tracks mixed completion types: some rows are implementation plus tests, some are local installed smoke, some are manual checklist gates, and some are design/research anchors. Do not treat every completed row as a shipped product feature.

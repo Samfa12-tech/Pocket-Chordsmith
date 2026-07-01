@@ -18,6 +18,12 @@ code.
 - Live playback status: browser event scheduler with simple Web Audio tones, not parity synths
 - Game runtime status: `profile:"game"` supports music states, stingers, intensity, ducking, lowpass, stem controls, and diagnostics
 
+## Release Mastering
+
+The first Pocket Release Mastering Assistant phase is complete for the generated Lofi & Chill schema-16 pack and was used for the 2026-07-01 CD Baby upload. The same release path also packaged Samfa12's Compilation Album #1 from Spin Vector, Dust on the River, and Possum Cafe Chordsmith/Pocket Audio data. See `../../docs/POCKET_RELEASE_MASTERING_STATUS.md` for archive paths, checksums, QC results, direct-open `.pocketdaw` keepers, CD Baby WAV keepers, short-track extension notes, and current limitations.
+
+This should not yet be described as a general-purpose mastering system. The current confidence applies to generated Pocket Chordsmith/Pocket Audio material; recorded/live instruments, vocals, wider panning, denser arrangements, phase-heavy stereo material, and broader non-lofi releases still need real-world testing.
+
 ## Lofi Chill Pack
 
 The shared lofi/chillhop preset spec lives in `src/presets/lofi.js` and is exported from the package root. It defines the `lofi_chill` audio profile, eight preset IDs, soft instrument/tone IDs, lofi drum kit and groove IDs, texture defaults, and game intensity hints.
