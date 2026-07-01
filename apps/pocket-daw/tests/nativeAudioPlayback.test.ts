@@ -130,6 +130,30 @@ describe("native audio playback bridge", () => {
     expect(payload.events.find((event) => event.id === "slide_melody")).toMatchObject({ slideMidi: 76, slideOffset: 0.1 });
   });
 
+  it("preserves MIDI preview detune cents for the native installed-app synth", () => {
+    const project = createDemoProject();
+    const events: RenderedEvent[] = [
+      {
+        id: "bent_midi",
+        clipId: "clip",
+        kind: "midi",
+        trackId: "melody",
+        role: "media",
+        time: 0,
+        duration: 0.4,
+        bar: 1,
+        step: 0,
+        velocity: 0.7,
+        midi: 60,
+        detuneCents: 100
+      }
+    ];
+
+    const payload = buildNativeAudioStartPayload(project, events, 0);
+
+    expect(payload.events.find((event) => event.id === "bent_midi")).toMatchObject({ detuneCents: 100 });
+  });
+
   it("passes timeline loop bounds to native playback for sample-accurate wrapping", () => {
     const project = createDemoProject();
     project.project.bpm = 120;

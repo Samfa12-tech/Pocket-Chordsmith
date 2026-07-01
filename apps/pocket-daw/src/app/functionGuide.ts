@@ -344,7 +344,7 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "Controllers, Program, Bend, Aftertouch",
-        does: "Adds, edits, duplicates and deletes MIDI CC, program-change, pitch-bend and aftertouch events.",
+        does: "Adds, edits, duplicates and deletes MIDI CC, program-change, pitch-bend and aftertouch events. MIDI preview/render events interpret channel-matched CC7 volume, CC10 pan, CC11 expression, CC64 sustain and pitch-bend detune.",
         useWhen: "Use for expressive MIDI playback and interchange.",
         aiNote: "Imported controller data may be dense; keep edits bounded and test playback."
       },
@@ -1730,7 +1730,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "MIDI Editing",
     control: "MIDI Controller/Program/Bend/Aftertouch",
     selector: "data-midi-controller-* / data-midi-program-* / data-midi-pitch-bend-* / data-midi-aftertouch-*",
-    does: "Adds, edits, duplicates, and deletes expressive MIDI events.",
+    does: "Adds, edits, duplicates, and deletes expressive MIDI events. The MIDI preview/render path interprets channel-matched CC7 volume, CC10 pan, CC11 expression, CC64 sustain, and pitch-bend detune.",
     useWhen: "Use for MIDI expression and interchange detail.",
     aiNote: "Imported controller data can be dense; avoid broad destructive edits without a clear target."
   },

@@ -218,7 +218,7 @@ Use `data-action` values for ordinary command buttons. Use selector entries for 
 | Velocity Transform | `data-midi-velocity-transform` |  | Applies a bulk velocity edit such as leveling or deterministic humanization. | Use to shape note dynamics quickly. | Check drum/bass parts because velocity may change perceived groove strongly. |
 | Pitch Transform | `data-midi-pitch-transform` |  | Transposes MIDI notes by semitone or octave steps. | Use for octave placement or key correction. | Check pitch range after transforms, especially drums and bass. |
 | MIDI Note Add/Edit/Move/Duplicate/Delete | `data-midi-note-*` |  | Adds notes and edits note pitch, start tick, length, velocity, channel, movement, duplication, and deletion. | Use for detailed piano-roll editing. | Keep note edits bounded and verify bar/tick interpretation against the clip PPQ and tempo map. |
-| MIDI Controller/Program/Bend/Aftertouch | `data-midi-controller-* / data-midi-program-* / data-midi-pitch-bend-* / data-midi-aftertouch-*` |  | Adds, edits, duplicates, and deletes expressive MIDI events. | Use for MIDI expression and interchange detail. | Imported controller data can be dense; avoid broad destructive edits without a clear target. |
+| MIDI Controller/Program/Bend/Aftertouch | `data-midi-controller-* / data-midi-program-* / data-midi-pitch-bend-* / data-midi-aftertouch-*` |  | Adds, edits, duplicates, and deletes expressive MIDI events. The MIDI preview/render path interprets channel-matched CC7 volume, CC10 pan, CC11 expression, CC64 sustain, and pitch-bend detune. | Use for MIDI expression and interchange detail. | Imported controller data can be dense; avoid broad destructive edits without a clear target. |
 
 ## MIDI To Chordsmith
 

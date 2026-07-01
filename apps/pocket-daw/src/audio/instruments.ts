@@ -172,7 +172,7 @@ export function scheduleInstrumentEvent(ctx: BaseAudioContext, destination: Audi
     return true;
   }
   if (event.kind === "midi" && event.midi !== undefined) {
-    leadPhrase(ctx, destination, event.midi, t, duration, "soft", event.pan || 0, event.velocity);
+    leadPhrase(ctx, destination, event.midi, t, duration, "soft", event.pan || 0, event.velocity, undefined, undefined, event.detuneCents);
     return true;
   }
   if (event.kind === "chord" && event.midiNotes) {
@@ -621,10 +621,12 @@ function leadPhrase(
   pan = 0,
   peakMul = 1,
   slideMidi?: number,
-  slideOffset?: number
+  slideOffset?: number,
+  detuneCents = 0
 ) {
+  const detuneSemitones = cleanDetuneSemitones(detuneCents);
   if (slideMidi === undefined || slideOffset === undefined) {
-    lead(ctx, destination, midi, start, dur, instrument, pan, peakMul);
+    lead(ctx, destination, midi + detuneSemitones, start, dur, instrument, pan, peakMul);
     return;
   }
   const cfg = leadInstrumentConfig(instrument);
@@ -635,8 +637,8 @@ function leadPhrase(
     const gain = ctx.createGain();
     let node: AudioNode = osc;
     osc.type = waveOverride || cfg.wave;
-    osc.frequency.setValueAtTime(midiToFreq(midi) * freqMul, start);
-    osc.frequency.linearRampToValueAtTime(midiToFreq(slideMidi) * freqMul, Math.min(endAt - 0.03, slideAt + 0.08));
+    osc.frequency.setValueAtTime(midiToFreq(midi + detuneSemitones) * freqMul, start);
+    osc.frequency.linearRampToValueAtTime(midiToFreq(slideMidi + detuneSemitones) * freqMul, Math.min(endAt - 0.03, slideAt + 0.08));
     const filter = ctx.createBiquadFilter();
     filter.type = filterType;
     filter.frequency.setValueAtTime(filterFreq, start);
@@ -650,6 +652,11 @@ function leadPhrase(
   };
   makeVoice();
   scheduleLeadExtraLayers(makeVoice, cfg);
+}
+
+function cleanDetuneSemitones(detuneCents: number): number {
+  const cents = Number.isFinite(detuneCents) ? detuneCents : 0;
+  return Math.max(-2, Math.min(2, cents / 100));
 }
 
 function lead(ctx: BaseAudioContext, destination: AudioNode, midi: number, start: number, dur = 0.28, instrument = DEFAULT_MELODY_INSTRUMENT, pan = 0, peakMul = 1) {

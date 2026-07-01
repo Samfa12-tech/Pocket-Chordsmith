@@ -44,6 +44,7 @@ export interface RenderedEvent {
   midiNotes?: number[];
   channel?: number;
   midiExportVelocity?: number;
+  detuneCents?: number;
   velocity: number;
   pan?: number;
   instrument?: string;
@@ -127,17 +128,26 @@ export function resolveMidiClip(project: PocketDawProject, clip: Clip, _context:
   const sourceStartTick = Math.max(0, Math.round(Number(clip.metadata?.sourceStartTick || 0)));
   const sourceStartSeconds = midiTempoMappedSecondsAtTick(timingMetadata, sourceStartTick, { fallbackBpm: project.project.bpm });
   const renderTicks = Math.max(0, Math.round(clip.barLength * project.project.timeSig * data.ppq));
+  const sourceEndTick = sourceStartTick + renderTicks;
   return data.notes
-    .filter((note) => note.startTick + note.durationTicks > sourceStartTick && note.startTick < sourceStartTick + renderTicks)
     .map((note) => {
+      const channel = typeof note.channel === "number" ? note.channel : 0;
+      return {
+        note,
+        channel,
+        endTick: sustainedMidiNoteEndTick(data.controllers, note.startTick + note.durationTicks, sourceEndTick, channel)
+      };
+    })
+    .filter(({ note, endTick }) => endTick > sourceStartTick && note.startTick < sourceEndTick)
+    .map(({ note, channel, endTick }) => {
       const clippedStartTick = Math.max(note.startTick, sourceStartTick);
       const localStartTick = clippedStartTick - sourceStartTick;
-      const skippedTicks = Math.max(0, sourceStartTick - note.startTick);
-      const durationTicks = Math.max(1, Math.min(note.durationTicks - skippedTicks, renderTicks - localStartTick));
-      const channel = typeof note.channel === "number" ? note.channel : 0;
+      const durationTicks = Math.max(1, Math.min(endTick, sourceEndTick) - clippedStartTick);
       const midiExportVelocity = Math.max(0.05, Math.min(1, (note.velocity / 127) * (clip.transforms.gain ?? 1)));
       const controllerVolume = midiControllerUnitAt(data.controllers, 7, clippedStartTick, channel, 1);
+      const controllerExpression = midiControllerUnitAt(data.controllers, 11, clippedStartTick, channel, 1);
       const controllerPan = midiControllerPanAt(data.controllers, clippedStartTick, channel);
+      const detuneCents = midiPitchBendCentsAt(data.pitchBends, clippedStartTick, channel);
       const eventOffsetSeconds = midiTempoMappedSecondsAtTick(timingMetadata, clippedStartTick, { fallbackBpm: project.project.bpm }) - sourceStartSeconds;
       const eventEndSeconds = midiTempoMappedSecondsAtTick(timingMetadata, clippedStartTick + durationTicks, { fallbackBpm: project.project.bpm }) - sourceStartSeconds;
       return {
@@ -153,13 +163,47 @@ export function resolveMidiClip(project: PocketDawProject, clip: Clip, _context:
         midi: Math.max(0, Math.min(127, note.pitch + (clip.transforms.transpose || 0) + (clip.transforms.octave || 0) * 12)),
         channel,
         midiExportVelocity,
-        velocity: Math.max(0, Math.min(1, midiExportVelocity * controllerVolume)),
+        detuneCents,
+        velocity: Math.max(0, Math.min(1, midiExportVelocity * controllerVolume * controllerExpression)),
         pan: controllerPan,
         instrument: "midi_preview",
         articulation: "note",
         accent: note.velocity >= 104
       };
     });
+}
+
+function midiPitchBendCentsAt(pitchBends: ReturnType<typeof midiDataFromClip>["pitchBends"], tick: number, channel: number): number {
+  let latest: ReturnType<typeof midiDataFromClip>["pitchBends"][number] | null = null;
+  for (const point of pitchBends) {
+    if ((point.channel ?? 0) !== channel || point.tick > tick) continue;
+    if (!latest || point.tick > latest.tick || (point.tick === latest.tick && midiControllerOrder(point.id) >= midiControllerOrder(latest.id))) latest = point;
+  }
+  if (!latest) return 0;
+  const value = Math.max(0, Math.min(16383, Math.round(latest.value)));
+  return Math.max(-200, Math.min(200, ((value - 8192) / 8192) * 200));
+}
+
+function sustainedMidiNoteEndTick(
+  controllers: ReturnType<typeof midiDataFromClip>["controllers"],
+  noteEndTick: number,
+  renderEndTick: number,
+  channel: number
+): number {
+  const noteEnd = Math.max(0, noteEndTick);
+  const latestSustain = latestMidiControllerAt(controllers, 64, noteEnd, channel);
+  if (!latestSustain || latestSustain.value < 64) return noteEnd;
+  let releaseTick = renderEndTick;
+  let releaseOrder = Number.MAX_SAFE_INTEGER;
+  controllers.forEach((point) => {
+    if (point.controller !== 64 || (point.channel ?? 0) !== channel || point.tick <= noteEnd || point.value >= 64) return;
+    const order = midiControllerOrder(point.id);
+    if (point.tick < releaseTick || (point.tick === releaseTick && order < releaseOrder)) {
+      releaseTick = point.tick;
+      releaseOrder = order;
+    }
+  });
+  return Math.max(noteEnd, Math.min(releaseTick, renderEndTick));
 }
 
 function midiControllerUnitAt(controllers: ReturnType<typeof midiDataFromClip>["controllers"], controller: number, tick: number, channel: number, fallback: number): number {

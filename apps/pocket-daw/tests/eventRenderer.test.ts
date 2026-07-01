@@ -6,7 +6,7 @@ import type { Clip, ClipType } from "../src/daw/schema";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 import { createAutomationLane } from "../src/daw/automation";
-import { addMidiController, importMidiFileToProject, midiDataFromClip, setMidiControllerField, setMidiNoteField } from "../src/daw/midiClips";
+import { addMidiController, addMidiPitchBend, importMidiFileToProject, midiDataFromClip, setMidiControllerField, setMidiNoteField, setMidiPitchBendField } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { timelineSecondsAtBar } from "../src/daw/timeline";
 import { simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
@@ -155,6 +155,67 @@ describe("event renderer", () => {
     expect(event.channel).toBe(0);
     expect(event.velocity).toBeCloseTo((100 / 127) * (64 / 127), 5);
     expect(event.pan).toBe(1);
+  });
+
+  it("applies MIDI CC11 expression alongside CC7 volume to rendered MIDI preview events", () => {
+    const imported = importMidiFileToProject(
+      createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI CC Expression" })),
+      parseStandardMidiFile(simpleMidiBytes()),
+      "lead.mid"
+    );
+    let project = addMidiController(imported.project, imported.clipId, 0);
+    let clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const volumeId = midiDataFromClip(clip).controllers[0].id;
+    project = setMidiControllerField(project, imported.clipId, volumeId, "controller", 7);
+    project = setMidiControllerField(project, imported.clipId, volumeId, "value", 96);
+    project = addMidiController(project, imported.clipId, 0);
+    clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const expressionId = midiDataFromClip(clip).controllers.find((point) => point.id !== volumeId)!.id;
+    project = setMidiControllerField(project, imported.clipId, expressionId, "controller", 11);
+    project = setMidiControllerField(project, imported.clipId, expressionId, "value", 32);
+
+    const event = renderTimelineEvents(project).find((item) => item.kind === "midi")!;
+
+    expect(event.velocity).toBeCloseTo((100 / 127) * (96 / 127) * (32 / 127), 5);
+  });
+
+  it("extends rendered MIDI preview note durations while CC64 sustain is held", () => {
+    const imported = importMidiFileToProject(
+      createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI CC Sustain" })),
+      parseStandardMidiFile(simpleMidiBytes()),
+      "lead.mid"
+    );
+    let project = addMidiController(imported.project, imported.clipId, 0);
+    let clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const sustainOnId = midiDataFromClip(clip).controllers[0].id;
+    project = setMidiControllerField(project, imported.clipId, sustainOnId, "controller", 64);
+    project = setMidiControllerField(project, imported.clipId, sustainOnId, "value", 127);
+    project = addMidiController(project, imported.clipId, 960);
+    clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const sustainOffId = midiDataFromClip(clip).controllers.find((point) => point.id !== sustainOnId)!.id;
+    project = setMidiControllerField(project, imported.clipId, sustainOffId, "controller", 64);
+    project = setMidiControllerField(project, imported.clipId, sustainOffId, "value", 0);
+
+    const event = renderTimelineEvents(project).find((item) => item.kind === "midi")!;
+
+    expect(event.duration).toBeCloseTo(1.25, 5);
+  });
+
+  it("applies active MIDI pitch bend as preview detune cents without changing note pitch", () => {
+    const imported = importMidiFileToProject(
+      createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Pitch Bend Preview" })),
+      parseStandardMidiFile(simpleMidiBytes()),
+      "lead.mid"
+    );
+    let project = addMidiPitchBend(imported.project, imported.clipId, 0);
+    const clip = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const bendId = midiDataFromClip(clip).pitchBends[0].id;
+    project = setMidiPitchBendField(project, imported.clipId, bendId, "value", 12288);
+
+    const event = renderTimelineEvents(project).find((item) => item.kind === "midi")!;
+
+    expect(event.midi).toBe(60);
+    expect(event.detuneCents).toBeCloseTo(100, 5);
   });
 
   it("lets MIDI CC7 value zero silence rendered MIDI preview events", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scheduleInstrumentEvent } from "../src/audio/instruments";
+import { midiToFreq, scheduleInstrumentEvent } from "../src/audio/instruments";
 import type { RenderedEvent } from "../src/audio/eventRenderer";
 import {
   LOFI_BASS_TONE_CONFIGS,
@@ -225,5 +225,27 @@ describe("Pocket DAW instruments", () => {
 
     expect(scheduled).toBe(true);
     expect(ctx.oscillators[0].frequency.values.find((entry) => entry.method === "set")?.value).toBe(155);
+  });
+
+  it("applies MIDI preview detune cents to the scheduled oscillator frequency", () => {
+    const ctx = new FakeAudioContext();
+
+    const scheduled = scheduleInstrumentEvent(ctx as unknown as BaseAudioContext, new FakeNode() as unknown as AudioNode, {
+      id: "midi-bent",
+      clipId: "clip-midi",
+      kind: "midi",
+      trackId: "midi",
+      role: "media",
+      time: 0.1,
+      duration: 0.5,
+      bar: 1,
+      step: 0,
+      midi: 60,
+      detuneCents: 100,
+      velocity: 0.8
+    });
+
+    expect(scheduled).toBe(true);
+    expect(ctx.oscillators[0].frequency.values.find((entry) => entry.method === "set")?.value).toBeCloseTo(midiToFreq(61), 5);
   });
 });

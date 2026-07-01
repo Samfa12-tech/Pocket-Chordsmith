@@ -111,6 +111,8 @@ pub struct NativeRenderedEvent {
     slide_midi: Option<f64>,
     #[serde(rename = "slideOffset")]
     slide_offset: Option<f64>,
+    #[serde(rename = "detuneCents")]
+    detune_cents: Option<f64>,
     #[serde(rename = "midiNotes", default)]
     midi_notes: Vec<f64>,
     velocity: f64,
@@ -3446,15 +3448,24 @@ fn render_lead_note(midi: f64, event: &NativeRenderedEvent, local: f64, velocity
     if local > dur + 0.22 {
         return 0.0;
     }
+    let detune_semitones = clean_detune_semitones(event.detune_cents);
     let slide = event
         .slide_midi
         .zip(event.slide_offset)
         .map(|(target_midi, offset)| {
             let ramp_end = (offset.max(0.02) * cfg.dur_mul + 0.08).min((dur + 0.19).max(0.0001));
-            (target_midi, ramp_end)
+            (target_midi + detune_semitones, ramp_end)
         });
     let mut sample = render_lead_voice(
-        midi, 1.0, local, dur, cfg.wave, cfg.peak, cfg.filter, cfg.freq, slide,
+        midi + detune_semitones,
+        1.0,
+        local,
+        dur,
+        cfg.wave,
+        cfg.peak,
+        cfg.filter,
+        cfg.freq,
+        slide,
     );
     for extra in cfg.extras {
         if local < extra.offset {
@@ -3498,6 +3509,14 @@ fn render_lead_note(midi: f64, event: &NativeRenderedEvent, local: f64, velocity
         );
     }
     sample * velocity
+}
+
+fn clean_detune_semitones(detune_cents: Option<f64>) -> f64 {
+    let cents = detune_cents.unwrap_or(0.0);
+    if !cents.is_finite() {
+        return 0.0;
+    }
+    (cents / 100.0).clamp(-2.0, 2.0)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4535,6 +4554,28 @@ mod tests {
         assert!(
             diff > 0.01,
             "expected melody slide to alter native samples, got diff {diff}"
+        );
+    }
+
+    #[test]
+    fn midi_preview_detune_cents_alter_native_lead_pitch() {
+        let mut plain = test_generated_event("midi_plain", "midi", 0.0, 0.45, 0.8);
+        plain.midi = Some(60.0);
+        plain.instrument = Some("soft".to_string());
+        let mut bent = plain.clone();
+        bent.id = "midi_bent".to_string();
+        bent.detune_cents = Some(100.0);
+
+        let diff: f32 = [0.06, 0.13, 0.19, 0.27]
+            .iter()
+            .map(|time| {
+                (render_event_sample(&plain, *time) - render_event_sample(&bent, *time)).abs()
+            })
+            .sum();
+
+        assert!(
+            diff > 0.01,
+            "expected MIDI preview detune to alter native samples, got diff {diff}"
         );
     }
 
@@ -5840,6 +5881,7 @@ mod tests {
             midi: Some(36.0),
             slide_midi: None,
             slide_offset: None,
+            detune_cents: None,
             midi_notes: Vec::new(),
             velocity,
             step: Some(0.0),
@@ -5869,6 +5911,7 @@ mod tests {
             midi: None,
             slide_midi: None,
             slide_offset: None,
+            detune_cents: None,
             midi_notes: vec![40.0, 47.0, 52.0],
             velocity: 1.0,
             step: Some(0.0),
@@ -5898,6 +5941,7 @@ mod tests {
             midi: None,
             slide_midi: None,
             slide_offset: None,
+            detune_cents: None,
             midi_notes: Vec::new(),
             velocity: 0.0,
             step: Some(0.0),
@@ -5927,6 +5971,7 @@ mod tests {
             midi: None,
             slide_midi: None,
             slide_offset: None,
+            detune_cents: None,
             midi_notes: vec![48.0, 55.0, 64.0],
             velocity: 1.0,
             step: Some(0.0),
