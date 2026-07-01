@@ -1,6 +1,7 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../src/daw/dawProject";
 import { createDemoProject } from "../src/demo/demoProject";
@@ -29,6 +30,7 @@ describe("Pocket DAW MCP tools", () => {
       "pocket_daw_validate_project",
       "pocket_daw_create_from_chordsmith",
       "pocket_daw_arrange_midi",
+      "pocket_daw_release_master",
       "pocket_daw_apply_commands",
       "pocket_daw_export_plan",
       "pocket_daw_live_status",
@@ -68,6 +70,9 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ensure_fx_automation");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("add_fx_automation_point");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("tomlow");
+    expect(toolList.find((tool) => tool.name === "pocket_daw_release_master")?.inputSchema).toMatchObject({
+      required: ["outputPath"]
+    });
   });
 
   it("reads and summarizes a project without writing", async () => {
@@ -644,6 +649,52 @@ describe("Pocket DAW MCP tools", () => {
     expect(result.extraction.rawMidiClip).toBe("omitted");
     expect(written.tracks.some((track: { id: string; mute?: boolean }) => track.id === "guitar" && track.mute === false)).toBe(true);
     expect(written.tracks.some((track: { trackType: string }) => track.trackType === "midi")).toBe(false);
+  });
+
+  it("masters an embedded schema-16 Chordsmith source from a Pocket DAW project", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-release-master-mcp-"));
+    const sourcePath = fileURLToPath(new URL("../../../packages/pocket-audio-core/tests/fixtures/section-sequence.pcs.json", import.meta.url));
+    const dawPath = join(dir, "section-sequence.pocketdaw");
+    const outDir = join(dir, "release");
+    await callPocketDawMcpTool("pocket_daw_create_from_chordsmith", {
+      inputPath: sourcePath,
+      outputPath: dawPath
+    });
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_release_master", {
+      projectPath: dawPath,
+      outputPath: outDir,
+      profile: "spotify_lofi_chill",
+      scope: "sequence",
+      export: "wav24,report",
+      force: true,
+      albumConsistency: true
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(["PASS", "WARN"]).toContain(result.status);
+    expect(result.reports[0].title).toBe("Section Sequence");
+    expect(result.reports[0].outputs.masterWav).toContain("masters_wav24");
+    expect(existsSync(result.reports[0].outputs.masterWav)).toBe(true);
+    expect(result.reports[0].clippedSamples).toBe(0);
+    expect(result.reports[0].nonFiniteSamples).toBe(0);
+    expect(result.reports[0].truePeakDbtp).toBeLessThanOrEqual(-0.95);
+  });
+
+  it("passes schema-16 input globs through the release-master MCP tool", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-release-master-glob-mcp-"));
+    const inputGlob = join(fileURLToPath(new URL("../../../packages/pocket-audio-core/tests/fixtures/", import.meta.url)), "section-sequence*.pcs.json");
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_release_master", {
+      inputPath: inputGlob,
+      outputPath: join(dir, "release"),
+      profile: "spotify_lofi_chill",
+      analyzeOnly: true,
+      force: true
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.manifest.inputCount).toBe(1);
+    expect(result.manifest.analyzeOnly).toBe(true);
   });
 
   it("rejects missing MIDI paths for arrangement", async () => {

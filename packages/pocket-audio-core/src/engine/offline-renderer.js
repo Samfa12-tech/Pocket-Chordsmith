@@ -25,6 +25,26 @@ export function renderPocketAudioBuffer(project, options = {}) {
   });
 }
 
+export function renderPocketAudioStemBuffers(project, options = {}) {
+  const sampleRate = options.sampleRate || 44100;
+  const stems = options.stems || ["drums", "bass", "chords", "melody", "guitar"];
+  const timeline = buildPocketAudioTimeline(project, options);
+  const out = {};
+  stems.forEach((stem) => {
+    out[stem] = renderPocketAudioEventBuffer(timeline.events.filter((event) => event.stem === stem), {
+      ...options,
+      sampleRate,
+      durationSeconds: timeline.duration,
+      lofiTexture: null,
+      timeline: {
+        ...timeline,
+        events: timeline.events.filter((event) => event.stem === stem)
+      }
+    });
+  });
+  return out;
+}
+
 export function renderPocketAudioEventBuffer(events, options = {}) {
   const sampleRate = options.sampleRate || 44100;
   const tailSeconds = options.tailSeconds ?? 0.6;

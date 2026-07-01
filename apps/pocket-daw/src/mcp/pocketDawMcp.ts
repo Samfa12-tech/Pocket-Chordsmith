@@ -65,6 +65,7 @@ export const POCKET_DAW_MCP_TOOLS = [
   "pocket_daw_validate_project",
   "pocket_daw_create_from_chordsmith",
   "pocket_daw_arrange_midi",
+  "pocket_daw_release_master",
   "pocket_daw_apply_commands",
   "pocket_daw_export_plan",
   "pocket_daw_live_status",
@@ -163,6 +164,8 @@ export async function callPocketDawMcpTool(name: string, args: unknown = {}): Pr
       return jsonToolResult(createFromChordsmith(args));
     case "pocket_daw_arrange_midi":
       return jsonToolResult(arrangeMidi(args));
+    case "pocket_daw_release_master":
+      return jsonToolResult(await releaseMaster(args));
     case "pocket_daw_apply_commands":
       return jsonToolResult(applyCommands(args));
     case "pocket_daw_export_plan":
@@ -211,6 +214,23 @@ export function pocketDawMcpToolList() {
         style: { type: "string", enum: ["heavy_metal"] },
         keepRawMidiClip: booleanSchema()
       }, ["midiPath"]),
+      annotations: writeOnlyWhenOutputPathAnnotations()
+    },
+    {
+      name: "pocket_daw_release_master",
+      description: "Render, analyse, master and export a schema-16 Pocket Chordsmith song or a Pocket DAW project with an embedded source song using Pocket Audio Core release profiles.",
+      inputSchema: objectSchema({
+        inputPath: stringSchema(),
+        projectPath: stringSchema(),
+        text: stringSchema(),
+        outputPath: stringSchema(),
+        profile: stringSchema(),
+        scope: { type: "string", enum: ["sequence", "section", "all"] },
+        export: stringSchema(),
+        force: booleanSchema(),
+        analyzeOnly: booleanSchema(),
+        albumConsistency: booleanSchema()
+      }, ["outputPath"]),
       annotations: writeOnlyWhenOutputPathAnnotations()
     },
     {
@@ -330,6 +350,52 @@ function arrangeMidi(args: unknown) {
     warnings: result.warnings,
     summary: summarizeProject(result.project),
     project: outputPath ? undefined : result.project
+  };
+}
+
+async function releaseMaster(args: unknown) {
+  const options = asRecord(args);
+  const outputPath = stringValue(options.outputPath);
+  if (!outputPath) throw new Error("pocket_daw_release_master requires outputPath because it writes release artifacts.");
+  const outDir = resolveUserPath(outputPath, { mustExist: false });
+  mkdirSync(outDir, { recursive: true });
+  const inputPath = await prepareReleaseMasterInput(options, outDir);
+  const { batchMasterRelease } = await import("../../../../packages/pocket-audio-core/src/mastering/batch-release.js");
+  const result = await batchMasterRelease({
+    input: inputPath,
+    out: outDir,
+    profile: stringValue(options.profile) || "spotify_lofi_chill",
+    scope: stringValue(options.scope) || "sequence",
+    export: stringValue(options.export) || "wav24,stems,report",
+    force: options.force === true,
+    analyzeOnly: options.analyzeOnly === true,
+    albumConsistency: options.albumConsistency === false ? false : true
+  });
+  return {
+    ok: result.manifest.status !== "FAIL",
+    status: result.manifest.status,
+    outDir: result.outDir,
+    inputPath,
+    manifest: result.manifest,
+    reports: result.reports.map((report: {
+      title: string;
+      qc: { status: string; warnings: string[]; failures: string[] };
+      postAnalysis: { integratedLufs: number | null; truePeakDbtp: number | null; clippedSamples: number; nonFiniteSamples: number };
+      masterSettings: { loudnessTargetStatus?: string; limiterGainReductionDb?: number };
+      outputs: Record<string, string>;
+    }) => ({
+      title: report.title,
+      status: report.qc.status,
+      warnings: report.qc.warnings,
+      failures: report.qc.failures,
+      integratedLufs: report.postAnalysis.integratedLufs,
+      truePeakDbtp: report.postAnalysis.truePeakDbtp,
+      clippedSamples: report.postAnalysis.clippedSamples,
+      nonFiniteSamples: report.postAnalysis.nonFiniteSamples,
+      loudnessTargetStatus: report.masterSettings.loudnessTargetStatus,
+      limiterGainReductionDb: report.masterSettings.limiterGainReductionDb,
+      outputs: report.outputs
+    }))
   };
 }
 
@@ -607,6 +673,46 @@ function writeProjectFile(path: string, project: PocketDawProject) {
   const resolved = resolveUserPath(path, { mustExist: false });
   mkdirSync(dirname(resolved), { recursive: true });
   writeFileSync(resolved, buildPocketDawProjectFile(project));
+}
+
+async function prepareReleaseMasterInput(options: Record<string, unknown>, outDir: string): Promise<string> {
+  const inputPath = stringValue(options.inputPath);
+  if (inputPath) return inputPath.includes("*") ? normalize(isAbsolute(inputPath) ? inputPath : resolve(process.cwd(), inputPath)) : resolveUserPath(inputPath);
+  const text = typeof options.text === "string" ? options.text : nativeSourceTextFromDawProject(options.projectPath);
+  const parsed = JSON.parse(text) as { title?: string; projectVersion?: number; schemaVersion?: number };
+  const version = Number(parsed.projectVersion ?? parsed.schemaVersion);
+  if (version !== 16) throw new Error(`pocket_daw_release_master requires native schema-16 source JSON; got schema ${Number.isFinite(version) ? version : "unknown"}.`);
+  const inputDir = join(outDir, "source-projects");
+  mkdirSync(inputDir, { recursive: true });
+  const stem = sanitizeMcpFileStem(parsed.title || "pocket-daw-release-source");
+  const path = join(inputDir, `${stem}.mcp-source.json`);
+  writeFileSync(path, JSON.stringify(parsed, null, 2));
+  return path;
+}
+
+function nativeSourceTextFromDawProject(projectPath: unknown): string {
+  const project = loadProject({ projectPath: stringValue(projectPath) || undefined }) as PocketDawProject & {
+    sourceRefs?: Array<{ original?: unknown; schemaVersion?: number; sourceType?: string; title?: string }>;
+  };
+  const source = (project.sourceRefs || []).find((item) => (
+    item.original &&
+    item.sourceType === "pocket-chordsmith" &&
+    Number((item.original as { projectVersion?: number; schemaVersion?: number }).projectVersion ?? (item.original as { schemaVersion?: number }).schemaVersion ?? item.schemaVersion) === 16
+  ));
+  if (!source?.original) {
+    throw new Error("Pocket DAW project does not contain an embedded native schema-16 Pocket Chordsmith source.");
+  }
+  return JSON.stringify(source.original);
+}
+
+function sanitizeMcpFileStem(value: string) {
+  return value
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase() || "pocket-daw-release-source";
 }
 
 function resolveUserPath(path: unknown, { mustExist = true } = {}) {
