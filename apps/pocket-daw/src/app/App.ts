@@ -97,7 +97,10 @@ import {
   collapseGeneratedDrumBranchesCommand,
   commitProject,
   copySelectedClip,
+  copySelectedClipRangeCommand,
   cropSelectedClipToTimelineSelectionCommand,
+  cutSelectedClip,
+  cutSelectedClipRangeCommand,
   convertMidiBassToGeneratedOverlaysCommand,
   convertMidiChordsToGeneratedOverlaysCommand,
   convertMidiDrumsToBranchOverlaysCommand,
@@ -221,7 +224,7 @@ import {
   undoCommand
 } from "./commands";
 import { commandFromKeyboardEvent } from "./keyboard";
-import { createInitialState, createRecordingUiState, currentProject, loadProjectIntoState, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type LoadProjectIntoStateOptions, type NativeCacheUiStatus } from "./state";
+import { createInitialState, createRecordingUiState, currentProject, isUiCollapseSection, loadProjectIntoState, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type LoadProjectIntoStateOptions, type NativeCacheUiStatus } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { automationSurfaceAudioSyncMode, automationSurfacePointFromClient } from "./automationSurface";
 import { renderAppShell } from "./ui";
@@ -252,6 +255,7 @@ import { assertExportProfileSupported, validateExportProfile } from "../daw/expo
 import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
 import { buildTesterDiagnosticsPayload, diagnosticsJson, runtimeLabel, runtimePlatform } from "./diagnostics";
 import { buildFeedbackEmailDraft, MORE_BY_SAMFA12_URL } from "./feedback";
+import { FUNCTION_ACTION_TOOLTIPS } from "./functionGuide";
 import { pocketDawMcpCopyText } from "./mcpSetup";
 import { PerformanceDiagnosticsRecorder, type UiPerformanceCounters } from "./performanceDiagnostics";
 import { beginRecordingSession, buildNativeRecordingDiagnosticsMetadata, buildNativeRecordingTakeMetadata, buildRecordingCompletionMessage, buildRecordingStartupPlan, cancelRecordingSession, recordingStartFailureCleanupPlan, transitionRecordingSession } from "./recordingOrchestration";
@@ -756,8 +760,17 @@ export class App {
     this.root.dataset.renderCount = String(this.renderCount);
     this.root.dataset.renderCountDuringPlayback = String(this.renderCountDuringPlayback);
     this.root.dataset.liveUpdateCount = String(this.liveUpdateCount);
+    this.applyButtonTooltips();
     this.bind();
     if (scroll) this.restoreScrollSnapshotSoon(scroll);
+  }
+
+  private applyButtonTooltips() {
+    this.root.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
+      if (button.getAttribute("title")) return;
+      const tooltip = tooltipForButton(button);
+      if (tooltip) button.setAttribute("title", tooltip);
+    });
   }
 
   private captureScrollSnapshot(): ScrollSnapshot {
@@ -1749,6 +1762,11 @@ export class App {
       this.render();
       return;
     }
+    if (target?.matches("[data-function-guide-backdrop]")) {
+      this.state.showFunctionGuidePanel = false;
+      this.render();
+      return;
+    }
     const addTrackButton = target?.closest<HTMLElement>("[data-add-track-kind]");
     if (addTrackButton) {
       this.applyProjectState(addTrackCommand(this.state, addTrackButton.dataset.addTrackKind as AddTrackKind), {
@@ -2360,6 +2378,22 @@ export class App {
     if (action === "restart") await this.restartTransport();
     if (action === "midi-panic") this.panicMidiPreview();
     if (action === "record-toggle") await this.toggleRecording();
+    if (action === "preset-music" || action === "preset-game-music") {
+      this.state.uiCreationPreset = action === "preset-game-music" ? "game-music" : "music";
+      this.state.status = this.state.uiCreationPreset === "game-music"
+        ? "Game music focus: cue and game-pack export controls are visible; live recording tools are tucked away."
+        : "Music focus: composition, editing and mix controls are visible; game-pack controls are tucked away.";
+      this.render({ preserveScroll: true });
+    }
+    if (action === "toggle-ui-section") {
+      const section = actionSource?.dataset.uiSection || "";
+      if (isUiCollapseSection(section)) {
+        const collapsed = this.state.collapsedUiSections[section] === true;
+        this.state.collapsedUiSections = { ...this.state.collapsedUiSections, [section]: !collapsed };
+        this.state.status = `${sectionLabelForStatus(section)} ${collapsed ? "expanded" : "collapsed"}.`;
+        this.render({ preserveScroll: true });
+      }
+    }
     if (action === "metronome-toggle") {
       this.applyProjectState(toggleMetronomeCommand(this.state), {
         audio: "project-load",
@@ -2424,6 +2458,14 @@ export class App {
       this.state.showMcpSetupPanel = false;
       this.render();
     }
+    if (action === "function-guide-open") {
+      this.state.showFunctionGuidePanel = true;
+      this.render();
+    }
+    if (action === "function-guide-close") {
+      this.state.showFunctionGuidePanel = false;
+      this.render();
+    }
     if (action === "copy-mcp-setup") await this.copyMcpSetup(actionSource?.dataset.copyMcpSetup || "all");
     if (action === "ai-bridge-test") await this.testAiBridgeConnection();
     if (action === "updater-check") await this.checkForUpdates(true);
@@ -2484,6 +2526,7 @@ export class App {
       this.state = copySelectedClip(this.state);
       this.render();
     }
+    if (action === "clip-cut") this.applyProjectState(cutSelectedClip(this.state));
     if (action === "clip-paste") this.applyProjectState(pasteClipAtPlayhead(this.state));
     if (action === "clip-split") this.applyProjectState(splitSelectedClipAtPlayhead(this.state));
     if (action === "audio-take-comp-from-playhead" && this.state.selectedClipId) {
@@ -2498,6 +2541,11 @@ export class App {
     if (action === "loop-clear") this.applyProjectState(clearLoopCommand(this.state), { audio: "transport-controls", reason: "loop-clear" });
     if (action === "range-selected") this.applyProjectState(setTimelineSelectionToSelectedClipCommand(this.state), { audio: "transport-controls", reason: "range-selected" });
     if (action === "range-loop") this.applyProjectState(setTimelineSelectionToLoopCommand(this.state), { audio: "transport-controls", reason: "range-loop" });
+    if (action === "range-copy") {
+      this.state = copySelectedClipRangeCommand(this.state);
+      this.render();
+    }
+    if (action === "range-cut") this.applyProjectState(cutSelectedClipRangeCommand(this.state), { audio: "transport-controls", reason: "range-cut" });
     if (action === "range-split") this.applyProjectState(splitTimelineSelectionCommand(this.state), { audio: "transport-controls", reason: "range-split" });
     if (action === "range-crop") this.applyProjectState(cropSelectedClipToTimelineSelectionCommand(this.state), { audio: "transport-controls", reason: "range-crop" });
     if (action === "range-delete") this.applyProjectState(deleteSelectedClipRangeCommand(this.state), { audio: "transport-controls", reason: "range-delete" });
@@ -2673,6 +2721,12 @@ export class App {
       this.state = copySelectedClip(this.state);
       this.render();
     }
+    if (command === "cut-clip") this.applyProjectState(cutSelectedClip(this.state));
+    if (command === "copy-range") {
+      this.state = copySelectedClipRangeCommand(this.state);
+      this.render();
+    }
+    if (command === "cut-range") this.applyProjectState(cutSelectedClipRangeCommand(this.state), { audio: "transport-controls", reason: "range-cut-keyboard" });
     if (command === "paste-clip") this.applyProjectState(pasteClipAtPlayhead(this.state));
     if (command === "delete-clip") this.applyProjectState(deleteSelectedClip(this.state));
     if (command === "split-clip") this.applyProjectState(splitSelectedClipAtPlayhead(this.state));
@@ -5084,6 +5138,181 @@ function midiImportPlacementModeLabel(mode: MidiImportPlacementMode): string {
   if (mode === "per-channel") return "channels";
   if (mode === "drum-channel-split") return "drum channel split";
   return "single clip";
+}
+
+const ACTION_BUTTON_TOOLTIPS: Record<string, string> = {
+  ...FUNCTION_ACTION_TOOLTIPS,
+  "add-bus-track": "Add a bus track for grouped routing.",
+  "add-return-track": "Add a return track for send effects.",
+  "add-track-close": "Close the add track panel.",
+  "add-track-open": "Open the add track panel.",
+  "audio-settings-close": "Close audio settings.",
+  "audio-settings-open": "Open audio input, output and recording settings.",
+  "audio-take-comp-from-playhead": "Create a take comp starting at the playhead.",
+  "build-native-cache": "Render generated and runtime audio into the native cache.",
+  "clip-copy": "Copy the selected clip to the clipboard.",
+  "clip-cut": "Cut the selected clip to the clipboard.",
+  "clip-delete": "Delete the selected clip.",
+  "clip-duplicate": "Duplicate the selected clip after itself.",
+  "clip-left": "Move the selected clip one snap step earlier.",
+  "clip-mute": "Mute or unmute the selected clip without deleting it.",
+  "clip-paste": "Paste the copied clip at the cursor.",
+  "clip-right": "Move the selected clip one snap step later.",
+  "clip-split": "Split the selected clip at the playhead.",
+  "collect-media": "Copy reloadable external media beside the saved project.",
+  "controls-close": "Close controls.",
+  "controls-open": "Open controls and diagnostics.",
+  "export-diagnostics": "Export a diagnostics JSON snapshot.",
+  "export-godot-manifest": "Export a WAV-based adaptive audio pack for Godot.",
+  "export-media-plan": "Export a JSON plan for collecting project media.",
+  "export-midi": "Export the full project MIDI arrangement.",
+  "export-section-manifest": "Download a ZIP of generated section loops and manifest.",
+  "export-selected-clip-midi": "Export the selected clip as a MIDI file.",
+  "export-selected-track-midi": "Export all MIDI-capable clips on this track.",
+  "export-stems": "Download a ZIP of stem WAV files and manifest.",
+  "export-wav": "Render the full mix as a WAV file.",
+  "export-web-game-manifest": "Export a WAV-based adaptive audio pack for web games.",
+  "feedback-close": "Close feedback notes.",
+  "feedback-open": "Open feedback notes.",
+  "file-window-close": "Close the file panel.",
+  "file-window-open": "Open imports, exports and project file actions.",
+  "freeze-selected-clip": "Render the selected clip into a reusable audio asset.",
+  "function-guide-close": "Close the Pocket DAW function guide.",
+  "function-guide-open": "Open the Pocket DAW function guide.",
+  "game-state-marker-add": "Add a game-state cue marker at the playhead.",
+  "import-audio": "Import an audio file into the media pool.",
+  "import-focus": "Open the import area.",
+  "import-midi": "Import a MIDI file as MIDI clips.",
+  "import-text": "Import pasted Pocket Chordsmith, Pocket DJ or Pocket DAW text.",
+  "load-demo": "Load the editable demo project.",
+  "loop-clear": "Clear the active loop region.",
+  "loop-selected": "Set the loop region to the selected clip.",
+  "marker-add": "Add a timeline marker at the playhead.",
+  "media-pool-focus": "Scroll to the media pool.",
+  "metronome-toggle": "Toggle metronome and recording count-in.",
+  "midi-panic": "Stop preview playback and clear stuck notes.",
+  "new-project": "Start a new unsaved project.",
+  "open-file": "Open a supported project, audio or MIDI file.",
+  "open-project": "Open a .pocketdaw project.",
+  "pause": "Pause playback.",
+  "play": "Start playback.",
+  "preset-game-music": "Show game cue and game-pack controls, and hide live-recording take tools.",
+  "preset-music": "Show composition, editing and mix controls, and hide game-pack clutter.",
+  "push-godot-pack": "Try a local Godot receiver first, then save the ZIP if unavailable.",
+  "range-clear": "Clear the active edit range.",
+  "range-copy": "Copy the selected clip material inside the active edit range.",
+  "range-crop": "Keep only the active edit range.",
+  "range-cut": "Cut the selected clip material inside the active edit range.",
+  "range-delete": "Delete material inside the active edit range.",
+  "range-loop": "Set the active edit range to the current loop.",
+  "range-ripple-all": "Delete the active range and close the gap across all tracks.",
+  "range-ripple-delete": "Delete the active range and close the gap on selected tracks.",
+  "range-selected": "Use the selected clip as the edit range.",
+  "range-split": "Split clips at the edit range boundaries.",
+  "record-toggle": "Start or stop recording on the armed track.",
+  "redo": "Redo the last undone edit.",
+  "reset-demo-template": "Reload the demo template.",
+  "restart": "Restart playback from the beginning.",
+  "save-project": "Save the current .pocketdaw project.",
+  "save-project-as": "Save this project to a new .pocketdaw file.",
+  "seek-start": "Move the playhead to Bar 1.",
+  "stop": "Stop playback.",
+  "toggle-inspector": "Show or hide the selected clip and track inspector.",
+  "toggle-ui-section": "Show or hide this UI section.",
+  "trim-end-left": "Move the clip end earlier by one snap step.",
+  "trim-end-right": "Move the clip end later by one snap step.",
+  "trim-start-left": "Move the clip start earlier by one snap step.",
+  "trim-start-right": "Move the clip start later by one snap step.",
+  "undo": "Undo the last edit.",
+  "updater-close": "Close updater status.",
+  "updater-open": "Open updater status.",
+  "zoom-in": "Zoom the timeline in.",
+  "zoom-out": "Zoom the timeline out."
+};
+
+const AUDIO_CLIP_ACTION_TOOLTIPS: Record<string, string> = {
+  "analyze-transients": "Analyze likely transient points in this audio clip.",
+  "clear-warp-markers": "Clear metadata warp markers from this audio clip.",
+  "create-crossfade-left": "Create an overlap fade at the left edge of this audio clip.",
+  "create-warp-markers": "Create metadata warp markers from analyzed transients.",
+  "crossfade-overlap": "Create a crossfade with an overlapping neighboring clip.",
+  "invert-phase": "Invert this audio clip's phase.",
+  "normalize-gain": "Set clip gain from the analyzed peak level.",
+  "quick-fade": "Apply short fade in and fade out to this audio clip.",
+  "reset-fades": "Clear this audio clip's fades.",
+  reverse: "Reverse this audio clip nondestructively."
+};
+
+function tooltipForButton(button: HTMLButtonElement): string {
+  const ariaLabel = button.getAttribute("aria-label")?.trim();
+  if (ariaLabel) return ariaLabel;
+
+  const action = button.dataset.action || "";
+  if (action) return ACTION_BUTTON_TOOLTIPS[action] || fallbackButtonTooltip(button, action);
+
+  const audioAction = dataTokenSuffix(button.dataset.audioClipAction || "");
+  if (audioAction) return AUDIO_CLIP_ACTION_TOOLTIPS[audioAction] || fallbackButtonTooltip(button, audioAction);
+
+  const addTrackKind = button.dataset.addTrackKind || "";
+  if (addTrackKind) return `Add or select ${readableDataToken(addTrackKind)}.`;
+
+  if (button.dataset.audioTakeActivate) return "Make this take active.";
+  if (button.dataset.audioTakeArchive) return "Archive this take without deleting source media.";
+  if (button.dataset.audioTakeRestore) return "Restore this archived take.";
+  if (button.dataset.armTrack) return "Arm or disarm this track for recording.";
+  if (button.dataset.monitorTrack) return "Toggle input monitoring for this track.";
+  if (button.dataset.fxToggle || button.dataset.drumLaneFxToggle) return "Enable or bypass this effect slot.";
+  if (button.dataset.fxRemove || button.dataset.drumLaneFxRemove) return "Remove this effect slot.";
+  if (button.dataset.midiQuantize) return "Quantize notes in this MIDI clip.";
+  if (button.dataset.midiSwing) return "Apply swing timing to this MIDI clip.";
+  if (button.dataset.midiGroove) return "Apply a groove template to this MIDI clip.";
+  if (button.dataset.midiVelocityTransform) return "Apply a velocity edit to this MIDI clip.";
+  if (button.dataset.midiPitchTransform) return "Apply a pitch edit to this MIDI clip.";
+  if (button.dataset.midiNoteAdd) return "Add a MIDI note at the playhead.";
+  if (button.dataset.midiControllerAdd) return "Add a MIDI controller event.";
+  if (button.dataset.midiProgramAdd) return "Add a MIDI program change.";
+  if (button.dataset.midiPitchBendAdd) return "Add a MIDI pitch-bend event.";
+  if (button.dataset.midiAftertouchAdd) return "Add a MIDI aftertouch event.";
+  if (button.dataset.midiNoteDelete || button.dataset.midiControllerDelete || button.dataset.midiProgramDelete || button.dataset.midiPitchBendDelete || button.dataset.midiAftertouchDelete) return "Delete this MIDI event.";
+  if (button.dataset.midiNoteDuplicate || button.dataset.midiControllerDuplicate || button.dataset.midiProgramDuplicate || button.dataset.midiPitchBendDuplicate || button.dataset.midiAftertouchDuplicate) return "Duplicate this MIDI event.";
+  if (button.dataset.midiNoteMove) return "Move this MIDI note earlier or later.";
+  if (button.dataset.midiNotePitch) return "Move this MIDI note up or down.";
+  if (button.dataset.midiNoteDuration) return "Shorten or lengthen this MIDI note.";
+  if (button.dataset.clipAutomationCreate || button.dataset.automationCreate || button.dataset.sendAutomationCreate || button.dataset.projectAutomationCreate || button.dataset.fxAutomationCreate) return "Create this automation lane.";
+  if (button.dataset.clipAutomationAddPoint || button.dataset.automationAddPoint || button.dataset.sendAutomationAddPoint || button.dataset.projectAutomationAddPoint || button.dataset.fxAutomationAddPoint) return "Add an automation point at the playhead.";
+  if (button.dataset.automationDeletePoint || button.dataset.projectMeterMapDelete) return "Delete this automation point.";
+  if (button.dataset.stepPage) return "Move through this step editor page.";
+  if (button.dataset.placeAudio) return "Place this media item on the timeline.";
+  if (button.dataset.reloadMedia) return "Reload this media item from its source path.";
+  if (button.dataset.relinkMedia) return "Relink this missing media item.";
+  if (button.dataset.markerRename) return "Rename this marker.";
+  if (button.dataset.trackRename) return "Rename this track.";
+
+  return fallbackButtonTooltip(button);
+}
+
+function dataTokenSuffix(value: string): string {
+  return value.split(":").filter(Boolean).pop() || "";
+}
+
+function readableDataToken(value: string): string {
+  return value.replace(/[-_:]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function fallbackButtonTooltip(button: HTMLButtonElement, token?: string): string {
+  const text = button.textContent?.replace(/\s+/g, " ").trim();
+  if (text) return text;
+  const readable = token ? readableDataToken(token) : "";
+  return readable ? `Run ${readable}.` : "Button";
+}
+
+function sectionLabelForStatus(section: string): string {
+  if (section === "timeline-tools") return "Timeline tools";
+  if (section === "inspector-clip") return "Inspector clip section";
+  if (section === "inspector-track") return "Inspector track section";
+  if (section === "lower-dock") return "Lower dock";
+  if (section === "media-pool") return "Media pool";
+  return "UI section";
 }
 
 function monotonicNowMs(): number {

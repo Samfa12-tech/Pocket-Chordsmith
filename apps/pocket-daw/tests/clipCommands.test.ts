@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { adoptMidiMeterMapCommand, adoptMidiTempoMapAutomationCommand, adoptMidiTempoMapStartCommand, branchGeneratedDrumsCommand, collapseGeneratedDrumBranchesCommand, convertMidiBassToGeneratedOverlaysCommand, convertMidiChordsToGeneratedOverlaysCommand, convertMidiDrumsToBranchOverlaysCommand, convertMidiMelodyToGeneratedOverlaysCommand, cropSelectedClipToTimelineSelectionCommand, cycleDrumBranchStepCommand, rippleDeleteSelectedClipRangeCommand, setSelectedGeneratedClipStemMuteCommand, setTimelineSelectionRangeCommand, splitTimelineSelectionCommand, toggleDrumBranchGroupCollapsedCommand } from "../src/app/commands";
+import {
+  adoptMidiMeterMapCommand,
+  adoptMidiTempoMapAutomationCommand,
+  adoptMidiTempoMapStartCommand,
+  branchGeneratedDrumsCommand,
+  collapseGeneratedDrumBranchesCommand,
+  convertMidiBassToGeneratedOverlaysCommand,
+  convertMidiChordsToGeneratedOverlaysCommand,
+  convertMidiDrumsToBranchOverlaysCommand,
+  convertMidiMelodyToGeneratedOverlaysCommand,
+  copySelectedClipRangeCommand,
+  cropSelectedClipToTimelineSelectionCommand,
+  cutSelectedClip,
+  cutSelectedClipRangeCommand,
+  cycleDrumBranchStepCommand,
+  pasteClipAtPlayhead,
+  rippleDeleteSelectedClipRangeCommand,
+  setSelectedGeneratedClipStemMuteCommand,
+  setTimelineSelectionRangeCommand,
+  splitTimelineSelectionCommand,
+  toggleDrumBranchGroupCollapsedCommand,
+  undoCommand
+} from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { DRUM_LANE_DEFS, drumBranchGroupCollapsed, generatedDrumBranchLane, getDrumBranchStepLevel } from "../src/daw/drumLanes";
 import { bassOverlayCount } from "../src/daw/bassOverlays";
@@ -9,6 +31,7 @@ import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import type { Clip } from "../src/daw/schema";
 import { createUndoStack } from "../src/daw/undo";
+import { clipSourceStartBar } from "../src/daw/clips";
 import { metalArrangementMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 
 describe("generated clip edit commands", () => {
@@ -270,6 +293,85 @@ describe("generated clip edit commands", () => {
       [2, 1, 6],
       [3, 1, 9],
       [6, 2, 16]
+    ]);
+  });
+});
+
+describe("selected clip clipboard commands", () => {
+  it("cuts the selected clip as one undoable edit and keeps it pasteable", () => {
+    const state = createInitialState();
+    const originalClip = state.undoStack.present.timeline.clips.find((clip) => clip.id === state.selectedClipId)!;
+    const originalCount = state.undoStack.present.timeline.clips.length;
+
+    const cut = cutSelectedClip(state);
+
+    expect(cut.status).toBe(`Cut ${originalClip.name}.`);
+    expect(cut.clipClipboard).toMatchObject({
+      id: originalClip.id,
+      name: originalClip.name,
+      trackId: originalClip.trackId,
+      startBar: originalClip.startBar,
+      barLength: originalClip.barLength
+    });
+    expect(cut.undoStack.present.timeline.clips).toHaveLength(originalCount - 1);
+    expect(cut.undoStack.present.timeline.clips.some((clip) => clip.id === originalClip.id)).toBe(false);
+    expect(cut.undoStack.past).toHaveLength(state.undoStack.past.length + 1);
+
+    const undone = undoCommand(cut);
+    expect(undone.undoStack.present.timeline.clips.some((clip) => clip.id === originalClip.id)).toBe(true);
+
+    const pasted = pasteClipAtPlayhead({ ...cut, playheadBar: originalClip.startBar + 2 });
+    const pastedClip = pasted.undoStack.present.timeline.clips.find((clip) => clip.id === pasted.selectedClipId)!;
+
+    expect(pasted.status).toBe("Pasted clip at playhead.");
+    expect(pastedClip.id).not.toBe(originalClip.id);
+    expect(pastedClip.name).toBe(`${originalClip.name} pasted`);
+    expect(pastedClip.trackId).toBe(originalClip.trackId);
+    expect(pastedClip.startBar).toBe(originalClip.startBar + 2);
+  });
+
+  it("does not mutate the project when no clip is selected for cutting", () => {
+    const state = { ...createInitialState(), selectedClipId: null };
+
+    const cut = cutSelectedClip(state);
+
+    expect(cut.undoStack.present).toBe(state.undoStack.present);
+    expect(cut.clipClipboard).toBeNull();
+    expect(cut.status).toBe("Select a clip to cut.");
+  });
+
+  it("copies and cuts selected clip ranges through the normal clipboard", () => {
+    const state = createInitialState();
+    const clip = state.undoStack.present.timeline.clips.find((item) => item.id === state.selectedClipId)!;
+    const ranged = setTimelineSelectionRangeCommand(state, clip.startBar + 1, clip.startBar + 3);
+
+    const copied = copySelectedClipRangeCommand(ranged);
+
+    expect(copied.status).toBe(`Copied range from ${clip.name}.`);
+    expect(copied.undoStack).toBe(ranged.undoStack);
+    expect(copied.clipClipboard?.barLength).toBe(2);
+    expect(copied.clipClipboard ? clipSourceStartBar(copied.clipClipboard) : -1).toBe(1);
+
+    const pasted = pasteClipAtPlayhead({ ...copied, playheadBar: clip.startBar + 8 });
+    const pastedClip = pasted.undoStack.present.timeline.clips.find((item) => item.id === pasted.selectedClipId)!;
+    expect(pastedClip.barLength).toBe(2);
+    expect(clipSourceStartBar(pastedClip)).toBe(1);
+
+    const cut = cutSelectedClipRangeCommand(ranged);
+    const rightClip = cut.selectedClipId
+      ? cut.undoStack.present.timeline.clips.find((item) => item.id === cut.selectedClipId)
+      : null;
+    const remaining = cut.undoStack.present.timeline.clips
+      .filter((item) => item.id === clip.id || item.id === rightClip?.id)
+      .sort((a, b) => a.startBar - b.startBar);
+
+    expect(cut.status).toBe(`Cut range from ${clip.name}.`);
+    expect(cut.clipClipboard?.barLength).toBe(2);
+    expect(cut.clipClipboard ? clipSourceStartBar(cut.clipClipboard) : -1).toBe(1);
+    expect(cut.undoStack.past).toHaveLength(ranged.undoStack.past.length + 1);
+    expect(remaining.map((item) => [item.startBar, item.barLength, clipSourceStartBar(item)])).toEqual([
+      [clip.startBar, 1, 0],
+      [clip.startBar + 3, clip.barLength - 3, 3]
     ]);
   });
 });

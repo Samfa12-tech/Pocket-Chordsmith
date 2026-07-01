@@ -28,6 +28,8 @@ export interface AppState {
   timelineHeightPx: number;
   inspectorVisible: boolean;
   inspectorWidthPx: number;
+  uiCreationPreset: UiCreationPreset;
+  collapsedUiSections: UiCollapsedSections;
   lowerDockTab: LowerDockTab;
   status: string;
   playing: boolean;
@@ -45,6 +47,7 @@ export interface AppState {
   showAudioSettings: boolean;
   showUpdaterPanel: boolean;
   showMcpSetupPanel: boolean;
+  showFunctionGuidePanel: boolean;
   showFeedbackPanel: boolean;
   aiBridge: AiBridgeUiStatus;
   feedbackText: string;
@@ -67,6 +70,10 @@ export interface AppState {
 }
 
 export type LowerDockTab = "mixer" | "inserts" | "sends" | "automation" | "piano-roll" | "audio-editor" | "export-details";
+export type UiCreationPreset = "music" | "game-music";
+export const UI_COLLAPSE_SECTIONS = ["timeline-tools", "inspector-clip", "inspector-track", "lower-dock", "media-pool"] as const;
+export type UiCollapseSection = typeof UI_COLLAPSE_SECTIONS[number];
+export type UiCollapsedSections = Record<UiCollapseSection, boolean>;
 
 export type HandoffResult = "not-received" | "imported" | "ignored" | "failed-parse";
 export type HandoffStatusSource = PocketHandoffSource | "project-file";
@@ -198,6 +205,8 @@ export function createInitialState(): AppState {
     timelineHeightPx: 430,
     inspectorVisible: true,
     inspectorWidthPx: 420,
+    uiCreationPreset: "music",
+    collapsedUiSections: createUiCollapsedSections(),
     lowerDockTab: "mixer",
     status: "Editable demo copy loaded. Edits autosave to this copy.",
     playing: false,
@@ -215,6 +224,7 @@ export function createInitialState(): AppState {
     showAudioSettings: false,
     showUpdaterPanel: false,
     showMcpSetupPanel: false,
+    showFunctionGuidePanel: false,
     showFeedbackPanel: false,
     aiBridge: defaultAiBridgeUiStatus(),
     feedbackText: "",
@@ -241,6 +251,25 @@ export function createInitialState(): AppState {
     },
     recording: createRecordingUiState()
   };
+}
+
+export function createUiCollapsedSections(overrides: Partial<UiCollapsedSections> = {}): UiCollapsedSections {
+  return {
+    "timeline-tools": false,
+    "inspector-clip": false,
+    "inspector-track": false,
+    "lower-dock": false,
+    "media-pool": false,
+    ...overrides
+  };
+}
+
+export function isUiCollapseSection(value: string): value is UiCollapseSection {
+  return UI_COLLAPSE_SECTIONS.includes(value as UiCollapseSection);
+}
+
+export function isUiSectionCollapsed(state: AppState, section: UiCollapseSection): boolean {
+  return state.collapsedUiSections?.[section] === true;
 }
 
 export function currentProject(state: AppState): PocketDawProject {

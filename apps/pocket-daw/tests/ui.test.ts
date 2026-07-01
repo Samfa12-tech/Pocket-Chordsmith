@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { createInitialState } from "../src/app/state";
+import { createInitialState, createUiCollapsedSections } from "../src/app/state";
 import { renderAppShell } from "../src/app/ui";
 import { createUndoStack } from "../src/daw/undo";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
@@ -17,6 +17,7 @@ import { simpleMidiBytes } from "./midiFixtures";
 import { createEmptyPocketDawProject } from "../src/daw/dawProject";
 import { POCKET_DAW_VERSION } from "../src/daw/schema";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
+import { FUNCTION_ACTION_CATALOG_DOC, FUNCTION_ACTION_REFERENCE, FUNCTION_GUIDE_SECTIONS, FUNCTION_REFERENCE_DOC } from "../src/app/functionGuide";
 
 function inspectorHtml(html: string) {
   return html.match(/<aside class="inspector"[\s\S]*?<\/aside>/)?.[0] || "";
@@ -178,6 +179,8 @@ describe("Pocket DAW UI rendering", () => {
 
     expect(html).toContain('data-action="range-selected"');
     expect(html).toContain('data-action="range-loop"');
+    expect(html).toContain('data-action="range-copy"');
+    expect(html).toContain('data-action="range-cut"');
     expect(html).toContain('data-action="range-split"');
     expect(html).toContain('data-action="range-crop"');
     expect(html).toContain('data-action="range-delete"');
@@ -203,7 +206,7 @@ describe("Pocket DAW UI rendering", () => {
     const transport = html.match(/<div class="transport-readout">[\s\S]*?<\/div>/)?.[0] || "";
 
     expect(transport).toContain('<span data-playing-state="true" class=""><strong>Stopped</strong></span>');
-    expect(transport).toContain('<span data-recording-state="true" class="recording"><strong>Recording</strong><small>0:07</small></span>');
+    expect(transport).toContain('<span data-recording-state="true" data-ui-scope="recording" class="recording"><strong>Recording</strong><small>0:07</small></span>');
     expect(transport).toContain("<span><strong>118</strong><small>BPM</small></span>");
     expect(transport).toContain("<span><strong>Metro</strong><small>off</small></span>");
     expect(transport).toContain('<span data-playhead-readout="true"><strong>Bar 1</strong><small>Beat 1</small></span>');
@@ -211,11 +214,167 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain(">Panic</button>");
   });
 
+  it("renders creation focus presets with scoped UI clutter controls", () => {
+    const state = createInitialState();
+
+    const html = renderAppShell(state);
+    const transport = transportHtml(html);
+
+    expect(html).toContain('data-ui-preset="music"');
+    expect(transport).toContain('class="creation-presets"');
+    expect(transport).toContain('data-action="preset-music" aria-pressed="true"');
+    expect(transport).toContain('data-action="preset-game-music" aria-pressed="false"');
+    expect(transport).toContain("Music preset: keep composition, editing and mix controls prominent");
+    expect(transport).toContain("Game music preset: keep cue and game-pack export controls visible");
+    expect(html).toContain('data-ui-scope="recording"');
+    expect(html).toContain('class="game-cue-controls" data-ui-scope="game"');
+
+    state.uiCreationPreset = "game-music";
+    const gameHtml = renderAppShell(state);
+    const gameTransport = transportHtml(gameHtml);
+
+    expect(gameHtml).toContain('data-ui-preset="game-music"');
+    expect(gameTransport).toContain('data-action="preset-music" aria-pressed="false"');
+    expect(gameTransport).toContain('data-action="preset-game-music" aria-pressed="true"');
+  });
+
+  it("renders minimisable UI sections with collapsed notices", () => {
+    const state = createInitialState();
+    const clip = state.undoStack.present.timeline.clips[0];
+    state.selectedClipId = clip.id;
+    state.selectedTrackId = "bass";
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain('data-ui-collapse-section="timeline-tools"');
+    expect(html).toContain('data-ui-section="timeline-tools" aria-expanded="true"');
+    expect(html).toContain('data-ui-section="inspector-clip" aria-expanded="true"');
+    expect(html).toContain('data-ui-section="inspector-track" aria-expanded="true"');
+    expect(html).toContain('data-ui-section="lower-dock" aria-expanded="true"');
+    expect(html).toContain('data-ui-section="media-pool" aria-expanded="true"');
+
+    state.collapsedUiSections = createUiCollapsedSections({
+      "timeline-tools": true,
+      "inspector-clip": true,
+      "inspector-track": true,
+      "lower-dock": true,
+      "media-pool": true
+    });
+    const collapsedHtml = renderAppShell(state);
+
+    expect(collapsedHtml).toContain('class="timeline-toolbar collapsed"');
+    expect(collapsedHtml).toContain("Timeline editing, zoom, loop and range controls are hidden.");
+    expect(collapsedHtml).toContain('class="inspector-section collapsed" data-ui-collapse-section="inspector-clip"');
+    expect(collapsedHtml).toContain("Selected clip details, mix controls and edit actions are hidden.");
+    expect(collapsedHtml).toContain("Selected track routing, automation and Chordsmith editors are hidden.");
+    expect(collapsedHtml).toContain('class="mixer lower-dock collapsed"');
+    expect(collapsedHtml).toContain("Mixer controls are hidden.");
+    expect(collapsedHtml).toContain('class="media-pool collapsed"');
+    expect(collapsedHtml).toContain("Media pool items, render cache and portability details are hidden.");
+    expect(collapsedHtml).toContain('data-ui-section="timeline-tools" aria-expanded="false"');
+  });
+
+  it("renders the Pocket DAW function guide for humans and AI counterparts", () => {
+    const state = createInitialState();
+    let html = renderAppShell(state);
+
+    expect(html).toContain('data-action="function-guide-open"');
+    expect(html).not.toContain('id="function-guide-title"');
+
+    state.showFunctionGuidePanel = true;
+    html = renderAppShell(state);
+
+    expect(html).toContain('data-function-guide-backdrop="true"');
+    expect(html).toContain('id="function-guide-title">Function Guide</h2>');
+    expect(html).toContain(FUNCTION_REFERENCE_DOC);
+    expect(html).toContain(FUNCTION_ACTION_CATALOG_DOC);
+    expect(html).toContain("AI note");
+    expect(html).toContain("Button And Action Catalog");
+    expect(html).toContain("data-action&#61;range-cut");
+    expect(html).toContain("data-audio-clip-action:normalize-gain");
+    expect(html).toContain("Cut / Copy / Paste / Duplicate");
+    expect(html).toContain("Copy Range");
+    expect(html).toContain("Cut Range");
+    expect(html).toContain("Music Focus");
+    expect(html).toContain("Godot Game Pack");
+    expect(html).toContain("Section Stem Mutes");
+    expect(html).toContain("Sets the active edit range to the current playback loop boundaries");
+    expect(html).toContain("data-marker-rename");
+    expect(html).toContain("data-track-input");
+    expect(html).toContain("data-section-chord");
+    expect(html).toContain("selected bass step + H/S/T");
+    expect(html).toContain("data-automation-enabled");
+    expect(FUNCTION_GUIDE_SECTIONS.length).toBeGreaterThan(10);
+    expect(FUNCTION_GUIDE_SECTIONS.every((section) => section.entries.length > 0)).toBe(true);
+    expect(FUNCTION_ACTION_REFERENCE.length).toBeGreaterThan(190);
+    expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "collect-media")).toBe(true);
+    expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "convert-midi-drums")).toBe(true);
+    expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-ai-bridge-enabled")).toBe(true);
+    [
+      "data-chord-instrument",
+      "data-section-chord",
+      "data-bass-mode",
+      "data-melody-instrument / data-melody-octave / data-melody-pan / data-melody-mute / data-melody-solo",
+      "data-guitar-setting",
+      "data-step-page",
+      "data-marker-rename",
+      "data-marker-delete",
+      "data-track-input",
+      "data-track-output",
+      "data-track-record-channel-mode",
+      "data-automation-enabled"
+    ].forEach((selector) => {
+      expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === selector)).toBe(true);
+    });
+  });
+
   it("wires MIDI Panic through the app transport dispatch path", () => {
     const source = readFileSync("src/app/App.ts", "utf8");
 
     expect(source).toContain('if (action === "midi-panic") this.panicMidiPreview();');
     expect(source).toContain("MIDI panic: stopped preview playback and cleared active notes.");
+    expect(source).toContain("this.applyButtonTooltips();");
+    expect(source).toContain("function tooltipForButton(button: HTMLButtonElement)");
+    expect(source).toContain("FUNCTION_ACTION_TOOLTIPS");
+    expect(source).toContain('if (action === "toggle-ui-section")');
+    expect(source).toContain('if (action === "function-guide-open")');
+    expect(source).toContain('"function-guide-open": "Open the Pocket DAW function guide."');
+    expect(source).toContain('"range-loop": "Set the active edit range to the current loop."');
+  });
+
+  it("documents Pocket DAW functions for human and AI helpers", () => {
+    const doc = readFileSync("docs/POCKET_DAW_FUNCTION_REFERENCE.md", "utf8");
+    const catalog = readFileSync("docs/POCKET_DAW_ACTION_CATALOG.md", "utf8");
+    const readme = readFileSync("README.md", "utf8");
+
+    expect(doc).toContain("# Pocket DAW Function Reference");
+    expect(doc).toContain("AI counterpart notes");
+    expect(doc).toContain("docs/POCKET_DAW_ACTION_CATALOG.md");
+    expect(doc).toContain("| Action Catalog |");
+    expect(doc).toContain("| Export Profile Controls |");
+    expect(doc).toContain("| Cut / Copy / Paste / Duplicate |");
+    expect(doc).toContain("Copy/Cut Range");
+    expect(doc).toContain("| Godot Game Pack |");
+    expect(doc).toContain("| Music Focus |");
+    expect(doc).toContain("Current Non-Claims");
+    expect(catalog).toContain("# Pocket DAW Action Catalog");
+    expect(catalog).toContain("| Collect Media | `data-action=collect-media`");
+    expect(catalog).toContain("| Map Drums | `data-action=convert-midi-drums`");
+    expect(catalog).toContain("| Download And Install Update | `data-action=updater-download-install`");
+    expect(catalog).toContain("| Enable Live App Bridge | `data-ai-bridge-enabled`");
+    expect(catalog).toContain("| Rename Marker | `data-marker-rename`");
+    expect(catalog).toContain("| Track Input | `data-track-input`");
+    expect(catalog).toContain("| Melody Track Settings | `data-melody-instrument / data-melody-octave / data-melody-pan / data-melody-mute / data-melody-solo`");
+    expect(catalog).toContain("| Bass Steps, Holds, Slides, Accents | `data-bass-step / data-bass-accent / selected bass step + H/S/T` | H hold / S slide / T tuplet");
+    expect(catalog).toContain("| Enable Automation Lane | `data-automation-enabled`");
+    expect(catalog).toContain("| Range Loop | `data-action=range-loop` |  | Sets the active edit range to the current playback loop boundaries.");
+    expect(catalog).not.toContain("Sets the playback loop to the active edit range.");
+    expect(catalog).not.toContain("data-bass-hold / data-bass-slide");
+    expect(catalog).toContain("| Export Profile Controls | `data-export-profile-setting`");
+    expect(catalog).toContain("| Future Codec Buttons | `data-action=export-full-flac`");
+    expect(catalog).toContain("FUNCTION_ACTION_REFERENCE");
+    expect(readme).toContain("docs/POCKET_DAW_FUNCTION_REFERENCE.md");
+    expect(readme).toContain("docs/POCKET_DAW_ACTION_CATALOG.md");
   });
 
   it("renders editable Pocket Pro EQ controls for selected track FX", () => {
@@ -346,16 +505,25 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).toContain(`data-clip-transform="${clip.id}:transpose"`);
     expect(inspector).toContain(`data-clip-transform="${clip.id}:gain"`);
     expect(inspector).toContain('aria-label="Generated clip stem mutes"');
+    expect(inspector).toContain("Section stem mutes");
+    expect(inspector).toContain("Checked roles are muted only for this generated clip.");
     expect(inspector).toContain(`data-clip-stem-mute="${clip.id}:drums"`);
     expect(inspector).toContain(`data-clip-stem-mute="${clip.id}:bass"`);
     expect(inspector).toContain(`data-clip-stem-mute="${clip.id}:chords"`);
     expect(inspector).toContain(`data-clip-stem-mute="${clip.id}:melody"`);
     expect(inspector).toContain(`data-clip-stem-mute="${clip.id}:guitar"`);
+    expect(inspector).toContain("Mute Drums");
+    expect(inspector).toContain('title="Cut the selected clip to the clipboard"');
+    expect(inspector).toContain('title="Copy the selected clip to the clipboard"');
     expect(inspector).toContain('aria-label="Selected clip edit actions"');
+    expect(inspector).toContain("These edit the selected clip or the active edit range and can be undone.");
+    expect(inspector).toContain('data-action="clip-cut"');
     expect(inspector).toContain('data-action="clip-copy"');
     expect(inspector).toContain('data-action="clip-paste"');
     expect(inspector).toContain('data-action="clip-duplicate"');
     expect(inspector).toContain('data-action="clip-split"');
+    expect(inspector).toContain('data-action="range-copy"');
+    expect(inspector).toContain('data-action="range-cut"');
     expect(inspector).toContain('data-action="trim-start-left"');
     expect(inspector).toContain('data-action="trim-start-right"');
     expect(inspector).toContain('data-action="trim-end-left"');
@@ -614,11 +782,14 @@ describe("Pocket DAW UI rendering", () => {
       "save-project",
       "save-project-as",
       "file-window-open",
+      "clip-cut",
       "clip-copy",
       "clip-paste",
       "clip-duplicate",
       "clip-split",
       "clip-delete",
+      "range-copy",
+      "range-cut",
       "loop-selected",
       "loop-clear",
       "marker-add",
@@ -1468,6 +1639,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(css).toContain("overflow: auto");
     expect(css).toContain("max(280px");
     expect(css).toContain("align-items: start");
+    expect(css).toContain('.app-shell[data-ui-preset="music"] [data-ui-scope~="game"]');
+    expect(css).toContain('.app-shell[data-ui-preset="game-music"] [data-ui-scope~="recording"]');
   });
 
   it("gives record-capable mixer strips enough vertical space for input and FX controls", () => {

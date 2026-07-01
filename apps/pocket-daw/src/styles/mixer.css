@@ -24,6 +24,11 @@
   overflow: hidden;
 }
 
+.mixer.lower-dock.collapsed {
+  grid-template-rows: auto auto;
+  min-height: 112px;
+}
+
 .lower-dock-header {
   display: flex;
   align-items: center;
@@ -32,6 +37,15 @@
   min-width: 0;
   padding-bottom: 4px;
   border-bottom: 1px solid #26314c;
+}
+
+.lower-dock-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  min-width: 0;
 }
 
 .lower-dock-header h2,
@@ -76,6 +90,11 @@
 .lower-dock-body {
   min-width: 0;
   min-height: 0;
+}
+
+.lower-dock-collapsed {
+  display: grid;
+  align-content: start;
 }
 
 .mixer-strips {

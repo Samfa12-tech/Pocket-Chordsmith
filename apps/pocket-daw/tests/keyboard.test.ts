@@ -46,6 +46,9 @@ describe("keyboard command mapping", () => {
     expect(commandFromKeyboardEvent(keyboardEvent("s", { ctrlKey: true }))).toBe("save-project");
     expect(commandFromKeyboardEvent(keyboardEvent("o", { ctrlKey: true }))).toBe("open-file");
     expect(commandFromKeyboardEvent(keyboardEvent("e", { ctrlKey: true }))).toBe("export-wav");
+    expect(commandFromKeyboardEvent(keyboardEvent("c", { ctrlKey: true, shiftKey: true }))).toBe("copy-range");
+    expect(commandFromKeyboardEvent(keyboardEvent("x", { ctrlKey: true, shiftKey: true }))).toBe("cut-range");
+    expect(commandFromKeyboardEvent(keyboardEvent("x", { ctrlKey: true }))).toBe("cut-clip");
     expect(commandFromKeyboardEvent(keyboardEvent("c", { ctrlKey: true }))).toBe("copy-clip");
     expect(commandFromKeyboardEvent(keyboardEvent("v", { ctrlKey: true }))).toBe("paste-clip");
     expect(commandFromKeyboardEvent(keyboardEvent("t"))).toBe("add-track");

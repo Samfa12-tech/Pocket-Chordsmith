@@ -352,6 +352,50 @@ export function copySelectedClip(state: AppState): AppState {
   return { ...state, clipClipboard: JSON.parse(JSON.stringify(clip)), status: `Copied ${clip.name}.` };
 }
 
+export function cutSelectedClip(state: AppState): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === state.selectedClipId);
+  if (!clip) return { ...state, status: "Select a clip to cut." };
+  const next = deleteClip(state.undoStack.present, clip.id);
+  return {
+    ...commitProject({ ...state, clipClipboard: JSON.parse(JSON.stringify(clip)) }, next, `Cut ${clip.name}.`),
+    selectedClipId: next.timeline.clips[0]?.id || null
+  };
+}
+
+export function copySelectedClipRangeCommand(state: AppState): AppState {
+  const result = selectedClipRangeClipboard(state, "copying");
+  if (!result.clip || !result.sourceClip) return { ...state, status: result.status };
+  return {
+    ...state,
+    clipClipboard: result.clip,
+    selectedClipId: result.sourceClip.id,
+    selectedTrackId: result.sourceClip.trackId || state.selectedTrackId,
+    status: `Copied range from ${result.sourceClip.name}.`
+  };
+}
+
+export function cutSelectedClipRangeCommand(state: AppState): AppState {
+  const selection = state.undoStack.present.timeline.selection;
+  const result = selectedClipRangeClipboard(state, "cutting");
+  if (!selection || !result.clip || !result.sourceClip) return { ...state, status: result.status };
+  const deleteResult = result.sourceClip.type === "midi"
+    ? deleteMidiClipRange(state.undoStack.present, result.sourceClip.id, selection.startBar, selection.endBar)
+    : deleteClipRange(state.undoStack.present, result.sourceClip.id, selection.startBar, selection.endBar);
+  if (!deleteResult.changed) {
+    return {
+      ...state,
+      selectedClipId: result.sourceClip.id,
+      selectedTrackId: result.sourceClip.trackId || state.selectedTrackId,
+      status: deleteResult.status
+    };
+  }
+  return {
+    ...commitProject({ ...state, clipClipboard: result.clip }, deleteResult.project, `Cut range from ${result.sourceClip.name}.`),
+    selectedClipId: deleteResult.rightClipId || (deleteResult.deletedClipId ? null : result.sourceClip.id),
+    selectedTrackId: result.sourceClip.trackId || state.selectedTrackId
+  };
+}
+
 export function pasteClipAtPlayhead(state: AppState): AppState {
   if (!state.clipClipboard) return { ...state, status: "Copy a clip before pasting." };
   const startBar = snapProjectBarValue(state.undoStack.present, state.playheadBar, state.snapMode);
@@ -360,6 +404,21 @@ export function pasteClipAtPlayhead(state: AppState): AppState {
     ...commitProject(state, result.project, "Pasted clip at playhead."),
     selectedClipId: result.pastedId
   };
+}
+
+function selectedClipRangeClipboard(state: AppState, verb: "copying" | "cutting"): { clip: Clip | null; sourceClip: Clip | null; status: string } {
+  const selection = state.undoStack.present.timeline.selection;
+  if (!selection) return { clip: null, sourceClip: null, status: `Set an edit range before ${verb} range.` };
+  if (!state.selectedClipId) return { clip: null, sourceClip: null, status: `Select a clip before ${verb} range.` };
+  const sourceClip = state.undoStack.present.timeline.clips.find((item) => item.id === state.selectedClipId) || null;
+  if (!sourceClip) return { clip: null, sourceClip: null, status: `Select a clip before ${verb} range.` };
+  const cropResult = sourceClip.type === "midi"
+    ? cropMidiClipToRange(state.undoStack.present, sourceClip.id, selection.startBar, selection.endBar)
+    : cropClipToRange(state.undoStack.present, sourceClip.id, selection.startBar, selection.endBar);
+  if (!cropResult.changed) return { clip: null, sourceClip, status: cropResult.status };
+  const cropped = cropResult.project.timeline.clips.find((item) => item.id === sourceClip.id);
+  if (!cropped) return { clip: null, sourceClip, status: `The selected clip does not overlap the edit range.` };
+  return { clip: JSON.parse(JSON.stringify(cropped)), sourceClip, status: cropResult.status };
 }
 
 export function toggleTrackMuteCommand(state: AppState, trackId: string): AppState {
