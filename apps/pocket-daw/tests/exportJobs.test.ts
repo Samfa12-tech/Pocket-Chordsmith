@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDemoProject } from "../src/demo/demoProject";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../src/daw/audioClips";
-import { createGameExportManifest, createGamePackDeliveryTargets, createGamePackZipBlob, createSectionLoopExportManifest, createSectionLoopMetadata, createSectionLoopZipBlob, createStemExportManifest, createStemExportPlan, createStemZipBlob, gamePackAudioCodecMetadata, projectForClipRender, projectForSectionLoopRender, projectWithOnlyTracksAudible } from "../src/daw/exportJobs";
+import { buildPortableGamePackSourceProjectFile, createGameExportManifest, createGamePackDeliveryTargets, createGamePackZipBlob, createSectionLoopExportManifest, createSectionLoopMetadata, createSectionLoopZipBlob, createStemExportManifest, createStemExportPlan, createStemZipBlob, gamePackAudioCodecMetadata, projectForClipRender, projectForSectionLoopRender, projectWithOnlyTracksAudible, verifyExportPackageEntries } from "../src/daw/exportJobs";
 import { branchGeneratedDrumsToTracks, cycleDrumBranchStep, DRUM_LANE_DEFS, getDrumLaneMix, setDrumBranchGroupCollapsed } from "../src/daw/drumLanes";
 import { addMediaPoolItem, createMediaPoolItem } from "../src/daw/mediaPool";
 import { addReturnTrack, setTrackSendLevel, setTrackSendMode } from "../src/daw/routing";
@@ -83,12 +83,13 @@ describe("export job helpers", () => {
     project.exportProfiles.find((profile) => profile.id === "stem-wavs")!.sampleRate = 48000;
     project.exportProfiles.find((profile) => profile.id === "stem-wavs")!.settings.channelMode = "stereo";
     project.exportProfiles.find((profile) => profile.id === "stem-wavs")!.settings.normalize = false;
+    project.exportProfiles.find((profile) => profile.id === "stem-wavs")!.settings.dither = "tpdf";
     const progress: string[] = [];
-    const renderProfiles: Array<{ sampleRate?: number; channelMode?: unknown; normalize?: unknown }> = [];
+    const renderProfiles: Array<{ sampleRate?: number; channelMode?: unknown; normalize?: unknown; dither?: unknown }> = [];
     const result = await createStemZipBlob(project, {
       renderWav: async (renderProject) => {
         const wavProfile = renderProject.exportProfiles.find((profile) => profile.id === "full-song-wav");
-        renderProfiles.push({ sampleRate: wavProfile?.sampleRate, channelMode: wavProfile?.settings.channelMode, normalize: wavProfile?.settings.normalize });
+        renderProfiles.push({ sampleRate: wavProfile?.sampleRate, channelMode: wavProfile?.settings.channelMode, normalize: wavProfile?.settings.normalize, dither: wavProfile?.settings.dither });
         return new Blob([`audible:${renderProject.tracks.filter((track) => !track.mute).map((track) => track.id).join(",")}`], { type: "audio/wav" });
       },
       onProgress: (label, detail) => {
@@ -99,6 +100,7 @@ describe("export job helpers", () => {
 
     expect(result.blob.type).toBe("application/zip");
     expect(result.blob.size).toBeGreaterThan(128);
+    expect(result.selfCheck).toMatchObject({ ok: true, checkedFileCount: paths.length, audioFileCount: result.manifest.stems.length });
     expect(paths).toContain("manifests/stem-wavs-manifest.json");
     expect(result.manifest.kind).toBe("stem-wavs");
     expect(result.manifest.stems.every((stem) => paths.includes(stem.packPath))).toBe(true);
@@ -118,11 +120,14 @@ describe("export job helpers", () => {
     expect(result.manifest.artifacts.filter((artifact) => artifact.audio).every((artifact) => artifact.audio?.format === "wav")).toBe(true);
     expect(result.manifest.audio.current.sampleRate).toBe(48000);
     expect(result.manifest.audio.current.normalization).toEqual({ mode: "off" });
+    expect(result.manifest.audio.current.dither).toEqual({ mode: "tpdf", appliesTo: "fixed-point-pcm" });
     expect(result.manifest.artifacts.filter((artifact) => artifact.audio).every((artifact) => artifact.audio?.sampleRate === 48000)).toBe(true);
     expect(result.manifest.artifacts.filter((artifact) => artifact.audio).every((artifact) => artifact.audio?.normalization.mode === "off")).toBe(true);
+    expect(result.manifest.artifacts.filter((artifact) => artifact.audio).every((artifact) => artifact.audio?.dither.mode === "tpdf")).toBe(true);
     expect(new Set(renderProfiles.map((profile) => profile.sampleRate))).toEqual(new Set([48000]));
     expect(new Set(renderProfiles.map((profile) => profile.channelMode))).toEqual(new Set(["stereo"]));
     expect(new Set(renderProfiles.map((profile) => profile.normalize))).toEqual(new Set([false]));
+    expect(new Set(renderProfiles.map((profile) => profile.dither))).toEqual(new Set(["tpdf"]));
     expect(progress.some((item) => item.startsWith("Assembling stem ZIP:"))).toBe(true);
   });
 
@@ -156,6 +161,25 @@ describe("export job helpers", () => {
     expect(loops[0].sourceClipId).toBeTruthy();
   });
 
+  it("calculates section loop metadata with active meter-map seconds", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.meterMap = [
+      { id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" },
+      { id: "meter_3_4", bar: 3, numerator: 3, denominator: 4, source: "manual" }
+    ];
+    const section = project.timeline.clips.find((clip) => clip.type === "generated-section")!;
+    section.startBar = 2;
+    section.barLength = 2;
+
+    const loop = createSectionLoopMetadata(project).find((item) => item.sourceClipId === section.id)!;
+
+    expect(loop.startBar).toBe(2);
+    expect(loop.endBar).toBe(4);
+    expect(loop.lengthSeconds).toBeCloseTo(3.25, 5);
+  });
+
   it("builds a downloadable section-loop ZIP with manifest and deterministic paths", async () => {
     const project = createDemoProject();
     project.exportProfiles.find((profile) => profile.id === "full-song-wav")!.sampleRate = 44100;
@@ -180,6 +204,7 @@ describe("export job helpers", () => {
 
     expect(result.blob.type).toBe("application/zip");
     expect(result.blob.size).toBeGreaterThan(128);
+    expect(result.selfCheck).toMatchObject({ ok: true, checkedFileCount: paths.length, audioFileCount: result.manifest.sectionLoops.length });
     expect(paths).toContain("manifests/section-loops-manifest.json");
     expect(result.manifest.kind).toBe("section-loop-wavs");
     expect(result.manifest.sectionLoops.every((loop) => paths.includes(loop.packPath))).toBe(true);
@@ -304,6 +329,21 @@ describe("export job helpers", () => {
     });
   });
 
+  it("calculates game marker seconds with active meter-map timing", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.meterMap = [
+      { id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" },
+      { id: "meter_3_4", bar: 3, numerator: 3, denominator: 4, source: "manual" }
+    ];
+    project.timeline.markers.push({ id: "metered-cue", bar: 4, name: "Metered Cue", markerType: "game-state", gameState: "combat" });
+
+    const manifest = createGameExportManifest(project, "godot-adaptive-pack");
+
+    expect(manifest.markers.find((marker) => marker.id === "metered-cue")?.seconds).toBeCloseTo(5.25, 5);
+  });
+
   it("describes game-pack delivery targets without claiming target smoke", () => {
     const targets = createGamePackDeliveryTargets();
 
@@ -331,6 +371,11 @@ describe("export job helpers", () => {
 
     expect(result.blob.type).toBe("application/zip");
     expect(result.blob.size).toBeGreaterThan(128);
+    expect(result.selfCheck).toMatchObject({
+      ok: true,
+      checkedFileCount: paths.length,
+      audioFileCount: 1 + result.manifest.stems.length + result.manifest.sectionLoops.length
+    });
     expect(paths).toContain("manifests/web-game-manifest.json");
     expect(paths).toContain(result.manifest.fullMix);
     expect(paths).toContain(result.manifest.sourceProject);
@@ -355,6 +400,34 @@ describe("export job helpers", () => {
     expect(result.manifest.audio.current.normalization).toEqual({ mode: "peak", targetPeak: 0.95 });
     expect(result.manifest.artifacts.filter((artifact) => artifact.audio).every((artifact) => artifact.audio?.sampleRate === 48000)).toBe(true);
     expect(result.manifest.artifacts.filter((artifact) => artifact.audio).every((artifact) => artifact.audio?.normalization.mode === "peak")).toBe(true);
+  });
+
+  it("reports package self-check failures for missing manifest entries", () => {
+    const manifest = createGameExportManifest(createDemoProject(), "web-game-pack");
+    const partialEntries = [
+      { path: manifest.manifestFile, size: 512 },
+      { path: manifest.fullMix, size: 128 }
+    ];
+    const checked = verifyExportPackageEntries({
+      ...manifest,
+      artifacts: manifest.artifacts.map((artifact) => ({
+        ...artifact,
+        sizeBytes: partialEntries.find((entry) => entry.path === artifact.path)?.size ?? null
+      })),
+      sizeSummary: {
+        ...manifest.sizeSummary,
+        expectedFileCount: manifest.artifacts.length,
+        renderedFileCount: partialEntries.length,
+        totalSizeBytes: partialEntries.reduce((sum, entry) => sum + entry.size, 0),
+        missingSizePaths: manifest.artifacts
+          .filter((artifact) => !partialEntries.some((entry) => entry.path === artifact.path))
+          .map((artifact) => artifact.path)
+      }
+    }, partialEntries);
+
+    expect(checked.ok).toBe(false);
+    expect(checked.errors.join("\n")).toContain("Manifest file is missing from ZIP entries");
+    expect(checked.errors.join("\n")).toContain("Size summary renderedFileCount");
   });
 
   it("builds a Godot game-pack ZIP with addon manifest paths and source project", async () => {
@@ -430,14 +503,56 @@ describe("export job helpers", () => {
     expect(manifest.mediaPortability).toMatchObject({
       totalMediaCount: 3,
       audioMediaCount: 3,
+      portableCount: 0,
       copyableExternalCount: 1,
+      cacheOnlyCount: 0,
       blockedCount: 2,
       runtimeOnlyCount: 1,
       missingOrUnresolvedCount: 1,
       needsCollectionOrRelinkCount: 3,
       embeddedSourceProjectPortable: false
     });
+    expect(manifest.sharedMediaPortability).toMatchObject({
+      localReferenceFieldCount: 2,
+      localReferenceItemCount: 2,
+      portableForSharing: false
+    });
     expect(JSON.stringify(manifest.mediaPortability)).not.toContain("C:\\");
+  });
+
+  it("builds portable embedded source projects without collected local provenance", () => {
+    let project = createDemoProject();
+    const collected = createMediaPoolItem({
+      kind: "audio",
+      name: "Collected.wav",
+      uri: "project-media/Collected.wav",
+      metadata: {
+        mediaRefKind: "project",
+        projectRelativePath: "project-media/Collected.wav",
+        originalUri: "C:\\Sessions\\Collected.wav",
+        nativePath: "C:\\Songs\\project-media\\Collected.wav",
+        nativeDecodedCachePath: "C:\\Songs\\project-cache\\native-audio\\imports\\Collected.wav",
+        nativeDecodedCacheRelativePath: "project-cache/native-audio/imports/Collected.wav",
+        lastReloadSourcePath: "C:\\Sessions\\Collected.wav"
+      }
+    });
+    project = addMediaPoolItem(project, collected);
+
+    const sourceProject = buildPortableGamePackSourceProjectFile(project);
+    const parsed = JSON.parse(sourceProject);
+    const media = parsed.mediaPool.find((item: { id: string }) => item.id === collected.id);
+
+    expect(media.uri).toBe("project-media/Collected.wav");
+    expect(media.metadata.projectRelativePath).toBe("project-media/Collected.wav");
+    expect(media.metadata.nativeDecodedCacheRelativePath).toBe("project-cache/native-audio/imports/Collected.wav");
+    expect(sourceProject).not.toContain("C:\\");
+    expect(sourceProject).not.toContain("originalUri");
+    expect(sourceProject).not.toContain("nativePath");
+    expect(sourceProject).not.toContain("lastReloadSourcePath");
+    expect(createGameExportManifest(project, "web-game-pack").sharedMediaPortability).toMatchObject({
+      localReferenceFieldCount: 0,
+      portableForSharing: true
+    });
   });
 
   it("adds manifest warnings for project invariant errors", () => {

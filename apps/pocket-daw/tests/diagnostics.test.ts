@@ -73,8 +73,21 @@ describe("tester diagnostics", () => {
       poolCount: 3,
       externalReferenceCount: 2,
       runtimeOnlyCount: 1,
-      missingCount: 1
+      missingCount: 1,
+      portability: {
+        copyableExternalCount: 1,
+        runtimeOnlyCount: 1,
+        missingOrUnresolvedCount: 1,
+        needsCollectionOrRelinkCount: 3
+      },
+      sharedPortability: {
+        localReferenceFieldCount: 2,
+        localReferenceItemCount: 2,
+        portableForSharing: false
+      }
     });
+    expect(JSON.stringify(payload.media.portability)).not.toContain("file://");
+    expect(JSON.stringify(payload.media.sharedPortability)).not.toContain("file://");
     expect(payload.performance).toBeNull();
     expect(diagnosticsJson(payload)).toContain('"installerOnly": true');
     expect(diagnosticsJson(payload)).toContain('"handoff"');

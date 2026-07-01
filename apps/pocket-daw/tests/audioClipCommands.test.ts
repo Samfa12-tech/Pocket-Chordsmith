@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activateAudioTakeCommand, addClipAutomationPointCommand, applySelectedAudioClipActionCommand, compAudioTakeFromPlayheadCommand, cropSelectedClipToTimelineSelectionCommand, deleteSelectedClipRangeCommand, ensureClipAutomationLaneCommand, rippleDeleteSelectedClipRangeCommand, rippleDeleteTimelineSelectionCommand, setAudioTakeArchivedCommand, setSelectedAudioClipPropertyCommand, setTimelineSelectionRangeCommand, setTimelineSelectionToLoopCommand, splitTimelineSelectionCommand } from "../src/app/commands";
+import { activateAudioTakeCommand, addClipAutomationPointCommand, applySelectedAudioClipActionCommand, compAudioTakeFromPlayheadCommand, cropSelectedClipToTimelineSelectionCommand, deleteSelectedClipRangeCommand, ensureClipAutomationLaneCommand, recordClipAutomationPointCommand, rippleDeleteSelectedClipRangeCommand, rippleDeleteTimelineSelectionCommand, setAudioTakeArchivedCommand, setSelectedAudioClipPropertyCommand, setTimelineSelectionRangeCommand, setTimelineSelectionToLoopCommand, splitTimelineSelectionCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { renderTimelineAudioRegions } from "../src/audio/audioRegions";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
@@ -40,6 +40,52 @@ describe("audio clip edit commands", () => {
     expect(edited.undoStack.past).toHaveLength(2);
     expect(edited.status).toBe("Split 2 clip boundaries at edit range.");
     expect(edited.undoStack.present.mediaPool.find((item) => item.id === imported.item.id)?.uri).toBe(imported.item.uri);
+  });
+
+  it("uses meter-map seconds for audio range edit source offsets", () => {
+    const setup = () => {
+      const state = createInitialState();
+      const empty = createEmptyPocketDawProject();
+      empty.project.bpm = 120;
+      empty.project.timeSig = 4;
+      empty.project.meterMap = [
+        { id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" },
+        { id: "meter_3_4", bar: 3, numerator: 3, denominator: 4, source: "manual" }
+      ];
+      empty.timeline.clips = [];
+      state.undoStack = createUndoStack(empty);
+      const imported = addImportedAudioMedia(empty, {
+        name: "Meter range.wav",
+        uri: "C:\\Audio\\Meter range.wav",
+        mimeType: "audio/wav",
+        durationSeconds: 8,
+        sampleRate: 48000,
+        channels: 1
+      });
+      const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+      state.undoStack = createUndoStack(placed.project);
+      state.selectedClipId = placed.clipId;
+      state.selectedTrackId = placed.trackId;
+      return { state, imported };
+    };
+
+    const splitSetup = setup();
+    const split = splitTimelineSelectionCommand(setTimelineSelectionRangeCommand(splitSetup.state, 3, 5));
+    const splitSegments = split.undoStack.present.timeline.clips
+      .filter((clip) => clip.mediaPoolItemId === splitSetup.imported.item.id)
+      .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+    expect(splitSegments.map((clip) => clip.metadata?.sourceOffsetSeconds)).toEqual([0, 1.75, 4.75]);
+
+    const cropSetup = setup();
+    const cropped = cropSelectedClipToTimelineSelectionCommand(setTimelineSelectionRangeCommand(cropSetup.state, 3, 5));
+    expect(cropped.undoStack.present.timeline.clips.find((clip) => clip.id === cropSetup.state.selectedClipId)?.metadata?.sourceOffsetSeconds).toBe(1.75);
+
+    const deleteSetup = setup();
+    const deleted = deleteSelectedClipRangeCommand(setTimelineSelectionRangeCommand(deleteSetup.state, 3, 5));
+    const deleteSegments = deleted.undoStack.present.timeline.clips
+      .filter((clip) => clip.mediaPoolItemId === deleteSetup.imported.item.id)
+      .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+    expect(deleteSegments.map((clip) => clip.metadata?.sourceOffsetSeconds)).toEqual([0, 4.75]);
   });
 
   it("can copy the loop into the edit range before range splitting", () => {
@@ -219,6 +265,29 @@ describe("audio clip edit commands", () => {
     expect(edited.selectedClipId).toBe(placed.clipId);
     expect(edited.selectedTrackId).toBe(placed.trackId);
     expect(edited.status).toContain("Set Voice.wav duration");
+  });
+
+  it("edits audio clip varispeed rate and pitch through the undoable command path", () => {
+    const state = createInitialState();
+    const imported = addImportedAudioMedia(state.undoStack.present, {
+      name: "Varispeed Voice.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 10,
+      sampleRate: 48000,
+      channels: 1
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    state.undoStack = createUndoStack(placed.project);
+
+    const rated = setSelectedAudioClipPropertyCommand(state, placed.clipId, "playbackRate", 1.5);
+    const pitched = setSelectedAudioClipPropertyCommand(rated, placed.clipId, "pitchSemitones", -12);
+    const clip = pitched.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+    const region = renderTimelineAudioRegions(pitched.undoStack.present, { includeMutedTracks: true }).audioRegions[0];
+
+    expect(clip.metadata?.playbackRate).toBe(1.5);
+    expect(clip.metadata?.pitchSemitones).toBe(-12);
+    expect(region.playbackRate).toBeCloseTo(0.75, 5);
+    expect(pitched.status).toContain("varispeed pitch");
   });
 
   it("activates grouped audio takes on the same track without muting parallel track takes", () => {
@@ -403,6 +472,34 @@ describe("audio clip edit commands", () => {
     expect(edited.status).toContain("gain automation point");
   });
 
+  it("records audio clip gain automation only into prepared lanes", () => {
+    const state = createInitialState();
+    const imported = addImportedAudioMedia(state.undoStack.present, {
+      name: "Voice.wav",
+      uri: "C:\\Audio\\Voice.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 10,
+      sampleRate: 48000,
+      channels: 1
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    state.undoStack = createUndoStack(placed.project);
+    state.selectedClipId = placed.clipId;
+    state.selectedTrackId = placed.trackId;
+    state.playheadBar = 3.5;
+
+    expect(recordClipAutomationPointCommand(state, placed.clipId, "gain", 0.42)).toBe(state);
+
+    const prepared = ensureClipAutomationLaneCommand(state, placed.clipId, "gain");
+    const recorded = recordClipAutomationPointCommand(prepared, placed.clipId, "gain", 0.42, 3.5);
+    const clip = recorded.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+    const lane = recorded.undoStack.present.automation.lanes.find((item) => item.id === clip.automationLaneId)!;
+
+    expect(lane.points).toContainEqual(expect.objectContaining({ bar: 3.5, value: 0.42, curve: "linear" }));
+    expect(recorded.selectedClipId).toBe(placed.clipId);
+    expect(recorded.status).toContain("Recorded Voice.wav gain automation point");
+  });
+
   it("normalizes selected audio clip gain from linked waveform peaks without changing source media", () => {
     const state = createInitialState();
     const imported = addImportedAudioMedia(state.undoStack.present, {
@@ -465,6 +562,122 @@ describe("audio clip edit commands", () => {
     expect(edited.undoStack.past).toHaveLength(1);
     expect(edited.selectedClipId).toBe(placed.clipId);
     expect(edited.status).toContain("Detected 2 transient markers");
+  });
+
+  it("creates and clears source-safe warp markers from analyzed transients", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    const imported = addImportedAudioMedia(state.undoStack.present, {
+      name: "Warp Loop.wav",
+      uri: "C:\\Audio\\Warp Loop.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 6,
+      sampleRate: 48000,
+      channels: 2,
+      metadata: { waveformPeaks: [0.05, 0.72, 0.2, 0.15, 0.86, 0.3] }
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    state.undoStack = createUndoStack(placed.project);
+    state.selectedClipId = placed.clipId;
+    state.selectedTrackId = placed.trackId;
+
+    const analyzed = applySelectedAudioClipActionCommand(state, placed.clipId, "analyze-transients");
+    const warped = applySelectedAudioClipActionCommand(analyzed, placed.clipId, "create-warp-markers");
+    const clip = warped.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+    const media = warped.undoStack.present.mediaPool.find((item) => item.id === imported.item.id)!;
+
+    expect(media.uri).toBe(imported.item.uri);
+    expect(clip.metadata?.audioWarpMarkerCount).toBe(2);
+    expect(clip.metadata?.audioWarpReady).toBe(true);
+    expect(clip.metadata?.audioWarpPlaybackMode).toBe("metadata-only");
+    expect(clip.metadata?.audioWarpEngine).toBe("pending-time-stretch-engine");
+    expect(clip.metadata?.audioWarpMarkers).toEqual([
+      expect.objectContaining({ id: "warp_1", sourceSeconds: 1.5, targetBar: 2.75, targetSeconds: 3.5, source: "transient", locked: true }),
+      expect.objectContaining({ id: "warp_2", sourceSeconds: 4.5, targetBar: 4.25, targetSeconds: 6.5, source: "transient", locked: true })
+    ]);
+    expect(warped.undoStack.past).toHaveLength(2);
+    expect(warped.status).toContain("Created 2 source-safe warp markers");
+    expect(warped.status).toContain("playback stretching is not enabled yet");
+
+    const cleared = applySelectedAudioClipActionCommand(warped, placed.clipId, "clear-warp-markers");
+    const clearedClip = cleared.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+    expect(clearedClip.metadata?.audioWarpMarkers).toEqual([]);
+    expect(clearedClip.metadata?.audioWarpMarkerCount).toBe(0);
+    expect(clearedClip.metadata?.audioWarpReady).toBe(false);
+    expect(cleared.undoStack.past).toHaveLength(3);
+    expect(cleared.status).toContain("Cleared 2 warp markers");
+  });
+
+  it("keeps warp marker creation unavailable until transients are analyzed", () => {
+    const state = createInitialState();
+    const imported = addImportedAudioMedia(state.undoStack.present, {
+      name: "Raw Loop.wav",
+      uri: "C:\\Audio\\Raw Loop.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 6,
+      sampleRate: 48000,
+      channels: 2,
+      metadata: { waveformPeaks: [0.7, 0.1, 0.8] }
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    state.undoStack = createUndoStack(placed.project);
+    state.selectedClipId = placed.clipId;
+    state.selectedTrackId = placed.trackId;
+
+    const edited = applySelectedAudioClipActionCommand(state, placed.clipId, "create-warp-markers");
+
+    expect(edited.undoStack.present).toBe(state.undoStack.present);
+    expect(edited.undoStack.past).toHaveLength(0);
+    expect(edited.status).toContain("Analyze transients");
+  });
+
+  it("retargets source-safe warp markers when audio clips are split and cropped", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    const imported = addImportedAudioMedia(state.undoStack.present, {
+      name: "Warp Edit.wav",
+      uri: "C:\\Audio\\Warp Edit.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 6,
+      sampleRate: 48000,
+      channels: 2,
+      metadata: { waveformPeaks: [0.05, 0.72, 0.2, 0.15, 0.86, 0.3] }
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    state.undoStack = createUndoStack(placed.project);
+    const analyzed = applySelectedAudioClipActionCommand(state, placed.clipId, "analyze-transients");
+    const warped = applySelectedAudioClipActionCommand(analyzed, placed.clipId, "create-warp-markers");
+
+    const split = splitClipAtBar(warped.undoStack.present, placed.clipId, 3);
+    const left = split.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    const right = split.project.timeline.clips.find((item) => item.id === split.rightClipId)!;
+
+    expect(left.metadata?.audioWarpMarkers).toEqual([
+      expect.objectContaining({ sourceSeconds: 1.5, targetBar: 2.75, targetSeconds: 3.5 })
+    ]);
+    expect(right.metadata?.audioWarpMarkers).toEqual([
+      expect.objectContaining({ sourceSeconds: 4.5, targetBar: 4.25, targetSeconds: 6.5 })
+    ]);
+    expect(right.metadata?.audioWarpMarkerCount).toBe(1);
+
+    const cropState = {
+      ...state,
+      undoStack: createUndoStack(warped.undoStack.present),
+      selectedClipId: placed.clipId,
+      selectedTrackId: placed.trackId
+    };
+    const ranged = setTimelineSelectionRangeCommand(cropState, 3, 5);
+    const cropped = cropSelectedClipToTimelineSelectionCommand(ranged);
+    const croppedClip = cropped.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+
+    expect(croppedClip.startBar).toBe(3);
+    expect(croppedClip.metadata?.sourceOffsetSeconds).toBe(2);
+    expect(croppedClip.metadata?.audioWarpMarkers).toEqual([
+      expect.objectContaining({ sourceSeconds: 4.5, targetBar: 4.25, targetSeconds: 6.5 })
+    ]);
+    expect(croppedClip.metadata?.audioWarpMarkerCount).toBe(1);
   });
 
   it("keeps normalize unavailable until an audio clip has waveform peak data", () => {
@@ -675,6 +888,46 @@ describe("audio clip edit commands", () => {
     expect(edited.undoStack.past).toHaveLength(1);
     expect(edited.selectedClipId).toBe(split.rightClipId);
     expect(edited.status).toContain("Created 0.5s overlap crossfade");
+  });
+
+  it("uses active meter-map seconds for overlap crossfade durations", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    state.undoStack.present.project.meterMap = [{ id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" }];
+    const firstImport = addImportedAudioMedia(state.undoStack.present, {
+      name: "First Meter.wav",
+      uri: "C:\\Audio\\First Meter.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 6,
+      sampleRate: 48000,
+      channels: 2
+    });
+    const firstPlaced = placeAudioClipOnTimeline(firstImport.project, firstImport.item.id, 2);
+    const first = firstPlaced.project.timeline.clips.find((item) => item.id === firstPlaced.clipId)!;
+    first.barLength = 1;
+    const secondImport = addImportedAudioMedia(firstPlaced.project, {
+      name: "Second Meter.wav",
+      uri: "C:\\Audio\\Second Meter.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 6,
+      sampleRate: 48000,
+      channels: 2
+    });
+    const secondPlaced = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, firstPlaced.trackId, 2.5);
+    const second = secondPlaced.project.timeline.clips.find((item) => item.id === secondPlaced.clipId)!;
+    second.barLength = 1;
+    state.undoStack = createUndoStack(secondPlaced.project);
+    state.selectedClipId = secondPlaced.clipId;
+    state.selectedTrackId = firstPlaced.trackId;
+
+    const edited = applySelectedAudioClipActionCommand(state, secondPlaced.clipId, "crossfade-overlap");
+    const updatedFirst = edited.undoStack.present.timeline.clips.find((item) => item.id === firstPlaced.clipId)!;
+    const updatedSecond = edited.undoStack.present.timeline.clips.find((item) => item.id === secondPlaced.clipId)!;
+
+    expect(updatedFirst.metadata?.fadeOutSeconds).toBeCloseTo(0.875, 5);
+    expect(updatedSecond.metadata?.fadeInSeconds).toBeCloseTo(0.875, 5);
+    expect(edited.status).toContain("Applied 0.875s crossfade");
   });
 
   it("does not create a crossfade when the selected audio clip has no overlap", () => {

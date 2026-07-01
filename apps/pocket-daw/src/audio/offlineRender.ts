@@ -1,6 +1,6 @@
 import type { PocketDawProject, Track } from "../daw/schema";
 import { trackIsAudible } from "../daw/tracks";
-import { barsToSeconds } from "../daw/timeline";
+import { timelineBarAtSeconds, timelineDurationSeconds } from "../daw/timeline";
 import { renderTimelineEvents } from "./eventRenderer";
 import { audioBufferForRegionPlayback, audioRegionPlaybackWindow, renderTimelineAudioRegions, scheduleAudioRegionEnvelope } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
@@ -9,7 +9,7 @@ import { DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumLaneFxChain, isDrumEven
 import { connectFxChain } from "./fxProcessor";
 import { scheduleInstrumentEvent } from "./instruments";
 import { chordsmithSidechainSettings, isChordsmithSidechainTrigger, scheduleChordsmithSidechainDuck } from "./sidechain";
-import { activeAutomationLaneCount, getAutomatedTrackControls } from "../daw/automation";
+import { activeAutomationLaneCount, getAutomatedFxChains, getAutomatedTrackControls } from "../daw/automation";
 import { activeTrackSendRoutes } from "../daw/routing";
 import {
   CHORDSMITH_LOFI_TEXTURE_OFFLINE,
@@ -22,20 +22,30 @@ const CHORDSMITH_GENERATED_EXPORT_ROLES = new Set(["drums", "bass", "chords", "m
 
 export interface OfflineRenderOptions {
   channelMode?: WavChannelMode;
+  bitDepth?: WavBitDepth;
+  dither?: WavDitherMode;
   includeChordsmithOfflineLofiTexture?: boolean;
   normalizePeak?: boolean;
 }
 
 export type WavChannelMode = "stereo" | "mono";
+export type WavBitDepth = 16 | 24 | 32;
+export type WavDitherMode = "off" | "tpdf";
 const WAV_PEAK_NORMALIZE_TARGET = 0.95;
 
 export async function renderProjectToWavBlob(project: PocketDawProject, options: OfflineRenderOptions = {}): Promise<Blob> {
   const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (!OfflineCtx) throw new Error("Offline WAV rendering is not supported in this browser.");
   const tailSeconds = Number(project.exportProfiles.find((p) => p.id === "full-song-wav")?.settings.tailSeconds ?? 1.2);
-  const duration = barsToSeconds(project.timeline.bars, project.project.bpm, project.project.timeSig) + tailSeconds;
+  const duration = timelineDurationSeconds(project) + tailSeconds;
   const sampleRate = fullSongWavSampleRate(project);
   const ctx = new OfflineCtx(2, Math.ceil(duration * sampleRate), sampleRate);
+  const automatedFxChains = getAutomatedFxChains(project, 1);
+  const automatedTrackFxChain = (track: Track | null | undefined) => {
+    const chain = getTrackFxChain(project, track);
+    return chain ? automatedFxChains.find((item) => item.id === chain.id) || chain : null;
+  };
+  const automatedChainById = (chainId: string | null | undefined) => chainId ? automatedFxChains.find((item) => item.id === chainId) || null : null;
   const master = ctx.createGain();
   const compressor = ctx.createDynamicsCompressor();
   compressor.threshold.value = -16;
@@ -45,7 +55,8 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
   compressor.release.value = 0.1;
   const masterTrack = project.tracks.find((track) => track.role === "master");
   const masterDestination = project.mixer.masterLimiter ? compressor : ctx.destination;
-  connectFxChain(ctx, master, masterDestination, getTrackFxChain(project, masterTrack));
+  const fxAutomation = { project, projectStartSeconds: 0 };
+  connectFxChain(ctx, master, masterDestination, automatedTrackFxChain(masterTrack), fxAutomation);
   if (project.mixer.masterLimiter) compressor.connect(ctx.destination);
   const offlineLofiTexture = options.includeChordsmithOfflineLofiTexture === false ? null : chordsmithOfflineLofiTextureForProject(project);
   if (offlineLofiTexture) scheduleChordsmithOfflineLofiTexture(ctx, master, duration, offlineLofiTexture);
@@ -90,7 +101,7 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
     const duck = sidechainOutputs.get(track.id);
     const postFx = ctx.createGain();
     input.connect(gain);
-    connectFxChain(ctx, gain, postFx, getTrackFxChain(project, track));
+    connectFxChain(ctx, gain, postFx, automatedTrackFxChain(track), fxAutomation);
     if (duck) {
       postFx.connect(duck);
       duck.connect(pan || destination);
@@ -104,7 +115,7 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
   if (drumsOutput) {
     DRUM_LANE_DEFS.forEach((lane) => {
       const input = ctx.createGain();
-      connectFxChain(ctx, input, drumsOutput, getDrumLaneFxChain(project, lane.id));
+      connectFxChain(ctx, input, drumsOutput, automatedChainById(getDrumLaneFxChain(project, lane.id)?.id), fxAutomation);
       drumLaneOutputs.set(lane.id, input);
     });
   }
@@ -141,15 +152,18 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
     const source = ctx.createBufferSource();
     const gain = ctx.createGain();
     source.buffer = audioBufferForRegionPlayback(ctx, cached.buffer, region);
+    source.playbackRate.value = region.playbackRate;
     source.connect(gain);
     gain.connect(output);
     scheduleAudioRegionEnvelope(gain.gain, region, region.startTimeSeconds, 0, playbackWindow.durationSeconds);
-    source.start(region.startTimeSeconds, playbackWindow.sourceOffsetSeconds, playbackWindow.durationSeconds);
+    source.start(region.startTimeSeconds, playbackWindow.sourceOffsetSeconds, playbackWindow.sourceDurationSeconds);
   });
 
   const rendered = await ctx.startRendering();
   return encodeWav(rendered, {
     channelMode: options.channelMode || fullSongWavChannelMode(project),
+    bitDepth: options.bitDepth || fullSongWavBitDepth(project),
+    dither: options.dither || fullSongWavDither(project),
     normalizePeak: options.normalizePeak ?? fullSongWavPeakNormalize(project)
   });
 }
@@ -165,9 +179,19 @@ export function fullSongWavChannelMode(project: PocketDawProject): WavChannelMod
   return mode === "mono" ? "mono" : "stereo";
 }
 
+export function fullSongWavBitDepth(project: PocketDawProject): WavBitDepth {
+  const bitDepth = Number(project.exportProfiles.find((profile) => profile.id === "full-song-wav")?.bitDepth ?? 16);
+  return bitDepth === 32 ? 32 : bitDepth === 24 ? 24 : 16;
+}
+
 export function fullSongWavPeakNormalize(project: PocketDawProject): boolean {
   const normalize = project.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings?.normalize;
   return normalize === true || normalize === "peak";
+}
+
+export function fullSongWavDither(project: PocketDawProject): WavDitherMode {
+  const dither = project.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings?.dither;
+  return dither === "tpdf" ? "tpdf" : "off";
 }
 
 function offlineEventDestination(project: PocketDawProject, event: ReturnType<typeof renderTimelineEvents>[number], output: GainNode, drumLaneOutputs: Map<string, GainNode>): AudioNode {
@@ -255,7 +279,7 @@ function applyOfflineAutomation(project: PocketDawProject, outputs: Map<string, 
   const steps = Math.max(8, Math.ceil(duration / 0.125));
   for (let i = 0; i <= steps; i += 1) {
     const seconds = (duration * i) / steps;
-    const bar = seconds / (60 / project.project.bpm * project.project.timeSig) + 1;
+    const bar = timelineBarAtSeconds(project, seconds);
     project.tracks.forEach((track) => {
       if (track.role === "master") return;
       const output = outputs.get(track.id);
@@ -298,10 +322,13 @@ function outputDestination(project: PocketDawProject, outputs: Map<string, GainN
   return master;
 }
 
-export function encodeWav(buffer: AudioBuffer, options: { channelMode?: WavChannelMode; normalizePeak?: boolean } = {}): Blob {
+export function encodeWav(buffer: AudioBuffer, options: { channelMode?: WavChannelMode; bitDepth?: WavBitDepth; dither?: WavDitherMode; normalizePeak?: boolean } = {}): Blob {
   const channels = options.channelMode === "mono" ? 1 : buffer.numberOfChannels;
+  const bitDepth = normalizeWavBitDepth(options.bitDepth);
+  const bytesPerSample = bitDepth / 8;
+  const audioFormat = bitDepth === 32 ? 3 : 1;
   const sampleRate = buffer.sampleRate;
-  const length = buffer.length * channels * 2;
+  const length = buffer.length * channels * bytesPerSample;
   const out = new ArrayBuffer(44 + length);
   const view = new DataView(out);
   writeAscii(view, 0, "RIFF");
@@ -309,40 +336,58 @@ export function encodeWav(buffer: AudioBuffer, options: { channelMode?: WavChann
   writeAscii(view, 8, "WAVE");
   writeAscii(view, 12, "fmt ");
   view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
+  view.setUint16(20, audioFormat, true);
   view.setUint16(22, channels, true);
   view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * channels * 2, true);
-  view.setUint16(32, channels * 2, true);
-  view.setUint16(34, 16, true);
+  view.setUint32(28, sampleRate * channels * bytesPerSample, true);
+  view.setUint16(32, channels * bytesPerSample, true);
+  view.setUint16(34, bitDepth, true);
   writeAscii(view, 36, "data");
   view.setUint32(40, length, true);
   let offset = 44;
   const data = Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i));
   const gain = options.normalizePeak ? peakNormalizeGainForFloatChannels(data, buffer.length, channels, WAV_PEAK_NORMALIZE_TARGET) : 1;
+  const dither = bitDepth === 32 ? "off" : normalizeWavDither(options.dither);
+  const ditherNoise = dither === "tpdf" ? createTpdfDither(0x5eed_c0de) : null;
   for (let i = 0; i < buffer.length; i += 1) {
     for (let ch = 0; ch < channels; ch += 1) {
-      const sample = Math.max(-1, Math.min(1, (channels === 1 ? monoSampleAt(data, i) : data[ch][i]) * gain));
-      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-      offset += 2;
+      const rawSample = (channels === 1 ? monoSampleAt(data, i) : data[ch][i]) * gain;
+      const sample = bitDepth === 32 ? rawSample : ditheredFixedPointSample(rawSample, bitDepth, ditherNoise);
+      writeWavSample(view, offset, bitDepth, sample);
+      offset += bytesPerSample;
     }
   }
   return new Blob([out], { type: "audio/wav" });
 }
 
-export async function wavBlobWithChannelMode(blob: Blob, channelMode: WavChannelMode, options: { normalizePeak?: boolean } = {}): Promise<Blob> {
-  if (channelMode !== "mono" && !options.normalizePeak) return blob;
+export async function wavBlobWithChannelMode(blob: Blob, channelMode: WavChannelMode, options: { bitDepth?: WavBitDepth; dither?: WavDitherMode; normalizePeak?: boolean } = {}): Promise<Blob> {
+  const targetBitDepth = options.bitDepth;
+  const dither = normalizeWavDither(options.dither);
+  if (channelMode !== "mono" && !options.normalizePeak && dither === "off" && (!targetBitDepth || targetBitDepth === 16)) return blob;
   const source = new Uint8Array(await blob.arrayBuffer());
-  const channelAdjusted = channelMode === "mono" ? downmixPcm16WavToMono(source) : source;
+  const sourceInfo = parseWav(source);
+  if (!sourceInfo) throw new Error("Native WAV export returned a format that cannot be processed.");
+  if (channelMode !== "mono" && !options.normalizePeak && dither === "off" && (!targetBitDepth || targetBitDepth === sourceInfo.bitsPerSample)) return blob;
+  const channelAdjusted = channelMode === "mono" ? downmixWavToMono(source) : source;
   if (!channelAdjusted) throw new Error("Native WAV export returned a format that cannot be downmixed to mono.");
-  const converted = options.normalizePeak ? peakNormalizePcm16Wav(channelAdjusted) : channelAdjusted;
-  if (!converted) throw new Error("Native WAV export returned a PCM format that cannot be peak-normalized.");
+  const normalized = options.normalizePeak ? peakNormalizeWav(channelAdjusted) : channelAdjusted;
+  if (!normalized) throw new Error("Native WAV export returned a format that cannot be peak-normalized.");
+  const converted = targetBitDepth ? convertWavBitDepth(normalized, targetBitDepth, { dither }) : normalized;
+  if (!converted) throw new Error("Native WAV export returned a format that cannot be converted to the requested bit depth.");
   const out = new ArrayBuffer(converted.byteLength);
   new Uint8Array(out).set(converted);
   return new Blob([out], { type: "audio/wav" });
 }
 
 export function downmixPcm16WavToMono(bytes: Uint8Array): Uint8Array | null {
+  return downmixWavToMono(bytes);
+}
+
+export function downmixPcmWavToMono(bytes: Uint8Array): Uint8Array | null {
+  return downmixWavToMono(bytes);
+}
+
+export function downmixWavToMono(bytes: Uint8Array): Uint8Array | null {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (bytes.byteLength < 44 || readAscii(view, 0, 4) !== "RIFF" || readAscii(view, 8, 4) !== "WAVE") return null;
   let offset = 12;
@@ -370,10 +415,11 @@ export function downmixPcm16WavToMono(bytes: Uint8Array): Uint8Array | null {
   const channels = view.getUint16(fmtOffset + 2, true);
   const sampleRate = view.getUint32(fmtOffset + 4, true);
   const bitsPerSample = view.getUint16(fmtOffset + 14, true);
-  if (audioFormat !== 1 || bitsPerSample !== 16 || channels < 1) return null;
+  const bytesPerSample = bitsPerSample / 8;
+  if (!isSupportedWavFormat(audioFormat, bitsPerSample) || channels < 1) return null;
   if (channels === 1) return bytes;
-  const frameCount = Math.floor(dataSize / (channels * 2));
-  const monoDataSize = frameCount * 2;
+  const frameCount = Math.floor(dataSize / (channels * bytesPerSample));
+  const monoDataSize = frameCount * bytesPerSample;
   const out = new ArrayBuffer(44 + monoDataSize);
   const outView = new DataView(out);
   writeAscii(outView, 0, "RIFF");
@@ -381,40 +427,79 @@ export function downmixPcm16WavToMono(bytes: Uint8Array): Uint8Array | null {
   writeAscii(outView, 8, "WAVE");
   writeAscii(outView, 12, "fmt ");
   outView.setUint32(16, 16, true);
-  outView.setUint16(20, 1, true);
+  outView.setUint16(20, audioFormat, true);
   outView.setUint16(22, 1, true);
   outView.setUint32(24, sampleRate, true);
-  outView.setUint32(28, sampleRate * 2, true);
-  outView.setUint16(32, 2, true);
-  outView.setUint16(34, 16, true);
+  outView.setUint32(28, sampleRate * bytesPerSample, true);
+  outView.setUint16(32, bytesPerSample, true);
+  outView.setUint16(34, bitsPerSample, true);
   writeAscii(outView, 36, "data");
   outView.setUint32(40, monoDataSize, true);
   let outOffset = 44;
   for (let frame = 0; frame < frameCount; frame += 1) {
     let sum = 0;
     for (let channel = 0; channel < channels; channel += 1) {
-      sum += view.getInt16(dataOffset + (frame * channels + channel) * 2, true);
+      sum += readWavSample(view, dataOffset + (frame * channels + channel) * bytesPerSample, audioFormat, bitsPerSample);
     }
-    outView.setInt16(outOffset, Math.max(-32768, Math.min(32767, Math.round(sum / channels))), true);
-    outOffset += 2;
+    if (audioFormat === 3) writeWavSample(outView, outOffset, bitsPerSample as WavBitDepth, sum / channels);
+    else writePcmInteger(outView, outOffset, bitsPerSample, Math.round(sum / channels));
+    outOffset += bytesPerSample;
   }
   return new Uint8Array(out);
 }
 
 export function peakNormalizePcm16Wav(bytes: Uint8Array, targetPeak = WAV_PEAK_NORMALIZE_TARGET): Uint8Array | null {
-  const parsed = parsePcm16Wav(bytes);
+  return peakNormalizePcmWav(bytes, targetPeak);
+}
+
+export function peakNormalizePcmWav(bytes: Uint8Array, targetPeak = WAV_PEAK_NORMALIZE_TARGET): Uint8Array | null {
+  return peakNormalizeWav(bytes, targetPeak);
+}
+
+export function peakNormalizeWav(bytes: Uint8Array, targetPeak = WAV_PEAK_NORMALIZE_TARGET): Uint8Array | null {
+  const parsed = parseWav(bytes);
   if (!parsed) return null;
-  const peak = pcm16Peak(parsed.view, parsed.dataOffset, parsed.dataSize);
+  const peak = wavPeak(parsed.view, parsed.dataOffset, parsed.dataSize, parsed.audioFormat, parsed.bitsPerSample);
   if (peak <= 0) return bytes;
-  const gain = targetPeak * 32767 / peak;
+  const gain = parsed.audioFormat === 3 ? targetPeak / peak : targetPeak * pcmMaxPositive(parsed.bitsPerSample) / peak;
   if (!Number.isFinite(gain) || gain <= 0 || Math.abs(gain - 1) < 0.000001) return bytes;
   const out = new Uint8Array(bytes);
   const outView = new DataView(out.buffer, out.byteOffset, out.byteLength);
-  for (let offset = parsed.dataOffset; offset + 1 < parsed.dataOffset + parsed.dataSize; offset += 2) {
-    const sample = parsed.view.getInt16(offset, true);
-    outView.setInt16(offset, Math.max(-32768, Math.min(32767, Math.round(sample * gain))), true);
+  const bytesPerSample = parsed.bitsPerSample / 8;
+  for (let offset = parsed.dataOffset; offset + bytesPerSample - 1 < parsed.dataOffset + parsed.dataSize; offset += bytesPerSample) {
+    const sample = readWavSample(parsed.view, offset, parsed.audioFormat, parsed.bitsPerSample);
+    if (parsed.audioFormat === 3) writeWavSample(outView, offset, parsed.bitsPerSample, sample * gain);
+    else writePcmInteger(outView, offset, parsed.bitsPerSample, Math.round(sample * gain));
   }
   return out;
+}
+
+export function convertPcmWavBitDepth(bytes: Uint8Array, targetBitDepth: WavBitDepth): Uint8Array | null {
+  return convertWavBitDepth(bytes, targetBitDepth);
+}
+
+export function convertWavBitDepth(bytes: Uint8Array, targetBitDepth: WavBitDepth, options: { dither?: WavDitherMode } = {}): Uint8Array | null {
+  const parsed = parseWav(bytes);
+  if (!parsed) return null;
+  const dither = targetBitDepth === 32 ? "off" : normalizeWavDither(options.dither);
+  if (parsed.bitsPerSample === targetBitDepth && dither === "off") return bytes;
+  const sourceBytesPerSample = parsed.bitsPerSample / 8;
+  const targetBytesPerSample = targetBitDepth / 8;
+  const frameSamples = Math.floor(parsed.dataSize / sourceBytesPerSample);
+  const dataSize = frameSamples * targetBytesPerSample;
+  const out = new ArrayBuffer(44 + dataSize);
+  const outView = new DataView(out);
+  writeWavHeader(outView, parsed.sampleRate, parsed.channels, targetBitDepth, dataSize);
+  let outOffset = 44;
+  const ditherNoise = dither === "tpdf" ? createTpdfDither(0xdecaf_bad) : null;
+  for (let offset = parsed.dataOffset; offset + sourceBytesPerSample - 1 < parsed.dataOffset + parsed.dataSize; offset += sourceBytesPerSample) {
+    const sample = parsed.audioFormat === 3
+      ? readWavSample(parsed.view, offset, parsed.audioFormat, parsed.bitsPerSample)
+      : readPcmSample(parsed.view, offset, parsed.bitsPerSample) / pcmMaxPositive(parsed.bitsPerSample);
+    writeWavSample(outView, outOffset, targetBitDepth, targetBitDepth === 32 ? sample : ditheredFixedPointSample(sample, targetBitDepth, ditherNoise));
+    outOffset += targetBytesPerSample;
+  }
+  return new Uint8Array(out);
 }
 
 function peakNormalizeGainForFloatChannels(channels: Float32Array[], length: number, outputChannels: number, targetPeak: number): number {
@@ -430,15 +515,16 @@ function peakNormalizeGainForFloatChannels(channels: Float32Array[], length: num
   return Number.isFinite(gain) && gain > 0 ? gain : 1;
 }
 
-function pcm16Peak(view: DataView, dataOffset: number, dataSize: number): number {
+function wavPeak(view: DataView, dataOffset: number, dataSize: number, audioFormat: number, bitsPerSample: number): number {
   let peak = 0;
-  for (let offset = dataOffset; offset + 1 < dataOffset + dataSize; offset += 2) {
-    peak = Math.max(peak, Math.abs(view.getInt16(offset, true)));
+  const bytesPerSample = bitsPerSample / 8;
+  for (let offset = dataOffset; offset + bytesPerSample - 1 < dataOffset + dataSize; offset += bytesPerSample) {
+    peak = Math.max(peak, Math.abs(readWavSample(view, offset, audioFormat, bitsPerSample)));
   }
   return peak;
 }
 
-function parsePcm16Wav(bytes: Uint8Array): { view: DataView; dataOffset: number; dataSize: number } | null {
+function parseWav(bytes: Uint8Array): { view: DataView; dataOffset: number; dataSize: number; sampleRate: number; channels: number; audioFormat: 1 | 3; bitsPerSample: WavBitDepth } | null {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (bytes.byteLength < 44 || readAscii(view, 0, 4) !== "RIFF" || readAscii(view, 8, 4) !== "WAVE") return null;
   let offset = 12;
@@ -463,9 +549,11 @@ function parsePcm16Wav(bytes: Uint8Array): { view: DataView; dataOffset: number;
   }
   if (fmtOffset < 0 || fmtSize < 16 || dataOffset < 0) return null;
   const audioFormat = view.getUint16(fmtOffset, true);
+  const channels = view.getUint16(fmtOffset + 2, true);
+  const sampleRate = view.getUint32(fmtOffset + 4, true);
   const bitsPerSample = view.getUint16(fmtOffset + 14, true);
-  if (audioFormat !== 1 || bitsPerSample !== 16) return null;
-  return { view, dataOffset, dataSize };
+  if (!isSupportedWavFormat(audioFormat, bitsPerSample) || channels < 1) return null;
+  return { view, dataOffset, dataSize, sampleRate, channels, audioFormat: audioFormat as 1 | 3, bitsPerSample: bitsPerSample as WavBitDepth };
 }
 
 function monoSampleAt(channels: Float32Array[], index: number): number {
@@ -481,6 +569,96 @@ function readAscii(view: DataView, offset: number, length: number): string {
 
 function writeAscii(view: DataView, offset: number, text: string) {
   for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i));
+}
+
+function writeWavHeader(view: DataView, sampleRate: number, channels: number, bitDepth: WavBitDepth, dataSize: number) {
+  const bytesPerSample = bitDepth / 8;
+  const audioFormat = bitDepth === 32 ? 3 : 1;
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, audioFormat, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * channels * bytesPerSample, true);
+  view.setUint16(32, channels * bytesPerSample, true);
+  view.setUint16(34, bitDepth, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, dataSize, true);
+}
+
+function isSupportedPcmBitDepth(value: number): value is WavBitDepth {
+  return value === 16 || value === 24 || value === 32;
+}
+
+function isSupportedWavFormat(audioFormat: number, bitsPerSample: number): boolean {
+  return (audioFormat === 1 && (bitsPerSample === 16 || bitsPerSample === 24)) || (audioFormat === 3 && bitsPerSample === 32);
+}
+
+function normalizeWavBitDepth(value: unknown): WavBitDepth {
+  return Number(value) === 32 ? 32 : Number(value) === 24 ? 24 : 16;
+}
+
+function normalizeWavDither(value: unknown): WavDitherMode {
+  return value === "tpdf" ? "tpdf" : "off";
+}
+
+function ditheredFixedPointSample(sample: number, bitDepth: WavBitDepth, ditherNoise: (() => number) | null): number {
+  const unclipped = ditherNoise && bitDepth !== 32 ? sample + ditherNoise() / pcmMaxPositive(bitDepth) : sample;
+  return Math.max(-1, Math.min(1, unclipped));
+}
+
+function createTpdfDither(seed: number): () => number {
+  let state = seed >>> 0;
+  const next = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0xffffffff;
+  };
+  return () => next() - next();
+}
+
+function pcmMaxPositive(bitsPerSample: number): number {
+  return bitsPerSample === 24 ? 0x7fffff : 0x7fff;
+}
+
+function pcmMinNegative(bitsPerSample: number): number {
+  return bitsPerSample === 24 ? -0x800000 : -0x8000;
+}
+
+function readPcmSample(view: DataView, offset: number, bitsPerSample: number): number {
+  if (bitsPerSample === 24) {
+    const raw = view.getUint8(offset) | (view.getUint8(offset + 1) << 8) | (view.getUint8(offset + 2) << 16);
+    return raw & 0x800000 ? raw - 0x1000000 : raw;
+  }
+  return view.getInt16(offset, true);
+}
+
+function readWavSample(view: DataView, offset: number, audioFormat: number, bitsPerSample: number): number {
+  if (audioFormat === 3 && bitsPerSample === 32) return view.getFloat32(offset, true);
+  return readPcmSample(view, offset, bitsPerSample);
+}
+
+function writeWavSample(view: DataView, offset: number, bitsPerSample: WavBitDepth, sample: number) {
+  if (bitsPerSample === 32) {
+    view.setFloat32(offset, sample, true);
+    return;
+  }
+  const scaled = sample < 0 ? sample * Math.abs(pcmMinNegative(bitsPerSample)) : sample * pcmMaxPositive(bitsPerSample);
+  writePcmInteger(view, offset, bitsPerSample, Math.round(scaled));
+}
+
+function writePcmInteger(view: DataView, offset: number, bitsPerSample: number, sample: number) {
+  const value = Math.max(pcmMinNegative(bitsPerSample), Math.min(pcmMaxPositive(bitsPerSample), Math.round(sample)));
+  if (bitsPerSample === 24) {
+    const unsigned = value < 0 ? value + 0x1000000 : value;
+    view.setUint8(offset, unsigned & 0xff);
+    view.setUint8(offset + 1, (unsigned >> 8) & 0xff);
+    view.setUint8(offset + 2, (unsigned >> 16) & 0xff);
+    return;
+  }
+  view.setInt16(offset, value, true);
 }
 
 function clamp01(value: unknown): number {

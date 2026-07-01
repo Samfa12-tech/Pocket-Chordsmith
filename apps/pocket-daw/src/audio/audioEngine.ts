@@ -1,7 +1,7 @@
 import type { PocketDawProject, Track } from "../daw/schema";
 import { cloneProject } from "../daw/dawProject";
 import { trackIsAudible } from "../daw/tracks";
-import { barsToSeconds, secondsToBars } from "../daw/timeline";
+import { timelineBarAtSeconds, timelineDurationSeconds, timelineSecondsAtBar } from "../daw/timeline";
 import { renderTimelineEvents, type RenderedEvent } from "./eventRenderer";
 import { audioBufferForRegionPlayback, audioRegionPlaybackWindow, renderTimelineAudioRegions, scheduleAudioRegionEnvelope, type AudioRegion } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
@@ -10,7 +10,7 @@ import { DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumLaneFxChain, isDrumEven
 import { connectFxChain } from "./fxProcessor";
 import { scheduleInstrumentEvent } from "./instruments";
 import { chordsmithSidechainSettings, isChordsmithSidechainTrigger, scheduleChordsmithSidechainDuck } from "./sidechain";
-import { activeAutomationLaneCount, getAutomatedTrackControls } from "../daw/automation";
+import { activeAutomationLaneCount, getAutomatedFxChains, getAutomatedTrackControls } from "../daw/automation";
 import { activeTrackSendRoutes } from "../daw/routing";
 import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioAsset, type NativeAudioStartResult, type NativeAudioStatus } from "../native/audioPlayback";
 import type { RecordingNativePlaybackAnchor } from "../app/state";
@@ -101,8 +101,8 @@ interface NativeRestartRequest {
 export function calculateLoopSeekSeconds(project: PocketDawProject, currentSeconds: number): number | null {
   if (!project.timeline.loop.enabled) return null;
   const loop = project.timeline.loop;
-  const start = barsToSeconds(loop.startBar - 1, project.project.bpm, project.project.timeSig);
-  const end = barsToSeconds(loop.endBar - 1, project.project.bpm, project.project.timeSig);
+  const start = timelineSecondsAtBar(project, loop.startBar);
+  const end = timelineSecondsAtBar(project, loop.endBar);
   if (end <= start || currentSeconds < end) return null;
   return start;
 }
@@ -383,7 +383,7 @@ export class AudioEngine {
 
     const output = this.trackOutputs.get(track.id);
     if (!output) return true;
-    const currentBar = secondsToBars(this.currentSeconds(), this.project.project.bpm, this.project.project.timeSig) + 1;
+    const currentBar = this.barAtSeconds(this.currentSeconds());
     const controls = getAutomatedTrackControls(this.project, track, currentBar);
     output.gain.gain.setTargetAtTime(trackIsAudible(track, this.project.tracks) ? controls.volume : 0, now, 0.018);
     if (output.pan) output.pan.pan.setTargetAtTime(controls.pan, now, 0.018);
@@ -497,7 +497,7 @@ export class AudioEngine {
   }
 
   seekToBar(bar: number) {
-    const seconds = barsToSeconds(Math.max(0, bar - 1), this.project.project.bpm, this.project.project.timeSig);
+    const seconds = timelineSecondsAtBar(this.project, bar);
     this.seek(seconds);
   }
 
@@ -930,9 +930,8 @@ export class AudioEngine {
   private nativeLoopBoundsSeconds(): { startSeconds: number; endSeconds: number; lengthSeconds: number } | null {
     const loop = this.project.timeline.loop;
     if (!loop?.enabled) return null;
-    const secondsPerBar = barsToSeconds(1, this.project.project.bpm, this.project.project.timeSig);
-    const startSeconds = Math.max(0, (loop.startBar - 1) * secondsPerBar);
-    const endSeconds = Math.max(startSeconds, (loop.endBar - 1) * secondsPerBar);
+    const startSeconds = timelineSecondsAtBar(this.project, loop.startBar);
+    const endSeconds = Math.max(startSeconds, timelineSecondsAtBar(this.project, loop.endBar));
     const lengthSeconds = endSeconds - startSeconds;
     if (lengthSeconds <= 0) return null;
     return { startSeconds, endSeconds, lengthSeconds };
@@ -1070,7 +1069,7 @@ export class AudioEngine {
   }
 
   private nativeRenderCacheClipIdsNear(seconds: number, windowBars: number): Set<string> {
-    const startBar = secondsToBars(Math.max(0, seconds), this.project.project.bpm, this.project.project.timeSig) + 1;
+    const startBar = this.barAtSeconds(Math.max(0, seconds));
     const endBar = startBar + Math.max(1, windowBars);
     const clipIds = new Set<string>();
     this.project.timeline.clips.forEach((clip) => {
@@ -1247,7 +1246,7 @@ export class AudioEngine {
 
   private syncNativeMixerControls(seconds = this.currentSeconds(), force = false) {
     if (this.playbackBackend !== "native-cpal" && this.playbackBackend !== "native-cpal-paused") return;
-    const currentBar = secondsToBars(seconds, this.project.project.bpm, this.project.project.timeSig) + 1;
+    const currentBar = this.barAtSeconds(seconds);
     this.project.tracks.forEach((track) => {
       const controls = getAutomatedTrackControls(this.project, track, currentBar);
       const signature = `${controls.volume.toFixed(4)}:${controls.pan.toFixed(4)}:${track.mute ? 1 : 0}:${track.solo ? 1 : 0}`;
@@ -1298,7 +1297,7 @@ export class AudioEngine {
     this.maybePreloadUpcomingNativePlaybackCachePayloadWindow(current);
     this.maybeAdvanceNativePlaybackCachePayloadWindow(current);
     this.maybeScheduleProgressiveNativeRenderCacheRefresh(current);
-    const songEnd = barsToSeconds(this.project.timeline.bars, this.project.project.bpm, this.project.project.timeSig) + 0.4;
+    const songEnd = timelineDurationSeconds(this.project) + 0.4;
     if (!this.project.timeline.loop.enabled && current > songEnd) this.stop();
     else this.emitTick();
   }
@@ -1341,10 +1340,11 @@ export class AudioEngine {
   }
 
   private nativeRenderCacheTimeWindow(seconds: number, windowBars: number): { startSeconds: number; endSeconds: number } {
-    const secondsPerBar = barsToSeconds(1, this.project.project.bpm, this.project.project.timeSig);
-    const duration = Math.max(secondsPerBar, barsToSeconds(Math.max(1, windowBars), this.project.project.bpm, this.project.project.timeSig));
     const startSeconds = Math.max(0, seconds - 0.15);
-    return { startSeconds, endSeconds: startSeconds + duration };
+    const startBar = this.barAtSeconds(startSeconds);
+    const endSeconds = timelineSecondsAtBar(this.project, startBar + Math.max(1, windowBars));
+    const fallbackDuration = Math.max(0, endSeconds - timelineSecondsAtBar(this.project, startBar));
+    return { startSeconds, endSeconds: Math.max(startSeconds + fallbackDuration * 0.25, endSeconds) };
   }
 
   private refreshNativePositionEstimate(estimatedSeconds: number) {
@@ -1432,7 +1432,14 @@ export class AudioEngine {
     this.disposeMixer();
     this.trackOutputs.clear();
     this.drumLaneOutputs.clear();
-    const currentBar = secondsToBars(this.currentSeconds(), this.project.project.bpm, this.project.project.timeSig) + 1;
+    const currentBar = this.barAtSeconds(this.currentSeconds());
+    const projectStartSeconds = this.currentSeconds();
+    const automatedFxChains = getAutomatedFxChains(this.project, currentBar);
+    const fxAutomation = { project: this.project, projectStartSeconds };
+    const automatedTrackFxChain = (track: Track) => {
+      const chain = getTrackFxChain(this.project, track);
+      return chain ? automatedFxChains.find((item) => item.id === chain.id) || chain : null;
+    };
     this.project.tracks.forEach((track) => {
       if (track.role === "master") {
         this.master!.gain.setTargetAtTime(track.volume, this.ctx!.currentTime, 0.02);
@@ -1463,7 +1470,7 @@ export class AudioEngine {
       if (track.role === "master") return;
       const output = this.trackOutputs.get(track.id);
       if (!output) return;
-      const fx = connectFxChain(this.ctx!, output.gain, output.analyser, getTrackFxChain(this.project, track));
+      const fx = connectFxChain(this.ctx!, output.gain, output.analyser, automatedTrackFxChain(track), fxAutomation);
       output.input.connect(output.gain);
       const destination = this.outputDestination(track);
       const postFxOutput: AudioNode = output.sidechain || output.analyser;
@@ -1485,12 +1492,12 @@ export class AudioEngine {
         if (output.pan) safelyDisconnect(output.pan);
       };
     });
-    this.configureDrumLaneOutputs();
+    this.configureDrumLaneOutputs(automatedFxChains, fxAutomation);
   }
 
   private connectTrackSends(preFaderSource: AudioNode, postFaderSource: AudioNode, track: Track): Array<() => void> {
     if (!this.ctx) return [];
-    const currentBar = secondsToBars(this.currentSeconds(), this.project.project.bpm, this.project.project.timeSig) + 1;
+    const currentBar = this.barAtSeconds(this.currentSeconds());
     const sourceOutput = this.trackOutputs.get(track.id);
     return activeTrackSendRoutes(this.project, track, currentBar).flatMap((send) => {
       const target = this.trackOutputs.get(send.returnTrackId);
@@ -1505,12 +1512,16 @@ export class AudioEngine {
     });
   }
 
-  private configureDrumLaneOutputs() {
+  private configureDrumLaneOutputs(
+    automatedFxChains = getAutomatedFxChains(this.project, this.barAtSeconds(this.currentSeconds())),
+    fxAutomation = { project: this.project, projectStartSeconds: this.currentSeconds() }
+  ) {
     const drumsOutput = this.trackOutputs.get("drums");
     if (!this.ctx || !drumsOutput) return;
     DRUM_LANE_DEFS.forEach((lane) => {
       const input = this.ctx!.createGain();
-      const fx = connectFxChain(this.ctx!, input, drumsOutput.input, getDrumLaneFxChain(this.project, lane.id));
+      const rawChain = getDrumLaneFxChain(this.project, lane.id);
+      const fx = connectFxChain(this.ctx!, input, drumsOutput.input, rawChain ? automatedFxChains.find((item) => item.id === rawChain.id) || rawChain : null, fxAutomation);
       this.drumLaneOutputs.set(lane.id, {
         input,
         cleanup: () => {
@@ -1522,7 +1533,7 @@ export class AudioEngine {
   }
 
   private updateTrackOutputControls(now: number) {
-    const currentBar = secondsToBars(this.currentSeconds(), this.project.project.bpm, this.project.project.timeSig) + 1;
+    const currentBar = this.barAtSeconds(this.currentSeconds());
     this.project.tracks.forEach((track) => {
       if (track.role === "master") return;
       const output = this.trackOutputs.get(track.id);
@@ -1585,7 +1596,7 @@ export class AudioEngine {
       if (region.startTimeSeconds + region.durationSeconds >= this.currentSeconds() - 0.045) this.scheduleAudioRegion(region, this.currentSeconds());
       this.nextAudioRegionIndex += 1;
     }
-    const songEnd = barsToSeconds(this.project.timeline.bars, this.project.project.bpm, this.project.project.timeSig) + 0.4;
+    const songEnd = timelineDurationSeconds(this.project) + 0.4;
     if (!this.project.timeline.loop.enabled && current > songEnd) this.stop();
     else this.emitTick();
   }
@@ -1661,11 +1672,12 @@ export class AudioEngine {
     const source = this.ctx.createBufferSource();
     const gain = this.ctx.createGain();
     source.buffer = audioBufferForRegionPlayback(this.ctx, cached.buffer, region);
+    source.playbackRate.value = region.playbackRate;
     source.connect(gain);
     gain.connect(output.input);
     const when = this.startedAt + Math.max(region.startTimeSeconds, currentSeconds);
     scheduleAudioRegionEnvelope(gain.gain, region, Math.max(this.ctx.currentTime, when), sourceElapsed, playbackWindow.durationSeconds);
-    source.start(Math.max(this.ctx.currentTime, when), playbackWindow.sourceOffsetSeconds, playbackWindow.durationSeconds);
+    source.start(Math.max(this.ctx.currentTime, when), playbackWindow.sourceOffsetSeconds, playbackWindow.sourceDurationSeconds);
     source.onended = () => {
       safelyDisconnect(source);
       safelyDisconnect(gain);
@@ -1717,7 +1729,7 @@ export class AudioEngine {
 
   private updateAutomationControls(seconds: number) {
     if (!this.ctx || !activeAutomationLaneCount(this.project)) return;
-    const bar = secondsToBars(seconds, this.project.project.bpm, this.project.project.timeSig) + 1;
+    const bar = this.barAtSeconds(seconds);
     this.project.tracks.forEach((track) => {
       if (track.role === "master") return;
       const output = this.trackOutputs.get(track.id);
@@ -1788,8 +1800,12 @@ export class AudioEngine {
     this.onTick({
       playing: this.playing,
       seconds,
-      bar: secondsToBars(seconds, this.project.project.bpm, this.project.project.timeSig) + 1
+      bar: this.barAtSeconds(seconds)
     });
+  }
+
+  private barAtSeconds(seconds: number): number {
+    return timelineBarAtSeconds(this.project, seconds);
   }
 }
 

@@ -11,6 +11,7 @@ import {
 import { basename, dirname, join, relative } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
 import { hashArtifacts, relativeArtifactPath, walkFiles, writeChecksumFile } from "./hash-release-artifacts.mjs";
+import { assertReleaseCandidateTruth } from "./verify-release-candidate-truth.mjs";
 import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
@@ -37,6 +38,7 @@ const INSTALLERS_DIR = join(RELEASES_DIR, "installers");
 const UPDATER_ENDPOINT = "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json";
 
 export async function packageItchRelease({ buildNative = process.env.POCKET_DAW_SKIP_NATIVE_BUILD !== "1" } = {}) {
+  assertReleaseCandidateTruth(ROOT);
   if (buildNative) run("npm", ["run", "tauri:build:installers"]);
 
   rmCurrentVersionReleaseFiles();
@@ -349,7 +351,7 @@ function knownLimitations() {
     "Full send/return processing and advanced pro DAW features are future work.",
     "Godot/web game-pack exports build ZIPs with manifest metadata, source project JSON and rendered audio, but still need target-project smoke testing before calling them production pipeline exports.",
     "Godot editor sample preview is still an audition path, not exact DAW/Chordsmith/DJ synth parity; use DAW game-pack rendered audio for parity checks.",
-    "Stem export is sequential and not yet a single bundled stem ZIP.",
+    "Stem WAV ZIP export is a single manifest-backed ZIP in current source/current candidate, generated sequentially; treat it as release-smoked only after the exact installer checklist confirms playable/readable stems.",
     "Native cache hydration reads valid project-cache/native-audio WAV entries when source hashes match; stale, invalid or partial generated-stem cache groups are skipped.",
     "Manual native-cache builds are intended to override generated-track playback until a source-changing edit invalidates the source hash; treat any continued procedural generated-track playback after a successful cache build as a bug.",
     "Automation is limited to first-pass track volume and pan lanes.",
@@ -377,7 +379,7 @@ ${artifactTable}
 
 ## Short Description
 
-Pocket DAW lets you import Pocket Chordsmith songs, arrange sections on a desktop timeline, play back generated parts, import audio/MIDI, and export WAV, MIDI, stem WAVs and Godot/web game-pack ZIPs.
+Pocket DAW lets you import Pocket Chordsmith songs, arrange sections on a desktop timeline, play back generated parts, import audio/MIDI, and export WAV/MIDI. Current source/current candidate also includes stem WAV, section-loop and Godot/web game-pack ZIP builders; call those release-smoked only after the exact installer checklist passes.
 
 ## Features
 

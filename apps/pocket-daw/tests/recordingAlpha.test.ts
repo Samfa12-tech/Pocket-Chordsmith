@@ -4,6 +4,7 @@ import { migratePocketDawProject } from "../src/compatibility/migrations";
 import { addImportedAudioMedia, placeAudioClipOnTrack, placeRecordingClipOnTrack } from "../src/daw/audioClips";
 import { buildPocketDawProjectFile } from "../src/daw/dawProject";
 import { addTrackToProject } from "../src/daw/tracks";
+import { createAutomationLane } from "../src/daw/automation";
 import { createDemoProject } from "../src/demo/demoProject";
 import {
   buildLoopbackCalibrationReport,
@@ -56,6 +57,56 @@ describe("recording alpha foundations", () => {
     expect(first.clicks.map((click) => click.beatIndex)).toEqual([0, 1]);
     expect(afterLoop.clicks.map((click) => click.beatIndex)).toEqual([0, 1]);
     expect(afterLoop.clicks[0]).toMatchObject({ bar: 1, beat: 1, accented: true });
+  });
+
+  it("generates metronome timing through project tempo automation", () => {
+    let project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.metronome = { enabled: true, countInBars: 1, volume: 0.55 };
+    project = createAutomationLane(project, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [{ bar: 1, value: 60, curve: "hold" }]
+    }).project;
+
+    const clicks = buildMetronomeClicks(project, 4, 4);
+    const schedule = buildTransportMetronomeSchedule(project, 4.02, null, 2.2);
+
+    expect(countInSeconds(project)).toBeCloseTo(4, 5);
+    expect(clicks.map((click) => click.timeSeconds)).toEqual([4, 5, 6, 7]);
+    expect(clicks[0]).toMatchObject({ beatIndex: 4, bar: 2, beat: 1, accented: true });
+    expect(schedule.clicks.map((click) => click.timeSeconds)).toEqual([4, 5, 6]);
+  });
+
+  it("generates metronome beat counts and accents from project meter-map points", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.meterMap = [
+      { id: "meter_2", bar: 2, numerator: 7, denominator: 8, source: "manual" }
+    ];
+
+    const clicks = buildMetronomeClicks(project, 0, 4);
+    const schedule = buildTransportMetronomeSchedule(project, 2.08, null, 0.35);
+
+    expect(clicks.map((click) => `${click.bar}.${click.beat}${click.accented ? "*" : ""}`)).toEqual([
+      "1.1*",
+      "1.2",
+      "1.3",
+      "1.4",
+      "2.1*",
+      "2.2",
+      "2.3",
+      "2.4",
+      "2.5",
+      "2.6",
+      "2.7",
+      "3.1*"
+    ]);
+    expect(clicks[5].timeSeconds).toBeCloseTo(2.25, 5);
+    expect(schedule.clicks.map((click) => click.beatIndex)).toEqual([5]);
+    expect(schedule.clicks[0]).toMatchObject({ bar: 2, beat: 2, accented: false });
   });
 
   it("places recorded project-media audio on the armed live track", () => {

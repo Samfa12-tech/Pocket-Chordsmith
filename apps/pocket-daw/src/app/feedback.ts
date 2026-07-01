@@ -61,7 +61,7 @@ export function feedbackDiagnosticsSummary(diagnostics: TesterDiagnosticsPayload
     `Build: ${diagnostics.app.buildId} / ${diagnostics.app.commit}`,
     `Project: ${diagnostics.project.title} / ${diagnostics.project.fileLabel}`,
     `Project path: ${diagnostics.project.filePath || "unsaved"}`,
-    `Timeline: ${diagnostics.project.bpm} BPM, ${diagnostics.project.timeSig}/4, ${diagnostics.project.bars} bars, ${diagnostics.project.trackCount} tracks, ${diagnostics.project.clipCount} clips`,
+    `Timeline: ${diagnostics.project.bpm} BPM, ${diagnostics.project.timeSig}/4, ${diagnostics.project.bars} bars, ${diagnostics.project.trackCount} tracks, ${diagnostics.project.clipCount} clips, ${diagnostics.project.meterMapPointCount} meter-map points`,
     `Audio: ${diagnostics.audio.deviceHost}, ${diagnostics.audio.deviceCount} devices, backend ${diagnostics.audio.playbackBackend}`,
     `Recording: ${diagnostics.recording.status}, input ${diagnostics.recording.inputDeviceName || "none"}, peak ${Math.round(diagnostics.recording.inputPeak * 100)}%, armed ${diagnostics.recording.armedTrackIds.join(", ") || "none"}, monitor ${diagnostics.recording.monitorTrackIds.join(", ") || "none"}`,
     `Updater: ${diagnostics.updater.status} / ${diagnostics.updater.currentVersion} -> ${diagnostics.updater.availableVersion || "none"}`,

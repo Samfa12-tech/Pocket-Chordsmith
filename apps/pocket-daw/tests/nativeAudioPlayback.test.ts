@@ -4,7 +4,7 @@ import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoPr
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, DRUM_LANE_DEFS } from "../src/daw/drumLanes";
 import { addFxSlot, setFxSlotParameter } from "../src/daw/fx";
 import { setTrackSendLevel } from "../src/daw/routing";
-import { addAutomationPoint, createAutomationLane, ensureTrackSendAutomationLane } from "../src/daw/automation";
+import { addAutomationPoint, createAutomationLane, ensureFxParameterAutomationLane, ensureTrackSendAutomationLane } from "../src/daw/automation";
 import type { RenderedEvent } from "../src/audio/eventRenderer";
 import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioInvokeApi, type NativeAudioStatus } from "../src/native/audioPlayback";
 
@@ -128,6 +128,22 @@ describe("native audio playback bridge", () => {
     expect(payload.loop).toEqual({ enabled: true, startSeconds: 2, endSeconds: 6 });
   });
 
+  it("passes tempo-automated loop bounds to native playback", () => {
+    let project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.timeline.loop = { enabled: true, startBar: 2, endBar: 4 };
+    project = createAutomationLane(project, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [{ bar: 1, value: 60, curve: "hold" }]
+    }).project;
+
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
+
+    expect(payload.loop).toEqual({ enabled: true, startSeconds: 4, endSeconds: 12 });
+  });
+
   it("passes enabled metronome timing to native playback", () => {
     const project = createDemoProject();
     project.project.bpm = 120;
@@ -137,6 +153,55 @@ describe("native audio playback bridge", () => {
     const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
 
     expect(payload.metronome).toEqual({ enabled: true, beatSeconds: 0.5, timeSig: 3, volume: 0.4 });
+  });
+
+  it("passes tempo-automated metronome click schedules to native playback", () => {
+    let project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.metronome = { enabled: true, countInBars: 1, volume: 0.4 };
+    project.timeline.bars = 2;
+    project = createAutomationLane(project, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [{ bar: 1, value: 60, curve: "hold" }]
+    }).project;
+
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
+
+    expect(payload.metronome?.clickSchedule?.slice(0, 5)).toEqual([
+      { timeSeconds: 0, accented: true },
+      { timeSeconds: 1, accented: false },
+      { timeSeconds: 2, accented: false },
+      { timeSeconds: 3, accented: false },
+      { timeSeconds: 4, accented: true }
+    ]);
+  });
+
+  it("passes meter-map metronome click schedules to native playback", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.metronome = { enabled: true, countInBars: 1, volume: 0.4 };
+    project.timeline.bars = 2;
+    project.project.meterMap = [
+      { id: "meter_2", bar: 2, numerator: 3, denominator: 4, source: "manual" }
+    ];
+
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
+
+    const clicks = payload.metronome?.clickSchedule?.slice(0, 7) || [];
+    expect(payload.metronome?.timeSig).toBe(4);
+    expect(clicks.map((click) => click.accented)).toEqual([true, false, false, false, true, false, false]);
+    expect(clicks.map((click) => click.timeSeconds)).toEqual([
+      0,
+      0.5,
+      1,
+      1.5,
+      2,
+      2.5,
+      3
+    ]);
   });
 
   it("passes guarded send routes to native playback tracks", () => {
@@ -182,6 +247,19 @@ describe("native audio playback bridge", () => {
     expect(nativeMasterEq?.parameters.highMidGain).toBe(2.4);
     expect(nativeSnareEq?.type).toBe("parametric-eq");
     expect(payload.events.some((event) => event.kind === "snare" && event.drumLane === "snare")).toBe(true);
+  });
+
+  it("passes automated FX parameter values to the native runtime at transport start", () => {
+    let project = addFxSlot(createDemoProject(), "master", "delay");
+    const chain = project.fx.chains.find((item) => item.ownerTrackId === "master")!;
+    const slot = chain.slots[0];
+    const ensured = ensureFxParameterAutomationLane(project, chain.id, slot.id, "mix")!;
+    project = addAutomationPoint(ensured.project, ensured.laneId, { bar: 3, value: 0.8, curve: "linear" });
+
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 2);
+    const nativeDelay = payload.fxChains.find((item) => item.id === chain.id)?.slots[0];
+
+    expect(nativeDelay?.parameters.mix).toBeCloseTo(0.556, 5);
   });
 
   it("can route every Chordsmith live drum pad lane through native per-lane FX", () => {

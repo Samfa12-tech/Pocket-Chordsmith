@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createDemoProject } from "../src/demo/demoProject";
-import { addAutomationPoint, createAutomationLane, deleteAutomationPoint, ensureClipAutomationLane, ensureTrackSendAutomationLane, evaluateAutomationLane, getAutomatedTrackControls, getTrackSendAutomationLane, updateAutomationPoint } from "../src/daw/automation";
+import { addAutomationPoint, createAutomationLane, deleteAutomationPoint, ensureClipAutomationLane, ensureProjectAutomationLane, ensureTrackSendAutomationLane, evaluateAutomationLane, evaluateProjectTempoAtBar, getAutomatedTrackControls, getProjectAutomationLane, getTrackSendAutomationLane, updateAutomationPoint } from "../src/daw/automation";
 import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../src/daw/audioClips";
 import { addReturnTrack, setTrackSendLevel } from "../src/daw/routing";
+import { barsToSeconds, timelineBarAtSeconds, timelineDurationSeconds, timelineSecondsAtBar } from "../src/daw/timeline";
 
 describe("automation helpers", () => {
   it("creates, evaluates, updates and deletes clamped automation points", () => {
@@ -92,5 +93,58 @@ describe("automation helpers", () => {
     expect(lane).toMatchObject({ targetPath: `tracks.bass.sends.${withReturn.trackId}.level`, min: 0, max: 1 });
     expect(lane.points[0]).toMatchObject({ bar: 1, value: 0.45 });
     expect(bass.automationLaneIds).toContain(ensured.laneId);
+  });
+
+  it("creates and evaluates project tempo automation lanes", () => {
+    const project = createDemoProject();
+    project.project.bpm = 118;
+
+    const ensured = ensureProjectAutomationLane(project, "tempo");
+    const lane = getProjectAutomationLane(ensured.project, "tempo")!;
+    const ramped = addAutomationPoint(ensured.project, ensured.laneId, { bar: 5, value: 160, curve: "linear" });
+
+    expect(lane).toMatchObject({ id: "auto_project_tempo", targetPath: "project.tempo", min: 40, max: 240, unit: "linear" });
+    expect(lane.points[0]).toMatchObject({ bar: 1, value: 118 });
+    expect(evaluateProjectTempoAtBar(ramped, 3)).toBeCloseTo(139, 5);
+  });
+
+  it("maps musical bars to seconds with project tempo automation", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.timeline.bars = 3;
+
+    expect(timelineSecondsAtBar(project, 4)).toBeCloseTo(barsToSeconds(3, 120, 4), 5);
+
+    const automated = createAutomationLane(project, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [
+        { bar: 1, value: 120, curve: "hold" },
+        { bar: 3, value: 60, curve: "hold" }
+      ]
+    }).project;
+
+    expect(timelineSecondsAtBar(automated, 3)).toBeCloseTo(4, 5);
+    expect(timelineSecondsAtBar(automated, 4)).toBeCloseTo(8, 5);
+    expect(timelineBarAtSeconds(automated, 4)).toBeCloseTo(3, 5);
+    expect(timelineBarAtSeconds(automated, 8)).toBeCloseTo(4, 5);
+    expect(timelineDurationSeconds(automated)).toBeCloseTo(8, 5);
+  });
+
+  it("integrates linear project tempo automation ramps", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const automated = createAutomationLane(project, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [
+        { bar: 1, value: 120, curve: "linear" },
+        { bar: 3, value: 60, curve: "hold" }
+      ]
+    }).project;
+
+    expect(timelineSecondsAtBar(automated, 3)).toBeCloseTo(8 * Math.log(2), 5);
   });
 });

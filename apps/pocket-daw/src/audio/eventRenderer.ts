@@ -1,9 +1,11 @@
 import type { Clip, JsonObject, PocketDawProject, TrackRole } from "../daw/schema";
-import { sortClips } from "../daw/timeline";
+import { sortClips, timelineDurationSeconds, timelineSecondsAtBar } from "../daw/timeline";
 import { clipSourceStartBar } from "../daw/clips";
-import { midiDataFromClip } from "../daw/midiClips";
+import { midiDataFromClip, midiTempoMappedSecondsAtTick } from "../daw/midiClips";
 import { anyDrumLaneSolo, DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumBranchLaneSteps, getDrumLaneMix, type DrumLaneId } from "../daw/drumLanes";
 import { getMelodyOverlayEvents } from "../daw/melodyOverlays";
+import { getBassOverlayEvents } from "../daw/bassOverlays";
+import { getChordOverlayEvents } from "../daw/chordOverlays";
 import type { SanitizedPcsProject, SanitizedPcsSection } from "../compatibility/pcsSanitizer";
 import { chordsmithChordRhythmStarts } from "../../../../packages/pocket-audio-core/src/performance/chord-rhythm.js";
 import { chordsmithDrumPeak, chordsmithDrumStepDuration, chordsmithDrumTupletDuration } from "../../../../packages/pocket-audio-core/src/performance/drum-feel.js";
@@ -74,8 +76,7 @@ export function renderTimelineEvents(project: PocketDawProject): RenderedEvent[]
 }
 
 export function projectDurationSeconds(project: PocketDawProject): number {
-  const secondsPerBar = project.project.timeSig * (60 / project.project.bpm);
-  return Math.max(1, project.timeline.bars * secondsPerBar);
+  return timelineDurationSeconds(project);
 }
 
 export function buildRenderContext(project: PocketDawProject): RenderContext {
@@ -115,9 +116,16 @@ export function resolveGeneratedPatternClip(_project: PocketDawProject, _clip: C
 export function resolveMidiClip(project: PocketDawProject, clip: Clip, _context: RenderContext): RenderedEvent[] {
   const data = midiDataFromClip(clip);
   if (!data.notes.length) return [];
-  const secondsPerBeat = 60 / project.project.bpm;
+  const tempoEvents = Array.isArray(data.metadata?.tempoEvents) ? data.metadata.tempoEvents : [];
+  const timingMetadata = {
+    ...(data.metadata || {}),
+    ppq: data.ppq,
+    tempoBpm: project.project.bpm,
+    tempoEvents: tempoEvents.length > 1 ? tempoEvents : []
+  };
   const clipStart = barStartSeconds(project, clip.startBar);
   const sourceStartTick = Math.max(0, Math.round(Number(clip.metadata?.sourceStartTick || 0)));
+  const sourceStartSeconds = midiTempoMappedSecondsAtTick(timingMetadata, sourceStartTick, { fallbackBpm: project.project.bpm });
   const renderTicks = Math.max(0, Math.round(clip.barLength * project.project.timeSig * data.ppq));
   return data.notes
     .filter((note) => note.startTick + note.durationTicks > sourceStartTick && note.startTick < sourceStartTick + renderTicks)
@@ -130,14 +138,16 @@ export function resolveMidiClip(project: PocketDawProject, clip: Clip, _context:
       const midiExportVelocity = Math.max(0.05, Math.min(1, (note.velocity / 127) * (clip.transforms.gain ?? 1)));
       const controllerVolume = midiControllerUnitAt(data.controllers, 7, clippedStartTick, channel, 1);
       const controllerPan = midiControllerPanAt(data.controllers, clippedStartTick, channel);
+      const eventOffsetSeconds = midiTempoMappedSecondsAtTick(timingMetadata, clippedStartTick, { fallbackBpm: project.project.bpm }) - sourceStartSeconds;
+      const eventEndSeconds = midiTempoMappedSecondsAtTick(timingMetadata, clippedStartTick + durationTicks, { fallbackBpm: project.project.bpm }) - sourceStartSeconds;
       return {
         id: `${clip.id}_${note.id}`,
         clipId: clip.id,
         kind: "midi" as const,
         trackId: clip.trackId,
         role: "media" as const,
-        time: clipStart + (localStartTick / data.ppq) * secondsPerBeat,
-        duration: Math.max(0.03, (durationTicks / data.ppq) * secondsPerBeat),
+        time: clipStart + eventOffsetSeconds,
+        duration: Math.max(0.03, eventEndSeconds - eventOffsetSeconds),
         bar: clip.startBar + Math.floor(localStartTick / (data.ppq * project.project.timeSig)),
         step: Math.round(localStartTick),
         midi: Math.max(0, Math.min(127, note.pitch + (clip.transforms.transpose || 0) + (clip.transforms.octave || 0) * 12)),
@@ -208,7 +218,9 @@ function renderGeneratedSectionEvents(
   const sectionMaxSteps = section.bars * stepsPerBar;
   const renderSteps = Math.max(0, Math.min(Math.round(clip.barLength * stepsPerBar), sectionMaxSteps - sourceStartStep));
   const clipStart = barStartSeconds(project, clip.startBar);
-  const stepTimes = buildStepTimes(renderSteps, clipStart, secondsPerBeat, resolution, swing);
+  const stepTimes = projectUsesTimelineClock(project)
+    ? buildTempoAwareStepTimes(project, clip.startBar, renderSteps + 1, clipStart, secondsPerBeat, resolution, swing, stepsPerBar)
+    : buildStepTimes(renderSteps, clipStart, secondsPerBeat, resolution, swing);
   const clipGain = clip.transforms.gain ?? 1;
   const stemMutes = clip.transforms.stemMutes || {};
   const sourceMeta = sourceEventMetadata(pcs);
@@ -216,7 +228,7 @@ function renderGeneratedSectionEvents(
   for (let localStep = 0; localStep < renderSteps; localStep += 1) {
     const step = sourceStartStep + localStep;
     const eventTime = stepTimes[localStep] ?? clipStart;
-    const stepDur = stepDurationForIndex(localStep, secondsPerBeat, resolution, swing);
+    const stepDur = stepDurationForLocalStep(stepTimes, localStep, stepDurationForIndex(localStep, secondsPerBeat, resolution, swing));
     const eventBar = clip.startBar + Math.floor(localStep / stepsPerBar);
 
     if (!stemMutes.drums) {
@@ -227,7 +239,7 @@ function renderGeneratedSectionEvents(
         if (gridTripletSecond(section, drum, step, sectionMaxSteps)) return;
         if (gridTripletStart(section, drum, step, sectionMaxSteps)) {
           const nextLevel = section.grid[drum][step + 1] || 0;
-          const spanDur = spanDurationForSteps(localStep, 2, secondsPerBeat, resolution, swing);
+          const spanDur = spanDurationForLocalSteps(stepTimes, localStep, 2, spanDurationForSteps(localStep, 2, secondsPerBeat, resolution, swing));
           tripletTimesForSpan(eventTime, spanDur).forEach((time, tripletIndex) => {
             const tripletLevel = tripletIndex === 2 ? nextLevel : level;
             if (tripletLevel <= 0) return;
@@ -295,7 +307,7 @@ function renderGeneratedSectionEvents(
 
     if (!stemMutes.bass && pcs.bassOn && bassTriggerAt(pcs, section, step) && !section.bassHold[step] && !section.bassSlide[step]) {
       if (gridTripletStart(section, "bass", step, sectionMaxSteps)) {
-        const spanDur = spanDurationForSteps(localStep, 2, secondsPerBeat, resolution, swing);
+        const spanDur = spanDurationForLocalSteps(stepTimes, localStep, 2, spanDurationForSteps(localStep, 2, secondsPerBeat, resolution, swing));
         const times = tripletTimesForSpan(eventTime, spanDur);
         const leftMidi = bassMidiAt(pcs, section, step);
         const rightMidi = bassMidiAt(pcs, section, step + 1);
@@ -347,6 +359,32 @@ function renderGeneratedSectionEvents(
       }
     }
 
+    if (!stemMutes.bass && pcs.bassOn) {
+      getBassOverlayEvents(project, section.id, step).forEach((overlay, overlayIndex) => {
+        out.push({
+          id: `${clip.id}_bass_overlay_${step}_${overlayIndex}_${overlay.midi}`,
+          clipId: clip.id,
+          kind: "bass",
+          trackId: "bass",
+          role: "bass",
+          time: humanizedTime(pcs, eventTime, step + overlayIndex, 24),
+          duration: spanDurationForLocalSteps(
+            stepTimes,
+            localStep,
+            Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)),
+            spanDurationForSteps(localStep, Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)), secondsPerBeat, resolution, swing)
+          ),
+          bar: eventBar,
+          step,
+          midi: applyClipPitchTransform(overlay.midi, clip),
+          velocity: humanizedPeak(pcs, overlay.velocity * 0.42 * clipGain, step + overlayIndex, 24),
+          bassTone: pcs.bassTone,
+          articulation: "midi-overlay",
+          ...sourceMeta
+        });
+      });
+    }
+
     if (!stemMutes.chords && pcs.chordsOn && step % stepsPerBar === 0) {
       const chord = currentChord(pcs, section, step);
       chordRhythmStarts(pcs, eventTime, secondsPerBeat).forEach(([start, duration], chordIndex) => {
@@ -369,6 +407,32 @@ function renderGeneratedSectionEvents(
       });
     }
 
+    if (!stemMutes.chords && pcs.chordsOn) {
+      getChordOverlayEvents(project, section.id, step).forEach((overlay, overlayIndex) => {
+        out.push({
+          id: `${clip.id}_chord_overlay_${step}_${overlayIndex}_${overlay.midiNotes.join(".")}`,
+          clipId: clip.id,
+          kind: "chord",
+          trackId: "chords",
+          role: "chords",
+          time: eventTime,
+          duration: spanDurationForLocalSteps(
+            stepTimes,
+            localStep,
+            Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)),
+            spanDurationForSteps(localStep, Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)), secondsPerBeat, resolution, swing)
+          ),
+          bar: eventBar,
+          step,
+          midiNotes: overlay.midiNotes.map((midi) => applyClipPitchTransform(midi, clip)),
+          velocity: overlay.velocity * clipGain,
+          instrument: pcs.chordInstrument,
+          articulation: "midi-overlay",
+          ...sourceMeta
+        });
+      });
+    }
+
     if (!stemMutes.melody) {
       section.melodyTracks.forEach((track, trackIndex) => {
         if (section.melodyMute[trackIndex]) return;
@@ -378,7 +442,7 @@ function renderGeneratedSectionEvents(
         const note = track[step];
         if (note === null || note === undefined) return;
         if (melodyTripletStart(section, trackIndex, step, sectionMaxSteps)) {
-          const spanDur = spanDurationForSteps(localStep, 2, secondsPerBeat, resolution, swing);
+          const spanDur = spanDurationForLocalSteps(stepTimes, localStep, 2, spanDurationForSteps(localStep, 2, secondsPerBeat, resolution, swing));
           const times = tripletTimesForSpan(eventTime, spanDur);
           const nextNote = track[step + 1] ?? note;
           const notes = [note, melodyTripletMiddleIndex(pcs, note, nextNote), nextNote];
@@ -422,7 +486,12 @@ function renderGeneratedSectionEvents(
             trackId: melodyTrackId(project, trackIndex),
             role: "melody",
             time: humanizedTime(pcs, eventTime, step + overlayIndex, 22 + trackIndex),
-            duration: spanDurationForSteps(localStep, Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)), secondsPerBeat, resolution, swing),
+            duration: spanDurationForLocalSteps(
+              stepTimes,
+              localStep,
+              Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)),
+              spanDurationForSteps(localStep, Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)), secondsPerBeat, resolution, swing)
+            ),
             bar: eventBar,
             step,
             midi: applyClipPitchTransform(overlay.midi, clip),
@@ -471,15 +540,18 @@ function buildStepTimes(stepCount: number, startTime: number, secondsPerBeat: nu
 }
 
 function barStartSeconds(project: PocketDawProject, bar: number) {
-  const completedBars = Math.max(0, Math.round(bar) - 1);
-  const stepCount = completedBars * project.project.timeSig * project.project.resolution;
-  return buildStepTimeline({
-    stepCount,
-    startTime: 0,
-    bpm: project.project.bpm,
-    resolution: project.project.resolution,
-    swing: project.project.swing
-  }).duration;
+  if (!projectUsesTimelineClock(project)) {
+    const completedBars = Math.max(0, Math.round(bar) - 1);
+    const stepCount = completedBars * project.project.timeSig * project.project.resolution;
+    return buildStepTimeline({
+      stepCount,
+      startTime: 0,
+      bpm: project.project.bpm,
+      resolution: project.project.resolution,
+      swing: project.project.swing
+    }).duration;
+  }
+  return timelineSecondsAtBar(project, bar);
 }
 
 function stepDurationForIndex(step: number, secondsPerBeat: number, resolution: number, swing: number): number {
@@ -488,6 +560,45 @@ function stepDurationForIndex(step: number, secondsPerBeat: number, resolution: 
 
 function spanDurationForSteps(startStep: number, span: number, secondsPerBeat: number, resolution: number, swing: number) {
   return spanDurationSeconds({ bpm: bpmFromSecondsPerBeat(secondsPerBeat), resolution, swing }, startStep, span);
+}
+
+function buildTempoAwareStepTimes(
+  project: PocketDawProject,
+  clipStartBar: number,
+  stepCount: number,
+  clipStart: number,
+  secondsPerBeat: number,
+  resolution: number,
+  swing: number,
+  stepsPerBar: number
+): number[] {
+  const baseline = buildStepTimes(stepCount, clipStart, secondsPerBeat, resolution, swing);
+  const secondsPerStep = secondsPerBeat / Math.max(1, resolution);
+  return baseline.map((time, step) => {
+    const straightTime = clipStart + step * secondsPerStep;
+    const swingOffset = time - straightTime;
+    return timelineSecondsAtBar(project, clipStartBar + step / Math.max(1, stepsPerBar)) + swingOffset;
+  });
+}
+
+function stepDurationForLocalStep(stepTimes: number[], localStep: number, fallback: number): number {
+  const start = stepTimes[localStep];
+  const end = stepTimes[localStep + 1];
+  return Number.isFinite(start) && Number.isFinite(end) && end > start ? end - start : fallback;
+}
+
+function spanDurationForLocalSteps(stepTimes: number[], localStep: number, span: number, fallback: number): number {
+  const start = stepTimes[localStep];
+  const end = stepTimes[localStep + Math.max(1, Math.round(span))];
+  return Number.isFinite(start) && Number.isFinite(end) && end > start ? end - start : fallback;
+}
+
+function projectHasTempoAutomation(project: PocketDawProject): boolean {
+  return project.automation.lanes.some((lane) => lane.enabled && lane.targetPath === "project.tempo" && lane.points.length > 0);
+}
+
+function projectUsesTimelineClock(project: PocketDawProject): boolean {
+  return projectHasTempoAutomation(project) || (project.project.meterMap || []).length > 0;
 }
 
 function bpmFromSecondsPerBeat(secondsPerBeat: number) {

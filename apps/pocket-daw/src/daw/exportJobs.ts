@@ -1,10 +1,10 @@
 import type { Clip, PocketDawProject, Track, TimelineMarker } from "./schema";
-import { cloneProject } from "./dawProject";
+import { buildPocketDawProjectFile, cloneProject } from "./dawProject";
 import { assertExportProfileSupported } from "./exportProfiles";
-import { createAudioMediaAnalysisSummary, createMediaPortabilitySummary, createRenderCacheSummary, type AudioMediaAnalysisSummary, type MediaPortabilitySummary, type RenderCacheSummary } from "./mediaPool";
+import { createAudioMediaAnalysisSummary, createMediaPortabilitySummary, createPortableMediaProject, createRenderCacheSummary, verifyMediaPortability, verifySharedMediaPortability, type AudioMediaAnalysisSummary, type MediaPortabilitySummary, type RenderCacheSummary, type SharedMediaPortabilityVerification } from "./mediaPool";
 import { validateProjectInvariants } from "./projectInvariants";
 import { createRoutingExportSummary, type RoutingExportSummary } from "./routing";
-import { barsToSeconds } from "./timeline";
+import { barsToSeconds, timelineSecondsAtBar } from "./timeline";
 import { createZipBlob, type ZipArchiveEntry } from "./zipArchive";
 import { DRUM_LANE_DEFS, generatedDrumBranchLane, ensureDrumLaneMixerInPlace } from "./drumLanes";
 import {
@@ -66,6 +66,10 @@ export interface GamePackAudioCodecMetadata {
   normalization: {
     mode: "off" | "peak";
     targetPeak?: number;
+  };
+  dither: {
+    mode: "off" | "tpdf";
+    appliesTo: "fixed-point-pcm" | "none";
   };
   sourceWavIncluded: boolean;
   targetRuntimeSmoke: "required-before-release-claim";
@@ -130,6 +134,7 @@ export interface GameExportManifest {
   renderCache: RenderCacheSummary;
   mediaAnalysis: AudioMediaAnalysisSummary;
   mediaPortability: MediaPortabilitySummary;
+  sharedMediaPortability: SharedMediaPortabilityVerification;
   folders: {
     full: string;
     stems: string;
@@ -145,11 +150,12 @@ export interface GamePackZipResult {
   manifest: GameExportManifest;
   blob: Blob;
   entries: Array<{ path: string; size: number }>;
+  selfCheck: ExportPackageSelfCheckResult;
 }
 
 export interface GamePackZipOptions {
   renderWav: (project: PocketDawProject) => Promise<Blob>;
-  sourceProjectContents: string;
+  sourceProjectContents?: string;
   onProgress?: (label: string, detail: string) => Promise<void> | void;
 }
 
@@ -231,6 +237,7 @@ export interface StemZipResult {
   manifest: StemExportManifest;
   blob: Blob;
   entries: Array<{ path: string; size: number }>;
+  selfCheck: ExportPackageSelfCheckResult;
 }
 
 export interface StemZipOptions {
@@ -267,11 +274,21 @@ export interface SectionLoopZipResult {
   manifest: SectionLoopExportManifest;
   blob: Blob;
   entries: Array<{ path: string; size: number }>;
+  selfCheck: ExportPackageSelfCheckResult;
 }
 
 export interface SectionLoopZipOptions {
   renderWav: (project: PocketDawProject) => Promise<Blob>;
   onProgress?: (label: string, detail: string) => Promise<void> | void;
+}
+
+export interface ExportPackageSelfCheckResult {
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+  checkedFileCount: number;
+  audioFileCount: number;
+  totalSizeBytes: number | null;
 }
 
 export function createStemExportPlan(project: PocketDawProject): StemExportPlanItem[] {
@@ -371,11 +388,13 @@ export async function createStemZipBlob(project: PocketDawProject, options: Stem
   const manifestJson = JSON.stringify(finalManifest, null, 2);
   entries.push({ path: finalManifest.manifestFile, data: manifestJson });
   entrySummaries.push({ path: finalManifest.manifestFile, size: byteSize(manifestJson) });
+  const selfCheck = assertExportPackageSelfCheck(finalManifest, entrySummaries);
   await options.onProgress?.("Assembling stem ZIP", `${entries.length} file${entries.length === 1 ? "" : "s"}`);
   return {
     manifest: finalManifest,
     blob: await createZipBlob(entries),
-    entries: entrySummaries
+    entries: entrySummaries,
+    selfCheck
   };
 }
 
@@ -457,7 +476,7 @@ export function createSectionLoopMetadata(project: PocketDawProject): SectionLoo
         scale: project.project.scale,
         timeSig: project.project.timeSig,
         lengthBars,
-        lengthSeconds: barsToSeconds(lengthBars, project.project.bpm, project.project.timeSig),
+        lengthSeconds: timelineSecondsBetweenBars(project, clip.startBar, clip.startBar + clip.barLength),
         fileName: fileNameFromPackPath(packPath),
         packPath,
         status: "renderable",
@@ -534,11 +553,13 @@ export async function createSectionLoopZipBlob(project: PocketDawProject, option
   const manifestJson = JSON.stringify(finalManifest, null, 2);
   entries.push({ path: finalManifest.manifestFile, data: manifestJson });
   entrySummaries.push({ path: finalManifest.manifestFile, size: byteSize(manifestJson) });
+  const selfCheck = assertExportPackageSelfCheck(finalManifest, entrySummaries);
   await options.onProgress?.("Assembling section-loop ZIP", `${entries.length} file${entries.length === 1 ? "" : "s"}`);
   return {
     manifest: finalManifest,
     blob: await createZipBlob(entries),
-    entries: entrySummaries
+    entries: entrySummaries,
+    selfCheck
   };
 }
 
@@ -596,9 +617,10 @@ export function createGameExportManifest(project: PocketDawProject, kind: GameEx
   const renderCache = createRenderCacheSummary(project);
   const mediaAnalysis = createAudioMediaAnalysisSummary(project);
   const mediaPortability = createMediaPortabilitySummary(project);
+  const sharedMediaPortability = verifySharedMediaPortability(createPortableMediaProject(project));
   const markers = project.timeline.markers.map((marker) => ({
     ...marker,
-    seconds: barsToSeconds(Math.max(0, marker.bar - 1), project.project.bpm, project.project.timeSig)
+    seconds: timelineSecondsAtBar(project, marker.bar)
   }));
   const manifestFile = gamePackManifestPath(kind);
   const fullMixFile = gamePackFullMixPath(project.project.title);
@@ -639,6 +661,7 @@ export function createGameExportManifest(project: PocketDawProject, kind: GameEx
     renderCache,
     mediaAnalysis,
     mediaPortability,
+    sharedMediaPortability,
     folders: {
       full: GAME_PACK_FOLDERS.full,
       stems: GAME_PACK_FOLDERS.stems,
@@ -654,6 +677,10 @@ export function createGameExportManifest(project: PocketDawProject, kind: GameEx
       "Compressed FLAC, Ogg Vorbis and MP3 pack metadata is reserved for future encoder-backed profiles; current packs remain WAV-only."
     ]
   };
+}
+
+export function buildPortableGamePackSourceProjectFile(project: PocketDawProject): string {
+  return buildPocketDawProjectFile(createPortableMediaProject(project));
 }
 
 export async function createGamePackZipBlob(project: PocketDawProject, kind: GameExportManifest["kind"], options: GamePackZipOptions): Promise<GamePackZipResult> {
@@ -683,17 +710,99 @@ export async function createGamePackZipBlob(project: PocketDawProject, kind: Gam
     await pushEntry(loop.packPath, await options.renderWav(projectForSectionLoopRender(project, loop)));
   }
 
-  await pushEntry(manifest.sourceProject, options.sourceProjectContents);
+  await pushEntry(manifest.sourceProject, portableSourceProjectContents(project, options.sourceProjectContents));
   const finalManifest = finalizeManifestSizes(manifest, entrySummaries);
   const manifestJson = JSON.stringify(finalManifest, null, 2);
   entries.push({ path: finalManifest.manifestFile, data: manifestJson });
   entrySummaries.push({ path: finalManifest.manifestFile, size: byteSize(manifestJson) });
+  const selfCheck = assertExportPackageSelfCheck(finalManifest, entrySummaries);
   await options.onProgress?.("Assembling game-pack ZIP", `${entries.length} file${entries.length === 1 ? "" : "s"}`);
   return {
     manifest: finalManifest,
     blob: await createZipBlob(entries),
-    entries: entrySummaries
+    entries: entrySummaries,
+    selfCheck
   };
+}
+
+function portableSourceProjectContents(project: PocketDawProject, contents?: string): string {
+  if (!contents) return buildPortableGamePackSourceProjectFile(project);
+  try {
+    const parsed = JSON.parse(contents) as PocketDawProject;
+    if (parsed?.app === project.app && Array.isArray(parsed.mediaPool)) {
+      return buildPortableGamePackSourceProjectFile(parsed);
+    }
+  } catch {
+    // Fall back to the live project so the embedded source remains portable.
+  }
+  return buildPortableGamePackSourceProjectFile(project);
+}
+
+export function verifyExportPackageEntries(
+  manifest: Pick<GameExportManifest | StemExportManifest | SectionLoopExportManifest, "kind" | "manifestFile" | "files" | "artifacts" | "sizeSummary">,
+  entries: Array<{ path: string; size: number }>
+): ExportPackageSelfCheckResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const entryPaths = entries.map((entry) => entry.path);
+  const entrySizes = new Map(entries.map((entry) => [entry.path, entry.size]));
+  const fileSet = new Set(manifest.files);
+  const entrySet = new Set(entryPaths);
+  const artifactPaths = new Set(manifest.artifacts.map((artifact) => artifact.path));
+
+  collectDuplicates(manifest.files).forEach((path) => errors.push(`Manifest lists duplicate file path: ${path}`));
+  collectDuplicates(entryPaths).forEach((path) => errors.push(`ZIP entries include duplicate file path: ${path}`));
+  if (!fileSet.has(manifest.manifestFile)) errors.push(`Manifest files do not include manifest path: ${manifest.manifestFile}`);
+  if (!entrySet.has(manifest.manifestFile)) errors.push(`ZIP entries do not include manifest path: ${manifest.manifestFile}`);
+
+  manifest.files.forEach((path) => {
+    if (!entrySet.has(path)) errors.push(`Manifest file is missing from ZIP entries: ${path}`);
+    if (!artifactPaths.has(path)) errors.push(`Manifest file is missing an artifact summary: ${path}`);
+  });
+  entryPaths.forEach((path) => {
+    if (!fileSet.has(path)) errors.push(`ZIP entry is not listed in manifest files: ${path}`);
+  });
+  manifest.artifacts.forEach((artifact) => {
+    if (!fileSet.has(artifact.path)) errors.push(`Artifact is not listed in manifest files: ${artifact.path}`);
+    const entrySize = entrySizes.get(artifact.path);
+    if (entrySize === undefined) {
+      errors.push(`Artifact is missing from ZIP entries: ${artifact.path}`);
+      return;
+    }
+    if (!Number.isFinite(entrySize) || entrySize <= 0) errors.push(`ZIP entry is empty: ${artifact.path}`);
+    if (artifact.sizeBytes !== entrySize) errors.push(`Artifact size does not match ZIP entry for ${artifact.path}: manifest=${artifact.sizeBytes ?? "missing"} zip=${entrySize}`);
+    if (artifact.audio) {
+      if (artifact.audio.format !== "wav" || artifact.audio.status !== "implemented") errors.push(`Audio artifact is not an implemented WAV artifact: ${artifact.path}`);
+      if (entrySize <= 0) errors.push(`Audio artifact has no rendered bytes: ${artifact.path}`);
+      if (artifact.audio.mimeType !== "audio/wav") warnings.push(`Audio artifact has unexpected MIME type ${artifact.audio.mimeType}: ${artifact.path}`);
+    }
+  });
+
+  const totalSize = entries.reduce((sum, entry) => sum + entry.size, 0);
+  const audioFileCount = manifest.artifacts.filter((artifact) => artifact.audio).length;
+  if (manifest.sizeSummary.expectedFileCount !== manifest.artifacts.length) errors.push("Size summary expectedFileCount does not match artifact count.");
+  if (manifest.sizeSummary.renderedFileCount !== manifest.artifacts.length) errors.push("Size summary renderedFileCount does not match artifact count.");
+  if (manifest.sizeSummary.audioFileCount !== audioFileCount) errors.push("Size summary audioFileCount does not match audio artifact count.");
+  if (manifest.sizeSummary.totalSizeBytes !== totalSize) errors.push(`Size summary totalSizeBytes does not match ZIP entries: manifest=${manifest.sizeSummary.totalSizeBytes ?? "missing"} zip=${totalSize}`);
+  if (manifest.sizeSummary.missingSizePaths.length) errors.push(`Size summary still has missing artifact sizes: ${manifest.sizeSummary.missingSizePaths.join(", ")}`);
+
+  return {
+    ok: errors.length === 0,
+    errors: Array.from(new Set(errors)),
+    warnings: Array.from(new Set(warnings)),
+    checkedFileCount: fileSet.size,
+    audioFileCount,
+    totalSizeBytes: errors.some((error) => error.includes("totalSizeBytes")) ? null : totalSize
+  };
+}
+
+function assertExportPackageSelfCheck(
+  manifest: Pick<GameExportManifest | StemExportManifest | SectionLoopExportManifest, "kind" | "manifestFile" | "files" | "artifacts" | "sizeSummary">,
+  entries: Array<{ path: string; size: number }>
+): ExportPackageSelfCheckResult {
+  const result = verifyExportPackageEntries(manifest, entries);
+  if (!result.ok) throw new Error(`Export package self-check failed for ${manifest.kind}: ${result.errors.join(" ")}`);
+  return result;
 }
 
 export function collectExportWarnings(project: PocketDawProject, options: { includeSectionLoopWarning?: boolean } = {}): string[] {
@@ -709,9 +818,17 @@ export function collectExportWarnings(project: PocketDawProject, options: { incl
   const invalidatedRenderCacheCount = createRenderCacheSummary(project).invalidatedCount;
   if (invalidatedRenderCacheCount) warnings.push(`${invalidatedRenderCacheCount} render-cache item${invalidatedRenderCacheCount === 1 ? " is" : "s are"} invalidated; rebuild or refreeze before relying on cached game-pack assets.`);
   const mediaAnalysis = createAudioMediaAnalysisSummary(project);
-  const mediaPortability = createMediaPortabilitySummary(project);
+  const mediaPortability = verifyMediaPortability(project);
   if (mediaPortability.needsCollectionOrRelinkCount) {
     warnings.push(`${mediaPortability.needsCollectionOrRelinkCount} media item${mediaPortability.needsCollectionOrRelinkCount === 1 ? "" : "s"} must be collected or relinked before the embedded source project is portable.`);
+  }
+  if (mediaPortability.cacheOnlyCount) {
+    warnings.push(`${mediaPortability.cacheOnlyCount} media item${mediaPortability.cacheOnlyCount === 1 ? "" : "s"} can reload playback from decoded cache only; relink original sources before release smoke.`);
+  }
+  warnings.push(...mediaPortability.warnings);
+  const sharedMediaPortability = verifySharedMediaPortability(createPortableMediaProject(project));
+  if (sharedMediaPortability.localReferenceFieldCount) {
+    warnings.push(`${sharedMediaPortability.localReferenceFieldCount} local media reference field${sharedMediaPortability.localReferenceFieldCount === 1 ? "" : "s"} remain in the embedded source project; collect or relink media before sharing the pack.`);
   }
   if (mediaAnalysis.clipsMissingWaveformCount) warnings.push(`${mediaAnalysis.clipsMissingWaveformCount} audio clip${mediaAnalysis.clipsMissingWaveformCount === 1 ? " is" : "s are"} missing waveform analysis; normalize and future waveform edits will be limited until media is analyzed.`);
   if (mediaAnalysis.staleAnalysisCount) warnings.push(`${mediaAnalysis.staleAnalysisCount} audio media item${mediaAnalysis.staleAnalysisCount === 1 ? " has" : "s have"} stale waveform analysis flags; reload or re-analyze before release smoke.`);
@@ -743,11 +860,17 @@ function fileNameFromPackPath(path: string): string {
   return path.split("/").pop() || `${safeGamePackName(path, "pocket-daw")}.wav`;
 }
 
-export function gamePackAudioCodecMetadata(format: GamePackAudioFormat, sampleRate = 44100, normalization: GamePackAudioCodecMetadata["normalization"] = { mode: "off" }): GamePackAudioCodecMetadata {
+export function gamePackAudioCodecMetadata(
+  format: GamePackAudioFormat,
+  sampleRate = 44100,
+  normalization: GamePackAudioCodecMetadata["normalization"] = { mode: "off" },
+  dither: GamePackAudioCodecMetadata["dither"] = { mode: "off", appliesTo: "none" }
+): GamePackAudioCodecMetadata {
   const base = {
     sampleRate,
     channels: 2 as const,
     normalization,
+    dither,
     sourceWavIncluded: false
   };
   if (format === "wav") {
@@ -810,12 +933,13 @@ function createGamePackAudioSummary(project: PocketDawProject, profileId = "full
     ? Math.round(profileRate)
     : project.project.sampleRate || 44100;
   const normalization = exportProfileNormalizationMetadata(profile);
+  const dither = exportProfileDitherMetadata(profile);
   return {
-    current: gamePackAudioCodecMetadata("wav", sampleRate, normalization),
+    current: gamePackAudioCodecMetadata("wav", sampleRate, normalization, dither),
     plannedFormats: [
-      gamePackAudioCodecMetadata("flac", sampleRate, normalization),
-      gamePackAudioCodecMetadata("ogg-vorbis", sampleRate, normalization),
-      gamePackAudioCodecMetadata("mp3", sampleRate, normalization)
+      gamePackAudioCodecMetadata("flac", sampleRate, normalization, dither),
+      gamePackAudioCodecMetadata("ogg-vorbis", sampleRate, normalization, dither),
+      gamePackAudioCodecMetadata("mp3", sampleRate, normalization, dither)
     ],
     releaseStatus: "Current Godot/Web game packs are WAV-only until encoder dependencies and target-runtime smoke are proven."
   };
@@ -825,6 +949,12 @@ function exportProfileNormalizationMetadata(profile: PocketDawProject["exportPro
   const normalize = profile?.settings?.normalize;
   if (normalize === true || normalize === "peak") return { mode: "peak", targetPeak: 0.95 };
   return { mode: "off" };
+}
+
+function exportProfileDitherMetadata(profile: PocketDawProject["exportProfiles"][number] | undefined): GamePackAudioCodecMetadata["dither"] {
+  const bitDepth = Number(profile?.bitDepth || 16);
+  const dither = profile?.settings?.dither;
+  return dither === "tpdf" && bitDepth !== 32 ? { mode: "tpdf", appliesTo: "fixed-point-pcm" } : { mode: "off", appliesTo: "none" };
 }
 
 function createGamePackArtifactSummaries(input: {
@@ -987,4 +1117,18 @@ function summarizeArtifacts(artifacts: GamePackArtifactSummary[]): GamePackSizeS
 
 function byteSize(data: Blob | string): number {
   return typeof data === "string" ? new TextEncoder().encode(data).byteLength : data.size;
+}
+
+function timelineSecondsBetweenBars(project: PocketDawProject, startBar: number, endBar: number): number {
+  return Math.max(0, timelineSecondsAtBar(project, endBar) - timelineSecondsAtBar(project, startBar));
+}
+
+function collectDuplicates(values: string[]): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  values.forEach((value) => {
+    if (seen.has(value)) duplicates.add(value);
+    seen.add(value);
+  });
+  return Array.from(duplicates);
 }

@@ -269,8 +269,8 @@ export function validateExportProfile(profile: ExportProfile, context = profile.
   }
   if (profile.format === "wav") {
     const bitDepth = Number(profile.bitDepth ?? 16);
-    if (Number.isFinite(bitDepth) && bitDepth !== 16) {
-      errors.push(`WAV bitDepth=${bitDepth} is planned, but the current WAV encoder writes 16-bit PCM. Use 16-bit WAV export for now.`);
+    if (Number.isFinite(bitDepth) && bitDepth !== 16 && bitDepth !== 24 && bitDepth !== 32) {
+      errors.push(`WAV bitDepth=${bitDepth} is not supported. Use 16-bit PCM, 24-bit PCM or 32-bit float WAV export for now.`);
     }
     const sampleRate = Number(profile.sampleRate ?? 44100);
     if (Number.isFinite(sampleRate) && (sampleRate < 22050 || sampleRate > 192000)) {
@@ -283,6 +283,10 @@ export function validateExportProfile(profile: ExportProfile, context = profile.
     const normalize = profile.settings?.normalize;
     if (normalize !== undefined && normalize !== false && normalize !== true && normalize !== "peak" && normalize !== "off") {
       errors.push(`WAV normalize=${String(normalize)} is not supported. Use off or peak WAV normalization for now.`);
+    }
+    const dither = profile.settings?.dither;
+    if (dither !== undefined && dither !== false && dither !== "off" && dither !== "tpdf") {
+      errors.push(`WAV dither=${String(dither)} is not supported. Use off or TPDF WAV dithering for now.`);
     }
   }
 

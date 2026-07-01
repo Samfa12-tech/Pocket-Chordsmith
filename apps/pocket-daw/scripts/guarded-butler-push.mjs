@@ -3,10 +3,17 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
 import { ITCH_CHANNEL, ITCH_SLUG } from "./package-itch.mjs";
+import { assertReleaseCandidateTruth } from "./verify-release-candidate-truth.mjs";
 import { verifySmokeAttestationFile } from "./verify-smoke-attestation.mjs";
 
 if (process.env.PUBLISH !== "1") {
   console.error("Refusing to upload. Set PUBLISH=1 only after manual approval and smoke-check review.");
+  process.exit(1);
+}
+try {
+  assertReleaseCandidateTruth(process.cwd());
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
 

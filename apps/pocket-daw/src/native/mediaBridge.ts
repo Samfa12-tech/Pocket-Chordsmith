@@ -221,14 +221,16 @@ export async function pruneNativeCacheAssets(
 export async function renderNativeAudioWav(
   payload: NativeAudioStartPayload,
   durationSeconds: number,
-  renderModeOrApi?: "mix" | "cache-stem" | NativeMediaApi,
+  renderModeOrApi?: "mix" | "cache-stem" | { renderMode?: "mix" | "cache-stem"; bitDepth?: 16 | 24 | 32 } | NativeMediaApi,
   injectedApi?: NativeMediaApi
 ): Promise<NativeRenderedWav | null> {
-  const renderMode = typeof renderModeOrApi === "string" ? renderModeOrApi : undefined;
-  const api = typeof renderModeOrApi === "object" && renderModeOrApi ? renderModeOrApi : injectedApi || defaultNativeMediaApi;
+  const renderOptions = typeof renderModeOrApi === "object" && renderModeOrApi && !("isAvailable" in renderModeOrApi) ? renderModeOrApi : null;
+  const renderMode = typeof renderModeOrApi === "string" ? renderModeOrApi : renderOptions?.renderMode;
+  const api = typeof renderModeOrApi === "object" && renderModeOrApi && "isAvailable" in renderModeOrApi ? renderModeOrApi : injectedApi || defaultNativeMediaApi;
   if (!api.isAvailable()) return null;
   const args: Record<string, unknown> = { payload, durationSeconds };
   if (renderMode) args.renderMode = renderMode;
+  if (renderOptions?.bitDepth) args.bitDepth = renderOptions.bitDepth;
   const result = await api.invoke<NativeRenderedWavPayload>("native_audio_render_wav", args);
   if (!result || !Array.isArray(result.bytes)) throw new Error("Native audio render returned an invalid WAV payload.");
   return {

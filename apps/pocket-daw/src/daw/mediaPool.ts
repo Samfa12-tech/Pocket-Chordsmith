@@ -55,13 +55,50 @@ export interface CollectMediaPlan {
 export interface MediaPortabilitySummary {
   totalMediaCount: number;
   audioMediaCount: number;
+  portableCount: number;
   alreadyProjectCount: number;
   copyableExternalCount: number;
+  cacheOnlyCount: number;
   blockedCount: number;
   runtimeOnlyCount: number;
   missingOrUnresolvedCount: number;
   needsCollectionOrRelinkCount: number;
   embeddedSourceProjectPortable: boolean;
+}
+
+export type MediaPortabilityState =
+  | "portable-project"
+  | "copyable-external"
+  | "cache-only"
+  | "runtime-only"
+  | "missing-or-unresolved"
+  | "blocked";
+
+export interface MediaPortabilityVerificationItem {
+  id: string;
+  name: string;
+  kind: MediaPoolItem["kind"];
+  state: MediaPortabilityState;
+  portable: boolean;
+  action: "none" | "collect" | "relink" | "reload-cache";
+  reason: string;
+  hasProjectRelativePath: boolean;
+  hasDecodedCache: boolean;
+  reloadable: boolean;
+  relinkable: boolean;
+}
+
+export interface MediaPortabilityVerification extends MediaPortabilitySummary {
+  items: MediaPortabilityVerificationItem[];
+  warnings: string[];
+}
+
+export interface SharedMediaPortabilityVerification {
+  localReferenceFieldCount: number;
+  localReferenceItemCount: number;
+  affectedItemIds: string[];
+  affectedFieldKeys: string[];
+  portableForSharing: boolean;
 }
 
 export interface CollectedMediaItem {
@@ -451,22 +488,145 @@ export function createCollectMediaPlan(project: PocketDawProject): CollectMediaP
 }
 
 export function createMediaPortabilitySummary(project: PocketDawProject): MediaPortabilitySummary {
+  const { items: _items, warnings: _warnings, ...summary } = verifyMediaPortability(project);
+  return summary;
+}
+
+export function verifyMediaPortability(project: PocketDawProject): MediaPortabilityVerification {
   const plan = createCollectMediaPlan(project);
-  const audioItems = project.mediaPool.filter((item) => item.kind === "audio");
-  const statuses = project.mediaPool.map((item) => mediaPoolStatus(item));
-  const missingOrUnresolvedCount = statuses.filter((status) => status.missing || status.unresolved).length;
-  const runtimeOnlyCount = statuses.filter((status) => status.runtimeOnly).length;
-  const needsCollectionOrRelinkCount = plan.copy.length + plan.blocked.length;
+  const planItems = new Map<string, CollectMediaPlanItem>();
+  [...plan.copy, ...plan.alreadyProject, ...plan.blocked].forEach((item) => planItems.set(item.id, item));
+  const items = project.mediaPool.map((item): MediaPortabilityVerificationItem => {
+    const status = mediaPoolStatus(item);
+    const planItem = planItems.get(item.id);
+    const hasProjectRelativePath = isProjectMediaItem(item);
+    const hasDecodedCache = item.kind === "audio" && status.cacheReloadable;
+    const name = portableMediaName(item);
+    if (hasProjectRelativePath && planItem?.action === "already-project-media") {
+      return portabilityItem(item, status, {
+        name,
+        state: "portable-project",
+        portable: true,
+        action: "none",
+        reason: "Project-relative media is saved beside the source project.",
+        hasProjectRelativePath,
+        hasDecodedCache
+      });
+    }
+    if ((status.missing || status.unresolved) && hasDecodedCache) {
+      return portabilityItem(item, status, {
+        name,
+        state: "cache-only",
+        portable: false,
+        action: "reload-cache",
+        reason: "Decoded cache can restore playback, but the original source should be relinked before release smoke.",
+        hasProjectRelativePath,
+        hasDecodedCache
+      });
+    }
+    if (status.missing || status.unresolved) {
+      return portabilityItem(item, status, {
+        name,
+        state: "missing-or-unresolved",
+        portable: false,
+        action: "relink",
+        reason: "Media is missing or unresolved and needs relink.",
+        hasProjectRelativePath,
+        hasDecodedCache
+      });
+    }
+    if (status.runtimeOnly) {
+      return portabilityItem(item, status, {
+        name,
+        state: "runtime-only",
+        portable: false,
+        action: "relink",
+        reason: "Browser runtime-only media needs a durable native source before collection.",
+        hasProjectRelativePath,
+        hasDecodedCache
+      });
+    }
+    if (planItem?.action === "copy-to-project-media") {
+      return portabilityItem(item, status, {
+        name,
+        state: "copyable-external",
+        portable: false,
+        action: "collect",
+        reason: "External media can be collected into project-media.",
+        hasProjectRelativePath,
+        hasDecodedCache
+      });
+    }
+    return portabilityItem(item, status, {
+      name,
+      state: "blocked",
+      portable: false,
+      action: "relink",
+      reason: planItem?.reason || "Media is not portable yet and needs relink or collection.",
+      hasProjectRelativePath,
+      hasDecodedCache
+    });
+  });
+  const portableCount = items.filter((item) => item.portable).length;
+  const copyableExternalCount = items.filter((item) => item.state === "copyable-external").length;
+  const cacheOnlyCount = items.filter((item) => item.state === "cache-only").length;
+  const runtimeOnlyCount = items.filter((item) => item.state === "runtime-only").length;
+  const missingOrUnresolvedCount = items.filter((item) => item.state === "missing-or-unresolved" || item.state === "cache-only").length;
+  const blockedCount = items.filter((item) => item.state === "blocked" || item.state === "runtime-only" || item.state === "missing-or-unresolved" || item.state === "cache-only").length;
+  const needsCollectionOrRelinkCount = items.filter((item) => !item.portable).length;
+  const warnings = items
+    .filter((item) => !item.portable)
+    .map((item) => `${item.name}: ${item.reason}`);
   return {
     totalMediaCount: project.mediaPool.length,
-    audioMediaCount: audioItems.length,
-    alreadyProjectCount: plan.alreadyProject.length,
-    copyableExternalCount: plan.copy.length,
-    blockedCount: plan.blocked.length,
+    audioMediaCount: project.mediaPool.filter((item) => item.kind === "audio").length,
+    portableCount,
+    alreadyProjectCount: items.filter((item) => item.state === "portable-project").length,
+    copyableExternalCount,
+    cacheOnlyCount,
+    blockedCount,
     runtimeOnlyCount,
     missingOrUnresolvedCount,
     needsCollectionOrRelinkCount,
-    embeddedSourceProjectPortable: needsCollectionOrRelinkCount === 0
+    embeddedSourceProjectPortable: needsCollectionOrRelinkCount === 0,
+    items,
+    warnings
+  };
+}
+
+export function createPortableMediaProject(project: PocketDawProject): PocketDawProject {
+  const next = cloneProject(project);
+  next.mediaPool = next.mediaPool.map((item) => {
+    const metadata = stripLocalMediaMetadata(item.metadata);
+    const projectRelativeUri = portableProjectRelativeUri(item);
+    return {
+      ...item,
+      uri: projectRelativeUri || item.uri,
+      metadata
+    };
+  });
+  return next;
+}
+
+export function verifySharedMediaPortability(project: PocketDawProject): SharedMediaPortabilityVerification {
+  const affectedItemIds = new Set<string>();
+  const affectedFieldKeys = new Set<string>();
+  let localReferenceFieldCount = 0;
+  project.mediaPool.forEach((item) => {
+    const fields: Array<[string, unknown]> = [["uri", item.uri], ...Object.entries(item.metadata || {})];
+    fields.forEach(([key, value]) => {
+      if (!isLocalMediaReferenceField(key, value)) return;
+      affectedItemIds.add(item.id);
+      affectedFieldKeys.add(key);
+      localReferenceFieldCount += 1;
+    });
+  });
+  return {
+    localReferenceFieldCount,
+    localReferenceItemCount: affectedItemIds.size,
+    affectedItemIds: Array.from(affectedItemIds),
+    affectedFieldKeys: Array.from(affectedFieldKeys).sort(),
+    portableForSharing: localReferenceFieldCount === 0
   };
 }
 
@@ -591,6 +751,60 @@ function blockedPlanItem(item: MediaPoolItem, sourceUri: string | undefined, rea
     action: "blocked",
     reason
   };
+}
+
+function portabilityItem(
+  item: MediaPoolItem,
+  status: MediaPoolStatus,
+  input: Omit<MediaPortabilityVerificationItem, "id" | "kind" | "reloadable" | "relinkable">
+): MediaPortabilityVerificationItem {
+  return {
+    id: item.id,
+    kind: item.kind,
+    reloadable: status.reloadable,
+    relinkable: status.relinkable,
+    ...input
+  };
+}
+
+function portableMediaName(item: MediaPoolItem): string {
+  return fileNameFromUri(item.name) || fileNameFromUri(item.uri) || safeFileName(item.name || item.id);
+}
+
+function portableProjectRelativeUri(item: MediaPoolItem): string {
+  const metadata = item.metadata || {};
+  return normalizeProjectRelativeMediaPath(metadataString(metadata.projectRelativePath))
+    || normalizeProjectRelativeMediaPath(String(item.uri || ""))
+    || normalizeProjectRelativeMediaPath(metadataString(metadata.nativeDecodedCacheRelativePath));
+}
+
+function stripLocalMediaMetadata(metadata: JsonObject | undefined): JsonObject {
+  const next = { ...(metadata || {}) };
+  [
+    "originalUri",
+    "nativePath",
+    "nativeDecodedCachePath",
+    "lastReloadSourcePath",
+    "relinkedFromUri",
+    "sourceUri"
+  ].forEach((key) => {
+    delete next[key];
+  });
+  Object.entries(next).forEach(([key, value]) => {
+    if (isLocalMediaReferenceField(key, value)) delete next[key];
+  });
+  return next;
+}
+
+function isLocalMediaReferenceField(key: string, value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (normalizeProjectRelativeMediaPath(trimmed)) return false;
+  if (key === "uri" || /(?:uri|path|file|source|original|native|reload)/i.test(key)) {
+    return isExternalUri(trimmed) || /^[a-z]:[\\/]/i.test(trimmed) || trimmed.startsWith("/") || trimmed.startsWith("\\\\");
+  }
+  return false;
 }
 
 function fileNameFromUri(uri?: string): string {

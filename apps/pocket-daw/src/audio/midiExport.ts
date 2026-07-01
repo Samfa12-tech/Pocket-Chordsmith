@@ -1,4 +1,5 @@
 import type { PocketDawProject } from "../daw/schema";
+import { effectiveMeterAtBar, timelineBarAtSeconds, timelineQuarterNoteBeatsBetweenBars } from "../daw/timeline";
 import { midiDataFromClip } from "../daw/midiClips";
 import { renderTimelineEvents, type RenderedEvent } from "./eventRenderer";
 
@@ -31,7 +32,7 @@ function buildMidiTracks(project: PocketDawProject, ppq: number, options: MidiEx
   const title = options.title || project.project.title;
   const meta: MidiMessage[] = [
     { tick: 0, data: [0xff, 0x51, 0x03, ...u24(Math.round(60000000 / project.project.bpm))] },
-    { tick: 0, data: [0xff, 0x58, 0x04, project.project.timeSig, 2, 24, 8] },
+    ...timeSignatureMessages(project, ppq),
     { tick: 0, data: [0xff, 0x03, ascii(title).length, ...ascii(title)] }
   ];
   const clipIds = options.clipIds?.length ? new Set(options.clipIds) : null;
@@ -76,8 +77,8 @@ function trackNameMessage(name: string): MidiMessage {
 }
 
 function addEventMessages(messages: MidiMessage[], event: RenderedEvent, project: PocketDawProject, ppq: number) {
-  const startTick = secondsToTicks(event.time, project.project.bpm, ppq);
-  const endTick = Math.max(startTick + 12, secondsToTicks(event.time + event.duration, project.project.bpm, ppq));
+  const startTick = secondsToTimelineTicks(event.time, project, ppq);
+  const endTick = Math.max(startTick + 12, secondsToTimelineTicks(event.time + event.duration, project, ppq));
   const channel = midiChannelForEvent(event, project);
   const notes = event.midiNotes || (event.midi !== undefined ? [event.midi] : event.kind in DRUM_NOTES ? [DRUM_NOTES[event.kind]] : []);
   notes.forEach((note) => {
@@ -99,7 +100,7 @@ function addMidiControllerMessages(project: PocketDawProject, ppq: number, byTra
     const data = midiDataFromClip(clip);
     const sourceStartTick = Math.max(0, Math.round(Number(clip.metadata?.sourceStartTick || 0)));
     const renderTicks = Math.max(0, Math.round(clip.barLength * project.project.timeSig * data.ppq));
-    const clipStartTick = secondsToTicks(barStartSeconds(project, clip.startBar), project.project.bpm, ppq);
+    const clipStartTick = barStartTick(project, clip.startBar, ppq);
     activeControllerStateBefore(data.controllers, sourceStartTick).forEach((point) => {
       const channel = Math.max(0, Math.min(15, Math.round(point.channel ?? 0)));
       messages.push({
@@ -145,7 +146,7 @@ function addMidiProgramChangeMessages(project: PocketDawProject, ppq: number, by
     const data = midiDataFromClip(clip);
     const sourceStartTick = Math.max(0, Math.round(Number(clip.metadata?.sourceStartTick || 0)));
     const renderTicks = Math.max(0, Math.round(clip.barLength * project.project.timeSig * data.ppq));
-    const clipStartTick = secondsToTicks(barStartSeconds(project, clip.startBar), project.project.bpm, ppq);
+    const clipStartTick = barStartTick(project, clip.startBar, ppq);
     activeProgramStateBefore(data.programChanges, sourceStartTick).forEach((point) => {
       const channel = Math.max(0, Math.min(15, Math.round(point.channel ?? 0)));
       messages.push({
@@ -191,7 +192,7 @@ function addMidiPitchBendMessages(project: PocketDawProject, ppq: number, byTrac
     const data = midiDataFromClip(clip);
     const sourceStartTick = Math.max(0, Math.round(Number(clip.metadata?.sourceStartTick || 0)));
     const renderTicks = Math.max(0, Math.round(clip.barLength * project.project.timeSig * data.ppq));
-    const clipStartTick = secondsToTicks(barStartSeconds(project, clip.startBar), project.project.bpm, ppq);
+    const clipStartTick = barStartTick(project, clip.startBar, ppq);
     activePitchBendStateBefore(data.pitchBends, sourceStartTick).forEach((point) => {
       messages.push({ tick: clipStartTick, data: pitchBendMessage(point.value, point.channel ?? 0) });
     });
@@ -235,7 +236,7 @@ function addMidiAftertouchMessages(project: PocketDawProject, ppq: number, byTra
     const data = midiDataFromClip(clip);
     const sourceStartTick = Math.max(0, Math.round(Number(clip.metadata?.sourceStartTick || 0)));
     const renderTicks = Math.max(0, Math.round(clip.barLength * project.project.timeSig * data.ppq));
-    const clipStartTick = secondsToTicks(barStartSeconds(project, clip.startBar), project.project.bpm, ppq);
+    const clipStartTick = barStartTick(project, clip.startBar, ppq);
     activeAftertouchStateBefore(data.aftertouch, sourceStartTick).forEach((point) => {
       messages.push({ tick: clipStartTick, data: aftertouchMessage(point) });
     });
@@ -316,12 +317,36 @@ function midiMessageSortPriority(message: MidiMessage): number {
   return 40;
 }
 
-function secondsToTicks(seconds: number, bpm: number, ppq: number) {
-  return Math.round(seconds / (60 / bpm) * ppq);
+function secondsToTimelineTicks(seconds: number, project: PocketDawProject, ppq: number) {
+  const bar = timelineBarAtSeconds(project, Math.max(0, seconds));
+  return Math.max(0, Math.round(timelineQuarterNoteBeatsBetweenBars(project, 1, bar) * ppq));
 }
 
-function barStartSeconds(project: PocketDawProject, bar: number) {
-  return Math.max(0, bar - 1) * project.project.timeSig * (60 / project.project.bpm);
+function barStartTick(project: PocketDawProject, bar: number, ppq: number) {
+  return Math.max(0, Math.round(timelineQuarterNoteBeatsBetweenBars(project, 1, bar) * ppq));
+}
+
+function timeSignatureMessages(project: PocketDawProject, ppq: number): MidiMessage[] {
+  const events = [
+    { bar: 1, meter: effectiveMeterAtBar(project, 1) },
+    ...(project.project.meterMap || [])
+      .filter((point) => Number.isFinite(point.bar) && point.bar >= 1)
+      .map((point) => ({ bar: point.bar, meter: effectiveMeterAtBar(project, point.bar) }))
+  ].sort((a, b) => a.bar - b.bar);
+  const byTick = new Map<number, MidiMessage>();
+  events.forEach((event) => {
+    const tick = Math.max(0, Math.round(timelineQuarterNoteBeatsBetweenBars(project, 1, event.bar) * ppq));
+    byTick.set(tick, {
+      tick,
+      data: [0xff, 0x58, 0x04, Math.max(1, Math.min(255, Math.round(event.meter.numerator))), midiDenominatorPower(event.meter.denominator), 24, 8]
+    });
+  });
+  return Array.from(byTick.values()).sort((a, b) => a.tick - b.tick);
+}
+
+function midiDenominatorPower(denominator: number): number {
+  const safe = Math.max(1, Math.round(Number(denominator) || 4));
+  return Math.max(0, Math.min(7, Math.round(Math.log2(safe))));
 }
 
 function chunk(name: string, data: number[]): number[] {

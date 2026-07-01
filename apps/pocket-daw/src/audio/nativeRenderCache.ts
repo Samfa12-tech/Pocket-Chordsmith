@@ -1,6 +1,6 @@
 import { cloneProject } from "../daw/dawProject";
 import type { Clip, PocketDawProject, RenderCacheItem, TrackRole } from "../daw/schema";
-import { barsToSeconds } from "../daw/timeline";
+import { timelineSecondsAtBar } from "../daw/timeline";
 import { DRUM_LANE_DEFS, getDrumLaneMix } from "../daw/drumLanes";
 import { midiDataFromClip } from "../daw/midiClips";
 import { buildNativeAudioStartPayload, type NativeAudioAsset, type NativeAudioRegion } from "../native/audioPlayback";
@@ -16,7 +16,7 @@ import { encodeWav } from "./offlineRender";
 
 export const NATIVE_RENDER_CACHE_ROOT = "project-cache/native-audio";
 export const NATIVE_GENERATED_STEM_TAIL_SECONDS = 0.25;
-export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v25-915a6014-prefader-sends";
+export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v26-57527c6b-varispeed";
 export const NATIVE_CACHE_STEM_RENDER_MODE = "cache-stem";
 const STEM_ROLES: TrackRole[] = ["drums", "bass", "chords", "melody", "guitar"];
 
@@ -159,14 +159,14 @@ export async function buildNativeRenderCache(
     }
     const itemStartBar = item.startBar ?? item.clip.startBar;
     const itemBarLength = item.barLength ?? item.clip.barLength;
-    const duration = barsToSeconds(itemBarLength, project.project.bpm, project.project.timeSig);
+    const duration = timelineSecondsBetweenBars(project, itemStartBar, itemStartBar + itemBarLength);
     const regionDuration = generatedStemRenderDuration(duration);
     const sourceClipIds = sourceClipIdsForBuildItem(item);
     regions.push({
       id: `${sourceClipIds.join("_")}_${item.trackId}_${item.role}`,
       assetId: asset.id,
       trackId: item.trackId,
-      startTime: barsToSeconds(itemStartBar - 1, project.project.bpm, project.project.timeSig),
+      startTime: timelineSecondsAtBar(project, itemStartBar),
       sourceOffset: 0,
       duration: Math.min(regionDuration, asset.durationSeconds),
       gain: 1,
@@ -887,7 +887,7 @@ async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Pro
   const assetProject = item.clips?.length
     ? projectForNativeGeneratedStemGroupRender(project, item.clips, item.trackId, itemStartBar, itemBarLength)
     : projectForNativeGeneratedStemRender(project, item.clip, item.trackId);
-  const clipDurationSeconds = barsToSeconds(itemBarLength, project.project.bpm, project.project.timeSig);
+  const clipDurationSeconds = timelineSecondsBetweenBars(project, itemStartBar, itemStartBar + itemBarLength);
   const renderDurationSeconds = generatedStemRenderDuration(clipDurationSeconds);
   const { rendered: nativeRender, error } = await renderNativeGeneratedStemWav(assetProject, renderDurationSeconds);
   if (!nativeRender?.bytes?.length) return { asset: null, error: error || "Native cache-stem renderer returned no audio." };
@@ -977,6 +977,10 @@ function nativeGeneratedStemGroupSourceHash(project: PocketDawProject, clips: Cl
 
 function generatedStemRenderDuration(durationSeconds: number): number {
   return Math.max(0, durationSeconds) + NATIVE_GENERATED_STEM_TAIL_SECONDS;
+}
+
+function timelineSecondsBetweenBars(project: PocketDawProject, startBar: number, endBar: number): number {
+  return Math.max(0, timelineSecondsAtBar(project, endBar) - timelineSecondsAtBar(project, startBar));
 }
 
 async function renderNativeGeneratedStemWav(assetProject: PocketDawProject, durationSeconds: number) {
@@ -1207,10 +1211,11 @@ function nativeRegionFromHydratedItem(project: PocketDawProject, item: RenderCac
       trackId: region.trackId,
       startTime: region.startTimeSeconds,
       sourceOffset: region.sourceOffsetSeconds,
-      duration: Math.min(region.durationSeconds, asset.durationSeconds),
+      duration: Math.min(region.durationSeconds, Math.max(0, asset.durationSeconds - region.sourceOffsetSeconds) / Math.max(0.25, region.playbackRate || 1)),
       gain: region.gain,
       phaseMultiplier: region.phaseMultiplier,
       reversed: region.reversed,
+      playbackRate: region.playbackRate,
       pan: 0,
       fadeIn: region.fadeInSeconds,
       fadeOut: region.fadeOutSeconds
@@ -1236,12 +1241,12 @@ function nativeGeneratedGroupRegionFromItem(project: PocketDawProject, item: Ren
   if (!trackId) return null;
   const startBar = Math.min(...clips.map((clip) => clip.startBar));
   const endBar = Math.max(...clips.map((clip) => clip.startBar + clip.barLength));
-  const duration = barsToSeconds(endBar - startBar, project.project.bpm, project.project.timeSig);
+  const duration = timelineSecondsBetweenBars(project, startBar, endBar);
   return {
     id: `${clips.map((clip) => clip.id).join("_")}_${trackId}_${asset.id}_hydrated`,
     assetId: asset.id,
     trackId,
-    startTime: barsToSeconds(startBar - 1, project.project.bpm, project.project.timeSig),
+    startTime: timelineSecondsAtBar(project, startBar),
     sourceOffset: 0,
     duration: Math.min(generatedStemRenderDuration(duration), asset.durationSeconds),
     gain: 1,
@@ -1254,12 +1259,12 @@ function nativeGeneratedGroupRegionFromItem(project: PocketDawProject, item: Ren
 }
 
 function nativeGeneratedRegionFromClip(project: PocketDawProject, clip: Clip, trackId: string, asset: NativeAudioAsset): NativeAudioRegion {
-  const clipDuration = barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig);
+  const clipDuration = timelineSecondsBetweenBars(project, clip.startBar, clip.startBar + clip.barLength);
   return {
     id: `${clip.id}_${trackId}_${asset.id}_hydrated`,
     assetId: asset.id,
     trackId,
-    startTime: barsToSeconds(clip.startBar - 1, project.project.bpm, project.project.timeSig),
+    startTime: timelineSecondsAtBar(project, clip.startBar),
     sourceOffset: 0,
     duration: Math.min(generatedStemRenderDuration(clipDuration), asset.durationSeconds),
     gain: 1,
@@ -1274,7 +1279,7 @@ function nativeGeneratedRegionFromClip(project: PocketDawProject, clip: Clip, tr
 function hydratedDurationFallback(project: PocketDawProject, item: RenderCacheItem): number {
   const clip = item.sourceClipId ? project.timeline.clips.find((entry) => entry.id === item.sourceClipId) : null;
   if (!clip) return 0;
-  const clipDuration = barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig);
+  const clipDuration = timelineSecondsBetweenBars(project, clip.startBar, clip.startBar + clip.barLength);
   return String(item.metadata?.cacheKind || "") === "native-generated-stem"
     ? generatedStemRenderDuration(clipDuration)
     : clipDuration;
@@ -1356,7 +1361,7 @@ async function appendRuntimeAudioCache(
       assets.set(key, asset);
       renderCacheItems.push(renderCacheItemForRuntimeAudio(asset, signature, createdAt, region.clipId, region.mediaPoolItemId, source));
     }
-    const duration = Math.min(region.durationSeconds, Math.max(0, asset.durationSeconds - region.sourceOffsetSeconds));
+    const duration = Math.min(region.durationSeconds, Math.max(0, asset.durationSeconds - region.sourceOffsetSeconds) / Math.max(0.25, region.playbackRate || 1));
     if (duration <= 0) {
       missingRuntimeAudioRegionCount += 1;
       continue;
@@ -1371,6 +1376,7 @@ async function appendRuntimeAudioCache(
       gain: region.gain,
       phaseMultiplier: region.phaseMultiplier,
       reversed: region.reversed,
+      playbackRate: region.playbackRate,
       pan: 0,
       fadeIn: region.fadeInSeconds,
       fadeOut: region.fadeOutSeconds,

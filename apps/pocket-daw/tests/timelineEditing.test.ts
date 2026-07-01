@@ -3,7 +3,7 @@ import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject, parsePocketDawProjectFile } from "../src/daw/dawProject";
 import { clipSourceStartBar, cropClipToRange, deleteClipRange, moveClipToBar, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, trimClipEnd, trimClipStart } from "../src/daw/clips";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
-import { addGameStateMarkerAtBar, addMarkerAtBar, clearLoop, clearTimelineSelection, deleteMarker, setLoopToClip, setTimelineSelectionRange, setTimelineSelectionToClip, setTimelineSelectionToLoop, snapBarValue } from "../src/daw/timeline";
+import { addGameStateMarkerAtBar, addMarkerAtBar, clearLoop, clearTimelineSelection, deleteMarker, setLoopToClip, setTimelineSelectionRange, setTimelineSelectionToClip, setTimelineSelectionToLoop, snapBarValue, snapProjectBarValue } from "../src/daw/timeline";
 import { createDemoProject } from "../src/demo/demoProject";
 import { addTrackToProject } from "../src/daw/tracks";
 import type { Clip, PocketDawProject } from "../src/daw/schema";
@@ -376,6 +376,18 @@ describe("timeline editing helpers", () => {
     expect(snapBarValue(2.376, "off", 4)).toBe(2.38);
   });
 
+  it("calculates project beat snap values from meter-map points", () => {
+    const project = createDemoProject();
+    project.project.timeSig = 4;
+    project.project.meterMap = [
+      { id: "meter_2", bar: 2, numerator: 7, denominator: 8, source: "manual" }
+    ];
+
+    expect(snapProjectBarValue(project, 1.37, "beat")).toBe(1.25);
+    expect(snapProjectBarValue(project, 2.37, "beat")).toBeCloseTo(2 + 3 / 7, 6);
+    expect(snapProjectBarValue(project, 2.99, "beat")).toBe(3);
+  });
+
   it("renders split clip windows instead of full source sections", () => {
     const project = createDemoProject();
     const clip = project.timeline.clips[0];
@@ -462,6 +474,29 @@ describe("timeline editing helpers", () => {
     expect(updated.barLength).toBe(clip.barLength - 1);
     expect(updated.metadata?.sourceOffsetSeconds).toBeCloseTo(secondsPerBar, 5);
     expect(project.mediaPool.find((item) => item.id === imported.item.id)?.uri).toBe(imported.item.uri);
+  });
+
+  it("trims audio clip starts using active meter-map seconds", () => {
+    let project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.meterMap = [{ id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" }];
+    const imported = addImportedAudioMedia(project, {
+      name: "Meter Trim.wav",
+      uri: "C:\\Audio\\Meter Trim.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 12,
+      sampleRate: 48000,
+      channels: 2
+    });
+    project = placeAudioClipOnTimeline(imported.project, imported.item.id, 2).project;
+    const clip = project.timeline.clips.find((item) => item.type === "audio")!;
+
+    const trimmed = trimClipStart(project, clip.id, 1);
+    const updated = trimmed.timeline.clips.find((item) => item.id === clip.id)!;
+
+    expect(updated.startBar).toBe(3);
+    expect(updated.metadata?.sourceOffsetSeconds).toBeCloseTo(1.75, 5);
   });
 
   it("splits audio clips with source offsets on the right-hand clip", () => {

@@ -7,6 +7,7 @@ import {
   createAudioMediaAnalysisSummary,
   createMediaPortabilitySummary,
   createMediaPoolItem,
+  createPortableMediaProject,
   createRenderCacheSummary,
   findMediaPoolItem,
   linkFreezeRenderCacheItem,
@@ -21,7 +22,9 @@ import {
   removeUnusedMediaPoolItem,
   renderCacheItemsForMedia,
   updateMediaPoolItem,
-  updateMediaPoolItemMetadata
+  updateMediaPoolItemMetadata,
+  verifyMediaPortability,
+  verifySharedMediaPortability
 } from "../src/daw/mediaPool";
 import { createDemoProject } from "../src/demo/demoProject";
 
@@ -596,8 +599,10 @@ describe("media pool helpers", () => {
     expect(summary).toEqual({
       totalMediaCount: 4,
       audioMediaCount: 4,
+      portableCount: 1,
       alreadyProjectCount: 1,
       copyableExternalCount: 1,
+      cacheOnlyCount: 0,
       blockedCount: 2,
       runtimeOnlyCount: 1,
       missingOrUnresolvedCount: 1,
@@ -606,6 +611,65 @@ describe("media pool helpers", () => {
     });
     expect(JSON.stringify(summary)).not.toContain("C:\\");
     expect(JSON.stringify(summary)).not.toContain("file://");
+  });
+
+  it("verifies action-level media portability with cache-only recovery state", () => {
+    let project = createDemoProject();
+    const external = createMediaPoolItem({ kind: "audio", name: "Lead Vocal.wav", uri: "C:\\Sessions\\Lead Vocal.wav" });
+    const cachedMissing = createMediaPoolItem({
+      kind: "audio",
+      name: "Recovered Take.wav",
+      uri: "file:///lost/Recovered Take.wav",
+      metadata: {
+        missing: true,
+        unresolved: true,
+        nativeDecodedCacheRelativePath: "project-cache/native-audio/imports/recovered.wav",
+        nativeDecodedCachePath: "C:\\Songs\\project-cache\\native-audio\\imports\\recovered.wav",
+        lastReloadSourcePath: "C:\\Sessions\\Recovered Take.wav"
+      }
+    }, [external]);
+    const collected = createMediaPoolItem({
+      kind: "audio",
+      name: "Collected.wav",
+      uri: "project-media/Collected.wav",
+      metadata: {
+        mediaRefKind: "project",
+        projectRelativePath: "project-media/Collected.wav",
+        originalUri: "C:\\Sessions\\Collected.wav",
+        nativePath: "C:\\Songs\\project-media\\Collected.wav"
+      }
+    }, [external, cachedMissing]);
+    project = addMediaPoolItem(addMediaPoolItem(addMediaPoolItem(project, external), cachedMissing), collected);
+
+    const verification = verifyMediaPortability(project);
+
+    expect(verification).toMatchObject({
+      totalMediaCount: 3,
+      portableCount: 1,
+      copyableExternalCount: 1,
+      cacheOnlyCount: 1,
+      missingOrUnresolvedCount: 1,
+      needsCollectionOrRelinkCount: 2,
+      embeddedSourceProjectPortable: false
+    });
+    expect(verification.items.find((item) => item.id === cachedMissing.id)).toMatchObject({
+      state: "cache-only",
+      action: "reload-cache",
+      hasDecodedCache: true
+    });
+    expect(JSON.stringify(verification)).not.toContain("C:\\");
+    expect(JSON.stringify(verification)).not.toContain("file://");
+
+    const portableProject = createPortableMediaProject(project);
+    const shared = verifySharedMediaPortability(portableProject);
+    expect(shared).toMatchObject({
+      localReferenceFieldCount: 1,
+      localReferenceItemCount: 1,
+      portableForSharing: false
+    });
+    expect(shared.affectedFieldKeys).toEqual(["uri"]);
+    expect(JSON.stringify(portableProject.mediaPool.find((item) => item.id === collected.id))).not.toContain("C:\\");
+    expect(JSON.stringify(portableProject.mediaPool.find((item) => item.id === collected.id))).not.toContain("originalUri");
   });
 
   it("initializes media pool and render cache when migrating older projects", () => {

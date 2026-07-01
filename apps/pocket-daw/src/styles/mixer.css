@@ -194,6 +194,33 @@
   max-width: 520px;
 }
 
+.audio-warp-panel {
+  display: grid;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid rgba(125, 211, 255, 0.22);
+  border-radius: 6px;
+  color: #b9c7e6;
+  background: rgba(125, 211, 255, 0.06);
+  font-size: 11px;
+}
+
+.audio-warp-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.audio-warp-list span {
+  padding: 2px 5px;
+  border: 1px solid rgba(185, 199, 230, 0.18);
+  border-radius: 4px;
+  color: #dce8ff;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  background: rgba(8, 13, 24, 0.45);
+}
+
 .strip {
   display: grid;
   grid-template-rows: 28px 48px 38px 38px 64px minmax(50px, auto);

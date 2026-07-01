@@ -117,6 +117,26 @@ describe("schema migrations", () => {
     expect(migrated.tracks[0].automationLaneIds).toEqual(["lane-onclick-alert-1"]);
   });
 
+  it("normalizes project meter-map points during migration", () => {
+    const migrated = migratePocketDawProject({
+      app: "PocketDAW",
+      schemaVersion: 2,
+      project: {
+        title: "Meter Map",
+        meterMap: [
+          { id: "meter same", bar: 8.123456789, numerator: 7, denominator: 8, source: "midi-import", sourceClipId: "<clip>", sourceTick: 960, seconds: 2.5 },
+          { id: "meter same", bar: -2, numerator: 99, denominator: "bad", source: "unsafe", sourceTick: -5, seconds: -1 }
+        ]
+      },
+      timeline: { clips: [] }
+    });
+
+    expect(migrated.project.meterMap).toEqual([
+      expect.objectContaining({ id: "meter-same_2", bar: 1, numerator: 32, denominator: 4, sourceTick: 0, seconds: 0 }),
+      expect.objectContaining({ id: "meter-same", bar: 8.123457, numerator: 7, denominator: 8, source: "midi-import", sourceClipId: "<clip>", sourceTick: 960, seconds: 2.5 })
+    ]);
+  });
+
   it("repairs duplicate marker ids across the whole migrated marker list", () => {
     const migrated = migratePocketDawProject({
       app: "PocketDAW",

@@ -8,14 +8,17 @@ import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackRecordin
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
 import { addTrackToProject, renameTrack, type AddTrackKind } from "../daw/tracks";
 import { placeAudioClipOnTimeline } from "../daw/audioClips";
-import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createEmptyMidiClip, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, midiDataFromClip, midiGrooveTemplateById, moveMidiNote, quantizeMidiClip, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote, type MidiAftertouchField, type MidiControllerField, type MidiGrooveTemplateId, type MidiNoteField, type MidiPitchBendField, type MidiPitchTransform, type MidiProgramChangeField, type MidiQuantizeGrid, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
+import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createEmptyMidiClip, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, midiDataFromClip, midiGrooveTemplateById, moveMidiNote, quantizeMidiClip, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote, type MidiAftertouchField, type MidiControllerField, type MidiGrooveTemplateId, type MidiNoteField, type MidiPitchBendField, type MidiPitchTransform, type MidiProgramChangeField, type MidiQuantizeGrid, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
+import type { MidiTempoMapSummary } from "../daw/midiClips";
+import { convertMidiClipToBassOverlays } from "../daw/midiBassConversion";
+import { convertMidiClipToChordOverlays } from "../daw/midiChordConversion";
 import { convertMidiClipToDrumBranchOverlays } from "../daw/midiDrumConversion";
 import { convertMidiClipToMelodyOverlays } from "../daw/midiMelodyConversion";
-import { addAutomationPoint, deleteAutomationPoint, ensureClipAutomationLane, ensureTrackAutomationLane, ensureTrackSendAutomationLane, setAutomationLaneEnabled, type ClipAutomationField, type TrackAutomationField, type TrackSendAutomationField, updateAutomationPoint } from "../daw/automation";
+import { addAutomationPoint, deleteAutomationPoint, ensureClipAutomationLane, ensureFxParameterAutomationLane, ensureProjectAutomationLane, ensureTrackAutomationLane, ensureTrackSendAutomationLane, getClipAutomationLane, getFxParameterAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, setAutomationLaneEnabled, setAutomationLanePoints, type ClipAutomationField, type ProjectAutomationField, type TrackAutomationField, type TrackSendAutomationField, updateAutomationPoint } from "../daw/automation";
 import { addBusTrack, addReturnTrack, routeTrackToOutput, setTrackSendLevel, setTrackSendMode, type TrackSendMode } from "../daw/routing";
 import { setFxSlotParameter, setPocketProEqPreset } from "../daw/fx";
 import { pushUndo, redo, undo } from "../daw/undo";
-import { addGameStateMarkerAtBar, addMarkerAtBar, clearLoop, clearTimelineSelection, deleteMarker, gameStateMarkerLabel, isGameStateMarkerId, renameMarker, setLoopToClip, setTimelineSelectionRange, setTimelineSelectionToClip, setTimelineSelectionToLoop, snapBarValue } from "../daw/timeline";
+import { addGameStateMarkerAtBar, addMarkerAtBar, clearLoop, clearTimelineSelection, deleteMarker, effectiveMeterAtBar, gameStateMarkerLabel, isGameStateMarkerId, renameMarker, setLoopToClip, setTimelineSelectionRange, setTimelineSelectionToClip, setTimelineSelectionToLoop, snapBarValue, snapBeatStepAtBar, snapProjectBarValue, timelineQuarterNoteBeatsBetweenBars } from "../daw/timeline";
 import {
   appendChordsmithSection,
   applyBassPreset,
@@ -53,7 +56,7 @@ import {
 import { drumPresetEventsForProject, drumPresetLabel, drumPresetVisibleForProject, findDrumPreset } from "../daw/chordsmithDrumPresets";
 import { bassPresetLabel, bassPresetPatternForProject, bassPresetVisibleForProject, findBassPreset } from "../daw/chordsmithBassPresets";
 import { findGuitarPreset, guitarPresetLabel, guitarPresetPatternForProject, guitarPresetVisibleForProject } from "../daw/chordsmithGuitarPresets";
-import type { PocketDawProject, RecordingChannelMode } from "../daw/schema";
+import type { AutomationPoint, Clip, PocketDawProject, ProjectMeterMapPoint, RecordingChannelMode } from "../daw/schema";
 import type { AppState } from "./state";
 
 export function importTextToProject(text: string): { project: PocketDawProject; message: string } {
@@ -85,7 +88,7 @@ export function commitProject(state: AppState, project: PocketDawProject, status
   };
 }
 
-export type ExportProfileSettingField = "sampleRate" | "tailSeconds" | "channelMode" | "normalize";
+export type ExportProfileSettingField = "sampleRate" | "bitDepth" | "tailSeconds" | "channelMode" | "normalize" | "dither";
 
 export function setExportProfileSettingCommand(state: AppState, profileId: string, field: ExportProfileSettingField, value: number | string): AppState {
   const project = state.undoStack.present;
@@ -97,6 +100,10 @@ export function setExportProfileSettingCommand(state: AppState, profileId: strin
   if (field === "sampleRate") {
     nextProfile.sampleRate = clampExportSampleRate(Number(value));
     return commitProject(state, next, `Set ${profile.name} sample rate to ${nextProfile.sampleRate} Hz.`);
+  }
+  if (field === "bitDepth") {
+    nextProfile.bitDepth = Number(value) === 32 ? 32 : Number(value) === 24 ? 24 : 16;
+    return commitProject(state, next, `Set ${profile.name} bit depth to ${nextProfile.bitDepth === 32 ? "32-bit float" : `${nextProfile.bitDepth}-bit PCM`}.`);
   }
   if (field === "channelMode") {
     const channelMode = String(value).toLowerCase() === "mono" ? "mono" : "stereo";
@@ -113,6 +120,14 @@ export function setExportProfileSettingCommand(state: AppState, profileId: strin
       normalize
     };
     return commitProject(state, next, `Set ${profile.name} normalization to ${normalize === "peak" ? "peak" : "off"}.`);
+  }
+  if (field === "dither") {
+    const dither = String(value).toLowerCase() === "tpdf" ? "tpdf" : "off";
+    nextProfile.settings = {
+      ...(nextProfile.settings || {}),
+      dither
+    };
+    return commitProject(state, next, `Set ${profile.name} dither to ${dither === "tpdf" ? "TPDF" : "off"}.`);
   }
   const tailValue = Number(value);
   const tailSeconds = Math.round(Math.max(0, Math.min(30, Number.isFinite(tailValue) ? tailValue : 0)) * 100) / 100;
@@ -135,7 +150,8 @@ export function moveSelectedClip(state: AppState, delta: number): AppState {
 
 export function moveSelectedClipBySnap(state: AppState, direction: -1 | 1): AppState {
   const project = state.undoStack.present;
-  const delta = state.snapMode === "beat" ? direction / Math.max(1, project.project.timeSig) : direction;
+  const clip = project.timeline.clips.find((item) => item.id === state.selectedClipId);
+  const delta = state.snapMode === "beat" ? direction * snapBeatStepAtBar(project, clip?.startBar || state.playheadBar) : direction;
   return moveSelectedClip(state, delta);
 }
 
@@ -143,7 +159,7 @@ export function moveClipToBarCommand(state: AppState, clipId: string, startBar: 
   const project = state.undoStack.present;
   const clip = project.timeline.clips.find((item) => item.id === clipId);
   if (!clip) return { ...state, status: "Choose a clip before dragging." };
-  const snapped = snapBarValue(startBar, state.snapMode, project.project.timeSig);
+  const snapped = snapProjectBarValue(project, startBar, state.snapMode);
   const next = moveClipToBar(project, clipId, snapped);
   if (next === project) return { ...state, selectedClipId: clipId, status: `Clip stayed at Bar ${clip.startBar}.` };
   return {
@@ -157,7 +173,7 @@ export function repeatClipToEndCommand(state: AppState, clipId: string, endBar: 
   const project = state.undoStack.present;
   const clip = project.timeline.clips.find((item) => item.id === clipId);
   if (!clip) return { ...state, status: "Choose a section before repeating it." };
-  const snappedEnd = snapBarValue(endBar, state.snapMode, project.project.timeSig);
+  const snappedEnd = snapProjectBarValue(project, endBar, state.snapMode);
   const result = repeatGeneratedSectionClipToEnd(project, clipId, snappedEnd);
   if (result.project === project) return { ...state, selectedClipId: clipId, status: "Only generated section clips can be repeat-dragged." };
   return {
@@ -222,7 +238,9 @@ export function setSelectedAudioClipPropertyCommand(state: AppState, clipId: str
     sourceOffsetSeconds: "source offset",
     durationSeconds: "duration",
     fadeInSeconds: "fade in",
-    fadeOutSeconds: "fade out"
+    fadeOutSeconds: "fade out",
+    playbackRate: "playback rate",
+    pitchSemitones: "varispeed pitch"
   };
   return {
     ...commitProject(state, next, `Set ${clip.name} ${labels[field]} to ${updated?.metadata?.[field] ?? value}.`),
@@ -336,7 +354,7 @@ export function copySelectedClip(state: AppState): AppState {
 
 export function pasteClipAtPlayhead(state: AppState): AppState {
   if (!state.clipClipboard) return { ...state, status: "Copy a clip before pasting." };
-  const startBar = snapBarValue(state.playheadBar, state.snapMode, state.undoStack.present.project.timeSig);
+  const startBar = snapProjectBarValue(state.undoStack.present, state.playheadBar, state.snapMode);
   const result = pasteClip(state.undoStack.present, state.clipClipboard, startBar);
   return {
     ...commitProject(state, result.project, "Pasted clip at playhead."),
@@ -466,6 +484,136 @@ export function addAutomationPointCommand(state: AppState, trackId: string, fiel
   return commitProject(state, next, `Added ${field} automation point.`);
 }
 
+export function addAutomationPointToLaneCommand(state: AppState, laneId: string, bar: number, value: number, curve: string = "linear"): AppState {
+  const lane = state.undoStack.present.automation.lanes.find((item) => item.id === laneId);
+  if (!lane) return { ...state, status: "Choose an automation lane before drawing points." };
+  return commitProject(
+    state,
+    addAutomationPoint(state.undoStack.present, laneId, { bar, value, curve: cleanAutomationCurve(curve) }),
+    "Added drawn automation point."
+  );
+}
+
+export function addAutomationPointsToLaneCommand(state: AppState, laneId: string, points: Array<{ bar: number; value: number; curve?: string }>): AppState {
+  const lane = state.undoStack.present.automation.lanes.find((item) => item.id === laneId);
+  if (!lane) return { ...state, status: "Choose an automation lane before drawing points." };
+  const cleanPoints = points.filter((point) => Number.isFinite(point.bar) && Number.isFinite(point.value));
+  if (!cleanPoints.length) return { ...state, status: "Draw on an automation lane to add points." };
+  const next = cleanPoints.reduce(
+    (project, point) => addAutomationPoint(project, laneId, { bar: point.bar, value: point.value, curve: cleanAutomationCurve(point.curve) }),
+    state.undoStack.present
+  );
+  return commitProject(state, next, `Added ${cleanPoints.length} drawn automation point${cleanPoints.length === 1 ? "" : "s"}.`);
+}
+
+export function recordTrackAutomationPointCommand(state: AppState, trackId: string, field: TrackAutomationField, value: number, bar = state.playheadBar || 1): AppState {
+  const project = state.undoStack.present;
+  const track = project.tracks.find((item) => item.id === trackId);
+  const lane = getTrackAutomationLane(project, trackId, field);
+  if (!track || !lane) return state;
+  const automationValue = field === "volume" ? volumeAutomationMultiplier(track.volume, value) : value;
+  return commitProject(
+    state,
+    addAutomationPoint(project, lane.id, { bar, value: automationValue, curve: "linear" }),
+    `Recorded ${track.name} ${field} automation point.`
+  );
+}
+
+export function ensureProjectAutomationLaneCommand(state: AppState, field: ProjectAutomationField): AppState {
+  const result = ensureProjectAutomationLane(state.undoStack.present, field);
+  return commitProject(state, result.project, `Enabled project ${field} automation lane.`);
+}
+
+function volumeAutomationMultiplier(baseVolume: number, targetVolume: number): number {
+  if (!Number.isFinite(targetVolume)) return 1;
+  if (!Number.isFinite(baseVolume) || Math.abs(baseVolume) < 0.0001) return targetVolume;
+  return targetVolume / baseVolume;
+}
+
+export function addProjectAutomationPointCommand(state: AppState, field: ProjectAutomationField): AppState {
+  const project = state.undoStack.present;
+  const ensured = ensureProjectAutomationLane(project, field);
+  const value = field === "tempo" ? project.project.bpm : 0;
+  const next = addAutomationPoint(ensured.project, ensured.laneId, { bar: state.playheadBar || 1, value, curve: "linear" });
+  return commitProject(state, next, `Added project ${field} automation point.`);
+}
+
+export type ProjectMeterMapField = "bar" | "numerator" | "denominator";
+
+export function addProjectMeterMapPointCommand(state: AppState, options: Partial<Pick<ProjectMeterMapPoint, "bar" | "numerator" | "denominator">> = {}): AppState {
+  const project = state.undoStack.present;
+  const bar = cleanMeterBar(options.bar ?? state.playheadBar ?? 1);
+  const meter = effectiveMeterAtBar(project, bar);
+  const point: ProjectMeterMapPoint = cleanProjectMeterMapPoint({
+    id: uniqueProjectMeterMapId(project, "meter_manual"),
+    bar,
+    numerator: options.numerator ?? meter.numerator,
+    denominator: options.denominator ?? meter.denominator,
+    source: "manual"
+  });
+  const next = cloneProject(project);
+  next.project.meterMap = sortProjectMeterMap([...(next.project.meterMap || []), point]);
+  return commitProject(state, next, `Added project meter ${point.numerator}/${point.denominator} at Bar ${point.bar}.`);
+}
+
+export function updateProjectMeterMapPointCommand(state: AppState, pointId: string, patch: Partial<Pick<ProjectMeterMapPoint, ProjectMeterMapField>>): AppState {
+  const project = state.undoStack.present;
+  const existing = (project.project.meterMap || []).find((point) => point.id === pointId);
+  if (!existing) return { ...state, status: "Choose a project meter-map point before editing it." };
+  const next = cloneProject(project);
+  next.project.meterMap = sortProjectMeterMap((next.project.meterMap || []).map((point) => {
+    if (point.id !== pointId) return point;
+    return cleanProjectMeterMapPoint({
+      ...point,
+      bar: patch.bar ?? point.bar,
+      numerator: patch.numerator ?? point.numerator,
+      denominator: patch.denominator ?? point.denominator,
+      source: point.source || "manual"
+    });
+  }));
+  const updated = next.project.meterMap.find((point) => point.id === pointId) || existing;
+  return commitProject(state, next, `Updated project meter ${updated.numerator}/${updated.denominator} at Bar ${updated.bar}.`);
+}
+
+export function deleteProjectMeterMapPointCommand(state: AppState, pointId: string): AppState {
+  const project = state.undoStack.present;
+  const existing = (project.project.meterMap || []).find((point) => point.id === pointId);
+  if (!existing) return { ...state, status: "Choose a project meter-map point before deleting it." };
+  const next = cloneProject(project);
+  next.project.meterMap = (next.project.meterMap || []).filter((point) => point.id !== pointId);
+  return commitProject(state, next, `Deleted project meter ${existing.numerator}/${existing.denominator} at Bar ${existing.bar}.`);
+}
+
+function cleanProjectMeterMapPoint(point: ProjectMeterMapPoint): ProjectMeterMapPoint {
+  return {
+    ...point,
+    id: String(point.id || "meter_manual").replace(/[^a-z0-9_-]+/gi, "-") || "meter_manual",
+    bar: cleanMeterBar(point.bar),
+    numerator: Math.max(1, Math.min(32, Math.round(Number(point.numerator) || 4))),
+    denominator: Math.max(1, Math.min(32, Math.round(Number(point.denominator) || 4)))
+  };
+}
+
+function cleanMeterBar(value: unknown): number {
+  const bar = Number(value);
+  return Math.round(Math.max(1, Math.min(4096, Number.isFinite(bar) ? bar : 1)) * 1000000) / 1000000;
+}
+
+function sortProjectMeterMap(points: ProjectMeterMapPoint[]): ProjectMeterMapPoint[] {
+  return points.slice().sort((a, b) => a.bar - b.bar || a.id.localeCompare(b.id));
+}
+
+function uniqueProjectMeterMapId(project: PocketDawProject, base: string): string {
+  const existing = new Set((project.project.meterMap || []).map((point) => point.id));
+  let id = base;
+  let n = 2;
+  while (existing.has(id)) {
+    id = `${base}_${n}`;
+    n += 1;
+  }
+  return id;
+}
+
 export function ensureTrackSendAutomationLaneCommand(state: AppState, trackId: string, returnTrackId: string, field: TrackSendAutomationField): AppState {
   const project = state.undoStack.present;
   const track = project.tracks.find((item) => item.id === trackId);
@@ -497,6 +645,22 @@ export function addTrackSendAutomationPointCommand(state: AppState, trackId: str
   };
 }
 
+export function recordTrackSendAutomationPointCommand(state: AppState, trackId: string, returnTrackId: string, field: TrackSendAutomationField, value: number, bar = state.playheadBar || 1): AppState {
+  const project = state.undoStack.present;
+  const track = project.tracks.find((item) => item.id === trackId);
+  const ret = project.tracks.find((item) => item.id === returnTrackId && item.trackType === "return");
+  const lane = getTrackSendAutomationLane(project, trackId, returnTrackId, field);
+  if (!track || !ret || !lane || track.role === "master" || track.trackType === "return") return state;
+  return {
+    ...commitProject(
+      state,
+      addAutomationPoint(project, lane.id, { bar, value, curve: "linear" }),
+      `Recorded ${track.name} send automation point to ${ret.name}.`
+    ),
+    selectedTrackId: trackId
+  };
+}
+
 export function ensureClipAutomationLaneCommand(state: AppState, clipId: string, field: ClipAutomationField): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio clip before automating clip gain." };
@@ -522,8 +686,28 @@ export function addClipAutomationPointCommand(state: AppState, clipId: string, f
   };
 }
 
-export function updateAutomationPointCommand(state: AppState, laneId: string, pointIndex: number, bar: number, value: number): AppState {
-  return commitProject(state, updateAutomationPoint(state.undoStack.present, laneId, pointIndex, { bar, value }), "Updated automation point.");
+export function recordClipAutomationPointCommand(state: AppState, clipId: string, field: ClipAutomationField, value: number, bar = state.playheadBar || 1): AppState {
+  const project = state.undoStack.present;
+  const clip = project.timeline.clips.find((item) => item.id === clipId);
+  const lane = getClipAutomationLane(project, clipId, field);
+  if (!clip || clip.type !== "audio" || !lane) return state;
+  return {
+    ...commitProject(
+      state,
+      addAutomationPoint(project, lane.id, { bar, value, curve: "linear" }),
+      `Recorded ${clip.name} ${field} automation point.`
+    ),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function updateAutomationPointCommand(state: AppState, laneId: string, pointIndex: number, bar: number, value: number, curve?: string): AppState {
+  return commitProject(
+    state,
+    updateAutomationPoint(state.undoStack.present, laneId, pointIndex, { bar, value, curve: cleanAutomationCurve(curve) }),
+    "Updated automation point."
+  );
 }
 
 export function deleteAutomationPointCommand(state: AppState, laneId: string, pointIndex: number): AppState {
@@ -532,6 +716,11 @@ export function deleteAutomationPointCommand(state: AppState, laneId: string, po
 
 export function setAutomationLaneEnabledCommand(state: AppState, laneId: string, enabled: boolean): AppState {
   return commitProject(state, setAutomationLaneEnabled(state.undoStack.present, laneId, enabled), enabled ? "Automation lane enabled." : "Automation lane disabled.");
+}
+
+function cleanAutomationCurve(value: string | undefined): NonNullable<AutomationPoint["curve"]> {
+  if (value === "hold" || value === "ease-in" || value === "ease-out") return value;
+  return "linear";
 }
 
 export function placeAudioClipCommand(state: AppState, mediaPoolItemId: string): AppState {
@@ -547,7 +736,7 @@ export function placeAudioClipCommand(state: AppState, mediaPoolItemId: string):
 export function addMidiNoteCommand(state: AppState, clipId: string): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before adding notes." };
-  const tick = Math.max(0, Math.round((state.playheadBar - clip.startBar) * state.undoStack.present.project.timeSig * midiDataFromClip(clip).ppq));
+  const tick = midiTickAtPlayhead(state, clip);
   return {
     ...commitProject(state, addMidiNote(state.undoStack.present, clipId, tick), `Added MIDI note to ${clip.name}.`),
     selectedClipId: clipId,
@@ -610,7 +799,7 @@ export function setMidiNoteFieldCommand(state: AppState, clipId: string, noteId:
 export function addMidiControllerCommand(state: AppState, clipId: string): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before adding controller data." };
-  const tick = Math.max(0, Math.round((state.playheadBar - clip.startBar) * state.undoStack.present.project.timeSig * midiDataFromClip(clip).ppq));
+  const tick = midiTickAtPlayhead(state, clip);
   return {
     ...commitProject(state, addMidiController(state.undoStack.present, clipId, tick), `Added CC1 controller point to ${clip.name}.`),
     selectedClipId: clipId,
@@ -651,7 +840,7 @@ export function deleteMidiControllerCommand(state: AppState, clipId: string, con
 export function addMidiProgramChangeCommand(state: AppState, clipId: string): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before adding program changes." };
-  const tick = Math.max(0, Math.round((state.playheadBar - clip.startBar) * state.undoStack.present.project.timeSig * midiDataFromClip(clip).ppq));
+  const tick = midiTickAtPlayhead(state, clip);
   return {
     ...commitProject(state, addMidiProgramChange(state.undoStack.present, clipId, tick), `Added program change to ${clip.name}.`),
     selectedClipId: clipId,
@@ -692,7 +881,7 @@ export function deleteMidiProgramChangeCommand(state: AppState, clipId: string, 
 export function addMidiPitchBendCommand(state: AppState, clipId: string): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before adding pitch bends." };
-  const tick = Math.max(0, Math.round((state.playheadBar - clip.startBar) * state.undoStack.present.project.timeSig * midiDataFromClip(clip).ppq));
+  const tick = midiTickAtPlayhead(state, clip);
   return {
     ...commitProject(state, addMidiPitchBend(state.undoStack.present, clipId, tick), `Added pitch bend to ${clip.name}.`),
     selectedClipId: clipId,
@@ -733,7 +922,7 @@ export function deleteMidiPitchBendCommand(state: AppState, clipId: string, bend
 export function addMidiAftertouchCommand(state: AppState, clipId: string): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before adding aftertouch." };
-  const tick = Math.max(0, Math.round((state.playheadBar - clip.startBar) * state.undoStack.present.project.timeSig * midiDataFromClip(clip).ppq));
+  const tick = midiTickAtPlayhead(state, clip);
   return {
     ...commitProject(state, addMidiAftertouch(state.undoStack.present, clipId, tick), `Added aftertouch to ${clip.name}.`),
     selectedClipId: clipId,
@@ -769,6 +958,14 @@ export function deleteMidiAftertouchCommand(state: AppState, clipId: string, aft
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId
   };
+}
+
+function midiTickAtPlayhead(state: AppState, clip: Clip): number {
+  const ppq = midiDataFromClip(clip).ppq;
+  const clipStartBar = Number.isFinite(clip.startBar) ? clip.startBar : 1;
+  const playheadBar = Number.isFinite(state.playheadBar) ? Math.max(clipStartBar, state.playheadBar) : clipStartBar;
+  const beats = timelineQuarterNoteBeatsBetweenBars(state.undoStack.present, clipStartBar, playheadBar);
+  return Math.max(0, Math.round(beats * ppq));
 }
 
 export function convertMidiDrumsToBranchOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A"): AppState {
@@ -814,6 +1011,201 @@ export function convertMidiMelodyToGeneratedOverlaysCommand(
     selectedTrackId: clip.trackId || state.selectedTrackId,
     chordsmithEditorSectionId: result.sectionId
   };
+}
+
+export function convertMidiBassToGeneratedOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A"): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping bass." };
+  const result = convertMidiClipToBassOverlays(state.undoStack.present, clipId, sectionId);
+  if (!result.written) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.skipped ? `No supported bass MIDI notes found in ${clip.name}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name}.`
+    };
+  }
+  return {
+    ...commitProject(state, result.project, `Mapped ${result.written} MIDI bass note${result.written === 1 ? "" : "s"} from ${clip.name} to Section ${result.sectionId} Bass overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId,
+    chordsmithEditorSectionId: result.sectionId
+  };
+}
+
+export function convertMidiChordsToGeneratedOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A"): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping chords." };
+  const result = convertMidiClipToChordOverlays(state.undoStack.present, clipId, sectionId);
+  if (!result.written) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.skipped ? `No supported MIDI chord groups found in ${clip.name}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name}.`
+    };
+  }
+  return {
+    ...commitProject(state, result.project, `Mapped ${result.written} MIDI chord group${result.written === 1 ? "" : "s"} from ${clip.name} to Section ${result.sectionId} Chords overlays${result.merged ? ` (${result.merged} grouped)` : ""}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId,
+    chordsmithEditorSectionId: result.sectionId
+  };
+}
+
+export function adoptMidiTempoMapStartCommand(state: AppState, clipId = state.selectedClipId || ""): AppState {
+  const project = state.undoStack.present;
+  const clip = project.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before adopting MIDI tempo." };
+  const midi = midiDataFromClip(clip);
+  const media = clip.mediaPoolItemId ? project.mediaPool.find((item) => item.id === clip.mediaPoolItemId) || null : null;
+  const metadata = {
+    ...(media?.metadata || {}),
+    ...(midi.metadata || {}),
+    ppq: midi.ppq
+  };
+  const summary = createMidiTempoMapSummary(metadata, { fallbackBpm: project.project.bpm, fallbackTimeSig: project.project.timeSig });
+  const tempo = summary?.tempoEvents[0] || null;
+  const meter = summary?.timeSignatureEvents[0] || null;
+  if (!tempo && !meter) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: `${clip.name} has no imported MIDI tempo or meter metadata to adopt.`
+    };
+  }
+  const patch: ChordsmithGlobalPatch = {};
+  if (tempo) patch.bpm = tempo.bpm;
+  let skippedMeter = "";
+  if (meter) {
+    if (meter.denominator === 4) patch.timeSig = meter.numerator;
+    else skippedMeter = ` Meter ${meter.numerator}/${meter.denominator} is preserved but project globals currently support /4 meters only.`;
+  }
+  if (patch.bpm === undefined && patch.timeSig === undefined) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: skippedMeter.trim() || `${clip.name} has no supported MIDI tempo or meter metadata to adopt.`
+    };
+  }
+  const next = setChordsmithGlobals(project, patch);
+  const parts = [
+    patch.bpm !== undefined ? `${patch.bpm} BPM` : "",
+    patch.timeSig !== undefined ? `${patch.timeSig}/4` : ""
+  ].filter(Boolean);
+  return {
+    ...commitProject(state, next, `Adopted MIDI start ${parts.join(" and ")} from ${clip.name}.${skippedMeter}`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function adoptMidiTempoMapAutomationCommand(state: AppState, clipId = state.selectedClipId || ""): AppState {
+  const project = state.undoStack.present;
+  const clip = project.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before converting a MIDI tempo map." };
+  const midi = midiDataFromClip(clip);
+  const media = clip.mediaPoolItemId ? project.mediaPool.find((item) => item.id === clip.mediaPoolItemId) || null : null;
+  const metadata = {
+    ...(media?.metadata || {}),
+    ...(midi.metadata || {}),
+    ppq: midi.ppq
+  };
+  const summary = createMidiTempoMapSummary(metadata, { fallbackBpm: project.project.bpm, fallbackTimeSig: project.project.timeSig });
+  if (!summary?.tempoEvents.length) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: `${clip.name} has no imported MIDI tempo events to convert into project tempo automation.`
+    };
+  }
+  const firstTempo = summary.tempoEvents[0]!.bpm;
+  const withBaseTempo = setChordsmithGlobals(project, { bpm: firstTempo });
+  const ensured = ensureProjectAutomationLane(withBaseTempo, "tempo");
+  const points = summary.tempoEvents.map((event) => ({
+    bar: midiTempoEventAutomationBar(event.position, summary.ppq, midiBeatsPerBarAtTick(summary, event.tick, project.project.timeSig)),
+    value: event.bpm,
+    curve: "hold" as const
+  }));
+  const next = setAutomationLanePoints(ensured.project, ensured.laneId, points);
+  return {
+    ...commitProject(state, next, `Converted ${summary.tempoEvents.length} MIDI tempo event${summary.tempoEvents.length === 1 ? "" : "s"} from ${clip.name} into project tempo automation.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function adoptMidiMeterMapCommand(state: AppState, clipId = state.selectedClipId || ""): AppState {
+  const project = state.undoStack.present;
+  const clip = project.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before converting a MIDI meter map." };
+  const midi = midiDataFromClip(clip);
+  const media = clip.mediaPoolItemId ? project.mediaPool.find((item) => item.id === clip.mediaPoolItemId) || null : null;
+  const metadata = {
+    ...(media?.metadata || {}),
+    ...(midi.metadata || {}),
+    ppq: midi.ppq
+  };
+  const summary = createMidiTempoMapSummary(metadata, { fallbackBpm: project.project.bpm, fallbackTimeSig: project.project.timeSig });
+  if (!summary?.timeSignatureEvents.length) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: `${clip.name} has no imported MIDI meter events to convert into a project meter map.`
+    };
+  }
+  const first = summary.timeSignatureEvents[0]!;
+  const meterMap: ProjectMeterMapPoint[] = summary.timeSignatureEvents.map((event, index) => ({
+    id: `meter_${index + 1}`,
+    bar: midiTempoEventAutomationBar(event.position, summary.ppq, midiBeatsPerBarAtTick(summary, event.tick, project.project.timeSig)),
+    numerator: event.numerator,
+    denominator: event.denominator,
+    source: "midi-import",
+    sourceClipId: clip.id,
+    sourceTick: event.tick,
+    seconds: Math.round(event.seconds * 1000000) / 1000000
+  }));
+  let next = cloneProject(project);
+  next.project.meterMap = meterMap;
+  if (first.denominator === 4) {
+    next = setChordsmithGlobals(next, { timeSig: first.numerator });
+  }
+  const unsupportedStart = first.denominator !== 4
+    ? ` Start meter ${first.numerator}/${first.denominator} is stored in the meter map; project globals currently support /4 meters only.`
+    : "";
+  return {
+    ...commitProject(state, next, `Converted ${meterMap.length} MIDI meter event${meterMap.length === 1 ? "" : "s"} from ${clip.name} into the project meter map.${unsupportedStart}`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+function midiTempoEventAutomationBar(position: { bar: number; beat: number; tick: number }, ppq: number, beatsPerBarValue: number): number {
+  const beatsPerBar = Math.max(1, Math.round(Number(beatsPerBarValue) || 4));
+  const safePpq = Math.max(1, Math.round(Number(ppq) || 480));
+  const bar = Math.max(1, Number(position.bar) || 1);
+  const beat = Math.max(1, Number(position.beat) || 1);
+  const tick = Math.max(0, Number(position.tick) || 0);
+  const fractional = (beat - 1) / beatsPerBar + tick / (safePpq * beatsPerBar);
+  return Math.round((bar + fractional) * 1000000) / 1000000;
+}
+
+function midiBeatsPerBarAtTick(summary: MidiTempoMapSummary, tick: number, fallbackTimeSig: number): number {
+  let beatsPerBar = Math.max(1, Math.round(Number(fallbackTimeSig) || 4));
+  const target = Math.max(0, Math.round(Number(tick) || 0));
+  summary.timeSignatureEvents
+    .slice()
+    .sort((a, b) => a.tick - b.tick)
+    .some((event) => {
+      if (event.tick >= target && event.tick !== 0) return true;
+      beatsPerBar = Math.max(1, Math.round(event.numerator));
+      return false;
+    });
+  return beatsPerBar;
 }
 
 export function quantizeMidiClipCommand(state: AppState, clipId: string, grid: MidiQuantizeGrid): AppState {
@@ -884,6 +1276,32 @@ export function removeTrackFxCommand(state: AppState, chainId: string, slotId: s
 
 export function setFxSlotParameterCommand(state: AppState, chainId: string, slotId: string, parameter: string, value: number | boolean): AppState {
   return commitProject(state, setFxSlotParameter(state.undoStack.present, chainId, slotId, parameter, value), "Updated FX setting.");
+}
+
+export function ensureFxAutomationLaneCommand(state: AppState, chainId: string, slotId: string, parameter: string): AppState {
+  const result = ensureFxParameterAutomationLane(state.undoStack.present, chainId, slotId, parameter);
+  if (!result) return { ...state, status: "Choose a numeric FX parameter before automating it." };
+  return commitProject(state, result.project, "Enabled FX parameter automation.");
+}
+
+export function addFxAutomationPointCommand(state: AppState, chainId: string, slotId: string, parameter: string): AppState {
+  const ensured = ensureFxParameterAutomationLane(state.undoStack.present, chainId, slotId, parameter);
+  if (!ensured) return { ...state, status: "Choose a numeric FX parameter before automating it." };
+  const chain = ensured.project.fx?.chains.find((item) => item.id === chainId);
+  const slot = chain?.slots.find((item) => item.id === slotId);
+  const value = Number(slot?.parameters?.[String(parameter || "").replace(/[^a-z0-9_-]+/gi, "")]);
+  const next = addAutomationPoint(ensured.project, ensured.laneId, { bar: state.playheadBar || 1, value: Number.isFinite(value) ? value : 0, curve: "linear" });
+  return commitProject(state, next, "Added FX automation point.");
+}
+
+export function recordFxAutomationPointCommand(state: AppState, chainId: string, slotId: string, parameter: string, value: number, bar = state.playheadBar || 1): AppState {
+  const lane = getFxParameterAutomationLane(state.undoStack.present, chainId, slotId, parameter);
+  if (!lane) return state;
+  return commitProject(
+    state,
+    addAutomationPoint(state.undoStack.present, lane.id, { bar, value, curve: "linear" }),
+    "Recorded FX automation point."
+  );
 }
 
 export function setPocketProEqPresetCommand(state: AppState, chainId: string, slotId: string, presetId: string): AppState {

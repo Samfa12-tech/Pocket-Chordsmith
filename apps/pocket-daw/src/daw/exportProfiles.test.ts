@@ -72,10 +72,10 @@ describe("export profile codec foundation", () => {
     }
   });
 
-  it("rejects WAV profiles that request unsupported bit depth or sample rate", () => {
-    const badDepth = validateExportProfile({
+  it("accepts 32-bit float WAV profiles and rejects unsupported sample rates", () => {
+    const floatDepth = validateExportProfile({
       ...profileWithFormat("wav"),
-      bitDepth: 24,
+      bitDepth: 32,
       sampleRate: 44100
     });
     const badRate = validateExportProfile({
@@ -84,8 +84,7 @@ describe("export profile codec foundation", () => {
       sampleRate: 384000
     });
 
-    expect(badDepth.ok).toBe(false);
-    expect(badDepth.errors.join(" ")).toContain("current WAV encoder writes 16-bit PCM");
+    expect(floatDepth.ok).toBe(true);
     expect(badRate.ok).toBe(false);
     expect(badRate.errors.join(" ")).toContain("outside the supported 22050-192000 Hz range");
   });

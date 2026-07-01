@@ -1,13 +1,16 @@
 import type { PocketDawProject } from "../daw/schema";
-import { barsToSeconds } from "../daw/timeline";
+import { timelineDurationSeconds } from "../daw/timeline";
 import { buildNativeAudioStartPayload } from "../native/audioPlayback";
 import { renderNativeAudioWav, type NativeMediaApi } from "../native/mediaBridge";
 import { renderTimelineEvents } from "./eventRenderer";
 import { buildNativeRuntimeAudioCache } from "./nativeRenderCache";
-import { fullSongWavChannelMode, fullSongWavPeakNormalize, fullSongWavSampleRate, wavBlobWithChannelMode, type WavChannelMode } from "./offlineRender";
+import { fullSongWavBitDepth, fullSongWavChannelMode, fullSongWavDither, fullSongWavPeakNormalize, fullSongWavSampleRate, wavBlobWithChannelMode, type WavBitDepth, type WavChannelMode, type WavDitherMode } from "./offlineRender";
 
-export async function renderProjectToNativeWavBlob(project: PocketDawProject, api?: NativeMediaApi, options: { channelMode?: WavChannelMode; normalizePeak?: boolean } = {}): Promise<Blob | null> {
+export async function renderProjectToNativeWavBlob(project: PocketDawProject, api?: NativeMediaApi, options: { channelMode?: WavChannelMode; bitDepth?: WavBitDepth; dither?: WavDitherMode; normalizePeak?: boolean } = {}): Promise<Blob | null> {
   const renderProject = projectForFullSongWavExport(project);
+  const targetBitDepth = options.bitDepth || fullSongWavBitDepth(renderProject);
+  const dither = options.dither || fullSongWavDither(renderProject);
+  const nativeBitDepth = dither === "tpdf" && targetBitDepth !== 32 ? 32 : targetBitDepth;
   const runtimeCache = await buildNativeRuntimeAudioCache(renderProject);
   if (runtimeCache.missingRuntimeAudioRegionCount > 0) {
     throw new Error("Native WAV export is missing one or more timeline audio files.");
@@ -17,18 +20,22 @@ export async function renderProjectToNativeWavBlob(project: PocketDawProject, ap
     ...payload,
     loop: null,
     metronome: null
-  }, nativeWavExportDurationSeconds(renderProject), api);
+  }, nativeWavExportDurationSeconds(renderProject), { bitDepth: nativeBitDepth }, api);
   if (!rendered) return null;
   return wavBlobWithChannelMode(
     new Blob([new Uint8Array(rendered.bytes)], { type: "audio/wav" }),
     options.channelMode || fullSongWavChannelMode(renderProject),
-    { normalizePeak: options.normalizePeak ?? fullSongWavPeakNormalize(renderProject) }
+    {
+      bitDepth: targetBitDepth,
+      dither,
+      normalizePeak: options.normalizePeak ?? fullSongWavPeakNormalize(renderProject)
+    }
   );
 }
 
 export function nativeWavExportDurationSeconds(project: PocketDawProject): number {
   const tailSeconds = Number(project.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings.tailSeconds ?? 1.2);
-  return barsToSeconds(project.timeline.bars, project.project.bpm, project.project.timeSig) + tailSeconds;
+  return timelineDurationSeconds(project) + tailSeconds;
 }
 
 function projectForFullSongWavExport(project: PocketDawProject): PocketDawProject {

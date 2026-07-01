@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { branchGeneratedDrumsCommand, collapseGeneratedDrumBranchesCommand, convertMidiDrumsToBranchOverlaysCommand, convertMidiMelodyToGeneratedOverlaysCommand, cropSelectedClipToTimelineSelectionCommand, cycleDrumBranchStepCommand, rippleDeleteSelectedClipRangeCommand, setSelectedGeneratedClipStemMuteCommand, setTimelineSelectionRangeCommand, splitTimelineSelectionCommand, toggleDrumBranchGroupCollapsedCommand } from "../src/app/commands";
+import { adoptMidiMeterMapCommand, adoptMidiTempoMapAutomationCommand, adoptMidiTempoMapStartCommand, branchGeneratedDrumsCommand, collapseGeneratedDrumBranchesCommand, convertMidiBassToGeneratedOverlaysCommand, convertMidiChordsToGeneratedOverlaysCommand, convertMidiDrumsToBranchOverlaysCommand, convertMidiMelodyToGeneratedOverlaysCommand, cropSelectedClipToTimelineSelectionCommand, cycleDrumBranchStepCommand, rippleDeleteSelectedClipRangeCommand, setSelectedGeneratedClipStemMuteCommand, setTimelineSelectionRangeCommand, splitTimelineSelectionCommand, toggleDrumBranchGroupCollapsedCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { DRUM_LANE_DEFS, drumBranchGroupCollapsed, generatedDrumBranchLane, getDrumBranchStepLevel } from "../src/daw/drumLanes";
+import { bassOverlayCount } from "../src/daw/bassOverlays";
+import { chordOverlayCount } from "../src/daw/chordOverlays";
 import { melodyOverlayCount } from "../src/daw/melodyOverlays";
 import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import type { Clip } from "../src/daw/schema";
 import { createUndoStack } from "../src/daw/undo";
-import { metalArrangementMidiBytes } from "./midiFixtures";
+import { metalArrangementMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 
 describe("generated clip edit commands", () => {
   it("branches and collapses generated drums through the undoable command path", () => {
@@ -84,6 +86,102 @@ describe("generated clip edit commands", () => {
     expect(edited.selectedClipId).toBe(imported.clipId);
     expect(edited.status).toContain("Mapped");
     expect(edited.status).toContain("MIDI melodic");
+  });
+
+  it("maps selected MIDI bass clips into generated bass overlays through the command path", () => {
+    const state = createInitialState();
+    const imported = importMidiFileToProject(state.undoStack.present, parseStandardMidiFile(metalArrangementMidiBytes()), "metal.mid");
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+    state.chordsmithEditorSectionId = "A";
+
+    const edited = convertMidiBassToGeneratedOverlaysCommand(state);
+
+    expect(bassOverlayCount(edited.undoStack.present, "A")).toBe(2);
+    expect(edited.undoStack.past).toHaveLength(1);
+    expect(edited.selectedClipId).toBe(imported.clipId);
+    expect(edited.status).toContain("Mapped");
+    expect(edited.status).toContain("MIDI bass");
+  });
+
+  it("maps selected MIDI chord groups into generated chord overlays through the command path", () => {
+    const state = createInitialState();
+    const imported = importMidiFileToProject(state.undoStack.present, parseStandardMidiFile(metalArrangementMidiBytes()), "metal.mid");
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+    state.chordsmithEditorSectionId = "A";
+
+    const edited = convertMidiChordsToGeneratedOverlaysCommand(state);
+
+    expect(chordOverlayCount(edited.undoStack.present, "A")).toBe(2);
+    expect(edited.undoStack.past).toHaveLength(1);
+    expect(edited.selectedClipId).toBe(imported.clipId);
+    expect(edited.status).toContain("Mapped");
+    expect(edited.status).toContain("MIDI chord");
+  });
+
+  it("adopts imported MIDI start tempo and supported meter through the command path", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 100;
+    state.undoStack.present.project.timeSig = 5;
+    const imported = importMidiFileToProject(state.undoStack.present, parseStandardMidiFile(tempoMapMidiBytes()), "tempo-map.mid");
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+
+    const edited = adoptMidiTempoMapStartCommand(state);
+
+    expect(edited.undoStack.present.project.bpm).toBe(120);
+    expect(edited.undoStack.present.project.timeSig).toBe(4);
+    expect(edited.undoStack.past).toHaveLength(1);
+    expect(edited.selectedClipId).toBe(imported.clipId);
+    expect(edited.status).toContain("Adopted MIDI start 120 BPM and 4/4");
+  });
+
+  it("converts imported MIDI tempo maps into project tempo automation", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 100;
+    state.undoStack.present.project.timeSig = 5;
+    const imported = importMidiFileToProject(state.undoStack.present, parseStandardMidiFile(tempoMapMidiBytes()), "tempo-map.mid");
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+
+    const edited = adoptMidiTempoMapAutomationCommand(state);
+    const lane = edited.undoStack.present.automation.lanes.find((item) => item.targetPath === "project.tempo")!;
+    const clip = edited.undoStack.present.timeline.clips.find((item) => item.id === imported.clipId)!;
+
+    expect(edited.undoStack.present.project.bpm).toBe(120);
+    expect(lane.points).toEqual([
+      { bar: 1, value: 120, curve: "hold" },
+      { bar: 1.25, value: 140, curve: "hold" }
+    ]);
+    expect(clip.type).toBe("midi");
+    expect(edited.undoStack.past).toHaveLength(1);
+    expect(edited.selectedClipId).toBe(imported.clipId);
+    expect(edited.status).toContain("Converted 2 MIDI tempo events");
+  });
+
+  it("converts imported MIDI meter maps into project meter-map points", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.timeSig = 5;
+    const imported = importMidiFileToProject(state.undoStack.present, parseStandardMidiFile(tempoMapMidiBytes()), "tempo-map.mid");
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+
+    const edited = adoptMidiMeterMapCommand(state);
+
+    expect(edited.undoStack.present.project.timeSig).toBe(4);
+    expect(edited.undoStack.present.project.meterMap).toEqual([
+      expect.objectContaining({ id: "meter_1", bar: 1, numerator: 4, denominator: 4, source: "midi-import", sourceClipId: imported.clipId, sourceTick: 0 }),
+      expect.objectContaining({ id: "meter_2", bar: 1.25, numerator: 3, denominator: 4, source: "midi-import", sourceClipId: imported.clipId, sourceTick: 480 })
+    ]);
+    expect(edited.undoStack.past).toHaveLength(1);
+    expect(edited.selectedClipId).toBe(imported.clipId);
+    expect(edited.status).toContain("Converted 2 MIDI meter events");
   });
 
   it("applies generated clip stem mutes through the undoable command path", () => {

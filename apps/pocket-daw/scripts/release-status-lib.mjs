@@ -90,6 +90,29 @@ export function validateReleaseStatus(releaseStatus, context) {
   return { ok: failures.length === 0, failures };
 }
 
+export function validateReleaseCandidateTruth(releaseStatus, context, options = {}) {
+  const validation = validateReleaseStatus(releaseStatus, context);
+  const failures = [...validation.failures];
+  const sourceVersion = String(releaseStatus?.sourceVersion || "");
+  const latestPublishedVersion = String(releaseStatus?.latestPublishedVersion || "");
+  const currentCommit = String(options.currentCommit || "").trim();
+  const latestPublishedCommit = String(releaseStatus?.latestPublishedCommit || "").trim();
+  const sourceOnlyNotes = Array.isArray(releaseStatus?.unreleasedSourceNotes) ? releaseStatus.unreleasedSourceNotes : [];
+
+  if (sourceVersion && sourceVersion === latestPublishedVersion) {
+    if (!currentCommit || !/^[a-f0-9]{40}$/i.test(currentCommit)) {
+      failures.push("release candidate truth requires the current 40-character git commit.");
+    } else if (!latestPublishedCommit || currentCommit.toLowerCase() !== latestPublishedCommit.toLowerCase()) {
+      failures.push(`release-status.json sourceVersion matches latestPublishedVersion (${sourceVersion}) but current commit ${currentCommit || "missing"} does not match latestPublishedCommit ${latestPublishedCommit || "missing"}; bump the next Pocket DAW checkpoint version before packaging/publishing source-only changes.`);
+    }
+    if (sourceOnlyNotes.length) {
+      failures.push("release-status.json unreleasedSourceNotes must be empty when sourceVersion matches latestPublishedVersion; bump the next Pocket DAW checkpoint version before packaging/publishing source-only changes.");
+    }
+  }
+
+  return { ok: failures.length === 0, failures };
+}
+
 export function renderReleaseStatusMarkdown(releaseStatus) {
   const smoke = releaseStatus.lastInstalledSmoke || {};
   const smokeVersion = smoke.version || "not recorded";
@@ -126,6 +149,12 @@ ${notes}
 ## Unreleased Source-Only Notes
 
 ${unreleasedNotes}
+
+## Capability Claim Boundary
+
+- Public release claims must be limited to the latest published version plus the exact installed-smoke evidence recorded above.
+- Source-only notes describe current working-tree capability only; they are not public release claims until installed-app smoke and release metadata are refreshed.
+- Candidate release claims require a fresh exact-artifact smoke attestation, verified game-pack ZIP evidence for any game-pack claim, and refreshed generated release status.
 
 ## Release Truth
 

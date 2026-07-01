@@ -1,6 +1,6 @@
 import type { AudioEngine } from "../audio/audioEngine";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
-import { createAudioMediaAnalysisSummary, createRenderCacheSummary, mediaPoolStatus, type AudioMediaAnalysisSummary, type RenderCacheSummary } from "../daw/mediaPool";
+import { createAudioMediaAnalysisSummary, createPortableMediaProject, createRenderCacheSummary, mediaPoolStatus, verifyMediaPortability, verifySharedMediaPortability, type AudioMediaAnalysisSummary, type MediaPortabilityVerification, type RenderCacheSummary, type SharedMediaPortabilityVerification } from "../daw/mediaPool";
 import { validateProjectInvariants, type ProjectInvariantIssue } from "../daw/projectInvariants";
 import { createRoutingExportSummary, type RoutingExportSummary } from "../daw/routing";
 import { POCKET_DAW_VERSION, type PocketDawProject } from "../daw/schema";
@@ -29,6 +29,8 @@ export interface TesterDiagnosticsPayload {
     schemaVersion: number;
     bpm: number;
     timeSig: number;
+    meterMapPointCount: number;
+    meterMap: NonNullable<PocketDawProject["project"]["meterMap"]>;
     bars: number;
     clipCount: number;
     trackCount: number;
@@ -97,6 +99,8 @@ export interface TesterDiagnosticsPayload {
     missingCount: number;
     runtimeAvailableCount: number;
     renderCacheCount: number;
+    portability: MediaPortabilityVerification;
+    sharedPortability: SharedMediaPortabilityVerification;
     renderCache: RenderCacheSummary;
     analysis: AudioMediaAnalysisSummary;
     nativeRenderCache: AudioEngineDiagnostics["nativeRenderCache"];
@@ -162,6 +166,8 @@ export function buildTesterDiagnosticsPayload(
       schemaVersion: project.schemaVersion,
       bpm: project.project.bpm,
       timeSig: project.project.timeSig,
+      meterMapPointCount: project.project.meterMap?.length || 0,
+      meterMap: project.project.meterMap || [],
       bars: project.timeline.bars,
       clipCount: project.timeline.clips.length,
       trackCount: project.tracks.length,
@@ -230,6 +236,8 @@ export function buildTesterDiagnosticsPayload(
       missingCount,
       runtimeAvailableCount,
       renderCacheCount: project.renderCache.length,
+      portability: verifyMediaPortability(project),
+      sharedPortability: verifySharedMediaPortability(createPortableMediaProject(project)),
       renderCache: createRenderCacheSummary(project),
       analysis: createAudioMediaAnalysisSummary(project),
       nativeRenderCache: audioDiagnostics.nativeRenderCache

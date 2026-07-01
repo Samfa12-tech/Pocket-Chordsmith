@@ -10,6 +10,7 @@ import { addTrackToProject } from "../src/daw/tracks";
 import { createAutomationLane } from "../src/daw/automation";
 import { branchGeneratedDrumsToTracks } from "../src/daw/drumLanes";
 import { nativeRenderCacheSignature, nativeRuntimeAudioCacheSignature, type NativeRenderCache } from "../src/audio/nativeRenderCache";
+import { timelineSecondsAtBar } from "../src/daw/timeline";
 import type { Clip, PocketDawProject } from "../src/daw/schema";
 import { simpleMidiBytes } from "./midiFixtures";
 
@@ -56,6 +57,37 @@ describe("audio engine diagnostics", () => {
 
     project.timeline.loop.enabled = false;
     expect(calculateLoopSeekSeconds(project, secondsPerBar * 6)).toBeNull();
+  });
+
+  it("calculates loop returns through project tempo automation", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.timeline.loop = { enabled: true, startBar: 2, endBar: 4 };
+    const automated = createAutomationLane(project, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [{ bar: 1, value: 60, curve: "hold" }]
+    }).project;
+
+    expect(calculateLoopSeekSeconds(automated, 11.9)).toBeNull();
+    expect(calculateLoopSeekSeconds(automated, 12)).toBeCloseTo(4, 5);
+  });
+
+  it("seeks to bars through project tempo automation", () => {
+    let project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project = createAutomationLane(project, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [{ bar: 1, value: 60, curve: "hold" }]
+    }).project;
+    const engine = new AudioEngine(project);
+
+    engine.seekToBar(3);
+
+    expect(engine.currentSeconds()).toBeCloseTo(8, 5);
   });
 
   it("updates mixer controls without rebuilding timeline diagnostics", () => {
@@ -930,6 +962,24 @@ describe("audio engine diagnostics", () => {
     } finally {
       (globalThis as any).window = previousWindow;
     }
+  });
+
+  it("sizes native render-cache time windows from the active meter map", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.meterMap = [
+      { id: "meter_short", bar: 2, numerator: 1, denominator: 16, source: "manual" }
+    ];
+    const engine = new AudioEngine(project);
+    const internals = engine as unknown as {
+      nativeRenderCacheTimeWindow(seconds: number, windowBars: number): { startSeconds: number; endSeconds: number };
+    };
+
+    const window = internals.nativeRenderCacheTimeWindow(2.15, 1);
+
+    expect(window.startSeconds).toBeCloseTo(2, 5);
+    expect(window.endSeconds).toBeCloseTo(timelineSecondsAtBar(project, 3), 5);
   });
 
   it("advances warmed cache payload windows without building cache during playback", async () => {

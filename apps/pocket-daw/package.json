@@ -1,6 +1,6 @@
 {
   "name": "pocket-daw",
-  "version": "0.6.34",
+  "version": "0.6.35",
   "description": "Free Windows desktop arrangement and production app for Pocket Chordsmith projects, built with Vite, TypeScript, Tauri, and native audio playback.",
   "private": true,
   "license": "UNLICENSED",
@@ -36,6 +36,7 @@
     "verify:versions": "node scripts/verify-versions.mjs && npm run verify:release-status-doc",
     "status:release": "node scripts/render-release-status.mjs",
     "verify:release-status-doc": "node scripts/verify-release-status-doc.mjs",
+    "verify:release-candidate-truth": "node scripts/verify-release-candidate-truth.mjs",
     "verify:smoke-attestation": "node scripts/verify-smoke-attestation.mjs",
     "verify:game-pack": "node scripts/verify-game-pack.mjs",
     "package:itch": "node scripts/package-itch.mjs",
@@ -49,6 +50,7 @@
     "itch:push:hidden": "node scripts/guarded-butler-push.mjs",
     "itch:push:bootstrapper": "node scripts/guarded-butler-push-bootstrapper.mjs",
     "verify:release": "node scripts/verify-release.mjs",
+    "verify:candidate": "node scripts/verify-candidate.mjs",
     "verify:native-release": "node scripts/verify-release.mjs --native-release",
     "release:update": "node scripts/release-updater-build.mjs",
     "release:update:fast": "node scripts/release-updater-build.mjs --fast",

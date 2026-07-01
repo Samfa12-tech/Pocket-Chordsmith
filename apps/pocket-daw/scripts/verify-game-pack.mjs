@@ -51,6 +51,7 @@ export function verifyGamePackZip(zipPath, options = {}) {
 
   if (manifest) {
     verifyManifest(manifest, { manifestPath, expectedKind, entrySet, entrySizes, errors, warnings });
+    verifyEmbeddedSourceProject(manifest, { zip, entrySet, errors });
   }
 
   if (!warnings.some((warning) => warning.includes("Manual target-runtime smoke"))) {
@@ -182,6 +183,67 @@ function verifyAudioMetadata(manifest, { errors, warnings }) {
   if (manifest.audio?.releaseStatus && !String(manifest.audio.releaseStatus).toLowerCase().includes("wav")) {
     warnings.push("Manifest audio.releaseStatus does not explicitly mention WAV.");
   }
+}
+
+function verifyEmbeddedSourceProject(manifest, { zip, entrySet, errors }) {
+  const sourceProjectPath = normalizeZipPath(manifest.sourceProject || "");
+  if (!sourceProjectPath || !entrySet.has(sourceProjectPath)) return;
+  let project;
+  try {
+    project = JSON.parse(zip.readAsText(sourceProjectPath));
+  } catch (error) {
+    errors.push(`Could not parse embedded source project ${sourceProjectPath}: ${errorMessage(error)}`);
+    return;
+  }
+  const mediaPool = Array.isArray(project?.mediaPool) ? project.mediaPool : [];
+  if (!mediaPool.length) return;
+  const localRefs = findEmbeddedSourceLocalMediaRefs(mediaPool);
+  if (localRefs.localReferenceFieldCount) {
+    const keys = localRefs.affectedFieldKeys.length ? ` (${localRefs.affectedFieldKeys.join(", ")})` : "";
+    errors.push(`${sourceProjectPath}: embedded source project contains ${localRefs.localReferenceFieldCount} local media reference field${localRefs.localReferenceFieldCount === 1 ? "" : "s"}${keys}; collect or relink media before sharing the pack.`);
+  }
+  const manifestShared = manifest.sharedMediaPortability;
+  if (manifestShared && Number(manifestShared.localReferenceFieldCount) !== localRefs.localReferenceFieldCount) {
+    errors.push(`${sourceProjectPath}: sharedMediaPortability.localReferenceFieldCount expected ${localRefs.localReferenceFieldCount} but found ${String(manifestShared.localReferenceFieldCount)}.`);
+  }
+}
+
+function findEmbeddedSourceLocalMediaRefs(mediaPool) {
+  const affectedFieldKeys = new Set();
+  let localReferenceFieldCount = 0;
+  mediaPool.forEach((item) => {
+    const fields = [["uri", item?.uri], ...Object.entries(item?.metadata || {})];
+    fields.forEach(([key, value]) => {
+      if (!isLocalMediaReferenceField(key, value)) return;
+      affectedFieldKeys.add(key);
+      localReferenceFieldCount += 1;
+    });
+  });
+  return {
+    localReferenceFieldCount,
+    affectedFieldKeys: Array.from(affectedFieldKeys).sort()
+  };
+}
+
+function isLocalMediaReferenceField(key, value) {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed || isProjectRelativeMediaPath(trimmed)) return false;
+  if (key === "uri" || /(?:uri|path|file|source|original|native|reload)/i.test(key)) {
+    return isExternalMediaPath(trimmed) || /^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.startsWith("/") || trimmed.startsWith("\\\\");
+  }
+  return false;
+}
+
+function isProjectRelativeMediaPath(value) {
+  const normalized = normalizeZipPath(String(value || "").replace(/^project:\/\/media\//i, "project-media/"));
+  if (!normalized || normalized.includes("://") || /^[A-Za-z]:\//.test(normalized) || normalized.startsWith("/") || normalized.startsWith("\\\\")) return false;
+  if (!normalized.startsWith("project-media/") && !normalized.startsWith("project-cache/")) return false;
+  return !normalized.split("/").some((part) => !part || part === "." || part === "..");
+}
+
+function isExternalMediaPath(value) {
+  return /^(file|https?):/i.test(value) || /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\");
 }
 
 function isWavImplemented(metadata) {

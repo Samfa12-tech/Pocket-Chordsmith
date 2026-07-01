@@ -1,4 +1,4 @@
-import type { AutomationLane, AutomationPoint, PocketDawProject, Track } from "./schema";
+import type { AutomationLane, AutomationPoint, FxChain, FxPluginInstance, JsonObject, PocketDawProject, Track } from "./schema";
 import { cloneProject } from "./dawProject";
 
 export function evaluateAutomationLane(lane: AutomationLane, bar: number, fallback = 0): number {
@@ -20,6 +20,12 @@ export function evaluateAutomationLane(lane: AutomationLane, bar: number, fallba
 export type TrackAutomationField = "volume" | "pan";
 export type ClipAutomationField = "gain";
 export type TrackSendAutomationField = "level";
+export type ProjectAutomationField = "tempo";
+export type FxAutomationField = string;
+
+export function projectAutomationPath(field: ProjectAutomationField): string {
+  return `project.${field}`;
+}
 
 export function trackAutomationPath(trackId: string, field: TrackAutomationField): string {
   return `tracks.${trackId}.${field}`;
@@ -31,6 +37,10 @@ export function trackSendAutomationPath(trackId: string, returnTrackId: string, 
 
 export function clipAutomationPath(clipId: string, field: ClipAutomationField): string {
   return `clips.${clipId}.${field}`;
+}
+
+export function fxParameterAutomationPath(chainId: string, slotId: string, parameter: FxAutomationField): string {
+  return `fx.${safePathPart(chainId)}.slots.${safePathPart(slotId)}.parameters.${safeFxParameter(parameter)}`;
 }
 
 export function createAutomationLane(project: PocketDawProject, targetPath: string, options: Partial<AutomationLane> = {}): { project: PocketDawProject; laneId: string } {
@@ -49,6 +59,7 @@ export function createAutomationLane(project: PocketDawProject, targetPath: stri
   next.automation.lanes.push(lane);
   attachLaneToTrack(next, lane);
   attachLaneToClip(next, lane);
+  attachLaneToFx(next, lane);
   return { project: next, laneId };
 }
 
@@ -65,10 +76,29 @@ export function ensureTrackAutomationLane(project: PocketDawProject, trackId: st
   });
 }
 
+export function ensureProjectAutomationLane(project: PocketDawProject, field: ProjectAutomationField): { project: PocketDawProject; laneId: string } {
+  const targetPath = projectAutomationPath(field);
+  const existing = project.automation.lanes.find((lane) => lane.targetPath === targetPath);
+  if (existing) return { project, laneId: existing.id };
+  return createAutomationLane(project, targetPath, {
+    id: `auto_project_${field}`,
+    min: 40,
+    max: 240,
+    unit: "linear",
+    points: [{ bar: 1, value: project.project.bpm || 120, curve: "linear" }]
+  });
+}
+
 export function addAutomationPoint(project: PocketDawProject, laneId: string, point: AutomationPoint): PocketDawProject {
   return editLane(project, laneId, (lane) => {
     lane.points.push(cleanPoint(point, lane.min, lane.max));
     lane.points.sort(pointSort);
+  });
+}
+
+export function setAutomationLanePoints(project: PocketDawProject, laneId: string, points: AutomationPoint[]): PocketDawProject {
+  return editLane(project, laneId, (lane) => {
+    lane.points = points.map((point) => cleanPoint(point, lane.min, lane.max)).sort(pointSort);
   });
 }
 
@@ -122,6 +152,22 @@ export function ensureTrackSendAutomationLane(project: PocketDawProject, trackId
   });
 }
 
+export function ensureFxParameterAutomationLane(project: PocketDawProject, chainId: string, slotId: string, parameter: FxAutomationField): { project: PocketDawProject; laneId: string } | null {
+  const target = getFxAutomationTarget(project, chainId, slotId, parameter);
+  if (!target) return null;
+  const targetPath = fxParameterAutomationPath(chainId, slotId, target.parameter);
+  const existing = project.automation.lanes.find((lane) => lane.targetPath === targetPath);
+  if (existing) return { project, laneId: existing.id };
+  const defaults = fxAutomationDefaults(target.slot, target.parameter);
+  return createAutomationLane(project, targetPath, {
+    id: laneIdFromTarget(targetPath),
+    min: defaults.min,
+    max: defaults.max,
+    unit: defaults.unit,
+    points: [{ bar: 1, value: target.value, curve: "linear" }]
+  });
+}
+
 export function evaluateAutomationValue(project: PocketDawProject, targetPath: string, bar: number, fallback: number): number {
   const lane = project.automation.lanes.find((item) => item.targetPath === targetPath);
   return lane ? evaluateAutomationLane(lane, bar, fallback) : fallback;
@@ -137,6 +183,29 @@ export function getClipAutomationLane(project: PocketDawProject, clipId: string,
 
 export function getTrackSendAutomationLane(project: PocketDawProject, trackId: string, returnTrackId: string, field: TrackSendAutomationField): AutomationLane | null {
   return project.automation.lanes.find((lane) => lane.targetPath === trackSendAutomationPath(trackId, returnTrackId, field)) || null;
+}
+
+export function getProjectAutomationLane(project: PocketDawProject, field: ProjectAutomationField): AutomationLane | null {
+  return project.automation.lanes.find((lane) => lane.targetPath === projectAutomationPath(field)) || null;
+}
+
+export function evaluateProjectTempoAtBar(project: PocketDawProject, bar: number): number {
+  return evaluateAutomationValue(project, projectAutomationPath("tempo"), bar, project.project.bpm);
+}
+
+export function evaluateFxParameterAtBar(project: PocketDawProject, chainId: string, slotId: string, parameter: FxAutomationField, bar: number, fallback: number): number {
+  return evaluateAutomationValue(project, fxParameterAutomationPath(chainId, slotId, parameter), bar, fallback);
+}
+
+export function getFxParameterAutomationLane(project: PocketDawProject, chainId: string, slotId: string, parameter: FxAutomationField): AutomationLane | null {
+  return project.automation.lanes.find((lane) => lane.targetPath === fxParameterAutomationPath(chainId, slotId, parameter)) || null;
+}
+
+export function getAutomatedFxChains(project: PocketDawProject, bar: number): FxChain[] {
+  return (project.fx?.chains || []).map((chain) => ({
+    ...chain,
+    slots: chain.slots.map((slot) => automatedFxSlot(project, chain.id, slot, bar))
+  }));
 }
 
 export function getAutomatedTrackControls(project: PocketDawProject, track: Track, bar: number): { volume: number; pan: number } {
@@ -167,6 +236,7 @@ function editLane(project: PocketDawProject, laneId: string, updater: (lane: Aut
   updater(lane);
   attachLaneToTrack(next, lane);
   attachLaneToClip(next, lane);
+  attachLaneToFx(next, lane);
   return next;
 }
 
@@ -184,6 +254,14 @@ function attachLaneToClip(project: PocketDawProject, lane: AutomationLane) {
   if (clip) clip.automationLaneId = lane.id;
 }
 
+function attachLaneToFx(project: PocketDawProject, lane: AutomationLane) {
+  const parsed = parseFxTarget(lane.targetPath);
+  if (!parsed) return;
+  const chain = project.fx?.chains.find((item) => item.id === parsed.chainId);
+  const track = chain?.ownerTrackId ? project.tracks.find((item) => item.id === chain.ownerTrackId) : null;
+  if (track && !track.automationLaneIds.includes(lane.id)) track.automationLaneIds.push(lane.id);
+}
+
 function parseTrackTarget(targetPath: string): { trackId: string; field: TrackAutomationField | TrackSendAutomationField } | null {
   const direct = targetPath.match(/^tracks\.([^.]+)\.(volume|pan)$/);
   if (direct) return { trackId: direct[1], field: direct[2] as TrackAutomationField };
@@ -196,10 +274,17 @@ function parseClipTarget(targetPath: string): { clipId: string; field: ClipAutom
   return match ? { clipId: match[1], field: match[2] as ClipAutomationField } : null;
 }
 
+function parseFxTarget(targetPath: string): { chainId: string; slotId: string; parameter: string } | null {
+  const match = targetPath.match(/^fx\.([^.]+)\.slots\.([^.]+)\.parameters\.([^.]+)$/);
+  return match ? { chainId: match[1], slotId: match[2], parameter: match[3] } : null;
+}
+
 function automationDefaultsForTarget(targetPath: string): { unit: AutomationLane["unit"]; min: number; max: number } {
+  if (targetPath === projectAutomationPath("tempo")) return { unit: "linear", min: 40, max: 240 };
   if (targetPath.endsWith(".pan")) return { unit: "linear", min: -1, max: 1 };
   if (/^tracks\.[^.]+\.sends\.[^.]+\.level$/.test(targetPath)) return { unit: "percent", min: 0, max: 1 };
   if (targetPath.startsWith("clips.") && targetPath.endsWith(".gain")) return { unit: "percent", min: 0, max: 4 };
+  if (/^fx\.[^.]+\.slots\.[^.]+\.parameters\.[^.]+$/.test(targetPath)) return { unit: "linear", min: 0, max: 1 };
   return { unit: "percent", min: 0, max: 1.2 };
 }
 
@@ -225,6 +310,55 @@ export function interpolateAutomationValue(start: number, end: number, t: number
 
 function laneIdFromTarget(targetPath: string): string {
   return `auto_${targetPath.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").toLowerCase()}`;
+}
+
+function getFxAutomationTarget(project: PocketDawProject, chainId: string, slotId: string, parameter: FxAutomationField): { chain: FxChain; slot: FxPluginInstance; parameter: string; value: number } | null {
+  const safeParameter = safeFxParameter(parameter);
+  if (!safeParameter) return null;
+  const chain = project.fx?.chains.find((item) => item.id === chainId);
+  const slot = chain?.slots.find((item) => item.id === slotId);
+  if (!chain || !slot) return null;
+  const value = Number((slot.parameters || {})[safeParameter]);
+  if (!Number.isFinite(value)) return null;
+  return { chain, slot, parameter: safeParameter, value };
+}
+
+function automatedFxSlot(project: PocketDawProject, chainId: string, slot: FxPluginInstance, bar: number): FxPluginInstance {
+  const parameters: JsonObject = { ...(slot.parameters || {}) };
+  Object.entries(parameters).forEach(([parameter, raw]) => {
+    if (typeof raw !== "number") return;
+    const lane = getFxParameterAutomationLane(project, chainId, slot.id, parameter);
+    if (!lane?.enabled || !lane.points.length) return;
+    parameters[parameter] = evaluateAutomationLane(lane, bar, raw);
+  });
+  return { ...slot, parameters };
+}
+
+function fxAutomationDefaults(slot: FxPluginInstance, parameter: string): { unit: AutomationLane["unit"]; min: number; max: number } {
+  const value = Number((slot.parameters || {})[parameter]);
+  const lower = parameter.toLowerCase();
+  if (lower.includes("frequency")) return { unit: "linear", min: 20, max: 20000 };
+  if (lower === "q" || lower.endsWith("q")) return { unit: "linear", min: 0.1, max: 20 };
+  if (lower.includes("threshold")) return { unit: "linear", min: -80, max: 0 };
+  if (lower.includes("gain") && value < 0) return { unit: "linear", min: -24, max: 24 };
+  if (lower.includes("gain") && value <= 4) return { unit: "linear", min: 0, max: 4 };
+  if (lower.includes("mix") || lower.includes("feedback") || lower.includes("reduction")) return { unit: "percent", min: 0, max: 1 };
+  if (lower.includes("ratio")) return { unit: "linear", min: 1, max: 30 };
+  if (lower.includes("attack") || lower.includes("release") || lower.includes("time")) return { unit: "linear", min: 0, max: 2 };
+  if (lower.includes("decay")) return { unit: "linear", min: 0.1, max: 10 };
+  if (lower.includes("rate")) return { unit: "linear", min: 0.01, max: 20 };
+  if (lower.includes("depth")) return { unit: "linear", min: 0, max: value > 10 ? 2000 : 1 };
+  if (lower.includes("bits")) return { unit: "linear", min: 1, max: 16 };
+  if (lower.includes("drive")) return { unit: "linear", min: 0, max: 8 };
+  return { unit: "linear", min: 0, max: Math.max(1, value * 2) };
+}
+
+function safePathPart(value: string): string {
+  return String(value || "").replace(/[^a-z0-9_-]+/gi, "");
+}
+
+function safeFxParameter(value: string): string {
+  return safePathPart(value);
 }
 
 function uniqueLaneId(project: PocketDawProject, base: string): string {

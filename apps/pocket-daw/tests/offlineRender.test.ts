@@ -1,7 +1,15 @@
-import { describe, expect, it } from "vitest";
-import { chordsmithOfflineLofiTextureForProject, chordsmithOfflineTrackExportGain, downmixPcm16WavToMono, encodeWav, fullSongWavChannelMode, fullSongWavPeakNormalize, fullSongWavSampleRate, peakNormalizePcm16Wav } from "../src/audio/offlineRender";
+import { afterEach, describe, expect, it } from "vitest";
+import { chordsmithOfflineLofiTextureForProject, chordsmithOfflineTrackExportGain, downmixPcm16WavToMono, encodeWav, fullSongWavBitDepth, fullSongWavChannelMode, fullSongWavPeakNormalize, fullSongWavSampleRate, peakNormalizePcm16Wav, renderProjectToWavBlob } from "../src/audio/offlineRender";
 import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
+import { createAutomationLane } from "../src/daw/automation";
+import { createEmptyPocketDawProject } from "../src/daw/dawProject";
 import { CHORDSMITH_OFFLINE_STEM_GAIN } from "../../../packages/pocket-audio-core/src/performance/stem-mix.js";
+
+const originalWindow = (globalThis as unknown as { window?: unknown }).window;
+
+afterEach(() => {
+  (globalThis as unknown as { window?: unknown }).window = originalWindow;
+});
 
 describe("offline WAV render parity helpers", () => {
   it("extracts Chordsmith lofi texture settings for continuous export texture", () => {
@@ -70,6 +78,19 @@ describe("offline WAV render parity helpers", () => {
     expect(fullSongWavChannelMode(project)).toBe("stereo");
   });
 
+  it("uses the full-song WAV profile bit depth", () => {
+    const project = createDemoProject();
+    const profile = project.exportProfiles.find((item) => item.id === "full-song-wav")!;
+
+    expect(fullSongWavBitDepth(project)).toBe(16);
+
+    profile.bitDepth = 24;
+    expect(fullSongWavBitDepth(project)).toBe(24);
+
+    profile.bitDepth = 32;
+    expect(fullSongWavBitDepth(project)).toBe(32);
+  });
+
   it("uses the full-song WAV profile peak normalization setting", () => {
     const project = createDemoProject();
     const profile = project.exportProfiles.find((item) => item.id === "full-song-wav")!;
@@ -97,6 +118,50 @@ describe("offline WAV render parity helpers", () => {
     expect(view.getUint32(28, true)).toBe(44100 * 2);
     expect(view.getInt16(44, true)).toBeCloseTo(0x3fff, -1);
     expect(view.getInt16(46, true)).toBeCloseTo(-0x2000, -1);
+  });
+
+  it("encodes 24-bit PCM WAVs when requested", async () => {
+    const blob = encodeWav(fakeAudioBuffer([
+      [1, -1],
+      [0, 0.5]
+    ]), { channelMode: "mono", bitDepth: 24 });
+    const view = new DataView(await blob.arrayBuffer());
+
+    expect(view.getUint16(22, true)).toBe(1);
+    expect(view.getUint16(32, true)).toBe(3);
+    expect(view.getUint16(34, true)).toBe(24);
+    expect(view.getUint32(40, true)).toBe(6);
+    expect(readInt24(view, 44)).toBeCloseTo(0x3fffff, -2);
+    expect(readInt24(view, 47)).toBeCloseTo(-0x200000, -2);
+  });
+
+  it("encodes 32-bit float WAVs when requested", async () => {
+    const blob = encodeWav(fakeAudioBuffer([
+      [1.25, -1.25],
+      [0.25, -0.25]
+    ]), { channelMode: "mono", bitDepth: 32 });
+    const view = new DataView(await blob.arrayBuffer());
+
+    expect(view.getUint16(20, true)).toBe(3);
+    expect(view.getUint16(22, true)).toBe(1);
+    expect(view.getUint16(32, true)).toBe(4);
+    expect(view.getUint16(34, true)).toBe(32);
+    expect(view.getUint32(40, true)).toBe(8);
+    expect(view.getFloat32(44, true)).toBeCloseTo(0.75, 5);
+    expect(view.getFloat32(48, true)).toBeCloseTo(-0.75, 5);
+  });
+
+  it("applies deterministic TPDF dither when quantizing fixed-point WAVs", async () => {
+    const buffer = fakeAudioBuffer([
+      new Array(32).fill(0),
+      new Array(32).fill(0)
+    ]);
+    const first = new Uint8Array(await encodeWav(buffer, { bitDepth: 16, dither: "tpdf" }).arrayBuffer());
+    const second = new Uint8Array(await encodeWav(buffer, { bitDepth: 16, dither: "tpdf" }).arrayBuffer());
+    const samples = Array.from({ length: 32 }, (_, index) => new DataView(first.buffer).getInt16(44 + index * 4, true));
+
+    expect(Array.from(first)).toEqual(Array.from(second));
+    expect(samples.some((sample) => sample !== 0)).toBe(true);
   });
 
   it("keeps explicit stereo render options from inheriting full-song mono settings", async () => {
@@ -157,17 +222,133 @@ describe("offline WAV render parity helpers", () => {
     expect(Math.abs(view.getInt16(44, true))).toBeCloseTo(0x7999, -1);
     expect(Math.abs(view.getInt16(48, true))).toBeCloseTo(0x7999, -1);
   });
+
+  it("samples offline track automation through project meter-map timing", async () => {
+    const scheduled: Array<{ value: number; time: number }> = [];
+    installFakeOfflineAudioContext(scheduled);
+    let project = createEmptyPocketDawProject();
+    project.sourceRefs = [];
+    project.timeline.clips = [];
+    project.timeline.markers = [];
+    project.timeline.bars = 3;
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.meterMap = [
+      { id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" },
+      { id: "meter_3_4", bar: 3, numerator: 3, denominator: 4, source: "manual" }
+    ];
+    project.tracks.forEach((track) => {
+      track.volume = track.id === "bass" ? 0.2 : 0.05;
+    });
+    project.tracks.find((track) => track.id === "bass")!.trackType = "audio";
+    project.fx = { chains: [] };
+    project.mixer.masterLimiter = false;
+    project.exportProfiles.find((profile) => profile.id === "full-song-wav")!.settings.tailSeconds = 0;
+    project = createAutomationLane(project, "tracks.bass.volume", {
+      points: [
+        { bar: 1, value: 0.2, curve: "hold" },
+        { bar: 3, value: 0.8, curve: "hold" }
+      ]
+    }).project;
+    const expectedBassGain = chordsmithOfflineTrackExportGain(project, project.tracks.find((track) => track.id === "bass")!, 0.2 * 0.8);
+
+    await renderProjectToWavBlob(project, { includeChordsmithOfflineLofiTexture: false });
+
+    expect(scheduled).toContainEqual(expect.objectContaining({ time: 3.75, value: expectedBassGain }));
+  });
 });
 
-function fakeAudioBuffer(channels: number[][]): AudioBuffer {
+function fakeAudioBuffer(channels: number[][], sampleRate = 44100): AudioBuffer {
   return {
     numberOfChannels: channels.length,
-    sampleRate: 44100,
+    sampleRate,
     length: channels[0]?.length || 0,
     getChannelData(index: number) {
       return Float32Array.from(channels[index] || []);
     }
   } as AudioBuffer;
+}
+
+function installFakeOfflineAudioContext(scheduled: Array<{ value: number; time: number }>) {
+  class FakeAudioParam {
+    value = 1;
+    setValueAtTime(value: number, time: number) {
+      this.value = value;
+      scheduled.push({ value, time });
+      return this;
+    }
+  }
+
+  class FakeAudioNode {
+    connect() {
+      return null;
+    }
+  }
+
+  class FakeGainNode extends FakeAudioNode {
+    gain = new FakeAudioParam();
+  }
+
+  class FakeStereoPannerNode extends FakeAudioNode {
+    pan = new FakeAudioParam();
+  }
+
+  class FakeDynamicsCompressorNode extends FakeAudioNode {
+    threshold = new FakeAudioParam();
+    knee = new FakeAudioParam();
+    ratio = new FakeAudioParam();
+    attack = new FakeAudioParam();
+    release = new FakeAudioParam();
+  }
+
+  class FakeOfflineAudioContext {
+    destination = new FakeAudioNode();
+    sampleRate: number;
+    length: number;
+
+    constructor(_channels: number, length: number, sampleRate: number) {
+      this.length = length;
+      this.sampleRate = sampleRate;
+    }
+
+    createGain() {
+      return new FakeGainNode();
+    }
+
+    createDynamicsCompressor() {
+      return new FakeDynamicsCompressorNode();
+    }
+
+    createStereoPanner() {
+      return new FakeStereoPannerNode();
+    }
+
+    createBuffer(channels: number, length: number, sampleRate: number) {
+      return fakeAudioBuffer(Array.from({ length: channels }, () => new Array(length).fill(0)), sampleRate);
+    }
+
+    createBufferSource() {
+      return Object.assign(new FakeAudioNode(), {
+        buffer: null,
+        playbackRate: new FakeAudioParam(),
+        start() {},
+        stop() {}
+      });
+    }
+
+    async startRendering() {
+      const length = Math.max(1, this.length);
+      return fakeAudioBuffer([
+        new Array(length).fill(0),
+        new Array(length).fill(0)
+      ], this.sampleRate);
+    }
+  }
+
+  (globalThis as unknown as { window?: unknown }).window = {
+    OfflineAudioContext: FakeOfflineAudioContext,
+    webkitOfflineAudioContext: FakeOfflineAudioContext
+  };
 }
 
 function wavHeaderBytes(input: { sampleRate: number; channels: number; dataSize: number }): number[] {
@@ -187,6 +368,11 @@ function wavHeaderBytes(input: { sampleRate: number; channels: number; dataSize:
   writeAscii(view, 36, "data");
   view.setUint32(40, input.dataSize, true);
   return Array.from(bytes);
+}
+
+function readInt24(view: DataView, offset: number): number {
+  const raw = view.getUint8(offset) | (view.getUint8(offset + 1) << 8) | (view.getUint8(offset + 2) << 16);
+  return raw & 0x800000 ? raw - 0x1000000 : raw;
 }
 
 function writeAscii(view: DataView, offset: number, text: string) {

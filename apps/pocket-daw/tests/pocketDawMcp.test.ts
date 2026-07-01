@@ -6,11 +6,14 @@ import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../src/d
 import { createDemoProject } from "../src/demo/demoProject";
 import { callPocketDawMcpTool, pocketDawMcpToolList } from "../src/mcp/pocketDawMcp";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
+import { addFxSlot } from "../src/daw/fx";
 import { addMidiNote, importMidiFileToProject, midiDataFromClip } from "../src/daw/midiClips";
+import { bassOverlayCount } from "../src/daw/bassOverlays";
+import { chordOverlayCount } from "../src/daw/chordOverlays";
 import { melodyOverlayCount } from "../src/daw/melodyOverlays";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { addTrackToProject } from "../src/daw/tracks";
-import { metalArrangementMidiBytes, simpleMidiBytes } from "./midiFixtures";
+import { metalArrangementMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 
 function parseToolResult(result: Awaited<ReturnType<typeof callPocketDawMcpTool>>) {
   return JSON.parse(result.content[0].text);
@@ -51,8 +54,19 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_timeline_selection");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("apply_audio_clip_action");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("create-warp-markers");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_drums");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_bass");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_chords");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_melody");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("adopt_midi_tempo");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("ensure_project_automation");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("add_project_automation_point");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("update_automation_point");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("ease-out");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("ensure_fx_automation");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("add_fx_automation_point");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("tomlow");
   });
 
@@ -172,6 +186,35 @@ describe("Pocket DAW MCP tools", () => {
     expect(takeClips).toHaveLength(4);
     expect(archivedLeft).toMatchObject({ muted: true, metadata: { takeStatus: "archived-take" } });
     expect(activeRight).toMatchObject({ startBar: 4, muted: false, metadata: { sourceOffsetSeconds: 4 } });
+  });
+
+  it("applies audio transient and warp-marker actions through the file-first command path", async () => {
+    const imported = addImportedAudioMedia(createDemoProject(), {
+      name: "MCP Warp.wav",
+      uri: "C:\\Audio\\MCP Warp.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 6,
+      sampleRate: 48000,
+      channels: 2,
+      metadata: { waveformPeaks: [0.05, 0.72, 0.2, 0.15, 0.86, 0.3] }
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(placed.project),
+      commands: [
+        { type: "apply_audio_clip_action", clipId: placed.clipId, action: "analyze-transients" },
+        { type: "apply_audio_clip_action", clipId: placed.clipId, action: "create-warp-markers" }
+      ]
+    }));
+    const clip = result.project.timeline.clips.find((item: { id: string }) => item.id === placed.clipId);
+    const summaryClip = result.summary.clips.find((item: { id: string }) => item.id === placed.clipId);
+
+    expect(result.statuses[0]).toContain("Detected 2 transient markers");
+    expect(result.statuses[1]).toContain("Created 2 source-safe warp markers");
+    expect(clip.metadata.audioWarpMarkerCount).toBe(2);
+    expect(clip.metadata.audioWarpPlaybackMode).toBe("metadata-only");
+    expect(summaryClip.audioWarpMarkerCount).toBe(2);
   });
 
   it("applies timeline range edits through the file-first command path", async () => {
@@ -419,6 +462,168 @@ describe("Pocket DAW MCP tools", () => {
       step: 0,
       sourceClipId: imported.clipId
     });
+  });
+
+  it("maps MIDI bass clips into generated bass overlays through the file-first command path", async () => {
+    const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(metalArrangementMidiBytes()), "metal.mid");
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(imported.project),
+      commands: [
+        { type: "convert_midi_bass", clipId: imported.clipId, sectionId: "A" }
+      ]
+    }));
+
+    expect(result.statuses[0]).toContain("Mapped");
+    expect(bassOverlayCount(result.project, "A")).toBe(2);
+    expect(result.project.tracks.find((track: { id: string }) => track.id === "bass").metadata.bassOverlayEvents.A[0]).toMatchObject({
+      step: 0,
+      midi: 48,
+      sourceClipId: imported.clipId
+    });
+  });
+
+  it("maps MIDI chord groups into generated chord overlays through the file-first command path", async () => {
+    const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(metalArrangementMidiBytes()), "metal.mid");
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(imported.project),
+      commands: [
+        { type: "convert_midi_chords", clipId: imported.clipId, sectionId: "A" }
+      ]
+    }));
+
+    expect(result.statuses[0]).toContain("Mapped");
+    expect(chordOverlayCount(result.project, "A")).toBe(2);
+    expect(result.project.tracks.find((track: { id: string }) => track.id === "chords").metadata.chordOverlayEvents.A[0]).toMatchObject({
+      step: 0,
+      midiNotes: [48, 55, 60],
+      sourceClipId: imported.clipId
+    });
+  });
+
+  it("adopts imported MIDI tempo through the file-first command path", async () => {
+    const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(tempoMapMidiBytes()), "tempo-map.mid");
+    imported.project.project.bpm = 100;
+    imported.project.project.timeSig = 5;
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(imported.project),
+      commands: [
+        { type: "adopt_midi_tempo", clipId: imported.clipId }
+      ]
+    }));
+
+    expect(result.statuses[0]).toContain("Adopted MIDI start 120 BPM and 4/4");
+    expect(result.project.project.bpm).toBe(120);
+    expect(result.project.project.timeSig).toBe(4);
+  });
+
+  it("converts imported MIDI tempo maps into project automation through the file-first command path", async () => {
+    const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(tempoMapMidiBytes()), "tempo-map.mid");
+    imported.project.project.bpm = 100;
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(imported.project),
+      commands: [
+        { type: "adopt_midi_tempo_map", clipId: imported.clipId }
+      ]
+    }));
+    const lane = result.project.automation.lanes.find((item: { targetPath: string }) => item.targetPath === "project.tempo");
+
+    expect(result.statuses[0]).toContain("Converted 2 MIDI tempo events");
+    expect(result.project.project.bpm).toBe(120);
+    expect(lane.points).toEqual([
+      { bar: 1, value: 120, curve: "hold" },
+      { bar: 1.25, value: 140, curve: "hold" }
+    ]);
+  });
+
+  it("converts imported MIDI meter maps through the file-first command path", async () => {
+    const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(tempoMapMidiBytes()), "tempo-map.mid");
+    imported.project.project.timeSig = 5;
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(imported.project),
+      commands: [
+        { type: "adopt_midi_meter_map", clipId: imported.clipId }
+      ]
+    }));
+
+    expect(result.statuses[0]).toContain("Converted 2 MIDI meter events");
+    expect(result.project.project.timeSig).toBe(4);
+    expect(result.project.project.meterMap).toEqual([
+      expect.objectContaining({ bar: 1, numerator: 4, denominator: 4, sourceClipId: imported.clipId }),
+      expect.objectContaining({ bar: 1.25, numerator: 3, denominator: 4, sourceClipId: imported.clipId })
+    ]);
+    expect(result.summary.meterMapPointCount).toBe(2);
+  });
+
+  it("edits project meter-map points through the file-first command path", async () => {
+    const project = createDemoProject();
+    project.project.timeSig = 6;
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(project),
+      commands: [
+        { type: "add_project_meter_map_point", bar: 3 },
+        { type: "update_project_meter_map_point", pointId: "meter_manual", bar: 4, numerator: 7, denominator: 8 },
+        { type: "delete_project_meter_map_point", pointId: "meter_manual" },
+        { type: "add_project_meter_map_point", bar: 5, numerator: 3, denominator: 4 }
+      ]
+    }));
+
+    expect(result.statuses[0]).toContain("Added project meter 6/4 at Bar 3");
+    expect(result.statuses[1]).toContain("Updated project meter 7/8 at Bar 4");
+    expect(result.statuses[2]).toContain("Deleted project meter 7/8 at Bar 4");
+    expect(result.statuses[3]).toContain("Added project meter 3/4 at Bar 5");
+    expect(result.project.project.meterMap).toEqual([
+      expect.objectContaining({ id: "meter_manual", bar: 5, numerator: 3, denominator: 4, source: "manual" })
+    ]);
+    expect(result.summary.meterMapPointCount).toBe(1);
+  });
+
+  it("creates project tempo automation through the file-first command path", async () => {
+    const project = createDemoProject();
+    project.project.bpm = 126;
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(project),
+      commands: [
+        { type: "ensure_project_automation", field: "tempo" },
+        { type: "add_project_automation_point", field: "tempo", bar: 8 },
+        { type: "update_automation_point", laneId: "auto_project_tempo", pointIndex: 1, bar: 9, value: 112, curve: "ease-out" }
+      ]
+    }));
+    const lane = result.project.automation.lanes.find((item: { targetPath: string }) => item.targetPath === "project.tempo");
+
+    expect(result.statuses[0]).toContain("project tempo automation lane");
+    expect(result.statuses[1]).toContain("project tempo automation point");
+    expect(result.statuses[2]).toContain("Updated automation point");
+    expect(lane.points).toEqual([
+      expect.objectContaining({ bar: 1, value: 126 }),
+      expect.objectContaining({ bar: 9, value: 112, curve: "ease-out" })
+    ]);
+  });
+
+  it("creates FX parameter automation through the file-first command path", async () => {
+    const project = addFxSlot(createDemoProject(), "master", "delay");
+    const chain = project.fx.chains.find((item) => item.ownerTrackId === "master")!;
+    const slot = chain.slots[0];
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(project),
+      commands: [
+        { type: "ensure_fx_automation", chainId: chain.id, slotId: slot.id, parameter: "feedback" },
+        { type: "add_fx_automation_point", chainId: chain.id, slotId: slot.id, parameter: "feedback", bar: 6 },
+        { type: "update_automation_point", laneId: `auto_fx_${chain.id}_slots_${slot.id}_parameters_feedback`, pointIndex: 1, bar: 6, value: 0.5, curve: "ease-in" }
+      ]
+    }));
+    const lane = result.project.automation.lanes.find((item: { targetPath: string }) => item.targetPath === `fx.${chain.id}.slots.${slot.id}.parameters.feedback`);
+
+    expect(result.statuses[0]).toContain("Enabled FX parameter automation");
+    expect(result.statuses[1]).toContain("FX automation point");
+    expect(lane.points[1]).toMatchObject({ bar: 6, value: 0.5, curve: "ease-in" });
   });
 
   it("writes arranged MIDI only when outputPath is explicit", async () => {

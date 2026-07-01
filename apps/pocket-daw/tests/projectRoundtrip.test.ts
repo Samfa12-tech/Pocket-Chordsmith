@@ -6,14 +6,14 @@ import { addFxSlot } from "../src/daw/fx";
 import { createAutomationLane } from "../src/daw/automation";
 import { addBusTrack, addReturnTrack, routeTrackToOutput, setTrackSendLevel, setTrackSendMode } from "../src/daw/routing";
 import { POCKET_DAW_VERSION } from "../src/daw/schema";
-import { activateAudioTakeCommand, addMidiControllerCommand, applySelectedAudioClipActionCommand, duplicateMidiControllerCommand, duplicateMidiNoteCommand, quantizeMidiClipCommand, setMidiControllerFieldCommand, setMidiNoteFieldCommand, setSelectedAudioClipPropertyCommand, swingMidiClipCommand, transformMidiPitchCommand, transformMidiVelocityCommand } from "../src/app/commands";
+import { activateAudioTakeCommand, addMidiControllerCommand, adoptMidiMeterMapCommand, applySelectedAudioClipActionCommand, duplicateMidiControllerCommand, duplicateMidiNoteCommand, quantizeMidiClipCommand, setMidiControllerFieldCommand, setMidiNoteFieldCommand, setSelectedAudioClipPropertyCommand, swingMidiClipCommand, transformMidiPitchCommand, transformMidiVelocityCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
 import { splitClipAtBar } from "../src/daw/clips";
 import { addMidiAftertouch, addMidiNote, addMidiPitchBend, addMidiProgramChange, importMidiFileToProject, midiDataFromClip, setMidiAftertouchField, setMidiPitchBendField, setMidiProgramChangeField } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { createUndoStack } from "../src/daw/undo";
-import { aftertouchMidiBytes, pitchBendMidiBytes, programChangeMidiBytes, simpleMidiBytes } from "./midiFixtures";
+import { aftertouchMidiBytes, pitchBendMidiBytes, programChangeMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 import { branchGeneratedDrumsToTracks, cycleDrumBranchStep, drumBranchGroupCollapsed, generatedDrumBranchLane, getDrumBranchStepLevel, setDrumBranchGroupCollapsed } from "../src/daw/drumLanes";
 
 describe("project roundtrip", () => {
@@ -95,6 +95,8 @@ describe("project roundtrip", () => {
     edited = setSelectedAudioClipPropertyCommand(edited, placed.clipId, "fadeInSeconds", 0.5);
     edited = setSelectedAudioClipPropertyCommand(edited, placed.clipId, "fadeOutSeconds", 0.75);
     edited = setSelectedAudioClipPropertyCommand(edited, placed.clipId, "sourceOffsetSeconds", 1.25);
+    edited = setSelectedAudioClipPropertyCommand(edited, placed.clipId, "playbackRate", 1.25);
+    edited = setSelectedAudioClipPropertyCommand(edited, placed.clipId, "pitchSemitones", -7);
     edited = applySelectedAudioClipActionCommand(edited, placed.clipId, "normalize-gain");
     edited = applySelectedAudioClipActionCommand(edited, placed.clipId, "reset-fades");
     edited = applySelectedAudioClipActionCommand(edited, placed.clipId, "quick-fade");
@@ -116,6 +118,8 @@ describe("project roundtrip", () => {
       fadeInSeconds: 0.05,
       fadeOutSeconds: 0.05,
       sourceOffsetSeconds: 1.25,
+      playbackRate: 1.25,
+      pitchSemitones: -7,
       invertPhase: true
     });
     expect(clip.automationLaneId).toBeTruthy();
@@ -290,6 +294,24 @@ describe("project roundtrip", () => {
     expect(midiDataFromClip(clip).metadata?.lastPitchTransform).toBe("octave-up");
     expect(midiDataFromClip(clip).controllers[0]).toMatchObject({ controller: 74, value: 91, channel: 2 });
     expect(midiDataFromClip(clip).controllers[1]).toMatchObject({ controller: 74, value: 91, tick: 2400, channel: 2 });
+  });
+
+  it("preserves adopted imported MIDI meter maps through save and reopen", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.timeSig = 5;
+    const imported = importMidiFileToProject(state.undoStack.present, parseStandardMidiFile(tempoMapMidiBytes()), "tempo-map.mid");
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+
+    const edited = adoptMidiMeterMapCommand(state, imported.clipId);
+    const parsed = migratePocketDawProject(parsePocketDawProjectFile(buildPocketDawProjectFile(edited.undoStack.present)));
+
+    expect(parsed.project.timeSig).toBe(4);
+    expect(parsed.project.meterMap).toEqual([
+      expect.objectContaining({ bar: 1, numerator: 4, denominator: 4, source: "midi-import", sourceClipId: imported.clipId }),
+      expect.objectContaining({ bar: 1.25, numerator: 3, denominator: 4, source: "midi-import", sourceClipId: imported.clipId })
+    ]);
   });
 
   it("preserves imported MIDI program changes through save and reopen", () => {

@@ -24,7 +24,7 @@ Pocket DAW uses signed Tauri updater artifacts from GitHub Releases. The app is 
 Source commits after the published `0.6.34` checkpoint are unreleased until a
 new checkpoint is deliberately versioned, packaged, hashed, smoke-tested, and
 published. Do not create a new installer from a later commit while leaving the
-app/package/Tauri metadata at `0.6.34`.
+app/package/Tauri metadata at the previous public checkpoint.
 
 ## Local Development
 

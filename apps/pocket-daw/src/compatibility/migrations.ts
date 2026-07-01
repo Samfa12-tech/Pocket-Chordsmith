@@ -9,7 +9,8 @@ import {
   POCKET_DAW_VERSION,
   GAME_STATE_MARKERS,
   RECORDING_CHANNEL_MODES,
-  type PocketDawProject
+  type PocketDawProject,
+  type ProjectMeterMapPoint
 } from "../daw/schema";
 
 const TRACK_TYPES = ["generated", "midi", "audio", "bus", "return", "master"] as const;
@@ -44,6 +45,7 @@ export function migratePocketDawProject(raw: unknown): PocketDawProject {
       key: String(source.project?.key || "C"),
       scale: String(source.project?.scale || "major"),
       timeSig: clampNumber(source.project?.timeSig, 2, 7, 4),
+      meterMap: normalizeProjectMeterMap(source.project?.meterMap),
       swing: clampNumber(source.project?.swing, 0, 0.35, 0),
       resolution: clampNumber(source.project?.resolution, 1, 16, 4),
       sampleRate: clampNumber(source.project?.sampleRate, 22050, 96000, 44100),
@@ -273,6 +275,29 @@ function normalizeMetronomeSettings(value: unknown) {
     countInBars: Math.round(clampNumber(source.countInBars, 0, 4, defaults.countInBars)),
     volume: clampNumber(source.volume, 0, 1, defaults.volume)
   };
+}
+
+function normalizeProjectMeterMap(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const usedIds = new Set<string>();
+  return value.map((point, index) => {
+    const source = isRecord(point) ? point : {};
+    const meterSource = source.source === "midi-import" ? "midi-import" : source.source === "manual" ? "manual" : undefined;
+    const cleaned: ProjectMeterMapPoint = {
+      ...(isRecord(point) ? point : {}),
+      id: uniqueSafeId(source.id, `meter_${index + 1}`, usedIds),
+      bar: Math.round(clampNumber(source.bar, 1, 4096, 1) * 1000000) / 1000000,
+      numerator: Math.round(clampNumber(source.numerator, 1, 32, 4)),
+      denominator: Math.round(clampNumber(source.denominator, 1, 32, 4)),
+    };
+    if (meterSource) cleaned.source = meterSource;
+    if (source.sourceClipId !== undefined) cleaned.sourceClipId = safeText(source.sourceClipId, "");
+    const sourceTick = optionalClampNumber(source.sourceTick, 0, Number.MAX_SAFE_INTEGER);
+    if (sourceTick !== undefined) cleaned.sourceTick = sourceTick;
+    const seconds = optionalClampNumber(source.seconds, 0, 60 * 60 * 24);
+    if (seconds !== undefined) cleaned.seconds = seconds;
+    return cleaned;
+  }).sort((a, b) => a.bar - b.bar || a.id.localeCompare(b.id));
 }
 
 function normalizeClipTransforms(value: unknown) {

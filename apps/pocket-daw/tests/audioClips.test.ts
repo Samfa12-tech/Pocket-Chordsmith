@@ -4,7 +4,8 @@ import { createDemoProject } from "../src/demo/demoProject";
 import { addImportedAudioMedia, detectAudioTransientsFromPeaks, placeAudioClipOnTimeline, placeAudioClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../src/daw/audioClips";
 import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
 import { createAutomationLane } from "../src/daw/automation";
-import { activateAudioTake, setAudioTakeArchived } from "../src/daw/clips";
+import { activateAudioTake, setAudioClipProperty, setAudioTakeArchived } from "../src/daw/clips";
+import { timelineSecondsAtBar } from "../src/daw/timeline";
 
 describe("audio media and clips", () => {
   it("creates audio media pool items with lightweight waveform metadata", () => {
@@ -185,6 +186,83 @@ describe("audio media and clips", () => {
     }
   });
 
+  it("uses active meter-map bar lengths when placing imported audio clips", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.meterMap = [
+      { id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" },
+      { id: "meter_3_4", bar: 3, numerator: 3, denominator: 4, source: "manual" }
+    ];
+    const imported = addImportedAudioMedia(project, {
+      name: "Metered loop.wav",
+      durationSeconds: 3.25,
+      sampleRate: 48000,
+      channels: 2
+    });
+
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+
+    expect(clip.barLength).toBeCloseTo(2, 5);
+  });
+
+  it("uses active meter-map seconds for invalid audio duration fallback", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.meterMap = [
+      { id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" }
+    ];
+    const imported = addImportedAudioMedia(project, {
+      name: "Meter Fallback.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    clip.barLength = 1;
+    const expectedDuration = timelineSecondsAtBar(placed.project, 3) - timelineSecondsAtBar(placed.project, 2);
+
+    const edited = setAudioClipProperty(placed.project, clip.id, "durationSeconds", Number.NaN);
+
+    expect(edited.timeline.clips.find((item) => item.id === clip.id)?.metadata?.durationSeconds).toBeCloseTo(expectedDuration, 5);
+  });
+
+  it("uses active meter-map seconds when overwriting audio clip source windows", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.meterMap = [
+      { id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" },
+      { id: "meter_3_4", bar: 3, numerator: 3, denominator: 4, source: "manual" }
+    ];
+    const bed = addImportedAudioMedia(project, {
+      name: "Bed.wav",
+      durationSeconds: 6,
+      sampleRate: 48000,
+      channels: 2
+    });
+    const bedPlaced = placeAudioClipOnTimeline(bed.project, bed.item.id, 2);
+    const bedClip = bedPlaced.project.timeline.clips.find((item) => item.id === bedPlaced.clipId)!;
+    bedClip.barLength = 3;
+    const punch = addImportedAudioMedia(bedPlaced.project, {
+      name: "Punch.wav",
+      durationSeconds: 1.5,
+      sampleRate: 48000,
+      channels: 2
+    });
+
+    const overwritten = placeAudioClipOnTrack(punch.project, punch.item.id, bedPlaced.trackId, 3, { overwriteOverlaps: true });
+    const bedSegments = overwritten.project.timeline.clips
+      .filter((clip) => clip.mediaPoolItemId === bed.item.id)
+      .sort((a, b) => a.startBar - b.startBar);
+
+    expect(bedSegments.map((clip) => [clip.startBar, clip.barLength])).toEqual([[2, 1], [4, 1]]);
+    expect(bedSegments.map((clip) => clip.metadata?.sourceOffsetSeconds)).toEqual([0, 3.25]);
+  });
+
   it("places additional imported audio on a visible new media lane", () => {
     const first = addImportedAudioMedia(createDemoProject(), {
       name: "First Loop.wav",
@@ -229,6 +307,35 @@ describe("audio media and clips", () => {
     expect(rendered.audioRegions[0].startTimeSeconds).toBeGreaterThan(0);
     expect(rendered.warnings[0]).toContain("Missing audio");
   });
+
+  it("places audio regions on the tempo-automated project timeline", () => {
+    let project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project = createAutomationLane(project, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [{ bar: 1, value: 60, curve: "hold" }]
+    }).project;
+    const imported = addImportedAudioMedia(project, {
+      name: "Tempo Lane Audio.wav",
+      durationSeconds: 12,
+      sampleRate: 44100,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    clip.barLength = 2;
+
+    const rendered = renderTimelineAudioRegions(placed.project);
+
+    expect(rendered.audioRegions[0]).toMatchObject({
+      clipId: placed.clipId,
+      startTimeSeconds: 4,
+      durationSeconds: 8
+    });
+  });
+
 
   it("keeps archived grouped takes out of audible audio regions while preserving media", () => {
     const project = createDemoProject();
@@ -315,8 +422,31 @@ describe("audio media and clips", () => {
 
     expect(region.reversed).toBe(true);
     expect(region.durationSeconds).toBe(2);
-    expect(audioRegionPlaybackWindow(region, 10, 0)).toEqual({ sourceOffsetSeconds: 6, durationSeconds: 2 });
-    expect(audioRegionPlaybackWindow(region, 10, 0.5)).toEqual({ sourceOffsetSeconds: 6.5, durationSeconds: 1.5 });
+    expect(audioRegionPlaybackWindow(region, 10, 0)).toEqual({ sourceOffsetSeconds: 6, sourceDurationSeconds: 2, durationSeconds: 2 });
+    expect(audioRegionPlaybackWindow(region, 10, 0.5)).toEqual({ sourceOffsetSeconds: 6.5, sourceDurationSeconds: 1.5, durationSeconds: 1.5 });
+  });
+
+  it("maps varispeed audio clips to faster source windows without changing source media", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const imported = addImportedAudioMedia(project, {
+      name: "Varispeed.wav",
+      durationSeconds: 12,
+      sampleRate: 48000,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    clip.barLength = 2;
+    clip.metadata = { ...(clip.metadata || {}), sourceOffsetSeconds: 1, playbackRate: 2, pitchSemitones: 12 };
+
+    const region = renderTimelineAudioRegions(placed.project).audioRegions[0];
+
+    expect(region.playbackRate).toBe(4);
+    expect(region.pitchSemitones).toBe(12);
+    expect(region.durationSeconds).toBe(2.75);
+    expect(audioRegionPlaybackWindow(region, 12, 1)).toEqual({ sourceOffsetSeconds: 5, sourceDurationSeconds: 7, durationSeconds: 1.75 });
   });
 
   it("applies clip gain automation to audio region envelopes", () => {

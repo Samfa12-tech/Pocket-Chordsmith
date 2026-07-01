@@ -103,6 +103,33 @@ describe("game-pack ZIP verifier", () => {
     expect(result.errors.join("\n")).toContain("Unsafe manifest path");
   });
 
+  it("rejects embedded source projects that still contain local media references without leaking paths", async () => {
+    const zipPath = await writeGamePack("web-game-pack");
+    const manifest = readManifest(zipPath, "manifests/web-game-manifest.json");
+    const zip = new AdmZip(zipPath);
+    const sourceProject = JSON.parse(zip.readAsText(manifest.sourceProject));
+    sourceProject.mediaPool = [{
+      id: "media_external",
+      kind: "audio",
+      name: "External.wav",
+      uri: "C:\\Sessions\\External.wav",
+      metadata: {
+        originalUri: "file:///lost/External.wav",
+        projectRelativePath: "project-media/External.wav"
+      }
+    }];
+    const mutated = rewriteEntry(zipPath, manifest.sourceProject, JSON.stringify(sourceProject, null, 2));
+
+    const result = verifyGamePackZip(mutated, { kind: "web-game-pack" });
+    const errors = result.errors.join("\n");
+
+    expect(result.ok).toBe(false);
+    expect(errors).toContain("embedded source project contains 2 local media reference fields");
+    expect(errors).toContain("originalUri");
+    expect(errors).not.toContain("C:\\");
+    expect(errors).not.toContain("file:///lost");
+  });
+
   async function writeGamePack(kind: "godot-adaptive-pack" | "web-game-pack") {
     const project = createDemoProject();
     const result = await createGamePackZipBlob(project, kind, {
@@ -130,6 +157,14 @@ describe("game-pack ZIP verifier", () => {
     const zip = new AdmZip(zipPath);
     const manifest = JSON.parse(zip.readAsText(manifestPath));
     zip.updateFile(manifestPath, Buffer.from(JSON.stringify(updater(manifest), null, 2)));
+    const output = path.join(tempDir, `mutated-${Math.random().toString(36).slice(2)}.zip`);
+    zip.writeZip(output);
+    return output;
+  }
+
+  function rewriteEntry(zipPath: string, entryPath: string, contents: string) {
+    const zip = new AdmZip(zipPath);
+    zip.updateFile(entryPath, Buffer.from(contents));
     const output = path.join(tempDir, `mutated-${Math.random().toString(36).slice(2)}.zip`);
     zip.writeZip(output);
     return output;

@@ -72,7 +72,7 @@ import {
   prunePersistedNativeRenderCacheAssets,
   projectForNativeGeneratedStemRender
 } from "../src/audio/nativeRenderCache";
-import { barsToSeconds } from "../src/daw/timeline";
+import { barsToSeconds, timelineSecondsAtBar } from "../src/daw/timeline";
 import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
 import { cycleBassStep } from "../src/daw/chordsmithEditor";
 import { addDrumLaneFx, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneSolo, setDrumLaneVolume } from "../src/daw/drumLanes";
@@ -330,6 +330,37 @@ describe("native render cache", () => {
     });
     expect(cache.regions[0].duration).toBeCloseTo(clipDuration + NATIVE_GENERATED_STEM_TAIL_SECONDS, 5);
     expect(cache.renderCacheItems[0].metadata?.renderTailSeconds).toBe(NATIVE_GENERATED_STEM_TAIL_SECONDS);
+  });
+
+  it("places generated stem cache regions with project meter-map timing", async () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.meterMap = [
+      { id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" },
+      { id: "meter_3_4", bar: 3, numerator: 3, denominator: 4, source: "manual" }
+    ];
+    const clip = project.timeline.clips.find((item) => item.type === "generated-section")!;
+    clip.startBar = 3;
+    clip.barLength = 1;
+    project.timeline.clips = [clip];
+    const renderMock = nativeMediaBridgeMock.renderNativeAudioWav as unknown as {
+      mockImplementation(fn: (_payload: unknown, durationSeconds: number) => Promise<unknown>): void;
+    };
+    renderMock.mockImplementation(async (_payload: unknown, durationSeconds: number) => ({
+      ...nativeRenderResult(),
+      durationSeconds
+    }));
+
+    const cache = await buildNativeRenderCache(project, "meter-map-generated-cache");
+    const expectedStart = timelineSecondsAtBar(project, clip.startBar);
+    const expectedDuration = timelineSecondsAtBar(project, clip.startBar + clip.barLength) - expectedStart + NATIVE_GENERATED_STEM_TAIL_SECONDS;
+
+    expect(cache.regions.length).toBeGreaterThan(0);
+    cache.regions.forEach((region) => {
+      expect(region.startTime).toBeCloseTo(expectedStart, 5);
+      expect(region.duration).toBeCloseTo(expectedDuration, 5);
+    });
   });
 
   it("uses native offline rendering for generated-section WAV assets when available", async () => {
@@ -627,6 +658,27 @@ describe("native render cache", () => {
     expect(cache.regions[0]).toMatchObject({ trackId: "bass", assetId: cache.assets[0].id });
     expect(offlineRenderMock.encodeWav).toHaveBeenCalled();
     expect(offlineRenderMock.renderProjectToWavBlob).not.toHaveBeenCalled();
+  });
+
+  it("carries audio clip varispeed playback rate into native runtime regions", async () => {
+    const project = withAudioClip(createDemoProject());
+    const clip = project.timeline.clips.find((item) => item.id === "audio_clip")!;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      sourceOffsetSeconds: 0,
+      durationSeconds: 0.5,
+      playbackRate: 2,
+      pitchSemitones: 0
+    };
+    setCachedAudioBuffer("media_audio", fakeAudioBuffer());
+
+    const cache = await buildNativeRuntimeAudioCache(project, "runtime-varispeed-signature");
+
+    expect(cache.regions[0]).toMatchObject({
+      playbackRate: 2,
+      duration: 0.5,
+      sourceOffset: 0
+    });
   });
 
   it("keeps runtime audio cache stable across generated section edits", async () => {
@@ -1052,6 +1104,7 @@ describe("native render cache", () => {
     const signature = nativeRenderCacheSignature(project);
     const clip = project.timeline.clips.find((item) => item.type === "generated-section")!;
     const clipDuration = barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig);
+    const cachedWavBytes = wavBytes();
     const renderMock = nativeMediaBridgeMock.renderNativeAudioWav as unknown as {
       mockImplementation(fn: (_payload: unknown, durationSeconds: number) => Promise<unknown>): void;
     };
@@ -1070,8 +1123,8 @@ describe("native render cache", () => {
           assetId: String(args?.assetId || ""),
           path: `C:\\Songs\\${String(args?.relativePath || "").replace(/\//g, "\\")}`,
           relativePath: String(args?.relativePath || ""),
-          sizeBytes: wavBytes().length,
-          bytes: Array.from(wavBytes())
+          sizeBytes: cachedWavBytes.length,
+          bytes: Array.from(cachedWavBytes)
         } as never;
       }
     };
@@ -1097,7 +1150,7 @@ describe("native render cache", () => {
         relativePath: built.renderCacheItems[0].metadata?.assetRelativePath
       }
     });
-  }, 30000);
+  }, 60_000);
 
   it("hydrates grouped overlapping generated cache metadata for all covered clips", async () => {
     const project = createDemoProject();

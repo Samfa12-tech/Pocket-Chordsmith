@@ -1,14 +1,15 @@
 import { AudioEngine, type AudioProjectSyncMode, type TrackMixerControlPatch } from "../audio/audioEngine";
 import { audioBufferPeaks, getCachedAudioBuffer, setCachedAudioBuffer } from "../audio/audioBufferCache";
-import { buildTransportMetronomeSchedule, countInSeconds, metronomeSettings, secondsPerBar } from "../audio/metronome";
+import { buildTransportMetronomeSchedule, countInSeconds, metronomeSettings } from "../audio/metronome";
 import { exportProjectToMidiBlob } from "../audio/midiExport";
 import { mergeNativeRenderCacheItems, prunePersistedNativeRenderCacheAssets } from "../audio/nativeRenderCache";
 import { renderProjectToNativeWavBlob } from "../audio/nativeOfflineRender";
-import { renderProjectToWavBlob, type WavChannelMode } from "../audio/offlineRender";
+import { renderProjectToWavBlob, type WavBitDepth, type WavChannelMode, type WavDitherMode } from "../audio/offlineRender";
 import { createDemoProject } from "../demo/demoProject";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../daw/dawProject";
 import { DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumBranchStepLevel, isDrumLaneId } from "../daw/drumLanes";
 import { renderTimelineEvents } from "../audio/eventRenderer";
+import { timelineSecondsAtBar } from "../daw/timeline";
 import {
   listenForDeepLinkHandoffs,
   listenForProjectFileLaunches,
@@ -58,6 +59,8 @@ import {
 } from "../native/updaterBridge";
 import {
   addAutomationPointCommand,
+  addAutomationPointToLaneCommand,
+  addAutomationPointsToLaneCommand,
   addBusTrackCommand,
   addClipAutomationPointCommand,
   appendChordsmithSectionCommand,
@@ -65,6 +68,8 @@ import {
   addTrackFxCommand,
   addGameStateMarkerAtPlayheadCommand,
   addMarkerAtPlayheadCommand,
+  addProjectAutomationPointCommand,
+  addProjectMeterMapPointCommand,
   addEmptyMidiClipCommand,
   addMidiAftertouchCommand,
   addMidiControllerCommand,
@@ -73,8 +78,12 @@ import {
   addMidiProgramChangeCommand,
   addReturnTrackCommand,
   addDrumLaneFxCommand,
+  addFxAutomationPointCommand,
   addTrackSendAutomationPointCommand,
   activateAudioTakeCommand,
+  adoptMidiMeterMapCommand,
+  adoptMidiTempoMapAutomationCommand,
+  adoptMidiTempoMapStartCommand,
   applyMidiGrooveTemplateCommand,
   applySelectedAudioClipActionCommand,
   applyBassPresetCommand,
@@ -89,6 +98,8 @@ import {
   commitProject,
   copySelectedClip,
   cropSelectedClipToTimelineSelectionCommand,
+  convertMidiBassToGeneratedOverlaysCommand,
+  convertMidiChordsToGeneratedOverlaysCommand,
   convertMidiDrumsToBranchOverlaysCommand,
   convertMidiMelodyToGeneratedOverlaysCommand,
   cycleDrumTupletCommand,
@@ -100,6 +111,7 @@ import {
   deleteSelectedClipRangeCommand,
   deleteMarkerCommand,
   deleteAutomationPointCommand,
+  deleteProjectMeterMapPointCommand,
   deleteMidiControllerCommand,
   deleteMidiAftertouchCommand,
   deleteMidiNoteCommand,
@@ -133,6 +145,8 @@ import {
   resizeMidiNoteCommand,
   ensureAutomationLaneCommand,
   ensureClipAutomationLaneCommand,
+  ensureFxAutomationLaneCommand,
+  ensureProjectAutomationLaneCommand,
   ensureTrackSendAutomationLaneCommand,
   setBassModeCommand,
   setChordInstrumentCommand,
@@ -161,6 +175,10 @@ import {
   setSectionChordCommand,
   setLoopBars,
   setLoopEnabled,
+  recordFxAutomationPointCommand,
+  recordClipAutomationPointCommand,
+  recordTrackSendAutomationPointCommand,
+  recordTrackAutomationPointCommand,
   setTrackInputCommand,
   setTrackRecordingChannelModeCommand,
   setTrackPanCommand,
@@ -199,20 +217,22 @@ import {
   trimSelectedClipEndCommand,
   trimSelectedClipStartCommand,
   updateAutomationPointCommand,
+  updateProjectMeterMapPointCommand,
   undoCommand
 } from "./commands";
 import { commandFromKeyboardEvent } from "./keyboard";
 import { createInitialState, createRecordingUiState, currentProject, loadProjectIntoState, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type LoadProjectIntoStateOptions, type NativeCacheUiStatus } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
+import { automationSurfaceAudioSyncMode, automationSurfacePointFromClient } from "./automationSurface";
 import { renderAppShell } from "./ui";
 import { replacePresent } from "../daw/undo";
 import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
 import { POCKET_DAW_VERSION, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
 import { trackIsAudible, type AddTrackKind } from "../daw/tracks";
-import { barFloatToPosition, snapBarValue } from "../daw/timeline";
+import { barFloatToDisplayPosition, snapProjectBarValue } from "../daw/timeline";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeRecordingClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../daw/audioClips";
-import { createCollectMediaPlan, findMediaPoolItem, linkFreezeRenderCacheItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked, mediaPoolReloadCandidates, mediaPoolStatus, updateMediaPoolItemMetadata } from "../daw/mediaPool";
+import { createCollectMediaPlan, findMediaPoolItem, linkFreezeRenderCacheItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked, mediaPoolReloadCandidates, mediaPoolStatus, updateMediaPoolItemMetadata, verifyMediaPortability } from "../daw/mediaPool";
 import {
   AUDIO_MEDIA_ACCEPT,
   collectProjectMediaNative,
@@ -227,7 +247,7 @@ import { importMidiFileToProjectWithPlacement, type MidiImportPlacementMode } fr
 import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
 import { isNativeRecordingAvailable, nativeRecordingStatus, startNativeRecording, startNativeRecordingPreview, stopNativeRecording, stopNativeRecordingPreview, updateNativeRecordingMonitor } from "../native/recordingBridge";
-import { createGamePackZipBlob, createSectionLoopMetadata, createSectionLoopZipBlob, createStemExportPlan, createStemZipBlob, projectForClipRender } from "../daw/exportJobs";
+import { buildPortableGamePackSourceProjectFile, createGamePackZipBlob, createSectionLoopMetadata, createSectionLoopZipBlob, createStemExportPlan, createStemZipBlob, projectForClipRender } from "../daw/exportJobs";
 import { assertExportProfileSupported, validateExportProfile } from "../daw/exportProfiles";
 import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
 import { buildTesterDiagnosticsPayload, diagnosticsJson, runtimeLabel, runtimePlatform } from "./diagnostics";
@@ -281,6 +301,7 @@ export class App {
   private pinchPointers = new Map<number, PointerEvent>();
   private pinchStartDistance: number | null = null;
   private pinchStartZoom = 240;
+  private suppressNextAutomationSurfaceClick = false;
   private metronomeContext: AudioContext | null = null;
   private metronomeTimer: number | null = null;
   private recordingTimer: number | null = null;
@@ -903,10 +924,12 @@ export class App {
     this.root.querySelectorAll<HTMLInputElement>("[data-track-send-level]").forEach((input) => {
       input.addEventListener("change", () => {
         const [trackId, returnTrackId] = String(input.dataset.trackSendLevel || "").split(":");
-        this.applyProjectState(setTrackSendLevelCommand(this.state, trackId, returnTrackId, Number(input.value)), {
-          audio: "mixer-graph",
+        const value = Number(input.value);
+        const recorded = this.recordLiveSendAutomation(trackId, returnTrackId, "level", value);
+        this.applyProjectState(recorded || setTrackSendLevelCommand(this.state, trackId, returnTrackId, value), {
+          audio: recorded ? "composition-events" : "mixer-graph",
           preserveScroll: true,
-          reason: "track-send-level"
+          reason: recorded ? "track-send-level-automation-record" : "track-send-level"
         });
       });
     });
@@ -949,19 +972,21 @@ export class App {
     this.root.querySelectorAll<HTMLInputElement>("[data-audio-clip-property]").forEach((input) => {
       input.addEventListener("change", () => {
         const [clipId, field] = String(input.dataset.audioClipProperty || "").split(":");
-        if (field !== "gain" && field !== "sourceOffsetSeconds" && field !== "durationSeconds" && field !== "fadeInSeconds" && field !== "fadeOutSeconds") return;
-        this.applyProjectState(setSelectedAudioClipPropertyCommand(this.state, clipId, field, Number(input.value)), {
+        if (field !== "gain" && field !== "sourceOffsetSeconds" && field !== "durationSeconds" && field !== "fadeInSeconds" && field !== "fadeOutSeconds" && field !== "playbackRate" && field !== "pitchSemitones") return;
+        const value = Number(input.value);
+        const recorded = field === "gain" ? this.recordLiveClipAutomation(clipId, field, value) : null;
+        this.applyProjectState(recorded || setSelectedAudioClipPropertyCommand(this.state, clipId, field, value), {
           audio: "timeline-structure",
           preserveScroll: true,
-          reason: `audio-clip-${field}`
+          reason: recorded ? "clip-gain-automation-record" : `audio-clip-${field}`
         });
       });
     });
     this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-export-profile-setting]").forEach((input) => {
       input.addEventListener("change", () => {
         const [profileId, field] = String(input.dataset.exportProfileSetting || "").split(":");
-        if (field !== "sampleRate" && field !== "tailSeconds" && field !== "channelMode" && field !== "normalize") return;
-        this.applyProjectState(setExportProfileSettingCommand(this.state, profileId, field, field === "channelMode" || field === "normalize" ? input.value : Number(input.value)), {
+        if (field !== "sampleRate" && field !== "bitDepth" && field !== "tailSeconds" && field !== "channelMode" && field !== "normalize" && field !== "dither") return;
+        this.applyProjectState(setExportProfileSettingCommand(this.state, profileId, field, field === "channelMode" || field === "normalize" || field === "dither" ? input.value : Number(input.value)), {
           audio: "none",
           preserveScroll: true,
           reason: `export-profile-${field}`
@@ -971,7 +996,7 @@ export class App {
     this.root.querySelectorAll<HTMLButtonElement>("[data-audio-clip-action]").forEach((button) => {
       button.addEventListener("click", () => {
         const [clipId, action] = String(button.dataset.audioClipAction || "").split(":");
-        if (action !== "normalize-gain" && action !== "reset-fades" && action !== "quick-fade" && action !== "crossfade-overlap" && action !== "create-crossfade-left" && action !== "invert-phase" && action !== "reverse" && action !== "analyze-transients") return;
+        if (action !== "normalize-gain" && action !== "reset-fades" && action !== "quick-fade" && action !== "crossfade-overlap" && action !== "create-crossfade-left" && action !== "invert-phase" && action !== "reverse" && action !== "analyze-transients" && action !== "create-warp-markers" && action !== "clear-warp-markers") return;
         this.applyProjectState(applySelectedAudioClipActionCommand(this.state, clipId, action), {
           audio: "timeline-structure",
           preserveScroll: true,
@@ -1000,14 +1025,26 @@ export class App {
         });
       });
     });
-    this.root.querySelectorAll<HTMLInputElement>("[data-automation-point-bar], [data-automation-point-value]").forEach((input) => {
+    this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-automation-point-bar], [data-automation-point-value], [data-automation-point-curve]").forEach((input) => {
       input.addEventListener("change", () => {
-        const packed = input.dataset.automationPointBar || input.dataset.automationPointValue || "";
+        const packed = input.dataset.automationPointBar || input.dataset.automationPointValue || input.dataset.automationPointCurve || "";
         const [laneId, indexText] = packed.split(":");
         const index = Number(indexText);
         const bar = Number(findDataElement<HTMLInputElement>(this.root, "data-automation-point-bar", `${laneId}:${index}`)?.value || 1);
         const value = Number(findDataElement<HTMLInputElement>(this.root, "data-automation-point-value", `${laneId}:${index}`)?.value || 0);
-        this.applyProjectState(updateAutomationPointCommand(this.state, laneId, index, bar, value));
+        const curve = findDataElement<HTMLSelectElement>(this.root, "data-automation-point-curve", `${laneId}:${index}`)?.value || "linear";
+        this.applyProjectState(updateAutomationPointCommand(this.state, laneId, index, bar, value, curve));
+      });
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-project-meter-map-field]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const [pointId, field] = String(input.dataset.projectMeterMapField || "").split(":");
+        if (field !== "bar" && field !== "numerator" && field !== "denominator") return;
+        this.applyProjectState(updateProjectMeterMapPointCommand(this.state, pointId, { [field]: Number(input.value) }), {
+          audio: "none",
+          preserveScroll: true,
+          reason: "project-meter-map-edit"
+        });
       });
     });
     this.root.querySelectorAll<HTMLInputElement>("[data-section-bars]").forEach((input) => {
@@ -1286,10 +1323,11 @@ export class App {
     const [chainId, slotId, parameter] = encoded.split(":");
     if (!chainId || !slotId || !parameter) return;
     const value = input.type === "checkbox" ? input.checked : Number(input.value);
-    this.applyProjectState(setFxSlotParameterCommand(this.state, chainId, slotId, parameter, value), {
+    const recorded = typeof value === "number" ? this.recordLiveFxAutomation(chainId, slotId, parameter, value) : null;
+    this.applyProjectState(recorded || setFxSlotParameterCommand(this.state, chainId, slotId, parameter, value), {
       audio: "mixer-graph",
       preserveScroll: true,
-      reason: "fx-parameter"
+      reason: recorded ? "fx-parameter-automation-record" : "fx-parameter"
     });
   }
 
@@ -1335,6 +1373,16 @@ export class App {
     this.previewMixerControl(input, trackId, field);
     this.mixerGestureStarts.delete(key);
     if (Math.abs(startValue - value) < 0.0001) return;
+    const recorded = this.recordLiveMixerAutomation(trackId, field, value);
+    if (recorded) {
+      this.applyProjectState(recorded, {
+        audio: "composition-events",
+        preserveScroll: true,
+        reason: `track-${field}-automation-record`
+      });
+      void this.syncActiveOrArmedInputMonitor(trackId);
+      return;
+    }
     const next = field === "volume" ? setTrackVolumeCommand(this.state, trackId, value) : setTrackPanCommand(this.state, trackId, value);
     this.applyProjectState(next, {
       audio: "none",
@@ -1342,6 +1390,30 @@ export class App {
       reason: `track-${field}`
     });
     void this.syncActiveOrArmedInputMonitor(trackId);
+  }
+
+  private recordLiveMixerAutomation(trackId: string, field: MixerControlField, value: number): AppState | null {
+    if (!this.state.playing && !this.engine.isPlaying()) return null;
+    const next = recordTrackAutomationPointCommand(this.state, trackId, field, value, this.state.playheadBar || 1);
+    return next === this.state ? null : next;
+  }
+
+  private recordLiveSendAutomation(trackId: string, returnTrackId: string, field: "level", value: number): AppState | null {
+    if (!this.state.playing && !this.engine.isPlaying()) return null;
+    const next = recordTrackSendAutomationPointCommand(this.state, trackId, returnTrackId, field, value, this.state.playheadBar || 1);
+    return next === this.state ? null : next;
+  }
+
+  private recordLiveFxAutomation(chainId: string, slotId: string, parameter: string, value: number): AppState | null {
+    if (!this.state.playing && !this.engine.isPlaying()) return null;
+    const next = recordFxAutomationPointCommand(this.state, chainId, slotId, parameter, value, this.state.playheadBar || 1);
+    return next === this.state ? null : next;
+  }
+
+  private recordLiveClipAutomation(clipId: string, field: "gain", value: number): AppState | null {
+    if (!this.state.playing && !this.engine.isPlaying()) return null;
+    const next = recordClipAutomationPointCommand(this.state, clipId, field, value, this.state.playheadBar || 1);
+    return next === this.state ? null : next;
   }
 
   private currentMixerControlValue(trackId: string, field: MixerControlField): number {
@@ -1382,6 +1454,7 @@ export class App {
     this.trackTimelinePinchPointer(event, target);
     if (this.beginTimelineHeightResize(target, event)) return;
     if (this.beginInspectorResize(target, event)) return;
+    if (this.beginAutomationSurfaceDraw(target, event)) return;
     if (this.beginTimelineClipDrag(target, event)) return;
     if (this.beginChordsmithStepDrag(target, "pointerup")) return;
     if (this.isTimelineNonSeekTarget(target)) return;
@@ -1513,6 +1586,55 @@ export class App {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     return true;
+  }
+
+  private beginAutomationSurfaceDraw(target: HTMLElement | null, event: PointerEvent): boolean {
+    const surface = target?.closest<HTMLElement>("[data-automation-lane-surface]");
+    if (!surface) return false;
+    event.preventDefault();
+    this.suppressNextAutomationSurfaceClick = true;
+    const laneId = String(surface.dataset.automationLaneSurface || "");
+    const lane = currentProject(this.state).automation.lanes.find((item) => item.id === laneId);
+    const audioMode = automationSurfaceAudioSyncMode(lane?.targetPath);
+    const points: Array<{ bar: number; value: number; curve: "linear" }> = [];
+    const collect = (clientX: number, clientY: number) => {
+      const point = this.automationSurfacePoint(surface, clientX, clientY);
+      const last = points[points.length - 1];
+      if (last && last.bar === point.bar && last.value === point.value) return;
+      points.push({ ...point, curve: "linear" });
+    };
+    collect(event.clientX, event.clientY);
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+    };
+    const move = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      collect(moveEvent.clientX, moveEvent.clientY);
+    };
+    const up = (upEvent: PointerEvent) => {
+      cleanup();
+      collect(upEvent.clientX, upEvent.clientY);
+      this.applyProjectState(addAutomationPointsToLaneCommand(this.state, laneId, points), {
+        audio: audioMode,
+        preserveScroll: true,
+        reason: "automation-surface-draw"
+      });
+    };
+    const cancel = () => cleanup();
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    return true;
+  }
+
+  private automationSurfacePoint(surface: HTMLElement, clientX: number, clientY: number): { bar: number; value: number } {
+    const minBar = Number(surface.dataset.automationLaneStartBar || 1);
+    const maxBar = Number(surface.dataset.automationLaneEndBar || minBar + 4);
+    const minValue = Number(surface.dataset.automationLaneMin || 0);
+    const maxValue = Number(surface.dataset.automationLaneMax || 1);
+    return automationSurfacePointFromClient(surface.getBoundingClientRect(), minBar, maxBar, minValue, maxValue, clientX, clientY);
   }
 
   private handleWheel(event: WheelEvent) {
@@ -1935,10 +2057,38 @@ export class App {
       if (field === "level") this.applyProjectState(ensureTrackSendAutomationLaneCommand(this.state, trackId, returnTrackId, field), { audio: "composition-events", preserveScroll: true, reason: "send-automation-create" });
       return;
     }
+    const projectAutomationCreate = target?.closest<HTMLElement>("[data-project-automation-create]");
+    if (projectAutomationCreate) {
+      const field = String(projectAutomationCreate.dataset.projectAutomationCreate || "");
+      if (field === "tempo") this.applyProjectState(ensureProjectAutomationLaneCommand(this.state, field), { audio: "composition-events", preserveScroll: true, reason: "project-automation-create" });
+      return;
+    }
     const clipAutomationCreate = target?.closest<HTMLElement>("[data-clip-automation-create]");
     if (clipAutomationCreate) {
       const [clipId, field] = String(clipAutomationCreate.dataset.clipAutomationCreate || "").split(":");
       if (field === "gain") this.applyProjectState(ensureClipAutomationLaneCommand(this.state, clipId, field), { audio: "composition-events", preserveScroll: true, reason: "clip-automation-create" });
+      return;
+    }
+    const fxAutomationCreate = target?.closest<HTMLElement>("[data-fx-automation-create]");
+    if (fxAutomationCreate) {
+      const [chainId, slotId, parameter] = String(fxAutomationCreate.dataset.fxAutomationCreate || "").split(":");
+      this.applyProjectState(ensureFxAutomationLaneCommand(this.state, chainId, slotId, parameter), { audio: "mixer-graph", preserveScroll: true, reason: "fx-automation-create" });
+      return;
+    }
+    const automationSurface = target?.closest<HTMLElement>("[data-automation-lane-surface]");
+    if (automationSurface && event instanceof MouseEvent) {
+      const laneId = String(automationSurface.dataset.automationLaneSurface || "");
+      if (this.suppressNextAutomationSurfaceClick) {
+        this.suppressNextAutomationSurfaceClick = false;
+        return;
+      }
+      const { bar, value } = this.automationSurfacePoint(automationSurface, event.clientX, event.clientY);
+      const lane = currentProject(this.state).automation.lanes.find((item) => item.id === laneId);
+      this.applyProjectState(addAutomationPointToLaneCommand(this.state, laneId, bar, value), {
+        audio: automationSurfaceAudioSyncMode(lane?.targetPath),
+        preserveScroll: true,
+        reason: "automation-surface-add-point"
+      });
       return;
     }
     const automationAddPoint = target?.closest<HTMLElement>("[data-automation-add-point]");
@@ -1953,16 +2103,46 @@ export class App {
       if (field === "level") this.applyProjectState(addTrackSendAutomationPointCommand(this.state, trackId, returnTrackId, field), { audio: "composition-events", preserveScroll: true, reason: "send-automation-add-point" });
       return;
     }
+    const projectAutomationAddPoint = target?.closest<HTMLElement>("[data-project-automation-add-point]");
+    if (projectAutomationAddPoint) {
+      const field = String(projectAutomationAddPoint.dataset.projectAutomationAddPoint || "");
+      if (field === "tempo") this.applyProjectState(addProjectAutomationPointCommand(this.state, field), { audio: "composition-events", preserveScroll: true, reason: "project-automation-add-point" });
+      return;
+    }
+    const meterMapAddPoint = target?.closest<HTMLElement>("[data-project-meter-map-add]");
+    if (meterMapAddPoint) {
+      this.applyProjectState(addProjectMeterMapPointCommand(this.state), {
+        audio: "none",
+        preserveScroll: true,
+        reason: "project-meter-map-add"
+      });
+      return;
+    }
     const clipAutomationAddPoint = target?.closest<HTMLElement>("[data-clip-automation-add-point]");
     if (clipAutomationAddPoint) {
       const [clipId, field] = String(clipAutomationAddPoint.dataset.clipAutomationAddPoint || "").split(":");
       if (field === "gain") this.applyProjectState(addClipAutomationPointCommand(this.state, clipId, field), { audio: "composition-events", preserveScroll: true, reason: "clip-automation-add-point" });
       return;
     }
+    const fxAutomationAddPoint = target?.closest<HTMLElement>("[data-fx-automation-add-point]");
+    if (fxAutomationAddPoint) {
+      const [chainId, slotId, parameter] = String(fxAutomationAddPoint.dataset.fxAutomationAddPoint || "").split(":");
+      this.applyProjectState(addFxAutomationPointCommand(this.state, chainId, slotId, parameter), { audio: "mixer-graph", preserveScroll: true, reason: "fx-automation-add-point" });
+      return;
+    }
     const automationDeletePoint = target?.closest<HTMLElement>("[data-automation-delete-point]");
     if (automationDeletePoint) {
       const [laneId, index] = String(automationDeletePoint.dataset.automationDeletePoint || "").split(":");
       this.applyProjectState(deleteAutomationPointCommand(this.state, laneId, Number(index)));
+      return;
+    }
+    const meterMapDeletePoint = target?.closest<HTMLElement>("[data-project-meter-map-delete]");
+    if (meterMapDeletePoint) {
+      this.applyProjectState(deleteProjectMeterMapPointCommand(this.state, String(meterMapDeletePoint.dataset.projectMeterMapDelete || "")), {
+        audio: "none",
+        preserveScroll: true,
+        reason: "project-meter-map-delete"
+      });
       return;
     }
     const stepPage = target?.closest<HTMLElement>("[data-step-page]");
@@ -2376,10 +2556,35 @@ export class App {
       preserveScroll: true,
       reason: "convert-midi-drums"
     });
+    if (action === "convert-midi-bass") this.applyProjectState(convertMidiBassToGeneratedOverlaysCommand(this.state), {
+      audio: "composition-events",
+      preserveScroll: true,
+      reason: "convert-midi-bass"
+    });
+    if (action === "convert-midi-chords") this.applyProjectState(convertMidiChordsToGeneratedOverlaysCommand(this.state), {
+      audio: "composition-events",
+      preserveScroll: true,
+      reason: "convert-midi-chords"
+    });
     if (action === "convert-midi-melody") this.applyProjectState(convertMidiMelodyToGeneratedOverlaysCommand(this.state), {
       audio: "composition-events",
       preserveScroll: true,
       reason: "convert-midi-melody"
+    });
+    if (action === "adopt-midi-tempo") this.applyProjectState(adoptMidiTempoMapStartCommand(this.state), {
+      audio: "composition-events",
+      preserveScroll: true,
+      reason: "adopt-midi-tempo"
+    });
+    if (action === "adopt-midi-tempo-map") this.applyProjectState(adoptMidiTempoMapAutomationCommand(this.state), {
+      audio: "composition-events",
+      preserveScroll: true,
+      reason: "adopt-midi-tempo-map"
+    });
+    if (action === "adopt-midi-meter-map") this.applyProjectState(adoptMidiMeterMapCommand(this.state), {
+      audio: "composition-events",
+      preserveScroll: true,
+      reason: "adopt-midi-meter-map"
     });
     if (action === "collapse-generated-drum-branches") this.applyProjectState(collapseGeneratedDrumBranchesCommand(this.state), {
       audio: "composition-events",
@@ -2561,7 +2766,7 @@ export class App {
 
   private snapTimelineBar(value: number): number {
     const project = currentProject(this.state);
-    return snapBarValue(value, this.state.snapMode, project.project.timeSig);
+    return snapProjectBarValue(project, value, this.state.snapMode);
   }
 
   private async restartTransport() {
@@ -2632,7 +2837,7 @@ export class App {
     const sessionId = this.recordingStartToken + 1;
     this.recordingStartToken = sessionId;
     const preRollSeconds = countInSeconds(project);
-    const captureStartTransportSeconds = Math.max(0, (startBar - 1) * secondsPerBar(project));
+    const captureStartTransportSeconds = timelineSecondsAtBar(project, startBar);
     const shouldStartBackingPlayback = !this.engine.isPlaying();
     const startupPlan = buildRecordingStartupPlan({
       transportAlreadyPlaying: !shouldStartBackingPlayback,
@@ -3062,7 +3267,7 @@ export class App {
 
   private metronomeTransportSeconds(project: ReturnType<typeof currentProject>): number {
     if (this.engine.isPlaying()) return this.engine.currentSeconds();
-    return Math.max(0, (this.state.playheadBar - 1) * secondsPerBar(project));
+    return timelineSecondsAtBar(project, this.state.playheadBar);
   }
 
   private stopLiveMetronome() {
@@ -3540,7 +3745,7 @@ export class App {
     const rect = timeline.getBoundingClientRect();
     const rawBar = (clientX - rect.left - this.timelineTrackHeaderWidth(timeline)) / this.state.zoom + 1;
     const project = currentProject(this.state);
-    const bar = Math.max(1, Math.min(project.timeline.bars + 1, snapBarValue(rawBar, this.state.snapMode, project.project.timeSig)));
+    const bar = Math.max(1, Math.min(project.timeline.bars + 1, snapProjectBarValue(project, rawBar, this.state.snapMode)));
     this.seekToBar(bar, final);
     return bar;
   }
@@ -3570,7 +3775,7 @@ export class App {
 
   private formatBarBeatParts(barValue: number) {
     const project = currentProject(this.state);
-    const pos = barFloatToPosition(barValue, project.project.timeSig, project.project.ppq);
+    const pos = barFloatToDisplayPosition(project, barValue);
     return { bar: `Bar ${pos.bar}`, beat: `Beat ${pos.beat}` };
   }
 
@@ -3773,10 +3978,10 @@ export class App {
         waveformPeaks: decoded.waveformPeaks,
         metadata: audioSourceMetadata(source)
       }, loadedFrom);
-      this.applyProjectState(commitProject(this.state, project, `Reloaded ${item.name} from ${loadedFrom.label}.`), { audio: "timeline-structure", reason: "reload-media" });
+      this.applyProjectState(commitProject(this.state, project, `Reloaded ${item.name} from ${loadedFrom.label}.${this.mediaPortabilityStatus(project)}`), { audio: "timeline-structure", reason: "reload-media" });
     } catch (error) {
       const project = markMediaPoolItemMissing(currentProject(this.state), item.id, true, error instanceof Error ? error.message : "Reload failed.");
-      this.applyProjectState(commitProject(this.state, project, `Could not reload ${item.name}. Use Relink.`), { audio: "none", preserveScroll: true, reason: "reload-media-failed" });
+      this.applyProjectState(commitProject(this.state, project, `Could not reload ${item.name}. Use Relink.${this.mediaPortabilityStatus(project)}`), { audio: "none", preserveScroll: true, reason: "reload-media-failed" });
     }
   }
 
@@ -3817,7 +4022,7 @@ export class App {
       });
       const cacheMetadata = await this.persistNativeDecodedAudioCache(item.id, source);
       if (cacheMetadata) project = updateMediaPoolItemMetadata(project, item.id, cacheMetadata);
-      this.applyProjectState(commitProject(this.state, project, `Relinked ${item.name} to ${source.name}.`), { audio: "timeline-structure", reason: "relink-media" });
+      this.applyProjectState(commitProject(this.state, project, `Relinked ${item.name} to ${source.name}.${this.mediaPortabilityStatus(project)}`), { audio: "timeline-structure", reason: "relink-media" });
     } catch (error) {
       this.state.status = error instanceof Error ? `Relink failed: ${error.message}` : "Relink failed.";
       this.render({ preserveScroll: true });
@@ -4109,7 +4314,7 @@ export class App {
           throw new Error(`${clip.name} needs its source audio loaded before freezing.`);
         }
       }
-      const blob = await this.renderWavNativeFirst(renderTarget.project, { channelMode: "stereo", normalizePeak: false });
+      const blob = await this.renderWavNativeFirst(renderTarget.project, { channelMode: "stereo", bitDepth: 16, dither: "off", normalizePeak: false });
       const source = await this.freezeBlobSource(blob, clip);
       const decoded = await this.decodeAudioSource(source);
       const media = addImportedAudioMedia(currentProject(this.state), {
@@ -4276,8 +4481,8 @@ export class App {
       const hydration = await this.hydrateTimelineAudioBuffers();
       this.assertNoMissingAudibleAudioBuffers(hydration, `${label} game-pack export`);
       const result = await createGamePackZipBlob(project, kind, {
-        sourceProjectContents: buildPocketDawProjectFile(project),
-        renderWav: (renderProject) => this.renderWavNativeFirst(renderProject, { channelMode: "stereo", normalizePeak: false }),
+        sourceProjectContents: buildPortableGamePackSourceProjectFile(project),
+        renderWav: (renderProject) => this.renderWavNativeFirst(renderProject, { channelMode: "stereo", bitDepth: 16, dither: "off", normalizePeak: false }),
         onProgress: (title, detail) => this.showExportProgress(title, detail)
       });
       if (options.pushToGodot && kind === "godot-adaptive-pack") {
@@ -4330,8 +4535,20 @@ export class App {
     this.render({ preserveScroll: true });
   }
 
-  private async renderWavNativeFirst(project: PocketDawProject, options: { channelMode?: WavChannelMode; normalizePeak?: boolean } = {}): Promise<Blob> {
+  private async renderWavNativeFirst(project: PocketDawProject, options: { channelMode?: WavChannelMode; bitDepth?: WavBitDepth; dither?: WavDitherMode; normalizePeak?: boolean } = {}): Promise<Blob> {
     return await renderProjectToNativeWavBlob(project, undefined, options) || await renderProjectToWavBlob(project, options);
+  }
+
+  private mediaPortabilityStatus(project: PocketDawProject): string {
+    const portability = verifyMediaPortability(project);
+    if (portability.embeddedSourceProjectPortable) return " Media portability: embedded source project is portable.";
+    const details = [
+      `${portability.needsCollectionOrRelinkCount} item${portability.needsCollectionOrRelinkCount === 1 ? "" : "s"} need collection or relink`,
+      portability.cacheOnlyCount ? `${portability.cacheOnlyCount} cache-only` : "",
+      portability.runtimeOnlyCount ? `${portability.runtimeOnlyCount} runtime-only` : "",
+      portability.missingOrUnresolvedCount ? `${portability.missingOrUnresolvedCount} missing or unresolved` : ""
+    ].filter(Boolean);
+    return ` Media portability: ${details.join(", ")}.`;
   }
 
   private exportMediaPlan() {
@@ -4386,7 +4603,7 @@ export class App {
         saveRecentProject(saveResult.file.label, saveResult.file.path);
         this.state.recent = loadRecentProjects();
       }
-      this.state.status = `Collected ${collected.length} media item${collected.length === 1 ? "" : "s"} into project-media and saved project refs.`;
+      this.state.status = `Collected ${collected.length} media item${collected.length === 1 ? "" : "s"} into project-media and saved project refs.${this.mediaPortabilityStatus(currentProject(this.state))}`;
       this.saveAutosaveSnapshot(currentProject(this.state));
       this.render({ preserveScroll: true });
     } catch (error) {

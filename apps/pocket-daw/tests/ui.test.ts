@@ -9,7 +9,7 @@ import { addMediaPoolItem, createMediaPoolItem } from "../src/daw/mediaPool";
 import { addTrackToProject } from "../src/daw/tracks";
 import { addFxSlot } from "../src/daw/fx";
 import { branchGeneratedDrumsToTracks, setDrumBranchGroupCollapsed } from "../src/daw/drumLanes";
-import { ensureTrackSendAutomationLane } from "../src/daw/automation";
+import { createAutomationLane, ensureTrackSendAutomationLane } from "../src/daw/automation";
 import { addReturnTrack, setTrackSendLevel, setTrackSendMode } from "../src/daw/routing";
 import { addMidiAftertouch, addMidiController, addMidiPitchBend, addMidiProgramChange, importMidiFileToProject, midiDataFromClip } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
@@ -369,7 +369,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).not.toContain("<button disabled>Convert to MIDI</button>");
   });
 
-  it("renders audio clip inspector controls for non-destructive gain, fades and source offset", () => {
+  it("renders audio clip inspector controls for non-destructive gain, fades, source offset and warp markers", () => {
     const state = createInitialState();
     const imported = addImportedAudioMedia(state.undoStack.present, {
       name: "Voice.wav",
@@ -391,10 +391,14 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).toContain(`data-audio-clip-property="${placed.clipId}:fadeOutSeconds"`);
     expect(inspector).toContain(`data-audio-clip-property="${placed.clipId}:sourceOffsetSeconds"`);
     expect(inspector).toContain(`data-audio-clip-property="${placed.clipId}:durationSeconds"`);
+    expect(inspector).toContain(`data-audio-clip-property="${placed.clipId}:playbackRate"`);
+    expect(inspector).toContain(`data-audio-clip-property="${placed.clipId}:pitchSemitones"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:quick-fade"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:reset-fades"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:normalize-gain"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:analyze-transients"`);
+    expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:create-warp-markers"`);
+    expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:clear-warp-markers"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:crossfade-overlap"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:create-crossfade-left"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:invert-phase"`);
@@ -721,6 +725,9 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('data-add-fx="bass"');
     expect(html).toContain('class="fx-inspector"');
     expect(html).toContain(">Delay<");
+    expect(html).toContain("FX parameter automation");
+    expect(html).toContain("data-fx-automation-create=\"fx_bass:");
+    expect(html).toContain(":mix\"");
   });
 
   it("renders selected-track sends in the lower dock sends tab", () => {
@@ -743,16 +750,45 @@ describe("Pocket DAW UI rendering", () => {
   });
 
   it("renders selected-track automation in the lower dock automation tab", () => {
+    const laneResult = createAutomationLane(createEmptyPocketDawProject(), "tracks.bass.volume", {
+      points: [
+        { bar: 1, value: 0.75, curve: "hold" },
+        { bar: 5, value: 1, curve: "ease-in" }
+      ]
+    });
     const state = createInitialState();
+    laneResult.project.project.meterMap = [
+      { id: "meter_1", bar: 1, numerator: 4, denominator: 4, source: "midi-import", sourceTick: 0 },
+      { id: "meter_2", bar: 5.25, numerator: 7, denominator: 8, source: "midi-import", sourceTick: 3840 }
+    ];
+    state.undoStack = createUndoStack(laneResult.project);
     state.selectedTrackId = "bass";
     state.lowerDockTab = "automation";
 
     const html = lowerDockHtml(renderAppShell(state));
 
     expect(html).toContain('data-lower-dock="automation"');
+    expect(html).toContain("Project Automation");
+    expect(html).toContain('data-project-automation-create="tempo"');
     expect(html).toContain("Bass track automation");
-    expect(html).toContain('data-automation-create="bass:volume"');
+    expect(html).toContain('data-automation-add-point="bass:volume"');
     expect(html).toContain('data-automation-create="bass:pan"');
+    expect(html).toContain(`data-automation-point-curve="${laneResult.laneId}:0"`);
+    expect(html).toContain('<option value="hold" selected>Hold</option>');
+    expect(html).toContain('<option value="ease-in" selected>Ease in</option>');
+    expect(html).toContain(`data-automation-lane-surface="${laneResult.laneId}"`);
+    expect(html).toContain('data-automation-lane-min="0"');
+    expect(html).toContain('data-automation-lane-max="1.2"');
+    expect(html).toContain("automation-curve-line");
+    expect(html).toContain("Meter Map");
+    expect(html).toContain('data-project-meter-map-add="true"');
+    expect(html).toContain('data-project-meter-map-point="meter_2"');
+    expect(html).toContain('data-project-meter-map-field="meter_2:bar"');
+    expect(html).toContain('data-project-meter-map-field="meter_2:numerator"');
+    expect(html).toContain('data-project-meter-map-field="meter_2:denominator"');
+    expect(html).toContain('data-project-meter-map-delete="meter_2"');
+    expect(html).toContain("7/8");
+    expect(html).toContain("tick 3840");
   });
 
   it("renders the selected MIDI clip in the lower dock piano-roll tab", () => {
@@ -780,6 +816,13 @@ describe("Pocket DAW UI rendering", () => {
       channels: 2
     });
     const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      audioWarpMarkers: [{ id: "warp_1", sourceSeconds: 1.5, targetBar: 2.75, targetSeconds: 3.5, source: "transient", locked: true }],
+      audioWarpMarkerCount: 1,
+      audioWarpPlaybackMode: "metadata-only"
+    };
     const state = createInitialState();
     state.undoStack = createUndoStack(placed.project);
     state.selectedClipId = placed.clipId;
@@ -793,6 +836,9 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain(`data-audio-clip-property="${placed.clipId}:gain"`);
     expect(html).toContain(`data-clip-automation-create="${placed.clipId}:gain"`);
     expect(html).toContain(`data-audio-clip-action="${placed.clipId}:reverse"`);
+    expect(html).toContain(`data-audio-clip-action="${placed.clipId}:create-warp-markers"`);
+    expect(html).toContain("Warp: 1 marker / metadata-only");
+    expect(html).toContain("1.50s -> 2.75");
   });
 
   it("renders export details in the lower dock export tab", () => {
@@ -818,22 +864,32 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Target smoke: manual-required-before-release-claim");
     expect(html).toContain("Manual target web-game smoke is required before release claims.");
     expect(html).toContain("Embedded source project is portable.");
+    expect(html).toContain("Embedded source project is share-safe.");
     expect(html).not.toContain("current render graphs are post-fader only");
     expect(html).toContain('data-export-profile="full-song-wav"');
     expect(html).toContain('data-export-profile-setting="full-song-wav:sampleRate"');
     expect(html).toContain('data-export-profile-setting="full-song-wav:tailSeconds"');
+    expect(html).toContain('data-export-profile-setting="full-song-wav:bitDepth"');
     expect(html).toContain('data-export-profile-setting="full-song-wav:channelMode"');
     expect(html).toContain('data-export-profile-setting="full-song-wav:normalize"');
+    expect(html).toContain('data-export-profile-setting="full-song-wav:dither"');
     expect(html).toContain('data-export-profile="stem-wavs"');
     expect(html).toContain('data-export-profile-setting="stem-wavs:sampleRate"');
+    expect(html).toContain('data-export-profile-setting="stem-wavs:bitDepth"');
     expect(html).toContain('data-export-profile-setting="stem-wavs:channelMode"');
     expect(html).toContain('data-export-profile-setting="stem-wavs:normalize"');
+    expect(html).toContain('data-export-profile-setting="stem-wavs:dither"');
     expect(html).toContain('data-export-profile="section-loops"');
     expect(html).toContain('data-export-profile-setting="section-loops:sampleRate"');
+    expect(html).toContain('data-export-profile-setting="section-loops:bitDepth"');
     expect(html).toContain('data-export-profile-setting="section-loops:channelMode"');
     expect(html).toContain('data-export-profile-setting="section-loops:normalize"');
+    expect(html).toContain('data-export-profile-setting="section-loops:dither"');
     expect(html).toContain('<option value="mono"');
     expect(html).toContain("16-bit PCM");
+    expect(html).toContain("24-bit PCM");
+    expect(html).toContain("32-bit float");
+    expect(html).toContain("TPDF");
     expect(html).toContain('data-action="export-wav"');
     expect(html).toContain('data-action="export-godot-manifest"');
     expect(html).toContain('data-action="push-godot-pack"');
@@ -878,9 +934,12 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("3 media items need collection or relink before the embedded source project is portable.");
     expect(html).toContain("<dt>Project media</dt><dd>1</dd>");
     expect(html).toContain("<dt>Copyable external</dt><dd>1</dd>");
+    expect(html).toContain("<dt>Cache-only</dt><dd>0</dd>");
     expect(html).toContain("<dt>Runtime-only</dt><dd>1</dd>");
     expect(html).toContain("<dt>Missing</dt><dd>1</dd>");
     expect(html).toContain("<dt>Blocked</dt><dd>2</dd>");
+    expect(html).toContain("<dt>Shared source refs</dt><dd>2</dd>");
+    expect(html).toContain("2 local reference fields remain in the embedded source project.");
     expect(html).not.toContain("C:\\Sessions");
     expect(html).not.toContain("file:///lost");
   });
@@ -967,8 +1026,51 @@ describe("Pocket DAW UI rendering", () => {
     const html = renderAppShell(createInitialState());
 
     expect(html).toContain('class="ruler-tick"');
+    expect(html).toContain('class="ruler-beat-tick"');
+    expect(html).toContain('data-ruler-beat="1:2"');
+    expect(html).toContain('data-ruler-meter="1:4/4"');
     expect(html).toContain("<b>1</b><small>0:00</small>");
+    expect(html).toContain('title="Bar 1 beat 2 / 4/4 / 0:01"');
     expect(html).toContain("Click to seek by bar or time");
+  });
+
+  it("renders tempo-automated time labels on the timeline ruler", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    state.undoStack.present.timeline.bars = 2;
+    state.undoStack.present = createAutomationLane(state.undoStack.present, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [{ bar: 1, value: 60, curve: "hold" }]
+    }).project;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("<b>2</b><small>0:04</small>");
+    expect(html).toContain("<b>3</b><small>0:08</small>");
+    expect(html).toContain('data-ruler-beat="2:2"');
+    expect(html).toContain('title="Bar 2 beat 2 / 4/4 / 0:05"');
+  });
+
+  it("renders meter-map-aware ruler ticks without changing timeline timing labels", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    state.undoStack.present.timeline.bars = 3;
+    state.undoStack.present.project.meterMap = [
+      { id: "meter_1", bar: 2, numerator: 7, denominator: 8, source: "midi-import" }
+    ];
+    state.playheadBar = 2 + 6 / 7;
+
+    const html = renderAppShell(state);
+    const transport = html.match(/<div class="transport-readout">[\s\S]*?<\/div>/)?.[0] || "";
+
+    expect(html).toContain('data-ruler-meter="2:7/8"');
+    expect(html).toContain('data-ruler-beat="2:7"');
+    expect(html).not.toContain('data-ruler-beat="2:8"');
+    expect(html).toContain('title="Bar 2 beat 7 / 7/8 / 0:04"');
+    expect(transport).toContain('<span data-playhead-readout="true"><strong>Bar 2</strong><small>Beat 7</small></span>');
   });
 
   it("renders close default zoom and marker rails aligned to bar coordinates", () => {
@@ -1037,13 +1139,25 @@ describe("Pocket DAW UI rendering", () => {
     expect(source).toContain("placementMode: this.state.midiImportPlacementMode");
   });
 
-  it("wires selected MIDI drum and melody mapping through the app action path", () => {
+  it("wires selected MIDI drum, bass, chord and melody mapping through the app action path", () => {
     const source = readFileSync("src/app/App.ts", "utf8");
 
     expect(source).toContain('action === "convert-midi-drums"');
     expect(source).toContain("convertMidiDrumsToBranchOverlaysCommand");
+    expect(source).toContain('action === "convert-midi-bass"');
+    expect(source).toContain("convertMidiBassToGeneratedOverlaysCommand");
+    expect(source).toContain('action === "convert-midi-chords"');
+    expect(source).toContain("convertMidiChordsToGeneratedOverlaysCommand");
     expect(source).toContain('action === "convert-midi-melody"');
     expect(source).toContain("convertMidiMelodyToGeneratedOverlaysCommand");
+  });
+
+  it("wires live clip-gain moves into prepared clip automation lanes during playback", () => {
+    const source = readFileSync("src/app/App.ts", "utf8");
+
+    expect(source).toContain("recordLiveClipAutomation");
+    expect(source).toContain("recordClipAutomationPointCommand");
+    expect(source).toContain('reason: recorded ? "clip-gain-automation-record"');
   });
 
   it("wires Godot pack push through the local push bridge with ZIP fallback", () => {
@@ -1178,6 +1292,17 @@ describe("Pocket DAW UI rendering", () => {
       uri: "file:///music/Tempo Map.mid",
       sizeBytes: 512,
       metadata: {
+        ppq: 480,
+        tempoBpm: 120,
+        timeSig: 4,
+        tempoEvents: [
+          { tick: 0, trackIndex: 0, bpm: 120, microsecondsPerQuarter: 500000 },
+          { tick: 480, trackIndex: 0, bpm: 140, microsecondsPerQuarter: 428571 }
+        ],
+        timeSignatureEvents: [
+          { tick: 0, trackIndex: 0, numerator: 4, denominator: 4 },
+          { tick: 480, trackIndex: 0, numerator: 3, denominator: 4 }
+        ],
         importWarnings: [
           "MIDI file contains 2 tempo events; Pocket DAW preserves the tempo map metadata.",
           "<script>alert(1)</script>"
@@ -1191,6 +1316,11 @@ describe("Pocket DAW UI rendering", () => {
     const html = renderAppShell(state);
 
     expect(html).toContain("<dt>Warnings</dt>");
+    expect(html).toContain("<dt>Tempo Map</dt>");
+    expect(html).toContain("120 BPM @ 1.1.0");
+    expect(html).toContain("140 BPM @ 1.2.0");
+    expect(html).toContain("3/4 @ 1.2.0");
+    expect(html).toContain("playback still follows project tempo/meter");
     expect(html).toContain("MIDI file contains 2 tempo events");
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).not.toContain("<script>alert");
@@ -1436,8 +1566,18 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Aftertouch");
     expect(html).toContain('data-action="convert-midi-drums"');
     expect(html).toContain("Map Drums");
+    expect(html).toContain('data-action="convert-midi-bass"');
+    expect(html).toContain("Map Bass");
+    expect(html).toContain('data-action="convert-midi-chords"');
+    expect(html).toContain("Map Chords");
     expect(html).toContain('data-action="convert-midi-melody"');
     expect(html).toContain("Map Melody");
+    expect(html).toContain('data-action="adopt-midi-tempo"');
+    expect(html).toContain("Adopt Tempo");
+    expect(html).toContain('data-action="adopt-midi-tempo-map"');
+    expect(html).toContain("Tempo Lane");
+    expect(html).toContain('data-action="adopt-midi-meter-map"');
+    expect(html).toContain("Meter Lane");
     expect(html).toContain("C4");
     expect(html).toContain("MIDI clips are created from the selected import placement");
     expect(html).toContain("midi-note-strip");

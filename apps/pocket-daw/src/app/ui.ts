@@ -6,16 +6,16 @@ import { bassStepUsesAuto, bassVisibleNoteIndex, getPrimaryChordsmithSource, tot
 import { bassPresetLabel, visibleBassPresetsForProject } from "../daw/chordsmithBassPresets";
 import { drumPresetLabel, visibleDrumPresetsForProject } from "../daw/chordsmithDrumPresets";
 import { guitarPresetLabel, visibleGuitarPresetsForProject } from "../daw/chordsmithGuitarPresets";
-import { GAME_STATE_MARKERS, POCKET_DAW_VERSION, type Clip, type FxChain, type FxPluginInstance, type GameStateMarkerId, type Track } from "../daw/schema";
+import { GAME_STATE_MARKERS, POCKET_DAW_VERSION, type AutomationLane, type AutomationPoint, type Clip, type FxChain, type FxPluginInstance, type GameStateMarkerId, type Track } from "../daw/schema";
 import { POCKET_PRO_EQ_BANDS, POCKET_PRO_EQ_PRESETS, POCKET_PRO_EQ_TYPE } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
 import { POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 import { POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { DEFAULT_STEM_MIX } from "../../../../packages/pocket-audio-core/src/constants.js";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
-import { barFloatToPosition, barsToSeconds, gameStateMarkerLabel, sortClips } from "../daw/timeline";
-import { createAudioMediaAnalysisSummary, createCollectMediaPlan, createMediaPortabilitySummary, createRenderCacheSummary, mediaPoolStatus, renderCacheItemsForMedia } from "../daw/mediaPool";
-import { MIDI_GROOVE_TEMPLATES, MIDI_IMPORT_PLACEMENT_MODES, midiDataFromClip } from "../daw/midiClips";
-import { clipHasAutomation, getClipAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, trackHasAutomation } from "../daw/automation";
+import { barFloatToDisplayPosition, barsToSeconds, effectiveMeterAtBar, gameStateMarkerLabel, sortClips, timelineSecondsAtBar } from "../daw/timeline";
+import { createAudioMediaAnalysisSummary, createCollectMediaPlan, createPortableMediaProject, createRenderCacheSummary, mediaPoolStatus, renderCacheItemsForMedia, verifyMediaPortability, verifySharedMediaPortability } from "../daw/mediaPool";
+import { MIDI_GROOVE_TEMPLATES, MIDI_IMPORT_PLACEMENT_MODES, createMidiTempoMapSummary, midiDataFromClip, type MidiTempoMapPosition, type MidiTempoMapSummary } from "../daw/midiClips";
+import { clipHasAutomation, getClipAutomationLane, getFxParameterAutomationLane, getProjectAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, interpolateAutomationValue, trackHasAutomation } from "../daw/automation";
 import { availableTrackOutputs, createRoutingExportSummary, trackSendLevel, trackSendMode } from "../daw/routing";
 import { createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs";
 import { validateExportProfile } from "../daw/exportProfiles";
@@ -178,7 +178,7 @@ function renderTransport(state: AppState): string {
       : state.recording.status === "stopping"
         ? "Stopping recording"
         : "Record";
-  const barBeat = formatBarBeatParts(state.playheadBar, project.project.timeSig, project.project.ppq);
+  const barBeat = formatBarBeatParts(project, state.playheadBar);
   const recordingPrimary = state.recording.status === "recording" ? "Recording" : recordingLabel;
   const recordingSecondary = state.recording.status === "recording" ? formatDuration(state.recording.elapsedSeconds) : "";
   const metroDetail = metronome.enabled ? `${metronome.countInBars} bar` : "off";
@@ -371,11 +371,26 @@ function renderTimelineSongSettings(pcs: SanitizedPcsProject | null): string {
 }
 
 function renderBarRuler(project: ReturnType<typeof currentProject>): string {
-  return `<div class="ruler" data-seek-ruler="true" title="Click to seek by bar or time">${Array.from({ length: project.timeline.bars + 1 }, (_, i) => {
+  const barTicks = Array.from({ length: project.timeline.bars + 1 }, (_, i) => {
     const bar = i + 1;
-    const seconds = barsToSeconds(i, project.project.bpm, project.project.timeSig);
-    return `<span class="ruler-tick" style="left:${barLeftCalc(`${i} * var(--bar)`)}"><b>${bar}</b><small>${formatDuration(seconds)}</small></span>`;
-  }).join("")}</div>`;
+    const seconds = timelineSecondsAtBar(project, bar);
+    const meter = effectiveMeterAtBar(project, bar);
+    return `<span class="ruler-tick" data-ruler-meter="${bar}:${meter.numerator}/${meter.denominator}" title="${escapeAttr(`Bar ${bar} / ${meter.numerator}/${meter.denominator} / ${formatDuration(seconds)}`)}" style="left:${barLeftCalc(`${i} * var(--bar)`)}"><b>${bar}</b><small>${formatDuration(seconds)}</small></span>`;
+  }).join("");
+  const beatTicks = Array.from({ length: project.timeline.bars }, (_, barIndex) => {
+    const bar = barIndex + 1;
+    const meter = effectiveMeterAtBar(project, bar);
+    const beatsPerBar = meter.numerator;
+    return Array.from({ length: Math.max(0, beatsPerBar - 1) }, (_, beatIndex) => {
+      const beat = beatIndex + 2;
+      const beatOffset = (beat - 1) / beatsPerBar;
+      const barPosition = bar + beatOffset;
+      const seconds = timelineSecondsAtBar(project, barPosition);
+      const left = sanitizeCssLengthOrNumber(barIndex + beatOffset, 0, 0, 4096);
+      return `<span class="ruler-beat-tick" data-ruler-beat="${bar}:${beat}" data-ruler-meter="${bar}:${meter.numerator}/${meter.denominator}" style="left:${barLeftCalc(`${left} * var(--bar)`)}" title="${escapeAttr(`Bar ${bar} beat ${beat} / ${meter.numerator}/${meter.denominator} / ${formatDuration(seconds)}`)}"><small>${beat}</small></span>`;
+    }).join("");
+  }).join("");
+  return `<div class="ruler" data-seek-ruler="true" title="Click to seek by bar or time">${barTicks}${beatTicks}</div>`;
 }
 
 function renderMarkers(state: AppState): string {
@@ -732,7 +747,7 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
               ${renderAutomationPanel(project, track)}
               ${renderChordsmithSequencer(state, project, pcs, clip, track)}
               ${track.role === "drums" ? renderDrumLaneMixer(project) : ""}
-              ${renderFxInspector(chain)}
+              ${renderFxInspector(project, chain)}
             </section>`
           : ""
       }
@@ -793,6 +808,8 @@ function renderAudioClipProperties(project: ReturnType<typeof currentProject>, c
   const sourceOffsetSeconds = typeof metadata.sourceOffsetSeconds === "number" ? metadata.sourceOffsetSeconds : 0;
   const fadeInSeconds = typeof metadata.fadeInSeconds === "number" ? metadata.fadeInSeconds : 0;
   const fadeOutSeconds = typeof metadata.fadeOutSeconds === "number" ? metadata.fadeOutSeconds : 0;
+  const playbackRate = typeof metadata.playbackRate === "number" ? metadata.playbackRate : 1;
+  const pitchSemitones = typeof metadata.pitchSemitones === "number" ? metadata.pitchSemitones : 0;
   const media = clip.mediaPoolItemId ? project.mediaPool.find((item) => item.id === clip.mediaPoolItemId) || null : null;
   const durationSeconds = typeof metadata.durationSeconds === "number"
     ? metadata.durationSeconds
@@ -807,18 +824,38 @@ function renderAudioClipProperties(project: ReturnType<typeof currentProject>, c
       <label>Fade out <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:fadeOutSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(fadeOutSeconds, 0, 0, 86400)}"></label>
       <label>Source offset <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:sourceOffsetSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(sourceOffsetSeconds, 0, 0, 86400)}"></label>
       <label>Duration <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:durationSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(durationSeconds, 0, 0, 86400)}"></label>
+      <label>Rate <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:playbackRate`)}" type="number" min="0.25" max="4" step="0.01" value="${sanitizeCssLengthOrNumber(playbackRate, 1, 0.25, 4)}"></label>
+      <label>Pitch <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:pitchSemitones`)}" type="number" min="-48" max="48" step="1" value="${sanitizeCssLengthOrNumber(pitchSemitones, 0, -48, 48)}"></label>
       ${renderAudioTakePanel(project, clip)}
       <div class="audio-clip-actions" aria-label="Audio clip actions">
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:quick-fade`)}">Short fades</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:reset-fades`)}">Reset fades</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:normalize-gain`)}">Normalize</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:analyze-transients`)}">Analyze</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:create-warp-markers`)}">Warp markers</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:clear-warp-markers`)}">Clear warp</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:crossfade-overlap`)}">Crossfade</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:create-crossfade-left`)}">Overlap fade</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:invert-phase`)}">Invert phase</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:reverse`)}">Reverse</button>
       </div>
+      ${renderAudioWarpMarkerPanel(clip)}
       ${renderAudioClipAutomationPanel(project, clip)}
+    </div>
+  `;
+}
+
+function renderAudioWarpMarkerPanel(clip: Clip): string {
+  const markers = audioWarpMarkersForUi(clip);
+  const metadata = clip.metadata || {};
+  if (!markers.length) return `<div class="audio-warp-panel"><span>Warp: none</span></div>`;
+  const mode = typeof metadata.audioWarpPlaybackMode === "string" ? metadata.audioWarpPlaybackMode : "metadata-only";
+  return `
+    <div class="audio-warp-panel" aria-label="Audio warp markers">
+      <span>Warp: ${markers.length} marker${markers.length === 1 ? "" : "s"} / ${escapeHtml(mode)}</span>
+      <div class="audio-warp-list">
+        ${markers.slice(0, 6).map((marker) => `<span title="${escapeAttr(`${marker.sourceSeconds.toFixed(2)}s to Bar ${marker.targetBar}`)}">${marker.sourceSeconds.toFixed(2)}s -> ${marker.targetBar}</span>`).join("")}
+      </div>
     </div>
   `;
 }
@@ -870,6 +907,7 @@ function renderClipAutomationLane(clip: Clip, lane: ReturnType<typeof getClipAut
         <label class="inline-toggle"><input data-automation-enabled="${sanitizeDataAttr(lane.id)}" type="checkbox" ${lane.enabled ? "checked" : ""}> Gain</label>
         <button type="button" data-clip-automation-add-point="${sanitizeDataAttr(`${clip.id}:gain`)}">Add at Playhead</button>
       </header>
+      ${renderAutomationCurveSurface(lane, "Gain automation")}
       ${
         points.length
           ? `<div class="automation-points">
@@ -877,6 +915,7 @@ function renderClipAutomationLane(clip: Clip, lane: ReturnType<typeof getClipAut
                 <div class="automation-point">
                   <label>Bar <input data-automation-point-bar="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="1" step="0.25" value="${sanitizeCssLengthOrNumber(point.bar, 1, 1, 4096)}"></label>
                   <label>Value <input data-automation-point-value="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="0" max="4" step="0.01" value="${sanitizeCssLengthOrNumber(point.value, 1, 0, 4)}"></label>
+                  ${renderAutomationCurveSelect(lane.id, index, point)}
                   <button type="button" data-automation-delete-point="${sanitizeDataAttr(`${lane.id}:${index}`)}">Delete</button>
                 </div>
               `).join("")}
@@ -885,6 +924,96 @@ function renderClipAutomationLane(clip: Clip, lane: ReturnType<typeof getClipAut
       }
     </div>
   `;
+}
+
+function renderAutomationCurveSelect(laneId: string, index: number, point: AutomationPoint): string {
+  const selectedCurve = point.curve || "linear";
+  const curves: Array<NonNullable<AutomationPoint["curve"]>> = ["linear", "hold", "ease-in", "ease-out"];
+  const labels: Record<NonNullable<AutomationPoint["curve"]>, string> = {
+    "linear": "Linear",
+    "hold": "Hold",
+    "ease-in": "Ease in",
+    "ease-out": "Ease out"
+  };
+  return `
+    <label>Curve
+      <select data-automation-point-curve="${sanitizeDataAttr(`${laneId}:${index}`)}">
+        ${curves.map((curve) => `<option value="${escapeAttr(curve)}" ${selectedCurve === curve ? "selected" : ""}>${escapeHtml(labels[curve])}</option>`).join("")}
+      </select>
+    </label>
+  `;
+}
+
+function renderAutomationCurveSurface(lane: AutomationLane, label: string): string {
+  const points = lane.points.slice().sort((a, b) => a.bar - b.bar || (a.beat || 0) - (b.beat || 0) || (a.tick || 0) - (b.tick || 0));
+  const minValue = Number.isFinite(lane.min) ? Number(lane.min) : Math.min(0, ...points.map((point) => point.value));
+  const maxValue = Number.isFinite(lane.max) ? Number(lane.max) : Math.max(1, ...points.map((point) => point.value));
+  const minBar = Math.max(1, Math.min(1, ...points.map((point) => point.bar)));
+  const maxPointBar = Math.max(minBar + 1, ...points.map((point) => point.bar));
+  const maxBar = Math.max(minBar + 4, maxPointBar + 1);
+  const width = 240;
+  const height = 64;
+  const path = automationPathData(points, minBar, maxBar, minValue, maxValue, width, height);
+  return `
+    <button
+      type="button"
+      class="automation-curve-surface"
+      data-automation-lane-surface="${sanitizeDataAttr(lane.id)}"
+      data-automation-lane-start-bar="${escapeAttr(String(minBar))}"
+      data-automation-lane-end-bar="${escapeAttr(String(maxBar))}"
+      data-automation-lane-min="${escapeAttr(String(minValue))}"
+      data-automation-lane-max="${escapeAttr(String(maxValue))}"
+      aria-label="${escapeAttr(`${label}: click to add a point`)}"
+      title="${escapeAttr(`${label}: click to add a point`)}"
+    >
+      <svg viewBox="0 0 ${width} ${height}" aria-hidden="true" focusable="false">
+        <line class="automation-grid-line" x1="0" y1="${height / 2}" x2="${width}" y2="${height / 2}"></line>
+        ${path ? `<path class="automation-curve-line" d="${escapeAttr(path)}"></path>` : ""}
+        ${points.map((point) => {
+          const { x, y } = automationPointToSvg(point.bar, point.value, minBar, maxBar, minValue, maxValue, width, height);
+          return `<circle class="automation-curve-point" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="3.2"></circle>`;
+        }).join("")}
+      </svg>
+      <span>Draw</span>
+    </button>
+  `;
+}
+
+function automationPathData(points: AutomationPoint[], minBar: number, maxBar: number, minValue: number, maxValue: number, width: number, height: number): string {
+  if (!points.length) return "";
+  if (points.length === 1) {
+    const { x, y } = automationPointToSvg(points[0].bar, points[0].value, minBar, maxBar, minValue, maxValue, width, height);
+    return `M ${x.toFixed(2)} ${y.toFixed(2)} L ${width.toFixed(2)} ${y.toFixed(2)}`;
+  }
+  const samples: Array<{ x: number; y: number }> = [];
+  const sorted = points.slice().sort((a, b) => a.bar - b.bar);
+  sorted.forEach((point, index) => {
+    if (index === sorted.length - 1) {
+      samples.push(automationPointToSvg(point.bar, point.value, minBar, maxBar, minValue, maxValue, width, height));
+      return;
+    }
+    const next = sorted[index + 1];
+    const steps = point.curve === "hold" ? 1 : point.curve === "linear" || !point.curve ? 1 : 8;
+    for (let step = 0; step <= steps; step += 1) {
+      const t = steps <= 1 ? step : step / steps;
+      const bar = point.bar + (next.bar - point.bar) * t;
+      const value = point.curve === "hold" && step > 0 ? point.value : interpolateAutomationValue(point.value, next.value, t, point.curve);
+      samples.push(automationPointToSvg(bar, value, minBar, maxBar, minValue, maxValue, width, height));
+    }
+    if (point.curve === "hold") samples.push(automationPointToSvg(next.bar, next.value, minBar, maxBar, minValue, maxValue, width, height));
+  });
+  return samples.map((sample, index) => `${index === 0 ? "M" : "L"} ${sample.x.toFixed(2)} ${sample.y.toFixed(2)}`).join(" ");
+}
+
+function automationPointToSvg(bar: number, value: number, minBar: number, maxBar: number, minValue: number, maxValue: number, width: number, height: number): { x: number; y: number } {
+  const barSpan = Math.max(0.0001, maxBar - minBar);
+  const valueSpan = Math.max(0.0001, maxValue - minValue);
+  const x = ((bar - minBar) / barSpan) * width;
+  const y = height - ((value - minValue) / valueSpan) * height;
+  return {
+    x: Math.max(0, Math.min(width, x)),
+    y: Math.max(0, Math.min(height, y))
+  };
 }
 
 function renderAutomationPanel(project: ReturnType<typeof currentProject>, track: Track): string {
@@ -911,6 +1040,7 @@ function renderAutomationLane(project: ReturnType<typeof currentProject>, track:
         <label class="inline-toggle"><input data-automation-enabled="${sanitizeDataAttr(lane.id)}" type="checkbox" ${lane.enabled ? "checked" : ""}> ${label}</label>
         <button type="button" data-automation-add-point="${sanitizeDataAttr(`${track.id}:${field}`)}">Add at Playhead</button>
       </header>
+      ${renderAutomationCurveSurface(lane, `${label} automation`)}
       ${
         points.length
           ? `<div class="automation-points">
@@ -918,6 +1048,7 @@ function renderAutomationLane(project: ReturnType<typeof currentProject>, track:
                 <div class="automation-point">
                   <label>Bar <input data-automation-point-bar="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="1" step="0.25" value="${sanitizeCssLengthOrNumber(point.bar, 1, 1, 4096)}"></label>
                   <label>Value <input data-automation-point-value="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="${sanitizeCssLengthOrNumber(lane.min ?? (field === "pan" ? -1 : 0), field === "pan" ? -1 : 0, -1, 1.2)}" max="${sanitizeCssLengthOrNumber(lane.max ?? (field === "pan" ? 1 : 1.2), field === "pan" ? 1 : 1.2, -1, 1.2)}" step="${field === "pan" ? "0.05" : "0.01"}" value="${sanitizeCssLengthOrNumber(point.value, 0, -1, 1.2)}"></label>
+                  ${renderAutomationCurveSelect(lane.id, index, point)}
                   <button type="button" data-automation-delete-point="${sanitizeDataAttr(`${lane.id}:${index}`)}">Delete</button>
                 </div>
               `).join("")}
@@ -984,6 +1115,7 @@ function renderSendAutomationLane(project: ReturnType<typeof currentProject>, tr
         <label class="inline-toggle"><input data-automation-enabled="${sanitizeDataAttr(lane.id)}" type="checkbox" ${lane.enabled ? "checked" : ""}> Send automation</label>
         <button type="button" data-send-automation-add-point="${sanitizeDataAttr(`${track.id}:${ret.id}:level`)}">Add at Playhead</button>
       </div>
+      ${renderAutomationCurveSurface(lane, "Send automation")}
       ${
         lane.points.length
           ? `<div class="automation-points">
@@ -991,6 +1123,7 @@ function renderSendAutomationLane(project: ReturnType<typeof currentProject>, tr
                 <div class="automation-point">
                   <label>Bar <input data-automation-point-bar="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="1" step="0.25" value="${sanitizeCssLengthOrNumber(point.bar, 1, 1, 4096)}"></label>
                   <label>Value <input data-automation-point-value="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="0" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(point.value, 0, 0, 1)}"></label>
+                  ${renderAutomationCurveSelect(lane.id, index, point)}
                   <button type="button" data-automation-delete-point="${sanitizeDataAttr(`${lane.id}:${index}`)}">Delete</button>
                 </div>
               `).join("")}
@@ -1063,7 +1196,12 @@ function renderMidiClipEditor(clip: Clip): string {
         <button type="button" data-midi-pitch-bend-add="${sanitizeDataAttr(clip.id)}">Add Bend</button>
         <button type="button" data-midi-aftertouch-add="${sanitizeDataAttr(clip.id)}">Add Touch</button>
         <button type="button" title="Map General MIDI drum notes into generated drum branch overlays" data-action="convert-midi-drums">Map Drums</button>
+        <button type="button" title="Map low non-drum MIDI notes into generated bass overlays" data-action="convert-midi-bass">Map Bass</button>
+        <button type="button" title="Map simultaneous non-drum MIDI notes into generated chord overlays" data-action="convert-midi-chords">Map Chords</button>
         <button type="button" title="Map non-drum MIDI notes into generated melody overlays" data-action="convert-midi-melody">Map Melody</button>
+        <button type="button" title="Adopt the imported MIDI start tempo and supported /4 meter as project globals" data-action="adopt-midi-tempo">Adopt Tempo</button>
+        <button type="button" title="Convert imported MIDI tempo events into project tempo automation" data-action="adopt-midi-tempo-map">Tempo Lane</button>
+        <button type="button" title="Convert imported MIDI time-signature events into the project meter map" data-action="adopt-midi-meter-map">Meter Lane</button>
         <button type="button" data-midi-note-add="${sanitizeDataAttr(clip.id)}">Add Note</button>
       </header>
       ${
@@ -1607,7 +1745,7 @@ function renderLowerDockInserts(project: ReturnType<typeof currentProject>, sele
         <p>${chain?.slots.length || 0} insert${chain?.slots.length === 1 ? "" : "s"} / ${selectedTrack.fxChainId || "no chain"}</p>
         ${selectedTrack.role !== "master" ? renderFxDropdown(selectedTrack) : ""}
       </section>
-      ${renderFxInspector(chain)}
+      ${renderFxInspector(project, chain)}
     </div>
   `;
 }
@@ -1628,17 +1766,92 @@ function renderLowerDockSends(project: ReturnType<typeof currentProject>, select
 }
 
 function renderLowerDockAutomation(project: ReturnType<typeof currentProject>, selectedTrack: Track | null): string {
+  const projectPanel = renderProjectAutomationPanel(project);
   if (!selectedTrack || selectedTrack.role === "master" || selectedTrack.trackType === "return") {
-    return `<div class="lower-dock-body lower-dock-empty"><strong>Select a source track</strong><span>Track automation lanes are available for volume, pan and selected sends.</span></div>`;
+    return `<div class="lower-dock-body lower-dock-detail">${projectPanel}<div class="lower-dock-empty"><strong>Select a source track</strong><span>Track automation lanes are available for volume, pan and selected sends.</span></div></div>`;
   }
   return `
     <div class="lower-dock-body lower-dock-detail">
+      ${projectPanel}
       <section class="dock-track-context">
         <h3>${escapeHtml(selectedTrack.name)}</h3>
         <p>${trackHasAutomation(project, selectedTrack.id) ? "Automation lanes are active for this track." : "Create a lane to automate this track."}</p>
       </section>
       ${renderAutomationPanel(project, selectedTrack)}
       ${renderSendPanel(project, selectedTrack)}
+    </div>
+  `;
+}
+
+function renderProjectAutomationPanel(project: ReturnType<typeof currentProject>): string {
+  const lane = getProjectAutomationLane(project, "tempo");
+  return `
+    <section class="dock-panel project-automation-panel" aria-label="Project automation">
+      <h3>Project Automation</h3>
+      ${renderProjectTempoAutomationLane(project, lane)}
+      ${renderProjectMeterMap(project)}
+    </section>
+  `;
+}
+
+function renderProjectTempoAutomationLane(project: ReturnType<typeof currentProject>, lane: ReturnType<typeof getProjectAutomationLane>): string {
+  if (!lane) {
+    return `<div class="automation-lane empty"><span>Tempo</span><button type="button" data-project-automation-create="tempo">Create</button></div>`;
+  }
+  const points = lane.points.slice().sort((a, b) => a.bar - b.bar);
+  return `
+    <div class="automation-lane">
+      <header>
+        <label class="inline-toggle"><input data-automation-enabled="${sanitizeDataAttr(lane.id)}" type="checkbox" ${lane.enabled ? "checked" : ""}> Tempo</label>
+        <button type="button" data-project-automation-add-point="tempo">Add at Playhead</button>
+      </header>
+      ${renderAutomationCurveSurface(lane, "Tempo automation")}
+      <p class="editor-note">Base ${Math.round(project.project.bpm)} BPM / tempo automation drives timeline timing; source-audio warp over ramps is pending.</p>
+      ${
+        points.length
+          ? `<div class="automation-points">
+              ${points.map((point, index) => `
+                <div class="automation-point">
+                  <label>Bar <input data-automation-point-bar="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="1" step="0.25" value="${sanitizeCssLengthOrNumber(point.bar, 1, 1, 4096)}"></label>
+                  <label>BPM <input data-automation-point-value="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="40" max="240" step="1" value="${sanitizeCssLengthOrNumber(point.value, project.project.bpm, 40, 240)}"></label>
+                  ${renderAutomationCurveSelect(lane.id, index, point)}
+                  <button type="button" data-automation-delete-point="${sanitizeDataAttr(`${lane.id}:${index}`)}">Delete</button>
+                </div>
+              `).join("")}
+            </div>`
+          : `<p class="editor-note">No tempo points yet.</p>`
+      }
+    </div>
+  `;
+}
+
+function renderProjectMeterMap(project: ReturnType<typeof currentProject>): string {
+  const points = (project.project.meterMap || []).slice().sort((a, b) => a.bar - b.bar || a.id.localeCompare(b.id));
+  if (!points.length) {
+    return `<div class="automation-lane empty"><span>Meter Map</span><button type="button" data-project-meter-map-add="true">Add at Playhead</button><small>Import MIDI time signatures, then use Meter Lane, or add points manually.</small></div>`;
+  }
+  return `
+    <div class="automation-lane project-meter-map">
+      <header>
+        <strong>Meter Map</strong>
+        <small>${points.length} point${points.length === 1 ? "" : "s"}</small>
+        <button type="button" data-project-meter-map-add="true">Add at Playhead</button>
+      </header>
+      <p class="editor-note">Stored as project timing data; active variable-meter grid/playback is a later timing-engine pass.</p>
+      <div class="automation-points">
+        ${points.slice(0, 8).map((point) => `
+          <div class="automation-point" data-project-meter-map-point="${sanitizeDataAttr(point.id)}">
+            <strong>${escapeHtml(`${point.numerator}/${point.denominator}`)}</strong>
+            <label>Bar <input data-project-meter-map-field="${sanitizeDataAttr(`${point.id}:bar`)}" type="number" min="1" max="4096" step="0.25" value="${sanitizeCssLengthOrNumber(point.bar, 1, 1, 4096)}"></label>
+            <label>Top <input data-project-meter-map-field="${sanitizeDataAttr(`${point.id}:numerator`)}" type="number" min="1" max="32" step="1" value="${sanitizeCssLengthOrNumber(point.numerator, 4, 1, 32)}"></label>
+            <label>Bottom <input data-project-meter-map-field="${sanitizeDataAttr(`${point.id}:denominator`)}" type="number" min="1" max="32" step="1" value="${sanitizeCssLengthOrNumber(point.denominator, 4, 1, 32)}"></label>
+            <span>${escapeHtml(formatBarBeat(project, point.bar))}</span>
+            ${point.source === "midi-import" ? `<small>MIDI${typeof point.sourceTick === "number" ? ` tick ${sanitizeCssLengthOrNumber(point.sourceTick, 0, 0)}` : ""}</small>` : ""}
+            <button type="button" data-project-meter-map-delete="${sanitizeDataAttr(point.id)}">Delete</button>
+          </div>
+        `).join("")}
+      </div>
+      ${points.length > 8 ? `<p class="editor-note">+${points.length - 8} more meter point${points.length - 8 === 1 ? "" : "s"}</p>` : ""}
     </div>
   `;
 }
@@ -1682,7 +1895,8 @@ function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>
   const loops = createSectionLoopMetadata(project);
   const enabledProfiles = project.exportProfiles.filter((profile) => profile.enabled);
   const routing = createRoutingExportSummary(project);
-  const portability = createMediaPortabilitySummary(project);
+  const portability = verifyMediaPortability(project);
+  const sharedPortability = verifySharedMediaPortability(createPortableMediaProject(project));
   const deliveryTargets = createGamePackDeliveryTargets();
   return `
     <div class="lower-dock-body lower-dock-detail lower-dock-export">
@@ -1707,10 +1921,13 @@ function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>
           <dl>
             <dt>Project media</dt><dd>${portability.alreadyProjectCount}</dd>
             <dt>Copyable external</dt><dd>${portability.copyableExternalCount}</dd>
+            <dt>Cache-only</dt><dd>${portability.cacheOnlyCount}</dd>
             <dt>Runtime-only</dt><dd>${portability.runtimeOnlyCount}</dd>
             <dt>Missing</dt><dd>${portability.missingOrUnresolvedCount}</dd>
             <dt>Blocked</dt><dd>${portability.blockedCount}</dd>
+            <dt>Shared source refs</dt><dd>${sharedPortability.localReferenceFieldCount}</dd>
           </dl>
+          ${sharedPortability.portableForSharing ? `<p>Embedded source project is share-safe.</p>` : `<p>${sharedPortability.localReferenceFieldCount} local reference field${sharedPortability.localReferenceFieldCount === 1 ? "" : "s"} remain in the embedded source project.</p>`}
         </div>
         ${routing.warnings.length ? `<div class="dock-routing-warnings">${routing.warnings.map((warning) => `<span>${escapeHtml(warning)}</span>`).join("")}</div>` : ""}
         <div class="dock-export-portability">
@@ -1751,9 +1968,11 @@ function renderFullSongWavExportProfileControls(project: ReturnType<typeof curre
   const profile = project.exportProfiles.find((item) => item.id === "full-song-wav");
   if (!profile) return "";
   const sampleRate = Number(profile.sampleRate || project.project.sampleRate || 44100);
+  const bitDepth = Number(profile.bitDepth || 16) === 32 ? 32 : Number(profile.bitDepth || 16) === 24 ? 24 : 16;
   const tailSeconds = Number(profile.settings?.tailSeconds ?? 1.2);
   const channelMode = profile.settings?.channelMode === "mono" ? "mono" : "stereo";
   const normalize = profile.settings?.normalize === true || profile.settings?.normalize === "peak" ? "peak" : "off";
+  const dither = profile.settings?.dither === "tpdf" ? "tpdf" : "off";
   const sampleRates = [44100, 48000, 88200, 96000];
   return `
     <div class="export-profile-controls" data-export-profile="full-song-wav">
@@ -1777,8 +1996,18 @@ function renderFullSongWavExportProfileControls(project: ReturnType<typeof curre
           <option value="peak" ${normalize === "peak" ? "selected" : ""}>Peak</option>
         </select>
       </label>
+      <label>Dither
+        <select data-export-profile-setting="${sanitizeDataAttr("full-song-wav:dither")}">
+          <option value="off" ${dither === "off" ? "selected" : ""}>Off</option>
+          <option value="tpdf" ${dither === "tpdf" ? "selected" : ""}>TPDF</option>
+        </select>
+      </label>
       <label>Depth
-        <input type="text" value="${escapeAttr(`${profile.bitDepth || 16}-bit PCM`)}" disabled title="Current WAV encoder writes 16-bit PCM. Wider bit-depth export remains planned.">
+        <select data-export-profile-setting="${sanitizeDataAttr("full-song-wav:bitDepth")}">
+          <option value="16" ${bitDepth === 16 ? "selected" : ""}>16-bit PCM</option>
+          <option value="24" ${bitDepth === 24 ? "selected" : ""}>24-bit PCM</option>
+          <option value="32" ${bitDepth === 32 ? "selected" : ""}>32-bit float</option>
+        </select>
       </label>
     </div>
   `;
@@ -1788,8 +2017,10 @@ function renderWavZipExportProfileControls(project: ReturnType<typeof currentPro
   const profile = project.exportProfiles.find((item) => item.id === profileId);
   if (!profile) return "";
   const sampleRate = Number(profile.sampleRate || project.project.sampleRate || 44100);
+  const bitDepth = Number(profile.bitDepth || 16) === 32 ? 32 : Number(profile.bitDepth || 16) === 24 ? 24 : 16;
   const channelMode = profile.settings?.channelMode === "mono" ? "mono" : "stereo";
   const normalize = profile.settings?.normalize === true || profile.settings?.normalize === "peak" ? "peak" : "off";
+  const dither = profile.settings?.dither === "tpdf" ? "tpdf" : "off";
   const sampleRates = [44100, 48000, 88200, 96000];
   return `
     <div class="export-profile-controls" data-export-profile="${sanitizeDataAttr(profileId)}">
@@ -1810,8 +2041,18 @@ function renderWavZipExportProfileControls(project: ReturnType<typeof currentPro
           <option value="peak" ${normalize === "peak" ? "selected" : ""}>Peak</option>
         </select>
       </label>
+      <label>Dither
+        <select data-export-profile-setting="${sanitizeDataAttr(`${profileId}:dither`)}">
+          <option value="off" ${dither === "off" ? "selected" : ""}>Off</option>
+          <option value="tpdf" ${dither === "tpdf" ? "selected" : ""}>TPDF</option>
+        </select>
+      </label>
       <label>Depth
-        <input type="text" value="${escapeAttr(`${profile.bitDepth || 16}-bit PCM`)}" disabled title="Current WAV encoder writes 16-bit PCM. Wider bit-depth export remains planned.">
+        <select data-export-profile-setting="${sanitizeDataAttr(`${profileId}:bitDepth`)}">
+          <option value="16" ${bitDepth === 16 ? "selected" : ""}>16-bit PCM</option>
+          <option value="24" ${bitDepth === 24 ? "selected" : ""}>24-bit PCM</option>
+          <option value="32" ${bitDepth === 32 ? "selected" : ""}>32-bit float</option>
+        </select>
       </label>
     </div>
   `;
@@ -1847,6 +2088,7 @@ function renderMediaPool(state: AppState): string {
   const project = currentProject(state);
   const items = project.mediaPool;
   const collectPlan = createCollectMediaPlan(project);
+  const portability = verifyMediaPortability(project);
   return `
     <section class="media-pool" data-layout-zone="media" id="mediaPool" aria-label="Media Pool" data-scroll-key="media-pool">
       <header>
@@ -1863,6 +2105,7 @@ function renderMediaPool(state: AppState): string {
                 const cacheItems = renderCacheItemsForMedia(project, item.id);
                 const analysisLabel = item.kind === "audio" ? mediaItemAnalysisLabel(item) : "";
                 const warnings = mediaItemWarnings(item);
+                const tempoMap = item.kind === "midi" ? createMidiTempoMapSummary(item.metadata, { fallbackBpm: project.project.bpm, fallbackTimeSig: project.project.timeSig }) : null;
                 return `
                   <article class="media-item ${status.missing ? "missing" : ""} ${status.runtimeAvailable ? "runtime-available" : ""}">
                     <div class="media-name">
@@ -1877,6 +2120,7 @@ function renderMediaPool(state: AppState): string {
                       <dt>URI</dt><dd title="${escapeAttr(item.uri || "")}">${escapeHtml(item.uri || "-")}</dd>
                       <dt>Persistence</dt><dd title="${escapeAttr(mediaPersistenceDetail(status, cacheItems.length))}">${escapeHtml(mediaPersistenceLabel(status, cacheItems.length))}</dd>
                       ${analysisLabel ? `<dt>Analysis</dt><dd>${escapeHtml(analysisLabel)}</dd>` : ""}
+                      ${tempoMap ? `<dt>Tempo Map</dt><dd>${renderMidiTempoMapSummary(tempoMap)}</dd>` : ""}
                       ${warnings.length ? `<dt>Warnings</dt><dd>${warnings.map(escapeHtml).join(" / ")}</dd>` : ""}
                       <dt>Cache</dt><dd>${cacheItems.length ? cacheItems.map((cache) => `${escapeHtml(cache.id)}${cache.invalidated ? " invalid" : ""}`).join(", ") : "-"}</dd>
                     </dl>
@@ -1903,6 +2147,8 @@ function renderMediaPool(state: AppState): string {
         <span>${escapeHtml(nativeCacheStatusText(state))}</span>
         <strong>Collect Plan</strong>
         <span>${collectPlan.copy.length} copy / ${collectPlan.alreadyProject.length} project / ${collectPlan.blocked.length} blocked</span>
+        <strong>Portability Check</strong>
+        <span>${portability.embeddedSourceProjectPortable ? "Embedded source portable" : `${portability.needsCollectionOrRelinkCount} need action${portability.cacheOnlyCount ? ` / ${portability.cacheOnlyCount} cache-only` : ""}`}</span>
       </aside>
     </section>
   `;
@@ -1938,6 +2184,21 @@ function nativeCacheStatusText(state: AppState): string {
 function mediaItemWarnings(item: ReturnType<typeof currentProject>["mediaPool"][number]): string[] {
   const warnings = item.metadata?.importWarnings;
   return Array.isArray(warnings) ? warnings.filter((warning): warning is string => typeof warning === "string" && warning.trim().length > 0) : [];
+}
+
+function renderMidiTempoMapSummary(summary: MidiTempoMapSummary): string {
+  const tempoRows = summary.tempoEvents.slice(0, 4).map((event) => `${event.bpm} BPM @ ${midiPositionLabel(event.position)} (${formatDuration(event.seconds)})`);
+  const meterRows = summary.timeSignatureEvents.slice(0, 4).map((event) => `${event.numerator}/${event.denominator} @ ${midiPositionLabel(event.position)} (${formatDuration(event.seconds)})`);
+  const parts = [
+    tempoRows.length ? `Tempo ${tempoRows.join(" / ")}${summary.tempoEvents.length > tempoRows.length ? ` / +${summary.tempoEvents.length - tempoRows.length}` : ""}` : "",
+    meterRows.length ? `Meter ${meterRows.join(" / ")}${summary.timeSignatureEvents.length > meterRows.length ? ` / +${summary.timeSignatureEvents.length - meterRows.length}` : ""}` : "",
+    summary.hasTempoChanges || summary.hasMeterChanges ? "preserved from MIDI; playback still follows project tempo/meter" : "preserved from MIDI"
+  ].filter(Boolean);
+  return escapeHtml(parts.join(" / "));
+}
+
+function midiPositionLabel(position: MidiTempoMapPosition): string {
+  return `${position.bar}.${position.beat}.${position.tick}`;
 }
 
 function renderFilePanel(state: AppState): string {
@@ -2103,6 +2364,23 @@ function mediaTransientMarkers(item: { metadata?: Record<string, unknown> }): nu
   return markers
     .map((marker) => Number(marker))
     .filter((marker) => Number.isFinite(marker) && marker >= 0);
+}
+
+function audioWarpMarkersForUi(clip: Clip): Array<{ sourceSeconds: number; targetBar: number; targetSeconds: number }> {
+  const markers = clip.metadata?.audioWarpMarkers;
+  if (!Array.isArray(markers)) return [];
+  return markers
+    .map((marker) => {
+      if (!marker || typeof marker !== "object" || Array.isArray(marker)) return null;
+      const data = marker as Record<string, unknown>;
+      const sourceSeconds = Number(data.sourceSeconds);
+      const targetBar = Number(data.targetBar);
+      const targetSeconds = Number(data.targetSeconds);
+      if (!Number.isFinite(sourceSeconds) || !Number.isFinite(targetBar) || !Number.isFinite(targetSeconds)) return null;
+      return { sourceSeconds, targetBar, targetSeconds };
+    })
+    .filter((marker): marker is { sourceSeconds: number; targetBar: number; targetSeconds: number } => !!marker)
+    .slice(0, 128);
 }
 
 function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Track, meterLevel: number, state: AppState): string {
@@ -2287,7 +2565,7 @@ function renderDrumLaneMixer(project: ReturnType<typeof currentProject>): string
                   ${BUILT_IN_FX.map((fx) => `<option value="${fx.type}">${escapeHtml(fx.name)}</option>`).join("")}
                 </select>
               </label>
-              ${renderDrumLaneFxInspector(chain)}
+              ${renderDrumLaneFxInspector(project, chain)}
             </div>
           `;
         }).join("")}
@@ -2296,26 +2574,27 @@ function renderDrumLaneMixer(project: ReturnType<typeof currentProject>): string
   `;
 }
 
-function renderDrumLaneFxInspector(chain: FxChain | null): string {
+function renderDrumLaneFxInspector(project: ReturnType<typeof currentProject>, chain: FxChain | null): string {
   if (!chain?.slots.length) return `<p class="editor-note">No lane FX.</p>`;
   return `
     <div class="drum-lane-fx">
-      ${chain.slots.map((slot) => renderFxSlot(chain, slot, "data-drum-lane-fx-toggle", "data-drum-lane-fx-remove")).join("")}
+      ${chain.slots.map((slot) => renderFxSlot(project, chain, slot, "data-drum-lane-fx-toggle", "data-drum-lane-fx-remove")).join("")}
     </div>
   `;
 }
 
-function renderFxInspector(chain: FxChain | null): string {
+function renderFxInspector(project: ReturnType<typeof currentProject>, chain: FxChain | null): string {
   if (!chain) return "";
   return `
     <div class="fx-inspector">
       <h3>FX Chain</h3>
-      ${chain.slots.length ? chain.slots.map((slot) => renderFxSlot(chain, slot, "data-fx-toggle", "data-fx-remove")).join("") : `<p>No FX yet.</p>`}
+      ${chain.slots.length ? chain.slots.map((slot) => renderFxSlot(project, chain, slot, "data-fx-toggle", "data-fx-remove")).join("") : `<p>No FX yet.</p>`}
     </div>
   `;
 }
 
-function renderFxSlot(chain: FxChain, slot: FxPluginInstance, toggleAttr: string, removeAttr: string): string {
+function renderFxSlot(project: ReturnType<typeof currentProject>, chain: FxChain, slot: FxPluginInstance, toggleAttr: string, removeAttr: string): string {
+  const genericControls = slot.type === POCKET_PRO_EQ_TYPE ? "" : renderGenericFxParameterControls(project, chain.id, slot);
   return `
     <div class="fx-slot ${slot.enabled ? "" : "bypassed"}">
       <div class="fx-slot-heading">
@@ -2325,12 +2604,28 @@ function renderFxSlot(chain: FxChain, slot: FxPluginInstance, toggleAttr: string
           <button ${removeAttr}="${sanitizeDataAttr(`${chain.id}:${slot.id}`)}">Remove</button>
         </div>
       </div>
-      ${slot.type === POCKET_PRO_EQ_TYPE ? renderPocketProEqControls(chain.id, slot) : ""}
+      ${slot.type === POCKET_PRO_EQ_TYPE ? renderPocketProEqControls(project, chain.id, slot) : ""}
+      ${genericControls}
     </div>
   `;
 }
 
-function renderPocketProEqControls(chainId: string, slot: FxPluginInstance): string {
+function renderGenericFxParameterControls(project: ReturnType<typeof currentProject>, chainId: string, slot: FxPluginInstance): string {
+  const entries = Object.entries(slot.parameters || {}).filter(([, value]) => typeof value === "number");
+  if (!entries.length) return "";
+  return `
+    <div class="fx-param-automation-list" aria-label="FX parameter automation">
+      ${entries.map(([parameter, value]) => `
+        <div class="fx-param-row">
+          <span>${escapeHtml(parameter)} ${escapeHtml(formatFxParameterValue(Number(value)))}</span>
+          ${renderFxAutomationControls(project, chainId, slot, parameter, Number(value))}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderPocketProEqControls(project: ReturnType<typeof currentProject>, chainId: string, slot: FxPluginInstance): string {
   return `
     <div class="pro-eq-editor">
       <label>Preset
@@ -2354,17 +2649,20 @@ function renderPocketProEqControls(chainId: string, slot: FxPluginInstance): str
             <label>Freq
               <input data-fx-param="${sanitizeDataAttr(`${chainId}:${slot.id}:${band.frequencyParam}`)}" type="range" min="${band.minFrequency}" max="${band.maxFrequency}" step="1" value="${sanitizeCssLengthOrNumber(numParam(slot, band.frequencyParam, band.defaultFrequency), band.defaultFrequency, band.minFrequency, band.maxFrequency)}">
               <span>${Math.round(numParam(slot, band.frequencyParam, band.defaultFrequency))} Hz</span>
+              ${renderFxAutomationControls(project, chainId, slot, band.frequencyParam, numParam(slot, band.frequencyParam, band.defaultFrequency))}
             </label>
             ${band.gainParam ? `
               <label>Gain
                 <input data-fx-param="${sanitizeDataAttr(`${chainId}:${slot.id}:${band.gainParam}`)}" type="range" min="${minGain}" max="${maxGain}" step="0.1" value="${sanitizeCssLengthOrNumber(numParam(slot, band.gainParam, defaultGain), defaultGain, minGain, maxGain)}">
                 <span>${numParam(slot, band.gainParam, defaultGain).toFixed(1)} dB</span>
+                ${renderFxAutomationControls(project, chainId, slot, band.gainParam, numParam(slot, band.gainParam, defaultGain))}
               </label>
             ` : ""}
             ${band.qParam ? `
               <label>Q
                 <input data-fx-param="${sanitizeDataAttr(`${chainId}:${slot.id}:${band.qParam}`)}" type="range" min="${minQ}" max="${maxQ}" step="0.1" value="${sanitizeCssLengthOrNumber(numParam(slot, band.qParam, defaultQ), defaultQ, minQ, maxQ)}">
                 <span>${numParam(slot, band.qParam, defaultQ).toFixed(1)}</span>
+                ${renderFxAutomationControls(project, chainId, slot, band.qParam, numParam(slot, band.qParam, defaultQ))}
               </label>
             ` : ""}
           </fieldset>
@@ -2372,6 +2670,24 @@ function renderPocketProEqControls(chainId: string, slot: FxPluginInstance): str
       }).join("")}
     </div>
   `;
+}
+
+function renderFxAutomationControls(project: ReturnType<typeof currentProject>, chainId: string, slot: FxPluginInstance, parameter: string, value: number): string {
+  const lane = getFxParameterAutomationLane(project, chainId, slot.id, parameter);
+  const packed = sanitizeDataAttr(`${chainId}:${slot.id}:${parameter}`);
+  return `
+    <span class="fx-automation-controls ${lane ? "active" : ""}" data-fx-automation-state="${packed}">
+      <button type="button" title="${escapeAttr(`Enable automation for ${parameter}`)}" data-fx-automation-create="${packed}">${lane ? "Auto" : "Auto"}</button>
+      <button type="button" title="${escapeAttr(`Add ${parameter} point at the playhead from ${value}`)}" data-fx-automation-add-point="${packed}">Add</button>
+    </span>
+  `;
+}
+
+function formatFxParameterValue(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  if (Math.abs(value) >= 100) return Math.round(value).toString();
+  if (Math.abs(value) >= 10) return value.toFixed(1);
+  return value.toFixed(2);
 }
 
 function numParam(slot: FxPluginInstance, key: string, fallback: number): number {
@@ -2664,13 +2980,13 @@ function releaseNotesSummary(notes: string): string {
   return notes.replace(/\s+/g, " ").trim().slice(0, 420) || "No release notes were provided.";
 }
 
-function formatBarBeat(barValue: number, timeSig: number, ppq: number): string {
-  const parts = formatBarBeatParts(barValue, timeSig, ppq);
+function formatBarBeat(project: ReturnType<typeof currentProject>, barValue: number): string {
+  const parts = formatBarBeatParts(project, barValue);
   return `${parts.bar} ${parts.beat}`;
 }
 
-function formatBarBeatParts(barValue: number, timeSig: number, ppq: number): { bar: string; beat: string } {
-  const pos = barFloatToPosition(barValue, timeSig, ppq);
+function formatBarBeatParts(project: ReturnType<typeof currentProject>, barValue: number): { bar: string; beat: string } {
+  const pos = barFloatToDisplayPosition(project, barValue);
   return { bar: `Bar ${pos.bar}`, beat: `Beat ${pos.beat}` };
 }
 

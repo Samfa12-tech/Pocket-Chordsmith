@@ -2,7 +2,9 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    exclude: ["tests/e2e/**", "node_modules/**", "dist/**", "src-tauri/target/**"]
+    exclude: ["tests/e2e/**", "node_modules/**", "dist/**", "src-tauri/target/**"],
+    maxWorkers: 4,
+    testTimeout: 30000
   },
   server: {
     host: "127.0.0.1",

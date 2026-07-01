@@ -5,9 +5,11 @@ import { setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneSolo, setD
 import type { Clip, ClipType } from "../src/daw/schema";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
+import { createAutomationLane } from "../src/daw/automation";
 import { addMidiController, importMidiFileToProject, midiDataFromClip, setMidiControllerField, setMidiNoteField } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
-import { simpleMidiBytes } from "./midiFixtures";
+import { timelineSecondsAtBar } from "../src/daw/timeline";
+import { simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 import { buildPocketAudioTimeline, normalisePocketChordsmithProject } from "../../../packages/pocket-audio-core/src/index.js";
 import { chordsmithHumanizeOffset, chordsmithHumanizePeak } from "../../../packages/pocket-audio-core/src/performance/humanize.js";
 
@@ -192,6 +194,60 @@ describe("event renderer", () => {
     expect(event.duration).toBeCloseTo((960 / 480) * (60 / project.project.bpm), 5);
     expect(event.velocity).toBeCloseTo(81 / 127, 5);
     expect(event.channel).toBe(2);
+  });
+
+  it("uses imported MIDI tempo maps for MIDI note render timing", () => {
+    const imported = importMidiFileToProject(
+      createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Tempo Render", bpm: 120 })),
+      parseStandardMidiFile(tempoMapMidiBytes()),
+      "tempo-map.mid"
+    );
+
+    const event = renderTimelineEvents(imported.project).find((item) => item.kind === "midi")!;
+
+    expect(event.time).toBeCloseTo(0, 5);
+    expect(event.duration).toBeCloseTo(0.5 + 60 / 140, 5);
+  });
+
+  it("uses project tempo automation for generated and MIDI clip placement", () => {
+    let generated = createDemoProject();
+    generated.project.bpm = 120;
+    generated.project.timeSig = 4;
+    generated = createAutomationLane(generated, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [{ bar: 1, value: 60, curve: "hold" }]
+    }).project;
+    generated.timeline.clips[0].startBar = 2;
+    const generatedEvent = renderTimelineEvents(generated).find((event) => event.clipId === generated.timeline.clips[0].id)!;
+
+    const imported = importMidiFileToProject(
+      createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Tempo Lane", bpm: 120 })),
+      parseStandardMidiFile(simpleMidiBytes()),
+      "lead.mid"
+    );
+    let midiProject = createAutomationLane(imported.project, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [{ bar: 1, value: 60, curve: "hold" }]
+    }).project;
+    midiProject.timeline.clips.find((item) => item.id === imported.clipId)!.startBar = 2;
+    const midiEvent = renderTimelineEvents(midiProject).find((event) => event.kind === "midi")!;
+
+    expect(generatedEvent.time).toBeCloseTo(4, 5);
+    expect(midiEvent.time).toBeCloseTo(4, 5);
+  });
+
+  it("uses project meter maps for generated clip placement without requiring tempo automation", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.meterMap = [{ id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" }];
+    project.timeline.clips[0].startBar = 3;
+
+    const generatedEvent = renderTimelineEvents(project).find((event) => event.clipId === project.timeline.clips[0].id)!;
+
+    expect(generatedEvent.time).toBeCloseTo(timelineSecondsAtBar(project, 3), 5);
   });
 
   it("matches MIDI controller playback to the note channel", () => {

@@ -66,6 +66,8 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
       schemaVersion: 2,
       bpm: 110,
       timeSig: 3,
+      meterMapPointCount: 0,
+      meterMap: [],
       bars: 32,
       clipCount: 8,
       trackCount: 11,
@@ -149,6 +151,28 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
       missingCount: 0,
       runtimeAvailableCount: 0,
       renderCacheCount: 3,
+      portability: {
+        totalMediaCount: 0,
+        audioMediaCount: 0,
+        portableCount: 0,
+        alreadyProjectCount: 0,
+        copyableExternalCount: 0,
+        cacheOnlyCount: 0,
+        blockedCount: 0,
+        runtimeOnlyCount: 0,
+        missingOrUnresolvedCount: 0,
+        needsCollectionOrRelinkCount: 0,
+        embeddedSourceProjectPortable: true,
+        items: [],
+        warnings: []
+      },
+      sharedPortability: {
+        localReferenceFieldCount: 0,
+        localReferenceItemCount: 0,
+        affectedItemIds: [],
+        affectedFieldKeys: [],
+        portableForSharing: true
+      },
       analysis: {
         audioMediaCount: 2,
         audioClipCount: 1,

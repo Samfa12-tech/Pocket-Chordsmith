@@ -235,6 +235,25 @@
   font-size: 9px;
 }
 
+.ruler-beat-tick {
+  position: absolute;
+  z-index: 2;
+  top: 22px;
+  height: 8px;
+  border-left: 1px solid rgba(147, 163, 198, 0.36);
+  color: #667491;
+  font-size: 8px;
+  line-height: 1;
+  pointer-events: none;
+  transform: translateX(4px);
+}
+
+.ruler-beat-tick small {
+  display: block;
+  margin-left: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
 .timeline-row {
   position: relative;
   z-index: 1;

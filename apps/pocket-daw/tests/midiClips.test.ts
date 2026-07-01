@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
-import { MIDI_GROOVE_TEMPLATES, addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, importMidiFileToProject, importMidiFileToProjectWithPlacement, midiDataFromClip, moveMidiNote, quantizeMidiClip, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote } from "../src/daw/midiClips";
+import { MIDI_GROOVE_TEMPLATES, addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, importMidiFileToProject, importMidiFileToProjectWithPlacement, midiDataFromClip, moveMidiNote, quantizeMidiClip, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote } from "../src/daw/midiClips";
 import { parseStandardMidiFile, type ParsedMidiFile } from "../src/daw/midiParser";
 import { aftertouchMidiBytes, formatOneTempoAndPianoMidiBytes, metalArrangementMidiBytes, metadataRichMidiBytes, multiTrackChannelMidiBytes, pitchBendMidiBytes, programChangeMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 
@@ -260,6 +260,24 @@ describe("MIDI clips", () => {
     expect(result.item.metadata?.timeSignatureEvents).toEqual([
       expect.objectContaining({ numerator: 4, denominator: 4 }),
       expect.objectContaining({ numerator: 3, denominator: 4 })
+    ]);
+  });
+
+  it("summarizes imported MIDI tempo and meter maps with positions", () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Tempo Summary", bpm: 100 }));
+    const parsed = parseStandardMidiFile(tempoMapMidiBytes());
+    const result = importMidiFileToProject(project, parsed, "tempo-map.mid", "file:///tempo-map.mid", 384);
+    const summary = createMidiTempoMapSummary(result.item.metadata, { fallbackBpm: project.project.bpm, fallbackTimeSig: project.project.timeSig });
+
+    expect(summary?.hasTempoChanges).toBe(true);
+    expect(summary?.hasMeterChanges).toBe(true);
+    expect(summary?.tempoEvents).toEqual([
+      expect.objectContaining({ bpm: 120, seconds: 0, position: { bar: 1, beat: 1, tick: 0 } }),
+      expect.objectContaining({ bpm: 140, seconds: 0.5, position: { bar: 1, beat: 2, tick: 0 } })
+    ]);
+    expect(summary?.timeSignatureEvents).toEqual([
+      expect.objectContaining({ numerator: 4, denominator: 4, position: { bar: 1, beat: 1, tick: 0 } }),
+      expect.objectContaining({ numerator: 3, denominator: 4, seconds: 0.5, position: { bar: 1, beat: 2, tick: 0 } })
     ]);
   });
 

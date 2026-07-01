@@ -14,6 +14,8 @@ describe("release scripts", () => {
     const packageBootstrapper = readFileSync("scripts/package-itch-bootstrapper.mjs", "utf8");
     const guardedBootstrapperPush = readFileSync("scripts/guarded-butler-push-bootstrapper.mjs", "utf8");
     const releaseUpdaterBuild = readFileSync("scripts/release-updater-build.mjs", "utf8");
+    const verifyCandidate = readFileSync("scripts/verify-candidate.mjs", "utf8");
+    const verifyReleaseCandidateTruth = readFileSync("scripts/verify-release-candidate-truth.mjs", "utf8");
 
     expect(packageJson.scripts["tauri:build"]).toBe("tauri build");
     expect(packageJson.scripts["verify:native-release"]).toContain("--native-release");
@@ -25,6 +27,8 @@ describe("release scripts", () => {
     expect(packageJson.scripts["release:updater-manifest"]).toBe("node scripts/make-updater-manifest.mjs");
     expect(packageJson.scripts["status:release"]).toBe("node scripts/render-release-status.mjs");
     expect(packageJson.scripts["verify:smoke-attestation"]).toBe("node scripts/verify-smoke-attestation.mjs");
+    expect(packageJson.scripts["verify:candidate"]).toBe("node scripts/verify-candidate.mjs");
+    expect(packageJson.scripts["verify:release-candidate-truth"]).toBe("node scripts/verify-release-candidate-truth.mjs");
     expect(packageJson.scripts["release:update"]).toBe("node scripts/release-updater-build.mjs");
     expect(packageJson.scripts["release:update:fast"]).toBe("node scripts/release-updater-build.mjs --fast");
     expect(packageJson.scripts["release:update:full"]).toBe("node scripts/release-updater-build.mjs --full");
@@ -45,6 +49,7 @@ describe("release scripts", () => {
     expect(packageItch).not.toContain("zip.writeZip");
     expect(packageItch).not.toContain("new AdmZip");
     expect(packageItch).toContain("butler push-preview");
+    expect(packageItch).toContain("assertReleaseCandidateTruth");
     expect(packageItch).toContain("releases/itch/installers");
     expect(packageItch).toContain("appears stale");
     expect(packageItch).toContain("mix-slider values");
@@ -59,6 +64,7 @@ describe("release scripts", () => {
     expect(guardedPush).toContain('PUBLISH !== "1"');
     expect(guardedPush).toContain("SMOKE_ATTESTATION");
     expect(guardedPush).toContain("verifySmokeAttestationFile");
+    expect(guardedPush).toContain("assertReleaseCandidateTruth");
     expect(guardedPush).toContain('"releases/itch/installers"');
     expect(updaterManifest).toContain("pocket-daw-latest.json");
     expect(updaterManifest).toContain("SHA256SUMS.txt");
@@ -74,11 +80,27 @@ describe("release scripts", () => {
     expect(releaseUpdaterBuild).toContain('process.env.PUBLISH !== "1"');
     expect(releaseUpdaterBuild).toContain("SMOKE_ATTESTATION");
     expect(releaseUpdaterBuild).toContain("verifySmokeAttestationFile");
+    expect(releaseUpdaterBuild).toContain("assertReleaseCandidateTruth");
     expect(releaseUpdaterBuild).toContain("--fast --publish is blocked");
     expect(releaseUpdaterBuild).toContain("makeUpdaterManifest");
     expect(releaseUpdaterBuild).toContain("makeBootstrapperManifest");
     expect(releaseUpdaterBuild).toContain("assertGithubReleaseMissing");
     expect(releaseUpdaterBuild).toContain("Remote setup SHA-256 verified");
     expect(releaseUpdaterBuild).not.toContain('run("butler"');
+    expect(verifyCandidate).toContain('"verify:versions"');
+    expect(verifyCandidate).toContain('"verify:native-sound-recipes"');
+    expect(verifyCandidate).toContain('"verify:release"');
+    expect(verifyCandidate).toContain('"test:e2e"');
+    expect(verifyCandidate).toContain("cargo");
+    expect(verifyCandidate).toContain("verifySmokeAttestationFile");
+    expect(verifyCandidate).toContain("verifyGamePackZip");
+    expect(verifyCandidate).toContain("assertReleaseCandidateTruth");
+    expect(verifyCandidate).toContain("--attestation");
+    expect(verifyCandidate).toContain("--installer");
+    expect(verifyCandidate).toContain("--commit");
+    expect(verifyCandidate).toContain("--game-pack");
+    expect(verifyReleaseCandidateTruth).toContain("validateReleaseCandidateTruth");
+    expect(verifyReleaseCandidateTruth).toContain("git");
+    expect(verifyReleaseCandidateTruth).toContain("bump the next Pocket DAW checkpoint version");
   });
 });

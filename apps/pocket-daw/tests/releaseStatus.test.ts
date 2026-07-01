@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   renderReleaseStatusMarkdown,
+  validateReleaseCandidateTruth,
   validateReleaseStatus
 } from "../scripts/release-status-lib.mjs";
 
@@ -79,6 +80,74 @@ describe("release status source", () => {
     expect(markdown).toContain("Last installed-smoke version | `0.6.10`");
     expect(markdown).toContain("## Unreleased Source-Only Notes");
     expect(markdown).toContain("Stem ZIP source work is pending installed smoke.");
+    expect(markdown).toContain("## Capability Claim Boundary");
+    expect(markdown).toContain("Public release claims must be limited to");
+    expect(markdown).toContain("Source-only notes describe current working-tree capability");
+    expect(markdown).toContain("Candidate release claims require a fresh exact-artifact smoke attestation");
     expect(markdown).toContain("must not be described as public or installed-smoked");
+  });
+
+  it("blocks same-version release candidates when source has moved past the published commit", () => {
+    const validation = validateReleaseCandidateTruth({
+      ...baseStatus,
+      latestPublishedVersion: baseStatus.sourceVersion,
+      latestPublishedTag: `pocket-daw-v${baseStatus.sourceVersion}`
+    }, baseContext, {
+      currentCommit: "a".repeat(40)
+    });
+
+    expect(validation.ok).toBe(false);
+    expect(validation.failures.join("\n")).toContain("sourceVersion matches latestPublishedVersion");
+    expect(validation.failures.join("\n")).toContain("bump the next Pocket DAW checkpoint version before packaging/publishing source-only changes");
+  });
+
+  it("blocks same-version release candidates when source-only notes are present", () => {
+    const validation = validateReleaseCandidateTruth({
+      ...baseStatus,
+      latestPublishedVersion: baseStatus.sourceVersion,
+      latestPublishedTag: `pocket-daw-v${baseStatus.sourceVersion}`,
+      latestPublishedCommit: baseStatus.lastInstalledSmoke.commit || baseStatus.latestPublishedCommit,
+      unreleasedSourceNotes: ["Source-only after 0.6.20: a feature still needs installed smoke."]
+    }, baseContext, {
+      currentCommit: baseStatus.latestPublishedCommit
+    });
+
+    expect(validation.ok).toBe(false);
+    expect(validation.failures.join("\n")).toContain("unreleasedSourceNotes must be empty when sourceVersion matches latestPublishedVersion");
+  });
+
+  it("allows a bumped source candidate with source-only notes", () => {
+    const validation = validateReleaseCandidateTruth({
+      ...baseStatus,
+      sourceVersion: "0.6.21",
+      unreleasedSourceNotes: ["Source-only after 0.6.20: next checkpoint feature."]
+    }, {
+      ...baseContext,
+      packageJsonVersion: "0.6.21",
+      packageLockRootVersion: "0.6.21",
+      packageLockPackageVersion: "0.6.21",
+      tauriConfigVersion: "0.6.21",
+      cargoTomlVersion: "0.6.21",
+      cargoLockVersion: "0.6.21",
+      schemaAppVersion: "0.6.21"
+    }, {
+      currentCommit: "a".repeat(40)
+    });
+
+    expect(validation).toEqual({ ok: true, failures: [] });
+  });
+
+  it("allows an exact published checkpoint with no source-only notes", () => {
+    const validation = validateReleaseCandidateTruth({
+      ...baseStatus,
+      latestPublishedVersion: baseStatus.sourceVersion,
+      latestPublishedTag: `pocket-daw-v${baseStatus.sourceVersion}`,
+      latestPublishedCommit: "a".repeat(40),
+      unreleasedSourceNotes: []
+    }, baseContext, {
+      currentCommit: "a".repeat(40)
+    });
+
+    expect(validation).toEqual({ ok: true, failures: [] });
   });
 });

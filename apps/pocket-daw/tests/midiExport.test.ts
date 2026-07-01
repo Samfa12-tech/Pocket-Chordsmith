@@ -7,6 +7,7 @@ import { setClipTransform } from "../src/daw/clips";
 import { addMidiAftertouch, addMidiController, addMidiPitchBend, addMidiProgramChange, duplicateMidiController, duplicateMidiNote, importMidiFileToProject, importMidiFileToProjectWithPlacement, midiDataFromClip, setMidiAftertouchField, setMidiControllerField, setMidiNoteField, setMidiPitchBendField, setMidiProgramChangeField } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { createDemoChordsmithProject, createDemoProject } from "../src/demo/demoProject";
+import { createAutomationLane } from "../src/daw/automation";
 import { aftertouchMidiBytes, controllerOnlyMidiBytes, metalArrangementMidiBytes, multiTrackChannelMidiBytes, pitchBendMidiBytes, programChangeMidiBytes, shortNoteLateControllerMidiBytes, simpleMidiBytes } from "./midiFixtures";
 
 describe("MIDI export", () => {
@@ -24,6 +25,25 @@ describe("MIDI export", () => {
     expect(parsed.tempoBpm).toBe(136);
     expect(parsed.metadata.parsedTrackCount).toBe(readU16(bytes, 10));
     expect(parsed.notes.length).toBeGreaterThan(0);
+  });
+
+  it("exports project meter-map points as MIDI time-signature meta events", async () => {
+    const project = createDemoProject();
+    project.project.timeSig = 4;
+    project.project.ppq = 480;
+    project.project.meterMap = [
+      { id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" },
+      { id: "meter_3_4", bar: 3, numerator: 3, denominator: 4, source: "manual" }
+    ];
+
+    const bytes = new Uint8Array(await exportProjectToMidiBlob(project).arrayBuffer());
+    const parsed = parseStandardMidiFile(bytes);
+
+    expect(parsed.metadata.timeSignatureEvents).toEqual([
+      expect.objectContaining({ tick: 0, trackIndex: 0, numerator: 4, denominator: 4 }),
+      expect.objectContaining({ tick: 1920, trackIndex: 0, numerator: 7, denominator: 8 }),
+      expect.objectContaining({ tick: 3600, trackIndex: 0, numerator: 3, denominator: 4 })
+    ]);
   });
 
   it("can export only the selected clip's rendered MIDI events", async () => {
@@ -88,6 +108,26 @@ describe("MIDI export", () => {
     expect(transposed.notes[0].velocity).toBeLessThan(original.notes[0].velocity);
   });
 
+  it("exports rendered note ticks through the project timeline clock", async () => {
+    let project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.ppq = 480;
+    project = createAutomationLane(project, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [{ bar: 1, value: 60, curve: "hold" }]
+    }).project;
+    const clip = project.timeline.clips[0];
+    clip.startBar = 2;
+
+    const bytes = new Uint8Array(await exportProjectToMidiBlob(project, { clipIds: [clip.id], trackIds: ["bass"] }).arrayBuffer());
+    const exported = parseStandardMidiFile(bytes);
+
+    expect(exported.notes.length).toBeGreaterThan(0);
+    expect(exported.notes[0].startTick).toBe(1920);
+  });
+
   it("preserves editable MIDI controller events in scoped MIDI export", async () => {
     const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "Controller Export" }));
     const parsedSource = parseStandardMidiFile(simpleMidiBytes(true));
@@ -111,6 +151,25 @@ describe("MIDI export", () => {
       expect.objectContaining({ controller: 74, value: 91, tick: 0, channel: 2 })
     ]);
     expect(firstStatusIndex(bytes, 0xb2)).toBeLessThan(firstStatusIndex(bytes, 0x90));
+  });
+
+  it("places MIDI controller exports at meter-map-aware musical ticks", async () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "Controller Meter Export" }));
+    project.project.timeSig = 4;
+    project.project.ppq = 480;
+    project.project.meterMap = [{ id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" }];
+    const imported = importMidiFileToProject(project, parseStandardMidiFile(simpleMidiBytes(true)), "lead-with-cc.mid");
+    const controllerId = midiDataFromClip(imported.project.timeline.clips.find((clip) => clip.id === imported.clipId)!).controllers[0].id;
+    const clip = imported.project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    clip.startBar = 3;
+    const edited = setMidiControllerField(imported.project, imported.clipId, controllerId, "tick", 0);
+
+    const bytes = new Uint8Array(await exportProjectToMidiBlob(edited, { clipIds: [imported.clipId], trackIds: [imported.trackId] }).arrayBuffer());
+    const exported = parseStandardMidiFile(bytes);
+
+    expect(exported.controllers).toEqual([
+      expect.objectContaining({ tick: 3600, controller: 1, value: 64 })
+    ]);
   });
 
   it("keeps late or controller-only MIDI controller events inside imported clip exports", async () => {

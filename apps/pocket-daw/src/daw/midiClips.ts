@@ -74,6 +74,38 @@ export interface MidiImportPlacementResult {
   placementMode: MidiImportPlacementMode;
 }
 
+export interface MidiTempoMapPosition {
+  bar: number;
+  beat: number;
+  tick: number;
+}
+
+export interface MidiTempoMapTempoEvent {
+  tick: number;
+  trackIndex?: number;
+  bpm: number;
+  microsecondsPerQuarter?: number;
+  seconds: number;
+  position: MidiTempoMapPosition;
+}
+
+export interface MidiTempoMapMeterEvent {
+  tick: number;
+  trackIndex?: number;
+  numerator: number;
+  denominator: number;
+  seconds: number;
+  position: MidiTempoMapPosition;
+}
+
+export interface MidiTempoMapSummary {
+  ppq: number;
+  tempoEvents: MidiTempoMapTempoEvent[];
+  timeSignatureEvents: MidiTempoMapMeterEvent[];
+  hasTempoChanges: boolean;
+  hasMeterChanges: boolean;
+}
+
 export interface MidiTimelineRippleDeleteResult {
   project: PocketDawProject;
   changed: boolean;
@@ -119,6 +151,39 @@ export function importMidiFileToProject(project: PocketDawProject, parsed: Parse
     clipId: result.primaryClipId || "",
     trackId: result.primaryTrackId || ""
   };
+}
+
+export function createMidiTempoMapSummary(metadata: JsonObject | undefined, options: { fallbackBpm?: number; fallbackTimeSig?: number } = {}): MidiTempoMapSummary | null {
+  const ppq = cleanNumber(metadata?.ppq, 480);
+  const tempoEvents = cleanTempoEvents(metadata?.tempoEvents);
+  const timeSignatureEvents = cleanTimeSignatureEvents(metadata?.timeSignatureEvents);
+  if (!tempoEvents.length && !timeSignatureEvents.length) return null;
+  const fallbackBpm = cleanNumber(options.fallbackBpm ?? metadata?.tempoBpm, 120);
+  const fallbackTimeSig = cleanNumber(options.fallbackTimeSig ?? metadata?.timeSig, 4);
+  const uniqueTempos = new Set(tempoEvents.map((event) => event.bpm));
+  const uniqueMeters = new Set(timeSignatureEvents.map((event) => `${event.numerator}/${event.denominator}`));
+  return {
+    ppq,
+    tempoEvents: tempoEvents.map((event) => ({
+      ...event,
+      seconds: secondsAtMidiTick(event.tick, ppq, tempoEvents, fallbackBpm),
+      position: midiPositionAtTick(event.tick, ppq, timeSignatureEvents, fallbackTimeSig)
+    })),
+    timeSignatureEvents: timeSignatureEvents.map((event) => ({
+      ...event,
+      seconds: secondsAtMidiTick(event.tick, ppq, tempoEvents, fallbackBpm),
+      position: midiPositionAtTick(event.tick, ppq, timeSignatureEvents, fallbackTimeSig)
+    })),
+    hasTempoChanges: uniqueTempos.size > 1,
+    hasMeterChanges: uniqueMeters.size > 1
+  };
+}
+
+export function midiTempoMappedSecondsAtTick(metadata: JsonObject | undefined, tick: number, options: { fallbackBpm?: number } = {}): number {
+  const ppq = cleanNumber(metadata?.ppq, 480);
+  const tempoEvents = cleanTempoEvents(metadata?.tempoEvents);
+  const fallbackBpm = cleanNumber(options.fallbackBpm ?? metadata?.tempoBpm, 120);
+  return secondsAtMidiTick(Math.max(0, Math.round(Number(tick) || 0)), ppq, tempoEvents, fallbackBpm);
 }
 
 export function importMidiFileToProjectWithPlacement(project: PocketDawProject, parsed: ParsedMidiFile, name: string, options: MidiImportPlacementOptions = {}): MidiImportPlacementResult {
@@ -1328,6 +1393,84 @@ function midiImportWarnings(parsed: ParsedMidiFile): string[] {
       : `MIDI file contains ${timeSignatureEvents.length} time-signature events with the same meter; Pocket DAW preserves them as metadata.`);
   }
   return warnings;
+}
+
+function cleanTempoEvents(raw: unknown): Array<Omit<MidiTempoMapTempoEvent, "seconds" | "position">> {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((event) => {
+    if (!event || typeof event !== "object") return null;
+    const item = event as Record<string, unknown>;
+    const bpm = cleanNumber(item.bpm, 0);
+    if (bpm <= 0) return null;
+    const cleaned: Omit<MidiTempoMapTempoEvent, "seconds" | "position"> = {
+      tick: Math.max(0, Math.round(cleanNumber(item.tick, 0))),
+      bpm: Math.max(1, Math.round(bpm))
+    };
+    const trackIndex = Number(item.trackIndex);
+    if (Number.isFinite(trackIndex)) cleaned.trackIndex = Math.max(0, Math.round(trackIndex));
+    const microsecondsPerQuarter = Number(item.microsecondsPerQuarter);
+    if (Number.isFinite(microsecondsPerQuarter) && microsecondsPerQuarter > 0) {
+      cleaned.microsecondsPerQuarter = Math.round(microsecondsPerQuarter);
+    }
+    return cleaned;
+  }).filter((event): event is Omit<MidiTempoMapTempoEvent, "seconds" | "position"> => !!event)
+    .sort((a, b) => a.tick - b.tick || a.bpm - b.bpm);
+}
+
+function cleanTimeSignatureEvents(raw: unknown): Array<Omit<MidiTempoMapMeterEvent, "seconds" | "position">> {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((event) => {
+    if (!event || typeof event !== "object") return null;
+    const item = event as Record<string, unknown>;
+    const numerator = Math.max(1, Math.round(cleanNumber(item.numerator, 0)));
+    const denominator = Math.max(1, Math.round(cleanNumber(item.denominator, 0)));
+    if (!numerator || !denominator) return null;
+    const cleaned: Omit<MidiTempoMapMeterEvent, "seconds" | "position"> = {
+      tick: Math.max(0, Math.round(cleanNumber(item.tick, 0))),
+      numerator,
+      denominator
+    };
+    const trackIndex = Number(item.trackIndex);
+    if (Number.isFinite(trackIndex)) cleaned.trackIndex = Math.max(0, Math.round(trackIndex));
+    return cleaned;
+  }).filter((event): event is Omit<MidiTempoMapMeterEvent, "seconds" | "position"> => !!event)
+    .sort((a, b) => a.tick - b.tick || a.numerator - b.numerator || a.denominator - b.denominator);
+}
+
+function secondsAtMidiTick(targetTick: number, ppq: number, tempoEvents: Array<Omit<MidiTempoMapTempoEvent, "seconds" | "position">>, fallbackBpm: number): number {
+  const safePpq = Math.max(1, ppq);
+  const target = Math.max(0, targetTick);
+  let bpm = Math.max(1, fallbackBpm);
+  let lastTick = 0;
+  let seconds = 0;
+  for (const event of tempoEvents) {
+    if (event.tick > target) break;
+    seconds += ((event.tick - lastTick) / safePpq) * (60 / bpm);
+    bpm = Math.max(1, event.bpm);
+    lastTick = event.tick;
+  }
+  seconds += ((target - lastTick) / safePpq) * (60 / bpm);
+  return seconds;
+}
+
+function midiPositionAtTick(targetTick: number, ppq: number, timeSignatureEvents: Array<Omit<MidiTempoMapMeterEvent, "seconds" | "position">>, fallbackTimeSig: number): MidiTempoMapPosition {
+  const safePpq = Math.max(1, ppq);
+  const target = Math.max(0, targetTick);
+  let numerator = Math.max(1, Math.round(fallbackTimeSig));
+  let lastTick = 0;
+  let bars = 0;
+  for (const event of timeSignatureEvents) {
+    if (event.tick >= target) break;
+    bars += ((event.tick - lastTick) / safePpq) / numerator;
+    numerator = Math.max(1, event.numerator);
+    lastTick = event.tick;
+  }
+  bars += ((target - lastTick) / safePpq) / numerator;
+  const bar = Math.floor(bars) + 1;
+  const beatFloat = (bars - Math.floor(bars)) * numerator;
+  const beat = Math.floor(beatFloat) + 1;
+  const tick = Math.round((beatFloat - Math.floor(beatFloat)) * safePpq);
+  return { bar, beat, tick };
 }
 
 function ensureMidiTrack(project: PocketDawProject, options: { trackName?: string; reuseExistingMidiTrack?: boolean } = {}): Track {

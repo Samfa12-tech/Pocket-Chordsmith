@@ -2,7 +2,7 @@ import { addMediaPoolItem, createMediaPoolItem, findMediaPoolItem, type MediaPoo
 import type { Clip, JsonObject, MediaPoolItem, PocketDawProject, Track } from "./schema";
 import { cloneProject } from "./dawProject";
 import { createEmptyFxChain } from "./fx";
-import { recomputeTimelineBars } from "./timeline";
+import { recomputeTimelineBars, timelineBarAtSeconds, timelineSecondsAtBar } from "./timeline";
 
 export interface ImportedAudioMedia {
   name: string;
@@ -163,7 +163,7 @@ export function placeAudioClipOnTrack(project: PocketDawProject, mediaPoolItemId
   const track = next.tracks.find((candidate) => candidate.id === trackId && candidate.trackType === "audio");
   if (!track) return { project, clipId: "", trackId: "" };
   const clipStartBar = cleanStartBar(startBar);
-  const barLength = Math.max(1, secondsToBars(item.durationSeconds || secondsPerBar(next), next));
+  const barLength = Math.max(1, secondsToBarsFromStart(item.durationSeconds || secondsBetweenBars(next, clipStartBar, clipStartBar + 1), next, clipStartBar));
   if (options.overwriteOverlaps) {
     overwriteAudioClipsInRange(next, track.id, clipStartBar, clipStartBar + barLength);
   }
@@ -296,7 +296,7 @@ function overwriteAudioClipsInRange(project: PocketDawProject, trackId: string, 
         barLength: rightLength,
         metadata: {
           ...(clip.metadata || {}),
-          sourceOffsetSeconds: audioClipSourceOffsetSeconds(clip) + Math.max(0, rightStart - clipStart) * secondsPerBar(project)
+          sourceOffsetSeconds: audioClipSourceOffsetSeconds(clip) + secondsBetweenBars(project, clipStart, rightStart)
         }
       });
     }
@@ -343,13 +343,15 @@ function audioTrackName(name: string, fallbackIndex: number): string {
   return base ? `Audio ${fallbackIndex} - ${base.slice(0, 28)}` : `Audio ${fallbackIndex}`;
 }
 
-function secondsToBars(seconds: number, project: PocketDawProject): number {
-  const bars = seconds / secondsPerBar(project);
+function secondsToBarsFromStart(seconds: number, project: PocketDawProject, startBar: number): number {
+  const startSeconds = timelineSecondsAtBar(project, startBar);
+  const endBar = timelineBarAtSeconds(project, startSeconds + Math.max(0, Number.isFinite(seconds) ? seconds : 0));
+  const bars = endBar - startBar;
   return Math.max(0.001, Math.round(bars * 1_000_000) / 1_000_000);
 }
 
-function secondsPerBar(project: PocketDawProject): number {
-  return project.project.timeSig * (60 / project.project.bpm);
+function secondsBetweenBars(project: PocketDawProject, startBar: number, endBar: number): number {
+  return Math.max(0, timelineSecondsAtBar(project, endBar) - timelineSecondsAtBar(project, startBar));
 }
 
 function cleanStartBar(value: number): number {

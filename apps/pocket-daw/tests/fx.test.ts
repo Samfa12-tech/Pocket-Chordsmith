@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { addFxAutomationPointCommand, ensureFxAutomationLaneCommand, recordFxAutomationPointCommand } from "../src/app/commands";
+import { createInitialState } from "../src/app/state";
 import { addFxSlot, BUILT_IN_FX, ensureProjectFx, setFxSlotParameter, setPocketProEqPreset } from "../src/daw/fx";
 import { addDrumLaneFx, DRUM_LANE_DEFS, getDrumLaneFxChain, getDrumLaneMix, setDrumLanePan, setDrumLaneVolume } from "../src/daw/drumLanes";
 import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
 import { createDemoProject } from "../src/demo/demoProject";
+import { addAutomationPoint, ensureFxParameterAutomationLane, getAutomatedFxChains } from "../src/daw/automation";
+import { createUndoStack } from "../src/daw/undo";
 
 describe("built-in FX", () => {
   it("includes the v0.1.3 starter pack", () => {
@@ -66,6 +70,61 @@ describe("built-in FX", () => {
     expect(parsedSlot?.parameters.hpEnabled).toBe(true);
     expect(parsedSlot?.parameters.lowMidGain).toBe(-1.8);
     expect(parsedSlot?.parameters.lpFrequency).toBe(13200);
+  });
+
+  it("creates numeric FX parameter automation lanes and evaluates automated chain parameters", () => {
+    let project = addFxSlot(createDemoProject(), "master", "delay");
+    const chain = project.fx.chains.find((item) => item.ownerTrackId === "master")!;
+    const slot = chain.slots[0];
+
+    const ensured = ensureFxParameterAutomationLane(project, chain.id, slot.id, "mix")!;
+    project = addAutomationPoint(ensured.project, ensured.laneId, { bar: 3, value: 0.8, curve: "linear" });
+    const automated = getAutomatedFxChains(project, 2).find((item) => item.id === chain.id)?.slots[0];
+    const original = project.fx.chains.find((item) => item.id === chain.id)?.slots[0];
+
+    expect(project.tracks.find((track) => track.role === "master")?.automationLaneIds).toContain(ensured.laneId);
+    expect(automated?.parameters.mix).toBeCloseTo(0.56, 5);
+    expect(original?.parameters.mix).toBe(0.32);
+    expect(ensureFxParameterAutomationLane(project, chain.id, slot.id, "enabled")).toBeNull();
+  });
+
+  it("creates FX automation through the undoable command path", () => {
+    const project = addFxSlot(createDemoProject(), "master", "delay");
+    const chain = project.fx.chains.find((item) => item.ownerTrackId === "master")!;
+    const slot = chain.slots[0];
+    const state = createInitialState();
+    state.undoStack = createUndoStack(project);
+    state.playheadBar = 5;
+
+    const created = ensureFxAutomationLaneCommand(state, chain.id, slot.id, "feedback");
+    const withPoint = addFxAutomationPointCommand(created, chain.id, slot.id, "feedback");
+    const lane = withPoint.undoStack.present.automation.lanes.find((item) => item.targetPath === `fx.${chain.id}.slots.${slot.id}.parameters.feedback`)!;
+
+    expect(lane.points).toEqual([
+      expect.objectContaining({ bar: 1, value: 0.28 }),
+      expect.objectContaining({ bar: 5, value: 0.28 })
+    ]);
+    expect(withPoint.undoStack.past.length).toBeGreaterThanOrEqual(2);
+    expect(withPoint.status).toContain("FX automation point");
+  });
+
+  it("records live FX automation into an existing numeric parameter lane", () => {
+    const project = addFxSlot(createDemoProject(), "master", "delay");
+    const chain = project.fx.chains.find((item) => item.ownerTrackId === "master")!;
+    const slot = chain.slots[0];
+    const state = createInitialState();
+    state.undoStack = createUndoStack(project);
+    state.playheadBar = 6;
+    const created = ensureFxAutomationLaneCommand(state, chain.id, slot.id, "mix");
+
+    const recorded = recordFxAutomationPointCommand(created, chain.id, slot.id, "mix", 0.74);
+    const missing = recordFxAutomationPointCommand(state, chain.id, slot.id, "feedback", 0.5);
+    const lane = recorded.undoStack.present.automation.lanes.find((item) => item.targetPath === `fx.${chain.id}.slots.${slot.id}.parameters.mix`)!;
+
+    expect(lane.points).toContainEqual(expect.objectContaining({ bar: 6, value: 0.74, curve: "linear" }));
+    expect(recorded.undoStack.past.length).toBe(created.undoStack.past.length + 1);
+    expect(recorded.status).toContain("Recorded FX automation point");
+    expect(missing).toBe(state);
   });
 
   it("keeps custom future chain ids during migration repair", () => {

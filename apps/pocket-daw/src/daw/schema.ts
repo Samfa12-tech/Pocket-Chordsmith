@@ -1,6 +1,6 @@
 export const POCKET_DAW_APP = "PocketDAW" as const;
 export const POCKET_DAW_SCHEMA_VERSION = 2;
-export const POCKET_DAW_VERSION = "0.6.34";
+export const POCKET_DAW_VERSION = "0.6.35";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -60,11 +60,23 @@ export interface ProjectMeta {
   key: string;
   scale: string;
   timeSig: number;
+  meterMap?: ProjectMeterMapPoint[];
   swing: number;
   resolution: number;
   sampleRate: number;
   ppq: number;
   metronome?: MetronomeSettings;
+}
+
+export interface ProjectMeterMapPoint {
+  id: string;
+  bar: number;
+  numerator: number;
+  denominator: number;
+  source?: "manual" | "midi-import";
+  sourceClipId?: string;
+  sourceTick?: number;
+  seconds?: number;
 }
 
 export interface MetronomeSettings {

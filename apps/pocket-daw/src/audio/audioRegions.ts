@@ -1,5 +1,5 @@
 import type { Clip, MediaPoolItem, PocketDawProject } from "../daw/schema";
-import { barsToSeconds } from "../daw/timeline";
+import { timelineSecondsAtBar } from "../daw/timeline";
 import { trackIsAudible } from "../daw/tracks";
 import { clipAutomationPath, evaluateAutomationLane, interpolateAutomationValue } from "../daw/automation";
 
@@ -21,6 +21,8 @@ export interface AudioRegion {
   reversed: boolean;
   fadeInSeconds: number;
   fadeOutSeconds: number;
+  playbackRate: number;
+  pitchSemitones: number;
   gainAutomation?: AudioRegionGainAutomationPoint[];
 }
 
@@ -30,7 +32,7 @@ export interface AudioFadeEnvelope {
 }
 
 export interface AudioClipPropertyDiagnostic {
-  field: "sourceOffsetSeconds" | "durationSeconds" | "gain" | "fadeInSeconds" | "fadeOutSeconds";
+  field: "sourceOffsetSeconds" | "durationSeconds" | "gain" | "fadeInSeconds" | "fadeOutSeconds" | "playbackRate" | "pitchSemitones";
   code: "invalid" | "negative" | "capped" | "scaled";
   message: string;
 }
@@ -41,6 +43,8 @@ export interface AudioClipProperties extends AudioFadeEnvelope {
   gain: number;
   phaseMultiplier: number;
   reversed: boolean;
+  playbackRate: number;
+  pitchSemitones: number;
   diagnostics: AudioClipPropertyDiagnostic[];
 }
 
@@ -55,6 +59,7 @@ export interface RenderTimelineAudioRegionsOptions {
 
 export interface AudioRegionPlaybackWindow {
   sourceOffsetSeconds: number;
+  sourceDurationSeconds: number;
   durationSeconds: number;
 }
 
@@ -85,7 +90,7 @@ export function audioRegionFromClip(project: PocketDawProject, clip: Clip, media
     clipId: clip.id,
     trackId: clip.trackId,
     mediaPoolItemId: clip.mediaPoolItemId || media.id,
-    startTimeSeconds: barsToSeconds(clip.startBar - 1, project.project.bpm, project.project.timeSig),
+    startTimeSeconds: timelineSecondsAtBar(project, clip.startBar),
     sourceOffsetSeconds: properties.sourceOffsetSeconds,
     durationSeconds: properties.durationSeconds,
     gain: properties.gain,
@@ -93,6 +98,8 @@ export function audioRegionFromClip(project: PocketDawProject, clip: Clip, media
     reversed: properties.reversed,
     fadeInSeconds: properties.fadeInSeconds,
     fadeOutSeconds: properties.fadeOutSeconds,
+    playbackRate: properties.playbackRate,
+    pitchSemitones: properties.pitchSemitones,
     gainAutomation: gainAutomationFromClip(project, clip, properties.gain, properties.durationSeconds)
   };
 }
@@ -100,13 +107,17 @@ export function audioRegionFromClip(project: PocketDawProject, clip: Clip, media
 export function normalizeAudioClipProperties(project: PocketDawProject, clip: Clip, media: MediaPoolItem): AudioClipProperties {
   const diagnostics: AudioClipPropertyDiagnostic[] = [];
   const metadata = clip.metadata || {};
-  const clipDuration = barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig);
+  const clipDuration = clipDurationSeconds(project, clip);
   const mediaDuration = cleanPositiveMediaDuration(media.durationSeconds, clipDuration);
   const rawSourceOffset = readNonNegativeMetadata(metadata.sourceOffsetSeconds, 0, "sourceOffsetSeconds", diagnostics);
   const sourceOffsetSeconds = capValue(rawSourceOffset, mediaDuration, "sourceOffsetSeconds", "media duration", diagnostics);
+  const basePlaybackRate = readRangedMetadata(metadata.playbackRate, 1, 0.25, 4, "playbackRate", diagnostics);
+  const pitchSemitones = readRangedMetadata(metadata.pitchSemitones, 0, -48, 48, "pitchSemitones", diagnostics);
+  const playbackRate = cleanPlaybackRate(basePlaybackRate * (2 ** (pitchSemitones / 12)));
   const explicitDuration = readNonNegativeMetadata(metadata.durationSeconds, mediaDuration, "durationSeconds", diagnostics);
   const maxDuration = Math.max(0, mediaDuration - sourceOffsetSeconds);
-  const durationSeconds = capValue(Math.max(0, explicitDuration || clipDuration), Math.min(clipDuration, maxDuration), "durationSeconds", "clip/media bounds", diagnostics);
+  const maxTimelineDuration = playbackRate > 0 ? maxDuration / playbackRate : maxDuration;
+  const durationSeconds = capValue(Math.max(0, explicitDuration || clipDuration), Math.min(clipDuration, maxTimelineDuration), "durationSeconds", "clip/media bounds", diagnostics);
   const gain = readNonNegativeMetadata(metadata.gain, clip.transforms.gain ?? 1, "gain", diagnostics);
   const rawFadeIn = readNonNegativeMetadata(metadata.fadeInSeconds, 0, "fadeInSeconds", diagnostics);
   const rawFadeOut = readNonNegativeMetadata(metadata.fadeOutSeconds, 0, "fadeOutSeconds", diagnostics);
@@ -126,6 +137,8 @@ export function normalizeAudioClipProperties(project: PocketDawProject, clip: Cl
     gain,
     phaseMultiplier: metadata.invertPhase === true ? -1 : 1,
     reversed: metadata.reversed === true,
+    playbackRate,
+    pitchSemitones,
     fadeInSeconds: fade.fadeInSeconds,
     fadeOutSeconds: fade.fadeOutSeconds,
     diagnostics
@@ -194,14 +207,19 @@ export function audioRegionPlaybackWindow(region: AudioRegion, sourceDurationSec
   const elapsed = Math.max(0, sourceElapsed);
   const sourceDuration = Math.max(0, sourceDurationSeconds);
   const remainingRegion = Math.max(0, region.durationSeconds - elapsed);
+  const playbackRate = cleanPlaybackRate(region.playbackRate);
   if (remainingRegion <= 0 || sourceDuration <= 0) return null;
+  const sourceSpan = remainingRegion * playbackRate;
   const offset = region.reversed
-    ? sourceDuration - (region.sourceOffsetSeconds + region.durationSeconds) + elapsed
-    : region.sourceOffsetSeconds + elapsed;
+    ? sourceDuration - (region.sourceOffsetSeconds + region.durationSeconds * playbackRate) + elapsed * playbackRate
+    : region.sourceOffsetSeconds + elapsed * playbackRate;
   const sourceOffsetSeconds = Math.max(0, offset);
   if (sourceOffsetSeconds >= sourceDuration) return null;
-  const durationSeconds = Math.min(remainingRegion, Math.max(0, sourceDuration - sourceOffsetSeconds));
-  return durationSeconds > 0 ? { sourceOffsetSeconds, durationSeconds } : null;
+  const sourceDurationAvailable = Math.min(sourceSpan, Math.max(0, sourceDuration - sourceOffsetSeconds));
+  const durationSeconds = sourceDurationAvailable / playbackRate;
+  return durationSeconds > 0 && sourceDurationAvailable > 0
+    ? { sourceOffsetSeconds, sourceDurationSeconds: sourceDurationAvailable, durationSeconds }
+    : null;
 }
 
 export function audioBufferForRegionPlayback(ctx: BaseAudioContext, buffer: AudioBuffer, region: Pick<AudioRegion, "reversed">): AudioBuffer {
@@ -227,7 +245,7 @@ function gainAutomationFromClip(project: PocketDawProject, clip: Clip, fallbackG
     { localSeconds: 0, value: evaluateAutomationLane(lane, clip.startBar, fallbackGain), curve: startCurve },
     ...points
       .map((point) => ({
-        localSeconds: barsToSeconds(point.bar - clip.startBar, project.project.bpm, project.project.timeSig),
+        localSeconds: timelineSecondsAtBar(project, point.bar) - timelineSecondsAtBar(project, clip.startBar),
         value: point.value,
         curve: point.curve
       }))
@@ -239,6 +257,10 @@ function gainAutomationFromClip(project: PocketDawProject, clip: Clip, fallbackG
     value: Math.max(0, Math.min(4, Number.isFinite(point.value) ? point.value : fallbackGain)),
     curve: point.curve === "hold" ? "hold" : point.curve === "ease-in" || point.curve === "ease-out" ? point.curve : "linear"
   }));
+}
+
+function clipDurationSeconds(project: PocketDawProject, clip: Clip): number {
+  return Math.max(0, timelineSecondsAtBar(project, clip.startBar + Math.max(0, clip.barLength)) - timelineSecondsAtBar(project, clip.startBar));
 }
 
 function audioRegionGainAutomationAt(region: Pick<AudioRegion, "gain"> & Partial<Pick<AudioRegion, "gainAutomation">>, localSeconds: number): number {
@@ -274,9 +296,37 @@ function cleanNumber(value: unknown, fallback: number): number {
   return Number.isFinite(number) && number >= 0 ? number : fallback;
 }
 
+function cleanSignedNumber(value: unknown, fallback: number): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function cleanPlaybackRate(value: unknown): number {
+  return clampNumber(cleanSignedNumber(value, 1), 0.25, 4, 1);
+}
+
 function cleanPositiveMediaDuration(value: unknown, fallback: number): number {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : Math.max(0, fallback);
+}
+
+function readRangedMetadata(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+  field: AudioClipPropertyDiagnostic["field"],
+  diagnostics: AudioClipPropertyDiagnostic[]
+): number {
+  if (value === undefined || value === null || value === "") return fallback;
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    diagnostics.push({ field, code: "invalid", message: `${field} was not finite and fell back to ${fallback}.` });
+    return fallback;
+  }
+  const clamped = clampNumber(number, min, max, fallback);
+  if (clamped !== number) diagnostics.push({ field, code: "capped", message: `${field} exceeded its supported range and was capped to ${clamped}.` });
+  return clamped;
 }
 
 function readNonNegativeMetadata(
@@ -311,4 +361,9 @@ function capValue(
     return max;
   }
   return value;
+}
+
+function clampNumber(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
 }

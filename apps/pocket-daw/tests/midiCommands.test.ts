@@ -97,6 +97,25 @@ describe("MIDI edit commands", () => {
     expect(edited.status).toContain("Added MIDI note to late.mid");
   });
 
+  it("adds MIDI notes at meter-map-aware playhead ticks", () => {
+    const state = createInitialState();
+    const parsed = parseStandardMidiFile(simpleMidiBytes());
+    const imported = importMidiFileToProject(state.undoStack.present, parsed, "metered.mid");
+    imported.project.project.timeSig = 4;
+    imported.project.project.meterMap = [{ id: "meter_7_8", bar: 2, numerator: 7, denominator: 8, source: "manual" }];
+    imported.project.timeline.clips.find((item) => item.id === imported.clipId)!.startBar = 2;
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+    state.playheadBar = 3;
+
+    const edited = addMidiNoteCommand(state, imported.clipId);
+    const clip = edited.undoStack.present.timeline.clips.find((item) => item.id === imported.clipId)!;
+
+    expect(midiDataFromClip(clip).notes.at(-1)).toMatchObject({ startTick: 1680, durationTicks: 480 });
+    expect(edited.undoStack.past).toHaveLength(1);
+  });
+
   it("extends MIDI clip length when Add Note lands past the current clip end", () => {
     const state = createInitialState();
     const parsed = parseStandardMidiFile(simpleMidiBytes());

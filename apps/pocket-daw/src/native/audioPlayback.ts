@@ -1,9 +1,10 @@
 import type { FxChain, JsonValue, PocketDawProject } from "../daw/schema";
 import type { RenderedEvent } from "../audio/eventRenderer";
+import { buildMetronomeClicks } from "../audio/metronome";
 import { chordsmithSidechainSettings } from "../audio/sidechain";
 import { activeTrackSendRoutes } from "../daw/routing";
-import { getAutomatedTrackControls } from "../daw/automation";
-import { secondsToBars } from "../daw/timeline";
+import { getAutomatedFxChains, getAutomatedTrackControls, getProjectAutomationLane } from "../daw/automation";
+import { timelineBarAtSeconds, timelineDurationSeconds, timelineSecondsAtBar } from "../daw/timeline";
 
 export interface NativeAudioStatus {
   backend: "native-cpal" | string;
@@ -111,6 +112,7 @@ export interface NativeAudioRegion {
   gain: number;
   phaseMultiplier?: number;
   reversed?: boolean;
+  playbackRate?: number;
   pan: number;
   fadeIn: number;
   fadeOut: number;
@@ -143,6 +145,12 @@ export interface NativeAudioMetronome {
   beatSeconds: number;
   timeSig: number;
   volume: number;
+  clickSchedule?: NativeAudioMetronomeClick[];
+}
+
+export interface NativeAudioMetronomeClick {
+  timeSeconds: number;
+  accented: boolean;
 }
 
 export interface NativeAudioSidechain {
@@ -267,7 +275,7 @@ export function buildNativeAudioStartPayload(
   startSeconds: number,
   cache?: { assets: NativeAudioAsset[]; regions: NativeAudioRegion[] }
 ): NativeAudioStartPayload {
-  const startBar = secondsToBars(Math.max(0, startSeconds), project.project.bpm, project.project.timeSig) + 1;
+  const startBar = timelineBarAtSeconds(project, Math.max(0, startSeconds));
   return {
     projectTitle: project.project.title,
     sampleRate: project.project.sampleRate,
@@ -315,7 +323,7 @@ export function buildNativeAudioStartPayload(
       direction: event.direction,
       drumLane: event.drumLane
     })),
-    fxChains: nativeFxChains(project.fx?.chains || []),
+    fxChains: nativeFxChains(getAutomatedFxChains(project, startBar)),
     assets: cache?.assets || [],
     regions: cache?.regions || []
   };
@@ -324,21 +332,27 @@ export function buildNativeAudioStartPayload(
 function nativeMetronome(project: PocketDawProject): NativeAudioMetronome | null {
   const settings = project.project.metronome;
   if (!settings?.enabled) return null;
+  const lane = getProjectAutomationLane(project, "tempo");
+  const needsExplicitSchedule = Boolean((lane?.enabled && lane.points.length) || project.project.meterMap?.length);
+  const clickSchedule = needsExplicitSchedule
+    ? buildMetronomeClicks(project, 0, timelineDurationSeconds(project) + 4)
+      .slice(0, 20000)
+      .map((click) => ({ timeSeconds: click.timeSeconds, accented: click.accented }))
+    : [];
   return {
     enabled: true,
     beatSeconds: 60 / Math.max(1, project.project.bpm || 120),
     timeSig: Math.max(1, Math.round(project.project.timeSig || 4)),
-    volume: clamp(settings.volume, 0, 1)
+    volume: clamp(settings.volume, 0, 1),
+    ...(clickSchedule.length ? { clickSchedule } : {})
   };
 }
 
 function nativeLoop(project: PocketDawProject): NativeAudioLoop | null {
   const loop = project.timeline.loop;
   if (!loop?.enabled) return null;
-  const beatsPerBar = Math.max(1, project.project.timeSig || 4);
-  const secondsPerBar = beatsPerBar * (60 / Math.max(1, project.project.bpm || 120));
-  const startSeconds = Math.max(0, (loop.startBar - 1) * secondsPerBar);
-  const endSeconds = Math.max(startSeconds, (loop.endBar - 1) * secondsPerBar);
+  const startSeconds = timelineSecondsAtBar(project, loop.startBar);
+  const endSeconds = Math.max(startSeconds, timelineSecondsAtBar(project, loop.endBar));
   if (endSeconds <= startSeconds) return null;
   return { enabled: true, startSeconds, endSeconds };
 }

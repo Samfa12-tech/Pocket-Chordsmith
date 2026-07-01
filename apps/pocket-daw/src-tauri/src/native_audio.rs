@@ -77,6 +77,15 @@ pub struct NativeMetronomePayload {
     #[serde(rename = "timeSig")]
     time_sig: u32,
     volume: f64,
+    #[serde(rename = "clickSchedule", default)]
+    click_schedule: Vec<NativeMetronomeClickPayload>,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct NativeMetronomeClickPayload {
+    #[serde(rename = "timeSeconds")]
+    time_seconds: f64,
+    accented: bool,
 }
 
 #[derive(Clone, Deserialize)]
@@ -226,6 +235,8 @@ pub struct NativeAudioRegion {
     phase_multiplier: f64,
     #[serde(default)]
     reversed: bool,
+    #[serde(rename = "playbackRate", default = "default_playback_rate")]
+    playback_rate: f64,
     pan: f64,
     #[serde(rename = "fadeIn", default)]
     fade_in: f64,
@@ -495,6 +506,7 @@ pub fn native_audio_render_wav(
     payload: NativeAudioStartPayload,
     duration_seconds: f64,
     render_mode: Option<String>,
+    bit_depth: Option<u16>,
     state: tauri::State<'_, NativeAudioState>,
 ) -> Result<NativeAudioRenderedWav, String> {
     let mut runtime = state
@@ -508,6 +520,7 @@ pub fn native_audio_render_wav(
         &mut playback,
         duration_seconds,
         parse_render_mode(render_mode.as_deref()),
+        sanitize_offline_bit_depth(bit_depth),
     )
 }
 
@@ -1003,11 +1016,34 @@ fn f32_to_i16(value: f32) -> i16 {
     }
 }
 
+fn f32_to_i24(value: f32) -> i32 {
+    let clamped = value.clamp(-1.0, 1.0);
+    if clamped < 0.0 {
+        (clamped * 8_388_608.0).round().clamp(-8_388_608.0, 0.0) as i32
+    } else {
+        (clamped * 8_388_607.0).round().clamp(0.0, 8_388_607.0) as i32
+    }
+}
+
+fn write_i24_le(bytes: &mut Vec<u8>, value: i32) {
+    let unsigned = if value < 0 { value + 0x1_000_000 } else { value };
+    bytes.push((unsigned & 0xff) as u8);
+    bytes.push(((unsigned >> 8) & 0xff) as u8);
+    bytes.push(((unsigned >> 16) & 0xff) as u8);
+}
+
 fn sanitize_offline_sample_rate(sample_rate: u32) -> u32 {
     if sample_rate == 0 {
         return 48_000;
     }
     sample_rate.clamp(8_000, 192_000)
+}
+
+fn sanitize_offline_bit_depth(bit_depth: Option<u16>) -> u16 {
+    match bit_depth {
+        Some(24) => 24,
+        _ => 16,
+    }
 }
 
 fn preferred_output_config(
@@ -1079,6 +1115,7 @@ fn render_playback_to_wav(
     playback: &mut PlaybackShared,
     duration_seconds: f64,
     mode: NativeAudioRenderMode,
+    bit_depth: u16,
 ) -> Result<NativeAudioRenderedWav, String> {
     if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
         return Err("Native offline render duration must be positive and finite.".to_string());
@@ -1096,7 +1133,11 @@ fn render_playback_to_wav(
     let frame_count = (duration_seconds * sample_rate as f64).ceil().max(1.0) as usize;
     let bytes = match mode {
         NativeAudioRenderMode::Mix => {
-            render_pcm16_wav_frames(sample_rate, 2, frame_count, || render_next_frame(playback))?
+            if bit_depth == 32 {
+                render_float32_wav_frames(sample_rate, 2, frame_count, || render_next_frame(playback))?
+            } else {
+                render_pcm_wav_frames(sample_rate, 2, bit_depth, frame_count, || render_next_frame(playback))?
+            }
         }
         NativeAudioRenderMode::CacheStem => {
             prune_cache_stem_events(playback);
@@ -1134,22 +1175,35 @@ fn prune_cache_stem_events(playback: &mut PlaybackShared) {
     reset_scan_starts(playback);
 }
 
-fn render_pcm16_wav_frames<F>(
+fn render_pcm_wav_frames<F>(
     sample_rate: u32,
     channels: u16,
+    bit_depth: u16,
     frame_count: usize,
     mut next_frame: F,
 ) -> Result<Vec<u8>, String>
 where
     F: FnMut() -> (f32, f32),
 {
-    let data_len = wav_data_len(frame_count, channels, 2)?;
-    let mut bytes = wav_header(sample_rate, channels, 1, 16, data_len)?;
+    let bytes_per_sample = match bit_depth {
+        24 => 3,
+        16 => 2,
+        _ => return Err("Native offline WAV render only supports 16-bit PCM, 24-bit PCM or 32-bit float output.".to_string()),
+    };
+    let data_len = wav_data_len(frame_count, channels, bytes_per_sample)?;
+    let mut bytes = wav_header(sample_rate, channels, 1, bit_depth, data_len)?;
     for _ in 0..frame_count {
         let (left, right) = next_frame();
-        bytes.extend_from_slice(&f32_to_i16(left).to_le_bytes());
-        if channels > 1 {
-            bytes.extend_from_slice(&f32_to_i16(right).to_le_bytes());
+        if bit_depth == 24 {
+            write_i24_le(&mut bytes, f32_to_i24(left));
+            if channels > 1 {
+                write_i24_le(&mut bytes, f32_to_i24(right));
+            }
+        } else {
+            bytes.extend_from_slice(&f32_to_i16(left).to_le_bytes());
+            if channels > 1 {
+                bytes.extend_from_slice(&f32_to_i16(right).to_le_bytes());
+            }
         }
     }
     Ok(bytes)
@@ -1587,11 +1641,19 @@ fn sanitize_metronome(metronome: Option<NativeMetronomePayload>) -> Option<Nativ
     if !metro.enabled || !metro.beat_seconds.is_finite() || metro.beat_seconds <= 0.0 {
         return None;
     }
+    let mut click_schedule: Vec<NativeMetronomeClickPayload> = metro
+        .click_schedule
+        .into_iter()
+        .filter(|click| click.time_seconds.is_finite() && click.time_seconds >= 0.0)
+        .take(20_000)
+        .collect();
+    click_schedule.sort_by(|a, b| a.time_seconds.total_cmp(&b.time_seconds));
     Some(NativeMetronomePayload {
         enabled: true,
         beat_seconds: metro.beat_seconds.clamp(0.05, 4.0),
         time_sig: metro.time_sig.clamp(1, 16),
         volume: metro.volume.clamp(0.0, 1.0),
+        click_schedule,
     })
 }
 
@@ -1602,17 +1664,31 @@ fn render_metronome_sample(playback: &PlaybackShared, t: f64) -> f32 {
     if !metronome.enabled || metronome.volume <= 0.0001 {
         return 0.0;
     }
+    if !metronome.click_schedule.is_empty() {
+        let idx = metronome
+            .click_schedule
+            .partition_point(|click| click.time_seconds <= t);
+        if idx == 0 {
+            return 0.0;
+        }
+        let click = &metronome.click_schedule[idx - 1];
+        return render_metronome_click(t - click.time_seconds, click.accented, metronome.volume);
+    }
     let beat_seconds = metronome.beat_seconds.max(0.001);
     let beat_index = (t / beat_seconds).floor().max(0.0) as u64;
     let beat_time = beat_index as f64 * beat_seconds;
     let local = t - beat_time;
+    let accented = beat_index.is_multiple_of(metronome.time_sig.max(1) as u64);
+    render_metronome_click(local, accented, metronome.volume)
+}
+
+fn render_metronome_click(local: f64, accented: bool, volume: f64) -> f32 {
     if !(0.0..=0.055).contains(&local) {
         return 0.0;
     }
-    let accented = beat_index.is_multiple_of(metronome.time_sig.max(1) as u64);
     let freq = if accented { 1760.0 } else { 1120.0 };
     let env = (-local * if accented { 95.0 } else { 115.0 }).exp() as f32;
-    let gain = metronome.volume as f32 * if accented { 0.34 } else { 0.24 };
+    let gain = volume as f32 * if accented { 0.34 } else { 0.24 };
     phase(freq, local) * env * gain
 }
 
@@ -2388,11 +2464,14 @@ fn render_region_sample(
         return None;
     }
     let sample_rate = asset.sample_rate.max(1) as f64;
+    let playback_rate = region.playback_rate.clamp(0.25, 4.0);
+    let source_local = local * playback_rate;
+    let source_span = region.duration.max(0.0) * playback_rate;
     let frame_position = if region.reversed {
-        ((region.source_offset.max(0.0) + region.duration.max(0.0)) * sample_rate - 1.0)
-            - local * sample_rate
+        ((region.source_offset.max(0.0) + source_span) * sample_rate - 1.0)
+            - source_local * sample_rate
     } else {
-        (region.source_offset.max(0.0) + local) * sample_rate
+        (region.source_offset.max(0.0) + source_local) * sample_rate
     };
     if !frame_position.is_finite() || frame_position < 0.0 {
         return None;
@@ -2498,6 +2577,10 @@ fn default_phase_multiplier() -> f64 {
     1.0
 }
 
+fn default_playback_rate() -> f64 {
+    1.0
+}
+
 fn decode_payload_asset(asset: &NativeAudioAssetPayload) -> Result<DecodedAudioAsset, String> {
     if asset.id.trim().is_empty() {
         return Err("Native cached WAV asset is missing an id.".to_string());
@@ -2578,6 +2661,7 @@ fn validate_region(region: &NativeAudioRegion) -> Result<(), String> {
         || !region.duration.is_finite()
         || !region.gain.is_finite()
         || !region.phase_multiplier.is_finite()
+        || !region.playback_rate.is_finite()
         || !region.pan.is_finite()
     {
         return Err(format!(
@@ -2588,6 +2672,12 @@ fn validate_region(region: &NativeAudioRegion) -> Result<(), String> {
     if region.duration <= 0.0 {
         return Err(format!(
             "Native cached WAV region {} must have a positive duration.",
+            region.id
+        ));
+    }
+    if region.playback_rate <= 0.0 {
+        return Err(format!(
+            "Native cached WAV region {} must have a positive playback rate.",
             region.id
         ));
     }
@@ -3887,6 +3977,23 @@ mod tests {
     }
 
     #[test]
+    fn renders_region_samples_with_varispeed_playback_rate() {
+        let asset = DecodedAudioAsset {
+            sample_rate: 4,
+            channels: 2,
+            samples: vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            frame_count: 3,
+        };
+        let mut region = test_region("region", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0);
+        region.playback_rate = 2.0;
+
+        let sample = render_region_sample(&region, &asset, 0.25).expect("region should sample at doubled source time");
+
+        assert!((sample.0 - 0.5).abs() < 0.0001);
+        assert!((sample.1 - 0.6).abs() < 0.0001);
+    }
+
+    #[test]
     fn renders_reversed_region_samples_from_selected_source_window() {
         let asset = DecodedAudioAsset {
             sample_rate: 4,
@@ -4750,6 +4857,7 @@ mod tests {
         assert_eq!(metronome.beat_seconds, 0.5);
         assert_eq!(metronome.time_sig, 4);
         assert_eq!(metronome.volume, 0.6);
+        assert!(metronome.click_schedule.is_empty());
     }
 
     #[test]
@@ -4760,11 +4868,30 @@ mod tests {
             beat_seconds: 0.25,
             time_sig: 4,
             volume: 0.8,
+            click_schedule: Vec::new(),
         });
 
         let energy = render_energy(&mut playback, 80);
 
         assert!(energy > 0.0001, "expected native metronome click energy");
+    }
+
+    #[test]
+    fn native_metronome_uses_scheduled_clicks_when_present() {
+        let mut playback = playback_with_events(Vec::new());
+        playback.metronome = Some(NativeMetronomePayload {
+            enabled: true,
+            beat_seconds: 0.25,
+            time_sig: 4,
+            volume: 0.8,
+            click_schedule: vec![NativeMetronomeClickPayload {
+                time_seconds: 0.4,
+                accented: true,
+            }],
+        });
+
+        assert_eq!(render_metronome_sample(&playback, 0.25), 0.0);
+        assert!(render_metronome_sample(&playback, 0.405).abs() > 0.0001);
     }
 
     #[test]
@@ -4775,7 +4902,7 @@ mod tests {
         insert_playback_track(&mut playback, test_track("bass", 1.0, 0.0, false, false));
         playback.sample_rate = 8_000;
 
-        let rendered = render_playback_to_wav(&mut playback, 0.1, NativeAudioRenderMode::Mix)
+        let rendered = render_playback_to_wav(&mut playback, 0.1, NativeAudioRenderMode::Mix, 16)
             .expect("wav render should work");
         let decoded = decode_pcm16_wav(&rendered.bytes).expect("rendered wav should decode");
         let energy: f32 = decoded.samples.iter().map(|sample| sample.abs()).sum();
@@ -4788,6 +4915,55 @@ mod tests {
         assert!(
             energy > 0.1,
             "expected offline native render to contain audible bass energy"
+        );
+    }
+
+    #[test]
+    fn native_offline_render_can_write_pcm24_wav() {
+        let mut event = test_generated_event("offline_bass_24", "bass", 0.0, 0.05, 1.0);
+        event.bass_tone = Some("warm_sub".to_string());
+        let mut playback = playback_with_events(vec![event]);
+        insert_playback_track(&mut playback, test_track("bass", 1.0, 0.0, false, false));
+        playback.sample_rate = 8_000;
+
+        let rendered = render_playback_to_wav(&mut playback, 0.1, NativeAudioRenderMode::Mix, 24)
+            .expect("24-bit wav render should work");
+
+        assert_eq!(&rendered.bytes[0..4], b"RIFF");
+        assert_eq!(&rendered.bytes[8..12], b"WAVE");
+        assert_eq!(u16::from_le_bytes([rendered.bytes[22], rendered.bytes[23]]), 2);
+        assert_eq!(u16::from_le_bytes([rendered.bytes[32], rendered.bytes[33]]), 6);
+        assert_eq!(u16::from_le_bytes([rendered.bytes[34], rendered.bytes[35]]), 24);
+        assert!(rendered.bytes.len() > 44);
+        assert!(
+            rendered.bytes[44..].iter().any(|byte| *byte != 0),
+            "expected 24-bit PCM payload to contain audible rendered samples"
+        );
+    }
+
+    #[test]
+    fn native_offline_render_can_write_float32_wav() {
+        let mut event = test_generated_event("offline_bass_32", "bass", 0.0, 0.05, 1.0);
+        event.bass_tone = Some("warm_sub".to_string());
+        let mut playback = playback_with_events(vec![event]);
+        insert_playback_track(&mut playback, test_track("bass", 1.0, 0.0, false, false));
+        playback.sample_rate = 8_000;
+
+        let rendered = render_playback_to_wav(&mut playback, 0.1, NativeAudioRenderMode::Mix, 32)
+            .expect("32-bit float wav render should work");
+
+        assert_eq!(&rendered.bytes[0..4], b"RIFF");
+        assert_eq!(&rendered.bytes[8..12], b"WAVE");
+        assert_eq!(u16::from_le_bytes([rendered.bytes[20], rendered.bytes[21]]), 3);
+        assert_eq!(u16::from_le_bytes([rendered.bytes[22], rendered.bytes[23]]), 2);
+        assert_eq!(u16::from_le_bytes([rendered.bytes[32], rendered.bytes[33]]), 8);
+        assert_eq!(u16::from_le_bytes([rendered.bytes[34], rendered.bytes[35]]), 32);
+        assert!(rendered.bytes.len() > 44);
+        assert!(
+            rendered.bytes[44..].chunks_exact(4).any(|chunk| {
+                f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]).abs() > 0.0001
+            }),
+            "expected 32-bit float payload to contain audible rendered samples"
         );
     }
 
@@ -4825,7 +5001,7 @@ mod tests {
         let mut stem_source = playback_with_events(vec![event]);
         insert_playback_track(&mut stem_source, track.clone());
         stem_source.sample_rate = 8_000;
-        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem)
+        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
             .expect("cache stem render should work");
         let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
         let tracks = HashMap::from([("bass".to_string(), track)]);
@@ -4892,7 +5068,7 @@ mod tests {
         let mut stem_source = playback_with_events(vec![event]);
         insert_playback_track(&mut stem_source, track.clone());
         stem_source.sample_rate = 8_000;
-        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem)
+        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
             .expect("cache stem render should work");
         let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
         let tracks = HashMap::from([("melody".to_string(), track)]);
@@ -4960,7 +5136,7 @@ mod tests {
         let mut stem_source = playback_with_events(vec![event]);
         insert_playback_track(&mut stem_source, track.clone());
         stem_source.sample_rate = 8_000;
-        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem)
+        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
             .expect("cache stem render should work");
         let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
         let tracks = HashMap::from([("melody".to_string(), track)]);
@@ -5031,7 +5207,7 @@ mod tests {
         let mut kick_stem_source = playback_with_events(vec![kick.clone()]);
         kick_stem_source.sample_rate = 8_000;
         let kick_stem =
-            render_playback_to_wav(&mut kick_stem_source, 0.1, NativeAudioRenderMode::CacheStem)
+            render_playback_to_wav(&mut kick_stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
                 .expect("kick cache stem render should work");
         let kick_decoded = decode_pcm16_wav(&kick_stem.bytes).expect("kick stem should decode");
 
@@ -5041,6 +5217,7 @@ mod tests {
             &mut chord_stem_source,
             0.1,
             NativeAudioRenderMode::CacheStem,
+            16,
         )
         .expect("chord cache stem render should work");
         let chord_decoded = decode_pcm16_wav(&chord_stem.bytes).expect("chord stem should decode");
@@ -5143,7 +5320,7 @@ mod tests {
         let mut stem_source = playback_with_events(vec![event]);
         stem_source.sample_rate = 8_000;
         insert_playback_track(&mut stem_source, bass_track.clone());
-        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem)
+        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
             .expect("cache stem render should work");
         let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
 
@@ -5251,6 +5428,7 @@ mod tests {
             &mut bass_stem_source,
             0.08,
             NativeAudioRenderMode::CacheStem,
+            16,
         )
         .expect("bass cache stem render should work");
         let bass_decoded = decode_pcm16_wav(&bass_stem.bytes).expect("bass stem should decode");
@@ -5268,6 +5446,7 @@ mod tests {
             &mut melody_stem_source,
             0.08,
             NativeAudioRenderMode::CacheStem,
+            16,
         )
         .expect("melody cache stem render should work");
         let melody_decoded =
@@ -5637,6 +5816,7 @@ mod tests {
             gain,
             phase_multiplier: 1.0,
             reversed: false,
+            playback_rate: 1.0,
             pan,
             fade_in: 0.0,
             fade_out: 0.0,

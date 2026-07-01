@@ -36,6 +36,7 @@ export function createEmptyPocketDawProject(): PocketDawProject {
       key: starter.pcs.key,
       scale: starter.pcs.scale,
       timeSig: starter.pcs.timeSig,
+      meterMap: [],
       swing: starter.pcs.swing,
       resolution: starter.pcs.resolution,
       sampleRate: 44100,

@@ -12,6 +12,7 @@ import packageJson from "../package.json" with { type: "json" };
 import { packageItchRelease } from "./package-itch.mjs";
 import { makeUpdaterManifest } from "./make-updater-manifest.mjs";
 import { DEFAULT_BOOTSTRAPPER_MANIFEST, makeBootstrapperManifest } from "./make-bootstrapper-manifest.mjs";
+import { assertReleaseCandidateTruth } from "./verify-release-candidate-truth.mjs";
 import { verifySmokeAttestationFile } from "./verify-smoke-attestation.mjs";
 
 const ROOT = process.cwd();
@@ -30,6 +31,11 @@ if (options.fast && options.full) fail("Use either --fast or --full, not both.")
 if (options.fast && options.publish) fail("--fast --publish is blocked. Publish builds must rebuild installers in the same run.");
 if (options.publish && process.env.PUBLISH !== "1") {
   fail("Refusing to publish. Set PUBLISH=1 only after deciding this version should go public.");
+}
+try {
+  assertReleaseCandidateTruth(ROOT);
+} catch (error) {
+  fail(error instanceof Error ? error.message : String(error));
 }
 
 if (options.full) {

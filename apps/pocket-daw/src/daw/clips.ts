@@ -1,12 +1,12 @@
 import type { Clip, PocketDawProject } from "./schema";
 import { cloneProject } from "./dawProject";
-import { barsToSeconds, recomputeTimelineBars } from "./timeline";
+import { recomputeTimelineBars, timelineBarAtSeconds, timelineSecondsAtBar } from "./timeline";
 import { detectAudioTransientsFromPeaks } from "./audioClips";
 
 export type ClipTransformField = "transpose" | "gain";
 export type GeneratedStemRole = "drums" | "bass" | "chords" | "melody" | "guitar";
-export type AudioClipPropertyField = "gain" | "sourceOffsetSeconds" | "durationSeconds" | "fadeInSeconds" | "fadeOutSeconds";
-export type AudioClipAction = "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients";
+export type AudioClipPropertyField = "gain" | "sourceOffsetSeconds" | "durationSeconds" | "fadeInSeconds" | "fadeOutSeconds" | "playbackRate" | "pitchSemitones";
+export type AudioClipAction = "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "clear-warp-markers";
 export type AudioTakeStatus = "active" | "muted-take" | "archived-take";
 
 export interface AudioClipActionResult {
@@ -164,12 +164,14 @@ export function setAudioClipProperty(project: PocketDawProject, clipId: string, 
   const next = cloneProject(project);
   const clip = next.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "audio") return project;
-  const max = field === "gain" ? 4 : 24 * 60 * 60;
-  const fallback = field === "gain" ? 1 : field === "durationSeconds" ? barsToSeconds(clip.barLength, project.project.bpm, project.project.timeSig) : 0;
+  const max = field === "gain" ? 4 : field === "playbackRate" ? 4 : field === "pitchSemitones" ? 48 : 24 * 60 * 60;
+  const min = field === "pitchSemitones" ? -48 : 0;
+  const fallback = field === "gain" || field === "playbackRate" ? 1 : field === "durationSeconds" ? timelineSecondsBetweenBars(project, clip.startBar, clip.startBar + clip.barLength) : 0;
   clip.metadata = {
     ...(clip.metadata || {}),
-    [field]: clampNumber(value, 0, max, fallback, false)
+    [field]: clampNumber(value, min, max, fallback, false)
   };
+  retargetAudioClipWarpMarkers(project, clip);
   return next;
 }
 
@@ -233,6 +235,19 @@ export function applyAudioClipAction(project: PocketDawProject, clipId: string, 
   }
 
   const media = clip.mediaPoolItemId ? next.mediaPool.find((item) => item.id === clip.mediaPoolItemId) : null;
+  if (action === "clear-warp-markers") {
+    const markerCount = Array.isArray(clip.metadata?.audioWarpMarkers) ? clip.metadata.audioWarpMarkers.length : 0;
+    if (!markerCount) return { project, changed: false, status: `No warp markers to clear for ${clip.name}.` };
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      audioWarpMarkers: [],
+      audioWarpMarkerCount: 0,
+      audioWarpReady: false,
+      audioWarpPlaybackMode: "metadata-only"
+    };
+    return { project: next, changed: true, status: `Cleared ${markerCount} warp marker${markerCount === 1 ? "" : "s"} for ${clip.name}.` };
+  }
+
   if (action === "analyze-transients") {
     if (!media) return { project, changed: false, status: `Reload or relink ${clip.name} before analyzing transients.` };
     const analysis = detectAudioTransientsFromPeaks(media.metadata?.waveformPeaks, media.durationSeconds || 0);
@@ -260,6 +275,49 @@ export function applyAudioClipAction(project: PocketDawProject, clipId: string, 
       status: `Detected ${analysis.markersSeconds.length} transient marker${analysis.markersSeconds.length === 1 ? "" : "s"} for ${clip.name}.`
     };
   }
+
+  if (action === "create-warp-markers") {
+    if (!media) return { project, changed: false, status: `Reload or relink ${clip.name} before creating warp markers.` };
+    const transientMarkers = audioTransientMarkers(media.metadata?.audioTransientMarkersSeconds, media.durationSeconds || 0);
+    if (!transientMarkers.length) return { project, changed: false, status: `Analyze transients for ${clip.name} before creating warp markers.` };
+    const sourceOffset = metadataNumber(clip.metadata?.sourceOffsetSeconds, 0, 0, 24 * 60 * 60);
+    const clipStartSeconds = timelineSecondsAtBar(next, clip.startBar);
+    const durationSeconds = metadataNumber(clip.metadata?.durationSeconds, Math.max(0, (media.durationSeconds || 0) - sourceOffset), 0, 24 * 60 * 60);
+    const sourceEnd = sourceOffset + Math.max(0, durationSeconds);
+    const markers = transientMarkers
+      .filter((sourceSeconds) => sourceSeconds >= sourceOffset && sourceSeconds <= sourceEnd)
+      .slice(0, 128)
+      .map((sourceSeconds, index) => {
+        const localSeconds = Math.max(0, sourceSeconds - sourceOffset);
+        const targetSeconds = clipStartSeconds + localSeconds;
+        return {
+          id: `warp_${index + 1}`,
+          sourceSeconds: roundSeconds(sourceSeconds),
+          targetBar: roundBar(timelineBarAtSeconds(next, targetSeconds)),
+          targetSeconds: roundSeconds(targetSeconds),
+          source: "transient",
+          locked: true
+        };
+      });
+    if (!markers.length) return { project, changed: false, status: `No transient markers fall inside ${clip.name}'s current source window.` };
+    const updatedAt = new Date().toISOString();
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      audioWarpMarkers: markers,
+      audioWarpMarkerCount: markers.length,
+      audioWarpSourceMediaId: media.id,
+      audioWarpReady: true,
+      audioWarpPlaybackMode: "metadata-only",
+      audioWarpEngine: "pending-time-stretch-engine",
+      audioWarpUpdatedAt: updatedAt
+    };
+    return {
+      project: next,
+      changed: true,
+      status: `Created ${markers.length} source-safe warp marker${markers.length === 1 ? "" : "s"} for ${clip.name}; playback stretching is not enabled yet.`
+    };
+  }
+
   const maxPeak = maxWaveformPeak(media?.metadata?.waveformPeaks);
   if (!media || maxPeak <= 0) {
     return { project, changed: false, status: `Analyze or reload ${clip.name} before normalizing gain.` };
@@ -481,7 +539,7 @@ function shiftedClipMetadata(project: PocketDawProject, clip: Clip, deltaBars: n
   if (clip.type === "audio") {
     const metadata: NonNullable<Clip["metadata"]> = {
       ...(clip.metadata || {}),
-      sourceOffsetSeconds: audioClipSourceOffsetSeconds(clip) + barsToSeconds(deltaBars, project.project.bpm, project.project.timeSig)
+      sourceOffsetSeconds: audioClipSourceOffsetSeconds(clip) + timelineSecondsBetweenBars(project, clip.startBar, clip.startBar + deltaBars)
     };
     delete metadata.sourceStartBar;
     return metadata;
@@ -516,7 +574,9 @@ function applyOverlapCrossfade(original: PocketDawProject, next: PocketDawProjec
     .filter((item) => item.clip.startBar < selected.startBar)
     .sort((a, b) => b.clip.startBar - a.clip.startBar)[0];
   if (left) {
-    const seconds = crossfadeSeconds(original, left.overlapBars);
+    const overlapStart = Math.max(selectedStart, left.clip.startBar);
+    const overlapEnd = Math.min(selectedEnd, left.clip.startBar + left.clip.barLength);
+    const seconds = crossfadeSecondsForRange(original, overlapStart, overlapEnd);
     left.clip.metadata = {
       ...(left.clip.metadata || {}),
       fadeOutSeconds: seconds,
@@ -536,7 +596,9 @@ function applyOverlapCrossfade(original: PocketDawProject, next: PocketDawProjec
     .filter((item) => item.clip.startBar > selected.startBar)
     .sort((a, b) => a.clip.startBar - b.clip.startBar)[0];
   if (right) {
-    const seconds = crossfadeSeconds(original, right.overlapBars);
+    const overlapStart = Math.max(selectedStart, right.clip.startBar);
+    const overlapEnd = Math.min(selectedEnd, right.clip.startBar + right.clip.barLength);
+    const seconds = crossfadeSecondsForRange(original, overlapStart, overlapEnd);
     selected.metadata = {
       ...(selected.metadata || {}),
       fadeOutSeconds: seconds,
@@ -577,23 +639,21 @@ function createLeftOverlapCrossfade(original: PocketDawProject, next: PocketDawP
     return { project: original, changed: false, status: "Select a right-hand audio clip with earlier source material before creating an overlap crossfade." };
   }
 
-  const secondsPerBar = barsToSeconds(1, original.project.bpm, original.project.timeSig);
-  if (secondsPerBar <= 0) {
-    return { project: original, changed: false, status: "Project timing is unavailable for creating an overlap crossfade." };
-  }
-
-  const overlapBars = Math.min(0.25, sourceOffsetSeconds / secondsPerBar, Math.max(0, selected.startBar - 1));
+  const earliestStartFromSource = timelineBarAtSeconds(original, Math.max(0, timelineSecondsAtBar(original, selected.startBar) - sourceOffsetSeconds));
+  const sourceOverlapBars = Math.max(0, selected.startBar - earliestStartFromSource);
+  const overlapBars = Math.min(0.25, sourceOverlapBars, Math.max(0, selected.startBar - 1));
   if (overlapBars <= 0.001) {
     return { project: original, changed: false, status: "Select a right-hand audio clip with earlier source material before creating an overlap crossfade." };
   }
 
-  const overlapSeconds = crossfadeSeconds(original, overlapBars);
+  const overlapSeconds = crossfadeSecondsForRange(original, selected.startBar - overlapBars, selected.startBar);
   selected.startBar = Math.max(1, selected.startBar - overlapBars);
   selected.barLength += overlapBars;
   selected.metadata = {
     ...(selected.metadata || {}),
     sourceOffsetSeconds: Math.max(0, sourceOffsetSeconds - overlapSeconds)
   };
+  retargetAudioClipWarpMarkers(original, selected);
   recomputeTimelineBars(next);
 
   const result = applyOverlapCrossfade(original, next, selected);
@@ -619,7 +679,7 @@ export function splitClipAtBar(project: PocketDawProject, clipId: string, splitB
   const rightMetadata = clip.type === "audio"
     ? {
         ...(clip.metadata || {}),
-        sourceOffsetSeconds: audioClipSourceOffsetSeconds(clip) + barsToSeconds(leftLength, project.project.bpm, project.project.timeSig),
+        sourceOffsetSeconds: audioClipSourceOffsetSeconds(clip) + timelineSecondsBetweenBars(project, clip.startBar, clip.startBar + leftLength),
         sourceStartBar: undefined
       }
     : {
@@ -627,6 +687,7 @@ export function splitClipAtBar(project: PocketDawProject, clipId: string, splitB
         sourceStartBar: sourceOffset + leftLength
       };
   if (clip.type === "audio") delete rightMetadata.sourceStartBar;
+  if (clip.type === "audio") retargetAudioClipWarpMarkers(project, clip);
   const rightClip: Clip = {
     ...JSON.parse(JSON.stringify(clip)),
     id: nextClipId(next.timeline.clips),
@@ -636,6 +697,7 @@ export function splitClipAtBar(project: PocketDawProject, clipId: string, splitB
     name: `${clip.name} split`,
     metadata: rightMetadata
   };
+  if (rightClip.type === "audio") retargetAudioClipWarpMarkers(project, rightClip);
   next.timeline.clips.push(rightClip);
   recomputeTimelineBars(next);
   return { project: next, rightClipId: rightClip.id };
@@ -697,7 +759,7 @@ export function cropClipToRange(project: PocketDawProject, clipId: string, start
     const sourceOffsetSeconds = audioClipSourceOffsetSeconds(clip);
     clip.metadata = {
       ...(clip.metadata || {}),
-      sourceOffsetSeconds: sourceOffsetSeconds + barsToSeconds(sourceDeltaBars, project.project.bpm, project.project.timeSig)
+      sourceOffsetSeconds: sourceOffsetSeconds + timelineSecondsBetweenBars(project, clip.startBar, clip.startBar + sourceDeltaBars)
     };
     delete clip.metadata.sourceStartBar;
   } else {
@@ -708,6 +770,7 @@ export function cropClipToRange(project: PocketDawProject, clipId: string, start
   }
   clip.startBar = cropStart;
   clip.barLength = cropEnd - cropStart;
+  if (clip.type === "audio") retargetAudioClipWarpMarkers(project, clip);
   recomputeTimelineBars(next);
   return { project: next, changed: true, clipId, status: `Cropped ${clip.name} to edit range.` };
 }
@@ -747,12 +810,14 @@ export function deleteClipRange(project: PocketDawProject, clipId: string, start
     shiftClipSourceStart(project, clip, sourceDeltaBars);
     clip.startBar = removeEnd;
     clip.barLength = clipEnd - removeEnd;
+    if (clip.type === "audio") retargetAudioClipWarpMarkers(project, clip);
     recomputeTimelineBars(next);
     return { project: next, changed: true, deletedClipId: null, rightClipId: clip.id, status: `Deleted range from ${clip.name}.` };
   }
 
   if (removeEnd >= clipEnd - epsilon) {
     clip.barLength = removeStart - clipStart;
+    if (clip.type === "audio") retargetAudioClipWarpMarkers(project, clip);
     recomputeTimelineBars(next);
     return { project: next, changed: true, deletedClipId: null, rightClipId: null, status: `Deleted range from ${clip.name}.` };
   }
@@ -767,6 +832,8 @@ export function deleteClipRange(project: PocketDawProject, clipId: string, start
     metadata: shiftedClipMetadata(project, clip, removeEnd - clipStart)
   };
   clip.barLength = removeStart - clipStart;
+  if (clip.type === "audio") retargetAudioClipWarpMarkers(project, clip);
+  if (rightClip.type === "audio") retargetAudioClipWarpMarkers(project, rightClip);
   next.timeline.clips.push(rightClip);
   recomputeTimelineBars(next);
   return { project: next, changed: true, deletedClipId: null, rightClipId: rightClip.id, status: `Deleted range from ${clip.name}.` };
@@ -852,6 +919,7 @@ export function rippleDeleteTimelineRange(project: PocketDawProject, startBar: n
     const rightLength = Math.max(0, clipEnd - rangeEnd);
     if (leftLength > 0.0001) {
       clip.barLength = leftLength;
+      if (clip.type === "audio") retargetAudioClipWarpMarkers(project, clip);
       nextClips.push(clip);
     }
     if (rightLength > 0.0001) {
@@ -865,6 +933,7 @@ export function rippleDeleteTimelineRange(project: PocketDawProject, startBar: n
         name: leftLength > 0.0001 ? `${clip.name} ripple` : clip.name,
         metadata: shiftedClipMetadata(project, clip, rangeEnd - clipStart)
       };
+      if (rightClip.type === "audio") retargetAudioClipWarpMarkers(project, rightClip);
       nextClips.push(rightClip);
       if (rightId !== clip.id) rightClipIds.push(rightId);
     }
@@ -904,20 +973,26 @@ export function trimClipStart(project: PocketDawProject, clipId: string, deltaBa
   const delta = Math.round(deltaBars);
   if (delta === 0) return project;
   if (clip.type === "audio") {
-    const secondsPerBar = barsToSeconds(1, project.project.bpm, project.project.timeSig);
     const sourceOffsetSeconds = audioClipSourceOffsetSeconds(clip);
     if (delta > 0) {
       const trim = Math.min(delta, Math.max(0, clip.barLength - 0.125));
       if (trim <= 0) return project;
+      const trimSeconds = timelineSecondsBetweenBars(project, clip.startBar, clip.startBar + trim);
       clip.startBar += trim;
       clip.barLength -= trim;
-      clip.metadata = { ...(clip.metadata || {}), sourceOffsetSeconds: sourceOffsetSeconds + trim * secondsPerBar };
+      clip.metadata = { ...(clip.metadata || {}), sourceOffsetSeconds: sourceOffsetSeconds + trimSeconds };
+      retargetAudioClipWarpMarkers(project, clip);
     } else {
-      const extend = Math.min(Math.abs(delta), clip.startBar - 1, secondsPerBar > 0 ? sourceOffsetSeconds / secondsPerBar : 0);
+      const requestedStartBar = Math.max(1, clip.startBar - Math.min(Math.abs(delta), clip.startBar - 1));
+      const earliestStartFromSource = timelineBarAtSeconds(project, Math.max(0, timelineSecondsAtBar(project, clip.startBar) - sourceOffsetSeconds));
+      const newStartBar = Math.min(clip.startBar, Math.max(requestedStartBar, earliestStartFromSource));
+      const extend = clip.startBar - newStartBar;
       if (extend <= 0) return project;
-      clip.startBar -= extend;
+      const extendSeconds = timelineSecondsBetweenBars(project, newStartBar, clip.startBar);
+      clip.startBar = newStartBar;
       clip.barLength += extend;
-      clip.metadata = { ...(clip.metadata || {}), sourceOffsetSeconds: Math.max(0, sourceOffsetSeconds - extend * secondsPerBar) };
+      clip.metadata = { ...(clip.metadata || {}), sourceOffsetSeconds: Math.max(0, sourceOffsetSeconds - extendSeconds) };
+      retargetAudioClipWarpMarkers(project, clip);
     }
     return recomputeTimelineBars(next);
   }
@@ -1012,8 +1087,71 @@ function maxWaveformPeak(value: unknown): number {
   }, 0);
 }
 
-function crossfadeSeconds(project: PocketDawProject, overlapBars: number): number {
-  return clampNumber(barsToSeconds(overlapBars, project.project.bpm, project.project.timeSig), 0, 24 * 60 * 60, 0, false);
+function audioTransientMarkers(value: unknown, durationSeconds: number): number[] {
+  const duration = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : Number.POSITIVE_INFINITY;
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((marker) => Number(marker))
+    .filter((marker) => Number.isFinite(marker) && marker >= 0 && marker <= duration)
+    .sort((a, b) => a - b)
+    .filter((marker, index, markers) => index === 0 || Math.abs(marker - markers[index - 1]) >= 0.005)
+    .map(roundSeconds);
+}
+
+function retargetAudioClipWarpMarkers(project: PocketDawProject, clip: Clip): void {
+  if (clip.type !== "audio" || !Array.isArray(clip.metadata?.audioWarpMarkers)) return;
+  const sourceOffset = audioClipSourceOffsetSeconds(clip);
+  const clipStartSeconds = timelineSecondsAtBar(project, clip.startBar);
+  const clipDurationSeconds = Math.max(0, timelineSecondsAtBar(project, clip.startBar + clip.barLength) - clipStartSeconds);
+  const sourceEnd = sourceOffset + clipDurationSeconds;
+  const markers = clip.metadata.audioWarpMarkers
+    .map((marker, index) => {
+      if (!marker || typeof marker !== "object" || Array.isArray(marker)) return null;
+      const data = marker as Record<string, unknown>;
+      const sourceSeconds = Number(data.sourceSeconds);
+      if (!Number.isFinite(sourceSeconds) || sourceSeconds < sourceOffset || sourceSeconds > sourceEnd) return null;
+      const localSeconds = Math.max(0, sourceSeconds - sourceOffset);
+      const targetSeconds = clipStartSeconds + localSeconds;
+      return {
+        id: typeof data.id === "string" ? data.id : `warp_${index + 1}`,
+        sourceSeconds: roundSeconds(sourceSeconds),
+        targetBar: roundBar(timelineBarAtSeconds(project, targetSeconds)),
+        targetSeconds: roundSeconds(targetSeconds),
+        source: typeof data.source === "string" ? data.source : "transient",
+        locked: data.locked !== false
+      };
+    })
+    .filter((marker): marker is { id: string; sourceSeconds: number; targetBar: number; targetSeconds: number; source: string; locked: boolean } => !!marker)
+    .slice(0, 128);
+  clip.metadata = {
+    ...(clip.metadata || {}),
+    audioWarpMarkers: markers,
+    audioWarpMarkerCount: markers.length,
+    audioWarpReady: markers.length > 0,
+    audioWarpPlaybackMode: "metadata-only"
+  };
+}
+
+function metadataNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(min, Math.min(max, numeric));
+}
+
+function roundSeconds(value: number): number {
+  return Math.max(0, Math.round(value * 1000) / 1000);
+}
+
+function roundBar(value: number): number {
+  return Math.max(1, Math.round(value * 1000) / 1000);
+}
+
+function crossfadeSecondsForRange(project: PocketDawProject, startBar: number, endBar: number): number {
+  return clampNumber(timelineSecondsBetweenBars(project, startBar, endBar), 0, 24 * 60 * 60, 0, false);
+}
+
+function timelineSecondsBetweenBars(project: PocketDawProject, startBar: number, endBar: number): number {
+  return Math.max(0, timelineSecondsAtBar(project, endBar) - timelineSecondsAtBar(project, startBar));
 }
 
 function formatSeconds(seconds: number): string {

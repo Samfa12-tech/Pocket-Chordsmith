@@ -37,17 +37,35 @@ describe("export profiles", () => {
     let state = createInitialState();
 
     state = setExportProfileSettingCommand(state, "full-song-wav", "sampleRate", 48000);
+    state = setExportProfileSettingCommand(state, "full-song-wav", "bitDepth", 32);
     state = setExportProfileSettingCommand(state, "full-song-wav", "tailSeconds", 2.35);
     state = setExportProfileSettingCommand(state, "full-song-wav", "channelMode", "mono");
     state = setExportProfileSettingCommand(state, "full-song-wav", "normalize", "peak");
+    state = setExportProfileSettingCommand(state, "full-song-wav", "dither", "tpdf");
 
     const profile = state.undoStack.present.exportProfiles.find((item) => item.id === "full-song-wav");
     expect(profile).toMatchObject({
       sampleRate: 48000,
-      settings: { tailSeconds: 2.35, channelMode: "mono", normalize: "peak" }
+      bitDepth: 32,
+      settings: { tailSeconds: 2.35, channelMode: "mono", normalize: "peak", dither: "tpdf" }
     });
-    expect(state.undoStack.past.length).toBe(4);
-    expect(state.status).toBe("Set Full Song WAV normalization to peak.");
+    expect(state.undoStack.past.length).toBe(6);
+    expect(state.status).toBe("Set Full Song WAV dither to TPDF.");
+  });
+
+  it("validates WAV bit-depth support explicitly", () => {
+    const profile = createDefaultExportProfiles().find((item) => item.id === "full-song-wav")!;
+
+    profile.bitDepth = 24;
+    expect(validateExportProfile(profile).ok).toBe(true);
+
+    profile.bitDepth = 32;
+    expect(validateExportProfile(profile).ok).toBe(true);
+
+    profile.bitDepth = 48 as 32;
+    const result = validateExportProfile(profile);
+    expect(result.ok).toBe(false);
+    expect(result.errors.join("\n")).toContain("bitDepth=48");
   });
 
   it("validates WAV channel modes explicitly", () => {
@@ -72,5 +90,17 @@ describe("export profiles", () => {
     const result = validateExportProfile(profile);
     expect(result.ok).toBe(false);
     expect(result.errors.join("\n")).toContain("normalize=lufs");
+  });
+
+  it("validates WAV dither modes explicitly", () => {
+    const profile = createDefaultExportProfiles().find((item) => item.id === "full-song-wav")!;
+
+    profile.settings.dither = "tpdf";
+    expect(validateExportProfile(profile).ok).toBe(true);
+
+    profile.settings.dither = "noise-shaped";
+    const result = validateExportProfile(profile);
+    expect(result.ok).toBe(false);
+    expect(result.errors.join("\n")).toContain("dither=noise-shaped");
   });
 });

@@ -1,9 +1,30 @@
 import { describe, expect, it } from "vitest";
 import { connectFxChain } from "../src/audio/fxProcessor";
+import { createDemoProject } from "../src/demo/demoProject";
+import { addAutomationPoint, ensureFxParameterAutomationLane } from "../src/daw/automation";
+import { addFxSlot } from "../src/daw/fx";
 import type { FxChain } from "../src/daw/schema";
 
 class FakeAudioParam {
   value = 0;
+  calls: Array<{ method: string; value: number; time: number }> = [];
+
+  cancelScheduledValues(time: number) {
+    this.calls.push({ method: "cancel", value: 0, time });
+    return this;
+  }
+
+  setValueAtTime(value: number, time: number) {
+    this.calls.push({ method: "set", value, time });
+    this.value = value;
+    return this;
+  }
+
+  linearRampToValueAtTime(value: number, time: number) {
+    this.calls.push({ method: "linear", value, time });
+    this.value = value;
+    return this;
+  }
 }
 
 class FakeNode {
@@ -27,6 +48,7 @@ class FakeFilter extends FakeNode {
 }
 
 class FakeContext {
+  currentTime = 0;
   filters: FakeFilter[] = [];
 
   createBiquadFilter() {
@@ -78,5 +100,25 @@ describe("FX processor", () => {
     expect((ctx as unknown as FakeContext).filters.map((filter) => filter.frequency.value)).toEqual([90, 140, 420, 7800, 16000]);
     expect((ctx as unknown as FakeContext).filters.map((filter) => filter.gain.value)).toEqual([0, -2, 1.5, 2.2, 0]);
     expect((ctx as unknown as FakeContext).filters[2].Q.value).toBe(1.4);
+  });
+
+  it("schedules automatable FX parameters onto WebAudio AudioParams", () => {
+    let project = addFxSlot(createDemoProject(), "master", "parametric-eq");
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const chain = project.fx.chains.find((item) => item.ownerTrackId === "master")!;
+    const slot = chain.slots[0];
+    const ensured = ensureFxParameterAutomationLane(project, chain.id, slot.id, "lowShelfFrequency")!;
+    project = addAutomationPoint(ensured.project, ensured.laneId, { bar: 3, value: 240, curve: "linear" });
+    const automatedChain = project.fx.chains.find((item) => item.id === chain.id)!;
+    const ctx = new FakeContext() as unknown as BaseAudioContext;
+    const source = new FakeNode() as unknown as AudioNode;
+    const destination = new FakeNode() as unknown as AudioNode;
+
+    connectFxChain(ctx, source, destination, automatedChain, { project, projectStartSeconds: 0 });
+    const lowShelfFrequency = (ctx as unknown as FakeContext).filters[0].frequency;
+
+    expect(lowShelfFrequency.calls).toContainEqual({ method: "set", value: 120, time: 0 });
+    expect(lowShelfFrequency.calls).toContainEqual({ method: "linear", value: 240, time: 4 });
   });
 });
