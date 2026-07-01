@@ -426,6 +426,12 @@ describe("Pocket DAW UI rendering", () => {
     expect(doc).toContain("| Studio Rail |");
     expect(doc).toContain("| Folder Tracks |");
     expect(doc).toContain("| Track Source Editor |");
+    expect(doc).toContain("| Live MCP Recording Input Channel |");
+    expect(doc).toContain("| Live MCP Arm And Monitor |");
+    expect(doc).toContain("| Live MCP Track Input |");
+    expect(doc).toContain("| Live MCP Track Setup Status |");
+    expect(doc).toContain("| Live MCP Media And Takes |");
+    expect(doc).toContain("| Live MCP Export Readiness |");
     expect(doc).toContain("Clip mix controls affect the selected timeline clip; Track source editor controls affect the generated source section.");
     expect(doc).toContain("Current Non-Claims");
     expect(catalog).toContain("# Pocket DAW Action Catalog");
@@ -439,6 +445,12 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Map Drums | `data-action=convert-midi-drums`");
     expect(catalog).toContain("| Download And Install Update | `data-action=updater-download-install`");
     expect(catalog).toContain("| Enable Live App Bridge | `data-ai-bridge-enabled`");
+    expect(catalog).toContain("| Live MCP Recording Input Channel | `pocket_daw_live_apply_commands:set_recording_input_channel`");
+    expect(catalog).toContain("| Live MCP Arm And Monitor | `pocket_daw_live_apply_commands:set_track_armed, set_track_monitor`");
+    expect(catalog).toContain("| Live MCP Track Input | `pocket_daw_live_apply_commands:set_track_input`");
+    expect(catalog).toContain("| Live MCP Track Setup Status | `pocket_daw_live_status:tracks`");
+    expect(catalog).toContain("| Live MCP Media And Takes | `pocket_daw_live_status:media`");
+    expect(catalog).toContain("| Live MCP Export Readiness | `pocket_daw_live_status:export`");
     expect(catalog).toContain("| Rename Marker | `data-marker-rename`");
     expect(catalog).toContain("| Track Input | `data-track-input`");
     expect(catalog).toContain("| Melody Track Settings | `data-melody-instrument / data-melody-octave / data-melody-pan / data-melody-mute / data-melody-solo`");

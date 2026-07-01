@@ -235,7 +235,7 @@ import { replacePresent } from "../daw/undo";
 import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
 import { POCKET_DAW_VERSION, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
-import { buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError } from "../daw/recordingInputs";
+import { buildNativeRecordingAlphaInputPreflight, buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError } from "../daw/recordingInputs";
 import { trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToDisplayPosition, snapProjectBarValue } from "../daw/timeline";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeRecordingClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../daw/audioClips";
@@ -254,10 +254,10 @@ import { importMidiFileToProjectWithPlacement, type MidiImportPlacementMode } fr
 import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
 import { isNativeRecordingAvailable, nativeRecordingStatus, startNativeRecording, startNativeRecordingPreview, stopNativeRecording, stopNativeRecordingPreview, updateNativeRecordingMonitor } from "../native/recordingBridge";
-import { buildPortableGamePackSourceProjectFile, createGamePackZipBlob, createSectionLoopMetadata, createSectionLoopZipBlob, createStemExportPlan, createStemZipBlob, projectForClipRender } from "../daw/exportJobs";
+import { buildPortableGamePackSourceProjectFile, createGameExportManifest, createGamePackDeliveryTargets, createGamePackZipBlob, createSectionLoopMetadata, createSectionLoopZipBlob, createStemExportPlan, createStemZipBlob, projectForClipRender } from "../daw/exportJobs";
 import { assertExportProfileSupported, validateExportProfile } from "../daw/exportProfiles";
 import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
-import { buildTesterDiagnosticsPayload, diagnosticsJson, runtimeLabel, runtimePlatform } from "./diagnostics";
+import { buildTesterDiagnosticsPayload, createAudioTakeDiagnosticsSummary, diagnosticsJson, runtimeLabel, runtimePlatform } from "./diagnostics";
 import { buildFeedbackEmailDraft, MORE_BY_SAMFA12_URL } from "./feedback";
 import { FUNCTION_ACTION_TOOLTIPS } from "./functionGuide";
 import { pocketDawMcpCopyText } from "./mcpSetup";
@@ -274,7 +274,12 @@ type AiBridgeLiveCommand =
   | { type: "set_track_volume"; trackId: string; volume: number }
   | { type: "set_track_pan"; trackId: string; pan: number }
   | { type: "set_track_mute"; trackId: string; mute: boolean }
-  | { type: "set_track_solo"; trackId: string; solo: boolean };
+  | { type: "set_track_solo"; trackId: string; solo: boolean }
+  | { type: "set_track_input"; trackId: string; inputDeviceId?: string | null }
+  | { type: "set_track_armed"; trackId: string; armed: boolean }
+  | { type: "set_track_monitor"; trackId: string; monitorEnabled: boolean }
+  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "mono"; channelIndex?: number }
+  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] };
 
 interface ApplyProjectOptions {
   audio?: AudioProjectSyncMode | "none";
@@ -525,6 +530,8 @@ export class App {
     this.state.nativeCacheStatus = nativeCacheStatusFromDiagnostics(audioDiagnostics);
     const uiPerformance = this.uiPerformanceCounters();
     const performanceDiagnostics = this.performanceDiagnostics.report(this.state, audioDiagnostics, uiPerformance, { recordSample: true });
+    const exportReadiness = createAiBridgeExportReadiness(project);
+    const mediaReadiness = createAiBridgeMediaReadiness(project);
     return {
       ok: true,
       available: true,
@@ -552,7 +559,12 @@ export class App {
         trackName: project.tracks.find((track) => track.id === this.state.selectedTrackId)?.name || null,
         clipName: project.timeline.clips.find((clip) => clip.id === this.state.selectedClipId)?.name || null
       },
-      recording: this.state.recording,
+      recording: {
+        ...this.state.recording,
+        inputPreflight: buildNativeRecordingAlphaInputPreflight(project)
+      },
+      export: exportReadiness,
+      media: mediaReadiness,
       nativeCache: this.state.nativeCacheStatus,
       diagnostics: {
         audio: audioDiagnostics,
@@ -564,14 +576,22 @@ export class App {
         name: track.name,
         role: track.role,
         type: track.trackType,
+        folderId: track.folderId ?? null,
+        outputId: track.routing.outputId,
         volume: track.volume,
         pan: track.pan,
         mute: track.mute,
-        solo: track.solo
+        solo: track.solo,
+        armed: track.armed,
+        monitorEnabled: track.monitorEnabled,
+        inputDeviceId: track.inputDeviceId ?? null,
+        recordingChannelMode: track.recordingChannelMode ?? null,
+        recordingInput: track.recordingInput ?? null
       })),
       capabilities: {
+        read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
         control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics"],
-        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo"]
+        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel"]
       }
     };
   }
@@ -728,6 +748,25 @@ export class App {
     if (command.type === "set_track_solo") {
       const track = project.tracks.find((item) => item.id === trackId);
       return track?.solo === Boolean(command.solo) ? { ...this.state, status: "Track solo already matched." } : toggleTrackSoloCommand(this.state, trackId);
+    }
+    if (command.type === "set_track_input") {
+      return setTrackInputCommand(this.state, trackId, command.inputDeviceId || null);
+    }
+    if (command.type === "set_track_armed") {
+      const track = project.tracks.find((item) => item.id === trackId);
+      return track?.armed === Boolean(command.armed) ? { ...this.state, status: "Track arm already matched." } : toggleTrackArmedCommand(this.state, trackId);
+    }
+    if (command.type === "set_track_monitor") {
+      const track = project.tracks.find((item) => item.id === trackId);
+      return track?.monitorEnabled === Boolean(command.monitorEnabled) ? { ...this.state, status: "Track monitor already matched." } : toggleTrackMonitorCommand(this.state, trackId);
+    }
+    if (command.type === "set_recording_input_channel") {
+      return setTrackRecordingInputChannelCommand(
+        this.state,
+        trackId,
+        recordingInputChannelValueFromLiveCommand(command),
+        command.deviceId ?? undefined
+      );
     }
     throw new Error(`Unsupported live command: ${(command as { type?: string }).type || "[missing type]"}`);
   }
@@ -5146,6 +5185,57 @@ function numberInput(value: unknown, label: string): number {
   const number = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(number)) throw new Error(`${label} must be a finite number.`);
   return number;
+}
+
+function recordingInputChannelValueFromLiveCommand(command: Extract<AiBridgeLiveCommand, { type: "set_recording_input_channel" }>): string {
+  if (command.mode === "stereo") {
+    const pair = Array.isArray(command.channelPair) ? command.channelPair : [0, 1];
+    return `stereo:${Math.max(0, Math.floor(Number(pair[0]) || 0))}:${Math.max(0, Math.floor(Number(pair[1]) || 1))}`;
+  }
+  return `mono:${Math.max(0, Math.floor(Number(command.channelIndex) || 0))}`;
+}
+
+function createAiBridgeExportReadiness(project: PocketDawProject) {
+  const stems = createStemExportPlan(project);
+  const sectionLoops = createSectionLoopMetadata(project);
+  const godot = createGameExportManifest(project, "godot-adaptive-pack");
+  const web = createGameExportManifest(project, "web-game-pack");
+  return {
+    stemCount: stems.length,
+    sectionLoopCount: sectionLoops.length,
+    deliveryTargets: createGamePackDeliveryTargets(),
+    gamePacks: {
+      godot: compactGamePackStatus(godot),
+      web: compactGamePackStatus(web)
+    }
+  };
+}
+
+function compactGamePackStatus(manifest: ReturnType<typeof createGameExportManifest>) {
+  return {
+    kind: manifest.kind,
+    manifestFile: manifest.manifestFile,
+    fullMix: manifest.fullMix,
+    sourceProject: manifest.sourceProject,
+    fileCount: manifest.files.length,
+    stemCount: manifest.stems.length,
+    sectionLoopCount: manifest.sectionLoops.length,
+    markerCount: manifest.markers.length,
+    warningCount: manifest.warnings.length,
+    warnings: manifest.warnings
+  };
+}
+
+function createAiBridgeMediaReadiness(project: PocketDawProject) {
+  const statuses = project.mediaPool.map((item) => mediaPoolStatus(item));
+  return {
+    poolCount: project.mediaPool.length,
+    projectMediaCount: statuses.filter((status) => !status.external && !status.runtimeOnly && !status.missing && !status.unresolved).length,
+    externalReferenceCount: statuses.filter((status) => status.external).length,
+    runtimeOnlyCount: statuses.filter((status) => status.runtimeOnly).length,
+    missingCount: statuses.filter((status) => status.missing || status.unresolved).length,
+    audioTakes: createAudioTakeDiagnosticsSummary(project)
+  };
 }
 
 function nativeCacheStatusFromDiagnostics(diagnostics: ReturnType<AudioEngine["getDiagnostics"]>): NativeCacheUiStatus {

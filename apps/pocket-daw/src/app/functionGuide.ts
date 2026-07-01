@@ -2259,6 +2259,54 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "AI / MCP Bridge",
+    control: "Live MCP Recording Input Channel",
+    selector: "pocket_daw_live_apply_commands:set_recording_input_channel",
+    does: "Lets the tokened live bridge set the running app's selected live-track Mono Ch N or Stereo Ch N-N+1 recording input assignment through the same undoable command path as the mixer UI.",
+    useWhen: "Use during MCP-observed installed-app smoke when the running app needs a recording input prepared without visual UI driving.",
+    aiNote: "Requires the installed app live bridge. Non-default channel maps still remain blocked by native-alpha preflight until native channel routing lands."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "Live MCP Arm And Monitor",
+    selector: "pocket_daw_live_apply_commands:set_track_armed, set_track_monitor",
+    does: "Lets the tokened live bridge arm or disarm a live audio track and enable or disable input monitoring through existing undoable track commands.",
+    useWhen: "Use during MCP-observed recording setup when the intended live track needs to be prepared without broad UI automation.",
+    aiNote: "Desired-state commands are idempotent. Actual recording/playback quality still needs installed-app and human audio smoke."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "Live MCP Track Input",
+    selector: "pocket_daw_live_apply_commands:set_track_input",
+    does: "Lets the tokened live bridge set a live track's visible input device through the same command path as the mixer input selector.",
+    useWhen: "Use before arming or recording when MCP needs to prepare the running app for a known hardware input.",
+    aiNote: "Device IDs are runtime-specific. Confirm the selected input through live status and real installed-app smoke."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "Live MCP Track Setup Status",
+    selector: "pocket_daw_live_status:tracks",
+    does: "Reports per-track arm, monitor, input device, recording mode, recording input assignment, folder and output routing setup from the running app.",
+    useWhen: "Use during recording or routing smoke to confirm the running app matches the visible mixer before pressing Record or exporting.",
+    aiNote: "Read-only status. It helps observe setup, but real audio recording/playback still needs installed-app smoke."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "Live MCP Media And Takes",
+    selector: "pocket_daw_live_status:media",
+    does: "Reports media-pool counts, missing/runtime-only media counts and grouped audio-take summary from the running app.",
+    useWhen: "Use after importing or recording audio to confirm project media and take groups appeared before save/reopen smoke.",
+    aiNote: "Read-only status. It confirms project state, not whether the recorded audio sounds correct."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "Live MCP Export Readiness",
+    selector: "pocket_daw_live_status:export",
+    does: "Reports compact Godot/Web game-pack readiness from the running app, including manifest paths, full-mix path, stem/loop counts, warning counts and delivery targets.",
+    useWhen: "Use before exporting or manually importing a game pack so the AI counterpart can observe the running project's export shape.",
+    aiNote: "Read-only status. It does not replace ZIP verification or manual Godot/Web target-runtime smoke."
+  },
+  {
+    surface: "AI / MCP Bridge",
     control: "File MCP Verify Game Pack",
     selector: "pocket_daw_verify_game_pack",
     does: "Verifies an existing Godot/Web game-pack ZIP against its manifest, embedded source project, file-size summary, deterministic paths and WAV-only codec boundary.",

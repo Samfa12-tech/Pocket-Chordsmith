@@ -60,6 +60,11 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("toggle_folder_expanded");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("toggle_track_solo");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_recording_input_channel");
+    const liveApplySchema = toolList.find((tool) => tool.name === "pocket_daw_live_apply_commands")?.inputSchema as { properties: Record<string, unknown> } | undefined;
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_armed");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_monitor");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_input");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_recording_input_channel");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_timeline_selection");
@@ -1014,6 +1019,126 @@ describe("Pocket DAW MCP tools", () => {
         action: "performance_diagnostics",
         mode: "start",
         maxSamples: 240
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("sends live recording input channel commands through the tokened app bridge", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-live-recording-input-"));
+    const sessionPath = join(dir, "ai-bridge-session.json");
+    writeFileSync(sessionPath, JSON.stringify({
+      statusUrl: "http://127.0.0.1:47858/pocket-daw/live/status",
+      controlUrl: "http://127.0.0.1:47858/pocket-daw/live/control",
+      token: "test-token"
+    }));
+    const originalFetch = globalThis.fetch;
+    let requestBody = "";
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requestBody = String(init?.body || "");
+      return new Response(JSON.stringify({
+        ok: true,
+        action: "apply_commands",
+        statuses: ["Live Vocals recording input set to Stereo Ch 3-4."]
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_live_apply_commands", {
+        sessionPath,
+        commands: [{ type: "set_recording_input_channel", trackId: "live-vocals", deviceId: "interface-4", mode: "stereo", channelPair: [2, 3] }]
+      }));
+
+      expect(result.ok).toBe(true);
+      expect(JSON.parse(requestBody)).toMatchObject({
+        action: "apply_commands",
+        commands: [{ type: "set_recording_input_channel", trackId: "live-vocals", deviceId: "interface-4", mode: "stereo", channelPair: [2, 3] }]
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("sends live arm and monitor commands through the tokened app bridge", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-live-arm-monitor-"));
+    const sessionPath = join(dir, "ai-bridge-session.json");
+    writeFileSync(sessionPath, JSON.stringify({
+      statusUrl: "http://127.0.0.1:47858/pocket-daw/live/status",
+      controlUrl: "http://127.0.0.1:47858/pocket-daw/live/control",
+      token: "test-token"
+    }));
+    const originalFetch = globalThis.fetch;
+    let requestBody = "";
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requestBody = String(init?.body || "");
+      return new Response(JSON.stringify({
+        ok: true,
+        action: "apply_commands",
+        statuses: ["Armed Live Vocals.", "Live Vocals monitor on."]
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_live_apply_commands", {
+        sessionPath,
+        commands: [
+          { type: "set_track_armed", trackId: "live-vocals", armed: true },
+          { type: "set_track_monitor", trackId: "live-vocals", monitorEnabled: true }
+        ]
+      }));
+
+      expect(result.ok).toBe(true);
+      expect(JSON.parse(requestBody)).toMatchObject({
+        action: "apply_commands",
+        commands: [
+          { type: "set_track_armed", trackId: "live-vocals", armed: true },
+          { type: "set_track_monitor", trackId: "live-vocals", monitorEnabled: true }
+        ]
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("sends live track input commands through the tokened app bridge", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-live-track-input-"));
+    const sessionPath = join(dir, "ai-bridge-session.json");
+    writeFileSync(sessionPath, JSON.stringify({
+      statusUrl: "http://127.0.0.1:47858/pocket-daw/live/status",
+      controlUrl: "http://127.0.0.1:47858/pocket-daw/live/control",
+      token: "test-token"
+    }));
+    const originalFetch = globalThis.fetch;
+    let requestBody = "";
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requestBody = String(init?.body || "");
+      return new Response(JSON.stringify({
+        ok: true,
+        action: "apply_commands",
+        statuses: ["Updated track input."]
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_live_apply_commands", {
+        sessionPath,
+        commands: [{ type: "set_track_input", trackId: "live-vocals", inputDeviceId: "interface-4" }]
+      }));
+
+      expect(result.ok).toBe(true);
+      expect(JSON.parse(requestBody)).toMatchObject({
+        action: "apply_commands",
+        commands: [{ type: "set_track_input", trackId: "live-vocals", inputDeviceId: "interface-4" }]
       });
     } finally {
       globalThis.fetch = originalFetch;

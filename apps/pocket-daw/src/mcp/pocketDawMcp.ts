@@ -139,7 +139,12 @@ export type PocketDawLiveCommand =
   | { type: "set_track_volume"; trackId: string; volume: number }
   | { type: "set_track_pan"; trackId: string; pan: number }
   | { type: "set_track_mute"; trackId: string; mute: boolean }
-  | { type: "set_track_solo"; trackId: string; solo: boolean };
+  | { type: "set_track_solo"; trackId: string; solo: boolean }
+  | { type: "set_track_input"; trackId: string; inputDeviceId?: string | null }
+  | { type: "set_track_armed"; trackId: string; armed: boolean }
+  | { type: "set_track_monitor"; trackId: string; monitorEnabled: boolean }
+  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "mono"; channelIndex?: number }
+  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] };
 
 interface PocketDawLiveSession {
   app?: string;
@@ -1014,13 +1019,20 @@ function liveCommandSchema() {
     {
       type: {
         type: "string",
-        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo"]
+        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel"]
       },
       trackId: stringSchema(),
+      inputDeviceId: stringSchema(),
+      deviceId: stringSchema(),
+      mode: { type: "string", enum: ["mono", "stereo"] },
+      channelIndex: numberSchema(),
+      channelPair: { type: "array", items: numberSchema(), minItems: 2, maxItems: 2 },
       volume: numberSchema(),
       pan: numberSchema(),
       mute: booleanSchema(),
-      solo: booleanSchema()
+      solo: booleanSchema(),
+      armed: booleanSchema(),
+      monitorEnabled: booleanSchema()
     },
     ["type", "trackId"]
   );

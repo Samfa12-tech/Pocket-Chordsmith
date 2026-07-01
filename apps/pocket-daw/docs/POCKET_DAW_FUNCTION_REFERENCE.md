@@ -1,6 +1,6 @@
 # Pocket DAW Function Reference
 
-Last updated: 2026-07-01
+Last updated: 2026-07-02
 
 This document explains Pocket DAW's user-facing functions in plain language for a human user and their AI counterpart. It describes what each function does, when to use it, and what an AI helper should be careful about.
 
@@ -186,6 +186,12 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | Check For Updates | Checks updater manifest and downloads/installs verified artifacts. | Installed-app alpha testing. | Do not claim update success until exact artifact/version/hash smoke is recorded. |
 | AI / MCP Bridge | Shows MCP command/config snippets and live bridge controls. | AI counterpart should inspect, validate, edit or observe/control the app. | File MCP works with app closed; live MCP needs running app and bearer token. |
 | File MCP Recording Input Channel | Stores explicit live-track Mono Ch N or Stereo Ch N-N+1 input assignments through the file-first command path. | Preparing recording smoke or multi-input projects without visual mixer driving. | Native-alpha preflight can still block non-default channel maps until native channel routing lands. |
+| Live MCP Recording Input Channel | Stores explicit live-track Mono Ch N or Stereo Ch N-N+1 input assignments in the running app through `pocket_daw_live_apply_commands`. | MCP-observed installed-app smoke when recording setup needs to happen without visual UI driving. | Requires the live bridge token; uses the same undoable command path and native-alpha preflight boundaries as the mixer UI. |
+| Live MCP Arm And Monitor | Arms/disarms live audio tracks and toggles monitoring in the running app through `pocket_daw_live_apply_commands`. | MCP-observed recording setup. | Desired-state commands are idempotent; still confirm real input/audio behavior in the installed app. |
+| Live MCP Track Input | Sets a live track's visible input device in the running app through `pocket_daw_live_apply_commands`. | MCP-observed recording setup for known hardware inputs. | Device IDs are runtime-specific; confirm via live status and actual installed-app input smoke. |
+| Live MCP Track Setup Status | Reports per-track arm, monitor, input device, recording mode, recording input assignment, folder and output routing setup in `pocket_daw_live_status.tracks`. | MCP-observed recording or routing smoke. | Read-only; compare against the visible mixer and still verify actual audio in the installed app. |
+| Live MCP Media And Takes | Reports media-pool counts and grouped audio-take state in `pocket_daw_live_status.media`. | MCP-observed audio import or recording smoke. | Read-only; confirms project state, not recorded audio quality. |
+| Live MCP Export Readiness | Reports compact Godot/Web export readiness in `pocket_daw_live_status.export`. | MCP-observed installed-app smoke before exporting or importing a game pack. | Read-only; still verify the generated ZIP and manually smoke Godot/Web target import before release claims. |
 | Send Feedback | Drafts feedback email with notes and diagnostics when possible. | Tester reports and confusing behavior. | Review diagnostics for privacy before external sharing. |
 
 ## Current Non-Claims
