@@ -4,6 +4,7 @@ import { migratePocketDawProject } from "../src/compatibility/migrations";
 import { addImportedAudioMedia, placeAudioClipOnTrack, placeRecordingClipOnTrack } from "../src/daw/audioClips";
 import { buildPocketDawProjectFile } from "../src/daw/dawProject";
 import { addTrackToProject } from "../src/daw/tracks";
+import { buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError, setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
 import { createAutomationLane } from "../src/daw/automation";
 import { createDemoProject } from "../src/demo/demoProject";
 import {
@@ -149,6 +150,90 @@ describe("recording alpha foundations", () => {
       channelMap: [0],
       latencyCompensationAppliedSeconds: 0
     });
+  });
+
+  it("builds explicit mono and stereo recording input preflight plans without enabling multitrack", () => {
+    let project = addTrackToProject(createDemoProject(), "live-instrument").project;
+    project.tracks.find((track) => track.id === "live-instrument")!.armed = true;
+    project = setTrackRecordingInputAssignment(project, "live-instrument", {
+      deviceId: "usb-interface",
+      mode: "stereo",
+      channelPair: [2, 3]
+    });
+
+    const plan = buildRecordingInputPreflight(project, {
+      availableInputDevices: [{ id: "usb-interface", name: "USB Interface", channelCount: 4 }]
+    });
+
+    expect(plan.ok).toBe(true);
+    expect(plan.mode).toBe("single-track");
+    expect(plan.errors).toEqual([]);
+    expect(plan.capturePlan).toEqual([{
+      trackId: "live-instrument",
+      trackName: "Live Instrument",
+      deviceId: "usb-interface",
+      mode: "stereo",
+      channelMap: [2, 3],
+      label: "Live Instrument: Stereo Ch 3-4"
+    }]);
+    expect(nativeRecordingAlphaChannelCompatibilityError(plan.capturePlan[0])).toContain("native recording alpha currently captures Stereo Ch 1-2");
+  });
+
+  it("allows current native recording alpha default mono and stereo channel maps", () => {
+    let project = addTrackToProject(createDemoProject(), "live-instrument").project;
+    project.tracks.find((track) => track.id === "live-instrument")!.armed = true;
+    const mono = buildRecordingInputPreflight(project, {
+      availableInputDevices: [{ id: "default-input", name: "Default input", channelCount: 2 }]
+    });
+    project = setTrackRecordingInputAssignment(project, "live-instrument", {
+      deviceId: "default-input",
+      mode: "stereo",
+      channelPair: [0, 1]
+    });
+    const stereo = buildRecordingInputPreflight(project, {
+      availableInputDevices: [{ id: "default-input", name: "Default input", channelCount: 2 }]
+    });
+
+    expect(nativeRecordingAlphaChannelCompatibilityError(mono.capturePlan[0])).toBeNull();
+    expect(nativeRecordingAlphaChannelCompatibilityError(stereo.capturePlan[0])).toBeNull();
+  });
+
+  it("rejects unavailable recording channel assignments before native capture starts", () => {
+    let project = addTrackToProject(createDemoProject(), "live-vocals").project;
+    project.tracks.find((track) => track.id === "live-vocals")!.armed = true;
+    project = setTrackRecordingInputAssignment(project, "live-vocals", {
+      deviceId: "small-interface",
+      mode: "stereo",
+      channelPair: [0, 1]
+    });
+
+    const plan = buildRecordingInputPreflight(project, {
+      availableInputDevices: [{ id: "small-interface", name: "Small Interface", channelCount: 1 }]
+    });
+
+    expect(plan.ok).toBe(false);
+    expect(plan.capturePlan).toEqual([]);
+    expect(plan.errors.join("\n")).toContain("needs channels 1-2 but Small Interface exposes 1 input channel");
+  });
+
+  it("keeps multitrack recording gated behind a valid future preflight mode", () => {
+    let project = addTrackToProject(createDemoProject(), "live-vocals").project;
+    project = addTrackToProject(project, "live-instrument").project;
+    project.tracks.find((track) => track.id === "live-vocals")!.armed = true;
+    project.tracks.find((track) => track.id === "live-instrument")!.armed = true;
+
+    const alphaPlan = buildRecordingInputPreflight(project, {
+      availableInputDevices: [{ id: "default-input", name: "Default input", channelCount: 2 }]
+    });
+    const futurePlan = buildRecordingInputPreflight(project, {
+      allowMultipleArmedTracks: true,
+      availableInputDevices: [{ id: "default-input", name: "Default input", channelCount: 2 }]
+    });
+
+    expect(alphaPlan.ok).toBe(false);
+    expect(alphaPlan.errors.join("\n")).toContain("Only one live audio track can be armed");
+    expect(futurePlan.ok).toBe(false);
+    expect(futurePlan.errors.join("\n")).toContain("Recording channel 1 is assigned to both Live Vocals and Live Instrument");
   });
 
   it("preserves fractional recording placement at beat-level starts", () => {

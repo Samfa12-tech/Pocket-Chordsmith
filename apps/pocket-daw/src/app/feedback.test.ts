@@ -117,7 +117,16 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
       playbackCaptureRenderedFrameCount: null,
       playbackStopRenderedFrameCount: null,
       playbackSampleRate: null,
-      timingNotes: []
+      timingNotes: [],
+      inputPreflight: {
+        ok: false,
+        mode: "single-track",
+        armedTrackCount: 0,
+        selectedTrackId: null,
+        capturePlan: [],
+        errors: ["Arm one live audio track before recording."],
+        warnings: []
+      }
     },
     updater: {
       status: "not-available",

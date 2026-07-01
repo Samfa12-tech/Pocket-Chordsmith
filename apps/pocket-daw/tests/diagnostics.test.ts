@@ -7,7 +7,9 @@ import { createUndoStack } from "../src/daw/undo";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
 import { activateAudioTake, setAudioTakeArchived } from "../src/daw/clips";
 import { addMediaPoolItem, createMediaPoolItem, linkFreezeRenderCacheItem, markMediaPoolItemMissing } from "../src/daw/mediaPool";
+import { setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
 import { addReturnTrack, setTrackSendLevel, setTrackSendMode } from "../src/daw/routing";
+import { addTrackToProject } from "../src/daw/tracks";
 
 describe("tester diagnostics", () => {
   it("builds an installed-alpha payload with project, updater, audio and media state", () => {
@@ -123,6 +125,37 @@ describe("tester diagnostics", () => {
       playbackSampleRate: 48000
     });
     expect(payload.recording.timingNotes.join("\n")).toContain("No automatic latency compensation");
+  });
+
+  it("includes recording input preflight diagnostics for manual smoke", () => {
+    let state = createInitialState();
+    let project = addTrackToProject(currentProject(state), "live-vocals").project;
+    project.tracks.find((track) => track.id === "live-vocals")!.armed = true;
+    project = setTrackRecordingInputAssignment(project, "live-vocals", {
+      deviceId: "small-interface",
+      mode: "stereo",
+      channelPair: [0, 1]
+    });
+    project.audioDeviceSettings.devices = [{
+      id: "small-interface",
+      name: "Small Interface",
+      kind: "input",
+      supportedChannels: [1]
+    }];
+    state = { ...state, undoStack: createUndoStack(project) };
+    const engine = new AudioEngine(project);
+
+    const payload = buildTesterDiagnosticsPayload(state, engine.getDiagnostics());
+
+    expect(payload.recording.inputPreflight).toMatchObject({
+      ok: false,
+      mode: "single-track",
+      armedTrackCount: 1,
+      selectedTrackId: "live-vocals",
+      capturePlan: []
+    });
+    expect(payload.recording.inputPreflight.errors.join("\n")).toContain("needs channels 1-2");
+    expect(diagnosticsJson(payload)).toContain('"inputPreflight"');
   });
 
   it("captures bounded live performance samples for MCP stress-test analysis", () => {

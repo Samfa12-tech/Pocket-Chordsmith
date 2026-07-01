@@ -41,6 +41,16 @@ export type TrackRole =
 
 export const RECORDING_CHANNEL_MODES = ["mono", "stereo"] as const;
 export type RecordingChannelMode = typeof RECORDING_CHANNEL_MODES[number];
+export const RECORDING_INPUT_MODES = ["mono", "stereo", "split-mono"] as const;
+export type RecordingInputMode = typeof RECORDING_INPUT_MODES[number];
+
+export interface TrackRecordingInput {
+  deviceId: string | null;
+  mode: RecordingInputMode;
+  channelIndex?: number;
+  channelPair?: [number, number];
+  allowDuplicateChannels?: boolean;
+}
 
 export interface SourceRef {
   id: string;
@@ -180,6 +190,7 @@ export interface Track {
   folderId?: string | null;
   recordKind?: "none" | "live-vocals" | "live-instrument";
   inputDeviceId?: string | null;
+  recordingInput?: TrackRecordingInput;
   monitorEnabled?: boolean;
   recordingChannelMode?: RecordingChannelMode;
   active?: boolean;

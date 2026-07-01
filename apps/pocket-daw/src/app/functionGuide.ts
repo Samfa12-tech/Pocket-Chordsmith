@@ -2229,6 +2229,30 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "AI / MCP Bridge",
+    control: "File MCP Folder Commands",
+    selector: "set_track_folder, toggle_folder_expanded, toggle_track_mute, toggle_track_solo",
+    does: "Lets file-first MCP assign timeline lanes to folder tracks, collapse or expand the folder, and use folder Mute/Solo as child-lane group controls.",
+    useWhen: "Use when a human or AI counterpart needs to organize a busy project or smoke folder behavior without driving the visual UI.",
+    aiNote: "These commands reuse existing undoable app command paths. Folder commands still do not imply folder-bus routing, sends, FX inheritance or export grouping."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "File MCP Verify Game Pack",
+    selector: "pocket_daw_verify_game_pack",
+    does: "Verifies an existing Godot/Web game-pack ZIP against its manifest, embedded source project, file-size summary, deterministic paths and WAV-only codec boundary.",
+    useWhen: "Use after exporting a pack and before any Godot/Web target-runtime smoke claim.",
+    aiNote: "Read-only. Requires an explicit ZIP path and still reports that manual target-runtime smoke is required before release claims."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "Recording Input Preflight Diagnostics",
+    selector: "recording.inputPreflight, recordingInputPreflight",
+    does: "Reports whether the current armed live tracks and saved input channel assignments are valid before native recording starts.",
+    useWhen: "Use when recording will not start, when checking mono/stereo channel assignments, or before future multitrack hardware smoke.",
+    aiNote: "Exposed in support diagnostics and file-first MCP summaries. It is a readiness report, not a claim that simultaneous multitrack recording is shipped."
+  },
+  {
+    surface: "AI / MCP Bridge",
     control: "Copy MCP Setup",
     actionId: "copy-mcp-setup",
     does: "Copies command, JSON, TOML, or all MCP setup snippets.",

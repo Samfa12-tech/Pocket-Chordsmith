@@ -46,9 +46,12 @@ import {
   setSectionBarsCommand,
   setSectionChordCommand,
   setTrackPanCommand,
+  setTrackFolderCommand,
   setTrackVolumeCommand,
   splitTimelineSelectionCommand,
+  toggleFolderExpandedCommand,
   toggleTrackMuteCommand,
+  toggleTrackSoloCommand,
   updateAutomationPointCommand,
   updateProjectMeterMapPointCommand
 } from "../app/commands.ts";
@@ -58,6 +61,7 @@ import { DRUM_LANE_IDS, type DrumLaneId } from "../daw/drumLanes.ts";
 import { createGameExportManifest, createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs.ts";
 import { arrangeMidiToHeavyMetalProject } from "../daw/midiArrangement.ts";
 import { validateProjectInvariants } from "../daw/projectInvariants.ts";
+import { buildRecordingInputPreflight } from "../daw/recordingInputs.ts";
 import { GAME_STATE_MARKERS, POCKET_DAW_SCHEMA_VERSION, POCKET_DAW_VERSION, type GameStateMarkerId, type PocketDawProject } from "../daw/schema.ts";
 
 export const POCKET_DAW_MCP_TOOLS = [
@@ -68,6 +72,7 @@ export const POCKET_DAW_MCP_TOOLS = [
   "pocket_daw_release_master",
   "pocket_daw_apply_commands",
   "pocket_daw_export_plan",
+  "pocket_daw_verify_game_pack",
   "pocket_daw_live_status",
   "pocket_daw_live_control",
   "pocket_daw_live_performance",
@@ -79,7 +84,10 @@ export type PocketDawMcpTool = (typeof POCKET_DAW_MCP_TOOLS)[number];
 export type PocketDawMcpCommand =
   | { type: "set_track_volume"; trackId: string; volume: number }
   | { type: "set_track_pan"; trackId: string; pan: number }
+  | { type: "set_track_folder"; trackId: string; folderId?: string | null }
+  | { type: "toggle_folder_expanded"; folderId: string }
   | { type: "toggle_track_mute"; trackId: string }
+  | { type: "toggle_track_solo"; trackId: string }
   | { type: "move_clip_to_bar"; clipId: string; startBar: number }
   | { type: "set_timeline_selection"; startBar: number; endBar: number }
   | { type: "set_timeline_selection_to_clip"; clipId: string }
@@ -170,6 +178,8 @@ export async function callPocketDawMcpTool(name: string, args: unknown = {}): Pr
       return jsonToolResult(applyCommands(args));
     case "pocket_daw_export_plan":
       return jsonToolResult(exportPlan(args));
+    case "pocket_daw_verify_game_pack":
+      return jsonToolResult(await verifyGamePack(args));
     case "pocket_daw_live_status":
       return jsonToolResult(await liveStatus(args));
     case "pocket_daw_live_control":
@@ -246,6 +256,15 @@ export function pocketDawMcpToolList() {
       name: "pocket_daw_export_plan",
       description: "Summarize stem, section-loop and game-pack export plans without WebAudio/native rendering.",
       inputSchema: objectSchema({ projectPath: stringSchema(), raw: stringSchema() }),
+      annotations: readOnlyToolAnnotations()
+    },
+    {
+      name: "pocket_daw_verify_game_pack",
+      description: "Verify an existing Godot/Web game-pack ZIP against its manifest, embedded source project and WAV-only codec boundary.",
+      inputSchema: objectSchema({
+        zipPath: stringSchema(),
+        kind: { type: "string", enum: ["godot-adaptive-pack", "web-game-pack"] }
+      }, ["zipPath"]),
       annotations: readOnlyToolAnnotations()
     },
     {
@@ -437,6 +456,16 @@ function exportPlan(args: unknown) {
   };
 }
 
+async function verifyGamePack(args: unknown) {
+  const options = asRecord(args);
+  const zipPath = resolveUserPath(options.zipPath);
+  const kind = stringValue(options.kind);
+  const verifier = await import("../../scripts/verify-game-pack.mjs") as {
+    verifyGamePackZip: (zipPath: string, options?: { kind?: string }) => unknown;
+  };
+  return verifier.verifyGamePackZip(zipPath, kind ? { kind } : {});
+}
+
 async function liveStatus(args: unknown) {
   const session = readLiveSession(asRecord(args));
   if (!session.ok) return session;
@@ -558,8 +587,14 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return setTrackVolumeCommand(state, command.trackId, command.volume);
     case "set_track_pan":
       return setTrackPanCommand(state, command.trackId, command.pan);
+    case "set_track_folder":
+      return setTrackFolderCommand(state, command.trackId, command.folderId || null);
+    case "toggle_folder_expanded":
+      return toggleFolderExpandedCommand(state, command.folderId);
     case "toggle_track_mute":
       return toggleTrackMuteCommand(state, command.trackId);
+    case "toggle_track_solo":
+      return toggleTrackSoloCommand(state, command.trackId);
     case "move_clip_to_bar":
       return moveClipToBarCommand(state, command.clipId, command.startBar);
     case "set_timeline_selection":
@@ -750,6 +785,7 @@ function summarizeProject(project: PocketDawProject) {
     clipCount: project.timeline.clips.length,
     mediaPoolCount: project.mediaPool.length,
     audioTakeSummary: summarizeAudioTakes(project),
+    recordingInputPreflight: buildRecordingInputPreflight(project),
     tracks: project.tracks.map((track) => ({
       id: track.id,
       name: track.name,
@@ -758,7 +794,9 @@ function summarizeProject(project: PocketDawProject) {
       volume: track.volume,
       pan: track.pan,
       mute: track.mute,
-      solo: track.solo
+      solo: track.solo,
+      folderId: track.folderId || null,
+      folderExpanded: track.trackType === "folder" ? track.metadata?.folderExpanded !== false : undefined
     })),
     clips: project.timeline.clips.map((clip) => ({
       id: clip.id,
@@ -864,9 +902,12 @@ function commandSchema() {
         type: "string",
         enum: [
           "set_track_volume",
-         "set_track_pan",
-         "toggle_track_mute",
-         "move_clip_to_bar",
+          "set_track_pan",
+          "set_track_folder",
+          "toggle_folder_expanded",
+          "toggle_track_mute",
+          "toggle_track_solo",
+          "move_clip_to_bar",
           "set_timeline_selection",
           "set_timeline_selection_to_clip",
           "set_timeline_selection_to_loop",
@@ -880,7 +921,7 @@ function commandSchema() {
           "activate_audio_take",
           "set_audio_take_archived",
           "comp_audio_take_from_bar",
-         "add_marker",
+          "add_marker",
           "add_game_state_marker",
           "set_section_bars",
           "set_section_chord",
@@ -912,6 +953,7 @@ function commandSchema() {
         ]
       },
       trackId: stringSchema(),
+      folderId: { oneOf: [stringSchema(), { type: "null" }] },
       clipId: stringSchema(),
       sectionId: stringSchema(),
       laneId: stringSchema(),

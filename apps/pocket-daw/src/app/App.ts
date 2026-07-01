@@ -234,6 +234,7 @@ import { replacePresent } from "../daw/undo";
 import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
 import { POCKET_DAW_VERSION, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
+import { buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError } from "../daw/recordingInputs";
 import { trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToDisplayPosition, snapProjectBarValue } from "../daw/timeline";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeRecordingClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../daw/audioClips";
@@ -2925,14 +2926,20 @@ export class App {
       return;
     }
     const armedTracks = project.tracks.filter((track) => track.armed && track.recordKind && track.recordKind !== "none");
-    if (armedTracks.length !== 1) {
-      this.state.status = armedTracks.length
-        ? "Only one live audio track can be armed for this recording alpha."
-        : "Arm one live audio track before recording.";
+    const inputPreflight = buildRecordingInputPreflight(project);
+    if (!inputPreflight.ok) {
+      this.state.status = inputPreflight.errors[0] || (armedTracks.length ? "Only one live audio track can be armed for this recording alpha." : "Arm one live audio track before recording.");
       this.render({ preserveScroll: true });
       return;
     }
-    const track = armedTracks[0];
+    const capturePlan = inputPreflight.capturePlan[0];
+    const alphaChannelError = nativeRecordingAlphaChannelCompatibilityError(capturePlan);
+    if (alphaChannelError) {
+      this.state.status = alphaChannelError;
+      this.render({ preserveScroll: true });
+      return;
+    }
+    const track = project.tracks.find((item) => item.id === capturePlan.trackId) || armedTracks[0];
     const startBar = Math.max(1, this.state.playheadBar || project.timeline.cursor.bar || 1);
     const sessionId = this.recordingStartToken + 1;
     this.recordingStartToken = sessionId;
@@ -3010,12 +3017,12 @@ export class App {
         projectTitle: project.project.title,
         trackId: track.id,
         trackName: track.name,
-        inputDeviceId: track.inputDeviceId || project.audioDeviceSettings.inputDeviceId,
+        inputDeviceId: capturePlan.deviceId || track.inputDeviceId || project.audioDeviceSettings.inputDeviceId,
         outputDeviceId: project.audioDeviceSettings.outputDeviceId,
         monitorEnabled: !!track.monitorEnabled && !track.mute,
         monitorVolume: track.mute ? 0 : track.volume,
         monitorPan: track.pan,
-        channelMode: track.recordingChannelMode === "stereo" ? "stereo" : "mono",
+        channelMode: capturePlan.mode === "stereo" ? "stereo" : "mono",
         recordingSessionId: sessionId,
         startBar,
         requestedStartSeconds: captureStartTransportSeconds,

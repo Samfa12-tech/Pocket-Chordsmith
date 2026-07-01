@@ -99,6 +99,7 @@ The current no-hidden-compensation rule stays in force:
 ## Verification Targets
 
 - Existing mono alpha tests continue to pass without schema migration surprises.
+- Source preflight can model explicit mono, stereo and future split-mono channel maps, reject unavailable channels, detect duplicate channel assignments for future multitrack mode, and keep non-default channel maps out of the current native recording alpha until the native writer can honor them.
 - A stereo recording fixture creates a two-channel WAV and records `channels: 2` plus channel-pair metadata.
 - A split-mono fixture records two mono files from one shared capture session and one shared `takeGroupId`.
 - Simultaneous captures have matching requested start metadata and comparable first-frame evidence.
@@ -108,4 +109,4 @@ The current no-hidden-compensation rule stays in force:
 
 ## Release Boundary
 
-Until the grouped native capture path and tests exist, release notes should continue to say: one armed live track at a time only; no simultaneous multitrack capture, punch-in/out, comping, latency compensation UI, ASIO, or FX monitoring. Source-level mono/stereo mode support still requires installed hardware smoke before release copy should lean on it.
+Until the grouped native capture path and tests exist, release notes should continue to say: one armed live track at a time only; no simultaneous multitrack capture, non-default native channel routing, punch-in/out, comping, latency compensation UI, ASIO, or FX monitoring. Source-level mono/stereo mode and input-preflight support still require installed hardware smoke before release copy should lean on them.

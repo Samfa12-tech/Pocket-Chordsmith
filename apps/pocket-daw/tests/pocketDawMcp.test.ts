@@ -11,8 +11,10 @@ import { addFxSlot } from "../src/daw/fx";
 import { addMidiNote, importMidiFileToProject, midiDataFromClip } from "../src/daw/midiClips";
 import { bassOverlayCount } from "../src/daw/bassOverlays";
 import { chordOverlayCount } from "../src/daw/chordOverlays";
+import { createGamePackZipBlob } from "../src/daw/exportJobs";
 import { melodyOverlayCount } from "../src/daw/melodyOverlays";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
+import { setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
 import { addTrackToProject } from "../src/daw/tracks";
 import { metalArrangementMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 
@@ -33,6 +35,7 @@ describe("Pocket DAW MCP tools", () => {
       "pocket_daw_release_master",
       "pocket_daw_apply_commands",
       "pocket_daw_export_plan",
+      "pocket_daw_verify_game_pack",
       "pocket_daw_live_status",
       "pocket_daw_live_control",
       "pocket_daw_live_performance",
@@ -53,6 +56,9 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("add_game_state_marker");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("comp_audio_take_from_bar");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_timeline_selection");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_track_folder");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("toggle_folder_expanded");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("toggle_track_solo");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_timeline_selection");
@@ -73,11 +79,27 @@ describe("Pocket DAW MCP tools", () => {
     expect(toolList.find((tool) => tool.name === "pocket_daw_release_master")?.inputSchema).toMatchObject({
       required: ["outputPath"]
     });
+    expect(toolList.find((tool) => tool.name === "pocket_daw_verify_game_pack")?.inputSchema).toMatchObject({
+      required: ["zipPath"]
+    });
   });
 
   it("reads and summarizes a project without writing", async () => {
-    const project = createDemoProject();
+    let project = createDemoProject();
     project.timeline.selection = { startBar: 2, endBar: 6, source: "manual" };
+    project = addTrackToProject(project, "live-vocals").project;
+    project.tracks.find((track) => track.id === "live-vocals")!.armed = true;
+    project = setTrackRecordingInputAssignment(project, "live-vocals", {
+      deviceId: "small-interface",
+      mode: "stereo",
+      channelPair: [0, 1]
+    });
+    project.audioDeviceSettings.devices = [{
+      id: "small-interface",
+      name: "Small Interface",
+      kind: "input",
+      supportedChannels: [1]
+    }];
     const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_read_project", {
       raw: buildPocketDawProjectFile(project)
     }));
@@ -86,6 +108,13 @@ describe("Pocket DAW MCP tools", () => {
     expect(result.summary.title).toBe(project.project.title);
     expect(result.summary.trackCount).toBe(project.tracks.length);
     expect(result.summary.timelineSelection).toEqual({ startBar: 2, endBar: 6, source: "manual" });
+    expect(result.summary.recordingInputPreflight).toMatchObject({
+      ok: false,
+      armedTrackCount: 1,
+      selectedTrackId: "live-vocals",
+      capturePlan: []
+    });
+    expect(result.summary.recordingInputPreflight.errors.join("\n")).toContain("needs channels 1-2");
     expect(result.project).toBeUndefined();
   });
 
@@ -113,6 +142,53 @@ describe("Pocket DAW MCP tools", () => {
       bar: 5,
       name: "Combat",
       markerType: "game-state"
+    });
+  });
+
+  it("applies folder group commands through the file-first command path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-mcp-folder-"));
+    const outputPath = join(dir, "folder-group.pocketdaw");
+    const withFolder = addTrackToProject(createDemoProject(), "folder");
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(withFolder.project),
+      outputPath,
+      commands: [
+        { type: "set_track_folder", trackId: "bass", folderId: withFolder.trackId },
+        { type: "toggle_folder_expanded", folderId: withFolder.trackId },
+        { type: "toggle_track_mute", trackId: withFolder.trackId },
+        { type: "toggle_track_solo", trackId: withFolder.trackId }
+      ]
+    }));
+    const edited = JSON.parse(readFileSync(outputPath, "utf8"));
+    const folder = edited.tracks.find((track: { id: string }) => track.id === withFolder.trackId);
+    const bass = edited.tracks.find((track: { id: string }) => track.id === "bass");
+    const summaryFolder = result.summary.tracks.find((track: { id: string }) => track.id === withFolder.trackId);
+    const summaryBass = result.summary.tracks.find((track: { id: string }) => track.id === "bass");
+
+    expect(result.written).toBe(outputPath);
+    expect(result.statuses).toEqual([
+      "Moved Bass into Folder.",
+      "Folder collapsed.",
+      "Toggled track mute.",
+      "Toggled track solo."
+    ]);
+    expect(folder).toMatchObject({
+      mute: true,
+      solo: true,
+      metadata: { folderExpanded: false, folderMode: "organizational" }
+    });
+    expect(bass.folderId).toBe(withFolder.trackId);
+    expect(summaryFolder).toMatchObject({
+      type: "folder",
+      folderId: null,
+      folderExpanded: false,
+      mute: true,
+      solo: true
+    });
+    expect(summaryBass).toMatchObject({
+      id: "bass",
+      folderId: withFolder.trackId
     });
   });
 
@@ -720,6 +796,35 @@ describe("Pocket DAW MCP tools", () => {
       delivery: "local-loopback-with-zip-fallback",
       targetRuntimeSmoke: "manual-required-before-release-claim"
     });
+  });
+
+  it("verifies an existing game-pack ZIP through the file-first MCP tool", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-mcp-game-pack-"));
+    const project = createDemoProject();
+    const pack = await createGamePackZipBlob(project, "web-game-pack", {
+      sourceProjectContents: JSON.stringify(project),
+      renderWav: async (renderProject) => new Blob([`bars:${renderProject.timeline.bars}`], { type: "audio/wav" })
+    });
+    const zipPath = join(dir, "web-game-pack.zip");
+    writeFileSync(zipPath, Buffer.from(await pack.blob.arrayBuffer()));
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_verify_game_pack", {
+      zipPath,
+      kind: "web-game-pack"
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.zipPath).toBe(zipPath);
+    expect(result.kind).toBe("web-game-pack");
+    expect(result.manifestPath).toBe("manifests/web-game-manifest.json");
+    expect(result.entryCount).toBeGreaterThan(0);
+    expect(result.warnings.join("\n")).toContain("Manual target-runtime smoke");
+  });
+
+  it("requires an explicit game-pack ZIP path for MCP verification", async () => {
+    await expect(callPocketDawMcpTool("pocket_daw_verify_game_pack", {
+      kind: "godot-adaptive-pack"
+    })).rejects.toThrow("A file path is required");
   });
 
   it("rejects unknown command types", async () => {
