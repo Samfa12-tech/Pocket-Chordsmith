@@ -372,6 +372,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(FUNCTION_ACTION_REFERENCE.length).toBeGreaterThan(200);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "collect-media")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "convert-midi-drums")).toBe(true);
+    expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "convert-midi-arrangement")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-ai-bridge-enabled")).toBe(true);
     [
       "data-chord-instrument",
@@ -443,6 +444,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Toggle Folder Track | `data-folder-toggle`");
     expect(catalog).toContain("| Collect Media | `data-action=collect-media`");
     expect(catalog).toContain("| Map Drums | `data-action=convert-midi-drums`");
+    expect(catalog).toContain("| Map Arrangement | `data-action=convert-midi-arrangement`");
     expect(catalog).toContain("| Download And Install Update | `data-action=updater-download-install`");
     expect(catalog).toContain("| Enable Live App Bridge | `data-ai-bridge-enabled`");
     expect(catalog).toContain("| Live MCP Recording Input Channel | `pocket_daw_live_apply_commands:set_recording_input_channel`");
@@ -1911,6 +1913,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Map Chords");
     expect(html).toContain('data-action="convert-midi-melody"');
     expect(html).toContain("Map Melody");
+    expect(html).toContain('data-action="convert-midi-arrangement"');
+    expect(html).toContain("Map Arrangement");
     expect(html).toContain('data-action="adopt-midi-tempo"');
     expect(html).toContain("Adopt Tempo");
     expect(html).toContain('data-action="adopt-midi-tempo-map"');

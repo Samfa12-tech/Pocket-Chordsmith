@@ -1768,6 +1768,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "MIDI To Chordsmith",
+    control: "Map Arrangement",
+    actionId: "convert-midi-arrangement",
+    does: "Maps drums, bass, chord groups and melody notes from the selected MIDI clip into generated overlays in one undoable, source-preserving pass.",
+    useWhen: "Use when a MIDI clip should become editable Chordsmith-style arrangement material without replacing the raw MIDI import.",
+    aiNote: "Treat this as an interpretation helper; preserve the raw MIDI clip and listen/inspect each role after mapping."
+  },
+  {
+    surface: "MIDI To Chordsmith",
     control: "Adopt Tempo",
     actionId: "adopt-midi-tempo",
     does: "Applies the imported MIDI start tempo and supported /4 meter to project globals.",

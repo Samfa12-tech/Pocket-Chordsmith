@@ -8,6 +8,7 @@ import {
   convertMidiBassToGeneratedOverlaysCommand,
   convertMidiChordsToGeneratedOverlaysCommand,
   convertMidiDrumsToBranchOverlaysCommand,
+  convertMidiArrangementToGeneratedOverlaysCommand,
   convertMidiMelodyToGeneratedOverlaysCommand,
   copySelectedClipRangeCommand,
   cropSelectedClipToTimelineSelectionCommand,
@@ -143,6 +144,34 @@ describe("generated clip edit commands", () => {
     expect(edited.selectedClipId).toBe(imported.clipId);
     expect(edited.status).toContain("Mapped");
     expect(edited.status).toContain("MIDI chord");
+  });
+
+  it("maps selected MIDI clips into a full generated arrangement without replacing the raw clip", () => {
+    const state = createInitialState();
+    const imported = importMidiFileToProject(state.undoStack.present, parseStandardMidiFile(metalArrangementMidiBytes()), "metal.mid");
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+    state.chordsmithEditorSectionId = "A";
+
+    const edited = convertMidiArrangementToGeneratedOverlaysCommand(state);
+    const sourceClip = edited.undoStack.present.timeline.clips.find((clip) => clip.id === imported.clipId) as Clip | undefined;
+
+    expect(getDrumBranchStepLevel(edited.undoStack.present, "A", "kick", 0)).toBeGreaterThan(0);
+    expect(bassOverlayCount(edited.undoStack.present, "A")).toBe(2);
+    expect(chordOverlayCount(edited.undoStack.present, "A")).toBe(2);
+    expect(melodyOverlayCount(edited.undoStack.present, "A", 0)).toBeGreaterThanOrEqual(3);
+    expect(sourceClip?.type).toBe("midi");
+    expect(sourceClip?.mediaPoolItemId).toBe(imported.item.id);
+    expect(sourceClip?.muted).not.toBe(true);
+    expect(edited.undoStack.past).toHaveLength(1);
+    expect(edited.selectedClipId).toBe(imported.clipId);
+    expect(edited.selectedTrackId).toBe(imported.trackId);
+    expect(edited.status).toContain("Mapped MIDI arrangement from metal.mid");
+    expect(edited.status).toContain("drums");
+    expect(edited.status).toContain("bass");
+    expect(edited.status).toContain("chords");
+    expect(edited.status).toContain("melody");
   });
 
   it("adopts imported MIDI start tempo and supported meter through the command path", () => {

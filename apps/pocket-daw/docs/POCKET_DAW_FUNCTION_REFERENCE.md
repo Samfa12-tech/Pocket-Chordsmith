@@ -97,7 +97,7 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | Swing And Groove | Applies swing percentages or named groove templates. | Adding feel after basic timing is correct. | Record chosen groove/swing in metadata where possible. |
 | Velocity And Pitch Transforms | Applies bulk velocity shaping or pitch shifts. | Humanization, leveling, octave/semitone shifts. | Check pitch range after transforms, especially drums/bass. |
 | Controllers, Program, Bend, Aftertouch | Adds/edits/duplicates/deletes expressive MIDI events. MIDI preview/render interprets channel-matched CC7 volume, CC10 pan, CC11 expression, CC64 sustain and pitch-bend detune. | MIDI expression and interchange. | Imported controller data may be dense; keep edits bounded. |
-| MIDI To Chordsmith Mapping | Maps MIDI into generated drum/bass/chord/melody overlays and can adopt tempo/meter. | Turning a MIDI file into editable Chordsmith-style source material. | Conversion is an aid, not proof of musical correctness. Listen and inspect. |
+| MIDI To Chordsmith Mapping | Maps MIDI into generated drum/bass/chord/melody overlays one role at a time or as one source-preserving Map Arrangement pass, and can adopt tempo/meter. | Turning a MIDI file into editable Chordsmith-style source material without replacing the raw MIDI import. | Conversion is an aid, not proof of musical correctness. Keep the raw MIDI clip and listen/inspect each generated role. |
 
 ## Audio Clip Editing
 

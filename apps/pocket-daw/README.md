@@ -61,6 +61,7 @@ Before describing any release as sound-parity work, check `../../docs/POCKET_AUD
 Run `npm run mcp:pocket-daw` to start the local stdio MCP bridge. It exposes structured tools for reading, validating, converting, editing and export-planning `.pocketdaw` projects without driving the UI.
 
 The file bridge can also arrange a `.mid` file into a generated Chordsmith-style heavy-metal Pocket DAW project with metal drums, bass, distorted lead, rhythm guitar and a muted raw-MIDI reference clip via `pocket_daw_arrange_midi`.
+For already-imported MIDI clips, `pocket_daw_apply_commands` supports `convert_midi_arrangement` to map drums, bass, chord groups and melody into generated overlays while preserving the raw MIDI clip as the DAW source.
 
 Pocket DAW `0.6.13` added `Help -> AI / MCP Bridge` in the installed app. The panel keeps copy-ready command, Claude/JSON and Codex TOML snippets, and can enable a token-protected live localhost bridge for the running app. Live MCP tools can read app status, control transport, select tracks/clips, save an already-saved project and apply safe mixer edits. File/project MCP tools still work while Pocket DAW is closed. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
 

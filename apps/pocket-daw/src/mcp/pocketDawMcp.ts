@@ -15,6 +15,7 @@ import {
   branchGeneratedDrumsCommand,
   clearTimelineSelectionCommand,
   compAudioTakeFromPlayheadCommand,
+  convertMidiArrangementToGeneratedOverlaysCommand,
   convertMidiBassToGeneratedOverlaysCommand,
   convertMidiChordsToGeneratedOverlaysCommand,
   convertMidiDrumsToBranchOverlaysCommand,
@@ -115,6 +116,7 @@ export type PocketDawMcpCommand =
   | { type: "convert_midi_bass"; clipId: string; sectionId?: string }
   | { type: "convert_midi_chords"; clipId: string; sectionId?: string }
   | { type: "convert_midi_melody"; clipId: string; sectionId?: string; trackIndex?: number }
+  | { type: "convert_midi_arrangement"; clipId: string; sectionId?: string; trackIndex?: number }
   | { type: "adopt_midi_tempo"; clipId: string }
   | { type: "adopt_midi_tempo_map"; clipId: string }
   | { type: "adopt_midi_meter_map"; clipId: string }
@@ -653,6 +655,8 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return convertMidiChordsToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A");
     case "convert_midi_melody":
       return convertMidiMelodyToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A", command.trackIndex || 0);
+    case "convert_midi_arrangement":
+      return convertMidiArrangementToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A", command.trackIndex || 0);
     case "adopt_midi_tempo":
       return adoptMidiTempoMapStartCommand(state, command.clipId);
     case "adopt_midi_tempo_map":
@@ -950,6 +954,7 @@ function commandSchema() {
           "convert_midi_bass",
           "convert_midi_chords",
           "convert_midi_melody",
+          "convert_midi_arrangement",
           "adopt_midi_tempo",
           "adopt_midi_tempo_map",
           "adopt_midi_meter_map",

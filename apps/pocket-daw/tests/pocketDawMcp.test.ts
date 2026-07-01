@@ -621,6 +621,25 @@ describe("Pocket DAW MCP tools", () => {
     });
   });
 
+  it("maps MIDI clips into generated arrangements through the file-first command path", async () => {
+    const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(metalArrangementMidiBytes()), "metal.mid");
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(imported.project),
+      commands: [
+        { type: "convert_midi_arrangement", clipId: imported.clipId, sectionId: "A", trackIndex: 0 }
+      ]
+    }));
+    const sourceClip = result.project.timeline.clips.find((clip: { id: string }) => clip.id === imported.clipId);
+
+    expect(result.statuses[0]).toContain("Mapped MIDI arrangement");
+    expect(result.project.tracks.some((track: { id: string }) => track.id === "drums-kick")).toBe(true);
+    expect(bassOverlayCount(result.project, "A")).toBe(2);
+    expect(chordOverlayCount(result.project, "A")).toBe(2);
+    expect(melodyOverlayCount(result.project, "A", 0)).toBeGreaterThanOrEqual(3);
+    expect(sourceClip).toMatchObject({ type: "midi", mediaPoolItemId: imported.item.id });
+  });
+
   it("adopts imported MIDI tempo through the file-first command path", async () => {
     const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(tempoMapMidiBytes()), "tempo-map.mid");
     imported.project.project.bpm = 100;

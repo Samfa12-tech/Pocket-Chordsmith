@@ -1137,6 +1137,41 @@ export function convertMidiChordsToGeneratedOverlaysCommand(state: AppState, cli
   };
 }
 
+export function convertMidiArrangementToGeneratedOverlaysCommand(
+  state: AppState,
+  clipId = state.selectedClipId || "",
+  sectionId = state.chordsmithEditorSectionId || "A",
+  melodyTrackIndex = 0
+): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping an arrangement." };
+
+  const drums = convertMidiClipToDrumBranchOverlays(state.undoStack.present, clipId, sectionId);
+  const bass = convertMidiClipToBassOverlays(drums.project, clipId, sectionId);
+  const chords = convertMidiClipToChordOverlays(bass.project, clipId, sectionId);
+  const melody = convertMidiClipToMelodyOverlays(chords.project, clipId, sectionId, melodyTrackIndex);
+  const totalWritten = drums.written + bass.written + chords.written + melody.written;
+  const totalSkipped = drums.skipped + bass.skipped + chords.skipped + melody.skipped;
+  const totalMerged = drums.merged + bass.merged + chords.merged + melody.merged;
+
+  if (!totalWritten) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: totalSkipped ? `No supported arrangement material found in ${clip.name}; skipped ${totalSkipped}.` : `No MIDI notes found to map in ${clip.name}.`
+    };
+  }
+
+  const summary = `${drums.written} drums, ${bass.written} bass, ${chords.written} chords, ${melody.written} melody`;
+  return {
+    ...commitProject(state, melody.project, `Mapped MIDI arrangement from ${clip.name} to Section ${melody.sectionId}: ${summary}${totalMerged ? ` (${totalMerged} merged/grouped)` : ""}. Raw MIDI clip preserved.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId,
+    chordsmithEditorSectionId: melody.sectionId
+  };
+}
+
 export function adoptMidiTempoMapStartCommand(state: AppState, clipId = state.selectedClipId || ""): AppState {
   const project = state.undoStack.present;
   const clip = project.timeline.clips.find((item) => item.id === clipId);

@@ -1459,6 +1459,7 @@ function renderMidiClipEditor(clip: Clip): string {
         <button type="button" title="Map low non-drum MIDI notes into generated bass overlays" data-action="convert-midi-bass">Map Bass</button>
         <button type="button" title="Map simultaneous non-drum MIDI notes into generated chord overlays" data-action="convert-midi-chords">Map Chords</button>
         <button type="button" title="Map non-drum MIDI notes into generated melody overlays" data-action="convert-midi-melody">Map Melody</button>
+        <button type="button" title="Map drums, bass, chords and melody from this MIDI clip into generated overlays while preserving the raw MIDI clip" data-action="convert-midi-arrangement">Map Arrangement</button>
         <button type="button" title="Adopt the imported MIDI start tempo and supported /4 meter as project globals" data-action="adopt-midi-tempo">Adopt Tempo</button>
         <button type="button" title="Convert imported MIDI tempo events into project tempo automation" data-action="adopt-midi-tempo-map">Tempo Lane</button>
         <button type="button" title="Convert imported MIDI time-signature events into the project meter map" data-action="adopt-midi-meter-map">Meter Lane</button>

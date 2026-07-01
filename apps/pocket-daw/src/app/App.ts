@@ -104,6 +104,7 @@ import {
   convertMidiBassToGeneratedOverlaysCommand,
   convertMidiChordsToGeneratedOverlaysCommand,
   convertMidiDrumsToBranchOverlaysCommand,
+  convertMidiArrangementToGeneratedOverlaysCommand,
   convertMidiMelodyToGeneratedOverlaysCommand,
   cycleDrumTupletCommand,
   cycleBassStepCommand,
@@ -2716,6 +2717,11 @@ export class App {
       audio: "composition-events",
       preserveScroll: true,
       reason: "convert-midi-melody"
+    });
+    if (action === "convert-midi-arrangement") this.applyProjectState(convertMidiArrangementToGeneratedOverlaysCommand(this.state), {
+      audio: "composition-events",
+      preserveScroll: true,
+      reason: "convert-midi-arrangement"
     });
     if (action === "adopt-midi-tempo") this.applyProjectState(adoptMidiTempoMapStartCommand(this.state), {
       audio: "composition-events",
