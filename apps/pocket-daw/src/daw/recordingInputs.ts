@@ -101,6 +101,24 @@ export function buildRecordingInputPreflight(
   };
 }
 
+export function buildNativeRecordingAlphaInputPreflight(
+  project: PocketDawProject,
+  options: RecordingInputPreflightOptions = {}
+): RecordingInputPreflight {
+  const preflight = buildRecordingInputPreflight(project, options);
+  if (!preflight.capturePlan.length) return preflight;
+  const alphaErrors = preflight.capturePlan
+    .map((item) => nativeRecordingAlphaChannelCompatibilityError(item))
+    .filter((error): error is string => Boolean(error));
+  if (!alphaErrors.length) return preflight;
+  return {
+    ...preflight,
+    ok: false,
+    capturePlan: [],
+    errors: [...preflight.errors, ...alphaErrors]
+  };
+}
+
 export function nativeRecordingAlphaChannelCompatibilityError(item: RecordingInputCapturePlanItem | null | undefined): string | null {
   if (!item) return "No recording capture plan is available.";
   if (item.mode === "mono" && item.channelMap.length === 1 && item.channelMap[0] === 0) return null;

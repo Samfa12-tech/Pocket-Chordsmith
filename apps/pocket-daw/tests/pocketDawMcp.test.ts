@@ -59,6 +59,7 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_track_folder");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("toggle_folder_expanded");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("toggle_track_solo");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_recording_input_channel");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_timeline_selection");
@@ -190,6 +191,38 @@ describe("Pocket DAW MCP tools", () => {
       id: "bass",
       folderId: withFolder.trackId
     });
+  });
+
+  it("applies explicit recording input channel assignment through the file-first command path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-mcp-recording-input-"));
+    const outputPath = join(dir, "recording-input.pocketdaw");
+    const withLiveTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    withLiveTrack.project.audioDeviceSettings.devices = [{
+      id: "interface-4",
+      name: "Four Channel Interface",
+      kind: "input",
+      supportedChannels: [1, 2, 4]
+    }];
+    withLiveTrack.project.tracks.find((track) => track.id === withLiveTrack.trackId)!.armed = true;
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(withLiveTrack.project),
+      outputPath,
+      commands: [
+        { type: "set_recording_input_channel", trackId: withLiveTrack.trackId, deviceId: "interface-4", mode: "stereo", channelPair: [2, 3] }
+      ]
+    }));
+    const edited = JSON.parse(readFileSync(outputPath, "utf8"));
+    const liveTrack = edited.tracks.find((track: { id: string }) => track.id === withLiveTrack.trackId);
+
+    expect(result.written).toBe(outputPath);
+    expect(result.statuses).toEqual(["Live Vocals recording input set to Stereo Ch 3-4."]);
+    expect(liveTrack.recordingInput).toMatchObject({
+      deviceId: "interface-4",
+      mode: "stereo",
+      channelPair: [2, 3]
+    });
+    expect(result.summary.recordingInputPreflight.errors.join("\n")).toContain("native recording alpha currently captures Stereo Ch 1-2 only");
   });
 
   it("applies generated drum branch overlay edits through the file-first command path", async () => {

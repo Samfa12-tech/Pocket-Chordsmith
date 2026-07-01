@@ -48,6 +48,7 @@ import {
   setTrackPanCommand,
   setTrackFolderCommand,
   setTrackVolumeCommand,
+  setTrackRecordingInputChannelCommand,
   splitTimelineSelectionCommand,
   toggleFolderExpandedCommand,
   toggleTrackMuteCommand,
@@ -61,7 +62,7 @@ import { DRUM_LANE_IDS, type DrumLaneId } from "../daw/drumLanes.ts";
 import { createGameExportManifest, createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs.ts";
 import { arrangeMidiToHeavyMetalProject } from "../daw/midiArrangement.ts";
 import { validateProjectInvariants } from "../daw/projectInvariants.ts";
-import { buildRecordingInputPreflight } from "../daw/recordingInputs.ts";
+import { buildNativeRecordingAlphaInputPreflight } from "../daw/recordingInputs.ts";
 import { GAME_STATE_MARKERS, POCKET_DAW_SCHEMA_VERSION, POCKET_DAW_VERSION, type GameStateMarkerId, type PocketDawProject } from "../daw/schema.ts";
 
 export const POCKET_DAW_MCP_TOOLS = [
@@ -88,6 +89,8 @@ export type PocketDawMcpCommand =
   | { type: "toggle_folder_expanded"; folderId: string }
   | { type: "toggle_track_mute"; trackId: string }
   | { type: "toggle_track_solo"; trackId: string }
+  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "mono"; channelIndex?: number }
+  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] }
   | { type: "move_clip_to_bar"; clipId: string; startBar: number }
   | { type: "set_timeline_selection"; startBar: number; endBar: number }
   | { type: "set_timeline_selection_to_clip"; clipId: string }
@@ -595,6 +598,8 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return toggleTrackMuteCommand(state, command.trackId);
     case "toggle_track_solo":
       return toggleTrackSoloCommand(state, command.trackId);
+    case "set_recording_input_channel":
+      return setTrackRecordingInputChannelCommand(state, command.trackId, recordingInputChannelValueFromMcpCommand(command), command.deviceId ?? undefined);
     case "move_clip_to_bar":
       return moveClipToBarCommand(state, command.clipId, command.startBar);
     case "set_timeline_selection":
@@ -694,6 +699,14 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
   }
 }
 
+function recordingInputChannelValueFromMcpCommand(command: Extract<PocketDawMcpCommand, { type: "set_recording_input_channel" }>): string {
+  if (command.mode === "stereo") {
+    const pair = Array.isArray(command.channelPair) ? command.channelPair : [0, 1];
+    return `stereo:${Math.max(0, Math.floor(Number(pair[0]) || 0))}:${Math.max(0, Math.floor(Number(pair[1]) || 1))}`;
+  }
+  return `mono:${Math.max(0, Math.floor(Number(command.channelIndex) || 0))}`;
+}
+
 function loadProject(input: ProjectInput): PocketDawProject {
   const raw = typeof input.raw === "string" ? input.raw : readTextInput(input.projectPath);
   return loadPocketDawRaw(raw);
@@ -785,7 +798,7 @@ function summarizeProject(project: PocketDawProject) {
     clipCount: project.timeline.clips.length,
     mediaPoolCount: project.mediaPool.length,
     audioTakeSummary: summarizeAudioTakes(project),
-    recordingInputPreflight: buildRecordingInputPreflight(project),
+    recordingInputPreflight: buildNativeRecordingAlphaInputPreflight(project),
     tracks: project.tracks.map((track) => ({
       id: track.id,
       name: track.name,
@@ -907,6 +920,7 @@ function commandSchema() {
           "toggle_folder_expanded",
           "toggle_track_mute",
           "toggle_track_solo",
+          "set_recording_input_channel",
           "move_clip_to_bar",
           "set_timeline_selection",
           "set_timeline_selection_to_clip",
@@ -953,6 +967,10 @@ function commandSchema() {
         ]
       },
       trackId: stringSchema(),
+      deviceId: { oneOf: [stringSchema(), { type: "null" }] },
+      mode: { type: "string", enum: ["mono", "stereo"] },
+      channelIndex: numberSchema(),
+      channelPair: arraySchema(numberSchema()),
       folderId: { oneOf: [stringSchema(), { type: "null" }] },
       clipId: stringSchema(),
       sectionId: stringSchema(),

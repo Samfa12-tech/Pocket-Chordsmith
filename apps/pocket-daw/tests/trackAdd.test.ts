@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addEmptyMidiClipCommand, addTrackCommand, setTrackFolderCommand, setTrackRecordingChannelModeCommand, toggleFolderExpandedCommand, toggleTrackArmedCommand, toggleTrackMonitorCommand } from "../src/app/commands";
+import { addEmptyMidiClipCommand, addTrackCommand, setTrackFolderCommand, setTrackInputCommand, setTrackRecordingChannelModeCommand, toggleFolderExpandedCommand, toggleTrackArmedCommand, toggleTrackMonitorCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { toggleTrackMute, toggleTrackSolo } from "../src/daw/mixer";
 import { midiDataFromClip } from "../src/daw/midiClips";
@@ -180,5 +180,19 @@ describe("track workflow", () => {
     expect(stereo.status).toContain("recording set to stereo");
     expect(rejected.undoStack.present.tracks.find((track) => track.id === "drums")?.recordingChannelMode).toBe("mono");
     expect(rejected.status).toContain("Only live audio tracks");
+  });
+
+  it("keeps explicit recording input assignment metadata in sync with live track input controls", () => {
+    const state = addTrackCommand(createInitialState(), "live-instrument");
+    const withInput = setTrackInputCommand(state, "live-instrument", "interface-8");
+    const stereo = setTrackRecordingChannelModeCommand(withInput, "live-instrument", "stereo");
+    const track = stereo.undoStack.present.tracks.find((item) => item.id === "live-instrument");
+
+    expect(track?.inputDeviceId).toBe("interface-8");
+    expect(track?.recordingInput).toMatchObject({
+      deviceId: "interface-8",
+      mode: "stereo",
+      channelPair: [0, 1]
+    });
   });
 });

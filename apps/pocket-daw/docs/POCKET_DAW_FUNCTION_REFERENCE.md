@@ -69,6 +69,7 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | Function | What it does | Use when | AI counterpart notes |
 | --- | --- | --- | --- |
 | Clip Mix | Adjusts selected-clip gain and transpose where supported. | Per-clip balance or MIDI/generated pitch changes. | Audio pitch shifting is not fully available; audio clips expose audio-specific controls. |
+| Track Source Editor | Labels generated-role sequencer controls as Chordsmith source edits, separate from selected-clip mix controls. | Editing drums, bass, chords, melody or guitar from the inspector when the user needs source/clip context. | Clip mix controls affect the selected timeline clip; Track source editor controls affect the generated source section. |
 | Section Stem Mutes | Mutes Drums, Bass, Chords, Melody or Guitar only in the selected generated-section clip. | Clip-level variations from one Chordsmith section. | Checked means muted for that clip only. Original Chordsmith source remains unchanged. |
 | Clip Edit Palette | Provides local quick actions for cut/copy/paste/duplicate/split/range/trim/mute/delete. | Editing from the inspector instead of the toolbar. | Routes to the same command layer as menu/toolbar/keyboard edits. |
 | Freeze Selected Clip | Renders selected clip into reusable audio/cache artifact. | Testing cached playback or preserving generated material as audio. | Check render cache and media pool after freezing. |
@@ -184,6 +185,7 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | Copy / Export Diagnostics | Copies/downloads structured diagnostic data. | Support, bug reports and smoke evidence. | Prefer exported JSON for durable evidence. |
 | Check For Updates | Checks updater manifest and downloads/installs verified artifacts. | Installed-app alpha testing. | Do not claim update success until exact artifact/version/hash smoke is recorded. |
 | AI / MCP Bridge | Shows MCP command/config snippets and live bridge controls. | AI counterpart should inspect, validate, edit or observe/control the app. | File MCP works with app closed; live MCP needs running app and bearer token. |
+| File MCP Recording Input Channel | Stores explicit live-track Mono Ch N or Stereo Ch N-N+1 input assignments through the file-first command path. | Preparing recording smoke or multi-input projects without visual mixer driving. | Native-alpha preflight can still block non-default channel maps until native channel routing lands. |
 | Send Feedback | Drafts feedback email with notes and diagnostics when possible. | Tester reports and confusing behavior. | Review diagnostics for privacy before external sharing. |
 
 ## Current Non-Claims

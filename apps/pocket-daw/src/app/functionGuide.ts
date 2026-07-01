@@ -229,6 +229,12 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
         aiNote: "Audio pitch shifting is not currently available; audio clips expose audio-specific controls instead."
       },
       {
+        name: "Track Source Editor",
+        does: "Labels generated-role sequencer controls as Chordsmith source edits, separate from selected-clip mix controls.",
+        useWhen: "Use when editing drums, bass, chords, melody or guitar from the inspector and the user needs to know whether a control changes clip metadata or source section data.",
+        aiNote: "Clip mix controls affect the selected timeline clip; Track source editor controls affect the generated source section."
+      },
+      {
         name: "Section Stem Mutes",
         does: "Mutes Drums, Bass, Chords, Melody, or Guitar only inside the selected generated-section clip.",
         useWhen: "Use to create clip-level variations from one Chordsmith section.",
@@ -1402,6 +1408,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "Track And Routing",
+    control: "Recording Input Channel",
+    selector: "data-track-record-channel",
+    does: "Chooses the explicit mono input channel or stereo input pair stored in the track's recording assignment metadata.",
+    useWhen: "Use when a multi-input interface needs vocals, guitars, keys or mixers assigned to known hardware inputs before recording.",
+    aiNote: "Current native recording alpha only captures Mono Ch 1 or Stereo Ch 1-2; other assignments are preflighted and blocked until channel routing lands."
+  },
+  {
+    surface: "Track And Routing",
     control: "Track Output Routing",
     selector: "data-track-output",
     does: "Routes a track to master or an available bus destination.",
@@ -2234,6 +2248,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     does: "Lets file-first MCP assign timeline lanes to folder tracks, collapse or expand the folder, and use folder Mute/Solo as child-lane group controls.",
     useWhen: "Use when a human or AI counterpart needs to organize a busy project or smoke folder behavior without driving the visual UI.",
     aiNote: "These commands reuse existing undoable app command paths. Folder commands still do not imply folder-bus routing, sends, FX inheritance or export grouping."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "File MCP Recording Input Channel",
+    selector: "set_recording_input_channel",
+    does: "Lets file-first MCP store the same explicit live-track Mono Ch N or Stereo Ch N-N+1 recording input assignment exposed in the mixer UI.",
+    useWhen: "Use before recording smoke or when an AI counterpart needs to prepare a multi-input project without driving the visual mixer.",
+    aiNote: "This writes project assignment metadata and native-alpha preflight can still block non-default channel maps until native channel routing lands."
   },
   {
     surface: "AI / MCP Bridge",

@@ -2,7 +2,7 @@ import type { AudioEngine } from "../audio/audioEngine";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { createAudioMediaAnalysisSummary, createPortableMediaProject, createRenderCacheSummary, mediaPoolStatus, verifyMediaPortability, verifySharedMediaPortability, type AudioMediaAnalysisSummary, type MediaPortabilityVerification, type RenderCacheSummary, type SharedMediaPortabilityVerification } from "../daw/mediaPool";
 import { validateProjectInvariants, type ProjectInvariantIssue } from "../daw/projectInvariants";
-import { buildRecordingInputPreflight, type RecordingInputPreflight } from "../daw/recordingInputs";
+import { buildNativeRecordingAlphaInputPreflight, type RecordingInputPreflight } from "../daw/recordingInputs";
 import { createRoutingExportSummary, type RoutingExportSummary } from "../daw/routing";
 import { POCKET_DAW_VERSION, type PocketDawProject } from "../daw/schema";
 import { currentProject, type AppState } from "./state";
@@ -212,7 +212,7 @@ export function buildTesterDiagnosticsPayload(
       playbackCaptureRenderedFrameCount: state.recording.playbackCaptureAnchor?.renderedFrameCount ?? null,
       playbackStopRenderedFrameCount: state.recording.playbackStopAnchor?.renderedFrameCount ?? null,
       playbackSampleRate: state.recording.playbackCaptureAnchor?.sampleRate ?? state.recording.playbackStopAnchor?.sampleRate ?? null,
-      inputPreflight: buildRecordingInputPreflight(project),
+      inputPreflight: buildNativeRecordingAlphaInputPreflight(project),
       timingNotes: recordingTimingNotes(state)
     },
     updater: {

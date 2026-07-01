@@ -1078,13 +1078,14 @@ function renderAudioClipProperties(project: ReturnType<typeof currentProject>, c
     );
   return `
     <div class="audio-clip-properties" aria-label="Audio clip properties">
-      <label>Gain <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:gain`)}" type="number" min="0" max="4" step="0.05" value="${sanitizeCssLengthOrNumber(gain, 1, 0, 4)}"></label>
-      <label>Fade in <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:fadeInSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(fadeInSeconds, 0, 0, 86400)}"></label>
-      <label>Fade out <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:fadeOutSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(fadeOutSeconds, 0, 0, 86400)}"></label>
-      <label>Source offset <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:sourceOffsetSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(sourceOffsetSeconds, 0, 0, 86400)}"></label>
-      <label>Duration <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:durationSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(durationSeconds, 0, 0, 86400)}"></label>
-      <label>Rate <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:playbackRate`)}" type="number" min="0.25" max="4" step="0.01" value="${sanitizeCssLengthOrNumber(playbackRate, 1, 0.25, 4)}"></label>
-      <label>Pitch <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:pitchSemitones`)}" type="number" min="-48" max="48" step="1" value="${sanitizeCssLengthOrNumber(pitchSemitones, 0, -48, 48)}"></label>
+      <p class="editor-note">Audio clip settings are source-safe metadata for this timeline clip only.</p>
+      <label>Gain <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:gain`)}" type="number" min="0" max="4" step="0.05" value="${sanitizeCssLengthOrNumber(gain, 1, 0, 4)}" title="Scale this audio clip's playback gain without rewriting the source file."></label>
+      <label>Fade in <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:fadeInSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(fadeInSeconds, 0, 0, 86400)}" title="Fade in from the clip start in seconds."></label>
+      <label>Fade out <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:fadeOutSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(fadeOutSeconds, 0, 0, 86400)}" title="Fade out before the clip end in seconds."></label>
+      <label>Source offset <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:sourceOffsetSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(sourceOffsetSeconds, 0, 0, 86400)}" title="Start playback from this many seconds into the source audio."></label>
+      <label>Duration <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:durationSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(durationSeconds, 0, 0, 86400)}" title="Limit this timeline clip's audio duration in seconds."></label>
+      <label>Rate <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:playbackRate`)}" type="number" min="0.25" max="4" step="0.01" value="${sanitizeCssLengthOrNumber(playbackRate, 1, 0.25, 4)}" title="Play this clip faster or slower as source-safe varispeed metadata."></label>
+      <label>Pitch <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:pitchSemitones`)}" type="number" min="-48" max="48" step="1" value="${sanitizeCssLengthOrNumber(pitchSemitones, 0, -48, 48)}" title="Pitch-as-speed semitone metadata for varispeed playback; pitch-preserving correction is future work."></label>
       ${renderAudioTakePanel(project, clip)}
       <div class="audio-clip-actions" aria-label="Audio clip actions">
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:quick-fade`)}" title="Apply short fade in and fade out to this audio clip">Short fades</button>
@@ -1603,6 +1604,10 @@ function renderChordsmithSequencer(state: AppState, project: ReturnType<typeof c
           <input data-section-bars="${sanitizeDataAttr(section.id)}" type="number" min="1" max="16" value="${sanitizeCssLengthOrNumber(section.bars, 4, 1, 16)}">
         </label>
       </header>
+      <div class="inspector-subhead" aria-label="Track source editor context">
+        <h3>Track source editor</h3>
+        <p>This edits the Chordsmith section data for the selected generated role. Clip mix changes affect only the selected timeline clip.</p>
+      </div>
       ${renderChordsmithScopeControls(state, pcs, section, selectedClipSection, page, maxPage)}
       ${presetPanel}
       ${renderChordsmithGlobals(pcs)}
@@ -1666,7 +1671,7 @@ function renderChordsmithScopeControls(state: AppState, pcs: SanitizedPcsProject
   const melodyCount = Math.max(1, section.melodyTracks.length);
   return `
     <div class="editor-controls">
-      <label class="inline-toggle"><input id="chordsmithFollowClip" type="checkbox" ${state.chordsmithEditorFollowClip ? "checked" : ""} ${selectedClipSection ? "" : "disabled"}> Follow clip</label>
+      <label class="inline-toggle" title="Follow the selected generated clip section when possible; turn off to choose a section manually."><input id="chordsmithFollowClip" type="checkbox" ${state.chordsmithEditorFollowClip ? "checked" : ""} ${selectedClipSection ? "" : "disabled"} title="Follow the selected generated clip section when possible; turn off to choose a section manually."> Follow clip</label>
       <label>Section
         <select id="chordsmithSectionSelect">
           ${SECTION_IDS.map((id) => `<option value="${id}" ${section.id === id ? "selected" : ""}>Section ${id}</option>`).join("")}
@@ -1679,9 +1684,9 @@ function renderChordsmithScopeControls(state: AppState, pcs: SanitizedPcsProject
       </label>
       <div class="step-page-controls" aria-label="Sequencer step page">
         <strong>Step page</strong>
-        <button type="button" data-step-page="-1" ${page <= 0 ? "disabled" : ""}>Prev</button>
+        <button type="button" data-step-page="-1" ${page <= 0 ? "disabled" : ""} title="Move to the previous visible group of Chordsmith steps.">Prev</button>
         <span>${page + 1} / ${maxPage + 1}</span>
-        <button type="button" data-step-page="1" ${page >= maxPage ? "disabled" : ""}>Next</button>
+        <button type="button" data-step-page="1" ${page >= maxPage ? "disabled" : ""} title="Move to the next visible group of Chordsmith steps.">Next</button>
       </div>
     </div>
     <p class="editor-note">Time signature ${pcs.timeSig}/4 and resolution ${pcs.resolution} are preserved from Chordsmith in this pass.</p>
@@ -1899,7 +1904,7 @@ function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: San
     <div class="sequencer-block ${inactive ? "muted-editor" : ""}">
       <strong>Guitar</strong>
       <div class="editor-controls lane-controls">
-        <label class="inline-toggle"><input data-guitar-setting="guitarEnabled" type="checkbox" ${pcs.guitarEnabled ? "checked" : ""}> Enabled</label>
+        <label class="inline-toggle" title="Enable or mute generated guitar playback for this Chordsmith source."><input data-guitar-setting="guitarEnabled" type="checkbox" ${pcs.guitarEnabled ? "checked" : ""} title="Enable or mute generated guitar playback for this Chordsmith source."> Enabled</label>
         <label>Tone
           <select data-guitar-setting="guitarTone">
             ${POCKET_GUITAR_TONES.map((tone) => `<option value="${tone}" ${pcs.guitarTone === tone ? "selected" : ""}>${escapeHtml(instrumentLabel(tone))}</option>`).join("")}
@@ -2723,6 +2728,8 @@ function renderMixerInputSelector(project: ReturnType<typeof currentProject>, tr
   const compactLabel = compactInputLabel(inputLabel);
   const channelMode = track.recordingChannelMode === "stereo" ? "stereo" : "mono";
   const peak = active ? state.recording.inputPeak : 0;
+  const channelOptions = recordingInputChannelOptions(project, track);
+  const selectedChannel = recordingInputChannelValue(track);
   return `
     <label class="strip-control strip-input">
       <span>Input <strong title="${escapeAttr(inputLabel)}">${escapeHtml(compactLabel)}</strong></span>
@@ -2739,11 +2746,62 @@ function renderMixerInputSelector(project: ReturnType<typeof currentProject>, tr
         <option value="stereo" ${channelMode === "stereo" ? "selected" : ""}>Stereo</option>
       </select>
     </label>
+    <label class="strip-control strip-input">
+      <span>Channel <strong>${escapeHtml(recordingInputChannelLabel(selectedChannel))}</strong></span>
+      <select data-track-record-channel="${sanitizeDataAttr(track.id)}" aria-label="${escapeAttr(`Recording input channel for ${track.name}`)}" title="Choose the hardware input channel or stereo pair for this live track.">
+        ${channelOptions.map((option) => `<option value="${escapeAttr(option.value)}" ${option.value === selectedChannel ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+      </select>
+      <small title="Current native recording alpha only captures default channels.">Current native recording supports Mono Ch 1 or Stereo Ch 1-2 only; other choices are preflighted and blocked until channel routing lands.</small>
+    </label>
   `;
 }
 
 function recordingChannelLabel(track: Track): "Mono" | "Stereo" {
   return track.recordingChannelMode === "stereo" ? "Stereo" : "Mono";
+}
+
+function recordingInputChannelOptions(project: ReturnType<typeof currentProject>, track: Track): Array<{ value: string; label: string }> {
+  const channelCount = recordingInputChannelCount(project, track);
+  const monoOptions = Array.from({ length: channelCount }, (_, index) => ({
+    value: `mono:${index}`,
+    label: `Mono Ch ${index + 1}`
+  }));
+  const stereoOptions = Array.from({ length: Math.floor(channelCount / 2) }, (_, pairIndex) => {
+    const left = pairIndex * 2;
+    const right = left + 1;
+    return {
+      value: `stereo:${left}:${right}`,
+      label: `Stereo Ch ${left + 1}-${right + 1}`
+    };
+  });
+  return [...monoOptions, ...stereoOptions];
+}
+
+function recordingInputChannelCount(project: ReturnType<typeof currentProject>, track: Track): number {
+  const deviceId = track.recordingInput?.deviceId ?? track.inputDeviceId ?? project.audioDeviceSettings.inputDeviceId ?? "";
+  const device = (project.audioDeviceSettings.devices || []).find((item) => item.id === deviceId);
+  const supported = (device?.supportedChannels || []).map(Number).filter((value) => Number.isFinite(value) && value > 0);
+  const deviceChannels = supported.length ? Math.max(...supported) : 0;
+  const fallback = Number(project.audioDeviceSettings.inputChannels || 0);
+  return Math.max(1, Math.min(32, Math.floor(deviceChannels || fallback || 2)));
+}
+
+function recordingInputChannelValue(track: Track): string {
+  const assignment = track.recordingInput;
+  if (assignment?.mode === "stereo") {
+    const pair = assignment.channelPair || [0, 1];
+    return `stereo:${pair[0]}:${pair[1]}`;
+  }
+  const channelIndex = assignment?.mode === "mono" ? assignment.channelIndex ?? 0 : 0;
+  return `mono:${channelIndex}`;
+}
+
+function recordingInputChannelLabel(value: string): string {
+  const [mode, first, second] = value.split(":");
+  const channelA = Math.max(0, Number(first) || 0);
+  const channelB = Math.max(0, Number(second) || 1);
+  if (mode === "stereo") return `Stereo Ch ${channelA + 1}-${channelB + 1}`;
+  return `Mono Ch ${channelA + 1}`;
 }
 
 function compactInputLabel(label: string): string {

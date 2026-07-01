@@ -184,6 +184,7 @@ import {
   recordTrackSendAutomationPointCommand,
   recordTrackAutomationPointCommand,
   setTrackInputCommand,
+  setTrackRecordingInputChannelCommand,
   setTrackRecordingChannelModeCommand,
   setTrackPanCommand,
   setTrackSendLevelCommand,
@@ -926,6 +927,17 @@ export class App {
           audio: "none",
           preserveScroll: true,
           reason: "track-record-channel-mode"
+        });
+        void this.syncActiveOrArmedInputMonitor(trackId);
+      });
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-track-record-channel]").forEach((select) => {
+      select.addEventListener("change", () => {
+        const trackId = select.dataset.trackRecordChannel || "";
+        this.applyProjectState(setTrackRecordingInputChannelCommand(this.state, trackId, select.value), {
+          audio: "none",
+          preserveScroll: true,
+          reason: "track-record-channel"
         });
         void this.syncActiveOrArmedInputMonitor(trackId);
       });

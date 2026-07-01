@@ -311,6 +311,27 @@ describe("Pocket DAW UI rendering", () => {
     expect(collapsedHtml).toContain('data-ui-section="timeline-tools" aria-expanded="false"');
   });
 
+  it("labels generated-role inspector controls as source editing rather than clip gain edits", () => {
+    const state = createInitialState();
+    state.selectedTrackId = "drums";
+    state.selectedClipId = state.undoStack.present.timeline.clips.find((clip) => clip.trackId === "drums")?.id || null;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("Track source editor");
+    expect(html).toContain("This edits the Chordsmith section data for the selected generated role.");
+    expect(html).toContain("Clip mix changes affect only the selected timeline clip.");
+    expect(html).toContain('title="Follow the selected generated clip section when possible; turn off to choose a section manually."');
+    expect(html).toContain('title="Move to the previous visible group of Chordsmith steps."');
+    expect(html).toContain('title="Move to the next visible group of Chordsmith steps."');
+
+    state.selectedTrackId = "guitar";
+    state.selectedClipId = state.undoStack.present.timeline.clips.find((clip) => clip.trackId === "guitar")?.id || null;
+    const guitarHtml = renderAppShell(state);
+
+    expect(guitarHtml).toContain('title="Enable or mute generated guitar playback for this Chordsmith source."');
+  });
+
   it("renders the Pocket DAW function guide for humans and AI counterparts", () => {
     const state = createInitialState();
     let html = renderAppShell(state);
@@ -364,6 +385,7 @@ describe("Pocket DAW UI rendering", () => {
       "data-track-input",
       "data-track-output",
       "data-track-record-channel-mode",
+      "data-track-record-channel",
       "data-automation-enabled"
     ].forEach((selector) => {
       expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === selector)).toBe(true);
@@ -403,6 +425,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(doc).toContain("| Music Focus |");
     expect(doc).toContain("| Studio Rail |");
     expect(doc).toContain("| Folder Tracks |");
+    expect(doc).toContain("| Track Source Editor |");
+    expect(doc).toContain("Clip mix controls affect the selected timeline clip; Track source editor controls affect the generated source section.");
     expect(doc).toContain("Current Non-Claims");
     expect(catalog).toContain("# Pocket DAW Action Catalog");
     expect(catalog).toContain("| Studio Rail Navigation | `studio-rail / data-studio-rail-target`");
@@ -768,6 +792,13 @@ describe("Pocket DAW UI rendering", () => {
     const state = createInitialState();
     const withLiveTrack = addTrackToProject(state.undoStack.present, "live-vocals");
     const liveTrack = withLiveTrack.project.tracks.find((track) => track.id === withLiveTrack.trackId)!;
+    withLiveTrack.project.audioDeviceSettings.devices = [{
+      id: "interface-4",
+      name: "Four Channel Interface",
+      kind: "input",
+      supportedChannels: [1, 2, 4]
+    }];
+    liveTrack.inputDeviceId = "interface-4";
     state.undoStack = createUndoStack(withLiveTrack.project);
     state.selectedTrackId = withLiveTrack.trackId;
     state.recording = {
@@ -793,6 +824,12 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain(`data-track-input="${withLiveTrack.trackId}"`);
     expect(html).toContain(`data-track-record-channel-mode="${withLiveTrack.trackId}"`);
     expect(html).toContain('option value="mono" selected>Mono</option>');
+    expect(html).toContain(`data-track-record-channel="${withLiveTrack.trackId}"`);
+    expect(html).toContain('option value="mono:0" selected>Mono Ch 1</option>');
+    expect(html).toContain('option value="mono:3" >Mono Ch 4</option>');
+    expect(html).toContain('option value="stereo:0:1" >Stereo Ch 1-2</option>');
+    expect(html).toContain('option value="stereo:2:3" >Stereo Ch 3-4</option>');
+    expect(html).toContain('Current native recording supports Mono Ch 1 or Stereo Ch 1-2 only; other choices are preflighted and blocked until channel routing lands.');
     expect(html).toContain(`data-input-activity-fill="${withLiveTrack.trackId}"`);
     expect(html).toContain('data-recording-preview="true" data-timeline-non-seek="true"');
   });

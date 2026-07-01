@@ -5,6 +5,7 @@ import { migratePocketDawProject } from "../compatibility/migrations";
 import { cloneProject, createDefaultMetronomeSettings, parsePocketDawProjectFile } from "../daw/dawProject";
 import { activateAudioTake, applyAudioClipAction, cropClipToRange, deleteClip, deleteClipRange, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
 import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackRecordingChannelMode, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
+import { setTrackRecordingInputAssignment } from "../daw/recordingInputs";
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
 import { addTrackToProject, renameTrack, setTrackFolder, toggleFolderExpanded, type AddTrackKind } from "../daw/tracks";
 import { placeAudioClipOnTimeline } from "../daw/audioClips";
@@ -56,7 +57,7 @@ import {
 import { drumPresetEventsForProject, drumPresetLabel, drumPresetVisibleForProject, findDrumPreset } from "../daw/chordsmithDrumPresets";
 import { bassPresetLabel, bassPresetPatternForProject, bassPresetVisibleForProject, findBassPreset } from "../daw/chordsmithBassPresets";
 import { findGuitarPreset, guitarPresetLabel, guitarPresetPatternForProject, guitarPresetVisibleForProject } from "../daw/chordsmithGuitarPresets";
-import type { AutomationPoint, Clip, PocketDawProject, ProjectMeterMapPoint, RecordingChannelMode } from "../daw/schema";
+import type { AutomationPoint, Clip, PocketDawProject, ProjectMeterMapPoint, RecordingChannelMode, RecordingInputMode, TrackRecordingInput } from "../daw/schema";
 import type { AppState } from "./state";
 
 export function importTextToProject(text: string): { project: PocketDawProject; message: string } {
@@ -1450,18 +1451,66 @@ export function toggleDrumBranchGroupCollapsedCommand(state: AppState): AppState
 }
 
 export function setTrackInputCommand(state: AppState, trackId: string, inputDeviceId: string | null): AppState {
-  return commitProject(state, setTrackInput(state.undoStack.present, trackId, inputDeviceId), "Updated track input.");
+  const base = setTrackInput(state.undoStack.present, trackId, inputDeviceId);
+  return commitProject(state, setTrackRecordingInputAssignment(base, trackId, recordingAssignmentForTrack(base, trackId)), "Updated track input.");
 }
 
 export function setTrackRecordingChannelModeCommand(state: AppState, trackId: string, mode: RecordingChannelMode): AppState {
   const track = state.undoStack.present.tracks.find((item) => item.id === trackId);
   if (!track?.recordKind || track.recordKind === "none") return { ...state, status: "Only live audio tracks have recording channel modes." };
   if (mode !== "mono" && mode !== "stereo") return { ...state, status: "Choose Mono or Stereo recording." };
+  const base = setTrackRecordingChannelMode(state.undoStack.present, trackId, mode);
   return commitProject(
     state,
-    setTrackRecordingChannelMode(state.undoStack.present, trackId, mode),
+    setTrackRecordingInputAssignment(base, trackId, recordingAssignmentForTrack(base, trackId, mode)),
     `${track.name} recording set to ${mode}.`
   );
+}
+
+export function setTrackRecordingInputChannelCommand(state: AppState, trackId: string, value: string, deviceIdOverride?: string | null): AppState {
+  const track = state.undoStack.present.tracks.find((item) => item.id === trackId);
+  if (!track?.recordKind || track.recordKind === "none") return { ...state, status: "Only live audio tracks have recording input channels." };
+  const deviceId = deviceIdOverride !== undefined ? deviceIdOverride : track.recordingInput?.deviceId ?? track.inputDeviceId ?? null;
+  const assignment = recordingAssignmentFromChannelValue(deviceId, value);
+  if (!assignment) return { ...state, status: "Choose a mono or stereo input channel." };
+  return commitProject(
+    state,
+    setTrackRecordingInputAssignment(state.undoStack.present, trackId, assignment),
+    `${track.name} recording input set to ${recordingAssignmentLabel(assignment)}.`
+  );
+}
+
+function recordingAssignmentForTrack(project: PocketDawProject, trackId: string, overrideMode?: RecordingInputMode): TrackRecordingInput | null {
+  const track = project.tracks.find((item) => item.id === trackId);
+  if (!track?.recordKind || track.recordKind === "none") return null;
+  const mode = overrideMode === "stereo" ? "stereo" : track.recordingChannelMode === "stereo" ? "stereo" : "mono";
+  if (mode === "stereo") {
+    const pair = track.recordingInput?.mode === "stereo" ? track.recordingInput.channelPair : undefined;
+    return { deviceId: track.inputDeviceId ?? null, mode, channelPair: pair || [0, 1] };
+  }
+  const channelIndex = track.recordingInput?.mode === "mono" ? track.recordingInput.channelIndex : undefined;
+  return { deviceId: track.inputDeviceId ?? null, mode, channelIndex: channelIndex ?? 0 };
+}
+
+function recordingAssignmentFromChannelValue(deviceId: string | null, value: string): TrackRecordingInput | null {
+  const [mode, first, second] = value.split(":");
+  const channelA = Number(first);
+  const channelB = Number(second);
+  if (mode === "stereo" && Number.isFinite(channelA) && Number.isFinite(channelB)) {
+    return { deviceId, mode: "stereo", channelPair: [Math.max(0, Math.floor(channelA)), Math.max(0, Math.floor(channelB))] };
+  }
+  if (mode === "mono" && Number.isFinite(channelA)) {
+    return { deviceId, mode: "mono", channelIndex: Math.max(0, Math.floor(channelA)) };
+  }
+  return null;
+}
+
+function recordingAssignmentLabel(assignment: TrackRecordingInput): string {
+  if (assignment.mode === "stereo") {
+    const pair = assignment.channelPair || [0, 1];
+    return `Stereo Ch ${pair[0] + 1}-${pair[1] + 1}`;
+  }
+  return `Mono Ch ${(assignment.channelIndex ?? 0) + 1}`;
 }
 
 export function renameTrackCommand(state: AppState, trackId: string, name: string): AppState {
