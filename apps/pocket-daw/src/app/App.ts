@@ -174,6 +174,7 @@ import {
   setMelodyPanCommand,
   setMelodyInstrumentCommand,
   setMelodySoloCommand,
+  setTrackFolderCommand,
   setSectionBarsCommand,
   setSectionChordCommand,
   setLoopBars,
@@ -200,6 +201,7 @@ import {
   toggleDrumLaneFxCommand,
   toggleTrackArmedCommand,
   toggleTrackFxCommand,
+  toggleFolderExpandedCommand,
   toggleTrackMonitorCommand,
   toggleMetronomeCommand,
   toggleSelectedClipMute,
@@ -932,6 +934,13 @@ export class App {
         audio: "mixer-graph",
         preserveScroll: true,
         reason: "track-output"
+      }));
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-track-folder]").forEach((select) => {
+      select.addEventListener("change", () => this.applyProjectState(setTrackFolderCommand(this.state, select.dataset.trackFolder || "", select.value || null), {
+        audio: "none",
+        preserveScroll: true,
+        reason: "track-folder"
       }));
     });
     this.root.querySelectorAll<HTMLInputElement>("[data-track-send-level]").forEach((input) => {
@@ -2275,6 +2284,15 @@ export class App {
       const track = currentProject(this.state).tracks.find((item) => item.id === trackId);
       const nextName = window.prompt("Track name", track?.name || "Track");
       if (nextName !== null) this.applyProjectState(renameTrackCommand(this.state, trackId, nextName));
+      return;
+    }
+    const folderToggle = target?.closest<HTMLElement>("[data-folder-toggle]");
+    if (folderToggle) {
+      this.applyProjectState(toggleFolderExpandedCommand(this.state, folderToggle.dataset.folderToggle || ""), {
+        audio: "none",
+        preserveScroll: true,
+        reason: "folder-toggle"
+      });
       return;
     }
     const markerDelete = target?.closest<HTMLElement>("[data-marker-delete]");

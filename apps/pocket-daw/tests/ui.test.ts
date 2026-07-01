@@ -18,6 +18,7 @@ import { createEmptyPocketDawProject } from "../src/daw/dawProject";
 import { POCKET_DAW_VERSION } from "../src/daw/schema";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
 import { FUNCTION_ACTION_CATALOG_DOC, FUNCTION_ACTION_REFERENCE, FUNCTION_GUIDE_SECTIONS, FUNCTION_REFERENCE_DOC } from "../src/app/functionGuide";
+import { addTrackCommand, setTrackFolderCommand, toggleFolderExpandedCommand } from "../src/app/commands";
 
 function inspectorHtml(html: string) {
   return html.match(/<aside class="inspector"[\s\S]*?<\/aside>/)?.[0] || "";
@@ -341,6 +342,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Studio Rail Navigation");
     expect(html).toContain("Library, Project, Clips, Media, Mixer");
     expect(html).toContain("data-action&#61;studio-focus-godot");
+    expect(html).toContain("Add Folder Track");
+    expect(html).toContain("data-add-track-kind:folder");
     expect(html).toContain("selected bass step + H/S/T");
     expect(html).toContain("data-automation-enabled");
     expect(FUNCTION_GUIDE_SECTIONS.length).toBeGreaterThan(10);
@@ -399,11 +402,15 @@ describe("Pocket DAW UI rendering", () => {
     expect(doc).toContain("| Godot Game Pack |");
     expect(doc).toContain("| Music Focus |");
     expect(doc).toContain("| Studio Rail |");
+    expect(doc).toContain("| Folder Tracks |");
     expect(doc).toContain("Current Non-Claims");
     expect(catalog).toContain("# Pocket DAW Action Catalog");
     expect(catalog).toContain("| Studio Rail Navigation | `studio-rail / data-studio-rail-target`");
     expect(catalog).toContain("| Studio Rail Clips | `data-action=studio-focus-timeline`");
     expect(catalog).toContain("| Studio Rail Godot | `data-action=studio-focus-godot`");
+    expect(catalog).toContain("| Add Folder Track | `data-add-track-kind:folder`");
+    expect(catalog).toContain("| Assign Track Folder | `data-track-folder`");
+    expect(catalog).toContain("| Toggle Folder Track | `data-folder-toggle`");
     expect(catalog).toContain("| Collect Media | `data-action=collect-media`");
     expect(catalog).toContain("| Map Drums | `data-action=convert-midi-drums`");
     expect(catalog).toContain("| Download And Install Update | `data-action=updater-download-install`");
@@ -1441,12 +1448,55 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Record-capable vocal audio track");
     expect(html).toContain("Record-capable instrument audio track");
     expect(html).toContain("Instrument / MIDI");
+    expect(html).toContain("Organization");
+    expect(html).toContain('data-add-track-kind="folder"');
+    expect(html).toContain("Timeline organizer; no audio routing yet");
     expect(html).toContain("Chordsmith Roles");
     expect(html).toContain("Routing");
     expect(html).toContain('data-add-track-kind="midi-instrument"');
     expect(html).toContain("MIDI Instrument");
     expect(lower).toContain("Add a MIDI clip");
     expect(lower).toContain('data-action="add-empty-midi-clip"');
+  });
+
+  it("renders folder tracks as organizational timeline and mixer rows", () => {
+    let state = addTrackCommand(createInitialState(), "folder");
+    const folderId = state.selectedTrackId || "folder";
+    state = setTrackFolderCommand(state, "bass", folderId);
+
+    const bassHtml = renderAppShell(state);
+    expect(inspectorHtml(bassHtml)).toContain('data-track-folder="bass"');
+
+    state.selectedTrackId = folderId;
+    const html = renderAppShell(state);
+    const inspector = inspectorHtml(html);
+    const lower = lowerDockHtml(html);
+
+    expect(html).toContain('class="timeline-row  folder-row');
+    expect(html).toContain('data-row="folder"');
+    expect(html).toContain('data-folder-child="folder"');
+    expect(html).toContain("In Folder");
+    expect(html).toContain('data-folder-toggle="folder"');
+    expect(html).toContain("Folder / organizer");
+    expect(inspector).toContain("folder / folder");
+    expect(inspector).toContain('class="folder-track-note"');
+    expect(inspector).toContain("organizes timeline lanes and can be renamed like any other track");
+    expect(inspector).toContain("It does not process audio, carry FX, mute child tracks, or change exports yet");
+    expect(inspector).not.toContain('data-track-output="folder"');
+    expect(inspector).not.toContain('data-automation-create="folder:volume"');
+    expect(lower).toContain('class="strip folder-strip"');
+    expect(lower).toContain("Organizes timeline lanes only.");
+    expect(lower).toContain("No audio routing, sends or FX yet.");
+    expect(lower).not.toContain('data-volume="folder"');
+    expect(lower).not.toContain('data-pan="folder"');
+    expect(lower).not.toContain('data-mute-track="folder"');
+
+    const collapsed = toggleFolderExpandedCommand(state, folderId);
+    const collapsedHtml = renderAppShell(collapsed);
+
+    expect(collapsedHtml).toContain('data-folder-toggle="folder"');
+    expect(collapsedHtml).toContain(">Expand</button>");
+    expect(collapsedHtml).not.toContain('data-row="bass"');
   });
 
   it("renders native cache-stem renderer failures before quiet procedural fallback", () => {
@@ -1700,6 +1750,10 @@ describe("Pocket DAW UI rendering", () => {
     expect(css).toContain("grid-area: studio-rail");
     expect(css).toContain(".add-track-library");
     expect(css).toContain(".add-track-group");
+    expect(css).toContain(".timeline-row.folder-row");
+    expect(css).toContain(".timeline-row.folder-child-row");
+    expect(css).toContain("[data-folder-toggle]");
+    expect(css).toContain(".folder-track-note");
     expect(css).toContain('.app-shell[data-ui-preset="music"] [data-ui-scope~="game"]');
     expect(css).toContain('.app-shell[data-ui-preset="game-music"] [data-ui-scope~="recording"]');
   });
@@ -1709,6 +1763,7 @@ describe("Pocket DAW UI rendering", () => {
 
     expect(css).toContain("min-height: 452px");
     expect(css).toContain(".strip.record-capable");
+    expect(css).toContain(".strip.folder-strip");
     expect(css).toContain("grid-template-rows: 28px 76px 48px 38px 38px 64px minmax(50px, auto)");
     expect(css).toContain("padding: 10px 18px 28px");
   });

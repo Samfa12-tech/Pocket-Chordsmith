@@ -451,6 +451,12 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
         aiNote: "Full send/return processing is still guarded; use current routing summaries and tests."
       },
       {
+        name: "Folder Tracks",
+        does: "Adds visible timeline organizer tracks that save/reopen, can be renamed, can hold child lanes, and can collapse or expand without processing audio.",
+        useWhen: "Use to structure larger arrangements before folder-bus routing is implemented.",
+        aiNote: "Folder tracks are project data, but current behavior is organizational only: no child mute, audio routing, sends or FX."
+      },
+      {
         name: "Sends",
         does: "Sets selected source-track send levels and pre/post-fader mode to return tracks.",
         useWhen: "Use for shared reverb/delay-style workflows and routing tests.",
@@ -1243,8 +1249,8 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     control: "Add Track",
     actionId: "add-track-open",
     shortcut: "T",
-    does: "Opens the Library / Add Track panel grouped by Audio Recording, Instrument / MIDI, Chordsmith Roles, and Routing.",
-    useWhen: "Use to add live audio, MIDI, generated role, bus, or return tracks without hunting through the busier DAW surface.",
+    does: "Opens the Library / Add Track panel grouped by Audio Recording, Instrument / MIDI, Organization, Chordsmith Roles, and Routing.",
+    useWhen: "Use to add live audio, MIDI, generated role, folder, bus, or return tracks without hunting through the busier DAW surface.",
     aiNote: "Opening the panel is UI-only; choose a track kind to mutate the project. Input device and mono/stereo mode are set on record-capable mixer strips after creation."
   },
   {
@@ -1278,6 +1284,30 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     does: "Adds an empty MIDI instrument track for piano-roll clips.",
     useWhen: "Use when composing MIDI directly inside the DAW.",
     aiNote: "Add a MIDI clip next before editing notes."
+  },
+  {
+    surface: "Track And Routing",
+    control: "Add Folder Track",
+    selector: "data-add-track-kind:folder",
+    does: "Adds a timeline organizer track that can be renamed and saved without processing audio.",
+    useWhen: "Use when a growing arrangement needs visible structure before folder-bus routing exists.",
+    aiNote: "Folder tracks are project data, but current behavior is organizational only: no child mute, no audio routing, no sends and no FX."
+  },
+  {
+    surface: "Track And Routing",
+    control: "Assign Track Folder",
+    selector: "data-track-folder",
+    does: "Moves a generated, audio, or MIDI timeline lane into or out of an organizational folder.",
+    useWhen: "Use to group lanes visually and reduce timeline clutter without changing audio behavior.",
+    aiNote: "This is organizational metadata only. Do not infer bus routing, child mute, child solo, sends, FX inheritance, or export grouping from the folder assignment yet."
+  },
+  {
+    surface: "Track And Routing",
+    control: "Toggle Folder Track",
+    selector: "data-folder-toggle",
+    does: "Collapses or expands a folder track's child timeline lanes.",
+    useWhen: "Use when the timeline is busy and the grouped lanes are not being edited directly.",
+    aiNote: "Collapse only hides child rows from the timeline view. It does not mute, disable, route, remove, or exclude child tracks from playback/export."
   },
   {
     surface: "Track And Routing",

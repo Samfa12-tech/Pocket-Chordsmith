@@ -6,7 +6,7 @@ import { cloneProject, createDefaultMetronomeSettings, parsePocketDawProjectFile
 import { activateAudioTake, applyAudioClipAction, cropClipToRange, deleteClip, deleteClipRange, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
 import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackRecordingChannelMode, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
-import { addTrackToProject, renameTrack, type AddTrackKind } from "../daw/tracks";
+import { addTrackToProject, renameTrack, setTrackFolder, toggleFolderExpanded, type AddTrackKind } from "../daw/tracks";
 import { placeAudioClipOnTimeline } from "../daw/audioClips";
 import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createEmptyMidiClip, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, midiDataFromClip, midiGrooveTemplateById, moveMidiNote, quantizeMidiClip, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote, type MidiAftertouchField, type MidiControllerField, type MidiGrooveTemplateId, type MidiNoteField, type MidiPitchBendField, type MidiPitchTransform, type MidiProgramChangeField, type MidiQuantizeGrid, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
 import type { MidiTempoMapSummary } from "../daw/midiClips";
@@ -465,6 +465,30 @@ export function addTrackCommand(state: AppState, kind: AddTrackKind): AppState {
     ...commitProject(state, result.project, "Added track."),
     selectedTrackId: result.trackId,
     showAddTrack: false
+  };
+}
+
+export function setTrackFolderCommand(state: AppState, trackId: string, folderId: string | null): AppState {
+  const project = state.undoStack.present;
+  const track = project.tracks.find((item) => item.id === trackId);
+  const folder = folderId ? project.tracks.find((item) => item.id === folderId && item.trackType === "folder") : null;
+  const next = setTrackFolder(project, trackId, folder?.id || null);
+  if (next === project) return { ...state, status: "Track folder unchanged." };
+  return {
+    ...commitProject(state, next, folder ? `Moved ${track?.name || "track"} into ${folder.name}.` : `Removed ${track?.name || "track"} from folder.`),
+    selectedTrackId: trackId
+  };
+}
+
+export function toggleFolderExpandedCommand(state: AppState, folderId: string): AppState {
+  const project = state.undoStack.present;
+  const folder = project.tracks.find((item) => item.id === folderId && item.trackType === "folder");
+  const next = toggleFolderExpanded(project, folderId);
+  if (next === project) return { ...state, status: "Folder unchanged." };
+  const expanded = next.tracks.find((item) => item.id === folderId)?.metadata?.folderExpanded !== false;
+  return {
+    ...commitProject(state, next, `${folder?.name || "Folder"} ${expanded ? "expanded" : "collapsed"}.`),
+    selectedTrackId: folderId
   };
 }
 

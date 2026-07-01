@@ -126,6 +126,7 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | Inserts | Shows selected-track FX chain and add/bypass/remove/automation controls. | Track-level sound shaping. | Third-party plugin hosting is future work. |
 | Pocket Pro EQ | Provides EQ presets and band controls. | Corrective or tonal EQ. | Check automation/parameter state after presets. |
 | Bus And Return Tracks | Adds grouped routing and send-effect returns. | Organizing submixes or shared effects. | Full send/return processing remains guarded; check routing summaries. |
+| Folder Tracks | Adds visible timeline organizer tracks that save/reopen, can be renamed, can hold child lanes, and can collapse or expand without processing audio. | Structuring larger arrangements before folder-bus routing exists. | Organizational only for now: collapse hides rows, but there is no child mute, audio routing, sends, FX inheritance or export grouping. |
 | Sends | Sets source-track send levels and pre/post-fader mode. | Shared ambience/effects and routing tests. | Verify routing warnings. |
 | Drum Kit Lanes | Mixes drum lanes separately, adds lane FX, gates lanes and manages branch rows. | Kit-piece balance/export control. | Branching creates additional tracks; keep manifests clear. |
 

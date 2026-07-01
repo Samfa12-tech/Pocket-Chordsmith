@@ -13,8 +13,8 @@ import {
   type ProjectMeterMapPoint
 } from "../daw/schema";
 
-const TRACK_TYPES = ["generated", "midi", "audio", "bus", "return", "master"] as const;
-const TRACK_ROLES = ["arrangement", "drums", "bass", "chords", "melody", "guitar", "fx-return", "master", "bus", "media", "automation"] as const;
+const TRACK_TYPES = ["generated", "midi", "audio", "folder", "bus", "return", "master"] as const;
+const TRACK_ROLES = ["arrangement", "drums", "bass", "chords", "melody", "guitar", "fx-return", "master", "bus", "folder", "media", "automation"] as const;
 const RECORD_KINDS = ["none", "live-vocals", "live-instrument"] as const;
 const CLIP_TYPES = ["generated-section", "generated-pattern", "midi", "audio", "automation", "marker"] as const;
 const MEDIA_KINDS = ["audio", "midi", "render", "image", "unknown"] as const;
@@ -102,7 +102,7 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
     const originalId = String(track?.id || fallback.id || `track_${index + 1}`);
     const id = uniqueSafeId(originalId, `track_${index + 1}`, usedTrackIds);
     trackIdMap.set(originalId, id);
-    return {
+    const normalized = {
       ...fallback,
       ...(isRecord(track) ? track : {}),
       id,
@@ -117,6 +117,7 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
       colour: safeColour(track?.colour, fallback.colour || "#40d8ff"),
       routing: normalizeTrackRouting(track?.routing, trackIdMap),
       automationLaneIds: Array.isArray(track?.automationLaneIds) ? track.automationLaneIds.map(String).filter(Boolean) : [],
+      folderId: track?.folderId === undefined || track?.folderId === null ? null : safeText(track.folderId, ""),
       recordKind: safeEnum(track?.recordKind, RECORD_KINDS, fallback.recordKind || "none"),
       inputDeviceId: track?.inputDeviceId === undefined || track?.inputDeviceId === null ? null : safeText(track.inputDeviceId, ""),
       monitorEnabled: track?.monitorEnabled === true,
@@ -124,9 +125,37 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
       active: track?.active === false ? false : true,
       metadata: isRecord(track?.metadata) ? track.metadata : undefined
     };
+    if (normalized.trackType === "folder") {
+      normalized.role = "folder";
+      normalized.routing = { inputIds: [], outputId: null, sendIds: [], busId: null };
+      normalized.automationLaneIds = [];
+      normalized.recordKind = "none";
+      normalized.folderId = null;
+      normalized.armed = false;
+      normalized.mute = false;
+      normalized.solo = false;
+      normalized.inputDeviceId = null;
+      normalized.monitorEnabled = false;
+      normalized.metadata = {
+        ...(isRecord(track?.metadata) ? track.metadata : {}),
+        folderExpanded: normalized.metadata?.folderExpanded !== false,
+        folderMode: "organizational"
+      };
+      delete normalized.fxChainId;
+    }
+    return normalized;
   });
 
   const trackIds = new Set(next.tracks.map((track) => track.id));
+  const folderIds = new Set(next.tracks.filter((track) => track.trackType === "folder").map((track) => track.id));
+  next.tracks.forEach((track) => {
+    if (!track.folderId) {
+      track.folderId = null;
+      return;
+    }
+    const mappedFolderId = mappedId(trackIdMap, track.folderId, safeText(track.folderId, ""));
+    track.folderId = folderIds.has(mappedFolderId) && mappedFolderId !== track.id && track.trackType !== "folder" ? mappedFolderId : null;
+  });
   const fallbackTrackId = next.tracks.find((track) => track.role !== "master")?.id || next.tracks[0]?.id || "drums";
 
   next.mediaPool = (Array.isArray(next.mediaPool) ? next.mediaPool : []).map((item, index) => {

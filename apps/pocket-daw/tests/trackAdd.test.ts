@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { addEmptyMidiClipCommand, addTrackCommand, setTrackRecordingChannelModeCommand, toggleTrackArmedCommand, toggleTrackMonitorCommand } from "../src/app/commands";
+import { addEmptyMidiClipCommand, addTrackCommand, setTrackFolderCommand, setTrackRecordingChannelModeCommand, toggleFolderExpandedCommand, toggleTrackArmedCommand, toggleTrackMonitorCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { toggleTrackMute, toggleTrackSolo } from "../src/daw/mixer";
 import { midiDataFromClip } from "../src/daw/midiClips";
-import { addTrackToProject } from "../src/daw/tracks";
+import { addTrackToProject, setTrackFolder, toggleFolderExpanded } from "../src/daw/tracks";
 import { createDemoProject } from "../src/demo/demoProject";
 
 describe("track workflow", () => {
@@ -48,15 +48,56 @@ describe("track workflow", () => {
     expect(result.project.fx.chains.some((chain) => chain.id === track?.fxChainId)).toBe(true);
   });
 
-  it("ignores mute and solo commands for FX Return and Master", () => {
-    const project = createDemoProject();
-    const muted = toggleTrackMute(toggleTrackMute(project, "fx-return"), "master");
-    const soloed = toggleTrackSolo(toggleTrackSolo(project, "fx-return"), "master");
+  it("adds organizational folder tracks without fake audio routing", () => {
+    const result = addTrackToProject(createDemoProject(), "folder");
+    const track = result.project.tracks.find((item) => item.id === result.trackId);
 
-    expect(muted.tracks.find((track) => track.id === "fx-return")?.mute).toBe(false);
-    expect(muted.tracks.find((track) => track.id === "master")?.mute).toBe(false);
-    expect(soloed.tracks.find((track) => track.id === "fx-return")?.solo).toBe(false);
-    expect(soloed.tracks.find((track) => track.id === "master")?.solo).toBe(false);
+    expect(track?.name).toBe("Folder");
+    expect(track?.trackType).toBe("folder");
+    expect(track?.role).toBe("folder");
+    expect(track?.routing.outputId).toBeNull();
+    expect(track?.routing.sendIds).toEqual([]);
+    expect(track?.fxChainId).toBeUndefined();
+    expect(track?.metadata).toMatchObject({ folderExpanded: true, folderMode: "organizational" });
+    expect(result.project.fx.chains.some((chain) => chain.ownerTrackId === track?.id || chain.id === track?.fxChainId)).toBe(false);
+  });
+
+  it("assigns timeline tracks to folders and toggles folder collapse state", () => {
+    const withFolder = addTrackToProject(createDemoProject(), "folder");
+    const assigned = setTrackFolder(withFolder.project, "bass", withFolder.trackId);
+    const collapsed = toggleFolderExpanded(assigned, withFolder.trackId);
+
+    expect(assigned.tracks.find((track) => track.id === "bass")?.folderId).toBe(withFolder.trackId);
+    expect(collapsed.tracks.find((track) => track.id === withFolder.trackId)?.metadata?.folderExpanded).toBe(false);
+    expect(setTrackFolder(assigned, withFolder.trackId, withFolder.trackId)).toBe(assigned);
+    expect(setTrackFolder(assigned, "bass", "missing-folder")).not.toBe(assigned);
+    expect(setTrackFolder(assigned, "bass", "missing-folder").tracks.find((track) => track.id === "bass")?.folderId).toBeNull();
+  });
+
+  it("records folder assignment and collapse changes in undo history", () => {
+    const withFolder = addTrackCommand(createInitialState(), "folder");
+    const assigned = setTrackFolderCommand(withFolder, "bass", withFolder.selectedTrackId || "");
+    const collapsed = toggleFolderExpandedCommand(assigned, withFolder.selectedTrackId || "");
+
+    expect(assigned.undoStack.past.length).toBe(withFolder.undoStack.past.length + 1);
+    expect(assigned.undoStack.present.tracks.find((track) => track.id === "bass")?.folderId).toBe(withFolder.selectedTrackId);
+    expect(collapsed.undoStack.past.length).toBe(assigned.undoStack.past.length + 1);
+    expect(collapsed.undoStack.present.tracks.find((track) => track.id === withFolder.selectedTrackId)?.metadata?.folderExpanded).toBe(false);
+  });
+
+  it("ignores mute and solo commands for FX Return, Folder and Master", () => {
+    const project = addTrackToProject(createDemoProject(), "folder").project;
+    const muted = toggleTrackMute(toggleTrackMute(project, "fx-return"), "master");
+    const mutedFolder = toggleTrackMute(muted, "folder");
+    const soloed = toggleTrackSolo(toggleTrackSolo(project, "fx-return"), "master");
+    const soloedFolder = toggleTrackSolo(soloed, "folder");
+
+    expect(mutedFolder.tracks.find((track) => track.id === "fx-return")?.mute).toBe(false);
+    expect(mutedFolder.tracks.find((track) => track.id === "folder")?.mute).toBe(false);
+    expect(mutedFolder.tracks.find((track) => track.id === "master")?.mute).toBe(false);
+    expect(soloedFolder.tracks.find((track) => track.id === "fx-return")?.solo).toBe(false);
+    expect(soloedFolder.tracks.find((track) => track.id === "folder")?.solo).toBe(false);
+    expect(soloedFolder.tracks.find((track) => track.id === "master")?.solo).toBe(false);
   });
 
   it("records Add Track changes in undo history", () => {

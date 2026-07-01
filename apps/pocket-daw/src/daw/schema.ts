@@ -20,6 +20,7 @@ export type TrackType =
   | "generated"
   | "midi"
   | "audio"
+  | "folder"
   | "bus"
   | "return"
   | "master";
@@ -34,6 +35,7 @@ export type TrackRole =
   | "fx-return"
   | "master"
   | "bus"
+  | "folder"
   | "media"
   | "automation";
 
@@ -175,6 +177,7 @@ export interface Track {
   routing: TrackRouting;
   automationLaneIds: string[];
   fxChainId?: string;
+  folderId?: string | null;
   recordKind?: "none" | "live-vocals" | "live-instrument";
   inputDeviceId?: string | null;
   monitorEnabled?: boolean;

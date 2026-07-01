@@ -41,9 +41,9 @@ export function createDefaultTracks(options: { guitarActive?: boolean } = {}): T
 }
 
 export function trackIsAudible(track: Track, allTracks: Track[]): boolean {
-  const anySolo = allTracks.some((t) => t.solo && t.role !== "master" && t.role !== "fx-return");
+  const anySolo = allTracks.some((t) => t.solo && t.role !== "master" && t.role !== "fx-return" && t.role !== "folder");
   if (track.mute || track.active === false) return false;
-  if (anySolo && !track.solo && track.role !== "master" && track.role !== "fx-return") return false;
+  if (anySolo && !track.solo && track.role !== "master" && track.role !== "fx-return" && track.role !== "folder") return false;
   return true;
 }
 
@@ -59,7 +59,31 @@ export function renameTrack(project: PocketDawProject, trackId: string, name: st
   return next;
 }
 
-export type AddTrackKind = "live-vocals" | "live-instrument" | "midi-instrument" | "chordsmith-drums" | "chordsmith-bass" | "chordsmith-chords" | "chordsmith-melody" | "chordsmith-guitar";
+export function setTrackFolder(project: PocketDawProject, trackId: string, folderId: string | null): PocketDawProject {
+  const next = cloneProject(project);
+  const track = next.tracks.find((item) => item.id === trackId);
+  const folder = folderId ? next.tracks.find((item) => item.id === folderId && item.trackType === "folder") : null;
+  if (!track || track.trackType === "folder" || track.role === "master") return project;
+  const nextFolderId = folder?.id || null;
+  if ((track.folderId || null) === nextFolderId) return project;
+  track.folderId = nextFolderId;
+  return next;
+}
+
+export function toggleFolderExpanded(project: PocketDawProject, folderId: string): PocketDawProject {
+  const next = cloneProject(project);
+  const folder = next.tracks.find((item) => item.id === folderId && item.trackType === "folder");
+  if (!folder) return project;
+  const current = folder.metadata?.folderExpanded !== false;
+  folder.metadata = {
+    ...(folder.metadata || {}),
+    folderExpanded: !current,
+    folderMode: "organizational"
+  };
+  return next;
+}
+
+export type AddTrackKind = "live-vocals" | "live-instrument" | "midi-instrument" | "folder" | "chordsmith-drums" | "chordsmith-bass" | "chordsmith-chords" | "chordsmith-melody" | "chordsmith-guitar";
 
 export function addTrackToProject(project: PocketDawProject, kind: AddTrackKind): { project: PocketDawProject; trackId: string } {
   const generatedRole = kind.replace("chordsmith-", "") as TrackRole;
@@ -82,6 +106,13 @@ export function addTrackToProject(project: PocketDawProject, kind: AddTrackKind)
     const next = cloneProject(project);
     insertBeforeMaster(next, track);
     return { project: withFxChain(next, track), trackId: id };
+  }
+  if (kind === "folder") {
+    const id = uniqueTrackId(project, "folder");
+    const track = makeFolderTrack(id);
+    const next = cloneProject(project);
+    insertBeforeMaster(next, track);
+    return { project: next, trackId: id };
   }
   const role: TrackRole = "media";
   const base = kind === "live-vocals" ? "Live Vocals" : "Live Instrument";
@@ -113,6 +144,32 @@ function makeTrack(id: string, name: string, trackType: Track["trackType"], role
     monitorEnabled: false,
     recordingChannelMode: "mono",
     active: true
+  };
+}
+
+function makeFolderTrack(id: string): Track {
+  return {
+    id,
+    name: "Folder",
+    trackType: "folder",
+    role: "folder",
+    volume: 1,
+    pan: 0,
+    mute: false,
+    solo: false,
+    armed: false,
+    colour: "#95a2bf",
+    routing: { inputIds: [], outputId: null, sendIds: [], busId: null },
+    automationLaneIds: [],
+    recordKind: "none",
+    inputDeviceId: null,
+    monitorEnabled: false,
+    recordingChannelMode: "mono",
+    active: true,
+    metadata: {
+      folderExpanded: true,
+      folderMode: "organizational"
+    }
   };
 }
 

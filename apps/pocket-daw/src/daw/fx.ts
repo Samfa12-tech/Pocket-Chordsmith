@@ -13,7 +13,7 @@ export const BUILT_IN_FX = POCKET_BUILT_IN_FX as unknown as FxDefinition[];
 
 export function createDefaultFxState(tracks: Track[]): FxState {
   return {
-    chains: tracks.map((track) => createEmptyFxChain(track.id, `${track.name} FX`))
+    chains: tracks.filter(trackCanHaveFx).map((track) => createEmptyFxChain(track.id, `${track.name} FX`))
   };
 }
 
@@ -24,7 +24,17 @@ export function createEmptyFxChain(trackId: string, name = "Track FX"): FxChain 
 export function ensureProjectFx(project: PocketDawProject): PocketDawProject {
   const next = cloneProject(project);
   next.fx = next.fx && Array.isArray(next.fx.chains) ? next.fx : { chains: [] };
+  const folderTrackIds = new Set(next.tracks.filter((track) => track.trackType === "folder").map((track) => track.id));
+  next.fx.chains = next.fx.chains.filter((chain) => {
+    if (folderTrackIds.has(String(chain.ownerTrackId || ""))) return false;
+    if (String(chain.id || "").startsWith("fx_") && folderTrackIds.has(String(chain.id).slice(3))) return false;
+    return true;
+  });
   next.tracks.forEach((track) => {
+    if (!trackCanHaveFx(track)) {
+      delete track.fxChainId;
+      return;
+    }
     const chainId = track.fxChainId || `fx_${track.id}`;
     track.fxChainId = chainId;
     if (!next.fx.chains.some((chain) => chain.id === chainId)) {
@@ -38,7 +48,7 @@ export function addFxSlot(project: PocketDawProject, trackId: string, type: stri
   const next = ensureProjectFx(project);
   const track = next.tracks.find((item) => item.id === trackId);
   const def = BUILT_IN_FX.find((item) => item.type === type);
-  if (!track || !def) return next;
+  if (!track || !trackCanHaveFx(track) || !def) return next;
   const chain = next.fx.chains.find((item) => item.id === track.fxChainId);
   if (!chain) return next;
   chain.slots.push(createFxPluginInstance(def, chain.slots.length + 1));
@@ -89,7 +99,7 @@ export function setPocketProEqPreset(project: PocketDawProject, chainId: string,
 }
 
 export function getTrackFxChain(project: PocketDawProject, track: Track | null | undefined): FxChain | null {
-  if (!track?.fxChainId) return null;
+  if (!track?.fxChainId || !trackCanHaveFx(track)) return null;
   return project.fx?.chains.find((chain) => chain.id === track.fxChainId) || null;
 }
 
@@ -107,4 +117,8 @@ function createFxPluginInstance(def: FxDefinition, index: number): FxPluginInsta
     presetId: "default",
     parameters: { ...def.defaultParameters }
   };
+}
+
+function trackCanHaveFx(track: Track): boolean {
+  return track.trackType !== "folder";
 }

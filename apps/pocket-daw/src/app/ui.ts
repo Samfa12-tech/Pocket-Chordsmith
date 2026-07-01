@@ -594,7 +594,10 @@ function markerDisplayName(marker: { name: string; markerType?: string; gameStat
 function renderTimelineRows(state: AppState): string {
   const project = currentProject(state);
   const branchCollapsed = drumBranchGroupCollapsed(project);
+  const collapsedFolders = new Set(project.tracks.filter((track) => track.trackType === "folder" && track.metadata?.folderExpanded === false).map((track) => track.id));
   const rows = project.tracks.filter((track) => {
+    if (track.trackType === "folder") return true;
+    if (track.folderId && collapsedFolders.has(track.folderId)) return false;
     if (!((track.trackType === "generated" || track.trackType === "audio" || track.trackType === "midi") && track.role !== "arrangement")) return false;
     return !(branchCollapsed && generatedDrumBranchLane(track));
   });
@@ -604,9 +607,10 @@ function renderTimelineRows(state: AppState): string {
     .map((track) => {
       const branchLane = generatedDrumBranchLane(track);
       const branchAttrs = branchLane ? ` data-branch-group="drums" data-drum-branch-lane="${sanitizeDataAttr(branchLane)}"` : "";
+      const folderChildAttrs = track.folderId ? ` data-folder-child="${sanitizeDataAttr(track.folderId)}"` : "";
       return `
-        <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${branchLane ? "drum-branch-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}"${branchAttrs}>
-          ${renderTimelineTrackHeader(track, state.selectedTrackId === track.id, pcs)}
+        <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${track.trackType === "folder" ? "folder-row" : ""} ${track.folderId ? "folder-child-row" : ""} ${branchLane ? "drum-branch-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}"${branchAttrs}${folderChildAttrs}>
+          ${renderTimelineTrackHeader(project, track, state.selectedTrackId === track.id, pcs)}
           ${clips.map((clip) => renderClip(project, clip, state.selectedClipId === clip.id, track, !!pcs)).join("")}
           ${renderRecordingPreview(state, track)}
           ${renderInlineChordsmithEditor(state, pcs, track, clips)}
@@ -616,13 +620,16 @@ function renderTimelineRows(state: AppState): string {
     .join("");
 }
 
-function renderTimelineTrackHeader(track: Track, selected: boolean, pcs: SanitizedPcsProject | null): string {
-  const lanes = trackHeaderLaneText(track, pcs);
+function renderTimelineTrackHeader(project: ReturnType<typeof currentProject>, track: Track, selected: boolean, pcs: SanitizedPcsProject | null): string {
+  const lanes = trackHeaderLaneText(project, track, pcs);
   const branchEntry = track.role === "drums" && !generatedDrumBranchLane(track) ? ` data-drum-branch-entry="track" title="Double-click or right-click to branch generated drums"` : "";
-  const canMuteSolo = track.role !== "master" && track.role !== "fx-return";
+  const canMuteSolo = track.role !== "master" && track.role !== "fx-return" && track.role !== "folder";
   const canSolo = canMuteSolo;
   const canRecord = !!track.recordKind && track.recordKind !== "none";
   const recordChannelLabel = recordingChannelLabel(track);
+  const isFolder = track.trackType === "folder";
+  const expanded = track.metadata?.folderExpanded !== false;
+  const childCount = isFolder ? project.tracks.filter((item) => item.folderId === track.id).length : 0;
   return `
     <div class="timeline-track-header ${selected ? "selected" : ""} ${track.active === false ? "inactive" : ""}" data-track-id="${sanitizeDataAttr(track.id)}"${branchEntry}>
       <span class="track-colour" style="background:${safeTrackColour(track.colour)}"></span>
@@ -631,19 +638,25 @@ function renderTimelineTrackHeader(track: Track, selected: boolean, pcs: Sanitiz
         ${lanes ? `<span class="timeline-track-lanes">${escapeHtml(lanes)}</span>` : ""}
       </span>
       <span class="track-header-controls">
+        ${isFolder ? `<button type="button" title="${escapeAttr(`${expanded ? "Collapse" : "Expand"} ${track.name}`)}" class="${expanded ? "on" : ""}" data-folder-toggle="${sanitizeDataAttr(track.id)}">${expanded ? "Collapse" : "Expand"}</button>` : ""}
         ${canMuteSolo ? `<button type="button" title="${escapeAttr(`Mute ${track.name}`)}" class="${track.mute ? "on" : ""}" data-mute-track="${sanitizeDataAttr(track.id)}">M</button>
         ${canSolo ? `<button type="button" title="${escapeAttr(`Solo ${track.name}`)}" class="${track.solo ? "on" : ""}" data-solo-track="${sanitizeDataAttr(track.id)}">S</button>` : ""}` : ""}
         ${canRecord ? `<button type="button" title="${escapeAttr(`Arm ${track.name} for ${recordChannelLabel.toLowerCase()} recording`)}" class="${track.armed ? "on record" : ""}" data-arm-track="${sanitizeDataAttr(track.id)}">R</button>
         <button type="button" title="${escapeAttr(`Monitor ${track.name} input during recording`)}" class="${track.monitorEnabled ? "on" : ""}" data-monitor-track="${sanitizeDataAttr(track.id)}">Mon</button>` : ""}
       </span>
-      <span class="track-state">${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${canRecord ? recordChannelLabel.slice(0, 2) : ""}${track.monitorEnabled ? "Mon" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
+      <span class="track-state">${isFolder ? `${childCount} lanes` : ""}${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${canRecord ? recordChannelLabel.slice(0, 2) : ""}${track.monitorEnabled ? "Mon" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
     </div>
   `;
 }
 
-function trackHeaderLaneText(track: Track, pcs: SanitizedPcsProject | null): string {
+function trackHeaderLaneText(project: ReturnType<typeof currentProject>, track: Track, pcs: SanitizedPcsProject | null): string {
   const branchLane = generatedDrumBranchLane(track);
   if (branchLane) return `Drum branch: ${drumLaneLabel(branchLane)}`;
+  if (track.role === "folder") return "Folder / organizer";
+  if (track.folderId) {
+    const folder = project.tracks.find((item) => item.id === track.folderId && item.trackType === "folder");
+    if (folder) return `In ${folder.name}`;
+  }
   if (track.role === "drums") return "Full kit lanes";
   if (track.role === "bass") return "Bass steps";
   if (track.role === "chords") return "Chord bars";
@@ -943,20 +956,51 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
                       <dt>Arm</dt><dd>${track.recordKind && track.recordKind !== "none" ? (track.armed ? "Armed" : "Available") : "Not record-capable"}</dd>
                       <dt>Routing</dt><dd>${escapeHtml(track.routing.outputId || "none")}</dd>
                     </dl>
-                    ${renderInputSelector(project, track)}
-                    ${renderOutputSelector(project, track)}
-                    ${renderSendPanel(project, track)}
-                    ${track.role !== "master" && track.trackType !== "audio" && track.trackType !== "bus" && track.trackType !== "return" ? `<button type="button" data-action="export-selected-track-midi" title="Export all MIDI-capable clips on this track">Export Track MIDI</button>` : ""}
-                    ${renderAutomationPanel(project, track)}
-                    ${renderChordsmithSequencer(state, project, pcs, clip, track)}
-                    ${track.role === "drums" ? renderDrumLaneMixer(project) : ""}
-                    ${renderFxInspector(project, chain)}
+                    ${track.trackType === "folder" ? renderFolderTrackNote(track) : `
+                      ${renderTrackFolderSelector(project, track)}
+                      ${renderInputSelector(project, track)}
+                      ${renderOutputSelector(project, track)}
+                      ${renderSendPanel(project, track)}
+                      ${(track.trackType === "generated" || track.trackType === "midi") ? `<button type="button" data-action="export-selected-track-midi" title="Export all MIDI-capable clips on this track">Export Track MIDI</button>` : ""}
+                      ${renderAutomationPanel(project, track)}
+                      ${renderChordsmithSequencer(state, project, pcs, clip, track)}
+                      ${track.role === "drums" ? renderDrumLaneMixer(project) : ""}
+                      ${renderFxInspector(project, chain)}
+                    `}
                   `
               }
             </section>`
           : ""
       }
     </aside>
+  `;
+}
+
+function renderFolderTrackNote(track: Track): string {
+  const expanded = track.metadata?.folderExpanded !== false;
+  return `
+    <div class="folder-track-note" aria-label="Folder track behavior">
+      <p class="editor-note">${escapeHtml(track.name)} organizes timeline lanes and can be renamed like any other track.</p>
+      <p class="editor-note">It does not process audio, carry FX, mute child tracks, or change exports yet; folder-bus behavior should come later through the normal routing model.</p>
+      <dl>
+        <dt>Folder state</dt><dd>${expanded ? "Expanded" : "Collapsed"}</dd>
+        <dt>Audio routing</dt><dd>None</dd>
+      </dl>
+    </div>
+  `;
+}
+
+function renderTrackFolderSelector(project: ReturnType<typeof currentProject>, track: Track): string {
+  if (!["generated", "audio", "midi"].includes(track.trackType)) return "";
+  const folders = project.tracks.filter((item) => item.trackType === "folder");
+  if (!folders.length) return "";
+  return `
+    <label>Folder
+      <select data-track-folder="${sanitizeDataAttr(track.id)}" title="Place this timeline lane inside an organizational folder">
+        <option value="">No folder</option>
+        ${folders.map((folder) => `<option value="${escapeAttr(folder.id)}" ${track.folderId === folder.id ? "selected" : ""}>${escapeHtml(folder.name)}</option>`).join("")}
+      </select>
+    </label>
   `;
 }
 
@@ -1230,7 +1274,7 @@ function automationPointToSvg(bar: number, value: number, minBar: number, maxBar
 }
 
 function renderAutomationPanel(project: ReturnType<typeof currentProject>, track: Track): string {
-  if (track.role === "master" || track.trackType === "return") return "";
+  if (track.role === "master" || track.trackType === "return" || track.trackType === "folder") return "";
   return `
     <div class="automation-panel ${trackHasAutomation(project, track.id) ? "active" : ""}">
       <h3>Automation</h3>
@@ -1273,7 +1317,7 @@ function renderAutomationLane(project: ReturnType<typeof currentProject>, track:
 }
 
 function renderOutputSelector(project: ReturnType<typeof currentProject>, track: Track): string {
-  if (track.role === "master") return "";
+  if (track.role === "master" || track.trackType === "folder") return "";
   const outputs = availableTrackOutputs(project, track.id);
   return `
     <label>Output
@@ -1285,7 +1329,7 @@ function renderOutputSelector(project: ReturnType<typeof currentProject>, track:
 }
 
 function renderSendPanel(project: ReturnType<typeof currentProject>, track: Track): string {
-  if (track.role === "master" || track.trackType === "return") return "";
+  if (track.role === "master" || track.trackType === "return" || track.trackType === "folder") return "";
   const returns = project.tracks.filter((item) => item.trackType === "return");
   return `
     <div class="send-panel" aria-label="Track sends">
@@ -2609,6 +2653,7 @@ function audioWarpMarkersForUi(clip: Clip): Array<{ sourceSeconds: number; targe
 }
 
 function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Track, meterLevel: number, state: AppState): string {
+  if (track.trackType === "folder") return renderFolderMixerStrip(track);
   const panLabel = panReadout(track.pan);
   const volumeLabel = `${Math.round(track.volume * 100)}%`;
   const chain = getTrackFxChain(project, track);
@@ -2646,6 +2691,19 @@ function renderMixerStrip(project: ReturnType<typeof currentProject>, track: Tra
         }
       </div>
       ${renderMixerFxArea(track, chain, isMaster)}
+    </div>
+  `;
+}
+
+function renderFolderMixerStrip(track: Track): string {
+  return `
+    <div class="strip folder-strip">
+      <div class="strip-name">
+        <button type="button" data-track-rename="${sanitizeDataAttr(track.id)}" title="${escapeAttr(`Rename ${track.name}`)}">${escapeHtml(track.name)}</button>
+        <small>Folder</small>
+      </div>
+      <div class="strip-note folder-strip-note">Organizes timeline lanes only.</div>
+      <div class="strip-note">No audio routing, sends or FX yet.</div>
     </div>
   `;
 }
@@ -2970,6 +3028,13 @@ function renderAddTrackPanel(): string {
             <p>Creates editable MIDI material for piano-roll composition.</p>
             <div class="add-track-grid">
               <button data-add-track-kind="midi-instrument" title="Add an empty MIDI instrument track for piano-roll clips"><strong>MIDI Instrument</strong><span>Empty MIDI track for piano-roll clips</span></button>
+            </div>
+          </section>
+          <section class="add-track-group" aria-label="Organization tracks">
+            <h3>Organization</h3>
+            <p>Adds project structure without pretending to process audio. Folder-bus routing can build on this later.</p>
+            <div class="add-track-grid">
+              <button data-add-track-kind="folder" title="Add a folder track for organizing timeline lanes"><strong>Folder</strong><span>Timeline organizer; no audio routing yet</span></button>
             </div>
           </section>
           <section class="add-track-group" aria-label="Chordsmith generated role tracks">

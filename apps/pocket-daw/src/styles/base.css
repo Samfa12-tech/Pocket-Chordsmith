@@ -652,8 +652,34 @@ button.record:hover {
   background: #0b1320;
 }
 
+.timeline-row.folder-row .timeline-track-header {
+  border-left: 3px solid rgba(149, 162, 191, 0.62);
+  border-right-color: #3b465f;
+  background: #101827;
+}
+
 .timeline-row.drum-branch-row .timeline-track-lanes {
   color: #a9dff0;
+}
+
+.timeline-row.folder-row .timeline-track-lanes {
+  color: #cbd5e1;
+}
+
+.timeline-row.folder-child-row .timeline-track-header {
+  padding-left: 16px;
+  background: #0c1422;
+}
+
+.timeline-row.folder-child-row .timeline-track-header::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 7px;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(149, 162, 191, 0.55);
 }
 
 .timeline-track-header .track-colour {
@@ -711,6 +737,11 @@ button.record:hover {
   border-radius: 2px;
   font-size: 10px;
   font-weight: 800;
+}
+
+.track-header-controls [data-folder-toggle] {
+  min-width: 48px;
+  font-size: 9px;
 }
 
 .track-header-controls button.record,
@@ -2202,6 +2233,24 @@ button.record:hover {
   color: #95a2bf;
   font-size: 12px;
   line-height: 1.35;
+}
+
+.folder-track-note {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #2d3958;
+  border-radius: 8px;
+  background: #101827;
+}
+
+.folder-track-note dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  margin: 0;
+  color: #dbe5ff;
+  font-size: 12px;
 }
 
 .add-track-grid {

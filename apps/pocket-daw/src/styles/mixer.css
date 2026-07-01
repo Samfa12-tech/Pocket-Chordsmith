@@ -257,6 +257,17 @@
   min-height: 406px;
 }
 
+.strip.folder-strip {
+  grid-template-rows: 28px auto auto;
+  min-height: 142px;
+  border-style: dashed;
+  background: #101827;
+}
+
+.folder-strip-note {
+  color: #cbd5e1;
+}
+
 .strip-name {
   display: grid;
   gap: 2px;

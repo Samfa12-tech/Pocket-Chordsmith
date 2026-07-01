@@ -15,6 +15,7 @@ import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { createUndoStack } from "../src/daw/undo";
 import { aftertouchMidiBytes, pitchBendMidiBytes, programChangeMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 import { branchGeneratedDrumsToTracks, cycleDrumBranchStep, drumBranchGroupCollapsed, generatedDrumBranchLane, getDrumBranchStepLevel, setDrumBranchGroupCollapsed } from "../src/daw/drumLanes";
+import { addTrackToProject, setTrackFolder, toggleFolderExpanded } from "../src/daw/tracks";
 
 describe("project roundtrip", () => {
   it("saves and opens .pocketdaw JSON", () => {
@@ -24,6 +25,8 @@ describe("project roundtrip", () => {
     const ret = addReturnTrack(project, "Verb Return");
     project = setTrackSendLevel(ret.project, "bass", ret.trackId, 0.25);
     project = setTrackSendMode(project, "bass", ret.trackId, "post-fader");
+    const folder = addTrackToProject(project, "folder");
+    project = toggleFolderExpanded(setTrackFolder(folder.project, "bass", folder.trackId), folder.trackId);
     project = createAutomationLane(project, "tracks.bass.volume", { points: [{ bar: 1, value: 0.5 }, { bar: 2, value: 1 }] }).project;
     project = createAutomationLane(project, `tracks.bass.sends.${ret.trackId}.level`, { points: [{ bar: 1, value: 0.2 }, { bar: 3, value: 0.7 }] }).project;
     project.audioDeviceSettings.devices = [
@@ -42,6 +45,14 @@ describe("project roundtrip", () => {
     expect(parsed.tracks.find((track) => track.id === "bass")?.routing.outputId).toBe(bus.trackId);
     expect(parsed.tracks.find((track) => track.id === "bass")?.metadata?.sendLevels).toMatchObject({ [ret.trackId]: 0.25 });
     expect(parsed.tracks.find((track) => track.id === "bass")?.metadata?.sendModes).toMatchObject({ [ret.trackId]: "post-fader" });
+    expect(parsed.tracks.find((track) => track.id === folder.trackId)).toMatchObject({
+      trackType: "folder",
+      role: "folder",
+      routing: { inputIds: [], outputId: null, sendIds: [] },
+      metadata: { folderExpanded: false, folderMode: "organizational" }
+    });
+    expect(parsed.tracks.find((track) => track.id === folder.trackId)?.fxChainId).toBeUndefined();
+    expect(parsed.tracks.find((track) => track.id === "bass")?.folderId).toBe(folder.trackId);
     expect(parsed.routing.buses.find((item) => item.id === bus.trackId)?.trackIds).toContain("bass");
     expect(parsed.exportProfiles.find((profile) => profile.id === "stem-wavs")?.enabled).toBe(true);
   });
