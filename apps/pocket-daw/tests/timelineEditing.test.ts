@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject, parsePocketDawProjectFile } from "../src/daw/dawProject";
-import { clipSourceStartBar, cropClipToRange, deleteClipRange, moveClipToBar, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, trimClipEnd, trimClipStart } from "../src/daw/clips";
+import { activateAudioTake, audioClipTakeSummary, clipSourceStartBar, compGroupedAudioTakeRange, cropClipToRange, deleteClipRange, moveClipToBar, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, trimClipEnd, trimClipStart } from "../src/daw/clips";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
 import { addGameStateMarkerAtBar, addMarkerAtBar, clearLoop, clearTimelineSelection, deleteMarker, setLoopToClip, setTimelineSelectionRange, setTimelineSelectionToClip, setTimelineSelectionToLoop, snapBarValue, snapProjectBarValue } from "../src/daw/timeline";
 import { createDemoProject } from "../src/demo/demoProject";
@@ -451,6 +451,57 @@ describe("timeline editing helpers", () => {
       sourceOffsetSeconds: 4
     });
     expect(project.timeline.clips.find((item) => item.id === clip.id)?.metadata?.sourceOffsetSeconds).toBe(0);
+  });
+
+  it("summarizes split take-lane segments for comp organization", () => {
+    const project = createEmptyPocketDawProject();
+    const firstImport = addImportedAudioMedia(project, {
+      name: "Lead take 1.wav",
+      durationSeconds: 16,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "lane-summary-a" }
+    });
+    const firstPlaced = placeAudioClipOnTimeline(firstImport.project, firstImport.item.id, 2);
+    const secondImport = addImportedAudioMedia(firstPlaced.project, {
+      name: "Lead take 2.wav",
+      durationSeconds: 16,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "lane-summary-a" }
+    });
+    const secondPlaced = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, firstPlaced.trackId, 2);
+    const firstActive = activateAudioTake(secondPlaced.project, firstPlaced.clipId).project;
+    const comped = compGroupedAudioTakeRange(firstActive, secondPlaced.clipId, 4, 6);
+    const summary = audioClipTakeSummary(comped.project, comped.activeClipId || secondPlaced.clipId);
+
+    expect(comped.changed).toBe(true);
+    expect(summary?.lanes).toHaveLength(2);
+    expect(summary?.lanes.map((lane) => ({
+      takeLaneId: lane.takeLaneId,
+      clipCount: lane.clipCount,
+      activeClipCount: lane.activeClipCount,
+      mutedClipCount: lane.mutedClipCount,
+      startBar: lane.startBar,
+      endBar: Number(lane.endBar.toFixed(6))
+    }))).toEqual([
+      {
+        takeLaneId: "lane-summary-a-lane-1",
+        clipCount: 3,
+        activeClipCount: 2,
+        mutedClipCount: 1,
+        startBar: 2,
+        endBar: 9.866667
+      },
+      {
+        takeLaneId: "lane-summary-a-lane-2",
+        clipCount: 3,
+        activeClipCount: 1,
+        mutedClipCount: 2,
+        startBar: 2,
+        endBar: 9.866667
+      }
+    ]);
   });
 
   it("trims audio clip starts by moving source offsets instead of changing source media", () => {

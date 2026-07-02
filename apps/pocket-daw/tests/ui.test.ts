@@ -397,6 +397,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "convert-midi-drums")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "convert-midi-arrangement")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "audio-take-comp-range")).toBe(true);
+    expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-audio-take-lane-summary")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-audio-clip-action:quantize-warp-markers")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-midi-duration-quantize")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-ai-bridge-enabled")).toBe(true);
@@ -487,6 +488,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Download And Install Update | `data-action=updater-download-install`");
     expect(catalog).toContain("| Enable Live App Bridge | `data-ai-bridge-enabled`");
     expect(catalog).toContain("| Take Lane Activate | `data-audio-take-lane-activate`");
+    expect(catalog).toContain("| Take Lane Overview | `data-audio-take-lane-summary`");
     expect(catalog).toContain("| Live MCP Recording Input Channel | `pocket_daw_live_apply_commands:set_recording_input_channel`");
     expect(catalog).toContain("| File MCP Take Lane Activation | `activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range, pocket_daw_live_apply_commands:activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range`");
     expect(catalog).toContain("| MCP Punch Recording Placement | `place_punch_recording_clip`, `place_punch_recording_clip_from_range`, `pocket_daw_live_apply_commands:place_punch_recording_clip_from_range`");
@@ -722,7 +724,7 @@ describe("Pocket DAW UI rendering", () => {
       name: "Lead take 1.wav",
       uri: "project-media/recordings/lead-take-1.wav",
       mimeType: "audio/wav",
-      durationSeconds: 8,
+      durationSeconds: 16,
       sampleRate: 48000,
       channels: 1,
       metadata: { takeGroupId: "lead-comp-a", inputMode: "mono", channelMap: [0] }
@@ -732,7 +734,7 @@ describe("Pocket DAW UI rendering", () => {
       name: "Lead take 2.wav",
       uri: "project-media/recordings/lead-take-2.wav",
       mimeType: "audio/wav",
-      durationSeconds: 8,
+      durationSeconds: 16,
       sampleRate: 48000,
       channels: 1,
       metadata: { takeGroupId: "lead-comp-a", inputMode: "mono", channelMap: [0] }
@@ -746,6 +748,13 @@ describe("Pocket DAW UI rendering", () => {
 
     expect(inspector).toContain("Take Lanes");
     expect(inspector).toContain("lead-comp-a");
+    expect(inspector).toContain("Take lane overview");
+    expect(inspector).toContain("Lane 1");
+    expect(inspector).toContain("Lane 2");
+    expect(inspector).toContain("active / 1 segment / bars Bar 2 Beat 1 to Bar 9 Beat 4");
+    expect(inspector).toContain("1 active / 0 muted / 0 archived");
+    expect(inspector).toContain('data-audio-take-lane-summary="lead-comp-a-lane-1:active"');
+    expect(inspector).toContain('data-audio-take-lane-summary="lead-comp-a-lane-2:active"');
     expect(inspector).toContain(`data-audio-take-activate="${firstPlaced.clipId}"`);
     expect(inspector).toContain(`data-audio-take-activate="${secondPlaced.clipId}"`);
     expect(inspector).toContain(`data-audio-take-lane-activate="${firstPlaced.clipId}"`);

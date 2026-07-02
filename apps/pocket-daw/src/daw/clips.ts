@@ -57,6 +57,17 @@ export interface AudioTakeSummary {
   takeNumber: number;
   takeCount: number;
   active: boolean;
+  lanes: Array<{
+    takeLaneId: string;
+    takeNumber: number;
+    clipCount: number;
+    activeClipCount: number;
+    archivedClipCount: number;
+    mutedClipCount: number;
+    startBar: number;
+    endBar: number;
+    segmentNames: string[];
+  }>;
   siblings: Array<{
     clipId: string;
     name: string;
@@ -388,13 +399,43 @@ export function audioClipTakeSummary(project: PocketDawProject, clipId: string):
     .sort((a, b) => a.takeNumber - b.takeNumber || a.clipId.localeCompare(b.clipId));
   const selected = siblings.find((item) => item.clipId === clip.id);
   if (!selected) return null;
+  const lanes = summarizeAudioTakeLanes(project, clip.trackId, groupId);
   return {
     groupId,
     takeNumber: selected.takeNumber,
     takeCount: siblings.length,
     active: selected.active,
+    lanes,
     siblings
   };
+}
+
+function summarizeAudioTakeLanes(project: PocketDawProject, trackId: string, groupId: string): AudioTakeSummary["lanes"] {
+  const laneMap = new Map<string, Clip[]>();
+  takeGroupClips(project, trackId, groupId).forEach((clip, index) => {
+    const laneId = takeLaneIdForClip(clip, index);
+    laneMap.set(laneId, [...(laneMap.get(laneId) || []), clip]);
+  });
+  return Array.from(laneMap.entries())
+    .map(([takeLaneId, clips]) => {
+      const ordered = clips.slice().sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+      const first = ordered[0];
+      const takeNumber = first ? takeIndexForClip(first, 0) : 0;
+      const statuses = ordered.map(audioTakeStatus);
+      const activeClipCount = ordered.filter((clip) => (audioTakeStatus(clip) === "active" || audioTakeStatus(clip) === "comp-segment") && !clip.muted).length;
+      return {
+        takeLaneId,
+        takeNumber,
+        clipCount: ordered.length,
+        activeClipCount,
+        archivedClipCount: statuses.filter((status) => status === "archived-take").length,
+        mutedClipCount: ordered.filter((clip) => clip.muted || audioTakeStatus(clip) === "muted-take").length,
+        startBar: Math.min(...ordered.map((clip) => clip.startBar)),
+        endBar: Math.max(...ordered.map((clip) => clip.startBar + clip.barLength)),
+        segmentNames: ordered.map((clip) => clip.name)
+      };
+    })
+    .sort((a, b) => a.takeNumber - b.takeNumber || a.takeLaneId.localeCompare(b.takeLaneId));
 }
 
 export function activateAudioTake(project: PocketDawProject, clipId: string): AudioClipActionResult {

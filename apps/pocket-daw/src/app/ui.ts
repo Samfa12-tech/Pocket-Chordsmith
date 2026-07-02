@@ -1129,6 +1129,20 @@ function renderAudioTakePanel(project: ReturnType<typeof currentProject>, clip: 
     <div class="audio-take-panel" aria-label="Audio take lanes" data-ui-scope="recording">
       <h3>Take Lanes</h3>
       <p class="editor-note">${escapeHtml(summary.groupId)} - Take ${summary.takeNumber} of ${summary.takeCount}${summary.active ? " active" : " muted"}</p>
+      <div class="audio-take-lane-overview" aria-label="Take lane overview">
+        ${summary.lanes.map((lane) => {
+          const laneState = lane.archivedClipCount === lane.clipCount ? "archived" : lane.activeClipCount ? "active" : "muted";
+          const segmentLabel = lane.clipCount === 1 ? "1 segment" : `${lane.clipCount} segments`;
+          const rangeLabel = `${formatBarBeat(project, lane.startBar)} to ${formatBarBeat(project, lane.endBar)}`;
+          return `
+            <div class="audio-take-lane-card" data-audio-take-lane-summary="${sanitizeDataAttr(`${lane.takeLaneId}:${laneState}`)}" title="${escapeAttr(`${lane.takeLaneId}: ${segmentLabel}, bars ${rangeLabel}`)}">
+              <strong>Lane ${lane.takeNumber}</strong>
+              <span>${escapeHtml(laneState)} / ${escapeHtml(segmentLabel)} / bars ${escapeHtml(rangeLabel)}</span>
+              <small>${lane.activeClipCount} active / ${lane.mutedClipCount} muted / ${lane.archivedClipCount} archived</small>
+            </div>
+          `;
+        }).join("")}
+      </div>
       <div class="audio-take-buttons">
         ${summary.siblings.map((take) => `
           <span class="audio-take-row" data-audio-take-status="${sanitizeDataAttr(`${take.clipId}:${take.takeStatus}`)}">

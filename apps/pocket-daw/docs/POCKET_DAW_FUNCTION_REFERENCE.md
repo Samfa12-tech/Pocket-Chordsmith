@@ -118,7 +118,7 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | Add Live Vocals / Live Instrument | Creates a record-capable live audio track scaffold; input and mono/stereo channel mode are set on the mixer strip. | Preparing vocals/instruments for capture. | Installed-app-only; smoke against packaged app. |
 | Arm / Monitor | Arms a record-capable track and optionally monitors input. | Preparing one live track for capture/input metering. | Only one armed recording target is expected currently. |
 | Record | Captures audio to project-relative WAV media and places the take on timeline. | After saving the project and arming the intended track. | Confirm saved path, count-in, take placement, media pool item and reopen persistence. |
-| Take Lanes | Groups alternate takes, activates one take or every clip in a take lane, archives/restores takes, comps from playhead and comps the selected take over the active edit range. | Managing repeated passes without deleting source media. | Archive is not delete. Lane activation and range comping are source-only foundations over ordinary audio clips, not full lane UI yet. |
+| Take Lanes | Groups alternate takes, shows a compact lane overview with active/muted/archived segment counts, activates one take or every clip in a take lane, archives/restores takes, comps from playhead and comps the selected take over the active edit range. | Managing repeated passes without deleting source media. | Archive is not delete. Lane activation, lane overview and range comping are source-only foundations over ordinary audio clips, not a full stacked waveform take editor yet. |
 
 ## Mixer, Routing And FX
 

@@ -434,9 +434,9 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "Take Lanes",
-        does: "Groups alternate recorded clips, activates one take or every clip in a take lane, archives/restores takes, and can comp from the playhead.",
+        does: "Groups alternate recorded clips, shows a compact lane overview with active/muted/archived segment counts, activates one take or every clip in a take lane, archives/restores takes, and can comp from the playhead or active edit range.",
         useWhen: "Use to manage repeated passes without deleting source media.",
-        aiNote: "Archive is not delete. Lane activation is audition metadata over ordinary audio clips, not full lane UI yet."
+        aiNote: "Archive is not delete. This is a source-safe lane organizer over ordinary audio clips, not a full stacked waveform take editor yet."
       }
     ]
   },
@@ -1652,6 +1652,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "Recording And Takes",
+    control: "Take Lane Overview",
+    selector: "data-audio-take-lane-summary",
+    does: "Shows each take lane's active/muted/archived segment counts and timeline span.",
+    useWhen: "Use before lane activation or range comping to understand which take lane owns each split comp segment.",
+    aiNote: "Read-only organization surface; use the take activate, lane activate, archive/restore and comp controls for edits."
+  },
+  {
+    surface: "Recording And Takes",
     control: "Take Activate",
     selector: "data-audio-take-activate",
     does: "Makes a take the active audible clip in its take group.",
@@ -1664,7 +1672,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     selector: "data-audio-take-lane-activate",
     does: "Activates every non-archived clip in the selected take lane so split comp segments from that lane can be auditioned together.",
     useWhen: "Use after comp splits create multiple clips in each take lane and you want to hear one lane as a whole.",
-    aiNote: "This is lane auditioning over normal audio clips; it is not the full future take-lane editor."
+    aiNote: "This is lane auditioning over normal audio clips; it is not a full stacked waveform take editor."
   },
   {
     surface: "Recording And Takes",
