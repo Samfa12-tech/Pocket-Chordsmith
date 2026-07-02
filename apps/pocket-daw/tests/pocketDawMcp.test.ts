@@ -3,9 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { importTextToProject } from "../src/app/commands";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../src/daw/dawProject";
 import { createDemoProject } from "../src/demo/demoProject";
 import { callPocketDawMcpTool, pocketDawMcpToolList } from "../src/mcp/pocketDawMcp";
+import { utf8ToBase64Url } from "../src/compatibility/pcsParser";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
 import { addFxSlot } from "../src/daw/fx";
 import { addMidiNote, importMidiFileToProject, midiDataFromClip } from "../src/daw/midiClips";
@@ -17,6 +19,7 @@ import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
 import { addTrackToProject } from "../src/daw/tracks";
 import { metalArrangementMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
+import { createPocketDjImportFixture } from "./pocketDjFixtures";
 
 function parseToolResult(result: Awaited<ReturnType<typeof callPocketDawMcpTool>>) {
   return JSON.parse(result.content[0].text);
@@ -145,6 +148,37 @@ describe("Pocket DAW MCP tools", () => {
       capturePlan: []
     });
     expect(result.summary.recordingInputPreflight.errors.join("\n")).toContain("needs channels 1-2");
+    expect(result.project).toBeUndefined();
+  });
+
+  it("summarizes preserved Pocket DJ source metadata for MCP smoke", async () => {
+    const session = createPocketDjImportFixture();
+    const project = importTextToProject(`PDJ1:${utf8ToBase64Url(JSON.stringify(session))}`).project;
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_read_project", {
+      raw: buildPocketDawProjectFile(project)
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.summary.sourceRefCount).toBe(2);
+    expect(result.summary.pocketDjSource).toMatchObject({
+      title: "Late Night Deck",
+      sourcePrefix: "PDJ1",
+      djVersion: 1,
+      currentSection: "B",
+      queuedSection: "D",
+      launchQuantize: "bar",
+      dropTarget: "D",
+      loopCurrentSection: true,
+      sequence: ["A", "B", "D"],
+      sequencePlaying: true,
+      sequenceRepeat: true,
+      sequenceIndex: 1,
+      buildActive: true,
+      masterVolume: 0.72,
+      stemVolumes: { drums: 0.42, bass: 0.8 },
+      stemMutes: { melody: true },
+      fx: { filter: 0.31, reverb: 0.44 }
+    });
     expect(result.project).toBeUndefined();
   });
 

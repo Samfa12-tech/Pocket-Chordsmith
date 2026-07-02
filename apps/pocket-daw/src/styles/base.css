@@ -1875,12 +1875,16 @@ button.record:hover {
 }
 
 .controls-panel header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
   padding: 16px 18px;
   border-bottom: 1px solid #26314c;
+  background: #101625;
 }
 
 .controls-panel h2 {

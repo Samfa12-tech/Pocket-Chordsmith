@@ -1842,6 +1842,9 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("About / Diagnostics");
     expect(html).toContain("Copy Diagnostics");
     expect(html).toContain("Export Diagnostics JSON");
+    expect(html).toContain('data-action="controls-close"');
+    expect(html).toContain('aria-label="Close About and Diagnostics"');
+    expect(html).toContain('title="Close About and Diagnostics"');
     expect(html).toContain("installerOnly");
     expect(html).toContain("Routing");
     expect(html).toContain("pre-fader");
@@ -1866,6 +1869,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(css).toContain("overflow: auto");
     expect(css).toContain("max(280px");
     expect(css).toContain("align-items: start");
+    expect(css).toContain("position: sticky");
+    expect(css).toContain("top: 0");
     expect(css).toContain("--studio-rail-width: 68px");
     expect(css).toContain('"studio-rail transport"');
     expect(css).toContain(".studio-rail");

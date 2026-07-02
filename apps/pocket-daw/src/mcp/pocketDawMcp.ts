@@ -68,6 +68,7 @@ import { buildPocketDawProjectFile } from "../daw/dawProject.ts";
 import { DRUM_LANE_IDS, type DrumLaneId } from "../daw/drumLanes.ts";
 import { createGameExportManifest, createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs.ts";
 import { arrangeMidiToHeavyMetalProject } from "../daw/midiArrangement.ts";
+import { createPocketDjSourceSummary } from "../daw/pocketDjSources.ts";
 import { validateProjectInvariants } from "../daw/projectInvariants.ts";
 import { buildGroupedRecordingCapturePlan, buildNativeRecordingAlphaInputPreflight } from "../daw/recordingInputs.ts";
 import { GAME_STATE_MARKERS, POCKET_DAW_SCHEMA_VERSION, POCKET_DAW_VERSION, type GameStateMarkerId, type PocketDawProject } from "../daw/schema.ts";
@@ -844,6 +845,8 @@ function summarizeProject(project: PocketDawProject) {
     timelineSelection: project.timeline.selection || null,
     trackCount: project.tracks.length,
     clipCount: project.timeline.clips.length,
+    sourceRefCount: project.sourceRefs.length,
+    pocketDjSource: createPocketDjSourceSummary(project),
     mediaPoolCount: project.mediaPool.length,
     audioTakeSummary: createAudioTakeDiagnosticsSummary(project),
     recordingInputPreflight: buildNativeRecordingAlphaInputPreflight(project),

@@ -3269,7 +3269,7 @@ function renderControlsPanel(state: AppState): string {
       <section class="controls-panel" role="dialog" aria-modal="true" aria-labelledby="controls-title">
         <header>
           <h2 id="controls-title">About / Diagnostics</h2>
-          <button data-action="controls-close">Close</button>
+          <button type="button" data-action="controls-close" aria-label="Close About and Diagnostics" title="Close About and Diagnostics">Close</button>
         </header>
         <div class="control-guide">
           <p><strong>App</strong><span>Pocket DAW v${escapeHtml(POCKET_DAW_VERSION)} / build ${escapeHtml(runtimeBuildId())} / commit ${escapeHtml(runtimeCommit())}</span></p>
