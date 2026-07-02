@@ -153,6 +153,75 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.timelineSelection).toEqual({ startBar: 7, endBar: 9, source: "punch" });
   });
 
+  it("sets and clears ordinary edit ranges through the live bridge executor and status", () => {
+    const app = appHarness(createInitialState());
+
+    const ranged = app.applyAiBridgeLiveCommand({
+      type: "set_timeline_selection",
+      startBar: 3,
+      endBar: 5
+    });
+    app.state = ranged;
+    const rangedStatus = app.aiBridgeLiveStatus() as {
+      timelineSelection?: { startBar: number; endBar: number; source: string } | null;
+    };
+    const cleared = app.applyAiBridgeLiveCommand({ type: "clear_timeline_selection" });
+    app.state = cleared;
+    const clearedStatus = app.aiBridgeLiveStatus() as {
+      timelineSelection?: { startBar: number; endBar: number; source: string } | null;
+    };
+
+    expect(ranged.status).toBe("Updated edit range.");
+    expect(ranged.undoStack.present.timeline.selection).toEqual({ startBar: 3, endBar: 5, source: "manual" });
+    expect(rangedStatus.timelineSelection).toEqual({ startBar: 3, endBar: 5, source: "manual" });
+    expect(cleared.status).toBe("Edit range cleared.");
+    expect(cleared.undoStack.present.timeline.selection).toBeNull();
+    expect(clearedStatus.timelineSelection).toBeNull();
+  });
+
+  it("sets edit ranges from clips and splits through the live bridge executor", () => {
+    let state = createInitialState();
+    let project = currentProject(state);
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const imported = addImportedAudioMedia(project, {
+      name: "Live range split.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    state = {
+      ...state,
+      selectedClipId: placed.clipId,
+      selectedTrackId: placed.trackId,
+      undoStack: createUndoStack(placed.project)
+    };
+    const app = appHarness(state);
+
+    const clipRanged = app.applyAiBridgeLiveCommand({
+      type: "set_timeline_selection_to_clip",
+      clipId: placed.clipId
+    });
+    app.state = clipRanged;
+    const narrowed = app.applyAiBridgeLiveCommand({
+      type: "set_timeline_selection",
+      startBar: 3,
+      endBar: 5
+    });
+    app.state = narrowed;
+    const split = app.applyAiBridgeLiveCommand({ type: "split_timeline_selection" });
+    const splitAudioClipStarts = split.undoStack.present.timeline.clips
+      .filter((clip) => clip.name.startsWith("Live range split.wav"))
+      .map((clip) => clip.startBar)
+      .sort((a, b) => a - b);
+
+    expect(clipRanged.status).toBe("Edit range set to selected clip.");
+    expect(clipRanged.undoStack.present.timeline.selection).toEqual({ startBar: 2, endBar: 6, source: "clip" });
+    expect(split.status).toContain("at edit range.");
+    expect(splitAudioClipStarts).toEqual([2, 3, 5]);
+  });
+
   it("places punch takes from the active range through the live bridge executor", () => {
     let state = addTrackCommand(createInitialState(), "live-vocals");
     const project = currentProject(state);
@@ -425,6 +494,10 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.capabilities.liveCommands).toContain("set_track_input");
     expect(status.capabilities.liveCommands).toContain("set_recording_input_channel");
     expect(status.capabilities.liveCommands).toContain("set_punch_range");
+    expect(status.capabilities.liveCommands).toContain("set_timeline_selection");
+    expect(status.capabilities.liveCommands).toContain("set_timeline_selection_to_clip");
+    expect(status.capabilities.liveCommands).toContain("clear_timeline_selection");
+    expect(status.capabilities.liveCommands).toContain("split_timeline_selection");
     expect(status.capabilities.liveCommands).toContain("place_punch_recording_clip_from_range");
     expect(status.capabilities.liveCommands).toContain("activate_audio_take_lane");
     expect(status.capabilities.liveCommands).toContain("set_audio_take_archived");

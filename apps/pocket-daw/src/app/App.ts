@@ -286,6 +286,10 @@ type AiBridgeLiveCommand =
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "split-mono"; channelIndex?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] }
   | { type: "set_punch_range"; startBar: number; endBar: number }
+  | { type: "set_timeline_selection"; startBar: number; endBar: number }
+  | { type: "set_timeline_selection_to_clip"; clipId: string }
+  | { type: "clear_timeline_selection" }
+  | { type: "split_timeline_selection" }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
@@ -607,7 +611,7 @@ export class App {
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
         control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics"],
-        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "place_punch_recording_clip_from_range"]
+        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "place_punch_recording_clip_from_range"]
       }
     };
   }
@@ -755,6 +759,21 @@ export class App {
     const project = currentProject(this.state);
     if (command.type === "set_punch_range") {
       return setPunchRangeCommand(this.state, numberInput(command.startBar, "startBar"), numberInput(command.endBar, "endBar"));
+    }
+    if (command.type === "set_timeline_selection") {
+      return setTimelineSelectionRangeCommand(this.state, numberInput(command.startBar, "startBar"), numberInput(command.endBar, "endBar"));
+    }
+    if (command.type === "set_timeline_selection_to_clip") {
+      return setTimelineSelectionToSelectedClipCommand({
+        ...this.state,
+        selectedClipId: stringInput(command.clipId, "clipId")
+      });
+    }
+    if (command.type === "clear_timeline_selection") {
+      return clearTimelineSelectionCommand(this.state);
+    }
+    if (command.type === "split_timeline_selection") {
+      return splitTimelineSelectionCommand(this.state);
     }
     if (command.type === "activate_audio_take_lane") {
       return activateAudioTakeLaneCommand(this.state, stringInput(command.clipId, "clipId"));
@@ -5508,9 +5527,18 @@ function liveCommandAudioSyncMode(command: AiBridgeLiveCommand): AudioProjectSyn
     command.type === "activate_audio_take_lane" ||
     command.type === "set_audio_take_archived" ||
     command.type === "comp_audio_take_from_bar" ||
+    command.type === "split_timeline_selection" ||
     command.type === "place_punch_recording_clip_from_range"
   ) {
     return "timeline-structure";
+  }
+  if (
+    command.type === "set_punch_range" ||
+    command.type === "set_timeline_selection" ||
+    command.type === "set_timeline_selection_to_clip" ||
+    command.type === "clear_timeline_selection"
+  ) {
+    return "transport-controls";
   }
   return "mixer-graph";
 }

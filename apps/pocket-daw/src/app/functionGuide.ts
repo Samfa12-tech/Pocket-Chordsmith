@@ -2307,6 +2307,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "AI / MCP Bridge",
+    control: "Live MCP Edit Range",
+    selector: "pocket_daw_live_apply_commands:set_timeline_selection, set_timeline_selection_to_clip, clear_timeline_selection, split_timeline_selection",
+    does: "Lets the tokened live bridge set an ordinary edit range, range a selected clip, clear the edit range, or split clips at the active range through the same undoable command paths as the timeline UI.",
+    useWhen: "Use during MCP-observed editing smoke when an AI counterpart needs precise range setup or range splitting in the running app without broad UI automation.",
+    aiNote: "This is normal edit-range control, not punch intent. Confirm `timelineSelection.source` before applying destructive-looking range edits."
+  },
+  {
+    surface: "AI / MCP Bridge",
     control: "Live MCP Recording Input Channel",
     selector: "pocket_daw_live_apply_commands:set_recording_input_channel",
     does: "Lets the tokened live bridge set the running app's selected live-track Mono Ch N, Stereo Ch N-N+1 or future split-mono recording input assignment through the same undoable command path as the mixer UI.",
