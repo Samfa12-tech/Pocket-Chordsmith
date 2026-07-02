@@ -1269,6 +1269,15 @@ export class App {
         this.render({ preserveScroll: true });
       });
     });
+    this.root.querySelectorAll<HTMLInputElement>("[data-midi-conversion-keep-raw-reference]").forEach((input) => {
+      input.addEventListener("change", () => {
+        this.state.midiConversionKeepRawReference = input.checked;
+        this.state.status = input.checked
+          ? "MIDI conversion will keep the raw reference clip on the timeline."
+          : "MIDI conversion will remove the raw reference clip from the timeline after mapping.";
+        this.render({ preserveScroll: true });
+      });
+    });
     this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-chordsmith-global]").forEach((input) => {
       input.addEventListener("change", () => {
         const field = input.dataset.chordsmithGlobal || "";

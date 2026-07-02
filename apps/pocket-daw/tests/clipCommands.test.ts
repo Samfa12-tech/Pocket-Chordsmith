@@ -193,6 +193,24 @@ describe("generated clip edit commands", () => {
     expect(edited.status).toContain("melody");
   });
 
+  it("can remove the raw MIDI reference clip after successful arrangement mapping", () => {
+    const state = createInitialState();
+    const imported = importMidiFileToProject(state.undoStack.present, parseStandardMidiFile(metalArrangementMidiBytes()), "metal.mid");
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+    state.chordsmithEditorSectionId = "A";
+    state.midiConversionKeepRawReference = false;
+
+    const edited = convertMidiArrangementToGeneratedOverlaysCommand(state);
+
+    expect(edited.undoStack.present.timeline.clips.some((clip) => clip.id === imported.clipId)).toBe(false);
+    expect(edited.undoStack.present.mediaPool.some((item) => item.id === imported.item.id)).toBe(true);
+    expect(bassOverlayCount(edited.undoStack.present, "A")).toBe(2);
+    expect(edited.selectedClipId).not.toBe(imported.clipId);
+    expect(edited.status).toContain("Raw MIDI reference removed from the timeline");
+  });
+
   it("uses the selected melody target when mapping MIDI melody and arrangements", () => {
     const steps = 16;
     const twoMelodyProject = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({

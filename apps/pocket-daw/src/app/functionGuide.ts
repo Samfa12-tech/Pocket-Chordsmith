@@ -1790,9 +1790,9 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "MIDI To Chordsmith",
     control: "Chordsmith Mapping Preview",
     selector: "data-midi-conversion-preview, data-midi-conversion-source-target, data-midi-conversion-section-target, data-midi-conversion-melody-target, midiChordsmithConversionPreviews[], media.midiChordsmithConversionPreviews[]",
-    does: "Shows how the selected MIDI clip will map into drums, bass, chord groups and melody before any conversion command runs, and lets the user choose the source MIDI track/channel plus target Chordsmith section and melody track. Includes tempo/meter, key/scale source, rough section shape, role hints, visible/source note counts, filtered-out counts, per-role written counts, preserved expressive MIDI event counts and warnings.",
+    does: "Shows how the selected MIDI clip will map into drums, bass, chord groups and melody before any conversion command runs, and lets the user choose the source MIDI track/channel, target Chordsmith section, melody track and whether to keep the raw MIDI reference clip after mapping. Includes tempo/meter, key/scale source, rough section shape, role hints, visible/source note counts, filtered-out counts, per-role written counts, preserved expressive MIDI event counts and warnings.",
     useWhen: "Use before Map Drums, Map Bass, Map Chords, Map Melody or Map Arrangement so the raw MIDI import remains inspectable and conversion targets are explicit.",
-    aiNote: "Read-only preview exposed in the Piano Roll, support diagnostics, file-first MCP summaries and live MCP media status. Source selectors update the mapping commands only; they do not mutate MIDI import semantics or prove the musical interpretation is correct."
+    aiNote: "Read-only preview exposed in the Piano Roll, support diagnostics, file-first MCP summaries and live MCP media status. Source/reference selectors update mapping commands only; they do not mutate MIDI import semantics or prove the musical interpretation is correct."
   },
   {
     surface: "MIDI To Chordsmith",

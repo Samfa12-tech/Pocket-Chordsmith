@@ -1049,6 +1049,22 @@ describe("Pocket DAW MCP tools", () => {
     expect(sourceClip).toMatchObject({ type: "midi", mediaPoolItemId: imported.item.id });
   });
 
+  it("can remove raw MIDI reference clips after arrangement mapping through the file-first command path", async () => {
+    const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(metalArrangementMidiBytes()), "metal.mid");
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(imported.project),
+      commands: [
+        { type: "convert_midi_arrangement", clipId: imported.clipId, sectionId: "A", trackIndex: 0, keepRawReference: false }
+      ]
+    }));
+
+    expect(result.statuses[0]).toContain("Raw MIDI reference removed from the timeline");
+    expect(result.project.timeline.clips.some((clip: { id: string }) => clip.id === imported.clipId)).toBe(false);
+    expect(result.project.mediaPool.some((item: { id: string }) => item.id === imported.item.id)).toBe(true);
+    expect(bassOverlayCount(result.project, "A")).toBe(2);
+  });
+
   it("adopts imported MIDI tempo through the file-first command path", async () => {
     const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(tempoMapMidiBytes()), "tempo-map.mid");
     imported.project.project.bpm = 100;

@@ -1506,7 +1506,9 @@ describe("Pocket DAW UI rendering", () => {
     expect(source).toContain("[data-midi-conversion-section-target]");
     expect(source).toContain("[data-midi-conversion-melody-target]");
     expect(source).toContain("[data-midi-conversion-source-target]");
+    expect(source).toContain("[data-midi-conversion-keep-raw-reference]");
     expect(source).toContain("MIDI conversion source set to");
+    expect(source).toContain("MIDI conversion will remove the raw reference clip");
     expect(source).toContain("MIDI conversion target set to Section");
     expect(source).toContain("MIDI conversion melody target set to track");
   });
@@ -2012,6 +2014,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('data-midi-conversion-section-target="true"');
     expect(html).toContain('data-midi-conversion-melody-target="true"');
     expect(html).toContain('data-midi-conversion-source-target="true"');
+    expect(html).toContain('data-midi-conversion-keep-raw-reference="true" checked');
+    expect(html).toContain("Keep raw reference");
     expect(html).toContain("All MIDI notes");
     expect(html).toContain("Map to");
     expect(html).toContain(`data-midi-conversion-preview="${result.clipId}"`);

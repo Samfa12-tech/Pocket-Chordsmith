@@ -40,6 +40,7 @@ export interface AppState {
   midiImportPlacementMode: MidiImportPlacementMode;
   midiConversionSourceMode: MidiConversionSourceMode;
   midiConversionSourceValue: number | null;
+  midiConversionKeepRawReference: boolean;
   currentFile: ProjectFileState;
   busyMessage: string | null;
   exportProgress: { message: string; detail?: string } | null;
@@ -219,6 +220,7 @@ export function createInitialState(): AppState {
     midiImportPlacementMode: "single-clip",
     midiConversionSourceMode: "all",
     midiConversionSourceValue: null,
+    midiConversionKeepRawReference: true,
     currentFile: { path: null, label: "Editable demo copy" },
     busyMessage: null,
     exportProgress: null,
@@ -317,6 +319,7 @@ export function loadProjectIntoState(
     midiImportPlacementMode: state.midiImportPlacementMode,
     midiConversionSourceMode: state.midiConversionSourceMode,
     midiConversionSourceValue: state.midiConversionSourceValue,
+    midiConversionKeepRawReference: state.midiConversionKeepRawReference,
     currentFile: options.currentFile || { path: null, label: project.project.title || "Untitled project" },
     busyMessage: null,
     exportProgress: null,

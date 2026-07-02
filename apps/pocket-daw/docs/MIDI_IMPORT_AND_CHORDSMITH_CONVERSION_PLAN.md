@@ -92,12 +92,12 @@ Non-goals:
 ## Conversion Roadmap
 
 1. Add an explicit conversion command beside, not inside, import.
-2. Show a conversion preview. `Current source status: first pass implemented for selected MIDI clips in the Piano Roll plus support diagnostics, file-first MCP summaries and live MCP media status. It reports tempo/meter, MIDI key-signature or pitch-inferred key/scale, rough section shape, role hints, visible/source note counts, filtered-out note counts, per-role drum/bass/chord/melody mapping counts, preserved expressive MIDI event counts and warnings before any conversion command runs. The Piano Roll now also exposes source MIDI track/channel, target Section and Melody Track choices used by Map Drums, Map Bass, Map Chords, Map Melody and Map Arrangement. Deeper A-H section sequencing remains future work.`
+2. Show a conversion preview. `Current source status: first pass implemented for selected MIDI clips in the Piano Roll plus support diagnostics, file-first MCP summaries and live MCP media status. It reports tempo/meter, MIDI key-signature or pitch-inferred key/scale, rough section shape, role hints, visible/source note counts, filtered-out note counts, per-role drum/bass/chord/melody mapping counts, preserved expressive MIDI event counts and warnings before any conversion command runs. The Piano Roll now also exposes source MIDI track/channel, target Section, Melody Track and raw-reference keep/remove choices used by Map Drums, Map Bass, Map Chords, Map Melody and Map Arrangement. Deeper A-H section sequencing remains future work.`
    - detected key, scale, tempo, time signature
    - suggested section length and A-H sequence
    - mapped drum lanes, bass roots, chord rhythm, melody lead, and optional guitar rhythm
    - ignored tracks/channels/controllers
-3. Provide mapping choices. `Current source status: first source and target choices implemented for all notes, a chosen source track, a chosen MIDI channel, destination section and generated melody track; raw-reference omit/keep choices remain future work.`
+3. Provide mapping choices. `Current source status: first source and target choices implemented for all notes, a chosen source track, a chosen MIDI channel, destination section, generated melody track and raw-reference keep/remove after successful mapping.`
    - drums from channel 10 or chosen track
    - bass from lowest monophonic track/channel
    - chords from block/polyphonic tracks

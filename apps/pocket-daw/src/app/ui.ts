@@ -1496,7 +1496,7 @@ function renderMidiClipEditor(project: ReturnType<typeof currentProject>, state:
         <button type="button" data-midi-program-add="${sanitizeDataAttr(clip.id)}">Add Program</button>
         <button type="button" data-midi-pitch-bend-add="${sanitizeDataAttr(clip.id)}">Add Bend</button>
         <button type="button" data-midi-aftertouch-add="${sanitizeDataAttr(clip.id)}">Add Touch</button>
-        ${renderMidiConversionTargetControls(conversionSectionId, conversionMelodyTrackIndex, conversionMelodyCount, conversionPreview?.sourceOptions || [], conversionSourceFilter)}
+        ${renderMidiConversionTargetControls(conversionSectionId, conversionMelodyTrackIndex, conversionMelodyCount, conversionPreview?.sourceOptions || [], conversionSourceFilter, state.midiConversionKeepRawReference)}
         <button type="button" title="Map General MIDI drum notes into generated drum branch overlays" data-action="convert-midi-drums">Map Drums</button>
         <button type="button" title="Map low non-drum MIDI notes into generated bass overlays" data-action="convert-midi-bass">Map Bass</button>
         <button type="button" title="Map simultaneous non-drum MIDI notes into generated chord overlays" data-action="convert-midi-chords">Map Chords</button>
@@ -1654,7 +1654,8 @@ function renderMidiConversionTargetControls(
   melodyTrackIndex: number,
   melodyTrackCount: number,
   sourceOptions: MidiConversionSourceOption[],
-  sourceFilter: MidiConversionSourceFilter
+  sourceFilter: MidiConversionSourceFilter,
+  keepRawReference: boolean
 ): string {
   const options = sourceOptions.length ? sourceOptions : [{ mode: "all" as const, value: null, label: "All MIDI notes" }];
   const sourceValue = midiConversionSourceOptionValue(sourceFilter);
@@ -1677,6 +1678,10 @@ function renderMidiConversionTargetControls(
         <select data-midi-conversion-melody-target="true" title="Choose the generated melody track used by Map Melody and Map Arrangement.">
           ${Array.from({ length: melodyTrackCount }, (_value, index) => `<option value="${index}" ${melodyTrackIndex === index ? "selected" : ""}>Track ${index + 1}</option>`).join("")}
         </select>
+      </label>
+      <label class="midi-raw-reference-toggle" title="Keep the imported MIDI clip on the timeline after mapping, or remove only that reference clip while leaving the source in the Media Pool.">
+        <input type="checkbox" data-midi-conversion-keep-raw-reference="true" ${keepRawReference !== false ? "checked" : ""}>
+        Keep raw reference
       </label>
     </div>
   `;

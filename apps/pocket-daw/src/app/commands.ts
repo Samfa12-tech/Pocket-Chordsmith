@@ -1250,7 +1250,7 @@ function midiTickAtPlayhead(state: AppState, clip: Clip): number {
   return Math.max(0, Math.round(beats * ppq));
 }
 
-export function convertMidiDrumsToBranchOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A", sourceFilter?: MidiConversionSourceFilter): AppState {
+export function convertMidiDrumsToBranchOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A", sourceFilter?: MidiConversionSourceFilter, keepRawReference?: boolean): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping drums." };
   const filter = sourceFilter || currentMidiConversionSourceFilter(state);
@@ -1264,9 +1264,10 @@ export function convertMidiDrumsToBranchOverlaysCommand(state: AppState, clipId 
       status: result.skipped ? `No supported drum hits found in ${clip.name} from ${sourceLabel}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name} from ${sourceLabel}.`
     };
   }
+  const rawReference = finalizeMidiConversionReference(result.project, clipId, keepRawReference ?? currentMidiConversionKeepRawReference(state));
   return {
-    ...commitProject(state, result.project, `Mapped ${result.written} MIDI drum cell${result.written === 1 ? "" : "s"} from ${clip.name} (${sourceLabel}) to Section ${result.sectionId} branch overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
-    selectedClipId: clipId,
+    ...commitProject(state, rawReference.project, `Mapped ${result.written} MIDI drum cell${result.written === 1 ? "" : "s"} from ${clip.name} (${sourceLabel}) to Section ${result.sectionId} branch overlays${result.merged ? ` (${result.merged} merged)` : ""}.${rawReference.statusSuffix}`),
+    selectedClipId: rawReference.selectedClipId,
     selectedTrackId: clip.trackId || state.selectedTrackId,
     chordsmithEditorSectionId: result.sectionId
   };
@@ -1277,7 +1278,8 @@ export function convertMidiMelodyToGeneratedOverlaysCommand(
   clipId = state.selectedClipId || "",
   sectionId = state.chordsmithEditorSectionId || "A",
   trackIndex = state.chordsmithEditorMelodyTrackIndex || 0,
-  sourceFilter?: MidiConversionSourceFilter
+  sourceFilter?: MidiConversionSourceFilter,
+  keepRawReference?: boolean
 ): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping melody." };
@@ -1292,16 +1294,17 @@ export function convertMidiMelodyToGeneratedOverlaysCommand(
       status: result.skipped ? `No supported melodic MIDI notes found in ${clip.name} from ${sourceLabel}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name} from ${sourceLabel}.`
     };
   }
+  const rawReference = finalizeMidiConversionReference(result.project, clipId, keepRawReference ?? currentMidiConversionKeepRawReference(state));
   return {
-    ...commitProject(state, result.project, `Mapped ${result.written} MIDI melodic note${result.written === 1 ? "" : "s"} from ${clip.name} (${sourceLabel}) to Section ${result.sectionId} Melody ${result.trackIndex + 1} overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
-    selectedClipId: clipId,
+    ...commitProject(state, rawReference.project, `Mapped ${result.written} MIDI melodic note${result.written === 1 ? "" : "s"} from ${clip.name} (${sourceLabel}) to Section ${result.sectionId} Melody ${result.trackIndex + 1} overlays${result.merged ? ` (${result.merged} merged)` : ""}.${rawReference.statusSuffix}`),
+    selectedClipId: rawReference.selectedClipId,
     selectedTrackId: clip.trackId || state.selectedTrackId,
     chordsmithEditorSectionId: result.sectionId,
     chordsmithEditorMelodyTrackIndex: result.trackIndex
   };
 }
 
-export function convertMidiBassToGeneratedOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A", sourceFilter?: MidiConversionSourceFilter): AppState {
+export function convertMidiBassToGeneratedOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A", sourceFilter?: MidiConversionSourceFilter, keepRawReference?: boolean): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping bass." };
   const filter = sourceFilter || currentMidiConversionSourceFilter(state);
@@ -1315,15 +1318,16 @@ export function convertMidiBassToGeneratedOverlaysCommand(state: AppState, clipI
       status: result.skipped ? `No supported bass MIDI notes found in ${clip.name} from ${sourceLabel}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name} from ${sourceLabel}.`
     };
   }
+  const rawReference = finalizeMidiConversionReference(result.project, clipId, keepRawReference ?? currentMidiConversionKeepRawReference(state));
   return {
-    ...commitProject(state, result.project, `Mapped ${result.written} MIDI bass note${result.written === 1 ? "" : "s"} from ${clip.name} (${sourceLabel}) to Section ${result.sectionId} Bass overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
-    selectedClipId: clipId,
+    ...commitProject(state, rawReference.project, `Mapped ${result.written} MIDI bass note${result.written === 1 ? "" : "s"} from ${clip.name} (${sourceLabel}) to Section ${result.sectionId} Bass overlays${result.merged ? ` (${result.merged} merged)` : ""}.${rawReference.statusSuffix}`),
+    selectedClipId: rawReference.selectedClipId,
     selectedTrackId: clip.trackId || state.selectedTrackId,
     chordsmithEditorSectionId: result.sectionId
   };
 }
 
-export function convertMidiChordsToGeneratedOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A", sourceFilter?: MidiConversionSourceFilter): AppState {
+export function convertMidiChordsToGeneratedOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A", sourceFilter?: MidiConversionSourceFilter, keepRawReference?: boolean): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping chords." };
   const filter = sourceFilter || currentMidiConversionSourceFilter(state);
@@ -1337,9 +1341,10 @@ export function convertMidiChordsToGeneratedOverlaysCommand(state: AppState, cli
       status: result.skipped ? `No supported MIDI chord groups found in ${clip.name} from ${sourceLabel}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name} from ${sourceLabel}.`
     };
   }
+  const rawReference = finalizeMidiConversionReference(result.project, clipId, keepRawReference ?? currentMidiConversionKeepRawReference(state));
   return {
-    ...commitProject(state, result.project, `Mapped ${result.written} MIDI chord group${result.written === 1 ? "" : "s"} from ${clip.name} (${sourceLabel}) to Section ${result.sectionId} Chords overlays${result.merged ? ` (${result.merged} grouped)` : ""}.`),
-    selectedClipId: clipId,
+    ...commitProject(state, rawReference.project, `Mapped ${result.written} MIDI chord group${result.written === 1 ? "" : "s"} from ${clip.name} (${sourceLabel}) to Section ${result.sectionId} Chords overlays${result.merged ? ` (${result.merged} grouped)` : ""}.${rawReference.statusSuffix}`),
+    selectedClipId: rawReference.selectedClipId,
     selectedTrackId: clip.trackId || state.selectedTrackId,
     chordsmithEditorSectionId: result.sectionId
   };
@@ -1350,7 +1355,8 @@ export function convertMidiArrangementToGeneratedOverlaysCommand(
   clipId = state.selectedClipId || "",
   sectionId = state.chordsmithEditorSectionId || "A",
   melodyTrackIndex = state.chordsmithEditorMelodyTrackIndex || 0,
-  sourceFilter?: MidiConversionSourceFilter
+  sourceFilter?: MidiConversionSourceFilter,
+  keepRawReference?: boolean
 ): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping an arrangement." };
@@ -1375,9 +1381,10 @@ export function convertMidiArrangementToGeneratedOverlaysCommand(
   }
 
   const summary = `${drums.written} drums, ${bass.written} bass, ${chords.written} chords, ${melody.written} melody`;
+  const rawReference = finalizeMidiConversionReference(melody.project, clipId, keepRawReference ?? currentMidiConversionKeepRawReference(state));
   return {
-    ...commitProject(state, melody.project, `Mapped MIDI arrangement from ${clip.name} (${sourceLabel}) to Section ${melody.sectionId}: ${summary}${totalMerged ? ` (${totalMerged} merged/grouped)` : ""}. Raw MIDI clip preserved.`),
-    selectedClipId: clipId,
+    ...commitProject(state, rawReference.project, `Mapped MIDI arrangement from ${clip.name} (${sourceLabel}) to Section ${melody.sectionId}: ${summary}${totalMerged ? ` (${totalMerged} merged/grouped)` : ""}.${rawReference.statusSuffix}`),
+    selectedClipId: rawReference.selectedClipId,
     selectedTrackId: clip.trackId || state.selectedTrackId,
     chordsmithEditorSectionId: melody.sectionId,
     chordsmithEditorMelodyTrackIndex: melody.trackIndex
@@ -1386,6 +1393,26 @@ export function convertMidiArrangementToGeneratedOverlaysCommand(
 
 export function currentMidiConversionSourceFilter(state: AppState): MidiConversionSourceFilter {
   return normalizeMidiConversionSourceFilter(state.midiConversionSourceMode, state.midiConversionSourceValue);
+}
+
+export function currentMidiConversionKeepRawReference(state: AppState): boolean {
+  return state.midiConversionKeepRawReference !== false;
+}
+
+function finalizeMidiConversionReference(project: PocketDawProject, clipId: string, keepRawReference: boolean): { project: PocketDawProject; selectedClipId: string | null; statusSuffix: string } {
+  if (keepRawReference) {
+    return {
+      project,
+      selectedClipId: clipId,
+      statusSuffix: " Raw MIDI reference preserved."
+    };
+  }
+  const next = deleteClip(project, clipId);
+  return {
+    project: next,
+    selectedClipId: next.timeline.clips[0]?.id || null,
+    statusSuffix: " Raw MIDI reference removed from the timeline; source media remains in the Media Pool."
+  };
 }
 
 export function adoptMidiTempoMapStartCommand(state: AppState, clipId = state.selectedClipId || ""): AppState {
