@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { createInitialState, createUiCollapsedSections } from "../src/app/state";
+import { collapsedSectionsForCreationPreset, createInitialState, createUiCollapsedSections, lowerDockTabForCreationPreset } from "../src/app/state";
 import { renderAppShell } from "../src/app/ui";
 import { createUndoStack } from "../src/daw/undo";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
@@ -239,6 +239,27 @@ describe("Pocket DAW UI rendering", () => {
     expect(gameTransport).toContain('data-action="preset-game-music" aria-pressed="true"');
   });
 
+  it("defines focus preset collapse defaults that genuinely reduce visible clutter", () => {
+    expect(collapsedSectionsForCreationPreset("game-music")).toMatchObject({
+      "timeline-tools": false,
+      "inspector-clip": true,
+      "inspector-track": false,
+      "lower-dock": false,
+      "media-pool": false
+    });
+    expect(lowerDockTabForCreationPreset("game-music", "mixer")).toBe("export-details");
+
+    expect(collapsedSectionsForCreationPreset("music")).toMatchObject({
+      "timeline-tools": false,
+      "inspector-clip": false,
+      "inspector-track": false,
+      "lower-dock": false,
+      "media-pool": true
+    });
+    expect(lowerDockTabForCreationPreset("music", "export-details")).toBe("mixer");
+    expect(lowerDockTabForCreationPreset("music", "piano-roll")).toBe("piano-roll");
+  });
+
   it("renders a persistent studio rail for major DAW work areas", () => {
     const state = createInitialState();
 
@@ -403,6 +424,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(source).toContain("this.applyButtonTooltips();");
     expect(source).toContain("function tooltipForButton(button: HTMLButtonElement)");
     expect(source).toContain("FUNCTION_ACTION_TOOLTIPS");
+    expect(source).toContain("collapsedSectionsForCreationPreset");
+    expect(source).toContain("lowerDockTabForCreationPreset");
     expect(source).toContain('if (action === "toggle-ui-section")');
     expect(source).toContain('if (action === "function-guide-open")');
     expect(source).toContain('if (action === "studio-focus-timeline")');
@@ -426,6 +449,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(doc).toContain("Copy/Cut Range");
     expect(doc).toContain("| Godot Game Pack |");
     expect(doc).toContain("| Music Focus |");
+    expect(doc).toContain("collapses the Media Pool");
+    expect(doc).toContain("Opens Export Details");
     expect(doc).toContain("| Studio Rail |");
     expect(doc).toContain("| Folder Tracks |");
     expect(doc).toContain("| Track Source Editor |");
@@ -443,6 +468,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Studio Rail Navigation | `studio-rail / data-studio-rail-target`");
     expect(catalog).toContain("| Studio Rail Clips | `data-action=studio-focus-timeline`");
     expect(catalog).toContain("| Studio Rail Godot | `data-action=studio-focus-godot`");
+    expect(catalog).toContain("collapsing the Media Pool");
+    expect(catalog).toContain("collapses selected clip/take detail");
     expect(catalog).toContain("| Add Folder Track | `data-add-track-kind:folder`");
     expect(catalog).toContain("| Assign Track Folder | `data-track-folder`");
     expect(catalog).toContain("| Toggle Folder Track | `data-folder-toggle`");

@@ -64,6 +64,9 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
   applyChipTrackEq(fx, project);
   applyChipTrackPresets(tracks, project);
   applyChipMasterChain(fx, project);
+  applyMetalTrackEq(fx, project);
+  applyMetalTrackPresets(tracks, project);
+  applyMetalMasterChain(fx, project);
 
   const daw: PocketDawProject = {
     app: POCKET_DAW_APP,
@@ -82,7 +85,8 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
         notes: [
           "Imported through Pocket DAW v0 compatibility sanitizer. Unknown source fields are preserved in original.",
           ...(isLofiProject(project) ? [`Lofi profile detected: ${lofiPresetLabel(project)}. Track presets, editable Pocket Pro EQ curves and a gentle lofi master chain were applied.`] : []),
-          ...(isChipProject(project) ? [`Chip tune profile detected: ${chipPresetLabel(project)}. Chip track presets, punch EQ curves and a compact master chain were applied.`] : [])
+          ...(isChipProject(project) ? [`Chip tune profile detected: ${chipPresetLabel(project)}. Chip track presets, punch EQ curves and a compact master chain were applied.`] : []),
+          ...(isMetalProject(project) ? [`Heavy metal profile detected: ${metalPresetLabel(project)}. Tight drum/bass/guitar metadata, presence EQ curves and a controlled metal master chain were applied.`] : [])
         ]
       }
     ],
@@ -147,7 +151,8 @@ function alignTracksToChordsmithSource(tracks: ReturnType<typeof createDefaultTr
   const sourceSoundMetadata = {
     audioProfile: project.audioProfile,
     lofiPreset: project.lofiPreset,
-    chipPreset: project.chipPreset
+    chipPreset: project.chipPreset,
+    metalPreset: project.metalPreset
   };
   if (drums) {
     drums.volume = project.beatVolume;
@@ -217,6 +222,10 @@ function isChipProject(project: SanitizedPcsProject) {
   return project.audioProfile === "chip_tune" || Boolean(project.chipPreset);
 }
 
+function isMetalProject(project: SanitizedPcsProject) {
+  return project.audioProfile === "heavy_metal" || Boolean(project.metalPreset);
+}
+
 function lofiPresetLabel(project: SanitizedPcsProject) {
   return (project.lofiPreset || "lofi_chill")
     .replace(/^lofi_/, "")
@@ -228,6 +237,14 @@ function lofiPresetLabel(project: SanitizedPcsProject) {
 function chipPresetLabel(project: SanitizedPcsProject) {
   return (project.chipPreset || "chip_tune")
     .replace(/^chip_/, "")
+    .split("_")
+    .map((part) => titleCase(part))
+    .join(" ");
+}
+
+function metalPresetLabel(project: SanitizedPcsProject) {
+  return (project.metalPreset || "heavy_metal")
+    .replace(/^metal_/, "")
     .split("_")
     .map((part) => titleCase(part))
     .join(" ");
@@ -289,6 +306,40 @@ function applyChipTrackPresets(tracks: Track[], project: SanitizedPcsProject) {
     }
     if (track.role === "master") {
       track.name = "Chip Master";
+    }
+  });
+}
+
+function applyMetalTrackPresets(tracks: Track[], project: SanitizedPcsProject) {
+  if (!isMetalProject(project)) return;
+  tracks.forEach((track) => {
+    track.metadata = {
+      ...(track.metadata || {}),
+      audioProfile: "heavy_metal",
+      metalPreset: project.metalPreset || "heavy_metal"
+    };
+    if (track.role === "drums") {
+      track.name = project.drumKit === "metal_doom" ? "Doom Drums" : project.drumKit === "metal_arena" ? "Arena Metal Drums" : "Tight Metal Drums";
+      track.metadata = { ...(track.metadata || {}), drumKit: project.drumKit, drumGroovePreset: project.drumGroovePreset };
+    }
+    if (track.role === "bass") {
+      track.name = project.bassTone === "metal_grind_bass" ? "Grind Bass" : project.bassTone === "metal_sub_pick" ? "Sub Pick Bass" : "Pick Bass";
+      track.metadata = { ...(track.metadata || {}), bassTone: project.bassTone };
+    }
+    if (track.role === "chords") {
+      track.name = `${titleCase(project.chordInstrument.replace(/_/g, " "))} Chugs`;
+      track.metadata = { ...(track.metadata || {}), chordsmithInstrument: project.chordInstrument };
+    }
+    if (track.role === "guitar") {
+      track.name = `${titleCase(project.guitarTone.replace(/_/g, " "))} Guitar`;
+      track.metadata = { ...(track.metadata || {}), chordsmithInstrument: project.guitarTone, guitarPatternPreset: project.guitarPatternPreset };
+    }
+    if (track.role === "fx-return") {
+      track.name = "Metal Room";
+      track.volume = Math.max(track.volume, 0.46);
+    }
+    if (track.role === "master") {
+      track.name = "Metal Master";
     }
   });
 }
@@ -396,6 +447,52 @@ function applyChipMasterChain(fx: FxState, project: SanitizedPcsProject) {
   ];
 }
 
+function applyMetalMasterChain(fx: FxState, project: SanitizedPcsProject) {
+  if (!isMetalProject(project)) return;
+  const master = fx.chains.find((chain) => chain.ownerTrackId === "master" || chain.id === "fx_master");
+  if (!master) return;
+  const texture = project.metalTexture || {};
+  const drive = typeof texture.drive === "number" ? texture.drive : 0.45;
+  const tightness = typeof texture.lowTightness === "number" ? texture.lowTightness : 0.8;
+  const presence = typeof texture.presence === "number" ? texture.presence : 0.58;
+  master.slots = [
+    ...master.slots,
+    pocketProEqSlot("metal_pro_eq_master", "Metal Master EQ", "gentle-lead-presence"),
+    {
+      id: "metal_tight_low_master",
+      type: "parametric-eq",
+      name: "Tight Low Control",
+      enabled: true,
+      presetId: "metal-master",
+      parameters: { lowShelfFrequency: 95, lowShelfGain: -1.5 + tightness * 1.2, lowMidFrequency: 260, lowMidGain: -1.8 * tightness, highMidFrequency: 2600, highMidGain: presence * 1.4, highShelfFrequency: 6200, highShelfGain: presence * 0.9 }
+    },
+    {
+      id: "metal_saturation_master",
+      type: "saturation",
+      name: "Controlled Amp Weight",
+      enabled: true,
+      presetId: "metal-master",
+      parameters: { drive: 1.1 + drive * 1.4, mix: 0.12 + drive * 0.18 }
+    },
+    {
+      id: "metal_glue_master",
+      type: "compressor",
+      name: "Metal Glue",
+      enabled: true,
+      presetId: "metal-master",
+      parameters: { threshold: -16, ratio: 3.4, attack: 0.004, release: 0.09 }
+    },
+    {
+      id: "metal_limiter_master",
+      type: "limiter",
+      name: "Metal Safety Limiter",
+      enabled: true,
+      presetId: "metal-master",
+      parameters: { threshold: -4.8, ratio: 14, attack: 0.002, release: 0.08 }
+    }
+  ];
+}
+
 function applyLofiTrackEq(fx: FxState, project: SanitizedPcsProject) {
   if (!isLofiProject(project)) return;
   const presetForRole = new Map([
@@ -426,6 +523,24 @@ function applyChipTrackEq(fx: FxState, project: SanitizedPcsProject) {
     const owner = chain.ownerTrackId || "";
     const melody = owner === "melody" || owner.startsWith("melody-");
     const preset = melody ? ["chip_melody_eq", "Chip Lead EQ", "gentle-lead-presence"] : presetForRole.get(owner);
+    if (!preset || chain.slots.some((slot) => slot.type === POCKET_PRO_EQ_TYPE && slot.presetId === preset[2])) return;
+    const [id, name, presetId] = preset;
+    chain.slots = [pocketProEqSlot(`${id}_${owner || chain.id}`, name, presetId), ...chain.slots];
+  });
+}
+
+function applyMetalTrackEq(fx: FxState, project: SanitizedPcsProject) {
+  if (!isMetalProject(project)) return;
+  const presetForRole = new Map([
+    ["drums", ["metal_drum_eq", "Metal Drum EQ", "drum-punch"]],
+    ["bass", ["metal_bass_eq", "Metal Bass EQ", "warm-bass-pocket"]],
+    ["chords", ["metal_chord_eq", "Metal Chug EQ", "gentle-lead-presence"]],
+    ["guitar", ["metal_guitar_eq", "Metal Guitar EQ", "gentle-lead-presence"]]
+  ]);
+  fx.chains.forEach((chain) => {
+    const owner = chain.ownerTrackId || "";
+    const melody = owner === "melody" || owner.startsWith("melody-");
+    const preset = melody ? ["metal_melody_eq", "Metal Lead EQ", "gentle-lead-presence"] : presetForRole.get(owner);
     if (!preset || chain.slots.some((slot) => slot.type === POCKET_PRO_EQ_TYPE && slot.presetId === preset[2])) return;
     const [id, name, presetId] = preset;
     chain.slots = [pocketProEqSlot(`${id}_${owner || chain.id}`, name, presetId), ...chain.slots];

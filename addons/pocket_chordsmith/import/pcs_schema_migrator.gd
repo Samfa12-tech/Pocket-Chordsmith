@@ -19,6 +19,10 @@ const CHIP_AUDIO_PROFILE_ID := SharedSoundConstants.CHIP_AUDIO_PROFILE_ID
 const DEFAULT_CHIP_PRESET_ID := SharedSoundConstants.DEFAULT_CHIP_PRESET_ID
 const CHIP_STYLE_PRESETS := SharedSoundConstants.CHIP_STYLE_PRESETS
 const CHIP_STYLE_PRESET_TEXTURES := SharedSoundConstants.CHIP_STYLE_PRESET_TEXTURES
+const HEAVY_METAL_AUDIO_PROFILE_ID := SharedSoundConstants.HEAVY_METAL_AUDIO_PROFILE_ID
+const DEFAULT_METAL_PRESET_ID := SharedSoundConstants.DEFAULT_METAL_PRESET_ID
+const METAL_STYLE_PRESETS := SharedSoundConstants.METAL_STYLE_PRESETS
+const METAL_STYLE_PRESET_TEXTURES := SharedSoundConstants.METAL_STYLE_PRESET_TEXTURES
 const POCKET_CHORD_INSTRUMENTS := SharedSoundConstants.POCKET_CHORD_INSTRUMENTS
 const POCKET_MELODY_INSTRUMENTS := SharedSoundConstants.POCKET_MELODY_INSTRUMENTS
 const POCKET_DRUM_KITS := SharedSoundConstants.POCKET_DRUM_KITS
@@ -43,7 +47,7 @@ const DEFAULT_MINOR_PROGRESSION := [0, 5, 2, 6]
 
 const TOP_LEVEL_SUPPORTED_KEYS := [
 	"projectVersion", "schemaVersion", "key", "scale", "timeSig", "bpm", "swing",
-	"audioProfile", "stylePreset", "lofiPreset", "lofiTexture", "chipPreset", "chipTexture", "drumKit", "drumGroovePreset", "bassTone",
+	"audioProfile", "stylePreset", "lofiPreset", "lofiTexture", "chipPreset", "chipTexture", "metalPreset", "metalTexture", "drumKit", "drumGroovePreset", "bassTone",
 	"resolution", "chordType", "chordInstrument", "chordPlayMode", "chordRhythmMode", "chordOctave",
 	"humanizeOn", "sidechainOn", "sidechainAmount", "fxDelay", "fxChorus", "fxFlanger", "fxReverb", "fxMix",
 	"masterVolume", "masterVol", "chordVolume", "chordVol", "beatVolume", "beatVol", "leadVolume", "leadVol",
@@ -98,16 +102,21 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 	data["swing"] = _clamp_float(raw.get("swing", 0.0), 0.0, 0.35, 0.0, "swing", warnings)
 	var style_preset := str(raw.get("stylePreset", ""))
 	var chip_preset := _sanitize_chip_preset(str(raw.get("chipPreset", style_preset if style_preset.begins_with("chip_") else "")))
+	var metal_preset := _sanitize_metal_preset(str(raw.get("metalPreset", style_preset if style_preset.begins_with("metal_") else "")))
 	var lofi_preset := _sanitize_lofi_preset(str(raw.get("lofiPreset", style_preset if style_preset.begins_with("lofi_") else "")))
-	data["audioProfile"] = CHIP_AUDIO_PROFILE_ID if str(raw.get("audioProfile", "")) == CHIP_AUDIO_PROFILE_ID or not chip_preset.is_empty() else (LOFI_AUDIO_PROFILE_ID if str(raw.get("audioProfile", "")) == LOFI_AUDIO_PROFILE_ID or not lofi_preset.is_empty() else "standard")
+	data["audioProfile"] = CHIP_AUDIO_PROFILE_ID if str(raw.get("audioProfile", "")) == CHIP_AUDIO_PROFILE_ID or not chip_preset.is_empty() else (HEAVY_METAL_AUDIO_PROFILE_ID if str(raw.get("audioProfile", "")) == HEAVY_METAL_AUDIO_PROFILE_ID or not metal_preset.is_empty() else (LOFI_AUDIO_PROFILE_ID if str(raw.get("audioProfile", "")) == LOFI_AUDIO_PROFILE_ID or not lofi_preset.is_empty() else "standard"))
 	data["lofiPreset"] = lofi_preset if data["audioProfile"] == LOFI_AUDIO_PROFILE_ID else ""
 	data["lofiTexture"] = _sanitize_lofi_texture(raw.get("lofiTexture", {}), str(data["lofiPreset"]))
 	data["chipPreset"] = (chip_preset if not chip_preset.is_empty() else DEFAULT_CHIP_PRESET_ID) if data["audioProfile"] == CHIP_AUDIO_PROFILE_ID else ""
 	data["chipTexture"] = _sanitize_chip_texture(raw.get("chipTexture", {}), str(data["chipPreset"]))
+	data["metalPreset"] = (metal_preset if not metal_preset.is_empty() else DEFAULT_METAL_PRESET_ID) if data["audioProfile"] == HEAVY_METAL_AUDIO_PROFILE_ID else ""
+	data["metalTexture"] = _sanitize_metal_texture(raw.get("metalTexture", {}), str(data["metalPreset"]))
 	if data["audioProfile"] != LOFI_AUDIO_PROFILE_ID:
 		data["lofiTexture"]["enabled"] = false
 	if data["audioProfile"] != CHIP_AUDIO_PROFILE_ID:
 		data["chipTexture"]["enabled"] = false
+	if data["audioProfile"] != HEAVY_METAL_AUDIO_PROFILE_ID:
+		data["metalTexture"]["enabled"] = false
 	data["drumKit"] = _safe_choice(str(raw.get("drumKit", "classic")), POCKET_DRUM_KITS, "classic", "drumKit", warnings)
 	data["drumGroovePreset"] = str(raw.get("drumGroovePreset", ""))
 	data["bassTone"] = _safe_choice(str(raw.get("bassTone", "classic")), POCKET_BASS_TONES, "classic", "bassTone", warnings)
@@ -211,10 +220,10 @@ func _collect_metadata(raw: Dictionary, data: Dictionary, metadata: Dictionary, 
 		if raw.get(key) is Dictionary:
 			for meta_key in raw[key].keys():
 				game_metadata[meta_key] = raw[key][meta_key]
-	for key in ["level_id", "default_loop", "mood", "intensity_tags", "markers", "loop_regions", "gameplay_flags", "accent_map", "music_states", "default_music_state", "stem_sets", "state_stem_sets", "audioProfile", "lofiPreset", "lofiTexture", "chipPreset", "chipTexture", "drumKit", "drumGroovePreset", "bassTone"]:
+	for key in ["level_id", "default_loop", "mood", "intensity_tags", "markers", "loop_regions", "gameplay_flags", "accent_map", "music_states", "default_music_state", "stem_sets", "state_stem_sets", "audioProfile", "lofiPreset", "lofiTexture", "chipPreset", "chipTexture", "metalPreset", "metalTexture", "drumKit", "drumGroovePreset", "bassTone"]:
 		if raw.has(key):
 			game_metadata[key] = raw[key]
-	for key in ["audioProfile", "lofiPreset", "lofiTexture", "chipPreset", "chipTexture", "drumKit", "drumGroovePreset", "bassTone"]:
+	for key in ["audioProfile", "lofiPreset", "lofiTexture", "chipPreset", "chipTexture", "metalPreset", "metalTexture", "drumKit", "drumGroovePreset", "bassTone"]:
 		if data.has(key):
 			game_metadata[key] = data[key]
 	metadata["game_metadata"] = game_metadata
@@ -372,6 +381,10 @@ func _sanitize_chip_preset(value: String) -> String:
 	return value if CHIP_STYLE_PRESETS.has(value) else ""
 
 
+func _sanitize_metal_preset(value: String) -> String:
+	return value if METAL_STYLE_PRESETS.has(value) else ""
+
+
 func _sanitize_lofi_texture(raw, preset_id := "") -> Dictionary:
 	var source: Dictionary = raw if raw is Dictionary else {}
 	var preset_texture: Dictionary = LOFI_STYLE_PRESET_TEXTURES.get(preset_id, {})
@@ -397,6 +410,20 @@ func _sanitize_chip_texture(raw, preset_id := "") -> Dictionary:
 		"pitchDrift": clamp(_as_float(source.get("pitchDrift", preset_texture.get("pitchDrift", 0.02)), 0.02), 0.0, 1.0),
 		"saturation": clamp(_as_float(source.get("saturation", preset_texture.get("saturation", 0.18)), 0.18), 0.0, 1.0),
 		"stereoSpread": clamp(_as_float(source.get("stereoSpread", preset_texture.get("stereoSpread", 0.12)), 0.12), 0.0, 1.0),
+	}
+
+
+func _sanitize_metal_texture(raw, preset_id := "") -> Dictionary:
+	var source: Dictionary = raw if raw is Dictionary else {}
+	var preset_texture: Dictionary = METAL_STYLE_PRESET_TEXTURES.get(preset_id, {})
+	return {
+		"enabled": bool(source.get("enabled", preset_texture.get("enabled", false))),
+		"drive": clamp(_as_float(source.get("drive", preset_texture.get("drive", 0.45)), 0.45), 0.0, 1.0),
+		"palmMute": clamp(_as_float(source.get("palmMute", preset_texture.get("palmMute", 0.68)), 0.68), 0.0, 1.0),
+		"lowTightness": clamp(_as_float(source.get("lowTightness", preset_texture.get("lowTightness", 0.78)), 0.78), 0.0, 1.0),
+		"presence": clamp(_as_float(source.get("presence", preset_texture.get("presence", 0.55)), 0.55), 0.0, 1.0),
+		"roomSize": clamp(_as_float(source.get("roomSize", preset_texture.get("roomSize", 0.14)), 0.14), 0.0, 1.0),
+		"pickAttack": clamp(_as_float(source.get("pickAttack", preset_texture.get("pickAttack", 0.7)), 0.7), 0.0, 1.0),
 	}
 
 

@@ -134,6 +134,12 @@ pub struct NativeRenderedEvent {
     #[serde(rename = "chipTexture")]
     #[allow(dead_code)]
     chip_texture: Option<Value>,
+    #[serde(rename = "metalPreset")]
+    #[allow(dead_code)]
+    metal_preset: Option<String>,
+    #[serde(rename = "metalTexture")]
+    #[allow(dead_code)]
+    metal_texture: Option<Value>,
     accent: Option<bool>,
     articulation: Option<String>,
     direction: Option<String>,
@@ -5894,6 +5900,8 @@ mod tests {
             lofi_texture: None,
             chip_preset: None,
             chip_texture: None,
+            metal_preset: None,
+            metal_texture: None,
             accent: None,
             articulation: None,
             direction: None,
@@ -5924,6 +5932,8 @@ mod tests {
             lofi_texture: None,
             chip_preset: None,
             chip_texture: None,
+            metal_preset: None,
+            metal_texture: None,
             accent: None,
             articulation: Some(articulation.to_string()),
             direction: None,
@@ -5954,6 +5964,8 @@ mod tests {
             lofi_texture: None,
             chip_preset: None,
             chip_texture: None,
+            metal_preset: None,
+            metal_texture: None,
             accent: None,
             articulation: None,
             direction: None,
@@ -5984,6 +5996,8 @@ mod tests {
             lofi_texture: None,
             chip_preset: None,
             chip_texture: None,
+            metal_preset: None,
+            metal_texture: None,
             accent: None,
             articulation: None,
             direction: None,

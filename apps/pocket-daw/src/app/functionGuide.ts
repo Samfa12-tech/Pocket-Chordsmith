@@ -620,15 +620,15 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "Music Focus",
-        does: "Keeps composition, editing and mix controls visible while hiding game cue/export clutter.",
+        does: "Keeps composition, editing and mix controls visible while collapsing the Media Pool and hiding game cue/export clutter.",
         useWhen: "Use when writing or mixing a song.",
-        aiNote: "Focus presets are view filters only; they do not delete controls or project data."
+        aiNote: "Focus presets are layout filters only; they do not delete controls, media or project data."
       },
       {
         name: "Game Music Focus",
-        does: "Keeps game cues and game-pack export controls visible while hiding live-recording take tools.",
+        does: "Opens Export Details, keeps game cues and game-pack export controls visible, and collapses selected clip/take detail.",
         useWhen: "Use when preparing adaptive music and game packs.",
-        aiNote: "WAV game packs remain the supported baseline."
+        aiNote: "Layout filter only; WAV game packs remain the supported baseline and the Godot addon is not edited."
       },
       {
         name: "Collapsible UI Sections",
@@ -1186,17 +1186,17 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "View And Focus",
     control: "Music Focus",
     actionId: "preset-music",
-    does: "Keeps composition, editing, and mixing controls prominent while hiding game-export clutter.",
+    does: "Keeps composition, editing, and mixing controls prominent while collapsing the Media Pool and hiding game-export clutter.",
     useWhen: "Use while writing, arranging, importing, or mixing a song.",
-    aiNote: "View filter only; it does not remove project data or disable hidden features."
+    aiNote: "Layout filter only; it does not remove project data, media or hidden features."
   },
   {
     surface: "View And Focus",
     control: "Game Music Focus",
     actionId: "preset-game-music",
-    does: "Keeps game cue and game-pack controls visible while hiding live-recording take clutter.",
+    does: "Opens Export Details, keeps game cue and game-pack controls visible, and collapses selected clip/take detail.",
     useWhen: "Use while preparing adaptive game music packs.",
-    aiNote: "View filter only; WAV game packs remain the supported baseline."
+    aiNote: "Layout filter only; WAV game packs remain the supported baseline and this does not edit the Godot addon."
   },
   {
     surface: "View And Focus",

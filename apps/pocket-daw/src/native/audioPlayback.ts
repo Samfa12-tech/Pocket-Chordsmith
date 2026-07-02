@@ -70,6 +70,8 @@ export interface NativeAudioEvent {
   lofiTexture?: JsonValue;
   chipPreset?: string;
   chipTexture?: JsonValue;
+  metalPreset?: string;
+  metalTexture?: JsonValue;
   accent?: boolean;
   articulation?: string;
   direction?: "down" | "up";
@@ -322,6 +324,8 @@ export function buildNativeAudioStartPayload(
       lofiTexture: event.lofiTexture,
       chipPreset: event.chipPreset,
       chipTexture: event.chipTexture,
+      metalPreset: event.metalPreset,
+      metalTexture: event.metalTexture,
       accent: event.accent,
       articulation: event.articulation,
       direction: event.direction,

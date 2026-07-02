@@ -114,6 +114,68 @@ describe("Pocket Chordsmith import", () => {
     expect(project.sourceRefs[0]?.normalized).toMatchObject({ lofiTexture: { enabled: true, tapeHiss: 0.1 } });
   });
 
+  it("applies heavy-metal preset defaults when importing sparse metal Chordsmith projects", () => {
+    const melodyA = new Array<number | null>(64).fill(null);
+    const bassNotesA = new Array<number | null>(64).fill(null);
+    const guitarPatternA = new Array<string>(64).fill("off");
+    const gridA = {
+      kick: new Array(64).fill(0),
+      snare: new Array(64).fill(0),
+      hat: new Array(64).fill(0),
+      bass: new Array(64).fill(0)
+    };
+    gridA.kick[0] = 2;
+    bassNotesA[0] = 0;
+    guitarPatternA[0] = "chug";
+    melodyA[0] = 5;
+    const sanitized = sanitizePocketChordsmithProject({
+      title: "Sparse Metal Import",
+      audioProfile: "heavy_metal",
+      metalPreset: "metal_thrashing_gallop",
+      bassMode: "manual",
+      gridA,
+      bassNotesA,
+      guitarPatternA,
+      melodyTracksA: [melodyA]
+    });
+    const project = createDawProjectFromChordsmithProject(sanitized);
+    const byRole = new Map(project.tracks.map((track) => [track.role, track]));
+    const events = renderTimelineEvents(project);
+    const masterChain = project.fx.chains.find((chain) => chain.ownerTrackId === "master" || chain.id === "fx_master");
+
+    expect(sanitized.audioProfile).toBe("heavy_metal");
+    expect(sanitized.scale).toBe("minor");
+    expect(sanitized.bpm).toBe(168);
+    expect(sanitized.metalPreset).toBe("metal_thrashing_gallop");
+    expect(sanitized.drumKit).toBe("metal_tight");
+    expect(sanitized.drumGroovePreset).toBe("metal_gallop_160");
+    expect(sanitized.bassTone).toBe("metal_grind_bass");
+    expect(sanitized.chordInstrument).toBe("metal_power_stack");
+    expect(sanitized.sections.A.melodyInstruments).toEqual(["twin_harmony_lead"]);
+    expect(sanitized.guitarEnabled).toBe(true);
+    expect(sanitized.guitarTone).toBe("tight_metal");
+    expect(sanitized.guitarPatternPreset).toBe("thrash_gallop");
+    expect(sanitized.metalTexture).toMatchObject({ enabled: true, palmMute: 0.84, pickAttack: 0.82 });
+    expect(project.sourceRefs[0]?.notes?.some((note) => note.includes("Heavy metal profile detected"))).toBe(true);
+    expect(project.sourceRefs[0]?.normalized).toMatchObject({
+      audioProfile: "heavy_metal",
+      metalPreset: "metal_thrashing_gallop",
+      drumKit: "metal_tight",
+      drumGroovePreset: "metal_gallop_160",
+      bassTone: "metal_grind_bass"
+    });
+    expect(byRole.get("drums")?.metadata).toMatchObject({ audioProfile: "heavy_metal", metalPreset: "metal_thrashing_gallop", drumKit: "metal_tight" });
+    expect(byRole.get("bass")?.metadata).toMatchObject({ bassTone: "metal_grind_bass" });
+    expect(byRole.get("guitar")?.active).toBe(true);
+    expect(project.fx.chains.find((chain) => chain.ownerTrackId === "drums")?.slots[0]).toMatchObject({ type: "parametric-eq", presetId: "drum-punch" });
+    expect(masterChain?.slots.some((slot) => slot.id === "metal_saturation_master")).toBe(true);
+    expect(events.some((event) => event.kind === "kick" && event.audioProfile === "heavy_metal" && event.drumKit === "metal_tight")).toBe(true);
+    expect(events.some((event) => event.kind === "bass" && event.bassTone === "metal_grind_bass")).toBe(true);
+    expect(events.some((event) => event.kind === "chord" && event.instrument === "metal_power_stack")).toBe(true);
+    expect(events.some((event) => event.kind === "melody" && event.instrument === "twin_harmony_lead" && event.metalPreset === "metal_thrashing_gallop")).toBe(true);
+    expect(events.some((event) => event.kind === "guitar" && event.instrument === "tight_metal")).toBe(true);
+  });
+
   it("normalises missing fields and preserves unknown source fields", () => {
     const sanitized = sanitizePocketChordsmithProject({
       title: "Sparse",

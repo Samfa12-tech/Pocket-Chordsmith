@@ -35,9 +35,11 @@ npm run build
 npm run tauri:dev
 ```
 
-## Lofi Chill Pack
+## Chordsmith Profile Imports
 
 Pocket DAW's Chordsmith compatibility layer accepts the optional lofi profile fields from Pocket Chordsmith JSON and `PCS1:` payloads. Imported lofi projects get soft track presets for drums, bass, chords, melody, ambience, and a gentle lofi master chain with conservative low-pass, saturation, compression/limiting, and optional texture metadata.
+
+Current source builds also accept Chordsmith heavy-metal profile metadata. Imported metal projects keep the selected preset/profile metadata, use metal preset defaults for omitted drums, bass, chord/lead voices and guitar setup, and pass those IDs into browser/native playback payloads. This is source-only until the next exact installed-app smoke confirms the packaged audio path.
 
 The demo helpers expose a lofi Chordsmith template project for future template-picker UI and import/export tests. Rendered Chordsmith stems remain the recommended game handoff when exact live/export parity matters.
 

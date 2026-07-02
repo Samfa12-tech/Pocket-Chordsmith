@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
+import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
+import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, DRUM_LANE_DEFS } from "../src/daw/drumLanes";
 import { addFxSlot, setFxSlotParameter } from "../src/daw/fx";
 import { setTrackSendLevel } from "../src/daw/routing";
@@ -347,6 +349,40 @@ describe("native audio playback bridge", () => {
     expect(payload.events.some((event) => event.kind === "melody" && event.instrument === "tape_bell")).toBe(true);
     expect(payload.fxChains.find((chain) => chain.ownerTrackId === "drums")?.slots[0]).toMatchObject({ type: "parametric-eq", presetId: "lofi-drum-softener" });
     expect(payload.fxChains.find((chain) => chain.ownerTrackId === "master")?.slots[0]).toMatchObject({ type: "parametric-eq", presetId: "lofi-soft-rolloff" });
+  });
+
+  it("preserves heavy-metal sound metadata for the native installed-app synth", () => {
+    const gridA = {
+      kick: new Array(64).fill(0),
+      snare: new Array(64).fill(0),
+      hat: new Array(64).fill(0),
+      bass: new Array(64).fill(0)
+    };
+    const bassNotesA = new Array<number | null>(64).fill(null);
+    const melodyA = new Array<number | null>(64).fill(null);
+    const guitarPatternA = new Array<string>(64).fill("off");
+    gridA.kick[0] = 2;
+    bassNotesA[0] = 0;
+    melodyA[0] = 5;
+    guitarPatternA[0] = "chug";
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({
+      title: "Native Metal",
+      audioProfile: "heavy_metal",
+      metalPreset: "metal_power_anthem",
+      bassMode: "manual",
+      gridA,
+      bassNotesA,
+      melodyTracksA: [melodyA],
+      guitarPatternA
+    }));
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
+
+    expect(payload.events.some((event) => event.kind === "kick" && event.audioProfile === "heavy_metal" && event.drumKit === "metal_arena" && event.metalPreset === "metal_power_anthem")).toBe(true);
+    const bassEvent = payload.events.find((event) => event.kind === "bass" && event.bassTone === "metal_pick_bass");
+    expect(bassEvent).toMatchObject({ audioProfile: "heavy_metal", metalPreset: "metal_power_anthem" });
+    expect(payload.events.some((event) => event.kind === "melody" && event.instrument === "twin_harmony_lead")).toBe(true);
+    expect(payload.events.some((event) => event.kind === "guitar" && event.instrument === "tight_metal")).toBe(true);
+    expect(payload.fxChains.find((chain) => chain.ownerTrackId === "master")?.slots.some((slot) => slot.id === "metal_glue_master")).toBe(true);
   });
 
   it("passes cached WAV assets and timeline regions to the native runtime", () => {

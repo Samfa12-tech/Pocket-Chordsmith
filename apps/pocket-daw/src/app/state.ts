@@ -264,6 +264,22 @@ export function createUiCollapsedSections(overrides: Partial<UiCollapsedSections
   };
 }
 
+export function collapsedSectionsForCreationPreset(preset: UiCreationPreset): UiCollapsedSections {
+  if (preset === "game-music") {
+    return createUiCollapsedSections({
+      "inspector-clip": true
+    });
+  }
+  return createUiCollapsedSections({
+    "media-pool": true
+  });
+}
+
+export function lowerDockTabForCreationPreset(preset: UiCreationPreset, current: LowerDockTab): LowerDockTab {
+  if (preset === "game-music") return "export-details";
+  return current === "export-details" ? "mixer" : current;
+}
+
 export function isUiCollapseSection(value: string): value is UiCollapseSection {
   return UI_COLLAPSE_SECTIONS.includes(value as UiCollapseSection);
 }

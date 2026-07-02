@@ -44,6 +44,8 @@ func compile_project(project: Dictionary, import_result := {}) -> Resource:
 	chart.lofi_texture = _dictionary_or_empty(project.get("lofiTexture", {})).duplicate(true)
 	chart.chip_preset = str(project.get("chipPreset", ""))
 	chart.chip_texture = _dictionary_or_empty(project.get("chipTexture", {})).duplicate(true)
+	chart.metal_preset = str(project.get("metalPreset", ""))
+	chart.metal_texture = _dictionary_or_empty(project.get("metalTexture", {})).duplicate(true)
 	chart.drum_kit = str(project.get("drumKit", "classic"))
 	chart.drum_groove_preset = str(project.get("drumGroovePreset", ""))
 	chart.bass_tone = str(project.get("bassTone", "classic"))
@@ -69,6 +71,16 @@ func compile_project(project: Dictionary, import_result := {}) -> Resource:
 		}
 		if game_metadata.has("chip_intensity_hints"):
 			chart.chip_intensity_hints = _dictionary_or_empty(game_metadata.get("chip_intensity_hints", {}))
+	if chart.audio_profile == "heavy_metal":
+		chart.metal_intensity_hints = {
+			"menu": 0.38,
+			"explore": 0.68,
+			"combat": 0.86,
+			"boss": 0.95,
+			"breakdown": 0.78,
+		}
+		if game_metadata.has("metal_intensity_hints"):
+			chart.metal_intensity_hints = _dictionary_or_empty(game_metadata.get("metal_intensity_hints", {}))
 	chart.level_id = str(game_metadata.get("level_id", ""))
 	chart.default_loop = str(game_metadata.get("default_loop", ""))
 	chart.mood = str(game_metadata.get("mood", ""))

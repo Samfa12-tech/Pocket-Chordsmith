@@ -56,6 +56,8 @@ export interface RenderedEvent {
   lofiTexture?: JsonObject;
   chipPreset?: string;
   chipTexture?: JsonObject;
+  metalPreset?: string;
+  metalTexture?: JsonObject;
   accent?: boolean;
   tuplet?: boolean;
   articulation?: string;
@@ -735,7 +737,9 @@ function sourceEventMetadata(pcs: SanitizedPcsProject) {
     lofiPreset: pcs.lofiPreset,
     lofiTexture: pcs.lofiTexture,
     chipPreset: pcs.chipPreset,
-    chipTexture: pcs.chipTexture
+    chipTexture: pcs.chipTexture,
+    metalPreset: pcs.metalPreset,
+    metalTexture: pcs.metalTexture
   };
 }
 

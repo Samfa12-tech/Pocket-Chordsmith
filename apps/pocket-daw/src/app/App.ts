@@ -232,7 +232,7 @@ import {
   undoCommand
 } from "./commands";
 import { commandFromKeyboardEvent } from "./keyboard";
-import { createInitialState, createRecordingUiState, currentProject, isUiCollapseSection, loadProjectIntoState, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type LoadProjectIntoStateOptions, type NativeCacheUiStatus } from "./state";
+import { collapsedSectionsForCreationPreset, createInitialState, createRecordingUiState, currentProject, isUiCollapseSection, loadProjectIntoState, lowerDockTabForCreationPreset, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type LoadProjectIntoStateOptions, type NativeCacheUiStatus } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { automationSurfaceAudioSyncMode, automationSurfacePointFromClient } from "./automationSurface";
 import { renderAppShell } from "./ui";
@@ -2558,9 +2558,11 @@ export class App {
     if (action === "record-toggle") await this.toggleRecording();
     if (action === "preset-music" || action === "preset-game-music") {
       this.state.uiCreationPreset = action === "preset-game-music" ? "game-music" : "music";
+      this.state.collapsedUiSections = collapsedSectionsForCreationPreset(this.state.uiCreationPreset);
+      this.state.lowerDockTab = lowerDockTabForCreationPreset(this.state.uiCreationPreset, this.state.lowerDockTab);
       this.state.status = this.state.uiCreationPreset === "game-music"
-        ? "Game music focus: cue and game-pack export controls are visible; live recording tools are tucked away."
-        : "Music focus: composition, editing and mix controls are visible; game-pack controls are tucked away.";
+        ? "Game music focus: cue and game-pack export controls are visible; clip take details and live recording tools are tucked away."
+        : "Music focus: composition, editing and mix controls are visible; game-pack controls and media-pool clutter are tucked away.";
       this.render({ preserveScroll: true });
     }
     if (action === "toggle-ui-section") {
@@ -5492,8 +5494,8 @@ const ACTION_BUTTON_TOOLTIPS: Record<string, string> = {
   "open-project": "Open a .pocketdaw project.",
   "pause": "Pause playback.",
   "play": "Start playback.",
-  "preset-game-music": "Show game cue and game-pack controls, and hide live-recording take tools.",
-  "preset-music": "Show composition, editing and mix controls, and hide game-pack clutter.",
+  "preset-game-music": "Show game cue and game-pack export controls, open export details, and tuck clip take/recording detail away.",
+  "preset-music": "Show composition, editing and mix controls, and tuck game-pack and media-pool clutter away.",
   "push-godot-pack": "Try a local Godot receiver first, then save the ZIP if unavailable.",
   "range-clear": "Clear the active edit range.",
   "range-copy": "Copy the selected clip material inside the active edit range.",

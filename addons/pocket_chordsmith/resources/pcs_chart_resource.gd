@@ -19,6 +19,8 @@ const TICKS_PER_QUARTER := 480
 @export var lofi_texture: Dictionary = {}
 @export var chip_preset := ""
 @export var chip_texture: Dictionary = {}
+@export var metal_preset := ""
+@export var metal_texture: Dictionary = {}
 @export var drum_kit := "classic"
 @export var drum_groove_preset := ""
 @export var bass_tone := "classic"
@@ -26,6 +28,7 @@ const TICKS_PER_QUARTER := 480
 @export var performance_settings: Dictionary = {}
 @export var lofi_intensity_hints: Dictionary = {}
 @export var chip_intensity_hints: Dictionary = {}
+@export var metal_intensity_hints: Dictionary = {}
 
 @export var sections: Array[Resource] = []
 @export var section_library: Dictionary = {}
