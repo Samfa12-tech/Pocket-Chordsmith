@@ -1,4 +1,4 @@
-import type { Clip, PocketDawProject } from "./schema";
+import type { Clip, JsonObject, PocketDawProject } from "./schema";
 import { cloneProject } from "./dawProject";
 import { recomputeTimelineBars, timelineBarAtSeconds, timelineSecondsAtBar } from "./timeline";
 import { detectAudioTransientsFromPeaks } from "./audioClips";
@@ -254,8 +254,9 @@ export function applyAudioClipAction(project: PocketDawProject, clipId: string, 
   if (action === "clear-warp-markers") {
     const markerCount = Array.isArray(clip.metadata?.audioWarpMarkers) ? clip.metadata.audioWarpMarkers.length : 0;
     if (!markerCount) return { project, changed: false, status: `No warp markers to clear for ${clip.name}.` };
+    const clearedMetadata = clearDerivedAudioWarpPlaybackMetadata(clip.metadata || {});
     clip.metadata = {
-      ...(clip.metadata || {}),
+      ...clearedMetadata,
       audioWarpMarkers: [],
       audioWarpMarkerCount: 0,
       audioWarpReady: false,
@@ -277,8 +278,9 @@ export function applyAudioClipAction(project: PocketDawProject, clipId: string, 
       };
     });
     const updatedAt = new Date().toISOString();
+    const clearedMetadata = clearDerivedAudioWarpPlaybackMetadata(clip.metadata || {});
     clip.metadata = {
-      ...(clip.metadata || {}),
+      ...clearedMetadata,
       audioWarpMarkers: quantized,
       audioWarpMarkerCount: quantized.length,
       audioWarpReady: true,
@@ -301,6 +303,8 @@ export function applyAudioClipAction(project: PocketDawProject, clipId: string, 
     const result = audioWarpGlobalVarispeed(markers, next, clip);
     if (!result) return { project, changed: false, status: `Warp markers for ${clip.name} need distinct source and target times before varispeed can be applied.` };
     const previousPitch = metadataNumber(clip.metadata?.pitchSemitones, 0, -48, 48);
+    const previousPlaybackRate = metadataNumber(clip.metadata?.playbackRate, 1, 0.25, 4);
+    const previousSourceOffsetSeconds = audioClipSourceOffsetSeconds(clip);
     const updatedAt = new Date().toISOString();
     clip.metadata = {
       ...(clip.metadata || {}),
@@ -315,6 +319,8 @@ export function applyAudioClipAction(project: PocketDawProject, clipId: string, 
       audioWarpAppliedRate: result.playbackRate,
       audioWarpAppliedSourceOffsetSeconds: result.sourceOffsetSeconds,
       audioWarpAppliedFromMarkerCount: markers.length,
+      audioWarpPreviousPlaybackRate: previousPlaybackRate,
+      audioWarpPreviousSourceOffsetSeconds: previousSourceOffsetSeconds,
       audioWarpAppliedAt: updatedAt,
       audioWarpUpdatedAt: updatedAt
     };
@@ -378,8 +384,9 @@ export function applyAudioClipAction(project: PocketDawProject, clipId: string, 
       });
     if (!markers.length) return { project, changed: false, status: `No transient markers fall inside ${clip.name}'s current source window.` };
     const updatedAt = new Date().toISOString();
+    const clearedMetadata = clearDerivedAudioWarpPlaybackMetadata(clip.metadata || {});
     clip.metadata = {
-      ...(clip.metadata || {}),
+      ...clearedMetadata,
       audioWarpMarkers: markers,
       audioWarpMarkerCount: markers.length,
       audioWarpSourceMediaId: media.id,
@@ -1384,6 +1391,42 @@ function audioWarpGlobalVarispeed(
   };
 }
 
+function clearDerivedAudioWarpPlaybackMetadata(metadata: JsonObject): JsonObject {
+  const next: JsonObject = { ...metadata };
+  const appliedRate = Number(next.audioWarpAppliedRate);
+  const previousRate = Number(next.audioWarpPreviousPlaybackRate);
+  const currentRate = Number(next.playbackRate);
+  if (
+    next.audioWarpPlaybackMode === "global-varispeed" &&
+    Number.isFinite(appliedRate) &&
+    Number.isFinite(previousRate) &&
+    (!Number.isFinite(currentRate) || Math.abs(currentRate - appliedRate) < 0.0005)
+  ) {
+    next.playbackRate = roundPlaybackRate(previousRate);
+  }
+  const appliedOffset = Number(next.audioWarpAppliedSourceOffsetSeconds);
+  const previousOffset = Number(next.audioWarpPreviousSourceOffsetSeconds);
+  const currentOffset = Number(next.sourceOffsetSeconds);
+  if (
+    next.audioWarpPlaybackMode === "global-varispeed" &&
+    Number.isFinite(appliedOffset) &&
+    Number.isFinite(previousOffset) &&
+    (!Number.isFinite(currentOffset) || Math.abs(currentOffset - appliedOffset) < 0.0005)
+  ) {
+    next.sourceOffsetSeconds = roundSeconds(previousOffset);
+  }
+  delete next.audioWarpAppliedRate;
+  delete next.audioWarpAppliedSourceOffsetSeconds;
+  delete next.audioWarpAppliedFromMarkerCount;
+  delete next.audioWarpPreviousPlaybackRate;
+  delete next.audioWarpPreviousSourceOffsetSeconds;
+  delete next.audioWarpAppliedAt;
+  delete next.audioWarpEngine;
+  delete next.audioWarpQuantizeGrid;
+  delete next.audioWarpQuantizedAt;
+  return next;
+}
+
 function retargetAudioClipWarpMarkers(project: PocketDawProject, clip: Clip): void {
   if (clip.type !== "audio" || !Array.isArray(clip.metadata?.audioWarpMarkers)) return;
   const sourceOffset = audioClipSourceOffsetSeconds(clip);
@@ -1410,7 +1453,7 @@ function retargetAudioClipWarpMarkers(project: PocketDawProject, clip: Clip): vo
     .filter((marker): marker is { id: string; sourceSeconds: number; targetBar: number; targetSeconds: number; source: string; locked: boolean } => !!marker)
     .slice(0, 128);
   clip.metadata = {
-    ...(clip.metadata || {}),
+    ...clearDerivedAudioWarpPlaybackMetadata(clip.metadata || {}),
     audioWarpMarkers: markers,
     audioWarpMarkerCount: markers.length,
     audioWarpReady: markers.length > 0,

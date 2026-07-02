@@ -848,6 +848,69 @@ describe("audio clip edit commands", () => {
     expect(region.sourceOffsetSeconds).toBeCloseTo(0.334, 3);
     expect(applied.status).toContain("Applied warp varispeed 1.333x");
     expect(applied.status).toContain("pitch changes with speed");
+
+    const cleared = applySelectedAudioClipActionCommand(applied, placed.clipId, "clear-warp-markers");
+    const clearedClip = cleared.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+    const clearedRegion = renderTimelineAudioRegions(cleared.undoStack.present).audioRegions[0];
+
+    expect(clearedClip.metadata?.audioWarpMarkers).toEqual([]);
+    expect(clearedClip.metadata?.audioWarpReady).toBe(false);
+    expect(clearedClip.metadata?.audioWarpAppliedRate).toBeUndefined();
+    expect(clearedClip.metadata?.audioWarpPreviousPlaybackRate).toBeUndefined();
+    expect(clearedClip.metadata?.audioWarpEngine).toBeUndefined();
+    expect(clearedClip.metadata?.audioWarpQuantizeGrid).toBeUndefined();
+    expect(clearedClip.metadata?.playbackRate).toBe(1);
+    expect(clearedClip.metadata?.sourceOffsetSeconds).toBe(0);
+    expect(clearedRegion.playbackRate).toBe(1);
+    expect(clearedRegion.sourceOffsetSeconds).toBe(0);
+    expect(cleared.status).toContain("Cleared 2 warp markers");
+  });
+
+  it("does not reset manual playback-rate edits when clearing old warp markers", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    const imported = addImportedAudioMedia(state.undoStack.present, {
+      name: "Manual Warp Rate.wav",
+      uri: "C:\\Audio\\Manual Warp Rate.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    const project = {
+      ...placed.project,
+      timeline: {
+        ...placed.project.timeline,
+        clips: placed.project.timeline.clips.map((clip) => clip.id === placed.clipId ? {
+          ...clip,
+          metadata: {
+            ...(clip.metadata || {}),
+            audioWarpMarkers: [
+              { id: "warp_1", sourceSeconds: 1, targetBar: 2.25, targetSeconds: 2.5, source: "transient", locked: true },
+              { id: "warp_2", sourceSeconds: 3, targetBar: 3, targetSeconds: 4, source: "transient", locked: true }
+            ],
+            audioWarpMarkerCount: 2,
+            audioWarpReady: true,
+            audioWarpPlaybackMode: "metadata-only"
+          }
+        } : clip)
+      }
+    };
+    state.undoStack = createUndoStack(project);
+    state.selectedClipId = placed.clipId;
+    state.selectedTrackId = placed.trackId;
+
+    const applied = applySelectedAudioClipActionCommand(state, placed.clipId, "apply-warp-varispeed");
+    const manual = setSelectedAudioClipPropertyCommand(applied, placed.clipId, "playbackRate", 1.75);
+    const cleared = applySelectedAudioClipActionCommand(manual, placed.clipId, "clear-warp-markers");
+    const clip = cleared.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+
+    expect(clip.metadata?.playbackRate).toBe(1.75);
+    expect(clip.metadata?.audioWarpAppliedRate).toBeUndefined();
+    expect(clip.metadata?.audioWarpEngine).toBeUndefined();
+    expect(clip.metadata?.audioWarpMarkers).toEqual([]);
   });
 
   it("keeps warp marker creation unavailable until transients are analyzed", () => {

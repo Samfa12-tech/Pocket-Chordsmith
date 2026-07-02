@@ -1624,7 +1624,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     selector: "data-audio-clip-action:clear-warp-markers",
     does: "Removes metadata warp markers from an audio clip.",
     useWhen: "Use when analysis markers are wrong or no longer wanted.",
-    aiNote: "Clearing markers should not delete source audio."
+    aiNote: "Clearing markers should not delete source audio. If a warp-derived varispeed rate is still untouched, clearing restores the previous rate/source offset; manual edits are preserved."
   },
   {
     surface: "Audio Clip Editing",
