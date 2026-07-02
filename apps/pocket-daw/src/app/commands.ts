@@ -1273,7 +1273,7 @@ export function convertMidiMelodyToGeneratedOverlaysCommand(
   state: AppState,
   clipId = state.selectedClipId || "",
   sectionId = state.chordsmithEditorSectionId || "A",
-  trackIndex = 0
+  trackIndex = state.chordsmithEditorMelodyTrackIndex || 0
 ): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping melody." };
@@ -1290,7 +1290,8 @@ export function convertMidiMelodyToGeneratedOverlaysCommand(
     ...commitProject(state, result.project, `Mapped ${result.written} MIDI melodic note${result.written === 1 ? "" : "s"} from ${clip.name} to Section ${result.sectionId} Melody ${result.trackIndex + 1} overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId,
-    chordsmithEditorSectionId: result.sectionId
+    chordsmithEditorSectionId: result.sectionId,
+    chordsmithEditorMelodyTrackIndex: result.trackIndex
   };
 }
 
@@ -1338,7 +1339,7 @@ export function convertMidiArrangementToGeneratedOverlaysCommand(
   state: AppState,
   clipId = state.selectedClipId || "",
   sectionId = state.chordsmithEditorSectionId || "A",
-  melodyTrackIndex = 0
+  melodyTrackIndex = state.chordsmithEditorMelodyTrackIndex || 0
 ): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping an arrangement." };
@@ -1365,7 +1366,8 @@ export function convertMidiArrangementToGeneratedOverlaysCommand(
     ...commitProject(state, melody.project, `Mapped MIDI arrangement from ${clip.name} to Section ${melody.sectionId}: ${summary}${totalMerged ? ` (${totalMerged} merged/grouped)` : ""}. Raw MIDI clip preserved.`),
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId,
-    chordsmithEditorSectionId: melody.sectionId
+    chordsmithEditorSectionId: melody.sectionId,
+    chordsmithEditorMelodyTrackIndex: melody.trackIndex
   };
 }
 

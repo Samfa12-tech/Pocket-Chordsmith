@@ -932,7 +932,7 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
                     ${renderClipEditPalette()}
                     <button type="button" data-action="freeze-selected-clip" title="Render the selected clip into a reusable audio asset">Freeze</button>
                     <button type="button" data-action="export-selected-clip-midi" ${clip.type === "audio" ? "disabled title=\"Audio clips do not contain MIDI events.\"" : "title=\"Export the selected clip as a MIDI file\""}>Export Clip MIDI</button>
-                    ${clip.type === "midi" ? renderMidiClipEditor(project, clip) : ""}
+                    ${clip.type === "midi" ? renderMidiClipEditor(project, state, clip) : ""}
                   `
               }
             </section>`
@@ -1436,9 +1436,14 @@ function renderMidiClipMetadata(clip: Clip, media: ReturnType<typeof currentProj
   `;
 }
 
-function renderMidiClipEditor(project: ReturnType<typeof currentProject>, clip: Clip): string {
+function renderMidiClipEditor(project: ReturnType<typeof currentProject>, state: AppState, clip: Clip): string {
   const midi = midiDataFromClip(clip);
-  const conversionPreview = createMidiChordsmithConversionPreview(project, clip.id);
+  const conversionSectionId = SECTION_IDS.includes(state.chordsmithEditorSectionId as SectionId) ? state.chordsmithEditorSectionId as SectionId : "A";
+  const pcs = getPrimaryChordsmithSource(project);
+  const conversionSection = pcs?.sections[conversionSectionId];
+  const conversionMelodyCount = Math.max(1, conversionSection?.melodyTracks.length || 1);
+  const conversionMelodyTrackIndex = Math.max(0, Math.min(conversionMelodyCount - 1, Math.round(Number(state.chordsmithEditorMelodyTrackIndex) || 0)));
+  const conversionPreview = createMidiChordsmithConversionPreview(project, clip.id, conversionSectionId, conversionMelodyTrackIndex);
   const notes = midi.notes.slice().sort((a, b) => a.startTick - b.startTick || a.pitch - b.pitch);
   const controllers = midi.controllers.slice().sort((a, b) => a.tick - b.tick || a.controller - b.controller);
   const programs = midi.programChanges.slice().sort((a, b) => a.tick - b.tick || (a.channel ?? 0) - (b.channel ?? 0) || a.program - b.program);
@@ -1489,6 +1494,7 @@ function renderMidiClipEditor(project: ReturnType<typeof currentProject>, clip: 
         <button type="button" data-midi-program-add="${sanitizeDataAttr(clip.id)}">Add Program</button>
         <button type="button" data-midi-pitch-bend-add="${sanitizeDataAttr(clip.id)}">Add Bend</button>
         <button type="button" data-midi-aftertouch-add="${sanitizeDataAttr(clip.id)}">Add Touch</button>
+        ${renderMidiConversionTargetControls(conversionSectionId, conversionMelodyTrackIndex, conversionMelodyCount)}
         <button type="button" title="Map General MIDI drum notes into generated drum branch overlays" data-action="convert-midi-drums">Map Drums</button>
         <button type="button" title="Map low non-drum MIDI notes into generated bass overlays" data-action="convert-midi-bass">Map Bass</button>
         <button type="button" title="Map simultaneous non-drum MIDI notes into generated chord overlays" data-action="convert-midi-chords">Map Chords</button>
@@ -1637,6 +1643,23 @@ function renderMidiChordsmithConversionPreview(preview: MidiChordsmithConversion
         <dt>Preserved</dt><dd>Raw MIDI ${preview.rawMidiClip}; ${escapeHtml(expressive)}</dd>
       </dl>
     </section>
+  `;
+}
+
+function renderMidiConversionTargetControls(sectionId: SectionId, melodyTrackIndex: number, melodyTrackCount: number): string {
+  return `
+    <div class="midi-conversion-targets" aria-label="MIDI conversion target">
+      <label>Map to
+        <select data-midi-conversion-section-target="true" title="Choose the Chordsmith section that MIDI mapping commands will write into.">
+          ${SECTION_IDS.map((id) => `<option value="${id}" ${sectionId === id ? "selected" : ""}>Section ${id}</option>`).join("")}
+        </select>
+      </label>
+      <label>Melody
+        <select data-midi-conversion-melody-target="true" title="Choose the generated melody track used by Map Melody and Map Arrangement.">
+          ${Array.from({ length: melodyTrackCount }, (_value, index) => `<option value="${index}" ${melodyTrackIndex === index ? "selected" : ""}>Track ${index + 1}</option>`).join("")}
+        </select>
+      </label>
+    </div>
   `;
 }
 
@@ -2213,7 +2236,7 @@ function renderLowerDockPianoRoll(project: ReturnType<typeof currentProject>, st
         <h3>${escapeHtml(clip.name)}</h3>
         <p>${midiDataFromClip(clip).notes.length} notes / ${midiDataFromClip(clip).controllers.length} CC points</p>
       </section>
-      ${renderMidiClipEditor(project, clip)}
+      ${renderMidiClipEditor(project, state, clip)}
     </div>
   `;
 }

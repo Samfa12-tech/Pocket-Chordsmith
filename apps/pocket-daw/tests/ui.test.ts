@@ -1503,6 +1503,10 @@ describe("Pocket DAW UI rendering", () => {
     expect(source).toContain("convertMidiChordsToGeneratedOverlaysCommand");
     expect(source).toContain('action === "convert-midi-melody"');
     expect(source).toContain("convertMidiMelodyToGeneratedOverlaysCommand");
+    expect(source).toContain("[data-midi-conversion-section-target]");
+    expect(source).toContain("[data-midi-conversion-melody-target]");
+    expect(source).toContain("MIDI conversion target set to Section");
+    expect(source).toContain("MIDI conversion melody target set to track");
   });
 
   it("wires live clip-control moves into prepared clip automation lanes during playback", () => {
@@ -2003,6 +2007,9 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Map Melody");
     expect(html).toContain('data-action="convert-midi-arrangement"');
     expect(html).toContain("Map Arrangement");
+    expect(html).toContain('data-midi-conversion-section-target="true"');
+    expect(html).toContain('data-midi-conversion-melody-target="true"');
+    expect(html).toContain("Map to");
     expect(html).toContain(`data-midi-conversion-preview="${result.clipId}"`);
     expect(html).toContain("Chordsmith Mapping Preview");
     expect(html).toContain("120 BPM / 4/4");

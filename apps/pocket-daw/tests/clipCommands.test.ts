@@ -24,6 +24,8 @@ import {
   undoCommand
 } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
+import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
+import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 import { DRUM_LANE_DEFS, drumBranchGroupCollapsed, generatedDrumBranchLane, getDrumBranchStepLevel } from "../src/daw/drumLanes";
 import { bassOverlayCount } from "../src/daw/bassOverlays";
 import { chordOverlayCount } from "../src/daw/chordOverlays";
@@ -172,6 +174,40 @@ describe("generated clip edit commands", () => {
     expect(edited.status).toContain("bass");
     expect(edited.status).toContain("chords");
     expect(edited.status).toContain("melody");
+  });
+
+  it("uses the selected melody target when mapping MIDI melody and arrangements", () => {
+    const steps = 16;
+    const twoMelodyProject = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({
+      title: "Two Melody MIDI Target",
+      sectionBars: { A: 1 },
+      songSequence: ["A"],
+      melodyTracksA: [new Array<number | null>(steps).fill(null), new Array<number | null>(steps).fill(null)],
+      melodyInstrumentsA: ["pulse", "distorted_lead_guitar"],
+      melodyOctavesA: [0, 0],
+      melodyMuteA: [false, false],
+      melodySoloA: [false, false],
+      melodyPanA: [0, 0.1],
+      melodyHoldA: [new Array<boolean>(steps).fill(false), new Array<boolean>(steps).fill(false)],
+      melodySlideA: [new Array<boolean>(steps).fill(false), new Array<boolean>(steps).fill(false)],
+      melodyTupletsA: [new Array<boolean>(steps).fill(false), new Array<boolean>(steps).fill(false)]
+    }));
+    const state = createInitialState();
+    const imported = importMidiFileToProject(twoMelodyProject, parseStandardMidiFile(metalArrangementMidiBytes()), "metal.mid");
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+    state.chordsmithEditorSectionId = "A";
+    state.chordsmithEditorMelodyTrackIndex = 1;
+
+    const melody = convertMidiMelodyToGeneratedOverlaysCommand(state);
+    const arrangement = convertMidiArrangementToGeneratedOverlaysCommand(state);
+
+    expect(melodyOverlayCount(melody.undoStack.present, "A", 1)).toBeGreaterThanOrEqual(3);
+    expect(melody.status).toContain("Melody 2");
+    expect(melody.chordsmithEditorMelodyTrackIndex).toBe(1);
+    expect(melodyOverlayCount(arrangement.undoStack.present, "A", 1)).toBeGreaterThanOrEqual(3);
+    expect(arrangement.chordsmithEditorMelodyTrackIndex).toBe(1);
   });
 
   it("adopts imported MIDI start tempo and supported meter through the command path", () => {

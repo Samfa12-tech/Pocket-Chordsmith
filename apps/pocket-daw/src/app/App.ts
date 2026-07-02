@@ -1252,6 +1252,22 @@ export class App {
       this.state.status = `Melody editor set to track ${this.state.chordsmithEditorMelodyTrackIndex + 1}.`;
       this.render({ preserveScroll: true });
     });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-midi-conversion-section-target]").forEach((select) => {
+      select.addEventListener("change", () => {
+        this.state.chordsmithEditorSectionId = select.value;
+        this.state.chordsmithEditorStepPage = 0;
+        this.state.chordsmithEditorFollowClip = false;
+        this.state.status = `MIDI conversion target set to Section ${this.state.chordsmithEditorSectionId}.`;
+        this.render({ preserveScroll: true });
+      });
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-midi-conversion-melody-target]").forEach((select) => {
+      select.addEventListener("change", () => {
+        this.state.chordsmithEditorMelodyTrackIndex = Number(select.value || 0);
+        this.state.status = `MIDI conversion melody target set to track ${this.state.chordsmithEditorMelodyTrackIndex + 1}.`;
+        this.render({ preserveScroll: true });
+      });
+    });
     this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-chordsmith-global]").forEach((input) => {
       input.addEventListener("change", () => {
         const field = input.dataset.chordsmithGlobal || "";
