@@ -498,7 +498,7 @@ describe("audio clip edit commands", () => {
     expect(edited.status).toContain("Comped Vocal take 2.wav split from bar 4");
   });
 
-  it("creates selected audio clip gain automation through the undoable command path", () => {
+  it("creates selected audio clip gain and fade automation through the undoable command path", () => {
     const state = createInitialState();
     const imported = addImportedAudioMedia(state.undoStack.present, {
       name: "Voice.wav",
@@ -516,17 +516,20 @@ describe("audio clip edit commands", () => {
     let edited = ensureClipAutomationLaneCommand(state, placed.clipId, "gain");
     edited.playheadBar = 3;
     edited = addClipAutomationPointCommand(edited, placed.clipId, "gain");
-    const clip = edited.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
-    const lane = edited.undoStack.present.automation.lanes.find((item) => item.id === clip.automationLaneId)!;
+    edited = ensureClipAutomationLaneCommand(edited, placed.clipId, "fadeInSeconds");
+    edited.playheadBar = 3.5;
+    edited = addClipAutomationPointCommand(edited, placed.clipId, "fadeInSeconds");
+    const gainLane = edited.undoStack.present.automation.lanes.find((item) => item.targetPath === `clips.${placed.clipId}.gain`)!;
+    const fadeLane = edited.undoStack.present.automation.lanes.find((item) => item.targetPath === `clips.${placed.clipId}.fadeInSeconds`)!;
 
-    expect(lane.targetPath).toBe(`clips.${placed.clipId}.gain`);
-    expect(lane.points.map((point) => point.bar)).toEqual([2, 3]);
-    expect(edited.undoStack.past).toHaveLength(2);
+    expect(gainLane.points.map((point) => point.bar)).toEqual([2, 3]);
+    expect(fadeLane.points.map((point) => point.bar)).toEqual([2, 3.5]);
+    expect(edited.undoStack.past).toHaveLength(4);
     expect(edited.selectedClipId).toBe(placed.clipId);
-    expect(edited.status).toContain("gain automation point");
+    expect(edited.status).toContain("fade in automation point");
   });
 
-  it("records audio clip gain automation only into prepared lanes", () => {
+  it("records audio clip gain, fade and source-offset automation only into prepared lanes", () => {
     const state = createInitialState();
     const imported = addImportedAudioMedia(state.undoStack.present, {
       name: "Voice.wav",
@@ -543,15 +546,23 @@ describe("audio clip edit commands", () => {
     state.playheadBar = 3.5;
 
     expect(recordClipAutomationPointCommand(state, placed.clipId, "gain", 0.42)).toBe(state);
+    expect(recordClipAutomationPointCommand(state, placed.clipId, "fadeOutSeconds", 1.5)).toBe(state);
 
-    const prepared = ensureClipAutomationLaneCommand(state, placed.clipId, "gain");
-    const recorded = recordClipAutomationPointCommand(prepared, placed.clipId, "gain", 0.42, 3.5);
-    const clip = recorded.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
-    const lane = recorded.undoStack.present.automation.lanes.find((item) => item.id === clip.automationLaneId)!;
+    let prepared = ensureClipAutomationLaneCommand(state, placed.clipId, "gain");
+    prepared = ensureClipAutomationLaneCommand(prepared, placed.clipId, "fadeOutSeconds");
+    prepared = ensureClipAutomationLaneCommand(prepared, placed.clipId, "sourceOffsetSeconds");
+    let recorded = recordClipAutomationPointCommand(prepared, placed.clipId, "gain", 0.42, 3.5);
+    recorded = recordClipAutomationPointCommand(recorded, placed.clipId, "fadeOutSeconds", 1.5, 3.75);
+    recorded = recordClipAutomationPointCommand(recorded, placed.clipId, "sourceOffsetSeconds", 2.25, 4);
+    const gainLane = recorded.undoStack.present.automation.lanes.find((item) => item.targetPath === `clips.${placed.clipId}.gain`)!;
+    const fadeLane = recorded.undoStack.present.automation.lanes.find((item) => item.targetPath === `clips.${placed.clipId}.fadeOutSeconds`)!;
+    const offsetLane = recorded.undoStack.present.automation.lanes.find((item) => item.targetPath === `clips.${placed.clipId}.sourceOffsetSeconds`)!;
 
-    expect(lane.points).toContainEqual(expect.objectContaining({ bar: 3.5, value: 0.42, curve: "linear" }));
+    expect(gainLane.points).toContainEqual(expect.objectContaining({ bar: 3.5, value: 0.42, curve: "linear" }));
+    expect(fadeLane.points).toContainEqual(expect.objectContaining({ bar: 3.75, value: 1.5, curve: "linear" }));
+    expect(offsetLane.points).toContainEqual(expect.objectContaining({ bar: 4, value: 2.25, curve: "linear" }));
     expect(recorded.selectedClipId).toBe(placed.clipId);
-    expect(recorded.status).toContain("Recorded Voice.wav gain automation point");
+    expect(recorded.status).toContain("Recorded Voice.wav source offset automation point");
   });
 
   it("normalizes selected audio clip gain from linked waveform peaks without changing source media", () => {

@@ -808,10 +808,11 @@ export function recordTrackSendAutomationPointCommand(state: AppState, trackId: 
 
 export function ensureClipAutomationLaneCommand(state: AppState, clipId: string, field: ClipAutomationField): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
-  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio clip before automating clip gain." };
+  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio clip before automating clip controls." };
   const result = ensureClipAutomationLane(state.undoStack.present, clipId, field);
+  const label = clipAutomationFieldLabel(field);
   return {
-    ...commitProject(state, result.project, `Enabled ${clip.name} gain automation.`),
+    ...commitProject(state, result.project, `Enabled ${clip.name} ${label} automation.`),
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId
   };
@@ -819,13 +820,14 @@ export function ensureClipAutomationLaneCommand(state: AppState, clipId: string,
 
 export function addClipAutomationPointCommand(state: AppState, clipId: string, field: ClipAutomationField): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
-  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio clip before automating clip gain." };
+  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio clip before automating clip controls." };
   const ensured = ensureClipAutomationLane(state.undoStack.present, clipId, field);
   const updatedClip = ensured.project.timeline.clips.find((item) => item.id === clipId);
-  const fallbackGain = typeof updatedClip?.metadata?.gain === "number" ? updatedClip.metadata.gain : updatedClip?.transforms.gain ?? 1;
-  const next = addAutomationPoint(ensured.project, ensured.laneId, { bar: state.playheadBar || clip.startBar || 1, value: fallbackGain, curve: "linear" });
+  const value = clipAutomationFallbackValue(updatedClip || clip, field);
+  const label = clipAutomationFieldLabel(field);
+  const next = addAutomationPoint(ensured.project, ensured.laneId, { bar: state.playheadBar || clip.startBar || 1, value, curve: "linear" });
   return {
-    ...commitProject(state, next, `Added ${clip.name} gain automation point.`),
+    ...commitProject(state, next, `Added ${clip.name} ${label} automation point.`),
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId
   };
@@ -836,15 +838,29 @@ export function recordClipAutomationPointCommand(state: AppState, clipId: string
   const clip = project.timeline.clips.find((item) => item.id === clipId);
   const lane = getClipAutomationLane(project, clipId, field);
   if (!clip || clip.type !== "audio" || !lane) return state;
+  const label = clipAutomationFieldLabel(field);
   return {
     ...commitProject(
       state,
       addAutomationPoint(project, lane.id, { bar, value, curve: "linear" }),
-      `Recorded ${clip.name} ${field} automation point.`
+      `Recorded ${clip.name} ${label} automation point.`
     ),
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId
   };
+}
+
+function clipAutomationFieldLabel(field: ClipAutomationField): string {
+  if (field === "fadeInSeconds") return "fade in";
+  if (field === "fadeOutSeconds") return "fade out";
+  if (field === "sourceOffsetSeconds") return "source offset";
+  return "gain";
+}
+
+function clipAutomationFallbackValue(clip: Clip | undefined, field: ClipAutomationField): number {
+  if (field === "gain") return typeof clip?.metadata?.gain === "number" ? clip.metadata.gain : clip?.transforms.gain ?? 1;
+  const value = clip?.metadata?.[field];
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 export function updateAutomationPointCommand(state: AppState, laneId: string, pointIndex: number, bar: number, value: number, curve?: string): AppState {

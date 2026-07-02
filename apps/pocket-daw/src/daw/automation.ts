@@ -18,7 +18,7 @@ export function evaluateAutomationLane(lane: AutomationLane, bar: number, fallba
 }
 
 export type TrackAutomationField = "volume" | "pan";
-export type ClipAutomationField = "gain";
+export type ClipAutomationField = "gain" | "fadeInSeconds" | "fadeOutSeconds" | "sourceOffsetSeconds";
 export type TrackSendAutomationField = "level";
 export type ProjectAutomationField = "tempo";
 export type FxAutomationField = string;
@@ -128,12 +128,14 @@ export function ensureClipAutomationLane(project: PocketDawProject, clipId: stri
   const existing = project.automation.lanes.find((lane) => lane.targetPath === targetPath);
   if (existing) return { project, laneId: existing.id };
   const clip = project.timeline.clips.find((item) => item.id === clipId);
-  const fallbackGain = typeof clip?.metadata?.gain === "number" ? clip.metadata.gain : clip?.transforms.gain ?? 1;
+  const fallbackValue = clipAutomationFallbackValue(clip, field);
+  const defaults = clipAutomationDefaults(field);
   return createAutomationLane(project, targetPath, {
     id: `auto_${clipId}_${field}`,
-    min: 0,
-    max: 4,
-    points: [{ bar: clip?.startBar || 1, value: fallbackGain, curve: "linear" }]
+    min: defaults.min,
+    max: defaults.max,
+    unit: defaults.unit,
+    points: [{ bar: clip?.startBar || 1, value: fallbackValue, curve: "linear" }]
   });
 }
 
@@ -270,7 +272,7 @@ function parseTrackTarget(targetPath: string): { trackId: string; field: TrackAu
 }
 
 function parseClipTarget(targetPath: string): { clipId: string; field: ClipAutomationField } | null {
-  const match = targetPath.match(/^clips\.([^.]+)\.(gain)$/);
+  const match = targetPath.match(/^clips\.([^.]+)\.(gain|fadeInSeconds|fadeOutSeconds|sourceOffsetSeconds)$/);
   return match ? { clipId: match[1], field: match[2] as ClipAutomationField } : null;
 }
 
@@ -283,9 +285,21 @@ function automationDefaultsForTarget(targetPath: string): { unit: AutomationLane
   if (targetPath === projectAutomationPath("tempo")) return { unit: "linear", min: 40, max: 240 };
   if (targetPath.endsWith(".pan")) return { unit: "linear", min: -1, max: 1 };
   if (/^tracks\.[^.]+\.sends\.[^.]+\.level$/.test(targetPath)) return { unit: "percent", min: 0, max: 1 };
-  if (targetPath.startsWith("clips.") && targetPath.endsWith(".gain")) return { unit: "percent", min: 0, max: 4 };
+  const clipField = targetPath.match(/^clips\.[^.]+\.(gain|fadeInSeconds|fadeOutSeconds|sourceOffsetSeconds)$/)?.[1] as ClipAutomationField | undefined;
+  if (clipField) return clipAutomationDefaults(clipField);
   if (/^fx\.[^.]+\.slots\.[^.]+\.parameters\.[^.]+$/.test(targetPath)) return { unit: "linear", min: 0, max: 1 };
   return { unit: "percent", min: 0, max: 1.2 };
+}
+
+function clipAutomationDefaults(field: ClipAutomationField): { unit: AutomationLane["unit"]; min: number; max: number } {
+  if (field === "gain") return { unit: "percent", min: 0, max: 4 };
+  return { unit: "linear", min: 0, max: 86400 };
+}
+
+function clipAutomationFallbackValue(clip: PocketDawProject["timeline"]["clips"][number] | undefined, field: ClipAutomationField): number {
+  if (field === "gain") return typeof clip?.metadata?.gain === "number" ? clip.metadata.gain : clip?.transforms.gain ?? 1;
+  const value = clip?.metadata?.[field];
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 function cleanPoint(point: Partial<AutomationPoint>, min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY): AutomationPoint {

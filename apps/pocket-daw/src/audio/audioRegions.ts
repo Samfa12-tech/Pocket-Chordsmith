@@ -109,7 +109,8 @@ export function normalizeAudioClipProperties(project: PocketDawProject, clip: Cl
   const metadata = clip.metadata || {};
   const clipDuration = clipDurationSeconds(project, clip);
   const mediaDuration = cleanPositiveMediaDuration(media.durationSeconds, clipDuration);
-  const rawSourceOffset = readNonNegativeMetadata(metadata.sourceOffsetSeconds, 0, "sourceOffsetSeconds", diagnostics);
+  const staticSourceOffset = readNonNegativeMetadata(metadata.sourceOffsetSeconds, 0, "sourceOffsetSeconds", diagnostics);
+  const rawSourceOffset = evaluateClipAutomationAtStart(project, clip, "sourceOffsetSeconds", staticSourceOffset);
   const sourceOffsetSeconds = capValue(rawSourceOffset, mediaDuration, "sourceOffsetSeconds", "media duration", diagnostics);
   const basePlaybackRate = readRangedMetadata(metadata.playbackRate, 1, 0.25, 4, "playbackRate", diagnostics);
   const pitchSemitones = readRangedMetadata(metadata.pitchSemitones, 0, -48, 48, "pitchSemitones", diagnostics);
@@ -119,8 +120,10 @@ export function normalizeAudioClipProperties(project: PocketDawProject, clip: Cl
   const maxTimelineDuration = playbackRate > 0 ? maxDuration / playbackRate : maxDuration;
   const durationSeconds = capValue(Math.max(0, explicitDuration || clipDuration), Math.min(clipDuration, maxTimelineDuration), "durationSeconds", "clip/media bounds", diagnostics);
   const gain = readNonNegativeMetadata(metadata.gain, clip.transforms.gain ?? 1, "gain", diagnostics);
-  const rawFadeIn = readNonNegativeMetadata(metadata.fadeInSeconds, 0, "fadeInSeconds", diagnostics);
-  const rawFadeOut = readNonNegativeMetadata(metadata.fadeOutSeconds, 0, "fadeOutSeconds", diagnostics);
+  const staticFadeIn = readNonNegativeMetadata(metadata.fadeInSeconds, 0, "fadeInSeconds", diagnostics);
+  const staticFadeOut = readNonNegativeMetadata(metadata.fadeOutSeconds, 0, "fadeOutSeconds", diagnostics);
+  const rawFadeIn = evaluateClipAutomationAtStart(project, clip, "fadeInSeconds", staticFadeIn);
+  const rawFadeOut = evaluateClipAutomationAtStart(project, clip, "fadeOutSeconds", staticFadeOut);
   const cappedFadeIn = capValue(rawFadeIn, durationSeconds, "fadeInSeconds", "region duration", diagnostics);
   const cappedFadeOut = capValue(rawFadeOut, durationSeconds, "fadeOutSeconds", "region duration", diagnostics);
   const fade = normalizeAudioFade(durationSeconds, cappedFadeIn, cappedFadeOut);
@@ -257,6 +260,12 @@ function gainAutomationFromClip(project: PocketDawProject, clip: Clip, fallbackG
     value: Math.max(0, Math.min(4, Number.isFinite(point.value) ? point.value : fallbackGain)),
     curve: point.curve === "hold" ? "hold" : point.curve === "ease-in" || point.curve === "ease-out" ? point.curve : "linear"
   }));
+}
+
+function evaluateClipAutomationAtStart(project: PocketDawProject, clip: Clip, field: "fadeInSeconds" | "fadeOutSeconds" | "sourceOffsetSeconds", fallback: number): number {
+  const lane = project.automation.lanes.find((item) => item.targetPath === clipAutomationPath(clip.id, field));
+  if (!lane?.enabled || !lane.points.length) return fallback;
+  return Math.max(0, evaluateAutomationLane(lane, clip.startBar, fallback));
 }
 
 function clipDurationSeconds(project: PocketDawProject, clip: Clip): number {

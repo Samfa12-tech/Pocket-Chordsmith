@@ -15,7 +15,7 @@ import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type S
 import { barFloatToDisplayPosition, barsToSeconds, effectiveMeterAtBar, gameStateMarkerLabel, sortClips, timelineSecondsAtBar } from "../daw/timeline";
 import { createAudioMediaAnalysisSummary, createCollectMediaPlan, createPortableMediaProject, createRenderCacheSummary, mediaPoolStatus, renderCacheItemsForMedia, verifyMediaPortability, verifySharedMediaPortability } from "../daw/mediaPool";
 import { MIDI_GROOVE_TEMPLATES, MIDI_IMPORT_PLACEMENT_MODES, createMidiTempoMapSummary, midiDataFromClip, type MidiTempoMapPosition, type MidiTempoMapSummary } from "../daw/midiClips";
-import { clipHasAutomation, getClipAutomationLane, getFxParameterAutomationLane, getProjectAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, interpolateAutomationValue, trackHasAutomation } from "../daw/automation";
+import { clipHasAutomation, getClipAutomationLane, getFxParameterAutomationLane, getProjectAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, interpolateAutomationValue, trackHasAutomation, type ClipAutomationField } from "../daw/automation";
 import { availableTrackOutputs, createRoutingExportSummary, trackSendLevel, trackSendMode } from "../daw/routing";
 import { createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs";
 import { validateExportProfile } from "../daw/exportProfiles";
@@ -1149,34 +1149,44 @@ function renderAudioTakePanel(project: ReturnType<typeof currentProject>, clip: 
 }
 
 function renderAudioClipAutomationPanel(project: ReturnType<typeof currentProject>, clip: Clip): string {
-  const lane = getClipAutomationLane(project, clip.id, "gain");
+  const fields: Array<{ field: ClipAutomationField; label: string; min: number; max: number; step: number }> = [
+    { field: "gain", label: "Gain", min: 0, max: 4, step: 0.01 },
+    { field: "fadeInSeconds", label: "Fade in", min: 0, max: 86400, step: 0.01 },
+    { field: "fadeOutSeconds", label: "Fade out", min: 0, max: 86400, step: 0.01 },
+    { field: "sourceOffsetSeconds", label: "Source offset", min: 0, max: 86400, step: 0.01 }
+  ];
   return `
     <div class="automation-panel clip-automation ${clipHasAutomation(project, clip.id) ? "active" : ""}">
       <h3>Clip Automation</h3>
-      ${renderClipAutomationLane(clip, lane)}
+      ${fields.map((config) => renderClipAutomationLane(clip, config, getClipAutomationLane(project, clip.id, config.field))).join("")}
     </div>
   `;
 }
 
-function renderClipAutomationLane(clip: Clip, lane: ReturnType<typeof getClipAutomationLane>): string {
+function renderClipAutomationLane(
+  clip: Clip,
+  config: { field: ClipAutomationField; label: string; min: number; max: number; step: number },
+  lane: ReturnType<typeof getClipAutomationLane>
+): string {
   if (!lane) {
-    return `<div class="automation-lane empty"><span>Gain</span><button type="button" data-clip-automation-create="${sanitizeDataAttr(`${clip.id}:gain`)}">Create</button></div>`;
+    return `<div class="automation-lane empty"><span>${escapeHtml(config.label)}</span><button type="button" data-clip-automation-create="${sanitizeDataAttr(`${clip.id}:${config.field}`)}" title="Create ${escapeAttr(config.label.toLowerCase())} automation for this audio clip">Create</button></div>`;
   }
   const points = lane.points.slice().sort((a, b) => a.bar - b.bar);
+  const label = `${config.label} automation`;
   return `
     <div class="automation-lane">
       <header>
-        <label class="inline-toggle"><input data-automation-enabled="${sanitizeDataAttr(lane.id)}" type="checkbox" ${lane.enabled ? "checked" : ""}> Gain</label>
-        <button type="button" data-clip-automation-add-point="${sanitizeDataAttr(`${clip.id}:gain`)}">Add at Playhead</button>
+        <label class="inline-toggle"><input data-automation-enabled="${sanitizeDataAttr(lane.id)}" type="checkbox" ${lane.enabled ? "checked" : ""}> ${escapeHtml(config.label)}</label>
+        <button type="button" data-clip-automation-add-point="${sanitizeDataAttr(`${clip.id}:${config.field}`)}" title="Add ${escapeAttr(config.label.toLowerCase())} automation at the playhead">Add at Playhead</button>
       </header>
-      ${renderAutomationCurveSurface(lane, "Gain automation")}
+      ${renderAutomationCurveSurface(lane, label)}
       ${
         points.length
           ? `<div class="automation-points">
               ${points.map((point, index) => `
                 <div class="automation-point">
                   <label>Bar <input data-automation-point-bar="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="1" step="0.25" value="${sanitizeCssLengthOrNumber(point.bar, 1, 1, 4096)}"></label>
-                  <label>Value <input data-automation-point-value="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="0" max="4" step="0.01" value="${sanitizeCssLengthOrNumber(point.value, 1, 0, 4)}"></label>
+                  <label>Value <input data-automation-point-value="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="${config.min}" max="${config.max}" step="${config.step}" value="${sanitizeCssLengthOrNumber(point.value, config.field === "gain" ? 1 : 0, config.min, config.max)}"></label>
                   ${renderAutomationCurveSelect(lane.id, index, point)}
                   <button type="button" data-automation-delete-point="${sanitizeDataAttr(`${lane.id}:${index}`)}">Delete</button>
                 </div>

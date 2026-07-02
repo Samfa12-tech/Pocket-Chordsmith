@@ -103,7 +103,8 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 
 | Function | What it does | Use when | AI counterpart notes |
 | --- | --- | --- | --- |
-| Audio Clip Properties | Controls gain, fades, source offset, duration, playback rate and pitch metadata. | Fitting audio into the arrangement without editing source files. | Some metadata may be preparatory until full DSP support exists; verify playback/render. |
+| Audio Clip Properties | Controls gain, fades, source offset, duration, playback rate and pitch metadata. | Fitting audio into the arrangement without editing source files. | Source files are not modified; gain, fades, source offset, reverse and varispeed affect playback/export. |
+| Audio Clip Automation | Creates, draws, edits and live-records selected audio-clip gain, fade-in, fade-out and source-offset automation lanes. | Level, fade or source-window changes over time without rewriting the source file. | Fade/source-offset lanes are evaluated into source-safe audio-region metadata; this is not pitch-preserving time-stretch. |
 | Short Fades / Reset Fades | Adds quick fades or clears fade settings. | Removing clicks or restoring raw clip edges. | Source-safe metadata. |
 | Normalize | Sets clip gain from analyzed peak level. | Bringing quiet audio closer to working level. | Changes gain metadata, not source samples. |
 | Transient Analysis And Warp Markers | Finds likely transients, creates/clears metadata warp markers, and can quantize warp marker targets to the project 1/16 grid without changing source anchors. | Timing/warp prep or rhythmic audio inspection. | Do not claim full elastic audio until playback/export smoke proves it. |

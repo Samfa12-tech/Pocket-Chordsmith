@@ -565,6 +565,51 @@ describe("audio media and clips", () => {
     expect(audioRegionEnvelopeGainAt(region, 1)).toBeCloseTo(0.75, 5);
   });
 
+  it("applies clip fade and source-offset automation to rendered audio regions", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const imported = addImportedAudioMedia(project, {
+      name: "Fade automation.wav",
+      durationSeconds: 12,
+      sampleRate: 44100,
+      channels: 2
+    });
+    let placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    placed = {
+      ...placed,
+      project: createAutomationLane(placed.project, `clips.${placed.clipId}.fadeInSeconds`, {
+        min: 0,
+        max: 86400,
+        points: [{ bar: 1, value: 1.25 }]
+      }).project
+    };
+    placed = {
+      ...placed,
+      project: createAutomationLane(placed.project, `clips.${placed.clipId}.fadeOutSeconds`, {
+        min: 0,
+        max: 86400,
+        points: [{ bar: 1, value: 0.75 }]
+      }).project
+    };
+    placed = {
+      ...placed,
+      project: createAutomationLane(placed.project, `clips.${placed.clipId}.sourceOffsetSeconds`, {
+        min: 0,
+        max: 86400,
+        points: [{ bar: 1, value: 2.5 }]
+      }).project
+    };
+
+    const region = renderTimelineAudioRegions(placed.project).audioRegions[0];
+
+    expect(region.fadeInSeconds).toBe(1.25);
+    expect(region.fadeOutSeconds).toBe(0.75);
+    expect(region.sourceOffsetSeconds).toBe(2.5);
+    expect(audioRegionEnvelopeGainAt(region, 0.625)).toBeCloseTo(0.5, 5);
+    expect(audioRegionPlaybackWindow(region, 12, 0)).toMatchObject({ sourceOffsetSeconds: 2.5 });
+  });
+
   it("reports repaired audio clip metadata without changing the serialized layout", () => {
     const imported = addImportedAudioMedia(createDemoProject(), {
       name: "Repair.wav",

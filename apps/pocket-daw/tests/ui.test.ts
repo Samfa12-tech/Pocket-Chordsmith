@@ -672,6 +672,11 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:create-crossfade-left"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:invert-phase"`);
     expect(inspector).toContain(`data-clip-automation-create="${placed.clipId}:gain"`);
+    expect(inspector).toContain(`data-clip-automation-create="${placed.clipId}:fadeInSeconds"`);
+    expect(inspector).toContain(`data-clip-automation-create="${placed.clipId}:fadeOutSeconds"`);
+    expect(inspector).toContain(`data-clip-automation-create="${placed.clipId}:sourceOffsetSeconds"`);
+    expect(inspector).toContain("Create fade in automation for this audio clip");
+    expect(inspector).toContain("Create source offset automation for this audio clip");
     expect(inspector).toContain("Source offset");
     expect(inspector).toContain("Duration");
   });
@@ -1439,12 +1444,13 @@ describe("Pocket DAW UI rendering", () => {
     expect(source).toContain("convertMidiMelodyToGeneratedOverlaysCommand");
   });
 
-  it("wires live clip-gain moves into prepared clip automation lanes during playback", () => {
+  it("wires live clip-control moves into prepared clip automation lanes during playback", () => {
     const source = readFileSync("src/app/App.ts", "utf8");
 
     expect(source).toContain("recordLiveClipAutomation");
     expect(source).toContain("recordClipAutomationPointCommand");
-    expect(source).toContain('reason: recorded ? "clip-gain-automation-record"');
+    expect(source).toContain("isClipAutomationField(field)");
+    expect(source).toContain("reason: recorded ? `clip-${field}-automation-record`");
   });
 
   it("wires Godot pack push through the local push bridge with ZIP fallback", () => {

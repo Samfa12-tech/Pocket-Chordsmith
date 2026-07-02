@@ -364,7 +364,13 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
         name: "Audio Clip Properties",
         does: "Controls clip gain, fade in, fade out, source offset, duration, playback rate and pitch metadata.",
         useWhen: "Use to fit audio to the arrangement without editing the original file.",
-        aiNote: "Some metadata may be preparatory until full DSP support exists; verify render/playback behavior."
+        aiNote: "Source files are not modified; gain, fades, source offset, reverse and varispeed affect playback/export."
+      },
+      {
+        name: "Audio Clip Automation",
+        does: "Creates, draws, edits and live-records selected audio-clip gain, fade-in, fade-out and source-offset automation lanes.",
+        useWhen: "Use when a clip needs level, fade or source-window changes over time without rewriting the source file.",
+        aiNote: "Fade/source-offset lanes are evaluated into source-safe audio-region metadata; this is not pitch-preserving time-stretch."
       },
       {
         name: "Short Fades / Reset Fades",
@@ -2027,7 +2033,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "Sends And Automation",
     control: "Create Automation Lane",
     selector: "data-clip-automation-create / data-automation-create / data-send-automation-create / data-project-automation-create / data-fx-automation-create",
-    does: "Creates an automation lane for clip gain, track parameters, sends, project tempo, or FX parameters.",
+    does: "Creates an automation lane for audio clip gain/fades/source offset, track parameters, sends, project tempo, or FX parameters.",
     useWhen: "Use when a value should change over time.",
     aiNote: "Automation is project data; preserve sorted point order and target identity."
   },

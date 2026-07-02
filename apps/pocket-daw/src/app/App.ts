@@ -236,6 +236,7 @@ import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./cho
 import { automationSurfaceAudioSyncMode, automationSurfacePointFromClient } from "./automationSurface";
 import { renderAppShell } from "./ui";
 import { replacePresent } from "../daw/undo";
+import type { ClipAutomationField } from "../daw/automation";
 import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
 import { POCKET_DAW_VERSION, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
@@ -1140,11 +1141,11 @@ export class App {
         const [clipId, field] = String(input.dataset.audioClipProperty || "").split(":");
         if (field !== "gain" && field !== "sourceOffsetSeconds" && field !== "durationSeconds" && field !== "fadeInSeconds" && field !== "fadeOutSeconds" && field !== "playbackRate" && field !== "pitchSemitones") return;
         const value = Number(input.value);
-        const recorded = field === "gain" ? this.recordLiveClipAutomation(clipId, field, value) : null;
+        const recorded = isClipAutomationField(field) ? this.recordLiveClipAutomation(clipId, field, value) : null;
         this.applyProjectState(recorded || setSelectedAudioClipPropertyCommand(this.state, clipId, field, value), {
           audio: "timeline-structure",
           preserveScroll: true,
-          reason: recorded ? "clip-gain-automation-record" : `audio-clip-${field}`
+          reason: recorded ? `clip-${field}-automation-record` : `audio-clip-${field}`
         });
       });
     });
@@ -1586,7 +1587,7 @@ export class App {
     return next === this.state ? null : next;
   }
 
-  private recordLiveClipAutomation(clipId: string, field: "gain", value: number): AppState | null {
+  private recordLiveClipAutomation(clipId: string, field: ClipAutomationField, value: number): AppState | null {
     if (!this.state.playing && !this.engine.isPlaying()) return null;
     const next = recordClipAutomationPointCommand(this.state, clipId, field, value, this.state.playheadBar || 1);
     return next === this.state ? null : next;
@@ -2247,7 +2248,7 @@ export class App {
     const clipAutomationCreate = target?.closest<HTMLElement>("[data-clip-automation-create]");
     if (clipAutomationCreate) {
       const [clipId, field] = String(clipAutomationCreate.dataset.clipAutomationCreate || "").split(":");
-      if (field === "gain") this.applyProjectState(ensureClipAutomationLaneCommand(this.state, clipId, field), { audio: "composition-events", preserveScroll: true, reason: "clip-automation-create" });
+      if (isClipAutomationField(field)) this.applyProjectState(ensureClipAutomationLaneCommand(this.state, clipId, field), { audio: "composition-events", preserveScroll: true, reason: "clip-automation-create" });
       return;
     }
     const fxAutomationCreate = target?.closest<HTMLElement>("[data-fx-automation-create]");
@@ -2302,7 +2303,7 @@ export class App {
     const clipAutomationAddPoint = target?.closest<HTMLElement>("[data-clip-automation-add-point]");
     if (clipAutomationAddPoint) {
       const [clipId, field] = String(clipAutomationAddPoint.dataset.clipAutomationAddPoint || "").split(":");
-      if (field === "gain") this.applyProjectState(addClipAutomationPointCommand(this.state, clipId, field), { audio: "composition-events", preserveScroll: true, reason: "clip-automation-add-point" });
+      if (isClipAutomationField(field)) this.applyProjectState(addClipAutomationPointCommand(this.state, clipId, field), { audio: "composition-events", preserveScroll: true, reason: "clip-automation-add-point" });
       return;
     }
     const fxAutomationAddPoint = target?.closest<HTMLElement>("[data-fx-automation-add-point]");
@@ -5305,6 +5306,10 @@ function audioClipActionInput(value: unknown): AudioClipAction {
     return value;
   }
   throw new Error(`Unsupported audio clip action: ${String(value || "[missing action]")}`);
+}
+
+function isClipAutomationField(value: string): value is ClipAutomationField {
+  return value === "gain" || value === "fadeInSeconds" || value === "fadeOutSeconds" || value === "sourceOffsetSeconds";
 }
 
 function numberInput(value: unknown, label: string): number {

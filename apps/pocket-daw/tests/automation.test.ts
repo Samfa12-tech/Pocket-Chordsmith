@@ -62,7 +62,7 @@ describe("automation helpers", () => {
     expect(controls.pan).toBeCloseTo(0, 5);
   });
 
-  it("creates clip gain automation lanes attached to audio clips", () => {
+  it("creates clip gain, fade and source-offset automation lanes attached to audio clips", () => {
     const imported = addImportedAudioMedia(createDemoProject(), {
       name: "Automation.wav",
       durationSeconds: 4,
@@ -71,15 +71,23 @@ describe("automation helpers", () => {
     });
     const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
     const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
-    clip.metadata = { ...(clip.metadata || {}), gain: 1.5 };
+    clip.metadata = { ...(clip.metadata || {}), gain: 1.5, fadeInSeconds: 0.75, sourceOffsetSeconds: 1.25 };
 
-    const ensured = ensureClipAutomationLane(placed.project, placed.clipId, "gain");
-    const lane = ensured.project.automation.lanes.find((item) => item.id === ensured.laneId)!;
-    const updatedClip = ensured.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    const gain = ensureClipAutomationLane(placed.project, placed.clipId, "gain");
+    const fade = ensureClipAutomationLane(gain.project, placed.clipId, "fadeInSeconds");
+    const offset = ensureClipAutomationLane(fade.project, placed.clipId, "sourceOffsetSeconds");
+    const gainLane = offset.project.automation.lanes.find((item) => item.id === gain.laneId)!;
+    const fadeLane = offset.project.automation.lanes.find((item) => item.id === fade.laneId)!;
+    const offsetLane = offset.project.automation.lanes.find((item) => item.id === offset.laneId)!;
+    const updatedClip = offset.project.timeline.clips.find((item) => item.id === placed.clipId)!;
 
-    expect(lane).toMatchObject({ targetPath: `clips.${placed.clipId}.gain`, min: 0, max: 4 });
-    expect(lane.points[0]).toMatchObject({ bar: 2, value: 1.5 });
-    expect(updatedClip.automationLaneId).toBe(lane.id);
+    expect(gainLane).toMatchObject({ targetPath: `clips.${placed.clipId}.gain`, min: 0, max: 4 });
+    expect(gainLane.points[0]).toMatchObject({ bar: 2, value: 1.5 });
+    expect(fadeLane).toMatchObject({ targetPath: `clips.${placed.clipId}.fadeInSeconds`, min: 0, max: 86400 });
+    expect(fadeLane.points[0]).toMatchObject({ bar: 2, value: 0.75 });
+    expect(offsetLane).toMatchObject({ targetPath: `clips.${placed.clipId}.sourceOffsetSeconds`, min: 0, max: 86400 });
+    expect(offsetLane.points[0]).toMatchObject({ bar: 2, value: 1.25 });
+    expect(updatedClip.automationLaneId).toBe(offsetLane.id);
   });
 
   it("creates send-level automation lanes attached to source tracks", () => {
