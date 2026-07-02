@@ -439,7 +439,7 @@ function simpleVoiceRecipe(event) {
     };
   }
   if (event.type === "kick" || event.type === "snare" || event.type === "hat") {
-    const kit = POCKET_DRUM_KIT_CONFIGS[resolvePocketDrumKitId(event.drumKit, event.audioProfile, event.lofiPreset)] || POCKET_DRUM_KIT_CONFIGS.classic;
+    const kit = POCKET_DRUM_KIT_CONFIGS[resolvePocketDrumKitId(event.drumKit, event.audioProfile, event.metalPreset || event.chipPreset || event.lofiPreset)] || POCKET_DRUM_KIT_CONFIGS.classic;
     const drum = event.type === "kick" ? kit.kick : event.type === "snare" ? kit.snare : kit.hat;
     return {
       wave: event.type === "hat" ? "square" : "sine",

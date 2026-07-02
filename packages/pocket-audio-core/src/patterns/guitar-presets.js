@@ -6,6 +6,9 @@ export const GUITAR_PRESETS = Object.freeze([
   { id: "metal_chug", label: "Metal chug", tip: "Fast chug rhythm with accents on each beat." },
   { id: "gallop", label: "Gallop", tip: "Three-note metal gallop grouped across sixteenth subdivisions." },
   { id: "doom_slow", label: "Doom", tip: "Slow sustained power chords on strong beats." },
+  { id: "thrash_gallop", label: "Thrash gallop", tip: "Fast palm-muted gallops with hard beat accents." },
+  { id: "tremolo_drive", label: "Tremolo drive", tip: "Dense tremolo-style sixteenths for boss or blast sections." },
+  { id: "breakdown_stabs", label: "Breakdown stabs", tip: "Half-time stop/start chugs with silence between impacts." },
   { id: "verse_chorus", label: "Verse/chorus", tip: "Open verse strums followed by a tighter chug section." },
   { id: "boom_chick", label: "Boom-chick", tip: "Western boom-chick accents with percussive scratches." },
   { id: "train_chop", label: "Train chop", tip: "Driving chop pattern with alternating chugs and open strums." },
@@ -65,6 +68,23 @@ export function guitarPresetPatternForProject(presetId, pcs, section) {
     } else if (preset.id === "doom_slow") {
       if (pos === 0 || pos === beat * 2) pattern[step] = "accent";
       else if (pos > 0) pattern[step] = "hold";
+    } else if (preset.id === "thrash_gallop") {
+      const unit = Math.max(1, Math.round(resolution / 4));
+      if (step % unit === 0) {
+        const slot = Math.floor(pos / unit) % 8;
+        if ([0, 1, 3, 4, 5, 7].includes(slot)) pattern[step] = slot === 0 || slot === 4 ? "accent" : "chug";
+      }
+    } else if (preset.id === "tremolo_drive") {
+      if (step % Math.max(1, Math.round(resolution / 4)) === 0) {
+        pattern[step] = pos % beat === 0 ? "accent" : "chug";
+      }
+    } else if (preset.id === "breakdown_stabs") {
+      const unit = Math.max(1, Math.round(resolution / 4));
+      if (step % unit === 0) {
+        const slot = Math.floor(pos / unit) % 16;
+        if ([0, 3, 8, 10].includes(slot)) pattern[step] = slot === 0 || slot === 8 ? "accent" : "chug";
+        if ([1, 4, 9, 11].includes(slot)) pattern[step] = "scratch";
+      }
     } else if (preset.id === "verse_chorus") {
       const bar = Math.floor(step / barSteps);
       if (bar < 2) {

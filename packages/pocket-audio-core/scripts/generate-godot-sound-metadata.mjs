@@ -23,6 +23,17 @@ import {
   CHIP_STYLE_PRESET_IDS
 } from "../src/presets/chip.js";
 import {
+  DEFAULT_METAL_PRESET_ID,
+  HEAVY_METAL_AUDIO_PROFILE_ID,
+  METAL_BASS_TONES,
+  METAL_CHORD_INSTRUMENTS,
+  METAL_DRUM_GROOVE_PRESETS,
+  METAL_DRUM_KITS,
+  METAL_MELODY_INSTRUMENTS,
+  METAL_STYLE_PRESETS,
+  METAL_STYLE_PRESET_IDS
+} from "../src/presets/metal.js";
+import {
   DEFAULT_CHORD_INSTRUMENT,
   DEFAULT_MELODY_INSTRUMENT,
   POCKET_CHORD_INSTRUMENTS,
@@ -76,9 +87,18 @@ const generated = [
   `const CHIP_DRUM_GROOVE_PRESETS := ${gdArray(CHIP_DRUM_GROOVE_PRESETS)}`,
   `const CHIP_BASS_TONES := ${gdArray(CHIP_BASS_TONES)}`,
   `const CHIP_STYLE_PRESET_TEXTURES := ${gdValue(chipStylePresetTextures())}`,
+  `const HEAVY_METAL_AUDIO_PROFILE_ID := ${gdString(HEAVY_METAL_AUDIO_PROFILE_ID)}`,
+  `const DEFAULT_METAL_PRESET_ID := ${gdString(DEFAULT_METAL_PRESET_ID)}`,
+  `const METAL_STYLE_PRESETS := ${gdArray(METAL_STYLE_PRESET_IDS)}`,
+  `const METAL_CHORD_INSTRUMENTS := ${gdArray(METAL_CHORD_INSTRUMENTS)}`,
+  `const METAL_MELODY_INSTRUMENTS := ${gdArray(METAL_MELODY_INSTRUMENTS)}`,
+  `const METAL_DRUM_KITS := ${gdArray(METAL_DRUM_KITS)}`,
+  `const METAL_DRUM_GROOVE_PRESETS := ${gdArray(METAL_DRUM_GROOVE_PRESETS)}`,
+  `const METAL_BASS_TONES := ${gdArray(METAL_BASS_TONES)}`,
+  `const METAL_STYLE_PRESET_TEXTURES := ${gdValue(metalStylePresetTextures())}`,
   "",
-  `const POCKET_DRUM_KITS := ${gdArray(["classic", ...LOFI_DRUM_KITS.filter((id) => id !== "classic"), ...CHIP_DRUM_KITS])}`,
-  `const POCKET_BASS_TONES := ${gdArray(["classic", ...LOFI_BASS_TONES.filter((id) => id !== "classic"), ...CHIP_BASS_TONES])}`,
+  `const POCKET_DRUM_KITS := ${gdArray(["classic", ...LOFI_DRUM_KITS.filter((id) => id !== "classic"), ...CHIP_DRUM_KITS, ...METAL_DRUM_KITS])}`,
+  `const POCKET_BASS_TONES := ${gdArray(["classic", ...LOFI_BASS_TONES.filter((id) => id !== "classic"), ...CHIP_BASS_TONES, ...METAL_BASS_TONES])}`,
   `const POCKET_CHORD_INSTRUMENTS := ${gdArray(POCKET_CHORD_INSTRUMENTS)}`,
   `const POCKET_MELODY_INSTRUMENTS := ${gdArray(POCKET_MELODY_INSTRUMENTS)}`,
   `const DEFAULT_CHORD_INSTRUMENT := ${gdString(DEFAULT_CHORD_INSTRUMENT)}`,
@@ -144,6 +164,12 @@ function chipStylePresetTextures() {
   );
 }
 
+function metalStylePresetTextures() {
+  return Object.fromEntries(
+    METAL_STYLE_PRESET_IDS.map((id) => [id, METAL_STYLE_PRESETS[id].texture || {}])
+  );
+}
+
 function godotDrumSampleStreams() {
   const streams = {
     kick: "kick",
@@ -166,6 +192,12 @@ function godotDrumSampleStreams() {
     streams[`${kit}:open_hat`] = `${kit}_open_hat`;
   });
   CHIP_DRUM_KITS.forEach((kit) => {
+    streams[`${kit}:kick`] = "kick";
+    streams[`${kit}:snare`] = "snare";
+    streams[`${kit}:hat`] = "hat";
+    streams[`${kit}:open_hat`] = "open_hat";
+  });
+  METAL_DRUM_KITS.forEach((kit) => {
     streams[`${kit}:kick`] = "kick";
     streams[`${kit}:snare`] = "snare";
     streams[`${kit}:hat`] = "hat";

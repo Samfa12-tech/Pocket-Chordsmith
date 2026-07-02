@@ -935,7 +935,13 @@ const DRUM_PRESETS = [
   {id:"chip_boss_half_time", label:"Chip boss half-time", simple4:true, simple3:false, timeSigs:[4], tip:"Half-time boss groove with heavy kick/snare anchors and tight noise hats."},
   {id:"chip_arp_jam", label:"Chip arp jam", simple4:false, simple3:false, timeSigs:[4], tip:"Modern chip jam groove with 16th-note motion, syncopated kicks and punchy backbeat."},
   {id:"chip_dungeon_shuffle", label:"Chip dungeon shuffle", simple4:false, simple3:false, timeSigs:[4], tip:"Uneasy dungeon shuffle with staggered hats and minor-key movement."},
-  {id:"chip_victory_stomp", label:"Chip victory stomp", simple4:true, simple3:false, timeSigs:[4], tip:"Bright victory stomp with accented hats, arcade kick hits and payoff snare."}
+  {id:"chip_victory_stomp", label:"Chip victory stomp", simple4:true, simple3:false, timeSigs:[4], tip:"Bright victory stomp with accented hats, arcade kick hits and payoff snare."},
+  {id:"metal_backbeat_chug", label:"Metal backbeat chug", simple4:false, simple3:false, timeSigs:[4], tip:"Tight metal backbeat with kick doubles that follow palm-muted chugs."},
+  {id:"metal_gallop_160", label:"Metal gallop 160", simple4:false, simple3:false, timeSigs:[4], tip:"Thrash gallop kick language with driving hats and strong backbeat."},
+  {id:"metal_double_kick_drive", label:"Double-kick drive", simple4:false, simple3:false, timeSigs:[4], tip:"Continuous double-kick drive under a clear snare anchor."},
+  {id:"metal_blast_220", label:"Blast 220", simple4:false, simple3:false, timeSigs:[4], tip:"Blast-beat approximation for fine grids, with safer lower-resolution fallbacks."},
+  {id:"metal_doom_70", label:"Doom 70", simple4:true, simple3:false, timeSigs:[4], tip:"Slow doom procession with sparse cymbals and a long low kick."},
+  {id:"metal_breakdown_half_time", label:"Breakdown half-time", simple4:true, simple3:false, timeSigs:[4], tip:"Half-time breakdown with gated kick/snare impacts."}
 ];
 const DRUM_PATTERN_DEFS = {
   4:{
@@ -1073,6 +1079,38 @@ const DRUM_PATTERN_DEFS = {
       res1:drumGroove(drumHits("hat",[0,4,8,12],2), drumHits("kick",[0,4,8]), drumHits("snare",[12],2)),
       res2:drumGroove(drumAccentHits("hat",[0,2,4,6,8,10,12,14],[0,4,8,12]), drumHits("kick",[0,4,8,10]), drumHits("snare",[12],2)),
       res4:drumGroove(drumAccentHits("hat",[0,2,4,6,8,10,12,14],[0,4,8,12]), drumHits("kick",[0,3,4,8,10],1,{minRes:4}), drumHits("snare",[12],2), drumHits("snare",[15],1,{minRes:4}))
+    },
+    metal_backbeat_chug:{
+      res1:drumGroove(drumHits("hat",[0,4,8,12]), drumHits("kick",[0,8,12]), drumHits("snare",[4,12],2)),
+      res2:drumGroove(drumAccentHits("hat",[0,2,4,6,8,10,12,14],[0,4,8,12]), drumHits("kick",[0,2,8,10,12,14]), drumHits("snare",[4,12],2)),
+      res4:drumGroove(drumAccentHits("hat",[0,2,4,6,8,10,12,14],[0,4,8,12]), drumHits("kick",[0,1,2,3,8,9,10,11,12,14],1,{minRes:4}), drumHits("snare",[4,12],2))
+    },
+    metal_gallop_160:{
+      res1:drumGroove(drumHits("hat",[0,4,8,12],2), drumHits("kick",[0,8]), drumHits("snare",[4,12],2)),
+      res2:drumGroove(drumAccentHits("hat",[0,2,4,6,8,10,12,14],[0,8]), drumHits("kick",[0,2,6,8,10,14]), drumHits("snare",[4,12],2)),
+      res4:drumGroove(drumAccentHits("hat",[0,2,4,6,8,10,12,14],[0,8]), drumHits("kick",[0,1,3,4,5,7,8,9,11,12,13,15],1,{minRes:4}), drumHits("snare",[4,12],2))
+    },
+    metal_double_kick_drive:{
+      res1:drumGroove(drumHits("hat",[0,4,8,12]), drumHits("kick",[0,4,8,12]), drumHits("snare",[4,12],2)),
+      res2:drumGroove(drumAccentHits("hat",[0,2,4,6,8,10,12,14],[0,4,8,12]), drumHits("kick",[0,2,4,6,8,10,12,14]), drumHits("snare",[4,12],2)),
+      res4:drumGroove(drumAccentHits("hat",[0,2,4,6,8,10,12,14],[0,4,8,12]), drumHits("kick",[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],1,{minRes:4}), drumHits("snare",[4,12],2))
+    },
+    metal_blast_220:{
+      res1:drumGroove(drumHits("hat",[0,4,8,12],2), drumHits("kick",[0,4,8,12]), drumHits("snare",[4,12],2)),
+      res1Note:"Simplified because Full resolution cannot represent a blast beat.",
+      res2:drumGroove(drumHits("hat",[0,2,4,6,8,10,12,14]), drumHits("kick",[0,4,8,12]), drumHits("snare",[2,6,10,14],2)),
+      res2Note:"Using a skank/double-time fallback at this resolution.",
+      res4:drumGroove(drumAccentHits("snare",[0,2,4,6,8,10,12,14],[0,8]), drumHits("kick",[1,3,5,7,9,11,13,15],1,{minRes:4}), drumHits("hat",[1,3,5,7,9,11,13,15],1,{minRes:4}))
+    },
+    metal_doom_70:{
+      res1:drumGroove(drumHits("hat",[0,8]), drumHits("kick",[0]), drumHits("snare",[8],2)),
+      res2:drumGroove(drumHits("hat",[0,8,14]), drumHits("kick",[0,10]), drumHits("snare",[8],2)),
+      res4:drumGroove(drumHits("hat",[0,8,14]), drumHits("kick",[0,10]), drumHits("snare",[8],2), drumHits("hat",[15],2,{minRes:4}))
+    },
+    metal_breakdown_half_time:{
+      res1:drumGroove(drumHits("hat",[0,8]), drumHits("kick",[0,12]), drumHits("snare",[8],2)),
+      res2:drumGroove(drumHits("hat",[0,8]), drumHits("kick",[0,3,8,12]), drumHits("snare",[8],2)),
+      res4:drumGroove(drumHits("hat",[0,8]), drumHits("kick",[0,3,8,10,12],1,{minRes:4}), drumHits("snare",[8],2), drumHits("snare",[15],1,{minRes:4}))
     }
   },
   3:{
@@ -1167,13 +1205,13 @@ const HANDOFF_TO_CHORDSMITH_KEY = "pocket_dj_to_chordsmith_handoff_v1";
 const MIDI_TICKS_PER_QUARTER = 480;
 const MAX_SEQUENCE_SLOTS = 64;
 const GUITAR_ARTICULATIONS = ["off","open","chug","accent","hold","scratch"];
-const GUITAR_TONES = ["clean","crunch","high_gain","metal","western_twang"];
+const GUITAR_TONES = ["clean","crunch","high_gain","metal","tight_metal","doom_fuzz","western_twang"];
 const GUITAR_REGISTERS = ["low","mid","high"];
 const GUITAR_STRUM_MODES = ["down","up","alternate"];
-const GUITAR_PATTERN_PRESETS = ["rock_eighths","punk_downstrokes","metal_chug","gallop","doom_slow","verse_chorus","boom_chick","train_chop","western_waltz"];
+const GUITAR_PATTERN_PRESETS = ["rock_eighths","punk_downstrokes","metal_chug","gallop","doom_slow","thrash_gallop","tremolo_drive","breakdown_stabs","verse_chorus","boom_chick","train_chop","western_waltz"];
 const GUITAR_FILL_STYLES = ["gentle_strum","sparse_strum","chug","accents_only"];
-const CHORD_INSTRUMENTS = ["pocket","piano","saloon_piano","harp","warm_pad","glass","dusty_rhodes","felt_piano","cassette_keys","muted_jazz_guitar","lofi_warm_pad","chip_square_stack","chip_triangle_pad","chip_arp_keys","modern_chip_poly"];
-const MELODY_INSTRUMENTS = ["pulse","soft","synth","bell","lead_guitar","distorted_lead_guitar","banjo","harmonica","cowboy_whistle","trumpet","saxophone","mellow_vibes","soft_pluck","mellow_sax","muted_trumpet","tape_bell","chip_square_lead","chip_pulse_lead","chip_triangle_blip","chip_bell_stack","modern_chip_lead"];
+const CHORD_INSTRUMENTS = ["pocket","piano","saloon_piano","harp","warm_pad","glass","dusty_rhodes","felt_piano","cassette_keys","muted_jazz_guitar","lofi_warm_pad","chip_square_stack","chip_triangle_pad","chip_arp_keys","modern_chip_poly","metal_power_stack","dark_organ_stack"];
+const MELODY_INSTRUMENTS = ["pulse","soft","synth","bell","lead_guitar","distorted_lead_guitar","banjo","harmonica","cowboy_whistle","trumpet","saxophone","mellow_vibes","soft_pluck","mellow_sax","muted_trumpet","tape_bell","chip_square_lead","chip_pulse_lead","chip_triangle_blip","chip_bell_stack","modern_chip_lead","shred_lead_guitar","twin_harmony_lead"];
 const LOFI_AUDIO_PROFILE_ID = "lofi_chill";
 const CHIP_AUDIO_PROFILE_ID = "chip_tune";
 const LOFI_DRUM_KITS = ["classic","lofi_dusty","lofi_brush","lofi_tape_soft"];
@@ -1182,6 +1220,9 @@ const LOFI_DRUM_GROOVE_PRESETS = ["lofi_backbeat_76","lofi_lazy_boom_bap","lofi_
 const CHIP_DRUM_KITS = ["chip_noise_kit","chip_arcade_kit","modern_chip_punch"];
 const CHIP_BASS_TONES = ["chip_triangle_bass","chip_square_bass","modern_chip_sub","bitcrush_bass"];
 const CHIP_DRUM_GROOVE_PRESETS = ["chip_run_128","chip_menu_bounce","chip_boss_half_time","chip_arp_jam","chip_dungeon_shuffle","chip_victory_stomp"];
+const METAL_DRUM_KITS = ["metal_tight","metal_arena","metal_doom"];
+const METAL_BASS_TONES = ["metal_pick_bass","metal_sub_pick","metal_grind_bass"];
+const METAL_DRUM_GROOVE_PRESETS = ["metal_backbeat_chug","metal_gallop_160","metal_double_kick_drive","metal_blast_220","metal_doom_70","metal_breakdown_half_time"];
 const DEFAULT_LOFI_TEXTURE = {enabled:false, vinylCrackle:0.08, tapeHiss:0.05, wowFlutter:0.03, warmth:0.16, lowPassAge:0.22, bitCrush:0.01};
 const DEFAULT_CHIP_TEXTURE = {enabled:false, bitDepth:0.22, sampleRateCrush:0.18, pulseWidth:0.5, pitchDrift:0.03, saturation:0.16, stereoSpread:0.12};
 const FALLBACK_DRUM_KIT_CONFIGS = {
@@ -1351,8 +1392,11 @@ function lofiDrumGroovePresetIds(){ return coreArrayExport("LOFI_DRUM_GROOVE_PRE
 function chipDrumKitIds(){ return coreArrayExport("CHIP_DRUM_KITS", CHIP_DRUM_KITS); }
 function chipBassToneIds(){ return coreArrayExport("CHIP_BASS_TONES", CHIP_BASS_TONES); }
 function chipDrumGroovePresetIds(){ return coreArrayExport("CHIP_DRUM_GROOVE_PRESETS", CHIP_DRUM_GROOVE_PRESETS); }
-function pocketDrumKitIds(){ return Array.from(new Set(["classic", ...lofiDrumKitIds(), ...chipDrumKitIds()])); }
-function pocketBassToneIds(){ return Array.from(new Set(["classic", ...lofiBassToneIds(), ...chipBassToneIds()])); }
+function metalDrumKitIds(){ return coreArrayExport("METAL_DRUM_KITS", METAL_DRUM_KITS); }
+function metalBassToneIds(){ return coreArrayExport("METAL_BASS_TONES", METAL_BASS_TONES); }
+function metalDrumGroovePresetIds(){ return coreArrayExport("METAL_DRUM_GROOVE_PRESETS", METAL_DRUM_GROOVE_PRESETS); }
+function pocketDrumKitIds(){ return Array.from(new Set(["classic", ...lofiDrumKitIds(), ...chipDrumKitIds(), ...metalDrumKitIds()])); }
+function pocketBassToneIds(){ return Array.from(new Set(["classic", ...lofiBassToneIds(), ...chipBassToneIds(), ...metalBassToneIds()])); }
 function guitarToneIds(){ return coreArrayExport("POCKET_GUITAR_TONES", GUITAR_TONES); }
 function guitarRegisterIds(){ return coreArrayExport("POCKET_GUITAR_REGISTERS", GUITAR_REGISTERS); }
 function guitarStrumModeIds(){ return coreArrayExport("POCKET_GUITAR_STRUM_MODES", GUITAR_STRUM_MODES); }
@@ -3849,6 +3893,9 @@ function bassToneConfig(tone=state.bassTone){
   if(tone === "chip_square_bass") return {mainWave:"square", subWave:"triangle", mainPeak:0.72, subPeak:0.22, cutoff:680, subCutoff:220, attack:0.002};
   if(tone === "modern_chip_sub") return {mainWave:"square", subWave:"sine", mainPeak:0.64, subPeak:0.62, cutoff:420, subCutoff:150, attack:0.006};
   if(tone === "bitcrush_bass") return {mainWave:"sawtooth", subWave:"square", mainPeak:0.58, subPeak:0.34, cutoff:560, subCutoff:210, attack:0.003};
+  if(tone === "metal_pick_bass") return {mainWave:"sawtooth", subWave:"square", mainPeak:0.72, subPeak:0.4, cutoff:520, subCutoff:140, attack:0.003};
+  if(tone === "metal_sub_pick") return {mainWave:"triangle", subWave:"sine", mainPeak:0.58, subPeak:0.68, cutoff:360, subCutoff:110, attack:0.006};
+  if(tone === "metal_grind_bass") return {mainWave:"sawtooth", subWave:"triangle", mainPeak:0.66, subPeak:0.32, cutoff:760, subCutoff:170, attack:0.002};
   if(tone === "warm_sub") return {mainWave:"sine", subWave:"sine", mainPeak:0.82, subPeak:0.55, cutoff:210, subCutoff:120, attack:0.018};
   if(tone === "soft_upright") return {mainWave:"triangle", subWave:"sine", mainPeak:0.72, subPeak:0.28, cutoff:360, subCutoff:140, attack:0.008};
   if(tone === "rounded_triangle_bass") return {mainWave:"triangle", subWave:"sine", mainPeak:0.84, subPeak:0.34, cutoff:300, subCutoff:130, attack:0.012};
@@ -3901,6 +3948,16 @@ function chordNotes(ch){
   return notes;
 }
 function chordInstrumentConfig(name){
+  if(name === "metal_power_stack") return {
+    rootWave:"sawtooth", wave:"sawtooth", peak:0.15, filter:"bandpass", freq:1180, filterQ:0.9, filterSweep:1950,
+    attack:0.002, decay:0.08, sustain:0.58, release:0.16, durMul:0.72, spreadMul:0.3, shimmer:false, maxLiveDur:0.76,
+    layers:[{wave:"sawtooth", level:0.78, detune:-5}, {wave:"square", level:0.42, detune:5}, {wave:"triangle", freqMul:0.5, level:0.2}]
+  };
+  if(name === "dark_organ_stack") return {
+    rootWave:"triangle", wave:"sawtooth", peak:0.125, filter:"lowpass", freq:1050, filterQ:0.62, filterSweep:1500,
+    attack:0.09, decay:0.24, sustain:0.82, release:0.62, durMul:1.35, spreadMul:0.18, shimmer:false, maxLiveDur:1.7,
+    layers:[{wave:"triangle", level:0.72, detune:-8}, {wave:"sawtooth", level:0.36, detune:7}, {wave:"sine", freqMul:2, level:0.16}]
+  };
   if(name === "chip_square_stack") return {
     rootWave:"square", wave:"square", peak:0.16, filter:"lowpass", freq:3600, filterQ:0.8,
     attack:0.002, decay:0.08, sustain:0.48, release:0.14, durMul:0.82, spreadMul:0.16, shimmer:false, maxLiveDur:0.68,
@@ -4434,6 +4491,8 @@ function leadInstrumentConfig(name){
   if(name === "chip_triangle_blip") return {wave:"triangle", peak:0.12, filter:"lowpass", freq:3100, durMul:0.54, chip:true};
   if(name === "chip_bell_stack") return {wave:"sine", peak:0.108, filter:"lowpass", freq:3900, durMul:1.05, chip:true};
   if(name === "modern_chip_lead") return {wave:"square", peak:0.138, filter:"lowpass", freq:3600, durMul:0.86, chip:true};
+  if(name === "shred_lead_guitar") return {wave:"sawtooth", peak:0.132, filter:"bandpass", freq:2300, durMul:0.78, metal:true};
+  if(name === "twin_harmony_lead") return {wave:"sawtooth", peak:0.118, filter:"lowpass", freq:2900, durMul:0.86, metal:true};
   if(name === "soft") return {wave:"triangle", peak:0.16, filter:"lowpass", freq:1700, durMul:1.0};
   if(name === "synth") return {wave:"sawtooth", peak:0.18, filter:"lowpass", freq:1500, durMul:0.95};
   if(name === "bell") return {wave:"sine", peak:0.105, filter:"lowpass", freq:2600, durMul:1.05};
@@ -4979,6 +5038,8 @@ function guitarToneConfig(tone=state.guitarTone){
   if(tone === "clean") return {drive:0.65, input:0.62, peak:0.086, lowpass:4300, highpass:90, body:1.4, mid:1.0, spread:0.016, sustain:1.08, mute:0.085, scratch:0.040};
   if(tone === "crunch") return {drive:2.4, input:0.80, peak:0.092, lowpass:3600, highpass:100, body:2.8, mid:2.0, spread:0.013, sustain:0.98, mute:0.074, scratch:0.044};
   if(tone === "metal") return {drive:6.2, input:0.92, peak:0.088, lowpass:3050, highpass:115, body:4.5, mid:3.0, spread:0.009, sustain:0.86, mute:0.060, scratch:0.040};
+  if(tone === "tight_metal") return {drive:7.1, input:0.88, peak:0.078, lowpass:2850, highpass:145, body:3.5, mid:3.35, spread:0.007, sustain:0.76, mute:0.045, scratch:0.036};
+  if(tone === "doom_fuzz") return {drive:8.4, input:0.82, peak:0.075, lowpass:2450, highpass:72, body:5.2, mid:2.15, spread:0.012, sustain:1.18, mute:0.095, scratch:0.030};
   if(tone === "western_twang") return {drive:1.25, input:0.68, peak:0.082, lowpass:4700, highpass:125, body:1.1, mid:2.4, spread:0.020, sustain:0.72, mute:0.070, scratch:0.034};
   return {drive:4.2, input:0.88, peak:0.090, lowpass:3250, highpass:108, body:3.7, mid:2.6, spread:0.010, sustain:0.91, mute:0.066, scratch:0.042};
 }
@@ -6314,10 +6375,10 @@ function toggleSettings(open=null){
   }
 }
 function genreDisplayName(genre){
-  return {clean:"Clean", lofi:"Lofi / Chill", chip:"Chip Tune", western:"Western"}[genre] || "Clean";
+  return {clean:"Clean", lofi:"Lofi / Chill", chip:"Chip Tune", metal:"Heavy Metal", western:"Western"}[genre] || "Clean";
 }
 function renderGenreDrawer(){
-  const activeGenre = safeChoice(state.settingsGenre || detectActiveGenre(), ["clean","lofi","chip","western"], "clean");
+  const activeGenre = safeChoice(state.settingsGenre || detectActiveGenre(), ["clean","lofi","chip","metal","western"], "clean");
   state.settingsGenre = activeGenre;
   if(els.genreDrawer){
     els.genreDrawer.classList.toggle("open", !!state.settingsGenreDrawerOpen);
@@ -6354,7 +6415,7 @@ function renderGenreDrawer(){
   }
 }
 function openGenreDrawer(genreId=null){
-  state.settingsGenre = safeChoice(genreId || state.settingsGenre || detectActiveGenre(), ["clean","lofi","chip","western"], "clean");
+  state.settingsGenre = safeChoice(genreId || state.settingsGenre || detectActiveGenre(), ["clean","lofi","chip","metal","western"], "clean");
   state.settingsGenreDrawerOpen = true;
   renderGenreDrawer();
   requestAnimationFrame(() => {
@@ -6368,7 +6429,7 @@ function closeGenreDrawer(){
   if(els.genreDrawerBtn && els.genreDrawerBtn.focus) els.genreDrawerBtn.focus({preventScroll:true});
 }
 function selectSettingsGenre(genreId){
-  state.settingsGenre = safeChoice(genreId, ["clean","lofi","chip","western"], "clean");
+  state.settingsGenre = safeChoice(genreId, ["clean","lofi","chip","metal","western"], "clean");
   state.settingsGenreDrawerOpen = true;
   renderGenreDrawer();
 }
@@ -6379,6 +6440,8 @@ function applyCleanGenreToProject(){
   state.lofiTexture = {...DEFAULT_LOFI_TEXTURE, enabled:false};
   state.chipPreset = "";
   state.chipTexture = {...DEFAULT_CHIP_TEXTURE, enabled:false};
+  state.metalPreset = "";
+  state.metalTexture = {...DEFAULT_METAL_TEXTURE, enabled:false};
   state.drumKit = "classic";
   state.drumGroovePreset = "";
   state.bassTone = "classic";
@@ -26225,6 +26288,10 @@ function applyLofiPresetToProject(presetId, options={}){
   state.lofiPreset = sanitizeLofiPresetId(presetId) || "lofi_study_room";
   state.settingsGenre = "lofi";
   state.lofiTexture = sanitizeLofiTexture(preset.texture, state.lofiPreset);
+  state.chipPreset = "";
+  state.chipTexture = {...DEFAULT_CHIP_TEXTURE, enabled:false};
+  state.metalPreset = "";
+  state.metalTexture = {...DEFAULT_METAL_TEXTURE, enabled:false};
   state.drumKit = safeChoice(preset.drumKit, lofiDrumKitIds(), "lofi_dusty");
   state.drumGroovePreset = safeChoice(preset.drumGroovePreset, lofiDrumGroovePresetIds(), "lofi_backbeat_76");
   state.bassTone = safeChoice(preset.bassTone, lofiBassToneIds(), "warm_sub");
@@ -26350,6 +26417,8 @@ function applyChipPresetToProject(presetId, options={}){
   state.chipTexture = sanitizeChipTexture(preset.texture, state.chipPreset);
   state.lofiPreset = "";
   state.lofiTexture = {...DEFAULT_LOFI_TEXTURE, enabled:false};
+  state.metalPreset = "";
+  state.metalTexture = {...DEFAULT_METAL_TEXTURE, enabled:false};
   state.drumKit = safeChoice(preset.drumKit, chipDrumKitIds(), "chip_noise_kit");
   state.drumGroovePreset = safeChoice(preset.drumGroovePreset, chipDrumGroovePresetIds(), "chip_run_128");
   state.bassTone = safeChoice(preset.bassTone, chipBassToneIds(), "chip_triangle_bass");
@@ -26754,7 +26823,11 @@ function normalizeChordsmithTraceEvent(ev){
   if(ev.direction !== undefined) out.direction = ev.direction;
   if(ev.audioProfile !== undefined) out.audioProfile = ev.audioProfile;
   if(ev.lofiPreset !== undefined) out.lofiPreset = ev.lofiPreset;
+  if(ev.chipPreset !== undefined) out.chipPreset = ev.chipPreset;
+  if(ev.metalPreset !== undefined) out.metalPreset = ev.metalPreset;
   if(ev.lofiTexture !== undefined) out.lofiTexture = {...ev.lofiTexture};
+  if(ev.chipTexture !== undefined) out.chipTexture = {...ev.chipTexture};
+  if(ev.metalTexture !== undefined) out.metalTexture = {...ev.metalTexture};
   return out;
 }
 
@@ -28588,7 +28661,7 @@ function exportProject(){
   storeSection();
   const out = {
     projectVersion:PROJECT_SCHEMA_VERSION,
-    key:state.key, scale:state.scale, timeSig:state.timeSig, bpm:state.bpm, swing:state.swing, audioProfile:(state.audioProfile === CHIP_AUDIO_PROFILE_ID || state.chipPreset ? CHIP_AUDIO_PROFILE_ID : state.audioProfile === LOFI_AUDIO_PROFILE_ID || state.lofiPreset ? LOFI_AUDIO_PROFILE_ID : "standard"), lofiPreset:state.lofiPreset || "", lofiTexture:sanitizeLofiTexture(state.lofiTexture, state.lofiPreset), chipPreset:state.chipPreset || "", chipTexture:sanitizeChipTexture(state.chipTexture, state.chipPreset), drumKit:state.drumKit || "classic", drumGroovePreset:state.drumGroovePreset || "", bassTone:state.bassTone || "classic", theme:state.theme, uiMode:state.uiMode,
+    key:state.key, scale:state.scale, timeSig:state.timeSig, bpm:state.bpm, swing:state.swing, audioProfile:(state.audioProfile === CHIP_AUDIO_PROFILE_ID || state.chipPreset ? CHIP_AUDIO_PROFILE_ID : state.audioProfile === HEAVY_METAL_AUDIO_PROFILE_ID || state.metalPreset ? HEAVY_METAL_AUDIO_PROFILE_ID : state.audioProfile === LOFI_AUDIO_PROFILE_ID || state.lofiPreset ? LOFI_AUDIO_PROFILE_ID : "standard"), lofiPreset:state.lofiPreset || "", lofiTexture:sanitizeLofiTexture(state.lofiTexture, state.lofiPreset), chipPreset:state.chipPreset || "", chipTexture:sanitizeChipTexture(state.chipTexture, state.chipPreset), metalPreset:state.metalPreset || "", metalTexture:sanitizeMetalTexture(state.metalTexture, state.metalPreset), drumKit:state.drumKit || "classic", drumGroovePreset:state.drumGroovePreset || "", bassTone:state.bassTone || "classic", theme:state.theme, uiMode:state.uiMode,
     chordType:state.chordType, chordInstrument:state.chordInstrument, resolution:state.resolution, masterVolume:masterVolumeValue(), chordVolume:volumeSliderValue("chordVol", 0.72), beatVolume:volumeSliderValue("beatVol", 0.86), leadVolume:volumeSliderValue("leadVol", 0.65), melodyPitchMode:state.melodyPitchMode, midiExportMode:state.midiExportMode, midiChordExport:state.midiChordExport, midiExactDurations:state.midiExactDurations,
     guitarEnabled:state.guitarEnabled, guitarTone:state.guitarTone, guitarRegister:state.guitarRegister, guitarStrumMode:state.guitarStrumMode, guitarPatternPreset:state.guitarPatternPreset, guitarVolume:state.guitarVolume,
     chordPlayMode:state.chordPlayMode, chordRhythmMode:state.chordRhythmMode, chordOctave:state.chordOctave, melodyOctave:state.melodyOctave,
@@ -28647,6 +28720,8 @@ function importProject(rawData){
   state.lofiTexture = sanitizeLofiTexture(data.lofiTexture, state.lofiPreset);
   state.chipPreset = data.chipPreset || "";
   state.chipTexture = sanitizeChipTexture(data.chipTexture, state.chipPreset);
+  state.metalPreset = data.metalPreset || "";
+  state.metalTexture = sanitizeMetalTexture(data.metalTexture, state.metalPreset);
   state.drumKit = data.drumKit || "classic";
   state.drumGroovePreset = data.drumGroovePreset || "";
   state.bassTone = data.bassTone || "classic";
@@ -29058,6 +29133,16 @@ function renderAll(){
   if(els.chipPitchDrift) els.chipPitchDrift.value = String(state.chipTexture?.pitchDrift ?? DEFAULT_CHIP_TEXTURE.pitchDrift);
   if(els.chipSaturation) els.chipSaturation.value = String(state.chipTexture?.saturation ?? DEFAULT_CHIP_TEXTURE.saturation);
   if(els.chipStereoSpread) els.chipStereoSpread.value = String(state.chipTexture?.stereoSpread ?? DEFAULT_CHIP_TEXTURE.stereoSpread);
+  if(els.metalPresetSelect) els.metalPresetSelect.value = state.metalPreset || "";
+  if(els.metalDrumKitSelect) els.metalDrumKitSelect.value = metalDrumKitIds().includes(state.drumKit) ? state.drumKit : "metal_tight";
+  if(els.metalBassToneSelect) els.metalBassToneSelect.value = metalBassToneIds().includes(state.bassTone) ? state.bassTone : "metal_pick_bass";
+  if(els.metalTextureToggle) els.metalTextureToggle.checked = !!state.metalTexture?.enabled;
+  if(els.metalDrive) els.metalDrive.value = String(state.metalTexture?.drive ?? DEFAULT_METAL_TEXTURE.drive);
+  if(els.metalPalmMute) els.metalPalmMute.value = String(state.metalTexture?.palmMute ?? DEFAULT_METAL_TEXTURE.palmMute);
+  if(els.metalLowTightness) els.metalLowTightness.value = String(state.metalTexture?.lowTightness ?? DEFAULT_METAL_TEXTURE.lowTightness);
+  if(els.metalPresence) els.metalPresence.value = String(state.metalTexture?.presence ?? DEFAULT_METAL_TEXTURE.presence);
+  if(els.metalRoomSize) els.metalRoomSize.value = String(state.metalTexture?.roomSize ?? DEFAULT_METAL_TEXTURE.roomSize);
+  if(els.metalPickAttack) els.metalPickAttack.value = String(state.metalTexture?.pickAttack ?? DEFAULT_METAL_TEXTURE.pickAttack);
   renderGenreDrawer();
   if(els.showMelodyPadsToggle) els.showMelodyPadsToggle.checked = !!state.showMelodyPads;
   if(els.showDrumPadsToggle) els.showDrumPadsToggle.checked = !!state.showDrumPads;
@@ -29153,6 +29238,12 @@ function bindControls(){
   if(els.chipApplyLoopBtn) els.chipApplyLoopBtn.addEventListener("click", () => {
     applyChipPresetToProject(sanitizeChipPresetId(els.chipPresetSelect?.value) || state.chipPreset || "chip_arcade_start", {fullLoop:true});
   });
+  if(els.metalApplyIdeaBtn) els.metalApplyIdeaBtn.addEventListener("click", () => {
+    applyMetalPresetToProject(sanitizeMetalPresetId(els.metalPresetSelect?.value) || state.metalPreset || "metal_classic_chug", {fullLoop:false});
+  });
+  if(els.metalApplyLoopBtn) els.metalApplyLoopBtn.addEventListener("click", () => {
+    applyMetalPresetToProject(sanitizeMetalPresetId(els.metalPresetSelect?.value) || state.metalPreset || "metal_classic_chug", {fullLoop:true});
+  });
   if(els.westernPresetSelect) els.westernPresetSelect.addEventListener("change", () => {
     const value = sanitizeWesternPresetId(els.westernPresetSelect.value) || "western_frontier_ride";
     applyWesternPresetToProject(value, {fullLoop:false});
@@ -29218,6 +29309,24 @@ function bindControls(){
     renderAll();
     setStatus("Chip tune profile off; clean project settings restored");
   });
+  if(els.metalPresetSelect) els.metalPresetSelect.addEventListener("change", () => {
+    const value = sanitizeMetalPresetId(els.metalPresetSelect.value);
+    if(value){
+      applyMetalPresetToProject(value, {fullLoop:false});
+      return;
+    }
+    pushUndoState();
+    state.audioProfile = "standard";
+    state.metalPreset = "";
+    state.metalTexture = {...DEFAULT_METAL_TEXTURE, enabled:false};
+    state.drumKit = "classic";
+    state.drumGroovePreset = "";
+    state.bassTone = "classic";
+    state.settingsGenre = "clean";
+    markProjectDirty();
+    renderAll();
+    setStatus("Heavy metal profile off; clean project settings restored");
+  });
   if(els.drumKitSelect) els.drumKitSelect.addEventListener("change", () => {
     pushUndoState();
     state.drumKit = safeChoice(els.drumKitSelect.value, lofiDrumKitIds(), "classic");
@@ -29251,6 +29360,28 @@ function bindControls(){
     markProjectDirty();
     renderAll();
     setStatus(`Chip bass: ${els.chipBassToneSelect.options[els.chipBassToneSelect.selectedIndex].text}`);
+  });
+  if(els.metalDrumKitSelect) els.metalDrumKitSelect.addEventListener("change", () => {
+    pushUndoState();
+    state.drumKit = safeChoice(els.metalDrumKitSelect.value, metalDrumKitIds(), "metal_tight");
+    state.audioProfile = HEAVY_METAL_AUDIO_PROFILE_ID;
+    if(!state.metalPreset) state.metalPreset = "metal_classic_chug";
+    state.lofiPreset = "";
+    state.chipPreset = "";
+    markProjectDirty();
+    renderAll();
+    setStatus(`Metal drums: ${els.metalDrumKitSelect.options[els.metalDrumKitSelect.selectedIndex].text}`);
+  });
+  if(els.metalBassToneSelect) els.metalBassToneSelect.addEventListener("change", () => {
+    pushUndoState();
+    state.bassTone = safeChoice(els.metalBassToneSelect.value, metalBassToneIds(), "metal_pick_bass");
+    state.audioProfile = HEAVY_METAL_AUDIO_PROFILE_ID;
+    if(!state.metalPreset) state.metalPreset = "metal_classic_chug";
+    state.lofiPreset = "";
+    state.chipPreset = "";
+    markProjectDirty();
+    renderAll();
+    setStatus(`Metal bass: ${els.metalBassToneSelect.options[els.metalBassToneSelect.selectedIndex].text}`);
   });
   const updateLofiTextureControls = (mark=true) => {
     state.lofiTexture = sanitizeLofiTexture({
@@ -29310,6 +29441,38 @@ function bindControls(){
       updateChipTextureControls(true);
       if(els.chipTextureToggle && !els.chipTextureToggle.checked){
         state.chipTexture.enabled = false;
+      }
+    });
+  });
+  const updateMetalTextureControls = (mark=true) => {
+    state.metalTexture = sanitizeMetalTexture({
+      enabled: !!els.metalTextureToggle?.checked,
+      drive: els.metalDrive?.value,
+      palmMute: els.metalPalmMute?.value,
+      lowTightness: els.metalLowTightness?.value,
+      presence: els.metalPresence?.value,
+      roomSize: els.metalRoomSize?.value,
+      pickAttack: els.metalPickAttack?.value
+    }, state.metalPreset);
+    if(state.metalTexture.enabled){
+      state.audioProfile = HEAVY_METAL_AUDIO_PROFILE_ID;
+      if(!state.metalPreset) state.metalPreset = "metal_classic_chug";
+      state.lofiPreset = "";
+      state.chipPreset = "";
+    }
+    if(mark) markProjectDirty();
+  };
+  if(els.metalTextureToggle) els.metalTextureToggle.addEventListener("change", () => {
+    pushUndoState();
+    updateMetalTextureControls(true);
+    renderAll();
+    setStatus(state.metalTexture.enabled ? "Metal texture on" : "Metal texture off");
+  });
+  ["metalDrive","metalPalmMute","metalLowTightness","metalPresence","metalRoomSize","metalPickAttack"].forEach(id => {
+    if(els[id]) els[id].addEventListener("input", () => {
+      updateMetalTextureControls(true);
+      if(els.metalTextureToggle && !els.metalTextureToggle.checked){
+        state.metalTexture.enabled = false;
       }
     });
   });
@@ -29787,6 +29950,7 @@ function init(){
   ["statusText","miniStatusText","miniSectionText","miniPlayBtn","miniStopBtn","miniUndoBtn","miniSettingsBtn","playBtn","stopBtn","demoBtn","undoBtn","randomIdeaBtn","settingsBtn","settingsModal","closeSettingsBtn","bpmInput","swingInput","swingValue","keySelect","scaleSelect","timeSigSelect","uiModeSelect","themeSelect","chordTypeSelect","chordInstrumentSelect","progressionSlots","chordPalette","padGrid","drumPresetChips","drumPadsPanel","drumPadGrid","drumPadStatus","drumRecordToggle","drumClearRecordingBtn","melodyIdeaBtn","melodyDegreeSelect","melodyPitchModeSelect","melodyInputModeSelect","xyPlaybackModeSelect","xyPadModeSelect","xyScaleModeSelect","xyChordFollowToggle","xyRecordToggle","xyPadControls","xyPadWrap","xyPad","xyPadMarker","xyPadReadout","melodyGridControls","melodyDegreeChips","melodyOctaveChips","melodyTrackChips","melodyTrackControls","addMelodyTrackBtn","removeMelodyTrackBtn","melodyInstrumentSelect","melodyRows","resolutionLabel","resolutionSelect","seqHeader","seqRows","trackChips","guitarEnabledToggle","guitarEnabledToggleSettings","guitarToneSelect","guitarRegisterSelect","guitarStrumModeSelect","guitarVolume","guitarPresetChips","guitarFillStyleSelect","fillGuitarFromChordsBtn","applyGuitarAllBtn","clearGuitarBtn","guitarRow","chordOctaveSelect","chordPlayModeSelect","chordRhythmModeSelect","fillFullBtn","fillHalfBtn","fillQuarterBtn","fillTripletBtn","clearTrackBtn","sectionChips","sectionBarsSelect","copyTargetSectionSelect","copyAToBBtn","playSequenceBtn","addSequenceSlotBtn","removeSequenceSlotBtn","clearSequenceBtn","sectionSequence","projectBox","exportScopeSelect","midiExportModeSelect","midiChordExportSelect","midiExactDurationsToggle","exportJsonBtn","importJsonBtn","copyShareCodeBtn","importShareCodeBtn","pushToDjBtn","pushToDawBtn","pushToGodotBtn","pushHandoffStatus","exportMidiBtn","exportWavBtn","cancelWavExportBtn","wavProgressText","importMidiBtn","midiImportInput","midiImportSummary","wavResultBox","wavPreview","wavOpenLink","wavDownloadLink","wavShareBtn","saveSlot1Btn","loadSlot1Btn","saveSlot2Btn","loadSlot2Btn","loadAutoBtn","autoSaveStatus","tooltipsToggle","masterVol","chordVol","beatVol","leadVol","metronomeToggle","chordsToggle","bassToggle","fxDelay","fxChorus","fxFlanger","fxReverb","fxMix","showMelodyPadsToggle","showDrumPadsToggle","showMelodyPickerToggle","showTrackControlsToggle","humanizeToggle","sidechainToggle","sidechainAmount","sidechainAmountRow","bassModeSelect","melodyPadsPanel","drumPadsPanel","melodyPickerPanel"].forEach(id => els[id] = document.getElementById(id));
   ["lofiChillBtn","lofiGameLoopBtn","lofiPresetSelect","drumKitSelect","bassToneSelect","lofiTextureToggle","lofiVinylCrackle","lofiTapeHiss","lofiWowFlutter","lofiWarmth","lofiLowPassAge","lofiBitCrush","lofiApplyIdeaBtn","lofiApplyLoopBtn"].forEach(id => els[id] = document.getElementById(id));
   ["chipTuneBtn","chipGameLoopBtn","chipPresetSelect","chipDrumKitSelect","chipBassToneSelect","chipTextureToggle","chipBitDepth","chipSampleRateCrush","chipPulseWidth","chipPitchDrift","chipSaturation","chipStereoSpread","chipApplyIdeaBtn","chipApplyLoopBtn"].forEach(id => els[id] = document.getElementById(id));
+  ["metalPresetSelect","metalDrumKitSelect","metalBassToneSelect","metalTextureToggle","metalDrive","metalPalmMute","metalLowTightness","metalPresence","metalRoomSize","metalPickAttack","metalApplyIdeaBtn","metalApplyLoopBtn"].forEach(id => els[id] = document.getElementById(id));
   ["genreDrawerBtn","genreDrawer","closeGenreDrawerBtn","genreSummary","cleanGenreBtn","westernPresetSelect","westernApplyIdeaBtn","westernApplyLoopBtn","westernDrumPresetSelect","westernGuitarPresetSelect"].forEach(id => els[id] = document.getElementById(id));
   els.drumPresetSelect = document.getElementById("drumPresetSelect");
   els.guitarPresetSelect = document.getElementById("guitarPresetSelect");

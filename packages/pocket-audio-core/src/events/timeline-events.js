@@ -291,23 +291,27 @@ function baseEvent(project, section, context, patch) {
     tuplet: Boolean(patch.tuplet),
     audioProfile: project.meta.audioProfile || "standard",
     lofiPreset: project.lofi?.presetId || "",
-    chipPreset: project.chip?.presetId || ""
+    chipPreset: project.chip?.presetId || "",
+    metalPreset: project.metal?.presetId || ""
   };
   ["midi", "midiNotes", "instrument", "articulation", "pan", "slideMidi", "slideOffset", "direction", "drumKit", "bassTone"].forEach((key) => {
     if (patch[key] !== undefined) event[key] = patch[key];
   });
   if (project.lofi?.texture?.enabled) event.lofiTexture = cloneJson(project.lofi.texture);
   if (project.chip?.texture?.enabled) event.chipTexture = cloneJson(project.chip.texture);
+  if (project.metal?.texture?.enabled) event.metalTexture = cloneJson(project.metal.texture);
   return event;
 }
 
 function projectSoundDrumKit(project) {
   if (project.meta.audioProfile === "chip_tune") return project.chip?.drumKit || "chip_noise_kit";
+  if (project.meta.audioProfile === "heavy_metal") return project.metal?.drumKit || "metal_tight";
   return project.lofi?.drumKit || "classic";
 }
 
 function projectSoundBassTone(project) {
   if (project.meta.audioProfile === "chip_tune") return project.chip?.bassTone || "chip_triangle_bass";
+  if (project.meta.audioProfile === "heavy_metal") return project.metal?.bassTone || "metal_pick_bass";
   return project.lofi?.bassTone || "classic";
 }
 

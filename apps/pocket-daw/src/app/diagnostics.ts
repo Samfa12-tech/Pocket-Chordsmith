@@ -277,7 +277,7 @@ export function createAudioTakeDiagnosticsSummary(project: PocketDawProject): Au
     const current = groups.get(groupId) || { groupId, clipCount: 0, activeCount: 0, mutedCount: 0, archivedCount: 0, lanes: [] };
     const status = audioTakeStatusForDiagnostics(clip);
     current.clipCount += 1;
-    if (status === "active" && !clip.muted) {
+    if (isAudibleTakeStatus(status) && !clip.muted) {
       current.activeCount += 1;
       activeCount += 1;
     }
@@ -293,7 +293,7 @@ export function createAudioTakeDiagnosticsSummary(project: PocketDawProject): Au
     lane.clipCount += 1;
     lane.clipIds.push(clip.id);
     lane.clipNames.push(clip.name);
-    if (status === "active" && !clip.muted) {
+    if (isAudibleTakeStatus(status) && !clip.muted) {
       lane.activeCount += 1;
       lane.activeClipIds.push(clip.id);
     }
@@ -316,12 +316,16 @@ export function createAudioTakeDiagnosticsSummary(project: PocketDawProject): Au
   };
 }
 
-function audioTakeStatusForDiagnostics(clip: Clip): "active" | "muted-take" | "archived-take" {
-  return clip.metadata?.takeStatus === "archived-take" || clip.metadata?.takeStatus === "muted-take" || clip.metadata?.takeStatus === "active"
+function audioTakeStatusForDiagnostics(clip: Clip): "active" | "comp-segment" | "muted-take" | "archived-take" {
+  return clip.metadata?.takeStatus === "archived-take" || clip.metadata?.takeStatus === "muted-take" || clip.metadata?.takeStatus === "active" || clip.metadata?.takeStatus === "comp-segment"
     ? clip.metadata.takeStatus
     : clip.muted || clip.metadata?.takeActive === false
       ? "muted-take"
       : "active";
+}
+
+function isAudibleTakeStatus(status: "active" | "comp-segment" | "muted-take" | "archived-take"): boolean {
+  return status === "active" || status === "comp-segment";
 }
 
 function audioTakeLaneSummaryForClip(

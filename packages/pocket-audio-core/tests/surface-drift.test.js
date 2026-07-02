@@ -22,6 +22,13 @@ import {
   CHIP_DRUM_KITS,
   CHIP_MELODY_INSTRUMENTS,
   CHIP_STYLE_PRESET_IDS,
+  HEAVY_METAL_AUDIO_PROFILE_ID,
+  METAL_BASS_TONES,
+  METAL_CHORD_INSTRUMENTS,
+  METAL_DRUM_GROOVE_PRESETS,
+  METAL_DRUM_KITS,
+  METAL_MELODY_INSTRUMENTS,
+  METAL_STYLE_PRESET_IDS,
   CHORDSMITH_CHORD_PLAY_MODES,
   CHORDSMITH_CHORD_RHYTHM,
   CHORDSMITH_CHORD_RHYTHM_MODES,
@@ -124,8 +131,8 @@ test("public lofi IDs stay aligned across Chordsmith, DJ, Godot and core", async
 
   const expectedDrumKits = ["classic", ...LOFI_DRUM_KITS];
   const expectedBassTones = ["classic", ...LOFI_BASS_TONES];
-  const expectedPocketDrumKits = ["classic", ...LOFI_DRUM_KITS, ...CHIP_DRUM_KITS];
-  const expectedPocketBassTones = ["classic", ...LOFI_BASS_TONES, ...CHIP_BASS_TONES];
+  const expectedPocketDrumKits = ["classic", ...LOFI_DRUM_KITS, ...CHIP_DRUM_KITS, ...METAL_DRUM_KITS];
+  const expectedPocketBassTones = ["classic", ...LOFI_BASS_TONES, ...CHIP_BASS_TONES, ...METAL_BASS_TONES];
   const expectedDrumGroovePresets = [...LOFI_DRUM_GROOVE_PRESETS];
 
   assert.equal(extractStringConst(chordsmith, "LOFI_AUDIO_PROFILE_ID"), LOFI_AUDIO_PROFILE_ID);
@@ -150,6 +157,11 @@ test("public lofi IDs stay aligned across Chordsmith, DJ, Godot and core", async
   assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "CHIP_CHORD_INSTRUMENTS"), CHIP_CHORD_INSTRUMENTS);
   assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "CHIP_MELODY_INSTRUMENTS"), CHIP_MELODY_INSTRUMENTS);
   assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "CHIP_STYLE_PRESETS"), CHIP_STYLE_PRESET_IDS);
+  assert.equal(extractGdStringConst(godotSharedSoundConstants, "HEAVY_METAL_AUDIO_PROFILE_ID"), HEAVY_METAL_AUDIO_PROFILE_ID);
+  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "METAL_CHORD_INSTRUMENTS"), METAL_CHORD_INSTRUMENTS);
+  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "METAL_MELODY_INSTRUMENTS"), METAL_MELODY_INSTRUMENTS);
+  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "METAL_DRUM_GROOVE_PRESETS"), METAL_DRUM_GROOVE_PRESETS);
+  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "METAL_STYLE_PRESETS"), METAL_STYLE_PRESET_IDS);
   assert.ok(godotMigrator.includes("const SharedSoundConstants := preload"), "Godot migrator should consume generated shared sound constants");
   assert.ok(godotMigrator.includes("POCKET_CHORD_INSTRUMENTS := SharedSoundConstants.POCKET_CHORD_INSTRUMENTS"), "Godot migrator should validate chord IDs from generated shared sound constants");
   assert.ok(godotMigrator.includes("POCKET_MELODY_INSTRUMENTS := SharedSoundConstants.POCKET_MELODY_INSTRUMENTS"), "Godot migrator should validate melody IDs from generated shared sound constants");

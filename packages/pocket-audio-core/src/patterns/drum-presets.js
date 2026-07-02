@@ -26,7 +26,13 @@ export const DRUM_PRESETS = [
   { id: "chip_boss_half_time", label: "Chip boss half-time", simple4: true, simple3: false, timeSigs: [4], tip: "Half-time boss groove with heavy kick/snare anchors and tight noise hats." },
   { id: "chip_arp_jam", label: "Chip arp jam", simple4: false, simple3: false, timeSigs: [4], tip: "Modern chip jam groove with 16th-note motion, syncopated kicks and punchy backbeat." },
   { id: "chip_dungeon_shuffle", label: "Chip dungeon shuffle", simple4: false, simple3: false, timeSigs: [4], tip: "Uneasy dungeon shuffle with staggered hats and minor-key movement." },
-  { id: "chip_victory_stomp", label: "Chip victory stomp", simple4: true, simple3: false, timeSigs: [4], tip: "Bright victory stomp with accented hats, arcade kick hits and payoff snare." }
+  { id: "chip_victory_stomp", label: "Chip victory stomp", simple4: true, simple3: false, timeSigs: [4], tip: "Bright victory stomp with accented hats, arcade kick hits and payoff snare." },
+  { id: "metal_backbeat_chug", label: "Metal backbeat chug", simple4: false, simple3: false, timeSigs: [4], tip: "Tight metal backbeat with kick doubles that follow palm-muted chugs." },
+  { id: "metal_gallop_160", label: "Metal gallop 160", simple4: false, simple3: false, timeSigs: [4], tip: "Thrash gallop kick language with driving hats and strong backbeat." },
+  { id: "metal_double_kick_drive", label: "Double-kick drive", simple4: false, simple3: false, timeSigs: [4], tip: "Continuous double-kick drive under a clear snare anchor." },
+  { id: "metal_blast_220", label: "Blast 220", simple4: false, simple3: false, timeSigs: [4], tip: "Blast-beat approximation for fine grids, with safer lower-resolution fallbacks." },
+  { id: "metal_doom_70", label: "Doom 70", simple4: true, simple3: false, timeSigs: [4], tip: "Slow doom procession with sparse cymbals and a long low kick." },
+  { id: "metal_breakdown_half_time", label: "Breakdown half-time", simple4: true, simple3: false, timeSigs: [4], tip: "Half-time breakdown with gated kick/snare impacts." }
 ];
 
 function drumHits(track, pos16, level = 1, options = {}) {
@@ -177,6 +183,38 @@ export const DRUM_PATTERN_DEFS = {
       res1: drumGroove(drumHits("hat", [0, 4, 8, 12], 2), drumHits("kick", [0, 4, 8]), drumHits("snare", [12], 2)),
       res2: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 4, 8, 12]), drumHits("kick", [0, 4, 8, 10]), drumHits("snare", [12], 2)),
       res4: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 4, 8, 12]), drumHits("kick", [0, 3, 4, 8, 10], 1, { minRes: 4 }), drumHits("snare", [12], 2), drumHits("snare", [15], 1, { minRes: 4 }))
+    },
+    metal_backbeat_chug: {
+      res1: drumGroove(drumHits("hat", [0, 4, 8, 12]), drumHits("kick", [0, 8, 12]), drumHits("snare", [4, 12], 2)),
+      res2: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 4, 8, 12]), drumHits("kick", [0, 2, 8, 10, 12, 14]), drumHits("snare", [4, 12], 2)),
+      res4: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 4, 8, 12]), drumHits("kick", [0, 1, 2, 3, 8, 9, 10, 11, 12, 14], 1, { minRes: 4 }), drumHits("snare", [4, 12], 2))
+    },
+    metal_gallop_160: {
+      res1: drumGroove(drumHits("hat", [0, 4, 8, 12], 2), drumHits("kick", [0, 8]), drumHits("snare", [4, 12], 2)),
+      res2: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 8]), drumHits("kick", [0, 2, 6, 8, 10, 14]), drumHits("snare", [4, 12], 2)),
+      res4: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 8]), drumHits("kick", [0, 1, 3, 4, 5, 7, 8, 9, 11, 12, 13, 15], 1, { minRes: 4 }), drumHits("snare", [4, 12], 2))
+    },
+    metal_double_kick_drive: {
+      res1: drumGroove(drumHits("hat", [0, 4, 8, 12]), drumHits("kick", [0, 4, 8, 12]), drumHits("snare", [4, 12], 2)),
+      res2: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 4, 8, 12]), drumHits("kick", [0, 2, 4, 6, 8, 10, 12, 14]), drumHits("snare", [4, 12], 2)),
+      res4: drumGroove(drumAccentHits("hat", [0, 2, 4, 6, 8, 10, 12, 14], [0, 4, 8, 12]), drumHits("kick", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], 1, { minRes: 4 }), drumHits("snare", [4, 12], 2))
+    },
+    metal_blast_220: {
+      res1: drumGroove(drumHits("hat", [0, 4, 8, 12], 2), drumHits("kick", [0, 4, 8, 12]), drumHits("snare", [4, 12], 2)),
+      res1Note: "Simplified because Full resolution cannot represent a blast beat.",
+      res2: drumGroove(drumHits("hat", [0, 2, 4, 6, 8, 10, 12, 14]), drumHits("kick", [0, 4, 8, 12]), drumHits("snare", [2, 6, 10, 14], 2)),
+      res2Note: "Using a skank/double-time fallback at this resolution.",
+      res4: drumGroove(drumAccentHits("snare", [0, 2, 4, 6, 8, 10, 12, 14], [0, 8]), drumHits("kick", [1, 3, 5, 7, 9, 11, 13, 15], 1, { minRes: 4 }), drumHits("hat", [1, 3, 5, 7, 9, 11, 13, 15], 1, { minRes: 4 }))
+    },
+    metal_doom_70: {
+      res1: drumGroove(drumHits("hat", [0, 8]), drumHits("kick", [0]), drumHits("snare", [8], 2)),
+      res2: drumGroove(drumHits("hat", [0, 8, 14]), drumHits("kick", [0, 10]), drumHits("snare", [8], 2)),
+      res4: drumGroove(drumHits("hat", [0, 8, 14]), drumHits("kick", [0, 10]), drumHits("snare", [8], 2), drumHits("hat", [15], 2, { minRes: 4 }))
+    },
+    metal_breakdown_half_time: {
+      res1: drumGroove(drumHits("hat", [0, 8]), drumHits("kick", [0, 12]), drumHits("snare", [8], 2)),
+      res2: drumGroove(drumHits("hat", [0, 8]), drumHits("kick", [0, 3, 8, 12]), drumHits("snare", [8], 2)),
+      res4: drumGroove(drumHits("hat", [0, 8]), drumHits("kick", [0, 3, 8, 10, 12], 1, { minRes: 4 }), drumHits("snare", [8], 2), drumHits("snare", [15], 1, { minRes: 4 }))
     }
   },
   3: {

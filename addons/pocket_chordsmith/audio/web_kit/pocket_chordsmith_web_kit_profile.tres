@@ -20,6 +20,9 @@ event_sample_streams = {
 "bass:chip_triangle_bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
 "bass:classic": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
 "bass:manual_bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
+"bass:metal_grind_bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
+"bass:metal_pick_bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
+"bass:metal_sub_pick": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
 "bass:modern_chip_sub": "res://addons/pocket_chordsmith/audio/web_kit/bass_tone.wav",
 "bass:rounded_triangle_bass": "res://addons/pocket_chordsmith/audio/web_kit/bass_rounded_triangle_bass.wav",
 "bass:soft_upright": "res://addons/pocket_chordsmith/audio/web_kit/bass_soft_upright.wav",
@@ -34,6 +37,8 @@ event_sample_streams = {
 "chord:glass": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
 "chord:harp": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
 "chord:lofi_warm_pad": "res://addons/pocket_chordsmith/audio/web_kit/chord_lofi_warm_pad.wav",
+"chord:dark_organ_stack": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
+"chord:metal_power_stack": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
 "chord:modern_chip_poly": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
 "chord:muted_jazz_guitar": "res://addons/pocket_chordsmith/audio/web_kit/chord_muted_jazz_guitar.wav",
 "chord:piano": "res://addons/pocket_chordsmith/audio/web_kit/chord_tone.wav",
@@ -85,8 +90,10 @@ event_sample_streams = {
 "melody:saxophone": "res://addons/pocket_chordsmith/audio/web_kit/melody_saxophone.wav",
 "melody:soft": "res://addons/pocket_chordsmith/audio/web_kit/melody_soft.wav",
 "melody:soft_pluck": "res://addons/pocket_chordsmith/audio/web_kit/melody_soft_pluck.wav",
+"melody:shred_lead_guitar": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
 "melody:synth": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
 "melody:tape_bell": "res://addons/pocket_chordsmith/audio/web_kit/melody_tape_bell.wav",
+"melody:twin_harmony_lead": "res://addons/pocket_chordsmith/audio/web_kit/melody_pulse.wav",
 "melody:trumpet": "res://addons/pocket_chordsmith/audio/web_kit/melody_trumpet.wav"
 }
 drum_kit = {

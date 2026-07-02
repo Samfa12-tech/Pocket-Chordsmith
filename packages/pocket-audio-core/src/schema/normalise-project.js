@@ -15,6 +15,7 @@ import {
 } from "../constants.js";
 import { normaliseLofiProjectSettings } from "../presets/lofi.js";
 import { CHIP_AUDIO_PROFILE_ID, normaliseChipProjectSettings } from "../presets/chip.js";
+import { HEAVY_METAL_AUDIO_PROFILE_ID, normaliseMetalProjectSettings } from "../presets/metal.js";
 import { CHORDSMITH_CHORD_PLAY_MODES, CHORDSMITH_CHORD_RHYTHM_MODES } from "../performance/chord-rhythm.js";
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../sounds/instruments.js";
 import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_ARTICULATIONS, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../sounds/guitar.js";
@@ -27,6 +28,7 @@ export function normalisePocketChordsmithProject(raw, options = {}) {
   const soundProfile = normaliseSoundProfile(project);
   const lofi = soundProfile.lofi;
   const chip = soundProfile.chip;
+  const metal = soundProfile.metal;
   const timeSig = safeChoice(asInt(project.timeSig, DEFAULT_TIME_SIG), [3, 4, 5, 6, 7], DEFAULT_TIME_SIG);
   const resolution = sanitizeResolution(project.resolution ?? project.lastAdvancedResolution ?? DEFAULT_RESOLUTION);
   const sectionBars = normaliseSectionBars(project.sectionBars || project.sectionLengths);
@@ -60,10 +62,11 @@ export function normalisePocketChordsmithProject(raw, options = {}) {
       melodyPitchMode: safeChoice(project.melodyPitchMode, ["scale", "chromatic"], "scale"),
       humanizeOn: Boolean(project.humanizeOn),
       audioProfile: soundProfile.audioProfile,
-      stylePreset: chip.presetId || lofi.presetId || ""
+      stylePreset: chip.presetId || metal.presetId || lofi.presetId || ""
     },
     lofi,
     chip,
+    metal,
     transport: {
       scope: "sequence",
       currentSection: sequence[0] || "A"
@@ -152,13 +155,24 @@ function normaliseSection(project, id, context) {
 function normaliseSoundProfile(project) {
   const explicit = String(project.audioProfile || "").toLowerCase();
   const chipCandidate = normaliseChipProjectSettings(project);
+  const metalCandidate = normaliseMetalProjectSettings(project);
   const lofiCandidate = normaliseLofiProjectSettings(project);
   const chipActive = explicit === CHIP_AUDIO_PROFILE_ID || (!explicit && Boolean(chipCandidate.presetId));
-  const lofiActive = !chipActive && (explicit === "lofi_chill" || (!explicit && Boolean(lofiCandidate.presetId)));
+  const metalActive = !chipActive && (explicit === HEAVY_METAL_AUDIO_PROFILE_ID || (!explicit && Boolean(metalCandidate.presetId)));
+  const lofiActive = !chipActive && !metalActive && (explicit === "lofi_chill" || (!explicit && Boolean(lofiCandidate.presetId)));
   if (chipActive) {
     return {
       audioProfile: CHIP_AUDIO_PROFILE_ID,
       chip: chipCandidate,
+      metal: normaliseMetalProjectSettings({ audioProfile: "standard" }),
+      lofi: normaliseLofiProjectSettings({ audioProfile: "standard" })
+    };
+  }
+  if (metalActive) {
+    return {
+      audioProfile: HEAVY_METAL_AUDIO_PROFILE_ID,
+      chip: normaliseChipProjectSettings({ audioProfile: "standard" }),
+      metal: metalCandidate,
       lofi: normaliseLofiProjectSettings({ audioProfile: "standard" })
     };
   }
@@ -166,12 +180,14 @@ function normaliseSoundProfile(project) {
     return {
       audioProfile: "lofi_chill",
       chip: normaliseChipProjectSettings({ audioProfile: "standard" }),
+      metal: normaliseMetalProjectSettings({ audioProfile: "standard" }),
       lofi: lofiCandidate
     };
   }
   return {
     audioProfile: "standard",
     chip: normaliseChipProjectSettings({ audioProfile: "standard" }),
+    metal: normaliseMetalProjectSettings({ audioProfile: "standard" }),
     lofi: normaliseLofiProjectSettings({ audioProfile: "standard" })
   };
 }
@@ -191,6 +207,7 @@ function normaliseStemMix(project) {
 
 function normaliseFx(project) {
   const lofi = normaliseLofiProjectSettings(project);
+  const metal = normaliseMetalProjectSettings(project);
   return {
     ...cloneJson(DEFAULT_FX),
     delay: clamp(asNumber(project.fxDelay, DEFAULT_FX.delay), 0, 1),
@@ -202,7 +219,8 @@ function normaliseFx(project) {
       enabled: Boolean(project.sidechainOn ?? project.pumpChordsEnabled),
       amount: clamp(asNumber(project.sidechainAmount ?? project.pumpAmount, DEFAULT_FX.sidechain.amount), 0, 1)
     },
-    lofiTexture: lofi.texture
+    lofiTexture: lofi.texture,
+    metalTexture: metal.texture
   };
 }
 

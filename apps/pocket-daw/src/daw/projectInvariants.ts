@@ -99,7 +99,7 @@ export function validateProjectInvariants(project: PocketDawProject): ProjectInv
           add("error", "invalid-audio-clip-metadata", `${base}.metadata.${field}`, `Audio clip ${clip.id} has invalid ${field}.`);
         }
       }
-      if (metadata.takeStatus !== undefined && metadata.takeStatus !== "active" && metadata.takeStatus !== "muted-take" && metadata.takeStatus !== "archived-take") {
+      if (metadata.takeStatus !== undefined && metadata.takeStatus !== "active" && metadata.takeStatus !== "comp-segment" && metadata.takeStatus !== "muted-take" && metadata.takeStatus !== "archived-take") {
         add("warning", "invalid-audio-take-status", `${base}.metadata.takeStatus`, `Audio clip ${clip.id} has an unknown take status.`);
       }
     }

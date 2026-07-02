@@ -310,6 +310,10 @@ const CHIP_BASS_TONES = ["chip_triangle_bass","chip_square_bass","modern_chip_su
 const CHIP_STYLE_PRESETS = ["chip_arcade_start","chip_bug_maze_pulse","chip_neon_boss","chip_tiny_quest","chip_modern_jam","chip_menu_glow","chip_dungeon_drive","chip_victory_burst"];
 const CHIP_DRUM_GROOVE_PRESETS = ["chip_run_128","chip_menu_bounce","chip_boss_half_time","chip_arp_jam","chip_dungeon_shuffle","chip_victory_stomp"];
 const DEFAULT_CHIP_TEXTURE = {enabled:false, bitDepth:0.18, sampleRateCrush:0.14, pulseWidth:0.5, pitchDrift:0.02, saturation:0.18, stereoSpread:0.12};
+const METAL_CHORD_INSTRUMENTS = ["metal_power_stack","dark_organ_stack"];
+const METAL_MELODY_INSTRUMENTS = ["shred_lead_guitar","twin_harmony_lead"];
+const METAL_DRUM_KITS = ["metal_tight","metal_arena","metal_doom"];
+const METAL_BASS_TONES = ["metal_pick_bass","metal_sub_pick","metal_grind_bass"];
 const FALLBACK_DRUM_KIT_CONFIGS = {
   classic:{kick:{startFreq:155,endFreq:45,sweepSeconds:0.14,gainFloor:0.08,gainScale:1,length:0.17,rampSeconds:0.16},snare:{noiseSeconds:0.12,highpass:1700,gainFloor:0.05,gainScale:1,length:0.13,rampSeconds:0.12},hat:{closedLength:0.05,openLength:0.16,highpassClosed:5600,highpassOpen:3800,gainFloorClosed:0.03,gainFloorOpen:0.05,gainScaleClosed:1,gainScaleOpen:1,rampSecondsClosed:0.05,rampSecondsOpen:0.14}},
   lofi_dusty:{kick:{startFreq:132,endFreq:42,sweepSeconds:0.18,filterFreq:170,gainFloor:0.04,gainScale:0.58,length:0.23,rampSeconds:0.21},snare:{noiseSeconds:0.13,highpass:980,lowpass:2800,gainFloor:0.035,gainScale:0.52,length:0.14,rampSeconds:0.12,bodyFreq:185,bodyGain:0.035,bodyLength:0.11,bodyRampSeconds:0.09},hat:{closedLength:0.065,openLength:0.2,highpassClosed:3400,highpassOpen:2600,lowpass:6200,gainFloorClosed:0.02,gainFloorOpen:0.035,gainScaleClosed:0.55,gainScaleOpen:0.62,rampSecondsClosed:0.055,rampSecondsOpen:0.18}},
@@ -319,6 +323,9 @@ const FALLBACK_DRUM_KIT_CONFIGS = {
 FALLBACK_DRUM_KIT_CONFIGS.chip_noise_kit = {kick:{startFreq:210,endFreq:55,sweepSeconds:0.075,filterFreq:1900,gainFloor:0.05,gainScale:0.7,length:0.11,rampSeconds:0.095},snare:{noiseSeconds:0.075,highpass:1500,lowpass:6200,gainFloor:0.035,gainScale:0.72,length:0.08,rampSeconds:0.07,bodyFreq:260,bodyGain:0.028,bodyLength:0.055,bodyRampSeconds:0.05},hat:{closedLength:0.035,openLength:0.12,highpassClosed:5200,highpassOpen:3600,lowpass:9400,gainFloorClosed:0.018,gainFloorOpen:0.03,gainScaleClosed:0.68,gainScaleOpen:0.72,rampSecondsClosed:0.03,rampSecondsOpen:0.105}};
 FALLBACK_DRUM_KIT_CONFIGS.chip_arcade_kit = {kick:{startFreq:185,endFreq:48,sweepSeconds:0.095,filterFreq:1400,gainFloor:0.055,gainScale:0.78,length:0.14,rampSeconds:0.12},snare:{noiseSeconds:0.09,highpass:1300,lowpass:5600,gainFloor:0.04,gainScale:0.68,length:0.1,rampSeconds:0.085,bodyFreq:220,bodyGain:0.032,bodyLength:0.075,bodyRampSeconds:0.065},hat:{closedLength:0.04,openLength:0.145,highpassClosed:5000,highpassOpen:3300,lowpass:9000,gainFloorClosed:0.018,gainFloorOpen:0.032,gainScaleClosed:0.66,gainScaleOpen:0.72,rampSecondsClosed:0.034,rampSecondsOpen:0.12}};
 FALLBACK_DRUM_KIT_CONFIGS.modern_chip_punch = {kick:{startFreq:150,endFreq:38,sweepSeconds:0.145,filterFreq:230,gainFloor:0.06,gainScale:0.88,length:0.18,rampSeconds:0.16},snare:{noiseSeconds:0.105,highpass:980,lowpass:4800,gainFloor:0.04,gainScale:0.76,length:0.12,rampSeconds:0.1,bodyFreq:190,bodyGain:0.046,bodyLength:0.095,bodyRampSeconds:0.08},hat:{closedLength:0.045,openLength:0.17,highpassClosed:4300,highpassOpen:3000,lowpass:7800,gainFloorClosed:0.02,gainFloorOpen:0.035,gainScaleClosed:0.7,gainScaleOpen:0.78,rampSecondsClosed:0.04,rampSecondsOpen:0.145}};
+FALLBACK_DRUM_KIT_CONFIGS.metal_tight = {kick:{startFreq:112,endFreq:34,sweepSeconds:0.075,filterFreq:240,gainFloor:0.07,gainScale:0.98,length:0.14,rampSeconds:0.115},snare:{noiseSeconds:0.09,highpass:1550,lowpass:7200,gainFloor:0.045,gainScale:0.82,length:0.105,rampSeconds:0.09,bodyFreq:205,bodyGain:0.04,bodyLength:0.08,bodyRampSeconds:0.06},hat:{closedLength:0.035,openLength:0.13,highpassClosed:5600,highpassOpen:4100,lowpass:9800,gainFloorClosed:0.018,gainFloorOpen:0.03,gainScaleClosed:0.68,gainScaleOpen:0.72,rampSecondsClosed:0.03,rampSecondsOpen:0.105}};
+FALLBACK_DRUM_KIT_CONFIGS.metal_arena = {kick:{startFreq:104,endFreq:36,sweepSeconds:0.105,filterFreq:210,gainFloor:0.072,gainScale:0.9,length:0.18,rampSeconds:0.15},snare:{noiseSeconds:0.12,highpass:1280,lowpass:6800,gainFloor:0.048,gainScale:0.86,length:0.14,rampSeconds:0.12,bodyFreq:190,bodyGain:0.055,bodyLength:0.105,bodyRampSeconds:0.08},hat:{closedLength:0.045,openLength:0.18,highpassClosed:5000,highpassOpen:3600,lowpass:9200,gainFloorClosed:0.019,gainFloorOpen:0.034,gainScaleClosed:0.64,gainScaleOpen:0.74,rampSecondsClosed:0.038,rampSecondsOpen:0.15}};
+FALLBACK_DRUM_KIT_CONFIGS.metal_doom = {kick:{startFreq:92,endFreq:30,sweepSeconds:0.15,filterFreq:160,gainFloor:0.07,gainScale:0.78,length:0.26,rampSeconds:0.22},snare:{noiseSeconds:0.18,highpass:880,lowpass:4400,gainFloor:0.045,gainScale:0.7,length:0.2,rampSeconds:0.17,bodyFreq:165,bodyGain:0.06,bodyLength:0.14,bodyRampSeconds:0.11},hat:{closedLength:0.065,openLength:0.24,highpassClosed:3600,highpassOpen:2600,lowpass:7200,gainFloorClosed:0.018,gainFloorOpen:0.035,gainScaleClosed:0.52,gainScaleOpen:0.6,rampSecondsClosed:0.055,rampSecondsOpen:0.2}};
 const CHORDSMITH_THEMES = {
   night:{bg:"#070711",panel:"#101222",panel2:"#171a2f",line:"#2d3154",text:"#f4f7ff",muted:"#98a2c8",cyan:"#48f5ff",magenta:"#ff4fd8",violet:"#9b6cff",lime:"#a8ff61",amber:"#ffd166",danger:"#ff6b8b",background:"radial-gradient(circle at 15% 5%,rgba(72,245,255,.18),transparent 28%),radial-gradient(circle at 90% 10%,rgba(255,79,216,.16),transparent 32%),radial-gradient(circle at 50% 95%,rgba(155,108,255,.14),transparent 32%),linear-gradient(180deg,#060711,#0b0c18 50%,#060711)"},
   ocean:{bg:"#06131b",panel:"#102536",panel2:"#18364a",line:"#2d5c73",text:"#edf9ff",muted:"#9cc6d4",cyan:"#63d8ff",magenta:"#7ef0d7",violet:"#6fa8ff",lime:"#99f5cf",amber:"#ffd27a",danger:"#ff7f9d",background:"radial-gradient(circle at 12% 7%,rgba(99,216,255,.20),transparent 30%),radial-gradient(circle at 90% 10%,rgba(126,240,215,.15),transparent 34%),radial-gradient(circle at 48% 95%,rgba(111,168,255,.15),transparent 34%),linear-gradient(180deg,#06131b,#0a1f2a 52%,#061018)"},
@@ -395,10 +402,14 @@ function chipMelodyInstrumentIds(){ return coreArrayExport("CHIP_MELODY_INSTRUME
 function chipDrumKitIds(){ return coreArrayExport("CHIP_DRUM_KITS", CHIP_DRUM_KITS); }
 function chipBassToneIds(){ return coreArrayExport("CHIP_BASS_TONES", CHIP_BASS_TONES); }
 function chipStylePresetIds(){ return coreArrayExport("CHIP_STYLE_PRESET_IDS", CHIP_STYLE_PRESETS); }
-function pocketDrumKitIds(){ return Array.from(new Set([...lofiDrumKitIds(), ...chipDrumKitIds()])); }
-function pocketBassToneIds(){ return Array.from(new Set([...lofiBassToneIds(), ...chipBassToneIds()])); }
-function pocketChordInstrumentIds(){ return ["pocket","piano","saloon_piano","harp","warm_pad","glass",...lofiChordInstrumentIds(),...chipChordInstrumentIds()]; }
-function pocketMelodyInstrumentIds(){ return ["pulse","soft","synth","bell","lead_guitar","distorted_lead_guitar","banjo","harmonica","cowboy_whistle","trumpet","saxophone",...lofiMelodyInstrumentIds(),...chipMelodyInstrumentIds()]; }
+function metalChordInstrumentIds(){ return coreArrayExport("METAL_CHORD_INSTRUMENTS", METAL_CHORD_INSTRUMENTS); }
+function metalMelodyInstrumentIds(){ return coreArrayExport("METAL_MELODY_INSTRUMENTS", METAL_MELODY_INSTRUMENTS); }
+function metalDrumKitIds(){ return coreArrayExport("METAL_DRUM_KITS", METAL_DRUM_KITS); }
+function metalBassToneIds(){ return coreArrayExport("METAL_BASS_TONES", METAL_BASS_TONES); }
+function pocketDrumKitIds(){ return Array.from(new Set([...lofiDrumKitIds(), ...chipDrumKitIds(), ...metalDrumKitIds()])); }
+function pocketBassToneIds(){ return Array.from(new Set([...lofiBassToneIds(), ...chipBassToneIds(), ...metalBassToneIds()])); }
+function pocketChordInstrumentIds(){ return ["pocket","piano","saloon_piano","harp","warm_pad","glass",...lofiChordInstrumentIds(),...chipChordInstrumentIds(),...metalChordInstrumentIds()]; }
+function pocketMelodyInstrumentIds(){ return ["pulse","soft","synth","bell","lead_guitar","distorted_lead_guitar","banjo","harmonica","cowboy_whistle","trumpet","saxophone",...lofiMelodyInstrumentIds(),...chipMelodyInstrumentIds(),...metalMelodyInstrumentIds()]; }
 function fallbackChordsmithFxParameters(fx = {}){
   const delay = clamp(asNum(fx.delay ?? fx.echo, DEFAULT_FX.echo), 0, 1);
   const chorus = clamp(asNum(fx.chorus, DEFAULT_FX.chorus), 0, 1);
@@ -783,7 +794,7 @@ function sanitizePocketChordsmithProject(raw){
     melodyPitchMode: safeChoice(raw.melodyPitchMode,["scale","chromatic"],"scale"),
     bassMode: safeChoice(raw.bassMode,["auto","manual"],"auto"),
     guitarEnabled: !!raw.guitarEnabled,
-    guitarTone: safeChoice(raw.guitarTone,["clean","crunch","high_gain","metal","western_twang"],"high_gain"),
+    guitarTone: safeChoice(raw.guitarTone,["clean","crunch","high_gain","metal","tight_metal","doom_fuzz","western_twang"],"high_gain"),
     guitarRegister: safeChoice(raw.guitarRegister,["low","mid","high"],"low"),
     guitarStrumMode: safeChoice(raw.guitarStrumMode,["down","up","alternate"],"down"),
     guitarVolume: clamp(asNum(raw.guitarVolume,.66),0,1),
@@ -1241,6 +1252,9 @@ function bassToneConfig(tone=session?.deck?.bassTone){
   if(tone === "chip_square_bass") return {mainWave:"square", subWave:"triangle", mainPeak:.72, subPeak:.22, cutoff:680, subCutoff:220};
   if(tone === "modern_chip_sub") return {mainWave:"square", subWave:"sine", mainPeak:.64, subPeak:.62, cutoff:420, subCutoff:150};
   if(tone === "bitcrush_bass") return {mainWave:"sawtooth", subWave:"square", mainPeak:.58, subPeak:.34, cutoff:560, subCutoff:210};
+  if(tone === "metal_pick_bass") return {mainWave:"sawtooth", subWave:"square", mainPeak:.72, subPeak:.4, cutoff:520, subCutoff:140};
+  if(tone === "metal_sub_pick") return {mainWave:"triangle", subWave:"sine", mainPeak:.58, subPeak:.68, cutoff:360, subCutoff:110};
+  if(tone === "metal_grind_bass") return {mainWave:"sawtooth", subWave:"triangle", mainPeak:.66, subPeak:.32, cutoff:760, subCutoff:170};
   if(tone === "warm_sub") return {mainWave:"sine", subWave:"sine", mainPeak:.82, subPeak:.55, cutoff:210, subCutoff:120};
   if(tone === "soft_upright") return {mainWave:"triangle", subWave:"sine", mainPeak:.72, subPeak:.28, cutoff:360, subCutoff:140};
   if(tone === "rounded_triangle_bass") return {mainWave:"triangle", subWave:"sine", mainPeak:.84, subPeak:.34, cutoff:300, subCutoff:130};
@@ -1337,6 +1351,8 @@ function playChordTone(freq,t,dur,type,peak,filterType,filterFreq,cfg={},pan=0){
   });
 }
 function chordInstrumentConfig(name){
+  if(name === "metal_power_stack") return {rootWave:"sawtooth",wave:"sawtooth",peak:.15,filter:"bandpass",freq:1180,filterQ:.9,filterSweep:1950,attack:.002,decay:.08,sustain:.58,release:.16,durMul:.72,spreadMul:.3,shimmer:false,maxLiveDur:.76,layers:[{wave:"sawtooth",level:.78,detune:-5},{wave:"square",level:.42,detune:5},{wave:"triangle",freqMul:.5,level:.2}]};
+  if(name === "dark_organ_stack") return {rootWave:"triangle",wave:"sawtooth",peak:.125,filter:"lowpass",freq:1050,filterQ:.62,filterSweep:1500,attack:.09,decay:.24,sustain:.82,release:.62,durMul:1.35,spreadMul:.18,shimmer:false,maxLiveDur:1.7,layers:[{wave:"triangle",level:.72,detune:-8},{wave:"sawtooth",level:.36,detune:7},{wave:"sine",freqMul:2,level:.16}]};
   if(name === "piano") return {rootWave:"triangle",wave:"triangle",peak:.23,filter:"lowpass",freq:3100,filterQ:.9,attack:.003,decay:.18,sustain:.18,release:.16,durMul:.72,spreadMul:.45,shimmer:false,maxLiveDur:.82,layers:[{wave:"triangle",level:1},{wave:"sine",freqMul:2,level:.18,detune:3}]};
   if(name === "saloon_piano") return {rootWave:"triangle",wave:"triangle",peak:.205,filter:"lowpass",freq:3600,filterQ:1,attack:.002,decay:.13,sustain:.12,release:.18,durMul:.62,spreadMul:.58,shimmer:false,maxLiveDur:.7,layers:[{wave:"triangle",level:.88,detune:-8},{wave:"triangle",level:.62,detune:9},{wave:"sine",freqMul:2,level:.16,detune:5}]};
   if(name === "harp") return {rootWave:"triangle",wave:"sine",peak:.18,filter:"lowpass",freq:4600,filterQ:1.4,attack:.002,decay:.1,sustain:.03,release:.36,durMul:.5,spreadMul:1.45,shimmer:true,maxLiveDur:.58,layers:[{wave:"triangle",level:.9},{wave:"sine",freqMul:2,level:.26,detune:7}]};
@@ -1378,6 +1394,8 @@ function leadInstrumentConfig(name){
   if(name === "chip_triangle_blip") return {wave:"triangle",peak:.12,filter:"lowpass",freq:3100,durMul:.54};
   if(name === "chip_bell_stack") return {wave:"sine",peak:.108,filter:"lowpass",freq:3900,durMul:1.05};
   if(name === "modern_chip_lead") return {wave:"square",peak:.138,filter:"lowpass",freq:3600,durMul:.86};
+  if(name === "shred_lead_guitar") return {wave:"sawtooth",peak:.132,filter:"bandpass",freq:2300,durMul:.78};
+  if(name === "twin_harmony_lead") return {wave:"sawtooth",peak:.118,filter:"lowpass",freq:2900,durMul:.86};
   return {wave:"square",peak:.20,filter:"lowpass",freq:2300,durMul:1};
 }
 function playLeadInstrument(midi,t,dur=.28,instrument="pulse",pan=0,peakMul=1){
@@ -1410,6 +1428,8 @@ function guitarToneConfig(tone=session?.deck?.guitarTone){
   if(tone === "clean") return {drive:.65,input:.62,peak:.086,lowpass:4300,highpass:90,body:1.4,mid:1,spread:.016,sustain:1.08,mute:.085,scratch:.040};
   if(tone === "crunch") return {drive:2.4,input:.80,peak:.092,lowpass:3600,highpass:100,body:2.8,mid:2,spread:.013,sustain:.98,mute:.074,scratch:.044};
   if(tone === "metal") return {drive:6.2,input:.92,peak:.088,lowpass:3050,highpass:115,body:4.5,mid:3,spread:.009,sustain:.86,mute:.060,scratch:.040};
+  if(tone === "tight_metal") return {drive:7.1,input:.88,peak:.078,lowpass:2850,highpass:145,body:3.5,mid:3.35,spread:.007,sustain:.76,mute:.045,scratch:.036};
+  if(tone === "doom_fuzz") return {drive:8.4,input:.82,peak:.075,lowpass:2450,highpass:72,body:5.2,mid:2.15,spread:.012,sustain:1.18,mute:.095,scratch:.030};
   if(tone === "western_twang") return {drive:1.25,input:.68,peak:.082,lowpass:4700,highpass:125,body:1.1,mid:2.4,spread:.020,sustain:.72,mute:.070,scratch:.034};
   return {drive:4.2,input:.88,peak:.090,lowpass:3250,highpass:108,body:3.7,mid:2.6,spread:.010,sustain:.91,mute:.066,scratch:.042};
 }

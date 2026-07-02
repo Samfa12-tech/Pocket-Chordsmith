@@ -125,4 +125,28 @@ describe("project invariant validation", () => {
     expect(report.ok).toBe(true);
     expect(report.warnings.map((issue) => issue.code)).toContain("invalid-audio-take-status");
   });
+
+  it("accepts comp-segment audio take metadata as a valid audible take state", () => {
+    const imported = addImportedAudioMedia(createDemoProject(), {
+      name: "Comp segment.wav",
+      durationSeconds: 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { waveformPeaks: [0.5], takeGroupId: "comp-status-a" }
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId)!;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      takeStatus: "comp-segment",
+      takeActive: true,
+      compGroupId: "comp-status-a",
+      compSourceTakeId: "comp-status-a-take-1"
+    };
+
+    const report = validateProjectInvariants(placed.project);
+
+    expect(report.ok).toBe(true);
+    expect(report.warnings.map((issue) => issue.code)).not.toContain("invalid-audio-take-status");
+  });
 });

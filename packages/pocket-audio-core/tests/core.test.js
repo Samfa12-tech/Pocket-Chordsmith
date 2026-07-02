@@ -20,6 +20,7 @@ import {
   DEFAULT_CLASSIC_BASS_TONE,
   DEFAULT_LOFI_DRUM_KIT,
   DEFAULT_CHIP_DRUM_KIT,
+  DEFAULT_METAL_DRUM_KIT,
   POCKET_BUILT_IN_FX,
   POCKET_BUILT_IN_FX_TYPES,
   POCKET_GUITAR_TONE_CONFIGS,
@@ -47,6 +48,10 @@ import {
   CHIP_BASS_TONES,
   CHIP_CHORD_INSTRUMENTS,
   CHIP_MELODY_INSTRUMENTS,
+  METAL_DRUM_KITS,
+  METAL_BASS_TONES,
+  METAL_CHORD_INSTRUMENTS,
+  METAL_MELODY_INSTRUMENTS,
   CHORDSMITH_HUMANIZE_TIMING_SECONDS,
   CHORDSMITH_LOFI_TEXTURE_LIVE,
   CHORDSMITH_LOFI_TEXTURE_OFFLINE,
@@ -330,10 +335,16 @@ test("shared sound registry includes the classic Chordsmith bass voice", () => {
       missingBassTones: [],
       missingChordInstruments: [],
       missingLeadInstruments: []
+    },
+    metal: {
+      missingDrumKits: [],
+      missingBassTones: [],
+      missingChordInstruments: [],
+      missingLeadInstruments: []
     }
   });
-  assert.deepEqual(Object.keys(POCKET_BASS_TONE_CONFIGS), ["classic", "warm_sub", "soft_upright", "rounded_triangle_bass", ...CHIP_BASS_TONES]);
-  assert.deepEqual(Object.keys(POCKET_DRUM_KIT_CONFIGS), ["classic", "lofi_dusty", "lofi_brush", "lofi_tape_soft", ...CHIP_DRUM_KITS]);
+  assert.deepEqual(Object.keys(POCKET_BASS_TONE_CONFIGS), ["classic", "warm_sub", "soft_upright", "rounded_triangle_bass", ...CHIP_BASS_TONES, ...METAL_BASS_TONES]);
+  assert.deepEqual(Object.keys(POCKET_DRUM_KIT_CONFIGS), ["classic", "lofi_dusty", "lofi_brush", "lofi_tape_soft", ...CHIP_DRUM_KITS, ...METAL_DRUM_KITS]);
   assert.equal(POCKET_DRUM_KIT_CONFIGS.classic.kick.startFreq, 155);
   assert.equal(POCKET_DRUM_KIT_CONFIGS.lofi_brush.snare.bodyFreq, 150);
   assert.equal(POCKET_BASS_TONE_CONFIGS.classic.cutoff, 420);
@@ -344,10 +355,12 @@ test("shared sound registry includes the classic Chordsmith bass voice", () => {
   assert.equal(DEFAULT_CLASSIC_BASS_TONE, "classic");
   assert.equal(DEFAULT_LOFI_DRUM_KIT, "lofi_dusty");
   assert.equal(DEFAULT_CHIP_DRUM_KIT, "chip_noise_kit");
+  assert.equal(DEFAULT_METAL_DRUM_KIT, "metal_tight");
   assert.equal(resolvePocketDrumKitId("lofi_tape_soft", "standard", ""), "lofi_tape_soft");
   assert.equal(resolvePocketDrumKitId("classic", "lofi_chill", ""), "classic");
   assert.equal(resolvePocketDrumKitId("", "lofi_chill", ""), DEFAULT_LOFI_DRUM_KIT);
   assert.equal(resolvePocketDrumKitId("", "chip_tune", ""), DEFAULT_CHIP_DRUM_KIT);
+  assert.equal(resolvePocketDrumKitId("", "heavy_metal", ""), DEFAULT_METAL_DRUM_KIT);
   assert.equal(resolvePocketDrumKitId("unknown_lofi", "standard", "lofi_koi_pond"), DEFAULT_LOFI_DRUM_KIT);
   assert.equal(resolvePocketDrumKitId("unknown_lofi", "standard", ""), DEFAULT_CLASSIC_DRUM_KIT);
   assert.equal(resolvePocketBassToneId("rounded_triangle_bass"), "rounded_triangle_bass");
@@ -506,7 +519,7 @@ test("shared phrase helper mirrors Chordsmith bass and melody gates", () => {
 
 test("shared guitar tone registry matches Chordsmith tone surface", () => {
   assert.deepEqual(validatePocketGuitarRegistry(), { missingToneConfigs: [] });
-  assert.deepEqual(POCKET_GUITAR_TONES, ["clean", "crunch", "high_gain", "metal", "western_twang"]);
+  assert.deepEqual(POCKET_GUITAR_TONES, ["clean", "crunch", "high_gain", "metal", "tight_metal", "doom_fuzz", "western_twang"]);
   assert.deepEqual(POCKET_GUITAR_STEP_CYCLE, ["off", "chug", "accent", "hold", "scratch"]);
   assert.equal(DEFAULT_GUITAR_TONE, "high_gain");
   assert.equal(DEFAULT_GUITAR_REGISTER, "low");
@@ -514,6 +527,8 @@ test("shared guitar tone registry matches Chordsmith tone surface", () => {
   assert.ok(POCKET_GUITAR_TONES.includes(DEFAULT_GUITAR_TONE));
   assert.equal(POCKET_GUITAR_TONE_CONFIGS.high_gain.drive, 4.2);
   assert.equal(POCKET_GUITAR_TONE_CONFIGS.metal.lowpass, 3050);
+  assert.equal(POCKET_GUITAR_TONE_CONFIGS.tight_metal.highpass, 145);
+  assert.equal(POCKET_GUITAR_TONE_CONFIGS.doom_fuzz.drive, 8.4);
   assert.equal(POCKET_GUITAR_TONE_CONFIGS.western_twang.spread, 0.02);
 });
 
@@ -524,6 +539,9 @@ test("shared guitar preset helper mirrors Chordsmith named rhythm fills", () => 
     "metal_chug",
     "gallop",
     "doom_slow",
+    "thrash_gallop",
+    "tremolo_drive",
+    "breakdown_stabs",
     "verse_chorus",
     "boom_chick",
     "train_chop",
@@ -543,8 +561,8 @@ test("shared guitar gate helper mirrors Chordsmith live playback", () => {
 
 test("shared Chordsmith instrument registry covers chord and melody voices", () => {
   assert.deepEqual(validatePocketInstrumentRegistry(), { missingChordConfigs: [], missingLeadConfigs: [] });
-  assert.deepEqual(POCKET_CHORD_INSTRUMENTS, ["pocket", "piano", "saloon_piano", "harp", "warm_pad", "glass", "dusty_rhodes", "felt_piano", "cassette_keys", "muted_jazz_guitar", "lofi_warm_pad", ...CHIP_CHORD_INSTRUMENTS]);
-  assert.deepEqual(POCKET_MELODY_INSTRUMENTS, ["pulse", "soft", "synth", "bell", "lead_guitar", "distorted_lead_guitar", "banjo", "harmonica", "cowboy_whistle", "trumpet", "saxophone", "mellow_vibes", "soft_pluck", "mellow_sax", "muted_trumpet", "tape_bell", ...CHIP_MELODY_INSTRUMENTS]);
+  assert.deepEqual(POCKET_CHORD_INSTRUMENTS, ["pocket", "piano", "saloon_piano", "harp", "warm_pad", "glass", "dusty_rhodes", "felt_piano", "cassette_keys", "muted_jazz_guitar", "lofi_warm_pad", ...CHIP_CHORD_INSTRUMENTS, ...METAL_CHORD_INSTRUMENTS]);
+  assert.deepEqual(POCKET_MELODY_INSTRUMENTS, ["pulse", "soft", "synth", "bell", "lead_guitar", "distorted_lead_guitar", "banjo", "harmonica", "cowboy_whistle", "trumpet", "saxophone", "mellow_vibes", "soft_pluck", "mellow_sax", "muted_trumpet", "tape_bell", ...CHIP_MELODY_INSTRUMENTS, ...METAL_MELODY_INSTRUMENTS]);
   assert.equal(DEFAULT_CHORD_INSTRUMENT, "pocket");
   assert.equal(DEFAULT_MELODY_INSTRUMENT, "pulse");
   assert.ok(POCKET_CHORD_INSTRUMENTS.includes(DEFAULT_CHORD_INSTRUMENT));

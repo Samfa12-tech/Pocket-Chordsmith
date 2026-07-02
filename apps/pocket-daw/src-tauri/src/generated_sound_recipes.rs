@@ -62,6 +62,9 @@ fn native_drum_kit_config(kit: &str) -> NativeDrumKitConfig {
         "chip_noise_kit" => native_drum_kit_chip_noise_kit(),
         "chip_arcade_kit" => native_drum_kit_chip_arcade_kit(),
         "modern_chip_punch" => native_drum_kit_modern_chip_punch(),
+        "metal_tight" => native_drum_kit_metal_tight(),
+        "metal_arena" => native_drum_kit_metal_arena(),
+        "metal_doom" => native_drum_kit_metal_doom(),
         _ => native_drum_kit_classic(),
     }
 }
@@ -75,7 +78,11 @@ fn generated_native_resolve_drum_kit(kit: Option<&str>, audio_profile: Option<&s
         "chip_noise_kit" => "chip_noise_kit",
         "chip_arcade_kit" => "chip_arcade_kit",
         "modern_chip_punch" => "modern_chip_punch",
+        "metal_tight" => "metal_tight",
+        "metal_arena" => "metal_arena",
+        "metal_doom" => "metal_doom",
         _ if generated_native_chip_active(audio_profile, lofi_preset) => "chip_noise_kit",
+        _ if generated_native_metal_active(audio_profile, lofi_preset) => "metal_tight",
         _ if generated_native_lofi_active(audio_profile, lofi_preset) => "lofi_dusty",
         _ => "classic",
     }
@@ -87,6 +94,10 @@ fn generated_native_lofi_active(audio_profile: Option<&str>, lofi_preset: Option
 
 fn generated_native_chip_active(audio_profile: Option<&str>, chip_preset: Option<&str>) -> bool {
     audio_profile == Some("chip_tune") || chip_preset.unwrap_or("").starts_with("chip_")
+}
+
+fn generated_native_metal_active(audio_profile: Option<&str>, metal_preset: Option<&str>) -> bool {
+    audio_profile == Some("heavy_metal") || metal_preset.unwrap_or("").starts_with("metal_")
 }
 
 fn native_drum_kit_classic() -> NativeDrumKitConfig {
@@ -376,6 +387,129 @@ fn native_drum_kit_modern_chip_punch() -> NativeDrumKitConfig {
     }
 }
 
+fn native_drum_kit_metal_tight() -> NativeDrumKitConfig {
+    NativeDrumKitConfig {
+        kick: NativeKickConfig {
+            start_freq: 112.0,
+            end_freq: 34.0,
+            sweep_seconds: 0.075,
+            filter_freq: Some(240.0),
+            gain_floor: 0.07,
+            gain_scale: 0.98,
+            length: 0.14,
+            ramp_seconds: 0.115,
+        },
+        snare: NativeSnareConfig {
+            noise_seconds: 0.09,
+            highpass: 1550.0,
+            lowpass: Some(7200.0),
+            gain_floor: 0.045,
+            gain_scale: 0.82,
+            length: 0.105,
+            ramp_seconds: 0.09,
+            body_freq: Some(205.0),
+            body_gain: 0.04,
+            body_length: 0.08,
+            body_ramp_seconds: 0.06,
+        },
+        hat: NativeHatConfig {
+            closed_length: 0.035,
+            open_length: 0.13,
+            highpass_closed: 5600.0,
+            highpass_open: 4100.0,
+            lowpass: Some(9800.0),
+            gain_floor_closed: 0.018,
+            gain_floor_open: 0.03,
+            gain_scale_closed: 0.68,
+            gain_scale_open: 0.72,
+            ramp_seconds_closed: 0.03,
+            ramp_seconds_open: 0.105,
+        },
+    }
+}
+
+fn native_drum_kit_metal_arena() -> NativeDrumKitConfig {
+    NativeDrumKitConfig {
+        kick: NativeKickConfig {
+            start_freq: 104.0,
+            end_freq: 36.0,
+            sweep_seconds: 0.105,
+            filter_freq: Some(210.0),
+            gain_floor: 0.072,
+            gain_scale: 0.9,
+            length: 0.18,
+            ramp_seconds: 0.15,
+        },
+        snare: NativeSnareConfig {
+            noise_seconds: 0.12,
+            highpass: 1280.0,
+            lowpass: Some(6800.0),
+            gain_floor: 0.048,
+            gain_scale: 0.86,
+            length: 0.14,
+            ramp_seconds: 0.12,
+            body_freq: Some(190.0),
+            body_gain: 0.055,
+            body_length: 0.105,
+            body_ramp_seconds: 0.08,
+        },
+        hat: NativeHatConfig {
+            closed_length: 0.045,
+            open_length: 0.18,
+            highpass_closed: 5000.0,
+            highpass_open: 3600.0,
+            lowpass: Some(9200.0),
+            gain_floor_closed: 0.019,
+            gain_floor_open: 0.034,
+            gain_scale_closed: 0.64,
+            gain_scale_open: 0.74,
+            ramp_seconds_closed: 0.038,
+            ramp_seconds_open: 0.15,
+        },
+    }
+}
+
+fn native_drum_kit_metal_doom() -> NativeDrumKitConfig {
+    NativeDrumKitConfig {
+        kick: NativeKickConfig {
+            start_freq: 92.0,
+            end_freq: 30.0,
+            sweep_seconds: 0.15,
+            filter_freq: Some(160.0),
+            gain_floor: 0.07,
+            gain_scale: 0.78,
+            length: 0.26,
+            ramp_seconds: 0.22,
+        },
+        snare: NativeSnareConfig {
+            noise_seconds: 0.18,
+            highpass: 880.0,
+            lowpass: Some(4400.0),
+            gain_floor: 0.045,
+            gain_scale: 0.7,
+            length: 0.2,
+            ramp_seconds: 0.17,
+            body_freq: Some(165.0),
+            body_gain: 0.06,
+            body_length: 0.14,
+            body_ramp_seconds: 0.11,
+        },
+        hat: NativeHatConfig {
+            closed_length: 0.065,
+            open_length: 0.24,
+            highpass_closed: 3600.0,
+            highpass_open: 2600.0,
+            lowpass: Some(7200.0),
+            gain_floor_closed: 0.018,
+            gain_floor_open: 0.035,
+            gain_scale_closed: 0.52,
+            gain_scale_open: 0.6,
+            ramp_seconds_closed: 0.055,
+            ramp_seconds_open: 0.2,
+        },
+    }
+}
+
 fn native_bass_tone_config(tone: Option<&str>) -> NativeBassToneConfig {
     match tone.unwrap_or("classic") {
         "warm_sub" => native_bass_tone_warm_sub(),
@@ -385,6 +519,9 @@ fn native_bass_tone_config(tone: Option<&str>) -> NativeBassToneConfig {
         "chip_square_bass" => native_bass_tone_chip_square_bass(),
         "modern_chip_sub" => native_bass_tone_modern_chip_sub(),
         "bitcrush_bass" => native_bass_tone_bitcrush_bass(),
+        "metal_pick_bass" => native_bass_tone_metal_pick_bass(),
+        "metal_sub_pick" => native_bass_tone_metal_sub_pick(),
+        "metal_grind_bass" => native_bass_tone_metal_grind_bass(),
         _ => native_bass_tone_classic(),
     }
 }
@@ -485,6 +622,42 @@ fn native_bass_tone_bitcrush_bass() -> NativeBassToneConfig {
     }
 }
 
+fn native_bass_tone_metal_pick_bass() -> NativeBassToneConfig {
+    NativeBassToneConfig {
+        main_wave: "sawtooth",
+        sub_wave: "square",
+        main_peak: 0.72,
+        sub_peak: 0.4,
+        cutoff: 520.0,
+        sub_cutoff: 140.0,
+        attack: 0.003,
+    }
+}
+
+fn native_bass_tone_metal_sub_pick() -> NativeBassToneConfig {
+    NativeBassToneConfig {
+        main_wave: "triangle",
+        sub_wave: "sine",
+        main_peak: 0.58,
+        sub_peak: 0.68,
+        cutoff: 360.0,
+        sub_cutoff: 110.0,
+        attack: 0.006,
+    }
+}
+
+fn native_bass_tone_metal_grind_bass() -> NativeBassToneConfig {
+    NativeBassToneConfig {
+        main_wave: "sawtooth",
+        sub_wave: "triangle",
+        main_peak: 0.66,
+        sub_peak: 0.32,
+        cutoff: 760.0,
+        sub_cutoff: 170.0,
+        attack: 0.002,
+    }
+}
+
 fn generated_native_chord_config(instrument: Option<&str>) -> NativeChordConfig {
     match instrument.unwrap_or("pocket") {
         "piano" => generated_native_chord_piano(),
@@ -501,6 +674,8 @@ fn generated_native_chord_config(instrument: Option<&str>) -> NativeChordConfig 
         "chip_triangle_pad" => generated_native_chord_chip_triangle_pad(),
         "chip_arp_keys" => generated_native_chord_chip_arp_keys(),
         "modern_chip_poly" => generated_native_chord_modern_chip_poly(),
+        "metal_power_stack" => generated_native_chord_metal_power_stack(),
+        "dark_organ_stack" => generated_native_chord_dark_organ_stack(),
         _ => generated_native_chord_pocket(),
     }
 }
@@ -769,6 +944,48 @@ const GENERATED_CHORD_MODERN_CHIP_POLY_LAYERS: [NativeChordLayerConfig; 3] = [
         freq_mul: 0.5,
         detune: 0.0,
         level: 0.22,
+    }
+];
+
+const GENERATED_CHORD_METAL_POWER_STACK_LAYERS: [NativeChordLayerConfig; 3] = [
+    NativeChordLayerConfig {
+        wave: "sawtooth",
+        freq_mul: 1.0,
+        detune: -5.0,
+        level: 0.78,
+    },
+    NativeChordLayerConfig {
+        wave: "square",
+        freq_mul: 1.0,
+        detune: 5.0,
+        level: 0.42,
+    },
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 0.5,
+        detune: 0.0,
+        level: 0.2,
+    }
+];
+
+const GENERATED_CHORD_DARK_ORGAN_STACK_LAYERS: [NativeChordLayerConfig; 3] = [
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 1.0,
+        detune: -8.0,
+        level: 0.72,
+    },
+    NativeChordLayerConfig {
+        wave: "sawtooth",
+        freq_mul: 1.0,
+        detune: 7.0,
+        level: 0.36,
+    },
+    NativeChordLayerConfig {
+        wave: "sine",
+        freq_mul: 2.0,
+        detune: 0.0,
+        level: 0.16,
     }
 ];
 
@@ -1087,6 +1304,48 @@ fn generated_native_chord_modern_chip_poly() -> NativeChordConfig {
     }
 }
 
+fn generated_native_chord_metal_power_stack() -> NativeChordConfig {
+    NativeChordConfig {
+        root_wave: "sawtooth",
+        wave: "sawtooth",
+        peak: 0.15,
+        filter: "bandpass",
+        freq: 1180.0,
+        filter_q: 0.9,
+        filter_sweep: Some(1950.0),
+        attack: 0.002,
+        decay: 0.08,
+        sustain: 0.58,
+        release: 0.16,
+        dur_mul: 0.72,
+        spread_mul: 0.3,
+        shimmer: false,
+        max_live_dur: 0.76,
+        layers: &GENERATED_CHORD_METAL_POWER_STACK_LAYERS,
+    }
+}
+
+fn generated_native_chord_dark_organ_stack() -> NativeChordConfig {
+    NativeChordConfig {
+        root_wave: "triangle",
+        wave: "sawtooth",
+        peak: 0.125,
+        filter: "lowpass",
+        freq: 1050.0,
+        filter_q: 0.62,
+        filter_sweep: Some(1500.0),
+        attack: 0.09,
+        decay: 0.24,
+        sustain: 0.82,
+        release: 0.62,
+        dur_mul: 1.35,
+        spread_mul: 0.18,
+        shimmer: false,
+        max_live_dur: 1.7,
+        layers: &GENERATED_CHORD_DARK_ORGAN_STACK_LAYERS,
+    }
+}
+
 fn generated_native_lead_config(instrument: Option<&str>) -> NativeLeadConfig {
     match instrument.unwrap_or("pulse") {
         "soft" => generated_native_lead_soft(),
@@ -1109,6 +1368,8 @@ fn generated_native_lead_config(instrument: Option<&str>) -> NativeLeadConfig {
         "chip_triangle_blip" => generated_native_lead_chip_triangle_blip(),
         "chip_bell_stack" => generated_native_lead_chip_bell_stack(),
         "modern_chip_lead" => generated_native_lead_modern_chip_lead(),
+        "shred_lead_guitar" => generated_native_lead_shred_lead_guitar(),
+        "twin_harmony_lead" => generated_native_lead_twin_harmony_lead(),
         _ => generated_native_lead_pulse(),
     }
 }
@@ -1459,6 +1720,64 @@ const GENERATED_LEAD_MODERN_CHIP_LEAD_EXTRAS: [NativeLeadExtraConfig; 2] = [
     }
 ];
 
+const GENERATED_LEAD_SHRED_LEAD_GUITAR_EXTRAS: [NativeLeadExtraConfig; 2] = [
+    NativeLeadExtraConfig {
+        freq_mul: 1.006,
+        slide_freq_mul: Some(1.012),
+        midi_offset: 0.0,
+        wave: "square",
+        peak: 0.04,
+        peak_scale: 0.26,
+        filter: "lowpass",
+        freq: 3400.0,
+        offset: 0.004,
+        dur_mul: 0.62,
+        max_dur: None,
+    },
+    NativeLeadExtraConfig {
+        freq_mul: 2.0,
+        slide_freq_mul: None,
+        midi_offset: 12.0,
+        wave: "triangle",
+        peak: 0.012,
+        peak_scale: 0.1,
+        filter: "lowpass",
+        freq: 4200.0,
+        offset: 0.008,
+        dur_mul: 0.32,
+        max_dur: Some(0.12),
+    }
+];
+
+const GENERATED_LEAD_TWIN_HARMONY_LEAD_EXTRAS: [NativeLeadExtraConfig; 2] = [
+    NativeLeadExtraConfig {
+        freq_mul: 1.5,
+        slide_freq_mul: None,
+        midi_offset: 7.0,
+        wave: "sawtooth",
+        peak: 0.032,
+        peak_scale: 0.24,
+        filter: "bandpass",
+        freq: 2600.0,
+        offset: 0.006,
+        dur_mul: 0.7,
+        max_dur: None,
+    },
+    NativeLeadExtraConfig {
+        freq_mul: 2.005,
+        slide_freq_mul: None,
+        midi_offset: 12.0,
+        wave: "triangle",
+        peak: 0.014,
+        peak_scale: 0.12,
+        filter: "lowpass",
+        freq: 3800.0,
+        offset: 0.012,
+        dur_mul: 0.4,
+        max_dur: Some(0.16),
+    }
+];
+
 fn generated_native_lead_pulse() -> NativeLeadConfig {
     NativeLeadConfig {
         wave: "square",
@@ -1690,11 +2009,35 @@ fn generated_native_lead_modern_chip_lead() -> NativeLeadConfig {
     }
 }
 
+fn generated_native_lead_shred_lead_guitar() -> NativeLeadConfig {
+    NativeLeadConfig {
+        wave: "sawtooth",
+        peak: 0.132,
+        filter: "bandpass",
+        freq: 2300.0,
+        dur_mul: 0.78,
+        extras: &GENERATED_LEAD_SHRED_LEAD_GUITAR_EXTRAS,
+    }
+}
+
+fn generated_native_lead_twin_harmony_lead() -> NativeLeadConfig {
+    NativeLeadConfig {
+        wave: "sawtooth",
+        peak: 0.118,
+        filter: "lowpass",
+        freq: 2900.0,
+        dur_mul: 0.86,
+        extras: &GENERATED_LEAD_TWIN_HARMONY_LEAD_EXTRAS,
+    }
+}
+
 fn generated_guitar_tone_config(tone: Option<&str>) -> NativeGuitarToneConfig {
     match tone.unwrap_or("high_gain") {
         "clean" => generated_guitar_tone_clean(),
         "crunch" => generated_guitar_tone_crunch(),
         "metal" => generated_guitar_tone_metal(),
+        "tight_metal" => generated_guitar_tone_tight_metal(),
+        "doom_fuzz" => generated_guitar_tone_doom_fuzz(),
         "western_twang" => generated_guitar_tone_western_twang(),
         _ => generated_guitar_tone_high_gain(),
     }
@@ -1761,6 +2104,38 @@ fn generated_guitar_tone_metal() -> NativeGuitarToneConfig {
         sustain: 0.86,
         mute: 0.06,
         scratch: 0.04,
+    }
+}
+
+fn generated_guitar_tone_tight_metal() -> NativeGuitarToneConfig {
+    NativeGuitarToneConfig {
+        drive: 7.1,
+        input: 0.88,
+        peak: 0.078,
+        lowpass: 2850.0,
+        highpass: 145.0,
+        body: 3.5,
+        mid: 3.35,
+        spread: 0.007,
+        sustain: 0.76,
+        mute: 0.045,
+        scratch: 0.036,
+    }
+}
+
+fn generated_guitar_tone_doom_fuzz() -> NativeGuitarToneConfig {
+    NativeGuitarToneConfig {
+        drive: 8.4,
+        input: 0.82,
+        peak: 0.075,
+        lowpass: 2450.0,
+        highpass: 72.0,
+        body: 5.2,
+        mid: 2.15,
+        spread: 0.012,
+        sustain: 1.18,
+        mute: 0.095,
+        scratch: 0.03,
     }
 }
 

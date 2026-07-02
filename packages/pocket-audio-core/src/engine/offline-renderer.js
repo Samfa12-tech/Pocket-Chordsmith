@@ -296,7 +296,7 @@ function guitarSample(voice, t) {
 }
 
 function drumKitConfig(event) {
-  const kit = resolvePocketDrumKitId(event.drumKit, event.audioProfile, event.lofiPreset);
+  const kit = resolvePocketDrumKitId(event.drumKit, event.audioProfile, event.metalPreset || event.chipPreset || event.lofiPreset);
   return POCKET_DRUM_KIT_CONFIGS[kit] || POCKET_DRUM_KIT_CONFIGS.classic;
 }
 

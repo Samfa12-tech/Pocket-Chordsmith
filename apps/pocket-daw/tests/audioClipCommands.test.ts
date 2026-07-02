@@ -539,8 +539,9 @@ describe("audio clip edit commands", () => {
     const takeOne = clips.filter((clip) => clip.metadata?.takeIndex === 1);
     const takeTwo = clips.filter((clip) => clip.metadata?.takeIndex === 2);
     const activeSegments = clips
-      .filter((clip) => clip.metadata?.takeStatus === "active" && !clip.muted)
+      .filter((clip) => (clip.metadata?.takeStatus === "active" || clip.metadata?.takeStatus === "comp-segment") && !clip.muted)
       .sort((a, b) => a.startBar - b.startBar || Number(a.metadata?.takeIndex || 0) - Number(b.metadata?.takeIndex || 0));
+    const compSegment = takeTwo.find((clip) => clip.startBar === 3)!;
 
     expect(takeOne.map((clip) => [clip.startBar, clip.barLength, clip.metadata?.takeStatus, clip.metadata?.sourceOffsetSeconds])).toEqual([
       [2, 1, "active", 0],
@@ -549,11 +550,18 @@ describe("audio clip edit commands", () => {
     ]);
     expect(takeTwo.map((clip) => [clip.startBar, clip.barLength, clip.metadata?.takeStatus, clip.metadata?.sourceOffsetSeconds])).toEqual([
       [2, 1, "muted-take", 0],
-      [3, 2, "active", 2],
+      [3, 2, "comp-segment", 2],
       [5, 1, "muted-take", 6]
     ]);
+    expect(compSegment.metadata).toMatchObject({
+      takeActive: true,
+      compGroupId: "vocal-range-comp",
+      compSourceTakeId: "vocal-range-comp-take-2",
+      compRangeStartBar: 3,
+      compRangeEndBar: 5
+    });
     expect(activeSegments.map((clip) => [clip.metadata?.takeIndex, clip.startBar, clip.barLength])).toEqual([[1, 2, 1], [2, 3, 2], [1, 5, 1]]);
-    expect(edited.selectedClipId).toBe(takeTwo.find((clip) => clip.startBar === 3)?.id);
+    expect(edited.selectedClipId).toBe(compSegment.id);
     expect(edited.undoStack.past).toHaveLength(3);
     expect(edited.status).toBe("Comped Vocal range take 2.wav over edit range 3 to 5.");
   });

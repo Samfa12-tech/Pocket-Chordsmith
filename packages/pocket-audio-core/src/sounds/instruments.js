@@ -6,6 +6,10 @@ import {
   CHIP_CHORD_INSTRUMENT_CONFIGS,
   CHIP_LEAD_INSTRUMENT_CONFIGS
 } from "./chip-registry.js";
+import {
+  METAL_CHORD_INSTRUMENT_CONFIGS,
+  METAL_LEAD_INSTRUMENT_CONFIGS
+} from "./metal-registry.js";
 
 export const POCKET_CHORD_INSTRUMENTS = Object.freeze([
   "pocket",
@@ -22,7 +26,9 @@ export const POCKET_CHORD_INSTRUMENTS = Object.freeze([
   "chip_square_stack",
   "chip_triangle_pad",
   "chip_arp_keys",
-  "modern_chip_poly"
+  "modern_chip_poly",
+  "metal_power_stack",
+  "dark_organ_stack"
 ]);
 
 export const DEFAULT_CHORD_INSTRUMENT = "pocket";
@@ -48,7 +54,9 @@ export const POCKET_MELODY_INSTRUMENTS = Object.freeze([
   "chip_pulse_lead",
   "chip_triangle_blip",
   "chip_bell_stack",
-  "modern_chip_lead"
+  "modern_chip_lead",
+  "shred_lead_guitar",
+  "twin_harmony_lead"
 ]);
 
 export const DEFAULT_MELODY_INSTRUMENT = "pulse";
@@ -183,7 +191,8 @@ export const CLASSIC_CHORD_INSTRUMENT_CONFIGS = Object.freeze({
 export const POCKET_CHORD_INSTRUMENT_CONFIGS = Object.freeze({
   ...CLASSIC_CHORD_INSTRUMENT_CONFIGS,
   ...LOFI_CHORD_INSTRUMENT_CONFIGS,
-  ...CHIP_CHORD_INSTRUMENT_CONFIGS
+  ...CHIP_CHORD_INSTRUMENT_CONFIGS,
+  ...METAL_CHORD_INSTRUMENT_CONFIGS
 });
 
 export const CLASSIC_LEAD_INSTRUMENT_CONFIGS = Object.freeze({
@@ -295,7 +304,8 @@ export const CLASSIC_LEAD_INSTRUMENT_CONFIGS = Object.freeze({
 export const POCKET_LEAD_INSTRUMENT_CONFIGS = Object.freeze({
   ...CLASSIC_LEAD_INSTRUMENT_CONFIGS,
   ...LOFI_LEAD_INSTRUMENT_CONFIGS,
-  ...CHIP_LEAD_INSTRUMENT_CONFIGS
+  ...CHIP_LEAD_INSTRUMENT_CONFIGS,
+  ...METAL_LEAD_INSTRUMENT_CONFIGS
 });
 
 export function findPocketChordInstrumentConfig(name) {

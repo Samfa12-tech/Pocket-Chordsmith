@@ -7,7 +7,7 @@ export type ClipTransformField = "transpose" | "gain";
 export type GeneratedStemRole = "drums" | "bass" | "chords" | "melody" | "guitar";
 export type AudioClipPropertyField = "gain" | "sourceOffsetSeconds" | "durationSeconds" | "fadeInSeconds" | "fadeOutSeconds" | "playbackRate" | "pitchSemitones";
 export type AudioClipAction = "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "clear-warp-markers";
-export type AudioTakeStatus = "active" | "muted-take" | "archived-take";
+export type AudioTakeStatus = "active" | "comp-segment" | "muted-take" | "archived-take";
 
 export interface AudioClipActionResult {
   project: PocketDawProject;
@@ -381,7 +381,7 @@ export function audioClipTakeSummary(project: PocketDawProject, clipId: string):
       takeNumber: takeIndexForClip(item, index),
       takeLaneId: takeLaneIdForClip(item, index),
       takeStatus: audioTakeStatus(item),
-      active: audioTakeStatus(item) === "active" && !item.muted,
+      active: audioTakeStatus(item) === "active" || audioTakeStatus(item) === "comp-segment" ? !item.muted : false,
       archived: audioTakeStatus(item) === "archived-take",
       muted: item.muted
     }))
@@ -520,13 +520,24 @@ export function compGroupedAudioTakeRange(project: PocketDawProject, clipId: str
     if (!insideRange) return;
     const active = takeLaneIdForClip(clip, index) === selectedLaneId;
     const nextMuted = !active;
-    const takeStatus: AudioTakeStatus = active ? "active" : "muted-take";
+    const takeStatus: AudioTakeStatus = active ? "comp-segment" : "muted-take";
     if (clip.muted !== nextMuted || clip.metadata?.takeActive !== active || clip.metadata?.takeStatus !== takeStatus) changed = true;
     clip.muted = nextMuted;
+    const recordingTakeId = typeof clip.metadata?.recordingTakeId === "string" && clip.metadata.recordingTakeId.trim()
+      ? clip.metadata.recordingTakeId
+      : clip.id;
     clip.metadata = {
       ...(clip.metadata || {}),
       takeActive: active,
-      takeStatus
+      takeStatus,
+      ...(active
+        ? {
+            compGroupId: groupId,
+            compSourceTakeId: recordingTakeId,
+            compRangeStartBar: rangeStart,
+            compRangeEndBar: rangeEnd
+          }
+        : {})
     };
     if (active) activeClipId = clip.id;
   });
@@ -647,7 +658,7 @@ function takeLaneIdForClip(clip: Clip, fallbackIndex: number): string {
 
 function audioTakeStatus(clip: Clip): AudioTakeStatus {
   const value = clip.metadata?.takeStatus;
-  if (value === "archived-take" || value === "muted-take" || value === "active") return value;
+  if (value === "archived-take" || value === "muted-take" || value === "active" || value === "comp-segment") return value;
   return clip.metadata?.takeActive === false || clip.muted ? "muted-take" : "active";
 }
 
