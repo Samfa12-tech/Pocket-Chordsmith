@@ -76,6 +76,7 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
       invariantWarningCount: 0,
       invariantErrors: [],
       invariantWarnings: [],
+      pocketDjSource: null,
       audioTakes: {
         groupedClipCount: 0,
         groupCount: 0,

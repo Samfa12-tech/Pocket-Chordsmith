@@ -57,7 +57,7 @@ import {
 import { drumPresetEventsForProject, drumPresetLabel, drumPresetVisibleForProject, findDrumPreset } from "../daw/chordsmithDrumPresets";
 import { bassPresetLabel, bassPresetPatternForProject, bassPresetVisibleForProject, findBassPreset } from "../daw/chordsmithBassPresets";
 import { findGuitarPreset, guitarPresetLabel, guitarPresetPatternForProject, guitarPresetVisibleForProject } from "../daw/chordsmithGuitarPresets";
-import type { AutomationPoint, Clip, PocketDawProject, ProjectMeterMapPoint, RecordingChannelMode, RecordingInputMode, TrackRecordingInput } from "../daw/schema";
+import type { AutomationPoint, Clip, JsonObject, JsonValue, PocketDawProject, ProjectMeterMapPoint, RecordingChannelMode, RecordingInputMode, TrackRecordingInput } from "../daw/schema";
 import type { AppState } from "./state";
 
 export function importTextToProject(text: string): { project: PocketDawProject; message: string } {
@@ -66,15 +66,107 @@ export function importTextToProject(text: string): { project: PocketDawProject; 
     return { project: parsed.data, message: "Opened .pocketdaw project." };
   }
   if (parsed.kind === "pdj") {
-    const source = (parsed.data as Record<string, unknown>).source as Record<string, unknown> | undefined;
-    const sourceProject = source?.project || (parsed.data as Record<string, unknown>).project;
-    const pcs = sanitizePocketChordsmithProject(sourceProject);
-    return { project: createDawProjectFromChordsmithProject(pcs), message: "Imported Pocket DJ source Chordsmith project." };
+    return createDawProjectFromPocketDjSession(parsed.data, parsed.importKind);
   }
   const pcs = sanitizePocketChordsmithProject(parsed.data);
   const project = createDawProjectFromChordsmithProject(pcs);
   project.importHistory[0].importKind = parsed.importKind;
   return { project, message: parsed.importKind === "PCS1" ? "Imported PCS1 share code." : "Imported raw Pocket Chordsmith JSON." };
+}
+
+function createDawProjectFromPocketDjSession(data: unknown, importKind: "PDJ1" | "raw-json"): { project: PocketDawProject; message: string } {
+  const session = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : {};
+  const source = session.source && typeof session.source === "object" && !Array.isArray(session.source) ? session.source as Record<string, unknown> : {};
+  const deck = session.deck && typeof session.deck === "object" && !Array.isArray(session.deck) ? session.deck as Record<string, unknown> : {};
+  const performance = session.performance && typeof session.performance === "object" && !Array.isArray(session.performance) ? session.performance as Record<string, unknown> : {};
+  const sourceProject = source.project || session.project;
+  const pcs = sanitizePocketChordsmithProject(sourceProject);
+  const project = createDawProjectFromChordsmithProject(pcs);
+  const importedAt = project.sourceRefs[0]?.importedAt || new Date().toISOString();
+  const djRefId = uniqueSourceRefId(project, "src_pdj_001");
+  const title = safeString(deck.name) || safeString(source.sourceTitle) || pcs.rawTitle || "Pocket DJ Session";
+  const stemVolumes = safeJsonObject(performance.stemVolumes);
+  const stemMutes = safeJsonObject(performance.stemMutes);
+  const fx = safeJsonObject(performance.fx);
+  const sequence = Array.isArray(performance.sequence) ? performance.sequence.filter((item) => typeof item === "string") as string[] : [];
+
+  project.sourceRefs.push({
+    id: djRefId,
+    sourceType: "pocket-dj",
+    sourcePrefix: importKind === "PDJ1" ? "PDJ1" : "raw-json",
+    schemaVersion: typeof session.djVersion === "number" ? session.djVersion : undefined,
+    importedAt,
+    title,
+    original: jsonClone(session) as JsonValue,
+    normalized: {
+      app: safeString(session.app) || "PocketDJ",
+      djVersion: typeof session.djVersion === "number" ? session.djVersion : null,
+      source: {
+        app: safeString(source.app) || "PocketChordsmith",
+        sourcePrefix: safeString(source.sourcePrefix) || "PCS1",
+        projectVersion: typeof source.projectVersion === "number" ? source.projectVersion : pcs.projectVersion,
+        sourceTitle: safeString(source.sourceTitle) || pcs.rawTitle
+      },
+      deck: jsonClone(deck) as JsonObject,
+      performance: {
+        currentSection: safeString(performance.currentSection) || null,
+        queuedSection: safeString(performance.queuedSection) || null,
+        launchQuantize: safeString(performance.launchQuantize) || null,
+        dropTarget: safeString(performance.dropTarget) || null,
+        loopCurrentSection: typeof performance.loopCurrentSection === "boolean" ? performance.loopCurrentSection : false,
+        sequence,
+        sequencePlaying: typeof performance.sequencePlaying === "boolean" ? performance.sequencePlaying : false,
+        sequenceRepeat: typeof performance.sequenceRepeat === "boolean" ? performance.sequenceRepeat : false,
+        sequenceIndex: typeof performance.sequenceIndex === "number" ? performance.sequenceIndex : 0,
+        buildActive: typeof performance.buildActive === "boolean" ? performance.buildActive : false,
+        masterVolume: typeof performance.masterVolume === "number" ? performance.masterVolume : null,
+        stemVolumes,
+        stemMutes,
+        fx
+      }
+    },
+    notes: [
+      "Imported from Pocket DJ; editable DAW clips remain linked to the embedded Pocket Chordsmith source.",
+      "Pocket DJ deck, mixer, launch, sequence and FX performance state is preserved as source metadata for future handoff/export work."
+    ]
+  });
+  project.importHistory = [
+    {
+      id: "import_001",
+      sourceRefId: djRefId,
+      importedAt,
+      importKind,
+      message: "Imported Pocket DJ session and preserved DJ performance metadata."
+    }
+  ];
+  project.sourceRefs[0].notes = [
+    ...(project.sourceRefs[0].notes || []),
+    `Embedded source came from a Pocket DJ ${importKind === "PDJ1" ? "PDJ1 share code" : "session JSON"} import; DJ-only performance state is stored in ${djRefId}.`
+  ];
+  return { project, message: "Imported Pocket DJ session and preserved performance metadata." };
+}
+
+function uniqueSourceRefId(project: PocketDawProject, base: string) {
+  const ids = new Set(project.sourceRefs.map((ref) => ref.id));
+  let id = base;
+  let index = 2;
+  while (ids.has(id)) {
+    id = `${base}_${index}`;
+    index += 1;
+  }
+  return id;
+}
+
+function safeString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function safeJsonObject(value: unknown): JsonObject {
+  return value && typeof value === "object" && !Array.isArray(value) ? jsonClone(value as Record<string, unknown>) as JsonObject : {};
+}
+
+function jsonClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 export function loadPocketDawRaw(raw: string): PocketDawProject {

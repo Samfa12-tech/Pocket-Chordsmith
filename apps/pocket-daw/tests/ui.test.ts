@@ -18,7 +18,9 @@ import { createEmptyPocketDawProject } from "../src/daw/dawProject";
 import { POCKET_DAW_VERSION } from "../src/daw/schema";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
 import { FUNCTION_ACTION_CATALOG_DOC, FUNCTION_ACTION_REFERENCE, FUNCTION_GUIDE_SECTIONS, FUNCTION_REFERENCE_DOC } from "../src/app/functionGuide";
-import { addTrackCommand, setTrackFolderCommand, toggleFolderExpandedCommand } from "../src/app/commands";
+import { addTrackCommand, importTextToProject, setTrackFolderCommand, toggleFolderExpandedCommand } from "../src/app/commands";
+import { utf8ToBase64Url } from "../src/compatibility/pcsParser";
+import { createPocketDjImportFixture } from "./pocketDjFixtures";
 
 function inspectorHtml(html: string) {
   return html.match(/<aside class="inspector"[\s\S]*?<\/aside>/)?.[0] || "";
@@ -986,6 +988,21 @@ describe("Pocket DAW UI rendering", () => {
     ].forEach((action) => {
       expect(html).toContain(`data-action="${action}"`);
     });
+  });
+
+  it("renders preserved Pocket DJ metadata in the File import window", () => {
+    const state = createInitialState();
+    const session = createPocketDjImportFixture();
+    state.undoStack = createUndoStack(importTextToProject(`PDJ1:${utf8ToBase64Url(JSON.stringify(session))}`).project);
+    state.showFilePanel = true;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("Pocket DJ metadata preserved");
+    expect(html).toContain("Late Night Deck / PDJ1 v1 / Current B / Queued D / Launch bar / Hold on / Sequence playing / Build active");
+    expect(html).toContain("Sequence: A -&gt; B -&gt; D / repeat / drop D");
+    expect(html).toContain("Mixer: master 72% / 1 muted stem / drums 42%, bass 80%");
+    expect(html).toContain("DJ state is preserved for future handoff/export and is not silently applied to the DAW mix.");
   });
 
   it("describes demo loading as an editable copy with an explicit template reload", () => {

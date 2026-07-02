@@ -31,7 +31,7 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 
 | Function | What it does | Use when | AI counterpart notes |
 | --- | --- | --- | --- |
-| Import Paste | Parses pasted `PCS1:` share codes, Pocket Chordsmith JSON, Pocket DJ source sessions, PocketHandoff payloads, or raw `.pocketdaw` JSON. | Fast Chordsmith/DJ/project handoff without a file picker. | Confirm resulting track, clip, section and media counts. |
+| Import Paste | Parses pasted `PCS1:` share codes, Pocket Chordsmith JSON, Pocket DJ sessions, PocketHandoff payloads, or raw `.pocketdaw` JSON. | Fast Chordsmith/DJ/project handoff without a file picker. | For Pocket DJ imports, the editable arrangement stays linked to the embedded Chordsmith source while DJ deck/performance state is preserved as metadata, not silently applied to the DAW mix. |
 | Open File | Lets the file picker route supported project, audio, or MIDI files into the correct import path. | The user wants one entry point for local files. | Inspect status text and media pool after import. |
 | Import Audio | Imports an audio file, decodes it for runtime playback, stores metadata, and makes it timeline-placeable. | Loops, vocals, instrument takes, references and stems. | Check source format, duration, sample rate, channels, cache path and missing/unloaded state. |
 | Import MIDI | Parses `.mid`/`.midi` files, adds media metadata, and creates editable MIDI clips according to the placement mode. | External melodies, drums, chord ideas or conversion material. | Check tempo/meter maps before adopting them into project timing. |

@@ -74,9 +74,9 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
     entries: [
       {
         name: "Import Paste",
-        does: "Parses pasted PCS1 share codes, Pocket Chordsmith JSON, Pocket DJ source sessions, PocketHandoff payloads, or raw .pocketdaw JSON.",
+        does: "Parses pasted PCS1 share codes, Pocket Chordsmith JSON, Pocket DJ sessions, PocketHandoff payloads, or raw .pocketdaw JSON.",
         useWhen: "Use for fast Chordsmith or DJ handoff testing without opening a file picker.",
-        aiNote: "Confirm the resulting track, section and media counts rather than assuming a paste imported fully."
+        aiNote: "For Pocket DJ imports, the editable arrangement stays linked to the embedded Chordsmith source while DJ deck/performance state is preserved as metadata, not silently applied to the DAW mix."
       },
       {
         name: "Open File",
@@ -774,9 +774,9 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "Import",
     control: "Import Paste",
     actionId: "import-text",
-    does: "Imports pasted PCS1 share codes, Chordsmith JSON, Pocket DJ source sessions, .pocketdaw JSON, or handoff text.",
+    does: "Imports pasted PCS1 share codes, Chordsmith JSON, Pocket DJ sessions, .pocketdaw JSON, or handoff text.",
     useWhen: "Use for fast handoff from another Pocket Audio tool or text-based import.",
-    aiNote: "Validate the resulting tracks, clips, sections, and source metadata after import."
+    aiNote: "For Pocket DJ imports, validate both the Chordsmith source ref and the preserved pocket-dj source ref; DJ state is metadata until a future explicit apply/export path uses it."
   },
   {
     surface: "Import",

@@ -3,6 +3,8 @@ import { migratePocketDawProject } from "./migrations";
 
 export const PCS_SHARE_PREFIX = "PCS1:";
 export const POCKET_DJ_SHARE_PREFIX = "PDJ1:";
+const HANDOFF_APP = "PocketHandoff";
+const HANDOFF_WINDOW_PREFIX = "PocketHandoff:";
 
 export type ImportParseResult =
   | { kind: "pocketdaw"; data: ReturnType<typeof migratePocketDawProject> }
@@ -59,6 +61,9 @@ export function parseAnyImportText(text: string): ImportParseResult {
   const trimmed = String(text || "").trim();
   if (!trimmed) throw new Error("Paste a PCS1 share code, Pocket Chordsmith JSON, or .pocketdaw JSON first.");
 
+  const handoff = parsePocketHandoffImport(trimmed);
+  if (handoff) return handoff;
+
   if (trimmed.startsWith(PCS_SHARE_PREFIX)) {
     return { kind: "pcs", data: parsePocketChordsmithShareCode(trimmed), importKind: "PCS1" };
   }
@@ -74,9 +79,53 @@ export function parseAnyImportText(text: string): ImportParseResult {
     if (maybeApp === "PocketDAW") {
       return { kind: "pocketdaw", data: migratePocketDawProject(parsePocketDawProjectFile(parsed)) };
     }
+    if (maybeApp === HANDOFF_APP && typeof (parsed as Record<string, unknown>).code === "string") {
+      return parseAnyImportText(String((parsed as Record<string, unknown>).code));
+    }
     if (maybeApp === "PocketDJ") return { kind: "pdj", data: parsed, importKind: "raw-json" };
   }
   return { kind: "pcs", data: parsed, importKind: "raw-json" };
+}
+
+function parsePocketHandoffImport(text: string): ImportParseResult | null {
+  const trimmed = text.trim();
+  const unprefixed = trimmed.startsWith(HANDOFF_WINDOW_PREFIX) ? trimmed.slice(HANDOFF_WINDOW_PREFIX.length) : trimmed;
+  const candidates = new Set<string>([trimmed, unprefixed]);
+  const uriDecoded = safeDecodeURIComponent(unprefixed);
+  if (uriDecoded) candidates.add(uriDecoded);
+  [unprefixed, uriDecoded].forEach((candidate) => {
+    try {
+      if (candidate) candidates.add(base64UrlToUtf8(candidate));
+    } catch {
+      // Not a base64url PocketHandoff envelope.
+    }
+  });
+  for (const candidate of candidates) {
+    const code = pocketHandoffCode(candidate);
+    if (code) return parseAnyImportText(code);
+  }
+  return null;
+}
+
+function pocketHandoffCode(text: string): string | null {
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && (parsed as Record<string, unknown>).app === HANDOFF_APP && typeof (parsed as Record<string, unknown>).code === "string") {
+      const code = String((parsed as Record<string, unknown>).code).trim();
+      return code || null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 export function buildPocketChordsmithShareCode(project: unknown): string {

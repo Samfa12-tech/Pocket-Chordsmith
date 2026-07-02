@@ -19,6 +19,7 @@ import { clipHasAutomation, getClipAutomationLane, getFxParameterAutomationLane,
 import { availableTrackOutputs, createRoutingExportSummary, trackSendLevel, trackSendMode } from "../daw/routing";
 import { createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs";
 import { validateExportProfile } from "../daw/exportProfiles";
+import { createPocketDjSourceSummary, type PocketDjSourceSummary } from "../daw/pocketDjSources";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { audioClipTakeSummary, clipSourceStartBar } from "../daw/clips";
 import { createAudioTakeDiagnosticsSummary, runtimeBuildId, runtimeCommit, runtimeLabel } from "./diagnostics";
@@ -2502,6 +2503,7 @@ function renderFilePanel(state: AppState): string {
   const collectPlan = createCollectMediaPlan(project);
   const progress = state.exportProgress;
   const futureExportButtons = renderFutureExportButtons(project);
+  const pocketDjSummary = createPocketDjSourceSummary(project);
   return `
     <div class="modal-backdrop" data-file-backdrop="true">
       <section class="controls-panel file-panel" role="dialog" aria-modal="true" aria-labelledby="file-window-title">
@@ -2544,6 +2546,7 @@ function renderFilePanel(state: AppState): string {
             <button data-action="import-audio" title="Import an audio file into the media pool">Import Audio</button>
             <button data-action="import-midi" title="Import a .mid or .midi file as a MIDI clip">Import MIDI</button>
           </div>
+          ${pocketDjSummary ? renderPocketDjSourceSummary(pocketDjSummary) : ""}
         </section>
         <section class="file-window-section" aria-labelledby="file-export-title">
           <div>
@@ -2615,6 +2618,35 @@ function renderFutureExportButtons(project: ReturnType<typeof currentProject>): 
       }).join("")}
     </div>
     <p class="file-note">FLAC, Ogg, MP3 and AIFF exports are visible as future profiles only; this build exports WAV-based game packs until encoders and target-runtime smoke are proven.</p>
+  `;
+}
+
+function renderPocketDjSourceSummary(summary: PocketDjSourceSummary): string {
+  const sequence = summary.sequence.length ? summary.sequence.join(" -> ") : "No saved sequence";
+  const muteCount = Object.values(summary.stemMutes).filter(Boolean).length;
+  const stemVolumeRows = Object.entries(summary.stemVolumes)
+    .slice(0, 5)
+    .map(([stem, value]) => `${stem} ${Math.round(value * 100)}%`);
+  const fxRows = Object.entries(summary.fx)
+    .filter(([, value]) => value > 0)
+    .slice(0, 5)
+    .map(([name, value]) => `${name} ${Math.round(value * 100)}%`);
+  const statusParts = [
+    summary.currentSection ? `Current ${summary.currentSection}` : "",
+    summary.queuedSection ? `Queued ${summary.queuedSection}` : "",
+    summary.launchQuantize ? `Launch ${summary.launchQuantize}` : "",
+    summary.loopCurrentSection ? "Hold on" : "",
+    summary.sequencePlaying ? "Sequence playing" : "",
+    summary.buildActive ? "Build active" : ""
+  ].filter(Boolean);
+  return `
+    <div class="file-note pocket-dj-source-summary">
+      <strong>Pocket DJ metadata preserved:</strong>
+      <span>${escapeHtml(summary.title)} / ${escapeHtml(summary.sourcePrefix)}${summary.djVersion ? ` v${summary.djVersion}` : ""} / ${escapeHtml(statusParts.join(" / ") || "No active DJ transport state")}</span>
+      <span>Sequence: ${escapeHtml(sequence)}${summary.sequenceRepeat ? " / repeat" : ""}${summary.dropTarget ? ` / drop ${escapeHtml(summary.dropTarget)}` : ""}</span>
+      <span>Mixer: ${summary.masterVolume === null ? "master n/a" : `master ${Math.round(summary.masterVolume * 100)}%`} / ${muteCount} muted stem${muteCount === 1 ? "" : "s"}${stemVolumeRows.length ? ` / ${escapeHtml(stemVolumeRows.join(", "))}` : ""}</span>
+      <span>FX metadata: ${escapeHtml(fxRows.length ? fxRows.join(", ") : "none active")}. DJ state is preserved for future handoff/export and is not silently applied to the DAW mix.</span>
+    </div>
   `;
 }
 

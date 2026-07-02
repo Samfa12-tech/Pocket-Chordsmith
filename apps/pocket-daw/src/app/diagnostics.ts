@@ -5,6 +5,7 @@ import { validateProjectInvariants, type ProjectInvariantIssue } from "../daw/pr
 import { buildNativeRecordingAlphaInputPreflight, type RecordingInputPreflight } from "../daw/recordingInputs";
 import { createRoutingExportSummary, type RoutingExportSummary } from "../daw/routing";
 import { POCKET_DAW_VERSION, type Clip, type PocketDawProject } from "../daw/schema";
+import { createPocketDjSourceSummary, type PocketDjSourceSummary } from "../daw/pocketDjSources";
 import { currentProject, type AppState } from "./state";
 import type { PerformanceDiagnosticsReport } from "./performanceDiagnostics";
 
@@ -40,6 +41,7 @@ export interface TesterDiagnosticsPayload {
     invariantWarningCount: number;
     invariantErrors: ProjectInvariantIssue[];
     invariantWarnings: ProjectInvariantIssue[];
+    pocketDjSource: PocketDjSourceSummary | null;
     audioTakes: AudioTakeDiagnosticsSummary;
   };
   audio: {
@@ -189,6 +191,7 @@ export function buildTesterDiagnosticsPayload(
       invariantWarningCount: invariants.warnings.length,
       invariantErrors: invariants.errors,
       invariantWarnings: invariants.warnings,
+      pocketDjSource: createPocketDjSourceSummary(project),
       audioTakes: createAudioTakeDiagnosticsSummary(project)
     },
     audio: {

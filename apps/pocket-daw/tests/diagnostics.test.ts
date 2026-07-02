@@ -10,6 +10,9 @@ import { addMediaPoolItem, createMediaPoolItem, linkFreezeRenderCacheItem, markM
 import { setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
 import { addReturnTrack, setTrackSendLevel, setTrackSendMode } from "../src/daw/routing";
 import { addTrackToProject } from "../src/daw/tracks";
+import { importTextToProject } from "../src/app/commands";
+import { utf8ToBase64Url } from "../src/compatibility/pcsParser";
+import { createPocketDjImportFixture } from "./pocketDjFixtures";
 
 describe("tester diagnostics", () => {
   it("builds an installed-alpha payload with project, updater, audio and media state", () => {
@@ -93,6 +96,34 @@ describe("tester diagnostics", () => {
     expect(payload.performance).toBeNull();
     expect(diagnosticsJson(payload)).toContain('"installerOnly": true');
     expect(diagnosticsJson(payload)).toContain('"handoff"');
+  });
+
+  it("summarizes preserved Pocket DJ source metadata for smoke diagnostics", () => {
+    const state = createInitialState();
+    const session = createPocketDjImportFixture();
+    const imported = importTextToProject(`PDJ1:${utf8ToBase64Url(JSON.stringify(session))}`).project;
+    state.undoStack = createUndoStack(imported);
+
+    const engine = new AudioEngine(imported);
+    const payload = buildTesterDiagnosticsPayload(state, engine.getDiagnostics(), {
+      capturedAt: "2026-07-03T00:00:00.000Z"
+    });
+
+    expect(payload.project.pocketDjSource).toMatchObject({
+      title: "Late Night Deck",
+      sourcePrefix: "PDJ1",
+      djVersion: 1,
+      currentSection: "B",
+      queuedSection: "D",
+      launchQuantize: "bar",
+      sequence: ["A", "B", "D"],
+      sequencePlaying: true,
+      sequenceRepeat: true,
+      masterVolume: 0.72,
+      stemMutes: { melody: true },
+      stemVolumes: { drums: 0.42, bass: 0.8 },
+      fx: { filter: 0.31, reverb: 0.44 }
+    });
   });
 
   it("reports recording timing anchors as diagnostics without applying offset", () => {

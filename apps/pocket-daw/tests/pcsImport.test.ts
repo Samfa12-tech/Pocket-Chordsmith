@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildPocketChordsmithShareCode, parseAnyImportText, parsePocketChordsmithShareCode } from "../src/compatibility/pcsParser";
+import { buildPocketChordsmithShareCode, parseAnyImportText, parsePocketChordsmithShareCode, utf8ToBase64Url } from "../src/compatibility/pcsParser";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 import { createDemoChordsmithProject, createLofiChordsmithTemplateProject } from "../src/demo/demoProject";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { importTextToProject } from "../src/app/commands";
 import { DEFAULT_FX } from "../../../packages/pocket-audio-core/src/constants.js";
+import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
+import { migratePocketDawProject } from "../src/compatibility/migrations";
+import { createPocketDjImportFixture } from "./pocketDjFixtures";
 
 describe("Pocket Chordsmith import", () => {
   it("decodes PCS1 share codes", () => {
@@ -20,6 +23,98 @@ describe("Pocket Chordsmith import", () => {
     const parsed = parseAnyImportText(JSON.stringify(source));
     expect(parsed.kind).toBe("pcs");
     expect(parsed.kind === "pcs" ? parsed.importKind : "").toBe("raw-json");
+  });
+
+  it("imports PDJ1 sessions while preserving DJ-owned performance metadata", () => {
+    const session = createPocketDjImportFixture();
+    const code = `PDJ1:${utf8ToBase64Url(JSON.stringify(session))}`;
+    const parsed = parseAnyImportText(code);
+    const { project, message } = importTextToProject(code);
+    const chordsmithRef = project.sourceRefs.find((ref) => ref.sourceType === "pocket-chordsmith");
+    const djRef = project.sourceRefs.find((ref) => ref.sourceType === "pocket-dj");
+
+    expect(parsed.kind).toBe("pdj");
+    expect(parsed.kind === "pdj" ? parsed.importKind : "").toBe("PDJ1");
+    expect(message).toBe("Imported Pocket DJ session and preserved performance metadata.");
+    expect(chordsmithRef?.sourcePrefix).toBe("PCS1");
+    expect(chordsmithRef?.normalized).toMatchObject({ rawTitle: "DJ Source Tune", bpm: 132 });
+    expect(chordsmithRef?.notes?.some((note) => note.includes("Pocket DJ PDJ1 share code"))).toBe(true);
+    expect(djRef).toMatchObject({
+      sourceType: "pocket-dj",
+      sourcePrefix: "PDJ1",
+      schemaVersion: 1,
+      title: "Late Night Deck"
+    });
+    expect(djRef?.original).toMatchObject({
+      app: "PocketDJ",
+      performance: {
+        currentSection: "B",
+        stemVolumes: { drums: 0.42 },
+        fx: { filter: 0.31 }
+      }
+    });
+    expect(djRef?.normalized).toMatchObject({
+      app: "PocketDJ",
+      djVersion: 1,
+      deck: { name: "Late Night Deck", bpm: 132, lofiPreset: "lofi_rainy_window" },
+      performance: {
+        currentSection: "B",
+        queuedSection: "D",
+        launchQuantize: "bar",
+        sequence: ["A", "B", "D"],
+        sequencePlaying: true,
+        masterVolume: 0.72,
+        stemMutes: { melody: true },
+        stemVolumes: { drums: 0.42, bass: 0.8 },
+        fx: { filter: 0.31, reverb: 0.44 }
+      }
+    });
+    expect(project.importHistory).toEqual([
+      expect.objectContaining({
+        sourceRefId: djRef?.id,
+        importKind: "PDJ1",
+        message: "Imported Pocket DJ session and preserved DJ performance metadata."
+      })
+    ]);
+    expect(project.timeline.clips.every((clip) => clip.sourceRefId === chordsmithRef?.id)).toBe(true);
+
+    const reopened = migratePocketDawProject(parsePocketDawProjectFile(buildPocketDawProjectFile(project)));
+    const reopenedDjRef = reopened.sourceRefs.find((ref) => ref.sourceType === "pocket-dj");
+    expect(reopenedDjRef?.normalized).toMatchObject({
+      performance: {
+        currentSection: "B",
+        sequence: ["A", "B", "D"],
+        stemMutes: { melody: true },
+        fx: { filter: 0.31, reverb: 0.44 }
+      }
+    });
+    expect(reopened.importHistory[0]).toMatchObject({ importKind: "PDJ1", sourceRefId: reopenedDjRef?.id });
+  });
+
+  it("unwraps PocketHandoff envelopes that carry PDJ1 sessions", () => {
+    const session = createPocketDjImportFixture();
+    const code = `PDJ1:${utf8ToBase64Url(JSON.stringify(session))}`;
+    const handoff = {
+      app: "PocketHandoff",
+      handoffVersion: 1,
+      kind: "dj-to-daw",
+      code,
+      createdAt: "2026-07-03T00:00:00.000Z",
+      sourceApp: "Pocket DJ",
+      targetApp: "PocketDAW"
+    };
+    const fromJson = importTextToProject(JSON.stringify(handoff)).project;
+    const fromEncoded = parseAnyImportText(`PocketHandoff:${utf8ToBase64Url(JSON.stringify(handoff))}`);
+    const djRef = fromJson.sourceRefs.find((ref) => ref.sourceType === "pocket-dj");
+
+    expect(fromEncoded.kind).toBe("pdj");
+    expect(fromEncoded.kind === "pdj" ? fromEncoded.importKind : "").toBe("PDJ1");
+    expect(djRef?.sourcePrefix).toBe("PDJ1");
+    expect(djRef?.normalized).toMatchObject({
+      deck: { name: "Late Night Deck" },
+      performance: { currentSection: "B", sequence: ["A", "B", "D"], fx: { filter: 0.31 } }
+    });
+    expect(fromJson.importHistory[0]).toMatchObject({ importKind: "PDJ1", sourceRefId: djRef?.id });
   });
 
   it("preserves source BPM when importing PCS1 share codes or raw Chordsmith JSON", () => {

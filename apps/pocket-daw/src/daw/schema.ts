@@ -373,7 +373,7 @@ export interface ImportHistoryItem {
   id: string;
   sourceRefId: string;
   importedAt: string;
-  importKind: "PCS1" | "raw-json" | "pocketdaw" | "demo" | "unknown";
+  importKind: "PCS1" | "PDJ1" | "raw-json" | "pocketdaw" | "demo" | "unknown";
   message: string;
 }
 
