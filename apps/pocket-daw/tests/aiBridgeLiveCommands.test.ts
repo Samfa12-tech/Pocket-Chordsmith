@@ -530,7 +530,20 @@ describe("Pocket DAW AI bridge live commands", () => {
           groupCount: number;
           activeCount: number;
           archivedCount: number;
-          groups: Array<{ groupId: string; clipCount: number; activeCount: number; archivedCount: number }>;
+          groups: Array<{
+            groupId: string;
+            clipCount: number;
+            activeCount: number;
+            archivedCount: number;
+            lanes: Array<{
+              laneId: string;
+              clipIds: string[];
+              clipNames: string[];
+              activeClipIds: string[];
+              activeCount: number;
+              archivedCount: number;
+            }>;
+          }>;
         };
       };
       capabilities: { read: string[] };
@@ -547,7 +560,30 @@ describe("Pocket DAW AI bridge live commands", () => {
         groupCount: 1,
         activeCount: 1,
         archivedCount: 1,
-        groups: [{ groupId: "live-status-takes-a", clipCount: 2, activeCount: 1, archivedCount: 1 }]
+        groups: [{
+          groupId: "live-status-takes-a",
+          clipCount: 2,
+          activeCount: 1,
+          archivedCount: 1,
+          lanes: [
+            {
+              laneId: "live-status-takes-a-lane-1",
+              clipIds: [firstPlaced.clipId],
+              clipNames: ["Live take 1.wav"],
+              activeClipIds: [],
+              activeCount: 0,
+              archivedCount: 1
+            },
+            {
+              laneId: "live-status-takes-a-lane-2",
+              clipIds: [secondPlaced.clipId],
+              clipNames: ["Live take 2.wav"],
+              activeClipIds: [secondPlaced.clipId],
+              activeCount: 1,
+              archivedCount: 0
+            }
+          ]
+        }]
       }
     });
   });

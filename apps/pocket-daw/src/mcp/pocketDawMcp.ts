@@ -62,6 +62,7 @@ import {
   updateProjectMeterMapPointCommand
 } from "../app/commands.ts";
 import { createInitialState, loadProjectIntoState, type AppState } from "../app/state.ts";
+import { createAudioTakeDiagnosticsSummary } from "../app/diagnostics.ts";
 import { buildPocketDawProjectFile } from "../daw/dawProject.ts";
 import { DRUM_LANE_IDS, type DrumLaneId } from "../daw/drumLanes.ts";
 import { createGameExportManifest, createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs.ts";
@@ -828,7 +829,7 @@ function summarizeProject(project: PocketDawProject) {
     trackCount: project.tracks.length,
     clipCount: project.timeline.clips.length,
     mediaPoolCount: project.mediaPool.length,
-    audioTakeSummary: summarizeAudioTakes(project),
+    audioTakeSummary: createAudioTakeDiagnosticsSummary(project),
     recordingInputPreflight: buildNativeRecordingAlphaInputPreflight(project),
     recordingFutureCapturePlan: buildGroupedRecordingCapturePlan(project, {
       requestedStartBar: 1,
@@ -863,30 +864,6 @@ function summarizeProject(project: PocketDawProject) {
       captureStartBar: clip.metadata?.captureStartBar,
       audioWarpMarkerCount: Array.isArray(clip.metadata?.audioWarpMarkers) ? clip.metadata.audioWarpMarkers.length : undefined
     }))
-  };
-}
-
-function summarizeAudioTakes(project: PocketDawProject) {
-  const audioTakeClips = project.timeline.clips.filter((clip) => clip.type === "audio" && (clip.metadata?.recordingTakeGroupId || clip.metadata?.takeGroupId));
-  const groups = new Map<string, { groupId: string; clipCount: number; activeCount: number; mutedCount: number; archivedCount: number }>();
-  audioTakeClips.forEach((clip) => {
-    const groupId = String(clip.metadata?.recordingTakeGroupId || clip.metadata?.takeGroupId || "");
-    const current = groups.get(groupId) || { groupId, clipCount: 0, activeCount: 0, mutedCount: 0, archivedCount: 0 };
-    const status = clip.metadata?.takeStatus === "archived-take" || clip.metadata?.takeStatus === "muted-take" || clip.metadata?.takeStatus === "active"
-      ? clip.metadata.takeStatus
-      : clip.muted || clip.metadata?.takeActive === false
-        ? "muted-take"
-        : "active";
-    current.clipCount += 1;
-    if (status === "active" && !clip.muted) current.activeCount += 1;
-    if (status === "archived-take") current.archivedCount += 1;
-    if (status === "muted-take" || clip.muted) current.mutedCount += 1;
-    groups.set(groupId, current);
-  });
-  return {
-    groupedClipCount: audioTakeClips.length,
-    groupCount: groups.size,
-    groups: [...groups.values()].sort((a, b) => a.groupId.localeCompare(b.groupId))
   };
 }
 

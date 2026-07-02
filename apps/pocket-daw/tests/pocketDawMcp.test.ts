@@ -473,7 +473,37 @@ describe("Pocket DAW MCP tools", () => {
     const editedById = new Map(result.project.timeline.clips.map((clip: { id: string }) => [clip.id, clip]));
 
     expect(result.statuses).toEqual(["Activated take lane mcp-lane-b for MCP lane B.wav."]);
-    expect(result.summary.audioTakeSummary.groups).toEqual([{ groupId: "mcp-take-lane-a", clipCount: 4, activeCount: 2, mutedCount: 2, archivedCount: 0 }]);
+    expect(result.summary.audioTakeSummary.groups).toEqual([{
+      groupId: "mcp-take-lane-a",
+      clipCount: 4,
+      activeCount: 2,
+      mutedCount: 2,
+      archivedCount: 0,
+      lanes: [
+        {
+          laneId: "mcp-lane-a",
+          laneIndex: 1,
+          clipCount: 2,
+          activeCount: 0,
+          mutedCount: 2,
+          archivedCount: 0,
+          clipIds: [firstLeft.clipId, firstRight.clipId],
+          clipNames: ["MCP lane A.wav", "MCP lane A.wav"],
+          activeClipIds: []
+        },
+        {
+          laneId: "mcp-lane-b",
+          laneIndex: 2,
+          clipCount: 2,
+          activeCount: 2,
+          mutedCount: 0,
+          archivedCount: 0,
+          clipIds: [secondLeft.clipId, secondRight.clipId],
+          clipNames: ["MCP lane B.wav", "MCP lane B.wav"],
+          activeClipIds: [secondLeft.clipId, secondRight.clipId]
+        }
+      ]
+    }]);
     expect(editedById.get(firstLeft.clipId)).toMatchObject({ muted: true, metadata: { takeStatus: "muted-take" } });
     expect(editedById.get(firstRight.clipId)).toMatchObject({ muted: true, metadata: { takeStatus: "muted-take" } });
     expect(editedById.get(secondLeft.clipId)).toMatchObject({ muted: false, metadata: { takeStatus: "active" } });

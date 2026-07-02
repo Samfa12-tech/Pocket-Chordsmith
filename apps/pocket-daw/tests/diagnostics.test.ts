@@ -262,7 +262,28 @@ describe("tester diagnostics", () => {
       groupCount: 1,
       activeCount: 1,
       archivedCount: 1,
-      groups: [{ groupId: "diagnostic-takes-a", clipCount: 2, activeCount: 1, archivedCount: 1 }]
+      groups: [{
+        groupId: "diagnostic-takes-a",
+        clipCount: 2,
+        activeCount: 1,
+        archivedCount: 1,
+        lanes: [
+          {
+            laneId: "diagnostic-takes-a-lane-1",
+            clipIds: [firstPlaced.clipId],
+            clipNames: ["Diagnostic take 1.wav"],
+            archivedCount: 1,
+            activeClipIds: []
+          },
+          {
+            laneId: "diagnostic-takes-a-lane-2",
+            clipIds: [secondPlaced.clipId],
+            clipNames: ["Diagnostic take 2.wav"],
+            activeCount: 1,
+            activeClipIds: [secondPlaced.clipId]
+          }
+        ]
+      }]
     });
     expect(diagnosticsJson(payload)).toContain('"audioTakes"');
   });

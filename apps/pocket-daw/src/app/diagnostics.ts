@@ -4,7 +4,7 @@ import { createAudioMediaAnalysisSummary, createPortableMediaProject, createRend
 import { validateProjectInvariants, type ProjectInvariantIssue } from "../daw/projectInvariants";
 import { buildNativeRecordingAlphaInputPreflight, type RecordingInputPreflight } from "../daw/recordingInputs";
 import { createRoutingExportSummary, type RoutingExportSummary } from "../daw/routing";
-import { POCKET_DAW_VERSION, type PocketDawProject } from "../daw/schema";
+import { POCKET_DAW_VERSION, type Clip, type PocketDawProject } from "../daw/schema";
 import { currentProject, type AppState } from "./state";
 import type { PerformanceDiagnosticsReport } from "./performanceDiagnostics";
 
@@ -126,6 +126,17 @@ export interface AudioTakeDiagnosticsSummary {
     activeCount: number;
     mutedCount: number;
     archivedCount: number;
+    lanes: Array<{
+      laneId: string;
+      laneIndex: number | null;
+      clipCount: number;
+      activeCount: number;
+      mutedCount: number;
+      archivedCount: number;
+      clipIds: string[];
+      clipNames: string[];
+      activeClipIds: string[];
+    }>;
   }>;
 }
 
@@ -263,12 +274,8 @@ export function createAudioTakeDiagnosticsSummary(project: PocketDawProject): Au
   let archivedCount = 0;
   audioTakeClips.forEach((clip) => {
     const groupId = String(clip.metadata?.recordingTakeGroupId || clip.metadata?.takeGroupId || "");
-    const current = groups.get(groupId) || { groupId, clipCount: 0, activeCount: 0, mutedCount: 0, archivedCount: 0 };
-    const status = clip.metadata?.takeStatus === "archived-take" || clip.metadata?.takeStatus === "muted-take" || clip.metadata?.takeStatus === "active"
-      ? clip.metadata.takeStatus
-      : clip.muted || clip.metadata?.takeActive === false
-        ? "muted-take"
-        : "active";
+    const current = groups.get(groupId) || { groupId, clipCount: 0, activeCount: 0, mutedCount: 0, archivedCount: 0, lanes: [] };
+    const status = audioTakeStatusForDiagnostics(clip);
     current.clipCount += 1;
     if (status === "active" && !clip.muted) {
       current.activeCount += 1;
@@ -282,6 +289,16 @@ export function createAudioTakeDiagnosticsSummary(project: PocketDawProject): Au
       current.mutedCount += 1;
       mutedCount += 1;
     }
+    const lane = audioTakeLaneSummaryForClip(current.lanes, clip, groupId, current.lanes.length);
+    lane.clipCount += 1;
+    lane.clipIds.push(clip.id);
+    lane.clipNames.push(clip.name);
+    if (status === "active" && !clip.muted) {
+      lane.activeCount += 1;
+      lane.activeClipIds.push(clip.id);
+    }
+    if (status === "archived-take") lane.archivedCount += 1;
+    if (status === "muted-take" || clip.muted) lane.mutedCount += 1;
     groups.set(groupId, current);
   });
   return {
@@ -290,8 +307,55 @@ export function createAudioTakeDiagnosticsSummary(project: PocketDawProject): Au
     activeCount,
     mutedCount,
     archivedCount,
-    groups: [...groups.values()].sort((a, b) => a.groupId.localeCompare(b.groupId))
+    groups: [...groups.values()]
+      .map((group) => ({
+        ...group,
+        lanes: group.lanes.sort((a, b) => (a.laneIndex ?? Number.MAX_SAFE_INTEGER) - (b.laneIndex ?? Number.MAX_SAFE_INTEGER) || a.laneId.localeCompare(b.laneId))
+      }))
+      .sort((a, b) => a.groupId.localeCompare(b.groupId))
   };
+}
+
+function audioTakeStatusForDiagnostics(clip: Clip): "active" | "muted-take" | "archived-take" {
+  return clip.metadata?.takeStatus === "archived-take" || clip.metadata?.takeStatus === "muted-take" || clip.metadata?.takeStatus === "active"
+    ? clip.metadata.takeStatus
+    : clip.muted || clip.metadata?.takeActive === false
+      ? "muted-take"
+      : "active";
+}
+
+function audioTakeLaneSummaryForClip(
+  lanes: AudioTakeDiagnosticsSummary["groups"][number]["lanes"],
+  clip: Clip,
+  groupId: string,
+  fallbackIndex: number
+): AudioTakeDiagnosticsSummary["groups"][number]["lanes"][number] {
+  const laneIndex = audioTakeLaneIndexForDiagnostics(clip, fallbackIndex);
+  const laneId = typeof clip.metadata?.takeLaneId === "string" && clip.metadata.takeLaneId.trim()
+    ? clip.metadata.takeLaneId.trim()
+    : `${groupId}-lane-${laneIndex ?? fallbackIndex + 1}`;
+  let lane = lanes.find((item) => item.laneId === laneId);
+  if (!lane) {
+    lane = {
+      laneId,
+      laneIndex,
+      clipCount: 0,
+      activeCount: 0,
+      mutedCount: 0,
+      archivedCount: 0,
+      clipIds: [],
+      clipNames: [],
+      activeClipIds: []
+    };
+    lanes.push(lane);
+  }
+  return lane;
+}
+
+function audioTakeLaneIndexForDiagnostics(clip: Clip, fallbackIndex: number): number | null {
+  const value = Number(clip.metadata?.takeLaneIndex ?? clip.metadata?.takeIndex);
+  if (Number.isFinite(value) && value > 0) return Math.round(value);
+  return fallbackIndex + 1;
 }
 
 function recordingTimingConfidence(state: AppState): "none" | "low" | "diagnostic" {

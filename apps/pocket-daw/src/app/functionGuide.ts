@@ -2364,10 +2364,10 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   {
     surface: "AI / MCP Bridge",
     control: "Recording Input Preflight Diagnostics",
-    selector: "recording.inputPreflight, recordingInputPreflight, recordingFutureCapturePlan, recording.futureCapturePlan",
-    does: "Reports whether the current armed live tracks and saved input channel assignments are valid before native recording starts; file-first MCP summaries and live MCP status also expose grouped future-capture planning for shared mono, stereo and split-mono take/session metadata.",
-    useWhen: "Use when recording will not start, when checking mono/stereo channel assignments, or before future multitrack hardware smoke.",
-    aiNote: "Exposed in support diagnostics and file-first MCP summaries. Grouped capture planning is source-only and does not claim simultaneous native multitrack recording is shipped."
+    selector: "recording.inputPreflight, recordingInputPreflight, recordingFutureCapturePlan, recording.futureCapturePlan, audioTakeSummary.groups[].lanes[], media.audioTakes.groups[].lanes[]",
+    does: "Reports whether the current armed live tracks and saved input channel assignments are valid before native recording starts; file-first MCP summaries and live MCP status also expose grouped future-capture planning plus take-lane IDs, clip IDs/names and active clip IDs for smoke observation.",
+    useWhen: "Use when recording will not start, when checking mono/stereo channel assignments, when observing take-lane activation, or before future multitrack hardware smoke.",
+    aiNote: "Exposed in support diagnostics, file-first MCP summaries and live MCP status. Grouped capture planning and lane observation are source-only and do not claim simultaneous native multitrack recording or the full visual take-lane editor is shipped."
   },
   {
     surface: "AI / MCP Bridge",
