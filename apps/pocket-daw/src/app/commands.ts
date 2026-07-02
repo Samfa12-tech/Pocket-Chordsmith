@@ -292,6 +292,25 @@ export function placePunchRecordingClipCommand(
   };
 }
 
+export function placePunchRecordingClipFromRangeCommand(
+  state: AppState,
+  mediaPoolItemId: string,
+  trackId: string,
+  captureStartBar: number
+): AppState {
+  const selection = state.undoStack.present.timeline.selection;
+  if (!selection || selection.source !== "punch") {
+    return { ...state, selectedTrackId: trackId, status: "Set an explicit punch range before placing a punch take." };
+  }
+  const placed = placePunchRecordingClipCommand(state, mediaPoolItemId, trackId, captureStartBar, selection.startBar, selection.endBar);
+  if (placed.undoStack.present === state.undoStack.present) return placed;
+  const media = state.undoStack.present.mediaPool.find((item) => item.id === mediaPoolItemId);
+  return {
+    ...placed,
+    status: `Placed punch take ${media?.name || "recording"} from active punch range ${formatRangeBar(selection.startBar)} to ${formatRangeBar(selection.endBar)}.`
+  };
+}
+
 export function activateAudioTakeCommand(state: AppState, clipId: string): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio take before activating it." };
@@ -1557,6 +1576,9 @@ function recordingAssignmentFromChannelValue(deviceId: string | null, value: str
   if (mode === "stereo" && Number.isFinite(channelA) && Number.isFinite(channelB)) {
     return { deviceId, mode: "stereo", channelPair: [Math.max(0, Math.floor(channelA)), Math.max(0, Math.floor(channelB))] };
   }
+  if (mode === "split-mono" && Number.isFinite(channelA)) {
+    return { deviceId, mode: "split-mono", channelIndex: Math.max(0, Math.floor(channelA)) };
+  }
   if (mode === "mono" && Number.isFinite(channelA)) {
     return { deviceId, mode: "mono", channelIndex: Math.max(0, Math.floor(channelA)) };
   }
@@ -1568,7 +1590,12 @@ function recordingAssignmentLabel(assignment: TrackRecordingInput): string {
     const pair = assignment.channelPair || [0, 1];
     return `Stereo Ch ${pair[0] + 1}-${pair[1] + 1}`;
   }
+  if (assignment.mode === "split-mono") return `Split Mono Ch ${(assignment.channelIndex ?? 0) + 1}`;
   return `Mono Ch ${(assignment.channelIndex ?? 0) + 1}`;
+}
+
+function formatRangeBar(value: number): string {
+  return Number.isInteger(value) ? String(value) : Number(value).toFixed(3).replace(/0+$/g, "").replace(/\.$/, "");
 }
 
 export function renameTrackCommand(state: AppState, trackId: string, name: string): AppState {
@@ -1606,6 +1633,16 @@ export function clearLoopCommand(state: AppState): AppState {
 
 export function setTimelineSelectionRangeCommand(state: AppState, startBar: number, endBar: number): AppState {
   return commitProject(state, setTimelineSelectionRange(state.undoStack.present, startBar, endBar, "manual"), "Updated edit range.");
+}
+
+export function setPunchRangeCommand(state: AppState, startBar: number, endBar: number): AppState {
+  const next = setTimelineSelectionRange(state.undoStack.present, startBar, endBar, "punch");
+  const selection = next.timeline.selection;
+  return commitProject(
+    state,
+    next,
+    `Punch range set from bar ${formatRangeBar(selection?.startBar ?? startBar)} to ${formatRangeBar(selection?.endBar ?? endBar)}.`
+  );
 }
 
 export function setTimelineSelectionToSelectedClipCommand(state: AppState): AppState {

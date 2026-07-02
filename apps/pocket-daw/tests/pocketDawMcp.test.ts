@@ -56,16 +56,21 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("add_game_state_marker");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("comp_audio_take_from_bar");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("place_punch_recording_clip");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("place_punch_recording_clip_from_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_timeline_selection");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_punch_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_track_folder");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("toggle_folder_expanded");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("toggle_track_solo");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_recording_input_channel");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("split-mono");
     const liveApplySchema = toolList.find((tool) => tool.name === "pocket_daw_live_apply_commands")?.inputSchema as { properties: Record<string, unknown> } | undefined;
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_armed");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_monitor");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_input");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_recording_input_channel");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("split-mono");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_punch_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_timeline_selection");
@@ -122,6 +127,80 @@ describe("Pocket DAW MCP tools", () => {
       capturePlan: []
     });
     expect(result.summary.recordingInputPreflight.errors.join("\n")).toContain("needs channels 1-2");
+    expect(result.project).toBeUndefined();
+  });
+
+  it("summarizes grouped future recording capture plans for MCP smoke", async () => {
+    let project = addTrackToProject(createDemoProject(), "live-vocals").project;
+    project = addTrackToProject(project, "live-instrument").project;
+    const liveVocals = project.tracks.find((track) => track.id === "live-vocals")!;
+    const liveInstrument = project.tracks.find((track) => track.id === "live-instrument")!;
+    liveVocals.armed = true;
+    liveInstrument.armed = true;
+    project.audioDeviceSettings.devices = [{
+      id: "interface-4",
+      name: "Four Channel Interface",
+      kind: "input",
+      supportedChannels: [1, 2, 4]
+    }];
+    project = setTrackRecordingInputAssignment(project, "live-vocals", {
+      deviceId: "interface-4",
+      mode: "split-mono",
+      channelIndex: 0
+    });
+    project = setTrackRecordingInputAssignment(project, "live-instrument", {
+      deviceId: "interface-4",
+      mode: "stereo",
+      channelPair: [1, 2]
+    });
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_read_project", {
+      raw: buildPocketDawProjectFile(project)
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.summary.recordingFutureCapturePlan).toMatchObject({
+      ok: true,
+      recordingSessionId: "mcp-preview",
+      takeGroupId: "mcp-preview-take-group",
+      requestedStartBar: 1
+    });
+    expect(result.summary.recordingFutureCapturePlan.items.map((item: {
+      trackId: string;
+      mode: string;
+      channelMap: number[];
+      outputChannels: number;
+      projectRelativePath: string;
+    }) => ({
+      trackId: item.trackId,
+      mode: item.mode,
+      channelMap: item.channelMap,
+      outputChannels: item.outputChannels,
+      projectRelativePath: item.projectRelativePath
+    }))).toEqual([
+      {
+        trackId: "live-vocals",
+        mode: "split-mono",
+        channelMap: [0],
+        outputChannels: 1,
+        projectRelativePath: "project-media/recordings/mcp-preview-live-vocals-split-ch1.wav"
+      },
+      {
+        trackId: "live-instrument",
+        mode: "stereo",
+        channelMap: [1, 2],
+        outputChannels: 2,
+        projectRelativePath: "project-media/recordings/mcp-preview-live-instrument-ch2-3.wav"
+      }
+    ]);
+    expect(result.summary.recordingFutureCapturePlan.items[0].takeMetadata).toMatchObject({
+      importMode: "native-recording",
+      recordingSessionId: "mcp-preview",
+      takeGroupId: "mcp-preview-take-group",
+      inputMode: "split-mono",
+      channelMap: [0],
+      latencyCompensationAppliedSeconds: 0
+    });
     expect(result.project).toBeUndefined();
   });
 
@@ -229,6 +308,44 @@ describe("Pocket DAW MCP tools", () => {
       channelPair: [2, 3]
     });
     expect(result.summary.recordingInputPreflight.errors.join("\n")).toContain("native recording alpha currently captures Stereo Ch 1-2 only");
+  });
+
+  it("applies split-mono recording input assignments through the file-first command path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-mcp-split-mono-"));
+    const outputPath = join(dir, "split-mono-input.pocketdaw");
+    const withLiveTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    withLiveTrack.project.audioDeviceSettings.devices = [{
+      id: "interface-4",
+      name: "Four Channel Interface",
+      kind: "input",
+      supportedChannels: [1, 2, 4]
+    }];
+    withLiveTrack.project.tracks.find((track) => track.id === withLiveTrack.trackId)!.armed = true;
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(withLiveTrack.project),
+      outputPath,
+      commands: [
+        { type: "set_recording_input_channel", trackId: withLiveTrack.trackId, deviceId: "interface-4", mode: "split-mono", channelIndex: 1 }
+      ]
+    }));
+    const edited = JSON.parse(readFileSync(outputPath, "utf8"));
+    const liveTrack = edited.tracks.find((track: { id: string }) => track.id === withLiveTrack.trackId);
+
+    expect(result.written).toBe(outputPath);
+    expect(result.statuses).toEqual(["Live Vocals recording input set to Split Mono Ch 2."]);
+    expect(liveTrack.recordingInput).toMatchObject({
+      deviceId: "interface-4",
+      mode: "split-mono",
+      channelIndex: 1
+    });
+    expect(result.summary.recordingFutureCapturePlan.items[0]).toMatchObject({
+      mode: "split-mono",
+      channelMap: [1],
+      outputChannels: 1,
+      projectRelativePath: "project-media/recordings/mcp-preview-live-vocals-split-ch2.wav"
+    });
+    expect(result.summary.recordingInputPreflight.errors.join("\n")).toContain("native recording alpha currently captures Mono Ch 1 only");
   });
 
   it("applies generated drum branch overlay edits through the file-first command path", async () => {
@@ -349,6 +466,50 @@ describe("Pocket DAW MCP tools", () => {
     expect(summaryClip).toMatchObject({ punchStartBar: 7, punchEndBar: 9, captureStartBar: 6 });
   });
 
+  it("places punch recording windows from the active punch range through the file-first command path", async () => {
+    const withTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    const secondsPerBar = withTrack.project.project.timeSig * (60 / withTrack.project.project.bpm);
+    const imported = addImportedAudioMedia(withTrack.project, {
+      name: "MCP range punch.wav",
+      uri: "project-media/recordings/mcp-range-punch.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: {
+        mediaRefKind: "project",
+        recordingTakeId: "mcp-range-punch-take-1",
+        recordingTakeGroupId: "mcp-range-punch-group",
+        takeLaneId: "mcp-range-punch-group-lane-1"
+      }
+    });
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(imported.project),
+      commands: [
+        { type: "set_punch_range", startBar: 7, endBar: 9 },
+        { type: "place_punch_recording_clip_from_range", mediaPoolItemId: imported.item.id, trackId: withTrack.trackId, captureStartBar: 6 }
+      ]
+    }));
+    const punchClip = result.project.timeline.clips.find((clip: { name: string }) => clip.name === "MCP range punch.wav");
+    const summaryClip = result.summary.clips.find((clip: { id: string }) => clip.id === punchClip.id);
+
+    expect(result.statuses).toEqual([
+      "Punch range set from bar 7 to 9.",
+      "Placed punch take MCP range punch.wav from active punch range 7 to 9."
+    ]);
+    expect(result.summary.timelineSelection).toEqual({ startBar: 7, endBar: 9, source: "punch" });
+    expect(punchClip).toMatchObject({ trackId: withTrack.trackId, startBar: 7, barLength: 2 });
+    expect(punchClip.metadata).toMatchObject({
+      recordingTakeId: "mcp-range-punch-take-1",
+      recordingTakeGroupId: "mcp-range-punch-group",
+      punchStartBar: 7,
+      punchEndBar: 9,
+      captureStartBar: 6
+    });
+    expect(summaryClip).toMatchObject({ punchStartBar: 7, punchEndBar: 9, captureStartBar: 6 });
+  });
+
   it("applies audio transient and warp-marker actions through the file-first command path", async () => {
     const imported = addImportedAudioMedia(createDemoProject(), {
       name: "MCP Warp.wav",
@@ -411,6 +572,20 @@ describe("Pocket DAW MCP tools", () => {
     expect(result.summary.timelineSelection).toEqual({ startBar: 3, endBar: 5, source: "manual" });
     expect(segments.map((clip: { startBar: number; barLength: number }) => [clip.startBar, clip.barLength])).toEqual([[2, 1], [5, 1]]);
     expect(segments.map((clip: { metadata?: { sourceOffsetSeconds?: number } }) => clip.metadata?.sourceOffsetSeconds)).toEqual([0, 6]);
+  });
+
+  it("marks explicit punch ranges through the file-first command path", async () => {
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(createDemoProject()),
+      commands: [
+        { type: "set_punch_range", startBar: 7, endBar: 9 }
+      ]
+    }));
+
+    expect(result.written).toBeNull();
+    expect(result.statuses).toEqual(["Punch range set from bar 7 to 9."]);
+    expect(result.project.timeline.selection).toEqual({ startBar: 7, endBar: 9, source: "punch" });
+    expect(result.summary.timelineSelection).toEqual({ startBar: 7, endBar: 9, source: "punch" });
   });
 
   it("applies MIDI timeline crop edits through the file-first command path", async () => {

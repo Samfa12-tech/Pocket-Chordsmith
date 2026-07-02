@@ -164,6 +164,7 @@ import {
   setExportProfileSettingCommand,
   setPocketProEqPresetCommand,
   setLoopToSelectedClipCommand,
+  setPunchRangeCommand,
   setTimelineSelectionRangeCommand,
   setTimelineSelectionToLoopCommand,
   setTimelineSelectionToSelectedClipCommand,
@@ -236,7 +237,7 @@ import { replacePresent } from "../daw/undo";
 import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
 import { POCKET_DAW_VERSION, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
-import { buildNativeRecordingAlphaInputPreflight, buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError } from "../daw/recordingInputs";
+import { buildGroupedRecordingCapturePlan, buildNativeRecordingAlphaInputPreflight, buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError } from "../daw/recordingInputs";
 import { trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToDisplayPosition, snapProjectBarValue } from "../daw/timeline";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeRecordingClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../daw/audioClips";
@@ -280,7 +281,9 @@ type AiBridgeLiveCommand =
   | { type: "set_track_armed"; trackId: string; armed: boolean }
   | { type: "set_track_monitor"; trackId: string; monitorEnabled: boolean }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "mono"; channelIndex?: number }
-  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] };
+  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "split-mono"; channelIndex?: number }
+  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] }
+  | { type: "set_punch_range"; startBar: number; endBar: number };
 
 interface ApplyProjectOptions {
   audio?: AudioProjectSyncMode | "none";
@@ -554,6 +557,7 @@ export class App {
         bpm: project.project.bpm,
         loop: project.timeline.loop
       },
+      timelineSelection: project.timeline.selection || null,
       selection: {
         trackId: this.state.selectedTrackId,
         clipId: this.state.selectedClipId,
@@ -562,7 +566,12 @@ export class App {
       },
       recording: {
         ...this.state.recording,
-        inputPreflight: buildNativeRecordingAlphaInputPreflight(project)
+        inputPreflight: buildNativeRecordingAlphaInputPreflight(project),
+        futureCapturePlan: buildGroupedRecordingCapturePlan(project, {
+          requestedStartBar: 1,
+          recordingSessionId: "live-preview",
+          takeGroupId: "live-preview-take-group"
+        })
       },
       export: exportReadiness,
       media: mediaReadiness,
@@ -592,7 +601,7 @@ export class App {
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
         control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics"],
-        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel"]
+        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range"]
       }
     };
   }
@@ -738,6 +747,9 @@ export class App {
 
   private applyAiBridgeLiveCommand(command: AiBridgeLiveCommand): AppState {
     const project = currentProject(this.state);
+    if (command.type === "set_punch_range") {
+      return setPunchRangeCommand(this.state, numberInput(command.startBar, "startBar"), numberInput(command.endBar, "endBar"));
+    }
     const trackId = typeof command.trackId === "string" ? command.trackId : "";
     if (!project.tracks.some((track) => track.id === trackId)) throw new Error(`Track not found: ${trackId || "[missing trackId]"}`);
     if (command.type === "set_track_volume") return setTrackVolumeCommand(this.state, trackId, numberInput(command.volume, "volume"));
@@ -5198,6 +5210,7 @@ function recordingInputChannelValueFromLiveCommand(command: Extract<AiBridgeLive
     const pair = Array.isArray(command.channelPair) ? command.channelPair : [0, 1];
     return `stereo:${Math.max(0, Math.floor(Number(pair[0]) || 0))}:${Math.max(0, Math.floor(Number(pair[1]) || 1))}`;
   }
+  if (command.mode === "split-mono") return `split-mono:${Math.max(0, Math.floor(Number(command.channelIndex) || 0))}`;
   return `mono:${Math.max(0, Math.floor(Number(command.channelIndex) || 0))}`;
 }
 

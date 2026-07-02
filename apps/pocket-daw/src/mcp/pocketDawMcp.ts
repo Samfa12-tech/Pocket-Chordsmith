@@ -32,10 +32,12 @@ import {
   loadPocketDawRaw,
   moveClipToBarCommand,
   placePunchRecordingClipCommand,
+  placePunchRecordingClipFromRangeCommand,
   rippleDeleteSelectedClipRangeCommand,
   rippleDeleteTimelineSelectionCommand,
   ensureFxAutomationLaneCommand,
   ensureProjectAutomationLaneCommand,
+  setPunchRangeCommand,
   setTimelineSelectionRangeCommand,
   setTimelineSelectionToLoopCommand,
   setTimelineSelectionToSelectedClipCommand,
@@ -64,7 +66,7 @@ import { DRUM_LANE_IDS, type DrumLaneId } from "../daw/drumLanes.ts";
 import { createGameExportManifest, createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs.ts";
 import { arrangeMidiToHeavyMetalProject } from "../daw/midiArrangement.ts";
 import { validateProjectInvariants } from "../daw/projectInvariants.ts";
-import { buildNativeRecordingAlphaInputPreflight } from "../daw/recordingInputs.ts";
+import { buildGroupedRecordingCapturePlan, buildNativeRecordingAlphaInputPreflight } from "../daw/recordingInputs.ts";
 import { GAME_STATE_MARKERS, POCKET_DAW_SCHEMA_VERSION, POCKET_DAW_VERSION, type GameStateMarkerId, type PocketDawProject } from "../daw/schema.ts";
 
 export const POCKET_DAW_MCP_TOOLS = [
@@ -92,9 +94,11 @@ export type PocketDawMcpCommand =
   | { type: "toggle_track_mute"; trackId: string }
   | { type: "toggle_track_solo"; trackId: string }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "mono"; channelIndex?: number }
+  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "split-mono"; channelIndex?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] }
   | { type: "move_clip_to_bar"; clipId: string; startBar: number }
   | { type: "set_timeline_selection"; startBar: number; endBar: number }
+  | { type: "set_punch_range"; startBar: number; endBar: number }
   | { type: "set_timeline_selection_to_clip"; clipId: string }
   | { type: "set_timeline_selection_to_loop" }
   | { type: "clear_timeline_selection" }
@@ -108,6 +112,7 @@ export type PocketDawMcpCommand =
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
   | { type: "place_punch_recording_clip"; mediaPoolItemId: string; trackId: string; captureStartBar: number; punchStartBar: number; punchEndBar: number }
+  | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number }
   | { type: "add_marker"; bar: number }
   | { type: "add_game_state_marker"; bar: number; gameState: GameStateMarkerId }
   | { type: "set_section_bars"; sectionId: string; bars: number }
@@ -148,7 +153,9 @@ export type PocketDawLiveCommand =
   | { type: "set_track_armed"; trackId: string; armed: boolean }
   | { type: "set_track_monitor"; trackId: string; monitorEnabled: boolean }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "mono"; channelIndex?: number }
-  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] };
+  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "split-mono"; channelIndex?: number }
+  | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] }
+  | { type: "set_punch_range"; startBar: number; endBar: number };
 
 interface PocketDawLiveSession {
   app?: string;
@@ -613,6 +620,8 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return moveClipToBarCommand(state, command.clipId, command.startBar);
     case "set_timeline_selection":
       return setTimelineSelectionRangeCommand(state, command.startBar, command.endBar);
+    case "set_punch_range":
+      return setPunchRangeCommand(state, command.startBar, command.endBar);
     case "set_timeline_selection_to_clip":
       return setTimelineSelectionToSelectedClipCommand({ ...state, selectedClipId: command.clipId });
     case "set_timeline_selection_to_loop":
@@ -639,6 +648,8 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return compAudioTakeFromPlayheadCommand({ ...state, playheadBar: command.bar }, command.clipId);
     case "place_punch_recording_clip":
       return placePunchRecordingClipCommand(state, command.mediaPoolItemId, command.trackId, command.captureStartBar, command.punchStartBar, command.punchEndBar);
+    case "place_punch_recording_clip_from_range":
+      return placePunchRecordingClipFromRangeCommand(state, command.mediaPoolItemId, command.trackId, command.captureStartBar);
     case "add_marker":
       return addMarkerAtPlayheadCommand({ ...state, playheadBar: command.bar });
     case "add_game_state_marker":
@@ -717,6 +728,7 @@ function recordingInputChannelValueFromMcpCommand(command: Extract<PocketDawMcpC
     const pair = Array.isArray(command.channelPair) ? command.channelPair : [0, 1];
     return `stereo:${Math.max(0, Math.floor(Number(pair[0]) || 0))}:${Math.max(0, Math.floor(Number(pair[1]) || 1))}`;
   }
+  if (command.mode === "split-mono") return `split-mono:${Math.max(0, Math.floor(Number(command.channelIndex) || 0))}`;
   return `mono:${Math.max(0, Math.floor(Number(command.channelIndex) || 0))}`;
 }
 
@@ -812,6 +824,11 @@ function summarizeProject(project: PocketDawProject) {
     mediaPoolCount: project.mediaPool.length,
     audioTakeSummary: summarizeAudioTakes(project),
     recordingInputPreflight: buildNativeRecordingAlphaInputPreflight(project),
+    recordingFutureCapturePlan: buildGroupedRecordingCapturePlan(project, {
+      requestedStartBar: 1,
+      recordingSessionId: "mcp-preview",
+      takeGroupId: "mcp-preview-take-group"
+    }),
     tracks: project.tracks.map((track) => ({
       id: track.id,
       name: track.name,
@@ -939,6 +956,7 @@ function commandSchema() {
           "set_recording_input_channel",
           "move_clip_to_bar",
           "set_timeline_selection",
+          "set_punch_range",
           "set_timeline_selection_to_clip",
           "set_timeline_selection_to_loop",
           "clear_timeline_selection",
@@ -952,6 +970,7 @@ function commandSchema() {
           "set_audio_take_archived",
           "comp_audio_take_from_bar",
           "place_punch_recording_clip",
+          "place_punch_recording_clip_from_range",
           "add_marker",
           "add_game_state_marker",
           "set_section_bars",
@@ -986,7 +1005,7 @@ function commandSchema() {
       },
       trackId: stringSchema(),
       deviceId: { oneOf: [stringSchema(), { type: "null" }] },
-      mode: { type: "string", enum: ["mono", "stereo"] },
+      mode: { type: "string", enum: ["mono", "split-mono", "stereo"] },
       channelIndex: numberSchema(),
       channelPair: arraySchema(numberSchema()),
       folderId: { oneOf: [stringSchema(), { type: "null" }] },
@@ -1036,12 +1055,12 @@ function liveCommandSchema() {
     {
       type: {
         type: "string",
-        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel"]
+        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range"]
       },
       trackId: stringSchema(),
       inputDeviceId: stringSchema(),
       deviceId: stringSchema(),
-      mode: { type: "string", enum: ["mono", "stereo"] },
+      mode: { type: "string", enum: ["mono", "split-mono", "stereo"] },
       channelIndex: numberSchema(),
       channelPair: { type: "array", items: numberSchema(), minItems: 2, maxItems: 2 },
       volume: numberSchema(),
@@ -1049,9 +1068,11 @@ function liveCommandSchema() {
       mute: booleanSchema(),
       solo: booleanSchema(),
       armed: booleanSchema(),
-      monitorEnabled: booleanSchema()
+      monitorEnabled: booleanSchema(),
+      startBar: numberSchema(),
+      endBar: numberSchema()
     },
-    ["type", "trackId"]
+    ["type"]
   );
 }
 

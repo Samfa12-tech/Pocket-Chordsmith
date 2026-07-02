@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { buildMetronomeClicks, buildTransportMetronomeSchedule, countInSeconds } from "../src/audio/metronome";
-import { placePunchRecordingClipCommand } from "../src/app/commands";
+import { placePunchRecordingClipCommand, placePunchRecordingClipFromRangeCommand, setPunchRangeCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { migratePocketDawProject } from "../src/compatibility/migrations";
 import { addImportedAudioMedia, placeAudioClipOnTrack, placePunchRecordingClipOnTrack, placeRecordingClipOnTrack } from "../src/daw/audioClips";
 import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
 import { addTrackToProject } from "../src/daw/tracks";
-import { buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError, setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
+import { buildGroupedRecordingCapturePlan, buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError, setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
 import { createAutomationLane } from "../src/daw/automation";
 import { createDemoProject } from "../src/demo/demoProject";
 import {
@@ -239,6 +239,94 @@ describe("recording alpha foundations", () => {
     expect(futurePlan.errors.join("\n")).toContain("Recording channel 1 is assigned to both Live Vocals and Live Instrument");
   });
 
+  it("builds a grouped future capture plan with shared take metadata for mono stereo and split-mono assignments", () => {
+    let project = addTrackToProject(createDemoProject(), "live-vocals").project;
+    project = addTrackToProject(project, "live-instrument").project;
+    project = addTrackToProject(project, "live-instrument").project;
+    const tracks = project.tracks.filter((track) => track.recordKind && track.recordKind !== "none");
+    tracks[0].id = "live-vocals-a";
+    tracks[0].name = "Live Vocals";
+    tracks[1].id = "live-guitar-a";
+    tracks[1].name = "Live Guitar";
+    tracks[2].id = "live-room-a";
+    tracks[2].name = "Live Room";
+    tracks.forEach((track) => {
+      track.armed = true;
+    });
+    project = setTrackRecordingInputAssignment(project, "live-vocals-a", {
+      deviceId: "interface-8",
+      mode: "mono",
+      channelIndex: 0
+    });
+    project = setTrackRecordingInputAssignment(project, "live-guitar-a", {
+      deviceId: "interface-8",
+      mode: "split-mono",
+      channelIndex: 1
+    });
+    project = setTrackRecordingInputAssignment(project, "live-room-a", {
+      deviceId: "interface-8",
+      mode: "stereo",
+      channelPair: [2, 3]
+    });
+
+    const plan = buildGroupedRecordingCapturePlan(project, {
+      availableInputDevices: [{ id: "interface-8", name: "8ch Interface", channelCount: 8 }],
+      requestedStartBar: 9.5,
+      recordingSessionId: 77,
+      takeGroupId: "take-group-77",
+      projectRelativeRecordingDir: "project-media/recordings/session-77"
+    });
+
+    expect(plan.ok).toBe(true);
+    expect(plan.recordingSessionId).toBe(77);
+    expect(plan.takeGroupId).toBe("take-group-77");
+    expect(plan.requestedStartBar).toBe(9.5);
+    expect(plan.items.map((item) => ({
+      trackId: item.trackId,
+      mode: item.mode,
+      channelMap: item.channelMap,
+      outputChannels: item.outputChannels,
+      fileName: item.fileName,
+      projectRelativePath: item.projectRelativePath
+    }))).toEqual([
+      {
+        trackId: "live-vocals-a",
+        mode: "mono",
+        channelMap: [0],
+        outputChannels: 1,
+        fileName: "077-live-vocals-ch1.wav",
+        projectRelativePath: "project-media/recordings/session-77/077-live-vocals-ch1.wav"
+      },
+      {
+        trackId: "live-guitar-a",
+        mode: "split-mono",
+        channelMap: [1],
+        outputChannels: 1,
+        fileName: "077-live-guitar-split-ch2.wav",
+        projectRelativePath: "project-media/recordings/session-77/077-live-guitar-split-ch2.wav"
+      },
+      {
+        trackId: "live-room-a",
+        mode: "stereo",
+        channelMap: [2, 3],
+        outputChannels: 2,
+        fileName: "077-live-room-ch3-4.wav",
+        projectRelativePath: "project-media/recordings/session-77/077-live-room-ch3-4.wav"
+      }
+    ]);
+    expect(plan.items[1].takeMetadata).toMatchObject({
+      importMode: "native-recording",
+      recordingSessionId: 77,
+      takeGroupId: "take-group-77",
+      trackId: "live-guitar-a",
+      deviceId: "interface-8",
+      inputMode: "split-mono",
+      channelMap: [1],
+      requestedStartBar: 9.5,
+      latencyCompensationAppliedSeconds: 0
+    });
+  });
+
   it("preserves fractional recording placement at beat-level starts", () => {
     const starts = [1.25, 2.5, 7.75];
     for (const startBar of starts) {
@@ -422,6 +510,44 @@ describe("recording alpha foundations", () => {
     expect(punched.selectedTrackId).toBe(withTrack.trackId);
     expect(punched.undoStack.past).toHaveLength(1);
     expect(punched.status).toContain("Placed punch take command-punch.wav from bar 7 to 9");
+  });
+
+  it("places punch recordings from the active punch range through the undoable command path", () => {
+    let state = createInitialState();
+    const withTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    const secondsPerBar = withTrack.project.project.timeSig * (60 / withTrack.project.project.bpm);
+    const rawPunchMedia = addImportedAudioMedia(withTrack.project, {
+      name: "range-command-punch.wav",
+      uri: "project-media/recordings/range-command-punch.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: {
+        mediaRefKind: "project",
+        recordingTakeId: "range-command-punch-take-1",
+        recordingTakeGroupId: "range-command-punch-group",
+        takeLaneId: "range-command-punch-group-lane-1"
+      }
+    });
+    state.undoStack = createUndoStack(rawPunchMedia.project);
+    state = setPunchRangeCommand(state, 7, 9);
+
+    const punched = placePunchRecordingClipFromRangeCommand(state, rawPunchMedia.item.id, withTrack.trackId, 6);
+    const punchClip = punched.undoStack.present.timeline.clips.find((clip) => clip.id === punched.selectedClipId)!;
+
+    expect(punchClip).toMatchObject({ trackId: withTrack.trackId, startBar: 7, barLength: 2 });
+    expect(punchClip.metadata).toMatchObject({
+      recordingTakeId: "range-command-punch-take-1",
+      recordingTakeGroupId: "range-command-punch-group",
+      sourceOffsetSeconds: Math.round(secondsPerBar * 1000) / 1000,
+      sourceDurationSeconds: Math.round(secondsPerBar * 2 * 1000) / 1000,
+      punchStartBar: 7,
+      punchEndBar: 9,
+      captureStartBar: 6
+    });
+    expect(punched.undoStack.present.timeline.selection).toEqual({ startBar: 7, endBar: 9, source: "punch" });
+    expect(punched.status).toContain("Placed punch take range-command-punch.wav from active punch range 7 to 9");
   });
 
   it("splits fractional recording overwrites and preserves the right-hand source offset", () => {

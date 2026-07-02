@@ -2269,25 +2269,33 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "AI / MCP Bridge",
     control: "File MCP Recording Input Channel",
     selector: "set_recording_input_channel",
-    does: "Lets file-first MCP store the same explicit live-track Mono Ch N or Stereo Ch N-N+1 recording input assignment exposed in the mixer UI.",
+    does: "Lets file-first MCP store explicit live-track Mono Ch N, Stereo Ch N-N+1 or future split-mono recording input assignments. The visual mixer still exposes the current mono/stereo alpha choices.",
     useWhen: "Use before recording smoke or when an AI counterpart needs to prepare a multi-input project without driving the visual mixer.",
-    aiNote: "This writes project assignment metadata and native-alpha preflight can still block non-default channel maps until native channel routing lands."
+    aiNote: "This writes project assignment metadata only. Split-mono and other non-default maps remain blocked by native-alpha preflight until native channel routing lands."
   },
   {
     surface: "AI / MCP Bridge",
     control: "File MCP Punch Recording Placement",
-    selector: "place_punch_recording_clip",
-    does: "Places an explicit punch-window clip from an existing raw recording media item through the undoable command path.",
+    selector: "place_punch_recording_clip, place_punch_recording_clip_from_range",
+    does: "Places an explicit punch-window clip from an existing raw recording media item through the undoable command path, either from command-provided bars or from the active `set_punch_range` selection.",
     useWhen: "Use for file-first punch/take-lane smoke before a full installed punch recording UI exists.",
     aiNote: "This is a metadata/placement foundation only; it does not start native recording or prove user-facing punch recording."
   },
   {
     surface: "AI / MCP Bridge",
+    control: "MCP Punch Range Setup",
+    selector: "set_punch_range, pocket_daw_live_apply_commands:set_punch_range, timelineSelection",
+    does: "Marks the current timeline selection as an explicit punch range through file-first MCP or the tokened live bridge so later punch/take smoke can distinguish punch intent from ordinary edit ranges.",
+    useWhen: "Use before punch-placement smoke or future installed punch recording tests when an AI counterpart needs a visible punch window without driving the timeline UI.",
+    aiNote: "This only stores `timeline.selection.source = \"punch\"`. It does not start recording, place audio, or claim punch-in/out is shipped."
+  },
+  {
+    surface: "AI / MCP Bridge",
     control: "Live MCP Recording Input Channel",
     selector: "pocket_daw_live_apply_commands:set_recording_input_channel",
-    does: "Lets the tokened live bridge set the running app's selected live-track Mono Ch N or Stereo Ch N-N+1 recording input assignment through the same undoable command path as the mixer UI.",
+    does: "Lets the tokened live bridge set the running app's selected live-track Mono Ch N, Stereo Ch N-N+1 or future split-mono recording input assignment through the same undoable command path as the mixer UI.",
     useWhen: "Use during MCP-observed installed-app smoke when the running app needs a recording input prepared without visual UI driving.",
-    aiNote: "Requires the installed app live bridge. Non-default channel maps still remain blocked by native-alpha preflight until native channel routing lands."
+    aiNote: "Requires the installed app live bridge. Split-mono and other non-default channel maps still remain blocked by native-alpha preflight until native channel routing lands."
   },
   {
     surface: "AI / MCP Bridge",
@@ -2340,10 +2348,10 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   {
     surface: "AI / MCP Bridge",
     control: "Recording Input Preflight Diagnostics",
-    selector: "recording.inputPreflight, recordingInputPreflight",
-    does: "Reports whether the current armed live tracks and saved input channel assignments are valid before native recording starts.",
+    selector: "recording.inputPreflight, recordingInputPreflight, recordingFutureCapturePlan, recording.futureCapturePlan",
+    does: "Reports whether the current armed live tracks and saved input channel assignments are valid before native recording starts; file-first MCP summaries and live MCP status also expose grouped future-capture planning for shared mono, stereo and split-mono take/session metadata.",
     useWhen: "Use when recording will not start, when checking mono/stereo channel assignments, or before future multitrack hardware smoke.",
-    aiNote: "Exposed in support diagnostics and file-first MCP summaries. It is a readiness report, not a claim that simultaneous multitrack recording is shipped."
+    aiNote: "Exposed in support diagnostics and file-first MCP summaries. Grouped capture planning is source-only and does not claim simultaneous native multitrack recording is shipped."
   },
   {
     surface: "AI / MCP Bridge",

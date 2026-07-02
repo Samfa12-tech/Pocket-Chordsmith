@@ -61,6 +61,38 @@ describe("Pocket DAW AI bridge live commands", () => {
     });
   });
 
+  it("applies split-mono recording input assignments through the live bridge executor", () => {
+    const state = addTrackCommand(createInitialState(), "live-vocals");
+    const project = state.undoStack.present;
+    project.audioDeviceSettings = {
+      devices: [{ id: "interface-4", name: "Four Channel Interface", kind: "input", isDefaultInput: true, supportedChannels: [1, 2, 4] }],
+      inputDeviceId: "interface-4",
+      outputDeviceId: null,
+      sampleRate: 48000,
+      bufferSize: 256,
+      inputChannels: 4,
+      outputChannels: 2,
+      host: "wasapi"
+    };
+    const app = appHarness(state);
+
+    const next = app.applyAiBridgeLiveCommand({
+      type: "set_recording_input_channel",
+      trackId: "live-vocals",
+      deviceId: "interface-4",
+      mode: "split-mono",
+      channelIndex: 1
+    });
+
+    const track = next.undoStack.present.tracks.find((item) => item.id === "live-vocals");
+    expect(next.status).toBe("Live Vocals recording input set to Split Mono Ch 2.");
+    expect(track?.recordingInput).toMatchObject({
+      deviceId: "interface-4",
+      mode: "split-mono",
+      channelIndex: 1
+    });
+  });
+
   it("applies arm and monitor states through the live bridge executor", () => {
     const state = addTrackCommand(createInitialState(), "live-vocals");
     const app = appHarness(state);
@@ -101,6 +133,25 @@ describe("Pocket DAW AI bridge live commands", () => {
     });
   });
 
+  it("applies explicit punch ranges through the live bridge executor and status", () => {
+    const state = createInitialState();
+    const app = appHarness(state);
+
+    const next = app.applyAiBridgeLiveCommand({
+      type: "set_punch_range",
+      startBar: 7,
+      endBar: 9
+    });
+    app.state = next;
+    const status = app.aiBridgeLiveStatus() as {
+      timelineSelection?: { startBar: number; endBar: number; source: string } | null;
+    };
+
+    expect(next.status).toBe("Punch range set from bar 7 to 9.");
+    expect(next.undoStack.present.timeline.selection).toEqual({ startBar: 7, endBar: 9, source: "punch" });
+    expect(status.timelineSelection).toEqual({ startBar: 7, endBar: 9, source: "punch" });
+  });
+
   it("exposes recording input preflight and live recording commands in live status", () => {
     const state = addTrackCommand(createInitialState(), "live-vocals");
     const project = state.undoStack.present;
@@ -129,8 +180,83 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.capabilities.liveCommands).toContain("set_track_monitor");
     expect(status.capabilities.liveCommands).toContain("set_track_input");
     expect(status.capabilities.liveCommands).toContain("set_recording_input_channel");
+    expect(status.capabilities.liveCommands).toContain("set_punch_range");
     expect(status.recording.inputPreflight).toMatchObject({ ok: false });
     expect(status.recording.inputPreflight?.errors.join("\n")).toContain("native recording alpha currently captures Stereo Ch 1-2 only");
+  });
+
+  it("exposes future grouped capture planning in live status for MCP-observed recording smoke", () => {
+    let state = addTrackCommand(createInitialState(), "live-vocals");
+    state = addTrackCommand(state, "live-instrument");
+    const project = state.undoStack.present;
+    project.audioDeviceSettings = {
+      devices: [{ id: "interface-4", name: "Four Channel Interface", kind: "input", isDefaultInput: true, supportedChannels: [1, 2, 4] }],
+      inputDeviceId: "interface-4",
+      outputDeviceId: null,
+      sampleRate: 48000,
+      bufferSize: 256,
+      inputChannels: 4,
+      outputChannels: 2,
+      host: "wasapi"
+    };
+    const vocals = project.tracks.find((item) => item.id === "live-vocals")!;
+    const guitar = project.tracks.find((item) => item.id === "live-instrument")!;
+    vocals.armed = true;
+    guitar.armed = true;
+    vocals.recordingInput = { deviceId: "interface-4", mode: "split-mono", channelIndex: 0 };
+    guitar.recordingInput = { deviceId: "interface-4", mode: "stereo", channelPair: [1, 2] };
+    const app = appHarness(state);
+
+    const status = app.aiBridgeLiveStatus() as {
+      recording: {
+        futureCapturePlan?: {
+          ok: boolean;
+          recordingSessionId: string;
+          takeGroupId: string;
+          items: Array<{
+            trackId: string;
+            mode: string;
+            channelMap: number[];
+            outputChannels: number;
+            projectRelativePath: string;
+            takeMetadata: { inputMode?: string; takeGroupId?: string; latencyCompensationAppliedSeconds?: number };
+          }>;
+        };
+      };
+    };
+
+    expect(status.recording.futureCapturePlan).toMatchObject({
+      ok: true,
+      recordingSessionId: "live-preview",
+      takeGroupId: "live-preview-take-group"
+    });
+    expect(status.recording.futureCapturePlan?.items.map((item) => ({
+      trackId: item.trackId,
+      mode: item.mode,
+      channelMap: item.channelMap,
+      outputChannels: item.outputChannels,
+      projectRelativePath: item.projectRelativePath
+    }))).toEqual([
+      {
+        trackId: "live-vocals",
+        mode: "split-mono",
+        channelMap: [0],
+        outputChannels: 1,
+        projectRelativePath: "project-media/recordings/live-preview-live-vocals-split-ch1.wav"
+      },
+      {
+        trackId: "live-instrument",
+        mode: "stereo",
+        channelMap: [1, 2],
+        outputChannels: 2,
+        projectRelativePath: "project-media/recordings/live-preview-live-instrument-ch2-3.wav"
+      }
+    ]);
+    expect(status.recording.futureCapturePlan?.items[0].takeMetadata).toMatchObject({
+      inputMode: "split-mono",
+      takeGroupId: "live-preview-take-group",
+      latencyCompensationAppliedSeconds: 0
+    });
   });
 
   it("exposes compact export readiness for MCP-observed game-pack smoke", () => {

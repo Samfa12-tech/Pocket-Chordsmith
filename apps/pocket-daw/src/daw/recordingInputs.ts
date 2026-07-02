@@ -1,5 +1,6 @@
 import { cloneProject } from "./dawProject";
-import type { AudioDeviceInfo, PocketDawProject, RecordingInputMode, Track, TrackRecordingInput } from "./schema";
+import type { AudioDeviceInfo, JsonObject, PocketDawProject, RecordingInputMode, Track, TrackRecordingInput } from "./schema";
+import { timelineSecondsAtBar } from "./timeline";
 
 export interface RecordingInputDeviceAvailability {
   id: string;
@@ -29,6 +30,31 @@ export interface RecordingInputPreflight {
   capturePlan: RecordingInputCapturePlanItem[];
   errors: string[];
   warnings: string[];
+}
+
+export interface GroupedRecordingCapturePlanOptions extends RecordingInputPreflightOptions {
+  requestedStartBar: number;
+  recordingSessionId: number | string;
+  takeGroupId: string;
+  projectRelativeRecordingDir?: string;
+}
+
+export interface GroupedRecordingCapturePlanItem extends RecordingInputCapturePlanItem {
+  outputChannels: 1 | 2;
+  fileName: string;
+  projectRelativePath: string;
+  takeMetadata: JsonObject;
+}
+
+export interface GroupedRecordingCapturePlan {
+  ok: boolean;
+  recordingSessionId: number | string;
+  takeGroupId: string;
+  requestedStartBar: number;
+  requestedStartSeconds: number;
+  errors: string[];
+  warnings: string[];
+  items: GroupedRecordingCapturePlanItem[];
 }
 
 export function setTrackRecordingInputAssignment(
@@ -116,6 +142,63 @@ export function buildNativeRecordingAlphaInputPreflight(
     ok: false,
     capturePlan: [],
     errors: [...preflight.errors, ...alphaErrors]
+  };
+}
+
+export function buildGroupedRecordingCapturePlan(
+  project: PocketDawProject,
+  options: GroupedRecordingCapturePlanOptions
+): GroupedRecordingCapturePlan {
+  const requestedStartBar = safePositiveBar(options.requestedStartBar);
+  const requestedStartSeconds = timelineSecondsAtBar(project, requestedStartBar);
+  const base = {
+    recordingSessionId: options.recordingSessionId,
+    takeGroupId: options.takeGroupId,
+    requestedStartBar,
+    requestedStartSeconds
+  };
+  const preflight = buildRecordingInputPreflight(project, {
+    ...options,
+    allowMultipleArmedTracks: true
+  });
+  if (!preflight.ok) {
+    return {
+      ...base,
+      ok: false,
+      errors: preflight.errors,
+      warnings: preflight.warnings,
+      items: []
+    };
+  }
+  const recordingDir = cleanProjectRelativeDir(options.projectRelativeRecordingDir || "project-media/recordings");
+  const sessionLabel = sessionFilePrefix(options.recordingSessionId);
+  const items = preflight.capturePlan.map((item) => {
+    const fileName = recordingCaptureFileName(sessionLabel, item);
+    return {
+      ...item,
+      outputChannels: item.mode === "stereo" ? 2 as const : 1 as const,
+      fileName,
+      projectRelativePath: `${recordingDir}/${fileName}`,
+      takeMetadata: {
+        importMode: "native-recording",
+        recordingSessionId: options.recordingSessionId,
+        takeGroupId: options.takeGroupId,
+        trackId: item.trackId,
+        deviceId: item.deviceId,
+        inputMode: item.mode,
+        channelMap: item.channelMap,
+        requestedStartBar,
+        requestedStartSeconds,
+        latencyCompensationAppliedSeconds: 0
+      }
+    };
+  });
+  return {
+    ...base,
+    ok: true,
+    errors: [],
+    warnings: preflight.warnings,
+    items
   };
 }
 
@@ -239,4 +322,40 @@ function maxSupportedChannels(values: number[] | undefined): number | undefined 
 function safeChannel(value: unknown, fallback: number): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric >= 0 ? Math.floor(numeric) : fallback;
+}
+
+function safePositiveBar(value: unknown): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(1, numeric) : 1;
+}
+
+function sessionFilePrefix(value: number | string): string {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric >= 0) return String(Math.floor(numeric)).padStart(3, "0");
+  return slugForFile(String(value || "session"));
+}
+
+function recordingCaptureFileName(sessionLabel: string, item: RecordingInputCapturePlanItem): string {
+  const trackSlug = slugForFile(item.trackName || item.trackId || "track");
+  const channels = item.channelMap.map((channel) => channel + 1);
+  const channelLabel = channels.length === 1 ? `ch${channels[0]}` : `ch${channels[0]}-${channels[channels.length - 1]}`;
+  const modeLabel = item.mode === "split-mono" ? "split-" : "";
+  return `${sessionLabel}-${trackSlug}-${modeLabel}${channelLabel}.wav`;
+}
+
+function cleanProjectRelativeDir(value: string): string {
+  return (value || "project-media/recordings")
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part) => slugForFile(part))
+    .filter(Boolean)
+    .join("/") || "project-media/recordings";
+}
+
+function slugForFile(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "item";
 }
