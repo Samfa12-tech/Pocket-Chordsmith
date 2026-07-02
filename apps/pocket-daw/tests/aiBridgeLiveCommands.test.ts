@@ -4,8 +4,10 @@ import { createInitialState, currentProject, type AppState } from "../src/app/st
 import { addTrackCommand } from "../src/app/commands";
 import { AudioEngine } from "../src/audio/audioEngine";
 import { PerformanceDiagnosticsRecorder } from "../src/app/performanceDiagnostics";
+import { createEmptyPocketDawProject } from "../src/daw/dawProject";
 import { createUndoStack } from "../src/daw/undo";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
+import { addTrackToProject } from "../src/daw/tracks";
 import { activateAudioTake, setAudioTakeArchived } from "../src/daw/clips";
 
 function appHarness(state: AppState) {
@@ -220,6 +222,144 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(clipRanged.undoStack.present.timeline.selection).toEqual({ startBar: 2, endBar: 6, source: "clip" });
     expect(split.status).toContain("at edit range.");
     expect(splitAudioClipStarts).toEqual([2, 3, 5]);
+  });
+
+  it("crops and deletes selected audio clip ranges through the live bridge executor", () => {
+    let cropState = createInitialState();
+    const cropProject = createEmptyPocketDawProject();
+    cropProject.project.bpm = 120;
+    cropProject.project.timeSig = 4;
+    cropProject.timeline.clips = [];
+    const cropImport = addImportedAudioMedia(cropProject, {
+      name: "Live crop range.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1
+    });
+    const cropPlaced = placeAudioClipOnTimeline(cropImport.project, cropImport.item.id, 2);
+    cropState = {
+      ...cropState,
+      selectedClipId: cropPlaced.clipId,
+      selectedTrackId: cropPlaced.trackId,
+      undoStack: createUndoStack(cropPlaced.project)
+    };
+    const cropApp = appHarness(cropState);
+
+    const cropRanged = cropApp.applyAiBridgeLiveCommand({ type: "set_timeline_selection", startBar: 3, endBar: 5 });
+    cropApp.state = cropRanged;
+    const cropped = cropApp.applyAiBridgeLiveCommand({
+      type: "crop_clip_to_timeline_selection",
+      clipId: cropPlaced.clipId
+    });
+    const croppedClip = cropped.undoStack.present.timeline.clips.find((clip) => clip.id === cropPlaced.clipId)!;
+
+    let deleteState = createInitialState();
+    const deleteProject = createEmptyPocketDawProject();
+    deleteProject.project.bpm = 120;
+    deleteProject.project.timeSig = 4;
+    deleteProject.timeline.clips = [];
+    const deleteImport = addImportedAudioMedia(deleteProject, {
+      name: "Live delete range.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1
+    });
+    const deletePlaced = placeAudioClipOnTimeline(deleteImport.project, deleteImport.item.id, 2);
+    deleteState = {
+      ...deleteState,
+      selectedClipId: deletePlaced.clipId,
+      selectedTrackId: deletePlaced.trackId,
+      undoStack: createUndoStack(deletePlaced.project)
+    };
+    const deleteApp = appHarness(deleteState);
+
+    const deleteRanged = deleteApp.applyAiBridgeLiveCommand({ type: "set_timeline_selection", startBar: 3, endBar: 5 });
+    deleteApp.state = deleteRanged;
+    const deleted = deleteApp.applyAiBridgeLiveCommand({
+      type: "delete_clip_range",
+      clipId: deletePlaced.clipId
+    });
+    const deletedSegments = deleted.undoStack.present.timeline.clips
+      .filter((clip) => clip.mediaPoolItemId === deleteImport.item.id)
+      .sort((a, b) => a.startBar - b.startBar);
+
+    expect(cropped.status).toBe("Cropped Live crop range.wav to edit range.");
+    expect(croppedClip).toMatchObject({ startBar: 3, barLength: 2 });
+    expect(croppedClip.metadata?.sourceOffsetSeconds).toBe(2);
+    expect(cropped.selectedClipId).toBe(cropPlaced.clipId);
+    expect(deleted.status).toBe("Deleted range from Live delete range.wav.");
+    expect(deletedSegments.map((clip) => [clip.startBar, clip.barLength])).toEqual([[2, 1], [5, 1]]);
+    expect(deletedSegments.map((clip) => clip.metadata?.sourceOffsetSeconds)).toEqual([0, 6]);
+    expect(deleted.selectedClipId).toBe(deletedSegments[1].id);
+  });
+
+  it("ripple deletes selected ranges and all-track ranges through the live bridge executor", () => {
+    let selectedState = createInitialState();
+    const selectedProject = createEmptyPocketDawProject();
+    selectedProject.project.bpm = 120;
+    selectedProject.project.timeSig = 4;
+    selectedProject.timeline.clips = [];
+    const selectedImport = addImportedAudioMedia(selectedProject, {
+      name: "Live ripple range.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1
+    });
+    const firstPlaced = placeAudioClipOnTimeline(selectedImport.project, selectedImport.item.id, 2);
+    const laterPlaced = placeAudioClipOnTrack(firstPlaced.project, selectedImport.item.id, firstPlaced.trackId, 7);
+    selectedState = {
+      ...selectedState,
+      selectedClipId: firstPlaced.clipId,
+      selectedTrackId: firstPlaced.trackId,
+      undoStack: createUndoStack(laterPlaced.project)
+    };
+    const selectedApp = appHarness(selectedState);
+
+    const selectedRanged = selectedApp.applyAiBridgeLiveCommand({ type: "set_timeline_selection", startBar: 3, endBar: 5 });
+    selectedApp.state = selectedRanged;
+    const selectedRipple = selectedApp.applyAiBridgeLiveCommand({
+      type: "ripple_delete_clip_range",
+      clipId: firstPlaced.clipId
+    });
+    const selectedSegments = selectedRipple.undoStack.present.timeline.clips
+      .filter((clip) => clip.mediaPoolItemId === selectedImport.item.id && clip.trackId === firstPlaced.trackId)
+      .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+
+    let allState = createInitialState();
+    const allProject = createEmptyPocketDawProject();
+    allProject.project.bpm = 120;
+    allProject.project.timeSig = 4;
+    allProject.timeline.clips = [];
+    const allImport = addImportedAudioMedia(allProject, {
+      name: "Live ripple all.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1
+    });
+    const firstTrack = placeAudioClipOnTimeline(allImport.project, allImport.item.id, 2);
+    const firstLater = placeAudioClipOnTrack(firstTrack.project, allImport.item.id, firstTrack.trackId, 7);
+    const secondTrack = addTrackToProject(firstLater.project, "live-instrument");
+    const secondEarly = placeAudioClipOnTrack(secondTrack.project, allImport.item.id, secondTrack.trackId, 3);
+    const secondLater = placeAudioClipOnTrack(secondEarly.project, allImport.item.id, secondTrack.trackId, 8);
+    allState = {
+      ...allState,
+      selectedClipId: firstTrack.clipId,
+      selectedTrackId: firstTrack.trackId,
+      undoStack: createUndoStack(secondLater.project)
+    };
+    const allApp = appHarness(allState);
+
+    const allRanged = allApp.applyAiBridgeLiveCommand({ type: "set_timeline_selection", startBar: 3, endBar: 5 });
+    allApp.state = allRanged;
+    const allRipple = allApp.applyAiBridgeLiveCommand({ type: "ripple_delete_timeline_selection" });
+
+    expect(selectedRipple.status).toBe("Ripple deleted range from Live ripple range.wav; moved 2 clips.");
+    expect(selectedSegments.map((clip) => [clip.startBar, clip.barLength])).toEqual([[2, 1], [3, 1], [5, 4]]);
+    expect(selectedSegments.map((clip) => clip.metadata?.sourceOffsetSeconds)).toEqual([0, 6, 0]);
+    expect(allRipple.status).toBe("Ripple deleted edit range across all tracks; edited 2 clips and moved 2 later clips.");
+    expect(allRipple.undoStack.present.timeline.clips.find((clip) => clip.id === firstLater.clipId)?.startBar).toBe(5);
+    expect(allRipple.undoStack.present.timeline.clips.find((clip) => clip.id === secondLater.clipId)?.startBar).toBe(6);
+    expect(allRipple.undoStack.present.timeline.clips.find((clip) => clip.id === secondEarly.clipId)?.metadata?.sourceOffsetSeconds).toBe(4);
   });
 
   it("places punch takes from the active range through the live bridge executor", () => {
@@ -498,6 +638,10 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.capabilities.liveCommands).toContain("set_timeline_selection_to_clip");
     expect(status.capabilities.liveCommands).toContain("clear_timeline_selection");
     expect(status.capabilities.liveCommands).toContain("split_timeline_selection");
+    expect(status.capabilities.liveCommands).toContain("crop_clip_to_timeline_selection");
+    expect(status.capabilities.liveCommands).toContain("delete_clip_range");
+    expect(status.capabilities.liveCommands).toContain("ripple_delete_clip_range");
+    expect(status.capabilities.liveCommands).toContain("ripple_delete_timeline_selection");
     expect(status.capabilities.liveCommands).toContain("place_punch_recording_clip_from_range");
     expect(status.capabilities.liveCommands).toContain("activate_audio_take_lane");
     expect(status.capabilities.liveCommands).toContain("set_audio_take_archived");

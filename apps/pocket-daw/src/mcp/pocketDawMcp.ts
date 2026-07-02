@@ -163,6 +163,10 @@ export type PocketDawLiveCommand =
   | { type: "set_timeline_selection_to_clip"; clipId: string }
   | { type: "clear_timeline_selection" }
   | { type: "split_timeline_selection" }
+  | { type: "crop_clip_to_timeline_selection"; clipId: string }
+  | { type: "delete_clip_range"; clipId: string }
+  | { type: "ripple_delete_clip_range"; clipId: string }
+  | { type: "ripple_delete_timeline_selection" }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
@@ -1046,7 +1050,7 @@ function liveCommandSchema() {
     {
       type: {
         type: "string",
-        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "place_punch_recording_clip_from_range"]
+        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "place_punch_recording_clip_from_range"]
       },
       trackId: stringSchema(),
       clipId: stringSchema(),

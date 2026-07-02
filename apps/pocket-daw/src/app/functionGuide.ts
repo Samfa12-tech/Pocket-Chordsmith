@@ -2308,9 +2308,9 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   {
     surface: "AI / MCP Bridge",
     control: "Live MCP Edit Range",
-    selector: "pocket_daw_live_apply_commands:set_timeline_selection, set_timeline_selection_to_clip, clear_timeline_selection, split_timeline_selection",
-    does: "Lets the tokened live bridge set an ordinary edit range, range a selected clip, clear the edit range, or split clips at the active range through the same undoable command paths as the timeline UI.",
-    useWhen: "Use during MCP-observed editing smoke when an AI counterpart needs precise range setup or range splitting in the running app without broad UI automation.",
+    selector: "pocket_daw_live_apply_commands:set_timeline_selection, set_timeline_selection_to_clip, clear_timeline_selection, split_timeline_selection, crop_clip_to_timeline_selection, delete_clip_range, ripple_delete_clip_range, ripple_delete_timeline_selection",
+    does: "Lets the tokened live bridge set an ordinary edit range, range a selected clip, clear the edit range, split clips at the active range, crop the selected clip, delete the selected clip range, or ripple-delete selected/all-track ranges through the same undoable command paths as the timeline UI.",
+    useWhen: "Use during MCP-observed editing smoke when an AI counterpart needs precise range setup or source-safe destructive-looking range edits in the running app without broad UI automation.",
     aiNote: "This is normal edit-range control, not punch intent. Confirm `timelineSelection.source` before applying destructive-looking range edits."
   },
   {

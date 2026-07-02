@@ -290,6 +290,10 @@ type AiBridgeLiveCommand =
   | { type: "set_timeline_selection_to_clip"; clipId: string }
   | { type: "clear_timeline_selection" }
   | { type: "split_timeline_selection" }
+  | { type: "crop_clip_to_timeline_selection"; clipId: string }
+  | { type: "delete_clip_range"; clipId: string }
+  | { type: "ripple_delete_clip_range"; clipId: string }
+  | { type: "ripple_delete_timeline_selection" }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
@@ -611,7 +615,7 @@ export class App {
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
         control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics"],
-        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "place_punch_recording_clip_from_range"]
+        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "place_punch_recording_clip_from_range"]
       }
     };
   }
@@ -774,6 +778,27 @@ export class App {
     }
     if (command.type === "split_timeline_selection") {
       return splitTimelineSelectionCommand(this.state);
+    }
+    if (command.type === "crop_clip_to_timeline_selection") {
+      return cropSelectedClipToTimelineSelectionCommand({
+        ...this.state,
+        selectedClipId: stringInput(command.clipId, "clipId")
+      });
+    }
+    if (command.type === "delete_clip_range") {
+      return deleteSelectedClipRangeCommand({
+        ...this.state,
+        selectedClipId: stringInput(command.clipId, "clipId")
+      });
+    }
+    if (command.type === "ripple_delete_clip_range") {
+      return rippleDeleteSelectedClipRangeCommand({
+        ...this.state,
+        selectedClipId: stringInput(command.clipId, "clipId")
+      });
+    }
+    if (command.type === "ripple_delete_timeline_selection") {
+      return rippleDeleteTimelineSelectionCommand(this.state);
     }
     if (command.type === "activate_audio_take_lane") {
       return activateAudioTakeLaneCommand(this.state, stringInput(command.clipId, "clipId"));
@@ -5528,6 +5553,10 @@ function liveCommandAudioSyncMode(command: AiBridgeLiveCommand): AudioProjectSyn
     command.type === "set_audio_take_archived" ||
     command.type === "comp_audio_take_from_bar" ||
     command.type === "split_timeline_selection" ||
+    command.type === "crop_clip_to_timeline_selection" ||
+    command.type === "delete_clip_range" ||
+    command.type === "ripple_delete_clip_range" ||
+    command.type === "ripple_delete_timeline_selection" ||
     command.type === "place_punch_recording_clip_from_range"
   ) {
     return "timeline-structure";

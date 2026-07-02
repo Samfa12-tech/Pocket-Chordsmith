@@ -454,7 +454,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Live MCP Recording Input Channel | `pocket_daw_live_apply_commands:set_recording_input_channel`");
     expect(catalog).toContain("| File MCP Take Lane Activation | `activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, pocket_daw_live_apply_commands:activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar`");
     expect(catalog).toContain("| MCP Punch Recording Placement | `place_punch_recording_clip`, `place_punch_recording_clip_from_range`, `pocket_daw_live_apply_commands:place_punch_recording_clip_from_range`");
-    expect(catalog).toContain("| Live MCP Edit Range | `pocket_daw_live_apply_commands:set_timeline_selection, set_timeline_selection_to_clip, clear_timeline_selection, split_timeline_selection`");
+    expect(catalog).toContain("| Live MCP Edit Range | `pocket_daw_live_apply_commands:set_timeline_selection, set_timeline_selection_to_clip, clear_timeline_selection, split_timeline_selection, crop_clip_to_timeline_selection, delete_clip_range, ripple_delete_clip_range, ripple_delete_timeline_selection`");
     expect(catalog).toContain("| Live MCP Arm And Monitor | `pocket_daw_live_apply_commands:set_track_armed, set_track_monitor`");
     expect(catalog).toContain("| Live MCP Track Input | `pocket_daw_live_apply_commands:set_track_input`");
     expect(catalog).toContain("| Live MCP Track Setup Status | `pocket_daw_live_status:tracks`");
