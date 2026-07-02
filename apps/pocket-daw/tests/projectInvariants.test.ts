@@ -44,6 +44,23 @@ describe("project invariant validation", () => {
     expect(report.warnings.map((issue) => issue.code)).toContain("control-only-clip-type");
   });
 
+  it("does not warn for section-backed generated-pattern clips with pattern ids", () => {
+    const project = createDemoProject();
+    const source = project.timeline.clips.find((clip) => clip.type === "generated-section" && clip.sectionId === "A")!;
+    project.timeline.clips = [{
+      ...source,
+      id: "renderable-pattern",
+      type: "generated-pattern",
+      trackId: "drums",
+      metadata: { sourceStartBar: 0, patternId: "beat-a" }
+    }];
+
+    const report = validateProjectInvariants(project);
+
+    expect(report.ok).toBe(true);
+    expect(report.warnings.map((issue) => issue.code)).not.toContain("control-only-clip-type");
+  });
+
   it("warns when audio clips rely on missing or stale waveform analysis", () => {
     const imported = addImportedAudioMedia(createDemoProject(), {
       name: "Relinked.wav",

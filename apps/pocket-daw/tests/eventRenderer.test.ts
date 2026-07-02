@@ -119,16 +119,49 @@ describe("event renderer", () => {
     expect(dawEvents.map(dawSkeleton)).toEqual(coreEvents.map(coreSkeleton));
   });
 
+  it("renders valid generated-pattern clips through the Chordsmith section engine", () => {
+    const project = createDemoProject();
+    const source = project.timeline.clips.find((clip) => clip.type === "generated-section" && clip.sectionId === "A")!;
+    project.timeline.clips = [
+      {
+        ...source,
+        id: "pattern-drums-a",
+        type: "generated-pattern",
+        trackId: "drums",
+        name: "Drum pattern A",
+        startBar: 3,
+        barLength: 1,
+        transforms: {
+          ...source.transforms,
+          gain: 0.5,
+          stemMutes: { bass: true, chords: true, melody: true, guitar: true }
+        },
+        metadata: { sourceStartBar: 0, patternId: "beat-a" }
+      }
+    ];
+
+    const events = renderTimelineEvents(project);
+    const drumEvents = events.filter((event) => event.clipId === "pattern-drums-a" && event.role === "drums");
+
+    expect(drumEvents.length).toBeGreaterThan(0);
+    expect(drumEvents.every((event) => event.trackId === "drums")).toBe(true);
+    expect(drumEvents[0]).toMatchObject({ clipId: "pattern-drums-a", bar: 3 });
+    expect(drumEvents[0].time).toBeCloseTo(timelineSecondsAtBar(project, 3), 5);
+    expect(drumEvents[0].velocity).toBeLessThan(0.6);
+    expect(events.some((event) => event.kind === "bass" || event.kind === "chord" || event.kind === "melody" || event.kind === "guitar")).toBe(false);
+  });
+
   it("safely ignores clip types without resolvers or payloads", () => {
     const project = createDemoProject();
     const base = project.timeline.clips[0];
-    const futureTypes: ClipType[] = ["generated-pattern", "audio", "automation", "marker"];
+    const futureTypes: ClipType[] = ["audio", "automation", "marker"];
 
     futureTypes.forEach((type) => {
       const clip: Clip = { ...base, id: `future-${type}`, type, muted: false };
       expect(resolveClipEvents(project, clip)).toEqual([]);
     });
 
+    expect(resolveClipEvents(project, { ...base, id: "pattern-empty", type: "generated-pattern", sectionId: undefined, muted: false })).toEqual([]);
     expect(resolveClipEvents(project, { ...base, id: "midi-empty", type: "midi", muted: false, metadata: {} })).toEqual([]);
   });
 

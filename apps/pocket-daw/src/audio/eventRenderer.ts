@@ -110,8 +110,13 @@ export function resolveGeneratedSectionClip(project: PocketDawProject, clip: Cli
   return renderGeneratedSectionEvents(project, pcs, section, clip);
 }
 
-export function resolveGeneratedPatternClip(_project: PocketDawProject, _clip: Clip, _context: RenderContext): RenderedEvent[] {
-  return [];
+export function resolveGeneratedPatternClip(project: PocketDawProject, clip: Clip, context: RenderContext): RenderedEvent[] {
+  const patternId = typeof clip.metadata?.patternId === "string" ? clip.metadata.patternId.trim() : "";
+  if (!patternId) return [];
+  const pcs = (clip.sourceRefId ? context.pcsSources.get(clip.sourceRefId) : null) || context.primaryPcsSource;
+  const section = pcs && clip.sectionId ? pcs.sections[clip.sectionId as keyof typeof pcs.sections] : null;
+  if (!pcs || !section) return [];
+  return renderGeneratedSectionEvents(project, pcs, section, clip);
 }
 
 export function resolveMidiClip(project: PocketDawProject, clip: Clip, _context: RenderContext): RenderedEvent[] {

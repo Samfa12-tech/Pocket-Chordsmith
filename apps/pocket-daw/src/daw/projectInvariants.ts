@@ -16,7 +16,7 @@ export interface ProjectInvariantReport {
   warnings: ProjectInvariantIssue[];
 }
 
-const CONTROL_ONLY_CLIP_TYPES: ReadonlySet<ClipType> = new Set(["automation", "marker", "generated-pattern"]);
+const CONTROL_ONLY_CLIP_TYPES: ReadonlySet<ClipType> = new Set(["automation", "marker"]);
 
 export function validateProjectInvariants(project: PocketDawProject): ProjectInvariantReport {
   const errors: ProjectInvariantIssue[] = [];
@@ -106,7 +106,7 @@ export function validateProjectInvariants(project: PocketDawProject): ProjectInv
     if (clip.automationLaneId && !laneIds.has(clip.automationLaneId)) {
       add("error", "missing-clip-automation-lane", `${base}.automationLaneId`, `Clip ${clip.id} references missing automation lane ${clip.automationLaneId}.`);
     }
-    if (CONTROL_ONLY_CLIP_TYPES.has(clip.type)) {
+    if (CONTROL_ONLY_CLIP_TYPES.has(clip.type) || (clip.type === "generated-pattern" && !isRenderableGeneratedPatternClip(clip))) {
       add("warning", "control-only-clip-type", `${base}.type`, `Clip type ${clip.type} is schema-valid but not fully rendered as audio material.`);
     }
   });
@@ -186,6 +186,13 @@ function hasWaveformPeaks(value: unknown): boolean {
 
 function metadataString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function isRenderableGeneratedPatternClip(clip: PocketDawProject["timeline"]["clips"][number]): boolean {
+  return clip.type === "generated-pattern" &&
+    typeof clip.sectionId === "string" &&
+    typeof clip.metadata?.patternId === "string" &&
+    clip.metadata.patternId.trim().length > 0;
 }
 
 function isAllowedVirtualClipTrack(type: ClipType, trackId: string): boolean {
