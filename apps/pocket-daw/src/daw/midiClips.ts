@@ -637,6 +637,20 @@ export function quantizeMidiClip(project: PocketDawProject, clipId: string, grid
   });
 }
 
+export function quantizeMidiClipDurations(project: PocketDawProject, clipId: string, grid: MidiQuantizeGrid): PocketDawProject {
+  return editMidiClip(project, clipId, (data) => {
+    const stepTicks = midiQuantizeStepTicks(data.ppq, grid);
+    data.notes = data.notes.map((note) => ({
+      ...note,
+      durationTicks: Math.max(stepTicks, Math.round(note.durationTicks / stepTicks) * stepTicks)
+    }));
+    data.metadata = {
+      ...(data.metadata || {}),
+      lastDurationQuantizeGrid: grid
+    };
+  });
+}
+
 export function swingMidiClip(project: PocketDawProject, clipId: string, percent: MidiSwingPercent): PocketDawProject {
   return editMidiClip(project, clipId, (data) => {
     data.notes = data.notes.map((note) => {

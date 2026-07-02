@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
-import { MIDI_GROOVE_TEMPLATES, addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, importMidiFileToProject, importMidiFileToProjectWithPlacement, midiDataFromClip, moveMidiNote, quantizeMidiClip, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote } from "../src/daw/midiClips";
+import { MIDI_GROOVE_TEMPLATES, addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, importMidiFileToProject, importMidiFileToProjectWithPlacement, midiDataFromClip, moveMidiNote, quantizeMidiClip, quantizeMidiClipDurations, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote } from "../src/daw/midiClips";
 import { parseStandardMidiFile, type ParsedMidiFile } from "../src/daw/midiParser";
 import { aftertouchMidiBytes, formatOneTempoAndPianoMidiBytes, metalArrangementMidiBytes, metadataRichMidiBytes, multiTrackChannelMidiBytes, pitchBendMidiBytes, programChangeMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 
@@ -586,6 +586,27 @@ describe("MIDI clips", () => {
     expect(edited.startTick).toBe(240);
     expect(edited.durationTicks).toBe(360);
     expect(edited.velocity).toBe(37);
+  });
+
+  it("quantizes MIDI note durations to a musical grid without moving starts or expression", () => {
+    const imported = importSimpleMidi();
+    const clipId = imported.result.clipId;
+    let project = addMidiNote(imported.result.project, clipId, 181);
+    let clip = project.timeline.clips.find((item) => item.id === clipId)!;
+    const noteId = midiDataFromClip(clip).notes.at(-1)!.id;
+
+    project = setMidiNoteField(project, clipId, noteId, "durationTicks", 181);
+    project = setMidiNoteField(project, clipId, noteId, "velocity", 37);
+    project = setMidiNoteField(project, clipId, noteId, "channel", 2);
+    project = quantizeMidiClipDurations(project, clipId, "1/16");
+    clip = project.timeline.clips.find((item) => item.id === clipId)!;
+    const edited = midiDataFromClip(clip).notes.find((note) => note.id === noteId)!;
+
+    expect(edited.startTick).toBe(181);
+    expect(edited.durationTicks).toBe(240);
+    expect(edited.velocity).toBe(37);
+    expect(edited.channel).toBe(2);
+    expect(midiDataFromClip(clip).metadata?.lastDurationQuantizeGrid).toBe("1/16");
   });
 
   it("supports common MIDI quantize grids", () => {

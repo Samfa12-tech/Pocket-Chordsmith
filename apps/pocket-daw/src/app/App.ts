@@ -140,6 +140,7 @@ import {
   placePunchRecordingClipFromRangeCommand,
   pitchMidiNoteCommand,
   quantizeMidiClipCommand,
+  quantizeMidiDurationsCommand,
   redoCommand,
   renameMarkerCommand,
   renameTrackCommand,
@@ -2065,6 +2066,18 @@ export class App {
           audio: "composition-events",
           preserveScroll: true,
           reason: `midi-quantize-${grid}`
+        });
+      }
+      return;
+    }
+    const quantizeMidiDurations = target?.closest<HTMLElement>("[data-midi-duration-quantize]");
+    if (quantizeMidiDurations) {
+      const [clipId, grid] = String(quantizeMidiDurations.dataset.midiDurationQuantize || "").split(":");
+      if (grid === "1/4" || grid === "1/8" || grid === "1/16" || grid === "1/32") {
+        this.applyProjectState(quantizeMidiDurationsCommand(this.state, clipId, grid), {
+          audio: "composition-events",
+          preserveScroll: true,
+          reason: `midi-duration-quantize-${grid}`
         });
       }
       return;

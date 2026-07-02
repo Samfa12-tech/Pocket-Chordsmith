@@ -1428,6 +1428,7 @@ function renderMidiClipEditor(clip: Clip): string {
   const pitchBends = midi.pitchBends.slice().sort((a, b) => a.tick - b.tick || (a.channel ?? 0) - (b.channel ?? 0) || a.value - b.value);
   const aftertouch = midi.aftertouch.slice().sort((a, b) => a.tick - b.tick || (a.channel ?? 0) - (b.channel ?? 0) || (a.note ?? -1) - (b.note ?? -1));
   const lastGrid = typeof midi.metadata?.lastQuantizeGrid === "string" ? midi.metadata.lastQuantizeGrid : "";
+  const lastDurationGrid = typeof midi.metadata?.lastDurationQuantizeGrid === "string" ? midi.metadata.lastDurationQuantizeGrid : "";
   const lastSwingPercent = typeof midi.metadata?.lastSwingPercent === "number" ? midi.metadata.lastSwingPercent : null;
   const lastGrooveTemplate = typeof midi.metadata?.lastGrooveTemplate === "string" ? midi.metadata.lastGrooveTemplate : "";
   const lastVelocityTransform = typeof midi.metadata?.lastVelocityTransform === "string" ? midi.metadata.lastVelocityTransform : "";
@@ -1451,6 +1452,9 @@ function renderMidiClipEditor(clip: Clip): string {
         <label class="midi-clip-length-control">Bars <input data-midi-clip-property="${sanitizeDataAttr(`${clip.id}:barLength`)}" type="number" min="0.25" max="4096" step="0.25" value="${sanitizeCssLengthOrNumber(clip.barLength, 1, 0.25, 4096)}"></label>
         <div class="midi-quantize-actions" aria-label="Quantize">
           ${grids.map((grid) => `<button type="button" class="${lastGrid === grid ? "selected" : ""}" title="Quantize to ${escapeAttr(grid)}" data-midi-quantize="${sanitizeDataAttr(`${clip.id}:${grid}`)}">Q ${escapeHtml(grid)}</button>`).join("")}
+        </div>
+        <div class="midi-duration-actions" aria-label="Quantize note lengths">
+          ${grids.map((grid) => `<button type="button" class="${lastDurationGrid === grid ? "selected" : ""}" title="Quantize note lengths to ${escapeAttr(grid)}" data-midi-duration-quantize="${sanitizeDataAttr(`${clip.id}:${grid}`)}">Len ${escapeHtml(grid)}</button>`).join("")}
         </div>
         <div class="midi-swing-actions" aria-label="Swing">
           ${swings.map((percent) => `<button type="button" class="${lastSwingPercent === percent ? "selected" : ""}" title="${percent === 50 ? "Straight eighth notes" : `Apply ${percent}% eighth-note swing`}" data-midi-swing="${sanitizeDataAttr(`${clip.id}:${percent}`)}">${percent === 50 ? "Straight" : `Swing ${percent}`}</button>`).join("")}

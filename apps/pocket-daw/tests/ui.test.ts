@@ -396,6 +396,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "convert-midi-arrangement")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "audio-take-comp-range")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-audio-clip-action:quantize-warp-markers")).toBe(true);
+    expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-midi-duration-quantize")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-ai-bridge-enabled")).toBe(true);
     [
       "data-chord-instrument",
@@ -424,6 +425,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(source).toContain("this.applyButtonTooltips();");
     expect(source).toContain("function tooltipForButton(button: HTMLButtonElement)");
     expect(source).toContain("FUNCTION_ACTION_TOOLTIPS");
+    expect(source).toContain("quantizeMidiDurationsCommand");
+    expect(source).toContain("[data-midi-duration-quantize]");
     expect(source).toContain("collapsedSectionsForCreationPreset");
     expect(source).toContain("lowerDockTabForCreationPreset");
     expect(source).toContain('if (action === "toggle-ui-section")');
@@ -451,6 +454,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(doc).toContain("| Music Focus |");
     expect(doc).toContain("collapses the Media Pool");
     expect(doc).toContain("Opens Export Details");
+    expect(doc).toContain("note-length quantize snaps durations");
     expect(doc).toContain("| Studio Rail |");
     expect(doc).toContain("| Folder Tracks |");
     expect(doc).toContain("| Track Source Editor |");
@@ -476,6 +480,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Collect Media | `data-action=collect-media`");
     expect(catalog).toContain("| Map Drums | `data-action=convert-midi-drums`");
     expect(catalog).toContain("| Map Arrangement | `data-action=convert-midi-arrangement`");
+    expect(catalog).toContain("| Quantize Note Lengths | `data-midi-duration-quantize`");
     expect(catalog).toContain("| Quantize Warp Markers | `data-audio-clip-action:quantize-warp-markers`");
     expect(catalog).toContain("| Download And Install Update | `data-action=updater-download-install`");
     expect(catalog).toContain("| Enable Live App Bridge | `data-ai-bridge-enabled`");
@@ -1911,6 +1916,10 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain(`data-midi-quantize="${result.clipId}:1/8"`);
     expect(html).toContain(`data-midi-quantize="${result.clipId}:1/16"`);
     expect(html).toContain(`data-midi-quantize="${result.clipId}:1/32"`);
+    expect(html).toContain(`data-midi-duration-quantize="${result.clipId}:1/4"`);
+    expect(html).toContain(`data-midi-duration-quantize="${result.clipId}:1/8"`);
+    expect(html).toContain(`data-midi-duration-quantize="${result.clipId}:1/16"`);
+    expect(html).toContain(`data-midi-duration-quantize="${result.clipId}:1/32"`);
     expect(html).toContain(`data-midi-swing="${result.clipId}:50"`);
     expect(html).toContain(`data-midi-swing="${result.clipId}:55"`);
     expect(html).toContain(`data-midi-swing="${result.clipId}:60"`);

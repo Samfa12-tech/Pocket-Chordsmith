@@ -93,7 +93,7 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | Function | What it does | Use when | AI counterpart notes |
 | --- | --- | --- | --- |
 | Piano Roll | Edits selected MIDI clip notes, clip length, pitch, tick, duration, velocity and channel. | Precise note editing after import or manual creation. | Read MIDI metadata and tempo map summaries before timing assumptions. |
-| Quantize | Moves MIDI notes to a selected rhythmic grid. | Tightening timing. | Changes note timing in project state but is undoable. |
+| Quantize | Moves MIDI note starts to a selected rhythmic grid, and note-length quantize snaps durations without moving starts. | Tightening starts or cleaning ragged note lengths. | Changes MIDI timing/length data in project state but is undoable; listen for overlaps or shortened sustains. |
 | Swing And Groove | Applies swing percentages or named groove templates. | Adding feel after basic timing is correct. | Record chosen groove/swing in metadata where possible. |
 | Velocity And Pitch Transforms | Applies bulk velocity shaping or pitch shifts. | Humanization, leveling, octave/semitone shifts. | Check pitch range after transforms, especially drums/bass. |
 | Controllers, Program, Bend, Aftertouch | Adds/edits/duplicates/deletes expressive MIDI events. MIDI preview/render interprets channel-matched CC7 volume, CC10 pan, CC11 expression, CC64 sustain and pitch-bend detune. | MIDI expression and interchange. | Imported controller data may be dense; keep edits bounded. |

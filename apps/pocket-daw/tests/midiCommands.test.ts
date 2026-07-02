@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addMidiAftertouchCommand, addMidiControllerCommand, addMidiNoteCommand, addMidiPitchBendCommand, addMidiProgramChangeCommand, applyMidiGrooveTemplateCommand, cropSelectedClipToTimelineSelectionCommand, deleteMidiAftertouchCommand, deleteMidiControllerCommand, deleteMidiPitchBendCommand, deleteMidiProgramChangeCommand, deleteSelectedClipRangeCommand, duplicateMidiAftertouchCommand, duplicateMidiControllerCommand, duplicateMidiNoteCommand, duplicateMidiPitchBendCommand, duplicateMidiProgramChangeCommand, quantizeMidiClipCommand, rippleDeleteSelectedClipRangeCommand, setMidiAftertouchFieldCommand, setMidiClipBarLengthCommand, setMidiControllerFieldCommand, setMidiNoteFieldCommand, setMidiPitchBendFieldCommand, setMidiProgramChangeFieldCommand, setTimelineSelectionRangeCommand, splitTimelineSelectionCommand, swingMidiClipCommand, transformMidiPitchCommand, transformMidiVelocityCommand } from "../src/app/commands";
+import { addMidiAftertouchCommand, addMidiControllerCommand, addMidiNoteCommand, addMidiPitchBendCommand, addMidiProgramChangeCommand, applyMidiGrooveTemplateCommand, cropSelectedClipToTimelineSelectionCommand, deleteMidiAftertouchCommand, deleteMidiControllerCommand, deleteMidiPitchBendCommand, deleteMidiProgramChangeCommand, deleteSelectedClipRangeCommand, duplicateMidiAftertouchCommand, duplicateMidiControllerCommand, duplicateMidiNoteCommand, duplicateMidiPitchBendCommand, duplicateMidiProgramChangeCommand, quantizeMidiClipCommand, quantizeMidiDurationsCommand, rippleDeleteSelectedClipRangeCommand, setMidiAftertouchFieldCommand, setMidiClipBarLengthCommand, setMidiControllerFieldCommand, setMidiNoteFieldCommand, setMidiPitchBendFieldCommand, setMidiProgramChangeFieldCommand, setTimelineSelectionRangeCommand, splitTimelineSelectionCommand, swingMidiClipCommand, transformMidiPitchCommand, transformMidiVelocityCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { createEmptyPocketDawProject } from "../src/daw/dawProject";
 import { addMidiNote, importMidiFileToProject, midiDataFromClip } from "../src/daw/midiClips";
@@ -46,10 +46,44 @@ describe("MIDI edit commands", () => {
     expect(edited.status).toContain("Quantized lead.mid to 1/4");
   });
 
+  it("quantizes MIDI note lengths through the undoable command path", () => {
+    const state = createInitialState();
+    const parsed = parseStandardMidiFile(simpleMidiBytes());
+    const imported = importMidiFileToProject(state.undoStack.present, parsed, "lengths.mid");
+    let project = addMidiNote(imported.project, imported.clipId, 181);
+    const clipBefore = project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const noteId = midiDataFromClip(clipBefore).notes.at(-1)!.id;
+    project = setMidiNoteFieldCommand({ ...state, undoStack: createUndoStack(project) }, imported.clipId, noteId, "durationTicks", 181).undoStack.present;
+    state.undoStack = createUndoStack(project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+
+    const edited = quantizeMidiDurationsCommand(state, imported.clipId, "1/16");
+    const clip = edited.undoStack.present.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const note = midiDataFromClip(clip).notes.find((item) => item.id === noteId)!;
+
+    expect(note.startTick).toBe(181);
+    expect(note.durationTicks).toBe(240);
+    expect(midiDataFromClip(clip).metadata?.lastDurationQuantizeGrid).toBe("1/16");
+    expect(edited.undoStack.past).toHaveLength(1);
+    expect(edited.selectedClipId).toBe(imported.clipId);
+    expect(edited.selectedTrackId).toBe(imported.trackId);
+    expect(edited.status).toContain("Quantized lengths.mid note lengths to 1/16");
+  });
+
   it("does not quantize non-MIDI clips", () => {
     const state = createInitialState();
 
     const edited = quantizeMidiClipCommand(state, "missing", "1/16");
+
+    expect(edited.undoStack.present).toBe(state.undoStack.present);
+    expect(edited.status).toContain("Choose a MIDI clip");
+  });
+
+  it("does not quantize MIDI note lengths for non-MIDI clips", () => {
+    const state = createInitialState();
+
+    const edited = quantizeMidiDurationsCommand(state, "missing", "1/16");
 
     expect(edited.undoStack.present).toBe(state.undoStack.present);
     expect(edited.status).toContain("Choose a MIDI clip");

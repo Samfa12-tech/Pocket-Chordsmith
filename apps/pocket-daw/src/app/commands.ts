@@ -9,7 +9,7 @@ import { setTrackRecordingInputAssignment } from "../daw/recordingInputs";
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
 import { addTrackToProject, renameTrack, setTrackFolder, toggleFolderExpanded, type AddTrackKind } from "../daw/tracks";
 import { placeAudioClipOnTimeline, placePunchRecordingClipOnTrack } from "../daw/audioClips";
-import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createEmptyMidiClip, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, midiDataFromClip, midiGrooveTemplateById, moveMidiNote, quantizeMidiClip, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote, type MidiAftertouchField, type MidiControllerField, type MidiGrooveTemplateId, type MidiNoteField, type MidiPitchBendField, type MidiPitchTransform, type MidiProgramChangeField, type MidiQuantizeGrid, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
+import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createEmptyMidiClip, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, midiDataFromClip, midiGrooveTemplateById, moveMidiNote, quantizeMidiClip, quantizeMidiClipDurations, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote, type MidiAftertouchField, type MidiControllerField, type MidiGrooveTemplateId, type MidiNoteField, type MidiPitchBendField, type MidiPitchTransform, type MidiProgramChangeField, type MidiQuantizeGrid, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
 import type { MidiTempoMapSummary } from "../daw/midiClips";
 import { convertMidiClipToBassOverlays } from "../daw/midiBassConversion";
 import { convertMidiClipToChordOverlays } from "../daw/midiChordConversion";
@@ -1437,6 +1437,16 @@ export function quantizeMidiClipCommand(state: AppState, clipId: string, grid: M
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before quantizing." };
   return {
     ...commitProject(state, quantizeMidiClip(state.undoStack.present, clipId, grid), `Quantized ${clip.name} to ${grid}.`),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function quantizeMidiDurationsCommand(state: AppState, clipId: string, grid: MidiQuantizeGrid): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before quantizing note lengths." };
+  return {
+    ...commitProject(state, quantizeMidiClipDurations(state.undoStack.present, clipId, grid), `Quantized ${clip.name} note lengths to ${grid}.`),
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId
   };

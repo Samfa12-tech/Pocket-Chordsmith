@@ -326,9 +326,15 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "Quantize",
-        does: "Moves MIDI notes to a selected rhythmic grid.",
-        useWhen: "Use to tighten timing to 1/4, 1/8, 1/16 or 1/32 grids.",
-        aiNote: "Quantization is destructive to note timing within the project state but can be undone."
+        does: "Moves MIDI note starts to a selected rhythmic grid.",
+        useWhen: "Use to tighten note starts to 1/4, 1/8, 1/16 or 1/32 grids.",
+        aiNote: "Start quantization is destructive to note timing within the project state but can be undone."
+      },
+      {
+        name: "Quantize Note Lengths",
+        does: "Snaps MIDI note durations to a selected rhythmic grid without moving note starts.",
+        useWhen: "Use to clean imported or played-in MIDI notes whose starts are good but lengths are messy.",
+        aiNote: "Length quantization preserves note starts, velocity, channel and expression data; still listen for overlaps or shortened sustains."
       },
       {
         name: "Swing And Groove",
@@ -1712,9 +1718,17 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "MIDI Editing",
     control: "Quantize",
     selector: "data-midi-quantize",
-    does: "Moves MIDI notes to the selected rhythmic grid.",
-    useWhen: "Use to tighten timing to quarter, eighth, sixteenth, or thirty-second notes.",
-    aiNote: "This edits MIDI timing in project state but remains undoable."
+    does: "Moves MIDI note starts to the selected rhythmic grid.",
+    useWhen: "Use to tighten note starts to quarter, eighth, sixteenth, or thirty-second notes.",
+    aiNote: "This edits MIDI start timing in project state but remains undoable."
+  },
+  {
+    surface: "MIDI Editing",
+    control: "Quantize Note Lengths",
+    selector: "data-midi-duration-quantize",
+    does: "Snaps MIDI note durations to the selected rhythmic grid without moving note starts.",
+    useWhen: "Use when imported or recorded MIDI has acceptable starts but ragged note lengths.",
+    aiNote: "Preserves starts, velocity, channel and expression metadata; verify musical sustains after use."
   },
   {
     surface: "MIDI Editing",
