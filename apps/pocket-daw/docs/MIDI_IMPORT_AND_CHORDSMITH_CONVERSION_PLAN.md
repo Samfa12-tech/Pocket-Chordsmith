@@ -92,7 +92,7 @@ Non-goals:
 ## Conversion Roadmap
 
 1. Add an explicit conversion command beside, not inside, import.
-2. Show a conversion preview. `Current source status: first pass implemented for selected MIDI clips in the Piano Roll plus support diagnostics, file-first MCP summaries and live MCP media status. It reports tempo/meter, MIDI key-signature or pitch-inferred key/scale, rough section shape, role hints, visible/source note counts, filtered-out note counts, per-role drum/bass/chord/melody mapping counts, preserved expressive MIDI event counts and warnings before any conversion command runs. The Piano Roll now also exposes source MIDI track/channel, target Section, Melody Track and raw-reference keep/remove choices used by Map Drums, Map Bass, Map Chords, Map Melody and Map Arrangement. Deeper A-H section sequencing remains future work.`
+2. Show a conversion preview. `Current source status: implemented for selected MIDI clips in the Piano Roll plus support diagnostics, file-first MCP summaries and live MCP media status. It reports tempo/meter, MIDI key-signature or pitch-inferred key/scale, rough section shape, role hints, visible/source note counts, filtered-out note counts, per-role drum/bass/chord/melody mapping counts, preserved expressive MIDI event counts, conversion confidence, ignored material, ambiguous merged/grouped material, raw-reference keep/remove impact and warnings before any conversion command runs. The Piano Roll also exposes source MIDI track/channel, target Section, Melody Track and raw-reference keep/remove choices used by Map Drums, Map Bass, Map Chords, Map Melody and Map Arrangement. Deeper A-H section sequencing remains future work.`
    - detected key, scale, tempo, time signature
    - suggested section length and A-H sequence
    - mapped drum lanes, bass roots, chord rhythm, melody lead, and optional guitar rhythm
@@ -124,7 +124,7 @@ Conversion tests:
 - conversion does not run during ordinary import
 - conversion creates Chordsmith source edits through undoable commands
 - raw MIDI reference clip can remain muted and linked to the source media
-- conversion report lists ignored/ambiguous material
+- conversion report lists ignored/ambiguous material before applying changes `Current source status: tested through preview model, UI rendering and file-first MCP summaries.`
 - drum, bass, chord, melody, and guitar heuristics are deterministic for fixture files
 
 ## Release Language

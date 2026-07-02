@@ -48,6 +48,17 @@ describe("MIDI clips", () => {
     expect(preview?.timing).toMatchObject({ bpm: 120, timeSignature: "4/4" });
     expect(preview?.structure.suggestedSectionCount).toBeGreaterThan(0);
     expect(preview?.roleHints.length).toBeGreaterThan(0);
+    expect(preview?.confidence).toBe("medium");
+    expect(preview?.ignoredMaterial.map((row) => row.reason)).toEqual(expect.arrayContaining([
+      "drum-channel-for-melodic-roles",
+      "melodic-notes-for-drums",
+      "above-bass-range"
+    ]));
+    expect(preview?.ambiguousMaterial.map((row) => row.reason)).toContain("merged-target-steps");
+    expect(preview?.rawReferenceAction).toMatchObject({
+      keepTimelineClip: true,
+      sourceMediaPreserved: true
+    });
     expect(JSON.stringify(imported.project)).toBe(before);
   });
 
@@ -66,6 +77,23 @@ describe("MIDI clips", () => {
     expect(preview?.visibleNoteCount).toBe(1);
     expect(preview?.mappings.bass.written).toBe(1);
     expect(preview?.mappings.drums.written).toBe(0);
+    expect(preview?.ignoredMaterial.map((row) => row.reason)).toContain("source-filter");
+  });
+
+  it("reports raw MIDI reference removal before applying a Chordsmith conversion", () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Reference Preview" }));
+    const imported = importMidiFileToProject(project, parseStandardMidiFile(simpleMidiBytes()), "lead.mid");
+
+    const preview = createMidiChordsmithConversionPreview(imported.project, imported.clipId, "A", 0, {
+      mode: "all",
+      value: null
+    }, false);
+
+    expect(preview?.rawReferenceAction).toMatchObject({
+      keepTimelineClip: false,
+      sourceMediaPreserved: true
+    });
+    expect(preview?.rawReferenceAction.detail).toContain("removed after a successful mapping");
   });
 
   it("uses preserved MIDI key and meter metadata in Chordsmith conversion previews", () => {

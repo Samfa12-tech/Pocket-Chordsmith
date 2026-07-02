@@ -1445,7 +1445,7 @@ function renderMidiClipEditor(project: ReturnType<typeof currentProject>, state:
   const conversionMelodyCount = Math.max(1, conversionSection?.melodyTracks.length || 1);
   const conversionMelodyTrackIndex = Math.max(0, Math.min(conversionMelodyCount - 1, Math.round(Number(state.chordsmithEditorMelodyTrackIndex) || 0)));
   const conversionSourceFilter = normalizeMidiConversionSourceFilter(state.midiConversionSourceMode, state.midiConversionSourceValue);
-  const conversionPreview = createMidiChordsmithConversionPreview(project, clip.id, conversionSectionId, conversionMelodyTrackIndex, conversionSourceFilter);
+  const conversionPreview = createMidiChordsmithConversionPreview(project, clip.id, conversionSectionId, conversionMelodyTrackIndex, conversionSourceFilter, state.midiConversionKeepRawReference);
   const notes = midi.notes.slice().sort((a, b) => a.startTick - b.startTick || a.pitch - b.pitch);
   const controllers = midi.controllers.slice().sort((a, b) => a.tick - b.tick || a.controller - b.controller);
   const programs = midi.programChanges.slice().sort((a, b) => a.tick - b.tick || (a.channel ?? 0) - (b.channel ?? 0) || a.program - b.program);
@@ -1628,6 +1628,8 @@ function renderMidiChordsmithConversionPreview(preview: MidiChordsmithConversion
     preview.preservedAftertouchCount ? `${preview.preservedAftertouchCount} touch` : ""
   ].filter(Boolean).join(", ") || "none";
   const warningText = preview.warnings.length ? preview.warnings.join(" ") : "Ready to map. The raw MIDI clip stays in the project.";
+  const ignoredSummary = formatMidiConversionReportRows(preview.ignoredMaterial);
+  const ambiguousSummary = formatMidiConversionReportRows(preview.ambiguousMaterial);
   return `
     <section class="midi-conversion-preview" data-midi-conversion-preview="${sanitizeDataAttr(preview.clipId)}" aria-label="MIDI to Chordsmith conversion preview">
       <h4>Chordsmith Mapping Preview</h4>
@@ -1637,16 +1639,22 @@ function renderMidiChordsmithConversionPreview(preview: MidiChordsmithConversion
         <dt>Key</dt><dd>${escapeHtml(preview.key.key)} ${preview.key.scale}${preview.key.source === "pitch-inference" ? " (inferred)" : preview.key.source === "midi-key-signature" ? " (MIDI)" : " (project)"}</dd>
         <dt>Structure</dt><dd>${preview.structure.sourceBars} bars / ${preview.structure.suggestedSectionCount} section${preview.structure.suggestedSectionCount === 1 ? "" : "s"} x ${preview.structure.suggestedSectionBars}</dd>
         <dt>Source</dt><dd>${escapeHtml(preview.sourceFilterLabel)}${preview.filteredOutNoteCount ? ` (${preview.filteredOutNoteCount} filtered out)` : ""}</dd>
+        <dt>Confidence</dt><dd>${escapeHtml(preview.confidence)}${ignoredSummary ? ` / ${escapeHtml(ignoredSummary)}` : ""}${ambiguousSummary ? ` / ${escapeHtml(ambiguousSummary)}` : ""}</dd>
         <dt>Visible notes</dt><dd>${preview.visibleNoteCount} / ${preview.sourceNoteCount}${preview.outOfRangeNoteCount ? ` (${preview.outOfRangeNoteCount} outside clip range)` : ""}</dd>
         <dt>Drums</dt><dd>${preview.mappings.drums.written} cells${laneSummary ? ` / ${escapeHtml(laneSummary)}` : ""}</dd>
         <dt>Bass</dt><dd>${preview.mappings.bass.written} notes${preview.mappings.bass.pitches.length ? ` / ${escapeHtml(formatMidiPitchList(preview.mappings.bass.pitches))}` : ""}</dd>
         <dt>Chords</dt><dd>${preview.mappings.chords.written} groups</dd>
         <dt>Melody</dt><dd>${preview.mappings.melody.written} notes${preview.mappings.melody.pitches.length ? ` / ${escapeHtml(formatMidiPitchList(preview.mappings.melody.pitches))}` : ""}</dd>
         <dt>Role hints</dt><dd>${escapeHtml(formatMidiRoleHints(preview.roleHints))}</dd>
-        <dt>Preserved</dt><dd>Raw MIDI ${preview.rawMidiClip}; ${escapeHtml(expressive)}</dd>
+        <dt>Preserved</dt><dd>Raw MIDI ${preview.rawMidiClip}; ${escapeHtml(expressive)}; ${escapeHtml(preview.rawReferenceAction.detail)}</dd>
       </dl>
     </section>
   `;
+}
+
+function formatMidiConversionReportRows(rows: MidiChordsmithConversionPreview["ignoredMaterial"] | MidiChordsmithConversionPreview["ambiguousMaterial"]): string {
+  if (!rows.length) return "";
+  return rows.slice(0, 3).map((row) => `${row.reason} ${row.count}`).join(", ") + (rows.length > 3 ? ` +${rows.length - 3}` : "");
 }
 
 function renderMidiConversionTargetControls(

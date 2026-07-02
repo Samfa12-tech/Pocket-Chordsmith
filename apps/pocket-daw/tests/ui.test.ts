@@ -2031,6 +2031,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('data-action="adopt-midi-meter-map"');
     expect(html).toContain("Meter Lane");
     expect(html).toContain("C4");
+    expect(html).toContain("<dt>Confidence</dt>");
+    expect(html).toContain("Raw MIDI timeline reference will be kept after mapping.");
     expect(html).toContain("MIDI clips are created from the selected import placement");
     expect(html).toContain("midi-note-strip");
   });
@@ -2052,6 +2054,21 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('<option value="source-track:2" selected>Track 3: Bass</option>');
     expect(html).toContain('<option value="channel:9" >Channel 10</option>');
     expect(html).toContain("<dt>Source</dt><dd>source track 3");
+  });
+
+  it("renders the MIDI conversion raw-reference removal impact before mapping", () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Reference UI" }));
+    const imported = importMidiFileToProject(project, parseStandardMidiFile(multiTrackChannelMidiBytes()), "band.mid");
+    const state = createInitialState();
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+    state.lowerDockTab = "piano-roll";
+    state.midiConversionKeepRawReference = false;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("Raw MIDI timeline reference will be removed after a successful mapping");
   });
 
   it("renders the selected imported melody lane editor", () => {

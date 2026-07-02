@@ -196,10 +196,17 @@ describe("Pocket DAW MCP tools", () => {
         clipId: imported.clipId,
         clipName: "metal.mid",
         rawMidiClip: "preserved",
+        confidence: "medium",
         timing: expect.objectContaining({ bpm: 120, timeSignature: "4/4" }),
         key: expect.objectContaining({ source: expect.any(String) }),
         structure: expect.objectContaining({ sourceBars: expect.any(Number), suggestedSectionCount: expect.any(Number) }),
         roleHints: expect.any(Array),
+        ignoredMaterial: expect.any(Array),
+        ambiguousMaterial: expect.any(Array),
+        rawReferenceAction: expect.objectContaining({
+          keepTimelineClip: true,
+          sourceMediaPreserved: true
+        }),
         mappings: expect.objectContaining({
           drums: expect.objectContaining({ written: expect.any(Number) }),
           bass: expect.objectContaining({ written: expect.any(Number) }),
@@ -213,6 +220,11 @@ describe("Pocket DAW MCP tools", () => {
     expect(preview.mappings.bass.written).toBeGreaterThan(0);
     expect(preview.mappings.chords.written).toBeGreaterThan(0);
     expect(preview.mappings.melody.written).toBeGreaterThan(0);
+    expect(preview.ignoredMaterial.map((row: { reason: string }) => row.reason)).toEqual(expect.arrayContaining([
+      "melodic-notes-for-drums",
+      "above-bass-range"
+    ]));
+    expect(preview.ambiguousMaterial.map((row: { reason: string }) => row.reason)).toContain("merged-target-steps");
   });
 
   it("summarizes grouped future recording capture plans for MCP smoke", async () => {

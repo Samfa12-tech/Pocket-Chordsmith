@@ -49,6 +49,22 @@ export interface MidiChordsmithConversionPreview {
   sourceFilterLabel: string;
   sourceOptions: MidiConversionSourceOption[];
   filteredOutNoteCount: number;
+  confidence: "high" | "medium" | "low";
+  ignoredMaterial: Array<{
+    reason: string;
+    count: number;
+    detail: string;
+  }>;
+  ambiguousMaterial: Array<{
+    reason: string;
+    count: number;
+    detail: string;
+  }>;
+  rawReferenceAction: {
+    keepTimelineClip: boolean;
+    sourceMediaPreserved: true;
+    detail: string;
+  };
   mappings: {
     drums: {
       written: number;
@@ -93,7 +109,8 @@ export function createMidiChordsmithConversionPreview(
   clipId: string,
   sectionId = "A",
   melodyTrackIndex = 0,
-  sourceFilter: MidiConversionSourceFilter = DEFAULT_MIDI_CONVERSION_SOURCE_FILTER
+  sourceFilter: MidiConversionSourceFilter = DEFAULT_MIDI_CONVERSION_SOURCE_FILTER,
+  keepRawReference = true
 ): MidiChordsmithConversionPreview | null {
   const clip = project.timeline.clips.find((item) => item.id === clipId && item.type === "midi");
   if (!clip || clip.type !== "midi") return null;
@@ -102,8 +119,10 @@ export function createMidiChordsmithConversionPreview(
   const visibleTicks = Math.max(0, Math.round(clip.barLength * project.project.timeSig * midi.ppq));
   const sourceEndTick = sourceStartTick + visibleTicks;
   const normalizedSourceFilter = normalizeMidiConversionSourceFilter(sourceFilter.mode, sourceFilter.value);
-  const sourceFilteredNoteCount = midi.notes.filter((note) => midiNoteMatchesConversionSource(note, normalizedSourceFilter)).length;
-  const visibleNoteCount = midi.notes.filter((note) => midiNoteMatchesConversionSource(note, normalizedSourceFilter) && note.startTick >= sourceStartTick && note.startTick < sourceEndTick).length;
+  const sourceFilteredNotes = midi.notes.filter((note) => midiNoteMatchesConversionSource(note, normalizedSourceFilter));
+  const visibleNotes = sourceFilteredNotes.filter((note) => note.startTick >= sourceStartTick && note.startTick < sourceEndTick);
+  const sourceFilteredNoteCount = sourceFilteredNotes.length;
+  const visibleNoteCount = visibleNotes.length;
   const metadata = combinedMidiMetadata(project, clip, midi.metadata);
   const tempoSummary = createMidiTempoMapSummary(metadata, { fallbackBpm: project.project.bpm, fallbackTimeSig: project.project.timeSig });
   const timing = midiConversionTimingPreview(project, metadata, tempoSummary);
@@ -122,6 +141,20 @@ export function createMidiChordsmithConversionPreview(
     pitchBends: midi.pitchBends.length,
     aftertouch: midi.aftertouch.length
   });
+  const ignoredMaterial = midiConversionIgnoredMaterialReport({
+    totalNoteCount: midi.notes.length,
+    sourceFilteredNoteCount,
+    visibleNotes,
+    outOfRangeNoteCount: Math.max(0, sourceFilteredNoteCount - visibleNoteCount),
+    filteredOutNoteCount: Math.max(0, midi.notes.length - sourceFilteredNoteCount),
+    preservedExpressionCount: midi.controllers.length + midi.programChanges.length + midi.pitchBends.length + midi.aftertouch.length,
+    ppq: midi.ppq,
+    projectResolution: project.project.resolution,
+    sourceStartTick,
+    filterLabel: midiConversionSourceLabel(normalizedSourceFilter)
+  });
+  const ambiguousMaterial = midiConversionAmbiguousMaterialReport({ mergedByTargets, visibleNoteCount });
+  const confidence = midiConversionConfidence(written, visibleNoteCount, warnings.length, ignoredMaterial.length, ambiguousMaterial.length);
 
   return {
     clipId: clip.id,
@@ -143,6 +176,16 @@ export function createMidiChordsmithConversionPreview(
     sourceFilterLabel: midiConversionSourceLabel(normalizedSourceFilter),
     sourceOptions: midiConversionSourceOptions(midi.notes, metadata),
     filteredOutNoteCount: Math.max(0, midi.notes.length - sourceFilteredNoteCount),
+    confidence,
+    ignoredMaterial,
+    ambiguousMaterial,
+    rawReferenceAction: {
+      keepTimelineClip: keepRawReference !== false,
+      sourceMediaPreserved: true,
+      detail: keepRawReference !== false
+        ? "Raw MIDI timeline reference will be kept after mapping."
+        : "Raw MIDI timeline reference will be removed after a successful mapping; source media remains in the Media Pool."
+    },
     mappings: {
       drums: {
         written: drums.written,
@@ -177,6 +220,120 @@ export function createMidiChordsmithConversionPreview(
     roleHints: midiConversionRoleHints(metadata, midi.programChanges),
     warnings
   };
+}
+
+function midiConversionIgnoredMaterialReport(input: {
+  totalNoteCount: number;
+  sourceFilteredNoteCount: number;
+  visibleNotes: Array<{ channel?: number; pitch: number; startTick: number }>;
+  outOfRangeNoteCount: number;
+  filteredOutNoteCount: number;
+  preservedExpressionCount: number;
+  ppq: number;
+  projectResolution: number;
+  sourceStartTick: number;
+  filterLabel: string;
+}): MidiChordsmithConversionPreview["ignoredMaterial"] {
+  const rows: MidiChordsmithConversionPreview["ignoredMaterial"] = [];
+  if (input.filteredOutNoteCount) {
+    rows.push({
+      reason: "source-filter",
+      count: input.filteredOutNoteCount,
+      detail: `${input.filteredOutNoteCount} note${input.filteredOutNoteCount === 1 ? "" : "s"} excluded because mapping reads ${input.filterLabel}.`
+    });
+  }
+  if (input.outOfRangeNoteCount) {
+    rows.push({
+      reason: "outside-clip-range",
+      count: input.outOfRangeNoteCount,
+      detail: `${input.outOfRangeNoteCount} selected-source note${input.outOfRangeNoteCount === 1 ? "" : "s"} outside this clip window will not map.`
+    });
+  }
+  const drumChannelNotes = input.visibleNotes.filter((note) => note.channel === 9).length;
+  if (drumChannelNotes) {
+    rows.push({
+      reason: "drum-channel-for-melodic-roles",
+      count: drumChannelNotes,
+      detail: `${drumChannelNotes} channel-10 drum note${drumChannelNotes === 1 ? "" : "s"} ignored by bass, chord and melody mappers.`
+    });
+  }
+  const nonDrumNotes = input.visibleNotes.filter((note) => note.channel !== 9).length;
+  if (nonDrumNotes) {
+    rows.push({
+      reason: "melodic-notes-for-drums",
+      count: nonDrumNotes,
+      detail: `${nonDrumNotes} non-drum note${nonDrumNotes === 1 ? "" : "s"} ignored by the drum mapper.`
+    });
+  }
+  const highBassNotes = input.visibleNotes.filter((note) => note.channel !== 9 && note.pitch > 60).length;
+  if (highBassNotes) {
+    rows.push({
+      reason: "above-bass-range",
+      count: highBassNotes,
+      detail: `${highBassNotes} non-drum note${highBassNotes === 1 ? "" : "s"} above MIDI 60 ignored by the bass mapper.`
+    });
+  }
+  const singleNoteChordGroups = midiSingleNoteChordGroupCount(input.visibleNotes, input.ppq, input.projectResolution, input.sourceStartTick);
+  if (singleNoteChordGroups) {
+    rows.push({
+      reason: "single-note-chord-groups",
+      count: singleNoteChordGroups,
+      detail: `${singleNoteChordGroups} chord step${singleNoteChordGroups === 1 ? "" : "s"} had fewer than two unique notes and will not become a chord overlay.`
+    });
+  }
+  if (input.preservedExpressionCount) {
+    rows.push({
+      reason: "preserved-expression",
+      count: input.preservedExpressionCount,
+      detail: `${input.preservedExpressionCount} controller/program/bend/aftertouch event${input.preservedExpressionCount === 1 ? "" : "s"} stay on the raw MIDI clip and do not become Chordsmith overlays.`
+    });
+  }
+  if (!input.totalNoteCount) {
+    rows.push({
+      reason: "empty-midi",
+      count: 0,
+      detail: "No MIDI notes are available to map."
+    });
+  }
+  return rows;
+}
+
+function midiConversionAmbiguousMaterialReport(input: { mergedByTargets: number; visibleNoteCount: number }): MidiChordsmithConversionPreview["ambiguousMaterial"] {
+  const rows: MidiChordsmithConversionPreview["ambiguousMaterial"] = [];
+  if (input.mergedByTargets) {
+    rows.push({
+      reason: "merged-target-steps",
+      count: input.mergedByTargets,
+      detail: `${input.mergedByTargets} note${input.mergedByTargets === 1 ? "" : "s"} share a destination step and will be merged or grouped deterministically.`
+    });
+  }
+  if (!input.visibleNoteCount) {
+    rows.push({
+      reason: "no-visible-source-notes",
+      count: 0,
+      detail: "Mapping confidence is low because no selected-source notes are visible in this clip window."
+    });
+  }
+  return rows;
+}
+
+function midiConversionConfidence(written: number, visibleNoteCount: number, warningCount: number, ignoredCount: number, ambiguousCount: number): MidiChordsmithConversionPreview["confidence"] {
+  if (!visibleNoteCount || !written) return "low";
+  if (warningCount || ignoredCount > 3 || ambiguousCount > 0) return "medium";
+  return "high";
+}
+
+function midiSingleNoteChordGroupCount(notes: Array<{ channel?: number; pitch: number; startTick: number }>, ppq: number, projectResolution: number, sourceStartTick: number): number {
+  const ticksPerStep = Math.max(1, ppq / Math.max(1, projectResolution));
+  const groups = new Map<number, Set<number>>();
+  notes.forEach((note) => {
+    if (note.channel === 9) return;
+    const step = Math.max(0, Math.round((note.startTick - sourceStartTick) / ticksPerStep));
+    const group = groups.get(step) || new Set<number>();
+    group.add(Math.max(0, Math.min(127, Math.round(note.pitch))));
+    groups.set(step, group);
+  });
+  return Array.from(groups.values()).filter((group) => group.size < 2).length;
 }
 
 export function createMidiChordsmithConversionPreviews(project: PocketDawProject): MidiChordsmithConversionPreview[] {
