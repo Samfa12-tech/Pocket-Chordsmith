@@ -1619,9 +1619,9 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   {
     surface: "Audio Clip Editing",
     control: "Quantize Warp Markers",
-    selector: "data-audio-clip-action:quantize-warp-markers",
-    does: "Snaps existing warp marker target positions to the project 1/16 grid as source-safe metadata.",
-    useWhen: "Use after creating warp markers to prepare live-instrument timing correction.",
+    selector: "data-audio-clip-action:quantize-warp-markers-1/4, quantize-warp-markers-1/8, quantize-warp-markers-1/16, quantize-warp-markers-1/32",
+    does: "Snaps existing warp marker target positions to a chosen quarter, eighth, sixteenth or thirty-second note grid as source-safe metadata.",
+    useWhen: "Use after creating warp markers to prepare live-instrument timing correction at the musical resolution the take needs.",
     aiNote: "This does not time-stretch playback yet; sourceSeconds anchors stay preserved for the future stretch engine."
   },
   {

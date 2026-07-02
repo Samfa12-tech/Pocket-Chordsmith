@@ -398,7 +398,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "convert-midi-arrangement")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "audio-take-comp-range")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-audio-take-lane-summary")).toBe(true);
-    expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-audio-clip-action:quantize-warp-markers")).toBe(true);
+    expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-audio-clip-action:quantize-warp-markers-1/4, quantize-warp-markers-1/8, quantize-warp-markers-1/16, quantize-warp-markers-1/32")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-audio-clip-action:apply-warp-varispeed")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-midi-duration-quantize")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-ai-bridge-enabled")).toBe(true);
@@ -485,7 +485,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Map Drums | `data-action=convert-midi-drums`");
     expect(catalog).toContain("| Map Arrangement | `data-action=convert-midi-arrangement`");
     expect(catalog).toContain("| Quantize Note Lengths | `data-midi-duration-quantize`");
-    expect(catalog).toContain("| Quantize Warp Markers | `data-audio-clip-action:quantize-warp-markers`");
+    expect(catalog).toContain("| Quantize Warp Markers | `data-audio-clip-action:quantize-warp-markers-1/4, quantize-warp-markers-1/8, quantize-warp-markers-1/16, quantize-warp-markers-1/32`");
     expect(catalog).toContain("| Apply Warp Rate | `data-audio-clip-action:apply-warp-varispeed`");
     expect(catalog).toContain("| Download And Install Update | `data-action=updater-download-install`");
     expect(catalog).toContain("| Enable Live App Bridge | `data-ai-bridge-enabled`");
@@ -708,7 +708,10 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:normalize-gain"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:analyze-transients"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:create-warp-markers"`);
-    expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:quantize-warp-markers"`);
+    expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:quantize-warp-markers-1/4"`);
+    expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:quantize-warp-markers-1/8"`);
+    expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:quantize-warp-markers-1/16"`);
+    expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:quantize-warp-markers-1/32"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:apply-warp-varispeed"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:clear-warp-markers"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:crossfade-overlap"`);

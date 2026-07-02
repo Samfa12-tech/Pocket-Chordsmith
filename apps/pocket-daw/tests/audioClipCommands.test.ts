@@ -799,6 +799,55 @@ describe("audio clip edit commands", () => {
     expect(quantized.status).toContain("playback stretching is not enabled yet");
   });
 
+  it("quantizes source-safe warp marker targets to selectable grids", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    const imported = addImportedAudioMedia(state.undoStack.present, {
+      name: "Loose Guitar.wav",
+      uri: "C:\\Audio\\Loose Guitar.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 6,
+      sampleRate: 48000,
+      channels: 1
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    const project = {
+      ...placed.project,
+      timeline: {
+        ...placed.project.timeline,
+        clips: placed.project.timeline.clips.map((clip) => clip.id === placed.clipId ? {
+          ...clip,
+          metadata: {
+            ...(clip.metadata || {}),
+            audioWarpMarkers: [
+              { id: "warp_1", sourceSeconds: 0.37, targetBar: 2.18, targetSeconds: 2.36, source: "transient", locked: true },
+              { id: "warp_2", sourceSeconds: 1.12, targetBar: 2.59, targetSeconds: 3.18, source: "transient", locked: true },
+              { id: "warp_3", sourceSeconds: 2.01, targetBar: 3.03, targetSeconds: 4.06, source: "transient", locked: true }
+            ],
+            audioWarpMarkerCount: 3,
+            audioWarpReady: true,
+            audioWarpPlaybackMode: "metadata-only"
+          }
+        } : clip)
+      }
+    };
+    state.undoStack = createUndoStack(project);
+    state.selectedClipId = placed.clipId;
+    state.selectedTrackId = placed.trackId;
+
+    const quantized = applySelectedAudioClipActionCommand(state, placed.clipId, "quantize-warp-markers-1/8");
+    const clip = quantized.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+
+    expect(clip.metadata?.audioWarpMarkers).toEqual([
+      expect.objectContaining({ id: "warp_1", sourceSeconds: 0.37, targetBar: 2.125, targetSeconds: 2.25 }),
+      expect.objectContaining({ id: "warp_2", sourceSeconds: 1.12, targetBar: 2.625, targetSeconds: 3.25 }),
+      expect.objectContaining({ id: "warp_3", sourceSeconds: 2.01, targetBar: 3, targetSeconds: 4 })
+    ]);
+    expect(clip.metadata?.audioWarpQuantizeGrid).toBe("1/8");
+    expect(quantized.status).toContain("to 1/8");
+  });
+
   it("applies source-safe warp marker timing as global varispeed playback", () => {
     const state = createInitialState();
     state.undoStack.present.project.bpm = 120;

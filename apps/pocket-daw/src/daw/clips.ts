@@ -6,7 +6,8 @@ import { detectAudioTransientsFromPeaks } from "./audioClips";
 export type ClipTransformField = "transpose" | "gain";
 export type GeneratedStemRole = "drums" | "bass" | "chords" | "melody" | "guitar";
 export type AudioClipPropertyField = "gain" | "sourceOffsetSeconds" | "durationSeconds" | "fadeInSeconds" | "fadeOutSeconds" | "playbackRate" | "pitchSemitones";
-export type AudioClipAction = "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "apply-warp-varispeed" | "clear-warp-markers";
+export type AudioWarpQuantizeGrid = "1/4" | "1/8" | "1/16" | "1/32";
+export type AudioClipAction = "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | `quantize-warp-markers-${AudioWarpQuantizeGrid}` | "apply-warp-varispeed" | "clear-warp-markers";
 export type AudioTakeStatus = "active" | "comp-segment" | "muted-take" | "archived-take";
 
 export interface AudioClipActionResult {
@@ -265,10 +266,11 @@ export function applyAudioClipAction(project: PocketDawProject, clipId: string, 
     return { project: next, changed: true, status: `Cleared ${markerCount} warp marker${markerCount === 1 ? "" : "s"} for ${clip.name}.` };
   }
 
-  if (action === "quantize-warp-markers") {
+  const warpQuantizeGrid = audioWarpQuantizeGridForAction(action);
+  if (warpQuantizeGrid) {
     const markers = quantizableAudioWarpMarkers(clip.metadata?.audioWarpMarkers);
     if (!markers.length) return { project, changed: false, status: `Create warp markers for ${clip.name} before quantizing audio timing.` };
-    const stepBars = audioWarpQuantizeStepBars(next);
+    const stepBars = audioWarpQuantizeStepBars(next, warpQuantizeGrid);
     const quantized = markers.map((marker) => {
       const targetBar = roundBar(Math.max(1, Math.round(marker.targetBar / stepBars) * stepBars));
       return {
@@ -286,14 +288,14 @@ export function applyAudioClipAction(project: PocketDawProject, clipId: string, 
       audioWarpReady: true,
       audioWarpPlaybackMode: "metadata-only",
       audioWarpEngine: "pending-time-stretch-engine",
-      audioWarpQuantizeGrid: "1/16",
+      audioWarpQuantizeGrid: warpQuantizeGrid,
       audioWarpQuantizedAt: updatedAt,
       audioWarpUpdatedAt: updatedAt
     };
     return {
       project: next,
       changed: true,
-      status: `Quantized ${quantized.length} warp marker target${quantized.length === 1 ? "" : "s"} for ${clip.name} to 1/16; playback stretching is not enabled yet.`
+      status: `Quantized ${quantized.length} warp marker target${quantized.length === 1 ? "" : "s"} for ${clip.name} to ${warpQuantizeGrid}; playback stretching is not enabled yet.`
     };
   }
 
@@ -1362,9 +1364,19 @@ function quantizableAudioWarpMarkers(value: unknown): Array<{ id: string; source
     .slice(0, 128);
 }
 
-function audioWarpQuantizeStepBars(project: PocketDawProject): number {
+function audioWarpQuantizeGridForAction(action: AudioClipAction): AudioWarpQuantizeGrid | null {
+  if (action === "quantize-warp-markers") return "1/16";
+  if (action === "quantize-warp-markers-1/4") return "1/4";
+  if (action === "quantize-warp-markers-1/8") return "1/8";
+  if (action === "quantize-warp-markers-1/16") return "1/16";
+  if (action === "quantize-warp-markers-1/32") return "1/32";
+  return null;
+}
+
+function audioWarpQuantizeStepBars(project: PocketDawProject, grid: AudioWarpQuantizeGrid): number {
   const numerator = Math.max(1, Math.round(Number(project.project.timeSig) || 4));
-  return 1 / (numerator * 4);
+  const subdivisionsPerBeat = grid === "1/4" ? 1 : grid === "1/8" ? 2 : grid === "1/32" ? 8 : 4;
+  return 1 / (numerator * subdivisionsPerBeat);
 }
 
 function audioWarpGlobalVarispeed(
