@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activateAudioTakeCommand, addClipAutomationPointCommand, applySelectedAudioClipActionCommand, compAudioTakeFromPlayheadCommand, cropSelectedClipToTimelineSelectionCommand, deleteSelectedClipRangeCommand, ensureClipAutomationLaneCommand, recordClipAutomationPointCommand, rippleDeleteSelectedClipRangeCommand, rippleDeleteTimelineSelectionCommand, setAudioTakeArchivedCommand, setSelectedAudioClipPropertyCommand, setTimelineSelectionRangeCommand, setTimelineSelectionToLoopCommand, splitTimelineSelectionCommand } from "../src/app/commands";
+import { activateAudioTakeCommand, activateAudioTakeLaneCommand, addClipAutomationPointCommand, applySelectedAudioClipActionCommand, compAudioTakeFromPlayheadCommand, cropSelectedClipToTimelineSelectionCommand, deleteSelectedClipRangeCommand, ensureClipAutomationLaneCommand, recordClipAutomationPointCommand, rippleDeleteSelectedClipRangeCommand, rippleDeleteTimelineSelectionCommand, setAudioTakeArchivedCommand, setSelectedAudioClipPropertyCommand, setTimelineSelectionRangeCommand, setTimelineSelectionToLoopCommand, splitTimelineSelectionCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { renderTimelineAudioRegions } from "../src/audio/audioRegions";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
@@ -341,6 +341,60 @@ describe("audio clip edit commands", () => {
     expect(parallel.metadata?.takeStatus).toBe("active");
     expect(edited.undoStack.past).toHaveLength(1);
     expect(edited.status).toContain("Activated Take 2");
+  });
+
+  it("activates grouped audio take lanes through the undoable command path", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    const firstImport = addImportedAudioMedia(state.undoStack.present, {
+      name: "Lane command A.wav",
+      uri: "project-media/recordings/lane-command-a.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "lane-command-group" }
+    });
+    const firstLeft = placeAudioClipOnTimeline(firstImport.project, firstImport.item.id, 2);
+    const firstRight = placeAudioClipOnTrack(firstLeft.project, firstImport.item.id, firstLeft.trackId, 4);
+    const secondImport = addImportedAudioMedia(firstRight.project, {
+      name: "Lane command B.wav",
+      uri: "project-media/recordings/lane-command-b.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "lane-command-group" }
+    });
+    const secondLeft = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, firstLeft.trackId, 2);
+    const secondRight = placeAudioClipOnTrack(secondLeft.project, secondImport.item.id, firstLeft.trackId, 4);
+    state.undoStack = createUndoStack({
+      ...secondRight.project,
+      timeline: {
+        ...secondRight.project.timeline,
+        clips: secondRight.project.timeline.clips.map((clip) => {
+          if (clip.id === firstLeft.clipId || clip.id === firstRight.clipId) {
+            return { ...clip, muted: false, metadata: { ...(clip.metadata || {}), takeLaneId: "lane-command-a", takeLaneIndex: 1, takeStatus: "active", takeActive: true } };
+          }
+          if (clip.id === secondLeft.clipId || clip.id === secondRight.clipId) {
+            return { ...clip, muted: true, metadata: { ...(clip.metadata || {}), takeLaneId: "lane-command-b", takeLaneIndex: 2, takeStatus: "muted-take", takeActive: false } };
+          }
+          return clip;
+        })
+      }
+    });
+    state.selectedClipId = secondLeft.clipId;
+    state.selectedTrackId = secondLeft.trackId;
+
+    const edited = activateAudioTakeLaneCommand(state, secondLeft.clipId);
+    const audibleClipIds = renderTimelineAudioRegions(edited.undoStack.present).audioRegions.map((region) => region.clipId).sort();
+
+    expect(audibleClipIds).toEqual([secondLeft.clipId, secondRight.clipId].sort());
+    expect(edited.selectedClipId).toBe(secondLeft.clipId);
+    expect(edited.selectedTrackId).toBe(secondLeft.trackId);
+    expect(edited.undoStack.past).toHaveLength(1);
+    expect(edited.status).toBe("Activated take lane lane-command-b for Lane command B.wav.");
   });
 
   it("archives and restores grouped audio takes without deleting clips or media", () => {

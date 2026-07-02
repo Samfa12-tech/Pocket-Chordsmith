@@ -7,6 +7,7 @@ import {
   addFxAutomationPointCommand,
   addProjectAutomationPointCommand,
   addProjectMeterMapPointCommand,
+  activateAudioTakeLaneCommand,
   activateAudioTakeCommand,
   adoptMidiMeterMapCommand,
   adoptMidiTempoMapAutomationCommand,
@@ -109,6 +110,7 @@ export type PocketDawMcpCommand =
   | { type: "ripple_delete_timeline_selection" }
   | { type: "apply_audio_clip_action"; clipId: string; action: "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "clear-warp-markers" }
   | { type: "activate_audio_take"; clipId: string }
+  | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
   | { type: "place_punch_recording_clip"; mediaPoolItemId: string; trackId: string; captureStartBar: number; punchStartBar: number; punchEndBar: number }
@@ -155,7 +157,9 @@ export type PocketDawLiveCommand =
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "mono"; channelIndex?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "split-mono"; channelIndex?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] }
-  | { type: "set_punch_range"; startBar: number; endBar: number };
+  | { type: "set_punch_range"; startBar: number; endBar: number }
+  | { type: "activate_audio_take_lane"; clipId: string }
+  | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number };
 
 interface PocketDawLiveSession {
   app?: string;
@@ -642,6 +646,8 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return applySelectedAudioClipActionCommand(state, command.clipId, command.action);
     case "activate_audio_take":
       return activateAudioTakeCommand(state, command.clipId);
+    case "activate_audio_take_lane":
+      return activateAudioTakeLaneCommand(state, command.clipId);
     case "set_audio_take_archived":
       return setAudioTakeArchivedCommand(state, command.clipId, command.archived);
     case "comp_audio_take_from_bar":
@@ -957,6 +963,7 @@ function commandSchema() {
           "move_clip_to_bar",
           "set_timeline_selection",
           "set_punch_range",
+          "place_punch_recording_clip_from_range",
           "set_timeline_selection_to_clip",
           "set_timeline_selection_to_loop",
           "clear_timeline_selection",
@@ -967,6 +974,7 @@ function commandSchema() {
           "ripple_delete_timeline_selection",
           "apply_audio_clip_action",
           "activate_audio_take",
+          "activate_audio_take_lane",
           "set_audio_take_archived",
           "comp_audio_take_from_bar",
           "place_punch_recording_clip",
@@ -1055,9 +1063,11 @@ function liveCommandSchema() {
     {
       type: {
         type: "string",
-        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range"]
+        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "activate_audio_take_lane", "place_punch_recording_clip_from_range"]
       },
       trackId: stringSchema(),
+      clipId: stringSchema(),
+      mediaPoolItemId: stringSchema(),
       inputDeviceId: stringSchema(),
       deviceId: stringSchema(),
       mode: { type: "string", enum: ["mono", "split-mono", "stereo"] },
@@ -1070,7 +1080,8 @@ function liveCommandSchema() {
       armed: booleanSchema(),
       monitorEnabled: booleanSchema(),
       startBar: numberSchema(),
-      endBar: numberSchema()
+      endBar: numberSchema(),
+      captureStartBar: numberSchema()
     },
     ["type"]
   );

@@ -71,11 +71,14 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_recording_input_channel");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("split-mono");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_punch_range");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("place_punch_recording_clip_from_range");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("activate_audio_take_lane");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_timeline_selection");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("apply_audio_clip_action");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("create-warp-markers");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("activate_audio_take_lane");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_drums");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_bass");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_chords");
@@ -423,6 +426,58 @@ describe("Pocket DAW MCP tools", () => {
     expect(takeClips).toHaveLength(4);
     expect(archivedLeft).toMatchObject({ muted: true, metadata: { takeStatus: "archived-take" } });
     expect(activeRight).toMatchObject({ startBar: 4, muted: false, metadata: { sourceOffsetSeconds: 4 } });
+  });
+
+  it("activates grouped audio take lanes through the file-first command path", async () => {
+    let project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const firstImport = addImportedAudioMedia(project, {
+      name: "MCP lane A.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "mcp-take-lane-a" }
+    });
+    const firstLeft = placeAudioClipOnTimeline(firstImport.project, firstImport.item.id, 2);
+    const firstRight = placeAudioClipOnTrack(firstLeft.project, firstImport.item.id, firstLeft.trackId, 4);
+    const secondImport = addImportedAudioMedia(firstRight.project, {
+      name: "MCP lane B.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "mcp-take-lane-a" }
+    });
+    const secondLeft = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, firstLeft.trackId, 2);
+    const secondRight = placeAudioClipOnTrack(secondLeft.project, secondImport.item.id, firstLeft.trackId, 4);
+    project = {
+      ...secondRight.project,
+      timeline: {
+        ...secondRight.project.timeline,
+        clips: secondRight.project.timeline.clips.map((clip) => {
+          if (clip.id === firstLeft.clipId || clip.id === firstRight.clipId) {
+            return { ...clip, muted: false, metadata: { ...(clip.metadata || {}), takeLaneId: "mcp-lane-a", takeLaneIndex: 1, takeStatus: "active", takeActive: true } };
+          }
+          if (clip.id === secondLeft.clipId || clip.id === secondRight.clipId) {
+            return { ...clip, muted: true, metadata: { ...(clip.metadata || {}), takeLaneId: "mcp-lane-b", takeLaneIndex: 2, takeStatus: "muted-take", takeActive: false } };
+          }
+          return clip;
+        })
+      }
+    };
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(project),
+      commands: [{ type: "activate_audio_take_lane", clipId: secondLeft.clipId }]
+    }));
+    const editedById = new Map(result.project.timeline.clips.map((clip: { id: string }) => [clip.id, clip]));
+
+    expect(result.statuses).toEqual(["Activated take lane mcp-lane-b for MCP lane B.wav."]);
+    expect(result.summary.audioTakeSummary.groups).toEqual([{ groupId: "mcp-take-lane-a", clipCount: 4, activeCount: 2, mutedCount: 2, archivedCount: 0 }]);
+    expect(editedById.get(firstLeft.clipId)).toMatchObject({ muted: true, metadata: { takeStatus: "muted-take" } });
+    expect(editedById.get(firstRight.clipId)).toMatchObject({ muted: true, metadata: { takeStatus: "muted-take" } });
+    expect(editedById.get(secondLeft.clipId)).toMatchObject({ muted: false, metadata: { takeStatus: "active" } });
+    expect(editedById.get(secondRight.clipId)).toMatchObject({ muted: false, metadata: { takeStatus: "active" } });
   });
 
   it("places punch recording windows through the file-first command path", async () => {

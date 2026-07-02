@@ -422,9 +422,9 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "Take Lanes",
-        does: "Groups alternate recorded clips, activates one take, archives/restores takes, and can comp from the playhead.",
+        does: "Groups alternate recorded clips, activates one take or every clip in a take lane, archives/restores takes, and can comp from the playhead.",
         useWhen: "Use to manage repeated passes without deleting source media.",
-        aiNote: "Archive is not delete. Preserve source media unless the user explicitly wants cleanup."
+        aiNote: "Archive is not delete. Lane activation is audition metadata over ordinary audio clips, not full lane UI yet."
       }
     ]
   },
@@ -1648,6 +1648,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "Recording And Takes",
+    control: "Take Lane Activate",
+    selector: "data-audio-take-lane-activate",
+    does: "Activates every non-archived clip in the selected take lane so split comp segments from that lane can be auditioned together.",
+    useWhen: "Use after comp splits create multiple clips in each take lane and you want to hear one lane as a whole.",
+    aiNote: "This is lane auditioning over normal audio clips; it is not the full future take-lane editor."
+  },
+  {
+    surface: "Recording And Takes",
     control: "Archive Take",
     selector: "data-audio-take-archive",
     does: "Archives a take without deleting its source media.",
@@ -2275,10 +2283,18 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "AI / MCP Bridge",
-    control: "File MCP Punch Recording Placement",
-    selector: "place_punch_recording_clip, place_punch_recording_clip_from_range",
-    does: "Places an explicit punch-window clip from an existing raw recording media item through the undoable command path, either from command-provided bars or from the active `set_punch_range` selection.",
-    useWhen: "Use for file-first punch/take-lane smoke before a full installed punch recording UI exists.",
+    control: "File MCP Take Lane Activation",
+    selector: "activate_audio_take_lane, pocket_daw_live_apply_commands:activate_audio_take_lane",
+    does: "Activates every non-archived clip in the selected grouped audio take lane and mutes sibling lanes in the same take group through the undoable command path, from file-first MCP or the tokened live bridge.",
+    useWhen: "Use for file-first or MCP-observed live take-lane audition smoke after comp splits create multiple clips in each lane.",
+    aiNote: "This is a source-only lane audition foundation. It does not create the full visual take-lane editor or installed punch workflow."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "MCP Punch Recording Placement",
+    selector: "place_punch_recording_clip, place_punch_recording_clip_from_range, pocket_daw_live_apply_commands:place_punch_recording_clip_from_range",
+    does: "Places an explicit punch-window clip from an existing raw recording media item through the undoable command path, either from command-provided bars or from the active `set_punch_range` selection. The live bridge can place from the active punch range in the running app.",
+    useWhen: "Use for file-first or MCP-observed live punch/take-lane smoke before a full installed punch recording UI exists.",
     aiNote: "This is a metadata/placement foundation only; it does not start native recording or prove user-facing punch recording."
   },
   {

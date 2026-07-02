@@ -3,7 +3,7 @@ import { sanitizePocketChordsmithProject } from "../compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../compatibility/pcsToDaw";
 import { migratePocketDawProject } from "../compatibility/migrations";
 import { cloneProject, createDefaultMetronomeSettings, parsePocketDawProjectFile } from "../daw/dawProject";
-import { activateAudioTake, applyAudioClipAction, cropClipToRange, deleteClip, deleteClipRange, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
+import { activateAudioTake, activateAudioTakeLane, applyAudioClipAction, cropClipToRange, deleteClip, deleteClipRange, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
 import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackRecordingChannelMode, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
 import { setTrackRecordingInputAssignment } from "../daw/recordingInputs";
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
@@ -315,6 +315,25 @@ export function activateAudioTakeCommand(state: AppState, clipId: string): AppSt
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio take before activating it." };
   const result = activateAudioTake(state.undoStack.present, clipId);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.status
+    };
+  }
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function activateAudioTakeLaneCommand(state: AppState, clipId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio take lane before activating it." };
+  const result = activateAudioTakeLane(state.undoStack.present, clipId);
   if (!result.changed) {
     return {
       ...state,

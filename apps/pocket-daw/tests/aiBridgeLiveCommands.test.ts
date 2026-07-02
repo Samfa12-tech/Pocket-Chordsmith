@@ -17,6 +17,7 @@ function appHarness(state: AppState) {
     renderCountDuringPlayback: number;
     liveUpdateCount: number;
     applyAiBridgeLiveCommand(command: unknown): AppState;
+    applyAiBridgeLiveCommands(commands: unknown[]): unknown;
     aiBridgeLiveStatus(): unknown;
   };
   app.state = state;
@@ -152,6 +153,161 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.timelineSelection).toEqual({ startBar: 7, endBar: 9, source: "punch" });
   });
 
+  it("places punch takes from the active range through the live bridge executor", () => {
+    let state = addTrackCommand(createInitialState(), "live-vocals");
+    const project = currentProject(state);
+    const secondsPerBar = project.project.timeSig * (60 / project.project.bpm);
+    const imported = addImportedAudioMedia(project, {
+      name: "Live range punch.wav",
+      uri: "project-media/recordings/live-range-punch.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: {
+        mediaRefKind: "project",
+        recordingTakeId: "live-range-punch-take-1",
+        recordingTakeGroupId: "live-range-punch-group",
+        takeLaneId: "live-range-punch-group-lane-1"
+      }
+    });
+    state = { ...state, undoStack: createUndoStack(imported.project) };
+    const app = appHarness(state);
+
+    const ranged = app.applyAiBridgeLiveCommand({
+      type: "set_punch_range",
+      startBar: 7,
+      endBar: 9
+    });
+    app.state = ranged;
+    const placed = app.applyAiBridgeLiveCommand({
+      type: "place_punch_recording_clip_from_range",
+      mediaPoolItemId: imported.item.id,
+      trackId: "live-vocals",
+      captureStartBar: 6
+    });
+    const punchClip = placed.undoStack.present.timeline.clips.find((clip) => clip.name === "Live range punch.wav");
+
+    expect(placed.status).toBe("Placed punch take Live range punch.wav from active punch range 7 to 9.");
+    expect(placed.undoStack.present.timeline.selection).toEqual({ startBar: 7, endBar: 9, source: "punch" });
+    expect(punchClip).toMatchObject({ trackId: "live-vocals", startBar: 7, barLength: 2 });
+    expect(punchClip?.metadata).toMatchObject({
+      recordingTakeId: "live-range-punch-take-1",
+      recordingTakeGroupId: "live-range-punch-group",
+      punchStartBar: 7,
+      punchEndBar: 9,
+      captureStartBar: 6
+    });
+  });
+
+  it("activates grouped audio take lanes through the live bridge executor", () => {
+    let state = addTrackCommand(createInitialState(), "live-vocals");
+    let project = currentProject(state);
+    const firstImport = addImportedAudioMedia(project, {
+      name: "Live take lane A.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "live-lane-switch" }
+    });
+    const firstLeft = placeAudioClipOnTrack(firstImport.project, firstImport.item.id, "live-vocals", 1);
+    const firstRight = placeAudioClipOnTrack(firstLeft.project, firstImport.item.id, "live-vocals", 3);
+    const secondImport = addImportedAudioMedia(firstRight.project, {
+      name: "Live take lane B.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "live-lane-switch" }
+    });
+    const secondLeft = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, "live-vocals", 1);
+    const secondRight = placeAudioClipOnTrack(secondLeft.project, secondImport.item.id, "live-vocals", 3);
+    project = {
+      ...secondRight.project,
+      timeline: {
+        ...secondRight.project.timeline,
+        clips: secondRight.project.timeline.clips.map((clip) => {
+          if (clip.id === firstLeft.clipId || clip.id === firstRight.clipId) {
+            return { ...clip, muted: false, metadata: { ...(clip.metadata || {}), takeLaneId: "live-lane-a", takeLaneIndex: 1, takeStatus: "active", takeActive: true } };
+          }
+          if (clip.id === secondLeft.clipId || clip.id === secondRight.clipId) {
+            return { ...clip, muted: true, metadata: { ...(clip.metadata || {}), takeLaneId: "live-lane-b", takeLaneIndex: 2, takeStatus: "muted-take", takeActive: false } };
+          }
+          return clip;
+        })
+      }
+    };
+    state = { ...state, selectedClipId: firstLeft.clipId, selectedTrackId: "live-vocals", undoStack: createUndoStack(project) };
+    const app = appHarness(state);
+
+    const next = app.applyAiBridgeLiveCommand({
+      type: "activate_audio_take_lane",
+      clipId: secondLeft.clipId
+    });
+    const byId = new Map(next.undoStack.present.timeline.clips.map((clip) => [clip.id, clip]));
+
+    expect(next.status).toBe("Activated take lane live-lane-b for Live take lane B.wav.");
+    expect(next.selectedClipId).toBe(secondLeft.clipId);
+    expect([firstLeft.clipId, firstRight.clipId].map((id) => byId.get(id))).toEqual([
+      expect.objectContaining({ muted: true, metadata: expect.objectContaining({ takeStatus: "muted-take", takeActive: false }) }),
+      expect.objectContaining({ muted: true, metadata: expect.objectContaining({ takeStatus: "muted-take", takeActive: false }) })
+    ]);
+    expect([secondLeft.clipId, secondRight.clipId].map((id) => byId.get(id))).toEqual([
+      expect.objectContaining({ muted: false, metadata: expect.objectContaining({ takeStatus: "active", takeActive: true }) }),
+      expect.objectContaining({ muted: false, metadata: expect.objectContaining({ takeStatus: "active", takeActive: true }) })
+    ]);
+  });
+
+  it("uses timeline audio sync for live bridge commands that change clips", () => {
+    let state = addTrackCommand(createInitialState(), "live-vocals");
+    let project = currentProject(state);
+    const firstImport = addImportedAudioMedia(project, {
+      name: "Live sync lane A.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "live-sync-lane" }
+    });
+    const firstLeft = placeAudioClipOnTrack(firstImport.project, firstImport.item.id, "live-vocals", 1);
+    const secondImport = addImportedAudioMedia(firstLeft.project, {
+      name: "Live sync lane B.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "live-sync-lane" }
+    });
+    const secondLeft = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, "live-vocals", 1);
+    project = {
+      ...secondLeft.project,
+      timeline: {
+        ...secondLeft.project.timeline,
+        clips: secondLeft.project.timeline.clips.map((clip) => {
+          if (clip.id === firstLeft.clipId) {
+            return { ...clip, muted: false, metadata: { ...(clip.metadata || {}), takeLaneId: "live-sync-a", takeStatus: "active", takeActive: true } };
+          }
+          if (clip.id === secondLeft.clipId) {
+            return { ...clip, muted: true, metadata: { ...(clip.metadata || {}), takeLaneId: "live-sync-b", takeStatus: "muted-take", takeActive: false } };
+          }
+          return clip;
+        })
+      }
+    };
+    state = { ...state, undoStack: createUndoStack(project) };
+    const app = appHarness(state) as ReturnType<typeof appHarness> & {
+      applyProjectState(next: AppState, options: { audio?: string }): void;
+    };
+    const syncModes: string[] = [];
+    app.applyProjectState = (next, options) => {
+      app.state = next;
+      syncModes.push(options.audio || "");
+    };
+
+    app.applyAiBridgeLiveCommands([
+      { type: "activate_audio_take_lane", clipId: secondLeft.clipId }
+    ]);
+
+    expect(syncModes).toEqual(["timeline-structure"]);
+  });
+
   it("exposes recording input preflight and live recording commands in live status", () => {
     const state = addTrackCommand(createInitialState(), "live-vocals");
     const project = state.undoStack.present;
@@ -181,6 +337,8 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.capabilities.liveCommands).toContain("set_track_input");
     expect(status.capabilities.liveCommands).toContain("set_recording_input_channel");
     expect(status.capabilities.liveCommands).toContain("set_punch_range");
+    expect(status.capabilities.liveCommands).toContain("place_punch_recording_clip_from_range");
+    expect(status.capabilities.liveCommands).toContain("activate_audio_take_lane");
     expect(status.recording.inputPreflight).toMatchObject({ ok: false });
     expect(status.recording.inputPreflight?.errors.join("\n")).toContain("native recording alpha currently captures Stereo Ch 1-2 only");
   });

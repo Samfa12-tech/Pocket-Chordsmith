@@ -469,6 +469,42 @@ export function splitGroupedAudioTakesAtBar(project: PocketDawProject, clipId: s
   };
 }
 
+export function activateAudioTakeLane(project: PocketDawProject, clipId: string): AudioClipActionResult {
+  const selected = project.timeline.clips.find((item) => item.id === clipId);
+  const groupId = audioClipTakeGroupId(selected);
+  if (!selected || selected.type !== "audio" || !groupId) {
+    return { project, changed: false, status: "Choose a grouped audio take before activating a take lane." };
+  }
+  const siblings = audioTakeSiblings(project, selected).filter((clip) => audioTakeStatus(clip) !== "archived-take");
+  const selectedLaneId = takeLaneIdForClip(selected, siblings.findIndex((clip) => clip.id === selected.id));
+  if (!selectedLaneId || siblings.filter((clip, index) => takeLaneIdForClip(clip, index) === selectedLaneId).length < 1) {
+    return { project, changed: false, status: "Choose a grouped audio take lane before activating it." };
+  }
+  const next = cloneProject(project);
+  let changed = false;
+  next.timeline.clips.forEach((clip, index) => {
+    if (clip.type !== "audio" || clip.trackId !== selected.trackId || audioClipTakeGroupId(clip) !== groupId) return;
+    if (audioTakeStatus(clip) === "archived-take") return;
+    const laneId = takeLaneIdForClip(clip, index);
+    const active = laneId === selectedLaneId;
+    const nextMuted = !active;
+    const takeStatus: AudioTakeStatus = active ? "active" : "muted-take";
+    if (clip.muted !== nextMuted || clip.metadata?.takeActive !== active || clip.metadata?.takeStatus !== takeStatus) changed = true;
+    clip.muted = nextMuted;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      takeActive: active,
+      takeStatus
+    };
+  });
+  if (!changed) return { project, changed: false, status: `Take lane ${selectedLaneId} is already active.` };
+  return {
+    project: next,
+    changed: true,
+    status: `Activated take lane ${selectedLaneId} for ${selected.name}.`
+  };
+}
+
 export function setAudioTakeArchived(project: PocketDawProject, clipId: string, archived: boolean): AudioClipActionResult {
   const selected = project.timeline.clips.find((item) => item.id === clipId);
   const groupId = audioClipTakeGroupId(selected);

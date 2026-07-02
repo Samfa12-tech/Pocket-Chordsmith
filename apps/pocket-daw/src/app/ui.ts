@@ -1134,6 +1134,7 @@ function renderAudioTakePanel(project: ReturnType<typeof currentProject>, clip: 
             <button type="button" data-audio-take-activate="${sanitizeDataAttr(take.clipId)}" ${take.clipId === clip.id || take.archived ? "disabled" : ""} title="Make this take the active clip in the take group">
               Take ${take.takeNumber} ${take.archived ? "archived" : take.active ? "active" : "muted"}
             </button>
+            <button type="button" data-audio-take-lane-activate="${sanitizeDataAttr(take.clipId)}" ${take.archived ? "disabled" : ""} title="Activate every clip in this take lane for auditioning">Lane</button>
             ${
               take.archived
                 ? `<button type="button" data-audio-take-restore="${sanitizeDataAttr(take.clipId)}" title="Restore this archived take to the take group">Restore</button>`

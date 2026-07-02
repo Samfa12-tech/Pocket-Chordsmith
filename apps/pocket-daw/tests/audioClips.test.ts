@@ -4,7 +4,7 @@ import { createDemoProject } from "../src/demo/demoProject";
 import { addImportedAudioMedia, detectAudioTransientsFromPeaks, placeAudioClipOnTimeline, placeAudioClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../src/daw/audioClips";
 import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
 import { createAutomationLane } from "../src/daw/automation";
-import { activateAudioTake, setAudioClipProperty, setAudioTakeArchived } from "../src/daw/clips";
+import { activateAudioTake, activateAudioTakeLane, setAudioClipProperty, setAudioTakeArchived } from "../src/daw/clips";
 import { timelineSecondsAtBar } from "../src/daw/timeline";
 
 describe("audio media and clips", () => {
@@ -365,6 +365,59 @@ describe("audio media and clips", () => {
     expect(renderTimelineAudioRegions(archived).audioRegions.map((region) => region.clipId)).not.toContain(secondPlaced.clipId);
     expect(archived.mediaPool.find((item) => item.id === secondImport.item.id)).toBeTruthy();
     expect(renderTimelineAudioRegions(reactivated).audioRegions.map((region) => region.clipId)).toContain(secondPlaced.clipId);
+  });
+
+  it("activates every clip in a grouped take lane for lane auditioning", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const firstImport = addImportedAudioMedia(project, {
+      name: "Lane A.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "lane-audition-group" }
+    });
+    const firstLeft = placeAudioClipOnTimeline(firstImport.project, firstImport.item.id, 1);
+    const firstRight = placeAudioClipOnTrack(firstLeft.project, firstImport.item.id, firstLeft.trackId, 3);
+    const secondImport = addImportedAudioMedia(firstRight.project, {
+      name: "Lane B.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "lane-audition-group" }
+    });
+    const secondLeft = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, firstLeft.trackId, 1);
+    const secondRight = placeAudioClipOnTrack(secondLeft.project, secondImport.item.id, firstLeft.trackId, 3);
+    const prepared = {
+      ...secondRight.project,
+      timeline: {
+        ...secondRight.project.timeline,
+        clips: secondRight.project.timeline.clips.map((clip) => {
+          if (clip.id === firstLeft.clipId || clip.id === firstRight.clipId) {
+            return { ...clip, muted: false, metadata: { ...(clip.metadata || {}), takeLaneId: "lane-a", takeLaneIndex: 1, takeStatus: "active", takeActive: true } };
+          }
+          if (clip.id === secondLeft.clipId || clip.id === secondRight.clipId) {
+            return { ...clip, muted: true, metadata: { ...(clip.metadata || {}), takeLaneId: "lane-b", takeLaneIndex: 2, takeStatus: "muted-take", takeActive: false } };
+          }
+          return clip;
+        })
+      }
+    };
+
+    const auditioned = activateAudioTakeLane(prepared, secondLeft.clipId);
+    const byId = new Map(auditioned.project.timeline.clips.map((clip) => [clip.id, clip]));
+
+    expect(auditioned.status).toBe("Activated take lane lane-b for Lane B.wav.");
+    expect([firstLeft.clipId, firstRight.clipId].map((id) => byId.get(id))).toEqual([
+      expect.objectContaining({ muted: true, metadata: expect.objectContaining({ takeStatus: "muted-take", takeActive: false }) }),
+      expect.objectContaining({ muted: true, metadata: expect.objectContaining({ takeStatus: "muted-take", takeActive: false }) })
+    ]);
+    expect([secondLeft.clipId, secondRight.clipId].map((id) => byId.get(id))).toEqual([
+      expect.objectContaining({ muted: false, metadata: expect.objectContaining({ takeStatus: "active", takeActive: true }) }),
+      expect.objectContaining({ muted: false, metadata: expect.objectContaining({ takeStatus: "active", takeActive: true }) })
+    ]);
+    expect(renderTimelineAudioRegions(auditioned.project).audioRegions.map((region) => region.clipId).sort()).toEqual([secondLeft.clipId, secondRight.clipId].sort());
   });
 
   it("normalizes and evaluates linear audio clip fades", () => {

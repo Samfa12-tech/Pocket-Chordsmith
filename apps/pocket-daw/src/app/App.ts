@@ -81,6 +81,7 @@ import {
   addFxAutomationPointCommand,
   addTrackSendAutomationPointCommand,
   activateAudioTakeCommand,
+  activateAudioTakeLaneCommand,
   adoptMidiMeterMapCommand,
   adoptMidiTempoMapAutomationCommand,
   adoptMidiTempoMapStartCommand,
@@ -135,6 +136,7 @@ import {
   moveMidiNoteCommand,
   pasteClipAtPlayhead,
   placeAudioClipCommand,
+  placePunchRecordingClipFromRangeCommand,
   pitchMidiNoteCommand,
   quantizeMidiClipCommand,
   redoCommand,
@@ -283,7 +285,9 @@ type AiBridgeLiveCommand =
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "mono"; channelIndex?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "split-mono"; channelIndex?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] }
-  | { type: "set_punch_range"; startBar: number; endBar: number };
+  | { type: "set_punch_range"; startBar: number; endBar: number }
+  | { type: "activate_audio_take_lane"; clipId: string }
+  | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number };
 
 interface ApplyProjectOptions {
   audio?: AudioProjectSyncMode | "none";
@@ -601,7 +605,7 @@ export class App {
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
         control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics"],
-        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range"]
+        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "activate_audio_take_lane", "place_punch_recording_clip_from_range"]
       }
     };
   }
@@ -733,7 +737,7 @@ export class App {
     const statuses: string[] = [];
     for (const command of commands) {
       const next = this.applyAiBridgeLiveCommand(command);
-      this.applyProjectState(next, { audio: "mixer-graph", autosave: "debounced", preserveScroll: true, reason: "ai-bridge-live-command" });
+      this.applyProjectState(next, { audio: liveCommandAudioSyncMode(command), autosave: "debounced", preserveScroll: true, reason: "ai-bridge-live-command" });
       statuses.push(this.state.status);
     }
     return {
@@ -749,6 +753,9 @@ export class App {
     const project = currentProject(this.state);
     if (command.type === "set_punch_range") {
       return setPunchRangeCommand(this.state, numberInput(command.startBar, "startBar"), numberInput(command.endBar, "endBar"));
+    }
+    if (command.type === "activate_audio_take_lane") {
+      return activateAudioTakeLaneCommand(this.state, stringInput(command.clipId, "clipId"));
     }
     const trackId = typeof command.trackId === "string" ? command.trackId : "";
     if (!project.tracks.some((track) => track.id === trackId)) throw new Error(`Track not found: ${trackId || "[missing trackId]"}`);
@@ -779,6 +786,14 @@ export class App {
         trackId,
         recordingInputChannelValueFromLiveCommand(command),
         command.deviceId ?? undefined
+      );
+    }
+    if (command.type === "place_punch_recording_clip_from_range") {
+      return placePunchRecordingClipFromRangeCommand(
+        this.state,
+        stringInput(command.mediaPoolItemId, "mediaPoolItemId"),
+        trackId,
+        numberInput(command.captureStartBar, "captureStartBar")
       );
     }
     throw new Error(`Unsupported live command: ${(command as { type?: string }).type || "[missing type]"}`);
@@ -1098,6 +1113,16 @@ export class App {
           audio: "timeline-structure",
           preserveScroll: true,
           reason: "audio-take-activate"
+        });
+      });
+    });
+    this.root.querySelectorAll<HTMLButtonElement>("[data-audio-take-lane-activate]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const clipId = String(button.dataset.audioTakeLaneActivate || "");
+        this.applyProjectState(activateAudioTakeLaneCommand(this.state, clipId), {
+          audio: "timeline-structure",
+          preserveScroll: true,
+          reason: "audio-take-lane-activate"
         });
       });
     });
@@ -5432,6 +5457,7 @@ function tooltipForButton(button: HTMLButtonElement): string {
   if (addTrackKind) return `Add or select ${readableDataToken(addTrackKind)}.`;
 
   if (button.dataset.audioTakeActivate) return "Make this take active.";
+  if (button.dataset.audioTakeLaneActivate) return "Activate this whole take lane.";
   if (button.dataset.audioTakeArchive) return "Archive this take without deleting source media.";
   if (button.dataset.audioTakeRestore) return "Restore this archived take.";
   if (button.dataset.armTrack) return "Arm or disarm this track for recording.";
@@ -5464,6 +5490,13 @@ function tooltipForButton(button: HTMLButtonElement): string {
   if (button.dataset.trackRename) return "Rename this track.";
 
   return fallbackButtonTooltip(button);
+}
+
+function liveCommandAudioSyncMode(command: AiBridgeLiveCommand): AudioProjectSyncMode {
+  if (command.type === "activate_audio_take_lane" || command.type === "place_punch_recording_clip_from_range") {
+    return "timeline-structure";
+  }
+  return "mixer-graph";
 }
 
 function dataTokenSuffix(value: string): string {
