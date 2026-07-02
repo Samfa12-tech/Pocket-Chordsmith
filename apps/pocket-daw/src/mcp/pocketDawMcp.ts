@@ -16,6 +16,7 @@ import {
   branchGeneratedDrumsCommand,
   clearTimelineSelectionCommand,
   compAudioTakeFromPlayheadCommand,
+  compAudioTakeRangeCommand,
   convertMidiArrangementToGeneratedOverlaysCommand,
   convertMidiBassToGeneratedOverlaysCommand,
   convertMidiChordsToGeneratedOverlaysCommand,
@@ -114,6 +115,7 @@ export type PocketDawMcpCommand =
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
+  | { type: "comp_audio_take_range"; clipId: string }
   | { type: "place_punch_recording_clip"; mediaPoolItemId: string; trackId: string; captureStartBar: number; punchStartBar: number; punchEndBar: number }
   | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number }
   | { type: "add_marker"; bar: number }
@@ -171,6 +173,7 @@ export type PocketDawLiveCommand =
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
+  | { type: "comp_audio_take_range"; clipId: string }
   | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number };
 
 interface PocketDawLiveSession {
@@ -664,6 +667,8 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return setAudioTakeArchivedCommand(state, command.clipId, command.archived);
     case "comp_audio_take_from_bar":
       return compAudioTakeFromPlayheadCommand({ ...state, playheadBar: command.bar }, command.clipId);
+    case "comp_audio_take_range":
+      return compAudioTakeRangeCommand(state, command.clipId);
     case "place_punch_recording_clip":
       return placePunchRecordingClipCommand(state, command.mediaPoolItemId, command.trackId, command.captureStartBar, command.punchStartBar, command.punchEndBar);
     case "place_punch_recording_clip_from_range":
@@ -965,6 +970,7 @@ function commandSchema() {
           "activate_audio_take_lane",
           "set_audio_take_archived",
           "comp_audio_take_from_bar",
+          "comp_audio_take_range",
           "place_punch_recording_clip",
           "place_punch_recording_clip_from_range",
           "add_marker",
@@ -1051,7 +1057,7 @@ function liveCommandSchema() {
     {
       type: {
         type: "string",
-        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "place_punch_recording_clip_from_range"]
+        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       },
       trackId: stringSchema(),
       clipId: stringSchema(),

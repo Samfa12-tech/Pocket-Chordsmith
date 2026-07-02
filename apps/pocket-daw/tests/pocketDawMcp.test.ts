@@ -55,6 +55,7 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_drum_lane_gate");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("add_game_state_marker");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("comp_audio_take_from_bar");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("comp_audio_take_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("place_punch_recording_clip");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("place_punch_recording_clip_from_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_timeline_selection");
@@ -86,6 +87,7 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("activate_audio_take_lane");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_audio_take_archived");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("comp_audio_take_from_bar");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("comp_audio_take_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_timeline_selection");

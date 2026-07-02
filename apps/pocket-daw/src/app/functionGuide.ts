@@ -1685,6 +1685,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     aiNote: "Confirm playhead position and take group before comping."
   },
   {
+    surface: "Recording And Takes",
+    control: "Comp Range",
+    actionId: "audio-take-comp-range",
+    does: "Splits grouped takes at the active edit range and makes the selected take audible only inside that range.",
+    useWhen: "Use to build a vocal or instrument comp from a short phrase without replacing the earlier or later active take segments.",
+    aiNote: "Set the edit range first; source media and outside-range comp choices should remain intact."
+  },
+  {
     surface: "MIDI Editing",
     control: "Add Empty MIDI Clip",
     actionId: "add-empty-midi-clip",
@@ -2290,8 +2298,8 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   {
     surface: "AI / MCP Bridge",
     control: "File MCP Take Lane Activation",
-    selector: "activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, pocket_daw_live_apply_commands:activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar",
-    does: "Activates every non-archived clip in the selected grouped audio take lane, archives/restores takes without deleting media, and splits grouped takes into first comp segments through the undoable command path, from file-first MCP or the tokened live bridge.",
+    selector: "activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range, pocket_daw_live_apply_commands:activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range",
+    does: "Activates every non-archived clip in the selected grouped audio take lane, archives/restores takes without deleting media, and splits grouped takes into first comp segments or active edit-range comps through the undoable command path, from file-first MCP or the tokened live bridge.",
     useWhen: "Use for file-first or MCP-observed live take-lane audition, archive/restore and comp smoke after repeated takes exist.",
     aiNote: "This is a source-only lane audition foundation. It does not create the full visual take-lane editor or installed punch workflow."
   },

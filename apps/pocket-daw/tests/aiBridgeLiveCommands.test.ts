@@ -741,6 +741,7 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.capabilities.liveCommands).toContain("activate_audio_take_lane");
     expect(status.capabilities.liveCommands).toContain("set_audio_take_archived");
     expect(status.capabilities.liveCommands).toContain("comp_audio_take_from_bar");
+    expect(status.capabilities.liveCommands).toContain("comp_audio_take_range");
     expect(status.recording.inputPreflight).toMatchObject({ ok: false });
     expect(status.recording.inputPreflight?.errors.join("\n")).toContain("native recording alpha currently captures Stereo Ch 1-2 only");
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activateAudioTakeCommand, activateAudioTakeLaneCommand, addClipAutomationPointCommand, applySelectedAudioClipActionCommand, compAudioTakeFromPlayheadCommand, cropSelectedClipToTimelineSelectionCommand, deleteSelectedClipRangeCommand, ensureClipAutomationLaneCommand, recordClipAutomationPointCommand, rippleDeleteSelectedClipRangeCommand, rippleDeleteTimelineSelectionCommand, setAudioTakeArchivedCommand, setSelectedAudioClipPropertyCommand, setTimelineSelectionRangeCommand, setTimelineSelectionToLoopCommand, splitTimelineSelectionCommand } from "../src/app/commands";
+import { activateAudioTakeCommand, activateAudioTakeLaneCommand, addClipAutomationPointCommand, applySelectedAudioClipActionCommand, compAudioTakeFromPlayheadCommand, compAudioTakeRangeCommand, cropSelectedClipToTimelineSelectionCommand, deleteSelectedClipRangeCommand, ensureClipAutomationLaneCommand, recordClipAutomationPointCommand, rippleDeleteSelectedClipRangeCommand, rippleDeleteTimelineSelectionCommand, setAudioTakeArchivedCommand, setSelectedAudioClipPropertyCommand, setTimelineSelectionRangeCommand, setTimelineSelectionToLoopCommand, splitTimelineSelectionCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { renderTimelineAudioRegions } from "../src/audio/audioRegions";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
@@ -496,6 +496,66 @@ describe("audio clip edit commands", () => {
     expect(edited.selectedClipId).toBe(secondRight.id);
     expect(edited.undoStack.past).toHaveLength(2);
     expect(edited.status).toContain("Comped Vocal take 2.wav split from bar 4");
+  });
+
+  it("comps a grouped audio take only over the active edit range", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    const firstImport = addImportedAudioMedia(state.undoStack.present, {
+      name: "Vocal range take 1.wav",
+      uri: "project-media/recordings/vocal-range-take-1.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "vocal-range-comp", inputMode: "mono", channelMap: [0] }
+    });
+    const firstPlaced = placeAudioClipOnTimeline(firstImport.project, firstImport.item.id, 2);
+    const secondImport = addImportedAudioMedia(firstPlaced.project, {
+      name: "Vocal range take 2.wav",
+      uri: "project-media/recordings/vocal-range-take-2.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "vocal-range-comp", inputMode: "mono", channelMap: [0] }
+    });
+    const secondPlaced = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, firstPlaced.trackId, 2);
+    state.undoStack = createUndoStack(secondPlaced.project);
+    state.selectedClipId = firstPlaced.clipId;
+    state.selectedTrackId = firstPlaced.trackId;
+    const firstActive = activateAudioTakeCommand(state, firstPlaced.clipId);
+    const ranged = setTimelineSelectionRangeCommand({
+      ...firstActive,
+      selectedClipId: secondPlaced.clipId,
+      selectedTrackId: secondPlaced.trackId
+    }, 3, 5);
+
+    const edited = compAudioTakeRangeCommand(ranged, secondPlaced.clipId);
+    const clips = edited.undoStack.present.timeline.clips
+      .filter((clip) => clip.metadata?.takeGroupId === "vocal-range-comp")
+      .sort((a, b) => Number(a.metadata?.takeIndex || 0) - Number(b.metadata?.takeIndex || 0) || a.startBar - b.startBar);
+    const takeOne = clips.filter((clip) => clip.metadata?.takeIndex === 1);
+    const takeTwo = clips.filter((clip) => clip.metadata?.takeIndex === 2);
+    const activeSegments = clips
+      .filter((clip) => clip.metadata?.takeStatus === "active" && !clip.muted)
+      .sort((a, b) => a.startBar - b.startBar || Number(a.metadata?.takeIndex || 0) - Number(b.metadata?.takeIndex || 0));
+
+    expect(takeOne.map((clip) => [clip.startBar, clip.barLength, clip.metadata?.takeStatus, clip.metadata?.sourceOffsetSeconds])).toEqual([
+      [2, 1, "active", 0],
+      [3, 2, "muted-take", 2],
+      [5, 1, "active", 6]
+    ]);
+    expect(takeTwo.map((clip) => [clip.startBar, clip.barLength, clip.metadata?.takeStatus, clip.metadata?.sourceOffsetSeconds])).toEqual([
+      [2, 1, "muted-take", 0],
+      [3, 2, "active", 2],
+      [5, 1, "muted-take", 6]
+    ]);
+    expect(activeSegments.map((clip) => [clip.metadata?.takeIndex, clip.startBar, clip.barLength])).toEqual([[1, 2, 1], [2, 3, 2], [1, 5, 1]]);
+    expect(edited.selectedClipId).toBe(takeTwo.find((clip) => clip.startBar === 3)?.id);
+    expect(edited.undoStack.past).toHaveLength(3);
+    expect(edited.status).toBe("Comped Vocal range take 2.wav over edit range 3 to 5.");
   });
 
   it("creates selected audio clip gain and fade automation through the undoable command path", () => {

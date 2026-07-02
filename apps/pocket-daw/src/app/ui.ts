@@ -1144,6 +1144,7 @@ function renderAudioTakePanel(project: ReturnType<typeof currentProject>, clip: 
         `).join("")}
       </div>
       <button type="button" data-action="audio-take-comp-from-playhead" title="Comp this take group starting at the current playhead">Comp from playhead</button>
+      <button type="button" data-action="audio-take-comp-range" title="Use this take only inside the active edit range">Comp range</button>
     </div>
   `;
 }

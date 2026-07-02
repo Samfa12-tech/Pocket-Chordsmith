@@ -90,6 +90,7 @@ import {
   applyBassPresetCommand,
   branchGeneratedDrumsCommand,
   compAudioTakeFromPlayheadCommand,
+  compAudioTakeRangeCommand,
   cycleDrumBranchStepCommand,
   applyDrumPresetCommand,
   applyGuitarPresetCommand,
@@ -300,6 +301,7 @@ type AiBridgeLiveCommand =
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
+  | { type: "comp_audio_take_range"; clipId: string }
   | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number };
 
 interface ApplyProjectOptions {
@@ -618,7 +620,7 @@ export class App {
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
         control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics"],
-        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "place_punch_recording_clip_from_range"]
+        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       }
     };
   }
@@ -821,6 +823,9 @@ export class App {
         { ...this.state, playheadBar: numberInput(command.bar, "bar") },
         stringInput(command.clipId, "clipId")
       );
+    }
+    if (command.type === "comp_audio_take_range") {
+      return compAudioTakeRangeCommand(this.state, stringInput(command.clipId, "clipId"));
     }
     const trackId = typeof command.trackId === "string" ? command.trackId : "";
     if (!project.tracks.some((track) => track.id === trackId)) throw new Error(`Track not found: ${trackId || "[missing trackId]"}`);
@@ -2732,6 +2737,9 @@ export class App {
     if (action === "clip-split") this.applyProjectState(splitSelectedClipAtPlayhead(this.state));
     if (action === "audio-take-comp-from-playhead" && this.state.selectedClipId) {
       this.applyProjectState(compAudioTakeFromPlayheadCommand(this.state, this.state.selectedClipId));
+    }
+    if (action === "audio-take-comp-range" && this.state.selectedClipId) {
+      this.applyProjectState(compAudioTakeRangeCommand(this.state, this.state.selectedClipId));
     }
     if (action === "trim-start-right") this.applyProjectState(trimSelectedClipStartCommand(this.state, 1));
     if (action === "trim-start-left") this.applyProjectState(trimSelectedClipStartCommand(this.state, -1));
@@ -5436,6 +5444,7 @@ const ACTION_BUTTON_TOOLTIPS: Record<string, string> = {
   "audio-settings-close": "Close audio settings.",
   "audio-settings-open": "Open audio input, output and recording settings.",
   "audio-take-comp-from-playhead": "Create a take comp starting at the playhead.",
+  "audio-take-comp-range": "Use the selected take only inside the active edit range.",
   "build-native-cache": "Render generated and runtime audio into the native cache.",
   "clip-copy": "Copy the selected clip to the clipboard.",
   "clip-cut": "Cut the selected clip to the clipboard.",
@@ -5585,6 +5594,7 @@ function liveCommandAudioSyncMode(command: AiBridgeLiveCommand): AudioProjectSyn
     command.type === "activate_audio_take_lane" ||
     command.type === "set_audio_take_archived" ||
     command.type === "comp_audio_take_from_bar" ||
+    command.type === "comp_audio_take_range" ||
     command.type === "split_timeline_selection" ||
     command.type === "crop_clip_to_timeline_selection" ||
     command.type === "delete_clip_range" ||

@@ -20,6 +20,11 @@ export interface AudioTakeCompSplitResult extends AudioClipActionResult {
   splitCount: number;
 }
 
+export interface AudioTakeRangeCompResult extends AudioClipActionResult {
+  activeClipId: string | null;
+  splitCount: number;
+}
+
 export interface ClipRangeSplitResult {
   project: PocketDawProject;
   splitCount: number;
@@ -469,6 +474,75 @@ export function splitGroupedAudioTakesAtBar(project: PocketDawProject, clipId: s
   };
 }
 
+export function compGroupedAudioTakeRange(project: PocketDawProject, clipId: string, startBar: number, endBar: number): AudioTakeRangeCompResult {
+  const selected = project.timeline.clips.find((item) => item.id === clipId);
+  const groupId = audioClipTakeGroupId(selected);
+  if (!selected || selected.type !== "audio" || !groupId) {
+    return { project, changed: false, status: "Choose a grouped audio take before range comping.", activeClipId: null, splitCount: 0 };
+  }
+  const rawStart = Number(startBar);
+  const rawEnd = Number(endBar);
+  if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || Math.abs(rawEnd - rawStart) < 0.0001) {
+    return { project, changed: false, status: "Set an edit range before range comping.", activeClipId: null, splitCount: 0 };
+  }
+  const rangeStart = Math.max(1, Math.min(rawStart, rawEnd));
+  const rangeEnd = Math.max(rangeStart, Math.max(rawStart, rawEnd));
+  if (!clipOverlapsRange(selected, rangeStart, rangeEnd)) {
+    return { project, changed: false, status: "Move the edit range over the selected take before range comping.", activeClipId: null, splitCount: 0 };
+  }
+  const initialSiblings = audioTakeSiblings(project, selected).filter((clip) => audioTakeStatus(clip) !== "archived-take");
+  if (initialSiblings.length < 2) {
+    return { project, changed: false, status: "No alternate takes are available for this audio clip.", activeClipId: null, splitCount: 0 };
+  }
+  const selectedLaneId = takeLaneIdForClip(selected, initialSiblings.findIndex((clip) => clip.id === selected.id));
+  let next = project;
+  let splitCount = 0;
+
+  [rangeStart, rangeEnd].forEach((bar) => {
+    const splitIds = takeGroupClips(next, selected.trackId, groupId)
+      .filter((clip) => audioTakeStatus(clip) !== "archived-take" && clipSpansBar(clip, bar))
+      .map((clip) => clip.id);
+    splitIds.forEach((id) => {
+      const split = splitClipAtBar(next, id, bar);
+      if (split.rightClipId) {
+        splitCount += 1;
+        next = split.project;
+      }
+    });
+  });
+
+  const editable = cloneProject(next);
+  let changed = false;
+  let activeClipId: string | null = null;
+  takeGroupClips(editable, selected.trackId, groupId).forEach((clip, index) => {
+    if (audioTakeStatus(clip) === "archived-take" || !clipOverlapsRange(clip, rangeStart, rangeEnd)) return;
+    const insideRange = clip.startBar >= rangeStart - 0.0001 && clipEndBar(clip) <= rangeEnd + 0.0001;
+    if (!insideRange) return;
+    const active = takeLaneIdForClip(clip, index) === selectedLaneId;
+    const nextMuted = !active;
+    const takeStatus: AudioTakeStatus = active ? "active" : "muted-take";
+    if (clip.muted !== nextMuted || clip.metadata?.takeActive !== active || clip.metadata?.takeStatus !== takeStatus) changed = true;
+    clip.muted = nextMuted;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      takeActive: active,
+      takeStatus
+    };
+    if (active) activeClipId = clip.id;
+  });
+  if (!changed || !activeClipId) {
+    return { project, changed: false, status: "The selected take is already active over that edit range.", activeClipId: null, splitCount };
+  }
+  recomputeTimelineBars(editable);
+  return {
+    project: editable,
+    changed: true,
+    status: `Comped ${selected.name} over edit range ${formatBarForStatus(rangeStart)} to ${formatBarForStatus(rangeEnd)}.`,
+    activeClipId,
+    splitCount
+  };
+}
+
 export function activateAudioTakeLane(project: PocketDawProject, clipId: string): AudioClipActionResult {
   const selected = project.timeline.clips.find((item) => item.id === clipId);
   const groupId = audioClipTakeGroupId(selected);
@@ -548,6 +622,12 @@ function audioTakeSiblings(project: PocketDawProject, clip: Clip): Clip[] {
     .sort((a, b) => takeSortKey(a) - takeSortKey(b) || a.startBar - b.startBar || a.id.localeCompare(b.id));
 }
 
+function takeGroupClips(project: PocketDawProject, trackId: string, groupId: string): Clip[] {
+  return project.timeline.clips
+    .filter((item) => item.type === "audio" && item.trackId === trackId && audioClipTakeGroupId(item) === groupId)
+    .sort((a, b) => takeSortKey(a) - takeSortKey(b) || a.startBar - b.startBar || a.id.localeCompare(b.id));
+}
+
 function takeIndexForClip(clip: Clip, fallbackIndex: number): number {
   const takeIndex = Number(clip.metadata?.takeLaneIndex ?? clip.metadata?.takeIndex);
   return Number.isFinite(takeIndex) && takeIndex > 0 ? Math.round(takeIndex) : fallbackIndex + 1;
@@ -578,6 +658,11 @@ function clipEndBar(clip: Clip): number {
 function clipsOverlap(a: Clip, b: Clip): boolean {
   const epsilon = 0.0001;
   return a.startBar < clipEndBar(b) - epsilon && b.startBar < clipEndBar(a) - epsilon;
+}
+
+function clipOverlapsRange(clip: Clip, startBar: number, endBar: number): boolean {
+  const epsilon = 0.0001;
+  return clip.startBar < endBar - epsilon && startBar < clipEndBar(clip) - epsilon;
 }
 
 function clipSpansBar(clip: Clip, bar: number): boolean {

@@ -373,6 +373,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "collect-media")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "convert-midi-drums")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "convert-midi-arrangement")).toBe(true);
+    expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "audio-take-comp-range")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-audio-clip-action:quantize-warp-markers")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-ai-bridge-enabled")).toBe(true);
     [
@@ -453,7 +454,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Enable Live App Bridge | `data-ai-bridge-enabled`");
     expect(catalog).toContain("| Take Lane Activate | `data-audio-take-lane-activate`");
     expect(catalog).toContain("| Live MCP Recording Input Channel | `pocket_daw_live_apply_commands:set_recording_input_channel`");
-    expect(catalog).toContain("| File MCP Take Lane Activation | `activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, pocket_daw_live_apply_commands:activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar`");
+    expect(catalog).toContain("| File MCP Take Lane Activation | `activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range, pocket_daw_live_apply_commands:activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range`");
     expect(catalog).toContain("| MCP Punch Recording Placement | `place_punch_recording_clip`, `place_punch_recording_clip_from_range`, `pocket_daw_live_apply_commands:place_punch_recording_clip_from_range`");
     expect(catalog).toContain("| Live MCP Edit Range | `pocket_daw_live_apply_commands:set_timeline_selection, set_timeline_selection_to_clip, clear_timeline_selection, split_timeline_selection, crop_clip_to_timeline_selection, delete_clip_range, ripple_delete_clip_range, ripple_delete_timeline_selection`");
     expect(catalog).toContain("| Live MCP Audio Clip Actions | `pocket_daw_live_apply_commands:apply_audio_clip_action`");
@@ -719,6 +720,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).toContain(`data-audio-take-archive="${secondPlaced.clipId}"`);
     expect(inspector).toContain('data-audio-take-status="');
     expect(inspector).toContain('data-action="audio-take-comp-from-playhead"');
+    expect(inspector).toContain('data-action="audio-take-comp-range"');
+    expect(inspector).toContain("Use this take only inside the active edit range");
     expect(inspector).toContain("Take 2 of 2");
     const firstButton = inspector.match(new RegExp(`<button[^>]*data-audio-take-activate="${firstPlaced.clipId}"[^>]*>`))?.[0] || "";
     const selectedButton = inspector.match(new RegExp(`<button[^>]*data-audio-take-activate="${secondPlaced.clipId}"[^>]*>`))?.[0] || "";
