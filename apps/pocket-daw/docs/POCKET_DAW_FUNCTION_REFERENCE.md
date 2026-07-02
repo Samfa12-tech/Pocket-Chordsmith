@@ -1,6 +1,6 @@
 # Pocket DAW Function Reference
 
-Last updated: 2026-07-02
+Last updated: 2026-07-03
 
 This document explains Pocket DAW's user-facing functions in plain language for a human user and their AI counterpart. It describes what each function does, when to use it, and what an AI helper should be careful about.
 
@@ -109,7 +109,7 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | Audio Clip Automation | Creates, draws, edits and live-records selected audio-clip gain, fade-in, fade-out and source-offset automation lanes. | Level, fade or source-window changes over time without rewriting the source file. | Fade/source-offset lanes are evaluated into source-safe audio-region metadata; this is not pitch-preserving time-stretch. |
 | Short Fades / Reset Fades | Adds quick fades or clears fade settings. | Removing clicks or restoring raw clip edges. | Source-safe metadata. |
 | Normalize | Sets clip gain from analyzed peak level. | Bringing quiet audio closer to working level. | Changes gain metadata, not source samples. |
-| Transient Analysis And Warp Markers | Finds likely transients, creates/clears metadata warp markers, and can quantize warp marker targets to the project 1/16 grid without changing source anchors. | Timing/warp prep or rhythmic audio inspection. | Do not claim full elastic audio until playback/export smoke proves it. |
+| Transient Analysis And Warp Markers | Finds likely transients, creates/clears metadata warp markers, can quantize warp marker targets to the project 1/16 grid without changing source anchors, and can apply a source-safe global varispeed rate from those anchors. | Timing/warp prep, loop fitting or rough live-instrument timing correction before pitch-preserving stretch exists. | Warp-rate playback changes pitch with speed. Do not claim full elastic audio, independent pitch correction or autotune. |
 | Crossfade / Overlap Fade | Creates fade transitions between clips or at a clip edge. | Smoothing edits and comps. | Inspect neighboring clips after crossfade operations. |
 | Invert Phase / Reverse | Applies phase inversion or reverse playback metadata. | Phase correction checks or creative effects. | Verify export/render output. |
 

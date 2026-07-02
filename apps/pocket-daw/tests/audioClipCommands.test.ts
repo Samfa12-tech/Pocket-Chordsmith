@@ -799,6 +799,57 @@ describe("audio clip edit commands", () => {
     expect(quantized.status).toContain("playback stretching is not enabled yet");
   });
 
+  it("applies source-safe warp marker timing as global varispeed playback", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    const imported = addImportedAudioMedia(state.undoStack.present, {
+      name: "Warp Rate Loop.wav",
+      uri: "C:\\Audio\\Warp Rate Loop.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    const project = {
+      ...placed.project,
+      timeline: {
+        ...placed.project.timeline,
+        clips: placed.project.timeline.clips.map((clip) => clip.id === placed.clipId ? {
+          ...clip,
+          metadata: {
+            ...(clip.metadata || {}),
+            audioWarpMarkers: [
+              { id: "warp_1", sourceSeconds: 1, targetBar: 2.25, targetSeconds: 2.5, source: "transient", locked: true },
+              { id: "warp_2", sourceSeconds: 3, targetBar: 3, targetSeconds: 4, source: "transient", locked: true }
+            ],
+            audioWarpMarkerCount: 2,
+            audioWarpReady: true,
+            audioWarpPlaybackMode: "metadata-only"
+          }
+        } : clip)
+      }
+    };
+    state.undoStack = createUndoStack(project);
+    state.selectedClipId = placed.clipId;
+    state.selectedTrackId = placed.trackId;
+
+    const applied = applySelectedAudioClipActionCommand(state, placed.clipId, "apply-warp-varispeed");
+    const clip = applied.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+    const region = renderTimelineAudioRegions(applied.undoStack.present).audioRegions[0];
+
+    expect(clip.metadata?.audioWarpPlaybackMode).toBe("global-varispeed");
+    expect(clip.metadata?.audioWarpEngine).toBe("global-varispeed");
+    expect(clip.metadata?.playbackRate).toBeCloseTo(1.333, 3);
+    expect(clip.metadata?.sourceOffsetSeconds).toBeCloseTo(0.334, 3);
+    expect(clip.metadata?.audioWarpAppliedFromMarkerCount).toBe(2);
+    expect(region.playbackRate).toBeCloseTo(1.333, 3);
+    expect(region.sourceOffsetSeconds).toBeCloseTo(0.334, 3);
+    expect(applied.status).toContain("Applied warp varispeed 1.333x");
+    expect(applied.status).toContain("pitch changes with speed");
+  });
+
   it("keeps warp marker creation unavailable until transients are analyzed", () => {
     const state = createInitialState();
     const imported = addImportedAudioMedia(state.undoStack.present, {

@@ -1171,7 +1171,7 @@ export class App {
     this.root.querySelectorAll<HTMLButtonElement>("[data-audio-clip-action]").forEach((button) => {
       button.addEventListener("click", () => {
         const [clipId, action] = String(button.dataset.audioClipAction || "").split(":");
-        if (action !== "normalize-gain" && action !== "reset-fades" && action !== "quick-fade" && action !== "crossfade-overlap" && action !== "create-crossfade-left" && action !== "invert-phase" && action !== "reverse" && action !== "analyze-transients" && action !== "create-warp-markers" && action !== "quantize-warp-markers" && action !== "clear-warp-markers") return;
+        if (action !== "normalize-gain" && action !== "reset-fades" && action !== "quick-fade" && action !== "crossfade-overlap" && action !== "create-crossfade-left" && action !== "invert-phase" && action !== "reverse" && action !== "analyze-transients" && action !== "create-warp-markers" && action !== "quantize-warp-markers" && action !== "apply-warp-varispeed" && action !== "clear-warp-markers") return;
         this.applyProjectState(applySelectedAudioClipActionCommand(this.state, clipId, action), {
           audio: "timeline-structure",
           preserveScroll: true,
@@ -5360,6 +5360,7 @@ function audioClipActionInput(value: unknown): AudioClipAction {
     value === "analyze-transients" ||
     value === "create-warp-markers" ||
     value === "quantize-warp-markers" ||
+    value === "apply-warp-varispeed" ||
     value === "clear-warp-markers"
   ) {
     return value;
@@ -5592,6 +5593,7 @@ const AUDIO_CLIP_ACTION_TOOLTIPS: Record<string, string> = {
   "crossfade-overlap": "Create a crossfade with an overlapping neighboring clip.",
   "invert-phase": "Invert this audio clip's phase.",
   "normalize-gain": "Set clip gain from the analyzed peak level.",
+  "apply-warp-varispeed": "Apply a source-safe global varispeed rate from warp markers.",
   "quick-fade": "Apply short fade in and fade out to this audio clip.",
   "quantize-warp-markers": "Snap warp marker targets to the 1/16 grid as metadata.",
   "reset-fades": "Clear this audio clip's fades.",

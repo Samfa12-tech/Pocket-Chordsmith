@@ -1612,6 +1612,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "Audio Clip Editing",
+    control: "Apply Warp Rate",
+    selector: "data-audio-clip-action:apply-warp-varispeed",
+    does: "Applies a source-safe global varispeed playback rate from the first and last warp markers, and aligns the first marker by updating clip source-offset metadata where possible.",
+    useWhen: "Use after creating or quantizing warp markers when a loop or take needs an audible timing correction before pitch-preserving stretch exists.",
+    aiNote: "This changes playback/export timing through varispeed, so pitch changes with speed. It does not edit source samples or claim elastic audio/autotune."
+  },
+  {
+    surface: "Audio Clip Editing",
     control: "Clear Warp",
     selector: "data-audio-clip-action:clear-warp-markers",
     does: "Removes metadata warp markers from an audio clip.",

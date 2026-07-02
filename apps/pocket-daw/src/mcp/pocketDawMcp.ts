@@ -113,7 +113,7 @@ export type PocketDawMcpCommand =
   | { type: "delete_clip_range"; clipId: string }
   | { type: "ripple_delete_clip_range"; clipId: string }
   | { type: "ripple_delete_timeline_selection" }
-  | { type: "apply_audio_clip_action"; clipId: string; action: "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "clear-warp-markers" }
+  | { type: "apply_audio_clip_action"; clipId: string; action: "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "apply-warp-varispeed" | "clear-warp-markers" }
   | { type: "activate_audio_take"; clipId: string }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
@@ -172,7 +172,7 @@ export type PocketDawLiveCommand =
   | { type: "delete_clip_range"; clipId: string }
   | { type: "ripple_delete_clip_range"; clipId: string }
   | { type: "ripple_delete_timeline_selection" }
-  | { type: "apply_audio_clip_action"; clipId: string; action: "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "clear-warp-markers" }
+  | { type: "apply_audio_clip_action"; clipId: string; action: "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "apply-warp-varispeed" | "clear-warp-markers" }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
@@ -1038,7 +1038,7 @@ function commandSchema() {
       gameState: { type: "string", enum: [...GAME_STATE_MARKERS] },
       action: {
         type: "string",
-        enum: ["normalize-gain", "reset-fades", "quick-fade", "crossfade-overlap", "create-crossfade-left", "invert-phase", "reverse", "analyze-transients", "create-warp-markers", "quantize-warp-markers", "clear-warp-markers"]
+        enum: ["normalize-gain", "reset-fades", "quick-fade", "crossfade-overlap", "create-crossfade-left", "invert-phase", "reverse", "analyze-transients", "create-warp-markers", "quantize-warp-markers", "apply-warp-varispeed", "clear-warp-markers"]
       },
       parameter: stringSchema(),
       field: { type: "string", enum: ["tempo"] },
@@ -1093,7 +1093,7 @@ function liveCommandSchema() {
       armed: booleanSchema(),
       monitorEnabled: booleanSchema(),
       archived: booleanSchema(),
-      action: { type: "string", enum: ["normalize-gain", "reset-fades", "quick-fade", "crossfade-overlap", "create-crossfade-left", "invert-phase", "reverse", "analyze-transients", "create-warp-markers", "quantize-warp-markers", "clear-warp-markers"] },
+      action: { type: "string", enum: ["normalize-gain", "reset-fades", "quick-fade", "crossfade-overlap", "create-crossfade-left", "invert-phase", "reverse", "analyze-transients", "create-warp-markers", "quantize-warp-markers", "apply-warp-varispeed", "clear-warp-markers"] },
       bar: numberSchema(),
       startBar: numberSchema(),
       endBar: numberSchema(),

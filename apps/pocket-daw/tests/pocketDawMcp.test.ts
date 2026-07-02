@@ -85,6 +85,7 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("ripple_delete_timeline_selection");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("apply_audio_clip_action");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("quantize-warp-markers");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("apply-warp-varispeed");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("clear-warp-markers");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("place_punch_recording_clip_from_range");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("activate_audio_take_lane");
@@ -714,7 +715,8 @@ describe("Pocket DAW MCP tools", () => {
       commands: [
         { type: "apply_audio_clip_action", clipId: placed.clipId, action: "analyze-transients" },
         { type: "apply_audio_clip_action", clipId: placed.clipId, action: "create-warp-markers" },
-        { type: "apply_audio_clip_action", clipId: placed.clipId, action: "quantize-warp-markers" }
+        { type: "apply_audio_clip_action", clipId: placed.clipId, action: "quantize-warp-markers" },
+        { type: "apply_audio_clip_action", clipId: placed.clipId, action: "apply-warp-varispeed" }
       ]
     }));
     const clip = result.project.timeline.clips.find((item: { id: string }) => item.id === placed.clipId);
@@ -723,9 +725,11 @@ describe("Pocket DAW MCP tools", () => {
     expect(result.statuses[0]).toContain("Detected 2 transient markers");
     expect(result.statuses[1]).toContain("Created 2 source-safe warp markers");
     expect(result.statuses[2]).toContain("Quantized 2 warp marker targets");
+    expect(result.statuses[3]).toContain("Applied warp varispeed");
     expect(clip.metadata.audioWarpMarkerCount).toBe(2);
     expect(clip.metadata.audioWarpQuantizeGrid).toBe("1/16");
-    expect(clip.metadata.audioWarpPlaybackMode).toBe("metadata-only");
+    expect(clip.metadata.audioWarpPlaybackMode).toBe("global-varispeed");
+    expect(clip.metadata.audioWarpAppliedFromMarkerCount).toBe(2);
     expect(summaryClip.audioWarpMarkerCount).toBe(2);
   });
 

@@ -1097,6 +1097,7 @@ function renderAudioClipProperties(project: ReturnType<typeof currentProject>, c
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:analyze-transients`)}" title="Analyze likely transient points in this clip">Analyze</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:create-warp-markers`)}" title="Create metadata warp markers from analyzed transients">Warp markers</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:quantize-warp-markers`)}" title="Snap warp marker targets to the 1/16 grid as metadata; playback stretching is future work">Quantize warp</button>
+        <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:apply-warp-varispeed`)}" title="Apply a source-safe global varispeed rate from the first and last warp markers; pitch changes with speed">Apply warp rate</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:clear-warp-markers`)}" title="Clear metadata warp markers from this clip">Clear warp</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:crossfade-overlap`)}" title="Create a crossfade with an overlapping neighboring clip">Crossfade</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:create-crossfade-left`)}" title="Create an overlap fade at the left edge of this clip">Overlap fade</button>
