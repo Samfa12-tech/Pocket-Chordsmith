@@ -491,6 +491,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Enable Live App Bridge | `data-ai-bridge-enabled`");
     expect(catalog).toContain("| Take Lane Activate | `data-audio-take-lane-activate`");
     expect(catalog).toContain("| Take Lane Overview | `data-audio-take-lane-summary`");
+    expect(catalog).toContain("| File MCP Recording Latency Offset | `set_recording_latency_offset`");
+    expect(catalog).toContain("| Live MCP Recording Latency Offset | `pocket_daw_live_apply_commands:set_recording_latency_offset`");
     expect(catalog).toContain("| Live MCP Recording Input Channel | `pocket_daw_live_apply_commands:set_recording_input_channel`");
     expect(catalog).toContain("| File MCP Take Lane Activation | `activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range, pocket_daw_live_apply_commands:activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range`");
     expect(catalog).toContain("| MCP Punch Recording Placement | `place_punch_recording_clip`, `place_punch_recording_clip_from_range`, `pocket_daw_live_apply_commands:place_punch_recording_clip_from_range`");
@@ -503,6 +505,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Live MCP Export Readiness | `pocket_daw_live_status:export`");
     expect(catalog).toContain("| Rename Marker | `data-marker-rename`");
     expect(catalog).toContain("| Track Input | `data-track-input`");
+    expect(catalog).toContain("| Recording Latency Offset | `data-track-recording-latency`");
     expect(catalog).toContain("| Melody Track Settings | `data-melody-instrument / data-melody-octave / data-melody-pan / data-melody-mute / data-melody-solo`");
     expect(catalog).toContain("| Bass Steps, Holds, Slides, Accents | `data-bass-step / data-bass-accent / selected bass step + H/S/T` | H hold / S slide / T tuplet");
     expect(catalog).toContain("| Enable Automation Lane | `data-automation-enabled`");
@@ -910,6 +913,9 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('option value="stereo:0:1" >Stereo Ch 1-2</option>');
     expect(html).toContain('option value="stereo:2:3" >Stereo Ch 3-4</option>');
     expect(html).toContain('Current native recording supports Mono Ch 1 or Stereo Ch 1-2 only; other choices are preflighted and blocked until channel routing lands.');
+    expect(html).toContain(`data-track-recording-latency="${withLiveTrack.trackId}"`);
+    expect(html).toContain('title="Positive values place new recordings earlier; negative values place them later. Raw recorded media is not changed."');
+    expect(html).toContain("Manual take placement offset.");
     expect(html).toContain(`data-input-activity-fill="${withLiveTrack.trackId}"`);
     expect(html).toContain('data-recording-preview="true" data-timeline-non-seek="true"');
   });

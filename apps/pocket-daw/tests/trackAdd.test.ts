@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addEmptyMidiClipCommand, addTrackCommand, setTrackFolderCommand, setTrackInputCommand, setTrackRecordingChannelModeCommand, toggleFolderExpandedCommand, toggleTrackArmedCommand, toggleTrackMonitorCommand } from "../src/app/commands";
+import { addEmptyMidiClipCommand, addTrackCommand, setTrackFolderCommand, setTrackInputCommand, setTrackRecordingChannelModeCommand, setTrackRecordingLatencyOffsetCommand, toggleFolderExpandedCommand, toggleTrackArmedCommand, toggleTrackMonitorCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { toggleTrackMute, toggleTrackSolo } from "../src/daw/mixer";
 import { midiDataFromClip } from "../src/daw/midiClips";
@@ -179,6 +179,23 @@ describe("track workflow", () => {
     expect(stereo.undoStack.present.tracks.find((track) => track.id === "live-instrument")?.recordingChannelMode).toBe("stereo");
     expect(stereo.status).toContain("recording set to stereo");
     expect(rejected.undoStack.present.tracks.find((track) => track.id === "drums")?.recordingChannelMode).toBe("mono");
+    expect(rejected.status).toContain("Only live audio tracks");
+  });
+
+  it("sets manual recording latency offsets only on live audio tracks", () => {
+    const state = addTrackCommand(createInitialState(), "live-vocals");
+    const offset = setTrackRecordingLatencyOffsetCommand(state, "live-vocals", 37.6);
+    const clamped = setTrackRecordingLatencyOffsetCommand(offset, "live-vocals", -999);
+    const rejected = setTrackRecordingLatencyOffsetCommand(clamped, "drums", 25);
+
+    expect(offset.undoStack.present.tracks.find((track) => track.id === "live-vocals")?.metadata).toMatchObject({
+      recordingLatencyOffsetSeconds: 0.038,
+      recordingLatencyOffsetMs: 38,
+      recordingLatencyOffsetMode: "manual-track-offset"
+    });
+    expect(offset.status).toContain("recording latency offset set to 38 ms");
+    expect(clamped.undoStack.present.tracks.find((track) => track.id === "live-vocals")?.metadata?.recordingLatencyOffsetSeconds).toBe(-0.5);
+    expect(rejected.undoStack.present.tracks.find((track) => track.id === "drums")?.metadata?.recordingLatencyOffsetSeconds).toBeUndefined();
     expect(rejected.status).toContain("Only live audio tracks");
   });
 

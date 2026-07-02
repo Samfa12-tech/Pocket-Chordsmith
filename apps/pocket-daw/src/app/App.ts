@@ -193,6 +193,7 @@ import {
   recordTrackAutomationPointCommand,
   setTrackInputCommand,
   setTrackRecordingInputChannelCommand,
+  setTrackRecordingLatencyOffsetCommand,
   setTrackRecordingChannelModeCommand,
   setTrackPanCommand,
   setTrackSendLevelCommand,
@@ -245,7 +246,7 @@ import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
 import { POCKET_DAW_VERSION, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
 import { buildGroupedRecordingCapturePlan, buildNativeRecordingAlphaInputPreflight, buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError } from "../daw/recordingInputs";
-import { trackIsAudible, type AddTrackKind } from "../daw/tracks";
+import { recordingLatencyOffsetSeconds, trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToDisplayPosition, snapProjectBarValue } from "../daw/timeline";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeRecordingClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../daw/audioClips";
 import type { AudioClipAction } from "../daw/clips";
@@ -288,6 +289,7 @@ type AiBridgeLiveCommand =
   | { type: "set_track_input"; trackId: string; inputDeviceId?: string | null }
   | { type: "set_track_armed"; trackId: string; armed: boolean }
   | { type: "set_track_monitor"; trackId: string; monitorEnabled: boolean }
+  | { type: "set_recording_latency_offset"; trackId: string; offsetSeconds?: number; milliseconds?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "mono"; channelIndex?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "split-mono"; channelIndex?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] }
@@ -618,12 +620,13 @@ export class App {
         monitorEnabled: track.monitorEnabled,
         inputDeviceId: track.inputDeviceId ?? null,
         recordingChannelMode: track.recordingChannelMode ?? null,
+        recordingLatencyOffsetSeconds: track.recordKind && track.recordKind !== "none" ? recordingLatencyOffsetSeconds(track) : undefined,
         recordingInput: track.recordingInput ?? null
       })),
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
         control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics"],
-        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
+        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       }
     };
   }
@@ -853,6 +856,13 @@ export class App {
       const track = project.tracks.find((item) => item.id === trackId);
       return track?.monitorEnabled === Boolean(command.monitorEnabled) ? { ...this.state, status: "Track monitor already matched." } : toggleTrackMonitorCommand(this.state, trackId);
     }
+    if (command.type === "set_recording_latency_offset") {
+      return setTrackRecordingLatencyOffsetCommand(
+        this.state,
+        trackId,
+        command.milliseconds !== undefined ? numberInput(command.milliseconds, "milliseconds") : numberInput(command.offsetSeconds, "offsetSeconds") * 1000
+      );
+    }
     if (command.type === "set_recording_input_channel") {
       return setTrackRecordingInputChannelCommand(
         this.state,
@@ -1081,6 +1091,17 @@ export class App {
         });
         void this.syncActiveOrArmedInputMonitor(trackId);
       });
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-track-recording-latency]").forEach((input) => {
+      input.addEventListener("change", () => this.applyProjectState(setTrackRecordingLatencyOffsetCommand(
+        this.state,
+        input.dataset.trackRecordingLatency || "",
+        Number(input.value)
+      ), {
+        audio: "none",
+        preserveScroll: true,
+        reason: "track-recording-latency"
+      }));
     });
     this.root.querySelectorAll<HTMLSelectElement>("[data-track-output]").forEach((select) => {
       select.addEventListener("change", () => this.applyProjectState(routeTrackOutputCommand(this.state, select.dataset.trackOutput || "", select.value || "master"), {
@@ -3387,6 +3408,8 @@ export class App {
             trackId: result.trackId,
             channelMode: decoded?.channels === 2 || result.channels === 2 ? "stereo" : recordingTrack?.recordingChannelMode
           }),
+          latencyCompensationRequestedSeconds: recordingLatencyOffsetSeconds(recordingTrack),
+          latencyCompensationMode: "manual-track-offset",
           ...buildNativeRecordingDiagnosticsMetadata({
             ...result,
             playbackCaptureAnchor,

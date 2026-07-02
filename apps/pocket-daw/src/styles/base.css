@@ -839,7 +839,8 @@ button.record:hover {
   color: #eef4ff;
 }
 
-.strip-control select {
+.strip-control select,
+.strip-control input {
   min-height: 34px;
 }
 

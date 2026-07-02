@@ -9,7 +9,7 @@ import { activateAudioTake, setAudioTakeArchived } from "../src/daw/clips";
 import { addMediaPoolItem, createMediaPoolItem, linkFreezeRenderCacheItem, markMediaPoolItemMissing } from "../src/daw/mediaPool";
 import { setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
 import { addReturnTrack, setTrackSendLevel, setTrackSendMode } from "../src/daw/routing";
-import { addTrackToProject } from "../src/daw/tracks";
+import { addTrackToProject, setTrackRecordingLatencyOffset } from "../src/daw/tracks";
 import { importTextToProject } from "../src/app/commands";
 import { utf8ToBase64Url } from "../src/compatibility/pcsParser";
 import { createPocketDjImportFixture } from "./pocketDjFixtures";
@@ -156,6 +156,20 @@ describe("tester diagnostics", () => {
       playbackSampleRate: 48000
     });
     expect(payload.recording.timingNotes.join("\n")).toContain("No automatic latency compensation");
+  });
+
+  it("reports configured manual recording latency offsets separately from automatic compensation", () => {
+    let state = createInitialState();
+    const withLiveTrack = addTrackToProject(currentProject(state), "live-vocals");
+    const project = setTrackRecordingLatencyOffset(withLiveTrack.project, withLiveTrack.trackId, 0.031);
+    state = { ...state, undoStack: createUndoStack(project) };
+    const engine = new AudioEngine(project);
+
+    const payload = buildTesterDiagnosticsPayload(state, engine.getDiagnostics());
+    const notes = payload.recording.timingNotes.join("\n");
+
+    expect(notes).toContain("No automatic latency compensation");
+    expect(notes).toContain("Manual recording latency offsets are configured for Live Vocals (31 ms)");
   });
 
   it("includes recording input preflight diagnostics for manual smoke", () => {

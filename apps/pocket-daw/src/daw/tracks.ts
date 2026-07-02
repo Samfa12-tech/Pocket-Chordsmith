@@ -3,6 +3,9 @@ import { cloneProject } from "./dawProject";
 import { createEmptyFxChain } from "./fx";
 import { DEFAULT_MASTER_VOLUME, DEFAULT_STEM_MIX } from "../../../../packages/pocket-audio-core/src/constants.js";
 
+export const MIN_RECORDING_LATENCY_OFFSET_SECONDS = -0.5;
+export const MAX_RECORDING_LATENCY_OFFSET_SECONDS = 0.5;
+
 const TRACK_DEFS: Array<{ id: string; name: string; role: TrackRole; colour: string; volume: number; pan: number }> = [
   { id: "drums", name: "Drums", role: "drums", colour: "#40d8ff", volume: DEFAULT_STEM_MIX.drums.volume, pan: DEFAULT_STEM_MIX.drums.pan },
   { id: "bass", name: "Bass", role: "bass", colour: "#7cff9b", volume: DEFAULT_STEM_MIX.bass.volume, pan: DEFAULT_STEM_MIX.bass.pan },
@@ -82,6 +85,35 @@ export function toggleFolderExpanded(project: PocketDawProject, folderId: string
     folderMode: "organizational"
   };
   return next;
+}
+
+export function recordingLatencyOffsetSeconds(track: Track | null | undefined): number {
+  const rawSeconds = Number(track?.metadata?.recordingLatencyOffsetSeconds);
+  if (!Number.isFinite(rawSeconds)) return 0;
+  return clampRecordingLatencyOffsetSeconds(rawSeconds);
+}
+
+export function setTrackRecordingLatencyOffset(project: PocketDawProject, trackId: string, offsetSeconds: number): PocketDawProject {
+  const next = cloneProject(project);
+  const track = next.tracks.find((item) => item.id === trackId);
+  if (!track || !track.recordKind || track.recordKind === "none") return project;
+  const cleanSeconds = clampRecordingLatencyOffsetSeconds(offsetSeconds);
+  const cleanMs = Math.round(cleanSeconds * 1000);
+  track.metadata = {
+    ...(track.metadata || {}),
+    recordingLatencyOffsetSeconds: cleanSeconds,
+    recordingLatencyOffsetMs: cleanMs,
+    recordingLatencyOffsetMode: "manual-track-offset"
+  };
+  return next;
+}
+
+export function clampRecordingLatencyOffsetSeconds(offsetSeconds: number): number {
+  const clean = Number.isFinite(offsetSeconds) ? offsetSeconds : 0;
+  return Math.max(
+    MIN_RECORDING_LATENCY_OFFSET_SECONDS,
+    Math.min(MAX_RECORDING_LATENCY_OFFSET_SECONDS, Math.round(clean * 1000) / 1000)
+  );
 }
 
 export type AddTrackKind = "live-vocals" | "live-instrument" | "midi-instrument" | "folder" | "chordsmith-drums" | "chordsmith-bass" | "chordsmith-chords" | "chordsmith-melody" | "chordsmith-guitar";

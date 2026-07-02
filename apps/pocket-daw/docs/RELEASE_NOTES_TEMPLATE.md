@@ -53,7 +53,7 @@ Tauri updater signatures are separate from Windows code signing. Do not claim th
 
 ## Public Wording
 
-Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is not yet a professional DAW replacement. The v0.6.0 recording alpha is one installed-app mono track only and requires a saved project before capture. ASIO, simultaneous multitrack recording, stereo recording modes, punch-in/out, comping/take lanes, latency compensation UI, FX monitoring, full send/return processing, full bundled game export packs and advanced pro DAW features are future work unless this release explicitly implements them.
+Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is not yet a professional DAW replacement. The v0.6.0 recording alpha is one installed-app mono track only and requires a saved project before capture. ASIO, simultaneous multitrack recording, punch-in/out, full comping/take lanes, automatic latency detection/compensation, FX monitoring, full send/return processing, full bundled game export packs and advanced pro DAW features are future work unless this release explicitly implements them.
 
 The repo has mixed licensing/source-available boundaries; do not describe the whole repo as fully MIT/open-source unless the license files explicitly support that.
 

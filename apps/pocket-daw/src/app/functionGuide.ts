@@ -433,6 +433,12 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
         aiNote: "Confirm saved path, count-in, take placement, media pool item, and reopen persistence."
       },
       {
+        name: "Manual Recording Latency Offset",
+        does: "Stores a per-live-track millisecond placement offset for future recordings. Positive values place new takes earlier; negative values place them later, while the raw WAV media remains unchanged.",
+        useWhen: "Use after loopback or listening smoke shows a consistent recorded-track timing offset.",
+        aiNote: "This is visible and opt-in. It is not automatic device-latency compensation, and each placed take stores requested/applied offset metadata for audit."
+      },
+      {
         name: "Take Lanes",
         does: "Groups alternate recorded clips, shows a compact lane overview with active/muted/archived segment counts, activates one take or every clip in a take lane, archives/restores takes, and can comp from the playhead or active edit range.",
         useWhen: "Use to manage repeated passes without deleting source media.",
@@ -1428,6 +1434,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "Track And Routing",
+    control: "Recording Latency Offset",
+    selector: "data-track-recording-latency",
+    does: "Sets a manual millisecond take-placement offset on a record-capable track. Positive values place new recordings earlier; negative values place them later.",
+    useWhen: "Use after calibration or repeat listening shows that new takes land consistently late or early.",
+    aiNote: "This is per-track project metadata and affects future placed recordings only. It does not rewrite raw media or claim automatic latency compensation."
+  },
+  {
+    surface: "Track And Routing",
     control: "Track Output Routing",
     selector: "data-track-output",
     does: "Routes a track to master or an available bus destination.",
@@ -2327,6 +2341,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "AI / MCP Bridge",
+    control: "File MCP Recording Latency Offset",
+    selector: "set_recording_latency_offset",
+    does: "Lets file-first MCP set a live track's manual recording latency offset in seconds or milliseconds through the same undoable command path as the mixer UI.",
+    useWhen: "Use before recording smoke when a project has known interface or monitoring delay that should be reflected in future take placement.",
+    aiNote: "This is explicit project metadata only. Positive values place new takes earlier; negative values place them later, and clips record requested/applied offset metadata."
+  },
+  {
+    surface: "AI / MCP Bridge",
     control: "File MCP Recording Input Channel",
     selector: "set_recording_input_channel",
     does: "Lets file-first MCP store explicit live-track Mono Ch N, Stereo Ch N-N+1 or future split-mono recording input assignments. The visual mixer still exposes the current mono/stereo alpha choices.",
@@ -2372,6 +2394,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     does: "Lets the tokened live bridge apply selected audio-clip actions such as Normalize, Analyze Transients, Create/Quantize/Clear Warp Markers, Invert Phase, Reverse, Short Fades, Reset Fades and crossfade helpers through the same undoable command path as the Audio Editor buttons.",
     useWhen: "Use during MCP-observed audio editing smoke when a clip needs source-safe analysis or metadata edits without visual UI driving.",
     aiNote: "Warp and quantize actions are metadata-only preparation for future time-stretch. They do not claim elastic audio, pitch correction or changed source samples."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "Live MCP Recording Latency Offset",
+    selector: "pocket_daw_live_apply_commands:set_recording_latency_offset",
+    does: "Lets the tokened live bridge set the running app's selected live-track manual recording latency offset through the same command path as the mixer UI.",
+    useWhen: "Use during MCP-observed installed-app recording smoke when the running app needs a known timing offset prepared without visual UI driving.",
+    aiNote: "Requires the installed app live bridge. It is visible, opt-in placement metadata, not automatic hardware-latency detection."
   },
   {
     surface: "AI / MCP Bridge",

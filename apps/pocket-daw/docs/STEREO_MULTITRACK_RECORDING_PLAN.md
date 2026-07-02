@@ -1,6 +1,6 @@
 # Stereo And Multitrack Recording Plan
 
-This is the design anchor for moving beyond the current recording alpha. It does not change the current shipped behavior: Pocket DAW still records one armed live track at a time in the installed app, requires a saved project, writes project-relative WAV takes under `project-media/recordings/`, and does not apply hidden latency compensation.
+This is the design anchor for moving beyond the current recording alpha. It does not change the current shipped behavior: Pocket DAW still records one armed live track at a time in the installed app, requires a saved project, writes project-relative WAV takes under `project-media/recordings/`, and does not apply hidden or automatic latency compensation.
 
 ## Current Baseline
 
@@ -54,7 +54,9 @@ interface RecordingTakeMetadata {
   captureStartInputFrame: number | null;
   firstInputFrame: number | null;
   droppedInputFrameCount: number;
-  latencyCompensationAppliedSeconds: 0;
+  latencyCompensationRequestedSeconds?: number;
+  latencyCompensationAppliedSeconds: number;
+  latencyCompensationMode?: "manual-track-offset";
 }
 ```
 
@@ -94,13 +96,13 @@ The current no-hidden-compensation rule stays in force:
 - Do not move recorded clips automatically based on device latency guesses.
 - Store playback/capture anchors, capture frames, sample rates, and dropped-frame counters.
 - Add future calibration as a visible command that writes a measured profile.
-- If compensation is later applied, store `latencyCompensationAppliedSeconds` and keep the raw diagnostic fields.
+- Manual track offsets may apply visible placement correction; keep `latencyCompensationRequestedSeconds`, `latencyCompensationAppliedSeconds`, `latencyCompensationMode` and raw diagnostic fields.
 
 ## Verification Targets
 
 - Existing mono alpha tests continue to pass without schema migration surprises.
 - Source preflight can model explicit mono, stereo and future split-mono channel maps, reject unavailable channels, detect duplicate channel assignments for future multitrack mode, and keep non-default channel maps out of the current native recording alpha until the native writer can honor them.
-- Source grouped-capture planning can convert a valid future mono/stereo/split-mono preflight into deterministic per-track WAV output paths, output channel counts, shared `recordingSessionId`/`takeGroupId`, requested-start timing, channel maps and zero hidden latency-compensation metadata.
+- Source grouped-capture planning can convert a valid future mono/stereo/split-mono preflight into deterministic per-track WAV output paths, output channel counts, shared `recordingSessionId`/`takeGroupId`, requested-start timing, channel maps and explicit manual latency-offset metadata without starting native simultaneous capture.
 - A stereo recording fixture creates a two-channel WAV and records `channels: 2` plus channel-pair metadata.
 - A split-mono fixture records two mono files from one shared capture session and one shared `takeGroupId`.
 - Simultaneous captures have matching requested start metadata and comparable first-frame evidence.
@@ -110,4 +112,4 @@ The current no-hidden-compensation rule stays in force:
 
 ## Release Boundary
 
-Until the grouped native capture path and tests exist, release notes should continue to say: one armed live track at a time only; no simultaneous multitrack capture, non-default native channel routing, punch-in/out, comping, latency compensation UI, ASIO, or FX monitoring. Source-level mono/stereo mode, input preflight and grouped capture planning still require installed hardware smoke and native writer implementation before release copy should lean on them.
+Until the grouped native capture path and tests exist, release notes should continue to say: one armed live track at a time only; no simultaneous multitrack capture, non-default native channel routing, punch-in/out, full comping, automatic latency detection/compensation, ASIO, or FX monitoring. Source-level mono/stereo mode, input preflight, manual offset placement and grouped capture planning still require installed hardware smoke and native writer implementation before release copy should lean on them.

@@ -66,12 +66,14 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_track_folder");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("toggle_folder_expanded");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("toggle_track_solo");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_recording_latency_offset");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_recording_input_channel");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("split-mono");
     const liveApplySchema = toolList.find((tool) => tool.name === "pocket_daw_live_apply_commands")?.inputSchema as { properties: Record<string, unknown> } | undefined;
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_armed");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_monitor");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_input");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_recording_latency_offset");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_recording_input_channel");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("split-mono");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_punch_range");
@@ -406,6 +408,39 @@ describe("Pocket DAW MCP tools", () => {
       channelPair: [2, 3]
     });
     expect(result.summary.recordingInputPreflight.errors.join("\n")).toContain("native recording alpha currently captures Stereo Ch 1-2 only");
+  });
+
+  it("applies manual recording latency offsets through the file-first command path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-mcp-recording-latency-"));
+    const outputPath = join(dir, "recording-latency.pocketdaw");
+    const withLiveTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    withLiveTrack.project.tracks.find((track) => track.id === withLiveTrack.trackId)!.armed = true;
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(withLiveTrack.project),
+      outputPath,
+      commands: [
+        { type: "set_recording_latency_offset", trackId: withLiveTrack.trackId, milliseconds: 24 }
+      ]
+    }));
+    const edited = JSON.parse(readFileSync(outputPath, "utf8"));
+    const liveTrack = edited.tracks.find((track: { id: string }) => track.id === withLiveTrack.trackId);
+
+    expect(result.written).toBe(outputPath);
+    expect(result.statuses).toEqual(["Live Vocals recording latency offset set to 24 ms."]);
+    expect(liveTrack.metadata).toMatchObject({
+      recordingLatencyOffsetSeconds: 0.024,
+      recordingLatencyOffsetMs: 24,
+      recordingLatencyOffsetMode: "manual-track-offset"
+    });
+    expect(result.summary.tracks.find((track: { id: string }) => track.id === withLiveTrack.trackId)).toMatchObject({
+      recordingLatencyOffsetSeconds: 0.024
+    });
+    expect(result.summary.recordingFutureCapturePlan.items[0].takeMetadata).toMatchObject({
+      latencyCompensationRequestedSeconds: 0.024,
+      latencyCompensationAppliedSeconds: 0,
+      latencyCompensationMode: "manual-track-offset"
+    });
   });
 
   it("applies split-mono recording input assignments through the file-first command path", async () => {

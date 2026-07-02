@@ -5,7 +5,7 @@ This is the design anchor for punch-in/out, non-destructive take lanes and compi
 ## Current Baseline
 
 - `src/app/App.ts` stops native recording, imports the WAV through `addImportedAudioMedia`, places it with `placeRecordingClipOnTrack`, flushes autosave, then saves the project file.
-- `src/daw/audioClips.ts` implements `placeRecordingClipOnTrack` as `placeAudioClipOnTrack(..., { overwriteOverlaps: true })`, and now has a helper-level `placePunchRecordingClipOnTrack` foundation plus undoable command/file-first MCP wiring that commits only an explicit punch window from a longer raw take while preserving source/take metadata.
+- `src/daw/audioClips.ts` implements `placeRecordingClipOnTrack` with same-track overwrite plus explicit manual latency-offset placement metadata, and now has a helper-level `placePunchRecordingClipOnTrack` foundation plus undoable command/file-first MCP wiring that commits only an explicit punch window from a longer raw take while preserving source/take metadata.
 - Placed audio clips now preserve source recording/take metadata such as `takeGroupId`, `recordingTakeGroupId`, `takeLaneId`, `takeLaneIndex`, `takeStatus`, `inputMode`, `channelMap` and latency evidence from the media item.
 - `src/daw/clips.ts` has grouped-take helpers that activate same-track sibling takes, activate whole take lanes for auditioning, archive/restore takes without deleting media, and split overlap-aligned grouped takes at the playhead for a first source-preserving comp segment foundation through normal undoable command/UI paths.
 - Current same-track overwrite is destructive at the clip level: overlapped audio clips are split away from the new recording range, and the right-hand remainder advances `metadata.sourceOffsetSeconds`. File-first and live MCP can now mark an explicit punch range by storing `timeline.selection.source = "punch"` before later punch/take smoke, and both file-first MCP plus the tokened live MCP bridge can place an existing raw take from that active punch range. The helper-level punch foundation applies splitting only to an explicit visible punch range and stores `punchStartBar`, `punchEndBar`, `captureStartBar`, `sourceOffsetSeconds` and `sourceDurationSeconds` on the committed take clip.
@@ -78,7 +78,7 @@ Use `Clip.lane` only as an optional visual lane index until the UI contract is p
 5. Preserve or mute the previous material according to the selected mode:
    - `Replace visible range`: current overwrite behavior, but with the new take metadata.
    - `Create new take lane`: no destructive timeline split; new take lands on a muted or active lane.
-6. Store timing evidence and `latencyCompensationAppliedSeconds: 0` unless a future visible compensation command applies an offset.
+6. Store timing evidence plus `latencyCompensationRequestedSeconds`, `latencyCompensationAppliedSeconds` and `latencyCompensationMode` when the track has a visible manual offset.
 
 ## Take Lane And Comping Flow
 
@@ -100,7 +100,7 @@ Use `Clip.lane` only as an optional visual lane index until the UI contract is p
 
 - Do not combine this with ASIO or stereo/multitrack capture in the first slice. Those have separate design anchors.
 - Do not destroy raw takes when editing a comp. Delete/archive should be explicit and undoable.
-- Do not silently move clips for latency. Store evidence first; apply offsets only through a visible command.
+- Do not silently move clips for latency. Store evidence first; apply offsets only through the visible per-track manual offset command/control.
 - Do not make `Clip.lane` the only durable lane identity. Lane ordering will change.
 - Do not claim punch/comping in release notes until installed recording smoke proves at least one punch flow and one save/reopen flow.
 

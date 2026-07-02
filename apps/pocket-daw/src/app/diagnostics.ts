@@ -7,6 +7,7 @@ import { createRoutingExportSummary, type RoutingExportSummary } from "../daw/ro
 import { POCKET_DAW_VERSION, type Clip, type PocketDawProject } from "../daw/schema";
 import { createPocketDjSourceSummary, type PocketDjSourceSummary } from "../daw/pocketDjSources";
 import { createMidiChordsmithConversionPreviews, type MidiChordsmithConversionPreview } from "../daw/midiConversionPreview";
+import { recordingLatencyOffsetSeconds } from "../daw/tracks";
 import { currentProject, type AppState } from "./state";
 import type { PerformanceDiagnosticsReport } from "./performanceDiagnostics";
 
@@ -398,8 +399,16 @@ function recordingTimingConfidence(state: AppState): "none" | "low" | "diagnosti
 }
 
 function recordingTimingNotes(state: AppState): string[] {
+  const project = currentProject(state);
+  const manualOffsets = project.tracks
+    .filter((track) => track.recordKind && track.recordKind !== "none")
+    .map((track) => ({ track, offsetSeconds: recordingLatencyOffsetSeconds(track) }))
+    .filter((entry) => entry.offsetSeconds !== 0);
   const notes = [
     "No automatic latency compensation is applied.",
+    manualOffsets.length
+      ? `Manual recording latency offsets are configured for ${manualOffsets.map((entry) => `${entry.track.name} (${Math.round(entry.offsetSeconds * 1000)} ms)`).join(", ")}.`
+      : "No manual recording latency offsets are configured.",
     "Browser monotonic timestamps are presentation estimates, not sample-clock anchors."
   ];
   if (!state.recording.playbackCaptureAnchor) notes.push("No native playback capture anchor is available for the current recording state.");

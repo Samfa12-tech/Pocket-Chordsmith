@@ -11,6 +11,7 @@ Recording is a narrow installed-app alpha slice in current v0.6.x builds. It is 
 - Native CPAL capture writes mono PCM WAV takes under `project-media/recordings/` beside the saved project.
 - Stopping a take adds a project-media Media Pool item and places an audio clip on the armed track at the original record start bar.
 - No hidden latency compensation or automatic take alignment is applied.
+- Live tracks expose an explicit manual latency offset in milliseconds; positive values place future takes earlier, negative values place them later, and raw recorded WAV media is not rewritten.
 - Project schema now defaults `track.monitorEnabled` to `false` and stores project metronome settings.
 - Metronome/count-in is audible in the installed app and is not included in WAV/MIDI exports.
 - Diagnostics export includes recording status, armed tracks, monitored tracks and metronome/count-in settings.
@@ -22,7 +23,7 @@ Recording is a narrow installed-app alpha slice in current v0.6.x builds. It is 
 - Stereo track recording modes.
 - Punch-in/out.
 - Comping or take lanes.
-- Latency compensation UI.
+- Automatic latency detection/compensation.
 - FX monitoring.
 - Input meters beyond current playback/mixer meters.
 - Browser `getUserMedia` recording.
@@ -36,5 +37,6 @@ Recording is a narrow installed-app alpha slice in current v0.6.x builds. It is 
 | Arm rule | Add Live Vocals and Live Instrument, arm one then the other. | Only one live track remains armed. | Manual / Not run | Manual / Not run |  | Covered by unit tests for state. |
 | Monitor | Toggle Monitor on the armed track. | Monitor state changes; if enabled during recording, input is routed to output without FX. | Manual / Not run | Manual / Not run |  | Keep speaker/mic feedback risk in mind. |
 | Count-in | Enable metronome/count-in and press Record. | One-bar count-in is heard before capture starts. | Manual / Not run | Manual / Not run |  | Click is not exported. |
+| Manual latency offset | Set a live track latency offset such as `25 ms`, record a short take, then inspect the placed clip metadata via diagnostics or MCP. | The new clip is placed earlier by the requested offset, reports requested/applied latency metadata, and the source WAV media remains unchanged. | Manual / Not run | Manual / Not run |  | This is explicit placement correction, not automatic latency detection. |
 | Record take | Record 5-10 seconds, then Stop Rec. | WAV is written under `project-media/recordings/`; clip appears on the armed track. | Manual / Not run | Manual / Not run |  | First slice is mono only. |
 | Reload | Save, close, reopen the `.pocketdaw`. | Recorded clip reloads and plays. | Manual / Not run | Manual / Not run |  | Confirms durable project-media behavior. |

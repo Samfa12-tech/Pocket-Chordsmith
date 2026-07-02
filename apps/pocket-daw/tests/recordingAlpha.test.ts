@@ -5,8 +5,9 @@ import { createInitialState } from "../src/app/state";
 import { migratePocketDawProject } from "../src/compatibility/migrations";
 import { addImportedAudioMedia, placeAudioClipOnTrack, placePunchRecordingClipOnTrack, placeRecordingClipOnTrack } from "../src/daw/audioClips";
 import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
-import { addTrackToProject } from "../src/daw/tracks";
+import { addTrackToProject, setTrackRecordingLatencyOffset } from "../src/daw/tracks";
 import { buildGroupedRecordingCapturePlan, buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError, setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
+import { timelineBarAtSeconds, timelineSecondsAtBar } from "../src/daw/timeline";
 import { createAutomationLane } from "../src/daw/automation";
 import { createDemoProject } from "../src/demo/demoProject";
 import {
@@ -346,6 +347,34 @@ describe("recording alpha foundations", () => {
 
       expect(clip?.startBar).toBeCloseTo(startBar, 5);
     }
+  });
+
+  it("applies visible manual recording latency offsets when placing new takes", () => {
+    const withTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    const project = setTrackRecordingLatencyOffset(withTrack.project, withTrack.trackId, 0.012);
+    const imported = addImportedAudioMedia(project, {
+      name: "late-vocal-take.wav",
+      uri: "project-media/recordings/late-vocal-take.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 2,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { mediaRefKind: "project", projectRelativePath: "project-media/recordings/late-vocal-take.wav" }
+    });
+
+    const placed = placeRecordingClipOnTrack(imported.project, imported.item.id, withTrack.trackId, 5);
+    const clip = placed.project.timeline.clips.find((item) => item.id === placed.clipId);
+    const expectedStartSeconds = timelineSecondsAtBar(project, 5) - 0.012;
+    const expectedStoredStartBar = Math.round(timelineBarAtSeconds(project, expectedStartSeconds) * 1000) / 1000;
+
+    expect(clip?.startBar).toBe(expectedStoredStartBar);
+    expect(clip?.metadata).toMatchObject({
+      latencyCompensationRequestedSeconds: 0.012,
+      latencyCompensationAppliedSeconds: 0.012,
+      latencyCompensationMode: "manual-track-offset",
+      originalRequestedStartBar: 5
+    });
+    expect(imported.item.metadata?.latencyCompensationAppliedSeconds).toBeUndefined();
   });
 
   it("records over same-track audio while preserving material before and after the take", () => {

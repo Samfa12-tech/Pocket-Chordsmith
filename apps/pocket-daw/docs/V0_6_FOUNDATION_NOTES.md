@@ -65,8 +65,9 @@ This note tracks the v0.6-readiness work that follows the v0.5.1 hardening pass.
 - Project metadata includes metronome settings for enabled state, count-in bars and volume.
 - Native CPAL recording commands can start/stop/status one mono input capture and write PCM WAV files under `project-media/recordings/`.
 - Stop-recording imports the take as project media and places an audio clip on the armed live track.
+- Live tracks can store an explicit manual recording latency offset; future placed takes move earlier/later by that offset while the raw WAV media remains unchanged and requested/applied offset metadata is saved on the clip.
 - Browser/dev recording remains disabled.
-- Remaining work: ASIO, simultaneous multitrack/stereo capture, punch-in/out, comping/take lanes, latency compensation UI and FX monitoring.
+- Remaining work: ASIO, simultaneous multitrack/stereo capture, punch-in/out, full comping/take lanes, automatic latency detection/compensation and FX monitoring.
 - Future stereo/multitrack recording design is tracked in `STEREO_MULTITRACK_RECORDING_PLAN.md`; it keeps the no-hidden-compensation rule and requires explicit channel assignment plus grouped take metadata before implementation.
 - ASIO/low-latency backend research is tracked in `ASIO_LOW_LATENCY_BACKEND_SPIKE.md`; the current release path remains CPAL/WASAPI-first.
 - Punch-in/out, non-destructive take lanes and comping are tracked in `PUNCH_COMPING_TAKE_LANES_PLAN.md`; the current release still uses same-track overwrite placement for recorded takes.

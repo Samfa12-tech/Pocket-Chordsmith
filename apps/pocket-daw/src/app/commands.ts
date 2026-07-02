@@ -7,7 +7,7 @@ import { activateAudioTake, activateAudioTakeLane, applyAudioClipAction, compGro
 import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackRecordingChannelMode, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
 import { setTrackRecordingInputAssignment } from "../daw/recordingInputs";
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
-import { addTrackToProject, renameTrack, setTrackFolder, toggleFolderExpanded, type AddTrackKind } from "../daw/tracks";
+import { addTrackToProject, recordingLatencyOffsetSeconds, renameTrack, setTrackFolder, setTrackRecordingLatencyOffset, toggleFolderExpanded, type AddTrackKind } from "../daw/tracks";
 import { placeAudioClipOnTimeline, placePunchRecordingClipOnTrack } from "../daw/audioClips";
 import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createEmptyMidiClip, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, midiDataFromClip, midiGrooveTemplateById, moveMidiNote, quantizeMidiClip, quantizeMidiClipDurations, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote, type MidiAftertouchField, type MidiControllerField, type MidiGrooveTemplateId, type MidiNoteField, type MidiPitchBendField, type MidiPitchTransform, type MidiProgramChangeField, type MidiQuantizeGrid, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
 import type { MidiTempoMapSummary } from "../daw/midiClips";
@@ -1765,6 +1765,19 @@ export function setTrackRecordingInputChannelCommand(state: AppState, trackId: s
     state,
     setTrackRecordingInputAssignment(state.undoStack.present, trackId, assignment),
     `${track.name} recording input set to ${recordingAssignmentLabel(assignment)}.`
+  );
+}
+
+export function setTrackRecordingLatencyOffsetCommand(state: AppState, trackId: string, milliseconds: number): AppState {
+  const track = state.undoStack.present.tracks.find((item) => item.id === trackId);
+  if (!track?.recordKind || track.recordKind === "none") return { ...state, status: "Only live audio tracks have recording latency offsets." };
+  const cleanMs = Math.max(-500, Math.min(500, Math.round(Number.isFinite(milliseconds) ? milliseconds : 0)));
+  const next = setTrackRecordingLatencyOffset(state.undoStack.present, trackId, cleanMs / 1000);
+  const appliedMs = Math.round(recordingLatencyOffsetSeconds(next.tracks.find((item) => item.id === trackId)) * 1000);
+  return commitProject(
+    state,
+    next,
+    `${track.name} recording latency offset set to ${appliedMs} ms.`
   );
 }
 

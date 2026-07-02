@@ -472,7 +472,8 @@
   min-width: 0;
 }
 
-.strip-input select {
+.strip-input select,
+.strip-input input {
   min-height: 24px;
   padding: 0 6px;
   font-size: 10px;

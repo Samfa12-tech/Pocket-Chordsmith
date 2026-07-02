@@ -17,6 +17,7 @@ import { createAudioMediaAnalysisSummary, createCollectMediaPlan, createPortable
 import { MIDI_GROOVE_TEMPLATES, MIDI_IMPORT_PLACEMENT_MODES, createMidiTempoMapSummary, midiDataFromClip, type MidiTempoMapPosition, type MidiTempoMapSummary } from "../daw/midiClips";
 import { clipHasAutomation, getClipAutomationLane, getFxParameterAutomationLane, getProjectAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, interpolateAutomationValue, trackHasAutomation, type ClipAutomationField } from "../daw/automation";
 import { availableTrackOutputs, createRoutingExportSummary, trackSendLevel, trackSendMode } from "../daw/routing";
+import { recordingLatencyOffsetSeconds } from "../daw/tracks";
 import { createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs";
 import { validateExportProfile } from "../daw/exportProfiles";
 import { createPocketDjSourceSummary, type PocketDjSourceSummary } from "../daw/pocketDjSources";
@@ -2898,6 +2899,7 @@ function renderMixerInputSelector(project: ReturnType<typeof currentProject>, tr
   const peak = active ? state.recording.inputPeak : 0;
   const channelOptions = recordingInputChannelOptions(project, track);
   const selectedChannel = recordingInputChannelValue(track);
+  const latencyOffsetMs = Math.round(recordingLatencyOffsetSeconds(track) * 1000);
   return `
     <label class="strip-control strip-input">
       <span>Input <strong title="${escapeAttr(inputLabel)}">${escapeHtml(compactLabel)}</strong></span>
@@ -2920,6 +2922,20 @@ function renderMixerInputSelector(project: ReturnType<typeof currentProject>, tr
         ${channelOptions.map((option) => `<option value="${escapeAttr(option.value)}" ${option.value === selectedChannel ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
       </select>
       <small title="Current native recording alpha only captures default channels.">Current native recording supports Mono Ch 1 or Stereo Ch 1-2 only; other choices are preflighted and blocked until channel routing lands.</small>
+    </label>
+    <label class="strip-control strip-input">
+      <span>Latency <strong>${latencyOffsetMs} ms</strong></span>
+      <input
+        data-track-recording-latency="${sanitizeDataAttr(track.id)}"
+        type="number"
+        min="-500"
+        max="500"
+        step="1"
+        value="${latencyOffsetMs}"
+        aria-label="${escapeAttr(`Manual recording latency offset for ${track.name}`)}"
+        title="Positive values place new recordings earlier; negative values place them later. Raw recorded media is not changed."
+      />
+      <small title="Manual and opt-in: Pocket DAW stores the requested and applied offset on each placed take.">Manual take placement offset.</small>
     </label>
   `;
 }

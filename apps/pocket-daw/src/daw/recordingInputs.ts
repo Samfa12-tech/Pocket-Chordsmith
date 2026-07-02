@@ -1,6 +1,7 @@
 import { cloneProject } from "./dawProject";
 import type { AudioDeviceInfo, JsonObject, PocketDawProject, RecordingInputMode, Track, TrackRecordingInput } from "./schema";
 import { timelineSecondsAtBar } from "./timeline";
+import { recordingLatencyOffsetSeconds } from "./tracks";
 
 export interface RecordingInputDeviceAvailability {
   id: string;
@@ -173,6 +174,8 @@ export function buildGroupedRecordingCapturePlan(
   const recordingDir = cleanProjectRelativeDir(options.projectRelativeRecordingDir || "project-media/recordings");
   const sessionLabel = sessionFilePrefix(options.recordingSessionId);
   const items = preflight.capturePlan.map((item) => {
+    const track = project.tracks.find((candidate) => candidate.id === item.trackId);
+    const requestedLatencyOffsetSeconds = recordingLatencyOffsetSeconds(track);
     const fileName = recordingCaptureFileName(sessionLabel, item);
     return {
       ...item,
@@ -189,6 +192,8 @@ export function buildGroupedRecordingCapturePlan(
         channelMap: item.channelMap,
         requestedStartBar,
         requestedStartSeconds,
+        latencyCompensationRequestedSeconds: requestedLatencyOffsetSeconds,
+        latencyCompensationMode: "manual-track-offset",
         latencyCompensationAppliedSeconds: 0
       }
     };

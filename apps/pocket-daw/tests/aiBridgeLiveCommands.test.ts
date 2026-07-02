@@ -64,6 +64,25 @@ describe("Pocket DAW AI bridge live commands", () => {
     });
   });
 
+  it("applies manual recording latency offsets through the live bridge executor", () => {
+    const state = addTrackCommand(createInitialState(), "live-vocals");
+    const app = appHarness(state);
+
+    const next = app.applyAiBridgeLiveCommand({
+      type: "set_recording_latency_offset",
+      trackId: "live-vocals",
+      offsetSeconds: 0.029
+    });
+
+    const track = next.undoStack.present.tracks.find((item) => item.id === "live-vocals");
+    expect(next.status).toBe("Live Vocals recording latency offset set to 29 ms.");
+    expect(track?.metadata).toMatchObject({
+      recordingLatencyOffsetSeconds: 0.029,
+      recordingLatencyOffsetMs: 29,
+      recordingLatencyOffsetMode: "manual-track-offset"
+    });
+  });
+
   it("applies split-mono recording input assignments through the live bridge executor", () => {
     const state = addTrackCommand(createInitialState(), "live-vocals");
     const project = state.undoStack.present;
@@ -726,6 +745,7 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.capabilities.liveCommands).toContain("set_track_armed");
     expect(status.capabilities.liveCommands).toContain("set_track_monitor");
     expect(status.capabilities.liveCommands).toContain("set_track_input");
+    expect(status.capabilities.liveCommands).toContain("set_recording_latency_offset");
     expect(status.capabilities.liveCommands).toContain("set_recording_input_channel");
     expect(status.capabilities.liveCommands).toContain("set_punch_range");
     expect(status.capabilities.liveCommands).toContain("set_timeline_selection");

@@ -54,6 +54,7 @@ import {
   setTrackPanCommand,
   setTrackFolderCommand,
   setTrackVolumeCommand,
+  setTrackRecordingLatencyOffsetCommand,
   setTrackRecordingInputChannelCommand,
   splitTimelineSelectionCommand,
   toggleFolderExpandedCommand,
@@ -74,6 +75,7 @@ import { createPocketDjSourceSummary } from "../daw/pocketDjSources.ts";
 import { validateProjectInvariants } from "../daw/projectInvariants.ts";
 import { buildGroupedRecordingCapturePlan, buildNativeRecordingAlphaInputPreflight } from "../daw/recordingInputs.ts";
 import { GAME_STATE_MARKERS, POCKET_DAW_SCHEMA_VERSION, POCKET_DAW_VERSION, type GameStateMarkerId, type PocketDawProject } from "../daw/schema.ts";
+import { recordingLatencyOffsetSeconds } from "../daw/tracks.ts";
 
 export const POCKET_DAW_MCP_TOOLS = [
   "pocket_daw_read_project",
@@ -99,6 +101,7 @@ export type PocketDawMcpCommand =
   | { type: "toggle_folder_expanded"; folderId: string }
   | { type: "toggle_track_mute"; trackId: string }
   | { type: "toggle_track_solo"; trackId: string }
+  | { type: "set_recording_latency_offset"; trackId: string; offsetSeconds?: number; milliseconds?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "mono"; channelIndex?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "split-mono"; channelIndex?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] }
@@ -160,6 +163,7 @@ export type PocketDawLiveCommand =
   | { type: "set_track_input"; trackId: string; inputDeviceId?: string | null }
   | { type: "set_track_armed"; trackId: string; armed: boolean }
   | { type: "set_track_monitor"; trackId: string; monitorEnabled: boolean }
+  | { type: "set_recording_latency_offset"; trackId: string; offsetSeconds?: number; milliseconds?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "mono"; channelIndex?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "split-mono"; channelIndex?: number }
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] }
@@ -636,6 +640,12 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return toggleTrackMuteCommand(state, command.trackId);
     case "toggle_track_solo":
       return toggleTrackSoloCommand(state, command.trackId);
+    case "set_recording_latency_offset":
+      return setTrackRecordingLatencyOffsetCommand(
+        state,
+        command.trackId,
+        command.milliseconds !== undefined ? finiteCommandNumber(command.milliseconds, "milliseconds") : finiteCommandNumber(command.offsetSeconds, "offsetSeconds") * 1000
+      );
     case "set_recording_input_channel":
       return setTrackRecordingInputChannelCommand(state, command.trackId, recordingInputChannelValueFromMcpCommand(command), command.deviceId ?? undefined);
     case "move_clip_to_bar":
@@ -768,6 +778,12 @@ function recordingInputChannelValueFromMcpCommand(command: Extract<PocketDawMcpC
   return `mono:${Math.max(0, Math.floor(Number(command.channelIndex) || 0))}`;
 }
 
+function finiteCommandNumber(value: unknown, label: string): number {
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(number)) throw new Error(`${label} must be a finite number.`);
+  return number;
+}
+
 function loadProject(input: ProjectInput): PocketDawProject {
   const raw = typeof input.raw === "string" ? input.raw : readTextInput(input.projectPath);
   return loadPocketDawRaw(raw);
@@ -877,6 +893,7 @@ function summarizeProject(project: PocketDawProject) {
       pan: track.pan,
       mute: track.mute,
       solo: track.solo,
+      recordingLatencyOffsetSeconds: track.recordKind && track.recordKind !== "none" ? recordingLatencyOffsetSeconds(track) : undefined,
       folderId: track.folderId || null,
       folderExpanded: track.trackType === "folder" ? track.metadata?.folderExpanded !== false : undefined
     })),
@@ -968,6 +985,7 @@ function commandSchema() {
           "toggle_folder_expanded",
           "toggle_track_mute",
           "toggle_track_solo",
+          "set_recording_latency_offset",
           "set_recording_input_channel",
           "move_clip_to_bar",
           "set_timeline_selection",
@@ -1045,6 +1063,8 @@ function commandSchema() {
       curve: { type: "string", enum: ["linear", "hold", "ease-in", "ease-out"] },
       volume: numberSchema(),
       pan: numberSchema(),
+      offsetSeconds: numberSchema(),
+      milliseconds: numberSchema(),
       gate: numberSchema(),
       mute: booleanSchema(),
       archived: booleanSchema(),
@@ -1076,7 +1096,7 @@ function liveCommandSchema() {
     {
       type: {
         type: "string",
-        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
+        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       },
       trackId: stringSchema(),
       clipId: stringSchema(),
@@ -1086,6 +1106,8 @@ function liveCommandSchema() {
       mode: { type: "string", enum: ["mono", "split-mono", "stereo"] },
       channelIndex: numberSchema(),
       channelPair: { type: "array", items: numberSchema(), minItems: 2, maxItems: 2 },
+      offsetSeconds: numberSchema(),
+      milliseconds: numberSchema(),
       volume: numberSchema(),
       pan: numberSchema(),
       mute: booleanSchema(),

@@ -3,6 +3,7 @@ import type { Clip, JsonObject, MediaPoolItem, PocketDawProject, Track } from ".
 import { cloneProject } from "./dawProject";
 import { createEmptyFxChain } from "./fx";
 import { recomputeTimelineBars, timelineBarAtSeconds, timelineSecondsAtBar } from "./timeline";
+import { recordingLatencyOffsetSeconds } from "./tracks";
 
 export interface ImportedAudioMedia {
   name: string;
@@ -208,7 +209,11 @@ export function placeAudioClipOnTrack(project: PocketDawProject, mediaPoolItemId
 }
 
 export function placeRecordingClipOnTrack(project: PocketDawProject, mediaPoolItemId: string, trackId: string, startBar: number): PlaceAudioClipResult {
-  return placeAudioClipOnTrack(project, mediaPoolItemId, trackId, startBar, { overwriteOverlaps: true });
+  const placement = recordingLatencyPlacement(project, trackId, startBar);
+  return placeAudioClipOnTrack(project, mediaPoolItemId, trackId, placement.startBar, {
+    overwriteOverlaps: true,
+    extraMetadata: placement.metadata
+  });
 }
 
 export function placePunchRecordingClipOnTrack(project: PocketDawProject, mediaPoolItemId: string, trackId: string, options: PlacePunchRecordingOptions): PlaceAudioClipResult {
@@ -216,9 +221,10 @@ export function placePunchRecordingClipOnTrack(project: PocketDawProject, mediaP
   const punchStartBar = cleanStartBar(options.punchStartBar);
   const punchEndBar = Math.max(punchStartBar, cleanStartBar(options.punchEndBar));
   if (punchEndBar <= punchStartBar + 0.001) return { project, clipId: "", trackId: "" };
+  const placement = recordingLatencyPlacement(project, trackId, punchStartBar);
   const sourceOffsetSeconds = secondsBetweenBars(project, captureStartBar, punchStartBar);
   const sourceDurationSeconds = secondsBetweenBars(project, punchStartBar, punchEndBar);
-  return placeAudioClipOnTrack(project, mediaPoolItemId, trackId, punchStartBar, {
+  return placeAudioClipOnTrack(project, mediaPoolItemId, trackId, placement.startBar, {
     overwriteOverlaps: true,
     clipBarLength: punchEndBar - punchStartBar,
     sourceOffsetSeconds,
@@ -228,9 +234,38 @@ export function placePunchRecordingClipOnTrack(project: PocketDawProject, mediaP
       punchEndBar,
       captureStartBar,
       punchMode: "replace-visible-range",
-      latencyCompensationAppliedSeconds: 0
+      ...placement.metadata
     }
   });
+}
+
+function recordingLatencyPlacement(project: PocketDawProject, trackId: string, startBar: number): { startBar: number; metadata: JsonObject } {
+  const cleanBar = cleanStartBar(startBar);
+  const track = project.tracks.find((candidate) => candidate.id === trackId);
+  const requestedSeconds = recordingLatencyOffsetSeconds(track);
+  if (requestedSeconds === 0) {
+    return {
+      startBar: cleanBar,
+      metadata: {
+        latencyCompensationRequestedSeconds: 0,
+        latencyCompensationAppliedSeconds: 0,
+        latencyCompensationMode: "manual-track-offset"
+      }
+    };
+  }
+  const requestedStartSeconds = timelineSecondsAtBar(project, cleanBar);
+  const adjustedStartSeconds = Math.max(0, requestedStartSeconds - requestedSeconds);
+  const appliedSeconds = roundSeconds(requestedStartSeconds - adjustedStartSeconds);
+  return {
+    startBar: timelineBarAtSeconds(project, adjustedStartSeconds),
+    metadata: {
+      latencyCompensationRequestedSeconds: requestedSeconds,
+      latencyCompensationAppliedSeconds: appliedSeconds,
+      latencyCompensationMode: "manual-track-offset",
+      originalRequestedStartBar: cleanBar,
+      latencyAdjustedStartSeconds: roundSeconds(adjustedStartSeconds)
+    }
+  };
 }
 
 function createPlacedAudioClipMetadata(item: MediaPoolItem, project: PocketDawProject, trackId: string): JsonObject {
@@ -252,7 +287,9 @@ function createPlacedAudioClipMetadata(item: MediaPoolItem, project: PocketDawPr
     "takeStatus",
     "inputMode",
     "channelMap",
+    "latencyCompensationRequestedSeconds",
     "latencyCompensationAppliedSeconds",
+    "latencyCompensationMode",
     "nativeRecordingSessionId",
     "nativeRequestedStartBar",
     "nativeRequestedStartSeconds",
