@@ -194,6 +194,10 @@ describe("Pocket DAW MCP tools", () => {
         clipId: imported.clipId,
         clipName: "metal.mid",
         rawMidiClip: "preserved",
+        timing: expect.objectContaining({ bpm: 120, timeSignature: "4/4" }),
+        key: expect.objectContaining({ source: expect.any(String) }),
+        structure: expect.objectContaining({ sourceBars: expect.any(Number), suggestedSectionCount: expect.any(Number) }),
+        roleHints: expect.any(Array),
         mappings: expect.objectContaining({
           drums: expect.objectContaining({ written: expect.any(Number) }),
           bass: expect.objectContaining({ written: expect.any(Number) }),

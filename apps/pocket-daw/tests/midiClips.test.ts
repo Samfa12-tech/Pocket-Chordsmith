@@ -45,7 +45,31 @@ describe("MIDI clips", () => {
     expect(preview?.mappings.bass.written).toBeGreaterThan(0);
     expect(preview?.mappings.chords.written).toBeGreaterThan(0);
     expect(preview?.mappings.melody.written).toBeGreaterThan(0);
+    expect(preview?.timing).toMatchObject({ bpm: 120, timeSignature: "4/4" });
+    expect(preview?.structure.suggestedSectionCount).toBeGreaterThan(0);
+    expect(preview?.roleHints.length).toBeGreaterThan(0);
     expect(JSON.stringify(imported.project)).toBe(before);
+  });
+
+  it("uses preserved MIDI key and meter metadata in Chordsmith conversion previews", () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Metadata Preview", key: "C", scale: "major" }));
+    const imported = importMidiFileToProject(project, parseStandardMidiFile(metadataRichMidiBytes()), "metadata.mid");
+
+    const preview = createMidiChordsmithConversionPreview(imported.project, imported.clipId, "A");
+
+    expect(preview?.timing).toMatchObject({
+      bpm: 120,
+      timeSignature: "3/4",
+      tempoEventCount: 1,
+      timeSignatureEventCount: 1,
+      hasTempoChanges: false,
+      hasMeterChanges: false
+    });
+    expect(preview?.key).toEqual({
+      key: "D",
+      scale: "minor",
+      source: "midi-key-signature"
+    });
   });
 
   it("imports MIDI controller events into editable clip metadata", () => {

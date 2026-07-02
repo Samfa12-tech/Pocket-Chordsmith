@@ -1625,11 +1625,15 @@ function renderMidiChordsmithConversionPreview(preview: MidiChordsmithConversion
       <h4>Chordsmith Mapping Preview</h4>
       <p class="editor-note">${escapeHtml(warningText)}</p>
       <dl>
+        <dt>Timing</dt><dd>${preview.timing.bpm} BPM / ${escapeHtml(preview.timing.timeSignature)}${preview.timing.hasTempoChanges || preview.timing.hasMeterChanges ? " map" : ""}</dd>
+        <dt>Key</dt><dd>${escapeHtml(preview.key.key)} ${preview.key.scale}${preview.key.source === "pitch-inference" ? " (inferred)" : preview.key.source === "midi-key-signature" ? " (MIDI)" : " (project)"}</dd>
+        <dt>Structure</dt><dd>${preview.structure.sourceBars} bars / ${preview.structure.suggestedSectionCount} section${preview.structure.suggestedSectionCount === 1 ? "" : "s"} x ${preview.structure.suggestedSectionBars}</dd>
         <dt>Visible notes</dt><dd>${preview.visibleNoteCount} / ${preview.sourceNoteCount}${preview.outOfRangeNoteCount ? ` (${preview.outOfRangeNoteCount} outside clip range)` : ""}</dd>
         <dt>Drums</dt><dd>${preview.mappings.drums.written} cells${laneSummary ? ` / ${escapeHtml(laneSummary)}` : ""}</dd>
         <dt>Bass</dt><dd>${preview.mappings.bass.written} notes${preview.mappings.bass.pitches.length ? ` / ${escapeHtml(formatMidiPitchList(preview.mappings.bass.pitches))}` : ""}</dd>
         <dt>Chords</dt><dd>${preview.mappings.chords.written} groups</dd>
         <dt>Melody</dt><dd>${preview.mappings.melody.written} notes${preview.mappings.melody.pitches.length ? ` / ${escapeHtml(formatMidiPitchList(preview.mappings.melody.pitches))}` : ""}</dd>
+        <dt>Role hints</dt><dd>${escapeHtml(formatMidiRoleHints(preview.roleHints))}</dd>
         <dt>Preserved</dt><dd>Raw MIDI ${preview.rawMidiClip}; ${escapeHtml(expressive)}</dd>
       </dl>
     </section>
@@ -1639,6 +1643,10 @@ function renderMidiChordsmithConversionPreview(preview: MidiChordsmithConversion
 function formatMidiPitchList(pitches: number[]): string {
   const labels = pitches.slice(0, 6).map((pitch) => midiPitchLabel(pitch));
   return `${labels.join(", ")}${pitches.length > labels.length ? ` +${pitches.length - labels.length}` : ""}`;
+}
+
+function formatMidiRoleHints(hints: MidiChordsmithConversionPreview["roleHints"]): string {
+  return hints.length ? hints.map((hint) => `${hint.role}: ${hint.source}`).join(", ") : "reference: Raw MIDI";
 }
 
 function midiPitchLabel(pitch: number): string {
