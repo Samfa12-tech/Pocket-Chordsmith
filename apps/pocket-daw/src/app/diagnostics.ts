@@ -131,12 +131,16 @@ export interface AudioTakeDiagnosticsSummary {
     lanes: Array<{
       laneId: string;
       laneIndex: number | null;
+      laneState: "active" | "muted" | "archived" | "mixed";
       clipCount: number;
       activeCount: number;
       mutedCount: number;
       archivedCount: number;
+      startBar: number | null;
+      endBar: number | null;
       clipIds: string[];
       clipNames: string[];
+      segmentNames: string[];
       activeClipIds: string[];
     }>;
   }>;
@@ -294,8 +298,11 @@ export function createAudioTakeDiagnosticsSummary(project: PocketDawProject): Au
     }
     const lane = audioTakeLaneSummaryForClip(current.lanes, clip, groupId, current.lanes.length);
     lane.clipCount += 1;
+    lane.startBar = lane.startBar === null ? clip.startBar : Math.min(lane.startBar, clip.startBar);
+    lane.endBar = lane.endBar === null ? clip.startBar + clip.barLength : Math.max(lane.endBar, clip.startBar + clip.barLength);
     lane.clipIds.push(clip.id);
     lane.clipNames.push(clip.name);
+    lane.segmentNames.push(clip.name);
     if (isAudibleTakeStatus(status) && !clip.muted) {
       lane.activeCount += 1;
       lane.activeClipIds.push(clip.id);
@@ -313,7 +320,12 @@ export function createAudioTakeDiagnosticsSummary(project: PocketDawProject): Au
     groups: [...groups.values()]
       .map((group) => ({
         ...group,
-        lanes: group.lanes.sort((a, b) => (a.laneIndex ?? Number.MAX_SAFE_INTEGER) - (b.laneIndex ?? Number.MAX_SAFE_INTEGER) || a.laneId.localeCompare(b.laneId))
+        lanes: group.lanes
+          .sort((a, b) => (a.laneIndex ?? Number.MAX_SAFE_INTEGER) - (b.laneIndex ?? Number.MAX_SAFE_INTEGER) || a.laneId.localeCompare(b.laneId))
+          .map((lane) => ({
+            ...lane,
+            laneState: audioTakeLaneStateForDiagnostics(lane)
+          }))
       }))
       .sort((a, b) => a.groupId.localeCompare(b.groupId))
   };
@@ -346,17 +358,28 @@ function audioTakeLaneSummaryForClip(
     lane = {
       laneId,
       laneIndex,
+      laneState: "muted",
       clipCount: 0,
       activeCount: 0,
       mutedCount: 0,
       archivedCount: 0,
+      startBar: null,
+      endBar: null,
       clipIds: [],
       clipNames: [],
+      segmentNames: [],
       activeClipIds: []
     };
     lanes.push(lane);
   }
   return lane;
+}
+
+function audioTakeLaneStateForDiagnostics(lane: AudioTakeDiagnosticsSummary["groups"][number]["lanes"][number]): "active" | "muted" | "archived" | "mixed" {
+  if (lane.clipCount > 0 && lane.archivedCount === lane.clipCount) return "archived";
+  if (lane.activeCount > 0 && lane.mutedCount === 0 && lane.archivedCount === 0) return "active";
+  if (lane.activeCount === 0 && (lane.mutedCount > 0 || lane.archivedCount > 0)) return "muted";
+  return "mixed";
 }
 
 function audioTakeLaneIndexForDiagnostics(clip: Clip, fallbackIndex: number): number | null {

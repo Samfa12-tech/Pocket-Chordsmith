@@ -532,23 +532,31 @@ describe("Pocket DAW MCP tools", () => {
         {
           laneId: "mcp-lane-a",
           laneIndex: 1,
+          laneState: "muted",
           clipCount: 2,
           activeCount: 0,
           mutedCount: 2,
           archivedCount: 0,
+          startBar: 2,
+          endBar: 8,
           clipIds: [firstLeft.clipId, firstRight.clipId],
           clipNames: ["MCP lane A.wav", "MCP lane A.wav"],
+          segmentNames: ["MCP lane A.wav", "MCP lane A.wav"],
           activeClipIds: []
         },
         {
           laneId: "mcp-lane-b",
           laneIndex: 2,
+          laneState: "active",
           clipCount: 2,
           activeCount: 2,
           mutedCount: 0,
           archivedCount: 0,
+          startBar: 2,
+          endBar: 8,
           clipIds: [secondLeft.clipId, secondRight.clipId],
           clipNames: ["MCP lane B.wav", "MCP lane B.wav"],
+          segmentNames: ["MCP lane B.wav", "MCP lane B.wav"],
           activeClipIds: [secondLeft.clipId, secondRight.clipId]
         }
       ]

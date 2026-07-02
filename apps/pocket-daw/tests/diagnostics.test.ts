@@ -266,9 +266,11 @@ describe("tester diagnostics", () => {
   it("includes grouped audio take diagnostics for comping smoke review", () => {
     let state = createInitialState();
     let project = currentProject(state);
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
     const firstImport = addImportedAudioMedia(project, {
       name: "Diagnostic take 1.wav",
-      durationSeconds: 4,
+      durationSeconds: 8,
       sampleRate: 48000,
       channels: 1,
       metadata: { takeGroupId: "diagnostic-takes-a" }
@@ -276,7 +278,7 @@ describe("tester diagnostics", () => {
     const firstPlaced = placeAudioClipOnTimeline(firstImport.project, firstImport.item.id, 1);
     const secondImport = addImportedAudioMedia(firstPlaced.project, {
       name: "Diagnostic take 2.wav",
-      durationSeconds: 4,
+      durationSeconds: 8,
       sampleRate: 48000,
       channels: 1,
       metadata: { takeGroupId: "diagnostic-takes-a" }
@@ -301,15 +303,23 @@ describe("tester diagnostics", () => {
         lanes: [
           {
             laneId: "diagnostic-takes-a-lane-1",
+            laneState: "archived",
+            startBar: 1,
+            endBar: 5,
             clipIds: [firstPlaced.clipId],
             clipNames: ["Diagnostic take 1.wav"],
+            segmentNames: ["Diagnostic take 1.wav"],
             archivedCount: 1,
             activeClipIds: []
           },
           {
             laneId: "diagnostic-takes-a-lane-2",
+            laneState: "active",
+            startBar: 1,
+            endBar: 5,
             clipIds: [secondPlaced.clipId],
             clipNames: ["Diagnostic take 2.wav"],
+            segmentNames: ["Diagnostic take 2.wav"],
             activeCount: 1,
             activeClipIds: [secondPlaced.clipId]
           }
