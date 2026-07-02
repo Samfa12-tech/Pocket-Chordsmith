@@ -2284,9 +2284,9 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   {
     surface: "AI / MCP Bridge",
     control: "File MCP Take Lane Activation",
-    selector: "activate_audio_take_lane, pocket_daw_live_apply_commands:activate_audio_take_lane",
-    does: "Activates every non-archived clip in the selected grouped audio take lane and mutes sibling lanes in the same take group through the undoable command path, from file-first MCP or the tokened live bridge.",
-    useWhen: "Use for file-first or MCP-observed live take-lane audition smoke after comp splits create multiple clips in each lane.",
+    selector: "activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, pocket_daw_live_apply_commands:activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar",
+    does: "Activates every non-archived clip in the selected grouped audio take lane, archives/restores takes without deleting media, and splits grouped takes into first comp segments through the undoable command path, from file-first MCP or the tokened live bridge.",
+    useWhen: "Use for file-first or MCP-observed live take-lane audition, archive/restore and comp smoke after repeated takes exist.",
     aiNote: "This is a source-only lane audition foundation. It does not create the full visual take-lane editor or installed punch workflow."
   },
   {

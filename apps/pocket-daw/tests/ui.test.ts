@@ -451,7 +451,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Enable Live App Bridge | `data-ai-bridge-enabled`");
     expect(catalog).toContain("| Take Lane Activate | `data-audio-take-lane-activate`");
     expect(catalog).toContain("| Live MCP Recording Input Channel | `pocket_daw_live_apply_commands:set_recording_input_channel`");
-    expect(catalog).toContain("| File MCP Take Lane Activation | `activate_audio_take_lane, pocket_daw_live_apply_commands:activate_audio_take_lane`");
+    expect(catalog).toContain("| File MCP Take Lane Activation | `activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, pocket_daw_live_apply_commands:activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar`");
     expect(catalog).toContain("| MCP Punch Recording Placement | `place_punch_recording_clip`, `place_punch_recording_clip_from_range`, `pocket_daw_live_apply_commands:place_punch_recording_clip_from_range`");
     expect(catalog).toContain("| Live MCP Arm And Monitor | `pocket_daw_live_apply_commands:set_track_armed, set_track_monitor`");
     expect(catalog).toContain("| Live MCP Track Input | `pocket_daw_live_apply_commands:set_track_input`");

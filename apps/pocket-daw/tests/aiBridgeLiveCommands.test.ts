@@ -257,6 +257,92 @@ describe("Pocket DAW AI bridge live commands", () => {
     ]);
   });
 
+  it("archives and restores grouped audio takes through the live bridge executor", () => {
+    let state = addTrackCommand(createInitialState(), "live-vocals");
+    let project = currentProject(state);
+    const firstImport = addImportedAudioMedia(project, {
+      name: "Live archive keep.wav",
+      durationSeconds: 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "live-archive-takes" }
+    });
+    const firstPlaced = placeAudioClipOnTrack(firstImport.project, firstImport.item.id, "live-vocals", 2);
+    const secondImport = addImportedAudioMedia(firstPlaced.project, {
+      name: "Live archive maybe.wav",
+      durationSeconds: 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "live-archive-takes" }
+    });
+    const secondPlaced = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, "live-vocals", 2);
+    project = activateAudioTake(secondPlaced.project, firstPlaced.clipId).project;
+    state = { ...state, selectedClipId: firstPlaced.clipId, selectedTrackId: "live-vocals", undoStack: createUndoStack(project) };
+    const app = appHarness(state);
+
+    const archived = app.applyAiBridgeLiveCommand({
+      type: "set_audio_take_archived",
+      clipId: secondPlaced.clipId,
+      archived: true
+    });
+    app.state = archived;
+    const restored = app.applyAiBridgeLiveCommand({
+      type: "set_audio_take_archived",
+      clipId: secondPlaced.clipId,
+      archived: false
+    });
+    const archivedClip = archived.undoStack.present.timeline.clips.find((clip) => clip.id === secondPlaced.clipId)!;
+    const restoredClip = restored.undoStack.present.timeline.clips.find((clip) => clip.id === secondPlaced.clipId)!;
+
+    expect(archived.status).toContain("Archived Live archive maybe.wav");
+    expect(archivedClip).toMatchObject({ muted: true, metadata: expect.objectContaining({ takeStatus: "archived-take", takeActive: false }) });
+    expect(archived.undoStack.present.mediaPool.find((item) => item.id === secondImport.item.id)).toBeTruthy();
+    expect(restored.status).toContain("Restored Live archive maybe.wav");
+    expect(restoredClip).toMatchObject({ muted: true, metadata: expect.objectContaining({ takeStatus: "muted-take", takeActive: false }) });
+    expect(restored.selectedClipId).toBe(secondPlaced.clipId);
+  });
+
+  it("comps grouped audio takes from an explicit bar through the live bridge executor", () => {
+    let state = addTrackCommand(createInitialState(), "live-vocals");
+    let project = currentProject(state);
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const firstImport = addImportedAudioMedia(project, {
+      name: "Live comp take 1.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "live-comp-takes" }
+    });
+    const firstPlaced = placeAudioClipOnTrack(firstImport.project, firstImport.item.id, "live-vocals", 2);
+    const secondImport = addImportedAudioMedia(firstPlaced.project, {
+      name: "Live comp take 2.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "live-comp-takes" }
+    });
+    const secondPlaced = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, "live-vocals", 2);
+    project = activateAudioTake(secondPlaced.project, firstPlaced.clipId).project;
+    state = { ...state, selectedClipId: firstPlaced.clipId, selectedTrackId: "live-vocals", undoStack: createUndoStack(project) };
+    const app = appHarness(state);
+
+    const edited = app.applyAiBridgeLiveCommand({
+      type: "comp_audio_take_from_bar",
+      clipId: secondPlaced.clipId,
+      bar: 4
+    });
+    const clips = edited.undoStack.present.timeline.clips.filter((clip) => clip.metadata?.takeGroupId === "live-comp-takes");
+    const secondRight = clips.find((clip) => clip.name === "Live comp take 2.wav split")!;
+    const firstRight = clips.find((clip) => clip.name === "Live comp take 1.wav split")!;
+
+    expect(edited.status).toContain("Comped Live comp take 2.wav split from bar 4");
+    expect(clips).toHaveLength(4);
+    expect(firstRight).toMatchObject({ startBar: 4, muted: true, metadata: expect.objectContaining({ takeStatus: "muted-take", sourceOffsetSeconds: 4 }) });
+    expect(secondRight).toMatchObject({ startBar: 4, muted: false, metadata: expect.objectContaining({ takeStatus: "active", sourceOffsetSeconds: 4 }) });
+    expect(edited.selectedClipId).toBe(secondRight.id);
+  });
+
   it("uses timeline audio sync for live bridge commands that change clips", () => {
     let state = addTrackCommand(createInitialState(), "live-vocals");
     let project = currentProject(state);
@@ -302,10 +388,12 @@ describe("Pocket DAW AI bridge live commands", () => {
     };
 
     app.applyAiBridgeLiveCommands([
-      { type: "activate_audio_take_lane", clipId: secondLeft.clipId }
+      { type: "activate_audio_take_lane", clipId: secondLeft.clipId },
+      { type: "set_audio_take_archived", clipId: firstLeft.clipId, archived: true },
+      { type: "comp_audio_take_from_bar", clipId: secondLeft.clipId, bar: 1.5 }
     ]);
 
-    expect(syncModes).toEqual(["timeline-structure"]);
+    expect(syncModes).toEqual(["timeline-structure", "timeline-structure", "timeline-structure"]);
   });
 
   it("exposes recording input preflight and live recording commands in live status", () => {
@@ -339,6 +427,8 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.capabilities.liveCommands).toContain("set_punch_range");
     expect(status.capabilities.liveCommands).toContain("place_punch_recording_clip_from_range");
     expect(status.capabilities.liveCommands).toContain("activate_audio_take_lane");
+    expect(status.capabilities.liveCommands).toContain("set_audio_take_archived");
+    expect(status.capabilities.liveCommands).toContain("comp_audio_take_from_bar");
     expect(status.recording.inputPreflight).toMatchObject({ ok: false });
     expect(status.recording.inputPreflight?.errors.join("\n")).toContain("native recording alpha currently captures Stereo Ch 1-2 only");
   });

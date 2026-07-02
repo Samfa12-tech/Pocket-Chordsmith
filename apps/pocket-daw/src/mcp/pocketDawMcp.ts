@@ -160,6 +160,8 @@ export type PocketDawLiveCommand =
   | { type: "set_recording_input_channel"; trackId: string; deviceId?: string | null; mode: "stereo"; channelPair?: [number, number] }
   | { type: "set_punch_range"; startBar: number; endBar: number }
   | { type: "activate_audio_take_lane"; clipId: string }
+  | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
+  | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
   | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number };
 
 interface PocketDawLiveSession {
@@ -1040,7 +1042,7 @@ function liveCommandSchema() {
     {
       type: {
         type: "string",
-        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "activate_audio_take_lane", "place_punch_recording_clip_from_range"]
+        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "place_punch_recording_clip_from_range"]
       },
       trackId: stringSchema(),
       clipId: stringSchema(),
@@ -1056,6 +1058,8 @@ function liveCommandSchema() {
       solo: booleanSchema(),
       armed: booleanSchema(),
       monitorEnabled: booleanSchema(),
+      archived: booleanSchema(),
+      bar: numberSchema(),
       startBar: numberSchema(),
       endBar: numberSchema(),
       captureStartBar: numberSchema()
