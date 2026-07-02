@@ -1,3 +1,4 @@
+import { midiNoteMatchesConversionSource, type MidiConversionSourceFilter } from "./midiConversionFilter";
 import { midiDataFromClip } from "./midiClips";
 import { sectionStepLimit, writeMelodyOverlayEvents, type MelodyOverlayWrite } from "./melodyOverlays";
 import type { PocketDawProject } from "./schema";
@@ -12,7 +13,7 @@ export interface MidiMelodyConversionResult {
   pitches: number[];
 }
 
-export function convertMidiClipToMelodyOverlays(project: PocketDawProject, clipId: string, sectionId = "A", trackIndex = 0): MidiMelodyConversionResult {
+export function convertMidiClipToMelodyOverlays(project: PocketDawProject, clipId: string, sectionId = "A", trackIndex = 0, filter?: MidiConversionSourceFilter): MidiMelodyConversionResult {
   const clip = project.timeline.clips.find((item) => item.id === clipId && item.type === "midi");
   const totalSteps = sectionStepLimit(project, sectionId);
   const safeTrackIndex = Math.max(0, Math.round(Number(trackIndex)));
@@ -30,6 +31,10 @@ export function convertMidiClipToMelodyOverlays(project: PocketDawProject, clipI
   let merged = 0;
 
   data.notes.forEach((note) => {
+    if (!midiNoteMatchesConversionSource(note, filter)) {
+      skipped += 1;
+      return;
+    }
     if (note.channel === 9) {
       skipped += 1;
       return;

@@ -51,6 +51,23 @@ describe("MIDI clips", () => {
     expect(JSON.stringify(imported.project)).toBe(before);
   });
 
+  it("previews Chordsmith conversion from a chosen MIDI source track", () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Source Preview" }));
+    const imported = importMidiFileToProject(project, parseStandardMidiFile(multiTrackChannelMidiBytes()), "band.mid");
+
+    const preview = createMidiChordsmithConversionPreview(imported.project, imported.clipId, "A", 0, {
+      mode: "source-track",
+      value: 2
+    });
+
+    expect(preview?.sourceFilterLabel).toBe("source track 3");
+    expect(preview?.sourceOptions.map((option) => option.label)).toContain("Track 3: Bass");
+    expect(preview?.filteredOutNoteCount).toBeGreaterThan(0);
+    expect(preview?.visibleNoteCount).toBe(1);
+    expect(preview?.mappings.bass.written).toBe(1);
+    expect(preview?.mappings.drums.written).toBe(0);
+  });
+
   it("uses preserved MIDI key and meter metadata in Chordsmith conversion previews", () => {
     const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Metadata Preview", key: "C", scale: "major" }));
     const imported = importMidiFileToProject(project, parseStandardMidiFile(metadataRichMidiBytes()), "metadata.mid");

@@ -68,6 +68,7 @@ import { buildPocketDawProjectFile } from "../daw/dawProject.ts";
 import { DRUM_LANE_IDS, type DrumLaneId } from "../daw/drumLanes.ts";
 import { createGameExportManifest, createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs.ts";
 import { arrangeMidiToHeavyMetalProject } from "../daw/midiArrangement.ts";
+import { normalizeMidiConversionSourceFilter, type MidiConversionSourceMode } from "../daw/midiConversionFilter.ts";
 import { createMidiChordsmithConversionPreviews } from "../daw/midiConversionPreview.ts";
 import { createPocketDjSourceSummary } from "../daw/pocketDjSources.ts";
 import { validateProjectInvariants } from "../daw/projectInvariants.ts";
@@ -126,11 +127,11 @@ export type PocketDawMcpCommand =
   | { type: "set_section_chord"; sectionId: string; barIndex: number; degree: number }
   | { type: "cycle_drum_step"; sectionId: string; lane: "kick" | "snare" | "hat"; step: number }
   | { type: "branch_generated_drums" }
-  | { type: "convert_midi_drums"; clipId: string; sectionId?: string }
-  | { type: "convert_midi_bass"; clipId: string; sectionId?: string }
-  | { type: "convert_midi_chords"; clipId: string; sectionId?: string }
-  | { type: "convert_midi_melody"; clipId: string; sectionId?: string; trackIndex?: number }
-  | { type: "convert_midi_arrangement"; clipId: string; sectionId?: string; trackIndex?: number }
+  | { type: "convert_midi_drums"; clipId: string; sectionId?: string; sourceMode?: MidiConversionSourceMode; sourceValue?: number }
+  | { type: "convert_midi_bass"; clipId: string; sectionId?: string; sourceMode?: MidiConversionSourceMode; sourceValue?: number }
+  | { type: "convert_midi_chords"; clipId: string; sectionId?: string; sourceMode?: MidiConversionSourceMode; sourceValue?: number }
+  | { type: "convert_midi_melody"; clipId: string; sectionId?: string; trackIndex?: number; sourceMode?: MidiConversionSourceMode; sourceValue?: number }
+  | { type: "convert_midi_arrangement"; clipId: string; sectionId?: string; trackIndex?: number; sourceMode?: MidiConversionSourceMode; sourceValue?: number }
   | { type: "adopt_midi_tempo"; clipId: string }
   | { type: "adopt_midi_tempo_map"; clipId: string }
   | { type: "adopt_midi_meter_map"; clipId: string }
@@ -688,15 +689,15 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
     case "branch_generated_drums":
       return branchGeneratedDrumsCommand(state);
     case "convert_midi_drums":
-      return convertMidiDrumsToBranchOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A");
+      return convertMidiDrumsToBranchOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A", sourceFilterFromMcpCommand(command));
     case "convert_midi_bass":
-      return convertMidiBassToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A");
+      return convertMidiBassToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A", sourceFilterFromMcpCommand(command));
     case "convert_midi_chords":
-      return convertMidiChordsToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A");
+      return convertMidiChordsToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A", sourceFilterFromMcpCommand(command));
     case "convert_midi_melody":
-      return convertMidiMelodyToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A", command.trackIndex || 0);
+      return convertMidiMelodyToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A", command.trackIndex || 0, sourceFilterFromMcpCommand(command));
     case "convert_midi_arrangement":
-      return convertMidiArrangementToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A", command.trackIndex || 0);
+      return convertMidiArrangementToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A", command.trackIndex || 0, sourceFilterFromMcpCommand(command));
     case "adopt_midi_tempo":
       return adoptMidiTempoMapStartCommand(state, command.clipId);
     case "adopt_midi_tempo_map":
@@ -746,6 +747,11 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
     default:
       throw new Error(`Unsupported Pocket DAW MCP command: ${(command as { type?: string }).type || "[missing type]"}`);
   }
+}
+
+function sourceFilterFromMcpCommand(command: PocketDawMcpCommand) {
+  if (!("sourceMode" in command)) return undefined;
+  return normalizeMidiConversionSourceFilter(command.sourceMode, command.sourceValue);
 }
 
 function recordingInputChannelValueFromMcpCommand(command: Extract<PocketDawMcpCommand, { type: "set_recording_input_channel" }>): string {
@@ -1048,6 +1054,8 @@ function commandSchema() {
       degree: numberSchema(),
       step: numberSchema(),
       trackIndex: numberSchema(),
+      sourceMode: { type: "string", enum: ["all", "source-track", "channel"] },
+      sourceValue: numberSchema(),
       pointIndex: numberSchema(),
       numerator: numberSchema(),
       denominator: numberSchema(),

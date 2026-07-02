@@ -1,4 +1,5 @@
 import { bassSectionStepLimit, writeBassOverlayEvents, type BassOverlayWrite } from "./bassOverlays";
+import { midiNoteMatchesConversionSource, type MidiConversionSourceFilter } from "./midiConversionFilter";
 import { midiDataFromClip } from "./midiClips";
 import type { PocketDawProject } from "./schema";
 
@@ -11,7 +12,7 @@ export interface MidiBassConversionResult {
   pitches: number[];
 }
 
-export function convertMidiClipToBassOverlays(project: PocketDawProject, clipId: string, sectionId = "A"): MidiBassConversionResult {
+export function convertMidiClipToBassOverlays(project: PocketDawProject, clipId: string, sectionId = "A", filter?: MidiConversionSourceFilter): MidiBassConversionResult {
   const clip = project.timeline.clips.find((item) => item.id === clipId && item.type === "midi");
   const totalSteps = bassSectionStepLimit(project, sectionId);
   if (!clip || clip.type !== "midi" || totalSteps <= 0) {
@@ -27,6 +28,10 @@ export function convertMidiClipToBassOverlays(project: PocketDawProject, clipId:
   let merged = 0;
 
   data.notes.forEach((note) => {
+    if (!midiNoteMatchesConversionSource(note, filter)) {
+      skipped += 1;
+      return;
+    }
     if (note.channel === 9 || note.pitch > 60) {
       skipped += 1;
       return;

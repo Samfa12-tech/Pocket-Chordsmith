@@ -1,5 +1,6 @@
 import { totalEditorSteps, getPrimaryChordsmithSource } from "./chordsmithEditor";
 import { writeDrumBranchStepLevels, type DrumBranchStepWrite, type DrumLaneId } from "./drumLanes";
+import { midiNoteMatchesConversionSource, type MidiConversionSourceFilter } from "./midiConversionFilter";
 import { midiDataFromClip } from "./midiClips";
 import type { PocketDawProject } from "./schema";
 
@@ -12,7 +13,7 @@ export interface MidiDrumConversionResult {
   lanes: Record<string, number>;
 }
 
-export function convertMidiClipToDrumBranchOverlays(project: PocketDawProject, clipId: string, sectionId = "A"): MidiDrumConversionResult {
+export function convertMidiClipToDrumBranchOverlays(project: PocketDawProject, clipId: string, sectionId = "A", filter?: MidiConversionSourceFilter): MidiDrumConversionResult {
   const clip = project.timeline.clips.find((item) => item.id === clipId && item.type === "midi");
   const pcs = getPrimaryChordsmithSource(project);
   const section = pcs?.sections[sectionId as keyof typeof pcs.sections];
@@ -31,6 +32,10 @@ export function convertMidiClipToDrumBranchOverlays(project: PocketDawProject, c
   let merged = 0;
 
   data.notes.forEach((note) => {
+    if (!midiNoteMatchesConversionSource(note, filter)) {
+      skipped += 1;
+      return;
+    }
     if (note.channel !== 9) {
       skipped += 1;
       return;

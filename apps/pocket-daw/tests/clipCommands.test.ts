@@ -35,7 +35,7 @@ import { parseStandardMidiFile } from "../src/daw/midiParser";
 import type { Clip } from "../src/daw/schema";
 import { createUndoStack } from "../src/daw/undo";
 import { clipSourceStartBar } from "../src/daw/clips";
-import { metalArrangementMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
+import { metalArrangementMidiBytes, multiTrackChannelMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 
 describe("generated clip edit commands", () => {
   it("branches and collapses generated drums through the undoable command path", () => {
@@ -129,6 +129,23 @@ describe("generated clip edit commands", () => {
     expect(edited.selectedClipId).toBe(imported.clipId);
     expect(edited.status).toContain("Mapped");
     expect(edited.status).toContain("MIDI bass");
+  });
+
+  it("maps selected MIDI bass clips from a chosen source track through the command path", () => {
+    const state = createInitialState();
+    const imported = importMidiFileToProject(state.undoStack.present, parseStandardMidiFile(multiTrackChannelMidiBytes()), "band.mid");
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+    state.chordsmithEditorSectionId = "A";
+    state.midiConversionSourceMode = "source-track";
+    state.midiConversionSourceValue = 2;
+
+    const edited = convertMidiBassToGeneratedOverlaysCommand(state);
+
+    expect(bassOverlayCount(edited.undoStack.present, "A")).toBe(1);
+    expect(edited.status).toContain("source track 3");
+    expect(edited.status).toContain("Mapped");
   });
 
   it("maps selected MIDI chord groups into generated chord overlays through the command path", () => {

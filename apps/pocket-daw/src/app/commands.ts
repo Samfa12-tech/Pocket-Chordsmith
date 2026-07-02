@@ -13,6 +13,7 @@ import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, ad
 import type { MidiTempoMapSummary } from "../daw/midiClips";
 import { convertMidiClipToBassOverlays } from "../daw/midiBassConversion";
 import { convertMidiClipToChordOverlays } from "../daw/midiChordConversion";
+import { midiConversionSourceLabel, normalizeMidiConversionSourceFilter, type MidiConversionSourceFilter } from "../daw/midiConversionFilter";
 import { convertMidiClipToDrumBranchOverlays } from "../daw/midiDrumConversion";
 import { convertMidiClipToMelodyOverlays } from "../daw/midiMelodyConversion";
 import { addAutomationPoint, deleteAutomationPoint, ensureClipAutomationLane, ensureFxParameterAutomationLane, ensureProjectAutomationLane, ensureTrackAutomationLane, ensureTrackSendAutomationLane, getClipAutomationLane, getFxParameterAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, setAutomationLaneEnabled, setAutomationLanePoints, type ClipAutomationField, type ProjectAutomationField, type TrackAutomationField, type TrackSendAutomationField, updateAutomationPoint } from "../daw/automation";
@@ -1249,20 +1250,22 @@ function midiTickAtPlayhead(state: AppState, clip: Clip): number {
   return Math.max(0, Math.round(beats * ppq));
 }
 
-export function convertMidiDrumsToBranchOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A"): AppState {
+export function convertMidiDrumsToBranchOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A", sourceFilter?: MidiConversionSourceFilter): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping drums." };
-  const result = convertMidiClipToDrumBranchOverlays(state.undoStack.present, clipId, sectionId);
+  const filter = sourceFilter || currentMidiConversionSourceFilter(state);
+  const sourceLabel = midiConversionSourceLabel(filter);
+  const result = convertMidiClipToDrumBranchOverlays(state.undoStack.present, clipId, sectionId, filter);
   if (!result.written) {
     return {
       ...state,
       selectedClipId: clipId,
       selectedTrackId: clip.trackId || state.selectedTrackId,
-      status: result.skipped ? `No supported drum hits found in ${clip.name}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name}.`
+      status: result.skipped ? `No supported drum hits found in ${clip.name} from ${sourceLabel}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name} from ${sourceLabel}.`
     };
   }
   return {
-    ...commitProject(state, result.project, `Mapped ${result.written} MIDI drum cell${result.written === 1 ? "" : "s"} from ${clip.name} to Section ${result.sectionId} branch overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
+    ...commitProject(state, result.project, `Mapped ${result.written} MIDI drum cell${result.written === 1 ? "" : "s"} from ${clip.name} (${sourceLabel}) to Section ${result.sectionId} branch overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId,
     chordsmithEditorSectionId: result.sectionId
@@ -1273,21 +1276,24 @@ export function convertMidiMelodyToGeneratedOverlaysCommand(
   state: AppState,
   clipId = state.selectedClipId || "",
   sectionId = state.chordsmithEditorSectionId || "A",
-  trackIndex = state.chordsmithEditorMelodyTrackIndex || 0
+  trackIndex = state.chordsmithEditorMelodyTrackIndex || 0,
+  sourceFilter?: MidiConversionSourceFilter
 ): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping melody." };
-  const result = convertMidiClipToMelodyOverlays(state.undoStack.present, clipId, sectionId, trackIndex);
+  const filter = sourceFilter || currentMidiConversionSourceFilter(state);
+  const sourceLabel = midiConversionSourceLabel(filter);
+  const result = convertMidiClipToMelodyOverlays(state.undoStack.present, clipId, sectionId, trackIndex, filter);
   if (!result.written) {
     return {
       ...state,
       selectedClipId: clipId,
       selectedTrackId: clip.trackId || state.selectedTrackId,
-      status: result.skipped ? `No supported melodic MIDI notes found in ${clip.name}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name}.`
+      status: result.skipped ? `No supported melodic MIDI notes found in ${clip.name} from ${sourceLabel}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name} from ${sourceLabel}.`
     };
   }
   return {
-    ...commitProject(state, result.project, `Mapped ${result.written} MIDI melodic note${result.written === 1 ? "" : "s"} from ${clip.name} to Section ${result.sectionId} Melody ${result.trackIndex + 1} overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
+    ...commitProject(state, result.project, `Mapped ${result.written} MIDI melodic note${result.written === 1 ? "" : "s"} from ${clip.name} (${sourceLabel}) to Section ${result.sectionId} Melody ${result.trackIndex + 1} overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId,
     chordsmithEditorSectionId: result.sectionId,
@@ -1295,40 +1301,44 @@ export function convertMidiMelodyToGeneratedOverlaysCommand(
   };
 }
 
-export function convertMidiBassToGeneratedOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A"): AppState {
+export function convertMidiBassToGeneratedOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A", sourceFilter?: MidiConversionSourceFilter): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping bass." };
-  const result = convertMidiClipToBassOverlays(state.undoStack.present, clipId, sectionId);
+  const filter = sourceFilter || currentMidiConversionSourceFilter(state);
+  const sourceLabel = midiConversionSourceLabel(filter);
+  const result = convertMidiClipToBassOverlays(state.undoStack.present, clipId, sectionId, filter);
   if (!result.written) {
     return {
       ...state,
       selectedClipId: clipId,
       selectedTrackId: clip.trackId || state.selectedTrackId,
-      status: result.skipped ? `No supported bass MIDI notes found in ${clip.name}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name}.`
+      status: result.skipped ? `No supported bass MIDI notes found in ${clip.name} from ${sourceLabel}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name} from ${sourceLabel}.`
     };
   }
   return {
-    ...commitProject(state, result.project, `Mapped ${result.written} MIDI bass note${result.written === 1 ? "" : "s"} from ${clip.name} to Section ${result.sectionId} Bass overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
+    ...commitProject(state, result.project, `Mapped ${result.written} MIDI bass note${result.written === 1 ? "" : "s"} from ${clip.name} (${sourceLabel}) to Section ${result.sectionId} Bass overlays${result.merged ? ` (${result.merged} merged)` : ""}.`),
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId,
     chordsmithEditorSectionId: result.sectionId
   };
 }
 
-export function convertMidiChordsToGeneratedOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A"): AppState {
+export function convertMidiChordsToGeneratedOverlaysCommand(state: AppState, clipId = state.selectedClipId || "", sectionId = state.chordsmithEditorSectionId || "A", sourceFilter?: MidiConversionSourceFilter): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping chords." };
-  const result = convertMidiClipToChordOverlays(state.undoStack.present, clipId, sectionId);
+  const filter = sourceFilter || currentMidiConversionSourceFilter(state);
+  const sourceLabel = midiConversionSourceLabel(filter);
+  const result = convertMidiClipToChordOverlays(state.undoStack.present, clipId, sectionId, filter);
   if (!result.written) {
     return {
       ...state,
       selectedClipId: clipId,
       selectedTrackId: clip.trackId || state.selectedTrackId,
-      status: result.skipped ? `No supported MIDI chord groups found in ${clip.name}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name}.`
+      status: result.skipped ? `No supported MIDI chord groups found in ${clip.name} from ${sourceLabel}; skipped ${result.skipped}.` : `No MIDI notes found to map in ${clip.name} from ${sourceLabel}.`
     };
   }
   return {
-    ...commitProject(state, result.project, `Mapped ${result.written} MIDI chord group${result.written === 1 ? "" : "s"} from ${clip.name} to Section ${result.sectionId} Chords overlays${result.merged ? ` (${result.merged} grouped)` : ""}.`),
+    ...commitProject(state, result.project, `Mapped ${result.written} MIDI chord group${result.written === 1 ? "" : "s"} from ${clip.name} (${sourceLabel}) to Section ${result.sectionId} Chords overlays${result.merged ? ` (${result.merged} grouped)` : ""}.`),
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId,
     chordsmithEditorSectionId: result.sectionId
@@ -1339,15 +1349,18 @@ export function convertMidiArrangementToGeneratedOverlaysCommand(
   state: AppState,
   clipId = state.selectedClipId || "",
   sectionId = state.chordsmithEditorSectionId || "A",
-  melodyTrackIndex = state.chordsmithEditorMelodyTrackIndex || 0
+  melodyTrackIndex = state.chordsmithEditorMelodyTrackIndex || 0,
+  sourceFilter?: MidiConversionSourceFilter
 ): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before mapping an arrangement." };
+  const filter = sourceFilter || currentMidiConversionSourceFilter(state);
+  const sourceLabel = midiConversionSourceLabel(filter);
 
-  const drums = convertMidiClipToDrumBranchOverlays(state.undoStack.present, clipId, sectionId);
-  const bass = convertMidiClipToBassOverlays(drums.project, clipId, sectionId);
-  const chords = convertMidiClipToChordOverlays(bass.project, clipId, sectionId);
-  const melody = convertMidiClipToMelodyOverlays(chords.project, clipId, sectionId, melodyTrackIndex);
+  const drums = convertMidiClipToDrumBranchOverlays(state.undoStack.present, clipId, sectionId, filter);
+  const bass = convertMidiClipToBassOverlays(drums.project, clipId, sectionId, filter);
+  const chords = convertMidiClipToChordOverlays(bass.project, clipId, sectionId, filter);
+  const melody = convertMidiClipToMelodyOverlays(chords.project, clipId, sectionId, melodyTrackIndex, filter);
   const totalWritten = drums.written + bass.written + chords.written + melody.written;
   const totalSkipped = drums.skipped + bass.skipped + chords.skipped + melody.skipped;
   const totalMerged = drums.merged + bass.merged + chords.merged + melody.merged;
@@ -1357,18 +1370,22 @@ export function convertMidiArrangementToGeneratedOverlaysCommand(
       ...state,
       selectedClipId: clipId,
       selectedTrackId: clip.trackId || state.selectedTrackId,
-      status: totalSkipped ? `No supported arrangement material found in ${clip.name}; skipped ${totalSkipped}.` : `No MIDI notes found to map in ${clip.name}.`
+      status: totalSkipped ? `No supported arrangement material found in ${clip.name} from ${sourceLabel}; skipped ${totalSkipped}.` : `No MIDI notes found to map in ${clip.name} from ${sourceLabel}.`
     };
   }
 
   const summary = `${drums.written} drums, ${bass.written} bass, ${chords.written} chords, ${melody.written} melody`;
   return {
-    ...commitProject(state, melody.project, `Mapped MIDI arrangement from ${clip.name} to Section ${melody.sectionId}: ${summary}${totalMerged ? ` (${totalMerged} merged/grouped)` : ""}. Raw MIDI clip preserved.`),
+    ...commitProject(state, melody.project, `Mapped MIDI arrangement from ${clip.name} (${sourceLabel}) to Section ${melody.sectionId}: ${summary}${totalMerged ? ` (${totalMerged} merged/grouped)` : ""}. Raw MIDI clip preserved.`),
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId,
     chordsmithEditorSectionId: melody.sectionId,
     chordsmithEditorMelodyTrackIndex: melody.trackIndex
   };
+}
+
+export function currentMidiConversionSourceFilter(state: AppState): MidiConversionSourceFilter {
+  return normalizeMidiConversionSourceFilter(state.midiConversionSourceMode, state.midiConversionSourceValue);
 }
 
 export function adoptMidiTempoMapStartCommand(state: AppState, clipId = state.selectedClipId || ""): AppState {

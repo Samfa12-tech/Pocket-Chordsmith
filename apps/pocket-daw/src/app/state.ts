@@ -10,6 +10,7 @@ import type { RecentProject } from "../native/recentFiles";
 import type { UpdaterState } from "../native/updaterBridge";
 import { defaultAiBridgeUiStatus, type AiBridgeUiStatus } from "../native/aiBridge";
 import type { DrumLaneId } from "../daw/drumLanes";
+import type { MidiConversionSourceMode } from "../daw/midiConversionFilter";
 import type { MidiImportPlacementMode } from "../daw/midiClips";
 
 export type ChordsmithStepSelection =
@@ -37,6 +38,8 @@ export interface AppState {
   meterLevels: Record<string, number>;
   importText: string;
   midiImportPlacementMode: MidiImportPlacementMode;
+  midiConversionSourceMode: MidiConversionSourceMode;
+  midiConversionSourceValue: number | null;
   currentFile: ProjectFileState;
   busyMessage: string | null;
   exportProgress: { message: string; detail?: string } | null;
@@ -214,6 +217,8 @@ export function createInitialState(): AppState {
     meterLevels: {},
     importText: "",
     midiImportPlacementMode: "single-clip",
+    midiConversionSourceMode: "all",
+    midiConversionSourceValue: null,
     currentFile: { path: null, label: "Editable demo copy" },
     busyMessage: null,
     exportProgress: null,
@@ -310,6 +315,8 @@ export function loadProjectIntoState(
     meterLevels: {},
     importText: options.clearImportText === false ? state.importText : "",
     midiImportPlacementMode: state.midiImportPlacementMode,
+    midiConversionSourceMode: state.midiConversionSourceMode,
+    midiConversionSourceValue: state.midiConversionSourceValue,
     currentFile: options.currentFile || { path: null, label: project.project.title || "Untitled project" },
     busyMessage: null,
     exportProgress: null,

@@ -21,6 +21,7 @@ import { createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExp
 import { validateExportProfile } from "../daw/exportProfiles";
 import { createPocketDjSourceSummary, type PocketDjSourceSummary } from "../daw/pocketDjSources";
 import { createMidiChordsmithConversionPreview, type MidiChordsmithConversionPreview } from "../daw/midiConversionPreview";
+import { normalizeMidiConversionSourceFilter, type MidiConversionSourceFilter, type MidiConversionSourceOption } from "../daw/midiConversionFilter";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { audioClipTakeSummary, clipSourceStartBar } from "../daw/clips";
 import { createAudioTakeDiagnosticsSummary, runtimeBuildId, runtimeCommit, runtimeLabel } from "./diagnostics";
@@ -1443,7 +1444,8 @@ function renderMidiClipEditor(project: ReturnType<typeof currentProject>, state:
   const conversionSection = pcs?.sections[conversionSectionId];
   const conversionMelodyCount = Math.max(1, conversionSection?.melodyTracks.length || 1);
   const conversionMelodyTrackIndex = Math.max(0, Math.min(conversionMelodyCount - 1, Math.round(Number(state.chordsmithEditorMelodyTrackIndex) || 0)));
-  const conversionPreview = createMidiChordsmithConversionPreview(project, clip.id, conversionSectionId, conversionMelodyTrackIndex);
+  const conversionSourceFilter = normalizeMidiConversionSourceFilter(state.midiConversionSourceMode, state.midiConversionSourceValue);
+  const conversionPreview = createMidiChordsmithConversionPreview(project, clip.id, conversionSectionId, conversionMelodyTrackIndex, conversionSourceFilter);
   const notes = midi.notes.slice().sort((a, b) => a.startTick - b.startTick || a.pitch - b.pitch);
   const controllers = midi.controllers.slice().sort((a, b) => a.tick - b.tick || a.controller - b.controller);
   const programs = midi.programChanges.slice().sort((a, b) => a.tick - b.tick || (a.channel ?? 0) - (b.channel ?? 0) || a.program - b.program);
@@ -1494,7 +1496,7 @@ function renderMidiClipEditor(project: ReturnType<typeof currentProject>, state:
         <button type="button" data-midi-program-add="${sanitizeDataAttr(clip.id)}">Add Program</button>
         <button type="button" data-midi-pitch-bend-add="${sanitizeDataAttr(clip.id)}">Add Bend</button>
         <button type="button" data-midi-aftertouch-add="${sanitizeDataAttr(clip.id)}">Add Touch</button>
-        ${renderMidiConversionTargetControls(conversionSectionId, conversionMelodyTrackIndex, conversionMelodyCount)}
+        ${renderMidiConversionTargetControls(conversionSectionId, conversionMelodyTrackIndex, conversionMelodyCount, conversionPreview?.sourceOptions || [], conversionSourceFilter)}
         <button type="button" title="Map General MIDI drum notes into generated drum branch overlays" data-action="convert-midi-drums">Map Drums</button>
         <button type="button" title="Map low non-drum MIDI notes into generated bass overlays" data-action="convert-midi-bass">Map Bass</button>
         <button type="button" title="Map simultaneous non-drum MIDI notes into generated chord overlays" data-action="convert-midi-chords">Map Chords</button>
@@ -1634,6 +1636,7 @@ function renderMidiChordsmithConversionPreview(preview: MidiChordsmithConversion
         <dt>Timing</dt><dd>${preview.timing.bpm} BPM / ${escapeHtml(preview.timing.timeSignature)}${preview.timing.hasTempoChanges || preview.timing.hasMeterChanges ? " map" : ""}</dd>
         <dt>Key</dt><dd>${escapeHtml(preview.key.key)} ${preview.key.scale}${preview.key.source === "pitch-inference" ? " (inferred)" : preview.key.source === "midi-key-signature" ? " (MIDI)" : " (project)"}</dd>
         <dt>Structure</dt><dd>${preview.structure.sourceBars} bars / ${preview.structure.suggestedSectionCount} section${preview.structure.suggestedSectionCount === 1 ? "" : "s"} x ${preview.structure.suggestedSectionBars}</dd>
+        <dt>Source</dt><dd>${escapeHtml(preview.sourceFilterLabel)}${preview.filteredOutNoteCount ? ` (${preview.filteredOutNoteCount} filtered out)` : ""}</dd>
         <dt>Visible notes</dt><dd>${preview.visibleNoteCount} / ${preview.sourceNoteCount}${preview.outOfRangeNoteCount ? ` (${preview.outOfRangeNoteCount} outside clip range)` : ""}</dd>
         <dt>Drums</dt><dd>${preview.mappings.drums.written} cells${laneSummary ? ` / ${escapeHtml(laneSummary)}` : ""}</dd>
         <dt>Bass</dt><dd>${preview.mappings.bass.written} notes${preview.mappings.bass.pitches.length ? ` / ${escapeHtml(formatMidiPitchList(preview.mappings.bass.pitches))}` : ""}</dd>
@@ -1646,9 +1649,25 @@ function renderMidiChordsmithConversionPreview(preview: MidiChordsmithConversion
   `;
 }
 
-function renderMidiConversionTargetControls(sectionId: SectionId, melodyTrackIndex: number, melodyTrackCount: number): string {
+function renderMidiConversionTargetControls(
+  sectionId: SectionId,
+  melodyTrackIndex: number,
+  melodyTrackCount: number,
+  sourceOptions: MidiConversionSourceOption[],
+  sourceFilter: MidiConversionSourceFilter
+): string {
+  const options = sourceOptions.length ? sourceOptions : [{ mode: "all" as const, value: null, label: "All MIDI notes" }];
+  const sourceValue = midiConversionSourceOptionValue(sourceFilter);
   return `
     <div class="midi-conversion-targets" aria-label="MIDI conversion target">
+      <label>Source
+        <select data-midi-conversion-source-target="true" title="Choose which imported MIDI source track or channel the Chordsmith mapping buttons will read.">
+          ${options.map((option) => {
+            const value = midiConversionSourceOptionValue(option);
+            return `<option value="${escapeAttr(value)}" ${sourceValue === value ? "selected" : ""}>${escapeHtml(option.label)}</option>`;
+          }).join("")}
+        </select>
+      </label>
       <label>Map to
         <select data-midi-conversion-section-target="true" title="Choose the Chordsmith section that MIDI mapping commands will write into.">
           ${SECTION_IDS.map((id) => `<option value="${id}" ${sectionId === id ? "selected" : ""}>Section ${id}</option>`).join("")}
@@ -1661,6 +1680,10 @@ function renderMidiConversionTargetControls(sectionId: SectionId, melodyTrackInd
       </label>
     </div>
   `;
+}
+
+function midiConversionSourceOptionValue(option: MidiConversionSourceFilter | MidiConversionSourceOption): string {
+  return option.mode === "all" ? "all" : `${option.mode}:${Number(option.value ?? 0)}`;
 }
 
 function formatMidiPitchList(pitches: number[]): string {

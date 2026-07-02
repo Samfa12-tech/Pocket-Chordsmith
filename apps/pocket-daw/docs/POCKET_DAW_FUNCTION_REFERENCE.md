@@ -36,6 +36,7 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | Import Audio | Imports an audio file, decodes it for runtime playback, stores metadata, and makes it timeline-placeable. | Loops, vocals, instrument takes, references and stems. | Check source format, duration, sample rate, channels, cache path and missing/unloaded state. |
 | Import MIDI | Parses `.mid`/`.midi` files, adds media metadata, and creates editable MIDI clips according to the placement mode. | External melodies, drums, chord ideas or conversion material. | Check tempo/meter maps before adopting them into project timing. |
 | MIDI Placement Mode | Chooses single clip, per-source-track, per-channel, or drum-channel split placement for imported MIDI. | Multi-track/channel MIDI files. | Per-channel or drum split can be easier for AI analysis. |
+| MIDI To Chordsmith Source | Chooses whether mapping reads all MIDI notes, one imported source track, or one MIDI channel before writing generated overlays. | Converting multitrack MIDI where drums, bass, chords or melody live on distinct tracks/channels. | Match the source selector to the role before invoking Map Drums, Map Bass, Map Chords, Map Melody or Map Arrangement. |
 | Chordsmith Handoff | Converts Chordsmith material into DAW tracks, clips, sections and generated roles. | Moving from Pocket Chordsmith composition into DAW arrangement/export. | Keep Chordsmith as musical source of truth; do not duplicate whole Chordsmith UI logic inside the DAW. |
 
 ## Transport

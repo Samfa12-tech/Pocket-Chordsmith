@@ -1,5 +1,14 @@
 import { convertMidiClipToBassOverlays } from "./midiBassConversion";
 import { convertMidiClipToChordOverlays } from "./midiChordConversion";
+import {
+  DEFAULT_MIDI_CONVERSION_SOURCE_FILTER,
+  midiConversionSourceLabel,
+  midiConversionSourceOptions,
+  midiNoteMatchesConversionSource,
+  normalizeMidiConversionSourceFilter,
+  type MidiConversionSourceFilter,
+  type MidiConversionSourceOption
+} from "./midiConversionFilter";
 import { convertMidiClipToDrumBranchOverlays } from "./midiDrumConversion";
 import { convertMidiClipToMelodyOverlays } from "./midiMelodyConversion";
 import { createMidiTempoMapSummary, midiDataFromClip } from "./midiClips";
@@ -36,6 +45,10 @@ export interface MidiChordsmithConversionPreview {
   preservedProgramChangeCount: number;
   preservedPitchBendCount: number;
   preservedAftertouchCount: number;
+  sourceFilter: MidiConversionSourceFilter;
+  sourceFilterLabel: string;
+  sourceOptions: MidiConversionSourceOption[];
+  filteredOutNoteCount: number;
   mappings: {
     drums: {
       written: number;
@@ -79,7 +92,8 @@ export function createMidiChordsmithConversionPreview(
   project: PocketDawProject,
   clipId: string,
   sectionId = "A",
-  melodyTrackIndex = 0
+  melodyTrackIndex = 0,
+  sourceFilter: MidiConversionSourceFilter = DEFAULT_MIDI_CONVERSION_SOURCE_FILTER
 ): MidiChordsmithConversionPreview | null {
   const clip = project.timeline.clips.find((item) => item.id === clipId && item.type === "midi");
   if (!clip || clip.type !== "midi") return null;
@@ -87,16 +101,18 @@ export function createMidiChordsmithConversionPreview(
   const sourceStartTick = Math.max(0, Math.round(Number(clip.metadata?.sourceStartTick || 0)));
   const visibleTicks = Math.max(0, Math.round(clip.barLength * project.project.timeSig * midi.ppq));
   const sourceEndTick = sourceStartTick + visibleTicks;
-  const visibleNoteCount = midi.notes.filter((note) => note.startTick >= sourceStartTick && note.startTick < sourceEndTick).length;
+  const normalizedSourceFilter = normalizeMidiConversionSourceFilter(sourceFilter.mode, sourceFilter.value);
+  const sourceFilteredNoteCount = midi.notes.filter((note) => midiNoteMatchesConversionSource(note, normalizedSourceFilter)).length;
+  const visibleNoteCount = midi.notes.filter((note) => midiNoteMatchesConversionSource(note, normalizedSourceFilter) && note.startTick >= sourceStartTick && note.startTick < sourceEndTick).length;
   const metadata = combinedMidiMetadata(project, clip, midi.metadata);
   const tempoSummary = createMidiTempoMapSummary(metadata, { fallbackBpm: project.project.bpm, fallbackTimeSig: project.project.timeSig });
   const timing = midiConversionTimingPreview(project, metadata, tempoSummary);
   const key = midiConversionKeyPreview(project, metadata, midi.notes);
   const structure = midiConversionStructurePreview(project, midi.ppq, sourceStartTick, sourceEndTick);
-  const drums = convertMidiClipToDrumBranchOverlays(project, clipId, sectionId);
-  const bass = convertMidiClipToBassOverlays(project, clipId, sectionId);
-  const chords = convertMidiClipToChordOverlays(project, clipId, sectionId);
-  const melody = convertMidiClipToMelodyOverlays(project, clipId, sectionId, melodyTrackIndex);
+  const drums = convertMidiClipToDrumBranchOverlays(project, clipId, sectionId, normalizedSourceFilter);
+  const bass = convertMidiClipToBassOverlays(project, clipId, sectionId, normalizedSourceFilter);
+  const chords = convertMidiClipToChordOverlays(project, clipId, sectionId, normalizedSourceFilter);
+  const melody = convertMidiClipToMelodyOverlays(project, clipId, sectionId, melodyTrackIndex, normalizedSourceFilter);
   const written = drums.written + bass.written + chords.written + melody.written;
   const skippedByTargets = drums.skipped + bass.skipped + chords.skipped + melody.skipped;
   const mergedByTargets = drums.merged + bass.merged + chords.merged + melody.merged;
@@ -118,11 +134,15 @@ export function createMidiChordsmithConversionPreview(
     structure,
     sourceNoteCount: midi.notes.length,
     visibleNoteCount,
-    outOfRangeNoteCount: Math.max(0, midi.notes.length - visibleNoteCount),
+    outOfRangeNoteCount: Math.max(0, sourceFilteredNoteCount - visibleNoteCount),
     preservedControllerCount: midi.controllers.length,
     preservedProgramChangeCount: midi.programChanges.length,
     preservedPitchBendCount: midi.pitchBends.length,
     preservedAftertouchCount: midi.aftertouch.length,
+    sourceFilter: normalizedSourceFilter,
+    sourceFilterLabel: midiConversionSourceLabel(normalizedSourceFilter),
+    sourceOptions: midiConversionSourceOptions(midi.notes, metadata),
+    filteredOutNoteCount: Math.max(0, midi.notes.length - sourceFilteredNoteCount),
     mappings: {
       drums: {
         written: drums.written,

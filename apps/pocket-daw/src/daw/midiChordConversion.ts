@@ -1,4 +1,5 @@
 import { chordSectionStepLimit, writeChordOverlayEvents, type ChordOverlayWrite } from "./chordOverlays";
+import { midiNoteMatchesConversionSource, type MidiConversionSourceFilter } from "./midiConversionFilter";
 import { midiDataFromClip } from "./midiClips";
 import type { PocketDawProject } from "./schema";
 
@@ -19,7 +20,7 @@ interface PendingChord {
   sourceNoteIds: string[];
 }
 
-export function convertMidiClipToChordOverlays(project: PocketDawProject, clipId: string, sectionId = "A"): MidiChordConversionResult {
+export function convertMidiClipToChordOverlays(project: PocketDawProject, clipId: string, sectionId = "A", filter?: MidiConversionSourceFilter): MidiChordConversionResult {
   const clip = project.timeline.clips.find((item) => item.id === clipId && item.type === "midi");
   const totalSteps = chordSectionStepLimit(project, sectionId);
   if (!clip || clip.type !== "midi" || totalSteps <= 0) {
@@ -35,6 +36,10 @@ export function convertMidiClipToChordOverlays(project: PocketDawProject, clipId
   let merged = 0;
 
   data.notes.forEach((note) => {
+    if (!midiNoteMatchesConversionSource(note, filter)) {
+      skipped += 1;
+      return;
+    }
     if (note.channel === 9) {
       skipped += 1;
       return;

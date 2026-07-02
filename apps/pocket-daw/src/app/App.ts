@@ -7,6 +7,7 @@ import { renderProjectToNativeWavBlob } from "../audio/nativeOfflineRender";
 import { renderProjectToWavBlob, type WavBitDepth, type WavChannelMode, type WavDitherMode } from "../audio/offlineRender";
 import { createDemoProject } from "../demo/demoProject";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../daw/dawProject";
+import { midiConversionSourceLabel, normalizeMidiConversionSourceFilter } from "../daw/midiConversionFilter";
 import { createMidiChordsmithConversionPreviews } from "../daw/midiConversionPreview";
 import { DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumBranchStepLevel, isDrumLaneId } from "../daw/drumLanes";
 import { renderTimelineEvents } from "../audio/eventRenderer";
@@ -1385,6 +1386,15 @@ export class App {
       this.state.midiImportPlacementMode = midiImportPlacementModeFromValue((event.target as HTMLSelectElement).value);
       this.state.status = `MIDI import placement set to ${midiImportPlacementModeLabel(this.state.midiImportPlacementMode)}.`;
       this.render();
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-midi-conversion-source-target]").forEach((select) => {
+      select.addEventListener("change", () => {
+        const filter = midiConversionSourceFilterFromValue(select.value);
+        this.state.midiConversionSourceMode = filter.mode;
+        this.state.midiConversionSourceValue = filter.value;
+        this.state.status = `MIDI conversion source set to ${midiConversionSourceLabel(filter)}.`;
+        this.render({ preserveScroll: true });
+      });
     });
     this.root.querySelector<HTMLTextAreaElement>("[data-feedback-text]")?.addEventListener("input", (event) => {
       this.state.feedbackText = (event.target as HTMLTextAreaElement).value;
@@ -5466,6 +5476,12 @@ function midiImportPlacementModeLabel(mode: MidiImportPlacementMode): string {
   if (mode === "per-channel") return "channels";
   if (mode === "drum-channel-split") return "drum channel split";
   return "single clip";
+}
+
+function midiConversionSourceFilterFromValue(value: string) {
+  if (value === "all") return normalizeMidiConversionSourceFilter("all", null);
+  const [mode, rawValue] = value.split(":");
+  return normalizeMidiConversionSourceFilter(mode, rawValue);
 }
 
 const ACTION_BUTTON_TOOLTIPS: Record<string, string> = {

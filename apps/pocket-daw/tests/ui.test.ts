@@ -13,7 +13,7 @@ import { createAutomationLane, ensureTrackSendAutomationLane } from "../src/daw/
 import { addReturnTrack, setTrackSendLevel, setTrackSendMode } from "../src/daw/routing";
 import { addMidiAftertouch, addMidiController, addMidiPitchBend, addMidiProgramChange, importMidiFileToProject, midiDataFromClip } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
-import { simpleMidiBytes } from "./midiFixtures";
+import { multiTrackChannelMidiBytes, simpleMidiBytes } from "./midiFixtures";
 import { createEmptyPocketDawProject } from "../src/daw/dawProject";
 import { POCKET_DAW_VERSION } from "../src/daw/schema";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
@@ -1505,6 +1505,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(source).toContain("convertMidiMelodyToGeneratedOverlaysCommand");
     expect(source).toContain("[data-midi-conversion-section-target]");
     expect(source).toContain("[data-midi-conversion-melody-target]");
+    expect(source).toContain("[data-midi-conversion-source-target]");
+    expect(source).toContain("MIDI conversion source set to");
     expect(source).toContain("MIDI conversion target set to Section");
     expect(source).toContain("MIDI conversion melody target set to track");
   });
@@ -2009,6 +2011,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Map Arrangement");
     expect(html).toContain('data-midi-conversion-section-target="true"');
     expect(html).toContain('data-midi-conversion-melody-target="true"');
+    expect(html).toContain('data-midi-conversion-source-target="true"');
+    expect(html).toContain("All MIDI notes");
     expect(html).toContain("Map to");
     expect(html).toContain(`data-midi-conversion-preview="${result.clipId}"`);
     expect(html).toContain("Chordsmith Mapping Preview");
@@ -2025,6 +2029,25 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("C4");
     expect(html).toContain("MIDI clips are created from the selected import placement");
     expect(html).toContain("midi-note-strip");
+  });
+
+  it("renders MIDI conversion source choices from imported track and channel metadata", () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Source UI" }));
+    const imported = importMidiFileToProject(project, parseStandardMidiFile(multiTrackChannelMidiBytes()), "band.mid");
+    const state = createInitialState();
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+    state.lowerDockTab = "piano-roll";
+    state.midiConversionSourceMode = "source-track";
+    state.midiConversionSourceValue = 2;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain('data-midi-conversion-source-target="true"');
+    expect(html).toContain('<option value="source-track:2" selected>Track 3: Bass</option>');
+    expect(html).toContain('<option value="channel:9" >Channel 10</option>');
+    expect(html).toContain("<dt>Source</dt><dd>source track 3");
   });
 
   it("renders the selected imported melody lane editor", () => {

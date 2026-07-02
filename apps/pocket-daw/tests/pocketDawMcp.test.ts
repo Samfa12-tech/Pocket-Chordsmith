@@ -18,7 +18,7 @@ import { melodyOverlayCount } from "../src/daw/melodyOverlays";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
 import { addTrackToProject } from "../src/daw/tracks";
-import { metalArrangementMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
+import { metalArrangementMidiBytes, multiTrackChannelMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 import { createPocketDjImportFixture } from "./pocketDjFixtures";
 
 function parseToolResult(result: Awaited<ReturnType<typeof callPocketDawMcpTool>>) {
@@ -101,6 +101,8 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_bass");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_chords");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_melody");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("sourceMode");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("sourceValue");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("adopt_midi_tempo");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ensure_project_automation");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("add_project_automation_point");
@@ -993,6 +995,20 @@ describe("Pocket DAW MCP tools", () => {
       midi: 48,
       sourceClipId: imported.clipId
     });
+  });
+
+  it("maps MIDI bass clips from an explicit source track through the file-first command path", async () => {
+    const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(multiTrackChannelMidiBytes()), "band.mid");
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(imported.project),
+      commands: [
+        { type: "convert_midi_bass", clipId: imported.clipId, sectionId: "A", sourceMode: "source-track", sourceValue: 2 }
+      ]
+    }));
+
+    expect(result.statuses[0]).toContain("source track 3");
+    expect(bassOverlayCount(result.project, "A")).toBe(1);
   });
 
   it("maps MIDI chord groups into generated chord overlays through the file-first command path", async () => {
