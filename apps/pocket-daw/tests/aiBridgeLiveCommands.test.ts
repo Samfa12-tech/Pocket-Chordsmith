@@ -420,22 +420,36 @@ describe("Pocket DAW AI bridge live commands", () => {
       clipId: placed.clipId,
       action: "quantize-warp-markers"
     });
-    const media = quantized.undoStack.present.mediaPool.find((item) => item.id === imported.item.id)!;
-    const clip = quantized.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+    app.state = quantized;
+    const moved = app.applyAiBridgeLiveCommand({
+      type: "set_audio_warp_marker_target",
+      clipId: placed.clipId,
+      markerId: "warp_2",
+      targetBar: 4.5
+    });
+    app.state = moved;
+    const deleted = app.applyAiBridgeLiveCommand({
+      type: "delete_audio_warp_marker",
+      clipId: placed.clipId,
+      markerId: "warp_1"
+    });
+    const media = deleted.undoStack.present.mediaPool.find((item) => item.id === imported.item.id)!;
+    const clip = deleted.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
 
     expect(analyzed.status).toContain("Detected 2 transient markers");
     expect(warped.status).toContain("Created 2 source-safe warp markers");
     expect(quantized.status).toContain("Quantized 2 warp marker targets");
+    expect(moved.status).toContain("Moved warp marker warp_2");
+    expect(deleted.status).toContain("Deleted warp marker warp_1");
     expect(media.metadata?.audioTransientMarkersSeconds).toEqual([1.5, 4.5]);
     expect(clip.metadata?.audioWarpReady).toBe(true);
-    expect(clip.metadata?.audioWarpQuantizeGrid).toBe("1/16");
+    expect(clip.metadata?.audioWarpQuantizeGrid).toBeUndefined();
     expect(clip.metadata?.audioWarpPlaybackMode).toBe("metadata-only");
     expect(clip.metadata?.audioWarpMarkers).toEqual([
-      expect.objectContaining({ id: "warp_1", sourceSeconds: 1.5, targetBar: 2.75, targetSeconds: 3.5 }),
-      expect.objectContaining({ id: "warp_2", sourceSeconds: 4.5, targetBar: 4.25, targetSeconds: 6.5 })
+      expect.objectContaining({ id: "warp_2", sourceSeconds: 4.5, targetBar: 4.5, targetSeconds: 7 })
     ]);
-    expect(quantized.selectedClipId).toBe(placed.clipId);
-    expect(quantized.selectedTrackId).toBe(placed.trackId);
+    expect(deleted.selectedClipId).toBe(placed.clipId);
+    expect(deleted.selectedTrackId).toBe(placed.trackId);
   });
 
   it("applies reversible audio clip actions through the live bridge executor", () => {

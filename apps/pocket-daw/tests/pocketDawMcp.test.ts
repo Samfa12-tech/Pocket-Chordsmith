@@ -753,7 +753,9 @@ describe("Pocket DAW MCP tools", () => {
         { type: "apply_audio_clip_action", clipId: placed.clipId, action: "analyze-transients" },
         { type: "apply_audio_clip_action", clipId: placed.clipId, action: "create-warp-markers" },
         { type: "apply_audio_clip_action", clipId: placed.clipId, action: "quantize-warp-markers-1/8" },
-        { type: "apply_audio_clip_action", clipId: placed.clipId, action: "apply-warp-varispeed" }
+        { type: "set_audio_warp_marker_target", clipId: placed.clipId, markerId: "warp_2", targetBar: 4.5 },
+        { type: "apply_audio_clip_action", clipId: placed.clipId, action: "apply-warp-varispeed" },
+        { type: "delete_audio_warp_marker", clipId: placed.clipId, markerId: "warp_1" }
       ]
     }));
     const clip = result.project.timeline.clips.find((item: { id: string }) => item.id === placed.clipId);
@@ -762,12 +764,20 @@ describe("Pocket DAW MCP tools", () => {
     expect(result.statuses[0]).toContain("Detected 2 transient markers");
     expect(result.statuses[1]).toContain("Created 2 source-safe warp markers");
     expect(result.statuses[2]).toContain("Quantized 2 warp marker targets");
-    expect(result.statuses[3]).toContain("Applied warp varispeed");
-    expect(clip.metadata.audioWarpMarkerCount).toBe(2);
-    expect(clip.metadata.audioWarpQuantizeGrid).toBe("1/8");
-    expect(clip.metadata.audioWarpPlaybackMode).toBe("global-varispeed");
-    expect(clip.metadata.audioWarpAppliedFromMarkerCount).toBe(2);
-    expect(summaryClip.audioWarpMarkerCount).toBe(2);
+    expect(result.statuses[3]).toContain("Moved warp marker warp_2");
+    expect(result.statuses[4]).toContain("Applied warp varispeed");
+    expect(result.statuses[5]).toContain("Deleted warp marker warp_1");
+    expect(clip.metadata.audioWarpMarkerCount).toBe(1);
+    expect(clip.metadata.audioWarpQuantizeGrid).toBeUndefined();
+    expect(clip.metadata.audioWarpPlaybackMode).toBe("metadata-only");
+    expect(clip.metadata.audioWarpAppliedFromMarkerCount).toBeUndefined();
+    expect(clip.metadata.audioWarpMarkers).toEqual([
+      expect.objectContaining({ id: "warp_2", sourceSeconds: 4.5, targetBar: 4.5 })
+    ]);
+    expect(summaryClip.audioWarpMarkerCount).toBe(1);
+    expect(summaryClip.audioWarpMarkers).toEqual([
+      expect.objectContaining({ id: "warp_2", sourceSeconds: 4.5, targetBar: 4.5 })
+    ]);
   });
 
   it("applies timeline range edits through the file-first command path", async () => {

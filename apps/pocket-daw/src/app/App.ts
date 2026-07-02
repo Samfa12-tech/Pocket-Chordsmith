@@ -94,6 +94,7 @@ import {
   compAudioTakeFromPlayheadCommand,
   compAudioTakeRangeCommand,
   cycleDrumBranchStepCommand,
+  deleteAudioWarpMarkerCommand,
   applyDrumPresetCommand,
   applyGuitarPresetCommand,
   clearLoopCommand,
@@ -200,6 +201,7 @@ import {
   setTrackSendModeCommand,
   setTrackVolumeCommand,
   setSelectedAudioClipPropertyCommand,
+  setAudioWarpMarkerTargetCommand,
   setMidiClipBarLengthCommand,
   setMidiAftertouchFieldCommand,
   setMidiControllerFieldCommand,
@@ -303,6 +305,8 @@ type AiBridgeLiveCommand =
   | { type: "ripple_delete_clip_range"; clipId: string }
   | { type: "ripple_delete_timeline_selection" }
   | { type: "apply_audio_clip_action"; clipId: string; action: AudioClipAction }
+  | { type: "set_audio_warp_marker_target"; clipId: string; markerId: string; targetBar: number }
+  | { type: "delete_audio_warp_marker"; clipId: string; markerId: string }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
@@ -626,7 +630,7 @@ export class App {
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
         control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics"],
-        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
+        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       }
     };
   }
@@ -816,6 +820,21 @@ export class App {
         this.state,
         stringInput(command.clipId, "clipId"),
         audioClipActionInput(command.action)
+      );
+    }
+    if (command.type === "set_audio_warp_marker_target") {
+      return setAudioWarpMarkerTargetCommand(
+        this.state,
+        stringInput(command.clipId, "clipId"),
+        stringInput(command.markerId, "markerId"),
+        numberInput(command.targetBar, "targetBar")
+      );
+    }
+    if (command.type === "delete_audio_warp_marker") {
+      return deleteAudioWarpMarkerCommand(
+        this.state,
+        stringInput(command.clipId, "clipId"),
+        stringInput(command.markerId, "markerId")
       );
     }
     if (command.type === "activate_audio_take_lane") {
@@ -1192,11 +1211,33 @@ export class App {
     this.root.querySelectorAll<HTMLButtonElement>("[data-audio-clip-action]").forEach((button) => {
       button.addEventListener("click", () => {
         const [clipId, action] = String(button.dataset.audioClipAction || "").split(":");
-        if (action !== "normalize-gain" && action !== "reset-fades" && action !== "quick-fade" && action !== "crossfade-overlap" && action !== "create-crossfade-left" && action !== "invert-phase" && action !== "reverse" && action !== "analyze-transients" && action !== "create-warp-markers" && action !== "quantize-warp-markers" && action !== "apply-warp-varispeed" && action !== "clear-warp-markers") return;
+        if (action !== "normalize-gain" && action !== "reset-fades" && action !== "quick-fade" && action !== "crossfade-overlap" && action !== "create-crossfade-left" && action !== "invert-phase" && action !== "reverse" && action !== "analyze-transients" && action !== "create-warp-markers" && action !== "quantize-warp-markers" && action !== "quantize-warp-markers-1/4" && action !== "quantize-warp-markers-1/8" && action !== "quantize-warp-markers-1/16" && action !== "quantize-warp-markers-1/32" && action !== "apply-warp-varispeed" && action !== "clear-warp-markers") return;
         this.applyProjectState(applySelectedAudioClipActionCommand(this.state, clipId, action), {
           audio: "timeline-structure",
           preserveScroll: true,
           reason: `audio-clip-${action}`
+        });
+      });
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-audio-warp-marker-target]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const [clipId, markerId] = String(input.dataset.audioWarpMarkerTarget || "").split(":");
+        if (!clipId || !markerId) return;
+        this.applyProjectState(setAudioWarpMarkerTargetCommand(this.state, clipId, markerId, Number(input.value)), {
+          audio: "timeline-structure",
+          preserveScroll: true,
+          reason: "audio-warp-marker-target"
+        });
+      });
+    });
+    this.root.querySelectorAll<HTMLButtonElement>("[data-audio-warp-marker-delete]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const [clipId, markerId] = String(button.dataset.audioWarpMarkerDelete || "").split(":");
+        if (!clipId || !markerId) return;
+        this.applyProjectState(deleteAudioWarpMarkerCommand(this.state, clipId, markerId), {
+          audio: "timeline-structure",
+          preserveScroll: true,
+          reason: "audio-warp-marker-delete"
         });
       });
     });
@@ -5383,6 +5424,10 @@ function audioClipActionInput(value: unknown): AudioClipAction {
     value === "analyze-transients" ||
     value === "create-warp-markers" ||
     value === "quantize-warp-markers" ||
+    value === "quantize-warp-markers-1/4" ||
+    value === "quantize-warp-markers-1/8" ||
+    value === "quantize-warp-markers-1/16" ||
+    value === "quantize-warp-markers-1/32" ||
     value === "apply-warp-varispeed" ||
     value === "clear-warp-markers"
   ) {
@@ -5684,6 +5729,8 @@ function liveCommandAudioSyncMode(command: AiBridgeLiveCommand): AudioProjectSyn
     command.type === "ripple_delete_clip_range" ||
     command.type === "ripple_delete_timeline_selection" ||
     command.type === "apply_audio_clip_action" ||
+    command.type === "set_audio_warp_marker_target" ||
+    command.type === "delete_audio_warp_marker" ||
     command.type === "place_punch_recording_clip_from_range"
   ) {
     return "timeline-structure";

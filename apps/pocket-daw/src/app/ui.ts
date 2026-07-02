@@ -1123,7 +1123,27 @@ function renderAudioWarpMarkerPanel(clip: Clip): string {
     <div class="audio-warp-panel" aria-label="Audio warp markers">
       <span>Warp: ${markers.length} marker${markers.length === 1 ? "" : "s"} / ${escapeHtml(mode)}</span>
       <div class="audio-warp-list">
-        ${markers.slice(0, 6).map((marker) => `<span title="${escapeAttr(`${marker.sourceSeconds.toFixed(2)}s to Bar ${marker.targetBar}`)}">${marker.sourceSeconds.toFixed(2)}s -> ${marker.targetBar}</span>`).join("")}
+        ${markers.slice(0, 6).map((marker) => `
+          <div class="audio-warp-marker-row" title="${escapeAttr(`${marker.id}: source ${marker.sourceSeconds.toFixed(2)}s targets Bar ${marker.targetBar}`)}">
+            <span>${escapeHtml(marker.sourceSeconds.toFixed(2))}s</span>
+            <label>Target
+              <input
+                data-audio-warp-marker-target="${sanitizeDataAttr(`${clip.id}:${marker.id}`)}"
+                type="number"
+                min="1"
+                max="9999"
+                step="0.001"
+                value="${sanitizeCssLengthOrNumber(marker.targetBar, 1, 1, 9999)}"
+                title="Move this warp marker target bar without changing its source audio anchor."
+              >
+            </label>
+            <button
+              type="button"
+              data-audio-warp-marker-delete="${sanitizeDataAttr(`${clip.id}:${marker.id}`)}"
+              title="Delete this warp marker without deleting the source audio."
+            >Delete</button>
+          </div>
+        `).join("")}
       </div>
     </div>
   `;
@@ -2814,20 +2834,20 @@ function mediaTransientMarkers(item: { metadata?: Record<string, unknown> }): nu
     .filter((marker) => Number.isFinite(marker) && marker >= 0);
 }
 
-function audioWarpMarkersForUi(clip: Clip): Array<{ sourceSeconds: number; targetBar: number; targetSeconds: number }> {
+function audioWarpMarkersForUi(clip: Clip): Array<{ id: string; sourceSeconds: number; targetBar: number; targetSeconds: number }> {
   const markers = clip.metadata?.audioWarpMarkers;
   if (!Array.isArray(markers)) return [];
   return markers
-    .map((marker) => {
+    .map((marker, index) => {
       if (!marker || typeof marker !== "object" || Array.isArray(marker)) return null;
       const data = marker as Record<string, unknown>;
       const sourceSeconds = Number(data.sourceSeconds);
       const targetBar = Number(data.targetBar);
       const targetSeconds = Number(data.targetSeconds);
       if (!Number.isFinite(sourceSeconds) || !Number.isFinite(targetBar) || !Number.isFinite(targetSeconds)) return null;
-      return { sourceSeconds, targetBar, targetSeconds };
+      return { id: typeof data.id === "string" ? data.id : `warp_${index + 1}`, sourceSeconds, targetBar, targetSeconds };
     })
-    .filter((marker): marker is { sourceSeconds: number; targetBar: number; targetSeconds: number } => !!marker)
+    .filter((marker): marker is { id: string; sourceSeconds: number; targetBar: number; targetSeconds: number } => !!marker)
     .slice(0, 128);
 }
 

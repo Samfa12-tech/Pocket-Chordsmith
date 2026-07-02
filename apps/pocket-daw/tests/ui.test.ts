@@ -1203,7 +1203,10 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain(`data-audio-clip-action="${placed.clipId}:reverse"`);
     expect(html).toContain(`data-audio-clip-action="${placed.clipId}:create-warp-markers"`);
     expect(html).toContain("Warp: 1 marker / metadata-only");
-    expect(html).toContain("1.50s -> 2.75");
+    expect(html).toContain(`data-audio-warp-marker-target="${placed.clipId}:warp_1"`);
+    expect(html).toContain(`data-audio-warp-marker-delete="${placed.clipId}:warp_1"`);
+    expect(html).toContain("1.50");
+    expect(html).toContain("Move this warp marker target bar without changing its source audio anchor.");
   });
 
   it("renders export details in the lower dock export tab", () => {

@@ -419,6 +419,79 @@ export function applyAudioClipAction(project: PocketDawProject, clipId: string, 
   return { project: next, changed: true, status: `Normalized ${clip.name} gain to ${gain}.` };
 }
 
+export function setAudioWarpMarkerTarget(project: PocketDawProject, clipId: string, markerId: string, targetBar: number): AudioClipActionResult {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") {
+    return { project, changed: false, status: "Choose an audio clip before editing audio warp markers." };
+  }
+  const markers = quantizableAudioWarpMarkers(clip.metadata?.audioWarpMarkers);
+  const markerIndex = markers.findIndex((marker) => marker.id === markerId);
+  if (markerIndex < 0) {
+    return { project, changed: false, status: `Warp marker ${markerId || "[missing marker]"} was not found on ${clip.name}.` };
+  }
+  const numericTargetBar = Number(targetBar);
+  if (!Number.isFinite(numericTargetBar)) {
+    return { project, changed: false, status: "Warp marker target bar must be a finite number." };
+  }
+  const nextTargetBar = roundBar(numericTargetBar);
+  const previous = markers[markerIndex];
+  if (Math.abs(previous.targetBar - nextTargetBar) < 0.0005) {
+    return { project, changed: false, status: `Warp marker ${markerId} already targets bar ${nextTargetBar}.` };
+  }
+  const updatedAt = new Date().toISOString();
+  const updatedMarkers = markers.map((marker, index) => index === markerIndex
+    ? { ...marker, targetBar: nextTargetBar, targetSeconds: roundSeconds(timelineSecondsAtBar(next, nextTargetBar)), edited: true }
+    : marker
+  );
+  clip.metadata = {
+    ...clearDerivedAudioWarpPlaybackMetadata(clip.metadata || {}),
+    audioWarpMarkers: updatedMarkers,
+    audioWarpMarkerCount: updatedMarkers.length,
+    audioWarpReady: updatedMarkers.length > 0,
+    audioWarpPlaybackMode: "metadata-only",
+    audioWarpEngine: "pending-time-stretch-engine",
+    audioWarpEditedAt: updatedAt,
+    audioWarpUpdatedAt: updatedAt
+  };
+  return {
+    project: next,
+    changed: true,
+    status: `Moved warp marker ${markerId} for ${clip.name} to bar ${nextTargetBar}; playback stretching is not enabled yet.`
+  };
+}
+
+export function deleteAudioWarpMarker(project: PocketDawProject, clipId: string, markerId: string): AudioClipActionResult {
+  const next = cloneProject(project);
+  const clip = next.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") {
+    return { project, changed: false, status: "Choose an audio clip before editing audio warp markers." };
+  }
+  const markers = quantizableAudioWarpMarkers(clip.metadata?.audioWarpMarkers);
+  if (!markers.some((marker) => marker.id === markerId)) {
+    return { project, changed: false, status: `Warp marker ${markerId || "[missing marker]"} was not found on ${clip.name}.` };
+  }
+  const updatedAt = new Date().toISOString();
+  const updatedMarkers = markers.filter((marker) => marker.id !== markerId);
+  clip.metadata = {
+    ...clearDerivedAudioWarpPlaybackMetadata(clip.metadata || {}),
+    audioWarpMarkers: updatedMarkers,
+    audioWarpMarkerCount: updatedMarkers.length,
+    audioWarpReady: updatedMarkers.length > 0,
+    audioWarpPlaybackMode: "metadata-only",
+    audioWarpEditedAt: updatedAt,
+    audioWarpUpdatedAt: updatedAt
+  };
+  if (updatedMarkers.length) {
+    clip.metadata.audioWarpEngine = "pending-time-stretch-engine";
+  }
+  return {
+    project: next,
+    changed: true,
+    status: `Deleted warp marker ${markerId} for ${clip.name}.`
+  };
+}
+
 export function audioClipTakeSummary(project: PocketDawProject, clipId: string): AudioTakeSummary | null {
   const clip = project.timeline.clips.find((item) => item.id === clipId);
   const groupId = audioClipTakeGroupId(clip);

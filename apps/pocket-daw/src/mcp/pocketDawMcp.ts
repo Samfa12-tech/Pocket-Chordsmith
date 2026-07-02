@@ -28,6 +28,7 @@ import {
   cycleDrumBranchStepCommand,
   cycleDrumStepCommand,
   cycleMelodyStepCommand,
+  deleteAudioWarpMarkerCommand,
   deleteSelectedClipRangeCommand,
   deleteProjectMeterMapPointCommand,
   importTextToProject,
@@ -48,6 +49,7 @@ import {
   setDrumLanePanCommand,
   setDrumLaneVolumeCommand,
   setFxSlotParameterCommand,
+  setAudioWarpMarkerTargetCommand,
   setAudioTakeArchivedCommand,
   setSectionBarsCommand,
   setSectionChordCommand,
@@ -117,6 +119,8 @@ export type PocketDawMcpCommand =
   | { type: "ripple_delete_clip_range"; clipId: string }
   | { type: "ripple_delete_timeline_selection" }
   | { type: "apply_audio_clip_action"; clipId: string; action: "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "quantize-warp-markers-1/4" | "quantize-warp-markers-1/8" | "quantize-warp-markers-1/16" | "quantize-warp-markers-1/32" | "apply-warp-varispeed" | "clear-warp-markers" }
+  | { type: "set_audio_warp_marker_target"; clipId: string; markerId: string; targetBar: number }
+  | { type: "delete_audio_warp_marker"; clipId: string; markerId: string }
   | { type: "activate_audio_take"; clipId: string }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
@@ -177,6 +181,8 @@ export type PocketDawLiveCommand =
   | { type: "ripple_delete_clip_range"; clipId: string }
   | { type: "ripple_delete_timeline_selection" }
   | { type: "apply_audio_clip_action"; clipId: string; action: "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "quantize-warp-markers-1/4" | "quantize-warp-markers-1/8" | "quantize-warp-markers-1/16" | "quantize-warp-markers-1/32" | "apply-warp-varispeed" | "clear-warp-markers" }
+  | { type: "set_audio_warp_marker_target"; clipId: string; markerId: string; targetBar: number }
+  | { type: "delete_audio_warp_marker"; clipId: string; markerId: string }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
@@ -672,6 +678,10 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return rippleDeleteTimelineSelectionCommand(state);
     case "apply_audio_clip_action":
       return applySelectedAudioClipActionCommand(state, command.clipId, command.action);
+    case "set_audio_warp_marker_target":
+      return setAudioWarpMarkerTargetCommand(state, command.clipId, command.markerId, finiteCommandNumber(command.targetBar, "targetBar"));
+    case "delete_audio_warp_marker":
+      return deleteAudioWarpMarkerCommand(state, command.clipId, command.markerId);
     case "activate_audio_take":
       return activateAudioTakeCommand(state, command.clipId);
     case "activate_audio_take_lane":
@@ -911,9 +921,31 @@ function summarizeProject(project: PocketDawProject) {
       punchStartBar: clip.metadata?.punchStartBar,
       punchEndBar: clip.metadata?.punchEndBar,
       captureStartBar: clip.metadata?.captureStartBar,
-      audioWarpMarkerCount: Array.isArray(clip.metadata?.audioWarpMarkers) ? clip.metadata.audioWarpMarkers.length : undefined
+      audioWarpMarkerCount: Array.isArray(clip.metadata?.audioWarpMarkers) ? clip.metadata.audioWarpMarkers.length : undefined,
+      audioWarpMarkers: summarizeAudioWarpMarkers(clip.metadata?.audioWarpMarkers)
     }))
   };
+}
+
+function summarizeAudioWarpMarkers(value: unknown) {
+  if (!Array.isArray(value)) return undefined;
+  return value
+    .map((marker, index) => {
+      if (!marker || typeof marker !== "object" || Array.isArray(marker)) return null;
+      const data = marker as Record<string, unknown>;
+      const sourceSeconds = Number(data.sourceSeconds);
+      const targetBar = Number(data.targetBar);
+      const targetSeconds = Number(data.targetSeconds);
+      if (!Number.isFinite(sourceSeconds) || !Number.isFinite(targetBar) || !Number.isFinite(targetSeconds)) return null;
+      return {
+        id: typeof data.id === "string" ? data.id : `warp_${index + 1}`,
+        sourceSeconds,
+        targetBar,
+        targetSeconds
+      };
+    })
+    .filter((marker): marker is { id: string; sourceSeconds: number; targetBar: number; targetSeconds: number } => !!marker)
+    .slice(0, 8);
 }
 
 function validatePocketDawProject(project: PocketDawProject): { ok: boolean; errors: string[]; warnings: string[] } {
@@ -1000,6 +1032,8 @@ function commandSchema() {
           "ripple_delete_clip_range",
           "ripple_delete_timeline_selection",
           "apply_audio_clip_action",
+          "set_audio_warp_marker_target",
+          "delete_audio_warp_marker",
           "activate_audio_take",
           "activate_audio_take_lane",
           "set_audio_take_archived",
@@ -1046,6 +1080,7 @@ function commandSchema() {
       channelPair: arraySchema(numberSchema()),
       folderId: { oneOf: [stringSchema(), { type: "null" }] },
       clipId: stringSchema(),
+      markerId: stringSchema(),
       mediaPoolItemId: stringSchema(),
       sectionId: stringSchema(),
       laneId: stringSchema(),
@@ -1065,6 +1100,7 @@ function commandSchema() {
       pan: numberSchema(),
       offsetSeconds: numberSchema(),
       milliseconds: numberSchema(),
+      targetBar: numberSchema(),
       gate: numberSchema(),
       mute: booleanSchema(),
       archived: booleanSchema(),
@@ -1096,10 +1132,11 @@ function liveCommandSchema() {
     {
       type: {
         type: "string",
-        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
+        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       },
       trackId: stringSchema(),
       clipId: stringSchema(),
+      markerId: stringSchema(),
       mediaPoolItemId: stringSchema(),
       inputDeviceId: stringSchema(),
       deviceId: stringSchema(),
@@ -1116,6 +1153,7 @@ function liveCommandSchema() {
       monitorEnabled: booleanSchema(),
       archived: booleanSchema(),
       action: { type: "string", enum: ["normalize-gain", "reset-fades", "quick-fade", "crossfade-overlap", "create-crossfade-left", "invert-phase", "reverse", "analyze-transients", "create-warp-markers", "quantize-warp-markers", "quantize-warp-markers-1/4", "quantize-warp-markers-1/8", "quantize-warp-markers-1/16", "quantize-warp-markers-1/32", "apply-warp-varispeed", "clear-warp-markers"] },
+      targetBar: numberSchema(),
       bar: numberSchema(),
       startBar: numberSchema(),
       endBar: numberSchema(),

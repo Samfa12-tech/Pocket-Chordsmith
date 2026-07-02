@@ -3,7 +3,7 @@ import { sanitizePocketChordsmithProject } from "../compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../compatibility/pcsToDaw";
 import { migratePocketDawProject } from "../compatibility/migrations";
 import { cloneProject, createDefaultMetronomeSettings, parsePocketDawProjectFile } from "../daw/dawProject";
-import { activateAudioTake, activateAudioTakeLane, applyAudioClipAction, compGroupedAudioTakeRange, cropClipToRange, deleteClip, deleteClipRange, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
+import { activateAudioTake, activateAudioTakeLane, applyAudioClipAction, compGroupedAudioTakeRange, cropClipToRange, deleteAudioWarpMarker, deleteClip, deleteClipRange, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setAudioWarpMarkerTarget, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
 import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackRecordingChannelMode, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
 import { setTrackRecordingInputAssignment } from "../daw/recordingInputs";
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
@@ -347,6 +347,44 @@ export function applySelectedAudioClipActionCommand(state: AppState, clipId: str
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio clip before editing audio properties." };
   const result = applyAudioClipAction(state.undoStack.present, clipId, action);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.status
+    };
+  }
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function setAudioWarpMarkerTargetCommand(state: AppState, clipId: string, markerId: string, targetBar: number): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio clip before editing audio warp markers." };
+  const result = setAudioWarpMarkerTarget(state.undoStack.present, clipId, markerId, targetBar);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.status
+    };
+  }
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function deleteAudioWarpMarkerCommand(state: AppState, clipId: string, markerId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio clip before editing audio warp markers." };
+  const result = deleteAudioWarpMarker(state.undoStack.present, clipId, markerId);
   if (!result.changed) {
     return {
       ...state,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activateAudioTakeCommand, activateAudioTakeLaneCommand, addClipAutomationPointCommand, applySelectedAudioClipActionCommand, compAudioTakeFromPlayheadCommand, compAudioTakeRangeCommand, cropSelectedClipToTimelineSelectionCommand, deleteSelectedClipRangeCommand, ensureClipAutomationLaneCommand, recordClipAutomationPointCommand, rippleDeleteSelectedClipRangeCommand, rippleDeleteTimelineSelectionCommand, setAudioTakeArchivedCommand, setSelectedAudioClipPropertyCommand, setTimelineSelectionRangeCommand, setTimelineSelectionToLoopCommand, splitTimelineSelectionCommand } from "../src/app/commands";
+import { activateAudioTakeCommand, activateAudioTakeLaneCommand, addClipAutomationPointCommand, applySelectedAudioClipActionCommand, compAudioTakeFromPlayheadCommand, compAudioTakeRangeCommand, cropSelectedClipToTimelineSelectionCommand, deleteAudioWarpMarkerCommand, deleteSelectedClipRangeCommand, ensureClipAutomationLaneCommand, recordClipAutomationPointCommand, rippleDeleteSelectedClipRangeCommand, rippleDeleteTimelineSelectionCommand, setAudioTakeArchivedCommand, setAudioWarpMarkerTargetCommand, setSelectedAudioClipPropertyCommand, setTimelineSelectionRangeCommand, setTimelineSelectionToLoopCommand, splitTimelineSelectionCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { renderTimelineAudioRegions } from "../src/audio/audioRegions";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
@@ -846,6 +846,92 @@ describe("audio clip edit commands", () => {
     ]);
     expect(clip.metadata?.audioWarpQuantizeGrid).toBe("1/8");
     expect(quantized.status).toContain("to 1/8");
+  });
+
+  it("edits and deletes individual warp marker targets without changing source anchors", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    const imported = addImportedAudioMedia(state.undoStack.present, {
+      name: "Editable Warp.wav",
+      uri: "C:\\Audio\\Editable Warp.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    const project = {
+      ...placed.project,
+      timeline: {
+        ...placed.project.timeline,
+        clips: placed.project.timeline.clips.map((clip) => clip.id === placed.clipId ? {
+          ...clip,
+          metadata: {
+            ...(clip.metadata || {}),
+            sourceOffsetSeconds: 0.5,
+            playbackRate: 1.25,
+            audioWarpMarkers: [
+              { id: "warp_1", sourceSeconds: 1, targetBar: 2.25, targetSeconds: 2.5, source: "transient", locked: true },
+              { id: "warp_2", sourceSeconds: 3, targetBar: 3, targetSeconds: 4, source: "transient", locked: true }
+            ],
+            audioWarpMarkerCount: 2,
+            audioWarpReady: true,
+            audioWarpPlaybackMode: "global-varispeed",
+            audioWarpEngine: "global-varispeed",
+            audioWarpAppliedRate: 1.25,
+            audioWarpAppliedSourceOffsetSeconds: 0.5,
+            audioWarpAppliedFromMarkerCount: 2,
+            audioWarpPreviousPlaybackRate: 1,
+            audioWarpPreviousSourceOffsetSeconds: 0,
+            audioWarpQuantizeGrid: "1/8"
+          }
+        } : clip)
+      }
+    };
+    state.undoStack = createUndoStack(project);
+    state.selectedClipId = placed.clipId;
+    state.selectedTrackId = placed.trackId;
+
+    const moved = setAudioWarpMarkerTargetCommand(state, placed.clipId, "warp_2", 2.5);
+    const movedClip = moved.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+    const movedMarkers = movedClip.metadata?.audioWarpMarkers;
+
+    expect(movedMarkers).toEqual([
+      expect.objectContaining({ id: "warp_1", sourceSeconds: 1, targetBar: 2.25, targetSeconds: 2.5 }),
+      expect.objectContaining({ id: "warp_2", sourceSeconds: 3, targetBar: 2.5, targetSeconds: 3, edited: true })
+    ]);
+    expect(movedClip.metadata?.audioWarpMarkerCount).toBe(2);
+    expect(movedClip.metadata?.audioWarpReady).toBe(true);
+    expect(movedClip.metadata?.audioWarpPlaybackMode).toBe("metadata-only");
+    expect(movedClip.metadata?.audioWarpEngine).toBe("pending-time-stretch-engine");
+    expect(movedClip.metadata?.audioWarpAppliedRate).toBeUndefined();
+    expect(movedClip.metadata?.audioWarpAppliedSourceOffsetSeconds).toBeUndefined();
+    expect(movedClip.metadata?.audioWarpPreviousPlaybackRate).toBeUndefined();
+    expect(movedClip.metadata?.audioWarpQuantizeGrid).toBeUndefined();
+    expect(movedClip.metadata?.playbackRate).toBe(1);
+    expect(movedClip.metadata?.sourceOffsetSeconds).toBe(0);
+    expect(moved.status).toContain("Moved warp marker warp_2");
+    expect(moved.undoStack.past).toHaveLength(1);
+
+    const deleted = deleteAudioWarpMarkerCommand(moved, placed.clipId, "warp_1");
+    const deletedClip = deleted.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+    expect(deletedClip.metadata?.audioWarpMarkers).toEqual([
+      expect.objectContaining({ id: "warp_2", sourceSeconds: 3, targetBar: 2.5, targetSeconds: 3 })
+    ]);
+    expect(deletedClip.metadata?.audioWarpMarkerCount).toBe(1);
+    expect(deletedClip.metadata?.audioWarpReady).toBe(true);
+    expect(deletedClip.metadata?.audioWarpEngine).toBe("pending-time-stretch-engine");
+    expect(deleted.status).toContain("Deleted warp marker warp_1");
+    expect(deleted.undoStack.past).toHaveLength(2);
+
+    const missing = deleteAudioWarpMarkerCommand(deleted, placed.clipId, "warp_missing");
+    expect(missing.undoStack.past).toHaveLength(2);
+    expect(missing.status).toContain("was not found");
+
+    const invalid = setAudioWarpMarkerTargetCommand(deleted, placed.clipId, "warp_2", Number.NaN);
+    expect(invalid.undoStack.past).toHaveLength(2);
+    expect(invalid.status).toContain("must be a finite number");
   });
 
   it("applies source-safe warp marker timing as global varispeed playback", () => {

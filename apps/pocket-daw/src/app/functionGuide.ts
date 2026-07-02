@@ -1626,6 +1626,22 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "Audio Clip Editing",
+    control: "Edit Warp Marker Target",
+    selector: "data-audio-warp-marker-target",
+    does: "Moves one warp marker's target bar while keeping its sourceSeconds anchor unchanged.",
+    useWhen: "Use when transient detection found the right source hit but the musical destination needs human or AI correction.",
+    aiNote: "Also available as set_audio_warp_marker_target in file-first MCP and live MCP. Editing clears stale derived warp-rate metadata and returns the clip to metadata-only warp mode."
+  },
+  {
+    surface: "Audio Clip Editing",
+    control: "Delete Warp Marker",
+    selector: "data-audio-warp-marker-delete",
+    does: "Deletes one metadata warp marker without deleting or rewriting source audio.",
+    useWhen: "Use when one detected transient is musically wrong but the rest of the warp marker set is useful.",
+    aiNote: "Also available as delete_audio_warp_marker in file-first MCP and live MCP. Deleting markers clears stale derived warp-rate metadata."
+  },
+  {
+    surface: "Audio Clip Editing",
     control: "Apply Warp Rate",
     selector: "data-audio-clip-action:apply-warp-varispeed",
     does: "Applies a source-safe global varispeed playback rate from the first and last warp markers, and aligns the first marker by updating clip source-offset metadata where possible.",
