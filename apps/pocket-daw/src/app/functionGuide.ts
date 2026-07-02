@@ -2315,6 +2315,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "AI / MCP Bridge",
+    control: "Live MCP Audio Clip Actions",
+    selector: "pocket_daw_live_apply_commands:apply_audio_clip_action",
+    does: "Lets the tokened live bridge apply selected audio-clip actions such as Normalize, Analyze Transients, Create/Quantize/Clear Warp Markers, Invert Phase, Reverse, Short Fades, Reset Fades and crossfade helpers through the same undoable command path as the Audio Editor buttons.",
+    useWhen: "Use during MCP-observed audio editing smoke when a clip needs source-safe analysis or metadata edits without visual UI driving.",
+    aiNote: "Warp and quantize actions are metadata-only preparation for future time-stretch. They do not claim elastic audio, pitch correction or changed source samples."
+  },
+  {
+    surface: "AI / MCP Bridge",
     control: "Live MCP Recording Input Channel",
     selector: "pocket_daw_live_apply_commands:set_recording_input_channel",
     does: "Lets the tokened live bridge set the running app's selected live-track Mono Ch N, Stereo Ch N-N+1 or future split-mono recording input assignment through the same undoable command path as the mixer UI.",

@@ -243,6 +243,7 @@ import { buildGroupedRecordingCapturePlan, buildNativeRecordingAlphaInputPreflig
 import { trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToDisplayPosition, snapProjectBarValue } from "../daw/timeline";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeRecordingClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../daw/audioClips";
+import type { AudioClipAction } from "../daw/clips";
 import { createCollectMediaPlan, findMediaPoolItem, linkFreezeRenderCacheItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked, mediaPoolReloadCandidates, mediaPoolStatus, updateMediaPoolItemMetadata, verifyMediaPortability } from "../daw/mediaPool";
 import {
   AUDIO_MEDIA_ACCEPT,
@@ -294,6 +295,7 @@ type AiBridgeLiveCommand =
   | { type: "delete_clip_range"; clipId: string }
   | { type: "ripple_delete_clip_range"; clipId: string }
   | { type: "ripple_delete_timeline_selection" }
+  | { type: "apply_audio_clip_action"; clipId: string; action: AudioClipAction }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
@@ -615,7 +617,7 @@ export class App {
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
         control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics"],
-        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "place_punch_recording_clip_from_range"]
+        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "place_punch_recording_clip_from_range"]
       }
     };
   }
@@ -799,6 +801,13 @@ export class App {
     }
     if (command.type === "ripple_delete_timeline_selection") {
       return rippleDeleteTimelineSelectionCommand(this.state);
+    }
+    if (command.type === "apply_audio_clip_action") {
+      return applySelectedAudioClipActionCommand(
+        this.state,
+        stringInput(command.clipId, "clipId"),
+        audioClipActionInput(command.action)
+      );
     }
     if (command.type === "activate_audio_take_lane") {
       return activateAudioTakeLaneCommand(this.state, stringInput(command.clipId, "clipId"));
@@ -5279,6 +5288,25 @@ function stringInput(value: unknown, label: string): string {
   return value;
 }
 
+function audioClipActionInput(value: unknown): AudioClipAction {
+  if (
+    value === "normalize-gain" ||
+    value === "reset-fades" ||
+    value === "quick-fade" ||
+    value === "crossfade-overlap" ||
+    value === "create-crossfade-left" ||
+    value === "invert-phase" ||
+    value === "reverse" ||
+    value === "analyze-transients" ||
+    value === "create-warp-markers" ||
+    value === "quantize-warp-markers" ||
+    value === "clear-warp-markers"
+  ) {
+    return value;
+  }
+  throw new Error(`Unsupported audio clip action: ${String(value || "[missing action]")}`);
+}
+
 function numberInput(value: unknown, label: string): number {
   const number = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(number)) throw new Error(`${label} must be a finite number.`);
@@ -5557,6 +5585,7 @@ function liveCommandAudioSyncMode(command: AiBridgeLiveCommand): AudioProjectSyn
     command.type === "delete_clip_range" ||
     command.type === "ripple_delete_clip_range" ||
     command.type === "ripple_delete_timeline_selection" ||
+    command.type === "apply_audio_clip_action" ||
     command.type === "place_punch_recording_clip_from_range"
   ) {
     return "timeline-structure";

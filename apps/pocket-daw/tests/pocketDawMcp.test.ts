@@ -79,6 +79,9 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("delete_clip_range");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("ripple_delete_clip_range");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("ripple_delete_timeline_selection");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("apply_audio_clip_action");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("quantize-warp-markers");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("clear-warp-markers");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("place_punch_recording_clip_from_range");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("activate_audio_take_lane");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_audio_take_archived");

@@ -362,6 +362,100 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(allRipple.undoStack.present.timeline.clips.find((clip) => clip.id === secondEarly.clipId)?.metadata?.sourceOffsetSeconds).toBe(4);
   });
 
+  it("applies audio transient and warp marker actions through the live bridge executor", () => {
+    let state = createInitialState();
+    const project = createEmptyPocketDawProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.timeline.clips = [];
+    const imported = addImportedAudioMedia(project, {
+      name: "Live warp loop.wav",
+      durationSeconds: 6,
+      sampleRate: 48000,
+      channels: 2,
+      metadata: { waveformPeaks: [0.05, 0.72, 0.2, 0.15, 0.86, 0.3] }
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    state = {
+      ...state,
+      selectedClipId: placed.clipId,
+      selectedTrackId: placed.trackId,
+      undoStack: createUndoStack(placed.project)
+    };
+    const app = appHarness(state);
+
+    const analyzed = app.applyAiBridgeLiveCommand({
+      type: "apply_audio_clip_action",
+      clipId: placed.clipId,
+      action: "analyze-transients"
+    });
+    app.state = analyzed;
+    const warped = app.applyAiBridgeLiveCommand({
+      type: "apply_audio_clip_action",
+      clipId: placed.clipId,
+      action: "create-warp-markers"
+    });
+    app.state = warped;
+    const quantized = app.applyAiBridgeLiveCommand({
+      type: "apply_audio_clip_action",
+      clipId: placed.clipId,
+      action: "quantize-warp-markers"
+    });
+    const media = quantized.undoStack.present.mediaPool.find((item) => item.id === imported.item.id)!;
+    const clip = quantized.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+
+    expect(analyzed.status).toContain("Detected 2 transient markers");
+    expect(warped.status).toContain("Created 2 source-safe warp markers");
+    expect(quantized.status).toContain("Quantized 2 warp marker targets");
+    expect(media.metadata?.audioTransientMarkersSeconds).toEqual([1.5, 4.5]);
+    expect(clip.metadata?.audioWarpReady).toBe(true);
+    expect(clip.metadata?.audioWarpQuantizeGrid).toBe("1/16");
+    expect(clip.metadata?.audioWarpPlaybackMode).toBe("metadata-only");
+    expect(clip.metadata?.audioWarpMarkers).toEqual([
+      expect.objectContaining({ id: "warp_1", sourceSeconds: 1.5, targetBar: 2.75, targetSeconds: 3.5 }),
+      expect.objectContaining({ id: "warp_2", sourceSeconds: 4.5, targetBar: 4.25, targetSeconds: 6.5 })
+    ]);
+    expect(quantized.selectedClipId).toBe(placed.clipId);
+    expect(quantized.selectedTrackId).toBe(placed.trackId);
+  });
+
+  it("applies reversible audio clip actions through the live bridge executor", () => {
+    let state = createInitialState();
+    const project = createEmptyPocketDawProject();
+    project.timeline.clips = [];
+    const imported = addImportedAudioMedia(project, {
+      name: "Live reverse.wav",
+      durationSeconds: 4,
+      sampleRate: 48000,
+      channels: 1
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    state = {
+      ...state,
+      selectedClipId: placed.clipId,
+      selectedTrackId: placed.trackId,
+      undoStack: createUndoStack(placed.project)
+    };
+    const app = appHarness(state);
+
+    const reversed = app.applyAiBridgeLiveCommand({
+      type: "apply_audio_clip_action",
+      clipId: placed.clipId,
+      action: "reverse"
+    });
+    app.state = reversed;
+    const restored = app.applyAiBridgeLiveCommand({
+      type: "apply_audio_clip_action",
+      clipId: placed.clipId,
+      action: "reverse"
+    });
+
+    expect(reversed.status).toBe("Reversed Live reverse.wav.");
+    expect(reversed.undoStack.present.timeline.clips.find((clip) => clip.id === placed.clipId)?.metadata?.reversed).toBe(true);
+    expect(restored.status).toBe("Restored forward playback for Live reverse.wav.");
+    expect(restored.undoStack.present.timeline.clips.find((clip) => clip.id === placed.clipId)?.metadata?.reversed).toBe(false);
+  });
+
   it("places punch takes from the active range through the live bridge executor", () => {
     let state = addTrackCommand(createInitialState(), "live-vocals");
     const project = currentProject(state);
@@ -642,6 +736,7 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.capabilities.liveCommands).toContain("delete_clip_range");
     expect(status.capabilities.liveCommands).toContain("ripple_delete_clip_range");
     expect(status.capabilities.liveCommands).toContain("ripple_delete_timeline_selection");
+    expect(status.capabilities.liveCommands).toContain("apply_audio_clip_action");
     expect(status.capabilities.liveCommands).toContain("place_punch_recording_clip_from_range");
     expect(status.capabilities.liveCommands).toContain("activate_audio_take_lane");
     expect(status.capabilities.liveCommands).toContain("set_audio_take_archived");
