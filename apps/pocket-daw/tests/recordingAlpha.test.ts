@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildMetronomeClicks, buildTransportMetronomeSchedule, countInSeconds } from "../src/audio/metronome";
+import { placePunchRecordingClipCommand } from "../src/app/commands";
+import { createInitialState } from "../src/app/state";
 import { migratePocketDawProject } from "../src/compatibility/migrations";
-import { addImportedAudioMedia, placeAudioClipOnTrack, placeRecordingClipOnTrack } from "../src/daw/audioClips";
-import { buildPocketDawProjectFile } from "../src/daw/dawProject";
+import { addImportedAudioMedia, placeAudioClipOnTrack, placePunchRecordingClipOnTrack, placeRecordingClipOnTrack } from "../src/daw/audioClips";
+import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
 import { addTrackToProject } from "../src/daw/tracks";
 import { buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError, setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
 import { createAutomationLane } from "../src/daw/automation";
@@ -20,6 +22,7 @@ import {
 } from "../src/app/recordingOrchestration";
 import { createRecordingUiState, recordingSessionMatches } from "../src/app/state";
 import { nativeRecordingStatus } from "../src/native/recordingBridge";
+import { createUndoStack } from "../src/daw/undo";
 
 describe("recording alpha foundations", () => {
   it("migrates metronome and monitor defaults without changing old save compatibility", () => {
@@ -295,6 +298,130 @@ describe("recording alpha foundations", () => {
       { name: "old-take.wav", startBar: 9, barLength: 2 }
     ]);
     expect(audioClips[2].metadata?.sourceOffsetSeconds).toBeCloseTo(secondsPerBar * 4, 5);
+  });
+
+  it("places a punch recording window from a longer raw take with durable take metadata", () => {
+    const withTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    const secondsPerBar = withTrack.project.project.timeSig * (60 / withTrack.project.project.bpm);
+    const bedMedia = addImportedAudioMedia(withTrack.project, {
+      name: "punch-bed.wav",
+      uri: "project-media/recordings/punch-bed.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 6,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { mediaRefKind: "project", projectRelativePath: "project-media/recordings/punch-bed.wav" }
+    });
+    const bedPlaced = placeAudioClipOnTrack(bedMedia.project, bedMedia.item.id, withTrack.trackId, 5);
+    const oldClip = bedPlaced.project.timeline.clips.find((clip) => clip.id === bedPlaced.clipId)!;
+    oldClip.barLength = 6;
+    oldClip.metadata = { ...(oldClip.metadata || {}), sourceOffsetSeconds: 0 };
+    const rawPunchMedia = addImportedAudioMedia(bedPlaced.project, {
+      name: "raw-punch-capture.wav",
+      uri: "project-media/recordings/raw-punch-capture.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: {
+        mediaRefKind: "project",
+        projectRelativePath: "project-media/recordings/raw-punch-capture.wav",
+        importMode: "native-recording",
+        recordingTakeId: "punch-take-1",
+        recordingTakeGroupId: "punch-group-a",
+        takeLaneId: "punch-group-a-lane-1",
+        takeLaneIndex: 1,
+        nativeRecordingSessionId: 42,
+        latencyCompensationAppliedSeconds: 0,
+        punchStartBar: 7,
+        punchEndBar: 9
+      }
+    });
+
+    const punched = placePunchRecordingClipOnTrack(rawPunchMedia.project, rawPunchMedia.item.id, withTrack.trackId, {
+      captureStartBar: 6,
+      punchStartBar: 7,
+      punchEndBar: 9
+    });
+    const audioClips = punched.project.timeline.clips
+      .filter((clip) => clip.trackId === withTrack.trackId && clip.type === "audio")
+      .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+    const punchClip = audioClips.find((clip) => clip.id === punched.clipId)!;
+    const rawMedia = punched.project.mediaPool.find((item) => item.id === rawPunchMedia.item.id)!;
+    const reopened = migratePocketDawProject(parsePocketDawProjectFile(buildPocketDawProjectFile(punched.project)));
+    const reopenedPunch = reopened.timeline.clips.find((clip) => clip.id === punched.clipId)!;
+    const roundedPunchOffset = Math.round(secondsPerBar * 1000) / 1000;
+    const roundedPunchDuration = Math.round(secondsPerBar * 2 * 1000) / 1000;
+
+    expect(audioClips.map((clip) => ({ name: clip.name, startBar: clip.startBar, barLength: clip.barLength }))).toEqual([
+      { name: "punch-bed.wav", startBar: 5, barLength: 2 },
+      { name: "raw-punch-capture.wav", startBar: 7, barLength: 2 },
+      { name: "punch-bed.wav", startBar: 9, barLength: 2 }
+    ]);
+    expect(punchClip.metadata).toMatchObject({
+      recordingTakeId: "punch-take-1",
+      recordingTakeGroupId: "punch-group-a",
+      takeLaneId: "punch-group-a-lane-1",
+      takeLaneIndex: 1,
+      takeStatus: "active",
+      sourceOffsetSeconds: roundedPunchOffset,
+      sourceDurationSeconds: roundedPunchDuration,
+      punchStartBar: 7,
+      punchEndBar: 9,
+      captureStartBar: 6,
+      latencyCompensationAppliedSeconds: 0
+    });
+    expect(rawMedia.durationSeconds).toBe(secondsPerBar * 4);
+    expect(rawMedia.metadata?.punchStartBar).toBe(7);
+    expect(rawMedia.metadata?.punchEndBar).toBe(9);
+    expect(reopenedPunch.metadata).toMatchObject({
+      recordingTakeId: "punch-take-1",
+      recordingTakeGroupId: "punch-group-a",
+      takeLaneId: "punch-group-a-lane-1",
+      sourceOffsetSeconds: roundedPunchOffset,
+      sourceDurationSeconds: roundedPunchDuration,
+      punchStartBar: 7,
+      punchEndBar: 9
+    });
+  });
+
+  it("places punch recordings through the undoable command path", () => {
+    const state = createInitialState();
+    const withTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    const secondsPerBar = withTrack.project.project.timeSig * (60 / withTrack.project.project.bpm);
+    const rawPunchMedia = addImportedAudioMedia(withTrack.project, {
+      name: "command-punch.wav",
+      uri: "project-media/recordings/command-punch.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: {
+        mediaRefKind: "project",
+        recordingTakeId: "command-punch-take-1",
+        recordingTakeGroupId: "command-punch-group",
+        takeLaneId: "command-punch-group-lane-1"
+      }
+    });
+    state.undoStack = createUndoStack(rawPunchMedia.project);
+
+    const punched = placePunchRecordingClipCommand(state, rawPunchMedia.item.id, withTrack.trackId, 6, 7, 9);
+    const punchClip = punched.undoStack.present.timeline.clips.find((clip) => clip.id === punched.selectedClipId)!;
+
+    expect(punchClip).toMatchObject({ trackId: withTrack.trackId, startBar: 7, barLength: 2 });
+    expect(punchClip.metadata).toMatchObject({
+      recordingTakeId: "command-punch-take-1",
+      recordingTakeGroupId: "command-punch-group",
+      takeLaneId: "command-punch-group-lane-1",
+      sourceOffsetSeconds: Math.round(secondsPerBar * 1000) / 1000,
+      sourceDurationSeconds: Math.round(secondsPerBar * 2 * 1000) / 1000,
+      punchStartBar: 7,
+      punchEndBar: 9,
+      captureStartBar: 6
+    });
+    expect(punched.selectedTrackId).toBe(withTrack.trackId);
+    expect(punched.undoStack.past).toHaveLength(1);
+    expect(punched.status).toContain("Placed punch take command-punch.wav from bar 7 to 9");
   });
 
   it("splits fractional recording overwrites and preserves the right-hand source offset", () => {

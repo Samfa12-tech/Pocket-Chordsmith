@@ -55,6 +55,7 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_drum_lane_gate");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("add_game_state_marker");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("comp_audio_take_from_bar");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("place_punch_recording_clip");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_timeline_selection");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_track_folder");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("toggle_folder_expanded");
@@ -307,6 +308,47 @@ describe("Pocket DAW MCP tools", () => {
     expect(activeRight).toMatchObject({ startBar: 4, muted: false, metadata: { sourceOffsetSeconds: 4 } });
   });
 
+  it("places punch recording windows through the file-first command path", async () => {
+    const withTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    const secondsPerBar = withTrack.project.project.timeSig * (60 / withTrack.project.project.bpm);
+    const imported = addImportedAudioMedia(withTrack.project, {
+      name: "MCP punch.wav",
+      uri: "project-media/recordings/mcp-punch.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: {
+        mediaRefKind: "project",
+        recordingTakeId: "mcp-punch-take-1",
+        recordingTakeGroupId: "mcp-punch-group",
+        takeLaneId: "mcp-punch-group-lane-1"
+      }
+    });
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(imported.project),
+      commands: [
+        { type: "place_punch_recording_clip", mediaPoolItemId: imported.item.id, trackId: withTrack.trackId, captureStartBar: 6, punchStartBar: 7, punchEndBar: 9 }
+      ]
+    }));
+    const punchClip = result.project.timeline.clips.find((clip: { name: string }) => clip.name === "MCP punch.wav");
+    const summaryClip = result.summary.clips.find((clip: { id: string }) => clip.id === punchClip.id);
+
+    expect(result.statuses[0]).toContain("Placed punch take MCP punch.wav from bar 7 to 9");
+    expect(punchClip).toMatchObject({ trackId: withTrack.trackId, startBar: 7, barLength: 2 });
+    expect(punchClip.metadata).toMatchObject({
+      recordingTakeId: "mcp-punch-take-1",
+      recordingTakeGroupId: "mcp-punch-group",
+      sourceOffsetSeconds: Math.round(secondsPerBar * 1000) / 1000,
+      sourceDurationSeconds: Math.round(secondsPerBar * 2 * 1000) / 1000,
+      punchStartBar: 7,
+      punchEndBar: 9,
+      captureStartBar: 6
+    });
+    expect(summaryClip).toMatchObject({ punchStartBar: 7, punchEndBar: 9, captureStartBar: 6 });
+  });
+
   it("applies audio transient and warp-marker actions through the file-first command path", async () => {
     const imported = addImportedAudioMedia(createDemoProject(), {
       name: "MCP Warp.wav",
@@ -323,7 +365,8 @@ describe("Pocket DAW MCP tools", () => {
       raw: buildPocketDawProjectFile(placed.project),
       commands: [
         { type: "apply_audio_clip_action", clipId: placed.clipId, action: "analyze-transients" },
-        { type: "apply_audio_clip_action", clipId: placed.clipId, action: "create-warp-markers" }
+        { type: "apply_audio_clip_action", clipId: placed.clipId, action: "create-warp-markers" },
+        { type: "apply_audio_clip_action", clipId: placed.clipId, action: "quantize-warp-markers" }
       ]
     }));
     const clip = result.project.timeline.clips.find((item: { id: string }) => item.id === placed.clipId);
@@ -331,7 +374,9 @@ describe("Pocket DAW MCP tools", () => {
 
     expect(result.statuses[0]).toContain("Detected 2 transient markers");
     expect(result.statuses[1]).toContain("Created 2 source-safe warp markers");
+    expect(result.statuses[2]).toContain("Quantized 2 warp marker targets");
     expect(clip.metadata.audioWarpMarkerCount).toBe(2);
+    expect(clip.metadata.audioWarpQuantizeGrid).toBe("1/16");
     expect(clip.metadata.audioWarpPlaybackMode).toBe("metadata-only");
     expect(summaryClip.audioWarpMarkerCount).toBe(2);
   });

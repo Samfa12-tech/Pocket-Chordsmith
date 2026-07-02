@@ -6,7 +6,7 @@ import { detectAudioTransientsFromPeaks } from "./audioClips";
 export type ClipTransformField = "transpose" | "gain";
 export type GeneratedStemRole = "drums" | "bass" | "chords" | "melody" | "guitar";
 export type AudioClipPropertyField = "gain" | "sourceOffsetSeconds" | "durationSeconds" | "fadeInSeconds" | "fadeOutSeconds" | "playbackRate" | "pitchSemitones";
-export type AudioClipAction = "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "clear-warp-markers";
+export type AudioClipAction = "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "clear-warp-markers";
 export type AudioTakeStatus = "active" | "muted-take" | "archived-take";
 
 export interface AudioClipActionResult {
@@ -246,6 +246,37 @@ export function applyAudioClipAction(project: PocketDawProject, clipId: string, 
       audioWarpPlaybackMode: "metadata-only"
     };
     return { project: next, changed: true, status: `Cleared ${markerCount} warp marker${markerCount === 1 ? "" : "s"} for ${clip.name}.` };
+  }
+
+  if (action === "quantize-warp-markers") {
+    const markers = quantizableAudioWarpMarkers(clip.metadata?.audioWarpMarkers);
+    if (!markers.length) return { project, changed: false, status: `Create warp markers for ${clip.name} before quantizing audio timing.` };
+    const stepBars = audioWarpQuantizeStepBars(next);
+    const quantized = markers.map((marker) => {
+      const targetBar = roundBar(Math.max(1, Math.round(marker.targetBar / stepBars) * stepBars));
+      return {
+        ...marker,
+        targetBar,
+        targetSeconds: roundSeconds(timelineSecondsAtBar(next, targetBar))
+      };
+    });
+    const updatedAt = new Date().toISOString();
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      audioWarpMarkers: quantized,
+      audioWarpMarkerCount: quantized.length,
+      audioWarpReady: true,
+      audioWarpPlaybackMode: "metadata-only",
+      audioWarpEngine: "pending-time-stretch-engine",
+      audioWarpQuantizeGrid: "1/16",
+      audioWarpQuantizedAt: updatedAt,
+      audioWarpUpdatedAt: updatedAt
+    };
+    return {
+      project: next,
+      changed: true,
+      status: `Quantized ${quantized.length} warp marker target${quantized.length === 1 ? "" : "s"} for ${clip.name} to 1/16; playback stretching is not enabled yet.`
+    };
   }
 
   if (action === "analyze-transients") {
@@ -1096,6 +1127,34 @@ function audioTransientMarkers(value: unknown, durationSeconds: number): number[
     .sort((a, b) => a - b)
     .filter((marker, index, markers) => index === 0 || Math.abs(marker - markers[index - 1]) >= 0.005)
     .map(roundSeconds);
+}
+
+function quantizableAudioWarpMarkers(value: unknown): Array<{ id: string; sourceSeconds: number; targetBar: number; targetSeconds: number; source: string; locked: boolean }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((marker, index) => {
+      if (!marker || typeof marker !== "object" || Array.isArray(marker)) return null;
+      const data = marker as Record<string, unknown>;
+      const sourceSeconds = Number(data.sourceSeconds);
+      const targetBar = Number(data.targetBar);
+      if (!Number.isFinite(sourceSeconds) || sourceSeconds < 0 || !Number.isFinite(targetBar) || targetBar < 1) return null;
+      const targetSeconds = Number(data.targetSeconds);
+      return {
+        id: typeof data.id === "string" ? data.id : `warp_${index + 1}`,
+        sourceSeconds: roundSeconds(sourceSeconds),
+        targetBar: roundBar(targetBar),
+        targetSeconds: Number.isFinite(targetSeconds) ? roundSeconds(targetSeconds) : 0,
+        source: typeof data.source === "string" ? data.source : "transient",
+        locked: data.locked !== false
+      };
+    })
+    .filter((marker): marker is { id: string; sourceSeconds: number; targetBar: number; targetSeconds: number; source: string; locked: boolean } => !!marker)
+    .slice(0, 128);
+}
+
+function audioWarpQuantizeStepBars(project: PocketDawProject): number {
+  const numerator = Math.max(1, Math.round(Number(project.project.timeSig) || 4));
+  return 1 / (numerator * 4);
 }
 
 function retargetAudioClipWarpMarkers(project: PocketDawProject, clip: Clip): void {

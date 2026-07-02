@@ -31,6 +31,7 @@ import {
   importTextToProject,
   loadPocketDawRaw,
   moveClipToBarCommand,
+  placePunchRecordingClipCommand,
   rippleDeleteSelectedClipRangeCommand,
   rippleDeleteTimelineSelectionCommand,
   ensureFxAutomationLaneCommand,
@@ -102,10 +103,11 @@ export type PocketDawMcpCommand =
   | { type: "delete_clip_range"; clipId: string }
   | { type: "ripple_delete_clip_range"; clipId: string }
   | { type: "ripple_delete_timeline_selection" }
-  | { type: "apply_audio_clip_action"; clipId: string; action: "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "clear-warp-markers" }
+  | { type: "apply_audio_clip_action"; clipId: string; action: "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "clear-warp-markers" }
   | { type: "activate_audio_take"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
+  | { type: "place_punch_recording_clip"; mediaPoolItemId: string; trackId: string; captureStartBar: number; punchStartBar: number; punchEndBar: number }
   | { type: "add_marker"; bar: number }
   | { type: "add_game_state_marker"; bar: number; gameState: GameStateMarkerId }
   | { type: "set_section_bars"; sectionId: string; bars: number }
@@ -635,6 +637,8 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return setAudioTakeArchivedCommand(state, command.clipId, command.archived);
     case "comp_audio_take_from_bar":
       return compAudioTakeFromPlayheadCommand({ ...state, playheadBar: command.bar }, command.clipId);
+    case "place_punch_recording_clip":
+      return placePunchRecordingClipCommand(state, command.mediaPoolItemId, command.trackId, command.captureStartBar, command.punchStartBar, command.punchEndBar);
     case "add_marker":
       return addMarkerAtPlayheadCommand({ ...state, playheadBar: command.bar });
     case "add_game_state_marker":
@@ -831,6 +835,9 @@ function summarizeProject(project: PocketDawProject) {
       takeGroupId: typeof clip.metadata?.recordingTakeGroupId === "string" ? clip.metadata.recordingTakeGroupId : clip.metadata?.takeGroupId,
       takeStatus: clip.metadata?.takeStatus,
       takeLaneId: clip.metadata?.takeLaneId,
+      punchStartBar: clip.metadata?.punchStartBar,
+      punchEndBar: clip.metadata?.punchEndBar,
+      captureStartBar: clip.metadata?.captureStartBar,
       audioWarpMarkerCount: Array.isArray(clip.metadata?.audioWarpMarkers) ? clip.metadata.audioWarpMarkers.length : undefined
     }))
   };
@@ -944,6 +951,7 @@ function commandSchema() {
           "activate_audio_take",
           "set_audio_take_archived",
           "comp_audio_take_from_bar",
+          "place_punch_recording_clip",
           "add_marker",
           "add_game_state_marker",
           "set_section_bars",
@@ -983,6 +991,7 @@ function commandSchema() {
       channelPair: arraySchema(numberSchema()),
       folderId: { oneOf: [stringSchema(), { type: "null" }] },
       clipId: stringSchema(),
+      mediaPoolItemId: stringSchema(),
       sectionId: stringSchema(),
       laneId: stringSchema(),
       pointId: stringSchema(),
@@ -992,7 +1001,7 @@ function commandSchema() {
       gameState: { type: "string", enum: [...GAME_STATE_MARKERS] },
       action: {
         type: "string",
-        enum: ["normalize-gain", "reset-fades", "quick-fade", "crossfade-overlap", "create-crossfade-left", "invert-phase", "reverse", "analyze-transients", "create-warp-markers", "clear-warp-markers"]
+        enum: ["normalize-gain", "reset-fades", "quick-fade", "crossfade-overlap", "create-crossfade-left", "invert-phase", "reverse", "analyze-transients", "create-warp-markers", "quantize-warp-markers", "clear-warp-markers"]
       },
       parameter: stringSchema(),
       field: { type: "string", enum: ["tempo"] },
@@ -1004,6 +1013,9 @@ function commandSchema() {
       archived: booleanSchema(),
       startBar: numberSchema(),
       endBar: numberSchema(),
+      captureStartBar: numberSchema(),
+      punchStartBar: numberSchema(),
+      punchEndBar: numberSchema(),
       bar: numberSchema(),
       bars: numberSchema(),
       barIndex: numberSchema(),

@@ -609,6 +609,63 @@ describe("audio clip edit commands", () => {
     expect(cleared.status).toContain("Cleared 2 warp markers");
   });
 
+  it("quantizes source-safe warp marker targets without changing source audio anchors", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    const imported = addImportedAudioMedia(state.undoStack.present, {
+      name: "Loose Drums.wav",
+      uri: "C:\\Audio\\Loose Drums.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 6,
+      sampleRate: 48000,
+      channels: 2
+    });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 2);
+    const project = {
+      ...placed.project,
+      timeline: {
+        ...placed.project.timeline,
+        clips: placed.project.timeline.clips.map((clip) => clip.id === placed.clipId ? {
+          ...clip,
+          metadata: {
+            ...(clip.metadata || {}),
+            audioWarpMarkers: [
+              { id: "warp_1", sourceSeconds: 0.37, targetBar: 2.18, targetSeconds: 2.36, source: "transient", locked: true },
+              { id: "warp_2", sourceSeconds: 1.12, targetBar: 2.59, targetSeconds: 3.18, source: "transient", locked: true },
+              { id: "warp_3", sourceSeconds: 2.01, targetBar: 3.03, targetSeconds: 4.06, source: "transient", locked: true }
+            ],
+            audioWarpMarkerCount: 3,
+            audioWarpReady: true,
+            audioWarpPlaybackMode: "metadata-only"
+          }
+        } : clip)
+      }
+    };
+    state.undoStack = createUndoStack(project);
+    state.selectedClipId = placed.clipId;
+    state.selectedTrackId = placed.trackId;
+
+    const quantized = applySelectedAudioClipActionCommand(state, placed.clipId, "quantize-warp-markers");
+    const clip = quantized.undoStack.present.timeline.clips.find((item) => item.id === placed.clipId)!;
+
+    expect(clip.metadata?.audioWarpMarkers).toEqual([
+      expect.objectContaining({ id: "warp_1", sourceSeconds: 0.37, targetBar: 2.188, targetSeconds: 2.376 }),
+      expect.objectContaining({ id: "warp_2", sourceSeconds: 1.12, targetBar: 2.563, targetSeconds: 3.126 }),
+      expect.objectContaining({ id: "warp_3", sourceSeconds: 2.01, targetBar: 3, targetSeconds: 4 })
+    ]);
+    expect(clip.metadata?.audioWarpMarkerCount).toBe(3);
+    expect(clip.metadata?.audioWarpReady).toBe(true);
+    expect(clip.metadata?.audioWarpQuantizeGrid).toBe("1/16");
+    expect(clip.metadata?.audioWarpPlaybackMode).toBe("metadata-only");
+    expect(clip.metadata?.audioWarpEngine).toBe("pending-time-stretch-engine");
+    expect(quantized.undoStack.past).toHaveLength(1);
+    expect(quantized.selectedClipId).toBe(placed.clipId);
+    expect(quantized.selectedTrackId).toBe(placed.trackId);
+    expect(quantized.status).toContain("Quantized 3 warp marker targets");
+    expect(quantized.status).toContain("playback stretching is not enabled yet");
+  });
+
   it("keeps warp marker creation unavailable until transients are analyzed", () => {
     const state = createInitialState();
     const imported = addImportedAudioMedia(state.undoStack.present, {

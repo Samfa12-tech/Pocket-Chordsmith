@@ -1592,6 +1592,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "Audio Clip Editing",
+    control: "Quantize Warp Markers",
+    selector: "data-audio-clip-action:quantize-warp-markers",
+    does: "Snaps existing warp marker target positions to the project 1/16 grid as source-safe metadata.",
+    useWhen: "Use after creating warp markers to prepare live-instrument timing correction.",
+    aiNote: "This does not time-stretch playback yet; sourceSeconds anchors stay preserved for the future stretch engine."
+  },
+  {
+    surface: "Audio Clip Editing",
     control: "Clear Warp",
     selector: "data-audio-clip-action:clear-warp-markers",
     does: "Removes metadata warp markers from an audio clip.",
@@ -2264,6 +2272,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     does: "Lets file-first MCP store the same explicit live-track Mono Ch N or Stereo Ch N-N+1 recording input assignment exposed in the mixer UI.",
     useWhen: "Use before recording smoke or when an AI counterpart needs to prepare a multi-input project without driving the visual mixer.",
     aiNote: "This writes project assignment metadata and native-alpha preflight can still block non-default channel maps until native channel routing lands."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "File MCP Punch Recording Placement",
+    selector: "place_punch_recording_clip",
+    does: "Places an explicit punch-window clip from an existing raw recording media item through the undoable command path.",
+    useWhen: "Use for file-first punch/take-lane smoke before a full installed punch recording UI exists.",
+    aiNote: "This is a metadata/placement foundation only; it does not start native recording or prove user-facing punch recording."
   },
   {
     surface: "AI / MCP Bridge",

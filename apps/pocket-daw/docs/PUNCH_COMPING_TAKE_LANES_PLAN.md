@@ -5,10 +5,10 @@ This is the design anchor for punch-in/out, non-destructive take lanes and compi
 ## Current Baseline
 
 - `src/app/App.ts` stops native recording, imports the WAV through `addImportedAudioMedia`, places it with `placeRecordingClipOnTrack`, flushes autosave, then saves the project file.
-- `src/daw/audioClips.ts` implements `placeRecordingClipOnTrack` as `placeAudioClipOnTrack(..., { overwriteOverlaps: true })`.
+- `src/daw/audioClips.ts` implements `placeRecordingClipOnTrack` as `placeAudioClipOnTrack(..., { overwriteOverlaps: true })`, and now has a helper-level `placePunchRecordingClipOnTrack` foundation plus undoable command/file-first MCP wiring that commits only an explicit punch window from a longer raw take while preserving source/take metadata.
 - Placed audio clips now preserve source recording/take metadata such as `takeGroupId`, `recordingTakeGroupId`, `takeLaneId`, `takeLaneIndex`, `takeStatus`, `inputMode`, `channelMap` and latency evidence from the media item.
 - `src/daw/clips.ts` has grouped-take helpers that activate same-track sibling takes, archive/restore takes without deleting media, and split overlap-aligned grouped takes at the playhead for a first source-preserving comp segment foundation through normal undoable command/UI paths.
-- Current same-track overwrite is destructive at the clip level: overlapped audio clips are split away from the new recording range, and the right-hand remainder advances `metadata.sourceOffsetSeconds`.
+- Current same-track overwrite is destructive at the clip level: overlapped audio clips are split away from the new recording range, and the right-hand remainder advances `metadata.sourceOffsetSeconds`. The helper-level punch foundation applies that split only to an explicit visible punch range and stores `punchStartBar`, `punchEndBar`, `captureStartBar`, `sourceOffsetSeconds` and `sourceDurationSeconds` on the committed take clip.
 - `src/daw/schema.ts` already has optional `Clip.lane`, `Clip.metadata`, `Track.metadata` and `MediaPoolItem.metadata`.
 - `src/compatibility/migrations.ts` preserves clip, track and media metadata and clamps optional `Clip.lane` without requiring a schema-version bump for metadata-only planning.
 - `tests/recordingAlpha.test.ts` intentionally covers fractional record placement, same-track overwrite splitting and right-hand source-offset preservation.
@@ -107,7 +107,7 @@ Use `Clip.lane` only as an optional visual lane index until the UI contract is p
 ## Verification Targets
 
 - Existing recording alpha tests still pass for current same-track overwrite behavior.
-- Metadata roundtrip test preserves `recordingTakeId`, `recordingTakeGroupId`, `takeLaneId`, `takeStatus`, `punchStartBar`, `punchEndBar` and comp fields.
+- Metadata roundtrip test preserves `recordingTakeId`, `recordingTakeGroupId`, `takeLaneId`, `takeStatus`, `punchStartBar`, `punchEndBar` and comp fields. Source now has helper-level, undoable command and file-first MCP punch placement coverage for raw-take preservation, same-track punch-window splitting, MCP summary visibility and save/reopen metadata survival; native punch UI/transport smoke remains future work.
 - Audio-clip region tests prove inactive take lanes do not render and active comp segments do render with correct `sourceOffsetSeconds`.
 - Undo/autosave tests prove record completion, take activation, lane archive and comp edits are committed as project changes. Source already has unit coverage for grouped take activation, archive/restore, comp-from-playhead splitting and save/reopen metadata preservation; installed smoke and full punch-flow coverage remain future work.
 - Migration tests prove old projects without take metadata load unchanged and future metadata survives normalization.

@@ -8,7 +8,7 @@ import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackRecordin
 import { setTrackRecordingInputAssignment } from "../daw/recordingInputs";
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
 import { addTrackToProject, renameTrack, setTrackFolder, toggleFolderExpanded, type AddTrackKind } from "../daw/tracks";
-import { placeAudioClipOnTimeline } from "../daw/audioClips";
+import { placeAudioClipOnTimeline, placePunchRecordingClipOnTrack } from "../daw/audioClips";
 import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createEmptyMidiClip, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, midiDataFromClip, midiGrooveTemplateById, moveMidiNote, quantizeMidiClip, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote, type MidiAftertouchField, type MidiControllerField, type MidiGrooveTemplateId, type MidiNoteField, type MidiPitchBendField, type MidiPitchTransform, type MidiProgramChangeField, type MidiQuantizeGrid, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
 import type { MidiTempoMapSummary } from "../daw/midiClips";
 import { convertMidiClipToBassOverlays } from "../daw/midiBassConversion";
@@ -266,6 +266,29 @@ export function applySelectedAudioClipActionCommand(state: AppState, clipId: str
     ...commitProject(state, result.project, result.status),
     selectedClipId: clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function placePunchRecordingClipCommand(
+  state: AppState,
+  mediaPoolItemId: string,
+  trackId: string,
+  captureStartBar: number,
+  punchStartBar: number,
+  punchEndBar: number
+): AppState {
+  const media = state.undoStack.present.mediaPool.find((item) => item.id === mediaPoolItemId && item.kind === "audio");
+  const track = state.undoStack.present.tracks.find((item) => item.id === trackId && item.trackType === "audio");
+  if (!media || !track) return { ...state, status: "Choose an audio recording media item and audio track before placing a punch take." };
+  const result = placePunchRecordingClipOnTrack(state.undoStack.present, mediaPoolItemId, trackId, { captureStartBar, punchStartBar, punchEndBar });
+  if (!result.clipId || result.project === state.undoStack.present) {
+    return { ...state, selectedTrackId: trackId, status: `Could not place punch take ${media.name}; check the punch range.` };
+  }
+  return {
+    ...commitProject(state, result.project, `Placed punch take ${media.name} from bar ${punchStartBar} to ${punchEndBar}.`),
+    selectedClipId: result.clipId,
+    selectedTrackId: trackId,
+    lowerDockTab: "audio-editor"
   };
 }
 

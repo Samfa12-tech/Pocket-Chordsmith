@@ -373,6 +373,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "collect-media")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "convert-midi-drums")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.actionId === "convert-midi-arrangement")).toBe(true);
+    expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-audio-clip-action:quantize-warp-markers")).toBe(true);
     expect(FUNCTION_ACTION_REFERENCE.some((entry) => entry.selector === "data-ai-bridge-enabled")).toBe(true);
     [
       "data-chord-instrument",
@@ -445,9 +446,11 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Collect Media | `data-action=collect-media`");
     expect(catalog).toContain("| Map Drums | `data-action=convert-midi-drums`");
     expect(catalog).toContain("| Map Arrangement | `data-action=convert-midi-arrangement`");
+    expect(catalog).toContain("| Quantize Warp Markers | `data-audio-clip-action:quantize-warp-markers`");
     expect(catalog).toContain("| Download And Install Update | `data-action=updater-download-install`");
     expect(catalog).toContain("| Enable Live App Bridge | `data-ai-bridge-enabled`");
     expect(catalog).toContain("| Live MCP Recording Input Channel | `pocket_daw_live_apply_commands:set_recording_input_channel`");
+    expect(catalog).toContain("| File MCP Punch Recording Placement | `place_punch_recording_clip`");
     expect(catalog).toContain("| Live MCP Arm And Monitor | `pocket_daw_live_apply_commands:set_track_armed, set_track_monitor`");
     expect(catalog).toContain("| Live MCP Track Input | `pocket_daw_live_apply_commands:set_track_input`");
     expect(catalog).toContain("| Live MCP Track Setup Status | `pocket_daw_live_status:tracks`");
@@ -657,6 +660,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:normalize-gain"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:analyze-transients"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:create-warp-markers"`);
+    expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:quantize-warp-markers"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:clear-warp-markers"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:crossfade-overlap"`);
     expect(inspector).toContain(`data-audio-clip-action="${placed.clipId}:create-crossfade-left"`);
