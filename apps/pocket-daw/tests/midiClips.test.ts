@@ -3,6 +3,7 @@ import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 import { MIDI_GROOVE_TEMPLATES, addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, importMidiFileToProject, importMidiFileToProjectWithPlacement, midiDataFromClip, moveMidiNote, quantizeMidiClip, quantizeMidiClipDurations, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote } from "../src/daw/midiClips";
+import { createMidiChordsmithConversionPreview } from "../src/daw/midiConversionPreview";
 import { parseStandardMidiFile, type ParsedMidiFile } from "../src/daw/midiParser";
 import { aftertouchMidiBytes, formatOneTempoAndPianoMidiBytes, metalArrangementMidiBytes, metadataRichMidiBytes, multiTrackChannelMidiBytes, pitchBendMidiBytes, programChangeMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 
@@ -19,6 +20,32 @@ describe("MIDI clips", () => {
     expect(clip?.mediaPoolItemId).toBe(result.item.id);
     expect(result.project.tracks.find((track) => track.id === result.trackId)?.trackType).toBe("midi");
     expect(midiDataFromClip(clip!).notes[0]).toMatchObject({ pitch: 60, durationTicks: 480 });
+  });
+
+  it("previews explicit MIDI to Chordsmith conversion without mutating the imported clip", () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Preview" }));
+    const imported = importMidiFileToProject(project, parseStandardMidiFile(metalArrangementMidiBytes()), "metal.mid");
+    const before = JSON.stringify(imported.project);
+
+    const preview = createMidiChordsmithConversionPreview(imported.project, imported.clipId, "A");
+
+    expect(preview).toMatchObject({
+      clipId: imported.clipId,
+      sectionId: "A",
+      rawMidiClip: "preserved",
+      sourceNoteCount: expect.any(Number),
+      mappings: {
+        drums: expect.objectContaining({ written: expect.any(Number) }),
+        bass: expect.objectContaining({ written: expect.any(Number) }),
+        chords: expect.objectContaining({ written: expect.any(Number) }),
+        melody: expect.objectContaining({ written: expect.any(Number) })
+      }
+    });
+    expect(preview?.mappings.drums.written).toBeGreaterThan(0);
+    expect(preview?.mappings.bass.written).toBeGreaterThan(0);
+    expect(preview?.mappings.chords.written).toBeGreaterThan(0);
+    expect(preview?.mappings.melody.written).toBeGreaterThan(0);
+    expect(JSON.stringify(imported.project)).toBe(before);
   });
 
   it("imports MIDI controller events into editable clip metadata", () => {

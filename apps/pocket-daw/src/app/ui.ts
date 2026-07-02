@@ -20,6 +20,7 @@ import { availableTrackOutputs, createRoutingExportSummary, trackSendLevel, trac
 import { createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs";
 import { validateExportProfile } from "../daw/exportProfiles";
 import { createPocketDjSourceSummary, type PocketDjSourceSummary } from "../daw/pocketDjSources";
+import { createMidiChordsmithConversionPreview, type MidiChordsmithConversionPreview } from "../daw/midiConversionPreview";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { audioClipTakeSummary, clipSourceStartBar } from "../daw/clips";
 import { createAudioTakeDiagnosticsSummary, runtimeBuildId, runtimeCommit, runtimeLabel } from "./diagnostics";
@@ -931,7 +932,7 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
                     ${renderClipEditPalette()}
                     <button type="button" data-action="freeze-selected-clip" title="Render the selected clip into a reusable audio asset">Freeze</button>
                     <button type="button" data-action="export-selected-clip-midi" ${clip.type === "audio" ? "disabled title=\"Audio clips do not contain MIDI events.\"" : "title=\"Export the selected clip as a MIDI file\""}>Export Clip MIDI</button>
-                    ${clip.type === "midi" ? renderMidiClipEditor(clip) : ""}
+                    ${clip.type === "midi" ? renderMidiClipEditor(project, clip) : ""}
                   `
               }
             </section>`
@@ -1435,8 +1436,9 @@ function renderMidiClipMetadata(clip: Clip, media: ReturnType<typeof currentProj
   `;
 }
 
-function renderMidiClipEditor(clip: Clip): string {
+function renderMidiClipEditor(project: ReturnType<typeof currentProject>, clip: Clip): string {
   const midi = midiDataFromClip(clip);
+  const conversionPreview = createMidiChordsmithConversionPreview(project, clip.id);
   const notes = midi.notes.slice().sort((a, b) => a.startTick - b.startTick || a.pitch - b.pitch);
   const controllers = midi.controllers.slice().sort((a, b) => a.tick - b.tick || a.controller - b.controller);
   const programs = midi.programChanges.slice().sort((a, b) => a.tick - b.tick || (a.channel ?? 0) - (b.channel ?? 0) || a.program - b.program);
@@ -1497,6 +1499,7 @@ function renderMidiClipEditor(clip: Clip): string {
         <button type="button" title="Convert imported MIDI time-signature events into the project meter map" data-action="adopt-midi-meter-map">Meter Lane</button>
         <button type="button" data-midi-note-add="${sanitizeDataAttr(clip.id)}">Add Note</button>
       </header>
+      ${conversionPreview ? renderMidiChordsmithConversionPreview(conversionPreview) : ""}
       ${
         notes.length
           ? `<div class="midi-note-list">
@@ -1603,6 +1606,39 @@ function renderMidiClipEditor(clip: Clip): string {
       </section>
     </div>
   `;
+}
+
+function renderMidiChordsmithConversionPreview(preview: MidiChordsmithConversionPreview): string {
+  const laneSummary = Object.entries(preview.mappings.drums.lanes)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([lane, count]) => `${lane} ${count}`)
+    .join(", ");
+  const expressive = [
+    preview.preservedControllerCount ? `${preview.preservedControllerCount} CC` : "",
+    preview.preservedProgramChangeCount ? `${preview.preservedProgramChangeCount} program` : "",
+    preview.preservedPitchBendCount ? `${preview.preservedPitchBendCount} bend` : "",
+    preview.preservedAftertouchCount ? `${preview.preservedAftertouchCount} touch` : ""
+  ].filter(Boolean).join(", ") || "none";
+  const warningText = preview.warnings.length ? preview.warnings.join(" ") : "Ready to map. The raw MIDI clip stays in the project.";
+  return `
+    <section class="midi-conversion-preview" data-midi-conversion-preview="${sanitizeDataAttr(preview.clipId)}" aria-label="MIDI to Chordsmith conversion preview">
+      <h4>Chordsmith Mapping Preview</h4>
+      <p class="editor-note">${escapeHtml(warningText)}</p>
+      <dl>
+        <dt>Visible notes</dt><dd>${preview.visibleNoteCount} / ${preview.sourceNoteCount}${preview.outOfRangeNoteCount ? ` (${preview.outOfRangeNoteCount} outside clip range)` : ""}</dd>
+        <dt>Drums</dt><dd>${preview.mappings.drums.written} cells${laneSummary ? ` / ${escapeHtml(laneSummary)}` : ""}</dd>
+        <dt>Bass</dt><dd>${preview.mappings.bass.written} notes${preview.mappings.bass.pitches.length ? ` / ${escapeHtml(formatMidiPitchList(preview.mappings.bass.pitches))}` : ""}</dd>
+        <dt>Chords</dt><dd>${preview.mappings.chords.written} groups</dd>
+        <dt>Melody</dt><dd>${preview.mappings.melody.written} notes${preview.mappings.melody.pitches.length ? ` / ${escapeHtml(formatMidiPitchList(preview.mappings.melody.pitches))}` : ""}</dd>
+        <dt>Preserved</dt><dd>Raw MIDI ${preview.rawMidiClip}; ${escapeHtml(expressive)}</dd>
+      </dl>
+    </section>
+  `;
+}
+
+function formatMidiPitchList(pitches: number[]): string {
+  const labels = pitches.slice(0, 6).map((pitch) => midiPitchLabel(pitch));
+  return `${labels.join(", ")}${pitches.length > labels.length ? ` +${pitches.length - labels.length}` : ""}`;
 }
 
 function midiPitchLabel(pitch: number): string {
@@ -2169,7 +2205,7 @@ function renderLowerDockPianoRoll(project: ReturnType<typeof currentProject>, st
         <h3>${escapeHtml(clip.name)}</h3>
         <p>${midiDataFromClip(clip).notes.length} notes / ${midiDataFromClip(clip).controllers.length} CC points</p>
       </section>
-      ${renderMidiClipEditor(clip)}
+      ${renderMidiClipEditor(project, clip)}
     </div>
   `;
 }

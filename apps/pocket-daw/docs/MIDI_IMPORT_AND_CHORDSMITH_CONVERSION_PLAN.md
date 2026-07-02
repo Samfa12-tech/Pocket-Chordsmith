@@ -92,7 +92,7 @@ Non-goals:
 ## Conversion Roadmap
 
 1. Add an explicit conversion command beside, not inside, import.
-2. Show a conversion preview:
+2. Show a conversion preview. `Current source status: first pass implemented for selected MIDI clips in the Piano Roll plus support diagnostics, file-first MCP summaries and live MCP media status. It reports visible/source note counts, per-role drum/bass/chord/melody mapping counts, preserved expressive MIDI event counts and warnings before any conversion command runs. Deeper key/scale, section-sequence and program-role suggestions remain future work.`
    - detected key, scale, tempo, time signature
    - suggested section length and A-H sequence
    - mapped drum lanes, bass roots, chord rhythm, melody lead, and optional guitar rhythm

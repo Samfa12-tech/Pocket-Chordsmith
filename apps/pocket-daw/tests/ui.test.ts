@@ -2003,6 +2003,9 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Map Melody");
     expect(html).toContain('data-action="convert-midi-arrangement"');
     expect(html).toContain("Map Arrangement");
+    expect(html).toContain(`data-midi-conversion-preview="${result.clipId}"`);
+    expect(html).toContain("Chordsmith Mapping Preview");
+    expect(html).toContain("Raw MIDI preserved");
     expect(html).toContain('data-action="adopt-midi-tempo"');
     expect(html).toContain("Adopt Tempo");
     expect(html).toContain('data-action="adopt-midi-tempo-map"');

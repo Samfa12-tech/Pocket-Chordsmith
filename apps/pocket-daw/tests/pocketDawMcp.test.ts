@@ -182,6 +182,33 @@ describe("Pocket DAW MCP tools", () => {
     expect(result.project).toBeUndefined();
   });
 
+  it("summarizes MIDI to Chordsmith conversion previews for MCP smoke", async () => {
+    const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(metalArrangementMidiBytes()), "metal.mid");
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_read_project", {
+      raw: buildPocketDawProjectFile(imported.project)
+    }));
+
+    expect(result.summary.midiChordsmithConversionPreviews).toEqual([
+      expect.objectContaining({
+        clipId: imported.clipId,
+        clipName: "metal.mid",
+        rawMidiClip: "preserved",
+        mappings: expect.objectContaining({
+          drums: expect.objectContaining({ written: expect.any(Number) }),
+          bass: expect.objectContaining({ written: expect.any(Number) }),
+          chords: expect.objectContaining({ written: expect.any(Number) }),
+          melody: expect.objectContaining({ written: expect.any(Number) })
+        })
+      })
+    ]);
+    const preview = result.summary.midiChordsmithConversionPreviews[0];
+    expect(preview.mappings.drums.written).toBeGreaterThan(0);
+    expect(preview.mappings.bass.written).toBeGreaterThan(0);
+    expect(preview.mappings.chords.written).toBeGreaterThan(0);
+    expect(preview.mappings.melody.written).toBeGreaterThan(0);
+  });
+
   it("summarizes grouped future recording capture plans for MCP smoke", async () => {
     let project = addTrackToProject(createDemoProject(), "live-vocals").project;
     project = addTrackToProject(project, "live-instrument").project;

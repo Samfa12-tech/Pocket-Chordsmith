@@ -7,6 +7,7 @@ import { renderProjectToNativeWavBlob } from "../audio/nativeOfflineRender";
 import { renderProjectToWavBlob, type WavBitDepth, type WavChannelMode, type WavDitherMode } from "../audio/offlineRender";
 import { createDemoProject } from "../demo/demoProject";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../daw/dawProject";
+import { createMidiChordsmithConversionPreviews } from "../daw/midiConversionPreview";
 import { DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumBranchStepLevel, isDrumLaneId } from "../daw/drumLanes";
 import { renderTimelineEvents } from "../audio/eventRenderer";
 import { timelineSecondsAtBar } from "../daw/timeline";
@@ -5389,7 +5390,8 @@ function createAiBridgeMediaReadiness(project: PocketDawProject) {
     externalReferenceCount: statuses.filter((status) => status.external).length,
     runtimeOnlyCount: statuses.filter((status) => status.runtimeOnly).length,
     missingCount: statuses.filter((status) => status.missing || status.unresolved).length,
-    audioTakes: createAudioTakeDiagnosticsSummary(project)
+    audioTakes: createAudioTakeDiagnosticsSummary(project),
+    midiChordsmithConversionPreviews: createMidiChordsmithConversionPreviews(project)
   };
 }
 

@@ -356,9 +356,9 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "MIDI To Chordsmith Mapping",
-        does: "Maps imported MIDI into generated drum, bass, chord or melody overlays and can adopt tempo/meter data.",
+        does: "Previews how imported MIDI will map into generated drum, bass, chord or melody overlays, preserves expressive MIDI data on the raw clip, and can adopt tempo/meter data.",
         useWhen: "Use when a MIDI file should become editable Chordsmith-style source material.",
-        aiNote: "This is a conversion aid, not proof the result is musically perfect. Listen and inspect generated roles."
+        aiNote: "Use the preview/report before mapping. This is a conversion aid, not proof the result is musically perfect."
       }
     ]
   },
@@ -1785,6 +1785,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     does: "Adds, edits, duplicates, and deletes expressive MIDI events. The MIDI preview/render path interprets channel-matched CC7 volume, CC10 pan, CC11 expression, CC64 sustain, and pitch-bend detune.",
     useWhen: "Use for MIDI expression and interchange detail.",
     aiNote: "Imported controller data can be dense; avoid broad destructive edits without a clear target."
+  },
+  {
+    surface: "MIDI To Chordsmith",
+    control: "Chordsmith Mapping Preview",
+    selector: "data-midi-conversion-preview, midiChordsmithConversionPreviews[], media.midiChordsmithConversionPreviews[]",
+    does: "Shows how the selected MIDI clip will map into drums, bass, chord groups and melody before any conversion command runs, including visible/source note counts, per-role written counts, preserved expressive MIDI event counts and warnings.",
+    useWhen: "Use before Map Drums, Map Bass, Map Chords, Map Melody or Map Arrangement so the raw MIDI import remains inspectable and conversion is explicit.",
+    aiNote: "Read-only preview exposed in the Piano Roll, support diagnostics, file-first MCP summaries and live MCP media status. It does not mutate MIDI import semantics or prove the musical interpretation is correct."
   },
   {
     surface: "MIDI To Chordsmith",
