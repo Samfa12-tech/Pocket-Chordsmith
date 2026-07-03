@@ -31,6 +31,12 @@ The current app adds a `Lofi DJ Demo` plus lofi-aware macros: `Gentle Build`, `R
 
 Send a lofi project from Pocket Chordsmith by copying the normal `PCS1:` share code or using the existing handoff path. Stem mutes, section queueing, loops, build/drop, volume controls, and imports continue to use the same Chordsmith-compatible payload.
 
+## Heavy Metal Pack
+
+Pocket DJ imports Pocket Chordsmith `heavy_metal` projects and preserves `metalPreset`, `metalTexture`, `drumKit`, `drumGroovePreset`, `bassTone`, metal chord/lead instruments, and metal guitar tone metadata on the live deck.
+
+The current app includes a `Metal DJ Demo` for a quick classic-chug deck check. Imported metal projects show their metal preset in the Profile card and keep the original metal fields when using `Edit this song` back to Pocket Chordsmith.
+
 ## Local Check
 
 ```powershell

@@ -13,6 +13,89 @@ const PCS_FIXTURES = [
   },
 ];
 
+function makeMetalFixture() {
+  const len = 16;
+  const grid = {
+    kick: Array(len).fill(0),
+    snare: Array(len).fill(0),
+    hat: Array(len).fill(0),
+    bass: Array(len).fill(0),
+  };
+  [0, 4, 8, 12].forEach((step) => {
+    grid.kick[step] = 1;
+  });
+  [4, 12].forEach((step) => {
+    grid.snare[step] = 2;
+  });
+  [0, 2, 4, 6, 8, 10, 12, 14].forEach((step) => {
+    grid.hat[step] = 1;
+    grid.bass[step] = step % 4 === 2 ? 1 : 0;
+  });
+  const guitarPattern = Array(len).fill("off");
+  [0, 2, 4, 6, 8, 10, 12, 14].forEach((step, index) => {
+    guitarPattern[step] = index % 4 === 3 ? "accent" : "chug";
+  });
+  const melody = Array(len).fill(null);
+  [0, 3, 6, 8, 12].forEach((step, index) => {
+    melody[step] = [0, 1, 3, 5, 6][index];
+  });
+  return {
+    projectVersion: 16,
+    title: "Metal Chug Import Test",
+    key: "E",
+    scale: "minor",
+    timeSig: 4,
+    bpm: 128,
+    swing: 0,
+    resolution: 4,
+    audioProfile: "heavy_metal",
+    stylePreset: "metal_classic_chug",
+    metalPreset: "metal_classic_chug",
+    metalTexture: {
+      enabled: true,
+      drive: 0.52,
+      palmMute: 0.82,
+      lowTightness: 0.88,
+      presence: 0.6,
+      roomSize: 0.12,
+      pickAttack: 0.76,
+    },
+    drumKit: "metal_tight",
+    drumGroovePreset: "metal_backbeat_chug",
+    bassTone: "metal_pick_bass",
+    chordInstrument: "metal_power_stack",
+    melodyInstrumentsA: ["shred_lead_guitar"],
+    melodyTracksA: [melody],
+    melodyOctavesA: [0],
+    melodyMuteA: [false],
+    melodySoloA: [false],
+    melodyPanA: [0],
+    melodyHoldA: [Array(len).fill(false)],
+    melodySlideA: [Array(len).fill(false)],
+    melodyTupletsA: [Array(len).fill(false)],
+    progressionA: [0, 5, 6, 4],
+    gridA: grid,
+    gridTupletsA: {
+      kick: Array(len).fill(false),
+      snare: Array(len).fill(false),
+      hat: Array(len).fill(false),
+      bass: Array(len).fill(false),
+    },
+    bassNotesA: Array(len).fill(null),
+    bassHoldA: Array(len).fill(false),
+    bassSlideA: Array(len).fill(false),
+    bassAccentA: Array(len).fill(false),
+    guitarEnabled: true,
+    guitarTone: "tight_metal",
+    guitarRegister: "low",
+    guitarStrumMode: "alternate",
+    guitarPatternPreset: "metal_chug",
+    guitarPatternA: guitarPattern,
+    sectionBars: { A: 1 },
+    songSequence: ["A"],
+  };
+}
+
 test.beforeEach(async ({ page }) => {
   const consoleMessages = [];
   const pageErrors = [];
@@ -71,6 +154,18 @@ async function readSavedDjSession(page) {
   return page.evaluate(() =>
     JSON.parse(localStorage.getItem("pocket_dj_v1_last_session") || "null"),
   );
+}
+
+async function decodePocketChordsmithShareCode(page, code) {
+  return page.evaluate((shareCode) => {
+    const payload = shareCode.replace(/^PCS1:/, "");
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(
+      normalized.length + ((4 - (normalized.length % 4)) % 4),
+      "=",
+    );
+    return JSON.parse(decodeURIComponent(escape(atob(padded))));
+  }, code);
 }
 
 async function setRangeValue(locator, value) {
@@ -182,6 +277,79 @@ test("lofi macros update performance state and reset cleanly", async ({
   await page.locator("#resetFxBtn").click();
   await expect(page.locator("#statusText")).toContainText("FX and build reset");
   await expect(page.locator("#buildStateText")).toContainText("Neutral");
+});
+
+test("loads the Heavy Metal demo with metal deck metadata", async ({ page }) => {
+  await page.locator("#metalDemoBtn").click();
+
+  await expect(page.locator("#statusText")).toContainText(
+    "Heavy Metal DJ Demo loaded",
+  );
+  await expect(page.locator("#deckName")).toContainText(
+    "Heavy Metal DJ Demo",
+  );
+  await expect(page.locator(".meta-card", { hasText: "Profile" })).toContainText(
+    "Classic Chug",
+  );
+
+  const saved = await readSavedDjSession(page);
+  expect(saved.deck).toMatchObject({
+    audioProfile: "heavy_metal",
+    metalPreset: "metal_classic_chug",
+    drumKit: "metal_tight",
+    bassTone: "metal_pick_bass",
+    chordInstrument: "metal_power_stack",
+    guitarTone: "tight_metal",
+  });
+  expect(saved.deck.metalTexture).toMatchObject({
+    enabled: true,
+    palmMute: expect.any(Number),
+    lowTightness: expect.any(Number),
+  });
+});
+
+test("imports Heavy Metal Chordsmith JSON and preserves it for source handoff", async ({
+  page,
+}) => {
+  await page.locator("#importText").fill(JSON.stringify(makeMetalFixture()));
+  await page.locator("#importBtn").click();
+
+  await expect(page.locator("#statusText")).toContainText(
+    "Pocket Chordsmith project imported",
+  );
+  await expect(page.locator("#deckName")).toContainText(
+    "Metal Chug Import Test",
+  );
+  await expect(page.locator(".meta-card", { hasText: "Profile" })).toContainText(
+    "Classic Chug",
+  );
+
+  const saved = await readSavedDjSession(page);
+  expect(saved.deck.audioProfile).toBe("heavy_metal");
+  expect(saved.deck.metalPreset).toBe("metal_classic_chug");
+  expect(saved.deck.metalTexture.enabled).toBe(true);
+  expect(saved.source.project).toMatchObject({
+    audioProfile: "heavy_metal",
+    metalPreset: "metal_classic_chug",
+    drumKit: "metal_tight",
+    bassTone: "metal_pick_bass",
+    chordInstrument: "metal_power_stack",
+    guitarTone: "tight_metal",
+  });
+
+  await page.locator("#editSourceBtn").click();
+  await expect(page.locator("#handoffBox")).toBeVisible();
+  const handoffProject = await decodePocketChordsmithShareCode(
+    page,
+    await page.locator("#handoffText").inputValue(),
+  );
+  expect(handoffProject).toMatchObject({
+    audioProfile: "heavy_metal",
+    metalPreset: "metal_classic_chug",
+    drumKit: "metal_tight",
+    bassTone: "metal_pick_bass",
+  });
+  expect(handoffProject.metalTexture.enabled).toBe(true);
 });
 
 test("deck controls queue, loop, mix, filter, build and drop cleanly", async ({

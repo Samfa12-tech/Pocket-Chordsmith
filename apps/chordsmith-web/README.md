@@ -79,6 +79,10 @@ See `../../docs/LOFI_CHILL_PACK_IMPLEMENTATION.md` for the shared preset IDs, co
 
 Three import-ready chip demos live in `demos/`: `chip_bug_maze_pulse_loop.json`, `chip_arcade_start_loop.json`, and `chip_menu_glow_loop.json`.
 
+## Heavy Metal Pack
+
+`pocket_chordsmith_v68_core_bridge.html` includes a procedural `heavy_metal` profile with classic chug, thrash gallop, doom, power anthem, boss blast, and breakdown presets. Simple mode exposes `Heavy Metal`; Advanced Settings -> Genre exposes the full Heavy Metal panel with preset, drum kit, bass tone, and texture controls.
+
 ## Release Notes
 
 ### v68 Pocket Audio Core Bridge

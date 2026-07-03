@@ -271,7 +271,7 @@
         <div class="stat"><div class="k">Scale</div><select class="select" id="scaleSelect"><option value="major">Major</option><option value="minor">Minor</option></select></div>
         <div class="stat"><div class="k">Time</div><select class="select" id="timeSigSelect"><option value="4">4/4</option><option value="3">3/4</option></select></div>
         <div class="stat adv-only"><div class="k">Chord type</div><select class="select" id="chordTypeSelect"><option value="triad">Triad</option><option value="seventh">7th</option><option value="sus2">Sus2</option><option value="sus4">Sus4</option></select></div>
-        <div class="stat adv-only"><div class="k">Chord sound</div><select class="select" id="chordInstrumentSelect"><option value="pocket">Pocket Chordsmith</option><option value="piano">Piano</option><option value="saloon_piano">Saloon Piano</option><option value="harp">Harp</option><option value="warm_pad">Warm Pad</option><option value="glass">Glass</option><option value="dusty_rhodes">Dusty Rhodes</option><option value="felt_piano">Felt Piano</option><option value="cassette_keys">Cassette Keys</option><option value="muted_jazz_guitar">Muted Jazz Guitar</option><option value="lofi_warm_pad">Lofi Warm Pad</option></select></div>
+        <div class="stat adv-only"><div class="k">Chord sound</div><select class="select" id="chordInstrumentSelect"><option value="pocket">Pocket Chordsmith</option><option value="piano">Piano</option><option value="saloon_piano">Saloon Piano</option><option value="harp">Harp</option><option value="warm_pad">Warm Pad</option><option value="glass">Glass</option><option value="dusty_rhodes">Dusty Rhodes</option><option value="felt_piano">Felt Piano</option><option value="cassette_keys">Cassette Keys</option><option value="muted_jazz_guitar">Muted Jazz Guitar</option><option value="lofi_warm_pad">Lofi Warm Pad</option><option value="metal_power_stack">Metal Power Stack</option><option value="dark_organ_stack">Dark Organ Stack</option></select></div>
         <div class="stat adv-only"><div class="k">Chord octave</div><select class="select" id="chordOctaveSelect"><option value="-1">Low</option><option value="0" selected>Mid</option><option value="1">High</option></select></div>
         <div class="stat adv-only"><div class="k">Chord style</div><select class="select" id="chordPlayModeSelect"><option value="block">Block</option><option value="strum_up">Strum Up</option><option value="strum_down">Strum Down</option><option value="arp_up">Arp Up</option><option value="arp_down">Arp Down</option></select></div>
         <div class="stat adv-only"><div class="k">Chord rhythm</div><select class="select" id="chordRhythmModeSelect"><option value="sustain">Sustain</option><option value="quarter">Quarter Notes</option><option value="half">Half Notes</option></select></div>
@@ -289,6 +289,8 @@
           <button class="pill adv-only" id="lofiGameLoopBtn">Lofi Game Loop</button>
           <button class="pill good" id="chipTuneBtn">Chip Tune</button>
           <button class="pill adv-only" id="chipGameLoopBtn">Chip Game Loop</button>
+          <button class="pill good" id="metalChugBtn">Heavy Metal</button>
+          <button class="pill adv-only" id="metalGameLoopBtn">Metal Game Loop</button>
         </div>
       </div>
       <div class="progression" id="progressionSlots"></div>
@@ -633,6 +635,7 @@
                   <button class="mini-chip genre-tab" id="genreTabClean" data-genre="clean" role="tab" aria-controls="genrePanelClean">Clean</button>
                   <button class="mini-chip genre-tab" id="genreTabLofi" data-genre="lofi" role="tab" aria-controls="genrePanelLofi">Lofi / Chill</button>
                   <button class="mini-chip genre-tab" id="genreTabChip" data-genre="chip" role="tab" aria-controls="genrePanelChip">Chip Tune</button>
+                  <button class="mini-chip genre-tab" id="genreTabMetal" data-genre="metal" role="tab" aria-controls="genrePanelMetal">Heavy Metal</button>
                   <button class="mini-chip genre-tab" id="genreTabWestern" data-genre="western" role="tab" aria-controls="genrePanelWestern">Western</button>
                 </div>
                 <div class="genre-panels">
@@ -745,6 +748,54 @@
                       <label class="sub">Spread <input id="chipStereoSpread" type="range" min="0" max="1" step="0.01" value="0.12"></label>
                     </div>
                     <div class="tiny adv-only genre-advanced">Chip texture adds subtle bit, pulse and stereo colour while keeping the pack procedural.</div>
+                  </div>
+                  <div class="genre-panel" id="genrePanelMetal" data-genre-panel="metal" role="tabpanel" aria-labelledby="genreTabMetal">
+                    <div class="label" style="margin:0">Heavy Metal</div>
+                    <div class="row">
+                      <label class="sub">Preset
+                        <select class="select" id="metalPresetSelect">
+                          <option value="">Off / Clean</option>
+                          <option value="metal_classic_chug">Classic Chug</option>
+                          <option value="metal_thrashing_gallop">Thrash Gallop</option>
+                          <option value="metal_doom_procession">Doom Procession</option>
+                          <option value="metal_power_anthem">Power Anthem</option>
+                          <option value="metal_boss_blast">Boss Blast</option>
+                          <option value="metal_breakdown_gate">Breakdown Gate</option>
+                        </select>
+                      </label>
+                      <button class="mini-chip" id="metalApplyIdeaBtn">Apply Idea</button>
+                      <button class="mini-chip" id="metalApplyLoopBtn">Game Loop</button>
+                    </div>
+                    <div class="row adv-only genre-advanced">
+                      <label class="sub">Kit
+                        <select class="select" id="metalDrumKitSelect">
+                          <option value="metal_tight">Metal Tight</option>
+                          <option value="metal_arena">Metal Arena</option>
+                          <option value="metal_doom">Metal Doom</option>
+                        </select>
+                      </label>
+                      <label class="sub">Bass
+                        <select class="select" id="metalBassToneSelect">
+                          <option value="metal_pick_bass">Pick Bass</option>
+                          <option value="metal_sub_pick">Sub Pick</option>
+                          <option value="metal_grind_bass">Grind Bass</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="toggle-grid compact adv-only genre-advanced">
+                      <label><input id="metalTextureToggle" type="checkbox"> Texture</label>
+                    </div>
+                    <div class="row adv-only genre-advanced">
+                      <label class="sub">Drive <input id="metalDrive" type="range" min="0" max="1" step="0.01" value="0.48"></label>
+                      <label class="sub">Palm <input id="metalPalmMute" type="range" min="0" max="1" step="0.01" value="0.78"></label>
+                      <label class="sub">Tight <input id="metalLowTightness" type="range" min="0" max="1" step="0.01" value="0.86"></label>
+                    </div>
+                    <div class="row adv-only genre-advanced">
+                      <label class="sub">Presence <input id="metalPresence" type="range" min="0" max="1" step="0.01" value="0.58"></label>
+                      <label class="sub">Room <input id="metalRoomSize" type="range" min="0" max="1" step="0.01" value="0.12"></label>
+                      <label class="sub">Pick <input id="metalPickAttack" type="range" min="0" max="1" step="0.01" value="0.72"></label>
+                    </div>
+                    <div class="tiny adv-only genre-advanced">Metal uses tight distorted guitar, picked bass, heavier drum kits, and schema-16 metadata for game/DAW handoff.</div>
                   </div>
                   <div class="genre-panel" id="genrePanelWestern" data-genre-panel="western" role="tabpanel" aria-labelledby="genreTabWestern">
                     <div class="label" style="margin:0">Western</div>
@@ -1330,7 +1381,7 @@ const SECTION_PROP_GROUPS = [
 const state = {
   key:"C", scale:"major", timeSig:4, bpm:96, swing:0, theme:"night", uiMode:"simple",
   chordType:"triad", chordInstrument:"pocket", resolution:1, currentStep:-1, isPlaying:false, selectedSlot:0, selectedTrack:"hat", settingsOpen:false, tooltipsOn:true, chordOctave:0, melodyOctave:0, wavUrl:null, wavBlob:null, wavFile:null,
-  audioProfile:"standard", lofiPreset:"", lofiTexture:{...DEFAULT_LOFI_TEXTURE}, chipPreset:"", chipTexture:{...DEFAULT_CHIP_TEXTURE}, drumKit:"classic", drumGroovePreset:"", bassTone:"classic",
+  audioProfile:"standard", lofiPreset:"", lofiTexture:{...DEFAULT_LOFI_TEXTURE}, chipPreset:"", chipTexture:{...DEFAULT_CHIP_TEXTURE}, metalPreset:"", metalTexture:{...DEFAULT_METAL_TEXTURE}, drumKit:"classic", drumGroovePreset:"", bassTone:"classic",
   fxDelay:0.12, fxChorus:0.18, fxFlanger:0.06, fxReverb:0.18, fxMix:0.65,
   metronomeOn:true, chordsOn:true, bassOn:true,
   showMelodyPads:true, showDrumPads:true, drumRecordToGrid:false, showMelodyPicker:true, showTrackControls:true, humanizeOn:false, sidechainOn:false, sidechainAmount:0.45, bassMode:"auto",
@@ -4069,7 +4120,7 @@ function playChordTone(freq, t, dur, type, peak, filterType, filterFreq, cfg={},
 function lofiDrumKit(){
   const kit = state.drumKit || "classic";
   const resolver = pocketAudioCoreModule?.resolvePocketDrumKitId;
-  if(typeof resolver === "function") return resolver(kit, state.audioProfile, state.chipPreset || state.lofiPreset);
+  if(typeof resolver === "function") return resolver(kit, state.audioProfile, state.metalPreset || state.chipPreset || state.lofiPreset);
   return FALLBACK_DRUM_KIT_CONFIGS[kit] ? kit : (isChipActive() ? "chip_noise_kit" : isLofiActive() ? "lofi_dusty" : "classic");
 }
 function pocketDrumKitConfig(kit){
@@ -29696,6 +29747,14 @@ function bindControls(){
     els.chipGameLoopBtn.dataset.tip = "Generate an A/B/C/D chip tune game loop with harmonised leads.";
     els.chipGameLoopBtn.addEventListener("click", () => applyChipPresetToProject(state.chipPreset || "chip_bug_maze_pulse", {fullLoop:true}));
   }
+  if(els.metalChugBtn){
+    els.metalChugBtn.dataset.tip = "Create a heavy metal riff idea with tight chugs, picked bass, and heavier drums.";
+    els.metalChugBtn.addEventListener("click", () => applyMetalPresetToProject(randomChoice(["metal_classic_chug","metal_thrashing_gallop","metal_power_anthem","metal_breakdown_gate"]), {fullLoop:false}));
+  }
+  if(els.metalGameLoopBtn){
+    els.metalGameLoopBtn.dataset.tip = "Generate an A/B/C/D metal game loop with riff, breakdown, and lead sections.";
+    els.metalGameLoopBtn.addEventListener("click", () => applyMetalPresetToProject(state.metalPreset || "metal_classic_chug", {fullLoop:true}));
+  }
   if(els.genreDrawerBtn) els.genreDrawerBtn.addEventListener("click", () => {
     if(state.settingsGenreDrawerOpen) closeGenreDrawer();
     else openGenreDrawer(detectActiveGenre());
@@ -30434,7 +30493,7 @@ function init(){
   ["statusText","miniStatusText","miniSectionText","miniPlayBtn","miniStopBtn","miniUndoBtn","miniSettingsBtn","playBtn","stopBtn","demoBtn","undoBtn","randomIdeaBtn","settingsBtn","settingsModal","closeSettingsBtn","bpmInput","swingInput","swingValue","keySelect","scaleSelect","timeSigSelect","uiModeSelect","themeSelect","chordTypeSelect","chordInstrumentSelect","progressionSlots","chordPalette","padGrid","drumPresetChips","drumPadsPanel","drumPadGrid","drumPadStatus","drumRecordToggle","drumClearRecordingBtn","melodyIdeaBtn","melodyDegreeSelect","melodyPitchModeSelect","melodyInputModeSelect","xyPlaybackModeSelect","xyPadModeSelect","xyScaleModeSelect","xyChordFollowToggle","xyRecordToggle","xyPadControls","xyPadWrap","xyPad","xyPadMarker","xyPadReadout","melodyGridControls","melodyDegreeChips","melodyOctaveChips","melodyTrackChips","melodyTrackControls","addMelodyTrackBtn","removeMelodyTrackBtn","melodyInstrumentSelect","melodyRows","resolutionLabel","resolutionSelect","seqHeader","seqRows","trackChips","guitarEnabledToggle","guitarEnabledToggleSettings","guitarToneSelect","guitarRegisterSelect","guitarStrumModeSelect","guitarVolume","guitarPresetChips","guitarFillStyleSelect","fillGuitarFromChordsBtn","applyGuitarAllBtn","clearGuitarBtn","guitarRow","chordOctaveSelect","chordPlayModeSelect","chordRhythmModeSelect","fillFullBtn","fillHalfBtn","fillQuarterBtn","fillTripletBtn","clearTrackBtn","sectionChips","sectionBarsSelect","copyTargetSectionSelect","copyAToBBtn","playSequenceBtn","addSequenceSlotBtn","removeSequenceSlotBtn","clearSequenceBtn","sectionSequence","projectBox","exportScopeSelect","midiExportModeSelect","midiChordExportSelect","midiExactDurationsToggle","exportJsonBtn","importJsonBtn","copyShareCodeBtn","importShareCodeBtn","pushToDjBtn","pushToDawBtn","pushToGodotBtn","mobileTransferBtn","mobileTransferPanel","mobileTransferShareBtn","mobileTransferCopyBtn","mobileTransferDownloadBtn","mobileTransferOpenBtn","mobileTransferStatus","pushHandoffStatus","exportMidiBtn","exportWavBtn","cancelWavExportBtn","wavProgressText","importMidiBtn","midiImportInput","midiImportSummary","wavResultBox","wavPreview","wavOpenLink","wavDownloadLink","wavShareBtn","saveSlot1Btn","loadSlot1Btn","saveSlot2Btn","loadSlot2Btn","loadAutoBtn","autoSaveStatus","tooltipsToggle","masterVol","chordVol","beatVol","leadVol","metronomeToggle","chordsToggle","bassToggle","fxDelay","fxChorus","fxFlanger","fxReverb","fxMix","showMelodyPadsToggle","showDrumPadsToggle","showMelodyPickerToggle","showTrackControlsToggle","humanizeToggle","sidechainToggle","sidechainAmount","sidechainAmountRow","bassModeSelect","melodyPadsPanel","drumPadsPanel","melodyPickerPanel"].forEach(id => els[id] = document.getElementById(id));
   ["lofiChillBtn","lofiGameLoopBtn","lofiPresetSelect","drumKitSelect","bassToneSelect","lofiTextureToggle","lofiVinylCrackle","lofiTapeHiss","lofiWowFlutter","lofiWarmth","lofiLowPassAge","lofiBitCrush","lofiApplyIdeaBtn","lofiApplyLoopBtn"].forEach(id => els[id] = document.getElementById(id));
   ["chipTuneBtn","chipGameLoopBtn","chipPresetSelect","chipDrumKitSelect","chipBassToneSelect","chipTextureToggle","chipBitDepth","chipSampleRateCrush","chipPulseWidth","chipPitchDrift","chipSaturation","chipStereoSpread","chipApplyIdeaBtn","chipApplyLoopBtn"].forEach(id => els[id] = document.getElementById(id));
-  ["metalPresetSelect","metalDrumKitSelect","metalBassToneSelect","metalTextureToggle","metalDrive","metalPalmMute","metalLowTightness","metalPresence","metalRoomSize","metalPickAttack","metalApplyIdeaBtn","metalApplyLoopBtn"].forEach(id => els[id] = document.getElementById(id));
+  ["metalChugBtn","metalGameLoopBtn","metalPresetSelect","metalDrumKitSelect","metalBassToneSelect","metalTextureToggle","metalDrive","metalPalmMute","metalLowTightness","metalPresence","metalRoomSize","metalPickAttack","metalApplyIdeaBtn","metalApplyLoopBtn"].forEach(id => els[id] = document.getElementById(id));
   ["genreDrawerBtn","genreDrawer","closeGenreDrawerBtn","genreSummary","cleanGenreBtn","westernPresetSelect","westernApplyIdeaBtn","westernApplyLoopBtn","westernDrumPresetSelect","westernGuitarPresetSelect"].forEach(id => els[id] = document.getElementById(id));
   els.drumPresetSelect = document.getElementById("drumPresetSelect");
   els.guitarPresetSelect = document.getElementById("guitarPresetSelect");

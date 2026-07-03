@@ -278,11 +278,23 @@ const POCKET_DJ_VERSION = 1;
 const PROJECT_SCHEMA_VERSION = 16;
 const POCKET_AUDIO_CORE_VERSION = "0.1.0-scaffold";
 const POCKET_AUDIO_CORE_SCHEMA_SUPPORT = "16";
-const POCKET_AUDIO_CORE_IMPORT_PATHS = [
-  "../../packages/pocket-audio-core/src/index.js",
+const POCKET_AUDIO_CORE_REPO_IMPORT_PATHS = [
+  "../../packages/pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
+  "../../packages/pocket-audio-core/src/browser.js",
   "../../packages/pocket-audio-core/dist/pocket-audio-core.esm.js",
-  "./pocket-audio-core/src/index.js",
-  "./pocket-audio-core/dist/pocket-audio-core.esm.js"
+  "../../packages/pocket-audio-core/src/index.js"
+];
+const POCKET_AUDIO_CORE_PACKAGED_IMPORT_PATHS = [
+  "./pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
+  "./pocket-audio-core/src/browser.js",
+  "./pocket-audio-core/dist/pocket-audio-core.esm.js",
+  "./pocket-audio-core/src/index.js"
+];
+const POCKET_AUDIO_CORE_REPO_IIFE_PATHS = [
+  "../../packages/pocket-audio-core/dist/pocket-audio-core.iife.js"
+];
+const POCKET_AUDIO_CORE_PACKAGED_IIFE_PATHS = [
+  "./pocket-audio-core/dist/pocket-audio-core.iife.js"
 ];
 const SECTION_IDS = ["A","B","C","D","E","F","G","H"];
 const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
@@ -342,18 +354,76 @@ let pocketAudioCoreModule = null;
 let pocketAudioCore = null;
 let pocketAudioCoreStatus = "legacy audio active";
 
+function pocketAudioCoreIsRepoPath(){
+  const path = String(window.location.pathname || "").replace(/\\/g, "/").toLowerCase();
+  return path.includes("/apps/pocket-dj/");
+}
+function pocketAudioCoreImportPaths(){
+  return pocketAudioCoreIsRepoPath()
+    ? [...POCKET_AUDIO_CORE_REPO_IMPORT_PATHS, ...POCKET_AUDIO_CORE_PACKAGED_IMPORT_PATHS]
+    : [...POCKET_AUDIO_CORE_PACKAGED_IMPORT_PATHS, ...POCKET_AUDIO_CORE_REPO_IMPORT_PATHS];
+}
+function pocketAudioCoreScriptPaths(){
+  return pocketAudioCoreIsRepoPath()
+    ? [...POCKET_AUDIO_CORE_REPO_IIFE_PATHS, ...POCKET_AUDIO_CORE_PACKAGED_IIFE_PATHS]
+    : [...POCKET_AUDIO_CORE_PACKAGED_IIFE_PATHS, ...POCKET_AUDIO_CORE_REPO_IIFE_PATHS];
+}
 function pocketAudioCoreStatusLabel(){
   const diagnostics = pocketAudioCore?.getDiagnostics ? pocketAudioCore.getDiagnostics() : null;
   if(diagnostics?.projectLoaded) return `${POCKET_AUDIO_CORE_VERSION} / ${diagnostics.timelineEventCount || 0} events`;
   return `${POCKET_AUDIO_CORE_VERSION} / ${pocketAudioCoreStatus}`;
+}
+function loadPocketAudioCoreScript(path){
+  return new Promise((resolve, reject) => {
+    if(!path) return reject(new Error("Missing Pocket Audio Core script path"));
+    const existing = document.querySelector(`script[data-pocket-audio-core="${path}"]`);
+    if(existing){
+      if(globalThis.PocketAudioCore?.PocketAudio) return resolve(globalThis.PocketAudioCore);
+      existing.addEventListener("load", () => resolve(globalThis.PocketAudioCore), {once:true});
+      existing.addEventListener("error", () => reject(new Error(`Could not load ${path}`)), {once:true});
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = path;
+    script.async = true;
+    script.dataset.pocketAudioCore = path;
+    script.addEventListener("load", () => {
+      if(globalThis.PocketAudioCore?.PocketAudio) resolve(globalThis.PocketAudioCore);
+      else reject(new Error(`Pocket Audio Core script did not expose API: ${path}`));
+    }, {once:true});
+    script.addEventListener("error", () => reject(new Error(`Could not load ${path}`)), {once:true});
+    document.head.appendChild(script);
+  });
+}
+async function pocketAudioCoreAssetExists(path){
+  if(!path || window.location.protocol === "file:") return true;
+  try{
+    const response = await fetch(path, {method:"HEAD", cache:"no-store"});
+    return response.ok;
+  }catch(_e){
+    return true;
+  }
 }
 async function loadPocketAudioCoreModule(){
   if(pocketAudioCoreModule) return pocketAudioCoreModule;
   if(!pocketAudioCoreModulePromise){
     pocketAudioCoreModulePromise = (async () => {
       let lastError = null;
-      for(const path of POCKET_AUDIO_CORE_IMPORT_PATHS){
+      for(const path of pocketAudioCoreScriptPaths()){
         try{
+          if(!(await pocketAudioCoreAssetExists(path))) continue;
+          const mod = await loadPocketAudioCoreScript(path);
+          pocketAudioCoreModule = mod;
+          pocketAudioCore = new mod.PocketAudio({audio:false, host:"Pocket DJ"});
+          pocketAudioCoreStatus = "ready";
+          return mod;
+        }catch(e){
+          lastError = e;
+        }
+      }
+      for(const path of pocketAudioCoreImportPaths()){
+        try{
+          if(!(await pocketAudioCoreAssetExists(path))) continue;
           const mod = await import(path);
           pocketAudioCoreModule = mod;
           pocketAudioCore = new mod.PocketAudio({audio:false, host:"Pocket DJ"});
