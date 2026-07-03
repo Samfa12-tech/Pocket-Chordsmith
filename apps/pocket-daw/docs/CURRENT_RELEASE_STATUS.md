@@ -4,7 +4,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.35` |
+| Source version | `0.6.36` |
 | Project schema version | `2` |
 | Latest published version | `0.6.34` |
 | Latest published tag | `pocket-daw-v0.6.34` |
@@ -30,6 +30,10 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
+- Candidate 0.6.36: timeline-first UI opens with the inspector hidden, lower dock/media detail minimized, a compact timeline toolbar, and the main workspace weighted toward the arrangement timeline so the app feels less crowded on first launch.
+- Candidate 0.6.36: Pocket Audio handoff uses the download/open installed-app path from samfa12.com instead of the removed QR/local-network fallback; Sam manually smoke-tested push from the Pocket Audio handoff on samfa12.com into Pocket DAW.
+- Candidate 0.6.36: Sam manually smoke-tested Save/Load and confirmed audible playback/listening quality sounded good after the UI/handoff changes.
+- Candidate 0.6.36: Codex previously installed and controlled the 0.6.35 candidate through the live MCP bridge, confirming the app/project version, native-cpal playback start/stop, full render-cache coverage and no scheduler/cache hotspot signals before this release-version bump.
 - Candidate evidence after 0.6.34: Pocket DAW 0.6.35 was installed locally from releases/itch/installers/Pocket DAW_0.6.35_x64-setup.exe (SHA-256 8948FDF91BF7F4877348234120EA9873D5F14ABC7C0B07770FB1565EA70EC292), launched from C:\Users\sam_s\AppData\Local\Pocket DAW\pocket-daw.exe, and controlled through the enabled MCP live bridge at 127.0.0.1:47858. MCP status reported app/project version 0.6.35, schema 2, native-cpal playback started, render cache reached full coverage, diagnostics reported no late/skipped events, no graph rebuilds, no window-advance failures and no hotspot signals, then transport and diagnostics were stopped. This is candidate MCP smoke only; the full manual installed-app smoke checklist remains pending before public release claims.
 - Source-only after 0.6.34: live audio tracks now expose an explicit manual recording latency offset in the mixer, file-first MCP and tokened live MCP; future placed recording clips move earlier/later by the requested offset, preserve raw WAV media, and store requested/applied latency metadata for diagnostics and smoke observation; installed-app recording smoke is still required.
 - Source-only after 0.6.34: standalone Stem WAV export now builds one ZIP with audio/stems WAVs, manifests/stem-wavs-manifest.json, deterministic paths and byte-size summaries; installed-app smoke is still required before release claims.

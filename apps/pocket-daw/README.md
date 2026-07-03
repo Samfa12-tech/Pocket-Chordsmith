@@ -2,7 +2,7 @@
 
 Pocket DAW is a Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
-Current public status: **free Windows alpha testing on itch**. Treat `docs/CURRENT_RELEASE_STATUS.md`, generated from `release-status.json`, as the current source/public/smoke truth. The current audited release truth is `0.6.34`.
+Current public status: **free Windows alpha testing on itch**. Treat `docs/CURRENT_RELEASE_STATUS.md`, generated from `release-status.json`, as the current source/public/smoke truth. The current release checkpoint being prepared/published is `0.6.36`.
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
@@ -21,7 +21,7 @@ Pocket DAW is installed-app only for public alpha testing. Do not document, test
 
 Pocket DAW uses signed Tauri updater artifacts from GitHub Releases. The app is not updated from raw git source.
 
-Source commits after the published `0.6.34` checkpoint are unreleased until a
+Source commits after the last published checkpoint are unreleased until a
 new checkpoint is deliberately versioned, packaged, hashed, smoke-tested, and
 published. Do not create a new installer from a later commit while leaving the
 app/package/Tauri metadata at the previous public checkpoint.

@@ -4,7 +4,7 @@
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current public release truth: see `docs/CURRENT_RELEASE_STATUS.md`; the last published and installed-smoked checkpoint is `0.6.34`. Current source may be ahead until the next checkpoint is versioned, packaged, hashed, smoke-tested, and published.
+- Current public release truth: see `docs/CURRENT_RELEASE_STATUS.md`; `0.6.36` is the current release checkpoint being prepared/published with timeline-first UI and Pocket Audio handoff evidence.
 - Last completed public artifact record in this repo: tracked in `release-status.json`
 - Last installed public smoke evidence in this repo: tracked in `release-status.json`
 - Machine-readable release status: `release-status.json`
@@ -16,9 +16,17 @@ This is alpha-testing software, not a finished professional DAW. Future installe
 
 `docs/CURRENT_RELEASE_STATUS.md` is generated from `release-status.json` and is the release-truth anchor. Older version sections below are retained as historical implementation and QA notes; do not treat old version headings as current status unless the generated release-status doc agrees.
 
-Source commits after the published `0.6.34` checkpoint are unreleased until the
+Source commits after the last published checkpoint are unreleased until the
 next checkpoint is deliberately versioned, packaged, hashed, smoke-tested, and
-published. Do not create another `0.6.34` installer from a later commit.
+published. Do not create another installer from a later commit while leaving
+the package/Tauri/schema metadata at the previous public checkpoint.
+
+## Current 0.6.36 Checkpoint
+
+- Workspace/UI: Pocket DAW now opens timeline-first with inspector/detail docks minimized, a compact timeline toolbar, and Music/Game Music focus presets that actually change layout defaults.
+- Pocket Audio handoff: the installed DAW launch path from `samfa12.com` now uses the download/open handoff flow, with the QR/local-network fallback removed from the public path.
+- Manual smoke evidence from Sam on 2026-07-03: save/load passed, Pocket Audio handoff push from `samfa12.com` into Pocket DAW passed, and audible playback sounded good.
+- Release evidence is tracked in `release-status.json` and generated into `docs/CURRENT_RELEASE_STATUS.md`; exact installer hash and live updater publication evidence must be refreshed there after packaging/publishing.
 
 ## DAW capability map and next direction
 

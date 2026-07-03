@@ -65,11 +65,11 @@ describe("updater orchestration state transitions", () => {
         currentVersion: "0.6.34",
         update: {
           currentVersion: "0.6.34",
-          version: "0.6.35",
+          version: "0.6.37",
           notes: "Fixes",
           date: null,
         },
-        message: "Pocket DAW 0.6.35 is available.",
+        message: "Pocket DAW 0.6.37 is available.",
       },
       false,
     );
@@ -77,9 +77,9 @@ describe("updater orchestration state transitions", () => {
     expect(patch).toMatchObject({
       showUpdaterPanel: true,
       updaterStatus: "available",
-      updaterAvailableVersion: "0.6.35",
+      updaterAvailableVersion: "0.6.37",
       updaterReleaseNotes: "Fixes",
-      status: "Pocket DAW 0.6.35 is available. Open Help > Check for Updates.",
+      status: "Pocket DAW 0.6.37 is available. Open Help > Check for Updates.",
     });
   });
 
@@ -107,7 +107,7 @@ describe("updater orchestration state transitions", () => {
       state({
         playing: true,
         updaterStatus: "available",
-        updaterAvailableVersion: "0.6.35",
+        updaterAvailableVersion: "0.6.37",
       }),
     );
     expect(downloading).toMatchObject({

@@ -1,24 +1,31 @@
-# Pocket DAW v0.6.34 Alpha Testing Release Status
+# Pocket DAW v0.6.36 Alpha Testing Release Status
 
 Pocket DAW is now live for public Windows alpha testing on itch and linked from `samfa12.com`.
 
-This file records the current source baseline and the latest completed public installed-release evidence. Current source target is `0.6.34` bass parity/cache alpha. The machine-readable current status is `../release-status.json`; regenerate `CURRENT_RELEASE_STATUS.md` with `npm run status:release`.
+This file records the current source baseline and public installed-release evidence. Current source target is `0.6.36` timeline-first UI plus Pocket Audio handoff. The machine-readable current status is `../release-status.json`; regenerate `CURRENT_RELEASE_STATUS.md` with `npm run status:release`.
 
 ## Current Source Baseline
 
-- Version: `0.6.34`
-- Source delta after published `0.6.31`: Pocket DAW generated bass parity work for the installed/native path. Native cached/procedural bass now uses Chordsmith-style harmonic low-pass filtering for richer waves, keeps accented release tails alive, and bumps the native render-cache contract so old generated bass stems are rebuilt.
+- Version: `0.6.36`
+- Source delta after published `0.6.34`: Pocket DAW now opens timeline-first, reduces first-view UI density, keeps Music/Game Music layout presets meaningful, and uses the installed download/open handoff path from `samfa12.com` for Pocket Audio push into the DAW.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Primary itch channel: `windows-installer`
 - Updater manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 - Bootstrapper manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-bootstrapper-latest.json`
-- Release artifact status: `0.6.34` is the current public GitHub updater release and itch bootstrapper target.
-- Published source commit: `1b89374ac9a7c53cca3ea936909db62984de9031`.
-- GitHub release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.34`
+- Release artifact status: see `CURRENT_RELEASE_STATUS.md`; `0.6.36` is the active release checkpoint.
+- Published source commit: see `CURRENT_RELEASE_STATUS.md`.
+- GitHub release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.36`
 - Itch channel status: `samfa12/pocket-daw:windows-installer` reports user version `bootstrapper-0.6.34`.
 - Itch launch fallback: the bootstrapper upload includes `index.html` linking to `Pocket_DAW_Itch_Bootstrapper_v0.6.34.exe` so itch browser-mode requests no longer fail with `asset not found: index.html`.
 
-## Current Local Artifact Record
+## Current 0.6.36 Checkpoint Evidence
+
+- Sam manually smoke-tested save/load on 2026-07-03.
+- Sam manually smoke-tested Pocket Audio handoff push from `samfa12.com` into Pocket DAW on 2026-07-03.
+- Sam manually confirmed audible playback/listening quality sounded good on 2026-07-03.
+- Codex will record exact installer hash, commit, updater-manifest, and MCP installed-app evidence in `release-status.json` / `CURRENT_RELEASE_STATUS.md` once the packaged updater artifact is published.
+
+## Historical 0.6.34 Artifact Record
 
 The current installed-smoke artifact record is `0.6.34`. Local artifacts passed automated verification and installed-app smoke through MCP and user listening; the public GitHub updater artifact was then published from clean `main` and verified by downloading the latest manifest setup URL.
 
