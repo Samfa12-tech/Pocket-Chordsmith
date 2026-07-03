@@ -20,8 +20,11 @@ export function sidechainDuckCurve({ amount = 0.45, start = 0, duration = CHORDS
 }
 
 export function sidechainDuckGainAt({ amount = 0.45, triggerTime = 0, time = 0 } = {}) {
-  const elapsed = Number(time) - Number(triggerTime);
-  if (!Number.isFinite(elapsed) || elapsed < 0 || elapsed > CHORDSMITH_SIDECHAIN_RELEASE_SECONDS) return 1;
+  const safeTime = Number(time);
+  const safeTriggerTime = Number(triggerTime);
+  const elapsed = safeTime - safeTriggerTime;
+  const releaseEnd = safeTriggerTime + CHORDSMITH_SIDECHAIN_RELEASE_SECONDS;
+  if (!Number.isFinite(elapsed) || elapsed < 0 || safeTime >= releaseEnd) return 1;
   const duck = chordsmithSidechainDuckGain(amount, 1);
   if (elapsed <= CHORDSMITH_SIDECHAIN_ATTACK_SECONDS) {
     return 1 + (duck - 1) * (elapsed / CHORDSMITH_SIDECHAIN_ATTACK_SECONDS);

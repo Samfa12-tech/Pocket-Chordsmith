@@ -65,15 +65,14 @@ pub fn decode_audio_to_wav(
     let mut samples: Vec<f32> = Vec::new();
 
     loop {
-        let Some(packet) = (match format.next_packet() {
-            Ok(packet) => packet,
+        let packet = match format.next_packet() {
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
             Err(Error::IoError(err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => break,
             Err(Error::ResetRequired) => {
                 return Err("Symphonia stream reset is not supported for this import.".to_string())
             }
             Err(err) => return Err(format!("Symphonia could not read audio packet: {err}")),
-        }) else {
-            break;
         };
         if packet.track_id != track_id {
             continue;

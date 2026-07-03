@@ -1034,7 +1034,11 @@ fn f32_to_i24(value: f32) -> i32 {
 }
 
 fn write_i24_le(bytes: &mut Vec<u8>, value: i32) {
-    let unsigned = if value < 0 { value + 0x1_000_000 } else { value };
+    let unsigned = if value < 0 {
+        value + 0x1_000_000
+    } else {
+        value
+    };
     bytes.push((unsigned & 0xff) as u8);
     bytes.push(((unsigned >> 8) & 0xff) as u8);
     bytes.push(((unsigned >> 16) & 0xff) as u8);
@@ -1142,9 +1146,13 @@ fn render_playback_to_wav(
     let bytes = match mode {
         NativeAudioRenderMode::Mix => {
             if bit_depth == 32 {
-                render_float32_wav_frames(sample_rate, 2, frame_count, || render_next_frame(playback))?
+                render_float32_wav_frames(sample_rate, 2, frame_count, || {
+                    render_next_frame(playback)
+                })?
             } else {
-                render_pcm_wav_frames(sample_rate, 2, bit_depth, frame_count, || render_next_frame(playback))?
+                render_pcm_wav_frames(sample_rate, 2, bit_depth, frame_count, || {
+                    render_next_frame(playback)
+                })?
             }
         }
         NativeAudioRenderMode::CacheStem => {
@@ -2984,17 +2992,17 @@ fn harmonic_wave_coefficient(wave: &str, harmonic: usize) -> Option<f32> {
     match wave {
         "sawtooth" => Some(-2.0 / (std::f32::consts::PI * harmonic as f32)),
         "square" => {
-            if harmonic % 2 == 0 {
+            if harmonic.is_multiple_of(2) {
                 None
             } else {
                 Some(4.0 / (std::f32::consts::PI * harmonic as f32))
             }
         }
         "triangle" => {
-            if harmonic % 2 == 0 {
+            if harmonic.is_multiple_of(2) {
                 None
             } else {
-                let sign = if ((harmonic - 1) / 2) % 2 == 0 {
+                let sign = if ((harmonic - 1) / 2).is_multiple_of(2) {
                     1.0
                 } else {
                     -1.0
@@ -4012,7 +4020,8 @@ mod tests {
         let mut region = test_region("region", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0);
         region.playback_rate = 2.0;
 
-        let sample = render_region_sample(&region, &asset, 0.25).expect("region should sample at doubled source time");
+        let sample = render_region_sample(&region, &asset, 0.25)
+            .expect("region should sample at doubled source time");
 
         assert!((sample.0 - 0.5).abs() < 0.0001);
         assert!((sample.1 - 0.6).abs() < 0.0001);
@@ -4978,9 +4987,18 @@ mod tests {
 
         assert_eq!(&rendered.bytes[0..4], b"RIFF");
         assert_eq!(&rendered.bytes[8..12], b"WAVE");
-        assert_eq!(u16::from_le_bytes([rendered.bytes[22], rendered.bytes[23]]), 2);
-        assert_eq!(u16::from_le_bytes([rendered.bytes[32], rendered.bytes[33]]), 6);
-        assert_eq!(u16::from_le_bytes([rendered.bytes[34], rendered.bytes[35]]), 24);
+        assert_eq!(
+            u16::from_le_bytes([rendered.bytes[22], rendered.bytes[23]]),
+            2
+        );
+        assert_eq!(
+            u16::from_le_bytes([rendered.bytes[32], rendered.bytes[33]]),
+            6
+        );
+        assert_eq!(
+            u16::from_le_bytes([rendered.bytes[34], rendered.bytes[35]]),
+            24
+        );
         assert!(rendered.bytes.len() > 44);
         assert!(
             rendered.bytes[44..].iter().any(|byte| *byte != 0),
@@ -5001,10 +5019,22 @@ mod tests {
 
         assert_eq!(&rendered.bytes[0..4], b"RIFF");
         assert_eq!(&rendered.bytes[8..12], b"WAVE");
-        assert_eq!(u16::from_le_bytes([rendered.bytes[20], rendered.bytes[21]]), 3);
-        assert_eq!(u16::from_le_bytes([rendered.bytes[22], rendered.bytes[23]]), 2);
-        assert_eq!(u16::from_le_bytes([rendered.bytes[32], rendered.bytes[33]]), 8);
-        assert_eq!(u16::from_le_bytes([rendered.bytes[34], rendered.bytes[35]]), 32);
+        assert_eq!(
+            u16::from_le_bytes([rendered.bytes[20], rendered.bytes[21]]),
+            3
+        );
+        assert_eq!(
+            u16::from_le_bytes([rendered.bytes[22], rendered.bytes[23]]),
+            2
+        );
+        assert_eq!(
+            u16::from_le_bytes([rendered.bytes[32], rendered.bytes[33]]),
+            8
+        );
+        assert_eq!(
+            u16::from_le_bytes([rendered.bytes[34], rendered.bytes[35]]),
+            32
+        );
         assert!(rendered.bytes.len() > 44);
         assert!(
             rendered.bytes[44..].chunks_exact(4).any(|chunk| {
@@ -5048,8 +5078,9 @@ mod tests {
         let mut stem_source = playback_with_events(vec![event]);
         insert_playback_track(&mut stem_source, track.clone());
         stem_source.sample_rate = 8_000;
-        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
-            .expect("cache stem render should work");
+        let stem =
+            render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
+                .expect("cache stem render should work");
         let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
         let tracks = HashMap::from([("bass".to_string(), track)]);
         let (track_order, track_indices) = track_index_state(&tracks);
@@ -5115,8 +5146,9 @@ mod tests {
         let mut stem_source = playback_with_events(vec![event]);
         insert_playback_track(&mut stem_source, track.clone());
         stem_source.sample_rate = 8_000;
-        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
-            .expect("cache stem render should work");
+        let stem =
+            render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
+                .expect("cache stem render should work");
         let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
         let tracks = HashMap::from([("melody".to_string(), track)]);
         let (track_order, track_indices) = track_index_state(&tracks);
@@ -5183,8 +5215,9 @@ mod tests {
         let mut stem_source = playback_with_events(vec![event]);
         insert_playback_track(&mut stem_source, track.clone());
         stem_source.sample_rate = 8_000;
-        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
-            .expect("cache stem render should work");
+        let stem =
+            render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
+                .expect("cache stem render should work");
         let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
         let tracks = HashMap::from([("melody".to_string(), track)]);
         let (track_order, track_indices) = track_index_state(&tracks);
@@ -5253,9 +5286,13 @@ mod tests {
 
         let mut kick_stem_source = playback_with_events(vec![kick.clone()]);
         kick_stem_source.sample_rate = 8_000;
-        let kick_stem =
-            render_playback_to_wav(&mut kick_stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
-                .expect("kick cache stem render should work");
+        let kick_stem = render_playback_to_wav(
+            &mut kick_stem_source,
+            0.1,
+            NativeAudioRenderMode::CacheStem,
+            16,
+        )
+        .expect("kick cache stem render should work");
         let kick_decoded = decode_pcm16_wav(&kick_stem.bytes).expect("kick stem should decode");
 
         let mut chord_stem_source = playback_with_events(vec![chord.clone()]);
@@ -5367,8 +5404,9 @@ mod tests {
         let mut stem_source = playback_with_events(vec![event]);
         stem_source.sample_rate = 8_000;
         insert_playback_track(&mut stem_source, bass_track.clone());
-        let stem = render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
-            .expect("cache stem render should work");
+        let stem =
+            render_playback_to_wav(&mut stem_source, 0.1, NativeAudioRenderMode::CacheStem, 16)
+                .expect("cache stem render should work");
         let decoded = decode_pcm16_wav(&stem.bytes).expect("cache stem wav should decode");
 
         let tracks = HashMap::from([

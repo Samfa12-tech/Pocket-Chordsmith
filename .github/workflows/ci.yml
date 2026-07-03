@@ -132,6 +132,7 @@ jobs:
         working-directory: apps/pocket-daw
         run: |
           npm ci
+          npx playwright install chromium
           npm run verify:versions
           npm test
           npm run build
