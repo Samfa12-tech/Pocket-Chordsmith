@@ -153,6 +153,12 @@
     let currentTransferUrl = "";
     let currentRelay = null;
 
+    function makePocketDawDownloadFileName(){
+      const stamp = Date.now().toString(36);
+      const suffix = Math.random().toString(36).slice(2, 8);
+      return `pocket-chordsmith-to-pocket-daw-${stamp}-${suffix}.pcs1.txt`;
+    }
+
     function utf8ToBase64Url(text){
       const bytes = new TextEncoder().encode(text);
       let binary = "";
@@ -386,30 +392,33 @@
         els.sourceStatus.textContent = "Clipboard blocked. Select and copy the text manually.";
       }
     }
-    function downloadCode(){
+    function downloadCode(fileName = makePocketDawDownloadFileName(), statusMessage = "Downloaded .pcs1.txt handoff file."){
       if(!currentCode) return;
       const blob = new Blob([currentCode], {type:"text/plain;charset=utf-8"});
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `pocket-chordsmith-handoff-${Date.now().toString(36)}.pcs1.txt`;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      els.sourceStatus.textContent = "Downloaded .pcs1.txt handoff file.";
+      els.sourceStatus.textContent = statusMessage;
+      return fileName;
     }
     function openPocketDaw(){
       if(!currentCode) return;
-      const handoff = encodePocketHandoff(buildPocketHandoff("chordsmith-to-daw", currentCode));
+      const fileName = downloadCode(
+        makePocketDawDownloadFileName(),
+        "Pocket DAW launch requested with a downloaded handoff file. If it does not import, use Copy for Pocket DAW."
+      );
       const link = document.createElement("a");
-      link.href = `pocket-daw://handoff?${HANDOFF_PARAM}=${encodeURIComponent(handoff)}`;
+      link.href = `pocket-daw://handoff?source=download&file=${encodeURIComponent(fileName)}`;
       link.rel = "noreferrer";
       link.style.display = "none";
       document.body.appendChild(link);
       link.click();
       link.remove();
-      els.sourceStatus.textContent = "Pocket DAW launch requested. If it does not import, use Copy for Pocket DAW.";
     }
 
     els.loadTextBtn.addEventListener("click", () => {
@@ -435,7 +444,7 @@
     });
     els.copyDawBtn.addEventListener("click", () => copyText(currentCode, "PCS1 copied for Pocket DAW Import Paste."));
     els.copyGodotBtn.addEventListener("click", () => copyText(currentCode, "PCS1 copied for Godot Paste JSON/Code."));
-    els.downloadBtn.addEventListener("click", downloadCode);
+    els.downloadBtn.addEventListener("click", () => downloadCode());
     els.openDawBtn.addEventListener("click", openPocketDaw);
 
     const hashPayload = readHashPayload();

@@ -1051,10 +1051,18 @@ test("static handoff page imports hash payload and builds desktop fallbacks", as
       },
     });
     window.__handoffProtocolUrls = [];
+    window.__handoffDownloads = [];
     const originalClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function () {
       if (this.href.startsWith("pocket-daw://")) {
         window.__handoffProtocolUrls.push(this.href);
+        return;
+      }
+      if (this.download) {
+        window.__handoffDownloads.push({
+          fileName: this.download,
+          href: this.href,
+        });
         return;
       }
       return originalClick.call(this);
@@ -1068,11 +1076,16 @@ test("static handoff page imports hash payload and builds desktop fallbacks", as
   const result = await page.evaluate(() => ({
     copied: window.__handoffCopied,
     protocolUrls: window.__handoffProtocolUrls,
+    downloads: window.__handoffDownloads,
   }));
   expect(result.copied).toEqual(["PCS1:mobile-test", "PCS1:mobile-test"]);
+  expect(result.downloads).toHaveLength(1);
+  expect(result.downloads[0].fileName).toMatch(/^pocket-chordsmith-to-pocket-daw-.+\.pcs1\.txt$/);
   expect(result.protocolUrls).toHaveLength(1);
   expect(result.protocolUrls[0]).toContain("pocket-daw://handoff?");
-  expect(result.protocolUrls[0]).toContain("pocketHandoff=");
+  expect(result.protocolUrls[0]).toContain("source=download");
+  expect(result.protocolUrls[0]).toContain(`file=${encodeURIComponent(result.downloads[0].fileName)}`);
+  expect(result.protocolUrls[0]).not.toContain("pocketHandoff=");
 });
 
 test("static handoff page redeems a short code for desktop DAW and Godot import", async ({
@@ -1127,7 +1140,7 @@ test("static handoff page accepts pasted PCS1 text and downloads exact payload",
 
   const downloads = await page.evaluate(() => window.__handoffDownloads);
   expect(downloads).toHaveLength(1);
-  expect(downloads[0].fileName).toMatch(/^pocket-chordsmith-handoff-.+\.pcs1\.txt$/);
+  expect(downloads[0].fileName).toMatch(/^pocket-chordsmith-to-pocket-daw-.+\.pcs1\.txt$/);
 });
 
 test("static handoff page keeps copy and download available when QR is too large", async ({
