@@ -1766,7 +1766,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     selector: "data-midi-quantize",
     does: "Moves MIDI note starts to the selected rhythmic grid.",
     useWhen: "Use to tighten note starts to quarter, eighth, sixteenth, or thirty-second notes.",
-    aiNote: "This edits MIDI start timing in project state but remains undoable."
+    aiNote: "This edits MIDI start timing in project state but remains undoable. Also available as quantize_midi_clip through file-first MCP and live MCP."
   },
   {
     surface: "MIDI Editing",
@@ -1774,7 +1774,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     selector: "data-midi-duration-quantize",
     does: "Snaps MIDI note durations to the selected rhythmic grid without moving note starts.",
     useWhen: "Use when imported or recorded MIDI has acceptable starts but ragged note lengths.",
-    aiNote: "Preserves starts, velocity, channel and expression metadata; verify musical sustains after use."
+    aiNote: "Preserves starts, velocity, channel and expression metadata; verify musical sustains after use. Also available as quantize_midi_durations through file-first MCP and live MCP."
   },
   {
     surface: "MIDI Editing",
@@ -1782,7 +1782,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     selector: "data-midi-swing",
     does: "Applies straight or swung eighth-note timing to the MIDI clip.",
     useWhen: "Use after basic timing is correct and feel needs adjustment.",
-    aiNote: "Record/inspect the last swing metadata when explaining the result."
+    aiNote: "Record/inspect the last swing metadata when explaining the result. Also available as swing_midi_clip through file-first MCP and live MCP."
   },
   {
     surface: "MIDI Editing",
@@ -1790,7 +1790,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     selector: "data-midi-groove",
     does: "Applies a named groove template to MIDI timing.",
     useWhen: "Use for style-specific timing feel.",
-    aiNote: "Groove changes should be listened to, not judged from note positions alone."
+    aiNote: "Groove changes should be listened to, not judged from note positions alone. Also available as apply_midi_groove through file-first MCP and live MCP."
   },
   {
     surface: "MIDI Editing",

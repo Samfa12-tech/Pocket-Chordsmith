@@ -12,6 +12,7 @@ import {
   adoptMidiMeterMapCommand,
   adoptMidiTempoMapAutomationCommand,
   adoptMidiTempoMapStartCommand,
+  applyMidiGrooveTemplateCommand,
   applySelectedAudioClipActionCommand,
   branchGeneratedDrumsCommand,
   clearTimelineSelectionCommand,
@@ -36,6 +37,8 @@ import {
   moveClipToBarCommand,
   placePunchRecordingClipCommand,
   placePunchRecordingClipFromRangeCommand,
+  quantizeMidiClipCommand,
+  quantizeMidiDurationsCommand,
   rippleDeleteSelectedClipRangeCommand,
   rippleDeleteTimelineSelectionCommand,
   ensureFxAutomationLaneCommand,
@@ -59,6 +62,7 @@ import {
   setTrackRecordingLatencyOffsetCommand,
   setTrackRecordingInputChannelCommand,
   splitTimelineSelectionCommand,
+  swingMidiClipCommand,
   toggleFolderExpandedCommand,
   toggleTrackMuteCommand,
   toggleTrackSoloCommand,
@@ -71,6 +75,7 @@ import { buildPocketDawProjectFile } from "../daw/dawProject.ts";
 import { DRUM_LANE_IDS, type DrumLaneId } from "../daw/drumLanes.ts";
 import { createGameExportManifest, createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs.ts";
 import { arrangeMidiToHeavyMetalProject } from "../daw/midiArrangement.ts";
+import type { MidiGrooveTemplateId, MidiQuantizeGrid, MidiSwingPercent } from "../daw/midiClips.ts";
 import { normalizeMidiConversionSourceFilter, type MidiConversionSourceMode } from "../daw/midiConversionFilter.ts";
 import { createMidiChordsmithConversionPreviews } from "../daw/midiConversionPreview.ts";
 import { createPocketDjSourceSummary } from "../daw/pocketDjSources.ts";
@@ -121,6 +126,10 @@ export type PocketDawMcpCommand =
   | { type: "apply_audio_clip_action"; clipId: string; action: "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "quantize-warp-markers-1/4" | "quantize-warp-markers-1/8" | "quantize-warp-markers-1/16" | "quantize-warp-markers-1/32" | "apply-warp-varispeed" | "clear-warp-markers" }
   | { type: "set_audio_warp_marker_target"; clipId: string; markerId: string; targetBar: number }
   | { type: "delete_audio_warp_marker"; clipId: string; markerId: string }
+  | { type: "quantize_midi_clip"; clipId: string; grid: MidiQuantizeGrid }
+  | { type: "quantize_midi_durations"; clipId: string; grid: MidiQuantizeGrid }
+  | { type: "swing_midi_clip"; clipId: string; percent: MidiSwingPercent }
+  | { type: "apply_midi_groove"; clipId: string; templateId: MidiGrooveTemplateId }
   | { type: "activate_audio_take"; clipId: string }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
@@ -183,6 +192,10 @@ export type PocketDawLiveCommand =
   | { type: "apply_audio_clip_action"; clipId: string; action: "normalize-gain" | "reset-fades" | "quick-fade" | "crossfade-overlap" | "create-crossfade-left" | "invert-phase" | "reverse" | "analyze-transients" | "create-warp-markers" | "quantize-warp-markers" | "quantize-warp-markers-1/4" | "quantize-warp-markers-1/8" | "quantize-warp-markers-1/16" | "quantize-warp-markers-1/32" | "apply-warp-varispeed" | "clear-warp-markers" }
   | { type: "set_audio_warp_marker_target"; clipId: string; markerId: string; targetBar: number }
   | { type: "delete_audio_warp_marker"; clipId: string; markerId: string }
+  | { type: "quantize_midi_clip"; clipId: string; grid: MidiQuantizeGrid }
+  | { type: "quantize_midi_durations"; clipId: string; grid: MidiQuantizeGrid }
+  | { type: "swing_midi_clip"; clipId: string; percent: MidiSwingPercent }
+  | { type: "apply_midi_groove"; clipId: string; templateId: MidiGrooveTemplateId }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
@@ -682,6 +695,14 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return setAudioWarpMarkerTargetCommand(state, command.clipId, command.markerId, finiteCommandNumber(command.targetBar, "targetBar"));
     case "delete_audio_warp_marker":
       return deleteAudioWarpMarkerCommand(state, command.clipId, command.markerId);
+    case "quantize_midi_clip":
+      return quantizeMidiClipCommand(state, command.clipId, midiQuantizeGridFromMcpCommand(command.grid));
+    case "quantize_midi_durations":
+      return quantizeMidiDurationsCommand(state, command.clipId, midiQuantizeGridFromMcpCommand(command.grid));
+    case "swing_midi_clip":
+      return swingMidiClipCommand(state, command.clipId, midiSwingPercentFromMcpCommand(command.percent));
+    case "apply_midi_groove":
+      return applyMidiGrooveTemplateCommand(state, command.clipId, midiGrooveTemplateFromMcpCommand(command.templateId));
     case "activate_audio_take":
       return activateAudioTakeCommand(state, command.clipId);
     case "activate_audio_take_lane":
@@ -786,6 +807,22 @@ function recordingInputChannelValueFromMcpCommand(command: Extract<PocketDawMcpC
   }
   if (command.mode === "split-mono") return `split-mono:${Math.max(0, Math.floor(Number(command.channelIndex) || 0))}`;
   return `mono:${Math.max(0, Math.floor(Number(command.channelIndex) || 0))}`;
+}
+
+function midiQuantizeGridFromMcpCommand(value: unknown): MidiQuantizeGrid {
+  if (value === "1/4" || value === "1/8" || value === "1/16" || value === "1/32") return value;
+  throw new Error(`Unsupported MIDI quantize grid: ${String(value || "[missing grid]")}`);
+}
+
+function midiSwingPercentFromMcpCommand(value: unknown): MidiSwingPercent {
+  const percent = Number(value);
+  if (percent === 50 || percent === 55 || percent === 60 || percent === 65) return percent;
+  throw new Error(`Unsupported MIDI swing percent: ${String(value || "[missing percent]")}`);
+}
+
+function midiGrooveTemplateFromMcpCommand(value: unknown): MidiGrooveTemplateId {
+  if (value === "straight-16" || value === "pocket-16" || value === "shuffle-8") return value;
+  throw new Error(`Unsupported MIDI groove template: ${String(value || "[missing template]")}`);
 }
 
 function finiteCommandNumber(value: unknown, label: string): number {
@@ -922,7 +959,8 @@ function summarizeProject(project: PocketDawProject) {
       punchEndBar: clip.metadata?.punchEndBar,
       captureStartBar: clip.metadata?.captureStartBar,
       audioWarpMarkerCount: Array.isArray(clip.metadata?.audioWarpMarkers) ? clip.metadata.audioWarpMarkers.length : undefined,
-      audioWarpMarkers: summarizeAudioWarpMarkers(clip.metadata?.audioWarpMarkers)
+      audioWarpMarkers: summarizeAudioWarpMarkers(clip.metadata?.audioWarpMarkers),
+      midiTiming: summarizeMidiTimingMetadata(clip.metadata?.midi)
     }))
   };
 }
@@ -946,6 +984,21 @@ function summarizeAudioWarpMarkers(value: unknown) {
     })
     .filter((marker): marker is { id: string; sourceSeconds: number; targetBar: number; targetSeconds: number } => !!marker)
     .slice(0, 8);
+}
+
+function summarizeMidiTimingMetadata(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const midi = value as Record<string, unknown>;
+  const metadata = midi.metadata && typeof midi.metadata === "object" && !Array.isArray(midi.metadata)
+    ? midi.metadata as Record<string, unknown>
+    : {};
+  return {
+    noteCount: Array.isArray(midi.notes) ? midi.notes.length : 0,
+    lastQuantizeGrid: typeof metadata.lastQuantizeGrid === "string" ? metadata.lastQuantizeGrid : undefined,
+    lastDurationQuantizeGrid: typeof metadata.lastDurationQuantizeGrid === "string" ? metadata.lastDurationQuantizeGrid : undefined,
+    lastSwingPercent: typeof metadata.lastSwingPercent === "number" ? metadata.lastSwingPercent : undefined,
+    lastGrooveTemplate: typeof metadata.lastGrooveTemplate === "string" ? metadata.lastGrooveTemplate : undefined
+  };
 }
 
 function validatePocketDawProject(project: PocketDawProject): { ok: boolean; errors: string[]; warnings: string[] } {
@@ -1034,6 +1087,10 @@ function commandSchema() {
           "apply_audio_clip_action",
           "set_audio_warp_marker_target",
           "delete_audio_warp_marker",
+          "quantize_midi_clip",
+          "quantize_midi_durations",
+          "swing_midi_clip",
+          "apply_midi_groove",
           "activate_audio_take",
           "activate_audio_take_lane",
           "set_audio_take_archived",
@@ -1096,10 +1153,13 @@ function commandSchema() {
       parameter: stringSchema(),
       field: { type: "string", enum: ["tempo"] },
       curve: { type: "string", enum: ["linear", "hold", "ease-in", "ease-out"] },
+      grid: { type: "string", enum: ["1/4", "1/8", "1/16", "1/32"] },
+      templateId: { type: "string", enum: ["straight-16", "pocket-16", "shuffle-8"] },
       volume: numberSchema(),
       pan: numberSchema(),
       offsetSeconds: numberSchema(),
       milliseconds: numberSchema(),
+      percent: { type: "number", enum: [50, 55, 60, 65] },
       targetBar: numberSchema(),
       gate: numberSchema(),
       mute: booleanSchema(),
@@ -1132,7 +1192,7 @@ function liveCommandSchema() {
     {
       type: {
         type: "string",
-        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
+        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       },
       trackId: stringSchema(),
       clipId: stringSchema(),
@@ -1153,6 +1213,9 @@ function liveCommandSchema() {
       monitorEnabled: booleanSchema(),
       archived: booleanSchema(),
       action: { type: "string", enum: ["normalize-gain", "reset-fades", "quick-fade", "crossfade-overlap", "create-crossfade-left", "invert-phase", "reverse", "analyze-transients", "create-warp-markers", "quantize-warp-markers", "quantize-warp-markers-1/4", "quantize-warp-markers-1/8", "quantize-warp-markers-1/16", "quantize-warp-markers-1/32", "apply-warp-varispeed", "clear-warp-markers"] },
+      grid: { type: "string", enum: ["1/4", "1/8", "1/16", "1/32"] },
+      percent: { type: "number", enum: [50, 55, 60, 65] },
+      templateId: { type: "string", enum: ["straight-16", "pocket-16", "shuffle-8"] },
       targetBar: numberSchema(),
       bar: numberSchema(),
       startBar: numberSchema(),

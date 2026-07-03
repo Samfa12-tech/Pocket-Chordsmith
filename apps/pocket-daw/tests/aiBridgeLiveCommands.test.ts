@@ -9,6 +9,9 @@ import { createUndoStack } from "../src/daw/undo";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
 import { addTrackToProject } from "../src/daw/tracks";
 import { activateAudioTake, setAudioTakeArchived } from "../src/daw/clips";
+import { addMidiNote, importMidiFileToProject, midiDataFromClip } from "../src/daw/midiClips";
+import { parseStandardMidiFile } from "../src/daw/midiParser";
+import { simpleMidiBytes } from "./midiFixtures";
 
 function appHarness(state: AppState) {
   const app = Object.create(App.prototype) as {
@@ -452,6 +455,43 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(deleted.selectedTrackId).toBe(placed.trackId);
   });
 
+  it("applies MIDI quantize, swing and groove edits through the live bridge executor", () => {
+    let state = createInitialState();
+    const parsed = parseStandardMidiFile(simpleMidiBytes());
+    const imported = importMidiFileToProject(createEmptyPocketDawProject(), parsed, "live-midi.mid");
+    const project = addMidiNote(imported.project, imported.clipId, 181);
+    state = {
+      ...state,
+      selectedClipId: imported.clipId,
+      selectedTrackId: imported.trackId,
+      undoStack: createUndoStack(project)
+    };
+    const app = appHarness(state);
+
+    const quantized = app.applyAiBridgeLiveCommand({ type: "quantize_midi_clip", clipId: imported.clipId, grid: "1/16" });
+    app.state = quantized;
+    const lengths = app.applyAiBridgeLiveCommand({ type: "quantize_midi_durations", clipId: imported.clipId, grid: "1/8" });
+    app.state = lengths;
+    const swung = app.applyAiBridgeLiveCommand({ type: "swing_midi_clip", clipId: imported.clipId, percent: 60 });
+    app.state = swung;
+    const grooved = app.applyAiBridgeLiveCommand({ type: "apply_midi_groove", clipId: imported.clipId, templateId: "pocket-16" });
+    const clip = grooved.undoStack.present.timeline.clips.find((item) => item.id === imported.clipId)!;
+    const midi = midiDataFromClip(clip);
+
+    expect(quantized.status).toContain("Quantized live-midi.mid to 1/16");
+    expect(lengths.status).toContain("Quantized live-midi.mid note lengths to 1/8");
+    expect(swung.status).toContain("Applied 60% swing to live-midi.mid");
+    expect(grooved.status).toContain("Applied Pocket 16 groove to live-midi.mid");
+    expect(midi.metadata).toMatchObject({
+      lastQuantizeGrid: "1/16",
+      lastDurationQuantizeGrid: "1/8",
+      lastSwingPercent: 50,
+      lastGrooveTemplate: "pocket-16"
+    });
+    expect(grooved.selectedClipId).toBe(imported.clipId);
+    expect(grooved.selectedTrackId).toBe(imported.trackId);
+  });
+
   it("applies reversible audio clip actions through the live bridge executor", () => {
     let state = createInitialState();
     const project = createEmptyPocketDawProject();
@@ -771,6 +811,10 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.capabilities.liveCommands).toContain("ripple_delete_clip_range");
     expect(status.capabilities.liveCommands).toContain("ripple_delete_timeline_selection");
     expect(status.capabilities.liveCommands).toContain("apply_audio_clip_action");
+    expect(status.capabilities.liveCommands).toContain("quantize_midi_clip");
+    expect(status.capabilities.liveCommands).toContain("quantize_midi_durations");
+    expect(status.capabilities.liveCommands).toContain("swing_midi_clip");
+    expect(status.capabilities.liveCommands).toContain("apply_midi_groove");
     expect(status.capabilities.liveCommands).toContain("place_punch_recording_clip_from_range");
     expect(status.capabilities.liveCommands).toContain("activate_audio_take_lane");
     expect(status.capabilities.liveCommands).toContain("set_audio_take_archived");

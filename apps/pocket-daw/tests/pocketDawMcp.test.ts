@@ -69,6 +69,10 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_recording_latency_offset");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_recording_input_channel");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("split-mono");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("quantize_midi_clip");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("quantize_midi_durations");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("swing_midi_clip");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("apply_midi_groove");
     const liveApplySchema = toolList.find((tool) => tool.name === "pocket_daw_live_apply_commands")?.inputSchema as { properties: Record<string, unknown> } | undefined;
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_armed");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_monitor");
@@ -90,6 +94,10 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("quantize-warp-markers-1/8");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("apply-warp-varispeed");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("clear-warp-markers");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("quantize_midi_clip");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("quantize_midi_durations");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("swing_midi_clip");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("apply_midi_groove");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("place_punch_recording_clip_from_range");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("activate_audio_take_lane");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_audio_take_archived");
@@ -778,6 +786,45 @@ describe("Pocket DAW MCP tools", () => {
     expect(summaryClip.audioWarpMarkers).toEqual([
       expect.objectContaining({ id: "warp_2", sourceSeconds: 4.5, targetBar: 4.5 })
     ]);
+  });
+
+  it("applies MIDI timing edits through the file-first command path", async () => {
+    const parsed = parseStandardMidiFile(simpleMidiBytes());
+    const imported = importMidiFileToProject(createEmptyPocketDawProject(), parsed, "mcp-midi.mid");
+    const project = addMidiNote(imported.project, imported.clipId, 181);
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(project),
+      commands: [
+        { type: "quantize_midi_clip", clipId: imported.clipId, grid: "1/16" },
+        { type: "quantize_midi_durations", clipId: imported.clipId, grid: "1/8" },
+        { type: "swing_midi_clip", clipId: imported.clipId, percent: 60 },
+        { type: "apply_midi_groove", clipId: imported.clipId, templateId: "pocket-16" }
+      ]
+    }));
+    const clip = result.project.timeline.clips.find((item: { id: string }) => item.id === imported.clipId);
+    const midi = midiDataFromClip(clip!);
+    const summaryClip = result.summary.clips.find((item: { id: string }) => item.id === imported.clipId);
+
+    expect(result.statuses).toEqual([
+      expect.stringContaining("Quantized mcp-midi.mid to 1/16"),
+      expect.stringContaining("Quantized mcp-midi.mid note lengths to 1/8"),
+      expect.stringContaining("Applied 60% swing to mcp-midi.mid"),
+      expect.stringContaining("Applied Pocket 16 groove to mcp-midi.mid")
+    ]);
+    expect(midi.metadata).toMatchObject({
+      lastQuantizeGrid: "1/16",
+      lastDurationQuantizeGrid: "1/8",
+      lastSwingPercent: 50,
+      lastGrooveTemplate: "pocket-16"
+    });
+    expect(summaryClip.midiTiming).toMatchObject({
+      noteCount: 2,
+      lastQuantizeGrid: "1/16",
+      lastDurationQuantizeGrid: "1/8",
+      lastSwingPercent: 50,
+      lastGrooveTemplate: "pocket-16"
+    });
   });
 
   it("applies timeline range edits through the file-first command path", async () => {
