@@ -2446,9 +2446,25 @@ function downloadMobileTransferCode(){
   setStatus(downloaded ? "Mobile transfer file downloaded" : "Mobile transfer download blocked");
   setMobileTransferStatus(downloaded ? "Downloaded a .pcs1.txt file for desktop import." : "Download was blocked. Copy the PCS1 code from the project box.");
 }
+function openMobileTransferPendingWindow(){
+  try{
+    const opened = window.open("about:blank", "PocketAudioMobileTransfer");
+    if(opened){
+      try{
+        if(opened.document){
+          opened.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pocket Audio Handoff</title><style>body{font:16px system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#101722;color:#eef4ff}main{max-width:28rem;padding:24px;text-align:center}p{color:#b8c3d6}</style></head><body><main><h1>Preparing transfer...</h1><p>Pocket Chordsmith is creating a short samfa12 code for this song.</p></main></body></html>`);
+          opened.document.close();
+        }
+      }catch(e){}
+      return opened;
+    }
+  }catch(e){}
+  return null;
+}
 async function openMobileTransferPage(){
   const transfer = prepareMobileTransfer();
   if(!transfer) return;
+  const pendingWindow = openMobileTransferPendingWindow();
   setMobileTransferStatus("Creating a short samfa12 transfer code...");
   const relay = await createMobileTransferRelay(transfer);
   const url = relay?.url || (transfer.urlFits ? transfer.transferUrl : resolvePocketAudioHandoffUrl());
@@ -2458,7 +2474,9 @@ async function openMobileTransferPage(){
       ? "Transfer page pop-up blocked. Copy the short code or open samfa12.com/apps/pocket-audio-handoff/."
       : transfer.urlFits
         ? "Transfer page pop-up blocked. Copy the PCS1 code or open samfa12.com/apps/pocket-audio-handoff/."
-      : "Transfer page pop-up blocked. Copy or download the PCS1 code."
+      : "Transfer page pop-up blocked. Copy or download the PCS1 code.",
+    null,
+    pendingWindow
   );
   if(opened){
     setStatus("Opening mobile transfer page...");

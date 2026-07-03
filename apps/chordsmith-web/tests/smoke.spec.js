@@ -933,9 +933,14 @@ test("Godot push reports browser loopback permission blocks without claiming fal
 test("mobile transfer builds a PCS1 code and opens the static handoff page", async ({
   page,
 }) => {
+  let releaseRelay;
+  const relayReady = new Promise((resolve) => {
+    releaseRelay = resolve;
+  });
   await page.route("**/api/pocket-audio-handoff/transfers", async (route) => {
     const body = route.request().postDataJSON();
     expect(body.code).toMatch(/^PCS1:/);
+    await relayReady;
     await route.fulfill({
       status: 201,
       contentType: "application/json",
@@ -971,7 +976,20 @@ test("mobile transfer builds a PCS1 code and opens the static handoff page", asy
     "same-device",
   );
 
-  await page.getByRole("button", { name: "Open transfer page" }).click();
+  const openClick = page.getByRole("button", { name: "Open transfer page" }).click();
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__pocketChordsmithOpenedUrls.length),
+    )
+    .toBe(1);
+  const waitingUrl = await page.evaluate(
+    () => window.__pocketChordsmithOpenedUrls[0].location.href,
+  );
+  expect(waitingUrl).toBe("about:blank");
+
+  releaseRelay();
+  await openClick;
 
   const openedUrls = await page.evaluate(() =>
     window.__pocketChordsmithOpenedUrls.map((item) => item.location.href),
