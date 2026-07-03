@@ -210,11 +210,15 @@ export function createInitialState(): AppState {
     clipClipboard: null,
     clipClipboardGroup: null,
     zoom: 240,
-    timelineHeightPx: 430,
-    inspectorVisible: true,
+    timelineHeightPx: 620,
+    inspectorVisible: false,
     inspectorWidthPx: 420,
     uiCreationPreset: "music",
-    collapsedUiSections: createUiCollapsedSections(),
+    collapsedUiSections: createUiCollapsedSections({
+      "timeline-tools": true,
+      "lower-dock": true,
+      "media-pool": true
+    }),
     lowerDockTab: "mixer",
     status: "Editable demo copy loaded. Edits autosave to this copy.",
     playing: false,
@@ -278,10 +282,13 @@ export function createUiCollapsedSections(overrides: Partial<UiCollapsedSections
 export function collapsedSectionsForCreationPreset(preset: UiCreationPreset): UiCollapsedSections {
   if (preset === "game-music") {
     return createUiCollapsedSections({
+      "timeline-tools": true,
       "inspector-clip": true
     });
   }
   return createUiCollapsedSections({
+    "timeline-tools": true,
+    "lower-dock": true,
     "media-pool": true
   });
 }

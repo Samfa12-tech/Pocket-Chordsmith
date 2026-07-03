@@ -2716,9 +2716,10 @@ export class App {
       this.state.uiCreationPreset = action === "preset-game-music" ? "game-music" : "music";
       this.state.collapsedUiSections = collapsedSectionsForCreationPreset(this.state.uiCreationPreset);
       this.state.lowerDockTab = lowerDockTabForCreationPreset(this.state.uiCreationPreset, this.state.lowerDockTab);
+      this.state.inspectorVisible = false;
       this.state.status = this.state.uiCreationPreset === "game-music"
-        ? "Game music focus: cue and game-pack export controls are visible; clip take details and live recording tools are tucked away."
-        : "Music focus: composition, editing and mix controls are visible; game-pack controls and media-pool clutter are tucked away.";
+        ? "Game music focus: timeline/game cues stay prominent; game-pack export controls are open and inspector detail is tucked away."
+        : "Music focus: the timeline stays primary; deeper editing, mix and media controls are tucked away until opened.";
       this.render({ preserveScroll: true });
     }
     if (action === "toggle-ui-section") {
@@ -2835,6 +2836,7 @@ export class App {
     if (action === "media-pool-focus") {
       this.state.status = "Media Pool visible.";
       this.state.showFilePanel = false;
+      this.state.collapsedUiSections = { ...this.state.collapsedUiSections, "media-pool": false };
       this.render();
       this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "start", inline: "nearest" });
     }
@@ -2853,6 +2855,7 @@ export class App {
     }
     if (action === "lower-dock-mixer" || action === "lower-dock-inserts" || action === "lower-dock-sends" || action === "lower-dock-automation" || action === "lower-dock-piano-roll" || action === "lower-dock-audio-editor" || action === "lower-dock-export-details") {
       this.state.lowerDockTab = action.replace("lower-dock-", "") as typeof this.state.lowerDockTab;
+      this.state.collapsedUiSections = { ...this.state.collapsedUiSections, "lower-dock": false };
       this.state.status = `${this.state.lowerDockTab[0].toUpperCase()}${this.state.lowerDockTab.slice(1)} dock selected.`;
       this.render({ preserveScroll: true });
     }
@@ -2866,8 +2869,10 @@ export class App {
       this.state.showFunctionGuidePanel = false;
       this.state.showFeedbackPanel = false;
       this.state.uiCreationPreset = "game-music";
+      this.state.inspectorVisible = false;
+      this.state.collapsedUiSections = { ...collapsedSectionsForCreationPreset("game-music"), "lower-dock": false };
       this.state.lowerDockTab = "export-details";
-      this.state.status = "Godot focus: game cue and game-pack export controls are visible.";
+      this.state.status = "Godot focus: timeline/game cues stay prominent and game-pack export controls are visible.";
       this.render({ preserveScroll: true });
       this.root.querySelector<HTMLElement>(".mixer.lower-dock")?.scrollIntoView({ block: "start", inline: "nearest" });
     }
@@ -5738,8 +5743,8 @@ const ACTION_BUTTON_TOOLTIPS: Record<string, string> = {
   "open-project": "Open a .pocketdaw project.",
   "pause": "Pause playback.",
   "play": "Start playback.",
-  "preset-game-music": "Show game cue and game-pack export controls, open export details, and tuck clip take/recording detail away.",
-  "preset-music": "Show composition, editing and mix controls, and tuck game-pack and media-pool clutter away.",
+  "preset-game-music": "Keep timeline/game cues prominent, open game-pack export controls, and tuck inspector detail away.",
+  "preset-music": "Keep the timeline primary and tuck deeper edit, mix, media and game-export surfaces away.",
   "push-godot-pack": "Try a local Godot receiver first, then save the ZIP if unavailable.",
   "range-clear": "Clear the active edit range.",
   "range-copy": "Copy the selected clip material inside the active edit range.",

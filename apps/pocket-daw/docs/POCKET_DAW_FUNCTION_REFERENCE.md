@@ -174,9 +174,9 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | Function | What it does | Use when | AI counterpart notes |
 | --- | --- | --- | --- |
 | Studio Rail | Provides persistent left-side navigation for Library, Project, Clips, Media, Mixer, MIDI, Audio, Export, Godot, Pocket handoff, Diagnostics and Help. | The DAW surface feels busy or a human/AI helper needs to jump to a major work area quickly. | Rail buttons reuse the normal command layer; they focus work areas rather than adding parallel workflows. |
-| Music Focus | Shows composition/edit/mix controls, collapses the Media Pool and hides game cue/export clutter. | Writing or mixing music. | UI-only layout filter. |
-| Game Music Focus | Opens Export Details, shows game cues/game-pack exports and collapses selected clip/take detail. | Preparing adaptive music and packs. | WAV game packs remain baseline; does not edit the Godot addon. |
-| Collapsible UI Sections | Minimizes timeline tools, inspector sections, lower dock and media pool. | Reducing visual density. | UI-only; should not affect save/export. |
+| Music Focus | Keeps the timeline primary while tucking deeper edit, mix, media and game-export surfaces behind explicit buttons. | Writing or mixing music. | UI-only layout filter. |
+| Game Music Focus | Keeps the timeline and game cues prominent, opens Export Details and keeps inspector detail tucked away. | Preparing adaptive music and packs. | WAV game packs remain baseline; does not edit the Godot addon. |
+| Collapsible UI Sections | Minimizes timeline tools, inspector sections, lower dock and media pool. Collapsed timeline tools become a compact arrangement strip. | Reducing visual density. | UI-only; should not affect save/export. |
 | Tooltips | Adds hover explanations to buttons and dense controls. | Quick reminders without opening this guide. | Update tooltip map when adding buttons. |
 | Function Guide | Opens the in-app summary of functions. | Human or AI needs purpose/use/caution quickly. | Keep this guide and in-app catalog aligned. |
 | Button And Action Catalog | Shows command IDs, selectors, shortcuts, what each control does, when to use it and AI notes. | The UI feels busy or an AI helper needs precise control semantics. | This panel mirrors `docs/POCKET_DAW_ACTION_CATALOG.md`; update both from the shared catalog source. |

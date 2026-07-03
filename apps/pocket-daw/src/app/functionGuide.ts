@@ -632,19 +632,19 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "Music Focus",
-        does: "Keeps composition, editing and mix controls visible while collapsing the Media Pool and hiding game cue/export clutter.",
+        does: "Keeps the timeline primary while tucking deeper edit, mix, media and game-export surfaces behind explicit buttons.",
         useWhen: "Use when writing or mixing a song.",
         aiNote: "Focus presets are layout filters only; they do not delete controls, media or project data."
       },
       {
         name: "Game Music Focus",
-        does: "Opens Export Details, keeps game cues and game-pack export controls visible, and collapses selected clip/take detail.",
+        does: "Keeps the timeline and game cues prominent, opens Export Details for game-pack work, and keeps the inspector tucked away.",
         useWhen: "Use when preparing adaptive music and game packs.",
         aiNote: "Layout filter only; WAV game packs remain the supported baseline and the Godot addon is not edited."
       },
       {
         name: "Collapsible UI Sections",
-        does: "Minimizes timeline tools, inspector clip/track sections, lower dock and media pool.",
+        does: "Minimizes timeline tools, inspector clip/track sections, lower dock and media pool. Collapsed timeline tools become a compact arrangement strip instead of a blank hidden panel.",
         useWhen: "Use to reduce UI density while keeping the recovery Show buttons visible.",
         aiNote: "Collapse state is UI-only and should not affect save/export behavior."
       },
@@ -1198,7 +1198,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "View And Focus",
     control: "Music Focus",
     actionId: "preset-music",
-    does: "Keeps composition, editing, and mixing controls prominent while collapsing the Media Pool and hiding game-export clutter.",
+    does: "Keeps the timeline primary while tucking deeper edit, mix, media and game-export surfaces behind explicit buttons.",
     useWhen: "Use while writing, arranging, importing, or mixing a song.",
     aiNote: "Layout filter only; it does not remove project data, media or hidden features."
   },
@@ -1206,7 +1206,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "View And Focus",
     control: "Game Music Focus",
     actionId: "preset-game-music",
-    does: "Opens Export Details, keeps game cue and game-pack controls visible, and collapses selected clip/take detail.",
+    does: "Switches to Game music focus, keeps timeline/game cues prominent, opens Export Details, and keeps the inspector tucked away.",
     useWhen: "Use while preparing adaptive game music packs.",
     aiNote: "Layout filter only; WAV game packs remain the supported baseline and this does not edit the Godot addon."
   },

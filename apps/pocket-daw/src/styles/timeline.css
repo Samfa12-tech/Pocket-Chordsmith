@@ -18,8 +18,10 @@
 }
 
 .timeline-toolbar.collapsed {
-  justify-content: flex-start;
-  min-height: 48px;
+  justify-content: space-between;
+  min-height: 44px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 .timeline-toolbar > div {
@@ -33,9 +35,41 @@
   flex: 0 0 210px;
 }
 
+.timeline-toolbar.collapsed > .section-collapse-head {
+  flex-basis: 176px;
+}
+
 .timeline-toolbar > .collapsed-section-notice {
   display: grid;
   flex: 1 1 260px;
+}
+
+.timeline-compact-tools {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.timeline-compact-status,
+.timeline-compact-readout {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  min-width: 0;
+  color: #aebee2;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timeline-compact-status {
+  overflow: hidden;
+  max-width: 280px;
+  text-overflow: ellipsis;
+}
+
+.timeline-compact-readout {
+  color: #dce8ff;
 }
 
 .timeline-toolbar button {

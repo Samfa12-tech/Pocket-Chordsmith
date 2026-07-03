@@ -367,8 +367,8 @@ function renderCreationPresets(state: AppState): string {
   return `
     <span class="creation-presets" role="group" aria-label="Creation focus preset">
       <span class="creation-presets-label">Focus</span>
-      <button type="button" class="${musicActive ? "on" : ""}" data-action="preset-music" aria-pressed="${musicActive ? "true" : "false"}" title="Music preset: keep composition, editing and mix controls prominent while hiding game cue/export clutter">Music</button>
-      <button type="button" class="${gameActive ? "on" : ""}" data-action="preset-game-music" aria-pressed="${gameActive ? "true" : "false"}" title="Game music preset: keep cue and game-pack export controls visible while hiding live-recording take tools">Game music</button>
+      <button type="button" class="${musicActive ? "on" : ""}" data-action="preset-music" aria-pressed="${musicActive ? "true" : "false"}" title="Music preset: keep the timeline primary and tuck deeper edit, mix, media and game-export surfaces away">Music</button>
+      <button type="button" class="${gameActive ? "on" : ""}" data-action="preset-game-music" aria-pressed="${gameActive ? "true" : "false"}" title="Game music preset: keep timeline/game cues prominent and open game-pack export controls">Game music</button>
     </span>
   `;
 }
@@ -424,19 +424,20 @@ function renderTimeline(state: AppState): string {
   const rangeStart = selection?.startBar ?? project.timeline.loop.startBar;
   const rangeEnd = selection?.endBar ?? project.timeline.loop.endBar;
   const toolsCollapsed = isUiSectionCollapsed(state, "timeline-tools");
+  const toolsLabel = toolsCollapsed ? "Timeline" : "Timeline tools";
   return `
     <section class="timeline-wrap">
       <div class="timeline-toolbar ${toolsCollapsed ? "collapsed" : ""}" data-ui-collapse-section="timeline-tools">
         <div class="section-collapse-head timeline-tools-head">
           <div>
-            <strong>Timeline tools</strong>
+            <strong>${toolsLabel}</strong>
             <span>${escapeHtml(state.snapMode === "off" ? "Snap off" : `${modeLabel(state.snapMode)} snap`)} / ${Math.round(zoom)} px/bar</span>
           </div>
           ${renderUiSectionToggle(state, "timeline-tools")}
         </div>
         ${
           toolsCollapsed
-            ? renderCollapsedNotice("Timeline editing, zoom, loop and range controls are hidden.")
+            ? renderCompactTimelineTools(state, project, zoom, rangeStart, rangeEnd)
             : `
               <div class="edit-tools">
                 <button data-action="clip-left" title="Move the selected clip one snap step earlier">Move Left</button>
@@ -509,6 +510,39 @@ function renderTimeline(state: AppState): string {
       </div>
     </section>
   `;
+}
+
+function renderCompactTimelineTools(
+  state: AppState,
+  project: ReturnType<typeof currentProject>,
+  zoom: number,
+  rangeStart: number,
+  rangeEnd: number
+): string {
+  const selection = project.timeline.selection || null;
+  const loopSummary = project.timeline.loop.enabled
+    ? `Loop ${formatBarNumber(project.timeline.loop.startBar)}-${formatBarNumber(project.timeline.loop.endBar)}`
+    : "Loop off";
+  const rangeSummary = selection
+    ? `Range ${formatBarNumber(rangeStart)}-${formatBarNumber(rangeEnd)}`
+    : "No range";
+  return `
+    <div class="timeline-compact-tools" aria-label="Essential timeline tools">
+      <span class="timeline-compact-status">${escapeHtml(loopSummary)} / ${escapeHtml(rangeSummary)}</span>
+      <button data-action="clip-split" title="Split the selected clip at the playhead">Split</button>
+      <button data-action="clip-duplicate" title="Duplicate the selected clip after itself">Duplicate</button>
+      <button data-action="clip-mute" title="Mute or unmute the selected clip without deleting it">Mute</button>
+      <button data-action="clip-delete" title="Delete the selected clip">Delete</button>
+      <button data-action="zoom-out" title="Zoom the timeline out">Zoom -</button>
+      <button data-action="zoom-in" title="Zoom the timeline in">Zoom +</button>
+      <button data-action="toggle-inspector" title="${state.inspectorVisible ? "Hide" : "Show"} the selected clip and track inspector">${state.inspectorVisible ? "Hide Inspector" : "Inspector"}</button>
+      <span class="timeline-compact-readout" data-zoom-readout="true">${Math.round(zoom)} px/bar</span>
+    </div>
+  `;
+}
+
+function formatBarNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function renderTimelineSongSettings(pcs: SanitizedPcsProject | null): string {
