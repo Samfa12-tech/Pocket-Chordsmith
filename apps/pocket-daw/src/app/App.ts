@@ -263,7 +263,7 @@ import {
   writeNativeCacheAsset,
   type ImportedAudioBytes
 } from "../native/mediaBridge";
-import { importMidiFileToProjectWithPlacement, type MidiGrooveTemplateId, type MidiImportPlacementMode, type MidiQuantizeGrid, type MidiSwingPercent } from "../daw/midiClips";
+import { importMidiFileToProjectWithPlacement, type MidiGrooveTemplateId, type MidiImportPlacementMode, type MidiPitchTransform, type MidiQuantizeGrid, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
 import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
 import { isNativeRecordingAvailable, nativeRecordingStatus, startNativeRecording, startNativeRecordingPreview, stopNativeRecording, stopNativeRecordingPreview, updateNativeRecordingMonitor } from "../native/recordingBridge";
@@ -311,6 +311,8 @@ type AiBridgeLiveCommand =
   | { type: "quantize_midi_durations"; clipId: string; grid: MidiQuantizeGrid }
   | { type: "swing_midi_clip"; clipId: string; percent: MidiSwingPercent }
   | { type: "apply_midi_groove"; clipId: string; templateId: MidiGrooveTemplateId }
+  | { type: "transform_midi_velocity"; clipId: string; transform: MidiVelocityTransform }
+  | { type: "transform_midi_pitch"; clipId: string; transform: MidiPitchTransform }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
@@ -634,7 +636,7 @@ export class App {
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
         control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics"],
-        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
+        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "transform_midi_velocity", "transform_midi_pitch", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       }
     };
   }
@@ -852,6 +854,12 @@ export class App {
     }
     if (command.type === "apply_midi_groove") {
       return applyMidiGrooveTemplateCommand(this.state, stringInput(command.clipId, "clipId"), midiGrooveTemplateInput(command.templateId));
+    }
+    if (command.type === "transform_midi_velocity") {
+      return transformMidiVelocityCommand(this.state, stringInput(command.clipId, "clipId"), midiVelocityTransformInput(command.transform));
+    }
+    if (command.type === "transform_midi_pitch") {
+      return transformMidiPitchCommand(this.state, stringInput(command.clipId, "clipId"), midiPitchTransformInput(command.transform));
     }
     if (command.type === "activate_audio_take_lane") {
       return activateAudioTakeLaneCommand(this.state, stringInput(command.clipId, "clipId"));
@@ -5468,6 +5476,16 @@ function midiGrooveTemplateInput(value: unknown): MidiGrooveTemplateId {
   throw new Error(`Unsupported MIDI groove template: ${String(value || "[missing template]")}`);
 }
 
+function midiVelocityTransformInput(value: unknown): MidiVelocityTransform {
+  if (value === "level-96" || value === "humanize-12") return value;
+  throw new Error(`Unsupported MIDI velocity transform: ${String(value || "[missing transform]")}`);
+}
+
+function midiPitchTransformInput(value: unknown): MidiPitchTransform {
+  if (value === "semitone-down" || value === "semitone-up" || value === "octave-down" || value === "octave-up") return value;
+  throw new Error(`Unsupported MIDI pitch transform: ${String(value || "[missing transform]")}`);
+}
+
 function isClipAutomationField(value: string): value is ClipAutomationField {
   return value === "gain" || value === "fadeInSeconds" || value === "fadeOutSeconds" || value === "sourceOffsetSeconds";
 }
@@ -5767,6 +5785,8 @@ function liveCommandAudioSyncMode(command: AiBridgeLiveCommand): AudioProjectSyn
     command.type === "quantize_midi_durations" ||
     command.type === "swing_midi_clip" ||
     command.type === "apply_midi_groove" ||
+    command.type === "transform_midi_velocity" ||
+    command.type === "transform_midi_pitch" ||
     command.type === "place_punch_recording_clip_from_range"
   ) {
     return "timeline-structure";

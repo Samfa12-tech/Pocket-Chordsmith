@@ -66,6 +66,8 @@ import {
   toggleFolderExpandedCommand,
   toggleTrackMuteCommand,
   toggleTrackSoloCommand,
+  transformMidiPitchCommand,
+  transformMidiVelocityCommand,
   updateAutomationPointCommand,
   updateProjectMeterMapPointCommand
 } from "../app/commands.ts";
@@ -75,7 +77,7 @@ import { buildPocketDawProjectFile } from "../daw/dawProject.ts";
 import { DRUM_LANE_IDS, type DrumLaneId } from "../daw/drumLanes.ts";
 import { createGameExportManifest, createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs.ts";
 import { arrangeMidiToHeavyMetalProject } from "../daw/midiArrangement.ts";
-import type { MidiGrooveTemplateId, MidiQuantizeGrid, MidiSwingPercent } from "../daw/midiClips.ts";
+import type { MidiGrooveTemplateId, MidiPitchTransform, MidiQuantizeGrid, MidiSwingPercent, MidiVelocityTransform } from "../daw/midiClips.ts";
 import { normalizeMidiConversionSourceFilter, type MidiConversionSourceMode } from "../daw/midiConversionFilter.ts";
 import { createMidiChordsmithConversionPreviews } from "../daw/midiConversionPreview.ts";
 import { createPocketDjSourceSummary } from "../daw/pocketDjSources.ts";
@@ -130,6 +132,8 @@ export type PocketDawMcpCommand =
   | { type: "quantize_midi_durations"; clipId: string; grid: MidiQuantizeGrid }
   | { type: "swing_midi_clip"; clipId: string; percent: MidiSwingPercent }
   | { type: "apply_midi_groove"; clipId: string; templateId: MidiGrooveTemplateId }
+  | { type: "transform_midi_velocity"; clipId: string; transform: MidiVelocityTransform }
+  | { type: "transform_midi_pitch"; clipId: string; transform: MidiPitchTransform }
   | { type: "activate_audio_take"; clipId: string }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
@@ -196,6 +200,8 @@ export type PocketDawLiveCommand =
   | { type: "quantize_midi_durations"; clipId: string; grid: MidiQuantizeGrid }
   | { type: "swing_midi_clip"; clipId: string; percent: MidiSwingPercent }
   | { type: "apply_midi_groove"; clipId: string; templateId: MidiGrooveTemplateId }
+  | { type: "transform_midi_velocity"; clipId: string; transform: MidiVelocityTransform }
+  | { type: "transform_midi_pitch"; clipId: string; transform: MidiPitchTransform }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
@@ -703,6 +709,10 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return swingMidiClipCommand(state, command.clipId, midiSwingPercentFromMcpCommand(command.percent));
     case "apply_midi_groove":
       return applyMidiGrooveTemplateCommand(state, command.clipId, midiGrooveTemplateFromMcpCommand(command.templateId));
+    case "transform_midi_velocity":
+      return transformMidiVelocityCommand(state, command.clipId, midiVelocityTransformFromMcpCommand(command.transform));
+    case "transform_midi_pitch":
+      return transformMidiPitchCommand(state, command.clipId, midiPitchTransformFromMcpCommand(command.transform));
     case "activate_audio_take":
       return activateAudioTakeCommand(state, command.clipId);
     case "activate_audio_take_lane":
@@ -823,6 +833,16 @@ function midiSwingPercentFromMcpCommand(value: unknown): MidiSwingPercent {
 function midiGrooveTemplateFromMcpCommand(value: unknown): MidiGrooveTemplateId {
   if (value === "straight-16" || value === "pocket-16" || value === "shuffle-8") return value;
   throw new Error(`Unsupported MIDI groove template: ${String(value || "[missing template]")}`);
+}
+
+function midiVelocityTransformFromMcpCommand(value: unknown): MidiVelocityTransform {
+  if (value === "level-96" || value === "humanize-12") return value;
+  throw new Error(`Unsupported MIDI velocity transform: ${String(value || "[missing transform]")}`);
+}
+
+function midiPitchTransformFromMcpCommand(value: unknown): MidiPitchTransform {
+  if (value === "semitone-down" || value === "semitone-up" || value === "octave-down" || value === "octave-up") return value;
+  throw new Error(`Unsupported MIDI pitch transform: ${String(value || "[missing transform]")}`);
 }
 
 function finiteCommandNumber(value: unknown, label: string): number {
@@ -997,7 +1017,9 @@ function summarizeMidiTimingMetadata(value: unknown) {
     lastQuantizeGrid: typeof metadata.lastQuantizeGrid === "string" ? metadata.lastQuantizeGrid : undefined,
     lastDurationQuantizeGrid: typeof metadata.lastDurationQuantizeGrid === "string" ? metadata.lastDurationQuantizeGrid : undefined,
     lastSwingPercent: typeof metadata.lastSwingPercent === "number" ? metadata.lastSwingPercent : undefined,
-    lastGrooveTemplate: typeof metadata.lastGrooveTemplate === "string" ? metadata.lastGrooveTemplate : undefined
+    lastGrooveTemplate: typeof metadata.lastGrooveTemplate === "string" ? metadata.lastGrooveTemplate : undefined,
+    lastVelocityTransform: typeof metadata.lastVelocityTransform === "string" ? metadata.lastVelocityTransform : undefined,
+    lastPitchTransform: typeof metadata.lastPitchTransform === "string" ? metadata.lastPitchTransform : undefined
   };
 }
 
@@ -1091,6 +1113,8 @@ function commandSchema() {
           "quantize_midi_durations",
           "swing_midi_clip",
           "apply_midi_groove",
+          "transform_midi_velocity",
+          "transform_midi_pitch",
           "activate_audio_take",
           "activate_audio_take_lane",
           "set_audio_take_archived",
@@ -1155,6 +1179,7 @@ function commandSchema() {
       curve: { type: "string", enum: ["linear", "hold", "ease-in", "ease-out"] },
       grid: { type: "string", enum: ["1/4", "1/8", "1/16", "1/32"] },
       templateId: { type: "string", enum: ["straight-16", "pocket-16", "shuffle-8"] },
+      transform: { type: "string", enum: ["level-96", "humanize-12", "semitone-down", "semitone-up", "octave-down", "octave-up"] },
       volume: numberSchema(),
       pan: numberSchema(),
       offsetSeconds: numberSchema(),
@@ -1192,7 +1217,7 @@ function liveCommandSchema() {
     {
       type: {
         type: "string",
-        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
+        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "transform_midi_velocity", "transform_midi_pitch", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       },
       trackId: stringSchema(),
       clipId: stringSchema(),
@@ -1216,6 +1241,7 @@ function liveCommandSchema() {
       grid: { type: "string", enum: ["1/4", "1/8", "1/16", "1/32"] },
       percent: { type: "number", enum: [50, 55, 60, 65] },
       templateId: { type: "string", enum: ["straight-16", "pocket-16", "shuffle-8"] },
+      transform: { type: "string", enum: ["level-96", "humanize-12", "semitone-down", "semitone-up", "octave-down", "octave-up"] },
       targetBar: numberSchema(),
       bar: numberSchema(),
       startBar: numberSchema(),

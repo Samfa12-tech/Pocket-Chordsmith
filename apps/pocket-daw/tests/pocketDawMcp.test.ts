@@ -73,6 +73,8 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("quantize_midi_durations");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("swing_midi_clip");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("apply_midi_groove");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("transform_midi_velocity");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("transform_midi_pitch");
     const liveApplySchema = toolList.find((tool) => tool.name === "pocket_daw_live_apply_commands")?.inputSchema as { properties: Record<string, unknown> } | undefined;
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_armed");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_track_monitor");
@@ -98,6 +100,8 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("quantize_midi_durations");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("swing_midi_clip");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("apply_midi_groove");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("transform_midi_velocity");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("transform_midi_pitch");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("place_punch_recording_clip_from_range");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("activate_audio_take_lane");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_audio_take_archived");
@@ -799,7 +803,9 @@ describe("Pocket DAW MCP tools", () => {
         { type: "quantize_midi_clip", clipId: imported.clipId, grid: "1/16" },
         { type: "quantize_midi_durations", clipId: imported.clipId, grid: "1/8" },
         { type: "swing_midi_clip", clipId: imported.clipId, percent: 60 },
-        { type: "apply_midi_groove", clipId: imported.clipId, templateId: "pocket-16" }
+        { type: "apply_midi_groove", clipId: imported.clipId, templateId: "pocket-16" },
+        { type: "transform_midi_velocity", clipId: imported.clipId, transform: "level-96" },
+        { type: "transform_midi_pitch", clipId: imported.clipId, transform: "octave-up" }
       ]
     }));
     const clip = result.project.timeline.clips.find((item: { id: string }) => item.id === imported.clipId);
@@ -810,20 +816,27 @@ describe("Pocket DAW MCP tools", () => {
       expect.stringContaining("Quantized mcp-midi.mid to 1/16"),
       expect.stringContaining("Quantized mcp-midi.mid note lengths to 1/8"),
       expect.stringContaining("Applied 60% swing to mcp-midi.mid"),
-      expect.stringContaining("Applied Pocket 16 groove to mcp-midi.mid")
+      expect.stringContaining("Applied Pocket 16 groove to mcp-midi.mid"),
+      expect.stringContaining("Leveled mcp-midi.mid velocities"),
+      expect.stringContaining("Transposed mcp-midi.mid up an octave")
     ]);
     expect(midi.metadata).toMatchObject({
       lastQuantizeGrid: "1/16",
       lastDurationQuantizeGrid: "1/8",
       lastSwingPercent: 50,
-      lastGrooveTemplate: "pocket-16"
+      lastGrooveTemplate: "pocket-16",
+      lastVelocityTransform: "level-96",
+      lastPitchTransform: "octave-up"
     });
+    expect(midi.notes.every((note: { velocity: number; pitch: number }) => note.velocity === 96 && note.pitch >= 72)).toBe(true);
     expect(summaryClip.midiTiming).toMatchObject({
       noteCount: 2,
       lastQuantizeGrid: "1/16",
       lastDurationQuantizeGrid: "1/8",
       lastSwingPercent: 50,
-      lastGrooveTemplate: "pocket-16"
+      lastGrooveTemplate: "pocket-16",
+      lastVelocityTransform: "level-96",
+      lastPitchTransform: "octave-up"
     });
   });
 

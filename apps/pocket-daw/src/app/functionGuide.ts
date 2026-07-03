@@ -1798,7 +1798,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     selector: "data-midi-velocity-transform",
     does: "Applies a bulk velocity edit such as leveling or deterministic humanization.",
     useWhen: "Use to shape note dynamics quickly.",
-    aiNote: "Check drum/bass parts because velocity may change perceived groove strongly."
+    aiNote: "Check drum/bass parts because velocity may change perceived groove strongly. Also available as transform_midi_velocity through file-first MCP and live MCP."
   },
   {
     surface: "MIDI Editing",
@@ -1806,7 +1806,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     selector: "data-midi-pitch-transform",
     does: "Transposes MIDI notes by semitone or octave steps.",
     useWhen: "Use for octave placement or key correction.",
-    aiNote: "Check pitch range after transforms, especially drums and bass."
+    aiNote: "Check pitch range after transforms, especially drums and bass. Also available as transform_midi_pitch through file-first MCP and live MCP."
   },
   {
     surface: "MIDI Editing",
