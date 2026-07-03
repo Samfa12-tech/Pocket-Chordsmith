@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { collapsedSectionsForCreationPreset, createInitialState, createUiCollapsedSections, lowerDockTabForCreationPreset } from "../src/app/state";
+import { collapsedSectionsForCreationPreset, createInitialState as createTimelineFirstInitialState, createUiCollapsedSections, lowerDockTabForCreationPreset } from "../src/app/state";
 import { renderAppShell } from "../src/app/ui";
 import { createUndoStack } from "../src/daw/undo";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
@@ -40,6 +40,14 @@ function timelineRowHtml(html: string, rowId: string) {
   if (start === -1) return "";
   const next = html.indexOf('<div class="timeline-row', start + marker.length);
   return html.slice(start, next === -1 ? undefined : next);
+}
+
+function createInitialState() {
+  const state = createTimelineFirstInitialState();
+  state.timelineHeightPx = 430;
+  state.inspectorVisible = true;
+  state.collapsedUiSections = createUiCollapsedSections();
+  return state;
 }
 
 describe("Pocket DAW UI rendering", () => {
@@ -227,8 +235,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(transport).toContain('class="creation-presets"');
     expect(transport).toContain('data-action="preset-music" aria-pressed="true"');
     expect(transport).toContain('data-action="preset-game-music" aria-pressed="false"');
-    expect(transport).toContain("Music preset: keep composition, editing and mix controls prominent");
-    expect(transport).toContain("Game music preset: keep cue and game-pack export controls visible");
+    expect(transport).toContain("Music preset: keep the timeline primary");
+    expect(transport).toContain("Game music preset: keep timeline/game cues prominent");
     expect(html).toContain('data-ui-scope="recording"');
     expect(html).toContain('class="game-cue-controls" data-ui-scope="game"');
 
@@ -241,9 +249,24 @@ describe("Pocket DAW UI rendering", () => {
     expect(gameTransport).toContain('data-action="preset-game-music" aria-pressed="true"');
   });
 
+  it("opens the default workspace as timeline-first instead of inspector-and-mixer-first", () => {
+    const state = createTimelineFirstInitialState();
+    const html = renderAppShell(state);
+
+    expect(html).toContain("--studio-height:620px");
+    expect(html).toContain('class="studio inspector-hidden"');
+    expect(html).toContain('class="timeline-toolbar collapsed"');
+    expect(html).toContain('aria-label="Essential timeline tools"');
+    expect(html).toContain("Loop off / No range");
+    expect(html).toContain('data-action="toggle-inspector" title="Show the selected clip and track inspector">Inspector</button>');
+    expect(html).toContain('class="mixer lower-dock collapsed"');
+    expect(html).toContain('class="media-pool collapsed"');
+    expect(html).not.toContain('data-inspector-resize-handle="true"');
+  });
+
   it("defines focus preset collapse defaults that genuinely reduce visible clutter", () => {
     expect(collapsedSectionsForCreationPreset("game-music")).toMatchObject({
-      "timeline-tools": false,
+      "timeline-tools": true,
       "inspector-clip": true,
       "inspector-track": false,
       "lower-dock": false,
@@ -252,10 +275,10 @@ describe("Pocket DAW UI rendering", () => {
     expect(lowerDockTabForCreationPreset("game-music", "mixer")).toBe("export-details");
 
     expect(collapsedSectionsForCreationPreset("music")).toMatchObject({
-      "timeline-tools": false,
+      "timeline-tools": true,
       "inspector-clip": false,
       "inspector-track": false,
-      "lower-dock": false,
+      "lower-dock": true,
       "media-pool": true
     });
     expect(lowerDockTabForCreationPreset("music", "export-details")).toBe("mixer");
@@ -323,7 +346,8 @@ describe("Pocket DAW UI rendering", () => {
     const collapsedHtml = renderAppShell(state);
 
     expect(collapsedHtml).toContain('class="timeline-toolbar collapsed"');
-    expect(collapsedHtml).toContain("Timeline editing, zoom, loop and range controls are hidden.");
+    expect(collapsedHtml).toContain('aria-label="Essential timeline tools"');
+    expect(collapsedHtml).toContain("Loop off / No range");
     expect(collapsedHtml).toContain('class="inspector-section collapsed" data-ui-collapse-section="inspector-clip"');
     expect(collapsedHtml).toContain("Selected clip details, mix controls and edit actions are hidden.");
     expect(collapsedHtml).toContain("Selected track routing, automation and Chordsmith editors are hidden.");
@@ -456,8 +480,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(doc).toContain("Copy/Cut Range");
     expect(doc).toContain("| Godot Game Pack |");
     expect(doc).toContain("| Music Focus |");
-    expect(doc).toContain("collapses the Media Pool");
-    expect(doc).toContain("Opens Export Details");
+    expect(doc).toContain("Keeps the timeline primary");
+    expect(doc).toContain("opens Export Details");
     expect(doc).toContain("note-length quantize snaps durations");
     expect(doc).toContain("| Studio Rail |");
     expect(doc).toContain("| Folder Tracks |");
@@ -476,8 +500,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Studio Rail Navigation | `studio-rail / data-studio-rail-target`");
     expect(catalog).toContain("| Studio Rail Clips | `data-action=studio-focus-timeline`");
     expect(catalog).toContain("| Studio Rail Godot | `data-action=studio-focus-godot`");
-    expect(catalog).toContain("collapsing the Media Pool");
-    expect(catalog).toContain("collapses selected clip/take detail");
+    expect(catalog).toContain("tucking deeper edit, mix, media and game-export surfaces");
+    expect(catalog).toContain("keeps timeline/game cues prominent");
     expect(catalog).toContain("| Add Folder Track | `data-add-track-kind:folder`");
     expect(catalog).toContain("| Assign Track Folder | `data-track-folder`");
     expect(catalog).toContain("| Toggle Folder Track | `data-folder-toggle`");

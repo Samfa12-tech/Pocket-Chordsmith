@@ -17,6 +17,17 @@ guardrails for the current scaffold. `fixtures/index.json` records the committed
 fixture corpus and high-level expectations without making this package the
 canonical owner of every app's import behavior yet.
 
+## Future Compression Direction
+
+Long-term planning should include a smart share-code/JSON compression format for
+shorter Pocket Audio transfer codes, URLs, QR payloads, and mobile handoffs.
+This should be treated as a family-level format project, not a quick encoder
+swap: it would affect Pocket Chordsmith, Pocket DJ, Pocket DAW, the Godot addon,
+Pocket Audio Core, hosted handoff pages, fixtures, migrations, and every import
+fallback that currently accepts `PCS1:` or raw JSON. Any future compressed format
+must keep old `PCS1:` codes readable, define clear version/prefix behavior, and
+ship only after compatibility tests prove round-trips across the app family.
+
 License/status: WIP private package scaffold, `UNLICENSED`, and `private: true`.
 See the repository root `LICENSES.md` before reusing or redistributing package
 code.

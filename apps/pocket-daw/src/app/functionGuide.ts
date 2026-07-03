@@ -158,21 +158,21 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
     entries: [
       {
         name: "Select Clip / Track",
-        does: "Chooses the clip and track shown in the inspector and lower dock editors.",
-        useWhen: "Use before editing clip transforms, track routing, automation, MIDI, audio, or Chordsmith section data.",
-        aiNote: "MCP live tools can select tracks/clips when visual control is not available."
+        does: "Chooses the primary clip and track shown in the inspector and lower dock editors; Ctrl-click, Cmd-click or Shift-click adds/removes clips from the current multi-selection.",
+        useWhen: "Use before editing clip transforms, track routing, automation, MIDI, audio, Chordsmith section data, drag movement, or bulk timeline clipboard edits.",
+        aiNote: "MCP live status reports the runtime multi-selection as selection.clipIds/selection.clips. The primary selected clip still anchors inspector-only commands."
       },
       {
         name: "Move Left / Move Right",
-        does: "Moves the selected clip earlier or later by the current snap step.",
+        does: "Moves the selected clip, or every clip in the active multi-selection, earlier or later by the current snap step; dragging one selected clip moves the selected group together.",
         useWhen: "Use for arrangement timing changes while preserving the source clip.",
         aiNote: "Check snap mode before moving. Bar and beat moves are intentionally different."
       },
       {
         name: "Cut / Copy / Paste / Duplicate",
-        does: "Cuts, copies, pastes, or duplicates selected clips without altering the original source media.",
-        useWhen: "Use for moving material, repeating sections, building song form, or testing alternate placements.",
-        aiNote: "Cut removes the timeline clip and keeps a clipboard copy as one undoable edit; Paste depends on clipboard state."
+        does: "Cuts, copies, pastes, or duplicates the selected clip or selected clip group without altering original source media.",
+        useWhen: "Use for moving material, repeating sections, building song form, copying multi-track MIDI imports, or testing alternate placements.",
+        aiNote: "Group clipboard edits preserve relative clip spacing. Cut removes timeline clips and keeps a runtime clipboard copy as one undoable edit; Paste depends on clipboard state."
       },
       {
         name: "Split Clip",
@@ -188,7 +188,7 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "Mute Clip / Delete Clip",
-        does: "Mute silences the clip nondestructively; Delete removes it from the timeline.",
+        does: "Mute silences the selected clip or clip group nondestructively; Delete removes the selected clip or clip group from the timeline.",
         useWhen: "Use Mute for auditioning alternatives and Delete for removing unwanted arrangement material.",
         aiNote: "Prefer Mute when the user may want to recover an idea quickly."
       },
@@ -632,19 +632,19 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "Music Focus",
-        does: "Keeps composition, editing and mix controls visible while collapsing the Media Pool and hiding game cue/export clutter.",
+        does: "Keeps the timeline primary while tucking deeper edit, mix, media and game-export surfaces behind explicit buttons.",
         useWhen: "Use when writing or mixing a song.",
         aiNote: "Focus presets are layout filters only; they do not delete controls, media or project data."
       },
       {
         name: "Game Music Focus",
-        does: "Opens Export Details, keeps game cues and game-pack export controls visible, and collapses selected clip/take detail.",
+        does: "Keeps the timeline and game cues prominent, opens Export Details for game-pack work, and keeps the inspector tucked away.",
         useWhen: "Use when preparing adaptive music and game packs.",
         aiNote: "Layout filter only; WAV game packs remain the supported baseline and the Godot addon is not edited."
       },
       {
         name: "Collapsible UI Sections",
-        does: "Minimizes timeline tools, inspector clip/track sections, lower dock and media pool.",
+        does: "Minimizes timeline tools, inspector clip/track sections, lower dock and media pool. Collapsed timeline tools become a compact arrangement strip instead of a blank hidden panel.",
         useWhen: "Use to reduce UI density while keeping the recovery Show buttons visible.",
         aiNote: "Collapse state is UI-only and should not affect save/export behavior."
       },
@@ -906,35 +906,35 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     control: "Move Clip Left",
     actionId: "clip-left",
     shortcut: "ArrowLeft",
-    does: "Moves the selected clip earlier by the current snap step.",
+    does: "Moves the selected clip, or every clip in the current multi-selection, earlier by the current snap step.",
     useWhen: "Use to adjust arrangement timing.",
-    aiNote: "Check snap mode first; bar, beat and off-grid states imply different movement."
+    aiNote: "Check snap mode first; bar, beat and off-grid states imply different movement. Ctrl/Cmd/Shift-select clips before moving a group."
   },
   {
     surface: "Timeline Editing",
     control: "Move Clip Right",
     actionId: "clip-right",
     shortcut: "ArrowRight",
-    does: "Moves the selected clip later by the current snap step.",
+    does: "Moves the selected clip, or every clip in the current multi-selection, later by the current snap step.",
     useWhen: "Use to adjust arrangement timing.",
-    aiNote: "Check for overlaps and downstream section timing after moving."
+    aiNote: "Check for overlaps and downstream section timing after moving. Ctrl/Cmd/Shift-select clips before moving a group."
   },
   {
     surface: "Timeline Editing",
     control: "Cut Clip",
     actionId: "clip-cut",
     shortcut: "Ctrl+X",
-    does: "Copies the selected clip to the clipboard and removes it from the timeline.",
-    useWhen: "Use to move material elsewhere while keeping a clipboard copy.",
-    aiNote: "This is undoable. Verify paste target before moving user material."
+    does: "Copies the selected clip or selected clip group to the clipboard and removes it from the timeline.",
+    useWhen: "Use to move one clip or an arranged group elsewhere while keeping a clipboard copy.",
+    aiNote: "This is undoable. Group cuts preserve relative timing for paste. Verify paste target before moving user material."
   },
   {
     surface: "Timeline Editing",
     control: "Copy Clip",
     actionId: "clip-copy",
     shortcut: "Ctrl+C",
-    does: "Copies the selected whole clip to the clipboard without changing the timeline.",
-    useWhen: "Use before Paste or when repeating material.",
+    does: "Copies the selected whole clip or selected clip group to the clipboard without changing the timeline.",
+    useWhen: "Use before Paste or when repeating single-clip or multi-track material.",
     aiNote: "Clipboard state is runtime UI state, not a durable project artifact."
   },
   {
@@ -942,17 +942,17 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     control: "Paste Clip",
     actionId: "clip-paste",
     shortcut: "Ctrl+V",
-    does: "Pastes the current clip clipboard at the cursor/playhead context.",
+    does: "Pastes the current clip or clip-group clipboard at the cursor/playhead context.",
     useWhen: "Use after Cut Clip, Copy Clip, Copy Range, or Cut Range.",
-    aiNote: "Paste can fail clearly if the clipboard is empty."
+    aiNote: "Group paste keeps the copied clips' relative bar spacing. Paste can fail clearly if the clipboard is empty."
   },
   {
     surface: "Timeline Editing",
     control: "Duplicate Clip",
     actionId: "clip-duplicate",
     shortcut: "D",
-    does: "Creates a copy of the selected clip immediately after itself.",
-    useWhen: "Use to repeat phrases, loops, sections, or imported clips.",
+    does: "Creates a copy of the selected clip after itself, or a selected clip group after the selected group's span.",
+    useWhen: "Use to repeat phrases, loops, sections, imported clips, or multi-track MIDI sections.",
     aiNote: "Duplicate keeps source-safe metadata; inspect overlap if clip lengths are unusual."
   },
   {
@@ -969,7 +969,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     control: "Delete Clip",
     actionId: "clip-delete",
     shortcut: "Delete",
-    does: "Removes the selected clip from the timeline.",
+    does: "Removes the selected clip or selected clip group from the timeline.",
     useWhen: "Use when material is no longer needed in the arrangement.",
     aiNote: "Prefer Mute Clip when the user may want to audition alternatives."
   },
@@ -977,7 +977,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "Timeline Editing",
     control: "Mute Clip",
     actionId: "clip-mute",
-    does: "Silences or unsilences the selected clip without removing it.",
+    does: "Silences or unsilences the selected clip or selected clip group without removing it.",
     useWhen: "Use to audition alternate arrangements safely.",
     aiNote: "Muted clips still exist and should be considered in arrangement reviews."
   },
@@ -1198,7 +1198,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "View And Focus",
     control: "Music Focus",
     actionId: "preset-music",
-    does: "Keeps composition, editing, and mixing controls prominent while collapsing the Media Pool and hiding game-export clutter.",
+    does: "Keeps the timeline primary while tucking deeper edit, mix, media and game-export surfaces behind explicit buttons.",
     useWhen: "Use while writing, arranging, importing, or mixing a song.",
     aiNote: "Layout filter only; it does not remove project data, media or hidden features."
   },
@@ -1206,7 +1206,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "View And Focus",
     control: "Game Music Focus",
     actionId: "preset-game-music",
-    does: "Opens Export Details, keeps game cue and game-pack controls visible, and collapses selected clip/take detail.",
+    does: "Switches to Game music focus, keeps timeline/game cues prominent, opens Export Details, and keeps the inspector tucked away.",
     useWhen: "Use while preparing adaptive game music packs.",
     aiNote: "Layout filter only; WAV game packs remain the supported baseline and this does not edit the Godot addon."
   },
@@ -2442,6 +2442,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     does: "Lets the tokened live bridge set a live track's visible input device through the same command path as the mixer input selector.",
     useWhen: "Use before arming or recording when MCP needs to prepare the running app for a known hardware input.",
     aiNote: "Device IDs are runtime-specific. Confirm the selected input through live status and real installed-app smoke."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "Live MCP Selection Status",
+    selector: "pocket_daw_live_status:selection",
+    does: "Reports the running app's selected track, primary selected clip and full runtime selected clip group through selection.clipIds and selection.clips.",
+    useWhen: "Use during MCP-observed arrangement smoke to confirm multi-selected clips before group Move, Mute, Delete, Copy, Cut, Paste or Duplicate actions.",
+    aiNote: "Read-only status. Multi-selection is runtime UI state; saved project files do not persist it."
   },
   {
     surface: "AI / MCP Bridge",

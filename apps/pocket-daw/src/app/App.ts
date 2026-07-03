@@ -246,7 +246,7 @@ import { replacePresent } from "../daw/undo";
 import type { ClipAutomationField } from "../daw/automation";
 import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
-import { POCKET_DAW_VERSION, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
+import { POCKET_DAW_VERSION, type Clip, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
 import { buildGroupedRecordingCapturePlan, buildNativeRecordingAlphaInputPreflight, buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError } from "../daw/recordingInputs";
 import { recordingLatencyOffsetSeconds, trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToDisplayPosition, snapProjectBarValue } from "../daw/timeline";
@@ -570,6 +570,18 @@ export class App {
     const performanceDiagnostics = this.performanceDiagnostics.report(this.state, audioDiagnostics, uiPerformance, { recordSample: true });
     const exportReadiness = createAiBridgeExportReadiness(project);
     const mediaReadiness = createAiBridgeMediaReadiness(project);
+    const selectedClipIds = this.normalizedSelectedClipIds();
+    const selectedClips = selectedClipIds
+      .map((id) => project.timeline.clips.find((clip) => clip.id === id))
+      .filter((clip): clip is Clip => !!clip)
+      .map((clip) => ({
+        id: clip.id,
+        name: clip.name,
+        trackId: clip.trackId,
+        type: clip.type,
+        startBar: clip.startBar,
+        barLength: clip.barLength
+      }));
     return {
       ok: true,
       available: true,
@@ -595,8 +607,10 @@ export class App {
       selection: {
         trackId: this.state.selectedTrackId,
         clipId: this.state.selectedClipId,
+        clipIds: selectedClipIds,
         trackName: project.tracks.find((track) => track.id === this.state.selectedTrackId)?.name || null,
-        clipName: project.timeline.clips.find((clip) => clip.id === this.state.selectedClipId)?.name || null
+        clipName: project.timeline.clips.find((clip) => clip.id === this.state.selectedClipId)?.name || null,
+        clips: selectedClips
       },
       recording: {
         ...this.state.recording,
@@ -698,6 +712,7 @@ export class App {
       const clip = project.timeline.clips.find((item) => item.id === clipId);
       if (!clip) return { ok: false, code: "clip_not_found", message: `Clip not found: ${clipId}` };
       this.state.selectedClipId = clipId;
+      this.state.selectedClipIds = [clipId];
       this.state.selectedTrackId = clip.trackId || this.state.selectedTrackId;
       this.state.status = `Selected ${clip.name}.`;
       this.render({ preserveScroll: true });
@@ -1071,13 +1086,12 @@ export class App {
 
   private bind() {
     this.root.querySelectorAll<HTMLElement>("[data-clip-id]:not([data-inline-sequencer])").forEach((el) => {
-      el.addEventListener("click", () => {
+      el.addEventListener("click", (event) => {
         if (this.consumeSuppressedClipClick()) return;
-        this.state.selectedClipId = el.dataset.clipId || null;
+        const clipId = el.dataset.clipId || "";
         const row = el.dataset.row || "";
         const rowTrack = currentProject(this.state).tracks.find((track) => track.id === row) || currentProject(this.state).tracks.find((track) => track.role === row);
-        if (rowTrack) this.state.selectedTrackId = rowTrack.id;
-        this.state.status = `Selected ${this.state.selectedClipId}.`;
+        this.selectClipFromGesture(clipId, rowTrack?.id || row || null, event.ctrlKey || event.metaKey || event.shiftKey);
         this.render({ preserveScroll: true });
       });
     });
@@ -1845,13 +1859,17 @@ export class App {
     const startClientX = event.clientX;
     const startBar = clip.startBar;
     const grabOffsetBars = mode === "move" ? Math.max(0, this.clientXToTimelineBar(timeline, event.clientX) - clip.startBar) : 0;
+    const selectedIds = this.normalizedSelectedClipIds();
+    const preserveGroup = selectedIds.length > 1 && selectedIds.includes(clipId);
     this.state.selectedClipId = clipId;
+    this.state.selectedClipIds = preserveGroup ? selectedIds : [clipId];
     this.state.selectedTrackId = inlineClip?.dataset.inlineRow || visibleClip?.dataset.row || this.state.selectedTrackId;
     this.render({ preserveScroll: true });
-    const dragNodes = () => [
-      ...findDataElements<HTMLElement>(this.root, "data-inline-clip-id", clipId),
-      ...findDataElements<HTMLElement>(this.root, "data-clip-id", clipId)
-    ];
+    const selectedDragIds = mode === "move" && preserveGroup ? selectedIds : [clipId];
+    const dragNodes = () => selectedDragIds.flatMap((id) => [
+      ...findDataElements<HTMLElement>(this.root, "data-inline-clip-id", id),
+      ...findDataElements<HTMLElement>(this.root, "data-clip-id", id)
+    ]);
     let latestValue = mode === "move" ? startBar : clip.startBar + clip.barLength;
     const preview = (clientX: number) => {
       const currentTimeline = this.root.querySelector<HTMLElement>("[data-timeline-surface]") || timeline;
@@ -1865,7 +1883,7 @@ export class App {
           node.style.transform = `translateX(${dx}px)`;
           node.classList.add("dragging");
         });
-        this.state.status = `Dragging ${clip.name} to Bar ${latestValue}.`;
+        this.state.status = preserveGroup ? `Dragging ${selectedDragIds.length} clips to Bar ${latestValue}.` : `Dragging ${clip.name} to Bar ${latestValue}.`;
       } else {
         const repeatBars = Math.max(0, latestValue - (clip.startBar + clip.barLength));
         dragNodes().forEach((node) => {
@@ -2609,9 +2627,12 @@ export class App {
     if (inlineClip) {
       if (this.consumeSuppressedClipClick()) return;
       if (target?.closest("button, input, select, textarea")) return;
-      this.state.selectedClipId = inlineClip.dataset.inlineClipId || null;
-      this.state.selectedTrackId = inlineClip.dataset.inlineRow || this.state.selectedTrackId;
-      this.state.status = `Selected ${this.state.selectedClipId}.`;
+      const mouse = event as MouseEvent;
+      this.selectClipFromGesture(
+        inlineClip.dataset.inlineClipId || "",
+        inlineClip.dataset.inlineRow || this.state.selectedTrackId,
+        mouse.ctrlKey || mouse.metaKey || mouse.shiftKey
+      );
       this.render({ preserveScroll: true });
       return;
     }
@@ -2695,9 +2716,10 @@ export class App {
       this.state.uiCreationPreset = action === "preset-game-music" ? "game-music" : "music";
       this.state.collapsedUiSections = collapsedSectionsForCreationPreset(this.state.uiCreationPreset);
       this.state.lowerDockTab = lowerDockTabForCreationPreset(this.state.uiCreationPreset, this.state.lowerDockTab);
+      this.state.inspectorVisible = false;
       this.state.status = this.state.uiCreationPreset === "game-music"
-        ? "Game music focus: cue and game-pack export controls are visible; clip take details and live recording tools are tucked away."
-        : "Music focus: composition, editing and mix controls are visible; game-pack controls and media-pool clutter are tucked away.";
+        ? "Game music focus: timeline/game cues stay prominent; game-pack export controls are open and inspector detail is tucked away."
+        : "Music focus: the timeline stays primary; deeper editing, mix and media controls are tucked away until opened.";
       this.render({ preserveScroll: true });
     }
     if (action === "toggle-ui-section") {
@@ -2814,6 +2836,7 @@ export class App {
     if (action === "media-pool-focus") {
       this.state.status = "Media Pool visible.";
       this.state.showFilePanel = false;
+      this.state.collapsedUiSections = { ...this.state.collapsedUiSections, "media-pool": false };
       this.render();
       this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "start", inline: "nearest" });
     }
@@ -2832,6 +2855,7 @@ export class App {
     }
     if (action === "lower-dock-mixer" || action === "lower-dock-inserts" || action === "lower-dock-sends" || action === "lower-dock-automation" || action === "lower-dock-piano-roll" || action === "lower-dock-audio-editor" || action === "lower-dock-export-details") {
       this.state.lowerDockTab = action.replace("lower-dock-", "") as typeof this.state.lowerDockTab;
+      this.state.collapsedUiSections = { ...this.state.collapsedUiSections, "lower-dock": false };
       this.state.status = `${this.state.lowerDockTab[0].toUpperCase()}${this.state.lowerDockTab.slice(1)} dock selected.`;
       this.render({ preserveScroll: true });
     }
@@ -2845,8 +2869,10 @@ export class App {
       this.state.showFunctionGuidePanel = false;
       this.state.showFeedbackPanel = false;
       this.state.uiCreationPreset = "game-music";
+      this.state.inspectorVisible = false;
+      this.state.collapsedUiSections = { ...collapsedSectionsForCreationPreset("game-music"), "lower-dock": false };
       this.state.lowerDockTab = "export-details";
-      this.state.status = "Godot focus: game cue and game-pack export controls are visible.";
+      this.state.status = "Godot focus: timeline/game cues stay prominent and game-pack export controls are visible.";
       this.render({ preserveScroll: true });
       this.root.querySelector<HTMLElement>(".mixer.lower-dock")?.scrollIntoView({ block: "start", inline: "nearest" });
     }
@@ -3496,6 +3522,7 @@ export class App {
       this.applyProjectState(commitProject(this.state, placed.project, clipMessage), { autosave: "flush", preserveScroll: true });
       this.state.recording = createRecordingUiState({ message: clipMessage });
       this.state.selectedClipId = placed.clipId || this.state.selectedClipId;
+      this.state.selectedClipIds = this.state.selectedClipId ? [this.state.selectedClipId] : [];
       this.state.selectedTrackId = placed.trackId || this.state.selectedTrackId;
       await this.saveProject(false);
       void this.syncArmedInputPreview(trackId || result.trackId);
@@ -3928,6 +3955,13 @@ export class App {
     this.root.querySelectorAll<HTMLElement>("[data-row]").forEach((row) => {
       row.classList.toggle("selected-row", row.dataset.row === this.state.selectedTrackId);
     });
+    const selectedClipIds = new Set(this.normalizedSelectedClipIds());
+    this.root.querySelectorAll<HTMLElement>("[data-clip-id]").forEach((clip) => {
+      clip.classList.toggle("selected", selectedClipIds.has(clip.dataset.clipId || ""));
+    });
+    this.root.querySelectorAll<HTMLElement>("[data-inline-clip-id]").forEach((clip) => {
+      clip.classList.toggle("selected-clip-editor", selectedClipIds.has(clip.dataset.inlineClipId || ""));
+    });
   }
 
   private updateStatusDom() {
@@ -3946,11 +3980,49 @@ export class App {
 
   private applyProjectState(next: AppState, options: ApplyProjectOptions | boolean = {}) {
     const resolved = this.resolveApplyOptions(options);
-    this.state = next;
+    this.state = this.normalizeClipSelection(next);
     const project = currentProject(this.state);
     if (resolved.autosave !== "none") this.saveAutosaveSnapshot(project);
     if (resolved.audio && resolved.audio !== "none") this.engine.syncProject(project, resolved.audio, resolved.reason);
     this.scheduleRender(resolved.render || "immediate", { preserveScroll: resolved.preserveScroll });
+  }
+
+  private selectClipFromGesture(clipId: string, trackId: string | null, additive: boolean) {
+    const project = currentProject(this.state);
+    const clip = project.timeline.clips.find((item) => item.id === clipId);
+    if (!clip) return;
+    const current = this.normalizedSelectedClipIds();
+    let selectedClipIds = [clipId];
+    if (additive) {
+      selectedClipIds = current.includes(clipId)
+        ? current.filter((id) => id !== clipId)
+        : [...current, clipId];
+      if (!selectedClipIds.length) selectedClipIds = [clipId];
+    }
+    this.state.selectedClipIds = selectedClipIds;
+    this.state.selectedClipId = selectedClipIds.includes(clipId) ? clipId : selectedClipIds[0] || null;
+    this.state.selectedTrackId = trackId || clip.trackId || this.state.selectedTrackId;
+    this.state.status = selectedClipIds.length > 1 ? `${selectedClipIds.length} clips selected.` : `Selected ${this.state.selectedClipId}.`;
+  }
+
+  private normalizedSelectedClipIds(state = this.state): string[] {
+    if (!state.selectedClipId) return [];
+    const project = currentProject(state);
+    const validIds = new Set(project.timeline.clips.map((clip) => clip.id));
+    const requested = [state.selectedClipId || "", ...(state.selectedClipIds || [])].filter(Boolean);
+    return Array.from(new Set(requested)).filter((id) => validIds.has(id));
+  }
+
+  private normalizeClipSelection(state: AppState): AppState {
+    const selectedClipIds = this.normalizedSelectedClipIds(state);
+    const selectedClipId = state.selectedClipId && selectedClipIds.includes(state.selectedClipId)
+      ? state.selectedClipId
+      : selectedClipIds[0] || null;
+    return {
+      ...state,
+      selectedClipId,
+      selectedClipIds: selectedClipIds.length ? selectedClipIds : selectedClipId ? [selectedClipId] : []
+    };
   }
 
   private resolveApplyOptions(options: ApplyProjectOptions | boolean): Required<Omit<ApplyProjectOptions, "preservePlayback">> {
@@ -4487,6 +4559,7 @@ export class App {
       this.applyProjectState({
         ...commitProject(this.state, result.project, `Imported MIDI ${source.name} as ${clipCount} ${clipLabel} with ${parsed.notes.length} note${parsed.notes.length === 1 ? "" : "s"}.${warningSuffix}`),
         selectedClipId: result.primaryClipId,
+        selectedClipIds: result.clipIds.length ? result.clipIds : result.primaryClipId ? [result.primaryClipId] : [],
         selectedTrackId: result.primaryTrackId
       });
       this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "nearest" });
@@ -4779,6 +4852,7 @@ export class App {
       this.applyProjectState({
         ...commitProject(this.state, nextProject, `Froze ${clip.name} to audio and muted the source clip.`),
         selectedClipId: placed.clipId || clip.id,
+        selectedClipIds: [placed.clipId || clip.id],
         selectedTrackId: placed.trackId || clip.trackId
       }, {
         audio: "project-load",
@@ -5623,14 +5697,14 @@ const ACTION_BUTTON_TOOLTIPS: Record<string, string> = {
   "audio-take-comp-from-playhead": "Create a take comp starting at the playhead.",
   "audio-take-comp-range": "Use the selected take only inside the active edit range.",
   "build-native-cache": "Render generated and runtime audio into the native cache.",
-  "clip-copy": "Copy the selected clip to the clipboard.",
-  "clip-cut": "Cut the selected clip to the clipboard.",
-  "clip-delete": "Delete the selected clip.",
-  "clip-duplicate": "Duplicate the selected clip after itself.",
-  "clip-left": "Move the selected clip one snap step earlier.",
-  "clip-mute": "Mute or unmute the selected clip without deleting it.",
+  "clip-copy": "Copy the selected clip or selected clip group to the clipboard.",
+  "clip-cut": "Cut the selected clip or selected clip group to the clipboard.",
+  "clip-delete": "Delete the selected clip or selected clip group.",
+  "clip-duplicate": "Duplicate the selected clip or selected clip group after the selected span.",
+  "clip-left": "Move the selected clip or selected clip group one snap step earlier.",
+  "clip-mute": "Mute or unmute the selected clip or selected clip group without deleting it.",
   "clip-paste": "Paste the copied clip at the cursor.",
-  "clip-right": "Move the selected clip one snap step later.",
+  "clip-right": "Move the selected clip or selected clip group one snap step later.",
   "clip-split": "Split the selected clip at the playhead.",
   "collect-media": "Copy reloadable external media beside the saved project.",
   "controls-close": "Close controls.",
@@ -5669,8 +5743,8 @@ const ACTION_BUTTON_TOOLTIPS: Record<string, string> = {
   "open-project": "Open a .pocketdaw project.",
   "pause": "Pause playback.",
   "play": "Start playback.",
-  "preset-game-music": "Show game cue and game-pack export controls, open export details, and tuck clip take/recording detail away.",
-  "preset-music": "Show composition, editing and mix controls, and tuck game-pack and media-pool clutter away.",
+  "preset-game-music": "Keep timeline/game cues prominent, open game-pack export controls, and tuck inspector detail away.",
+  "preset-music": "Keep the timeline primary and tuck deeper edit, mix, media and game-export surfaces away.",
   "push-godot-pack": "Try a local Godot receiver first, then save the ZIP if unavailable.",
   "range-clear": "Clear the active edit range.",
   "range-copy": "Copy the selected clip material inside the active edit range.",

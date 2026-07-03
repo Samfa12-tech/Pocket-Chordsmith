@@ -1002,7 +1002,8 @@ fn collect_project_media(
             ));
         }
         ensure_file_size_at_most(&source, MAX_AUDIO_FILE_BYTES, "Media file is too large to collect in this release. Try a shorter file or keep it external until native streaming support lands.")?;
-        let target_relative_path = normalize_project_media_relative_path(&item.target_relative_path)?;
+        let target_relative_path =
+            normalize_project_media_relative_path(&item.target_relative_path)?;
         let target = resolve_project_relative_path(project_dir, &target_relative_path)?;
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent)

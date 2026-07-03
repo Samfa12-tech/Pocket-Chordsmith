@@ -97,6 +97,21 @@ export function moveClipByBars(project: PocketDawProject, clipId: string, deltaB
   return recomputeTimelineBars(next);
 }
 
+export function moveClipsByBars(project: PocketDawProject, clipIds: string[], deltaBars: number): PocketDawProject {
+  const ids = new Set(uniqueClipIds(clipIds));
+  if (!ids.size || Math.abs(deltaBars) < 0.0001) return project;
+  const next = cloneProject(project);
+  const clips = next.timeline.clips.filter((clip) => ids.has(clip.id));
+  if (!clips.length) return project;
+  const minStart = Math.min(...clips.map((clip) => clip.startBar));
+  const clampedDelta = Math.max(1 - minStart, deltaBars);
+  if (Math.abs(clampedDelta) < 0.0001) return project;
+  clips.forEach((clip) => {
+    clip.startBar += clampedDelta;
+  });
+  return recomputeTimelineBars(next);
+}
+
 export function moveClipToBar(project: PocketDawProject, clipId: string, startBar: number): PocketDawProject {
   const next = cloneProject(project);
   const clip = next.timeline.clips.find((item) => item.id === clipId);
@@ -129,9 +144,47 @@ export function duplicateClip(project: PocketDawProject, clipId: string): { proj
   return { project: next, duplicatedId: newClip.id };
 }
 
+export function duplicateClips(project: PocketDawProject, clipIds: string[]): { project: PocketDawProject; duplicatedIds: string[] } {
+  const uniqueIds = uniqueClipIds(clipIds);
+  if (!uniqueIds.length) return { project, duplicatedIds: [] };
+  const next = cloneProject(project);
+  const clips = uniqueIds
+    .map((id) => next.timeline.clips.find((item) => item.id === id))
+    .filter((clip): clip is Clip => !!clip)
+    .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+  if (!clips.length) return { project, duplicatedIds: [] };
+  const start = Math.min(...clips.map((clip) => clip.startBar));
+  const end = Math.max(...clips.map((clip) => clip.startBar + clip.barLength));
+  const span = Math.max(0.25, end - start);
+  const duplicatedIds: string[] = [];
+  clips.forEach((clip) => {
+    const newClip: Clip = {
+      ...JSON.parse(JSON.stringify(clip)),
+      id: nextClipId(next.timeline.clips),
+      startBar: Math.max(1, start + span + (clip.startBar - start)),
+      linked: true,
+      name: `${clip.name} copy`
+    };
+    next.timeline.clips.push(newClip);
+    duplicatedIds.push(newClip.id);
+  });
+  recomputeTimelineBars(next);
+  return { project: next, duplicatedIds };
+}
+
 export function deleteClip(project: PocketDawProject, clipId: string): PocketDawProject {
   const next = cloneProject(project);
   next.timeline.clips = next.timeline.clips.filter((clip) => clip.id !== clipId);
+  return recomputeTimelineBars(next);
+}
+
+export function deleteClips(project: PocketDawProject, clipIds: string[]): PocketDawProject {
+  const ids = new Set(uniqueClipIds(clipIds));
+  if (!ids.size) return project;
+  const next = cloneProject(project);
+  const before = next.timeline.clips.length;
+  next.timeline.clips = next.timeline.clips.filter((clip) => !ids.has(clip.id));
+  if (next.timeline.clips.length === before) return project;
   return recomputeTimelineBars(next);
 }
 
@@ -140,6 +193,19 @@ export function toggleClipMute(project: PocketDawProject, clipId: string): Pocke
   const clip = next.timeline.clips.find((item) => item.id === clipId);
   if (clip) clip.muted = !clip.muted;
   return next;
+}
+
+export function setClipsMuted(project: PocketDawProject, clipIds: string[], muted: boolean): PocketDawProject {
+  const ids = new Set(uniqueClipIds(clipIds));
+  if (!ids.size) return project;
+  const next = cloneProject(project);
+  let changed = false;
+  next.timeline.clips.forEach((clip) => {
+    if (!ids.has(clip.id)) return;
+    if (clip.muted !== muted) changed = true;
+    clip.muted = muted;
+  });
+  return changed ? next : project;
 }
 
 export function setClipTransform(project: PocketDawProject, clipId: string, field: ClipTransformField, value: number): PocketDawProject {
@@ -1385,9 +1451,42 @@ export function pasteClip(project: PocketDawProject, source: Clip, startBar: num
   return { project: next, pastedId: newClip.id };
 }
 
+export function pasteClips(project: PocketDawProject, sources: Clip[], startBar: number): { project: PocketDawProject; pastedIds: string[] } {
+  const clips = sources
+    .filter((clip): clip is Clip => !!clip)
+    .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+  if (!clips.length) return { project, pastedIds: [] };
+  const next = cloneProject(project);
+  const baseStart = Math.min(...clips.map((clip) => clip.startBar));
+  const targetStart = Math.max(1, startBar);
+  const pastedIds: string[] = [];
+  clips.forEach((source) => {
+    const newClip: Clip = {
+      ...JSON.parse(JSON.stringify(source)),
+      id: nextClipId(next.timeline.clips),
+      startBar: Math.max(1, targetStart + (source.startBar - baseStart)),
+      linked: true,
+      name: `${source.name} pasted`
+    };
+    next.timeline.clips.push(newClip);
+    pastedIds.push(newClip.id);
+  });
+  recomputeTimelineBars(next);
+  return { project: next, pastedIds };
+}
+
 export function clipSourceStartBar(clip: Clip): number {
   const value = clip.metadata?.sourceStartBar;
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+}
+
+function uniqueClipIds(clipIds: string[]): string[] {
+  const seen = new Set<string>();
+  return clipIds.filter((id) => {
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 }
 
 function audioClipSourceOffsetSeconds(clip: Clip): number {

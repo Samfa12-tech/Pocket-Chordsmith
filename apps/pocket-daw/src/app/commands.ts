@@ -3,7 +3,7 @@ import { sanitizePocketChordsmithProject } from "../compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../compatibility/pcsToDaw";
 import { migratePocketDawProject } from "../compatibility/migrations";
 import { cloneProject, createDefaultMetronomeSettings, parsePocketDawProjectFile } from "../daw/dawProject";
-import { activateAudioTake, activateAudioTakeLane, applyAudioClipAction, compGroupedAudioTakeRange, cropClipToRange, deleteAudioWarpMarker, deleteClip, deleteClipRange, duplicateClip, moveClipByBars, moveClipToBar, pasteClip, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setAudioWarpMarkerTarget, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
+import { activateAudioTake, activateAudioTakeLane, applyAudioClipAction, compGroupedAudioTakeRange, cropClipToRange, deleteAudioWarpMarker, deleteClip, deleteClipRange, deleteClips, duplicateClip, duplicateClips, moveClipByBars, moveClipsByBars, moveClipToBar, pasteClip, pasteClips, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setAudioWarpMarkerTarget, setClipTransform, setClipsMuted, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
 import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackRecordingChannelMode, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
 import { setTrackRecordingInputAssignment } from "../daw/recordingInputs";
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
@@ -238,8 +238,17 @@ function clampExportSampleRate(value: number): number {
 }
 
 export function moveSelectedClip(state: AppState, delta: number): AppState {
-  if (!state.selectedClipId) return state;
-  return commitProject(state, moveClipByBars(state.undoStack.present, state.selectedClipId, delta), `Moved clip ${delta > 0 ? "right" : "left"} ${Math.abs(delta)} bar.`);
+  const selected = selectedClipsForCommand(state);
+  if (!selected.length) return state;
+  const project = selected.length === 1
+    ? moveClipByBars(state.undoStack.present, selected[0].id, delta)
+    : moveClipsByBars(state.undoStack.present, selected.map((clip) => clip.id), delta);
+  return {
+    ...commitProject(state, project, selected.length === 1 ? `Moved clip ${delta > 0 ? "right" : "left"} ${Math.abs(delta)} bar.` : `Moved ${selected.length} selected clips ${delta > 0 ? "right" : "left"} ${Math.abs(delta)} bar.`),
+    selectedClipId: selected[0].id,
+    selectedClipIds: selected.map((clip) => clip.id),
+    selectedTrackId: selected[0].trackId || state.selectedTrackId
+  };
 }
 
 export function moveSelectedClipBySnap(state: AppState, direction: -1 | 1): AppState {
@@ -254,6 +263,19 @@ export function moveClipToBarCommand(state: AppState, clipId: string, startBar: 
   const clip = project.timeline.clips.find((item) => item.id === clipId);
   if (!clip) return { ...state, status: "Choose a clip before dragging." };
   const snapped = snapProjectBarValue(project, startBar, state.snapMode);
+  const selected = selectedClipsForCommand(state);
+  if (selected.length > 1 && selected.some((item) => item.id === clipId)) {
+    const delta = snapped - clip.startBar;
+    const next = moveClipsByBars(project, selected.map((item) => item.id), delta);
+    if (next === project) return { ...state, selectedClipId: clipId, selectedClipIds: selected.map((item) => item.id), status: `Selected clips stayed at Bar ${clip.startBar}.` };
+    const movedClip = next.timeline.clips.find((item) => item.id === clipId);
+    return {
+      ...commitProject(state, next, `Moved ${selected.length} selected clips to Bar ${movedClip?.startBar ?? snapped}.`),
+      selectedClipId: clipId,
+      selectedClipIds: selected.map((item) => item.id),
+      selectedTrackId: clip.trackId || state.selectedTrackId
+    };
+  }
   const next = moveClipToBar(project, clipId, snapped);
   if (next === project) return { ...state, selectedClipId: clipId, status: `Clip stayed at Bar ${clip.startBar}.` };
   return {
@@ -278,24 +300,49 @@ export function repeatClipToEndCommand(state: AppState, clipId: string, endBar: 
 }
 
 export function duplicateSelectedClip(state: AppState): AppState {
-  if (!state.selectedClipId) return state;
-  const result = duplicateClip(state.undoStack.present, state.selectedClipId);
+  const selected = selectedClipsForCommand(state);
+  if (!selected.length) return state;
+  if (selected.length > 1) {
+    const result = duplicateClips(state.undoStack.present, selected.map((clip) => clip.id));
+    if (!result.duplicatedIds.length) return { ...state, status: "Select clips to duplicate." };
+    return {
+      ...commitProject(state, result.project, `Duplicated ${result.duplicatedIds.length} selected clips.`),
+      selectedClipId: result.duplicatedIds[0],
+      selectedClipIds: result.duplicatedIds,
+      selectedTrackId: result.project.timeline.clips.find((clip) => clip.id === result.duplicatedIds[0])?.trackId || state.selectedTrackId
+    };
+  }
+  const result = duplicateClip(state.undoStack.present, selected[0].id);
   return {
     ...commitProject(state, result.project, "Duplicated selected clip."),
-    selectedClipId: result.duplicatedId || state.selectedClipId
+    selectedClipId: result.duplicatedId || selected[0].id,
+    selectedClipIds: result.duplicatedId ? [result.duplicatedId] : selected.map((clip) => clip.id)
   };
 }
 
 export function deleteSelectedClip(state: AppState): AppState {
-  if (!state.selectedClipId) return state;
-  const next = deleteClip(state.undoStack.present, state.selectedClipId);
+  const selected = selectedClipsForCommand(state);
+  if (!selected.length) return state;
+  const next = selected.length === 1 ? deleteClip(state.undoStack.present, selected[0].id) : deleteClips(state.undoStack.present, selected.map((clip) => clip.id));
+  const nextSelected = next.timeline.clips[0]?.id || null;
   return {
-    ...commitProject(state, next, "Deleted selected clip."),
-    selectedClipId: next.timeline.clips[0]?.id || null
+    ...commitProject(state, next, selected.length === 1 ? "Deleted selected clip." : `Deleted ${selected.length} selected clips.`),
+    selectedClipId: nextSelected,
+    selectedClipIds: nextSelected ? [nextSelected] : []
   };
 }
 
 export function toggleSelectedClipMute(state: AppState): AppState {
+  const selected = selectedClipsForCommand(state);
+  if (selected.length > 1) {
+    const muted = selected.some((clip) => !clip.muted);
+    return {
+      ...commitProject(state, setClipsMuted(state.undoStack.present, selected.map((clip) => clip.id), muted), `${muted ? "Muted" : "Unmuted"} ${selected.length} selected clips.`),
+      selectedClipId: selected[0].id,
+      selectedClipIds: selected.map((clip) => clip.id),
+      selectedTrackId: selected[0].trackId || state.selectedTrackId
+    };
+  }
   if (!state.selectedClipId) return state;
   return commitProject(state, toggleClipMute(state.undoStack.present, state.selectedClipId), "Toggled clip mute.");
 }
@@ -568,18 +615,42 @@ export function trimSelectedClipEndCommand(state: AppState, deltaBars: number): 
 }
 
 export function copySelectedClip(state: AppState): AppState {
-  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === state.selectedClipId);
+  const selected = selectedClipsForCommand(state);
+  if (selected.length > 1) {
+    return {
+      ...state,
+      clipClipboard: null,
+      clipClipboardGroup: selected.map((clip) => JSON.parse(JSON.stringify(clip)) as Clip),
+      selectedClipId: selected[0].id,
+      selectedClipIds: selected.map((clip) => clip.id),
+      selectedTrackId: selected[0].trackId || state.selectedTrackId,
+      status: `Copied ${selected.length} selected clips.`
+    };
+  }
+  const clip = selected[0];
   if (!clip) return { ...state, status: "Select a clip to copy." };
-  return { ...state, clipClipboard: JSON.parse(JSON.stringify(clip)), status: `Copied ${clip.name}.` };
+  return { ...state, clipClipboard: JSON.parse(JSON.stringify(clip)), clipClipboardGroup: null, selectedClipIds: [clip.id], status: `Copied ${clip.name}.` };
 }
 
 export function cutSelectedClip(state: AppState): AppState {
-  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === state.selectedClipId);
+  const selected = selectedClipsForCommand(state);
+  if (selected.length > 1) {
+    const next = deleteClips(state.undoStack.present, selected.map((clip) => clip.id));
+    const nextSelected = next.timeline.clips[0]?.id || null;
+    return {
+      ...commitProject({ ...state, clipClipboard: null, clipClipboardGroup: selected.map((clip) => JSON.parse(JSON.stringify(clip)) as Clip) }, next, `Cut ${selected.length} selected clips.`),
+      selectedClipId: nextSelected,
+      selectedClipIds: nextSelected ? [nextSelected] : []
+    };
+  }
+  const clip = selected[0];
   if (!clip) return { ...state, status: "Select a clip to cut." };
   const next = deleteClip(state.undoStack.present, clip.id);
+  const nextSelected = next.timeline.clips[0]?.id || null;
   return {
-    ...commitProject({ ...state, clipClipboard: JSON.parse(JSON.stringify(clip)) }, next, `Cut ${clip.name}.`),
-    selectedClipId: next.timeline.clips[0]?.id || null
+    ...commitProject({ ...state, clipClipboard: JSON.parse(JSON.stringify(clip)), clipClipboardGroup: null }, next, `Cut ${clip.name}.`),
+    selectedClipId: nextSelected,
+    selectedClipIds: nextSelected ? [nextSelected] : []
   };
 }
 
@@ -618,13 +689,36 @@ export function cutSelectedClipRangeCommand(state: AppState): AppState {
 }
 
 export function pasteClipAtPlayhead(state: AppState): AppState {
+  if (state.clipClipboardGroup?.length) {
+    const startBar = snapProjectBarValue(state.undoStack.present, state.playheadBar, state.snapMode);
+    const result = pasteClips(state.undoStack.present, state.clipClipboardGroup, startBar);
+    if (!result.pastedIds.length) return { ...state, status: "Copy clips before pasting." };
+    return {
+      ...commitProject(state, result.project, `Pasted ${result.pastedIds.length} clips at playhead.`),
+      selectedClipId: result.pastedIds[0],
+      selectedClipIds: result.pastedIds,
+      selectedTrackId: result.project.timeline.clips.find((clip) => clip.id === result.pastedIds[0])?.trackId || state.selectedTrackId
+    };
+  }
   if (!state.clipClipboard) return { ...state, status: "Copy a clip before pasting." };
   const startBar = snapProjectBarValue(state.undoStack.present, state.playheadBar, state.snapMode);
   const result = pasteClip(state.undoStack.present, state.clipClipboard, startBar);
   return {
     ...commitProject(state, result.project, "Pasted clip at playhead."),
-    selectedClipId: result.pastedId
+    selectedClipId: result.pastedId,
+    selectedClipIds: [result.pastedId]
   };
+}
+
+function selectedClipsForCommand(state: AppState): Clip[] {
+  if (!state.selectedClipId) return [];
+  const project = state.undoStack.present;
+  const requested = [state.selectedClipId || "", ...(state.selectedClipIds || [])].filter(Boolean);
+  const ids = Array.from(new Set(requested));
+  return ids
+    .map((id) => project.timeline.clips.find((clip) => clip.id === id))
+    .filter((clip): clip is Clip => !!clip)
+    .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
 }
 
 function selectedClipRangeClipboard(state: AppState, verb: "copying" | "cutting"): { clip: Clip | null; sourceClip: Clip | null; status: string } {

@@ -43,6 +43,12 @@ products.
 - Continue extracting shared parsing, normalisation, timeline, WAV/stem, and game-runtime APIs.
 - Treat current core output as scaffolded until sound/timing parity is proven.
 - Move canonical format definitions into `packages/pcs-format/` only when the shared boundary is stable.
+- Future format planning: design a smart share-code/JSON compression format so
+  Pocket Audio songs can travel as shorter codes and links. This is not a
+  near-term implementation task. It needs a cross-app compatibility plan for
+  Chordsmith, DJ, DAW, Godot, Pocket Audio Core, hosted handoff pages, old
+  `PCS1:` imports, raw JSON imports, migrations, fixtures, and fallback UX
+  before any new encoded format ships.
 
 ## Godot Addon
 

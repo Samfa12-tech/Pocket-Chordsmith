@@ -153,6 +153,12 @@ test("settings modal opens import and handoff tools", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "Push to Godot" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Mobile transfer" }),
+  ).toBeVisible();
+  await expect(page.locator("#pushHandoffStatus")).toContainText(
+    "same-device/localhost",
+  );
   await expect(page.locator("#pocketAudioCoreStatus")).toContainText(
     "Pocket Audio Core",
   );
@@ -922,6 +928,234 @@ test("Godot push reports browser loopback permission blocks without claiming fal
     "Clipboard was blocked by itch, so a PCS1 handoff text file was downloaded",
   );
   await expect(page.locator("#projectBox")).toHaveValue(/^PCS1:/);
+});
+
+test("mobile transfer opens the static handoff page with a short code", async ({
+  page,
+}) => {
+  let releaseRelay;
+  const relayReady = new Promise((resolve) => {
+    releaseRelay = resolve;
+  });
+  await page.route("**/api/pocket-audio-handoff/transfers", async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.code).toMatch(/^PCS1:/);
+    await relayReady;
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "SAM-TEST42",
+        shortCode: "SAM-TEST42",
+        url: `${new URL(route.request().url()).origin}/apps/pocket-audio-handoff/index.html#code=SAM-TEST42`,
+        expiresAt: "2026-07-03T01:00:00.000Z",
+        ttlSeconds: 1800,
+      }),
+    });
+  });
+  await page.evaluate(() => {
+    window.__pocketChordsmithOpenedUrls = [];
+    window.open = (url, name) => {
+      const opened = {
+        closed: false,
+        name: name || "",
+        opener: null,
+        location: { href: url },
+      };
+      window.__pocketChordsmithOpenedUrls.push(opened);
+      return opened;
+    };
+  });
+
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  const transferClick = page.getByRole("button", { name: "Mobile transfer" }).click();
+
+  await expect(page.locator("#mobileTransferPanel")).toBeVisible();
+  await expect(page.locator("#projectBox")).toHaveValue(/^PCS1:/);
+  await expect(page.locator("#pushHandoffStatus")).toContainText(
+    "same-device",
+  );
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__pocketChordsmithOpenedUrls.length),
+    )
+    .toBe(1);
+  const waitingUrl = await page.evaluate(
+    () => window.__pocketChordsmithOpenedUrls[0].location.href,
+  );
+  expect(waitingUrl).toBe("about:blank");
+
+  releaseRelay();
+  await transferClick;
+
+  const openedUrls = await page.evaluate(() =>
+    window.__pocketChordsmithOpenedUrls.map((item) => item.location.href),
+  );
+  expect(openedUrls).toHaveLength(1);
+  expect(openedUrls[0]).toContain("/apps/pocket-audio-handoff/index.html");
+  expect(openedUrls[0]).toContain("#code=SAM-TEST42");
+  await expect(page.locator("#mobileTransferStatus")).toContainText(
+    "short code SAM-TEST42",
+  );
+});
+
+test("static handoff page imports hash payload and builds desktop fallbacks", async ({
+  page,
+}) => {
+  const handoff = {
+    app: "PocketHandoff",
+    handoffVersion: 1,
+    kind: "chordsmith-mobile-transfer",
+    code: "PCS1:mobile-test",
+    createdAt: "2026-07-03T00:00:00.000Z",
+    sourceApp: "Pocket Chordsmith",
+    targetApp: "Pocket Audio Handoff",
+  };
+  const encoded = await page.evaluate((payload) => {
+    const bytes = new TextEncoder().encode(JSON.stringify(payload));
+    let binary = "";
+    bytes.forEach((byte) => {
+      binary += String.fromCharCode(byte);
+    });
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }, handoff);
+
+  await page.route("**/api/pocket-audio-handoff/transfers", async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.code).toBe("PCS1:mobile-test");
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "SAM-MOBILE",
+        shortCode: "SAM-MOBILE",
+        url: `${new URL(route.request().url()).origin}/apps/pocket-audio-handoff/index.html#code=SAM-MOBILE`,
+        expiresAt: "2026-07-03T01:00:00.000Z",
+      }),
+    });
+  });
+  await page.goto(`/apps/pocket-audio-handoff/#pocketHandoff=${encoded}`);
+  await expect(page.locator("#handoffText")).toHaveValue("PCS1:mobile-test");
+  await expect(page.locator("#payloadSummary")).toContainText("handoff link");
+  await expect(page.locator("#relayCode")).toContainText("SAM-MOBILE");
+
+  await page.evaluate(() => {
+    window.__handoffCopied = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text) => {
+          window.__handoffCopied.push(text);
+        },
+      },
+    });
+    window.__handoffProtocolUrls = [];
+    window.__handoffDownloads = [];
+    const originalClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.href.startsWith("pocket-daw://")) {
+        window.__handoffProtocolUrls.push(this.href);
+        return;
+      }
+      if (this.download) {
+        window.__handoffDownloads.push({
+          fileName: this.download,
+          href: this.href,
+        });
+        return;
+      }
+      return originalClick.call(this);
+    };
+  });
+
+  await page.getByRole("button", { name: "Copy for Pocket DAW" }).click();
+  await page.getByRole("button", { name: "Copy for Godot Paste JSON/Code" }).click();
+  await page.getByRole("button", { name: "Open Pocket DAW" }).click();
+
+  const result = await page.evaluate(() => ({
+    copied: window.__handoffCopied,
+    protocolUrls: window.__handoffProtocolUrls,
+    downloads: window.__handoffDownloads,
+  }));
+  expect(result.copied).toEqual(["PCS1:mobile-test", "PCS1:mobile-test"]);
+  expect(result.downloads).toHaveLength(1);
+  expect(result.downloads[0].fileName).toMatch(/^pocket-chordsmith-to-pocket-daw-.+\.pcs1\.txt$/);
+  expect(result.protocolUrls).toHaveLength(1);
+  expect(result.protocolUrls[0]).toContain("pocket-daw://handoff?");
+  expect(result.protocolUrls[0]).toContain("source=download");
+  expect(result.protocolUrls[0]).toContain(`file=${encodeURIComponent(result.downloads[0].fileName)}`);
+  expect(result.protocolUrls[0]).not.toContain("pocketHandoff=");
+});
+
+test("static handoff page redeems a short code for desktop DAW and Godot import", async ({
+  page,
+}) => {
+  await page.route("**/api/pocket-audio-handoff/transfers/SAM-DESK42", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "SAM-DESK42",
+        shortCode: "SAM-DESK42",
+        code: "PCS1:redeemed-desktop-test",
+        source: "Pocket Chordsmith",
+        metadata: { bpm: "96" },
+        createdAt: "2026-07-03T00:00:00.000Z",
+        expiresAt: "2026-07-03T01:00:00.000Z",
+      }),
+    });
+  });
+
+  await page.goto("/apps/pocket-audio-handoff/#code=SAM-DESK42");
+  await expect(page.locator("#handoffText")).toHaveValue("PCS1:redeemed-desktop-test");
+  await expect(page.locator("#relayStatus")).toContainText(
+    "SAM-DESK42 loaded",
+  );
+  await expect(page.getByRole("button", { name: "Copy for Pocket DAW" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Copy for Godot Paste JSON/Code" })).toBeEnabled();
+});
+
+test("static handoff page accepts pasted PCS1 text and downloads exact payload", async ({
+  page,
+}) => {
+  await page.goto("/apps/pocket-audio-handoff/");
+  await page.locator("#handoffText").fill("PCS1:pasted-mobile-test");
+
+  await page.evaluate(() => {
+    window.__handoffDownloads = [];
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.download) {
+        window.__handoffDownloads.push({
+          fileName: this.download,
+          href: this.href,
+        });
+      }
+    };
+  });
+
+  await page.getByRole("button", { name: "Load pasted code" }).click();
+  await expect(page.locator("#payloadSummary")).toContainText("PCS1");
+  await page.getByRole("button", { name: "Download .pcs1.txt" }).click();
+
+  const downloads = await page.evaluate(() => window.__handoffDownloads);
+  expect(downloads).toHaveLength(1);
+  expect(downloads[0].fileName).toMatch(/^pocket-chordsmith-to-pocket-daw-.+\.pcs1\.txt$/);
+});
+
+test("static handoff page keeps copy and download available when transfer URL is large", async ({
+  page,
+}) => {
+  await page.goto("/apps/pocket-audio-handoff/");
+  await page.locator("#handoffText").fill(`PCS1:${"x".repeat(3200)}`);
+  await page.getByRole("button", { name: "Load pasted code" }).click();
+
+  await expect(page.locator("#sourceStatus")).toContainText(
+    "Transfer link ready",
+  );
+  await expect(page.locator("#qrStatus")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Copy for Pocket DAW" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Download .pcs1.txt" })).toBeEnabled();
 });
 
 test("settings import and handoff controls stay within the viewport", async ({

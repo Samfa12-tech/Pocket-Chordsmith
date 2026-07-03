@@ -21,10 +21,12 @@ export type ChordsmithStepSelection =
 export interface AppState {
   undoStack: UndoStack<PocketDawProject>;
   selectedClipId: string | null;
+  selectedClipIds?: string[];
   selectedTrackId: string | null;
   cursorBar: number;
   snapMode: SnapMode;
   clipClipboard: Clip | null;
+  clipClipboardGroup?: Clip[] | null;
   zoom: number;
   timelineHeightPx: number;
   inspectorVisible: boolean;
@@ -201,16 +203,22 @@ export function createInitialState(): AppState {
   return {
     undoStack: createUndoStack(project),
     selectedClipId: project.timeline.clips[0]?.id || null,
+    selectedClipIds: project.timeline.clips[0]?.id ? [project.timeline.clips[0].id] : [],
     selectedTrackId: "drums",
     cursorBar: 1,
     snapMode: "bar",
     clipClipboard: null,
+    clipClipboardGroup: null,
     zoom: 240,
-    timelineHeightPx: 430,
-    inspectorVisible: true,
+    timelineHeightPx: 620,
+    inspectorVisible: false,
     inspectorWidthPx: 420,
     uiCreationPreset: "music",
-    collapsedUiSections: createUiCollapsedSections(),
+    collapsedUiSections: createUiCollapsedSections({
+      "timeline-tools": true,
+      "lower-dock": true,
+      "media-pool": true
+    }),
     lowerDockTab: "mixer",
     status: "Editable demo copy loaded. Edits autosave to this copy.",
     playing: false,
@@ -274,10 +282,13 @@ export function createUiCollapsedSections(overrides: Partial<UiCollapsedSections
 export function collapsedSectionsForCreationPreset(preset: UiCreationPreset): UiCollapsedSections {
   if (preset === "game-music") {
     return createUiCollapsedSections({
+      "timeline-tools": true,
       "inspector-clip": true
     });
   }
   return createUiCollapsedSections({
+    "timeline-tools": true,
+    "lower-dock": true,
     "media-pool": true
   });
 }
@@ -309,12 +320,14 @@ export function loadProjectIntoState(
     ...state,
     undoStack: createUndoStack(project),
     selectedClipId: selectedClip?.id || null,
+    selectedClipIds: selectedClip?.id ? [selectedClip.id] : [],
     selectedTrackId: preferredTrackId(project),
     cursorBar: 1,
     status: options.status,
     playing: false,
     playheadBar: 1,
     meterLevels: {},
+    clipClipboardGroup: null,
     importText: options.clearImportText === false ? state.importText : "",
     midiImportPlacementMode: state.midiImportPlacementMode,
     midiConversionSourceMode: state.midiConversionSourceMode,

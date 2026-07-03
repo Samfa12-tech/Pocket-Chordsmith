@@ -367,8 +367,8 @@ function renderCreationPresets(state: AppState): string {
   return `
     <span class="creation-presets" role="group" aria-label="Creation focus preset">
       <span class="creation-presets-label">Focus</span>
-      <button type="button" class="${musicActive ? "on" : ""}" data-action="preset-music" aria-pressed="${musicActive ? "true" : "false"}" title="Music preset: keep composition, editing and mix controls prominent while hiding game cue/export clutter">Music</button>
-      <button type="button" class="${gameActive ? "on" : ""}" data-action="preset-game-music" aria-pressed="${gameActive ? "true" : "false"}" title="Game music preset: keep cue and game-pack export controls visible while hiding live-recording take tools">Game music</button>
+      <button type="button" class="${musicActive ? "on" : ""}" data-action="preset-music" aria-pressed="${musicActive ? "true" : "false"}" title="Music preset: keep the timeline primary and tuck deeper edit, mix, media and game-export surfaces away">Music</button>
+      <button type="button" class="${gameActive ? "on" : ""}" data-action="preset-game-music" aria-pressed="${gameActive ? "true" : "false"}" title="Game music preset: keep timeline/game cues prominent and open game-pack export controls">Game music</button>
     </span>
   `;
 }
@@ -424,19 +424,20 @@ function renderTimeline(state: AppState): string {
   const rangeStart = selection?.startBar ?? project.timeline.loop.startBar;
   const rangeEnd = selection?.endBar ?? project.timeline.loop.endBar;
   const toolsCollapsed = isUiSectionCollapsed(state, "timeline-tools");
+  const toolsLabel = toolsCollapsed ? "Timeline" : "Timeline tools";
   return `
     <section class="timeline-wrap">
       <div class="timeline-toolbar ${toolsCollapsed ? "collapsed" : ""}" data-ui-collapse-section="timeline-tools">
         <div class="section-collapse-head timeline-tools-head">
           <div>
-            <strong>Timeline tools</strong>
+            <strong>${toolsLabel}</strong>
             <span>${escapeHtml(state.snapMode === "off" ? "Snap off" : `${modeLabel(state.snapMode)} snap`)} / ${Math.round(zoom)} px/bar</span>
           </div>
           ${renderUiSectionToggle(state, "timeline-tools")}
         </div>
         ${
           toolsCollapsed
-            ? renderCollapsedNotice("Timeline editing, zoom, loop and range controls are hidden.")
+            ? renderCompactTimelineTools(state, project, zoom, rangeStart, rangeEnd)
             : `
               <div class="edit-tools">
                 <button data-action="clip-left" title="Move the selected clip one snap step earlier">Move Left</button>
@@ -509,6 +510,39 @@ function renderTimeline(state: AppState): string {
       </div>
     </section>
   `;
+}
+
+function renderCompactTimelineTools(
+  state: AppState,
+  project: ReturnType<typeof currentProject>,
+  zoom: number,
+  rangeStart: number,
+  rangeEnd: number
+): string {
+  const selection = project.timeline.selection || null;
+  const loopSummary = project.timeline.loop.enabled
+    ? `Loop ${formatBarNumber(project.timeline.loop.startBar)}-${formatBarNumber(project.timeline.loop.endBar)}`
+    : "Loop off";
+  const rangeSummary = selection
+    ? `Range ${formatBarNumber(rangeStart)}-${formatBarNumber(rangeEnd)}`
+    : "No range";
+  return `
+    <div class="timeline-compact-tools" aria-label="Essential timeline tools">
+      <span class="timeline-compact-status">${escapeHtml(loopSummary)} / ${escapeHtml(rangeSummary)}</span>
+      <button data-action="clip-split" title="Split the selected clip at the playhead">Split</button>
+      <button data-action="clip-duplicate" title="Duplicate the selected clip after itself">Duplicate</button>
+      <button data-action="clip-mute" title="Mute or unmute the selected clip without deleting it">Mute</button>
+      <button data-action="clip-delete" title="Delete the selected clip">Delete</button>
+      <button data-action="zoom-out" title="Zoom the timeline out">Zoom -</button>
+      <button data-action="zoom-in" title="Zoom the timeline in">Zoom +</button>
+      <button data-action="toggle-inspector" title="${state.inspectorVisible ? "Hide" : "Show"} the selected clip and track inspector">${state.inspectorVisible ? "Hide Inspector" : "Inspector"}</button>
+      <span class="timeline-compact-readout" data-zoom-readout="true">${Math.round(zoom)} px/bar</span>
+    </div>
+  `;
+}
+
+function formatBarNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function renderTimelineSongSettings(pcs: SanitizedPcsProject | null): string {
@@ -607,6 +641,7 @@ function renderTimelineRows(state: AppState): string {
   });
   const clips = sortClips(project.timeline.clips);
   const pcs = getPrimaryChordsmithSource(project);
+  const selectedClipIds = selectedClipIdSet(state);
   return rows
     .map((track) => {
       const branchLane = generatedDrumBranchLane(track);
@@ -615,7 +650,7 @@ function renderTimelineRows(state: AppState): string {
       return `
         <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${track.trackType === "folder" ? "folder-row" : ""} ${track.folderId ? "folder-child-row" : ""} ${branchLane ? "drum-branch-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}"${branchAttrs}${folderChildAttrs}>
           ${renderTimelineTrackHeader(project, track, state.selectedTrackId === track.id, pcs)}
-          ${clips.map((clip) => renderClip(project, clip, state.selectedClipId === clip.id, track, !!pcs)).join("")}
+          ${clips.map((clip) => renderClip(project, clip, selectedClipIds.has(clip.id), track, !!pcs)).join("")}
           ${renderRecordingPreview(state, track)}
           ${renderInlineChordsmithEditor(state, pcs, track, clips)}
         </div>
@@ -651,6 +686,10 @@ function renderTimelineTrackHeader(project: ReturnType<typeof currentProject>, t
       <span class="track-state">${isFolder ? `${childCount} lanes` : ""}${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${canRecord ? recordChannelLabel.slice(0, 2) : ""}${track.monitorEnabled ? "Mon" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
     </div>
   `;
+}
+
+function selectedClipIdSet(state: AppState): Set<string> {
+  return new Set([state.selectedClipId || "", ...(state.selectedClipIds || [])].filter(Boolean));
 }
 
 function trackHeaderLaneText(project: ReturnType<typeof currentProject>, track: Track, pcs: SanitizedPcsProject | null): string {
@@ -723,7 +762,7 @@ function renderInlineChordsmithClip(
               : "";
   if (!body) return "";
   return `
-    <div class="inline-sequencer inline-${sanitizeDomId(track.role, "role")} ${state.selectedClipId === clip.id ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${sanitizeDataAttr(clip.id)}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-inline-row="${sanitizeDataAttr(track.id)}" data-row="${sanitizeDataAttr(track.id)}" data-inline-sequencer-role="${sanitizeDataAttr(track.role)}" data-inline-section="${sanitizeDataAttr(section.id)}"${track.role === "drums" ? ` data-drum-branch-entry="inline"` : ""} title="Drag empty space to move with snap. Drag the right handle to repeat the section.${track.role === "drums" ? " Double-click or right-click empty space to branch generated drums." : ""}" style="left:${left};width:${width};--inline-steps:${sanitizeCssLengthOrNumber(renderSteps, 0, 0, 256)};">
+    <div class="inline-sequencer inline-${sanitizeDomId(track.role, "role")} ${selectedClipIdSet(state).has(clip.id) ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${sanitizeDataAttr(clip.id)}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-inline-row="${sanitizeDataAttr(track.id)}" data-row="${sanitizeDataAttr(track.id)}" data-inline-sequencer-role="${sanitizeDataAttr(track.role)}" data-inline-section="${sanitizeDataAttr(section.id)}"${track.role === "drums" ? ` data-drum-branch-entry="inline"` : ""} title="Drag empty space to move with snap. Ctrl-click or Cmd-click to select multiple clips. Drag the right handle to repeat the section.${track.role === "drums" ? " Double-click or right-click empty space to branch generated drums." : ""}" style="left:${left};width:${width};--inline-steps:${sanitizeCssLengthOrNumber(renderSteps, 0, 0, 256)};">
       <span class="clip-drag-handle" data-clip-drag-handle="${sanitizeDataAttr(clip.id)}" title="Drag to move this section with snap"></span>
       ${body}
       <span class="clip-loop-handle" data-clip-loop-handle="${sanitizeDataAttr(clip.id)}" title="Drag right to repeat this section"></span>
@@ -853,7 +892,7 @@ function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, sele
   const peaks = Array.isArray(media?.metadata?.waveformPeaks) ? media.metadata.waveformPeaks.slice(0, 48) : [];
   const midi = clip.type === "midi" ? midiDataFromClip(clip) : null;
   const branchEntry = clip.type === "generated-section" && track.role === "drums" ? ` data-drum-branch-entry="clip"` : "";
-  const title = `Drag to move with snap. Drag the right handle to repeat generated sections.${branchEntry ? " Double-click or right-click to branch generated drums." : ""}`;
+  const title = `Drag to move with snap. Ctrl-click or Cmd-click to select multiple clips. Drag the right handle to repeat generated sections.${branchEntry ? " Double-click or right-click to branch generated drums." : ""}`;
   return `
     <button class="clip ${selected ? "selected" : ""} ${clip.muted ? "muted" : ""} ${clip.type === "audio" ? "audio-clip" : ""} ${clip.type === "midi" ? "midi-clip" : ""}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-row="${sanitizeDataAttr(track.id)}"${branchEntry} title="${escapeAttr(title)}" style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(Number(clip.startBar) - 1, 0)} * var(--bar)`)};width:calc(${sanitizeCssLengthOrNumber(clip.barLength, 1, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(clip.color)};background:color-mix(in srgb, ${safeClipColour(clip.color)} 28%, #15192a);">
       <strong>${escapeHtml(clip.sectionId || clip.name)}</strong>
