@@ -160,7 +160,7 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
         name: "Select Clip / Track",
         does: "Chooses the primary clip and track shown in the inspector and lower dock editors; Ctrl-click, Cmd-click or Shift-click adds/removes clips from the current multi-selection.",
         useWhen: "Use before editing clip transforms, track routing, automation, MIDI, audio, Chordsmith section data, drag movement, or bulk timeline clipboard edits.",
-        aiNote: "MCP live tools can select tracks/clips when visual control is not available. Multi-selection is UI/runtime state; the primary selected clip still anchors inspector-only commands."
+        aiNote: "MCP live status reports the runtime multi-selection as selection.clipIds/selection.clips. The primary selected clip still anchors inspector-only commands."
       },
       {
         name: "Move Left / Move Right",
@@ -906,18 +906,18 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     control: "Move Clip Left",
     actionId: "clip-left",
     shortcut: "ArrowLeft",
-    does: "Moves the selected clip earlier by the current snap step.",
+    does: "Moves the selected clip, or every clip in the current multi-selection, earlier by the current snap step.",
     useWhen: "Use to adjust arrangement timing.",
-    aiNote: "Check snap mode first; bar, beat and off-grid states imply different movement."
+    aiNote: "Check snap mode first; bar, beat and off-grid states imply different movement. Ctrl/Cmd/Shift-select clips before moving a group."
   },
   {
     surface: "Timeline Editing",
     control: "Move Clip Right",
     actionId: "clip-right",
     shortcut: "ArrowRight",
-    does: "Moves the selected clip later by the current snap step.",
+    does: "Moves the selected clip, or every clip in the current multi-selection, later by the current snap step.",
     useWhen: "Use to adjust arrangement timing.",
-    aiNote: "Check for overlaps and downstream section timing after moving."
+    aiNote: "Check for overlaps and downstream section timing after moving. Ctrl/Cmd/Shift-select clips before moving a group."
   },
   {
     surface: "Timeline Editing",
@@ -2442,6 +2442,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     does: "Lets the tokened live bridge set a live track's visible input device through the same command path as the mixer input selector.",
     useWhen: "Use before arming or recording when MCP needs to prepare the running app for a known hardware input.",
     aiNote: "Device IDs are runtime-specific. Confirm the selected input through live status and real installed-app smoke."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "Live MCP Selection Status",
+    selector: "pocket_daw_live_status:selection",
+    does: "Reports the running app's selected track, primary selected clip and full runtime selected clip group through selection.clipIds and selection.clips.",
+    useWhen: "Use during MCP-observed arrangement smoke to confirm multi-selected clips before group Move, Mute, Delete, Copy, Cut, Paste or Duplicate actions.",
+    aiNote: "Read-only status. Multi-selection is runtime UI state; saved project files do not persist it."
   },
   {
     surface: "AI / MCP Bridge",

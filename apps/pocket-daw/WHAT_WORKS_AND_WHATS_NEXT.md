@@ -698,7 +698,7 @@ v0.5.2 moved generated playback out of the browser timing path, but Pocket DAW i
 - Add installer signing/version metadata polish.
 - Extend Pocket Chordsmith to Pocket DAW push/handoff into a polished cross-app button flow and live-host smoke test.
 - Add Pocket DAW to Godot push/export workflow.
-- Add multi-select, cut and select-range editing when the timeline model is ready for it.
+- Deepen the now-present timeline multi-selection, clip clipboard and edit-range foundations with box/range selection gestures, clearer visual grouping and installed-app smoke.
 - Add stronger live preview from any clip edge/selection and better scrub-audition behavior.
 - Add Chordsmith FX and sidechain parity controls after the core musical lanes stay stable.
 - Add timeline visualisation for generated and audio material: waveform-style previews for audio clips, plus useful energy/note-density lanes for generated Chordsmith tracks.

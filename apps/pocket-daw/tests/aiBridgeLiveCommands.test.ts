@@ -203,6 +203,38 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(clearedStatus.timelineSelection).toBeNull();
   });
 
+  it("reports runtime clip multi-selection through live status", () => {
+    const state = createInitialState();
+    const selected = state.undoStack.present.timeline.clips.slice(0, 2);
+    state.selectedClipId = selected[1].id;
+    state.selectedClipIds = selected.map((clip) => clip.id);
+    state.selectedTrackId = selected[1].trackId;
+    const app = appHarness(state);
+
+    const status = app.aiBridgeLiveStatus() as {
+      selection?: {
+        clipId: string | null;
+        clipIds: string[];
+        clipName: string | null;
+        clips: Array<{ id: string; name: string; trackId: string; type: string; startBar: number; barLength: number }>;
+      };
+    };
+    const expectedClipIds = [selected[1].id, selected[0].id];
+
+    expect(status.selection?.clipId).toBe(selected[1].id);
+    expect(status.selection?.clipIds).toEqual(expectedClipIds);
+    expect(status.selection?.clipName).toBe(selected[1].name);
+    expect(status.selection?.clips.map((clip) => clip.id)).toEqual(expectedClipIds);
+    expect(status.selection?.clips[0]).toMatchObject({
+      id: selected[1].id,
+      name: selected[1].name,
+      trackId: selected[1].trackId,
+      type: selected[1].type,
+      startBar: selected[1].startBar,
+      barLength: selected[1].barLength
+    });
+  });
+
   it("sets edit ranges from clips and splits through the live bridge executor", () => {
     let state = createInitialState();
     let project = currentProject(state);

@@ -246,7 +246,7 @@ import { replacePresent } from "../daw/undo";
 import type { ClipAutomationField } from "../daw/automation";
 import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
-import { POCKET_DAW_VERSION, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
+import { POCKET_DAW_VERSION, type Clip, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
 import { buildGroupedRecordingCapturePlan, buildNativeRecordingAlphaInputPreflight, buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError } from "../daw/recordingInputs";
 import { recordingLatencyOffsetSeconds, trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToDisplayPosition, snapProjectBarValue } from "../daw/timeline";
@@ -570,6 +570,18 @@ export class App {
     const performanceDiagnostics = this.performanceDiagnostics.report(this.state, audioDiagnostics, uiPerformance, { recordSample: true });
     const exportReadiness = createAiBridgeExportReadiness(project);
     const mediaReadiness = createAiBridgeMediaReadiness(project);
+    const selectedClipIds = this.normalizedSelectedClipIds();
+    const selectedClips = selectedClipIds
+      .map((id) => project.timeline.clips.find((clip) => clip.id === id))
+      .filter((clip): clip is Clip => !!clip)
+      .map((clip) => ({
+        id: clip.id,
+        name: clip.name,
+        trackId: clip.trackId,
+        type: clip.type,
+        startBar: clip.startBar,
+        barLength: clip.barLength
+      }));
     return {
       ok: true,
       available: true,
@@ -595,8 +607,10 @@ export class App {
       selection: {
         trackId: this.state.selectedTrackId,
         clipId: this.state.selectedClipId,
+        clipIds: selectedClipIds,
         trackName: project.tracks.find((track) => track.id === this.state.selectedTrackId)?.name || null,
-        clipName: project.timeline.clips.find((clip) => clip.id === this.state.selectedClipId)?.name || null
+        clipName: project.timeline.clips.find((clip) => clip.id === this.state.selectedClipId)?.name || null,
+        clips: selectedClips
       },
       recording: {
         ...this.state.recording,
