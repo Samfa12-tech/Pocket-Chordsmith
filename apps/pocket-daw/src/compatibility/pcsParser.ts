@@ -5,6 +5,8 @@ export const PCS_SHARE_PREFIX = "PCS1:";
 export const POCKET_DJ_SHARE_PREFIX = "PDJ1:";
 const HANDOFF_APP = "PocketHandoff";
 const HANDOFF_WINDOW_PREFIX = "PocketHandoff:";
+const MAX_HANDOFF_IMPORT_DEPTH = 4;
+const HANDOFF_IMPORT_DEPTH_ERROR = "Nested Pocket handoff envelopes exceeded the supported import depth.";
 
 export type ImportParseResult =
   | { kind: "pocketdaw"; data: ReturnType<typeof migratePocketDawProject> }
@@ -58,10 +60,15 @@ export function parsePocketChordsmithJson(text: string): unknown {
 }
 
 export function parseAnyImportText(text: string): ImportParseResult {
+  return parseAnyImportTextAtDepth(text, 0);
+}
+
+function parseAnyImportTextAtDepth(text: string, depth: number): ImportParseResult {
+  if (depth > MAX_HANDOFF_IMPORT_DEPTH) throw new Error(HANDOFF_IMPORT_DEPTH_ERROR);
   const trimmed = String(text || "").trim();
   if (!trimmed) throw new Error("Paste a PCS1 share code, Pocket Chordsmith JSON, or .pocketdaw JSON first.");
 
-  const handoff = parsePocketHandoffImport(trimmed);
+  const handoff = parsePocketHandoffImport(trimmed, depth);
   if (handoff) return handoff;
 
   if (trimmed.startsWith(PCS_SHARE_PREFIX)) {
@@ -80,14 +87,14 @@ export function parseAnyImportText(text: string): ImportParseResult {
       return { kind: "pocketdaw", data: migratePocketDawProject(parsePocketDawProjectFile(parsed)) };
     }
     if (maybeApp === HANDOFF_APP && typeof (parsed as Record<string, unknown>).code === "string") {
-      return parseAnyImportText(String((parsed as Record<string, unknown>).code));
+      return parseAnyImportTextAtDepth(String((parsed as Record<string, unknown>).code), depth + 1);
     }
     if (maybeApp === "PocketDJ") return { kind: "pdj", data: parsed, importKind: "raw-json" };
   }
   return { kind: "pcs", data: parsed, importKind: "raw-json" };
 }
 
-function parsePocketHandoffImport(text: string): ImportParseResult | null {
+function parsePocketHandoffImport(text: string, depth: number): ImportParseResult | null {
   const trimmed = text.trim();
   const unprefixed = trimmed.startsWith(HANDOFF_WINDOW_PREFIX) ? trimmed.slice(HANDOFF_WINDOW_PREFIX.length) : trimmed;
   const candidates = new Set<string>([trimmed, unprefixed]);
@@ -102,7 +109,7 @@ function parsePocketHandoffImport(text: string): ImportParseResult | null {
   });
   for (const candidate of candidates) {
     const code = pocketHandoffCode(candidate);
-    if (code) return parseAnyImportText(code);
+    if (code) return parseAnyImportTextAtDepth(code, depth + 1);
   }
   return null;
 }

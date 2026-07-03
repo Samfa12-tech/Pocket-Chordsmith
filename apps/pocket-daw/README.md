@@ -67,6 +67,10 @@ For already-imported MIDI clips, `pocket_daw_apply_commands` supports `convert_m
 
 Pocket DAW `0.6.13` added `Help -> AI / MCP Bridge` in the installed app. The panel keeps copy-ready command, Claude/JSON and Codex TOML snippets, and can enable a token-protected live localhost bridge for the running app. Live MCP tools can read app status, control transport, select tracks/clips, save an already-saved project and apply safe mixer edits. File/project MCP tools still work while Pocket DAW is closed. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
 
+The live bridge is local-only and token-protected. Anyone or any process with
+access to this Windows user account and the session file can control the enabled
+live bridge, so enable it only for trusted local automation sessions.
+
 Pocket DAW current updater-visible checkpoint and exact-artifact smoke evidence are recorded in `release-status.json` and `docs/CURRENT_RELEASE_STATUS.md`.
 
 User and agent help docs:

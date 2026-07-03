@@ -77,10 +77,9 @@ npm run build
 Pocket DAW is live for Windows alpha testing on itch. Treat
 `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md`, generated from
 `apps/pocket-daw/release-status.json`, as the current source/public/smoke truth.
-The current audited release truth is `0.6.34`; install from itch for normal
-testing and use the in-app updater for future update tests rather than
-redownloading manually each time. Installer packaging and smoke evidence should
-be recorded against the exact generated artifact before publishing a new build.
+Install from itch for normal testing and use the in-app updater for future
+update tests. Installer packaging and smoke evidence should be recorded against
+the exact generated artifact before publishing a new build.
 
 Pocket Audio Core:
 

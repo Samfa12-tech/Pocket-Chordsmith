@@ -198,8 +198,20 @@ export function handoffFromDownloadFilePayload(payload: unknown, onStatus?: (sta
     code: handoff.code,
     source: "download-file",
     status: `Pocket Chordsmith handoff imported from ${fileName}.`,
-    clear: () => undefined
+    clear: () => {
+      void deleteDownloadHandoffFile(fileName);
+    }
   };
+}
+
+export async function deleteDownloadHandoffFile(fileName: string): Promise<boolean> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<boolean>("delete_download_handoff_file", { fileName });
+  } catch (error) {
+    console.info("Pocket DAW could not clean up the downloaded handoff file.", error);
+    return false;
+  }
 }
 
 async function firstDeepLinkHandoff(urls: string[] | null | undefined, onStatus?: (status: HandoffBridgeStatus) => void): Promise<PocketDawHandoff | null> {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPocketChordsmithShareCode, parseAnyImportText, parsePocketChordsmithShareCode, utf8ToBase64Url } from "../src/compatibility/pcsParser";
-import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
+import { MAX_SECTION_STEPS, sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 import { createDemoChordsmithProject, createLofiChordsmithTemplateProject } from "../src/demo/demoProject";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
@@ -91,6 +91,17 @@ describe("Pocket Chordsmith import", () => {
     expect(reopened.importHistory[0]).toMatchObject({ importKind: "PDJ1", sourceRefId: reopenedDjRef?.id });
   });
 
+  it("unwraps a single PocketHandoff envelope carrying PCS1", () => {
+    const source = createDemoChordsmithProject();
+    const code = buildPocketChordsmithShareCode(source);
+    const handoff = createPocketHandoffEnvelope(code);
+    const parsed = parseAnyImportText(JSON.stringify(handoff));
+
+    expect(parsed.kind).toBe("pcs");
+    expect(parsed.kind === "pcs" ? parsed.importKind : "").toBe("PCS1");
+    expect(parsed.kind === "pcs" ? (parsed.data as Record<string, unknown>).title : "").toBe("Pocket DAW Demo - Neon Roads");
+  });
+
   it("unwraps PocketHandoff envelopes that carry PDJ1 sessions", () => {
     const session = createPocketDjImportFixture();
     const code = `PDJ1:${utf8ToBase64Url(JSON.stringify(session))}`;
@@ -115,6 +126,33 @@ describe("Pocket Chordsmith import", () => {
       performance: { currentSection: "B", sequence: ["A", "B", "D"], fx: { filter: 0.31 } }
     });
     expect(fromJson.importHistory[0]).toMatchObject({ importKind: "PDJ1", sourceRefId: djRef?.id });
+  });
+
+  it("caps nested PocketHandoff envelope recursion", () => {
+    const source = createDemoChordsmithProject();
+    const code = buildPocketChordsmithShareCode(source);
+    const nestedAtLimit = nestPocketHandoff(code, 4);
+    const tooDeep = nestPocketHandoff(code, 5);
+
+    expect(parseAnyImportText(nestedAtLimit).kind).toBe("pcs");
+    expect(() => parseAnyImportText(tooDeep)).toThrow("Nested Pocket handoff envelopes exceeded the supported import depth.");
+  });
+
+  it("keeps legacy manual PocketHandoff JSON importable without freshness fields", () => {
+    const source = createDemoChordsmithProject();
+    const legacy = {
+      app: "PocketHandoff",
+      handoffVersion: 1,
+      kind: "chordsmith-to-daw",
+      code: buildPocketChordsmithShareCode(source),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      sourceApp: "Pocket Chordsmith"
+    };
+
+    const parsed = parseAnyImportText(JSON.stringify(legacy));
+
+    expect(parsed.kind).toBe("pcs");
+    expect(parsed.kind === "pcs" ? parsed.importKind : "").toBe("PCS1");
   });
 
   it("preserves source BPM when importing PCS1 share codes or raw Chordsmith JSON", () => {
@@ -369,6 +407,33 @@ describe("Pocket Chordsmith import", () => {
     expect(events.some((event) => event.kind === "melody" && event.step === 22)).toBe(false);
   });
 
+  it("caps hostile observed Chordsmith section lengths before allocation", () => {
+    const hostileLength = MAX_SECTION_STEPS + 2048;
+    const source = {
+      ...createCompactExportRegressionProject(),
+      gridA: {
+        kick: new Array(hostileLength).fill(1),
+        snare: new Array(hostileLength).fill(0),
+        hat: new Array(hostileLength).fill(0),
+        bass: new Array(hostileLength).fill(0)
+      },
+      melodyTracksA: [new Array(hostileLength).fill(null)],
+      melodyTupletsA: [new Array(hostileLength).fill(false)],
+      bassNotesA: new Array(hostileLength).fill(null)
+    };
+
+    const sanitized = sanitizePocketChordsmithProject(source);
+    const project = createDawProjectFromChordsmithProject(sanitized);
+
+    expect(sanitized.sections.A.grid.kick).toHaveLength(MAX_SECTION_STEPS);
+    expect(sanitized.sections.A.melodyTracks[0]).toHaveLength(MAX_SECTION_STEPS);
+    expect(sanitized.sections.A.bassNotes).toHaveLength(MAX_SECTION_STEPS);
+    expect(project.sourceRefs[0]?.normalized).toMatchObject({
+      sections: { A: { grid: { kick: expect.any(Array) } } }
+    });
+    expect(((project.sourceRefs[0]?.normalized as Record<string, unknown>).sections as Record<string, { grid: { kick: unknown[] } }>).A.grid.kick).toHaveLength(MAX_SECTION_STEPS);
+  });
+
   it("starts imported tracks from Chordsmith bus settings", () => {
     const sanitized = sanitizePocketChordsmithProject({
       ...createCompactExportRegressionProject(),
@@ -484,4 +549,24 @@ function createCompactExportRegressionProject() {
     bassAccentA: blankBool,
     guitarPatternA: guitarPattern
   };
+}
+
+function createPocketHandoffEnvelope(code: string) {
+  return {
+    app: "PocketHandoff",
+    handoffVersion: 1,
+    kind: "chordsmith-to-daw",
+    code,
+    createdAt: "2026-07-03T00:00:00.000Z",
+    sourceApp: "Pocket Chordsmith",
+    targetApp: "PocketDAW"
+  };
+}
+
+function nestPocketHandoff(code: string, depth: number): string {
+  let current = code;
+  for (let i = 0; i < depth; i += 1) {
+    current = JSON.stringify(createPocketHandoffEnvelope(current));
+  }
+  return current;
 }

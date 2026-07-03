@@ -263,6 +263,7 @@ pub fn run() {
             read_native_cache_asset,
             prune_native_cache_assets,
             read_download_handoff_file,
+            delete_download_handoff_file,
             open_midi_file,
             save_project_file_as,
             write_project_file,
@@ -887,6 +888,15 @@ fn read_download_handoff_file(file_name: String) -> Result<DownloadHandoffFilePa
         "Could not find {} in Downloads. Use the paste/import fallback if the browser asked where to save the file.",
         safe_name
     ))
+}
+
+#[tauri::command]
+fn delete_download_handoff_file(file_name: String) -> Result<bool, String> {
+    let safe_name = validate_download_handoff_file_name(&file_name)?;
+    let downloads = downloads_dir().ok_or_else(|| {
+        "Could not find the Downloads folder for the Pocket Chordsmith handoff.".to_string()
+    })?;
+    delete_download_handoff_file_from_dir(&downloads, &safe_name)
 }
 
 #[tauri::command]
@@ -1568,6 +1578,20 @@ fn validate_download_handoff_file_name(file_name: &str) -> Result<String, String
     Ok(trimmed.to_string())
 }
 
+fn delete_download_handoff_file_from_dir(
+    downloads: &std::path::Path,
+    file_name: &str,
+) -> Result<bool, String> {
+    let safe_name = validate_download_handoff_file_name(file_name)?;
+    let path = downloads.join(&safe_name);
+    if !path.exists() {
+        return Ok(false);
+    }
+    std::fs::remove_file(&path)
+        .map(|_| true)
+        .map_err(|err| format!("Could not delete Pocket Chordsmith handoff file: {}", err))
+}
+
 fn resolve_media_path(
     path: &str,
     project_file_path: Option<&str>,
@@ -2030,5 +2054,27 @@ mod tests {
                 .is_err()
         );
         assert!(validate_download_handoff_file_name("other-file.pcs1.txt").is_err());
+    }
+
+    #[test]
+    fn delete_download_handoff_file_removes_only_valid_handoffs() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let downloads = std::env::temp_dir().join(format!("pocket-daw-download-cleanup-{stamp}"));
+        std::fs::create_dir_all(&downloads).expect("test downloads dir");
+        let file_name = "pocket-chordsmith-to-pocket-daw-test-123.pcs1.txt";
+        let file_path = downloads.join(file_name);
+        std::fs::write(&file_path, "PCS1:test").expect("handoff file");
+
+        assert!(delete_download_handoff_file_from_dir(&downloads, file_name)
+            .expect("valid handoff deletion should succeed"));
+        assert!(!file_path.exists());
+        assert!(!delete_download_handoff_file_from_dir(&downloads, file_name)
+            .expect("missing valid handoff should be harmless"));
+        assert!(delete_download_handoff_file_from_dir(&downloads, "../bad.pcs1.txt").is_err());
+
+        let _ = std::fs::remove_dir_all(&downloads);
     }
 }

@@ -2041,12 +2041,15 @@ function parseProjectText(text){
   return sanitizeProjectData(parsed);
 }
 function buildPocketHandoff(kind, code, options={}){
+  const createdAt = new Date();
   return {
     app:"PocketHandoff",
     handoffVersion:1,
     kind,
     code,
-    createdAt:new Date().toISOString(),
+    createdAt:createdAt.toISOString(),
+    nonce: options.nonce || makePocketHandoffNonce(),
+    expiresAt: options.expiresAt || new Date(createdAt.getTime() + 10 * 60 * 1000).toISOString(),
     sourceApp:options.sourceApp || "Pocket Chordsmith",
     targetApp:options.targetApp,
     metadata:options.metadata || {
@@ -2056,6 +2059,15 @@ function buildPocketHandoff(kind, code, options={}){
       scale: state.scale
     }
   };
+}
+function makePocketHandoffNonce(){
+  try{
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+  }catch(e){
+    return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
+  }
 }
 function encodePocketHandoff(payload){
   return utf8ToBase64Url(JSON.stringify(payload));
@@ -2538,16 +2550,21 @@ function openInstalledAppProtocol(url, blockedMessage){
   return false;
 }
 async function postPocketDawLocalHandoff(encodedHandoff){
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1400);
   try{
     const response = await fetch(POCKET_DAW_LOCAL_HANDOFF_URL, {
       method: "POST",
       mode: "cors",
       headers: {"Content-Type":"text/plain;charset=utf-8"},
-      body: encodedHandoff
+      body: encodedHandoff,
+      signal: controller.signal
     });
     return response.ok;
   }catch(e){
     return false;
+  }finally{
+    clearTimeout(timer);
   }
 }
 function submitPocketDawLocalHandoffForm(encodedHandoff){

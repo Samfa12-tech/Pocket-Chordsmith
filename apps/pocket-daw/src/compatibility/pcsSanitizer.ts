@@ -114,6 +114,7 @@ export interface SanitizedPcsProject {
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const DRUM_TRACKS = ["kick", "snare", "hat", "bass"] as const;
 const MAX_BARS = 16;
+export const MAX_SECTION_STEPS = MAX_BARS * 7 * 16;
 const DEFAULT_PROGRESSION = [0, 4, 5, 3];
 const PCS_DRUM_KITS = ["classic", ...LOFI_DRUM_KITS, ...CHIP_DRUM_KITS, ...METAL_DRUM_KITS] as const;
 const PCS_BASS_TONES = ["classic", ...LOFI_BASS_TONES, ...CHIP_BASS_TONES, ...METAL_BASS_TONES] as const;
@@ -347,7 +348,7 @@ function expectedSectionSteps(raw: JsonObject, project: Pick<SanitizedPcsProject
     observedTrackLength(raw[sectionKey("melodySlide", id)]),
     observedTrackLength(raw[sectionKey("melodyTuplets", id)])
   ];
-  return Math.max(minimum, ...observed.filter((len) => len > 0));
+  return Math.min(MAX_SECTION_STEPS, Math.max(minimum, ...observed.filter((len) => len > 0)));
 }
 
 function observedGridLengths(raw: unknown): number[] {

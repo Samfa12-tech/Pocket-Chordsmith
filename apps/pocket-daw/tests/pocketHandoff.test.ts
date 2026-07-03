@@ -9,7 +9,8 @@ import {
   readDeepLinkHandoff,
   readStoredHandoff,
   readUrlHandoff,
-  readWindowNameHandoff
+  readWindowNameHandoff,
+  validatePocketHandoffEnvelope
 } from "../src/native/pocketHandoff";
 
 class MemoryStorage implements Storage {
@@ -54,8 +55,44 @@ describe("PocketHandoff compatibility", () => {
       handoffVersion: 1,
       kind: "pcs-to-daw",
       code: "PCS1:test",
-      sourceApp: "Pocket Chordsmith"
+      sourceApp: "Pocket Chordsmith",
+      targetApp: "PocketDAW",
+      nonce: expect.any(String),
+      expiresAt: expect.any(String)
     });
+  });
+
+  it("validates fresh target-addressed handoff envelopes", () => {
+    const payload = buildPocketHandoff("pcs-to-daw", "PCS1:test", {
+      createdAt: "2026-07-03T00:00:00.000Z",
+      expiresAt: "2026-07-03T00:05:00.000Z",
+      nonce: "abc12345"
+    });
+
+    expect(validatePocketHandoffEnvelope(payload, {
+      now: new Date("2026-07-03T00:01:00.000Z"),
+      requireFreshness: true,
+      requireTarget: true
+    })).toEqual({ ok: true });
+  });
+
+  it("rejects expired or wrongly targeted strict handoff envelopes", () => {
+    const expired = buildPocketHandoff("pcs-to-daw", "PCS1:test", {
+      createdAt: "2026-07-03T00:00:00.000Z",
+      expiresAt: "2026-07-03T00:05:00.000Z"
+    });
+    const wrongTarget = { ...expired, expiresAt: "2026-07-03T00:30:00.000Z", targetApp: "PocketDJ" };
+
+    expect(validatePocketHandoffEnvelope(expired, {
+      now: new Date("2026-07-03T00:06:00.000Z"),
+      requireFreshness: true,
+      requireTarget: true
+    })).toMatchObject({ ok: false, message: expect.stringContaining("expired") });
+    expect(validatePocketHandoffEnvelope(wrongTarget, {
+      now: new Date("2026-07-03T00:01:00.000Z"),
+      requireFreshness: true,
+      requireTarget: true
+    })).toMatchObject({ ok: false, message: expect.stringContaining("not supported") });
   });
 
   it("reads envelope and legacy imports from URL query/hash sources", () => {
@@ -90,7 +127,10 @@ describe("PocketHandoff compatibility", () => {
   });
 
   it("reads installed-app deep links without accepting arbitrary schemes", () => {
-    const payload = buildPocketHandoff("chordsmith-to-daw", "PCS1:deep-link", { createdAt: "2026-06-11T00:00:00.000Z" });
+    const payload = buildPocketHandoff("chordsmith-to-daw", "PCS1:deep-link", {
+      createdAt: "2026-06-11T00:00:00.000Z",
+      expiresAt: "2099-01-01T00:00:00.000Z"
+    });
     const encoded = encodePocketHandoff(payload);
 
     const handoff = readDeepLinkHandoff(`pocket-daw://handoff?pocketHandoff=${encoded}`);

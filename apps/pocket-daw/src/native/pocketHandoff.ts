@@ -6,6 +6,8 @@ export const HANDOFF_WINDOW_PREFIX = "PocketHandoff:";
 export const HANDOFF_STORAGE_KEYS = ["PocketHandoff", "pocketHandoff", "pocket-daw:handoff"] as const;
 export const HANDOFF_ENVELOPE_PARAMS = ["pocketHandoff", "handoff"] as const;
 export const HANDOFF_LEGACY_PARAMS = ["pcs1", "pcs", "code", "import"] as const;
+const DEFAULT_HANDOFF_TTL_MS = 10 * 60 * 1000;
+const HANDOFF_NONCE_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 
 export type PocketHandoffKind = "pcs-to-daw" | "chordsmith-to-daw" | "dj-to-daw" | "import";
 export type PocketHandoffSource = "url" | "window.name" | "localStorage" | "deep-link" | "local-server" | "download-file";
@@ -16,6 +18,8 @@ export interface PocketHandoffEnvelope {
   kind: PocketHandoffKind;
   code: string;
   createdAt: string;
+  nonce?: string;
+  expiresAt?: string;
   sourceApp?: string;
   targetApp?: string;
   metadata?: JsonObject;
@@ -34,13 +38,18 @@ export type DeepLinkHandoffInspection =
   | { result: "failed-parse"; url: string; message: string }
   | { result: "ignored"; url: string; message: string };
 
+export type PocketHandoffValidationResult = { ok: true } | { ok: false; message: string };
+
 export function buildPocketHandoff(kind: PocketHandoffKind, code: string, options: Partial<Omit<PocketHandoffEnvelope, "app" | "handoffVersion" | "kind" | "code" | "createdAt">> & { createdAt?: string } = {}): PocketHandoffEnvelope {
+  const createdAt = options.createdAt || new Date().toISOString();
   return {
     app: HANDOFF_APP,
     handoffVersion: HANDOFF_VERSION,
     kind,
     code,
-    createdAt: options.createdAt || new Date().toISOString(),
+    createdAt,
+    nonce: options.nonce || randomHandoffNonce(),
+    expiresAt: options.expiresAt || handoffExpiresAt(createdAt),
     sourceApp: options.sourceApp,
     targetApp: options.targetApp || "PocketDAW",
     metadata: options.metadata
@@ -105,6 +114,37 @@ export function readEncodedHandoff(raw: string, source: PocketHandoffSource): Po
   return makeHandoff(payload, source, () => undefined);
 }
 
+export function validatePocketHandoffEnvelope(payload: PocketHandoffEnvelope, options: {
+  now?: Date;
+  requireFreshness?: boolean;
+  requireTarget?: boolean;
+  targetApp?: string;
+} = {}): PocketHandoffValidationResult {
+  const targetApp = options.targetApp || "PocketDAW";
+  if (payload.targetApp && payload.targetApp !== targetApp) {
+    return { ok: false, message: `PocketHandoff target ${payload.targetApp} is not supported by Pocket DAW.` };
+  }
+  if (options.requireTarget && payload.targetApp !== targetApp) {
+    return { ok: false, message: "PocketHandoff payload was not addressed to Pocket DAW." };
+  }
+  if (payload.nonce && !HANDOFF_NONCE_PATTERN.test(payload.nonce)) {
+    return { ok: false, message: "PocketHandoff nonce was not in a supported format." };
+  }
+  if (options.requireFreshness && !payload.expiresAt) {
+    return { ok: false, message: "PocketHandoff payload did not include a freshness window." };
+  }
+  if (options.requireFreshness && payload.expiresAt) {
+    const expiresAt = Date.parse(payload.expiresAt);
+    if (!Number.isFinite(expiresAt)) {
+      return { ok: false, message: "PocketHandoff expiry timestamp was not valid." };
+    }
+    if (expiresAt < (options.now || new Date()).getTime()) {
+      return { ok: false, message: "PocketHandoff payload has expired. Send the song again from Pocket Chordsmith." };
+    }
+  }
+  return { ok: true };
+}
+
 export function inspectDeepLinkHandoff(input: string): DeepLinkHandoffInspection {
   if (!isPocketDawDeepLink(input)) {
     return { result: "ignored", url: input, message: "Ignored non-Pocket DAW launch URL." };
@@ -163,7 +203,12 @@ export function clearStoredHandoff(storage: Storage | null = getLocalStorage()):
   HANDOFF_STORAGE_KEYS.forEach((key) => storage.removeItem(key));
 }
 
-function makeHandoff(payload: PocketHandoffEnvelope, source: PocketHandoffSource, clear: () => void): PocketDawHandoff {
+function makeHandoff(payload: PocketHandoffEnvelope, source: PocketHandoffSource, clear: () => void): PocketDawHandoff | null {
+  const validation = validatePocketHandoffEnvelope(payload, {
+    requireFreshness: source === "deep-link" || source === "local-server",
+    requireTarget: source === "deep-link" || source === "local-server"
+  });
+  if (!validation.ok) return null;
   return {
     payload,
     code: payload.code,
@@ -189,6 +234,8 @@ function parseEnvelopeJson(text: string): PocketHandoffEnvelope | null {
         kind: parsed.kind,
         code: parsed.code,
         createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : new Date().toISOString(),
+        nonce: typeof parsed.nonce === "string" ? parsed.nonce : undefined,
+        expiresAt: typeof parsed.expiresAt === "string" ? parsed.expiresAt : undefined,
         sourceApp: typeof parsed.sourceApp === "string" ? parsed.sourceApp : undefined,
         targetApp: typeof parsed.targetApp === "string" ? parsed.targetApp : undefined,
         metadata: isJsonObject(parsed.metadata) ? parsed.metadata : undefined
@@ -292,6 +339,20 @@ function base64Encode(text: string): string {
   if (global.btoa) return global.btoa(unescape(encodeURIComponent(text)));
   if (global.Buffer) return global.Buffer.from(text, "utf8").toString("base64");
   throw new Error("No base64 encoder is available.");
+}
+
+function randomHandoffNonce(): string {
+  const bytes = new Uint8Array(16);
+  const crypto = globalThis.crypto;
+  if (crypto?.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function handoffExpiresAt(createdAt: string): string {
+  const createdMs = Date.parse(createdAt);
+  const baseMs = Number.isFinite(createdMs) ? createdMs : Date.now();
+  return new Date(baseMs + DEFAULT_HANDOFF_TTL_MS).toISOString();
 }
 
 function base64Decode(text: string): string {
