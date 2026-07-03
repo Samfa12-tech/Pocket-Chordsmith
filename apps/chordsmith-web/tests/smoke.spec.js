@@ -930,7 +930,7 @@ test("Godot push reports browser loopback permission blocks without claiming fal
   await expect(page.locator("#projectBox")).toHaveValue(/^PCS1:/);
 });
 
-test("mobile transfer builds a PCS1 code and opens the static handoff page", async ({
+test("mobile transfer opens the static handoff page with a short code", async ({
   page,
 }) => {
   let releaseRelay;
@@ -968,15 +968,13 @@ test("mobile transfer builds a PCS1 code and opens the static handoff page", asy
   });
 
   await page.getByRole("button", { name: "Settings" }).first().click();
-  await page.getByRole("button", { name: "Mobile transfer" }).click();
+  const transferClick = page.getByRole("button", { name: "Mobile transfer" }).click();
 
   await expect(page.locator("#mobileTransferPanel")).toBeVisible();
   await expect(page.locator("#projectBox")).toHaveValue(/^PCS1:/);
   await expect(page.locator("#pushHandoffStatus")).toContainText(
     "same-device",
   );
-
-  const openClick = page.getByRole("button", { name: "Open transfer page" }).click();
 
   await expect
     .poll(() =>
@@ -989,7 +987,7 @@ test("mobile transfer builds a PCS1 code and opens the static handoff page", asy
   expect(waitingUrl).toBe("about:blank");
 
   releaseRelay();
-  await openClick;
+  await transferClick;
 
   const openedUrls = await page.evaluate(() =>
     window.__pocketChordsmithOpenedUrls.map((item) => item.location.href),

@@ -837,16 +837,16 @@
               <button class="pill good" id="pushToDjBtn" data-tip="Opens Pocket DJ with this song when a browser handoff is available, with PCS1 copy fallback.">Send to DJ</button>
               <button class="pill good" id="pushToDawBtn" data-tip="Direct send works when Pocket DAW is installed on this same device. On phone, use Mobile transfer.">Send to Pocket DAW</button>
               <button class="pill" id="pushToGodotBtn" data-tip="Direct push looks for the Godot editor addon on this same device at localhost. On phone, use Mobile transfer and paste in Godot.">Push to Godot</button>
-              <button class="pill primary" id="mobileTransferBtn" data-tip="Prepare a phone-to-desktop PCS1 transfer using copy, share, download, or the samfa12.com transfer page.">Mobile transfer</button>
+              <button class="pill primary" id="mobileTransferBtn" data-tip="Open the samfa12.com transfer page with this song for desktop DAW or Godot import.">Mobile transfer</button>
             </div>
             <div class="tiny" id="pushHandoffStatus">Send uses a PCS1 song code. DAW and Godot direct push are same-device/localhost flows; use Mobile transfer when composing on phone and importing on desktop.</div>
             <div class="subsection handoff-transfer" id="mobileTransferPanel" hidden>
-              <div class="tiny">Mobile transfer keeps the song in your browser. Open the samfa12 transfer page on desktop, or move the PCS1 code with share, copy, or a text file.</div>
+              <div class="tiny">Mobile transfer opens the samfa12 handoff page automatically. If the page does not open, use these fallbacks.</div>
               <div class="row">
-                <button class="pill good" id="mobileTransferShareBtn">Open samfa12</button>
+                <button class="pill good" id="mobileTransferShareBtn">Share</button>
                 <button class="pill" id="mobileTransferCopyBtn">Copy PCS1</button>
                 <button class="pill" id="mobileTransferDownloadBtn">Download .pcs1.txt</button>
-                <button class="pill primary" id="mobileTransferOpenBtn">Open transfer page</button>
+                <button class="pill primary" id="mobileTransferOpenBtn">Open page again</button>
               </div>
               <div class="tiny handoff-transfer-status" id="mobileTransferStatus">Build a mobile transfer from the current song.</div>
             </div>
@@ -2399,7 +2399,7 @@ function prepareMobileTransfer(){
   return transfer;
 }
 async function shareMobileTransfer(){
-  return openMobileTransferPage();
+  return shareMobileTransferLink();
 }
 async function shareMobileTransferLink(){
   const transfer = prepareMobileTransfer();
@@ -30344,7 +30344,7 @@ function bindControls(){
   if(els.pushToDjBtn) els.pushToDjBtn.addEventListener("click", pushToPocketDj);
   if(els.pushToDawBtn) els.pushToDawBtn.addEventListener("click", pushToPocketDaw);
   if(els.pushToGodotBtn) els.pushToGodotBtn.addEventListener("click", pushToGodot);
-  if(els.mobileTransferBtn) els.mobileTransferBtn.addEventListener("click", prepareMobileTransfer);
+  if(els.mobileTransferBtn) els.mobileTransferBtn.addEventListener("click", openMobileTransferPage);
   if(els.mobileTransferShareBtn) els.mobileTransferShareBtn.addEventListener("click", shareMobileTransfer);
   if(els.mobileTransferCopyBtn) els.mobileTransferCopyBtn.addEventListener("click", copyMobileTransferCode);
   if(els.mobileTransferDownloadBtn) els.mobileTransferDownloadBtn.addEventListener("click", downloadMobileTransferCode);
