@@ -933,6 +933,21 @@ test("Godot push reports browser loopback permission blocks without claiming fal
 test("mobile transfer builds a PCS1 code and opens the static handoff page", async ({
   page,
 }) => {
+  await page.route("**/api/pocket-audio-handoff/transfers", async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.code).toMatch(/^PCS1:/);
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "SAM-TEST42",
+        shortCode: "SAM-TEST42",
+        url: `${new URL(route.request().url()).origin}/apps/pocket-audio-handoff/index.html#code=SAM-TEST42`,
+        expiresAt: "2026-07-03T01:00:00.000Z",
+        ttlSeconds: 1800,
+      }),
+    });
+  });
   await page.evaluate(() => {
     window.__pocketChordsmithOpenedUrls = [];
     window.open = (url, name) => {
@@ -963,9 +978,9 @@ test("mobile transfer builds a PCS1 code and opens the static handoff page", asy
   );
   expect(openedUrls).toHaveLength(1);
   expect(openedUrls[0]).toContain("/apps/pocket-audio-handoff/index.html");
-  expect(openedUrls[0]).toContain("#pocketHandoff=");
+  expect(openedUrls[0]).toContain("#code=SAM-TEST42");
   await expect(page.locator("#mobileTransferStatus")).toContainText(
-    "Opening samfa12 transfer page",
+    "short code SAM-TEST42",
   );
 });
 
@@ -990,9 +1005,24 @@ test("static handoff page imports hash payload and builds desktop fallbacks", as
     return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
   }, handoff);
 
+  await page.route("**/api/pocket-audio-handoff/transfers", async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.code).toBe("PCS1:mobile-test");
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "SAM-MOBILE",
+        shortCode: "SAM-MOBILE",
+        url: `${new URL(route.request().url()).origin}/apps/pocket-audio-handoff/index.html#code=SAM-MOBILE`,
+        expiresAt: "2026-07-03T01:00:00.000Z",
+      }),
+    });
+  });
   await page.goto(`/apps/pocket-audio-handoff/#pocketHandoff=${encoded}`);
   await expect(page.locator("#handoffText")).toHaveValue("PCS1:mobile-test");
   await expect(page.locator("#payloadSummary")).toContainText("handoff link");
+  await expect(page.locator("#relayCode")).toContainText("SAM-MOBILE");
 
   await page.evaluate(() => {
     window.__handoffCopied = [];
@@ -1027,6 +1057,34 @@ test("static handoff page imports hash payload and builds desktop fallbacks", as
   expect(result.protocolUrls).toHaveLength(1);
   expect(result.protocolUrls[0]).toContain("pocket-daw://handoff?");
   expect(result.protocolUrls[0]).toContain("pocketHandoff=");
+});
+
+test("static handoff page redeems a short code for desktop DAW and Godot import", async ({
+  page,
+}) => {
+  await page.route("**/api/pocket-audio-handoff/transfers/SAM-DESK42", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "SAM-DESK42",
+        shortCode: "SAM-DESK42",
+        code: "PCS1:redeemed-desktop-test",
+        source: "Pocket Chordsmith",
+        metadata: { bpm: "96" },
+        createdAt: "2026-07-03T00:00:00.000Z",
+        expiresAt: "2026-07-03T01:00:00.000Z",
+      }),
+    });
+  });
+
+  await page.goto("/apps/pocket-audio-handoff/#code=SAM-DESK42");
+  await expect(page.locator("#handoffText")).toHaveValue("PCS1:redeemed-desktop-test");
+  await expect(page.locator("#relayStatus")).toContainText(
+    "SAM-DESK42 loaded",
+  );
+  await expect(page.getByRole("button", { name: "Copy for Pocket DAW" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Copy for Godot Paste JSON/Code" })).toBeEnabled();
 });
 
 test("static handoff page accepts pasted PCS1 text and downloads exact payload", async ({

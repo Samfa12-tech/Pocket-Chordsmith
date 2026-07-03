@@ -843,7 +843,7 @@
             <div class="subsection handoff-transfer" id="mobileTransferPanel" hidden>
               <div class="tiny">Mobile transfer keeps the song in your browser. Open the samfa12 transfer page on desktop, or move the PCS1 code with share, copy, or a text file.</div>
               <div class="row">
-                <button class="pill good" id="mobileTransferShareBtn">Share</button>
+                <button class="pill good" id="mobileTransferShareBtn">Open samfa12</button>
                 <button class="pill" id="mobileTransferCopyBtn">Copy PCS1</button>
                 <button class="pill" id="mobileTransferDownloadBtn">Download .pcs1.txt</button>
                 <button class="pill primary" id="mobileTransferOpenBtn">Open transfer page</button>
@@ -1218,6 +1218,7 @@ const POCKET_CHORDSMITH_URL = "https://samfa12.itch.io/pocket-chordsmith";
 // Local development still uses relative paths.
 const POCKET_DJ_URL = "https://samfa12.com/apps/pocket-dj/";
 const POCKET_AUDIO_HANDOFF_URL = "https://samfa12.com/apps/pocket-audio-handoff/";
+const POCKET_AUDIO_HANDOFF_RELAY_URL = "https://pocket-audio-handoff.samfa12.workers.dev/api/pocket-audio-handoff";
 const POCKET_DAW_URL = "pocket-daw://handoff";
 const POCKET_DAW_LOCAL_HANDOFF_URL = "http://127.0.0.1:47858/pocket-daw/handoff";
 const GODOT_PUSH_ENDPOINTS = [
@@ -2083,7 +2084,12 @@ function buildHandoffUrl(url, payload){
   return `${url}${joiner}${HANDOFF_PARAM}=${encoded}`;
 }
 function isLocalHandoffHost(){
-  return window.location.protocol === "file:" || ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+  const host = window.location.hostname;
+  return window.location.protocol === "file:"
+    || ["localhost", "127.0.0.1", "::1"].includes(host)
+    || /^10\./.test(host)
+    || /^192\.168\./.test(host)
+    || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
 }
 function resolvePocketDjUrl(){
   if(isLocalHandoffHost()){
@@ -2095,10 +2101,30 @@ function resolvePocketDawUrl(){
   return POCKET_DAW_URL;
 }
 function resolvePocketAudioHandoffUrl(){
+  const withRelayOverride = (url) => appendPocketAudioHandoffRelayOverride(url);
   if(isLocalHandoffHost()){
-    try{ return new URL("../pocket-audio-handoff/index.html", window.location.href).href; }catch(e){}
+    try{ return withRelayOverride(new URL("../pocket-audio-handoff/index.html", window.location.href).href); }catch(e){}
   }
-  return POCKET_AUDIO_HANDOFF_URL;
+  return withRelayOverride(POCKET_AUDIO_HANDOFF_URL);
+}
+function configuredPocketAudioHandoffRelayUrl(){
+  try{
+    const params = new URL(window.location.href).searchParams;
+    const value = params.get("handoffRelay") || params.get("relay");
+    if(value) return value;
+  }catch(e){}
+  return "";
+}
+function appendPocketAudioHandoffRelayOverride(url){
+  const relay = configuredPocketAudioHandoffRelayUrl();
+  if(!relay) return url;
+  try{
+    const parsed = new URL(url, window.location.href);
+    parsed.searchParams.set("handoffRelay", relay);
+    return parsed.href;
+  }catch(e){
+    return url;
+  }
 }
 function saveHandoffPayload(storageKey, payload){
   try{
@@ -2325,6 +2351,37 @@ function buildMobileTransfer(){
     urlFits: transferUrl.length <= MOBILE_TRANSFER_URL_LIMIT
   };
 }
+function mobileTransferRelayUrl(){
+  const configured = configuredPocketAudioHandoffRelayUrl();
+  if(configured) return configured.replace(/\/+$/g, "");
+  if(isLocalHandoffHost()) return `${window.location.origin}/api/pocket-audio-handoff`;
+  return POCKET_AUDIO_HANDOFF_RELAY_URL;
+}
+async function createMobileTransferRelay(transfer){
+  if(!transfer?.code) return null;
+  try{
+    const response = await fetch(`${mobileTransferRelayUrl()}/transfers`, {
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        code:transfer.code,
+        source:"Pocket Chordsmith",
+        metadata:{
+          schemaVersion:String(PROJECT_SCHEMA_VERSION),
+          bpm:String(state.bpm),
+          key:String(state.key),
+          scale:String(state.scale),
+          songSequenceLength:String(Array.isArray(state.songSequence) ? state.songSequence.length : 0)
+        }
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if(!response.ok) throw new Error(payload.error || "Relay unavailable");
+    return payload;
+  }catch(e){
+    return null;
+  }
+}
 function showMobileTransferPanel(){
   if(els.mobileTransferPanel) els.mobileTransferPanel.hidden = false;
 }
@@ -2342,6 +2399,9 @@ function prepareMobileTransfer(){
   return transfer;
 }
 async function shareMobileTransfer(){
+  return openMobileTransferPage();
+}
+async function shareMobileTransferLink(){
   const transfer = prepareMobileTransfer();
   if(!transfer) return;
   rememberImmersiveModeBeforeExternalUi();
@@ -2386,21 +2446,27 @@ function downloadMobileTransferCode(){
   setStatus(downloaded ? "Mobile transfer file downloaded" : "Mobile transfer download blocked");
   setMobileTransferStatus(downloaded ? "Downloaded a .pcs1.txt file for desktop import." : "Download was blocked. Copy the PCS1 code from the project box.");
 }
-function openMobileTransferPage(){
+async function openMobileTransferPage(){
   const transfer = prepareMobileTransfer();
   if(!transfer) return;
-  const url = transfer.urlFits ? transfer.transferUrl : resolvePocketAudioHandoffUrl();
+  setMobileTransferStatus("Creating a short samfa12 transfer code...");
+  const relay = await createMobileTransferRelay(transfer);
+  const url = relay?.url || (transfer.urlFits ? transfer.transferUrl : resolvePocketAudioHandoffUrl());
   const opened = openHandoffUrl(
     url,
-    transfer.urlFits
-      ? "Transfer page pop-up blocked. Copy the PCS1 code or open samfa12.com/apps/pocket-audio-handoff/."
+    relay
+      ? "Transfer page pop-up blocked. Copy the short code or open samfa12.com/apps/pocket-audio-handoff/."
+      : transfer.urlFits
+        ? "Transfer page pop-up blocked. Copy the PCS1 code or open samfa12.com/apps/pocket-audio-handoff/."
       : "Transfer page pop-up blocked. Copy or download the PCS1 code."
   );
   if(opened){
     setStatus("Opening mobile transfer page...");
-    setMobileTransferStatus(transfer.urlFits
-      ? "Opening samfa12 transfer page with this song in the URL hash."
-      : "Opening transfer page without the song because this payload is too large for a URL. Paste or upload the PCS1 file there.");
+    setMobileTransferStatus(relay
+      ? `Opening samfa12 transfer page with short code ${relay.shortCode || relay.id}. Enter that code on your desktop.`
+      : transfer.urlFits
+        ? "Opening samfa12 transfer page with this song in the URL hash. It can create a short code there."
+        : "Relay unavailable and the song is too large for a URL. Download the PCS1 file or copy it from the project box.");
   }
 }
 function stopLivePlaybackBeforeHandoff(){
