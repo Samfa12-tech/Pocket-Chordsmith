@@ -1,5 +1,26 @@
 # Pocket Chordsmith Godot Addon Changelog
 
+## 1.1.9
+
+Pocket Audio Heavy Metal profile compatibility update.
+
+Added:
+
+- Import and chart-resource metadata preservation for the `heavy_metal` audio profile, `metalPreset`, `metalTexture`, metal drum kits, bass tones, chord instruments, melody instruments, guitar tones, and groove preset hints.
+- Shared Godot constants for the six Heavy Metal style presets: `metal_classic_chug`, `metal_thrashing_gallop`, `metal_doom_procession`, `metal_power_anthem`, `metal_boss_blast`, and `metal_breakdown_gate`.
+- Bundled web-kit playback profile aliases for `metal_tight`, `metal_arena`, and `metal_doom` drum kits.
+- Bundled web-kit playback profile aliases for `metal_pick_bass`, `metal_sub_pick`, `metal_grind_bass`, `metal_power_stack`, `dark_organ_stack`, `shred_lead_guitar`, and `twin_harmony_lead`.
+- Bundled web-kit playback profile aliases for `tight_metal` and `doom_fuzz` guitar tone articulations.
+
+Changed:
+
+- Updated addon package metadata to `1.1.9`.
+- Extended surface-drift coverage so every shared guitar tone must have checked-in Godot preview aliases.
+
+Notes:
+
+- The bundled web-kit mappings are safe preview aliases and do not add external samples. For final game audio identity, use Pocket DAW Godot Adaptive Packs, rendered stems, licensed samples, or a project-specific HYBRID/STEM_SYNC playback profile.
+
 ## 1.1.8
 
 Pocket Chordsmith-to-Godot adaptive stems and sample-preview sound parity update.

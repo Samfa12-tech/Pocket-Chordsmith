@@ -2,7 +2,7 @@
 
 Pocket Chordsmith imports web-app JSON into compiled Godot resources, then drives runtime music callbacks through one lightweight conductor node.
 
-Current release: `1.1.8`, with improved Pocket Chordsmith-to-Godot sample-preview sound parity, visible rendered preview stems, dry default buses, and Godot mixer-friendly stem routing.
+Current release: `1.1.9`, with Heavy Metal profile metadata preservation, metal sound preview aliases, improved Pocket Chordsmith-to-Godot sample-preview sound parity, visible rendered preview stems, dry default buses, and Godot mixer-friendly stem routing.
 
 License/status: MIT. The component license is `LICENSE` in this addon folder.
 See the repository root `LICENSES.md` for the full monorepo matrix.
@@ -80,7 +80,7 @@ Visual track building stays in the web app for now. Godot receives the exported 
 
 Design anchor: `docs/VISUAL_EDITOR_EXPLORATION.md` explores a Godot-native chart inspector and adaptive-state editor while keeping musical authoring in Pocket Chordsmith and production/stem work in Pocket DAW.
 
-Performance anchor: `docs/PERFORMANT_AUDIO_ROADMAP.md` records the current 1.1.8 audio architecture and the planned import/render/runtime path for a performant Godot game-audio system.
+Performance anchor: `docs/PERFORMANT_AUDIO_ROADMAP.md` records the current 1.1.9 audio architecture and the planned import/render/runtime path for a performant Godot game-audio system.
 
 For batch migration, use the editor `Compile Folder` button or the headless compiler:
 

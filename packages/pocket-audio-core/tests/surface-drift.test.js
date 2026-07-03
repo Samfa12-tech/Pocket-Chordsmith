@@ -1169,7 +1169,7 @@ test("Godot sample-preview event streams cover shared pitched sound IDs", async 
     readFile(surfaces.godotNativePreviewValidator, "utf8"),
     readFile(surfaces.godotEventTraceExporter, "utf8")
   ]);
-  const westernGuitarKeys = ["open", "chug", "accent", "scratch"].map((id) => `guitar:western_twang:${id}`);
+  const guitarToneKeys = POCKET_GUITAR_TONES.flatMap((tone) => ["open", "chug", "accent", "scratch"].map((id) => `guitar:${tone}:${id}`));
   const expectedKeys = [
     "bass",
     "bass:auto_bass",
@@ -1183,7 +1183,7 @@ test("Godot sample-preview event streams cover shared pitched sound IDs", async 
     "guitar:chug",
     "guitar:accent",
     "guitar:scratch",
-    ...westernGuitarKeys,
+    ...guitarToneKeys,
     "melody",
     ...POCKET_MELODY_INSTRUMENTS.map((id) => `melody:${id}`)
   ];

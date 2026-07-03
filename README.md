@@ -136,7 +136,7 @@ Security and responsible disclosure notes are in `SECURITY.md`.
 
 ## Project Notes
 
-- Current Godot addon release: `1.1.8`.
+- Current Godot addon release: `1.1.9`.
 - Keep `addons/pocket_chordsmith/` stable for Godot installs and addon-only packaging.
 - Lofi & Chill CD Baby upload/mastering closeout and Samfa12's Compilation
   Album #1 archive notes are recorded in

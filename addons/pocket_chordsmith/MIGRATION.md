@@ -1,4 +1,4 @@
-# Migrating To Pocket Chordsmith Godot Addon 1.1.8
+# Migrating To Pocket Chordsmith Godot Addon 1.1.9
 
 This release keeps the core architecture stable:
 
@@ -19,6 +19,12 @@ res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.t
 ```
 
 6. Keep any previous procedural preview player out of shipped gameplay scenes unless it is intentionally used as a temporary fallback.
+
+## 1.1.9 Heavy Metal Profile Note
+
+Version 1.1.9 understands Pocket Audio Heavy Metal profile metadata. Recompile imported JSON/share-code projects after updating; chart resources now preserve `audioProfile == "heavy_metal"`, `metalPreset`, `metalTexture`, metal drum kits, bass tones, chord instruments, melody instruments, guitar tone choices, and groove preset hints for Godot-native routing and adaptive game states.
+
+The bundled web-kit playback profile includes safe preview aliases for the metal drum kits, picked/grind bass tones, metal chord stacks, shred/twin leads, and `tight_metal`/`doom_fuzz` guitar articulations. These are onboarding previews, not external sample packs or final mastered metal stems.
 
 ## 1.1.8 Sample Preview Sound-Parity Note
 
