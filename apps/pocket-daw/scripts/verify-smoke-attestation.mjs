@@ -10,6 +10,7 @@ export const REQUIRED_SMOKE_CHECK_IDS = Object.freeze([
   "chordsmith-import",
   "project-workflow",
   "native-media-reliability",
+  "punch-take-lane-recording",
   "game-pack-target-smoke",
   "updater-check"
 ]);

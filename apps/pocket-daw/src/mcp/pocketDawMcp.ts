@@ -139,8 +139,8 @@ export type PocketDawMcpCommand =
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
   | { type: "comp_audio_take_range"; clipId: string }
-  | { type: "place_punch_recording_clip"; mediaPoolItemId: string; trackId: string; captureStartBar: number; punchStartBar: number; punchEndBar: number }
-  | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number }
+  | { type: "place_punch_recording_clip"; mediaPoolItemId: string; trackId: string; captureStartBar: number; punchStartBar: number; punchEndBar: number; createTakeLane?: boolean }
+  | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number; createTakeLane?: boolean }
   | { type: "add_marker"; bar: number }
   | { type: "add_game_state_marker"; bar: number; gameState: GameStateMarkerId }
   | { type: "set_section_bars"; sectionId: string; bars: number }
@@ -206,7 +206,7 @@ export type PocketDawLiveCommand =
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
   | { type: "comp_audio_take_range"; clipId: string }
-  | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number };
+  | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number; createTakeLane?: boolean };
 
 interface PocketDawLiveSession {
   app?: string;
@@ -349,12 +349,14 @@ export function pocketDawMcpToolList() {
       inputSchema: objectSchema({
         action: {
           type: "string",
-          enum: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project"]
+          enum: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "export_project"]
         },
         projectPath: stringSchema(),
         bar: numberSchema(),
         trackId: stringSchema(),
         clipId: stringSchema(),
+        format: { type: "string", enum: ["wav", "midi"] },
+        outputPath: stringSchema(),
         sessionPath: stringSchema()
       }, ["action"]),
       annotations: liveControlToolAnnotations()
@@ -724,9 +726,9 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
     case "comp_audio_take_range":
       return compAudioTakeRangeCommand(state, command.clipId);
     case "place_punch_recording_clip":
-      return placePunchRecordingClipCommand(state, command.mediaPoolItemId, command.trackId, command.captureStartBar, command.punchStartBar, command.punchEndBar);
+      return placePunchRecordingClipCommand(state, command.mediaPoolItemId, command.trackId, command.captureStartBar, command.punchStartBar, command.punchEndBar, { createTakeLane: command.createTakeLane });
     case "place_punch_recording_clip_from_range":
-      return placePunchRecordingClipFromRangeCommand(state, command.mediaPoolItemId, command.trackId, command.captureStartBar);
+      return placePunchRecordingClipFromRangeCommand(state, command.mediaPoolItemId, command.trackId, command.captureStartBar, { createTakeLane: command.createTakeLane });
     case "add_marker":
       return addMarkerAtPlayheadCommand({ ...state, playheadBar: command.bar });
     case "add_game_state_marker":
@@ -1189,6 +1191,7 @@ function commandSchema() {
       gate: numberSchema(),
       mute: booleanSchema(),
       archived: booleanSchema(),
+      createTakeLane: booleanSchema(),
       startBar: numberSchema(),
       endBar: numberSchema(),
       captureStartBar: numberSchema(),
@@ -1237,6 +1240,7 @@ function liveCommandSchema() {
       armed: booleanSchema(),
       monitorEnabled: booleanSchema(),
       archived: booleanSchema(),
+      createTakeLane: booleanSchema(),
       action: { type: "string", enum: ["normalize-gain", "reset-fades", "quick-fade", "crossfade-overlap", "create-crossfade-left", "invert-phase", "reverse", "analyze-transients", "create-warp-markers", "quantize-warp-markers", "quantize-warp-markers-1/4", "quantize-warp-markers-1/8", "quantize-warp-markers-1/16", "quantize-warp-markers-1/32", "apply-warp-varispeed", "clear-warp-markers"] },
       grid: { type: "string", enum: ["1/4", "1/8", "1/16", "1/32"] },
       percent: { type: "number", enum: [50, 55, 60, 65] },

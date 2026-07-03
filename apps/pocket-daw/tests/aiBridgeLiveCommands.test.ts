@@ -617,6 +617,58 @@ describe("Pocket DAW AI bridge live commands", () => {
     });
   });
 
+  it("places punch takes as new take lanes through the live bridge executor", () => {
+    let state = addTrackCommand(createInitialState(), "live-vocals");
+    const project = currentProject(state);
+    const secondsPerBar = project.project.timeSig * (60 / project.project.bpm);
+    const bedImport = addImportedAudioMedia(project, {
+      name: "Live lane bed.wav",
+      uri: "project-media/recordings/live-lane-bed.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { mediaRefKind: "project" }
+    });
+    const bedPlaced = placeAudioClipOnTrack(bedImport.project, bedImport.item.id, "live-vocals", 7);
+    const imported = addImportedAudioMedia(bedPlaced.project, {
+      name: "Live lane punch.wav",
+      uri: "project-media/recordings/live-lane-punch.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: {
+        mediaRefKind: "project",
+        recordingTakeId: "live-lane-punch-take-1",
+        recordingTakeGroupId: "live-lane-punch-group",
+        takeLaneId: "live-lane-punch-group-lane-2"
+      }
+    });
+    state = { ...state, undoStack: createUndoStack(imported.project) };
+    const app = appHarness(state);
+
+    const ranged = app.applyAiBridgeLiveCommand({
+      type: "set_punch_range",
+      startBar: 7,
+      endBar: 9
+    });
+    app.state = ranged;
+    const placed = app.applyAiBridgeLiveCommand({
+      type: "place_punch_recording_clip_from_range",
+      mediaPoolItemId: imported.item.id,
+      trackId: "live-vocals",
+      captureStartBar: 6,
+      createTakeLane: true
+    });
+    const byId = new Map(placed.undoStack.present.timeline.clips.map((clip) => [clip.id, clip]));
+    const punchClip = placed.undoStack.present.timeline.clips.find((clip) => clip.name === "Live lane punch.wav");
+
+    expect(placed.status).toBe("Placed punch take Live lane punch.wav as a new take lane from active punch range 7 to 9.");
+    expect(byId.get(bedPlaced.clipId)).toMatchObject({ muted: true, metadata: expect.objectContaining({ takeLaneIndex: 1, takeStatus: "muted-take", takeActive: false }) });
+    expect(punchClip).toMatchObject({ muted: false, startBar: 7, barLength: 2, metadata: expect.objectContaining({ takeLaneIndex: 2, takeStatus: "active", takeActive: true, punchMode: "create-new-take-lane" }) });
+  });
+
   it("activates grouped audio take lanes through the live bridge executor", () => {
     let state = addTrackCommand(createInitialState(), "live-vocals");
     let project = currentProject(state);
@@ -954,10 +1006,11 @@ describe("Pocket DAW AI bridge live commands", () => {
           web: { kind: string; manifestFile: string; fullMix: string; warningCount: number };
         };
       };
-      capabilities: { read: string[] };
+      capabilities: { read: string[]; control: string[] };
     };
 
     expect(status.capabilities.read).toContain("export_readiness");
+    expect(status.capabilities.control).toContain("export_project");
     expect(status.export.stemCount).toBeGreaterThan(0);
     expect(status.export.sectionLoopCount).toBeGreaterThan(0);
     expect(status.export.deliveryTargets.map((target) => target.id)).toEqual(["godot-local-loopback", "godot-zip", "web-zip"]);

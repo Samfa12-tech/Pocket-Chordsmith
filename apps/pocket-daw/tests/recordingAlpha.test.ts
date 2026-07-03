@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { buildMetronomeClicks, buildTransportMetronomeSchedule, countInSeconds } from "../src/audio/metronome";
+import { renderTimelineAudioRegions } from "../src/audio/audioRegions";
 import { placePunchRecordingClipCommand, placePunchRecordingClipFromRangeCommand, setPunchRangeCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { migratePocketDawProject } from "../src/compatibility/migrations";
-import { addImportedAudioMedia, placeAudioClipOnTrack, placePunchRecordingClipOnTrack, placeRecordingClipOnTrack } from "../src/daw/audioClips";
+import { addImportedAudioMedia, placeAudioClipOnTrack, placePunchRecordingClipOnTrack, placeRecordingClipOnTrack, placeTakeLaneRecordingClipOnTrack } from "../src/daw/audioClips";
+import { audioClipTakeSummary } from "../src/daw/clips";
 import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
 import { addTrackToProject, setTrackRecordingLatencyOffset } from "../src/daw/tracks";
 import { buildGroupedRecordingCapturePlan, buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError, setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
@@ -539,6 +541,95 @@ describe("recording alpha foundations", () => {
     expect(punched.selectedTrackId).toBe(withTrack.trackId);
     expect(punched.undoStack.past).toHaveLength(1);
     expect(punched.status).toContain("Placed punch take command-punch.wav from bar 7 to 9");
+  });
+
+  it("places punch recordings as non-destructive active take lanes", () => {
+    const withTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    const secondsPerBar = withTrack.project.project.timeSig * (60 / withTrack.project.project.bpm);
+    const bedMedia = addImportedAudioMedia(withTrack.project, {
+      name: "lane-bed.wav",
+      uri: "project-media/recordings/lane-bed.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { mediaRefKind: "project" }
+    });
+    const bedPlaced = placeAudioClipOnTrack(bedMedia.project, bedMedia.item.id, withTrack.trackId, 7);
+    const rawTake = addImportedAudioMedia(bedPlaced.project, {
+      name: "lane-punch.wav",
+      uri: "project-media/recordings/lane-punch.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { mediaRefKind: "project", importMode: "native-recording" }
+    });
+
+    const placed = placePunchRecordingClipOnTrack(rawTake.project, rawTake.item.id, withTrack.trackId, {
+      captureStartBar: 6,
+      punchStartBar: 7,
+      punchEndBar: 9,
+      createTakeLane: true
+    });
+    const project = placed.project;
+    const bed = project.timeline.clips.find((clip) => clip.id === bedPlaced.clipId)!;
+    const punch = project.timeline.clips.find((clip) => clip.id === placed.clipId)!;
+    const summary = audioClipTakeSummary(project, placed.clipId);
+    const regions = renderTimelineAudioRegions(project).audioRegions;
+    const reopened = migratePocketDawProject(parsePocketDawProjectFile(buildPocketDawProjectFile(project)));
+    const reopenedPunch = reopened.timeline.clips.find((clip) => clip.id === placed.clipId)!;
+
+    expect(bed).toMatchObject({ muted: true, startBar: 7, barLength: 4 });
+    expect(punch).toMatchObject({ muted: false, startBar: 7, barLength: 2 });
+    expect(bed.metadata).toMatchObject({ takeStatus: "muted-take", takeActive: false, takeLaneIndex: 1 });
+    expect(punch.metadata).toMatchObject({
+      takeStatus: "active",
+      takeActive: true,
+      takeLaneIndex: 2,
+      punchStartBar: 7,
+      punchEndBar: 9,
+      punchMode: "create-new-take-lane"
+    });
+    expect(summary?.takeCount).toBe(2);
+    expect(regions.map((region) => region.clipId)).toEqual([placed.clipId]);
+    expect(reopenedPunch.metadata).toMatchObject({ takeStatus: "active", takeLaneIndex: 2, punchStartBar: 7, punchEndBar: 9 });
+  });
+
+  it("places full recordings as new take lanes without overwriting older material", () => {
+    const withTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    const secondsPerBar = withTrack.project.project.timeSig * (60 / withTrack.project.project.bpm);
+    const firstMedia = addImportedAudioMedia(withTrack.project, {
+      name: "first-full-take.wav",
+      uri: "project-media/recordings/first-full-take.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 2,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { mediaRefKind: "project" }
+    });
+    const firstPlaced = placeAudioClipOnTrack(firstMedia.project, firstMedia.item.id, withTrack.trackId, 3);
+    const secondMedia = addImportedAudioMedia(firstPlaced.project, {
+      name: "second-full-take.wav",
+      uri: "project-media/recordings/second-full-take.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 2,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { mediaRefKind: "project", importMode: "native-recording" }
+    });
+
+    const secondPlaced = placeTakeLaneRecordingClipOnTrack(secondMedia.project, secondMedia.item.id, withTrack.trackId, 3);
+    const clips = secondPlaced.project.timeline.clips
+      .filter((clip) => clip.trackId === withTrack.trackId && clip.type === "audio")
+      .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+
+    expect(clips).toHaveLength(2);
+    expect(clips.map((clip) => [clip.name, clip.muted, clip.metadata?.takeLaneIndex, clip.metadata?.takeStatus])).toEqual([
+      ["first-full-take.wav", true, 1, "muted-take"],
+      ["second-full-take.wav", false, 2, "active"]
+    ]);
+    expect(renderTimelineAudioRegions(secondPlaced.project).audioRegions.map((region) => region.clipId)).toEqual([secondPlaced.clipId]);
   });
 
   it("places punch recordings from the active punch range through the undoable command path", () => {

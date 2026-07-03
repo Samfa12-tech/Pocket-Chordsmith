@@ -3,7 +3,7 @@ import { exportProjectToMidiBlob } from "../src/audio/midiExport";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
-import { setClipTransform } from "../src/daw/clips";
+import { activateAudioTakeLane, setClipTransform } from "../src/daw/clips";
 import { addMidiAftertouch, addMidiController, addMidiPitchBend, addMidiProgramChange, duplicateMidiController, duplicateMidiNote, importMidiFileToProject, importMidiFileToProjectWithPlacement, midiDataFromClip, setMidiAftertouchField, setMidiControllerField, setMidiNoteField, setMidiPitchBendField, setMidiProgramChangeField } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { createDemoChordsmithProject, createDemoProject } from "../src/demo/demoProject";
@@ -205,6 +205,68 @@ describe("MIDI export", () => {
 
     expect(exported.notes).toEqual([]);
     expect(exported.controllers).toEqual([]);
+  });
+
+  it("keeps archived MIDI take lanes out of event rendering and MIDI export even if mute is stale", async () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "Archived MIDI Take Export" }));
+    const imported = importMidiFileToProject(project, parseStandardMidiFile(simpleMidiBytes()), "archived-midi-take.mid");
+    const clip = imported.project.timeline.clips.find((item) => item.id === imported.clipId)!;
+    clip.muted = false;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      takeGroupId: "archived-midi-takes",
+      recordingTakeGroupId: "archived-midi-takes",
+      takeLaneId: "archived-midi-takes-lane-1",
+      takeLaneIndex: 1,
+      takeStatus: "archived-take",
+      takeActive: false
+    };
+
+    const bytes = new Uint8Array(await exportProjectToMidiBlob(imported.project, { clipIds: [imported.clipId], trackIds: [imported.trackId] }).arrayBuffer());
+    const exported = parseStandardMidiFile(bytes);
+
+    expect(renderTimelineEvents(imported.project).filter((event) => event.clipId === imported.clipId)).toEqual([]);
+    expect(exported.notes).toEqual([]);
+  });
+
+  it("exports the active MIDI take lane after lane activation", async () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Take Lane Export" }));
+    const first = importMidiFileToProject(project, parseStandardMidiFile(simpleMidiBytes()), "midi-take-1.mid");
+    const second = importMidiFileToProject(first.project, parseStandardMidiFile(simpleMidiBytes()), "midi-take-2.mid");
+    const firstClip = second.project.timeline.clips.find((item) => item.id === first.clipId)!;
+    const secondClip = second.project.timeline.clips.find((item) => item.id === second.clipId)!;
+    const secondNoteId = midiDataFromClip(secondClip).notes[0].id;
+    let grouped = setMidiNoteField(second.project, second.clipId, secondNoteId, "pitch", 64);
+    const groupedFirst = grouped.timeline.clips.find((item) => item.id === first.clipId)!;
+    const groupedSecond = grouped.timeline.clips.find((item) => item.id === second.clipId)!;
+    groupedFirst.metadata = {
+      ...(groupedFirst.metadata || {}),
+      takeGroupId: "midi-lane-group",
+      recordingTakeGroupId: "midi-lane-group",
+      takeLaneId: "midi-lane-group-lane-1",
+      takeLaneIndex: 1,
+      takeStatus: "active",
+      takeActive: true
+    };
+    groupedSecond.metadata = {
+      ...(groupedSecond.metadata || {}),
+      takeGroupId: "midi-lane-group",
+      recordingTakeGroupId: "midi-lane-group",
+      takeLaneId: "midi-lane-group-lane-2",
+      takeLaneIndex: 2,
+      takeStatus: "muted-take",
+      takeActive: false
+    };
+    groupedSecond.muted = true;
+
+    const activated = activateAudioTakeLane(grouped, second.clipId).project;
+    const bytes = new Uint8Array(await exportProjectToMidiBlob(activated, { trackIds: [second.trackId] }).arrayBuffer());
+    const exported = parseStandardMidiFile(bytes);
+
+    expect(activated.timeline.clips.find((clip) => clip.id === first.clipId)?.muted).toBe(true);
+    expect(activated.timeline.clips.find((clip) => clip.id === second.clipId)?.muted).toBe(false);
+    expect(renderTimelineEvents(activated).filter((event) => event.clipId === second.clipId)).toHaveLength(1);
+    expect(exported.notes.map((note) => note.pitch)).toEqual([64]);
   });
 
   it("does not export MIDI note or controller data from folder-muted tracks", async () => {

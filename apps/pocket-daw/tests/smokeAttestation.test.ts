@@ -99,15 +99,16 @@ describe("smoke attestation verifier", () => {
     }
   });
 
-  it("requires native media reliability and game-pack target smoke checks", () => {
+  it("requires native media reliability, punch take-lane and game-pack target smoke checks", () => {
     expect(REQUIRED_SMOKE_CHECK_IDS).toEqual(expect.arrayContaining([
       "native-media-reliability",
+      "punch-take-lane-recording",
       "game-pack-target-smoke"
     ]));
 
     const validation = validateSmokeAttestation(buildAttestation({
       checks: REQUIRED_SMOKE_CHECK_IDS
-        .filter((id) => id !== "native-media-reliability" && id !== "game-pack-target-smoke")
+        .filter((id) => id !== "native-media-reliability" && id !== "punch-take-lane-recording" && id !== "game-pack-target-smoke")
         .map((id) => ({ id, result: "pass" }))
     }), {
       version: "0.6.20",
@@ -118,6 +119,7 @@ describe("smoke attestation verifier", () => {
 
     expect(validation.ok).toBe(false);
     expect(validation.failures.join("\n")).toContain("native-media-reliability");
+    expect(validation.failures.join("\n")).toContain("punch-take-lane-recording");
     expect(validation.failures.join("\n")).toContain("game-pack-target-smoke");
   });
 

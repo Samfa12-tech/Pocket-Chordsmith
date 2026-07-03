@@ -227,6 +227,15 @@ describe("Pocket DAW UI rendering", () => {
     expect(transport).toContain('<span data-playhead-readout="true"><strong>Bar 1</strong><small>Beat 1</small></span>');
     expect(html).toContain('data-action="midi-panic"');
     expect(html).toContain(">Panic</button>");
+    expect(html).toContain('data-action="recording-punch-toggle"');
+    expect(html).toContain('data-action="recording-take-mode-toggle"');
+
+    state.recording.status = "idle";
+    state.recordingPunchEnabled = true;
+    state.recordingTakeMode = "take-lane";
+    const readyHtml = renderAppShell(state);
+    expect(readyHtml).toContain("<small>punch / lane</small>");
+    expect(readyHtml).toContain(">Take Lane</button>");
   });
 
   it("renders creation focus presets with scoped UI clutter controls", () => {

@@ -25,6 +25,8 @@ export interface SaveBinaryFileResult {
   bytesWritten?: number;
 }
 
+export type BinaryExportKind = "wav" | "midi" | "zip";
+
 interface NativeOpenPayload {
   path: string;
   label: string;
@@ -239,6 +241,30 @@ export async function saveBlobFileAs(
     mode: "browser-fallback",
     message: "Downloaded browser fallback file.",
     bytesWritten: blob.size
+  };
+}
+
+export async function writeBlobFileNative(
+  path: string,
+  blob: Blob,
+  kind: BinaryExportKind,
+  api = defaultNativeFileApi
+): Promise<SaveBinaryFileResult> {
+  if (!api.isAvailable()) {
+    throw new Error("Native binary writes are unavailable in this runtime.");
+  }
+  const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+  const saved = await api.invoke<NativeBinarySavePayload>("write_binary_file", {
+    path,
+    bytes,
+    kind
+  });
+  assertNativeBinarySavePayload(saved);
+  return {
+    file: projectFileStateFromPath(saved.path, saved.label),
+    mode: "native",
+    message: `Saved ${saved.label || projectFileStateFromPath(saved.path).label}.`,
+    bytesWritten: saved.bytesWritten
   };
 }
 

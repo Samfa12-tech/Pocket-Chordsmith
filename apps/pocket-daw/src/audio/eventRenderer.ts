@@ -1,6 +1,6 @@
 import type { Clip, JsonObject, PocketDawProject, TrackRole } from "../daw/schema";
 import { sortClips, timelineDurationSeconds, timelineSecondsAtBar } from "../daw/timeline";
-import { clipSourceStartBar } from "../daw/clips";
+import { clipIsAudibleTake, clipSourceStartBar } from "../daw/clips";
 import { midiDataFromClip, midiTempoMappedSecondsAtTick } from "../daw/midiClips";
 import { anyDrumLaneSolo, DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumBranchLaneSteps, getDrumLaneMix, type DrumLaneId } from "../daw/drumLanes";
 import { getMelodyOverlayEvents } from "../daw/melodyOverlays";
@@ -95,7 +95,7 @@ export function buildRenderContext(project: PocketDawProject): RenderContext {
 }
 
 export function resolveClipEvents(project: PocketDawProject, clip: Clip, context = buildRenderContext(project)): RenderedEvent[] {
-  if (clip.muted) return [];
+  if (!clipIsAudibleTake(clip)) return [];
   if (clip.type === "generated-section") return resolveGeneratedSectionClip(project, clip, context);
   if (clip.type === "generated-pattern") return resolveGeneratedPatternClip(project, clip, context);
   if (clip.type === "midi") return resolveMidiClip(project, clip, context);

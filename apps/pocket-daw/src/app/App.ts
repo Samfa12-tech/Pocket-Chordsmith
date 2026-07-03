@@ -30,6 +30,7 @@ import {
   safeName,
   saveBlobFileAs,
   saveProjectFile,
+  writeBlobFileNative,
   type NativeProjectRecoveryCandidate,
   type OpenProjectFileResult
 } from "../native/fileBridge";
@@ -250,7 +251,7 @@ import { POCKET_DAW_VERSION, type Clip, type JsonObject, type PocketDawProject, 
 import { buildGroupedRecordingCapturePlan, buildNativeRecordingAlphaInputPreflight, buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError } from "../daw/recordingInputs";
 import { recordingLatencyOffsetSeconds, trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToDisplayPosition, snapProjectBarValue } from "../daw/timeline";
-import { addImportedAudioMedia, placeAudioClipOnTimeline, placeRecordingClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../daw/audioClips";
+import { addImportedAudioMedia, placeAudioClipOnTimeline, placePunchRecordingClipOnTrack, placeRecordingClipOnTrack, placeTakeLaneRecordingClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../daw/audioClips";
 import type { AudioClipAction } from "../daw/clips";
 import { createCollectMediaPlan, findMediaPoolItem, linkFreezeRenderCacheItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked, mediaPoolReloadCandidates, mediaPoolStatus, updateMediaPoolItemMetadata, verifyMediaPortability } from "../daw/mediaPool";
 import {
@@ -284,7 +285,7 @@ import { applyUpdaterCheckResult, applyUpdaterInstallResult, applyUpdaterProgres
 type MixerControlField = "volume" | "pan";
 type ScrollSnapshot = Record<string, { top: number; left: number }>;
 type ClipDragMode = "move" | "repeat";
-type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "midi_panic" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "apply_commands" | "performance_diagnostics";
+type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "midi_panic" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "apply_commands" | "performance_diagnostics" | "export_project";
 type AiBridgeLiveCommand =
   | { type: "set_track_volume"; trackId: string; volume: number }
   | { type: "set_track_pan"; trackId: string; pan: number }
@@ -319,7 +320,7 @@ type AiBridgeLiveCommand =
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
   | { type: "comp_audio_take_range"; clipId: string }
-  | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number };
+  | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number; createTakeLane?: boolean };
 
 interface ApplyProjectOptions {
   audio?: AudioProjectSyncMode | "none";
@@ -654,7 +655,7 @@ export class App {
       })),
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
-        control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics"],
+        control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics", "export_project"],
         liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "transform_midi_velocity", "transform_midi_pitch", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       }
     };
@@ -750,8 +751,40 @@ export class App {
       const commands = Array.isArray(input.commands) ? input.commands as AiBridgeLiveCommand[] : [];
       return this.applyAiBridgeLiveCommands(commands);
     }
+    if (action === "export_project") return await this.handleAiBridgeExportProject(input);
     if (action === "performance_diagnostics") return this.handleAiBridgePerformanceDiagnostics(input);
     return { ok: false, code: "unknown_action", message: `Unsupported Pocket DAW live control action: ${action}` };
+  }
+
+  private async handleAiBridgeExportProject(input: Record<string, unknown>): Promise<unknown> {
+    const format = stringInput(input.format, "format").toLowerCase();
+    const outputPath = stringInput(input.outputPath, "outputPath");
+    if (format !== "wav" && format !== "midi") {
+      return { ok: false, code: "unsupported_export_format", message: "export_project supports wav or midi." };
+    }
+    try {
+      const project = currentProject(this.state);
+      const exportResult = format === "wav" ? await this.createFullMixWavBlobForExport() : null;
+      const blob = exportResult?.blob || exportProjectToMidiBlob(project);
+      const saved = await writeBlobFileNative(outputPath, blob, format === "wav" ? "wav" : "midi");
+      const bytesWritten = saved.bytesWritten || blob.size;
+      this.state.status = `Exported ${format.toUpperCase()} to ${saved.file?.label || outputPath} (${Math.round(bytesWritten / 1024)} KB).`;
+      this.render({ preserveScroll: true });
+      return {
+        ok: true,
+        action: "export_project",
+        format,
+        path: saved.file?.path || outputPath,
+        bytesWritten,
+        message: this.state.status
+      };
+    } catch (error) {
+      const label = format === "wav" ? "WAV" : "MIDI";
+      const message = error instanceof Error ? `${label} export failed: ${error.message}` : `${label} export failed.`;
+      this.state.status = message;
+      this.render({ preserveScroll: true });
+      return { ok: false, action: "export_project", format, code: "export_failed", message };
+    }
   }
 
   private handleAiBridgePerformanceDiagnostics(input: Record<string, unknown>) {
@@ -939,7 +972,8 @@ export class App {
         this.state,
         stringInput(command.mediaPoolItemId, "mediaPoolItemId"),
         trackId,
-        numberInput(command.captureStartBar, "captureStartBar")
+        numberInput(command.captureStartBar, "captureStartBar"),
+        { createTakeLane: Boolean(command.createTakeLane) }
       );
     }
     throw new Error(`Unsupported live command: ${(command as { type?: string }).type || "[missing type]"}`);
@@ -2729,6 +2763,20 @@ export class App {
     if (action === "restart") await this.restartTransport();
     if (action === "midi-panic") this.panicMidiPreview();
     if (action === "record-toggle") await this.toggleRecording();
+    if (action === "recording-punch-toggle") {
+      this.state.recordingPunchEnabled = !this.state.recordingPunchEnabled;
+      this.state.status = this.state.recordingPunchEnabled
+        ? "Punch recording enabled. Set a punch range and start at or before punch-in."
+        : "Punch recording disabled. Recording will commit the full take.";
+      this.render({ preserveScroll: true });
+    }
+    if (action === "recording-take-mode-toggle") {
+      this.state.recordingTakeMode = this.state.recordingTakeMode === "take-lane" ? "replace" : "take-lane";
+      this.state.status = this.state.recordingTakeMode === "take-lane"
+        ? "Recording will create a new active take lane."
+        : "Recording will replace the visible range on the armed track.";
+      this.render({ preserveScroll: true });
+    }
     if (action === "preset-music" || action === "preset-game-music") {
       this.state.uiCreationPreset = action === "preset-game-music" ? "game-music" : "music";
       const presetSections = collapsedSectionsForCreationPreset(this.state.uiCreationPreset);
@@ -3290,6 +3338,17 @@ export class App {
     }
     const track = project.tracks.find((item) => item.id === capturePlan.trackId) || armedTracks[0];
     const startBar = Math.max(1, this.state.playheadBar || project.timeline.cursor.bar || 1);
+    const punchRange = activePunchRange(project);
+    if (this.state.recordingPunchEnabled && !punchRange) {
+      this.state.status = "Set an explicit punch range before punch recording.";
+      this.render({ preserveScroll: true });
+      return;
+    }
+    if (this.state.recordingPunchEnabled && punchRange && startBar > punchRange.startBar + 0.0001) {
+      this.state.status = "Move the playhead to or before the punch-in bar before recording.";
+      this.render({ preserveScroll: true });
+      return;
+    }
     const sessionId = this.recordingStartToken + 1;
     this.recordingStartToken = sessionId;
     const preRollSeconds = countInSeconds(project);
@@ -3460,6 +3519,8 @@ export class App {
     const playbackCaptureAnchor = this.state.recording.playbackCaptureAnchor;
     const timingSource = this.state.recording.timingSource || "ui-transport-boundary-estimate";
     const playbackStopAnchor = await this.engine.nativePlaybackRecordingAnchor("stop-request", monotonicNowMs()).catch(() => null);
+    const punchRange = this.state.recordingPunchEnabled ? activePunchRange(currentProject(this.state)) : null;
+    const createTakeLane = this.state.recordingTakeMode === "take-lane";
     if (!recordingSessionMatches(this.state.recording, sessionId, ["recording", "stopping"])) return;
     const stopping = transitionRecordingSession({
       recording: this.state.recording,
@@ -3508,6 +3569,12 @@ export class App {
           recordingTrackId: result.trackId,
           requestedStartBar: startBar,
           placementStartBar: startBar,
+          ...(punchRange ? {
+            requestedEndBar: punchRange.endBar,
+            punchStartBar: punchRange.startBar,
+            punchEndBar: punchRange.endBar,
+            punchMode: createTakeLane ? "create-new-take-lane" : "replace-visible-range"
+          } : {}),
           captureStartTransportSeconds: captureStartTransportSeconds ?? null,
           playbackStartedAtMonotonicMs: playbackStartedAtMonotonicMs ?? null,
           captureRequestedAtMonotonicMs: captureRequestedAtMonotonicMs ?? null,
@@ -3530,9 +3597,18 @@ export class App {
         }
       });
       if (decoded && source) setCachedAudioBuffer(media.item.id, decoded.buffer, sourceCacheOptions(source));
-      const placed = placeRecordingClipOnTrack(media.project, media.item.id, trackId || result.trackId, startBar);
+      const placed = punchRange
+        ? placePunchRecordingClipOnTrack(media.project, media.item.id, trackId || result.trackId, {
+            captureStartBar: startBar,
+            punchStartBar: punchRange.startBar,
+            punchEndBar: punchRange.endBar,
+            createTakeLane
+          })
+        : createTakeLane
+          ? placeTakeLaneRecordingClipOnTrack(media.project, media.item.id, trackId || result.trackId, startBar)
+          : placeRecordingClipOnTrack(media.project, media.item.id, trackId || result.trackId, startBar);
       const baseClipMessage = placed.clipId
-        ? `Recorded ${result.fileName} to ${result.targetRelativePath}.`
+        ? recordingPlacementMessage(result.fileName, result.targetRelativePath, punchRange, createTakeLane)
         : `Recorded ${result.fileName}, but no armed audio track was available for clip placement.`;
       const clipMessage = buildRecordingCompletionMessage({
         baseMessage: baseClipMessage,
@@ -4714,14 +4790,9 @@ export class App {
   private async exportWav() {
     try {
       await this.showExportProgress("Preparing WAV export", "Loading timeline audio files");
-      const hydration = await this.hydrateTimelineAudioBuffers();
-      this.assertNoMissingAudibleAudioBuffers(hydration, "WAV export");
-      await this.showExportProgress("Rendering WAV mix", "Longer songs and imported audio can take a little while");
-      const project = currentProject(this.state);
-      const wavProfile = project.exportProfiles.find((profile) => profile.id === "full-song-wav");
-      if (!wavProfile) throw new Error("Full Song WAV profile is missing.");
-      assertExportProfileSupported(wavProfile, "Full Song WAV");
-      const blob = await this.renderWavNativeFirst(project);
+      const { project, blob } = await this.createFullMixWavBlobForExport(async () => {
+        await this.showExportProgress("Rendering WAV mix", "Longer songs and imported audio can take a little while");
+      });
       await this.showExportProgress("Preparing WAV download", `${Math.round(blob.size / 1024)} KB rendered`);
       downloadBlob(blob, safeName(project.project.title, "wav"));
       this.state.exportProgress = null;
@@ -4732,6 +4803,17 @@ export class App {
       this.state.status = error instanceof Error ? `WAV export failed: ${error.message}` : "WAV export failed.";
       this.render({ preserveScroll: true });
     }
+  }
+
+  private async createFullMixWavBlobForExport(onReadyToRender?: () => Promise<void>): Promise<{ project: PocketDawProject; blob: Blob }> {
+    const hydration = await this.hydrateTimelineAudioBuffers();
+    this.assertNoMissingAudibleAudioBuffers(hydration, "WAV export");
+    if (onReadyToRender) await onReadyToRender();
+    const project = currentProject(this.state);
+    const wavProfile = project.exportProfiles.find((profile) => profile.id === "full-song-wav");
+    if (!wavProfile) throw new Error("Full Song WAV profile is missing.");
+    assertExportProfileSupported(wavProfile, "Full Song WAV");
+    return { project, blob: await this.renderWavNativeFirst(project) };
   }
 
   private exportMidi() {
@@ -5680,6 +5762,26 @@ function formatRecordingDuration(seconds: number | undefined): string {
 function recordingStatusMessage(trackName: string, monitoring: boolean, outputDeviceName?: string | null): string {
   if (!monitoring) return `Recording ${trackName}.`;
   return outputDeviceName ? `Recording ${trackName}; monitor on via ${outputDeviceName}.` : `Recording ${trackName}; monitor on.`;
+}
+
+function activePunchRange(project: ReturnType<typeof currentProject>): { startBar: number; endBar: number } | null {
+  const selection = project.timeline.selection;
+  if (!selection || selection.source !== "punch") return null;
+  const startBar = Math.max(1, Math.min(selection.startBar, selection.endBar));
+  const endBar = Math.max(startBar, Math.max(selection.startBar, selection.endBar));
+  return endBar > startBar + 0.0001 ? { startBar, endBar } : null;
+}
+
+function recordingPlacementMessage(fileName: string, targetRelativePath: string, punchRange: { startBar: number; endBar: number } | null, createTakeLane: boolean): string {
+  const mode = punchRange
+    ? `punch ${formatStatusBar(punchRange.startBar)}-${formatStatusBar(punchRange.endBar)}`
+    : "full take";
+  const lane = createTakeLane ? " as a new take lane" : "";
+  return `Recorded ${fileName}${lane} (${mode}) to ${targetRelativePath}.`;
+}
+
+function formatStatusBar(bar: number): string {
+  return Number.isInteger(bar) ? String(bar) : bar.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function inputPreviewStatusMessage(trackName: string, monitoring: boolean, outputDeviceName?: string | null): string {

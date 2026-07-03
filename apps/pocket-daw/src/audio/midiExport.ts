@@ -3,6 +3,7 @@ import { effectiveMeterAtBar, timelineBarAtSeconds, timelineQuarterNoteBeatsBetw
 import { midiDataFromClip } from "../daw/midiClips";
 import { renderTimelineEvents, type RenderedEvent } from "./eventRenderer";
 import { trackIsAudible } from "../daw/tracks";
+import { clipIsAudibleTake } from "../daw/clips";
 
 interface MidiMessage {
   tick: number;
@@ -85,7 +86,7 @@ function trackIdIsAudible(project: PocketDawProject, trackId: string): boolean {
 
 function midiClipCanExport(project: PocketDawProject, clip: PocketDawProject["timeline"]["clips"][number], clipIds: Set<string> | null, trackIds: Set<string> | null): boolean {
   if (clip.type !== "midi") return false;
-  if (clip.muted) return false;
+  if (!clipIsAudibleTake(clip)) return false;
   if (clipIds && !clipIds.has(clip.id)) return false;
   if (trackIds && !trackIds.has(clip.trackId)) return false;
   return trackIdIsAudible(project, clip.trackId);

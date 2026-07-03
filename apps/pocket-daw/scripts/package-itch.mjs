@@ -252,6 +252,8 @@ ${artifactTable}
 - Live native composition edits keep existing cached playback regions where possible and defer fresh cache generation instead of launching hidden rebuilds during playback.
 - Hardened the installed-app live recording path for Windows smoke testing.
 - Preserved fractional recording placement and same-track overwrite splitting around recorded takes.
+- Added first punch and take-lane recording placement controls: Punch uses an explicit timeline range, Replace keeps visible-range overwrite behavior, and Take Lane preserves overlapping material as inactive grouped takes.
+- Audio and MIDI take-lane activation, archive/restore, split/comp editing and export filtering now share durable take metadata so inactive lanes stay out of playback/export.
 - Moved heavy recording preparation before count-in, guards stale recording sessions, and keeps stopped-transport count-in coherent.
 - Reused the armed input preview stream when recording begins instead of rebuilding the input stream at the capture boundary.
 - Streamed native capture through bounded lock-free rings and a writer thread to .wav.part before final WAV rename.
@@ -297,7 +299,7 @@ ${artifactTable}
 - Added Record transport controls, recording status/timer, metronome toggle and one-bar count-in support.
 - Added live-track M/S/R/Monitor controls in the timeline and mixer.
 - Recording requires a saved .pocketdaw file and writes PCM WAV takes under project-media/recordings beside the project.
-- Stopping a take imports the WAV as project media and places an audio clip on the armed track at the original record start bar.
+- Stopping a take imports the WAV as project media and places an audio clip on the armed track according to the selected Replace, Take Lane or Punch mode.
 - Added native CPAL recording start/stop/status commands with project-media path safety checks and friendly no-input errors.
 - Added diagnostics fields for recording state, armed tracks, monitor-enabled tracks and metronome/count-in settings.
 - Fixed Standard MIDI File import for real-world format 1 files with tempo/meta tracks and separate note tracks.
@@ -354,7 +356,7 @@ function knownLimitations() {
   return [
     "Live recording is a narrow installed-app alpha: one armed mono live track at a time.",
     "No ASIO backend yet; native audio currently targets WASAPI/CPAL.",
-    "No simultaneous multitrack recording, stereo recording modes, punch-in/out, comping/take lanes, FX-through-monitoring or latency compensation UI yet.",
+    "No simultaneous multitrack recording, stereo recording modes, dedicated lane subtracks/collapse/solo controls, full polished comping UI, live MIDI capture, FX-through-monitoring or latency compensation UI yet.",
     "Imported audio decode/streaming is still limited and large files are rejected before whole-file reads.",
     "Full send/return processing and advanced pro DAW features are future work.",
     "Godot/web game-pack exports build ZIPs with manifest metadata, source project JSON and rendered audio, but still need target-project smoke testing before calling them production pipeline exports.",
@@ -396,7 +398,7 @@ Pocket DAW lets you import Pocket Chordsmith songs, arrange sections on a deskto
 - Edit Chordsmith drums, bass, melody, guitar, section bars and chords.
 - Preserve imported Chordsmith mix volumes, lofi sound IDs and per-track source metadata for parity testing.
 - Import audio and MIDI into a visible media pool.
-- Record one armed mono live audio track in the installed app, with project-media WAV takes.
+- Record one armed mono live audio track in the installed app, with project-media WAV takes plus first punch and take-lane placement modes.
 - Export full WAV, MIDI, stem WAVs, section-loop WAVs, Godot game-pack ZIPs and web-game ZIPs.
 - Use per-drum lane mixer/FX controls for advanced drum balancing while keeping the normal Drums track compact.
 - Native Windows/Tauri shell with native audio playback and project file dialogs.
@@ -416,7 +418,7 @@ Pocket Chordsmith users, song sketching, adaptive/game-audio planning, MIDI/WAV 
 
 ${limitations.map((item) => `- ${item}`).join("\n")}
 
-ASIO, simultaneous multitrack recording, full send/return processing, full bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
+ASIO, simultaneous multitrack recording, dedicated lane subtracks, full polished comping UI, live MIDI capture, full send/return processing, full bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
 
 ## Signing
 
@@ -486,7 +488,10 @@ function windowsSmokeChecklist(installerArtifacts = []) {
     ["Live recording", "Save a .pocketdaw project, add a Live Vocals or Live Instrument track, then arm it.", "Exactly one live audio track is armed and the project must be saved before recording."],
     ["Live recording", "Refresh Audio Settings, choose an input, toggle Monitor off/on, and keep speakers/headphones safe.", "Monitor state changes clearly and no feedback occurs when Monitor is off."],
     ["Live recording", "Enable metronome, press Record, wait for count-in, record 5-10 seconds, then Stop Rec.", "A mono WAV is written under project-media/recordings and a clip appears on the armed track."],
+    ["Live recording", "Place existing audio on the armed track, set a visible punch range, enable Punch, choose Take Lane, start at or before punch-in, record briefly, then Stop Rec.", "The new WAV is saved under project-media/recordings; only the punch window is active, old overlapping material is preserved as an inactive take lane, and raw media remains in the Media Pool."],
+    ["Live recording", "Repeat a punch over existing audio with Punch enabled and Replace selected.", "Only the punch window replaces/trims visible material on the armed track; non-overlapping remainders preserve source offsets."],
     ["Live recording", "Save, close, reopen the project, then play the recorded clip.", "Recorded project-media WAV reloads and plays."],
+    ["Live recording", "After punch/take-lane recording, save, close, reopen, activate another lane, export WAV, and export MIDI from a project with grouped MIDI takes.", "Only active or comp-selected audio/MIDI lanes are audible/exported; archived or inactive lanes remain in the project."],
     ["Import/export", "Import an audio clip if exposed and place it on the timeline.", "Media appears with clear embedded/collected/referenced/cached/missing state; audible if loaded."],
     ["Import/export", "Import MIDI if exposed.", "MIDI item/clip appears and is readable/editable."],
     ["Import/export", "Export WAV and open the file in a player.", "WAV file is created and playable."],

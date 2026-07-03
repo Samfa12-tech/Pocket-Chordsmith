@@ -332,6 +332,8 @@ function renderTransport(state: AppState): string {
       <div class="transport-buttons">
         <button class="primary" data-transport-toggle="true" data-action="${state.playing ? "pause" : "play"}">${state.playing ? "Pause" : "Play"}</button>
         <button class="${recordingActive ? "record on" : "record"}" data-action="record-toggle" data-ui-scope="recording">${recordingActive ? "Stop Rec" : "Record"}</button>
+        <button class="${state.recordingPunchEnabled ? "on" : ""}" data-action="recording-punch-toggle" data-ui-scope="recording" title="Record only the explicit punch range when one is set">Punch</button>
+        <button class="${state.recordingTakeMode === "take-lane" ? "on" : ""}" data-action="recording-take-mode-toggle" data-ui-scope="recording" title="Toggle between replacing the visible range and creating a new take lane">${state.recordingTakeMode === "take-lane" ? "Take Lane" : "Replace"}</button>
         <button class="${metronome.enabled ? "on" : ""}" data-action="metronome-toggle" title="Metronome and one-bar recording count-in">Metro</button>
         <button data-action="stop">Stop</button>
         <button data-action="restart">Restart</button>
@@ -344,7 +346,7 @@ function renderTransport(state: AppState): string {
       </div>
       <div class="transport-readout">
         <span data-playing-state="true" class="${state.playing ? "playing" : ""}"><strong>${state.playing ? "Playing" : "Stopped"}</strong></span>
-        <span data-recording-state="true" data-ui-scope="recording" class="${recordingActive ? "recording" : ""}"><strong>${escapeHtml(recordingPrimary)}</strong>${recordingSecondary ? `<small>${escapeHtml(recordingSecondary)}</small>` : ""}</span>
+        <span data-recording-state="true" data-ui-scope="recording" class="${recordingActive ? "recording" : ""}"><strong>${escapeHtml(recordingPrimary)}</strong>${recordingSecondary ? `<small>${escapeHtml(recordingSecondary)}</small>` : `<small>${state.recordingPunchEnabled ? "punch" : "full"} / ${state.recordingTakeMode === "take-lane" ? "lane" : "replace"}</small>`}</span>
         <span><strong>${Math.round(project.project.bpm)}</strong><small>BPM</small></span>
         <span><strong>Metro</strong><small>${escapeHtml(metroDetail)}</small></span>
         <span><strong>${escapeHtml(project.project.key)}</strong><small>${escapeHtml(project.project.scale)}</small></span>
@@ -976,6 +978,7 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
                     </div>
                     ${clip.type === "generated-section" ? renderGeneratedClipStemMutes(clip) : ""}
                     ${renderClipEditPalette()}
+                    ${(clip.type === "audio" || clip.type === "midi") ? renderAudioTakePanel(project, clip) : ""}
                     <button type="button" data-action="freeze-selected-clip" title="Render the selected clip into a reusable audio asset">Freeze</button>
                     <button type="button" data-action="export-selected-clip-midi" ${clip.type === "audio" ? "disabled title=\"Audio clips do not contain MIDI events.\"" : "title=\"Export the selected clip as a MIDI file\""}>Export Clip MIDI</button>
                     ${clip.type === "midi" ? renderMidiClipEditor(project, state, clip) : ""}
@@ -1134,7 +1137,6 @@ function renderAudioClipProperties(project: ReturnType<typeof currentProject>, c
       <label>Duration <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:durationSeconds`)}" type="number" min="0" max="86400" step="0.01" value="${sanitizeCssLengthOrNumber(durationSeconds, 0, 0, 86400)}" title="Limit this timeline clip's audio duration in seconds."></label>
       <label>Rate <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:playbackRate`)}" type="number" min="0.25" max="4" step="0.01" value="${sanitizeCssLengthOrNumber(playbackRate, 1, 0.25, 4)}" title="Play this clip faster or slower as source-safe varispeed metadata."></label>
       <label>Pitch <input data-audio-clip-property="${sanitizeDataAttr(`${clip.id}:pitchSemitones`)}" type="number" min="-48" max="48" step="1" value="${sanitizeCssLengthOrNumber(pitchSemitones, 0, -48, 48)}" title="Pitch-as-speed semitone metadata for varispeed playback; pitch-preserving correction is future work."></label>
-      ${renderAudioTakePanel(project, clip)}
       <div class="audio-clip-actions" aria-label="Audio clip actions">
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:quick-fade`)}" title="Apply short fade in and fade out to this audio clip">Short fades</button>
         <button type="button" data-audio-clip-action="${sanitizeDataAttr(`${clip.id}:reset-fades`)}" title="Clear this audio clip's fades">Reset fades</button>
@@ -1196,9 +1198,10 @@ function renderAudioWarpMarkerPanel(clip: Clip): string {
 function renderAudioTakePanel(project: ReturnType<typeof currentProject>, clip: Clip): string {
   const summary = audioClipTakeSummary(project, clip.id);
   if (!summary || summary.takeCount < 2) return "";
+  const takeKind = clip.type === "midi" ? "MIDI" : "Audio";
   return `
-    <div class="audio-take-panel" aria-label="Audio take lanes" data-ui-scope="recording">
-      <h3>Take Lanes</h3>
+    <div class="audio-take-panel" aria-label="${escapeAttr(takeKind)} take lanes" data-ui-scope="recording">
+      <h3>${escapeHtml(takeKind)} Take Lanes</h3>
       <p class="editor-note">${escapeHtml(summary.groupId)} - Take ${summary.takeNumber} of ${summary.takeCount}${summary.active ? " active" : " muted"}</p>
       <div class="audio-take-lane-overview" aria-label="Take lane overview">
         ${summary.lanes.map((lane) => {

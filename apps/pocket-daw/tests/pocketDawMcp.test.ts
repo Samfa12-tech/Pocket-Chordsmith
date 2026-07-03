@@ -61,6 +61,7 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("comp_audio_take_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("place_punch_recording_clip");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("place_punch_recording_clip_from_range");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("createTakeLane");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_timeline_selection");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_punch_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("set_track_folder");
@@ -103,6 +104,7 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("transform_midi_velocity");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("transform_midi_pitch");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("place_punch_recording_clip_from_range");
+    expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("createTakeLane");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("activate_audio_take_lane");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("set_audio_take_archived");
     expect(JSON.stringify(liveApplySchema?.properties.commands)).toContain("comp_audio_take_from_bar");
@@ -745,6 +747,52 @@ describe("Pocket DAW MCP tools", () => {
       captureStartBar: 6
     });
     expect(summaryClip).toMatchObject({ punchStartBar: 7, punchEndBar: 9, captureStartBar: 6 });
+  });
+
+  it("places punch recording windows as take lanes through the file-first command path", async () => {
+    const withTrack = addTrackToProject(createDemoProject(), "live-vocals");
+    const secondsPerBar = withTrack.project.project.timeSig * (60 / withTrack.project.project.bpm);
+    const bedMedia = addImportedAudioMedia(withTrack.project, {
+      name: "MCP lane bed.wav",
+      uri: "project-media/recordings/mcp-lane-bed.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { mediaRefKind: "project" }
+    });
+    const bedPlaced = placeAudioClipOnTrack(bedMedia.project, bedMedia.item.id, withTrack.trackId, 7);
+    const imported = addImportedAudioMedia(bedPlaced.project, {
+      name: "MCP lane punch.wav",
+      uri: "project-media/recordings/mcp-lane-punch.wav",
+      mimeType: "audio/wav",
+      durationSeconds: secondsPerBar * 4,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: {
+        mediaRefKind: "project",
+        recordingTakeId: "mcp-lane-punch-take-1",
+        recordingTakeGroupId: "mcp-lane-punch-group",
+        takeLaneId: "mcp-lane-punch-group-lane-2"
+      }
+    });
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(imported.project),
+      commands: [
+        { type: "set_punch_range", startBar: 7, endBar: 9 },
+        { type: "place_punch_recording_clip_from_range", mediaPoolItemId: imported.item.id, trackId: withTrack.trackId, captureStartBar: 6, createTakeLane: true }
+      ]
+    }));
+    const bed = result.project.timeline.clips.find((clip: { id: string }) => clip.id === bedPlaced.clipId);
+    const punch = result.project.timeline.clips.find((clip: { name: string }) => clip.name === "MCP lane punch.wav");
+
+    expect(result.statuses).toEqual([
+      "Punch range set from bar 7 to 9.",
+      "Placed punch take MCP lane punch.wav as a new take lane from active punch range 7 to 9."
+    ]);
+    expect(bed).toMatchObject({ muted: true, startBar: 7, barLength: 4, metadata: { takeLaneIndex: 1, takeStatus: "muted-take", takeActive: false } });
+    expect(punch).toMatchObject({ muted: false, startBar: 7, barLength: 2, metadata: { takeLaneIndex: 2, takeStatus: "active", takeActive: true, punchMode: "create-new-take-lane" } });
   });
 
   it("applies audio transient and warp-marker actions through the file-first command path", async () => {
@@ -1546,6 +1594,40 @@ describe("Pocket DAW MCP tools", () => {
 
       expect(result.ok).toBe(true);
       expect(JSON.parse(requestBody)).toMatchObject({ action: "open_project", projectPath });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("sends live export_project through the tokened app bridge", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-live-export-"));
+    const sessionPath = join(dir, "ai-bridge-session.json");
+    const outputPath = join(dir, "punch-take-lane-smoke.wav");
+    writeFileSync(sessionPath, JSON.stringify({
+      statusUrl: "http://127.0.0.1:47858/pocket-daw/live/status",
+      controlUrl: "http://127.0.0.1:47858/pocket-daw/live/control",
+      token: "test-token"
+    }));
+    const originalFetch = globalThis.fetch;
+    let requestBody = "";
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requestBody = String(init?.body || "");
+      return new Response(JSON.stringify({ ok: true, action: "export_project", format: "wav", path: outputPath, bytesWritten: 44 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_live_control", {
+        sessionPath,
+        action: "export_project",
+        format: "wav",
+        outputPath
+      }));
+
+      expect(result.ok).toBe(true);
+      expect(JSON.parse(requestBody)).toMatchObject({ action: "export_project", format: "wav", outputPath });
     } finally {
       globalThis.fetch = originalFetch;
     }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openProjectFileNative, projectFileStateFromPath, projectRecoveryRecommendation, projectTitleFromFileState, saveBlobFileAs, saveProjectFile, type NativeFileApi, type NativeProjectRecoveryCandidate } from "../src/native/fileBridge";
+import { openProjectFileNative, projectFileStateFromPath, projectRecoveryRecommendation, projectTitleFromFileState, saveBlobFileAs, saveProjectFile, writeBlobFileNative, type NativeFileApi, type NativeProjectRecoveryCandidate } from "../src/native/fileBridge";
 import { createDemoProject } from "../src/demo/demoProject";
 
 describe("native file bridge", () => {
@@ -119,6 +119,29 @@ describe("native file bridge", () => {
       args: {
         defaultName: "Pack.zip",
         bytes: [1, 2, 3]
+      }
+    }]);
+  });
+
+  it("writes smoke export blobs to explicit native paths", async () => {
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeFileApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return { path: "C:\\Smoke\\Take Lane.mid", label: "Take Lane.mid", bytesWritten: 4 } as never;
+      }
+    };
+
+    const result = await writeBlobFileNative("C:\\Smoke\\Take Lane.mid", new Blob([new Uint8Array([77, 84, 104, 100])]), "midi", api);
+
+    expect(result).toMatchObject({ mode: "native", bytesWritten: 4, file: { label: "Take Lane.mid" } });
+    expect(calls).toEqual([{
+      command: "write_binary_file",
+      args: {
+        path: "C:\\Smoke\\Take Lane.mid",
+        bytes: [77, 84, 104, 100],
+        kind: "midi"
       }
     }]);
   });

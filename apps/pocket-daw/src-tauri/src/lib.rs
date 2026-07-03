@@ -268,6 +268,7 @@ pub fn run() {
             save_project_file_as,
             write_project_file,
             save_binary_file_as,
+            write_binary_file,
             ai_bridge_session,
             ai_bridge_set_enabled,
             ai_bridge_resolve_request
@@ -1280,6 +1281,45 @@ fn save_binary_file_as(
 }
 
 #[tauri::command]
+fn write_binary_file(
+    path: String,
+    bytes: Vec<u8>,
+    kind: String,
+) -> Result<BinaryFileSaveResult, String> {
+    ensure_bytes_at_most(
+        bytes.len() as u64,
+        MAX_BINARY_EXPORT_BYTES,
+        "Export file is too large for this release.",
+    )?;
+    let ext = match kind.as_str() {
+        "wav" => {
+            ensure_wav_payload(&bytes)?;
+            "wav"
+        }
+        "midi" => {
+            ensure_midi_payload(&bytes)?;
+            "mid"
+        }
+        "zip" => {
+            ensure_zip_payload(&bytes)?;
+            "zip"
+        }
+        _ => return Err("Unsupported binary export kind.".to_string()),
+    };
+    let path = ensure_extension(std::path::PathBuf::from(path), ext);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|err| format!("Could not create export folder: {err}"))?;
+    }
+    std::fs::write(&path, &bytes).map_err(|err| format!("Could not save export file: {err}"))?;
+    Ok(BinaryFileSaveResult {
+        label: file_label(&path),
+        path: path.to_string_lossy().to_string(),
+        bytes_written: bytes.len() as u64,
+    })
+}
+
+#[tauri::command]
 fn discover_project_recovery(path: String) -> Result<project_files::ProjectRecoveryState, String> {
     Ok(project_files::discover_project_recovery(
         &std::path::PathBuf::from(path),
@@ -1744,6 +1784,20 @@ fn ensure_zip_payload(bytes: &[u8]) -> Result<(), String> {
     Err("Export file must be a ZIP archive.".to_string())
 }
 
+fn ensure_wav_payload(bytes: &[u8]) -> Result<(), String> {
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WAVE" {
+        return Ok(());
+    }
+    Err("Export file must be a WAV audio file.".to_string())
+}
+
+fn ensure_midi_payload(bytes: &[u8]) -> Result<(), String> {
+    if bytes.len() >= 14 && &bytes[0..4] == b"MThd" {
+        return Ok(());
+    }
+    Err("Export file must be a Standard MIDI file.".to_string())
+}
+
 fn bytes_to_mb(bytes: u64) -> u64 {
     bytes.div_ceil(1024 * 1024)
 }
@@ -1951,6 +2005,15 @@ mod tests {
         let error = ensure_zip_payload(b"not a zip").expect_err("plain bytes should be rejected");
         assert!(error.contains("ZIP archive"));
         assert!(ensure_zip_payload(&[]).is_err());
+    }
+
+    #[test]
+    fn direct_export_payloads_must_match_declared_kind() {
+        assert!(ensure_wav_payload(b"RIFF\x24\x00\x00\x00WAVEfmt ").is_ok());
+        assert!(ensure_midi_payload(b"MThd\x00\x00\x00\x06\x00\x01\x00\x01\x01\xe0").is_ok());
+
+        assert!(ensure_wav_payload(b"MThd\x00\x00\x00\x06\x00\x01\x00\x01\x01\xe0").is_err());
+        assert!(ensure_midi_payload(b"RIFF\x24\x00\x00\x00WAVEfmt ").is_err());
     }
 
     #[test]

@@ -39,6 +39,7 @@ export interface PlacePunchRecordingOptions {
   captureStartBar: number;
   punchStartBar: number;
   punchEndBar: number;
+  createTakeLane?: boolean;
 }
 
 export interface AudioTransientAnalysis {
@@ -224,6 +225,20 @@ export function placePunchRecordingClipOnTrack(project: PocketDawProject, mediaP
   const placement = recordingLatencyPlacement(project, trackId, punchStartBar);
   const sourceOffsetSeconds = secondsBetweenBars(project, captureStartBar, punchStartBar);
   const sourceDurationSeconds = secondsBetweenBars(project, punchStartBar, punchEndBar);
+  if (options.createTakeLane) {
+    return placeTakeLaneAudioClipOnTrack(project, mediaPoolItemId, trackId, placement.startBar, punchEndBar, {
+      clipBarLength: punchEndBar - punchStartBar,
+      sourceOffsetSeconds,
+      sourceDurationSeconds,
+      extraMetadata: {
+        punchStartBar,
+        punchEndBar,
+        captureStartBar,
+        punchMode: "create-new-take-lane",
+        ...placement.metadata
+      }
+    });
+  }
   return placeAudioClipOnTrack(project, mediaPoolItemId, trackId, placement.startBar, {
     overwriteOverlaps: true,
     clipBarLength: punchEndBar - punchStartBar,
@@ -235,6 +250,87 @@ export function placePunchRecordingClipOnTrack(project: PocketDawProject, mediaP
       captureStartBar,
       punchMode: "replace-visible-range",
       ...placement.metadata
+    }
+  });
+}
+
+export function placeTakeLaneRecordingClipOnTrack(project: PocketDawProject, mediaPoolItemId: string, trackId: string, startBar: number): PlaceAudioClipResult {
+  const item = findMediaPoolItem(project, mediaPoolItemId);
+  if (!item || item.kind !== "audio") return { project, clipId: "", trackId: "" };
+  const placement = recordingLatencyPlacement(project, trackId, startBar);
+  const clipLength = Math.max(0.001, secondsToBarsFromStart(item.durationSeconds || secondsBetweenBars(project, startBar, startBar + 1), project, placement.startBar));
+  return placeTakeLaneAudioClipOnTrack(project, mediaPoolItemId, trackId, placement.startBar, placement.startBar + clipLength, {
+    extraMetadata: {
+      punchMode: "create-new-take-lane",
+      ...placement.metadata
+    }
+  });
+}
+
+function placeTakeLaneAudioClipOnTrack(project: PocketDawProject, mediaPoolItemId: string, trackId: string, startBar: number, endBar: number, options: PlaceAudioClipOptions = {}): PlaceAudioClipResult {
+  const item = findMediaPoolItem(project, mediaPoolItemId);
+  if (!item || item.kind !== "audio") return { project, clipId: "", trackId: "" };
+  const next = cloneProject(project);
+  const media = next.mediaPool.find((entry) => entry.id === mediaPoolItemId);
+  const track = next.tracks.find((candidate) => candidate.id === trackId && candidate.trackType === "audio");
+  if (!media || !track) return { project, clipId: "", trackId: "" };
+  const rangeStart = cleanStartBar(startBar);
+  const rangeEnd = Math.max(rangeStart + 0.001, cleanStartBar(endBar));
+  const overlapping = next.timeline.clips
+    .filter((clip) => clip.type === "audio" && clip.trackId === track.id && clip.startBar < rangeEnd - 0.0001 && rangeStart < clip.startBar + clip.barLength - 0.0001)
+    .sort((a, b) => takeLaneSortKey(a) - takeLaneSortKey(b) || a.startBar - b.startBar || a.id.localeCompare(b.id));
+  const existingGroupId = overlapping
+    .map((clip) => takeGroupIdFromMetadata(clip.metadata))
+    .find((value): value is string => !!value);
+  const mediaGroupId = takeGroupIdFromMetadata(media.metadata);
+  const groupId = existingGroupId || mediaGroupId || `recording-session-${media.id}`;
+  const groupedClips = next.timeline.clips.filter((clip) => clip.type === "audio" && clip.trackId === track.id && takeGroupIdFromMetadata(clip.metadata) === groupId);
+  const seededExisting = existingGroupId
+    ? groupedClips
+    : overlapping;
+  seededExisting.forEach((clip, index) => {
+    const laneIndex = cleanTakeLaneIndex(clip.metadata?.takeLaneIndex ?? clip.metadata?.takeIndex, index + 1);
+    clip.muted = true;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      takeGroupId: groupId,
+      recordingTakeGroupId: groupId,
+      takeIndex: laneIndex,
+      takeLaneIndex: laneIndex,
+      takeLaneId: takeLaneIdFromMetadata(clip.metadata, groupId, laneIndex),
+      recordingTakeId: recordingTakeIdFromMetadata(clip.metadata, groupId, laneIndex),
+      takeActive: false,
+      takeStatus: clip.metadata?.takeStatus === "archived-take" ? "archived-take" : "muted-take"
+    };
+  });
+  const maxExistingLaneIndex = Math.max(0, ...next.timeline.clips
+    .filter((clip) => clip.type === "audio" && clip.trackId === track.id && takeGroupIdFromMetadata(clip.metadata) === groupId)
+    .map((clip, index) => cleanTakeLaneIndex(clip.metadata?.takeLaneIndex ?? clip.metadata?.takeIndex, index + 1)));
+  const laneIndex = maxExistingLaneIndex + 1;
+  media.metadata = {
+    ...(media.metadata || {}),
+    takeGroupId: groupId,
+    recordingTakeGroupId: groupId,
+    takeIndex: laneIndex,
+    takeLaneIndex: laneIndex,
+    takeLaneId: `${groupId}-lane-${laneIndex}`,
+    recordingTakeId: recordingTakeIdFromMetadata(media.metadata, groupId, laneIndex),
+    takeActive: true,
+    takeStatus: "active"
+  };
+  return placeAudioClipOnTrack(next, media.id, track.id, rangeStart, {
+    ...options,
+    overwriteOverlaps: false,
+    extraMetadata: {
+      ...(options.extraMetadata || {}),
+      takeGroupId: groupId,
+      recordingTakeGroupId: groupId,
+      takeIndex: laneIndex,
+      takeLaneIndex: laneIndex,
+      takeLaneId: `${groupId}-lane-${laneIndex}`,
+      recordingTakeId: recordingTakeIdFromMetadata(media.metadata, groupId, laneIndex),
+      takeActive: true,
+      takeStatus: "active"
     }
   });
 }
@@ -453,6 +549,31 @@ function roundNumber(value: number): number {
 function audioClipSourceOffsetSeconds(clip: Clip): number {
   const value = clip.metadata?.sourceOffsetSeconds;
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function takeGroupIdFromMetadata(metadata: JsonObject | undefined): string | null {
+  const value = metadata?.recordingTakeGroupId || metadata?.takeGroupId;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function cleanTakeLaneIndex(value: unknown, fallback: number): number {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.round(number) : Math.max(1, fallback);
+}
+
+function takeLaneIdFromMetadata(metadata: JsonObject | undefined, groupId: string, laneIndex: number): string {
+  const value = metadata?.takeLaneId;
+  return typeof value === "string" && value.trim() ? value.trim() : `${groupId}-lane-${laneIndex}`;
+}
+
+function recordingTakeIdFromMetadata(metadata: JsonObject | undefined, groupId: string, laneIndex: number): string {
+  const value = metadata?.recordingTakeId;
+  return typeof value === "string" && value.trim() ? value.trim() : `${groupId}-take-${laneIndex}`;
+}
+
+function takeLaneSortKey(clip: Clip): number {
+  const value = Number(clip.metadata?.takeLaneIndex ?? clip.metadata?.takeIndex);
+  return Number.isFinite(value) && value > 0 ? value : Number.MAX_SAFE_INTEGER;
 }
 
 function nextClipId(project: PocketDawProject): string {

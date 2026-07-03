@@ -73,10 +73,13 @@ export interface AppState {
   nativeCacheStatus: NativeCacheUiStatus;
   lastHandoff: HandoffStatus;
   recording: RecordingUiState;
+  recordingPunchEnabled: boolean;
+  recordingTakeMode: RecordingTakeMode;
 }
 
 export type LowerDockTab = "mixer" | "inserts" | "sends" | "automation" | "piano-roll" | "audio-editor" | "export-details";
 export type UiCreationPreset = "music" | "game-music";
+export type RecordingTakeMode = "replace" | "take-lane";
 export const UI_COLLAPSE_SECTIONS = ["timeline-tools", "inspector-clip", "inspector-track", "lower-dock", "media-pool"] as const;
 export type UiCollapseSection = typeof UI_COLLAPSE_SECTIONS[number];
 export type UiCollapsedSections = Record<UiCollapseSection, boolean>;
@@ -264,7 +267,9 @@ export function createInitialState(): AppState {
       receivedAt: null,
       message: "No Pocket DAW handoff received yet."
     },
-    recording: createRecordingUiState()
+    recording: createRecordingUiState(),
+    recordingPunchEnabled: false,
+    recordingTakeMode: "replace"
   };
 }
 
@@ -339,7 +344,9 @@ export function loadProjectIntoState(
     nativeCacheStatus: createNativeCacheUiStatus(),
     chordsmithEditorStepPage: 0,
     chordsmithStepSelection: null,
-    recording: createRecordingUiState()
+    recording: createRecordingUiState(),
+    recordingPunchEnabled: state.recordingPunchEnabled,
+    recordingTakeMode: state.recordingTakeMode
   };
 }
 

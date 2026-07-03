@@ -2375,25 +2375,25 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "AI / MCP Bridge",
     control: "File MCP Take Lane Activation",
     selector: "activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range, pocket_daw_live_apply_commands:activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range",
-    does: "Activates every non-archived clip in the selected grouped audio take lane, archives/restores takes without deleting media, and splits grouped takes into first comp segments or active edit-range comps through the undoable command path, from file-first MCP or the tokened live bridge.",
+    does: "Activates every non-archived clip in the selected grouped audio or MIDI take lane, archives/restores takes without deleting media, and splits grouped takes into first comp segments or active edit-range comps through the undoable command path, from file-first MCP or the tokened live bridge.",
     useWhen: "Use for file-first or MCP-observed live take-lane audition, archive/restore and comp smoke after repeated takes exist.",
-    aiNote: "This is a source-only lane audition foundation. It does not create the full visual take-lane editor or installed punch workflow."
+    aiNote: "This is the first same-track take-lane workflow over ordinary clips. Dedicated stacked lane subtracks, collapse/solo and full polished comp editing still need exact installed-app smoke before release claims."
   },
   {
     surface: "AI / MCP Bridge",
     control: "MCP Punch Recording Placement",
     selector: "place_punch_recording_clip, place_punch_recording_clip_from_range, pocket_daw_live_apply_commands:place_punch_recording_clip_from_range",
-    does: "Places an explicit punch-window clip from an existing raw recording media item through the undoable command path, either from command-provided bars or from the active `set_punch_range` selection. The live bridge can place from the active punch range in the running app.",
-    useWhen: "Use for file-first or MCP-observed live punch/take-lane smoke before a full installed punch recording UI exists.",
-    aiNote: "This is a metadata/placement foundation only; it does not start native recording or prove user-facing punch recording."
+    does: "Places an explicit punch-window clip from an existing raw recording media item through the undoable command path, either from command-provided bars or from the active `set_punch_range` selection. Pass `createTakeLane: true` to preserve overlapping material as an inactive take lane.",
+    useWhen: "Use for file-first or MCP-observed live punch/take-lane smoke, especially after a real installed recording produces a raw project-media WAV.",
+    aiNote: "This places existing media; it does not start native capture by itself. Pair it with installed recording smoke before public release claims."
   },
   {
     surface: "AI / MCP Bridge",
     control: "MCP Punch Range Setup",
     selector: "set_punch_range, pocket_daw_live_apply_commands:set_punch_range, timelineSelection",
-    does: "Marks the current timeline selection as an explicit punch range through file-first MCP or the tokened live bridge so later punch/take smoke can distinguish punch intent from ordinary edit ranges.",
-    useWhen: "Use before punch-placement smoke or future installed punch recording tests when an AI counterpart needs a visible punch window without driving the timeline UI.",
-    aiNote: "This only stores `timeline.selection.source = \"punch\"`. It does not start recording, place audio, or claim punch-in/out is shipped."
+    does: "Marks the current timeline selection as an explicit punch range through file-first MCP or the tokened live bridge so punch/take smoke can distinguish punch intent from ordinary edit ranges.",
+    useWhen: "Use before punch-placement smoke or installed punch recording tests when an AI counterpart needs a visible punch window without driving the timeline UI.",
+    aiNote: "This only stores `timeline.selection.source = \"punch\"`. It does not start recording or place audio by itself."
   },
   {
     surface: "AI / MCP Bridge",

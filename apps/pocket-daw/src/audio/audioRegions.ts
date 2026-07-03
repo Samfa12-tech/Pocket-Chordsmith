@@ -2,6 +2,7 @@ import type { Clip, MediaPoolItem, PocketDawProject } from "../daw/schema";
 import { timelineSecondsAtBar } from "../daw/timeline";
 import { trackIsAudible } from "../daw/tracks";
 import { clipAutomationPath, evaluateAutomationLane, interpolateAutomationValue } from "../daw/automation";
+import { clipIsAudibleTake } from "../daw/clips";
 
 export interface AudioRegionGainAutomationPoint {
   localSeconds: number;
@@ -66,7 +67,7 @@ export interface AudioRegionPlaybackWindow {
 export function renderTimelineAudioRegions(project: PocketDawProject, options: RenderTimelineAudioRegionsOptions = {}): RenderedAudioTimeline {
   const warnings: string[] = [];
   const regions = project.timeline.clips
-    .filter((clip) => clip.type === "audio" && !clip.muted)
+    .filter((clip) => clip.type === "audio" && clipIsAudibleTake(clip))
     .flatMap((clip) => {
       const media = clip.mediaPoolItemId ? project.mediaPool.find((item) => item.id === clip.mediaPoolItemId) : null;
       if (!clip.mediaPoolItemId || !media) {

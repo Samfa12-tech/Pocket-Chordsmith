@@ -453,17 +453,24 @@ export function placePunchRecordingClipCommand(
   trackId: string,
   captureStartBar: number,
   punchStartBar: number,
-  punchEndBar: number
+  punchEndBar: number,
+  options: { createTakeLane?: boolean } = {}
 ): AppState {
   const media = state.undoStack.present.mediaPool.find((item) => item.id === mediaPoolItemId && item.kind === "audio");
   const track = state.undoStack.present.tracks.find((item) => item.id === trackId && item.trackType === "audio");
   if (!media || !track) return { ...state, status: "Choose an audio recording media item and audio track before placing a punch take." };
-  const result = placePunchRecordingClipOnTrack(state.undoStack.present, mediaPoolItemId, trackId, { captureStartBar, punchStartBar, punchEndBar });
+  const result = placePunchRecordingClipOnTrack(state.undoStack.present, mediaPoolItemId, trackId, {
+    captureStartBar,
+    punchStartBar,
+    punchEndBar,
+    createTakeLane: options.createTakeLane
+  });
   if (!result.clipId || result.project === state.undoStack.present) {
     return { ...state, selectedTrackId: trackId, status: `Could not place punch take ${media.name}; check the punch range.` };
   }
+  const laneLabel = options.createTakeLane ? " as a new take lane" : "";
   return {
-    ...commitProject(state, result.project, `Placed punch take ${media.name} from bar ${punchStartBar} to ${punchEndBar}.`),
+    ...commitProject(state, result.project, `Placed punch take ${media.name}${laneLabel} from bar ${punchStartBar} to ${punchEndBar}.`),
     selectedClipId: result.clipId,
     selectedTrackId: trackId,
     lowerDockTab: "audio-editor"
@@ -474,24 +481,26 @@ export function placePunchRecordingClipFromRangeCommand(
   state: AppState,
   mediaPoolItemId: string,
   trackId: string,
-  captureStartBar: number
+  captureStartBar: number,
+  options: { createTakeLane?: boolean } = {}
 ): AppState {
   const selection = state.undoStack.present.timeline.selection;
   if (!selection || selection.source !== "punch") {
     return { ...state, selectedTrackId: trackId, status: "Set an explicit punch range before placing a punch take." };
   }
-  const placed = placePunchRecordingClipCommand(state, mediaPoolItemId, trackId, captureStartBar, selection.startBar, selection.endBar);
+  const placed = placePunchRecordingClipCommand(state, mediaPoolItemId, trackId, captureStartBar, selection.startBar, selection.endBar, options);
   if (placed.undoStack.present === state.undoStack.present) return placed;
   const media = state.undoStack.present.mediaPool.find((item) => item.id === mediaPoolItemId);
+  const laneLabel = options.createTakeLane ? " as a new take lane" : "";
   return {
     ...placed,
-    status: `Placed punch take ${media?.name || "recording"} from active punch range ${formatRangeBar(selection.startBar)} to ${formatRangeBar(selection.endBar)}.`
+    status: `Placed punch take ${media?.name || "recording"}${laneLabel} from active punch range ${formatRangeBar(selection.startBar)} to ${formatRangeBar(selection.endBar)}.`
   };
 }
 
 export function activateAudioTakeCommand(state: AppState, clipId: string): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
-  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio take before activating it." };
+  if (!clip || !clipSupportsTakeLanes(clip)) return { ...state, status: "Choose an audio or MIDI take before activating it." };
   const result = activateAudioTake(state.undoStack.present, clipId);
   if (!result.changed) {
     return {
@@ -510,7 +519,7 @@ export function activateAudioTakeCommand(state: AppState, clipId: string): AppSt
 
 export function activateAudioTakeLaneCommand(state: AppState, clipId: string): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
-  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio take lane before activating it." };
+  if (!clip || !clipSupportsTakeLanes(clip)) return { ...state, status: "Choose an audio or MIDI take lane before activating it." };
   const result = activateAudioTakeLane(state.undoStack.present, clipId);
   if (!result.changed) {
     return {
@@ -529,7 +538,7 @@ export function activateAudioTakeLaneCommand(state: AppState, clipId: string): A
 
 export function setAudioTakeArchivedCommand(state: AppState, clipId: string, archived: boolean): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
-  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio take before archiving it." };
+  if (!clip || !clipSupportsTakeLanes(clip)) return { ...state, status: "Choose an audio or MIDI take before archiving it." };
   const result = setAudioTakeArchived(state.undoStack.present, clipId, archived);
   if (!result.changed) {
     return {
@@ -548,7 +557,7 @@ export function setAudioTakeArchivedCommand(state: AppState, clipId: string, arc
 
 export function compAudioTakeFromPlayheadCommand(state: AppState, clipId: string): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
-  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio take before comping." };
+  if (!clip || !clipSupportsTakeLanes(clip)) return { ...state, status: "Choose an audio or MIDI take before comping." };
   const splitBar = snapBarValue(state.playheadBar, "bar", state.undoStack.present.project.timeSig);
   const result = splitGroupedAudioTakesAtBar(state.undoStack.present, clipId, splitBar);
   if (!result.changed) {
@@ -568,7 +577,7 @@ export function compAudioTakeFromPlayheadCommand(state: AppState, clipId: string
 
 export function compAudioTakeRangeCommand(state: AppState, clipId: string): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
-  if (!clip || clip.type !== "audio") return { ...state, status: "Choose an audio take before range comping." };
+  if (!clip || !clipSupportsTakeLanes(clip)) return { ...state, status: "Choose an audio or MIDI take before range comping." };
   const selection = state.undoStack.present.timeline.selection;
   if (!selection) {
     return {
@@ -592,6 +601,10 @@ export function compAudioTakeRangeCommand(state: AppState, clipId: string): AppS
     selectedClipId: result.activeClipId || clipId,
     selectedTrackId: clip.trackId || state.selectedTrackId
   };
+}
+
+function clipSupportsTakeLanes(clip: Clip): boolean {
+  return clip.type === "audio" || clip.type === "midi";
 }
 
 export function splitSelectedClipAtPlayhead(state: AppState): AppState {
