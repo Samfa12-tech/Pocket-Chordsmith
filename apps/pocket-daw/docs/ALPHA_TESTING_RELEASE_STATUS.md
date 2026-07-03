@@ -7,7 +7,7 @@ This file records the current source baseline and public installed-release evide
 ## Current Source Baseline
 
 - Version: `0.6.37`
-- Source delta after published `0.6.36`: Pocket DAW preserves the timeline-first direction, keeps Music/Game Music layout presets meaningful, keeps the lower dock available in Music mode, keeps timeline tools collapsed by default, preserves scroll when opening panels, and hardens downloaded/opened Pocket Audio handoff payload handling from `samfa12.com`.
+- Source delta after published `0.6.36`: Pocket DAW preserves the timeline-first direction, keeps Music/Game Music layout presets meaningful, keeps the lower dock tucked by default in Music mode, keeps timeline tools collapsed by default, preserves scroll when opening panels, and hardens downloaded/opened Pocket Audio handoff payload handling from `samfa12.com`.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Primary itch channel: `windows-installer`
 - Updater manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
@@ -27,6 +27,12 @@ This file records the current source baseline and public installed-release evide
 - MCP smoke opened, saved and validated a temp imported Chordsmith project with zero validation errors or warnings, then played/stopped through native-cpal on WASAPI Speakers with no native lastError, scheduler misses, late/skipped events, graph rebuild spikes or hotspot signals.
 - Native render cache reported full coverage with 70 assets/regions, 7 cached clips, zero procedural fallback events and zero generated stem render failures.
 - GitHub latest updater and bootstrapper manifests both report version `0.6.37` and the same installer SHA-256.
+
+## Unreleased Source Checkpoint After 0.6.37
+
+- Current source has a compact first-view timeline toolbar, hidden/offscreen native file inputs, lower-dock reveal scrolling, and paused UI work after Sam confirmed the direction is good enough for now.
+- Current source hardens CI/release checks: GitHub artifact/cache actions use current Node-runtime majors, Pocket Audio Core installs Playwright for browser trace parity, and Pocket DAW `verify:release` runs `verify:ci-workflow` plus Pocket Audio Core `verify:family-parity` before DAW tests/build/package checks.
+- This is not a new public installed checkpoint until package/Tauri/schema metadata are intentionally versioned, an installer is built, hashes/manifests are recorded, and installed smoke is repeated.
 
 ## Historical 0.6.34 Artifact Record
 

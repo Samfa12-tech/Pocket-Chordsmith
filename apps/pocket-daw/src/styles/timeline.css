@@ -50,6 +50,11 @@
   min-width: 0;
 }
 
+.timeline-compact-tools button {
+  min-height: 28px;
+  padding: 0 9px;
+}
+
 .timeline-compact-status,
 .timeline-compact-readout {
   display: inline-flex;
@@ -70,6 +75,12 @@
 
 .timeline-compact-readout {
   color: #dce8ff;
+}
+
+.timeline-compact-tools-button {
+  border-color: rgba(64, 216, 255, 0.58);
+  color: #dff7ff;
+  background: rgba(20, 58, 78, 0.72);
 }
 
 .timeline-toolbar button {

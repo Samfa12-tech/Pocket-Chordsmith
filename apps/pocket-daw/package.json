@@ -34,6 +34,7 @@
     "package:preview": "npm run build && node scripts/package-preview.mjs",
     "release:updater-manifest": "node scripts/make-updater-manifest.mjs",
     "verify:versions": "node scripts/verify-versions.mjs && npm run verify:release-status-doc",
+    "verify:ci-workflow": "node scripts/verify-ci-workflow.mjs",
     "status:release": "node scripts/render-release-status.mjs",
     "verify:release-status-doc": "node scripts/verify-release-status-doc.mjs",
     "verify:release-candidate-truth": "node scripts/verify-release-candidate-truth.mjs",

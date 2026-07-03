@@ -272,11 +272,13 @@ import { assertExportProfileSupported, validateExportProfile } from "../daw/expo
 import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
 import { buildTesterDiagnosticsPayload, createAudioTakeDiagnosticsSummary, diagnosticsJson, runtimeLabel, runtimePlatform } from "./diagnostics";
 import { buildFeedbackEmailDraft, MORE_BY_SAMFA12_URL } from "./feedback";
+import { configureHiddenFileInput } from "./fileInputs";
 import { FUNCTION_ACTION_TOOLTIPS } from "./functionGuide";
 import { pocketDawMcpCopyText } from "./mcpSetup";
 import { PerformanceDiagnosticsRecorder, type UiPerformanceCounters } from "./performanceDiagnostics";
 import { beginRecordingSession, buildNativeRecordingDiagnosticsMetadata, buildNativeRecordingTakeMetadata, buildRecordingCompletionMessage, buildRecordingStartupPlan, cancelRecordingSession, recordingStartFailureCleanupPlan, transitionRecordingSession } from "./recordingOrchestration";
 import { PlaybackRenderScheduler, type RenderOptions, type RenderSchedule } from "./renderScheduler";
+import { revealElementInScroller } from "./scrollReveal";
 import { applyUpdaterCheckResult, applyUpdaterInstallResult, applyUpdaterProgress as updaterProgressPatch, applyUpdaterRelaunchResult, beginUpdaterCheck, beginUpdaterDownload } from "./updaterOrchestration";
 
 type MixerControlField = "volume" | "pan";
@@ -384,20 +386,23 @@ export class App {
         this.updateLiveDom();
       }
     });
-    this.fileInput = document.createElement("input");
-    this.fileInput.type = "file";
-    this.fileInput.accept = ".pocketdaw,.json,text/plain,application/json";
-    this.fileInput.addEventListener("change", () => this.handleFileOpen());
+    this.fileInput = configureHiddenFileInput(document.createElement("input"), {
+      accept: ".pocketdaw,.json,text/plain,application/json",
+      label: "project-open",
+      onChange: () => this.handleFileOpen()
+    });
     document.body.appendChild(this.fileInput);
-    this.audioFileInput = document.createElement("input");
-    this.audioFileInput.type = "file";
-    this.audioFileInput.accept = AUDIO_MEDIA_ACCEPT;
-    this.audioFileInput.addEventListener("change", () => this.handleAudioFileImport());
+    this.audioFileInput = configureHiddenFileInput(document.createElement("input"), {
+      accept: AUDIO_MEDIA_ACCEPT,
+      label: "audio-import",
+      onChange: () => this.handleAudioFileImport()
+    });
     document.body.appendChild(this.audioFileInput);
-    this.midiFileInput = document.createElement("input");
-    this.midiFileInput.type = "file";
-    this.midiFileInput.accept = MIDI_MEDIA_ACCEPT;
-    this.midiFileInput.addEventListener("change", () => this.handleMidiFileImport());
+    this.midiFileInput = configureHiddenFileInput(document.createElement("input"), {
+      accept: MIDI_MEDIA_ACCEPT,
+      label: "midi-import",
+      onChange: () => this.handleMidiFileImport()
+    });
     document.body.appendChild(this.midiFileInput);
     this.root.addEventListener("click", (event) => this.handleDelegatedClick(event));
     this.root.addEventListener("dblclick", (event) => this.handleDelegatedDoubleClick(event));
@@ -1008,6 +1013,18 @@ export class App {
       node.scrollTop = pos.top;
       node.scrollLeft = pos.left;
     });
+  }
+
+  private revealAppSection(selector: string) {
+    const reveal = () => {
+      const target = this.root.querySelector<HTMLElement>(selector);
+      if (!target) return;
+      const scroller = this.root.querySelector<HTMLElement>('[data-scroll-key="app-shell"]');
+      if (scroller) revealElementInScroller(scroller, target);
+      else target.scrollIntoView({ block: "start", inline: "nearest" });
+    };
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(reveal);
+    else reveal();
   }
 
   private updateLiveDom() {
@@ -2715,10 +2732,7 @@ export class App {
     if (action === "preset-music" || action === "preset-game-music") {
       this.state.uiCreationPreset = action === "preset-game-music" ? "game-music" : "music";
       const presetSections = collapsedSectionsForCreationPreset(this.state.uiCreationPreset);
-      this.state.collapsedUiSections = {
-        ...presetSections,
-        "lower-dock": this.state.collapsedUiSections["lower-dock"] ?? false
-      };
+      this.state.collapsedUiSections = { ...presetSections };
       this.state.lowerDockTab = lowerDockTabForCreationPreset(this.state.uiCreationPreset, this.state.lowerDockTab);
       this.state.inspectorVisible = false;
       this.state.status = this.state.uiCreationPreset === "game-music"
@@ -2835,14 +2849,14 @@ export class App {
       this.state.showFeedbackPanel = false;
       this.state.status = "Timeline clips visible.";
       this.render({ preserveScroll: true });
-      this.root.querySelector<HTMLElement>(".timeline-wrap")?.scrollIntoView({ block: "start", inline: "nearest" });
+      this.revealAppSection(".timeline-wrap");
     }
     if (action === "media-pool-focus") {
       this.state.status = "Media Pool visible.";
       this.state.showFilePanel = false;
       this.state.collapsedUiSections = { ...this.state.collapsedUiSections, "media-pool": false };
       this.render();
-      this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "start", inline: "nearest" });
+      this.revealAppSection("#mediaPool");
     }
     if (action === "import-focus") {
       this.state.status = "Paste a PCS1 share code, Pocket Chordsmith JSON, PocketHandoff payload or .pocketdaw JSON.";
@@ -2862,7 +2876,7 @@ export class App {
       this.state.collapsedUiSections = { ...this.state.collapsedUiSections, "lower-dock": false };
       this.state.status = `${this.state.lowerDockTab[0].toUpperCase()}${this.state.lowerDockTab.slice(1)} dock selected.`;
       this.render({ preserveScroll: true });
-      this.root.querySelector<HTMLElement>(".mixer.lower-dock")?.scrollIntoView({ block: "start", inline: "nearest" });
+      this.revealAppSection(".mixer.lower-dock");
     }
     if (action === "studio-focus-godot") {
       this.state.showFilePanel = false;
@@ -2879,7 +2893,7 @@ export class App {
       this.state.lowerDockTab = "export-details";
       this.state.status = "Godot focus: timeline/game cues stay prominent and game-pack export controls are visible.";
       this.render({ preserveScroll: true });
-      this.root.querySelector<HTMLElement>(".mixer.lower-dock")?.scrollIntoView({ block: "start", inline: "nearest" });
+      this.revealAppSection(".mixer.lower-dock");
     }
     if (action === "import-audio") await this.importAudioMedia();
     if (action === "import-midi") await this.importMidiMedia();

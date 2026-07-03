@@ -34,6 +34,10 @@ function transportHtml(html: string) {
   return html.match(/<header class="transport"[\s\S]*?<\/header>/)?.[0] || "";
 }
 
+function timelineToolbarHtml(html: string) {
+  return html.match(/<div class="timeline-toolbar[\s\S]*?<div class="timeline-scroll"/)?.[0] || "";
+}
+
 function timelineRowHtml(html: string, rowId: string) {
   const marker = `data-row="${rowId}"`;
   const start = html.indexOf(marker);
@@ -259,10 +263,30 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('aria-label="Essential timeline tools"');
     expect(html).toContain("Loop off / No range");
     expect(html).toContain('data-action="toggle-inspector" title="Show the selected clip and track inspector">Inspector</button>');
-    expect(html).toContain('class="mixer lower-dock"');
-    expect(html).not.toContain('class="mixer lower-dock collapsed"');
+    expect(html).toContain('class="timeline-compact-tools-button"');
+    expect(html).toContain("Show full timeline edit, song, loop, range and marker tools");
+    expect(html).toContain('class="mixer lower-dock collapsed"');
+    expect(html).toContain("Mixer controls are hidden.");
     expect(html).toContain('class="media-pool collapsed"');
     expect(html).not.toContain('data-inspector-resize-handle="true"');
+  });
+
+  it("keeps the collapsed timeline toolbar to primary actions only", () => {
+    const html = renderAppShell(createTimelineFirstInitialState());
+    const toolbar = timelineToolbarHtml(html);
+
+    expect(toolbar).toContain('class="timeline-compact-tools"');
+    expect(toolbar).toContain('data-action="clip-split"');
+    expect(toolbar).toContain('data-action="toggle-inspector"');
+    expect(toolbar).toContain('data-action="zoom-out"');
+    expect(toolbar).toContain('data-action="zoom-in"');
+    expect(toolbar).toContain('data-action="toggle-ui-section"');
+    expect(toolbar).toContain('data-ui-section="timeline-tools"');
+    expect(toolbar).not.toContain('data-action="clip-delete"');
+    expect(toolbar).not.toContain('data-action="clip-duplicate"');
+    expect(toolbar).not.toContain('data-action="clip-mute"');
+    expect(toolbar).not.toContain('data-action="range-delete"');
+    expect(toolbar).not.toContain('data-action="range-ripple-delete"');
   });
 
   it("defines focus preset collapse defaults that genuinely reduce visible clutter", () => {
@@ -279,7 +303,7 @@ describe("Pocket DAW UI rendering", () => {
       "timeline-tools": true,
       "inspector-clip": false,
       "inspector-track": false,
-      "lower-dock": false,
+      "lower-dock": true,
       "media-pool": true
     });
     expect(lowerDockTabForCreationPreset("music", "export-details")).toBe("mixer");
@@ -356,7 +380,9 @@ describe("Pocket DAW UI rendering", () => {
     expect(collapsedHtml).toContain("Mixer controls are hidden.");
     expect(collapsedHtml).toContain('class="media-pool collapsed"');
     expect(collapsedHtml).toContain("Media pool items, render cache and portability details are hidden.");
-    expect(collapsedHtml).toContain('data-ui-section="timeline-tools" aria-expanded="false"');
+    expect(collapsedHtml).toContain('class="timeline-compact-tools-button"');
+    expect(collapsedHtml).toContain('data-ui-section="timeline-tools"');
+    expect(collapsedHtml).toContain('aria-expanded="false"');
   });
 
   it("labels generated-role inspector controls as source editing rather than clip gain edits", () => {

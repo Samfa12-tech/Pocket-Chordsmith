@@ -236,7 +236,7 @@ ${artifactTable}
 - Opens into a timeline-first workspace: the inspector starts hidden, lower dock/media detail are tucked away, and the timeline gets most of the screen.
 - Simplified the timeline toolbar so core editing stays close to the timeline without flooding the first view with every range/edit command.
 - Music and Game Music focus presets now change real layout defaults, helping music creation and game-export work feel less crowded.
-- The Music focus preset keeps the lower dock available, timeline tools stay collapsed on open, and panel toggles preserve scroll so the timeline does not jump while working.
+- The Music focus preset tucks the lower dock by default, timeline tools stay collapsed on open, and panel toggles preserve scroll so the timeline does not jump while working.
 - Pocket Audio handoff now uses the download/open path for installed DAW launch from samfa12.com, avoiding the old QR/local-network fallback.
 - Hardened installed Pocket Audio handoff imports so downloaded/opened payloads from samfa12.com are accepted reliably and cleared after import instead of repeating unexpectedly.
 - Sam manually smoke-tested save/load, Pocket Audio handoff push from samfa12.com, and audible playback/listening quality for this release checkpoint.

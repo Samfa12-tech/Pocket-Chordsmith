@@ -433,7 +433,7 @@ function renderTimeline(state: AppState): string {
             <strong>${toolsLabel}</strong>
             <span>${escapeHtml(state.snapMode === "off" ? "Snap off" : `${modeLabel(state.snapMode)} snap`)} / ${Math.round(zoom)} px/bar</span>
           </div>
-          ${renderUiSectionToggle(state, "timeline-tools")}
+          ${toolsCollapsed ? "" : renderUiSectionToggle(state, "timeline-tools")}
         </div>
         ${
           toolsCollapsed
@@ -530,13 +530,18 @@ function renderCompactTimelineTools(
     <div class="timeline-compact-tools" aria-label="Essential timeline tools">
       <span class="timeline-compact-status">${escapeHtml(loopSummary)} / ${escapeHtml(rangeSummary)}</span>
       <button data-action="clip-split" title="Split the selected clip at the playhead">Split</button>
-      <button data-action="clip-duplicate" title="Duplicate the selected clip after itself">Duplicate</button>
-      <button data-action="clip-mute" title="Mute or unmute the selected clip without deleting it">Mute</button>
-      <button data-action="clip-delete" title="Delete the selected clip">Delete</button>
+      <button data-action="toggle-inspector" title="${state.inspectorVisible ? "Hide" : "Show"} the selected clip and track inspector">${state.inspectorVisible ? "Hide Inspector" : "Inspector"}</button>
       <button data-action="zoom-out" title="Zoom the timeline out">Zoom -</button>
       <button data-action="zoom-in" title="Zoom the timeline in">Zoom +</button>
-      <button data-action="toggle-inspector" title="${state.inspectorVisible ? "Hide" : "Show"} the selected clip and track inspector">${state.inspectorVisible ? "Hide Inspector" : "Inspector"}</button>
       <span class="timeline-compact-readout" data-zoom-readout="true">${Math.round(zoom)} px/bar</span>
+      <button
+        type="button"
+        class="timeline-compact-tools-button"
+        data-action="toggle-ui-section"
+        data-ui-section="timeline-tools"
+        aria-expanded="false"
+        title="Show full timeline edit, song, loop, range and marker tools"
+      >Tools</button>
     </div>
   `;
 }

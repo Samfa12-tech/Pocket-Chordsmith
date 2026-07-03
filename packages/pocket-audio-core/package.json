@@ -52,5 +52,8 @@
     "pcs1",
     "songwriting"
   ],
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "playwright": "^1.52.0"
+  }
 }

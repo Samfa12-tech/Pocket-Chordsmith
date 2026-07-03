@@ -37,6 +37,9 @@ describe("release scripts", () => {
     expect(packageJson.scripts["mcp:pocket-daw"]).toContain("pocketDawMcpServer.ts");
     expect(script).toContain('process.argv.includes("--native-release")');
     expect(script).toContain("POCKET_DAW_NATIVE_RELEASE");
+    expect(script).toContain("../../../packages/pocket-audio-core");
+    expect(script).toContain('"verify:ci-workflow"');
+    expect(script).toContain('"verify:family-parity"');
     expect(script).toContain('"tauri:debug"');
     expect(script).toContain('"tauri:build"');
     expect(itchScript).toContain('"package:itch"');

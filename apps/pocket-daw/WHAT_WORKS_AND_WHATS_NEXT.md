@@ -23,10 +23,16 @@ the package/Tauri/schema metadata at the previous public checkpoint.
 
 ## Current 0.6.37 Checkpoint
 
-- Workspace/UI: Pocket DAW now opens timeline-first with inspector/detail docks minimized, a compact timeline toolbar, Music/Game Music focus presets that actually change layout defaults, lower-dock visibility preserved for Music mode, and panel toggles that preserve timeline scroll.
+- Workspace/UI: Pocket DAW now opens timeline-first with inspector/detail docks minimized, the lower dock tucked by default in Music mode, a compact first-view timeline toolbar for only primary actions, full edit/range tools behind an explicit Tools expander, Music/Game Music focus presets that actually change layout defaults, and panel toggles that preserve timeline scroll.
 - Pocket Audio handoff: the installed DAW launch path from `samfa12.com` now uses the download/open handoff flow, with downloaded/opened payloads accepted reliably and cleared after import so successful handoffs do not repeat unexpectedly.
 - Manual smoke evidence from Sam on 2026-07-03: save/load passed, Pocket Audio handoff push from `samfa12.com` into Pocket DAW passed, and audible playback sounded good.
 - Release evidence is tracked in `release-status.json` and generated into `docs/CURRENT_RELEASE_STATUS.md`; the 0.6.37 updater manifest, exact installer hash, installed MCP open/save/validate/play smoke and Sam's manual smoke notes are recorded there.
+
+## Unreleased Source Checkpoint After 0.6.37
+
+- UI density checkpoint: current source opens with the timeline as the dominant work area, hides native file inputs offscreen, keeps the lower dock tucked in Music mode, keeps full timeline/range tools behind the explicit `Tools` expander, and scrolls the app shell to the lower dock when rail/dock buttons open it. Sam manually confirmed the new UI direction is good enough to pause UI work for now.
+- CI/release reliability checkpoint: `.github/workflows/ci.yml` now uses GitHub action majors that run on the current Node action runtime, Pocket Audio Core declares its Playwright browser-trace dependency, and `npm run verify:release` now runs both `verify:ci-workflow` and `packages/pocket-audio-core` `verify:family-parity` before DAW tests/build/package checks.
+- Remaining goal boundary: the small/medium reliability and UI-density work is now checkpointed; the remaining north-star gaps are large feature tracks, especially simultaneous multitrack capture, user-facing punch/take lanes, pitch-preserving time-stretch/pitch-shift, richer routing/latency tools, compressed export codecs and eventual plugin-host research.
 
 ## DAW capability map and next direction
 
@@ -72,6 +78,8 @@ New DAW features should not be bolted on as side modules. Each important capabil
 9. Stereo and simultaneous multitrack recording: explicit input assignment, stereo tracks, monitoring controls, low-latency device paths, full take lanes, punch recording, and comping. One-track mono/stereo recording plus input preflight, source-only grouped future-capture planning, grouped-take activation, UI/file/live MCP take-lane audition activation, lane-level MCP/status observation, UI/file/live MCP archive/restore, comp-from-bar and active-edit-range comp foundations, explicit MCP punch-range setup and helper/file/live MCP punch-window placement are foundations only; simultaneous capture, user-facing punch regions and full take-lane editing remain future work.
 10. Audio quantization and pitch tools: transient detection, warp markers, source-safe varispeed rate/pitch-as-speed and global warp-marker varispeed now have a first playback/export foundation; pitch-preserving time-stretch, pitch-shift, groove matching, and vocal pitch correction/autotune still wait until preservation and latency are dependable.
 11. Plugin hosting or bridge: evaluate CLAP/VST3/LV2 and related open-source host code only after the native mixer, automation, preset, render, and crash-boundary contracts are ready.
+
+Future plugin-host testing resource: Sam flagged this community-maintained Reddit-user plugin spreadsheet as a useful candidate pool for eventual plugin-host smoke matrices: `https://docs.google.com/spreadsheets/d/1qYb97aGzuAzDK8YoNB3N1LaVOEoelJc7y2CXCZBd0RU/edit?gid=0#gid=0`. Treat it as an external research source, not an endorsement or bundled dependency list. Before testing against it, review each candidate for license/distribution terms, Windows availability, format support, offline installer safety, reproducible download links, CPU/crash behavior, preset/state persistence, automation surface, latency reporting, scan failure behavior and whether it is appropriate for a free Pocket DAW test matrix.
 
 ### Open-source acceleration policy
 

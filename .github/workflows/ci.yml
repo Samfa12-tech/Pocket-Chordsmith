@@ -26,8 +26,8 @@ jobs:
             packages/pocket-audio-core/package-lock.json
             packages/pcs-format/package-lock.json
 
-      - name: Install Playwright Chromium
-        run: npx --yes playwright@1.52.0 install --with-deps chromium
+      - name: Install Playwright system dependencies
+        run: npx --yes playwright@1.61.1 install-deps chromium
 
       - name: Repository hygiene
         shell: bash
@@ -49,6 +49,7 @@ jobs:
         working-directory: packages/pocket-audio-core
         run: |
           npm ci
+          npx playwright install chromium
           npm test
           npm run build
           npm run verify:family-parity
@@ -64,6 +65,7 @@ jobs:
         working-directory: apps/chordsmith-web
         run: |
           npm ci
+          npx playwright install chromium
           npm run build
           npm run test:e2e
           npm run package:itch
@@ -72,6 +74,7 @@ jobs:
         working-directory: apps/pocket-dj
         run: |
           npm ci
+          npx playwright install chromium
           npm run package:itch
           npm run test:e2e
 
@@ -79,6 +82,7 @@ jobs:
         working-directory: apps/pocket-daw
         run: |
           npm ci
+          npx playwright install chromium
           npm run verify:versions
           npm test
           npm run build
@@ -86,7 +90,7 @@ jobs:
 
       - name: Upload browser test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: browser-test-reports-${{ github.run_id }}
           if-no-files-found: ignore
@@ -120,7 +124,7 @@ jobs:
           rustup component add clippy
 
       - name: Cache Cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -142,7 +146,7 @@ jobs:
 
       - name: Upload native check reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pocket-daw-windows-native-reports-${{ github.run_id }}
           if-no-files-found: ignore
