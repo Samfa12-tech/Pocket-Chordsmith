@@ -4,7 +4,7 @@
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current public release truth: see `docs/CURRENT_RELEASE_STATUS.md`; `0.6.36` is the current release checkpoint being prepared/published with timeline-first UI and Pocket Audio handoff evidence.
+- Current public release truth: see `docs/CURRENT_RELEASE_STATUS.md`; `0.6.36` is the current published updater checkpoint with timeline-first UI and Pocket Audio handoff evidence.
 - Last completed public artifact record in this repo: tracked in `release-status.json`
 - Last installed public smoke evidence in this repo: tracked in `release-status.json`
 - Machine-readable release status: `release-status.json`
@@ -26,7 +26,7 @@ the package/Tauri/schema metadata at the previous public checkpoint.
 - Workspace/UI: Pocket DAW now opens timeline-first with inspector/detail docks minimized, a compact timeline toolbar, and Music/Game Music focus presets that actually change layout defaults.
 - Pocket Audio handoff: the installed DAW launch path from `samfa12.com` now uses the download/open handoff flow, with the QR/local-network fallback removed from the public path.
 - Manual smoke evidence from Sam on 2026-07-03: save/load passed, Pocket Audio handoff push from `samfa12.com` into Pocket DAW passed, and audible playback sounded good.
-- Release evidence is tracked in `release-status.json` and generated into `docs/CURRENT_RELEASE_STATUS.md`; exact installer hash and live updater publication evidence must be refreshed there after packaging/publishing.
+- Release evidence is tracked in `release-status.json` and generated into `docs/CURRENT_RELEASE_STATUS.md`; the 0.6.36 updater manifest, exact installer hash, installed MCP smoke and Sam's manual smoke notes are recorded there.
 
 ## DAW capability map and next direction
 

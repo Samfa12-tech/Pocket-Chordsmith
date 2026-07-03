@@ -2,7 +2,7 @@
 
 Pocket DAW is a Windows desktop arrangement and production app for Pocket Chordsmith projects.
 
-Current public status: **free Windows alpha testing on itch**. Treat `docs/CURRENT_RELEASE_STATUS.md`, generated from `release-status.json`, as the current source/public/smoke truth. The current release checkpoint being prepared/published is `0.6.36`.
+Current public status: **free Windows alpha testing on itch**. Treat `docs/CURRENT_RELEASE_STATUS.md`, generated from `release-status.json`, as the current source/public/smoke truth. The current published updater checkpoint is `0.6.36`.
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
@@ -97,9 +97,10 @@ Architecture docs:
 ## Current Caveats
 
 - This is alpha-testing software, not a finished professional DAW.
-- Current source may contain unreleased post-`0.6.34` docs, tests, or source
-  organization work. Publish the next binary only after bumping the checkpoint
-  version and updating the release truth with exact-artifact smoke evidence.
+- Current source may contain unreleased docs, tests, or source organization
+  work after the latest published checkpoint. Publish the next binary only
+  after bumping the checkpoint version and updating the release truth with
+  exact-artifact smoke evidence.
 - Live recording is an installed-app-only alpha slice: one armed mono live audio track, saved-project prerequisite, project-relative WAV takes under `project-media/recordings`, metronome/count-in, monitor while armed/recording, and same-track overwrite placement for new takes.
 - v0.6.8 is the updater-visible native-cache diagnostics patch. It keeps the lofi/chillhop parity work, keeps manual Build Native Cache swapping active native playback to cached WAV regions, adds Native Playback/Native Cache readouts for cached regions, cached clips and procedural fallback events, and keeps lofi texture/noise ticks from falsely driving the Drums mixer meter.
 - v0.6.9 is the native lofi-bass audibility hotfix. It removes the extra native-only bass output pad so procedural `warm_sub` bass matches the Chordsmith/WebAudio scale when the native cache is not active.
