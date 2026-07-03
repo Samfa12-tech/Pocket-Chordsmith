@@ -16,7 +16,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Timeline-First UI + Pocket Audio Handoff`;
+export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Timeline-First UI + Hardened Pocket Audio Handoff`;
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -223,7 +223,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Timeline-First UI + Pocket Audio Handoff
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Timeline-First UI + Hardened Pocket Audio Handoff
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -236,7 +236,9 @@ ${artifactTable}
 - Opens into a timeline-first workspace: the inspector starts hidden, lower dock/media detail are tucked away, and the timeline gets most of the screen.
 - Simplified the timeline toolbar so core editing stays close to the timeline without flooding the first view with every range/edit command.
 - Music and Game Music focus presets now change real layout defaults, helping music creation and game-export work feel less crowded.
+- The Music focus preset keeps the lower dock available, timeline tools stay collapsed on open, and panel toggles preserve scroll so the timeline does not jump while working.
 - Pocket Audio handoff now uses the download/open path for installed DAW launch from samfa12.com, avoiding the old QR/local-network fallback.
+- Hardened installed Pocket Audio handoff imports so downloaded/opened payloads from samfa12.com are accepted reliably and cleared after import instead of repeating unexpectedly.
 - Sam manually smoke-tested save/load, Pocket Audio handoff push from samfa12.com, and audible playback/listening quality for this release checkpoint.
 - The existing Chordsmith, DJ, MIDI, native decode, WAV export, stem, section-loop, Godot and web-game pack foundations remain part of this alpha line.
 - Pocket DAW bass tone now matches Pocket Chordsmith much more closely in the installed/native path by applying Chordsmith-style harmonic low-pass filtering to generated bass waves.

@@ -1,11 +1,14 @@
 {
   "schema": 1,
-  "sourceVersion": "0.6.36",
+  "sourceVersion": "0.6.37",
   "projectSchemaVersion": 2,
   "latestPublishedVersion": "0.6.36",
   "latestPublishedTag": "pocket-daw-v0.6.36",
   "latestPublishedCommit": "c9376495b5f6b4f1ca56548352f01deefb0faad1",
-  "unreleasedSourceNotes": [],
+  "unreleasedSourceNotes": [
+    "0.6.37 candidate keeps the 0.6.36 timeline-first UI direction while preserving the lower dock for the Music preset, keeping timeline tools collapsed by default, and preserving scroll when opening panels.",
+    "0.6.37 candidate includes hardened installed Pocket Audio handoff import handling for downloaded/opened payloads from samfa12.com."
+  ],
   "lastInstalledSmoke": {
     "version": "0.6.36",
     "commit": "c9376495b5f6b4f1ca56548352f01deefb0faad1",

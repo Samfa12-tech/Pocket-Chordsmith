@@ -1,6 +1,6 @@
 {
   "name": "pocket-daw",
-  "version": "0.6.36",
+  "version": "0.6.37",
   "description": "Free Windows desktop arrangement and production app for Pocket Chordsmith projects, built with Vite, TypeScript, Tauri, and native audio playback.",
   "private": true,
   "license": "UNLICENSED",

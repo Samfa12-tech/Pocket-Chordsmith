@@ -216,7 +216,7 @@ export function createInitialState(): AppState {
     uiCreationPreset: "music",
     collapsedUiSections: createUiCollapsedSections({
       "timeline-tools": true,
-      "lower-dock": true,
+      "lower-dock": false,
       "media-pool": true
     }),
     lowerDockTab: "mixer",
@@ -288,7 +288,6 @@ export function collapsedSectionsForCreationPreset(preset: UiCreationPreset): Ui
   }
   return createUiCollapsedSections({
     "timeline-tools": true,
-    "lower-dock": true,
     "media-pool": true
   });
 }

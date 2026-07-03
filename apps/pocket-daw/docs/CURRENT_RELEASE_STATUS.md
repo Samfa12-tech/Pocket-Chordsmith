@@ -4,7 +4,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.36` |
+| Source version | `0.6.37` |
 | Project schema version | `2` |
 | Latest published version | `0.6.36` |
 | Latest published tag | `pocket-daw-v0.6.36` |
@@ -28,7 +28,8 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
-- No unreleased source-only notes recorded.
+- 0.6.37 candidate keeps the 0.6.36 timeline-first UI direction while preserving the lower dock for the Music preset, keeping timeline tools collapsed by default, and preserving scroll when opening panels.
+- 0.6.37 candidate includes hardened installed Pocket Audio handoff import handling for downloaded/opened payloads from samfa12.com.
 
 ## Capability Claim Boundary
 

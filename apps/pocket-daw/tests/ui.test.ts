@@ -249,7 +249,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(gameTransport).toContain('data-action="preset-game-music" aria-pressed="true"');
   });
 
-  it("opens the default workspace as timeline-first instead of inspector-and-mixer-first", () => {
+  it("opens the default workspace as timeline-first with edit tools tucked away", () => {
     const state = createTimelineFirstInitialState();
     const html = renderAppShell(state);
 
@@ -259,7 +259,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('aria-label="Essential timeline tools"');
     expect(html).toContain("Loop off / No range");
     expect(html).toContain('data-action="toggle-inspector" title="Show the selected clip and track inspector">Inspector</button>');
-    expect(html).toContain('class="mixer lower-dock collapsed"');
+    expect(html).toContain('class="mixer lower-dock"');
+    expect(html).not.toContain('class="mixer lower-dock collapsed"');
     expect(html).toContain('class="media-pool collapsed"');
     expect(html).not.toContain('data-inspector-resize-handle="true"');
   });
@@ -278,7 +279,7 @@ describe("Pocket DAW UI rendering", () => {
       "timeline-tools": true,
       "inspector-clip": false,
       "inspector-track": false,
-      "lower-dock": true,
+      "lower-dock": false,
       "media-pool": true
     });
     expect(lowerDockTabForCreationPreset("music", "export-details")).toBe("mixer");

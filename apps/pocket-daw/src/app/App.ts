@@ -2714,7 +2714,11 @@ export class App {
     if (action === "record-toggle") await this.toggleRecording();
     if (action === "preset-music" || action === "preset-game-music") {
       this.state.uiCreationPreset = action === "preset-game-music" ? "game-music" : "music";
-      this.state.collapsedUiSections = collapsedSectionsForCreationPreset(this.state.uiCreationPreset);
+      const presetSections = collapsedSectionsForCreationPreset(this.state.uiCreationPreset);
+      this.state.collapsedUiSections = {
+        ...presetSections,
+        "lower-dock": this.state.collapsedUiSections["lower-dock"] ?? false
+      };
       this.state.lowerDockTab = lowerDockTabForCreationPreset(this.state.uiCreationPreset, this.state.lowerDockTab);
       this.state.inspectorVisible = false;
       this.state.status = this.state.uiCreationPreset === "game-music"
@@ -2746,45 +2750,45 @@ export class App {
     if (action === "seek-start") this.seekToBar(1, true);
     if (action === "controls-open") {
       this.state.showControls = true;
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "controls-close") {
       this.state.showControls = false;
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "file-window-open") {
       this.state.showFilePanel = true;
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "file-window-close") {
       this.state.showFilePanel = false;
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "add-track-open") {
       this.state.showAddTrack = true;
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "add-bus-track") this.applyProjectState(addBusTrackCommand(this.state), { audio: "mixer-graph", preserveScroll: true, reason: "add-bus-track" });
     if (action === "add-return-track") this.applyProjectState(addReturnTrackCommand(this.state), { audio: "mixer-graph", preserveScroll: true, reason: "add-return-track" });
     if (action === "add-track-close") {
       this.state.showAddTrack = false;
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "audio-settings-open") {
       this.state.showAudioSettings = true;
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "audio-settings-close") {
       this.state.showAudioSettings = false;
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "updater-open") {
       this.state.showUpdaterPanel = true;
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "updater-close") {
       this.state.showUpdaterPanel = false;
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "mcp-setup-open") {
       this.state.showMcpSetupPanel = true;
@@ -2797,11 +2801,11 @@ export class App {
     }
     if (action === "function-guide-open") {
       this.state.showFunctionGuidePanel = true;
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "function-guide-close") {
       this.state.showFunctionGuidePanel = false;
-      this.render();
+      this.render({ preserveScroll: true });
     }
     if (action === "copy-mcp-setup") await this.copyMcpSetup(actionSource?.dataset.copyMcpSetup || "all");
     if (action === "ai-bridge-test") await this.testAiBridgeConnection();
@@ -2858,6 +2862,7 @@ export class App {
       this.state.collapsedUiSections = { ...this.state.collapsedUiSections, "lower-dock": false };
       this.state.status = `${this.state.lowerDockTab[0].toUpperCase()}${this.state.lowerDockTab.slice(1)} dock selected.`;
       this.render({ preserveScroll: true });
+      this.root.querySelector<HTMLElement>(".mixer.lower-dock")?.scrollIntoView({ block: "start", inline: "nearest" });
     }
     if (action === "studio-focus-godot") {
       this.state.showFilePanel = false;
