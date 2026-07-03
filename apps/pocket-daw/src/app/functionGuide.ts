@@ -158,21 +158,21 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
     entries: [
       {
         name: "Select Clip / Track",
-        does: "Chooses the clip and track shown in the inspector and lower dock editors.",
-        useWhen: "Use before editing clip transforms, track routing, automation, MIDI, audio, or Chordsmith section data.",
-        aiNote: "MCP live tools can select tracks/clips when visual control is not available."
+        does: "Chooses the primary clip and track shown in the inspector and lower dock editors; Ctrl-click, Cmd-click or Shift-click adds/removes clips from the current multi-selection.",
+        useWhen: "Use before editing clip transforms, track routing, automation, MIDI, audio, Chordsmith section data, drag movement, or bulk timeline clipboard edits.",
+        aiNote: "MCP live tools can select tracks/clips when visual control is not available. Multi-selection is UI/runtime state; the primary selected clip still anchors inspector-only commands."
       },
       {
         name: "Move Left / Move Right",
-        does: "Moves the selected clip earlier or later by the current snap step.",
+        does: "Moves the selected clip, or every clip in the active multi-selection, earlier or later by the current snap step; dragging one selected clip moves the selected group together.",
         useWhen: "Use for arrangement timing changes while preserving the source clip.",
         aiNote: "Check snap mode before moving. Bar and beat moves are intentionally different."
       },
       {
         name: "Cut / Copy / Paste / Duplicate",
-        does: "Cuts, copies, pastes, or duplicates selected clips without altering the original source media.",
-        useWhen: "Use for moving material, repeating sections, building song form, or testing alternate placements.",
-        aiNote: "Cut removes the timeline clip and keeps a clipboard copy as one undoable edit; Paste depends on clipboard state."
+        does: "Cuts, copies, pastes, or duplicates the selected clip or selected clip group without altering original source media.",
+        useWhen: "Use for moving material, repeating sections, building song form, copying multi-track MIDI imports, or testing alternate placements.",
+        aiNote: "Group clipboard edits preserve relative clip spacing. Cut removes timeline clips and keeps a runtime clipboard copy as one undoable edit; Paste depends on clipboard state."
       },
       {
         name: "Split Clip",
@@ -188,7 +188,7 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "Mute Clip / Delete Clip",
-        does: "Mute silences the clip nondestructively; Delete removes it from the timeline.",
+        does: "Mute silences the selected clip or clip group nondestructively; Delete removes the selected clip or clip group from the timeline.",
         useWhen: "Use Mute for auditioning alternatives and Delete for removing unwanted arrangement material.",
         aiNote: "Prefer Mute when the user may want to recover an idea quickly."
       },
@@ -924,17 +924,17 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     control: "Cut Clip",
     actionId: "clip-cut",
     shortcut: "Ctrl+X",
-    does: "Copies the selected clip to the clipboard and removes it from the timeline.",
-    useWhen: "Use to move material elsewhere while keeping a clipboard copy.",
-    aiNote: "This is undoable. Verify paste target before moving user material."
+    does: "Copies the selected clip or selected clip group to the clipboard and removes it from the timeline.",
+    useWhen: "Use to move one clip or an arranged group elsewhere while keeping a clipboard copy.",
+    aiNote: "This is undoable. Group cuts preserve relative timing for paste. Verify paste target before moving user material."
   },
   {
     surface: "Timeline Editing",
     control: "Copy Clip",
     actionId: "clip-copy",
     shortcut: "Ctrl+C",
-    does: "Copies the selected whole clip to the clipboard without changing the timeline.",
-    useWhen: "Use before Paste or when repeating material.",
+    does: "Copies the selected whole clip or selected clip group to the clipboard without changing the timeline.",
+    useWhen: "Use before Paste or when repeating single-clip or multi-track material.",
     aiNote: "Clipboard state is runtime UI state, not a durable project artifact."
   },
   {
@@ -942,17 +942,17 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     control: "Paste Clip",
     actionId: "clip-paste",
     shortcut: "Ctrl+V",
-    does: "Pastes the current clip clipboard at the cursor/playhead context.",
+    does: "Pastes the current clip or clip-group clipboard at the cursor/playhead context.",
     useWhen: "Use after Cut Clip, Copy Clip, Copy Range, or Cut Range.",
-    aiNote: "Paste can fail clearly if the clipboard is empty."
+    aiNote: "Group paste keeps the copied clips' relative bar spacing. Paste can fail clearly if the clipboard is empty."
   },
   {
     surface: "Timeline Editing",
     control: "Duplicate Clip",
     actionId: "clip-duplicate",
     shortcut: "D",
-    does: "Creates a copy of the selected clip immediately after itself.",
-    useWhen: "Use to repeat phrases, loops, sections, or imported clips.",
+    does: "Creates a copy of the selected clip after itself, or a selected clip group after the selected group's span.",
+    useWhen: "Use to repeat phrases, loops, sections, imported clips, or multi-track MIDI sections.",
     aiNote: "Duplicate keeps source-safe metadata; inspect overlap if clip lengths are unusual."
   },
   {
@@ -969,7 +969,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     control: "Delete Clip",
     actionId: "clip-delete",
     shortcut: "Delete",
-    does: "Removes the selected clip from the timeline.",
+    does: "Removes the selected clip or selected clip group from the timeline.",
     useWhen: "Use when material is no longer needed in the arrangement.",
     aiNote: "Prefer Mute Clip when the user may want to audition alternatives."
   },
@@ -977,7 +977,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "Timeline Editing",
     control: "Mute Clip",
     actionId: "clip-mute",
-    does: "Silences or unsilences the selected clip without removing it.",
+    does: "Silences or unsilences the selected clip or selected clip group without removing it.",
     useWhen: "Use to audition alternate arrangements safely.",
     aiNote: "Muted clips still exist and should be considered in arrangement reviews."
   },

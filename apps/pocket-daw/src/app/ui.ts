@@ -607,6 +607,7 @@ function renderTimelineRows(state: AppState): string {
   });
   const clips = sortClips(project.timeline.clips);
   const pcs = getPrimaryChordsmithSource(project);
+  const selectedClipIds = selectedClipIdSet(state);
   return rows
     .map((track) => {
       const branchLane = generatedDrumBranchLane(track);
@@ -615,7 +616,7 @@ function renderTimelineRows(state: AppState): string {
       return `
         <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${track.trackType === "folder" ? "folder-row" : ""} ${track.folderId ? "folder-child-row" : ""} ${branchLane ? "drum-branch-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}"${branchAttrs}${folderChildAttrs}>
           ${renderTimelineTrackHeader(project, track, state.selectedTrackId === track.id, pcs)}
-          ${clips.map((clip) => renderClip(project, clip, state.selectedClipId === clip.id, track, !!pcs)).join("")}
+          ${clips.map((clip) => renderClip(project, clip, selectedClipIds.has(clip.id), track, !!pcs)).join("")}
           ${renderRecordingPreview(state, track)}
           ${renderInlineChordsmithEditor(state, pcs, track, clips)}
         </div>
@@ -651,6 +652,10 @@ function renderTimelineTrackHeader(project: ReturnType<typeof currentProject>, t
       <span class="track-state">${isFolder ? `${childCount} lanes` : ""}${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${canRecord ? recordChannelLabel.slice(0, 2) : ""}${track.monitorEnabled ? "Mon" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
     </div>
   `;
+}
+
+function selectedClipIdSet(state: AppState): Set<string> {
+  return new Set([state.selectedClipId || "", ...(state.selectedClipIds || [])].filter(Boolean));
 }
 
 function trackHeaderLaneText(project: ReturnType<typeof currentProject>, track: Track, pcs: SanitizedPcsProject | null): string {
@@ -723,7 +728,7 @@ function renderInlineChordsmithClip(
               : "";
   if (!body) return "";
   return `
-    <div class="inline-sequencer inline-${sanitizeDomId(track.role, "role")} ${state.selectedClipId === clip.id ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${sanitizeDataAttr(clip.id)}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-inline-row="${sanitizeDataAttr(track.id)}" data-row="${sanitizeDataAttr(track.id)}" data-inline-sequencer-role="${sanitizeDataAttr(track.role)}" data-inline-section="${sanitizeDataAttr(section.id)}"${track.role === "drums" ? ` data-drum-branch-entry="inline"` : ""} title="Drag empty space to move with snap. Drag the right handle to repeat the section.${track.role === "drums" ? " Double-click or right-click empty space to branch generated drums." : ""}" style="left:${left};width:${width};--inline-steps:${sanitizeCssLengthOrNumber(renderSteps, 0, 0, 256)};">
+    <div class="inline-sequencer inline-${sanitizeDomId(track.role, "role")} ${selectedClipIdSet(state).has(clip.id) ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${sanitizeDataAttr(clip.id)}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-inline-row="${sanitizeDataAttr(track.id)}" data-row="${sanitizeDataAttr(track.id)}" data-inline-sequencer-role="${sanitizeDataAttr(track.role)}" data-inline-section="${sanitizeDataAttr(section.id)}"${track.role === "drums" ? ` data-drum-branch-entry="inline"` : ""} title="Drag empty space to move with snap. Ctrl-click or Cmd-click to select multiple clips. Drag the right handle to repeat the section.${track.role === "drums" ? " Double-click or right-click empty space to branch generated drums." : ""}" style="left:${left};width:${width};--inline-steps:${sanitizeCssLengthOrNumber(renderSteps, 0, 0, 256)};">
       <span class="clip-drag-handle" data-clip-drag-handle="${sanitizeDataAttr(clip.id)}" title="Drag to move this section with snap"></span>
       ${body}
       <span class="clip-loop-handle" data-clip-loop-handle="${sanitizeDataAttr(clip.id)}" title="Drag right to repeat this section"></span>
@@ -853,7 +858,7 @@ function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, sele
   const peaks = Array.isArray(media?.metadata?.waveformPeaks) ? media.metadata.waveformPeaks.slice(0, 48) : [];
   const midi = clip.type === "midi" ? midiDataFromClip(clip) : null;
   const branchEntry = clip.type === "generated-section" && track.role === "drums" ? ` data-drum-branch-entry="clip"` : "";
-  const title = `Drag to move with snap. Drag the right handle to repeat generated sections.${branchEntry ? " Double-click or right-click to branch generated drums." : ""}`;
+  const title = `Drag to move with snap. Ctrl-click or Cmd-click to select multiple clips. Drag the right handle to repeat generated sections.${branchEntry ? " Double-click or right-click to branch generated drums." : ""}`;
   return `
     <button class="clip ${selected ? "selected" : ""} ${clip.muted ? "muted" : ""} ${clip.type === "audio" ? "audio-clip" : ""} ${clip.type === "midi" ? "midi-clip" : ""}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-row="${sanitizeDataAttr(track.id)}"${branchEntry} title="${escapeAttr(title)}" style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(Number(clip.startBar) - 1, 0)} * var(--bar)`)};width:calc(${sanitizeCssLengthOrNumber(clip.barLength, 1, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(clip.color)};background:color-mix(in srgb, ${safeClipColour(clip.color)} 28%, #15192a);">
       <strong>${escapeHtml(clip.sectionId || clip.name)}</strong>

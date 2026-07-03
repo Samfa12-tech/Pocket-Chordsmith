@@ -10,16 +10,21 @@ import {
   convertMidiDrumsToBranchOverlaysCommand,
   convertMidiArrangementToGeneratedOverlaysCommand,
   convertMidiMelodyToGeneratedOverlaysCommand,
+  copySelectedClip,
   copySelectedClipRangeCommand,
+  deleteSelectedClip,
+  duplicateSelectedClip,
   cropSelectedClipToTimelineSelectionCommand,
   cutSelectedClip,
   cutSelectedClipRangeCommand,
   cycleDrumBranchStepCommand,
+  moveClipToBarCommand,
   pasteClipAtPlayhead,
   rippleDeleteSelectedClipRangeCommand,
   setSelectedGeneratedClipStemMuteCommand,
   setTimelineSelectionRangeCommand,
   splitTimelineSelectionCommand,
+  toggleSelectedClipMute,
   toggleDrumBranchGroupCollapsedCommand,
   undoCommand
 } from "../src/app/commands";
@@ -398,6 +403,91 @@ describe("generated clip edit commands", () => {
 });
 
 describe("selected clip clipboard commands", () => {
+  it("moves multiple selected clips as a group when one selected clip is dragged to a bar", () => {
+    const state = createInitialState();
+    const selected = state.undoStack.present.timeline.clips.slice(0, 2).sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+    const anchor = selected[1];
+    state.selectedClipId = anchor.id;
+    state.selectedClipIds = selected.map((clip) => clip.id);
+    const delta = 9 - anchor.startBar;
+
+    const moved = moveClipToBarCommand(state, anchor.id, 9);
+    const movedClips = selected.map((clip) => moved.undoStack.present.timeline.clips.find((item) => item.id === clip.id)!);
+
+    expect(moved.status).toBe("Moved 2 selected clips to Bar 9.");
+    expect(moved.undoStack.past).toHaveLength(state.undoStack.past.length + 1);
+    expect(moved.selectedClipId).toBe(anchor.id);
+    expect(moved.selectedClipIds).toEqual(selected.map((clip) => clip.id));
+    expect(movedClips.map((clip) => clip.startBar)).toEqual(selected.map((clip) => clip.startBar + delta));
+  });
+
+  it("duplicates multiple selected clips as one undoable arrangement group", () => {
+    const state = createInitialState();
+    const selected = state.undoStack.present.timeline.clips.slice(0, 2).sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+    state.selectedClipId = selected[0].id;
+    state.selectedClipIds = selected.map((clip) => clip.id);
+    const span = Math.max(...selected.map((clip) => clip.startBar + clip.barLength)) - Math.min(...selected.map((clip) => clip.startBar));
+
+    const duplicated = duplicateSelectedClip(state);
+    const duplicatedClips = (duplicated.selectedClipIds || [])
+      .map((id) => duplicated.undoStack.present.timeline.clips.find((clip) => clip.id === id)!)
+      .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+
+    expect(duplicated.status).toBe("Duplicated 2 selected clips.");
+    expect(duplicated.undoStack.past).toHaveLength(state.undoStack.past.length + 1);
+    expect(duplicated.selectedClipIds).toHaveLength(2);
+    expect(duplicatedClips.map((clip) => clip.name)).toEqual(selected.map((clip) => `${clip.name} copy`));
+    expect(duplicatedClips.map((clip) => clip.startBar)).toEqual(selected.map((clip) => clip.startBar + span));
+  });
+
+  it("mutes and deletes multiple selected clips through one command", () => {
+    const state = createInitialState();
+    const selected = state.undoStack.present.timeline.clips.slice(0, 2);
+    state.selectedClipId = selected[0].id;
+    state.selectedClipIds = selected.map((clip) => clip.id);
+
+    const muted = toggleSelectedClipMute(state);
+    expect(muted.status).toBe("Muted 2 selected clips.");
+    expect(selected.every((clip) => muted.undoStack.present.timeline.clips.find((item) => item.id === clip.id)?.muted)).toBe(true);
+    expect(muted.selectedClipIds).toEqual(selected.map((clip) => clip.id));
+
+    const unmuted = toggleSelectedClipMute(muted);
+    expect(unmuted.status).toBe("Unmuted 2 selected clips.");
+    expect(selected.every((clip) => unmuted.undoStack.present.timeline.clips.find((item) => item.id === clip.id)?.muted === false)).toBe(true);
+
+    const deleted = deleteSelectedClip(state);
+    expect(deleted.status).toBe("Deleted 2 selected clips.");
+    expect(selected.some((clip) => deleted.undoStack.present.timeline.clips.some((item) => item.id === clip.id))).toBe(false);
+    expect(deleted.undoStack.past).toHaveLength(state.undoStack.past.length + 1);
+    expect(deleted.selectedClipIds).toEqual(deleted.selectedClipId ? [deleted.selectedClipId] : []);
+  });
+
+  it("copies, cuts and pastes multiple selected clips while preserving relative timing", () => {
+    const state = createInitialState();
+    const selected = state.undoStack.present.timeline.clips.slice(0, 2).sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+    state.selectedClipId = selected[0].id;
+    state.selectedClipIds = selected.map((clip) => clip.id);
+    const baseStart = Math.min(...selected.map((clip) => clip.startBar));
+
+    const copied = copySelectedClip(state);
+    expect(copied.status).toBe("Copied 2 selected clips.");
+    expect(copied.clipClipboard).toBeNull();
+    expect(copied.clipClipboardGroup).toHaveLength(2);
+
+    const pasted = pasteClipAtPlayhead({ ...copied, playheadBar: 12 });
+    const pastedClips = (pasted.selectedClipIds || [])
+      .map((id) => pasted.undoStack.present.timeline.clips.find((clip) => clip.id === id)!)
+      .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+    expect(pasted.status).toBe("Pasted 2 clips at playhead.");
+    expect(pastedClips.map((clip) => clip.startBar)).toEqual(selected.map((clip) => 12 + (clip.startBar - baseStart)));
+    expect(pastedClips.map((clip) => clip.name)).toEqual(selected.map((clip) => `${clip.name} pasted`));
+
+    const cut = cutSelectedClip(state);
+    expect(cut.status).toBe("Cut 2 selected clips.");
+    expect(cut.clipClipboardGroup).toHaveLength(2);
+    expect(selected.some((clip) => cut.undoStack.present.timeline.clips.some((item) => item.id === clip.id))).toBe(false);
+  });
+
   it("cuts the selected clip as one undoable edit and keeps it pasteable", () => {
     const state = createInitialState();
     const originalClip = state.undoStack.present.timeline.clips.find((clip) => clip.id === state.selectedClipId)!;

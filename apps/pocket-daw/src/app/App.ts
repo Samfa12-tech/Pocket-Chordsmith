@@ -698,6 +698,7 @@ export class App {
       const clip = project.timeline.clips.find((item) => item.id === clipId);
       if (!clip) return { ok: false, code: "clip_not_found", message: `Clip not found: ${clipId}` };
       this.state.selectedClipId = clipId;
+      this.state.selectedClipIds = [clipId];
       this.state.selectedTrackId = clip.trackId || this.state.selectedTrackId;
       this.state.status = `Selected ${clip.name}.`;
       this.render({ preserveScroll: true });
@@ -1071,13 +1072,12 @@ export class App {
 
   private bind() {
     this.root.querySelectorAll<HTMLElement>("[data-clip-id]:not([data-inline-sequencer])").forEach((el) => {
-      el.addEventListener("click", () => {
+      el.addEventListener("click", (event) => {
         if (this.consumeSuppressedClipClick()) return;
-        this.state.selectedClipId = el.dataset.clipId || null;
+        const clipId = el.dataset.clipId || "";
         const row = el.dataset.row || "";
         const rowTrack = currentProject(this.state).tracks.find((track) => track.id === row) || currentProject(this.state).tracks.find((track) => track.role === row);
-        if (rowTrack) this.state.selectedTrackId = rowTrack.id;
-        this.state.status = `Selected ${this.state.selectedClipId}.`;
+        this.selectClipFromGesture(clipId, rowTrack?.id || row || null, event.ctrlKey || event.metaKey || event.shiftKey);
         this.render({ preserveScroll: true });
       });
     });
@@ -1845,13 +1845,17 @@ export class App {
     const startClientX = event.clientX;
     const startBar = clip.startBar;
     const grabOffsetBars = mode === "move" ? Math.max(0, this.clientXToTimelineBar(timeline, event.clientX) - clip.startBar) : 0;
+    const selectedIds = this.normalizedSelectedClipIds();
+    const preserveGroup = selectedIds.length > 1 && selectedIds.includes(clipId);
     this.state.selectedClipId = clipId;
+    this.state.selectedClipIds = preserveGroup ? selectedIds : [clipId];
     this.state.selectedTrackId = inlineClip?.dataset.inlineRow || visibleClip?.dataset.row || this.state.selectedTrackId;
     this.render({ preserveScroll: true });
-    const dragNodes = () => [
-      ...findDataElements<HTMLElement>(this.root, "data-inline-clip-id", clipId),
-      ...findDataElements<HTMLElement>(this.root, "data-clip-id", clipId)
-    ];
+    const selectedDragIds = mode === "move" && preserveGroup ? selectedIds : [clipId];
+    const dragNodes = () => selectedDragIds.flatMap((id) => [
+      ...findDataElements<HTMLElement>(this.root, "data-inline-clip-id", id),
+      ...findDataElements<HTMLElement>(this.root, "data-clip-id", id)
+    ]);
     let latestValue = mode === "move" ? startBar : clip.startBar + clip.barLength;
     const preview = (clientX: number) => {
       const currentTimeline = this.root.querySelector<HTMLElement>("[data-timeline-surface]") || timeline;
@@ -1865,7 +1869,7 @@ export class App {
           node.style.transform = `translateX(${dx}px)`;
           node.classList.add("dragging");
         });
-        this.state.status = `Dragging ${clip.name} to Bar ${latestValue}.`;
+        this.state.status = preserveGroup ? `Dragging ${selectedDragIds.length} clips to Bar ${latestValue}.` : `Dragging ${clip.name} to Bar ${latestValue}.`;
       } else {
         const repeatBars = Math.max(0, latestValue - (clip.startBar + clip.barLength));
         dragNodes().forEach((node) => {
@@ -2609,9 +2613,12 @@ export class App {
     if (inlineClip) {
       if (this.consumeSuppressedClipClick()) return;
       if (target?.closest("button, input, select, textarea")) return;
-      this.state.selectedClipId = inlineClip.dataset.inlineClipId || null;
-      this.state.selectedTrackId = inlineClip.dataset.inlineRow || this.state.selectedTrackId;
-      this.state.status = `Selected ${this.state.selectedClipId}.`;
+      const mouse = event as MouseEvent;
+      this.selectClipFromGesture(
+        inlineClip.dataset.inlineClipId || "",
+        inlineClip.dataset.inlineRow || this.state.selectedTrackId,
+        mouse.ctrlKey || mouse.metaKey || mouse.shiftKey
+      );
       this.render({ preserveScroll: true });
       return;
     }
@@ -3496,6 +3503,7 @@ export class App {
       this.applyProjectState(commitProject(this.state, placed.project, clipMessage), { autosave: "flush", preserveScroll: true });
       this.state.recording = createRecordingUiState({ message: clipMessage });
       this.state.selectedClipId = placed.clipId || this.state.selectedClipId;
+      this.state.selectedClipIds = this.state.selectedClipId ? [this.state.selectedClipId] : [];
       this.state.selectedTrackId = placed.trackId || this.state.selectedTrackId;
       await this.saveProject(false);
       void this.syncArmedInputPreview(trackId || result.trackId);
@@ -3928,6 +3936,13 @@ export class App {
     this.root.querySelectorAll<HTMLElement>("[data-row]").forEach((row) => {
       row.classList.toggle("selected-row", row.dataset.row === this.state.selectedTrackId);
     });
+    const selectedClipIds = new Set(this.normalizedSelectedClipIds());
+    this.root.querySelectorAll<HTMLElement>("[data-clip-id]").forEach((clip) => {
+      clip.classList.toggle("selected", selectedClipIds.has(clip.dataset.clipId || ""));
+    });
+    this.root.querySelectorAll<HTMLElement>("[data-inline-clip-id]").forEach((clip) => {
+      clip.classList.toggle("selected-clip-editor", selectedClipIds.has(clip.dataset.inlineClipId || ""));
+    });
   }
 
   private updateStatusDom() {
@@ -3946,11 +3961,49 @@ export class App {
 
   private applyProjectState(next: AppState, options: ApplyProjectOptions | boolean = {}) {
     const resolved = this.resolveApplyOptions(options);
-    this.state = next;
+    this.state = this.normalizeClipSelection(next);
     const project = currentProject(this.state);
     if (resolved.autosave !== "none") this.saveAutosaveSnapshot(project);
     if (resolved.audio && resolved.audio !== "none") this.engine.syncProject(project, resolved.audio, resolved.reason);
     this.scheduleRender(resolved.render || "immediate", { preserveScroll: resolved.preserveScroll });
+  }
+
+  private selectClipFromGesture(clipId: string, trackId: string | null, additive: boolean) {
+    const project = currentProject(this.state);
+    const clip = project.timeline.clips.find((item) => item.id === clipId);
+    if (!clip) return;
+    const current = this.normalizedSelectedClipIds();
+    let selectedClipIds = [clipId];
+    if (additive) {
+      selectedClipIds = current.includes(clipId)
+        ? current.filter((id) => id !== clipId)
+        : [...current, clipId];
+      if (!selectedClipIds.length) selectedClipIds = [clipId];
+    }
+    this.state.selectedClipIds = selectedClipIds;
+    this.state.selectedClipId = selectedClipIds.includes(clipId) ? clipId : selectedClipIds[0] || null;
+    this.state.selectedTrackId = trackId || clip.trackId || this.state.selectedTrackId;
+    this.state.status = selectedClipIds.length > 1 ? `${selectedClipIds.length} clips selected.` : `Selected ${this.state.selectedClipId}.`;
+  }
+
+  private normalizedSelectedClipIds(state = this.state): string[] {
+    if (!state.selectedClipId) return [];
+    const project = currentProject(state);
+    const validIds = new Set(project.timeline.clips.map((clip) => clip.id));
+    const requested = [state.selectedClipId || "", ...(state.selectedClipIds || [])].filter(Boolean);
+    return Array.from(new Set(requested)).filter((id) => validIds.has(id));
+  }
+
+  private normalizeClipSelection(state: AppState): AppState {
+    const selectedClipIds = this.normalizedSelectedClipIds(state);
+    const selectedClipId = state.selectedClipId && selectedClipIds.includes(state.selectedClipId)
+      ? state.selectedClipId
+      : selectedClipIds[0] || null;
+    return {
+      ...state,
+      selectedClipId,
+      selectedClipIds: selectedClipIds.length ? selectedClipIds : selectedClipId ? [selectedClipId] : []
+    };
   }
 
   private resolveApplyOptions(options: ApplyProjectOptions | boolean): Required<Omit<ApplyProjectOptions, "preservePlayback">> {
@@ -4487,6 +4540,7 @@ export class App {
       this.applyProjectState({
         ...commitProject(this.state, result.project, `Imported MIDI ${source.name} as ${clipCount} ${clipLabel} with ${parsed.notes.length} note${parsed.notes.length === 1 ? "" : "s"}.${warningSuffix}`),
         selectedClipId: result.primaryClipId,
+        selectedClipIds: result.clipIds.length ? result.clipIds : result.primaryClipId ? [result.primaryClipId] : [],
         selectedTrackId: result.primaryTrackId
       });
       this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "nearest" });
@@ -4779,6 +4833,7 @@ export class App {
       this.applyProjectState({
         ...commitProject(this.state, nextProject, `Froze ${clip.name} to audio and muted the source clip.`),
         selectedClipId: placed.clipId || clip.id,
+        selectedClipIds: [placed.clipId || clip.id],
         selectedTrackId: placed.trackId || clip.trackId
       }, {
         audio: "project-load",
@@ -5623,14 +5678,14 @@ const ACTION_BUTTON_TOOLTIPS: Record<string, string> = {
   "audio-take-comp-from-playhead": "Create a take comp starting at the playhead.",
   "audio-take-comp-range": "Use the selected take only inside the active edit range.",
   "build-native-cache": "Render generated and runtime audio into the native cache.",
-  "clip-copy": "Copy the selected clip to the clipboard.",
-  "clip-cut": "Cut the selected clip to the clipboard.",
-  "clip-delete": "Delete the selected clip.",
-  "clip-duplicate": "Duplicate the selected clip after itself.",
-  "clip-left": "Move the selected clip one snap step earlier.",
-  "clip-mute": "Mute or unmute the selected clip without deleting it.",
+  "clip-copy": "Copy the selected clip or selected clip group to the clipboard.",
+  "clip-cut": "Cut the selected clip or selected clip group to the clipboard.",
+  "clip-delete": "Delete the selected clip or selected clip group.",
+  "clip-duplicate": "Duplicate the selected clip or selected clip group after the selected span.",
+  "clip-left": "Move the selected clip or selected clip group one snap step earlier.",
+  "clip-mute": "Mute or unmute the selected clip or selected clip group without deleting it.",
   "clip-paste": "Paste the copied clip at the cursor.",
-  "clip-right": "Move the selected clip one snap step later.",
+  "clip-right": "Move the selected clip or selected clip group one snap step later.",
   "clip-split": "Split the selected clip at the playhead.",
   "collect-media": "Copy reloadable external media beside the saved project.",
   "controls-close": "Close controls.",
