@@ -2,29 +2,29 @@
   "schema": 1,
   "sourceVersion": "0.6.37",
   "projectSchemaVersion": 2,
-  "latestPublishedVersion": "0.6.36",
-  "latestPublishedTag": "pocket-daw-v0.6.36",
-  "latestPublishedCommit": "c9376495b5f6b4f1ca56548352f01deefb0faad1",
-  "unreleasedSourceNotes": [
-    "0.6.37 candidate keeps the 0.6.36 timeline-first UI direction while preserving the lower dock for the Music preset, keeping timeline tools collapsed by default, and preserving scroll when opening panels.",
-    "0.6.37 candidate includes hardened installed Pocket Audio handoff import handling for downloaded/opened payloads from samfa12.com."
-  ],
+  "latestPublishedVersion": "0.6.37",
+  "latestPublishedTag": "pocket-daw-v0.6.37",
+  "latestPublishedCommit": "7a9021cb580f3911890962b538fc47150f58840d",
+  "unreleasedSourceNotes": [],
   "lastInstalledSmoke": {
-    "version": "0.6.36",
-    "commit": "c9376495b5f6b4f1ca56548352f01deefb0faad1",
-    "installerFile": "Pocket.DAW_0.6.36_x64-setup.exe",
-    "installerSha256": "f074559250cae55bbd22932391b4ba75acc96f95d860f2941d9c5fb46e1e2a85",
-    "testedAt": "2026-07-03T07:43:38.1694606Z",
+    "version": "0.6.37",
+    "commit": "7a9021cb580f3911890962b538fc47150f58840d",
+    "installerFile": "Pocket.DAW_0.6.37_x64-setup.exe",
+    "installerSha256": "63877b49bf61861ee5b05f17eaf18874487c53c0c1cbdac936be7992b0ec09a1",
+    "testedAt": "2026-07-03T11:14:16.2904244Z",
     "result": "pass",
     "notes": [
-      "Pocket DAW 0.6.36 was installed locally from the exact staged updater setup EXE and launched from C:\\Users\\sam_s\\AppData\\Local\\Pocket DAW\\pocket-daw.exe.",
-      "The exact staged setup EXE SHA-256 was f074559250cae55bbd22932391b4ba75acc96f95d860f2941d9c5fb46e1e2a85 and the smoke attestation validated against commit c9376495b5f6b4f1ca56548352f01deefb0faad1.",
-      "MCP live bridge reported Pocket DAW project/app version 0.6.36, schema 2, Imported Chordsmith Project, 12 tracks and 7 clips.",
-      "MCP play started native-cpal playback; the immediate stop request timed out while the native render cache was building, then follow-up status recovered with transport stopped, native render cache coverage full, 66 assets, 70 regions, 7 cached clips, zero procedural fallback events, zero generated stem render failures and no scheduler/cache hotspot signals.",
+      "Pocket DAW 0.6.37 was installed locally from the exact staged updater setup EXE and launched from C:\\Users\\sam_s\\AppData\\Local\\Pocket DAW\\pocket-daw.exe.",
+      "The exact staged setup EXE SHA-256 was 63877b49bf61861ee5b05f17eaf18874487c53c0c1cbdac936be7992b0ec09a1 and the smoke attestation validated against commit 7a9021cb580f3911890962b538fc47150f58840d.",
+      "MCP live bridge reported Pocket DAW project/app version 0.6.37, schema 2, Imported Chordsmith Project, 12 tracks, 7 clips and saved temp project C:\\Users\\sam_s\\AppData\\Local\\Temp\\pocket-daw-0.6.37-save-open-smoke.pocketdaw.",
+      "MCP open/save/validate smoke passed: save_current succeeded and file-first validation reported ok with zero errors or warnings.",
+      "MCP play/stop smoke on the exact installed artifact used native-cpal through WASAPI Speakers at 44100 Hz, 2 channels, callbackCount 187, maxCallbackMicros 1114, slowCallbackCount 0, no native lastError, no scheduler misses, no late/skipped events, no graph rebuild spikes and no hotspot signals.",
+      "Native render cache coverage was full with 70 assets/regions, 7 cached clips, zero procedural fallback events and zero generated stem render failures.",
       "Sam manually smoke-tested save/load on 2026-07-03, Pocket Audio handoff push from samfa12.com into Pocket DAW, and audible playback/listening quality.",
-      "The public GitHub latest updater manifest reports version 0.6.36 and the downloaded setup EXE Pocket.DAW_0.6.36_x64-setup.exe matched SHA-256 f074559250cae55bbd22932391b4ba75acc96f95d860f2941d9c5fb46e1e2a85.",
-      "The public bootstrapper manifest reports version 0.6.36 and installer SHA-256 f074559250cae55bbd22932391b4ba75acc96f95d860f2941d9c5fb46e1e2a85.",
-      "GitHub release pocket-daw-v0.6.36 was published with 10 assets and marked latest. Itch remains on the existing bootstrapper channel; the bootstrapper now resolves the new GitHub installer."
+      "The public GitHub latest updater manifest reports version 0.6.37 and the downloaded setup EXE Pocket.DAW_0.6.37_x64-setup.exe matched SHA-256 63877b49bf61861ee5b05f17eaf18874487c53c0c1cbdac936be7992b0ec09a1.",
+      "The public bootstrapper manifest reports version 0.6.37 and installer SHA-256 63877b49bf61861ee5b05f17eaf18874487c53c0c1cbdac936be7992b0ec09a1.",
+      "GitHub release pocket-daw-v0.6.37 was published with 10 assets and marked latest. Itch remains on the existing bootstrapper channel; the bootstrapper now resolves the new GitHub installer.",
+      "The guarded publish command rebuilt a timestamped installer with a different SHA-256 before upload; this exact staged artifact was re-smoked and then published manually to keep the public updater hash aligned with the installed test artifact."
     ]
   }
 }
