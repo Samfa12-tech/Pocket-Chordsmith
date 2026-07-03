@@ -16,6 +16,7 @@
       "import": "./dist/pocket-audio-core.esm.js",
       "default": "./dist/pocket-audio-core.esm.js"
     },
+    "./browser": "./dist/pocket-audio-core.browser.esm.js",
     "./src": "./src/index.js"
   },
   "scripts": {

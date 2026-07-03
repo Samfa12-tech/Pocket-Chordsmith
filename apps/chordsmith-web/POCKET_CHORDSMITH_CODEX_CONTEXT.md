@@ -101,6 +101,7 @@ These are the important current-v68 facts Codex should assume and verify in the 
 - Recent compatibility features include western procedural instruments, playback-section visual following, guitar fill/generation helpers, compact JSON export, and `Push to DJ` / `Push to Godot` handoffs using existing `PCS1:` codes.
 - v67 upgraded `Push to Godot` to try the local Godot addon receiver first, then keep the v66 clipboard/paste fallback.
 - v68 adds the first Pocket Audio Core bridge for local project load/timeline diagnostics and a core-first WAV export path when the local module is available.
+- Mobile-to-desktop DAW/Godot handoff is intentionally a PCS1 transfer flow, not direct localhost push. `Send to Pocket DAW` and `Push to Godot` only reach apps on the same device; phone users should use Mobile transfer to copy/share/download a PCS1 code or open `https://samfa12.com/apps/pocket-audio-handoff/`. That static page keeps data client-side and is not a cloud relay.
 - New fields must remain optional and backwards compatible.
 
 Useful areas to inspect before most changes:

@@ -153,6 +153,12 @@ test("settings modal opens import and handoff tools", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "Push to Godot" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Mobile transfer" }),
+  ).toBeVisible();
+  await expect(page.locator("#pushHandoffStatus")).toContainText(
+    "same-device/localhost",
+  );
   await expect(page.locator("#pocketAudioCoreStatus")).toContainText(
     "Pocket Audio Core",
   );
@@ -922,6 +928,146 @@ test("Godot push reports browser loopback permission blocks without claiming fal
     "Clipboard was blocked by itch, so a PCS1 handoff text file was downloaded",
   );
   await expect(page.locator("#projectBox")).toHaveValue(/^PCS1:/);
+});
+
+test("mobile transfer builds a PCS1 code and opens the static handoff page", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    window.__pocketChordsmithOpenedUrls = [];
+    window.open = (url, name) => {
+      const opened = {
+        closed: false,
+        name: name || "",
+        opener: null,
+        location: { href: url },
+      };
+      window.__pocketChordsmithOpenedUrls.push(opened);
+      return opened;
+    };
+  });
+
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await page.getByRole("button", { name: "Mobile transfer" }).click();
+
+  await expect(page.locator("#mobileTransferPanel")).toBeVisible();
+  await expect(page.locator("#projectBox")).toHaveValue(/^PCS1:/);
+  await expect(page.locator("#pushHandoffStatus")).toContainText(
+    "same-device",
+  );
+
+  await page.getByRole("button", { name: "Open transfer page" }).click();
+
+  const openedUrls = await page.evaluate(() =>
+    window.__pocketChordsmithOpenedUrls.map((item) => item.location.href),
+  );
+  expect(openedUrls).toHaveLength(1);
+  expect(openedUrls[0]).toContain("/apps/pocket-audio-handoff/index.html");
+  expect(openedUrls[0]).toContain("#pocketHandoff=");
+  await expect(page.locator("#mobileTransferStatus")).toContainText(
+    "Opening samfa12 transfer page",
+  );
+});
+
+test("static handoff page imports hash payload and builds desktop fallbacks", async ({
+  page,
+}) => {
+  const handoff = {
+    app: "PocketHandoff",
+    handoffVersion: 1,
+    kind: "chordsmith-mobile-transfer",
+    code: "PCS1:mobile-test",
+    createdAt: "2026-07-03T00:00:00.000Z",
+    sourceApp: "Pocket Chordsmith",
+    targetApp: "Pocket Audio Handoff",
+  };
+  const encoded = await page.evaluate((payload) => {
+    const bytes = new TextEncoder().encode(JSON.stringify(payload));
+    let binary = "";
+    bytes.forEach((byte) => {
+      binary += String.fromCharCode(byte);
+    });
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }, handoff);
+
+  await page.goto(`/apps/pocket-audio-handoff/#pocketHandoff=${encoded}`);
+  await expect(page.locator("#handoffText")).toHaveValue("PCS1:mobile-test");
+  await expect(page.locator("#payloadSummary")).toContainText("handoff link");
+
+  await page.evaluate(() => {
+    window.__handoffCopied = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text) => {
+          window.__handoffCopied.push(text);
+        },
+      },
+    });
+    window.__handoffProtocolUrls = [];
+    const originalClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.href.startsWith("pocket-daw://")) {
+        window.__handoffProtocolUrls.push(this.href);
+        return;
+      }
+      return originalClick.call(this);
+    };
+  });
+
+  await page.getByRole("button", { name: "Copy for Pocket DAW" }).click();
+  await page.getByRole("button", { name: "Copy for Godot Paste JSON/Code" }).click();
+  await page.getByRole("button", { name: "Open Pocket DAW" }).click();
+
+  const result = await page.evaluate(() => ({
+    copied: window.__handoffCopied,
+    protocolUrls: window.__handoffProtocolUrls,
+  }));
+  expect(result.copied).toEqual(["PCS1:mobile-test", "PCS1:mobile-test"]);
+  expect(result.protocolUrls).toHaveLength(1);
+  expect(result.protocolUrls[0]).toContain("pocket-daw://handoff?");
+  expect(result.protocolUrls[0]).toContain("pocketHandoff=");
+});
+
+test("static handoff page accepts pasted PCS1 text and downloads exact payload", async ({
+  page,
+}) => {
+  await page.goto("/apps/pocket-audio-handoff/");
+  await page.locator("#handoffText").fill("PCS1:pasted-mobile-test");
+
+  await page.evaluate(() => {
+    window.__handoffDownloads = [];
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.download) {
+        window.__handoffDownloads.push({
+          fileName: this.download,
+          href: this.href,
+        });
+      }
+    };
+  });
+
+  await page.getByRole("button", { name: "Load pasted code" }).click();
+  await expect(page.locator("#payloadSummary")).toContainText("PCS1");
+  await page.getByRole("button", { name: "Download .pcs1.txt" }).click();
+
+  const downloads = await page.evaluate(() => window.__handoffDownloads);
+  expect(downloads).toHaveLength(1);
+  expect(downloads[0].fileName).toMatch(/^pocket-chordsmith-handoff-.+\.pcs1\.txt$/);
+});
+
+test("static handoff page keeps copy and download available when QR is too large", async ({
+  page,
+}) => {
+  await page.goto("/apps/pocket-audio-handoff/");
+  await page.locator("#handoffText").fill(`PCS1:${"x".repeat(3200)}`);
+  await page.getByRole("button", { name: "Load pasted code" }).click();
+
+  await expect(page.locator("#qrStatus")).toContainText(
+    "too large for a reliable QR transfer",
+  );
+  await expect(page.getByRole("button", { name: "Copy for Pocket DAW" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Download .pcs1.txt" })).toBeEnabled();
 });
 
 test("settings import and handoff controls stay within the viewport", async ({
