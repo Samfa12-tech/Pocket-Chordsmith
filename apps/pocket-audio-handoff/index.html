@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#10131a" />
   <title>Pocket Audio Handoff</title>
-  <script src="qrcode-generator.js"></script>
   <style>
     :root{
       --bg:#10131a; --panel:#171c26; --panel2:#202838; --line:#30394c; --text:#eef2ff; --muted:#a8b4d0;
@@ -43,9 +42,6 @@
     .code-card.hidden{display:none}
     .code-value{font:800 clamp(1.45rem,6vw,2.3rem)/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; letter-spacing:0}
     .split-row{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px}
-    .qr-box{display:grid; gap:8px; justify-items:start}
-    .qr-frame{background:#fff; color:#111; padding:10px; border-radius:12px; line-height:0}
-    .qr-frame svg{display:block; width:min(280px,calc(100vw - 72px)); height:auto}
     .hidden{display:none !important}
     .target-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px}
     .target{border:1px solid var(--line); border-radius:14px; padding:12px; background:rgba(32,40,56,.72); display:grid; gap:8px}
@@ -56,7 +52,7 @@
   <main>
     <header class="handoff-header">
       <h1>Pocket Audio Handoff</h1>
-      <p class="muted">Move a Pocket Chordsmith PCS1 song between phone, desktop Pocket DAW, and the Godot addon. If the relay is available, the phone gets a short code for desktop pickup; copy, QR, and file fallbacks stay available.</p>
+      <p class="muted">Move a Pocket Chordsmith PCS1 song between phone, desktop Pocket DAW, and the Godot addon. The phone gets a short code for desktop pickup; copy and file fallbacks stay available.</p>
     </header>
 
     <section class="panel" aria-labelledby="inputTitle">
@@ -130,23 +126,16 @@
         </div>
       </div>
     </section>
-
-    <section class="panel qr-box" aria-labelledby="qrTitle">
-      <h2 id="qrTitle">QR</h2>
-      <p class="muted" id="qrStatus">Load a song to show a QR when the transfer link is small enough.</p>
-      <div class="qr-frame hidden" id="qrFrame" aria-label="Pocket Audio transfer QR code"></div>
-    </section>
   </main>
 
   <script>
     const HANDOFF_PARAM = "pocketHandoff";
     const SHARE_CODE_PREFIX = "PCS1:";
-    const QR_MAX_CHARS = 2600;
     const TRANSFER_URL_LIMIT = 60000;
     const RELAY_ENDPOINT = resolveRelayEndpoint();
 
     const els = {};
-    ["handoffText","sourceStatus","loadTextBtn","fileInput","copyLinkBtn","payloadSummary","copyDawBtn","openDawBtn","copyGodotBtn","downloadBtn","qrStatus","qrFrame","relayStatus","relayCard","relayCode","relayExpiry","copyRelayUrlBtn","copyRelayCodeBtn","createRelayBtn","redeemCodeInput","redeemRelayBtn"].forEach(id => els[id] = document.getElementById(id));
+    ["handoffText","sourceStatus","loadTextBtn","fileInput","copyLinkBtn","payloadSummary","copyDawBtn","openDawBtn","copyGodotBtn","downloadBtn","relayStatus","relayCard","relayCode","relayExpiry","copyRelayUrlBtn","copyRelayCodeBtn","createRelayBtn","redeemCodeInput","redeemRelayBtn"].forEach(id => els[id] = document.getElementById(id));
 
     let currentCode = "";
     let currentSource = "";
@@ -272,28 +261,6 @@
       });
       if(els.createRelayBtn) els.createRelayBtn.disabled = !enabled;
     }
-    function renderQr(){
-      els.qrFrame.innerHTML = "";
-      els.qrFrame.classList.add("hidden");
-      if(!currentCode){
-        els.qrStatus.textContent = "Load a song to show a QR when the transfer link is small enough.";
-        return;
-      }
-      if(!currentTransferUrl || currentTransferUrl.length > QR_MAX_CHARS){
-        els.qrStatus.textContent = "This song is too large for a reliable QR transfer. Use copy, download, or paste instead.";
-        return;
-      }
-      try{
-        const qr = qrcode(0, "M");
-        qr.addData(currentTransferUrl);
-        qr.make();
-        els.qrFrame.innerHTML = qr.createSvgTag(5, 3);
-        els.qrFrame.classList.remove("hidden");
-        els.qrStatus.textContent = "Scan this QR to open the same transfer page on another device.";
-      }catch(e){
-        els.qrStatus.textContent = "This transfer is too large for QR. Use copy, download, or paste instead.";
-      }
-    }
     function loadCode(code, source){
       currentCode = String(code || "").trim();
       currentSource = source || "manual input";
@@ -310,7 +277,6 @@
         els.sourceStatus.textContent = "Paste a PCS1 code, open a handoff link, or upload a .pcs1.txt file.";
         els.payloadSummary.textContent = "No PCS1 song loaded yet.";
       }
-      renderQr();
     }
     function renderRelay(){
       if(!currentRelay){
@@ -345,13 +311,12 @@
         els.relayStatus.textContent = `Short code ready. On desktop, open samfa12.com/apps/pocket-audio-handoff/ and enter ${payload.shortCode || payload.id}.`;
         if(payload.url){
           currentTransferUrl = payload.url;
-          renderQr();
         }
         return payload;
       }catch(e){
         currentRelay = null;
         renderRelay();
-        els.relayStatus.textContent = `Relay unavailable. Use QR, copy link, or download instead. ${e.message || ""}`.trim();
+        els.relayStatus.textContent = `Relay unavailable. Use copy link or download instead. ${e.message || ""}`.trim();
         return null;
       }
     }

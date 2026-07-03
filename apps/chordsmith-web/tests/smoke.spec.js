@@ -1143,16 +1143,17 @@ test("static handoff page accepts pasted PCS1 text and downloads exact payload",
   expect(downloads[0].fileName).toMatch(/^pocket-chordsmith-to-pocket-daw-.+\.pcs1\.txt$/);
 });
 
-test("static handoff page keeps copy and download available when QR is too large", async ({
+test("static handoff page keeps copy and download available when transfer URL is large", async ({
   page,
 }) => {
   await page.goto("/apps/pocket-audio-handoff/");
   await page.locator("#handoffText").fill(`PCS1:${"x".repeat(3200)}`);
   await page.getByRole("button", { name: "Load pasted code" }).click();
 
-  await expect(page.locator("#qrStatus")).toContainText(
-    "too large for a reliable QR transfer",
+  await expect(page.locator("#sourceStatus")).toContainText(
+    "Transfer link ready",
   );
+  await expect(page.locator("#qrStatus")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy for Pocket DAW" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Download .pcs1.txt" })).toBeEnabled();
 });

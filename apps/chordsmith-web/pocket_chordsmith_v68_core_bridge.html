@@ -2391,8 +2391,8 @@ function prepareMobileTransfer(){
   const transfer = buildMobileTransfer();
   if(!transfer) return null;
   const sizeNote = transfer.urlFits
-    ? "Transfer link ready. The samfa12 page can show QR, DAW, and Godot import options."
-    : "This song is too large for a reliable URL/QR transfer. Use Share, Copy, or Download.";
+    ? "Transfer link ready. The samfa12 page can create a short code and show DAW/Godot import options."
+    : "This song is too large for a reliable URL transfer. Use Share, Copy, or Download.";
   setStatus("Mobile transfer ready");
   setPushHandoffStatus("Mobile transfer prepared. DAW/Godot direct push is same-device; this PCS1 transfer works across phone and desktop.");
   setMobileTransferStatus(sizeNote);
