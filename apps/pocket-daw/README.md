@@ -1,8 +1,25 @@
 # Pocket DAW
 
-Pocket DAW is a Windows desktop arrangement and production app for Pocket Chordsmith projects.
+Pocket DAW is a native-only Windows desktop arrangement and production app in
+the Pocket Audio family.
 
-Current public status: **free Windows alpha testing on itch**. Treat `docs/CURRENT_RELEASE_STATUS.md`, generated from `release-status.json`, as the current source/public/smoke truth. The current published updater checkpoint is `0.6.37`.
+It is built as a Tauri Windows app with a TypeScript UI and native audio
+playback/recording/render/export paths.
+
+Pocket DAW is not:
+
+- a browser DAW
+- an HTML5 app
+- a Web Audio app
+- Pocket Chordsmith
+- Pocket DJ
+
+Current public status: **free Windows alpha testing on itch**.
+
+For current source/public/smoke truth, use:
+
+- `docs/CURRENT_RELEASE_STATUS.md`
+- `release-status.json`
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
@@ -34,6 +51,17 @@ npm test
 npm run build
 npm run tauri:dev
 ```
+
+## Timing Model
+
+Pocket DAW's core invariant:
+
+> The native audio engine / sample clock owns timing. The UI follows audio
+> state; it does not drive musical timing.
+
+Playback, recording placement, loop boundaries, native render/cache, and
+export length must be derived from the native transport/audio timeline, not
+from UI animation frames, wall-clock timers, or visual playhead position.
 
 ## Chordsmith Profile Imports
 
@@ -89,6 +117,7 @@ Release and update docs:
 
 Architecture docs:
 
+- `docs/ARCHITECTURE.md`
 - `docs/APP_TS_RESPONSIBILITY_MAP.md`
 - `docs/DRUM_BRANCHING_PLAN.md`
 - `docs/FILE_ASSOCIATION_IMPLEMENTATION_PLAN.md`
@@ -101,6 +130,10 @@ Architecture docs:
 ## Current Caveats
 
 - This is alpha-testing software, not a finished professional DAW.
+- Use `release-status.json` and `docs/CURRENT_RELEASE_STATUS.md` for any
+  current version/source/public/smoke claim. Versioned bullets below are
+  historical context unless they explicitly point back to those release-truth
+  files.
 - Current source may contain unreleased docs, tests, or source organization
   work after the latest published checkpoint. Publish the next binary only
   after bumping the checkpoint version and updating the release truth with
@@ -114,8 +147,8 @@ Architecture docs:
 - v0.6.13 adds `Help -> AI / MCP Bridge` and live app MCP tools for status, transport, selection and safe mixer edits.
 - v0.6.19 adds native loop/metronome playback, latest-only native restarts during rapid live composition edits, better native-cache reuse after live edits, Save As title adoption from `.pocketdaw` filenames, and refreshed release/bootstrapper manifests.
 - Historical v0.6.22 checkpoint: cached-playback UI fixes from source commit `5cd186a22b6a8be9d706e1474b6a204ddbd065aa` and exact-artifact installed smoke for setup SHA-256 `c7adc2aea5595490e55dbb720bed6735cd91348caef69ef249f3ff1c0868a6b7`.
-- Historical installed-app note: Windows `.pocketdaw` association, cold-start launch, second-instance launch, live project-open, and `pocket-daw://` Chordsmith handoff coexistence passed local installed `0.6.34` smoke on 2026-06-28. The current public checkpoint is `0.6.37`; keep File -> Open / Ctrl+O as the fallback and keep association smoke in future public release checkpoints.
-- v0.6.37 is the current public updater checkpoint: timeline-first UI density work, Music/Game Music layout presets, lower-dock preservation for Music, scroll-preserving panel toggles, hardened installed Pocket Audio handoff import cleanup, exact-artifact MCP open/save/validate/play smoke, and Sam's manual save/load, samfa12.com handoff push and listening checks are recorded in `release-status.json`.
+- Historical installed-app note: Windows `.pocketdaw` association, cold-start launch, second-instance launch, live project-open, and `pocket-daw://` Chordsmith handoff coexistence passed local installed `0.6.34` smoke on 2026-06-28. Keep File -> Open / Ctrl+O as the fallback and keep association smoke in future public release checkpoints; use `release-status.json` for the current public checkpoint.
+- The latest published updater checkpoint and its exact installed-smoke notes are recorded in `release-status.json` and `docs/CURRENT_RELEASE_STATUS.md`. That is the source of truth for any current public release claim.
 - Current source after `0.6.37` includes a first user-facing punch/take-lane workflow for one armed live audio track, Web MIDI input capture that starts transport with automatic punch-out onto selected MIDI tracks, live-bridge recording option/start/stop/toggle controls for installed-app smoke, plus audio/MIDI take-lane timeline activation/archive/split behavior and export filtering. Local `0.6.38` candidate smoke has covered the no-hardware live-bridge helper, including MIDI take-lane range editing and parsed export sentinels; treat it as unreleased local-candidate behavior until a deliberate public checkpoint records formal smoke attestation and release metadata. Pair it with real recording/listening smoke and real connected-controller MIDI smoke before public release claims.
 - ASIO, simultaneous multitrack capture, stereo recording modes, dedicated lane subtracks/collapse/solo, full polished comping UI, automatic latency compensation UI, FX monitoring, multi-input MIDI routing/overdub polish, MP3/FLAC/compressed game-pack export, full send/return processing and advanced pro DAW features are future work unless a later release explicitly says otherwise. Stereo/multitrack recording direction is tracked in `docs/STEREO_MULTITRACK_RECORDING_PLAN.md`; ASIO/low-latency backend research is tracked in `docs/ASIO_LOW_LATENCY_BACKEND_SPIKE.md`; punch/comping/take-lane direction is tracked in `docs/PUNCH_COMPING_TAKE_LANES_PLAN.md`; multi-format export direction is tracked in `docs/MULTI_FORMAT_EXPORT_PLAN.md`.
 - Windows Authenticode signing is not currently claimed unless a release manifest proves it.

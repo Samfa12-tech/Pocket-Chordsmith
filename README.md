@@ -17,7 +17,7 @@ Project hub: `https://samfa12.com`
 | --- | --- | --- | --- |
 | Pocket Chordsmith | `apps/chordsmith-web/` | Browser music sketchpad for progressions, sections, drums, bass, melody, guitar, MIDI, WAV, JSON, and `PCS1:` share data. | Source-available, UNLICENSED |
 | Pocket DJ | `apps/pocket-dj/` | Live performance/remix deck that imports Pocket Chordsmith songs and turns them into section pads, stem controls, loops, builds, drops, and FX. | Source-available, UNLICENSED |
-| Pocket DAW | `apps/pocket-daw/` | Alpha-testing Windows desktop arrangement app for Pocket Chordsmith projects, distributed on itch with a Tauri installer/updater path. | Alpha-testing binary on itch; source-available, UNLICENSED |
+| Pocket DAW | `apps/pocket-daw/` | Native-only Windows desktop arrangement/production DAW for Pocket Chordsmith/Pocket Audio projects. Built as a Tauri Windows app with native audio playback/recording/render/export paths. Do not implement or publish Pocket DAW as a browser/HTML5/Web Audio app. | Alpha-testing binary on itch; source-available, UNLICENSED |
 | Pocket Audio Core | `packages/pocket-audio-core/` | Shared headless runtime/export scaffold for parsing, normalising, rendering timelines, Web Audio playback, WAV/stem output, and game-music APIs. | WIP/private package source, UNLICENSED |
 | PCS Format | `packages/pcs-format/` | Future shared format definitions, fixtures, migrations, and compatibility helpers for `PCS1:` and related JSON. | WIP/private package scaffold, UNLICENSED |
 | Pocket Chordsmith Godot addon | `addons/pocket_chordsmith/` | Godot editor/runtime addon that imports Pocket Chordsmith data, compiles chart resources, and drives conductor callbacks in games. | MIT |
@@ -43,6 +43,18 @@ Pocket Chordsmith is the current authoring source. Pocket DJ and Pocket DAW
 consume compatible song data rather than replacing the Chordsmith editor. The
 Godot addon compiles exported data into lightweight chart resources and runtime
 signals for games.
+
+## Project Routing Rules
+
+- Pocket Chordsmith browser composer work belongs in `apps/chordsmith-web/`.
+- Pocket DJ work belongs in `apps/pocket-dj/`.
+- Pocket DAW work belongs in `apps/pocket-daw/` and targets the native Windows Tauri app.
+- Godot addon work belongs in `addons/pocket_chordsmith/`.
+
+For Pocket DAW, do not create a browser DAW, standalone HTML DAW, or Web Audio
+DAW. The UI may be TypeScript/Tauri, but audio timing, recording alignment,
+native rendering/export, cache behaviour, installed-app release evidence, and
+`.pocketdaw` compatibility are Pocket DAW's core concerns.
 
 ## Run The Main Apps
 

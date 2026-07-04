@@ -8,10 +8,25 @@ This repository is now the canonical public monorepo for:
 
 - `apps/chordsmith-web/` - Pocket Chordsmith browser composition app.
 - `apps/pocket-dj/` - Pocket DJ performance/remix app.
-- `apps/pocket-daw/` - Pocket DAW Vite/TypeScript/Tauri app.
+- `apps/pocket-daw/` - Pocket DAW native-only Windows Tauri desktop app.
 - `addons/pocket_chordsmith/` - Godot addon path, kept stable for Godot installs and Asset Library packaging.
 - `packages/pocket-audio-core/` - shared runtime/export package.
 - `packages/pcs-format/` - future PCS format package scaffold.
+
+## Pocket DAW Boundary
+
+Pocket DAW is the native-only Windows DAW in the Pocket Audio family. It lives
+under `apps/pocket-daw/` and is packaged as a Tauri Windows desktop app.
+
+Do not treat Pocket DAW as a browser app, HTML5 app, Web Audio app, Pocket
+Chordsmith screen, or Pocket DJ deck. Its UI may use Vite/TypeScript through
+Tauri, but DAW implementation work must preserve the native Windows app,
+native audio playback/recording/render/export path, installer/updater flow,
+and `.pocketdaw` project boundary.
+
+Central timing rule: the native audio engine/sample clock owns playback,
+recording alignment, render/export timing, cache timing, and authoritative
+playhead position. The UI only displays state and dispatches commands.
 
 ## Current Baselines
 
