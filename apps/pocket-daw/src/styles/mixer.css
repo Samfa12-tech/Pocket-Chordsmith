@@ -562,6 +562,15 @@
   min-width: 0;
 }
 
+.strip-input small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #8ea0c4;
+  font-size: 9px;
+  line-height: 1.15;
+}
+
 .strip-input select,
 .strip-input input {
   min-height: 24px;

@@ -281,6 +281,7 @@ describe("Pocket DAW UI rendering", () => {
     const html = renderAppShell(state);
 
     expect(html).toContain("--studio-height:620px");
+    expect(html).toContain("--timeline-content-height:");
     expect(html).toContain('class="studio inspector-hidden"');
     expect(html).toContain('class="timeline-toolbar collapsed"');
     expect(html).toContain('aria-label="Essential timeline tools"');
@@ -1062,7 +1063,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('option value="mono:3" >Mono Ch 4</option>');
     expect(html).toContain('option value="stereo:0:1" >Stereo Ch 1-2</option>');
     expect(html).toContain('option value="stereo:2:3" >Stereo Ch 3-4</option>');
-    expect(html).toContain('Current native recording supports Mono Ch 1 or Stereo Ch 1-2 only; other choices are preflighted and blocked until channel routing lands.');
+    expect(html).toContain('title="Advanced channel routing is not available yet.">Now: Mono Ch 1 or Stereo 1-2.</small>');
     expect(html).toContain(`data-track-recording-latency="${withLiveTrack.trackId}"`);
     expect(html).toContain('title="Positive values place new recordings earlier; negative values place them later. Raw recorded media is not changed."');
     expect(html).toContain("Manual take placement offset.");
@@ -1531,6 +1532,7 @@ describe("Pocket DAW UI rendering", () => {
     const html = renderAppShell(state);
 
     expect(html).toContain("--studio-height:430px");
+    expect(html).toContain("--timeline-content-height:");
     expect(html).toContain("--inspector-width:420px");
     expect(html).toContain('data-layout-zone="menu"');
     expect(html).toContain('data-timeline-resize-handle="true"');
@@ -1539,6 +1541,21 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Hide Inspector");
     expect(html).toContain('data-clip-drag-handle="clip_001"');
     expect(html).toContain('data-clip-loop-handle="clip_001"');
+  });
+
+  it("clamps the timeline workspace height to the visible row content", () => {
+    const state = createTimelineFirstInitialState();
+    const withLiveTrack = addTrackToProject(createEmptyPocketDawProject(), "live-vocals");
+    withLiveTrack.project.tracks = withLiveTrack.project.tracks.filter((track) => track.id === withLiveTrack.trackId || track.role === "master");
+    withLiveTrack.project.timeline.clips = [];
+    state.undoStack = createUndoStack(withLiveTrack.project);
+    state.selectedTrackId = withLiveTrack.trackId;
+    state.timelineHeightPx = 620;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("--studio-height:620px");
+    expect(html).toContain("--timeline-content-height:174px");
   });
 
   it("can render the timeline with the inspector hidden", () => {
@@ -2067,6 +2084,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(css).toContain("align-items: start");
     expect(css).toContain("position: sticky");
     expect(css).toContain("top: 0");
+    expect(css).toContain("min(var(--studio-height");
     expect(css).toContain("--studio-rail-width: 68px");
     expect(css).toContain('"studio-rail transport"');
     expect(css).toContain(".studio-rail");

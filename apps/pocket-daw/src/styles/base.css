@@ -94,7 +94,7 @@ button:disabled {
     "studio-rail mixer"
     "studio-rail media";
   grid-template-columns: var(--studio-rail-width, 68px) minmax(0, 1fr);
-  grid-template-rows: auto auto auto var(--studio-height, 430px) 10px auto auto;
+  grid-template-rows: auto auto auto min(var(--studio-height, 430px), var(--timeline-content-height, var(--studio-height, 430px))) 10px auto auto;
   height: calc(100vh - var(--native-titlebar-safe-top, 0px));
   min-height: calc(100vh - var(--native-titlebar-safe-top, 0px));
   margin-top: var(--native-titlebar-safe-top, 0px);

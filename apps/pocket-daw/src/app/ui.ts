@@ -81,12 +81,21 @@ const GUITAR_LABELS: Record<string, string> = {
 
 type TakeLaneSummaryItem = NonNullable<ReturnType<typeof audioClipTakeSummary>>["lanes"][number];
 
+const TIMELINE_TOOLBAR_HEIGHT_PX = 62;
+const TIMELINE_TOOLBAR_COLLAPSED_HEIGHT_PX = 44;
+const TIMELINE_RULER_HEIGHT_PX = 32;
+const TIMELINE_MARKER_LANE_HEIGHT_PX = 26;
+const TIMELINE_ROW_HEIGHT_PX = 72;
+const TIMELINE_GENERATED_ROW_HEIGHT_PX = 84;
+const TIMELINE_TAKE_LANE_ROW_HEIGHT_PX = 88;
+
 export function renderAppShell(state: AppState): string {
   const project = currentProject(state);
   const selectedClip = project.timeline.clips.find((clip) => clip.id === state.selectedClipId) || null;
   const selectedTrack = project.tracks.find((track) => track.id === state.selectedTrackId) || null;
+  const timelineContentHeight = timelineContentHeightPx(project, state);
   return `
-    <div class="app-shell" data-layout-shell="true" data-scroll-key="app-shell" data-ui-preset="${escapeAttr(state.uiCreationPreset)}" style="--studio-height:${sanitizeCssLengthOrNumber(state.timelineHeightPx, 430, 260, 760)}px;--inspector-width:${sanitizeCssLengthOrNumber(state.inspectorWidthPx, 420, 280, 620)}px;">
+    <div class="app-shell" data-layout-shell="true" data-scroll-key="app-shell" data-ui-preset="${escapeAttr(state.uiCreationPreset)}" style="--studio-height:${sanitizeCssLengthOrNumber(state.timelineHeightPx, 430, 260, 760)}px;--timeline-content-height:${sanitizeCssLengthOrNumber(timelineContentHeight, 430, 160, 2000)}px;--inspector-width:${sanitizeCssLengthOrNumber(state.inspectorWidthPx, 420, 280, 620)}px;">
       ${renderMenuStrip(state)}
       ${renderStudioRail(state)}
       ${renderTransport(state)}
@@ -657,14 +666,7 @@ function markerDisplayName(marker: { name: string; markerType?: string; gameStat
 
 function renderTimelineRows(state: AppState): string {
   const project = currentProject(state);
-  const branchCollapsed = drumBranchGroupCollapsed(project);
-  const collapsedFolders = new Set(project.tracks.filter((track) => track.trackType === "folder" && track.metadata?.folderExpanded === false).map((track) => track.id));
-  const rows = project.tracks.filter((track) => {
-    if (track.trackType === "folder") return true;
-    if (track.folderId && collapsedFolders.has(track.folderId)) return false;
-    if (!((track.trackType === "generated" || track.trackType === "audio" || track.trackType === "midi") && track.role !== "arrangement")) return false;
-    return !(branchCollapsed && generatedDrumBranchLane(track));
-  });
+  const rows = visibleTimelineTracks(project);
   const clips = sortClips(project.timeline.clips);
   const pcs = getPrimaryChordsmithSource(project);
   const selectedClipIds = selectedClipIdSet(state);
@@ -688,6 +690,37 @@ function renderTimelineRows(state: AppState): string {
       return `${baseRow}${renderTimelineTakeLaneRows(project, state, track, clips, selectedClipIds, takeSummary)}`;
     })
     .join("");
+}
+
+function visibleTimelineTracks(project: ReturnType<typeof currentProject>): Track[] {
+  const branchCollapsed = drumBranchGroupCollapsed(project);
+  const collapsedFolders = new Set(project.tracks.filter((track) => track.trackType === "folder" && track.metadata?.folderExpanded === false).map((track) => track.id));
+  return project.tracks.filter((track) => {
+    if (track.trackType === "folder") return true;
+    if (track.folderId && collapsedFolders.has(track.folderId)) return false;
+    if (!((track.trackType === "generated" || track.trackType === "audio" || track.trackType === "midi") && track.role !== "arrangement")) return false;
+    return !(branchCollapsed && generatedDrumBranchLane(track));
+  });
+}
+
+function timelineContentHeightPx(project: ReturnType<typeof currentProject>, state: AppState): number {
+  const toolbarHeight = isUiSectionCollapsed(state, "timeline-tools") ? TIMELINE_TOOLBAR_COLLAPSED_HEIGHT_PX : TIMELINE_TOOLBAR_HEIGHT_PX;
+  const fixedHeight = toolbarHeight + TIMELINE_RULER_HEIGHT_PX + TIMELINE_MARKER_LANE_HEIGHT_PX;
+  const rowsHeight = visibleTimelineTracks(project).reduce((height, track) => height + timelineTrackRowHeightPx(project, state, track), 0);
+  return fixedHeight + Math.max(TIMELINE_ROW_HEIGHT_PX, rowsHeight);
+}
+
+function timelineTrackRowHeightPx(project: ReturnType<typeof currentProject>, state: AppState, track: Track): number {
+  const baseHeight = track.trackType === "generated" ? TIMELINE_GENERATED_ROW_HEIGHT_PX : TIMELINE_ROW_HEIGHT_PX;
+  return baseHeight + timelineTakeLaneCount(project, state, track) * TIMELINE_TAKE_LANE_ROW_HEIGHT_PX;
+}
+
+function timelineTakeLaneCount(project: ReturnType<typeof currentProject>, state: AppState, track: Track): number {
+  const takeSummary = state.selectedClipId ? audioClipTakeSummary(project, state.selectedClipId) : null;
+  if (!takeSummary || takeSummary.takeCount < 2 || !takeSummary.lanes.length || state.selectedTrackId !== track.id) return 0;
+  const selectedClip = project.timeline.clips.find((clip) => clip.id === state.selectedClipId);
+  if (!selectedClip || selectedClip.trackId !== track.id || (selectedClip.type !== "audio" && selectedClip.type !== "midi")) return 0;
+  return takeSummary.lanes.length;
 }
 
 function renderTimelineTrackHeader(project: ReturnType<typeof currentProject>, track: Track, selected: boolean, pcs: SanitizedPcsProject | null): string {
@@ -3118,7 +3151,7 @@ function renderMixerInputSelector(project: ReturnType<typeof currentProject>, tr
       <select data-track-record-channel="${sanitizeDataAttr(track.id)}" aria-label="${escapeAttr(`Recording input channel for ${track.name}`)}" title="Choose the hardware input channel or stereo pair for this live track.">
         ${channelOptions.map((option) => `<option value="${escapeAttr(option.value)}" ${option.value === selectedChannel ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
       </select>
-      <small title="Current native recording alpha only captures default channels.">Current native recording supports Mono Ch 1 or Stereo Ch 1-2 only; other choices are preflighted and blocked until channel routing lands.</small>
+      <small title="Advanced channel routing is not available yet.">Now: Mono Ch 1 or Stereo 1-2.</small>
     </label>
     <label class="strip-control strip-input">
       <span>Latency <strong>${latencyOffsetMs} ms</strong></span>
