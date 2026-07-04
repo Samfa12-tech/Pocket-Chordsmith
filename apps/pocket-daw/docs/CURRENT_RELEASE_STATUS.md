@@ -6,34 +6,32 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 | --- | --- |
 | Source version | `0.6.38` |
 | Project schema version | `2` |
-| Latest published version | `0.6.37` |
-| Latest published tag | `pocket-daw-v0.6.37` |
-| Latest published commit | `7a9021cb580f3911890962b538fc47150f58840d` |
-| Last installed-smoke version | `0.6.37` |
+| Latest published version | `0.6.38` |
+| Latest published tag | `pocket-daw-v0.6.38` |
+| Latest published commit | `811a5bebc3c3a1b115ba4e1a2044a1ec33c5dceb` |
+| Last installed-smoke version | `0.6.38` |
 | Last installed-smoke result | `pass` |
-| Last installed-smoke date | `2026-07-03T11:14:16.2904244Z` |
-| Last installed-smoke installer | `Pocket.DAW_0.6.37_x64-setup.exe` |
-| Last installed-smoke SHA-256 | `63877b49bf61861ee5b05f17eaf18874487c53c0c1cbdac936be7992b0ec09a1` |
+| Last installed-smoke date | `2026-07-04T05:37:07.244Z` |
+| Last installed-smoke installer | `Pocket.DAW_0.6.38_x64-setup.exe` |
+| Last installed-smoke SHA-256 | `9a6b3b3722879e28b2cd8bbfee915619dbeff6a85da810b198b3fada98fdebf7` |
 
 ## Installed-Smoke Notes
 
-- Pocket DAW 0.6.37 was installed locally from the exact staged updater setup EXE and launched from C:\Users\sam_s\AppData\Local\Pocket DAW\pocket-daw.exe.
-- The exact staged setup EXE SHA-256 was 63877b49bf61861ee5b05f17eaf18874487c53c0c1cbdac936be7992b0ec09a1 and the smoke attestation validated against commit 7a9021cb580f3911890962b538fc47150f58840d.
-- MCP live bridge reported Pocket DAW project/app version 0.6.37, schema 2, Imported Chordsmith Project, 12 tracks, 7 clips and saved temp project C:\Users\sam_s\AppData\Local\Temp\pocket-daw-0.6.37-save-open-smoke.pocketdaw.
-- MCP open/save/validate smoke passed: save_current succeeded and file-first validation reported ok with zero errors or warnings.
-- MCP play/stop smoke on the exact installed artifact used native-cpal through WASAPI Speakers at 44100 Hz, 2 channels, callbackCount 187, maxCallbackMicros 1114, slowCallbackCount 0, no native lastError, no scheduler misses, no late/skipped events, no graph rebuild spikes and no hotspot signals.
-- Native render cache coverage was full with 70 assets/regions, 7 cached clips, zero procedural fallback events and zero generated stem render failures.
-- Sam manually smoke-tested save/load on 2026-07-03, Pocket Audio handoff push from samfa12.com into Pocket DAW, and audible playback/listening quality.
-- The public GitHub latest updater manifest reports version 0.6.37 and the downloaded setup EXE Pocket.DAW_0.6.37_x64-setup.exe matched SHA-256 63877b49bf61861ee5b05f17eaf18874487c53c0c1cbdac936be7992b0ec09a1.
-- The public bootstrapper manifest reports version 0.6.37 and installer SHA-256 63877b49bf61861ee5b05f17eaf18874487c53c0c1cbdac936be7992b0ec09a1.
-- GitHub release pocket-daw-v0.6.37 was published with 10 assets and marked latest. Itch remains on the existing bootstrapper channel; the bootstrapper now resolves the new GitHub installer.
-- The guarded publish command rebuilt a timestamped installer with a different SHA-256 before upload; this exact staged artifact was re-smoked and then published manually to keep the public updater hash aligned with the installed test artifact.
+- Pocket DAW 0.6.38 was installed locally from the exact staged updater setup EXE and launched from C:\Users\sam_s\AppData\Local\Pocket DAW\pocket-daw.exe.
+- The exact staged setup EXE SHA-256 was 9a6b3b3722879e28b2cd8bbfee915619dbeff6a85da810b198b3fada98fdebf7 and the smoke attestation validated against commit 811a5bebc3c3a1b115ba4e1a2044a1ec33c5dceb.
+- Installed punch/take-lane smoke reported Pocket DAW version 0.6.38, opened C:\Users\sam_s\AppData\Local\Temp\pocket-daw-punch-take-installed-smoke-vnJ9sC\punch-take-lane-installed-smoke.pocketdaw, saved/reopened it, exported RIFF/WAVE and MIDI files, and passed invariant checks.
+- The live audio recording smoke added one durable timeline clip, one grouped take-lane clip, one take group and one active take; it wrote a project-relative native recording WAV with 48000 Hz mono metadata and 26400 captured native frames. The automated input capture was silent on this machine, so strict audible-audio evidence is not claimed.
+- The same smoke verified MIDI take-lane grouping, punched MIDI recording-take placement, range editing, save/reopen metadata, and parsed MIDI export including active pitches 83, 84 and 86 while excluding inactive sentinel pitches 82 and 85. MIDI input recording was correctly guarded unavailable because no MIDI input devices were present.
+- `npm run verify:installed:punch-takes -- --summary <summary.json> --installer <setup.exe>` passed against the exact smoke summary and installer hash.
+- `npm run verify:release` passed, including CI workflow verification, Pocket Audio family parity, 1008 Vitest tests, production build, preview package, and Tauri debug build. `cargo test --manifest-path src-tauri/Cargo.toml` and the native tests inside `npm run verify:itch` also passed with 114 Rust tests.
+- `npm run verify:itch` passed for 0.6.38, including signed installer packaging and release artifact verification.
+- GitHub release pocket-daw-v0.6.38 was published with 10 assets and marked latest. An earlier 0.6.38 GitHub release asset set had a different timestamped setup hash, so the release assets and notes were clobber-updated with the exact staged artifact that was installed and smoke-tested.
+- The public GitHub latest updater manifest reports version 0.6.38 and the downloaded setup EXE Pocket.DAW_0.6.38_x64-setup.exe matched SHA-256 9a6b3b3722879e28b2cd8bbfee915619dbeff6a85da810b198b3fada98fdebf7.
+- The public bootstrapper manifest reports version 0.6.38 and installer SHA-256 9a6b3b3722879e28b2cd8bbfee915619dbeff6a85da810b198b3fada98fdebf7. Itch remains on the existing bootstrapper channel build bootstrapper-0.6.34 because the bootstrapper binary did not change; it now resolves the new GitHub installer.
 
 ## Unreleased Source-Only Notes
 
-- 0.6.38 source candidate adds the first user-facing punch/take-lane recording workflow, automatic audio and Web MIDI punch-out at the active punch range end, user-created audio/MIDI take-lane groups from overlapping clips, UI-created MIDI take clips, Web MIDI input recording that starts transport onto selected MIDI tracks, live-bridge punched MIDI recording-take placement, live-bridge audio/MIDI recording option/start/stop/toggle controls for installed-app smoke, shared audio/MIDI take-lane activation/archive/comp behavior, inactive-take playback/export filtering, and a no-hardware installed smoke helper for punch take-lanes through the live bridge.
-- Local exact-artifact smoke passed for a freshly rebuilt 0.6.38 NSIS setup EXE at C:\Users\sam_s\Documents\Pocket Chordsmith\apps\pocket-daw\src-tauri\target\release\bundle\nsis\Pocket DAW_0.6.38_x64-setup.exe with SHA-256 419d90af306471336a3c1fd081c61b1a5d6875e303c1aa38a1870c23a9eb7cd1. The matching MSI SHA-256 is 127f3457ad690b8bc84de3bc5dfb3eb2222aa3864d9e6485756c18acef4d7739. The installed app reported version 0.6.38 and `npm run smoke:installed:punch-takes -- --installer <setup.exe>` passed, recording the setup EXE path/hash in the smoke summary, asserting live audio recording option/start/stop/toggle controls plus MIDI recording start/stop/toggle controls, starting and stopping live audio recording through `record_start`/`record_stop`, asserting that the successful live audio recording added one durable timeline clip, one grouped take-lane clip, one take group, and one active take, and verifying the saved project-relative native recording WAV file existed with RIFF/WAVE data, matching size metadata, 0.54 seconds of duration, captured native frames, byte-level WAV sample-rate/channel/frame-count evidence, and an active linked take-lane clip. `npm run verify:installed:punch-takes -- --summary <summary.json> --installer <setup.exe>` also passed against that summary and installer hash, guarding against stale or guard-only punch/take smoke evidence. Strict `--require-audible-audio` mode uses byte-level WAV peak/RMS analysis so silent or near-silent captures do not satisfy real mic/interface signal evidence. The same smoke recorded a guarded Web MIDI permission-denied result through `midi_record_start`, set Punch plus Take Lane mode through `pocket_daw_live_control:set_recording_options`, created punch take lanes, comp segments, live-bridge MIDI take-lane grouping with `create_take_lane_group`, live-bridge punched MIDI recording-take placement with `place_midi_recording_take`, live-bridge MIDI take-lane range editing, save/reopen metadata assertions, explicit WAV export, and parsed MIDI export that includes active edited MIDI take-lane pitches 83/84 and active recorded MIDI take pitch 86 while excluding inactive sentinel pitches 82/85.
-- 0.6.38 is not published yet. Public release claims remain limited to 0.6.37 until release manifests, updater assets, GitHub release state, and itch/bootstrapper publishing steps are deliberately completed and verified.
+- No unreleased source-only notes recorded.
 
 ## Capability Claim Boundary
 
