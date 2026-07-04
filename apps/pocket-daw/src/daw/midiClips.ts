@@ -116,6 +116,31 @@ export interface MidiTimelineRippleDeleteResult {
   rightClipIds: string[];
 }
 
+export interface MidiRecordingNoteInput {
+  pitch: number;
+  startBar: number;
+  endBar?: number;
+  durationBars?: number;
+  velocity?: number;
+  channel?: number;
+}
+
+export interface PlaceMidiRecordingOptions {
+  captureStartBar: number;
+  punchStartBar?: number;
+  punchEndBar?: number;
+  createTakeLane?: boolean;
+  name?: string;
+  recordingSessionId?: number | string | null;
+}
+
+export interface PlaceMidiRecordingResult {
+  project: PocketDawProject;
+  clipId: string;
+  trackId: string;
+  noteCount: number;
+}
+
 export const MIDI_GROOVE_TEMPLATES: readonly MidiGrooveTemplate[] = [
   { id: "straight-16", name: "Straight 16", grid: "1/16", swingPercent: 50, velocityAccent: 0, humanizeTicks: 0 },
   { id: "pocket-16", name: "Pocket 16", grid: "1/16", swingPercent: 50, velocityAccent: 6, humanizeTicks: 10 },
@@ -307,6 +332,79 @@ export function createEmptyMidiClip(project: PocketDawProject, trackId: string, 
   }
   recomputeTimelineBars(next);
   return { project: next, clipId: placed.clipId, trackId: placed.trackId };
+}
+
+export function placeMidiRecordingClipOnTrack(
+  project: PocketDawProject,
+  trackId: string,
+  notes: MidiRecordingNoteInput[],
+  options: PlaceMidiRecordingOptions
+): PlaceMidiRecordingResult {
+  const track = project.tracks.find((item) => item.id === trackId && item.trackType === "midi");
+  if (!track) return { project, clipId: "", trackId: "", noteCount: 0 };
+  const captureStartBar = cleanBarFloat(options.captureStartBar, 1);
+  const hasPunch = Number.isFinite(options.punchStartBar) && Number.isFinite(options.punchEndBar);
+  const punchStartBar = hasPunch ? cleanBarFloat(options.punchStartBar, captureStartBar) : null;
+  const punchEndBar = hasPunch ? cleanBarFloat(options.punchEndBar, (punchStartBar || captureStartBar) + 1) : null;
+  const clipStartBar = punchStartBar || captureStartBar;
+  const naturalEndBar = Math.max(
+    clipStartBar + 1,
+    ...notes.map((note) => midiRecordingNoteEndBar(note)).filter((value) => Number.isFinite(value))
+  );
+  const clipEndBar = punchStartBar !== null && punchEndBar !== null
+    ? Math.max(punchStartBar + 0.25, punchEndBar)
+    : naturalEndBar;
+  if (clipEndBar <= clipStartBar + 0.0001) return { project, clipId: "", trackId: track.id, noteCount: 0 };
+  const ppq = Math.max(1, Math.round(project.project.ppq || 480));
+  const ticksPerBar = ppq * Math.max(1, Math.round(project.project.timeSig || 4));
+  const recordedNotes = normalizeMidiRecordingNotes(notes, clipStartBar, clipEndBar, ticksPerBar);
+  const clipName = options.name?.trim() || `${track.name} MIDI Take`;
+  const placed = createMidiClip(project, undefined, clipName, {
+    ppq,
+    notes: recordedNotes,
+    controllers: [],
+    programChanges: [],
+    pitchBends: [],
+    aftertouch: [],
+    metadata: {
+      source: "midi-recording",
+      captureStartBar,
+      ...(punchStartBar !== null && punchEndBar !== null ? {
+        punchStartBar,
+        punchEndBar,
+        punchMode: options.createTakeLane ? "create-new-midi-take-lane" : "replace-visible-range"
+      } : {}),
+      ...(options.createTakeLane ? { recordingPlacementMode: "create-new-take-lane" } : {}),
+      ...(options.recordingSessionId !== undefined && options.recordingSessionId !== null ? { recordingSessionId: options.recordingSessionId } : {})
+    }
+  }, {
+    trackId: track.id,
+    trackName: track.name,
+    reuseExistingMidiTrack: false
+  });
+  let next = cloneProject(placed.project);
+  const clip = next.timeline.clips.find((item) => item.id === placed.clipId);
+  if (!clip) return { project, clipId: "", trackId: track.id, noteCount: 0 };
+  clip.startBar = clipStartBar;
+  clip.barLength = Math.max(0.25, clipEndBar - clipStartBar);
+  clip.name = clipName;
+  clip.metadata = {
+    ...(clip.metadata || {}),
+    midiRecording: true,
+    captureStartBar,
+    ...(punchStartBar !== null && punchEndBar !== null ? {
+      punchStartBar,
+      punchEndBar,
+      punchMode: options.createTakeLane ? "create-new-midi-take-lane" : "replace-visible-range"
+    } : {}),
+    ...(options.createTakeLane ? { recordingPlacementMode: "create-new-take-lane" } : {}),
+    ...(options.recordingSessionId !== undefined && options.recordingSessionId !== null ? { recordingSessionId: options.recordingSessionId } : {})
+  };
+  if (options.createTakeLane) {
+    next = applyMidiRecordingTakeLaneMetadata(next, placed.clipId, track.id, clipStartBar, clipEndBar, options.recordingSessionId);
+  }
+  recomputeTimelineBars(next);
+  return { project: next, clipId: placed.clipId, trackId: track.id, noteCount: recordedNotes.length };
 }
 
 export function setMidiClipBarLength(project: PocketDawProject, clipId: string, barLength: number): PocketDawProject {
@@ -1590,6 +1688,115 @@ function cleanAftertouch(value: unknown): ParsedMidiAftertouch | null {
     note: kind === "poly" ? cleanNumber(raw.note ?? raw.pitch, 60, 0, 127) : undefined,
     trackIndex: raw.trackIndex === undefined ? undefined : cleanNumber(raw.trackIndex, 0, 0)
   };
+}
+
+function normalizeMidiRecordingNotes(notes: MidiRecordingNoteInput[], clipStartBar: number, clipEndBar: number, ticksPerBar: number): ParsedMidiNote[] {
+  return notes
+    .map((note, index): ParsedMidiNote | null => {
+      const rawStart = cleanBarFloat(note.startBar, clipStartBar);
+      const rawEnd = midiRecordingNoteEndBar(note);
+      const startBar = Math.max(clipStartBar, rawStart);
+      const endBar = Math.min(clipEndBar, Math.max(rawStart + 0.001, rawEnd));
+      if (endBar <= startBar + 0.0001) return null;
+      return {
+        id: `recorded_note_${index + 1}`,
+        pitch: clampMidiPitch(note.pitch),
+        startTick: Math.max(0, Math.round((startBar - clipStartBar) * ticksPerBar)),
+        durationTicks: Math.max(1, Math.round((endBar - startBar) * ticksPerBar)),
+        velocity: clampMidiVelocity(note.velocity ?? 96),
+        channel: Math.max(0, Math.min(15, Math.round(Number(note.channel) || 0)))
+      };
+    })
+    .filter((note): note is ParsedMidiNote => !!note)
+    .sort((a, b) => a.startTick - b.startTick || a.pitch - b.pitch);
+}
+
+function midiRecordingNoteEndBar(note: MidiRecordingNoteInput): number {
+  const start = cleanBarFloat(note.startBar, 1);
+  if (Number.isFinite(note.endBar)) return cleanBarFloat(note.endBar, start + 0.25);
+  if (Number.isFinite(note.durationBars)) return start + Math.max(0.001, Number(note.durationBars));
+  return start + 0.25;
+}
+
+function applyMidiRecordingTakeLaneMetadata(
+  project: PocketDawProject,
+  clipId: string,
+  trackId: string,
+  startBar: number,
+  endBar: number,
+  recordingSessionId: number | string | null | undefined
+): PocketDawProject {
+  const next = cloneProject(project);
+  const newClip = next.timeline.clips.find((clip) => clip.id === clipId && clip.type === "midi");
+  if (!newClip) return project;
+  const overlapping = next.timeline.clips
+    .filter((clip) => clip.id !== clipId && clip.type === "midi" && clip.trackId === trackId && clip.startBar < endBar - 0.0001 && startBar < clip.startBar + clip.barLength - 0.0001)
+    .sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+  const existingGroupId = overlapping
+    .map((clip) => midiTakeGroupIdFromMetadata(clip.metadata))
+    .find((value): value is string => !!value);
+  const groupId = existingGroupId || midiRecordingTakeGroupId(next, recordingSessionId);
+  const grouped = existingGroupId
+    ? next.timeline.clips.filter((clip) => clip.type === "midi" && clip.trackId === trackId && midiTakeGroupIdFromMetadata(clip.metadata) === groupId)
+    : overlapping;
+  grouped.forEach((clip, index) => {
+    const laneIndex = Math.max(1, Math.round(Number(clip.metadata?.takeLaneIndex ?? clip.metadata?.takeIndex ?? index + 1) || index + 1));
+    clip.muted = true;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      takeGroupId: groupId,
+      recordingTakeGroupId: groupId,
+      takeIndex: laneIndex,
+      takeLaneIndex: laneIndex,
+      takeLaneId: typeof clip.metadata?.takeLaneId === "string" ? clip.metadata.takeLaneId : `${groupId}-lane-${laneIndex}`,
+      recordingTakeId: typeof clip.metadata?.recordingTakeId === "string" ? clip.metadata.recordingTakeId : `${groupId}-take-${laneIndex}`,
+      takeActive: false,
+      takeStatus: clip.metadata?.takeStatus === "archived-take" ? "archived-take" : "muted-take"
+    };
+  });
+  const laneIndex = Math.max(0, ...next.timeline.clips
+    .filter((clip) => clip.type === "midi" && clip.trackId === trackId && midiTakeGroupIdFromMetadata(clip.metadata) === groupId)
+    .map((clip, index) => Math.max(1, Math.round(Number(clip.metadata?.takeLaneIndex ?? clip.metadata?.takeIndex ?? index + 1) || index + 1)))) + 1;
+  newClip.muted = false;
+  newClip.metadata = {
+    ...(newClip.metadata || {}),
+    takeGroupId: groupId,
+    recordingTakeGroupId: groupId,
+    takeIndex: laneIndex,
+    takeLaneIndex: laneIndex,
+    takeLaneId: `${groupId}-lane-${laneIndex}`,
+    recordingTakeId: `${groupId}-take-${laneIndex}`,
+    takeActive: true,
+    takeStatus: "active"
+  };
+  return next;
+}
+
+function midiTakeGroupIdFromMetadata(metadata: JsonObject | undefined): string | null {
+  const raw = metadata?.recordingTakeGroupId ?? metadata?.takeGroupId;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
+function midiRecordingTakeGroupId(project: PocketDawProject, recordingSessionId: number | string | null | undefined): string {
+  if (recordingSessionId !== undefined && recordingSessionId !== null && String(recordingSessionId).trim()) {
+    return `midi-recording-session-${String(recordingSessionId).trim().replace(/[^a-zA-Z0-9_-]+/g, "-")}`;
+  }
+  return `midi-recording-take-group-${nextMidiRecordingGroupIndex(project)}`;
+}
+
+function nextMidiRecordingGroupIndex(project: PocketDawProject): number {
+  const used = new Set(project.timeline.clips
+    .map((clip) => midiTakeGroupIdFromMetadata(clip.metadata))
+    .filter((value): value is string => !!value));
+  let index = 1;
+  while (used.has(`midi-recording-take-group-${index}`)) index += 1;
+  return index;
+}
+
+function cleanBarFloat(value: unknown, fallback: number): number {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return Math.max(1, fallback);
+  return Math.max(1, Math.round(number * 1000) / 1000);
 }
 
 function cleanNumber(value: unknown, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER): number {

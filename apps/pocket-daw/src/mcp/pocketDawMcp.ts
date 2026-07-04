@@ -18,6 +18,7 @@ import {
   clearTimelineSelectionCommand,
   compAudioTakeFromPlayheadCommand,
   compAudioTakeRangeCommand,
+  createTakeLaneGroupCommand,
   convertMidiArrangementToGeneratedOverlaysCommand,
   convertMidiBassToGeneratedOverlaysCommand,
   convertMidiChordsToGeneratedOverlaysCommand,
@@ -35,6 +36,7 @@ import {
   importTextToProject,
   loadPocketDawRaw,
   moveClipToBarCommand,
+  placeMidiRecordingTakeCommand,
   placePunchRecordingClipCommand,
   placePunchRecordingClipFromRangeCommand,
   quantizeMidiClipCommand,
@@ -134,9 +136,11 @@ export type PocketDawMcpCommand =
   | { type: "apply_midi_groove"; clipId: string; templateId: MidiGrooveTemplateId }
   | { type: "transform_midi_velocity"; clipId: string; transform: MidiVelocityTransform }
   | { type: "transform_midi_pitch"; clipId: string; transform: MidiPitchTransform }
+  | { type: "place_midi_recording_take"; trackId: string; notes: Array<{ pitch: number; startBar: number; endBar?: number; durationBars?: number; velocity?: number; channel?: number }>; captureStartBar?: number; punchStartBar?: number; punchEndBar?: number; createTakeLane?: boolean; name?: string; recordingSessionId?: number | string | null }
   | { type: "activate_audio_take"; clipId: string }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
+  | { type: "create_take_lane_group"; clipIds?: string[]; activeClipId?: string }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
   | { type: "comp_audio_take_range"; clipId: string }
   | { type: "place_punch_recording_clip"; mediaPoolItemId: string; trackId: string; captureStartBar: number; punchStartBar: number; punchEndBar: number; createTakeLane?: boolean }
@@ -202,8 +206,10 @@ export type PocketDawLiveCommand =
   | { type: "apply_midi_groove"; clipId: string; templateId: MidiGrooveTemplateId }
   | { type: "transform_midi_velocity"; clipId: string; transform: MidiVelocityTransform }
   | { type: "transform_midi_pitch"; clipId: string; transform: MidiPitchTransform }
+  | { type: "place_midi_recording_take"; trackId: string; notes: Array<{ pitch: number; startBar: number; endBar?: number; durationBars?: number; velocity?: number; channel?: number }>; captureStartBar?: number; punchStartBar?: number; punchEndBar?: number; createTakeLane?: boolean; name?: string; recordingSessionId?: number | string | null }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
+  | { type: "create_take_lane_group"; clipIds?: string[]; activeClipId?: string }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
   | { type: "comp_audio_take_range"; clipId: string }
   | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number; createTakeLane?: boolean };
@@ -345,16 +351,18 @@ export function pocketDawMcpToolList() {
     },
     {
       name: "pocket_daw_live_control",
-      description: "Control a running Pocket DAW app transport, selection, or saved-project save through the tokened local live bridge.",
+      description: "Control a running Pocket DAW app transport, selection, audio/MIDI recording options and start/stop, saved-project save, or explicit export through the tokened local live bridge.",
       inputSchema: objectSchema({
         action: {
           type: "string",
-          enum: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "export_project"]
+          enum: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "set_recording_options", "record_start", "record_stop", "record_toggle", "midi_record_start", "midi_record_stop", "midi_record_toggle", "export_project"]
         },
         projectPath: stringSchema(),
         bar: numberSchema(),
         trackId: stringSchema(),
         clipId: stringSchema(),
+        punchEnabled: booleanSchema(),
+        takeMode: { type: "string", enum: ["replace", "take-lane"] },
         format: { type: "string", enum: ["wav", "midi"] },
         outputPath: stringSchema(),
         sessionPath: stringSchema()
@@ -715,12 +723,23 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return transformMidiVelocityCommand(state, command.clipId, midiVelocityTransformFromMcpCommand(command.transform));
     case "transform_midi_pitch":
       return transformMidiPitchCommand(state, command.clipId, midiPitchTransformFromMcpCommand(command.transform));
+    case "place_midi_recording_take":
+      return placeMidiRecordingTakeCommand(state, command.trackId, midiRecordingNotesFromMcpCommand(command.notes), {
+        captureStartBar: command.captureStartBar,
+        punchStartBar: command.punchStartBar,
+        punchEndBar: command.punchEndBar,
+        createTakeLane: command.createTakeLane,
+        name: command.name,
+        recordingSessionId: command.recordingSessionId
+      });
     case "activate_audio_take":
       return activateAudioTakeCommand(state, command.clipId);
     case "activate_audio_take_lane":
       return activateAudioTakeLaneCommand(state, command.clipId);
     case "set_audio_take_archived":
       return setAudioTakeArchivedCommand(state, command.clipId, command.archived);
+    case "create_take_lane_group":
+      return createTakeLaneGroupCommand(state, command.clipIds, command.activeClipId);
     case "comp_audio_take_from_bar":
       return compAudioTakeFromPlayheadCommand({ ...state, playheadBar: command.bar }, command.clipId);
     case "comp_audio_take_range":
@@ -845,6 +864,23 @@ function midiVelocityTransformFromMcpCommand(value: unknown): MidiVelocityTransf
 function midiPitchTransformFromMcpCommand(value: unknown): MidiPitchTransform {
   if (value === "semitone-down" || value === "semitone-up" || value === "octave-down" || value === "octave-up") return value;
   throw new Error(`Unsupported MIDI pitch transform: ${String(value || "[missing transform]")}`);
+}
+
+function midiRecordingNotesFromMcpCommand(value: unknown): Array<{ pitch: number; startBar: number; endBar?: number; durationBars?: number; velocity?: number; channel?: number }> {
+  if (!Array.isArray(value)) throw new Error("place_midi_recording_take requires a notes array.");
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`notes[${index}] must be an object.`);
+    const note = item as Record<string, unknown>;
+    const parsed: { pitch: number; startBar: number; endBar?: number; durationBars?: number; velocity?: number; channel?: number } = {
+      pitch: finiteCommandNumber(note.pitch, `notes[${index}].pitch`),
+      startBar: finiteCommandNumber(note.startBar, `notes[${index}].startBar`)
+    };
+    if (note.endBar !== undefined) parsed.endBar = finiteCommandNumber(note.endBar, `notes[${index}].endBar`);
+    if (note.durationBars !== undefined) parsed.durationBars = finiteCommandNumber(note.durationBars, `notes[${index}].durationBars`);
+    if (note.velocity !== undefined) parsed.velocity = finiteCommandNumber(note.velocity, `notes[${index}].velocity`);
+    if (note.channel !== undefined) parsed.channel = finiteCommandNumber(note.channel, `notes[${index}].channel`);
+    return parsed;
+  });
 }
 
 function finiteCommandNumber(value: unknown, label: string): number {
@@ -1082,6 +1118,17 @@ function arraySchema(items: Record<string, unknown>) {
   return { type: "array", items };
 }
 
+function midiRecordingNoteSchema() {
+  return objectSchema({
+    pitch: numberSchema(),
+    startBar: numberSchema(),
+    endBar: numberSchema(),
+    durationBars: numberSchema(),
+    velocity: numberSchema(),
+    channel: numberSchema()
+  }, ["pitch", "startBar"]);
+}
+
 function commandSchema() {
   return objectSchema(
     {
@@ -1117,9 +1164,11 @@ function commandSchema() {
           "apply_midi_groove",
           "transform_midi_velocity",
           "transform_midi_pitch",
+          "place_midi_recording_take",
           "activate_audio_take",
           "activate_audio_take_lane",
           "set_audio_take_archived",
+          "create_take_lane_group",
           "comp_audio_take_from_bar",
           "comp_audio_take_range",
           "place_punch_recording_clip",
@@ -1163,6 +1212,11 @@ function commandSchema() {
       channelPair: arraySchema(numberSchema()),
       folderId: { oneOf: [stringSchema(), { type: "null" }] },
       clipId: stringSchema(),
+      clipIds: arraySchema(stringSchema()),
+      activeClipId: stringSchema(),
+      notes: arraySchema(midiRecordingNoteSchema()),
+      name: stringSchema(),
+      recordingSessionId: { oneOf: [stringSchema(), numberSchema(), { type: "null" }] },
       markerId: stringSchema(),
       mediaPoolItemId: stringSchema(),
       sectionId: stringSchema(),
@@ -1220,10 +1274,15 @@ function liveCommandSchema() {
     {
       type: {
         type: "string",
-        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "transform_midi_velocity", "transform_midi_pitch", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
+        enum: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "transform_midi_velocity", "transform_midi_pitch", "place_midi_recording_take", "create_take_lane_group", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       },
       trackId: stringSchema(),
       clipId: stringSchema(),
+      clipIds: { type: "array", items: stringSchema() },
+      activeClipId: stringSchema(),
+      notes: arraySchema(midiRecordingNoteSchema()),
+      name: stringSchema(),
+      recordingSessionId: { oneOf: [stringSchema(), numberSchema(), { type: "null" }] },
       markerId: stringSchema(),
       mediaPoolItemId: stringSchema(),
       inputDeviceId: stringSchema(),
@@ -1250,7 +1309,9 @@ function liveCommandSchema() {
       bar: numberSchema(),
       startBar: numberSchema(),
       endBar: numberSchema(),
-      captureStartBar: numberSchema()
+      captureStartBar: numberSchema(),
+      punchStartBar: numberSchema(),
+      punchEndBar: numberSchema()
     },
     ["type"]
   );

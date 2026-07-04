@@ -1,4 +1,4 @@
-import { createRecordingUiState, recordingSessionMatches, type RecordingUiState } from "./state";
+import { createRecordingUiState, recordingSessionMatches, type MidiInputRecordingUiState, type RecordingUiState } from "./state";
 
 export type RecordingStartupStep =
   | "prepare-timeline-audio"
@@ -61,6 +61,20 @@ export interface RecordingSessionTransitionInput {
   sessionId: number;
   allowedStatuses: RecordingUiState["status"][];
   patch: Partial<RecordingUiState> & Pick<RecordingUiState, "status" | "message">;
+}
+
+export interface RecordingPunchOutInput {
+  recording: RecordingUiState;
+  punchEnabled: boolean;
+  punchRange?: { startBar: number; endBar: number } | null;
+  playheadBar: number;
+}
+
+export interface MidiInputPunchOutInput {
+  recording: MidiInputRecordingUiState;
+  punchEnabled: boolean;
+  punchRange?: { startBar: number; endBar: number } | null;
+  playheadBar: number;
 }
 
 export interface NativePlaybackRecordingAnchor {
@@ -140,6 +154,24 @@ export function recordingStartFailureCleanupPlan(input: RecordingStartFailureCle
     stopNativeCapture: input.nativeCaptureStarted,
     stopBackingPlayback: input.backingPlaybackStarted
   };
+}
+
+export function shouldAutoPunchOutRecording(input: RecordingPunchOutInput): boolean {
+  if (input.recording.status !== "recording") return false;
+  if (!input.punchEnabled || !input.punchRange) return false;
+  const playheadBar = Number(input.playheadBar);
+  const punchEndBar = Number(input.punchRange.endBar);
+  if (!Number.isFinite(playheadBar) || !Number.isFinite(punchEndBar)) return false;
+  return playheadBar >= punchEndBar - 0.0001;
+}
+
+export function shouldAutoPunchOutMidiInputRecording(input: MidiInputPunchOutInput): boolean {
+  if (input.recording.status !== "recording") return false;
+  if (!input.punchEnabled || !input.punchRange) return false;
+  const playheadBar = Number(input.playheadBar);
+  const punchEndBar = Number(input.punchRange.endBar);
+  if (!Number.isFinite(playheadBar) || !Number.isFinite(punchEndBar)) return false;
+  return playheadBar >= punchEndBar - 0.0001;
 }
 
 export function buildNativeRecordingDiagnosticsMetadata(source: NativeRecordingDiagnosticsSource) {

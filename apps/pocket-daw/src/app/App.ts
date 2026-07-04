@@ -104,6 +104,7 @@ import {
   commitProject,
   copySelectedClip,
   copySelectedClipRangeCommand,
+  createTakeLaneGroupCommand,
   cropSelectedClipToTimelineSelectionCommand,
   cutSelectedClip,
   cutSelectedClipRangeCommand,
@@ -140,6 +141,7 @@ import {
   moveSelectedClipBySnap,
   moveMidiNoteCommand,
   pasteClipAtPlayhead,
+  placeMidiRecordingTakeCommand,
   placeAudioClipCommand,
   placePunchRecordingClipFromRangeCommand,
   pitchMidiNoteCommand,
@@ -239,7 +241,7 @@ import {
   undoCommand
 } from "./commands";
 import { commandFromKeyboardEvent } from "./keyboard";
-import { collapsedSectionsForCreationPreset, createInitialState, createRecordingUiState, currentProject, isUiCollapseSection, loadProjectIntoState, lowerDockTabForCreationPreset, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type LoadProjectIntoStateOptions, type NativeCacheUiStatus } from "./state";
+import { collapsedSectionsForCreationPreset, createInitialState, createMidiInputRecordingUiState, createRecordingUiState, currentProject, isUiCollapseSection, loadProjectIntoState, lowerDockTabForCreationPreset, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type LoadProjectIntoStateOptions, type NativeCacheUiStatus } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { automationSurfaceAudioSyncMode, automationSurfacePointFromClient } from "./automationSurface";
 import { renderAppShell } from "./ui";
@@ -250,7 +252,7 @@ import { cloneProject } from "../daw/dawProject";
 import { POCKET_DAW_VERSION, type Clip, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
 import { buildGroupedRecordingCapturePlan, buildNativeRecordingAlphaInputPreflight, buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError } from "../daw/recordingInputs";
 import { recordingLatencyOffsetSeconds, trackIsAudible, type AddTrackKind } from "../daw/tracks";
-import { barFloatToDisplayPosition, snapProjectBarValue } from "../daw/timeline";
+import { barFloatToDisplayPosition, secondsToBars, snapProjectBarValue } from "../daw/timeline";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placePunchRecordingClipOnTrack, placeRecordingClipOnTrack, placeTakeLaneRecordingClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../daw/audioClips";
 import type { AudioClipAction } from "../daw/clips";
 import { createCollectMediaPlan, findMediaPoolItem, linkFreezeRenderCacheItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked, mediaPoolReloadCandidates, mediaPoolStatus, updateMediaPoolItemMetadata, verifyMediaPortability } from "../daw/mediaPool";
@@ -277,7 +279,7 @@ import { configureHiddenFileInput } from "./fileInputs";
 import { FUNCTION_ACTION_TOOLTIPS } from "./functionGuide";
 import { pocketDawMcpCopyText } from "./mcpSetup";
 import { PerformanceDiagnosticsRecorder, type UiPerformanceCounters } from "./performanceDiagnostics";
-import { beginRecordingSession, buildNativeRecordingDiagnosticsMetadata, buildNativeRecordingTakeMetadata, buildRecordingCompletionMessage, buildRecordingStartupPlan, cancelRecordingSession, recordingStartFailureCleanupPlan, transitionRecordingSession } from "./recordingOrchestration";
+import { beginRecordingSession, buildNativeRecordingDiagnosticsMetadata, buildNativeRecordingTakeMetadata, buildRecordingCompletionMessage, buildRecordingStartupPlan, cancelRecordingSession, recordingStartFailureCleanupPlan, shouldAutoPunchOutMidiInputRecording, shouldAutoPunchOutRecording, transitionRecordingSession } from "./recordingOrchestration";
 import { PlaybackRenderScheduler, type RenderOptions, type RenderSchedule } from "./renderScheduler";
 import { revealElementInScroller } from "./scrollReveal";
 import { applyUpdaterCheckResult, applyUpdaterInstallResult, applyUpdaterProgress as updaterProgressPatch, applyUpdaterRelaunchResult, beginUpdaterCheck, beginUpdaterDownload } from "./updaterOrchestration";
@@ -285,7 +287,7 @@ import { applyUpdaterCheckResult, applyUpdaterInstallResult, applyUpdaterProgres
 type MixerControlField = "volume" | "pan";
 type ScrollSnapshot = Record<string, { top: number; left: number }>;
 type ClipDragMode = "move" | "repeat";
-type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "midi_panic" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "apply_commands" | "performance_diagnostics" | "export_project";
+type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "midi_panic" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "set_recording_options" | "record_start" | "record_stop" | "record_toggle" | "midi_record_start" | "midi_record_stop" | "midi_record_toggle" | "apply_commands" | "performance_diagnostics" | "export_project";
 type AiBridgeLiveCommand =
   | { type: "set_track_volume"; trackId: string; volume: number }
   | { type: "set_track_pan"; trackId: string; pan: number }
@@ -316,8 +318,10 @@ type AiBridgeLiveCommand =
   | { type: "apply_midi_groove"; clipId: string; templateId: MidiGrooveTemplateId }
   | { type: "transform_midi_velocity"; clipId: string; transform: MidiVelocityTransform }
   | { type: "transform_midi_pitch"; clipId: string; transform: MidiPitchTransform }
+  | { type: "place_midi_recording_take"; trackId: string; notes: Array<{ pitch: number; startBar: number; endBar?: number; durationBars?: number; velocity?: number; channel?: number }>; captureStartBar?: number; punchStartBar?: number; punchEndBar?: number; createTakeLane?: boolean; name?: string; recordingSessionId?: number | string | null }
   | { type: "activate_audio_take_lane"; clipId: string }
   | { type: "set_audio_take_archived"; clipId: string; archived: boolean }
+  | { type: "create_take_lane_group"; clipIds?: string[]; activeClipId?: string }
   | { type: "comp_audio_take_from_bar"; clipId: string; bar: number }
   | { type: "comp_audio_take_range"; clipId: string }
   | { type: "place_punch_recording_clip_from_range"; mediaPoolItemId: string; trackId: string; captureStartBar: number; createTakeLane?: boolean };
@@ -329,6 +333,47 @@ interface ApplyProjectOptions {
   preservePlayback?: boolean;
   preserveScroll?: boolean;
   reason?: string;
+}
+
+interface WebMidiMessageEventLike {
+  data?: ArrayLike<number> | null;
+}
+
+interface WebMidiInputLike {
+  id?: string | null;
+  name?: string | null;
+  manufacturer?: string | null;
+  onmidimessage: ((event: WebMidiMessageEventLike) => void) | null;
+}
+
+interface WebMidiAccessLike {
+  inputs: { values(): IterableIterator<WebMidiInputLike> };
+}
+
+interface MidiInputCapturedNote {
+  pitch: number;
+  startBar: number;
+  endBar: number;
+  velocity: number;
+  channel: number;
+}
+
+interface MidiInputActiveNote {
+  pitch: number;
+  startBar: number;
+  velocity: number;
+  channel: number;
+}
+
+interface MidiInputRecordingRuntime {
+  access: WebMidiAccessLike;
+  input: WebMidiInputLike;
+  trackId: string;
+  captureStartBar: number;
+  startedAtMs: number;
+  sessionId: string;
+  activeNotes: Map<string, MidiInputActiveNote>;
+  notes: MidiInputCapturedNote[];
 }
 
 const STEP_NOTE_LABELS = ["R", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"];
@@ -361,7 +406,10 @@ export class App {
   private recordingTimer: number | null = null;
   private recordingStartToken = 0;
   private recordingStatusBusy = false;
+  private recordingPunchOutStopRequested = false;
+  private midiInputPunchOutStopRequested = false;
   private inputPreviewKey: string | null = null;
+  private midiInputRecordingRuntime: MidiInputRecordingRuntime | null = null;
   private aiBridgeUnlisten: (() => void) | null = null;
   private projectFileLaunchUnlisten: (() => void) | null = null;
 
@@ -376,6 +424,8 @@ export class App {
       this.state.playing = tick.playing;
       this.state.playheadBar = tick.bar;
       this.state.meterLevels = this.engine.getMeterLevels();
+      this.maybeAutoPunchOutRecording();
+      this.maybeAutoPunchOutMidiInputRecording();
       if (!tick.playing && this.state.recording.status === "idle") this.stopLiveMetronome();
       if (playingChanged) {
         if (tick.playing) {
@@ -620,6 +670,9 @@ export class App {
       },
       recording: {
         ...this.state.recording,
+        punchEnabled: this.state.recordingPunchEnabled,
+        takeMode: this.state.recordingTakeMode,
+        midiInput: this.state.midiInputRecording,
         inputPreflight: buildNativeRecordingAlphaInputPreflight(project),
         futureCapturePlan: buildGroupedRecordingCapturePlan(project, {
           requestedStartBar: 1,
@@ -655,8 +708,8 @@ export class App {
       })),
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
-        control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "performance_diagnostics", "export_project"],
-        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "transform_midi_velocity", "transform_midi_pitch", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
+        control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "set_recording_options", "record_start", "record_stop", "record_toggle", "midi_record_start", "midi_record_stop", "midi_record_toggle", "performance_diagnostics", "export_project"],
+        liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "transform_midi_velocity", "transform_midi_pitch", "place_midi_recording_take", "create_take_lane_group", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       }
     };
   }
@@ -745,6 +798,80 @@ export class App {
           trackCount: openedProject.tracks.length,
           clipCount: openedProject.timeline.clips.length
         }
+      };
+    }
+    if (action === "set_recording_options") {
+      if (input.punchEnabled !== undefined) this.state.recordingPunchEnabled = Boolean(input.punchEnabled);
+      if (input.takeMode !== undefined) this.state.recordingTakeMode = recordingTakeModeInput(input.takeMode);
+      this.state.status = `Recording options set to ${this.state.recordingPunchEnabled ? "punch" : "full"} / ${this.state.recordingTakeMode === "take-lane" ? "take lane" : "replace"}.`;
+      this.render({ preserveScroll: true });
+      return {
+        ok: true,
+        action,
+        recording: this.aiBridgeLiveStatus().recording,
+        message: this.state.status
+      };
+    }
+    if (action === "record_start") {
+      if (this.state.recording.status === "idle" || this.state.recording.status === "error") await this.startRecording();
+      const active = this.state.recording.status === "preparing" || this.state.recording.status === "count-in" || this.state.recording.status === "recording";
+      return {
+        ok: active,
+        action,
+        code: active ? undefined : "record_start_failed",
+        recording: this.aiBridgeLiveStatus().recording,
+        message: this.state.status
+      };
+    }
+    if (action === "record_stop") {
+      await this.stopRecording();
+      return {
+        ok: true,
+        action,
+        recording: this.aiBridgeLiveStatus().recording,
+        message: this.state.status
+      };
+    }
+    if (action === "record_toggle") {
+      await this.toggleRecording();
+      const failed = this.state.recording.status === "error";
+      return {
+        ok: !failed,
+        action,
+        code: failed ? "record_toggle_failed" : undefined,
+        recording: this.aiBridgeLiveStatus().recording,
+        message: this.state.status
+      };
+    }
+    if (action === "midi_record_start") {
+      await this.startMidiInputRecording();
+      const failed = this.state.midiInputRecording.status === "error";
+      return {
+        ok: !failed,
+        action,
+        code: failed ? "midi_record_start_failed" : undefined,
+        recording: this.aiBridgeLiveStatus().recording,
+        message: this.state.status
+      };
+    }
+    if (action === "midi_record_stop") {
+      await this.stopMidiInputRecording();
+      return {
+        ok: true,
+        action,
+        recording: this.aiBridgeLiveStatus().recording,
+        message: this.state.status
+      };
+    }
+    if (action === "midi_record_toggle") {
+      await this.toggleMidiInputRecording();
+      const failed = this.state.midiInputRecording.status === "error";
+      return {
+        ok: !failed,
+        action,
+        code: failed ? "midi_record_toggle_failed" : undefined,
+        recording: this.aiBridgeLiveStatus().recording,
+        message: this.state.status
       };
     }
     if (action === "apply_commands") {
@@ -914,11 +1041,28 @@ export class App {
     if (command.type === "transform_midi_pitch") {
       return transformMidiPitchCommand(this.state, stringInput(command.clipId, "clipId"), midiPitchTransformInput(command.transform));
     }
+    if (command.type === "place_midi_recording_take") {
+      return placeMidiRecordingTakeCommand(this.state, stringInput(command.trackId, "trackId"), midiRecordingNotesInput(command.notes), {
+        captureStartBar: typeof command.captureStartBar === "number" ? command.captureStartBar : undefined,
+        punchStartBar: typeof command.punchStartBar === "number" ? command.punchStartBar : undefined,
+        punchEndBar: typeof command.punchEndBar === "number" ? command.punchEndBar : undefined,
+        createTakeLane: Boolean(command.createTakeLane),
+        name: typeof command.name === "string" ? command.name : undefined,
+        recordingSessionId: typeof command.recordingSessionId === "string" || typeof command.recordingSessionId === "number" ? command.recordingSessionId : undefined
+      });
+    }
     if (command.type === "activate_audio_take_lane") {
       return activateAudioTakeLaneCommand(this.state, stringInput(command.clipId, "clipId"));
     }
     if (command.type === "set_audio_take_archived") {
       return setAudioTakeArchivedCommand(this.state, stringInput(command.clipId, "clipId"), Boolean(command.archived));
+    }
+    if (command.type === "create_take_lane_group") {
+      return createTakeLaneGroupCommand(
+        this.state,
+        Array.isArray(command.clipIds) ? stringArrayInput(command.clipIds, "clipIds") : undefined,
+        typeof command.activeClipId === "string" ? command.activeClipId : undefined
+      );
     }
     if (command.type === "comp_audio_take_from_bar") {
       return compAudioTakeFromPlayheadCommand(
@@ -1536,7 +1680,10 @@ export class App {
         const selection = currentProject(this.state).timeline.selection;
         const start = Number(this.root.querySelector<HTMLInputElement>("#rangeStart")?.value || selection?.startBar || 1);
         const end = Number(this.root.querySelector<HTMLInputElement>("#rangeEnd")?.value || selection?.endBar || start + 1);
-        this.applyProjectState(setTimelineSelectionRangeCommand(this.state, start, end), { audio: "transport-controls", reason: "timeline-selection-bars" });
+        const command = selection?.source === "punch"
+          ? setPunchRangeCommand(this.state, start, end)
+          : setTimelineSelectionRangeCommand(this.state, start, end);
+        this.applyProjectState(command, { audio: "transport-controls", reason: selection?.source === "punch" ? "punch-range-bars" : "timeline-selection-bars" });
       });
     });
     this.root.querySelector<HTMLTextAreaElement>("#importText")?.addEventListener("input", (event) => {
@@ -2763,6 +2910,7 @@ export class App {
     if (action === "restart") await this.restartTransport();
     if (action === "midi-panic") this.panicMidiPreview();
     if (action === "record-toggle") await this.toggleRecording();
+    if (action === "midi-record-toggle") await this.toggleMidiInputRecording();
     if (action === "recording-punch-toggle") {
       this.state.recordingPunchEnabled = !this.state.recordingPunchEnabled;
       this.state.status = this.state.recordingPunchEnabled
@@ -2776,6 +2924,38 @@ export class App {
         ? "Recording will create a new active take lane."
         : "Recording will replace the visible range on the armed track.";
       this.render({ preserveScroll: true });
+    }
+    if (action === "record-midi-take") {
+      const project = currentProject(this.state);
+      const selectedClip = this.state.selectedClipId ? project.timeline.clips.find((clip) => clip.id === this.state.selectedClipId) : null;
+      const trackId = selectedClip?.type === "midi" ? selectedClip.trackId : this.state.selectedTrackId || "";
+      const track = project.tracks.find((item) => item.id === trackId && item.trackType === "midi");
+      if (!track) {
+        this.state.status = "Select a MIDI track before adding a MIDI take.";
+        this.render({ preserveScroll: true });
+      } else {
+        const punchRange = this.state.recordingPunchEnabled && project.timeline.selection?.source === "punch" ? project.timeline.selection : null;
+        if (this.state.recordingPunchEnabled && !punchRange) {
+          this.state.status = "Set an explicit punch range before adding a punched MIDI take.";
+          this.render({ preserveScroll: true });
+        } else {
+          const startBar = punchRange?.startBar || Math.max(1, this.state.playheadBar || project.timeline.cursor.bar || 1);
+          const endBar = punchRange?.endBar || startBar + 1;
+          this.applyProjectState(placeMidiRecordingTakeCommand(this.state, track.id, [{
+            pitch: 72,
+            startBar,
+            endBar: Math.min(endBar, startBar + 0.5),
+            velocity: 96,
+            channel: 0
+          }], {
+            captureStartBar: startBar,
+            punchStartBar: punchRange?.startBar,
+            punchEndBar: punchRange?.endBar,
+            createTakeLane: this.state.recordingTakeMode === "take-lane",
+            name: `${track.name} MIDI Take`
+          }), { audio: "composition-events", preserveScroll: true, reason: "record-midi-take" });
+        }
+      }
     }
     if (action === "preset-music" || action === "preset-game-music") {
       this.state.uiCreationPreset = action === "preset-game-music" ? "game-music" : "music";
@@ -2965,6 +3145,7 @@ export class App {
     if (action === "clip-cut") this.applyProjectState(cutSelectedClip(this.state));
     if (action === "clip-paste") this.applyProjectState(pasteClipAtPlayhead(this.state));
     if (action === "clip-split") this.applyProjectState(splitSelectedClipAtPlayhead(this.state));
+    if (action === "create-take-lane-group") this.applyProjectState(createTakeLaneGroupCommand(this.state), { reason: "create-take-lane-group" });
     if (action === "audio-take-comp-from-playhead" && this.state.selectedClipId) {
       this.applyProjectState(compAudioTakeFromPlayheadCommand(this.state, this.state.selectedClipId));
     }
@@ -2980,6 +3161,11 @@ export class App {
     if (action === "loop-clear") this.applyProjectState(clearLoopCommand(this.state), { audio: "transport-controls", reason: "loop-clear" });
     if (action === "range-selected") this.applyProjectState(setTimelineSelectionToSelectedClipCommand(this.state), { audio: "transport-controls", reason: "range-selected" });
     if (action === "range-loop") this.applyProjectState(setTimelineSelectionToLoopCommand(this.state), { audio: "transport-controls", reason: "range-loop" });
+    if (action === "range-punch") this.applyProjectState(setPunchRangeCommand(
+      this.state,
+      Number(this.root.querySelector<HTMLInputElement>("#rangeStart")?.value || currentProject(this.state).timeline.selection?.startBar || currentProject(this.state).timeline.loop.startBar || 1),
+      Number(this.root.querySelector<HTMLInputElement>("#rangeEnd")?.value || currentProject(this.state).timeline.selection?.endBar || currentProject(this.state).timeline.loop.endBar || 2)
+    ), { audio: "transport-controls", reason: "range-punch" });
     if (action === "range-copy") {
       this.state = copySelectedClipRangeCommand(this.state);
       this.render();
@@ -3296,6 +3482,7 @@ export class App {
     }
     if (this.state.recording.status === "preparing" || this.state.recording.status === "count-in") {
       this.recordingStartToken += 1;
+      this.recordingPunchOutStopRequested = false;
       this.stopLiveMetronome();
       const trackId = this.state.recording.trackId || undefined;
       const message = this.state.recording.status === "preparing" ? "Recording preparation cancelled." : "Recording count-in cancelled.";
@@ -3349,6 +3536,7 @@ export class App {
       this.render({ preserveScroll: true });
       return;
     }
+    this.recordingPunchOutStopRequested = false;
     const sessionId = this.recordingStartToken + 1;
     this.recordingStartToken = sessionId;
     const preRollSeconds = countInSeconds(project);
@@ -3507,8 +3695,239 @@ export class App {
     }
   }
 
+  private async toggleMidiInputRecording() {
+    if (this.state.midiInputRecording.status === "recording") await this.stopMidiInputRecording();
+    else await this.startMidiInputRecording();
+  }
+
+  private async startMidiInputRecording() {
+    if (this.state.midiInputRecording.status === "recording") return;
+    const project = currentProject(this.state);
+    if (this.state.recording.status !== "idle" && this.state.recording.status !== "error") {
+      this.setMidiInputRecordingError("Stop audio recording before starting MIDI input recording.");
+      return;
+    }
+    const track = this.selectedMidiRecordingTrack();
+    if (!track) {
+      this.setMidiInputRecordingError("Select a MIDI track before recording MIDI input.");
+      return;
+    }
+    const requestMIDIAccess = this.webMidiRequestAccess();
+    if (!requestMIDIAccess) {
+      this.setMidiInputRecordingError("Web MIDI input is not available in this runtime.");
+      return;
+    }
+    const punchRange = this.state.recordingPunchEnabled ? activePunchRange(project) : null;
+    if (this.state.recordingPunchEnabled && !punchRange) {
+      this.setMidiInputRecordingError("Set an explicit punch range before recording a punched MIDI take.");
+      return;
+    }
+    const startBar = Math.max(1, this.state.playheadBar || project.timeline.cursor.bar || 1);
+    if (punchRange && startBar > punchRange.startBar + 0.0001) {
+      this.setMidiInputRecordingError("Move the playhead to or before the punch-in bar before recording MIDI input.");
+      return;
+    }
+    try {
+      const access = await promiseWithTimeout(requestMIDIAccess({ sysex: false }), 2500, "Web MIDI input request timed out.");
+      const input = firstWebMidiInput(access);
+      if (!input) {
+        this.setMidiInputRecordingError("No MIDI input devices are available.");
+        return;
+      }
+      const sessionId = `midi-input-${Date.now()}`;
+      const runtime: MidiInputRecordingRuntime = {
+        access,
+        input,
+        trackId: track.id,
+        captureStartBar: startBar,
+        startedAtMs: monotonicNowMs(),
+        sessionId,
+        activeNotes: new Map(),
+        notes: []
+      };
+      const shouldStartTransport = !this.engine.isPlaying();
+      input.onmidimessage = (event) => this.handleMidiInputMessage(event, monotonicNowMs());
+      this.midiInputRecordingRuntime = runtime;
+      this.state.selectedTrackId = track.id;
+      this.state.midiInputRecording = createMidiInputRecordingUiState({
+        status: "recording",
+        sessionId,
+        trackId: track.id,
+        inputId: input.id || null,
+        inputName: webMidiInputLabel(input),
+        startedAt: new Date().toISOString(),
+        startBar,
+        message: `Recording MIDI input on ${track.name}.`
+      });
+      this.state.status = this.state.midiInputRecording.message;
+      if (shouldStartTransport) {
+        this.seekToBar(startBar, true);
+        await this.playTransport();
+      }
+      this.render({ preserveScroll: true });
+    } catch (error) {
+      this.setMidiInputRecordingError(error instanceof Error ? error.message : "Could not start MIDI input recording.");
+    }
+  }
+
+  private async stopMidiInputRecording() {
+    const runtime = this.midiInputRecordingRuntime;
+    if (!runtime) {
+      this.state.midiInputRecording = createMidiInputRecordingUiState();
+      return;
+    }
+    runtime.input.onmidimessage = null;
+    this.flushActiveMidiInputNotes(runtime, monotonicNowMs());
+    this.midiInputRecordingRuntime = null;
+    const project = currentProject(this.state);
+    const track = project.tracks.find((item) => item.id === runtime.trackId && item.trackType === "midi");
+    if (!track) {
+      this.setMidiInputRecordingError("MIDI input recording target track is no longer available.");
+      return;
+    }
+    if (runtime.notes.length === 0) {
+      const message = `Stopped MIDI input recording on ${track.name}; no notes were captured.`;
+      this.state.midiInputRecording = createMidiInputRecordingUiState({ message });
+      this.state.status = message;
+      this.render({ preserveScroll: true });
+      return;
+    }
+    const punchRange = this.state.recordingPunchEnabled ? activePunchRange(project) : null;
+    const createTakeLane = this.state.recordingTakeMode === "take-lane";
+    const next = placeMidiRecordingTakeCommand(this.state, track.id, runtime.notes, {
+      captureStartBar: runtime.captureStartBar,
+      punchStartBar: punchRange?.startBar,
+      punchEndBar: punchRange?.endBar,
+      createTakeLane,
+      name: `${track.name} MIDI Input Take`,
+      recordingSessionId: runtime.sessionId
+    });
+    this.applyProjectState(next, { audio: "composition-events", preserveScroll: true, reason: "midi-input-recording" });
+    const placed = currentProject(this.state).timeline.clips.find((clip) => clip.id === this.state.selectedClipId && clip.type === "midi");
+    const message = placed
+      ? `${this.state.status} MIDI input source: ${webMidiInputLabel(runtime.input)}.`
+      : this.state.status;
+    this.state.midiInputRecording = createMidiInputRecordingUiState({ message });
+    this.state.status = message;
+    this.render({ preserveScroll: true });
+  }
+
+  private handleMidiInputMessage(event: WebMidiMessageEventLike, receivedAtMs: number) {
+    const runtime = this.midiInputRecordingRuntime;
+    if (!runtime || this.state.midiInputRecording.status !== "recording") return;
+    const data = event.data;
+    if (!data || data.length < 2) return;
+    const status = Number(data[0]) || 0;
+    const command = status & 0xf0;
+    const channel = status & 0x0f;
+    const pitch = Math.max(0, Math.min(127, Math.round(Number(data[1]) || 0)));
+    const velocity = Math.max(0, Math.min(127, Math.round(Number(data[2]) || 0)));
+    const key = `${channel}:${pitch}`;
+    if (command === 0x90 && velocity > 0) {
+      runtime.activeNotes.set(key, {
+        pitch,
+        velocity,
+        channel,
+        startBar: this.midiInputBarAt(runtime, receivedAtMs)
+      });
+    } else if (command === 0x80 || (command === 0x90 && velocity === 0)) {
+      const active = runtime.activeNotes.get(key);
+      if (active) {
+        runtime.activeNotes.delete(key);
+        this.commitMidiInputNote(runtime, active, this.midiInputBarAt(runtime, receivedAtMs));
+      }
+    }
+    this.state.midiInputRecording = {
+      ...this.state.midiInputRecording,
+      noteCount: runtime.notes.length,
+      activeNoteCount: runtime.activeNotes.size
+    };
+    this.updateLiveDom();
+  }
+
+  private flushActiveMidiInputNotes(runtime: MidiInputRecordingRuntime, receivedAtMs: number) {
+    const endBar = this.midiInputBarAt(runtime, receivedAtMs);
+    runtime.activeNotes.forEach((active) => this.commitMidiInputNote(runtime, active, endBar));
+    runtime.activeNotes.clear();
+  }
+
+  private commitMidiInputNote(runtime: MidiInputRecordingRuntime, active: MidiInputActiveNote, endBar: number) {
+    runtime.notes.push({
+      pitch: active.pitch,
+      velocity: active.velocity,
+      channel: active.channel,
+      startBar: active.startBar,
+      endBar: Math.max(active.startBar + 0.001, endBar)
+    });
+  }
+
+  private midiInputBarAt(runtime: MidiInputRecordingRuntime, receivedAtMs: number) {
+    const project = currentProject(this.state);
+    const elapsedSeconds = Math.max(0, (receivedAtMs - runtime.startedAtMs) / 1000);
+    return runtime.captureStartBar + secondsToBars(elapsedSeconds, project.project.bpm, project.project.timeSig);
+  }
+
+  private selectedMidiRecordingTrack() {
+    const project = currentProject(this.state);
+    const selectedClip = this.state.selectedClipId ? project.timeline.clips.find((clip) => clip.id === this.state.selectedClipId) : null;
+    const trackId = selectedClip?.type === "midi" ? selectedClip.trackId : this.state.selectedTrackId || "";
+    return project.tracks.find((item) => item.id === trackId && item.trackType === "midi") || null;
+  }
+
+  private webMidiRequestAccess() {
+    const nav = typeof navigator !== "undefined" ? navigator as Navigator & { requestMIDIAccess?: (options?: { sysex?: boolean }) => Promise<unknown> } : null;
+    return nav?.requestMIDIAccess
+      ? async (options?: { sysex?: boolean }) => await nav.requestMIDIAccess!(options) as WebMidiAccessLike
+      : null;
+  }
+
+  private setMidiInputRecordingError(message: string) {
+    if (this.midiInputRecordingRuntime) this.midiInputRecordingRuntime.input.onmidimessage = null;
+    this.midiInputRecordingRuntime = null;
+    this.state.midiInputRecording = createMidiInputRecordingUiState({ status: "error", message });
+    this.state.status = message;
+    this.render({ preserveScroll: true });
+  }
+
+  private maybeAutoPunchOutRecording() {
+    if (this.recordingPunchOutStopRequested) return;
+    const punchRange = this.state.recordingPunchEnabled ? activePunchRange(currentProject(this.state)) : null;
+    if (!shouldAutoPunchOutRecording({
+      recording: this.state.recording,
+      punchEnabled: this.state.recordingPunchEnabled,
+      punchRange,
+      playheadBar: this.state.playheadBar
+    })) return;
+    this.recordingPunchOutStopRequested = true;
+    this.state.status = "Punch-out reached; stopping recording.";
+    this.updateLiveDom();
+    void this.stopRecording().finally(() => {
+      this.recordingPunchOutStopRequested = false;
+    });
+  }
+
+  private maybeAutoPunchOutMidiInputRecording() {
+    if (this.midiInputPunchOutStopRequested) return;
+    const punchRange = this.state.recordingPunchEnabled ? activePunchRange(currentProject(this.state)) : null;
+    if (!shouldAutoPunchOutMidiInputRecording({
+      recording: this.state.midiInputRecording,
+      punchEnabled: this.state.recordingPunchEnabled,
+      punchRange,
+      playheadBar: this.state.playheadBar
+    })) return;
+    this.midiInputPunchOutStopRequested = true;
+    this.state.status = "MIDI punch-out reached; stopping MIDI recording.";
+    this.updateLiveDom();
+    void this.stopMidiInputRecording().finally(() => {
+      this.midiInputPunchOutStopRequested = false;
+    });
+  }
+
   private async stopRecording() {
-    if (this.state.recording.status !== "recording" && this.state.recording.status !== "stopping") return;
+    if (this.state.recording.status !== "recording" && this.state.recording.status !== "stopping") {
+      this.recordingPunchOutStopRequested = false;
+      return;
+    }
     const trackId = this.state.recording.trackId;
     const recordingTrack = currentProject(this.state).tracks.find((item) => item.id === trackId);
     const startBar = this.state.recording.startBar || this.state.playheadBar || 1;
@@ -5611,6 +6030,29 @@ function stringInput(value: unknown, label: string): string {
   return value;
 }
 
+function stringArrayInput(value: unknown[], label: string): string[] {
+  const strings = value.map((item, index) => stringInput(item, `${label}[${index}]`));
+  if (!strings.length) throw new Error(`${label} requires at least one item.`);
+  return strings;
+}
+
+function midiRecordingNotesInput(value: unknown): Array<{ pitch: number; startBar: number; endBar?: number; durationBars?: number; velocity?: number; channel?: number }> {
+  if (!Array.isArray(value)) throw new Error("place_midi_recording_take requires a notes array.");
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`notes[${index}] must be an object.`);
+    const note = item as Record<string, unknown>;
+    const parsed: { pitch: number; startBar: number; endBar?: number; durationBars?: number; velocity?: number; channel?: number } = {
+      pitch: numberInput(note.pitch, `notes[${index}].pitch`),
+      startBar: numberInput(note.startBar, `notes[${index}].startBar`)
+    };
+    if (note.endBar !== undefined) parsed.endBar = numberInput(note.endBar, `notes[${index}].endBar`);
+    if (note.durationBars !== undefined) parsed.durationBars = numberInput(note.durationBars, `notes[${index}].durationBars`);
+    if (note.velocity !== undefined) parsed.velocity = numberInput(note.velocity, `notes[${index}].velocity`);
+    if (note.channel !== undefined) parsed.channel = numberInput(note.channel, `notes[${index}].channel`);
+    return parsed;
+  });
+}
+
 function audioClipActionInput(value: unknown): AudioClipAction {
   if (
     value === "normalize-gain" ||
@@ -5801,6 +6243,11 @@ function midiImportPlacementModeLabel(mode: MidiImportPlacementMode): string {
   return "single clip";
 }
 
+function recordingTakeModeInput(value: unknown): "replace" | "take-lane" {
+  if (value === "replace" || value === "take-lane") return value;
+  throw new Error(`Unsupported recording take mode: ${String(value || "[missing mode]")}`);
+}
+
 function midiConversionSourceFilterFromValue(value: string) {
   if (value === "all") return normalizeMidiConversionSourceFilter("all", null);
   const [mode, rawValue] = value.split(":");
@@ -5873,10 +6320,12 @@ const ACTION_BUTTON_TOOLTIPS: Record<string, string> = {
   "range-cut": "Cut the selected clip material inside the active edit range.",
   "range-delete": "Delete material inside the active edit range.",
   "range-loop": "Set the active edit range to the current loop.",
+  "range-punch": "Use the active edit range as the recording punch window.",
   "range-ripple-all": "Delete the active range and close the gap across all tracks.",
   "range-ripple-delete": "Delete the active range and close the gap on selected tracks.",
   "range-selected": "Use the selected clip as the edit range.",
   "range-split": "Split clips at the edit range boundaries.",
+  "record-midi-take": "Create an editable MIDI take at the playhead or active punch range.",
   "record-toggle": "Start or stop recording on the armed track.",
   "redo": "Redo the last undone edit.",
   "reset-demo-template": "Reload the demo template.",
@@ -6019,6 +6468,31 @@ function sectionLabelForStatus(section: string): string {
   if (section === "lower-dock") return "Lower dock";
   if (section === "media-pool") return "Media pool";
   return "UI section";
+}
+
+function firstWebMidiInput(access: WebMidiAccessLike): WebMidiInputLike | null {
+  for (const input of access.inputs.values()) return input;
+  return null;
+}
+
+function webMidiInputLabel(input: WebMidiInputLike): string {
+  return input.name || input.manufacturer || input.id || "MIDI input";
+}
+
+function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = globalThis.setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        globalThis.clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        globalThis.clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
 }
 
 function monotonicNowMs(): number {

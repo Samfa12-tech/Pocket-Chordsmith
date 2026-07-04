@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject, parsePocketDawProjectFile } from "../src/daw/dawProject";
-import { activateAudioTake, audioClipTakeSummary, clipSourceStartBar, compGroupedAudioTakeRange, cropClipToRange, deleteClipRange, moveClipToBar, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, trimClipEnd, trimClipStart } from "../src/daw/clips";
+import { activateAudioTake, audioClipTakeSummary, clipSourceStartBar, compGroupedAudioTakeRange, createTakeLaneGroupFromClips, cropClipToRange, deleteClipRange, moveClipToBar, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setClipTransform, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, trimClipEnd, trimClipStart } from "../src/daw/clips";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
+import { addMidiNote, createEmptyMidiClip, midiDataFromClip, placeMidiRecordingClipOnTrack, setMidiNoteField } from "../src/daw/midiClips";
 import { addGameStateMarkerAtBar, addMarkerAtBar, clearLoop, clearTimelineSelection, deleteMarker, setLoopToClip, setTimelineSelectionRange, setTimelineSelectionToClip, setTimelineSelectionToLoop, snapBarValue, snapProjectBarValue } from "../src/daw/timeline";
 import { createDemoProject } from "../src/demo/demoProject";
 import { addTrackToProject } from "../src/daw/tracks";
@@ -502,6 +503,131 @@ describe("timeline editing helpers", () => {
         endBar: 9.866667
       }
     ]);
+  });
+
+  it("groups overlapping MIDI clips into user-created take lanes", () => {
+    let project = createEmptyPocketDawProject();
+    const track = addTrackToProject(project, "midi-instrument");
+    project = track.project;
+    let first = createEmptyMidiClip(project, track.trackId, 1, "MIDI take 1");
+    let edited = addMidiNote(first.project, first.clipId, 0);
+    let firstClipWithNote = edited.timeline.clips.find((clip) => clip.id === first.clipId)!;
+    edited = setMidiNoteField(edited, first.clipId, midiDataFromClip(firstClipWithNote).notes[0].id, "pitch", 81);
+    const second = createEmptyMidiClip(edited, track.trackId, 1, "MIDI take 2");
+    edited = addMidiNote(second.project, second.clipId, 0);
+    const secondClipWithNote = edited.timeline.clips.find((clip) => clip.id === second.clipId)!;
+    edited = setMidiNoteField(edited, second.clipId, midiDataFromClip(secondClipWithNote).notes[0].id, "pitch", 82);
+
+    const grouped = createTakeLaneGroupFromClips(edited, [first.clipId, second.clipId], second.clipId);
+    const firstClip = grouped.project.timeline.clips.find((clip) => clip.id === first.clipId);
+    const secondClip = grouped.project.timeline.clips.find((clip) => clip.id === second.clipId);
+    const summary = audioClipTakeSummary(grouped.project, second.clipId);
+    const events = renderTimelineEvents(grouped.project);
+
+    expect(grouped.changed).toBe(true);
+    expect(grouped.status).toBe("Grouped 2 MIDI clips as take lanes.");
+    expect(grouped.groupId).toBe("manual-midi-take-group-1");
+    expect(firstClip).toMatchObject({
+      muted: true,
+      metadata: expect.objectContaining({
+        recordingTakeGroupId: "manual-midi-take-group-1",
+        takeLaneId: "manual-midi-take-group-1-lane-1",
+        takeLaneIndex: 1,
+        takeActive: false,
+        takeStatus: "muted-take",
+        takeSource: "manual-clip-group"
+      })
+    });
+    expect(secondClip).toMatchObject({
+      muted: false,
+      metadata: expect.objectContaining({
+        recordingTakeGroupId: "manual-midi-take-group-1",
+        takeLaneId: "manual-midi-take-group-1-lane-2",
+        takeLaneIndex: 2,
+        takeActive: true,
+        takeStatus: "active",
+        takeSource: "manual-clip-group"
+      })
+    });
+    expect(summary?.takeCount).toBe(2);
+    expect(summary?.lanes.map((lane) => lane.takeLaneId)).toEqual(["manual-midi-take-group-1-lane-1", "manual-midi-take-group-1-lane-2"]);
+    expect(events.some((event) => event.clipId === first.clipId)).toBe(false);
+    expect(events.map((event) => event.midi)).toContain(82);
+    expect(events.map((event) => event.midi)).not.toContain(81);
+  });
+
+  it("places punched MIDI recordings as active take lanes with durable metadata", () => {
+    let project = createEmptyPocketDawProject();
+    const track = addTrackToProject(project, "midi-instrument");
+    project = track.project;
+    const first = placeMidiRecordingClipOnTrack(project, track.trackId, [{
+      pitch: 81,
+      startBar: 7.25,
+      endBar: 8,
+      velocity: 90
+    }], {
+      captureStartBar: 6,
+      punchStartBar: 7,
+      punchEndBar: 9,
+      createTakeLane: true,
+      name: "MIDI punch take 1",
+      recordingSessionId: 91
+    });
+    const second = placeMidiRecordingClipOnTrack(first.project, track.trackId, [{
+      pitch: 82,
+      startBar: 6.5,
+      endBar: 7.5,
+      velocity: 96
+    }, {
+      pitch: 83,
+      startBar: 8.25,
+      durationBars: 0.5,
+      velocity: 100
+    }], {
+      captureStartBar: 6,
+      punchStartBar: 7,
+      punchEndBar: 9,
+      createTakeLane: true,
+      name: "MIDI punch take 2",
+      recordingSessionId: 92
+    });
+    const reopened = parsePocketDawProjectFile(buildPocketDawProjectFile(second.project));
+    const firstClip = reopened.timeline.clips.find((clip) => clip.id === first.clipId)!;
+    const secondClip = reopened.timeline.clips.find((clip) => clip.id === second.clipId)!;
+    const secondNotes = midiDataFromClip(secondClip).notes;
+    const events = renderTimelineEvents(reopened);
+
+    expect(first.clipId).toBeTruthy();
+    expect(second.noteCount).toBe(2);
+    expect(firstClip).toMatchObject({
+      muted: true,
+      startBar: 7,
+      barLength: 2,
+      metadata: expect.objectContaining({
+        recordingTakeGroupId: "midi-recording-session-91",
+        takeLaneIndex: 1,
+        takeStatus: "muted-take",
+        punchStartBar: 7,
+        punchEndBar: 9
+      })
+    });
+    expect(secondClip).toMatchObject({
+      muted: false,
+      startBar: 7,
+      barLength: 2,
+      metadata: expect.objectContaining({
+        recordingTakeGroupId: "midi-recording-session-91",
+        takeLaneIndex: 2,
+        takeStatus: "active",
+        midiRecording: true,
+        punchMode: "create-new-midi-take-lane"
+      })
+    });
+    expect(secondNotes.map((note) => [note.pitch, note.startTick, note.durationTicks])).toEqual([
+      [82, 0, 960],
+      [83, 2400, 960]
+    ]);
+    expect(events.map((event) => event.midi).filter((pitch): pitch is number => typeof pitch === "number")).toEqual([82, 83]);
   });
 
   it("trims audio clip starts by moving source offsets instead of changing source media", () => {

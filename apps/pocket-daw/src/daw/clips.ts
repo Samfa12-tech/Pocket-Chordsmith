@@ -54,6 +54,12 @@ export interface TimelineRippleDeleteResult extends AudioClipActionResult {
   rightClipIds: string[];
 }
 
+export interface CreateTakeLaneGroupResult extends AudioClipActionResult {
+  clipIds: string[];
+  activeClipId: string | null;
+  groupId: string | null;
+}
+
 export interface AudioTakeSummary {
   groupId: string;
   takeNumber: number;
@@ -559,6 +565,69 @@ export function deleteAudioWarpMarker(project: PocketDawProject, clipId: string,
   };
 }
 
+export function createTakeLaneGroupFromClips(project: PocketDawProject, clipIds: string[], activeClipId?: string | null): CreateTakeLaneGroupResult {
+  const uniqueIds = uniqueClipIds(clipIds);
+  if (uniqueIds.length < 2) {
+    return { project, changed: false, status: "Select at least two audio or MIDI clips to make take lanes.", clipIds: uniqueIds, activeClipId: null, groupId: null };
+  }
+  const clips = uniqueIds
+    .map((id) => project.timeline.clips.find((clip) => clip.id === id))
+    .filter((clip): clip is Clip & { type: TakeLaneClipType } => takeLaneClipType(clip));
+  if (clips.length !== uniqueIds.length) {
+    return { project, changed: false, status: "Take lanes can only be made from audio or MIDI clips.", clipIds: uniqueIds, activeClipId: null, groupId: null };
+  }
+  const clipType = clips[0]?.type;
+  const trackId = clips[0]?.trackId;
+  if (!clipType || !trackId || clips.some((clip) => clip.type !== clipType || clip.trackId !== trackId)) {
+    return { project, changed: false, status: "Select audio or MIDI clips of one type on one track to make take lanes.", clipIds: uniqueIds, activeClipId: null, groupId: null };
+  }
+  const rangeStart = Math.max(...clips.map((clip) => clip.startBar));
+  const rangeEnd = Math.min(...clips.map(clipEndBar));
+  if (rangeEnd <= rangeStart + 0.0001) {
+    return { project, changed: false, status: "Selected clips must overlap to become alternate take lanes.", clipIds: uniqueIds, activeClipId: null, groupId: null };
+  }
+  const ordered = clips.slice().sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
+  const requestedActiveId = activeClipId && uniqueIds.includes(activeClipId) ? activeClipId : uniqueIds[0];
+  const groupId = existingTakeGroupId(clips) || nextManualTakeGroupId(project, clipType);
+  const next = cloneProject(project);
+  let changed = false;
+  const activeId = requestedActiveId || ordered[0].id;
+  ordered.forEach((sourceClip, index) => {
+    const clip = next.timeline.clips.find((item) => item.id === sourceClip.id);
+    if (!clip) return;
+    const takeLaneIndex = index + 1;
+    const active = clip.id === activeId;
+    const nextMetadata: JsonObject = {
+      ...(clip.metadata || {}),
+      takeGroupId: groupId,
+      recordingTakeGroupId: groupId,
+      recordingTakeId: typeof clip.metadata?.recordingTakeId === "string" && clip.metadata.recordingTakeId.trim()
+        ? clip.metadata.recordingTakeId
+        : clip.id,
+      takeLaneId: `${groupId}-lane-${takeLaneIndex}`,
+      takeLaneIndex,
+      takeActive: active,
+      takeStatus: active ? "active" : "muted-take",
+      takeSource: "manual-clip-group"
+    };
+    const muted = !active;
+    if (JSON.stringify(clip.metadata || {}) !== JSON.stringify(nextMetadata) || clip.muted !== muted) changed = true;
+    clip.metadata = nextMetadata;
+    clip.muted = muted;
+  });
+  if (!changed) {
+    return { project, changed: false, status: "Selected clips are already grouped as take lanes.", clipIds: ordered.map((clip) => clip.id), activeClipId: activeId, groupId };
+  }
+  return {
+    project: next,
+    changed: true,
+    status: `Grouped ${ordered.length} ${clipType === "midi" ? "MIDI" : "audio"} clips as take lanes.`,
+    clipIds: ordered.map((clip) => clip.id),
+    activeClipId: activeId,
+    groupId
+  };
+}
+
 export function audioClipTakeSummary(project: PocketDawProject, clipId: string): AudioTakeSummary | null {
   const clip = project.timeline.clips.find((item) => item.id === clipId);
   const groupId = clipTakeGroupId(clip);
@@ -892,6 +961,24 @@ function takeStatus(clip: Clip): AudioTakeStatus {
   const value = clip.metadata?.takeStatus;
   if (value === "archived-take" || value === "muted-take" || value === "active" || value === "comp-segment") return value;
   return clip.metadata?.takeActive === false || clip.muted ? "muted-take" : "active";
+}
+
+function existingTakeGroupId(clips: Clip[]): string | null {
+  const ids = clips.map(clipTakeGroupId).filter((id): id is string => !!id);
+  const first = ids[0];
+  return first && ids.every((id) => id === first) ? first : null;
+}
+
+function nextManualTakeGroupId(project: PocketDawProject, clipType: TakeLaneClipType): string {
+  const prefix = `manual-${clipType}-take-group`;
+  const used = new Set(
+    project.timeline.clips
+      .map(clipTakeGroupId)
+      .filter((id): id is string => !!id)
+  );
+  let index = 1;
+  while (used.has(`${prefix}-${index}`)) index += 1;
+  return `${prefix}-${index}`;
 }
 
 function clipEndBar(clip: Clip): number {

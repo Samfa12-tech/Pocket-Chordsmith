@@ -3,8 +3,10 @@ import { exportProjectToMidiBlob } from "../src/audio/midiExport";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
+import { migratePocketDawProject } from "../src/compatibility/migrations";
 import { activateAudioTakeLane, setClipTransform } from "../src/daw/clips";
-import { addMidiAftertouch, addMidiController, addMidiPitchBend, addMidiProgramChange, duplicateMidiController, duplicateMidiNote, importMidiFileToProject, importMidiFileToProjectWithPlacement, midiDataFromClip, setMidiAftertouchField, setMidiControllerField, setMidiNoteField, setMidiPitchBendField, setMidiProgramChangeField } from "../src/daw/midiClips";
+import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
+import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, deleteMidiClipRange, duplicateMidiController, duplicateMidiNote, importMidiFileToProject, importMidiFileToProjectWithPlacement, midiDataFromClip, setMidiAftertouchField, setMidiControllerField, setMidiNoteField, setMidiPitchBendField, setMidiProgramChangeField } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { createDemoChordsmithProject, createDemoProject } from "../src/demo/demoProject";
 import { createAutomationLane } from "../src/daw/automation";
@@ -267,6 +269,62 @@ describe("MIDI export", () => {
     expect(activated.timeline.clips.find((clip) => clip.id === second.clipId)?.muted).toBe(false);
     expect(renderTimelineEvents(activated).filter((event) => event.clipId === second.clipId)).toHaveLength(1);
     expect(exported.notes.map((note) => note.pitch)).toEqual([64]);
+  });
+
+  it("exports timeline-edited MIDI take lanes after save reopen and lane activation", async () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "Edited MIDI Take Lane Export" }));
+    const first = importMidiFileToProject(project, parseStandardMidiFile(simpleMidiBytes()), "midi-take-1.mid");
+    const second = importMidiFileToProject(first.project, parseStandardMidiFile(simpleMidiBytes()), "midi-take-2.mid");
+    const secondClip = second.project.timeline.clips.find((item) => item.id === second.clipId)!;
+    const firstNoteId = midiDataFromClip(secondClip).notes[0].id;
+    let edited = setMidiNoteField(second.project, second.clipId, firstNoteId, "pitch", 64);
+    edited = addMidiNote(edited, second.clipId, 3840);
+    const addedNoteId = midiDataFromClip(edited.timeline.clips.find((item) => item.id === second.clipId)!).notes.at(-1)!.id;
+    edited = setMidiNoteField(edited, second.clipId, addedNoteId, "pitch", 67);
+
+    const groupedFirst = edited.timeline.clips.find((item) => item.id === first.clipId)!;
+    const groupedSecond = edited.timeline.clips.find((item) => item.id === second.clipId)!;
+    groupedFirst.metadata = {
+      ...(groupedFirst.metadata || {}),
+      takeGroupId: "edited-midi-lane-group",
+      recordingTakeGroupId: "edited-midi-lane-group",
+      takeLaneId: "edited-midi-lane-group-lane-1",
+      takeLaneIndex: 1,
+      takeStatus: "active",
+      takeActive: true
+    };
+    groupedFirst.muted = false;
+    groupedSecond.metadata = {
+      ...(groupedSecond.metadata || {}),
+      takeGroupId: "edited-midi-lane-group",
+      recordingTakeGroupId: "edited-midi-lane-group",
+      takeLaneId: "edited-midi-lane-group-lane-2",
+      takeLaneIndex: 2,
+      takeStatus: "muted-take",
+      takeActive: false
+    };
+    groupedSecond.muted = true;
+
+    const deleted = deleteMidiClipRange(edited, second.clipId, 2, 3);
+    expect(deleted.changed).toBe(true);
+    expect(deleted.rightClipId).toBeTruthy();
+
+    const reopened = migratePocketDawProject(parsePocketDawProjectFile(buildPocketDawProjectFile(deleted.project)));
+    const activated = activateAudioTakeLane(reopened, deleted.rightClipId!).project;
+    const activeEditedClips = activated.timeline.clips
+      .filter((clip) => clip.metadata?.takeLaneId === "edited-midi-lane-group-lane-2")
+      .sort((a, b) => a.startBar - b.startBar);
+    const bytes = new Uint8Array(await exportProjectToMidiBlob(activated, { trackIds: [second.trackId] }).arrayBuffer());
+    const exported = parseStandardMidiFile(bytes);
+
+    expect(activeEditedClips.map((clip) => [clip.startBar, clip.barLength, clip.muted, clip.metadata?.takeStatus])).toEqual([
+      [1, 1, false, "active"],
+      [3, 0.25, false, "active"]
+    ]);
+    expect(activated.timeline.clips.find((clip) => clip.id === first.clipId)?.muted).toBe(true);
+    expect(renderTimelineEvents(activated).filter((event) => activeEditedClips.some((clip) => clip.id === event.clipId)).map((event) => event.midi)).toEqual([64, 67]);
+    expect(exported.notes.map((note) => note.pitch)).toEqual([64, 67]);
+    expect(exported.notes.map((note) => note.startTick)).toEqual([0, 3840]);
   });
 
   it("does not export MIDI note or controller data from folder-muted tracks", async () => {

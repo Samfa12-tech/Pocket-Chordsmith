@@ -3,13 +3,13 @@ import { sanitizePocketChordsmithProject } from "../compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../compatibility/pcsToDaw";
 import { migratePocketDawProject } from "../compatibility/migrations";
 import { cloneProject, createDefaultMetronomeSettings, parsePocketDawProjectFile } from "../daw/dawProject";
-import { activateAudioTake, activateAudioTakeLane, applyAudioClipAction, compGroupedAudioTakeRange, cropClipToRange, deleteAudioWarpMarker, deleteClip, deleteClipRange, deleteClips, duplicateClip, duplicateClips, moveClipByBars, moveClipsByBars, moveClipToBar, pasteClip, pasteClips, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setAudioWarpMarkerTarget, setClipTransform, setClipsMuted, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
+import { activateAudioTake, activateAudioTakeLane, applyAudioClipAction, compGroupedAudioTakeRange, createTakeLaneGroupFromClips, cropClipToRange, deleteAudioWarpMarker, deleteClip, deleteClipRange, deleteClips, duplicateClip, duplicateClips, moveClipByBars, moveClipsByBars, moveClipToBar, pasteClip, pasteClips, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setAudioWarpMarkerTarget, setClipTransform, setClipsMuted, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
 import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackRecordingChannelMode, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
 import { setTrackRecordingInputAssignment } from "../daw/recordingInputs";
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
 import { addTrackToProject, recordingLatencyOffsetSeconds, renameTrack, setTrackFolder, setTrackRecordingLatencyOffset, toggleFolderExpanded, type AddTrackKind } from "../daw/tracks";
 import { placeAudioClipOnTimeline, placePunchRecordingClipOnTrack } from "../daw/audioClips";
-import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createEmptyMidiClip, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, midiDataFromClip, midiGrooveTemplateById, moveMidiNote, quantizeMidiClip, quantizeMidiClipDurations, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote, type MidiAftertouchField, type MidiControllerField, type MidiGrooveTemplateId, type MidiNoteField, type MidiPitchBendField, type MidiPitchTransform, type MidiProgramChangeField, type MidiQuantizeGrid, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
+import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createEmptyMidiClip, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, midiDataFromClip, midiGrooveTemplateById, moveMidiNote, placeMidiRecordingClipOnTrack, quantizeMidiClip, quantizeMidiClipDurations, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote, type MidiAftertouchField, type MidiControllerField, type MidiGrooveTemplateId, type MidiNoteField, type MidiPitchBendField, type MidiPitchTransform, type MidiProgramChangeField, type MidiQuantizeGrid, type MidiRecordingNoteInput, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
 import type { MidiTempoMapSummary } from "../daw/midiClips";
 import { convertMidiClipToBassOverlays } from "../daw/midiBassConversion";
 import { convertMidiClipToChordOverlays } from "../daw/midiChordConversion";
@@ -498,6 +498,40 @@ export function placePunchRecordingClipFromRangeCommand(
   };
 }
 
+export function placeMidiRecordingTakeCommand(
+  state: AppState,
+  trackId: string,
+  notes: MidiRecordingNoteInput[],
+  options: { captureStartBar?: number; punchStartBar?: number; punchEndBar?: number; createTakeLane?: boolean; name?: string; recordingSessionId?: number | string | null } = {}
+): AppState {
+  const track = state.undoStack.present.tracks.find((item) => item.id === trackId && item.trackType === "midi");
+  if (!track) return { ...state, status: "Choose a MIDI track before recording a MIDI take." };
+  const captureStartBar = Number.isFinite(options.captureStartBar) ? Number(options.captureStartBar) : Math.max(1, state.playheadBar || state.undoStack.present.timeline.cursor.bar || 1);
+  const result = placeMidiRecordingClipOnTrack(state.undoStack.present, track.id, notes, {
+    captureStartBar,
+    punchStartBar: options.punchStartBar,
+    punchEndBar: options.punchEndBar,
+    createTakeLane: options.createTakeLane,
+    name: options.name,
+    recordingSessionId: options.recordingSessionId
+  });
+  if (!result.clipId || result.project === state.undoStack.present) {
+    return { ...state, selectedTrackId: track.id, status: "Could not place MIDI recording; check the track and punch range." };
+  }
+  const punchLabel = Number.isFinite(options.punchStartBar) && Number.isFinite(options.punchEndBar)
+    ? ` punch ${formatRangeBar(Number(options.punchStartBar))} to ${formatRangeBar(Number(options.punchEndBar))}`
+    : "";
+  const laneLabel = options.createTakeLane ? " as a new take lane" : "";
+  const noteLabel = `${result.noteCount} note${result.noteCount === 1 ? "" : "s"}`;
+  return {
+    ...commitProject(state, result.project, `Recorded MIDI take${laneLabel}${punchLabel} on ${track.name} with ${noteLabel}.`),
+    selectedClipId: result.clipId,
+    selectedClipIds: [result.clipId],
+    selectedTrackId: result.trackId,
+    lowerDockTab: "piano-roll"
+  };
+}
+
 export function activateAudioTakeCommand(state: AppState, clipId: string): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || !clipSupportsTakeLanes(clip)) return { ...state, status: "Choose an audio or MIDI take before activating it." };
@@ -555,6 +589,27 @@ export function setAudioTakeArchivedCommand(state: AppState, clipId: string, arc
   };
 }
 
+export function createTakeLaneGroupCommand(state: AppState, clipIds?: string[], activeClipId?: string | null): AppState {
+  const ids = clipIds?.length ? clipIds : selectedClipIdsForCommand(state);
+  const activeId = activeClipId || state.selectedClipId || ids[0] || null;
+  const result = createTakeLaneGroupFromClips(state.undoStack.present, ids, activeId);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipIds: result.clipIds.length ? result.clipIds : state.selectedClipIds,
+      selectedClipId: result.activeClipId || state.selectedClipId,
+      status: result.status
+    };
+  }
+  const activeClip = result.project.timeline.clips.find((clip) => clip.id === result.activeClipId);
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: result.activeClipId || state.selectedClipId,
+    selectedClipIds: result.clipIds,
+    selectedTrackId: activeClip?.trackId || state.selectedTrackId
+  };
+}
+
 export function compAudioTakeFromPlayheadCommand(state: AppState, clipId: string): AppState {
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || !clipSupportsTakeLanes(clip)) return { ...state, status: "Choose an audio or MIDI take before comping." };
@@ -605,6 +660,11 @@ export function compAudioTakeRangeCommand(state: AppState, clipId: string): AppS
 
 function clipSupportsTakeLanes(clip: Clip): boolean {
   return clip.type === "audio" || clip.type === "midi";
+}
+
+function selectedClipIdsForCommand(state: AppState): string[] {
+  const ids = [state.selectedClipId || "", ...(state.selectedClipIds || [])].filter(Boolean);
+  return Array.from(new Set(ids));
 }
 
 export function splitSelectedClipAtPlayhead(state: AppState): AppState {

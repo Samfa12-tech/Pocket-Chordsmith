@@ -4,7 +4,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.37` |
+| Source version | `0.6.38` |
 | Project schema version | `2` |
 | Latest published version | `0.6.37` |
 | Latest published tag | `pocket-daw-v0.6.37` |
@@ -31,13 +31,15 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
-- No unreleased source-only notes recorded.
+- 0.6.38 source candidate adds the first user-facing punch/take-lane recording workflow, automatic audio and Web MIDI punch-out at the active punch range end, user-created audio/MIDI take-lane groups from overlapping clips, UI-created MIDI take clips, Web MIDI input recording that starts transport onto selected MIDI tracks, live-bridge punched MIDI recording-take placement, live-bridge audio/MIDI recording option/start/stop/toggle controls for installed-app smoke, shared audio/MIDI take-lane activation/archive/comp behavior, inactive-take playback/export filtering, and a no-hardware installed smoke helper for punch take-lanes through the live bridge.
+- Local exact-artifact smoke passed for a freshly rebuilt 0.6.38 NSIS setup EXE at C:\Users\sam_s\Documents\Pocket Chordsmith\apps\pocket-daw\src-tauri\target\release\bundle\nsis\Pocket DAW_0.6.38_x64-setup.exe with SHA-256 419d90af306471336a3c1fd081c61b1a5d6875e303c1aa38a1870c23a9eb7cd1. The matching MSI SHA-256 is 127f3457ad690b8bc84de3bc5dfb3eb2222aa3864d9e6485756c18acef4d7739. The installed app reported version 0.6.38 and `npm run smoke:installed:punch-takes -- --installer <setup.exe>` passed, recording the setup EXE path/hash in the smoke summary, asserting live audio recording option/start/stop/toggle controls plus MIDI recording start/stop/toggle controls, starting and stopping live audio recording through `record_start`/`record_stop`, asserting that the successful live audio recording added one durable timeline clip, one grouped take-lane clip, one take group, and one active take, and verifying the saved project-relative native recording WAV file existed with RIFF/WAVE data, matching size metadata, 0.54 seconds of duration, captured native frames, byte-level WAV sample-rate/channel/frame-count evidence, and an active linked take-lane clip. `npm run verify:installed:punch-takes -- --summary <summary.json> --installer <setup.exe>` also passed against that summary and installer hash, guarding against stale or guard-only punch/take smoke evidence. Strict `--require-audible-audio` mode uses byte-level WAV peak/RMS analysis so silent or near-silent captures do not satisfy real mic/interface signal evidence. The same smoke recorded a guarded Web MIDI permission-denied result through `midi_record_start`, set Punch plus Take Lane mode through `pocket_daw_live_control:set_recording_options`, created punch take lanes, comp segments, live-bridge MIDI take-lane grouping with `create_take_lane_group`, live-bridge punched MIDI recording-take placement with `place_midi_recording_take`, live-bridge MIDI take-lane range editing, save/reopen metadata assertions, explicit WAV export, and parsed MIDI export that includes active edited MIDI take-lane pitches 83/84 and active recorded MIDI take pitch 86 while excluding inactive sentinel pitches 82/85.
+- 0.6.38 is not published yet. Public release claims remain limited to 0.6.37 until release manifests, updater assets, GitHub release state, and itch/bootstrapper publishing steps are deliberately completed and verified.
 
 ## Capability Claim Boundary
 
 - Public release claims must be limited to the latest published version plus the exact installed-smoke evidence recorded above.
 - Source-only notes describe current working-tree capability only; they are not public release claims until installed-app smoke and release metadata are refreshed.
-- Candidate release claims require a fresh exact-artifact smoke attestation, verified game-pack ZIP evidence for any game-pack claim, and refreshed generated release status.
+- Candidate release claims require a fresh exact-artifact smoke attestation, a verified installed punch/take-lane smoke summary, verified game-pack ZIP evidence for any game-pack claim, and refreshed generated release status.
 
 ## Release Truth
 

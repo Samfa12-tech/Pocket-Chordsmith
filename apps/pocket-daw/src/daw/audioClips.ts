@@ -261,7 +261,7 @@ export function placeTakeLaneRecordingClipOnTrack(project: PocketDawProject, med
   const clipLength = Math.max(0.001, secondsToBarsFromStart(item.durationSeconds || secondsBetweenBars(project, startBar, startBar + 1), project, placement.startBar));
   return placeTakeLaneAudioClipOnTrack(project, mediaPoolItemId, trackId, placement.startBar, placement.startBar + clipLength, {
     extraMetadata: {
-      punchMode: "create-new-take-lane",
+      recordingPlacementMode: "create-new-take-lane",
       ...placement.metadata
     }
   });

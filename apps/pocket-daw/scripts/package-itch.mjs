@@ -356,7 +356,7 @@ function knownLimitations() {
   return [
     "Live recording is a narrow installed-app alpha: one armed mono live track at a time.",
     "No ASIO backend yet; native audio currently targets WASAPI/CPAL.",
-    "No simultaneous multitrack recording, stereo recording modes, dedicated lane subtracks/collapse/solo controls, full polished comping UI, live MIDI capture, FX-through-monitoring or latency compensation UI yet.",
+    "No simultaneous multitrack recording, stereo recording modes, dedicated lane subtracks/collapse/solo controls, full polished comping UI, multi-input MIDI routing/overdub polish, FX-through-monitoring or latency compensation UI yet.",
     "Imported audio decode/streaming is still limited and large files are rejected before whole-file reads.",
     "Full send/return processing and advanced pro DAW features are future work.",
     "Godot/web game-pack exports build ZIPs with manifest metadata, source project JSON and rendered audio, but still need target-project smoke testing before calling them production pipeline exports.",
@@ -418,7 +418,7 @@ Pocket Chordsmith users, song sketching, adaptive/game-audio planning, MIDI/WAV 
 
 ${limitations.map((item) => `- ${item}`).join("\n")}
 
-ASIO, simultaneous multitrack recording, dedicated lane subtracks, full polished comping UI, live MIDI capture, full send/return processing, full bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
+ASIO, simultaneous multitrack recording, dedicated lane subtracks, full polished comping UI, multi-input MIDI routing/overdub polish, full send/return processing, full bundled game export packs and advanced pro DAW features are future work unless a later release explicitly says otherwise.
 
 ## Signing
 

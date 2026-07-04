@@ -1,18 +1,18 @@
-# Pocket DAW v0.6.37 Alpha Testing Release Status
+# Pocket DAW v0.6.38 Alpha Testing Release Status
 
 Pocket DAW is now live for public Windows alpha testing on itch and linked from `samfa12.com`.
 
-This file records the current source baseline and public installed-release evidence. Current source target is `0.6.37` timeline-first UI plus hardened Pocket Audio handoff. The machine-readable current status is `../release-status.json`; regenerate `CURRENT_RELEASE_STATUS.md` with `npm run status:release`.
+This file records the current source baseline and public installed-release evidence. Current source target is `0.6.38` punch/take-lane workflow candidate. The machine-readable current status is `../release-status.json`; regenerate `CURRENT_RELEASE_STATUS.md` with `npm run status:release`.
 
 ## Current Source Baseline
 
-- Version: `0.6.37`
-- Source delta after published `0.6.36`: Pocket DAW preserves the timeline-first direction, keeps Music/Game Music layout presets meaningful, keeps the lower dock tucked by default in Music mode, keeps timeline tools collapsed by default, preserves scroll when opening panels, and hardens downloaded/opened Pocket Audio handoff payload handling from `samfa12.com`.
+- Version: `0.6.38`
+- Source delta after published `0.6.37`: Pocket DAW adds the first user-facing punch/take-lane recording workflow, automatic audio and Web MIDI punch-out at the active punch range end, UI-created MIDI take clips, Web MIDI input recording that starts transport onto selected MIDI tracks, live-bridge punched MIDI recording-take placement, live-bridge audio/MIDI recording options/start/stop/toggle controls for installed-app smoke, shared audio/MIDI take-lane activation/archive/comp behavior, inactive-take playback/export filtering, and a no-hardware installed smoke helper for punch take-lanes through the live bridge.
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Primary itch channel: `windows-installer`
 - Updater manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json`
 - Bootstrapper manifest endpoint: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-bootstrapper-latest.json`
-- Release artifact status: `0.6.37` is the current public GitHub updater release.
+- Release artifact status: `0.6.38` has local candidate installer artifacts built and smoke-tested, but it is not deliberately published. `0.6.37` remains the current public GitHub updater release.
 - Published source commit: `7a9021cb580f3911890962b538fc47150f58840d`.
 - GitHub release: `https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/tag/pocket-daw-v0.6.37`
 - Itch channel status: `samfa12/pocket-daw:windows-installer` reports user version `bootstrapper-0.6.34`.
@@ -32,7 +32,8 @@ This file records the current source baseline and public installed-release evide
 
 - Current source has a compact first-view timeline toolbar, hidden/offscreen native file inputs, lower-dock reveal scrolling, and paused UI work after Sam confirmed the direction is good enough for now.
 - Current source hardens CI/release checks: GitHub artifact/cache actions use current Node-runtime majors, Pocket Audio Core installs Playwright for browser trace parity, and Pocket DAW `verify:release` runs `verify:ci-workflow` plus Pocket Audio Core `verify:family-parity` before DAW tests/build/package checks.
-- This is not a new public installed checkpoint until package/Tauri/schema metadata are intentionally versioned, an installer is built, hashes/manifests are recorded, and installed smoke is repeated.
+- Local `0.6.38` exact-artifact smoke passed for the freshly rebuilt setup EXE `src-tauri/target/release/bundle/nsis/Pocket DAW_0.6.38_x64-setup.exe`, SHA-256 `419d90af306471336a3c1fd081c61b1a5d6875e303c1aa38a1870c23a9eb7cd1`. The matching MSI SHA-256 is `127f3457ad690b8bc84de3bc5dfb3eb2222aa3864d9e6485756c18acef4d7739`. The installed app reported version `0.6.38`, and `npm run smoke:installed:punch-takes -- --installer <setup.exe>` passed while recording the setup EXE path/hash in its summary, asserting live audio recording option/start/stop/toggle controls plus MIDI recording start/stop/toggle controls, starting and stopping live audio recording through `record_start`/`record_stop`, asserting that the successful live audio recording added one durable timeline clip, one grouped take-lane clip, one take group, and one active take, and verifying the saved project-relative native recording WAV file existed with RIFF/WAVE data, matching size metadata, `0.54s` duration, `25920` captured native frames, and an active linked take-lane clip. `npm run verify:installed:punch-takes -- --summary <summary.json> --installer <setup.exe>` also passed against that summary and installer hash, guarding against stale or guard-only punch/take smoke evidence. The smoke also recorded a guarded Web MIDI permission-denied result through `midi_record_start`, set Punch plus Take Lane mode through `pocket_daw_live_control:set_recording_options`, with punch take-lane placement, comp/timeline editing, live-bridge MIDI take-lane grouping via `create_take_lane_group`, live-bridge punched MIDI recording-take placement via `place_midi_recording_take`, live-bridge MIDI take-lane range editing, save/reopen metadata assertions, explicit WAV export, and parsed MIDI export that kept inactive MIDI sentinel pitches `82` and `85` out while retaining active edited lane pitches `83`/`84` and active recorded MIDI take pitch `86`. Treat this as local candidate smoke, not public release evidence.
+- This is not a new public installed checkpoint until release manifests, updater assets, GitHub release state, and itch/bootstrapper publishing steps are deliberately completed and verified.
 
 ## Historical 0.6.34 Artifact Record
 
@@ -174,4 +175,4 @@ Historical partial installed-app smoke run by Sam on 2026-06-14 against v0.5.9/v
 - v0.6.7 source changes make manual Build Native Cache immediately override active native generated-track playback with cached WAV regions until source hashes change.
 - v0.6.8 source changes add visible Native Playback/Native Cache readouts for cached regions, cached clips and procedural fallback events, and keep lofi texture/noise ticks from falsely driving the Drums mixer meter.
 - v0.6.9 source changes restore native procedural `warm_sub`/lofi bass audibility by matching the Chordsmith/WebAudio bass output scale when cached stems are unavailable.
-- ASIO support, simultaneous multitrack recording, punch-in/out, full comping/take lanes, automatic latency detection/compensation, FX monitoring, full send/return processing, bundled game export packs, and professional DAW completeness remain out of scope for the current alpha.
+- For the public `0.6.37` alpha, ASIO support, simultaneous multitrack recording, punch-in/out, full comping/take lanes, automatic latency detection/compensation, FX monitoring, full send/return processing, bundled game export packs, and professional DAW completeness remain out of scope. The `0.6.38` source/local candidate now has a first punch/take-lane workflow slice, but it is not public release behavior until the next deliberate checkpoint.

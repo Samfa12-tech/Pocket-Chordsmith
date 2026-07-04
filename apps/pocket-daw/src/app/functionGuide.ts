@@ -428,9 +428,21 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "Record",
-        does: "Captures audio to project-relative WAV media under project-media/recordings and places the take on the timeline.",
+        does: "Captures audio to project-relative WAV media under project-media/recordings and places the take on the timeline, honoring explicit punch and take-lane mode when enabled.",
         useWhen: "Use after saving the project and selecting/arming the intended live track.",
         aiNote: "Confirm saved path, count-in, take placement, media pool item, and reopen persistence."
+      },
+      {
+        name: "Punch And Take Mode",
+        does: "Limits live recording placement to the visible punch range when Punch is enabled, and chooses whether the punch replaces overlapping material or creates a new active take lane.",
+        useWhen: "Use before repeating a section over existing audio while preserving earlier passes for auditioning or comping.",
+        aiNote: "Punch/take-lane recording is wired for installed-app audio capture and source-level Web MIDI input capture; real hardware MIDI smoke is still required before public claims."
+      },
+      {
+        name: "MIDI Input Recording",
+        does: "Records note on/off events from the first available Web MIDI input onto the selected MIDI track and commits the result as a normal MIDI take clip.",
+        useWhen: "Use with a connected MIDI keyboard/controller when a performed part should become editable, saveable, exportable MIDI take-lane material.",
+        aiNote: "Requires Web MIDI support in the runtime and a real MIDI input device. Automated tests cover fake-device capture; installed hardware smoke still needs a controller."
       },
       {
         name: "Manual Recording Latency Offset",
@@ -963,6 +975,30 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     does: "Splits the selected clip at the playhead.",
     useWhen: "Use before trimming, muting, moving, or exporting a subsection.",
     aiNote: "Prefer split over destructive source editing."
+  },
+  {
+    surface: "Recording And Takes",
+    control: "Make Takes",
+    actionId: "create-take-lane-group",
+    does: "Groups the selected overlapping audio or MIDI clips on one track as alternate take lanes, preserving them as normal timeline clips with durable take metadata.",
+    useWhen: "Use after importing or editing alternate audio or MIDI passes that should be auditioned, archived, comped, saved and exported as a take group.",
+    aiNote: "Requires at least two selected clips of one type on one track. For live automation use create_take_lane_group with explicit clipIds."
+  },
+  {
+    surface: "Recording And Takes",
+    control: "MIDI Take",
+    actionId: "record-midi-take",
+    does: "Creates an editable MIDI take on the selected MIDI track at the playhead, or trims it to the active punch range when punch recording is enabled.",
+    useWhen: "Use to start a MIDI take-lane pass without importing a MIDI file first, then edit or comp the resulting piano-roll clip.",
+    aiNote: "This creates a MIDI take clip through the same undoable placement path used by live MCP. Use MIDI Rec for Web MIDI input capture."
+  },
+  {
+    surface: "Recording And Takes",
+    control: "MIDI Input Recording",
+    actionId: "midi-record-toggle",
+    does: "Starts or stops Web MIDI input capture from the first available MIDI input, then commits captured note events as a MIDI recording take on the selected MIDI track.",
+    useWhen: "Use when a connected MIDI controller should record an editable take that can join take lanes, save/reopen and export through the normal MIDI path.",
+    aiNote: "Requires a Web MIDI-capable runtime and an attached input. Source tests use a fake device; real installed hardware smoke is still a release gate."
   },
   {
     surface: "Timeline Editing",
@@ -2374,9 +2410,9 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   {
     surface: "AI / MCP Bridge",
     control: "File MCP Take Lane Activation",
-    selector: "activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range, pocket_daw_live_apply_commands:activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range",
-    does: "Activates every non-archived clip in the selected grouped audio or MIDI take lane, archives/restores takes without deleting media, and splits grouped takes into first comp segments or active edit-range comps through the undoable command path, from file-first MCP or the tokened live bridge.",
-    useWhen: "Use for file-first or MCP-observed live take-lane audition, archive/restore and comp smoke after repeated takes exist.",
+    selector: "create_take_lane_group, place_midi_recording_take, activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range, pocket_daw_live_apply_commands:create_take_lane_group, place_midi_recording_take, activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range",
+    does: "Groups overlapping audio or MIDI clips into take lanes, places punched MIDI recording takes from note events, activates every non-archived clip in the selected lane, archives/restores takes without deleting media, and splits grouped takes into first comp segments or active edit-range comps through the undoable command path, from file-first MCP or the tokened live bridge.",
+    useWhen: "Use for file-first or MCP-observed live take-lane creation, MIDI recording-take placement, audition, archive/restore and comp smoke after repeated takes or alternate MIDI clips exist.",
     aiNote: "This is the first same-track take-lane workflow over ordinary clips. Dedicated stacked lane subtracks, collapse/solo and full polished comp editing still need exact installed-app smoke before release claims."
   },
   {
@@ -2386,6 +2422,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     does: "Places an explicit punch-window clip from an existing raw recording media item through the undoable command path, either from command-provided bars or from the active `set_punch_range` selection. Pass `createTakeLane: true` to preserve overlapping material as an inactive take lane.",
     useWhen: "Use for file-first or MCP-observed live punch/take-lane smoke, especially after a real installed recording produces a raw project-media WAV.",
     aiNote: "This places existing media; it does not start native capture by itself. Pair it with installed recording smoke before public release claims."
+  },
+  {
+    surface: "AI / MCP Bridge",
+    control: "Live MCP Recording Options And Transport",
+    selector: "pocket_daw_live_control:set_recording_options, record_start, record_stop, record_toggle, midi_record_start, midi_record_stop, midi_record_toggle",
+    does: "Lets the tokened live bridge set Punch on/off, choose Replace or Take Lane recording mode, start/stop/toggle installed-app audio recording, and start/stop/toggle Web MIDI input recording through the same guarded app paths as the transport buttons.",
+    useWhen: "Use during MCP-observed installed-app recording smoke after saving the project, selecting/arming the live track, choosing the hardware input, and setting the intended punch range.",
+    aiNote: "The no-hardware punch/take-lane smoke asserts and sets these controls but does not perform real microphone/interface capture or real connected-controller MIDI capture."
   },
   {
     surface: "AI / MCP Bridge",
@@ -2471,9 +2515,9 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "AI / MCP Bridge",
     control: "Live MCP Export Readiness",
     selector: "pocket_daw_live_status:export",
-    does: "Reports compact Godot/Web game-pack readiness from the running app, including manifest paths, full-mix path, stem/loop counts, warning counts and delivery targets.",
-    useWhen: "Use before exporting or manually importing a game pack so the AI counterpart can observe the running project's export shape.",
-    aiNote: "Read-only status. It does not replace ZIP verification or manual Godot/Web target-runtime smoke."
+    does: "Reports compact Godot/Web game-pack readiness from the running app, including manifest paths, full-mix path, stem/loop counts, warning counts and delivery targets, and pairs with live `export_project` control for explicit-path WAV/MIDI smoke exports.",
+    useWhen: "Use before exporting, manually importing a game pack, or running installed punch/take-lane smoke so the AI counterpart can observe and verify the running project's export shape.",
+    aiNote: "Use `export_project` only for local installed-app smoke output paths. Stem/loop/game-pack ZIPs still need ZIP verification and manual Godot/Web target-runtime smoke."
   },
   {
     surface: "AI / MCP Bridge",

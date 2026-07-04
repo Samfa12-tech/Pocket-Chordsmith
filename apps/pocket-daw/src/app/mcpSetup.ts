@@ -40,7 +40,7 @@ export function pocketDawMcpManualSetup(): string {
     "",
     "The bridge is a local stdio MCP server for .pocketdaw project inspection, validation, Chordsmith import, typed edits and export planning.",
     "",
-    "When Pocket DAW is running and Help > AI / MCP Bridge is enabled, the same MCP server also exposes live status, transport, selection, safe mixer controls and bounded performance diagnostics through the app's tokened localhost session file.",
+    "When Pocket DAW is running and Help > AI / MCP Bridge is enabled, the same MCP server also exposes live status, transport, selection, explicit-path smoke exports, safe mixer controls and bounded performance diagnostics through the app's tokened localhost session file.",
     "",
     "Command:",
     pocketDawMcpCommandLine(),

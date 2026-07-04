@@ -278,7 +278,7 @@ export function buildTesterDiagnosticsPayload(
 }
 
 export function createAudioTakeDiagnosticsSummary(project: PocketDawProject): AudioTakeDiagnosticsSummary {
-  const audioTakeClips = project.timeline.clips.filter((clip) => clip.type === "audio" && (clip.metadata?.recordingTakeGroupId || clip.metadata?.takeGroupId));
+  const audioTakeClips = project.timeline.clips.filter((clip) => (clip.type === "audio" || clip.type === "midi") && (clip.metadata?.recordingTakeGroupId || clip.metadata?.takeGroupId));
   const groups = new Map<string, AudioTakeDiagnosticsSummary["groups"][number]>();
   let activeCount = 0;
   let mutedCount = 0;

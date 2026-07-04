@@ -73,6 +73,7 @@ export interface AppState {
   nativeCacheStatus: NativeCacheUiStatus;
   lastHandoff: HandoffStatus;
   recording: RecordingUiState;
+  midiInputRecording: MidiInputRecordingUiState;
   recordingPunchEnabled: boolean;
   recordingTakeMode: RecordingTakeMode;
 }
@@ -131,6 +132,19 @@ export interface RecordingUiState {
   message: string;
 }
 
+export interface MidiInputRecordingUiState {
+  status: "idle" | "recording" | "error";
+  sessionId?: number | string | null;
+  trackId: string | null;
+  inputId: string | null;
+  inputName: string | null;
+  startedAt: string | null;
+  startBar: number | null;
+  noteCount: number;
+  activeNoteCount: number;
+  message: string;
+}
+
 export interface RecordingNativePlaybackAnchor {
   source: string;
   snapshotMonotonicMs: number | null;
@@ -183,6 +197,22 @@ export function createRecordingUiState(overrides: Partial<RecordingUiState> = {}
     monitoring: false,
     livePeaks: [],
     message: RECORDING_READY_MESSAGE,
+    ...overrides
+  };
+}
+
+export function createMidiInputRecordingUiState(overrides: Partial<MidiInputRecordingUiState> = {}): MidiInputRecordingUiState {
+  return {
+    status: "idle",
+    sessionId: null,
+    trackId: null,
+    inputId: null,
+    inputName: null,
+    startedAt: null,
+    startBar: null,
+    noteCount: 0,
+    activeNoteCount: 0,
+    message: "MIDI input recording ready.",
     ...overrides
   };
 }
@@ -268,6 +298,7 @@ export function createInitialState(): AppState {
       message: "No Pocket DAW handoff received yet."
     },
     recording: createRecordingUiState(),
+    midiInputRecording: createMidiInputRecordingUiState(),
     recordingPunchEnabled: false,
     recordingTakeMode: "replace"
   };
@@ -345,6 +376,7 @@ export function loadProjectIntoState(
     chordsmithEditorStepPage: 0,
     chordsmithStepSelection: null,
     recording: createRecordingUiState(),
+    midiInputRecording: createMidiInputRecordingUiState(),
     recordingPunchEnabled: state.recordingPunchEnabled,
     recordingTakeMode: state.recordingTakeMode
   };

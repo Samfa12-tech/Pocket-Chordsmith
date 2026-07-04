@@ -4,6 +4,7 @@ import { join } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
 import { ITCH_CHANNEL, ITCH_SLUG } from "./package-itch.mjs";
 import { assertReleaseCandidateTruth } from "./verify-release-candidate-truth.mjs";
+import { verifyInstalledPunchTakeSummaryFile } from "./verify-installed-punch-take-summary.mjs";
 import { verifySmokeAttestationFile } from "./verify-smoke-attestation.mjs";
 
 if (process.env.PUBLISH !== "1") {
@@ -26,6 +27,11 @@ if (!smokeAttestation) {
   console.error("Refusing to upload. Set SMOKE_ATTESTATION to a matching exact-artifact smoke attestation JSON.");
   process.exit(1);
 }
+const punchTakeSummary = process.env.PUNCH_TAKE_SUMMARY;
+if (!punchTakeSummary) {
+  console.error("Refusing to upload. Set PUNCH_TAKE_SUMMARY to a matching installed punch/take-lane smoke summary JSON.");
+  process.exit(1);
+}
 const smoke = verifySmokeAttestationFile({
   attestationPath: smokeAttestation,
   installerPath: setupInstaller,
@@ -34,6 +40,18 @@ const smoke = verifySmokeAttestationFile({
 });
 if (!smoke.ok) {
   for (const failure of smoke.failures) console.error(failure);
+  process.exit(1);
+}
+const punchTake = verifyInstalledPunchTakeSummaryFile({
+  summaryPath: punchTakeSummary,
+  installerPath: setupInstaller,
+  version,
+  requireAudibleAudio: envFlag("PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO"),
+  requireExportFiles: envFlag("PUNCH_TAKE_REQUIRE_EXPORT_FILES"),
+  requireMidiInput: envFlag("PUNCH_TAKE_REQUIRE_MIDI_INPUT")
+});
+if (!punchTake.ok) {
+  for (const failure of punchTake.failures) console.error(failure);
   process.exit(1);
 }
 
@@ -59,4 +77,8 @@ function gitCommit() {
     process.exit(1);
   }
   return result.stdout.trim();
+}
+
+function envFlag(name) {
+  return process.env[name] === "1" || process.env[name] === "true";
 }

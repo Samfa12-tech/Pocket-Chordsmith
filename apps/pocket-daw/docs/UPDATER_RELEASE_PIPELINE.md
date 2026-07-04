@@ -183,11 +183,31 @@ cargo test --manifest-path src-tauri/Cargo.toml
 npm run release:update:full
 ```
 
-After the candidate installer exists, validate the exact smoke attestation:
+After the candidate installer exists, validate the exact smoke attestation and the installed punch/take-lane smoke summary:
 
 ```powershell
 npm run verify:smoke-attestation -- --attestation <path-to-smoke-attestation.json> --installer <setup.exe> --commit <full-source-sha>
+npm run verify:installed:punch-takes -- --summary <punch-take-lane-installed-smoke-summary.json> --installer <setup.exe>
 ```
+
+For a hardware-backed punch/take-lane candidate, pass the strict summary gates through the full candidate verifier:
+
+```powershell
+npm run smoke:installed:punch-takes -- --installer <setup.exe> --record-ms 5000 --midi-record-ms 5000
+npm run verify:candidate -- --attestation <path-to-smoke-attestation.json> --installer <setup.exe> --punch-take-summary <punch-take-lane-installed-smoke-summary.json> --require-audible-audio --require-export-files --require-midi-input --commit <full-source-sha> --game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>
+```
+
+Guarded public publish paths also require the punch/take-lane summary:
+
+```powershell
+$env:SMOKE_ATTESTATION = "<path-to-smoke-attestation.json>"
+$env:PUNCH_TAKE_SUMMARY = "<punch-take-lane-installed-smoke-summary.json>"
+$env:PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO = "1" # for hardware-backed recording releases
+$env:PUNCH_TAKE_REQUIRE_EXPORT_FILES = "1"  # for on-disk WAV/MIDI export artifact checks
+$env:PUNCH_TAKE_REQUIRE_MIDI_INPUT = "1"    # for connected-controller MIDI releases
+```
+
+The punch/take summary verifier checks the installer SHA-256 and accepts the known Pocket DAW setup filename normalization between local `Pocket DAW_...` NSIS artifacts and staged `Pocket.DAW_...` release assets. Add `--require-export-files` only when the summary's WAV/MIDI export paths are expected to still exist on disk; archived summaries may legitimately point at deleted temp folders. New summaries also include export size/SHA-256 fields, and the verifier compares those hashes and sizes when they are present. Strict export-file mode also requires WAV sample data and parses the MIDI file bytes for active/inactive take-lane sentinel pitches. Strict MIDI-input mode requires a saved active punched MIDI input take with captured note pitches, matching capture/punch bars, punch mode metadata and take-lane placement evidence.
 
 Manual update-through-app smoke:
 

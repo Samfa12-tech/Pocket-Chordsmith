@@ -20,10 +20,12 @@ import {
   buildRecordingStartupPlan,
   beginRecordingSession,
   cancelRecordingSession,
+  shouldAutoPunchOutMidiInputRecording,
+  shouldAutoPunchOutRecording,
   transitionRecordingSession,
   recordingStartFailureCleanupPlan
 } from "../src/app/recordingOrchestration";
-import { createRecordingUiState, recordingSessionMatches } from "../src/app/state";
+import { createMidiInputRecordingUiState, createRecordingUiState, recordingSessionMatches } from "../src/app/state";
 import { nativeRecordingStatus } from "../src/native/recordingBridge";
 import { createUndoStack } from "../src/daw/undo";
 
@@ -629,6 +631,10 @@ describe("recording alpha foundations", () => {
       ["first-full-take.wav", true, 1, "muted-take"],
       ["second-full-take.wav", false, 2, "active"]
     ]);
+    expect(clips.find((clip) => clip.id === secondPlaced.clipId)?.metadata).toMatchObject({
+      recordingPlacementMode: "create-new-take-lane"
+    });
+    expect(clips.find((clip) => clip.id === secondPlaced.clipId)?.metadata?.punchMode).toBeUndefined();
     expect(renderTimelineAudioRegions(secondPlaced.project).audioRegions.map((region) => region.clipId)).toEqual([secondPlaced.clipId]);
   });
 
@@ -728,6 +734,38 @@ describe("recording alpha foundations", () => {
     const plan = buildRecordingStartupPlan({ transportAlreadyPlaying: true, countInSeconds: 0 });
 
     expect(plan).toEqual(["prepare-timeline-audio", "open-input-preview", "start-native-capture"]);
+  });
+
+  it("auto punch-out only triggers when an active punch recording reaches the punch end", () => {
+    const recording = createRecordingUiState({ status: "recording", sessionId: 14, trackId: "live-vocals", startBar: 5 });
+    const punchRange = { startBar: 7, endBar: 9 };
+
+    expect(shouldAutoPunchOutRecording({ recording, punchEnabled: true, punchRange, playheadBar: 8.99 })).toBe(false);
+    expect(shouldAutoPunchOutRecording({ recording, punchEnabled: true, punchRange, playheadBar: 9 })).toBe(true);
+    expect(shouldAutoPunchOutRecording({ recording, punchEnabled: false, punchRange, playheadBar: 9 })).toBe(false);
+    expect(shouldAutoPunchOutRecording({ recording, punchEnabled: true, punchRange: null, playheadBar: 9 })).toBe(false);
+    expect(shouldAutoPunchOutRecording({
+      recording: createRecordingUiState({ status: "stopping", sessionId: 14, trackId: "live-vocals", startBar: 5 }),
+      punchEnabled: true,
+      punchRange,
+      playheadBar: 9.5
+    })).toBe(false);
+  });
+
+  it("auto punch-out also triggers for active MIDI input punch recording", () => {
+    const recording = createMidiInputRecordingUiState({ status: "recording", sessionId: "midi-input-1", trackId: "midi-track-1", startBar: 5 });
+    const punchRange = { startBar: 7, endBar: 9 };
+
+    expect(shouldAutoPunchOutMidiInputRecording({ recording, punchEnabled: true, punchRange, playheadBar: 8.99 })).toBe(false);
+    expect(shouldAutoPunchOutMidiInputRecording({ recording, punchEnabled: true, punchRange, playheadBar: 9 })).toBe(true);
+    expect(shouldAutoPunchOutMidiInputRecording({ recording, punchEnabled: false, punchRange, playheadBar: 9 })).toBe(false);
+    expect(shouldAutoPunchOutMidiInputRecording({ recording, punchEnabled: true, punchRange: null, playheadBar: 9 })).toBe(false);
+    expect(shouldAutoPunchOutMidiInputRecording({
+      recording: createMidiInputRecordingUiState({ status: "idle", message: "Stopped." }),
+      punchEnabled: true,
+      punchRange,
+      playheadBar: 9.5
+    })).toBe(false);
   });
 
   it("invalidates stale recording session completion after count-in cancellation", () => {

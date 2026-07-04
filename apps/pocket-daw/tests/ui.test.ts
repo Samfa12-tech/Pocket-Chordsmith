@@ -11,12 +11,13 @@ import { addFxSlot } from "../src/daw/fx";
 import { branchGeneratedDrumsToTracks, setDrumBranchGroupCollapsed } from "../src/daw/drumLanes";
 import { createAutomationLane, ensureTrackSendAutomationLane } from "../src/daw/automation";
 import { addReturnTrack, setTrackSendLevel, setTrackSendMode } from "../src/daw/routing";
-import { addMidiAftertouch, addMidiController, addMidiPitchBend, addMidiProgramChange, importMidiFileToProject, midiDataFromClip } from "../src/daw/midiClips";
+import { addMidiAftertouch, addMidiController, addMidiPitchBend, addMidiProgramChange, addMidiNote, createEmptyMidiClip, importMidiFileToProject, midiDataFromClip, setMidiNoteField } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { multiTrackChannelMidiBytes, simpleMidiBytes } from "./midiFixtures";
 import { createEmptyPocketDawProject } from "../src/daw/dawProject";
 import { POCKET_DAW_VERSION } from "../src/daw/schema";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
+import { createTakeLaneGroupFromClips } from "../src/daw/clips";
 import { FUNCTION_ACTION_CATALOG_DOC, FUNCTION_ACTION_REFERENCE, FUNCTION_GUIDE_SECTIONS, FUNCTION_REFERENCE_DOC } from "../src/app/functionGuide";
 import { addTrackCommand, importTextToProject, setTrackFolderCommand, toggleFolderExpandedCommand } from "../src/app/commands";
 import { utf8ToBase64Url } from "../src/compatibility/pcsParser";
@@ -193,6 +194,7 @@ describe("Pocket DAW UI rendering", () => {
     const html = renderAppShell(state);
 
     expect(html).toContain('data-action="range-selected"');
+    expect(html).toContain('data-action="range-punch"');
     expect(html).toContain('data-action="range-loop"');
     expect(html).toContain('data-action="range-copy"');
     expect(html).toContain('data-action="range-cut"');
@@ -206,6 +208,12 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('id="rangeEnd"');
     expect(html).toContain('data-range-region="true"');
     expect(html).toContain('class="range-region clip"');
+
+    project.timeline.selection.source = "punch";
+    state.collapsedUiSections["timeline-tools"] = true;
+    const punchHtml = renderAppShell(state);
+    expect(punchHtml).toContain("Punch ");
+    expect(punchHtml).toContain('class="range-region punch"');
   });
 
   it("renders compact transport readouts with contained value and detail text", () => {
@@ -229,13 +237,19 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain(">Panic</button>");
     expect(html).toContain('data-action="recording-punch-toggle"');
     expect(html).toContain('data-action="recording-take-mode-toggle"');
+    expect(html).toContain('data-action="midi-record-toggle"');
+    expect(html).toContain('data-midi-recording-state="true"');
 
     state.recording.status = "idle";
+    state.midiInputRecording.status = "recording";
+    state.midiInputRecording.noteCount = 2;
     state.recordingPunchEnabled = true;
     state.recordingTakeMode = "take-lane";
     const readyHtml = renderAppShell(state);
     expect(readyHtml).toContain("<small>punch / lane</small>");
+    expect(readyHtml).toContain("<small>2 notes</small>");
     expect(readyHtml).toContain(">Take Lane</button>");
+    expect(readyHtml).toContain(">Stop MIDI</button>");
   });
 
   it("renders creation focus presets with scoped UI clutter controls", () => {
@@ -523,6 +537,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(doc).toContain("| Folder Tracks |");
     expect(doc).toContain("| Track Source Editor |");
     expect(doc).toContain("| Live MCP Recording Input Channel |");
+    expect(doc).toContain("| Live MCP Recording Options And Transport |");
     expect(doc).toContain("| Live MCP Edit Range |");
     expect(doc).toContain("| Live MCP Audio Clip Actions |");
     expect(doc).toContain("| Live MCP Arm And Monitor |");
@@ -549,12 +564,16 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Apply Warp Rate | `data-audio-clip-action:apply-warp-varispeed`");
     expect(catalog).toContain("| Download And Install Update | `data-action=updater-download-install`");
     expect(catalog).toContain("| Enable Live App Bridge | `data-ai-bridge-enabled`");
+    expect(catalog).toContain("| Make Takes | `data-action=create-take-lane-group`");
+    expect(catalog).toContain("| MIDI Take | `data-action=record-midi-take`");
+    expect(catalog).toContain("| MIDI Input Recording | `data-action=midi-record-toggle`");
     expect(catalog).toContain("| Take Lane Activate | `data-audio-take-lane-activate`");
     expect(catalog).toContain("| Take Lane Overview | `data-audio-take-lane-summary`");
     expect(catalog).toContain("| File MCP Recording Latency Offset | `set_recording_latency_offset`");
     expect(catalog).toContain("| Live MCP Recording Latency Offset | `pocket_daw_live_apply_commands:set_recording_latency_offset`");
     expect(catalog).toContain("| Live MCP Recording Input Channel | `pocket_daw_live_apply_commands:set_recording_input_channel`");
-    expect(catalog).toContain("| File MCP Take Lane Activation | `activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range, pocket_daw_live_apply_commands:activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range`");
+    expect(catalog).toContain("| Live MCP Recording Options And Transport | `pocket_daw_live_control:set_recording_options, record_start, record_stop, record_toggle, midi_record_start, midi_record_stop, midi_record_toggle`");
+    expect(catalog).toContain("| File MCP Take Lane Activation | `create_take_lane_group, place_midi_recording_take, activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range, pocket_daw_live_apply_commands:create_take_lane_group, place_midi_recording_take, activate_audio_take_lane, set_audio_take_archived, comp_audio_take_from_bar, comp_audio_take_range`");
     expect(catalog).toContain("| MCP Punch Recording Placement | `place_punch_recording_clip`, `place_punch_recording_clip_from_range`, `pocket_daw_live_apply_commands:place_punch_recording_clip_from_range`");
     expect(catalog).toContain("| Live MCP Edit Range | `pocket_daw_live_apply_commands:set_timeline_selection, set_timeline_selection_to_clip, clear_timeline_selection, split_timeline_selection, crop_clip_to_timeline_selection, delete_clip_range, ripple_delete_clip_range, ripple_delete_timeline_selection`");
     expect(catalog).toContain("| Live MCP Audio Clip Actions | `pocket_daw_live_apply_commands:apply_audio_clip_action`");
@@ -809,11 +828,14 @@ describe("Pocket DAW UI rendering", () => {
       metadata: { takeGroupId: "lead-comp-a", inputMode: "mono", channelMap: [0] }
     });
     const secondPlaced = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, firstPlaced.trackId, 2);
+    const secondClip = secondPlaced.project.timeline.clips.find((clip) => clip.id === secondPlaced.clipId);
+    secondClip!.metadata = { ...(secondClip!.metadata || {}), punchStartBar: 7, punchEndBar: 9 };
     state.undoStack = createUndoStack(secondPlaced.project);
     state.selectedClipId = secondPlaced.clipId;
     state.selectedTrackId = secondPlaced.trackId;
 
-    const inspector = inspectorHtml(renderAppShell(state));
+    const html = renderAppShell(state);
+    const inspector = inspectorHtml(html);
 
     expect(inspector).toContain("Take Lanes");
     expect(inspector).toContain("lead-comp-a");
@@ -833,12 +855,75 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).toContain('data-audio-take-status="');
     expect(inspector).toContain('data-action="audio-take-comp-from-playhead"');
     expect(inspector).toContain('data-action="audio-take-comp-range"');
+    expect(inspector).toContain('data-action="create-take-lane-group" disabled');
     expect(inspector).toContain("Use this take only inside the active edit range");
     expect(inspector).toContain("Take 2 of 2");
+    expect(html).toContain(`data-clip-take-badge="${firstPlaced.clipId}:active"`);
+    expect(html).toContain(`data-clip-take-badge="${secondPlaced.clipId}:active"`);
+    expect(html).toContain("Audio Lane 1 active");
+    expect(html).toContain("Audio Lane 2 active / Punch 7-9");
     const firstButton = inspector.match(new RegExp(`<button[^>]*data-audio-take-activate="${firstPlaced.clipId}"[^>]*>`))?.[0] || "";
     const selectedButton = inspector.match(new RegExp(`<button[^>]*data-audio-take-activate="${secondPlaced.clipId}"[^>]*>`))?.[0] || "";
     expect(firstButton).not.toContain("disabled");
     expect(selectedButton).toContain("disabled");
+  });
+
+  it("renders MIDI take lane badges directly on timeline clips", () => {
+    const state = createInitialState();
+    const withTrack = addTrackToProject(createEmptyPocketDawProject(), "midi-instrument");
+    let first = createEmptyMidiClip(withTrack.project, withTrack.trackId, 1, "MIDI take 1");
+    let edited = addMidiNote(first.project, first.clipId, 0);
+    let firstClipWithNote = edited.timeline.clips.find((clip) => clip.id === first.clipId)!;
+    edited = setMidiNoteField(edited, first.clipId, midiDataFromClip(firstClipWithNote).notes[0].id, "pitch", 81);
+    const second = createEmptyMidiClip(edited, withTrack.trackId, 1, "MIDI take 2");
+    edited = addMidiNote(second.project, second.clipId, 0);
+    firstClipWithNote = edited.timeline.clips.find((clip) => clip.id === second.clipId)!;
+    edited = setMidiNoteField(edited, second.clipId, midiDataFromClip(firstClipWithNote).notes[0].id, "pitch", 82);
+    const grouped = createTakeLaneGroupFromClips(edited, [first.clipId, second.clipId], second.clipId);
+    state.undoStack = createUndoStack(grouped.project);
+    state.selectedClipId = second.clipId;
+    state.selectedTrackId = withTrack.trackId;
+
+    const html = renderAppShell(state);
+    const inspector = inspectorHtml(html);
+
+    expect(inspector).toContain("MIDI Take Lanes");
+    expect(html).toContain(`data-clip-take-badge="${first.clipId}:muted"`);
+    expect(html).toContain(`data-clip-take-badge="${second.clipId}:active"`);
+    expect(html).toContain("MIDI Lane 1 muted");
+    expect(html).toContain("MIDI Lane 2 active");
+  });
+
+  it("enables user-created take lanes when multiple audio clips are selected", () => {
+    const state = createInitialState();
+    const firstImport = addImportedAudioMedia(state.undoStack.present, {
+      name: "Manual take 1.wav",
+      uri: "project-media/recordings/manual-take-1.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 4,
+      sampleRate: 48000,
+      channels: 1
+    });
+    const firstPlaced = placeAudioClipOnTimeline(firstImport.project, firstImport.item.id, 3);
+    const secondImport = addImportedAudioMedia(firstPlaced.project, {
+      name: "Manual take 2.wav",
+      uri: "project-media/recordings/manual-take-2.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 4,
+      sampleRate: 48000,
+      channels: 1
+    });
+    const secondPlaced = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, firstPlaced.trackId, 3);
+    state.undoStack = createUndoStack(secondPlaced.project);
+    state.selectedClipId = secondPlaced.clipId;
+    state.selectedClipIds = [firstPlaced.clipId, secondPlaced.clipId];
+    state.selectedTrackId = secondPlaced.trackId;
+
+    const inspector = inspectorHtml(renderAppShell(state));
+    const makeTakesButton = inspector.match(/<button[^>]*data-action="create-take-lane-group"[^>]*>/)?.[0] || "";
+
+    expect(inspector).toContain(">Make Takes</button>");
+    expect(makeTakesButton).not.toContain("disabled");
   });
 
   it("renders grouped audio take counts in About diagnostics", () => {
@@ -1231,6 +1316,21 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Selected MIDI clip editing");
     expect(html).toContain(`data-midi-note-add="${imported.clipId}"`);
     expect(html).toContain(`data-midi-quantize="${imported.clipId}:1/16"`);
+  });
+
+  it("offers MIDI take creation from an empty selected MIDI track", () => {
+    const added = addTrackToProject(createEmptyPocketDawProject(), "midi-instrument");
+    const state = createInitialState();
+    state.undoStack = createUndoStack(added.project);
+    state.selectedTrackId = added.trackId;
+    state.selectedClipId = null;
+    state.lowerDockTab = "piano-roll";
+
+    const html = lowerDockHtml(renderAppShell(state));
+
+    expect(html).toContain('data-action="record-midi-take"');
+    expect(html).toContain("MIDI Take");
+    expect(html).toContain('data-action="add-empty-midi-clip"');
   });
 
   it("renders the selected audio clip in the lower dock audio-editor tab", () => {
@@ -1949,6 +2049,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('data-arm-track="live-vocals"');
     expect(html).toContain('data-monitor-track="live-vocals"');
     expect(html).toContain("Arm Live Vocals for mono recording");
+    expect(html).toContain("Punch and Take Lane use the active punch range");
+    expect(html).not.toContain("punch-in, comping, latency compensation UI and simultaneous multitrack capture are future work");
   });
 
   it("keeps modal panels above the menu and transport bars", () => {

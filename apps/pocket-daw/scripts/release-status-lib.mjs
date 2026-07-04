@@ -154,7 +154,7 @@ ${unreleasedNotes}
 
 - Public release claims must be limited to the latest published version plus the exact installed-smoke evidence recorded above.
 - Source-only notes describe current working-tree capability only; they are not public release claims until installed-app smoke and release metadata are refreshed.
-- Candidate release claims require a fresh exact-artifact smoke attestation, verified game-pack ZIP evidence for any game-pack claim, and refreshed generated release status.
+- Candidate release claims require a fresh exact-artifact smoke attestation, a verified installed punch/take-lane smoke summary, verified game-pack ZIP evidence for any game-pack claim, and refreshed generated release status.
 
 ## Release Truth
 

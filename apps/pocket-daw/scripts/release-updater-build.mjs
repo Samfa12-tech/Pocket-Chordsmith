@@ -13,6 +13,7 @@ import { packageItchRelease } from "./package-itch.mjs";
 import { makeUpdaterManifest } from "./make-updater-manifest.mjs";
 import { DEFAULT_BOOTSTRAPPER_MANIFEST, makeBootstrapperManifest } from "./make-bootstrapper-manifest.mjs";
 import { assertReleaseCandidateTruth } from "./verify-release-candidate-truth.mjs";
+import { verifyInstalledPunchTakeSummaryFile } from "./verify-installed-punch-take-summary.mjs";
 import { verifySmokeAttestationFile } from "./verify-smoke-attestation.mjs";
 
 const ROOT = process.cwd();
@@ -71,6 +72,7 @@ console.log(`Setup SHA-256: ${sha256File(staged.setupExe)}`);
 if (options.publish) {
   assertGithubReleaseMissing();
   verifySmokeAttestationForPublish(staged);
+  verifyPunchTakeSummaryForPublish(staged);
   createGithubRelease(staged);
   await verifyPublishedRelease(staged);
 }
@@ -221,6 +223,24 @@ function verifySmokeAttestationForPublish(staged) {
   }
 }
 
+function verifyPunchTakeSummaryForPublish(staged) {
+  const summaryPath = process.env.PUNCH_TAKE_SUMMARY;
+  if (!summaryPath) {
+    fail("Refusing to publish. Set PUNCH_TAKE_SUMMARY to a matching installed punch/take-lane smoke summary JSON.");
+  }
+  const result = verifyInstalledPunchTakeSummaryFile({
+    summaryPath,
+    installerPath: staged.setupExe,
+    version: VERSION,
+    requireAudibleAudio: envFlag("PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO"),
+    requireExportFiles: envFlag("PUNCH_TAKE_REQUIRE_EXPORT_FILES"),
+    requireMidiInput: envFlag("PUNCH_TAKE_REQUIRE_MIDI_INPUT")
+  });
+  if (!result.ok) {
+    fail(`Installed punch/take-lane smoke summary did not match staged installer:\n${result.failures.join("\n")}`);
+  }
+}
+
 function run(command, args, options = {}) {
   const result = spawn(command, args, options);
   if (result.error) throw result.error;
@@ -260,6 +280,10 @@ function commandLine(command, args) {
 
 function sha256File(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function envFlag(name) {
+  return process.env[name] === "1" || process.env[name] === "true";
 }
 
 async function sha256Url(url) {

@@ -9,7 +9,7 @@ import { createUndoStack } from "../src/daw/undo";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
 import { addTrackToProject } from "../src/daw/tracks";
 import { activateAudioTake, setAudioTakeArchived } from "../src/daw/clips";
-import { addMidiNote, importMidiFileToProject, midiDataFromClip } from "../src/daw/midiClips";
+import { addMidiNote, createEmptyMidiClip, importMidiFileToProject, midiDataFromClip } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { simpleMidiBytes } from "./midiFixtures";
 
@@ -23,7 +23,10 @@ function appHarness(state: AppState) {
     liveUpdateCount: number;
     applyAiBridgeLiveCommand(command: unknown): AppState;
     applyAiBridgeLiveCommands(commands: unknown[]): unknown;
+    handleAiBridgeControl(input: Record<string, unknown>): Promise<unknown>;
     aiBridgeLiveStatus(): unknown;
+    updateLiveDom(): void;
+    render(options?: unknown): void;
   };
   app.state = state;
   app.engine = new AudioEngine(state.undoStack.present);
@@ -31,6 +34,8 @@ function appHarness(state: AppState) {
   app.renderCount = 0;
   app.renderCountDuringPlayback = 0;
   app.liveUpdateCount = 0;
+  app.render = () => undefined;
+  app.updateLiveDom = () => undefined;
   return app;
 }
 
@@ -669,6 +674,65 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(punchClip).toMatchObject({ muted: false, startBar: 7, barLength: 2, metadata: expect.objectContaining({ takeLaneIndex: 2, takeStatus: "active", takeActive: true, punchMode: "create-new-take-lane" }) });
   });
 
+  it("creates MIDI take lane groups through the live bridge executor", () => {
+    let state = addTrackCommand(createInitialState(), "midi-instrument");
+    const trackId = state.selectedTrackId || "midi_001";
+    const first = createEmptyMidiClip(currentProject(state), trackId, 2, "Live MIDI take A");
+    const second = createEmptyMidiClip(first.project, trackId, 2, "Live MIDI take B");
+    state = { ...state, undoStack: createUndoStack(second.project), selectedClipId: second.clipId, selectedClipIds: [first.clipId, second.clipId] };
+    const app = appHarness(state);
+
+    const grouped = app.applyAiBridgeLiveCommand({
+      type: "create_take_lane_group",
+      clipIds: [first.clipId, second.clipId],
+      activeClipId: second.clipId
+    });
+    const firstClip = grouped.undoStack.present.timeline.clips.find((clip) => clip.id === first.clipId);
+    const secondClip = grouped.undoStack.present.timeline.clips.find((clip) => clip.id === second.clipId);
+
+    expect(grouped.status).toBe("Grouped 2 MIDI clips as take lanes.");
+    expect(grouped.selectedClipIds).toEqual([first.clipId, second.clipId]);
+    expect(firstClip).toMatchObject({ muted: true, metadata: expect.objectContaining({ recordingTakeGroupId: "manual-midi-take-group-1", takeLaneIndex: 1, takeStatus: "muted-take" }) });
+    expect(secondClip).toMatchObject({ muted: false, metadata: expect.objectContaining({ recordingTakeGroupId: "manual-midi-take-group-1", takeLaneIndex: 2, takeStatus: "active" }) });
+  });
+
+  it("places MIDI recording takes through the live bridge executor", () => {
+    let state = addTrackCommand(createInitialState(), "midi-instrument");
+    const trackId = state.selectedTrackId || "midi_001";
+    const app = appHarness(state);
+
+    const first = app.applyAiBridgeLiveCommand({
+      type: "place_midi_recording_take",
+      trackId,
+      captureStartBar: 6,
+      punchStartBar: 7,
+      punchEndBar: 9,
+      createTakeLane: true,
+      name: "Bridge MIDI punch A",
+      recordingSessionId: "bridge-midi",
+      notes: [{ pitch: 84, startBar: 7.25, endBar: 7.75, velocity: 90 }]
+    });
+    app.state = first;
+    const second = app.applyAiBridgeLiveCommand({
+      type: "place_midi_recording_take",
+      trackId,
+      captureStartBar: 6,
+      punchStartBar: 7,
+      punchEndBar: 9,
+      createTakeLane: true,
+      name: "Bridge MIDI punch B",
+      recordingSessionId: "bridge-midi-b",
+      notes: [{ pitch: 85, startBar: 8, durationBars: 0.5, velocity: 96 }]
+    });
+    const firstClip = second.undoStack.present.timeline.clips.find((clip) => clip.id === first.selectedClipId);
+    const secondClip = second.undoStack.present.timeline.clips.find((clip) => clip.id === second.selectedClipId);
+
+    expect(first.status).toBe("Recorded MIDI take as a new take lane punch 7 to 9 on MIDI Instrument with 1 note.");
+    expect(second.status).toBe("Recorded MIDI take as a new take lane punch 7 to 9 on MIDI Instrument with 1 note.");
+    expect(firstClip).toMatchObject({ muted: true, metadata: expect.objectContaining({ recordingTakeGroupId: "midi-recording-session-bridge-midi", takeLaneIndex: 1, takeStatus: "muted-take" }) });
+    expect(secondClip).toMatchObject({ muted: false, metadata: expect.objectContaining({ recordingTakeGroupId: "midi-recording-session-bridge-midi", takeLaneIndex: 2, takeStatus: "active", punchMode: "create-new-midi-take-lane" }) });
+  });
+
   it("activates grouped audio take lanes through the live bridge executor", () => {
     let state = addTrackCommand(createInitialState(), "live-vocals");
     let project = currentProject(state);
@@ -885,10 +949,19 @@ describe("Pocket DAW AI bridge live commands", () => {
     const app = appHarness(state);
 
     const status = app.aiBridgeLiveStatus() as {
-      recording: { inputPreflight?: { ok: boolean; errors: string[] } };
-      capabilities: { liveCommands: string[] };
+      recording: { punchEnabled?: boolean; takeMode?: string; inputPreflight?: { ok: boolean; errors: string[] } };
+      capabilities: { control: string[]; liveCommands: string[] };
     };
 
+    expect(status.capabilities.control).toContain("set_recording_options");
+    expect(status.capabilities.control).toContain("record_start");
+    expect(status.capabilities.control).toContain("record_stop");
+    expect(status.capabilities.control).toContain("record_toggle");
+    expect(status.capabilities.control).toContain("midi_record_start");
+    expect(status.capabilities.control).toContain("midi_record_stop");
+    expect(status.capabilities.control).toContain("midi_record_toggle");
+    expect(status.recording.punchEnabled).toBe(false);
+    expect(status.recording.takeMode).toBe("replace");
     expect(status.capabilities.liveCommands).toContain("set_track_armed");
     expect(status.capabilities.liveCommands).toContain("set_track_monitor");
     expect(status.capabilities.liveCommands).toContain("set_track_input");
@@ -917,6 +990,160 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.capabilities.liveCommands).toContain("comp_audio_take_range");
     expect(status.recording.inputPreflight).toMatchObject({ ok: false });
     expect(status.recording.inputPreflight?.errors.join("\n")).toContain("native recording alpha currently captures Stereo Ch 1-2 only");
+  });
+
+  it("applies recording options and keeps record start guarded through live control", async () => {
+    const app = appHarness(createInitialState());
+
+    const options = await app.handleAiBridgeControl({
+      action: "set_recording_options",
+      punchEnabled: true,
+      takeMode: "take-lane"
+    }) as {
+      ok: boolean;
+      recording: { punchEnabled?: boolean; takeMode?: string };
+      message: string;
+    };
+    const start = await app.handleAiBridgeControl({ action: "record_start" }) as {
+      ok: boolean;
+      code?: string;
+      recording: { status?: string; message?: string };
+      message: string;
+    };
+
+    expect(options.ok).toBe(true);
+    expect(options.recording).toMatchObject({ punchEnabled: true, takeMode: "take-lane" });
+    expect(options.message).toBe("Recording options set to punch / take lane.");
+    expect(start.ok).toBe(false);
+    expect(start.code).toBe("record_start_failed");
+    expect(start.recording.status).toBe("error");
+    expect(start.message).toBe("Live recording is only available in the installed Pocket DAW app.");
+  });
+
+  it("guards MIDI input recording when Web MIDI is unavailable", async () => {
+    const state = addTrackCommand(createInitialState(), "midi-instrument");
+    state.selectedTrackId = state.undoStack.present.tracks.find((track) => track.trackType === "midi")?.id || null;
+    state.selectedClipId = null;
+    const app = appHarness(state);
+
+    const start = await app.handleAiBridgeControl({ action: "midi_record_start" }) as {
+      ok: boolean;
+      code?: string;
+      recording: { midiInput?: { status?: string; message?: string } };
+      message: string;
+    };
+
+    expect(start.ok).toBe(false);
+    expect(start.code).toBe("midi_record_start_failed");
+    expect(start.recording.midiInput).toMatchObject({
+      status: "error",
+      message: "Web MIDI input is not available in this runtime."
+    });
+    expect(start.message).toBe("Web MIDI input is not available in this runtime.");
+  });
+
+  it("commits captured Web MIDI input as a MIDI recording take", async () => {
+    const state = addTrackCommand(createInitialState(), "midi-instrument");
+    const midiTrackId = state.undoStack.present.tracks.find((track) => track.trackType === "midi")?.id;
+    if (!midiTrackId) throw new Error("Expected a MIDI track.");
+    state.selectedTrackId = midiTrackId;
+    state.selectedClipId = null;
+    const app = appHarness(state) as ReturnType<typeof appHarness> & {
+      applyProjectState(next: AppState): void;
+      playTransport(): Promise<void>;
+    };
+    app.applyProjectState = (next) => {
+      app.state = next;
+    };
+    let transportStarted = false;
+    app.playTransport = async () => {
+      transportStarted = true;
+      app.state.playing = true;
+    };
+    const input = { id: "usb-keys", name: "USB Keys", onmidimessage: null as null | ((event: { data: number[] }) => void) };
+    const access = { inputs: new Map([["usb-keys", input]]) };
+    const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { requestMIDIAccess: async () => access }
+    });
+
+    try {
+      const start = await app.handleAiBridgeControl({ action: "midi_record_start" }) as { ok: boolean };
+      input.onmidimessage?.({ data: [0x90, 67, 101] });
+      input.onmidimessage?.({ data: [0x80, 67, 0] });
+      const stop = await app.handleAiBridgeControl({ action: "midi_record_stop" }) as { ok: boolean; message: string };
+      const clip = currentProject(app.state).timeline.clips.find((item) => item.id === app.state.selectedClipId);
+
+      expect(start.ok).toBe(true);
+      expect(transportStarted).toBe(true);
+      expect(stop.ok).toBe(true);
+      expect(stop.message).toContain("Recorded MIDI take");
+      expect(stop.message).toContain("USB Keys");
+      expect(clip).toMatchObject({ type: "midi", trackId: midiTrackId });
+      expect(midiDataFromClip(clip!).notes).toMatchObject([{ pitch: 67, velocity: 101, channel: 0 }]);
+    } finally {
+      if (originalNavigator) Object.defineProperty(globalThis, "navigator", originalNavigator);
+      else Reflect.deleteProperty(globalThis, "navigator");
+    }
+  });
+
+  it("auto punch-out commits Web MIDI input takes through the live transport path", async () => {
+    const state = addTrackCommand(createInitialState(), "midi-instrument");
+    const midiTrackId = state.undoStack.present.tracks.find((track) => track.trackType === "midi")?.id;
+    if (!midiTrackId) throw new Error("Expected a MIDI track.");
+    state.selectedTrackId = midiTrackId;
+    state.selectedClipId = null;
+    state.playheadBar = 1;
+    state.recordingPunchEnabled = true;
+    state.recordingTakeMode = "take-lane";
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    state.undoStack.present.timeline.selection = { startBar: 7, endBar: 9, source: "punch" };
+    const app = appHarness(state) as ReturnType<typeof appHarness> & {
+      applyProjectState(next: AppState): void;
+      midiInputRecordingRuntime: { startedAtMs: number } | null;
+      maybeAutoPunchOutMidiInputRecording(): void;
+      playTransport(): Promise<void>;
+    };
+    app.applyProjectState = (next) => {
+      app.state = next;
+    };
+    let transportStarted = false;
+    app.playTransport = async () => {
+      transportStarted = true;
+      app.state.playing = true;
+    };
+    const input = { id: "usb-keys", name: "USB Keys", onmidimessage: null as null | ((event: { data: number[] }) => void) };
+    const access = { inputs: new Map([["usb-keys", input]]) };
+    const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { requestMIDIAccess: async () => access }
+    });
+
+    try {
+      const start = await app.handleAiBridgeControl({ action: "midi_record_start" }) as { ok: boolean };
+      if (!app.midiInputRecordingRuntime) throw new Error("Expected MIDI input runtime.");
+      app.midiInputRecordingRuntime.startedAtMs -= 12_500;
+      input.onmidimessage?.({ data: [0x90, 67, 101] });
+      input.onmidimessage?.({ data: [0x80, 67, 0] });
+      app.state.playheadBar = 9;
+      app.maybeAutoPunchOutMidiInputRecording();
+      await Promise.resolve();
+      const clip = currentProject(app.state).timeline.clips.find((item) => item.id === app.state.selectedClipId);
+
+      expect(start.ok).toBe(true);
+      expect(transportStarted).toBe(true);
+      expect(app.state.midiInputRecording.status).toBe("idle");
+      expect(app.state.status).toContain("Recorded MIDI take");
+      expect(clip).toMatchObject({ type: "midi", trackId: midiTrackId });
+      expect(clip?.metadata).toMatchObject({ punchStartBar: 7, punchEndBar: 9, takeStatus: "active" });
+      expect(midiDataFromClip(clip!).notes).toMatchObject([{ pitch: 67, velocity: 101, channel: 0 }]);
+    } finally {
+      if (originalNavigator) Object.defineProperty(globalThis, "navigator", originalNavigator);
+      else Reflect.deleteProperty(globalThis, "navigator");
+    }
   });
 
   it("exposes future grouped capture planning in live status for MCP-observed recording smoke", () => {
@@ -1162,6 +1389,72 @@ describe("Pocket DAW AI bridge live commands", () => {
           ]
         }]
       }
+    });
+  });
+
+  it("exposes MIDI take lanes in compact live media summaries", () => {
+    let project = createEmptyPocketDawProject();
+    project.timeline.clips = [];
+    const first = importMidiFileToProject(project, parseStandardMidiFile(simpleMidiBytes()), "Live MIDI take 1.mid");
+    const second = importMidiFileToProject(first.project, parseStandardMidiFile(simpleMidiBytes()), "Live MIDI take 2.mid");
+    project = second.project;
+    const firstClip = project.timeline.clips.find((clip) => clip.id === first.clipId)!;
+    const secondClip = project.timeline.clips.find((clip) => clip.id === second.clipId)!;
+    firstClip.metadata = {
+      ...(firstClip.metadata || {}),
+      takeGroupId: "live-midi-status-takes",
+      recordingTakeGroupId: "live-midi-status-takes",
+      takeLaneId: "live-midi-status-takes-lane-1",
+      takeLaneIndex: 1,
+      takeStatus: "muted-take",
+      takeActive: false
+    };
+    firstClip.muted = true;
+    secondClip.metadata = {
+      ...(secondClip.metadata || {}),
+      takeGroupId: "live-midi-status-takes",
+      recordingTakeGroupId: "live-midi-status-takes",
+      takeLaneId: "live-midi-status-takes-lane-2",
+      takeLaneIndex: 2,
+      takeStatus: "active",
+      takeActive: true
+    };
+    secondClip.muted = false;
+    const app = appHarness({ ...createInitialState(), undoStack: createUndoStack(project) });
+
+    const status = app.aiBridgeLiveStatus() as {
+      media?: {
+        audioTakes: {
+          groupedClipCount: number;
+          groupCount: number;
+          activeCount: number;
+          mutedCount: number;
+          groups: Array<{
+            groupId: string;
+            clipCount: number;
+            lanes: Array<{
+              laneId: string;
+              clipIds: string[];
+              activeClipIds: string[];
+            }>;
+          }>;
+        };
+      };
+    };
+
+    expect(status.media?.audioTakes).toMatchObject({
+      groupedClipCount: 2,
+      groupCount: 1,
+      activeCount: 1,
+      mutedCount: 1,
+      groups: [{
+        groupId: "live-midi-status-takes",
+        clipCount: 2,
+        lanes: [
+          { laneId: "live-midi-status-takes-lane-1", clipIds: [first.clipId], activeClipIds: [] },
+          { laneId: "live-midi-status-takes-lane-2", clipIds: [second.clipId], activeClipIds: [second.clipId] }
+        ]
+      }]
     });
   });
 });

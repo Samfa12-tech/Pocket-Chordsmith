@@ -2590,14 +2590,54 @@ button.record:hover {
 
 .clip.audio-clip {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto auto auto 1fr;
   gap: 2px;
 }
 
 .clip.midi-clip {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto auto auto 1fr;
   gap: 2px;
+}
+
+.clip-take-badge {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 1px 5px;
+  border: 1px solid rgba(238, 244, 255, 0.18);
+  border-radius: 4px;
+  background: rgba(8, 12, 22, 0.48);
+  color: #e8f3ff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.clip-take-badge.take-active {
+  border-color: rgba(82, 236, 160, 0.5);
+  background: rgba(20, 117, 76, 0.28);
+}
+
+.clip-take-badge.take-muted {
+  border-color: rgba(255, 200, 87, 0.48);
+  background: rgba(121, 86, 25, 0.28);
+  color: rgba(238, 244, 255, 0.72);
+}
+
+.clip-take-badge.take-archived {
+  border-color: rgba(149, 162, 191, 0.38);
+  background: rgba(38, 49, 76, 0.38);
+  color: rgba(238, 244, 255, 0.62);
+}
+
+.clip-take-badge.take-comp {
+  border-color: rgba(204, 151, 255, 0.5);
+  background: rgba(94, 61, 144, 0.32);
 }
 
 .midi-note-strip {

@@ -247,6 +247,7 @@ function renderMenuStrip(state: AppState): string {
         ["Duplicate Clip", "clip-duplicate"],
         ["Split Clip", "clip-split"],
         ["Range Clip", "range-selected"],
+        ["Set Punch", "range-punch"],
         ["Copy Range", "range-copy"],
         ["Cut Range", "range-cut"],
         ["Split Range", "range-split"],
@@ -318,6 +319,11 @@ function renderTransport(state: AppState): string {
   const barBeat = formatBarBeatParts(project, state.playheadBar);
   const recordingPrimary = state.recording.status === "recording" ? "Recording" : recordingLabel;
   const recordingSecondary = state.recording.status === "recording" ? formatDuration(state.recording.elapsedSeconds) : "";
+  const midiRecordingActive = state.midiInputRecording.status === "recording";
+  const midiRecordingLabel = midiRecordingActive ? "Stop MIDI" : "MIDI Rec";
+  const midiRecordingDetail = midiRecordingActive
+    ? `${state.midiInputRecording.noteCount} note${state.midiInputRecording.noteCount === 1 ? "" : "s"}`
+    : "input";
   const metroDetail = metronome.enabled ? `${metronome.countInBars} bar` : "off";
   return `
     <header class="transport" data-layout-zone="transport">
@@ -332,6 +338,7 @@ function renderTransport(state: AppState): string {
       <div class="transport-buttons">
         <button class="primary" data-transport-toggle="true" data-action="${state.playing ? "pause" : "play"}">${state.playing ? "Pause" : "Play"}</button>
         <button class="${recordingActive ? "record on" : "record"}" data-action="record-toggle" data-ui-scope="recording">${recordingActive ? "Stop Rec" : "Record"}</button>
+        <button class="${midiRecordingActive ? "record on" : "record"}" data-action="midi-record-toggle" data-ui-scope="recording" title="Start transport and record note events from the first available MIDI input onto the selected MIDI track">${midiRecordingLabel}</button>
         <button class="${state.recordingPunchEnabled ? "on" : ""}" data-action="recording-punch-toggle" data-ui-scope="recording" title="Record only the explicit punch range when one is set">Punch</button>
         <button class="${state.recordingTakeMode === "take-lane" ? "on" : ""}" data-action="recording-take-mode-toggle" data-ui-scope="recording" title="Toggle between replacing the visible range and creating a new take lane">${state.recordingTakeMode === "take-lane" ? "Take Lane" : "Replace"}</button>
         <button class="${metronome.enabled ? "on" : ""}" data-action="metronome-toggle" title="Metronome and one-bar recording count-in">Metro</button>
@@ -347,6 +354,7 @@ function renderTransport(state: AppState): string {
       <div class="transport-readout">
         <span data-playing-state="true" class="${state.playing ? "playing" : ""}"><strong>${state.playing ? "Playing" : "Stopped"}</strong></span>
         <span data-recording-state="true" data-ui-scope="recording" class="${recordingActive ? "recording" : ""}"><strong>${escapeHtml(recordingPrimary)}</strong>${recordingSecondary ? `<small>${escapeHtml(recordingSecondary)}</small>` : `<small>${state.recordingPunchEnabled ? "punch" : "full"} / ${state.recordingTakeMode === "take-lane" ? "lane" : "replace"}</small>`}</span>
+        <span data-midi-recording-state="true" data-ui-scope="recording" class="${midiRecordingActive ? "recording" : ""}"><strong>MIDI</strong><small>${escapeHtml(midiRecordingDetail)}</small></span>
         <span><strong>${Math.round(project.project.bpm)}</strong><small>BPM</small></span>
         <span><strong>Metro</strong><small>${escapeHtml(metroDetail)}</small></span>
         <span><strong>${escapeHtml(project.project.key)}</strong><small>${escapeHtml(project.project.scale)}</small></span>
@@ -479,6 +487,7 @@ function renderTimeline(state: AppState): string {
                   <input class="bar-input" id="rangeEnd" type="number" min="1.125" step="0.25" value="${sanitizeCssLengthOrNumber(rangeEnd, 2, 1.125, 4097)}" aria-label="Edit range end bar">
                   <button data-action="range-selected" title="Select the current clip as the edit range">Range Clip</button>
                   <button data-action="range-loop" title="Set the active edit range to the current loop">Range Loop</button>
+                  <button data-action="range-punch" title="Use these range bars as the punch-in and punch-out window for audio or MIDI recording">Set Punch</button>
                   <button data-action="range-copy" ${selection ? "" : "disabled"} title="Copy the selected clip material inside the edit range">Copy Range</button>
                   <button data-action="range-cut" ${selection ? "" : "disabled"} title="Cut the selected clip material inside the edit range">Cut Range</button>
                   <button data-action="range-split" ${selection ? "" : "disabled"} title="Split clips at the edit range boundaries">Split Range</button>
@@ -526,7 +535,7 @@ function renderCompactTimelineTools(
     ? `Loop ${formatBarNumber(project.timeline.loop.startBar)}-${formatBarNumber(project.timeline.loop.endBar)}`
     : "Loop off";
   const rangeSummary = selection
-    ? `Range ${formatBarNumber(rangeStart)}-${formatBarNumber(rangeEnd)}`
+    ? `${selection.source === "punch" ? "Punch" : "Range"} ${formatBarNumber(rangeStart)}-${formatBarNumber(rangeEnd)}`
     : "No range";
   return `
     <div class="timeline-compact-tools" aria-label="Essential timeline tools">
@@ -904,11 +913,46 @@ function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, sele
     <button class="clip ${selected ? "selected" : ""} ${clip.muted ? "muted" : ""} ${clip.type === "audio" ? "audio-clip" : ""} ${clip.type === "midi" ? "midi-clip" : ""}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-row="${sanitizeDataAttr(track.id)}"${branchEntry} title="${escapeAttr(title)}" style="left:${barLeftCalc(`${sanitizeCssLengthOrNumber(Number(clip.startBar) - 1, 0)} * var(--bar)`)};width:calc(${sanitizeCssLengthOrNumber(clip.barLength, 1, 0.125, 4096)} * var(--bar));border-color:${safeClipColour(clip.color)};background:color-mix(in srgb, ${safeClipColour(clip.color)} 28%, #15192a);">
       <strong>${escapeHtml(clip.sectionId || clip.name)}</strong>
       <span>${escapeHtml(clip.type === "audio" ? media?.name || "Audio" : clip.type === "midi" ? `${midi?.notes.length || 0} MIDI notes` : track.name)}</span>
+      ${renderClipTakeBadge(project, clip)}
       ${peaks.length ? `<i class="clip-waveform">${peaks.map((peak) => `<b style="height:${Math.max(2, Math.round(Number(peak) * 18))}px"></b>`).join("")}</i>` : ""}
       ${midi?.notes.length ? `<i class="midi-note-strip">${midi.notes.slice(0, 32).map((note) => `<b style="left:${Math.max(0, Math.min(100, (note.startTick / Math.max(1, midi.ppq * clip.barLength * project.project.timeSig)) * 100))}%;width:${Math.max(3, Math.min(24, (note.durationTicks / Math.max(1, midi.ppq * clip.barLength * project.project.timeSig)) * 100))}%;bottom:${Math.max(2, Math.min(24, (note.pitch - 36) / 3))}px"></b>`).join("")}</i>` : ""}
       ${clip.type === "generated-section" ? `<span class="clip-drag-handle" data-clip-drag-handle="${sanitizeDataAttr(clip.id)}" title="Drag to move this section with snap"></span><span class="clip-loop-handle" data-clip-loop-handle="${sanitizeDataAttr(clip.id)}" title="Drag right to repeat this section"></span>` : ""}
     </button>
   `;
+}
+
+function renderClipTakeBadge(project: ReturnType<typeof currentProject>, clip: Clip): string {
+  if (clip.type !== "audio" && clip.type !== "midi") return "";
+  const metadata = clip.metadata || {};
+  const summary = audioClipTakeSummary(project, clip.id);
+  const summaryTake = summary?.siblings.find((take) => take.clipId === clip.id) || null;
+  const laneIndex = Number(metadata.takeLaneIndex ?? metadata.takeIndex);
+  const summaryTakeNumber = summaryTake ? Number(summaryTake.takeNumber) : Number.NaN;
+  const hasLaneIndex = (Number.isFinite(laneIndex) && laneIndex > 0) || (Number.isFinite(summaryTakeNumber) && summaryTakeNumber > 0);
+  const takeNumber = Number.isFinite(laneIndex) && laneIndex > 0 ? laneIndex : summaryTakeNumber;
+  const rawTakeStatus = typeof metadata.takeStatus === "string" ? metadata.takeStatus : summaryTake?.takeStatus || "";
+  const takeGroupId = typeof metadata.recordingTakeGroupId === "string"
+    ? metadata.recordingTakeGroupId
+    : typeof metadata.takeGroupId === "string"
+      ? metadata.takeGroupId
+      : "";
+  const punchStartBar = Number(metadata.punchStartBar);
+  const punchEndBar = Number(metadata.punchEndBar);
+  const hasPunchRange = Number.isFinite(punchStartBar) && Number.isFinite(punchEndBar) && punchEndBar > punchStartBar;
+  if (!hasLaneIndex && !rawTakeStatus && !takeGroupId && !hasPunchRange) return "";
+
+  const state = rawTakeStatus === "archived-take"
+    ? "archived"
+    : rawTakeStatus === "muted-take" || metadata.takeActive === false || clip.muted
+      ? "muted"
+      : rawTakeStatus === "comp-segment"
+        ? "comp"
+        : "active";
+  const laneLabel = hasLaneIndex ? `Lane ${Math.round(takeNumber)}` : "Take";
+  const punchLabel = hasPunchRange ? ` / Punch ${formatBarNumber(punchStartBar)}-${formatBarNumber(punchEndBar)}` : "";
+  const kindLabel = clip.type === "midi" ? "MIDI" : "Audio";
+  const label = `${kindLabel} ${laneLabel} ${state}${punchLabel}`;
+  return `<small class="clip-take-badge take-${sanitizeDataAttr(state)}" data-clip-take-badge="${sanitizeDataAttr(`${clip.id}:${state}`)}" title="${escapeAttr(label)}">${escapeHtml(label)}</small>`;
 }
 
 function renderRecordingPreview(state: AppState, track: Track): string {
@@ -977,7 +1021,7 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
                       ${clip.type === "audio" ? renderAudioClipProperties(project, clip) : `<label>Gain <input data-clip-transform="${sanitizeDataAttr(`${clip.id}:gain`)}" type="number" min="0" max="4" step="0.05" value="${sanitizeCssLengthOrNumber(clip.transforms.gain, 1, 0, 4)}" title="Scale this clip's playback gain without changing the source material"></label>`}
                     </div>
                     ${clip.type === "generated-section" ? renderGeneratedClipStemMutes(clip) : ""}
-                    ${renderClipEditPalette()}
+                    ${renderClipEditPalette(project, state, clip)}
                     ${(clip.type === "audio" || clip.type === "midi") ? renderAudioTakePanel(project, clip) : ""}
                     <button type="button" data-action="freeze-selected-clip" title="Render the selected clip into a reusable audio asset">Freeze</button>
                     <button type="button" data-action="export-selected-clip-midi" ${clip.type === "audio" ? "disabled title=\"Audio clips do not contain MIDI events.\"" : "title=\"Export the selected clip as a MIDI file\""}>Export Clip MIDI</button>
@@ -1082,7 +1126,13 @@ function renderGeneratedClipStemMutes(clip: Clip): string {
   `;
 }
 
-function renderClipEditPalette(): string {
+function renderClipEditPalette(project: ReturnType<typeof currentProject>, state: AppState, clip: Clip): string {
+  const selectedClips = Array.from(selectedClipIdSet(state))
+    .map((id) => project.timeline.clips.find((item) => item.id === id))
+    .filter((item): item is Clip => !!item);
+  const canMakeTakeLaneGroup = (clip.type === "audio" || clip.type === "midi")
+    && selectedClips.length >= 2
+    && selectedClips.every((item) => item.type === clip.type && item.trackId === clip.trackId);
   return `
     <div class="clip-edit-palette" aria-label="Selected clip edit actions">
       <h3>Edit</h3>
@@ -1094,6 +1144,7 @@ function renderClipEditPalette(): string {
         <button type="button" data-action="clip-duplicate" title="Duplicate the selected clip after itself">Duplicate</button>
         <button type="button" data-action="clip-split" title="Split the selected clip at the playhead">Split</button>
         <button type="button" data-action="range-selected" title="Use the selected clip as the edit range">Range Clip</button>
+        <button type="button" data-action="range-punch" title="Use the active edit range as the punch-in and punch-out window for audio or MIDI recording">Set Punch</button>
         <button type="button" data-action="range-copy" title="Copy the selected clip material inside the active edit range">Copy Range</button>
         <button type="button" data-action="range-cut" title="Cut the selected clip material inside the active edit range">Cut Range</button>
         <button type="button" data-action="range-split" title="Split clips at the edit range boundaries">Split Range</button>
@@ -1101,6 +1152,7 @@ function renderClipEditPalette(): string {
         <button type="button" data-action="range-delete" title="Delete material inside the active edit range">Delete Range</button>
         <button type="button" data-action="range-ripple-delete" title="Delete the active range and close the gap on selected tracks">Ripple Delete</button>
         <button type="button" data-action="range-ripple-all" title="Delete the active range and close the gap across all tracks">Ripple All</button>
+        <button type="button" data-action="create-take-lane-group" ${canMakeTakeLaneGroup ? "" : "disabled"} title="${canMakeTakeLaneGroup ? "Group the selected audio or MIDI clips as alternate take lanes" : "Select at least two audio or MIDI clips to make take lanes"}">Make Takes</button>
         <button type="button" data-action="trim-start-left" title="Move the clip start earlier by one snap step">Start left</button>
         <button type="button" data-action="trim-start-right" title="Move the clip start later by one snap step">Start right</button>
         <button type="button" data-action="trim-end-left" title="Move the clip end earlier by one snap step">End left</button>
@@ -2336,7 +2388,7 @@ function renderLowerDockPianoRoll(project: ReturnType<typeof currentProject>, st
   const clip = selectedClipForDock(project, state, "midi");
   if (!clip) {
     const selectedTrack = project.tracks.find((track) => track.id === state.selectedTrackId);
-    return `<div class="lower-dock-body lower-dock-empty"><strong>${selectedTrack?.trackType === "midi" ? "Add a MIDI clip" : "Select a MIDI clip"}</strong><span>The Piano Roll tab edits MIDI notes, controllers, quantize, swing, velocity and pitch transforms for the selected MIDI clip.</span>${selectedTrack?.trackType === "midi" ? `<button type="button" data-action="add-empty-midi-clip">Add MIDI Clip</button>` : ""}</div>`;
+    return `<div class="lower-dock-body lower-dock-empty"><strong>${selectedTrack?.trackType === "midi" ? "Add a MIDI clip" : "Select a MIDI clip"}</strong><span>The Piano Roll tab edits MIDI notes, controllers, quantize, swing, velocity and pitch transforms for the selected MIDI clip.</span>${selectedTrack?.trackType === "midi" ? `<button type="button" data-action="record-midi-take">MIDI Take</button><button type="button" data-action="add-empty-midi-clip">Add MIDI Clip</button>` : ""}</div>`;
   }
   return `
     <div class="lower-dock-body lower-dock-editor">
@@ -3498,8 +3550,8 @@ function renderControlsPanel(state: AppState): string {
           <p><strong>Mixer</strong><span>Use Volume and Pan sliders. Meters show live peak audio. Mute silences a track; Solo isolates it.</span></p>
           <p><strong>Recent</strong><span>${escapeHtml(recent)}</span></p>
           <p><strong>Save / Export</strong><span>Save .pocketdaw projects, export full-song WAV, or export multi-track MIDI.</span></p>
-          <p><strong>Recording</strong><span>Installed app only: save the project, arm one live audio track, choose Mono or Stereo and an input if needed, then Record writes a project-media WAV under project-media/recordings.</span></p>
-          <p><strong>Alpha testing</strong><span>Recording is one armed track at a time. ASIO, punch-in, comping, latency compensation UI and simultaneous multitrack capture are future work.</span></p>
+          <p><strong>Recording</strong><span>Installed app only: save the project, arm one live audio track, choose Mono or Stereo and an input if needed, then Record writes a project-media WAV under project-media/recordings. Punch and Take Lane use the active punch range and preserve raw takes.</span></p>
+          <p><strong>Alpha testing</strong><span>Recording is one armed audio track at a time. ASIO, dedicated lane subtracks, automatic latency compensation and simultaneous multitrack capture are future work.</span></p>
         </div>
         <div class="diagnostic-actions">
           <button data-action="copy-diagnostics">Copy Diagnostics</button>
