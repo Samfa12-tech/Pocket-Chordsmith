@@ -454,6 +454,7 @@ function renderTimeline(state: AppState): string {
   const rangeEnd = selection?.endBar ?? project.timeline.loop.endBar;
   const toolsCollapsed = isUiSectionCollapsed(state, "timeline-tools");
   const toolsLabel = toolsCollapsed ? "Timeline" : "Timeline tools";
+  const rowHeights = timelineViewportRowHeightsPx(project, state);
   return `
     <section class="timeline-wrap">
       <div class="timeline-toolbar ${toolsCollapsed ? "collapsed" : ""}" data-ui-collapse-section="timeline-tools">
@@ -528,7 +529,7 @@ function renderTimeline(state: AppState): string {
         }
       </div>
       <div class="timeline-scroll" data-scroll-key="timeline-scroll">
-        <div class="timeline" data-timeline-surface="true" title="Click the grid to seek by bar" style="width:${width}px; --bar:${zoom}px; --track-header:176px;">
+        <div class="timeline" data-timeline-surface="true" title="Click the grid to seek by bar" style="width:${width}px; --bar:${zoom}px; --track-header:176px; --timeline-row-height:${sanitizeCssLengthOrNumber(rowHeights.standard, TIMELINE_ROW_HEIGHT_PX, TIMELINE_ROW_HEIGHT_PX, 1200)}px; --timeline-generated-row-height:${sanitizeCssLengthOrNumber(rowHeights.generated, TIMELINE_GENERATED_ROW_HEIGHT_PX, TIMELINE_GENERATED_ROW_HEIGHT_PX, 1200)}px; --timeline-take-lane-row-height:${sanitizeCssLengthOrNumber(rowHeights.takeLane, TIMELINE_TAKE_LANE_ROW_HEIGHT_PX, TIMELINE_TAKE_LANE_ROW_HEIGHT_PX, 1200)}px;">
           ${renderBarRuler(project)}
           ${renderMarkers(state)}
           <div class="cursor-line" data-cursor="true" style="left:${barLeftPx(cursorLeft)}"></div>
@@ -701,6 +702,26 @@ function visibleTimelineTracks(project: ReturnType<typeof currentProject>): Trac
     if (!((track.trackType === "generated" || track.trackType === "audio" || track.trackType === "midi") && track.role !== "arrangement")) return false;
     return !(branchCollapsed && generatedDrumBranchLane(track));
   });
+}
+
+function timelineViewportRowHeightsPx(project: ReturnType<typeof currentProject>, state: AppState): { standard: number; generated: number; takeLane: number } {
+  const toolbarHeight = isUiSectionCollapsed(state, "timeline-tools") ? TIMELINE_TOOLBAR_COLLAPSED_HEIGHT_PX : TIMELINE_TOOLBAR_HEIGHT_PX;
+  const studioHeight = Number.isFinite(state.timelineHeightPx)
+    ? Math.min(760, Math.max(260, state.timelineHeightPx))
+    : 430;
+  const availableRowsHeight = Math.max(
+    TIMELINE_ROW_HEIGHT_PX,
+    studioHeight - toolbarHeight - TIMELINE_RULER_HEIGHT_PX - TIMELINE_MARKER_LANE_HEIGHT_PX
+  );
+  const tracks = visibleTimelineTracks(project);
+  const naturalRowsHeight = tracks.reduce((height, track) => height + timelineTrackRowHeightPx(project, state, track), 0);
+  const renderedRowCount = tracks.reduce((count, track) => count + 1 + timelineTakeLaneCount(project, state, track), 0);
+  const fillPerRow = renderedRowCount > 0 ? Math.max(0, (availableRowsHeight - naturalRowsHeight) / renderedRowCount) : 0;
+  return {
+    standard: Math.round(TIMELINE_ROW_HEIGHT_PX + fillPerRow),
+    generated: Math.round(TIMELINE_GENERATED_ROW_HEIGHT_PX + fillPerRow),
+    takeLane: Math.round(TIMELINE_TAKE_LANE_ROW_HEIGHT_PX + fillPerRow)
+  };
 }
 
 function timelineContentHeightPx(project: ReturnType<typeof currentProject>, state: AppState): number {

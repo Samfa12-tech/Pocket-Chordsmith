@@ -327,7 +327,7 @@
 .timeline-row {
   position: relative;
   z-index: 1;
-  height: 72px;
+  height: var(--timeline-row-height, 72px);
   border-bottom: 1px solid rgba(43, 54, 84, 0.7);
 }
 
@@ -390,7 +390,7 @@
 }
 
 .generated-edit-row {
-  height: 84px;
+  height: var(--timeline-generated-row-height, 84px);
 }
 
 .generated-edit-row .clip {
@@ -398,7 +398,7 @@
 }
 
 .timeline-take-lane-row {
-  height: 88px;
+  height: var(--timeline-take-lane-row-height, 88px);
   background:
     linear-gradient(90deg, rgba(245, 196, 107, 0.06), transparent 38%),
     linear-gradient(180deg, rgba(9, 13, 24, 0.98), rgba(11, 16, 32, 0.92));

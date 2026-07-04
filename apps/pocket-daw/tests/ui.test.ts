@@ -1543,7 +1543,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('data-clip-loop-handle="clip_001"');
   });
 
-  it("clamps the timeline workspace height to the visible row content", () => {
+  it("fills short timeline workspaces with the visible track rows", () => {
     const state = createTimelineFirstInitialState();
     const withLiveTrack = addTrackToProject(createEmptyPocketDawProject(), "live-vocals");
     withLiveTrack.project.tracks = withLiveTrack.project.tracks.filter((track) => track.id === withLiveTrack.trackId || track.role === "master");
@@ -1556,6 +1556,7 @@ describe("Pocket DAW UI rendering", () => {
 
     expect(html).toContain("--studio-height:620px");
     expect(html).toContain("--timeline-content-height:174px");
+    expect(html).toContain("--timeline-row-height:518px");
   });
 
   it("can render the timeline with the inspector hidden", () => {
@@ -2084,7 +2085,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(css).toContain("align-items: start");
     expect(css).toContain("position: sticky");
     expect(css).toContain("top: 0");
-    expect(css).toContain("min(var(--studio-height");
+    expect(css).toContain("grid-template-rows: auto auto auto var(--studio-height");
     expect(css).toContain("--studio-rail-width: 68px");
     expect(css).toContain('"studio-rail transport"');
     expect(css).toContain(".studio-rail");
