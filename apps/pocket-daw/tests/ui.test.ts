@@ -246,7 +246,7 @@ describe("Pocket DAW UI rendering", () => {
     state.recordingPunchEnabled = true;
     state.recordingTakeMode = "take-lane";
     const readyHtml = renderAppShell(state);
-    expect(readyHtml).toContain("<small>punch / lane</small>");
+    expect(readyHtml).toContain("<small>punch unset / new lane</small>");
     expect(readyHtml).toContain("<small>2 notes</small>");
     expect(readyHtml).toContain(">Take Lane</button>");
     expect(readyHtml).toContain(">Stop MIDI</button>");
@@ -843,8 +843,9 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).toContain("lead-comp-a");
     expect(inspector).toContain("Lane 1");
     expect(inspector).toContain("Lane 2");
-    expect(inspector).toContain("active / 1 segment / bars Bar 2 Beat 1 to Bar 9 Beat 4");
-    expect(inspector).toContain("1 active / 0 muted / 0 archived");
+    expect(inspector).toContain("Active take lane");
+    expect(inspector).toContain("1 segment / bars Bar 2 Beat 1 to Bar 9 Beat 4 / plays in export");
+    expect(inspector).toContain("1 active / 0 inactive / 0 archived");
     expect(inspector).toContain('data-audio-take-lane-summary="lead-comp-a-lane-1:active"');
     expect(inspector).toContain('data-audio-take-lane-summary="lead-comp-a-lane-2:active"');
     expect(inspector).toContain(`data-audio-take-activate="${firstPlaced.clipId}"`);

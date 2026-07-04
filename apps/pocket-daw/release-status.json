@@ -1,11 +1,14 @@
 {
   "schema": 1,
-  "sourceVersion": "0.6.38",
+  "sourceVersion": "0.6.39",
   "projectSchemaVersion": 2,
   "latestPublishedVersion": "0.6.38",
   "latestPublishedTag": "pocket-daw-v0.6.38",
   "latestPublishedCommit": "811a5bebc3c3a1b115ba4e1a2044a1ec33c5dceb",
-  "unreleasedSourceNotes": [],
+  "unreleasedSourceNotes": [
+    "0.6.39 is a source-only recording confidence candidate. It keeps the public release on 0.6.38 until real audible audio-input evidence and connected MIDI-input evidence pass against the exact installed artifact.",
+    "The checkpoint focus is recording trust: stricter installed punch/take smoke flags, clearer take-lane state feedback, diagnostics for selected input/channel/sample-rate/media-path evidence, and no expansion into simultaneous multitrack, ASIO, plugin hosting, full comp UI, or pitch-preserving time-stretch."
+  ],
   "lastInstalledSmoke": {
     "version": "0.6.38",
     "commit": "811a5bebc3c3a1b115ba4e1a2044a1ec33c5dceb",

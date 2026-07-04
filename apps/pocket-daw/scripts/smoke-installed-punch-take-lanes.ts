@@ -12,6 +12,7 @@ import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { validateProjectInvariants } from "../src/daw/projectInvariants";
 import { POCKET_DAW_VERSION } from "../src/daw/schema";
 import { addTrackToProject } from "../src/daw/tracks";
+import { validateInstalledPunchTakeSummary } from "./verify-installed-punch-take-summary.mjs";
 
 interface AiBridgeSession {
   statusUrl: string;
@@ -25,6 +26,12 @@ interface SmokeArgs {
   installerPath: string | null;
   recordMs: number;
   midiRecordMs: number;
+  requireAudibleAudio: boolean;
+  requireMidiInput: boolean;
+  requireExportFiles: boolean;
+  minAudioDurationSeconds: number;
+  minAudioPeak: number;
+  minAudioRms: number;
 }
 
 interface AudioTakeSmokeCounts {
@@ -165,6 +172,14 @@ const summary = {
   ok: true,
   testedAt: new Date().toISOString(),
   runningVersion: status.project.version,
+  strictRequirements: {
+    requireAudibleAudio: args.requireAudibleAudio,
+    requireMidiInput: args.requireMidiInput,
+    requireExportFiles: args.requireExportFiles,
+    minAudioDurationSeconds: args.minAudioDurationSeconds,
+    minAudioPeak: args.minAudioPeak,
+    minAudioRms: args.minAudioRms
+  },
   installer: installerEvidence,
   projectPath,
   wavPath,
@@ -182,10 +197,34 @@ const summary = {
   midiTakeGroupCount: status.media.audioTakes.groups.filter((group: { groupId: string }) => group.groupId === midiTakeGroupId).length,
   midiRecordingTakeGroupCount: status.media.audioTakes.groups.filter((group: { groupId: string }) => group.groupId === midiRecordingTakeGroupId).length,
   midiDevicePreflight,
+  recordingConfidence: installedRecordingConfidence({
+    audioRecordingControl,
+    midiInputRecordingControl,
+    midiDevicePreflight,
+    minAudioDurationSeconds: args.minAudioDurationSeconds,
+    minAudioPeak: args.minAudioPeak,
+    minAudioRms: args.minAudioRms
+  }),
   audioRecordingControl,
   midiInputRecordingControl
 };
-await writeFile(join(root, "punch-take-lane-installed-smoke-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+const summaryPath = join(root, "punch-take-lane-installed-smoke-summary.json");
+await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
+if (args.installerPath || args.requireAudibleAudio || args.requireMidiInput || args.requireExportFiles) {
+  const strictValidation = validateInstalledPunchTakeSummary(summary, {
+    version: POCKET_DAW_VERSION,
+    installerPath: args.installerPath || undefined,
+    requireAudibleAudio: args.requireAudibleAudio,
+    requireMidiInput: args.requireMidiInput,
+    requireExportFiles: args.requireExportFiles,
+    minAudioDurationSeconds: args.minAudioDurationSeconds,
+    minAudioPeak: args.minAudioPeak,
+    minAudioRms: args.minAudioRms
+  });
+  if (!strictValidation.ok) {
+    throw new Error(`Installed punch/take smoke strict verification failed. Summary was written to ${summaryPath}\n${strictValidation.failures.join("\n")}`);
+  }
+}
 console.log(JSON.stringify(summary, null, 2));
 
 async function createSmokeProject(rootDir: string) {
@@ -261,7 +300,13 @@ function parseArgs(argv: string[]): SmokeArgs {
     outputDir: null,
     installerPath: null,
     recordMs: 500,
-    midiRecordMs: 500
+    midiRecordMs: 500,
+    requireAudibleAudio: false,
+    requireMidiInput: false,
+    requireExportFiles: false,
+    minAudioDurationSeconds: 3,
+    minAudioPeak: 0.005,
+    minAudioRms: 0.001
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -270,8 +315,14 @@ function parseArgs(argv: string[]): SmokeArgs {
     else if (arg === "--installer") parsed.installerPath = requiredValue(argv[++index], arg);
     else if (arg === "--record-ms") parsed.recordMs = parsePositiveInteger(requiredValue(argv[++index], arg), arg);
     else if (arg === "--midi-record-ms") parsed.midiRecordMs = parsePositiveInteger(requiredValue(argv[++index], arg), arg);
+    else if (arg === "--require-audible-audio") parsed.requireAudibleAudio = true;
+    else if (arg === "--require-midi-input") parsed.requireMidiInput = true;
+    else if (arg === "--require-export-files") parsed.requireExportFiles = true;
+    else if (arg === "--min-audio-duration-seconds") parsed.minAudioDurationSeconds = parsePositiveNumber(requiredValue(argv[++index], arg), arg);
+    else if (arg === "--min-audio-peak") parsed.minAudioPeak = parsePositiveNumber(requiredValue(argv[++index], arg), arg);
+    else if (arg === "--min-audio-rms") parsed.minAudioRms = parsePositiveNumber(requiredValue(argv[++index], arg), arg);
     else if (arg === "--help") {
-      console.log("Usage: tsx scripts/smoke-installed-punch-take-lanes.ts [--session <ai-bridge-session.json>] [--out <folder>] [--installer <setup.exe>] [--record-ms <milliseconds>] [--midi-record-ms <milliseconds>]");
+      console.log("Usage: tsx scripts/smoke-installed-punch-take-lanes.ts [--session <ai-bridge-session.json>] [--out <folder>] [--installer <setup.exe>] [--record-ms <milliseconds>] [--midi-record-ms <milliseconds>] [--require-audible-audio] [--require-midi-input] [--require-export-files] [--min-audio-duration-seconds <seconds>] [--min-audio-peak <peak>] [--min-audio-rms <rms>]");
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
@@ -306,6 +357,59 @@ function parsePositiveInteger(value: string, flag: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${flag} must be a positive integer.`);
   return parsed;
+}
+
+function parsePositiveNumber(value: string, flag: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${flag} must be a positive number.`);
+  return parsed;
+}
+
+function installedRecordingConfidence(input: {
+  audioRecordingControl: any;
+  midiInputRecordingControl: any;
+  midiDevicePreflight: any;
+  minAudioDurationSeconds: number;
+  minAudioPeak: number;
+  minAudioRms: number;
+}) {
+  const media = input.audioRecordingControl?.media || {};
+  const audibleAudio = input.audioRecordingControl?.outcome === "started-and-stopped"
+    && Number(media.durationSeconds) >= input.minAudioDurationSeconds
+    && Number(media.filePeak) >= input.minAudioPeak
+    && Number(media.fileRms) >= input.minAudioRms;
+  const connectedMidi = input.midiInputRecordingControl?.outcome === "started-and-stopped"
+    && input.midiInputRecordingControl?.take?.captured === true
+    && Number(input.midiInputRecordingControl?.take?.noteCount) > 0;
+  const blockers: string[] = [];
+  if (!audibleAudio) {
+    blockers.push(`Audible audio evidence needs duration >= ${input.minAudioDurationSeconds}s, filePeak >= ${input.minAudioPeak}, and fileRms >= ${input.minAudioRms}.`);
+  }
+  if (!connectedMidi) {
+    const inputCount = Number(input.midiDevicePreflight?.inputCount);
+    blockers.push(Number.isInteger(inputCount) && inputCount < 1
+      ? "No OS MIDI input devices were detected for connected MIDI recording evidence."
+      : "Connected MIDI recording did not capture a durable active take.");
+  }
+  return {
+    audibleAudio,
+    connectedMidi,
+    audioDeviceEvidence: {
+      projectRelativePath: typeof media.projectRelativePath === "string" ? media.projectRelativePath : null,
+      durationSeconds: typeof media.durationSeconds === "number" ? media.durationSeconds : null,
+      filePeak: typeof media.filePeak === "number" ? media.filePeak : null,
+      fileRms: typeof media.fileRms === "number" ? media.fileRms : null,
+      fileSampleRate: typeof media.fileSampleRate === "number" ? media.fileSampleRate : null,
+      fileChannels: typeof media.fileChannels === "number" ? media.fileChannels : null
+    },
+    midiDeviceEvidence: {
+      inputCount: Number.isInteger(Number(input.midiDevicePreflight?.inputCount)) ? Number(input.midiDevicePreflight.inputCount) : null,
+      inputs: Array.isArray(input.midiDevicePreflight?.inputs) ? input.midiDevicePreflight.inputs : [],
+      capturedNoteCount: typeof input.midiInputRecordingControl?.take?.noteCount === "number" ? input.midiInputRecordingControl.take.noteCount : 0,
+      capturedPitches: Array.isArray(input.midiInputRecordingControl?.take?.pitches) ? input.midiInputRecordingControl.take.pitches : []
+    },
+    blockers
+  };
 }
 
 function midiDevicePreflightEvidence() {

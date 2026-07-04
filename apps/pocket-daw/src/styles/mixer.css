@@ -299,15 +299,43 @@
 }
 
 .audio-take-lane-meta strong {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
   color: #f9d98f;
   font-size: 11px;
+}
+
+.take-lane-state-pill {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 1px 5px;
+  border: 1px solid rgba(245, 196, 107, 0.28);
+  border-radius: 999px;
+  color: #ffe9b4;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.35;
+  text-transform: uppercase;
 }
 
 .audio-take-lane-row.lane-active .audio-take-lane-meta strong {
   color: #b6ffe6;
 }
 
+.audio-take-lane-row.lane-active .take-lane-state-pill {
+  border-color: rgba(92, 227, 182, 0.36);
+  color: #b6ffe6;
+}
+
 .audio-take-lane-row.lane-archived .audio-take-lane-meta strong {
+  color: #d4dbea;
+}
+
+.audio-take-lane-row.lane-archived .take-lane-state-pill {
+  border-color: rgba(120, 137, 170, 0.34);
   color: #d4dbea;
 }
 

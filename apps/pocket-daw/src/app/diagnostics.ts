@@ -80,6 +80,7 @@ export interface TesterDiagnosticsPayload {
     playbackStopRenderedFrameCount: number | null;
     playbackSampleRate: number | null;
     inputPreflight: RecordingInputPreflight;
+    confidence: RecordingConfidenceDiagnostics;
     timingNotes: string[];
   };
   updater: {
@@ -117,6 +118,29 @@ export interface TesterDiagnosticsPayload {
     userDataPath: string;
   };
   performance: PerformanceDiagnosticsReport | null;
+}
+
+export interface RecordingConfidenceDiagnostics {
+  projectSaved: boolean;
+  selectedInputDeviceId: string | null;
+  selectedInputDeviceName: string | null;
+  selectedOutputDeviceId: string | null;
+  selectedOutputDeviceName: string | null;
+  sampleRate: number | null;
+  selectedTrackChannelMode: string | null;
+  selectedTrackChannelMap: number[];
+  capturePlanLabels: string[];
+  savedMediaRoot: string;
+  latestRecordedMediaPath: string | null;
+  latestRecordedMediaName: string | null;
+  midiInputStatus: string;
+  midiInputName: string | null;
+  midiInputMessage: string;
+  readyForAudioCapture: boolean;
+  readyForStrictAudibleAudioEvidence: boolean;
+  readyForConnectedMidiEvidence: boolean;
+  blockers: string[];
+  notes: string[];
 }
 
 export interface AudioTakeDiagnosticsSummary {
@@ -167,6 +191,7 @@ export function buildTesterDiagnosticsPayload(
   const metronome = project.project.metronome || { enabled: false, countInBars: 1, volume: 0.55 };
   const invariants = validateProjectInvariants(project);
   const routing = createRoutingExportSummary(project);
+  const recordingInputPreflight = buildNativeRecordingAlphaInputPreflight(project);
 
   return {
     capturedAt: options.capturedAt || new Date().toISOString(),
@@ -234,7 +259,8 @@ export function buildTesterDiagnosticsPayload(
       playbackCaptureRenderedFrameCount: state.recording.playbackCaptureAnchor?.renderedFrameCount ?? null,
       playbackStopRenderedFrameCount: state.recording.playbackStopAnchor?.renderedFrameCount ?? null,
       playbackSampleRate: state.recording.playbackCaptureAnchor?.sampleRate ?? state.recording.playbackStopAnchor?.sampleRate ?? null,
-      inputPreflight: buildNativeRecordingAlphaInputPreflight(project),
+      inputPreflight: recordingInputPreflight,
+      confidence: recordingConfidenceDiagnostics(state, recordingInputPreflight),
       timingNotes: recordingTimingNotes(state)
     },
     updater: {
@@ -275,6 +301,70 @@ export function buildTesterDiagnosticsPayload(
     },
     performance: options.performance || null
   };
+}
+
+function recordingConfidenceDiagnostics(state: AppState, inputPreflight: RecordingInputPreflight): RecordingConfidenceDiagnostics {
+  const project = currentProject(state);
+  const devices = project.audioDeviceSettings.devices || [];
+  const selectedInputDeviceId = project.audioDeviceSettings.inputDeviceId || inputPreflight.capturePlan[0]?.deviceId || null;
+  const selectedOutputDeviceId = project.audioDeviceSettings.outputDeviceId || null;
+  const selectedInputDevice = selectedInputDeviceId ? devices.find((device) => device.id === selectedInputDeviceId) || null : null;
+  const selectedOutputDevice = selectedOutputDeviceId ? devices.find((device) => device.id === selectedOutputDeviceId) || null : null;
+  const selectedTrack = inputPreflight.selectedTrackId
+    ? project.tracks.find((track) => track.id === inputPreflight.selectedTrackId) || null
+    : null;
+  const capturePlanItem = inputPreflight.capturePlan[0] || null;
+  const latestRecording = [...project.mediaPool].reverse().find((item) => {
+    const metadata = item.metadata as Record<string, unknown> | undefined;
+    return item.kind === "audio" && metadata?.importMode === "native-recording";
+  }) || null;
+  const latestRecordingMetadata = latestRecording?.metadata as Record<string, unknown> | undefined;
+  const latestRecordedMediaPath = typeof latestRecordingMetadata?.projectRelativePath === "string"
+    ? latestRecordingMetadata.projectRelativePath
+    : latestRecording?.uri || null;
+  const blockers = [
+    ...inputPreflight.errors,
+    ...(state.midiInputRecording.status === "error" && state.midiInputRecording.message ? [`MIDI input: ${state.midiInputRecording.message}`] : [])
+  ];
+  const sampleRate = state.recording.playbackCaptureAnchor?.sampleRate
+    ?? state.recording.playbackStopAnchor?.sampleRate
+    ?? project.audioDeviceSettings.sampleRate
+    ?? project.project.sampleRate
+    ?? null;
+  return {
+    projectSaved: Boolean(state.currentFile.path),
+    selectedInputDeviceId,
+    selectedInputDeviceName: state.recording.inputDeviceName || selectedInputDevice?.name || selectedInputDeviceId,
+    selectedOutputDeviceId,
+    selectedOutputDeviceName: state.recording.outputDeviceName || selectedOutputDevice?.name || selectedOutputDeviceId,
+    sampleRate: typeof sampleRate === "number" && Number.isFinite(sampleRate) ? sampleRate : null,
+    selectedTrackChannelMode: capturePlanItem?.mode || selectedTrack?.recordingChannelMode || null,
+    selectedTrackChannelMap: capturePlanItem?.channelMap || [],
+    capturePlanLabels: inputPreflight.capturePlan.map((item) => item.label),
+    savedMediaRoot: "project-media/recordings",
+    latestRecordedMediaPath,
+    latestRecordedMediaName: latestRecording?.name || null,
+    midiInputStatus: state.midiInputRecording.status,
+    midiInputName: state.midiInputRecording.inputName,
+    midiInputMessage: state.midiInputRecording.message,
+    readyForAudioCapture: Boolean(state.currentFile.path) && inputPreflight.ok,
+    readyForStrictAudibleAudioEvidence: Boolean(state.currentFile.path) && inputPreflight.ok && state.recording.status !== "error",
+    readyForConnectedMidiEvidence: state.midiInputRecording.status === "recording" || Boolean(state.midiInputRecording.inputName),
+    blockers,
+    notes: recordingConfidenceNotes(state, inputPreflight, latestRecordedMediaPath)
+  };
+}
+
+function recordingConfidenceNotes(state: AppState, inputPreflight: RecordingInputPreflight, latestRecordedMediaPath: string | null): string[] {
+  const notes: string[] = [];
+  notes.push(inputPreflight.ok ? "Audio input preflight is ready for the current armed track." : "Audio input preflight is blocking recording.");
+  notes.push(latestRecordedMediaPath ? `Latest native recording media path: ${latestRecordedMediaPath}.` : "No saved native recording media is present in this project yet.");
+  if (state.midiInputRecording.inputName) {
+    notes.push(`MIDI input selected during this session: ${state.midiInputRecording.inputName}.`);
+  } else {
+    notes.push("No connected MIDI input has been captured in this diagnostics session.");
+  }
+  return notes;
 }
 
 export function createAudioTakeDiagnosticsSummary(project: PocketDawProject): AudioTakeDiagnosticsSummary {

@@ -327,6 +327,14 @@ function renderTransport(state: AppState): string {
     ? `${state.midiInputRecording.noteCount} note${state.midiInputRecording.noteCount === 1 ? "" : "s"}`
     : "input";
   const metroDetail = metronome.enabled ? `${metronome.countInBars} bar` : "off";
+  const transportSelection = project.timeline.selection || null;
+  const punchRange = transportSelection?.source === "punch" ? transportSelection : null;
+  const recordingModeDetail = state.recordingPunchEnabled
+    ? punchRange
+      ? `punch ${formatBarNumber(punchRange.startBar)}-${formatBarNumber(punchRange.endBar)}`
+      : "punch unset"
+    : "full range";
+  const takeModeDetail = state.recordingTakeMode === "take-lane" ? "new lane" : "replace";
   return `
     <header class="transport" data-layout-zone="transport">
       <div class="brand">
@@ -341,8 +349,8 @@ function renderTransport(state: AppState): string {
         <button class="primary" data-transport-toggle="true" data-action="${state.playing ? "pause" : "play"}">${state.playing ? "Pause" : "Play"}</button>
         <button class="${recordingActive ? "record on" : "record"}" data-action="record-toggle" data-ui-scope="recording">${recordingActive ? "Stop Rec" : "Record"}</button>
         <button class="${midiRecordingActive ? "record on" : "record"}" data-action="midi-record-toggle" data-ui-scope="recording" title="Start transport and record note events from the first available MIDI input onto the selected MIDI track">${midiRecordingLabel}</button>
-        <button class="${state.recordingPunchEnabled ? "on" : ""}" data-action="recording-punch-toggle" data-ui-scope="recording" title="Record only the explicit punch range when one is set">Punch</button>
-        <button class="${state.recordingTakeMode === "take-lane" ? "on" : ""}" data-action="recording-take-mode-toggle" data-ui-scope="recording" title="Toggle between replacing the visible range and creating a new take lane">${state.recordingTakeMode === "take-lane" ? "Take Lane" : "Replace"}</button>
+        <button class="${state.recordingPunchEnabled ? "on" : ""}" data-action="recording-punch-toggle" data-ui-scope="recording" title="${escapeAttr(punchRange ? `Punch range is Bar ${formatBarNumber(punchRange.startBar)} to ${formatBarNumber(punchRange.endBar)}` : "Record only an explicit punch range after using Set Punch")}">Punch</button>
+        <button class="${state.recordingTakeMode === "take-lane" ? "on" : ""}" data-action="recording-take-mode-toggle" data-ui-scope="recording" title="Toggle between replacing the visible range and creating a new active take lane">${state.recordingTakeMode === "take-lane" ? "Take Lane" : "Replace"}</button>
         <button class="${metronome.enabled ? "on" : ""}" data-action="metronome-toggle" title="Metronome and one-bar recording count-in">Metro</button>
         <button data-action="stop">Stop</button>
         <button data-action="restart">Restart</button>
@@ -355,7 +363,7 @@ function renderTransport(state: AppState): string {
       </div>
       <div class="transport-readout">
         <span data-playing-state="true" class="${state.playing ? "playing" : ""}"><strong>${state.playing ? "Playing" : "Stopped"}</strong></span>
-        <span data-recording-state="true" data-ui-scope="recording" class="${recordingActive ? "recording" : ""}"><strong>${escapeHtml(recordingPrimary)}</strong>${recordingSecondary ? `<small>${escapeHtml(recordingSecondary)}</small>` : `<small>${state.recordingPunchEnabled ? "punch" : "full"} / ${state.recordingTakeMode === "take-lane" ? "lane" : "replace"}</small>`}</span>
+        <span data-recording-state="true" data-ui-scope="recording" class="${recordingActive ? "recording" : ""}"><strong>${escapeHtml(recordingPrimary)}</strong>${recordingSecondary ? `<small>${escapeHtml(recordingSecondary)}</small>` : `<small>${escapeHtml(`${recordingModeDetail} / ${takeModeDetail}`)}</small>`}</span>
         <span data-midi-recording-state="true" data-ui-scope="recording" class="${midiRecordingActive ? "recording" : ""}"><strong>MIDI</strong><small>${escapeHtml(midiRecordingDetail)}</small></span>
         <span><strong>${Math.round(project.project.bpm)}</strong><small>BPM</small></span>
         <span><strong>Metro</strong><small>${escapeHtml(metroDetail)}</small></span>
@@ -1305,7 +1313,7 @@ function renderAudioTakeLaneActionButtons(project: ReturnType<typeof currentProj
   return `
     <div class="audio-take-lane-actions ${compact ? "compact" : ""}">
       <button type="button" data-audio-take-activate="${sanitizeDataAttr(takeTarget?.clipId || "")}" ${takeDisabled ? "disabled" : ""} title="Make this lane's current overlapping take active in the take group">Take</button>
-      <button type="button" data-audio-take-lane-activate="${sanitizeDataAttr(targets.laneClipId)}" ${laneDisabled ? "disabled" : ""} title="Activate every non-archived clip in this take lane for auditioning">Lane</button>
+      <button type="button" data-audio-take-lane-activate="${sanitizeDataAttr(targets.laneClipId)}" ${laneDisabled ? "disabled" : ""} title="Activate every non-archived clip in this take lane for auditioning">Active</button>
       <button type="button" data-audio-take-lane-mute="${sanitizeDataAttr(targets.laneClipId)}" ${muteDisabled ? "disabled" : ""} title="Mute every non-archived clip in this take lane without deleting source media">Mute</button>
       ${
         laneState === "archived"
@@ -1323,12 +1331,18 @@ function renderAudioTakeLaneRow(project: ReturnType<typeof currentProject>, stat
   const segmentLabel = lane.clipCount === 1 ? "1 segment" : `${lane.clipCount} segments`;
   const rangeLabel = `${formatBarBeat(project, lane.startBar)} to ${formatBarBeat(project, lane.endBar)}`;
   const takeTarget = takeLaneActionTargets(project, state, summary, lane).takeTarget;
+  const stateLabel = laneState === "active" ? "Active take lane" : laneState === "archived" ? "Archived take lane" : "Inactive take lane";
+  const stateDetail = laneState === "active"
+    ? "plays in export"
+    : laneState === "archived"
+      ? "hidden from playback"
+      : "kept muted";
   return `
     <div class="audio-take-lane-row ${context === "timeline" ? "timeline-lane" : ""} lane-${sanitizeDataAttr(laneState)}" data-audio-take-lane-summary="${sanitizeDataAttr(`${lane.takeLaneId}:${laneState}`)}" data-audio-take-status="${sanitizeDataAttr(`${takeTarget?.clipId || lane.clipIds[0] || ""}:${laneState}`)}" title="${escapeAttr(`${lane.takeLaneId}: ${segmentLabel}, bars ${rangeLabel}`)}">
       <div class="audio-take-lane-meta">
-        <strong>Lane ${lane.takeNumber}</strong>
-        <span>${escapeHtml(laneState)} / ${escapeHtml(segmentLabel)} / bars ${escapeHtml(rangeLabel)}</span>
-        <small>${lane.activeClipCount} active / ${lane.mutedClipCount} muted / ${lane.archivedClipCount} archived</small>
+        <strong>Lane ${lane.takeNumber} <em class="take-lane-state-pill">${escapeHtml(stateLabel)}</em></strong>
+        <span>${escapeHtml(segmentLabel)} / bars ${escapeHtml(rangeLabel)} / ${escapeHtml(stateDetail)}</span>
+        <small>${lane.activeClipCount} active / ${lane.mutedClipCount} inactive / ${lane.archivedClipCount} archived</small>
       </div>
       ${renderAudioTakeLaneActionButtons(project, state, summary, lane, context === "timeline")}
     </div>

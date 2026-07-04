@@ -128,6 +128,28 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
         capturePlan: [],
         errors: ["Arm one live audio track before recording."],
         warnings: []
+      },
+      confidence: {
+        projectSaved: true,
+        selectedInputDeviceId: "input",
+        selectedInputDeviceName: "input",
+        selectedOutputDeviceId: "output",
+        selectedOutputDeviceName: "output",
+        sampleRate: null,
+        selectedTrackChannelMode: null,
+        selectedTrackChannelMap: [],
+        capturePlanLabels: [],
+        savedMediaRoot: "project-media/recordings",
+        latestRecordedMediaPath: null,
+        latestRecordedMediaName: null,
+        midiInputStatus: "idle",
+        midiInputName: null,
+        midiInputMessage: "",
+        readyForAudioCapture: false,
+        readyForStrictAudibleAudioEvidence: false,
+        readyForConnectedMidiEvidence: false,
+        blockers: ["Arm one live audio track before recording."],
+        notes: ["Audio input preflight is blocking recording."]
       }
     },
     updater: {

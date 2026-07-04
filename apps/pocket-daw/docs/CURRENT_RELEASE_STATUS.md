@@ -4,7 +4,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.38` |
+| Source version | `0.6.39` |
 | Project schema version | `2` |
 | Latest published version | `0.6.38` |
 | Latest published tag | `pocket-daw-v0.6.38` |
@@ -31,7 +31,8 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
-- No unreleased source-only notes recorded.
+- 0.6.39 is a source-only recording confidence candidate. It keeps the public release on 0.6.38 until real audible audio-input evidence and connected MIDI-input evidence pass against the exact installed artifact.
+- The checkpoint focus is recording trust: stricter installed punch/take smoke flags, clearer take-lane state feedback, diagnostics for selected input/channel/sample-rate/media-path evidence, and no expansion into simultaneous multitrack, ASIO, plugin hosting, full comp UI, or pitch-preserving time-stretch.
 
 ## Capability Claim Boundary
 
