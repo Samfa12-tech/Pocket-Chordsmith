@@ -2,7 +2,7 @@ import { addMediaPoolItem, createMediaPoolItem, findMediaPoolItem, type MediaPoo
 import type { Clip, JsonObject, MediaPoolItem, PocketDawProject, Track } from "./schema";
 import { cloneProject } from "./dawProject";
 import { createEmptyFxChain } from "./fx";
-import { recomputeTimelineBars, timelineBarAtSeconds, timelineSecondsAtBar } from "./timeline";
+import { recomputeTimelineBars, samplesToSeconds, timelineBarAtSeconds, timelineSecondsAtBar } from "./timeline";
 import { recordingLatencyOffsetSeconds } from "./tracks";
 
 export interface ImportedAudioMedia {
@@ -210,7 +210,8 @@ export function placeAudioClipOnTrack(project: PocketDawProject, mediaPoolItemId
 }
 
 export function placeRecordingClipOnTrack(project: PocketDawProject, mediaPoolItemId: string, trackId: string, startBar: number): PlaceAudioClipResult {
-  const placement = recordingLatencyPlacement(project, trackId, startBar);
+  const item = findMediaPoolItem(project, mediaPoolItemId);
+  const placement = recordingLatencyPlacement(project, trackId, startBar, item?.metadata);
   return placeAudioClipOnTrack(project, mediaPoolItemId, trackId, placement.startBar, {
     overwriteOverlaps: true,
     extraMetadata: placement.metadata
@@ -222,7 +223,8 @@ export function placePunchRecordingClipOnTrack(project: PocketDawProject, mediaP
   const punchStartBar = cleanStartBar(options.punchStartBar);
   const punchEndBar = Math.max(punchStartBar, cleanStartBar(options.punchEndBar));
   if (punchEndBar <= punchStartBar + 0.001) return { project, clipId: "", trackId: "" };
-  const placement = recordingLatencyPlacement(project, trackId, punchStartBar);
+  const item = findMediaPoolItem(project, mediaPoolItemId);
+  const placement = recordingLatencyPlacement(project, trackId, punchStartBar, item?.metadata);
   const sourceOffsetSeconds = secondsBetweenBars(project, captureStartBar, punchStartBar);
   const sourceDurationSeconds = secondsBetweenBars(project, punchStartBar, punchEndBar);
   if (options.createTakeLane) {
@@ -257,7 +259,7 @@ export function placePunchRecordingClipOnTrack(project: PocketDawProject, mediaP
 export function placeTakeLaneRecordingClipOnTrack(project: PocketDawProject, mediaPoolItemId: string, trackId: string, startBar: number): PlaceAudioClipResult {
   const item = findMediaPoolItem(project, mediaPoolItemId);
   if (!item || item.kind !== "audio") return { project, clipId: "", trackId: "" };
-  const placement = recordingLatencyPlacement(project, trackId, startBar);
+  const placement = recordingLatencyPlacement(project, trackId, startBar, item.metadata);
   const clipLength = Math.max(0.001, secondsToBarsFromStart(item.durationSeconds || secondsBetweenBars(project, startBar, startBar + 1), project, placement.startBar));
   return placeTakeLaneAudioClipOnTrack(project, mediaPoolItemId, trackId, placement.startBar, placement.startBar + clipLength, {
     extraMetadata: {
@@ -335,8 +337,19 @@ function placeTakeLaneAudioClipOnTrack(project: PocketDawProject, mediaPoolItemI
   });
 }
 
-function recordingLatencyPlacement(project: PocketDawProject, trackId: string, startBar: number): { startBar: number; metadata: JsonObject } {
+function recordingLatencyPlacement(project: PocketDawProject, trackId: string, startBar: number, sourceMetadata?: Record<string, unknown> | undefined): { startBar: number; metadata: JsonObject } {
   const cleanBar = cleanStartBar(startBar);
+  const sampleStart = Number(sourceMetadata?.clipTimelineStartSample);
+  const metadataSampleRate = Math.max(1, Math.round(Number(sourceMetadata?.timelineSampleRate) || project.project.sampleRate || 44_100));
+  if (Number.isFinite(sampleStart) && sampleStart >= 0) {
+    return {
+      startBar: timelineBarAtSeconds(project, samplesToSeconds(sampleStart, metadataSampleRate)),
+      metadata: {
+        originalRequestedStartBar: cleanBar,
+        latencyAdjustedStartSeconds: roundSeconds(samplesToSeconds(sampleStart, metadataSampleRate))
+      }
+    };
+  }
   const track = project.tracks.find((candidate) => candidate.id === trackId);
   const requestedSeconds = recordingLatencyOffsetSeconds(track);
   if (requestedSeconds === 0) {
@@ -386,6 +399,17 @@ function createPlacedAudioClipMetadata(item: MediaPoolItem, project: PocketDawPr
     "latencyCompensationRequestedSeconds",
     "latencyCompensationAppliedSeconds",
     "latencyCompensationMode",
+    "recordingPlacementTimingModel",
+    "timelineSampleRate",
+    "requestedStartSample",
+    "manualLatencyOffsetSamples",
+    "clipTimelineStartSample",
+    "clipTimelineStartSeconds",
+    "clipTimelineStartBar",
+    "recordedBufferOffsetSamples",
+    "recordedBufferOffsetSeconds",
+    "estimatedOutputLatencySamples",
+    "estimatedOutputLatencySeconds",
     "nativeRecordingSessionId",
     "nativeRequestedStartBar",
     "nativeRequestedStartSeconds",

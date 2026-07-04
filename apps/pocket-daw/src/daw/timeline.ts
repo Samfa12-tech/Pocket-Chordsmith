@@ -85,6 +85,33 @@ export function barsToSeconds(bars: number, bpm: number, timeSig: number): numbe
   return bars * timeSig * (60 / bpm);
 }
 
+export function samplesToSeconds(samples: number, sampleRate: number): number {
+  const safeSampleRate = Math.max(1, Math.round(Number(sampleRate) || 0));
+  return Math.max(0, Number(samples) || 0) / safeSampleRate;
+}
+
+export function secondsToSamples(seconds: number, sampleRate: number): number {
+  const safeSampleRate = Math.max(1, Math.round(Number(sampleRate) || 0));
+  return Math.max(0, Math.round((Number(seconds) || 0) * safeSampleRate));
+}
+
+export function beatsToSeconds(beats: number, bpm: number): number {
+  return constantTempoBeatsToSeconds(beats, bpm);
+}
+
+export function secondsToBeats(seconds: number, bpm: number): number {
+  const safeBpm = Math.max(1, Number(bpm) || 0);
+  return Math.max(0, Number(seconds) || 0) / (60 / safeBpm);
+}
+
+export function beatsToSamples(beats: number, sampleRate: number, bpm: number): number {
+  return secondsToSamples(beatsToSeconds(beats, bpm), sampleRate);
+}
+
+export function samplesToBeats(samples: number, sampleRate: number, bpm: number): number {
+  return secondsToBeats(samplesToSeconds(samples, sampleRate), bpm);
+}
+
 export function timelineQuarterNoteBeatsBetweenBars(project: PocketDawProject, startBar: number, endBar: number): number {
   const start = Math.max(1, Number.isFinite(startBar) ? startBar : 1);
   const end = Math.max(start, Number.isFinite(endBar) ? endBar : start);
@@ -143,6 +170,41 @@ export function timelineBarAtSeconds(project: PocketDawProject, seconds: number)
     else high = mid;
   }
   return high;
+}
+
+export function timelineSecondsAtPosition(project: PocketDawProject, position: TimelinePosition): number {
+  const safeBar = Math.max(1, Number.isFinite(position.bar) ? position.bar : 1);
+  const meter = effectiveMeterAtBar(project, safeBar);
+  const ppq = Math.max(1, Math.round(Number(project.project.ppq) || 480));
+  const beat = Math.max(1, Math.round(Number(position.beat) || 1));
+  const tick = Math.max(0, Math.round(Number(position.tick) || 0));
+  const beatsPerBar = Math.max(0.000001, quarterNoteBeatsPerBar(meter));
+  const localQuarterNoteBeats = (Math.max(0, beat - 1) * (4 / Math.max(1, meter.denominator))) + (tick / ppq) * (4 / Math.max(1, meter.denominator));
+  return timelineSecondsAtBar(project, safeBar) + beatsToSecondsAtBar(project, safeBar, localQuarterNoteBeats, beatsPerBar);
+}
+
+export function timelinePositionAtSeconds(project: PocketDawProject, seconds: number): TimelineDisplayPosition {
+  return barFloatToDisplayPosition(project, timelineBarAtSeconds(project, seconds));
+}
+
+export function barBeatTickToSamples(project: PocketDawProject, position: TimelinePosition, sampleRate = project.project.sampleRate): number {
+  return secondsToSamples(timelineSecondsAtPosition(project, position), sampleRate);
+}
+
+export function samplesToBarBeatTick(project: PocketDawProject, samples: number, sampleRate = project.project.sampleRate): TimelineDisplayPosition {
+  return timelinePositionAtSeconds(project, samplesToSeconds(samples, sampleRate));
+}
+
+export function wrapTimelineLoopSeconds(project: PocketDawProject, seconds: number): number {
+  if (!project.timeline.loop.enabled) return Math.max(0, Number(seconds) || 0);
+  const loopStart = timelineSecondsAtBar(project, project.timeline.loop.startBar);
+  const loopEnd = timelineSecondsAtBar(project, project.timeline.loop.endBar);
+  if (loopEnd <= loopStart) return Math.max(0, Number(seconds) || 0);
+  const safeSeconds = Math.max(0, Number(seconds) || 0);
+  if (safeSeconds < loopEnd) return safeSeconds;
+  const length = loopEnd - loopStart;
+  const wrappedOffset = ((safeSeconds - loopEnd) % length + length) % length;
+  return loopStart + wrappedOffset;
 }
 
 function constantTempoBarsToSeconds(bars: number, bpm: number, timeSig: number): number {
@@ -219,6 +281,12 @@ function integrateReciprocalTempo(t0: number, t1: number, bpmAt: (t: number) => 
 
 export function secondsToBars(seconds: number, bpm: number, timeSig: number): number {
   return seconds / Math.max(0.0001, timeSig * (60 / bpm));
+}
+
+function beatsToSecondsAtBar(project: PocketDawProject, startBar: number, localQuarterNoteBeats: number, beatsPerBar: number): number {
+  if (localQuarterNoteBeats <= 0) return 0;
+  const endBar = startBar + (localQuarterNoteBeats / Math.max(0.000001, beatsPerBar));
+  return timelineSecondsAtBar(project, endBar) - timelineSecondsAtBar(project, startBar);
 }
 
 export function findClipAtBar(project: PocketDawProject, bar: number): Clip | null {

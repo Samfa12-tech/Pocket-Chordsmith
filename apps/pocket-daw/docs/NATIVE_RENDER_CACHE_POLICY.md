@@ -11,6 +11,7 @@ Pocket DAW's native render cache is a playback/export reliability aid, not a sec
 ## Rebuild
 
 - Rebuild after source-changing edits: generated section notes, MIDI clip data, audio clip source windows, source refs, BPM/time signature/sample rate, drum lane mix/FX, or renderer contract/recipe changes.
+- Timing helpers and transport interpretation are part of the renderer contract. If event timing or sample/bar conversion behavior changes, timing-sensitive cache should be treated as stale.
 - During native playback, live composition edits may briefly keep only the filtered still-current part of an older cache while a fresh cache rebuild is pending.
 - A successful fresh rebuild must clear `nativeRenderCacheStaleForLiveEdits` and clear `pendingReason`.
 
@@ -19,6 +20,7 @@ Pocket DAW's native render cache is a playback/export reliability aid, not a sec
 - If no current cache covers playback, native playback can fall back to procedural events for generated material.
 - If native cache hydration finds stale source hashes, unsafe paths, failed reads, or partial generated-stem groups, those entries are skipped instead of treated as playable.
 - Browser/WebAudio rendering remains a development/test fallback, not the public DAW distribution target.
+- Cache windows may advance during native playback, but playhead ownership stays with the transport clock rather than the cache window itself.
 
 ## Diagnostics To Watch
 

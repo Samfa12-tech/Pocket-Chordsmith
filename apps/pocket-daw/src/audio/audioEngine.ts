@@ -1,7 +1,7 @@
 import type { PocketDawProject, Track } from "../daw/schema";
 import { cloneProject } from "../daw/dawProject";
 import { trackIsAudible } from "../daw/tracks";
-import { timelineBarAtSeconds, timelineDurationSeconds, timelineSecondsAtBar } from "../daw/timeline";
+import { timelineBarAtSeconds, timelineDurationSeconds, timelineSecondsAtBar, wrapTimelineLoopSeconds } from "../daw/timeline";
 import { renderTimelineEvents, type RenderedEvent } from "./eventRenderer";
 import { audioBufferForRegionPlayback, audioRegionPlaybackWindow, renderTimelineAudioRegions, scheduleAudioRegionEnvelope, type AudioRegion } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
@@ -29,6 +29,7 @@ import {
   type NativeRenderCachePersistResult
 } from "./nativeRenderCache";
 import type { NativeMediaApi } from "../native/mediaBridge";
+import { NativeTransportClock } from "./nativeTransportClock";
 
 interface TrackOutput {
   input: GainNode;
@@ -100,11 +101,8 @@ interface NativeRestartRequest {
 
 export function calculateLoopSeekSeconds(project: PocketDawProject, currentSeconds: number): number | null {
   if (!project.timeline.loop.enabled) return null;
-  const loop = project.timeline.loop;
-  const start = timelineSecondsAtBar(project, loop.startBar);
-  const end = timelineSecondsAtBar(project, loop.endBar);
-  if (end <= start || currentSeconds < end) return null;
-  return start;
+  const wrapped = wrapTimelineLoopSeconds(project, currentSeconds);
+  return Math.abs(wrapped - currentSeconds) < 0.000001 ? null : wrapped;
 }
 
 export class AudioEngine {
@@ -119,6 +117,7 @@ export class AudioEngine {
   private masterMeterData: Uint8Array<ArrayBuffer> | null = null;
   private schedulerTimer: number | null = null;
   private nativeTickTimer: number | null = null;
+  private nativeTransportClock = new NativeTransportClock();
   private nativePlayback: NativePlaybackBridgeLike;
   private nativeRenderCache: NativeRenderCache | null = null;
   private nativeRenderCacheBuildPromise: Promise<NativeRenderCache | null> | null = null;
@@ -151,7 +150,6 @@ export class AudioEngine {
   private nativeLiveRenderCacheRefreshHandle: number | null = null;
   private nativeRenderCachePendingReason: string | null = null;
   private playbackBackend: PlaybackBackend = "idle";
-  private nativeStartedAtMs = 0;
   private nativePlaybackStartedWithRenderCache = false;
   private nativePlaybackStartedWithProceduralFallbackEventCount = 0;
   private nativePlaybackCachePayloadWindowStartSeconds = 0;
@@ -306,7 +304,7 @@ export class AudioEngine {
       if (this.playbackBackend === "native-cpal-paused") {
         this.playbackBackend = "idle";
         void this.nativePlayback.stop().then((status) => {
-          if (status) this.nativeStatus = status;
+          if (status) this.applyNativeStatus(status);
         });
       }
       if (mode === "project-load" || mode === "timeline-structure" || !this.playing) {
@@ -401,7 +399,7 @@ export class AudioEngine {
       const fallbackCacheReason = this.nativeRenderCachePendingReason || "play-fallback-cache-build";
       this.playing = true;
       this.playbackBackend = "native-cpal";
-      this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
+      this.offsetSeconds = this.currentSeconds();
       this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
       this.nextEventIndex = this.nativeMeterEventIndex;
       this.nextAudioRegionIndex = this.findAudioRegionIndex(this.offsetSeconds);
@@ -455,13 +453,14 @@ export class AudioEngine {
     this.nativeSyncedTrackControls.clear();
     this.lastAudioDropCause = "stop";
     this.offsetSeconds = 0;
+    this.nativeTransportClock.stop();
     this.nextEventIndex = 0;
     this.nextAudioRegionIndex = 0;
     this.nativeMeterEventIndex = 0;
     this.meterPeaks = {};
     this.stopNativeTicker();
     void this.nativePlayback.stop().then((status) => {
-      if (status) this.nativeStatus = status;
+      if (status) this.applyNativeStatus(status);
     });
     this.stopActiveAudioSources();
     if (this.schedulerTimer !== null) window.clearInterval(this.schedulerTimer);
@@ -475,12 +474,13 @@ export class AudioEngine {
     this.cancelLiveNativeRenderCacheRefresh();
     const wasNative = this.playbackBackend === "native-cpal";
     this.offsetSeconds = this.currentSeconds();
+    this.nativeTransportClock.pause();
     this.playing = false;
     this.playbackBackend = wasNative ? "native-cpal-paused" : "idle";
     this.stopNativeTicker();
     if (wasNative) {
       void this.nativePlayback.pause().then((status) => {
-        if (status) this.nativeStatus = status;
+        if (status) this.applyNativeStatus(status);
       });
     }
     if (this.schedulerTimer !== null) window.clearInterval(this.schedulerTimer);
@@ -505,11 +505,11 @@ export class AudioEngine {
     this.offsetSeconds = Math.max(0, seconds);
     this.lastAudioDropCause = "seek";
     if ((this.playbackBackend === "native-cpal" && this.playing) || this.playbackBackend === "native-cpal-paused") {
-      if (this.playing) this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
+      this.nativeTransportClock.seekSeconds(this.offsetSeconds, this.nativeStatus?.sampleRate || this.project.project.sampleRate);
       this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
       this.syncNativeMixerControls(this.offsetSeconds, true);
       void this.nativePlayback.seek(this.offsetSeconds).then((status) => {
-        if (status) this.nativeStatus = status;
+        if (status) this.applyNativeStatus(status);
       });
     }
     if (this.ctx && this.playing) {
@@ -523,7 +523,7 @@ export class AudioEngine {
 
   currentSeconds(): number {
     if (this.playbackBackend === "native-cpal" && this.playing) {
-      return this.projectNativePlaybackSeconds(Math.max(0, (performance.now() - this.nativeStartedAtMs) / 1000));
+      return this.projectNativePlaybackSeconds(this.nativeTransportClock.currentPositionSeconds());
     }
     if (!this.ctx || !this.playing) return this.offsetSeconds;
     if (this.ctx.state !== "running") return this.offsetSeconds;
@@ -548,7 +548,7 @@ export class AudioEngine {
       const refreshed = await this.nativePlayback.status();
       if (refreshed) {
         status = refreshed;
-        this.nativeStatus = refreshed;
+        this.applyNativeStatus(refreshed);
       }
     }
     return {
@@ -703,15 +703,14 @@ export class AudioEngine {
     const status = await this.nativePlayback.resume();
     if (!status?.active || !status.playing) {
       this.playbackBackend = "idle";
-      this.nativeStatus = status;
+      this.applyNativeStatus(status);
       return false;
     }
-    this.nativeStatus = status;
+    this.applyNativeStatus(status);
     this.nativeLastError = null;
-    this.offsetSeconds = Math.max(0, status.positionSeconds || this.offsetSeconds);
+    this.offsetSeconds = this.currentSeconds();
     this.playing = true;
     this.playbackBackend = "native-cpal";
-    this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
     this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
     this.nativeLastTickSeconds = this.offsetSeconds;
     this.nextEventIndex = this.nativeMeterEventIndex;
@@ -745,7 +744,7 @@ export class AudioEngine {
     }
     this.nativePlaybackStartedWithRenderCache = !!playbackCache?.regions.length;
     this.nativePlaybackStartedWithProceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
-    this.nativeStatus = result.status;
+    this.applyNativeStatus(result.status);
     this.nativeLastError = null;
     return "started";
   }
@@ -779,7 +778,7 @@ export class AudioEngine {
   private async performNativeRestart(request: NativeRestartRequest): Promise<void> {
     if (request.token !== this.nativeRestartToken || this.playbackBackend !== "native-cpal" || !this.playing) return;
     this.offsetSeconds = request.seconds;
-    this.nativeStartedAtMs = performance.now() - this.offsetSeconds * 1000;
+    this.nativeTransportClock.seekSeconds(this.offsetSeconds, this.nativeStatus?.sampleRate || this.project.project.sampleRate);
     this.nativeMeterEventIndex = this.findEventIndex(this.offsetSeconds);
     this.nativeLastTickSeconds = this.offsetSeconds;
     this.nativeLastRestartReason = request.options.reason || null;
@@ -801,7 +800,7 @@ export class AudioEngine {
       this.nativeRestartCount += 1;
       this.nativePlaybackStartedWithRenderCache = !!playbackCache?.regions.length;
       this.nativePlaybackStartedWithProceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
-      this.nativeStatus = result.status;
+      this.applyNativeStatus(result.status);
       this.nativeLastError = null;
       if (request.options.reason === "play-cache-window-advance") this.nativePlaybackCacheWindowAdvanceLastError = null;
     } else {
@@ -1260,7 +1259,7 @@ export class AudioEngine {
         mute: !audible,
         solo: false
       }).then((status) => {
-        if (status) this.nativeStatus = status;
+        if (status) this.applyNativeStatus(status);
       });
     });
   }
@@ -1350,18 +1349,17 @@ export class AudioEngine {
 
   private refreshNativePositionEstimate(estimatedSeconds: number) {
     const now = performance.now();
-    if (this.nativeStatusRefreshInFlight || now - this.nativeLastStatusRefreshAtMs < 750) return;
+    if (this.nativeStatusRefreshInFlight || now - this.nativeLastStatusRefreshAtMs < 120) return;
     this.nativeStatusRefreshInFlight = true;
     this.nativeLastStatusRefreshAtMs = now;
     void this.nativePlayback.status()
       .then((status) => {
         if (!status) return;
-        this.nativeStatus = status;
+        this.applyNativeStatus(status);
         if (this.playbackBackend !== "native-cpal" || !this.playing || !status.active || !status.playing) return;
         const nativeSeconds = Math.max(0, status.positionSeconds || 0);
-        if (Math.abs(nativeSeconds - estimatedSeconds) < 0.08) return;
+        if (Math.abs(nativeSeconds - estimatedSeconds) < 0.02) return;
         this.offsetSeconds = nativeSeconds;
-        this.nativeStartedAtMs = performance.now() - nativeSeconds * 1000;
         this.nativeLastTickSeconds = nativeSeconds;
         this.repositionPlaybackIndexes(nativeSeconds + safeSyncLeadSeconds);
         this.emitTick(true);
@@ -1372,9 +1370,7 @@ export class AudioEngine {
   }
 
   private projectNativePlaybackSeconds(seconds: number): number {
-    if (!this.project.timeline.loop.enabled) return seconds;
-    const next = calculateLoopSeekSeconds(this.project, seconds);
-    return next === null ? seconds : next;
+    return wrapTimelineLoopSeconds(this.project, seconds);
   }
 
   private tapNativeMeters(current: number) {
@@ -1581,10 +1577,10 @@ export class AudioEngine {
     const current = this.currentSeconds();
     this.updateAutomationControls(current);
     this.handleLoop(current);
-    const horizon = this.currentSeconds() + this.schedulerLookaheadSeconds;
+    const horizon = current + this.schedulerLookaheadSeconds;
     while (this.nextEventIndex < this.events.length && this.events[this.nextEventIndex].time <= horizon) {
       const event = this.events[this.nextEventIndex];
-      if (event.time >= this.currentSeconds() - 0.045) this.scheduleEvent(event);
+      if (event.time >= current - 0.045) this.scheduleEvent(event);
       else {
         this.lateEventCount += 1;
         this.skippedLateEventCount += 1;
@@ -1594,7 +1590,7 @@ export class AudioEngine {
     }
     while (this.nextAudioRegionIndex < this.audioRegions.length && this.audioRegions[this.nextAudioRegionIndex].startTimeSeconds <= horizon) {
       const region = this.audioRegions[this.nextAudioRegionIndex];
-      if (region.startTimeSeconds + region.durationSeconds >= this.currentSeconds() - 0.045) this.scheduleAudioRegion(region, this.currentSeconds());
+      if (region.startTimeSeconds + region.durationSeconds >= current - 0.045) this.scheduleAudioRegion(region, current);
       this.nextAudioRegionIndex += 1;
     }
     const songEnd = timelineDurationSeconds(this.project) + 0.4;
@@ -1807,6 +1803,13 @@ export class AudioEngine {
 
   private barAtSeconds(seconds: number): number {
     return timelineBarAtSeconds(this.project, seconds);
+  }
+
+  private applyNativeStatus(status: NativeAudioStatus | null | undefined) {
+    if (!status) return;
+    this.nativeStatus = status;
+    const snapshot = this.nativeTransportClock.updateFromStatus(status);
+    this.offsetSeconds = snapshot.positionSeconds;
   }
 }
 

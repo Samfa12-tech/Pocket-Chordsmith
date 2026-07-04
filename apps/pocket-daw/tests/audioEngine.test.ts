@@ -860,9 +860,9 @@ describe("audio engine diagnostics", () => {
       const engine = new AudioEngine(project, native);
 
       await engine.play();
-      (engine as any).nativeStartedAtMs = performance.now() - secondsPerBar * 2 * 1000;
+      (engine as any).nativeTransportClock.setPlayingAtSeconds(secondsPerBar * 2 + 0.05);
 
-      expect(engine.currentSeconds()).toBeCloseTo(secondsPerBar, 1);
+      expect(engine.currentSeconds()).toBeCloseTo(secondsPerBar + 0.05, 1);
     } finally {
       (globalThis as any).window = previousWindow;
     }
@@ -1020,7 +1020,7 @@ describe("audio engine diagnostics", () => {
       const internals = engine as unknown as {
         nativeRenderCache: NativeRenderCache;
         nativePlaybackCachePayloadWindowEndSeconds: number;
-        nativeStartedAtMs: number;
+        nativeTransportClock: { setPlayingAtSeconds(seconds: number): void };
         nativeLastStatusRefreshAtMs: number;
         nativeLastRestartReason: string | null;
         nativeLastTickSeconds: number;
@@ -1031,7 +1031,7 @@ describe("audio engine diagnostics", () => {
 
       await engine.play();
       const firstWindowEnd = internals.nativePlaybackCachePayloadWindowEndSeconds;
-      internals.nativeStartedAtMs = performance.now() - Math.max(0, firstWindowEnd - 0.3) * 1000;
+      internals.nativeTransportClock.setPlayingAtSeconds(Math.max(0, firstWindowEnd - 0.3));
       internals.nativeLastStatusRefreshAtMs = performance.now();
       internals.tickNativePlayback();
       await internals.nativeRestartFlush;
@@ -1092,7 +1092,7 @@ describe("audio engine diagnostics", () => {
       const internals = engine as unknown as {
         nativeRenderCache: NativeRenderCache;
         nativePlaybackCachePayloadWindowEndSeconds: number;
-        nativeStartedAtMs: number;
+        nativeTransportClock: { setPlayingAtSeconds(seconds: number): void };
         nativeLastStatusRefreshAtMs: number;
         tickNativePlayback(): void;
         nativeRestartFlush: Promise<void> | null;
@@ -1102,7 +1102,7 @@ describe("audio engine diagnostics", () => {
       await engine.play();
       expect(starts[0].events.some((event) => !isSilentCachedSidechainTrigger(event))).toBe(true);
       const firstWindowEnd = internals.nativePlaybackCachePayloadWindowEndSeconds;
-      internals.nativeStartedAtMs = performance.now() - Math.max(0, firstWindowEnd - 0.3) * 1000;
+      internals.nativeTransportClock.setPlayingAtSeconds(Math.max(0, firstWindowEnd - 0.3));
       internals.nativeLastStatusRefreshAtMs = performance.now();
       internals.tickNativePlayback();
       await internals.nativeRestartFlush;

@@ -281,7 +281,7 @@ import { configureHiddenFileInput } from "./fileInputs";
 import { FUNCTION_ACTION_TOOLTIPS } from "./functionGuide";
 import { pocketDawMcpCopyText } from "./mcpSetup";
 import { PerformanceDiagnosticsRecorder, type UiPerformanceCounters } from "./performanceDiagnostics";
-import { beginRecordingSession, buildNativeRecordingDiagnosticsMetadata, buildNativeRecordingTakeMetadata, buildRecordingCompletionMessage, buildRecordingStartupPlan, cancelRecordingSession, recordingStartFailureCleanupPlan, shouldAutoPunchOutMidiInputRecording, shouldAutoPunchOutRecording, transitionRecordingSession } from "./recordingOrchestration";
+import { beginRecordingSession, buildNativeRecordingDiagnosticsMetadata, buildNativeRecordingTakeMetadata, buildRecordingCompletionMessage, buildRecordingSamplePlacementMetadata, buildRecordingStartupPlan, cancelRecordingSession, recordingStartFailureCleanupPlan, shouldAutoPunchOutMidiInputRecording, shouldAutoPunchOutRecording, transitionRecordingSession } from "./recordingOrchestration";
 import { PlaybackRenderScheduler, type RenderOptions, type RenderSchedule } from "./renderScheduler";
 import { revealElementInScroller } from "./scrollReveal";
 import { applyUpdaterCheckResult, applyUpdaterInstallResult, applyUpdaterProgress as updaterProgressPatch, applyUpdaterRelaunchResult, beginUpdaterCheck, beginUpdaterDownload } from "./updaterOrchestration";
@@ -4049,6 +4049,15 @@ export class App {
           }),
           latencyCompensationRequestedSeconds: recordingLatencyOffsetSeconds(recordingTrack),
           latencyCompensationMode: "manual-track-offset",
+          ...buildRecordingSamplePlacementMetadata({
+            project: currentProject(this.state),
+            track: recordingTrack,
+            startBar,
+            requestedStartSeconds: captureStartTransportSeconds ?? result.requestedStartSeconds,
+            captureSampleRate: result.captureSampleRate || result.sampleRate,
+            captureStartInputFrame: result.captureStartInputFrame,
+            firstInputFrame: result.firstInputFrame
+          }),
           ...buildNativeRecordingDiagnosticsMetadata({
             ...result,
             playbackCaptureAnchor,

@@ -1,4 +1,7 @@
 import { createRecordingUiState, recordingSessionMatches, type MidiInputRecordingUiState, type RecordingUiState } from "./state";
+import type { PocketDawProject, Track } from "../daw/schema";
+import { samplesToSeconds, secondsToSamples, timelineBarAtSeconds, timelineSecondsAtBar } from "../daw/timeline";
+import { recordingLatencyOffsetSeconds } from "../daw/tracks";
 
 export type RecordingStartupStep =
   | "prepare-timeline-audio"
@@ -45,6 +48,31 @@ export interface NativeRecordingTakeMetadataInput {
 export interface RecordingCompletionMessageInput {
   baseMessage: string;
   droppedInputFrameCount?: number | null;
+}
+
+export interface RecordingSamplePlacementInput {
+  project: PocketDawProject;
+  track: Track | null | undefined;
+  startBar: number;
+  requestedStartSeconds?: number | null;
+  captureSampleRate?: number;
+  captureStartInputFrame?: number | null;
+  firstInputFrame?: number | null;
+}
+
+export interface RecordingSamplePlacement {
+  timelineSampleRate: number;
+  requestedStartSeconds: number;
+  requestedStartSample: number;
+  manualOffsetSeconds: number;
+  manualOffsetSamples: number;
+  clipTimelineStartSeconds: number;
+  clipTimelineStartSample: number;
+  clipTimelineStartBar: number;
+  recordedBufferOffsetSamples: number;
+  recordedBufferOffsetSeconds: number;
+  estimatedOutputLatencySamples: number;
+  estimatedOutputLatencySeconds: number;
 }
 
 export interface RecordingSessionBeginInput {
@@ -217,6 +245,57 @@ export function buildRecordingCompletionMessage(input: RecordingCompletionMessag
   if (dropped <= 0) return input.baseMessage;
   const noun = dropped === 1 ? "frame was" : "frames were";
   return `${input.baseMessage} Warning: ${dropped} native input ${noun} dropped before the WAV was finalized.`;
+}
+
+export function buildRecordingSamplePlacement(input: RecordingSamplePlacementInput): RecordingSamplePlacement {
+  const project = input.project;
+  const timelineSampleRate = Math.max(1, Math.round(Number(project.project.sampleRate) || 44_100));
+  const captureSampleRate = Math.max(1, Math.round(Number(input.captureSampleRate) || timelineSampleRate));
+  const requestedStartSeconds = Number.isFinite(input.requestedStartSeconds)
+    ? Math.max(0, Number(input.requestedStartSeconds))
+    : timelineSecondsAtBar(project, Math.max(1, Number(input.startBar) || 1));
+  const requestedStartSample = secondsToSamples(requestedStartSeconds, timelineSampleRate);
+  const manualOffsetSeconds = recordingLatencyOffsetSeconds(input.track);
+  const manualOffsetSamples = secondsToSamples(Math.abs(manualOffsetSeconds), timelineSampleRate) * (manualOffsetSeconds < 0 ? -1 : 1);
+  const clipTimelineStartSample = Math.max(0, requestedStartSample - manualOffsetSamples);
+  const clipTimelineStartSeconds = samplesToSeconds(clipTimelineStartSample, timelineSampleRate);
+  const clipTimelineStartBar = timelineBarAtSeconds(project, clipTimelineStartSeconds);
+  const captureStartInputFrame = Number.isFinite(input.captureStartInputFrame) ? Math.max(0, Math.floor(Number(input.captureStartInputFrame))) : 0;
+  const firstInputFrame = Number.isFinite(input.firstInputFrame) ? Math.max(captureStartInputFrame, Math.floor(Number(input.firstInputFrame))) : captureStartInputFrame;
+  const recordedBufferOffsetSamples = Math.max(0, firstInputFrame - captureStartInputFrame);
+  const recordedBufferOffsetSeconds = samplesToSeconds(recordedBufferOffsetSamples, captureSampleRate);
+  const estimatedOutputLatencySamples = Math.max(0, Math.round(Number(project.audioDeviceSettings.bufferSize) || 0));
+  return {
+    timelineSampleRate,
+    requestedStartSeconds,
+    requestedStartSample,
+    manualOffsetSeconds,
+    manualOffsetSamples,
+    clipTimelineStartSeconds,
+    clipTimelineStartSample,
+    clipTimelineStartBar,
+    recordedBufferOffsetSamples,
+    recordedBufferOffsetSeconds,
+    estimatedOutputLatencySamples,
+    estimatedOutputLatencySeconds: samplesToSeconds(estimatedOutputLatencySamples, timelineSampleRate)
+  };
+}
+
+export function buildRecordingSamplePlacementMetadata(input: RecordingSamplePlacementInput) {
+  const placement = buildRecordingSamplePlacement(input);
+  return {
+    recordingPlacementTimingModel: "timeline-samples-v1",
+    timelineSampleRate: placement.timelineSampleRate,
+    requestedStartSample: placement.requestedStartSample,
+    manualLatencyOffsetSamples: placement.manualOffsetSamples,
+    clipTimelineStartSample: placement.clipTimelineStartSample,
+    clipTimelineStartSeconds: placement.clipTimelineStartSeconds,
+    clipTimelineStartBar: placement.clipTimelineStartBar,
+    recordedBufferOffsetSamples: placement.recordedBufferOffsetSamples,
+    recordedBufferOffsetSeconds: placement.recordedBufferOffsetSeconds,
+    estimatedOutputLatencySamples: placement.estimatedOutputLatencySamples,
+    estimatedOutputLatencySeconds: placement.estimatedOutputLatencySeconds
+  };
 }
 
 export function buildLoopbackCalibrationReport(takes: LoopbackCalibrationTake[]): LoopbackCalibrationReport {
