@@ -1,5 +1,10 @@
 # Pocket Audio Family Consolidation Inventory
 
+Historical note: this inventory captures the source inputs used during the
+2026-06 consolidation. It is archival context, not current navigation. For the
+live repo layout, use the root `README.md`, `PROJECT_MEMORY.md`, and
+`docs/CROSS_APP_RELEASE_DASHBOARD.md`.
+
 ## Source Repositories And Folders
 
 ### Public `Pocket-Chordsmith`
@@ -7,7 +12,7 @@
 - Inspected: current checkout and shallow clone from `https://github.com/Samfa12-tech/Pocket-Chordsmith`.
 - Apparent current role: public Godot addon repository plus local family workspace.
 - Important files: `addons/pocket_chordsmith/plugin.cfg`, addon runtime/editor/import/tools/resources/audio/docs, root addon `README.md`, `CHANGELOG.md`, `MIGRATION.md`, `LICENSE`.
-- Apparent current version: Godot addon `1.1.6`.
+- Apparent current version during consolidation: Godot addon `1.1.6`.
 - Likely stale files: older top-level workspace-only layout references that described `godot-addon/` as a separate nested repo.
 - Likely release artifacts: local `releases/`, addon zips, prompt-pack zips.
 - Do not copy: nested `.git` directories, release zips, `_tmp/`, generated caches.
@@ -22,12 +27,12 @@
 - Likely stale files: single older web snapshot compared with local `web-app/pocket_chordsmith_v68_core_bridge.html`.
 - Likely release artifacts: none found in the shallow clone.
 - Do not copy: older app snapshot as the current build.
-- Proposed destination: reference only; prefer local `web-app/` for `apps/chordsmith-web/`.
+- Proposed destination: reference only; the canonical browser app path is now `apps/chordsmith-web/`. Root `web-app/` is historical/reference-only when present.
 
-### Local `web-app/`
+### Historical Local `web-app/`
 
 - Inspected: `web-app/` in this workspace.
-- Apparent current role: newest Pocket Chordsmith browser app workspace.
+- Apparent role during consolidation: newest Pocket Chordsmith browser app workspace.
 - Important files: `index.html`, `pocket_chordsmith_v68_core_bridge.html`, `pocket_chordsmith_v67_direct_godot_push.html`, `demo.json`, `icon.png`, `background.png`, `POCKET_CHORDSMITH_CODEX_CONTEXT.md`, `skills/pocket-chordsmith-composer/SKILL.md`, package/test scripts.
 - Apparent current version: v68 current, v67 retained as direct Godot push baseline.
 - Likely stale files: v61-v66 HTML builds are useful snapshots, not current entry points.
@@ -35,10 +40,10 @@
 - Do not copy: `node_modules/`, `dist/`, `playwright-report/`, `test-results/`, `.codex-server-logs/`, random zips.
 - Proposed destination: `apps/chordsmith-web/`, with older intentional snapshots under `apps/chordsmith-web/archive/`.
 
-### Local `pocket_dj/`
+### Historical Local `pocket_dj/`
 
 - Inspected: `pocket_dj/` in this workspace.
-- Apparent current role: standalone Pocket DJ prototype and planning workspace.
+- Apparent role during consolidation: standalone Pocket DJ prototype and planning workspace.
 - Important files: `pocket_dj_v1g_core_bridge.html`, `pocket_dj_v1f_push_handoffs.html`, `pocket_dj_v1_planning_doc.md`, `pocket_dj_v1_codex_prompt.txt`, `README.md`.
 - Apparent current version: v1g current, v1f retained for push-handoff reference.
 - Likely stale files: v1e help-polish snapshot.
@@ -48,7 +53,7 @@
 
 ### Private `pocket-daw`
 
-- Inspected: shallow clone from `https://github.com/Samfa12-tech/pocket-daw` and the local nested `pocket-daw/` working tree.
+- Inspected: shallow clone from `https://github.com/Samfa12-tech/pocket-daw` and the historical local nested `pocket-daw/` working tree.
 - Apparent current role: Vite/TypeScript/Tauri Pocket DAW app.
 - Important files: `package.json`, `package-lock.json`, `index.html`, `src/`, `src-tauri/`, `scripts/`, `tests/`, `tsconfig.json`, `WHAT_WORKS_AND_WHATS_NEXT.md`, `POCKET_DAW_NORTH_STAR.md`, relevant docs.
 - Apparent current version: package version `0.5.1`; local tree includes newer uncommitted Pocket Audio Core/handoff integration files not present in the shallow clone.

@@ -42,6 +42,14 @@ playhead position. The UI only displays state and dispatches commands.
 
 ## Current Notes And Known Gaps
 
+### Current 2026-07-05 Housekeeping Notes
+
+- Project docs and filesystem were audited on 2026-07-05. The canonical navigation anchors remain `README.md`, `AGENTS.md`, this `PROJECT_MEMORY.md`, `docs/CROSS_APP_RELEASE_DASHBOARD.md`, `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md`, and `apps/chordsmith-web/POCKET_CHORDSMITH_CODEX_CONTEXT.md`.
+- Current Pocket DAW release truth is source `0.6.39`, latest published public updater release `0.6.38`, project schema `2`, and last installed-smoke `0.6.39` passing on 2026-07-04. Trust `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md` and `apps/pocket-daw/release-status.json` over older status prose when these differ.
+- `0.6.39` is a source-only recording confidence candidate until updater, GitHub release, bootstrapper, and itch publication steps are completed and verified. Public release claims should still name `0.6.38` unless release-status metadata is refreshed after publication.
+- `docs/CROSS_APP_RELEASE_DASHBOARD.md` was refreshed against current component metadata. Use it for cross-app baselines, but treat generated/component release files as the source of truth for exact versions and smoke evidence.
+- The loose root addon zip `pocket_chordsmith_godot_addon_1.1.8.zip` was moved out of the repository front door to ignored local storage at `releases/godot-addon/root-cleanup-2026-07-05/pocket_chordsmith_godot_addon_1.1.8_root-2026-06-29.zip` because a different `1.1.8` package already existed under `releases/godot-addon/`. Do not restore release zips to the repo root.
+
 ### Current 2026-07-01 Notes
 
 - Lofi & Chill CD Baby upload was completed on 2026-07-01 from the Pocket Release Mastering Assistant output. The final local archive is `release/archive/cd-baby/lofi-and-chill-cd-baby-uploaded-2026-07-01.zip` with SHA-256 `611079EFE35C44ECFC03F06F57BC596F5AB9B920BE951DAFE50FB4D5AFCB84C5`. The archive includes the uploaded 16-bit/44.1 kHz stereo WAV set, manifests, reports, mix patches, master settings, source-project copies, extended source-project copies, and short-track extension notes.
@@ -56,7 +64,7 @@ playhead position. The UI only displays state and dispatches commands.
 ### Current 2026-06-28 Notes
 
 - 2026-06-28 post-reaudit anchors: use `docs/CROSS_APP_RELEASE_DASHBOARD.md` for the cross-app baseline and `docs/audits/2026-06-27-deep-audit-workplan.md` for the deep-audit loop. The workplan tracks mixed completion types: some rows are implementation plus tests, some are local installed smoke, some are manual checklist gates, and some are design/research anchors. Do not treat every completed row as a shipped product feature.
-- Current Pocket DAW release truth is still the published `0.6.34` checkpoint recorded in `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md` and `apps/pocket-daw/release-status.json`. Source commits after the published `0.6.34` release include docs, tests, and small source organization changes; do not package or publish another installer as `0.6.34` from a later commit. Bump the next checkpoint and align package, Tauri, Cargo, schema/release metadata before publishing any new binary.
+- Historical 2026-06-28 Pocket DAW release truth was the published `0.6.34` checkpoint recorded then in `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md` and `apps/pocket-daw/release-status.json`. Source commits after that published `0.6.34` release included docs, tests, and small source organization changes; do not package or publish another installer as `0.6.34` from a later commit. For the current release truth, use the 2026-07-05 notes above plus the generated release-status files.
 - Pocket DAW Windows file association local smoke passed on 2026-06-28 against installed `0.6.34`: `.pocketdaw` registration, cold-start open, second-instance focus/open, live `open_project`, and `pocket-daw://` Chordsmith handoff coexistence. Keep exact-artifact update smoke as a gate for the next public checkpoint.
 - Sam manually exported a Pocket DAW project as a game asset and imported it into Godot on 2026-06-28; it worked. Treat this as manual DAW -> Godot game-asset smoke evidence, not hosted CI and not proof of Chordsmith direct browser push.
 - Chordsmith -> Godot direct browser push is not verified working from the live itch build. As of 2026-06-19, the Godot receiver can answer on localhost and pasted `PCS1:` share codes import in the Godot Chordsmith tab, but the browser button falls back to a form submit and still should be treated as not working until a fresh browser/Godot smoke proves the chart appears automatically.

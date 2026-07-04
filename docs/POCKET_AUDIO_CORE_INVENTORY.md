@@ -4,9 +4,9 @@ Date: 2026-06-11
 
 Pocket Audio Core is intended to become the shared, headless audio/runtime layer for Pocket Chordsmith, Pocket DJ, Pocket DAW, new browser games, and parity-first Godot export workflows. This inventory captures the current audio, import/export, scheduling, and handoff code before extraction. No app behaviour was changed during this pass.
 
-Post-consolidation note: this report was written before the public monorepo layout was finalized. The canonical paths are now `apps/chordsmith-web/`, `apps/pocket-dj/`, `apps/pocket-daw/`, `addons/pocket_chordsmith/`, `packages/pocket-audio-core/`, and `packages/pcs-format/`. Historical references to `web-app/`, `pocket_dj/`, `godot-addon/`, `pocket-daw/`, and `pocket_audio_core_handoff/` describe the source layout at the time of this inventory.
+Post-consolidation note: this report was written before the public monorepo layout was finalized. The canonical paths are now `apps/chordsmith-web/`, `apps/pocket-dj/`, `apps/pocket-daw/`, `addons/pocket_chordsmith/`, `packages/pocket-audio-core/`, and `packages/pcs-format/`. Historical references to `web-app/`, `pocket_dj/`, `godot-addon/`, `pocket-daw/`, and `pocket_audio_core_handoff/` describe the source layout at the time of this inventory only; do not use them as current navigation guidance.
 
-## Current Project Structure
+## Current Canonical Project Structure
 
 - `apps/chordsmith-web/` contains the current Pocket Chordsmith browser app. The active build is now `pocket_chordsmith_v68_core_bridge.html`, with `index.html` redirecting to it.
 - `apps/pocket-dj/` contains the standalone Pocket DJ prototype. The active build is now `pocket_dj_v1g_core_bridge.html`.

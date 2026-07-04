@@ -37,10 +37,10 @@ Pocket-Chordsmith/
 
 ## Sources Used
 
-- Godot addon: local `godot-addon/addons/pocket_chordsmith/`, cross-checked against the public `Pocket-Chordsmith` clone.
-- Pocket Chordsmith web: local `web-app/`, using `pocket_chordsmith_v68_core_bridge.html` as current and retaining `pocket_chordsmith_v67_direct_godot_push.html`.
-- Pocket DJ: local `pocket_dj/`, using `pocket_dj_v1g_core_bridge.html` as current and retaining `pocket_dj_v1f_push_handoffs.html`.
-- Pocket DAW: local nested `pocket-daw/` working tree, because it contains newer uncommitted integration work than the shallow `pocket-daw` clone.
+- Godot addon: historical local input `godot-addon/addons/pocket_chordsmith/`, cross-checked against the public `Pocket-Chordsmith` clone.
+- Pocket Chordsmith web: historical local input `web-app/`, using `pocket_chordsmith_v68_core_bridge.html` as current at consolidation time and retaining `pocket_chordsmith_v67_direct_godot_push.html`.
+- Pocket DJ: historical local input `pocket_dj/`, using `pocket_dj_v1g_core_bridge.html` as current at consolidation time and retaining `pocket_dj_v1f_push_handoffs.html`.
+- Pocket DAW: historical local nested `pocket-daw/` working tree, because it contained newer uncommitted integration work than the shallow `pocket-daw` clone at consolidation time.
 - Pocket Audio Core: existing `packages/pocket-audio-core/` package.
 - PCS format: new scaffold only.
 
@@ -64,7 +64,7 @@ Pocket-Chordsmith/
 - Pocket DAW native Tauri packaging was not run in this pass.
 - Browser handoffs were statically checked but not manually verified in a live browser/Godot Editor session.
 - `.pocketdaw` demo files remain ignored by the requested root `.gitignore` rule and were not committed as source.
-- Local source/reference folders such as `web-app/`, `godot-addon/`, `pocket_dj/`, and `pocket-daw/` remain on disk but are ignored by the monorepo.
+- Historical local source/reference folders such as `web-app/`, `godot-addon/`, `pocket_dj/`, and `pocket-daw/` may remain on disk as ignored inputs. The canonical live paths are `apps/chordsmith-web/`, `addons/pocket_chordsmith/`, `apps/pocket-dj/`, and `apps/pocket-daw/`.
 
 ## Recommended Next Steps
 
