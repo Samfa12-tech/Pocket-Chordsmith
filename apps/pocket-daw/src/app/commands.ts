@@ -3,7 +3,7 @@ import { sanitizePocketChordsmithProject } from "../compatibility/pcsSanitizer";
 import { createDawProjectFromChordsmithProject } from "../compatibility/pcsToDaw";
 import { migratePocketDawProject } from "../compatibility/migrations";
 import { cloneProject, createDefaultMetronomeSettings, parsePocketDawProjectFile } from "../daw/dawProject";
-import { activateAudioTake, activateAudioTakeLane, applyAudioClipAction, compGroupedAudioTakeRange, createTakeLaneGroupFromClips, cropClipToRange, deleteAudioWarpMarker, deleteClip, deleteClipRange, deleteClips, duplicateClip, duplicateClips, moveClipByBars, moveClipsByBars, moveClipToBar, pasteClip, pasteClips, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setAudioWarpMarkerTarget, setClipTransform, setClipsMuted, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
+import { activateAudioTake, activateAudioTakeLane, applyAudioClipAction, compGroupedAudioTakeRange, createTakeLaneGroupFromClips, cropClipToRange, deleteAudioWarpMarker, deleteClip, deleteClipRange, deleteClips, duplicateClip, duplicateClips, moveClipByBars, moveClipsByBars, moveClipToBar, muteAudioTakeLane, pasteClip, pasteClips, repeatGeneratedSectionClipToEnd, rippleDeleteClipRange, rippleDeleteTimelineRange, setAudioClipProperty, setAudioTakeArchived, setAudioTakeLaneArchived, setAudioWarpMarkerTarget, setClipTransform, setClipsMuted, setGeneratedClipStemMute, splitClipAtBar, splitClipsAtRange, splitGroupedAudioTakesAtBar, toggleClipMute, trimClipEnd, trimClipStart, type AudioClipAction, type AudioClipPropertyField, type ClipTransformField, type GeneratedStemRole } from "../daw/clips";
 import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackRecordingChannelMode, setTrackVolume, toggleTrackArmed, toggleTrackFx, toggleTrackMonitor, toggleTrackMute, toggleTrackSolo } from "../daw/mixer";
 import { setTrackRecordingInputAssignment } from "../daw/recordingInputs";
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
@@ -574,6 +574,44 @@ export function setAudioTakeArchivedCommand(state: AppState, clipId: string, arc
   const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
   if (!clip || !clipSupportsTakeLanes(clip)) return { ...state, status: "Choose an audio or MIDI take before archiving it." };
   const result = setAudioTakeArchived(state.undoStack.present, clipId, archived);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.status
+    };
+  }
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function muteAudioTakeLaneCommand(state: AppState, clipId: string): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || !clipSupportsTakeLanes(clip)) return { ...state, status: "Choose an audio or MIDI take lane before muting it." };
+  const result = muteAudioTakeLane(state.undoStack.present, clipId);
+  if (!result.changed) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.status
+    };
+  }
+  return {
+    ...commitProject(state, result.project, result.status),
+    selectedClipId: clipId,
+    selectedTrackId: clip.trackId || state.selectedTrackId
+  };
+}
+
+export function setAudioTakeLaneArchivedCommand(state: AppState, clipId: string, archived: boolean): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || !clipSupportsTakeLanes(clip)) return { ...state, status: "Choose an audio or MIDI take lane before archiving it." };
+  const result = setAudioTakeLaneArchived(state.undoStack.present, clipId, archived);
   if (!result.changed) {
     return {
       ...state,

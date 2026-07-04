@@ -831,6 +831,8 @@ describe("Pocket DAW UI rendering", () => {
     const secondClip = secondPlaced.project.timeline.clips.find((clip) => clip.id === secondPlaced.clipId);
     secondClip!.metadata = { ...(secondClip!.metadata || {}), punchStartBar: 7, punchEndBar: 9 };
     state.undoStack = createUndoStack(secondPlaced.project);
+    state.playheadBar = 4;
+    state.undoStack.present.timeline.selection = { startBar: 3, endBar: 5, source: "manual" };
     state.selectedClipId = secondPlaced.clipId;
     state.selectedTrackId = secondPlaced.trackId;
 
@@ -839,7 +841,6 @@ describe("Pocket DAW UI rendering", () => {
 
     expect(inspector).toContain("Take Lanes");
     expect(inspector).toContain("lead-comp-a");
-    expect(inspector).toContain("Take lane overview");
     expect(inspector).toContain("Lane 1");
     expect(inspector).toContain("Lane 2");
     expect(inspector).toContain("active / 1 segment / bars Bar 2 Beat 1 to Bar 9 Beat 4");
@@ -850,22 +851,22 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).toContain(`data-audio-take-activate="${secondPlaced.clipId}"`);
     expect(inspector).toContain(`data-audio-take-lane-activate="${firstPlaced.clipId}"`);
     expect(inspector).toContain(`data-audio-take-lane-activate="${secondPlaced.clipId}"`);
-    expect(inspector).toContain(`data-audio-take-archive="${firstPlaced.clipId}"`);
-    expect(inspector).toContain(`data-audio-take-archive="${secondPlaced.clipId}"`);
+    expect(inspector).toContain(`data-audio-take-lane-mute="${firstPlaced.clipId}"`);
+    expect(inspector).toContain(`data-audio-take-lane-mute="${secondPlaced.clipId}"`);
+    expect(inspector).toContain(`data-audio-take-lane-archive="${firstPlaced.clipId}"`);
+    expect(inspector).toContain(`data-audio-take-lane-archive="${secondPlaced.clipId}"`);
+    expect(inspector).toContain(`data-audio-take-comp-playhead="${firstPlaced.clipId}"`);
+    expect(inspector).toContain(`data-audio-take-comp-playhead="${secondPlaced.clipId}"`);
     expect(inspector).toContain('data-audio-take-status="');
-    expect(inspector).toContain('data-action="audio-take-comp-from-playhead"');
-    expect(inspector).toContain('data-action="audio-take-comp-range"');
-    expect(inspector).toContain('data-action="create-take-lane-group" disabled');
-    expect(inspector).toContain("Use this take only inside the active edit range");
     expect(inspector).toContain("Take 2 of 2");
     expect(html).toContain(`data-clip-take-badge="${firstPlaced.clipId}:active"`);
     expect(html).toContain(`data-clip-take-badge="${secondPlaced.clipId}:active"`);
     expect(html).toContain("Audio Lane 1 active");
     expect(html).toContain("Audio Lane 2 active / Punch 7-9");
-    const firstButton = inspector.match(new RegExp(`<button[^>]*data-audio-take-activate="${firstPlaced.clipId}"[^>]*>`))?.[0] || "";
-    const selectedButton = inspector.match(new RegExp(`<button[^>]*data-audio-take-activate="${secondPlaced.clipId}"[^>]*>`))?.[0] || "";
-    expect(firstButton).not.toContain("disabled");
-    expect(selectedButton).toContain("disabled");
+    expect(html).toContain('data-take-lane-row="lead-comp-a-lane-1"');
+    expect(html).toContain('data-take-lane-row="lead-comp-a-lane-2"');
+    expect(html).toContain("Lead take 1.wav");
+    expect(html).toContain("Lead take 2.wav");
   });
 
   it("renders MIDI take lane badges directly on timeline clips", () => {

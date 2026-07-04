@@ -68,6 +68,7 @@ export interface AudioTakeSummary {
   lanes: Array<{
     takeLaneId: string;
     takeNumber: number;
+    clipIds: string[];
     clipCount: number;
     activeClipCount: number;
     archivedClipCount: number;
@@ -682,6 +683,7 @@ function summarizeTakeLanes(project: PocketDawProject, trackId: string, groupId:
       return {
         takeLaneId,
         takeNumber,
+        clipIds: ordered.map((clip) => clip.id),
         clipCount: ordered.length,
         activeClipCount,
         archivedClipCount: statuses.filter((status) => status === "archived-take").length,
@@ -887,6 +889,70 @@ export function activateAudioTakeLane(project: PocketDawProject, clipId: string)
   };
 }
 
+export function muteAudioTakeLane(project: PocketDawProject, clipId: string): AudioClipActionResult {
+  const selection = resolveTakeLaneSelection(project, clipId);
+  if (!selection) {
+    return { project, changed: false, status: "Choose a grouped audio or MIDI take lane before muting it." };
+  }
+  const { selected, groupId, selectedLaneId } = selection;
+  const next = cloneProject(project);
+  let changed = false;
+  next.timeline.clips.forEach((clip, index) => {
+    if (clip.type !== selected.type || clip.trackId !== selected.trackId || clipTakeGroupId(clip) !== groupId) return;
+    if (takeLaneIdForClip(clip, index) !== selectedLaneId) return;
+    if (takeStatus(clip) === "archived-take") return;
+    if (clip.muted !== true || clip.metadata?.takeActive !== false || clip.metadata?.takeStatus !== "muted-take") changed = true;
+    clip.muted = true;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      takeActive: false,
+      takeStatus: "muted-take"
+    };
+  });
+  if (!changed) return { project, changed: false, status: `Take lane ${selectedLaneId} is already muted.` };
+  return {
+    project: next,
+    changed: true,
+    status: `Muted take lane ${selectedLaneId} for ${selected.name}.`
+  };
+}
+
+export function setAudioTakeLaneArchived(project: PocketDawProject, clipId: string, archived: boolean): AudioClipActionResult {
+  const selection = resolveTakeLaneSelection(project, clipId);
+  if (!selection) {
+    return { project, changed: false, status: "Choose a grouped audio or MIDI take lane before archiving it." };
+  }
+  const { selected, groupId, selectedLaneId } = selection;
+  const targetStatus: AudioTakeStatus = archived ? "archived-take" : "muted-take";
+  const next = cloneProject(project);
+  let changed = false;
+  next.timeline.clips.forEach((clip, index) => {
+    if (clip.type !== selected.type || clip.trackId !== selected.trackId || clipTakeGroupId(clip) !== groupId) return;
+    if (takeLaneIdForClip(clip, index) !== selectedLaneId) return;
+    if (clip.muted !== true || clip.metadata?.takeActive !== false || clip.metadata?.takeStatus !== targetStatus) changed = true;
+    clip.muted = true;
+    clip.metadata = {
+      ...(clip.metadata || {}),
+      takeActive: false,
+      takeStatus: targetStatus
+    };
+  });
+  if (!changed) {
+    return {
+      project,
+      changed: false,
+      status: archived ? `Take lane ${selectedLaneId} is already archived.` : `Take lane ${selectedLaneId} is already restored.`
+    };
+  }
+  return {
+    project: next,
+    changed: true,
+    status: archived
+      ? `Archived take lane ${selectedLaneId} for ${selected.name}.`
+      : `Restored take lane ${selectedLaneId} as available muted takes for ${selected.name}.`
+  };
+}
+
 export function setAudioTakeArchived(project: PocketDawProject, clipId: string, archived: boolean): AudioClipActionResult {
   const selected = project.timeline.clips.find((item) => item.id === clipId);
   const groupId = clipTakeGroupId(selected);
@@ -932,6 +998,16 @@ function takeLaneSiblings(project: PocketDawProject, clip: Clip & { type: TakeLa
   return project.timeline.clips
     .filter((item) => item.type === clip.type && item.trackId === clip.trackId && clipTakeGroupId(item) === groupId)
     .sort((a, b) => takeSortKey(a) - takeSortKey(b) || a.startBar - b.startBar || a.id.localeCompare(b.id));
+}
+
+function resolveTakeLaneSelection(project: PocketDawProject, clipId: string): { selected: Clip & { type: TakeLaneClipType }; groupId: string; selectedLaneId: string } | null {
+  const selected = project.timeline.clips.find((item) => item.id === clipId);
+  const groupId = clipTakeGroupId(selected);
+  if (!selected || !takeLaneClipType(selected) || !groupId) return null;
+  const siblings = takeLaneSiblings(project, selected);
+  const selectedLaneId = takeLaneIdForClip(selected, siblings.findIndex((clip) => clip.id === selected.id));
+  if (!selectedLaneId) return null;
+  return { selected, groupId, selectedLaneId };
 }
 
 function takeGroupClips(project: PocketDawProject, trackId: string, groupId: string, clipType: TakeLaneClipType): Clip[] {

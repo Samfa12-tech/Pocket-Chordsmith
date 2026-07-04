@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activateAudioTakeCommand, activateAudioTakeLaneCommand, addClipAutomationPointCommand, applySelectedAudioClipActionCommand, compAudioTakeFromPlayheadCommand, compAudioTakeRangeCommand, cropSelectedClipToTimelineSelectionCommand, deleteAudioWarpMarkerCommand, deleteSelectedClipRangeCommand, ensureClipAutomationLaneCommand, recordClipAutomationPointCommand, rippleDeleteSelectedClipRangeCommand, rippleDeleteTimelineSelectionCommand, setAudioTakeArchivedCommand, setAudioWarpMarkerTargetCommand, setSelectedAudioClipPropertyCommand, setTimelineSelectionRangeCommand, setTimelineSelectionToLoopCommand, splitTimelineSelectionCommand } from "../src/app/commands";
+import { activateAudioTakeCommand, activateAudioTakeLaneCommand, addClipAutomationPointCommand, applySelectedAudioClipActionCommand, compAudioTakeFromPlayheadCommand, compAudioTakeRangeCommand, cropSelectedClipToTimelineSelectionCommand, deleteAudioWarpMarkerCommand, deleteSelectedClipRangeCommand, ensureClipAutomationLaneCommand, muteAudioTakeLaneCommand, recordClipAutomationPointCommand, rippleDeleteSelectedClipRangeCommand, rippleDeleteTimelineSelectionCommand, setAudioTakeArchivedCommand, setAudioTakeLaneArchivedCommand, setAudioWarpMarkerTargetCommand, setSelectedAudioClipPropertyCommand, setTimelineSelectionRangeCommand, setTimelineSelectionToLoopCommand, splitTimelineSelectionCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { renderTimelineAudioRegions } from "../src/audio/audioRegions";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placeAudioClipOnTrack } from "../src/daw/audioClips";
@@ -438,6 +438,62 @@ describe("audio clip edit commands", () => {
     expect(restored.undoStack.present.mediaPool.find((item) => item.id === secondImport.item.id)).toBeTruthy();
     expect(restored.undoStack.past).toHaveLength(2);
     expect(restored.status).toContain("Restored Maybe take.wav");
+  });
+
+  it("mutes, archives and restores grouped audio take lanes through the undoable command path", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 120;
+    state.undoStack.present.project.timeSig = 4;
+    const firstImport = addImportedAudioMedia(state.undoStack.present, {
+      name: "Lane UI A.wav",
+      uri: "project-media/recordings/lane-ui-a.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "lane-ui-group" }
+    });
+    const firstLeft = placeAudioClipOnTimeline(firstImport.project, firstImport.item.id, 2);
+    const firstRight = placeAudioClipOnTrack(firstLeft.project, firstImport.item.id, firstLeft.trackId, 4);
+    const secondImport = addImportedAudioMedia(firstRight.project, {
+      name: "Lane UI B.wav",
+      uri: "project-media/recordings/lane-ui-b.wav",
+      mimeType: "audio/wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "lane-ui-group" }
+    });
+    const secondLeft = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, firstLeft.trackId, 2);
+    const secondRight = placeAudioClipOnTrack(secondLeft.project, secondImport.item.id, firstLeft.trackId, 4);
+    state.undoStack = createUndoStack({
+      ...secondRight.project,
+      timeline: {
+        ...secondRight.project.timeline,
+        clips: secondRight.project.timeline.clips.map((clip) => {
+          if (clip.id === firstLeft.clipId || clip.id === firstRight.clipId) {
+            return { ...clip, muted: false, metadata: { ...(clip.metadata || {}), takeLaneId: "lane-ui-a", takeLaneIndex: 1, takeStatus: "active", takeActive: true } };
+          }
+          if (clip.id === secondLeft.clipId || clip.id === secondRight.clipId) {
+            return { ...clip, muted: true, metadata: { ...(clip.metadata || {}), takeLaneId: "lane-ui-b", takeLaneIndex: 2, takeStatus: "muted-take", takeActive: false } };
+          }
+          return clip;
+        })
+      }
+    });
+    state.selectedClipId = firstLeft.clipId;
+    state.selectedTrackId = firstLeft.trackId;
+
+    const muted = muteAudioTakeLaneCommand(state, firstLeft.clipId);
+    const archived = setAudioTakeLaneArchivedCommand(muted, secondLeft.clipId, true);
+    const restored = setAudioTakeLaneArchivedCommand(archived, secondLeft.clipId, false);
+
+    expect(muted.status).toBe("Muted take lane lane-ui-a for Lane UI A.wav.");
+    expect(muted.undoStack.past).toHaveLength(1);
+    expect(archived.status).toBe("Archived take lane lane-ui-b for Lane UI B.wav.");
+    expect(archived.undoStack.past).toHaveLength(2);
+    expect(restored.status).toBe("Restored take lane lane-ui-b as available muted takes for Lane UI B.wav.");
+    expect(restored.undoStack.past).toHaveLength(3);
   });
 
   it("comps a grouped audio take from the playhead without muting earlier comp segments", () => {

@@ -140,6 +140,7 @@ import {
   moveSelectedClip,
   moveSelectedClipBySnap,
   moveMidiNoteCommand,
+  muteAudioTakeLaneCommand,
   pasteClipAtPlayhead,
   placeMidiRecordingTakeCommand,
   placeAudioClipCommand,
@@ -179,6 +180,7 @@ import {
   setTimelineSelectionToLoopCommand,
   setTimelineSelectionToSelectedClipCommand,
   setAudioTakeArchivedCommand,
+  setAudioTakeLaneArchivedCommand,
   setSelectedClipTransformCommand,
   setSelectedGeneratedClipStemMuteCommand,
   setMelodyMuteCommand,
@@ -1494,6 +1496,16 @@ export class App {
         });
       });
     });
+    this.root.querySelectorAll<HTMLButtonElement>("[data-audio-take-lane-mute]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const clipId = String(button.dataset.audioTakeLaneMute || "");
+        this.applyProjectState(muteAudioTakeLaneCommand(this.state, clipId), {
+          audio: "timeline-structure",
+          preserveScroll: true,
+          reason: "audio-take-lane-mute"
+        });
+      });
+    });
     this.root.querySelectorAll<HTMLButtonElement>("[data-audio-take-archive], [data-audio-take-restore]").forEach((button) => {
       button.addEventListener("click", () => {
         const clipId = String(button.dataset.audioTakeArchive || button.dataset.audioTakeRestore || "");
@@ -1502,6 +1514,37 @@ export class App {
           audio: "timeline-structure",
           preserveScroll: true,
           reason: archived ? "audio-take-archive" : "audio-take-restore"
+        });
+      });
+    });
+    this.root.querySelectorAll<HTMLButtonElement>("[data-audio-take-lane-archive], [data-audio-take-lane-restore]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const clipId = String(button.dataset.audioTakeLaneArchive || button.dataset.audioTakeLaneRestore || "");
+        const archived = !!button.dataset.audioTakeLaneArchive;
+        this.applyProjectState(setAudioTakeLaneArchivedCommand(this.state, clipId, archived), {
+          audio: "timeline-structure",
+          preserveScroll: true,
+          reason: archived ? "audio-take-lane-archive" : "audio-take-lane-restore"
+        });
+      });
+    });
+    this.root.querySelectorAll<HTMLButtonElement>("[data-audio-take-comp-playhead]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const clipId = String(button.dataset.audioTakeCompPlayhead || "");
+        this.applyProjectState(compAudioTakeFromPlayheadCommand(this.state, clipId), {
+          audio: "timeline-structure",
+          preserveScroll: true,
+          reason: "audio-take-comp-from-playhead"
+        });
+      });
+    });
+    this.root.querySelectorAll<HTMLButtonElement>("[data-audio-take-comp-range]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const clipId = String(button.dataset.audioTakeCompRange || "");
+        this.applyProjectState(compAudioTakeRangeCommand(this.state, clipId), {
+          audio: "timeline-structure",
+          preserveScroll: true,
+          reason: "audio-take-comp-range"
         });
       });
     });
@@ -6377,8 +6420,13 @@ function tooltipForButton(button: HTMLButtonElement): string {
 
   if (button.dataset.audioTakeActivate) return "Make this take active.";
   if (button.dataset.audioTakeLaneActivate) return "Activate this whole take lane.";
+  if (button.dataset.audioTakeLaneMute) return "Mute this whole take lane.";
   if (button.dataset.audioTakeArchive) return "Archive this take without deleting source media.";
   if (button.dataset.audioTakeRestore) return "Restore this archived take.";
+  if (button.dataset.audioTakeLaneArchive) return "Archive this whole take lane without deleting source media.";
+  if (button.dataset.audioTakeLaneRestore) return "Restore this archived take lane.";
+  if (button.dataset.audioTakeCompPlayhead) return "Comp this take lane at the current playhead.";
+  if (button.dataset.audioTakeCompRange) return "Use this take lane inside the active edit range.";
   if (button.dataset.armTrack) return "Arm or disarm this track for recording.";
   if (button.dataset.monitorTrack) return "Toggle input monitoring for this track.";
   if (button.dataset.fxToggle || button.dataset.drumLaneFxToggle) return "Enable or bypass this effect slot.";

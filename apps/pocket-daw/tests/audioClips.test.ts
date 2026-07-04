@@ -4,7 +4,7 @@ import { createDemoProject } from "../src/demo/demoProject";
 import { addImportedAudioMedia, detectAudioTransientsFromPeaks, placeAudioClipOnTimeline, placeAudioClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../src/daw/audioClips";
 import { buildPocketDawProjectFile, parsePocketDawProjectFile } from "../src/daw/dawProject";
 import { createAutomationLane } from "../src/daw/automation";
-import { activateAudioTake, activateAudioTakeLane, setAudioClipProperty, setAudioTakeArchived } from "../src/daw/clips";
+import { activateAudioTake, activateAudioTakeLane, muteAudioTakeLane, setAudioClipProperty, setAudioTakeArchived, setAudioTakeLaneArchived } from "../src/daw/clips";
 import { timelineSecondsAtBar } from "../src/daw/timeline";
 
 describe("audio media and clips", () => {
@@ -418,6 +418,68 @@ describe("audio media and clips", () => {
       expect.objectContaining({ muted: false, metadata: expect.objectContaining({ takeStatus: "active", takeActive: true }) })
     ]);
     expect(renderTimelineAudioRegions(auditioned.project).audioRegions.map((region) => region.clipId).sort()).toEqual([secondLeft.clipId, secondRight.clipId].sort());
+  });
+
+  it("mutes, archives and restores whole grouped take lanes", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const firstImport = addImportedAudioMedia(project, {
+      name: "Lane keep A.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "lane-mute-group" }
+    });
+    const firstLeft = placeAudioClipOnTimeline(firstImport.project, firstImport.item.id, 1);
+    const firstRight = placeAudioClipOnTrack(firstLeft.project, firstImport.item.id, firstLeft.trackId, 3);
+    const secondImport = addImportedAudioMedia(firstRight.project, {
+      name: "Lane keep B.wav",
+      durationSeconds: 8,
+      sampleRate: 48000,
+      channels: 1,
+      metadata: { takeGroupId: "lane-mute-group" }
+    });
+    const secondLeft = placeAudioClipOnTrack(secondImport.project, secondImport.item.id, firstLeft.trackId, 1);
+    const secondRight = placeAudioClipOnTrack(secondLeft.project, secondImport.item.id, firstLeft.trackId, 3);
+    const prepared = {
+      ...secondRight.project,
+      timeline: {
+        ...secondRight.project.timeline,
+        clips: secondRight.project.timeline.clips.map((clip) => {
+          if (clip.id === firstLeft.clipId || clip.id === firstRight.clipId) {
+            return { ...clip, muted: false, metadata: { ...(clip.metadata || {}), takeLaneId: "lane-a", takeLaneIndex: 1, takeStatus: "active", takeActive: true } };
+          }
+          if (clip.id === secondLeft.clipId || clip.id === secondRight.clipId) {
+            return { ...clip, muted: true, metadata: { ...(clip.metadata || {}), takeLaneId: "lane-b", takeLaneIndex: 2, takeStatus: "muted-take", takeActive: false } };
+          }
+          return clip;
+        })
+      }
+    };
+
+    const muted = muteAudioTakeLane(prepared, firstLeft.clipId);
+    const archived = setAudioTakeLaneArchived(muted.project, secondLeft.clipId, true);
+    const restored = setAudioTakeLaneArchived(archived.project, secondLeft.clipId, false);
+    const mutedById = new Map(muted.project.timeline.clips.map((clip) => [clip.id, clip]));
+    const archivedById = new Map(archived.project.timeline.clips.map((clip) => [clip.id, clip]));
+    const restoredById = new Map(restored.project.timeline.clips.map((clip) => [clip.id, clip]));
+
+    expect(muted.status).toBe("Muted take lane lane-a for Lane keep A.wav.");
+    expect([firstLeft.clipId, firstRight.clipId].map((id) => mutedById.get(id))).toEqual([
+      expect.objectContaining({ muted: true, metadata: expect.objectContaining({ takeStatus: "muted-take", takeActive: false }) }),
+      expect.objectContaining({ muted: true, metadata: expect.objectContaining({ takeStatus: "muted-take", takeActive: false }) })
+    ]);
+    expect(archived.status).toBe("Archived take lane lane-b for Lane keep B.wav.");
+    expect([secondLeft.clipId, secondRight.clipId].map((id) => archivedById.get(id))).toEqual([
+      expect.objectContaining({ muted: true, metadata: expect.objectContaining({ takeStatus: "archived-take", takeActive: false }) }),
+      expect.objectContaining({ muted: true, metadata: expect.objectContaining({ takeStatus: "archived-take", takeActive: false }) })
+    ]);
+    expect(restored.status).toBe("Restored take lane lane-b as available muted takes for Lane keep B.wav.");
+    expect([secondLeft.clipId, secondRight.clipId].map((id) => restoredById.get(id))).toEqual([
+      expect.objectContaining({ muted: true, metadata: expect.objectContaining({ takeStatus: "muted-take", takeActive: false }) }),
+      expect.objectContaining({ muted: true, metadata: expect.objectContaining({ takeStatus: "muted-take", takeActive: false }) })
+    ]);
   });
 
   it("normalizes and evaluates linear audio clip fades", () => {

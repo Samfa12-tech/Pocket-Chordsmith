@@ -259,37 +259,80 @@
   min-width: 48px;
 }
 
-.audio-take-lane-overview {
+.audio-take-lane-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 6px;
+  gap: 8px;
 }
 
-.audio-take-lane-card {
+.audio-take-lane-row {
   display: grid;
-  gap: 2px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
   min-width: 0;
-  padding: 7px;
+  padding: 8px;
   border: 1px solid rgba(245, 196, 107, 0.22);
   border-radius: 6px;
   background: rgba(245, 196, 107, 0.07);
 }
 
-.audio-take-lane-card strong,
-.audio-take-lane-card span,
-.audio-take-lane-card small {
+.audio-take-lane-row.lane-active {
+  border-color: rgba(92, 227, 182, 0.34);
+  background: rgba(92, 227, 182, 0.08);
+}
+
+.audio-take-lane-row.lane-archived {
+  border-color: rgba(120, 137, 170, 0.28);
+  background: rgba(120, 137, 170, 0.08);
+}
+
+.audio-take-lane-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.audio-take-lane-meta strong,
+.audio-take-lane-meta span,
+.audio-take-lane-meta small {
   overflow-wrap: anywhere;
 }
 
-.audio-take-lane-card strong {
+.audio-take-lane-meta strong {
   color: #f9d98f;
   font-size: 11px;
 }
 
-.audio-take-lane-card span,
-.audio-take-lane-card small {
+.audio-take-lane-row.lane-active .audio-take-lane-meta strong {
+  color: #b6ffe6;
+}
+
+.audio-take-lane-row.lane-archived .audio-take-lane-meta strong {
+  color: #d4dbea;
+}
+
+.audio-take-lane-meta span,
+.audio-take-lane-meta small {
   color: #b9c7e6;
   font-size: 10px;
+}
+
+.audio-take-lane-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(52px, auto));
+  gap: 6px;
+  justify-content: end;
+}
+
+.audio-take-lane-actions button {
+  min-height: 24px;
+  padding: 0 7px;
+  font-size: 10px;
+}
+
+.audio-take-lane-actions.compact {
+  grid-template-columns: repeat(2, minmax(44px, 1fr));
+  width: 100%;
 }
 
 .strip {

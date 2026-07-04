@@ -79,6 +79,8 @@ const GUITAR_LABELS: Record<string, string> = {
   scratch: "Sc"
 };
 
+type TakeLaneSummaryItem = NonNullable<ReturnType<typeof audioClipTakeSummary>>["lanes"][number];
+
 export function renderAppShell(state: AppState): string {
   const project = currentProject(state);
   const selectedClip = project.timeline.clips.find((clip) => clip.id === state.selectedClipId) || null;
@@ -663,7 +665,7 @@ function renderTimelineRows(state: AppState): string {
       const branchLane = generatedDrumBranchLane(track);
       const branchAttrs = branchLane ? ` data-branch-group="drums" data-drum-branch-lane="${sanitizeDataAttr(branchLane)}"` : "";
       const folderChildAttrs = track.folderId ? ` data-folder-child="${sanitizeDataAttr(track.folderId)}"` : "";
-      return `
+      const baseRow = `
         <div class="timeline-row ${track.trackType === "generated" ? "generated-edit-row" : ""} ${track.trackType === "folder" ? "folder-row" : ""} ${track.folderId ? "folder-child-row" : ""} ${branchLane ? "drum-branch-row" : ""} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}"${branchAttrs}${folderChildAttrs}>
           ${renderTimelineTrackHeader(project, track, state.selectedTrackId === track.id, pcs)}
           ${clips.map((clip) => renderClip(project, clip, selectedClipIds.has(clip.id), track, !!pcs)).join("")}
@@ -671,6 +673,11 @@ function renderTimelineRows(state: AppState): string {
           ${renderInlineChordsmithEditor(state, pcs, track, clips)}
         </div>
       `;
+      const takeSummary = state.selectedClipId ? audioClipTakeSummary(project, state.selectedClipId) : null;
+      if (!takeSummary || takeSummary.takeCount < 2 || !takeSummary.lanes.length || state.selectedTrackId !== track.id) return baseRow;
+      const selectedClip = project.timeline.clips.find((clip) => clip.id === state.selectedClipId);
+      if (!selectedClip || selectedClip.trackId !== track.id || (selectedClip.type !== "audio" && selectedClip.type !== "midi")) return baseRow;
+      return `${baseRow}${renderTimelineTakeLaneRows(project, state, track, clips, selectedClipIds, takeSummary)}`;
     })
     .join("");
 }
@@ -702,6 +709,23 @@ function renderTimelineTrackHeader(project: ReturnType<typeof currentProject>, t
       <span class="track-state">${isFolder ? `${childCount} lanes` : ""}${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${canRecord ? recordChannelLabel.slice(0, 2) : ""}${track.monitorEnabled ? "Mon" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
     </div>
   `;
+}
+
+function renderTimelineTakeLaneRows(project: ReturnType<typeof currentProject>, state: AppState, track: Track, clips: Clip[], selectedClipIds: Set<string>, summary: NonNullable<ReturnType<typeof audioClipTakeSummary>>): string {
+  return summary.lanes.map((lane) => `
+    <div class="timeline-row timeline-take-lane-row lane-${sanitizeDataAttr(audioTakeLaneState(lane))} ${state.selectedTrackId === track.id ? "selected-row" : ""}" data-row="${sanitizeDataAttr(track.id)}" data-take-lane-row="${sanitizeDataAttr(lane.takeLaneId)}">
+      <div class="timeline-track-header timeline-take-lane-header ${state.selectedTrackId === track.id ? "selected" : ""}" data-track-id="${sanitizeDataAttr(track.id)}">
+        <span class="track-colour" style="background:${safeTrackColour(track.colour)}"></span>
+        <span class="timeline-track-text">
+          <button type="button" class="timeline-track-name" data-track-rename="${sanitizeDataAttr(track.id)}" title="${escapeAttr(`Rename ${track.name}`)}">${escapeHtml(track.name)} / Lane ${lane.takeNumber}</button>
+          <span class="timeline-track-lanes">${escapeHtml(audioTakeLaneState(lane))} / ${escapeHtml(lane.clipCount === 1 ? "1 segment" : `${lane.clipCount} segments`)}</span>
+        </span>
+        <span class="track-state">${lane.activeClipCount ? "A" : ""}${lane.archivedClipCount === lane.clipCount ? "Arc" : ""}${lane.mutedClipCount ? "M" : ""}</span>
+      </div>
+      <div class="timeline-take-lane-controls-wrap">${renderAudioTakeLaneRow(project, state, summary, lane, "timeline")}</div>
+      ${clips.filter((clip) => lane.clipIds.includes(clip.id)).map((clip) => renderClip(project, clip, selectedClipIds.has(clip.id), track, false)).join("")}
+    </div>
+  `).join("");
 }
 
 function selectedClipIdSet(state: AppState): Set<string> {
@@ -1022,7 +1046,7 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
                     </div>
                     ${clip.type === "generated-section" ? renderGeneratedClipStemMutes(clip) : ""}
                     ${renderClipEditPalette(project, state, clip)}
-                    ${(clip.type === "audio" || clip.type === "midi") ? renderAudioTakePanel(project, clip) : ""}
+                    ${(clip.type === "audio" || clip.type === "midi") ? renderAudioTakePanel(state, clip) : ""}
                     <button type="button" data-action="freeze-selected-clip" title="Render the selected clip into a reusable audio asset">Freeze</button>
                     <button type="button" data-action="export-selected-clip-midi" ${clip.type === "audio" ? "disabled title=\"Audio clips do not contain MIDI events.\"" : "title=\"Export the selected clip as a MIDI file\""}>Export Clip MIDI</button>
                     ${clip.type === "midi" ? renderMidiClipEditor(project, state, clip) : ""}
@@ -1247,7 +1271,72 @@ function renderAudioWarpMarkerPanel(clip: Clip): string {
   `;
 }
 
-function renderAudioTakePanel(project: ReturnType<typeof currentProject>, clip: Clip): string {
+function audioTakeLaneState(lane: TakeLaneSummaryItem): "active" | "muted" | "archived" {
+  return lane.archivedClipCount === lane.clipCount ? "archived" : lane.activeClipCount ? "active" : "muted";
+}
+
+function takeLaneActionTargets(project: ReturnType<typeof currentProject>, state: AppState, summary: NonNullable<ReturnType<typeof audioClipTakeSummary>>, lane: TakeLaneSummaryItem) {
+  const laneClips = lane.clipIds
+    .map((clipId) => project.timeline.clips.find((clip) => clip.id === clipId) || null)
+    .filter((clip): clip is Clip => !!clip);
+  const overlapTake = summary.siblings.find((take) => take.takeLaneId === lane.takeLaneId) || null;
+  const selection = project.timeline.selection || null;
+  const playheadClip = laneClips.find((takeClip) => takeClip.startBar < state.playheadBar && takeClip.startBar + takeClip.barLength > state.playheadBar + 0.0001) || null;
+  const rangeClip = selection
+    ? laneClips.find((takeClip) => takeClip.startBar < selection.endBar - 0.0001 && takeClip.startBar + takeClip.barLength > selection.startBar + 0.0001) || null
+    : null;
+  return {
+    takeTarget: overlapTake,
+    laneClipId: laneClips[0]?.id || "",
+    playheadClipId: playheadClip?.id || "",
+    rangeClipId: rangeClip?.id || ""
+  };
+}
+
+function renderAudioTakeLaneActionButtons(project: ReturnType<typeof currentProject>, state: AppState, summary: NonNullable<ReturnType<typeof audioClipTakeSummary>>, lane: TakeLaneSummaryItem, compact = false): string {
+  const laneState = audioTakeLaneState(lane);
+  const targets = takeLaneActionTargets(project, state, summary, lane);
+  const takeTarget = targets.takeTarget;
+  const takeDisabled = !takeTarget || takeTarget.archived || (takeTarget.active && laneState === "active");
+  const laneDisabled = !targets.laneClipId || laneState === "archived" || laneState === "active";
+  const muteDisabled = !targets.laneClipId || laneState !== "active";
+  const playheadDisabled = !targets.playheadClipId || laneState === "archived";
+  const rangeDisabled = !targets.rangeClipId || laneState === "archived";
+  return `
+    <div class="audio-take-lane-actions ${compact ? "compact" : ""}">
+      <button type="button" data-audio-take-activate="${sanitizeDataAttr(takeTarget?.clipId || "")}" ${takeDisabled ? "disabled" : ""} title="Make this lane's current overlapping take active in the take group">Take</button>
+      <button type="button" data-audio-take-lane-activate="${sanitizeDataAttr(targets.laneClipId)}" ${laneDisabled ? "disabled" : ""} title="Activate every non-archived clip in this take lane for auditioning">Lane</button>
+      <button type="button" data-audio-take-lane-mute="${sanitizeDataAttr(targets.laneClipId)}" ${muteDisabled ? "disabled" : ""} title="Mute every non-archived clip in this take lane without deleting source media">Mute</button>
+      ${
+        laneState === "archived"
+          ? `<button type="button" data-audio-take-lane-restore="${sanitizeDataAttr(targets.laneClipId)}" ${targets.laneClipId ? "" : "disabled"} title="Restore this archived take lane as muted takes">Restore</button>`
+          : `<button type="button" data-audio-take-lane-archive="${sanitizeDataAttr(targets.laneClipId)}" ${targets.laneClipId ? "" : "disabled"} title="Archive this take lane without deleting the source media">Archive</button>`
+      }
+      <button type="button" data-audio-take-comp-playhead="${sanitizeDataAttr(targets.playheadClipId)}" ${playheadDisabled ? "disabled" : ""} title="Comp this take lane at the current playhead">Comp @</button>
+      <button type="button" data-audio-take-comp-range="${sanitizeDataAttr(targets.rangeClipId)}" ${rangeDisabled ? "disabled" : ""} title="Use this take lane only inside the active edit range">Comp []</button>
+    </div>
+  `;
+}
+
+function renderAudioTakeLaneRow(project: ReturnType<typeof currentProject>, state: AppState, summary: NonNullable<ReturnType<typeof audioClipTakeSummary>>, lane: TakeLaneSummaryItem, context: "inspector" | "timeline"): string {
+  const laneState = audioTakeLaneState(lane);
+  const segmentLabel = lane.clipCount === 1 ? "1 segment" : `${lane.clipCount} segments`;
+  const rangeLabel = `${formatBarBeat(project, lane.startBar)} to ${formatBarBeat(project, lane.endBar)}`;
+  const takeTarget = takeLaneActionTargets(project, state, summary, lane).takeTarget;
+  return `
+    <div class="audio-take-lane-row ${context === "timeline" ? "timeline-lane" : ""} lane-${sanitizeDataAttr(laneState)}" data-audio-take-lane-summary="${sanitizeDataAttr(`${lane.takeLaneId}:${laneState}`)}" data-audio-take-status="${sanitizeDataAttr(`${takeTarget?.clipId || lane.clipIds[0] || ""}:${laneState}`)}" title="${escapeAttr(`${lane.takeLaneId}: ${segmentLabel}, bars ${rangeLabel}`)}">
+      <div class="audio-take-lane-meta">
+        <strong>Lane ${lane.takeNumber}</strong>
+        <span>${escapeHtml(laneState)} / ${escapeHtml(segmentLabel)} / bars ${escapeHtml(rangeLabel)}</span>
+        <small>${lane.activeClipCount} active / ${lane.mutedClipCount} muted / ${lane.archivedClipCount} archived</small>
+      </div>
+      ${renderAudioTakeLaneActionButtons(project, state, summary, lane, context === "timeline")}
+    </div>
+  `;
+}
+
+function renderAudioTakePanel(state: AppState, clip: Clip): string {
+  const project = currentProject(state);
   const summary = audioClipTakeSummary(project, clip.id);
   if (!summary || summary.takeCount < 2) return "";
   const takeKind = clip.type === "midi" ? "MIDI" : "Audio";
@@ -1255,37 +1344,9 @@ function renderAudioTakePanel(project: ReturnType<typeof currentProject>, clip: 
     <div class="audio-take-panel" aria-label="${escapeAttr(takeKind)} take lanes" data-ui-scope="recording">
       <h3>${escapeHtml(takeKind)} Take Lanes</h3>
       <p class="editor-note">${escapeHtml(summary.groupId)} - Take ${summary.takeNumber} of ${summary.takeCount}${summary.active ? " active" : " muted"}</p>
-      <div class="audio-take-lane-overview" aria-label="Take lane overview">
-        ${summary.lanes.map((lane) => {
-          const laneState = lane.archivedClipCount === lane.clipCount ? "archived" : lane.activeClipCount ? "active" : "muted";
-          const segmentLabel = lane.clipCount === 1 ? "1 segment" : `${lane.clipCount} segments`;
-          const rangeLabel = `${formatBarBeat(project, lane.startBar)} to ${formatBarBeat(project, lane.endBar)}`;
-          return `
-            <div class="audio-take-lane-card" data-audio-take-lane-summary="${sanitizeDataAttr(`${lane.takeLaneId}:${laneState}`)}" title="${escapeAttr(`${lane.takeLaneId}: ${segmentLabel}, bars ${rangeLabel}`)}">
-              <strong>Lane ${lane.takeNumber}</strong>
-              <span>${escapeHtml(laneState)} / ${escapeHtml(segmentLabel)} / bars ${escapeHtml(rangeLabel)}</span>
-              <small>${lane.activeClipCount} active / ${lane.mutedClipCount} muted / ${lane.archivedClipCount} archived</small>
-            </div>
-          `;
-        }).join("")}
+      <div class="audio-take-lane-list" aria-label="Take lane rows">
+        ${summary.lanes.map((lane) => renderAudioTakeLaneRow(project, state, summary, lane, "inspector")).join("")}
       </div>
-      <div class="audio-take-buttons">
-        ${summary.siblings.map((take) => `
-          <span class="audio-take-row" data-audio-take-status="${sanitizeDataAttr(`${take.clipId}:${take.takeStatus}`)}">
-            <button type="button" data-audio-take-activate="${sanitizeDataAttr(take.clipId)}" ${take.clipId === clip.id || take.archived ? "disabled" : ""} title="Make this take the active clip in the take group">
-              Take ${take.takeNumber} ${take.archived ? "archived" : take.active ? "active" : "muted"}
-            </button>
-            <button type="button" data-audio-take-lane-activate="${sanitizeDataAttr(take.clipId)}" ${take.archived ? "disabled" : ""} title="Activate every clip in this take lane for auditioning">Lane</button>
-            ${
-              take.archived
-                ? `<button type="button" data-audio-take-restore="${sanitizeDataAttr(take.clipId)}" title="Restore this archived take to the take group">Restore</button>`
-                : `<button type="button" data-audio-take-archive="${sanitizeDataAttr(take.clipId)}" title="Archive this take without deleting the source media">Archive</button>`
-            }
-          </span>
-        `).join("")}
-      </div>
-      <button type="button" data-action="audio-take-comp-from-playhead" title="Comp this take group starting at the current playhead">Comp from playhead</button>
-      <button type="button" data-action="audio-take-comp-range" title="Use this take only inside the active edit range">Comp range</button>
     </div>
   `;
 }
