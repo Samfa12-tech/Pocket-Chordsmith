@@ -7,7 +7,7 @@
   "latestPublishedCommit": "811a5bebc3c3a1b115ba4e1a2044a1ec33c5dceb",
   "unreleasedSourceNotes": [
     "0.6.40 is an unpublished release-hardening candidate after the installed 0.6.39 manual notes. It routes Help/feedback links through the native OS opener, refreshes timeline M/S button state immediately while preserving the audio fast path, clears stale clip selection when track headers are selected so Delete does not remove an old clip, and defers the initial procedural fallback native-cache build/restart while playback is running.",
-    "0.6.40 has clean-source packaging and exact installed automated punch/take/export smoke evidence, but it is not public until the remaining manual Windows/hardware smoke, updater metadata, GitHub release, bootstrapper, and itch publication are completed and verified. Public release truth remains 0.6.38 until publication metadata changes."
+    "0.6.40 has clean-source packaging and exact installed strict punch/take/export smoke evidence with audible microphone plus connected loopMIDI coverage, but it is not public until updater metadata, GitHub release, bootstrapper, and itch publication are completed and verified. Public release truth remains 0.6.38 until publication metadata changes."
   ],
   "lastInstalledSmoke": {
     "version": "0.6.40",
