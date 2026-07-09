@@ -44,8 +44,8 @@ playhead position. The UI only displays state and dispatches commands.
 
 ### Current 2026-07-09 Pocket DAW Notes
 
-- Current Pocket DAW release truth is source `0.6.40`, latest published public updater release `0.6.38`, project schema `2`, and last installed-smoke `0.6.40` partial/automated passing on 2026-07-09 against exact installer SHA-256 `41c4ec77f9925f8155e2f5137c31fd7d68aaf322511cbc544c9d3d230cd6779b`. Trust `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md` and `apps/pocket-daw/release-status.json` over older status prose when these differ.
-- `0.6.40` is an unpublished release-hardening candidate for the 2026-07-07 installed-app notes: native external Help/feedback links, immediate timeline M/S visual refresh, Delete safety after selecting a track header, and deferred initial procedural fallback native-cache build/restart while playback is running. It has clean-source packaging and exact installed automated punch/take/export smoke, but it is not public until remaining manual Windows/hardware smoke, updater, GitHub release, bootstrapper, and itch publication steps are completed and verified.
+- Current Pocket DAW release truth is source `0.6.40`, latest published public updater release `0.6.38`, project schema `2`, and last installed-smoke `0.6.40` strict pass on 2026-07-09 against exact installer SHA-256 `41c4ec77f9925f8155e2f5137c31fd7d68aaf322511cbc544c9d3d230cd6779b`. Trust `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md` and `apps/pocket-daw/release-status.json` over older status prose when these differ.
+- `0.6.40` is an unpublished release-hardening candidate for the 2026-07-07 installed-app notes: native external Help/feedback links, immediate timeline M/S visual refresh, Delete safety after selecting a track header, and deferred initial procedural fallback native-cache build/restart while playback is running. It has clean-source packaging and exact installed strict punch/take/export smoke with audible microphone plus connected loopMIDI evidence, but it is not public until updater, GitHub release, bootstrapper, and itch publication steps are completed and verified.
 
 ### Current 2026-07-05 Housekeeping Notes
 

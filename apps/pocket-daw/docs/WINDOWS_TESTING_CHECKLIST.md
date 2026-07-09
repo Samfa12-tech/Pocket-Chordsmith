@@ -39,8 +39,8 @@ These are for re-test and bug-triage only; no code or settings changes were made
 ## 2026-07-09 Source Triage Notes (Pocket DAW v0.6.40, source-only)
 
 - The four `0.6.39` manual-note issues above now have source fixes in the `0.6.40` working tree: Help/feedback external links use the native OS opener, timeline M/S controls force an immediate visual refresh, track-header selection clears stale clip selection before Delete, and initial procedural fallback playback defers native cache build/restart work while transport is running.
-- The exact `0.6.40` setup EXE from clean commit `5b7dfeaad867ce0584f3c16eb729623e0779926d` passed automated installed punch/take/export smoke on 2026-07-09 with required export files and installer hash verification. The setup EXE SHA-256 was `41c4ec77f9925f8155e2f5137c31fd7d68aaf322511cbc544c9d3d230cd6779b`.
-- Remaining gate before public release: manual Windows/hardware smoke is still needed. The automated run recorded a real 5.09 second native audio capture, but it was below the audible-audio threshold, and no OS MIDI input devices were detected for connected MIDI evidence.
+- The exact `0.6.40` setup EXE from clean commit `5b7dfeaad867ce0584f3c16eb729623e0779926d` passed strict installed punch/take/export smoke on 2026-07-09 with audible microphone evidence, connected loopMIDI evidence, required export files, and installer hash verification. The setup EXE SHA-256 was `41c4ec77f9925f8155e2f5137c31fd7d68aaf322511cbc544c9d3d230cd6779b`.
+- Remaining gate before public release: updater, GitHub release, bootstrapper, and itch publication still need to complete and verify.
 
 For a candidate installer, record exact-artifact smoke evidence with `releases/smoke-attestation.schema.json` and validate it with `npm run verify:smoke-attestation -- --attestation <path> --installer <setup.exe> --commit <full-sha>`. A source build is not installed-smoked until that attestation matches the installer filename and SHA-256.
 
