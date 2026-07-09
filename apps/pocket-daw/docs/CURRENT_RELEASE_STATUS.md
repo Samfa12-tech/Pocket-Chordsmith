@@ -6,9 +6,9 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 | --- | --- |
 | Source version | `0.6.40` |
 | Project schema version | `2` |
-| Latest published version | `0.6.38` |
-| Latest published tag | `pocket-daw-v0.6.38` |
-| Latest published commit | `811a5bebc3c3a1b115ba4e1a2044a1ec33c5dceb` |
+| Latest published version | `0.6.40` |
+| Latest published tag | `pocket-daw-v0.6.40` |
+| Latest published commit | `8a69c90fc2ab1721873a658f0b240502aceffe25` |
 | Last installed-smoke version | `0.6.40` |
 | Last installed-smoke result | `pass` |
 | Last installed-smoke date | `2026-07-09T10:27:59.364Z` |
@@ -25,12 +25,11 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 - The live audio recording smoke captured audible microphone evidence: 10.06997732426304 seconds, 48000 Hz mono, 483360 captured native frames, filePeak 0.60931396484375, and fileRms 0.04333584582306064.
 - The connected MIDI recording smoke used loopMIDI Port as the OS MIDI input, captured a durable active punched MIDI take with 46 notes, and recorded pitches 60, 64, 67, 72, 76, 79, 84 and 88 during the strict MIDI input window.
 - `npm run verify:itch` passed for 0.6.40 from the clean source commit, including version/status checks, native sound recipe freshness, 1016 Vitest tests, production build, 115 Rust tests, signed installer packaging, and release artifact verification.
-- 0.6.40 has not been published to GitHub latest, the public updater manifest, the bootstrapper manifest, or itch. Public release truth remains 0.6.38 until those publication steps are completed and verified.
+- 0.6.40 was published to GitHub release pocket-daw-v0.6.40, the public updater manifest, the bootstrapper manifest, and itch channel samfa12/pocket-daw:windows-installer on 2026-07-09. GitHub latest/download manifests and the remote setup EXE SHA-256 were verified after publication; butler status reported windows-installer build #1783130 at version 0.6.40.
 
 ## Unreleased Source-Only Notes
 
-- 0.6.40 is an unpublished release-hardening candidate after the installed 0.6.39 manual notes. It routes Help/feedback links through the native OS opener, refreshes timeline M/S button state immediately while preserving the audio fast path, clears stale clip selection when track headers are selected so Delete does not remove an old clip, and defers the initial procedural fallback native-cache build/restart while playback is running.
-- 0.6.40 has clean-source packaging and exact installed strict punch/take/export smoke evidence with audible microphone plus connected loopMIDI coverage, but it is not public until updater metadata, GitHub release, bootstrapper, and itch publication are completed and verified. Public release truth remains 0.6.38 until publication metadata changes.
+- No unreleased source-only notes recorded.
 
 ## Capability Claim Boundary
 
