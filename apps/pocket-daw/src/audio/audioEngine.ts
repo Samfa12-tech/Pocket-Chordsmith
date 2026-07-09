@@ -406,7 +406,11 @@ export class AudioEngine {
       this.primeMeters(this.offsetSeconds);
       this.startNativeTicker();
       if (this.activeNativePlaybackLooksProceduralFallback()) {
-        this.scheduleLiveNativeRenderCacheRefresh(fallbackCacheReason);
+        if (fallbackCacheReason === "play-fallback-cache-build") {
+          this.deferNativeRenderCacheRefresh(fallbackCacheReason);
+        } else {
+          this.scheduleLiveNativeRenderCacheRefresh(fallbackCacheReason);
+        }
       } else {
         this.activateReadyNativeRenderCacheAfterFallback("play-cache-ready");
       }

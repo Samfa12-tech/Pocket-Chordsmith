@@ -20,6 +20,26 @@ Current alpha target:
 - Tauri updater signatures: `.sig` files are updater-validation signatures and are separate from Windows code signing.
 
 Manual smoke status: create a dated run note for each candidate. Historical rows below remain useful context only when their version/date matches the question being asked.
+## 2026-07-07 Manual Notes (Pocket DAW v0.6.39, installed/Tauri local check)
+
+- Session context:
+  - File: `C:\Users\sam_s\Music\Ocarina of Time Medley.pocketdaw`
+  - Diag export: `C:\Users\sam_s\.codex\attachments\56d8f5c4-b59a-4119-aa3b-6d39a924ee90\pasted-text.txt`
+  - Captured at: `2026-07-07T05:37:10.205Z`
+  - Diagnostic summary: `app.version` `0.6.39`, `project.trackCount` `12`, `project.clipCount` `11`, `recording.timingNotes` show no manual latency compensation configured.
+
+- Observed issues to validate on next 5.5 access:
+  - Help button flow: pressing **More by Samfa12** from Help opens `samfa12.com` inside the DAW webview instead of the OS default browser. Expected behavior is external browser launch.
+  - Playback reliability: while playing `Ocarina of Time Medley.pocketdaw`, track playback occasionally hitches later in the timeline (inconsistent bar location; appears to worsen as playback progresses). Repro is intermittent.
+  - Timeline mute/solo UI: pressing **M** or **S** on a track in the left timeline instrument panel updates audio behavior but does not immediately render the visual M/S state. The button state only updates after another track is clicked, including turning mute/solo off.
+  - Delete key behavior: with a track highlighted (live vocals in this run), pressing Delete did not delete that selected track; it cleared timeline/context across tracks and snapped the timeline back to the top. Undo restored the project.
+
+These are for re-test and bug-triage only; no code or settings changes were made.
+
+## 2026-07-09 Source Triage Notes (Pocket DAW v0.6.40, source-only)
+
+- The four `0.6.39` manual-note issues above now have source fixes in the `0.6.40` working tree: Help/feedback external links use the native OS opener, timeline M/S controls force an immediate visual refresh, track-header selection clears stale clip selection before Delete, and initial procedural fallback playback defers native cache build/restart work while transport is running.
+- This is source triage only. Before public release, build the exact `0.6.40` installer, run the required installed-app smoke rows against that artifact, and refresh `release-status.json` with matching installer hash, commit, updater, GitHub, bootstrapper, and itch evidence.
 
 For a candidate installer, record exact-artifact smoke evidence with `releases/smoke-attestation.schema.json` and validate it with `npm run verify:smoke-attestation -- --attestation <path> --installer <setup.exe> --commit <full-sha>`. A source build is not installed-smoked until that attestation matches the installer filename and SHA-256.
 

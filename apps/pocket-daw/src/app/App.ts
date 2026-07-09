@@ -272,6 +272,7 @@ import { importMidiFileToProjectWithPlacement, type MidiGrooveTemplateId, type M
 import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
 import { isNativeRecordingAvailable, nativeRecordingStatus, startNativeRecording, startNativeRecordingPreview, stopNativeRecording, stopNativeRecordingPreview, updateNativeRecordingMonitor } from "../native/recordingBridge";
+import { isNativeExternalLinkAvailable, openExternalUrlNative } from "../native/externalLinkBridge";
 import { buildPortableGamePackSourceProjectFile, createGameExportManifest, createGamePackDeliveryTargets, createGamePackZipBlob, createSectionLoopMetadata, createSectionLoopZipBlob, createStemExportPlan, createStemZipBlob, projectForClipRender } from "../daw/exportJobs";
 import { assertExportProfileSupported, validateExportProfile } from "../daw/exportProfiles";
 import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
@@ -1297,6 +1298,8 @@ export class App {
         const target = event.target as HTMLElement | null;
         if (this.isTrackHeaderControlTarget(target)) return;
         this.state.selectedTrackId = el.dataset.trackId || null;
+        this.state.selectedClipId = null;
+        this.state.selectedClipIds = [];
         this.render({ preserveScroll: true });
       });
     });
@@ -3108,7 +3111,7 @@ export class App {
     }
     if (action === "feedback-copy-diagnostics") await this.copyDiagnostics();
     if (action === "feedback-send") await this.sendFeedbackEmail();
-    if (action === "more-by-samfa12") this.openExternalUrl(MORE_BY_SAMFA12_URL);
+    if (action === "more-by-samfa12") await this.openExternalUrl(MORE_BY_SAMFA12_URL);
     if (action === "studio-focus-timeline") {
       this.state.showFilePanel = false;
       this.state.showControls = false;
@@ -4635,6 +4638,7 @@ export class App {
     this.syncTrackAudibilityFromState(next, trackId, "mute");
     this.applyProjectState(next, {
       audio: "none",
+      render: "immediate",
       preserveScroll: true,
       reason: "track-mute"
     });
@@ -4646,6 +4650,7 @@ export class App {
     this.syncTrackAudibilityFromState(next, trackId, "solo");
     this.applyProjectState(next, {
       audio: "none",
+      render: "immediate",
       preserveScroll: true,
       reason: "track-solo"
     });
@@ -5936,7 +5941,7 @@ export class App {
     });
     let copied = false;
     if (!draft.diagnosticsIncludedInBody) copied = await this.copyTextOrDownloadDiagnostics(text);
-    this.openExternalUrl(draft.mailtoUrl);
+    await this.openExternalUrl(draft.mailtoUrl);
     this.state.status = draft.diagnosticsIncludedInBody
       ? "Opened feedback email with diagnostics included."
       : copied
@@ -5945,7 +5950,15 @@ export class App {
     this.render({ preserveScroll: true });
   }
 
-  private openExternalUrl(url: string) {
+  private async openExternalUrl(url: string) {
+    if (await openExternalUrlNative(url)) return;
+    if (isNativeExternalLinkAvailable()) {
+      this.state.status = url.startsWith("mailto:")
+        ? "Could not open your mail app from Pocket DAW."
+        : "Could not open the external link from Pocket DAW.";
+      this.render({ preserveScroll: true });
+      return;
+    }
     if (url.startsWith("mailto:")) {
       window.location.href = url;
       return;

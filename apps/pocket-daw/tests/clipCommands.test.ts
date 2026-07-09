@@ -462,6 +462,19 @@ describe("selected clip clipboard commands", () => {
     expect(deleted.selectedClipIds).toEqual(deleted.selectedClipId ? [deleted.selectedClipId] : []);
   });
 
+  it("leaves Delete inert when track selection has cleared stale clip selection", () => {
+    const state = createInitialState();
+    const oldClipId = state.selectedClipId;
+    state.selectedTrackId = "live-vocals";
+    state.selectedClipId = null;
+    state.selectedClipIds = [];
+
+    const deleted = deleteSelectedClip(state);
+
+    expect(deleted).toBe(state);
+    expect(deleted.undoStack.present.timeline.clips.some((clip) => clip.id === oldClipId)).toBe(true);
+  });
+
   it("copies, cuts and pastes multiple selected clips while preserving relative timing", () => {
     const state = createInitialState();
     const selected = state.undoStack.present.timeline.clips.slice(0, 2).sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));

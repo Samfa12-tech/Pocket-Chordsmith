@@ -165,6 +165,19 @@ describe("mixer fast path", () => {
     expect(afterSolo.mixerControls.find((track) => track.id === "bass")).toMatchObject({ mute: false, solo: true });
   });
 
+  it("forces a full visual refresh for mute and solo while keeping audio on the fast path", () => {
+    const source = readFileSync("src/app/App.ts", "utf8");
+    const muteHandler = source.slice(source.indexOf("private toggleTrackMute"), source.indexOf("private toggleTrackSolo"));
+    const soloHandler = source.slice(source.indexOf("private toggleTrackSolo"), source.indexOf("private async toggleTrackMonitor"));
+
+    expect(muteHandler).toContain('audio: "none"');
+    expect(muteHandler).toContain('render: "immediate"');
+    expect(muteHandler).toContain("preserveScroll: true");
+    expect(soloHandler).toContain('audio: "none"');
+    expect(soloHandler).toContain('render: "immediate"');
+    expect(soloHandler).toContain("preserveScroll: true");
+  });
+
   it("keeps demo identity stable and commits one undo entry for mute or solo", () => {
     const muteState = createInitialState();
     const muteEngine = new AudioEngine(currentProject(muteState));

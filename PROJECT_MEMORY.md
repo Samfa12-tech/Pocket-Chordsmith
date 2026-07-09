@@ -42,11 +42,16 @@ playhead position. The UI only displays state and dispatches commands.
 
 ## Current Notes And Known Gaps
 
+### Current 2026-07-09 Pocket DAW Notes
+
+- Current Pocket DAW release truth is source `0.6.40`, latest published public updater release `0.6.38`, project schema `2`, and last installed-smoke `0.6.39` passing on 2026-07-04. Trust `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md` and `apps/pocket-daw/release-status.json` over older status prose when these differ.
+- `0.6.40` is a source-only release-hardening candidate for the 2026-07-07 installed-app notes: native external Help/feedback links, immediate timeline M/S visual refresh, Delete safety after selecting a track header, and deferred initial procedural fallback native-cache build/restart while playback is running. It is not public until exact `0.6.40` installed-app smoke, updater, GitHub release, bootstrapper, and itch publication steps are completed and verified.
+
 ### Current 2026-07-05 Housekeeping Notes
 
 - Project docs and filesystem were audited on 2026-07-05. The canonical navigation anchors remain `README.md`, `AGENTS.md`, this `PROJECT_MEMORY.md`, `docs/CROSS_APP_RELEASE_DASHBOARD.md`, `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md`, and `apps/chordsmith-web/POCKET_CHORDSMITH_CODEX_CONTEXT.md`.
-- Current Pocket DAW release truth is source `0.6.39`, latest published public updater release `0.6.38`, project schema `2`, and last installed-smoke `0.6.39` passing on 2026-07-04. Trust `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md` and `apps/pocket-daw/release-status.json` over older status prose when these differ.
-- `0.6.39` is a source-only recording confidence candidate until updater, GitHub release, bootstrapper, and itch publication steps are completed and verified. Public release claims should still name `0.6.38` unless release-status metadata is refreshed after publication.
+- Historical 2026-07-05 Pocket DAW release truth was source `0.6.39`, latest published public updater release `0.6.38`, project schema `2`, and last installed-smoke `0.6.39` passing on 2026-07-04. For the current release truth, use the 2026-07-09 notes above plus the generated release-status files.
+- `0.6.39` was a source-only recording confidence candidate until later `0.6.40` source hardening changes. Public release claims should still name `0.6.38` unless release-status metadata is refreshed after publication.
 - `docs/CROSS_APP_RELEASE_DASHBOARD.md` was refreshed against current component metadata. Use it for cross-app baselines, but treat generated/component release files as the source of truth for exact versions and smoke evidence.
 - The loose root addon zip `pocket_chordsmith_godot_addon_1.1.8.zip` was moved out of the repository front door to ignored local storage at `releases/godot-addon/root-cleanup-2026-07-05/pocket_chordsmith_godot_addon_1.1.8_root-2026-06-29.zip` because a different `1.1.8` package already existed under `releases/godot-addon/`. Do not restore release zips to the repo root.
 

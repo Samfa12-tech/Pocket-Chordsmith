@@ -265,6 +265,7 @@ pub fn run() {
             read_download_handoff_file,
             delete_download_handoff_file,
             open_midi_file,
+            open_external_url,
             save_project_file_as,
             write_project_file,
             save_binary_file_as,
@@ -285,6 +286,50 @@ fn initial_launch_args() -> SecondInstanceLaunchPayload {
             .map(|path| path.to_string_lossy().to_string())
             .unwrap_or_default(),
     }
+}
+
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let url = normalized_external_url(&url)?;
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .spawn()
+            .map_err(|err| format!("Could not open external URL: {err}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|err| format!("Could not open external URL: {err}"))?;
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|err| format!("Could not open external URL: {err}"))?;
+        return Ok(());
+    }
+
+    #[allow(unreachable_code)]
+    Err("External URL opening is not supported on this platform.".to_string())
+}
+
+fn normalized_external_url(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")
+    {
+        return Ok(trimmed.to_string());
+    }
+    Err("Only http, https and mailto external URLs can be opened.".to_string())
 }
 
 #[tauri::command]
@@ -1832,6 +1877,17 @@ mod tests {
     }
 
     #[test]
+    fn external_urls_are_limited_to_expected_schemes() {
+        assert_eq!(
+            normalized_external_url(" https://samfa12.com ").expect("https URLs should be allowed"),
+            "https://samfa12.com"
+        );
+        assert!(normalized_external_url("mailto:test@example.com").is_ok());
+        assert!(normalized_external_url("javascript:alert(1)").is_err());
+        assert!(normalized_external_url("file:///C:/secret.txt").is_err());
+    }
+
+    #[test]
     fn media_paths_resolve_project_media_aliases_under_saved_project() {
         let project_path = r"C:\Songs\Song.pocketdaw";
         let project_media = resolve_media_path("project-media/Loop.wav", Some(project_path))
@@ -2134,8 +2190,10 @@ mod tests {
         assert!(delete_download_handoff_file_from_dir(&downloads, file_name)
             .expect("valid handoff deletion should succeed"));
         assert!(!file_path.exists());
-        assert!(!delete_download_handoff_file_from_dir(&downloads, file_name)
-            .expect("missing valid handoff should be harmless"));
+        assert!(
+            !delete_download_handoff_file_from_dir(&downloads, file_name)
+                .expect("missing valid handoff should be harmless")
+        );
         assert!(delete_download_handoff_file_from_dir(&downloads, "../bad.pcs1.txt").is_err());
 
         let _ = std::fs::remove_dir_all(&downloads);

@@ -1246,7 +1246,7 @@ describe("audio engine diagnostics", () => {
     }
   });
 
-  it("promotes cold native fallback playback after a fresh cache build", async () => {
+  it("defers cold native fallback cache builds while playback is running", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       __TAURI__: {},
@@ -1311,16 +1311,12 @@ describe("audio engine diagnostics", () => {
       expect(starts[0].assets?.length || 0).toBe(0);
       expect(starts[0].regions?.length || 0).toBe(0);
 
-      await waitForAsyncCondition(() => starts.length >= 2);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-      expect(starts).toHaveLength(2);
-      expect(starts[1].assets?.length || 0).toBeGreaterThan(0);
-      expect(starts[1].regions?.length || 0).toBeGreaterThan(0);
-      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
-      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBeNull();
-      expect(buildOptions).toHaveLength(1);
-      expect(buildOptions[0].clipIds?.size || 0).toBe(0);
-      expect(buildOptions[0].coverage).not.toBe("partial");
+      expect(starts).toHaveLength(1);
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
+      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("play-fallback-cache-build");
+      expect(buildOptions).toHaveLength(0);
     } finally {
       (globalThis as any).window = previousWindow;
     }
@@ -1379,7 +1375,7 @@ describe("audio engine diagnostics", () => {
     }
   });
 
-  it("promotes mixed runtime-audio fallback without dropping runtime regions", async () => {
+  it("defers initial fallback cache promotion without dropping runtime regions during play", async () => {
     const previousWindow = (globalThis as any).window;
     (globalThis as any).window = {
       __TAURI__: {},
@@ -1447,13 +1443,11 @@ describe("audio engine diagnostics", () => {
       expect(starts[0].regions?.length || 0).toBe(1);
       expect(starts[0].events.some((event) => event.velocity > 0)).toBe(true);
 
-      await waitForAsyncCondition(() => starts.length >= 2);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-      expect(starts).toHaveLength(2);
-      expect(starts[1].assets?.length || 0).toBeGreaterThanOrEqual(1);
-      expect(starts[1].regions?.length || 0).toBeGreaterThanOrEqual(1);
-      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(1);
-      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBeNull();
+      expect(starts).toHaveLength(1);
+      expect(engine.getDiagnostics().nativeRenderCache.buildCount).toBe(0);
+      expect(engine.getDiagnostics().nativeRenderCache.pendingReason).toBe("play-fallback-cache-build");
     } finally {
       (globalThis as any).window = previousWindow;
     }

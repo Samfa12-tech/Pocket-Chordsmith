@@ -4,7 +4,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.39` |
+| Source version | `0.6.40` |
 | Project schema version | `2` |
 | Latest published version | `0.6.38` |
 | Latest published tag | `pocket-daw-v0.6.38` |
@@ -29,8 +29,8 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
-- 0.6.39 is a source-only recording confidence candidate with exact installed-app audible microphone and connected loopMIDI evidence. It is not public until updater, GitHub release, bootstrapper, and itch publication are completed and verified.
-- The checkpoint focus is recording trust: stricter installed punch/take smoke flags, clearer take-lane state feedback, diagnostics for selected input/channel/sample-rate/media-path evidence, and no expansion into simultaneous multitrack, ASIO, plugin hosting, full comp UI, or pitch-preserving time-stretch.
+- 0.6.40 is a source-only release-hardening candidate after the installed 0.6.39 manual notes. It routes Help/feedback links through the native OS opener, refreshes timeline M/S button state immediately while preserving the audio fast path, clears stale clip selection when track headers are selected so Delete does not remove an old clip, and defers the initial procedural fallback native-cache build/restart while playback is running.
+- 0.6.40 is not public until exact installed-app smoke, updater metadata, GitHub release, bootstrapper, and itch publication are completed and verified. The previous 0.6.39 installed-smoke evidence remains historical recording-confidence evidence, and public release truth remains 0.6.38 until publication metadata changes.
 
 ## Capability Claim Boundary
 
