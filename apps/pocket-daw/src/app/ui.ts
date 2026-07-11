@@ -107,6 +107,7 @@ export function renderAppShell(state: AppState): string {
       <div class="studio-resize-handle" data-timeline-resize-handle="true" title="Drag to resize timeline and push mixer lower"><span></span></div>
       ${renderMixer(state)}
       ${renderMediaPool(state)}
+      <p id="clip-repeat-instructions" class="visually-hidden">Use Left and Right Arrow to adjust the repeat end by the current snap. Hold Shift to adjust by one complete source length. Home clears repeats. End extends to sixteen repeats.</p>
       ${state.showFilePanel ? renderFilePanel(state) : ""}
       ${state.showControls ? renderControlsPanel(state) : ""}
       ${state.showAddTrack ? renderAddTrackPanel() : ""}
@@ -358,9 +359,9 @@ function renderTransport(state: AppState): string {
         <button class="primary" data-transport-toggle="true" data-action="${state.playing ? "pause" : "play"}">${state.playing ? "Pause" : "Play"}</button>
         <button class="${recordingActive ? "record on" : "record"}" data-action="record-toggle" data-ui-scope="recording">${recordingActive ? "Stop Rec" : "Record"}</button>
         <button class="${midiRecordingActive ? "record on" : "record"}" data-action="midi-record-toggle" data-ui-scope="recording" title="Start transport and record note events from the first available MIDI input onto the selected MIDI track">${midiRecordingLabel}</button>
-        <button class="${state.recordingPunchEnabled ? "on" : ""}" data-action="recording-punch-toggle" data-ui-scope="recording" title="${escapeAttr(punchRange ? `Punch range is Bar ${formatBarNumber(punchRange.startBar)} to ${formatBarNumber(punchRange.endBar)}` : "Record only an explicit punch range after using Set Punch")}">Punch</button>
-        <button class="${state.recordingTakeMode === "take-lane" ? "on" : ""}" data-action="recording-take-mode-toggle" data-ui-scope="recording" title="Toggle between replacing the visible range and creating a new active take lane">${state.recordingTakeMode === "take-lane" ? "Take Lane" : "Replace"}</button>
-        <button class="${metronome.enabled ? "on" : ""}" data-action="metronome-toggle" title="Metronome and one-bar recording count-in">Metro</button>
+        <button class="${state.recordingPunchEnabled ? "on" : ""}" data-action="recording-punch-toggle" data-ui-scope="recording" aria-pressed="${state.recordingPunchEnabled ? "true" : "false"}" aria-label="Punch recording ${state.recordingPunchEnabled ? "on" : "off"}" title="${escapeAttr(punchRange ? `Punch range is Bar ${formatBarNumber(punchRange.startBar)} to ${formatBarNumber(punchRange.endBar)}` : "Record only an explicit punch range after using Set Punch")}">Punch</button>
+        <button class="${state.recordingTakeMode === "take-lane" ? "on" : ""}" data-action="recording-take-mode-toggle" data-ui-scope="recording" aria-pressed="${state.recordingTakeMode === "take-lane" ? "true" : "false"}" aria-label="Record to a new take lane ${state.recordingTakeMode === "take-lane" ? "on" : "off"}" title="Toggle between replacing the visible range and creating a new active take lane">${state.recordingTakeMode === "take-lane" ? "Take Lane" : "Replace"}</button>
+        <button class="${metronome.enabled ? "on" : ""}" data-action="metronome-toggle" aria-pressed="${metronome.enabled ? "true" : "false"}" aria-label="Metronome ${metronome.enabled ? "on" : "off"}" title="Metronome and one-bar recording count-in">Metro</button>
         <button data-action="stop">Stop</button>
         <button data-action="restart">Restart</button>
         <button data-action="midi-panic" title="Immediately stop preview playback and clear stuck notes">Panic</button>
@@ -497,8 +498,8 @@ function renderTimeline(state: AppState): string {
                   <span data-zoom-readout="true">${Math.round(zoom)} px/bar</span>
                 </label>
                 <label><input type="checkbox" id="loopEnabled" ${project.timeline.loop.enabled ? "checked" : ""}> Loop</label>
-                <input class="bar-input" id="loopStart" type="number" min="1" value="${project.timeline.loop.startBar}">
-                <input class="bar-input" id="loopEnd" type="number" min="2" value="${project.timeline.loop.endBar}">
+                <input class="bar-input" id="loopStart" type="number" min="1" value="${project.timeline.loop.startBar}" aria-label="Loop start bar">
+                <input class="bar-input" id="loopEnd" type="number" min="2" value="${project.timeline.loop.endBar}" aria-label="Loop end bar">
                 <button data-action="loop-selected" title="Set the loop region to the selected clip">Loop Clip</button>
                 <button data-action="loop-clear" title="Clear the active loop region">Clear</button>
                 <span class="range-controls" aria-label="Edit range controls">
@@ -530,7 +531,7 @@ function renderTimeline(state: AppState): string {
       </div>
       <div class="timeline-scroll" data-scroll-key="timeline-scroll">
         <div class="timeline" data-timeline-surface="true" title="Click the grid to seek by bar" style="width:${width}px; --bar:${zoom}px; --track-header:176px; --timeline-row-height:${sanitizeCssLengthOrNumber(rowHeights.standard, TIMELINE_ROW_HEIGHT_PX, TIMELINE_ROW_HEIGHT_PX, 1200)}px; --timeline-generated-row-height:${sanitizeCssLengthOrNumber(rowHeights.generated, TIMELINE_GENERATED_ROW_HEIGHT_PX, TIMELINE_GENERATED_ROW_HEIGHT_PX, 1200)}px; --timeline-take-lane-row-height:${sanitizeCssLengthOrNumber(rowHeights.takeLane, TIMELINE_TAKE_LANE_ROW_HEIGHT_PX, TIMELINE_TAKE_LANE_ROW_HEIGHT_PX, 1200)}px;">
-          ${renderBarRuler(project)}
+          ${renderBarRuler(project, state.playheadBar)}
           ${renderMarkers(state)}
           <div class="cursor-line" data-cursor="true" style="left:${barLeftPx(cursorLeft)}"></div>
           <div class="playhead" data-playhead="true" style="left:${barLeftPx(playheadLeft)}"></div>
@@ -619,7 +620,8 @@ function renderTimelineSongSettings(pcs: SanitizedPcsProject | null): string {
   `;
 }
 
-function renderBarRuler(project: ReturnType<typeof currentProject>): string {
+function renderBarRuler(project: ReturnType<typeof currentProject>, playheadBar: number): string {
+  const bars = project.timeline.bars;
   const barTicks = Array.from({ length: project.timeline.bars + 1 }, (_, i) => {
     const bar = i + 1;
     const seconds = timelineSecondsAtBar(project, bar);
@@ -639,7 +641,7 @@ function renderBarRuler(project: ReturnType<typeof currentProject>): string {
       return `<span class="ruler-beat-tick" data-ruler-beat="${bar}:${beat}" data-ruler-meter="${bar}:${meter.numerator}/${meter.denominator}" style="left:${barLeftCalc(`${left} * var(--bar)`)}" title="${escapeAttr(`Bar ${bar} beat ${beat} / ${meter.numerator}/${meter.denominator} / ${formatDuration(seconds)}`)}"><small>${beat}</small></span>`;
     }).join("");
   }).join("");
-  return `<div class="ruler" data-seek-ruler="true" title="Click to seek by bar or time">${barTicks}${beatTicks}</div>`;
+  return `<div class="ruler" data-seek-ruler="true" role="slider" tabindex="0" aria-label="Timeline playhead" aria-valuemin="1" aria-valuemax="${bars + 1}" aria-valuenow="${sanitizeCssLengthOrNumber(playheadBar, 1, 1, bars + 1)}" aria-valuetext="Bar ${escapeAttr(formatBarNumber(playheadBar))}" title="Click to seek by bar or time. Use Left and Right Arrow keys for keyboard seeking.">${barTicks}${beatTicks}</div>`;
 }
 
 function renderMarkers(state: AppState): string {
@@ -763,10 +765,10 @@ function renderTimelineTrackHeader(project: ReturnType<typeof currentProject>, t
       </span>
       <span class="track-header-controls">
         ${isFolder ? `<button type="button" title="${escapeAttr(`${expanded ? "Collapse" : "Expand"} ${track.name}`)}" class="${expanded ? "on" : ""}" data-folder-toggle="${sanitizeDataAttr(track.id)}">${expanded ? "Collapse" : "Expand"}</button>` : ""}
-        ${canMuteSolo ? `<button type="button" title="${escapeAttr(`Mute ${track.name}`)}" class="${track.mute ? "on" : ""}" data-mute-track="${sanitizeDataAttr(track.id)}">M</button>
-        ${canSolo ? `<button type="button" title="${escapeAttr(`Solo ${track.name}`)}" class="${track.solo ? "on" : ""}" data-solo-track="${sanitizeDataAttr(track.id)}">S</button>` : ""}` : ""}
-        ${canRecord ? `<button type="button" title="${escapeAttr(`Arm ${track.name} for ${recordChannelLabel.toLowerCase()} recording`)}" class="${track.armed ? "on record" : ""}" data-arm-track="${sanitizeDataAttr(track.id)}">R</button>
-        <button type="button" title="${escapeAttr(`Monitor ${track.name} input during recording`)}" class="${track.monitorEnabled ? "on" : ""}" data-monitor-track="${sanitizeDataAttr(track.id)}">Mon</button>` : ""}
+        ${canMuteSolo ? `<button type="button" aria-pressed="${track.mute ? "true" : "false"}" aria-label="${escapeAttr(`Mute ${track.name}: ${track.mute ? "on" : "off"}`)}" title="${escapeAttr(`Mute ${track.name}`)}" class="${track.mute ? "on" : ""}" data-mute-track="${sanitizeDataAttr(track.id)}">M</button>
+        ${canSolo ? `<button type="button" aria-pressed="${track.solo ? "true" : "false"}" aria-label="${escapeAttr(`Solo ${track.name}: ${track.solo ? "on" : "off"}`)}" title="${escapeAttr(`Solo ${track.name}`)}" class="${track.solo ? "on" : ""}" data-solo-track="${sanitizeDataAttr(track.id)}">S</button>` : ""}` : ""}
+        ${canRecord ? `<button type="button" aria-pressed="${track.armed ? "true" : "false"}" aria-label="${escapeAttr(`Arm ${track.name} for ${recordChannelLabel.toLowerCase()} recording: ${track.armed ? "on" : "off"}`)}" title="${escapeAttr(`Arm ${track.name} for ${recordChannelLabel.toLowerCase()} recording`)}" class="${track.armed ? "on record" : ""}" data-arm-track="${sanitizeDataAttr(track.id)}">R</button>
+        <button type="button" aria-pressed="${track.monitorEnabled ? "true" : "false"}" aria-label="${escapeAttr(`Monitor ${track.name} input: ${track.monitorEnabled ? "on" : "off"}`)}" title="${escapeAttr(`Monitor ${track.name} input during recording`)}" class="${track.monitorEnabled ? "on" : ""}" data-monitor-track="${sanitizeDataAttr(track.id)}">Mon</button>` : ""}
       </span>
       <span class="track-state">${isFolder ? `${childCount} lanes` : ""}${track.automationLaneIds.length ? "A" : ""}${track.armed ? "R" : ""}${canRecord ? recordChannelLabel.slice(0, 2) : ""}${track.monitorEnabled ? "Mon" : ""}${track.mute ? "M" : ""}${track.solo ? "S" : ""}${track.active === false ? "Off" : ""}</span>
     </div>
@@ -867,15 +869,15 @@ function renderInlineChordsmithClip(
     <div class="inline-sequencer inline-${sanitizeDomId(track.role, "role")} ${selectedClipIdSet(state).has(clip.id) ? "selected-clip-editor" : ""}" data-inline-sequencer="true" data-inline-clip-id="${sanitizeDataAttr(clip.id)}" data-clip-id="${sanitizeDataAttr(clip.id)}" data-inline-row="${sanitizeDataAttr(track.id)}" data-row="${sanitizeDataAttr(track.id)}" data-inline-sequencer-role="${sanitizeDataAttr(track.role)}" data-inline-section="${sanitizeDataAttr(section.id)}"${track.role === "drums" ? ` data-drum-branch-entry="inline"` : ""} title="Drag empty space to move with snap. Ctrl-click or Cmd-click to select multiple clips. Drag the right handle to repeat the section.${track.role === "drums" ? " Double-click or right-click empty space to branch generated drums." : ""}" style="left:${left};width:${width};--inline-steps:${sanitizeCssLengthOrNumber(renderSteps, 0, 0, 256)};">
       <span class="clip-drag-handle" data-clip-drag-handle="${sanitizeDataAttr(clip.id)}" title="Drag to move this section with snap"></span>
       ${body}
-      <span class="clip-loop-handle" data-clip-loop-handle="${sanitizeDataAttr(clip.id)}" title="Drag right to repeat this section"></span>
+      ${renderClipLoopHandle(project, clip)}
     </div>
   `;
 }
 
 function renderInlineDrumEditor(section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   return `
-    <div class="inline-lane-grid drums-inline" aria-label="Drum steps">
-      ${(["kick", "snare", "hat"] as const).map((lane) => `
+    <div class="inline-lane-grid drums-inline" data-step-grid="true" role="group" aria-label="Drum steps">
+      ${(["kick", "snare", "hat"] as const).map((lane, laneIndex) => `
         <div class="inline-lane" aria-label="${escapeAttr(drumLaneLabel(lane))}">
           <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
             ${Array.from({ length: steps }, (_, step) => {
@@ -883,7 +885,9 @@ function renderInlineDrumEditor(section: SanitizedPcsSection, startStep: number,
               const level = section.grid[lane][actualStep] || 0;
               const tuplet = !!section.gridTuplets[lane][actualStep];
               const selected = selection?.kind === "drums" && selection.sectionId === section.id && selection.lane === lane && selection.step === actualStep;
-              return `<button class="step timeline-step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${escapeAttr(`${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet.`)}" data-drum-step="${sanitizeDataAttr(`${section.id}:${lane}:${actualStep}`)}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
+              const state = level === 2 ? "accent" : level === 1 ? "on" : "off";
+              const label = `${drumLaneLabel(lane)}, section ${section.id}, step ${actualStep + 1}, ${state}${tuplet ? ", tuplet" : ""}`;
+              return `<button class="step timeline-step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" ${stepCellAccessibility(label, level > 0, selected || (laneIndex === 0 && step === 0), laneIndex, step)} title="${escapeAttr(`${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet.`)}" data-drum-step="${sanitizeDataAttr(`${section.id}:${lane}:${actualStep}`)}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
             }).join("")}
           </div>
         </div>
@@ -894,7 +898,7 @@ function renderInlineDrumEditor(section: SanitizedPcsSection, startStep: number,
 
 function renderInlineDrumBranchEditor(project: ReturnType<typeof currentProject>, section: SanitizedPcsSection, lane: DrumLaneId, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   return `
-    <div class="inline-lane-grid drums-inline branch-inline" aria-label="${escapeAttr(`${drumLaneLabel(lane)} branch steps`)}">
+    <div class="inline-lane-grid drums-inline branch-inline" data-step-grid="true" role="group" aria-label="${escapeAttr(`${drumLaneLabel(lane)} branch steps`)}">
       <div class="inline-lane" aria-label="${escapeAttr(drumLaneLabel(lane))}">
         <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
           ${Array.from({ length: steps }, (_, step) => {
@@ -906,7 +910,9 @@ function renderInlineDrumBranchEditor(project: ReturnType<typeof currentProject>
             const title = sourceDrumLane(lane)
               ? `${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet.`
               : `${drumLaneLabel(lane)} branch step ${actualStep + 1}. DAW-only source overlay.`;
-            return `<button class="step timeline-step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${escapeAttr(title)}" ${dataAttr}="${sanitizeDataAttr(`${section.id}:${lane}:${actualStep}`)}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
+            const state = level === 2 ? "accent" : level === 1 ? "on" : "off";
+            const label = `${drumLaneLabel(lane)}, section ${section.id}, step ${actualStep + 1}, ${state}${tuplet ? ", tuplet" : ""}`;
+            return `<button class="step timeline-step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" ${stepCellAccessibility(label, level > 0, selected || step === 0, 0, step)} title="${escapeAttr(title)}" ${dataAttr}="${sanitizeDataAttr(`${section.id}:${lane}:${actualStep}`)}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
           }).join("")}
         </div>
       </div>
@@ -916,7 +922,7 @@ function renderInlineDrumBranchEditor(project: ReturnType<typeof currentProject>
 
 function renderInlineBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   return `
-    <div class="inline-lane single-inline-lane" aria-label="Bass steps">
+    <div class="inline-lane single-inline-lane" data-step-grid="true" role="group" aria-label="Bass steps">
       <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
@@ -926,7 +932,10 @@ function renderInlineBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsS
           const tuplet = !!section.gridTuplets.bass[actualStep];
           const selected = selection?.kind === "bass" && selection.sectionId === section.id && selection.step === actualStep;
           const title = auto ? `Auto bass step ${actualStep + 1}. Click to convert auto bass to editable manual notes.` : `Bass note step ${actualStep + 1}. Select then press H, S or T.`;
-          return `<button class="step timeline-step note-step ${note === null ? "" : "on"} ${auto ? "auto-bass" : ""} ${accent ? "accent" : ""} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${escapeAttr(title)}" data-bass-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${note === null ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep], tuplet })}</button>`;
+          const hold = !!section.bassHold[actualStep];
+          const slide = !!section.bassSlide[actualStep];
+          const state = note === null ? "off" : `${auto ? "auto " : ""}${BASS_LABELS[note] || String(note)}${accent ? ", accent" : ""}${hold ? ", hold" : ""}${slide ? ", slide" : ""}${tuplet ? ", tuplet" : ""}`;
+          return `<button class="step timeline-step note-step ${note === null ? "" : "on"} ${auto ? "auto-bass" : ""} ${accent ? "accent" : ""} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" ${stepCellAccessibility(`Bass, section ${section.id}, step ${actualStep + 1}, ${state}`, note !== null, selected || step === 0, 0, step)} title="${escapeAttr(title)}" data-bass-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${note === null ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold, slide, tuplet })}</button>`;
         }).join("")}
       </div>
     </div>
@@ -937,14 +946,18 @@ function renderInlineMelodyEditor(section: SanitizedPcsSection, trackIndex: numb
   const track = section.melodyTracks[trackIndex] || [];
   const instrument = section.melodyInstruments[trackIndex] || "synth";
   return `
-    <div class="inline-lane single-inline-lane" aria-label="${escapeAttr(`${instrumentLabel(instrument)} steps`)}">
+    <div class="inline-lane single-inline-lane" data-step-grid="true" role="group" aria-label="${escapeAttr(`${instrumentLabel(instrument)} steps`)}">
       <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
           const note = track[actualStep];
           const tuplet = !!section.melodyTuplets[trackIndex]?.[actualStep];
           const selected = selection?.kind === "melody" && selection.sectionId === section.id && selection.trackIndex === trackIndex && selection.step === actualStep;
-          return `<button class="step timeline-step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Melody ${trackIndex + 1} note step ${actualStep + 1}. Select then press H, S or T." data-melody-step="${sanitizeDataAttr(`${section.id}:${trackIndex}:${actualStep}`)}">${note === null || note === undefined ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold: !!section.melodyHold[trackIndex]?.[actualStep], slide: !!section.melodySlide[trackIndex]?.[actualStep], tuplet })}</button>`;
+          const on = note !== null && note !== undefined;
+          const hold = !!section.melodyHold[trackIndex]?.[actualStep];
+          const slide = !!section.melodySlide[trackIndex]?.[actualStep];
+          const state = on ? `${BASS_LABELS[note] || String(note)}${hold ? ", hold" : ""}${slide ? ", slide" : ""}${tuplet ? ", tuplet" : ""}` : "off";
+          return `<button class="step timeline-step note-step ${on ? "on" : ""} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" ${stepCellAccessibility(`Melody ${trackIndex + 1}, section ${section.id}, step ${actualStep + 1}, ${state}`, on, selected || step === 0, 0, step)} title="Melody ${trackIndex + 1} note step ${actualStep + 1}. Select then press H, S or T." data-melody-step="${sanitizeDataAttr(`${section.id}:${trackIndex}:${actualStep}`)}">${on ? escapeHtml(BASS_LABELS[note] || String(note)) : ""}${stepBadges({ hold, slide, tuplet })}</button>`;
         }).join("")}
       </div>
     </div>
@@ -953,12 +966,13 @@ function renderInlineMelodyEditor(section: SanitizedPcsSection, trackIndex: numb
 
 function renderInlineGuitarEditor(section: SanitizedPcsSection, startStep: number, steps: number): string {
   return `
-    <div class="inline-lane single-inline-lane" aria-label="Guitar steps">
+    <div class="inline-lane single-inline-lane" data-step-grid="true" role="group" aria-label="Guitar steps">
       <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
           const art = section.guitarPattern[actualStep] || "off";
-          return `<button class="step timeline-step guitar-step ${art !== "off" ? "on" : ""}" title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
+          const on = art !== "off";
+          return `<button class="step timeline-step guitar-step ${on ? "on" : ""}" ${stepCellAccessibility(`Guitar, section ${section.id}, step ${actualStep + 1}, ${on ? instrumentLabel(art) : "off"}`, on, step === 0, 0, step)} title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
         }).join("")}
       </div>
     </div>
@@ -975,7 +989,7 @@ function renderInlineChordEditor(section: SanitizedPcsSection, startBar: number,
         return `
           <label title="Section ${section.id} bar ${bar + 1} chord">
             <span>${bar + 1}</span>
-            <select data-section-chord="${sanitizeDataAttr(`${section.id}:${bar}`)}">
+            <select aria-label="${escapeAttr(`Section ${section.id}, bar ${bar + 1} chord`)}" data-section-chord="${sanitizeDataAttr(`${section.id}:${bar}`)}">
               ${CHORD_LABELS.map((label, value) => `<option value="${value}" ${degree === value ? "selected" : ""}>${label}</option>`).join("")}
             </select>
           </label>
@@ -1002,9 +1016,21 @@ function renderClip(project: ReturnType<typeof currentProject>, clip: Clip, sele
       ${renderClipTakeBadge(project, clip)}
       ${peaks.length ? `<i class="clip-waveform">${peaks.map((peak) => `<b style="height:${Math.max(2, Math.round(Number(peak) * 18))}px"></b>`).join("")}</i>` : ""}
       ${midi?.notes.length ? `<i class="midi-note-strip">${midi.notes.slice(0, 32).map((note) => `<b style="left:${Math.max(0, Math.min(100, (note.startTick / Math.max(1, midi.ppq * clip.barLength * project.project.timeSig)) * 100))}%;width:${Math.max(3, Math.min(24, (note.durationTicks / Math.max(1, midi.ppq * clip.barLength * project.project.timeSig)) * 100))}%;bottom:${Math.max(2, Math.min(24, (note.pitch - 36) / 3))}px"></b>`).join("")}</i>` : ""}
-      ${clip.type === "generated-section" ? `<span class="clip-drag-handle" data-clip-drag-handle="${sanitizeDataAttr(clip.id)}" title="Drag to move this section with snap"></span><span class="clip-loop-handle" data-clip-loop-handle="${sanitizeDataAttr(clip.id)}" title="Drag right to repeat this section"></span>` : ""}
+      ${clip.type === "generated-section" ? `<span class="clip-drag-handle" data-clip-drag-handle="${sanitizeDataAttr(clip.id)}" title="Drag to move this section with snap"></span>${renderClipLoopHandle(project, clip)}` : ""}
     </button>
   `;
+}
+
+function renderClipLoopHandle(project: ReturnType<typeof currentProject>, clip: Clip): string {
+  const sourceLength = Math.max(0.25, clip.barLength);
+  const minimumEnd = clip.startBar + sourceLength;
+  const repeats = project.timeline.clips.filter((item) => item.metadata?.loopParentId === clip.id);
+  const currentEnd = Math.max(minimumEnd, ...repeats.map((item) => item.startBar + item.barLength));
+  const maximumEnd = minimumEnd + sourceLength * 16;
+  const valueText = repeats.length
+    ? `Ends at bar ${currentEnd}; ${repeats.length} repeat${repeats.length === 1 ? "" : "s"}`
+    : `Ends at bar ${currentEnd}; no repeats`;
+  return `<span class="clip-loop-handle" role="slider" tabindex="0" aria-label="Repeat ${escapeAttr(clip.name)} end" aria-describedby="clip-repeat-instructions" aria-valuemin="${minimumEnd}" aria-valuemax="${maximumEnd}" aria-valuenow="${currentEnd}" aria-valuetext="${escapeAttr(valueText)}" data-clip-loop-handle="${sanitizeDataAttr(clip.id)}" title="Drag or use arrow keys to repeat this section"></span>`;
 }
 
 function renderClipTakeBadge(project: ReturnType<typeof currentProject>, clip: Clip): string {
@@ -2140,7 +2166,7 @@ function renderChordSelect(section: SanitizedPcsSection, bar: number): string {
   const degree = section.progression[bar] || 0;
   return `
     <label>Bar ${bar + 1}
-      <select data-section-chord="${sanitizeDataAttr(`${section.id}:${bar}`)}">
+      <select aria-label="${escapeAttr(`Section ${section.id}, bar ${bar + 1} chord`)}" data-section-chord="${sanitizeDataAttr(`${section.id}:${bar}`)}">
         ${CHORD_LABELS.map((label, value) => `<option value="${value}" ${degree === value ? "selected" : ""}>${label}</option>`).join("")}
       </select>
     </label>
@@ -2149,14 +2175,14 @@ function renderChordSelect(section: SanitizedPcsSection, bar: number): string {
 
 function renderDrumEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   return `
-    <div class="sequencer-block">
+    <div class="sequencer-block" data-step-grid="true" role="group" aria-label="Drum sequencer">
       <div class="sequencer-heading">
         <strong>Drums</strong>
       </div>
       ${renderStepRuler(startStep, steps)}
       ${(["kick", "snare", "hat"] as const)
         .map(
-          (lane) => `
+          (lane, laneIndex) => `
             <div class="sequencer-row">
               <span>${drumLaneLabel(lane)}</span>
               ${Array.from({ length: steps }, (_, step) => {
@@ -2164,7 +2190,8 @@ function renderDrumEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection
                 const level = section.grid[lane][actualStep] || 0;
                 const tuplet = !!section.gridTuplets[lane][actualStep];
                 const selected = selection?.kind === "drums" && selection.sectionId === section.id && selection.lane === lane && selection.step === actualStep;
-                return `<button class="step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${escapeAttr(`${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet.`)}" data-drum-step="${sanitizeDataAttr(`${section.id}:${lane}:${actualStep}`)}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
+                const state = level === 2 ? "accent" : level === 1 ? "on" : "off";
+                return `<button class="step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" ${stepCellAccessibility(`${drumLaneLabel(lane)}, section ${section.id}, step ${actualStep + 1}, ${state}${tuplet ? ", tuplet" : ""}`, level > 0, selected || (laneIndex === 0 && step === 0), laneIndex, step)} title="${escapeAttr(`${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet.`)}" data-drum-step="${sanitizeDataAttr(`${section.id}:${lane}:${actualStep}`)}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
               }).join("")}
             </div>
           `
@@ -2177,7 +2204,7 @@ function renderDrumEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection
 function renderDrumBranchEditor(project: ReturnType<typeof currentProject>, section: SanitizedPcsSection, lane: DrumLaneId, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   const liveOnly = !sourceDrumLane(lane);
   return `
-    <div class="sequencer-block">
+    <div class="sequencer-block" data-step-grid="true" role="group" aria-label="${escapeAttr(`${drumLaneLabel(lane)} branch sequencer`)}">
       <div class="sequencer-heading">
         <strong>${escapeHtml(drumLaneLabel(lane))} Branch</strong>
         ${liveOnly ? `<span class="editor-note">DAW-only source overlay</span>` : ""}
@@ -2194,7 +2221,8 @@ function renderDrumBranchEditor(project: ReturnType<typeof currentProject>, sect
           const title = liveOnly
             ? `${drumLaneLabel(lane)} branch step ${actualStep + 1}. Click to write a DAW-only drum source event.`
             : `${drumLaneLabel(lane)} step ${actualStep + 1}. Select then press T for tuplet.`;
-          return `<button class="step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${escapeAttr(title)}" ${dataAttr}="${sanitizeDataAttr(`${section.id}:${lane}:${actualStep}`)}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
+          const state = level === 2 ? "accent" : level === 1 ? "on" : "off";
+          return `<button class="step step-${level} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" ${stepCellAccessibility(`${drumLaneLabel(lane)}, section ${section.id}, step ${actualStep + 1}, ${state}${tuplet ? ", tuplet" : ""}`, level > 0, selected || step === 0, 0, step)} title="${escapeAttr(title)}" ${dataAttr}="${sanitizeDataAttr(`${section.id}:${lane}:${actualStep}`)}">${level === 2 ? "!" : level === 1 ? "x" : ""}${stepBadges({ tuplet })}</button>`;
         }).join("")}
       </div>
     </div>
@@ -2203,7 +2231,7 @@ function renderDrumBranchEditor(project: ReturnType<typeof currentProject>, sect
 
 function renderBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   return `
-    <div class="sequencer-block">
+    <div class="sequencer-block" data-step-grid="true" role="group" aria-label="Bass sequencer">
       <strong>Bass</strong>
       <label>Bass mode
         <select data-bass-mode="true">
@@ -2228,13 +2256,16 @@ function renderBassEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection
           const tuplet = !!section.gridTuplets.bass[actualStep];
           const selected = selection?.kind === "bass" && selection.sectionId === section.id && selection.step === actualStep;
           const title = auto ? `Auto bass step ${actualStep + 1}. Click to convert auto bass to editable manual notes.` : `Bass note step ${actualStep + 1}. Select then press H, S or T.`;
-          return `<button class="step note-step ${note === null ? "" : "on"} ${auto ? "auto-bass" : ""} ${accent ? "accent" : ""} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="${escapeAttr(title)}" data-bass-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${note === null ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold: !!section.bassHold[actualStep], slide: !!section.bassSlide[actualStep], tuplet })}</button>`;
+          const hold = !!section.bassHold[actualStep];
+          const slide = !!section.bassSlide[actualStep];
+          const state = note === null ? "off" : `${auto ? "auto " : ""}${BASS_LABELS[note] || String(note)}${accent ? ", accent" : ""}${hold ? ", hold" : ""}${slide ? ", slide" : ""}${tuplet ? ", tuplet" : ""}`;
+          return `<button class="step note-step ${note === null ? "" : "on"} ${auto ? "auto-bass" : ""} ${accent ? "accent" : ""} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" ${stepCellAccessibility(`Bass, section ${section.id}, step ${actualStep + 1}, ${state}`, note !== null, selected || step === 0, 0, step)} title="${escapeAttr(title)}" data-bass-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${note === null ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold, slide, tuplet })}</button>`;
         }).join("")}
       </div>
       ${renderMetaStepRow("accent", steps, (step) => {
         const actualStep = startStep + step;
         const accent = pcs.bassMode === "manual" ? !!section.bassAccent[actualStep] : (section.grid.bass[actualStep] || 0) === 2;
-        return `<button class="step meta-step ${accent ? "on accent" : ""}" title="Bass accent step ${actualStep + 1}" data-bass-accent="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${accent ? "!" : ""}</button>`;
+        return `<button class="step meta-step ${accent ? "on accent" : ""}" tabindex="-1" aria-label="Bass accent, section ${escapeAttr(section.id)}, step ${actualStep + 1}, ${accent ? "on" : "off"}" aria-pressed="${accent ? "true" : "false"}" title="Bass accent step ${actualStep + 1}" data-bass-accent="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${accent ? "!" : ""}</button>`;
       })}
     </div>
   `;
@@ -2246,7 +2277,7 @@ function renderMelodyEditor(section: SanitizedPcsSection, trackIndex: number, st
   const octave = section.melodyOctaves[trackIndex] || 0;
   const pan = section.melodyPan[trackIndex] || 0;
   return `
-    <div class="sequencer-block">
+    <div class="sequencer-block" data-step-grid="true" role="group" aria-label="Melody ${trackIndex + 1} sequencer">
       <strong>Melody ${trackIndex + 1}</strong>
       <div class="editor-controls lane-controls">
         <label>Instrument
@@ -2267,7 +2298,11 @@ function renderMelodyEditor(section: SanitizedPcsSection, trackIndex: number, st
           const note = track[actualStep];
           const tuplet = !!section.melodyTuplets[trackIndex]?.[actualStep];
           const selected = selection?.kind === "melody" && selection.sectionId === section.id && selection.trackIndex === trackIndex && selection.step === actualStep;
-          return `<button class="step note-step ${note === null || note === undefined ? "" : "on"} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" title="Melody ${trackIndex + 1} note step ${actualStep + 1}. Select then press H, S or T." data-melody-step="${sanitizeDataAttr(`${section.id}:${trackIndex}:${actualStep}`)}">${note === null || note === undefined ? "" : escapeHtml(BASS_LABELS[note] || String(note))}${stepBadges({ hold: !!section.melodyHold[trackIndex]?.[actualStep], slide: !!section.melodySlide[trackIndex]?.[actualStep], tuplet })}</button>`;
+          const on = note !== null && note !== undefined;
+          const hold = !!section.melodyHold[trackIndex]?.[actualStep];
+          const slide = !!section.melodySlide[trackIndex]?.[actualStep];
+          const state = on ? `${BASS_LABELS[note] || String(note)}${hold ? ", hold" : ""}${slide ? ", slide" : ""}${tuplet ? ", tuplet" : ""}` : "off";
+          return `<button class="step note-step ${on ? "on" : ""} ${tuplet ? "tuplet" : ""} ${selected ? "selected-step" : ""}" ${stepCellAccessibility(`Melody ${trackIndex + 1}, section ${section.id}, step ${actualStep + 1}, ${state}`, on, selected || step === 0, 0, step)} title="Melody ${trackIndex + 1} note step ${actualStep + 1}. Select then press H, S or T." data-melody-step="${sanitizeDataAttr(`${section.id}:${trackIndex}:${actualStep}`)}">${on ? escapeHtml(BASS_LABELS[note] || String(note)) : ""}${stepBadges({ hold, slide, tuplet })}</button>`;
         }).join("")}
       </div>
     </div>
@@ -2290,7 +2325,7 @@ function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: San
   const guitarTrack = project.tracks.find((track) => track.role === "guitar");
   const inactive = !pcs.guitarEnabled || guitarTrack?.active === false;
   return `
-    <div class="sequencer-block ${inactive ? "muted-editor" : ""}">
+    <div class="sequencer-block ${inactive ? "muted-editor" : ""}" data-step-grid="true" role="group" aria-label="Guitar sequencer">
       <strong>Guitar</strong>
       <div class="editor-controls lane-controls">
         <label class="inline-toggle" title="Enable or mute generated guitar playback for this Chordsmith source."><input data-guitar-setting="guitarEnabled" type="checkbox" ${pcs.guitarEnabled ? "checked" : ""} title="Enable or mute generated guitar playback for this Chordsmith source."> Enabled</label>
@@ -2317,7 +2352,8 @@ function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: San
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
           const art = section.guitarPattern[actualStep] || "off";
-          return `<button class="step guitar-step ${art !== "off" ? "on" : ""}" title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
+          const on = art !== "off";
+          return `<button class="step guitar-step ${on ? "on" : ""}" ${stepCellAccessibility(`Guitar, section ${section.id}, step ${actualStep + 1}, ${on ? instrumentLabel(art) : "off"}`, on, step === 0, 0, step)} title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
         }).join("")}
       </div>
     </div>
@@ -2331,6 +2367,10 @@ function renderMetaStepRow(label: string, steps: number, render: (step: number) 
       ${Array.from({ length: steps }, (_, step) => render(step)).join("")}
     </div>
   `;
+}
+
+function stepCellAccessibility(label: string, pressed: boolean, tabbable: boolean, row: number, column: number): string {
+  return `data-step-cell="true" data-step-row="${row}" data-step-column="${column}" tabindex="${tabbable ? "0" : "-1"}" aria-label="${escapeAttr(label)}" aria-pressed="${pressed ? "true" : "false"}"`;
 }
 
 function stepBadges(flags: { hold?: boolean; slide?: boolean; tuplet?: boolean }): string {
@@ -2904,7 +2944,10 @@ function renderFilePanel(state: AppState): string {
             <h3 id="file-import-title">Import</h3>
             <p>Bring in Chordsmith text, project files, audio, or MIDI without keeping import controls on the mixer page.</p>
           </div>
-          <textarea id="importText" class="file-import-text" spellcheck="false" placeholder="Paste PCS1 share code, raw Pocket Chordsmith JSON, Pocket DJ source session, or .pocketdaw JSON">${escapeHtml(state.importText)}</textarea>
+          <label for="importText">Chordsmith or Pocket DAW import text</label>
+          <p id="importTextHelp">Paste a PCS1 share code, raw Pocket Chordsmith JSON, Pocket DJ source session, or .pocketdaw JSON.</p>
+          <textarea id="importText" class="file-import-text" spellcheck="false" aria-invalid="${state.importTextError ? "true" : "false"}" aria-describedby="importTextHelp${state.importTextError ? " importTextError" : ""}" placeholder="Paste PCS1 share code, raw Pocket Chordsmith JSON, Pocket DJ source session, or .pocketdaw JSON">${escapeHtml(state.importText)}</textarea>
+          ${state.importTextError ? `<p id="importTextError" class="field-error" role="alert">${escapeHtml(state.importTextError)}</p>` : ""}
           <label class="file-inline-control">MIDI placement
             <select id="midiImportPlacementMode" title="Choose how imported MIDI files are placed on DAW tracks">
               ${MIDI_IMPORT_PLACEMENT_MODES.map((mode) => `<option value="${mode.id}" ${state.midiImportPlacementMode === mode.id ? "selected" : ""}>${escapeHtml(mode.name)}</option>`).join("")}
@@ -3822,7 +3865,7 @@ function renderMcpConfigBlock(label: string, copyKind: string, value: string): s
         <strong>${escapeHtml(label)}</strong>
         <button data-action="copy-mcp-setup" data-copy-mcp-setup="${escapeAttr(copyKind)}">Copy</button>
       </header>
-      <textarea readonly spellcheck="false">${escapeHtml(value)}</textarea>
+      <textarea aria-label="${escapeAttr(label)}" readonly spellcheck="false">${escapeHtml(value)}</textarea>
     </div>
   `;
 }

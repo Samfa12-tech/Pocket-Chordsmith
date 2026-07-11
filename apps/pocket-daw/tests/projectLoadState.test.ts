@@ -88,6 +88,7 @@ describe("project load state hydration", () => {
       inputPeak: 0.7,
       livePeaks: [0.7]
     });
+    initialState.importTextError = "Previous import failed.";
 
     const loadedProject = createDemoProject();
     loadedProject.project.title = "Loaded Clean Session";
@@ -106,6 +107,7 @@ describe("project load state hydration", () => {
     expect(loadedState.nativeCacheStatus.lastBuildReason).toBeNull();
     expect(loadedState.nativeCacheStatus.lastError).toBeNull();
     expect(loadedState.recording).toEqual(createRecordingUiState());
+    expect(loadedState.importTextError).toBeNull();
     expect(loadedState.showFilePanel).toBe(true);
     expect(loadedState.showControls).toBe(true);
     expect(loadedState.showAddTrack).toBe(true);

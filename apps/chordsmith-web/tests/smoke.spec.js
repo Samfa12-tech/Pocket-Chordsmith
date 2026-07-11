@@ -127,6 +127,283 @@ test("loads the main app controls", async ({ page }) => {
   await expect(page.locator("#progressionSlots .slot")).toHaveCount(4);
 });
 
+test("sequencer exposes names and state with one roving keyboard stop", async ({ page }) => {
+  const cells = page.locator("#seqRows .cell[data-step]");
+  await expect(cells.first()).toHaveAttribute("aria-label", "Kick, step 1, on");
+  await expect(cells.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(cells.first()).toHaveRole("button");
+  await expect(page.getByRole("gridcell", { name: "Kick, step 1, on" })).toHaveCount(0);
+  await expect(cells.filter({ has: page.locator('[tabindex="0"]') })).toHaveCount(0);
+  await expect(page.locator('#seqRows .cell[data-step][tabindex="0"]')).toHaveCount(1);
+
+  await cells.first().focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(cells.nth(4)).toBeFocused();
+  await expect(cells.nth(4)).toHaveAttribute("aria-label", "Kick, step 5, off");
+  await page.keyboard.press("Space");
+  await expect(page.locator('#seqRows .cell[aria-label="Kick, step 5, on"]')).toBeFocused();
+  await expect(page.locator('#seqRows .cell[aria-label="Kick, step 5, on"]')).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator('#seqRows .cell[aria-label^="Snare, step 5,"]')).toBeFocused();
+
+  const laneLabelHeight = await page.locator("#seqRows button.track-name").first().evaluate((node) => node.getBoundingClientRect().height);
+  expect(laneLabelHeight).toBeGreaterThanOrEqual(24);
+});
+
+test("advanced beat and bass gestures have keyboard equivalents", async ({ page }) => {
+  const firstKick = page.locator('#seqRows .cell[aria-label^="Kick, step 1,"]');
+  await firstKick.focus();
+  await page.keyboard.press("t");
+  await expect(page.locator('#seqRows .cell[aria-label="Kick, step 1, on, triplet start"]')).toBeFocused();
+
+  await page.evaluate(() => {
+    state.uiMode = "advanced";
+    state.bassMode = "manual";
+    state.bassNotes.fill(null);
+    state.bassAccent.fill(false);
+    state.bassNotes[0] = 0;
+    renderSeq();
+  });
+  const bassStart = page.locator('#seqRows .cell[aria-label^="Bass, step 1,"]');
+  await bassStart.focus();
+  await page.keyboard.press("h");
+  await expect(page.locator('#seqRows .cell[aria-label="Bass, step 2, hold"]')).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("a");
+  await expect(page.locator('#seqRows .cell[aria-label*="Bass, step 1,"][aria-label*="accent"]')).toBeFocused();
+  await page.keyboard.press("Delete");
+  await expect(page.locator('#seqRows .cell[aria-label="Bass, step 1, off"]')).toBeFocused();
+});
+
+test("melody and guitar advanced gestures expose keyboard commands and state", async ({ page }) => {
+  await page.locator("#uiModeSelect").selectOption("advanced");
+  await page.evaluate(() => {
+    state.melodyTracks[0].fill(null);
+    state.melodyTracks[0][0] = 0;
+    state.melodyTracks[0][1] = 1;
+    state.melodyTuplets[0].fill(false);
+    state.guitarPattern.fill("off");
+    renderMelodyRows();
+    renderGuitarPanel();
+  });
+  const melodyStart = page.locator('#melodyRows .cell[aria-label^="Melody track 1, step 1,"]');
+  await melodyStart.focus();
+  await page.keyboard.press("t");
+  await expect(page.locator('#melodyRows .cell[aria-label*="step 1"][aria-label*="triplet start"]')).toBeFocused();
+  await page.keyboard.press("Delete");
+  await expect(page.locator('#melodyRows .cell[aria-label="Melody track 1, step 1, off"]')).toBeFocused();
+
+  const guitarStart = page.locator('#guitarRow .cell[aria-label="Guitar, step 1, off"]');
+  await guitarStart.focus();
+  await page.keyboard.press("3");
+  await expect(page.locator('#guitarRow .cell[aria-label="Guitar, step 1, accent"]')).toBeFocused();
+  await page.keyboard.press("Delete");
+  await expect(page.locator('#guitarRow .cell[aria-label="Guitar, step 1, off"]')).toBeFocused();
+});
+
+test("genre tabs follow the keyboard tab pattern", async ({ page }) => {
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await page.locator("#genreDrawerBtn").click();
+  await expect(page.locator("#genreTabClean")).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("#genreTabLofi")).toBeFocused();
+  await expect(page.locator("#genreTabLofi")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#genrePanelLofi")).toBeVisible();
+  await page.keyboard.press("End");
+  await expect(page.locator("#genreTabWestern")).toBeFocused();
+});
+
+test("X-Y melody pad exposes state and supports complete keyboard operation", async ({ page }) => {
+  await page.locator("#uiModeSelect").selectOption("advanced");
+  await page.locator("#melodyInputModeSelect").selectOption("xy");
+
+  const pad = page.locator("#xyPad");
+  await expect(pad).toBeVisible();
+  await expect(pad).toHaveAttribute("role", "slider");
+  await expect(pad).toHaveAttribute("tabindex", "0");
+  await expect(pad).toHaveAttribute("aria-describedby", "xyPadInstructions");
+  await expect(page.locator("#xyPadInstructions")).toContainText("Left and Right Arrow");
+
+  await pad.focus();
+  await page.keyboard.press("Home");
+  await expect(pad).toHaveAttribute("aria-valuenow", "1");
+  await expect(pad).toHaveAttribute("aria-valuetext", /Sustain/);
+  await expect(pad).toBeFocused();
+
+  await page.keyboard.press("ArrowRight");
+  await expect(pad).toHaveAttribute("aria-valuenow", "2");
+  const beforeY = await pad.getAttribute("aria-valuetext");
+  await page.keyboard.press("ArrowUp");
+  await expect(pad).not.toHaveAttribute("aria-valuetext", beforeY);
+  await expect(page.locator("#statusText")).toContainText("X-Y pad:");
+  await expect(pad).toBeFocused();
+
+  await page.keyboard.press("End");
+  await expect(pad).toHaveAttribute("aria-valuenow", "14");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#statusText")).toContainText("X-Y pad stopped");
+  await expect(pad).toBeFocused();
+});
+
+test("core form controls and live feedback have accessible semantics", async ({ page }) => {
+  await expect(page.getByRole("main", { name: "Pocket Chordsmith composer" })).toBeVisible();
+  await expect(page.getByLabel("Key", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Scale", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Time signature", { exact: true })).toBeVisible();
+  await expect(page.locator("#statusText")).toHaveAttribute("role", "status");
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await expect(page.getByLabel("Theme")).toBeVisible();
+  await expect(page.getByLabel("Project JSON or share code")).toBeVisible();
+  const unnamedFormControls = await page.locator('select, textarea, input:not([type="hidden"])').evaluateAll((controls) =>
+    controls
+      .filter((control) => !control.getAttribute("aria-label") && !control.getAttribute("aria-labelledby") && !(control.labels && control.labels.length))
+      .map((control) => control.id || control.outerHTML.slice(0, 80)),
+  );
+  expect(unnamedFormControls).toEqual([]);
+});
+
+test("critical import errors and exports announce without moving focus", async ({ page }) => {
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await page.locator("#projectBox").fill("not valid project JSON");
+
+  const importButton = page.locator("#importJsonBtn");
+  await importButton.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#statusText")).toContainText(/Unexpected|Invalid|Could not|valid/i);
+  await expect(page.locator("#projectBox")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#projectBox")).toHaveAttribute("aria-describedby", /projectBoxError/);
+  await expect(page.locator("#projectBoxError")).toBeVisible();
+  await expect(importButton).toBeFocused();
+
+  await page.locator("#projectBox").pressSequentially(" ");
+  await expect(page.locator("#projectBox")).toHaveAttribute("aria-invalid", "false");
+  await expect(page.locator("#projectBoxError")).toBeHidden();
+
+  const exportButton = page.locator("#exportJsonBtn");
+  await exportButton.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#statusText")).toContainText("Compact project JSON exported");
+  await expect(page.locator("#projectBox")).toHaveAttribute("aria-invalid", "false");
+  await expect(exportButton).toBeFocused();
+
+  await importButton.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#statusText")).toContainText("Project imported");
+  await expect(page.locator("#projectBox")).toHaveAttribute("aria-invalid", "false");
+  await expect(page.locator("#projectBoxError")).toBeHidden();
+  await expect(importButton).toBeFocused();
+});
+
+test("settings modal makes background inert and restores it for every close path", async ({ page }) => {
+  const background = page.locator(".app");
+  const miniTransport = page.locator(".mini-transport");
+  const settingsButton = page.locator("#settingsBtn");
+
+  await settingsButton.click();
+  await expect.poll(() => background.evaluate((node) => node.inert)).toBe(true);
+  await expect.poll(() => miniTransport.evaluate((node) => node.closest("[inert]") !== null)).toBe(true);
+  await page.locator("#closeSettingsBtn").click();
+  await expect.poll(() => background.evaluate((node) => node.inert)).toBe(false);
+  await expect.poll(() => miniTransport.evaluate((node) => node.closest("[inert]") !== null)).toBe(false);
+  await expect(settingsButton).toBeFocused();
+
+  const miniSettings = page.locator("#miniSettingsBtn");
+  await miniSettings.click();
+  await expect.poll(() => background.evaluate((node) => node.inert)).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect.poll(() => background.evaluate((node) => node.inert)).toBe(false);
+  await expect(miniSettings).toBeFocused();
+
+  await settingsButton.click();
+  await expect.poll(() => background.evaluate((node) => node.inert)).toBe(true);
+  await page.locator("#settingsModal").click({ position: { x: 2, y: 2 } });
+  await expect.poll(() => background.evaluate((node) => node.inert)).toBe(false);
+  await expect.poll(() => miniTransport.evaluate((node) => node.closest("[inert]") !== null)).toBe(false);
+  await expect(settingsButton).toBeFocused();
+});
+
+test("composer reflows at a 320 CSS pixel viewport without page-level horizontal scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.locator("#uiModeSelect").selectOption("advanced");
+
+  const layout = await page.evaluate(() => {
+    const root = document.documentElement;
+    const app = document.querySelector(".app");
+    const sequencers = Array.from(document.querySelectorAll(".sequencer-wrap"));
+    const escapedControls = Array.from(document.querySelectorAll("button, input, select, textarea"))
+      .filter((element) => element.getClientRects().length && !element.closest(".sequencer-wrap"))
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { id: element.id, left: rect.left, right: rect.right };
+      })
+      .filter(({ left, right }) => left < -1 || right > window.innerWidth + 1);
+    return {
+      viewport: window.innerWidth,
+      rootScrollWidth: root.scrollWidth,
+      appRight: app?.getBoundingClientRect().right,
+      escapedControls,
+      internallyScrollableSequencers: sequencers.filter((element) => element.scrollWidth > element.clientWidth + 1).length,
+    };
+  });
+
+  expect(layout.viewport).toBe(320);
+  expect(layout.rootScrollWidth).toBeLessThanOrEqual(321);
+  expect(layout.appRight).toBeLessThanOrEqual(321);
+  expect(layout.escapedControls).toEqual([]);
+  expect(layout.internallyScrollableSequencers).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  const modalBounds = await page.locator("#settingsModal .modal-window").evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return { left: rect.left, right: rect.right, viewport: window.innerWidth };
+  });
+  expect(modalBounds.left).toBeGreaterThanOrEqual(-1);
+  expect(modalBounds.right).toBeLessThanOrEqual(modalBounds.viewport + 1);
+});
+
+test("reduced motion removes meaningful transition and animation timing", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect.poll(() => page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+  const motion = await page.evaluate(() => {
+    const element = document.createElement("button");
+    element.className = "drum-pad";
+    document.body.appendChild(element);
+    const style = getComputedStyle(element);
+    const before = getComputedStyle(element, "::before");
+    const result = {
+      transition: style.transitionDuration,
+      animation: style.animationDuration,
+      beforeTransition: before.transitionDuration,
+    };
+    element.remove();
+    return result;
+  });
+  expect(parseFloat(motion.transition)).toBeLessThanOrEqual(0.00001);
+  expect(parseFloat(motion.animation)).toBeLessThanOrEqual(0.00001);
+  expect(parseFloat(motion.beforeTransition)).toBeLessThanOrEqual(0.00001);
+});
+
+test("forced colors retains a strong visible keyboard focus indicator", async ({ page }) => {
+  await page.emulateMedia({ forcedColors: "active" });
+  await expect.poll(() => page.evaluate(() => matchMedia("(forced-colors: active)").matches)).toBe(true);
+  await page.locator("#playBtn").focus();
+  const focus = await page.locator("#playBtn").evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      focusVisible: element.matches(":focus-visible"),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: parseFloat(style.outlineWidth),
+      outlineOffset: parseFloat(style.outlineOffset),
+    };
+  });
+  expect(focus.focusVisible).toBe(true);
+  expect(focus.outlineStyle).not.toBe("none");
+  expect(focus.outlineWidth).toBeGreaterThanOrEqual(3);
+  expect(focus.outlineOffset).toBeGreaterThanOrEqual(2);
+});
+
 test("demo button loads the bundled starter song", async ({ page }) => {
   await page.getByRole("button", { name: "Demo" }).click();
   await expect(page.locator("#statusText")).toContainText(

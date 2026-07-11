@@ -1,6 +1,6 @@
 # Pocket Audio Family Release Dashboard
 
-Last refreshed: 2026-07-09 from local repo metadata, component package files, and generated release-status docs.
+Last refreshed: 2026-07-11 from local repo metadata, component package files, generated release-status docs, and the Pocket Audio family accessibility audit.
 
 This dashboard is a manually maintained cross-app index. It does not replace component release manifests, itch/GitHub evidence, or installed-app smoke records. Use it to find the current baseline, the validation gate to run before edits, and the release-truth anchor for each surface.
 
@@ -23,9 +23,18 @@ The active audit workplan is:
 docs/audits/2026-06-27-deep-audit-workplan.md
 ```
 
+The current accessibility/product evidence report is:
+
+```text
+docs/audits/2026-07-11-pocket-audio-family-accessibility-product-audit.md
+```
+
 Current audit-loop state:
 
 - The named deep-audit rows in `docs/audits/2026-06-27-deep-audit-workplan.md` use completion types instead of a single "done" claim. Treat design anchors, manual checklists, local smoke, automated tests, and shipped implementation as different kinds of evidence.
+- Wave 5 accessibility foundations are implemented across Pocket Chordsmith, Pocket DJ, Pocket Audio Handoff, Pocket DAW, and the Godot editor. The remaining acceptance limits are spoken screen-reader output plus global Windows High Contrast/200% DPI; keep those distinct from the completed source, browser, physical-phone, Godot-editor, and installed-WebView work.
+- The 2026-07-11 audit's 86 unnamed Chordsmith cells, missing DJ/Handoff labels and DJ heading, modal focus gaps, DAW Tab model, fixed-width shell, and Godot `FOCUS_NONE` toolbar are the historical baseline. The remediation appendix and Wave 5 ledger record the current state; do not quote the baseline as a current defect list.
+- Current accessibility regression evidence includes Chordsmith 74/74, combined DJ/Handoff 18/18, DAW 1016/1016 unit plus 14/14 browser and exact installed-candidate WebView checks, Handoff relay 4/4, physical Android checks, and a Godot toolbar contract/manual editor smoke. These clear implementation gates, not unperformed spoken-output or global OS-mode checks.
 - `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md` now records source `0.6.40`, latest public `0.6.40`, and exact installed strict smoke `0.6.40` passing on 2026-07-09 with audible microphone plus connected loopMIDI evidence. GitHub latest manifests and itch channel `windows-installer` were verified for the published checkpoint.
 - `TASK-18` now has installed Windows `0.6.34` evidence for `.pocketdaw` association, cold-start launch, second-instance launch, live project open, and `pocket-daw://` Chordsmith handoff coexistence.
 - DAW -> Godot game-asset export/import has manual smoke evidence from Sam on 2026-06-28; record future repeats with artifact name, Godot version, addon version, import path, and validator result.

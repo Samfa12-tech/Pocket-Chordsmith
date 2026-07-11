@@ -1,6 +1,9 @@
 # Pocket Audio Deep Audit Workplan
 
-Source audit: `C:\Users\sam_s\Downloads\Pocket_Chordsmith_Deep_Audit_Codex_Report_2026-06-27.md`
+Source audits:
+
+- `C:\Users\sam_s\Downloads\Pocket_Chordsmith_Deep_Audit_Codex_Report_2026-06-27.md`
+- `docs/audits/2026-07-11-pocket-audio-family-accessibility-product-audit.md`
 
 This file turns the 2026-06-27 deep audit into a repeatable work loop. Work in small PR-sized chunks, verify the affected component, and update this file as findings are completed.
 
@@ -25,6 +28,7 @@ This file turns the 2026-06-27 deep audit into a repeatable work loop. Work in s
 - Preserve compatibility contracts: `PCS1:`, raw JSON, schema 16 Chordsmith projects, `.pocketdaw` schema 2, save/open, autosave, MIDI, WAV, stems, handoffs, Godot import, tuplets, holds, slides, bass, drums, guitar, and melody.
 - Do not treat Pocket Audio Core as full sound parity until tests and docs prove it.
 - Do not publish or document Pocket DAW as a browser/HTML5 itch app.
+- Treat the 2026-07-11 accessibility audit as the active remediation and conformance ledger, not a conformance claim. Wave 5 implementation evidence is complete; preserve the explicitly listed spoken-output and global OS-mode limits until those optional manual checks are recorded.
 
 ## Wave 1 - Truth, Safety, Validation
 
@@ -46,6 +50,7 @@ This file turns the 2026-06-27 deep audit into a repeatable work loop. Work in s
 - Wave 2: DAW architecture seams, cache invalidation fixtures, Core WAV plumbing/equality, PCS Format scope, Godot pack roundtrip, recording docs cleanup.
 - Wave 3: DJ `PDJ1`, DJ macro tests, hosted handoff UX, Godot sample kit package report, Core adaptive examples, DAW media/MIDI/drum workflow designs.
 - Wave 4: larger DAW recording, ASIO, punch/comping, multi-format export, full Chordsmith live engine extraction, Godot visual editor exploration.
+- Wave 5: accessibility foundations across Chordsmith, DJ, Handoff, DAW, and the Godot editor. Complete shared names/state, keyboard and focus foundations before adding broader UI surface area.
 
 ## Wave 2 - Architecture Seams And Parity Hardening
 
@@ -87,3 +92,18 @@ This file turns the 2026-06-27 deep audit into a repeatable work loop. Work in s
 | TASK-34 | Multi-format export design. | `design-anchor-only` | `apps/pocket-daw/docs/MULTI_FORMAT_EXPORT_PLAN.md` records the current WAV/MIDI/game-pack baseline, profile shape, codec matrix, renderer-to-encoder boundary, normalization/dither policy, Core/DAW ownership split and verification targets. |
 | TASK-35 | Full Chordsmith live engine extraction. | `design-anchor-only` | `docs/POCKET_AUDIO_CORE_LIVE_ENGINE_EXTRACTION_GATE.md` records the current v68/Core scaffold baseline, entry gates, shadow/opt-in/default-switch phases, rollback requirements, ownership boundaries and verification targets. |
 | TASK-36 | Godot visual editor exploration. | `design-anchor-only` | `addons/pocket_chordsmith/docs/VISUAL_EDITOR_EXPLORATION.md` records the current editor/addon baseline, compiled-chart inspector direction, safe runtime metadata edits, musical edit boundaries, UI direction and validation targets. |
+
+## Wave 5 - Accessibility Foundations
+
+Detailed evidence, screenshots, severity, and acceptance guidance live in `docs/audits/2026-07-11-pocket-audio-family-accessibility-product-audit.md`.
+
+| ID | Finding | Completion Type | Verification |
+| --- | --- | --- | --- |
+| TASK-37 | Chordsmith sequencer cells expose lane, step, musical state, edit state, and pressed/current state without relying on visible glyphs. | `implementation-tested`, `automated-tests-added`, `physical-android-smoked`, `spoken-output-pending` | Names/state/native button semantics pass in the 74-test desktop/mobile suite. On Samsung Android 16 a step exposed Chrome AX `button`, Android `ToggleButton` clickable/focusable state, and physical tap changed its accessible pressed state. Spoken TalkBack output remains. |
+| TASK-38 | Chordsmith core editing reaches keyboard parity, including holds, slides, tuplets, accents, clears, drum pads, X-Y input alternatives, and genre tabs. | `implementation-tested`, `automated-tests-added`, `assistive-technology-verification-pending` | The 74-test desktop/mobile suite covers roving-grid editing, advanced gestures, drum pads, ARIA tabs, and the semantic X-Y slider's arrows, Shift fine adjustment, Home/End, replay, stop, value text, and focus. Manual screen-reader output remains. |
+| TASK-39 | Chordsmith, DJ, and Handoff form controls have persistent programmatic labels; DJ mixer controls expose track-specific names and pressed state. | `implementation-tested`, `automated-tests-added`, `manual-verification-pending` | Labels, mixer state, stable field help/errors, `aria-invalid`, focus preservation, edit/success clearing, and live announcements pass in Chordsmith 74/74 and DJ/Handoff 18/18. All three managed public mirrors are synced idempotently; spoken output remains. |
+| TASK-40 | DJ and DAW dialogs implement complete focus entry, containment, Escape close where safe, background inertness, and return-to-trigger. | `implementation-tested`, `automated-tests-added`, `installed-candidate-smoked` | Chordsmith settings and DJ help lifecycle tests cover background inertness, containment, all close paths, cleanup, and restoration. The exact installed DAW candidate additionally passes successful-import rerender focus entry and equivalent-trigger restoration. |
+| TASK-41 | Dynamic import, save, handoff, relay, playback, render, export, and error feedback is announced without stealing focus. | `implementation-tested`, `automated-tests-added`, `assistive-technology-verification-pending` | Critical live regions plus associated field errors are implemented. Chordsmith and DJ/Handoff tests prove invalid/edit/success lifecycle and no focus theft; installed DAW proves invalid/edit/actual-success clearing and focus restoration. Spoken output remains the acceptance limit. |
+| TASK-42 | Pocket DAW sequencer/timeline controls use meaningful stateful names, roving navigation, keyboard seek/repeat operations, exposed toggle state, and resilient target sizes. | `implementation-tested`, `automated-tests-added`, `installed-candidate-smoked` | Full DAW tests pass 1016 unit and 14 browser cases. The exact installed candidate passes stateful steps, one roving stop, ruler keys, and semantic repeat sliders with Arrow/Shift/Home/End, focus restoration, and undo through the existing composition-event timing path. |
+| TASK-43 | Pocket DAW reflows at supported narrow sizes and zoom; DJ/DAW motion respects reduced-motion preferences; placeholder and secondary text meet contrast targets. | `implementation-tested`, `automated-tests-added`, `installed-candidate-smoked`, `manual-os-mode-pending` | Browser checks cover Chordsmith/DJ at 320 CSS px, DAW at 800x600, modal bounds, reduced motion, and forced colors. The installed WebView passes emulated 800x600/reduced-motion/forced-colors checks; its 3px ring computes to 2.4px at Windows DPR 1.25. Global Windows High Contrast and 200% OS DPI remain manual OS-mode checks. |
+| TASK-44 | Godot addon toolbar actions are keyboard-focusable and the editor workflow is grouped and testable without a pointer. | `implementation-tested`, `automated-contract-added`, `headless-parse-passed`, `manual-godot-smoked`, `screen-reader-verification-pending` | A disposable Godot 4.6.3 editor smoke proved Tab/Shift+Tab visible focus and Enter/Space activation. `validate_editor_accessibility.gd` now fails unless all 14 toolbar actions remain named, explained, tagged, and `FOCUS_ALL`; Godot host spoken output remains separate. |

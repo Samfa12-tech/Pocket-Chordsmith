@@ -52,6 +52,9 @@
   .danger{border-color:rgba(255,107,139,.75);background:rgba(80,28,47,.7)}
   .muted-btn{opacity:.68}.small{font-size:.78rem;color:var(--muted)}.micro{font-size:.68rem;color:var(--muted)}
   textarea{width:100%;min-height:190px;resize:vertical;background:#080b15;border:1px solid rgba(125,137,210,.38);border-radius:16px;padding:12px;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#eaf2ff}
+  [aria-invalid="true"]{border-color:#ff668f;box-shadow:0 0 0 2px rgba(255,102,143,.2)}
+  .field-help{margin:0;color:var(--muted);font-size:.78rem;line-height:1.45}
+  .field-error{min-height:1.15em;margin:0;color:#ff9ab4;font-size:.78rem;line-height:1.45}
   .import-hero{display:grid;gap:12px}.import-copy{font-size:1rem;line-height:1.45;color:#cfd7ff}.import-copy strong{color:#fff}
   .meta-grid{width:100%;max-width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;min-width:0}.meta-card{background:rgba(23,26,47,.75);border:1px solid rgba(125,137,210,.24);border-radius:15px;padding:10px;min-height:66px;min-width:0}.meta-card .k{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.meta-card .v{font-weight:900;margin-top:4px;font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .now-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:10px;min-width:0}.now-card{background:linear-gradient(135deg,rgba(72,245,255,.12),rgba(155,108,255,.08));border:1px solid rgba(72,245,255,.28);border-radius:18px;padding:13px;min-width:0}.now-card .big{font-size:2.2rem;font-weight:950;line-height:1;text-shadow:0 0 24px rgba(72,245,255,.45)}.queued .big{color:var(--magenta);text-shadow:0 0 20px rgba(255,79,216,.45)}
@@ -78,24 +81,29 @@
   @media (min-width:720px){.help-overlay{align-items:center}.help-grid{grid-template-columns:1fr 1fr}}
 
   .toast{position:fixed;left:50%;top:calc(12px + var(--safe-t));transform:translateX(-50%);z-index:80;max-width:calc(100vw - 24px);background:rgba(7,7,17,.95);border:1px solid rgba(72,245,255,.4);border-radius:999px;padding:10px 14px;color:#fff;box-shadow:0 10px 38px rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:.18s ease}.toast.show{opacity:1;transform:translateX(-50%) translateY(4px)}
+  :focus-visible{outline:3px solid var(--cyan);outline-offset:3px}
+  @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
   @media (min-width:820px){.deck-layout{grid-template-columns:1fr 1fr}.fx-grid{grid-template-columns:1fr 1fr}.fx-row{grid-template-columns:112px minmax(100px,1fr) 42px}.pad-grid{grid-template-columns:repeat(4,1fr)}.pad{min-height:120px}.meta-grid{grid-template-columns:repeat(6,1fr)}}
   @media (max-width:540px){body{padding-left:10px;padding-right:10px}.meta-grid{grid-template-columns:repeat(2,1fr)}.now-grid{grid-template-columns:1fr 1fr}.now-card .big{font-size:1.8rem}.status{max-width:46%;font-size:.72rem}.stem{grid-template-columns:72px 48px minmax(92px,1fr) 28px}.bottom-transport{grid-template-columns:auto auto auto;grid-template-areas:"play stop restart" "master master master"}.bottom-transport .play{grid-area:play}.bottom-transport .stop{grid-area:stop}.bottom-transport .restart{grid-area:restart}.master-wrap{grid-area:master}.pad{min-height:88px}.pad .letter{font-size:1.8rem}}
 </style>
 </head>
 <body>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" aria-hidden="true"></div>
 <div class="app">
-  <section class="panel" id="importScreen">
+  <main class="panel" id="importScreen">
     <div class="titlebar">
       <div>
-        <div class="logo">Pocket DJ</div>
+        <h1 class="logo">Pocket DJ</h1>
         <div class="tagline">Turn Pocket Chordsmith songs into live remix decks.</div>
       </div>
-      <div class="row" style="justify-content:flex-end;max-width:46%"><button class="btn help-btn" id="importHelpBtn" type="button" aria-label="Open help">?</button><div class="status" id="importStatus">Ready</div></div>
+      <div class="row" style="justify-content:flex-end;max-width:46%"><button class="btn help-btn" id="importHelpBtn" type="button" aria-label="Open help">?</button><div class="status" id="importStatus" role="status" aria-live="polite">Ready</div></div>
     </div>
     <div class="section import-hero">
       <div class="import-copy"><strong>Paste a Pocket Chordsmith song export</strong> to turn it into a live remix deck. Pocket Chordsmith is the studio. Pocket DJ is the stage.</div>
-      <textarea id="importText" spellcheck="false" placeholder="Paste your Pocket Chordsmith share code or exported project here..."></textarea>
+      <label for="importText"><strong>Pocket Chordsmith song export</strong></label>
+      <textarea id="importText" spellcheck="false" placeholder="Paste your Pocket Chordsmith share code or exported project here..." aria-describedby="importHelp importError"></textarea>
+      <p class="field-help" id="importHelp">Paste a PCS1 share code or a Pocket Chordsmith JSON project.</p>
+      <p class="field-error" id="importError"></p>
       <div class="toolbar">
         <div class="row">
           <button class="btn primary" id="importBtn">Import</button>
@@ -109,16 +117,16 @@
       </div>
       <div class="small">Tip: export or share your song from Pocket Chordsmith, paste it here, then press Import.</div>
     </div>
-  </section>
+  </main>
 
   <main id="deckScreen" class="hidden">
     <section class="panel">
       <div class="titlebar">
         <div>
-          <div class="logo">Pocket DJ</div>
+          <h1 class="logo">Pocket DJ</h1>
           <div class="tagline" id="deckName">Imported Chordsmith Project</div>
         </div>
-        <div class="row" style="justify-content:flex-end;max-width:46%"><button class="btn help-btn" id="deckHelpBtn" type="button" aria-label="Open help">?</button><div class="status" id="statusText">Deck loaded</div></div>
+        <div class="row" style="justify-content:flex-end;max-width:46%"><button class="btn help-btn" id="deckHelpBtn" type="button" aria-label="Open help">?</button><div class="status" id="statusText" role="status" aria-live="polite">Deck loaded</div></div>
       </div>
       <div class="section">
         <div class="meta-grid" id="metaGrid"></div>
@@ -249,7 +257,7 @@
       <div class="help-grid">
         <div class="help-item"><strong>Import</strong><span>Paste a Pocket Chordsmith song export, then press <span class="help-kbd">Import</span>. Use <span class="help-kbd">Load Demo</span> to test the deck immediately.</span></div>
         <div class="help-item"><strong>Play sections</strong><span>Tap a section pad to queue it. The current pad glows cyan. The queued pad pulses pink.</span></div>
-        <div class="help-item"><strong>Set the Drop section</strong><span>Long-press a section pad. It will show a <span class="help-kbd">DROP</span> badge and the button changes to <span class="help-kbd">Drop → section</span>.</span></div>
+        <div class="help-item"><strong>Set the Drop section</strong><span>Long-press a section pad, or focus it and press <span class="help-kbd">D</span>. It will show a <span class="help-kbd">DROP</span> badge and the button changes to <span class="help-kbd">Drop → section</span>.</span></div>
         <div class="help-item"><strong>Build and Drop</strong><span><span class="help-kbd">Build</span> strips the mix back and adds tension. <span class="help-kbd">Drop</span> restores the mix and lands on the drop section.</span></div>
         <div class="help-item"><strong>Launch mode</strong><span><span class="help-kbd">Next Bar</span> is DJ-style. <span class="help-kbd">End of Section</span> finishes the whole section first. <span class="help-kbd">Instant</span> jumps now.</span></div>
         <div class="help-item"><strong>Sequence</strong><span><span class="help-kbd">Play Sequence</span> follows the song order. <span class="help-kbd">Repeat</span> loops that order.</span></div>
@@ -2224,7 +2232,14 @@ function resetFx(show=true){
 /* 10. UI renderer */
 const el = {};
 function bindElements(){
-  ["toast","helpOverlay","helpCloseBtn","importHelpBtn","deckHelpBtn","importScreen","deckScreen","transportBar","importText","importBtn","demoBtn","lofiDemoBtn","chipDemoBtn","metalDemoBtn","loadLastBtn","importStatus","statusText","deckName","metaGrid","currentSectionText","queuedSectionText","barBeatText","loopText","progressFill","beatDots","sectionPads","launchModeSelect","sequencePlayBtn","sequenceRepeatBtn","sequenceStrip","mixer","fxGrid","buildStateText","buildBtn","dropBtn","gentleBuildBtn","rainyDropBtn","filteredStudyBtn","tapeResetBtn","resetFxBtn","loopBtn","editSourceBtn","handoffBox","handoffText","handoffHelp","saveBtn","loadLastDeckBtn","clearSessionBtn","playBtn","stopBtn","restartBtn","masterVolume"].forEach(id => el[id] = document.getElementById(id));
+  ["toast","helpOverlay","helpCloseBtn","importHelpBtn","deckHelpBtn","importScreen","deckScreen","transportBar","importText","importError","importBtn","demoBtn","lofiDemoBtn","chipDemoBtn","metalDemoBtn","loadLastBtn","importStatus","statusText","deckName","metaGrid","currentSectionText","queuedSectionText","barBeatText","loopText","progressFill","beatDots","sectionPads","launchModeSelect","sequencePlayBtn","sequenceRepeatBtn","sequenceStrip","mixer","fxGrid","buildStateText","buildBtn","dropBtn","gentleBuildBtn","rainyDropBtn","filteredStudyBtn","tapeResetBtn","resetFxBtn","loopBtn","editSourceBtn","handoffBox","handoffText","handoffHelp","saveBtn","loadLastDeckBtn","clearSessionBtn","playBtn","stopBtn","restartBtn","masterVolume"].forEach(id => el[id] = document.getElementById(id));
+}
+function setImportError(message=""){
+  if(!el.importText || !el.importError) return;
+  const text = String(message || "").trim();
+  if(text) el.importText.setAttribute("aria-invalid", "true");
+  else el.importText.removeAttribute("aria-invalid");
+  el.importError.textContent = text;
 }
 function showStatus(msg){
   if(el.statusText) el.statusText.textContent = msg;
@@ -2481,10 +2496,12 @@ function renderMixer(){
     const row = document.createElement("div");
     row.className = `stem ${inactive ? "inactive" : ""}`;
     row.dataset.stemRow = stem;
-    row.innerHTML = `<div class="stem-name">${stem.toUpperCase()}</div>
-      <button class="btn mute ${session.performance.stemMutes[stem] ? "on" : ""}" data-mute="${stem}" ${inactive?"disabled":""}>M</button>
-      <input type="range" min="0" max="1" step="0.01" value="${session.performance.stemVolumes[stem]}" data-stem-volume="${stem}" ${inactive?"disabled":""}>
-      <div class="meter"><div class="meter-fill"></div></div>`;
+    const stemName = stem.charAt(0).toUpperCase() + stem.slice(1);
+    const muted = !!session.performance.stemMutes[stem];
+    row.innerHTML = `<div class="stem-name" id="stem-name-${stem}">${stem.toUpperCase()}</div>
+      <button class="btn mute ${muted ? "on" : ""}" data-mute="${stem}" aria-label="Mute ${stemName}" aria-pressed="${muted}" ${inactive?"disabled":""}>Mute</button>
+      <input type="range" min="0" max="1" step="0.01" value="${session.performance.stemVolumes[stem]}" data-stem-volume="${stem}" aria-label="${stemName} volume" ${inactive?"disabled":""}>
+      <div class="meter" aria-hidden="true"><div class="meter-fill"></div></div>`;
     el.mixer.appendChild(row);
   });
 }
@@ -2528,23 +2545,43 @@ function updateButtons(){
 }
 function escapeHtml(str){ return String(str).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
 
-function openHelp(){
+let helpReturnFocus = null;
+function helpFocusable(){
+  return Array.from(el.helpOverlay?.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])') || []).filter(node => !node.disabled && node.offsetParent !== null);
+}
+function openHelp(event){
   if(!el.helpOverlay) return;
+  helpReturnFocus = event?.currentTarget || document.activeElement;
   el.helpOverlay.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  requestAnimationFrame(() => el.helpCloseBtn?.focus());
 }
 function closeHelp(){
-  if(!el.helpOverlay) return;
+  if(!el.helpOverlay || el.helpOverlay.classList.contains("hidden")) return;
   el.helpOverlay.classList.add("hidden");
+  document.body.style.overflow = "";
+  if(helpReturnFocus?.isConnected) helpReturnFocus.focus();
+  helpReturnFocus = null;
 }
 
 /* 11. Event handlers */
 function bindHandlers(){
   el.importBtn.addEventListener("click", handleImport);
+  el.importText.addEventListener("input", () => setImportError());
   el.importHelpBtn?.addEventListener("click", openHelp);
   el.deckHelpBtn?.addEventListener("click", openHelp);
   el.helpCloseBtn?.addEventListener("click", closeHelp);
   el.helpOverlay?.addEventListener("click", e => { if(e.target === el.helpOverlay) closeHelp(); });
-  document.addEventListener("keydown", e => { if(e.key === "Escape") closeHelp(); });
+  document.addEventListener("keydown", e => {
+    if(e.key === "Escape") closeHelp();
+    if(e.key === "Tab" && el.helpOverlay && !el.helpOverlay.classList.contains("hidden")){
+      const items = helpFocusable();
+      if(!items.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+      else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+    }
+  });
   el.demoBtn.addEventListener("click", loadDemo);
   el.lofiDemoBtn?.addEventListener("click", loadLofiDemo);
   el.chipDemoBtn?.addEventListener("click", loadChipDemo);
@@ -2552,7 +2589,9 @@ function bindHandlers(){
   el.loadLastBtn.addEventListener("click", loadLocalSession);
   el.loadLastDeckBtn.addEventListener("click", loadLocalSession);
   el.saveBtn.addEventListener("click", () => { saveLocalSession(); showStatus("Session saved"); });
-  el.clearSessionBtn.addEventListener("click", () => { clearLocalSession(); });
+  el.clearSessionBtn.addEventListener("click", () => {
+    if(window.confirm("Clear this saved Pocket DJ session? This cannot be undone.")) clearLocalSession();
+  });
   el.editSourceBtn.addEventListener("click", editSourceSongInChordsmith);
   el.playBtn.addEventListener("click", () => state.playing ? stopPlayback() : startPlayback());
   el.stopBtn.addEventListener("click", stopPlayback);
@@ -2595,8 +2634,13 @@ async function handleImport(){
     resetPerformanceStemScales(1);
     clearPerformanceFx();
     primePocketAudioCore(session.source.project, parsed.kind === "pdj" ? "PDJ source project" : "PCS import");
+    setImportError();
     saveLocalSession(); renderAll(); showStatus(parsed.kind === "pdj" ? "Pocket DJ session loaded" : "Pocket Chordsmith project imported");
-  }catch(e){ showStatus(e.message || "Import failed"); }
+  }catch(e){
+    const message = e.message || "Import failed";
+    setImportError(message);
+    showStatus(message);
+  }
 }
 async function consumeIncomingPocketDjHandoff(){
   const payload = readUrlHandoff() || readWindowNameHandoff() || readStoredHandoff(HANDOFF_TO_DJ_KEY);

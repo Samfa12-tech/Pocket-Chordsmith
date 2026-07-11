@@ -458,6 +458,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("data-marker-rename");
     expect(html).toContain("data-track-input");
     expect(html).toContain("data-section-chord");
+    expect(html).toContain('aria-label="Section A, bar 1 chord"');
     expect(html).toContain("Studio Rail Navigation");
     expect(html).toContain("Library, Project, Clips, Media, Mixer");
     expect(html).toContain("data-action&#61;studio-focus-godot");
@@ -994,6 +995,7 @@ describe("Pocket DAW UI rendering", () => {
     expect(inspector).toContain('<option value="dusty_rhodes"');
     expect(inspector).toContain('<option value="chip_square_stack"');
     expect(inspector).toContain('data-section-chord="A:0"');
+    expect(inspector).toContain('aria-label="Section A, bar 1 chord"');
     expect(inspector).not.toContain('data-melody-instrument=');
   });
 
@@ -1138,6 +1140,12 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('class="controls-panel file-panel"');
     expect(html).toContain('id="file-window-title"');
     expect(html).toContain('id="importText"');
+    expect(html).toContain('for="importText">Chordsmith or Pocket DAW import text');
+    expect(html).toContain('aria-invalid="false" aria-describedby="importTextHelp"');
+    state.importTextError = "Import text is invalid.";
+    const invalidHtml = renderAppShell(state);
+    expect(invalidHtml).toContain('aria-invalid="true" aria-describedby="importTextHelp importTextError"');
+    expect(invalidHtml).toContain('id="importTextError" class="field-error" role="alert"');
     [
       "load-demo",
       "reset-demo-template",
@@ -1541,6 +1549,12 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain("Hide Inspector");
     expect(html).toContain('data-clip-drag-handle="clip_001"');
     expect(html).toContain('data-clip-loop-handle="clip_001"');
+    expect(html).toContain('role="slider" tabindex="0"');
+    expect(html).toContain('aria-label="Repeat ');
+    expect(html).toContain('aria-describedby="clip-repeat-instructions"');
+    expect(html).toContain('aria-valuetext="Ends at bar ');
+    expect(html).toContain('; no repeats"');
+    expect(html).toContain('id="clip-repeat-instructions"');
   });
 
   it("fills short timeline workspaces with the visible track rows", () => {

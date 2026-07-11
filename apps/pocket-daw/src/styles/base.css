@@ -38,7 +38,7 @@ body,
 
 body {
   margin: 0;
-  min-width: 1080px;
+  min-width: 0;
   min-height: 100vh;
   background:
     radial-gradient(circle at 12% 0%, rgba(64, 216, 255, 0.14), transparent 30%),
@@ -1765,7 +1765,7 @@ button.record:hover {
   place-items: center;
   width: 100%;
   min-width: 0;
-  min-height: 20px;
+  min-height: 24px;
   padding: 0;
   border-color: #2a3552;
   border-radius: 4px;
@@ -2799,5 +2799,73 @@ button.record:hover {
   .media-pool header,
   .render-cache-summary {
     grid-column: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  :root {
+    --studio-rail-width: 52px;
+  }
+
+  .quick-start,
+  .media-pool,
+  .file-window-body,
+  .file-command-grid,
+  .function-guide-intro,
+  .function-guide-grid,
+  .function-action-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .quick-start {
+    align-items: stretch;
+  }
+
+  .transport-buttons,
+  .transport-readout {
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.field-error {
+  margin: 0;
+  color: #ffb4b4;
+  font-weight: 700;
+}
+
+@media (forced-colors: active) {
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  a[href]:focus-visible,
+  [tabindex]:focus-visible {
+    /* WebView2 reports forced-color outline widths in device-adjusted CSS px;
+       3px preserves a >=2px visible ring at common 125% Windows scaling. */
+    outline: 3px solid CanvasText;
+    outline-offset: 2px;
   }
 }

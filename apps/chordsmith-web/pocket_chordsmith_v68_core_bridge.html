@@ -145,7 +145,7 @@
   .seq-header,.seq-row{grid-template-columns:64px repeat(var(--steps), minmax(34px, 1fr))}
   .melody-row{grid-template-columns:64px repeat(var(--steps), minmax(34px, 1fr))}
   .track-name{font-size:.8rem; color:var(--muted); padding-left:4px}
-  button.track-name{background:transparent; border:0; min-height:auto; padding:4px; text-align:left; border-radius:8px; color:var(--muted); cursor:pointer}
+  button.track-name{background:transparent; border:0; min-height:24px; padding:4px; text-align:left; border-radius:8px; color:var(--muted); cursor:pointer}
   button.track-name.active{color:var(--accent2); font-weight:700; background:rgba(143,240,198,.08)}
   .cell{min-height:38px; border-radius:10px; border:1px solid #323a4d; background:#202738; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:.78rem}
   .melody-row .cell{touch-action:none}
@@ -199,6 +199,8 @@
   .handoff-transfer[hidden]{display:none !important}
   .handoff-transfer .row{align-items:flex-start}
   .handoff-transfer-status{min-height:1.3em}
+  .field-error{color:#ffb3c2; margin-top:6px}
+  .field-error[hidden]{display:none}
 
   .has-tip{position:relative}
   .hover-tooltip{
@@ -217,6 +219,26 @@
     background:rgba(23,26,33,.99); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow);
   }
   .modal-window:focus{outline:2px solid rgba(122,162,255,.42); outline-offset:2px}
+  :where(button, input, select, textarea, [tabindex]):focus-visible{
+    outline:3px solid var(--accent2);
+    outline-offset:3px;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{
+      scroll-behavior:auto !important;
+      animation-duration:.01ms !important;
+      animation-iteration-count:1 !important;
+      transition-duration:.01ms !important;
+    }
+  }
+  @media (forced-colors: active){
+    :where(button, input, select, textarea, [tabindex]):focus-visible{
+      outline:3px solid Highlight;
+    }
+    .cell.on, .slot.active, .chip.active, .genre-tab.active{
+      border:2px solid Highlight;
+    }
+  }
   body.modal-open{overflow:hidden}
   input[type="range"]{width:106px}
   @media (max-width: 760px){
@@ -241,14 +263,14 @@
 </style>
 </head>
 <body>
-<div class="app">
+<div class="app" role="main" aria-label="Pocket Chordsmith composer">
   <div class="panel">
     <div class="titlebar">
       <div>
         <h1>Pocket Chordsmith v68</h1>
         <div class="sub">Pocket Audio Core bridge build</div>
       </div>
-      <div class="sub" id="statusText">Tap Play to begin audio</div>
+      <div class="sub" id="statusText" role="status" aria-live="polite" aria-atomic="true">Tap Play to begin audio</div>
     </div>
     <div class="section toolbar">
       <div class="group">
@@ -267,11 +289,11 @@
     </div>
     <div class="section">
       <div class="stats">
-        <div class="stat"><div class="k">Key</div><select class="select" id="keySelect"></select></div>
-        <div class="stat"><div class="k">Scale</div><select class="select" id="scaleSelect"><option value="major">Major</option><option value="minor">Minor</option></select></div>
-        <div class="stat"><div class="k">Time</div><select class="select" id="timeSigSelect"><option value="4">4/4</option><option value="3">3/4</option></select></div>
-        <div class="stat adv-only"><div class="k">Chord type</div><select class="select" id="chordTypeSelect"><option value="triad">Triad</option><option value="seventh">7th</option><option value="sus2">Sus2</option><option value="sus4">Sus4</option></select></div>
-        <div class="stat adv-only"><div class="k">Chord sound</div><select class="select" id="chordInstrumentSelect"><option value="pocket">Pocket Chordsmith</option><option value="piano">Piano</option><option value="saloon_piano">Saloon Piano</option><option value="harp">Harp</option><option value="warm_pad">Warm Pad</option><option value="glass">Glass</option><option value="dusty_rhodes">Dusty Rhodes</option><option value="felt_piano">Felt Piano</option><option value="cassette_keys">Cassette Keys</option><option value="muted_jazz_guitar">Muted Jazz Guitar</option><option value="lofi_warm_pad">Lofi Warm Pad</option><option value="metal_power_stack">Metal Power Stack</option><option value="dark_organ_stack">Dark Organ Stack</option></select></div>
+        <label class="stat"><span class="k">Key</span><select class="select" id="keySelect" aria-label="Key"></select></label>
+        <label class="stat"><span class="k">Scale</span><select class="select" id="scaleSelect" aria-label="Scale"><option value="major">Major</option><option value="minor">Minor</option></select></label>
+        <label class="stat"><span class="k">Time signature</span><select class="select" id="timeSigSelect" aria-label="Time signature"><option value="4">4/4</option><option value="3">3/4</option></select></label>
+        <label class="stat adv-only"><span class="k">Chord type</span><select class="select" id="chordTypeSelect"><option value="triad">Triad</option><option value="seventh">7th</option><option value="sus2">Sus2</option><option value="sus4">Sus4</option></select></label>
+        <label class="stat adv-only"><span class="k">Chord sound</span><select class="select" id="chordInstrumentSelect"><option value="pocket">Pocket Chordsmith</option><option value="piano">Piano</option><option value="saloon_piano">Saloon Piano</option><option value="harp">Harp</option><option value="warm_pad">Warm Pad</option><option value="glass">Glass</option><option value="dusty_rhodes">Dusty Rhodes</option><option value="felt_piano">Felt Piano</option><option value="cassette_keys">Cassette Keys</option><option value="muted_jazz_guitar">Muted Jazz Guitar</option><option value="lofi_warm_pad">Lofi Warm Pad</option><option value="metal_power_stack">Metal Power Stack</option><option value="dark_organ_stack">Dark Organ Stack</option></select></label>
         <div class="stat adv-only"><div class="k">Chord octave</div><select class="select" id="chordOctaveSelect"><option value="-1">Low</option><option value="0" selected>Mid</option><option value="1">High</option></select></div>
         <div class="stat adv-only"><div class="k">Chord style</div><select class="select" id="chordPlayModeSelect"><option value="block">Block</option><option value="strum_up">Strum Up</option><option value="strum_down">Strum Down</option><option value="arp_up">Arp Up</option><option value="arp_down">Arp Down</option></select></div>
         <div class="stat adv-only"><div class="k">Chord rhythm</div><select class="select" id="chordRhythmModeSelect"><option value="sustain">Sustain</option><option value="quarter">Quarter Notes</option><option value="half">Half Notes</option></select></div>
@@ -321,7 +343,7 @@
       <div class="subsection">
         <div class="section-title">
           <div class="label" style="margin:0">Drum kit pads</div>
-          <span class="tiny" id="drumPadStatus">Touch performance</span>
+          <span class="tiny" id="drumPadStatus" role="status" aria-live="polite">Touch performance</span>
         </div>
         <div class="drum-kit-grid" id="drumPadGrid"></div>
         <div class="row">
@@ -353,9 +375,9 @@
           <select class="tiny-select preset-select" id="drumPresetSelect"></select>
         </label>
       </div>
-      <div class="sequencer-wrap">
+      <div class="sequencer-wrap" aria-label="Beat sequencer. Use arrow keys to move between cells and Space or Enter to change a cell.">
         <div class="seq-header" id="seqHeader" style="--steps:16"></div>
-        <div class="stack" id="seqRows"></div>
+        <div class="stack" id="seqRows" role="grid" aria-label="Beat sequencer cells" aria-describedby="beatKeyboardHelp"></div>
       </div>
       <div class="section adv-only" style="padding:8px 0 0">
         <div class="subsection">
@@ -371,6 +393,7 @@
             <button class="pill" id="clearTrackBtn">Clear Track</button>
           </div>
           <div class="tiny">Beat cells cycle Off -> Hit -> Accent. Full/Half/Quarter/Eighth/Sixteenth are straight grid resolutions. Triplets are now marked as tuplets: place two adjacent hits, then drag right-to-left across them to mark a small 3. The two cells then play three evenly spaced hits in the time of two cells. Triplets cannot overlap; consecutive triplets use pairs like 1-2, 3-4, 5-6.</div>
+          <div class="tiny" id="beatKeyboardHelp"><strong>Keyboard:</strong> arrows move; Space/Enter cycles; T toggles a triplet with the next cell. On manual bass, H holds into the next empty cell, S connects to a different next note, A toggles accent, and Delete clears.</div>
         </div>
       </div>
       <div class="section adv-only" style="padding:8px 0 0">
@@ -418,7 +441,8 @@
             <button class="mini-chip warn" id="clearGuitarBtn">Clear Guitar</button>
           </div>
           <div class="sequencer-wrap">
-            <div class="guitar-row" id="guitarRow" style="--steps:16"></div>
+            <div class="guitar-row" id="guitarRow" style="--steps:16" aria-describedby="guitarKeyboardHelp"></div>
+            <div class="tiny" id="guitarKeyboardHelp"><strong>Keyboard:</strong> Space/Enter cycles articulation; 1 through 5 choose open, chug, accent, hold, or scratch; Delete clears.</div>
           </div>
           <div class="tiny">Cells cycle Rest, strum, palm mute, accent, hold and scratch. Guitar follows each bar's chord as root, fifth and octave power chords.</div>
         </div>
@@ -484,14 +508,14 @@
             <label class="sub"><input id="xyRecordToggle" type="checkbox"> Write to grid</label>
           </div>
           <div class="xy-pad-wrap" id="xyPadWrap" style="display:none">
-            <div class="xy-pad" id="xyPad">
+            <div class="xy-pad" id="xyPad" role="slider" tabindex="0" aria-label="X-Y melody performance pad pitch" aria-describedby="xyPadInstructions" aria-valuemin="1" aria-valuemax="14" aria-valuenow="1" aria-valuetext="Ready">
               <div class="xy-pad-marker" id="xyPadMarker"></div>
             </div>
             <div class="xy-pad-labels">
               <span>Pitch</span>
               <span id="xyPadReadout">Ready</span>
             </div>
-            <div class="tiny">Drag to play the selected melody track. X controls pitch. In Sustain mode, Y controls sustain or frequency. In Pulse mode, Y can control pulse rate in time with the music.</div>
+            <div class="tiny" id="xyPadInstructions">Drag to play the selected melody track, or use Left and Right Arrow for pitch and Up and Down Arrow for the Y value. Hold Shift for finer Y changes. Home and End select the first and last pitch. Escape stops the pad. In Sustain mode, Y controls sustain or frequency. In Pulse mode, Y can control pulse rate in time with the music.</div>
           </div>
           <div id="melodyGridControls">
             <div id="melodyPickerPanel">
@@ -501,7 +525,8 @@
             </div>
           </div>
           <div class="sequencer-wrap">
-            <div class="stack" id="melodyRows"></div>
+            <div class="stack" id="melodyRows" aria-describedby="melodyKeyboardHelp"></div>
+            <div class="tiny" id="melodyKeyboardHelp"><strong>Keyboard:</strong> Space/Enter places or cycles a note; T toggles a triplet with the next note; H holds into the next empty cell; S connects to a different next note; Delete clears.</div>
           </div>
         </div>
       </div>
@@ -861,7 +886,8 @@
               <button class="pill" id="loadAutoBtn">Load Auto</button>
             </div>
             <div class="tiny" id="autoSaveStatus">Auto-save every 60 seconds</div>
-            <textarea class="textarea" id="projectBox" placeholder="Project JSON or Share Code appears here"></textarea>
+            <textarea class="textarea" id="projectBox" placeholder="Project JSON or Share Code appears here" aria-describedby="projectBoxHelp projectBoxError" aria-invalid="false"></textarea>
+            <div class="tiny field-error" id="projectBoxError" hidden></div>
             <div class="row">
               <select class="tiny-select" id="exportScopeSelect">
                 <option value="A">Export Section A</option>
@@ -882,7 +908,7 @@
               <button class="pill good" id="copyShareCodeBtn">Copy Share Code</button>
               <button class="pill" id="importShareCodeBtn">Import Share Code / JSON</button>
             </div>
-            <div class="tiny">Use Import for either raw JSON or PCS1 share code. Share Code is a shorter mobile-friendly format for chat apps; compact JSON is the full backup format.</div>
+            <div class="tiny" id="projectBoxHelp">Use Import for either raw JSON or PCS1 share code. Share Code is a shorter mobile-friendly format for chat apps; compact JSON is the full backup format.</div>
             <div class="label" style="margin:8px 0 0">Send to</div>
             <div class="row">
               <button class="pill good" id="pushToDjBtn" data-tip="Opens Pocket DJ with this song when a browser handoff is available, with PCS1 copy fallback.">Send to DJ</button>
@@ -2271,15 +2297,28 @@ function consumeIncomingChordsmithHandoff(){
     importProject(parsed);
     markProjectDirty();
     primePocketAudioCoreFromCurrentProject("DJ handoff").catch(() => {});
+    setProjectBoxValidation();
     clearStoredHandoff(HANDOFF_TO_CHORDSMITH_KEY);
     clearUrlHandoff();
     setStatus("Song received from Pocket DJ");
     setPushHandoffStatus("Imported the source song from Pocket DJ. DJ mutes, loops and FX stayed in Pocket DJ.");
     return true;
   }catch(e){
-    setStatus(e && e.message ? e.message : "Could not import Pocket DJ handoff");
+    const message = e && e.message ? e.message : "Could not import Pocket DJ handoff";
+    setProjectBoxValidation(message);
+    setStatus(message);
     setPushHandoffStatus("Pocket DJ sent a code, but Chordsmith could not import it.");
     return false;
+  }
+}
+function setProjectBoxValidation(message=""){
+  if(!els.projectBox) return;
+  const error = document.getElementById("projectBoxError");
+  const invalid = !!message;
+  els.projectBox.setAttribute("aria-invalid", invalid ? "true" : "false");
+  if(error){
+    error.textContent = message;
+    error.hidden = !invalid;
   }
 }
 function importProjectFromTextBox(){
@@ -2288,10 +2327,13 @@ function importProjectFromTextBox(){
     importProject(parsed);
     markProjectDirty();
     primePocketAudioCoreFromCurrentProject("import").catch(() => {});
+    setProjectBoxValidation();
     setStatus(`Project imported${parsed.projectVersion < PROJECT_SCHEMA_VERSION ? " (legacy project normalised)" : ""}`);
     return true;
   }catch(e){
-    setStatus(e && e.message ? e.message : "Could not import project");
+    const message = e && e.message ? e.message : "Could not import project";
+    setProjectBoxValidation(message);
+    setStatus(message);
     return false;
   }
 }
@@ -2315,6 +2357,7 @@ async function copyShareCode(){
   try{
     code = buildShareCode();
     els.projectBox.value = code;
+    setProjectBoxValidation();
   }catch(e){
     setStatus("Could not build Share Code");
     return;
@@ -2338,7 +2381,7 @@ function importShareCode(){
 }
 
 async function copyTextForHandoff(text, successMessage, fallbackMessage){
-  if(els.projectBox) els.projectBox.value = text;
+  if(els.projectBox){ els.projectBox.value = text; setProjectBoxValidation(); }
   try{
     if(navigator.clipboard && navigator.clipboard.writeText){
       await navigator.clipboard.writeText(text);
@@ -2395,7 +2438,7 @@ function buildMobileTransfer(){
     setMobileTransferStatus("Could not build a PCS1 code for this song.");
     return null;
   }
-  if(els.projectBox) els.projectBox.value = code;
+  if(els.projectBox){ els.projectBox.value = code; setProjectBoxValidation(); }
   const payload = buildPocketHandoff("chordsmith-mobile-transfer", code, {
     targetApp: "Pocket Audio Handoff",
     metadata: {
@@ -2876,7 +2919,7 @@ async function pushToGodot(){
     setStatus("Could not build Godot handoff code");
     return;
   }
-  if(els.projectBox) els.projectBox.value = code;
+  if(els.projectBox){ els.projectBox.value = code; setProjectBoxValidation(); }
   setStatus("Trying direct Push to Godot...");
   setPushHandoffStatus("Looking for the Pocket Chordsmith Godot addon on localhost...");
   const direct = await pushCodeDirectlyToGodot(code);
@@ -4553,6 +4596,9 @@ function renderDrumPads(){
       recordDrumPadHit(d.id);
     };
     p.addEventListener("pointerdown", fire, {passive:false});
+    // Pointer events retain touch velocity; native keyboard activation emits
+    // a click with detail 0, so Enter and Space get equivalent behaviour.
+    p.addEventListener("click", ev => { if(ev.detail === 0) fire(ev); });
     p.addEventListener("contextmenu", ev => ev.preventDefault());
     els.drumPadGrid.appendChild(p);
   });
@@ -5140,6 +5186,7 @@ function renderMelodyTrackControls(){
     pan.max = "1";
     pan.step = "0.01";
     pan.value = String(melodyTrackPanValue(idx));
+    pan.setAttribute("aria-label", `Melody track ${idx + 1} pan`);
     const right = document.createElement("span");
     right.className = "tiny";
     right.textContent = "R";
@@ -5880,14 +5927,20 @@ function renderSingleMelodyRow(trackIndex){
   for(let i=0;i<steps;i++){
     const c = document.createElement("button");
     const isTupletStart = melodyTripletStart(getSectionData(state.currentSection, true), trackIndex, i);
+    const hasNote = track[i] !== null && track[i] !== undefined;
     c.className = "cell melody" + ((track[i] !== null || holdTrack[i]) ? " on melody" : "") + (holdTrack[i] ? " hold" : "") + (slideTrack[i] ? " slide" : "") + melodyHoldVisualClasses(track, holdTrack, slideTrack, i, steps) + (isTupletStart ? " triplet-start" : "") + (i === state.currentStep ? " current" : "");
     if(isActive) c.style.borderColor = "var(--accent)";
     c.dataset.tip = `Tap empty cell to place ${selectedMelodyLabel()} on melody track ${trackIndex + 1}. Tap filled cell to cycle up. Drag right from a note to hold it. Drag onto a later different note to slide. Drag right-to-left across two adjacent notes to toggle a triplet: three notes play in the space of those two cells. Consecutive triplets use non-overlapping pairs like 1-2, 3-4. Long press to clear.`;
     c.dataset.step = String(i);
     c.textContent = melodyCellDisplay(track, holdTrack, slideTrack, i, labels);
+    const melodyState = holdTrack[i] ? "hold" : hasNote ? `${melodyIndexLabel(track[i])}${slideTrack[i] ? ", slide" : ""}` : "off";
+    c.setAttribute("aria-label", `Melody track ${trackIndex + 1}, step ${i + 1}, ${melodyState}${isTupletStart ? ", triplet start" : ""}`);
+    c.setAttribute("aria-pressed", hasNote || !!holdTrack[i] ? "true" : "false");
+    c.setAttribute("aria-describedby", "melodyKeyboardHelp");
 
     let holdTimer = null;
     let held = false;
+    let restoreAfterKeyboardClick = false;
     const clearCell = () => {
       pushUndoState();
       state.melodyTracks[trackIndex][i] = null;
@@ -5914,6 +5967,34 @@ function renderSingleMelodyRow(trackIndex){
     const cancelHold = () => {
       if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
     };
+
+    c.addEventListener("keydown", event => {
+      const command = event.key.toLowerCase();
+      if(event.key === " " || event.key === "Enter") { restoreAfterKeyboardClick = true; return; }
+      if(!["t","h","s","delete","backspace"].includes(command)) return;
+      event.preventDefault();
+      if(command === "delete" || command === "backspace") {
+        clearCell();
+        requestAnimationFrame(() => els.melodyRows?.querySelectorAll(".melody-row")[trackIndex]?.querySelector(`[data-step="${i}"]`)?.focus({preventScroll:true}));
+        return;
+      }
+      if(command === "t"){
+        pushUndoState();
+        if(!toggleMelodyTriplet(trackIndex, i)) setStatus("Melody triplet needs two adjacent notes");
+      } else {
+        const nextHasNote = i < steps - 1 && track[i + 1] !== null && track[i + 1] !== undefined;
+        if(!hasNote || i >= steps - 1 || (command === "h" && nextHasNote) || (command === "s" && (!nextHasNote || track[i + 1] === track[i]))){
+          setStatus(command === "h" ? "Melody hold needs a note followed by an empty cell" : "Melody slide needs a different note in the next cell");
+          return;
+        }
+        pushUndoState();
+        const result = applyMelodyConnectionRange(trackIndex, i, i + 1);
+        storeSection();
+        renderMelodyRows();
+        setStatus(result.slide ? `Melody track ${trackIndex + 1} slides to the next note` : `Melody track ${trackIndex + 1} holds into the next cell`);
+      }
+      requestAnimationFrame(() => els.melodyRows?.querySelectorAll(".melody-row")[trackIndex]?.querySelector(`[data-step="${i}"]`)?.focus({preventScroll:true}));
+    });
 
     c.addEventListener("pointerdown", (e) => {
       if(track[i] !== null && !holdTrack[i]){
@@ -5958,6 +6039,10 @@ function renderSingleMelodyRow(trackIndex){
       storeSection();
       renderMelodyTrackChips();
       renderMelodyRows();
+      if(restoreAfterKeyboardClick){
+        restoreAfterKeyboardClick = false;
+        requestAnimationFrame(() => els.melodyRows?.querySelectorAll(".melody-row")[trackIndex]?.querySelector(`[data-step="${i}"]`)?.focus({preventScroll:true}));
+      }
       await ensureAudio();
       playLeadInstrument(melodyIndexToMidi(state.melodyTracks[trackIndex][i]), audioCtx.currentTime, 0.28, state.melodyInstruments[trackIndex] || "pulse", melodyTrackPanValue(trackIndex), humanizePeak(1, i, 30 + trackIndex));
     });
@@ -6004,6 +6089,35 @@ function renderDrumPresetChips(){
   els.drumPresetSelect.value = [...els.drumPresetSelect.options].some(option => option.value === previous) ? previous : "";
   els.drumPresetSelect.dataset.tip = "Choose a beat preset to fill kick, snare and hats for the current section.";
 }
+let sequencerFocus = {track:"kick", step:0};
+let restoreSequencerFocus = false;
+function sequencerCellAccessibleName(track, step, details){
+  const trackName = track.name || track.id;
+  let cellState = "off";
+  if(track.id === "bass" && state.bassMode === "manual"){
+    if(details.bassManualOn){
+      const noteLabel = melodyIndexLabel(details.bassManualIdx);
+      cellState = `${noteLabel || "note"}${details.isAccent ? ", accent" : ""}`;
+    } else if(details.bassHold) cellState = "hold";
+  } else if(details.isOn){
+    cellState = details.isAccent ? "accent" : "on";
+  }
+  if(details.bassSlide) cellState += ", slide";
+  if(details.isTupletStart) cellState += ", triplet start";
+  return `${trackName}, step ${step + 1}, ${cellState}`;
+}
+function focusSequencerCell(trackIndex, step){
+  const rows = Array.from(els.seqRows?.querySelectorAll(".seq-row") || []);
+  if(!rows.length) return;
+  const nextRow = (trackIndex + rows.length) % rows.length;
+  const cells = Array.from(rows[nextRow].querySelectorAll(".cell[data-step]"));
+  if(!cells.length) return;
+  const nextStep = clamp(step, 0, cells.length - 1);
+  const target = cells[nextStep];
+  rows.forEach(row => row.querySelectorAll(".cell[data-step]").forEach(cell => { cell.tabIndex = cell === target ? 0 : -1; }));
+  sequencerFocus = {track:TRACKS[nextRow].id, step:nextStep};
+  target.focus({preventScroll:true});
+}
 function renderSeq(){
   const steps = visibleSectionSteps();
   const section = getSectionData(state.currentSection, false);
@@ -6024,9 +6138,11 @@ function renderSeq(){
     }
   });
   els.seqRows.innerHTML = "";
-  TRACKS.forEach(track => {
+  TRACKS.forEach((track, trackIndex) => {
     const row = document.createElement("div");
     row.className = "seq-row"; row.style.setProperty("--steps", steps);
+    row.setAttribute("role", "row");
+    row.setAttribute("aria-label", `${track.name} sequence`);
     const name = document.createElement("button");
     name.type = "button";
     name.className = "track-name" + (state.selectedTrack === track.id ? " active" : "");
@@ -6052,6 +6168,83 @@ function renderSeq(){
       c.className = "cell " + track.id + (isOn ? ` on ${track.id}` : "") + (isAccent ? " accent" : "") + (bassSlide ? " slide" : "") + (isTupletStart ? " triplet-start" : "") + (i === state.currentStep ? " current" : "");
       if(track.id === "bass") c.style.touchAction = "none";
       c.dataset.step = String(i);
+      c.setAttribute("aria-pressed", isOn ? "true" : "false");
+      c.setAttribute("aria-label", sequencerCellAccessibleName(track, i, {cellLevel, bassHold, bassSlide, bassManualIdx, bassManualOn, isOn, isAccent, isTupletStart}));
+      c.tabIndex = sequencerFocus.track === track.id && sequencerFocus.step === i ? 0 : -1;
+      c.addEventListener("focus", () => { sequencerFocus = {track:track.id, step:i}; });
+      c.addEventListener("keydown", (event) => {
+        const command = event.key.toLowerCase();
+        if(command === "t"){
+          event.preventDefault();
+          pushUndoState();
+          restoreSequencerFocus = true;
+          if(!toggleGridTriplet(track.id, i)){
+            restoreSequencerFocus = false;
+            setStatus("Triplet needs two adjacent active cells");
+          }
+          return;
+        }
+        if(track.id === "bass" && state.bassMode === "manual" && ["h","s","a","delete","backspace"].includes(command)){
+          event.preventDefault();
+          const hasNote = state.bassNotes[i] !== null && state.bassNotes[i] !== undefined;
+          const nextHasNote = i < steps - 1 && state.bassNotes[i + 1] !== null && state.bassNotes[i + 1] !== undefined;
+          if(command === "h" || command === "s"){
+            if(!hasNote || i >= steps - 1 || (command === "h" && nextHasNote) || (command === "s" && (!nextHasNote || state.bassNotes[i + 1] === state.bassNotes[i]))){
+              setStatus(command === "h" ? "Bass hold needs a note followed by an empty cell" : "Bass slide needs a different note in the next cell");
+              return;
+            }
+            pushUndoState();
+            const result = applyBassConnectionRange(i, i + 1);
+            storeSection();
+            restoreSequencerFocus = true;
+            renderSeq();
+            setStatus(result.slide ? "Connected bass to the next note with a slide" : "Held bass into the next cell");
+            return;
+          }
+          if(!hasNote){ setStatus("Place a manual bass note first"); return; }
+          pushUndoState();
+          if(command === "a") state.bassAccent[i] = !state.bassAccent[i];
+          else {
+            state.bassNotes[i] = null;
+            state.bassAccent[i] = false;
+            state.bassHold[i] = false;
+            state.bassSlide[i] = false;
+            clearBassHoldFrom(i + 1);
+            clearBassSlideFrom(i + 1);
+          }
+          storeSection();
+          restoreSequencerFocus = true;
+          renderSeq();
+          setStatus(command === "a" ? `Bass accent ${state.bassAccent[i] ? "on" : "off"}` : "Bass note cleared");
+          return;
+        }
+        if((command === "delete" || command === "backspace") && track.id !== "bass"){
+          event.preventDefault();
+          pushUndoState();
+          state.grid[track.id][i] = 0;
+          if(state.gridTuplets?.[track.id]){
+            state.gridTuplets[track.id][i] = false;
+            if(i > 0) state.gridTuplets[track.id][i - 1] = false;
+          }
+          storeSection();
+          restoreSequencerFocus = true;
+          renderSeq();
+          setStatus(`${track.name} step ${i + 1} cleared`);
+          return;
+        }
+        let nextTrack = trackIndex;
+        let nextStep = i;
+        if(event.key === "ArrowLeft") nextStep--;
+        else if(event.key === "ArrowRight") nextStep++;
+        else if(event.key === "ArrowUp") nextTrack--;
+        else if(event.key === "ArrowDown") nextTrack++;
+        else if(event.key === "Home") nextStep = 0;
+        else if(event.key === "End") nextStep = steps - 1;
+        else if(event.key === " " || event.key === "Enter") { restoreSequencerFocus = true; return; }
+        else return;
+        event.preventDefault();
+        focusSequencerCell(nextTrack, nextStep);
+      });
       c.dataset.tip = (c.dataset.tip || "") + " Drag right-to-left across two adjacent hits to toggle a triplet: three hits play in the space of those two cells. Consecutive triplets use non-overlapping pairs like 1-2, 3-4.";
       c.textContent = track.id === "bass" ? bassCellDisplay(cellLevel, bassHold, bassSlide, bassManualIdx, bassManualAccent) : beatCellLabel(track.id, cellLevel);
       let rhythmTripletDrag = null;
@@ -6219,6 +6412,17 @@ function renderSeq(){
     }
     els.seqRows.appendChild(row);
   });
+  if(!els.seqRows.querySelector('.cell[data-step][tabindex="0"]')){
+    const first = els.seqRows.querySelector('.cell[data-step]');
+    if(first) first.tabIndex = 0;
+  }
+  if(restoreSequencerFocus){
+    restoreSequencerFocus = false;
+    requestAnimationFrame(() => {
+      const trackIndex = Math.max(0, TRACKS.findIndex(track => track.id === sequencerFocus.track));
+      focusSequencerCell(trackIndex, sequencerFocus.step);
+    });
+  }
 }
 
 function alignGuitarGridWidth(){
@@ -6263,6 +6467,25 @@ function renderGuitarPanel(){
     c.dataset.step = String(i);
     c.dataset.tip = `Guitar rhythm step: ${guitarArticulationTip(art)}. Tap to cycle rest, strum, palm mute, accent, hold and scratch.`;
     c.textContent = guitarArticulationLabel(art);
+    c.setAttribute("aria-label", `Guitar, step ${i + 1}, ${art}`);
+    c.setAttribute("aria-pressed", art === "off" ? "false" : "true");
+    c.setAttribute("aria-describedby", "guitarKeyboardHelp");
+    let restoreAfterKeyboardClick = false;
+    c.addEventListener("keydown", event => {
+      const direct = {"1":"open","2":"chug","3":"accent","4":"hold","5":"scratch"};
+      const command = event.key.toLowerCase();
+      if(event.key === " " || event.key === "Enter") { restoreAfterKeyboardClick = true; return; }
+      const next = command === "delete" || command === "backspace" ? "off" : direct[command] || null;
+      if(!next) return;
+      event.preventDefault();
+      event.stopPropagation();
+      pushUndoState();
+      state.guitarPattern[i] = next;
+      storeSection();
+      renderGuitarPanel();
+      setStatus(`Guitar step ${i + 1}: ${next}`);
+      requestAnimationFrame(() => els.guitarRow?.querySelector(`[data-step="${i}"]`)?.focus({preventScroll:true}));
+    });
     c.addEventListener("click", async () => {
       pushUndoState();
       const order = ["off","open","chug","accent","hold","scratch"];
@@ -6270,6 +6493,10 @@ function renderGuitarPanel(){
       state.guitarPattern[i] = order[(order.indexOf(current) + 1) % order.length];
       storeSection();
       renderGuitarPanel();
+      if(restoreAfterKeyboardClick){
+        restoreAfterKeyboardClick = false;
+        requestAnimationFrame(() => els.guitarRow?.querySelector(`[data-step="${i}"]`)?.focus({preventScroll:true}));
+      }
       if(state.guitarPattern[i] !== "off" && state.guitarPattern[i] !== "hold"){
         await ensureAudio();
         const bar = Math.floor(i / stepsPerBar());
@@ -6585,12 +6812,12 @@ function updateXYPadModeOptions(){
   els.xyPadModeSelect.value = state.xyPadMode === "rate" && hideRate ? (state.xyPlaybackMode === "sustain" ? "frequency" : "sustain") : state.xyPadMode;
 }
 
-function clearXYLiveState(){
+function clearXYLiveState(preserveReadout=false){
   state.xyLiveActive = false;
   state.xyLiveMidi = null;
   state.xyLastWriteStep = -1;
   if(els.xyPadMarker) els.xyPadMarker.style.display = "none";
-  if(els.xyPadReadout) els.xyPadReadout.textContent = "Ready";
+  if(els.xyPadReadout && !preserveReadout) els.xyPadReadout.textContent = "Ready";
 }
 function triggerXYPadPulse(){
   return;
@@ -6709,11 +6936,13 @@ function playLeadXY(midi, t, dur, instrument, brightness=1800){
     playTone(midiToFreq(midi + 12), t + 0.012, dur * 0.36, "sine", leadGain, 0.018, "lowpass", 3200, pan);
   }
 }
-async function handleXYPad(clientX, clientY){
-  if(!els.xyPad) return;
-  const rect = els.xyPad.getBoundingClientRect();
-  const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-  const y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+let xyKeyboardX = 0;
+let xyKeyboardY = 0.5;
+async function handleXYPosition(rawX, rawY){
+  const x = Math.max(0, Math.min(1, rawX));
+  const y = Math.max(0, Math.min(1, rawY));
+  xyKeyboardX = x;
+  xyKeyboardY = y;
   const pool = xyPitchPool();
   const noteIdx = Math.max(0, Math.min(pool.length - 1, Math.floor(x * pool.length)));
   const pulseInfo = xyPulseInfo(y);
@@ -6735,16 +6964,22 @@ async function handleXYPad(clientX, clientY){
     els.xyPadMarker.style.left = `${x * 100}%`;
     els.xyPadMarker.style.top = `${y * 100}%`;
   }
-  if(els.xyPadReadout){
+  if(els.xyPadReadout || els.xyPad){
     const chord = currentPerformanceChord();
     const modeLabel = state.xyScaleMode === "shred" ? "Shred" : state.xyScaleMode === "song" ? "Song" : state.xyScaleMode === "pentatonic" ? "Penta" : "Chord";
     const yLabel = state.xyPlaybackMode === "pulse"
-      ? (state.xyPadMode === "frequency" ? "Freq" : state.xyPadMode === "rate" ? pulseInfo.label : "Gate")
+      ? (state.xyPadMode === "frequency" ? `Freq ${Math.round(brightness)} Hz` : state.xyPadMode === "rate" ? pulseInfo.label : `Gate ${Math.round(gate * 1000)}ms`)
       : state.xyPlaybackMode === "ostinato"
         ? `Gate ${Math.round(gate * 1000)}ms`
-        : (state.xyPadMode === "frequency" ? "Freq" : "Sustain");
+        : (state.xyPadMode === "frequency" ? `Freq ${Math.round(brightness)} Hz` : `Sustain ${Math.round(gate * 1000)}ms`);
     const playLabel = state.xyPlaybackMode === "pulse" ? "Pulse" : state.xyPlaybackMode === "ostinato" ? "Ostinato" : "Sustain";
-    els.xyPadReadout.textContent = `${NOTES[pool[noteIdx].pc]} - ${modeLabel} - ${playLabel} - ${yLabel}${state.xyChordFollow ? " - " + chord.name : ""}`;
+    const readout = `${NOTES[pool[noteIdx].pc]} - ${modeLabel} - ${playLabel} - ${yLabel}${state.xyChordFollow ? " - " + chord.name : ""}`;
+    if(els.xyPadReadout) els.xyPadReadout.textContent = readout;
+    if(els.xyPad){
+      els.xyPad.setAttribute("aria-valuemax", String(pool.length));
+      els.xyPad.setAttribute("aria-valuenow", String(noteIdx + 1));
+      els.xyPad.setAttribute("aria-valuetext", readout);
+    }
   }
 
   if(state.xyRecordToGrid && state.isPlaying && state.currentStep >= 0){
@@ -6763,12 +6998,21 @@ async function handleXYPad(clientX, clientY){
   const liveDur = xySustainDuration();
   playLeadXY(midi, audioCtx.currentTime, liveDur, instrument, brightness);
 }
+async function handleXYPad(clientX, clientY){
+  if(!els.xyPad) return;
+  const rect = els.xyPad.getBoundingClientRect();
+  await handleXYPosition((clientX - rect.left) / rect.width, (clientY - rect.top) / rect.height);
+}
 
 function toggleSettings(open=null){
   const wasOpen = state.settingsOpen;
   state.settingsOpen = open === null ? !state.settingsOpen : !!open;
   els.settingsModal.classList.toggle("open", state.settingsOpen);
   els.settingsModal.setAttribute("aria-hidden", state.settingsOpen ? "false" : "true");
+  document.querySelectorAll(".app, .mini-transport").forEach(node => {
+    node.toggleAttribute("inert", state.settingsOpen);
+    node.inert = state.settingsOpen;
+  });
   document.body.classList.toggle("modal-open", state.settingsOpen);
   if(state.settingsOpen && !wasOpen){
     state.settingsGenre = detectActiveGenre();
@@ -29762,6 +30006,19 @@ function bindControls(){
   if(els.closeGenreDrawerBtn) els.closeGenreDrawerBtn.addEventListener("click", closeGenreDrawer);
   document.querySelectorAll(".genre-tab").forEach(tab => {
     tab.addEventListener("click", () => selectSettingsGenre(tab.dataset.genre));
+    tab.addEventListener("keydown", event => {
+      const tabs = Array.from(document.querySelectorAll(".genre-tab"));
+      const current = tabs.indexOf(tab);
+      let next = current;
+      if(event.key === "ArrowRight" || event.key === "ArrowDown") next = (current + 1) % tabs.length;
+      else if(event.key === "ArrowLeft" || event.key === "ArrowUp") next = (current - 1 + tabs.length) % tabs.length;
+      else if(event.key === "Home") next = 0;
+      else if(event.key === "End") next = tabs.length - 1;
+      else return;
+      event.preventDefault();
+      selectSettingsGenre(tabs[next].dataset.genre);
+      tabs[next].focus({preventScroll:true});
+    });
   });
   if(els.cleanGenreBtn) els.cleanGenreBtn.addEventListener("click", applyCleanGenreToProject);
   if(els.lofiApplyIdeaBtn) els.lofiApplyIdeaBtn.addEventListener("click", () => {
@@ -30315,6 +30572,36 @@ function bindControls(){
     els.xyPad.addEventListener("pointerup", endXY);
     els.xyPad.addEventListener("pointerleave", endXY);
     els.xyPad.addEventListener("pointercancel", endXY);
+    els.xyPad.addEventListener("keydown", async e => {
+      const poolLength = xyPitchPool().length;
+      const pitchStep = poolLength > 1 ? 1 / poolLength : 1;
+      const yStep = e.shiftKey ? 0.02 : 0.1;
+      let nextX = xyKeyboardX;
+      let nextY = xyKeyboardY;
+      if(e.key === "ArrowLeft") nextX -= pitchStep;
+      else if(e.key === "ArrowRight") nextX += pitchStep;
+      else if(e.key === "ArrowUp") nextY -= yStep;
+      else if(e.key === "ArrowDown") nextY += yStep;
+      else if(e.key === "Home") nextX = 0;
+      else if(e.key === "End") nextX = 1;
+      else if(e.key === " " || e.key === "Enter"){
+        // Replay the current keyboard position without changing either axis.
+      } else if(e.key === "Escape"){
+        e.preventDefault();
+        clearXYLiveState(true);
+        setStatus("X-Y pad stopped");
+        return;
+      } else return;
+      e.preventDefault();
+      e.stopPropagation();
+      state.xyLastWriteStep = -1;
+      await handleXYPosition(nextX, nextY);
+      setStatus(`X-Y pad: ${els.xyPad.getAttribute("aria-valuetext")}`);
+    });
+    els.xyPad.addEventListener("keyup", e => {
+      if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home","End"," ","Enter"].includes(e.key)) clearXYLiveState(true);
+    });
+    els.xyPad.addEventListener("blur", () => clearXYLiveState(true));
   }
 
   ["showMelodyPadsToggle","showDrumPadsToggle","showMelodyPickerToggle","showTrackControlsToggle"].forEach(id => {
@@ -30400,6 +30687,7 @@ function bindControls(){
   els.exportJsonBtn.addEventListener("click", async ()=>{
     const jsonText = JSON.stringify(exportProject());
     els.projectBox.value = jsonText;
+    setProjectBoxValidation();
     rememberImmersiveModeBeforeExternalUi();
     try{
       if(navigator.clipboard && navigator.clipboard.writeText){
@@ -30498,6 +30786,29 @@ function init(){
   els.drumPresetSelect = document.getElementById("drumPresetSelect");
   els.guitarPresetSelect = document.getElementById("guitarPresetSelect");
   els.pocketAudioCoreStatus = document.getElementById("pocketAudioCoreStatus");
+  const controlNames = {
+    chordOctaveSelect:"Chord octave", chordPlayModeSelect:"Chord style", chordRhythmModeSelect:"Chord rhythm",
+    resolutionSelect:"Beat resolution", guitarToneSelect:"Guitar tone", guitarRegisterSelect:"Guitar register",
+    guitarStrumModeSelect:"Guitar strum style", guitarPresetSelect:"Guitar pattern preset", guitarFillStyleSelect:"Guitar fill style",
+    melodyDegreeSelect:"Melody note", melodyInputModeSelect:"Melody input mode", melodyInstrumentSelect:"Melody instrument",
+    melodyPitchModeSelect:"Melody pitch mode", xyPlaybackModeSelect:"X-Y playback mode", xyPadModeSelect:"X-Y pad mode",
+    xyScaleModeSelect:"X-Y scale mode", sectionBarsSelect:"Section length", copyTargetSectionSelect:"Copy target section",
+    themeSelect:"Theme", bassModeSelect:"Bass mode", exportScopeSelect:"Export scope",
+    midiExportModeSelect:"MIDI export timing", midiChordExportSelect:"MIDI chord export", projectBox:"Project JSON or share code",
+    lofiPresetSelect:"Lofi preset", drumKitSelect:"Lofi drum kit", bassToneSelect:"Lofi bass tone",
+    chipPresetSelect:"Chip tune preset", chipDrumKitSelect:"Chip drum kit", chipBassToneSelect:"Chip bass tone",
+    metalPresetSelect:"Heavy metal preset", metalDrumKitSelect:"Metal drum kit", metalBassToneSelect:"Metal bass tone",
+    westernPresetSelect:"Western preset", westernDrumPresetSelect:"Western drum preset", westernGuitarPresetSelect:"Western guitar preset"
+  };
+  Object.entries(controlNames).forEach(([id, name]) => {
+    const control = document.getElementById(id);
+    if(control && !control.getAttribute("aria-label") && !(control.labels && control.labels.length)) control.setAttribute("aria-label", name);
+  });
+  if(els.projectBox) els.projectBox.addEventListener("input", () => setProjectBoxValidation());
+  ["mobileTransferStatus","pushHandoffStatus","autoSaveStatus","midiImportSummary","wavProgressText"].forEach(id => {
+    const status = document.getElementById(id);
+    if(status){ status.setAttribute("role", "status"); status.setAttribute("aria-live", "polite"); }
+  });
   updatePocketAudioCoreStatusUi();
   loadPocketAudioCoreModule().catch(() => {});
   bindImmersiveRestoreEvents();

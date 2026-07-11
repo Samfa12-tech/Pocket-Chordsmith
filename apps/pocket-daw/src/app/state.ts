@@ -39,6 +39,7 @@ export interface AppState {
   playheadBar: number;
   meterLevels: Record<string, number>;
   importText: string;
+  importTextError: string | null;
   midiImportPlacementMode: MidiImportPlacementMode;
   midiConversionSourceMode: MidiConversionSourceMode;
   midiConversionSourceValue: number | null;
@@ -258,6 +259,7 @@ export function createInitialState(): AppState {
     playheadBar: 1,
     meterLevels: {},
     importText: "",
+    importTextError: null,
     midiImportPlacementMode: "single-clip",
     midiConversionSourceMode: "all",
     midiConversionSourceValue: null,
@@ -365,6 +367,7 @@ export function loadProjectIntoState(
     meterLevels: {},
     clipClipboardGroup: null,
     importText: options.clearImportText === false ? state.importText : "",
+    importTextError: null,
     midiImportPlacementMode: state.midiImportPlacementMode,
     midiConversionSourceMode: state.midiConversionSourceMode,
     midiConversionSourceValue: state.midiConversionSourceValue,

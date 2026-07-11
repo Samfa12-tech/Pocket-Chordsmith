@@ -11,7 +11,7 @@ import { midiConversionSourceLabel, normalizeMidiConversionSourceFilter } from "
 import { createMidiChordsmithConversionPreviews } from "../daw/midiConversionPreview";
 import { DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumBranchStepLevel, isDrumLaneId } from "../daw/drumLanes";
 import { renderTimelineEvents } from "../audio/eventRenderer";
-import { timelineSecondsAtBar } from "../daw/timeline";
+import { snapBeatStepAtBar, timelineSecondsAtBar } from "../daw/timeline";
 import {
   listenForDeepLinkHandoffs,
   listenForProjectFileLaunches,
@@ -415,6 +415,8 @@ export class App {
   private midiInputRecordingRuntime: MidiInputRecordingRuntime | null = null;
   private aiBridgeUnlisten: (() => void) | null = null;
   private projectFileLaunchUnlisten: (() => void) | null = null;
+  private dialogActive = false;
+  private dialogReturnFocus: { selector: string; index: number } | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -1160,7 +1162,89 @@ export class App {
     this.root.dataset.liveUpdateCount = String(this.liveUpdateCount);
     this.applyButtonTooltips();
     this.bind();
+    this.syncDialogAccessibility();
     if (scroll) this.restoreScrollSnapshotSoon(scroll);
+  }
+
+  private rememberDialogTrigger(element: HTMLElement | null) {
+    if (!element) return;
+    const selector = element.id
+      ? `#${CSS.escape(element.id)}`
+      : element.dataset.action
+        ? `[data-action="${CSS.escape(element.dataset.action)}"]`
+        : "";
+    if (!selector) return;
+    const matches = Array.from(this.root.querySelectorAll<HTMLElement>(selector));
+    this.dialogReturnFocus = { selector, index: Math.max(0, matches.indexOf(element)) };
+  }
+
+  private syncDialogAccessibility() {
+    const dialog = this.root.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
+    const shell = this.root.querySelector<HTMLElement>(".app-shell");
+    shell?.querySelectorAll<HTMLElement>(":scope > :not(.modal-backdrop)").forEach((node) => {
+      node.inert = !!dialog;
+    });
+    if (dialog) {
+      dialog.tabIndex = -1;
+      if (!this.dialogActive || !dialog.contains(document.activeElement)) {
+        this.dialogActive = true;
+        const preferred = dialog.querySelector<HTMLElement>("[autofocus]")
+          || dialog.querySelector<HTMLElement>("textarea:not([readonly])")
+          || dialog.querySelector<HTMLElement>("input:not([type=hidden])")
+          || dialog.querySelector<HTMLElement>("button")
+          || dialog.querySelector<HTMLElement>("select")
+          || dialog.querySelector<HTMLElement>("[tabindex]:not([tabindex='-1'])");
+        (preferred || dialog).focus();
+      }
+      return;
+    }
+    if (!this.dialogActive) return;
+    this.dialogActive = false;
+    const returnMatches = this.dialogReturnFocus
+      ? this.root.querySelectorAll<HTMLElement>(this.dialogReturnFocus.selector)
+      : null;
+    const target = returnMatches
+      ? returnMatches[this.dialogReturnFocus!.index] || returnMatches[0]
+      : null;
+    this.dialogReturnFocus = null;
+    target?.focus();
+  }
+
+  private closeActiveDialog() {
+    this.state.showFilePanel = false;
+    this.state.showControls = false;
+    this.state.showAddTrack = false;
+    this.state.showAudioSettings = false;
+    this.state.showUpdaterPanel = false;
+    this.state.showMcpSetupPanel = false;
+    this.state.showFunctionGuidePanel = false;
+    this.state.showFeedbackPanel = false;
+    this.render({ preserveScroll: true });
+  }
+
+  private handleDialogKeyboard(event: KeyboardEvent): boolean {
+    const dialog = this.root.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
+    if (!dialog) return false;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.closeActiveDialog();
+      return true;
+    }
+    if (event.key !== "Tab") return false;
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled):not([type=hidden]), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])"))
+      .filter((node) => !node.hidden && node.getAttribute("aria-hidden") !== "true");
+    if (!focusable.length) {
+      event.preventDefault();
+      dialog.focus();
+      return true;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!dialog.contains(document.activeElement) || (event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    }
+    return true;
   }
 
   private applyButtonTooltips() {
@@ -1734,6 +1818,13 @@ export class App {
     });
     this.root.querySelector<HTMLTextAreaElement>("#importText")?.addEventListener("input", (event) => {
       this.state.importText = (event.target as HTMLTextAreaElement).value;
+      if (this.state.importTextError) {
+        this.state.importTextError = null;
+        const input = event.target as HTMLTextAreaElement;
+        input.setAttribute("aria-invalid", "false");
+        input.setAttribute("aria-describedby", "importTextHelp");
+        this.root.querySelector("#importTextError")?.remove();
+      }
     });
     this.root.querySelector<HTMLSelectElement>("#midiImportPlacementMode")?.addEventListener("change", (event) => {
       this.state.midiImportPlacementMode = midiImportPlacementModeFromValue((event.target as HTMLSelectElement).value);
@@ -2944,6 +3035,9 @@ export class App {
   }
 
   private async dispatch(action: string, actionSource?: HTMLElement) {
+    if (["controls-open", "file-window-open", "import-focus", "add-track-open", "audio-settings-open", "updater-open", "mcp-setup-open", "function-guide-open", "feedback-open"].includes(action)) {
+      this.rememberDialogTrigger(actionSource || (document.activeElement as HTMLElement | null));
+    }
     if (action === "play") await this.playTransport();
     if (action === "pause") {
       this.engine.pause();
@@ -3363,7 +3457,91 @@ export class App {
     this.render({ preserveScroll: true });
   }
 
+  private handleStepGridKeyboard(event: KeyboardEvent): boolean {
+    const cell = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-step-cell]");
+    if (!cell || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return false;
+    const grid = cell.closest<HTMLElement>("[data-step-grid]");
+    if (!grid) return false;
+    const cells = Array.from(grid.querySelectorAll<HTMLButtonElement>("[data-step-cell]"));
+    const row = Number(cell.dataset.stepRow || 0);
+    const column = Number(cell.dataset.stepColumn || 0);
+    let target: HTMLButtonElement | undefined;
+    if (event.key === "Home") target = cells.find((item) => Number(item.dataset.stepRow || 0) === row);
+    if (event.key === "End") target = cells.filter((item) => Number(item.dataset.stepRow || 0) === row).at(-1);
+    if (event.key === "ArrowLeft") target = cells.find((item) => Number(item.dataset.stepRow || 0) === row && Number(item.dataset.stepColumn || 0) === column - 1);
+    if (event.key === "ArrowRight") target = cells.find((item) => Number(item.dataset.stepRow || 0) === row && Number(item.dataset.stepColumn || 0) === column + 1);
+    if (event.key === "ArrowUp") target = cells.find((item) => Number(item.dataset.stepRow || 0) === row - 1 && Number(item.dataset.stepColumn || 0) === column);
+    if (event.key === "ArrowDown") target = cells.find((item) => Number(item.dataset.stepRow || 0) === row + 1 && Number(item.dataset.stepColumn || 0) === column);
+    if (!target) return true;
+    event.preventDefault();
+    cells.forEach((item) => { item.tabIndex = item === target ? 0 : -1; });
+    target.focus();
+    return true;
+  }
+
+  private handleTimelineRulerKeyboard(event: KeyboardEvent): boolean {
+    const ruler = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-seek-ruler]");
+    if (!ruler || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return false;
+    event.preventDefault();
+    const project = currentProject(this.state);
+    const beatStep = 1 / Math.max(1, project.project.timeSig);
+    const step = this.state.snapMode === "bar" ? 1 : this.state.snapMode === "beat" ? beatStep : 0.25;
+    const next = event.key === "Home"
+      ? 1
+      : event.key === "End"
+        ? project.timeline.bars + 1
+        : Math.max(1, Math.min(project.timeline.bars + 1, this.state.playheadBar + (event.key === "ArrowLeft" ? -step : step)));
+    this.seekToBar(next, true);
+    ruler.setAttribute("aria-valuenow", String(next));
+    ruler.setAttribute("aria-valuetext", `Bar ${this.formatBarBeat(next)}`);
+    return true;
+  }
+
+  private handleClipRepeatKeyboard(event: KeyboardEvent): boolean {
+    const handle = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-clip-loop-handle]");
+    if (!handle || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return false;
+    const clipId = handle.dataset.clipLoopHandle || "";
+    const project = currentProject(this.state);
+    const clip = project.timeline.clips.find((item) => item.id === clipId);
+    if (!clip || clip.type !== "generated-section") return false;
+    event.preventDefault();
+    event.stopPropagation();
+    const sourceLength = Math.max(0.25, clip.barLength);
+    const minimumEnd = clip.startBar + sourceLength;
+    const maximumEnd = minimumEnd + sourceLength * 16;
+    const currentEnd = Math.max(
+      minimumEnd,
+      ...project.timeline.clips
+        .filter((item) => item.metadata?.loopParentId === clip.id)
+        .map((item) => item.startBar + item.barLength)
+    );
+    const snapStep = this.state.snapMode === "bar"
+      ? 1
+      : this.state.snapMode === "beat"
+        ? snapBeatStepAtBar(project, currentEnd)
+        : 0.25;
+    const step = event.shiftKey ? sourceLength : snapStep;
+    const requestedEnd = event.key === "Home"
+      ? minimumEnd
+      : event.key === "End"
+        ? maximumEnd
+        : Math.max(minimumEnd, Math.min(maximumEnd, currentEnd + (event.key === "ArrowLeft" ? -step : step)));
+    this.applyProjectState(repeatClipToEndCommand(this.state, clipId, requestedEnd), {
+      audio: "composition-events",
+      preserveScroll: true,
+      reason: "clip-keyboard-repeat"
+    });
+    requestAnimationFrame(() => {
+      findDataElements<HTMLElement>(this.root, "data-clip-loop-handle", clipId)[0]?.focus();
+    });
+    return true;
+  }
+
   private async handleKeyboard(event: KeyboardEvent) {
+    if (this.handleDialogKeyboard(event)) return;
+    if (this.handleClipRepeatKeyboard(event)) return;
+    if (this.handleStepGridKeyboard(event)) return;
+    if (this.handleTimelineRulerKeyboard(event)) return;
     if (this.handleChordsmithStepShortcut(event)) return;
     const command = commandFromKeyboardEvent(event);
     if (!command) return;
@@ -3424,6 +3602,7 @@ export class App {
     if (command === "open-file") await this.openProject();
     if (command === "export-wav") await this.exportWav();
     if (command === "add-track") {
+      this.rememberDialogTrigger(document.activeElement as HTMLElement | null);
       this.state.showAddTrack = true;
       this.render();
     }
@@ -4851,7 +5030,9 @@ export class App {
       void this.syncArmedInputPreview();
       return true;
     } catch (error) {
-      this.state.status = error instanceof Error ? error.message : "Import failed.";
+      const message = error instanceof Error ? error.message : "Import failed.";
+      this.state.status = message;
+      this.state.importTextError = message;
       this.render();
       return false;
     }

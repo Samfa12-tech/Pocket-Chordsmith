@@ -17,12 +17,13 @@
     .handoff-header{padding:18px}
     h1{margin:0 0 4px; font-size:1.35rem}
     h2{margin:0; font-size:1rem}
+    h3{margin:0; font-size:1rem}
     p{margin:0}
     .muted,.status{color:var(--muted); font-size:.9rem}
     .panel{padding:14px; display:grid; gap:12px}
     .row{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
     button,.file-label{
-      border:1px solid var(--line); background:var(--panel2); color:var(--text); border-radius:12px; min-height:40px; padding:8px 12px;
+      border:1px solid var(--line); background:var(--panel2); color:var(--text); border-radius:12px; min-height:44px; padding:8px 12px;
       font:inherit; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; text-decoration:none;
     }
     button.primary{background:linear-gradient(180deg,#2d4b95,#203971); border-color:#4f72ca}
@@ -34,10 +35,17 @@
     }
     .code-input{
       width:min(220px,100%); border:1px solid var(--line); background:#111722; color:var(--text); border-radius:12px;
-      min-height:40px; padding:8px 12px; font:700 1rem/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; letter-spacing:0;
+      min-height:44px; padding:8px 12px; font:700 1rem/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; letter-spacing:0;
       text-transform:uppercase;
     }
     input[type=file]{position:absolute; width:1px; height:1px; opacity:0; pointer-events:none}
+    input[type=file]:focus-visible + .file-focus-proxy,
+    .file-label:has(+ input[type=file]:focus-visible){outline:3px solid var(--accent); outline-offset:3px}
+    :focus-visible{outline:3px solid var(--accent); outline-offset:3px}
+    textarea::placeholder,.code-input::placeholder{color:#bac5dc; opacity:1}
+    [aria-invalid="true"]{border-color:#ff668f; box-shadow:0 0 0 2px rgba(255,102,143,.2)}
+    .field-help{margin:0; color:var(--muted); font-size:.86rem}
+    .field-error{min-height:1.2em; margin:0; color:#ff9ab4; font-size:.86rem}
     .code-card{border:1px solid rgba(143,240,198,.42); background:rgba(35,102,81,.18); border-radius:14px; padding:12px; display:grid; gap:8px}
     .code-card.hidden{display:none}
     .code-value{font:800 clamp(1.45rem,6vw,2.3rem)/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; letter-spacing:0}
@@ -58,9 +66,12 @@
     <section class="panel" aria-labelledby="inputTitle">
       <div class="row">
         <h2 id="inputTitle">Song code</h2>
-        <span class="status" id="sourceStatus">Paste a PCS1 code, open a handoff link, or upload a .pcs1.txt file.</span>
+        <span class="status" id="sourceStatus" role="status" aria-live="polite">Paste a PCS1 code, open a handoff link, or upload a .pcs1.txt file.</span>
       </div>
-      <textarea id="handoffText" spellcheck="false" placeholder="PCS1:..."></textarea>
+      <label for="handoffText"><strong>Pocket Chordsmith song or transfer code</strong></label>
+      <textarea id="handoffText" spellcheck="false" placeholder="PCS1:..." aria-describedby="sourceHelp sourceFieldError"></textarea>
+      <p class="field-help" id="sourceHelp">Paste a PCS1 share code or a PocketHandoff payload.</p>
+      <p class="field-error" id="sourceFieldError"></p>
       <div class="row">
         <button class="primary" id="loadTextBtn">Load pasted code</button>
         <label class="file-label" for="fileInput">Open .pcs1.txt</label>
@@ -72,7 +83,8 @@
     <section class="panel" aria-labelledby="relayTitle">
       <div>
         <h2 id="relayTitle">Phone to desktop</h2>
-        <p class="muted" id="relayStatus">Load a song, then create a short code. On your computer, open this page and enter the code.</p>
+        <p class="muted">Relay transfers send your PCS1 song to the Pocket Audio relay service. Codes are short-lived, expire automatically, and should only be shared with someone you trust.</p>
+        <p class="muted" id="relayStatus" role="status" aria-live="polite">Load a song, then create a short code. On your computer, open this page and enter the code.</p>
       </div>
       <div class="code-card hidden" id="relayCard">
         <span class="muted">Desktop transfer code</span>
@@ -85,19 +97,22 @@
       </div>
       <div class="split-row">
         <div class="target">
-          <h2>Create on phone</h2>
+          <h3>Create on phone</h3>
           <p class="muted">Creates a short-lived relay code, so you do not need to copy a huge PCS1 song manually.</p>
           <div class="row">
             <button class="primary" id="createRelayBtn" disabled>Create short code</button>
           </div>
         </div>
         <div class="target">
-          <h2>Open on desktop</h2>
+          <h3>Open on desktop</h3>
           <p class="muted">Type the phone's code here, then use the DAW or Godot actions below.</p>
           <div class="row">
-            <input class="code-input" id="redeemCodeInput" autocomplete="off" inputmode="text" placeholder="SAM-8421" />
+            <label for="redeemCodeInput">Desktop transfer code</label>
+            <input class="code-input" id="redeemCodeInput" autocomplete="off" inputmode="text" placeholder="SAM-8421" aria-describedby="redeemCodeHelp redeemCodeError" />
             <button class="primary" id="redeemRelayBtn">Load code</button>
           </div>
+          <p class="field-help" id="redeemCodeHelp">Enter the short code shown on the sending phone.</p>
+          <p class="field-error" id="redeemCodeError"></p>
         </div>
       </div>
     </section>
@@ -105,11 +120,11 @@
     <section class="panel" aria-labelledby="targetsTitle">
       <div>
         <h2 id="targetsTitle">Send to desktop</h2>
-        <p class="muted" id="payloadSummary">No PCS1 song loaded yet.</p>
+        <p class="muted" id="payloadSummary" role="status" aria-live="polite">No PCS1 song loaded yet.</p>
       </div>
       <div class="target-grid">
         <div class="target">
-          <h2>Pocket DAW</h2>
+          <h3>Pocket DAW</h3>
           <p class="muted">Copy the song into Import Paste, or try opening the installed app.</p>
           <div class="row">
             <button class="good" id="copyDawBtn" disabled>Copy for Pocket DAW</button>
@@ -117,7 +132,7 @@
           </div>
         </div>
         <div class="target">
-          <h2>Godot</h2>
+          <h3>Godot</h3>
           <p class="muted">Open the Chordsmith tab, choose Paste JSON/Code, paste, then Import.</p>
           <div class="row">
             <button class="good" id="copyGodotBtn" disabled>Copy for Godot Paste JSON/Code</button>
@@ -135,12 +150,25 @@
     const RELAY_ENDPOINT = resolveRelayEndpoint();
 
     const els = {};
-    ["handoffText","sourceStatus","loadTextBtn","fileInput","copyLinkBtn","payloadSummary","copyDawBtn","openDawBtn","copyGodotBtn","downloadBtn","relayStatus","relayCard","relayCode","relayExpiry","copyRelayUrlBtn","copyRelayCodeBtn","createRelayBtn","redeemCodeInput","redeemRelayBtn"].forEach(id => els[id] = document.getElementById(id));
+    ["handoffText","sourceStatus","sourceFieldError","loadTextBtn","fileInput","copyLinkBtn","payloadSummary","copyDawBtn","openDawBtn","copyGodotBtn","downloadBtn","relayStatus","relayCard","relayCode","relayExpiry","copyRelayUrlBtn","copyRelayCodeBtn","createRelayBtn","redeemCodeInput","redeemCodeError","redeemRelayBtn"].forEach(id => els[id] = document.getElementById(id));
 
     let currentCode = "";
     let currentSource = "";
     let currentTransferUrl = "";
     let currentRelay = null;
+
+    function setFieldError(field, errorElement, message=""){
+      const text = String(message || "").trim();
+      if(text) field.setAttribute("aria-invalid", "true");
+      else field.removeAttribute("aria-invalid");
+      errorElement.textContent = text;
+    }
+    function setSourceError(message=""){
+      setFieldError(els.handoffText, els.sourceFieldError, message);
+    }
+    function setRedeemCodeError(message=""){
+      setFieldError(els.redeemCodeInput, els.redeemCodeError, message);
+    }
 
     function makePocketDawDownloadFileName(){
       const stamp = Date.now().toString(36);
@@ -270,6 +298,7 @@
       setButtons(!!currentCode);
       renderRelay();
       if(currentCode){
+        setSourceError();
         const urlNote = currentTransferUrl.length <= TRANSFER_URL_LIMIT ? "Transfer link ready." : "Transfer link is large; prefer copy/download.";
         els.sourceStatus.textContent = `Loaded ${currentSource}. ${urlNote}`;
         els.payloadSummary.textContent = `Loaded ${currentCode.length.toLocaleString()} characters from ${currentSource}.`;
@@ -323,9 +352,12 @@
     async function redeemRelayTransfer(rawCode){
       const id = normalizeRelayCode(rawCode);
       if(!id){
-        els.relayStatus.textContent = "Enter the short code from your phone.";
+        const message = "Enter the short code from your phone.";
+        setRedeemCodeError(message);
+        els.relayStatus.textContent = message;
         return null;
       }
+      setRedeemCodeError();
       els.relayStatus.textContent = `Loading ${id}...`;
       try{
         const response = await fetch(`${RELAY_ENDPOINT}/transfers/${encodeURIComponent(id)}`, {cache:"no-store"});
@@ -334,10 +366,13 @@
         loadCode(payload.code, id);
         currentRelay = {id, shortCode:id, expiresAt:payload.expiresAt, url:makeShortRelayUrl(id)};
         renderRelay();
+        setRedeemCodeError();
         els.relayStatus.textContent = `${id} loaded. Choose Pocket DAW or Godot below.`;
         return payload;
       }catch(e){
-        els.relayStatus.textContent = `${id} could not be loaded. It may have expired or been typed incorrectly.`;
+        const message = `${id} could not be loaded. It may have expired or been typed incorrectly.`;
+        setRedeemCodeError(message);
+        els.relayStatus.textContent = message;
         return null;
       }
     }
@@ -389,21 +424,31 @@
     els.loadTextBtn.addEventListener("click", () => {
       const result = extractCode(els.handoffText.value);
       if(result) loadCode(result.code, result.source);
-      else els.sourceStatus.textContent = "That does not look like a PCS1 code or PocketHandoff payload.";
+      else{
+        const message = "That does not look like a PCS1 code or PocketHandoff payload.";
+        setSourceError(message);
+        els.sourceStatus.textContent = message;
+      }
     });
+    els.handoffText.addEventListener("input", () => setSourceError());
     els.fileInput.addEventListener("change", async () => {
       const file = els.fileInput.files && els.fileInput.files[0];
       if(!file) return;
       const text = await file.text();
       const result = extractCode(text);
       if(result) loadCode(result.code, file.name);
-      else els.sourceStatus.textContent = "That file did not contain a PCS1 code or PocketHandoff payload.";
+      else{
+        const message = "That file did not contain a PCS1 code or PocketHandoff payload.";
+        setSourceError(message);
+        els.sourceStatus.textContent = message;
+      }
     });
     els.copyLinkBtn.addEventListener("click", () => copyText(currentTransferUrl, "Transfer link copied."));
     els.createRelayBtn.addEventListener("click", createRelayTransfer);
     els.copyRelayUrlBtn.addEventListener("click", () => copyText(currentRelay?.url || "", "Short transfer URL copied."));
     els.copyRelayCodeBtn.addEventListener("click", () => copyText(currentRelay?.shortCode || currentRelay?.id || "", "Short transfer code copied."));
     els.redeemRelayBtn.addEventListener("click", () => redeemRelayTransfer(els.redeemCodeInput.value));
+    els.redeemCodeInput.addEventListener("input", () => setRedeemCodeError());
     els.redeemCodeInput.addEventListener("keydown", (event) => {
       if(event.key === "Enter") redeemRelayTransfer(els.redeemCodeInput.value);
     });

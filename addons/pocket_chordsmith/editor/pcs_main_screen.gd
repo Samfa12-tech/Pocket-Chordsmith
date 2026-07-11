@@ -325,7 +325,10 @@ func _toolbar_button(parent: Control, text: String, tooltip: String, callback: C
 	var button := Button.new()
 	button.text = text
 	button.tooltip_text = tooltip
-	button.focus_mode = Control.FOCUS_NONE
+	# Keep native keyboard semantics: toolbar actions must remain reachable by
+	# Tab/Shift+Tab and activate with Enter or Space in the Godot editor.
+	button.focus_mode = Control.FOCUS_ALL
+	button.set_meta(&"pcs_toolbar_action", true)
 	button.pressed.connect(callback)
 	parent.add_child(button)
 	return button

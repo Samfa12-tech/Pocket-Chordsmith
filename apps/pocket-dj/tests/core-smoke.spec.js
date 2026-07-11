@@ -1,5 +1,210 @@
 import { expect, test } from "@playwright/test";
 
+test("Pocket DJ exposes accessible import, live status, mixer, shortcut help, and modal focus", async ({ page }) => {
+  await page.goto("/apps/pocket-dj/");
+  await expect(page.getByRole("heading", { level: 1, name: "Pocket DJ" })).toBeVisible();
+  await expect(page.getByRole("main")).toBeVisible();
+  await expect(page.getByLabel("Pocket Chordsmith song export")).toBeVisible();
+  await expect(page.locator("#importStatus")).toHaveAttribute("aria-live", "polite");
+
+  const opener = page.locator("#importHelpBtn");
+  await opener.click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.locator("#helpCloseBtn")).toBeFocused();
+  await expect(page.getByRole("dialog")).toContainText("press D");
+  await page.keyboard.press("Escape");
+  await expect(opener).toBeFocused();
+
+  await page.locator("#demoBtn").click();
+  const drumsMute = page.getByRole("button", { name: "Mute Drums" });
+  await expect(drumsMute).toHaveAttribute("aria-pressed", "false");
+  await drumsMute.click();
+  await expect(drumsMute).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Drums volume")).toBeVisible();
+});
+
+test("Pocket DJ associates import errors with the field and clears them without stealing focus", async ({ page }) => {
+  await page.goto("/apps/pocket-dj/");
+  const field = page.locator("#importText");
+  const button = page.locator("#importBtn");
+  const error = page.locator("#importError");
+
+  await expect(field).toHaveAttribute("aria-describedby", "importHelp importError");
+  await field.fill("not a Pocket Chordsmith export");
+  await button.click();
+  await expect(button).toBeFocused();
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  await expect(error).not.toHaveText("");
+  await expect(page.locator("#importStatus")).not.toHaveText("Ready");
+
+  await field.fill("correcting the export");
+  await expect(field).not.toHaveAttribute("aria-invalid", "true");
+  await expect(error).toHaveText("");
+
+  await field.fill(JSON.stringify(makeMetalFixture()));
+  await button.click();
+  await expect(field).not.toHaveAttribute("aria-invalid", "true");
+  await expect(error).toHaveText("");
+  await expect(page.locator("#statusText")).toContainText("Pocket Chordsmith project imported");
+});
+
+test("Pocket Audio Handoff labels fields and explains the short-lived relay", async ({ page }) => {
+  await page.goto("/apps/pocket-audio-handoff/");
+  await expect(page.getByRole("heading", { level: 1, name: "Pocket Audio Handoff" })).toBeVisible();
+  await expect(page.getByLabel("Pocket Chordsmith song or transfer code")).toBeVisible();
+  await expect(page.getByLabel("Desktop transfer code")).toBeVisible();
+  await expect(page.locator("#sourceStatus")).toHaveAttribute("aria-live", "polite");
+  await expect(page.locator("#relayStatus")).toHaveAttribute("aria-live", "polite");
+  await expect(page.getByText(/expire automatically/)).toBeVisible();
+  const shortTargets = await page.locator("button, .file-label, .code-input").evaluateAll(nodes => nodes.filter(node => {
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && rect.height < 44;
+  }).length);
+  expect(shortTargets).toBe(0);
+});
+
+test("Pocket Audio Handoff associates transfer and short-code errors and clears them on edit or success", async ({ page }) => {
+  await page.route("**/api/pocket-audio-handoff/transfers/**", async route => {
+    if(route.request().url().endsWith("/SAM-200")){
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({code: "PCS1:phone-success", expiresAt: "2030-01-01T00:00:00.000Z"}),
+      });
+    }else{
+      await route.fulfill({status: 404, contentType: "application/json", body: JSON.stringify({error: "Not found"})});
+    }
+  });
+  await page.goto("/apps/pocket-audio-handoff/");
+
+  const transfer = page.locator("#handoffText");
+  const transferButton = page.locator("#loadTextBtn");
+  await expect(transfer).toHaveAttribute("aria-describedby", "sourceHelp sourceFieldError");
+  await transfer.fill("not a transfer");
+  await transferButton.click();
+  await expect(transferButton).toBeFocused();
+  await expect(transfer).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#sourceFieldError")).toContainText("does not look like");
+  await expect(page.locator("#sourceStatus")).toContainText("does not look like");
+
+  await transfer.fill("PCS1:valid-transfer");
+  await expect(transfer).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#sourceFieldError")).toHaveText("");
+  await transferButton.click();
+  await expect(transfer).not.toHaveAttribute("aria-invalid", "true");
+
+  const shortCode = page.locator("#redeemCodeInput");
+  await expect(shortCode).toHaveAttribute("aria-describedby", "redeemCodeHelp redeemCodeError");
+  await shortCode.focus();
+  await shortCode.press("Enter");
+  await expect(shortCode).toBeFocused();
+  await expect(shortCode).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#redeemCodeError")).toHaveText("Enter the short code from your phone.");
+  await shortCode.fill("SAM-404");
+  await expect(shortCode).not.toHaveAttribute("aria-invalid", "true");
+  await shortCode.press("Enter");
+  await expect(shortCode).toBeFocused();
+  await expect(shortCode).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#redeemCodeError")).toContainText("could not be loaded");
+  await expect(page.locator("#relayStatus")).toContainText("could not be loaded");
+
+  await shortCode.fill("SAM-200");
+  await expect(shortCode).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#redeemCodeError")).toHaveText("");
+  await shortCode.press("Enter");
+  await expect(shortCode).toBeFocused();
+  await expect(shortCode).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#redeemCodeError")).toHaveText("");
+  await expect(page.locator("#relayStatus")).toContainText("SAM-200 loaded");
+});
+
+test("Pocket DJ reflows at 320 CSS pixels without page-level horizontal scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto("/apps/pocket-dj/");
+  await page.locator("#demoBtn").click();
+  const dimensions = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    page: document.documentElement.scrollWidth,
+    body: document.body.scrollWidth,
+  }));
+  expect(dimensions.page).toBeLessThanOrEqual(dimensions.viewport);
+  expect(dimensions.body).toBeLessThanOrEqual(dimensions.viewport);
+  await expect(page.locator("#transportBar")).toBeVisible();
+  await expect(page.getByLabel("Drums volume")).toBeVisible();
+});
+
+test("Pocket Audio Handoff reflows at 320 CSS pixels with labelled controls intact", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto("/apps/pocket-audio-handoff/");
+  const dimensions = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    page: document.documentElement.scrollWidth,
+  }));
+  expect(dimensions.page).toBeLessThanOrEqual(dimensions.viewport);
+  await expect(page.getByLabel("Pocket Chordsmith song or transfer code")).toBeVisible();
+  await expect(page.getByLabel("Desktop transfer code")).toBeVisible();
+});
+
+test("Pocket DJ honors reduced motion and preserves forced-colors focus visibility", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce", forcedColors: "active" });
+  await page.goto("/apps/pocket-dj/");
+  const opener = page.locator("#importHelpBtn");
+  await opener.focus();
+  const styles = await opener.evaluate((node) => {
+    const computed = getComputedStyle(node);
+    return {
+      outlineStyle: computed.outlineStyle,
+      outlineWidth: parseFloat(computed.outlineWidth),
+      transitionDuration: parseFloat(computed.transitionDuration),
+      animationDuration: parseFloat(computed.animationDuration),
+    };
+  });
+  expect(styles.outlineStyle).not.toBe("none");
+  expect(styles.outlineWidth).toBeGreaterThanOrEqual(2);
+  expect(styles.transitionDuration).toBeLessThanOrEqual(0.001);
+  expect(styles.animationDuration).toBeLessThanOrEqual(0.001);
+});
+
+test("Pocket Audio Handoff keeps keyboard focus visible in forced colors", async ({ page }) => {
+  await page.emulateMedia({ forcedColors: "active" });
+  await page.goto("/apps/pocket-audio-handoff/");
+  const field = page.getByLabel("Desktop transfer code");
+  await field.focus();
+  const outline = await field.evaluate((node) => {
+    const computed = getComputedStyle(node);
+    return { style: computed.outlineStyle, width: parseFloat(computed.outlineWidth) };
+  });
+  expect(outline.style).not.toBe("none");
+  expect(outline.width).toBeGreaterThanOrEqual(2);
+
+  const fileInput = page.locator("#fileInput");
+  await fileInput.focus();
+  const fileLabel = page.locator("label[for=fileInput]");
+  const labelOutline = await fileLabel.evaluate((node) => getComputedStyle(node).outlineStyle);
+  expect(labelOutline).not.toBe("none");
+});
+
+test("Pocket DJ help dialog traps focus and restores it after every close path", async ({ page }) => {
+  await page.goto("/apps/pocket-dj/");
+  const opener = page.locator("#importHelpBtn");
+
+  await opener.click();
+  await expect(page.locator("#helpCloseBtn")).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.locator("#helpCloseBtn")).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.locator("#helpCloseBtn")).toBeFocused();
+  await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
+  await page.locator("#helpCloseBtn").click();
+  await expect(opener).toBeFocused();
+  await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
+
+  await opener.click();
+  await page.locator("#helpOverlay").click({ position: { x: 2, y: 2 } });
+  await expect(page.locator("#helpOverlay")).toBeHidden();
+  await expect(opener).toBeFocused();
+});
+
 const PCS_FIXTURES = [
   {
     path: "/apps/chordsmith-web/demos/lofi_koi_pond_loop.json",
