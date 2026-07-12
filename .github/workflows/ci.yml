@@ -89,12 +89,12 @@ jobs:
           npm run test:e2e
 
       - name: Upload browser test reports
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: browser-test-reports-${{ github.run_id }}
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 7
           path: |
             apps/chordsmith-web/playwright-report/
             apps/chordsmith-web/test-results/
@@ -123,14 +123,10 @@ jobs:
           rustup component add rustfmt
           rustup component add clippy
 
-      - name: Cache Cargo
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            apps/pocket-daw/src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('apps/pocket-daw/src-tauri/Cargo.lock') }}
+      # Do not cache Cargo build output here. The compiled Tauri target directory
+      # was producing ~1 GB immutable caches for each Cargo.lock revision, which
+      # quickly exhausted this account's 0.5 GB Actions storage allowance.
+      # The Windows job is intentionally allowed to rebuild from source instead.
 
       - name: Pocket DAW frontend and native checks
         working-directory: apps/pocket-daw
@@ -145,12 +141,12 @@ jobs:
           cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Upload native check reports
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: pocket-daw-windows-native-reports-${{ github.run_id }}
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 7
           path: |
             apps/pocket-daw/test-results/
             apps/pocket-daw/playwright-report/
