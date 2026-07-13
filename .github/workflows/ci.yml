@@ -45,6 +45,10 @@ jobs:
             exit 1
           fi
 
+      - name: Install Pocket DAW dependencies for family parity
+        working-directory: apps/pocket-daw
+        run: npm ci
+
       - name: Pocket Audio Core
         working-directory: packages/pocket-audio-core
         run: |
@@ -81,7 +85,6 @@ jobs:
       - name: Pocket DAW
         working-directory: apps/pocket-daw
         run: |
-          npm ci
           npx playwright install chromium
           npm run verify:versions
           npm test
