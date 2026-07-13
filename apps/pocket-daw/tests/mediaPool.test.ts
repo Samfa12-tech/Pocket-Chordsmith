@@ -581,6 +581,28 @@ describe("media pool helpers", () => {
     expect(plan.blocked.find((item) => item.id === missing.id)?.reason).toContain("Relink");
   });
 
+  it("never allocates an external collect target over existing project media", () => {
+    let project = createDemoProject();
+    const collected = createMediaPoolItem({
+      kind: "audio",
+      name: "Loop.wav",
+      uri: "project-media/Loop.wav",
+      metadata: { mediaRefKind: "project", projectRelativePath: "project-media/Loop.wav" }
+    });
+    const external = createMediaPoolItem({
+      kind: "audio",
+      name: "Loop.wav",
+      uri: "C:\\Sessions\\Loop.wav",
+      metadata: { mediaRefKind: "external", external: true }
+    }, [collected]);
+    project = addMediaPoolItem(addMediaPoolItem(project, collected), external);
+
+    const plan = createCollectMediaPlan(project);
+
+    expect(plan.alreadyProject).toContainEqual(expect.objectContaining({ id: collected.id, targetRelativePath: "project-media/Loop.wav" }));
+    expect(plan.copy).toContainEqual(expect.objectContaining({ id: external.id, targetRelativePath: "project-media/Loop-2.wav" }));
+  });
+
   it("summarizes media portability without exposing source paths", () => {
     let project = createDemoProject();
     const external = createMediaPoolItem({ kind: "audio", name: "Lead Vocal.wav", uri: "C:\\Sessions\\Lead Vocal.wav" });
@@ -670,6 +692,34 @@ describe("media pool helpers", () => {
     expect(shared.affectedFieldKeys).toEqual(["uri"]);
     expect(JSON.stringify(portableProject.mediaPool.find((item) => item.id === collected.id))).not.toContain("C:\\");
     expect(JSON.stringify(portableProject.mediaPool.find((item) => item.id === collected.id))).not.toContain("originalUri");
+  });
+
+  it("does not call a missing project-relative source portable when only decoded cache can reload it", () => {
+    let project = createDemoProject();
+    const cachedMissing = createMediaPoolItem({
+      kind: "audio",
+      name: "Collected But Deleted.wav",
+      uri: "project-media/Collected But Deleted.wav",
+      metadata: {
+        mediaRefKind: "project",
+        projectRelativePath: "project-media/Collected But Deleted.wav",
+        nativeDecodedCacheRelativePath: "project-cache/native-audio/imports/recovered.wav",
+        missing: true,
+        unresolved: true
+      }
+    });
+    project = addMediaPoolItem(project, cachedMissing);
+
+    const verification = verifyMediaPortability(project);
+
+    expect(verification).toMatchObject({
+      portableCount: 0,
+      cacheOnlyCount: 1,
+      missingOrUnresolvedCount: 1,
+      needsCollectionOrRelinkCount: 1,
+      embeddedSourceProjectPortable: false
+    });
+    expect(verification.items[0]).toMatchObject({ state: "cache-only", action: "reload-cache" });
   });
 
   it("initializes media pool and render cache when migrating older projects", () => {

@@ -4,7 +4,7 @@
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current public release truth: see `docs/CURRENT_RELEASE_STATUS.md`; `0.6.38` is the current published updater checkpoint with timeline-first UI, Pocket Audio handoff hardening, punch/take-lane recording foundations and exact-artifact smoke evidence.
+- Current public release truth: see `docs/CURRENT_RELEASE_STATUS.md`; `0.6.40` is the current published updater checkpoint. Later source work remains unreleased until deliberately versioned, installer-bound, smoke-tested and published.
 - Last completed public artifact record in this repo: tracked in `release-status.json`
 - Last installed public smoke evidence in this repo: tracked in `release-status.json`
 - Machine-readable release status: `release-status.json`
@@ -21,7 +21,15 @@ next checkpoint is deliberately versioned, packaged, hashed, smoke-tested, and
 published. Do not create another installer from a later commit while leaving
 the package/Tauri/schema metadata at the previous public checkpoint.
 
-## Current 0.6.38 Checkpoint
+## Unreleased 2026-07-13 Portable Projects + Media Recovery Slice
+
+- Collect Media now reserves existing project-media names, refuses different-content overwrites, treats identical-byte retries as idempotent, preflights the whole copy set and cleans partial writes on copy failure.
+- Rewritten project-relative references are committed only after strict native project save succeeds; browser download fallback cannot claim a portable native save.
+- Decoded-cache recovery preserves the original media identity and remains visibly missing/unresolved until relink, while project open clears the global runtime audio buffer cache to prevent cross-project false recovery.
+- The live native bridge can collect, reload and explicitly relink media and export WAV, MIDI, stems, section loops, Godot packs and Web packs to deterministic smoke paths.
+- `smoke:installed:media-portability` and its verifier cover collect, deletion of original sources, project-folder move/reopen, cache-only recovery, relink/recollect, final reopen, five export artifacts, hashes and invariants. The 2026-07-13 source-debug run passed and the Godot pack imported headlessly in Godot 4.6.3; exact installer-bound smoke remains a release gate.
+
+## Historical 0.6.38 Checkpoint
 
 - Workspace/UI: Pocket DAW now opens timeline-first with inspector/detail docks minimized, the lower dock tucked by default in Music mode, a compact first-view timeline toolbar for only primary actions, full edit/range tools behind an explicit Tools expander, Music/Game Music focus presets that actually change layout defaults, and panel toggles that preserve timeline scroll.
 - Pocket Audio handoff: the installed DAW launch path from `samfa12.com` now uses the download/open handoff flow, with downloaded/opened payloads accepted reliably and cleared after import so successful handoffs do not repeat unexpectedly.

@@ -183,18 +183,21 @@ cargo test --manifest-path src-tauri/Cargo.toml
 npm run release:update:full
 ```
 
-After the candidate installer exists, validate the exact smoke attestation and the installed punch/take-lane smoke summary:
+After the candidate installer exists, validate the exact smoke attestation plus the installed punch/take-lane and media-portability summaries:
 
 ```powershell
 npm run verify:smoke-attestation -- --attestation <path-to-smoke-attestation.json> --installer <setup.exe> --commit <full-source-sha>
 npm run verify:installed:punch-takes -- --summary <punch-take-lane-installed-smoke-summary.json> --installer <setup.exe>
+npm run smoke:installed:media-portability -- --installer <setup.exe> --require-installer
+npm run verify:installed:media-portability -- --summary <installed-media-portability-smoke-summary.json> --installer <setup.exe> --require-installer
 ```
 
 For a hardware-backed punch/take-lane candidate, pass the strict summary gates through the full candidate verifier:
 
 ```powershell
 npm run smoke:installed:punch-takes -- --installer <setup.exe> --record-ms 5000 --midi-record-ms 5000
-npm run verify:candidate -- --attestation <path-to-smoke-attestation.json> --installer <setup.exe> --punch-take-summary <punch-take-lane-installed-smoke-summary.json> --require-audible-audio --require-export-files --require-midi-input --commit <full-source-sha> --game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>
+npm run smoke:installed:media-portability -- --installer <setup.exe> --require-installer
+npm run verify:candidate -- --attestation <path-to-smoke-attestation.json> --installer <setup.exe> --punch-take-summary <punch-take-lane-installed-smoke-summary.json> --media-portability-summary <installed-media-portability-smoke-summary.json> --require-audible-audio --require-export-files --require-midi-input --commit <full-source-sha> --game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>
 ```
 
 Guarded public publish paths also require the punch/take-lane summary:
@@ -208,6 +211,8 @@ $env:PUNCH_TAKE_REQUIRE_MIDI_INPUT = "1"    # for connected-controller MIDI rele
 ```
 
 The punch/take summary verifier checks the installer SHA-256 and accepts the known Pocket DAW setup filename normalization between local `Pocket DAW_...` NSIS artifacts and staged `Pocket.DAW_...` release assets. Add `--require-export-files` only when the summary's WAV/MIDI export paths are expected to still exist on disk; archived summaries may legitimately point at deleted temp folders. New summaries also include export size/SHA-256 fields, and the verifier compares those hashes and sizes when they are present. Strict export-file mode also requires WAV sample data and parses the MIDI file bytes for active/inactive take-lane sentinel pitches. Strict MIDI-input mode requires a saved active punched MIDI input take with captured note pitches, matching capture/punch bars, punch mode metadata and take-lane placement evidence.
+
+The media-portability smoke creates external WAV fixtures, collects and strictly saves them, deletes the original source folder, moves the complete project folder, reopens/reloads both assets, proves decoded-cache recovery remains cache-only, relinks/recollects the missing source, deletes the replacement source, reopens again, and writes WAV, stem ZIP, section-loop ZIP, Godot and Web packs. Its verifier binds installer filename/hash when `--require-installer` is used and re-hashes every retained evidence/export file. The smoke attestation separately requires the portability summary, game-pack ZIP evidence, and a Godot target-import report; notes such as `not run` or `waiver` cannot satisfy a pass attestation.
 
 Manual update-through-app smoke:
 

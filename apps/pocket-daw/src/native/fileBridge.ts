@@ -204,6 +204,27 @@ export async function saveProjectFile(
   return { file: null, mode: "browser-fallback", message: "Downloaded browser fallback .pocketdaw file." };
 }
 
+export async function writeProjectFileNativeStrict(
+  project: PocketDawProject,
+  currentPath: string,
+  api = defaultNativeFileApi
+): Promise<SaveProjectFileResult> {
+  const invariants = validateProjectInvariants(project);
+  if (invariants.errors.length) {
+    throw new Error(`Project has ${invariants.errors.length} save-blocking invariant error(s): ${invariants.errors[0].message}`);
+  }
+  if (!currentPath) throw new Error("A saved .pocketdaw path is required.");
+  if (!api.isAvailable()) throw new Error("Strict project save is only available in the installed native app.");
+  const contents = buildPocketDawProjectFile(project);
+  const saved = await api.invoke<NativeSavePayload>("write_project_file", { path: currentPath, contents });
+  assertNativeSavePayload(saved);
+  return {
+    file: projectFileStateFromPath(saved.path, saved.label),
+    mode: "native",
+    message: `Saved ${saved.label || projectFileStateFromPath(saved.path).label}.`
+  };
+}
+
 export async function saveBlobFileAs(
   blob: Blob,
   defaultName: string,

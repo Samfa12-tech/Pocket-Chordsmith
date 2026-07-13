@@ -112,6 +112,7 @@ describe("audio media and clips", () => {
       durationSeconds: 3,
       sampleRate: 44100,
       channels: 2,
+      sizeBytes: 42000,
       metadata: {
         external: true,
         missing: true,
@@ -130,7 +131,7 @@ describe("audio media and clips", () => {
       sizeBytes: 168000,
       waveformPeaks: [0.1, 0.6, 0.2],
       metadata: {
-        sourceEncoding: "flac",
+        sourceEncoding: "wav",
         decodedMimeType: "audio/wav",
         nativeDecoded: true
       }
@@ -141,20 +142,20 @@ describe("audio media and clips", () => {
     const item = updated.mediaPool.find((entry) => entry.id === imported.item.id)!;
 
     expect(item.uri).toBe("D:\\Lost\\Missing FLAC.flac");
-    expect(item).toMatchObject({ mimeType: "audio/wav", durationSeconds: 3.5, sampleRate: 48000, channels: 1, sizeBytes: 168000 });
+    expect(item).toMatchObject({ mimeType: "audio/flac", durationSeconds: 3.5, sampleRate: 48000, channels: 1, sizeBytes: 42000 });
     expect(item.metadata).toMatchObject({
       userNote: "keep this annotation",
       waveformPeaks: [0.1, 0.6, 0.2],
-      missing: false,
-      unresolved: false,
+      missing: true,
+      unresolved: true,
       waveformNeedsRefresh: false,
-      sourceEncoding: "flac",
-      decodedMimeType: "audio/wav",
-      nativeDecoded: true,
       lastReloadSourceKind: "decoded-cache",
       lastReloadSourcePath: "project-cache/native-audio/imports/media-002-missing-flac.wav",
-      restoredFromNativeDecodedCache: true
+      restoredFromNativeDecodedCache: true,
+      decodedCachePlaybackMimeType: "audio/wav",
+      decodedCachePlaybackSizeBytes: 168000
     });
+    expect(item.metadata?.sourceEncoding).toBeUndefined();
   });
 
   it("detects source-preserving transient candidates from waveform peaks", () => {

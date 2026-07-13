@@ -152,8 +152,8 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | Function | What it does | Use when | AI counterpart notes |
 | --- | --- | --- | --- |
 | Media Pool | Lists imported media, paths, duration, format metadata, runtime/cache status and placement actions. | Confirming imports, reload/relink and audio placement. | Inspect missing/unresolved/cache-only states before claiming portability. |
-| Reload / Relink | Reloads known source media or chooses replacement files. | Reopening projects with external references. | Relink changes project references; preserve user intent. |
-| Collect Media Plan | Exports a JSON plan for copying external media beside a saved project. | Sharing projects or embedding source project in game packs. | Plan is advisory unless another operation copies files. |
+| Reload / Relink | Reloads known source media or chooses replacement files; decoded-cache fallback preserves playback while remaining honestly missing/unresolved. | Reopening projects with external references. | Relink changes project references and clears stale source-derived analysis. |
+| Collect Media / Plan | Copies reloadable external media under `project-media/` and saves rewritten project-relative references, or exports the same deterministic plan as JSON. | Sharing projects or embedding source project in game packs. | Native collection refuses different-content overwrites and only commits rewritten references after strict native project save succeeds. |
 | Build Native Cache | Renders generated/runtime audio into project-cache/native-audio WAV assets. | Reliable native playback/reopen/export smoke. | Check stale, invalidated or fallback diagnostics. |
 | Render Cache Summary | Shows freeze, native stem, runtime audio and invalidated cache entries. | Understanding playback/export reuse. | Cache metadata can exist when runtime cache is inactive; confirm diagnostics. |
 

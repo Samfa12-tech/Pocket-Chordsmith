@@ -41,6 +41,8 @@
     "verify:smoke-attestation": "node scripts/verify-smoke-attestation.mjs",
     "smoke:installed:punch-takes": "tsx scripts/smoke-installed-punch-take-lanes.ts",
     "verify:installed:punch-takes": "node scripts/verify-installed-punch-take-summary.mjs",
+    "smoke:installed:media-portability": "tsx scripts/smoke-installed-media-portability.ts",
+    "verify:installed:media-portability": "node scripts/verify-installed-media-portability-summary.mjs",
     "verify:game-pack": "node scripts/verify-game-pack.mjs",
     "package:itch": "node scripts/package-itch.mjs",
     "verify:artifacts": "node scripts/verify-release-artifacts.mjs",

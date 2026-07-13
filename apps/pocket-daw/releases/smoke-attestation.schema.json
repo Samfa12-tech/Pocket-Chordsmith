@@ -80,9 +80,10 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "id",
-          "result"
+          "required": [
+            "id",
+            "result",
+            "notes"
         ],
         "properties": {
           "id": {
@@ -97,7 +98,44 @@
             ]
           },
           "notes": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "result"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "result": {
+                  "const": "pass"
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-fA-F0-9]{64}$"
+                },
+                "target": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "details": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
           }
         }
       }

@@ -1,5 +1,6 @@
 use cpal::traits::DeviceTrait;
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tauri::{Emitter, Manager};
@@ -13,7 +14,10 @@ const SECOND_INSTANCE_DEEP_LINK_EVENT: &str = "pocket-daw-second-instance";
 const LOCAL_HANDOFF_EVENT: &str = "pocket-daw-local-handoff";
 const AI_BRIDGE_REQUEST_EVENT: &str = "pocket-daw-ai-request";
 const LOCAL_HANDOFF_PORT: u16 = 47858;
-const AI_BRIDGE_RESPONSE_TIMEOUT_MS: u64 = 30000;
+// Native WAV/stem/loop/game-pack renders can legitimately take longer than a
+// lightweight edit command. Keep one bounded request window that lets those
+// explicit export operations finish without reporting a false bridge failure.
+const AI_BRIDGE_RESPONSE_TIMEOUT_MS: u64 = 180000;
 const DOWNLOAD_HANDOFF_PREFIX: &str = "pocket-chordsmith-to-pocket-daw-";
 const DOWNLOAD_HANDOFF_SUFFIX: &str = ".pcs1.txt";
 const MAX_PROJECT_FILE_BYTES: u64 = 25 * 1024 * 1024;
@@ -1048,7 +1052,7 @@ fn collect_project_media(
     let project_dir = project_path
         .parent()
         .ok_or_else(|| "Save the project before collecting media.".to_string())?;
-    let mut collected = Vec::new();
+    let mut prepared = Vec::new();
     for item in items {
         let source = source_uri_to_path(&item.source_uri);
         if !source.is_absolute() {
@@ -1060,13 +1064,61 @@ fn collect_project_media(
         ensure_file_size_at_most(&source, MAX_AUDIO_FILE_BYTES, "Media file is too large to collect in this release. Try a shorter file or keep it external until native streaming support lands.")?;
         let target_relative_path =
             normalize_project_media_relative_path(&item.target_relative_path)?;
-        let target = resolve_project_relative_path(project_dir, &target_relative_path)?;
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|err| format!("Could not create project media folder: {}", err))?;
+        if !target_relative_path.starts_with("project-media/") {
+            return Err("Collected media targets must stay under project-media/.".to_string());
         }
-        let size_bytes = std::fs::copy(&source, &target)
-            .map_err(|err| format!("Could not copy {}: {}", item.source_uri, err))?;
+        let target = resolve_project_relative_path(project_dir, &target_relative_path)?;
+        if target == project_path {
+            return Err("Collected media cannot overwrite the Pocket DAW project file.".to_string());
+        }
+        let target_already_matches = if target.exists() {
+            if !files_have_equal_bytes(&source, &target)? {
+                return Err(format!(
+                    "Collect target already exists with different content and will not be overwritten: {}",
+                    target_relative_path
+                ));
+            }
+            true
+        } else {
+            false
+        };
+        prepared.push((item, source, target_relative_path, target, target_already_matches));
+    }
+
+    let mut collected = Vec::new();
+    let mut copied_targets: Vec<std::path::PathBuf> = Vec::new();
+    for (item, source, target_relative_path, target, target_already_matches) in prepared {
+        if target_already_matches {
+            collected.push(CollectedProjectMediaItem {
+                id: item.id,
+                source_uri: item.source_uri,
+                target_path: target.to_string_lossy().to_string(),
+                target_relative_path,
+                size_bytes: std::fs::metadata(&target)
+                    .map_err(|err| format!("Could not inspect existing collect target: {}", err))?
+                    .len(),
+            });
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            if let Err(err) = std::fs::create_dir_all(parent) {
+                for copied in &copied_targets {
+                    let _ = std::fs::remove_file(copied);
+                }
+                return Err(format!("Could not create project media folder: {}", err));
+            }
+        }
+        let size_bytes = match std::fs::copy(&source, &target) {
+            Ok(size_bytes) => size_bytes,
+            Err(err) => {
+                let _ = std::fs::remove_file(&target);
+                for copied in &copied_targets {
+                    let _ = std::fs::remove_file(copied);
+                }
+                return Err(format!("Could not copy {}: {}", item.source_uri, err));
+            }
+        };
+        copied_targets.push(target.clone());
         collected.push(CollectedProjectMediaItem {
             id: item.id,
             source_uri: item.source_uri,
@@ -1076,6 +1128,36 @@ fn collect_project_media(
         });
     }
     Ok(collected)
+}
+
+fn files_have_equal_bytes(left: &std::path::Path, right: &std::path::Path) -> Result<bool, String> {
+    let left_metadata = std::fs::metadata(left)
+        .map_err(|err| format!("Could not inspect collect source: {}", err))?;
+    let right_metadata = std::fs::metadata(right)
+        .map_err(|err| format!("Could not inspect existing collect target: {}", err))?;
+    if !left_metadata.is_file() || !right_metadata.is_file() || left_metadata.len() != right_metadata.len() {
+        return Ok(false);
+    }
+    let mut left_file = std::fs::File::open(left)
+        .map_err(|err| format!("Could not read collect source: {}", err))?;
+    let mut right_file = std::fs::File::open(right)
+        .map_err(|err| format!("Could not read existing collect target: {}", err))?;
+    let mut left_buffer = [0_u8; 64 * 1024];
+    let mut right_buffer = [0_u8; 64 * 1024];
+    loop {
+        let left_read = left_file
+            .read(&mut left_buffer)
+            .map_err(|err| format!("Could not read collect source: {}", err))?;
+        let right_read = right_file
+            .read(&mut right_buffer)
+            .map_err(|err| format!("Could not read existing collect target: {}", err))?;
+        if left_read != right_read || left_buffer[..left_read] != right_buffer[..right_read] {
+            return Ok(false);
+        }
+        if left_read == 0 {
+            return Ok(true);
+        }
+    }
 }
 
 #[tauri::command]
@@ -1937,6 +2019,45 @@ mod tests {
         assert_eq!(copied[0].size_bytes, 4);
         assert!(project_dir.join("project-media").join("Loop.wav").exists());
 
+        let idempotent = collect_project_media(
+            project.to_string_lossy().to_string(),
+            vec![CollectProjectMediaItem {
+                id: "media_retry".to_string(),
+                source_uri: source.to_string_lossy().to_string(),
+                target_relative_path: "project-media/Loop.wav".to_string(),
+            }],
+        )
+        .expect("an identical collect retry should be idempotent");
+        assert_eq!(idempotent[0].size_bytes, 4);
+
+        let conflicting_source = source_dir.join("Conflicting.wav");
+        std::fs::write(&conflicting_source, [9, 9, 9, 9]).expect("conflicting source media");
+        let overwrite = match collect_project_media(
+            project.to_string_lossy().to_string(),
+            vec![CollectProjectMediaItem {
+                id: "media_overwrite".to_string(),
+                source_uri: conflicting_source.to_string_lossy().to_string(),
+                target_relative_path: "project-media/Loop.wav".to_string(),
+            }],
+        ) {
+            Ok(_) => panic!("collect should never overwrite an existing target"),
+            Err(error) => error,
+        };
+        assert!(overwrite.contains("will not be overwritten"));
+
+        let wrong_folder = match collect_project_media(
+            project.to_string_lossy().to_string(),
+            vec![CollectProjectMediaItem {
+                id: "media_wrong_folder".to_string(),
+                source_uri: source.to_string_lossy().to_string(),
+                target_relative_path: "project-cache/Loop.wav".to_string(),
+            }],
+        ) {
+            Ok(_) => panic!("collect should require project-media targets"),
+            Err(error) => error,
+        };
+        assert!(wrong_folder.contains("project-media"));
+
         let blocked = match collect_project_media(
             project.to_string_lossy().to_string(),
             vec![CollectProjectMediaItem {
@@ -1949,6 +2070,27 @@ mod tests {
             Err(error) => error,
         };
         assert!(blocked.contains("cannot escape"));
+
+        let second_source = source_dir.join("Second.wav");
+        std::fs::write(&second_source, [5, 6, 7, 8]).expect("second source media");
+        let missing_source = source_dir.join("Missing.wav");
+        let partial = collect_project_media(
+            project.to_string_lossy().to_string(),
+            vec![
+                CollectProjectMediaItem {
+                    id: "media_partial_a".to_string(),
+                    source_uri: second_source.to_string_lossy().to_string(),
+                    target_relative_path: "project-media/Second.wav".to_string(),
+                },
+                CollectProjectMediaItem {
+                    id: "media_partial_b".to_string(),
+                    source_uri: missing_source.to_string_lossy().to_string(),
+                    target_relative_path: "project-media/Missing.wav".to_string(),
+                },
+            ],
+        );
+        assert!(partial.is_err());
+        assert!(!project_dir.join("project-media").join("Second.wav").exists());
 
         let _ = std::fs::remove_dir_all(&root);
     }

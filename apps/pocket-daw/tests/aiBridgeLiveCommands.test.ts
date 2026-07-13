@@ -960,6 +960,9 @@ describe("Pocket DAW AI bridge live commands", () => {
     expect(status.capabilities.control).toContain("midi_record_start");
     expect(status.capabilities.control).toContain("midi_record_stop");
     expect(status.capabilities.control).toContain("midi_record_toggle");
+    expect(status.capabilities.control).toContain("collect_media");
+    expect(status.capabilities.control).toContain("reload_media");
+    expect(status.capabilities.control).toContain("relink_media");
     expect(status.recording.punchEnabled).toBe(false);
     expect(status.recording.takeMode).toBe("replace");
     expect(status.capabilities.liveCommands).toContain("set_track_armed");

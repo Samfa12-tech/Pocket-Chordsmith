@@ -433,7 +433,11 @@ export function mediaPoolReloadCandidates(item: MediaPoolItem): MediaPoolReloadC
 }
 
 export function createCollectMediaPlan(project: PocketDawProject): CollectMediaPlan {
-  const usedTargets = new Set<string>();
+  const usedTargets = new Set<string>(project.mediaPool
+    .filter((item) => isProjectMediaItem(item))
+    .map((item) => normalizeProjectRelativeMediaPath(String(item.metadata?.projectRelativePath || item.uri || "")))
+    .filter(Boolean)
+    .map((path) => path.toLowerCase()));
   const items = project.mediaPool.map((item): CollectMediaPlanItem => {
     const status = mediaPoolStatus(item);
     if (isProjectMediaItem(item)) {
@@ -502,17 +506,6 @@ export function verifyMediaPortability(project: PocketDawProject): MediaPortabil
     const hasProjectRelativePath = isProjectMediaItem(item);
     const hasDecodedCache = item.kind === "audio" && status.cacheReloadable;
     const name = portableMediaName(item);
-    if (hasProjectRelativePath && planItem?.action === "already-project-media") {
-      return portabilityItem(item, status, {
-        name,
-        state: "portable-project",
-        portable: true,
-        action: "none",
-        reason: "Project-relative media is saved beside the source project.",
-        hasProjectRelativePath,
-        hasDecodedCache
-      });
-    }
     if ((status.missing || status.unresolved) && hasDecodedCache) {
       return portabilityItem(item, status, {
         name,
@@ -531,6 +524,17 @@ export function verifyMediaPortability(project: PocketDawProject): MediaPortabil
         portable: false,
         action: "relink",
         reason: "Media is missing or unresolved and needs relink.",
+        hasProjectRelativePath,
+        hasDecodedCache
+      });
+    }
+    if (hasProjectRelativePath && planItem?.action === "already-project-media") {
+      return portabilityItem(item, status, {
+        name,
+        state: "portable-project",
+        portable: true,
+        action: "none",
+        reason: "Project-relative media is saved beside the source project.",
         hasProjectRelativePath,
         hasDecodedCache
       });

@@ -1,5 +1,5 @@
 import { AudioEngine, type AudioProjectSyncMode, type TrackMixerControlPatch } from "../audio/audioEngine";
-import { audioBufferPeaks, getCachedAudioBuffer, setCachedAudioBuffer } from "../audio/audioBufferCache";
+import { audioBufferPeaks, clearAudioBufferCache, getCachedAudioBuffer, setCachedAudioBuffer } from "../audio/audioBufferCache";
 import { buildTransportMetronomeSchedule, countInSeconds, metronomeSettings } from "../audio/metronome";
 import { exportProjectToMidiBlob } from "../audio/midiExport";
 import { mergeNativeRenderCacheItems, prunePersistedNativeRenderCacheAssets } from "../audio/nativeRenderCache";
@@ -30,6 +30,7 @@ import {
   safeName,
   saveBlobFileAs,
   saveProjectFile,
+  writeProjectFileNativeStrict,
   writeBlobFileNative,
   type NativeProjectRecoveryCandidate,
   type OpenProjectFileResult
@@ -257,7 +258,7 @@ import { recordingLatencyOffsetSeconds, trackIsAudible, type AddTrackKind } from
 import { barFloatToDisplayPosition, secondsToBars, snapProjectBarValue } from "../daw/timeline";
 import { addImportedAudioMedia, placeAudioClipOnTimeline, placePunchRecordingClipOnTrack, placeRecordingClipOnTrack, placeTakeLaneRecordingClipOnTrack, updateAudioMediaAnalysis, updateAudioMediaReloadAnalysis } from "../daw/audioClips";
 import type { AudioClipAction } from "../daw/clips";
-import { createCollectMediaPlan, findMediaPoolItem, linkFreezeRenderCacheItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked, mediaPoolReloadCandidates, mediaPoolStatus, updateMediaPoolItemMetadata, verifyMediaPortability } from "../daw/mediaPool";
+import { createCollectMediaPlan, findMediaPoolItem, linkFreezeRenderCacheItem, markMediaPoolItemCollected, markMediaPoolItemMissing, markMediaPoolItemRelinked, mediaPoolReloadCandidates, mediaPoolStatus, normalizeProjectRelativeMediaPath, updateMediaPoolItemMetadata, verifyMediaPortability } from "../daw/mediaPool";
 import {
   AUDIO_MEDIA_ACCEPT,
   collectProjectMediaNative,
@@ -290,7 +291,7 @@ import { applyUpdaterCheckResult, applyUpdaterInstallResult, applyUpdaterProgres
 type MixerControlField = "volume" | "pan";
 type ScrollSnapshot = Record<string, { top: number; left: number }>;
 type ClipDragMode = "move" | "repeat";
-type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "midi_panic" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "set_recording_options" | "record_start" | "record_stop" | "record_toggle" | "midi_record_start" | "midi_record_stop" | "midi_record_toggle" | "apply_commands" | "performance_diagnostics" | "export_project";
+type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "midi_panic" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "collect_media" | "reload_media" | "relink_media" | "set_recording_options" | "record_start" | "record_stop" | "record_toggle" | "midi_record_start" | "midi_record_stop" | "midi_record_toggle" | "apply_commands" | "performance_diagnostics" | "export_project";
 type AiBridgeLiveCommand =
   | { type: "set_track_volume"; trackId: string; volume: number }
   | { type: "set_track_pan"; trackId: string; pan: number }
@@ -713,7 +714,7 @@ export class App {
       })),
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
-        control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "set_recording_options", "record_start", "record_stop", "record_toggle", "midi_record_start", "midi_record_stop", "midi_record_toggle", "performance_diagnostics", "export_project"],
+        control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "collect_media", "reload_media", "relink_media", "set_recording_options", "record_start", "record_stop", "record_toggle", "midi_record_start", "midi_record_stop", "midi_record_toggle", "performance_diagnostics", "export_project"],
         liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "transform_midi_velocity", "transform_midi_pitch", "place_midi_recording_take", "create_take_lane_group", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       }
     };
@@ -805,6 +806,38 @@ export class App {
         }
       };
     }
+    if (action === "collect_media") {
+      const result = await this.collectMedia();
+      return {
+        ...result,
+        action,
+        message: this.state.status,
+        media: createAiBridgeMediaReadiness(currentProject(this.state))
+      };
+    }
+    if (action === "reload_media") {
+      const mediaPoolItemId = stringInput(input.mediaPoolItemId, "mediaPoolItemId");
+      const ok = await this.reloadAudioMedia(mediaPoolItemId);
+      return {
+        ok,
+        action,
+        mediaPoolItemId,
+        message: this.state.status,
+        media: createAiBridgeMediaReadiness(currentProject(this.state))
+      };
+    }
+    if (action === "relink_media") {
+      const mediaPoolItemId = stringInput(input.mediaPoolItemId, "mediaPoolItemId");
+      const sourcePath = stringInput(input.sourcePath, "sourcePath");
+      const ok = await this.relinkAudioMedia(mediaPoolItemId, sourcePath);
+      return {
+        ok,
+        action,
+        mediaPoolItemId,
+        message: this.state.status,
+        media: createAiBridgeMediaReadiness(currentProject(this.state))
+      };
+    }
     if (action === "set_recording_options") {
       if (input.punchEnabled !== undefined) this.state.recordingPunchEnabled = Boolean(input.punchEnabled);
       if (input.takeMode !== undefined) this.state.recordingTakeMode = recordingTakeModeInput(input.takeMode);
@@ -891,14 +924,48 @@ export class App {
   private async handleAiBridgeExportProject(input: Record<string, unknown>): Promise<unknown> {
     const format = stringInput(input.format, "format").toLowerCase();
     const outputPath = stringInput(input.outputPath, "outputPath");
-    if (format !== "wav" && format !== "midi") {
-      return { ok: false, code: "unsupported_export_format", message: "export_project supports wav or midi." };
+    const supportedFormats = ["wav", "midi", "stem-zip", "section-loop-zip", "godot-adaptive-pack", "web-game-pack"];
+    if (!supportedFormats.includes(format)) {
+      return { ok: false, code: "unsupported_export_format", message: `export_project supports ${supportedFormats.join(", ")}.` };
     }
     try {
       const project = currentProject(this.state);
-      const exportResult = format === "wav" ? await this.createFullMixWavBlobForExport() : null;
-      const blob = exportResult?.blob || exportProjectToMidiBlob(project);
-      const saved = await writeBlobFileNative(outputPath, blob, format === "wav" ? "wav" : "midi");
+      let blob: Blob;
+      let artifact: Record<string, unknown> = {};
+      if (format === "wav") {
+        blob = (await this.createFullMixWavBlobForExport()).blob;
+      } else if (format === "midi") {
+        blob = exportProjectToMidiBlob(project);
+      } else {
+        const hydration = await this.hydrateTimelineAudioBuffers();
+        this.assertNoMissingAudibleAudioBuffers(hydration, `${format} export`);
+        if (format === "stem-zip") {
+          const result = await createStemZipBlob(project, { renderWav: (renderProject) => this.renderWavNativeFirst(renderProject) });
+          blob = result.blob;
+          artifact = { entryCount: result.entries.length, stemCount: result.manifest.stems.length, manifestFile: result.manifest.manifestFile };
+        } else if (format === "section-loop-zip") {
+          const result = await createSectionLoopZipBlob(project, { renderWav: (renderProject) => this.renderWavNativeFirst(renderProject) });
+          blob = result.blob;
+          artifact = { entryCount: result.entries.length, sectionLoopCount: result.manifest.sectionLoops.length, manifestFile: result.manifest.manifestFile };
+        } else {
+          const kind = format as "godot-adaptive-pack" | "web-game-pack";
+          const result = await createGamePackZipBlob(project, kind, {
+            sourceProjectContents: buildPortableGamePackSourceProjectFile(project),
+            renderWav: (renderProject) => this.renderWavNativeFirst(renderProject, { channelMode: "stereo", bitDepth: 16, dither: "off", normalizePeak: false })
+          });
+          blob = result.blob;
+          artifact = {
+            kind,
+            entryCount: result.entries.length,
+            stemCount: result.manifest.stems.length,
+            sectionLoopCount: result.manifest.sectionLoops.length,
+            warningCount: result.manifest.warnings.length,
+            manifestFile: result.manifest.manifestFile
+          };
+        }
+      }
+      const binaryKind = format === "wav" ? "wav" : format === "midi" ? "midi" : "zip";
+      const saved = await writeBlobFileNative(outputPath, blob, binaryKind);
       const bytesWritten = saved.bytesWritten || blob.size;
       this.state.status = `Exported ${format.toUpperCase()} to ${saved.file?.label || outputPath} (${Math.round(bytesWritten / 1024)} KB).`;
       this.render({ preserveScroll: true });
@@ -908,10 +975,11 @@ export class App {
         format,
         path: saved.file?.path || outputPath,
         bytesWritten,
+        artifact,
         message: this.state.status
       };
     } catch (error) {
-      const label = format === "wav" ? "WAV" : "MIDI";
+      const label = format.toUpperCase();
       const message = error instanceof Error ? `${label} export failed: ${error.message}` : `${label} export failed.`;
       this.state.status = message;
       this.render({ preserveScroll: true });
@@ -5162,12 +5230,12 @@ export class App {
     }
   }
 
-  private async reloadAudioMedia(mediaPoolItemId: string) {
+  private async reloadAudioMedia(mediaPoolItemId: string): Promise<boolean> {
     const item = findMediaPoolItem(currentProject(this.state), mediaPoolItemId);
     if (!item || item.kind !== "audio") {
       this.state.status = "Choose an audio media item to reload.";
       this.render();
-      return;
+      return false;
     }
     const candidates = mediaPoolReloadCandidates(item);
     if (!candidates.length) {
@@ -5176,7 +5244,7 @@ export class App {
         ? `${item.name} is missing or unresolved. Use Relink.`
         : `${item.name} has no reloadable stored path. Use Relink.`;
       this.render();
-      return;
+      return false;
     }
     try {
       this.state.status = `Reloading ${item.name}...`;
@@ -5190,7 +5258,7 @@ export class App {
           if (!loaded) {
             this.state.status = "Native media reload is only available in the installed app.";
             this.render();
-            return;
+            return false;
           }
           source = loaded;
           loadedFrom = candidate;
@@ -5216,27 +5284,31 @@ export class App {
         metadata: audioSourceMetadata(source)
       }, loadedFrom);
       this.applyProjectState(commitProject(this.state, project, `Reloaded ${item.name} from ${loadedFrom.label}.${this.mediaPortabilityStatus(project)}`), { audio: "timeline-structure", reason: "reload-media" });
+      return true;
     } catch (error) {
       const project = markMediaPoolItemMissing(currentProject(this.state), item.id, true, error instanceof Error ? error.message : "Reload failed.");
       this.applyProjectState(commitProject(this.state, project, `Could not reload ${item.name}. Use Relink.${this.mediaPortabilityStatus(project)}`), { audio: "none", preserveScroll: true, reason: "reload-media-failed" });
+      return false;
     }
   }
 
-  private async relinkAudioMedia(mediaPoolItemId: string) {
+  private async relinkAudioMedia(mediaPoolItemId: string, sourcePath?: string): Promise<boolean> {
     const item = findMediaPoolItem(currentProject(this.state), mediaPoolItemId);
     if (!item || item.kind !== "audio") {
       this.state.status = "Choose an audio media item to relink.";
       this.render();
-      return;
+      return false;
     }
     try {
       this.state.status = `Relinking ${item.name}...`;
       this.render();
-      const source = await relinkAudioMediaNative();
+      const source = sourcePath
+        ? await loadAudioMediaNative(sourcePath, this.state.currentFile.path)
+        : await relinkAudioMediaNative();
       if (!source) {
         this.state.status = "Relink cancelled or native picker unavailable.";
         this.render();
-        return;
+        return false;
       }
       const decoded = await this.decodeAudioSource(source);
       setCachedAudioBuffer(item.id, decoded.buffer, sourceCacheOptions(source));
@@ -5260,9 +5332,11 @@ export class App {
       const cacheMetadata = await this.persistNativeDecodedAudioCache(item.id, source);
       if (cacheMetadata) project = updateMediaPoolItemMetadata(project, item.id, cacheMetadata);
       this.applyProjectState(commitProject(this.state, project, `Relinked ${item.name} to ${source.name}.${this.mediaPortabilityStatus(project)}`), { audio: "timeline-structure", reason: "relink-media" });
+      return true;
     } catch (error) {
       this.state.status = error instanceof Error ? `Relink failed: ${error.message}` : "Relink failed.";
       this.render({ preserveScroll: true });
+      return false;
     }
   }
 
@@ -5805,20 +5879,20 @@ export class App {
     this.render();
   }
 
-  private async collectMedia() {
+  private async collectMedia(): Promise<{ ok: boolean; collectedCount: number; blockedCount: number }> {
     const project = currentProject(this.state);
     const plan = createCollectMediaPlan(project);
     if (!this.state.currentFile.path) {
       this.state.status = "Save the project as a .pocketdaw file before collecting media.";
       this.render();
-      return;
+      return { ok: false, collectedCount: 0, blockedCount: plan.blocked.length };
     }
     if (!plan.copy.length) {
       this.state.status = plan.blocked.length
         ? `No media could be collected yet; ${plan.blocked.length} item${plan.blocked.length === 1 ? "" : "s"} need relink or native import first.`
         : "All media is already project media.";
       this.render();
-      return;
+      return { ok: plan.blocked.length === 0, collectedCount: 0, blockedCount: plan.blocked.length };
     }
     try {
       this.state.status = `Collecting ${plan.copy.length} media item${plan.copy.length === 1 ? "" : "s"}...`;
@@ -5831,29 +5905,35 @@ export class App {
       if (!collected) {
         this.state.status = "Collect Media is only available in the installed native app.";
         this.render();
-        return;
+        return { ok: false, collectedCount: 0, blockedCount: plan.blocked.length };
       }
       let nextProject = currentProject(this.state);
       collected.forEach((item) => {
         nextProject = markMediaPoolItemCollected(nextProject, item);
       });
-      this.applyProjectState(commitProject(this.state, nextProject, `Collected ${collected.length} media item${collected.length === 1 ? "" : "s"}.`), {
-        audio: "timeline-structure",
-        preserveScroll: true,
-        reason: "collect-media"
-      });
-      const saveResult = await saveProjectFile(currentProject(this.state), this.state.currentFile.path, false);
+      const saveResult = await writeProjectFileNativeStrict(nextProject, this.state.currentFile.path);
       if (saveResult.file) {
         this.state.currentFile = saveResult.file;
         saveRecentProject(saveResult.file.label, saveResult.file.path);
         this.state.recent = loadRecentProjects();
       }
-      this.state.status = `Collected ${collected.length} media item${collected.length === 1 ? "" : "s"} into project-media and saved project refs.${this.mediaPortabilityStatus(currentProject(this.state))}`;
+      this.applyProjectState(commitProject(this.state, nextProject, `Collected ${collected.length} media item${collected.length === 1 ? "" : "s"} into project-media and saved project refs.${this.mediaPortabilityStatus(nextProject)}`), {
+        audio: "timeline-structure",
+        preserveScroll: true,
+        reason: "collect-media"
+      });
       this.saveAutosaveSnapshot(currentProject(this.state));
       this.render({ preserveScroll: true });
+      const portability = verifyMediaPortability(currentProject(this.state));
+      return {
+        ok: collected.length === plan.copy.length && plan.blocked.length === 0 && portability.embeddedSourceProjectPortable,
+        collectedCount: collected.length,
+        blockedCount: plan.blocked.length
+      };
     } catch (error) {
       this.state.status = error instanceof Error ? `Collect media failed: ${error.message}` : "Collect media failed.";
       this.render({ preserveScroll: true });
+      return { ok: false, collectedCount: 0, blockedCount: plan.blocked.length };
     }
   }
 
@@ -6204,6 +6284,7 @@ export class App {
     this.engine.stop();
     this.stopLiveMetronome();
     this.cancelNativeInputForProjectReset();
+    clearAudioBufferCache();
     this.state = loadProjectIntoState(this.state, project, options);
     this.engine.setProject(project);
   }
@@ -6401,12 +6482,31 @@ function compactGamePackStatus(manifest: ReturnType<typeof createGameExportManif
 
 function createAiBridgeMediaReadiness(project: PocketDawProject) {
   const statuses = project.mediaPool.map((item) => mediaPoolStatus(item));
+  const portability = verifyMediaPortability(project);
   return {
     poolCount: project.mediaPool.length,
     projectMediaCount: statuses.filter((status) => !status.external && !status.runtimeOnly && !status.missing && !status.unresolved).length,
     externalReferenceCount: statuses.filter((status) => status.external).length,
     runtimeOnlyCount: statuses.filter((status) => status.runtimeOnly).length,
     missingCount: statuses.filter((status) => status.missing || status.unresolved).length,
+    portability,
+    items: project.mediaPool.map((item, index) => ({
+      id: item.id,
+      name: item.name,
+      kind: item.kind,
+      durationSeconds: item.durationSeconds,
+      sampleRate: item.sampleRate,
+      channels: item.channels,
+      sizeBytes: item.sizeBytes,
+      projectRelativePath: normalizeProjectRelativeMediaPath(String(item.metadata?.projectRelativePath || item.uri || "")) || null,
+      nativeDecodedCacheRelativePath: normalizeProjectRelativeMediaPath(String(item.metadata?.nativeDecodedCacheRelativePath || "")) || null,
+      lastReloadSourceKind: typeof item.metadata?.lastReloadSourceKind === "string" ? item.metadata.lastReloadSourceKind : null,
+      restoredFromNativeDecodedCache: item.metadata?.restoredFromNativeDecodedCache === true,
+      missing: statuses[index]?.missing === true,
+      unresolved: statuses[index]?.unresolved === true,
+      waveformPeakCount: Array.isArray(item.metadata?.waveformPeaks) ? item.metadata.waveformPeaks.length : 0,
+      transientMarkerCount: Array.isArray(item.metadata?.audioTransientMarkersSeconds) ? item.metadata.audioTransientMarkersSeconds.length : 0
+    })),
     audioTakes: createAudioTakeDiagnosticsSummary(project),
     midiChordsmithConversionPreviews: createMidiChordsmithConversionPreviews(project)
   };

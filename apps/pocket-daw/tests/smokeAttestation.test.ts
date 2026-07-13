@@ -29,10 +29,20 @@ function buildAttestation(overrides: Record<string, any> = {}) {
       audioInput: "Focusrite USB Audio",
       audioOutput: "Speakers (Realtek)"
     },
-    checks: REQUIRED_SMOKE_CHECK_IDS.map((id) => ({ id, result: "pass", notes: `${id} covered` })),
+    checks: REQUIRED_SMOKE_CHECK_IDS.map((id) => ({ id, result: "pass", notes: `${id} covered`, evidence: evidenceForCheck(id) })),
     knownFailures: [],
     ...overrides
   };
+}
+
+function evidenceForCheck(id: string) {
+  if (id === "native-media-reliability") return [{ kind: "installed-media-portability-summary", result: "pass", file: "media-summary.json", sha256: sha256("media") }];
+  if (id === "punch-take-lane-recording") return [{ kind: "installed-punch-take-summary", result: "pass", file: "punch-summary.json", sha256: sha256("punch") }];
+  if (id === "game-pack-target-smoke") return [
+    { kind: "game-pack-zip", result: "pass", file: "godot-pack.zip", sha256: sha256("pack") },
+    { kind: "godot-target-import", result: "pass", file: "godot-import.json", details: "Imported by Godot and validated generated assets." }
+  ];
+  return [];
 }
 
 function buildPunchTakeSummary(overrides: Record<string, any> = {}) {
@@ -170,7 +180,7 @@ describe("smoke attestation schema", () => {
       "audioInput",
       "audioOutput"
     ]);
-    expect(schema.properties.checks.items.required).toEqual(["id", "result"]);
+    expect(schema.properties.checks.items.required).toEqual(["id", "result", "notes"]);
   });
 });
 
@@ -237,6 +247,24 @@ describe("smoke attestation verifier", () => {
     expect(validation.failures.join("\n")).toContain("native-media-reliability");
     expect(validation.failures.join("\n")).toContain("punch-take-lane-recording");
     expect(validation.failures.join("\n")).toContain("game-pack-target-smoke");
+  });
+
+  it("rejects waiver notes and missing substantive evidence for critical checks", () => {
+    const base = buildAttestation();
+    const checks = base.checks.map((check: Record<string, any>) => check.id === "game-pack-target-smoke"
+      ? { ...check, notes: "No new claim; existing evidence applies.", evidence: [{ kind: "game-pack-zip", result: "pass", file: "pack.zip", sha256: sha256("pack") }] }
+      : check);
+
+    const validation = validateSmokeAttestation(buildAttestation({ checks }), {
+      version: "0.6.20",
+      commit: "e".repeat(40),
+      installerFile: "Pocket.DAW_0.6.20_x64-setup.exe",
+      installerSha256: sha256("installer bytes")
+    });
+
+    expect(validation.ok).toBe(false);
+    expect(validation.failures.join("\n")).toContain("waiver");
+    expect(validation.failures.join("\n")).toContain("godot-target-import");
   });
 
   it("rejects a rebuilt installer when the attestation hash is stale", () => {

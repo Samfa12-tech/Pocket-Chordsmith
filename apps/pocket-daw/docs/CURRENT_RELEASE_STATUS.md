@@ -29,7 +29,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
-- No unreleased source-only notes recorded.
+- 2026-07-13 source-only Portable Projects + Media Recovery slice: strict collect/save ordering, collision-safe and idempotent native copies, honest decoded-cache recovery, project-load runtime-cache clearing, live collect/reload/relink controls, explicit stem/loop/Godot/Web export controls, installer-bound portability evidence verification, and stricter smoke-attestation evidence requirements. Native debug smoke passed collect, source deletion, folder move/reopen, cache fallback, relink/recollect, five export artifacts and Godot 4.6.3 headless pack import; this is not yet an installed or published release claim.
 
 ## Capability Claim Boundary
 

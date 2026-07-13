@@ -1648,6 +1648,40 @@ describe("Pocket DAW MCP tools", () => {
     }
   });
 
+  it("sends explicit media relink controls through the tokened app bridge", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-live-relink-"));
+    const sessionPath = join(dir, "ai-bridge-session.json");
+    const sourcePath = join(dir, "replacement.wav");
+    writeFileSync(sessionPath, JSON.stringify({
+      statusUrl: "http://127.0.0.1:47858/pocket-daw/live/status",
+      controlUrl: "http://127.0.0.1:47858/pocket-daw/live/control",
+      token: "test-token"
+    }));
+    const originalFetch = globalThis.fetch;
+    let requestBody = "";
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      requestBody = String(init?.body || "");
+      return new Response(JSON.stringify({ ok: true, action: "relink_media", mediaPoolItemId: "media_001" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_live_control", {
+        sessionPath,
+        action: "relink_media",
+        mediaPoolItemId: "media_001",
+        sourcePath
+      }));
+
+      expect(result.ok).toBe(true);
+      expect(JSON.parse(requestBody)).toMatchObject({ action: "relink_media", mediaPoolItemId: "media_001", sourcePath });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("sends live performance diagnostic controls through the tokened app bridge", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pocket-daw-live-performance-"));
     const sessionPath = join(dir, "ai-bridge-session.json");

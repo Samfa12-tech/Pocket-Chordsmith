@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
 
 export const REQUIRED_SMOKE_CHECK_IDS = Object.freeze([
@@ -14,6 +14,14 @@ export const REQUIRED_SMOKE_CHECK_IDS = Object.freeze([
   "game-pack-target-smoke",
   "updater-check"
 ]);
+
+export const REQUIRED_SMOKE_EVIDENCE_KINDS = Object.freeze({
+  "native-media-reliability": ["installed-media-portability-summary"],
+  "punch-take-lane-recording": ["installed-punch-take-summary"],
+  "game-pack-target-smoke": ["game-pack-zip", "godot-target-import"]
+});
+
+const EVASIVE_SMOKE_NOTE = /\b(?:no new claim|existing evidence|manual(?:ly)? not run|not run|waiver)\b/i;
 
 export function validateSmokeAttestation(attestation, expectations) {
   const failures = [];
@@ -76,6 +84,7 @@ export function validateSmokeAttestation(attestation, expectations) {
       }
       requireString(check.id, `checks[${index}].id`, failures);
       requireString(check.result, `checks[${index}].result`, failures);
+      requireString(check.notes, `checks[${index}].notes`, failures);
       if (check.id && seenIds.has(check.id)) {
         failures.push(`checks contains duplicate id ${JSON.stringify(check.id)}`);
       }
@@ -84,6 +93,10 @@ export function validateSmokeAttestation(attestation, expectations) {
       if (check.result !== "pass") {
         badChecks.push(`${check.id || `checks[${index}]`}=${check.result}`);
       }
+      if (typeof check.notes === "string" && EVASIVE_SMOKE_NOTE.test(check.notes)) {
+        failures.push(`checks[${index}].notes records a waiver instead of completed smoke evidence`);
+      }
+      validateCheckEvidence(check, index, failures);
     }
 
     const missingRequired = REQUIRED_SMOKE_CHECK_IDS.filter((id) => !presentRequired.has(id));
@@ -121,12 +134,14 @@ export function verifySmokeAttestationFile(options = {}) {
 
   const attestation = JSON.parse(readFileSync(attestationPath, "utf8"));
   const actualInstallerSha256 = sha256File(installerPath);
-  return validateSmokeAttestation(attestation, {
+  const result = validateSmokeAttestation(attestation, {
     version,
     commit,
     installerFile: basename(installerPath),
     installerSha256: actualInstallerSha256
   });
+  verifyEvidenceFiles(attestation, attestationPath, result.failures);
+  return { ok: result.failures.length === 0, failures: result.failures };
 }
 
 export function sha256File(path) {
@@ -156,6 +171,68 @@ function requireString(value, label, failures) {
   if (typeof value !== "string" || !value.trim()) {
     failures.push(`${label} must be a non-empty string`);
   }
+}
+
+function validateCheckEvidence(check, index, failures) {
+  const requiredKinds = REQUIRED_SMOKE_EVIDENCE_KINDS[check.id] || [];
+  if (check.evidence !== undefined && !Array.isArray(check.evidence)) {
+    failures.push(`checks[${index}].evidence must be an array`);
+    return;
+  }
+  const evidence = Array.isArray(check.evidence) ? check.evidence : [];
+  const presentKinds = new Set();
+  evidence.forEach((entry, evidenceIndex) => {
+    const label = `checks[${index}].evidence[${evidenceIndex}]`;
+    if (!isPlainObject(entry)) {
+      failures.push(`${label} must be a JSON object`);
+      return;
+    }
+    requireString(entry.kind, `${label}.kind`, failures);
+    requireString(entry.result, `${label}.result`, failures);
+    if (entry.result !== "pass") failures.push(`${label}.result must be pass`);
+    if (entry.kind) presentKinds.add(entry.kind);
+    if (entry.file !== undefined) requireString(entry.file, `${label}.file`, failures);
+    if (entry.sha256 !== undefined) validateInstallerHash(entry.sha256, `${label}.sha256`, failures);
+    if (entry.target !== undefined) requireString(entry.target, `${label}.target`, failures);
+    if (entry.details !== undefined) requireString(entry.details, `${label}.details`, failures);
+  });
+  const missingKinds = requiredKinds.filter((kind) => !presentKinds.has(kind));
+  if (missingKinds.length) {
+    failures.push(`checks[${index}].evidence is missing required kinds: ${missingKinds.join(", ")}`);
+  }
+  for (const kind of requiredKinds) {
+    const entry = evidence.find((candidate) => candidate?.kind === kind);
+    if (!entry) continue;
+    if (kind === "godot-target-import") {
+      requireString(entry.file, `checks[${index}].evidence ${kind}.file`, failures);
+      requireString(entry.details, `checks[${index}].evidence ${kind}.details`, failures);
+    } else {
+      requireString(entry.file, `checks[${index}].evidence ${kind}.file`, failures);
+      validateInstallerHash(entry.sha256, `checks[${index}].evidence ${kind}.sha256`, failures);
+    }
+  }
+}
+
+function verifyEvidenceFiles(attestation, attestationPath, failures) {
+  if (!Array.isArray(attestation?.checks)) return;
+  const baseDir = dirname(resolve(attestationPath));
+  attestation.checks.forEach((check) => {
+    if (!Array.isArray(check?.evidence)) return;
+    check.evidence.forEach((entry) => {
+      if (typeof entry?.file !== "string" || !entry.file.trim()) return;
+      const path = isAbsolute(entry.file) ? entry.file : resolve(baseDir, entry.file);
+      if (!existsSync(path)) {
+        failures.push(`evidence file does not exist for ${check.id}/${entry.kind}: ${entry.file}`);
+        return;
+      }
+      if (typeof entry.sha256 === "string" && /^[a-f0-9]{64}$/i.test(entry.sha256)) {
+        const actual = sha256File(path);
+        if (actual.toLowerCase() !== entry.sha256.toLowerCase()) {
+          failures.push(`evidence SHA-256 does not match for ${check.id}/${entry.kind}: ${entry.file}`);
+        }
+      }
+    });
+  });
 }
 
 function validateSemverLike(value, label, failures) {

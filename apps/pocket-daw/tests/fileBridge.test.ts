@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openProjectFileNative, projectFileStateFromPath, projectRecoveryRecommendation, projectTitleFromFileState, saveBlobFileAs, saveProjectFile, writeBlobFileNative, type NativeFileApi, type NativeProjectRecoveryCandidate } from "../src/native/fileBridge";
+import { openProjectFileNative, projectFileStateFromPath, projectRecoveryRecommendation, projectTitleFromFileState, saveBlobFileAs, saveProjectFile, writeBlobFileNative, writeProjectFileNativeStrict, type NativeFileApi, type NativeProjectRecoveryCandidate } from "../src/native/fileBridge";
 import { createDemoProject } from "../src/demo/demoProject";
 
 describe("native file bridge", () => {
@@ -67,6 +67,29 @@ describe("native file bridge", () => {
 
     await expect(saveProjectFile(project, "C:\\Songs\\Bad.pocketdaw", false, api)).rejects.toThrow("save-blocking invariant");
     expect(calls).toEqual([]);
+  });
+
+  it("uses a strict native write for operations that must not fall back to a download", async () => {
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeFileApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return { path: "C:\\Songs\\Portable.pocketdaw", label: "Portable.pocketdaw" } as never;
+      }
+    };
+
+    const result = await writeProjectFileNativeStrict(createDemoProject(), "C:\\Songs\\Portable.pocketdaw", api);
+
+    expect(result.mode).toBe("native");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ command: "write_project_file", args: { path: "C:\\Songs\\Portable.pocketdaw" } });
+  });
+
+  it("rejects strict project writes when the native runtime is unavailable", async () => {
+    const api: NativeFileApi = { isAvailable: () => false, invoke: async () => null as never };
+
+    await expect(writeProjectFileNativeStrict(createDemoProject(), "C:\\Songs\\Portable.pocketdaw", api)).rejects.toThrow("installed native app");
   });
 
   it("opens native project payloads and treats cancel as null", async () => {

@@ -2507,17 +2507,17 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "AI / MCP Bridge",
     control: "Live MCP Media And Takes",
     selector: "pocket_daw_live_status:media",
-    does: "Reports media-pool counts, missing/runtime-only media counts and grouped audio-take summary from the running app.",
-    useWhen: "Use after importing or recording audio to confirm project media and take groups appeared before save/reopen smoke.",
-    aiNote: "Read-only status. It confirms project state, not whether the recorded audio sounds correct."
+    does: "Reports media-pool counts, missing/runtime-only/cache-only portability state, safe project-relative source/cache paths and grouped audio-take summary from the running app; live control also supports collect_media, reload_media and explicit-path relink_media actions.",
+    useWhen: "Use after importing or recording audio, and during collect/move/reopen/relink smoke, to confirm the project no longer depends on external source paths.",
+    aiNote: "Absolute media paths are not exposed. Cache recovery remains marked missing/unresolved until the original source is relinked and recollected."
   },
   {
     surface: "AI / MCP Bridge",
     control: "Live MCP Export Readiness",
     selector: "pocket_daw_live_status:export",
-    does: "Reports compact Godot/Web game-pack readiness from the running app, including manifest paths, full-mix path, stem/loop counts, warning counts and delivery targets, and pairs with live `export_project` control for explicit-path WAV/MIDI smoke exports.",
-    useWhen: "Use before exporting, manually importing a game pack, or running installed punch/take-lane smoke so the AI counterpart can observe and verify the running project's export shape.",
-    aiNote: "Use `export_project` only for local installed-app smoke output paths. Stem/loop/game-pack ZIPs still need ZIP verification and manual Godot/Web target-runtime smoke."
+    does: "Reports compact Godot/Web game-pack readiness and pairs with live `export_project` control for explicit-path WAV, MIDI, stem ZIP, section-loop ZIP, Godot Adaptive Pack and Web Game Pack smoke exports.",
+    useWhen: "Use before exporting or during installed portability/game-pack smoke so the running native app can produce artifacts without Save As dialog automation.",
+    aiNote: "ZIP outputs still require manifest/file verification, and release claims require target-runtime evidence such as a successful Godot headless import report."
   },
   {
     surface: "AI / MCP Bridge",

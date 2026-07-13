@@ -350,19 +350,21 @@ export function pocketDawMcpToolList() {
     },
     {
       name: "pocket_daw_live_control",
-      description: "Control a running Pocket DAW app transport, selection, audio/MIDI recording options and start/stop, saved-project save, or explicit export through the tokened local live bridge.",
+      description: "Control a running Pocket DAW app transport, selection, native media collect/reload/relink, audio/MIDI recording options and start/stop, saved-project save, or explicit export through the tokened local live bridge.",
       inputSchema: objectSchema({
         action: {
           type: "string",
-          enum: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "set_recording_options", "record_start", "record_stop", "record_toggle", "midi_record_start", "midi_record_stop", "midi_record_toggle", "export_project"]
+          enum: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "collect_media", "reload_media", "relink_media", "set_recording_options", "record_start", "record_stop", "record_toggle", "midi_record_start", "midi_record_stop", "midi_record_toggle", "export_project"]
         },
         projectPath: stringSchema(),
+        mediaPoolItemId: stringSchema(),
+        sourcePath: stringSchema(),
         bar: numberSchema(),
         trackId: stringSchema(),
         clipId: stringSchema(),
         punchEnabled: booleanSchema(),
         takeMode: { type: "string", enum: ["replace", "take-lane"] },
-        format: { type: "string", enum: ["wav", "midi"] },
+        format: { type: "string", enum: ["wav", "midi", "stem-zip", "section-loop-zip", "godot-adaptive-pack", "web-game-pack"] },
         outputPath: stringSchema(),
         sessionPath: stringSchema()
       }, ["action"]),

@@ -42,6 +42,13 @@ playhead position. The UI only displays state and dispatches commands.
 
 ## Current Notes And Known Gaps
 
+### Current 2026-07-13 Pocket DAW Source Notes
+
+- The unreleased Portable Projects + Media Recovery slice hardens native Collect Media against collisions, partial copies and false project-save success; identical-byte retries are idempotent, different-content overwrites are refused, and existing project-media names are reserved deterministically.
+- Missing project media can recover playback from a decoded WAV cache without being mislabeled portable. Relink clears stale source analysis, project open clears cross-project runtime audio buffers, and final portability requires relink/recollection plus a successful native project save.
+- Live bridge smoke now supports collect/reload/relink and explicit WAV, MIDI, stem ZIP, section-loop ZIP, Godot and Web pack exports. A 2026-07-13 native debug run passed delete-original-source, move-folder/reopen, cache fallback, relink/recollect, final reopen and all five tested non-MIDI artifacts; its Godot pack imported headlessly in Godot 4.6.3 with 464 compiled events.
+- Release attestation now requires retained installer-bound media-portability evidence, punch/take evidence, game-pack ZIP evidence and Godot target-import evidence. This work remains source-only at `0.6.40`; do not describe it as installed or published until a new checkpoint is versioned and exact-installer smoke passes.
+
 ### Current 2026-07-09 Pocket DAW Notes
 
 - Current Pocket DAW release truth is source `0.6.40`, latest published public updater release `0.6.40`, project schema `2`, and last installed-smoke `0.6.40` strict pass on 2026-07-09 against exact installer SHA-256 `41c4ec77f9925f8155e2f5137c31fd7d68aaf322511cbc544c9d3d230cd6779b`. Trust `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md` and `apps/pocket-daw/release-status.json` over older status prose when these differ.

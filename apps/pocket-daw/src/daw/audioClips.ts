@@ -135,13 +135,35 @@ export function updateAudioMediaReloadAnalysis(
   analysis: AudioMediaReloadAnalysis,
   loadedFrom: Pick<MediaPoolReloadCandidate, "kind" | "path">
 ): PocketDawProject {
+  if (loadedFrom.kind === "decoded-cache") {
+    const next = cloneProject(project);
+    const item = next.mediaPool.find((entry) => entry.id === id);
+    if (!item) return project;
+    if (analysis.durationSeconds !== undefined) item.durationSeconds = analysis.durationSeconds;
+    if (analysis.sampleRate !== undefined) item.sampleRate = analysis.sampleRate;
+    if (analysis.channels !== undefined) item.channels = analysis.channels;
+    item.metadata = {
+      ...metadataWithoutStaleAudioAnalysis(item.metadata),
+      waveformPeaks: analysis.waveformPeaks || [],
+      missing: true,
+      unresolved: true,
+      analysisInvalidated: false,
+      waveformNeedsRefresh: false,
+      lastReloadSourceKind: loadedFrom.kind,
+      lastReloadSourcePath: loadedFrom.path,
+      restoredFromNativeDecodedCache: true,
+      decodedCachePlaybackMimeType: analysis.mimeType || "audio/wav",
+      decodedCachePlaybackSizeBytes: analysis.sizeBytes || 0
+    };
+    return next;
+  }
   return updateAudioMediaAnalysis(project, id, {
     ...analysis,
     metadata: {
       ...(analysis.metadata || {}),
       lastReloadSourceKind: loadedFrom.kind,
       lastReloadSourcePath: loadedFrom.path,
-      restoredFromNativeDecodedCache: loadedFrom.kind === "decoded-cache"
+      restoredFromNativeDecodedCache: false
     }
   });
 }
