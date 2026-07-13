@@ -12,6 +12,7 @@ const minimumActionMajors = {
   "upload-artifact": 7,
   cache: 6
 };
+const requiredActions = new Set(["upload-artifact"]);
 
 function readText(filePath) {
   return fs.readFileSync(filePath, "utf8");
@@ -38,7 +39,7 @@ function verifyActionMajors(workflow) {
       fail(`.github/workflows/ci.yml uses actions/${action}@v${majorText}; use v${required}+ so GitHub does not emit Node 20 deprecation warnings.`);
     }
   }
-  for (const action of Object.keys(minimumActionMajors)) {
+  for (const action of requiredActions) {
     if (!seen.has(action)) fail(`.github/workflows/ci.yml does not contain actions/${action}; update this verifier if the CI artifact/cache strategy changed.`);
   }
 }
@@ -47,6 +48,18 @@ function verifyWorkflowNode(workflow) {
   if (!/node-version:\s*22\b/.test(workflow)) fail(".github/workflows/ci.yml should keep project commands on Node 22.");
   if (/playwright@1\.52\.0\s+install\s+--with-deps/.test(workflow)) {
     fail(".github/workflows/ci.yml still uses the old Playwright 1.52 install --with-deps path; use install-deps plus per-package browser installs.");
+  }
+}
+
+function verifyFamilyParityDependencies(workflow) {
+  const dawInstallStep = workflow.search(
+    /- name: Install Pocket DAW dependencies for family parity\s+working-directory: apps\/pocket-daw\s+run: npm ci/
+  );
+  const familyParityStep = workflow.indexOf("npm run verify:family-parity");
+  if (dawInstallStep < 0) {
+    fail(".github/workflows/ci.yml must install Pocket DAW dependencies before family parity so Vitest is available on clean runners.");
+  } else if (familyParityStep < 0 || dawInstallStep > familyParityStep) {
+    fail(".github/workflows/ci.yml must install Pocket DAW dependencies before running verify:family-parity.");
   }
 }
 
@@ -64,6 +77,7 @@ function verifyPocketAudioCorePlaywrightDependency() {
 const workflow = readText(workflowPath);
 verifyActionMajors(workflow);
 verifyWorkflowNode(workflow);
+verifyFamilyParityDependencies(workflow);
 verifyPocketAudioCorePlaywrightDependency();
 
 if (process.exitCode) process.exit(process.exitCode);
