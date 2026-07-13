@@ -1,10 +1,10 @@
-import type { Clip, PocketDawProject, Track, TimelineMarker } from "./schema";
+import type { Clip, PocketDawProject, TimelineMarker } from "./schema";
 import { buildPocketDawProjectFile, cloneProject } from "./dawProject";
 import { assertExportProfileSupported } from "./exportProfiles";
 import { createAudioMediaAnalysisSummary, createMediaPortabilitySummary, createPortableMediaProject, createRenderCacheSummary, verifyMediaPortability, verifySharedMediaPortability, type AudioMediaAnalysisSummary, type MediaPortabilitySummary, type RenderCacheSummary, type SharedMediaPortabilityVerification } from "./mediaPool";
 import { validateProjectInvariants } from "./projectInvariants";
 import { createRoutingExportSummary, type RoutingExportSummary } from "./routing";
-import { barsToSeconds, timelineSecondsAtBar } from "./timeline";
+import { timelineSecondsAtBar } from "./timeline";
 import { createZipBlob, type ZipArchiveEntry } from "./zipArchive";
 import { DRUM_LANE_DEFS, generatedDrumBranchLane, ensureDrumLaneMixerInPlace } from "./drumLanes";
 import {

@@ -589,10 +589,6 @@ function writeWavHeader(view: DataView, sampleRate: number, channels: number, bi
   view.setUint32(40, dataSize, true);
 }
 
-function isSupportedPcmBitDepth(value: number): value is WavBitDepth {
-  return value === 16 || value === 24 || value === 32;
-}
-
 function isSupportedWavFormat(audioFormat: number, bitsPerSample: number): boolean {
   return (audioFormat === 1 && (bitsPerSample === 16 || bitsPerSample === 24)) || (audioFormat === 3 && bitsPerSample === 32);
 }

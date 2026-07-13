@@ -207,10 +207,6 @@ export function wrapTimelineLoopSeconds(project: PocketDawProject, seconds: numb
   return loopStart + wrappedOffset;
 }
 
-function constantTempoBarsToSeconds(bars: number, bpm: number, timeSig: number): number {
-  return Math.max(0, bars) * timeSig * (60 / Math.max(1, bpm));
-}
-
 function constantTempoBeatsToSeconds(beats: number, bpm: number): number {
   return Math.max(0, beats) * (60 / Math.max(1, bpm));
 }

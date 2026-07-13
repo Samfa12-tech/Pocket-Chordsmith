@@ -125,8 +125,6 @@ export class AudioEngine {
   private nativeRuntimeAudioCache: NativeRenderCache | null = null;
   private nativeRuntimeAudioCacheBuildPromise: Promise<NativeRenderCache | null> | null = null;
   private nativeRuntimeAudioCacheBuildSignature: string | null = null;
-  private nativeRuntimeAudioCachePrewarmHandle: number | null = null;
-  private nativeRuntimeAudioCachePrewarmUsesIdleCallback = false;
   private nativeRenderCacheError: string | null = null;
   private nativeRenderCacheBypassedForLiveEdits = false;
   private nativeRenderCacheStaleForLiveEdits = false;
@@ -299,7 +297,6 @@ export class AudioEngine {
         && previousNativeRenderCache.signature !== renderCacheSignature;
       this.cancelNativeRenderCachePrewarm();
       if (mode !== "composition-events") this.cancelLiveNativeRenderCacheRefresh();
-      this.cancelNativeRuntimeAudioCachePrewarm();
       if (!this.runtimeAudioCacheStillValidFor(project)) this.nativeRuntimeAudioCache = null;
       if (this.playbackBackend === "native-cpal-paused") {
         this.playbackBackend = "idle";
@@ -1172,32 +1169,6 @@ export class AudioEngine {
     return true;
   }
 
-  private scheduleNativeRuntimeAudioCachePrewarm(reason: string): boolean {
-    if (!this.shouldPrewarmNativeRuntimeAudioCache()) return false;
-    const signature = nativeRuntimeAudioCacheSignature(this.project);
-    if (this.nativeRuntimeAudioCache?.signature === signature || (this.nativeRuntimeAudioCacheBuildPromise && this.nativeRuntimeAudioCacheBuildSignature === signature)) {
-      return true;
-    }
-    this.cancelNativeRuntimeAudioCachePrewarm();
-    const callback = () => {
-      this.nativeRuntimeAudioCachePrewarmHandle = null;
-      if (this.playing || this.nativeRenderCacheBypassedForLiveEdits) return;
-      void this.ensureNativeRuntimeAudioCache();
-      void reason;
-    };
-    const idleWindow = typeof window !== "undefined" ? window as IdleCallbackWindow : null;
-    if (idleWindow?.requestIdleCallback) {
-      this.nativeRuntimeAudioCachePrewarmUsesIdleCallback = true;
-      this.nativeRuntimeAudioCachePrewarmHandle = idleWindow.requestIdleCallback(callback, { timeout: 700 });
-    } else if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
-      this.nativeRuntimeAudioCachePrewarmUsesIdleCallback = false;
-      this.nativeRuntimeAudioCachePrewarmHandle = window.setTimeout(callback, 80);
-    } else {
-      return false;
-    }
-    return true;
-  }
-
   private cancelNativeRenderCachePrewarm() {
     if (this.nativeRenderCachePrewarmHandle !== null && typeof window !== "undefined") {
       const idleWindow = window as IdleCallbackWindow;
@@ -1217,25 +1188,8 @@ export class AudioEngine {
     this.nativeLiveCompositionCacheToken += 1;
   }
 
-  private cancelNativeRuntimeAudioCachePrewarm() {
-    if (this.nativeRuntimeAudioCachePrewarmHandle !== null && typeof window !== "undefined") {
-      const idleWindow = window as IdleCallbackWindow;
-      if (this.nativeRuntimeAudioCachePrewarmUsesIdleCallback && idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(this.nativeRuntimeAudioCachePrewarmHandle);
-      else window.clearTimeout(this.nativeRuntimeAudioCachePrewarmHandle);
-    }
-    this.nativeRuntimeAudioCachePrewarmHandle = null;
-  }
-
   private shouldPrewarmNativeRenderCache(): boolean {
     if (this.playing || this.nativeRenderCacheBypassedForLiveEdits) return false;
-    if (typeof window === "undefined") return false;
-    const globalWindow = window as unknown as Record<string, unknown>;
-    return "__TAURI_INTERNALS__" in globalWindow || "__TAURI__" in globalWindow;
-  }
-
-  private shouldPrewarmNativeRuntimeAudioCache(): boolean {
-    if (this.playing || this.nativeRenderCacheBypassedForLiveEdits) return false;
-    if (!this.audioRegions.some((region) => getCachedAudioBuffer(region.mediaPoolItemId))) return false;
     if (typeof window === "undefined") return false;
     const globalWindow = window as unknown as Record<string, unknown>;
     return "__TAURI_INTERNALS__" in globalWindow || "__TAURI__" in globalWindow;

@@ -2133,7 +2133,7 @@ function renderSelectedSequencerBlock(
   if (role === "chords") return renderChordEditor(pcs, section);
   if (role === "drums") {
     const branchLane = generatedDrumBranchLane(selectedTrack);
-    return branchLane ? renderDrumBranchEditor(project, section, branchLane, startStep, steps, selection) : renderDrumEditor(pcs, section, startStep, steps, selection);
+    return branchLane ? renderDrumBranchEditor(project, section, branchLane, startStep, steps, selection) : renderDrumEditor(section, startStep, steps, selection);
   }
   if (role === "bass") return renderBassEditor(pcs, section, startStep, steps, selection);
   if (role === "melody") return renderMelodyEditor(section, selectedTrack?.role === "melody" ? selectedMelodyTrackIndex(selectedTrack) : melodyTrackIndex, startStep, steps, selection);
@@ -2173,7 +2173,7 @@ function renderChordSelect(section: SanitizedPcsSection, bar: number): string {
   `;
 }
 
-function renderDrumEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
+function renderDrumEditor(section: SanitizedPcsSection, startStep: number, steps: number, selection: ChordsmithStepSelection | null): string {
   return `
     <div class="sequencer-block" data-step-grid="true" role="group" aria-label="Drum sequencer">
       <div class="sequencer-heading">

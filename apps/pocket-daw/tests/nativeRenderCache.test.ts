@@ -76,7 +76,7 @@ import { barsToSeconds, timelineSecondsAtBar } from "../src/daw/timeline";
 import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
 import { cycleBassStep } from "../src/daw/chordsmithEditor";
 import { addDrumLaneFx, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneSolo, setDrumLaneVolume } from "../src/daw/drumLanes";
-import { addFxSlot, setFxSlotParameter } from "../src/daw/fx";
+import { addFxSlot } from "../src/daw/fx";
 import { createAutomationLane } from "../src/daw/automation";
 import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
@@ -752,7 +752,7 @@ describe("native render cache", () => {
       const project = createDemoProject();
       const engine = new AudioEngine(project, native);
 
-      const firstCache = await engine.rebuildNativeRenderCache("test-prebuild");
+      await engine.rebuildNativeRenderCache("test-prebuild");
       await engine.play();
       const activeStart = starts.at(-1)!;
       expect(activeStart.assets?.length || 0).toBeGreaterThan(0);

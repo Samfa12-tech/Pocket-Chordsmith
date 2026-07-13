@@ -1609,7 +1609,6 @@ function visibleSectionSteps(sectionId=state.currentSection){ return sectionBarC
 function getSectionStepCount(sectionId=state.currentSection){ return visibleSectionSteps(sectionId); }
 function getMaxSectionStepCount(){ return MAX_BARS * stepsPerBar(); }
 function sectionPropKey(base, sectionId){ return `${base}${sanitizeSectionId(sectionId)}`; }
-function currentSectionData(base){ return state[sectionPropKey(base, state.currentSection)]; }
 function getSectionData(sectionId, includeMelody=state.uiMode === "advanced"){
   const id = sanitizeSectionId(sectionId);
   return {
@@ -1661,17 +1660,11 @@ function stepDurationForIndex(step, resolution=activeResolution(), swing=state.s
 function tickPerStep(resolution=activeResolution(), ticksPerQuarter=MIDI_TICKS_PER_QUARTER){
   return ticksPerQuarter / resolution;
 }
-function stepToTick(step, resolution=activeResolution(), ticksPerQuarter=MIDI_TICKS_PER_QUARTER){
-  return Math.round(step * tickPerStep(resolution, ticksPerQuarter));
-}
 function secondsToMidiTicks(seconds, ticksPerQuarter=MIDI_TICKS_PER_QUARTER){
   return Math.round((seconds / beatDur()) * ticksPerQuarter);
 }
 function sectionLengthTicks(section, ticksPerQuarter=MIDI_TICKS_PER_QUARTER){
   return Math.round(section.bars * state.timeSig * ticksPerQuarter);
-}
-function stepLengthTicks(step=0, resolution=activeResolution(), ticksPerQuarter=MIDI_TICKS_PER_QUARTER){
-  return Math.round(tickPerStep(resolution, ticksPerQuarter));
 }
 function clearSchedulerTimers(){
   schedulerTimers.forEach(id => clearInterval(id));
@@ -1766,8 +1759,6 @@ function normalizeBeatCell(value){
   if(value === false || value === null || value === undefined) return 0;
   return clamp(asInt(value, 0), 0, 2);
 }
-function beatCellIsOn(value){ return normalizeBeatCell(value) > 0; }
-function beatCellIsAccent(value){ return normalizeBeatCell(value) === 2; }
 function beatCellLabel(trackId, value){
   const level = normalizeBeatCell(value);
   if(level === 0) return "";
@@ -1942,10 +1933,6 @@ function sanitizeMetalTexture(raw, presetId=""){
     pickAttack: clamp(asNumber(source.pickAttack, defaults.pickAttack), 0, 1)
   };
 }
-function isMetalActive(){
-  return state.audioProfile === HEAVY_METAL_AUDIO_PROFILE_ID || !!sanitizeMetalPresetId(state.metalPreset);
-}
-
 function sanitizeProjectData(raw){
   if(!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Project data must be a JSON object");
 
@@ -4376,9 +4363,6 @@ function playBassPhrase(rootMidi, t, dur=0.22, peak=0.34, accent=false, slideMid
   makeVoice(rootMidi, slideMidi, cfg.mainWave, cfg.mainPeak, accent ? cfg.cutoff * 1.18 : cfg.cutoff);
   makeVoice(rootMidi-12, slideMidi-12, cfg.subWave, cfg.subPeak, cfg.subCutoff);
 }
-function playLead(midi, t, dur=0.28){
-  playTone(midiToFreq(midi), t, dur, "square", leadGain, 0.22, "lowpass", 2300);
-}
 function playMetronome(t, accent=false){
   const o = audioCtx.createOscillator(), g = audioCtx.createGain();
   o.type = "square"; o.frequency.value = accent ? 1400 : 1000;
@@ -4682,16 +4666,6 @@ function setDrumPresetHit(track, bar, beat, fraction=0, level=1){
   const step = visibleBeatStep(bar, beat, fraction);
   if(step < 0) return;
   state.grid[track][step] = Math.max(normalizeBeatCell(state.grid[track][step]), clamp(asInt(level, 1), 1, 2));
-}
-function fillPresetHats(bar, density="eighths"){
-  for(let beat = 0; beat < state.timeSig; beat++){
-    setDrumPresetHit("hat", bar, beat, 0, beat === 0 ? 2 : 1);
-    if(density === "eighths" || density === "sixteenths") setDrumPresetHit("hat", bar, beat, 0.5, 1);
-    if(density === "sixteenths"){
-      setDrumPresetHit("hat", bar, beat, 0.25, 1);
-      setDrumPresetHit("hat", bar, beat, 0.75, 1);
-    }
-  }
 }
 function addPreset16(track, bar, pos16, level=1){
   const beat = Math.floor(pos16 / 4);
@@ -5213,22 +5187,6 @@ function renderMelodyTrackControls(){
 function clearMelodyHoldFrom(trackIndex, startStep){
   const holdTrack = state.melodyHold[trackIndex] || [];
   for(let i = startStep; i < holdTrack.length; i++) holdTrack[i] = false;
-}
-function applyMelodyHoldRange(trackIndex, startStep, targetStep){
-  const holdTrack = state.melodyHold[trackIndex] || [];
-  clearMelodyHoldFrom(trackIndex, startStep + 1);
-  const track = state.melodyTracks[trackIndex] || [];
-  const safeTarget = clamp(asInt(targetStep, startStep), startStep, visibleSectionSteps() - 1);
-  let end = startStep;
-  for(let i = startStep + 1; i <= safeTarget; i++) {
-    if(track[i] !== null && track[i] !== undefined) break;
-    holdTrack[i] = true;
-    end = i;
-  }
-  return end;
-}
-function melodyStepDuration(section, trackIndex, step){
-  return melodyPhraseInfo(section, trackIndex, step).dur;
 }
 function melodyPhraseInfo(section, trackIndex, step){
   const holdTracks = section.melodyHold || [];
@@ -7291,13 +7249,6 @@ async function shareWavOutput(){
   }catch(e){}
 }
 
-function clearAll(){
-  pushUndoState();
-  TRACKS.forEach(t => state.grid[t.id].fill(0));
-  const trackLimit = state.uiMode === "simple" ? simpleModeMelodyTrackCount() : state.melodyTracks.length;
-  state.melodyTracks.slice(0, trackLimit).forEach(track => track.fill(null));
-  storeSection(); renderSeq(); renderMelodyRows();
-}
 const POCKET_CHORDSMITH_V61_SHOWCASE_DEMO = {
   "projectVersion": 16,
   "key": "C",
@@ -27382,16 +27333,6 @@ function loadDemo(){
   primePocketAudioCoreFromCurrentProject("demo").catch(() => {});
   setStatus("Loaded Pocket Chordsmith v68 demo");
 }
-function muteDemoSecondMelodyTracks(){
-  SECTION_IDS.forEach(id => {
-    const tracks = state[sectionPropKey("melodyTracks", id)] || [];
-    if(tracks.length < 2) return;
-    const mute = ensureMelodyBoolLength(state[sectionPropKey("melodyMute", id)] || [], tracks.length);
-    mute[1] = true;
-    state[sectionPropKey("melodyMute", id)] = mute;
-  });
-}
-
 function bytesVLQ(value){
   let buffer = value & 0x7F;
   const bytes = [];
@@ -28212,14 +28153,6 @@ function midiToBassManualIndex(midi){
     if(dist < best.dist) best = {idx, dist};
   }
   return best.idx;
-}
-function chooseMelodyTrackOctave(notes){
-  const upper = notes.filter(n => n.note >= 60).map(n => n.note).sort((a,b)=>a-b);
-  if(!upper.length) return -1;
-  const median = upper[Math.floor(upper.length / 2)];
-  if(median < 72) return -1;
-  if(median > 95) return 1;
-  return 0;
 }
 function chooseBestMelodyTrackOctave(notes){
   const midis = (notes || []).map(n => typeof n === "number" ? n : n && n.note).filter(n => Number.isFinite(n));

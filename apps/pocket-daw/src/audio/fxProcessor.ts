@@ -263,7 +263,6 @@ function scheduleAutomationLane(
       const steps = 12;
       for (let step = 0; step <= steps; step += 1) {
         const t = step / steps;
-        const bar = segmentStartBar + (b.bar - segmentStartBar) * t;
         const time = segmentStartTime + (segmentEndTime - segmentStartTime) * t;
         const value = interpolateAutomationValue(segmentStartValue, segmentEndValue, t, a.curve);
         param.setValueAtTime(transform(clamp(value, min, max)), time);

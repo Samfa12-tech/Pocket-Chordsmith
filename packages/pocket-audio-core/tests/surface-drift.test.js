@@ -1038,7 +1038,9 @@ test("Chordsmith guitar event gates stay aligned across DJ, DAW, Godot and core"
   assert.ok(godotCompiler.includes("_seconds_to_ticks(project, 0.055)"), "Godot compiler should preserve Chordsmith chug floor in ticks");
   assert.ok(godotCompiler.includes("_seconds_to_ticks(project, 0.075)"), "Godot compiler should preserve Chordsmith scratch ceiling in ticks");
   assert.ok(godotCompiler.includes('var gate := 0.98 if articulation == "accent" else 0.92'), "Godot compiler should preserve Chordsmith accent/open gate ratio");
-  assert.match(godotConductor, /if str\(flags\.get\("direction", "down"\)\) == "up":\s+ordered\.reverse\(\)/, "Godot sample preview should respect Chordsmith guitar strum direction");
+  assert.match(godotConductor, /func _ordered_guitar_notes\(notes: Array, direction: String\) -> Array:\s+var ordered := notes\.duplicate\(\)\s+if direction == "up":\s+ordered\.reverse\(\)/, "Godot should keep guitar strum direction in one shared ordering helper");
+  assert.ok(godotConductor.includes('notes = _ordered_guitar_notes(notes, str(flags.get("direction", "down")))'), "Godot sample preview should use the shared guitar ordering helper");
+  assert.ok(godotConductor.includes("var ordered := _ordered_guitar_notes(notes, direction)"), "Godot native guitar rendering should use the shared guitar ordering helper");
   assert.match(godotConductor, /"western_twang":\s+return 0\.020/, "Godot sample preview should preserve western twang guitar spread");
   assert.match(godotConductor, /articulation == "chug" or articulation == "scratch":\s+return float\(note_index\) \* 0\.003/s, "Godot sample preview should keep tight chug/scratch spread");
   assert.ok(godotConductor.includes('var tone_guitar_key := "guitar:%s:%s"'), "Godot sample preview should prefer tone-specific guitar sample keys");

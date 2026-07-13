@@ -235,7 +235,6 @@ describe("MIDI export", () => {
     const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Take Lane Export" }));
     const first = importMidiFileToProject(project, parseStandardMidiFile(simpleMidiBytes()), "midi-take-1.mid");
     const second = importMidiFileToProject(first.project, parseStandardMidiFile(simpleMidiBytes()), "midi-take-2.mid");
-    const firstClip = second.project.timeline.clips.find((item) => item.id === first.clipId)!;
     const secondClip = second.project.timeline.clips.find((item) => item.id === second.clipId)!;
     const secondNoteId = midiDataFromClip(secondClip).notes[0].id;
     let grouped = setMidiNoteField(second.project, second.clipId, secondNoteId, "pitch", 64);

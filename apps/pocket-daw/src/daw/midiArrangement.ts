@@ -2,7 +2,7 @@ import { sanitizePocketChordsmithProject, SECTION_IDS, type SectionId } from "..
 import { createDawProjectFromChordsmithProject } from "../compatibility/pcsToDaw";
 import { parseStandardMidiFile, type ParsedMidiFile, type ParsedMidiNote } from "./midiParser";
 import { importMidiFileToProject } from "./midiClips";
-import type { FxPluginInstance, JsonObject, PocketDawProject } from "./schema";
+import type { FxPluginInstance, PocketDawProject } from "./schema";
 import { drumPresetEventsForProject, pos16ToStep, shouldUsePresetEvent } from "./chordsmithDrumPresets";
 import { POCKET_PRO_EQ_TYPE, pocketProEqPresetParameters } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
 
@@ -49,17 +49,6 @@ const SCALE_INTERVALS: Record<"major" | "minor", number[]> = {
   major: [0, 2, 4, 5, 7, 9, 11],
   minor: [0, 2, 3, 5, 7, 8, 10]
 };
-const SECTION_COLORS: Record<SectionId, string> = {
-  A: "#40d8ff",
-  B: "#7cff9b",
-  C: "#b88cff",
-  D: "#ff68c8",
-  E: "#ffc857",
-  F: "#5cf1d6",
-  G: "#ff7a7a",
-  H: "#9db2ff"
-};
-
 type DrumLane = "kick" | "snare" | "hat";
 
 interface ChunkAnalysis {

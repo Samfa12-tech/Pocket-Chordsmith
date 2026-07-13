@@ -24,7 +24,6 @@ import {
   convertMidiChordsToGeneratedOverlaysCommand,
   convertMidiDrumsToBranchOverlaysCommand,
   convertMidiMelodyToGeneratedOverlaysCommand,
-  commitProject,
   cropSelectedClipToTimelineSelectionCommand,
   cycleBassStepCommand,
   cycleDrumBranchStepCommand,

@@ -1,3 +1,5 @@
+import { clamp01, safeChoice } from "./preset-utils.js";
+
 export const HEAVY_METAL_AUDIO_PROFILE_ID = "heavy_metal";
 export const DEFAULT_METAL_PRESET_ID = "metal_classic_chug";
 
@@ -103,14 +105,4 @@ function metalPreset(id, label, bpmDefault, preferredKeys, progression, drumKit,
     texture: Object.freeze({ ...DEFAULT_METAL_TEXTURE, enabled: true, ...texture }),
     intensityHints: Object.freeze({ menu: "A", build: "B", danger: "C", full: "D" })
   });
-}
-
-function safeChoice(value, allowed, fallback) {
-  return allowed.includes(value) ? value : fallback;
-}
-
-function clamp01(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return 0;
-  return Math.max(0, Math.min(1, number));
 }

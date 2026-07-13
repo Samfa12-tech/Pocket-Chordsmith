@@ -1,3 +1,5 @@
+import { clamp01, safeChoice } from "./preset-utils.js";
+
 export const CHIP_AUDIO_PROFILE_ID = "chip_tune";
 export const DEFAULT_CHIP_PRESET_ID = "chip_arcade_start";
 
@@ -262,14 +264,4 @@ export function normaliseChipProjectSettings(project = {}) {
       : { ...DEFAULT_CHIP_TEXTURE, enabled: false },
     intensityHints: chipActive ? { ...preset.intensityHints } : {}
   };
-}
-
-function safeChoice(value, allowed, fallback) {
-  return allowed.includes(value) ? value : fallback;
-}
-
-function clamp01(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return 0;
-  return Math.max(0, Math.min(1, number));
 }

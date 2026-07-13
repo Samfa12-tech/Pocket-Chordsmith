@@ -663,10 +663,6 @@ function chordsmithSynthFxSlots(project: SanitizedPcsProject): FxPluginInstance[
   }) as FxPluginInstance[];
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
 function usableSequence(project: SanitizedPcsProject) {
   const sequence = project.songSequence.filter((id) => project.sections[id]);
   if (sequence.length) return sequence;

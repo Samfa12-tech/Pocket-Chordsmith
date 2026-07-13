@@ -129,16 +129,12 @@ export function schema16SongSequence(project) {
     : String(raw || "")
         .split(/[\s,>+-]+/)
         .filter(Boolean);
-  return sections
-    .map((section) => String(section).trim().toUpperCase())
-    .filter((section) => REQUIRED_SECTION_SUFFIXES.includes(section));
+  return sections.map(normalizeSectionId).filter(Boolean);
 }
 
 export function schema16SectionSummary(project, sectionId = "A") {
-  const suffix = String(sectionId || "A")
-    .trim()
-    .toUpperCase();
-  if (!REQUIRED_SECTION_SUFFIXES.includes(suffix)) {
+  const suffix = normalizeSectionId(sectionId || "A");
+  if (!suffix) {
     return {
       ok: false,
       error: {
@@ -200,7 +196,7 @@ export function schema16ProjectSectionIds(project) {
     )
       ids.add(suffix);
   }
-  return [...ids].filter((section) => REQUIRED_SECTION_SUFFIXES.includes(section));
+  return [...ids];
 }
 
 function hasSchema16SectionField(project, suffix, field) {

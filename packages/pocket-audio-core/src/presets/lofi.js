@@ -1,3 +1,5 @@
+import { clamp01, safeChoice } from "./preset-utils.js";
+
 export const LOFI_AUDIO_PROFILE_ID = "lofi_chill";
 export const DEFAULT_LOFI_PRESET_ID = "lofi_study_room";
 
@@ -261,14 +263,4 @@ export function normaliseLofiProjectSettings(project = {}) {
       : { ...DEFAULT_LOFI_TEXTURE, enabled: false },
     intensityHints: lofiActive ? { ...preset.intensityHints } : {}
   };
-}
-
-function safeChoice(value, allowed, fallback) {
-  return allowed.includes(value) ? value : fallback;
-}
-
-function clamp01(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return 0;
-  return Math.max(0, Math.min(1, number));
 }

@@ -996,7 +996,6 @@ function normalizePocketDjSession(raw){
   return base;
 }
 function exportPocketDjSession(session){ return JSON.parse(JSON.stringify(session)); }
-function buildPocketDjShareCode(session){ return `${PDJ_SHARE_PREFIX}${utf8ToBase64Url(JSON.stringify(exportPocketDjSession(session)))}`; }
 function buildSourcePocketChordsmithShareCode(){
   if(!session || !session.source || !session.source.project) throw new Error("No source Pocket Chordsmith song is loaded.");
   return `${PCS_SHARE_PREFIX}${utf8ToBase64Url(JSON.stringify(session.source.project))}`;
@@ -2078,14 +2077,6 @@ function startPerformanceMacro(targets, durationMs, onDone){
     else { macroFrameId = null; if(onDone) onDone(); renderFxValuesOnly(); renderMixerValuesOnly(); autosave(); }
   };
   macroFrameId = requestAnimationFrame(tick);
-}
-function schedulePerformanceRelease(atTime, durationSec){
-  scheduleUiAt(atTime, () => {
-    restoreBuildSnapshot();
-    applyMixerAndFx();
-    renderMixerValuesOnly();
-    renderFxValuesOnly();
-  });
 }
 function playBuildRiser(durationSec){
   if(!audioCtx || !noiseBuffer) return;

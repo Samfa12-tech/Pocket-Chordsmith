@@ -1414,7 +1414,7 @@ func _route_sample_preview_chord(event: Dictionary) -> void:
 	var notes: Array = flags.get("midi_notes", [int(event.get("midi_note", 60))])
 	var track_type := str(event.get("track_type", "chord"))
 	if track_type == "guitar":
-		notes = _ordered_guitar_preview_notes(notes, flags)
+		notes = _ordered_guitar_notes(notes, str(flags.get("direction", "down")))
 	var max_notes: int = playback_profile.sample_preview_max_chord_notes
 	if track_type == "guitar":
 		max_notes = max(max_notes, 3)
@@ -1445,9 +1445,9 @@ func _play_sample_preview_chord_note(stream: AudioStream, layer: String, sample_
 	_play_polyphonic_sample(stream, _bus_for_layer(layer), "%s:%d" % [track_type, midi_note], volume_db, pitch_scale, playback_type, debug_info)
 
 
-func _ordered_guitar_preview_notes(notes: Array, flags: Dictionary) -> Array:
+func _ordered_guitar_notes(notes: Array, direction: String) -> Array:
 	var ordered := notes.duplicate()
-	if str(flags.get("direction", "down")) == "up":
+	if direction == "up":
 		ordered.reverse()
 	return ordered
 
@@ -3066,9 +3066,7 @@ func _build_native_guitar_stream(notes: Array, duration_ticks: int, tone: String
 		play_duration = float(cfg.get("scratch", 0.042))
 	else:
 		play_duration = max(0.12, note_seconds * float(cfg.get("sustain", 0.91)))
-	var ordered := notes.duplicate()
-	if direction == "up":
-		ordered.reverse()
+	var ordered := _ordered_guitar_notes(notes, direction)
 	var spread: float = 0.003 if is_chug or is_scratch else float(cfg.get("spread", 0.010))
 	var stream_seconds: float = play_duration + float(max(0, ordered.size() - 1)) * spread + (0.08 if is_chug else 0.24)
 	var frame_count := max(1, int(ceil(stream_seconds * float(NATIVE_BASS_SAMPLE_RATE))))

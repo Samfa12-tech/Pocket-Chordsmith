@@ -662,9 +662,6 @@ function cleanDetuneSemitones(detuneCents: number): number {
 function lead(ctx: BaseAudioContext, destination: AudioNode, midi: number, start: number, dur = 0.28, instrument = DEFAULT_MELODY_INSTRUMENT, pan = 0, peakMul = 1) {
   const cfg = leadInstrumentConfig(instrument);
   tone(ctx, destination, midi, start, dur * cfg.durMul, cfg.wave, cfg.peak * peakMul, cfg.filter, cfg.freq, pan);
-  const makeVoice = (freqMul = 1, wave: OscillatorType, peakScale = 1, filterType: BiquadFilterType, filterFreq: number, offset = 0, durMul = 1) => {
-    toneFreq(ctx, destination, midiToFreq(midi) * freqMul, start + offset, dur * durMul, wave, peakScale * peakMul, filterType, filterFreq, pan);
-  };
   for (const extra of leadExtraLayers(cfg)) {
     const extraMidi = midi + (Number(extra.midiOffset) || 0);
     const extraDur = Math.min(extra.maxDur ?? Number.POSITIVE_INFINITY, dur * extra.durMul);

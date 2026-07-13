@@ -26,8 +26,8 @@ export function validateProjectInvariants(project: PocketDawProject): ProjectInv
   };
 
   const trackIds = collectDuplicateIds(project.tracks, "tracks", add);
-  const clipIds = collectDuplicateIds(project.timeline.clips, "timeline.clips", add);
-  const markerIds = collectDuplicateIds(project.timeline.markers, "timeline.markers", add);
+  collectDuplicateIds(project.timeline.clips, "timeline.clips", add);
+  collectDuplicateIds(project.timeline.markers, "timeline.markers", add);
   const mediaIds = collectDuplicateIds(project.mediaPool, "mediaPool", add);
   const mediaById = new Map(project.mediaPool.map((item) => [item.id, item]));
   const laneIds = collectDuplicateIds(project.automation.lanes, "automation.lanes", add);
