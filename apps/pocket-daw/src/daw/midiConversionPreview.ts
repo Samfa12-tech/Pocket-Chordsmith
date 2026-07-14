@@ -13,8 +13,11 @@ import { convertMidiClipToDrumBranchOverlays } from "./midiDrumConversion";
 import { convertMidiClipToMelodyOverlays } from "./midiMelodyConversion";
 import { createMidiTempoMapSummary, midiDataFromClip } from "./midiClips";
 import type { Clip, JsonObject, PocketDawProject } from "./schema";
+import { getPrimaryChordsmithSource } from "./chordsmithEditor";
 
 export interface MidiChordsmithConversionPreview {
+  intent: "arrange-sketch";
+  fidelity: "creative arrangement";
   clipId: string;
   clipName: string;
   sectionId: string;
@@ -37,6 +40,12 @@ export interface MidiChordsmithConversionPreview {
     sourceBars: number;
     suggestedSectionBars: number;
     suggestedSectionCount: number;
+    destinationBars: number;
+    paddingBars: number;
+    truncatedBars: number;
+    repeatedSourceSections: number;
+    repeatedDestinationSections: number;
+    heuristicSubstitutions: number;
   };
   sourceNoteCount: number;
   visibleNoteCount: number;
@@ -128,6 +137,7 @@ export function createMidiChordsmithConversionPreview(
   const timing = midiConversionTimingPreview(project, metadata, tempoSummary);
   const key = midiConversionKeyPreview(project, metadata, midi.notes);
   const structure = midiConversionStructurePreview(project, midi.ppq, sourceStartTick, sourceEndTick);
+  const destinationBars = (getPrimaryChordsmithSource(project)?.sections as Record<string, { bars: number }> | undefined)?.[sectionId]?.bars || 4;
   const drums = convertMidiClipToDrumBranchOverlays(project, clipId, sectionId, normalizedSourceFilter);
   const bass = convertMidiClipToBassOverlays(project, clipId, sectionId, normalizedSourceFilter);
   const chords = convertMidiClipToChordOverlays(project, clipId, sectionId, normalizedSourceFilter);
@@ -157,6 +167,8 @@ export function createMidiChordsmithConversionPreview(
   const confidence = midiConversionConfidence(written, visibleNoteCount, warnings.length, ignoredMaterial.length, ambiguousMaterial.length);
 
   return {
+    intent: "arrange-sketch",
+    fidelity: "creative arrangement",
     clipId: clip.id,
     clipName: clip.name,
     sectionId,
@@ -164,7 +176,15 @@ export function createMidiChordsmithConversionPreview(
     rawMidiClip: "preserved",
     timing,
     key,
-    structure,
+    structure: {
+      ...structure,
+      destinationBars,
+      paddingBars: Math.max(0, destinationBars - structure.sourceBars),
+      truncatedBars: Math.max(0, structure.sourceBars - destinationBars),
+      repeatedSourceSections: 0,
+      repeatedDestinationSections: 0,
+      heuristicSubstitutions: 0
+    },
     sourceNoteCount: midi.notes.length,
     visibleNoteCount,
     outOfRangeNoteCount: Math.max(0, sourceFilteredNoteCount - visibleNoteCount),
@@ -386,7 +406,7 @@ function midiConversionTimingPreview(
   };
 }
 
-function midiConversionStructurePreview(project: PocketDawProject, ppq: number, sourceStartTick: number, sourceEndTick: number): MidiChordsmithConversionPreview["structure"] {
+function midiConversionStructurePreview(project: PocketDawProject, ppq: number, sourceStartTick: number, sourceEndTick: number): Pick<MidiChordsmithConversionPreview["structure"], "sourceBars" | "suggestedSectionBars" | "suggestedSectionCount"> {
   const ticksPerBar = Math.max(1, ppq * Math.max(1, project.project.timeSig));
   const sourceBars = Math.max(1, Math.ceil(Math.max(0, sourceEndTick - sourceStartTick) / ticksPerBar));
   const suggestedSectionBars = Math.min(8, Math.max(1, sourceBars >= 8 ? 4 : sourceBars));

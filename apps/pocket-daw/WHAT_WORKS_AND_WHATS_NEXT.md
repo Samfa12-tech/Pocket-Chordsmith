@@ -21,6 +21,15 @@ next checkpoint is deliberately versioned, packaged, hashed, smoke-tested, and
 published. Do not create another installer from a later commit while leaving
 the package/Tauri/schema metadata at the previous public checkpoint.
 
+## Unreleased 2026-07-14 Faithful MIDI Transcription Slice
+
+- MIDI conversion now distinguishes `Faithful transcription` from `Arrange into Chordsmith` in the Piano Roll instead of presenting one shared all-notes interpretation as transcription.
+- Faithful mode infers independent named roles, selects an exact supported timing resolution, packs up to 128 bars sequentially across A-H at 16 bars per section, preserves exact DAW melody/chord overlays and source tempo/key/meter, generates no accompaniment by default, keeps raw MIDI and records an auditable conversion-history report.
+- Exact chord overlays now suppress the simplified schema progression during faithful playback, and overlay durations can cross packed section boundaries without adding attacks.
+- The owned local `Billions of Years` fixture passed source validation at 86 BPM, F-sharp minor, 4/4, 74→74 bars, A-E 16/16/16/16/10, 244 melody attacks, 148 chord events with 453 constituent notes, final four F-sharp-major voicings, and zero generated bass/drums/guitar. The owned song files remain outside git.
+- Exact mixed-quality chords remain DAW-local. A schema-16 PCS1 progression copy is still simplified; the compatibility ADR defers a family-wide schema change until a backward-compatible extension is designed and tested.
+- This is source-only work at version `0.6.40`. A native Windows source-debug smoke opened the 74-bar converted project, advanced playback, saved/reopened it and exported a valid MIDI file; exact installer-bound workflow/listening smoke remains required before release claims.
+
 ## Unreleased 2026-07-13 Portable Projects + Media Recovery Slice
 
 - Collect Media now reserves existing project-media names, refuses different-content overwrites, treats identical-byte retries as idempotent, preflights the whole copy set and cleans partial writes on copy failure.

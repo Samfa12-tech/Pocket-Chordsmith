@@ -23,6 +23,7 @@ import {
   convertMidiBassToGeneratedOverlaysCommand,
   convertMidiChordsToGeneratedOverlaysCommand,
   convertMidiDrumsToBranchOverlaysCommand,
+  convertMidiFaithfullyToGeneratedOverlaysCommand,
   convertMidiMelodyToGeneratedOverlaysCommand,
   cropSelectedClipToTimelineSelectionCommand,
   cycleBassStepCommand,
@@ -81,6 +82,7 @@ import { arrangeMidiToHeavyMetalProject } from "../daw/midiArrangement.ts";
 import type { MidiGrooveTemplateId, MidiPitchTransform, MidiQuantizeGrid, MidiSwingPercent, MidiVelocityTransform } from "../daw/midiClips.ts";
 import { normalizeMidiConversionSourceFilter, type MidiConversionSourceMode } from "../daw/midiConversionFilter.ts";
 import { createMidiChordsmithConversionPreviews } from "../daw/midiConversionPreview.ts";
+import { createMidiFaithfulConversionPreviews } from "../daw/midiFaithfulConversion.ts";
 import { createPocketDjSourceSummary } from "../daw/pocketDjSources.ts";
 import { validateProjectInvariants } from "../daw/projectInvariants.ts";
 import { buildGroupedRecordingCapturePlan, buildNativeRecordingAlphaInputPreflight } from "../daw/recordingInputs.ts";
@@ -155,6 +157,7 @@ export type PocketDawMcpCommand =
   | { type: "convert_midi_chords"; clipId: string; sectionId?: string; sourceMode?: MidiConversionSourceMode; sourceValue?: number; keepRawReference?: boolean }
   | { type: "convert_midi_melody"; clipId: string; sectionId?: string; trackIndex?: number; sourceMode?: MidiConversionSourceMode; sourceValue?: number; keepRawReference?: boolean }
   | { type: "convert_midi_arrangement"; clipId: string; sectionId?: string; trackIndex?: number; sourceMode?: MidiConversionSourceMode; sourceValue?: number; keepRawReference?: boolean }
+  | { type: "convert_midi_faithful"; clipId: string; keepRawReference?: boolean }
   | { type: "adopt_midi_tempo"; clipId: string }
   | { type: "adopt_midi_tempo_map"; clipId: string }
   | { type: "adopt_midi_meter_map"; clipId: string }
@@ -771,6 +774,8 @@ function applyCommand(state: AppState, command: PocketDawMcpCommand): AppState {
       return convertMidiMelodyToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A", command.trackIndex || 0, sourceFilterFromMcpCommand(command), rawReferenceFromMcpCommand(command));
     case "convert_midi_arrangement":
       return convertMidiArrangementToGeneratedOverlaysCommand(state, command.clipId, command.sectionId || state.chordsmithEditorSectionId || "A", command.trackIndex || 0, sourceFilterFromMcpCommand(command), rawReferenceFromMcpCommand(command));
+    case "convert_midi_faithful":
+      return convertMidiFaithfullyToGeneratedOverlaysCommand(state, command.clipId, { keepRawReference: command.keepRawReference !== false });
     case "adopt_midi_tempo":
       return adoptMidiTempoMapStartCommand(state, command.clipId);
     case "adopt_midi_tempo_map":
@@ -983,6 +988,7 @@ function summarizeProject(project: PocketDawProject) {
     pocketDjSource: createPocketDjSourceSummary(project),
     mediaPoolCount: project.mediaPool.length,
     midiChordsmithConversionPreviews: createMidiChordsmithConversionPreviews(project),
+    midiFaithfulConversionPreviews: createMidiFaithfulConversionPreviews(project),
     audioTakeSummary: createAudioTakeDiagnosticsSummary(project),
     recordingInputPreflight: buildNativeRecordingAlphaInputPreflight(project),
     recordingFutureCapturePlan: buildGroupedRecordingCapturePlan(project, {

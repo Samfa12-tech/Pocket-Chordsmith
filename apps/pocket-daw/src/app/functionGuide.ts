@@ -356,9 +356,9 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "MIDI To Chordsmith Mapping",
-        does: "Previews how imported MIDI will map into generated drum, bass, chord or melody overlays, preserves expressive MIDI data on the raw clip, and can adopt tempo/meter data.",
+        does: "Separates role-aware faithful transcription from creative Chordsmith arrangement, previews exact packing/resolution/event counts, preserves the raw MIDI reference by default, and can adopt tempo/meter data.",
         useWhen: "Use when a MIDI file should become editable Chordsmith-style source material.",
-        aiNote: "Use the preview/report before mapping. This is a conversion aid, not proof the result is musically perfect."
+        aiNote: "Use faithful mode for exact selected roles and arrange mode for intentional generation, repetition or simplification. Never describe a simplified PCS1 progression as faithful."
       }
     ]
   },
@@ -1862,11 +1862,11 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "MIDI To Chordsmith",
-    control: "Chordsmith Mapping Preview",
-    selector: "data-midi-conversion-preview, data-midi-conversion-source-target, data-midi-conversion-section-target, data-midi-conversion-melody-target, midiChordsmithConversionPreviews[], media.midiChordsmithConversionPreviews[]",
-    does: "Shows how the selected MIDI clip will map into drums, bass, chord groups and melody before any conversion command runs, and lets the user choose the source MIDI track/channel, target Chordsmith section, melody track and whether to keep the raw MIDI reference clip after mapping. Includes tempo/meter, key/scale source, rough section shape, role hints, visible/source note counts, filtered-out counts, conversion confidence, ignored material, ambiguous merged/grouped material, raw-reference impact, per-role written counts, preserved expressive MIDI event counts and warnings.",
-    useWhen: "Use before Map Drums, Map Bass, Map Chords, Map Melody or Map Arrangement so the raw MIDI import remains inspectable and conversion targets are explicit.",
-    aiNote: "Read-only preview exposed in the Piano Roll, support diagnostics, file-first MCP summaries and live MCP media status. Source/reference selectors update mapping commands only; they do not mutate MIDI import semantics or prove the musical interpretation is correct."
+    control: "MIDI Conversion Mode And Preview",
+    selector: "data-midi-conversion-intent, data-midi-faithful-role-source, data-midi-faithful-preview, data-midi-conversion-preview, midiFaithfulConversionPreviews[], midiChordsmithConversionPreviews[]",
+    does: "Chooses Faithful transcription or Arrange into Chordsmith. Faithful preview shows independent role sources, exact source/destination bars, timing resolution/error, A-H packing, source/written/filtered/grouped counts, generated-part counts, raw-reference action, chord compatibility and fidelity before Apply.",
+    useWhen: "Use before converting imported MIDI so transcription and creative arrangement cannot be confused.",
+    aiNote: "Faithful mode packs up to 128 bars sequentially, writes exact DAW melody/chord overlays and generates no accompaniment by default. Mixed-quality PCS1 progression copies remain simplified."
   },
   {
     surface: "MIDI To Chordsmith",
@@ -1902,11 +1902,19 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "MIDI To Chordsmith",
-    control: "Map Arrangement",
+    control: "Apply Faithful Transcription",
+    actionId: "convert-midi-faithful",
+    does: "Applies independent inferred or manually selected melody/chord roles, exact sequential A-H packing, source-derived resolution and exact DAW overlays as one undoable command with structured history.",
+    useWhen: "Use when source order, length, note attacks, durations and chord voicings must remain auditable.",
+    aiNote: "The raw MIDI reference is kept by default. Sources above 128 bars must remain raw, be split, or use creative arrangement; they are never silently collapsed."
+  },
+  {
+    surface: "MIDI To Chordsmith",
+    control: "Apply Creative Arrangement",
     actionId: "convert-midi-arrangement",
-    does: "Maps drums, bass, chord groups and melody notes from the selected MIDI clip into generated overlays in one undoable, source-preserving pass.",
-    useWhen: "Use when a MIDI clip should become editable Chordsmith-style arrangement material without replacing the raw MIDI import.",
-    aiNote: "Treat this as an interpretation helper; preserve the raw MIDI clip and listen/inspect each role after mapping."
+    does: "Maps drums, bass, chord groups and melody notes from the selected source into generated overlays as one undoable creative sketch.",
+    useWhen: "Use when generated accompaniment and interpretive simplification are desired rather than exact transcription.",
+    aiNote: "This is explicitly creative arrangement. Review generated counts, padding, section reuse and losses before applying."
   },
   {
     surface: "MIDI To Chordsmith",

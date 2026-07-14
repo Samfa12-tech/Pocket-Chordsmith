@@ -23,6 +23,7 @@ import { validateExportProfile } from "../daw/exportProfiles";
 import { createPocketDjSourceSummary, type PocketDjSourceSummary } from "../daw/pocketDjSources";
 import { createMidiChordsmithConversionPreview, type MidiChordsmithConversionPreview } from "../daw/midiConversionPreview";
 import { normalizeMidiConversionSourceFilter, type MidiConversionSourceFilter, type MidiConversionSourceOption } from "../daw/midiConversionFilter";
+import { createMidiFaithfulConversionPreview, manualMidiRoleAssignment, type MidiConversionRole, type MidiFaithfulConversionOptions, type MidiFaithfulConversionPreview } from "../daw/midiFaithfulConversion";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { audioClipTakeSummary, clipSourceStartBar } from "../daw/clips";
 import { createAudioTakeDiagnosticsSummary, runtimeBuildId, runtimeCommit, runtimeLabel } from "./diagnostics";
@@ -1725,6 +1726,7 @@ function renderMidiClipEditor(project: ReturnType<typeof currentProject>, state:
   const conversionMelodyTrackIndex = Math.max(0, Math.min(conversionMelodyCount - 1, Math.round(Number(state.chordsmithEditorMelodyTrackIndex) || 0)));
   const conversionSourceFilter = normalizeMidiConversionSourceFilter(state.midiConversionSourceMode, state.midiConversionSourceValue);
   const conversionPreview = createMidiChordsmithConversionPreview(project, clip.id, conversionSectionId, conversionMelodyTrackIndex, conversionSourceFilter, state.midiConversionKeepRawReference);
+  const faithfulPreview = createMidiFaithfulConversionPreview(project, clip.id, midiFaithfulOptionsFromState(state));
   const notes = midi.notes.slice().sort((a, b) => a.startTick - b.startTick || a.pitch - b.pitch);
   const controllers = midi.controllers.slice().sort((a, b) => a.tick - b.tick || a.controller - b.controller);
   const programs = midi.programChanges.slice().sort((a, b) => a.tick - b.tick || (a.channel ?? 0) - (b.channel ?? 0) || a.program - b.program);
@@ -1775,18 +1777,23 @@ function renderMidiClipEditor(project: ReturnType<typeof currentProject>, state:
         <button type="button" data-midi-program-add="${sanitizeDataAttr(clip.id)}">Add Program</button>
         <button type="button" data-midi-pitch-bend-add="${sanitizeDataAttr(clip.id)}">Add Bend</button>
         <button type="button" data-midi-aftertouch-add="${sanitizeDataAttr(clip.id)}">Add Touch</button>
-        ${renderMidiConversionTargetControls(conversionSectionId, conversionMelodyTrackIndex, conversionMelodyCount, conversionPreview?.sourceOptions || [], conversionSourceFilter, state.midiConversionKeepRawReference)}
-        <button type="button" title="Map General MIDI drum notes into generated drum branch overlays" data-action="convert-midi-drums">Map Drums</button>
-        <button type="button" title="Map low non-drum MIDI notes into generated bass overlays" data-action="convert-midi-bass">Map Bass</button>
-        <button type="button" title="Map simultaneous non-drum MIDI notes into generated chord overlays" data-action="convert-midi-chords">Map Chords</button>
-        <button type="button" title="Map non-drum MIDI notes into generated melody overlays" data-action="convert-midi-melody">Map Melody</button>
-        <button type="button" title="Map drums, bass, chords and melody from this MIDI clip into generated overlays while preserving the raw MIDI clip" data-action="convert-midi-arrangement">Map Arrangement</button>
+        ${renderMidiConversionModeControls(state, conversionPreview?.sourceOptions || [], faithfulPreview)}
+        ${state.midiConversionIntent === "arrange-sketch" ? renderMidiConversionTargetControls(conversionSectionId, conversionMelodyTrackIndex, conversionMelodyCount, conversionPreview?.sourceOptions || [], conversionSourceFilter) : ""}
+        ${state.midiConversionIntent === "faithful-transcription"
+          ? `<button type="button" title="Apply the audited role-aware conversion as one undoable command" data-action="convert-midi-faithful" ${!faithfulPreview?.applyAllowed || faithfulPreview.fidelity === "creative arrangement" ? "disabled" : ""}>Apply Faithful Transcription</button>`
+          : `<button type="button" title="Map General MIDI drum notes into generated drum branch overlays" data-action="convert-midi-drums">Map Drums</button>
+             <button type="button" title="Map low non-drum MIDI notes into generated bass overlays" data-action="convert-midi-bass">Map Bass</button>
+             <button type="button" title="Map simultaneous non-drum MIDI notes into generated chord overlays" data-action="convert-midi-chords">Map Chords</button>
+             <button type="button" title="Map non-drum MIDI notes into generated melody overlays" data-action="convert-midi-melody">Map Melody</button>
+             <button type="button" title="Apply the existing creative drums, bass, chords and melody heuristics after reviewing substitutions and generated parts" data-action="convert-midi-arrangement">Apply Creative Arrangement</button>`}
         <button type="button" title="Adopt the imported MIDI start tempo and supported /4 meter as project globals" data-action="adopt-midi-tempo">Adopt Tempo</button>
         <button type="button" title="Convert imported MIDI tempo events into project tempo automation" data-action="adopt-midi-tempo-map">Tempo Lane</button>
         <button type="button" title="Convert imported MIDI time-signature events into the project meter map" data-action="adopt-midi-meter-map">Meter Lane</button>
         <button type="button" data-midi-note-add="${sanitizeDataAttr(clip.id)}">Add Note</button>
       </header>
-      ${conversionPreview ? renderMidiChordsmithConversionPreview(conversionPreview) : ""}
+      ${state.midiConversionIntent === "faithful-transcription"
+        ? faithfulPreview ? renderMidiFaithfulConversionPreview(faithfulPreview) : ""
+        : conversionPreview ? renderMidiChordsmithConversionPreview(conversionPreview) : ""}
       ${
         notes.length
           ? `<div class="midi-note-list">
@@ -1895,6 +1902,86 @@ function renderMidiClipEditor(project: ReturnType<typeof currentProject>, state:
   `;
 }
 
+function midiFaithfulOptionsFromState(state: AppState): MidiFaithfulConversionOptions {
+  const assignments: MidiFaithfulConversionOptions["assignments"] = {};
+  (Object.keys(state.midiConversionRoleSources) as MidiConversionRole[]).forEach((role) => {
+    const selection = state.midiConversionRoleSources[role];
+    if (selection === "auto") return;
+    assignments[role] = selection === "none" ? null : manualMidiRoleAssignment(role, selection);
+  });
+  return {
+    assignments,
+    keepRawReference: state.midiConversionKeepRawReference,
+    melodyTrackIndex: state.chordsmithEditorMelodyTrackIndex || 0
+  };
+}
+
+function renderMidiConversionModeControls(state: AppState, sourceOptions: MidiConversionSourceOption[], preview: MidiFaithfulConversionPreview | null): string {
+  const roles: MidiConversionRole[] = ["melody", "chords", "bass", "drums", "guitar"];
+  const options = sourceOptions.length ? sourceOptions : [{ mode: "all" as const, value: null, label: "All MIDI notes" }];
+  return `
+    <div class="midi-conversion-mode" aria-label="MIDI conversion mode">
+      <label>Conversion mode
+        <select data-midi-conversion-intent="true">
+          <option value="faithful-transcription" ${state.midiConversionIntent === "faithful-transcription" ? "selected" : ""}>Faithful transcription</option>
+          <option value="arrange-sketch" ${state.midiConversionIntent === "arrange-sketch" ? "selected" : ""}>Arrange into Chordsmith</option>
+        </select>
+      </label>
+      ${state.midiConversionIntent === "faithful-transcription" ? roles.map((role) => {
+        const selection = state.midiConversionRoleSources[role];
+        const selectedValue = typeof selection === "string" ? selection : midiConversionSourceOptionValue(selection);
+        const inferred = preview?.assignments[role];
+        return `<label>${escapeHtml(titleCaseWords(role))} source
+          <select data-midi-faithful-role-source="${role}" title="Assign one independent MIDI source to the ${role} role.">
+            <option value="auto" ${selectedValue === "auto" ? "selected" : ""}>Auto${inferred ? ` (${escapeHtml(inferred.label)})` : ""}</option>
+            <option value="none" ${selectedValue === "none" ? "selected" : ""}>None</option>
+            ${options.map((option) => {
+              const value = midiConversionSourceOptionValue(option);
+              return `<option value="${escapeAttr(value)}" ${selectedValue === value ? "selected" : ""}>${escapeHtml(option.label)}</option>`;
+            }).join("")}
+          </select>
+        </label>`;
+      }).join("") : ""}
+      <label class="midi-raw-reference-toggle" title="Keep the original imported MIDI clip available as the audit reference.">
+        <input type="checkbox" data-midi-conversion-keep-raw-reference="true" ${state.midiConversionKeepRawReference !== false ? "checked" : ""}>
+        Keep raw MIDI reference
+      </label>
+    </div>
+  `;
+}
+
+function renderMidiFaithfulConversionPreview(preview: MidiFaithfulConversionPreview): string {
+  const packing = preview.sectionPacking.songSequence.map((id) => `${id}:${preview.sectionPacking.sectionBars[id]}`).join(" / ") || "unsupported";
+  const roleRows = (["melody", "chords", "bass", "drums", "guitar"] as MidiConversionRole[]).map((role) => {
+    const summary = preview.roles[role];
+    const source = summary.assignment?.label || "None";
+    const inference = summary.assignment ? ` / ${summary.assignment.confidence} confidence: ${summary.assignment.reason}` : "";
+    return `<dt>${escapeHtml(titleCaseWords(role))}</dt><dd>${escapeHtml(source)}${escapeHtml(inference)} / ${summary.sourceNoteAttacks} source attacks / ${summary.destinationEvents} written${summary.filteredNotes ? ` / ${summary.filteredNotes} filtered` : ""}${summary.mergedNotes ? ` / ${summary.mergedNotes} grouped` : ""}${summary.outOfRangeNotes ? ` / ${summary.outOfRangeNotes} outside clip range` : ""}</dd>`;
+  }).join("");
+  return `
+    <section class="midi-conversion-preview" data-midi-faithful-preview="${sanitizeDataAttr(preview.clipId)}" aria-label="Faithful MIDI transcription preview">
+      <h4>Faithful Transcription Preview</h4>
+      <p class="editor-note">${escapeHtml(preview.warnings.join(" ") || "Exact DAW transcription is ready.")}</p>
+      <dl>
+        <dt>Source</dt><dd>${escapeHtml(preview.sourceFileName)} / ${preview.sourcePpq} PPQ / ${preview.tempoBpm} BPM / ${escapeHtml(preview.timeSignature)}</dd>
+        <dt>Key</dt><dd>${escapeHtml(preview.key.key)} ${preview.key.scale}${preview.key.source === "midi-key-signature" ? " (MIDI)" : " (project fallback)"}</dd>
+        <dt>Length</dt><dd>${preview.sourceBars} source bars → ${preview.destinationBars} destination bars / ${preview.sectionPacking.paddingBars} padding</dd>
+        <dt>Resolution</dt><dd>${preview.resolution} step${preview.resolution === 1 ? "" : "s"}/beat / ${preview.resolutionExact ? "exact" : `up to ${preview.maximumQuantizationErrorTicks} ticks error`}</dd>
+        <dt>Sections</dt><dd>${escapeHtml(packing)} / ${preview.sectionPacking.heuristicSubstitutions} heuristic substitutions</dd>
+        ${roleRows}
+        <dt>Generated parts</dt><dd>Bass ${preview.generated.bass}, drums ${preview.generated.drums}, guitar ${preview.generated.guitar}, harmony ${preview.generated.harmony}</dd>
+        <dt>Chord compatibility</dt><dd>${preview.chordCompatibility === "daw-exact-pcs1-simplified" ? "Exact DAW overlays; PCS1 progression would be simplified" : "No chord source"}</dd>
+        <dt>Raw reference</dt><dd>${preview.rawReferenceAction}</dd>
+        <dt>Fidelity</dt><dd>${escapeHtml(preview.fidelity)}</dd>
+      </dl>
+    </section>
+  `;
+}
+
+function titleCaseWords(value: string): string {
+  return value.replace(/(^|[-_\s])([a-z])/g, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
+}
+
 function renderMidiChordsmithConversionPreview(preview: MidiChordsmithConversionPreview): string {
   const laneSummary = Object.entries(preview.mappings.drums.lanes)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -1911,12 +1998,13 @@ function renderMidiChordsmithConversionPreview(preview: MidiChordsmithConversion
   const ambiguousSummary = formatMidiConversionReportRows(preview.ambiguousMaterial);
   return `
     <section class="midi-conversion-preview" data-midi-conversion-preview="${sanitizeDataAttr(preview.clipId)}" aria-label="MIDI to Chordsmith conversion preview">
-      <h4>Chordsmith Mapping Preview</h4>
+      <h4>Creative Arrangement Preview</h4>
       <p class="editor-note">${escapeHtml(warningText)}</p>
       <dl>
         <dt>Timing</dt><dd>${preview.timing.bpm} BPM / ${escapeHtml(preview.timing.timeSignature)}${preview.timing.hasTempoChanges || preview.timing.hasMeterChanges ? " map" : ""}</dd>
         <dt>Key</dt><dd>${escapeHtml(preview.key.key)} ${preview.key.scale}${preview.key.source === "pitch-inference" ? " (inferred)" : preview.key.source === "midi-key-signature" ? " (MIDI)" : " (project)"}</dd>
-        <dt>Structure</dt><dd>${preview.structure.sourceBars} bars / ${preview.structure.suggestedSectionCount} section${preview.structure.suggestedSectionCount === 1 ? "" : "s"} x ${preview.structure.suggestedSectionBars}</dd>
+        <dt>Structure</dt><dd>${preview.structure.sourceBars} source bars → ${preview.structure.destinationBars} destination bars / ${preview.structure.paddingBars} padding / ${preview.structure.truncatedBars} outside target</dd>
+        <dt>Section reuse</dt><dd>${preview.structure.repeatedSourceSections} true source repeats / ${preview.structure.repeatedDestinationSections} destination repeats / ${preview.structure.heuristicSubstitutions} heuristic substitutions</dd>
         <dt>Source</dt><dd>${escapeHtml(preview.sourceFilterLabel)}${preview.filteredOutNoteCount ? ` (${preview.filteredOutNoteCount} filtered out)` : ""}</dd>
         <dt>Confidence</dt><dd>${escapeHtml(preview.confidence)}${ignoredSummary ? ` / ${escapeHtml(ignoredSummary)}` : ""}${ambiguousSummary ? ` / ${escapeHtml(ambiguousSummary)}` : ""}</dd>
         <dt>Visible notes</dt><dd>${preview.visibleNoteCount} / ${preview.sourceNoteCount}${preview.outOfRangeNoteCount ? ` (${preview.outOfRangeNoteCount} outside clip range)` : ""}</dd>
@@ -1926,6 +2014,7 @@ function renderMidiChordsmithConversionPreview(preview: MidiChordsmithConversion
         <dt>Melody</dt><dd>${preview.mappings.melody.written} notes${preview.mappings.melody.pitches.length ? ` / ${escapeHtml(formatMidiPitchList(preview.mappings.melody.pitches))}` : ""}</dd>
         <dt>Role hints</dt><dd>${escapeHtml(formatMidiRoleHints(preview.roleHints))}</dd>
         <dt>Preserved</dt><dd>Raw MIDI ${preview.rawMidiClip}; ${escapeHtml(expressive)}; ${escapeHtml(preview.rawReferenceAction.detail)}</dd>
+        <dt>Fidelity</dt><dd>${escapeHtml(preview.fidelity)}</dd>
       </dl>
     </section>
   `;
@@ -1941,8 +2030,7 @@ function renderMidiConversionTargetControls(
   melodyTrackIndex: number,
   melodyTrackCount: number,
   sourceOptions: MidiConversionSourceOption[],
-  sourceFilter: MidiConversionSourceFilter,
-  keepRawReference: boolean
+  sourceFilter: MidiConversionSourceFilter
 ): string {
   const options = sourceOptions.length ? sourceOptions : [{ mode: "all" as const, value: null, label: "All MIDI notes" }];
   const sourceValue = midiConversionSourceOptionValue(sourceFilter);
@@ -1965,10 +2053,6 @@ function renderMidiConversionTargetControls(
         <select data-midi-conversion-melody-target="true" title="Choose the generated melody track used by Map Melody and Map Arrangement.">
           ${Array.from({ length: melodyTrackCount }, (_value, index) => `<option value="${index}" ${melodyTrackIndex === index ? "selected" : ""}>Track ${index + 1}</option>`).join("")}
         </select>
-      </label>
-      <label class="midi-raw-reference-toggle" title="Keep the imported MIDI clip on the timeline after mapping, or remove only that reference clip while leaving the source in the Media Pool.">
-        <input type="checkbox" data-midi-conversion-keep-raw-reference="true" ${keepRawReference !== false ? "checked" : ""}>
-        Keep raw reference
       </label>
     </div>
   `;

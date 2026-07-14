@@ -9,6 +9,7 @@ import { createDemoProject } from "../demo/demoProject";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../daw/dawProject";
 import { midiConversionSourceLabel, normalizeMidiConversionSourceFilter } from "../daw/midiConversionFilter";
 import { createMidiChordsmithConversionPreviews } from "../daw/midiConversionPreview";
+import { createMidiFaithfulConversionPreviews } from "../daw/midiFaithfulConversion";
 import { DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumBranchStepLevel, isDrumLaneId } from "../daw/drumLanes";
 import { renderTimelineEvents } from "../audio/eventRenderer";
 import { snapBeatStepAtBar, timelineSecondsAtBar } from "../daw/timeline";
@@ -113,6 +114,7 @@ import {
   convertMidiChordsToGeneratedOverlaysCommand,
   convertMidiDrumsToBranchOverlaysCommand,
   convertMidiArrangementToGeneratedOverlaysCommand,
+  convertMidiFaithfullyToGeneratedOverlaysCommand,
   convertMidiMelodyToGeneratedOverlaysCommand,
   cycleDrumTupletCommand,
   cycleBassStepCommand,
@@ -1908,6 +1910,26 @@ export class App {
         this.render({ preserveScroll: true });
       });
     });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-midi-conversion-intent]").forEach((select) => {
+      select.addEventListener("change", () => {
+        this.state.midiConversionIntent = select.value === "arrange-sketch" ? "arrange-sketch" : "faithful-transcription";
+        this.state.status = this.state.midiConversionIntent === "faithful-transcription"
+          ? "MIDI conversion set to faithful transcription. Review independent role sources before applying."
+          : "MIDI conversion set to creative arrangement. Review generated parts and losses before applying.";
+        this.render({ preserveScroll: true });
+      });
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-midi-faithful-role-source]").forEach((select) => {
+      select.addEventListener("change", () => {
+        const role = select.dataset.midiFaithfulRoleSource as keyof AppState["midiConversionRoleSources"];
+        if (!role || !(role in this.state.midiConversionRoleSources)) return;
+        this.state.midiConversionRoleSources[role] = select.value === "auto" || select.value === "none"
+          ? select.value
+          : midiConversionSourceFilterFromValue(select.value);
+        this.state.status = `Faithful ${role} source set to ${select.value === "auto" ? "automatic inference" : select.value === "none" ? "none" : midiConversionSourceLabel(midiConversionSourceFilterFromValue(select.value))}.`;
+        this.render({ preserveScroll: true });
+      });
+    });
     this.root.querySelector<HTMLTextAreaElement>("[data-feedback-text]")?.addEventListener("input", (event) => {
       this.state.feedbackText = (event.target as HTMLTextAreaElement).value;
     });
@@ -3451,6 +3473,11 @@ export class App {
       audio: "composition-events",
       preserveScroll: true,
       reason: "convert-midi-melody"
+    });
+    if (action === "convert-midi-faithful") this.applyProjectState(convertMidiFaithfullyToGeneratedOverlaysCommand(this.state), {
+      audio: "composition-events",
+      preserveScroll: true,
+      reason: "convert-midi-faithful"
     });
     if (action === "convert-midi-arrangement") this.applyProjectState(convertMidiArrangementToGeneratedOverlaysCommand(this.state), {
       audio: "composition-events",
@@ -6508,7 +6535,8 @@ function createAiBridgeMediaReadiness(project: PocketDawProject) {
       transientMarkerCount: Array.isArray(item.metadata?.audioTransientMarkersSeconds) ? item.metadata.audioTransientMarkersSeconds.length : 0
     })),
     audioTakes: createAudioTakeDiagnosticsSummary(project),
-    midiChordsmithConversionPreviews: createMidiChordsmithConversionPreviews(project)
+    midiChordsmithConversionPreviews: createMidiChordsmithConversionPreviews(project),
+    midiFaithfulConversionPreviews: createMidiFaithfulConversionPreviews(project)
   };
 }
 

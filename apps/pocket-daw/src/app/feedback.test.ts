@@ -85,7 +85,8 @@ function sampleDiagnostics(): TesterDiagnosticsPayload {
         archivedCount: 0,
         groups: []
       },
-      midiChordsmithConversionPreviews: []
+      midiChordsmithConversionPreviews: [],
+      midiFaithfulConversionPreviews: []
     },
     audio: {
       playbackBackend: "native",

@@ -7,6 +7,29 @@ This note separates two related but different workflows:
 
 Keeping these as separate commands prevents the MIDI import path from silently throwing away tracks, channels, tempo data, controller data, or drum detail just because a user also wants a Chordsmith-style sketch.
 
+## Implemented Source Checkpoint — 2026-07-14
+
+Pocket DAW now exposes two explicit conversion intents while keeping ordinary `Import MIDI` conservative:
+
+- `Faithful transcription` independently assigns melody, chords, bass, drums and guitar. Named `Vocal Melody` and `Chord Guide` tracks are high-confidence defaults. Automatic faithful conversion never sends one shared all-notes source to every role.
+- `Arrange into Chordsmith` keeps the earlier interpretive overlay mapper as a deliberately creative sketch path.
+
+Faithful transcription now:
+
+- chooses the lowest supported exact resolution from source onsets and durations;
+- packs source bars sequentially across A-H at up to 16 bars per section, for 128 unique bars total;
+- preserves exact source length and order with no padding or similarity-based section substitution;
+- writes exact MIDI melody pitches/durations and chord pitch sets/durations into DAW overlays;
+- disables and clears generated drums, bass and guitar by default;
+- suppresses the schema progression while exact chord overlays play, preventing doubled harmony;
+- carries overlay durations across packed section boundaries without creating a second note attack;
+- adopts the source start tempo, supported /4 meter and MIDI key signature;
+- keeps the raw MIDI timeline reference by default;
+- records a structured `midi-conversion` history report and exposes faithful previews in UI, diagnostics and MCP summaries;
+- applies as one undoable command and leaves the project unchanged if the preview is not applicable.
+
+Sources above 128 bars are blocked from faithful Chordsmith packing and must stay as raw MIDI, be split into multiple projects, or use creative arrangement. Mixed chord qualities and voicings remain exact in `.pocketdaw` chord overlays. Schema-16 PCS1 progression output cannot carry those overlays and must be labeled `simplified`; see `ADR_MIDI_EXACT_CHORD_OVERLAY_COMPATIBILITY.md`.
+
 ## Current Behavior
 
 Current Pocket DAW builds parse a MIDI file into:
@@ -43,11 +66,11 @@ Non-goals:
 - Replace the project Chordsmith source.
 - Mutate generated drum/bass/chord/melody/guitar tracks.
 
-### Convert MIDI To Chordsmith Arrangement
+### Convert MIDI To Chordsmith
 
-Command label: `Convert MIDI to Chordsmith Arrangement`
+Mode labels: `Faithful transcription` and `Arrange into Chordsmith`
 
-Purpose: create an editable Chordsmith-style sketch from selected MIDI data.
+Purpose: either create an auditable role-aware transcription in DAW overlays or create an explicitly interpretive Chordsmith-style sketch.
 
 Responsibilities:
 

@@ -419,12 +419,7 @@ function renderGeneratedSectionEvents(
           trackId: "bass",
           role: "bass",
           time: humanizedTime(pcs, eventTime, step + overlayIndex, 24),
-          duration: spanDurationForLocalSteps(
-            stepTimes,
-            localStep,
-            Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)),
-            spanDurationForSteps(localStep, Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)), secondsPerBeat, resolution, swing)
-          ),
+          duration: overlayDurationSeconds(project, clip, localStep, overlay.durationSteps, eventTime, stepsPerBar, spanDurationForSteps(localStep, overlay.durationSteps, secondsPerBeat, resolution, swing)),
           bar: eventBar,
           step,
           midi: applyClipPitchTransform(overlay.midi, clip),
@@ -436,7 +431,8 @@ function renderGeneratedSectionEvents(
       });
     }
 
-    if (!stemMutes.chords && pcs.chordsOn && step % stepsPerBar === 0) {
+    const chordOverlayOnly = project.tracks.find((track) => track.role === "chords")?.metadata?.midiFaithfulOverlayOnly === true;
+    if (!stemMutes.chords && pcs.chordsOn && !chordOverlayOnly && step % stepsPerBar === 0) {
       const chord = currentChord(pcs, section, step);
       chordRhythmStarts(pcs, eventTime, secondsPerBeat).forEach(([start, duration], chordIndex) => {
         out.push({
@@ -467,12 +463,7 @@ function renderGeneratedSectionEvents(
           trackId: "chords",
           role: "chords",
           time: eventTime,
-          duration: spanDurationForLocalSteps(
-            stepTimes,
-            localStep,
-            Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)),
-            spanDurationForSteps(localStep, Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)), secondsPerBeat, resolution, swing)
-          ),
+          duration: overlayDurationSeconds(project, clip, localStep, overlay.durationSteps, eventTime, stepsPerBar, spanDurationForSteps(localStep, overlay.durationSteps, secondsPerBeat, resolution, swing)),
           bar: eventBar,
           step,
           midiNotes: overlay.midiNotes.map((midi) => applyClipPitchTransform(midi, clip)),
@@ -537,12 +528,7 @@ function renderGeneratedSectionEvents(
             trackId: melodyTrackId(project, trackIndex),
             role: "melody",
             time: humanizedTime(pcs, eventTime, step + overlayIndex, 22 + trackIndex),
-            duration: spanDurationForLocalSteps(
-              stepTimes,
-              localStep,
-              Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)),
-              spanDurationForSteps(localStep, Math.max(1, Math.min(overlay.durationSteps, renderSteps - localStep)), secondsPerBeat, resolution, swing)
-            ),
+            duration: overlayDurationSeconds(project, clip, localStep, overlay.durationSteps, eventTime, stepsPerBar, spanDurationForSteps(localStep, overlay.durationSteps, secondsPerBeat, resolution, swing)),
             bar: eventBar,
             step,
             midi: applyClipPitchTransform(overlay.midi, clip),
@@ -642,6 +628,12 @@ function spanDurationForLocalSteps(stepTimes: number[], localStep: number, span:
   const start = stepTimes[localStep];
   const end = stepTimes[localStep + Math.max(1, Math.round(span))];
   return Number.isFinite(start) && Number.isFinite(end) && end > start ? end - start : fallback;
+}
+
+function overlayDurationSeconds(project: PocketDawProject, clip: Clip, localStep: number, durationSteps: number, eventTime: number, stepsPerBar: number, fallback: number): number {
+  const endBar = clip.startBar + (localStep + Math.max(1, durationSteps)) / Math.max(1, stepsPerBar);
+  const endTime = timelineSecondsAtBar(project, endBar);
+  return Number.isFinite(endTime) && endTime > eventTime ? endTime - eventTime : fallback;
 }
 
 function projectHasTempoAutomation(project: PocketDawProject): boolean {

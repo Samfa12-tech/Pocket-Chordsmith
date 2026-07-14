@@ -42,6 +42,13 @@ playhead position. The UI only displays state and dispatches commands.
 
 ## Current Notes And Known Gaps
 
+### Current 2026-07-14 Pocket DAW MIDI Transcription Notes
+
+- The unreleased source-only MIDI conversion slice separates `Faithful transcription` from `Arrange into Chordsmith`. Faithful mode uses independent role assignments, exact supported timing resolution, sequential A-H packing at up to 16 bars each, exact DAW melody/chord overlays, no generated accompaniment by default, raw-reference retention, structured conversion history and one-command undo.
+- Local validation against Sam's owned `Billions of Years` handoff fixture passed at 86 BPM, F-sharp minor, 4/4, 74 source and destination bars, A-E section lengths 16/16/16/16/10, 244 melody attacks, 148 chord overlays containing 453 MIDI notes, final four F-sharp-major voicings, and zero generated bass/drums/guitar. The owned MIDI/PCS1 fixtures remain outside git.
+- Exact mixed-quality chord overlays remain Pocket DAW-local. No family schema bump was made; schema-16 PCS1 progression output would be simplified and must be labeled as such. `apps/pocket-daw/docs/ADR_MIDI_EXACT_CHORD_OVERLAY_COMPATIBILITY.md` records the deferred Chordsmith-web extension decision.
+- This work is not installed or published at the current `0.6.40` public checkpoint. Full tests/build/E2E and a native Windows source-debug open/play/save/reopen/MIDI-export smoke passed on 2026-07-14; exact installer-bound workflow and listening smoke remain release gates before publication.
+
 ### Current 2026-07-13 Pocket DAW Source Notes
 
 - The unreleased Portable Projects + Media Recovery slice hardens native Collect Media against collisions, partial copies and false project-save success; identical-byte retries are idempotent, different-content overwrites are refused, and existing project-media names are reserved deterministically.

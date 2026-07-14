@@ -7,6 +7,7 @@ import { createRoutingExportSummary, type RoutingExportSummary } from "../daw/ro
 import { POCKET_DAW_VERSION, type Clip, type PocketDawProject } from "../daw/schema";
 import { createPocketDjSourceSummary, type PocketDjSourceSummary } from "../daw/pocketDjSources";
 import { createMidiChordsmithConversionPreviews, type MidiChordsmithConversionPreview } from "../daw/midiConversionPreview";
+import { createMidiFaithfulConversionPreviews, type MidiFaithfulConversionPreview } from "../daw/midiFaithfulConversion";
 import { recordingLatencyOffsetSeconds } from "../daw/tracks";
 import { currentProject, type AppState } from "./state";
 import type { PerformanceDiagnosticsReport } from "./performanceDiagnostics";
@@ -46,6 +47,7 @@ export interface TesterDiagnosticsPayload {
     pocketDjSource: PocketDjSourceSummary | null;
     audioTakes: AudioTakeDiagnosticsSummary;
     midiChordsmithConversionPreviews: MidiChordsmithConversionPreview[];
+    midiFaithfulConversionPreviews: MidiFaithfulConversionPreview[];
   };
   audio: {
     playbackBackend: string;
@@ -225,7 +227,8 @@ export function buildTesterDiagnosticsPayload(
       invariantWarnings: invariants.warnings,
       pocketDjSource: createPocketDjSourceSummary(project),
       audioTakes: createAudioTakeDiagnosticsSummary(project),
-      midiChordsmithConversionPreviews: createMidiChordsmithConversionPreviews(project)
+      midiChordsmithConversionPreviews: createMidiChordsmithConversionPreviews(project),
+      midiFaithfulConversionPreviews: createMidiFaithfulConversionPreviews(project)
     },
     audio: {
       playbackBackend: String(audioDiagnostics.playbackBackend),

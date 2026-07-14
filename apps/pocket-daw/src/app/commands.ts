@@ -16,6 +16,7 @@ import { convertMidiClipToChordOverlays } from "../daw/midiChordConversion";
 import { midiConversionSourceLabel, normalizeMidiConversionSourceFilter, type MidiConversionSourceFilter } from "../daw/midiConversionFilter";
 import { convertMidiClipToDrumBranchOverlays } from "../daw/midiDrumConversion";
 import { convertMidiClipToMelodyOverlays } from "../daw/midiMelodyConversion";
+import { convertMidiClipFaithfully, manualMidiRoleAssignment, type MidiFaithfulConversionOptions, type MidiConversionRole } from "../daw/midiFaithfulConversion";
 import { addAutomationPoint, deleteAutomationPoint, ensureClipAutomationLane, ensureFxParameterAutomationLane, ensureProjectAutomationLane, ensureTrackAutomationLane, ensureTrackSendAutomationLane, getClipAutomationLane, getFxParameterAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, setAutomationLaneEnabled, setAutomationLanePoints, type ClipAutomationField, type ProjectAutomationField, type TrackAutomationField, type TrackSendAutomationField, updateAutomationPoint } from "../daw/automation";
 import { addBusTrack, addReturnTrack, routeTrackToOutput, setTrackSendLevel, setTrackSendMode, type TrackSendMode } from "../daw/routing";
 import { setFxSlotParameter, setPocketProEqPreset } from "../daw/fx";
@@ -59,7 +60,7 @@ import { drumPresetEventsForProject, drumPresetLabel, drumPresetVisibleForProjec
 import { bassPresetLabel, bassPresetPatternForProject, bassPresetVisibleForProject, findBassPreset } from "../daw/chordsmithBassPresets";
 import { findGuitarPreset, guitarPresetLabel, guitarPresetPatternForProject, guitarPresetVisibleForProject } from "../daw/chordsmithGuitarPresets";
 import type { AutomationPoint, Clip, JsonObject, JsonValue, PocketDawProject, ProjectMeterMapPoint, RecordingChannelMode, RecordingInputMode, TrackRecordingInput } from "../daw/schema";
-import type { AppState } from "./state";
+import type { AppState, MidiRoleSourceSelection } from "./state";
 
 export function importTextToProject(text: string): { project: PocketDawProject; message: string } {
   const parsed = parseAnyImportText(text);
@@ -1632,6 +1633,52 @@ export function convertMidiArrangementToGeneratedOverlaysCommand(
     chordsmithEditorSectionId: melody.sectionId,
     chordsmithEditorMelodyTrackIndex: melody.trackIndex
   };
+}
+
+export function convertMidiFaithfullyToGeneratedOverlaysCommand(
+  state: AppState,
+  clipId = state.selectedClipId || "",
+  options: MidiFaithfulConversionOptions = currentMidiFaithfulConversionOptions(state)
+): AppState {
+  const clip = state.undoStack.present.timeline.clips.find((item) => item.id === clipId);
+  if (!clip || clip.type !== "midi") return { ...state, status: "Choose a MIDI clip before applying faithful transcription." };
+  const result = convertMidiClipFaithfully(state.undoStack.present, clipId, options);
+  if (!result.applied) {
+    return {
+      ...state,
+      selectedClipId: clipId,
+      selectedTrackId: clip.trackId || state.selectedTrackId,
+      status: result.report.warnings[0] || "Faithful transcription could not be applied. Review the preview and role assignments."
+    };
+  }
+  const summary = `${result.report.destinationBars} bars, ${result.report.melodyWritten} melody attacks, ${result.report.chordEventsWritten} exact chord events`;
+  return {
+    ...commitProject(state, result.project, `Faithfully transcribed ${clip.name}: ${summary}. ${result.report.rawMidiReferenceKept ? "Raw MIDI reference preserved." : "Raw MIDI timeline reference removed; source media preserved."}`),
+    selectedClipId: result.report.rawMidiReferenceKept ? clipId : result.project.timeline.clips[0]?.id || null,
+    selectedTrackId: clip.trackId || state.selectedTrackId,
+    chordsmithEditorSectionId: result.report.songSequence[0] || state.chordsmithEditorSectionId,
+    chordsmithEditorMelodyTrackIndex: Math.max(0, Math.round(options.melodyTrackIndex || 0))
+  };
+}
+
+export function currentMidiFaithfulConversionOptions(state: AppState): MidiFaithfulConversionOptions {
+  const assignments: MidiFaithfulConversionOptions["assignments"] = {};
+  (Object.keys(state.midiConversionRoleSources) as MidiConversionRole[]).forEach((role) => {
+    const selection = state.midiConversionRoleSources[role];
+    if (selection === "auto") return;
+    assignments[role] = selection === "none" ? null : manualMidiRoleAssignment(role, selection);
+  });
+  return {
+    assignments,
+    keepRawReference: currentMidiConversionKeepRawReference(state),
+    melodyTrackIndex: state.chordsmithEditorMelodyTrackIndex || 0
+  };
+}
+
+export function midiRoleSourceSelectionLabel(selection: MidiRoleSourceSelection): string {
+  if (selection === "auto") return "automatic inference";
+  if (selection === "none") return "none";
+  return midiConversionSourceLabel(selection);
 }
 
 export function currentMidiConversionSourceFilter(state: AppState): MidiConversionSourceFilter {

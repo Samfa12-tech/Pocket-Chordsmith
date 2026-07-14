@@ -10,7 +10,8 @@ import type { RecentProject } from "../native/recentFiles";
 import type { UpdaterState } from "../native/updaterBridge";
 import { defaultAiBridgeUiStatus, type AiBridgeUiStatus } from "../native/aiBridge";
 import type { DrumLaneId } from "../daw/drumLanes";
-import type { MidiConversionSourceMode } from "../daw/midiConversionFilter";
+import type { MidiConversionSourceFilter, MidiConversionSourceMode } from "../daw/midiConversionFilter";
+import type { MidiChordsmithConversionIntent, MidiConversionRole } from "../daw/midiFaithfulConversion";
 import type { MidiImportPlacementMode } from "../daw/midiClips";
 
 export type ChordsmithStepSelection =
@@ -44,6 +45,8 @@ export interface AppState {
   midiConversionSourceMode: MidiConversionSourceMode;
   midiConversionSourceValue: number | null;
   midiConversionKeepRawReference: boolean;
+  midiConversionIntent: MidiChordsmithConversionIntent;
+  midiConversionRoleSources: Record<MidiConversionRole, MidiRoleSourceSelection>;
   currentFile: ProjectFileState;
   busyMessage: string | null;
   exportProgress: { message: string; detail?: string } | null;
@@ -78,6 +81,8 @@ export interface AppState {
   recordingPunchEnabled: boolean;
   recordingTakeMode: RecordingTakeMode;
 }
+
+export type MidiRoleSourceSelection = "auto" | "none" | MidiConversionSourceFilter;
 
 export type LowerDockTab = "mixer" | "inserts" | "sends" | "automation" | "piano-roll" | "audio-editor" | "export-details";
 export type UiCreationPreset = "music" | "game-music";
@@ -264,6 +269,8 @@ export function createInitialState(): AppState {
     midiConversionSourceMode: "all",
     midiConversionSourceValue: null,
     midiConversionKeepRawReference: true,
+    midiConversionIntent: "faithful-transcription",
+    midiConversionRoleSources: createMidiRoleSourceSelections(),
     currentFile: { path: null, label: "Editable demo copy" },
     busyMessage: null,
     exportProgress: null,
@@ -372,6 +379,8 @@ export function loadProjectIntoState(
     midiConversionSourceMode: state.midiConversionSourceMode,
     midiConversionSourceValue: state.midiConversionSourceValue,
     midiConversionKeepRawReference: state.midiConversionKeepRawReference,
+    midiConversionIntent: state.midiConversionIntent,
+    midiConversionRoleSources: { ...state.midiConversionRoleSources },
     currentFile: options.currentFile || { path: null, label: project.project.title || "Untitled project" },
     busyMessage: null,
     exportProgress: null,
@@ -383,6 +392,10 @@ export function loadProjectIntoState(
     recordingPunchEnabled: state.recordingPunchEnabled,
     recordingTakeMode: state.recordingTakeMode
   };
+}
+
+export function createMidiRoleSourceSelections(): Record<MidiConversionRole, MidiRoleSourceSelection> {
+  return { melody: "auto", chords: "auto", bass: "auto", drums: "auto", guitar: "auto" };
 }
 
 function preferredTrackId(project: PocketDawProject): string | null {

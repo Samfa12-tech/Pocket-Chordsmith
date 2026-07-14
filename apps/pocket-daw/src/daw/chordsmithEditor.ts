@@ -101,6 +101,125 @@ export function appendChordsmithSection(project: PocketDawProject, sectionId: Se
   });
 }
 
+export interface FaithfulMidiChordsmithStructure {
+  sectionBars: Partial<Record<SectionId, number>>;
+  songSequence: SectionId[];
+  resolution: number;
+  bpm?: number;
+  timeSig?: number;
+  key?: string;
+  scale?: "major" | "minor";
+}
+
+export function configureFaithfulMidiChordsmithStructure(project: PocketDawProject, structure: FaithfulMidiChordsmithStructure): PocketDawProject {
+  return editChordsmithProject(project, (pcs, next) => {
+    const used = new Set(structure.songSequence);
+    pcs.resolution = safeResolution(structure.resolution);
+    if (structure.bpm !== undefined) pcs.bpm = clamp(Math.round(structure.bpm), 40, 240);
+    if (structure.timeSig !== undefined) pcs.timeSig = safeTimeSig(structure.timeSig);
+    if (structure.key) pcs.key = safeText(structure.key, pcs.key);
+    if (structure.scale) pcs.scale = structure.scale;
+    pcs.melodyPitchMode = "chromatic";
+    pcs.swing = 0;
+    pcs.humanizeOn = false;
+    pcs.songSequence = structure.songSequence.slice();
+    pcs.bassOn = false;
+    pcs.bassMode = "manual";
+    pcs.guitarEnabled = false;
+    pcs.chordsOn = true;
+    next.project.resolution = pcs.resolution;
+    next.project.bpm = pcs.bpm;
+    next.project.timeSig = pcs.timeSig;
+    next.project.key = pcs.key;
+    next.project.scale = pcs.scale;
+
+    SECTION_IDS.forEach((sectionId) => {
+      const section = pcs.sections[sectionId];
+      const bars = used.has(sectionId) ? clamp(Math.round(structure.sectionBars[sectionId] || 1), 1, 16) : 1;
+      const steps = bars * pcs.timeSig * pcs.resolution;
+      section.bars = bars;
+      section.active = used.has(sectionId);
+      pcs.sectionBars[sectionId] = bars;
+      section.progression = new Array<number>(bars).fill(0);
+      section.grid = {
+        kick: new Array<number>(steps).fill(0),
+        snare: new Array<number>(steps).fill(0),
+        hat: new Array<number>(steps).fill(0),
+        bass: new Array<number>(steps).fill(0)
+      };
+      section.gridTuplets = {
+        kick: new Array<boolean>(steps).fill(false),
+        snare: new Array<boolean>(steps).fill(false),
+        hat: new Array<boolean>(steps).fill(false),
+        bass: new Array<boolean>(steps).fill(false)
+      };
+      const melodyTrackCount = Math.max(1, section.melodyTracks.length);
+      section.melodyTracks = Array.from({ length: melodyTrackCount }, () => new Array<number | null>(steps).fill(null));
+      section.melodyHold = Array.from({ length: melodyTrackCount }, () => new Array<boolean>(steps).fill(false));
+      section.melodySlide = Array.from({ length: melodyTrackCount }, () => new Array<boolean>(steps).fill(false));
+      section.melodyTuplets = Array.from({ length: melodyTrackCount }, () => new Array<boolean>(steps).fill(false));
+      section.melodyInstruments = Array.from({ length: melodyTrackCount }, (_value, index) => section.melodyInstruments[index] || DEFAULT_MELODY_INSTRUMENT);
+      section.melodyOctaves = new Array<number>(melodyTrackCount).fill(0);
+      section.melodyMute = new Array<boolean>(melodyTrackCount).fill(false);
+      section.melodySolo = new Array<boolean>(melodyTrackCount).fill(false);
+      section.melodyPan = new Array<number>(melodyTrackCount).fill(0);
+      section.bassNotes = new Array<number | null>(steps).fill(null);
+      section.bassHold = new Array<boolean>(steps).fill(false);
+      section.bassSlide = new Array<boolean>(steps).fill(false);
+      section.bassAccent = new Array<boolean>(steps).fill(false);
+      section.guitarPattern = new Array<string>(steps).fill("off");
+    });
+
+    next.timeline.clips = next.timeline.clips.filter((clip) => clip.type !== "generated-section" || clip.linked === false);
+    let startBar = 1;
+    structure.songSequence.forEach((sectionId, sourceIndex) => {
+      const section = pcs.sections[sectionId];
+      next.timeline.clips.push({
+        id: nextGeneratedSectionClipId(next),
+        type: "generated-section",
+        trackId: "arrangement",
+        sourceRefId: getPrimaryChordsmithSourceRef(next)?.id,
+        sectionId,
+        startBar,
+        barLength: section.bars,
+        name: `Section ${sectionId}`,
+        muted: false,
+        color: SECTION_COLORS[sectionId] || "#40d8ff",
+        linked: true,
+        transforms: { transpose: 0, octave: 0, gain: 1, stemMutes: {} },
+        lane: 0,
+        metadata: { sourceIndex, sectionBars: section.bars }
+      });
+      startBar += section.bars;
+    });
+
+    const drums = next.tracks.find((track) => track.role === "drums");
+    const bass = next.tracks.find((track) => track.role === "bass");
+    const guitar = next.tracks.find((track) => track.role === "guitar");
+    const chords = next.tracks.find((track) => track.role === "chords");
+    if (drums) {
+      drums.mute = true;
+      drums.metadata = { ...(drums.metadata || {}), drumBranchEvents: {} };
+    }
+    if (bass) {
+      bass.mute = true;
+      bass.metadata = { ...(bass.metadata || {}), bassOverlayEvents: {} };
+    }
+    if (guitar) {
+      guitar.mute = true;
+      guitar.active = false;
+    }
+    if (chords) {
+      chords.mute = false;
+      chords.metadata = { ...(chords.metadata || {}), midiFaithfulOverlayOnly: true, chordOverlayEvents: {} };
+    }
+    next.tracks.filter((track) => track.role === "melody").forEach((track) => {
+      track.mute = false;
+      track.metadata = { ...(track.metadata || {}), melodyOverlayEvents: {} };
+    });
+  });
+}
+
 export function rebuildGeneratedSectionArrangement(project: PocketDawProject): PocketDawProject {
   const next = cloneProject(project);
   const ref = getPrimaryChordsmithSourceRef(next);
@@ -113,6 +232,11 @@ export function rebuildGeneratedSectionArrangement(project: PocketDawProject): P
 export function setSectionChord(project: PocketDawProject, sectionId: SectionId, barIndex: number, degree: number): PocketDawProject {
   return editChordsmithSection(project, sectionId, (_pcs, section) => {
     section.progression[barIndex] = clamp(Math.round(degree), 0, 6);
+  }, (next) => {
+    const chords = next.tracks.find((track) => track.role === "chords");
+    if (chords?.metadata?.midiFaithfulOverlayOnly === true) {
+      chords.metadata = { ...chords.metadata, midiFaithfulOverlayOnly: false };
+    }
   });
 }
 
@@ -621,7 +745,10 @@ function syncChordsmithOriginalGlobals(ref: SourceRef, pcs: SanitizedPcsProject)
   target.swing = pcs.swing;
   target.timeSig = pcs.timeSig;
   target.resolution = pcs.resolution;
+  target.melodyPitchMode = pcs.melodyPitchMode;
   target.chordInstrument = pcs.chordInstrument;
+  target.chordsOn = pcs.chordsOn;
+  target.bassOn = pcs.bassOn;
   target.songSequence = pcs.songSequence.slice();
   target.sectionSequence = pcs.songSequence.slice();
   target.bassMode = pcs.bassMode;

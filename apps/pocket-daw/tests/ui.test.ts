@@ -560,7 +560,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(catalog).toContain("| Toggle Folder Track | `data-folder-toggle`");
     expect(catalog).toContain("| Collect Media | `data-action=collect-media`");
     expect(catalog).toContain("| Map Drums | `data-action=convert-midi-drums`");
-    expect(catalog).toContain("| Map Arrangement | `data-action=convert-midi-arrangement`");
+    expect(catalog).toContain("| Apply Faithful Transcription | `data-action=convert-midi-faithful`");
+    expect(catalog).toContain("| Apply Creative Arrangement | `data-action=convert-midi-arrangement`");
     expect(catalog).toContain("| Quantize Note Lengths | `data-midi-duration-quantize`");
     expect(catalog).toContain("| Quantize Warp Markers | `data-audio-clip-action:quantize-warp-markers-1/4, quantize-warp-markers-1/8, quantize-warp-markers-1/16, quantize-warp-markers-1/32`");
     expect(catalog).toContain("| Apply Warp Rate | `data-audio-clip-action:apply-warp-varispeed`");
@@ -2213,29 +2214,25 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain(`data-midi-aftertouch-duplicate="${result.clipId}:${aftertouchId}"`);
     expect(html).toContain(`data-midi-aftertouch-delete="${result.clipId}:${aftertouchId}"`);
     expect(html).toContain("Aftertouch");
-    expect(html).toContain('data-action="convert-midi-drums"');
-    expect(html).toContain("Map Drums");
-    expect(html).toContain('data-action="convert-midi-bass"');
-    expect(html).toContain("Map Bass");
-    expect(html).toContain('data-action="convert-midi-chords"');
-    expect(html).toContain("Map Chords");
-    expect(html).toContain('data-action="convert-midi-melody"');
-    expect(html).toContain("Map Melody");
-    expect(html).toContain('data-action="convert-midi-arrangement"');
-    expect(html).toContain("Map Arrangement");
-    expect(html).toContain('data-midi-conversion-section-target="true"');
-    expect(html).toContain('data-midi-conversion-melody-target="true"');
-    expect(html).toContain('data-midi-conversion-source-target="true"');
+    expect(html).toContain('data-midi-conversion-intent="true"');
+    expect(html).toContain("Faithful transcription");
+    expect(html).toContain("Arrange into Chordsmith");
+    expect(html).toContain('data-midi-faithful-role-source="melody"');
+    expect(html).toContain('data-midi-faithful-role-source="chords"');
+    expect(html).toContain('data-midi-faithful-role-source="bass"');
+    expect(html).toContain('data-midi-faithful-role-source="drums"');
+    expect(html).toContain('data-midi-faithful-role-source="guitar"');
+    expect(html).toContain('data-action="convert-midi-faithful"');
+    expect(html).toContain("Apply Faithful Transcription");
     expect(html).toContain('data-midi-conversion-keep-raw-reference="true" checked');
-    expect(html).toContain("Keep raw reference");
+    expect(html).toContain("Keep raw MIDI reference");
     expect(html).toContain("All MIDI notes");
-    expect(html).toContain("Map to");
-    expect(html).toContain(`data-midi-conversion-preview="${result.clipId}"`);
-    expect(html).toContain("Chordsmith Mapping Preview");
+    expect(html).toContain(`data-midi-faithful-preview="${result.clipId}"`);
+    expect(html).toContain("Faithful Transcription Preview");
     expect(html).toContain("120 BPM / 4/4");
-    expect(html).toContain("Structure");
-    expect(html).toContain("Role hints");
-    expect(html).toContain("Raw MIDI preserved");
+    expect(html).toContain("Sections");
+    expect(html).toContain("Generated parts");
+    expect(html).toContain("Raw reference");
     expect(html).toContain('data-action="adopt-midi-tempo"');
     expect(html).toContain("Adopt Tempo");
     expect(html).toContain('data-action="adopt-midi-tempo-map"');
@@ -2243,8 +2240,8 @@ describe("Pocket DAW UI rendering", () => {
     expect(html).toContain('data-action="adopt-midi-meter-map"');
     expect(html).toContain("Meter Lane");
     expect(html).toContain("C4");
-    expect(html).toContain("<dt>Confidence</dt>");
-    expect(html).toContain("Raw MIDI timeline reference will be kept after mapping.");
+    expect(html).toContain("<dt>Fidelity</dt>");
+    expect(html).toContain("lossless within supported model");
     expect(html).toContain("MIDI clips are created from the selected import placement");
     expect(html).toContain("midi-note-strip");
   });
@@ -2259,6 +2256,7 @@ describe("Pocket DAW UI rendering", () => {
     state.lowerDockTab = "piano-roll";
     state.midiConversionSourceMode = "source-track";
     state.midiConversionSourceValue = 2;
+    state.midiConversionIntent = "arrange-sketch";
 
     const html = renderAppShell(state);
 
@@ -2280,7 +2278,7 @@ describe("Pocket DAW UI rendering", () => {
 
     const html = renderAppShell(state);
 
-    expect(html).toContain("Raw MIDI timeline reference will be removed after a successful mapping");
+    expect(html).toContain("Raw MIDI timeline reference will be removed after a successful transcription");
   });
 
   it("renders the selected imported melody lane editor", () => {

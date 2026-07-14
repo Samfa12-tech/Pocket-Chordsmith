@@ -8,6 +8,7 @@ import {
   convertMidiBassToGeneratedOverlaysCommand,
   convertMidiChordsToGeneratedOverlaysCommand,
   convertMidiDrumsToBranchOverlaysCommand,
+  convertMidiFaithfullyToGeneratedOverlaysCommand,
   convertMidiArrangementToGeneratedOverlaysCommand,
   convertMidiMelodyToGeneratedOverlaysCommand,
   copySelectedClip,
@@ -40,7 +41,7 @@ import { parseStandardMidiFile } from "../src/daw/midiParser";
 import type { Clip } from "../src/daw/schema";
 import { createUndoStack } from "../src/daw/undo";
 import { clipSourceStartBar } from "../src/daw/clips";
-import { metalArrangementMidiBytes, multiTrackChannelMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
+import { faithfulVocalChordGuideMidiBytes, metalArrangementMidiBytes, multiTrackChannelMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 
 describe("generated clip edit commands", () => {
   it("branches and collapses generated drums through the undoable command path", () => {
@@ -196,6 +197,31 @@ describe("generated clip edit commands", () => {
     expect(edited.status).toContain("bass");
     expect(edited.status).toContain("chords");
     expect(edited.status).toContain("melody");
+  });
+
+  it("applies faithful named-role conversion as one undoable command and records its report", () => {
+    const state = createInitialState();
+    const imported = importMidiFileToProject(state.undoStack.present, parseStandardMidiFile(faithfulVocalChordGuideMidiBytes()), "faithful-long.mid");
+    state.undoStack = createUndoStack(imported.project);
+    state.selectedClipId = imported.clipId;
+    state.selectedTrackId = imported.trackId;
+
+    const edited = convertMidiFaithfullyToGeneratedOverlaysCommand(state);
+
+    expect(edited.undoStack.past).toHaveLength(1);
+    expect(edited.status).toContain("Faithfully transcribed faithful-long.mid");
+    expect(edited.status).toContain("40 bars");
+    expect(edited.undoStack.present.importHistory.at(-1)?.importKind).toBe("midi-conversion");
+    expect(edited.undoStack.present.importHistory.at(-1)?.conversion).toEqual(expect.objectContaining({
+      intent: "faithful-transcription",
+      sourceBars: 40,
+      destinationBars: 40,
+      melodyWritten: 80,
+      chordEventsWritten: 80
+    }));
+
+    const undone = undoCommand(edited);
+    expect(undone.undoStack.present).toEqual(imported.project);
   });
 
   it("can remove the raw MIDI reference clip after successful arrangement mapping", () => {

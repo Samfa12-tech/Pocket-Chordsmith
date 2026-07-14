@@ -219,6 +219,40 @@ export function metalArrangementMidiBytes(): Uint8Array {
   return midiFile(1, 480, [tempoTrack, guitarTrack, drumTrack]);
 }
 
+export function faithfulVocalChordGuideMidiBytes(bars = 40): Uint8Array {
+  const ppq = 960;
+  const ticksPerBar = ppq * 4;
+  const tempoTrack = timedTrack([
+    { tick: 0, order: 0, bytes: [0xff, 0x03, 0x05, ...ascii("Tempo")] },
+    { tick: 0, order: 1, bytes: [0xff, 0x51, 0x03, 0x0a, 0xa5, 0x8a] },
+    { tick: 0, order: 2, bytes: [0xff, 0x58, 0x04, 0x04, 0x02, 0x18, 0x08] },
+    { tick: 0, order: 3, bytes: [0xff, 0x59, 0x02, 0xfd, 0x01] }
+  ]);
+  const melodyEvents: TimedMidiEvent[] = [
+    { tick: 0, order: 0, bytes: [0xff, 0x03, 0x0c, ...ascii("Vocal Melody")] }
+  ];
+  const chordEvents: TimedMidiEvent[] = [
+    { tick: 0, order: 0, bytes: [0xff, 0x03, 0x0b, ...ascii("Chord Guide")] }
+  ];
+  const chordShapes = [
+    [54, 57, 61],
+    [57, 61, 64, 67],
+    [59, 63, 66, 69],
+    [52, 56, 59, 63]
+  ];
+  for (let bar = 0; bar < bars; bar += 1) {
+    const barStart = bar * ticksPerBar;
+    addTimedNote(melodyEvents, barStart, 240, 66 + (bar % 5), 96, 0, bar * 2 + 1);
+    addTimedNote(melodyEvents, barStart + 240, bar === 15 ? 2880 : 240, 68 + (bar % 4), 92, 0, bar * 2 + 2);
+    for (let half = 0; half < 2; half += 1) {
+      const eventIndex = bar * 2 + half;
+      const shape = eventIndex >= bars * 2 - 4 ? [54, 58, 61] : chordShapes[eventIndex % chordShapes.length];
+      shape.forEach((pitch, noteIndex) => addTimedNote(chordEvents, barStart + half * 1920, 1920, pitch, 84, 1, eventIndex * 8 + noteIndex + 1));
+    }
+  }
+  return midiFile(1, ppq, [tempoTrack, timedTrack(melodyEvents), timedTrack(chordEvents)]);
+}
+
 export function corruptSecondTrackHeader(bytes: Uint8Array): Uint8Array {
   const copy = new Uint8Array(bytes);
   const firstTrackAt = findChunk(copy, "MTrk", 0);
@@ -265,6 +299,29 @@ function varLen(value: number): number[] {
     else break;
   }
   return bytes;
+}
+
+interface TimedMidiEvent {
+  tick: number;
+  order: number;
+  bytes: number[];
+}
+
+function addTimedNote(events: TimedMidiEvent[], startTick: number, durationTicks: number, pitch: number, velocity: number, channel: number, order: number) {
+  events.push({ tick: startTick, order: order * 2 + 1, bytes: [0x90 | channel, pitch, velocity] });
+  events.push({ tick: startTick + durationTicks, order: order * 2, bytes: [0x80 | channel, pitch, 0] });
+}
+
+function timedTrack(events: TimedMidiEvent[]): number[] {
+  const sorted = events.slice().sort((a, b) => a.tick - b.tick || a.order - b.order);
+  const out: number[] = [];
+  let previousTick = 0;
+  sorted.forEach((event) => {
+    out.push(...varLen(Math.max(0, event.tick - previousTick)), ...event.bytes);
+    previousTick = event.tick;
+  });
+  out.push(0x00, 0xff, 0x2f, 0x00);
+  return out;
 }
 
 function findChunk(bytes: Uint8Array, name: string, start: number): number {
