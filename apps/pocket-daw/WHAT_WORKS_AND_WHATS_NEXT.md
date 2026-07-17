@@ -4,7 +4,7 @@
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current public release truth: see `docs/CURRENT_RELEASE_STATUS.md`; `0.6.40` is the current published updater checkpoint. Later source work remains unreleased until deliberately versioned, installer-bound, smoke-tested and published.
+- Current public release truth: see `docs/CURRENT_RELEASE_STATUS.md`; `0.6.40` is the current published updater checkpoint. Source `0.6.41` is a release candidate and remains unreleased until installer-bound, smoke-tested and published.
 - Last completed public artifact record in this repo: tracked in `release-status.json`
 - Last installed public smoke evidence in this repo: tracked in `release-status.json`
 - Machine-readable release status: `release-status.json`
@@ -28,7 +28,7 @@ the package/Tauri/schema metadata at the previous public checkpoint.
 - Exact chord overlays now suppress the simplified schema progression during faithful playback, and overlay durations can cross packed section boundaries without adding attacks.
 - The owned local `Billions of Years` fixture passed source validation at 86 BPM, F-sharp minor, 4/4, 74→74 bars, A-E 16/16/16/16/10, 244 melody attacks, 148 chord events with 453 constituent notes, final four F-sharp-major voicings, and zero generated bass/drums/guitar. The owned song files remain outside git.
 - Exact mixed-quality chords remain DAW-local. A schema-16 PCS1 progression copy is still simplified; the compatibility ADR defers a family-wide schema change until a backward-compatible extension is designed and tested.
-- This is source-only work at version `0.6.40`. A native Windows source-debug smoke opened the 74-bar converted project, advanced playback, saved/reopened it and exported a valid MIDI file; exact installer-bound workflow/listening smoke remains required before release claims.
+- This is source-only work in the `0.6.41` release candidate. A native Windows source-debug smoke opened the 74-bar converted project, advanced playback, saved/reopened it and exported a valid MIDI file; exact installer-bound workflow/listening smoke remains required before release claims.
 
 ## Unreleased 2026-07-13 Portable Projects + Media Recovery Slice
 
