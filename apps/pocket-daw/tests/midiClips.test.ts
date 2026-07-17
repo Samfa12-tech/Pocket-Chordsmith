@@ -62,6 +62,22 @@ describe("MIDI clips", () => {
     expect(JSON.stringify(imported.project)).toBe(before);
   });
 
+  it("reports when editing one destination section changes repeated song-sequence occurrences", () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({
+      title: "Repeated Destination Preview",
+      songSequence: ["A", "B", "A"]
+    }));
+    const imported = importMidiFileToProject(project, parseStandardMidiFile(simpleMidiBytes()), "lead.mid");
+
+    const preview = createMidiChordsmithConversionPreview(imported.project, imported.clipId, "A");
+
+    expect(preview?.structure).toMatchObject({
+      repeatedSourceSections: 0,
+      repeatedDestinationSections: 1,
+      heuristicSubstitutions: 0
+    });
+  });
+
   it("previews Chordsmith conversion from a chosen MIDI source track", () => {
     const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({ title: "MIDI Source Preview" }));
     const imported = importMidiFileToProject(project, parseStandardMidiFile(multiTrackChannelMidiBytes()), "band.mid");

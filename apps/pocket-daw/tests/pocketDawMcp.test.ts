@@ -18,7 +18,7 @@ import { melodyOverlayCount } from "../src/daw/melodyOverlays";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { setTrackRecordingInputAssignment } from "../src/daw/recordingInputs";
 import { addTrackToProject } from "../src/daw/tracks";
-import { metalArrangementMidiBytes, multiTrackChannelMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
+import { faithfulVocalChordGuideMidiBytes, metalArrangementMidiBytes, multiTrackChannelMidiBytes, simpleMidiBytes, tempoMapMidiBytes } from "./midiFixtures";
 import { createPocketDjImportFixture } from "./pocketDjFixtures";
 
 function parseToolResult(result: Awaited<ReturnType<typeof callPocketDawMcpTool>>) {
@@ -135,6 +135,7 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_bass");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_chords");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_melody");
+    expect(JSON.stringify(applySchema?.properties.commands)).toContain("convert_midi_faithful");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("sourceMode");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("sourceValue");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("adopt_midi_tempo");
@@ -1125,6 +1126,46 @@ describe("Pocket DAW MCP tools", () => {
       name: "Raw MIDI Reference",
       mute: true
     });
+  });
+
+  it("reports padding, repeated destinations and heuristic substitutions for long creative arrangements", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-arrange-midi-long-"));
+    const midiPath = join(dir, "long-fixture.mid");
+    writeFileSync(midiPath, faithfulVocalChordGuideMidiBytes(40));
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_arrange_midi", { midiPath }));
+
+    expect(result.extraction).toMatchObject({
+      sourceBars: 40,
+      outputBars: 40,
+      paddingBars: 0,
+      sectionCount: 10,
+      uniqueSectionCount: 8,
+      repeatedSourceSections: 0,
+      repeatedDestinationSections: 2,
+      heuristicSubstitutions: 2
+    });
+    expect(result.extraction.sectionAssignments).toHaveLength(10);
+    expect(result.extraction.sectionAssignments.slice(-2).every((assignment: { heuristicSubstitution: boolean }) => assignment.heuristicSubstitution)).toBe(true);
+    expect(result.warnings.join("\n")).toContain("2 later four-bar source chunks were replaced");
+  });
+
+  it("applies faithful MIDI conversion through the discoverable file-first MCP command", async () => {
+    const imported = importMidiFileToProject(createDemoProject(), parseStandardMidiFile(faithfulVocalChordGuideMidiBytes(40)), "faithful-long.mid");
+
+    const result = parseToolResult(await callPocketDawMcpTool("pocket_daw_apply_commands", {
+      raw: buildPocketDawProjectFile(imported.project),
+      commands: [{ type: "convert_midi_faithful", clipId: imported.clipId }]
+    }));
+
+    expect(result.statuses[0]).toContain("Faithfully transcribed faithful-long.mid");
+    expect(result.project.importHistory.at(-1)?.conversion).toEqual(expect.objectContaining({
+      intent: "faithful-transcription",
+      sourceBars: 40,
+      destinationBars: 40,
+      melodyWritten: 80,
+      chordEventsWritten: 80
+    }));
   });
 
   it("maps MIDI drum clips into generated branch overlays through the file-first command path", async () => {

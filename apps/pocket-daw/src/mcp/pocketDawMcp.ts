@@ -1191,6 +1191,7 @@ function commandSchema() {
           "convert_midi_chords",
           "convert_midi_melody",
           "convert_midi_arrangement",
+          "convert_midi_faithful",
           "adopt_midi_tempo",
           "adopt_midi_tempo_map",
           "adopt_midi_meter_map",

@@ -235,6 +235,7 @@ ${artifactTable}
 
 - Added two explicit MIDI conversion intents: Faithful transcription preserves selected source roles and timing, while Arrange into Chordsmith keeps the creative section-reuse and accompaniment workflow.
 - Faithful transcription independently assigns melody and chord sources, chooses a supported source-derived resolution, preserves exact source length/order through sequential A-H packing, writes exact DAW melody/chord overlays, retains the raw MIDI reference, and generates no bass, drums or guitar by default.
+- File-first MCP clients can discover and apply faithful conversion, while long creative-arrangement reports now disclose output padding, repeated destinations and heuristic section substitutions.
 - Exact mixed-quality MIDI chord overlays remain Pocket DAW-local. Schema-16 PCS1 progression copies are clearly labeled simplified instead of being presented as faithful.
 - Local validation against Sam's owned Billions of Years fixture preserved 74 bars, 244 melody attacks, 148 chord overlays containing 453 MIDI notes, the final F-sharp-major voicings, and zero generated accompaniment. The owned fixture is not included in the public package.
 - Hardened Collect Media so copies are collision-safe and idempotent, partial copies do not masquerade as success, and project-save success is required before a project is described as portable.

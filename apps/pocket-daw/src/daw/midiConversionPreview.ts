@@ -137,7 +137,11 @@ export function createMidiChordsmithConversionPreview(
   const timing = midiConversionTimingPreview(project, metadata, tempoSummary);
   const key = midiConversionKeyPreview(project, metadata, midi.notes);
   const structure = midiConversionStructurePreview(project, midi.ppq, sourceStartTick, sourceEndTick);
-  const destinationBars = (getPrimaryChordsmithSource(project)?.sections as Record<string, { bars: number }> | undefined)?.[sectionId]?.bars || 4;
+  const chordsmithSource = getPrimaryChordsmithSource(project);
+  const destinationBars = (chordsmithSource?.sections as Record<string, { bars: number }> | undefined)?.[sectionId]?.bars || 4;
+  const destinationOccurrences = Array.isArray(chordsmithSource?.songSequence)
+    ? chordsmithSource.songSequence.filter((id) => id === sectionId).length
+    : 0;
   const drums = convertMidiClipToDrumBranchOverlays(project, clipId, sectionId, normalizedSourceFilter);
   const bass = convertMidiClipToBassOverlays(project, clipId, sectionId, normalizedSourceFilter);
   const chords = convertMidiClipToChordOverlays(project, clipId, sectionId, normalizedSourceFilter);
@@ -182,7 +186,7 @@ export function createMidiChordsmithConversionPreview(
       paddingBars: Math.max(0, destinationBars - structure.sourceBars),
       truncatedBars: Math.max(0, structure.sourceBars - destinationBars),
       repeatedSourceSections: 0,
-      repeatedDestinationSections: 0,
+      repeatedDestinationSections: Math.max(0, destinationOccurrences - 1),
       heuristicSubstitutions: 0
     },
     sourceNoteCount: midi.notes.length,

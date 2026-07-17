@@ -31,9 +31,20 @@ export interface MidiArrangementExtractionSummary {
   drumNoteCount: number;
   musicalNoteCount: number;
   sourceBars: number;
+  outputBars: number;
+  paddingBars: number;
   sectionCount: number;
   uniqueSectionCount: number;
+  repeatedSourceSections: number;
+  repeatedDestinationSections: number;
+  heuristicSubstitutions: number;
   rawMidiClip: "muted-reference" | "omitted";
+  sectionAssignments: Array<{
+    sourceChunk: number;
+    destinationSectionId: SectionId;
+    materialSourceChunk: number;
+    heuristicSubstitution: boolean;
+  }>;
   sections: Array<{
     id: SectionId;
     sourceChunk: number;
@@ -82,6 +93,10 @@ export function arrangeMidiToHeavyMetalProject(bytes: Uint8Array, options: MidiA
   const sectionCount = Math.max(1, Math.ceil(sourceBars / 4));
   const chunks = Array.from({ length: sectionCount }, (_value, index) => analyzeChunk(parsed, index, timeSig, keyRoot, scale));
   const assignments = assignSections(chunks);
+  const heuristicSubstitutions = assignments.filter((assignment) => assignment.chunkIndex !== assignment.sourceChunk);
+  if (heuristicSubstitutions.length) {
+    warnings.push(`${heuristicSubstitutions.length} later four-bar source chunk${heuristicSubstitutions.length === 1 ? " was" : "s were"} replaced with nearest A-H section material for this creative arrangement.`);
+  }
   const raw: Record<string, unknown> = {
     projectVersion: 16,
     title: options.title || titleFromFileName(options.fileName) || "Heavy Metal MIDI Arrangement",
@@ -188,9 +203,20 @@ export function arrangeMidiToHeavyMetalProject(bytes: Uint8Array, options: MidiA
       drumNoteCount: drumNotes.length,
       musicalNoteCount: musicalNotes.length,
       sourceBars,
+      outputBars: sectionCount * 4,
+      paddingBars: Math.max(0, sectionCount * 4 - sourceBars),
       sectionCount,
       uniqueSectionCount: sectionSummaries.length,
+      repeatedSourceSections: 0,
+      repeatedDestinationSections: Math.max(0, assignments.length - sectionSummaries.length),
+      heuristicSubstitutions: heuristicSubstitutions.length,
       rawMidiClip: options.keepRawMidiClip === false ? "omitted" : "muted-reference",
+      sectionAssignments: assignments.map((assignment) => ({
+        sourceChunk: assignment.chunkIndex,
+        destinationSectionId: assignment.sectionId,
+        materialSourceChunk: assignment.sourceChunk,
+        heuristicSubstitution: assignment.chunkIndex !== assignment.sourceChunk
+      })),
       sections: sectionSummaries
     }
   };
