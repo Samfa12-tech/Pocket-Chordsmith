@@ -1,6 +1,6 @@
 import { MAX_DAW_TEMPO_BPM, MIN_DAW_TEMPO_BPM, ensureProjectAutomationLane, setAutomationLanePoints } from "./automation";
 import { addImportedAudioMedia, placeAudioClipOnTimeline } from "./audioClips";
-import { createMediaOnlyPocketDawProject } from "./dawProject";
+import { cloneProject, createMediaOnlyPocketDawProject } from "./dawProject";
 import { importMidiFileToProjectWithPlacement } from "./midiClips";
 import { parseStandardMidiFile, type ParsedMidiFile, type ParsedMidiNote } from "./midiParser";
 import { updateMediaPoolItem } from "./mediaPool";
@@ -96,6 +96,12 @@ export interface BuildSessionImportResult {
   report: SessionImportReport;
 }
 
+export interface SessionImportHydrationFailure {
+  mediaPoolItemId: string;
+  assetName: string;
+  message: string;
+}
+
 interface ParsedMidiCandidate {
   asset: SessionImportMidiAsset | SessionImportNoteTrack;
   parsed: ParsedMidiFile;
@@ -107,7 +113,16 @@ interface ParsedMidiCandidate {
 interface TempoCandidate {
   label: string;
   ppq: number;
+  priority: number;
+  hasNotes: boolean;
+  sourceEventCount: number;
   events: Array<{ tick: number; bpm: number }>;
+}
+
+interface MidiSelection {
+  selected: ParsedMidiCandidate[];
+  tempoCandidates: ParsedMidiCandidate[];
+  discardedCount: number;
 }
 
 const ROLE_ORDER = ["bass", "drums", "guitar", "other", "synth", "vocal"] as const;
@@ -124,31 +139,38 @@ export function buildSessionImportProject(bundle: SessionImportBundle): BuildSes
   const importedAt = bundle.importedAt || new Date().toISOString();
   const warnings = dedupeStrings(bundle.warnings || []);
   const formats = uniqueFormats(bundle.formats);
+  if (formats.some((format) => format === "ableton-live" || format === "dawproject")) {
+    warnings.push("Ableton Live and DAWproject audio is treated as consolidated zero-origin stems; clip offsets, fades, loops, mixer settings, plug-ins and automation are not reconstructed.");
+  }
   const audioSelection = selectAudioAssets(bundle.audioAssets, warnings);
   const midiSelection = selectMidiCandidates(bundle, warnings);
-  const tempo = selectTempoCandidate(midiSelection.selected, warnings);
+  const tempo = selectTempoCandidate(midiSelection.tempoCandidates, warnings, bundle.fixedTempoBpm);
   let project = createMediaOnlyPocketDawProject(bundle.title);
 
   if (tempo?.events.length) {
-    project.project.bpm = tempo.events[0]!.bpm;
     const ensured = ensureProjectAutomationLane(project, "tempo");
-    const dedupedTempoEvents = dedupeTempoEvents(tempo.events);
-    const points = dedupedTempoEvents.map((event) => ({
+    const effectiveTempoEvents = collapseUnchangedTempoEvents(dedupeTempoEvents(tempo.events));
+    const points = effectiveTempoEvents.map((event) => ({
       bar: roundSix(1 + event.tick / (Math.max(1, tempo.ppq) * 4)),
       value: clamp(event.bpm, MIN_DAW_TEMPO_BPM, MAX_DAW_TEMPO_BPM),
       curve: "hold" as const
     }));
-    if (points.some((point, index) => point.value !== dedupedTempoEvents[index]?.bpm)) {
+    const initialBpm = points[0]?.value || 120;
+    if (points.some((point, index) => point.value !== effectiveTempoEvents[index]?.bpm)) {
       warnings.push(`Tempo values outside ${MIN_DAW_TEMPO_BPM}-${MAX_DAW_TEMPO_BPM} BPM were clamped to Pocket DAW's project-tempo range.`);
     }
     project = setAutomationLanePoints(ensured.project, ensured.laneId, points);
+    project.project.bpm = initialBpm;
   } else if (isPositiveFinite(bundle.fixedTempoBpm)) {
     project.project.bpm = clamp(Number(bundle.fixedTempoBpm), MIN_DAW_TEMPO_BPM, MAX_DAW_TEMPO_BPM);
   }
 
   const audioBindings: Array<SessionImportBinding<SessionImportAudioAsset>> = [];
+  const audioRoleCounts = countRoles(audioSelection.assets, (asset) => sessionRole(asset.role, asset.name));
+  const audioRoleIndexes = new Map<string, number>();
   for (const asset of audioSelection.assets) {
     const role = sessionRole(asset.role, asset.name);
+    const trackLabel = importedTrackLabel(role, asset.name, audioRoleCounts, audioRoleIndexes);
     const added = addImportedAudioMedia(project, {
       name: asset.name,
       uri: asset.uri,
@@ -168,7 +190,7 @@ export function buildSessionImportProject(bundle: SessionImportBundle): BuildSes
     const track = project.tracks.find((item) => item.id === placed.trackId);
     const clip = project.timeline.clips.find((item) => item.id === placed.clipId);
     if (track) {
-      track.name = roleLabel(role);
+      track.name = trackLabel;
       track.volume = 0.82;
       track.colour = ROLE_COLOURS[role] || track.colour;
       track.metadata = {
@@ -179,7 +201,7 @@ export function buildSessionImportProject(bundle: SessionImportBundle): BuildSes
       };
     }
     if (clip) {
-      clip.name = `${roleLabel(role)} stem`;
+      clip.name = `${trackLabel} stem`;
       clip.color = ROLE_COLOURS[role] || clip.color;
       clip.metadata = {
         ...(clip.metadata || {}),
@@ -192,7 +214,10 @@ export function buildSessionImportProject(bundle: SessionImportBundle): BuildSes
   }
 
   const midiBindings: Array<SessionImportBinding<SessionImportMidiAsset | SessionImportNoteTrack>> = [];
+  const midiRoleCounts = countRoles(midiSelection.selected, (candidate) => candidate.role);
+  const midiRoleIndexes = new Map<string, number>();
   for (const candidate of midiSelection.selected) {
+    const trackLabel = importedTrackLabel(candidate.role, candidate.label, midiRoleCounts, midiRoleIndexes);
     const imported = importMidiFileToProjectWithPlacement(project, candidate.parsed, `${roleLabel(candidate.role)} MIDI`, {
       uri: "uri" in candidate.asset ? candidate.asset.uri : undefined,
       sizeBytes: "sizeBytes" in candidate.asset ? candidate.asset.sizeBytes : undefined,
@@ -212,7 +237,7 @@ export function buildSessionImportProject(bundle: SessionImportBundle): BuildSes
     const track = project.tracks.find((item) => item.id === imported.primaryTrackId);
     const clip = project.timeline.clips.find((item) => item.id === imported.primaryClipId);
     if (track) {
-      track.name = `${roleLabel(candidate.role)} MIDI (reference)`;
+      track.name = `${trackLabel} MIDI (reference)`;
       track.mute = true;
       track.colour = ROLE_COLOURS[candidate.role] || track.colour;
       track.metadata = {
@@ -223,7 +248,7 @@ export function buildSessionImportProject(bundle: SessionImportBundle): BuildSes
       };
     }
     if (clip) {
-      clip.name = `${roleLabel(candidate.role)} MIDI`;
+      clip.name = `${trackLabel} MIDI`;
       clip.color = ROLE_COLOURS[candidate.role] || clip.color;
       clip.metadata = {
         ...(clip.metadata || {}),
@@ -256,7 +281,7 @@ export function buildSessionImportProject(bundle: SessionImportBundle): BuildSes
     formats,
     audioTrackCount: audioBindings.length,
     midiTrackCount: midiBindings.length,
-    tempoEventCount: tempo?.events.length || 0,
+    tempoEventCount: tempo?.sourceEventCount || 0,
     tempoSource: tempo?.label || (isPositiveFinite(bundle.fixedTempoBpm) ? "session fixed tempo" : null),
     duplicateAudioCount: audioSelection.duplicateCount,
     discardedMidiCount: midiSelection.discardedCount,
@@ -293,6 +318,44 @@ export function buildSessionImportProject(bundle: SessionImportBundle): BuildSes
   return { project, audioBindings, midiBindings, report };
 }
 
+export function recordSessionImportHydrationFailures(
+  project: PocketDawProject,
+  failures: SessionImportHydrationFailure[]
+): PocketDawProject {
+  if (!failures.length) return project;
+  const next = cloneProject(project);
+  const warnings = failures.map((failure) => `${failure.assetName}: ${failure.message}`);
+  for (const failure of failures) {
+    const item = next.mediaPool.find((entry) => entry.id === failure.mediaPoolItemId);
+    if (!item) continue;
+    item.metadata = {
+      ...(item.metadata || {}),
+      missing: true,
+      unresolved: true,
+      missingReason: failure.message,
+      sessionImportHydrationFailed: true
+    };
+  }
+  next.sourceRefs.forEach((sourceRef) => {
+    if (sourceRef.sourceType !== "daw-session") return;
+    sourceRef.notes = dedupeStrings([...(sourceRef.notes || []), ...warnings]);
+    sourceRef.normalized = {
+      ...asJsonObject(sourceRef.normalized),
+      hydrationWarnings: warnings,
+      partialAudioLoad: true
+    };
+  });
+  next.importHistory.forEach((entry) => {
+    if (entry.importKind !== "daw-session") return;
+    entry.conversion = {
+      ...(entry.conversion || {}),
+      hydrationWarnings: warnings,
+      partialAudioLoad: true
+    };
+  });
+  return next;
+}
+
 function selectAudioAssets(assets: SessionImportAudioAsset[], warnings: string[]): { assets: SessionImportAudioAsset[]; duplicateCount: number } {
   const sorted = assets.slice().sort((a, b) => audioPriority(a.sourceFormat) - audioPriority(b.sourceFormat) || roleIndex(sessionRole(a.role, a.name)) - roleIndex(sessionRole(b.role, b.name)) || a.name.localeCompare(b.name));
   const selected = new Map<string, SessionImportAudioAsset>();
@@ -311,30 +374,26 @@ function selectAudioAssets(assets: SessionImportAudioAsset[], warnings: string[]
     }
     selected.set(key, asset);
   }
-  const byRole = new Map<string, SessionImportAudioAsset>();
-  for (const asset of selected.values()) {
-    const role = sessionRole(asset.role, asset.name);
-    if (!byRole.has(role)) byRole.set(role, asset);
-    else if ((asset.pcmChecksum || asset.checksum) === (byRole.get(role)?.pcmChecksum || byRole.get(role)?.checksum)) duplicateCount += 1;
-    else warnings.push(`More than one distinct ${roleLabel(role)} audio asset was found; Pocket DAW kept the highest-priority session source.`);
-  }
   return {
-    assets: [...byRole.values()].sort((a, b) => roleIndex(sessionRole(a.role, a.name)) - roleIndex(sessionRole(b.role, b.name)) || a.name.localeCompare(b.name)),
+    assets: [...selected.values()].sort((a, b) => roleIndex(sessionRole(a.role, a.name)) - roleIndex(sessionRole(b.role, b.name)) || a.name.localeCompare(b.name)),
     duplicateCount
   };
 }
 
-function selectMidiCandidates(bundle: SessionImportBundle, warnings: string[]): { selected: ParsedMidiCandidate[]; discardedCount: number } {
+function selectMidiCandidates(bundle: SessionImportBundle, warnings: string[]): MidiSelection {
   const parsed: ParsedMidiCandidate[] = [];
+  const tempoCandidates: ParsedMidiCandidate[] = [];
   for (const asset of bundle.midiAssets) {
     try {
       const midi = parseStandardMidiFile(toUint8Array(asset.bytes));
+      const role = sessionRole(asset.role, asset.name);
+      const candidate = { asset, parsed: midi, role, priority: midiPriority(asset.sourceFormat, true), label: asset.name };
+      tempoCandidates.push(candidate);
       if (!midi.notes.length) {
-        warnings.push(`${asset.name} contains no MIDI notes and was kept out of the editable reference tracks.`);
+        warnings.push(`${asset.name} contains no MIDI notes; Pocket DAW kept any valid tempo or meter metadata but did not create an editable reference track.`);
         continue;
       }
-      const role = sessionRole(asset.role, asset.name);
-      parsed.push({ asset, parsed: midi, role, priority: midiPriority(asset.sourceFormat, true), label: asset.name });
+      parsed.push(candidate);
     } catch (error) {
       warnings.push(`Could not parse ${asset.name}: ${error instanceof Error ? error.message : "invalid MIDI"}`);
     }
@@ -342,46 +401,70 @@ function selectMidiCandidates(bundle: SessionImportBundle, warnings: string[]): 
   for (const track of bundle.noteTracks) {
     if (!track.notes.length) continue;
     const role = sessionRole(track.role, track.name);
-    parsed.push({
+    const candidate = {
       asset: track,
       parsed: parsedMidiFromBeatTrack(track),
       role,
       priority: midiPriority(track.sourceFormat, false),
       label: track.name
-    });
+    };
+    parsed.push(candidate);
+    tempoCandidates.push(candidate);
   }
   parsed.sort((a, b) => a.priority - b.priority || roleIndex(a.role) - roleIndex(b.role) || a.label.localeCompare(b.label));
-  const selected = new Map<string, ParsedMidiCandidate>();
+  const selected: ParsedMidiCandidate[] = [];
+  const exactRepresentations = new Set<string>();
+  const logicalRepresentations = new Map<string, ParsedMidiCandidate>();
   let discardedCount = 0;
   for (const candidate of parsed) {
-    const existing = selected.get(candidate.role);
-    if (!existing) {
-      selected.set(candidate.role, candidate);
+    const digest = noteDigest(candidate.parsed);
+    const exactKey = `${candidate.role}:${digest}`;
+    if (exactRepresentations.has(exactKey)) {
+      discardedCount += 1;
       continue;
     }
-    discardedCount += 1;
-    if (noteDigest(existing.parsed) !== noteDigest(candidate.parsed)) {
-      warnings.push(`Multiple distinct ${roleLabel(candidate.role)} MIDI tracks were found; Pocket DAW preferred ${existing.label}.`);
+    const logicalKey = `${candidate.role}:${sourceIdentity(candidate.label)}`;
+    const existing = logicalRepresentations.get(logicalKey);
+    if (existing) {
+      discardedCount += 1;
+      if (noteDigest(existing.parsed) !== digest) {
+        warnings.push(`Conflicting representations of ${existing.label} were found; Pocket DAW preferred the highest-priority session source.`);
+      }
+      continue;
     }
+    exactRepresentations.add(exactKey);
+    logicalRepresentations.set(logicalKey, candidate);
+    selected.push(candidate);
   }
   return {
-    selected: [...selected.values()].sort((a, b) => roleIndex(a.role) - roleIndex(b.role) || a.label.localeCompare(b.label)),
+    selected: selected.sort((a, b) => roleIndex(a.role) - roleIndex(b.role) || a.label.localeCompare(b.label)),
+    tempoCandidates,
     discardedCount
   };
 }
 
-function selectTempoCandidate(candidates: ParsedMidiCandidate[], warnings: string[]): TempoCandidate | null {
-  const tempos = candidates.map((candidate) => ({
-    label: candidate.label,
-    ppq: candidate.parsed.ppq,
-    events: tempoEvents(candidate.parsed)
-  })).filter((candidate) => candidate.events.length > 0)
-    .sort((a, b) => b.events.length - a.events.length || a.label.localeCompare(b.label));
+function selectTempoCandidate(candidates: ParsedMidiCandidate[], warnings: string[], fixedTempoBpm?: number): TempoCandidate | null {
+  const tempos = candidates.map((candidate) => {
+    const events = dedupeTempoEvents(tempoEvents(candidate.parsed));
+    return {
+      label: candidate.label,
+      ppq: candidate.parsed.ppq,
+      priority: candidate.priority,
+      hasNotes: candidate.parsed.notes.length > 0,
+      sourceEventCount: events.length,
+      events
+    };
+  }).filter((candidate) => candidate.events.length > 0)
+    .sort((a, b) => Number(b.hasNotes) - Number(a.hasNotes) || b.sourceEventCount - a.sourceEventCount || a.priority - b.priority || a.label.localeCompare(b.label));
   if (!tempos.length) return null;
   const selected = tempos[0]!;
   const selectedDigest = tempoDigest(selected);
   const conflicting = tempos.some((candidate) => tempoDigest(candidate) !== selectedDigest);
   if (conflicting) warnings.push(`Imported MIDI files contain conflicting tempo maps; Pocket DAW used ${selected.label}, the most complete map.`);
+  if (selected.events[0]!.tick > 0) {
+    selected.events.unshift({ tick: 0, bpm: clamp(Number(fixedTempoBpm) || 120, MIN_DAW_TEMPO_BPM, MAX_DAW_TEMPO_BPM) });
+    warnings.push(`${selected.label}'s first tempo event occurs after the song starts; Pocket DAW used ${selected.events[0]!.bpm} BPM before that event.`);
+  }
   return selected;
 }
 
@@ -402,6 +485,10 @@ function dedupeTempoEvents(events: Array<{ tick: number; bpm: number }>): Array<
   const byTick = new Map<number, { tick: number; bpm: number }>();
   events.forEach((event) => byTick.set(event.tick, event));
   return [...byTick.values()].sort((a, b) => a.tick - b.tick);
+}
+
+function collapseUnchangedTempoEvents(events: Array<{ tick: number; bpm: number }>): Array<{ tick: number; bpm: number }> {
+  return events.filter((event, index) => index === 0 || event.bpm !== events[index - 1]?.bpm);
 }
 
 function parsedMidiFromBeatTrack(track: SessionImportNoteTrack): ParsedMidiFile {
@@ -507,6 +594,29 @@ function roleLabel(role: string): string {
   return role.split(/[-_\s]+/).filter(Boolean).map((part) => `${part[0]?.toUpperCase() || ""}${part.slice(1)}`).join(" ") || "Media";
 }
 
+function sourceIdentity(name: string): string {
+  return name.replace(/\\/g, "/").split("/").pop()!.replace(/\.(wav|aif|aiff|flac|mid|midi)$/i, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "media";
+}
+
+function countRoles<T>(items: T[], role: (item: T) => string): Map<string, number> {
+  const counts = new Map<string, number>();
+  items.forEach((item) => {
+    const key = role(item);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  return counts;
+}
+
+function importedTrackLabel(role: string, sourceName: string, counts: Map<string, number>, indexes: Map<string, number>): string {
+  const base = roleLabel(role);
+  const total = counts.get(role) || 1;
+  if (total <= 1) return base;
+  const index = (indexes.get(role) || 0) + 1;
+  indexes.set(role, index);
+  const source = roleLabel(sourceIdentity(sourceName));
+  return source.toLowerCase() === base.toLowerCase() ? `${base} ${index}` : `${base} ${index} — ${source}`;
+}
+
 function roleIndex(role: string): number {
   const index = ROLE_ORDER.indexOf(role as (typeof ROLE_ORDER)[number]);
   return index >= 0 ? index : ROLE_ORDER.length;
@@ -557,6 +667,10 @@ function toUint8Array(bytes: ArrayBuffer | Uint8Array | number[]): Uint8Array {
 
 function isPositiveFinite(value: unknown): boolean {
   return Number.isFinite(Number(value)) && Number(value) > 0;
+}
+
+function asJsonObject(value: unknown): JsonObject {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
 }
 
 function positiveNumber(value: unknown, fallback: number): number {

@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{Read, Seek, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use zip::ZipArchive;
 
 const MAX_SOURCE_FILE_BYTES: u64 = 1024 * 1024 * 1024;
@@ -17,8 +18,15 @@ const MAX_MIDI_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_SOURCE_FILES: usize = 256;
 const MAX_SCAN_DEPTH: usize = 5;
 const MAX_COMPRESSION_RATIO: u64 = 200;
+const MAX_ARCHIVE_ENTRIES: usize = 4096;
+const MAX_REQUEST_SOURCE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const MAX_REQUEST_EXPANDED_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const MAX_REQUEST_MIDI_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_REQUEST_AUDIO_CACHE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const MAX_REQUEST_NOTES: usize = 1_000_000;
 const SESSION_IMPORT_STACK_BYTES: usize = 32 * 1024 * 1024;
 const AAF_MUREKA_ROLES: [&str; 6] = ["bass", "drums", "guitar", "other", "synth", "vocal"];
+static SESSION_IMPORT_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -92,6 +100,7 @@ struct SessionBeatNote {
 struct ZipEntryInfo {
     index: usize,
     name: String,
+    size: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -105,7 +114,7 @@ struct WavInfo {
 
 #[derive(Clone, Debug)]
 struct AudioRef {
-    role: String,
+    name: String,
     entry: String,
 }
 
@@ -125,7 +134,27 @@ struct TrackDef {
 struct SessionImporter {
     cache_root: PathBuf,
     payload: SessionImportPayload,
-    cached_pcm: HashMap<String, PathBuf>,
+    cached_wav: HashMap<String, PathBuf>,
+    expanded_archive_bytes: u64,
+    midi_payload_bytes: u64,
+    audio_cache_bytes: u64,
+}
+
+struct SessionImportGuard;
+
+impl SessionImportGuard {
+    fn acquire() -> Result<Self, String> {
+        SESSION_IMPORT_ACTIVE
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map(|_| Self)
+            .map_err(|_| "Another DAW session import is already running.".to_string())
+    }
+}
+
+impl Drop for SessionImportGuard {
+    fn drop(&mut self) {
+        SESSION_IMPORT_ACTIVE.store(false, Ordering::Release);
+    }
 }
 
 #[tauri::command]
@@ -156,6 +185,7 @@ pub async fn read_daw_session_path(path: String) -> Result<SessionImportPayload,
 }
 
 async fn import_session_paths_async(paths: Vec<PathBuf>) -> Result<SessionImportPayload, String> {
+    let _guard = SessionImportGuard::acquire()?;
     tauri::async_runtime::spawn_blocking(move || import_session_paths_on_worker(paths))
         .await
         .map_err(|error| format!("DAW session import task failed: {error}"))?
@@ -198,6 +228,7 @@ fn import_session_paths(paths: Vec<PathBuf>) -> Result<SessionImportPayload, Str
     let mut unique_files = Vec::new();
     let mut seen_file_hashes = HashMap::<String, PathBuf>::new();
     let mut warnings = Vec::new();
+    let mut source_bytes = 0u64;
     for path in files {
         let metadata = std::fs::metadata(&path)
             .map_err(|err| format!("Could not inspect {}: {err}", path.display()))?;
@@ -207,25 +238,31 @@ fn import_session_paths(paths: Vec<PathBuf>) -> Result<SessionImportPayload, Str
                 path.display()
             ));
         }
-        let hash = sha256_file(&path)?;
-        if let Some(original) = seen_file_hashes.get(&hash) {
-            warnings.push(format!(
-                "Skipped byte-identical duplicate {} (same as {}).",
-                path.display(),
-                original.display()
-            ));
-            continue;
+        source_bytes = source_bytes
+            .checked_add(metadata.len())
+            .ok_or_else(|| "Selected session source size overflowed.".to_string())?;
+        if source_bytes > MAX_REQUEST_SOURCE_BYTES {
+            return Err("The selected session exceeds the total source-size limit.".to_string());
         }
-        seen_file_hashes.insert(hash.clone(), path.clone());
+        let hash = sha256_file(&path)?;
+        if dedupe_source_file_by_content(&path) {
+            if let Some(original) = seen_file_hashes.get(&hash) {
+                warnings.push(format!(
+                    "Skipped byte-identical duplicate {} (same as {}).",
+                    path.display(),
+                    original.display()
+                ));
+                continue;
+            }
+            seen_file_hashes.insert(hash.clone(), path.clone());
+        }
         unique_files.push((path, hash));
     }
-    let bundle_checksum = sha256_bytes(
-        unique_files
-            .iter()
-            .flat_map(|(_, hash)| hash.as_bytes().iter().copied())
-            .collect::<Vec<_>>()
-            .as_slice(),
-    );
+    let bundle_identity = unique_files
+        .iter()
+        .map(|(path, hash)| format!("{}\0{hash}\n", path.to_string_lossy()))
+        .collect::<String>();
+    let bundle_checksum = sha256_bytes(bundle_identity.as_bytes());
     let cache_root = session_cache_root().join(&bundle_checksum[..16]);
     std::fs::create_dir_all(cache_root.join("audio"))
         .map_err(|err| format!("Could not create the DAW session audio cache: {err}"))?;
@@ -244,7 +281,10 @@ fn import_session_paths(paths: Vec<PathBuf>) -> Result<SessionImportPayload, Str
             warnings,
             checksum: bundle_checksum,
         },
-        cached_pcm: HashMap::new(),
+        cached_wav: HashMap::new(),
+        expanded_archive_bytes: 0,
+        midi_payload_bytes: 0,
+        audio_cache_bytes: 0,
     };
     for (path, source_hash) in unique_files {
         importer.process_source_file(&path, &source_hash)?;
@@ -256,6 +296,15 @@ fn import_session_paths(paths: Vec<PathBuf>) -> Result<SessionImportPayload, Str
     importer.payload.formats.dedup();
     importer.payload.warnings.sort();
     importer.payload.warnings.dedup();
+    let note_count = importer
+        .payload
+        .note_tracks
+        .iter()
+        .map(|track| track.notes.len())
+        .sum::<usize>();
+    if note_count > MAX_REQUEST_NOTES {
+        return Err("The selected session contains too many embedded notes.".to_string());
+    }
     if importer.payload.audio_assets.is_empty()
         && importer.payload.midi_assets.is_empty()
         && importer.payload.note_tracks.is_empty()
@@ -290,6 +339,14 @@ impl SessionImporter {
         let mut archive = ZipArchive::new(file)
             .map_err(|err| format!("Could not read archive {}: {err}", path.display()))?;
         let entries = validated_zip_entries(&mut archive)?;
+        let expanded_bytes = entries.iter().map(|entry| entry.size).sum::<u64>();
+        self.expanded_archive_bytes = self
+            .expanded_archive_bytes
+            .checked_add(expanded_bytes)
+            .ok_or_else(|| "Expanded session archive size overflowed.".to_string())?;
+        if self.expanded_archive_bytes > MAX_REQUEST_EXPANDED_BYTES {
+            return Err("The selected archives exceed the total expanded-size limit.".to_string());
+        }
         let is_dawproject = lower_extension(path) == "dawproject"
             || (entry_index_by_name(&entries, "project.xml").is_some()
                 && entry_index_by_name(&entries, "metadata.xml").is_some());
@@ -379,7 +436,7 @@ impl SessionImporter {
             let bytes = read_zip_entry(archive, index, MAX_ARCHIVE_ENTRY_BYTES)?;
             self.add_wav_bytes(
                 bytes,
-                format!("{}.wav", audio.role),
+                audio.name,
                 "dawproject",
                 &path.to_string_lossy(),
                 &entry.name,
@@ -411,7 +468,7 @@ impl SessionImporter {
             let bytes = read_zip_entry(archive, index, MAX_ARCHIVE_ENTRY_BYTES)?;
             self.add_wav_bytes(
                 bytes,
-                format!("{}.wav", audio.role),
+                audio.name,
                 "ableton-live",
                 &path.to_string_lossy(),
                 &entry.name,
@@ -441,7 +498,7 @@ impl SessionImporter {
             let bytes = read_file_limited(&resolved, MAX_ARCHIVE_ENTRY_BYTES)?;
             self.add_wav_bytes(
                 bytes,
-                format!("{}.wav", audio.role),
+                audio.name,
                 "ableton-live",
                 &path.to_string_lossy(),
                 &resolved.to_string_lossy(),
@@ -485,12 +542,15 @@ impl SessionImporter {
                 )
             })?;
             let mut pcm = Vec::new();
-            stream.read_to_end(&mut pcm).map_err(|err| {
-                format!(
-                    "Could not read AAF essence {}: {err}",
-                    essence_path.display()
-                )
-            })?;
+            std::io::Read::by_ref(&mut stream)
+                .take(MAX_ARCHIVE_ENTRY_BYTES + 1)
+                .read_to_end(&mut pcm)
+                .map_err(|err| {
+                    format!(
+                        "Could not read AAF essence {}: {err}",
+                        essence_path.display()
+                    )
+                })?;
             if pcm.len() as u64 > MAX_ARCHIVE_ENTRY_BYTES || pcm.len() % 4 != 0 {
                 return Err(format!(
                     "AAF essence {} has an unsupported PCM size.",
@@ -533,23 +593,33 @@ impl SessionImporter {
         let info = parse_wav_info(&bytes)?;
         let checksum = sha256_bytes(&bytes);
         let pcm_checksum = sha256_bytes(&bytes[info.pcm_start..info.pcm_end]);
-        let cached_path = if let Some(existing) = self.cached_pcm.get(&pcm_checksum) {
+        let cached_path = if let Some(existing) = self.cached_wav.get(&checksum) {
             existing.clone()
         } else {
+            self.audio_cache_bytes = self
+                .audio_cache_bytes
+                .checked_add(bytes.len() as u64)
+                .ok_or_else(|| "Session audio cache size overflowed.".to_string())?;
+            if self.audio_cache_bytes > MAX_REQUEST_AUDIO_CACHE_BYTES {
+                return Err(
+                    "The selected session exceeds the audio-cache import limit.".to_string()
+                );
+            }
             let path = self
                 .cache_root
                 .join("audio")
-                .join(format!("{pcm_checksum}.wav"));
+                .join(format!("{checksum}.wav"));
             if !path.exists() {
                 write_file_atomic(&path, &bytes)?;
             }
-            self.cached_pcm.insert(pcm_checksum.clone(), path.clone());
+            self.cached_wav.insert(checksum.clone(), path.clone());
             path
         };
         let role = role_from_name(&name);
+        let name = base_name(&name);
         self.push_format(source_format);
         self.payload.audio_assets.push(SessionAudioAsset {
-            name: format!("{role}.wav"),
+            name,
             role,
             uri: cached_path.to_string_lossy().to_string(),
             mime_type: "audio/wav".to_string(),
@@ -576,6 +646,13 @@ impl SessionImporter {
     ) -> Result<(), String> {
         if bytes.len() as u64 > MAX_MIDI_BYTES {
             return Err(format!("MIDI file {name} is too large for session import."));
+        }
+        self.midi_payload_bytes = self
+            .midi_payload_bytes
+            .checked_add(bytes.len() as u64)
+            .ok_or_else(|| "Session MIDI payload size overflowed.".to_string())?;
+        if self.midi_payload_bytes > MAX_REQUEST_MIDI_BYTES {
+            return Err("The selected session exceeds the total MIDI payload limit.".to_string());
         }
         if bytes.len() < 4 || &bytes[..4] != b"MThd" {
             return Err(format!("MIDI file {name} is missing its MThd header."));
@@ -649,21 +726,28 @@ fn parse_dawproject_xml(xml: &[u8], source_path: &str) -> Result<ParsedSessionXm
     }
     let note_tracks = notes
         .into_iter()
-        .map(|(role, mut notes)| {
+        .filter_map(|(track_id, mut notes)| {
+            let track = tracks.get(&track_id)?;
             notes.sort_by(|a, b| {
                 a.start_beat
                     .total_cmp(&b.start_beat)
                     .then(a.pitch.cmp(&b.pitch))
             });
-            SessionNoteTrack {
-                name: role.clone(),
+            let name = if track.name.trim().is_empty() {
+                "media".to_string()
+            } else {
+                track.name.clone()
+            };
+            let role = role_from_name(&name);
+            Some(SessionNoteTrack {
+                name,
                 role,
                 notes,
                 source_format: "dawproject".to_string(),
                 source_path: source_path.to_string(),
                 source_entry: "project.xml".to_string(),
                 ppq: 960,
-            }
+            })
         })
         .collect();
     Ok(ParsedSessionXml {
@@ -720,7 +804,7 @@ fn handle_dawproject_start(
             if track.content_type == "audio" {
                 if let Some(entry) = xml_attr(event, b"path") {
                     audio_refs.push(AudioRef {
-                        role: role_from_name(&track.name),
+                        name: track.name.clone(),
                         entry,
                     });
                 }
@@ -754,16 +838,13 @@ fn handle_dawproject_start(
                 .unwrap_or(0.0)
                 .round()
                 .clamp(0.0, 15.0) as u8;
-            notes
-                .entry(role_from_name(&track.name))
-                .or_default()
-                .push(SessionBeatNote {
-                    pitch: key,
-                    start_beat: round_six(start.max(0.0)),
-                    duration_beats: round_six(duration.max(1.0 / 960.0)),
-                    velocity,
-                    channel,
-                });
+            notes.entry(track_id).or_default().push(SessionBeatNote {
+                pitch: key,
+                start_beat: round_six(start.max(0.0)),
+                duration_beats: round_six(duration.max(1.0 / 960.0)),
+                velocity,
+                channel,
+            });
         }
         _ => {}
     }
@@ -939,8 +1020,13 @@ fn parse_ableton_xml(xml: &[u8], source_path: &str) -> Result<ParsedSessionXml, 
                             &track.name
                         });
                         if track.kind == "audio" && !track.audio_file.is_empty() {
+                            let name = if track.name.trim().is_empty() {
+                                base_name(&track.audio_file)
+                            } else {
+                                track.name.clone()
+                            };
                             audio_refs.push(AudioRef {
-                                role,
+                                name,
                                 entry: track.audio_file,
                             });
                         } else if track.kind == "midi" && !track.notes.is_empty() {
@@ -950,7 +1036,11 @@ fn parse_ableton_xml(xml: &[u8], source_path: &str) -> Result<ParsedSessionXml, 
                                     .then(a.pitch.cmp(&b.pitch))
                             });
                             note_tracks.push(SessionNoteTrack {
-                                name: role.clone(),
+                                name: if track.name.trim().is_empty() {
+                                    role.clone()
+                                } else {
+                                    track.name
+                                },
                                 role,
                                 notes: track.notes,
                                 source_format: "ableton-live".to_string(),
@@ -1077,6 +1167,11 @@ fn build_pcm_wav(
 fn validated_zip_entries<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
 ) -> Result<Vec<ZipEntryInfo>, String> {
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return Err(format!(
+            "Archive contains more than {MAX_ARCHIVE_ENTRIES} entries."
+        ));
+    }
     let mut entries = Vec::new();
     let mut total = 0u64;
     for index in 0..archive.len() {
@@ -1109,7 +1204,11 @@ fn validated_zip_entries<R: Read + Seek>(
         if total > MAX_ARCHIVE_TOTAL_BYTES {
             return Err("Archive expands beyond the DAW session import limit.".to_string());
         }
-        entries.push(ZipEntryInfo { index, name });
+        entries.push(ZipEntryInfo {
+            index,
+            name,
+            size: entry.size(),
+        });
     }
     Ok(entries)
 }
@@ -1161,8 +1260,16 @@ fn extract_zip_entry_to_file<R: Read + Seek>(
         .map_err(|err| format!("Could not create AAF temporary folder: {err}"))?;
     let mut output = File::create(target)
         .map_err(|err| format!("Could not create AAF temporary file: {err}"))?;
-    std::io::copy(&mut entry, &mut output)
-        .map_err(|err| format!("Could not extract AAF entry: {err}"))?;
+    let copied = std::io::copy(
+        &mut entry.by_ref().take(MAX_ARCHIVE_ENTRY_BYTES + 1),
+        &mut output,
+    )
+    .map_err(|err| format!("Could not extract AAF entry: {err}"))?;
+    if copied > MAX_ARCHIVE_ENTRY_BYTES {
+        drop(output);
+        let _ = std::fs::remove_file(target);
+        return Err("AAF entry exceeded the session import limit.".to_string());
+    }
     output
         .flush()
         .map_err(|err| format!("Could not flush AAF temporary file: {err}"))
@@ -1252,12 +1359,24 @@ fn collect_supported_files(
 }
 
 fn find_nearby_file(folder: &Path, name: &str, depth: usize) -> Option<PathBuf> {
+    let relative = safe_local_media_path(name)?;
+    let root = std::fs::canonicalize(folder).ok()?;
+    find_nearby_file_under(&root, &root, &relative, &base_name(name), depth)
+}
+
+fn find_nearby_file_under(
+    root: &Path,
+    folder: &Path,
+    relative: &Path,
+    wanted_base_name: &str,
+    depth: usize,
+) -> Option<PathBuf> {
     if depth > MAX_SCAN_DEPTH {
         return None;
     }
-    let direct = folder.join(name);
-    if direct.is_file() {
-        return Some(direct);
+    let direct = folder.join(relative);
+    if let Some(path) = canonical_file_beneath(root, &direct) {
+        return Some(path);
     }
     let mut entries = std::fs::read_dir(folder)
         .ok()?
@@ -1270,16 +1389,46 @@ fn find_nearby_file(folder: &Path, name: &str, depth: usize) -> Option<PathBuf> 
         if metadata.file_type().is_symlink() {
             continue;
         }
-        if metadata.is_file() && file_name(&path).eq_ignore_ascii_case(&base_name(name)) {
-            return Some(path);
+        if metadata.is_file() && file_name(&path).eq_ignore_ascii_case(wanted_base_name) {
+            if let Some(path) = canonical_file_beneath(root, &path) {
+                return Some(path);
+            }
         }
         if metadata.is_dir() {
-            if let Some(found) = find_nearby_file(&path, name, depth + 1) {
+            if let Some(found) =
+                find_nearby_file_under(root, &path, relative, wanted_base_name, depth + 1)
+            {
                 return Some(found);
             }
         }
     }
     None
+}
+
+fn safe_local_media_path(name: &str) -> Option<PathBuf> {
+    let normalized = name.replace('\\', "/");
+    if normalized.is_empty()
+        || normalized.starts_with('/')
+        || normalized.contains(':')
+        || Path::new(&normalized).components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return None;
+    }
+    Some(PathBuf::from(normalized))
+}
+
+fn canonical_file_beneath(root: &Path, candidate: &Path) -> Option<PathBuf> {
+    let metadata = std::fs::symlink_metadata(candidate).ok()?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return None;
+    }
+    let canonical = std::fs::canonicalize(candidate).ok()?;
+    canonical.starts_with(root).then_some(canonical)
 }
 
 fn xml_attr(event: &BytesStart<'_>, key: &[u8]) -> Option<String> {
@@ -1304,7 +1453,20 @@ fn read_file_limited(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
             path.display()
         ));
     }
-    std::fs::read(path).map_err(|err| format!("Could not read {}: {err}", path.display()))
+    let mut file =
+        File::open(path).map_err(|err| format!("Could not open {}: {err}", path.display()))?;
+    let mut bytes = Vec::with_capacity(metadata.len().min(limit) as usize);
+    std::io::Read::by_ref(&mut file)
+        .take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|err| format!("Could not read {}: {err}", path.display()))?;
+    if bytes.len() as u64 > limit {
+        return Err(format!(
+            "{} grew beyond the limit while it was being read.",
+            path.display()
+        ));
+    }
+    Ok(bytes)
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
@@ -1454,6 +1616,13 @@ fn is_supported_extension(extension: &str) -> bool {
     )
 }
 
+fn dedupe_source_file_by_content(path: &Path) -> bool {
+    matches!(
+        lower_extension(path).as_str(),
+        "zip" | "dawproject" | "als" | "aaf"
+    )
+}
+
 fn is_wav_name(name: &str) -> bool {
     name.to_ascii_lowercase().ends_with(".wav")
 }
@@ -1491,6 +1660,17 @@ mod tests {
     }
 
     #[test]
+    fn rejects_unsafe_standalone_session_media_paths() {
+        assert_eq!(
+            safe_local_media_path("Samples\\Imported\\bass.wav"),
+            Some(PathBuf::from("Samples/Imported/bass.wav"))
+        );
+        assert!(safe_local_media_path("../outside.wav").is_none());
+        assert!(safe_local_media_path("C:/outside.wav").is_none());
+        assert!(safe_local_media_path("//server/share.wav").is_none());
+    }
+
+    #[test]
     fn builds_and_reads_pcm_wav() {
         let pcm = vec![0u8; 44_100 * 4];
         let wav = build_pcm_wav(&pcm, 44_100, 2, 16).unwrap();
@@ -1507,9 +1687,33 @@ mod tests {
         let parsed = parse_dawproject_xml(xml, "fixture.dawproject").unwrap();
         assert_eq!(parsed.fixed_tempo_bpm, Some(120.0));
         assert_eq!(parsed.audio_refs[0].entry, "audio/bass.wav");
+        assert_eq!(parsed.audio_refs[0].name, "bass");
         assert_eq!(parsed.note_tracks[0].notes[0].start_beat, 3.5);
         assert_eq!(parsed.note_tracks[0].notes[0].pitch, 42);
         assert_eq!(parsed.note_tracks[0].notes[0].velocity, 102);
+    }
+
+    #[test]
+    fn preserves_distinct_dawproject_tracks_with_the_same_role() {
+        let xml = br#"<Project><Structure><Track contentType="audio" id="audio1" name="Rhythm Guitar"/><Track contentType="audio" id="audio2" name="Lead Guitar"/><Track contentType="notes" id="midi1" name="Rhythm Guitar"/><Track contentType="notes" id="midi2" name="Lead Guitar"/></Structure><Arrangement><Lanes><Lanes track="audio1"><Clip><Audio><File path="audio/rhythm.wav"/></Audio></Clip></Lanes><Lanes track="audio2"><Clip><Audio><File path="audio/lead.wav"/></Audio></Clip></Lanes><Lanes track="midi1"><Clip><Notes><Note time="0" duration="1" key="52"/></Notes></Clip></Lanes><Lanes track="midi2"><Clip><Notes><Note time="0" duration="1" key="64"/></Notes></Clip></Lanes></Lanes></Arrangement></Project>"#;
+        let parsed = parse_dawproject_xml(xml, "fixture.dawproject").unwrap();
+
+        assert_eq!(
+            parsed
+                .audio_refs
+                .iter()
+                .map(|audio| audio.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Rhythm Guitar", "Lead Guitar"]
+        );
+        assert_eq!(
+            parsed
+                .note_tracks
+                .iter()
+                .map(|track| (track.name.as_str(), track.role.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("Rhythm Guitar", "guitar"), ("Lead Guitar", "guitar")]
+        );
     }
 
     #[test]
@@ -1518,6 +1722,7 @@ mod tests {
         let parsed = parse_ableton_xml(xml, "fixture.als").unwrap();
         assert_eq!(parsed.fixed_tempo_bpm, Some(120.0));
         assert_eq!(parsed.audio_refs[0].entry, "bass.wav");
+        assert_eq!(parsed.audio_refs[0].name, "bass");
         assert_eq!(parsed.note_tracks[0].notes[0].start_beat, 3.5);
         assert_eq!(parsed.note_tracks[0].notes[0].pitch, 42);
     }

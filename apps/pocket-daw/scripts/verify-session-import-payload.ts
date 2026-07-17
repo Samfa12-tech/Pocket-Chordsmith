@@ -32,12 +32,12 @@ assertEqual(result.project.tracks.length, 14, "total project track count");
 assertEqual(result.project.project.bpm, 600, "initial project tempo");
 assertEqual(result.project.project.timeSig, 4, "project time signature");
 assertEqual(result.project.project.meterMap.length, 0, "project meter-map event count");
-assertEqual(tempoLane?.points.length, 597, "project tempo automation point count");
+assertEqual(tempoLane?.points.length, 407, "effective project tempo automation point count");
 assertEqual(tempoLane?.points[0]?.value, 600, "first tempo automation value");
 assertEqual(tempoLane?.points.at(-1)?.value, 176.470588, "last tempo automation value");
 assertEqual(tempoLane?.max, 999, "tempo automation upper bound");
 assertEqual(reloadedProject.project.bpm, 600, "reloaded initial project tempo");
-assertEqual(reloadedTempoLane?.points.length, 597, "reloaded tempo automation point count");
+assertEqual(reloadedTempoLane?.points.length, 407, "reloaded effective tempo automation point count");
 assertEqual(reloadedTempoLane?.points[0]?.value, 600, "reloaded first tempo automation value");
 assertEqual(reloadedTempoLane?.points.at(-1)?.value, 176.470588, "reloaded last tempo automation value");
 assertEqual(reloadedTempoLane?.max, 999, "reloaded tempo automation upper bound");
@@ -52,6 +52,7 @@ console.log(JSON.stringify({
   audioTracks: result.report.audioTrackCount,
   midiTracks: result.report.midiTrackCount,
   tempoEvents: result.report.tempoEventCount,
+  effectiveTempoAutomationPoints: tempoLane?.points.length,
   duplicateAudioRepresentationsRemoved: result.report.duplicateAudioCount,
   duplicateMidiRepresentationsRemoved: result.report.discardedMidiCount,
   initialTempoBpm: result.project.project.bpm,

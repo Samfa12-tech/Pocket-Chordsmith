@@ -98,9 +98,9 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       },
       {
         name: "Import Session Folder / Files",
-        does: "Reconciles stems, companion MIDI, Ableton Live, DAWproject and validated Mureka AAF exports into one clean Pocket DAW session.",
+        does: "Reconciles stems, companion MIDI, consolidated Ableton Live or DAWproject audio, and validated Mureka AAF exports into one Pocket DAW session.",
         useWhen: "Use when the same song was downloaded in several interchange formats or its stems and companion MIDI must remain aligned.",
-        aiNote: "Equivalent PCM is deduplicated, dedicated stems win source priority, MIDI references start muted, the most complete companion tempo map wins, and arbitrary non-Mureka AAF layouts are not claimed."
+        aiNote: "Equivalent PCM is deduplicated while distinct same-role layers remain separate. Complex clip placement, fades, mixer settings, plug-ins and automation are not reconstructed; arbitrary non-Mureka AAF layouts are not claimed."
       },
       {
         name: "MIDI Placement Mode",
@@ -711,8 +711,8 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
       {
         name: "Live MCP Session Import",
         does: "Uses pocket_daw_live_import_session to scan a local folder or supported file through the running native app and return a reconciliation report.",
-        useWhen: "Use for agent-driven stems/MIDI/Ableton/DAWproject/Mureka AAF import without driving native file pickers.",
-        aiNote: "Large AAF folders can take several minutes. The tool has a five-minute timeout; verify report counts, tempo source, muted MIDI references, native playback status and save/reopen timing before claiming success."
+        useWhen: "Use for agent-driven stems/MIDI and consolidated Ableton/DAWproject/Mureka AAF import without driving native file pickers.",
+        aiNote: "Large AAF folders can take several minutes. Verify report counts, partial-load state, tempo source, muted MIDI references, native playback status and save/reopen timing before claiming success."
       },
       {
         name: "Send Feedback",
@@ -836,17 +836,17 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "Import",
     control: "Import Session Folder",
     actionId: "import-daw-session-folder",
-    does: "Reconciles stems, companion MIDI, Ableton Live, DAWproject and Mureka AAF exports from one folder into a clean Pocket DAW session.",
+    does: "Reconciles stems, companion MIDI, consolidated Ableton Live or DAWproject audio, and Mureka AAF exports from one folder.",
     useWhen: "Use when a song was exported in several DAW interchange formats or when stems and MIDI companions need to stay aligned.",
-    aiNote: "Audio stems are audible at the safe import gain, editable MIDI references are muted by default, duplicate audio is removed by PCM checksum, and the most complete companion MIDI tempo map is adopted automatically."
+    aiNote: "Audio stems are audible at the safe import gain, editable MIDI references are muted by default, exact duplicate audio is removed by PCM checksum, distinct layers are preserved, and failed loads are recorded as missing media."
   },
   {
     surface: "Import",
     control: "Import Session Files",
     actionId: "import-daw-session-files",
-    does: "Imports selected DAW archives or interchange files through the same reconciled session pipeline.",
+    does: "Imports selected consolidated session archives or interchange files through the same reconciled pipeline.",
     useWhen: "Use for one or more .zip, .dawproject, .als, .aaf, .wav, .mid or .midi files when a whole folder is not desired.",
-    aiNote: "Standalone Ableton and DAWproject note tracks remain muted if their fixed tempo metadata disagrees with audio; add the companion MIDI tempo-map files for exact alignment."
+    aiNote: "Ableton/DAWproject clip placement and mix automation are not reconstructed. Add companion MIDI tempo-map files for exact alignment; a zero-load stem import leaves the current project unchanged."
   },
   {
     surface: "Import",

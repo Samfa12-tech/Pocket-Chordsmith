@@ -25,7 +25,7 @@ const MAX_NATIVE_AUDIO_SOURCE_FILE_BYTES: u64 = 600 * 1024 * 1024;
 pub struct NativeAudioRuntime {
     stream: Option<cpal::Stream>,
     shared: Option<Arc<Mutex<PlaybackShared>>>,
-    asset_cache: HashMap<String, Arc<DecodedAudioAsset>>,
+    asset_cache: HashMap<(String, String), Arc<DecodedAudioAsset>>,
     generation: u64,
     last_error: Option<String>,
     device_name: Option<String>,
@@ -226,6 +226,8 @@ pub struct NativeAudioAssetPayload {
     duration_seconds: f64,
     #[serde(rename = "sourcePath", default)]
     source_path: Option<String>,
+    #[serde(rename = "sourceHash", default)]
+    source_hash: Option<String>,
     #[serde(default)]
     bytes: Vec<u8>,
 }
@@ -766,7 +768,7 @@ impl NativeAudioRuntime {
         let compiled_sidechain_triggers =
             compile_sidechain_triggers(&events, payload.sidechain.as_ref(), &track_indices);
         let compiled_sidechain_trigger_source_len = events.len();
-        let active_region_capacity = regions.len().min(64);
+        let active_region_capacity = regions.len();
         let mut playback = PlaybackShared {
             project_title: payload.project_title,
             events,
@@ -820,8 +822,9 @@ impl NativeAudioRuntime {
         &mut self,
         asset: &NativeAudioAssetPayload,
     ) -> Result<Arc<DecodedAudioAsset>, String> {
+        let cache_key = native_asset_cache_key(asset);
         if asset.bytes.is_empty() {
-            if let Some(decoded) = self.asset_cache.get(&asset.id) {
+            if let Some(decoded) = self.asset_cache.get(&cache_key) {
                 validate_asset_metadata(asset, decoded)?;
                 return Ok(Arc::clone(decoded));
             }
@@ -833,8 +836,7 @@ impl NativeAudioRuntime {
                     ..asset.clone()
                 };
                 let decoded = Arc::new(decode_payload_asset(&file_asset)?);
-                self.asset_cache
-                    .insert(asset.id.clone(), Arc::clone(&decoded));
+                self.cache_decoded_asset(asset, Arc::clone(&decoded));
                 return Ok(decoded);
             }
             return Err(format!(
@@ -844,9 +846,19 @@ impl NativeAudioRuntime {
         }
 
         let decoded = Arc::new(decode_payload_asset(asset)?);
-        self.asset_cache
-            .insert(asset.id.clone(), Arc::clone(&decoded));
+        self.cache_decoded_asset(asset, Arc::clone(&decoded));
         Ok(decoded)
+    }
+
+    fn cache_decoded_asset(
+        &mut self,
+        asset: &NativeAudioAssetPayload,
+        decoded: Arc<DecodedAudioAsset>,
+    ) {
+        self.asset_cache
+            .retain(|(asset_id, _revision), _| asset_id != &asset.id);
+        self.asset_cache
+            .insert(native_asset_cache_key(asset), decoded);
     }
 
     fn status(&self) -> NativeAudioStatus {
@@ -901,6 +913,21 @@ impl NativeAudioRuntime {
             slow_callback_count: 0,
         }
     }
+}
+
+fn native_asset_cache_key(asset: &NativeAudioAssetPayload) -> (String, String) {
+    let revision = asset
+        .source_hash
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            asset
+                .source_path
+                .as_deref()
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or_default();
+    (asset.id.clone(), revision.to_string())
 }
 
 fn read_native_audio_source_file(source_path: &str) -> Result<Vec<u8>, String> {
@@ -1426,27 +1453,18 @@ fn render_generated_event_source(
     t: f64,
     active_counts: &mut TrackSourceBudget,
 ) -> Option<GeneratedEventSource> {
-    let (track_index, track_enabled, sample, event_pan, drum_lane) = {
-        let event = playback.events.get(event_index)?;
-        let route = playback.compiled_event_routes.get(event_index)?.as_ref()?;
-        let track_index = route.track_index;
-        let track_enabled = playback
-            .track_order
-            .get(track_index)
-            .and_then(|track_id| playback.tracks.get(track_id))
-            .map(|track| track_is_enabled(track, playback.has_solo))?;
-        let sample = render_event_sample(event, t);
-        (
-            track_index,
-            track_enabled,
-            sample,
-            event.pan.unwrap_or(0.0) as f32,
-            route.drum_lane.clone(),
-        )
-    };
+    let event = playback.events.get(event_index)?;
+    let route = playback.compiled_event_routes.get(event_index)?.as_ref()?;
+    let track_index = route.track_index;
+    let track_enabled = playback
+        .track_order
+        .get(track_index)
+        .and_then(|track_id| playback.tracks.get(track_id))
+        .map(|track| track_is_enabled(track, playback.has_solo))?;
     if !track_enabled {
         return None;
     }
+    let sample = render_event_sample(event, t);
     if sample.abs() <= 0.000001 {
         return None;
     }
@@ -1454,11 +1472,12 @@ fn render_generated_event_source(
         return None;
     }
 
+    let event_pan = event.pan.unwrap_or(0.0) as f32;
     let (pan_left, pan_right) = source_pan_gains(event_pan);
     let mut lane_left = sample * pan_left;
     let mut lane_right = sample * pan_right;
-    if let Some(lane) = drum_lane {
-        if let Some(chain) = playback.fx.drum_lane_chains.get_mut(&lane) {
+    if let Some(lane) = route.drum_lane.as_deref() {
+        if let Some(chain) = playback.fx.drum_lane_chains.get_mut(lane) {
             (lane_left, lane_right) = chain.process(lane_left, lane_right);
         }
     }
@@ -4005,6 +4024,7 @@ mod tests {
             channels: 2,
             duration_seconds: 0.5,
             source_path: None,
+            source_hash: None,
             bytes: pcm16_wav(48_000, 2, &[0, 0]),
         };
 
@@ -4023,6 +4043,7 @@ mod tests {
             channels: 2,
             duration_seconds: 0.5,
             source_path: None,
+            source_hash: Some("revision-1".to_string()),
             bytes: pcm16_wav(48_000, 2, &[16_384, -16_384]),
         };
         let metadata_only = NativeAudioAssetPayload {
@@ -4046,6 +4067,37 @@ mod tests {
     }
 
     #[test]
+    fn replaces_decoded_assets_when_the_source_revision_changes() {
+        let mut runtime = NativeAudioRuntime::default();
+        let first_asset = NativeAudioAssetPayload {
+            id: "asset".to_string(),
+            name: "Stem.wav".to_string(),
+            sample_rate: 48_000,
+            channels: 2,
+            duration_seconds: 1.0 / 48_000.0,
+            source_path: None,
+            source_hash: Some("revision-1".to_string()),
+            bytes: pcm16_wav(48_000, 2, &[16_384, 16_384]),
+        };
+        let second_asset = NativeAudioAssetPayload {
+            source_hash: Some("revision-2".to_string()),
+            bytes: pcm16_wav(48_000, 2, &[-16_384, -16_384]),
+            ..first_asset.clone()
+        };
+
+        let first = runtime
+            .decode_or_reuse_asset(&first_asset)
+            .expect("first revision should decode");
+        let second = runtime
+            .decode_or_reuse_asset(&second_asset)
+            .expect("second revision should replace the cache entry");
+
+        assert!(!Arc::ptr_eq(&first, &second));
+        assert_ne!(first.samples, second.samples);
+        assert_eq!(runtime.asset_cache.len(), 1);
+    }
+
+    #[test]
     fn decodes_native_audio_assets_from_absolute_wav_paths() {
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -4065,6 +4117,7 @@ mod tests {
             channels: 2,
             duration_seconds: 1.0 / 48_000.0,
             source_path: Some(path.to_string_lossy().to_string()),
+            source_hash: Some("file-revision".to_string()),
             bytes: Vec::new(),
         };
 

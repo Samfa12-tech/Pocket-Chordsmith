@@ -274,7 +274,7 @@ import {
 import { importMidiFileToProjectWithPlacement, type MidiGrooveTemplateId, type MidiImportPlacementMode, type MidiPitchTransform, type MidiQuantizeGrid, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
 import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
-import { buildSessionImportProject, type SessionImportBundle } from "../daw/sessionImport";
+import { buildSessionImportProject, recordSessionImportHydrationFailures, type SessionImportBundle, type SessionImportHydrationFailure } from "../daw/sessionImport";
 import { importDawSessionFilesNative, importDawSessionFolderNative, readDawSessionPathNative } from "../native/sessionBridge";
 import { isNativeRecordingAvailable, nativeRecordingStatus, startNativeRecording, startNativeRecordingPreview, stopNativeRecording, stopNativeRecordingPreview, updateNativeRecordingMonitor } from "../native/recordingBridge";
 import { isNativeExternalLinkAvailable, openExternalUrlNative } from "../native/externalLinkBridge";
@@ -5214,15 +5214,12 @@ export class App {
   private async loadDawSessionBundle(bundle: SessionImportBundle) {
     const recoveryMessage = this.savePreImportRecoverySnapshot("DAW session import");
     const built = buildSessionImportProject(bundle);
-    this.resetProjectSessionForProjectLoad(built.project, {
-      status: `Built ${built.report.audioTrackCount} audio stems and ${built.report.midiTrackCount} muted editable MIDI reference tracks. Loading stem audio...`,
-      currentFile: { path: null, label: `${built.project.project.title} (imported session)` }
-    });
+    this.state.status = `Built ${built.report.audioTrackCount} audio stems and ${built.report.midiTrackCount} muted editable MIDI reference tracks. Loading stem audio...`;
     this.render();
 
-    let hydratedProject = currentProject(this.state);
+    let hydratedProject = built.project;
     let loadedAudioCount = 0;
-    const hydrationWarnings: string[] = [];
+    const hydrationFailures: SessionImportHydrationFailure[] = [];
     for (const [index, binding] of built.audioBindings.entries()) {
       try {
         this.state.status = `Loading session stem ${index + 1}/${built.audioBindings.length}: ${binding.asset.name}`;
@@ -5244,17 +5241,31 @@ export class App {
         });
         loadedAudioCount += 1;
       } catch (error) {
-        hydrationWarnings.push(`${binding.asset.name}: ${error instanceof Error ? error.message : "could not load audio"}`);
+        hydrationFailures.push({
+          mediaPoolItemId: binding.mediaPoolItemId,
+          assetName: binding.asset.name,
+          message: error instanceof Error ? error.message : "could not load audio"
+        });
       }
     }
 
-    const warningCount = built.report.warnings.length + hydrationWarnings.length;
+    if (built.audioBindings.length && loadedAudioCount === 0) {
+      const detail = hydrationFailures[0] ? ` ${hydrationFailures[0].assetName}: ${hydrationFailures[0].message}` : "";
+      throw new Error(`No session stems could be loaded, so the current project was left unchanged.${detail}`);
+    }
+    hydratedProject = recordSessionImportHydrationFailures(hydratedProject, hydrationFailures);
+
+    const warningCount = built.report.warnings.length + hydrationFailures.length;
     const status = [
       `Imported ${built.project.project.title}: ${loadedAudioCount}/${built.report.audioTrackCount} stems loaded, ${built.report.midiTrackCount} editable MIDI reference tracks muted by default, and ${built.report.tempoEventCount} tempo events preserved.`,
       warningCount ? `${warningCount} import warning${warningCount === 1 ? "" : "s"} recorded in project provenance.` : "",
       recoveryMessage
     ].filter(Boolean).join(" ");
     const selected = built.audioBindings[0];
+    this.resetProjectSessionForProjectLoad(hydratedProject, {
+      status,
+      currentFile: { path: null, label: `${built.project.project.title} (imported session)` }
+    });
     this.applyProjectState({
       ...commitProject(this.state, hydratedProject, status),
       selectedClipId: selected?.clipId || null,
@@ -5268,7 +5279,8 @@ export class App {
     return {
       ...built.report,
       loadedAudioCount,
-      hydrationWarnings,
+      partial: hydrationFailures.length > 0,
+      hydrationWarnings: hydrationFailures.map((failure) => `${failure.assetName}: ${failure.message}`),
       status
     };
   }
@@ -6774,8 +6786,8 @@ const ACTION_BUTTON_TOOLTIPS: Record<string, string> = {
   "function-guide-open": "Open the Pocket DAW function guide.",
   "game-state-marker-add": "Add a game-state cue marker at the playhead.",
   "import-audio": "Import an audio file into the media pool.",
-  "import-daw-session-folder": "Import and reconcile a DAW session folder, including stems, MIDI, Ableton Live, DAWproject and Mureka AAF files.",
-  "import-daw-session-files": "Import selected DAW session archives or files into one reconciled project.",
+  "import-daw-session-folder": "Import and reconcile stems, MIDI and consolidated Ableton Live, DAWproject or Mureka AAF exports from one folder.",
+  "import-daw-session-files": "Import selected session archives or consolidated interchange files into one reconciled project.",
   "import-focus": "Open the import area.",
   "import-midi": "Import a MIDI file as MIDI clips.",
   "import-text": "Import pasted Pocket Chordsmith, Pocket DJ or Pocket DAW text.",
