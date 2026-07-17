@@ -3996,7 +3996,7 @@ export class App {
         }
       }
       if (cleanup.stopBackingPlayback) this.engine.stop();
-      const message = error instanceof Error ? error.message : "Could not start live recording.";
+      const message = error instanceof Error ? error.message : String(error || "Could not start live recording.");
       this.state.recording = createRecordingUiState({
         status: "error",
         sessionId,
@@ -4371,7 +4371,7 @@ export class App {
       void this.syncArmedInputPreview(trackId || result.trackId);
     } catch (error) {
       if (!recordingSessionMatches(this.state.recording, sessionId, ["stopping"])) return;
-      const message = error instanceof Error ? error.message : "Could not stop live recording.";
+      const message = error instanceof Error ? error.message : String(error || "Could not stop live recording.");
       this.state.recording = createRecordingUiState({
         status: "error",
         sessionId,
@@ -5026,7 +5026,7 @@ export class App {
       this.render({ preserveScroll: true });
     } catch (error) {
       this.inputPreviewKey = null;
-      const message = error instanceof Error ? error.message : "Could not start armed input metering.";
+      const message = error instanceof Error ? error.message : String(error || "Could not start armed input metering.");
       if (this.state.recording.status === "idle") {
         this.state.recording = {
           ...this.state.recording,

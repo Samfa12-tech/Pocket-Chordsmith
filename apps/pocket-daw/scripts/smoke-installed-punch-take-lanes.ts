@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { loadPocketDawRaw } from "../src/app/commands";
 import { addImportedAudioMedia, placeAudioClipOnTrack } from "../src/daw/audioClips";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject } from "../src/daw/dawProject";
@@ -59,12 +59,12 @@ interface RecordedAudioMediaEvidence {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const root = args.outputDir || await mkdtemp(join(tmpdir(), "pocket-daw-punch-take-installed-smoke-"));
+const root = args.outputDir ? resolve(args.outputDir) : await mkdtemp(join(tmpdir(), "pocket-daw-punch-take-installed-smoke-"));
 const session = await readSession(args.sessionPath);
 const projectPath = join(root, "punch-take-lane-installed-smoke.pocketdaw");
 const wavPath = join(root, "punch-take-lane-installed-smoke.wav");
 const midiPath = join(root, "punch-take-lane-installed-smoke.mid");
-const installerEvidence = args.installerPath ? await installerSmokeEvidence(args.installerPath) : null;
+const installerEvidence = args.installerPath ? await installerSmokeEvidence(resolve(args.installerPath)) : null;
 const midiDevicePreflight = midiDevicePreflightEvidence();
 const midiTakeGroupId = "manual-midi-take-group-1";
 const fixtureMidiRecordingTakeGroupId = "midi-recording-session-installed-midi-recording";
