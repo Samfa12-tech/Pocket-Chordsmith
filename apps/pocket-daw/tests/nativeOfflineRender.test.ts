@@ -290,6 +290,17 @@ describe("native offline WAV rendering", () => {
 
     expect(nativeWavExportDurationSeconds(renderProject)).toBeCloseTo(loop.lengthSeconds, 5);
   });
+
+  it("keeps sub-second section loop native renders shorter than the transport safety floor", () => {
+    const project = createDemoProject();
+    const source = project.timeline.clips.find((clip) => clip.type === "generated-section")!;
+    source.barLength = 0.25;
+    const loop = createSectionLoopMetadata(project).find((item) => item.sourceClipId === source.id)!;
+    const renderProject = projectForSectionLoopRender(project, loop);
+
+    expect(loop.lengthSeconds).toBeLessThan(1);
+    expect(nativeWavExportDurationSeconds(renderProject)).toBeCloseTo(loop.lengthSeconds, 5);
+  });
 });
 
 function wavHeaderBytes(input: { sampleRate: number; channels: number; dataSize: number; bitDepth?: 16 | 24 | 32 }): number[] {

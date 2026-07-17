@@ -1,6 +1,6 @@
 import type { PocketDawProject, Track } from "../daw/schema";
 import { trackIsAudible } from "../daw/tracks";
-import { timelineBarAtSeconds, timelineDurationSeconds } from "../daw/timeline";
+import { timelineBarAtSeconds, timelineRenderDurationSeconds } from "../daw/timeline";
 import { renderTimelineEvents } from "./eventRenderer";
 import { audioBufferForRegionPlayback, audioRegionPlaybackWindow, renderTimelineAudioRegions, scheduleAudioRegionEnvelope } from "./audioRegions";
 import { getCachedAudioBuffer } from "./audioBufferCache";
@@ -37,7 +37,7 @@ export async function renderProjectToWavBlob(project: PocketDawProject, options:
   const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (!OfflineCtx) throw new Error("Offline WAV rendering is not supported in this browser.");
   const tailSeconds = Number(project.exportProfiles.find((p) => p.id === "full-song-wav")?.settings.tailSeconds ?? 1.2);
-  const duration = timelineDurationSeconds(project) + tailSeconds;
+  const duration = timelineRenderDurationSeconds(project) + tailSeconds;
   const sampleRate = fullSongWavSampleRate(project);
   const ctx = new OfflineCtx(2, Math.ceil(duration * sampleRate), sampleRate);
   const automatedFxChains = getAutomatedFxChains(project, 1);

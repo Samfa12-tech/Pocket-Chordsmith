@@ -1,5 +1,5 @@
 import type { PocketDawProject } from "../daw/schema";
-import { timelineDurationSeconds } from "../daw/timeline";
+import { timelineRenderDurationSeconds } from "../daw/timeline";
 import { buildNativeAudioStartPayload } from "../native/audioPlayback";
 import { renderNativeAudioWav, type NativeMediaApi } from "../native/mediaBridge";
 import { renderTimelineEvents } from "./eventRenderer";
@@ -35,7 +35,7 @@ export async function renderProjectToNativeWavBlob(project: PocketDawProject, ap
 
 export function nativeWavExportDurationSeconds(project: PocketDawProject): number {
   const tailSeconds = Number(project.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings.tailSeconds ?? 1.2);
-  return timelineDurationSeconds(project) + tailSeconds;
+  return timelineRenderDurationSeconds(project) + tailSeconds;
 }
 
 function projectForFullSongWavExport(project: PocketDawProject): PocketDawProject {

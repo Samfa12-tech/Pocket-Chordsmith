@@ -261,6 +261,9 @@ describe("export job helpers", () => {
 
   it("builds section-only render projects for loop WAV export", () => {
     const project = createDemoProject();
+    project.tracks.forEach((track) => {
+      if (track.trackType === "generated") track.active = false;
+    });
     const loop = createSectionLoopMetadata(project)[0];
     const renderProject = projectForSectionLoopRender(project, loop);
 
@@ -273,6 +276,7 @@ describe("export job helpers", () => {
     });
     expect(renderProject.timeline.bars).toBe(loop.lengthBars);
     expect(renderProject.timeline.loop).toMatchObject({ enabled: true, startBar: 1, endBar: 1 + loop.lengthBars });
+    expect(renderProject.tracks.filter((track) => track.trackType === "generated").every((track) => track.active && !track.mute && !track.solo)).toBe(true);
     expect(renderProject.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings.tailSeconds).toBe(0);
   });
 

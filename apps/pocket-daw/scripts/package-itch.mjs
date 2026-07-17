@@ -241,6 +241,7 @@ ${artifactTable}
 - Hardened Collect Media so copies are collision-safe and idempotent, partial copies do not masquerade as success, and project-save success is required before a project is described as portable.
 - Missing project media can recover honestly from decoded WAV cache, then be relinked and recollected; project open and relink also clear stale runtime/source analysis state.
 - Expanded installed-app release evidence for project-folder move/reopen, cache fallback, relink/recollect, punch/take/export, Godot/Web game packs and Godot target import.
+- Hardened section-loop game-pack rendering so generated tracks are audible and valid sub-second loops keep exact manifest-aligned duration in native and browser WAV export.
 - Opens into a timeline-first workspace: the inspector starts hidden, lower dock/media detail are tucked away, and the timeline gets most of the screen.
 - Simplified the timeline toolbar so core editing stays close to the timeline without flooding the first view with every range/edit command.
 - Music and Game Music focus presets now change real layout defaults, helping music creation and game-export work feel less crowded.

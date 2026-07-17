@@ -156,6 +156,10 @@ export function timelineDurationSeconds(project: PocketDawProject): number {
   return Math.max(1, timelineSecondsAtBar(project, project.timeline.bars + 1));
 }
 
+export function timelineRenderDurationSeconds(project: PocketDawProject): number {
+  return Math.max(0, timelineSecondsAtBar(project, project.timeline.bars + 1));
+}
+
 export function timelineBarAtSeconds(project: PocketDawProject, seconds: number): number {
   const target = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
   const lane = getProjectAutomationLane(project, "tempo");

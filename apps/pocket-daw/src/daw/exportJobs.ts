@@ -590,6 +590,15 @@ export function projectForSectionLoopRender(project: PocketDawProject, loop: Sec
       endBar: 1 + loop.lengthBars
     }
   };
+  next.tracks = next.tracks.map((track) => {
+    if (track.trackType === "generated" && ["drums", "bass", "chords", "melody", "guitar"].includes(track.role)) {
+      return { ...track, active: true, mute: false, solo: false };
+    }
+    if (["folder", "bus", "return", "master"].includes(track.trackType)) {
+      return { ...track, active: true, mute: false, solo: false };
+    }
+    return { ...track, solo: false };
+  });
   return projectWithWavRenderProfile(next, "section-loops", { tailSeconds: 0 });
 }
 

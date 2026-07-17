@@ -21,6 +21,13 @@ next checkpoint is deliberately versioned, packaged, hashed, smoke-tested, and
 published. Do not create another installer from a later commit while leaving
 the package/Tauri/schema metadata at the previous public checkpoint.
 
+## Unreleased 2026-07-17 Release Candidate Hardening
+
+- Installed punch/take evidence resolves output and installer arguments to absolute paths before handing a saved project to the native recorder; Tauri string rejections are surfaced instead of collapsing into a generic recording error.
+- Section-loop render projects explicitly activate and unmute the generated Drums/Bass/Chords/Melody/Guitar tracks required to render the selected section, even when those source tracks were inactive in the editing project.
+- Native and browser WAV exporters use the exact render timeline duration instead of the transport's one-second safety floor, so valid 0.25-bar loops stay aligned with their manifest length instead of becoming one-second files.
+- Chromium target smoke exposed the previous silent fractional loop while the same pack's full mix and stems decoded audibly. The fix is covered by focused and full tests; a fresh exact installer, Godot report and Web target report remain required before publication.
+
 ## Unreleased 2026-07-14 Faithful MIDI Transcription Slice
 
 - MIDI conversion now distinguishes `Faithful transcription` from `Arrange into Chordsmith` in the Piano Roll instead of presenting one shared all-notes interpretation as transcription.
