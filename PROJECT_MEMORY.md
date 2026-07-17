@@ -42,19 +42,29 @@ playhead position. The UI only displays state and dispatches commands.
 
 ## Current Notes And Known Gaps
 
+### Current 2026-07-17 Pocket DAW 0.6.41 Release And Fast-Path Notes
+
+- Pocket DAW `0.6.41` is published from exact tested commit `15761a1ff2dd6dbba70698c343b7181095a7a7e6`. The public setup EXE `Pocket.DAW_0.6.41_x64-setup.exe` has SHA-256 `ee347b4786a1e6477d9a07659bc920fb126323dc3243f8b452df3170b0954174`; GitHub latest manifests, the downloaded remote installer hash, release tag and target commit were verified after publication.
+- The exact installed combined smoke passed without further user microphone work: 10.069977 seconds of 48 kHz mono audio cleared peak/RMS thresholds and loopMIDI captured 19 notes into an unmuted active punched take lane, with WAV and MIDI exports retained and verified. MIDI input is an agent responsibility through `apps/pocket-daw/scripts/send-loopmidi-smoke.ps1`.
+- Sam's private `Billions of Years` score passed faithful conversion on the final code at Type 1 / PPQ 960 / 86 BPM / F-sharp minor / 4/4: 74 source and destination bars, A-E lengths 16/16/16/16/10, resolution 4 exact, 244 melody attacks, 148 chord events containing 453 notes, final four `[54,58,61]` half-bar voicings, raw MIDI retained, and zero generated bass/drums/guitar/harmony. Owned handoff files and reports remain ignored and outside public packages.
+- Final gates passed 1,037 Vitest tests, 115 Rust tests, 14 Chromium E2E tests, strict installed media portability, Godot/Web pack verification, Godot 4.6.3 target import/runtime validation and Chromium Web Audio decode/offline render. The target smoke found and fixed a silent fractional-section-loop bug before the final installer.
+- Use `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md` for future releases. Build/stage once, run one combined strict audio/MIDI/export smoke at `10000/10000` ms, reuse one evidence set, run target smokes once, then publish the already-smoked staged files without rebuilding. Do not run `release:update:publish` after exact smoke.
+- Normal updater checkpoints do not repush itch. The `windows-installer` channel is the stable bootstrapper and stays on its prior user-version unless the bootstrapper executable/upload payload changes; it discovers `0.6.41` through the GitHub bootstrapper manifest.
+- Mistakes to avoid: unquoted `Start-Process -File` paths containing spaces, cleanup filters that match and terminate their own shell, starting smoke before the installed bridge is ready, shortening the audio phase so MIDI capture begins before the punch window, repeating microphone requests instead of inspecting one summary, combining evidence from separate runs, rebuilding after smoke, and reconstructing policy/evidence from chat instead of retained docs and JSON.
+
 ### Current 2026-07-14 Pocket DAW MIDI Transcription Notes
 
 - The unreleased source-only MIDI conversion slice separates `Faithful transcription` from `Arrange into Chordsmith`. Faithful mode uses independent role assignments, exact supported timing resolution, sequential A-H packing at up to 16 bars each, exact DAW melody/chord overlays, no generated accompaniment by default, raw-reference retention, structured conversion history and one-command undo.
 - Local validation against Sam's owned `Billions of Years` handoff fixture passed at 86 BPM, F-sharp minor, 4/4, 74 source and destination bars, A-E section lengths 16/16/16/16/10, 244 melody attacks, 148 chord overlays containing 453 MIDI notes, final four F-sharp-major voicings, and zero generated bass/drums/guitar. The owned MIDI/PCS1 fixtures remain outside git.
 - Exact mixed-quality chord overlays remain Pocket DAW-local. No family schema bump was made; schema-16 PCS1 progression output would be simplified and must be labeled as such. `apps/pocket-daw/docs/ADR_MIDI_EXACT_CHORD_OVERLAY_COMPATIBILITY.md` records the deferred Chordsmith-web extension decision.
-- This work is not installed or published at the current `0.6.40` public checkpoint. Full tests/build/E2E and a native Windows source-debug open/play/save/reopen/MIDI-export smoke passed on 2026-07-14; exact installer-bound workflow and listening smoke remain release gates before publication.
+- This work shipped in `0.6.41` after exact-installer audio/MIDI/export smoke, private owned-fixture validation, media portability, and Godot/Web target-runtime evidence passed. Use the 2026-07-17 notes above for current release truth.
 
 ### Current 2026-07-13 Pocket DAW Source Notes
 
 - The unreleased Portable Projects + Media Recovery slice hardens native Collect Media against collisions, partial copies and false project-save success; identical-byte retries are idempotent, different-content overwrites are refused, and existing project-media names are reserved deterministically.
 - Missing project media can recover playback from a decoded WAV cache without being mislabeled portable. Relink clears stale source analysis, project open clears cross-project runtime audio buffers, and final portability requires relink/recollection plus a successful native project save.
 - Live bridge smoke now supports collect/reload/relink and explicit WAV, MIDI, stem ZIP, section-loop ZIP, Godot and Web pack exports. A 2026-07-13 native debug run passed delete-original-source, move-folder/reopen, cache fallback, relink/recollect, final reopen and all five tested non-MIDI artifacts; its Godot pack imported headlessly in Godot 4.6.3 with 464 compiled events.
-- Release attestation now requires retained installer-bound media-portability evidence, punch/take evidence, game-pack ZIP evidence and Godot target-import evidence. This work remains source-only at `0.6.40`; do not describe it as installed or published until a new checkpoint is versioned and exact-installer smoke passes.
+- Release attestation requires retained installer-bound media-portability evidence, punch/take evidence, game-pack ZIP evidence and Godot target-import evidence. This work shipped in `0.6.41`; reuse the final evidence pattern and fast-path procedure for later checkpoints.
 
 ### Current 2026-07-09 Pocket DAW Notes
 

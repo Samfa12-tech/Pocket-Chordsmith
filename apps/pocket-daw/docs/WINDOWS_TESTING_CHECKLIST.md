@@ -2,6 +2,12 @@
 
 Run this against the exact installed Windows alpha from itch/GitHub release artifacts. Do not use an extracted portable app folder.
 
+For automated release sequencing, combined strict audio/MIDI evidence, target
+runtime smoke, and publication, use `RELEASE_TESTING_FAST_PATH.md` first. This
+file is the broader human/manual coverage inventory; do not walk every
+historical row during each checkpoint or repeat gates already completed by the
+fast path.
+
 Current alpha target:
 
 - App: Pocket DAW

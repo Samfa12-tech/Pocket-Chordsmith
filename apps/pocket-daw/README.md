@@ -73,14 +73,17 @@ The demo helpers expose a lofi Chordsmith template project for future template-p
 
 ## Release Checks
 
+Read `docs/RELEASE_TESTING_FAST_PATH.md` first. It is the authoritative one-pass
+order for exact-artifact packaging, combined audio/MIDI smoke, target-runtime
+evidence, candidate verification, and publication without a rebuild.
+
 ```powershell
-npm run verify:versions
-npm test
-cargo test --manifest-path src-tauri/Cargo.toml
 npm run release:update:full
+npm run verify:itch
+npm run release:update:fast
 ```
 
-Use `npm run release:update` for a local signed updater package without the full test gate, `npm run release:update:fast` only for manifest/release-note rehearsal against existing same-version installers, and `PUBLISH=1 npm run release:update:publish` only when an accumulated public checkpoint should go live. Public checkpoint releases publish GitHub updater assets and `pocket-daw-bootstrapper-latest.json`; they do not push itch.
+Use `npm run release:update` for a local signed updater package without the full test gate. Use `npm run release:update:fast` only to restage manifests/release notes against existing same-version installers; it never publishes. Once exact-installer smoke exists, do not run `release:update:publish`, because it rebuilds and changes the artifact identity. Publish the exact already-smoked files under `releases/updater/` as described in the fast-path document. Public checkpoints publish GitHub updater assets and `pocket-daw-bootstrapper-latest.json`; they do not push itch.
 
 Use `npm run package:itch-bootstrapper` and `npm run verify:itch-bootstrapper` to build the stable itch downloader. Upload it with `PUBLISH=1 npm run itch:push:bootstrapper` only when the bootstrapper itself changes. The old full-installer itch scripts remain as a manual fallback.
 

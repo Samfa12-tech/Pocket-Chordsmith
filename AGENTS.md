@@ -70,9 +70,12 @@ Do not load broad design guidance by default.
 
 ## Pocket DAW Release Notes For Agents
 
+- Read `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md` before any checkpoint build or hardware smoke. Follow its one-pass order; do not reconstruct the release procedure from older checklist fragments.
 - For Pocket DAW, work from `apps/pocket-daw/` and keep release metadata aligned across `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/tauri.conf.json`, and `src/daw/schema.ts`.
-- Run the full release validation before publishing: `npm run verify:versions`, `npm test`, `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run verify:release`, and `npm run verify:itch`.
+- Use the bundled guarded commands rather than adding duplicate manual passes: build/stage with `npm run release:update:full`, run `npm run verify:itch` once, restage same-version artifacts with `npm run release:update:fast`, collect exact-installer evidence, then run `npm run verify:candidate` once.
 - Commit release-script or doc fixes before the final `npm run package:itch`; the generated release manifest records the current commit and whether the working tree is dirty.
+- Run one combined strict installed audio/MIDI/export smoke with `--record-ms 10000 --midi-record-ms 10000`. MIDI input is the agent's job through `scripts/send-loopmidi-smoke.ps1`; do not repeatedly ask the user to exercise the microphone.
+- After exact-installer smoke, do not run an installer-producing command. In particular, `release:update:publish` rebuilds and must not be used against already-collected evidence. Publish the exact files already staged under `releases/updater/` and bind the release tag to the tested commit.
 - GitHub release uploads may normalize installer asset names with spaces to dots, for example `Pocket.DAW_0.6.3_x64-setup.exe`. Generate the updater manifest with the actual downloadable asset URL and verify it with `curl -L -I`.
-- The existing itch channel is `samfa12/pocket-daw:windows-installer`. Do not use `--hidden` for normal updates to that existing channel; run the guarded push with `PUBLISH=1 npm run itch:push`.
-- After uploading, verify `pocket-daw-latest.json` from the GitHub `latest/download` endpoint, verify the setup EXE URL resolves, check `gh release view`, and poll `butler status samfa12/pocket-daw:windows-installer` until the channel reports the new version.
+- Normal Pocket DAW checkpoints do not push itch. The existing `samfa12/pocket-daw:windows-installer` channel contains the stable bootstrapper; run `PUBLISH=1 npm run itch:push:bootstrapper` only when that bootstrapper payload changes. The full-installer itch push is an emergency/manual fallback.
+- After uploading, verify both latest/download manifests, download and hash the remote setup EXE, check `gh release view`, and confirm the release tag, remote target commit, `origin/main`, and tested commit agree. Use `butler status` only to confirm the unchanged bootstrapper channel remains healthy.

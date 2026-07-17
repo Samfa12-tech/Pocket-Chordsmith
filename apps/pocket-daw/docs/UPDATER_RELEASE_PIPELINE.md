@@ -91,14 +91,30 @@ npm run release:update:fast
 
 The fast path reuses existing version-matched installers and is blocked from publishing. Use it only when the native app binary has not changed.
 
-For an intentional public release after deciding the accumulated slice should go out:
+`release:update:publish` is an all-in-one build-and-publish path. It is only
+appropriate before artifact-bound smoke exists and only when the newly built
+artifact will receive fresh matching evidence. It must not be run after an
+installer has already passed exact-artifact smoke, because it rebuilds the
+installer and invalidates that evidence.
+
+The normal exact-artifact checkpoint procedure is documented in
+`RELEASE_TESTING_FAST_PATH.md`: build and stage once, smoke that setup EXE,
+verify the candidate, then create the GitHub release from the already-staged
+files without running another build.
+
+The guarded all-in-one command remains available for a workflow that can
+collect evidence against its newly built output before upload:
 
 ```powershell
 $env:PUBLISH = "1"
 npm run release:update:publish
 ```
 
-This runs the full gate, packages/stages the updater files, pushes the itch installer channel, creates the GitHub release, then verifies the live updater manifest, release asset hash and butler channel status. It refuses to publish if `PUBLISH=1` is not set, if `--fast` is used, or if the GitHub release tag already exists.
+This runs the full gate, packages/stages updater files, creates the GitHub
+release, then verifies the live updater manifest and release asset hash. It
+does not push itch. It refuses to publish if `PUBLISH=1` is not set, if
+`--fast` is used, if required exact-artifact evidence does not match its staged
+installer, or if the GitHub release tag already exists.
 
 Current itch policy is bootstrapper-first: GitHub Releases host the signed updater installers and manifests, while the itch `windows-installer` channel hosts `releases/itch-bootstrapper/upload/`. That upload contains the bootstrapper EXE, README, checksums, and an `index.html` fallback so itch browser-mode requests do not fail with `asset not found: index.html`. Use the full installer itch package only as a manual fallback.
 
@@ -174,13 +190,14 @@ https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocke
 
 Do not mark an updater checkpoint production-ready until this passes on Windows against exact artifacts.
 
-Before publishing or staging the candidate, run the release gate from `apps/pocket-daw/`:
+Before installed smoke, use the bundled one-pass release gate from
+`apps/pocket-daw/`. Do not add separate duplicates of tests already run by the
+guarded scripts:
 
 ```powershell
-npm run verify:versions
-npm test
-cargo test --manifest-path src-tauri/Cargo.toml
 npm run release:update:full
+npm run verify:itch
+npm run release:update:fast
 ```
 
 After the candidate installer exists, validate the exact smoke attestation plus the installed punch/take-lane and media-portability summaries:
@@ -195,7 +212,7 @@ npm run verify:installed:media-portability -- --summary <installed-media-portabi
 For a hardware-backed punch/take-lane candidate, pass the strict summary gates through the full candidate verifier:
 
 ```powershell
-npm run smoke:installed:punch-takes -- --installer <setup.exe> --record-ms 5000 --midi-record-ms 5000
+npm run smoke:installed:punch-takes -- --installer <setup.exe> --record-ms 10000 --midi-record-ms 10000 --require-audible-audio --require-midi-input --require-export-files
 npm run smoke:installed:media-portability -- --installer <setup.exe> --require-installer
 npm run verify:candidate -- --attestation <path-to-smoke-attestation.json> --installer <setup.exe> --punch-take-summary <punch-take-lane-installed-smoke-summary.json> --media-portability-summary <installed-media-portability-smoke-summary.json> --require-audible-audio --require-export-files --require-midi-input --commit <full-source-sha> --game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>
 ```
@@ -211,6 +228,13 @@ $env:PUNCH_TAKE_REQUIRE_MIDI_INPUT = "1"    # for connected-controller MIDI rele
 ```
 
 The punch/take summary verifier checks the installer SHA-256 and accepts the known Pocket DAW setup filename normalization between local `Pocket DAW_...` NSIS artifacts and staged `Pocket.DAW_...` release assets. Add `--require-export-files` only when the summary's WAV/MIDI export paths are expected to still exist on disk; archived summaries may legitimately point at deleted temp folders. New summaries also include export size/SHA-256 fields, and the verifier compares those hashes and sizes when they are present. Strict export-file mode also requires WAV sample data and parses the MIDI file bytes for active/inactive take-lane sentinel pitches. Strict MIDI-input mode requires a saved active punched MIDI input take with captured note pitches, matching capture/punch bars, punch mode metadata and take-lane placement evidence.
+
+Use the tracked `scripts/send-loopmidi-smoke.ps1` sender for connected MIDI
+input. Quote its full path when passing it to background PowerShell because the
+repository path contains spaces. Start the installed app first, wait for its
+bridge, start the sender, then use the proven ten-second audio and MIDI phases.
+Do not shorten the first phase: a short phase can leave transport before the
+punch window and create a zero-note lane even though loopMIDI is connected.
 
 The media-portability smoke creates external WAV fixtures, collects and strictly saves them, deletes the original source folder, moves the complete project folder, reopens/reloads both assets, proves decoded-cache recovery remains cache-only, relinks/recollects the missing source, deletes the replacement source, reopens again, and writes WAV, stem ZIP, section-loop ZIP, Godot and Web packs. Its verifier binds installer filename/hash when `--require-installer` is used and re-hashes every retained evidence/export file. The smoke attestation separately requires the portability summary, game-pack ZIP evidence, and a Godot target-import report; notes such as `not run` or `waiver` cannot satisfy a pass attestation.
 

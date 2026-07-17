@@ -19,7 +19,11 @@ Current policy: normal Pocket DAW app checkpoints ship through GitHub Releases a
 
 Pocket DAW is installed-app only. Do not publish or test a user-facing portable app workflow.
 
-Do not create or upload another installer from post-release source while package, Tauri, Cargo, schema, and release metadata still identify the already-published `0.6.34` checkpoint. Bump the next checkpoint first, then rebuild from a clean tree.
+Do not create or upload another installer from post-release source while
+package, Tauri, Cargo, schema, and release metadata still identify the latest
+published checkpoint. Bump the next checkpoint first, then rebuild from a
+clean tree. Use `RELEASE_TESTING_FAST_PATH.md` for the exact-artifact release
+order; this file covers the stable itch bootstrapper and updater rehearsal.
 
 ## Package Requirements for Itch
 
