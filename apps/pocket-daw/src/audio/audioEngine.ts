@@ -734,6 +734,10 @@ export class AudioEngine {
     const events = playbackEvents.events;
     if (playbackCache) playbackCache.proceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
     if (!events.length && !(playbackCache?.regions.length)) return "unavailable";
+    if (playbackCache?.assets.length && this.nativePlayback.preloadAssets) {
+      const loaded = await this.nativePlayback.preloadAssets(playbackCache.assets);
+      this.nativeRenderCachePreloadedAssetCount = Math.max(this.nativeRenderCachePreloadedAssetCount, loaded);
+    }
     const payload = buildNativeAudioStartPayload(this.project, events, this.offsetSeconds, playbackCache || undefined);
     this.nativeSyncedTrackControls.clear();
     const result = await this.nativePlayback.start(payload);

@@ -71,6 +71,22 @@ Current source builds also accept Chordsmith heavy-metal profile metadata. Impor
 
 The demo helpers expose a lofi Chordsmith template project for future template-picker UI and import/export tests. Rendered Chordsmith stems remain the recommended game handoff when exact live/export parity matters.
 
+## DAW Session Imports
+
+Current source builds can reconcile a folder or selected files containing several exports of the same song. Use **Import Session Folder** for a complete Mureka-style download folder, or **Import Session Files** for a smaller explicit selection.
+
+Supported inputs are generic audio-stem/MIDI ZIPs, Ableton Live `.als` sessions or ZIPs, `.dawproject` files, and the validated Mureka six-stem AAF layout. Generic arbitrary AAF projects are not claimed. Ableton sessions are most portable when their audio has been collected with the session; external sample paths that are absent from the selected files cannot be recovered by Pocket DAW.
+
+The reconciler fingerprints decoded PCM so equivalent stems from different formats become one audible track, prefers dedicated stems over DAW-session copies, and prefers companion MIDI over embedded note duplicates. Audio tracks start audible at `0.82`; editable MIDI reference tracks start muted so the same performance is not doubled. The most complete companion MIDI tempo map is adopted with fractional BPM precision up to 999 BPM, while inconsistent Mureka meter metadata is retained as MIDI metadata instead of replacing the confirmed project `4/4` meter.
+
+For local automation with the app running and its AI bridge enabled, use `pocket_daw_live_import_session` with a `path` pointing to a folder or supported file. Large AAF folders can take several minutes; the live MCP import has a five-minute timeout and native scanning runs on a dedicated worker stack. Verify an extracted native payload with:
+
+```powershell
+npm run verify:session-import-payload -- <native-payload.json>
+```
+
+These session-import changes are unreleased source work until a new deliberately versioned and exact-smoked checkpoint is published.
+
 ## Release Checks
 
 Read `docs/RELEASE_TESTING_FAST_PATH.md` first. It is the authoritative one-pass
@@ -96,7 +112,7 @@ Run `npm run mcp:pocket-daw` to start the local stdio MCP bridge. It exposes str
 The file bridge can also arrange a `.mid` file into a generated Chordsmith-style heavy-metal Pocket DAW project with metal drums, bass, distorted lead, rhythm guitar and a muted raw-MIDI reference clip via `pocket_daw_arrange_midi`.
 For already-imported MIDI clips, `pocket_daw_apply_commands` supports `convert_midi_arrangement` to map drums, bass, chord groups and melody into generated overlays while preserving the raw MIDI clip as the DAW source.
 
-Pocket DAW `0.6.13` added `Help -> AI / MCP Bridge` in the installed app. The panel keeps copy-ready command, Claude/JSON and Codex TOML snippets, and can enable a token-protected live localhost bridge for the running app. Live MCP tools can read app status, control transport, select tracks/clips, save an already-saved project, write explicit-path WAV/MIDI smoke exports and apply safe mixer edits. File/project MCP tools still work while Pocket DAW is closed. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
+Pocket DAW `0.6.13` added `Help -> AI / MCP Bridge` in the installed app. The panel keeps copy-ready command, Claude/JSON and Codex TOML snippets, and can enable a token-protected live localhost bridge for the running app. Live MCP tools can read app status, control transport, select tracks/clips, save an already-saved project, import a multi-format DAW session with `pocket_daw_live_import_session`, write explicit-path WAV/MIDI smoke exports and apply safe mixer edits. File/project MCP tools still work while Pocket DAW is closed. Use computer/browser control for installed-app visual smoke, updater rehearsal, playback confidence and other runtime checks.
 
 The live bridge is local-only and token-protected. Anyone or any process with
 access to this Windows user account and the session file can control the enabled

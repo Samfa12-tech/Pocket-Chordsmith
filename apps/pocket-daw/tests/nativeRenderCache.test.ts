@@ -619,7 +619,7 @@ describe("native render cache", () => {
     expect(offlineRenderMock.encodeWav).toHaveBeenCalled();
   });
 
-  it("uses preserved original WAV bytes for native runtime audio assets", async () => {
+  it("uses preserved local WAV paths for native runtime audio assets without copying the file into the bridge payload", async () => {
     const project = withAudioClip(createDemoProject());
     const originalWav = wavBytes(44_100, 2, Array.from({ length: 44_100 * 2 }, (_, index) => index % 2 === 0 ? 1024 : -1024));
     setCachedAudioBuffer("media_audio", fakeAudioBuffer(), {
@@ -637,8 +637,9 @@ describe("native render cache", () => {
       channels: 2,
       durationSeconds: 1,
       sizeBytes: originalWav.length,
-      bytes: Array.from(originalWav)
+      sourcePath: "C:\\Audio\\Loop.wav"
     });
+    expect(cache.assets[0].bytes).toBeUndefined();
     expect(cache.renderCacheItems[0].metadata).toMatchObject({
       cacheKind: "native-runtime-audio",
       sourceEncoding: "original-wav",

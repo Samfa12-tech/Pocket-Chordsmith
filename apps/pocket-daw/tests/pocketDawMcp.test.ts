@@ -41,6 +41,7 @@ describe("Pocket DAW MCP tools", () => {
       "pocket_daw_verify_game_pack",
       "pocket_daw_live_status",
       "pocket_daw_live_control",
+      "pocket_daw_live_import_session",
       "pocket_daw_live_performance",
       "pocket_daw_live_apply_commands"
     ]));
@@ -120,7 +121,11 @@ describe("Pocket DAW MCP tools", () => {
     expect(JSON.stringify(liveControlSchema)).toContain("midi_record_start");
     expect(JSON.stringify(liveControlSchema)).toContain("midi_record_stop");
     expect(JSON.stringify(liveControlSchema)).toContain("midi_record_toggle");
+    expect(JSON.stringify(liveControlSchema)).toContain("import_session");
     expect(JSON.stringify(liveControlSchema)).toContain("take-lane");
+    const liveSessionSchema = toolList.find((tool) => tool.name === "pocket_daw_live_import_session")?.inputSchema as { properties: Record<string, unknown>; required?: string[] } | undefined;
+    expect(liveSessionSchema?.required).toContain("path");
+    expect(liveSessionSchema?.properties.path).toMatchObject({ type: "string" });
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_clip_range");
     expect(JSON.stringify(applySchema?.properties.commands)).toContain("ripple_delete_timeline_selection");
@@ -1325,7 +1330,7 @@ describe("Pocket DAW MCP tools", () => {
     expect(result.project.project.bpm).toBe(120);
     expect(lane.points).toEqual([
       { bar: 1, value: 120, curve: "hold" },
-      { bar: 1.25, value: 140, curve: "hold" }
+      { bar: 1.25, value: 140.00014, curve: "hold" }
     ]);
   });
 

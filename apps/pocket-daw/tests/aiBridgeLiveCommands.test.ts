@@ -12,6 +12,7 @@ import { activateAudioTake, setAudioTakeArchived } from "../src/daw/clips";
 import { addMidiNote, createEmptyMidiClip, importMidiFileToProject, midiDataFromClip } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
 import { simpleMidiBytes } from "./midiFixtures";
+import { createAutomationLane } from "../src/daw/automation";
 
 function appHarness(state: AppState) {
   const app = Object.create(App.prototype) as {
@@ -40,6 +41,25 @@ function appHarness(state: AppState) {
 }
 
 describe("Pocket DAW AI bridge live commands", () => {
+  it("reports tempo automation at the current playhead", () => {
+    const state = createInitialState();
+    state.undoStack.present.project.bpm = 600;
+    state.undoStack.present = createAutomationLane(state.undoStack.present, "project.tempo", {
+      min: 40,
+      max: 999,
+      points: [
+        { bar: 1, value: 600, curve: "hold" },
+        { bar: 2, value: 176.470588, curve: "hold" }
+      ]
+    }).project;
+    state.playheadBar = 2;
+    const app = appHarness(state);
+
+    const status = app.aiBridgeLiveStatus() as { transport: { bpm: number } };
+
+    expect(status.transport.bpm).toBe(176.470588);
+  });
+
   it("applies recording input channel assignments through the live bridge executor", () => {
     const state = addTrackCommand(createInitialState(), "live-vocals");
     const project = state.undoStack.present;

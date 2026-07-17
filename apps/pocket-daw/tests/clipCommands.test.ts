@@ -310,7 +310,7 @@ describe("generated clip edit commands", () => {
     expect(edited.undoStack.present.project.bpm).toBe(120);
     expect(lane.points).toEqual([
       { bar: 1, value: 120, curve: "hold" },
-      { bar: 1.25, value: 140, curve: "hold" }
+      { bar: 1.25, value: 140.00014, curve: "hold" }
     ]);
     expect(clip.type).toBe("midi");
     expect(edited.undoStack.past).toHaveLength(1);

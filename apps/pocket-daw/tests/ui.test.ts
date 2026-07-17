@@ -1609,11 +1609,13 @@ describe("Pocket DAW UI rendering", () => {
     }).project;
 
     const html = renderAppShell(state);
+    const transport = html.match(/<div class="transport-readout">[\s\S]*?<\/div>/)?.[0] || "";
 
     expect(html).toContain("<b>2</b><small>0:04</small>");
     expect(html).toContain("<b>3</b><small>0:08</small>");
     expect(html).toContain('data-ruler-beat="2:2"');
     expect(html).toContain('title="Bar 2 beat 2 / 4/4 / 0:05"');
+    expect(transport).toContain("<span><strong>60</strong><small>BPM</small></span>");
   });
 
   it("renders meter-map-aware ruler ticks without changing timeline timing labels", () => {

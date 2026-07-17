@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDemoProject } from "../src/demo/demoProject";
-import { addAutomationPoint, createAutomationLane, deleteAutomationPoint, ensureClipAutomationLane, ensureProjectAutomationLane, ensureTrackSendAutomationLane, evaluateAutomationLane, evaluateProjectTempoAtBar, getAutomatedTrackControls, getProjectAutomationLane, getTrackSendAutomationLane, updateAutomationPoint } from "../src/daw/automation";
+import { MAX_DAW_TEMPO_BPM, addAutomationPoint, createAutomationLane, deleteAutomationPoint, ensureClipAutomationLane, ensureProjectAutomationLane, ensureTrackSendAutomationLane, evaluateAutomationLane, evaluateProjectTempoAtBar, getAutomatedTrackControls, getProjectAutomationLane, getTrackSendAutomationLane, updateAutomationPoint } from "../src/daw/automation";
 import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../src/daw/audioClips";
 import { addReturnTrack, setTrackSendLevel } from "../src/daw/routing";
 import { barsToSeconds, timelineBarAtSeconds, timelineDurationSeconds, timelineSecondsAtBar } from "../src/daw/timeline";
@@ -111,9 +111,23 @@ describe("automation helpers", () => {
     const lane = getProjectAutomationLane(ensured.project, "tempo")!;
     const ramped = addAutomationPoint(ensured.project, ensured.laneId, { bar: 5, value: 160, curve: "linear" });
 
-    expect(lane).toMatchObject({ id: "auto_project_tempo", targetPath: "project.tempo", min: 40, max: 240, unit: "linear" });
+    expect(lane).toMatchObject({ id: "auto_project_tempo", targetPath: "project.tempo", min: 40, max: MAX_DAW_TEMPO_BPM, unit: "linear" });
     expect(lane.points[0]).toMatchObject({ bar: 1, value: 118 });
     expect(evaluateProjectTempoAtBar(ramped, 3)).toBeCloseTo(139, 5);
+  });
+
+  it("preserves high and fractional DAW tempo-map points", () => {
+    const project = createDemoProject();
+    const ensured = ensureProjectAutomationLane(project, "tempo");
+    const withFastPoint = addAutomationPoint(ensured.project, ensured.laneId, { bar: 2, value: 600, curve: "hold" });
+    const withFractionalPoint = addAutomationPoint(withFastPoint, ensured.laneId, { bar: 3, value: 176.470588, curve: "hold" });
+    const lane = getProjectAutomationLane(withFractionalPoint, "tempo")!;
+
+    expect(lane.max).toBe(MAX_DAW_TEMPO_BPM);
+    expect(lane.points.find((point) => point.bar === 2)?.value).toBe(600);
+    expect(lane.points.find((point) => point.bar === 3)?.value).toBe(176.470588);
+    expect(evaluateProjectTempoAtBar(withFractionalPoint, 2)).toBe(600);
+    expect(evaluateProjectTempoAtBar(withFractionalPoint, 3)).toBe(176.470588);
   });
 
   it("maps musical bars to seconds with project tempo automation", () => {

@@ -78,7 +78,7 @@ describe("standard MIDI parser", () => {
 
     expect(parsed.format).toBe(1);
     expect(parsed.ppq).toBe(1024);
-    expect(parsed.tempoBpm).toBe(136);
+    expect(parsed.tempoBpm).toBe(136.059358);
     expect(parsed.trackNames).toEqual(["Tempo", "Acoustic Grand Piano"]);
     expect(parsed.metadata.parsedTrackCount).toBe(2);
     expect(parsed.metadata.trackSummaries).toEqual([
@@ -115,7 +115,7 @@ describe("standard MIDI parser", () => {
 
     expect(parsed.metadata.tempoEvents).toHaveLength(2);
     expect(parsed.metadata.timeSignatureEvents).toHaveLength(2);
-    expect(parsed.tempoBpm).toBe(140);
+    expect(parsed.tempoBpm).toBe(140.00014);
     expect(parsed.timeSig).toBe(3);
   });
 

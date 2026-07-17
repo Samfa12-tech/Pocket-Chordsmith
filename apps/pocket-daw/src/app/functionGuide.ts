@@ -70,7 +70,7 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
   },
   {
     title: "Import",
-    summary: "Bring Chordsmith, Pocket DJ, audio, MIDI and project data into the DAW.",
+    summary: "Bring Chordsmith, Pocket DJ, audio, MIDI, multi-format DAW sessions and project data into the DAW.",
     entries: [
       {
         name: "Import Paste",
@@ -95,6 +95,12 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
         does: "Parses .mid/.midi files, adds media pool metadata, and creates editable MIDI clips according to the MIDI placement mode.",
         useWhen: "Use for external melodies, drum parts, chord ideas, or Chordsmith conversion material.",
         aiNote: "Check imported tempo/meter maps and decide whether to adopt tempo, create tempo automation, or keep project tempo unchanged."
+      },
+      {
+        name: "Import Session Folder / Files",
+        does: "Reconciles stems, companion MIDI, Ableton Live, DAWproject and validated Mureka AAF exports into one clean Pocket DAW session.",
+        useWhen: "Use when the same song was downloaded in several interchange formats or its stems and companion MIDI must remain aligned.",
+        aiNote: "Equivalent PCM is deduplicated, dedicated stems win source priority, MIDI references start muted, the most complete companion tempo map wins, and arbitrary non-Mureka AAF layouts are not claimed."
       },
       {
         name: "MIDI Placement Mode",
@@ -703,6 +709,12 @@ export const FUNCTION_GUIDE_SECTIONS: FunctionGuideSection[] = [
         aiNote: "File MCP works with closed projects; live MCP needs the running app and bearer token."
       },
       {
+        name: "Live MCP Session Import",
+        does: "Uses pocket_daw_live_import_session to scan a local folder or supported file through the running native app and return a reconciliation report.",
+        useWhen: "Use for agent-driven stems/MIDI/Ableton/DAWproject/Mureka AAF import without driving native file pickers.",
+        aiNote: "Large AAF folders can take several minutes. The tool has a five-minute timeout; verify report counts, tempo source, muted MIDI references, native playback status and save/reopen timing before claiming success."
+      },
+      {
         name: "Send Feedback",
         does: "Drafts an email with user notes and diagnostics when possible.",
         useWhen: "Use for tester reports, confusing behavior, playback issues and installed-app findings.",
@@ -819,6 +831,22 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     does: "Imports a .mid or .midi file into editable MIDI media and timeline clips.",
     useWhen: "Use for external melodies, drums, basslines, chord sketches, and MIDI interchange.",
     aiNote: "Review MIDI placement mode, tempo map, meter map, channel splits, and resulting clip count."
+  },
+  {
+    surface: "Import",
+    control: "Import Session Folder",
+    actionId: "import-daw-session-folder",
+    does: "Reconciles stems, companion MIDI, Ableton Live, DAWproject and Mureka AAF exports from one folder into a clean Pocket DAW session.",
+    useWhen: "Use when a song was exported in several DAW interchange formats or when stems and MIDI companions need to stay aligned.",
+    aiNote: "Audio stems are audible at the safe import gain, editable MIDI references are muted by default, duplicate audio is removed by PCM checksum, and the most complete companion MIDI tempo map is adopted automatically."
+  },
+  {
+    surface: "Import",
+    control: "Import Session Files",
+    actionId: "import-daw-session-files",
+    does: "Imports selected DAW archives or interchange files through the same reconciled session pipeline.",
+    useWhen: "Use for one or more .zip, .dawproject, .als, .aaf, .wav, .mid or .midi files when a whole folder is not desired.",
+    aiNote: "Standalone Ableton and DAWproject note tracks remain muted if their fixed tempo metadata disagrees with audio; add the companion MIDI tempo-map files for exact alignment."
   },
   {
     surface: "Import",

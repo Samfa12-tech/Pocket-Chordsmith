@@ -3,6 +3,7 @@ import { createDefaultAudioDeviceSettings, createDefaultMetronomeSettings, ensur
 import { createDefaultFxState, ensureProjectFx } from "../daw/fx";
 import { ensureDrumLaneMixer } from "../daw/drumLanes";
 import { createDefaultTracks } from "../daw/tracks";
+import { MAX_DAW_TEMPO_BPM, MIN_DAW_TEMPO_BPM } from "../daw/automation";
 import {
   POCKET_DAW_APP,
   POCKET_DAW_SCHEMA_VERSION,
@@ -41,7 +42,7 @@ export function migratePocketDawProject(raw: unknown): PocketDawProject {
       ...(isRecord(source.project) ? source.project : {}),
       id: String(source.project?.id || "project_001"),
       title: String(source.project?.title || "Imported Chordsmith Song"),
-      bpm: clampNumber(source.project?.bpm, 40, 240, 118),
+      bpm: clampNumber(source.project?.bpm, MIN_DAW_TEMPO_BPM, MAX_DAW_TEMPO_BPM, 118),
       key: String(source.project?.key || "C"),
       scale: String(source.project?.scale || "major"),
       timeSig: clampNumber(source.project?.timeSig, 2, 7, 4),
@@ -232,19 +233,23 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
       const id = uniqueSafeId(originalId, `automation_${index + 1}`, usedLaneIds);
       laneIdMap.set(originalId, id);
       const trackId = lane?.trackId === undefined ? undefined : mappedId(trackIdMap, lane.trackId, safeText(lane.trackId, ""));
+      const targetPath = safeText(lane?.targetPath, "track.volume");
+      const isTempoLane = targetPath === "project.tempo";
       return {
         ...(isRecord(lane) ? lane : {}),
         id,
         trackId: trackId && trackIds.has(trackId) ? trackId : undefined,
-        targetPath: safeText(lane?.targetPath, "track.volume"),
+        targetPath,
         unit: safeEnum(lane?.unit, AUTOMATION_UNITS, "linear"),
-        min: optionalClampNumber(lane?.min, -120, 120),
-        max: optionalClampNumber(lane?.max, -120, 120),
+        min: isTempoLane ? MIN_DAW_TEMPO_BPM : optionalClampNumber(lane?.min, -120, 120),
+        max: isTempoLane ? MAX_DAW_TEMPO_BPM : optionalClampNumber(lane?.max, -120, 120),
         points: (Array.isArray(lane?.points) ? lane.points : []).map((point) => ({
           bar: clampNumber(point?.bar, 1, 4096, 1),
           beat: optionalClampNumber(point?.beat, 1, 16),
           tick: optionalClampNumber(point?.tick, 0, 1920),
-          value: clampNumber(point?.value, -120, 120, 0),
+          value: isTempoLane
+            ? clampNumber(point?.value, MIN_DAW_TEMPO_BPM, MAX_DAW_TEMPO_BPM, next.project.bpm)
+            : clampNumber(point?.value, -120, 120, 0),
           curve: safeEnum(point?.curve, AUTOMATION_CURVES, "linear")
         })),
         enabled: lane?.enabled !== false

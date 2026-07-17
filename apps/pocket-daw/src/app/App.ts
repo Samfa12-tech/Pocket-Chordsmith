@@ -251,7 +251,7 @@ import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./cho
 import { automationSurfaceAudioSyncMode, automationSurfacePointFromClient } from "./automationSurface";
 import { renderAppShell } from "./ui";
 import { replacePresent } from "../daw/undo";
-import type { ClipAutomationField } from "../daw/automation";
+import { evaluateProjectTempoAtBar, type ClipAutomationField } from "../daw/automation";
 import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
 import { POCKET_DAW_VERSION, type Clip, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
@@ -274,6 +274,8 @@ import {
 import { importMidiFileToProjectWithPlacement, type MidiGrooveTemplateId, type MidiImportPlacementMode, type MidiPitchTransform, type MidiQuantizeGrid, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
 import { parseStandardMidiFile } from "../daw/midiParser";
 import { MIDI_MEDIA_ACCEPT, importedMidiFromBrowserFile, importMidiNative, type ImportedMidiBytes } from "../native/midiBridge";
+import { buildSessionImportProject, type SessionImportBundle } from "../daw/sessionImport";
+import { importDawSessionFilesNative, importDawSessionFolderNative, readDawSessionPathNative } from "../native/sessionBridge";
 import { isNativeRecordingAvailable, nativeRecordingStatus, startNativeRecording, startNativeRecordingPreview, stopNativeRecording, stopNativeRecordingPreview, updateNativeRecordingMonitor } from "../native/recordingBridge";
 import { isNativeExternalLinkAvailable, openExternalUrlNative } from "../native/externalLinkBridge";
 import { buildPortableGamePackSourceProjectFile, createGameExportManifest, createGamePackDeliveryTargets, createGamePackZipBlob, createSectionLoopMetadata, createSectionLoopZipBlob, createStemExportPlan, createStemZipBlob, projectForClipRender } from "../daw/exportJobs";
@@ -293,7 +295,7 @@ import { applyUpdaterCheckResult, applyUpdaterInstallResult, applyUpdaterProgres
 type MixerControlField = "volume" | "pan";
 type ScrollSnapshot = Record<string, { top: number; left: number }>;
 type ClipDragMode = "move" | "repeat";
-type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "midi_panic" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "collect_media" | "reload_media" | "relink_media" | "set_recording_options" | "record_start" | "record_stop" | "record_toggle" | "midi_record_start" | "midi_record_stop" | "midi_record_toggle" | "apply_commands" | "performance_diagnostics" | "export_project";
+type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "midi_panic" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "import_session" | "collect_media" | "reload_media" | "relink_media" | "set_recording_options" | "record_start" | "record_stop" | "record_toggle" | "midi_record_start" | "midi_record_stop" | "midi_record_toggle" | "apply_commands" | "performance_diagnostics" | "export_project";
 type AiBridgeLiveCommand =
   | { type: "set_track_volume"; trackId: string; volume: number }
   | { type: "set_track_pan"; trackId: string; pan: number }
@@ -664,7 +666,7 @@ export class App {
       transport: {
         playing: this.state.playing || this.engine.isPlaying(),
         playheadBar: this.state.playheadBar,
-        bpm: project.project.bpm,
+        bpm: evaluateProjectTempoAtBar(project, this.state.playheadBar),
         loop: project.timeline.loop
       },
       timelineSelection: project.timeline.selection || null,
@@ -716,7 +718,7 @@ export class App {
       })),
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
-        control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "collect_media", "reload_media", "relink_media", "set_recording_options", "record_start", "record_stop", "record_toggle", "midi_record_start", "midi_record_stop", "midi_record_toggle", "performance_diagnostics", "export_project"],
+        control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "import_session", "collect_media", "reload_media", "relink_media", "set_recording_options", "record_start", "record_stop", "record_toggle", "midi_record_start", "midi_record_stop", "midi_record_toggle", "performance_diagnostics", "export_project"],
         liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "transform_midi_velocity", "transform_midi_pitch", "place_midi_recording_take", "create_take_lane_group", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       }
     };
@@ -728,7 +730,17 @@ export class App {
     if (action === "play") {
       await this.playTransport();
       this.render({ preserveScroll: true });
-      return { ok: true, action, status: "playing", transport: this.aiBridgeLiveStatus().transport };
+      const live = this.aiBridgeLiveStatus();
+      const playing = live.transport.playing;
+      const nativeError = this.engine.getDiagnostics().nativeAudio.lastError;
+      return {
+        ok: playing,
+        action,
+        status: playing ? "playing" : "play-failed",
+        code: playing ? undefined : "playback_start_failed",
+        message: playing ? "Playback started." : nativeError || "Playback did not start.",
+        transport: live.transport
+      };
     }
     if (action === "pause") {
       this.engine.pause();
@@ -917,6 +929,15 @@ export class App {
     if (action === "apply_commands") {
       const commands = Array.isArray(input.commands) ? input.commands as AiBridgeLiveCommand[] : [];
       return this.applyAiBridgeLiveCommands(commands);
+    }
+    if (action === "import_session") {
+      const path = stringInput(input.path, "path");
+      this.state.status = `Inspecting DAW session at ${path}. Large multi-format sessions can take several minutes...`;
+      this.render({ preserveScroll: true });
+      const bundle = await readDawSessionPathNative(path);
+      if (!bundle) return { ok: false, action, code: "native_session_import_unavailable", message: "Native session import is unavailable." };
+      const report = await this.loadDawSessionBundle(bundle);
+      return { ok: true, action, path, report, summary: this.aiBridgeLiveStatus() };
     }
     if (action === "export_project") return await this.handleAiBridgeExportProject(input);
     if (action === "performance_diagnostics") return this.handleAiBridgePerformanceDiagnostics(input);
@@ -3355,6 +3376,8 @@ export class App {
     }
     if (action === "import-audio") await this.importAudioMedia();
     if (action === "import-midi") await this.importMidiMedia();
+    if (action === "import-daw-session-folder") await this.importDawSession("folder");
+    if (action === "import-daw-session-files") await this.importDawSession("files");
     if (action === "add-empty-midi-clip") this.applyProjectState(addEmptyMidiClipCommand(this.state), {
       audio: "composition-events",
       preserveScroll: true,
@@ -5169,6 +5192,87 @@ export class App {
     this.audioFileInput.click();
   }
 
+  private async importDawSession(mode: "folder" | "files") {
+    try {
+      this.state.status = mode === "folder" ? "Inspecting DAW session folder..." : "Inspecting DAW session files...";
+      this.render();
+      const bundle = mode === "folder"
+        ? await importDawSessionFolderNative()
+        : await importDawSessionFilesNative();
+      if (!bundle) {
+        this.state.status = "DAW session import was cancelled or is unavailable. Session import requires the native Windows app.";
+        this.render();
+        return;
+      }
+      await this.loadDawSessionBundle(bundle);
+    } catch (error) {
+      this.state.status = error instanceof Error ? `DAW session import failed: ${error.message}` : "DAW session import failed.";
+      this.render();
+    }
+  }
+
+  private async loadDawSessionBundle(bundle: SessionImportBundle) {
+    const recoveryMessage = this.savePreImportRecoverySnapshot("DAW session import");
+    const built = buildSessionImportProject(bundle);
+    this.resetProjectSessionForProjectLoad(built.project, {
+      status: `Built ${built.report.audioTrackCount} audio stems and ${built.report.midiTrackCount} muted editable MIDI reference tracks. Loading stem audio...`,
+      currentFile: { path: null, label: `${built.project.project.title} (imported session)` }
+    });
+    this.render();
+
+    let hydratedProject = currentProject(this.state);
+    let loadedAudioCount = 0;
+    const hydrationWarnings: string[] = [];
+    for (const [index, binding] of built.audioBindings.entries()) {
+      try {
+        this.state.status = `Loading session stem ${index + 1}/${built.audioBindings.length}: ${binding.asset.name}`;
+        this.render({ preserveScroll: true });
+        const source = await loadAudioMediaNative(binding.asset.uri);
+        if (!source) throw new Error("native media loading is unavailable");
+        const decoded = await this.decodeAudioSource(source);
+        setCachedAudioBuffer(binding.mediaPoolItemId, decoded.buffer, sourceCacheOptions(source));
+        hydratedProject = updateAudioMediaAnalysis(hydratedProject, binding.mediaPoolItemId, {
+          name: binding.asset.name,
+          uri: binding.asset.uri,
+          mimeType: source.mimeType || binding.asset.mimeType,
+          durationSeconds: decoded.durationSeconds,
+          sampleRate: decoded.sampleRate,
+          channels: decoded.channels,
+          sizeBytes: source.sizeBytes || binding.asset.sizeBytes,
+          waveformPeaks: decoded.waveformPeaks,
+          metadata: audioSourceMetadata(source)
+        });
+        loadedAudioCount += 1;
+      } catch (error) {
+        hydrationWarnings.push(`${binding.asset.name}: ${error instanceof Error ? error.message : "could not load audio"}`);
+      }
+    }
+
+    const warningCount = built.report.warnings.length + hydrationWarnings.length;
+    const status = [
+      `Imported ${built.project.project.title}: ${loadedAudioCount}/${built.report.audioTrackCount} stems loaded, ${built.report.midiTrackCount} editable MIDI reference tracks muted by default, and ${built.report.tempoEventCount} tempo events preserved.`,
+      warningCount ? `${warningCount} import warning${warningCount === 1 ? "" : "s"} recorded in project provenance.` : "",
+      recoveryMessage
+    ].filter(Boolean).join(" ");
+    const selected = built.audioBindings[0];
+    this.applyProjectState({
+      ...commitProject(this.state, hydratedProject, status),
+      selectedClipId: selected?.clipId || null,
+      selectedClipIds: selected?.clipId ? [selected.clipId] : [],
+      selectedTrackId: selected?.trackId || null
+    }, { audio: "timeline-structure", reason: "import-daw-session" });
+    saveRecentProject(built.project.project.title);
+    this.state.recent = loadRecentProjects();
+    this.saveAutosaveSnapshot(hydratedProject);
+    this.render();
+    return {
+      ...built.report,
+      loadedAudioCount,
+      hydrationWarnings,
+      status
+    };
+  }
+
   private async handleAudioFileImport() {
     const file = this.audioFileInput.files?.[0];
     if (!file) return;
@@ -6670,6 +6774,8 @@ const ACTION_BUTTON_TOOLTIPS: Record<string, string> = {
   "function-guide-open": "Open the Pocket DAW function guide.",
   "game-state-marker-add": "Add a game-state cue marker at the playhead.",
   "import-audio": "Import an audio file into the media pool.",
+  "import-daw-session-folder": "Import and reconcile a DAW session folder, including stems, MIDI, Ableton Live, DAWproject and Mureka AAF files.",
+  "import-daw-session-files": "Import selected DAW session archives or files into one reconciled project.",
   "import-focus": "Open the import area.",
   "import-midi": "Import a MIDI file as MIDI clips.",
   "import-text": "Import pasted Pocket Chordsmith, Pocket DJ or Pocket DAW text.",

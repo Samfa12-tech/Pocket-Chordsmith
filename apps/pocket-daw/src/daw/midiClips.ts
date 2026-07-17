@@ -62,6 +62,7 @@ export interface MidiImportPlacementOptions {
   uri?: string;
   sizeBytes?: number;
   placementMode?: MidiImportPlacementMode;
+  reuseExistingMidiTrack?: boolean;
 }
 
 export interface MidiImportPlacementResult {
@@ -183,7 +184,7 @@ export function createMidiTempoMapSummary(metadata: JsonObject | undefined, opti
   const tempoEvents = cleanTempoEvents(metadata?.tempoEvents);
   const timeSignatureEvents = cleanTimeSignatureEvents(metadata?.timeSignatureEvents);
   if (!tempoEvents.length && !timeSignatureEvents.length) return null;
-  const fallbackBpm = cleanNumber(options.fallbackBpm ?? metadata?.tempoBpm, 120);
+  const fallbackBpm = cleanTempoBpm(options.fallbackBpm ?? metadata?.tempoBpm, 120);
   const fallbackTimeSig = cleanNumber(options.fallbackTimeSig ?? metadata?.timeSig, 4);
   const uniqueTempos = new Set(tempoEvents.map((event) => event.bpm));
   const uniqueMeters = new Set(timeSignatureEvents.map((event) => `${event.numerator}/${event.denominator}`));
@@ -207,7 +208,7 @@ export function createMidiTempoMapSummary(metadata: JsonObject | undefined, opti
 export function midiTempoMappedSecondsAtTick(metadata: JsonObject | undefined, tick: number, options: { fallbackBpm?: number } = {}): number {
   const ppq = cleanNumber(metadata?.ppq, 480);
   const tempoEvents = cleanTempoEvents(metadata?.tempoEvents);
-  const fallbackBpm = cleanNumber(options.fallbackBpm ?? metadata?.tempoBpm, 120);
+  const fallbackBpm = cleanTempoBpm(options.fallbackBpm ?? metadata?.tempoBpm, 120);
   return secondsAtMidiTick(Math.max(0, Math.round(Number(tick) || 0)), ppq, tempoEvents, fallbackBpm);
 }
 
@@ -245,7 +246,7 @@ export function importMidiFileToProjectWithPlacement(project: PocketDawProject, 
   groups.forEach((group) => {
     const placed = createMidiClip(placedProject, item.id, group.clipName, group.parsed, {
       trackName: group.trackName,
-      reuseExistingMidiTrack: placementMode === "single-clip"
+      reuseExistingMidiTrack: placementMode === "single-clip" && options.reuseExistingMidiTrack !== false
     });
     placedProject = placed.project;
     clipIds.push(placed.clipId);
@@ -1512,11 +1513,11 @@ function cleanTempoEvents(raw: unknown): Array<Omit<MidiTempoMapTempoEvent, "sec
   return raw.map((event) => {
     if (!event || typeof event !== "object") return null;
     const item = event as Record<string, unknown>;
-    const bpm = cleanNumber(item.bpm, 0);
+    const bpm = cleanTempoBpm(item.bpm, 0);
     if (bpm <= 0) return null;
     const cleaned: Omit<MidiTempoMapTempoEvent, "seconds" | "position"> = {
       tick: Math.max(0, Math.round(cleanNumber(item.tick, 0))),
-      bpm: Math.max(1, Math.round(bpm))
+      bpm: Math.max(1, Math.round(bpm * 1_000_000) / 1_000_000)
     };
     const trackIndex = Number(item.trackIndex);
     if (Number.isFinite(trackIndex)) cleaned.trackIndex = Math.max(0, Math.round(trackIndex));
@@ -1802,6 +1803,13 @@ function cleanBarFloat(value: unknown, fallback: number): number {
 function cleanNumber(value: unknown, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER): number {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(min, Math.min(max, Math.round(number))) : fallback;
+}
+
+function cleanTempoBpm(value: unknown, fallback: number): number {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0
+    ? Math.round(number * 1_000_000) / 1_000_000
+    : fallback;
 }
 
 function nextNoteId(notes: ParsedMidiNote[]): string {

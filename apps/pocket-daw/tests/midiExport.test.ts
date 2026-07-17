@@ -26,7 +26,7 @@ describe("MIDI export", () => {
     expect(readU16(bytes, 8)).toBe(1);
     expect(readU16(bytes, 10)).toBeGreaterThan(1);
     expect(parsed.format).toBe(1);
-    expect(parsed.tempoBpm).toBe(136);
+    expect(parsed.tempoBpm).toBe(136.000145);
     expect(parsed.metadata.parsedTrackCount).toBe(readU16(bytes, 10));
     expect(parsed.notes.length).toBeGreaterThan(0);
   });
@@ -130,6 +130,29 @@ describe("MIDI export", () => {
 
     expect(exported.notes.length).toBeGreaterThan(0);
     expect(exported.notes[0].startTick).toBe(1920);
+  });
+
+  it("exports hold tempo automation as a standard MIDI tempo map", async () => {
+    let project = createDemoProject();
+    project.project.bpm = 600;
+    project.project.ppq = 480;
+    project = createAutomationLane(project, "project.tempo", {
+      min: 40,
+      max: 999,
+      points: [
+        { bar: 1, value: 600, curve: "hold" },
+        { bar: 1.25, value: 176.470588, curve: "hold" }
+      ]
+    }).project;
+
+    const bytes = new Uint8Array(await exportProjectToMidiBlob(project).arrayBuffer());
+    const exported = parseStandardMidiFile(bytes);
+    const tempoEvents = exported.metadata.tempoEvents as Array<{ tick: number; bpm: number }>;
+
+    expect(tempoEvents).toEqual([
+      expect.objectContaining({ tick: 0, bpm: 600 }),
+      expect.objectContaining({ tick: 480, bpm: 176.470588 })
+    ]);
   });
 
   it("preserves editable MIDI controller events in scoped MIDI export", async () => {

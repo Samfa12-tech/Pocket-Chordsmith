@@ -504,6 +504,52 @@ describe("native audio playback bridge", () => {
     expect(startAssets[0].bytes).toBeUndefined();
   });
 
+  it("preloads file-backed WAV assets without serializing audio bytes", async () => {
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeAudioInvokeApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return status({ active: true }) as never;
+      }
+    };
+    const bridge = new NativeAudioPlaybackBridge(async () => api);
+    const sourcePath = "C:\\Pocket DAW Cache\\stem.wav";
+    const asset = {
+      id: "asset_file_backed_loop",
+      name: "File-backed loop.wav",
+      sourcePath,
+      sampleRate: 44_100,
+      channels: 2,
+      durationSeconds: 207.87
+    };
+    const payload = buildNativeAudioStartPayload(createDemoProject(), [], 0, {
+      assets: [asset],
+      regions: [{
+        id: "region_file_backed_loop",
+        assetId: asset.id,
+        trackId: "bass",
+        startTime: 0,
+        sourceOffset: 0,
+        duration: 207.87,
+        gain: 1,
+        pan: 0,
+        fadeIn: 0,
+        fadeOut: 0
+      }]
+    });
+
+    await expect(bridge.preloadAssets([asset])).resolves.toBe(1);
+    await bridge.start(payload);
+
+    expect(calls.map((call) => call.command)).toEqual(["native_audio_preload_asset", "native_audio_start"]);
+    expect(calls[0].args?.asset).toMatchObject({ sourcePath });
+    expect((calls[0].args?.asset as { bytes?: number[] }).bytes).toBeUndefined();
+    const startAsset = (calls[1].args?.payload as { assets: Array<{ sourcePath?: string; bytes?: number[] }> }).assets[0];
+    expect(startAsset).toMatchObject({ sourcePath });
+    expect(startAsset.bytes).toBeUndefined();
+  });
+
   it("uses native Tauri commands for start, pause, resume, seek, mixer updates and stop", async () => {
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
     const api: NativeAudioInvokeApi = {

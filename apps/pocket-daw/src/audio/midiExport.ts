@@ -4,6 +4,7 @@ import { midiDataFromClip } from "../daw/midiClips";
 import { renderTimelineEvents, type RenderedEvent } from "./eventRenderer";
 import { trackIsAudible } from "../daw/tracks";
 import { clipIsAudibleTake } from "../daw/clips";
+import { evaluateProjectTempoAtBar, getProjectAutomationLane } from "../daw/automation";
 
 interface MidiMessage {
   tick: number;
@@ -33,7 +34,7 @@ export function exportProjectToMidiBlob(project: PocketDawProject, options: Midi
 function buildMidiTracks(project: PocketDawProject, ppq: number, options: MidiExportOptions): MidiMessage[][] {
   const title = options.title || project.project.title;
   const meta: MidiMessage[] = [
-    { tick: 0, data: [0xff, 0x51, 0x03, ...u24(Math.round(60000000 / project.project.bpm))] },
+    ...tempoMessages(project, ppq),
     ...timeSignatureMessages(project, ppq),
     { tick: 0, data: [0xff, 0x03, ascii(title).length, ...ascii(title)] }
   ];
@@ -343,6 +344,28 @@ function timeSignatureMessages(project: PocketDawProject, ppq: number): MidiMess
     byTick.set(tick, {
       tick,
       data: [0xff, 0x58, 0x04, Math.max(1, Math.min(255, Math.round(event.meter.numerator))), midiDenominatorPower(event.meter.denominator), 24, 8]
+    });
+  });
+  return Array.from(byTick.values()).sort((a, b) => a.tick - b.tick);
+}
+
+function tempoMessages(project: PocketDawProject, ppq: number): MidiMessage[] {
+  const lane = getProjectAutomationLane(project, "tempo");
+  const points = lane?.enabled && lane.points.length
+    ? lane.points.slice().sort((a, b) => a.bar - b.bar)
+    : [];
+  const events = [
+    { bar: 1, value: evaluateProjectTempoAtBar(project, 1) },
+    ...points
+  ];
+  const byTick = new Map<number, MidiMessage>();
+  events.forEach((event) => {
+    const tick = Math.max(0, Math.round(timelineQuarterNoteBeatsBetweenBars(project, 1, event.bar) * ppq));
+    const bpm = Math.max(1, Number(event.value) || project.project.bpm || 120);
+    const microsecondsPerQuarter = Math.max(1, Math.min(0xffffff, Math.round(60_000_000 / bpm)));
+    byTick.set(tick, {
+      tick,
+      data: [0xff, 0x51, 0x03, ...u24(microsecondsPerQuarter)]
     });
   });
   return Array.from(byTick.values()).sort((a, b) => a.tick - b.tick);

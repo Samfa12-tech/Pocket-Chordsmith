@@ -31,6 +31,7 @@
     "mcp:pocket-daw": "tsx src/mcp/pocketDawMcpServer.ts",
     "generate:native-sound-recipes": "node scripts/generate-native-sound-recipes.mjs",
     "verify:native-sound-recipes": "node scripts/generate-native-sound-recipes.mjs --check",
+    "verify:session-import-payload": "tsx scripts/verify-session-import-payload.ts",
     "package:preview": "npm run build && node scripts/package-preview.mjs",
     "release:updater-manifest": "node scripts/make-updater-manifest.mjs",
     "verify:versions": "node scripts/verify-versions.mjs && npm run verify:release-status-doc",

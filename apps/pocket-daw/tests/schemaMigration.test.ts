@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { migratePocketDawProject } from "../src/compatibility/migrations";
+import { MAX_DAW_TEMPO_BPM } from "../src/daw/automation";
 import { DRUM_LANE_DEFS } from "../src/daw/drumLanes";
+import { createMediaOnlyPocketDawProject } from "../src/daw/dawProject";
 
 describe("schema migrations", () => {
   it("fills required v2 future-ready containers", () => {
@@ -87,7 +89,7 @@ describe("schema migrations", () => {
     });
 
     expect(migrated.schemaVersion).toBe(2);
-    expect(migrated.project.bpm).toBe(240);
+    expect(migrated.project.bpm).toBe(MAX_DAW_TEMPO_BPM);
     expect(migrated.project.timeSig).toBe(4);
     expect(migrated.project.swing).toBe(0.35);
     expect(migrated.tracks[0]).toMatchObject({
@@ -115,6 +117,36 @@ describe("schema migrations", () => {
       points: [{ bar: 1, value: 120, curve: "linear" }]
     });
     expect(migrated.tracks[0].automationLaneIds).toEqual(["lane-onclick-alert-1"]);
+  });
+
+  it("preserves high-resolution session tempo automation across reload migration", () => {
+    const sessionProject = createMediaOnlyPocketDawProject("Mureka session");
+    sessionProject.project.bpm = 600;
+    sessionProject.automation.lanes = [{
+      id: "auto_project_tempo",
+      targetPath: "project.tempo",
+      unit: "linear",
+      min: 40,
+      max: 999,
+      points: [
+        { bar: 1, value: 600, curve: "hold" },
+        { bar: 1.25, value: 176.470588, curve: "hold" }
+      ],
+      enabled: true
+    }];
+
+    const migrated = migratePocketDawProject(JSON.parse(JSON.stringify(sessionProject)));
+
+    expect(migrated.project.bpm).toBe(600);
+    expect(migrated.automation.lanes[0]).toMatchObject({
+      targetPath: "project.tempo",
+      min: 40,
+      max: 999,
+      points: [
+        { bar: 1, value: 600, curve: "hold" },
+        { bar: 1.25, value: 176.470588, curve: "hold" }
+      ]
+    });
   });
 
   it("normalizes project meter-map points during migration", () => {

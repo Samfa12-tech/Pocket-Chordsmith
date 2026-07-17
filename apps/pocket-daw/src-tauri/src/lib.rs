@@ -9,15 +9,16 @@ mod native_audio;
 mod native_decode;
 mod native_recording;
 mod project_files;
+mod session_import;
 
 const SECOND_INSTANCE_DEEP_LINK_EVENT: &str = "pocket-daw-second-instance";
 const LOCAL_HANDOFF_EVENT: &str = "pocket-daw-local-handoff";
 const AI_BRIDGE_REQUEST_EVENT: &str = "pocket-daw-ai-request";
 const LOCAL_HANDOFF_PORT: u16 = 47858;
-// Native WAV/stem/loop/game-pack renders can legitimately take longer than a
-// lightweight edit command. Keep one bounded request window that lets those
-// explicit export operations finish without reporting a false bridge failure.
-const AI_BRIDGE_RESPONSE_TIMEOUT_MS: u64 = 180000;
+// Native WAV/stem/loop/game-pack renders and multi-format DAW-session imports
+// can legitimately take several minutes. Keep one bounded request window that
+// lets those explicit operations finish without reporting a false bridge failure.
+const AI_BRIDGE_RESPONSE_TIMEOUT_MS: u64 = 300000;
 const DOWNLOAD_HANDOFF_PREFIX: &str = "pocket-chordsmith-to-pocket-daw-";
 const DOWNLOAD_HANDOFF_SUFFIX: &str = ".pcs1.txt";
 const MAX_PROJECT_FILE_BYTES: u64 = 25 * 1024 * 1024;
@@ -269,6 +270,9 @@ pub fn run() {
             read_download_handoff_file,
             delete_download_handoff_file,
             open_midi_file,
+            session_import::open_daw_session_folder,
+            session_import::open_daw_session_files,
+            session_import::read_daw_session_path,
             open_external_url,
             save_project_file_as,
             write_project_file,

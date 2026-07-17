@@ -73,6 +73,34 @@ export function createEmptyPocketDawProject(): PocketDawProject {
   return project;
 }
 
+export function createMediaOnlyPocketDawProject(title = "Untitled Imported Session"): PocketDawProject {
+  const project = createEmptyPocketDawProject();
+  const retainedTrackIds = new Set(["fx-return", "master"]);
+  project.sourceRefs = [];
+  project.project.title = title.trim() || "Untitled Imported Session";
+  project.project.bpm = 120;
+  project.project.key = "C";
+  project.project.scale = "major";
+  project.project.timeSig = 4;
+  project.project.meterMap = [];
+  project.project.swing = 0;
+  project.project.resolution = 16;
+  project.timeline = {
+    bars: 1,
+    cursor: { bar: 1, beat: 1, tick: 0 },
+    loop: { enabled: false, startBar: 1, endBar: 2 },
+    markers: [],
+    clips: []
+  };
+  project.tracks = project.tracks.filter((track) => retainedTrackIds.has(track.id));
+  project.automation = { lanes: [] };
+  project.fx.chains = project.fx.chains.filter((chain) => !chain.ownerTrackId || retainedTrackIds.has(chain.ownerTrackId));
+  project.mediaPool = [];
+  project.renderCache = [];
+  project.importHistory = [];
+  return project;
+}
+
 export function ensureStarterChordsmithSource(project: PocketDawProject): PocketDawProject {
   if (project.sourceRefs.some((ref) => ref.sourceType === "pocket-chordsmith")) return project;
   const hasGeneratedTrack = project.tracks.some((track) => track.trackType === "generated" && ["drums", "bass", "chords", "melody", "guitar"].includes(track.role));

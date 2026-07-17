@@ -1,6 +1,6 @@
 # Pocket DAW Action Catalog
 
-Last updated: 2026-07-03
+Last updated: 2026-07-17
 
 This catalog is generated from `src/app/functionGuide.ts` so the Markdown help and the in-app Function Guide describe the same controls. The broader workflow guide remains `docs/POCKET_DAW_FUNCTION_REFERENCE.md`.
 
@@ -28,6 +28,8 @@ Use `data-action` values for ordinary command buttons. Use selector entries for 
 | Import Chordsmith | `data-action=import-focus` |  | Opens the import/file area and focuses the user toward Chordsmith or text import. | Use from the quick-start area when a user wants to bring Chordsmith material in. | This opens the surface; the actual import happens through Import Paste or Open File. |
 | Import Audio | `data-action=import-audio` |  | Imports an audio file, decodes/cache-prepares it, and adds it to the media pool. | Use for loops, vocals, live instrument references, stems, or audio clips. | Check decoded format, sample rate, channels, duration, cache path, and missing/unloaded state. |
 | Import MIDI | `data-action=import-midi` |  | Imports a .mid or .midi file into editable MIDI media and timeline clips. | Use for external melodies, drums, basslines, chord sketches, and MIDI interchange. | Review MIDI placement mode, tempo map, meter map, channel splits, and resulting clip count. |
+| Import Session Folder | `data-action=import-daw-session-folder` |  | Reconciles stems, companion MIDI, Ableton Live, DAWproject and validated Mureka AAF files found in one folder. | Use for complete multi-format song export/download folders. | Equivalent PCM is deduplicated, dedicated stems win, MIDI references start muted, and the most complete companion tempo map is adopted. |
+| Import Session Files | `data-action=import-daw-session-files` |  | Runs the same reconciled session importer over explicitly selected archives or interchange files. | Use for a bounded subset or standalone session files. | Standalone fixed-tempo note sessions may not align with audio without companion tempo-map MIDI; arbitrary AAF layouts are not claimed. |
 | MIDI Placement Mode | `midiImportPlacementMode` |  | Chooses whether imported MIDI lands as one clip, source-track clips, channel clips, or drum-channel splits. | Use before importing multi-track or multi-channel MIDI. | Per-channel or drum split often gives AI helpers clearer structure for later editing. |
 
 ## Transport
@@ -335,6 +337,7 @@ Use `data-action` values for ordinary command buttons. Use selector entries for 
 | Control | Action / Selector | Shortcut | What it does | Use when | AI counterpart notes |
 | --- | --- | --- | --- | --- | --- |
 | AI / MCP Bridge | `data-action=mcp-setup-open` |  | Opens local MCP command/config snippets and live bridge controls. | Use when an AI counterpart should inspect, validate, edit, or observe/control the app. | Live bridge requires the running installed app and bearer token; file MCP can work closed. |
+| Live MCP Session Import | `pocket_daw_live_import_session` |  | Scans a local folder or supported file through the running native app and returns the reconciled session report. | Use for agent-driven stems/MIDI/Ableton/DAWproject/Mureka AAF import without picker automation. | Large AAF folders can take several minutes; the tool waits up to five minutes. Verify report counts, native playback and save/reopen tempo behavior. |
 | Enable Live App Bridge | `data-ai-bridge-enabled` |  | Toggles the token-protected live localhost bridge for the current app session. | Use when a trusted AI tool needs live app state/control. | Do not expose the bearer token broadly. |
 | Test Live Bridge | `data-action=ai-bridge-test` |  | Runs a connectivity test against the live MCP bridge. | Use before relying on live app MCP tools. | A failed test means use file MCP or visual/browser control instead. |
 | File MCP Folder Commands | `set_track_folder`, `toggle_folder_expanded`, `toggle_track_mute`, `toggle_track_solo` |  | Lets file-first MCP assign timeline lanes to folder tracks, collapse or expand the folder, and use folder Mute/Solo as child-lane group controls. | Use when a human or AI counterpart needs to organize a busy project or smoke folder behavior without driving the visual UI. | These commands reuse existing undoable app command paths. Folder commands still do not imply folder-bus routing, sends, FX inheritance or export grouping. |

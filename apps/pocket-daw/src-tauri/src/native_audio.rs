@@ -2,6 +2,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -18,6 +19,7 @@ const CHORDSMITH_LOFI_TEXTURE_CRACKLE_GAIN: f32 = 0.018;
 const CHORDSMITH_LOFI_TEXTURE_CRACKLE_DECAY_SECONDS: f64 = 0.024;
 const CHORDSMITH_LOFI_TEXTURE_CRACKLE_STOP_SECONDS: f64 = 0.028;
 const NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK: usize = 96;
+const MAX_NATIVE_AUDIO_SOURCE_FILE_BYTES: u64 = 600 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct NativeAudioRuntime {
@@ -222,6 +224,8 @@ pub struct NativeAudioAssetPayload {
     channels: u16,
     #[serde(rename = "durationSeconds")]
     duration_seconds: f64,
+    #[serde(rename = "sourcePath", default)]
+    source_path: Option<String>,
     #[serde(default)]
     bytes: Vec<u8>,
 }
@@ -817,14 +821,26 @@ impl NativeAudioRuntime {
         asset: &NativeAudioAssetPayload,
     ) -> Result<Arc<DecodedAudioAsset>, String> {
         if asset.bytes.is_empty() {
-            let Some(decoded) = self.asset_cache.get(&asset.id) else {
-                return Err(format!(
-                    "Native cached asset {} was requested without bytes before it was decoded.",
-                    asset.id
-                ));
-            };
-            validate_asset_metadata(asset, decoded)?;
-            return Ok(Arc::clone(decoded));
+            if let Some(decoded) = self.asset_cache.get(&asset.id) {
+                validate_asset_metadata(asset, decoded)?;
+                return Ok(Arc::clone(decoded));
+            }
+            if let Some(source_path) = asset.source_path.as_deref() {
+                let bytes = read_native_audio_source_file(source_path)?;
+                let file_asset = NativeAudioAssetPayload {
+                    bytes,
+                    source_path: None,
+                    ..asset.clone()
+                };
+                let decoded = Arc::new(decode_payload_asset(&file_asset)?);
+                self.asset_cache
+                    .insert(asset.id.clone(), Arc::clone(&decoded));
+                return Ok(decoded);
+            }
+            return Err(format!(
+                "Native cached asset {} was requested without bytes or a source path before it was decoded.",
+                asset.id
+            ));
         }
 
         let decoded = Arc::new(decode_payload_asset(asset)?);
@@ -885,6 +901,40 @@ impl NativeAudioRuntime {
             slow_callback_count: 0,
         }
     }
+}
+
+fn read_native_audio_source_file(source_path: &str) -> Result<Vec<u8>, String> {
+    let path = PathBuf::from(source_path);
+    if !path.is_absolute() || !is_wav_path(&path) {
+        return Err("Native audio source paths must be absolute .wav files.".to_string());
+    }
+    let metadata = std::fs::metadata(&path).map_err(|error| {
+        format!(
+            "Could not inspect native audio source {}: {error}",
+            path.display()
+        )
+    })?;
+    if !metadata.is_file()
+        || metadata.len() == 0
+        || metadata.len() > MAX_NATIVE_AUDIO_SOURCE_FILE_BYTES
+    {
+        return Err(format!(
+            "Native audio source {} has an invalid file size.",
+            path.display()
+        ));
+    }
+    std::fs::read(&path).map_err(|error| {
+        format!(
+            "Could not read native audio source {}: {error}",
+            path.display()
+        )
+    })
+}
+
+fn is_wav_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("wav"))
 }
 
 impl NativeAudioStatus {
@@ -3954,6 +4004,7 @@ mod tests {
             sample_rate: 44_100,
             channels: 2,
             duration_seconds: 0.5,
+            source_path: None,
             bytes: pcm16_wav(48_000, 2, &[0, 0]),
         };
 
@@ -3971,6 +4022,7 @@ mod tests {
             sample_rate: 48_000,
             channels: 2,
             duration_seconds: 0.5,
+            source_path: None,
             bytes: pcm16_wav(48_000, 2, &[16_384, -16_384]),
         };
         let metadata_only = NativeAudioAssetPayload {
@@ -3991,6 +4043,39 @@ mod tests {
             Arc::ptr_eq(&first, &second),
             "metadata-only payloads should share decoded PCM instead of cloning it"
         );
+    }
+
+    #[test]
+    fn decodes_native_audio_assets_from_absolute_wav_paths() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock should be available")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "pocket-daw-native-audio-{}-{nonce}.wav",
+            std::process::id()
+        ));
+        std::fs::write(&path, pcm16_wav(48_000, 2, &[16_384, -16_384]))
+            .expect("fixture wav should write");
+        let mut runtime = NativeAudioRuntime::default();
+        let asset = NativeAudioAssetPayload {
+            id: "file-backed-asset".to_string(),
+            name: "File backed stem.wav".to_string(),
+            sample_rate: 48_000,
+            channels: 2,
+            duration_seconds: 1.0 / 48_000.0,
+            source_path: Some(path.to_string_lossy().to_string()),
+            bytes: Vec::new(),
+        };
+
+        let decoded = runtime
+            .decode_or_reuse_asset(&asset)
+            .expect("absolute wav path should decode");
+
+        assert_eq!(decoded.sample_rate, 48_000);
+        assert_eq!(decoded.channels, 2);
+        assert_eq!(decoded.frame_count, 1);
+        std::fs::remove_file(path).expect("fixture wav should be removed");
     }
 
     #[test]

@@ -100,6 +100,7 @@ export const POCKET_DAW_MCP_TOOLS = [
   "pocket_daw_verify_game_pack",
   "pocket_daw_live_status",
   "pocket_daw_live_control",
+  "pocket_daw_live_import_session",
   "pocket_daw_live_performance",
   "pocket_daw_live_apply_commands"
 ] as const;
@@ -262,6 +263,8 @@ export async function callPocketDawMcpTool(name: string, args: unknown = {}): Pr
       return jsonToolResult(await liveStatus(args));
     case "pocket_daw_live_control":
       return jsonToolResult(await liveControl(args));
+    case "pocket_daw_live_import_session":
+      return jsonToolResult(await liveImportSession(args));
     case "pocket_daw_live_performance":
       return jsonToolResult(await livePerformance(args));
     case "pocket_daw_live_apply_commands":
@@ -357,8 +360,9 @@ export function pocketDawMcpToolList() {
       inputSchema: objectSchema({
         action: {
           type: "string",
-          enum: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "collect_media", "reload_media", "relink_media", "set_recording_options", "record_start", "record_stop", "record_toggle", "midi_record_start", "midi_record_stop", "midi_record_toggle", "export_project"]
+          enum: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "import_session", "collect_media", "reload_media", "relink_media", "set_recording_options", "record_start", "record_stop", "record_toggle", "midi_record_start", "midi_record_stop", "midi_record_toggle", "export_project"]
         },
+        path: stringSchema(),
         projectPath: stringSchema(),
         mediaPoolItemId: stringSchema(),
         sourcePath: stringSchema(),
@@ -371,6 +375,15 @@ export function pocketDawMcpToolList() {
         outputPath: stringSchema(),
         sessionPath: stringSchema()
       }, ["action"]),
+      annotations: liveControlToolAnnotations()
+    },
+    {
+      name: "pocket_daw_live_import_session",
+      description: "Import a local stems/MIDI/Ableton/DAWproject/AAF file or folder into a running native Pocket DAW app through its tokened live bridge.",
+      inputSchema: objectSchema({
+        path: stringSchema(),
+        sessionPath: stringSchema()
+      }, ["path"]),
       annotations: liveControlToolAnnotations()
     },
     {
@@ -562,7 +575,22 @@ async function liveControl(args: unknown) {
   if (!session.ok) return session;
   const body = { ...options };
   delete body.sessionPath;
-  return liveFetch(session.session.controlUrl, session.session, "POST", body);
+  return liveFetch(session.session.controlUrl, session.session, "POST", body, liveControlTimeoutMs(String(body.action || "")));
+}
+
+function liveControlTimeoutMs(action: string): number {
+  if (["import_session", "export_project"].includes(action)) return 300_000;
+  if (["play", "restart", "open_project", "collect_media", "reload_media", "relink_media"].includes(action)) return 120_000;
+  return 3500;
+}
+
+async function liveImportSession(args: unknown) {
+  const options = asRecord(args);
+  const session = readLiveSession(options);
+  if (!session.ok) return session;
+  const path = typeof options.path === "string" ? options.path.trim() : "";
+  if (!path) return { ok: false, code: "missing_path", message: "pocket_daw_live_import_session requires a local file or folder path." };
+  return liveFetch(session.session.controlUrl, session.session, "POST", { action: "import_session", path }, 300_000);
 }
 
 async function livePerformance(args: unknown) {
@@ -633,9 +661,9 @@ function readLiveSession(options: Record<string, unknown>): { ok: true; session:
   }
 }
 
-async function liveFetch(url: string, session: Pick<PocketDawLiveSession, "token">, method: "GET" | "POST", body?: unknown) {
+async function liveFetch(url: string, session: Pick<PocketDawLiveSession, "token">, method: "GET" | "POST", body?: unknown, timeoutMs = 3500) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 3500);
+  const timeout = setTimeout(() => controller.abort(), Math.max(1000, Math.min(600_000, timeoutMs)));
   try {
     const response = await fetch(url, {
       method,

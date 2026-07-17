@@ -133,7 +133,7 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
         }
         else if (type === 0x51 && payload.length === 3) {
           const microsecondsPerQuarter = (payload[0] << 16) | (payload[1] << 8) | payload[2];
-          const bpm = Math.round(60000000 / microsecondsPerQuarter);
+          const bpm = roundTempoBpm(60000000 / microsecondsPerQuarter);
           tempoBpm = bpm;
           tempoEvents.push({ tick, trackIndex, bpm, microsecondsPerQuarter });
         } else if (type === 0x58 && payload.length >= 2) {
@@ -279,6 +279,10 @@ export function parseStandardMidiFile(bytes: ArrayBuffer | Uint8Array): ParsedMi
     aftertouch: aftertouch.sort((a, b) => a.tick - b.tick || (a.channel ?? 0) - (b.channel ?? 0) || midiEventOrder(a.id) - midiEventOrder(b.id)),
     metadata
   };
+}
+
+function roundTempoBpm(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function midiEventOrder(id: string): number {

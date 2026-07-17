@@ -15,7 +15,7 @@ import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type S
 import { barFloatToDisplayPosition, barsToSeconds, effectiveMeterAtBar, gameStateMarkerLabel, sortClips, timelineSecondsAtBar } from "../daw/timeline";
 import { createAudioMediaAnalysisSummary, createCollectMediaPlan, createPortableMediaProject, createRenderCacheSummary, mediaPoolStatus, renderCacheItemsForMedia, verifyMediaPortability, verifySharedMediaPortability } from "../daw/mediaPool";
 import { MIDI_GROOVE_TEMPLATES, MIDI_IMPORT_PLACEMENT_MODES, createMidiTempoMapSummary, midiDataFromClip, type MidiTempoMapPosition, type MidiTempoMapSummary } from "../daw/midiClips";
-import { clipHasAutomation, getClipAutomationLane, getFxParameterAutomationLane, getProjectAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, interpolateAutomationValue, trackHasAutomation, type ClipAutomationField } from "../daw/automation";
+import { MAX_DAW_TEMPO_BPM, MIN_DAW_TEMPO_BPM, clipHasAutomation, evaluateProjectTempoAtBar, getClipAutomationLane, getFxParameterAutomationLane, getProjectAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, interpolateAutomationValue, trackHasAutomation, type ClipAutomationField } from "../daw/automation";
 import { availableTrackOutputs, createRoutingExportSummary, trackSendLevel, trackSendMode } from "../daw/routing";
 import { recordingLatencyOffsetSeconds } from "../daw/tracks";
 import { createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs";
@@ -376,7 +376,7 @@ function renderTransport(state: AppState): string {
         <span data-playing-state="true" class="${state.playing ? "playing" : ""}"><strong>${state.playing ? "Playing" : "Stopped"}</strong></span>
         <span data-recording-state="true" data-ui-scope="recording" class="${recordingActive ? "recording" : ""}"><strong>${escapeHtml(recordingPrimary)}</strong>${recordingSecondary ? `<small>${escapeHtml(recordingSecondary)}</small>` : `<small>${escapeHtml(`${recordingModeDetail} / ${takeModeDetail}`)}</small>`}</span>
         <span data-midi-recording-state="true" data-ui-scope="recording" class="${midiRecordingActive ? "recording" : ""}"><strong>MIDI</strong><small>${escapeHtml(midiRecordingDetail)}</small></span>
-        <span><strong>${Math.round(project.project.bpm)}</strong><small>BPM</small></span>
+        <span><strong>${formatTempoBpm(evaluateProjectTempoAtBar(project, state.playheadBar))}</strong><small>BPM</small></span>
         <span><strong>Metro</strong><small>${escapeHtml(metroDetail)}</small></span>
         <span><strong>${escapeHtml(project.project.key)}</strong><small>${escapeHtml(project.project.scale)}</small></span>
         <span data-playhead-readout="true"><strong>${escapeHtml(barBeat.bar)}</strong><small>${escapeHtml(barBeat.beat)}</small></span>
@@ -581,6 +581,11 @@ function renderCompactTimelineTools(
 
 function formatBarNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function formatTempoBpm(value: number): string {
+  const rounded = Math.round((Number(value) || 0) * 1_000_000) / 1_000_000;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function renderTimelineSongSettings(pcs: SanitizedPcsProject | null): string {
@@ -2594,7 +2599,7 @@ function renderProjectTempoAutomationLane(project: ReturnType<typeof currentProj
               ${points.map((point, index) => `
                 <div class="automation-point">
                   <label>Bar <input data-automation-point-bar="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="1" step="0.25" value="${sanitizeCssLengthOrNumber(point.bar, 1, 1, 4096)}"></label>
-                  <label>BPM <input data-automation-point-value="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="40" max="240" step="1" value="${sanitizeCssLengthOrNumber(point.value, project.project.bpm, 40, 240)}"></label>
+                  <label>BPM <input data-automation-point-value="${sanitizeDataAttr(`${lane.id}:${index}`)}" type="number" min="${MIN_DAW_TEMPO_BPM}" max="${MAX_DAW_TEMPO_BPM}" step="0.000001" value="${sanitizeCssLengthOrNumber(point.value, project.project.bpm, MIN_DAW_TEMPO_BPM, MAX_DAW_TEMPO_BPM)}"></label>
                   ${renderAutomationCurveSelect(lane.id, index, point)}
                   <button type="button" data-automation-delete-point="${sanitizeDataAttr(`${lane.id}:${index}`)}">Delete</button>
                 </div>
@@ -3042,6 +3047,8 @@ function renderFilePanel(state: AppState): string {
             <button data-action="open-file">Open File</button>
             <button data-action="import-audio" title="Import an audio file into the media pool">Import Audio</button>
             <button data-action="import-midi" title="Import a .mid or .midi file as a MIDI clip">Import MIDI</button>
+            <button data-action="import-daw-session-folder" title="Import a folder containing stems, MIDI and DAW session exports">Import Session Folder</button>
+            <button data-action="import-daw-session-files" title="Import selected Ableton, DAWproject, AAF, ZIP, WAV or MIDI files">Import Session Files</button>
           </div>
           ${pocketDjSummary ? renderPocketDjSourceSummary(pocketDjSummary) : ""}
         </section>

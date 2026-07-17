@@ -100,7 +100,8 @@ interface AssetBuildItem {
 }
 
 interface RuntimeAudioAssetSource {
-  bytes: number[];
+  bytes?: number[];
+  sourcePath?: string;
   sampleRate: number;
   channels: number;
   durationSeconds: number;
@@ -1350,6 +1351,7 @@ async function appendRuntimeAudioCache(
         id,
         name: `${region.mediaPoolItemId} runtime audio`,
         relativePath: nativeRenderCacheRelativePath(id),
+        sourcePath: source.sourcePath,
         mimeType: "audio/wav",
         sampleRate: source.sampleRate,
         channels: source.channels,
@@ -1407,8 +1409,10 @@ function sourceWavForNativeRuntime(cached: CachedAudioBuffer): RuntimeAudioAsset
   const bytes = new Uint8Array(cached.sourceBytes);
   const wav = parseSupportedNativeWav(bytes);
   if (!wav) return null;
+  const sourcePath = nativeRuntimeSourcePath(cached.sourceUri);
   return {
-    bytes: Array.from(bytes),
+    bytes: sourcePath ? undefined : Array.from(bytes),
+    sourcePath,
     sampleRate: wav.sampleRate,
     channels: wav.channels,
     durationSeconds: wav.durationSeconds,
@@ -1417,6 +1421,12 @@ function sourceWavForNativeRuntime(cached: CachedAudioBuffer): RuntimeAudioAsset
     sourceByteHash: cached.sourceByteHash,
     sourceByteLength: cached.sourceByteLength
   };
+}
+
+function nativeRuntimeSourcePath(uri: string | undefined): string | undefined {
+  const value = String(uri || "").trim();
+  if (/^[a-zA-Z]:[\\/]/.test(value) || /^\\\\[^\\]/.test(value)) return value;
+  return undefined;
 }
 
 function parseSupportedNativeWav(bytes: Uint8Array): { sampleRate: number; channels: number; durationSeconds: number } | null {

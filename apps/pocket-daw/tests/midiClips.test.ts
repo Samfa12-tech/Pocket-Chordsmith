@@ -327,7 +327,7 @@ describe("MIDI clips", () => {
     expect(result.item.metadata).toMatchObject({
       format: 1,
       ppq: 1024,
-      tempoBpm: 136,
+      tempoBpm: 136.059358,
       parsedTrackCount: 2,
       noteCount: 1
     });
@@ -367,7 +367,7 @@ describe("MIDI clips", () => {
     ]);
     expect(result.item.metadata?.tempoEvents).toEqual([
       expect.objectContaining({ bpm: 120 }),
-      expect.objectContaining({ bpm: 140 })
+      expect.objectContaining({ bpm: 140.00014 })
     ]);
     expect(result.item.metadata?.timeSignatureEvents).toEqual([
       expect.objectContaining({ numerator: 4, denominator: 4 }),
@@ -385,7 +385,7 @@ describe("MIDI clips", () => {
     expect(summary?.hasMeterChanges).toBe(true);
     expect(summary?.tempoEvents).toEqual([
       expect.objectContaining({ bpm: 120, seconds: 0, position: { bar: 1, beat: 1, tick: 0 } }),
-      expect.objectContaining({ bpm: 140, seconds: 0.5, position: { bar: 1, beat: 2, tick: 0 } })
+      expect.objectContaining({ bpm: 140.00014, seconds: 0.5, position: { bar: 1, beat: 2, tick: 0 } })
     ]);
     expect(summary?.timeSignatureEvents).toEqual([
       expect.objectContaining({ numerator: 4, denominator: 4, position: { bar: 1, beat: 1, tick: 0 } }),

@@ -54,7 +54,7 @@ export interface TrackRecordingInput {
 
 export interface SourceRef {
   id: string;
-  sourceType: "pocket-chordsmith" | "pocket-dj" | "manual" | "unknown";
+  sourceType: "pocket-chordsmith" | "pocket-dj" | "daw-session" | "manual" | "unknown";
   sourcePrefix?: "PCS1" | "PDJ1" | string;
   schemaVersion?: number;
   importedAt: string;
@@ -373,7 +373,7 @@ export interface ImportHistoryItem {
   id: string;
   sourceRefId: string;
   importedAt: string;
-  importKind: "PCS1" | "PDJ1" | "raw-json" | "pocketdaw" | "demo" | "midi-conversion" | "unknown";
+  importKind: "PCS1" | "PDJ1" | "raw-json" | "pocketdaw" | "demo" | "midi-conversion" | "daw-session" | "unknown";
   message: string;
   conversion?: JsonObject;
 }

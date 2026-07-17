@@ -97,6 +97,7 @@ export interface NativeAudioAsset {
   id: string;
   name: string;
   relativePath?: string;
+  sourcePath?: string;
   mimeType?: string;
   sampleRate: number;
   channels: number;
@@ -214,7 +215,7 @@ export class NativeAudioPlaybackBridge {
         loaded += 1;
         continue;
       }
-      if (!asset.bytes?.length) continue;
+      if (!asset.bytes?.length && !asset.sourcePath) continue;
       try {
         await api.invoke<NativeAudioStatus>("native_audio_preload_asset", { asset });
         this.knownNativeAssetIds.add(asset.id);

@@ -1,6 +1,9 @@
 import type { AutomationLane, AutomationPoint, FxChain, FxPluginInstance, JsonObject, PocketDawProject, Track } from "./schema";
 import { cloneProject } from "./dawProject";
 
+export const MIN_DAW_TEMPO_BPM = 40;
+export const MAX_DAW_TEMPO_BPM = 999;
+
 export function evaluateAutomationLane(lane: AutomationLane, bar: number, fallback = 0): number {
   if (!lane.enabled || !lane.points.length) return clamp(fallback, lane.min, lane.max);
   const points = lane.points.slice().sort((a, b) => a.bar - b.bar);
@@ -8,7 +11,7 @@ export function evaluateAutomationLane(lane: AutomationLane, bar: number, fallba
   for (let i = 0; i < points.length - 1; i += 1) {
     const a = points[i];
     const b = points[i + 1];
-    if (bar >= a.bar && bar <= b.bar) {
+    if (bar >= a.bar && bar < b.bar) {
       if (a.curve === "hold") return clamp(a.value, lane.min, lane.max);
       const t = (bar - a.bar) / Math.max(0.0001, b.bar - a.bar);
       return clamp(interpolateAutomationValue(a.value, b.value, t, a.curve), lane.min, lane.max);
@@ -82,8 +85,8 @@ export function ensureProjectAutomationLane(project: PocketDawProject, field: Pr
   if (existing) return { project, laneId: existing.id };
   return createAutomationLane(project, targetPath, {
     id: `auto_project_${field}`,
-    min: 40,
-    max: 240,
+    min: MIN_DAW_TEMPO_BPM,
+    max: MAX_DAW_TEMPO_BPM,
     unit: "linear",
     points: [{ bar: 1, value: project.project.bpm || 120, curve: "linear" }]
   });
@@ -282,7 +285,7 @@ function parseFxTarget(targetPath: string): { chainId: string; slotId: string; p
 }
 
 function automationDefaultsForTarget(targetPath: string): { unit: AutomationLane["unit"]; min: number; max: number } {
-  if (targetPath === projectAutomationPath("tempo")) return { unit: "linear", min: 40, max: 240 };
+  if (targetPath === projectAutomationPath("tempo")) return { unit: "linear", min: MIN_DAW_TEMPO_BPM, max: MAX_DAW_TEMPO_BPM };
   if (targetPath.endsWith(".pan")) return { unit: "linear", min: -1, max: 1 };
   if (/^tracks\.[^.]+\.sends\.[^.]+\.level$/.test(targetPath)) return { unit: "percent", min: 0, max: 1 };
   const clipField = targetPath.match(/^clips\.[^.]+\.(gain|fadeInSeconds|fadeOutSeconds|sourceOffsetSeconds)$/)?.[1] as ClipAutomationField | undefined;
