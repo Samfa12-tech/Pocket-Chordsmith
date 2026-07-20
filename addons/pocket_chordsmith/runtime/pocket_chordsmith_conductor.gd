@@ -3,6 +3,7 @@ extends Node
 class_name PocketChordsmithConductor
 
 const PlaybackProfile := preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
+const SoundProfileContract := preload("res://addons/pocket_chordsmith/import/pcs_sound_profile_contract.gd")
 
 const NATIVE_BASS_SAMPLE_RATE := 44100
 const DEFAULT_SAMPLE_PREVIEW_MIX := {
@@ -728,6 +729,11 @@ func get_diagnostics() -> Dictionary:
 		backend = PlaybackProfile.PlaybackBackend.keys()[playback_profile.playback_backend]
 	if _has_ready_stem_players():
 		stem_status = "playing" if _has_playing_stem_players() else "ready"
+	var expressive := _expressive_event_diagnostics()
+	var capability_report := {}
+	if chart != null:
+		var capabilities := playback_profile.get_capabilities() if playback_profile != null and playback_profile.has_method("get_capabilities") else {}
+		capability_report = SoundProfileContract.negotiate({"soundProfile": chart.sound_profile, "formatFeatures": chart.format_features, "sections": chart.rich_sections}, capabilities)
 	return {
 		"backend": backend,
 		"chart": chart.resource_path if chart != null else "",
@@ -769,7 +775,36 @@ func get_diagnostics() -> Dictionary:
 		"current_beat": current_beat,
 		"current_tick": current_tick,
 		"playback_warnings": get_playback_warnings(),
+		"schema_version": chart.schema_version if chart != null else 0,
+		"sound_profile": chart.sound_profile.duplicate(true) if chart != null else {},
+		"format_features": chart.format_features.duplicate() if chart != null else [],
+		"profile_metadata": chart.profile_metadata.duplicate(true) if chart != null else {},
+		"expressive_event_count": chart.expressive_event_count if chart != null else 0,
+		"expressive_event_diagnostics": expressive,
+		"capability_report": capability_report,
 	}
+
+
+func _expressive_event_diagnostics() -> Dictionary:
+	var result := {"articulations": {}, "roles": {}, "sounds": {}, "technique_namespaces": {}, "expression_fields": 0}
+	if chart == null:
+		return result
+	for event in chart.compiled_events:
+		var articulation := str(event.get("articulation", ""))
+		if not articulation.is_empty():
+			result["articulations"][articulation] = int(result["articulations"].get(articulation, 0)) + 1
+		var role := str(event.get("role", ""))
+		if not role.is_empty():
+			result["roles"][role] = int(result["roles"].get(role, 0)) + 1
+		var sound := str(event.get("sound", ""))
+		if not sound.is_empty():
+			result["sounds"][sound] = int(result["sounds"].get(sound, 0)) + 1
+		var technique: Dictionary = event.get("technique", {}) if event.get("technique", {}) is Dictionary else {}
+		for namespace in technique.keys():
+			result["technique_namespaces"][str(namespace)] = int(result["technique_namespaces"].get(str(namespace), 0)) + 1
+		var expression: Dictionary = event.get("expression", {}) if event.get("expression", {}) is Dictionary else {}
+		result["expression_fields"] = int(result["expression_fields"]) + expression.size()
+	return result
 
 
 func _record_sample_preview_native_cache_hit(event: Dictionary) -> void:
@@ -2465,6 +2500,11 @@ func _sample_key_for_event(event: Dictionary) -> String:
 	var track_type := str(event.get("track_type", ""))
 	var instrument_id := str(event.get("instrument_id", ""))
 	var flags: Dictionary = event.get("flags", {})
+	var sound := str(event.get("sound", flags.get("sound", "")))
+	if not sound.is_empty():
+		var sound_key := _preview_sample_key_for_sound(track_type, sound)
+		if not sound_key.is_empty():
+			return sound_key
 	var accent := bool(flags.get("accent", false))
 	if track_type == "drum":
 		var drum_candidates := _drum_sample_key_candidates(instrument_id, flags, accent)
@@ -2528,7 +2568,27 @@ func _drum_sample_key_candidates(instrument_id: String, flags: Dictionary, accen
 	if accent:
 		candidates.append("%s_accent" % instrument_id)
 	candidates.append(instrument_id)
+	if SoundProfileContract.FALLBACK_DRUM_LANES.has(instrument_id):
+		var fallback_lane := str(SoundProfileContract.FALLBACK_DRUM_LANES[instrument_id])
+		if accent:
+			candidates.append("%s_accent" % fallback_lane)
+		candidates.append(fallback_lane)
 	return candidates
+
+
+func _preview_sample_key_for_sound(track_type: String, sound: String) -> String:
+	var profile_key := "sound:%s" % sound
+	if playback_profile != null and playback_profile.event_sample_streams.has(profile_key):
+		return profile_key
+	var alias := str(SoundProfileContract.PREVIEW_SAMPLE_KEYS.get(sound, ""))
+	if alias.is_empty():
+		return ""
+	var candidate := alias
+	if playback_profile != null and playback_profile.event_sample_streams.has(candidate):
+		return candidate
+	if playback_profile != null and playback_profile.event_sample_streams.has(alias):
+		return alias
+	return candidate if not candidate.is_empty() else alias
 
 
 func _sample_preview_layer_for_event(event: Dictionary) -> String:

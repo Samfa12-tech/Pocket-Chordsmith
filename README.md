@@ -18,8 +18,8 @@ Project hub: `https://samfa12.com`
 | Pocket Chordsmith | `apps/chordsmith-web/` | Browser music sketchpad for progressions, sections, drums, bass, melody, guitar, MIDI, WAV, JSON, and `PCS1:` share data. | Source-available, UNLICENSED |
 | Pocket DJ | `apps/pocket-dj/` | Live performance/remix deck that imports Pocket Chordsmith songs and turns them into section pads, stem controls, loops, builds, drops, and FX. | Source-available, UNLICENSED |
 | Pocket DAW | `apps/pocket-daw/` | Native-only Windows desktop arrangement/production DAW for Pocket Chordsmith/Pocket Audio projects. Built as a Tauri Windows app with native audio playback/recording/render/export paths. Do not implement or publish Pocket DAW as a browser/HTML5/Web Audio app. | Alpha-testing binary on itch; source-available, UNLICENSED |
-| Pocket Audio Core | `packages/pocket-audio-core/` | Shared headless runtime/export scaffold for parsing, normalising, rendering timelines, Web Audio playback, WAV/stem output, and game-music APIs. | WIP/private package source, UNLICENSED |
-| PCS Format | `packages/pcs-format/` | Future shared format definitions, fixtures, migrations, and compatibility helpers for `PCS1:` and related JSON. | WIP/private package scaffold, UNLICENSED |
+| Pocket Audio Core | `packages/pocket-audio-core/` | Shared headless runtime and sound-profile contract for parsing, normalising, expressive timelines, Web Audio playback, WAV/stem output, capability reporting, and game-music APIs. | WIP/private package source, UNLICENSED |
+| PCS Format | `packages/pcs-format/` | Shared schema-17 format definitions, fixtures, migrations, capability reports, and reversible legacy projection for `PCS1:` and related JSON. | WIP/private package source, UNLICENSED |
 | Pocket Chordsmith Godot addon | `addons/pocket_chordsmith/` | Godot editor/runtime addon that imports Pocket Chordsmith data, compiles chart resources, and drives conductor callbacks in games. | MIT |
 
 Public app links already referenced in this repo:
@@ -136,6 +136,9 @@ More addon docs:
 - Pocket Audio Core browser examples: `packages/pocket-audio-core/examples/`
 - Godot export sketch: `packages/pocket-audio-core/examples/godot-export-demo/README.md`
 - Godot runtime bridge notes: `addons/pocket_chordsmith/docs/RUNTIME_BRIDGE.md`
+- Sound-profile evolution contract: `docs/SOUND_PROFILE_EVOLUTION_ARCHITECTURE.md`
+- Funk sound pack design: `docs/FUNK_SOUND_PACK_SPEC.md`
+- Sound-profile audit: `docs/audits/2026-07-20-sound-profile-audit.md`
 
 ## Contributing
 

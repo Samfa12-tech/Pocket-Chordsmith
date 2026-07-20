@@ -4,9 +4,11 @@ class_name PCSChartCompiler
 
 const ChartResource := preload("res://addons/pocket_chordsmith/resources/pcs_chart_resource.gd")
 const SectionResource := preload("res://addons/pocket_chordsmith/resources/pcs_section_resource.gd")
+const SoundProfileContract := preload("res://addons/pocket_chordsmith/import/pcs_sound_profile_contract.gd")
 
 const SECTION_IDS := ["A", "B", "C", "D", "E", "F", "G", "H"]
 const DRUM_TRACKS := ["kick", "snare", "hat"]
+const EXPANDED_DRUM_LANES := SoundProfileContract.DRUM_LANES
 const GRID_TRACKS := ["kick", "snare", "hat", "bass"]
 const GUITAR_ARTICULATIONS := ["off", "open", "chug", "accent", "hold", "scratch"]
 const NOTE_NAMES := ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -30,6 +32,7 @@ func compile_project(project: Dictionary, import_result := {}) -> Resource:
 	var chart = ChartResource.new()
 	chart.source_path = _metadata_source_path(import_result)
 	chart.source_project_version = int(project.get("projectVersion", 0))
+	chart.schema_version = int(project.get("projectVersion", 16))
 	chart.imported_at_unix_time = int(Time.get_unix_time_from_system())
 	chart.bpm = int(project.get("bpm", 120))
 	chart.time_signature = int(project.get("timeSig", 4))
@@ -40,6 +43,11 @@ func compile_project(project: Dictionary, import_result := {}) -> Resource:
 	chart.ticks_per_quarter = TICKS_PER_QUARTER
 	chart.original_metadata = _metadata(import_result)
 	chart.audio_profile = str(project.get("audioProfile", "standard"))
+	chart.sound_profile = _dictionary_or_empty(project.get("soundProfile", {})).duplicate(true)
+	chart.format_features = _string_array(project.get("formatFeatures", []))
+	chart.profile_metadata = _dictionary_or_empty(project.get("profileMetadata", project.get("%sMetadata" % chart.audio_profile, {}))).duplicate(true)
+	chart.rich_sections = _dictionary_or_empty(project.get("sections", project.get("richEvents", {}))).duplicate(true)
+	chart.capability_report = SoundProfileContract.negotiate(project)
 	chart.lofi_preset = str(project.get("lofiPreset", ""))
 	chart.lofi_texture = _dictionary_or_empty(project.get("lofiTexture", {})).duplicate(true)
 	chart.chip_preset = str(project.get("chipPreset", ""))
@@ -62,7 +70,7 @@ func compile_project(project: Dictionary, import_result := {}) -> Resource:
 		}
 		if game_metadata.has("lofi_intensity_hints"):
 			chart.lofi_intensity_hints = _dictionary_or_empty(game_metadata.get("lofi_intensity_hints", {}))
-	if chart.audio_profile == "chip_tune":
+	if chart.audio_profile == "chip_arcade":
 		chart.chip_intensity_hints = {
 			"menu": 0.48,
 			"explore": 0.66,
@@ -135,18 +143,161 @@ func compile_project(project: Dictionary, import_result := {}) -> Resource:
 		return tick_a < tick_b
 	)
 	chart.compiled_events = events
+	chart.expressive_event_count = _expressive_event_count(events)
 	chart.import_warnings = warnings
 	return chart
 
 
 func _compile_section_events(project: Dictionary, section_id: String, arrangement_index: int, section_start_tick: int, warnings: Array[String]) -> Array[Dictionary]:
 	var events: Array[Dictionary] = []
-	events.append_array(_compile_chord_events(project, section_id, arrangement_index, section_start_tick))
-	events.append_array(_compile_drum_events(project, section_id, arrangement_index, section_start_tick))
-	events.append_array(_compile_bass_events(project, section_id, arrangement_index, section_start_tick))
-	events.append_array(_compile_guitar_events(project, section_id, arrangement_index, section_start_tick))
-	events.append_array(_compile_melody_events(project, section_id, arrangement_index, section_start_tick))
+	var rich_tracks := _rich_track_ids(project, section_id)
+	events.append_array(_compile_rich_events(project, section_id, arrangement_index, section_start_tick, warnings))
+	if not rich_tracks.has("chord"):
+		events.append_array(_compile_chord_events(project, section_id, arrangement_index, section_start_tick))
+	if not rich_tracks.has("drums") and not rich_tracks.has("drum"):
+		events.append_array(_compile_drum_events(project, section_id, arrangement_index, section_start_tick))
+	if not rich_tracks.has("bass"):
+		events.append_array(_compile_bass_events(project, section_id, arrangement_index, section_start_tick))
+	if not rich_tracks.has("guitar"):
+		events.append_array(_compile_guitar_events(project, section_id, arrangement_index, section_start_tick))
+	if not rich_tracks.has("melody"):
+		events.append_array(_compile_melody_events(project, section_id, arrangement_index, section_start_tick))
 	return events
+
+
+func _rich_track_ids(project: Dictionary, section_id: String) -> Array[String]:
+	var sections: Dictionary = project.get("sections", project.get("richEvents", {})) if project.get("sections", project.get("richEvents", {})) is Dictionary else {}
+	var section: Dictionary = sections.get(section_id, {}) if sections.get(section_id, {}) is Dictionary else {}
+	var tracks: Dictionary = section.get("tracks", {}) if section.get("tracks", {}) is Dictionary else {}
+	var out: Array[String] = []
+	for track_id in tracks.keys():
+		var canonical := _rich_track_type(str(track_id), {})
+		if not canonical.is_empty() and not out.has(canonical):
+			out.append(canonical)
+	return out
+
+
+func _compile_rich_events(project: Dictionary, section_id: String, arrangement_index: int, section_start_tick: int, warnings: Array[String]) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var sections: Dictionary = project.get("sections", project.get("richEvents", {})) if project.get("sections", project.get("richEvents", {})) is Dictionary else {}
+	var section: Dictionary = sections.get(section_id, {}) if sections.get(section_id, {}) is Dictionary else {}
+	var tracks: Dictionary = section.get("tracks", {}) if section.get("tracks", {}) is Dictionary else {}
+	for track_key in tracks.keys():
+		var track_value = tracks[track_key]
+		var track: Dictionary = track_value if track_value is Dictionary else {}
+		var events: Array = track.get("events", []) if track.get("events", []) is Array else (track_value if track_value is Array else [])
+		for event_index in range(events.size()):
+			var raw_event = events[event_index]
+			if not (raw_event is Dictionary):
+				warnings.append("Ignored non-dictionary rich event %s.%s[%d]." % [section_id, str(track_key), event_index])
+				continue
+			var rich: Dictionary = raw_event.duplicate(true)
+			var track_type := _rich_track_type(str(track_key), rich)
+			if track_type.is_empty():
+				warnings.append("Ignored rich event with unsupported track '%s'." % str(track_key))
+				continue
+			var source_step := int(rich.get("step", -1)) if rich.has("step") else -1
+			var local_tick := int(rich.get("tick", 0)) if rich.has("tick") else _step_to_tick(project, max(0, source_step))
+			var duration_value := rich.get("duration_ticks", null)
+			var duration_ticks := int(duration_value) if duration_value != null else int(rich.get("duration", 1)) * (_ticks_per_step(project) if source_step >= 0 else 1)
+			var notes_source: Array = rich.get("notes", []) if rich.get("notes", []) is Array else []
+			var note_source := rich.get("note", null)
+			if notes_source.is_empty() and note_source != null:
+				notes_source = [note_source]
+			var midi_notes: Array[int] = []
+			for note_value in notes_source:
+				var midi := _rich_note_to_midi(project, section_id, track_type, note_value)
+				if midi >= 0:
+					midi_notes.append(midi)
+			var midi_note := int(midi_notes[0]) if not midi_notes.is_empty() else -1
+			var articulation := str(rich.get("articulation", ""))
+			var lane := str(rich.get("lane", rich.get("drumLane", track_key)))
+			var sound := str(rich.get("sound", rich.get("instrument", track.get("sound", lane if track_type == "drum" else track_key))))
+			var instrument_id := lane if track_type == "drum" else sound
+			if track_type == "drum" and midi_note < 0:
+				midi_note = _rich_drum_midi(lane)
+			var role := str(rich.get("role", track.get("role", "")))
+			var expression: Dictionary = rich.get("expression", {}) if rich.get("expression", {}) is Dictionary else {}
+			var technique: Dictionary = rich.get("technique", {}) if rich.get("technique", {}) is Dictionary else {}
+			var flags := {
+				"accent": articulation == "accent" or articulation == "slap" or articulation == "pop" or bool(rich.get("accent", false)),
+				"tuplet": false,
+				"hold": articulation == "hold",
+				"slide": articulation == "slide",
+				"muted": articulation in ["mute", "ghost", "scratch"],
+				"solo": false,
+				"generated": false,
+				"audio_profile": str(project.get("audioProfile", "standard")),
+				"sound_profile": str(_dictionary_or_empty(project.get("soundProfile", {})).get("id", project.get("audioProfile", "standard"))),
+				"sound": sound,
+				"role": role,
+				"articulation": articulation,
+				"expression": expression.duplicate(true),
+				"technique": technique.duplicate(true),
+				"midi_notes": midi_notes,
+				"rich_event": rich.duplicate(true),
+			}
+			var velocity := clamp(int(rich.get("velocity", 100)), 0, 127)
+			var pan := clamp(float(expression.get("pan", rich.get("pan", 0.0))), -1.0, 1.0)
+			var event := _make_event(
+				section_start_tick + max(0, local_tick), max(1, duration_ticks), section_id, track_type, int(rich.get("trackIndex", track.get("trackIndex", 0))), instrument_id, midi_note, velocity, pan, flags,
+				source_step, _step_to_bar(project, max(0, source_step)), arrangement_index, -1, source_step
+			)
+			event["step"] = source_step
+			event["notes"] = midi_notes.duplicate()
+			event["note"] = note_source if note_source != null else -1
+			event["articulation"] = articulation
+			event["sound"] = sound
+			event["role"] = role
+			event["expression"] = expression.duplicate(true)
+			event["technique"] = technique.duplicate(true)
+			event["source_event"] = rich.duplicate(true)
+			out.append(event)
+	return out
+
+
+func _rich_track_type(track_key: String, event: Dictionary) -> String:
+	var value := str(event.get("track", track_key)).to_lower()
+	if value in ["drums", "drum"] or EXPANDED_DRUM_LANES.has(value) or value in ["hat", "kick", "snare"]:
+		return "drum"
+	return value if value in ["bass", "chord", "guitar", "melody"] else ""
+
+
+func _rich_note_to_midi(project: Dictionary, section_id: String, track_type: String, value) -> int:
+	if value == null:
+		return -1
+	var note_value := int(value)
+	if note_value < 0:
+		return -1
+	if track_type == "bass":
+		return _bass_manual_index_to_midi(project, note_value) if note_value < 24 else clamp(note_value, 0, 127)
+	if track_type == "melody":
+		return _melody_index_to_midi(project, note_value, 0) if note_value < 24 else clamp(note_value, 0, 127)
+	return clamp(note_value, 0, 127)
+
+
+func _rich_drum_midi(lane: String) -> int:
+	match lane:
+		"kick", "tom_low":
+			return 36
+		"snare", "rim", "tom_mid":
+			return 38
+		"clap":
+			return 39
+		"hat_closed":
+			return 42
+		"hat_open":
+			return 46
+		"ride":
+			return 51
+		"crash":
+			return 49
+		"china":
+			return 52
+		"tom_high":
+			return 50
+		_:
+			return 39
 
 
 func _compile_chord_events(project: Dictionary, section_id: String, arrangement_index: int, section_start_tick: int) -> Array[Dictionary]:
@@ -602,9 +753,13 @@ func _make_event(tick: int, duration_ticks: int, section_id: String, track_type:
 		event_velocity = _humanized_velocity(velocity, effective_step, humanize_seed)
 		event_flags["humanized"] = true
 		event_flags["humanize_seed"] = humanize_seed
+	var notes: Array = event_flags.get("midi_notes", [midi_note]) if event_flags.get("midi_notes", [midi_note]) is Array else [midi_note]
 	return {
 		"tick": max(0, event_tick),
 		"duration_ticks": max(1, duration_ticks),
+		"step": source_step,
+		"notes": notes.duplicate(),
+		"note": midi_note,
 		"section_id": section_id,
 		"arrangement_index": arrangement_index,
 		"track_type": track_type,
@@ -613,10 +768,23 @@ func _make_event(tick: int, duration_ticks: int, section_id: String, track_type:
 		"midi_note": clamp(midi_note, -1, 127),
 		"velocity": clamp(event_velocity, 0, 127),
 		"pan": clamp(pan, -1.0, 1.0),
+		"articulation": str(event_flags.get("articulation", "")),
+		"sound": str(event_flags.get("sound", instrument_id)),
+		"role": str(event_flags.get("role", "")),
+		"expression": _dictionary_or_empty(event_flags.get("expression", {})).duplicate(true),
+		"technique": _dictionary_or_empty(event_flags.get("technique", {})).duplicate(true),
 		"flags": event_flags,
 		"source_step": source_step,
 		"source_bar": source_bar,
 	}
+
+
+func _expressive_event_count(events: Array[Dictionary]) -> int:
+	var count := 0
+	for event in events:
+		if not str(event.get("articulation", "")).is_empty() or not str(event.get("role", "")).is_empty() or not _dictionary_or_empty(event.get("expression", {})).is_empty() or not _dictionary_or_empty(event.get("technique", {})).is_empty() or event.has("source_event"):
+			count += 1
+	return count
 
 
 func _drum_humanize_seed(track_id: String) -> int:
@@ -1326,6 +1494,17 @@ func _array_of_dictionaries(value) -> Array[Dictionary]:
 	for item in value:
 		if item is Dictionary:
 			out.append(item)
+	return out
+
+
+func _string_array(value) -> Array[String]:
+	var out: Array[String] = []
+	if not (value is Array):
+		return out
+	for item in value:
+		var text := str(item)
+		if not text.is_empty():
+			out.append(text)
 	return out
 
 

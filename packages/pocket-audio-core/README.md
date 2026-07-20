@@ -1,8 +1,8 @@
 # Pocket Audio Core
 
-Pocket Audio Core is the shared, headless Web Audio runtime planned for the Pocket Chordsmith family. It is intended to become the common parser, normaliser, event renderer, scheduler, instrument layer, stem mixer, FX layer, offline renderer, and adaptive game-music API used by Pocket Chordsmith, Pocket DJ, Pocket DAW, new browser games, and Godot export workflows.
+Pocket Audio Core is the shared, headless Web Audio runtime and sound-profile contract for the Pocket Chordsmith family. It provides the common parser, normaliser, expressive event renderer, scheduler, instrument recipes, stem mixer, FX layer, offline renderer, capability reporting, and adaptive game-music API used across Pocket Chordsmith, Pocket DJ, Pocket DAW, browser games, and Godot export workflows.
 
-This package is currently a v0 extraction. It provides a real public API shape, defensive `PCS1:`/JSON parsing, a minimal normalised project model, deterministic timeline events, lightweight transport methods, event subscriptions, and a basic dependency-free WAV/stem render path. It does not claim exact timing, sound, instrument, FX, MIDI, or Godot parity yet.
+Version 0.2 adds the canonical Standard, Lofi, Chiptune, Western, Heavy Metal, and Funk profile registry; PCS schema-17 expressive events; deterministic live/offline reference rendering; shared recipe generation; and capability/loss reports. Exact app-to-app mastered tone parity still requires the backend-specific listening gates in the sound-parity matrix.
 
 License/status: WIP private package source, `UNLICENSED`, and `private: true`.
 See the repository root `LICENSES.md` before reusing or redistributing package
@@ -10,12 +10,12 @@ code.
 
 ## Current Status
 
-- Core version: `0.1.0-scaffold`
+- Core version: `0.2.0`
 - Supported source prefix: `PCS1:`
-- Initial source schema target: Pocket Chordsmith schema `16`
-- Integration status: first-pass bridges exist for Pocket Chordsmith v68 and Pocket DJ v1g; Pocket DJ, Pocket DAW and Godot consume shared lofi metadata through their compatibility/import paths, but the shared family bridge is not full playback parity
-- Render status: basic PCM/WAV and stem output using simplified procedural events, not exact Chordsmith/DJ/DAW/Godot sound parity
-- Live playback status: browser event scheduler with simple Web Audio tones, not parity synths
+- Source schema targets: Pocket Chordsmith schemas `16` and `17`, with reversible legacy projection and explicit loss reporting
+- Integration status: Pocket Chordsmith v68, Pocket DJ v1g, Pocket DAW, and the Godot addon preserve canonical profile and rich-event intent; unsupported preview behavior remains visible through capability reports
+- Render status: deterministic profile-aware PCM/WAV and stem reference output, including parameter-sensitive Metal, Funk, Chip, Western, Lofi, and Standard behavior; this is not a claim of mastered cross-backend tone parity
+- Live playback status: profile-aware browser scheduling and procedural voices with explicit backend limitations
 - Game runtime status: `profile:"game"` supports music states, stingers, intensity, ducking, lowpass, stem controls, and diagnostics
 
 ## Release Mastering
@@ -116,7 +116,7 @@ const kit = await createGodotExportKit(pcs1OrJson, {
 The first-pass kit returns a manifest plus WAV blobs for `STEM_SYNC` and `LOOP_KIT` workflows. `HYBRID` renders stem beds and placeholder sample/stinger assets for future kit work. `PROCEDURAL_PREVIEW` writes manifest metadata only, marks itself `previewOnly`, and is not a parity export. Lofi manifests preserve `audioProfile`, preset, texture, drum-kit, bass-tone, and instrument IDs, and include the shared lofi sound registry for game-pack tooling and preview runtimes.
 Chip manifests preserve the matching `chip_tune` profile fields, chip preset, texture, drum-kit, groove, bass-tone, chord, and melody IDs, plus the shared chip sound registry.
 
-This is a compatibility/export scaffold, not proof that Core renders the same sound as Chordsmith live playback, Pocket DAW native/cache output, or the Godot addon preview kit. Use it for deterministic metadata and fixture coverage; use DAW-rendered adaptive packs or app-specific smokes when production-grade audio parity matters. See `../../docs/GODOT_PARITY_EXPORT_WORKFLOW.md` and `examples/godot-export-demo/README.md`.
+This compatibility/export path is not by itself proof that Core renders the same mastered sound as Chordsmith live playback, Pocket DAW native/cache output, or the Godot addon preview kit. Use it for deterministic semantics, reference audio, and fixture coverage; use DAW-rendered adaptive packs or app-specific listening smokes when production-grade audio parity matters. See `../../docs/GODOT_PARITY_EXPORT_WORKFLOW.md` and `examples/godot-export-demo/README.md`.
 
 ## Commands
 

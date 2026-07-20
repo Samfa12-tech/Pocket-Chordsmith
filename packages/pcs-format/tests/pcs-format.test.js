@@ -6,11 +6,22 @@ import {
   PCS_FIXTURE_ROLES,
   PCS_FORMAT_SCOPE,
   PCS_FORMAT_STATUS,
+  PCS_FORMAT_FEATURES,
+  PCS_ARTICULATIONS,
+  PCS_LEGACY_SCHEMA_VERSION,
   PCS_PREFIX,
+  PCS_PROFILE_IDS,
   PCS_SCHEMA_VERSION,
+  PCS_DRUM_LANES,
+  encodePcsProject,
+  migratePcsProject,
+  negotiatePcsCapabilities,
   parsePcsProject,
+  projectToSchema16,
+  projectToSchema17,
   schema16SectionSummary,
   schema16SongSequence,
+  validatePcsProject,
   validateSchema16Project,
 } from "../src/index.js";
 
@@ -32,6 +43,18 @@ const traceSmoke = JSON.parse(
     "utf8",
   ),
 );
+const rich = JSON.parse(
+  readFileSync(
+    new URL("../fixtures/schema17-funk-rich-events.json", import.meta.url),
+    "utf8",
+  ),
+);
+const invalidRich = JSON.parse(
+  readFileSync(
+    new URL("../fixtures/schema17-invalid.json", import.meta.url),
+    "utf8",
+  ),
+);
 const currentAppDemo = JSON.parse(
   readFileSync(
     new URL(
@@ -45,25 +68,33 @@ const fixtureIndex = JSON.parse(
   readFileSync(new URL("../fixtures/index.json", import.meta.url), "utf8"),
 );
 
-test("exports PCS1 and schema-16 metadata", () => {
+test("exports stable PCS1, schema, profile, feature, and drum metadata", () => {
   assert.equal(PCS_PREFIX, "PCS1:");
-  assert.equal(PCS_SCHEMA_VERSION, 16);
-  assert.equal(PCS_FORMAT_STATUS, "0.1.0-scaffold");
+  assert.equal(PCS_SCHEMA_VERSION, 17);
+  assert.equal(PCS_LEGACY_SCHEMA_VERSION, 16);
+  assert.equal(PCS_FORMAT_STATUS, "0.2.0-schema17");
+  assert.ok(PCS_PROFILE_IDS.includes("funk_groove"));
+  assert.ok(PCS_FORMAT_FEATURES.includes("rich-events-v1"));
+  for (const articulation of [
+    "finger", "slap", "pop", "mute", "ghost", "hammer", "pull", "slide",
+    "hold", "staccato", "legato", "bend", "vibrato", "tremolo", "open",
+    "chug", "scratch", "palm_mute", "accent", "flam", "drag", "roll", "choke",
+    "note", "strum_up", "strum_down",
+  ]) assert.ok(PCS_ARTICULATIONS.includes(articulation));
+  for (const lane of ["hat_closed", "hat_open", "china", "percussion", "hat", "open_hat", "perc"]) {
+    assert.ok(PCS_DRUM_LANES.includes(lane));
+  }
 });
 
 test("documents package scope without claiming app-runtime ownership", () => {
   assert.ok(PCS_FORMAT_SCOPE.owns.includes("PCS1 prefix metadata"));
-  assert.ok(PCS_FORMAT_SCOPE.owns.includes("schema-16 projectVersion metadata"));
-  assert.ok(
-    PCS_FORMAT_SCOPE.owns.includes("schemaVersion compatibility alias metadata"),
-  );
-  assert.ok(PCS_FORMAT_SCOPE.owns.includes("compatibility fixture metadata"));
+  assert.ok(PCS_FORMAT_SCOPE.owns.includes("rich event normalization"));
   assert.ok(
     PCS_FORMAT_SCOPE.doesNotOwn.includes("full app runtime normalization"),
   );
   assert.ok(
     PCS_FORMAT_SCOPE.doesNotOwn.includes(
-      "audio rendering or scheduling behavior",
+      "audio rendering, scheduling, or sound recipes",
     ),
   );
 });
@@ -124,7 +155,7 @@ test("accepts legacy schemaVersion-only schema-16 fixtures", () => {
   const parsed = parsePcsProject(JSON.stringify(valid));
 
   assert.equal(valid.projectVersion, undefined);
-  assert.equal(valid.schemaVersion, PCS_SCHEMA_VERSION);
+  assert.equal(valid.schemaVersion, PCS_LEGACY_SCHEMA_VERSION);
   assert.equal(result.ok, true);
   assert.equal(parsed.ok, true);
 });
@@ -132,7 +163,7 @@ test("accepts legacy schemaVersion-only schema-16 fixtures", () => {
 test("accepts current app exports using canonical projectVersion", () => {
   const result = validateSchema16Project(currentAppDemo);
 
-  assert.equal(currentAppDemo.projectVersion, PCS_SCHEMA_VERSION);
+  assert.equal(currentAppDemo.projectVersion, PCS_LEGACY_SCHEMA_VERSION);
   assert.equal(currentAppDemo.schemaVersion, undefined);
   assert.equal(result.ok, true);
   assert.deepEqual(schema16SongSequence(currentAppDemo), [
@@ -195,7 +226,7 @@ test("parses current app raw JSON and PCS1 payloads", () => {
 
   assert.equal(rawResult.ok, true);
   assert.equal(encodedResult.ok, true);
-  assert.equal(rawResult.project.projectVersion, PCS_SCHEMA_VERSION);
+  assert.equal(rawResult.project.projectVersion, PCS_LEGACY_SCHEMA_VERSION);
   assert.deepEqual(
     encodedResult.project.songSequence,
     currentAppDemo.songSequence,
@@ -215,7 +246,7 @@ test("summarizes playable Section A and song sequence fixture units", () => {
 
 test("summarizes sections object shape when present", () => {
   const objectShape = {
-    projectVersion: PCS_SCHEMA_VERSION,
+    projectVersion: PCS_LEGACY_SCHEMA_VERSION,
     bpm: 96,
     songSequence: ["a", "b"],
     sections: {
@@ -247,4 +278,98 @@ test("summarizes sections object shape when present", () => {
   assert.equal(sectionA.ok, true);
   assert.equal(sectionA.bars, 2);
   assert.deepEqual(sectionA.melodyHold, [[false, true]]);
+});
+
+test("validates schema 17 rich intent and retains all unknown data", () => {
+  const result = validatePcsProject(rich);
+  const parsed = parsePcsProject(encodePcsProject(rich));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.schemaVersion, PCS_SCHEMA_VERSION);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.project.unknownFutureField.keep, true);
+  assert.equal(parsed.project.sections.A.unknownSectionField.keep, true);
+  assert.equal(parsed.project.sections.A.tracks.bass.events[0].unknownEventField, true);
+  assert.equal(
+    parsed.project.sections.A.tracks.bass.events[0].technique.funk.vendorUnknown.keep[1].deep,
+    true,
+  );
+  assert.equal(parsed.project.soundProfile.unknownProfileField, "keep");
+});
+
+test("rejects invalid schema 17 sound profiles and rich events", () => {
+  const result = validatePcsProject(invalidRich);
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join("\n"), /soundProfile.preset/);
+  assert.match(result.errors.join("\n"), /duration must be a positive/);
+  assert.match(result.errors.join("\n"), /technique must be namespace:name or a namespaced object/);
+});
+
+test("migrates schema 16 deterministically into normalized schema 17 tracks", () => {
+  const first = migratePcsProject(valid);
+  const second = projectToSchema17(valid);
+
+  assert.equal(first.ok, true);
+  assert.deepEqual(first, second);
+  assert.equal(first.project.projectVersion, PCS_SCHEMA_VERSION);
+  assert.equal(first.project.soundProfile.id, "standard");
+  assert.equal(first.project.sections.A.tracks.bass.events[0].note, 36);
+  assert.equal(first.project.sections.A.drumLanes.kick[0].sound, "kick");
+  assert.equal(first.project.unknownFutureField.keep, true);
+});
+
+test("projects rich schema 17 to schema 16 with explicit semantic loss", () => {
+  const result = projectToSchema16(rich);
+  const restored = migratePcsProject(result.project);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.project.projectVersion, PCS_LEGACY_SCHEMA_VERSION);
+  assert.equal(validateSchema16Project(result.project).ok, true);
+  assert.equal(result.lossReport.lossy, true);
+  assert.equal(result.lossReport.richSourceRetained, true);
+  assert.ok(result.lossReport.losses.some((loss) => loss.code === "sound-profile"));
+  assert.ok(result.lossReport.losses.some((loss) => loss.code === "drum-lane"));
+  assert.equal(result.project.unknownFutureField.keep, true);
+  assert.equal(result.project.sections.A.unknownSectionField.keep, true);
+  assert.equal(
+    result.project.compatibility.richSource.sections.A.tracks.bass.events[0].technique.funk.vendorUnknown.keep[1].deep,
+    true,
+  );
+  assert.equal(restored.ok, true);
+  assert.equal(restored.project.soundProfile.unknownProfileField, "keep");
+  assert.equal(
+    restored.project.sections.A.tracks.bass.events[0].unknownEventField,
+    true,
+  );
+});
+
+test("negotiates target capability gaps without mutating source intent", () => {
+  const result = negotiatePcsCapabilities(rich, {
+    formatFeatures: ["rich-events", "sound-profile"],
+    soundProfiles: ["standard"],
+    articulations: ["note"],
+    drumLanes: ["kick", "snare"],
+  });
+
+  assert.equal(result.ok, false);
+  assert.ok(result.unsupported.some((loss) => loss.kind === "soundProfile"));
+  assert.ok(result.unsupported.some((loss) => loss.kind === "drumLane"));
+  assert.ok(result.unsupported.some((loss) => loss.kind === "techniqueNamespace" && loss.value === "funk"));
+  assert.ok(result.lossReport.lossy);
+  assert.equal(rich.soundProfile.id, "funk_groove");
+});
+
+test("accepts namespaced technique objects when a target advertises the namespace", () => {
+  const result = negotiatePcsCapabilities(rich, {
+    formatFeatures: rich.formatFeatures,
+    soundProfiles: ["funk_groove"],
+    articulations: ["slap", "pop", "mute", "staccato"],
+    drumLanes: ["kick", "snare", "hat_open"],
+    techniqueNamespaces: ["funk"],
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.required.techniqueNamespaces, ["funk"]);
+  assert.equal(result.lossReport.lossy, false);
 });

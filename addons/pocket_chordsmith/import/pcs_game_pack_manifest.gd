@@ -4,6 +4,7 @@ class_name PCSGamePackManifest
 
 const SharedSoundConstants := preload("res://addons/pocket_chordsmith/import/pcs_shared_sound_constants.gd")
 const PlaybackProfile := preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
+const SoundProfileContract := preload("res://addons/pocket_chordsmith/import/pcs_sound_profile_contract.gd")
 
 const STEM_ASSET_KEYS := ["drums", "bass", "chords", "guitar", "melody", "melody_1", "melody_2", "melody_3", "melody_4", "melody_5", "melody_6", "fx", "ambience", "full"]
 const DRUM_SAMPLE_KEYS := ["kick", "kick_accent", "snare", "snare_accent", "hat", "hat_accent", "open_hat", "crash"]
@@ -47,7 +48,12 @@ static func create_playback_profile_from_manifest(manifest: Dictionary, pack_roo
 	profile.playback_backend = _backend_for_manifest(str(manifest.get("profile", "")))
 	if str(manifest.get("kind", "")) == "godot-adaptive-pack" or manifest.has("stems") or manifest.has("sectionLoops"):
 		profile.playback_backend = PlaybackProfile.PlaybackBackend.STEM_SYNC
-	profile.audio_profile = str(manifest.get("audioProfile", profile.audio_profile))
+	var sound_profile: Dictionary = manifest.get("soundProfile", {}) if manifest.get("soundProfile", {}) is Dictionary else {}
+	var normalized_profile := SoundProfileContract.normalize_profile(sound_profile, str(manifest.get("audioProfile", profile.audio_profile)), str(manifest.get("preset", "")))
+	profile.audio_profile = str(normalized_profile.get("id", profile.audio_profile))
+	profile.sound_profile_id = str(normalized_profile.get("id", profile.sound_profile_id))
+	profile.sound_preset = str(normalized_profile.get("preset", profile.sound_preset))
+	profile.sound_recipe_version = int(normalized_profile.get("recipeVersion", profile.sound_recipe_version))
 	profile.lofi_preset = str(_dictionary_or_empty(manifest.get("lofi", {})).get("presetId", profile.lofi_preset))
 	profile.lofi_texture = _dictionary_or_empty(_dictionary_or_empty(manifest.get("lofi", {})).get("texture", {}))
 	profile.chip_preset = str(_dictionary_or_empty(manifest.get("chip", {})).get("presetId", profile.chip_preset))

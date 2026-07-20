@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added PCS Format 0.2/schema 17 with sparse expressive events, canonical sound profiles, expanded drum lanes, unknown-field preservation, capability negotiation, and reversible schema-16 projection with explicit loss reports.
+- Added Pocket Audio Core 0.2 profile registries, genre grammars, sound recipes, live/offline articulation rendering, and parameter-perturbation coverage for Standard, Lofi, Chiptune, Western, Heavy Metal, and Funk.
+- Added first-class Funk and Western authoring to Pocket Chordsmith, including six Funk presets and finger/slap/pop/mute/hammer/pull/slide/hold bass articulation.
+- Upgraded Heavy Metal rendering with pick/palm-mute behavior, cabinet shaping, deterministic double takes, metal bass/drums, and riff-led grammar.
+- Upgraded Chiptune with channel, duty, envelope, sweep, arpeggio, noise, wavetable, retrigger, slide, and vibrato technique commands.
+- Preserved schema-17 intent and surfaced capability/loss reports across Pocket Chordsmith, Pocket DJ, Pocket DAW, and the Godot addon; Pocket DAW native rendering and cache signatures now consume profile parameters and rich articulation.
 - Consolidated the Pocket Audio family into a public monorepo layout.
 - Preserved the Godot addon at `addons/pocket_chordsmith/`.
 - Added app folders for Pocket Chordsmith web, Pocket DJ, and Pocket DAW.

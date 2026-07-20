@@ -16,9 +16,11 @@ import {
   type Track
 } from "../daw/schema";
 import { SECTION_IDS, type SanitizedPcsProject } from "./pcsSanitizer";
+import { negotiatePocketDawPcsCapabilities, pocketDawPcsCapabilities } from "./pcsCapabilities";
 
 export function createDawProjectFromChordsmithProject(project: SanitizedPcsProject): PocketDawProject {
   const sourceRefId = "src_pcs_001";
+  const capabilityReport = negotiatePocketDawPcsCapabilities(project);
   const sequence = usableSequence(project);
   let bar = 1;
   const clips: Clip[] = sequence.map((sectionId, index) => {
@@ -67,6 +69,8 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
   applyMetalTrackEq(fx, project);
   applyMetalTrackPresets(tracks, project);
   applyMetalMasterChain(fx, project);
+  applyWesternTrackPresets(tracks, project);
+  applyFunkTrackPresets(tracks, project);
 
   const daw: PocketDawProject = {
     app: POCKET_DAW_APP,
@@ -86,7 +90,10 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
           "Imported through Pocket DAW v0 compatibility sanitizer. Unknown source fields are preserved in original.",
           ...(isLofiProject(project) ? [`Lofi profile detected: ${lofiPresetLabel(project)}. Track presets, editable Pocket Pro EQ curves and a gentle lofi master chain were applied.`] : []),
           ...(isChipProject(project) ? [`Chip tune profile detected: ${chipPresetLabel(project)}. Chip track presets, punch EQ curves and a compact master chain were applied.`] : []),
-          ...(isMetalProject(project) ? [`Heavy metal profile detected: ${metalPresetLabel(project)}. Tight drum/bass/guitar metadata, presence EQ curves and a controlled metal master chain were applied.`] : [])
+          ...(isMetalProject(project) ? [`Heavy metal profile detected: ${metalPresetLabel(project)}. Tight drum/bass/guitar metadata, presence EQ curves and a controlled metal master chain were applied.`] : []),
+          ...(isWesternProject(project) ? ["Western profile detected. Pocket DAW preserves Western techniques and uses native twang, upright, banjo and harmonica fallbacks where available."] : []),
+          ...(isFunkProject(project) ? ["Funk profile detected. Pocket DAW preserves pocket/articulation intent and renders native slap/pop/mute plus ghost/accent dynamics."] : []),
+          `PCS capability negotiation preserved ${project.formatFeatures.length} declared feature${project.formatFeatures.length === 1 ? "" : "s"} and reported ${capabilityReport.lossCount} audible fallback${capabilityReport.lossCount === 1 ? "" : "s"}.`
         ]
       }
     ],
@@ -133,7 +140,11 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
         importKind: "PCS1",
         message: `Imported ${sequence.length} Chordsmith section clip${sequence.length === 1 ? "" : "s"}.`
       }
-    ]
+    ],
+    unknownFields: {
+      pcsCapabilities: pocketDawPcsCapabilities(),
+      pcsCompatibility: JSON.parse(JSON.stringify(capabilityReport))
+    }
   };
   ensureDrumLaneMixerInPlace(daw);
   return daw;
@@ -150,6 +161,8 @@ function alignTracksToChordsmithSource(tracks: ReturnType<typeof createDefaultTr
 
   const sourceSoundMetadata = {
     audioProfile: project.audioProfile,
+    soundProfile: JSON.parse(JSON.stringify(project.soundProfile)),
+    formatFeatures: [...project.formatFeatures],
     lofiPreset: project.lofiPreset,
     chipPreset: project.chipPreset,
     metalPreset: project.metalPreset
@@ -219,11 +232,19 @@ function isLofiProject(project: SanitizedPcsProject) {
 }
 
 function isChipProject(project: SanitizedPcsProject) {
-  return project.audioProfile === "chip_tune" || Boolean(project.chipPreset);
+  return project.audioProfile === "chip_arcade" || Boolean(project.chipPreset);
 }
 
 function isMetalProject(project: SanitizedPcsProject) {
   return project.audioProfile === "heavy_metal" || Boolean(project.metalPreset);
+}
+
+function isWesternProject(project: SanitizedPcsProject) {
+  return project.audioProfile === "western_frontier";
+}
+
+function isFunkProject(project: SanitizedPcsProject) {
+  return project.audioProfile === "funk_groove";
 }
 
 function lofiPresetLabel(project: SanitizedPcsProject) {
@@ -235,7 +256,7 @@ function lofiPresetLabel(project: SanitizedPcsProject) {
 }
 
 function chipPresetLabel(project: SanitizedPcsProject) {
-  return (project.chipPreset || "chip_tune")
+  return (project.soundProfile.preset || project.chipPreset || "chip_arcade")
     .replace(/^chip_/, "")
     .split("_")
     .map((part) => titleCase(part))
@@ -243,7 +264,7 @@ function chipPresetLabel(project: SanitizedPcsProject) {
 }
 
 function metalPresetLabel(project: SanitizedPcsProject) {
-  return (project.metalPreset || "heavy_metal")
+  return (project.soundProfile.preset || project.metalPreset || "heavy_metal")
     .replace(/^metal_/, "")
     .split("_")
     .map((part) => titleCase(part))
@@ -285,8 +306,8 @@ function applyChipTrackPresets(tracks: Track[], project: SanitizedPcsProject) {
   tracks.forEach((track) => {
     track.metadata = {
       ...(track.metadata || {}),
-      audioProfile: "chip_tune",
-      chipPreset: project.chipPreset || "chip_tune"
+      audioProfile: "chip_arcade",
+      chipPreset: project.chipPreset || project.soundProfile.preset
     };
     if (track.role === "drums") {
       track.name = "Chip Drums";
@@ -307,6 +328,45 @@ function applyChipTrackPresets(tracks: Track[], project: SanitizedPcsProject) {
     if (track.role === "master") {
       track.name = "Chip Master";
     }
+  });
+}
+
+function applyWesternTrackPresets(tracks: Track[], project: SanitizedPcsProject) {
+  if (!isWesternProject(project)) return;
+  tracks.forEach((track) => {
+    track.metadata = {
+      ...(track.metadata || {}),
+      audioProfile: "western_frontier",
+      soundProfile: JSON.parse(JSON.stringify(project.soundProfile))
+    };
+    if (track.role === "drums") track.name = "Western Train Drums";
+    if (track.role === "bass") {
+      track.name = "Upright Bass";
+      track.metadata = { ...(track.metadata || {}), bassTone: project.bassTone || "soft_upright" };
+    }
+    if (track.role === "chords") track.name = "Western Rhythm";
+    if (track.role === "guitar") {
+      track.name = "Western Acoustic / Twang Guitar";
+      track.metadata = { ...(track.metadata || {}), chordsmithInstrument: "western_twang" };
+    }
+  });
+}
+
+function applyFunkTrackPresets(tracks: Track[], project: SanitizedPcsProject) {
+  if (!isFunkProject(project)) return;
+  tracks.forEach((track) => {
+    track.metadata = {
+      ...(track.metadata || {}),
+      audioProfile: "funk_groove",
+      soundProfile: JSON.parse(JSON.stringify(project.soundProfile))
+    };
+    if (track.role === "drums") track.name = "Funk Pocket Drums";
+    if (track.role === "bass") {
+      track.name = "Funk Articulation Bass";
+      track.metadata = { ...(track.metadata || {}), bassTone: project.bassTone || "soft_upright" };
+    }
+    if (track.role === "chords") track.name = "Funk Stabs";
+    if (track.role === "guitar") track.name = "Muted Funk Guitar";
   });
 }
 

@@ -6,6 +6,23 @@ This release keeps the core architecture stable:
 Pocket Chordsmith JSON/share code -> PCSChartResource -> PocketChordsmithConductor
 ```
 
+## Unreleased PCS schema-17 profile note
+
+The importer now accepts PCS schema 17 while retaining schema-16 compatibility.
+Recompile imported charts so `PCSChartResource` can preserve `sound_profile`,
+`format_features`, expressive event counts, articulation, expression,
+performance roles, sounds, and namespaced technique diagnostics.
+
+Unsupported preview features are preserved in the imported source and reported
+through capability/loss diagnostics. They are not silently removed. Existing
+schema-16 projects continue through the compatibility migrator and retain their
+legacy profile aliases.
+
+Funk uses `funk_groove`; Western uses `western_frontier`; Chiptune normalizes
+to `chip_arcade`; Heavy Metal remains `heavy_metal`. For production audio,
+continue to route prepared `STEM_SYNC`/`HYBRID` assets rather than treating the
+Web Kit's safe preview aliases as mastered genre parity.
+
 ## What To Change In Existing Projects
 
 1. Re-enable the addon after replacing files.

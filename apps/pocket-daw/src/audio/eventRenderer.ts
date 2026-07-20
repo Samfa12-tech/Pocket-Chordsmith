@@ -6,7 +6,8 @@ import { anyDrumLaneSolo, DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumBranch
 import { getMelodyOverlayEvents } from "../daw/melodyOverlays";
 import { getBassOverlayEvents } from "../daw/bassOverlays";
 import { getChordOverlayEvents } from "../daw/chordOverlays";
-import type { SanitizedPcsProject, SanitizedPcsSection } from "../compatibility/pcsSanitizer";
+import type { SanitizedPcsProject, SanitizedPcsRichEvent, SanitizedPcsSection } from "../compatibility/pcsSanitizer";
+import { mapPcsArticulation, mapPcsDrumLane, mapPcsSound } from "../compatibility/pcsCapabilities";
 import { chordsmithChordRhythmStarts } from "../../../../packages/pocket-audio-core/src/performance/chord-rhythm.js";
 import { chordsmithDrumPeak, chordsmithDrumStepDuration, chordsmithDrumTupletDuration } from "../../../../packages/pocket-audio-core/src/performance/drum-feel.js";
 import { chordsmithHumanizeOffset, chordsmithHumanizePeak } from "../../../../packages/pocket-audio-core/src/performance/humanize.js";
@@ -40,6 +41,7 @@ export interface RenderedEvent {
   duration: number;
   bar: number;
   step: number;
+  tick?: number;
   midi?: number;
   midiNotes?: number[];
   channel?: number;
@@ -58,6 +60,11 @@ export interface RenderedEvent {
   chipTexture?: JsonObject;
   metalPreset?: string;
   metalTexture?: JsonObject;
+  soundProfile?: JsonObject;
+  sound?: string;
+  performanceRole?: string;
+  expression?: JsonObject;
+  technique?: JsonObject;
   accent?: boolean;
   tuplet?: boolean;
   articulation?: string;
@@ -275,6 +282,22 @@ function renderGeneratedSectionEvents(
   const clipGain = clip.transforms.gain ?? 1;
   const stemMutes = clip.transforms.stemMutes || {};
   const sourceMeta = sourceEventMetadata(pcs);
+  const richRoles = new Set(
+    Object.entries(section.richEvents || {})
+      .filter(([role, events]) => richRoleRequiresDirectRendering(pcs, role, events))
+      .map(([role]) => normalizedRichTrackRole(role))
+      .filter((role): role is TrackRole => role !== null)
+  );
+  out.push(...renderRichSectionEvents(project, pcs, section, clip, {
+    sourceStartStep,
+    renderSteps,
+    stepsPerBar,
+    stepTimes,
+    clipStart,
+    clipGain,
+    stemMutes,
+    richRoles
+  }));
 
   for (let localStep = 0; localStep < renderSteps; localStep += 1) {
     const step = sourceStartStep + localStep;
@@ -285,6 +308,8 @@ function renderGeneratedSectionEvents(
     if (!stemMutes.drums) {
       const texture = lofiTextureEvent(clip, pcs, step, eventBar, eventTime, stepDur);
       if (texture) out.push(texture);
+    }
+    if (!stemMutes.drums && !richRoles.has("drums")) {
       SEQUENCED_DRUM_LANES.forEach((drum) => {
         const level = section.grid[drum][step] || 0;
         if (gridTripletSecond(section, drum, step, sectionMaxSteps)) return;
@@ -356,7 +381,7 @@ function renderGeneratedSectionEvents(
       });
     }
 
-    if (!stemMutes.bass && pcs.bassOn && bassTriggerAt(pcs, section, step) && !section.bassHold[step] && !section.bassSlide[step]) {
+    if (!stemMutes.bass && !richRoles.has("bass") && pcs.bassOn && bassTriggerAt(pcs, section, step) && !section.bassHold[step] && !section.bassSlide[step]) {
       if (gridTripletStart(section, "bass", step, sectionMaxSteps)) {
         const spanDur = spanDurationForLocalSteps(stepTimes, localStep, 2, spanDurationForSteps(localStep, 2, secondsPerBeat, resolution, swing));
         const times = tripletTimesForSpan(eventTime, spanDur);
@@ -379,6 +404,7 @@ function renderGeneratedSectionEvents(
             midi: applyClipPitchTransform(midi, clip),
             velocity: humanizedPeak(pcs, (accent ? 0.42 : 0.34) * clipGain, step + tripletIndex, 4),
             accent,
+            ...(section.bassArticulation[tripletIndex === 2 ? step + 1 : step] ? { articulation: section.bassArticulation[tripletIndex === 2 ? step + 1 : step] } : {}),
             bassTone: pcs.bassTone,
             tuplet: true,
             ...sourceMeta
@@ -401,6 +427,7 @@ function renderGeneratedSectionEvents(
             midi: applyClipPitchTransform(midi, clip),
             velocity: humanizedPeak(pcs, (phrase.accent ? 0.42 : 0.34) * clipGain, step, 4),
             accent: phrase.accent,
+            ...(section.bassArticulation[step] ? { articulation: section.bassArticulation[step] } : {}),
             slideMidi: phrase.slideMidi === null ? undefined : applyClipPitchTransform(phrase.slideMidi, clip),
             slideOffset: phrase.slideOffset ?? undefined,
             bassTone: pcs.bassTone,
@@ -410,7 +437,7 @@ function renderGeneratedSectionEvents(
       }
     }
 
-    if (!stemMutes.bass && pcs.bassOn) {
+    if (!stemMutes.bass && !richRoles.has("bass") && pcs.bassOn) {
       getBassOverlayEvents(project, section.id, step).forEach((overlay, overlayIndex) => {
         out.push({
           id: `${clip.id}_bass_overlay_${step}_${overlayIndex}_${overlay.midi}`,
@@ -432,7 +459,7 @@ function renderGeneratedSectionEvents(
     }
 
     const chordOverlayOnly = project.tracks.find((track) => track.role === "chords")?.metadata?.midiFaithfulOverlayOnly === true;
-    if (!stemMutes.chords && pcs.chordsOn && !chordOverlayOnly && step % stepsPerBar === 0) {
+    if (!stemMutes.chords && !richRoles.has("chords") && pcs.chordsOn && !chordOverlayOnly && step % stepsPerBar === 0) {
       const chord = currentChord(pcs, section, step);
       chordRhythmStarts(pcs, eventTime, secondsPerBeat).forEach(([start, duration], chordIndex) => {
         out.push({
@@ -454,7 +481,7 @@ function renderGeneratedSectionEvents(
       });
     }
 
-    if (!stemMutes.chords && pcs.chordsOn) {
+    if (!stemMutes.chords && !richRoles.has("chords") && pcs.chordsOn) {
       getChordOverlayEvents(project, section.id, step).forEach((overlay, overlayIndex) => {
         out.push({
           id: `${clip.id}_chord_overlay_${step}_${overlayIndex}_${overlay.midiNotes.join(".")}`,
@@ -475,7 +502,7 @@ function renderGeneratedSectionEvents(
       });
     }
 
-    if (!stemMutes.melody) {
+    if (!stemMutes.melody && !richRoles.has("melody")) {
       section.melodyTracks.forEach((track, trackIndex) => {
         if (section.melodyMute[trackIndex]) return;
         const hasSolo = section.melodySolo.some(Boolean);
@@ -542,7 +569,7 @@ function renderGeneratedSectionEvents(
       });
     }
 
-    if (!stemMutes.guitar && pcs.guitarEnabled) {
+    if (!stemMutes.guitar && !richRoles.has("guitar") && pcs.guitarEnabled) {
       const art = section.guitarPattern[step];
       if (art && art !== "off" && art !== "hold") {
         out.push({
@@ -566,6 +593,233 @@ function renderGeneratedSectionEvents(
     }
   }
   return out;
+}
+
+interface RichRenderWindow {
+  sourceStartStep: number;
+  renderSteps: number;
+  stepsPerBar: number;
+  stepTimes: number[];
+  clipStart: number;
+  clipGain: number;
+  stemMutes: Record<string, boolean>;
+  richRoles: Set<TrackRole>;
+}
+
+function renderRichSectionEvents(
+  project: PocketDawProject,
+  pcs: SanitizedPcsProject,
+  section: SanitizedPcsSection,
+  clip: Clip,
+  window: RichRenderWindow
+): RenderedEvent[] {
+  const events: RenderedEvent[] = [];
+  Object.entries(section.richEvents || {}).forEach(([trackRole, richEvents]) => {
+    const stemRole = normalizedRichTrackRole(trackRole);
+    if (!stemRole || !window.richRoles.has(stemRole) || window.stemMutes[stemRole]) return;
+    richEvents.forEach((event, eventIndex) => {
+      const sourceStep = richEventStep(event, pcs);
+      if (sourceStep < window.sourceStartStep || sourceStep >= window.sourceStartStep + window.renderSteps) return;
+      const localStep = sourceStep - window.sourceStartStep;
+      const start = richStepTime(window, localStep);
+      const durationSteps = richEventDurationSteps(event);
+      const end = richStepTime(window, Math.min(window.renderSteps, localStep + durationSteps));
+      const baseDuration = Math.max(0.01, end - start);
+      const mappedArticulation = mapPcsArticulation(event.articulation);
+      const mappedSound = mapPcsSound(pcs.soundProfile.id, event.sound);
+      const noteValues = event.notes?.length ? event.notes : typeof event.note === "number" ? [event.note] : [];
+      const midiNotes = noteValues.map((note) => richNoteToMidi(pcs, section, stemRole, note, Math.floor(sourceStep))).map((note) => applyClipPitchTransform(note, clip));
+      const expressionPan = numericJsonField(event.expression, "pan");
+      const pocketOffset = numericNestedJsonField(event.technique, "funk", "pocketOffset");
+      const profilePocket = numericJsonField(pcs.soundProfile.parameters, "pocket");
+      const pocketSeconds = pocketOffset === null
+        ? pcs.soundProfile.id === "funk_groove" && Math.floor(sourceStep) % 2 !== 0
+          ? ((profilePocket ?? 0.72) - 0.5) * 0.03
+          : 0
+        : Math.max(-0.49, Math.min(0.49, pocketOffset)) * baseDuration;
+      const ghostNotes = numericJsonField(pcs.soundProfile.parameters, "ghostNotes") ?? 0.42;
+      const stabTightness = numericJsonField(pcs.soundProfile.parameters, "stabTightness") ?? 0.76;
+      const isGhostDrum = stemRole === "drums" && ["snare", "rim", "clap"].includes(event.sound) && event.articulation !== "accent" && event.velocity < 110;
+      const profileVelocityScale = pcs.soundProfile.id === "funk_groove" && isGhostDrum ? 0.46 + Math.max(0, Math.min(1, ghostNotes)) * 0.5 : 1;
+      const profileDurationScale = pcs.soundProfile.id === "funk_groove" && stemRole === "chords" ? 1 - Math.max(0, Math.min(1, stabTightness)) * 0.68 : 1;
+      const slideTarget = richSlideTarget(event);
+      const common = {
+        id: `${clip.id}_rich_${safeEventId(trackRole)}_${eventIndex}`,
+        clipId: clip.id,
+        trackId: richTrackId(project, stemRole),
+        role: stemRole,
+        time: Math.max(window.clipStart, start + pocketSeconds),
+        duration: Math.max(0.01, baseDuration * profileDurationScale),
+        bar: clip.startBar + Math.floor(localStep / window.stepsPerBar),
+        step: sourceStep,
+        ...(typeof event.tick === "number" ? { tick: event.tick } : {}),
+        velocity: richVelocity(event.velocity) * window.clipGain * profileVelocityScale,
+        ...(expressionPan === null ? {} : { pan: Math.max(-1, Math.min(1, expressionPan)) }),
+        ...(stemRole === "drums" && mappedArticulation === "finger" ? {} : { articulation: mappedArticulation }),
+        accent: event.articulation === "accent" || event.expression.accent === true || event.velocity >= 110,
+        sound: event.sound,
+        performanceRole: event.role,
+        expression: cloneEventJson(event.expression),
+        technique: cloneEventJson(event.technique),
+        ...sourceEventMetadata(pcs)
+      };
+
+      if (stemRole === "drums") {
+        const sourceLane = mapPcsDrumLane(event.sound || String(event.expression.lane || "percussion")) as DrumLaneId;
+        const accent = common.accent;
+        const lane = ["kick", "snare", "hat"].includes(sourceLane)
+          ? branchTargetDrumLane(project, sourceLane as SequencedDrumLane, accent ? 2 : 1)
+          : sourceLane;
+        const branchTrack = project.tracks.find((track) => generatedDrumBranchLane(track) === lane && track.active !== false);
+        events.push({
+          ...common,
+          kind: lane,
+          drumLane: lane,
+          trackId: branchTrack?.id || "drums",
+          drumKit: pcs.drumKit
+        });
+        return;
+      }
+
+      if (stemRole === "bass") {
+        const midi = midiNotes[0] ?? applyClipPitchTransform(bassMidiAt(pcs, section, Math.floor(sourceStep)) ?? 36, clip);
+        events.push({
+          ...common,
+          kind: "bass",
+          midi,
+          bassTone: mappedSound || pcs.bassTone,
+          ...(slideTarget === null ? {} : {
+            slideMidi: applyClipPitchTransform(richNoteToMidi(pcs, section, stemRole, slideTarget, Math.floor(sourceStep)), clip),
+            slideOffset: Math.min(baseDuration, Math.max(0.02, baseDuration * 0.7))
+          })
+        });
+        return;
+      }
+
+      const instrument = mappedSound || defaultRichInstrument(pcs, stemRole);
+      if (stemRole === "chords" || stemRole === "guitar") {
+        events.push({
+          ...common,
+          kind: stemRole === "chords" ? "chord" : "guitar",
+          midiNotes: midiNotes.length ? midiNotes : chordMidiNotes(pcs, currentChord(pcs, section, Math.floor(sourceStep))),
+          instrument,
+          direction: richDirection(event, Math.floor(sourceStep), pcs.guitarStrumMode)
+        });
+        return;
+      }
+
+      const midi = midiNotes[0] ?? applyClipPitchTransform(melodyIndexToMidi(pcs, 0), clip);
+      events.push({
+        ...common,
+        kind: "melody",
+        midi,
+        instrument,
+        ...(slideTarget === null ? {} : {
+          slideMidi: applyClipPitchTransform(richNoteToMidi(pcs, section, stemRole, slideTarget, Math.floor(sourceStep)), clip),
+          slideOffset: Math.min(baseDuration, Math.max(0.02, baseDuration * 0.7))
+        })
+      });
+    });
+  });
+  return events;
+}
+
+function normalizedRichTrackRole(value: string): TrackRole | null {
+  if (["drums", "bass", "chords", "melody", "guitar"].includes(value)) return value as TrackRole;
+  if (/^melody_?\d+$/i.test(value)) return "melody";
+  return null;
+}
+
+function richRoleRequiresDirectRendering(pcs: SanitizedPcsProject, role: string, events: SanitizedPcsRichEvent[]): boolean {
+  if (!events.length || !normalizedRichTrackRole(role)) return false;
+  if (["chip_arcade", "western_frontier", "heavy_metal", "funk_groove"].includes(pcs.soundProfile.id)) return true;
+  return events.some((event) => {
+    const alignedTick = typeof event.tick !== "number" || typeof event.step !== "number" || Math.abs(event.tick * pcs.resolution / pcs.ppq - event.step) < 0.0001;
+    const expressiveArticulation = ["slap", "pop", "mute", "hammer", "pull", "ghost", "roll", "bend", "vibrato"].includes(event.articulation);
+    const expressionKeys = Object.keys(event.expression).filter((key) => !["pan", "accent"].includes(key));
+    const techniqueKeys = Object.keys(event.technique).filter((key) => key !== "drums");
+    const expandedDrum = normalizedRichTrackRole(role) === "drums" && !["kick", "snare", "hat", "hat_closed", "hat_open"].includes(event.sound);
+    return !alignedTick || expressiveArticulation || expressionKeys.length > 0 || techniqueKeys.length > 0 || expandedDrum;
+  });
+}
+
+function richEventStep(event: SanitizedPcsRichEvent, pcs: SanitizedPcsProject): number {
+  return typeof event.tick === "number" ? event.tick * pcs.resolution / pcs.ppq : event.step || 0;
+}
+
+function richEventDurationSteps(event: SanitizedPcsRichEvent): number {
+  return event.duration;
+}
+
+function richStepTime(window: RichRenderWindow, localStep: number): number {
+  const bounded = Math.max(0, Math.min(window.renderSteps, localStep));
+  const floor = Math.floor(bounded);
+  const fraction = bounded - floor;
+  const start = window.stepTimes[floor] ?? window.clipStart;
+  const end = window.stepTimes[Math.min(window.stepTimes.length - 1, floor + 1)] ?? start;
+  return start + Math.max(0, end - start) * fraction;
+}
+
+function richNoteToMidi(pcs: SanitizedPcsProject, _section: SanitizedPcsSection, role: string, note: number, _step: number): number {
+  if (note >= 24) return Math.max(0, Math.min(127, Math.round(note)));
+  if (role === "bass") return bassManualIndexToMidi(pcs, Math.max(0, Math.min(13, Math.round(note))));
+  if (role === "chords" && note >= 0 && note <= 6) return melodyIndexToMidi(pcs, Math.round(note));
+  return melodyIndexToMidi(pcs, Math.max(0, Math.min(23, Math.round(note))));
+}
+
+function richVelocity(value: number): number {
+  return Math.max(0, Math.min(1, value > 1 ? value / 127 : value));
+}
+
+function richTrackId(project: PocketDawProject, role: string): string {
+  return project.tracks.find((track) => track.role === role)?.id || role;
+}
+
+function defaultRichInstrument(pcs: SanitizedPcsProject, role: string): string {
+  if (role === "guitar") return pcs.guitarTone;
+  if (role === "chords") return pcs.chordInstrument;
+  return pcs.audioProfile === "western_frontier" ? "harmonica" : pcs.audioProfile === "funk_groove" ? "muted_trumpet" : DEFAULT_MELODY_INSTRUMENT;
+}
+
+function richDirection(event: SanitizedPcsRichEvent, step: number, fallbackMode: string): "down" | "up" {
+  const metal = nestedJsonObject(event.technique, "metal");
+  const western = nestedJsonObject(event.technique, "western");
+  const requested = String(metal.pickDirection || western.pickDirection || western.strumDirection || "");
+  if (requested === "up") return "up";
+  if (requested === "alternate") return step % 2 ? "up" : "down";
+  if (requested === "down") return "down";
+  return guitarDirectionForStep(step, fallbackMode);
+}
+
+function richSlideTarget(event: SanitizedPcsRichEvent): number | null {
+  const direct = numericJsonField(event.expression, "slideToNote") ?? numericJsonField(event.expression, "bendToNote");
+  if (direct !== null) return direct;
+  const chip = nestedJsonObject(event.technique, "chip");
+  const western = nestedJsonObject(event.technique, "western");
+  const candidate = Number(chip.pitchSlide ?? western.bendToNote);
+  return Number.isFinite(candidate) ? candidate : null;
+}
+
+function numericJsonField(value: JsonObject, key: string): number | null {
+  const number = Number(value[key]);
+  return Number.isFinite(number) ? number : null;
+}
+
+function numericNestedJsonField(value: JsonObject, namespace: string, key: string): number | null {
+  return numericJsonField(nestedJsonObject(value, namespace), key);
+}
+
+function nestedJsonObject(value: JsonObject, key: string): JsonObject {
+  const nested = value[key];
+  return nested && typeof nested === "object" && !Array.isArray(nested) ? nested as JsonObject : {};
+}
+
+function cloneEventJson(value: JsonObject): JsonObject {
+  return JSON.parse(JSON.stringify(value)) as JsonObject;
+}
+
+function safeEventId(value: string): string {
+  return value.replace(/[^a-z0-9_-]+/gi, "_").slice(0, 48) || "event";
 }
 
 function roleOrder(role: TrackRole) {
@@ -701,7 +955,10 @@ function branchDrumOverlayDuration(laneId: DrumLaneId, stepDuration: number): nu
 function branchTargetDrumLane(project: PocketDawProject, sourceLane: SequencedDrumLane, level: number): DrumLaneId {
   const sourceDrum = sourceLane as DrumLaneId;
   if (level <= 1) return sourceDrum;
-  const accentBranch = DRUM_LANE_DEFS.find((lane) => lane.chordsmithRecordTrack === sourceLane && lane.chordsmithRecordLevel === level);
+  const explicitAccentBranch = sourceLane === "snare" ? "clap" : sourceLane === "hat" ? "openhat" : null;
+  const accentBranch = explicitAccentBranch
+    ? DRUM_LANE_DEFS.find((lane) => lane.id === explicitAccentBranch)
+    : DRUM_LANE_DEFS.find((lane) => lane.chordsmithRecordTrack === sourceLane && lane.chordsmithRecordLevel === level);
   if (!accentBranch || accentBranch.id === sourceLane) return sourceDrum;
   return project.tracks.some((track) => generatedDrumBranchLane(track) === accentBranch.id && track.active !== false) ? accentBranch.id : sourceDrum;
 }
@@ -725,7 +982,8 @@ function lofiTextureEvent(clip: Clip, pcs: SanitizedPcsProject, step: number, ba
 
 function sourceEventMetadata(pcs: SanitizedPcsProject) {
   return {
-    audioProfile: pcs.audioProfile,
+    audioProfile: pcs.soundProfile.id,
+    soundProfile: JSON.parse(JSON.stringify(pcs.soundProfile)) as JsonObject,
     lofiPreset: pcs.lofiPreset,
     lofiTexture: pcs.lofiTexture,
     chipPreset: pcs.chipPreset,

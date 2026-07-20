@@ -15,3 +15,11 @@ export function migratePocketChordsmithProject(raw) {
     migrationNotes: []
   };
 }
+
+export function restorePocketChordsmithSource(project) {
+  const original = project?.source?.original;
+  if (!original || typeof original !== "object" || Array.isArray(original)) {
+    throw new Error("That PocketAudioProject does not retain an original PCS source object.");
+  }
+  return JSON.parse(JSON.stringify(original));
+}

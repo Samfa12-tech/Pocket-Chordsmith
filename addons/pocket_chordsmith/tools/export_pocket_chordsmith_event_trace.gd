@@ -24,7 +24,7 @@ func _init() -> void:
 			result["report_path"] = report_path
 
 	print("Pocket Chordsmith event trace export: %s" % ("OK" if bool(result.get("ok", false)) else "Needs attention"))
-	for key in ["chart", "report_path", "event_count", "event_counts_by_type", "bpm", "time_signature", "arrangement"]:
+	for key in ["chart", "report_path", "event_count", "event_counts_by_type", "bpm", "time_signature", "schema_version", "sound_profile", "expressive_event_count", "capability_report", "arrangement"]:
 		print("%s: %s" % [key, str(result.get(key, ""))])
 	for error in result.get("errors", []):
 		push_error(str(error))
@@ -43,6 +43,11 @@ static func export_event_trace(chart_path: String) -> Dictionary:
 		"arrangement": [],
 		"event_count": 0,
 		"event_counts_by_type": {},
+		"schema_version": 0,
+		"sound_profile": {},
+		"format_features": [],
+		"expressive_event_count": 0,
+		"capability_report": {},
 		"events": [],
 		"errors": [],
 	}
@@ -51,6 +56,11 @@ static func export_event_trace(chart_path: String) -> Dictionary:
 		result["errors"].append("Could not load chart: %s" % chart_path)
 		return result
 	result["bpm"] = int(chart.get("bpm"))
+	result["schema_version"] = int(chart.get("schema_version"))
+	result["sound_profile"] = chart.get("sound_profile").duplicate(true) if chart.get("sound_profile") is Dictionary else {}
+	result["format_features"] = chart.get("format_features").duplicate() if chart.get("format_features") is Array else []
+	result["expressive_event_count"] = int(chart.get("expressive_event_count"))
+	result["capability_report"] = chart.get("capability_report").duplicate(true) if chart.get("capability_report") is Dictionary else {}
 	result["time_signature"] = int(chart.get("time_signature"))
 	result["ticks_per_quarter"] = int(chart.get("ticks_per_quarter"))
 	result["seconds_per_tick"] = float(chart.call("get_seconds_per_tick")) if chart.has_method("get_seconds_per_tick") else 0.0
@@ -83,6 +93,13 @@ static func _compact_event(event: Dictionary, seconds_per_tick: float) -> Dictio
 		"velocity": _round(float(event.get("velocity", 0.0)) / 127.0),
 		"accent": bool(flags.get("accent", false)),
 		"tuplet": bool(flags.get("tuplet", false)),
+		"notes": event.get("notes", flags.get("midi_notes", [])),
+		"note": int(event.get("note", event.get("midi_note", -1))),
+		"articulation": str(event.get("articulation", flags.get("articulation", ""))),
+		"sound": str(event.get("sound", flags.get("sound", ""))),
+		"role": str(event.get("role", flags.get("role", ""))),
+		"expression": event.get("expression", flags.get("expression", {})),
+		"technique": event.get("technique", flags.get("technique", {})),
 	}
 	if int(event.get("midi_note", -1)) >= 0:
 		out["midi"] = int(event.get("midi_note", -1))

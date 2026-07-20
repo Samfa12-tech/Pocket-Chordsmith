@@ -11,7 +11,7 @@ const FIXTURE_CASES = [
   {
     path: "/apps/chordsmith-web/demos/chip_arcade_start_loop.json",
     title: "Arcade Start Glow Loop",
-    audioProfile: "chip_tune",
+    audioProfile: "chip_arcade",
     presetField: "chipPreset",
     preset: "chip_arcade_start",
   },
@@ -212,7 +212,7 @@ test("genre tabs follow the keyboard tab pattern", async ({ page }) => {
   await expect(page.locator("#genreTabLofi")).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#genrePanelLofi")).toBeVisible();
   await page.keyboard.press("End");
-  await expect(page.locator("#genreTabWestern")).toBeFocused();
+  await expect(page.locator("#genreTabFunk")).toBeFocused();
 });
 
 test("X-Y melody pad exposes state and supports complete keyboard operation", async ({ page }) => {
@@ -486,7 +486,7 @@ test("settings genre drawer switches genre panels and keeps simple controls ligh
     };
   });
 
-  expect(result.projectVersion).toBe(16);
+  expect(result.projectVersion).toBe(17);
   expect(result.chordInstrument).toBe("saloon_piano");
   expect(result.guitarTone).toBe("western_twang");
   expect(result.guitarEnabled).toBe(true);
@@ -993,7 +993,7 @@ for (const fixtureCase of FIXTURE_CASES) {
     );
 
     const exported = JSON.parse(await page.locator("#projectBox").inputValue());
-    expect(exported.projectVersion).toBe(16);
+    expect(exported.projectVersion).toBe(17);
     expect(exported.audioProfile).toBe(fixtureCase.audioProfile);
     expect(exported[fixtureCase.presetField]).toBe(fixtureCase.preset);
     expect(exported.key).toBe(fixture.key);
@@ -1092,12 +1092,139 @@ test("PCS1 share code round-trips through the settings text box", async ({
   await expect(page.locator("#statusText")).toContainText("Project imported");
 
   const roundTrip = await page.evaluate(() => exportProject());
-  expect(roundTrip.projectVersion).toBe(16);
+  expect(roundTrip.projectVersion).toBe(17);
   expect(roundTrip.audioProfile).toBe(FIXTURE_CASES[0].audioProfile);
   expect(roundTrip.lofiPreset).toBe(FIXTURE_CASES[0].preset);
 });
 
-test("Godot direct push sends a schema 16 PCS1 payload to the local receiver", async ({
+test("schema 17 Funk projects preserve rich intent, unknown namespaces, and reversible schema 16 compatibility", async ({ page }) => {
+  const result = await page.evaluate(() => {
+    applyFunkPresetToProject("funk_slap_party", { fullLoop: false });
+    const authored = exportProject({ targetSchema: 17 });
+    authored.vendorFuture = { keep: ["root", 17] };
+    const bassEvent = authored.sections.A.tracks.bass.events.find(
+      (event) => event.articulation === "slap",
+    );
+    bassEvent.unknownEventField = "keep-event";
+    bassEvent.technique.vendorFuture = { keep: { nested: true } };
+
+    importProject(authored);
+    const roundTrip = exportProject({ targetSchema: 17 });
+    const roundTripBass = roundTrip.sections.A.tracks.bass.events.find(
+      (event) => event.articulation === "slap",
+    );
+    const legacy = projectToSchema16(roundTrip);
+    importProject(legacy.project);
+    const restored = exportProject({ targetSchema: 17 });
+    const restoredBass = restored.sections.A.tracks.bass.events.find(
+      (event) => event.articulation === "slap",
+    );
+
+    return {
+      roundTrip,
+      roundTripBass,
+      legacyVersion: legacy.project.projectVersion,
+      legacyCompatibility: legacy.project.compatibility,
+      report: legacy.lossReport,
+      restored,
+      restoredBass,
+    };
+  });
+
+  expect(result.roundTrip.projectVersion).toBe(17);
+  expect(result.roundTrip.soundProfile).toMatchObject({
+    id: "funk_groove",
+    preset: "funk_slap_party",
+    recipeVersion: 1,
+  });
+  expect(result.roundTrip.formatFeatures).toEqual(
+    expect.arrayContaining([
+      "sound-profile-v1",
+      "rich-events-v1",
+      "articulations-v1",
+      "expanded-drums-v1",
+      "capability-report-v1",
+    ]),
+  );
+  expect(result.roundTrip.vendorFuture).toEqual({ keep: ["root", 17] });
+  expect(result.roundTripBass.unknownEventField).toBe("keep-event");
+  expect(result.roundTripBass.technique.vendorFuture.keep.nested).toBe(true);
+  expect(result.legacyVersion).toBe(16);
+  expect(result.report).toMatchObject({
+    lossy: true,
+    sourceSchemaVersion: 17,
+    targetSchemaVersion: 16,
+    richSourceRetained: true,
+  });
+  expect(result.report.losses.length).toBeGreaterThan(0);
+  expect(result.legacyCompatibility.richSource.projectVersion).toBe(17);
+  expect(result.restored.projectVersion).toBe(17);
+  expect(result.restored.soundProfile.id).toBe("funk_groove");
+  expect(result.restoredBass.technique.vendorFuture.keep.nested).toBe(true);
+});
+
+test("all Metal and Funk profile parameters produce distinct renderer recipes", async ({ page }) => {
+  const traces = await page.evaluate(() => {
+    const vary = (profile, defaults, keys) =>
+      Object.fromEntries(
+        keys.map((key) => [
+          key,
+          {
+            low: buildSoundProfileParameterTrace(profile, { ...defaults, [key]: 0 }),
+            high: buildSoundProfileParameterTrace(profile, { ...defaults, [key]: 1 }),
+          },
+        ]),
+      );
+    return {
+      metal: vary("heavy_metal", DEFAULT_METAL_TEXTURE, [
+        "drive",
+        "palmMute",
+        "lowTightness",
+        "presence",
+        "roomSize",
+        "pickAttack",
+      ]),
+      funk: vary("funk_groove", DEFAULT_FUNK_PARAMETERS, [
+        "pocket",
+        "ghostNotes",
+        "slapAmount",
+        "popBrightness",
+        "muteDepth",
+        "stabTightness",
+      ]),
+    };
+  });
+
+  for (const profile of Object.values(traces)) {
+    for (const { low, high } of Object.values(profile)) {
+      expect(high).not.toEqual(low);
+    }
+  }
+});
+
+test("Funk is a first-class genre with six presets and the full bass articulation vocabulary", async ({ page }) => {
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await page.locator("#genreDrawerBtn").click();
+  await page.locator("#genreTabFunk").click();
+
+  await expect(page.locator("#genrePanelFunk")).toBeVisible();
+  await expect(page.locator("#funkPresetSelect option")).toHaveCount(6);
+  const articulations = await page.locator("#bassArticulationSelect option").evaluateAll(
+    (options) => options.map((option) => option.value),
+  );
+  expect(articulations).toEqual([
+    "finger",
+    "slap",
+    "pop",
+    "mute",
+    "hammer",
+    "pull",
+    "slide",
+    "hold",
+  ]);
+});
+
+test("Godot direct push sends a schema 17 PCS1 payload to the local receiver", async ({
   page,
 }) => {
   await importFixtureThroughSettings(page, FIXTURE_CASES[1].path);
@@ -1131,7 +1258,7 @@ test("Godot direct push sends a schema 16 PCS1 payload to the local receiver", a
     type: "pocket-chordsmith.push-to-godot",
     format: "PCS1",
     source: "Pocket Chordsmith",
-    schema: 16,
+    schema: 17,
   });
   expect(body.code).toMatch(/^PCS1:/);
   await expect(page.locator("#pushHandoffStatus")).toContainText(

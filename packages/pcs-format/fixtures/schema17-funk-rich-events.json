@@ -1,0 +1,50 @@
+{
+  "projectVersion": 17,
+  "title": "Funk Rich Event Fixture",
+  "bpm": 108,
+  "key": "D",
+  "scale": "dorian",
+  "songSequence": ["A"],
+  "formatFeatures": [
+    "sound-profile-v1",
+    "rich-events-v1",
+    "articulations-v1",
+    "expanded-drums-v1",
+    "capability-report-v1"
+  ],
+  "soundProfile": {
+    "id": "funk_groove",
+    "preset": "funk_slap_party",
+    "parameters": { "pocket": 0.78, "ghostNotes": 0.42 },
+    "recipeVersion": 1,
+    "unknownProfileField": "keep"
+  },
+  "sections": {
+    "A": {
+      "bars": 2,
+      "progression": ["i7", "IV7"],
+      "tracks": {
+        "bass": {
+          "events": [
+            { "step": 0, "duration": 1, "note": 38, "velocity": 112, "articulation": "slap", "role": "bass", "technique": { "funk": { "hand": "thumb", "vendorUnknown": { "keep": [1, { "deep": true }] } } }, "expression": { "pocket": -0.04 }, "unknownEventField": true },
+            { "step": 2, "duration": 1, "note": 45, "velocity": 84, "articulation": "pop", "role": "bass", "technique": { "funk": { "hand": "pluck" } } },
+            { "step": 3, "duration": 0.5, "sound": "funk_muted_thump", "velocity": 42, "articulation": "mute", "role": "bass", "technique": { "funk": { "ghostDepth": 0.8 } } }
+          ]
+        },
+        "melody_1": {
+          "sound": "funk_clav_stab",
+          "events": [
+            { "tick": 6, "duration": 2, "notes": [62, 65, 69], "velocity": 92, "articulation": "staccato", "role": "melody", "sound": "funk_clav_stab" }
+          ]
+        }
+      },
+      "drumLanes": {
+        "kick": [{ "step": 0, "duration": 1, "sound": "kick", "velocity": 112, "role": "drums" }],
+        "snare": [{ "step": 4, "duration": 1, "sound": "snare", "velocity": 110, "role": "drums" }],
+        "hat_open": [{ "step": 7, "duration": 0.5, "sound": "hat_open", "velocity": 70, "role": "drums", "expression": { "chokeAt": 8 } }]
+      },
+      "unknownSectionField": { "keep": true }
+    }
+  },
+  "unknownFutureField": { "keep": true }
+}

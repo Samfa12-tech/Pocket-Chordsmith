@@ -676,6 +676,11 @@ fn generated_native_chord_config(instrument: Option<&str>) -> NativeChordConfig 
         "modern_chip_poly" => generated_native_chord_modern_chip_poly(),
         "metal_power_stack" => generated_native_chord_metal_power_stack(),
         "dark_organ_stack" => generated_native_chord_dark_organ_stack(),
+        "funk_clav_stab" => generated_native_chord_funk_clav_stab(),
+        "funk_rhodes_stab" => generated_native_chord_funk_rhodes_stab(),
+        "funk_brass_stack" => generated_native_chord_funk_brass_stack(),
+        "western_saloon_piano" => generated_native_chord_western_saloon_piano(),
+        "western_mandolin_chop" => generated_native_chord_western_mandolin_chop(),
         _ => generated_native_chord_pocket(),
     }
 }
@@ -986,6 +991,81 @@ const GENERATED_CHORD_DARK_ORGAN_STACK_LAYERS: [NativeChordLayerConfig; 3] = [
         freq_mul: 2.0,
         detune: 0.0,
         level: 0.16,
+    }
+];
+
+const GENERATED_CHORD_FUNK_CLAV_STAB_LAYERS: [NativeChordLayerConfig; 2] = [
+    NativeChordLayerConfig {
+        wave: "square",
+        freq_mul: 1.0,
+        detune: 0.0,
+        level: 0.8,
+    },
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 2.0,
+        detune: 0.0,
+        level: 0.18,
+    }
+];
+
+const GENERATED_CHORD_FUNK_RHODES_STAB_LAYERS: [NativeChordLayerConfig; 2] = [
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 1.0,
+        detune: 0.0,
+        level: 0.8,
+    },
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 2.0,
+        detune: 0.0,
+        level: 0.18,
+    }
+];
+
+const GENERATED_CHORD_FUNK_BRASS_STACK_LAYERS: [NativeChordLayerConfig; 2] = [
+    NativeChordLayerConfig {
+        wave: "sawtooth",
+        freq_mul: 1.0,
+        detune: 0.0,
+        level: 0.8,
+    },
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 2.0,
+        detune: 0.0,
+        level: 0.18,
+    }
+];
+
+const GENERATED_CHORD_WESTERN_SALOON_PIANO_LAYERS: [NativeChordLayerConfig; 2] = [
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 1.0,
+        detune: -8.0,
+        level: 0.86,
+    },
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 1.0,
+        detune: 9.0,
+        level: 0.6,
+    }
+];
+
+const GENERATED_CHORD_WESTERN_MANDOLIN_CHOP_LAYERS: [NativeChordLayerConfig; 2] = [
+    NativeChordLayerConfig {
+        wave: "triangle",
+        freq_mul: 1.0,
+        detune: 0.0,
+        level: 0.8,
+    },
+    NativeChordLayerConfig {
+        wave: "square",
+        freq_mul: 2.0,
+        detune: 0.0,
+        level: 0.12,
     }
 ];
 
@@ -1346,6 +1426,111 @@ fn generated_native_chord_dark_organ_stack() -> NativeChordConfig {
     }
 }
 
+fn generated_native_chord_funk_clav_stab() -> NativeChordConfig {
+    NativeChordConfig {
+        root_wave: "square",
+        wave: "square",
+        peak: 0.15,
+        filter: "bandpass",
+        freq: 2250.0,
+        filter_q: 0.9,
+        filter_sweep: None,
+        attack: 0.004,
+        decay: 0.08,
+        sustain: 0.08,
+        release: 0.1,
+        dur_mul: 0.34,
+        spread_mul: 0.4,
+        shimmer: false,
+        max_live_dur: 0.42,
+        layers: &GENERATED_CHORD_FUNK_CLAV_STAB_LAYERS,
+    }
+}
+
+fn generated_native_chord_funk_rhodes_stab() -> NativeChordConfig {
+    NativeChordConfig {
+        root_wave: "triangle",
+        wave: "triangle",
+        peak: 0.16,
+        filter: "lowpass",
+        freq: 1900.0,
+        filter_q: 0.9,
+        filter_sweep: None,
+        attack: 0.008,
+        decay: 0.08,
+        sustain: 0.08,
+        release: 0.1,
+        dur_mul: 0.56,
+        spread_mul: 0.4,
+        shimmer: false,
+        max_live_dur: 0.42,
+        layers: &GENERATED_CHORD_FUNK_RHODES_STAB_LAYERS,
+    }
+}
+
+fn generated_native_chord_funk_brass_stack() -> NativeChordConfig {
+    NativeChordConfig {
+        root_wave: "sawtooth",
+        wave: "sawtooth",
+        peak: 0.13,
+        filter: "bandpass",
+        freq: 1450.0,
+        filter_q: 0.9,
+        filter_sweep: None,
+        attack: 0.01,
+        decay: 0.08,
+        sustain: 0.08,
+        release: 0.1,
+        dur_mul: 0.42,
+        spread_mul: 0.4,
+        shimmer: false,
+        max_live_dur: 0.42,
+        layers: &GENERATED_CHORD_FUNK_BRASS_STACK_LAYERS,
+    }
+}
+
+fn generated_native_chord_western_saloon_piano() -> NativeChordConfig {
+    NativeChordConfig {
+        root_wave: "triangle",
+        wave: "triangle",
+        peak: 0.19,
+        filter: "lowpass",
+        freq: 3500.0,
+        filter_q: 1.0,
+        filter_sweep: None,
+        attack: 0.002,
+        decay: 0.12,
+        sustain: 0.1,
+        release: 0.16,
+        dur_mul: 0.6,
+        spread_mul: 0.58,
+        shimmer: false,
+        max_live_dur: 0.68,
+        layers: &GENERATED_CHORD_WESTERN_SALOON_PIANO_LAYERS,
+    }
+}
+
+fn generated_native_chord_western_mandolin_chop() -> NativeChordConfig {
+    NativeChordConfig {
+        root_wave: "triangle",
+        wave: "square",
+        peak: 0.12,
+        filter: "bandpass",
+        freq: 2400.0,
+        filter_q: 1.1,
+        filter_sweep: None,
+        attack: 0.002,
+        decay: 0.06,
+        sustain: 0.04,
+        release: 0.09,
+        dur_mul: 0.34,
+        spread_mul: 0.72,
+        shimmer: false,
+        max_live_dur: 0.28,
+        layers: &GENERATED_CHORD_WESTERN_MANDOLIN_CHOP_LAYERS,
+    }
+}
+
 fn generated_native_lead_config(instrument: Option<&str>) -> NativeLeadConfig {
     match instrument.unwrap_or("pulse") {
         "soft" => generated_native_lead_soft(),
@@ -1370,6 +1555,11 @@ fn generated_native_lead_config(instrument: Option<&str>) -> NativeLeadConfig {
         "modern_chip_lead" => generated_native_lead_modern_chip_lead(),
         "shred_lead_guitar" => generated_native_lead_shred_lead_guitar(),
         "twin_harmony_lead" => generated_native_lead_twin_harmony_lead(),
+        "funk_muted_trumpet" => generated_native_lead_funk_muted_trumpet(),
+        "funk_sax_punch" => generated_native_lead_funk_sax_punch(),
+        "western_harmonica" => generated_native_lead_western_harmonica(),
+        "western_banjo" => generated_native_lead_western_banjo(),
+        "western_fiddle" => generated_native_lead_western_fiddle(),
         _ => generated_native_lead_pulse(),
     }
 }
@@ -1778,6 +1968,16 @@ const GENERATED_LEAD_TWIN_HARMONY_LEAD_EXTRAS: [NativeLeadExtraConfig; 2] = [
     }
 ];
 
+const GENERATED_LEAD_FUNK_MUTED_TRUMPET_EXTRAS: [NativeLeadExtraConfig; 0] = [];
+
+const GENERATED_LEAD_FUNK_SAX_PUNCH_EXTRAS: [NativeLeadExtraConfig; 0] = [];
+
+const GENERATED_LEAD_WESTERN_HARMONICA_EXTRAS: [NativeLeadExtraConfig; 0] = [];
+
+const GENERATED_LEAD_WESTERN_BANJO_EXTRAS: [NativeLeadExtraConfig; 0] = [];
+
+const GENERATED_LEAD_WESTERN_FIDDLE_EXTRAS: [NativeLeadExtraConfig; 0] = [];
+
 fn generated_native_lead_pulse() -> NativeLeadConfig {
     NativeLeadConfig {
         wave: "square",
@@ -2031,6 +2231,61 @@ fn generated_native_lead_twin_harmony_lead() -> NativeLeadConfig {
     }
 }
 
+fn generated_native_lead_funk_muted_trumpet() -> NativeLeadConfig {
+    NativeLeadConfig {
+        wave: "square",
+        peak: 0.11,
+        filter: "bandpass",
+        freq: 1580.0,
+        dur_mul: 0.48,
+        extras: &GENERATED_LEAD_FUNK_MUTED_TRUMPET_EXTRAS,
+    }
+}
+
+fn generated_native_lead_funk_sax_punch() -> NativeLeadConfig {
+    NativeLeadConfig {
+        wave: "triangle",
+        peak: 0.13,
+        filter: "bandpass",
+        freq: 980.0,
+        dur_mul: 0.56,
+        extras: &GENERATED_LEAD_FUNK_SAX_PUNCH_EXTRAS,
+    }
+}
+
+fn generated_native_lead_western_harmonica() -> NativeLeadConfig {
+    NativeLeadConfig {
+        wave: "square",
+        peak: 0.115,
+        filter: "bandpass",
+        freq: 1250.0,
+        dur_mul: 1.18,
+        extras: &GENERATED_LEAD_WESTERN_HARMONICA_EXTRAS,
+    }
+}
+
+fn generated_native_lead_western_banjo() -> NativeLeadConfig {
+    NativeLeadConfig {
+        wave: "triangle",
+        peak: 0.13,
+        filter: "bandpass",
+        freq: 2200.0,
+        dur_mul: 0.46,
+        extras: &GENERATED_LEAD_WESTERN_BANJO_EXTRAS,
+    }
+}
+
+fn generated_native_lead_western_fiddle() -> NativeLeadConfig {
+    NativeLeadConfig {
+        wave: "sawtooth",
+        peak: 0.11,
+        filter: "bandpass",
+        freq: 1750.0,
+        dur_mul: 1.08,
+        extras: &GENERATED_LEAD_WESTERN_FIDDLE_EXTRAS,
+    }
+}
+
 fn generated_guitar_tone_config(tone: Option<&str>) -> NativeGuitarToneConfig {
     match tone.unwrap_or("high_gain") {
         "clean" => generated_guitar_tone_clean(),
@@ -2039,6 +2294,7 @@ fn generated_guitar_tone_config(tone: Option<&str>) -> NativeGuitarToneConfig {
         "tight_metal" => generated_guitar_tone_tight_metal(),
         "doom_fuzz" => generated_guitar_tone_doom_fuzz(),
         "western_twang" => generated_guitar_tone_western_twang(),
+        "funk_muted" => generated_guitar_tone_funk_muted(),
         _ => generated_guitar_tone_high_gain(),
     }
 }
@@ -2152,5 +2408,21 @@ fn generated_guitar_tone_western_twang() -> NativeGuitarToneConfig {
         sustain: 0.72,
         mute: 0.07,
         scratch: 0.034,
+    }
+}
+
+fn generated_guitar_tone_funk_muted() -> NativeGuitarToneConfig {
+    NativeGuitarToneConfig {
+        drive: 1.45,
+        input: 0.7,
+        peak: 0.074,
+        lowpass: 3900.0,
+        highpass: 210.0,
+        body: 1.2,
+        mid: 2.75,
+        spread: 0.014,
+        sustain: 0.42,
+        mute: 0.045,
+        scratch: 0.038,
     }
 }

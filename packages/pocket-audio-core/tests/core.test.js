@@ -389,15 +389,15 @@ test("shared drum lane registry covers Chordsmith live pad recording metadata", 
     [
       ["kick", "kick", 1],
       ["snare", "snare", 1],
-      ["clap", "snare", 2],
       ["hat", "hat", 1],
       ["openhat", "hat", 2]
     ]
   );
   assert.deepEqual(
     POCKET_DRUM_LANES.filter((lane) => !lane.chordsmithRecordTrack).map((lane) => lane.id),
-    ["tomlow", "tommid", "tomhi", "crash", "ride"]
+    ["clap", "tomlow", "tommid", "tomhi", "crash", "ride"]
   );
+  assert.deepEqual(POCKET_DRUM_LANES.map((lane) => lane.chordsmithRecordLane), ["kick", "snare", "clap", "hat_closed", "hat_open", "tom_low", "tom_mid", "tom_high", "crash", "ride"]);
 });
 
 test("shared live drum voice constants mirror Chordsmith pad playback", () => {
@@ -519,7 +519,7 @@ test("shared phrase helper mirrors Chordsmith bass and melody gates", () => {
 
 test("shared guitar tone registry matches Chordsmith tone surface", () => {
   assert.deepEqual(validatePocketGuitarRegistry(), { missingToneConfigs: [] });
-  assert.deepEqual(POCKET_GUITAR_TONES, ["clean", "crunch", "high_gain", "metal", "tight_metal", "doom_fuzz", "western_twang"]);
+  assert.deepEqual(POCKET_GUITAR_TONES, ["clean", "crunch", "high_gain", "metal", "tight_metal", "doom_fuzz", "western_twang", "funk_muted"]);
   assert.deepEqual(POCKET_GUITAR_STEP_CYCLE, ["off", "chug", "accent", "hold", "scratch"]);
   assert.equal(DEFAULT_GUITAR_TONE, "high_gain");
   assert.equal(DEFAULT_GUITAR_REGISTER, "low");
@@ -561,8 +561,8 @@ test("shared guitar gate helper mirrors Chordsmith live playback", () => {
 
 test("shared Chordsmith instrument registry covers chord and melody voices", () => {
   assert.deepEqual(validatePocketInstrumentRegistry(), { missingChordConfigs: [], missingLeadConfigs: [] });
-  assert.deepEqual(POCKET_CHORD_INSTRUMENTS, ["pocket", "piano", "saloon_piano", "harp", "warm_pad", "glass", "dusty_rhodes", "felt_piano", "cassette_keys", "muted_jazz_guitar", "lofi_warm_pad", ...CHIP_CHORD_INSTRUMENTS, ...METAL_CHORD_INSTRUMENTS]);
-  assert.deepEqual(POCKET_MELODY_INSTRUMENTS, ["pulse", "soft", "synth", "bell", "lead_guitar", "distorted_lead_guitar", "banjo", "harmonica", "cowboy_whistle", "trumpet", "saxophone", "mellow_vibes", "soft_pluck", "mellow_sax", "muted_trumpet", "tape_bell", ...CHIP_MELODY_INSTRUMENTS, ...METAL_MELODY_INSTRUMENTS]);
+  assert.deepEqual(POCKET_CHORD_INSTRUMENTS, ["pocket", "piano", "saloon_piano", "harp", "warm_pad", "glass", "dusty_rhodes", "felt_piano", "cassette_keys", "muted_jazz_guitar", "lofi_warm_pad", ...CHIP_CHORD_INSTRUMENTS, ...METAL_CHORD_INSTRUMENTS, "funk_clav_stab", "funk_rhodes_stab", "funk_brass_stack", "western_saloon_piano", "western_mandolin_chop"]);
+  assert.deepEqual(POCKET_MELODY_INSTRUMENTS, ["pulse", "soft", "synth", "bell", "lead_guitar", "distorted_lead_guitar", "banjo", "harmonica", "cowboy_whistle", "trumpet", "saxophone", "mellow_vibes", "soft_pluck", "mellow_sax", "muted_trumpet", "tape_bell", ...CHIP_MELODY_INSTRUMENTS, ...METAL_MELODY_INSTRUMENTS, "funk_muted_trumpet", "funk_sax_punch", "western_harmonica", "western_banjo", "western_fiddle"]);
   assert.equal(DEFAULT_CHORD_INSTRUMENT, "pocket");
   assert.equal(DEFAULT_MELODY_INSTRUMENT, "pulse");
   assert.ok(POCKET_CHORD_INSTRUMENTS.includes(DEFAULT_CHORD_INSTRUMENT));

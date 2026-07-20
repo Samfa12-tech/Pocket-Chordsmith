@@ -1,7 +1,8 @@
-export const POCKET_AUDIO_CORE_VERSION = "0.1.0-scaffold";
+export const POCKET_AUDIO_CORE_VERSION = "0.2.0";
 export const CORE_PROJECT_VERSION = 1;
 export const PCS_SHARE_PREFIX = "PCS1:";
 export const DEFAULT_SOURCE_SCHEMA_VERSION = 16;
+export const RICH_EVENT_SCHEMA_VERSION = 17;
 export const DEFAULT_PPQ = 480;
 export const DEFAULT_BPM = 96;
 export const DEFAULT_TIME_SIG = 4;

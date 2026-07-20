@@ -15,7 +15,9 @@ import { chordsmithHumanizeOffset, chordsmithHumanizePeak } from "../performance
 import { chordsmithPhraseInfo } from "../performance/phrases.js";
 import { chordsmithPitchedTupletDuration, chordsmithPitchedTupletMiddleIndex, chordsmithPitchedTupletMiddleMidi } from "../performance/tuplets.js";
 import { DEFAULT_GUITAR_STRUM_MODE } from "../sounds/guitar.js";
-import { CHORDSMITH_SEQUENCED_DRUM_LANE_IDS } from "../sounds/drum-lanes.js";
+import { CHORDSMITH_SEQUENCED_DRUM_LANE_IDS, normalisePocketAudioDrumLane } from "../sounds/drum-lanes.js";
+import { normalisePocketAudioArticulation } from "../performance/expression.js";
+import { createPocketAudioRendererCapabilityReport } from "../engine/capabilities.js";
 
 export function buildPocketAudioTimeline(project, options = {}) {
   if (!project || project.app !== "PocketAudioProject") throw new Error("buildPocketAudioTimeline expects a normalised PocketAudioProject.");
@@ -31,13 +33,17 @@ export function buildPocketAudioTimeline(project, options = {}) {
     baseTime += sectionEvents.duration;
     baseTick += sectionEvents.durationTicks;
   });
+  const capabilityReport = createPocketAudioRendererCapabilityReport(project, { renderer: options.renderer || "offline" });
+  const eventLosses = events.flatMap((event) => event.compatibility || []);
   return {
     scope,
     events: events.sort((a, b) => a.time - b.time || roleOrder(a.stem) - roleOrder(b.stem)),
     duration: baseTime - (options.startTime || 0),
     durationTicks: baseTick - (options.startTick || 0),
     ppq: project.meta.ppq || DEFAULT_PPQ,
-    sectionIds: sectionIds.slice()
+    sectionIds: sectionIds.slice(),
+    capabilityReport,
+    lossReport: [...capabilityReport.losses, ...eventLosses]
   };
 }
 
@@ -69,22 +75,131 @@ export function buildSectionEvents(project, section, { baseTime = 0, baseTick = 
     swing: meta.swing
   });
   const events = [];
+  const rich = buildRichSectionEvents(project, section, { baseTime, baseTick, arrangementIndex, timeline, totalSteps, spb });
+  events.push(...rich.events);
   for (let step = 0; step < totalSteps; step += 1) {
     const time = timeline.times[step];
     const tick = baseTick + stepToTicks(step, meta.resolution, meta.ppq);
     const bar = Math.floor(step / spb) + 1;
     const beat = Math.floor((step % spb) / meta.resolution) + 1;
-    addDrumEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
-    addBassEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
-    addChordEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex });
-    addMelodyEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
-    addGuitarEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
+    if (!rich.ownedStems.has("drums")) addDrumEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
+    if (!rich.ownedStems.has("bass")) addBassEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
+    if (!rich.ownedStems.has("chords")) addChordEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex });
+    if (!rich.ownedStems.has("melody")) addMelodyEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
+    if (!rich.ownedStems.has("guitar")) addGuitarEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
   }
   return {
     events,
     duration: timeline.duration,
     durationTicks: stepToTicks(totalSteps, meta.resolution, meta.ppq)
   };
+}
+
+function buildRichSectionEvents(project, section, context) {
+  const events = [];
+  const ownedStems = new Set();
+  Object.entries(section.richTracks || {}).forEach(([trackId, track]) => {
+    const sourceEvents = Array.isArray(track?.events) ? track.events : [];
+    if (!sourceEvents.length) return;
+    const stem = richTrackStem(trackId, track);
+    if (!richTrackOwnsStem(project, stem, sourceEvents)) return;
+    ownedStems.add(stem);
+    let previousPitched = null;
+    sourceEvents.forEach((source, index) => {
+      const localTick = source.tick === undefined
+        ? stepToTicks(Number(source.step || 0), project.meta.resolution, project.meta.ppq)
+        : Math.max(0, Number(source.tick || 0));
+      const authoredStep = source.step === undefined ? localTick / project.meta.ppq * project.meta.resolution : Number(source.step || 0);
+      const step = Math.max(0, Math.min(context.totalSteps - 0.000001, authoredStep));
+      const time = source.tick === undefined
+        ? timeAtStep(context.timeline, step)
+        : context.baseTime + localTick / project.meta.ppq * beatSeconds(project);
+      const durationTicks = source.durationTicks || Math.max(1, stepToTicks(Number(source.duration || 1), project.meta.resolution, project.meta.ppq));
+      const duration = durationTicks / project.meta.ppq * beatSeconds(project);
+      const lane = stem === "drums" ? normalisePocketAudioDrumLane(source.lane || source.sound || trackId) : undefined;
+      const midi = richSingleMidi(project, section, stem, source);
+      const midiNotes = richPolyMidi(project, section, stem, source);
+      const requestedArticulation = normalisePocketAudioArticulation(source.articulation || defaultRichArticulation(stem, lane));
+      const connectedInvalid = (requestedArticulation === "hammer" || requestedArticulation === "pull") && previousPitched === null;
+      const articulation = connectedInvalid ? "finger" : requestedArticulation;
+      const compatibility = connectedInvalid ? [{
+        path: `sections.${section.id}.tracks.${trackId}.events[${index}].articulation`,
+        feature: `bass-articulation:${requestedArticulation}`,
+        action: "fallback",
+        fallback: "finger",
+        message: `${requestedArticulation} requires a previous pitched event and rendered as finger.`
+      }] : [];
+      const patch = {
+        idSuffix: `_rich_${safeId(trackId)}_${index}`,
+        time,
+        tick: context.baseTick + localTick,
+        durationTicks,
+        stem,
+        type: richEventType(stem, lane),
+        duration,
+        velocity: normaliseRichVelocity(source.velocity),
+        accent: articulation === "accent" || Number(source.velocity || 0) >= 112,
+        midi,
+        midiNotes,
+        instrument: source.sound || richDefaultSound(project, section, stem),
+        articulation,
+        sourceArticulation: connectedInvalid ? requestedArticulation : undefined,
+        sound: source.sound,
+        lane,
+        role: source.role,
+        expression: source.expression,
+        technique: source.technique,
+        note: source.note,
+        notes: source.notes,
+        sourceDuration: source.duration,
+        trackId,
+        compatibility,
+        pan: source.pan,
+        humanizeVelocity: false
+      };
+      if (stem === "bass") patch.bassTone = source.sound || projectSoundBassTone(project);
+      if (stem === "drums") patch.drumKit = projectSoundDrumKit(project);
+      events.push(baseEvent(project, section, {
+        step,
+        time,
+        tick: context.baseTick + localTick,
+        bar: Math.floor(step / context.spb) + 1,
+        beat: Math.floor((step % context.spb) / project.meta.resolution) + 1,
+        arrangementIndex: context.arrangementIndex
+      }, patch));
+      if (midi !== undefined || midiNotes?.length) previousPitched = midi ?? midiNotes[0];
+    });
+  });
+  return { events, ownedStems };
+}
+
+function richTrackOwnsStem(project, stem, events) {
+  const profileId = String(project.soundProfile?.id || project.meta?.audioProfile || "standard");
+  if (["chip_arcade", "western_frontier", "heavy_metal", "funk_groove"].includes(profileId)) return true;
+  return events.some((event) => {
+    if (event.tick !== undefined) {
+      const stepTicks = project.meta.ppq / project.meta.resolution;
+      if (Math.abs(Number(event.tick) / stepTicks - Math.round(Number(event.tick) / stepTicks)) > 0.000001) return true;
+    }
+    if (event.expression && Object.keys(event.expression).some((key) => key !== "pan")) return true;
+    if (event.technique && Object.keys(event.technique).some((key) => key !== "drums")) return true;
+    const articulation = String(event.articulation || "");
+    const compactArticulations = stem === "bass"
+      ? ["", "finger", "hold", "slide"]
+      : stem === "melody"
+        ? ["", "finger", "legato", "hold", "slide"]
+        : stem === "drums"
+          ? ["", "finger", "accent", "open"]
+          : stem === "chords"
+            ? ["", "finger", "block", "strum_up", "strum_down", "arp_up", "arp_down"]
+            : ["", "finger", "open", "hold", "accent", "scratch", "palm_mute", "chug"];
+    if (!compactArticulations.includes(articulation)) return true;
+    if (stem === "drums") {
+      const lane = normalisePocketAudioDrumLane(event.lane || event.sound || "");
+      if (!["kick", "snare", "hat", "hat_closed", "hat_open"].includes(lane)) return true;
+    }
+    return false;
+  });
 }
 
 function addDrumEvents(events, project, section, context) {
@@ -161,6 +276,7 @@ function addBassEvents(events, project, section, context) {
         midi,
         tuplet: true,
         bassTone: projectSoundBassTone(project),
+        articulation: section.bass.articulation?.[sourceStep] || undefined,
         humanizeSeed: 4,
         humanizeStep: context.step + index
       }));
@@ -178,6 +294,7 @@ function addBassEvents(events, project, section, context) {
     slideMidi: phrase.slideStep === null ? undefined : bassMidiAt(project, section, phrase.slideStep),
     slideOffset: phrase.slideOffset,
     bassTone: projectSoundBassTone(project),
+    articulation: section.bass.articulation?.[context.step] || undefined,
     humanizeSeed: 4
   }));
 }
@@ -278,7 +395,7 @@ function baseEvent(project, section, context, patch) {
     time: humanizedTime(project, time, humanizeStep, patch.humanizeSeed),
     duration: patch.duration ?? stepDurationSeconds(project.meta, context.step),
     tick: patch.tick ?? context.tick,
-    durationTicks: Math.max(1, Math.round(((patch.duration ?? stepDurationSeconds(project.meta, context.step)) / beatSeconds(project)) * project.meta.ppq)),
+    durationTicks: patch.durationTicks ?? Math.max(1, Math.round(((patch.duration ?? stepDurationSeconds(project.meta, context.step)) / beatSeconds(project)) * project.meta.ppq)),
     step: context.step,
     bar: context.bar,
     beat: context.beat,
@@ -292,9 +409,12 @@ function baseEvent(project, section, context, patch) {
     audioProfile: project.meta.audioProfile || "standard",
     lofiPreset: project.lofi?.presetId || "",
     chipPreset: project.chip?.presetId || "",
-    metalPreset: project.metal?.presetId || ""
+    metalPreset: project.metal?.presetId || "",
+    funkPreset: project.funk?.presetId || "",
+    westernPreset: project.western?.presetId || "",
+    soundProfile: cloneJson(project.soundProfile || { id: project.meta.audioProfile || "standard", preset: "", parameters: {}, recipeVersion: 1 })
   };
-  ["midi", "midiNotes", "instrument", "articulation", "pan", "slideMidi", "slideOffset", "direction", "drumKit", "bassTone"].forEach((key) => {
+  ["midi", "midiNotes", "instrument", "articulation", "sourceArticulation", "pan", "slideMidi", "slideOffset", "direction", "drumKit", "bassTone", "sound", "lane", "role", "expression", "technique", "note", "notes", "sourceDuration", "trackId", "compatibility"].forEach((key) => {
     if (patch[key] !== undefined) event[key] = patch[key];
   });
   if (project.lofi?.texture?.enabled) event.lofiTexture = cloneJson(project.lofi.texture);
@@ -304,14 +424,18 @@ function baseEvent(project, section, context, patch) {
 }
 
 function projectSoundDrumKit(project) {
-  if (project.meta.audioProfile === "chip_tune") return project.chip?.drumKit || "chip_noise_kit";
+  if (project.meta.audioProfile === "chip_arcade" || project.meta.audioProfile === "chip_tune") return project.chip?.drumKit || "chip_noise_kit";
   if (project.meta.audioProfile === "heavy_metal") return project.metal?.drumKit || "metal_tight";
+  if (project.meta.audioProfile === "funk_groove") return project.funk?.drumKit || "funk_dry_pocket";
+  if (project.meta.audioProfile === "western_frontier") return project.western?.drumKit || "western_train_kit";
   return project.lofi?.drumKit || "classic";
 }
 
 function projectSoundBassTone(project) {
-  if (project.meta.audioProfile === "chip_tune") return project.chip?.bassTone || "chip_triangle_bass";
+  if (project.meta.audioProfile === "chip_arcade" || project.meta.audioProfile === "chip_tune") return project.chip?.bassTone || "chip_triangle_bass";
   if (project.meta.audioProfile === "heavy_metal") return project.metal?.bassTone || "metal_pick_bass";
+  if (project.meta.audioProfile === "funk_groove") return project.funk?.bassTone || "funk_finger_pocket";
+  if (project.meta.audioProfile === "western_frontier") return project.western?.bassTone || "western_picked_bass";
   return project.lofi?.bassTone || "classic";
 }
 
@@ -451,4 +575,69 @@ function guitarDirection(step, mode) {
   if (mode === "up") return "up";
   if (mode === "alternate") return step % 2 ? "up" : DEFAULT_GUITAR_STRUM_MODE;
   return DEFAULT_GUITAR_STRUM_MODE;
+}
+
+function richTrackStem(trackId, track) {
+  const requested = String(track?.stem || track?.role || trackId || "").toLowerCase();
+  if (["drums", "drum", "kick", "snare", "rim", "clap", "hat", "hat_closed", "hat_open", "ride", "crash", "china", "tom_high", "tom_mid", "tom_low", "percussion"].includes(requested)) return "drums";
+  if (requested === "bass") return "bass";
+  if (["chord", "chords", "harmony", "stab", "stabs"].includes(requested)) return "chords";
+  if (requested === "guitar") return "guitar";
+  return "melody";
+}
+
+function richEventType(stem, lane) {
+  if (stem === "drums") return lane || "percussion";
+  if (stem === "chords") return "chord";
+  if (stem === "melody") return "melody";
+  return stem;
+}
+
+function richSingleMidi(project, _section, stem, source) {
+  if (source.midi !== undefined) return Number(source.midi);
+  if (source.note === undefined || Array.isArray(source.note)) return undefined;
+  if (stem === "bass") return chordsmithBassIndexToMidi({ key: project.meta.key, scale: project.meta.scale, noteIndex: Number(source.note) });
+  if (stem === "melody") return melodyMidiAt(project, Number(source.note), Number(source.octave || 0));
+  if (stem === "guitar") return chordsmithBassIndexToMidi({ key: project.meta.key, scale: project.meta.scale, noteIndex: Number(source.note) }) + 12;
+  return undefined;
+}
+
+function richPolyMidi(project, section, stem, source) {
+  if (Array.isArray(source.midiNotes)) return source.midiNotes.map(Number);
+  if (!Array.isArray(source.notes)) return undefined;
+  if (stem === "chords" || stem === "guitar") {
+    const root = currentChord(project, section, Number(source.step || 0)).rootPc;
+    return source.notes.map((offset) => 48 + root + Number(offset));
+  }
+  return source.notes.map(Number);
+}
+
+function richDefaultSound(project, section, stem) {
+  if (stem === "bass") return projectSoundBassTone(project);
+  if (stem === "chords") return section.chords.instrument;
+  if (stem === "guitar") return section.guitar.tone;
+  if (stem === "melody") return section.melody[0]?.instrument;
+  return undefined;
+}
+
+function defaultRichArticulation(stem, lane) {
+  if (stem === "drums") return lane === "hat_open" ? "open" : "finger";
+  return "finger";
+}
+
+function normaliseRichVelocity(value) {
+  const number = Number(value ?? 100);
+  return Math.max(0, Math.min(1, number > 1 ? number / 127 : number));
+}
+
+function timeAtStep(timeline, step) {
+  const leftIndex = Math.floor(step);
+  const fraction = step - leftIndex;
+  const left = timeline.times[leftIndex] ?? 0;
+  const right = timeline.times[leftIndex + 1] ?? (left + timeline.duration / Math.max(1, timeline.times.length));
+  return left + (right - left) * fraction;
+}
+
+function safeId(value) {
+  return String(value || "track").replace(/[^a-z0-9_-]/gi, "_");
 }

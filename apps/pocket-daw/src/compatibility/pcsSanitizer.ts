@@ -4,7 +4,6 @@ import { CHORDSMITH_CHORD_PLAY_MODES, CHORDSMITH_CHORD_RHYTHM_MODES } from "../.
 import {
   DEFAULT_LOFI_TEXTURE,
   getLofiStylePreset,
-  LOFI_AUDIO_PROFILE_ID,
   LOFI_BASS_TONES,
   LOFI_DRUM_GROOVE_PRESETS,
   LOFI_DRUM_KITS,
@@ -12,7 +11,6 @@ import {
   normaliseLofiTexture
 } from "../../../../packages/pocket-audio-core/src/presets/lofi.js";
 import {
-  CHIP_AUDIO_PROFILE_ID,
   CHIP_BASS_TONES,
   CHIP_DRUM_GROOVE_PRESETS,
   CHIP_DRUM_KITS,
@@ -32,6 +30,7 @@ import {
 } from "../../../../packages/pocket-audio-core/src/presets/metal.js";
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_PATTERN_PRESETS, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import { PCS17_FORMAT_FEATURES, type PocketDawProfileId } from "./pcsCapabilities";
 
 export const SECTION_IDS = ["A", "B", "C", "D", "E", "F", "G", "H"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
@@ -56,17 +55,43 @@ export interface SanitizedPcsSection {
   bassHold: boolean[];
   bassSlide: boolean[];
   bassAccent: boolean[];
+  bassArticulation: string[];
   guitarPattern: string[];
+  richEvents: Record<string, SanitizedPcsRichEvent[]>;
+}
+
+export interface SanitizedPcsSoundProfile {
+  id: PocketDawProfileId;
+  preset: string;
+  parameters: JsonObject;
+  recipeVersion: number;
+}
+
+export interface SanitizedPcsRichEvent {
+  step?: number;
+  tick?: number;
+  duration: number;
+  note?: number;
+  notes?: number[];
+  velocity: number;
+  articulation: string;
+  sound: string;
+  role: string;
+  expression: JsonObject;
+  technique: JsonObject;
+  raw: JsonObject;
 }
 
 export interface SanitizedPcsProject {
   projectVersion: number;
+  formatFeatures: string[];
+  soundProfile: SanitizedPcsSoundProfile;
   key: string;
   scale: "major" | "minor";
   timeSig: number;
   bpm: number;
   swing: number;
-  audioProfile: "standard" | "lofi_chill" | "chip_tune" | "heavy_metal";
+  audioProfile: PocketDawProfileId;
   lofiPreset: string;
   lofiTexture: JsonObject;
   chipPreset: string;
@@ -77,6 +102,7 @@ export interface SanitizedPcsProject {
   drumGroovePreset: string;
   bassTone: string;
   resolution: number;
+  ppq: number;
   chordType: "triad" | "seventh" | "sus2" | "sus4";
   chordInstrument: string;
   chordPlayMode: string;
@@ -113,37 +139,62 @@ export interface SanitizedPcsProject {
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const DRUM_TRACKS = ["kick", "snare", "hat", "bass"] as const;
+const RICH_TRACK_ROLES = ["drums", "bass", "chords", "melody", "guitar"] as const;
 const MAX_BARS = 16;
 export const MAX_SECTION_STEPS = MAX_BARS * 7 * 16;
 const DEFAULT_PROGRESSION = [0, 4, 5, 3];
 const PCS_DRUM_KITS = ["classic", ...LOFI_DRUM_KITS, ...CHIP_DRUM_KITS, ...METAL_DRUM_KITS] as const;
 const PCS_BASS_TONES = ["classic", ...LOFI_BASS_TONES, ...CHIP_BASS_TONES, ...METAL_BASS_TONES] as const;
+const DEFAULT_PROFILE_PRESETS: Record<PocketDawProfileId, string> = {
+  standard: "standard_chordsmith",
+  lofi_chill: "lofi_study_room",
+  chip_arcade: "chip_nes_pulse",
+  western_frontier: "western_trail",
+  heavy_metal: "metal_tight_riff",
+  funk_groove: "funk_classic_pocket"
+};
 
 export function sanitizePocketChordsmithProject(raw: unknown): SanitizedPcsProject {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("That project is not a valid Pocket Chordsmith JSON object.");
   }
   const obj = raw as JsonObject;
+  const soundProfileSource = jsonObject(obj.soundProfile);
   const requestedChipPreset = obj.chipPreset || (String(obj.stylePreset || "").startsWith("chip_") ? obj.stylePreset : "");
   const requestedMetalPreset = obj.metalPreset || (String(obj.stylePreset || "").startsWith("metal_") ? obj.stylePreset : "");
   const requestedLofiPreset = obj.lofiPreset || (String(obj.stylePreset || "").startsWith("lofi_") ? obj.stylePreset : "");
   const sanitizedChipPreset = sanitizeChipPresetId(requestedChipPreset);
   const sanitizedMetalPreset = sanitizeMetalPresetId(requestedMetalPreset);
   const sanitizedLofiPreset = sanitizeLofiPresetId(requestedLofiPreset);
-  const audioProfile = (obj.audioProfile === CHIP_AUDIO_PROFILE_ID || sanitizedChipPreset
-    ? CHIP_AUDIO_PROFILE_ID
-    : obj.audioProfile === HEAVY_METAL_AUDIO_PROFILE_ID || sanitizedMetalPreset
-      ? HEAVY_METAL_AUDIO_PROFILE_ID
-      : obj.audioProfile === LOFI_AUDIO_PROFILE_ID || sanitizedLofiPreset
-        ? LOFI_AUDIO_PROFILE_ID
-        : "standard") as SanitizedPcsProject["audioProfile"];
-  const lofiPreset = audioProfile === LOFI_AUDIO_PROFILE_ID ? getLofiStylePreset(sanitizedLofiPreset || undefined).id : "";
-  const chipPreset = audioProfile === CHIP_AUDIO_PROFILE_ID ? sanitizedChipPreset || DEFAULT_CHIP_PRESET_ID : "";
-  const metalPreset = audioProfile === HEAVY_METAL_AUDIO_PROFILE_ID ? sanitizedMetalPreset || DEFAULT_METAL_PRESET_ID : "";
+  const audioProfile = normalizeProfileId(
+    cleanId(soundProfileSource.id)
+      || cleanId(obj.audioProfile)
+      || inferredLegacyProfile(sanitizedChipPreset, sanitizedMetalPreset, sanitizedLofiPreset)
+  );
+  const requestedProfilePreset = cleanId(soundProfileSource.preset) || legacyProfilePreset(audioProfile, obj);
+  const soundProfile: SanitizedPcsSoundProfile = {
+    id: audioProfile,
+    preset: requestedProfilePreset || DEFAULT_PROFILE_PRESETS[audioProfile],
+    parameters: cloneJsonObject(soundProfileSource.parameters),
+    recipeVersion: clamp(asInt(soundProfileSource.recipeVersion, 1), 1, 1_000_000)
+  };
+  const lofiPreset = audioProfile === "lofi_chill" ? getLofiStylePreset(sanitizedLofiPreset || requestedProfilePreset || undefined).id : "";
+  const chipPreset = audioProfile === "chip_arcade" ? sanitizedChipPreset || sanitizeChipPresetId(requestedProfilePreset) || DEFAULT_CHIP_PRESET_ID : "";
+  const metalPreset = audioProfile === "heavy_metal" ? sanitizedMetalPreset || sanitizeMetalPresetId(requestedProfilePreset) || DEFAULT_METAL_PRESET_ID : "";
   const metalStylePreset = metalPreset ? getMetalStylePreset(metalPreset) : null;
-  const defaultScale = audioProfile === HEAVY_METAL_AUDIO_PROFILE_ID ? "minor" : "major";
+  const defaultScale = audioProfile === "heavy_metal" || audioProfile === "funk_groove" ? "minor" : "major";
+  const defaultBassTone = audioProfile === "western_frontier" || audioProfile === "funk_groove" ? "soft_upright" : metalStylePreset?.bassTone ?? "classic";
+  const defaultChordInstrument = audioProfile === "western_frontier"
+    ? "saloon_piano"
+    : audioProfile === "funk_groove"
+      ? "muted_jazz_guitar"
+      : metalStylePreset?.chordInstrument ?? DEFAULT_CHORD_INSTRUMENT;
+  const defaultGuitarTone = audioProfile === "western_frontier" ? "western_twang" : audioProfile === "funk_groove" ? "clean" : metalStylePreset?.guitarTone ?? DEFAULT_GUITAR_TONE;
+  const projectVersion = asInt(obj.projectVersion ?? obj.schemaVersion, hasSchema17Surface(obj) ? 17 : 1);
   const projectBase = {
-    projectVersion: asInt(obj.projectVersion ?? obj.schemaVersion, 1),
+    projectVersion,
+    formatFeatures: sanitizeFormatFeatures(obj.formatFeatures, projectVersion),
+    soundProfile,
     key: safeChoice(obj.key, NOTES, "C"),
     scale: safeChoice(obj.scale, ["major", "minor"], defaultScale) as "major" | "minor",
     timeSig: safeChoice(asInt(obj.timeSig, 4), [3, 4, 5, 6, 7], 4),
@@ -151,17 +202,18 @@ export function sanitizePocketChordsmithProject(raw: unknown): SanitizedPcsProje
     swing: clamp(asNum(obj.swing, 0), 0, 0.35),
     audioProfile,
     lofiPreset,
-    lofiTexture: sanitizeLofiTexture(obj.lofiTexture, lofiPreset, audioProfile),
+    lofiTexture: sanitizeLofiTexture(obj.lofiTexture ?? soundProfile.parameters, lofiPreset, audioProfile),
     chipPreset,
-    chipTexture: sanitizeChipTexture(obj.chipTexture, chipPreset, audioProfile),
+    chipTexture: sanitizeChipTexture(obj.chipTexture ?? soundProfile.parameters, chipPreset, audioProfile),
     metalPreset,
-    metalTexture: sanitizeMetalTexture(obj.metalTexture, metalPreset, audioProfile),
+    metalTexture: sanitizeMetalTexture(obj.metalTexture ?? soundProfile.parameters, metalPreset, audioProfile),
     drumKit: safeChoice(obj.drumKit, PCS_DRUM_KITS, metalStylePreset?.drumKit ?? "classic"),
     drumGroovePreset: sanitizeDrumGroovePreset(obj.drumGroovePreset, lofiPreset, chipPreset, metalPreset, audioProfile),
-    bassTone: safeChoice(obj.bassTone, PCS_BASS_TONES, metalStylePreset?.bassTone ?? "classic"),
+    bassTone: safeChoice(obj.bassTone, PCS_BASS_TONES, defaultBassTone),
     resolution: sanitizeResolution(obj.resolution ?? obj.lastAdvancedResolution ?? 4),
+    ppq: clamp(asInt(obj.ppq, 480), 24, 9600),
     chordType: safeChoice(obj.chordType, ["triad", "seventh", "sus2", "sus4"], "triad") as SanitizedPcsProject["chordType"],
-    chordInstrument: safeChoice(obj.chordInstrument, POCKET_CHORD_INSTRUMENTS, metalStylePreset?.chordInstrument ?? DEFAULT_CHORD_INSTRUMENT),
+    chordInstrument: safeChoice(obj.chordInstrument, POCKET_CHORD_INSTRUMENTS, defaultChordInstrument),
     chordPlayMode: safeChoice(obj.chordPlayMode, CHORDSMITH_CHORD_PLAY_MODES, "block"),
     chordRhythmMode: safeChoice(obj.chordRhythmMode, CHORDSMITH_CHORD_RHYTHM_MODES, "sustain"),
     chordOctave: clamp(asInt(obj.chordOctave, 0), -2, 2),
@@ -173,11 +225,11 @@ export function sanitizePocketChordsmithProject(raw: unknown): SanitizedPcsProje
     chordsOn: obj.chordsOn !== false,
     bassOn: obj.bassOn !== false,
     bassMode: safeChoice(obj.bassMode, ["auto", "manual"], "auto") as "auto" | "manual",
-    guitarEnabled: Boolean(obj.guitarEnabled ?? (audioProfile === HEAVY_METAL_AUDIO_PROFILE_ID)),
-    guitarTone: safeChoice(obj.guitarTone, POCKET_GUITAR_TONES, metalStylePreset?.guitarTone ?? DEFAULT_GUITAR_TONE),
+    guitarEnabled: Boolean(obj.guitarEnabled ?? ["heavy_metal", "western_frontier", "funk_groove"].includes(audioProfile)),
+    guitarTone: safeChoice(obj.guitarTone, POCKET_GUITAR_TONES, defaultGuitarTone),
     guitarRegister: safeChoice(obj.guitarRegister, POCKET_GUITAR_REGISTERS, DEFAULT_GUITAR_REGISTER),
     guitarStrumMode: safeChoice(obj.guitarStrumMode, POCKET_GUITAR_STRUM_MODES, DEFAULT_GUITAR_STRUM_MODE),
-    guitarPatternPreset: safeChoice(obj.guitarPatternPreset, POCKET_GUITAR_PATTERN_PRESETS, metalStylePreset?.guitarPatternPreset ?? "metal_chug"),
+    guitarPatternPreset: safeChoice(obj.guitarPatternPreset, POCKET_GUITAR_PATTERN_PRESETS, audioProfile === "western_frontier" ? "boom_chick" : metalStylePreset?.guitarPatternPreset ?? "metal_chug"),
     guitarVolume: clamp(asNum(obj.guitarVolume, DEFAULT_STEM_MIX.guitar.volume), 0, 1),
     fxDelay: clamp(asNum(obj.fxDelay, DEFAULT_FX.delay), 0, 1),
     fxChorus: clamp(asNum(obj.fxChorus, DEFAULT_FX.chorus), 0, 1),
@@ -221,15 +273,15 @@ function sanitizeMetalPresetId(value: unknown): string {
 
 function sanitizeDrumGroovePreset(value: unknown, lofiPreset: string, chipPreset: string, metalPreset: string, audioProfile: SanitizedPcsProject["audioProfile"]): string {
   const id = String(value || "");
-  if (audioProfile === CHIP_AUDIO_PROFILE_ID) {
+  if (audioProfile === "chip_arcade") {
     if ((CHIP_DRUM_GROOVE_PRESETS as readonly string[]).includes(id)) return id;
     return chipPreset ? "chip_run_128" : "";
   }
-  if (audioProfile === HEAVY_METAL_AUDIO_PROFILE_ID) {
+  if (audioProfile === "heavy_metal") {
     if ((METAL_DRUM_GROOVE_PRESETS as readonly string[]).includes(id)) return id;
     return metalPreset ? getMetalStylePreset(metalPreset).drumGroovePreset : "";
   }
-  if (audioProfile === LOFI_AUDIO_PROFILE_ID) {
+  if (audioProfile === "lofi_chill") {
     if ((LOFI_DRUM_GROOVE_PRESETS as readonly string[]).includes(id)) return id;
     return getLofiStylePreset(lofiPreset || undefined).drumGroovePreset || "";
   }
@@ -237,7 +289,7 @@ function sanitizeDrumGroovePreset(value: unknown, lofiPreset: string, chipPreset
 }
 
 function sanitizeLofiTexture(raw: unknown, lofiPreset: string, audioProfile: SanitizedPcsProject["audioProfile"]): JsonObject {
-  if (audioProfile !== LOFI_AUDIO_PROFILE_ID) {
+  if (audioProfile !== "lofi_chill") {
     return { ...DEFAULT_LOFI_TEXTURE, enabled: false } as JsonObject;
   }
   const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as JsonObject) : {};
@@ -245,7 +297,7 @@ function sanitizeLofiTexture(raw: unknown, lofiPreset: string, audioProfile: San
 }
 
 function sanitizeChipTexture(raw: unknown, chipPreset: string, audioProfile: SanitizedPcsProject["audioProfile"]): JsonObject {
-  if (audioProfile !== CHIP_AUDIO_PROFILE_ID) {
+  if (audioProfile !== "chip_arcade") {
     return normaliseChipTexture({ enabled: false }, chipPreset) as JsonObject;
   }
   const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as JsonObject) : {};
@@ -253,7 +305,7 @@ function sanitizeChipTexture(raw: unknown, chipPreset: string, audioProfile: San
 }
 
 function sanitizeMetalTexture(raw: unknown, metalPreset: string, audioProfile: SanitizedPcsProject["audioProfile"]): JsonObject {
-  if (audioProfile !== HEAVY_METAL_AUDIO_PROFILE_ID) {
+  if (audioProfile !== "heavy_metal") {
     return normaliseMetalTexture({ enabled: false }, getMetalStylePreset(metalPreset || undefined)) as JsonObject;
   }
   const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as JsonObject) : {};
@@ -269,11 +321,16 @@ function sanitizeSection(raw: JsonObject, project: SanitizedPcsProject, id: Sect
   const melodyTracks = sanitizeMelodyTracks(raw[sectionKey("melodyTracks", id)] || raw[sectionKey("melody", id)], len);
   const trackCount = melodyTracks.length;
   const defaultMelodyInstrument =
-    project.audioProfile === HEAVY_METAL_AUDIO_PROFILE_ID && project.metalPreset
+    project.audioProfile === "western_frontier"
+      ? "harmonica"
+      : project.audioProfile === "funk_groove"
+        ? "muted_trumpet"
+        : project.audioProfile === HEAVY_METAL_AUDIO_PROFILE_ID && project.metalPreset
       ? getMetalStylePreset(project.metalPreset).melodyInstrument
       : DEFAULT_MELODY_INSTRUMENT;
   const guitarPattern = fitArray(raw[sectionKey("guitarPattern", id)] || raw[sectionKey("rockGuitar", id)], len, "off", normalizeGuitarArt);
   const bassNotes = fitArray(raw[sectionKey("bassNotes", id)], len, null, (v) => normalizeMaybeNote(v, 13));
+  const richEvents = sanitizeRichEvents(raw, id);
   const sequenceHas = project.songSequence.includes(id);
   const active =
     id === "A" ||
@@ -282,6 +339,7 @@ function sanitizeSection(raw: JsonObject, project: SanitizedPcsProject, id: Sect
     tracksHaveNotes(melodyTracks) ||
     bassNotes.some((v) => v !== null) ||
     (project.guitarEnabled && guitarHasPattern(guitarPattern)) ||
+    Object.values(richEvents).some((events) => events.length > 0) ||
     progressionDiffers(progressionRaw);
 
   return {
@@ -304,8 +362,132 @@ function sanitizeSection(raw: JsonObject, project: SanitizedPcsProject, id: Sect
     bassHold: fitArray(raw[sectionKey("bassHold", id)], len, false, Boolean),
     bassSlide: fitArray(raw[sectionKey("bassSlide", id)], len, false, Boolean),
     bassAccent: fitArray(raw[sectionKey("bassAccent", id)], len, false, Boolean),
-    guitarPattern
+    bassArticulation: fitArray(raw[sectionKey("bassArticulation", id)], len, "", normalizeBassArticulation),
+    guitarPattern,
+    richEvents
   };
+}
+
+function normalizeBassArticulation(value: unknown): string {
+  const articulation = cleanId(value).toLowerCase();
+  return ["finger", "slap", "pop", "mute", "hammer", "pull", "slide", "hold"].includes(articulation) ? articulation : "";
+}
+
+function sanitizeRichEvents(raw: JsonObject, id: SectionId): Record<string, SanitizedPcsRichEvent[]> {
+  const section = jsonObject(jsonObject(raw.sections)[id]);
+  const tracks = jsonObject(section.tracks);
+  const out: Record<string, SanitizedPcsRichEvent[]> = {};
+  Object.entries(tracks).forEach(([role, track]) => {
+    const events = jsonObject(track).events;
+    if (!Array.isArray(events)) return;
+    out[role] = events
+      .slice(0, MAX_SECTION_STEPS * 4)
+      .map(sanitizeRichEvent)
+      .filter((event): event is SanitizedPcsRichEvent => !!event);
+  });
+  const richDrumLanes = jsonObject(section.drumLanes);
+  Object.entries(richDrumLanes).forEach(([lane, laneEvents]) => {
+    if (!Array.isArray(laneEvents)) return;
+    const sanitized = laneEvents
+      .slice(0, MAX_SECTION_STEPS * 4)
+      .map((event) => sanitizeRichEvent({ ...jsonObject(event), sound: cleanId(jsonObject(event).sound) || lane }))
+      .filter((event): event is SanitizedPcsRichEvent => !!event);
+    out.drums = [...(out.drums || []), ...sanitized];
+  });
+  RICH_TRACK_ROLES.forEach((role) => {
+    if (!out[role]) out[role] = [];
+  });
+  return out;
+}
+
+function sanitizeRichEvent(value: unknown): SanitizedPcsRichEvent | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = cloneJsonObject(value);
+  const hasTick = Number.isFinite(Number(raw.tick));
+  const hasStep = Number.isFinite(Number(raw.step));
+  if (!hasTick && !hasStep) return null;
+  const notes = Array.isArray(raw.notes)
+    ? raw.notes.slice(0, 16).map((note) => clamp(asNum(note, 0), -127, 127))
+    : undefined;
+  const note = Number.isFinite(Number(raw.note)) ? clamp(asNum(raw.note, 0), -127, 127) : undefined;
+  return {
+    ...(hasStep ? { step: clamp(asNum(raw.step, 0), 0, MAX_SECTION_STEPS) } : {}),
+    ...(hasTick ? { tick: clamp(asNum(raw.tick, 0), 0, MAX_SECTION_STEPS * 9600) } : {}),
+    duration: clamp(asNum(raw.duration, 1), 0.01, MAX_SECTION_STEPS * 16),
+    ...(typeof note === "number" ? { note } : {}),
+    ...(notes?.length ? { notes } : {}),
+    velocity: clamp(asNum(raw.velocity, 100), 0, 127),
+    articulation: cleanId(raw.articulation) || "note",
+    sound: cleanId(raw.sound),
+    role: cleanId(raw.role),
+    expression: cloneJsonObject(raw.expression),
+    technique: cloneJsonObject(raw.technique),
+    raw
+  };
+}
+
+function observedRichEventEnd(raw: JsonObject, id: SectionId, resolution: number, ppq: number): number {
+  const events = sanitizeRichEvents(raw, id);
+  return Object.values(events).flat().reduce((max, event) => {
+    const start = typeof event.tick === "number" ? event.tick * resolution / ppq : event.step || 0;
+    const duration = event.duration;
+    return Math.max(max, Math.ceil(start + duration));
+  }, 0);
+}
+
+function sanitizeFormatFeatures(value: unknown, projectVersion: number): string[] {
+  const requested = Array.isArray(value)
+    ? value.map(cleanId).filter(Boolean)
+    : [];
+  if (projectVersion >= 17) {
+    PCS17_FORMAT_FEATURES.forEach((feature) => {
+      if (!requested.includes(feature)) requested.push(feature);
+    });
+  }
+  return [...new Set(requested)].slice(0, 128);
+}
+
+function hasSchema17Surface(obj: JsonObject): boolean {
+  if (Object.keys(jsonObject(obj.soundProfile)).length > 0) return true;
+  if (Array.isArray(obj.formatFeatures) && obj.formatFeatures.length > 0) return true;
+  const sections = jsonObject(obj.sections);
+  return Object.values(sections).some((section) => Object.keys(jsonObject(jsonObject(section).tracks)).length > 0);
+}
+
+function normalizeProfileId(value: unknown): PocketDawProfileId {
+  const id = cleanId(value).toLowerCase();
+  if (id === "chip_tune" || id === "chiptune" || id === "chip") return "chip_arcade";
+  if (id === "western" || id === "country" || id === "western_frontier") return "western_frontier";
+  if (id === "metal" || id === "heavy-metal" || id === "heavy_metal") return "heavy_metal";
+  if (id === "funk" || id === "funk_groove") return "funk_groove";
+  if (id === "lofi" || id === "lofi_chill") return "lofi_chill";
+  return "standard";
+}
+
+function inferredLegacyProfile(chipPreset: string, metalPreset: string, lofiPreset: string): string {
+  if (chipPreset) return "chip_arcade";
+  if (metalPreset) return "heavy_metal";
+  if (lofiPreset) return "lofi_chill";
+  return "standard";
+}
+
+function legacyProfilePreset(profileId: PocketDawProfileId, obj: JsonObject): string {
+  if (profileId === "chip_arcade") return cleanId(obj.chipPreset) || cleanId(obj.stylePreset);
+  if (profileId === "heavy_metal") return cleanId(obj.metalPreset) || cleanId(obj.stylePreset);
+  if (profileId === "lofi_chill") return cleanId(obj.lofiPreset) || cleanId(obj.stylePreset);
+  return cleanId(obj.stylePreset);
+}
+
+function jsonObject(value: unknown): JsonObject {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
+}
+
+function cloneJsonObject(value: unknown): JsonObject {
+  return JSON.parse(JSON.stringify(jsonObject(value))) as JsonObject;
+}
+
+function cleanId(value: unknown): string {
+  return typeof value === "string" ? value.trim().slice(0, 128) : "";
 }
 
 function sectionKey(base: string, id: SectionId) {
@@ -333,7 +515,7 @@ function sanitizeResolution(v: unknown): number {
   return [1, 2, 4, 8, 16].includes(n) ? n : 4;
 }
 
-function expectedSectionSteps(raw: JsonObject, project: Pick<SanitizedPcsProject, "timeSig" | "resolution">, id: SectionId, bars: number) {
+function expectedSectionSteps(raw: JsonObject, project: Pick<SanitizedPcsProject, "timeSig" | "resolution" | "ppq">, id: SectionId, bars: number) {
   const minimum = bars * project.timeSig * project.resolution;
   const observed = [
     ...observedGridLengths(raw[sectionKey("grid", id)]),
@@ -346,7 +528,8 @@ function expectedSectionSteps(raw: JsonObject, project: Pick<SanitizedPcsProject
     observedTrackLength(raw[sectionKey("melodyTracks", id)] || raw[sectionKey("melody", id)]),
     observedTrackLength(raw[sectionKey("melodyHold", id)]),
     observedTrackLength(raw[sectionKey("melodySlide", id)]),
-    observedTrackLength(raw[sectionKey("melodyTuplets", id)])
+    observedTrackLength(raw[sectionKey("melodyTuplets", id)]),
+    observedRichEventEnd(raw, id, project.resolution, project.ppq)
   ];
   return Math.min(MAX_SECTION_STEPS, Math.max(minimum, ...observed.filter((len) => len > 0)));
 }

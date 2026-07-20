@@ -34,6 +34,22 @@ import {
   METAL_STYLE_PRESET_IDS
 } from "../src/presets/metal.js";
 import {
+  DEFAULT_WESTERN_PRESET_ID,
+  WESTERN_AUDIO_PROFILE_ID,
+  WESTERN_BASS_TONES,
+  WESTERN_DRUM_KITS,
+  WESTERN_STYLE_PRESETS,
+  WESTERN_STYLE_PRESET_IDS
+} from "../src/presets/western.js";
+import {
+  DEFAULT_FUNK_PRESET_ID,
+  FUNK_AUDIO_PROFILE_ID,
+  FUNK_BASS_TONES,
+  FUNK_DRUM_KITS,
+  FUNK_STYLE_PRESETS,
+  FUNK_STYLE_PRESET_IDS
+} from "../src/presets/funk.js";
+import {
   DEFAULT_CHORD_INSTRUMENT,
   DEFAULT_MELODY_INSTRUMENT,
   POCKET_CHORD_INSTRUMENTS,
@@ -96,9 +112,17 @@ const generated = [
   `const METAL_DRUM_GROOVE_PRESETS := ${gdArray(METAL_DRUM_GROOVE_PRESETS)}`,
   `const METAL_BASS_TONES := ${gdArray(METAL_BASS_TONES)}`,
   `const METAL_STYLE_PRESET_TEXTURES := ${gdValue(metalStylePresetTextures())}`,
+  `const WESTERN_AUDIO_PROFILE_ID := ${gdString(WESTERN_AUDIO_PROFILE_ID)}`,
+  `const DEFAULT_WESTERN_PRESET_ID := ${gdString(DEFAULT_WESTERN_PRESET_ID)}`,
+  `const WESTERN_STYLE_PRESETS := ${gdArray(WESTERN_STYLE_PRESET_IDS)}`,
+  `const WESTERN_STYLE_METADATA := ${gdValue(westernStyleMetadata())}`,
+  `const FUNK_AUDIO_PROFILE_ID := ${gdString(FUNK_AUDIO_PROFILE_ID)}`,
+  `const DEFAULT_FUNK_PRESET_ID := ${gdString(DEFAULT_FUNK_PRESET_ID)}`,
+  `const FUNK_STYLE_PRESETS := ${gdArray(FUNK_STYLE_PRESET_IDS)}`,
+  `const FUNK_STYLE_METADATA := ${gdValue(funkStyleMetadata())}`,
   "",
-  `const POCKET_DRUM_KITS := ${gdArray(["classic", ...LOFI_DRUM_KITS.filter((id) => id !== "classic"), ...CHIP_DRUM_KITS, ...METAL_DRUM_KITS])}`,
-  `const POCKET_BASS_TONES := ${gdArray(["classic", ...LOFI_BASS_TONES.filter((id) => id !== "classic"), ...CHIP_BASS_TONES, ...METAL_BASS_TONES])}`,
+  `const POCKET_DRUM_KITS := ${gdArray(["classic", ...LOFI_DRUM_KITS.filter((id) => id !== "classic"), ...CHIP_DRUM_KITS, ...METAL_DRUM_KITS, ...WESTERN_DRUM_KITS, ...FUNK_DRUM_KITS])}`,
+  `const POCKET_BASS_TONES := ${gdArray(["classic", ...LOFI_BASS_TONES.filter((id) => id !== "classic"), ...CHIP_BASS_TONES, ...METAL_BASS_TONES, ...WESTERN_BASS_TONES, ...FUNK_BASS_TONES])}`,
   `const POCKET_CHORD_INSTRUMENTS := ${gdArray(POCKET_CHORD_INSTRUMENTS)}`,
   `const POCKET_MELODY_INSTRUMENTS := ${gdArray(POCKET_MELODY_INSTRUMENTS)}`,
   `const DEFAULT_CHORD_INSTRUMENT := ${gdString(DEFAULT_CHORD_INSTRUMENT)}`,
@@ -168,6 +192,14 @@ function metalStylePresetTextures() {
   return Object.fromEntries(
     METAL_STYLE_PRESET_IDS.map((id) => [id, METAL_STYLE_PRESETS[id].texture || {}])
   );
+}
+
+function westernStyleMetadata() {
+  return Object.fromEntries(WESTERN_STYLE_PRESET_IDS.map((id) => [id, WESTERN_STYLE_PRESETS[id]]));
+}
+
+function funkStyleMetadata() {
+  return Object.fromEntries(FUNK_STYLE_PRESET_IDS.map((id) => [id, FUNK_STYLE_PRESETS[id]]));
 }
 
 function godotDrumSampleStreams() {

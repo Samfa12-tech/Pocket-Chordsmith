@@ -1,5 +1,26 @@
 # Pocket Chordsmith Godot Addon Changelog
 
+## Unreleased
+
+Pocket Audio schema-17 sound-profile compatibility update.
+
+Added:
+
+- Schema-17 import, migration, validation, and chart-resource preservation for
+  canonical sound profiles, sparse expressive events, expanded drum lanes,
+  articulation, expression, performance roles, sounds, and namespaced
+  technique data.
+- Capability negotiation and structured fallback/loss diagnostics without
+  deleting unsupported source intent.
+- Generated shared constants and safe Web Kit preview aliases for Funk,
+  Western, Chiptune, and upgraded Heavy Metal identifiers.
+- Headless schema-17 and schema-16 migration contract fixtures.
+
+Notes:
+
+- Procedural/sample preview remains an audition path. Use prepared
+  `STEM_SYNC` or `HYBRID` assets for production-grade profile identity.
+
 ## 1.1.9
 
 Pocket Audio Heavy Metal profile compatibility update.

@@ -16,7 +16,7 @@ import { encodeWav } from "./offlineRender";
 
 export const NATIVE_RENDER_CACHE_ROOT = "project-cache/native-audio";
 export const NATIVE_GENERATED_STEM_TAIL_SECONDS = 0.25;
-export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v28-7336fe70-muted-event-fastpath";
+export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v30-43de407d-sound-profile-recipes";
 export const NATIVE_CACHE_STEM_RENDER_MODE = "cache-stem";
 const STEM_ROLES: TrackRole[] = ["drums", "bass", "chords", "melody", "guitar"];
 
@@ -652,6 +652,7 @@ export function nativeRenderCacheSignature(project: PocketDawProject): string {
       ppq: project.project.ppq
     },
     sourceRefs: project.sourceRefs.map((ref) => ({ id: ref.id, checksum: ref.checksum, normalized: ref.normalized })),
+    pcsSoundIntent: project.sourceRefs.map((ref) => ({ id: ref.id, intent: nativePcsSoundIntent(ref.normalized) })),
     clips: project.timeline.clips
       .filter((clip) => clip.type === "generated-section")
       .map((clip) => ({
@@ -756,6 +757,61 @@ export function nativeRuntimeAudioCacheSignature(project: PocketDawProject): str
   }));
 }
 
+function nativePcsSoundIntentForClip(project: PocketDawProject, clip: Clip): unknown {
+  const ref = clip.sourceRefId
+    ? project.sourceRefs.find((candidate) => candidate.id === clip.sourceRefId)
+    : project.sourceRefs.find((candidate) => candidate.sourceType === "pocket-chordsmith");
+  return nativePcsSoundIntent(ref?.normalized);
+}
+
+function nativePcsSoundIntent(normalized: unknown): unknown {
+  if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) return null;
+  const source = normalized as Record<string, unknown>;
+  const profile = jsonRecord(source.soundProfile);
+  const sections = jsonRecord(source.sections);
+  const richEvents = Object.fromEntries(Object.entries(sections).map(([sectionId, sectionValue]) => {
+    const section = jsonRecord(sectionValue);
+    const tracks = jsonRecord(section.richEvents || jsonRecord(section.tracks));
+    return [sectionId, Object.fromEntries(Object.entries(tracks).map(([role, trackValue]) => {
+      const events = Array.isArray(trackValue)
+        ? trackValue
+        : Array.isArray(jsonRecord(trackValue).events)
+          ? jsonRecord(trackValue).events as unknown[]
+          : [];
+      return [role, events.map((eventValue) => {
+        const event = jsonRecord(eventValue);
+        return {
+          tick: event.tick,
+          step: event.step,
+          duration: event.duration,
+          note: event.note,
+          notes: event.notes,
+          velocity: event.velocity,
+          articulation: event.articulation,
+          sound: event.sound,
+          role: event.role,
+          expression: event.expression,
+          technique: event.technique
+        };
+      })];
+    }))];
+  }));
+  return {
+    formatFeatures: source.formatFeatures,
+    soundProfile: {
+      id: profile.id,
+      preset: profile.preset,
+      recipeVersion: profile.recipeVersion,
+      parameters: profile.parameters
+    },
+    richEvents
+  };
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
 function nativeAudioRendererContract(sampleRate: number) {
   return {
     version: NATIVE_AUDIO_RENDERER_CONTRACT_VERSION,
@@ -768,6 +824,18 @@ function nativeAudioRendererContract(sampleRate: number) {
 
 function nativeRendererRecipeHash(): string {
   return hashString(JSON.stringify({
+    soundProfileRecipeContract: {
+      version: 1,
+      profiles: ["standard", "lofi_chill", "chip_arcade", "western_frontier", "heavy_metal", "funk_groove"],
+      nativeImplementations: {
+        chipTexture: 1,
+        metalTexture: 1,
+        metalGuitarPreampCabDualTake: 1,
+        metalBassCleanGrit: 1,
+        funkArticulationAndGhostDrums: 1,
+        westernAcousticFallbacks: 1
+      }
+    },
     drumKits: POCKET_DRUM_KIT_CONFIGS,
     bassTones: POCKET_BASS_TONE_CONFIGS,
     chordInstruments: POCKET_CHORD_INSTRUMENT_CONFIGS,
@@ -944,6 +1012,7 @@ function nativeGeneratedStemSourceHash(project: PocketDawProject, clip: Clip, tr
       ppq: assetProject.project.ppq
     },
     trackId,
+    pcsSoundIntent: nativePcsSoundIntentForClip(assetProject, clip),
     events,
     drumLaneMix: isDrumStem ? nativeCacheStemDrumLaneMixState(assetProject) : [],
     fx: nativeGeneratedStemBakedFxState(assetProject, trackId),
@@ -969,6 +1038,7 @@ function nativeGeneratedStemGroupSourceHash(project: PocketDawProject, clips: Cl
     },
     trackId,
     sourceClipIds: clips.map((clip) => clip.id),
+    pcsSoundIntent: clips.map((clip) => nativePcsSoundIntentForClip(assetProject, clip)),
     events,
     drumLaneMix: isDrumStem ? nativeCacheStemDrumLaneMixState(assetProject) : [],
     fx: nativeGeneratedStemBakedFxState(assetProject, trackId),

@@ -2,6 +2,8 @@
 extends Resource
 class_name PCSPlaybackProfile
 
+const SoundProfileContract := preload("res://addons/pocket_chordsmith/import/pcs_sound_profile_contract.gd")
+
 enum PlaybackBackend {
 	STEM_SYNC,
 	HYBRID,
@@ -53,6 +55,14 @@ enum PlaybackBackend {
 @export var sample_preview_bass_duck_window_ticks := 0
 @export var guitar_preview_effects_enabled := false
 @export var audio_profile := "standard"
+@export var sound_profile_id := "standard"
+@export var sound_preset := "standard_chordsmith"
+@export var sound_recipe_version := 1
+@export var supported_format_features: Array[String] = ["sound-profile-v1", "rich-events-v1", "articulations-v1", "expanded-drums-v1", "capability-report-v1"]
+@export var supported_articulations: Array[String] = ["finger", "slap", "pop", "mute", "ghost", "hammer", "pull", "slide", "hold", "staccato", "legato", "bend", "vibrato", "tremolo", "open", "chug", "scratch", "palm_mute", "accent", "flam", "drag", "roll", "choke"]
+@export var supported_drum_lanes: Array[String] = ["kick", "snare", "rim", "clap", "hat_closed", "hat_open", "ride", "crash", "china", "tom_high", "tom_mid", "tom_low", "percussion"]
+@export var supported_technique_namespaces: Array[String] = ["chip", "metal", "western", "funk"]
+@export var supported_profile_ids: Array[String] = ["standard", "lofi_chill", "chip_arcade", "western_frontier", "heavy_metal", "funk_groove"]
 @export var lofi_preset := ""
 @export var lofi_texture: Dictionary = {}
 @export var chip_preset := ""
@@ -107,6 +117,16 @@ enum PlaybackBackend {
 
 func is_event_mode_enabled() -> bool:
 	return playback_backend == PlaybackBackend.HYBRID or playback_backend == PlaybackBackend.PROCEDURAL_PREVIEW
+
+
+func get_capabilities() -> Dictionary:
+	return {
+		"profileIds": supported_profile_ids.duplicate(),
+		"features": supported_format_features.duplicate(),
+		"articulations": supported_articulations.duplicate(),
+		"drumLanes": supported_drum_lanes.duplicate(),
+		"techniqueNamespaces": supported_technique_namespaces.duplicate(),
+	}
 
 
 func get_bus_for_layer(layer_name: String) -> String:

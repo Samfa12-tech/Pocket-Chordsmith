@@ -1,17 +1,56 @@
 export const POCKET_DRUM_LANES = Object.freeze([
-  { id: "kick", label: "Kick", short: "K", chordsmithPad: "kick", chordsmithPadName: "Kick", chordsmithPadMeta: "A - writes Kick", chordsmithPadKey: "a", chordsmithPadClass: "kick", chordsmithRecordTrack: "kick", chordsmithRecordLevel: 1, sequenced: true, defaultVolume: 1, defaultPan: 0 },
-  { id: "snare", label: "Snare", short: "S", chordsmithPad: "snare", chordsmithPadName: "Snare", chordsmithPadMeta: "S - writes Snare", chordsmithPadKey: "s", chordsmithPadClass: "snare", chordsmithRecordTrack: "snare", chordsmithRecordLevel: 1, sequenced: true, defaultVolume: 1, defaultPan: 0 },
-  { id: "clap", label: "Clap", short: "Cl", chordsmithPad: "clap", chordsmithPadName: "Clap", chordsmithPadMeta: "D - snare accent", chordsmithPadKey: "d", chordsmithPadClass: "snare", chordsmithRecordTrack: "snare", chordsmithRecordLevel: 2, sequenced: false, defaultVolume: 0.82, defaultPan: 0.05 },
-  { id: "hat", label: "Hi-hat", short: "H", chordsmithPad: "hat", chordsmithPadName: "Hat", chordsmithPadMeta: "F - writes Hat", chordsmithPadKey: "f", chordsmithPadClass: "hat", chordsmithRecordTrack: "hat", chordsmithRecordLevel: 1, sequenced: true, defaultVolume: 1, defaultPan: 0 },
-  { id: "openhat", label: "Open Hat", short: "OH", chordsmithPad: "openhat", chordsmithPadName: "Open Hat", chordsmithPadMeta: "G - hat accent", chordsmithPadKey: "g", chordsmithPadClass: "hat", chordsmithRecordTrack: "hat", chordsmithRecordLevel: 2, sequenced: false, defaultVolume: 0.9, defaultPan: 0.18 },
-  { id: "tomlow", label: "Low Tom", short: "LT", chordsmithPad: "tomlow", chordsmithPadName: "Low Tom", chordsmithPadMeta: "J - live only", chordsmithPadKey: "j", chordsmithPadClass: "tom", chordsmithRecordTrack: null, chordsmithRecordLevel: 0, sequenced: false, defaultVolume: 0.86, defaultPan: -0.18 },
-  { id: "tommid", label: "Mid Tom", short: "MT", chordsmithPad: "tommid", chordsmithPadName: "Mid Tom", chordsmithPadMeta: "K - live only", chordsmithPadKey: "k", chordsmithPadClass: "tom", chordsmithRecordTrack: null, chordsmithRecordLevel: 0, sequenced: false, defaultVolume: 0.84, defaultPan: 0 },
-  { id: "tomhi", label: "High Tom", short: "HT", chordsmithPad: "tomhi", chordsmithPadName: "High Tom", chordsmithPadMeta: "L - live only", chordsmithPadKey: "l", chordsmithPadClass: "tom", chordsmithRecordTrack: null, chordsmithRecordLevel: 0, sequenced: false, defaultVolume: 0.82, defaultPan: 0.18 },
-  { id: "crash", label: "Crash", short: "Cr", chordsmithPad: "crash", chordsmithPadName: "Crash", chordsmithPadMeta: "; - live only", chordsmithPadKey: ";", chordsmithPadClass: "fx", chordsmithRecordTrack: null, chordsmithRecordLevel: 0, sequenced: false, defaultVolume: 0.72, defaultPan: 0.24 },
-  { id: "ride", label: "Ride", short: "Rd", chordsmithPad: "ride", chordsmithPadName: "Ride", chordsmithPadMeta: "' - live only", chordsmithPadKey: "'", chordsmithPadClass: "fx", chordsmithRecordTrack: null, chordsmithRecordLevel: 0, sequenced: false, defaultVolume: 0.78, defaultPan: 0.28 }
+  { id: "kick", label: "Kick", short: "K", chordsmithPad: "kick", chordsmithPadName: "Kick", chordsmithPadMeta: "A - writes Kick", chordsmithPadKey: "a", chordsmithPadClass: "kick", chordsmithRecordTrack: "kick", chordsmithRecordLane: "kick", chordsmithRecordLevel: 1, sequenced: true, defaultVolume: 1, defaultPan: 0 },
+  { id: "snare", label: "Snare", short: "S", chordsmithPad: "snare", chordsmithPadName: "Snare", chordsmithPadMeta: "S - writes Snare", chordsmithPadKey: "s", chordsmithPadClass: "snare", chordsmithRecordTrack: "snare", chordsmithRecordLane: "snare", chordsmithRecordLevel: 1, sequenced: true, defaultVolume: 1, defaultPan: 0 },
+  { id: "clap", label: "Clap", short: "Cl", chordsmithPad: "clap", chordsmithPadName: "Clap", chordsmithPadMeta: "D - writes Clap", chordsmithPadKey: "d", chordsmithPadClass: "snare", chordsmithRecordTrack: null, chordsmithRecordLane: "clap", chordsmithRecordLevel: 1, sequenced: false, defaultVolume: 0.82, defaultPan: 0.05 },
+  { id: "hat", label: "Hi-hat", short: "H", chordsmithPad: "hat", chordsmithPadName: "Hat", chordsmithPadMeta: "F - writes Closed Hat", chordsmithPadKey: "f", chordsmithPadClass: "hat", chordsmithRecordTrack: "hat", chordsmithRecordLane: "hat_closed", chordsmithRecordLevel: 1, sequenced: true, defaultVolume: 1, defaultPan: 0 },
+  { id: "openhat", label: "Open Hat", short: "OH", chordsmithPad: "openhat", chordsmithPadName: "Open Hat", chordsmithPadMeta: "G - writes Open Hat", chordsmithPadKey: "g", chordsmithPadClass: "hat", chordsmithRecordTrack: "hat", chordsmithRecordLane: "hat_open", chordsmithRecordLevel: 2, sequenced: false, defaultVolume: 0.9, defaultPan: 0.18 },
+  { id: "tomlow", label: "Low Tom", short: "LT", chordsmithPad: "tomlow", chordsmithPadName: "Low Tom", chordsmithPadMeta: "J - writes Low Tom", chordsmithPadKey: "j", chordsmithPadClass: "tom", chordsmithRecordTrack: null, chordsmithRecordLane: "tom_low", chordsmithRecordLevel: 1, sequenced: false, defaultVolume: 0.86, defaultPan: -0.18 },
+  { id: "tommid", label: "Mid Tom", short: "MT", chordsmithPad: "tommid", chordsmithPadName: "Mid Tom", chordsmithPadMeta: "K - writes Mid Tom", chordsmithPadKey: "k", chordsmithPadClass: "tom", chordsmithRecordTrack: null, chordsmithRecordLane: "tom_mid", chordsmithRecordLevel: 1, sequenced: false, defaultVolume: 0.84, defaultPan: 0 },
+  { id: "tomhi", label: "High Tom", short: "HT", chordsmithPad: "tomhi", chordsmithPadName: "High Tom", chordsmithPadMeta: "L - writes High Tom", chordsmithPadKey: "l", chordsmithPadClass: "tom", chordsmithRecordTrack: null, chordsmithRecordLane: "tom_high", chordsmithRecordLevel: 1, sequenced: false, defaultVolume: 0.82, defaultPan: 0.18 },
+  { id: "crash", label: "Crash", short: "Cr", chordsmithPad: "crash", chordsmithPadName: "Crash", chordsmithPadMeta: "; - writes Crash", chordsmithPadKey: ";", chordsmithPadClass: "fx", chordsmithRecordTrack: null, chordsmithRecordLane: "crash", chordsmithRecordLevel: 1, sequenced: false, defaultVolume: 0.72, defaultPan: 0.24 },
+  { id: "ride", label: "Ride", short: "Rd", chordsmithPad: "ride", chordsmithPadName: "Ride", chordsmithPadMeta: "' - writes Ride", chordsmithPadKey: "'", chordsmithPadClass: "fx", chordsmithRecordTrack: null, chordsmithRecordLane: "ride", chordsmithRecordLevel: 1, sequenced: false, defaultVolume: 0.78, defaultPan: 0.28 }
 ]);
 
 export const POCKET_DRUM_LANE_IDS = Object.freeze(POCKET_DRUM_LANES.map((lane) => lane.id));
+
+export const POCKET_AUDIO_COMMON_DRUM_LANES = Object.freeze([
+  { id: "kick", fallback: "kick" },
+  { id: "snare", fallback: "snare" },
+  { id: "rim", fallback: "snare" },
+  { id: "clap", fallback: "clap" },
+  { id: "hat_closed", fallback: "hat" },
+  { id: "hat_open", fallback: "openhat" },
+  { id: "ride", fallback: "ride" },
+  { id: "crash", fallback: "crash" },
+  { id: "china", fallback: "crash" },
+  { id: "tom_high", fallback: "tomhi" },
+  { id: "tom_mid", fallback: "tommid" },
+  { id: "tom_low", fallback: "tomlow" },
+  { id: "percussion", fallback: "clap" }
+].map((lane) => Object.freeze(lane)));
+
+export const POCKET_AUDIO_COMMON_DRUM_LANE_IDS = Object.freeze(POCKET_AUDIO_COMMON_DRUM_LANES.map((lane) => lane.id));
+
+export const POCKET_AUDIO_DRUM_LANE_ALIASES = Object.freeze({
+  hat: "hat_closed",
+  closedhat: "hat_closed",
+  openhat: "hat_open",
+  tomhi: "tom_high",
+  tommid: "tom_mid",
+  tomlow: "tom_low"
+});
+
+export function normalisePocketAudioDrumLane(value, options = {}) {
+  const requested = String(value || options.fallback || "percussion").trim().toLowerCase();
+  const canonical = POCKET_AUDIO_DRUM_LANE_ALIASES[requested] || requested;
+  if (POCKET_AUDIO_COMMON_DRUM_LANE_IDS.includes(canonical)) return canonical;
+  return options.preserveUnknown === false ? (options.fallback || "percussion") : canonical;
+}
+
+export function pocketAudioDrumLaneFallback(value) {
+  const canonical = normalisePocketAudioDrumLane(value);
+  return POCKET_AUDIO_COMMON_DRUM_LANES.find((lane) => lane.id === canonical)?.fallback || "clap";
+}
 
 export const CHORDSMITH_SEQUENCED_DRUM_LANE_IDS = Object.freeze(
   POCKET_DRUM_LANES.filter((lane) => lane.sequenced).map((lane) => lane.id)

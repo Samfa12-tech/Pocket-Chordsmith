@@ -113,6 +113,9 @@ func _build_report(source_path: String, result: Dictionary) -> Dictionary:
 	for section_id in Migrator.SECTION_IDS:
 		if section_bars.has(section_id):
 			section_count += 1
+	var metadata: Dictionary = result.get("metadata", {}) if result.get("metadata", {}) is Dictionary else {}
+	var capability_report: Dictionary = metadata.get("capability_report", {}) if metadata.get("capability_report", {}) is Dictionary else {}
+	var capability_losses: Array = capability_report.get("losses", []) if capability_report.get("losses", []) is Array else []
 	return {
 		"source_path": source_path,
 		"schema_version": result.get("schema_version", 0),
@@ -122,6 +125,10 @@ func _build_report(source_path: String, result: Dictionary) -> Dictionary:
 		"key": project.get("key", ""),
 		"scale": project.get("scale", ""),
 		"resolution": project.get("resolution", 0),
+		"sound_profile": (project.get("soundProfile", {}) as Dictionary).duplicate(true) if project.get("soundProfile", {}) is Dictionary else {},
+		"format_features": project.get("formatFeatures", []).duplicate() if project.get("formatFeatures", []) is Array else [],
+		"rich_section_count": (project.get("sections", {}) as Dictionary).size() if project.get("sections", {}) is Dictionary else 0,
+		"capability_loss_count": capability_losses.size(),
 		"section_count": section_count,
 		"sequence_slots": sequence.size(),
 		"warning_count": (result.get("warnings", []) as Array).size(),

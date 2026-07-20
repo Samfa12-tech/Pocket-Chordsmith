@@ -4,6 +4,7 @@ class_name PCSValidator
 
 const ChartResource := preload("res://addons/pocket_chordsmith/resources/pcs_chart_resource.gd")
 const PlaybackProfile := preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
+const SoundProfileContract := preload("res://addons/pocket_chordsmith/import/pcs_sound_profile_contract.gd")
 
 const SECTION_IDS := ["A", "B", "C", "D", "E", "F", "G", "H"]
 const TRACK_IDS := ["kick", "snare", "hat", "bass"]
@@ -26,6 +27,14 @@ func validate_project(project: Dictionary) -> Dictionary:
 	if project.is_empty():
 		errors.append("Project is empty after import.")
 		return {"warnings": warnings, "errors": errors}
+	if int(project.get("projectVersion", 0)) >= SoundProfileContract.SCHEMA_VERSION:
+		if not (project.get("soundProfile", {}) is Dictionary):
+			errors.append("Schema-17 project soundProfile must be an object.")
+		if not (project.get("formatFeatures", []) is Array):
+			errors.append("Schema-17 project formatFeatures must be an array.")
+		var profile_id := str((project.get("soundProfile", {}) as Dictionary).get("id", ""))
+		if not SoundProfileContract.PROFILE_IDS.has(profile_id):
+			errors.append("Schema-17 project soundProfile.id '%s' is not a canonical profile ID." % profile_id)
 
 	if int(project.get("bpm", 0)) <= 0:
 		errors.append("Project BPM must be greater than zero.")
@@ -78,6 +87,11 @@ func validate_runtime_readiness(chart, playback_profile = null) -> Dictionary:
 	info["performance_settings"] = chart.performance_settings.duplicate(true)
 	info["music_states"] = chart.music_states.keys()
 	info["has_slide_events"] = chart.has_slide_events()
+	info["schema_version"] = chart.schema_version
+	info["sound_profile"] = chart.sound_profile.duplicate(true)
+	info["format_features"] = chart.format_features.duplicate()
+	info["expressive_event_count"] = chart.expressive_event_count
+	info["profile_metadata"] = chart.profile_metadata.duplicate(true)
 
 	if chart.bpm <= 0:
 		errors.append("Chart BPM must be greater than zero.")
@@ -116,7 +130,23 @@ func validate_runtime_readiness(chart, playback_profile = null) -> Dictionary:
 	else:
 		_validate_playback_profile(chart, playback_profile, warnings, errors, info)
 
+	var source := {
+		"soundProfile": chart.sound_profile,
+		"formatFeatures": chart.format_features,
+		"sections": chart.rich_sections,
+	}
+	var capabilities: Dictionary = playback_profile.get_capabilities() if playback_profile != null and playback_profile.has_method("get_capabilities") else {}
+	var capability_report: Dictionary = SoundProfileContract.negotiate(source, capabilities)
+	info["capability_report"] = capability_report
+	for loss in capability_report.get("losses", []):
+		if str(loss.get("action", "")) != "preserved":
+			warnings.append("Capability loss at %s: %s." % [str(loss.get("path", "")), str(loss.get("message", ""))])
+
 	return {"ok": errors.is_empty(), "warnings": warnings, "errors": errors, "info": info}
+
+
+func negotiate_capabilities(value, capabilities := {}) -> Dictionary:
+	return SoundProfileContract.negotiate(value, capabilities)
 
 
 func _validate_playback_profile(chart, playback_profile, warnings: Array[String], _errors: Array[String], info: Dictionary) -> void:

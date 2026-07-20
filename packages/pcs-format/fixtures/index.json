@@ -1,7 +1,7 @@
 {
   "package": "pcs-format",
-  "status": "0.1.0-scaffold",
-  "schemaVersion": 16,
+  "status": "0.2.0-schema17",
+  "schemaVersion": 17,
   "prefix": "PCS1:",
   "fixtures": [
     {
@@ -26,6 +26,18 @@
       "expectedSequence": ["A", "B", "A"],
       "summarySection": "A",
       "expectedSectionBars": 1
+    },
+    {
+      "file": "schema17-funk-rich-events.json",
+      "role": "schema17-rich-events-profiles-and-capabilities",
+      "expectedValid": true,
+      "preservesUnknownFields": true,
+      "profile": "funk_groove"
+    },
+    {
+      "file": "schema17-invalid.json",
+      "role": "invalid-schema17-rich-event-contract",
+      "expectedValid": false
     }
   ]
 }

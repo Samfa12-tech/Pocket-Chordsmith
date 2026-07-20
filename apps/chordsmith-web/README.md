@@ -88,7 +88,7 @@ Three import-ready chip demos live in `demos/`: `chip_bug_maze_pulse_loop.json`,
 ### v68 Pocket Audio Core Bridge
 
 - New file/version: `pocket_chordsmith_v68_core_bridge.html`; `index.html` now redirects to v68.
-- Updated to Pocket Audio Core `0.1.0-scaffold`.
+- Updated to Pocket Audio Core `0.2.0` with PCS schema-17 expressive events and canonical sound profiles.
 - Project schema remains `16`.
 - Pocket Audio Core now handles local shared project load/timeline diagnostics and mirrors transport start/stop when the repo-local core module is available.
 - WAV export tries the Pocket Audio Core renderer first when available, then falls back to the legacy OfflineAudioContext exporter.

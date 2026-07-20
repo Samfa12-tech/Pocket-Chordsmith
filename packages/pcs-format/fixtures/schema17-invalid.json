@@ -1,0 +1,22 @@
+{
+  "projectVersion": 17,
+  "bpm": 120,
+  "songSequence": ["A"],
+  "formatFeatures": ["rich-events"],
+  "soundProfile": {
+    "id": "funk_groove",
+    "preset": "",
+    "parameters": [],
+    "recipeVersion": 0
+  },
+  "sections": {
+    "A": {
+      "bars": 1,
+      "tracks": {
+        "bass": {
+          "events": [{ "step": -1, "duration": 0, "note": 200, "technique": "slap" }]
+        }
+      }
+    }
+  }
+}

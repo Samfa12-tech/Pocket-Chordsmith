@@ -98,12 +98,13 @@ export function isPocketLofiActive(audioProfile = "", lofiPreset = "") {
 }
 
 export function isPocketChipActive(audioProfile = "", chipPreset = "") {
-  return audioProfile === "chip_tune" || String(chipPreset || "").startsWith("chip_");
+  return audioProfile === "chip_arcade" || audioProfile === "chip_tune" || String(chipPreset || "").startsWith("chip_");
 }
 
 export function isPocketMetalActive(audioProfile = "", metalPreset = "") {
   return audioProfile === "heavy_metal" || String(metalPreset || "").startsWith("metal_");
 }
+
 
 export const LOFI_CHORD_INSTRUMENT_CONFIGS = Object.freeze({
   dusty_rhodes: Object.freeze({

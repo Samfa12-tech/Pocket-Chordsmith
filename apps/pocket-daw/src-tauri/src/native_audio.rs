@@ -134,14 +134,18 @@ pub struct NativeRenderedEvent {
     #[serde(rename = "chipPreset")]
     chip_preset: Option<String>,
     #[serde(rename = "chipTexture")]
-    #[allow(dead_code)]
-    chip_texture: Option<Value>,
+    chip_texture: Option<NativeChipTexture>,
     #[serde(rename = "metalPreset")]
-    #[allow(dead_code)]
     metal_preset: Option<String>,
     #[serde(rename = "metalTexture")]
-    #[allow(dead_code)]
-    metal_texture: Option<Value>,
+    metal_texture: Option<NativeMetalTexture>,
+    #[serde(rename = "soundProfile")]
+    sound_profile: Option<NativeSoundProfile>,
+    sound: Option<String>,
+    #[serde(rename = "performanceRole")]
+    performance_role: Option<String>,
+    expression: Option<Value>,
+    technique: Option<Value>,
     accent: Option<bool>,
     articulation: Option<String>,
     direction: Option<String>,
@@ -164,6 +168,64 @@ pub struct NativeLofiTexture {
     #[serde(rename = "bitCrush", default)]
     bit_crush: f64,
 }
+
+#[derive(Clone, Deserialize)]
+pub struct NativeChipTexture {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(rename = "bitDepth", default)]
+    bit_depth: f64,
+    #[serde(rename = "sampleRateCrush", default)]
+    sample_rate_crush: f64,
+    #[serde(rename = "pulseWidth", default = "default_chip_pulse_width")]
+    pulse_width: f64,
+    #[serde(rename = "pitchDrift", default)]
+    pitch_drift: f64,
+    #[serde(default)]
+    saturation: f64,
+    #[serde(rename = "stereoSpread", default)]
+    stereo_spread: f64,
+}
+
+fn default_chip_pulse_width() -> f64 {
+    0.5
+}
+
+#[derive(Clone, Deserialize)]
+pub struct NativeMetalTexture {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default = "default_metal_drive")]
+    drive: f64,
+    #[serde(rename = "palmMute", default = "default_metal_palm_mute")]
+    palm_mute: f64,
+    #[serde(rename = "lowTightness", default = "default_metal_low_tightness")]
+    low_tightness: f64,
+    #[serde(default = "default_metal_presence")]
+    presence: f64,
+    #[serde(rename = "roomSize", default)]
+    room_size: f64,
+    #[serde(rename = "pickAttack", default = "default_metal_pick_attack")]
+    pick_attack: f64,
+}
+
+fn default_metal_drive() -> f64 { 0.42 }
+fn default_metal_palm_mute() -> f64 { 0.72 }
+fn default_metal_low_tightness() -> f64 { 0.78 }
+fn default_metal_presence() -> f64 { 0.56 }
+fn default_metal_pick_attack() -> f64 { 0.64 }
+
+#[derive(Clone, Deserialize)]
+pub struct NativeSoundProfile {
+    id: String,
+    preset: String,
+    #[serde(rename = "recipeVersion", default = "default_recipe_version")]
+    recipe_version: u32,
+    #[serde(default)]
+    parameters: Value,
+}
+
+fn default_recipe_version() -> u32 { 1 }
 
 #[derive(Clone, Deserialize)]
 pub struct NativeTrackControl {
@@ -3088,11 +3150,14 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
     if local < 0.0 {
         return 0.0;
     }
-    let velocity = event.velocity.clamp(0.0, 1.4) as f32;
+    let velocity = expressive_velocity(event, event.velocity.clamp(0.0, 1.4) as f32);
     if velocity <= 0.0 {
         return 0.0;
     }
     let accent = event.accent.unwrap_or(false);
+    if chip_profile_active(event) && chip_channel(event) == "noise" && is_drum_kind(&event.kind) {
+        return render_chip_noise_channel(event, local, velocity);
+    }
     match event.kind.as_str() {
         "kick" => {
             let kit = lofi_drum_kit(event);
@@ -3232,6 +3297,15 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
         }
         "texture" => render_lofi_texture(event, local),
         "bass" => {
+            if metal_profile_active(event) {
+                return render_metal_bass(event, local, velocity);
+            }
+            if funk_profile_active(event) {
+                return render_funk_bass(event, local, velocity);
+            }
+            if chip_profile_active(event) {
+                return render_chip_note(event.midi.unwrap_or(36.0), event, local, velocity);
+            }
             let midi = event.midi.unwrap_or(36.0);
             let dur = event.duration.max(0.08);
             let cfg = native_bass_tone_config(event.bass_tone.as_deref());
@@ -3285,12 +3359,315 @@ fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
         }
         "melody" | "midi" => {
             let midi = event.midi.unwrap_or(72.0);
+            if chip_profile_active(event) {
+                return render_chip_note(midi, event, local, velocity);
+            }
             render_lead_note(midi, event, local, velocity)
         }
-        "chord" => render_chord_notes(&event.midi_notes, event, local, velocity),
-        "guitar" => render_guitar_notes(&event.midi_notes, event, local, velocity),
+        "chord" => {
+            if chip_profile_active(event) {
+                render_chip_chord(&event.midi_notes, event, local, velocity)
+            } else {
+                render_chord_notes(&event.midi_notes, event, local, velocity)
+            }
+        }
+        "guitar" => {
+            if metal_profile_active(event) {
+                render_metal_guitar(&event.midi_notes, event, local, velocity)
+            } else if western_profile_active(event) {
+                render_western_guitar(&event.midi_notes, event, local, velocity)
+            } else {
+                render_guitar_notes(&event.midi_notes, event, local, velocity)
+            }
+        }
         _ => 0.0,
     }
+}
+
+fn sound_profile_id(event: &NativeRenderedEvent) -> Option<&str> {
+    event
+        .sound_profile
+        .as_ref()
+        .map(|profile| profile.id.as_str())
+        .or(event.audio_profile.as_deref())
+}
+
+fn chip_profile_active(event: &NativeRenderedEvent) -> bool {
+    matches!(sound_profile_id(event), Some("chip_arcade" | "chip_tune"))
+        || event.chip_preset.as_deref().unwrap_or("").starts_with("chip_")
+}
+
+fn metal_profile_active(event: &NativeRenderedEvent) -> bool {
+    sound_profile_id(event) == Some("heavy_metal")
+        || event.metal_preset.as_deref().unwrap_or("").starts_with("metal_")
+}
+
+fn funk_profile_active(event: &NativeRenderedEvent) -> bool {
+    sound_profile_id(event) == Some("funk_groove")
+}
+
+fn western_profile_active(event: &NativeRenderedEvent) -> bool {
+    sound_profile_id(event) == Some("western_frontier")
+}
+
+fn is_drum_kind(kind: &str) -> bool {
+    matches!(kind, "kick" | "snare" | "clap" | "hat" | "openhat" | "tomlow" | "tommid" | "tomhi" | "crash" | "ride")
+}
+
+fn expressive_velocity(event: &NativeRenderedEvent, velocity: f32) -> f32 {
+    match event.articulation.as_deref() {
+        Some("ghost") => velocity * 0.34,
+        Some("accent") => (velocity * 1.12).min(1.4),
+        Some("mute") if event.kind != "bass" => velocity * 0.48,
+        _ => velocity,
+    }
+}
+
+fn technique_namespace<'a>(event: &'a NativeRenderedEvent, namespace: &str) -> Option<&'a serde_json::Map<String, Value>> {
+    event.technique.as_ref()?.as_object()?.get(namespace)?.as_object()
+}
+
+fn technique_number(event: &NativeRenderedEvent, namespace: &str, key: &str) -> Option<f64> {
+    technique_namespace(event, namespace)?.get(key)?.as_f64()
+}
+
+fn technique_string<'a>(event: &'a NativeRenderedEvent, namespace: &str, key: &str) -> Option<&'a str> {
+    technique_namespace(event, namespace)?.get(key)?.as_str()
+}
+
+fn sound_profile_number(event: &NativeRenderedEvent, key: &str, fallback: f64) -> f64 {
+    event
+        .sound_profile
+        .as_ref()
+        .and_then(|profile| profile.parameters.as_object())
+        .and_then(|parameters| parameters.get(key))
+        .and_then(Value::as_f64)
+        .unwrap_or(fallback)
+        .clamp(0.0, 1.0)
+}
+
+fn chip_channel(event: &NativeRenderedEvent) -> &str {
+    technique_string(event, "chip", "channel").unwrap_or_else(|| {
+        if is_drum_kind(&event.kind) { "noise" }
+        else if event.kind == "bass" { "triangle" }
+        else { "pulse1" }
+    })
+}
+
+fn render_chip_note(midi: f64, event: &NativeRenderedEvent, local: f64, velocity: f32) -> f32 {
+    let texture = event.chip_texture.as_ref();
+    let enabled = texture.map(|value| value.enabled).unwrap_or(true);
+    if !enabled || local > event.duration.max(0.04) + 0.08 {
+        return 0.0;
+    }
+    let crush = texture.map(|value| value.sample_rate_crush).unwrap_or(0.0).clamp(0.0, 1.0);
+    let virtual_rate = 48_000.0 * (1.0 - crush * 0.88).max(0.08);
+    let quantized_local = (local * virtual_rate).floor() / virtual_rate;
+    let drift = texture.map(|value| value.pitch_drift).unwrap_or(0.0).clamp(0.0, 1.0);
+    let vibrato = technique_number(event, "chip", "vibrato").unwrap_or(0.0).clamp(0.0, 1.0);
+    let sweep = technique_number(event, "chip", "sweep").unwrap_or(0.0).clamp(-24.0, 24.0);
+    let arp_offset = chip_arpeggio_offset(event, quantized_local);
+    let drift_semitones = (quantized_local * 6.7).sin() * drift * 0.18
+        + (quantized_local * 31.0).sin() * vibrato * 0.24;
+    let sweep_progress = (quantized_local / event.duration.max(0.04)).clamp(0.0, 1.0);
+    let freq = midi_to_freq(midi + arp_offset + drift_semitones + sweep * sweep_progress) as f32;
+    let duty = technique_number(event, "chip", "duty")
+        .or_else(|| texture.map(|value| value.pulse_width))
+        .unwrap_or(0.5)
+        .clamp(0.08, 0.92) as f32;
+    let channel = chip_channel(event);
+    let mut sample = match channel {
+        "triangle" => triangle(freq, quantized_local),
+        "noise" => noise(event, quantized_local, 173),
+        "wavetable" => triangle(freq, quantized_local) * 0.62 + saw(freq * 2.0, quantized_local) * 0.2,
+        _ => pulse_wave(freq, quantized_local, duty),
+    };
+    let spread = texture.map(|value| value.stereo_spread).unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+    if spread > 0.0 && channel != "noise" {
+        sample = sample * (1.0 - spread * 0.22)
+            + pulse_wave(freq * (1.0 + spread * 0.006), quantized_local + spread as f64 * 0.0007, duty) * spread * 0.22;
+    }
+    let connected = matches!(event.articulation.as_deref(), Some("hammer" | "pull" | "legato"));
+    let attack = if connected { 0.018 } else { 0.0015 };
+    let release = if event.articulation.as_deref() == Some("staccato") { 0.025 } else { 0.07 };
+    let env = note_envelope(quantized_local, event.duration.max(0.035), attack, 0.03, 0.72, release);
+    let saturation = texture.map(|value| value.saturation).unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+    let driven = (sample * (1.0 + saturation * 3.2)).tanh() / (1.0 + saturation * 0.45);
+    let bit_depth = texture.map(|value| value.bit_depth).unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+    let levels = (256.0 - bit_depth * 240.0).max(8.0);
+    ((driven * levels).round() / levels) * env * velocity * 0.18
+}
+
+fn render_chip_chord(notes: &[f64], event: &NativeRenderedEvent, local: f64, velocity: f32) -> f32 {
+    let notes = if notes.is_empty() { &[60.0][..] } else { notes };
+    let scale = (notes.len() as f32).sqrt().max(1.0);
+    notes.iter().take(4).enumerate().map(|(index, midi)| {
+        let offset = if technique_string(event, "chip", "channel") == Some("arpeggio") { index as f64 * 0.045 } else { 0.0 };
+        if local < offset { 0.0 } else { render_chip_note(*midi, event, local - offset, velocity) / scale }
+    }).sum()
+}
+
+fn render_chip_noise_channel(event: &NativeRenderedEvent, local: f64, velocity: f32) -> f32 {
+    let period = technique_number(event, "chip", "noisePeriod").unwrap_or(0.45).clamp(0.0, 1.0);
+    let retrigger = technique_number(event, "chip", "retrigger").unwrap_or(0.0).clamp(0.0, 1.0);
+    let stop = event.duration.max(0.025).min(0.42);
+    if local > stop { return 0.0; }
+    let rate = 3_000.0 + period * 19_000.0;
+    let index = (local * rate).floor() as u64;
+    let burst = if retrigger > 0.0 { 0.72 + 0.28 * (local * (8.0 + retrigger * 40.0)).sin().abs() } else { 1.0 };
+    stable_noise_sample(index, 181 + event_seed_u64(event, 0))
+        * note_envelope(local, stop, 0.001, 0.018, 0.18, 0.035)
+        * velocity
+        * burst as f32
+        * 0.18
+}
+
+fn chip_arpeggio_offset(event: &NativeRenderedEvent, local: f64) -> f64 {
+    let Some(values) = technique_namespace(event, "chip").and_then(|value| value.get("arpeggio")).and_then(Value::as_array) else {
+        return 0.0;
+    };
+    if values.is_empty() { return 0.0; }
+    let index = ((local / 0.055).floor() as usize) % values.len();
+    values[index].as_f64().unwrap_or(0.0).clamp(-24.0, 24.0)
+}
+
+fn pulse_wave(freq: f32, local: f64, duty: f32) -> f32 {
+    if (freq as f64 * local).fract() < duty.clamp(0.02, 0.98) as f64 { 1.0 } else { -1.0 }
+}
+
+fn render_metal_guitar(notes: &[f64], event: &NativeRenderedEvent, local: f64, velocity: f32) -> f32 {
+    let texture = event.metal_texture.as_ref();
+    let texture_mix = if texture.map(|value| value.enabled).unwrap_or(true) { 1.0 } else { 0.0 };
+    let drive = (0.22 + (texture.map(|value| value.drive).unwrap_or(0.48).clamp(0.0, 1.0) - 0.22) * texture_mix) as f32;
+    let tightness = (0.45 + (texture.map(|value| value.low_tightness).unwrap_or(0.82).clamp(0.0, 1.0) - 0.45) * texture_mix) as f32;
+    let presence = (0.34 + (texture.map(|value| value.presence).unwrap_or(0.58).clamp(0.0, 1.0) - 0.34) * texture_mix) as f32;
+    let pick = (0.32 + (texture.map(|value| value.pick_attack).unwrap_or(0.7).clamp(0.0, 1.0) - 0.32) * texture_mix) as f32;
+    let room = (texture.map(|value| value.room_size).unwrap_or(0.12).clamp(0.0, 1.0) * texture_mix) as f32;
+    let mute_depth = technique_number(event, "metal", "palmMuteDepth")
+        .or_else(|| texture.map(|value| value.palm_mute))
+        .unwrap_or(0.72)
+        .clamp(0.0, 1.0);
+    let palm_muted = matches!(event.articulation.as_deref(), Some("chug" | "palm_mute" | "mute"));
+    let play_dur = if palm_muted {
+        event.duration.min(0.16 - mute_depth * 0.105).max(0.025)
+    } else {
+        event.duration.max(0.08)
+    };
+    if local > play_dur + 0.16 + room as f64 * 0.12 { return 0.0; }
+    let source_notes = if notes.is_empty() { &[40.0][..] } else { notes };
+    let reverse = technique_string(event, "metal", "pickDirection").or(event.direction.as_deref()) == Some("up");
+    let dual_seed = technique_number(event, "metal", "dualTakeSeed").unwrap_or(event_seed_u64(event, 211) as f64);
+    let seed_unit = ((dual_seed.sin() * 0.5 + 0.5) as f32).clamp(0.0, 1.0);
+    let scale = (source_notes.len() as f32).sqrt().max(1.0);
+    let mut sample = 0.0_f32;
+    for index in 0..source_notes.len().min(6) {
+        let note_index = if reverse { source_notes.len() - 1 - index } else { index };
+        let midi = source_notes[note_index];
+        let offset = index as f64 * if palm_muted { 0.0025 } else { 0.0065 };
+        if local < offset { continue; }
+        let note_local = local - offset;
+        let freq = midi_to_freq(midi) as f32;
+        let env = note_envelope(note_local, play_dur, 0.0015, if palm_muted { 0.022 } else { 0.06 }, if palm_muted { 0.08 } else { 0.42 }, if palm_muted { 0.025 } else { 0.13 });
+        let preamp = (saw(freq, note_local) * 0.7 + triangle(freq * 2.0, note_local) * 0.22)
+            * (2.6 + drive * 8.8)
+            * (0.78 + tightness * 0.18);
+        let driven = preamp.tanh();
+        let cab = driven
+            * lowpass_tone_factor(freq * (2.1 + presence), 2_600.0 + presence * 1_700.0)
+            * (freq / (82.0 + tightness * 92.0)).clamp(0.18, 1.0);
+        let detune = 1.0 + (0.0025 + seed_unit * 0.0035);
+        let second_local = (note_local - (0.004 + seed_unit as f64 * 0.006)).max(0.0);
+        let second = (saw(freq * detune, second_local) * (2.4 + drive * 7.2)).tanh()
+            * lowpass_tone_factor(freq * 2.2, 2_450.0 + presence * 1_850.0);
+        sample += (cab * 0.58 + second * 0.42) * env / scale;
+    }
+    let pick_transient = if local < 0.026 {
+        (noise(event, local, 223) * 0.62 + triangle(1_850.0 + presence * 1_900.0, local) * 0.38)
+            * (-local * 145.0).exp() as f32
+            * pick
+            * 0.22
+    } else { 0.0 };
+    let room_reflection = if room > 0.0 && local > 0.035 {
+        sample * room * 0.14 * (-local * 4.5).exp() as f32
+    } else { 0.0 };
+    (sample + pick_transient + room_reflection) * velocity * 0.24
+}
+
+fn render_metal_bass(event: &NativeRenderedEvent, local: f64, velocity: f32) -> f32 {
+    let texture = event.metal_texture.as_ref();
+    let texture_mix = if texture.map(|value| value.enabled).unwrap_or(true) { 1.0 } else { 0.0 };
+    let drive = (0.18 + (texture.map(|value| value.drive).unwrap_or(0.48).clamp(0.0, 1.0) - 0.18) * texture_mix) as f32;
+    let tightness = (0.42 + (texture.map(|value| value.low_tightness).unwrap_or(0.82).clamp(0.0, 1.0) - 0.42) * texture_mix) as f32;
+    let presence = (0.3 + (texture.map(|value| value.presence).unwrap_or(0.58).clamp(0.0, 1.0) - 0.3) * texture_mix) as f32;
+    let pick = (0.28 + (texture.map(|value| value.pick_attack).unwrap_or(0.7).clamp(0.0, 1.0) - 0.28) * texture_mix) as f32;
+    let dur = event.duration.max(0.055);
+    if local > dur + 0.18 { return 0.0; }
+    let freq = midi_to_freq(event.midi.unwrap_or(36.0)) as f32;
+    let clean_env = note_envelope(local, dur, 0.004, 0.055, 0.62, 0.15);
+    let grit_env = note_envelope(local, dur.min(0.32), 0.002, 0.035, 0.38, 0.09);
+    let clean = (triangle(freq, local) * 0.72 + phase(freq * 0.5, local) * 0.28) * clean_env * 0.54;
+    let grit_source = saw(freq * 2.0, local) * (1.4 + drive * 5.0);
+    let grit = grit_source.tanh()
+        * grit_env
+        * (0.16 + drive * 0.28)
+        * lowpass_tone_factor(freq * 4.0, 1_450.0 + presence * 2_400.0)
+        * (0.78 + tightness * 0.18);
+    let attack = if local < 0.022 { noise(event, local, 229) * (-local * 170.0).exp() as f32 * pick * 0.12 } else { 0.0 };
+    (clean + grit + attack) * velocity
+}
+
+fn render_funk_bass(event: &NativeRenderedEvent, local: f64, velocity: f32) -> f32 {
+    let articulation = event.articulation.as_deref().unwrap_or("finger");
+    let ghost_depth = technique_number(event, "funk", "ghostDepth")
+        .unwrap_or_else(|| sound_profile_number(event, "ghostNotes", 0.42))
+        .clamp(0.0, 1.0) as f32;
+    let slap_amount = sound_profile_number(event, "slapAmount", 0.68) as f32;
+    let pop_brightness = sound_profile_number(event, "popBrightness", 0.62) as f32;
+    let mute_depth = sound_profile_number(event, "muteDepth", 0.74) as f32;
+    let midi = event.midi.unwrap_or(36.0);
+    let freq = midi_to_freq(midi) as f32;
+    let connected = matches!(articulation, "hammer" | "pull" | "legato");
+    let muted = matches!(articulation, "mute" | "ghost");
+    let dur = if muted { event.duration.min(0.13 - mute_depth as f64 * 0.075).max(0.035) } else { event.duration.max(0.05) };
+    if local > dur + 0.11 { return 0.0; }
+    if muted {
+        let body = triangle(freq, local) * note_envelope(local, dur, 0.001, 0.018, 0.04, 0.025) * (0.18 - mute_depth * 0.09);
+        let thump = noise(event, local, 239) * (-local * 62.0).exp() as f32 * (0.12 + ghost_depth * 0.15 + (1.0 - mute_depth) * 0.08);
+        return (body + thump) * velocity;
+    }
+    let env = note_envelope(local, dur, if connected { 0.022 } else { 0.0035 }, 0.045, 0.5, 0.09);
+    let mut body = (triangle(freq, local) * 0.72 + phase(freq * 0.5, local) * 0.22) * env * 0.55;
+    let transient = match articulation {
+        "slap" => noise(event, local, 241) * (-local * 185.0).exp() as f32 * (0.12 + slap_amount * 0.2) + triangle(freq * 2.0, local) * (-local * 95.0).exp() as f32 * (0.06 + slap_amount * 0.1),
+        "pop" => noise(event, local, 243) * (-local * 210.0).exp() as f32 * (0.1 + pop_brightness * 0.18) + saw(freq * (2.0 + pop_brightness), local) * (-local * 82.0).exp() as f32 * (0.07 + pop_brightness * 0.13),
+        _ if connected => 0.0,
+        _ => noise(event, local, 245) * (-local * 175.0).exp() as f32 * 0.055,
+    };
+    if articulation == "pop" { body += triangle(freq * 2.0, local) * env * (0.04 + pop_brightness * 0.09); }
+    (body + transient) * velocity
+}
+
+fn render_western_guitar(notes: &[f64], event: &NativeRenderedEvent, local: f64, velocity: f32) -> f32 {
+    let base = render_guitar_notes(notes, event, local, velocity);
+    let connected = matches!(event.articulation.as_deref(), Some("hammer" | "pull" | "legato"));
+    let pick = if !connected && local < 0.028 {
+        let direction = technique_string(event, "western", "pickDirection").or(event.direction.as_deref());
+        let polarity = if direction == Some("up") { -1.0 } else { 1.0 };
+        noise(event, local, 251) * (-local * 135.0).exp() as f32 * polarity * velocity * 0.065
+    } else { 0.0 };
+    let roll = technique_number(event, "western", "banjoRoll").unwrap_or(0.0).clamp(0.0, 1.0);
+    let roll_gate = if roll > 0.0 { 0.72 + 0.28 * (local * (28.0 + roll * 34.0)).sin().abs() as f32 } else { 1.0 };
+    let connected_attack = if connected { (local / 0.022).clamp(0.0, 1.0) as f32 } else { 1.0 };
+    (base + pick) * roll_gate * connected_attack
+}
+
+fn event_seed_u64(event: &NativeRenderedEvent, salt: u64) -> u64 {
+    let mut hash = 1469598103934665603_u64 ^ salt;
+    for byte in event.id.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(1099511628211);
+    }
+    hash
 }
 
 fn lofi_drum_kit(event: &NativeRenderedEvent) -> &str {
@@ -4881,6 +5258,130 @@ mod tests {
     }
 
     #[test]
+    fn chip_texture_parameters_and_channel_commands_perturb_native_audio() {
+        let mut base = test_generated_event("chip_profile", "melody", 0.0, 0.28, 0.9);
+        base.midi = Some(69.0);
+        base.sound_profile = Some(test_sound_profile("chip_arcade", "chip_nes_pulse"));
+        base.technique = Some(serde_json::json!({ "chip": { "channel": "pulse1", "arpeggio": [0, 7, 12] } }));
+        base.chip_texture = Some(NativeChipTexture {
+            enabled: true,
+            bit_depth: 0.2,
+            sample_rate_crush: 0.18,
+            pulse_width: 0.5,
+            pitch_drift: 0.03,
+            saturation: 0.16,
+            stereo_spread: 0.12,
+        });
+        let times = [0.0031, 0.0087, 0.0193, 0.0431, 0.0717, 0.1163, 0.1739];
+        let baseline: Vec<f32> = times.iter().map(|time| render_event_sample(&base, *time)).collect();
+        for (name, texture) in [
+            ("bitDepth", NativeChipTexture { bit_depth: 0.86, ..base.chip_texture.clone().unwrap() }),
+            ("sampleRateCrush", NativeChipTexture { sample_rate_crush: 0.82, ..base.chip_texture.clone().unwrap() }),
+            ("pulseWidth", NativeChipTexture { pulse_width: 0.22, ..base.chip_texture.clone().unwrap() }),
+            ("pitchDrift", NativeChipTexture { pitch_drift: 0.72, ..base.chip_texture.clone().unwrap() }),
+            ("saturation", NativeChipTexture { saturation: 0.88, ..base.chip_texture.clone().unwrap() }),
+            ("stereoSpread", NativeChipTexture { stereo_spread: 0.82, ..base.chip_texture.clone().unwrap() }),
+        ] {
+            let mut variant = base.clone();
+            variant.chip_texture = Some(texture);
+            let diff: f32 = times.iter().enumerate().map(|(index, time)| (render_event_sample(&variant, *time) - baseline[index]).abs()).sum();
+            assert!(diff > 0.00001, "chip texture {name} should perturb native samples, diff={diff}");
+        }
+        let mut triangle_channel = base.clone();
+        triangle_channel.technique = Some(serde_json::json!({ "chip": { "channel": "triangle" } }));
+        let channel_diff: f32 = times.iter().enumerate().map(|(index, time)| (render_event_sample(&triangle_channel, *time) - baseline[index]).abs()).sum();
+        assert!(channel_diff > 0.001, "chip channel selection should be audible, diff={channel_diff}");
+    }
+
+    #[test]
+    fn metal_texture_parameters_perturb_preamp_cab_pick_mute_and_dual_take_audio() {
+        let mut base = test_guitar_event("tight_metal", "palm_mute");
+        base.sound_profile = Some(test_sound_profile("heavy_metal", "metal_tight_riff"));
+        base.technique = Some(serde_json::json!({ "metal": { "pickDirection": "down", "dualTakeSeed": 17, "palmMuteDepth": 0.76 } }));
+        base.metal_texture = Some(NativeMetalTexture {
+            enabled: true,
+            drive: 0.48,
+            palm_mute: 0.72,
+            low_tightness: 0.78,
+            presence: 0.56,
+            room_size: 0.16,
+            pick_attack: 0.64,
+        });
+        let times = [0.0023, 0.0069, 0.0147, 0.0311, 0.0523, 0.0817, 0.1271];
+        let baseline: Vec<f32> = times.iter().map(|time| render_event_sample(&base, *time)).collect();
+        for (name, texture) in [
+            ("drive", NativeMetalTexture { drive: 0.91, ..base.metal_texture.clone().unwrap() }),
+            ("palmMute", NativeMetalTexture { palm_mute: 0.18, ..base.metal_texture.clone().unwrap() }),
+            ("lowTightness", NativeMetalTexture { low_tightness: 0.16, ..base.metal_texture.clone().unwrap() }),
+            ("presence", NativeMetalTexture { presence: 0.93, ..base.metal_texture.clone().unwrap() }),
+            ("roomSize", NativeMetalTexture { room_size: 0.82, ..base.metal_texture.clone().unwrap() }),
+            ("pickAttack", NativeMetalTexture { pick_attack: 0.08, ..base.metal_texture.clone().unwrap() }),
+        ] {
+            let mut variant = base.clone();
+            variant.metal_texture = Some(texture);
+            if name == "palmMute" {
+                variant.technique = Some(serde_json::json!({ "metal": { "pickDirection": "down", "dualTakeSeed": 17 } }));
+            }
+            let diff: f32 = times.iter().enumerate().map(|(index, time)| (render_event_sample(&variant, *time) - baseline[index]).abs()).sum();
+            assert!(diff > 0.00001, "metal texture {name} should perturb native samples, diff={diff}");
+        }
+        let mut other_take = base.clone();
+        other_take.technique = Some(serde_json::json!({ "metal": { "pickDirection": "down", "dualTakeSeed": 99, "palmMuteDepth": 0.76 } }));
+        let take_diff: f32 = times.iter().enumerate().map(|(index, time)| (render_event_sample(&other_take, *time) - baseline[index]).abs()).sum();
+        assert!(take_diff > 0.00001, "dual-take seed should perturb deterministic audio, diff={take_diff}");
+        let mut disabled = base.clone();
+        disabled.metal_texture = Some(NativeMetalTexture { enabled: false, ..base.metal_texture.clone().unwrap() });
+        let enabled_diff: f32 = times.iter().enumerate().map(|(index, time)| (render_event_sample(&disabled, *time) - baseline[index]).abs()).sum();
+        assert!(enabled_diff > 0.00001, "metal texture enable should perturb native samples, diff={enabled_diff}");
+    }
+
+    #[test]
+    fn funk_slap_pop_mute_profile_parameters_perturb_native_audio() {
+        let times = [0.0017, 0.0049, 0.0123, 0.0287, 0.0611, 0.0983];
+        for (parameter, articulation) in [("slapAmount", "slap"), ("popBrightness", "pop"), ("muteDepth", "mute")] {
+            let mut base = test_generated_event("funk_parameter", "bass", 0.0, 0.24, 0.82);
+            base.articulation = Some(articulation.to_string());
+            let mut profile = test_sound_profile("funk_groove", "funk_classic_pocket");
+            profile.parameters = serde_json::json!({ (parameter): 0.12 });
+            base.sound_profile = Some(profile);
+            let baseline: Vec<f32> = times.iter().map(|time| render_event_sample(&base, *time)).collect();
+            let mut variant = base.clone();
+            variant.sound_profile.as_mut().unwrap().parameters = serde_json::json!({ (parameter): 0.92 });
+            let diff: f32 = times.iter().enumerate().map(|(index, time)| (render_event_sample(&variant, *time) - baseline[index]).abs()).sum();
+            assert!(diff > 0.00001, "funk {parameter} should perturb native samples, diff={diff}");
+        }
+    }
+
+    #[test]
+    fn metal_bass_funk_articulations_and_western_fallbacks_have_audio_evidence() {
+        let mut metal_bass = test_generated_event("metal_bass", "bass", 0.0, 0.3, 0.8);
+        metal_bass.sound_profile = Some(test_sound_profile("heavy_metal", "metal_tight_riff"));
+        metal_bass.metal_texture = Some(NativeMetalTexture { enabled: true, drive: 0.72, palm_mute: 0.7, low_tightness: 0.86, presence: 0.7, room_size: 0.1, pick_attack: 0.78 });
+        assert!(render_event_sample_energy(&metal_bass, &[0.004, 0.016, 0.041, 0.09]) > 0.02);
+
+        let mut finger = test_generated_event("funk_finger", "bass", 0.0, 0.24, 0.8);
+        finger.sound_profile = Some(test_sound_profile("funk_groove", "funk_classic_pocket"));
+        finger.articulation = Some("finger".to_string());
+        let mut slap = finger.clone();
+        slap.id = "funk_slap".to_string();
+        slap.articulation = Some("slap".to_string());
+        let mut muted = finger.clone();
+        muted.id = "funk_mute".to_string();
+        muted.articulation = Some("mute".to_string());
+        let times = [0.002, 0.007, 0.018, 0.045, 0.09];
+        let finger_energy = render_event_sample_energy(&finger, &times);
+        let slap_energy = render_event_sample_energy(&slap, &times);
+        let mute_energy = render_event_sample_energy(&muted, &times);
+        assert!((finger_energy - slap_energy).abs() > 0.01);
+        assert!((finger_energy - mute_energy).abs() > 0.01);
+
+        let mut western = test_guitar_event("western_twang", "hammer");
+        western.sound_profile = Some(test_sound_profile("western_frontier", "western_trail"));
+        western.technique = Some(serde_json::json!({ "western": { "pickDirection": "up", "banjoRoll": 0.7 } }));
+        assert!(render_event_sample_energy(&western, &[0.01, 0.03, 0.06, 0.11]) > 0.001);
+    }
+
+    #[test]
     fn native_sidechain_ducks_chords_after_kick_triggers() {
         let mut chord = test_chord_event();
         chord.time = 0.018;
@@ -6007,6 +6508,15 @@ mod tests {
             .sum()
     }
 
+    fn test_sound_profile(id: &str, preset: &str) -> NativeSoundProfile {
+        NativeSoundProfile {
+            id: id.to_string(),
+            preset: preset.to_string(),
+            recipe_version: 1,
+            parameters: serde_json::json!({}),
+        }
+    }
+
     fn sine_bin_magnitude(samples: &[f32], sample_rate: f32, freq: f32) -> f32 {
         let mut real = 0.0_f32;
         let mut imag = 0.0_f32;
@@ -6078,6 +6588,11 @@ mod tests {
             chip_texture: None,
             metal_preset: None,
             metal_texture: None,
+            sound_profile: None,
+            sound: None,
+            performance_role: None,
+            expression: None,
+            technique: None,
             accent: None,
             articulation: None,
             direction: None,
@@ -6110,6 +6625,11 @@ mod tests {
             chip_texture: None,
             metal_preset: None,
             metal_texture: None,
+            sound_profile: None,
+            sound: None,
+            performance_role: None,
+            expression: None,
+            technique: None,
             accent: None,
             articulation: Some(articulation.to_string()),
             direction: None,
@@ -6142,6 +6662,11 @@ mod tests {
             chip_texture: None,
             metal_preset: None,
             metal_texture: None,
+            sound_profile: None,
+            sound: None,
+            performance_role: None,
+            expression: None,
+            technique: None,
             accent: None,
             articulation: None,
             direction: None,
@@ -6174,6 +6699,11 @@ mod tests {
             chip_texture: None,
             metal_preset: None,
             metal_texture: None,
+            sound_profile: None,
+            sound: None,
+            performance_role: None,
+            expression: None,
+            technique: None,
             accent: None,
             articulation: None,
             direction: None,

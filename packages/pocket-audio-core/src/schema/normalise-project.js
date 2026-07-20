@@ -13,9 +13,13 @@ import {
   SECTION_IDS,
   STEM_IDS
 } from "../constants.js";
+import { POCKET_AUDIO_FORMAT_FEATURES, normalisePocketAudioSoundProfile } from "../profiles/profile-registry.js";
+import { normalisePocketAudioArticulation, normalisePocketAudioExpression, normalisePocketAudioRole, normalisePocketAudioTechnique } from "../performance/expression.js";
 import { normaliseLofiProjectSettings } from "../presets/lofi.js";
 import { CHIP_AUDIO_PROFILE_ID, normaliseChipProjectSettings } from "../presets/chip.js";
 import { HEAVY_METAL_AUDIO_PROFILE_ID, normaliseMetalProjectSettings } from "../presets/metal.js";
+import { FUNK_AUDIO_PROFILE_ID, normaliseFunkProjectSettings } from "../presets/funk.js";
+import { WESTERN_AUDIO_PROFILE_ID, normaliseWesternProjectSettings } from "../presets/western.js";
 import { CHORDSMITH_CHORD_PLAY_MODES, CHORDSMITH_CHORD_RHYTHM_MODES } from "../performance/chord-rhythm.js";
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../sounds/instruments.js";
 import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_ARTICULATIONS, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../sounds/guitar.js";
@@ -29,6 +33,8 @@ export function normalisePocketChordsmithProject(raw, options = {}) {
   const lofi = soundProfile.lofi;
   const chip = soundProfile.chip;
   const metal = soundProfile.metal;
+  const funk = soundProfile.funk;
+  const western = soundProfile.western;
   const timeSig = safeChoice(asInt(project.timeSig, DEFAULT_TIME_SIG), [3, 4, 5, 6, 7], DEFAULT_TIME_SIG);
   const resolution = sanitizeResolution(project.resolution ?? project.lastAdvancedResolution ?? DEFAULT_RESOLUTION);
   const sectionBars = normaliseSectionBars(project.sectionBars || project.sectionLengths);
@@ -62,11 +68,15 @@ export function normalisePocketChordsmithProject(raw, options = {}) {
       melodyPitchMode: safeChoice(project.melodyPitchMode, ["scale", "chromatic"], "scale"),
       humanizeOn: Boolean(project.humanizeOn),
       audioProfile: soundProfile.audioProfile,
-      stylePreset: chip.presetId || metal.presetId || lofi.presetId || ""
+      stylePreset: soundProfile.descriptor.id === "standard" ? String(project.stylePreset || "") : soundProfile.descriptor.preset
     },
+    formatFeatures: normaliseFormatFeatures(project, sourceSchemaVersion),
+    soundProfile: soundProfile.descriptor,
     lofi,
     chip,
     metal,
+    funk,
+    western,
     transport: {
       scope: "sequence",
       currentSection: sequence[0] || "A"
@@ -83,15 +93,19 @@ export function normalisePocketChordsmithProject(raw, options = {}) {
       coreVersion: POCKET_AUDIO_CORE_VERSION,
       sourceSchemaVersion,
       warnings: migrationNotes,
-      limitations: ["0.1.0-scaffold normalises data but does not yet provide sound parity."]
+      losses: [],
+      preservesUnknownSource: options.preserveOriginal !== false,
+      limitations: []
     }
   };
 }
 
 function normaliseSection(project, id, context) {
-  const steps = context.timeSig * context.resolution * context.sectionBars[id];
+  const sectionSource = project.sections?.[id] && typeof project.sections[id] === "object" ? project.sections[id] : {};
+  const bars = clamp(asInt(sectionSource.bars, context.sectionBars[id]), 1, 16);
+  const steps = context.timeSig * context.resolution * bars;
   const grid = project[`grid${id}`] || {};
-  const progressionRaw = project[`progression${id}`];
+  const progressionRaw = sectionSource.progression || project[`progression${id}`];
   const melodyTracks = normaliseMelodyTracks(project[`melodyTracks${id}`] || project[`melody${id}`], steps);
   const guitarPattern = fitArray(project[`guitarPattern${id}`] || project[`rockGuitar${id}`], steps, "off", normaliseGuitarArticulation);
   const bassNotes = fitArray(project[`bassNotes${id}`], steps, null, (value) => normaliseMaybeNote(value, 13));
@@ -104,8 +118,9 @@ function normaliseSection(project, id, context) {
     (Boolean(project.guitarEnabled) && guitarPattern.some((step) => step !== "off")) ||
     progressionDiffers(progressionRaw);
   return {
+    ...cloneUnknownSectionData(sectionSource),
     id,
-    bars: context.sectionBars[id],
+    bars,
     active,
     progression: fitArray(progressionRaw || DEFAULT_PROGRESSION, Math.max(1, context.sectionBars[id]), 0, (value) => clamp(asInt(value, 0), 0, 6)),
     drums: {
@@ -121,6 +136,7 @@ function normaliseSection(project, id, context) {
       hold: fitArray(project[`bassHold${id}`], steps, false, Boolean),
       slide: fitArray(project[`bassSlide${id}`], steps, false, Boolean),
       accent: fitArray(project[`bassAccent${id}`], steps, false, Boolean)
+      ,articulation: fitArray(project[`bassArticulation${id}`], steps, "", (value) => value ? normalisePocketAudioArticulation(value) : "")
     },
     chords: {
       enabled: project.chordsOn !== false,
@@ -148,48 +164,94 @@ function normaliseSection(project, id, context) {
       strumMode: safeChoice(project.guitarStrumMode, POCKET_GUITAR_STRUM_MODES, DEFAULT_GUITAR_STRUM_MODE),
       volume: clamp(asNumber(project.guitarVolume, DEFAULT_STEM_MIX.guitar.volume), 0, 1),
       pattern: guitarPattern
-    }
+    },
+    richTracks: normaliseRichTracks(sectionSource.tracks, { id, steps })
   };
 }
 
 function normaliseSoundProfile(project) {
-  const explicit = String(project.audioProfile || "").toLowerCase();
-  const chipCandidate = normaliseChipProjectSettings(project);
-  const metalCandidate = normaliseMetalProjectSettings(project);
-  const lofiCandidate = normaliseLofiProjectSettings(project);
-  const chipActive = explicit === CHIP_AUDIO_PROFILE_ID || (!explicit && Boolean(chipCandidate.presetId));
-  const metalActive = !chipActive && (explicit === HEAVY_METAL_AUDIO_PROFILE_ID || (!explicit && Boolean(metalCandidate.presetId)));
-  const lofiActive = !chipActive && !metalActive && (explicit === "lofi_chill" || (!explicit && Boolean(lofiCandidate.presetId)));
-  if (chipActive) {
-    return {
-      audioProfile: CHIP_AUDIO_PROFILE_ID,
-      chip: chipCandidate,
-      metal: normaliseMetalProjectSettings({ audioProfile: "standard" }),
-      lofi: normaliseLofiProjectSettings({ audioProfile: "standard" })
-    };
-  }
-  if (metalActive) {
-    return {
-      audioProfile: HEAVY_METAL_AUDIO_PROFILE_ID,
-      chip: normaliseChipProjectSettings({ audioProfile: "standard" }),
-      metal: metalCandidate,
-      lofi: normaliseLofiProjectSettings({ audioProfile: "standard" })
-    };
-  }
-  if (lofiActive) {
-    return {
-      audioProfile: "lofi_chill",
-      chip: normaliseChipProjectSettings({ audioProfile: "standard" }),
-      metal: normaliseMetalProjectSettings({ audioProfile: "standard" }),
-      lofi: lofiCandidate
-    };
-  }
-  return {
-    audioProfile: "standard",
-    chip: normaliseChipProjectSettings({ audioProfile: "standard" }),
-    metal: normaliseMetalProjectSettings({ audioProfile: "standard" }),
-    lofi: normaliseLofiProjectSettings({ audioProfile: "standard" })
+  const descriptor = normalisePocketAudioSoundProfile(project.soundProfile, {
+    audioProfile: project.audioProfile,
+    stylePreset: project.stylePreset || project.chipPreset || project.metalPreset || project.lofiPreset || project.funkPreset || project.westernPreset
+  });
+  const activeView = {
+    ...project,
+    audioProfile: descriptor.id,
+    stylePreset: descriptor.preset,
+    soundProfile: descriptor,
+    lofiPreset: descriptor.id === "lofi_chill" ? descriptor.preset : undefined,
+    chipPreset: descriptor.id === CHIP_AUDIO_PROFILE_ID ? descriptor.preset : undefined,
+    metalPreset: descriptor.id === HEAVY_METAL_AUDIO_PROFILE_ID ? descriptor.preset : undefined,
+    funkPreset: descriptor.id === FUNK_AUDIO_PROFILE_ID ? descriptor.preset : undefined,
+    westernPreset: descriptor.id === WESTERN_AUDIO_PROFILE_ID ? descriptor.preset : undefined,
+    lofiTexture: descriptor.id === "lofi_chill" ? { ...descriptor.parameters, ...project.lofiTexture, ...project.soundProfile?.parameters, enabled: true } : project.lofiTexture,
+    chipTexture: descriptor.id === CHIP_AUDIO_PROFILE_ID ? { ...descriptor.parameters, ...project.chipTexture, ...project.soundProfile?.parameters, enabled: true } : project.chipTexture,
+    metalTexture: descriptor.id === HEAVY_METAL_AUDIO_PROFILE_ID ? { ...descriptor.parameters, ...project.metalTexture, ...project.soundProfile?.parameters, enabled: true } : project.metalTexture
   };
+  return {
+    descriptor,
+    audioProfile: descriptor.id,
+    chip: descriptor.id === CHIP_AUDIO_PROFILE_ID ? normaliseChipProjectSettings(activeView) : normaliseChipProjectSettings({ audioProfile: "standard" }),
+    metal: descriptor.id === HEAVY_METAL_AUDIO_PROFILE_ID ? normaliseMetalProjectSettings(activeView) : normaliseMetalProjectSettings({ audioProfile: "standard" }),
+    lofi: descriptor.id === "lofi_chill" ? normaliseLofiProjectSettings(activeView) : normaliseLofiProjectSettings({ audioProfile: "standard" }),
+    funk: descriptor.id === FUNK_AUDIO_PROFILE_ID ? normaliseFunkProjectSettings(activeView) : normaliseFunkProjectSettings({ audioProfile: "standard", soundProfile: { id: "standard" } }),
+    western: descriptor.id === WESTERN_AUDIO_PROFILE_ID ? normaliseWesternProjectSettings(activeView) : normaliseWesternProjectSettings({ audioProfile: "standard", soundProfile: { id: "standard" } })
+  };
+}
+
+function normaliseFormatFeatures(project, sourceSchemaVersion) {
+  const source = Array.isArray(project.formatFeatures) ? project.formatFeatures.map((item) => String(item)).filter(Boolean) : [];
+  if (sourceSchemaVersion < 17 && !project.soundProfile && !hasRichTracks(project.sections)) return source;
+  return [...new Set([...POCKET_AUDIO_FORMAT_FEATURES, ...source])];
+}
+
+function hasRichTracks(sections) {
+  return Object.values(sections || {}).some((section) => Object.values(section?.tracks || {}).some((track) => Array.isArray(track?.events) && track.events.length));
+}
+
+function normaliseRichTracks(value, context) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out = {};
+  Object.entries(value).forEach(([trackId, track]) => {
+    if (!track || typeof track !== "object" || Array.isArray(track)) return;
+    out[trackId] = {
+      ...cloneJson(track),
+      events: (Array.isArray(track.events) ? track.events : []).map((event, index) => normaliseRichEvent(event, { ...context, trackId, index }))
+    };
+  });
+  return out;
+}
+
+function normaliseRichEvent(value, context) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const step = source.step === undefined ? undefined : clamp(asNumber(source.step, 0), 0, Math.max(0, context.steps - 0.000001));
+  const tick = source.tick === undefined ? undefined : Math.max(0, asInt(source.tick, 0));
+  const articulation = source.articulation === undefined ? undefined : normalisePocketAudioArticulation(source.articulation);
+  const notes = Array.isArray(source.notes) ? source.notes.map((note) => asNumber(note, 0)) : undefined;
+  return {
+    ...cloneJson(source),
+    ...(step !== undefined ? { step } : {}),
+    ...(tick !== undefined ? { tick } : {}),
+    duration: Math.max(0.01, asNumber(source.duration, 1)),
+    ...(source.durationTicks === undefined ? {} : { durationTicks: Math.max(1, asInt(source.durationTicks, 1)) }),
+    ...(source.note === undefined ? {} : { note: asNumber(source.note, 0) }),
+    ...(notes ? { notes } : {}),
+    velocity: clamp(asNumber(source.velocity, 100), 0, 127),
+    ...(articulation ? { articulation } : {}),
+    ...(source.sound === undefined ? {} : { sound: String(source.sound) }),
+    ...(source.lane === undefined ? {} : { lane: String(source.lane) }),
+    role: normalisePocketAudioRole(source.role),
+    expression: normalisePocketAudioExpression(source.expression),
+    technique: normalisePocketAudioTechnique(source.technique)
+  };
+}
+
+function cloneUnknownSectionData(section) {
+  const copy = cloneJson(section || {});
+  delete copy.bars;
+  delete copy.progression;
+  delete copy.tracks;
+  return copy;
 }
 
 function normaliseStemMix(project) {

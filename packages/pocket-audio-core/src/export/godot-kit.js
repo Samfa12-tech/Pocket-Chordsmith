@@ -7,6 +7,9 @@ import { chordsmithFxParameters } from "../fx/chordsmith-fx.js";
 import { POCKET_LOFI_SOUND_REGISTRY } from "../sounds/lofi-registry.js";
 import { POCKET_CHIP_SOUND_REGISTRY } from "../sounds/chip-registry.js";
 import { POCKET_METAL_SOUND_REGISTRY } from "../sounds/metal-registry.js";
+import { POCKET_FUNK_SOUND_REGISTRY } from "../sounds/funk-registry.js";
+import { POCKET_WESTERN_SOUND_REGISTRY } from "../sounds/western-registry.js";
+import { createPocketAudioRendererCapabilityReport } from "../engine/capabilities.js";
 import { GAME_PACK_FOLDERS, gamePackPath } from "./game-pack-paths.js";
 import { renderPocketAudioStems } from "./stems.js";
 import { createSilentWavBlob } from "./wav.js";
@@ -83,10 +86,15 @@ function createBaseManifest(project, { profile, sampleRate }) {
     timeSig: project.meta.timeSig,
     swing: project.meta.swing,
     audioProfile: project.meta.audioProfile || "standard",
+    soundProfile: cloneJson(project.soundProfile || {}),
+    formatFeatures: cloneJson(project.formatFeatures || []),
+    capabilityReport: createPocketAudioRendererCapabilityReport(project, { renderer: "offline" }),
     fx: createFxManifest(project),
     lofi: createLofiManifest(project),
     chip: createChipManifest(project),
     metal: createMetalManifest(project),
+    funk: cloneJson(project.funk || {}),
+    western: cloneJson(project.western || {}),
     soundRegistry: createSoundRegistryManifest(project),
     sampleRate,
     sequence: project.sequence.slice(),
@@ -210,6 +218,8 @@ function createManifestEvent(event) {
     "lofiPreset",
     "chipPreset",
     "metalPreset",
+    "funkPreset",
+    "westernPreset",
     "drumKit",
     "bassTone",
     "instrument",
@@ -222,7 +232,18 @@ function createManifestEvent(event) {
     "tuplet",
     "slideMidi",
     "slideOffset",
-    "direction"
+    "direction",
+    "soundProfile",
+    "sourceArticulation",
+    "sound",
+    "lane",
+    "role",
+    "expression",
+    "technique",
+    "note",
+    "notes",
+    "trackId",
+    "compatibility"
   ].forEach((key) => {
     if (event[key] !== undefined) out[key] = cloneJson(event[key]);
   });
@@ -272,8 +293,10 @@ function createMetalManifest(project) {
 
 function createSoundRegistryManifest(project) {
   if (project.meta.audioProfile === "lofi_chill") return { lofi: cloneJson(POCKET_LOFI_SOUND_REGISTRY) };
-  if (project.meta.audioProfile === "chip_tune") return { chip: cloneJson(POCKET_CHIP_SOUND_REGISTRY) };
+  if (project.meta.audioProfile === "chip_arcade" || project.meta.audioProfile === "chip_tune") return { chip: cloneJson(POCKET_CHIP_SOUND_REGISTRY) };
   if (project.meta.audioProfile === "heavy_metal") return { metal: cloneJson(POCKET_METAL_SOUND_REGISTRY) };
+  if (project.meta.audioProfile === "funk_groove") return { funk: cloneJson(POCKET_FUNK_SOUND_REGISTRY) };
+  if (project.meta.audioProfile === "western_frontier") return { western: cloneJson(POCKET_WESTERN_SOUND_REGISTRY) };
   return {};
 }
 

@@ -1,6 +1,7 @@
 import { clamp01, safeChoice } from "./preset-utils.js";
 
-export const CHIP_AUDIO_PROFILE_ID = "chip_tune";
+export const CHIP_AUDIO_PROFILE_ID = "chip_arcade";
+export const LEGACY_CHIP_AUDIO_PROFILE_IDS = Object.freeze(["chip_tune"]);
 export const DEFAULT_CHIP_PRESET_ID = "chip_arcade_start";
 
 export const CHIP_CHORD_INSTRUMENTS = Object.freeze([
@@ -228,7 +229,8 @@ export function getChipStylePreset(id = DEFAULT_CHIP_PRESET_ID) {
 }
 
 export function isChipProfile(value) {
-  return String(value || "").toLowerCase() === CHIP_AUDIO_PROFILE_ID;
+  const id = String(value || "").toLowerCase();
+  return id === CHIP_AUDIO_PROFILE_ID || LEGACY_CHIP_AUDIO_PROFILE_IDS.includes(id);
 }
 
 export function normaliseChipTexture(value = {}, preset = getChipStylePreset()) {

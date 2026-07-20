@@ -29,6 +29,14 @@ import {
   METAL_DRUM_KITS,
   METAL_MELODY_INSTRUMENTS,
   METAL_STYLE_PRESET_IDS,
+  WESTERN_AUDIO_PROFILE_ID,
+  WESTERN_BASS_TONES,
+  WESTERN_DRUM_KITS,
+  WESTERN_STYLE_PRESET_IDS,
+  FUNK_AUDIO_PROFILE_ID,
+  FUNK_BASS_TONES,
+  FUNK_DRUM_KITS,
+  FUNK_STYLE_PRESET_IDS,
   CHORDSMITH_CHORD_PLAY_MODES,
   CHORDSMITH_CHORD_RHYTHM,
   CHORDSMITH_CHORD_RHYTHM_MODES,
@@ -131,8 +139,8 @@ test("public lofi IDs stay aligned across Chordsmith, DJ, Godot and core", async
 
   const expectedDrumKits = ["classic", ...LOFI_DRUM_KITS];
   const expectedBassTones = ["classic", ...LOFI_BASS_TONES];
-  const expectedPocketDrumKits = ["classic", ...LOFI_DRUM_KITS, ...CHIP_DRUM_KITS, ...METAL_DRUM_KITS];
-  const expectedPocketBassTones = ["classic", ...LOFI_BASS_TONES, ...CHIP_BASS_TONES, ...METAL_BASS_TONES];
+  const expectedPocketDrumKits = ["classic", ...LOFI_DRUM_KITS, ...CHIP_DRUM_KITS, ...METAL_DRUM_KITS, ...WESTERN_DRUM_KITS, ...FUNK_DRUM_KITS];
+  const expectedPocketBassTones = ["classic", ...LOFI_BASS_TONES, ...CHIP_BASS_TONES, ...METAL_BASS_TONES, ...WESTERN_BASS_TONES, ...FUNK_BASS_TONES];
   const expectedDrumGroovePresets = [...LOFI_DRUM_GROOVE_PRESETS];
 
   assert.equal(extractStringConst(chordsmith, "LOFI_AUDIO_PROFILE_ID"), LOFI_AUDIO_PROFILE_ID);
@@ -162,6 +170,10 @@ test("public lofi IDs stay aligned across Chordsmith, DJ, Godot and core", async
   assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "METAL_MELODY_INSTRUMENTS"), METAL_MELODY_INSTRUMENTS);
   assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "METAL_DRUM_GROOVE_PRESETS"), METAL_DRUM_GROOVE_PRESETS);
   assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "METAL_STYLE_PRESETS"), METAL_STYLE_PRESET_IDS);
+  assert.equal(extractGdStringConst(godotSharedSoundConstants, "WESTERN_AUDIO_PROFILE_ID"), WESTERN_AUDIO_PROFILE_ID);
+  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "WESTERN_STYLE_PRESETS"), WESTERN_STYLE_PRESET_IDS);
+  assert.equal(extractGdStringConst(godotSharedSoundConstants, "FUNK_AUDIO_PROFILE_ID"), FUNK_AUDIO_PROFILE_ID);
+  assert.deepEqual(extractGdArrayConst(godotSharedSoundConstants, "FUNK_STYLE_PRESETS"), FUNK_STYLE_PRESET_IDS);
   assert.ok(godotMigrator.includes("const SharedSoundConstants := preload"), "Godot migrator should consume generated shared sound constants");
   assert.ok(godotMigrator.includes("POCKET_CHORD_INSTRUMENTS := SharedSoundConstants.POCKET_CHORD_INSTRUMENTS"), "Godot migrator should validate chord IDs from generated shared sound constants");
   assert.ok(godotMigrator.includes("POCKET_MELODY_INSTRUMENTS := SharedSoundConstants.POCKET_MELODY_INSTRUMENTS"), "Godot migrator should validate melody IDs from generated shared sound constants");
@@ -568,6 +580,7 @@ test("Chordsmith live drum pads stay aligned with shared drum lane definitions",
     key: lane.chordsmithPadKey,
     cls: lane.chordsmithPadClass,
     recordTrack: lane.chordsmithRecordTrack,
+    recordLane: lane.chordsmithRecordLane,
     recordLevel: lane.chordsmithRecordLevel
   }));
 

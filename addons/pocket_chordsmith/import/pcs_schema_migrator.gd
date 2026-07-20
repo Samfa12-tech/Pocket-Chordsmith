@@ -3,14 +3,16 @@ extends RefCounted
 class_name PCSSchemaMigrator
 
 const SharedSoundConstants := preload("res://addons/pocket_chordsmith/import/pcs_shared_sound_constants.gd")
+const SoundProfileContract := preload("res://addons/pocket_chordsmith/import/pcs_sound_profile_contract.gd")
 
 const SECTION_IDS := ["A", "B", "C", "D", "E", "F", "G", "H"]
 const TRACK_IDS := ["kick", "snare", "hat", "bass"]
+const EXPANDED_DRUM_LANES := SoundProfileContract.DRUM_LANES
 const NOTE_NAMES := ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 const MAX_BARS := 4
 const MAX_MELODY_TRACKS := 6
 const MAX_SEQUENCE_SLOTS := 64
-const PROJECT_SCHEMA_VERSION := 16
+const PROJECT_SCHEMA_VERSION := 17
 const GUITAR_ARTICULATIONS := SharedSoundConstants.POCKET_GUITAR_ARTICULATIONS
 const LOFI_AUDIO_PROFILE_ID := SharedSoundConstants.LOFI_AUDIO_PROFILE_ID
 const LOFI_STYLE_PRESETS := SharedSoundConstants.LOFI_STYLE_PRESETS
@@ -20,6 +22,8 @@ const DEFAULT_CHIP_PRESET_ID := SharedSoundConstants.DEFAULT_CHIP_PRESET_ID
 const CHIP_STYLE_PRESETS := SharedSoundConstants.CHIP_STYLE_PRESETS
 const CHIP_STYLE_PRESET_TEXTURES := SharedSoundConstants.CHIP_STYLE_PRESET_TEXTURES
 const HEAVY_METAL_AUDIO_PROFILE_ID := SharedSoundConstants.HEAVY_METAL_AUDIO_PROFILE_ID
+const WESTERN_AUDIO_PROFILE_ID := SharedSoundConstants.WESTERN_AUDIO_PROFILE_ID
+const FUNK_AUDIO_PROFILE_ID := SharedSoundConstants.FUNK_AUDIO_PROFILE_ID
 const DEFAULT_METAL_PRESET_ID := SharedSoundConstants.DEFAULT_METAL_PRESET_ID
 const METAL_STYLE_PRESETS := SharedSoundConstants.METAL_STYLE_PRESETS
 const METAL_STYLE_PRESET_TEXTURES := SharedSoundConstants.METAL_STYLE_PRESET_TEXTURES
@@ -48,6 +52,7 @@ const DEFAULT_MINOR_PROGRESSION := [0, 5, 2, 6]
 const TOP_LEVEL_SUPPORTED_KEYS := [
 	"projectVersion", "schemaVersion", "key", "scale", "timeSig", "bpm", "swing",
 	"audioProfile", "stylePreset", "lofiPreset", "lofiTexture", "chipPreset", "chipTexture", "metalPreset", "metalTexture", "drumKit", "drumGroovePreset", "bassTone",
+	"formatFeatures", "soundProfile", "sections", "capabilities", "richEvents", "westernMetadata", "funkMetadata", "profileMetadata",
 	"resolution", "chordType", "chordInstrument", "chordPlayMode", "chordRhythmMode", "chordOctave",
 	"humanizeOn", "sidechainOn", "sidechainAmount", "fxDelay", "fxChorus", "fxFlanger", "fxReverb", "fxMix",
 	"masterVolume", "masterVol", "chordVolume", "chordVol", "beatVolume", "beatVol", "leadVolume", "leadVol",
@@ -88,29 +93,57 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 	}
 
 	var schema_version := _as_int(raw.get("projectVersion", raw.get("schemaVersion", 1)), 1)
+	var is_rich := SoundProfileContract.is_rich_project(raw)
 	if schema_version < PROJECT_SCHEMA_VERSION:
 		migration_notes.append("Project schema %d was normalised to importer schema %d." % [schema_version, PROJECT_SCHEMA_VERSION])
 	elif schema_version > PROJECT_SCHEMA_VERSION:
 		warnings.append("Project schema %d is newer than this importer schema %d; unsupported fields were preserved as metadata." % [schema_version, PROJECT_SCHEMA_VERSION])
 
 	var data := {}
-	data["projectVersion"] = schema_version
+	data["projectVersion"] = PROJECT_SCHEMA_VERSION if is_rich else schema_version
 	data["key"] = _safe_choice(str(raw.get("key", "C")), NOTE_NAMES, "C", "key", warnings)
 	data["scale"] = _safe_choice(str(raw.get("scale", "major")), ["major", "minor"], "major", "scale", warnings)
 	data["timeSig"] = _sanitize_time_signature(raw.get("timeSig", 4), warnings)
 	data["bpm"] = _clamp_int(raw.get("bpm", 96), 40, 240, 96, "bpm", warnings)
 	data["swing"] = _clamp_float(raw.get("swing", 0.0), 0.0, 0.35, 0.0, "swing", warnings)
 	var style_preset := str(raw.get("stylePreset", ""))
+	var requested_profile := str(raw.get("audioProfile", "standard"))
+	var normalized_profile := SoundProfileContract.normalize_profile(raw.get("soundProfile", {}), requested_profile, style_preset, {})
+	if is_rich or raw.has("soundProfile"):
+		requested_profile = str(normalized_profile.get("id", "standard"))
+	else:
+		requested_profile = SoundProfileContract.canonical_profile_id(requested_profile)
 	var chip_preset := _sanitize_chip_preset(str(raw.get("chipPreset", style_preset if style_preset.begins_with("chip_") else "")))
 	var metal_preset := _sanitize_metal_preset(str(raw.get("metalPreset", style_preset if style_preset.begins_with("metal_") else "")))
 	var lofi_preset := _sanitize_lofi_preset(str(raw.get("lofiPreset", style_preset if style_preset.begins_with("lofi_") else "")))
-	data["audioProfile"] = CHIP_AUDIO_PROFILE_ID if str(raw.get("audioProfile", "")) == CHIP_AUDIO_PROFILE_ID or not chip_preset.is_empty() else (HEAVY_METAL_AUDIO_PROFILE_ID if str(raw.get("audioProfile", "")) == HEAVY_METAL_AUDIO_PROFILE_ID or not metal_preset.is_empty() else (LOFI_AUDIO_PROFILE_ID if str(raw.get("audioProfile", "")) == LOFI_AUDIO_PROFILE_ID or not lofi_preset.is_empty() else "standard"))
+	var explicit_profile := raw.has("audioProfile") and not str(raw.get("audioProfile", "")).is_empty() and requested_profile != "standard"
+	data["audioProfile"] = requested_profile if (is_rich or raw.has("soundProfile") or explicit_profile) else (CHIP_AUDIO_PROFILE_ID if not chip_preset.is_empty() else (HEAVY_METAL_AUDIO_PROFILE_ID if not metal_preset.is_empty() else (LOFI_AUDIO_PROFILE_ID if not lofi_preset.is_empty() else "standard")))
 	data["lofiPreset"] = lofi_preset if data["audioProfile"] == LOFI_AUDIO_PROFILE_ID else ""
 	data["lofiTexture"] = _sanitize_lofi_texture(raw.get("lofiTexture", {}), str(data["lofiPreset"]))
 	data["chipPreset"] = (chip_preset if not chip_preset.is_empty() else DEFAULT_CHIP_PRESET_ID) if data["audioProfile"] == CHIP_AUDIO_PROFILE_ID else ""
 	data["chipTexture"] = _sanitize_chip_texture(raw.get("chipTexture", {}), str(data["chipPreset"]))
 	data["metalPreset"] = (metal_preset if not metal_preset.is_empty() else DEFAULT_METAL_PRESET_ID) if data["audioProfile"] == HEAVY_METAL_AUDIO_PROFILE_ID else ""
 	data["metalTexture"] = _sanitize_metal_texture(raw.get("metalTexture", {}), str(data["metalPreset"]))
+	data["formatFeatures"] = SoundProfileContract.normalize_features(raw.get("formatFeatures", []), is_rich)
+	data["soundProfile"] = normalized_profile.duplicate(true)
+	data["soundProfile"]["id"] = str(data["audioProfile"])
+	if str(data["soundProfile"].get("preset", "")).is_empty() or str(data["soundProfile"].get("preset", "")).begins_with("standard_") and data["audioProfile"] != "standard":
+		data["soundProfile"]["preset"] = SoundProfileContract.default_preset(str(data["audioProfile"]))
+	if raw.get("sections", {}) is Dictionary:
+		data["sections"] = (raw.get("sections", {}) as Dictionary).duplicate(true)
+	if raw.get("richEvents", {}) is Dictionary:
+		data["richEvents"] = (raw.get("richEvents", {}) as Dictionary).duplicate(true)
+	if raw.get("capabilities", {}) is Dictionary:
+		data["capabilities"] = (raw.get("capabilities", {}) as Dictionary).duplicate(true)
+	if data["audioProfile"] == WESTERN_AUDIO_PROFILE_ID:
+		data["westernMetadata"] = _western_metadata(str(data["soundProfile"].get("preset", "")), raw)
+	if data["audioProfile"] == FUNK_AUDIO_PROFILE_ID:
+		data["funkMetadata"] = _funk_metadata(str(data["soundProfile"].get("preset", "")), raw)
+	data["profileMetadata"] = {}
+	if data["audioProfile"] == WESTERN_AUDIO_PROFILE_ID:
+		data["profileMetadata"] = data["westernMetadata"].duplicate(true)
+	elif data["audioProfile"] == FUNK_AUDIO_PROFILE_ID:
+		data["profileMetadata"] = data["funkMetadata"].duplicate(true)
 	if data["audioProfile"] != LOFI_AUDIO_PROFILE_ID:
 		data["lofiTexture"]["enabled"] = false
 	if data["audioProfile"] != CHIP_AUDIO_PROFILE_ID:
@@ -180,6 +213,8 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 
 	_clean_tuplets(data, warnings)
 	_collect_metadata(raw, data, metadata, warnings)
+	metadata["original_project"] = raw.duplicate(true)
+	metadata["capability_report"] = SoundProfileContract.negotiate(data)
 
 	return {
 		"project": data,
@@ -188,7 +223,21 @@ func normalize(raw: Dictionary, source_path := "") -> Dictionary:
 		"schema_version": schema_version,
 		"migration_notes": migration_notes,
 		"metadata": metadata,
-	}
+}
+
+
+func _western_metadata(preset: String, raw: Dictionary) -> Dictionary:
+	var base: Dictionary = SharedSoundConstants.WESTERN_STYLE_METADATA.get(preset, SharedSoundConstants.WESTERN_STYLE_METADATA.get(SharedSoundConstants.DEFAULT_WESTERN_PRESET_ID, {})).duplicate(true)
+	if raw.get("westernMetadata", {}) is Dictionary:
+		base.merge(raw.get("westernMetadata", {}), true)
+	return base
+
+
+func _funk_metadata(preset: String, raw: Dictionary) -> Dictionary:
+	var base: Dictionary = SharedSoundConstants.FUNK_STYLE_METADATA.get(preset, SharedSoundConstants.FUNK_STYLE_METADATA.get(SharedSoundConstants.DEFAULT_FUNK_PRESET_ID, {})).duplicate(true)
+	if raw.get("funkMetadata", {}) is Dictionary:
+		base.merge(raw.get("funkMetadata", {}), true)
+	return base
 
 
 func _collect_metadata(raw: Dictionary, data: Dictionary, metadata: Dictionary, warnings: Array[String]) -> void:
@@ -220,10 +269,10 @@ func _collect_metadata(raw: Dictionary, data: Dictionary, metadata: Dictionary, 
 		if raw.get(key) is Dictionary:
 			for meta_key in raw[key].keys():
 				game_metadata[meta_key] = raw[key][meta_key]
-	for key in ["level_id", "default_loop", "mood", "intensity_tags", "markers", "loop_regions", "gameplay_flags", "accent_map", "music_states", "default_music_state", "stem_sets", "state_stem_sets", "audioProfile", "lofiPreset", "lofiTexture", "chipPreset", "chipTexture", "metalPreset", "metalTexture", "drumKit", "drumGroovePreset", "bassTone"]:
+	for key in ["level_id", "default_loop", "mood", "intensity_tags", "markers", "loop_regions", "gameplay_flags", "accent_map", "music_states", "default_music_state", "stem_sets", "state_stem_sets", "audioProfile", "lofiPreset", "lofiTexture", "chipPreset", "chipTexture", "metalPreset", "metalTexture", "drumKit", "drumGroovePreset", "bassTone", "soundProfile", "formatFeatures", "profileMetadata"]:
 		if raw.has(key):
 			game_metadata[key] = raw[key]
-	for key in ["audioProfile", "lofiPreset", "lofiTexture", "chipPreset", "chipTexture", "metalPreset", "metalTexture", "drumKit", "drumGroovePreset", "bassTone"]:
+	for key in ["audioProfile", "lofiPreset", "lofiTexture", "chipPreset", "chipTexture", "metalPreset", "metalTexture", "drumKit", "drumGroovePreset", "bassTone", "soundProfile", "formatFeatures", "profileMetadata"]:
 		if data.has(key):
 			game_metadata[key] = data[key]
 	metadata["game_metadata"] = game_metadata

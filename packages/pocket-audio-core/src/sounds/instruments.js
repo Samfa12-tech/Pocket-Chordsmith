@@ -10,6 +10,8 @@ import {
   METAL_CHORD_INSTRUMENT_CONFIGS,
   METAL_LEAD_INSTRUMENT_CONFIGS
 } from "./metal-registry.js";
+import { FUNK_CHORD_INSTRUMENT_CONFIGS, FUNK_LEAD_INSTRUMENT_CONFIGS } from "./funk-registry.js";
+import { WESTERN_CHORD_INSTRUMENT_CONFIGS, WESTERN_LEAD_INSTRUMENT_CONFIGS } from "./western-registry.js";
 
 export const POCKET_CHORD_INSTRUMENTS = Object.freeze([
   "pocket",
@@ -29,6 +31,8 @@ export const POCKET_CHORD_INSTRUMENTS = Object.freeze([
   "modern_chip_poly",
   "metal_power_stack",
   "dark_organ_stack"
+  ,"funk_clav_stab", "funk_rhodes_stab", "funk_brass_stack"
+  ,"western_saloon_piano", "western_mandolin_chop"
 ]);
 
 export const DEFAULT_CHORD_INSTRUMENT = "pocket";
@@ -57,6 +61,8 @@ export const POCKET_MELODY_INSTRUMENTS = Object.freeze([
   "modern_chip_lead",
   "shred_lead_guitar",
   "twin_harmony_lead"
+  ,"funk_muted_trumpet", "funk_sax_punch"
+  ,"western_harmonica", "western_banjo", "western_fiddle"
 ]);
 
 export const DEFAULT_MELODY_INSTRUMENT = "pulse";
@@ -192,7 +198,9 @@ export const POCKET_CHORD_INSTRUMENT_CONFIGS = Object.freeze({
   ...CLASSIC_CHORD_INSTRUMENT_CONFIGS,
   ...LOFI_CHORD_INSTRUMENT_CONFIGS,
   ...CHIP_CHORD_INSTRUMENT_CONFIGS,
-  ...METAL_CHORD_INSTRUMENT_CONFIGS
+  ...METAL_CHORD_INSTRUMENT_CONFIGS,
+  ...FUNK_CHORD_INSTRUMENT_CONFIGS,
+  ...WESTERN_CHORD_INSTRUMENT_CONFIGS
 });
 
 export const CLASSIC_LEAD_INSTRUMENT_CONFIGS = Object.freeze({
@@ -305,7 +313,9 @@ export const POCKET_LEAD_INSTRUMENT_CONFIGS = Object.freeze({
   ...CLASSIC_LEAD_INSTRUMENT_CONFIGS,
   ...LOFI_LEAD_INSTRUMENT_CONFIGS,
   ...CHIP_LEAD_INSTRUMENT_CONFIGS,
-  ...METAL_LEAD_INSTRUMENT_CONFIGS
+  ...METAL_LEAD_INSTRUMENT_CONFIGS,
+  ...FUNK_LEAD_INSTRUMENT_CONFIGS,
+  ...WESTERN_LEAD_INSTRUMENT_CONFIGS
 });
 
 export function findPocketChordInstrumentConfig(name) {

@@ -1,9 +1,9 @@
 {
   "name": "pcs-format",
-  "version": "0.1.0-scaffold",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Future shared PCS format definitions and compatibility helpers.",
+  "description": "Shared PCS1 schema 16/17 definitions and compatibility helpers.",
   "main": "./dist/index.js",
   "exports": {
     ".": "./dist/index.js",

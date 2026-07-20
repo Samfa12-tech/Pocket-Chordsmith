@@ -27,6 +27,13 @@ export interface PocketAudioCoreEvent {
   lofiTexture?: JsonObject;
   chipPreset?: string;
   chipTexture?: JsonObject;
+  metalPreset?: string;
+  metalTexture?: JsonObject;
+  soundProfile?: JsonObject;
+  sound?: string;
+  performanceRole?: string;
+  expression?: JsonObject;
+  technique?: JsonObject;
   slideMidi?: number;
   slideOffset?: number;
   direction?: "down" | "up";
@@ -61,6 +68,13 @@ export function normalizeRenderedEventForPocketAudioCore(event: RenderedEvent): 
   if (event.lofiTexture) out.lofiTexture = cloneJsonObject(event.lofiTexture);
   if (event.chipPreset) out.chipPreset = event.chipPreset;
   if (event.chipTexture) out.chipTexture = cloneJsonObject(event.chipTexture);
+  if (event.metalPreset) out.metalPreset = event.metalPreset;
+  if (event.metalTexture) out.metalTexture = cloneJsonObject(event.metalTexture);
+  if (event.soundProfile) out.soundProfile = cloneJsonObject(event.soundProfile);
+  if (event.sound) out.sound = event.sound;
+  if (event.performanceRole) out.performanceRole = event.performanceRole;
+  if (event.expression) out.expression = cloneJsonObject(event.expression);
+  if (event.technique) out.technique = cloneJsonObject(event.technique);
   if (typeof event.slideMidi === "number") out.slideMidi = clampMidiNote(event.slideMidi);
   if (typeof event.slideOffset === "number") out.slideOffset = roundAudioTime(event.slideOffset);
   if (event.direction) out.direction = event.direction;

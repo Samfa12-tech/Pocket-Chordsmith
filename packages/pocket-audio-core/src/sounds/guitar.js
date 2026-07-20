@@ -2,7 +2,7 @@ export const POCKET_GUITAR_ARTICULATIONS = Object.freeze(["off", "open", "chug",
 
 export const POCKET_GUITAR_STEP_CYCLE = Object.freeze(["off", "chug", "accent", "hold", "scratch"]);
 
-export const POCKET_GUITAR_TONES = Object.freeze(["clean", "crunch", "high_gain", "metal", "tight_metal", "doom_fuzz", "western_twang"]);
+export const POCKET_GUITAR_TONES = Object.freeze(["clean", "crunch", "high_gain", "metal", "tight_metal", "doom_fuzz", "western_twang", "funk_muted"]);
 export const DEFAULT_GUITAR_TONE = "high_gain";
 
 export const POCKET_GUITAR_REGISTERS = Object.freeze(["low", "mid", "high"]);
@@ -35,7 +35,8 @@ export const POCKET_GUITAR_TONE_CONFIGS = Object.freeze({
   metal: Object.freeze({ drive: 6.2, input: 0.92, peak: 0.088, lowpass: 3050, highpass: 115, body: 4.5, mid: 3.0, spread: 0.009, sustain: 0.86, mute: 0.06, scratch: 0.04 }),
   tight_metal: Object.freeze({ drive: 7.1, input: 0.88, peak: 0.078, lowpass: 2850, highpass: 145, body: 3.5, mid: 3.35, spread: 0.007, sustain: 0.76, mute: 0.045, scratch: 0.036 }),
   doom_fuzz: Object.freeze({ drive: 8.4, input: 0.82, peak: 0.075, lowpass: 2450, highpass: 72, body: 5.2, mid: 2.15, spread: 0.012, sustain: 1.18, mute: 0.095, scratch: 0.03 }),
-  western_twang: Object.freeze({ drive: 1.25, input: 0.68, peak: 0.082, lowpass: 4700, highpass: 125, body: 1.1, mid: 2.4, spread: 0.02, sustain: 0.72, mute: 0.07, scratch: 0.034 })
+  western_twang: Object.freeze({ drive: 1.25, input: 0.68, peak: 0.082, lowpass: 4700, highpass: 125, body: 1.1, mid: 2.4, spread: 0.02, sustain: 0.72, mute: 0.07, scratch: 0.034 }),
+  funk_muted: Object.freeze({ drive: 1.45, input: 0.7, peak: 0.074, lowpass: 3900, highpass: 210, body: 1.2, mid: 2.75, spread: 0.014, sustain: 0.42, mute: 0.045, scratch: 0.038 })
 });
 
 export function findPocketGuitarTone(id) {

@@ -6,6 +6,7 @@ const TICKS_PER_QUARTER := 480
 
 @export var source_path := ""
 @export var source_project_version := 0
+@export var schema_version := 16
 @export var imported_at_unix_time := 0
 @export var bpm := 120
 @export var time_signature := 4
@@ -15,6 +16,9 @@ const TICKS_PER_QUARTER := 480
 @export var resolution := 1
 @export var ticks_per_quarter := TICKS_PER_QUARTER
 @export var audio_profile := "standard"
+@export var sound_profile: Dictionary = {}
+@export var format_features: Array[String] = []
+@export var profile_metadata: Dictionary = {}
 @export var lofi_preset := ""
 @export var lofi_texture: Dictionary = {}
 @export var chip_preset := ""
@@ -29,6 +33,9 @@ const TICKS_PER_QUARTER := 480
 @export var lofi_intensity_hints: Dictionary = {}
 @export var chip_intensity_hints: Dictionary = {}
 @export var metal_intensity_hints: Dictionary = {}
+@export var expressive_event_count := 0
+@export var rich_sections: Dictionary = {}
+@export var capability_report: Dictionary = {}
 
 @export var sections: Array[Resource] = []
 @export var section_library: Dictionary = {}
@@ -106,3 +113,13 @@ func has_slide_events() -> bool:
 		if bool(flags.get("slide", false)):
 			return true
 	return false
+
+
+func get_original_project() -> Dictionary:
+	var source = original_metadata.get("original_project", {})
+	return source.duplicate(true) if source is Dictionary else {}
+
+
+func get_rich_loss_report(capabilities := {}) -> Dictionary:
+	var contract = load("res://addons/pocket_chordsmith/import/pcs_sound_profile_contract.gd")
+	return contract.negotiate({"soundProfile": sound_profile, "formatFeatures": format_features, "sections": rich_sections}, capabilities)

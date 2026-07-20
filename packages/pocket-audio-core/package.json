@@ -1,9 +1,9 @@
 {
   "name": "pocket-audio-core",
-  "version": "0.1.0-scaffold",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Shared headless audio runtime scaffold for the Pocket Chordsmith family.",
+  "description": "Shared headless audio runtime and sound-profile contract for the Pocket Chordsmith family.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Samfa12-tech/Pocket-Chordsmith.git",

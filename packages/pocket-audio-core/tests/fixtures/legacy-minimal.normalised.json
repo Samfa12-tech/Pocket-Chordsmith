@@ -31,7 +31,7 @@
         ]
       }
     },
-    "normalizedAt": "2026-06-18T20:34:38.570Z"
+    "normalizedAt": "2026-07-20T07:58:32.944Z"
   },
   "meta": {
     "title": "Pocket Chordsmith Project",
@@ -43,8 +43,19 @@
     "swing": 0,
     "ppq": 480,
     "melodyPitchMode": "scale",
+    "humanizeOn": false,
     "audioProfile": "standard",
     "stylePreset": ""
+  },
+  "formatFeatures": [],
+  "soundProfile": {
+    "id": "standard",
+    "preset": "standard_chordsmith",
+    "recipeVersion": 1,
+    "parameters": {
+      "neutralTone": 0.5,
+      "transientClarity": 0.5
+    }
   },
   "lofi": {
     "audioProfile": "standard",
@@ -83,6 +94,7 @@
         "sidechain": 0.24
       },
       "texture": {
+        "enabled": true,
         "vinylCrackle": 0.09,
         "tapeHiss": 0.04,
         "wowFlutter": 0.03,
@@ -111,6 +123,220 @@
       "bitCrush": 0.01
     },
     "intensityHints": {}
+  },
+  "chip": {
+    "audioProfile": "standard",
+    "presetId": "",
+    "preset": {
+      "id": "chip_arcade_start",
+      "label": "Arcade Start",
+      "description": "Bright square lead, triangle bass and classic noise drums for instant retro-game hooks.",
+      "bpm": {
+        "min": 116,
+        "max": 132,
+        "default": 124
+      },
+      "timeSig": 4,
+      "preferredKeys": [
+        "C major",
+        "G major",
+        "A minor"
+      ],
+      "scalePreference": "major",
+      "swing": 0.02,
+      "humanize": 0.03,
+      "chordType": "triad",
+      "chordStyle": "punchy I-V-vi-IV game loop",
+      "chordInstrument": "chip_square_stack",
+      "melodyInstrument": "chip_square_lead",
+      "bassTone": "chip_triangle_bass",
+      "drumKit": "chip_noise_kit",
+      "drumGroovePreset": "chip_run_128",
+      "fx": {
+        "delay": 0.12,
+        "chorus": 0.08,
+        "flanger": 0.02,
+        "reverb": 0.08,
+        "mix": 0.44,
+        "sidechain": 0.18
+      },
+      "texture": {
+        "enabled": true,
+        "bitDepth": 0.2,
+        "sampleRateCrush": 0.16,
+        "pulseWidth": 0.5,
+        "pitchDrift": 0.015,
+        "saturation": 0.14,
+        "stereoSpread": 0.1
+      },
+      "intensityHints": {
+        "menu": "A",
+        "explore": "B",
+        "danger": "C",
+        "full": "D"
+      }
+    },
+    "drumKit": "",
+    "drumGroovePreset": "",
+    "bassTone": "",
+    "texture": {
+      "enabled": false,
+      "bitDepth": 0.22,
+      "sampleRateCrush": 0.18,
+      "pulseWidth": 0.5,
+      "pitchDrift": 0.03,
+      "saturation": 0.16,
+      "stereoSpread": 0.12
+    },
+    "intensityHints": {}
+  },
+  "metal": {
+    "audioProfile": "standard",
+    "presetId": "",
+    "preset": {
+      "id": "metal_classic_chug",
+      "label": "Classic Chug",
+      "description": "Classic Chug procedural heavy metal starter preset.",
+      "bpm": {
+        "min": 112,
+        "max": 144,
+        "default": 128
+      },
+      "timeSig": 4,
+      "preferredKeys": [
+        "E minor",
+        "A minor"
+      ],
+      "scalePreference": "minor",
+      "progression": [
+        0,
+        5,
+        6,
+        4
+      ],
+      "swing": 0,
+      "humanize": 0.03,
+      "chordType": "triad",
+      "chordStyle": "minor power-chord movement",
+      "chordInstrument": "metal_power_stack",
+      "melodyInstrument": "shred_lead_guitar",
+      "bassTone": "metal_pick_bass",
+      "drumKit": "metal_tight",
+      "drumGroovePreset": "metal_backbeat_chug",
+      "guitarTone": "tight_metal",
+      "guitarPatternPreset": "metal_chug",
+      "fx": {
+        "delay": 0.08,
+        "chorus": 0.04,
+        "flanger": 0.02,
+        "reverb": 0.12,
+        "mix": 0.4,
+        "sidechain": 0.2
+      },
+      "texture": {
+        "enabled": true,
+        "drive": 0.48,
+        "palmMute": 0.78,
+        "lowTightness": 0.86,
+        "presence": 0.58,
+        "roomSize": 0.12,
+        "pickAttack": 0.72
+      },
+      "intensityHints": {
+        "menu": "A",
+        "build": "B",
+        "danger": "C",
+        "full": "D"
+      }
+    },
+    "drumKit": "",
+    "drumGroovePreset": "",
+    "bassTone": "",
+    "guitarTone": "",
+    "guitarPatternPreset": "",
+    "texture": {
+      "enabled": false,
+      "drive": 0.42,
+      "palmMute": 0.72,
+      "lowTightness": 0.78,
+      "presence": 0.56,
+      "roomSize": 0.16,
+      "pickAttack": 0.64
+    },
+    "intensityHints": {}
+  },
+  "funk": {
+    "audioProfile": "funk_groove",
+    "presetId": "funk_classic_pocket",
+    "preset": {
+      "id": "funk_classic_pocket",
+      "label": "Classic Pocket",
+      "bpm": {
+        "min": 86,
+        "max": 110,
+        "default": 98
+      },
+      "bassTone": "funk_finger_pocket",
+      "drumKit": "funk_dry_pocket",
+      "drumGroovePreset": "funk_backbeat_98",
+      "chordInstrument": "funk_clav_stab",
+      "scalePreference": "minor",
+      "chordType": "seventh",
+      "parameters": {
+        "pocket": 0.82,
+        "ghostNotes": 0.4,
+        "slapAmount": 0.68,
+        "popBrightness": 0.62,
+        "muteDepth": 0.74,
+        "stabTightness": 0.76
+      }
+    },
+    "drumKit": "funk_dry_pocket",
+    "drumGroovePreset": "funk_backbeat_98",
+    "bassTone": "funk_finger_pocket",
+    "chordInstrument": "funk_clav_stab",
+    "parameters": {
+      "pocket": 0.82,
+      "ghostNotes": 0.4,
+      "slapAmount": 0.68,
+      "popBrightness": 0.62,
+      "muteDepth": 0.74,
+      "stabTightness": 0.76
+    }
+  },
+  "western": {
+    "audioProfile": "western_frontier",
+    "presetId": "western_trail",
+    "preset": {
+      "id": "western_trail",
+      "label": "Western Trail",
+      "bpm": {
+        "min": 90,
+        "max": 118,
+        "default": 104
+      },
+      "groovePreset": "western_train",
+      "drumKit": "western_train_kit",
+      "bassTone": "western_picked_bass",
+      "guitarTone": "western_twang",
+      "parameters": {
+        "twang": 0.68,
+        "pickAttack": 0.64,
+        "body": 0.48,
+        "roomSize": 0.2,
+        "swing": 0.12
+      }
+    },
+    "drumKit": "western_train_kit",
+    "bassTone": "western_picked_bass",
+    "groovePreset": "western_train",
+    "parameters": {
+      "twang": 0.68,
+      "pickAttack": 0.64,
+      "body": 0.48,
+      "roomSize": 0.2,
+      "swing": 0.12
+    }
   },
   "transport": {
     "scope": "sequence",
@@ -165,6 +391,15 @@
         "warmth": 0.16,
         "lowPassAge": 0.22,
         "bitCrush": 0.01
+      },
+      "metalTexture": {
+        "enabled": false,
+        "drive": 0.42,
+        "palmMute": 0.72,
+        "lowTightness": 0.78,
+        "presence": 0.56,
+        "roomSize": 0.16,
+        "pickAttack": 0.64
       }
     }
   },
@@ -976,6 +1211,72 @@
           false,
           false,
           false
+        ],
+        "articulation": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
         ]
       },
       "chords": {
@@ -1331,7 +1632,8 @@
           "off",
           "off"
         ]
-      }
+      },
+      "richTracks": {}
     },
     "B": {
       "id": "B",
@@ -1339,9 +1641,9 @@
       "active": false,
       "progression": [
         0,
-        0,
-        0,
-        0
+        4,
+        5,
+        3
       ],
       "drums": {
         "kick": [
@@ -2140,6 +2442,72 @@
           false,
           false,
           false
+        ],
+        "articulation": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
         ]
       },
       "chords": {
@@ -2495,7 +2863,8 @@
           "off",
           "off"
         ]
-      }
+      },
+      "richTracks": {}
     },
     "C": {
       "id": "C",
@@ -2503,9 +2872,9 @@
       "active": false,
       "progression": [
         0,
-        0,
-        0,
-        0
+        4,
+        5,
+        3
       ],
       "drums": {
         "kick": [
@@ -3304,6 +3673,72 @@
           false,
           false,
           false
+        ],
+        "articulation": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
         ]
       },
       "chords": {
@@ -3659,7 +4094,8 @@
           "off",
           "off"
         ]
-      }
+      },
+      "richTracks": {}
     },
     "D": {
       "id": "D",
@@ -3667,9 +4103,9 @@
       "active": false,
       "progression": [
         0,
-        0,
-        0,
-        0
+        4,
+        5,
+        3
       ],
       "drums": {
         "kick": [
@@ -4468,6 +4904,72 @@
           false,
           false,
           false
+        ],
+        "articulation": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
         ]
       },
       "chords": {
@@ -4823,7 +5325,8 @@
           "off",
           "off"
         ]
-      }
+      },
+      "richTracks": {}
     },
     "E": {
       "id": "E",
@@ -4831,9 +5334,9 @@
       "active": false,
       "progression": [
         0,
-        0,
-        0,
-        0
+        4,
+        5,
+        3
       ],
       "drums": {
         "kick": [
@@ -5632,6 +6135,72 @@
           false,
           false,
           false
+        ],
+        "articulation": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
         ]
       },
       "chords": {
@@ -5987,7 +6556,8 @@
           "off",
           "off"
         ]
-      }
+      },
+      "richTracks": {}
     },
     "F": {
       "id": "F",
@@ -5995,9 +6565,9 @@
       "active": false,
       "progression": [
         0,
-        0,
-        0,
-        0
+        4,
+        5,
+        3
       ],
       "drums": {
         "kick": [
@@ -6796,6 +7366,72 @@
           false,
           false,
           false
+        ],
+        "articulation": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
         ]
       },
       "chords": {
@@ -7151,7 +7787,8 @@
           "off",
           "off"
         ]
-      }
+      },
+      "richTracks": {}
     },
     "G": {
       "id": "G",
@@ -7159,9 +7796,9 @@
       "active": false,
       "progression": [
         0,
-        0,
-        0,
-        0
+        4,
+        5,
+        3
       ],
       "drums": {
         "kick": [
@@ -7960,6 +8597,72 @@
           false,
           false,
           false
+        ],
+        "articulation": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
         ]
       },
       "chords": {
@@ -8315,7 +9018,8 @@
           "off",
           "off"
         ]
-      }
+      },
+      "richTracks": {}
     },
     "H": {
       "id": "H",
@@ -8323,9 +9027,9 @@
       "active": false,
       "progression": [
         0,
-        0,
-        0,
-        0
+        4,
+        5,
+        3
       ],
       "drums": {
         "kick": [
@@ -9124,6 +9828,72 @@
           false,
           false,
           false
+        ],
+        "articulation": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
         ]
       },
       "chords": {
@@ -9479,7 +10249,8 @@
           "off",
           "off"
         ]
-      }
+      },
+      "richTracks": {}
     }
   },
   "sequence": [
@@ -9487,11 +10258,11 @@
   ],
   "markers": [],
   "compatibility": {
-    "coreVersion": "0.1.0-scaffold",
+    "coreVersion": "0.2.0",
     "sourceSchemaVersion": 1,
     "warnings": [],
-    "limitations": [
-      "0.1.0-scaffold normalises data but does not yet provide sound parity."
-    ]
+    "losses": [],
+    "preservesUnknownSource": true,
+    "limitations": []
   }
 }

@@ -301,6 +301,82 @@ function makeMetalFixture() {
   };
 }
 
+function makeRichFunkFixture() {
+  return {
+    projectVersion: 17,
+    title: "Rich Funk Pocket",
+    key: "D",
+    scale: "minor",
+    timeSig: 4,
+    bpm: 98,
+    resolution: 4,
+    formatFeatures: [
+      "sound-profile-v1",
+      "rich-events-v1",
+      "articulations-v1",
+      "expanded-drums-v1",
+      "capability-report-v1",
+      "future-expression-v1",
+    ],
+    soundProfile: {
+      id: "funk_groove",
+      preset: "funk_classic_pocket",
+      recipeVersion: 7,
+      parameters: { pocket: 0.78, ghostNotes: 0.42 },
+      futureRecipeField: { preserve: true },
+    },
+    unknownFutureField: { keep: "exactly" },
+    sections: {
+      A: {
+        bars: 1,
+        unknownSectionField: { keep: 17 },
+        tracks: {
+          bass: {
+            unknownTrackField: "bass-kept",
+            events: [
+              {
+                step: 0,
+                duration: 1,
+                note: 0,
+                velocity: 112,
+                articulation: "slap",
+                sound: "funk_slap_pop",
+                role: "anchor",
+                expression: { pocket: 0.8 },
+                technique: { funk: { hand: "thumb" }, future: { keep: true } },
+                unknownEventField: { keep: true },
+              },
+              { tick: 24, duration: 0.5, note: 7, velocity: 76, articulation: "pop" },
+            ],
+          },
+          drums: {
+            events: [
+              { step: 0, sound: "kick", velocity: 112 },
+              { step: 4, sound: "snare", velocity: 105 },
+              { step: 6, sound: "ride", velocity: 70 },
+            ],
+          },
+        },
+      },
+    },
+  };
+}
+
+function makeWesternProfileFixture() {
+  return {
+    projectVersion: 17,
+    title: "Western Trail Handoff",
+    audioProfile: "western_frontier",
+    soundProfile: {
+      id: "western_frontier",
+      preset: "western_trail",
+      recipeVersion: 1,
+      parameters: { swing: 0.05 },
+    },
+    sections: { A: { bars: 1, tracks: { guitar: { events: [{ step: 0, note: 36, articulation: "open", sound: "western_twang" }] } } } },
+  };
+}
+
 test.beforeEach(async ({ page }) => {
   const consoleMessages = [];
   const pageErrors = [];
@@ -387,7 +463,7 @@ test("loads demo deck through Pocket Audio Core", async ({ page }) => {
   await expect(page.locator("#statusText")).toContainText("Demo deck loaded");
 
   const audioCoreCard = page.locator(".meta-card", { hasText: "Audio Core" });
-  await expect(audioCoreCard).toContainText("0.1.0-scaffold");
+  await expect(audioCoreCard).toContainText("0.2.0");
   await expect(audioCoreCard).toContainText(/events|ready/);
   await expect(audioCoreCard).not.toContainText(/legacy audio active/i);
 });
@@ -555,6 +631,87 @@ test("imports Heavy Metal Chordsmith JSON and preserves it for source handoff", 
     bassTone: "metal_pick_bass",
   });
   expect(handoffProject.metalTexture.enabled).toBe(true);
+});
+
+test("imports schema-17 Funk, preserves rich unknown data through save and handoff, and reports playback loss", async ({ page }) => {
+  const fixture = makeRichFunkFixture();
+  await page.locator("#importText").fill(JSON.stringify(fixture));
+  await page.locator("#importBtn").click();
+
+  await expect(page.locator("#statusText")).toContainText("Pocket Chordsmith project imported");
+  await expect(page.locator("#deckName")).toContainText("Rich Funk Pocket");
+  await expect(page.locator(".meta-card", { hasText: "Profile" })).toContainText("Classic Pocket");
+
+  const saved = await readSavedDjSession(page);
+  expect(saved.schemaVersion).toBe(17);
+  expect(saved.deck).toMatchObject({
+    audioProfile: "funk_groove",
+    soundProfile: { id: "funk_groove", preset: "funk_classic_pocket", recipeVersion: 7 },
+  });
+  expect(saved.source.originalProject).toEqual(fixture);
+  expect(saved.source.project.sections.A.tracks.bass.events[0]).toMatchObject({
+    expression: { pocket: 0.8 },
+    technique: { funk: { hand: "thumb" }, future: { keep: true } },
+    unknownEventField: { keep: true },
+  });
+  expect(saved.compatibility.requestedFeatures).toContain("future-expression-v1");
+  expect(saved.compatibility.lossReport).toEqual(expect.arrayContaining([
+    expect.objectContaining({ feature: "drum-lane:ride", action: "approximated" }),
+    expect.objectContaining({ feature: "technique:future", action: "preserved" }),
+  ]));
+
+  await page.locator("#editSourceBtn").click();
+  const handoffProject = await decodePocketChordsmithShareCode(page, await page.locator("#handoffText").inputValue());
+  expect(handoffProject).toEqual(fixture);
+});
+
+test("supports Western and Funk profile negotiation plus non-composition Funk performance macros", async ({ page }) => {
+  const capability = await page.evaluate(() => window.negotiatePocketDjCapabilities({
+    features: ["rich-events-v1", "future-feature-v1"],
+    articulations: ["slap", "future-articulation"],
+  }));
+  expect(capability.schemaVersions).toEqual([16, 17]);
+  expect(capability.unsupportedFeatures).toEqual(["future-feature-v1"]);
+  expect(capability.unsupportedArticulations).toEqual(["future-articulation"]);
+
+  await page.locator("#importText").fill(JSON.stringify(makeWesternProfileFixture()));
+  await page.locator("#importBtn").click();
+  let saved = await readSavedDjSession(page);
+  expect(saved.deck.soundProfile).toMatchObject({ id: "western_frontier", preset: "western_trail" });
+
+  const fixture = makeRichFunkFixture();
+  await page.reload();
+  await expect(page.locator("#importText")).toBeVisible();
+  await page.locator("#importText").fill(JSON.stringify(fixture));
+  await page.locator("#importBtn").click();
+  await page.locator("#funkOneDropBtn").click();
+  await page.locator("#funkBassMuteBtn").click();
+  await page.locator("#funkSlapPopBtn").click();
+  await page.locator("#funkGhostLiftBtn").click();
+  await page.locator("#funkPhraseFillBtn").click();
+  saved = await readSavedDjSession(page);
+  expect(saved.performance.funkMacros).toEqual({
+    oneDrop: true,
+    bassMute: true,
+    slapPopEmphasis: true,
+    ghostLift: true,
+    phraseFill: true,
+  });
+  expect(saved.source.originalProject).toEqual(fixture);
+});
+
+test("metal and chip recipe parameters change the DJ playback recipe", async ({ page }) => {
+  const recipes = await page.evaluate(() => ({
+    metalQuiet: window.pocketDjPlaybackRecipeProbe("heavy_metal", { drive: 0.1, palmMute: 0.1, presence: 0.1, pickAttack: 0.1 }),
+    metalHot: window.pocketDjPlaybackRecipeProbe("heavy_metal", { drive: 0.9, palmMute: 0.9, presence: 0.9, pickAttack: 0.9 }),
+    chipSoft: window.pocketDjPlaybackRecipeProbe("chip_arcade", { pitchDrift: 0.01, saturation: 0.01, sampleRateCrush: 0.01 }),
+    chipHard: window.pocketDjPlaybackRecipeProbe("chip_arcade", { pitchDrift: 0.9, saturation: 0.9, sampleRateCrush: 0.9 }),
+  }));
+  expect(recipes.metalHot.drive).toBeGreaterThan(recipes.metalQuiet.drive);
+  expect(recipes.metalHot.palmMuteLength).toBeLessThan(recipes.metalQuiet.palmMuteLength);
+  expect(recipes.metalHot.presenceGain).toBeGreaterThan(recipes.metalQuiet.presenceGain);
+  expect(recipes.chipHard.driftCents).toBeGreaterThan(recipes.chipSoft.driftCents);
+  expect(recipes.chipHard.crushFilterMul).toBeGreaterThan(recipes.chipSoft.crushFilterMul);
 });
 
 test("deck controls queue, loop, mix, filter, build and drop cleanly", async ({

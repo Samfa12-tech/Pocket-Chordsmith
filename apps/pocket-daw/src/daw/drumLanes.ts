@@ -17,6 +17,7 @@ export interface DrumLaneDefinition {
   chordsmithPadKey: string;
   chordsmithPadClass: string;
   chordsmithRecordTrack: "kick" | "snare" | "hat" | null;
+  chordsmithRecordLane: string | null;
   chordsmithRecordLevel: number;
   sequenced: boolean;
   defaultVolume: number;
@@ -32,9 +33,17 @@ export interface DrumLaneMix {
   fxChainId: string;
 }
 
-export const DRUM_LANE_DEFS = POCKET_DRUM_LANES as DrumLaneDefinition[];
-export const DRUM_LANE_IDS = POCKET_DRUM_LANE_IDS as DrumLaneId[];
+export const DRUM_LANE_DEFS: readonly DrumLaneDefinition[] = POCKET_DRUM_LANES.map((definition) => ({
+  ...definition,
+  id: definition.id as DrumLaneId,
+  chordsmithRecordTrack: normaliseChordsmithRecordTrack(definition.chordsmithRecordTrack)
+}));
+export const DRUM_LANE_IDS: readonly DrumLaneId[] = POCKET_DRUM_LANE_IDS;
 export const DEFAULT_DRUM_BRANCH_LANES = DRUM_LANE_IDS;
+
+function normaliseChordsmithRecordTrack(value: unknown): "kick" | "snare" | "hat" | null {
+  return value === "kick" || value === "snare" || value === "hat" ? value : null;
+}
 
 export function isDrumLaneId(value: string | undefined): value is DrumLaneId {
   return !!value && DRUM_LANE_IDS.includes(value as DrumLaneId);

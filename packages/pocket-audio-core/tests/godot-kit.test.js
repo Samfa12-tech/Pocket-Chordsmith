@@ -106,7 +106,7 @@ test("Godot manifest preserves lofi sound identity for procedural previews and g
 
 test("Godot manifest preserves chip sound identity for procedural previews and game-pack exports", () => {
   const manifest = createGodotManifest(chipGodotFixture, { profile: GODOT_EXPORT_PROFILES.LOOP_KIT, sampleRate: 48000 });
-  assert.equal(manifest.audioProfile, "chip_tune");
+  assert.equal(manifest.audioProfile, "chip_arcade");
   assert.equal(manifest.chip.presetId, "chip_neon_boss");
   assert.equal(manifest.chip.drumKit, "modern_chip_punch");
   assert.equal(manifest.chip.drumGroovePreset, "chip_boss_half_time");
@@ -118,7 +118,7 @@ test("Godot manifest preserves chip sound identity for procedural previews and g
   assert.ok(manifest.soundRegistry.chip.leadInstruments.chip_pulse_lead);
 
   assert.ok(manifest.events.some((event) => event.stem === "drums" && event.drumKit === "modern_chip_punch" && event.chipPreset === "chip_neon_boss"));
-  assert.ok(manifest.events.some((event) => event.stem === "bass" && event.bassTone === "bitcrush_bass" && event.audioProfile === "chip_tune"));
+  assert.ok(manifest.events.some((event) => event.stem === "bass" && event.bassTone === "bitcrush_bass" && event.audioProfile === "chip_arcade"));
   assert.ok(manifest.events.some((event) => event.stem === "chords" && event.instrument === "modern_chip_poly" && event.chipTexture?.enabled));
   assert.ok(manifest.events.some((event) => event.stem === "melody" && event.instrument === "chip_pulse_lead"));
 });

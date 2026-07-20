@@ -340,14 +340,21 @@ function nowSeconds(context) {
 
 function scheduleSimpleAudioEvent(context, event, project) {
   if (project?.mixer?.stems?.[event.stem]?.mute) return;
-  const start = Math.max(context.currentTime + 0.005, context.currentTime + Math.max(0, event.time - ((performance.now() / 1000) % Math.max(event.time + 1, 1))));
+  const funk = event.audioProfile === "funk_groove" ? liveFunkParameters(event) : null;
+  const pocketOffset = funk && Number(event.step || 0) % 2 !== 0 ? (funk.pocket - 0.5) * 0.03 : 0;
+  const start = Math.max(context.currentTime + 0.005, context.currentTime + Math.max(0, event.time + pocketOffset - ((performance.now() / 1000) % Math.max(event.time + 1, 1))));
+  if (event.type === "guitar" && event.audioProfile === "heavy_metal") {
+    scheduleMetalGuitarAudioEvent(context, event, project, start);
+    return;
+  }
   if (event.type === "bass") {
     scheduleBassAudioEvent(context, event, project, start);
     return;
   }
   const gain = context.createGain();
   const voice = simpleVoiceRecipe(event);
-  const volume = (project?.mixer?.stems?.[event.stem]?.volume ?? 0.7) * Math.min(1, event.velocity || 0.5) * voice.peak;
+  const ghostScale = funk && ["snare", "rim", "clap"].includes(String(event.type || event.lane)) && !event.accent ? 0.46 + funk.ghostNotes * 0.5 : 1;
+  const volume = (project?.mixer?.stems?.[event.stem]?.volume ?? 0.7) * Math.min(1, event.velocity || 0.5) * voice.peak * ghostScale;
   gain.gain.setValueAtTime(0.0001, start);
   gain.gain.linearRampToValueAtTime(volume, start + voice.attack);
   gain.gain.exponentialRampToValueAtTime(0.0001, start + Math.max(0.04, (event.duration || 0.08) * voice.durationScale));
@@ -357,9 +364,11 @@ function scheduleSimpleAudioEvent(context, event, project) {
   filter.connect(gain);
   gain.connect(context.destination);
   const osc = context.createOscillator();
-  osc.type = voice.wave;
+  if (voice.pulseDuty !== undefined && typeof osc.setPeriodicWave === "function") osc.setPeriodicWave(createPulseWave(context, voice.pulseDuty));
+  else osc.type = voice.wave;
   const midi = event.midi || event.midiNotes?.[0] || (event.type === "kick" ? 36 : event.type === "snare" ? 38 : event.type === "hat" ? 72 : 60);
   osc.frequency.setValueAtTime(440 * Math.pow(2, (midi - 69) / 12), start);
+  if (voice.pitchSlide) osc.frequency.exponentialRampToValueAtTime(440 * Math.pow(2, (midi + voice.pitchSlide - 69) / 12), start + Math.max(0.04, event.duration || 0.08));
   osc.connect(filter);
   osc.start(start);
   osc.stop(start + Math.max(0.04, (event.duration || 0.08) * voice.durationScale) + 0.02);
@@ -370,12 +379,21 @@ function scheduleBassAudioEvent(context, event, project, start) {
   const stemVolume = project?.mixer?.stems?.[event.stem]?.volume ?? 0.7;
   const peak = stemVolume * Math.min(1, event.velocity || 0.5);
   const midi = event.midi || event.midiNotes?.[0] || 36;
-  const bassDur = Math.max(0.08, event.duration || 0.22);
-  scheduleBassLayer(context, start, midi, bassDur, cfg.mainWave || "sawtooth", peak * Number(cfg.mainPeak || 1), cfg.cutoff || 420, cfg.attack || 0.01);
-  scheduleBassLayer(context, start, midi - 12, Math.min(0.12, bassDur * 0.82), cfg.subWave || "sine", peak * Number(cfg.subPeak || 0.35), cfg.subCutoff || 220, cfg.attack || 0.01);
+  const articulation = event.articulation || "finger";
+  const funk = event.audioProfile === "funk_groove" ? (event.soundProfile?.parameters || {}) : null;
+  const metal = event.audioProfile === "heavy_metal" ? (event.metalTexture || event.soundProfile?.parameters || {}) : null;
+  const bassDur = Math.max(0.05, (event.duration || 0.22) * (articulation === "mute" || articulation === "ghost" ? 0.28 : 1));
+  const articulationGain = articulation === "mute" || articulation === "ghost" ? 0.16 + (1 - Number(funk?.muteDepth ?? 0.74)) * 0.18 : articulation === "hammer" || articulation === "pull" ? 0.78 : 1;
+  scheduleBassLayer(context, start, midi, bassDur, cfg.mainWave || "sawtooth", peak * Number(cfg.mainPeak || 1) * articulationGain, cfg.cutoff || 420, articulation === "hammer" || articulation === "pull" ? 0.018 : cfg.attack || 0.01, { drive: metal ? 1 + Number(metal.drive || 0) * 4 : 1 });
+  scheduleBassLayer(context, start, midi - 12, Math.min(0.16, bassDur * 0.82), cfg.subWave || "sine", peak * Number(cfg.subPeak || 0.35), cfg.subCutoff || 220, cfg.attack || 0.01);
+  if (funk && ["slap", "pop", "mute", "ghost"].includes(articulation)) {
+    const brightness = articulation === "pop" ? Number(funk.popBrightness ?? 0.62) : Number(funk.slapAmount ?? 0.68);
+    scheduleTransientOscillator(context, start, articulation === "pop" ? midi + 12 : midi + 24, 0.035, peak * (0.08 + brightness * 0.16));
+  }
+  if (metal) scheduleBassLayer(context, start, midi, Math.min(0.18, bassDur), "sawtooth", peak * (0.12 + Number(metal.presence || 0) * 0.16), 900 + Number(metal.presence || 0) * 1500, 0.002, { drive: 2 + Number(metal.drive || 0) * 5 });
 }
 
-function scheduleBassLayer(context, start, midi, duration, wave, volume, cutoff, attack) {
+function scheduleBassLayer(context, start, midi, duration, wave, volume, cutoff, attack, options = {}) {
   const gain = context.createGain();
   gain.gain.setValueAtTime(0.0001, start);
   gain.gain.linearRampToValueAtTime(Math.max(0.0001, volume), start + Math.max(0.002, Number(attack || 0.01)));
@@ -388,7 +406,12 @@ function scheduleBassLayer(context, start, midi, duration, wave, volume, cutoff,
   const osc = context.createOscillator();
   osc.type = wave || "sine";
   osc.frequency.setValueAtTime(440 * Math.pow(2, (midi - 69) / 12), start);
-  osc.connect(filter);
+  if (options.drive > 1 && typeof context.createWaveShaper === "function") {
+    const shaper = context.createWaveShaper();
+    shaper.curve = distortionCurve(options.drive);
+    osc.connect(shaper);
+    shaper.connect(filter);
+  } else osc.connect(filter);
   osc.start(start);
   osc.stop(start + Math.max(0.04, duration) + 0.02);
 }
@@ -396,24 +419,28 @@ function scheduleBassLayer(context, start, midi, duration, wave, volume, cutoff,
 function simpleVoiceRecipe(event) {
   if (event.type === "chord") {
     const cfg = findPocketChordInstrumentConfig(event.instrument);
+    const funk = event.audioProfile === "funk_groove" ? liveFunkParameters(event) : null;
     return {
       wave: cfg.wave || "sine",
       peak: Math.max(0.04, Number(cfg.peak || 0.2)),
       attack: Math.max(0.002, Number(cfg.attack || 0.01)),
-      durationScale: Math.max(0.35, Number(cfg.durMul || 1)),
+      durationScale: Math.max(0.08, Number(cfg.durMul || 1) * (funk ? 1 - funk.stabTightness * 0.68 : 1)),
       filterType: cfg.filter || "lowpass",
       filterFrequency: Math.max(80, Number(cfg.freq || 1800))
     };
   }
   if (event.type === "melody") {
     const cfg = findPocketLeadInstrumentConfig(event.instrument);
+    const chip = event.audioProfile === "chip_arcade" || event.audioProfile === "chip_tune" ? (event.technique?.chip || {}) : null;
     return {
-      wave: cfg.wave || "sine",
+      wave: chip?.channel === "triangle" ? "triangle" : cfg.wave || "sine",
       peak: Math.max(0.04, Number(cfg.peak || 0.16)),
       attack: 0.006,
       durationScale: Math.max(0.35, Number(cfg.durMul || 1)),
       filterType: cfg.filter || "lowpass",
-      filterFrequency: Math.max(80, Number(cfg.freq || 2200))
+      filterFrequency: Math.max(80, Number(cfg.freq || 2200)),
+      pulseDuty: chip && String(chip.channel || "pulse1").startsWith("pulse") ? Math.max(0.08, Math.min(0.92, Number(chip.duty ?? event.soundProfile?.parameters?.pulseWidth ?? 0.5))) : undefined,
+      pitchSlide: chip ? Number(chip.pitchSlide ?? chip.sweep ?? 0) : 0
     };
   }
   if (event.type === "bass") {
@@ -451,6 +478,105 @@ function simpleVoiceRecipe(event) {
     };
   }
   return { wave: "sine", peak: 0.18, attack: 0.01, durationScale: 1, filterType: "lowpass", filterFrequency: 2200 };
+}
+
+function liveFunkParameters(event) {
+  const source = event.soundProfile?.parameters || {};
+  const clamp01 = (value, fallback) => Math.max(0, Math.min(1, Number(value ?? fallback)));
+  return {
+    pocket: clamp01(source.pocket, 0.72),
+    ghostNotes: clamp01(source.ghostNotes, 0.42),
+    slapAmount: clamp01(source.slapAmount, 0.68),
+    popBrightness: clamp01(source.popBrightness, 0.62),
+    muteDepth: clamp01(source.muteDepth, 0.74),
+    stabTightness: clamp01(source.stabTightness, 0.76)
+  };
+}
+
+function scheduleMetalGuitarAudioEvent(context, event, project, start) {
+  const cfg = findPocketGuitarTone(event.instrument);
+  const texture = event.metalTexture || event.soundProfile?.parameters || {};
+  const technique = event.technique?.metal || {};
+  const palmMute = clamp(technique.palmMute ?? ((event.articulation === "palm_mute" || event.articulation === "chug") ? texture.palmMute : Number(texture.palmMute || 0) * 0.3), 0, 1);
+  const drive = 1.4 + clamp(Number(texture.drive || 0), 0, 1) * 8.2;
+  const tightness = clamp(Number(texture.lowTightness || 0), 0, 1);
+  const presence = clamp(Number(texture.presence || 0), 0, 1);
+  const roomSize = clamp(Number(texture.roomSize || 0), 0, 1);
+  const pickAttack = clamp(Number(texture.pickAttack || 0), 0, 1);
+  const duration = Math.max(0.05, (event.duration || 0.16) * (1 - palmMute * 0.58));
+  const peak = (project?.mixer?.stems?.guitar?.volume ?? 0.66) * Math.min(1, event.velocity || 0.5) * Number(cfg.peak || 0.078);
+  const output = context.createGain();
+  output.gain.setValueAtTime(0.0001, start);
+  output.gain.linearRampToValueAtTime(Math.max(0.0001, peak), start + 0.004);
+  output.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  output.connect(context.destination);
+  if (roomSize > 0.005 && typeof context.createDelay === "function") {
+    const delay = context.createDelay();
+    const room = context.createGain();
+    delay.delayTime.setValueAtTime(0.011 + roomSize * 0.023, start);
+    room.gain.setValueAtTime(roomSize * 0.24, start);
+    output.connect(delay);
+    delay.connect(room);
+    room.connect(context.destination);
+  }
+  const notes = event.midiNotes?.length ? event.midiNotes : [event.midi || 45];
+  [-1, 1].forEach((side) => notes.forEach((midi, noteIndex) => {
+    const osc = context.createOscillator();
+    const highpass = context.createBiquadFilter();
+    const lowpass = context.createBiquadFilter();
+    const shaper = typeof context.createWaveShaper === "function" ? context.createWaveShaper() : null;
+    const pan = typeof context.createStereoPanner === "function" ? context.createStereoPanner() : null;
+    osc.type = "sawtooth";
+    osc.detune.setValueAtTime(side * (4 + presence * 4) + noteIndex, start);
+    osc.frequency.setValueAtTime(440 * Math.pow(2, (midi - 69) / 12), start);
+    highpass.type = "highpass";
+    highpass.frequency.setValueAtTime(68 + tightness * 150, start);
+    lowpass.type = "lowpass";
+    lowpass.frequency.setValueAtTime(2200 + presence * 2100 - palmMute * 620, start);
+    if (shaper) shaper.curve = distortionCurve(drive);
+    if (pan) pan.pan.setValueAtTime(side * (0.28 + presence * 0.12), start);
+    osc.connect(highpass);
+    if (shaper) { highpass.connect(shaper); shaper.connect(lowpass); } else highpass.connect(lowpass);
+    if (pan) { lowpass.connect(pan); pan.connect(output); } else lowpass.connect(output);
+    osc.start(start);
+    osc.stop(start + duration + 0.03);
+  }));
+  scheduleTransientOscillator(context, start, 84 + presence * 12, 0.028, peak * pickAttack * 1.8);
+}
+
+function scheduleTransientOscillator(context, start, midi, duration, volume) {
+  if (volume <= 0.0001) return;
+  const gain = context.createGain();
+  const osc = context.createOscillator();
+  gain.gain.setValueAtTime(Math.max(0.0001, volume), start);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  osc.type = "square";
+  osc.frequency.setValueAtTime(440 * Math.pow(2, (midi - 69) / 12), start);
+  osc.connect(gain);
+  gain.connect(context.destination);
+  osc.start(start);
+  osc.stop(start + duration + 0.01);
+}
+
+function createPulseWave(context, duty) {
+  const harmonics = 32;
+  const real = new Float32Array(harmonics + 1);
+  const imag = new Float32Array(harmonics + 1);
+  for (let n = 1; n <= harmonics; n += 1) {
+    real[n] = 2 * Math.sin(Math.PI * n * duty) * Math.cos(Math.PI * n * duty) / (Math.PI * n);
+    imag[n] = 2 * Math.sin(Math.PI * n * duty) * Math.sin(Math.PI * n * duty) / (Math.PI * n);
+  }
+  return context.createPeriodicWave(real, imag, { disableNormalization: false });
+}
+
+function distortionCurve(amount) {
+  const samples = 256;
+  const curve = new Float32Array(samples);
+  for (let index = 0; index < samples; index += 1) {
+    const x = index * 2 / (samples - 1) - 1;
+    curve[index] = Math.tanh(x * amount);
+  }
+  return curve;
 }
 
 function normaliseSectionId(value) {
