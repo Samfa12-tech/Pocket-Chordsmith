@@ -178,9 +178,16 @@ function validateMidiInputCaptureEvidence(control, failures) {
   } else if (control.captureStartBar > control.punchStartBar || control.punchEndBar <= control.punchStartBar) {
     failures.push("midiInputRecordingControl punch range must start after captureStartBar and end after punchStartBar");
   }
+  if (control.requestedCaptureStartBar !== undefined) {
+    if (typeof control.requestedCaptureStartBar !== "number") {
+      failures.push("midiInputRecordingControl.requestedCaptureStartBar must be numeric when present");
+    } else if (typeof control.captureStartBar === "number" && control.captureStartBar + 0.125 < control.requestedCaptureStartBar) {
+      failures.push("midiInputRecordingControl.captureStartBar must not precede requestedCaptureStartBar");
+    }
+  }
   if (!barsApproximatelyEqual(take.punchStartBar, control.punchStartBar)) failures.push("midiInputRecordingControl.take.punchStartBar must match the requested punchStartBar");
   if (!barsApproximatelyEqual(take.punchEndBar, control.punchEndBar)) failures.push("midiInputRecordingControl.take.punchEndBar must match the requested punchEndBar");
-  if (!barsApproximatelyEqual(take.captureStartBar, control.captureStartBar)) failures.push("midiInputRecordingControl.take.captureStartBar must match the requested captureStartBar");
+  if (!barsApproximatelyEqual(take.captureStartBar, control.captureStartBar)) failures.push("midiInputRecordingControl.take.captureStartBar must match the recorded captureStartBar");
   if (take.punchMode !== "create-new-midi-take-lane") failures.push("midiInputRecordingControl.take.punchMode must be create-new-midi-take-lane");
   if (!Number.isInteger(take.noteCount) || take.noteCount < 1) failures.push("midiInputRecordingControl.take.noteCount must be at least 1");
   if (!Array.isArray(take.pitches) || !take.pitches.every((pitch) => Number.isInteger(pitch) && pitch >= 0 && pitch <= 127)) {

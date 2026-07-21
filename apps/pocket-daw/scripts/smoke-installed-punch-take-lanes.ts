@@ -681,7 +681,8 @@ async function exerciseMidiInputRecordingControl(session: AiBridgeSession, midiT
       punchEnabled: true,
       punchStartBar: 7,
       punchEndBar: 9,
-      captureStartBar: 6,
+      requestedCaptureStartBar: 6,
+      captureStartBar: typeof take.captureStartBar === "number" ? take.captureStartBar : 6,
       placement,
       take
     };

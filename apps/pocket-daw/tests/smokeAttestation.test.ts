@@ -419,7 +419,8 @@ describe("installed punch/take smoke summary verifier", () => {
         startMessage: "Recording MIDI input.",
         stopMessage: "Recorded MIDI take.",
         punchEnabled: true,
-        captureStartBar: 6,
+        requestedCaptureStartBar: 6,
+        captureStartBar: 6.294,
         punchStartBar: 7,
         punchEndBar: 9,
         placement: {
@@ -438,7 +439,7 @@ describe("installed punch/take smoke summary verifier", () => {
           takeStatus: "active",
           punchStartBar: 7,
           punchEndBar: 9,
-          captureStartBar: 6.036,
+          captureStartBar: 6.294,
           punchMode: "create-new-midi-take-lane",
           noteCount: 2,
           pitches: [60, 67]
