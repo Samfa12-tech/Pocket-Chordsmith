@@ -2,11 +2,11 @@
 
 This note is the current direction for turning Pocket Chordsmith imports into a practical Godot game-audio system without making gameplay render a full music engine from text.
 
-## Current State In 1.1.9
+## Current State In 1.2.0
 
 Pocket Chordsmith JSON and `PCS1:` share codes are score data. The addon can import them, compile a lightweight `PCSChartResource`, preserve sound/mix/performance metadata, and preview the result in Godot.
 
-The 1.1.9 addon has three usable audio paths:
+The 1.2.0 addon has three usable audio paths:
 
 - `STEM_SYNC` for prepared stems and loops. This is the preferred shipped-game path.
 - `HYBRID` for stems plus short samples, accents, stingers, and event hits.

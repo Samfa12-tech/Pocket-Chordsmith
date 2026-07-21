@@ -1,6 +1,6 @@
 [package]
 name = "pocket-daw"
-version = "0.6.41"
+version = "0.6.42"
 description = "Pocket DAW desktop app"
 authors = ["Pocket Family"]
 edition = "2021"

@@ -2,7 +2,7 @@
 extends SceneTree
 
 const ADDON_DIR := "res://addons/pocket_chordsmith"
-const DEFAULT_VERSION := "1.1.9"
+const DEFAULT_VERSION := "1.2.0"
 const DEFAULT_OUTPUT := "res://pocket_chordsmith_godot_addon_%s.zip" % DEFAULT_VERSION
 const EXCLUDED_PACKAGE_DIRS := {
 	"_trace_compare": true,

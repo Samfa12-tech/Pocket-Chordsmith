@@ -7,7 +7,9 @@ run("npm", ["run", "verify:native-sound-recipes"]);
 run("npm", ["test"]);
 run("npm", ["run", "build"]);
 run("cargo", ["test"], { cwd: "src-tauri", optional: true });
-run("npm", ["run", "package:itch"]);
+run("npm", ["run", "package:itch"], {
+  env: { ...process.env, POCKET_DAW_SKIP_NATIVE_BUILD: "1" }
+});
 run("npm", ["run", "verify:artifacts"]);
 
 console.log(isWindows
@@ -19,13 +21,15 @@ function run(command, args, options = {}) {
   console.log(`\n> ${executable} ${args.join(" ")}`);
   const result = isWindows
     ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", commandLine(executable, args)], {
-        cwd: options.cwd || process.cwd(),
-        stdio: "inherit",
+      cwd: options.cwd || process.cwd(),
+      env: options.env || process.env,
+      stdio: "inherit",
         shell: false
       })
     : spawnSync(executable, args, {
-        cwd: options.cwd || process.cwd(),
-        stdio: "inherit",
+      cwd: options.cwd || process.cwd(),
+      env: options.env || process.env,
+      stdio: "inherit",
         shell: false
       });
   if (result.error) {

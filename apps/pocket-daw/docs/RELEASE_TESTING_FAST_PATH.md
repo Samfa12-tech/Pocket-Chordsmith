@@ -33,9 +33,11 @@ Run from `apps/pocket-daw/`.
    npm run release:update:fast
    ```
 
-   `release:update:fast` is used here only to restage manifests and the already
-   built same-version installers after `verify:itch`; it does not rebuild the
-   native binary and cannot publish.
+   `verify:itch` automatically sets `POCKET_DAW_SKIP_NATIVE_BUILD=1` so it
+   validates and restages the installer built by `release:update:full` instead
+   of producing a second native binary. `release:update:fast` then restages
+   updater manifests around those same-version installers; it does not rebuild
+   the native binary and cannot publish.
 5. Record the full source commit, staged setup path, and setup SHA-256. Treat
    these three values as immutable candidate identity.
 6. Run private/owned MIDI fixture validation once through the current parser

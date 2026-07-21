@@ -2,7 +2,7 @@
 
 Pocket Chordsmith imports web-app JSON into compiled Godot resources, then drives runtime music callbacks through one lightweight conductor node.
 
-Current release: `1.1.9`, with Heavy Metal profile metadata preservation, metal sound preview aliases, improved Pocket Chordsmith-to-Godot sample-preview sound parity, visible rendered preview stems, dry default buses, and Godot mixer-friendly stem routing.
+Current release: `1.2.0`, with PCS schema-17 profile identity, expressive-event preservation, capability/loss diagnostics, Funk/Western/Chiptune/Heavy Metal preview aliases, visible rendered preview stems, dry default buses, and Godot mixer-friendly stem routing.
 
 License/status: MIT. The component license is `LICENSE` in this addon folder.
 See the repository root `LICENSES.md` for the full monorepo matrix.

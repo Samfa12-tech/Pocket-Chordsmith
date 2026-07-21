@@ -90,7 +90,7 @@ Audio features must avoid painful harshness and clipping. Use sensible gain stag
 These are the important current-v68 facts Codex should assume and verify in the file before editing:
 
 - The app title is Pocket Chordsmith v68.
-- `PROJECT_SCHEMA_VERSION` is currently 16.
+- `PROJECT_SCHEMA_VERSION` is currently 17. Schema 16 remains the supported legacy import/projection boundary.
 - `SECTION_IDS` currently supports `["A","B","C","D","E","F","G","H"]`.
 - `MAX_MELODY_TRACKS` is currently 6.
 - MIDI ticks per quarter are currently 480.

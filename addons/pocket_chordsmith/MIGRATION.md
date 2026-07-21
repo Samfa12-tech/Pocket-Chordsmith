@@ -1,4 +1,4 @@
-# Migrating To Pocket Chordsmith Godot Addon 1.1.9
+# Migrating To Pocket Chordsmith Godot Addon 1.2.0
 
 This release keeps the core architecture stable:
 
@@ -6,7 +6,7 @@ This release keeps the core architecture stable:
 Pocket Chordsmith JSON/share code -> PCSChartResource -> PocketChordsmithConductor
 ```
 
-## Unreleased PCS schema-17 profile note
+## 1.2.0 PCS schema-17 profile note
 
 The importer now accepts PCS schema 17 while retaining schema-16 compatibility.
 Recompile imported charts so `PCSChartResource` can preserve `sound_profile`,

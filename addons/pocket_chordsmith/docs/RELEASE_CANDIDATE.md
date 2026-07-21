@@ -36,13 +36,14 @@ godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/
 
 Run the complete deterministic gate in `HEADLESS_VALIDATION.md` when chart compile/import, DAW pack import, runtime validation, direct browser push, or receiver behavior changes.
 
-For Godot Asset Library submission, rely on the repository `.gitattributes` export-ignore rules. The generated Asset Library download should include `addons/pocket_chordsmith/` only.
+For Godot Asset Library submission, use the verified addon-only release branch/tag. Do not use a normal monorepo commit or source archive: the download tree must contain only `addons/pocket_chordsmith/` and must exclude `.uid`, `.import`, `.godot`, generated caches, and export builds.
 
 ## RC Exit Criteria
 
 - Addon enables without editor errors.
 - Demo scene opens and runs.
-- A v58 JSON/share code compiles.
+- A legacy schema-16 JSON/share code compiles through compatibility migration.
+- A schema-17 Funk project compiles with profile identity, expressive events, expanded drum lanes, and unknown technique intent preserved.
 - A compiled chart validates with no errors.
 - Runtime conductor emits beat/bar/section/marker/accent/event signals.
 - Generated HYBRID profile triggers sample hits.

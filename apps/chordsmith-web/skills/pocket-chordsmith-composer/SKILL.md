@@ -15,7 +15,7 @@ Use this skill when asked to create, improve, vary, or export music for Pocket C
 
 ## Current JSON Contract
 
-Current v68 exports schema `16`, but treat the app as the source of truth. Emit a single object that matches `exportProject()`:
+Current v68 exports schema `17`; schema `16` remains the explicit legacy compatibility projection. Treat the app as the source of truth and emit a single object that matches `exportProject()`:
 
 - Global fields: `projectVersion`, `key`, `scale`, `timeSig`, `bpm`, `swing`, `theme`, `uiMode`, `chordType`, `chordInstrument`, `resolution`, `melodyPitchMode`, `midiExportMode`, `midiChordExport`, `midiExactDurations`, `guitarEnabled`, `guitarTone`, `guitarRegister`, `guitarStrumMode`, `guitarPatternPreset`, `guitarVolume`, `chordPlayMode`, `chordRhythmMode`, `chordOctave`, `melodyOctave`, `melodyInputMode`, `xyPlaybackMode`, `xyPadMode`, `xyScaleMode`, `xyChordFollow`, `xyRecordToGrid`, `fxDelay`, `fxChorus`, `fxFlanger`, `fxReverb`, `fxMix`, `metronomeOn`, `chordsOn`, `bassOn`, `showMelodyPads`, `showDrumPads`, `drumRecordToGrid`, `showMelodyPicker`, `showTrackControls`, `bassMode`, `humanizeOn`, `sidechainOn`, `sidechainAmount`, `lastAdvancedResolution`, `sectionBars`, `songSequence`, `followPlaybackSection`.
 - For each section `A` through `H`: `progressionX`, `gridX`, `gridTupletsX`, `melodyTracksX`, `melodyInstrumentsX`, `melodyOctavesX`, `melodyMuteX`, `melodySoloX`, `melodyPanX`, `melodyHoldX`, `melodySlideX`, `melodyTupletsX`, `bassHoldX`, `bassSlideX`, `bassNotesX`, `bassAccentX`, `guitarPatternX`.

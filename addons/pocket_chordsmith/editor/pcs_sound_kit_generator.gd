@@ -196,8 +196,10 @@ func _drum_sample_streams() -> Dictionary:
 
 func _event_sample_streams() -> Dictionary:
 	var out: Dictionary = (SharedSoundConstants.GODOT_EVENT_SAMPLE_STREAMS as Dictionary).duplicate(true)
-	for sound_id in SharedSoundConstants.PROFILE_PREVIEW_ALIASES.keys():
-		out["sound:%s" % str(sound_id)] = str(SharedSoundConstants.PROFILE_PREVIEW_ALIASES[sound_id])
+	for key in out.keys():
+		var parts := str(key).split(":", false, 1)
+		if parts.size() == 2 and parts[0] in ["bass", "chord", "melody"]:
+			out["sound:%s" % parts[1]] = str(out[key])
 	return out
 
 

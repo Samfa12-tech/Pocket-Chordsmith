@@ -732,7 +732,7 @@ func get_diagnostics() -> Dictionary:
 	var expressive := _expressive_event_diagnostics()
 	var capability_report := {}
 	if chart != null:
-		var capabilities := playback_profile.get_capabilities() if playback_profile != null and playback_profile.has_method("get_capabilities") else {}
+		var capabilities: Dictionary = playback_profile.get_capabilities() if playback_profile != null and playback_profile.has_method("get_capabilities") else {}
 		capability_report = SoundProfileContract.negotiate({"soundProfile": chart.sound_profile, "formatFeatures": chart.format_features, "sections": chart.rich_sections}, capabilities)
 	return {
 		"backend": backend,
@@ -800,8 +800,8 @@ func _expressive_event_diagnostics() -> Dictionary:
 		if not sound.is_empty():
 			result["sounds"][sound] = int(result["sounds"].get(sound, 0)) + 1
 		var technique: Dictionary = event.get("technique", {}) if event.get("technique", {}) is Dictionary else {}
-		for namespace in technique.keys():
-			result["technique_namespaces"][str(namespace)] = int(result["technique_namespaces"].get(str(namespace), 0)) + 1
+		for technique_namespace in technique.keys():
+			result["technique_namespaces"][str(technique_namespace)] = int(result["technique_namespaces"].get(str(technique_namespace), 0)) + 1
 		var expression: Dictionary = event.get("expression", {}) if event.get("expression", {}) is Dictionary else {}
 		result["expression_fields"] = int(result["expression_fields"]) + expression.size()
 	return result

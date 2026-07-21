@@ -44,6 +44,7 @@ describe("release scripts", () => {
     expect(script).toContain('"tauri:debug"');
     expect(script).toContain('"tauri:build"');
     expect(itchScript).toContain('"package:itch"');
+    expect(itchScript).toContain('POCKET_DAW_SKIP_NATIVE_BUILD: "1"');
     expect(itchScript).toContain('"verify:artifacts"');
     expect(packageItch).toContain('ITCH_CHANNEL = "windows-installer"');
     expect(packageItch).toContain("installerOnly: true");

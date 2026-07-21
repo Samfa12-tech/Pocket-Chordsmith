@@ -38,7 +38,7 @@ playhead position. The UI only displays state and dispatches commands.
 - Pocket DJ current build: `apps/pocket-dj/pocket_dj_v1g_core_bridge.html`.
 - Pocket DAW package root: `apps/pocket-daw/package.json`.
 - Godot addon plugin config: `addons/pocket_chordsmith/plugin.cfg`.
-- Godot addon release baseline: `1.1.9`.
+- Godot addon release baseline: `1.2.0`.
 
 ## Current Notes And Known Gaps
 

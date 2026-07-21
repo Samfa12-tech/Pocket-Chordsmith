@@ -1,6 +1,6 @@
 # Pocket Chordsmith Godot Addon Changelog
 
-## Unreleased
+## 1.2.0 - 2026-07-22
 
 Pocket Audio schema-17 sound-profile compatibility update.
 

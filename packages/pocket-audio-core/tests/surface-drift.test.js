@@ -1204,6 +1204,19 @@ test("Godot sample-preview event streams cover shared pitched sound IDs", async 
   ];
 
   assert.ok(
+    soundKitGenerator.includes('out["sound:%s" % parts[1]] = str(out[key])'),
+    "Godot sound-kit generation should derive rich-event sound aliases from the checked-in event stream registry"
+  );
+  assert.ok(
+    !soundKitGenerator.includes("SharedSoundConstants.PROFILE_PREVIEW_ALIASES"),
+    "Godot sound-kit generation should not reference an undeclared generated constant"
+  );
+  assert.ok(
+    !conductor.includes("for namespace in"),
+    "Godot conductor should not use the reserved namespace keyword as a loop variable"
+  );
+
+  assert.ok(
     conductor.includes('var bass_key := "bass:%s" % instrument_id'),
     "Godot conductor should resolve bass sample-preview keys from event instrument IDs"
   );
