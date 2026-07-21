@@ -117,4 +117,4 @@ If Godot reports stale UID or script-class errors after replacing the addon, clo
 addons/pocket_chordsmith/docs/UID_CACHE_RECOVERY.md
 ```
 
-The Asset Library repository uses `.gitattributes` export-ignore rules so downloads contain the portable `addons/pocket_chordsmith/` payload. Godot regenerates local IDs and import metadata when the addon is opened in a project.
+Asset Library releases use a verified addon-only branch whose tree contains only `addons/pocket_chordsmith/`. Do not submit a normal monorepo commit or source archive. Godot regenerates local IDs and import metadata when the addon is opened in a project.

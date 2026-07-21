@@ -209,7 +209,7 @@ Use `docs/HEADLESS_VALIDATION.md` for the complete headless gate, direct Push-to
 
 Godot Asset Library release checklist:
 
-1. Commit all release changes to Git.
-2. Copy the full 40-character Git commit hash from the committed revision.
+1. Create and verify an addon-only release branch whose tree contains only `addons/pocket_chordsmith/`.
+2. Copy the full 40-character Git commit hash from that addon-only revision.
 3. Paste that full hash into the Godot Asset Library `Download Commit` field.
 4. Do not use branch names or version tags such as `main`, `master`, or `v1.1.6` for `Download Commit`.
