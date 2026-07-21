@@ -65,7 +65,7 @@ The canonical additive fields are:
             {
               "step": 0,
               "duration": 1,
-              "note": 0,
+              "note": 36,
               "velocity": 112,
               "articulation": "slap",
               "sound": "funk_slap_pop",
@@ -82,8 +82,11 @@ The canonical additive fields are:
 ```
 
 Events use `step` for grid-authored data and may use `tick` when imported or
-authored at PPQ precision. `notes` is used for polyphonic events and `note` for
-single-note events. Unknown `expression` and `technique` namespaces are copied
+authored at PPQ precision. `duration` is measured in grid steps; optional
+`durationTicks` preserves exact PPQ duration. `notes` is used for polyphonic events and `note` for
+single-note events; both contain absolute MIDI note numbers. A generated rich
+track may declare `compatibility.compactMirror: true` when it only mirrors the
+compact fields. Unknown `expression` and `technique` namespaces are copied
 unchanged.
 
 ## Stable profile IDs

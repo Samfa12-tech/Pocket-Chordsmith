@@ -337,7 +337,7 @@ function makeRichFunkFixture() {
               {
                 step: 0,
                 duration: 1,
-                note: 0,
+                note: 38,
                 velocity: 112,
                 articulation: "slap",
                 sound: "funk_slap_pop",
@@ -346,7 +346,7 @@ function makeRichFunkFixture() {
                 technique: { funk: { hand: "thumb" }, future: { keep: true } },
                 unknownEventField: { keep: true },
               },
-              { tick: 24, duration: 0.5, note: 7, velocity: 76, articulation: "pop" },
+              { tick: 24, duration: 0.5, note: 45, velocity: 76, articulation: "pop" },
             ],
           },
           drums: {
@@ -659,6 +659,8 @@ test("imports schema-17 Funk, preserves rich unknown data through save and hando
     expect.objectContaining({ feature: "drum-lane:ride", action: "approximated" }),
     expect.objectContaining({ feature: "technique:future", action: "preserved" }),
   ]));
+  expect(await page.evaluate(() => richEventNotes({ note: 38 }, "bass", {}, 0)[0])).toBe(38);
+  expect(await page.evaluate(() => richEventStep({ tick: 240 }, { resolution: 4 }))).toBe(2);
 
   await page.locator("#editSourceBtn").click();
   const handoffProject = await decodePocketChordsmithShareCode(page, await page.locator("#handoffText").inputValue());

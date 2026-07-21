@@ -206,6 +206,8 @@ export function normalizeRichEvent(input, options = {}) {
     warnings.push("Rich event duration defaulted to 1.");
   } else if (!Number.isFinite(Number(event.duration)) || Number(event.duration) <= 0) errors.push("duration must be a positive number.");
   else event.duration = Number(event.duration);
+  if (event.durationTicks !== undefined && (!Number.isInteger(Number(event.durationTicks)) || Number(event.durationTicks) <= 0)) errors.push("durationTicks must be a positive integer.");
+  else if (event.durationTicks !== undefined) event.durationTicks = Number(event.durationTicks);
   if (event.note !== undefined && event.notes !== undefined) errors.push("Rich event may use note or notes, not both.");
   if (event.note !== undefined && !isMidiNote(event.note)) errors.push("note must be a MIDI note number.");
   if (event.notes !== undefined && (!Array.isArray(event.notes) || !event.notes.length || event.notes.some((note) => !isMidiNote(note)))) errors.push("notes must be a non-empty MIDI note array.");
@@ -247,7 +249,7 @@ export function migrateSchema16To17(project) {
       melodyInstruments: source.melodyInstruments ?? instruments,
       bassNotes: source.bassNotes ?? bassNotes,
       drumLanes,
-      tracks: isPlainObject(source.tracks) ? source.tracks : compactTracks(melodyTracks, instruments, bassNotes, bassArticulation),
+      tracks: isPlainObject(source.tracks) ? source.tracks : compactTracks(project, id, melodyTracks, instruments, bassNotes, bassArticulation),
     };
   }
   migrated.sections = sections;
@@ -424,13 +426,37 @@ function compactDrumLanes(grid) {
   return lanes;
 }
 
-function compactTracks(melodyTracks, instruments, bassNotes, bassArticulation) {
+function compactTracks(project, sectionId, melodyTracks, instruments, bassNotes, bassArticulation) {
   const tracks = {};
+  const indexedPitchMode = ["scale", "chromatic"].includes(project.melodyPitchMode);
+  const melodyOctaves = sectionField(project, sectionId, "melodyOctaves") || [];
   melodyTracks.forEach((notes, index) => {
-    tracks[`melody_${index + 1}`] = { events: (Array.isArray(notes) ? notes : []).flatMap((note, step) => note === null || note === undefined ? [] : [{ step, duration: 1, note, velocity: 100, articulation: "note", sound: instruments[index], role: "melody" }]) };
+    tracks[`melody_${index + 1}`] = { events: (Array.isArray(notes) ? notes : []).flatMap((note, step) => note === null || note === undefined ? [] : [{ step, duration: 1, note: indexedPitchMode ? compactMelodyIndexToMidi(project, note, melodyOctaves[index]) : note, velocity: 100, articulation: "note", sound: instruments[index], role: "melody" }]) };
   });
-  tracks.bass = { events: (Array.isArray(bassNotes) ? bassNotes : []).flatMap((note, step) => note === null || note === undefined ? [] : [{ step, duration: 1, note, velocity: 100, articulation: bassArticulation[step] || "note", role: "bass" }]) };
+  tracks.bass = { events: (Array.isArray(bassNotes) ? bassNotes : []).flatMap((note, step) => note === null || note === undefined ? [] : [{ step, duration: 1, note: indexedPitchMode ? compactBassIndexToMidi(project, note) : note, velocity: 100, articulation: bassArticulation[step] || "note", role: "bass" }]) };
   return tracks;
+}
+
+function compactBassIndexToMidi(project, value) {
+  const index = Math.max(0, Math.min(13, Math.trunc(Number(value) || 0)));
+  const scale = scalePitchClasses(project);
+  return 36 + scale[index % 7] + Math.floor(index / 7) * 12;
+}
+
+function compactMelodyIndexToMidi(project, value, trackOctave = project.melodyOctave || 0) {
+  const chromatic = project.melodyPitchMode === "chromatic";
+  const max = chromatic ? 23 : 13;
+  const index = Math.max(0, Math.min(max, Math.trunc(Number(value) || 0)));
+  const pitch = chromatic ? index % 12 : scalePitchClasses(project)[index % 7];
+  const octave = Math.floor(index / (chromatic ? 12 : 7));
+  return 72 + pitch + (Number(trackOctave) || 0) * 12 + octave * 12;
+}
+
+function scalePitchClasses(project) {
+  const roots = { C: 0, "C#": 1, Db: 1, D: 2, "D#": 3, Eb: 3, E: 4, F: 5, "F#": 6, Gb: 6, G: 7, "G#": 8, Ab: 8, A: 9, "A#": 10, Bb: 10, B: 11 };
+  const intervals = project.scale === "minor" ? [0, 2, 3, 5, 7, 8, 10] : [0, 2, 4, 5, 7, 9, 11];
+  const root = roots[project.key] ?? 0;
+  return intervals.map((interval) => (root + interval) % 12);
 }
 
 function compactGrid(drumLanes, losses, path) {
@@ -443,7 +469,7 @@ function compactGrid(drumLanes, losses, path) {
       const normalized = normalizeRichEvent(event, { role: "drums" });
       if (!normalized.ok) continue;
       const { step, tick, duration, velocity, articulation, expression, technique } = normalized.event;
-      if (!Number.isInteger(step) || tick !== undefined || duration !== 1 || articulation !== "note" || expression || technique) addLoss(losses, "drum-expression", `${path}.${lane}`, "Rich drum timing or expression cannot be represented by schema 16 grid cells.");
+      if (!Number.isInteger(step) || tick !== undefined || normalized.event.durationTicks !== undefined || duration !== 1 || articulation !== "note" || expression || technique) addLoss(losses, "drum-expression", `${path}.${lane}`, "Rich drum timing or expression cannot be represented by schema 16 grid cells.");
       if (Number.isInteger(step) && step >= 0) {
         grid[lane] ||= [];
         grid[lane][step] = velocity > 0 ? 1 : 0;
@@ -466,7 +492,7 @@ function projectSectionTracks(tracks, losses, path) {
       const result = normalizeRichEvent(input, { role });
       if (!result.ok) continue;
       const event = result.event;
-      if (!Number.isInteger(event.step) || event.tick !== undefined || event.duration !== 1 || event.notes || event.expression || event.technique || !["note", "hold", "slide", "slap", "pop", "mute", "hammer", "pull"].includes(event.articulation)) addLoss(losses, "rich-event", `${path}.${name}`, "Schema 16 cannot fully represent this rich event.");
+      if (!Number.isInteger(event.step) || event.tick !== undefined || event.durationTicks !== undefined || event.duration !== 1 || event.notes || event.expression || event.technique || !["note", "hold", "slide", "slap", "pop", "mute", "hammer", "pull"].includes(event.articulation)) addLoss(losses, "rich-event", `${path}.${name}`, "Schema 16 cannot fully represent this rich event.");
       if (Number.isInteger(event.step) && event.note !== undefined) notes[event.step] = event.note;
     }
     if (role === "bass") {
@@ -493,7 +519,14 @@ function inferCapabilities(project) {
 
 function forEachRichEvent(project, callback) {
   for (const section of Object.values(project.sections || {})) {
-    for (const track of Object.values(section?.tracks || {})) for (const event of track?.events || []) callback(event);
+    for (const [trackId, track] of Object.entries(section?.tracks || {})) {
+      const role = String(track?.role || track?.stem || trackId).toLowerCase();
+      const isDrums = role === "drum" || role === "drums" || PCS_DRUM_LANES.includes(role);
+      for (const event of track?.events || []) {
+        const lane = isDrums ? String(event?.lane || event?.drumLane || event?.sound || (PCS_DRUM_LANES.includes(role) ? role : "")) : "";
+        callback(event, PCS_DRUM_LANES.includes(lane) ? lane : undefined);
+      }
+    }
     for (const [lane, events] of Object.entries(section?.drumLanes || {})) for (const event of events || []) callback(event, lane);
   }
 }

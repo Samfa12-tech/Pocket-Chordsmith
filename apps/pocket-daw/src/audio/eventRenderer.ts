@@ -622,13 +622,13 @@ function renderRichSectionEvents(
       if (sourceStep < window.sourceStartStep || sourceStep >= window.sourceStartStep + window.renderSteps) return;
       const localStep = sourceStep - window.sourceStartStep;
       const start = richStepTime(window, localStep);
-      const durationSteps = richEventDurationSteps(event);
+      const durationSteps = richEventDurationSteps(event, pcs);
       const end = richStepTime(window, Math.min(window.renderSteps, localStep + durationSteps));
       const baseDuration = Math.max(0.01, end - start);
       const mappedArticulation = mapPcsArticulation(event.articulation);
       const mappedSound = mapPcsSound(pcs.soundProfile.id, event.sound);
       const noteValues = event.notes?.length ? event.notes : typeof event.note === "number" ? [event.note] : [];
-      const midiNotes = noteValues.map((note) => richNoteToMidi(pcs, section, stemRole, note, Math.floor(sourceStep))).map((note) => applyClipPitchTransform(note, clip));
+      const midiNotes = noteValues.map(richNoteToMidi).map((note) => applyClipPitchTransform(note, clip));
       const expressionPan = numericJsonField(event.expression, "pan");
       const pocketOffset = numericNestedJsonField(event.technique, "funk", "pocketOffset");
       const profilePocket = numericJsonField(pcs.soundProfile.parameters, "pocket");
@@ -689,7 +689,7 @@ function renderRichSectionEvents(
           midi,
           bassTone: mappedSound || pcs.bassTone,
           ...(slideTarget === null ? {} : {
-            slideMidi: applyClipPitchTransform(richNoteToMidi(pcs, section, stemRole, slideTarget, Math.floor(sourceStep)), clip),
+            slideMidi: applyClipPitchTransform(richNoteToMidi(slideTarget), clip),
             slideOffset: Math.min(baseDuration, Math.max(0.02, baseDuration * 0.7))
           })
         });
@@ -715,7 +715,7 @@ function renderRichSectionEvents(
         midi,
         instrument,
         ...(slideTarget === null ? {} : {
-          slideMidi: applyClipPitchTransform(richNoteToMidi(pcs, section, stemRole, slideTarget, Math.floor(sourceStep)), clip),
+          slideMidi: applyClipPitchTransform(richNoteToMidi(slideTarget), clip),
           slideOffset: Math.min(baseDuration, Math.max(0.02, baseDuration * 0.7))
         })
       });
@@ -732,23 +732,16 @@ function normalizedRichTrackRole(value: string): TrackRole | null {
 
 function richRoleRequiresDirectRendering(pcs: SanitizedPcsProject, role: string, events: SanitizedPcsRichEvent[]): boolean {
   if (!events.length || !normalizedRichTrackRole(role)) return false;
-  if (["chip_arcade", "western_frontier", "heavy_metal", "funk_groove"].includes(pcs.soundProfile.id)) return true;
-  return events.some((event) => {
-    const alignedTick = typeof event.tick !== "number" || typeof event.step !== "number" || Math.abs(event.tick * pcs.resolution / pcs.ppq - event.step) < 0.0001;
-    const expressiveArticulation = ["slap", "pop", "mute", "hammer", "pull", "ghost", "roll", "bend", "vibrato"].includes(event.articulation);
-    const expressionKeys = Object.keys(event.expression).filter((key) => !["pan", "accent"].includes(key));
-    const techniqueKeys = Object.keys(event.technique).filter((key) => key !== "drums");
-    const expandedDrum = normalizedRichTrackRole(role) === "drums" && !["kick", "snare", "hat", "hat_closed", "hat_open"].includes(event.sound);
-    return !alignedTick || expressiveArticulation || expressionKeys.length > 0 || techniqueKeys.length > 0 || expandedDrum;
-  });
+  const compactMirror = events.every((event) => event.compactMirror);
+  return !compactMirror || !["standard", "lofi_chill"].includes(pcs.soundProfile.id);
 }
 
 function richEventStep(event: SanitizedPcsRichEvent, pcs: SanitizedPcsProject): number {
   return typeof event.tick === "number" ? event.tick * pcs.resolution / pcs.ppq : event.step || 0;
 }
 
-function richEventDurationSteps(event: SanitizedPcsRichEvent): number {
-  return event.duration;
+function richEventDurationSteps(event: SanitizedPcsRichEvent, pcs: SanitizedPcsProject): number {
+  return event.durationTicks === undefined ? event.duration : event.durationTicks * pcs.resolution / pcs.ppq;
 }
 
 function richStepTime(window: RichRenderWindow, localStep: number): number {
@@ -760,11 +753,8 @@ function richStepTime(window: RichRenderWindow, localStep: number): number {
   return start + Math.max(0, end - start) * fraction;
 }
 
-function richNoteToMidi(pcs: SanitizedPcsProject, _section: SanitizedPcsSection, role: string, note: number, _step: number): number {
-  if (note >= 24) return Math.max(0, Math.min(127, Math.round(note)));
-  if (role === "bass") return bassManualIndexToMidi(pcs, Math.max(0, Math.min(13, Math.round(note))));
-  if (role === "chords" && note >= 0 && note <= 6) return melodyIndexToMidi(pcs, Math.round(note));
-  return melodyIndexToMidi(pcs, Math.max(0, Math.min(23, Math.round(note))));
+function richNoteToMidi(note: number): number {
+  return Math.max(0, Math.min(127, Math.round(note)));
 }
 
 function richVelocity(value: number): number {

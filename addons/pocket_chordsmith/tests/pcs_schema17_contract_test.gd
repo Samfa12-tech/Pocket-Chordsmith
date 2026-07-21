@@ -34,19 +34,31 @@ func _init() -> void:
 				failures.append("Rich expressive event count was not compiled.")
 			var found_technique := false
 			var found_crash := false
+			var bass_midis: Array[int] = []
+			var found_tick_duration := false
 			for event in chart.compiled_events:
 				if event.get("technique", {}) is Dictionary and (event.get("technique", {}) as Dictionary).has("futureTechnique"):
 					found_technique = true
 				if str(event.get("instrument_id", "")) == "crash":
 					found_crash = true
+				if str(event.get("track_type", "")) == "bass":
+					bass_midis.append(int(event.get("midi_note", -1)))
+					if int(event.get("midi_note", -1)) == 43 and int(event.get("duration_ticks", -1)) == 240:
+						found_tick_duration = true
 			if not found_technique:
 				failures.append("Unknown technique namespace was not carried into compiled diagnostics.")
 			if not found_crash:
 				failures.append("Expanded crash drum lane was not compiled.")
+			if not bass_midis.has(36) or not bass_midis.has(43):
+				failures.append("Schema-17 bass notes were not retained as absolute MIDI pitches.")
+			if not found_tick_duration:
+				failures.append("Schema-17 durationTicks was not retained as an exact PPQ duration.")
 			var restricted := {"articulations": ["finger"], "drumLanes": ["kick"], "features": ["capability-report-v1"], "techniqueNamespaces": ["funk"], "profileIds": ["standard"]}
 			var loss_report: Dictionary = Contract.negotiate(project, restricted)
 			if (loss_report.get("losses", []) as Array).is_empty():
 				failures.append("Restricted capability negotiation did not report losses.")
+			if not (loss_report.get("losses", []) as Array).any(func(loss): return str(loss.get("feature", "")) == "drum-lane:crash"):
+				failures.append("Restricted capability negotiation missed the crash lane in the drums track.")
 		var legacy = JSON.parse_string(FileAccess.get_file_as_string(legacy_path))
 		var legacy_imported: Dictionary = importer.load_text(JSON.stringify(legacy), legacy_path)
 		if not bool(legacy_imported.get("ok", false)) or str((legacy_imported.get("project", {}) as Dictionary).get("audioProfile", "")) != "chip_arcade":

@@ -102,7 +102,7 @@ function buildRichSectionEvents(project, section, context) {
     const sourceEvents = Array.isArray(track?.events) ? track.events : [];
     if (!sourceEvents.length) return;
     const stem = richTrackStem(trackId, track);
-    if (!richTrackOwnsStem(project, stem, sourceEvents)) return;
+    if (!richTrackOwnsStem(project, track)) return;
     ownedStems.add(stem);
     let previousPitched = null;
     sourceEvents.forEach((source, index) => {
@@ -114,11 +114,11 @@ function buildRichSectionEvents(project, section, context) {
       const time = source.tick === undefined
         ? timeAtStep(context.timeline, step)
         : context.baseTime + localTick / project.meta.ppq * beatSeconds(project);
-      const durationTicks = source.durationTicks || Math.max(1, stepToTicks(Number(source.duration || 1), project.meta.resolution, project.meta.ppq));
+      const durationTicks = source.durationTicks ?? Math.max(1, stepToTicks(Number(source.duration || 1), project.meta.resolution, project.meta.ppq));
       const duration = durationTicks / project.meta.ppq * beatSeconds(project);
       const lane = stem === "drums" ? normalisePocketAudioDrumLane(source.lane || source.sound || trackId) : undefined;
-      const midi = richSingleMidi(project, section, stem, source);
-      const midiNotes = richPolyMidi(project, section, stem, source);
+      const midi = richSingleMidi(source);
+      const midiNotes = richPolyMidi(source);
       const requestedArticulation = normalisePocketAudioArticulation(source.articulation || defaultRichArticulation(stem, lane));
       const connectedInvalid = (requestedArticulation === "hammer" || requestedArticulation === "pull") && previousPitched === null;
       const articulation = connectedInvalid ? "finger" : requestedArticulation;
@@ -173,33 +173,10 @@ function buildRichSectionEvents(project, section, context) {
   return { events, ownedStems };
 }
 
-function richTrackOwnsStem(project, stem, events) {
+function richTrackOwnsStem(project, track) {
   const profileId = String(project.soundProfile?.id || project.meta?.audioProfile || "standard");
-  if (["chip_arcade", "western_frontier", "heavy_metal", "funk_groove"].includes(profileId)) return true;
-  return events.some((event) => {
-    if (event.tick !== undefined) {
-      const stepTicks = project.meta.ppq / project.meta.resolution;
-      if (Math.abs(Number(event.tick) / stepTicks - Math.round(Number(event.tick) / stepTicks)) > 0.000001) return true;
-    }
-    if (event.expression && Object.keys(event.expression).some((key) => key !== "pan")) return true;
-    if (event.technique && Object.keys(event.technique).some((key) => key !== "drums")) return true;
-    const articulation = String(event.articulation || "");
-    const compactArticulations = stem === "bass"
-      ? ["", "finger", "hold", "slide"]
-      : stem === "melody"
-        ? ["", "finger", "legato", "hold", "slide"]
-        : stem === "drums"
-          ? ["", "finger", "accent", "open"]
-          : stem === "chords"
-            ? ["", "finger", "block", "strum_up", "strum_down", "arp_up", "arp_down"]
-            : ["", "finger", "open", "hold", "accent", "scratch", "palm_mute", "chug"];
-    if (!compactArticulations.includes(articulation)) return true;
-    if (stem === "drums") {
-      const lane = normalisePocketAudioDrumLane(event.lane || event.sound || "");
-      if (!["kick", "snare", "hat", "hat_closed", "hat_open"].includes(lane)) return true;
-    }
-    return false;
-  });
+  const compactMirror = track?.compatibility?.compactMirror === true;
+  return !compactMirror || !["standard", "lofi_chill"].includes(profileId);
 }
 
 function addDrumEvents(events, project, section, context) {
@@ -593,22 +570,15 @@ function richEventType(stem, lane) {
   return stem;
 }
 
-function richSingleMidi(project, _section, stem, source) {
+function richSingleMidi(source) {
   if (source.midi !== undefined) return Number(source.midi);
   if (source.note === undefined || Array.isArray(source.note)) return undefined;
-  if (stem === "bass") return chordsmithBassIndexToMidi({ key: project.meta.key, scale: project.meta.scale, noteIndex: Number(source.note) });
-  if (stem === "melody") return melodyMidiAt(project, Number(source.note), Number(source.octave || 0));
-  if (stem === "guitar") return chordsmithBassIndexToMidi({ key: project.meta.key, scale: project.meta.scale, noteIndex: Number(source.note) }) + 12;
-  return undefined;
+  return Number(source.note);
 }
 
-function richPolyMidi(project, section, stem, source) {
+function richPolyMidi(source) {
   if (Array.isArray(source.midiNotes)) return source.midiNotes.map(Number);
   if (!Array.isArray(source.notes)) return undefined;
-  if (stem === "chords" || stem === "guitar") {
-    const root = currentChord(project, section, Number(source.step || 0)).rootPc;
-    return source.notes.map((offset) => 48 + root + Number(offset));
-  }
   return source.notes.map(Number);
 }
 

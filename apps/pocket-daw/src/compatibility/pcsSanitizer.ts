@@ -71,6 +71,7 @@ export interface SanitizedPcsRichEvent {
   step?: number;
   tick?: number;
   duration: number;
+  durationTicks?: number;
   note?: number;
   notes?: number[];
   velocity: number;
@@ -79,6 +80,7 @@ export interface SanitizedPcsRichEvent {
   role: string;
   expression: JsonObject;
   technique: JsonObject;
+  compactMirror: boolean;
   raw: JsonObject;
 }
 
@@ -380,9 +382,10 @@ function sanitizeRichEvents(raw: JsonObject, id: SectionId): Record<string, Sani
   Object.entries(tracks).forEach(([role, track]) => {
     const events = jsonObject(track).events;
     if (!Array.isArray(events)) return;
+    const compactMirror = jsonObject(jsonObject(track).compatibility).compactMirror === true;
     out[role] = events
       .slice(0, MAX_SECTION_STEPS * 4)
-      .map(sanitizeRichEvent)
+      .map((event) => sanitizeRichEvent(event, compactMirror))
       .filter((event): event is SanitizedPcsRichEvent => !!event);
   });
   const richDrumLanes = jsonObject(section.drumLanes);
@@ -400,7 +403,7 @@ function sanitizeRichEvents(raw: JsonObject, id: SectionId): Record<string, Sani
   return out;
 }
 
-function sanitizeRichEvent(value: unknown): SanitizedPcsRichEvent | null {
+function sanitizeRichEvent(value: unknown, compactMirror = false): SanitizedPcsRichEvent | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = cloneJsonObject(value);
   const hasTick = Number.isFinite(Number(raw.tick));
@@ -414,6 +417,7 @@ function sanitizeRichEvent(value: unknown): SanitizedPcsRichEvent | null {
     ...(hasStep ? { step: clamp(asNum(raw.step, 0), 0, MAX_SECTION_STEPS) } : {}),
     ...(hasTick ? { tick: clamp(asNum(raw.tick, 0), 0, MAX_SECTION_STEPS * 9600) } : {}),
     duration: clamp(asNum(raw.duration, 1), 0.01, MAX_SECTION_STEPS * 16),
+    ...(Number.isFinite(Number(raw.durationTicks)) ? { durationTicks: clamp(asInt(raw.durationTicks, 1), 1, MAX_SECTION_STEPS * 9600) } : {}),
     ...(typeof note === "number" ? { note } : {}),
     ...(notes?.length ? { notes } : {}),
     velocity: clamp(asNum(raw.velocity, 100), 0, 127),
@@ -422,6 +426,7 @@ function sanitizeRichEvent(value: unknown): SanitizedPcsRichEvent | null {
     role: cleanId(raw.role),
     expression: cloneJsonObject(raw.expression),
     technique: cloneJsonObject(raw.technique),
+    compactMirror,
     raw
   };
 }

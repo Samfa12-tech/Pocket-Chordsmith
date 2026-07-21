@@ -788,6 +788,49 @@ test("timeline includes drums, bass, chords, melody and guitar events", () => {
   assert.ok(timeline.duration > 0);
 });
 
+test("schema 17 rich pitches remain absolute MIDI notes", () => {
+  const project = normalisePocketChordsmithProject({
+    ...minimalProject,
+    projectVersion: 17,
+    audioProfile: "funk_groove",
+    soundProfile: { id: "funk_groove", preset: "funk_classic_pocket", recipeVersion: 1 },
+    sections: {
+      A: {
+        tracks: {
+          bass: { events: [{ step: 0, duration: 1, note: 38, velocity: 112, articulation: "slap" }] },
+          chords: { events: [{ step: 0, duration: 4, notes: [62, 65, 69], velocity: 92, articulation: "staccato" }] },
+        },
+      },
+    },
+  });
+  const events = buildPocketAudioTimeline(project, { scope: "section", sectionId: "A" }).events;
+
+  assert.equal(events.find((event) => event.stem === "bass").midi, 38);
+  assert.deepEqual(events.find((event) => event.stem === "chords").midiNotes, [62, 65, 69]);
+});
+
+test("compact mirrors defer to compact data while authored rich tracks own their stem", () => {
+  const withTrack = (track) => normalisePocketChordsmithProject({
+    ...minimalProject,
+    projectVersion: 17,
+    soundProfile: { id: "standard", preset: "standard_chordsmith", recipeVersion: 1 },
+    sections: { A: { tracks: { bass: track } } },
+  });
+  const mirrored = buildPocketAudioTimeline(withTrack({
+    compatibility: { compactMirror: true },
+    events: [{ step: 0, durationTicks: 73, note: 99, velocity: 100 }],
+  }), { scope: "section", sectionId: "A" }).events.filter((event) => event.stem === "bass");
+  const authored = buildPocketAudioTimeline(withTrack({
+    events: [{ step: 0, durationTicks: 73, note: 61, velocity: 100 }],
+  }), { scope: "section", sectionId: "A" }).events.filter((event) => event.stem === "bass");
+
+  assert.notEqual(mirrored[0].midi, 99);
+  assert.notEqual(mirrored[0].durationTicks, 73);
+  assert.equal(authored.length, 1);
+  assert.equal(authored[0].midi, 61);
+  assert.equal(authored[0].durationTicks, 73);
+});
+
 test("timeline fallback stem velocities use shared Chordsmith mix defaults", () => {
   const project = normalisePocketChordsmithProject({
     ...richProject(),

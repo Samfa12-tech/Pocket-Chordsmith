@@ -2140,7 +2140,7 @@ function applyRichSectionsToLegacyData(data){
     bassEvents.forEach(event => {
       const step = richEventStep(event,data.resolution);
       if(step >= maxStep || event.note === undefined) return;
-      data[`bassNotes${id}`][step] = clamp(asInt(event.note,0),0,13);
+      data[`bassNotes${id}`][step] = midiToBassManualIndex(event.note,data.key,data.scale);
       data[`bassAccent${id}`][step] = event.velocity >= 104 || ["slap","pop","accent"].includes(event.articulation);
       data[`bassArticulation${id}`][step] = safeChoice(event.articulation,BASS_ARTICULATIONS,"finger");
       const held = Math.max(1,Math.round(asNumber(event.duration,1)));
@@ -2151,7 +2151,8 @@ function applyRichSectionsToLegacyData(data){
       while(data[`melodyTracks${id}`].length <= trackIndex) data[`melodyTracks${id}`].push(blankMelody());
       (track.events || []).forEach(event => {
         const step = richEventStep(event,data.resolution);
-        if(step < maxStep && event.note !== undefined) data[`melodyTracks${id}`][trackIndex][step] = clamp(asInt(event.note,0),0,23);
+        const trackOctave = data[`melodyOctaves${id}`]?.[trackIndex] ?? data.melodyOctave ?? 0;
+        if(step < maxStep && event.note !== undefined) data[`melodyTracks${id}`][trackIndex][step] = midiToMelodyIndex(event.note,data.melodyPitchMode,data.key,data.scale,trackOctave);
       });
     });
   });
@@ -5069,16 +5070,29 @@ function melodyNoteCount(){
   return state.melodyPitchMode === "chromatic" ? 24 : 14;
 }
 function melodyIndexToMidi(idx, trackOctave = currentMelodyTrackOctave()){
-  const safeIdx = clamp(asInt(idx, 0), 0, melodyNoteCount() - 1);
-  if(state.melodyPitchMode === "chromatic"){
+  return melodyIndexToMidiForSettings(idx,state.melodyPitchMode,state.key,state.scale,trackOctave);
+}
+function melodyIndexToMidiForSettings(idx,pitchMode,key,scaleName,trackOctave=0){
+  const noteCount = pitchMode === "chromatic" ? 24 : 14;
+  const safeIdx = clamp(asInt(idx, 0), 0, noteCount - 1);
+  if(pitchMode === "chromatic"){
     const chroma = ((safeIdx % 12) + 12) % 12;
     const oct = Math.floor(safeIdx / 12);
     return 72 + chroma + ((trackOctave + oct) * 12);
   }
-  const scale = buildScale(state.key, state.scale);
+  const scale = buildScale(key,scaleName);
   const degree = ((safeIdx % 7) + 7) % 7;
   const oct = Math.floor(safeIdx / 7);
   return 72 + scale[degree] + ((trackOctave + oct) * 12);
+}
+function midiToMelodyIndex(midi,pitchMode=state.melodyPitchMode,key=state.key,scaleName=state.scale,trackOctave=currentMelodyTrackOctave()){
+  const noteCount = pitchMode === "chromatic" ? 24 : 14;
+  let best = {idx:0,dist:Infinity};
+  for(let idx=0;idx<noteCount;idx++){
+    const dist = Math.abs(melodyIndexToMidiForSettings(idx,pitchMode,key,scaleName,trackOctave) - midi);
+    if(dist < best.dist) best = {idx,dist};
+  }
+  return best.idx;
 }
 function melodyIndexLabel(idx){
   if(idx === null || idx === undefined) return "";
@@ -5625,8 +5639,8 @@ function clearBassSlideFrom(startStep){
   const slideTrack = state.bassSlide || [];
   for(let i = startStep; i < slideTrack.length; i++) slideTrack[i] = false;
 }
-function bassManualIndexToMidi(idx){
-  const scale = buildScale(state.key, state.scale);
+function bassManualIndexToMidi(idx,key=state.key,scaleName=state.scale){
+  const scale = buildScale(key,scaleName);
   const degree = ((idx % 7) + 7) % 7;
   const oct = Math.floor(idx / 7);
   return 36 + scale[degree] + (oct * 12);
@@ -28556,10 +28570,10 @@ function midiProgramToMelodyInstrument(program){
   if(midiProgramSuggestsKeysOrgan(program)) return program >= 16 ? "soft" : "synth";
   return null;
 }
-function midiToBassManualIndex(midi){
+function midiToBassManualIndex(midi,key=state.key,scaleName=state.scale){
   let best = {idx:0, dist:Infinity};
   for(let idx = 0; idx < 14; idx++){
-    const candidate = bassManualIndexToMidi(idx);
+    const candidate = bassManualIndexToMidi(idx,key,scaleName);
     const dist = Math.abs(candidate - midi);
     if(dist < best.dist) best = {idx, dist};
   }
@@ -29821,9 +29835,10 @@ function richEventDurationSteps(holdTrack, step, stepCount){
 function generatedRichTracksForSection(sectionId){
   const section = getSectionData(sectionId,true);
   const stepCount = section.bars * stepsPerBar();
-  const tracks = {drums:{events:[]},bass:{events:[]},guitar:{events:[]},chords:{events:[]}};
+  const compactMirror = () => ({compatibility:{compactMirror:true},events:[]});
+  const tracks = {drums:compactMirror(),bass:compactMirror(),guitar:compactMirror(),chords:compactMirror()};
   const pushEvent = (track,event) => {
-    if(!tracks[track]) tracks[track] = {events:[]};
+    if(!tracks[track]) tracks[track] = compactMirror();
     tracks[track].events.push({step:event.step,tick:Math.round(event.step * MIDI_TICKS_PER_QUARTER / activeResolution()),duration:event.duration ?? 1,velocity:event.velocity ?? 96,articulation:event.articulation || "finger",sound:event.sound || "standard",role:event.role || "support",expression:event.expression || {},technique:event.technique || {},...(event.note !== undefined ? {note:event.note} : {}),...(event.notes ? {notes:event.notes} : {})});
   };
   const lanes = sanitizeDrumLanes(section.drumLanes || {});
@@ -29837,7 +29852,7 @@ function generatedRichTracksForSection(sectionId){
       if(level) pushEvent("drums",{step,duration:1,velocity:level === 2 ? 116 : lane === "hat_closed" ? 74 : 98,articulation:level === 2 ? "accent" : lane === "hat_open" ? "open" : "finger",sound:lane,role:lane === "kick" && step % stepsPerBar() === 0 ? "anchor" : "groove",technique:{drums:{lane}}});
     });
     if(bassStepHasTrigger(section,step) && !(section.bassHold || [])[step] && !(section.bassSlide || [])[step]){
-      const note = state.bassMode === "manual" ? section.bassNotes[step] : ((section.progression[Math.floor(step/stepsPerBar())] || state.availableChords[0])?.degree ?? 0);
+      const note = bassStepMidiAt(section,step);
       const articulation = bassArticulationAt(section,step);
       pushEvent("bass",{step,duration:richEventDurationSteps(section.bassHold,step,stepCount),note,velocity:bassStepAccentAt(section,step) ? 112 : articulation === "mute" ? 72 : 92,articulation,sound:state.bassTone || "classic",role:step % stepsPerBar() === 0 ? "anchor" : articulation === "pop" ? "fill" : "groove",technique:normalizeSoundProfileId(state.audioProfile) === FUNK_AUDIO_PROFILE_ID ? {funk:{hand:articulation === "slap" ? "thumb" : articulation === "pop" ? "index" : "finger"}} : {}});
     }
@@ -29855,7 +29870,8 @@ function generatedRichTracksForSection(sectionId){
     (section.melodyTracks || []).forEach((melody,trackIndex) => {
       if(melody[step] === null || melody[step] === undefined || (section.melodyHold?.[trackIndex] || [])[step] || (section.melodySlide?.[trackIndex] || [])[step]) return;
       const trackName = `melody${trackIndex + 1}`;
-      pushEvent(trackName,{step,duration:richEventDurationSteps(section.melodyHold?.[trackIndex],step,stepCount),note:melody[step],velocity:94,articulation:(section.melodySlide?.[trackIndex] || [])[step+1] ? "slide" : "legato",sound:section.melodyInstruments?.[trackIndex] || "pulse",role:trackIndex === 0 ? "lead" : "response",expression:{pan:section.melodyPan?.[trackIndex] || 0}});
+      const trackOctave = section.melodyOctaves?.[trackIndex] ?? state.melodyOctave ?? 0;
+      pushEvent(trackName,{step,duration:richEventDurationSteps(section.melodyHold?.[trackIndex],step,stepCount),note:melodyIndexToMidi(melody[step],trackOctave),velocity:94,articulation:(section.melodySlide?.[trackIndex] || [])[step+1] ? "slide" : "legato",sound:section.melodyInstruments?.[trackIndex] || "pulse",role:trackIndex === 0 ? "lead" : "response",expression:{pan:section.melodyPan?.[trackIndex] || 0}});
     });
   }
   return tracks;
@@ -29882,7 +29898,13 @@ function buildRichSections(){
     const sourceSection = source[id] || {tracks:{}};
     const mergedSection = mergeProjectValues(sourceSection,{tracks:{}});
     Object.entries(generated).forEach(([trackName,track]) => {
-      const sourceEvents = Array.isArray(sourceSection.tracks?.[trackName]?.events) ? sourceSection.tracks[trackName].events : [];
+      const sourceTrack = sourceSection.tracks?.[trackName];
+      const sourceEvents = Array.isArray(sourceTrack?.events) ? sourceTrack.events : [];
+      const authoredRichSource = sourceEvents.length > 0 && sourceTrack?.compatibility?.compactMirror !== true;
+      if(authoredRichSource){
+        mergedSection.tracks[trackName] = mergeProjectValues(sourceTrack,{compatibility:mergeProjectValues(sourceTrack.compatibility,{compactMirror:false}),events:sourceEvents.map(deepCloneProjectValue)});
+        return;
+      }
       const used = new Set();
       const events = track.events.map(event => {
         const matchIndex = sourceEvents.findIndex((sourceEvent,index) => !used.has(index) && richEventsMatch(event,sourceEvent));
@@ -29892,7 +29914,7 @@ function buildRichSections(){
         return mergeProjectValues(sourceEvent,{...event,expression:mergeProjectValues(sourceEvent.expression,event.expression),technique:mergeProjectValues(sourceEvent.technique,event.technique)});
       });
       sourceEvents.forEach((event,index) => { if(!used.has(index) && richEventNeedsPreservation(event)) events.push(deepCloneProjectValue(event)); });
-      mergedSection.tracks[trackName] = mergeProjectValues(sourceSection.tracks?.[trackName],{events});
+      mergedSection.tracks[trackName] = mergeProjectValues(sourceTrack,{compatibility:mergeProjectValues(sourceTrack?.compatibility,{compactMirror:true}),events});
     });
     Object.entries(sourceSection.tracks || {}).forEach(([trackName,track]) => { if(!generated[trackName]) mergedSection.tracks[trackName] = deepCloneProjectValue(track); });
     out[id] = mergedSection;

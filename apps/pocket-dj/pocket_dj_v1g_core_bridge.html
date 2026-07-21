@@ -781,33 +781,37 @@ function richTrackEvents(section, trackId){
 function richEventStep(event, project=session?.source?.project){
   if(event?.step !== undefined) return asNum(event.step,0);
   if(event?.tick !== undefined){
-    const ppq = Math.max(1, asNum(project?.ppq || project?.ticksPerQuarter || 96,96));
+    const ppq = Math.max(1, asNum(project?.ppq || project?.ticksPerQuarter || 480,480));
     return asNum(event.tick,0) / ppq * (project?.resolution || session?.deck?.resolution || 4);
   }
   return null;
 }
 function richEventsAt(section, trackId, step){
+  if(!richTrackOwnsPlayback(section,trackId)) return [];
   return richTrackEvents(section,trackId).filter(event => {
     const eventStep = richEventStep(event);
     return eventStep !== null && Math.abs(eventStep - step) < .001;
   });
 }
-function richTrackHasEvents(section, trackId){ return richTrackEvents(section,trackId).length > 0; }
+function richTrackOwnsPlayback(section,trackId){
+  const track = section?.richTracks?.[trackId];
+  if(!track || !richTrackEvents(section,trackId).length) return false;
+  const profileId = canonicalProfileId(session?.deck?.soundProfile?.id || session?.deck?.audioProfile);
+  return track.compatibility?.compactMirror !== true || ![STANDARD_AUDIO_PROFILE_ID,LOFI_AUDIO_PROFILE_ID].includes(profileId);
+}
+function richTrackHasEvents(section, trackId){ return richTrackOwnsPlayback(section,trackId); }
 function richEventVelocity(event, fallback=.8){
   const value = event?.velocity === undefined ? fallback : asNum(event.velocity, fallback * 127);
   return clamp(value > 1 ? value / 127 : value,0,1.2);
 }
 function richEventDuration(event, step, fallback){
+  if(event?.durationTicks !== undefined){
+    const project = session?.source?.project || {};
+    const ppq = Math.max(1,asNum(project.ppq || project.ticksPerQuarter || 480,480));
+    return Math.max(.035,spanDuration(step,Math.max(.001,asNum(event.durationTicks,1) / ppq * resolution())));
+  }
   if(event?.duration === undefined) return fallback;
   return Math.max(.035, spanDuration(step, Math.max(.05, asNum(event.duration,1))));
-}
-function richEventNote(event, fallback, track="bass"){
-  const candidate = Array.isArray(event?.notes) ? event.notes[0] : event?.note;
-  if(candidate === undefined || candidate === null || candidate === "") return fallback;
-  const number = asNum(candidate, fallback);
-  if(track === "bass") return number >= 24 ? clamp(number,0,127) : bassManualIndexToMidi(number);
-  if(track === "melody") return number >= 24 ? clamp(number,0,127) : melodyIndexToMidi(number,0);
-  return number >= 24 ? clamp(number,0,127) : number;
 }
 function supportedFeatureSet(){ return new Set(POCKET_DJ_CAPABILITIES.features); }
 function capabilityReportForProject(project){
@@ -2036,13 +2040,9 @@ function chordDurationForStep(section, step){
 }
 function richEventNotes(event, track, section, step){
   const raw = Array.isArray(event?.notes) ? event.notes : event?.note === undefined ? [] : [event.note];
-  if(track === "chords" && raw.length) return raw.map(value => {
-    const number = asNum(value,0);
-    return number >= 24 ? clamp(number,0,127) : chordMidiNotes(currentChord(section,step),session.deck.chordOctave || 0)[Math.abs(Math.round(number)) % 3];
-  });
-  if(track === "melody") return raw.length ? raw.map(value => asNum(value,0) >= 24 ? clamp(asNum(value,0),0,127) : melodyIndexToMidi(value,0)) : [];
-  if(track === "guitar") return raw.length ? raw.map(value => asNum(value,0) >= 24 ? clamp(asNum(value,0),0,127) : powerChordNotes(currentChord(section,step))[Math.abs(Math.round(value)) % 3]) : powerChordNotes(currentChord(section,step));
-  return raw.length ? raw.map(value => asNum(value,0) >= 24 ? clamp(asNum(value,0),0,127) : bassManualIndexToMidi(value)) : [bassMidiAt(section,step)];
+  if(raw.length) return raw.map(value => clamp(asNum(value,0),0,127));
+  if(track === "guitar") return powerChordNotes(currentChord(section,step));
+  return track === "bass" ? [bassMidiAt(section,step)] : [];
 }
 function scheduleRichDrumEvents(section, step, time){
   if(session.performance.stemMutes.drums) return;

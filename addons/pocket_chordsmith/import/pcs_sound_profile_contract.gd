@@ -139,13 +139,22 @@ static func negotiate(value, capabilities := {}) -> Dictionary:
 				for namespace_id in technique.keys():
 					if not caps["techniqueNamespaces"].has(str(namespace_id)):
 						_add_loss(report, "%s.technique.%s" % [path, str(namespace_id)], "technique:%s" % str(namespace_id), "preserved", "", "Unknown technique namespace is preserved for a later-capable consumer.")
-				if str(track_id) in DRUM_LANES and not caps["drumLanes"].has(str(track_id)):
-					_add_loss(report, "%s.track" % path, "drum-lane:%s" % str(track_id), "fallback", str(FALLBACK_DRUM_LANES.get(str(track_id), "percussion")), "Drum lane is preserved but preview uses the nearest supported lane.")
+				var drum_lane := _event_drum_lane(str(track_id), track, event)
+				if not drum_lane.is_empty() and not caps["drumLanes"].has(drum_lane):
+					_add_loss(report, "%s.lane" % path, "drum-lane:%s" % drum_lane, "fallback", str(FALLBACK_DRUM_LANES.get(drum_lane, "percussion")), "Drum lane is preserved but preview uses the nearest supported lane.")
 				previous_event = event
 	var losses: Array = report["losses"]
 	losses.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return str(a.get("path", "")) < str(b.get("path", "")))
 	report["ok"] = losses.is_empty()
 	return report
+
+
+static func _event_drum_lane(track_id: String, track: Dictionary, event: Dictionary) -> String:
+	var role := str(track.get("role", track.get("stem", track_id))).to_lower()
+	if role not in ["drum", "drums"] and role not in DRUM_LANES:
+		return ""
+	var lane := str(event.get("lane", event.get("drumLane", event.get("sound", role if role in DRUM_LANES else ""))))
+	return lane if lane in DRUM_LANES else ""
 
 
 static func _add_loss(report: Dictionary, path: String, feature: String, action: String, fallback: String, message: String) -> void:

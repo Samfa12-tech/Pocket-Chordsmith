@@ -198,7 +198,7 @@ func _compile_rich_events(project: Dictionary, section_id: String, arrangement_i
 				continue
 			var source_step := int(rich.get("step", -1)) if rich.has("step") else -1
 			var local_tick := int(rich.get("tick", 0)) if rich.has("tick") else _step_to_tick(project, max(0, source_step))
-			var duration_value := rich.get("duration_ticks", null)
+			var duration_value := rich.get("durationTicks", rich.get("duration_ticks", null))
 			var duration_ticks := int(duration_value) if duration_value != null else int(rich.get("duration", 1)) * (_ticks_per_step(project) if source_step >= 0 else 1)
 			var notes_source: Array = rich.get("notes", []) if rich.get("notes", []) is Array else []
 			var note_source := rich.get("note", null)
@@ -206,7 +206,7 @@ func _compile_rich_events(project: Dictionary, section_id: String, arrangement_i
 				notes_source = [note_source]
 			var midi_notes: Array[int] = []
 			for note_value in notes_source:
-				var midi := _rich_note_to_midi(project, section_id, track_type, note_value)
+				var midi := _rich_note_to_midi(note_value)
 				if midi >= 0:
 					midi_notes.append(midi)
 			var midi_note := int(midi_notes[0]) if not midi_notes.is_empty() else -1
@@ -263,16 +263,12 @@ func _rich_track_type(track_key: String, event: Dictionary) -> String:
 	return value if value in ["bass", "chord", "guitar", "melody"] else ""
 
 
-func _rich_note_to_midi(project: Dictionary, section_id: String, track_type: String, value) -> int:
+func _rich_note_to_midi(value) -> int:
 	if value == null:
 		return -1
 	var note_value := int(value)
 	if note_value < 0:
 		return -1
-	if track_type == "bass":
-		return _bass_manual_index_to_midi(project, note_value) if note_value < 24 else clamp(note_value, 0, 127)
-	if track_type == "melody":
-		return _melody_index_to_midi(project, note_value, 0) if note_value < 24 else clamp(note_value, 0, 127)
 	return clamp(note_value, 0, 127)
 
 

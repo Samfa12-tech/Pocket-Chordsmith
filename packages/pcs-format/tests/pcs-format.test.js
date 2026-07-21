@@ -281,8 +281,10 @@ test("summarizes sections object shape when present", () => {
 });
 
 test("validates schema 17 rich intent and retains all unknown data", () => {
-  const result = validatePcsProject(rich);
-  const parsed = parsePcsProject(encodePcsProject(rich));
+  const withTickDuration = structuredClone(rich);
+  withTickDuration.sections.A.tracks.bass.events[0].durationTicks = 240;
+  const result = validatePcsProject(withTickDuration);
+  const parsed = parsePcsProject(encodePcsProject(withTickDuration));
 
   assert.equal(result.ok, true);
   assert.equal(result.schemaVersion, PCS_SCHEMA_VERSION);
@@ -295,6 +297,7 @@ test("validates schema 17 rich intent and retains all unknown data", () => {
     true,
   );
   assert.equal(parsed.project.soundProfile.unknownProfileField, "keep");
+  assert.equal(parsed.project.sections.A.tracks.bass.events[0].durationTicks, 240);
 });
 
 test("rejects invalid schema 17 sound profiles and rich events", () => {
@@ -317,6 +320,15 @@ test("migrates schema 16 deterministically into normalized schema 17 tracks", ()
   assert.equal(first.project.sections.A.tracks.bass.events[0].note, 36);
   assert.equal(first.project.sections.A.drumLanes.kick[0].sound, "kick");
   assert.equal(first.project.unknownFutureField.keep, true);
+});
+
+test("migrates Chordsmith compact pitch indexes to schema 17 MIDI notes", () => {
+  const result = migratePcsProject(currentAppDemo);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.project.sections.A.tracks.melody_1.events[0].note, 81);
+  assert.equal(result.project.sections.A.tracks.bass.events[0].note, 45);
+  assert.equal(validatePcsProject(result.project).ok, true);
 });
 
 test("projects rich schema 17 to schema 16 with explicit semantic loss", () => {
@@ -372,4 +384,20 @@ test("accepts namespaced technique objects when a target advertises the namespac
   assert.equal(result.ok, true);
   assert.deepEqual(result.required.techniqueNamespaces, ["funk"]);
   assert.equal(result.lossReport.lossy, false);
+});
+
+test("detects drum capabilities in combined rich drum tracks", () => {
+  const project = structuredClone(rich);
+  project.sections.A.tracks.drums = {
+    events: [{ step: 0, duration: 1, lane: "crash", sound: "crash", velocity: 110, articulation: "accent" }],
+  };
+  const result = negotiatePcsCapabilities(project, {
+    formatFeatures: project.formatFeatures,
+    soundProfiles: ["funk_groove"],
+    articulations: PCS_ARTICULATIONS,
+    drumLanes: ["kick"],
+    techniqueNamespaces: ["funk"],
+  });
+
+  assert.ok(result.unsupported.some((loss) => loss.kind === "drumLane" && loss.value === "crash"));
 });

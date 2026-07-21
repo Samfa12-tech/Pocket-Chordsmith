@@ -1105,6 +1105,9 @@ test("schema 17 Funk projects preserve rich intent, unknown namespaces, and reve
     const bassEvent = authored.sections.A.tracks.bass.events.find(
       (event) => event.articulation === "slap",
     );
+    const chordEvent = authored.sections.A.tracks.chords.events[0];
+    const section = getSectionData("A", true);
+    const chord = section.progression[Math.floor(chordEvent.step / stepsPerBar())] || state.availableChords[0];
     bassEvent.unknownEventField = "keep-event";
     bassEvent.technique.vendorFuture = { keep: { nested: true } };
 
@@ -1123,6 +1126,11 @@ test("schema 17 Funk projects preserve rich intent, unknown namespaces, and reve
     return {
       roundTrip,
       roundTripBass,
+      authoredBassNote: bassEvent.note,
+      authoredChordNotes: chordEvent.notes,
+      bassPitchMatchesLive: bassEvent.note === bassStepMidiAt(section, bassEvent.step),
+      chordPitchesMatchLive: JSON.stringify(chordEvent.notes) === JSON.stringify(chordNotes(chord)),
+      compactMirror: authored.sections.A.tracks.bass.compatibility.compactMirror,
       legacyVersion: legacy.project.projectVersion,
       legacyCompatibility: legacy.project.compatibility,
       report: legacy.lossReport,
@@ -1147,6 +1155,12 @@ test("schema 17 Funk projects preserve rich intent, unknown namespaces, and reve
     ]),
   );
   expect(result.roundTrip.vendorFuture).toEqual({ keep: ["root", 17] });
+  expect(result.authoredBassNote).toBeGreaterThanOrEqual(0);
+  expect(result.authoredBassNote).toBeLessThanOrEqual(127);
+  expect(result.authoredChordNotes.every((note) => note >= 0 && note <= 127)).toBe(true);
+  expect(result.bassPitchMatchesLive).toBe(true);
+  expect(result.chordPitchesMatchLive).toBe(true);
+  expect(result.compactMirror).toBe(true);
   expect(result.roundTripBass.unknownEventField).toBe("keep-event");
   expect(result.roundTripBass.technique.vendorFuture.keep.nested).toBe(true);
   expect(result.legacyVersion).toBe(16);
@@ -1161,6 +1175,30 @@ test("schema 17 Funk projects preserve rich intent, unknown namespaces, and reve
   expect(result.restored.projectVersion).toBe(17);
   expect(result.restored.soundProfile.id).toBe("funk_groove");
   expect(result.restoredBass.technique.vendorFuture.keep.nested).toBe(true);
+});
+
+test("authored rich tracks retain exact ticks without generated mirror duplicates", async ({ page }) => {
+  const result = await page.evaluate(() => {
+    applyFunkPresetToProject("funk_classic_pocket", { fullLoop: false });
+    const project = exportProject({ targetSchema: 17 });
+    const track = project.sections.A.tracks.bass;
+    track.compatibility = { compactMirror: false };
+    const event = track.events[0];
+    delete event.step;
+    event.tick = 6;
+    event.durationTicks = 240;
+    event.vendorTiming = { exact: true };
+    track.events = [event];
+
+    importProject(project);
+    const roundTrip = exportProject({ targetSchema: 17 });
+    return roundTrip.sections.A.tracks.bass;
+  });
+
+  expect(result.compatibility.compactMirror).toBe(false);
+  expect(result.events).toHaveLength(1);
+  expect(result.events[0]).toMatchObject({ tick: 6, durationTicks: 240, vendorTiming: { exact: true } });
+  expect(result.events[0].step).toBeUndefined();
 });
 
 test("all Metal and Funk profile parameters produce distinct renderer recipes", async ({ page }) => {

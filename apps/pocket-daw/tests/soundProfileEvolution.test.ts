@@ -32,7 +32,7 @@ function funkSchema17() {
               {
                 step: 0,
                 duration: 1,
-                note: 0,
+                note: 36,
                 velocity: 112,
                 articulation: "slap",
                 sound: "funk_slap_pop",
@@ -41,7 +41,7 @@ function funkSchema17() {
                 technique: { funk: { hand: "thumb", pocketOffset: 0.08 }, futureStyle: { keep: true } },
                 futureEventField: "preserve"
               },
-              { tick: 240, duration: 240, note: 7, velocity: 72, articulation: "pop", sound: "funk_slap_pop", expression: {}, technique: { funk: { hand: "finger" } } }
+              { tick: 240, duration: 240, note: 43, velocity: 72, articulation: "pop", sound: "funk_slap_pop", expression: {}, technique: { funk: { hand: "finger" } } }
             ]
           },
           drums: {
@@ -81,6 +81,7 @@ describe("Pocket DAW sound-profile evolution", () => {
       technique: { futureStyle: { keep: true } }
     });
     expect(events.some((event) => event.kind === "bass" && event.articulation === "slap" && event.sound === "funk_slap_pop" && event.performanceRole === "anchor")).toBe(true);
+    expect(events.find((event) => event.kind === "bass" && event.articulation === "slap")?.midi).toBe(36);
     expect(events.some((event) => event.kind === "snare" && event.articulation === "ghost" && event.technique?.funk)).toBe(true);
     expect(events.some((event) => event.kind === "crash" && event.sound === "china")).toBe(true);
     expect(report.lossCount).toBeGreaterThan(0);
@@ -105,6 +106,27 @@ describe("Pocket DAW sound-profile evolution", () => {
     expect(sanitized.soundProfile.id).toBe("chip_arcade");
     expect(sanitized.audioProfile).toBe("chip_arcade");
     expect(sanitized.sections.A.active).toBe(true);
+  });
+
+  it("defers marked compact mirrors but renders unmarked authored rich tracks", () => {
+    const renderBass = (compatibility?: Record<string, unknown>) => {
+      const source = funkSchema17() as Record<string, any>;
+      source.soundProfile = { id: "standard", preset: "standard_chordsmith", recipeVersion: 1, parameters: {} };
+      source.audioProfile = "standard";
+      source.bassMode = "manual";
+      source.bassNotesA = [0];
+      source.sections.A.tracks.bass = {
+        ...(compatibility ? { compatibility } : {}),
+        events: [{ step: 0, duration: 1, ...(compatibility ? {} : { durationTicks: 240 }), note: compatibility ? 99 : 61, velocity: 100, articulation: "finger" }]
+      };
+      return renderTimelineEvents(createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject(source)))
+        .filter((event) => event.kind === "bass");
+    };
+
+    expect(renderBass({ compactMirror: true }).some((event) => event.midi === 99)).toBe(false);
+    const authored = renderBass();
+    expect(authored.map((event) => event.midi)).toEqual([61]);
+    expect(authored[0].duration).toBeCloseTo((240 / 480) * (60 / 104), 5);
   });
 
   it("includes profile recipes, parameters, articulations, and technique fields in native cache signatures", () => {
