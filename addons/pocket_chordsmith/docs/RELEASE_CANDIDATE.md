@@ -1,0 +1,52 @@
+# Pocket Chordsmith Release Candidate Guide
+
+## You Do
+
+- Choose the public version label and release name.
+- Confirm the license and any third-party sample/stem licensing language.
+- Test in the Godot versions you want to officially support.
+- Test one real exported build target, especially Web or mobile if that is part of the promise.
+- Record or capture a short demo showing JSON import, generated sound kit, conductor signals, and adaptive state switching.
+- Write the itch/GitHub release description in your own voice.
+
+## Codex/Addon Automation Does
+
+- Compile JSON or share-code exports into `PCSChartResource`.
+- Generate the web-style sample kit and HYBRID playback profile.
+- Refresh the sample kit package report when preview assets or packaging rules change.
+- Validate chart/profile runtime readiness.
+- Export an integration report.
+- Package the clean addon zip.
+- Keep runtime playback chart-driven and free of JSON parsing.
+
+## RC Smoke Test
+
+From a project containing the addon:
+
+```text
+godot --headless --path <project> --editor --quit
+godot --headless --path <project> res://addons/pocket_chordsmith/demos/demo_music_level.tscn --quit-after 2
+```
+
+Validate a compiled chart:
+
+```text
+godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/validate_pocket_chordsmith_runtime.gd -- --chart res://path/to/chart.tres --profile res://addons/pocket_chordsmith/audio/web_kit/pocket_chordsmith_web_kit_profile.tres --report res://pocket_chordsmith_integration_report.md
+```
+
+Run the complete deterministic gate in `HEADLESS_VALIDATION.md` when chart compile/import, DAW pack import, runtime validation, direct browser push, or receiver behavior changes.
+
+For Godot Asset Library submission, use the verified addon-only release branch/tag. Do not use a normal monorepo commit or source archive: the download tree must contain only `addons/pocket_chordsmith/` and must exclude `.uid`, `.import`, `.godot`, generated caches, and export builds.
+
+## RC Exit Criteria
+
+- Addon enables without editor errors.
+- Demo scene opens and runs.
+- A legacy schema-16 JSON/share code compiles through compatibility migration.
+- A schema-17 Funk project compiles with profile identity, expressive events, expanded drum lanes, and unknown technique intent preserved.
+- A compiled chart validates with no errors.
+- Runtime conductor emits beat/bar/section/marker/accent/event signals.
+- Generated HYBRID profile triggers sample hits.
+- STEM_SYNC warns clearly when stems are missing.
+- Direct Push-to-Godot is either verified against a named browser/Godot build or explicitly recorded as fallback-only.
+- No runtime gameplay code parses Pocket Chordsmith JSON.

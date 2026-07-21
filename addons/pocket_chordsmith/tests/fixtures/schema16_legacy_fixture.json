@@ -1,0 +1,11 @@
+{
+  "projectVersion": 16,
+  "audioProfile": "chip_tune",
+  "chipPreset": "chip_arcade_start",
+  "bpm": 128,
+  "timeSig": 4,
+  "resolution": 2,
+  "sectionBars": {"A": 1},
+  "songSequence": ["A"],
+  "gridA": {"kick": [2, 0, 1, 0], "snare": [0, 0, 2, 0], "hat": [1, 1, 1, 1], "bass": [1, 0, 1, 0]}
+}

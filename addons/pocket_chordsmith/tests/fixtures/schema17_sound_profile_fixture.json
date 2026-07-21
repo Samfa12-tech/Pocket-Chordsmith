@@ -1,0 +1,64 @@
+{
+  "projectVersion": 17,
+  "formatFeatures": [
+    "sound-profile-v1",
+    "rich-events-v1",
+    "articulations-v1",
+    "expanded-drums-v1",
+    "capability-report-v1"
+  ],
+  "soundProfile": {
+    "id": "funk_groove",
+    "preset": "funk_classic_pocket",
+    "parameters": {
+      "pocket": 0.78,
+      "ghostNotes": 0.42
+    },
+    "recipeVersion": 1
+  },
+  "bpm": 98,
+  "timeSig": 4,
+  "resolution": 4,
+  "sectionBars": {"A": 1},
+  "songSequence": ["A"],
+  "sections": {
+    "A": {
+      "bars": 1,
+      "tracks": {
+        "bass": {
+          "events": [
+            {
+              "step": 0,
+              "duration": 1,
+              "note": 36,
+              "velocity": 112,
+              "articulation": "slap",
+              "sound": "funk_slap_pop",
+              "role": "anchor",
+              "expression": {"ghostDepth": 0.12, "futureExpression": {"vendor": "fixture"}},
+              "technique": {"funk": {"hand": "thumb"}, "futureTechnique": {"kept": true}}
+            },
+            {
+              "step": 2,
+              "duration": 1,
+              "durationTicks": 240,
+              "note": 43,
+              "velocity": 82,
+              "articulation": "pop",
+              "sound": "funk_slap_pop",
+              "role": "answer"
+            }
+          ]
+        },
+        "drums": {
+          "events": [
+            {"step": 0, "duration": 1, "lane": "kick", "velocity": 118, "articulation": "accent"},
+            {"step": 2, "duration": 1, "lane": "hat_closed", "velocity": 48, "articulation": "ghost"},
+            {"step": 15, "duration": 1, "lane": "crash", "velocity": 100, "articulation": "accent"}
+          ]
+        }
+      }
+    }
+  },
+  "unknownTopLevel": {"mustSurvive": true}
+}
