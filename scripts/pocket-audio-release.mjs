@@ -5,7 +5,7 @@ const args = parseArgs(process.argv.slice(2));
 
 try {
   if (args.command !== "batch") {
-    throw new Error("Usage: node bin/pocket-audio-release.js batch --input \"packs/*.json\" --out release/out --profile spotify_lofi_chill --scope sequence --export wav24,stems,report");
+    throw new Error("Usage: node scripts/pocket-audio-release.mjs batch --input \"packs/*.json\" --out local-artifacts/staging/mastering/out --profile spotify_lofi_chill --scope sequence --export wav24,stems,report");
   }
   const result = await batchMasterRelease(args);
   console.log(JSON.stringify({

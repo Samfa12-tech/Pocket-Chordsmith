@@ -2,8 +2,6 @@
 extends SceneTree
 
 const ADDON_DIR := "res://addons/pocket_chordsmith"
-const DEFAULT_VERSION := "1.2.0"
-const DEFAULT_OUTPUT := "res://pocket_chordsmith_godot_addon_%s.zip" % DEFAULT_VERSION
 const EXCLUDED_PACKAGE_DIRS := {
 	"_trace_compare": true,
 }
@@ -16,7 +14,12 @@ func _init() -> void:
 		quit(0)
 		return
 
-	var output_path := str(args.get("output", DEFAULT_OUTPUT))
+	var output_path := str(args.get("output", ""))
+	if output_path.is_empty():
+		push_error("An explicit versioned --output path is required; do not write addon packages to the project root.")
+		_print_usage()
+		quit(1)
+		return
 	var include_import_metadata := bool(args.get("include_import_metadata", false))
 	var result := package_addon(output_path, include_import_metadata)
 
@@ -32,7 +35,7 @@ func _init() -> void:
 	quit(0 if bool(result.get("ok", false)) else 1)
 
 
-static func package_addon(output_path: String = DEFAULT_OUTPUT, include_import_metadata := false) -> Dictionary:
+static func package_addon(output_path: String, include_import_metadata := false) -> Dictionary:
 	var result := {"ok": false, "output_path": output_path, "file_count": 0, "files": [], "warnings": [], "errors": []}
 	var files := _collect_files(ADDON_DIR, include_import_metadata)
 	if files.is_empty():
@@ -134,4 +137,4 @@ func _parse_args(args: PackedStringArray) -> Dictionary:
 func _print_usage() -> void:
 	print("Pocket Chordsmith addon packager")
 	print("Usage:")
-	print("  godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd -- [--output <zip-path>] [--include-import-metadata]")
+	print("  godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd -- --output <versioned-zip-path> [--include-import-metadata]")

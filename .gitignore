@@ -35,12 +35,7 @@ test-results/
 playwright-report/
 .codex-server-logs/
 
-# Local source workspaces kept only as import references after consolidation.
-/archive/
-/godot-addon/
-/marketing-assets/
-/pocket_audio_core_handoff/
-/pocket_dj/
-/pocket-daw/
-/release/
-/releases/
+# Local-only source references, evidence, packages, and scratch output.
+# See docs/LOCAL_ARTIFACTS_POLICY.md. Do not recreate the retired root folders
+# such as archive/, release/, releases/, godot-addon/, or marketing-assets/.
+/local-artifacts/

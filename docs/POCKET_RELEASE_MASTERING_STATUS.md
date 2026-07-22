@@ -13,7 +13,7 @@ The schema-16 Pocket Chordsmith lofi/chill release-mastering phase is complete e
 Sam uploaded the final Lofi & Chill CD Baby WAV set on 2026-07-01. The local closeout archive is:
 
 ```text
-release/archive/cd-baby/lofi-and-chill-cd-baby-uploaded-2026-07-01.zip
+local-artifacts/archive/music/cd-baby/lofi-and-chill-cd-baby-uploaded-2026-07-01.zip
 ```
 
 Archive SHA-256:
@@ -48,7 +48,7 @@ Samfa12's Compilation Album #1 was harvested on 2026-07-01 from Pocket Chordsmit
 The harvest found 71 usable source cues/songs. The curated album set uses 18 tracks, with every selected source expanded to at least 120 seconds before rendering. The closeout archive is:
 
 ```text
-release/archive/samfa12-compilation-album-1/
+local-artifacts/archive/music/samfa12-compilation-album-1/
 ```
 
 Archived packages and SHA-256 checksums:
@@ -68,8 +68,8 @@ Archive contents:
 Loose direct-open Pocket DAW copies and CD Baby WAVs are also kept here:
 
 ```text
-release/archive/samfa12-compilation-album-1/pocketdaw-projects/
-release/archive/samfa12-compilation-album-1/cdbaby-wav16/
+local-artifacts/archive/music/samfa12-compilation-album-1/pocketdaw-projects/
+local-artifacts/archive/music/samfa12-compilation-album-1/cdbaby-wav16/
 ```
 
 Keep both folders. The first contains the 18 album `.pocketdaw` projects extracted from the source archive so they can be opened directly in Pocket DAW without unpacking the full evidence ZIP. The second contains the 18 CD Baby-ready 16-bit / 44.1 kHz stereo WAVs extracted from the CD Baby delivery package so they can be uploaded or auditioned directly.
@@ -83,6 +83,6 @@ Final compilation QC:
 - all delivery WAVs are stereo 44.1 kHz;
 - WARN tracks are transient-limited/preserved-dynamics notes under the profile limiter policy, not invalid exports.
 
-The rebuildable working folder `releases/samfa12-compilation-album-1/` was deleted after archive verification to reclaim about 3.8 GB. The store metadata template is included in the delivery packages, but final legal/store values such as songwriter, genre, cover art, and ISRC still need human confirmation before submission.
+The rebuildable staging folder was deleted after archive verification to reclaim about 3.8 GB. The store metadata template is included in the delivery packages, but final legal/store values such as songwriter, genre, cover art, and ISRC still need human confirmation before submission.
 
 Do not mark the mastering assistant as broadly solid yet. Further real-world testing is required with recorded/live instruments, vocals, wider panning choices, denser arrangements, phase-heavy stereo sources, and non-lofi material before using it as a general release-mastering system.

@@ -10,7 +10,7 @@ Measured on 2026-07-22 from the default addon package selection rules in `tools/
 | --- | ---: | ---: | --- |
 | Default addon package input | 129 files | about 3.01 MiB | Excludes `.uid`, `.import`, hidden files, `_trace_compare/`, and `tmp_*` files. |
 | `audio/web_kit/` | 61 files | 2,265,227 | 60 generated WAVs plus `pocket_chordsmith_web_kit_profile.tres`. |
-| Compressed addon ZIP | 1 ZIP | about 2.09 MiB | Measured from `releases/godot-addon/pocket_chordsmith_godot_addon_1.2.0.zip` built by `tools/package_pocket_chordsmith_addon.gd`; exact bytes vary because this report is packaged inside the ZIP. |
+| Compressed addon ZIP | 1 ZIP | about 2.09 MiB | Measured from `local-artifacts/archive/packages/godot-addon/pocket_chordsmith_godot_addon_1.2.0.zip` built by `tools/package_pocket_chordsmith_addon.gd`; exact bytes vary because this report is packaged inside the ZIP. |
 
 The web kit is intentionally bundled because it lets a new Godot project audition charts without finding third-party samples first. Version 1.2.0 adds schema-17 profile and expressive-event preservation plus safe Funk, Western, Chiptune, and Heavy Metal preview aliases, but this remains a preview/onboarding kit rather than a bit-identical WebAudio renderer.
 

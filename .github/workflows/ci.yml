@@ -32,18 +32,7 @@ jobs:
       - name: Repository hygiene
         shell: bash
         run: |
-          test -f addons/pocket_chordsmith/plugin.cfg
-          test -f apps/chordsmith-web/index.html
-          test -f apps/pocket-dj/index.html
-          test -f apps/pocket-daw/package.json
-          if find addons apps packages docs -type d -name .git | grep .; then
-            echo "Nested git repositories found under canonical source roots."
-            exit 1
-          fi
-          if git ls-files | grep -E '(^|/)(node_modules|dist|target|src-tauri/target)(/|$)|\.(zip|exe|msi)$'; then
-            echo "Generated or release artifacts are tracked."
-            exit 1
-          fi
+          node scripts/check-repo-organization.mjs
 
       - name: Install Pocket DAW dependencies for family parity
         working-directory: apps/pocket-daw

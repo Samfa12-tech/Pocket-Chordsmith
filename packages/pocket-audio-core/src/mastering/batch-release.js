@@ -28,7 +28,7 @@ export async function batchMasterRelease(options) {
   const profile = getReleaseProfile(batchOptions.profile || "spotify_lofi_chill");
   const inputPaths = await resolveInputPaths(batchOptions.input || batchOptions.inputs || []);
   if (!inputPaths.length) throw new Error("No input project JSON files matched.");
-  const outDir = resolve(batchOptions.out || "release/pocket-release");
+  const outDir = resolve(batchOptions.out || "local-artifacts/staging/pocket-release");
   await prepareOutput(outDir);
   const reports = [];
   const failures = [];

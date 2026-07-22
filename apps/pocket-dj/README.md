@@ -50,7 +50,7 @@ npm run package:itch
 
 `npm run package:itch` builds `packages/pocket-audio-core`, stages a clean Pocket
 DJ web package under `dist/itch-package/`, and writes
-`releases/pocket-dj/pocket-dj-web.zip`. The zip includes `index.html`,
+`local-artifacts/staging/pocket-dj/pocket-dj-web.zip`. The zip includes `index.html`,
 `pocket_dj_v1g_core_bridge.html`, and packaged `pocket-audio-core/src` plus
 `pocket-audio-core/dist` fallback files so hosted builds can load Pocket Audio
 Core from `./pocket-audio-core/...`.
