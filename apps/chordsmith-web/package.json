@@ -27,6 +27,7 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test:e2e": "playwright test",
+    "test:composer": "node scripts/verify-genre-composer-fixtures.mjs",
     "format": "prettier . --write",
     "package:itch": "npm run build && node scripts/package-itch.mjs"
   },

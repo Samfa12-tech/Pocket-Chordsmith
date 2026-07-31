@@ -1,6 +1,6 @@
 # Pocket Chordsmith
 
-Pocket Chordsmith is a single-file, mobile-first music sketchpad for building chord progressions, beats, basslines, melodies, arrangements, MIDI exports, and WAV exports in the browser.
+Pocket Chordsmith is a mobile-first music sketchpad for building chord progressions, beats, basslines, melodies, editable full-song arrangements, MIDI exports, and WAV exports in the browser.
 
 The current app build is `pocket_chordsmith_v68_core_bridge.html`. `index.html` redirects to it so the project can be uploaded as a simple web app bundle, including on itch.io.
 
@@ -28,6 +28,8 @@ License/status: source-available app, `UNLICENSED`. See the repository root
 - `demo.json` - standalone demo project data.
 - `background.png` - promotional/background artwork for store pages or future app surfaces.
 - `skills/pocket-chordsmith-composer/SKILL.md` - Codex skill for creating import-ready Pocket Chordsmith project JSON.
+- `src/genre-composer.js` - dependency-free deterministic genre song planner.
+- `docs/GENRE_COMPOSER.md` - genre archetypes, seed behavior, fixtures, and listening checklist.
 - `POCKET_CHORDSMITH_CODEX_CONTEXT.md` - stable Codex/AI development context covering app rules, compatibility expectations, feature behaviour, testing checklists, and update discipline.
 
 ## Local Use
@@ -65,7 +67,7 @@ and the Pocket Chordsmith Godot addon.
 
 ## Lofi Chill Pack
 
-`pocket_chordsmith_v68_core_bridge.html` includes a procedural lofi/chillhop profile for loopable study and chill-game background music. Simple mode exposes friendly `Lofi Chill` and `Lofi Game Loop` actions. Advanced mode exposes the lofi preset, lofi drum kit, lofi bass tone, and subtle texture controls.
+`pocket_chordsmith_v68_core_bridge.html` includes a procedural lofi/chillhop profile for loopable study and chill-game background music. Simple mode exposes `Compose Lofi Song`; the Advanced Genre Studio separates Current Section, Apply Sound Profile, Compose Full Song, and Game Loop actions. Advanced mode exposes the lofi preset, lofi drum kit, lofi bass tone, and subtle texture controls.
 
 The new lofi fields are optional and schema `16` stays backwards compatible. JSON export/import and `PCS1:` share codes preserve lofi profile metadata; MIDI export remains note-focused and does not encode vinyl/tape texture.
 
@@ -75,21 +77,34 @@ See `../../docs/LOFI_CHILL_PACK_IMPLEMENTATION.md` for the shared preset IDs, co
 
 ## Chip Tune Pack
 
-`pocket_chordsmith_v68_core_bridge.html` also includes a procedural `chip_tune` profile with classic square/triangle/noise colors, modern chip punch, phat bass, and harmonised lead/chord jams. Simple mode exposes friendly `Chip Tune` and `Chip Game Loop` actions. Advanced mode exposes chip preset, kit, bass, and texture controls.
+`pocket_chordsmith_v68_core_bridge.html` also includes a procedural `chip_tune` profile with classic square/triangle/noise colors, modern chip punch, phat bass, and harmonised lead/chord jams. Simple mode exposes `Compose Chip Tune`; the Advanced Genre Studio keeps full-song composition and loop generation explicit. Advanced mode exposes chip preset, kit, bass, and texture controls.
 
 Three import-ready chip demos live in `demos/`: `chip_bug_maze_pulse_loop.json`, `chip_arcade_start_loop.json`, and `chip_menu_glow_loop.json`.
 
 ## Heavy Metal Pack
 
-`pocket_chordsmith_v68_core_bridge.html` includes a procedural `heavy_metal` profile with classic chug, thrash gallop, doom, power anthem, boss blast, and breakdown presets. Simple mode exposes `Heavy Metal`; Advanced Settings -> Genre exposes the full Heavy Metal panel with preset, drum kit, bass tone, and texture controls.
+`pocket_chordsmith_v68_core_bridge.html` includes a procedural `heavy_metal` profile with classic chug, thrash gallop, doom, power anthem, boss blast, and breakdown presets. Simple mode exposes `Compose Metal Song`; Advanced Settings -> Genre exposes distinct profile, current-section, full-song, and game-loop actions alongside preset, drum kit, bass tone, and texture controls.
 
+## Genre Composer
+
+The current v68 source update turns the five prominent genre buttons into
+multi-section, deterministic full-song composers. Metal, Lofi, Western,
+Chiptune, and Funk each receive explicit archetypes, BPM ranges, shared motifs,
+section roles, energy curves, and role-specific instrument policies. Existing
+Current Section actions remain in the Genre Studio, while sound-profile,
+full-song, and game-loop actions are explicit secondary choices.
+
+Enter a seed in Genre Studio to reproduce a song. Generated project JSON stores
+optional `genreComposition` planning metadata alongside the normal editable
+Chordsmith section data. See `docs/GENRE_COMPOSER.md` for reference seeds,
+commands, compatibility details, and the manual listening checklist.
 ## Release Notes
 
 ### v68 Pocket Audio Core Bridge
 
 - New file/version: `pocket_chordsmith_v68_core_bridge.html`; `index.html` now redirects to v68.
 - Updated to Pocket Audio Core `0.2.0` with PCS schema-17 expressive events and canonical sound profiles.
-- Project schema remains `16`.
+- Project schema is `17`; schema `16` remains the explicit legacy compatibility projection.
 - Pocket Audio Core now handles local shared project load/timeline diagnostics and mirrors transport start/stop when the repo-local core module is available.
 - WAV export tries the Pocket Audio Core renderer first when available, then falls back to the legacy OfflineAudioContext exporter.
 - Known limitations: live audible playback, preview sounds, MIDI import/export, grid editing, Godot push, and rich editor behavior still use the existing Chordsmith app code; the core renderer is a first-pass deterministic renderer and is not yet sound-parity signed off.

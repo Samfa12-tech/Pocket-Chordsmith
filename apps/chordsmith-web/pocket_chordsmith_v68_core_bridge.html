@@ -282,7 +282,7 @@
         <button class="pill" id="settingsBtn">Settings</button>
       </div>
       <div class="group">
-        <label class="sub">BPM <input class="num" id="bpmInput" type="number" min="60" max="180" value="96"></label>
+        <label class="sub">BPM <input class="num" id="bpmInput" type="number" min="60" max="240" value="96"></label>
         <label class="sub">Swing <input id="swingInput" type="range" min="0" max="0.3" step="0.01" value="0"></label>
         <span class="sub" id="swingValue">0%</span>
       </div>
@@ -307,14 +307,14 @@
         <div class="label" style="margin:0">Progression</div>
         <div class="group">
           <button class="pill" id="randomIdeaBtn">Random idea</button>
-          <button class="pill good" id="lofiChillBtn">Lofi Chill</button>
+          <button class="pill good" id="lofiChillBtn">Compose Lofi Song</button>
           <button class="pill adv-only" id="lofiGameLoopBtn">Lofi Game Loop</button>
-          <button class="pill good" id="chipTuneBtn">Chip Tune</button>
+          <button class="pill good" id="chipTuneBtn">Compose Chip Tune</button>
           <button class="pill adv-only" id="chipGameLoopBtn">Chip Game Loop</button>
-          <button class="pill good" id="metalChugBtn">Heavy Metal</button>
+          <button class="pill good" id="metalChugBtn">Compose Metal Song</button>
           <button class="pill adv-only" id="metalGameLoopBtn">Metal Game Loop</button>
-          <button class="pill good" id="westernTrailBtn">Western</button>
-          <button class="pill good" id="funkGrooveBtn">Funk</button>
+          <button class="pill good" id="westernTrailBtn">Compose Western Song</button>
+          <button class="pill good" id="funkGrooveBtn">Compose Funk Song</button>
           <button class="pill adv-only" id="funkGameLoopBtn">Funk Game Loop</button>
         </div>
       </div>
@@ -664,6 +664,8 @@
                 </div>
                 <button class="mini-chip" id="closeGenreDrawerBtn">Close</button>
               </div>
+              <label class="sub">Seed <input class="input" id="genreSeedInput" inputmode="text" autocomplete="off" placeholder="Optional fixed seed"></label>
+              <div class="tiny">A fixed seed makes Compose Full Song and Game Loop reproducible. Leave it blank for a new variation.</div>
               <div class="genre-drawer-body">
                 <div class="genre-tabs" role="tablist" aria-label="Genre families">
                   <button class="mini-chip genre-tab" id="genreTabClean" data-genre="clean" role="tab" aria-controls="genrePanelClean">Clean</button>
@@ -697,8 +699,10 @@
                           <option value="lofi_sleepy_waltz">Sleepy Waltz</option>
                         </select>
                       </label>
-                      <button class="mini-chip" id="lofiApplyIdeaBtn">Apply Idea</button>
+                      <button class="mini-chip" id="lofiApplyIdeaBtn">Current Section</button>
                       <button class="mini-chip" id="lofiApplyLoopBtn">Game Loop</button>
+                      <button class="mini-chip" id="lofiApplyProfileBtn">Apply Sound Profile</button>
+                      <button class="mini-chip good" id="lofiComposeSongBtn">Compose Full Song</button>
                     </div>
                     <div class="row adv-only genre-advanced">
                       <label class="sub">Kit
@@ -749,8 +753,10 @@
                           <option value="chip_victory_burst">Victory Burst</option>
                         </select>
                       </label>
-                      <button class="mini-chip" id="chipApplyIdeaBtn">Apply Idea</button>
+                      <button class="mini-chip" id="chipApplyIdeaBtn">Current Section</button>
                       <button class="mini-chip" id="chipApplyLoopBtn">Game Loop</button>
+                      <button class="mini-chip" id="chipApplyProfileBtn">Apply Sound Profile</button>
+                      <button class="mini-chip good" id="chipComposeSongBtn">Compose Full Song</button>
                     </div>
                     <div class="row adv-only genre-advanced">
                       <label class="sub">Kit
@@ -798,8 +804,10 @@
                           <option value="metal_breakdown_gate">Breakdown Gate</option>
                         </select>
                       </label>
-                      <button class="mini-chip" id="metalApplyIdeaBtn">Apply Idea</button>
+                      <button class="mini-chip" id="metalApplyIdeaBtn">Current Section</button>
                       <button class="mini-chip" id="metalApplyLoopBtn">Game Loop</button>
+                      <button class="mini-chip" id="metalApplyProfileBtn">Apply Sound Profile</button>
+                      <button class="mini-chip good" id="metalComposeSongBtn">Compose Full Song</button>
                     </div>
                     <div class="row adv-only genre-advanced">
                       <label class="sub">Kit
@@ -840,10 +848,13 @@
                           <option value="western_frontier_ride">Frontier Ride</option>
                           <option value="western_train_chase">Train Chase</option>
                           <option value="western_cowboy_waltz">Cowboy Waltz</option>
+                          <option value="western_duel">High Noon Duel</option>
                         </select>
                       </label>
-                      <button class="mini-chip" id="westernApplyIdeaBtn">Apply Idea</button>
+                      <button class="mini-chip" id="westernApplyIdeaBtn">Current Section</button>
                       <button class="mini-chip" id="westernApplyLoopBtn">Game Loop</button>
+                      <button class="mini-chip" id="westernApplyProfileBtn">Apply Sound Profile</button>
+                      <button class="mini-chip good" id="westernComposeSongBtn">Compose Full Song</button>
                     </div>
                     <div class="row adv-only genre-advanced">
                       <label class="sub">Drums
@@ -876,8 +887,10 @@
                           <option value="funk_game_chase">Game Chase</option>
                         </select>
                       </label>
-                      <button class="mini-chip" id="funkApplyIdeaBtn">Apply Idea</button>
+                      <button class="mini-chip" id="funkApplyIdeaBtn">Current Section</button>
                       <button class="mini-chip" id="funkApplyLoopBtn">Game Loop</button>
+                      <button class="mini-chip" id="funkApplyProfileBtn">Apply Sound Profile</button>
+                      <button class="mini-chip good" id="funkComposeSongBtn">Compose Full Song</button>
                     </div>
                     <div class="row adv-only genre-advanced">
                       <label class="sub">Pocket <input id="funkPocket" type="range" min="0" max="1" step="0.01" value="0.58"></label>
@@ -1009,6 +1022,7 @@
     </div>
   </div>
 </div>
+<script type="module" src="./src/genre-composer.js"></script>
 <script>
 const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const DEGREE_LABELS = ["I","ii","iii","IV","V","vi","vii dim"];
@@ -1305,6 +1319,8 @@ const DRUM_PADS = [
   {id:"ride", name:"Ride", meta:"' - writes Ride", key:"'", cls:"fx", recordTrack:null, recordLane:"ride", recordLevel:1}
 ];
 const MAX_BARS = 4;
+const MIN_BPM = 60;
+const MAX_BPM = 240;
 const SECTION_IDS = ["A","B","C","D","E","F","G","H"];
 const MAX_MELODY_TRACKS = 6;
 const DEFAULT_SECTION_BARS = Object.fromEntries(SECTION_IDS.map(id => [id, MAX_BARS]));
@@ -1434,7 +1450,8 @@ const METAL_STYLE_PRESET_IDS = Object.keys(METAL_STYLE_PRESETS);
 const WESTERN_STYLE_PRESETS = {
   western_frontier_ride:{label:"Frontier Ride", bpm:112, key:"G", scale:"major", timeSig:4, progression:[0,3,4,0], swing:0.05, chordInstrument:"saloon_piano", chordPlayMode:"strum_up", chordRhythmMode:"quarter", drumGroovePreset:"boom_chick", altDrumGroovePreset:"train_beat", guitarPatternPreset:"boom_chick", altGuitarPatternPreset:"train_chop", guitarTone:"western_twang", guitarRegister:"mid", guitarStrumMode:"alternate"},
   western_train_chase:{label:"Train Chase", bpm:124, key:"D", scale:"major", timeSig:4, progression:[0,4,3,4], swing:0.03, chordInstrument:"saloon_piano", chordPlayMode:"strum_down", chordRhythmMode:"quarter", drumGroovePreset:"train_beat", altDrumGroovePreset:"boom_chick", guitarPatternPreset:"train_chop", altGuitarPatternPreset:"boom_chick", guitarTone:"western_twang", guitarRegister:"mid", guitarStrumMode:"alternate"},
-  western_cowboy_waltz:{label:"Cowboy Waltz", bpm:88, key:"C", scale:"major", timeSig:3, progression:[0,3,4,0], swing:0.04, chordInstrument:"saloon_piano", chordPlayMode:"strum_up", chordRhythmMode:"quarter", drumGroovePreset:"cowboy_waltz", altDrumGroovePreset:"cowboy_waltz", guitarPatternPreset:"western_waltz", altGuitarPatternPreset:"western_waltz", guitarTone:"western_twang", guitarRegister:"mid", guitarStrumMode:"alternate"}
+  western_cowboy_waltz:{label:"Cowboy Waltz", bpm:88, key:"C", scale:"major", timeSig:3, progression:[0,3,4,0], swing:0.04, chordInstrument:"saloon_piano", chordPlayMode:"strum_up", chordRhythmMode:"quarter", drumGroovePreset:"cowboy_waltz", altDrumGroovePreset:"cowboy_waltz", guitarPatternPreset:"western_waltz", altGuitarPatternPreset:"western_waltz", guitarTone:"western_twang", guitarRegister:"mid", guitarStrumMode:"alternate"},
+  western_duel:{label:"High Noon Duel", bpm:86, key:"A", scale:"minor", timeSig:4, progression:[0,6,5,4], swing:0.01, chordInstrument:"saloon_piano", chordPlayMode:"strum_up", chordRhythmMode:"quarter", drumGroovePreset:"boom_chick", altDrumGroovePreset:"train_beat", guitarPatternPreset:"boom_chick", altGuitarPatternPreset:"train_chop", guitarTone:"western_twang", guitarRegister:"mid", guitarStrumMode:"alternate"}
 };
 WESTERN_STYLE_PRESETS.western_trail = {...WESTERN_STYLE_PRESETS.western_frontier_ride, label:"Western Trail"};
 const WESTERN_STYLE_PRESET_IDS = Object.keys(WESTERN_STYLE_PRESETS);
@@ -1492,7 +1509,7 @@ const state = {
   melodyTracksA:[], melodyTracksB:[], melodyTracksC:[], melodyTracksD:[], melodyTracks:[], melodyInstrumentsA:[], melodyInstrumentsB:[], melodyInstrumentsC:[], melodyInstrumentsD:[], melodyInstruments:[], melodyOctavesA:[], melodyOctavesB:[], melodyOctavesC:[], melodyOctavesD:[], melodyOctaves:[], melodyMuteA:[], melodyMuteB:[], melodyMuteC:[], melodyMuteD:[], melodyMute:[], melodySoloA:[], melodySoloB:[], melodySoloC:[], melodySoloD:[], melodySolo:[], melodyPanA:[], melodyPanB:[], melodyPanC:[], melodyPanD:[], melodyPan:[], melodyHoldA:[], melodyHoldB:[], melodyHoldC:[], melodyHoldD:[], melodyHold:[], melodySlideA:[], melodySlideB:[], melodySlideC:[], melodySlideD:[], melodySlide:[], melodyTupletsA:[], melodyTupletsB:[], melodyTupletsC:[], melodyTupletsD:[], melodyTuplets:[], bassHoldA:[], bassHoldB:[], bassHoldC:[], bassHoldD:[], bassHold:[], bassSlideA:[], bassSlideB:[], bassSlideC:[], bassSlideD:[], bassSlide:[], bassNotesA:[], bassNotesB:[], bassNotesC:[], bassNotesD:[], bassNotes:[], bassAccentA:[], bassAccentB:[], bassAccentC:[], bassAccentD:[], bassAccent:[], bassArticulationA:[], bassArticulationB:[], bassArticulationC:[], bassArticulationD:[], bassArticulation:[], drumLanesA:{}, drumLanesB:{}, drumLanesC:{}, drumLanesD:{}, drumLanes:{}, activeMelodyTrack:0, selectedMelodyDegree:0,
   guitarPatternA:[], guitarPatternB:[], guitarPatternC:[], guitarPatternD:[], guitarPattern:[],
   melodyInputMode:"grid", xyPlaybackMode:"sustain", xyPadMode:"sustain", xyScaleMode:"song", xyChordFollow:true, xyRecordToGrid:false, xyLastWriteStep:-1, xyLiveActive:false, xyLiveMidi:null, xyLiveBrightness:1800, xyLiveGate:0.18, xyLivePulseInterval:0.5, xyLivePulseLabel:"Quarter", xyLiveInstrument:"pulse", xyLivePan:0, undoStack:[], suspendUndo:false,
-  lastAdvancedResolution:2, pendingUiTimers:[], liveRecordStepClock:[], lastHighlightedStep:-1, advancedFxPrimed:false, settingsGenreDrawerOpen:false, settingsGenre:"clean",
+  lastAdvancedResolution:2, pendingUiTimers:[], liveRecordStepClock:[], lastHighlightedStep:-1, advancedFxPrimed:false, settingsGenreDrawerOpen:false, settingsGenre:"clean", genreComposition:null,
   transportPlan:[], autosaveDirty:false, wavExporting:false, wavExportToken:0, pendingImmersiveRestore:false, exportSchemaVersion:17, lastCapabilityReport:[], _projectSource:null, _richSource:null,
   availableChords:[], nextSuggested:[]
 };
@@ -1659,7 +1676,8 @@ let settingsFocusReturn = null;
 function noteIndex(n){ return NOTES.indexOf(n); }
 function midiToFreq(m){ return 440 * Math.pow(2, (m-69)/12); }
 function beatDur(){ return 60 / state.bpm; }
-function activeResolution(){ return state.uiMode === "simple" && !isLofiActive() ? 1 : state.resolution; }
+function activeResolution(){ return state.uiMode === "simple" && !isLofiActive() && !state.genreComposition ? 1 : state.resolution; }
+function sanitizeBpm(value, fallback=96){ return clamp(asInt(value, fallback), MIN_BPM, MAX_BPM); }
 function stepsPerBar(){ return state.timeSig * activeResolution(); }
 function totalSteps(){ return MAX_BARS * stepsPerBar(); }
 function simpleModeMelodyTrackCount(){ return 1; }
@@ -2170,7 +2188,7 @@ function sanitizeProjectData(raw){
     key: safeChoice(raw.key, NOTES, "C"),
     scale: safeChoice(raw.scale, ["major","minor"], "major"),
     timeSig: safeChoice(asInt(raw.timeSig, 4), [3,4], 4),
-    bpm: clamp(asInt(raw.bpm, 96), 60, 180),
+    bpm: sanitizeBpm(raw.bpm, 96),
     swing: clamp(asNumber(raw.swing, 0), 0, 0.3),
     audioProfile: soundProfile.id,
     soundProfile,
@@ -2231,7 +2249,8 @@ function sanitizeProjectData(raw){
     lastAdvancedResolution: sanitizeResolutionValue(raw.lastAdvancedResolution, 2),
     sectionBars: sanitizeSectionBars(raw.sectionBars || raw.sectionLengths),
     songSequence: sanitizeSongSequence(raw.songSequence || raw.sectionSequence),
-    followPlaybackSection: raw.followPlaybackSection !== false
+    followPlaybackSection: raw.followPlaybackSection !== false,
+    genreComposition: raw.genreComposition && typeof raw.genreComposition === "object" ? deepCloneProjectValue(raw.genreComposition) : null
   };
   if(data.chipPreset){
     data.audioProfile = CHIP_AUDIO_PROFILE_ID;
@@ -27620,7 +27639,7 @@ function applyWesternPresetToProject(presetId="western_frontier_ride", options={
   const previousMode = state.playbackMode || "section";
   if(shouldPushUndo) pushUndoState();
   if(wasPlaying) stopPlayback();
-  state.audioProfile = "standard";
+  state.audioProfile = WESTERN_AUDIO_PROFILE_ID;
   state.lofiPreset = "";
   state.lofiTexture = {...DEFAULT_LOFI_TEXTURE, enabled:false};
   state.chipPreset = "";
@@ -27737,6 +27756,319 @@ function applyFunkPresetToProject(presetId="funk_classic_pocket",options={}){
   state.currentSection = sections[0]; syncSection(); state.selectedSlot = 0; state.activeMelodyTrack = 0; updateSuggestions(); markProjectDirty(); renderAll();
   const message = fullLoop ? `${preset.label} funk loop generated across A-D` : `${preset.label} funk idea generated`;
   if(wasPlaying){ state.playbackMode = previousMode; restartPlaybackPlanAfterStructureChange(`${message}; playback restarted`); } else setStatus(message);
+}
+function genreComposerApi(){
+  const api = window.PocketChordsmithGenreComposer;
+  if(!api || typeof api.composeSong !== "function") throw new Error("Genre composer could not load");
+  return api;
+}
+function selectedGenreArchetype(genre){
+  const selected = {
+    lofi: els.lofiPresetSelect?.value || state.lofiPreset || "lofi_study_room",
+    chip: els.chipPresetSelect?.value || state.chipPreset || "chip_arcade_start",
+    metal: els.metalPresetSelect?.value || state.metalPreset || "metal_classic_chug",
+    western: els.westernPresetSelect?.value || state.westernPreset || "western_frontier_ride",
+    funk: els.funkPresetSelect?.value || state.funkPreset || "funk_classic_pocket"
+  };
+  return selected[genre] || "";
+}
+function requestedGenreSeed(){
+  const typed = String(els.genreSeedInput?.value || "").trim();
+  return typed || genreComposerApi().createSeed();
+}
+function presetForGenreComposition(genre, archetype){
+  if(genre === "lofi") return lofiPresetConfig(archetype);
+  if(genre === "chip") return chipPresetConfig(archetype);
+  if(genre === "metal") return metalPresetConfig(archetype);
+  if(genre === "western") return westernPresetConfig(archetype);
+  if(genre === "funk") return funkPresetConfig(archetype);
+  return null;
+}
+function resetOtherGenreProfiles(activeGenre){
+  if(activeGenre !== "lofi"){ state.lofiPreset = ""; state.lofiTexture = {...DEFAULT_LOFI_TEXTURE,enabled:false}; }
+  if(activeGenre !== "chip"){ state.chipPreset = ""; state.chipTexture = {...DEFAULT_CHIP_TEXTURE,enabled:false}; }
+  if(activeGenre !== "metal"){ state.metalPreset = ""; state.metalTexture = {...DEFAULT_METAL_TEXTURE,enabled:false}; }
+  if(activeGenre !== "western") state.westernPreset = "western_trail";
+  if(activeGenre !== "funk"){ state.funkPreset = ""; state.funkParameters = {...DEFAULT_FUNK_PARAMETERS}; }
+}
+function applyGenreCompositionSoundProfile(plan, options={}){
+  const identity = plan.identity;
+  const genre = identity.genre;
+  const preset = presetForGenreComposition(genre, identity.archetype) || {};
+  const profileOnly = !!options.profileOnly;
+  resetOtherGenreProfiles(genre);
+  state.settingsGenre = genre;
+  if(!profileOnly){
+    state.key = identity.key;
+    state.scale = identity.scale;
+    state.timeSig = identity.timeSignature;
+    state.bpm = identity.bpm;
+    state.resolution = 4;
+    state.lastAdvancedResolution = 4;
+    state.bassMode = "manual";
+    state.humanizeOn = genre === "lofi" || genre === "funk";
+    state.sidechainOn = genre !== "western";
+    state.sidechainAmount = genre === "metal" ? 0.34 : genre === "funk" ? 0.24 : 0.18;
+  }
+  if(genre === "lofi"){
+    state.audioProfile = LOFI_AUDIO_PROFILE_ID;
+    state.lofiPreset = LOFI_STYLE_PRESETS[identity.archetype] ? identity.archetype : "lofi_study_room";
+    state.lofiTexture = sanitizeLofiTexture(preset.texture, state.lofiPreset);
+    state.soundProfile = {id:LOFI_AUDIO_PROFILE_ID,preset:state.lofiPreset,recipeVersion:SOUND_RECIPE_VERSION,parameters:deepCloneProjectValue(state.lofiTexture)};
+    state.drumKit = safeChoice(preset.drumKit, lofiDrumKitIds(), "lofi_dusty");
+    state.drumGroovePreset = safeChoice(preset.drumGroovePreset, lofiDrumGroovePresetIds(), "lofi_backbeat_76");
+    state.bassTone = safeChoice(preset.bassTone, lofiBassToneIds(), "warm_sub");
+    state.chordType = "seventh";
+    state.chordInstrument = safeChoice(preset.chordInstrument, chordInstrumentIds(), "felt_piano");
+    state.chordPlayMode = "block";
+    state.chordRhythmMode = "half";
+    state.guitarEnabled = false;
+  }else if(genre === "chip"){
+    state.audioProfile = CHIP_AUDIO_PROFILE_ID;
+    state.chipPreset = CHIP_STYLE_PRESETS[identity.archetype] ? identity.archetype : "chip_arcade_start";
+    state.chipTexture = sanitizeChipTexture(preset.texture, state.chipPreset);
+    state.soundProfile = {id:CHIP_AUDIO_PROFILE_ID,preset:state.chipPreset,recipeVersion:SOUND_RECIPE_VERSION,parameters:deepCloneProjectValue(state.chipTexture)};
+    state.drumKit = safeChoice(preset.drumKit, chipDrumKitIds(), "chip_noise_kit");
+    state.drumGroovePreset = safeChoice(preset.drumGroovePreset, chipDrumGroovePresetIds(), "chip_run_128");
+    state.bassTone = safeChoice(preset.bassTone, chipBassToneIds(), "chip_triangle_bass");
+    state.chordType = "triad";
+    state.chordInstrument = safeChoice(preset.chordInstrument, chordInstrumentIds(), "chip_square_stack");
+    state.chordPlayMode = "arp_up";
+    state.chordRhythmMode = "quarter";
+    state.guitarEnabled = false;
+  }else if(genre === "metal"){
+    state.audioProfile = HEAVY_METAL_AUDIO_PROFILE_ID;
+    state.metalPreset = METAL_STYLE_PRESETS[identity.archetype] ? identity.archetype : "metal_classic_chug";
+    state.metalTexture = sanitizeMetalTexture(preset.texture, state.metalPreset);
+    state.soundProfile = {id:HEAVY_METAL_AUDIO_PROFILE_ID,preset:state.metalPreset,recipeVersion:SOUND_RECIPE_VERSION,parameters:deepCloneProjectValue(state.metalTexture)};
+    state.drumKit = safeChoice(preset.drumKit, metalDrumKitIds(), "metal_tight");
+    state.drumGroovePreset = safeChoice(preset.drumGroovePreset, metalDrumGroovePresetIds(), "metal_backbeat_chug");
+    state.bassTone = safeChoice(preset.bassTone, metalBassToneIds(), "metal_pick_bass");
+    state.chordType = "triad";
+    state.chordInstrument = safeChoice(preset.chordInstrument, chordInstrumentIds(), "metal_power_stack");
+    state.chordPlayMode = "block";
+    state.chordRhythmMode = "quarter";
+    state.guitarEnabled = true;
+    state.guitarTone = safeChoice(preset.guitarTone, guitarToneIds(), "tight_metal");
+    state.guitarRegister = preset.guitarTone === "doom_fuzz" ? "low" : "mid";
+    state.guitarStrumMode = "down";
+    state.guitarPatternPreset = safeChoice(preset.guitarPatternPreset, guitarPatternPresetIds(), "metal_chug");
+  }else if(genre === "western"){
+    state.audioProfile = WESTERN_AUDIO_PROFILE_ID;
+    state.westernPreset = WESTERN_STYLE_PRESETS[identity.archetype] ? identity.archetype : "western_frontier_ride";
+    state.soundProfile = {id:WESTERN_AUDIO_PROFILE_ID,preset:state.westernPreset,recipeVersion:SOUND_RECIPE_VERSION,parameters:{}};
+    state.drumKit = "classic";
+    state.drumGroovePreset = identity.archetype === "western_train_chase" ? "train_beat" : identity.timeSignature === 3 ? "cowboy_waltz" : "boom_chick";
+    state.bassTone = "classic";
+    state.chordType = "triad";
+    state.chordInstrument = "saloon_piano";
+    state.chordPlayMode = "strum_up";
+    state.chordRhythmMode = "quarter";
+    state.guitarEnabled = true;
+    state.guitarTone = "western_twang";
+    state.guitarRegister = "mid";
+    state.guitarStrumMode = "alternate";
+    state.guitarPatternPreset = identity.timeSignature === 3 ? "western_waltz" : "boom_chick";
+  }else if(genre === "funk"){
+    state.audioProfile = FUNK_AUDIO_PROFILE_ID;
+    state.funkPreset = FUNK_STYLE_PRESETS[identity.archetype] ? identity.archetype : "funk_classic_pocket";
+    state.funkParameters = sanitizeFunkParameters(preset.parameters);
+    state.soundProfile = {id:FUNK_AUDIO_PROFILE_ID,preset:state.funkPreset,recipeVersion:SOUND_RECIPE_VERSION,parameters:deepCloneProjectValue(state.funkParameters)};
+    state.drumKit = safeChoice(preset.drumKit, funkDrumKitIds(), "funk_dry_pocket");
+    state.drumGroovePreset = safeChoice(preset.drumGroovePreset, funkDrumGroovePresetIds(), "funk_backbeat_98");
+    state.bassTone = safeChoice(preset.bassTone, funkBassToneIds(), "funk_finger_pocket");
+    state.chordType = "seventh";
+    state.chordInstrument = safeChoice(preset.chordInstrument, chordInstrumentIds(), "funk_clav_stab");
+    state.chordPlayMode = "block";
+    state.chordRhythmMode = "quarter";
+    state.guitarEnabled = true;
+    state.guitarTone = "funk_muted";
+    state.guitarRegister = "mid";
+    state.guitarStrumMode = "alternate";
+  }
+  generateAvailableChords();
+}
+function resetGenreComposerSection(id){
+  clearSectionPerformance(id);
+  state[sectionPropKey("progression", id)] = [];
+  state[sectionPropKey("drumLanes", id)] = createDrumLanes();
+  state[sectionPropKey("bassArticulation", id)] = ensureBassArticulationTrack([]);
+  state[sectionPropKey("guitarPattern", id)] = createGuitarState();
+}
+function composerStepInBar(bar, cell){
+  const steps = stepsPerBar();
+  const local = clamp(Math.round((Number(cell) / 15) * Math.max(0, steps - 1)), 0, Math.max(0, steps - 1));
+  return bar * steps + local;
+}
+function fillGenreComposerSection(plan, genre){
+  const id = plan.id;
+  const bars = plan.bars;
+  const grid = blankGrid();
+  const lanes = createDrumLanes();
+  const notes = blankBassNotes();
+  const holds = blankBassHold();
+  const slides = blankBassSlide();
+  const accents = blankBassAccent();
+  const articulations = ensureBassArticulationTrack([]);
+  const guitar = createGuitarState();
+  const riffCells = plan.rhythmicCell.filter((cell) => Number.isFinite(cell));
+  const setGrid = (lane, step, level=1) => { if(step >= 0 && step < grid[lane].length) grid[lane][step] = Math.max(grid[lane][step] || 0, level); };
+  const setLane = (lane, step, level=1) => { if(Array.isArray(lanes[lane]) && step >= 0 && step < lanes[lane].length) lanes[lane][step] = Math.max(lanes[lane][step] || 0, level); };
+  const setBass = (step, note, articulation="finger", level=1) => {
+    if(step < 0 || step >= notes.length) return;
+    notes[step] = clamp(Math.round(note), 0, 13);
+    articulations[step] = articulation;
+    accents[step] = level > 1 || ["pick","slap","pop"].includes(articulation);
+    setGrid("bass", step, level);
+  };
+  for(let bar = 0; bar < bars; bar++){
+    const root = plan.progression[bar % plan.progression.length] || 0;
+    const beat = (number) => composerStepInBar(bar, number);
+    if(genre === "metal"){
+      const attacks = riffCells.filter((_, index) => plan.density.drums > 1 || index % 2 === 0);
+      attacks.forEach((cell, index) => {
+        const step = beat(cell);
+        const level = index === 0 ? 2 : 1;
+        setGrid("kick", step, level);
+        setBass(step, index % 4 === 3 ? root + 7 : root, "pick", level);
+        guitar[step] = plan.role === "breakdown" ? (index % 2 ? "chug" : "accent") : index % 4 === 0 ? "accent" : "chug";
+      });
+      [4,12].forEach((cell) => setGrid("snare", beat(cell), 2));
+      for(let cell = 0; cell < 16; cell += plan.density.drums >= 3 ? 2 : 4) setGrid("hat", beat(cell), cell % 8 === 0 ? 2 : 1);
+      if(plan.role === "chorus") setLane("crash", beat(0), 2);
+      if(plan.role === "solo") setLane("ride", beat(0), 1);
+    }else if(genre === "lofi"){
+      setGrid("kick", beat(0), 2); if(plan.energy > .48) setGrid("kick", beat(10), 1);
+      setGrid("snare", beat(4), 1); setGrid("snare", beat(12), 2);
+      [2,6,10,14].forEach((cell) => { if(plan.energy > .3 || cell === 6) setGrid("hat", beat(cell), cell === 10 ? 2 : 1); });
+      setBass(beat(0), root, "finger", 2);
+      if(plan.energy > .42) setBass(beat(8), (root + 4) % 7, "finger", 1);
+      if(plan.energy > .6) setBass(beat(14), (root + 6) % 7, "slide", 1);
+    }else if(genre === "western"){
+      setGrid("kick", beat(0), 2); setBass(beat(0), root, "finger", 2);
+      const second = state.timeSig === 3 ? 5 : 8;
+      setGrid("hat", beat(second), 1); setBass(beat(second), (root + 4) % 7, "finger", 1);
+      if(state.timeSig === 4){ setGrid("snare", beat(8), 1); setGrid("hat", beat(12), 1); }
+      [0, second].forEach((cell, index) => { const step = beat(cell); guitar[step] = index ? "open" : "accent"; });
+      if(plan.energy > .65) guitar[beat(state.timeSig === 3 ? 9 : 12)] = "open";
+    }else if(genre === "chip"){
+      [0,8].forEach((cell, index) => setGrid("kick", beat(cell), index ? 1 : 2));
+      [4,12].forEach((cell) => setGrid("snare", beat(cell), 2));
+      for(let cell = 0; cell < 16; cell += 2) setGrid("hat", beat(cell), cell % 4 ? 1 : 2);
+      [0,4,8,12].forEach((cell, index) => setBass(beat(cell), index % 2 ? root + 7 : root, "finger", index ? 1 : 2));
+      if(plan.role === "chorus") setLane("crash", beat(0), 1);
+    }else if(genre === "funk"){
+      [0,6,8,14].forEach((cell, index) => { if(plan.energy > .35 || index < 2) setGrid("kick", beat(cell), index === 0 ? 2 : 1); });
+      [4,12].forEach((cell) => setGrid("snare", beat(cell), 2));
+      for(let cell = 0; cell < 16; cell += 2) setGrid("hat", beat(cell), cell % 4 ? 1 : 2);
+      [3,7,11,15].forEach((cell) => setLane("snare", beat(cell), 1));
+      const phrase = [[0,root,"slap",2],[3,root + 7,"mute",1],[6,(root + 4) % 7,"pop",2],[10,root,"finger",1],[13,(root + 5) % 7,"hammer",1],[15,(root + 7) % 14,"pull",1]];
+      phrase.forEach(([cell,note,art,level]) => setBass(beat(cell), note, art, level));
+      [2,6,10,14].forEach((cell, index) => { guitar[beat(cell)] = index % 2 ? "scratch" : "open"; });
+    }
+    if(plan.fill && bar === bars - 1){
+      [10,12,14,15].forEach((cell, index) => setLane(index % 2 ? "tom_mid" : "tom_low", beat(cell), index === 3 ? 2 : 1));
+      setLane("crash", beat(15), 1);
+    }
+  }
+  const hasLead = plan.lead !== "none";
+  const trackCount = hasLead && genre === "chip" ? 2 : 1;
+  const tracks = blankMelodyTracks(trackCount);
+  const melodyHold = blankMelodyHold(trackCount);
+  const melodySlide = blankMelodySlide(trackCount);
+  const melodyTuplets = blankMelodyTuplets(trackCount);
+  const leadInstrument = plan.leadInstrument || (genre === "chip" ? "chip_square_lead" : "pulse");
+  if(hasLead){
+    const perBar = plan.lead === "solo" || plan.lead === "hook" ? 4 : plan.lead === "sparse" ? 1 : 2;
+    for(let bar = 0; bar < bars; bar++){
+      const root = plan.progression[bar % plan.progression.length] || 0;
+      for(let phraseIndex = 0; phraseIndex < perBar; phraseIndex++){
+        const motifIndex = (bar * perBar + phraseIndex) % plan.motif.length;
+        const value = phraseIndex === 0 ? root : plan.motif[motifIndex];
+        if(value === null || value === undefined) continue;
+        const step = bar * stepsPerBar() + clamp(Math.floor((phraseIndex * stepsPerBar()) / perBar), 0, stepsPerBar() - 1);
+        tracks[0][step] = clamp(Math.round(value), 0, 13);
+        if(genre === "chip" && phraseIndex % 2 === 1){
+          const arpStep = Math.min(tracks[1].length - 1, step + Math.max(1, Math.floor(activeResolution() / 2)));
+          tracks[1][arpStep] = clamp(Math.round(value + 4), 0, 13);
+        }
+      }
+    }
+  }
+  state[sectionPropKey("grid", id)] = grid;
+  state[sectionPropKey("drumLanes", id)] = lanes;
+  state[sectionPropKey("bassNotes", id)] = notes;
+  state[sectionPropKey("bassHold", id)] = holds;
+  state[sectionPropKey("bassSlide", id)] = slides;
+  state[sectionPropKey("bassAccent", id)] = accents;
+  state[sectionPropKey("bassArticulation", id)] = articulations;
+  state[sectionPropKey("guitarPattern", id)] = guitar;
+  state[sectionPropKey("melodyTracks", id)] = tracks;
+  state[sectionPropKey("melodyInstruments", id)] = genre === "chip" ? [leadInstrument,"chip_square_lead"] : [leadInstrument];
+  state[sectionPropKey("melodyOctaves", id)] = Array.from({length:trackCount}, () => genre === "metal" ? 1 : 0);
+  state[sectionPropKey("melodyMute", id)] = blankMelodyMute(trackCount);
+  state[sectionPropKey("melodySolo", id)] = blankMelodySolo(trackCount);
+  state[sectionPropKey("melodyPan", id)] = trackCount === 2 ? [-0.18,0.18] : [0.12];
+  state[sectionPropKey("melodyHold", id)] = melodyHold;
+  state[sectionPropKey("melodySlide", id)] = melodySlide;
+  state[sectionPropKey("melodyTuplets", id)] = melodyTuplets;
+}
+function serialiseGenreComposition(plan){
+  return {
+    version:plan.version,
+    identity:deepCloneProjectValue(plan.identity),
+    sections:plan.sections.map(section => ({id:section.id,role:section.role,bars:section.bars,energy:section.energy,progressionRole:section.progressionRole,motifTransform:section.motifTransform,lead:section.lead,variation:section.variation,fill:section.fill})),
+    sequence:plan.sequence.slice()
+  };
+}
+function composeGenreSong(genre, options={}){
+  const api = genreComposerApi();
+  const seed = options.seed ?? requestedGenreSeed();
+  const plan = api.composeSong({genre,archetype:options.archetype || options.presetId,seed,mode:options.mode || "song"});
+  const errors = api.validatePlan(plan);
+  if(errors.length) throw new Error(`Genre plan invalid: ${errors.join(", ")}`);
+  const wasPlaying = !!state.isPlaying;
+  const previousMode = state.playbackMode || "section";
+  pushUndoState();
+  if(wasPlaying) stopPlayback();
+  applyGenreCompositionSoundProfile(plan);
+  state.genreComposition = serialiseGenreComposition(plan);
+  SECTION_IDS.forEach(resetGenreComposerSection);
+  plan.sections.forEach(section => {
+    state.sectionBars[section.id] = section.bars;
+    setSectionProgressionDegrees(section.id, section.progression);
+    fillGenreComposerSection(section, plan.identity.genre);
+  });
+  state.songSequence = plan.sequence.slice();
+  state.currentSection = plan.sections[0].id;
+  if(state._projectSource && typeof state._projectSource === "object") state._projectSource = {...state._projectSource,sections:{}};
+  state._richSource = {};
+  syncSection();
+  state.selectedSlot = 0;
+  state.activeMelodyTrack = 0;
+  updateSuggestions();
+  markProjectDirty();
+  renderAll();
+  const label = plan.identity.archetype.replace(/^\w+_/, "").replaceAll("_", " ");
+  const message = `${label} ${plan.identity.mode === "game-loop" ? "game loop" : "full song"} composed from seed ${plan.identity.seed}`;
+  if(wasPlaying){ state.playbackMode = previousMode; restartPlaybackPlanAfterStructureChange(`${message}; playback restarted`); }
+  else setStatus(message);
+  return plan;
+}
+function applyGenreSoundProfileOnly(genre){
+  const api = genreComposerApi();
+  const archetype = selectedGenreArchetype(genre);
+  const plan = api.composeSong({genre,archetype,seed:`profile:${archetype}`,key:state.key});
+  const wasPlaying = !!state.isPlaying;
+  const previousMode = state.playbackMode || "section";
+  pushUndoState();
+  if(wasPlaying) stopPlayback();
+  applyGenreCompositionSoundProfile(plan,{profileOnly:true});
+  markProjectDirty();
+  renderAll();
+  const message = `${plan.identity.archetype.replace(/^\w+_/, "").replaceAll("_", " ")} sound profile applied`;
+  if(wasPlaying){ state.playbackMode = previousMode; restartPlaybackPlanAfterStructureChange(`${message}; playback restarted`); }
+  else setStatus(message);
 }
 function loadDemo(){
   importProject(JSON.parse(JSON.stringify(POCKET_CHORDSMITH_V61_SHOWCASE_DEMO)));
@@ -28917,7 +29249,7 @@ function importParsedMidiToProject(parsed, fileName="MIDI"){
   const timeSig = firstMidiEvent(parsed.timeSignatures);
   const foundBpm = tempo ? Math.round(60000000 / tempo.microsecondsPerQuarter) : null;
   if(foundBpm){
-    state.bpm = clamp(foundBpm, 60, 180);
+    state.bpm = sanitizeBpm(foundBpm, state.bpm);
     if(els.bpmInput) els.bpmInput.value = state.bpm;
   }
   const foundTimeSigLabel = timeSig ? `${timeSig.numerator}/${timeSig.denominator}` : "not found";
@@ -29972,7 +30304,8 @@ function exportProject(options={}){
     chordPlayMode:state.chordPlayMode, chordRhythmMode:state.chordRhythmMode, chordOctave:state.chordOctave, melodyOctave:state.melodyOctave,
     melodyInputMode:state.melodyInputMode, xyPlaybackMode:state.xyPlaybackMode, xyPadMode:state.xyPadMode, xyScaleMode:state.xyScaleMode, xyChordFollow:state.xyChordFollow, xyRecordToGrid:state.xyRecordToGrid,
     fxDelay:state.fxDelay, fxChorus:state.fxChorus, fxFlanger:state.fxFlanger, fxReverb:state.fxReverb, fxMix:state.fxMix, metronomeOn:state.metronomeOn, chordsOn:state.chordsOn, bassOn:state.bassOn, showMelodyPads:state.showMelodyPads, showDrumPads:state.showDrumPads, drumRecordToGrid:state.drumRecordToGrid, showMelodyPicker:state.showMelodyPicker, showTrackControls:state.showTrackControls, bassMode:state.bassMode, humanizeOn:state.humanizeOn, sidechainOn:state.sidechainOn, sidechainAmount:state.sidechainAmount, lastAdvancedResolution:state.lastAdvancedResolution,
-    sectionBars:state.sectionBars, songSequence:sequenceList(), followPlaybackSection:state.followPlaybackSection !== false
+    sectionBars:state.sectionBars, songSequence:sequenceList(), followPlaybackSection:state.followPlaybackSection !== false,
+    genreComposition:state.genreComposition ? deepCloneProjectValue(state.genreComposition) : undefined
   };
   SECTION_IDS.forEach(id => {
     out[sectionPropKey("progression", id)] = state[sectionPropKey("progression", id)].map(ch => ch === null ? null : (ch?.degree ?? 0));
@@ -30044,6 +30377,7 @@ function importProject(rawData){
   state.westernPreset = data.westernPreset || "western_trail";
   state.funkPreset = data.funkPreset || "";
   state.funkParameters = sanitizeFunkParameters(data.funkParameters || state.soundProfile?.parameters);
+  state.genreComposition = data.genreComposition ? deepCloneProjectValue(data.genreComposition) : null;
   state.drumKit = data.drumKit || "classic";
   state.drumGroovePreset = data.drumGroovePreset || "";
   state.bassTone = data.bassTone || "classic";
@@ -30338,7 +30672,7 @@ function scheduler(){
   }
 }
 async function startPlayback(mode="section"){
-  state.bpm = Math.max(60, Math.min(180, parseInt(els.bpmInput.value || "96", 10)));
+  state.bpm = sanitizeBpm(els.bpmInput.value, 96);
   els.bpmInput.value = state.bpm;
   storeSection();
   primePocketAudioCoreFromCurrentProject(mode === "sequence" ? "song playback" : "section playback")
@@ -30537,32 +30871,32 @@ function bindControls(){
     els.randomIdeaBtn.addEventListener("click", applyRandomIdea);
   }
   if(els.lofiChillBtn){
-    els.lofiChillBtn.dataset.tip = "Create a warm lofi/chillhop idea without opening the advanced controls.";
-    els.lofiChillBtn.addEventListener("click", () => applyLofiPresetToProject(randomChoice(["lofi_study_room","lofi_rainy_window","lofi_koi_pond","lofi_menu_warmth"]), {fullLoop:false}));
+    els.lofiChillBtn.dataset.tip = "Compose a complete, sectioned lofi song. Use a fixed seed in Genre Studio to reproduce a variation.";
+    els.lofiChillBtn.addEventListener("click", () => composeGenreSong("lofi"));
   }
   if(els.lofiGameLoopBtn){
     els.lofiGameLoopBtn.dataset.tip = "Generate an A/B/C/D lofi game loop with adaptive sections.";
-    els.lofiGameLoopBtn.addEventListener("click", () => applyLofiPresetToProject(state.lofiPreset || "lofi_study_room", {fullLoop:true}));
+    els.lofiGameLoopBtn.addEventListener("click", () => composeGenreSong("lofi",{archetype:selectedGenreArchetype("lofi"),mode:"game-loop"}));
   }
   if(els.chipTuneBtn){
-    els.chipTuneBtn.dataset.tip = "Create a bright chip tune idea with square leads, tight drums, and a friendly bass line.";
-    els.chipTuneBtn.addEventListener("click", () => applyChipPresetToProject(randomChoice(["chip_arcade_start","chip_bug_maze_pulse","chip_tiny_quest","chip_menu_glow"]), {fullLoop:false}));
+    els.chipTuneBtn.dataset.tip = "Compose a complete chiptune with constrained pulse, triangle-bass, and noise-drum roles.";
+    els.chipTuneBtn.addEventListener("click", () => composeGenreSong("chip"));
   }
   if(els.chipGameLoopBtn){
     els.chipGameLoopBtn.dataset.tip = "Generate an A/B/C/D chip tune game loop with harmonised leads.";
-    els.chipGameLoopBtn.addEventListener("click", () => applyChipPresetToProject(state.chipPreset || "chip_bug_maze_pulse", {fullLoop:true}));
+    els.chipGameLoopBtn.addEventListener("click", () => composeGenreSong("chip",{archetype:selectedGenreArchetype("chip"),mode:"game-loop"}));
   }
   if(els.metalChugBtn){
-    els.metalChugBtn.dataset.tip = "Create a heavy metal riff idea with tight chugs, picked bass, and heavier drums.";
-    els.metalChugBtn.addEventListener("click", () => applyMetalPresetToProject(randomChoice(["metal_classic_chug","metal_thrashing_gallop","metal_power_anthem","metal_breakdown_gate"]), {fullLoop:false}));
+    els.metalChugBtn.dataset.tip = "Compose a complete metal song with riff-led sections, coordinated kick/bass/guitar, transitions, and an ending.";
+    els.metalChugBtn.addEventListener("click", () => composeGenreSong("metal"));
   }
   if(els.metalGameLoopBtn){
     els.metalGameLoopBtn.dataset.tip = "Generate an A/B/C/D metal game loop with riff, breakdown, and lead sections.";
-    els.metalGameLoopBtn.addEventListener("click", () => applyMetalPresetToProject(state.metalPreset || "metal_classic_chug", {fullLoop:true}));
+    els.metalGameLoopBtn.addEventListener("click", () => composeGenreSong("metal",{archetype:selectedGenreArchetype("metal"),mode:"game-loop"}));
   }
-  if(els.westernTrailBtn) els.westernTrailBtn.addEventListener("click",()=>applyWesternPresetToProject("western_trail",{fullLoop:false}));
-  if(els.funkGrooveBtn) els.funkGrooveBtn.addEventListener("click",()=>applyFunkPresetToProject("funk_classic_pocket",{fullLoop:false}));
-  if(els.funkGameLoopBtn) els.funkGameLoopBtn.addEventListener("click",()=>applyFunkPresetToProject(state.funkPreset || "funk_classic_pocket",{fullLoop:true}));
+  if(els.westernTrailBtn) els.westernTrailBtn.addEventListener("click",()=>composeGenreSong("western"));
+  if(els.funkGrooveBtn) els.funkGrooveBtn.addEventListener("click",()=>composeGenreSong("funk"));
+  if(els.funkGameLoopBtn) els.funkGameLoopBtn.addEventListener("click",()=>composeGenreSong("funk",{archetype:selectedGenreArchetype("funk"),mode:"game-loop"}));
   if(els.genreDrawerBtn) els.genreDrawerBtn.addEventListener("click", () => {
     if(state.settingsGenreDrawerOpen) closeGenreDrawer();
     else openGenreDrawer(detectActiveGenre());
@@ -30589,19 +30923,19 @@ function bindControls(){
     applyLofiPresetToProject(sanitizeLofiPresetId(els.lofiPresetSelect?.value) || state.lofiPreset || "lofi_study_room", {fullLoop:false});
   });
   if(els.lofiApplyLoopBtn) els.lofiApplyLoopBtn.addEventListener("click", () => {
-    applyLofiPresetToProject(sanitizeLofiPresetId(els.lofiPresetSelect?.value) || state.lofiPreset || "lofi_study_room", {fullLoop:true});
+    composeGenreSong("lofi",{archetype:selectedGenreArchetype("lofi"),mode:"game-loop"});
   });
   if(els.chipApplyIdeaBtn) els.chipApplyIdeaBtn.addEventListener("click", () => {
     applyChipPresetToProject(sanitizeChipPresetId(els.chipPresetSelect?.value) || state.chipPreset || "chip_arcade_start", {fullLoop:false});
   });
   if(els.chipApplyLoopBtn) els.chipApplyLoopBtn.addEventListener("click", () => {
-    applyChipPresetToProject(sanitizeChipPresetId(els.chipPresetSelect?.value) || state.chipPreset || "chip_arcade_start", {fullLoop:true});
+    composeGenreSong("chip",{archetype:selectedGenreArchetype("chip"),mode:"game-loop"});
   });
   if(els.metalApplyIdeaBtn) els.metalApplyIdeaBtn.addEventListener("click", () => {
     applyMetalPresetToProject(sanitizeMetalPresetId(els.metalPresetSelect?.value) || state.metalPreset || "metal_classic_chug", {fullLoop:false});
   });
   if(els.metalApplyLoopBtn) els.metalApplyLoopBtn.addEventListener("click", () => {
-    applyMetalPresetToProject(sanitizeMetalPresetId(els.metalPresetSelect?.value) || state.metalPreset || "metal_classic_chug", {fullLoop:true});
+    composeGenreSong("metal",{archetype:selectedGenreArchetype("metal"),mode:"game-loop"});
   });
   if(els.westernPresetSelect) els.westernPresetSelect.addEventListener("change", () => {
     const value = sanitizeWesternPresetId(els.westernPresetSelect.value) || "western_frontier_ride";
@@ -30611,7 +30945,7 @@ function bindControls(){
     applyWesternPresetToProject(sanitizeWesternPresetId(els.westernPresetSelect?.value) || state.westernPreset || "western_frontier_ride", {fullLoop:false});
   });
   if(els.westernApplyLoopBtn) els.westernApplyLoopBtn.addEventListener("click", () => {
-    applyWesternPresetToProject(sanitizeWesternPresetId(els.westernPresetSelect?.value) || state.westernPreset || "western_frontier_ride", {fullLoop:true});
+    composeGenreSong("western",{archetype:selectedGenreArchetype("western"),mode:"game-loop"});
   });
   if(els.westernDrumPresetSelect) els.westernDrumPresetSelect.addEventListener("change", () => {
     pushUndoState();
@@ -30634,7 +30968,11 @@ function bindControls(){
   });
   if(els.funkPresetSelect) els.funkPresetSelect.addEventListener("change",()=>applyFunkPresetToProject(els.funkPresetSelect.value,{fullLoop:false}));
   if(els.funkApplyIdeaBtn) els.funkApplyIdeaBtn.addEventListener("click",()=>applyFunkPresetToProject(els.funkPresetSelect?.value || "funk_classic_pocket",{fullLoop:false}));
-  if(els.funkApplyLoopBtn) els.funkApplyLoopBtn.addEventListener("click",()=>applyFunkPresetToProject(els.funkPresetSelect?.value || "funk_classic_pocket",{fullLoop:true}));
+  if(els.funkApplyLoopBtn) els.funkApplyLoopBtn.addEventListener("click",()=>composeGenreSong("funk",{archetype:selectedGenreArchetype("funk"),mode:"game-loop"}));
+  [["lofi","lofiApplyProfileBtn","lofiComposeSongBtn"],["chip","chipApplyProfileBtn","chipComposeSongBtn"],["metal","metalApplyProfileBtn","metalComposeSongBtn"],["western","westernApplyProfileBtn","westernComposeSongBtn"],["funk","funkApplyProfileBtn","funkComposeSongBtn"]].forEach(([genre,profileId,composeId]) => {
+    if(els[profileId]) els[profileId].addEventListener("click",()=>applyGenreSoundProfileOnly(genre));
+    if(els[composeId]) els[composeId].addEventListener("click",()=>composeGenreSong(genre,{archetype:selectedGenreArchetype(genre)}));
+  });
   const updateFunkParameters = () => { state.funkParameters=sanitizeFunkParameters({pocket:els.funkPocket?.value,slapAmount:els.funkSlap?.value,ghostNotes:els.funkGhost?.value}); state.audioProfile=FUNK_AUDIO_PROFILE_ID; if(!state.funkPreset) state.funkPreset="funk_classic_pocket"; markProjectDirty(); };
   ["funkPocket","funkSlap","funkGhost"].forEach(id=>{ if(els[id]) els[id].addEventListener("input",updateFunkParameters); });
   if(els.lofiPresetSelect) els.lofiPresetSelect.addEventListener("change", () => {
@@ -30903,7 +31241,7 @@ function bindControls(){
   els.loadSlot2Btn.addEventListener("click", ()=>loadFromSlot(2));
   els.loadAutoBtn.addEventListener("click", ()=>loadAutoSnapshot());
   els.tooltipsToggle.addEventListener("change", ()=>{ state.tooltipsOn = els.tooltipsToggle.checked; applyTooltips(); });
-  els.bpmInput.addEventListener("change", ()=>{ state.bpm = Math.max(60, Math.min(180, parseInt(els.bpmInput.value||"96",10))); els.bpmInput.value = state.bpm; markProjectDirty(); updateMiniTransport(); });
+  els.bpmInput.addEventListener("change", ()=>{ state.bpm = sanitizeBpm(els.bpmInput.value, 96); els.bpmInput.value = state.bpm; markProjectDirty(); updateMiniTransport(); });
   els.swingInput.addEventListener("input", ()=>{ state.swing = parseFloat(els.swingInput.value); els.swingValue.textContent = `${Math.round(state.swing*100)}%`; markProjectDirty(); });
   els.keySelect.addEventListener("change", ()=>{ pushUndoState(); state.key = els.keySelect.value; generateAvailableChords(); renderAll(); });
   els.scaleSelect.addEventListener("change", ()=>{ pushUndoState(); state.scale = els.scaleSelect.value; generateAvailableChords(); renderAll(); });
@@ -31359,10 +31697,10 @@ function bindControls(){
 
 function init(){
   ["statusText","miniStatusText","miniSectionText","miniPlayBtn","miniStopBtn","miniUndoBtn","miniSettingsBtn","playBtn","stopBtn","demoBtn","undoBtn","randomIdeaBtn","settingsBtn","settingsModal","closeSettingsBtn","bpmInput","swingInput","swingValue","keySelect","scaleSelect","timeSigSelect","uiModeSelect","themeSelect","chordTypeSelect","chordInstrumentSelect","progressionSlots","chordPalette","padGrid","drumPresetChips","drumPadsPanel","drumPadGrid","drumPadStatus","drumRecordToggle","drumClearRecordingBtn","melodyIdeaBtn","melodyDegreeSelect","melodyPitchModeSelect","melodyInputModeSelect","xyPlaybackModeSelect","xyPadModeSelect","xyScaleModeSelect","xyChordFollowToggle","xyRecordToggle","xyPadControls","xyPadWrap","xyPad","xyPadMarker","xyPadReadout","melodyGridControls","melodyDegreeChips","melodyOctaveChips","melodyTrackChips","melodyTrackControls","addMelodyTrackBtn","removeMelodyTrackBtn","melodyInstrumentSelect","melodyRows","resolutionLabel","resolutionSelect","seqHeader","seqRows","trackChips","guitarEnabledToggle","guitarEnabledToggleSettings","guitarToneSelect","guitarRegisterSelect","guitarStrumModeSelect","guitarVolume","guitarPresetChips","guitarFillStyleSelect","fillGuitarFromChordsBtn","applyGuitarAllBtn","clearGuitarBtn","guitarRow","chordOctaveSelect","chordPlayModeSelect","chordRhythmModeSelect","fillFullBtn","fillHalfBtn","fillQuarterBtn","fillTripletBtn","clearTrackBtn","sectionChips","sectionBarsSelect","copyTargetSectionSelect","copyAToBBtn","playSequenceBtn","addSequenceSlotBtn","removeSequenceSlotBtn","clearSequenceBtn","sectionSequence","projectBox","exportScopeSelect","midiExportModeSelect","midiChordExportSelect","midiExactDurationsToggle","exportJsonBtn","importJsonBtn","copyShareCodeBtn","importShareCodeBtn","pushToDjBtn","pushToDawBtn","pushToGodotBtn","mobileTransferBtn","mobileTransferPanel","mobileTransferShareBtn","mobileTransferCopyBtn","mobileTransferDownloadBtn","mobileTransferOpenBtn","mobileTransferStatus","pushHandoffStatus","exportMidiBtn","exportWavBtn","cancelWavExportBtn","wavProgressText","importMidiBtn","midiImportInput","midiImportSummary","wavResultBox","wavPreview","wavOpenLink","wavDownloadLink","wavShareBtn","saveSlot1Btn","loadSlot1Btn","saveSlot2Btn","loadSlot2Btn","loadAutoBtn","autoSaveStatus","tooltipsToggle","masterVol","chordVol","beatVol","leadVol","metronomeToggle","chordsToggle","bassToggle","fxDelay","fxChorus","fxFlanger","fxReverb","fxMix","showMelodyPadsToggle","showDrumPadsToggle","showMelodyPickerToggle","showTrackControlsToggle","humanizeToggle","sidechainToggle","sidechainAmount","sidechainAmountRow","bassModeSelect","bassArticulationSelect","projectSchemaSelect","projectLossReport","melodyPadsPanel","drumPadsPanel","melodyPickerPanel"].forEach(id => els[id] = document.getElementById(id));
-  ["lofiChillBtn","lofiGameLoopBtn","lofiPresetSelect","drumKitSelect","bassToneSelect","lofiTextureToggle","lofiVinylCrackle","lofiTapeHiss","lofiWowFlutter","lofiWarmth","lofiLowPassAge","lofiBitCrush","lofiApplyIdeaBtn","lofiApplyLoopBtn"].forEach(id => els[id] = document.getElementById(id));
-  ["chipTuneBtn","chipGameLoopBtn","chipPresetSelect","chipDrumKitSelect","chipBassToneSelect","chipTextureToggle","chipBitDepth","chipSampleRateCrush","chipPulseWidth","chipPitchDrift","chipSaturation","chipStereoSpread","chipApplyIdeaBtn","chipApplyLoopBtn"].forEach(id => els[id] = document.getElementById(id));
-  ["metalChugBtn","metalGameLoopBtn","metalPresetSelect","metalDrumKitSelect","metalBassToneSelect","metalTextureToggle","metalDrive","metalPalmMute","metalLowTightness","metalPresence","metalRoomSize","metalPickAttack","metalApplyIdeaBtn","metalApplyLoopBtn"].forEach(id => els[id] = document.getElementById(id));
-  ["genreDrawerBtn","genreDrawer","closeGenreDrawerBtn","genreSummary","cleanGenreBtn","westernTrailBtn","westernPresetSelect","westernApplyIdeaBtn","westernApplyLoopBtn","westernDrumPresetSelect","westernGuitarPresetSelect","funkGrooveBtn","funkGameLoopBtn","funkPresetSelect","funkApplyIdeaBtn","funkApplyLoopBtn","funkPocket","funkSlap","funkGhost"].forEach(id => els[id] = document.getElementById(id));
+  ["lofiChillBtn","lofiGameLoopBtn","lofiPresetSelect","drumKitSelect","bassToneSelect","lofiTextureToggle","lofiVinylCrackle","lofiTapeHiss","lofiWowFlutter","lofiWarmth","lofiLowPassAge","lofiBitCrush","lofiApplyIdeaBtn","lofiApplyLoopBtn","lofiApplyProfileBtn","lofiComposeSongBtn"].forEach(id => els[id] = document.getElementById(id));
+  ["chipTuneBtn","chipGameLoopBtn","chipPresetSelect","chipDrumKitSelect","chipBassToneSelect","chipTextureToggle","chipBitDepth","chipSampleRateCrush","chipPulseWidth","chipPitchDrift","chipSaturation","chipStereoSpread","chipApplyIdeaBtn","chipApplyLoopBtn","chipApplyProfileBtn","chipComposeSongBtn"].forEach(id => els[id] = document.getElementById(id));
+  ["metalChugBtn","metalGameLoopBtn","metalPresetSelect","metalDrumKitSelect","metalBassToneSelect","metalTextureToggle","metalDrive","metalPalmMute","metalLowTightness","metalPresence","metalRoomSize","metalPickAttack","metalApplyIdeaBtn","metalApplyLoopBtn","metalApplyProfileBtn","metalComposeSongBtn"].forEach(id => els[id] = document.getElementById(id));
+  ["genreDrawerBtn","genreDrawer","closeGenreDrawerBtn","genreSeedInput","genreSummary","cleanGenreBtn","westernTrailBtn","westernPresetSelect","westernApplyIdeaBtn","westernApplyLoopBtn","westernApplyProfileBtn","westernComposeSongBtn","westernDrumPresetSelect","westernGuitarPresetSelect","funkGrooveBtn","funkGameLoopBtn","funkPresetSelect","funkApplyIdeaBtn","funkApplyLoopBtn","funkApplyProfileBtn","funkComposeSongBtn","funkPocket","funkSlap","funkGhost"].forEach(id => els[id] = document.getElementById(id));
   els.drumPresetSelect = document.getElementById("drumPresetSelect");
   els.guitarPresetSelect = document.getElementById("guitarPresetSelect");
   els.pocketAudioCoreStatus = document.getElementById("pocketAudioCoreStatus");
