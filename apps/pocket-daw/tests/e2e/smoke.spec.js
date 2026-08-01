@@ -20,6 +20,13 @@ async function openTimelineTools(page) {
   await expect(page.locator("#loopEnabled")).toBeVisible();
 }
 
+async function openSoundLibrary(page) {
+  await page.locator('[data-studio-rail-target="library"]').click();
+  const library = page.getByRole("region", { name: "Sounds Library" });
+  await expect(library).toBeVisible();
+  return library;
+}
+
 test("starts the browser fallback and exposes core DAW controls", async ({ page }) => {
   await gotoApp(page);
 
@@ -93,35 +100,29 @@ test("toggles loop state and adds a live track through browser controls", async 
   await expect(page.locator("#loopEnabled")).toBeChecked();
   await expect(page.locator('[data-transport-status="true"]')).toContainText("Loop enabled");
 
-  await page.getByRole("button", { name: "Add Track" }).last().click();
-  await expect(page.locator('[data-add-track-backdrop="true"]')).toBeVisible();
+  await openSoundLibrary(page);
+  await page.getByText("Add other track types", { exact: true }).click();
   await page.locator('[data-add-track-kind="live-vocals"]').click();
   await expect(page.locator('[data-add-track-backdrop="true"]')).toHaveCount(0);
   await expect(page.locator('[data-arm-track="live-vocals"]').first()).toBeVisible();
   await expect(page.locator('[data-transport-status="true"]')).toContainText("Added track");
 });
 
-test("contains modal focus, closes on Escape, and restores the trigger", async ({ page }) => {
+test("focuses the persistent Library, closes on Escape, and restores the trigger", async ({ page }) => {
   await gotoApp(page);
 
-  const trigger = page.getByRole("button", { name: "Add Track" }).last();
+  const trigger = page.locator('[data-studio-rail-target="library"]');
   await trigger.focus();
   await trigger.click();
 
-  const dialog = page.getByRole("dialog", { name: "Library / Add Track" });
-  await expect(dialog).toBeVisible();
-  await expect.poll(() => page.evaluate(() => document.querySelector("[role=dialog]")?.contains(document.activeElement))).toBe(true);
-  await expect.poll(() => page.locator(".transport").evaluate((node) => node.inert)).toBe(true);
-
-  const dialogButtons = dialog.getByRole("button");
-  await dialogButtons.last().focus();
-  await page.keyboard.press("Tab");
-  await expect(dialogButtons.first()).toBeFocused();
+  const library = page.getByRole("region", { name: "Sounds Library" });
+  await expect(library).toBeVisible();
+  await expect(page.locator('[data-sample-library-search="true"]')).toBeFocused();
+  await expect.poll(() => page.locator(".transport").evaluate((node) => node.inert)).toBe(false);
 
   await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
+  await expect(library).toHaveCount(0);
   await expect(trigger).toBeFocused();
-  await expect.poll(() => page.locator(".transport").evaluate((node) => node.inert)).toBe(false);
 });
 
 test("adjusts generated clip repeats from the keyboard and preserves undo", async ({ page }) => {
@@ -217,7 +218,7 @@ test("uses stateful sequencer names and roving arrow-key focus", async ({ page }
   await expect.poll(async () => Number(await ruler.getAttribute("aria-valuenow"))).toBeGreaterThan(before);
 });
 
-test("keeps the supported narrow window and modal inside the viewport", async ({ page }) => {
+test("keeps the supported narrow window and Library inside the viewport", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 600 });
   await gotoApp(page);
 
@@ -231,10 +232,8 @@ test("keeps the supported narrow window and modal inside the viewport", async ({
   await expect(page.getByRole("heading", { name: "Pocket DAW" })).toBeVisible();
   await expect(page.locator('[data-transport-toggle="true"]')).toBeVisible();
 
-  await page.getByRole("button", { name: "Add Track", exact: true }).last().click();
-  const dialog = page.getByRole("dialog", { name: "Library / Add Track" });
-  await expect(dialog).toBeVisible();
-  const box = await dialog.boundingBox();
+  const library = await openSoundLibrary(page);
+  const box = await library.boundingBox();
   expect(box).not.toBeNull();
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.y).toBeGreaterThanOrEqual(0);
@@ -323,4 +322,72 @@ test("keeps malicious pasted project text inert in the browser fallback", async 
 
   await expect(page.locator('[role="status"]').first()).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__pocketDawE2eDialogCount)).toBe(0);
+});
+
+test("opens the persistent Sounds Library without trapping the rest of the studio", async ({ page }) => {
+  await gotoApp(page);
+
+  const library = await openSoundLibrary(page);
+  await expect(page.getByRole("tab", { name: "Sounds" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Samples" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Plug-ins" })).toBeVisible();
+  const close = library.getByRole("button", { name: "Close" });
+  await expect(close).toBeVisible();
+  await expect.poll(() => close.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    const topmost = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return Boolean(topmost && (topmost === node || node.contains(topmost)));
+  })).toBe(true);
+  await expect(page.locator(".transport")).not.toHaveAttribute("inert", "");
+
+  const search = page.locator('[data-sample-library-search="true"]');
+  await expect(search).toBeFocused();
+  await search.fill("kick");
+  await page.keyboard.press("Space");
+  await expect(search).toHaveValue("kick");
+  await expect(page.locator('[data-transport-toggle="true"]')).toHaveText("Pause");
+
+  await page.keyboard.press("Control+Space");
+  await expect(library.getByRole("status")).toContainText("Select a sound");
+  await expect(page.locator('[data-transport-toggle="true"]')).toHaveText("Pause");
+
+  await page.keyboard.press("Escape");
+  await expect(library).toHaveCount(0);
+});
+
+test("exposes honest sample empty states and the native-only VST3 boundary", async ({ page }) => {
+  await gotoApp(page);
+  await openSoundLibrary(page);
+
+  await page.getByRole("tab", { name: "Samples" }).click();
+  await expect(page.getByRole("region", { name: "Sounds Library" })).toContainText("No matching sounds");
+  await expect(page.getByRole("button", { name: "Add Files" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Folder", exact: true })).toBeVisible();
+  await expect(page.locator('[data-action="sample-library-create-drum-rack"]')).toBeDisabled();
+
+  await page.getByRole("tab", { name: "Plug-ins" }).click();
+  await expect(page.getByRole("region", { name: "Sounds Library" })).toContainText("VST3 Beta requires the installed Windows app");
+  await expect(page.getByRole("region", { name: "Sounds Library" })).toContainText("cannot scan or host native plug-ins");
+});
+
+test("keeps the Sounds Library usable in narrow, reduced-motion, forced-color layouts", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.emulateMedia({ reducedMotion: "reduce", forcedColors: "active" });
+  await gotoApp(page);
+  const library = await openSoundLibrary(page);
+  const box = await library.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(800);
+  expect(box.y + box.height).toBeLessThanOrEqual(600);
+
+  const search = page.locator('[data-sample-library-search="true"]');
+  await search.focus();
+  const focus = await search.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth };
+  });
+  expect(focus.outlineStyle).not.toBe("none");
+  expect(Number.parseFloat(focus.outlineWidth)).toBeGreaterThanOrEqual(2);
 });

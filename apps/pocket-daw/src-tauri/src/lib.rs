@@ -1,4 +1,5 @@
 use cpal::traits::DeviceTrait;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::sync::{mpsc, Arc, Mutex};
@@ -6,10 +7,14 @@ use std::time::Duration;
 use tauri::{Emitter, Manager};
 
 mod native_audio;
+mod native_audio_blocks;
 mod native_decode;
 mod native_recording;
 mod project_files;
+mod sample_library;
 mod session_import;
+mod vst3_foundation;
+mod vst3_session;
 
 const SECOND_INSTANCE_DEEP_LINK_EVENT: &str = "pocket-daw-second-instance";
 const LOCAL_HANDOFF_EVENT: &str = "pocket-daw-local-handoff";
@@ -263,6 +268,13 @@ pub fn run() {
             discover_project_recovery,
             open_audio_media_file,
             read_audio_media_file,
+            sample_library::sample_library_select_files,
+            sample_library::sample_library_select_folder,
+            sample_library::sample_library_scan_folder,
+            sample_library::sample_library_scan_paths,
+            sample_library::sample_library_starter_sounds,
+            sample_library::sample_library_load_state,
+            sample_library::sample_library_save_state,
             collect_project_media,
             write_native_cache_asset,
             read_native_cache_asset,
@@ -280,7 +292,31 @@ pub fn run() {
             write_binary_file,
             ai_bridge_session,
             ai_bridge_set_enabled,
-            ai_bridge_resolve_request
+            ai_bridge_resolve_request,
+            vst3_foundation::vst3_beta_status,
+            vst3_foundation::vst3_beta_set_enabled,
+            vst3_foundation::vst3_beta_get_user_scan_roots,
+            vst3_foundation::vst3_beta_set_user_scan_roots,
+            vst3_foundation::vst3_beta_select_user_scan_folder,
+            vst3_foundation::vst3_beta_discover_modules,
+            vst3_foundation::vst3_beta_list_registry,
+            vst3_foundation::vst3_beta_quarantine_module,
+            vst3_foundation::vst3_beta_clear_quarantine,
+            vst3_foundation::vst3_validate_state_snapshot,
+            vst3_session::vst3_session_query_parameters,
+            vst3_session::vst3_session_set_parameter,
+            vst3_session::vst3_session_query_programs,
+            vst3_session::vst3_session_select_program,
+            vst3_session::vst3_session_open_editor,
+            vst3_session::vst3_session_close_editor,
+            vst3_session::vst3_session_poll_parameter_edits,
+            vst3_session::vst3_session_load_instance,
+            vst3_session::vst3_session_query_status,
+            vst3_session::vst3_session_unload_instance,
+            vst3_session::vst3_session_retry_instance,
+            vst3_session::vst3_session_get_state,
+            vst3_session::vst3_session_set_state,
+            vst3_session::vst3_session_open_vendor_editor
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pocket DAW");
@@ -1066,14 +1102,47 @@ fn collect_project_media(
             ));
         }
         ensure_file_size_at_most(&source, MAX_AUDIO_FILE_BYTES, "Media file is too large to collect in this release. Try a shorter file or keep it external until native streaming support lands.")?;
-        let target_relative_path =
+        let mut target_relative_path =
             normalize_project_media_relative_path(&item.target_relative_path)?;
         if !target_relative_path.starts_with("project-media/") {
             return Err("Collected media targets must stay under project-media/.".to_string());
         }
-        let target = resolve_project_relative_path(project_dir, &target_relative_path)?;
+        let mut target = resolve_project_relative_path(project_dir, &target_relative_path)?;
+        let source_hash = if target_relative_path.starts_with("project-media/samples/") {
+            Some(file_sha256_hex(&source)?)
+        } else {
+            None
+        };
+        if let Some(hash) = source_hash.as_deref() {
+            if let Some(existing) = find_collected_sample_with_hash(project_dir, hash)? {
+                target = existing;
+                target_relative_path = target
+                    .strip_prefix(project_dir)
+                    .map_err(|_| "Collected sample escaped the project folder.".to_string())?
+                    .to_string_lossy()
+                    .replace('\\', "/");
+            } else if target.exists() && !files_have_equal_bytes(&source, &target)? {
+                let stem = target
+                    .file_stem()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("sample");
+                let extension = target
+                    .extension()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("wav");
+                let collision_name = format!("{}-{}.{}", stem, &hash[..12], extension);
+                target = target.with_file_name(collision_name);
+                target_relative_path = target
+                    .strip_prefix(project_dir)
+                    .map_err(|_| "Collected sample escaped the project folder.".to_string())?
+                    .to_string_lossy()
+                    .replace('\\', "/");
+            }
+        }
         if target == project_path {
-            return Err("Collected media cannot overwrite the Pocket DAW project file.".to_string());
+            return Err(
+                "Collected media cannot overwrite the Pocket DAW project file.".to_string(),
+            );
         }
         let target_already_matches = if target.exists() {
             if !files_have_equal_bytes(&source, &target)? {
@@ -1086,7 +1155,13 @@ fn collect_project_media(
         } else {
             false
         };
-        prepared.push((item, source, target_relative_path, target, target_already_matches));
+        prepared.push((
+            item,
+            source,
+            target_relative_path,
+            target,
+            target_already_matches,
+        ));
     }
 
     let mut collected = Vec::new();
@@ -1139,7 +1214,10 @@ fn files_have_equal_bytes(left: &std::path::Path, right: &std::path::Path) -> Re
         .map_err(|err| format!("Could not inspect collect source: {}", err))?;
     let right_metadata = std::fs::metadata(right)
         .map_err(|err| format!("Could not inspect existing collect target: {}", err))?;
-    if !left_metadata.is_file() || !right_metadata.is_file() || left_metadata.len() != right_metadata.len() {
+    if !left_metadata.is_file()
+        || !right_metadata.is_file()
+        || left_metadata.len() != right_metadata.len()
+    {
         return Ok(false);
     }
     let mut left_file = std::fs::File::open(left)
@@ -1162,6 +1240,44 @@ fn files_have_equal_bytes(left: &std::path::Path, right: &std::path::Path) -> Re
             return Ok(true);
         }
     }
+}
+
+fn file_sha256_hex(path: &std::path::Path) -> Result<String, String> {
+    let mut file = std::fs::File::open(path)
+        .map_err(|error| format!("Could not hash collect source: {error}"))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|error| format!("Could not hash collect source: {error}"))?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn find_collected_sample_with_hash(
+    project_dir: &std::path::Path,
+    expected_hash: &str,
+) -> Result<Option<std::path::PathBuf>, String> {
+    let folder = project_dir.join("project-media").join("samples");
+    let entries = match std::fs::read_dir(&folder) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("Could not inspect collected samples: {error}")),
+    };
+    for entry in entries.take(20_000) {
+        let path = entry
+            .map_err(|error| format!("Could not inspect a collected sample: {error}"))?
+            .path();
+        if path.is_file() && file_sha256_hex(&path)? == expected_hash {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
 }
 
 #[tauri::command]
@@ -2094,9 +2210,75 @@ mod tests {
             ],
         );
         assert!(partial.is_err());
-        assert!(!project_dir.join("project-media").join("Second.wav").exists());
+        assert!(!project_dir
+            .join("project-media")
+            .join("Second.wav")
+            .exists());
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn collected_samples_deduplicate_by_checksum_and_use_collision_safe_names() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("pocket-daw-sample-dedup-{stamp}"));
+        let source_dir = root.join("source");
+        let project_dir = root.join("project");
+        std::fs::create_dir_all(&source_dir).expect("source dir");
+        std::fs::create_dir_all(&project_dir).expect("project dir");
+        let project = project_dir.join("Song.pocketdaw");
+        std::fs::write(&project, "{}").expect("project file");
+        let first = source_dir.join("First.wav");
+        let duplicate = source_dir.join("Duplicate.wav");
+        let different = source_dir.join("Different.wav");
+        std::fs::write(&first, [1, 2, 3, 4]).expect("first");
+        std::fs::write(&duplicate, [1, 2, 3, 4]).expect("duplicate");
+        std::fs::write(&different, [9, 8, 7, 6]).expect("different");
+
+        let first_result = collect_project_media(
+            project.to_string_lossy().to_string(),
+            vec![CollectProjectMediaItem {
+                id: "first".into(),
+                source_uri: first.to_string_lossy().to_string(),
+                target_relative_path: "project-media/samples/Sample.wav".into(),
+            }],
+        )
+        .expect("first collect");
+        let duplicate_result = collect_project_media(
+            project.to_string_lossy().to_string(),
+            vec![CollectProjectMediaItem {
+                id: "duplicate".into(),
+                source_uri: duplicate.to_string_lossy().to_string(),
+                target_relative_path: "project-media/samples/Other.wav".into(),
+            }],
+        )
+        .expect("deduplicated collect");
+        assert_eq!(
+            first_result[0].target_relative_path,
+            duplicate_result[0].target_relative_path
+        );
+
+        let collision_result = collect_project_media(
+            project.to_string_lossy().to_string(),
+            vec![CollectProjectMediaItem {
+                id: "different".into(),
+                source_uri: different.to_string_lossy().to_string(),
+                target_relative_path: "project-media/samples/Sample.wav".into(),
+            }],
+        )
+        .expect("collision-safe collect");
+        assert_ne!(
+            collision_result[0].target_relative_path,
+            first_result[0].target_relative_path
+        );
+        assert!(collision_result[0]
+            .target_relative_path
+            .starts_with("project-media/samples/Sample-"));
+
+        std::fs::remove_dir_all(root).expect("remove test folder");
     }
 
     #[test]

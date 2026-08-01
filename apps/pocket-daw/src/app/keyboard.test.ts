@@ -29,6 +29,11 @@ describe("Pocket DAW keyboard shortcuts", () => {
       globalThis.HTMLElement = previousHTMLElement;
     }
   });
+
+  it("reserves Ctrl+Space for sample audition without changing normal transport Space", () => {
+    expect(commandFromKeyboardEvent(keyEvent({ key: " ", code: "Space", ctrlKey: true }))).toBe("preview-sample");
+    expect(commandFromKeyboardEvent(keyEvent({ key: " ", code: "Space" }))).toBe("play-pause");
+  });
 });
 
 function keyEvent(overrides: Partial<Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey" | "target">> = {}) {

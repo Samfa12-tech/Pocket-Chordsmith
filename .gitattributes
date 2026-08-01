@@ -18,3 +18,7 @@
 *.wav binary
 *.mid binary
 *.midi binary
+
+# Preserve the pinned upstream VST3 SDK subset byte-for-byte. Its source files
+# intentionally retain upstream whitespace covered by SOURCE_LOCK.json.
+apps/pocket-daw/src-tauri/third_party/vst3sdk/** -text whitespace=-trailing-space,-blank-at-eof,-space-before-tab

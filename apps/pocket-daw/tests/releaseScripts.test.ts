@@ -15,10 +15,15 @@ describe("release scripts", () => {
     const guardedBootstrapperPush = readFileSync("scripts/guarded-butler-push-bootstrapper.mjs", "utf8");
     const releaseUpdaterBuild = readFileSync("scripts/release-updater-build.mjs", "utf8");
     const installedPunchTakeSmoke = readFileSync("scripts/smoke-installed-punch-take-lanes.ts", "utf8");
+    const installedVst3HostSmoke = readFileSync("scripts/smoke-installed-vst3-host.mjs", "utf8");
     const verifyCandidate = readFileSync("scripts/verify-candidate.mjs", "utf8");
     const verifyReleaseCandidateTruth = readFileSync("scripts/verify-release-candidate-truth.mjs", "utf8");
 
-    expect(packageJson.scripts["tauri:build"]).toBe("tauri build");
+    expect(packageJson.scripts["tauri:build"]).toContain("plugin-host:prepare:release");
+    expect(packageJson.scripts["tauri:build"]).toContain("tauri.sidecar.conf.json");
+    expect(packageJson.scripts["tauri:build:installers"]).toContain("plugin-host:prepare:release");
+    expect(packageJson.scripts["tauri:build:installers"]).toContain("tauri.package.conf.json");
+    expect(packageJson.scripts["verify:plugin-host"]).toContain("--check");
     expect(packageJson.scripts["verify:native-release"]).toContain("--native-release");
     expect(packageJson.scripts["package:itch"]).toBe("node scripts/package-itch.mjs");
     expect(packageJson.scripts["verify:itch"]).toBe("node scripts/verify-itch.mjs");
@@ -29,6 +34,8 @@ describe("release scripts", () => {
     expect(packageJson.scripts["status:release"]).toBe("node scripts/render-release-status.mjs");
     expect(packageJson.scripts["verify:smoke-attestation"]).toBe("node scripts/verify-smoke-attestation.mjs");
     expect(packageJson.scripts["verify:candidate"]).toBe("node scripts/verify-candidate.mjs");
+    expect(packageJson.scripts["smoke:installed:vst3-host"]).toBe("node scripts/smoke-installed-vst3-host.mjs");
+    expect(packageJson.scripts["verify:installed:vst3-host"]).toBe("node scripts/verify-installed-vst3-host-summary.mjs");
     expect(packageJson.scripts["verify:release-candidate-truth"]).toBe("node scripts/verify-release-candidate-truth.mjs");
     expect(packageJson.scripts["release:update"]).toBe("node scripts/release-updater-build.mjs");
     expect(packageJson.scripts["release:update:fast"]).toBe("node scripts/release-updater-build.mjs --fast");
@@ -64,7 +71,13 @@ describe("release scripts", () => {
     expect(packageItch).toContain("Manual Build Native Cache now immediately swaps active native playback");
     expect(packageItch).toContain("low or zero procedural fallback events");
     expect(packageItch).toContain("Native Playback and Native Cache readouts");
+    expect(packageItch).toContain("loadCandidatePluginHostMetadata");
+    expect(packageItch).toContain("SIDECAR_PACKAGED_BINARY_PATH");
+    expect(packageItch).toContain("preBundleSha256");
+    expect(packageItch).toContain("thirdPartyNoticesRequired");
     expect(verifyArtifacts).toContain("assertSignatureFreshness");
+    expect(verifyArtifacts).toContain("assertPluginHostSidecar");
+    expect(verifyArtifacts).toContain("Permission is hereby granted");
     expect(verifyArtifacts).toContain("TAURI_SIGNING_PRIVATE_KEY");
     expect(guardedPush).toContain('PUBLISH !== "1"');
     expect(guardedPush).toContain("SMOKE_ATTESTATION");
@@ -107,6 +120,9 @@ describe("release scripts", () => {
     expect(installedPunchTakeSmoke).toContain("requestedRecordMs: midiRecordMs");
     expect(installedPunchTakeSmoke).toContain("midiDevicePreflightEvidence");
     expect(installedPunchTakeSmoke).toContain("midiDevicePreflight");
+    expect(installedVst3HostSmoke).toContain("POCKET_DAW_TEST_PLUGIN_HOST_EXE");
+    expect(installedVst3HostSmoke).toContain("persistent_session_graph_processes_two_fixture_instances_and_recovers_cleanly");
+    expect(installedVst3HostSmoke).toContain("candidate.sha256 !== sidecarSha256");
     expect(verifyCandidate).toContain('"verify:versions"');
     expect(verifyCandidate).toContain('"verify:native-sound-recipes"');
     expect(verifyCandidate).toContain('"verify:release"');
@@ -114,9 +130,11 @@ describe("release scripts", () => {
     expect(verifyCandidate).toContain("cargo");
     expect(verifyCandidate).toContain("verifySmokeAttestationFile");
     expect(verifyCandidate).toContain("verifyInstalledPunchTakeSummaryFile");
+    expect(verifyCandidate).toContain("verifyInstalledVst3HostSummaryFile");
     expect(verifyCandidate).toContain("verifyGamePackZip");
     expect(verifyCandidate).toContain("assertReleaseCandidateTruth");
     expect(verifyCandidate).toContain("--punch-take-summary <punch-take-lane-installed-smoke-summary.json>");
+    expect(verifyCandidate).toContain("--vst3-host-summary <installed-vst3-host-smoke-summary.json>");
     expect(verifyCandidate).toContain("requireAudibleAudio: options.requireAudibleAudio");
     expect(verifyCandidate).toContain("requireExportFiles: options.requireExportFiles");
     expect(verifyCandidate).toContain("requireMidiInput: options.requireMidiInput");

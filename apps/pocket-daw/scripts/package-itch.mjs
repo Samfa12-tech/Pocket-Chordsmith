@@ -10,13 +10,20 @@ import {
 } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
-import { hashArtifacts, relativeArtifactPath, walkFiles, writeChecksumFile } from "./hash-release-artifacts.mjs";
+import { hashArtifacts, relativeArtifactPath, sha256File, walkFiles, writeChecksumFile } from "./hash-release-artifacts.mjs";
+import {
+  SIDECAR_BLOCK_FRAMES,
+  SIDECAR_NAME,
+  SIDECAR_PROTOCOL_VERSION,
+  SIDECAR_TARGET,
+  stagedSidecarName
+} from "./prepare-plugin-host-sidecar.mjs";
 import { assertReleaseCandidateTruth } from "./verify-release-candidate-truth.mjs";
 import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Faithful MIDI + Portable Projects`;
+export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Samples, Samplers + VST3 Beta`;
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -35,11 +42,19 @@ const ROOT = process.cwd();
 const VERSION = packageJson.version;
 const RELEASES_DIR = join(ROOT, "releases", "itch");
 const INSTALLERS_DIR = join(RELEASES_DIR, "installers");
+const SIDECAR_METADATA_NAME = `${SIDECAR_NAME}-build.json`;
+const SIDECAR_BINARIES_DIR = join(ROOT, "src-tauri", "binaries");
+const SIDECAR_METADATA_PATH = join(SIDECAR_BINARIES_DIR, SIDECAR_METADATA_NAME);
+const SIDECAR_BINARY_PATH = join(SIDECAR_BINARIES_DIR, stagedSidecarName());
+const SIDECAR_PACKAGED_BINARY_PATH = join(ROOT, "src-tauri", "target", "release", `${SIDECAR_NAME}.exe`);
+const SIDECAR_CANDIDATE_METADATA_PATH = join(ROOT, "src-tauri", "target", "release", "bundle", SIDECAR_METADATA_NAME);
+const THIRD_PARTY_NOTICES_PATH = join(ROOT, "src-tauri", "resources", "THIRD_PARTY_NOTICES.txt");
 const UPDATER_ENDPOINT = "https://github.com/Samfa12-tech/Pocket-Chordsmith/releases/latest/download/pocket-daw-latest.json";
 
 export async function packageItchRelease({ buildNative = process.env.POCKET_DAW_SKIP_NATIVE_BUILD !== "1" } = {}) {
   assertReleaseCandidateTruth(ROOT);
   if (buildNative) run("npm", ["run", "tauri:build:installers"]);
+  const pluginHostSidecar = await loadCandidatePluginHostMetadata({ builtNow: buildNative });
 
   rmCurrentVersionReleaseFiles();
   mkdirSync(RELEASES_DIR, { recursive: true });
@@ -73,7 +88,7 @@ export async function packageItchRelease({ buildNative = process.env.POCKET_DAW_
   const artifacts = await releaseArtifactsWithSignatures(rootArtifacts);
 
   const manifestPath = join(RELEASES_DIR, `pocket-daw-release-manifest-v${VERSION}.json`);
-  const manifest = await releaseManifest(artifacts);
+  const manifest = await releaseManifest(artifacts, pluginHostSidecar);
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   const checksummed = await hashArtifacts(ROOT, [...rootArtifacts, manifestPath]);
@@ -92,6 +107,81 @@ export async function packageItchRelease({ buildNative = process.env.POCKET_DAW_
     verdictPath,
     artifacts: finalArtifacts
   };
+}
+
+async function loadCandidatePluginHostMetadata({ builtNow }) {
+  if (builtNow) {
+    if (!existsSync(SIDECAR_METADATA_PATH) || !existsSync(SIDECAR_BINARY_PATH)) {
+      throw new Error("Release plug-in host sidecar metadata or binary is missing after the native build.");
+    }
+    const staged = parsePluginHostMetadata(SIDECAR_METADATA_PATH);
+    if (staged.profile !== "release") throw new Error("Release packaging requires a release-profile plug-in host sidecar.");
+    const actualHash = await sha256File(SIDECAR_BINARY_PATH);
+    const actualSize = statSync(SIDECAR_BINARY_PATH).size;
+    if (actualHash !== staged.sha256 || actualSize !== staged.sizeBytes) {
+      throw new Error("Release plug-in host sidecar metadata does not match the staged binary.");
+    }
+    const packaged = await bindPackagedPluginHostMetadata(staged, SIDECAR_PACKAGED_BINARY_PATH);
+    mkdirSync(dirname(SIDECAR_CANDIDATE_METADATA_PATH), { recursive: true });
+    writeFileSync(SIDECAR_CANDIDATE_METADATA_PATH, `${JSON.stringify(packaged, null, 2)}\n`, "utf8");
+  }
+  if (!existsSync(SIDECAR_CANDIDATE_METADATA_PATH)) {
+    throw new Error("Exact candidate plug-in host metadata is missing. Run the full release build before fast restaging.");
+  }
+  const metadata = parsePluginHostMetadata(SIDECAR_CANDIDATE_METADATA_PATH);
+  assertInstalledThirdPartyNotices(metadata);
+  return {
+    ...metadata,
+    packagingIntent: "tauriExternalBin",
+    installedProbeStatus: "NOT RUN",
+    thirdPartyNoticesRequired: metadata.vst3SdkLinked
+  };
+}
+
+export async function bindPackagedPluginHostMetadata(staged, packagedBinaryPath) {
+  if (!existsSync(packagedBinaryPath)) {
+    throw new Error("The post-Tauri plug-in host sidecar is missing after the native build.");
+  }
+  return {
+    ...staged,
+    preBundleSha256: staged.sha256,
+    preBundleSizeBytes: staged.sizeBytes,
+    sha256: await sha256File(packagedBinaryPath),
+    sizeBytes: statSync(packagedBinaryPath).size
+  };
+}
+
+function parsePluginHostMetadata(path) {
+  const metadata = JSON.parse(readFileSync(path, "utf8"));
+  if (metadata.component !== SIDECAR_NAME) throw new Error("Plug-in host candidate component mismatch.");
+  if (metadata.protocolVersion !== SIDECAR_PROTOCOL_VERSION) throw new Error("Plug-in host candidate protocol mismatch.");
+  if (metadata.target !== SIDECAR_TARGET) throw new Error("Plug-in host candidate target mismatch.");
+  if (metadata.audioBlockFrames !== SIDECAR_BLOCK_FRAMES) throw new Error("Plug-in host candidate block size mismatch.");
+  if (!/^[a-f0-9]{64}$/.test(metadata.sha256 || "") || !Number.isSafeInteger(metadata.sizeBytes) || metadata.sizeBytes <= 0) {
+    throw new Error("Plug-in host candidate hash or size is invalid.");
+  }
+  if (!metadata.vst3SdkLinked && (metadata.scannerAvailable || metadata.audioHostingAvailable)) {
+    throw new Error("Plug-in host candidate cannot advertise SDK capabilities when the SDK is not linked.");
+  }
+  if (metadata.vst3SdkLinked && (!metadata.scannerAvailable || !metadata.audioHostingAvailable)) {
+    throw new Error("SDK-linked candidate must expose both isolated scanning and session audio hosting.");
+  }
+  return metadata;
+}
+
+function assertInstalledThirdPartyNotices(metadata) {
+  if (!existsSync(THIRD_PARTY_NOTICES_PATH)) throw new Error("Installed third-party notices resource is missing.");
+  if (!metadata.vst3SdkLinked) return;
+  const notices = readFileSync(THIRD_PARTY_NOTICES_PATH, "utf8");
+  if (!/Steinberg VST 3 SDK/i.test(notices) || !/Permission is hereby granted/i.test(notices)) {
+    throw new Error("SDK-linked plug-in hosting requires the installed Steinberg VST 3 SDK MIT notice.");
+  }
+  if (!metadata.vst3SdkTag || !/^[a-f0-9]{40}$/.test(metadata.vst3SdkCommit || "")) {
+    throw new Error("SDK-linked plug-in hosting requires an exact VST3 SDK tag and commit in candidate metadata.");
+  }
+  if (!/^[a-f0-9]{64}$/.test(metadata.vst3SdkLicenseSha256 || "")) {
+    throw new Error("SDK-linked plug-in hosting requires the pinned VST3 SDK license hash.");
+  }
 }
 
 function rmCurrentVersionReleaseFiles() {
@@ -223,7 +313,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Faithful MIDI + Portable Projects
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Samples, Samplers + VST3 Beta
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -232,6 +322,21 @@ Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket C
 ${artifactTable}
 
 ## Highlights
+
+- Added a persistent Sounds and Samples Library with explicit file/folder import, Explorer drag-and-drop, search, filters, favourites, recents, waveform audition, and keyboard-accessible actions. Pocket DAW never scans personal drives automatically.
+- Bundled the existing Pocket Starter Sounds as a useful starter collection.
+- Added Quick Sampler tracks with pitch, fine tune, gain, pan, start/end, reverse, one-shot/gate/loop modes, loop bounds, and ADSR controls.
+- Added 16-pad Drum Racks mapped to MIDI notes 36-51 with per-pad gain, pan, tune, trim, reverse, mute/solo, play mode, and choke groups.
+- Added used-sample-only Save/Save As collection with checksum deduplication, collision-safe names, decoded-cache WAV recovery, and honest non-portable missing-media warnings.
+- Upgraded projects to schema 3 while preserving schema-2 tracks, clips, media, and built-in effects.
+- Added opt-in Windows x64 VST3 instrument and effect hosting in a crash-isolated helper. Scanning and processing use bounded processes, named pipes, and shared memory; vendor code never runs in the native audio callback.
+- Added sample-positioned notes and automation, native tempo/meter/transport/loop context, latency compensation, effect tails, factory programs, Pocket presets, validated compressed state, and missing-plug-in placeholders.
+- Added owned vendor editor windows plus a searchable generic parameter editor fallback.
+- A missed deadline bypasses an effect or silences an instrument for that block; helper failure disables affected instances without taking down Pocket DAW and preserves recovery state.
+- VST3 compatibility tests cover JS80P 4.0.2 and Surge XT 1.3.4 from official vendor releases. Pocket DAW does not bundle or download them.
+- Existing MIDI transcription, recording, Pocket Audio handoff, native export, Freeze, stems, section loops, Godot/Web game packs, and project portability remain supported.
+
+## Established foundations
 
 - Added two explicit MIDI conversion intents: Faithful transcription preserves selected source roles and timing, while Arrange into Chordsmith keeps the creative section-reuse and accompaniment workflow.
 - Faithful transcription independently assigns melody and chord sources, chooses a supported source-derived resolution, preserves exact source length/order through sequential A-H packing, writes exact DAW melody/chord overlays, retains the raw MIDI reference, and generates no bass, drums or guitar by default.
@@ -540,7 +645,7 @@ ${rows.map(([area, steps, expected]) => `| ${area} | ${steps} | ${expected} | Ma
 `;
 }
 
-async function releaseManifest(artifacts) {
+async function releaseManifest(artifacts, pluginHostSidecar) {
   const gitCommit = commandOutput("git", ["rev-parse", "HEAD"]);
   const gitStatus = commandOutput("git", ["status", "--short"]);
   const schema = readFileSync(join(ROOT, "src", "daw", "schema.ts"), "utf8");
@@ -567,6 +672,7 @@ async function releaseManifest(artifacts) {
       installerDirectory: relativeArtifactPath(ROOT, INSTALLERS_DIR),
       updaterEndpoint: UPDATER_ENDPOINT
     },
+    pluginHostSidecar,
     artifacts,
     windowsSmokeTest: { status: "NOT RUN", run: false },
     manualItchUpload: { status: "NOT RUN", run: false },

@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { loadPocketDawRaw } from "../src/app/commands";
 import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../src/daw/audioClips";
+import { createDrumRackTrack, createQuickSamplerTrack } from "../src/daw/devices";
 import { buildPocketDawProjectFile } from "../src/daw/dawProject";
+import { createMidiClip } from "../src/daw/midiClips";
 import { validateProjectInvariants } from "../src/daw/projectInvariants";
 import { POCKET_DAW_VERSION } from "../src/daw/schema";
 import { createDemoProject } from "../src/demo/demoProject";
@@ -172,6 +174,12 @@ if (!webVerification.ok) throw new Error(`Web game-pack verification failed: ${w
 const reopenedProject = loadPocketDawRaw(await readFile(movedProjectPath, "utf8"));
 const invariants = validateProjectInvariants(reopenedProject);
 if (invariants.errors.length) throw new Error(`Final portable project has invariant errors: ${invariants.errors[0].message}`);
+const quickSampler = reopenedProject.devices.find((device) => device.id === fixture.quickSamplerDeviceId && device.type === "quick-sampler");
+const drumRack = reopenedProject.devices.find((device) => device.id === fixture.drumRackDeviceId && device.type === "drum-rack");
+if (!quickSampler || quickSampler.mediaPoolItemId !== fixture.mediaAId) throw new Error("Quick Sampler did not survive installed collect/move/reopen with its media mapping.");
+if (!drumRack || drumRack.pads[0]?.mediaPoolItemId !== fixture.mediaAId || drumRack.pads[1]?.mediaPoolItemId !== fixture.mediaBId) {
+  throw new Error("Drum Rack did not survive installed collect/move/reopen with its ordered pad mappings.");
+}
 
 const summary = {
   ok: true,
@@ -185,6 +193,15 @@ const summary = {
   originalSourcesDeleted: true,
   replacementSourceDeleted: true,
   mediaPoolItemIds: [fixture.mediaAId, fixture.mediaBId],
+  instrumentDevices: {
+    quickSampler: { id: quickSampler.id, type: quickSampler.type, trackId: fixture.quickSamplerTrackId, mediaPoolItemId: quickSampler.mediaPoolItemId },
+    drumRack: {
+      id: drumRack.id,
+      type: drumRack.type,
+      trackId: fixture.drumRackTrackId,
+      mappedPads: drumRack.pads.filter((pad) => pad.mediaPoolItemId).map((pad) => ({ midiNote: pad.midiNote, mediaPoolItemId: pad.mediaPoolItemId }))
+    }
+  },
   phases: {
     initial,
     collected: { ...collected, files: collectedEvidence },
@@ -256,7 +273,32 @@ async function createSmokeProject(sourceA: string, sourceB: string) {
   });
   project = mediaB.project;
   project = placeAudioClipOnTimeline(project, mediaB.item.id, 3).project;
-  return { project, mediaAId: mediaA.item.id, mediaBId: mediaB.item.id };
+  const quickSampler = createQuickSamplerTrack(project, mediaA.item.id, "Installed Quick Sampler");
+  if (!quickSampler) throw new Error("Could not create the installed Quick Sampler smoke fixture.");
+  project = createMidiClip(quickSampler.project, undefined, "Sampler C3", {
+    ppq: project.project.ppq || 480,
+    notes: [{ id: "smoke-sampler-c3", pitch: 60, startTick: 0, durationTicks: 480, velocity: 104, channel: 0 }],
+    metadata: { source: "installed-media-portability-smoke", device: "quick-sampler" }
+  }, { trackId: quickSampler.trackId }).project;
+  const drumRack = createDrumRackTrack(project, [mediaA.item.id, mediaB.item.id], "Installed Drum Rack");
+  if (!drumRack) throw new Error("Could not create the installed Drum Rack smoke fixture.");
+  project = createMidiClip(drumRack.project, undefined, "Drum Pads 36-37", {
+    ppq: project.project.ppq || 480,
+    notes: [
+      { id: "smoke-drum-36", pitch: 36, startTick: 0, durationTicks: 120, velocity: 110, channel: 9 },
+      { id: "smoke-drum-37", pitch: 37, startTick: 240, durationTicks: 120, velocity: 100, channel: 9 }
+    ],
+    metadata: { source: "installed-media-portability-smoke", device: "drum-rack" }
+  }, { trackId: drumRack.trackId }).project;
+  return {
+    project,
+    mediaAId: mediaA.item.id,
+    mediaBId: mediaB.item.id,
+    quickSamplerDeviceId: quickSampler.deviceId,
+    quickSamplerTrackId: quickSampler.trackId,
+    drumRackDeviceId: drumRack.deviceId,
+    drumRackTrackId: drumRack.trackId
+  };
 }
 
 function mediaSnapshot(status: any) {

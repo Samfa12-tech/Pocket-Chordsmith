@@ -123,33 +123,130 @@ export function timelineQuarterNoteBeatsBetweenBars(project: PocketDawProject, s
 
 export function timelineSecondsAtBar(project: PocketDawProject, bar: number): number {
   const target = Math.max(1, Number.isFinite(bar) ? bar : 1);
-  if (target <= 1) return 0;
-  const lane = getProjectAutomationLane(project, "tempo");
-  if (!lane || !lane.enabled || lane.points.length === 0) return constantTempoBeatsToSeconds(timelineQuarterNoteBeatsBetweenBars(project, 1, target), project.project.bpm);
-  const points = lane.points.slice().sort((a, b) => a.bar - b.bar);
+  return timelineMetricsAtSortedBars(project, [target])[0]?.timeSeconds ?? 0;
+}
+
+export interface TimelineMetricAtBar {
+  bar: number;
+  timeSeconds: number;
+  projectPpq: number;
+  tempo: number;
+  curve: "linear" | "hold" | "ease-in" | "ease-out";
+  meter: TimelineMeter;
+}
+
+/**
+ * Computes an ordered set of timeline coordinates in one forward pass. This is
+ * the bounded transport-map path for native playback; unlike repeatedly calling
+ * timelineSecondsAtBar it does not re-sort and rescan attacker-controlled tempo
+ * and meter arrays for every requested point.
+ */
+export function timelineMetricsAtSortedBars(project: PocketDawProject, bars: number[]): TimelineMetricAtBar[] {
+  const targets = [...new Set(bars
+    .filter(Number.isFinite)
+    .map((bar) => Math.max(1, bar)))]
+    .sort((left, right) => left - right);
+  return timelineMetricsWithPreparedControls(project, targets, prepareTimelineControls(project));
+}
+
+function prepareTimelineControls(project: PocketDawProject) {
+  const fallbackMeter: TimelineMeter = {
+    numerator: Math.max(1, Math.round(Number(project.project.timeSig) || 4)),
+    denominator: 4
+  };
+  const meterPoints = (project.project.meterMap || [])
+    .filter((point) => Number.isFinite(point.bar) && Number.isFinite(point.numerator) && Number.isFinite(point.denominator))
+    .slice()
+    .sort((left, right) => left.bar - right.bar || left.id.localeCompare(right.id));
+  const tempoLane = getProjectAutomationLane(project, "tempo");
+  const tempoPoints = tempoLane?.enabled
+    ? tempoLane.points.filter((point) => Number.isFinite(point.bar) && Number.isFinite(point.value)).slice().sort((left, right) => left.bar - right.bar)
+    : [];
+  return { fallbackMeter, meterPoints, tempoPoints };
+}
+
+type PreparedTimelineControls = ReturnType<typeof prepareTimelineControls>;
+
+function timelineMetricsWithPreparedControls(
+  project: PocketDawProject,
+  targets: number[],
+  controls: PreparedTimelineControls
+): TimelineMetricAtBar[] {
+  const { fallbackMeter, meterPoints, tempoPoints } = controls;
   let cursor = 1;
   let seconds = 0;
-  while (cursor < target - 0.000001) {
-    const first = points[0];
-    const last = points[points.length - 1];
-    if (cursor < first.bar) {
-      const next = Math.min(target, first.bar);
-      seconds += constantTempoBeatsToSeconds(timelineQuarterNoteBeatsBetweenBars(project, cursor, next), first.value);
+  let projectPpq = 0;
+  let meterIndex = -1;
+  let tempoIndex = -1;
+  const results: TimelineMetricAtBar[] = [];
+  const epsilon = 0.000001;
+
+  const advanceControls = () => {
+    while (meterIndex + 1 < meterPoints.length && meterPoints[meterIndex + 1]!.bar <= cursor + epsilon) meterIndex += 1;
+    while (tempoIndex + 1 < tempoPoints.length && tempoPoints[tempoIndex + 1]!.bar <= cursor + epsilon) tempoIndex += 1;
+  };
+  const activeMeter = (): TimelineMeter => {
+    const point = meterIndex >= 0 ? meterPoints[meterIndex] : undefined;
+    return point ? {
+      numerator: Math.max(1, Math.round(point.numerator)),
+      denominator: Math.max(1, Math.round(point.denominator)),
+      source: point.source,
+      sourceBar: point.bar
+    } : fallbackMeter;
+  };
+  const activeTempo = () => {
+    if (!tempoPoints.length) return { startBar: cursor, endBar: cursor + 1, start: project.project.bpm, end: project.project.bpm, curve: "linear" as const, nextBar: Number.POSITIVE_INFINITY };
+    if (tempoIndex < 0) {
+      const first = tempoPoints[0]!;
+      return { startBar: cursor, endBar: first.bar, start: first.value, end: first.value, curve: "linear" as const, nextBar: first.bar };
+    }
+    const start = tempoPoints[tempoIndex]!;
+    const end = tempoPoints[tempoIndex + 1];
+    if (!end) return { startBar: start.bar, endBar: cursor + 1, start: start.value, end: start.value, curve: start.curve || "linear", nextBar: Number.POSITIVE_INFINITY };
+    return { startBar: start.bar, endBar: end.bar, start: start.value, end: end.value, curve: start.curve || "linear", nextBar: end.bar };
+  };
+
+  for (const target of targets) {
+    while (cursor < target - epsilon) {
+      advanceControls();
+      const meter = activeMeter();
+      const tempo = activeTempo();
+      const nextMeterBar = meterPoints[meterIndex + 1]?.bar ?? Number.POSITIVE_INFINITY;
+      const next = Math.min(target, nextMeterBar, tempo.nextBar);
+      if (!(next > cursor + epsilon)) {
+        cursor = Math.min(target, cursor + epsilon);
+        continue;
+      }
+      seconds += tempoSegmentSecondsForMeter(
+        cursor,
+        next,
+        tempo.startBar,
+        tempo.endBar,
+        tempo.start,
+        tempo.end,
+        tempo.curve,
+        quarterNoteBeatsPerBar(meter)
+      );
+      projectPpq += (next - cursor) * quarterNoteBeatsPerBar(meter);
       cursor = next;
-      continue;
     }
-    if (cursor >= last.bar || points.length === 1) {
-      seconds += constantTempoBeatsToSeconds(timelineQuarterNoteBeatsBetweenBars(project, cursor, target), last.value);
-      break;
-    }
-    const index = Math.max(0, points.findIndex((point, i) => cursor >= point.bar && cursor < (points[i + 1]?.bar ?? Number.POSITIVE_INFINITY)));
-    const start = points[index];
-    const end = points[index + 1] || last;
-    const next = Math.min(target, end.bar);
-    seconds += tempoSegmentSeconds(project, cursor, next, start.bar, end.bar, start.value, end.value, start.curve);
-    cursor = next;
+    advanceControls();
+    const meter = activeMeter();
+    const tempo = activeTempo();
+    const tempoProgress = (cursor - tempo.startBar) / Math.max(0.000001, tempo.endBar - tempo.startBar);
+    const tempoValue = tempo.start === tempo.end || tempo.curve === "hold"
+      ? tempo.start
+      : shapedTempo(tempo.start, tempo.end, tempoProgress, tempo.curve);
+    results.push({
+      bar: target,
+      timeSeconds: seconds,
+      projectPpq,
+      tempo: Math.max(1, tempoValue),
+      curve: tempo.curve,
+      meter
+    });
   }
-  return seconds;
+  return results;
 }
 
 export function timelineDurationSeconds(project: PocketDawProject): number {
@@ -165,12 +262,14 @@ export function timelineBarAtSeconds(project: PocketDawProject, seconds: number)
   const lane = getProjectAutomationLane(project, "tempo");
   if ((!lane || !lane.enabled || lane.points.length === 0) && !(project.project.meterMap || []).length) return secondsToBars(target, project.project.bpm, project.project.timeSig) + 1;
   const lastPointBar = lane?.points.reduce((max, point) => Math.max(max, point.bar), 1) || 1;
+  const controls = prepareTimelineControls(project);
+  const secondsAtBar = (bar: number) => timelineMetricsWithPreparedControls(project, [bar], controls)[0]?.timeSeconds ?? 0;
   let high = Math.max(2, project.timeline.bars + 1, lastPointBar + 1);
-  while (timelineSecondsAtBar(project, high) < target && high < 100000) high *= 2;
+  while (secondsAtBar(high) < target && high < 100000) high *= 2;
   let low = 1;
   for (let i = 0; i < 32; i += 1) {
     const mid = (low + high) / 2;
-    if (timelineSecondsAtBar(project, mid) < target) low = mid;
+    if (secondsAtBar(mid) < target) low = mid;
     else high = mid;
   }
   return high;
@@ -213,30 +312,6 @@ export function wrapTimelineLoopSeconds(project: PocketDawProject, seconds: numb
 
 function constantTempoBeatsToSeconds(beats: number, bpm: number): number {
   return Math.max(0, beats) * (60 / Math.max(1, bpm));
-}
-
-function tempoSegmentSeconds(
-  project: PocketDawProject,
-  cursor: number,
-  next: number,
-  startBar: number,
-  endBar: number,
-  startBpm: number,
-  endBpm: number,
-  curve: string | undefined
-): number {
-  return timelineSegmentsBetweenBars(project, cursor, next).reduce((seconds, segment) => {
-    return seconds + tempoSegmentSecondsForMeter(
-      segment.startBar,
-      segment.endBar,
-      startBar,
-      endBar,
-      startBpm,
-      endBpm,
-      curve,
-      quarterNoteBeatsPerBar(segment.meter)
-    );
-  }, 0);
 }
 
 function tempoSegmentSecondsForMeter(

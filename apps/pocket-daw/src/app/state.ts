@@ -13,6 +13,8 @@ import type { DrumLaneId } from "../daw/drumLanes";
 import type { MidiConversionSourceFilter, MidiConversionSourceMode } from "../daw/midiConversionFilter";
 import type { MidiChordsmithConversionIntent, MidiConversionRole } from "../daw/midiFaithfulConversion";
 import type { MidiImportPlacementMode } from "../daw/midiClips";
+import { createEmptySampleLibraryIndex, type SampleLibraryCategory, type SampleLibraryIndex } from "../native/sampleLibrary";
+import type { Vst3BetaStatus, Vst3InstanceStatus, Vst3ModuleCandidate } from "../plugins/vst3Foundation";
 
 export type ChordsmithStepSelection =
   | { kind: "drums"; sectionId: string; lane: DrumLaneId; step: number }
@@ -80,6 +82,32 @@ export interface AppState {
   midiInputRecording: MidiInputRecordingUiState;
   recordingPunchEnabled: boolean;
   recordingTakeMode: RecordingTakeMode;
+  sampleLibrary: SampleLibraryIndex;
+  sampleLibraryTab: "sounds" | "samples" | "plugins";
+  sampleLibraryQuery: string;
+  sampleLibraryCategory: SampleLibraryCategory | "all";
+  sampleLibraryFolderId: string | null;
+  sampleLibraryFavoritesOnly: boolean;
+  sampleLibraryTargetTrackId: string | null;
+  sampleLibraryTargetBar: number;
+  selectedSampleLibraryIds: string[];
+  sampleLibraryLoading: boolean;
+  sampleLibraryMessage: string;
+  previewingSampleLibraryId: string | null;
+  vst3BetaStatus: Vst3BetaStatus | null;
+  vst3Modules: Vst3ModuleCandidate[];
+  vst3DescriptorQuery: string;
+  vst3RoleFilter: "all" | "instrument" | "effect";
+  vst3ParameterQuery: string;
+  vst3SubstitutionTarget: Vst3SubstitutionTarget | null;
+  vst3InstanceStatuses: Record<string, Vst3InstanceStatus>;
+  vst3BusyInstanceId: string | null;
+}
+
+export interface Vst3SubstitutionTarget {
+  instanceId: string;
+  role: "instrument" | "effect";
+  chainId?: string;
 }
 
 export type MidiRoleSourceSelection = "auto" | "none" | MidiConversionSourceFilter;
@@ -309,7 +337,27 @@ export function createInitialState(): AppState {
     recording: createRecordingUiState(),
     midiInputRecording: createMidiInputRecordingUiState(),
     recordingPunchEnabled: false,
-    recordingTakeMode: "replace"
+    recordingTakeMode: "replace",
+    sampleLibrary: createEmptySampleLibraryIndex(),
+    sampleLibraryTab: "sounds",
+    sampleLibraryQuery: "",
+    sampleLibraryCategory: "all",
+    sampleLibraryFolderId: null,
+    sampleLibraryFavoritesOnly: false,
+    sampleLibraryTargetTrackId: null,
+    sampleLibraryTargetBar: 1,
+    selectedSampleLibraryIds: [],
+    sampleLibraryLoading: false,
+    sampleLibraryMessage: "Choose Add Folder or Add Files to build your local sound library.",
+    previewingSampleLibraryId: null,
+    vst3BetaStatus: null,
+    vst3Modules: [],
+    vst3DescriptorQuery: "",
+    vst3RoleFilter: "all",
+    vst3ParameterQuery: "",
+    vst3SubstitutionTarget: null,
+    vst3InstanceStatuses: {},
+    vst3BusyInstanceId: null
   };
 }
 

@@ -16,7 +16,7 @@ import { encodeWav } from "./offlineRender";
 
 export const NATIVE_RENDER_CACHE_ROOT = "project-cache/native-audio";
 export const NATIVE_GENERATED_STEM_TAIL_SECONDS = 0.25;
-export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v30-43de407d-sound-profile-recipes";
+export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v34-da092472-vst3-transport";
 export const NATIVE_CACHE_STEM_RENDER_MODE = "cache-stem";
 const STEM_ROLES: TrackRole[] = ["drums", "bass", "chords", "melody", "guitar"];
 
@@ -119,7 +119,7 @@ export async function buildNativeRenderCache(
 ): Promise<NativeRenderCache> {
   const requestedClipIds = options.clipIds ? new Set(options.clipIds) : null;
   const cacheableClips = project.timeline.clips
-    .filter(isNativeStemCacheableClip)
+    .filter((clip) => isNativeStemCacheableClip(project, clip))
     .filter((clip) => !requestedClipIds || requestedClipIds.has(clip.id));
   const assets = new Map<string, NativeAudioAsset>();
   const reusableAssets = nativeGeneratedStemReusableAssets(reuseCache);
@@ -440,6 +440,7 @@ export async function hydrateNativeRenderCacheAssets(
 
   const generatedGroups = new Map<string, HydratedCacheEntry[]>();
   const runtimeEntries: HydratedCacheEntry[] = [];
+  const samplerEntries: HydratedCacheEntry[] = [];
   hydrated.forEach((entry) => {
     if (entry.cacheKind === "native-generated-stem" && entry.clipId) {
       const group = generatedGroups.get(entry.clipId) || [];
@@ -447,10 +448,12 @@ export async function hydrateNativeRenderCacheAssets(
       generatedGroups.set(entry.clipId, group);
     } else if (entry.cacheKind === "native-runtime-audio") {
       runtimeEntries.push(entry);
+    } else if (entry.cacheKind === "native-sampler-asset") {
+      samplerEntries.push(entry);
     }
   });
 
-  const acceptedEntries: HydratedCacheEntry[] = [...runtimeEntries];
+  const acceptedEntries: HydratedCacheEntry[] = [...runtimeEntries, ...samplerEntries];
   generatedGroups.forEach((entries, clipId) => {
     const clip = project.timeline.clips.find((item) => item.id === clipId);
     const expected = clip ? expectedGeneratedStemKeys(project, clip) : new Set<string>();
@@ -581,7 +584,7 @@ function expectedNativeCacheSourceHashes(
   runtimeSignature = nativeRuntimeAudioCacheSignature(project)
 ): Set<string> {
   const hashes = new Set<string>();
-  if (cacheKind === "native-runtime-audio") {
+  if (cacheKind === "native-runtime-audio" || cacheKind === "native-sampler-asset") {
     hashes.add(runtimeSignature);
     return hashes;
   }
@@ -612,7 +615,7 @@ function expectedNativeCacheSourceHashes(
   if (!clip || !trackId) {
     const assetId = String(item.metadata?.assetId || item.id);
     project.timeline.clips
-      .filter(isNativeStemCacheableClip)
+      .filter((clip) => isNativeStemCacheableClip(project, clip))
       .flatMap((candidate) => assetBuildItems(project, candidate))
       .filter((candidate) => candidate.assetId === assetId)
       .forEach((candidate) => hashes.add(candidate.sourceHash));
@@ -729,7 +732,12 @@ export function nativeRuntimeAudioCacheSignature(project: PocketDawProject): str
       transforms: clip.transforms,
       metadata: clip.metadata
     }));
-  const mediaIds = new Set(audioClips.map((clip) => clip.mediaPoolItemId).filter(Boolean));
+  const samplerMediaIds = project.devices.flatMap((device) => device.type === "quick-sampler"
+    ? [device.mediaPoolItemId]
+    : device.type === "drum-rack"
+      ? device.pads.flatMap((pad) => pad.mediaPoolItemId ? [pad.mediaPoolItemId] : [])
+      : []);
+  const mediaIds = new Set([...audioClips.map((clip) => clip.mediaPoolItemId).filter(Boolean), ...samplerMediaIds]);
   return hashString(JSON.stringify({
     project: {
       bpm: project.project.bpm,
@@ -737,6 +745,7 @@ export function nativeRuntimeAudioCacheSignature(project: PocketDawProject): str
       sampleRate: project.project.sampleRate
     },
     audioClips,
+    samplerMediaIds,
     mediaPool: project.mediaPool
       .filter((item) => mediaIds.has(item.id))
       .map((item) => ({
@@ -845,10 +854,14 @@ function nativeRendererRecipeHash(): string {
   }));
 }
 
-function isNativeStemCacheableClip(clip: Clip): boolean {
+function isNativeStemCacheableClip(project: PocketDawProject, clip: Clip): boolean {
   if (clip.muted) return false;
   if (clip.type === "generated-section") return !!clip.sectionId;
-  if (clip.type === "midi") return midiDataFromClip(clip).notes.length > 0;
+  if (clip.type === "midi") {
+    const track = project.tracks.find((item) => item.id === clip.trackId);
+    if (track?.instrumentDeviceId && project.devices.some((device) => device.id === track.instrumentDeviceId)) return false;
+    return midiDataFromClip(clip).notes.length > 0;
+  }
   return false;
 }
 
@@ -1209,6 +1222,9 @@ function nativeAssetFromHydratedItem(
   bytes: number[],
   sizeBytes: number
 ): NativeAudioAsset {
+  const usedBySampler = !!item.mediaPoolItemId && project.devices.some((device) => device.type === "quick-sampler"
+    ? device.mediaPoolItemId === item.mediaPoolItemId
+    : device.type === "drum-rack" && device.pads.some((pad) => pad.mediaPoolItemId === item.mediaPoolItemId));
   return {
     id: assetId,
     name: String(item.metadata?.name || item.id),
@@ -1219,7 +1235,10 @@ function nativeAssetFromHydratedItem(
     durationSeconds: cleanPositiveNumber(item.metadata?.durationSeconds, hydratedDurationFallback(project, item)),
     sizeBytes: sizeBytes || bytes.length,
     sourceHash: String(item.metadata?.sourceHash || ""),
-    bytes
+    bytes,
+    ...(usedBySampler && item.mediaPoolItemId
+      ? { mediaPoolItemId: item.mediaPoolItemId, sampleLibraryOnly: true }
+      : {})
   };
 }
 
@@ -1243,7 +1262,7 @@ function hydratedGeneratedStemEntries(
   }
   const sourceHash = String(item.metadata?.sourceHash || "");
   const matchingBuildItems = project.timeline.clips
-    .filter(isNativeStemCacheableClip)
+    .filter((clip) => isNativeStemCacheableClip(project, clip))
     .flatMap((clip) => assetBuildItems(project, clip))
     .filter((buildItem) => buildItem.assetId === assetId && (!sourceHash || buildItem.sourceHash === sourceHash));
 
@@ -1456,6 +1475,61 @@ async function appendRuntimeAudioCache(
     });
     runtimeAudioRegionCount += 1;
     cachedClipIds.add(region.clipId);
+  }
+  const samplerMediaIds = new Set(project.devices.flatMap((device) => {
+    if (device.type === "quick-sampler") return [device.mediaPoolItemId];
+    if (device.type === "drum-rack") return device.pads.flatMap((pad) => pad.mediaPoolItemId ? [pad.mediaPoolItemId] : []);
+    return [];
+  }));
+  const samplerSignature = nativeRuntimeAudioCacheSignature(project);
+  for (const mediaPoolItemId of samplerMediaIds) {
+    const cached = getCachedAudioBuffer(mediaPoolItemId);
+    if (!cached || cached.channels < 1 || cached.channels > 2) continue;
+    const key = runtimeAudioAssetKey(project, mediaPoolItemId, cached);
+    const existing = assets.get(key);
+    if (existing) {
+      existing.mediaPoolItemId = mediaPoolItemId;
+      renderCacheHitCount += 1;
+      continue;
+    }
+    const source = await runtimeAudioAssetSource(cached);
+    const id = `native-sample-${hashString(key)}`;
+    const asset: NativeAudioAsset = {
+      id,
+      name: `${mediaPoolItemId} sampler audio`,
+      relativePath: nativeRenderCacheRelativePath(id),
+      sourcePath: source.sourcePath,
+      mimeType: "audio/wav",
+      sampleRate: source.sampleRate,
+      channels: source.channels,
+      durationSeconds: source.durationSeconds,
+      sizeBytes: source.sizeBytes,
+      sourceHash: samplerSignature,
+      bytes: source.bytes,
+      mediaPoolItemId,
+      sampleLibraryOnly: true
+    };
+    assets.set(key, asset);
+    renderCacheMissCount += 1;
+    renderCacheItems.push({
+      id,
+      mediaPoolItemId,
+      createdAt,
+      invalidated: false,
+      metadata: {
+        cacheKind: "native-sampler-asset",
+        assetId: id,
+        sourceHash: samplerSignature,
+        name: asset.name,
+        mimeType: asset.mimeType || "audio/wav",
+        sampleRate: asset.sampleRate,
+        channels: asset.channels,
+        durationSeconds: asset.durationSeconds,
+        rendererContractVersion: NATIVE_AUDIO_RENDERER_CONTRACT_VERSION,
+        sourceEncoding: source.sourceEncoding,
+        byteLength: source.sizeBytes
+      }
+    });
   }
   return { renderCacheHitCount, renderCacheMissCount, runtimeAudioRegionCount, missingRuntimeAudioRegionCount };
 }

@@ -2,16 +2,24 @@ import { createDefaultExportProfiles } from "../daw/exportProfiles";
 import { createDefaultAudioDeviceSettings, createDefaultMetronomeSettings, ensureStarterChordsmithSource } from "../daw/dawProject";
 import { createDefaultFxState, ensureProjectFx } from "../daw/fx";
 import { ensureDrumLaneMixer } from "../daw/drumLanes";
+import { createDrumRackDevice, createQuickSamplerDevice, validHostedPluginState } from "../daw/devices";
 import { createDefaultTracks } from "../daw/tracks";
 import { MAX_DAW_TEMPO_BPM, MIN_DAW_TEMPO_BPM } from "../daw/automation";
 import {
   POCKET_DAW_APP,
   POCKET_DAW_SCHEMA_VERSION,
   POCKET_DAW_VERSION,
+  MAX_HOSTED_PLUGIN_LATENCY_SAMPLES,
+  MAX_HOSTED_PLUGIN_TAIL_SAMPLES,
   GAME_STATE_MARKERS,
   RECORDING_CHANNEL_MODES,
   type PocketDawProject,
-  type ProjectMeterMapPoint
+  type ProjectMeterMapPoint,
+  type InstrumentDevice,
+  type HostedPluginIdentity,
+  type HostedPluginProjectMetadata,
+  type HostedPluginStateSnapshot,
+  type JsonObject
 } from "../daw/schema";
 
 const TRACK_TYPES = ["generated", "midi", "audio", "folder", "bus", "return", "master"] as const;
@@ -22,6 +30,9 @@ const MEDIA_KINDS = ["audio", "midi", "render", "image", "unknown"] as const;
 const MARKER_TYPES = ["section", "cue", "loop", "export", "game-state"] as const;
 const AUTOMATION_UNITS = ["linear", "db", "hz", "percent", "boolean"] as const;
 const AUTOMATION_CURVES = ["linear", "hold", "ease-in", "ease-out"] as const;
+const MAX_HOSTED_PARAMETER_DESCRIPTORS = 4096;
+const MAX_HOSTED_FACTORY_PROGRAMS = 4096;
+const MAX_HOSTED_POCKET_PRESETS = 256;
 
 export function migratePocketDawProject(raw: unknown): PocketDawProject {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -62,6 +73,7 @@ export function migratePocketDawProject(raw: unknown): PocketDawProject {
       clips: Array.isArray(source.timeline?.clips) ? source.timeline.clips : []
     },
     tracks,
+    devices: Array.isArray(source.devices) ? source.devices : [],
     automation: source.automation || { lanes: [] },
     routing: source.routing || { masterTrackId: "master", buses: [], returns: [] },
     mediaPool: Array.isArray(source.mediaPool) ? source.mediaPool : [],
@@ -92,10 +104,12 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
   const mediaIdMap = new Map<string, string>();
   const clipIdMap = new Map<string, string>();
   const laneIdMap = new Map<string, string>();
+  const deviceIdMap = new Map<string, string>();
   const usedTrackIds = new Set<string>();
   const usedMediaIds = new Set<string>();
   const usedClipIds = new Set<string>();
   const usedLaneIds = new Set<string>();
+  const usedDeviceIds = new Set<string>();
   const usedMarkerIds = new Set<string>();
 
   next.tracks = (Array.isArray(next.tracks) && next.tracks.length ? next.tracks : defaultTracks).map((track, index) => {
@@ -118,6 +132,7 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
       colour: safeColour(track?.colour, fallback.colour || "#40d8ff"),
       routing: normalizeTrackRouting(track?.routing, trackIdMap),
       automationLaneIds: Array.isArray(track?.automationLaneIds) ? track.automationLaneIds.map(String).filter(Boolean) : [],
+      instrumentDeviceId: track?.instrumentDeviceId === undefined ? undefined : safeText(track.instrumentDeviceId, ""),
       folderId: track?.folderId === undefined || track?.folderId === null ? null : safeText(track.folderId, ""),
       recordKind: safeEnum(track?.recordKind, RECORD_KINDS, fallback.recordKind || "none"),
       inputDeviceId: track?.inputDeviceId === undefined || track?.inputDeviceId === null ? null : safeText(track.inputDeviceId, ""),
@@ -141,6 +156,7 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
         folderMode: "organizational"
       };
       delete normalized.fxChainId;
+      delete normalized.instrumentDeviceId;
     }
     return normalized;
   });
@@ -175,6 +191,24 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
       checksum: item?.checksum === undefined ? undefined : safeText(item.checksum, ""),
       metadata: isRecord(item?.metadata) ? item.metadata : undefined
     };
+  });
+
+  next.devices = (Array.isArray(next.devices) ? next.devices : []).map((device, index) => {
+    const sourceDevice: Record<string, unknown> = isRecord(device) ? device as unknown as Record<string, unknown> : {};
+    const originalId = String(sourceDevice.id || `device_${index + 1}`);
+    const id = uniqueSafeId(originalId, `device_${index + 1}`, usedDeviceIds);
+    deviceIdMap.set(originalId, id);
+    return normalizeInstrumentDevice(sourceDevice, id, mediaIdMap);
+  });
+  const deviceIds = new Set(next.devices.map((device) => device.id));
+  next.tracks.forEach((track) => {
+    if (!track.instrumentDeviceId) {
+      delete track.instrumentDeviceId;
+      return;
+    }
+    const mappedDeviceId = mappedId(deviceIdMap, track.instrumentDeviceId, "");
+    if (track.trackType === "midi" && deviceIds.has(mappedDeviceId)) track.instrumentDeviceId = mappedDeviceId;
+    else delete track.instrumentDeviceId;
   });
 
   next.timeline = {
@@ -264,6 +298,26 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
   });
 
   next.routing = normalizeRouting(next.routing, trackIdMap, trackIds);
+  next.fx = {
+    chains: (Array.isArray(next.fx?.chains) ? next.fx.chains : []).map((chain) => ({
+      ...chain,
+      slots: (Array.isArray(chain.slots) ? chain.slots : []).map((slot) => {
+        if (!slot.hostedPlugin) return slot;
+        const hostedPluginState = validHostedPluginState(slot.hostedPluginState)
+          ? JSON.parse(JSON.stringify(slot.hostedPluginState)) as HostedPluginStateSnapshot
+          : undefined;
+        const normalizedSlot = {
+          ...slot,
+          hostedPlugin: normalizeHostedPluginIdentity(slot.hostedPlugin),
+          hostedPluginState,
+          hostedPluginMetadata: normalizeHostedPluginMetadata(slot.hostedPluginMetadata)
+        };
+        if (!hostedPluginState) delete normalizedSlot.hostedPluginState;
+        if (!normalizedSlot.hostedPluginMetadata) delete normalizedSlot.hostedPluginMetadata;
+        return normalizedSlot;
+      })
+    }))
+  };
   next.renderCache = (Array.isArray(next.renderCache) ? next.renderCache : []).map((item, index) => ({
     ...(isRecord(item) ? item : {}),
     id: uniqueSafeId(item?.id, `render_cache_${index + 1}`, new Set()),
@@ -275,6 +329,59 @@ function normalizeLoadedProject(project: PocketDawProject): PocketDawProject {
   }));
   next.importHistory = Array.isArray(next.importHistory) ? next.importHistory : [];
   return next;
+}
+
+function normalizeHostedPluginMetadata(value: unknown): HostedPluginProjectMetadata | undefined {
+  if (!isRecord(value)) return undefined;
+  const parameterDescriptors = (Array.isArray(value.parameterDescriptors) ? value.parameterDescriptors : [])
+    .slice(0, MAX_HOSTED_PARAMETER_DESCRIPTORS)
+    .filter(isRecord)
+    .map((descriptor) => ({
+      stableId: safeText(descriptor.stableId, "").replace(/\D/g, "").slice(0, 32),
+      name: safeText(descriptor.name, "Parameter").slice(0, 128),
+      shortLabel: safeText(descriptor.shortLabel, "").slice(0, 64) || undefined,
+      unit: safeText(descriptor.unit, "").slice(0, 64) || undefined,
+      min: clampNumber(descriptor.min, -1_000_000, 1_000_000, 0),
+      max: clampNumber(descriptor.max, -1_000_000, 1_000_000, 1),
+      defaultValue: clampNumber(descriptor.defaultValue, -1_000_000, 1_000_000, 0),
+      stepCount: optionalClampNumber(descriptor.stepCount, 0, 1_000_000),
+      automatable: descriptor.automatable === true,
+      readOnly: descriptor.readOnly === true || undefined
+    }))
+    .filter((descriptor) => descriptor.stableId && descriptor.max >= descriptor.min);
+  const factoryPrograms = (Array.isArray(value.factoryPrograms) ? value.factoryPrograms : [])
+    .slice(0, MAX_HOSTED_FACTORY_PROGRAMS)
+    .filter(isRecord)
+    .map((program) => ({
+      id: safeText(program.id, "").replace(/[^a-z0-9:_-]/gi, "").slice(0, 96),
+      name: safeText(program.name, "Program").slice(0, 128)
+    }))
+    .filter((program) => program.id);
+  const pocketPresets = (Array.isArray(value.pocketPresets) ? value.pocketPresets : [])
+    .slice(0, MAX_HOSTED_POCKET_PRESETS)
+    .filter(isRecord)
+    .map((preset) => {
+      const state = validHostedPluginState(preset.hostedPluginState)
+        ? JSON.parse(JSON.stringify(preset.hostedPluginState)) as HostedPluginStateSnapshot
+        : undefined;
+      return {
+        id: safeText(preset.id, "").replace(/[^a-z0-9_-]/gi, "").slice(0, 96),
+        name: safeText(preset.name, "Preset").slice(0, 128),
+        createdAt: safeText(preset.createdAt, new Date(0).toISOString()).slice(0, 64),
+        parameters: isRecord(preset.parameters) ? JSON.parse(JSON.stringify(preset.parameters)) as JsonObject : {},
+        ...(state ? { hostedPluginState: state } : {})
+      };
+    })
+    .filter((preset) => preset.id);
+  return {
+    parameterDescriptors,
+    factoryPrograms,
+    pocketPresets,
+    selectedFactoryProgramId: safeText(value.selectedFactoryProgramId, "").slice(0, 96) || undefined,
+    selectedPocketPresetId: safeText(value.selectedPocketPresetId, "").slice(0, 96) || undefined,
+    lastKnownLatencySamples: optionalClampNumber(value.lastKnownLatencySamples, 0, MAX_HOSTED_PLUGIN_LATENCY_SAMPLES),
+    lastKnownTailSamples: optionalClampNumber(value.lastKnownTailSamples, 0, MAX_HOSTED_PLUGIN_TAIL_SAMPLES)
+  };
 }
 
 function normalizePosition(value: unknown) {
@@ -345,6 +452,109 @@ function normalizeClipTransforms(value: unknown) {
     freezeRenderId: source.freezeRenderId === undefined ? undefined : safeText(source.freezeRenderId, ""),
     convertToMidiHint: source.convertToMidiHint === true
   };
+}
+
+function normalizeInstrumentDevice(
+  value: Record<string, unknown>,
+  id: string,
+  mediaIdMap: Map<string, string>
+): InstrumentDevice {
+  if (value.type === "drum-rack") {
+    const defaults = createDrumRackDevice([], { id, name: safeText(value.name, "Drum Rack") });
+    const rawPads = Array.isArray(value.pads) ? value.pads : [];
+    const padsByNote = new Map(rawPads
+      .filter(isRecord)
+      .map((pad) => [Math.round(clampNumber(pad.midiNote, 0, 127, -1)), pad] as const));
+    defaults.enabled = value.enabled !== false;
+    defaults.pads = defaults.pads.map((fallback, index) => {
+      const raw = padsByNote.get(fallback.midiNote) || (isRecord(rawPads[index]) ? rawPads[index] as Record<string, unknown> : {});
+      const mediaPoolItemId = raw.mediaPoolItemId === undefined
+        ? undefined
+        : mappedId(mediaIdMap, raw.mediaPoolItemId, safeId(raw.mediaPoolItemId, "media"));
+      const startPosition = clampNumber(raw.startPosition, 0, 0.999, fallback.startPosition);
+      const endPosition = Math.max(startPosition + 0.001, clampNumber(raw.endPosition, 0, 1, fallback.endPosition));
+      return {
+        ...fallback,
+        id: safeId(raw.id, fallback.id),
+        midiNote: fallback.midiNote,
+        name: safeText(raw.name, fallback.name),
+        ...(mediaPoolItemId ? { mediaPoolItemId } : {}),
+        gain: clampNumber(raw.gain, 0, 4, fallback.gain),
+        pan: clampNumber(raw.pan, -1, 1, fallback.pan),
+        coarseTune: Math.round(clampNumber(raw.coarseTune, -48, 48, fallback.coarseTune)),
+        fineTuneCents: clampNumber(raw.fineTuneCents, -100, 100, fallback.fineTuneCents),
+        startPosition,
+        endPosition: Math.min(1, endPosition),
+        reverse: raw.reverse === true,
+        playbackMode: raw.playbackMode === "gate" ? "gate" : "one-shot",
+        mute: raw.mute === true,
+        solo: raw.solo === true,
+        chokeGroup: raw.chokeGroup === null ? null : raw.chokeGroup === undefined ? fallback.chokeGroup : safeText(raw.chokeGroup, "").slice(0, 32) || null
+      };
+    });
+    return defaults;
+  }
+
+  if (value.type === "vst3-instrument") {
+    const identity = normalizeHostedPluginIdentity(value.hostedPlugin);
+    const state = validHostedPluginState(value.hostedPluginState)
+      ? JSON.parse(JSON.stringify(value.hostedPluginState)) as HostedPluginStateSnapshot
+      : undefined;
+    const metadata = normalizeHostedPluginMetadata(value.hostedPluginMetadata);
+    return {
+      id,
+      type: "vst3-instrument",
+      name: safeText(value.name, identity.name || "Missing VST3 Instrument"),
+      enabled: value.enabled !== false,
+      hostedPlugin: identity,
+      ...(state ? { hostedPluginState: state } : {}),
+      ...(metadata ? { hostedPluginMetadata: metadata } : {}),
+      parameters: isRecord(value.parameters) ? value.parameters as JsonObject : {}
+    };
+  }
+
+  const mediaPoolItemId = mappedId(mediaIdMap, value.mediaPoolItemId, safeId(value.mediaPoolItemId, "missing-media"));
+  const sampler = createQuickSamplerDevice(mediaPoolItemId, { id, name: safeText(value.name, "Quick Sampler") });
+  sampler.enabled = value.enabled !== false;
+  sampler.rootNote = Math.round(clampNumber(value.rootNote, 0, 127, sampler.rootNote));
+  sampler.keyTracking = value.keyTracking !== false;
+  sampler.coarseTune = Math.round(clampNumber(value.coarseTune, -48, 48, sampler.coarseTune));
+  sampler.fineTuneCents = clampNumber(value.fineTuneCents, -100, 100, sampler.fineTuneCents);
+  sampler.gain = clampNumber(value.gain, 0, 4, sampler.gain);
+  sampler.pan = clampNumber(value.pan, -1, 1, sampler.pan);
+  sampler.startPosition = clampNumber(value.startPosition, 0, 0.999, sampler.startPosition);
+  sampler.endPosition = Math.min(1, Math.max(sampler.startPosition + 0.001, clampNumber(value.endPosition, 0, 1, sampler.endPosition)));
+  sampler.reverse = value.reverse === true;
+  sampler.playbackMode = value.playbackMode === "gate" || value.playbackMode === "loop" ? value.playbackMode : "one-shot";
+  sampler.loopStartPosition = clampNumber(value.loopStartPosition, sampler.startPosition, sampler.endPosition, sampler.startPosition);
+  sampler.loopEndPosition = clampNumber(value.loopEndPosition, sampler.loopStartPosition + 0.001, sampler.endPosition, sampler.endPosition);
+  const envelope = isRecord(value.envelope) ? value.envelope : {};
+  sampler.envelope = {
+    attackSeconds: clampNumber(envelope.attackSeconds, 0, 60, sampler.envelope.attackSeconds),
+    decaySeconds: clampNumber(envelope.decaySeconds, 0, 60, sampler.envelope.decaySeconds),
+    sustainLevel: clampNumber(envelope.sustainLevel, 0, 1, sampler.envelope.sustainLevel),
+    releaseSeconds: clampNumber(envelope.releaseSeconds, 0, 60, sampler.envelope.releaseSeconds)
+  };
+  return sampler;
+}
+
+function normalizeHostedPluginIdentity(value: unknown): HostedPluginIdentity {
+  const source = isRecord(value) ? value : {};
+  return {
+    format: "vst3",
+    classId: safeText(source.classId, "missing-class-id"),
+    vendor: safeText(source.vendor, "Unknown vendor"),
+    name: safeText(source.name, "Missing VST3 Instrument"),
+    version: safeText(source.version, "unknown"),
+    category: safeText(source.category, "Instrument"),
+    moduleFilename: safeModuleFilename(source.moduleFilename),
+    binaryFingerprint: safeText(source.binaryFingerprint, "unknown")
+  };
+}
+
+function safeModuleFilename(value: unknown): string {
+  const text = safeText(value, "missing.vst3").replace(/\\/g, "/");
+  return text.split("/").pop()?.slice(0, 260) || "missing.vst3";
 }
 
 function normalizeTrackRouting(value: unknown, trackIdMap: Map<string, string>) {

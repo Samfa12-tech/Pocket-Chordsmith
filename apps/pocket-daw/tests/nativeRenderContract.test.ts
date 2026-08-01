@@ -6,11 +6,17 @@ import { NATIVE_AUDIO_RENDERER_CONTRACT_VERSION } from "../src/audio/nativeRende
 describe("native audio renderer cache contract", () => {
   it("changes when native cached/procedural parity-sensitive renderer code changes", () => {
     const nativeAudio = readFileSync(join(process.cwd(), "src-tauri", "src", "native_audio.rs"), "utf8");
+    const vst3Session = readFileSync(join(process.cwd(), "src-tauri", "src", "vst3_session.rs"), "utf8");
     const hash = hashString([
       sourceLine(nativeAudio, /^const NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK:.*$/m),
       sourceSection(nativeAudio, "fn render_generated_event_source", "fn sanitize_loop_region"),
       sourceSection(nativeAudio, "fn render_region_sample", "fn validate_asset"),
-      sourceSection(nativeAudio, "fn render_event_sample", "impl EventSeed for NativeRenderedEvent")
+      sourceSection(nativeAudio, "fn render_event_sample", "impl EventSeed for NativeRenderedEvent"),
+      sourceSection(nativeAudio, "fn render_hosted_instruments", "fn hosted_note_events_for_block"),
+      sourceSection(nativeAudio, "impl HostedEffectState", "fn hosted_deadline_micros"),
+      sourceSection(nativeAudio, "impl NativeFxRuntime", "impl NativeFxChainState"),
+      sourceSection(vst3Session, "pub(crate) struct HostedInstancePayload", "#[derive(Clone, Copy, Debug, Default)]"),
+      sourceSection(vst3Session, "impl Vst3GraphService", "thread_local!")
     ].join("\n---native-render-contract---\n"));
 
     expect(NATIVE_AUDIO_RENDERER_CONTRACT_VERSION).toContain(hash);

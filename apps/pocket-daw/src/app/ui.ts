@@ -6,7 +6,7 @@ import { bassStepUsesAuto, bassVisibleNoteIndex, getPrimaryChordsmithSource, tot
 import { bassPresetLabel, visibleBassPresetsForProject } from "../daw/chordsmithBassPresets";
 import { drumPresetLabel, visibleDrumPresetsForProject } from "../daw/chordsmithDrumPresets";
 import { guitarPresetLabel, visibleGuitarPresetsForProject } from "../daw/chordsmithGuitarPresets";
-import { GAME_STATE_MARKERS, POCKET_DAW_VERSION, type AutomationLane, type AutomationPoint, type Clip, type FxChain, type FxPluginInstance, type GameStateMarkerId, type Track } from "../daw/schema";
+import { GAME_STATE_MARKERS, POCKET_DAW_VERSION, type AutomationLane, type AutomationPoint, type Clip, type FxChain, type FxPluginInstance, type GameStateMarkerId, type HostedPluginIdentity, type HostedPluginParameterDescriptor, type HostedPluginProjectMetadata, type HostedPluginStateSnapshot, type JsonObject, type Track } from "../daw/schema";
 import { POCKET_PRO_EQ_BANDS, POCKET_PRO_EQ_PRESETS, POCKET_PRO_EQ_TYPE } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
 import { POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 import { POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
@@ -18,7 +18,7 @@ import { MIDI_GROOVE_TEMPLATES, MIDI_IMPORT_PLACEMENT_MODES, createMidiTempoMapS
 import { MAX_DAW_TEMPO_BPM, MIN_DAW_TEMPO_BPM, clipHasAutomation, evaluateProjectTempoAtBar, getClipAutomationLane, getFxParameterAutomationLane, getProjectAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, interpolateAutomationValue, trackHasAutomation, type ClipAutomationField } from "../daw/automation";
 import { availableTrackOutputs, createRoutingExportSummary, trackSendLevel, trackSendMode } from "../daw/routing";
 import { recordingLatencyOffsetSeconds } from "../daw/tracks";
-import { createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan } from "../daw/exportJobs";
+import { createGamePackDeliveryTargets, createSectionLoopMetadata, createStemExportPlan, projectForClipRender } from "../daw/exportJobs";
 import { validateExportProfile } from "../daw/exportProfiles";
 import { createPocketDjSourceSummary, type PocketDjSourceSummary } from "../daw/pocketDjSources";
 import { createMidiChordsmithConversionPreview, type MidiChordsmithConversionPreview } from "../daw/midiConversionPreview";
@@ -30,6 +30,8 @@ import { createAudioTakeDiagnosticsSummary, runtimeBuildId, runtimeCommit, runti
 import { FUNCTION_ACTION_CATALOG_DOC, FUNCTION_ACTION_REFERENCE, FUNCTION_GUIDE_SECTIONS, FUNCTION_REFERENCE_DOC } from "./functionGuide";
 import { pocketDawMcpClaudeConfig, pocketDawMcpCodexConfig, pocketDawMcpCommandLine, POCKET_DAW_MCP_WORKSPACE } from "./mcpSetup";
 import { projectTitleFromFileState } from "../native/fileBridge";
+import { filterSampleLibraryEntries, type SampleLibraryEntry } from "../native/sampleLibrary";
+import { findExactVst3Descriptor, verifiedVst3Descriptors, vst3DescriptorKey } from "../plugins/vst3Foundation";
 import {
   escapeAttr,
   escapeHtml,
@@ -111,7 +113,7 @@ export function renderAppShell(state: AppState): string {
       <p id="clip-repeat-instructions" class="visually-hidden">Use Left and Right Arrow to adjust the repeat end by the current snap. Hold Shift to adjust by one complete source length. Home clears repeats. End extends to sixteen repeats.</p>
       ${state.showFilePanel ? renderFilePanel(state) : ""}
       ${state.showControls ? renderControlsPanel(state) : ""}
-      ${state.showAddTrack ? renderAddTrackPanel() : ""}
+      ${state.showAddTrack ? renderAddTrackPanel(state) : ""}
       ${state.showAudioSettings ? renderAudioSettingsPanel(state) : ""}
       ${state.showUpdaterPanel ? renderUpdaterPanel(state) : ""}
       ${state.showMcpSetupPanel ? renderMcpSetupPanel(state) : ""}
@@ -1176,9 +1178,10 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
                       ${renderSendPanel(project, track)}
                       ${(track.trackType === "generated" || track.trackType === "midi") ? `<button type="button" data-action="export-selected-track-midi" title="Export all MIDI-capable clips on this track">Export Track MIDI</button>` : ""}
                       ${renderAutomationPanel(project, track)}
+                      ${renderInstrumentDevice(state, project, track)}
                       ${renderChordsmithSequencer(state, project, pcs, clip, track)}
                       ${track.role === "drums" ? renderDrumLaneMixer(project) : ""}
-                      ${renderFxInspector(project, chain)}
+                      ${renderFxInspector(state, project, chain)}
                     `}
                   `
               }
@@ -1187,6 +1190,79 @@ function renderInspector(state: AppState, project: ReturnType<typeof currentProj
       }
     </aside>
   `;
+}
+
+function renderInstrumentDevice(state: AppState, project: ReturnType<typeof currentProject>, track: Track): string {
+  const device = track.instrumentDeviceId ? project.devices.find((item) => item.id === track.instrumentDeviceId) : null;
+  if (!device) return "";
+  if (device.type === "vst3-instrument") return `
+    <section class="instrument-device-panel hosted-device-panel">
+      <header><div><h3>${escapeHtml(device.name)}</h3><span>VST3 instrument</span></div><label class="inline-toggle"><input type="checkbox" data-instrument-device-enabled="${sanitizeDataAttr(device.id)}" ${device.enabled ? "checked" : ""}> Enabled</label></header>
+      ${renderHostedPluginEditor(state, project, device.id, device.hostedPlugin, device.parameters, device.hostedPluginMetadata, device.hostedPluginState, "instrument")}
+    </section>`;
+  if (device.type === "quick-sampler") return `
+    <section class="instrument-device-panel" aria-label="Quick Sampler controls">
+      <header><div><h3>${escapeHtml(device.name)}</h3><span>Quick Sampler</span></div><label class="inline-toggle"><input type="checkbox" data-instrument-device-enabled="${sanitizeDataAttr(device.id)}" ${device.enabled ? "checked" : ""}> Enabled</label></header>
+      <div class="device-control-grid">
+        ${samplerNumberControl(device.id, "rootNote", "Root note (C3 = 60)", device.rootNote, 0, 127, 1)}
+        <label class="inline-toggle"><input type="checkbox" data-sampler-param="${sanitizeDataAttr(`${device.id}:keyTracking`)}" ${device.keyTracking ? "checked" : ""}> Key tracking</label>
+        ${samplerNumberControl(device.id, "coarseTune", "Coarse", device.coarseTune, -48, 48, 1)}
+        ${samplerNumberControl(device.id, "fineTuneCents", "Fine cents", device.fineTuneCents, -100, 100, 1)}
+        ${samplerNumberControl(device.id, "gain", "Gain", device.gain, 0, 4, 0.01)}
+        ${samplerNumberControl(device.id, "pan", "Pan", device.pan, -1, 1, 0.01)}
+        ${samplerNumberControl(device.id, "startPosition", "Start", device.startPosition, 0, 1, 0.001)}
+        ${samplerNumberControl(device.id, "endPosition", "End", device.endPosition, 0, 1, 0.001)}
+        <label>Mode<select data-sampler-param="${sanitizeDataAttr(`${device.id}:playbackMode`)}"><option value="one-shot" ${device.playbackMode === "one-shot" ? "selected" : ""}>One-shot</option><option value="gate" ${device.playbackMode === "gate" ? "selected" : ""}>Gate</option><option value="loop" ${device.playbackMode === "loop" ? "selected" : ""}>Loop</option></select></label>
+        <label class="inline-toggle"><input type="checkbox" data-sampler-param="${sanitizeDataAttr(`${device.id}:reverse`)}" ${device.reverse ? "checked" : ""}> Reverse</label>
+        ${samplerNumberControl(device.id, "loopStartPosition", "Loop start", device.loopStartPosition, 0, 1, 0.001)}
+        ${samplerNumberControl(device.id, "loopEndPosition", "Loop end", device.loopEndPosition, 0, 1, 0.001)}
+      </div>
+      <div class="device-envelope" aria-label="Amplitude envelope">
+        <strong>ADSR</strong>
+        ${samplerEnvelopeControl(device.id, "attackSeconds", "Attack", device.envelope.attackSeconds, 0, 10, 0.001)}
+        ${samplerEnvelopeControl(device.id, "decaySeconds", "Decay", device.envelope.decaySeconds, 0, 10, 0.001)}
+        ${samplerEnvelopeControl(device.id, "sustainLevel", "Sustain", device.envelope.sustainLevel, 0, 1, 0.01)}
+        ${samplerEnvelopeControl(device.id, "releaseSeconds", "Release", device.envelope.releaseSeconds, 0, 20, 0.001)}
+      </div>
+    </section>`;
+  const anySolo = device.pads.some((pad) => pad.solo);
+  return `
+    <section class="instrument-device-panel drum-rack-panel" aria-label="Drum Rack controls">
+      <header><div><h3>${escapeHtml(device.name)}</h3><span>16 pads · MIDI notes 36–51</span></div><label class="inline-toggle"><input type="checkbox" data-instrument-device-enabled="${sanitizeDataAttr(device.id)}" ${device.enabled ? "checked" : ""}> Enabled</label></header>
+      <div class="drum-pad-grid">${device.pads.map((pad, index) => {
+        const media = pad.mediaPoolItemId ? project.mediaPool.find((item) => item.id === pad.mediaPoolItemId) : null;
+        return `<details class="drum-pad ${pad.mute || (anySolo && !pad.solo) ? "muted" : ""}" ${index === 0 ? "open" : ""}>
+          <summary><strong>${index + 1}</strong><span>${escapeHtml(pad.name)}</span><small>${pad.midiNote}</small></summary>
+          <p>${escapeHtml(media?.name || "Empty pad")}</p>
+          <div class="device-control-grid compact">
+            <label>Sample<select data-drum-pad-map="${sanitizeDataAttr(`${device.id}:${index}`)}"><option value="">Empty</option>${project.mediaPool.filter((item) => item.kind === "audio").map((item) => `<option value="${escapeAttr(item.id)}" ${pad.mediaPoolItemId === item.id ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}</select></label>
+            ${drumPadNumberControl(device.id, index, "gain", "Gain", pad.gain, 0, 4, 0.01)}
+            ${drumPadNumberControl(device.id, index, "pan", "Pan", pad.pan, -1, 1, 0.01)}
+            ${drumPadNumberControl(device.id, index, "coarseTune", "Tune", pad.coarseTune, -48, 48, 1)}
+            ${drumPadNumberControl(device.id, index, "fineTuneCents", "Fine", pad.fineTuneCents, -100, 100, 1)}
+            ${drumPadNumberControl(device.id, index, "startPosition", "Start", pad.startPosition, 0, 1, 0.001)}
+            ${drumPadNumberControl(device.id, index, "endPosition", "End", pad.endPosition, 0, 1, 0.001)}
+            <label>Mode<select data-drum-pad-param="${sanitizeDataAttr(`${device.id}:${index}:playbackMode`)}"><option value="one-shot" ${pad.playbackMode === "one-shot" ? "selected" : ""}>One-shot</option><option value="gate" ${pad.playbackMode === "gate" ? "selected" : ""}>Gate</option></select></label>
+            <label>Choke<input data-drum-pad-param="${sanitizeDataAttr(`${device.id}:${index}:chokeGroup`)}" value="${escapeAttr(pad.chokeGroup || "")}" placeholder="None"></label>
+            <label class="inline-toggle"><input type="checkbox" data-drum-pad-param="${sanitizeDataAttr(`${device.id}:${index}:reverse`)}" ${pad.reverse ? "checked" : ""}> Reverse</label>
+            <label class="inline-toggle"><input type="checkbox" data-drum-pad-param="${sanitizeDataAttr(`${device.id}:${index}:mute`)}" ${pad.mute ? "checked" : ""}> Mute</label>
+            <label class="inline-toggle"><input type="checkbox" data-drum-pad-param="${sanitizeDataAttr(`${device.id}:${index}:solo`)}" ${pad.solo ? "checked" : ""}> Solo</label>
+          </div>
+        </details>`;
+      }).join("")}</div>
+    </section>`;
+}
+
+function samplerNumberControl(deviceId: string, parameter: string, label: string, value: number, min: number, max: number, step: number): string {
+  return `<label>${label}<input type="number" data-sampler-param="${sanitizeDataAttr(`${deviceId}:${parameter}`)}" min="${min}" max="${max}" step="${step}" value="${value}"></label>`;
+}
+
+function samplerEnvelopeControl(deviceId: string, parameter: string, label: string, value: number, min: number, max: number, step: number): string {
+  return `<label>${label}<input type="number" data-sampler-envelope="${sanitizeDataAttr(`${deviceId}:${parameter}`)}" min="${min}" max="${max}" step="${step}" value="${value}"></label>`;
+}
+
+function drumPadNumberControl(deviceId: string, padIndex: number, parameter: string, label: string, value: number, min: number, max: number, step: number): string {
+  return `<label>${label}<input type="number" data-drum-pad-param="${sanitizeDataAttr(`${deviceId}:${padIndex}:${parameter}`)}" min="${min}" max="${max}" step="${step}" value="${value}"></label>`;
 }
 
 function renderFolderTrackNote(track: Track): string {
@@ -2510,7 +2586,7 @@ function renderMixer(state: AppState): string {
 }
 
 function renderLowerDockBody(state: AppState, project: ReturnType<typeof currentProject>, selectedTrack: Track | null, tab: LowerDockTab): string {
-  if (tab === "inserts") return renderLowerDockInserts(project, selectedTrack);
+  if (tab === "inserts") return renderLowerDockInserts(state, project, selectedTrack);
   if (tab === "sends") return renderLowerDockSends(project, selectedTrack);
   if (tab === "automation") return renderLowerDockAutomation(project, selectedTrack);
   if (tab === "piano-roll") return renderLowerDockPianoRoll(project, state);
@@ -2519,7 +2595,7 @@ function renderLowerDockBody(state: AppState, project: ReturnType<typeof current
   return `<div class="lower-dock-body mixer-strips">${project.tracks.map((track) => renderMixerStrip(project, track, state.meterLevels[track.id] || 0, state)).join("")}</div>`;
 }
 
-function renderLowerDockInserts(project: ReturnType<typeof currentProject>, selectedTrack: Track | null): string {
+function renderLowerDockInserts(state: AppState, project: ReturnType<typeof currentProject>, selectedTrack: Track | null): string {
   if (!selectedTrack) {
     return `<div class="lower-dock-body lower-dock-empty"><strong>Select a track</strong><span>Inserts show the selected track FX chain and add-FX controls.</span></div>`;
   }
@@ -2531,7 +2607,7 @@ function renderLowerDockInserts(project: ReturnType<typeof currentProject>, sele
         <p>${chain?.slots.length || 0} insert${chain?.slots.length === 1 ? "" : "s"} / ${selectedTrack.fxChainId || "no chain"}</p>
         ${selectedTrack.role !== "master" ? renderFxDropdown(selectedTrack) : ""}
       </section>
-      ${renderFxInspector(project, chain)}
+      ${renderFxInspector(state, project, chain)}
     </div>
   `;
 }
@@ -3499,17 +3575,17 @@ function renderDrumLaneFxInspector(project: ReturnType<typeof currentProject>, c
   `;
 }
 
-function renderFxInspector(project: ReturnType<typeof currentProject>, chain: FxChain | null): string {
+function renderFxInspector(state: AppState, project: ReturnType<typeof currentProject>, chain: FxChain | null): string {
   if (!chain) return "";
   return `
     <div class="fx-inspector">
       <h3>FX Chain</h3>
-      ${chain.slots.length ? chain.slots.map((slot) => renderFxSlot(project, chain, slot, "data-fx-toggle", "data-fx-remove")).join("") : `<p>No FX yet.</p>`}
+      ${chain.slots.length ? chain.slots.map((slot) => renderFxSlot(project, chain, slot, "data-fx-toggle", "data-fx-remove", state)).join("") : `<p>No FX yet.</p>`}
     </div>
   `;
 }
 
-function renderFxSlot(project: ReturnType<typeof currentProject>, chain: FxChain, slot: FxPluginInstance, toggleAttr: string, removeAttr: string): string {
+function renderFxSlot(project: ReturnType<typeof currentProject>, chain: FxChain, slot: FxPluginInstance, toggleAttr: string, removeAttr: string, state?: AppState): string {
   const genericControls = slot.type === POCKET_PRO_EQ_TYPE ? "" : renderGenericFxParameterControls(project, chain.id, slot);
   return `
     <div class="fx-slot ${slot.enabled ? "" : "bypassed"}">
@@ -3520,10 +3596,106 @@ function renderFxSlot(project: ReturnType<typeof currentProject>, chain: FxChain
           <button ${removeAttr}="${sanitizeDataAttr(`${chain.id}:${slot.id}`)}">Remove</button>
         </div>
       </div>
+      ${slot.hostedPlugin && state ? renderHostedPluginEditor(state, project, slot.id, slot.hostedPlugin, slot.parameters, slot.hostedPluginMetadata, slot.hostedPluginState, "effect", chain.id) : slot.hostedPlugin ? `<div class="hosted-plugin-placeholder" role="status"><strong>${escapeHtml(slot.hostedPlugin.vendor)} · VST3</strong><span>Identity, state, automation and chain position are preserved.</span></div>` : ""}
       ${slot.type === POCKET_PRO_EQ_TYPE ? renderPocketProEqControls(project, chain.id, slot) : ""}
       ${genericControls}
     </div>
   `;
+}
+
+function renderHostedPluginEditor(
+  state: AppState,
+  project: ReturnType<typeof currentProject>,
+  instanceId: string,
+  identity: HostedPluginIdentity,
+  parameters: JsonObject,
+  metadata: HostedPluginProjectMetadata | undefined,
+  snapshot: HostedPluginStateSnapshot | undefined,
+  role: "instrument" | "effect",
+  chainId?: string
+): string {
+  const exactDescriptor = findExactVst3Descriptor(identity, state.vst3Modules);
+  const runtime = state.vst3InstanceStatuses[instanceId];
+  const phase = !exactDescriptor
+    ? "missing"
+    : runtime?.phase || (state.vst3BetaStatus?.audioHostingAvailable ? "loading" : "unavailable");
+  const latency = runtime?.latencySamples ?? metadata?.lastKnownLatencySamples ?? exactDescriptor?.reportedLatencySamples ?? 0;
+  const tail = runtime?.tailSamples ?? metadata?.lastKnownTailSamples ?? exactDescriptor?.reportedTailSamples ?? 0;
+  const sampleRate = Math.max(1, project.project.sampleRate || 48_000);
+  const failure = runtime?.failureCode ? ` · ${runtime.failureCode}` : "";
+  const statusText = phase === "missing"
+    ? "Missing plug-in: exact class ID and binary fingerprint were not found. Identity, state, automation and chain position remain preserved."
+    : phase === "failed"
+      ? `Host failure${failure}. The instance is disabled and its project state is preserved.`
+      : phase === "ready"
+        ? "Hosted in the isolated session graph."
+        : phase === "disabled"
+          ? "Disabled after a host or realtime safety event; state is preserved."
+          : phase === "loading"
+            ? "Waiting for the isolated session host."
+            : "Audio hosting is unavailable in this build; this is a preserved placeholder.";
+  const descriptors: HostedPluginParameterDescriptor[] = metadata?.parameterDescriptors?.length
+    ? metadata.parameterDescriptors
+    : Object.entries(parameters).filter(([, value]) => typeof value === "number").map(([stableId, value]) => ({
+        stableId,
+        name: stableId,
+        min: Math.min(0, Number(value)),
+        max: Math.max(1, Number(value)),
+        defaultValue: Number(value),
+        automatable: true
+      }));
+  const query = state.vst3ParameterQuery.trim().toLowerCase();
+  const visibleParameters = descriptors.filter((parameter) => !query || `${parameter.name} ${parameter.stableId} ${parameter.unit || ""}`.toLowerCase().includes(query));
+  const vendorEditorReady = state.vst3BetaStatus?.vendorEditorAvailable === true && runtime?.vendorEditorAvailable === true;
+  const genericAvailable = descriptors.length > 0 || runtime?.genericEditorAvailable === true;
+  const selectedClip = project.timeline.clips.find((clip) => clip.id === state.selectedClipId);
+  const ownerTrackId = role === "instrument"
+    ? project.tracks.find((track) => track.instrumentDeviceId === instanceId)?.id
+    : project.fx.chains.find((chain) => chain.id === chainId)?.ownerTrackId;
+  const canFreeze = phase === "ready" && !!ownerTrackId && selectedClip?.trackId === ownerTrackId && !!projectForClipRender(project, selectedClip.id);
+  const roleChainAttr = chainId ? ` data-vst3-chain-id="${sanitizeDataAttr(chainId)}"` : "";
+  return `
+    <div class="hosted-plugin-editor ${phase === "ready" ? "ready" : "placeholder"}" data-vst3-instance="${sanitizeDataAttr(instanceId)}">
+      <div class="hosted-plugin-status ${phase}" role="status" aria-live="polite">
+        <strong>${escapeHtml(identity.vendor)} · ${escapeHtml(identity.version)}</strong>
+        <span>${escapeHtml(statusText)}</span>
+        <small>Latency ${latency} samples (${(latency / sampleRate * 1000).toFixed(1)} ms) · Tail ${tail} samples (${(tail / sampleRate).toFixed(2)} s)${snapshot ? ` · State ${Math.max(1, Math.round(snapshot.sizeBytes / 1024))} KiB preserved` : ""}</small>
+      </div>
+      <div class="hosted-plugin-actions">
+        ${(phase === "failed" || phase === "disabled") ? `<button data-action="vst3-instance-retry" data-vst3-instance-id="${sanitizeDataAttr(instanceId)}">Retry host</button><button data-action="vst3-safe-reload" data-vst3-instance-id="${sanitizeDataAttr(instanceId)}">Safe Reload</button>` : ""}
+        <button data-action="vst3-choose-substitute" data-vst3-instance-id="${sanitizeDataAttr(instanceId)}" data-vst3-role="${role}"${roleChainAttr}>Choose replacement…</button>
+        <button data-action="vst3-rescan">Rescan</button>
+        <button data-action="vst3-freeze-render" data-vst3-instance-id="${sanitizeDataAttr(instanceId)}" ${canFreeze ? "" : `disabled title="${phase !== "ready" ? "Freeze requires a working hosted instance" : "Select a renderable clip on this plug-in's track before freezing"}"`}>Freeze selected clip</button>
+        ${vendorEditorReady ? `<button data-action="vst3-open-editor" data-vst3-instance-id="${sanitizeDataAttr(instanceId)}">Open vendor editor</button>` : `<span class="hosted-plugin-editor-note">Vendor editor unavailable; use Generic controls.</span>`}
+      </div>
+      <div class="hosted-plugin-programs">
+        <label>Factory program
+          <select data-vst3-factory-program="${sanitizeDataAttr(instanceId)}" ${metadata?.factoryPrograms.length ? "" : "disabled"}>
+            <option value="">${metadata?.factoryPrograms.length ? "Choose…" : "Not reported by host"}</option>
+            ${(metadata?.factoryPrograms || []).map((program) => `<option value="${escapeAttr(program.id)}" ${metadata?.selectedFactoryProgramId === program.id ? "selected" : ""}>${escapeHtml(program.name)}</option>`).join("")}
+          </select>
+        </label>
+        <label>Pocket preset
+          <select data-vst3-pocket-preset="${sanitizeDataAttr(instanceId)}" ${(metadata?.pocketPresets.length || 0) ? "" : "disabled"}>
+            <option value="">${metadata?.pocketPresets.length ? "Choose…" : "No saved presets"}</option>
+            ${(metadata?.pocketPresets || []).map((preset) => `<option value="${escapeAttr(preset.id)}" ${metadata?.selectedPocketPresetId === preset.id ? "selected" : ""}>${escapeHtml(preset.name)}</option>`).join("")}
+          </select>
+        </label>
+        <button data-action="vst3-save-pocket-preset" data-vst3-instance-id="${sanitizeDataAttr(instanceId)}">Save Pocket preset…</button>
+      </div>
+      <details class="hosted-plugin-generic" ${genericAvailable ? "open" : ""}>
+        <summary>Generic controls ${descriptors.length ? `(${descriptors.length})` : ""}</summary>
+        ${genericAvailable ? `
+          <label class="hosted-plugin-parameter-search">Search parameters<input type="search" data-vst3-parameter-search="true" value="${escapeAttr(state.vst3ParameterQuery)}" placeholder="Cutoff, mix, gain…"></label>
+          <div class="hosted-plugin-parameter-list" data-scroll-key="hosted-plugin-parameters">
+            ${visibleParameters.length ? visibleParameters.map((parameter) => {
+              const value = Number(parameters[parameter.stableId] ?? parameter.defaultValue);
+              const step = parameter.stepCount && parameter.stepCount > 1 ? (parameter.max - parameter.min) / parameter.stepCount : Math.max(0.0001, (parameter.max - parameter.min) / 1000);
+              return `<label class="hosted-plugin-parameter-row"><span>${escapeHtml(parameter.name)} <small>${escapeHtml(parameter.unit || "")}</small></span><input type="range" min="${sanitizeCssLengthOrNumber(parameter.min, 0, -1e9, 1e9)}" max="${sanitizeCssLengthOrNumber(parameter.max, 1, -1e9, 1e9)}" step="${sanitizeCssLengthOrNumber(step, 0.001, 0.000001, 1e9)}" value="${sanitizeCssLengthOrNumber(value, parameter.defaultValue, parameter.min, parameter.max)}" data-vst3-param-instance="${sanitizeDataAttr(instanceId)}" data-vst3-param-id="${sanitizeDataAttr(parameter.stableId)}"${roleChainAttr} ${parameter.readOnly ? "disabled" : ""}><output>${escapeHtml(formatFxParameterValue(value))}</output>${parameter.automatable ? `<button type="button" data-action="vst3-automate-parameter" data-vst3-instance-id="${sanitizeDataAttr(instanceId)}" data-vst3-parameter-id="${sanitizeDataAttr(parameter.stableId)}"${roleChainAttr}>Automate</button>` : ""}</label>`;
+            }).join("") : `<p class="editor-note">No parameters match “${escapeHtml(state.vst3ParameterQuery)}”.</p>`}
+          </div>` : `<p class="editor-note">The host has not reported parameter metadata. Generic editing will appear when it does.</p>`}
+      </details>
+    </div>`;
 }
 
 function renderGenericFxParameterControls(project: ReturnType<typeof currentProject>, chainId: string, slot: FxPluginInstance): string {
@@ -3636,18 +3808,78 @@ function renderInputSelector(project: ReturnType<typeof currentProject> | null, 
   `;
 }
 
-function renderAddTrackPanel(): string {
+function renderAddTrackPanel(state: AppState): string {
+  const project = currentProject(state);
+  const audioTracks = project.tracks.filter((track) => track.trackType === "audio");
+  const recentRank = new Map(state.sampleLibrary.recentIds.map((id, index) => [id, index]));
+  const visibleEntries = filterSampleLibraryEntries(state.sampleLibrary, {
+    query: state.sampleLibraryQuery,
+    category: state.sampleLibraryCategory,
+    folderId: state.sampleLibraryFolderId || undefined,
+    favoritesOnly: state.sampleLibraryFavoritesOnly
+  }).filter((entry) => state.sampleLibraryTab === "sounds" ? entry.source === "starter" : entry.source !== "starter")
+    .sort((left, right) => (recentRank.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (recentRank.get(right.id) ?? Number.MAX_SAFE_INTEGER) || left.name.localeCompare(right.name));
+  const selected = new Set(state.selectedSampleLibraryIds);
+  const tabs = (["sounds", "samples", "plugins"] as const).map((tab) => `
+    <button class="sample-library-tab ${state.sampleLibraryTab === tab ? "active" : ""}" data-action="sample-library-tab-${tab}" role="tab" aria-selected="${state.sampleLibraryTab === tab}">${tab === "plugins" ? "Plug-ins" : tab[0].toUpperCase() + tab.slice(1)}</button>
+  `).join("");
   return `
-    <div class="modal-backdrop" data-add-track-backdrop="true">
-      <section class="controls-panel add-track-panel" role="dialog" aria-modal="true" aria-labelledby="add-track-title">
+    <div class="sample-library-drawer" data-add-track-backdrop="true">
+      <section class="controls-panel add-track-panel sample-library-panel" role="region" aria-labelledby="add-track-title">
         <header>
           <div>
-            <h2 id="add-track-title">Library / Add Track</h2>
-            <p>Choose a track source. Recording input and mono/stereo mode appear on record-capable mixer strips after the track is created.</p>
+            <h2 id="add-track-title">Sounds Library</h2>
+            <p>Your local studio browser. Files stay where they are until a project uses them; Pocket DAW never scans personal drives automatically.</p>
           </div>
           <button data-action="add-track-close">Close</button>
         </header>
-        <div class="add-track-library">
+        <div class="sample-library-tabs" role="tablist" aria-label="Library sections">${tabs}</div>
+        ${state.sampleLibraryTab === "plugins" ? renderVst3Library(state) : `
+          <div class="sample-library-workbench">
+            <aside class="sample-library-filters" aria-label="Sound filters">
+              <label>Search
+                <input type="search" data-sample-library-search="true" value="${escapeAttr(state.sampleLibraryQuery)}" placeholder="Kick, guitar, WAV..." autofocus>
+              </label>
+              <label>Category
+                <select data-sample-library-category="true">
+                  ${(["all", "drums", "bass", "chords", "melody", "guitar", "fx", "other"] as const).map((category) => `<option value="${category}" ${state.sampleLibraryCategory === category ? "selected" : ""}>${category === "all" ? "All categories" : category[0].toUpperCase() + category.slice(1)}</option>`).join("")}
+                </select>
+              </label>
+              ${state.sampleLibraryTab === "samples" ? `<label>Folder
+                <select data-sample-library-folder="true">
+                  <option value="">All added folders</option>
+                  ${state.sampleLibrary.folders.map((folder) => `<option value="${escapeAttr(folder.id)}" ${state.sampleLibraryFolderId === folder.id ? "selected" : ""}>${escapeHtml(folder.label)}</option>`).join("")}
+                </select>
+              </label>` : ""}
+              <label>Timeline track
+                <select data-sample-library-target-track="true">
+                  <option value="">New or matching audio track</option>
+                  ${audioTracks.map((track) => `<option value="${escapeAttr(track.id)}" ${state.sampleLibraryTargetTrackId === track.id ? "selected" : ""}>${escapeHtml(track.name)}</option>`).join("")}
+                </select>
+              </label>
+              <label>Timeline bar<input type="number" min="1" step="0.25" data-sample-library-target-bar="true" value="${sanitizeCssLengthOrNumber(state.sampleLibraryTargetBar, 1, 1, 100000)}"></label>
+              <label class="inline-toggle"><input type="checkbox" data-sample-library-favorites="true" ${state.sampleLibraryFavoritesOnly ? "checked" : ""}> Favourites only</label>
+              <label>Preview volume<input type="range" min="0" max="1" step="0.01" data-sample-library-preview-volume="true" value="${sanitizeCssLengthOrNumber(state.sampleLibrary.settings.previewVolume, 0.8, 0, 1)}"></label>
+              <div class="sample-library-import-actions">
+                <button data-action="sample-library-add-files">Add Files</button>
+                <button data-action="sample-library-add-folder">Add Folder</button>
+              </div>
+              <p class="sample-library-drop-note">Or drop Explorer files/folders into Pocket DAW.</p>
+              <p class="sample-library-privacy">The index is stored in app data, not inside projects or analytics.</p>
+            </aside>
+            <section class="sample-library-results" aria-label="${state.sampleLibraryTab === "sounds" ? "Pocket Starter Sounds" : "Added samples"}" aria-busy="${state.sampleLibraryLoading}">
+              <div class="sample-library-results-header">
+                <div><h3>${state.sampleLibraryTab === "sounds" ? "Pocket Starter Sounds" : "Your Samples"}</h3><p>${state.sampleLibraryTab === "sounds" ? "A useful starter collection from Pocket Audio—not a premium instrument library." : `${visibleEntries.length} matching local file${visibleEntries.length === 1 ? "" : "s"}.`}</p></div>
+                <button class="primary" data-action="sample-library-create-drum-rack" ${selected.size ? "" : "disabled"}>Create Drum Rack (${Math.min(selected.size, 16)})</button>
+              </div>
+              <p class="sample-library-message" role="status">${escapeHtml(state.sampleLibraryMessage)}</p>
+              ${state.sampleLibraryLoading ? `<div class="sample-library-empty">Loading sounds...</div>` : visibleEntries.length ? `<div class="sample-library-list" data-scroll-key="sample-library-list">${visibleEntries.map((entry) => renderSampleLibraryRow(state, entry, selected.has(entry.id))).join("")}</div>` : `<div class="sample-library-empty"><strong>No matching sounds</strong><span>${state.sampleLibraryTab === "sounds" ? "Starter sounds are unavailable in this runtime." : "Add files or a folder, or clear the current filters."}</span></div>`}
+            </section>
+          </div>
+        `}
+        <details class="sample-library-track-sources">
+          <summary>Add other track types</summary>
+          <div class="add-track-library">
           <section class="add-track-group" aria-label="Audio recording tracks">
             <h3>Audio Recording</h3>
             <p>Creates record-capable audio tracks. Set input device and mono/stereo mode on the mixer strip.</p>
@@ -3689,10 +3921,96 @@ function renderAddTrackPanel(): string {
               <button data-action="add-return-track" title="Add a return track for send effects"><strong>Return</strong><span>FX return scaffold; sends stay guarded</span></button>
             </div>
           </section>
-        </div>
+          </div>
+        </details>
       </section>
     </div>
   `;
+}
+
+function renderSampleLibraryRow(state: AppState, entry: SampleLibraryEntry, selected: boolean): string {
+  const favorite = state.sampleLibrary.favoriteIds.includes(entry.id);
+  const recent = state.sampleLibrary.recentIds.includes(entry.id);
+  const isPreviewing = state.previewingSampleLibraryId === entry.id;
+  return `
+    <article class="sample-library-row ${selected ? "selected" : ""}">
+      <label class="sample-library-select" title="Select for Drum Rack"><input type="checkbox" data-sample-library-select="${sanitizeDataAttr(entry.id)}" ${selected ? "checked" : ""}><span class="visually-hidden">Select ${escapeHtml(entry.name)}</span></label>
+      <button class="sample-library-favorite ${favorite ? "active" : ""}" data-action="sample-library-favorite" data-sample-id="${sanitizeDataAttr(entry.id)}" aria-pressed="${favorite}" aria-label="${favorite ? "Remove" : "Add"} ${escapeAttr(entry.name)} ${favorite ? "from" : "to"} favourites">${favorite ? "★" : "☆"}</button>
+      <div class="sample-library-file"><strong>${escapeHtml(entry.name)}</strong><span>${recent ? "Recent · " : ""}${escapeHtml(entry.category)} · ${escapeHtml(entry.extension.toUpperCase())} · ${formatLibraryFileSize(entry.sizeBytes)}</span></div>
+      <div class="sample-library-wave" aria-label="${entry.waveformPeaks?.length ? "Waveform overview" : "Waveform appears after first preview"}">${renderLibraryWaveform(entry.waveformPeaks)}</div>
+      <div class="sample-library-row-actions">
+        <button data-action="sample-library-preview" data-sample-id="${sanitizeDataAttr(entry.id)}" aria-label="${isPreviewing ? "Stop previewing" : "Preview"} ${escapeAttr(entry.name)}">${isPreviewing ? "Stop" : "Preview"}</button>
+        <button data-action="sample-library-add-clip" data-sample-id="${sanitizeDataAttr(entry.id)}">Add at Bar ${sanitizeCssLengthOrNumber(state.sampleLibraryTargetBar, 1, 1, 100000)}</button>
+        <button class="primary" data-action="sample-library-create-sampler" data-sample-id="${sanitizeDataAttr(entry.id)}">Quick Sampler</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderLibraryWaveform(peaks?: number[]): string {
+  if (!peaks?.length) return `<span>Preview to analyse</span>`;
+  const stride = Math.max(1, Math.ceil(peaks.length / 32));
+  return peaks.filter((_, index) => index % stride === 0).slice(0, 32)
+    .map((peak) => `<i style="height:${sanitizeCssLengthOrNumber(Math.max(8, Math.round(peak * 100)), 8, 8, 100)}%"></i>`)
+    .join("");
+}
+
+function renderVst3Library(state: AppState): string {
+  const status = state.vst3BetaStatus;
+  if (!status) return `<div class="sample-library-plugin-empty"><h3>VST3 Beta requires the installed Windows app</h3><p>The browser preview cannot scan or host native plug-ins.</p></div>`;
+  if (!status.enabled) {
+    const capabilityCopy = status.scannerAvailable && status.audioHostingAvailable
+      ? "The isolated scanner and session audio host are available in this installed build."
+      : status.scannerAvailable
+        ? "The isolated scanner is available, but audio hosting is unavailable in this installed build."
+        : "The isolated scanner and audio host are unavailable in this installed build; enabling keeps VST3 in placeholder-only mode.";
+    return `
+    <div class="sample-library-plugin-consent">
+      <h3>Enable VST3 Beta?</h3>
+      <p>VST3 plug-ins are third-party native code. Pocket DAW scans only official VST3 locations and folders you explicitly add. ${escapeHtml(capabilityCopy)}</p>
+      <ul><li>Windows x64 VST3 only</li><li>No VST2, downloads, or bundled third-party plug-ins</li><li>Install only from official vendor sites</li></ul>
+      <div class="sample-library-plugin-actions"><button class="primary" data-action="vst3-enable">Enable VST3 Beta</button><button data-action="vst3-guide-open">Free plug-in guidance</button></div>
+    </div>`;
+  }
+  const descriptors = verifiedVst3Descriptors(state.vst3Modules);
+  const query = state.vst3DescriptorQuery.trim().toLowerCase();
+  const visible = descriptors.filter((descriptor) => {
+    if (state.vst3RoleFilter === "instrument" && !descriptor.supportsInstrumentRole) return false;
+    if (state.vst3RoleFilter === "effect" && !descriptor.supportsEffectRole) return false;
+    return !query || `${descriptor.identity.name} ${descriptor.identity.vendor} ${descriptor.identity.category} ${descriptor.identity.moduleFilename}`.toLowerCase().includes(query);
+  });
+  const selectedTrack = currentProject(state).tracks.find((track) => track.id === state.selectedTrackId);
+  const substitution = state.vst3SubstitutionTarget;
+  const quarantined = state.vst3Modules.filter((module) => module.quarantined).length;
+  const pending = state.vst3Modules.filter((module) => module.descriptorStatus !== "verifiedByIsolatedScanner" && !module.quarantined).length;
+  return `
+    <div class="sample-library-plugin-browser">
+      <div class="sample-library-results-header"><div><h3>VST3 Beta</h3><p>${escapeHtml(status.boundary)}</p></div><div class="sample-library-plugin-actions"><button data-action="vst3-add-folder">Add Folder…</button><button data-action="vst3-rescan">Discover Modules</button><button data-action="vst3-guide-open">Safe install guidance</button></div></div>
+      <div class="sample-library-capabilities" role="status">
+        <span class="${status.scannerAvailable ? "ready" : "waiting"}">Isolated scanner: ${status.scannerAvailable ? "ready" : "not installed"}</span>
+        <span class="${status.audioHostingAvailable ? "ready" : "waiting"}">Audio host: ${status.audioHostingAvailable ? "ready" : "not installed"}</span>
+        <span>Scan folders: ${status.officialScanRootCount} official + ${status.userScanRootCount} added</span>
+        <span>State limit: ${Math.round(status.stateLimitBytes / 1024 / 1024)} MiB</span>
+      </div>
+      ${substitution ? `<div class="hosted-plugin-recovery" role="status"><strong>Choose a verified ${substitution.role} replacement</strong><span>Substitution keeps the instance ID, chain position, previous valid state and automation. Only matching stable parameters are carried into the replacement.</span><button data-action="vst3-cancel-substitute">Cancel</button></div>` : ""}
+      <div class="hosted-plugin-browser-filters">
+        <label>Search verified plug-ins<input type="search" data-vst3-descriptor-search="true" value="${escapeAttr(state.vst3DescriptorQuery)}" placeholder="Vendor, instrument, effect…" autofocus></label>
+        <label>Role<select data-vst3-role-filter="true"><option value="all" ${state.vst3RoleFilter === "all" ? "selected" : ""}>All</option><option value="instrument" ${state.vst3RoleFilter === "instrument" ? "selected" : ""}>Instruments</option><option value="effect" ${state.vst3RoleFilter === "effect" ? "selected" : ""}>Effects</option></select></label>
+        <span>Effect target: ${escapeHtml(selectedTrack?.name || "select a track")}</span>
+      </div>
+      <p class="sample-library-message" aria-live="polite">${escapeHtml(state.sampleLibraryMessage)}</p>
+      ${state.sampleLibraryLoading ? `<div class="sample-library-empty">Scanning changed modules in isolated processes…</div>` : visible.length ? `<div class="sample-library-list hosted-plugin-descriptor-list" data-scroll-key="vst3-descriptors">${visible.map((descriptor) => {
+        const key = vst3DescriptorKey(descriptor.identity);
+        const canSubstitute = substitution && ((substitution.role === "instrument" && descriptor.supportsInstrumentRole) || (substitution.role === "effect" && descriptor.supportsEffectRole));
+        return `<article class="sample-library-row hosted-plugin-descriptor"><div class="sample-library-file"><strong>${escapeHtml(descriptor.identity.name)}</strong><span>${escapeHtml(descriptor.identity.vendor)} · ${escapeHtml(descriptor.identity.category)} · ${escapeHtml(descriptor.identity.version)}</span><small>${descriptor.reportedLatencySamples} sample latency · ${descriptor.reportedTailSamples} sample tail · ${escapeHtml(descriptor.identity.moduleFilename)}</small></div><div class="sample-library-row-actions">${canSubstitute ? `<button class="primary" data-action="vst3-substitute" data-vst3-descriptor-key="${sanitizeDataAttr(key)}">Use replacement</button>` : `<button data-action="vst3-insert-instrument" data-vst3-descriptor-key="${sanitizeDataAttr(key)}" ${!descriptor.supportsInstrumentRole || !status.audioHostingAvailable ? "disabled" : ""}>New instrument track</button><button data-action="vst3-insert-effect" data-vst3-descriptor-key="${sanitizeDataAttr(key)}" ${!descriptor.supportsEffectRole || !selectedTrack || selectedTrack.trackType === "folder" || !status.audioHostingAvailable ? "disabled" : ""}>Add effect</button>`}</div></article>`;
+      }).join("")}</div>` : `<div class="sample-library-empty"><strong>${descriptors.length ? "No matching verified plug-ins" : "No verified VST3 descriptors"}</strong><span>${pending ? `${pending} module${pending === 1 ? " is" : "s are"} waiting for isolated scanning. ` : ""}${quarantined ? `${quarantined} quarantined module${quarantined === 1 ? " is" : "s are"} excluded. ` : ""}${status.scannerAvailable ? "Rescan changed modules or adjust the search." : "The isolated scanner is not available in this build."}</span></div>`}
+    </div>`;
+}
+
+function formatLibraryFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "size unknown";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function renderAudioSettingsPanel(state: AppState): string {
@@ -3807,7 +4125,7 @@ function renderControlsPanel(state: AppState): string {
           <p><strong>Import</strong><span>Paste a PCS1 code, Chordsmith JSON, Pocket DJ source session, or .pocketdaw file.</span></p>
           <p><strong>Demo</strong><span>Load Demo Copy creates an editable autosaved copy. Reload Demo Template discards copy edits and starts fresh from the built-in demo.</span></p>
           <p><strong>Transport</strong><span>Play, Stop, Restart, Panic, or return to Bar 1 from the top bar.</span></p>
-          <p><strong>Shortcuts</strong><span>Space play/pause, Home Bar 1, L loop, P loop selected, X split, G marker, Ctrl+X/C/V clip cut/copy/paste, Ctrl+Shift+X/C range cut/copy, M mute, S solo, R arm, D duplicate, Delete remove, arrows move clips, plus/minus zoom.</span></p>
+          <p><strong>Shortcuts</strong><span>Space play/pause, Ctrl+Space preview/stop selected Library sound, Home Bar 1, L loop, P loop selected, X split, G marker, Ctrl+X/C/V clip cut/copy/paste, Ctrl+Shift+X/C range cut/copy, M mute, S solo, R arm, D duplicate, Delete remove, arrows move clips, plus/minus zoom.</span></p>
           <p><strong>Timeline</strong><span>Select a clip, click or drag the ruler/grid to seek and scrub, choose Bar or Beat snap, then use Move, Copy, Paste, Split, Trim, Loop Clip, Marker and Zoom controls.</span></p>
           <p><strong>Media Pool</strong><span>Import Audio decodes supported files into a runtime cache. Import MIDI parses .mid files into editable clips played by the preview synth.</span></p>
           <p><strong>Mixer</strong><span>Use Volume and Pan sliders. Meters show live peak audio. Mute silences a track; Solo isolates it.</span></p>

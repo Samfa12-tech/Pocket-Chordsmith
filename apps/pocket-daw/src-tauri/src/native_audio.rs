@@ -1,10 +1,21 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+use crate::native_audio_blocks::{
+    for_each_frame_block, for_each_output_block, NATIVE_AUDIO_BLOCK_FRAMES,
+};
+use crate::vst3_session::{
+    HostedInstancePayload, HostedNoteEvent, HostedParameterPoint, HostedProcessContext,
+    Vst3GraphService, MAX_HOSTED_LATENCY_SAMPLES, MAX_HOSTED_TAIL_SAMPLES, VST3_BLOCK_FRAMES,
+};
 
 type NativeAudioState = Mutex<NativeAudioRuntime>;
 const CHORDSMITH_SIDECHAIN_ATTACK_SECONDS: f64 = 0.012;
@@ -20,16 +31,103 @@ const CHORDSMITH_LOFI_TEXTURE_CRACKLE_DECAY_SECONDS: f64 = 0.024;
 const CHORDSMITH_LOFI_TEXTURE_CRACKLE_STOP_SECONDS: f64 = 0.028;
 const NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK: usize = 96;
 const MAX_NATIVE_AUDIO_SOURCE_FILE_BYTES: u64 = 600 * 1024 * 1024;
+const MAX_NATIVE_LATENCY_COMPENSATION_BYTES: usize = 64 * 1024 * 1024;
+const STEREO_DELAY_BYTES_PER_SAMPLE: usize = 2 * std::mem::size_of::<f32>();
+const MAX_NATIVE_LATENCY_COMPENSATION_SAMPLES: usize =
+    MAX_NATIVE_LATENCY_COMPENSATION_BYTES / STEREO_DELAY_BYTES_PER_SAMPLE;
 
 #[derive(Default)]
 pub struct NativeAudioRuntime {
     stream: Option<cpal::Stream>,
     shared: Option<Arc<Mutex<PlaybackShared>>>,
+    output_ring: Option<Arc<NativeOutputRing>>,
+    render_stop: Option<Arc<AtomicBool>>,
+    render_thread: Option<JoinHandle<()>>,
     asset_cache: HashMap<(String, String), Arc<DecodedAudioAsset>>,
     generation: u64,
     last_error: Option<String>,
     device_name: Option<String>,
     host_name: Option<String>,
+}
+
+const NATIVE_OUTPUT_RING_SAMPLES: usize = 1 << 16;
+
+struct NativeOutputRing {
+    samples: Box<[UnsafeCell<f32>]>,
+    read: AtomicUsize,
+    write: AtomicUsize,
+    callback_count: AtomicU64,
+    last_callback_micros: AtomicU64,
+    max_callback_micros: AtomicU64,
+    slow_callback_count: AtomicU64,
+    stream_failed: AtomicBool,
+}
+
+// One render worker writes and the CPAL callback is the sole reader. The
+// indices publish ownership of each slot; neither side allocates or locks.
+unsafe impl Sync for NativeOutputRing {}
+
+impl NativeOutputRing {
+    fn new() -> Self {
+        Self {
+            samples: (0..NATIVE_OUTPUT_RING_SAMPLES)
+                .map(|_| UnsafeCell::new(0.0))
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+            read: AtomicUsize::new(0),
+            write: AtomicUsize::new(0),
+            callback_count: AtomicU64::new(0),
+            last_callback_micros: AtomicU64::new(0),
+            max_callback_micros: AtomicU64::new(0),
+            slow_callback_count: AtomicU64::new(0),
+            stream_failed: AtomicBool::new(false),
+        }
+    }
+
+    fn available_to_write(&self) -> usize {
+        self.samples.len().saturating_sub(
+            self.write
+                .load(Ordering::Relaxed)
+                .wrapping_sub(self.read.load(Ordering::Acquire)),
+        )
+    }
+
+    fn push(&self, source: &[f32]) -> bool {
+        if self.available_to_write() < source.len() {
+            return false;
+        }
+        let write = self.write.load(Ordering::Relaxed);
+        for (offset, sample) in source.iter().copied().enumerate() {
+            unsafe {
+                *self.samples[(write + offset) & (self.samples.len() - 1)].get() = sample;
+            }
+        }
+        self.write
+            .store(write.wrapping_add(source.len()), Ordering::Release);
+        true
+    }
+
+    fn pop(&self) -> Option<f32> {
+        let read = self.read.load(Ordering::Relaxed);
+        if read == self.write.load(Ordering::Acquire) {
+            return None;
+        }
+        let sample = unsafe { *self.samples[read & (self.samples.len() - 1)].get() };
+        self.read.store(read.wrapping_add(1), Ordering::Release);
+        Some(sample)
+    }
+
+    fn record_callback(&self, started: Instant, frame_count: usize, sample_rate: u32) {
+        let elapsed = started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64;
+        self.callback_count.fetch_add(1, Ordering::Relaxed);
+        self.last_callback_micros.store(elapsed, Ordering::Relaxed);
+        self.max_callback_micros
+            .fetch_max(elapsed, Ordering::Relaxed);
+        let deadline = callback_deadline_micros(sample_rate, frame_count);
+        if deadline > 0 && elapsed > deadline {
+            self.slow_callback_count.fetch_add(1, Ordering::Relaxed);
+        }
+    }
 }
 
 pub fn create_native_audio_runtime() -> NativeAudioState {
@@ -44,6 +142,12 @@ pub struct NativeAudioStartPayload {
     sample_rate: u32,
     #[serde(rename = "startSeconds")]
     start_seconds: f64,
+    #[serde(default = "default_bpm")]
+    bpm: f64,
+    #[serde(rename = "timeSig", default = "default_time_sig")]
+    time_sig: i32,
+    #[serde(rename = "transportMap", default)]
+    transport_map: Vec<NativeTransportPoint>,
     #[serde(rename = "outputDeviceId")]
     output_device_id: Option<String>,
     #[serde(rename = "loop", default)]
@@ -60,6 +164,130 @@ pub struct NativeAudioStartPayload {
     assets: Vec<NativeAudioAssetPayload>,
     #[serde(default)]
     regions: Vec<NativeAudioRegion>,
+    #[serde(default)]
+    samplers: Vec<NativeSamplerDevicePayload>,
+    #[serde(rename = "hostedInstruments", default)]
+    hosted_instruments: Vec<HostedInstancePayload>,
+}
+
+fn default_bpm() -> f64 {
+    120.0
+}
+fn default_time_sig() -> i32 {
+    4
+}
+
+#[derive(Clone, Deserialize)]
+pub struct NativeTransportPoint {
+    #[serde(rename = "timeSeconds")]
+    time_seconds: f64,
+    #[serde(rename = "projectPpq")]
+    project_ppq: f64,
+    #[serde(rename = "barPositionPpq")]
+    bar_position_ppq: f64,
+    tempo: f64,
+    numerator: i32,
+    denominator: i32,
+    #[serde(default)]
+    curve: String,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct NativeSamplerEnvelopePayload {
+    #[serde(rename = "attackSeconds", default)]
+    attack_seconds: f64,
+    #[serde(rename = "decaySeconds", default)]
+    decay_seconds: f64,
+    #[serde(rename = "sustainLevel", default = "default_sampler_sustain")]
+    sustain_level: f64,
+    #[serde(rename = "releaseSeconds", default)]
+    release_seconds: f64,
+}
+
+fn default_sampler_sustain() -> f64 {
+    1.0
+}
+
+#[derive(Clone, Deserialize)]
+pub struct NativeSamplerPadPayload {
+    #[serde(rename = "midiNote")]
+    midi_note: u8,
+    #[serde(rename = "assetId")]
+    asset_id: String,
+    gain: f64,
+    pan: f64,
+    #[serde(rename = "coarseTune", default)]
+    coarse_tune: f64,
+    #[serde(rename = "fineTuneCents", default)]
+    fine_tune_cents: f64,
+    #[serde(rename = "startPosition", default)]
+    start_position: f64,
+    #[serde(rename = "endPosition", default = "default_unit")]
+    end_position: f64,
+    #[serde(default)]
+    reverse: bool,
+    #[serde(rename = "playbackMode", default = "default_one_shot")]
+    playback_mode: String,
+    #[serde(default)]
+    mute: bool,
+    #[serde(default)]
+    solo: bool,
+    #[serde(rename = "chokeGroup", default)]
+    choke_group: Option<String>,
+}
+
+fn default_unit() -> f64 {
+    1.0
+}
+fn default_one_shot() -> String {
+    "one-shot".to_string()
+}
+
+#[derive(Clone, Deserialize)]
+pub struct NativeSamplerDevicePayload {
+    id: String,
+    #[serde(rename = "trackId")]
+    track_id: String,
+    #[serde(rename = "type")]
+    device_type: String,
+    enabled: bool,
+    #[serde(rename = "assetId", default)]
+    asset_id: Option<String>,
+    #[serde(rename = "rootNote", default = "default_sampler_root")]
+    root_note: f64,
+    #[serde(rename = "keyTracking", default = "default_true")]
+    key_tracking: bool,
+    #[serde(rename = "coarseTune", default)]
+    coarse_tune: f64,
+    #[serde(rename = "fineTuneCents", default)]
+    fine_tune_cents: f64,
+    #[serde(default = "default_unit")]
+    gain: f64,
+    #[serde(default)]
+    pan: f64,
+    #[serde(rename = "startPosition", default)]
+    start_position: f64,
+    #[serde(rename = "endPosition", default = "default_unit")]
+    end_position: f64,
+    #[serde(default)]
+    reverse: bool,
+    #[serde(rename = "playbackMode", default = "default_one_shot")]
+    playback_mode: String,
+    #[serde(rename = "loopStartPosition", default)]
+    loop_start_position: f64,
+    #[serde(rename = "loopEndPosition", default = "default_unit")]
+    loop_end_position: f64,
+    #[serde(default)]
+    envelope: Option<NativeSamplerEnvelopePayload>,
+    #[serde(default)]
+    pads: Vec<NativeSamplerPadPayload>,
+}
+
+fn default_sampler_root() -> f64 {
+    60.0
+}
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Deserialize)]
@@ -209,11 +437,21 @@ pub struct NativeMetalTexture {
     pick_attack: f64,
 }
 
-fn default_metal_drive() -> f64 { 0.42 }
-fn default_metal_palm_mute() -> f64 { 0.72 }
-fn default_metal_low_tightness() -> f64 { 0.78 }
-fn default_metal_presence() -> f64 { 0.56 }
-fn default_metal_pick_attack() -> f64 { 0.64 }
+fn default_metal_drive() -> f64 {
+    0.42
+}
+fn default_metal_palm_mute() -> f64 {
+    0.72
+}
+fn default_metal_low_tightness() -> f64 {
+    0.78
+}
+fn default_metal_presence() -> f64 {
+    0.56
+}
+fn default_metal_pick_attack() -> f64 {
+    0.64
+}
 
 #[derive(Clone, Deserialize)]
 pub struct NativeSoundProfile {
@@ -225,7 +463,9 @@ pub struct NativeSoundProfile {
     parameters: Value,
 }
 
-fn default_recipe_version() -> u32 { 1 }
+fn default_recipe_version() -> u32 {
+    1
+}
 
 #[derive(Clone, Deserialize)]
 pub struct NativeTrackControl {
@@ -275,6 +515,8 @@ pub struct NativeFxSlotPayload {
     enabled: bool,
     #[serde(default)]
     parameters: HashMap<String, Value>,
+    #[serde(rename = "hostedPlugin", default)]
+    hosted_plugin: Option<HostedInstancePayload>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -404,6 +646,7 @@ struct PlaybackShared {
     project_title: Option<String>,
     events: Vec<NativeRenderedEvent>,
     compiled_event_routes: Vec<Option<CompiledGeneratedEventRoute>>,
+    compiled_sampler_routes: Vec<Option<CompiledSamplerEventRoute>>,
     compiled_sidechain_triggers: Vec<CompiledSidechainTrigger>,
     compiled_sidechain_trigger_source_len: usize,
     assets: HashMap<String, Arc<DecodedAudioAsset>>,
@@ -413,6 +656,8 @@ struct PlaybackShared {
     track_order: Vec<String>,
     track_indices: HashMap<String, usize>,
     fx: NativeFxRuntime,
+    hosted_instruments: HashMap<String, HostedInstrumentState>,
+    hosted_graph: Option<Vst3GraphService>,
     loop_region: Option<NativeLoopPayload>,
     metronome: Option<NativeMetronomePayload>,
     sidechain: Option<NativeSidechainPayload>,
@@ -420,6 +665,8 @@ struct PlaybackShared {
     position_seconds: f64,
     sample_rate: u32,
     channels: u16,
+    bpm: f64,
+    time_sig: i32,
     playing: bool,
     rendered_frame_count: u64,
     scan_start_index: usize,
@@ -446,6 +693,21 @@ struct CompiledGeneratedEventRoute {
     drum_lane: Option<String>,
 }
 
+struct CompiledSamplerEventRoute {
+    asset: Arc<DecodedAudioAsset>,
+    gain: f32,
+    pan: f32,
+    pitch_ratio: f64,
+    start_position: f64,
+    end_position: f64,
+    reverse: bool,
+    playback_mode: String,
+    loop_start_position: f64,
+    loop_end_position: f64,
+    envelope: Option<NativeSamplerEnvelopePayload>,
+    choke_end_time: Option<f64>,
+}
+
 struct CompiledSidechainTrigger {
     time: f64,
     track_index: usize,
@@ -464,6 +726,48 @@ struct NativeFxRuntime {
     track_chains: HashMap<String, NativeFxChainState>,
     drum_lane_chains: HashMap<String, NativeFxChainState>,
     master_chain: Option<NativeFxChainState>,
+    latency_compensation: HashMap<String, StereoDelayLine>,
+    track_latency_samples: HashMap<String, u32>,
+    max_tail_samples: u32,
+}
+
+struct StereoDelayLine {
+    left: Vec<f32>,
+    right: Vec<f32>,
+    index: usize,
+}
+
+impl StereoDelayLine {
+    fn new(samples: usize) -> Option<Self> {
+        if samples == 0 || samples > MAX_HOSTED_LATENCY_SAMPLES as usize {
+            return None;
+        }
+        let mut left = Vec::new();
+        let mut right = Vec::new();
+        left.try_reserve_exact(samples).ok()?;
+        right.try_reserve_exact(samples).ok()?;
+        left.resize(samples, 0.0);
+        right.resize(samples, 0.0);
+        Some(Self {
+            left,
+            right,
+            index: 0,
+        })
+    }
+
+    fn process(&mut self, left: f32, right: f32) -> (f32, f32) {
+        let output = (self.left[self.index], self.right[self.index]);
+        self.left[self.index] = left;
+        self.right[self.index] = right;
+        self.index = (self.index + 1) % self.left.len();
+        output
+    }
+
+    fn clear(&mut self) {
+        self.left.fill(0.0);
+        self.right.fill(0.0);
+        self.index = 0;
+    }
 }
 
 struct NativeFxChainState {
@@ -529,6 +833,34 @@ enum NativeFxProcessor {
         phase: f32,
         sample_rate: f32,
     },
+    HostedVst3(HostedEffectState),
+}
+
+struct HostedEffectState {
+    instance_id: String,
+    graph: Vst3GraphService,
+    input: [[f32; VST3_BLOCK_FRAMES]; 2],
+    output: [[f32; VST3_BLOCK_FRAMES]; 2],
+    cursor: usize,
+    block_start_sample: i64,
+    sample_rate: u32,
+    bpm: f64,
+    time_sig: i32,
+    transport_map: Vec<NativeTransportPoint>,
+    loop_region: Option<NativeLoopPayload>,
+    automation: Vec<crate::vst3_session::HostedParameterAutomation>,
+    ready: bool,
+    disabled: bool,
+}
+
+struct HostedInstrumentState {
+    payload: HostedInstancePayload,
+    graph: Vst3GraphService,
+    output: [[f32; VST3_BLOCK_FRAMES]; 2],
+    cursor: usize,
+    block_start_sample: i64,
+    disabled: bool,
+    transport_map: Vec<NativeTransportPoint>,
 }
 
 #[derive(Clone, Debug)]
@@ -588,6 +920,17 @@ pub fn native_audio_render_wav(
     let mut runtime = state
         .lock()
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
+    let has_hosted = !payload.hosted_instruments.is_empty()
+        || payload
+            .fx_chains
+            .iter()
+            .any(|chain| chain.slots.iter().any(|slot| slot.hosted_plugin.is_some()));
+    if has_hosted && runtime.shared.is_some() {
+        return Err(
+            "Stop native playback before rendering hosted plug-ins so offline DSP state stays isolated."
+                .to_string(),
+        );
+    }
     let sample_rate = sanitize_offline_sample_rate(payload.sample_rate);
     let generation = runtime.generation;
     let mut playback = runtime.build_playback(payload, sample_rate, 2, generation)?;
@@ -643,6 +986,7 @@ pub fn native_audio_seek(
     if let Some(shared) = &runtime.shared {
         if let Ok(mut playback) = shared.lock() {
             playback.position_seconds = seconds.max(0.0);
+            reset_hosted_processing(&mut playback);
             apply_loop_wrap(&mut playback);
             reset_scan_starts(&mut playback);
         }
@@ -725,38 +1069,43 @@ impl NativeAudioRuntime {
             reset_scan_starts(&mut playback);
         }
 
-        let err_shared = Arc::clone(&shared);
+        let output_ring = Arc::new(NativeOutputRing::new());
+        let err_ring = Arc::clone(&output_ring);
         let err_fn = move |err| {
-            if let Ok(mut playback) = err_shared.lock() {
-                playback.playing = false;
-            }
+            err_ring.stream_failed.store(true, Ordering::Release);
             eprintln!("Pocket DAW native audio stream error: {}", err);
         };
 
         let stream = match sample_format {
             cpal::SampleFormat::F32 => {
-                let callback_shared = Arc::clone(&shared);
+                let callback_ring = Arc::clone(&output_ring);
                 device.build_output_stream(
                     &config,
-                    move |data: &mut [f32], _| write_output(data, &callback_shared),
+                    move |data: &mut [f32], _| {
+                        write_ring_output(data, &callback_ring, channels as usize, sample_rate)
+                    },
                     err_fn,
                     None,
                 )
             }
             cpal::SampleFormat::I16 => {
-                let callback_shared = Arc::clone(&shared);
+                let callback_ring = Arc::clone(&output_ring);
                 device.build_output_stream(
                     &config,
-                    move |data: &mut [i16], _| write_output_i16(data, &callback_shared),
+                    move |data: &mut [i16], _| {
+                        write_ring_output_i16(data, &callback_ring, channels as usize, sample_rate)
+                    },
                     err_fn,
                     None,
                 )
             }
             cpal::SampleFormat::U16 => {
-                let callback_shared = Arc::clone(&shared);
+                let callback_ring = Arc::clone(&output_ring);
                 device.build_output_stream(
                     &config,
-                    move |data: &mut [u16], _| write_output_u16(data, &callback_shared),
+                    move |data: &mut [u16], _| {
+                        write_ring_output_u16(data, &callback_ring, channels as usize, sample_rate)
+                    },
                     err_fn,
                     None,
                 )
@@ -770,11 +1119,45 @@ impl NativeAudioRuntime {
         }
         .map_err(|err| format!("Could not build native output stream: {}", err))?;
 
-        stream
-            .play()
-            .map_err(|err| format!("Could not start native output stream: {}", err))?;
+        let render_stop = Arc::new(AtomicBool::new(false));
+        let producer_shared = Arc::clone(&shared);
+        let producer_ring = Arc::clone(&output_ring);
+        let producer_stop = Arc::clone(&render_stop);
+        let render_thread = std::thread::Builder::new()
+            .name("pocket-daw-native-render".to_string())
+            .spawn(move || {
+                let block_samples = NATIVE_AUDIO_BLOCK_FRAMES * channels as usize;
+                let mut block = vec![0.0_f32; block_samples];
+                while !producer_stop.load(Ordering::Acquire) {
+                    if producer_ring.available_to_write() < block_samples {
+                        std::thread::sleep(Duration::from_millis(1));
+                        continue;
+                    }
+                    if let Ok(mut playback) = producer_shared.lock() {
+                        for frame in block.chunks_mut(channels as usize) {
+                            let (left, right) = render_next_frame(&mut playback);
+                            write_frame(frame, left, right);
+                        }
+                    } else {
+                        block.fill(0.0);
+                    }
+                    if !producer_ring.push(&block) {
+                        std::thread::yield_now();
+                    }
+                }
+            })
+            .map_err(|_| "Could not start the native render worker.".to_string())?;
+
+        if let Err(err) = stream.play() {
+            render_stop.store(true, Ordering::Release);
+            let _ = render_thread.join();
+            return Err(format!("Could not start native output stream: {}", err));
+        }
         self.stream = Some(stream);
         self.shared = Some(shared);
+        self.output_ring = Some(output_ring);
+        self.render_stop = Some(render_stop);
+        self.render_thread = Some(render_thread);
         self.device_name = Some(device_name);
         self.host_name = Some(host_name);
         self.last_error = None;
@@ -788,6 +1171,15 @@ impl NativeAudioRuntime {
         channels: u16,
         generation: u64,
     ) -> Result<PlaybackShared, String> {
+        let mut hosted_payloads = payload.hosted_instruments.clone();
+        hosted_payloads.extend(
+            payload
+                .fx_chains
+                .iter()
+                .flat_map(|chain| chain.slots.iter())
+                .filter_map(|slot| slot.hosted_plugin.clone()),
+        );
+        let hosted_graph = Vst3GraphService::start(&hosted_payloads, sample_rate).unwrap_or(None);
         let mut events = payload.events;
         events.sort_by(|a, b| {
             a.time
@@ -823,10 +1215,65 @@ impl NativeAudioRuntime {
             .into_iter()
             .map(|track| (track.id.clone(), track))
             .collect::<HashMap<_, _>>();
-        let fx = build_native_fx_runtime(payload.fx_chains, &tracks, sample_rate as f32);
+        let mut fx = build_native_fx_runtime(
+            payload.fx_chains,
+            &tracks,
+            sample_rate as f32,
+            hosted_graph.clone(),
+            payload.bpm,
+            payload.time_sig,
+            payload.transport_map.clone(),
+            payload.loop_region.clone(),
+        );
+        if let Some(graph) = hosted_graph.as_ref() {
+            for payload in payload
+                .hosted_instruments
+                .iter()
+                .filter(|item| item.enabled)
+            {
+                if let Some(info) = graph.info(&payload.instance_id) {
+                    let latency = fx
+                        .track_latency_samples
+                        .get(&payload.track_id)
+                        .copied()
+                        .unwrap_or(0)
+                        .saturating_add(info.latency_samples);
+                    fx.track_latency_samples
+                        .insert(payload.track_id.clone(), latency);
+                    fx.max_tail_samples = fx.max_tail_samples.max(info.tail_samples);
+                }
+            }
+        }
+        fx.rebuild_latency_compensation(tracks.keys());
+        let hosted_instruments = hosted_graph
+            .as_ref()
+            .map(|graph| {
+                payload
+                    .hosted_instruments
+                    .iter()
+                    .filter(|item| item.enabled && item.role == "instrument")
+                    .map(|item| {
+                        (
+                            item.track_id.clone(),
+                            HostedInstrumentState {
+                                payload: item.clone(),
+                                graph: graph.clone(),
+                                output: [[0.0; VST3_BLOCK_FRAMES]; 2],
+                                cursor: VST3_BLOCK_FRAMES,
+                                block_start_sample: 0,
+                                disabled: false,
+                                transport_map: payload.transport_map.clone(),
+                            },
+                        )
+                    })
+                    .collect::<HashMap<_, _>>()
+            })
+            .unwrap_or_default();
         let scratch_track_capacity = tracks.len().max(1);
         let compiled_regions = compile_audio_regions(&regions, &assets, &track_indices);
         let compiled_event_routes = compile_generated_event_routes(&events, &track_indices);
+        let compiled_sampler_routes =
+            compile_sampler_event_routes(&events, &payload.samplers, &assets, &track_indices);
         let compiled_sidechain_triggers =
             compile_sidechain_triggers(&events, payload.sidechain.as_ref(), &track_indices);
         let compiled_sidechain_trigger_source_len = events.len();
@@ -835,6 +1282,7 @@ impl NativeAudioRuntime {
             project_title: payload.project_title,
             events,
             compiled_event_routes,
+            compiled_sampler_routes,
             compiled_sidechain_triggers,
             compiled_sidechain_trigger_source_len,
             assets,
@@ -845,12 +1293,16 @@ impl NativeAudioRuntime {
             track_order,
             track_indices,
             fx,
+            hosted_instruments,
+            hosted_graph,
             loop_region: sanitize_loop_region(payload.loop_region),
             metronome: sanitize_metronome(payload.metronome),
             sidechain: payload.sidechain,
             position_seconds: payload.start_seconds.max(0.0),
             sample_rate,
             channels,
+            bpm: payload.bpm.clamp(1.0, 999.0),
+            time_sig: payload.time_sig.clamp(1, 32),
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
@@ -877,6 +1329,13 @@ impl NativeAudioRuntime {
             }
         }
         self.stream = None;
+        if let Some(stop) = self.render_stop.take() {
+            stop.store(true, Ordering::Release);
+        }
+        if let Some(thread) = self.render_thread.take() {
+            let _ = thread.join();
+        }
+        self.output_ring = None;
         self.shared = None;
     }
 
@@ -944,10 +1403,30 @@ impl NativeAudioRuntime {
                     asset_count: playback.assets.len(),
                     asset_region_count: playback.regions.len(),
                     procedural_event_count: playback.events.len(),
-                    callback_count: playback.callback_count,
-                    last_callback_micros: playback.last_callback_micros,
-                    max_callback_micros: playback.max_callback_micros,
-                    slow_callback_count: playback.slow_callback_count,
+                    callback_count: self
+                        .output_ring
+                        .as_ref()
+                        .map_or(playback.callback_count, |ring| {
+                            ring.callback_count.load(Ordering::Relaxed)
+                        }),
+                    last_callback_micros: self
+                        .output_ring
+                        .as_ref()
+                        .map_or(playback.last_callback_micros, |ring| {
+                            ring.last_callback_micros.load(Ordering::Relaxed)
+                        }),
+                    max_callback_micros: self
+                        .output_ring
+                        .as_ref()
+                        .map_or(playback.max_callback_micros, |ring| {
+                            ring.max_callback_micros.load(Ordering::Relaxed)
+                        }),
+                    slow_callback_count: self
+                        .output_ring
+                        .as_ref()
+                        .map_or(playback.slow_callback_count, |ring| {
+                            ring.slow_callback_count.load(Ordering::Relaxed)
+                        }),
                 };
             }
         }
@@ -1054,15 +1533,69 @@ impl NativeAudioStatus {
     }
 }
 
+fn write_ring_output(data: &mut [f32], ring: &NativeOutputRing, channels: usize, sample_rate: u32) {
+    crate::vst3_session::with_audio_callback_scope(|| {
+        let started = Instant::now();
+        for sample in data.iter_mut() {
+            *sample = ring.pop().unwrap_or(0.0);
+        }
+        ring.record_callback(
+            started,
+            frame_count_for_output(data.len(), channels),
+            sample_rate,
+        );
+    });
+}
+
+fn write_ring_output_i16(
+    data: &mut [i16],
+    ring: &NativeOutputRing,
+    channels: usize,
+    sample_rate: u32,
+) {
+    crate::vst3_session::with_audio_callback_scope(|| {
+        let started = Instant::now();
+        for sample in data.iter_mut() {
+            *sample = (ring.pop().unwrap_or(0.0).clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+        }
+        ring.record_callback(
+            started,
+            frame_count_for_output(data.len(), channels),
+            sample_rate,
+        );
+    });
+}
+
+fn write_ring_output_u16(
+    data: &mut [u16],
+    ring: &NativeOutputRing,
+    channels: usize,
+    sample_rate: u32,
+) {
+    crate::vst3_session::with_audio_callback_scope(|| {
+        let started = Instant::now();
+        for sample in data.iter_mut() {
+            *sample = f32_to_u16(ring.pop().unwrap_or(0.0));
+        }
+        ring.record_callback(
+            started,
+            frame_count_for_output(data.len(), channels),
+            sample_rate,
+        );
+    });
+}
+
 fn write_output(data: &mut [f32], shared: &Arc<Mutex<PlaybackShared>>) {
     let started = Instant::now();
     if let Ok(mut playback) = shared.lock() {
         let channels = playback.channels as usize;
         let frame_count = frame_count_for_output(data.len(), channels);
-        for frame in data.chunks_mut(channels) {
-            let (left, right) = render_next_frame(&mut playback);
-            write_frame(frame, left, right);
-        }
+        for_each_output_block(data, channels, |block| {
+            for frame in block.chunks_mut(channels) {
+                let (left, right) = render_next_frame(&mut playback);
+                write_frame(frame, left, right);
+            }
+        });
         record_callback_timing(&mut playback, started, frame_count);
     } else {
         data.fill(0.0);
@@ -1074,18 +1607,20 @@ fn write_output_i16(data: &mut [i16], shared: &Arc<Mutex<PlaybackShared>>) {
     if let Ok(mut playback) = shared.lock() {
         let channels = playback.channels as usize;
         let frame_count = frame_count_for_output(data.len(), channels);
-        for frame in data.chunks_mut(channels) {
-            let (left, right) = render_next_frame(&mut playback);
-            if let Some(sample) = frame.get_mut(0) {
-                *sample = (left.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+        for_each_output_block(data, channels, |block| {
+            for frame in block.chunks_mut(channels) {
+                let (left, right) = render_next_frame(&mut playback);
+                if let Some(sample) = frame.get_mut(0) {
+                    *sample = (left.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+                }
+                if frame.len() > 1 {
+                    frame[1] = (right.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+                }
+                for sample in frame.iter_mut().skip(2) {
+                    *sample = (((left + right) * 0.5).clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+                }
             }
-            if frame.len() > 1 {
-                frame[1] = (right.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
-            }
-            for sample in frame.iter_mut().skip(2) {
-                *sample = (((left + right) * 0.5).clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
-            }
-        }
+        });
         record_callback_timing(&mut playback, started, frame_count);
     } else {
         data.fill(0);
@@ -1097,18 +1632,20 @@ fn write_output_u16(data: &mut [u16], shared: &Arc<Mutex<PlaybackShared>>) {
     if let Ok(mut playback) = shared.lock() {
         let channels = playback.channels as usize;
         let frame_count = frame_count_for_output(data.len(), channels);
-        for frame in data.chunks_mut(channels) {
-            let (left, right) = render_next_frame(&mut playback);
-            if let Some(sample) = frame.get_mut(0) {
-                *sample = f32_to_u16(left);
+        for_each_output_block(data, channels, |block| {
+            for frame in block.chunks_mut(channels) {
+                let (left, right) = render_next_frame(&mut playback);
+                if let Some(sample) = frame.get_mut(0) {
+                    *sample = f32_to_u16(left);
+                }
+                if frame.len() > 1 {
+                    frame[1] = f32_to_u16(right);
+                }
+                for sample in frame.iter_mut().skip(2) {
+                    *sample = f32_to_u16((left + right) * 0.5);
+                }
             }
-            if frame.len() > 1 {
-                frame[1] = f32_to_u16(right);
-            }
-            for sample in frame.iter_mut().skip(2) {
-                *sample = f32_to_u16((left + right) * 0.5);
-            }
-        }
+        });
         record_callback_timing(&mut playback, started, frame_count);
     } else {
         data.fill(u16::MAX / 2);
@@ -1281,7 +1818,18 @@ fn render_playback_to_wav(
     let sample_rate = sanitize_offline_sample_rate(playback.sample_rate);
     playback.sample_rate = sample_rate;
     playback.channels = 2;
-    let frame_count = (duration_seconds * sample_rate as f64).ceil().max(1.0) as usize;
+    let base_frame_count = (duration_seconds * sample_rate as f64).ceil().max(1.0) as usize;
+    let frame_count = match mode {
+        NativeAudioRenderMode::Mix => base_frame_count
+            .saturating_add(playback.fx.max_tail_samples as usize)
+            .saturating_add(if playback.hosted_graph.is_some() {
+                VST3_BLOCK_FRAMES
+            } else {
+                0
+            }),
+        NativeAudioRenderMode::CacheStem => base_frame_count,
+    }
+    .min((MAX_OFFLINE_RENDER_SECONDS * sample_rate as f64) as usize);
     let bytes = match mode {
         NativeAudioRenderMode::Mix => {
             if bit_depth == 32 {
@@ -1347,20 +1895,22 @@ where
     };
     let data_len = wav_data_len(frame_count, channels, bytes_per_sample)?;
     let mut bytes = wav_header(sample_rate, channels, 1, bit_depth, data_len)?;
-    for _ in 0..frame_count {
-        let (left, right) = next_frame();
-        if bit_depth == 24 {
-            write_i24_le(&mut bytes, f32_to_i24(left));
-            if channels > 1 {
-                write_i24_le(&mut bytes, f32_to_i24(right));
-            }
-        } else {
-            bytes.extend_from_slice(&f32_to_i16(left).to_le_bytes());
-            if channels > 1 {
-                bytes.extend_from_slice(&f32_to_i16(right).to_le_bytes());
+    for_each_frame_block(frame_count, |block_frames| {
+        for _ in 0..block_frames {
+            let (left, right) = next_frame();
+            if bit_depth == 24 {
+                write_i24_le(&mut bytes, f32_to_i24(left));
+                if channels > 1 {
+                    write_i24_le(&mut bytes, f32_to_i24(right));
+                }
+            } else {
+                bytes.extend_from_slice(&f32_to_i16(left).to_le_bytes());
+                if channels > 1 {
+                    bytes.extend_from_slice(&f32_to_i16(right).to_le_bytes());
+                }
             }
         }
-    }
+    });
     Ok(bytes)
 }
 
@@ -1375,13 +1925,15 @@ where
 {
     let data_len = wav_data_len(frame_count, channels, 4)?;
     let mut bytes = wav_header(sample_rate, channels, 3, 32, data_len)?;
-    for _ in 0..frame_count {
-        let (left, right) = next_frame();
-        bytes.extend_from_slice(&left.to_le_bytes());
-        if channels > 1 {
-            bytes.extend_from_slice(&right.to_le_bytes());
+    for_each_frame_block(frame_count, |block_frames| {
+        for _ in 0..block_frames {
+            let (left, right) = next_frame();
+            bytes.extend_from_slice(&left.to_le_bytes());
+            if channels > 1 {
+                bytes.extend_from_slice(&right.to_le_bytes());
+            }
         }
-    }
+    });
     Ok(bytes)
 }
 
@@ -1518,6 +2070,13 @@ fn render_generated_event_source(
     let event = playback.events.get(event_index)?;
     let route = playback.compiled_event_routes.get(event_index)?.as_ref()?;
     let track_index = route.track_index;
+    if playback
+        .track_order
+        .get(track_index)
+        .is_some_and(|track_id| playback.hosted_instruments.contains_key(track_id))
+    {
+        return None;
+    }
     let track_enabled = playback
         .track_order
         .get(track_index)
@@ -1526,18 +2085,26 @@ fn render_generated_event_source(
     if !track_enabled {
         return None;
     }
-    let sample = render_event_sample(event, t);
-    if sample.abs() <= 0.000001 {
-        return None;
-    }
+    let sampler_route = playback
+        .compiled_sampler_routes
+        .get(event_index)
+        .and_then(|route| route.as_ref());
+    let (sample_left, sample_right, event_pan) = if let Some(sampler) = sampler_route {
+        let (left, right) = render_sampler_event_sample(event, sampler, t)?;
+        (left, right, sampler.pan)
+    } else {
+        let sample = render_event_sample(event, t);
+        if sample.abs() <= 0.000001 {
+            return None;
+        }
+        (sample, sample, event.pan.unwrap_or(0.0) as f32)
+    };
     if !active_counts.allows(track_index) {
         return None;
     }
-
-    let event_pan = event.pan.unwrap_or(0.0) as f32;
     let (pan_left, pan_right) = source_pan_gains(event_pan);
-    let mut lane_left = sample * pan_left;
-    let mut lane_right = sample * pan_right;
+    let mut lane_left = sample_left * pan_left;
+    let mut lane_right = sample_right * pan_right;
     if let Some(lane) = route.drum_lane.as_deref() {
         if let Some(chain) = playback.fx.drum_lane_chains.get_mut(lane) {
             (lane_left, lane_right) = chain.process(lane_left, lane_right);
@@ -1550,6 +2117,146 @@ fn render_generated_event_source(
     })
 }
 
+fn render_sampler_event_sample(
+    event: &NativeRenderedEvent,
+    route: &CompiledSamplerEventRoute,
+    t: f64,
+) -> Option<(f32, f32)> {
+    let local = t - event.time;
+    if local < 0.0 || route.pitch_ratio <= 0.0 {
+        return None;
+    }
+    if route.choke_end_time.is_some_and(|end| t >= end) {
+        return None;
+    }
+    let asset = route.asset.as_ref();
+    if asset.frame_count == 0 {
+        return None;
+    }
+    let start_frame = (route.start_position * asset.frame_count as f64)
+        .floor()
+        .max(0.0);
+    let end_frame = (route.end_position * asset.frame_count as f64)
+        .ceil()
+        .min(asset.frame_count as f64);
+    if end_frame <= start_frame {
+        return None;
+    }
+    let source_advance = local * asset.sample_rate.max(1) as f64 * route.pitch_ratio;
+    let gate_end = event.duration.max(0.0);
+    let release = route
+        .envelope
+        .as_ref()
+        .map(|env| env.release_seconds.max(0.0))
+        .unwrap_or(0.008);
+    if route.playback_mode == "gate" && local > gate_end + release {
+        return None;
+    }
+    let mut source_frame = if route.playback_mode == "loop" {
+        let loop_start = (route.loop_start_position.max(route.start_position)
+            * asset.frame_count as f64)
+            .floor();
+        let loop_end =
+            (route.loop_end_position.min(route.end_position) * asset.frame_count as f64).ceil();
+        let loop_len = (loop_end - loop_start).max(1.0);
+        let initial_len = (loop_start - start_frame).max(0.0);
+        if source_advance < initial_len {
+            start_frame + source_advance
+        } else {
+            loop_start + (source_advance - initial_len).rem_euclid(loop_len)
+        }
+    } else {
+        start_frame + source_advance
+    };
+    if route.reverse {
+        source_frame = end_frame - 1.0 - (source_frame - start_frame);
+    }
+    if source_frame < start_frame || source_frame >= end_frame {
+        return None;
+    }
+    let (left, right) = interpolated_asset_frame(asset, source_frame)?;
+    let envelope = sampler_envelope_gain(route, local, gate_end);
+    let velocity = event.velocity.clamp(0.0, 1.4) as f32;
+    let gain = route.gain * velocity * envelope;
+    Some((left * gain, right * gain))
+}
+
+fn sampler_envelope_gain(route: &CompiledSamplerEventRoute, local: f64, gate_end: f64) -> f32 {
+    let Some(env) = route.envelope.as_ref() else {
+        if route.playback_mode == "gate" && local > gate_end {
+            return (1.0 - (local - gate_end) / 0.008).clamp(0.0, 1.0) as f32;
+        }
+        return (local / 0.003).clamp(0.0, 1.0) as f32;
+    };
+    let attack = env.attack_seconds.max(0.0);
+    let decay = env.decay_seconds.max(0.0);
+    let sustain = env.sustain_level.clamp(0.0, 1.0);
+    let held = if attack > 0.0 && local < attack {
+        local / attack
+    } else if decay > 0.0 && local < attack + decay {
+        1.0 - (1.0 - sustain) * ((local - attack) / decay)
+    } else {
+        sustain
+    };
+    if route.playback_mode != "one-shot" && local > gate_end {
+        let release = env.release_seconds.max(0.000_001);
+        (held * (1.0 - (local - gate_end) / release).clamp(0.0, 1.0)) as f32
+    } else {
+        held as f32
+    }
+}
+
+fn interpolated_asset_frame(asset: &DecodedAudioAsset, frame_position: f64) -> Option<(f32, f32)> {
+    if !frame_position.is_finite() || frame_position < 0.0 {
+        return None;
+    }
+    let frame = frame_position.floor() as usize;
+    if asset.frame_count == 0 || frame >= asset.frame_count {
+        return None;
+    }
+    let fraction = (frame_position - frame as f64).clamp(0.0, 1.0) as f32;
+    let channels = asset.channels.max(1) as usize;
+    let left = cubic_asset_channel(asset, frame, fraction, channels, 0)?;
+    let right = if channels > 1 {
+        cubic_asset_channel(asset, frame, fraction, channels, 1).unwrap_or(left)
+    } else {
+        left
+    };
+    Some((left, right))
+}
+
+fn cubic_asset_channel(
+    asset: &DecodedAudioAsset,
+    frame: usize,
+    fraction: f32,
+    channels: usize,
+    channel: usize,
+) -> Option<f32> {
+    let last_frame = asset.frame_count.checked_sub(1)?;
+    let sample = |sample_frame: usize| -> Option<f32> {
+        let index = sample_frame
+            .min(last_frame)
+            .checked_mul(channels)?
+            .checked_add(channel)?;
+        asset.samples.get(index).copied()
+    };
+    let p0 = sample(frame.saturating_sub(1))?;
+    let p1 = sample(frame)?;
+    let p2 = sample(frame.saturating_add(1))?;
+    let p3 = sample(frame.saturating_add(2))?;
+    let t = fraction.clamp(0.0, 1.0);
+    let t2 = t * t;
+    let t3 = t2 * t;
+    let value = 0.5
+        * ((2.0 * p1)
+            + (-p0 + p2) * t
+            + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+            + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3);
+    let neighborhood_min = p0.min(p1).min(p2).min(p3);
+    let neighborhood_max = p0.max(p1).max(p2).max(p3);
+    Some(value.clamp(neighborhood_min, neighborhood_max))
+}
+
 fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     if !playback.playing {
         return (0.0, 0.0);
@@ -1560,7 +2267,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     apply_loop_wrap(playback);
     let t = playback.position_seconds;
     while playback.scan_start_index < playback.events.len()
-        && event_release_end(&playback.events[playback.scan_start_index]) < t
+        && playback_event_release_end(playback, playback.scan_start_index) < t
     {
         playback.scan_start_index += 1;
     }
@@ -1604,13 +2311,15 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         );
     }
 
+    render_hosted_instruments(playback, t, &mut track_mixes);
+
     let mut event_index = playback.scan_start_index;
     while event_index < playback.events.len() {
         let event_time = playback.events[event_index].time;
         if event_time > t {
             break;
         }
-        let event_expired = event_release_end(&playback.events[event_index]) < t;
+        let event_expired = playback_event_release_end(playback, event_index) < t;
         if event_expired {
             event_index += 1;
             continue;
@@ -1656,6 +2365,9 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         if let Some(chain) = playback.fx.track_chains.get_mut(track_id) {
             (track_left, track_right) = chain.process(track_left, track_right);
         }
+        if let Some(delay) = playback.fx.latency_compensation.get_mut(track_id) {
+            (track_left, track_right) = delay.process(track_left, track_right);
+        }
         let sidechain_gain = sidechain_gain(playback, track_id, t);
         track_left *= sidechain_gain;
         track_right *= sidechain_gain;
@@ -1680,6 +2392,9 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         (track_left, track_right) = apply_bus_pan(track_left, track_right, track_id, playback);
         if let Some(chain) = playback.fx.track_chains.get_mut(track_id) {
             (track_left, track_right) = chain.process(track_left, track_right);
+        }
+        if let Some(delay) = playback.fx.latency_compensation.get_mut(track_id) {
+            (track_left, track_right) = delay.process(track_left, track_right);
         }
         let sidechain_gain = sidechain_gain(playback, track_id, t);
         track_left *= sidechain_gain;
@@ -1709,6 +2424,133 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     )
 }
 
+fn render_hosted_instruments(
+    playback: &mut PlaybackShared,
+    t: f64,
+    track_mixes: &mut Vec<TrackMix>,
+) {
+    let sample_rate = playback.sample_rate.max(1);
+    let current_sample = (t * sample_rate as f64).round().max(0.0) as i64;
+    let track_ids = playback
+        .hosted_instruments
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    for track_id in track_ids {
+        let Some(track_index) = playback.track_indices.get(&track_id).copied() else {
+            continue;
+        };
+        if !playback
+            .tracks
+            .get(&track_id)
+            .is_some_and(|track| track_is_enabled(track, playback.has_solo))
+        {
+            continue;
+        }
+        let needs_block = playback
+            .hosted_instruments
+            .get(&track_id)
+            .is_some_and(|state| state.cursor >= VST3_BLOCK_FRAMES);
+        if needs_block {
+            let block_end = current_sample + VST3_BLOCK_FRAMES as i64;
+            let events = hosted_note_events_for_block(
+                &playback.events,
+                &track_id,
+                current_sample,
+                block_end,
+                sample_rate,
+            );
+            let Some(state) = playback.hosted_instruments.get_mut(&track_id) else {
+                continue;
+            };
+            state.block_start_sample = current_sample;
+            let parameters =
+                hosted_automation_for_block(&state.payload.automation, current_sample, sample_rate);
+            let result = state.graph.process_off_callback(
+                &state.payload.instance_id,
+                &[[0.0; VST3_BLOCK_FRAMES]; 2],
+                VST3_BLOCK_FRAMES,
+                &events,
+                &parameters,
+                hosted_process_context(
+                    current_sample,
+                    sample_rate,
+                    playback.bpm,
+                    playback.time_sig,
+                    &state.transport_map,
+                    playback.loop_region.as_ref(),
+                ),
+                hosted_deadline_micros(sample_rate),
+            );
+            state.disabled = result.disabled;
+            state.output = if result.deadline_missed || result.disabled {
+                [[0.0; VST3_BLOCK_FRAMES]; 2]
+            } else {
+                result.output
+            };
+            state.cursor = 0;
+        }
+        let Some(state) = playback.hosted_instruments.get_mut(&track_id) else {
+            continue;
+        };
+        if state.disabled {
+            continue;
+        }
+        add_track_mix(
+            track_mixes,
+            track_index,
+            state.output[0][state.cursor],
+            state.output[1][state.cursor],
+        );
+        state.cursor += 1;
+    }
+}
+
+fn hosted_note_events_for_block(
+    events: &[NativeRenderedEvent],
+    track_id: &str,
+    start_sample: i64,
+    end_sample: i64,
+    sample_rate: u32,
+) -> Vec<HostedNoteEvent> {
+    let mut hosted = Vec::new();
+    for (event_index, event) in events
+        .iter()
+        .enumerate()
+        .filter(|(_, event)| event.track_id == track_id)
+    {
+        let pitches = if event.midi_notes.is_empty() {
+            event.midi.into_iter().collect::<Vec<_>>()
+        } else {
+            event.midi_notes.clone()
+        };
+        for (pitch_index, pitch) in pitches.into_iter().enumerate() {
+            let note_id = ((event_index as u64 * 32 + pitch_index as u64) & i32::MAX as u64) as i32;
+            for (note_on, seconds) in [
+                (true, event.time),
+                (false, event.time + event.duration.max(0.0)),
+            ] {
+                let sample = (seconds * sample_rate as f64).round() as i64;
+                if sample < start_sample || sample >= end_sample {
+                    continue;
+                }
+                hosted.push(HostedNoteEvent {
+                    note_on,
+                    sample_offset: (sample - start_sample) as u32,
+                    note_id,
+                    channel: 0,
+                    pitch: pitch.round().clamp(0.0, 127.0) as i16,
+                    value: event.velocity.clamp(0.0, 1.0) as f32,
+                    tuning: event.detune_cents.unwrap_or(0.0) as f32,
+                });
+            }
+        }
+    }
+    hosted.sort_by_key(|event| event.sample_offset);
+    hosted.truncate(256);
+    hosted
+}
+
 fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     if !playback.playing {
         return (0.0, 0.0);
@@ -1719,7 +2561,7 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     apply_loop_wrap(playback);
     let t = playback.position_seconds;
     while playback.scan_start_index < playback.events.len()
-        && event_release_end(&playback.events[playback.scan_start_index]) < t
+        && playback_event_release_end(playback, playback.scan_start_index) < t
     {
         playback.scan_start_index += 1;
     }
@@ -1735,7 +2577,7 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         if event_time > t {
             break;
         }
-        let event_expired = event_release_end(&playback.events[event_index]) < t;
+        let event_expired = playback_event_release_end(playback, event_index) < t;
         if event_expired {
             event_index += 1;
             continue;
@@ -1855,12 +2697,40 @@ fn apply_loop_wrap(playback: &mut PlaybackShared) {
     }
     let overflow = (playback.position_seconds - loop_region.end_seconds).rem_euclid(length);
     playback.position_seconds = loop_region.start_seconds + overflow;
+    reset_hosted_processing(playback);
     reset_scan_starts(playback);
+}
+
+fn reset_hosted_processing(playback: &mut PlaybackShared) {
+    if let Some(graph) = playback.hosted_graph.as_ref() {
+        let _ = graph.reset_off_callback();
+    }
+    for state in playback.hosted_instruments.values_mut() {
+        state.output = [[0.0; VST3_BLOCK_FRAMES]; 2];
+        state.cursor = VST3_BLOCK_FRAMES;
+        state.disabled = false;
+    }
+    for chain in playback.fx.track_chains.values_mut() {
+        chain.reset_hosted_adapters();
+    }
+    for chain in playback.fx.drum_lane_chains.values_mut() {
+        chain.reset_hosted_adapters();
+    }
+    if let Some(chain) = playback.fx.master_chain.as_mut() {
+        chain.reset_hosted_adapters();
+    }
+    for delay in playback.fx.latency_compensation.values_mut() {
+        delay.clear();
+    }
 }
 
 fn reset_scan_starts(playback: &mut PlaybackShared) {
     ensure_compiled_regions(playback);
-    playback.scan_start_index = find_scan_start(&playback.events, playback.position_seconds);
+    playback.scan_start_index = find_scan_start(
+        &playback.events,
+        &playback.compiled_sampler_routes,
+        playback.position_seconds,
+    );
     playback.region_scan_start_index =
         find_compiled_region_scan_start(&playback.compiled_regions, playback.position_seconds);
     playback.active_region_indices.clear();
@@ -2032,17 +2902,33 @@ fn build_native_fx_runtime(
     chains: Vec<NativeFxChainPayload>,
     tracks: &HashMap<String, NativeTrackControl>,
     sample_rate: f32,
+    hosted_graph: Option<Vst3GraphService>,
+    bpm: f64,
+    time_sig: i32,
+    transport_map: Vec<NativeTransportPoint>,
+    loop_region: Option<NativeLoopPayload>,
 ) -> NativeFxRuntime {
     let mut runtime = NativeFxRuntime::default();
+    let mut track_latencies = HashMap::<String, u32>::new();
     let mut chain_states = chains
         .into_iter()
         .map(|chain| {
-            let state = NativeFxChainState::from_payload(&chain, sample_rate);
-            (chain, state)
+            let (latency, tail) = hosted_chain_timing(&chain, hosted_graph.as_ref());
+            let state = NativeFxChainState::from_payload_with_graph(
+                &chain,
+                sample_rate,
+                hosted_graph.clone(),
+                bpm,
+                time_sig,
+                transport_map.clone(),
+                loop_region.clone(),
+            );
+            (chain, state, latency, tail)
         })
         .collect::<Vec<_>>();
 
-    for (chain, state) in chain_states.drain(..) {
+    for (chain, state, latency, tail) in chain_states.drain(..) {
+        runtime.max_tail_samples = runtime.max_tail_samples.max(tail);
         if state.slots.is_empty() {
             continue;
         }
@@ -2055,28 +2941,109 @@ fn build_native_fx_runtime(
             continue;
         }
         if let Some(owner) = chain.owner_track_id {
+            track_latencies.insert(owner.clone(), latency);
             runtime.track_chains.insert(owner, state);
             continue;
         }
         for (track_id, track) in tracks {
             if track.fx_chain_id.as_deref() == Some(chain.id.as_str()) {
+                track_latencies.insert(track_id.clone(), latency);
                 runtime.track_chains.insert(track_id.clone(), state);
                 break;
             }
         }
     }
 
+    runtime.track_latency_samples = track_latencies;
+
     runtime
+}
+
+impl NativeFxRuntime {
+    fn rebuild_latency_compensation<'a>(&mut self, track_ids: impl Iterator<Item = &'a String>) {
+        self.latency_compensation.clear();
+        let mut remaining_samples = MAX_NATIVE_LATENCY_COMPENSATION_SAMPLES;
+        let max_latency = self
+            .track_latency_samples
+            .values()
+            .copied()
+            .max()
+            .unwrap_or(0);
+        for track_id in track_ids {
+            let latency = self
+                .track_latency_samples
+                .get(track_id)
+                .copied()
+                .unwrap_or(0);
+            let delay_samples = max_latency.saturating_sub(latency) as usize;
+            if delay_samples > remaining_samples {
+                continue;
+            }
+            if let Some(delay) = StereoDelayLine::new(delay_samples) {
+                remaining_samples -= delay_samples;
+                self.latency_compensation.insert(track_id.clone(), delay);
+            }
+        }
+    }
+}
+
+fn hosted_chain_timing(
+    chain: &NativeFxChainPayload,
+    graph: Option<&Vst3GraphService>,
+) -> (u32, u32) {
+    let Some(graph) = graph else { return (0, 0) };
+    accumulate_hosted_timing(
+        chain
+            .slots
+            .iter()
+            .filter_map(|slot| slot.hosted_plugin.as_ref())
+            .filter_map(|payload| graph.info(&payload.instance_id))
+            .map(|info| (info.latency_samples, info.tail_samples)),
+    )
+}
+
+fn accumulate_hosted_timing(timing: impl Iterator<Item = (u32, u32)>) -> (u32, u32) {
+    timing.fold((0, 0), |(latency, tail), (next_latency, next_tail)| {
+        (
+            latency
+                .saturating_add(next_latency)
+                .saturating_add(VST3_BLOCK_FRAMES as u32)
+                .min(MAX_HOSTED_LATENCY_SAMPLES),
+            tail.saturating_add(next_tail).min(MAX_HOSTED_TAIL_SAMPLES),
+        )
+    })
 }
 
 impl NativeFxChainState {
     fn from_payload(chain: &NativeFxChainPayload, sample_rate: f32) -> Self {
+        Self::from_payload_with_graph(chain, sample_rate, None, 120.0, 4, Vec::new(), None)
+    }
+
+    fn from_payload_with_graph(
+        chain: &NativeFxChainPayload,
+        sample_rate: f32,
+        hosted_graph: Option<Vst3GraphService>,
+        bpm: f64,
+        time_sig: i32,
+        transport_map: Vec<NativeTransportPoint>,
+        loop_region: Option<NativeLoopPayload>,
+    ) -> Self {
         Self {
             slots: chain
                 .slots
                 .iter()
                 .filter(|slot| slot.enabled)
-                .filter_map(|slot| NativeFxSlotState::from_payload(slot, sample_rate))
+                .filter_map(|slot| {
+                    NativeFxSlotState::from_payload_with_graph(
+                        slot,
+                        sample_rate,
+                        hosted_graph.clone(),
+                        bpm,
+                        time_sig,
+                        transport_map.clone(),
+                        loop_region.clone(),
+                    )
+                })
                 .collect(),
         }
     }
@@ -2087,12 +3054,56 @@ impl NativeFxChainState {
         }
         (left, right)
     }
+
+    fn reset_hosted_adapters(&mut self) {
+        for slot in &mut self.slots {
+            if let NativeFxProcessor::HostedVst3(state) = &mut slot.processor {
+                state.input = [[0.0; VST3_BLOCK_FRAMES]; 2];
+                state.output = [[0.0; VST3_BLOCK_FRAMES]; 2];
+                state.cursor = 0;
+                state.ready = false;
+                state.disabled = false;
+            }
+        }
+    }
 }
 
 impl NativeFxSlotState {
     fn from_payload(slot: &NativeFxSlotPayload, sample_rate: f32) -> Option<Self> {
+        Self::from_payload_with_graph(slot, sample_rate, None, 120.0, 4, Vec::new(), None)
+    }
+
+    fn from_payload_with_graph(
+        slot: &NativeFxSlotPayload,
+        sample_rate: f32,
+        hosted_graph: Option<Vst3GraphService>,
+        bpm: f64,
+        time_sig: i32,
+        transport_map: Vec<NativeTransportPoint>,
+        loop_region: Option<NativeLoopPayload>,
+    ) -> Option<Self> {
         let filters = filters_for_slot(slot, sample_rate);
-        let processor = processor_for_slot(slot, sample_rate);
+        let processor =
+            if let (Some(payload), Some(graph)) = (slot.hosted_plugin.as_ref(), hosted_graph) {
+                NativeFxProcessor::HostedVst3(HostedEffectState {
+                    instance_id: payload.instance_id.clone(),
+                    graph,
+                    input: [[0.0; VST3_BLOCK_FRAMES]; 2],
+                    output: [[0.0; VST3_BLOCK_FRAMES]; 2],
+                    cursor: 0,
+                    block_start_sample: 0,
+                    sample_rate: sample_rate.max(1.0) as u32,
+                    bpm,
+                    time_sig,
+                    transport_map,
+                    loop_region,
+                    automation: payload.automation.clone(),
+                    ready: false,
+                    disabled: false,
+                })
+            } else {
+                processor_for_slot(slot, sample_rate)
+            };
         if filters.is_empty() && matches!(processor, NativeFxProcessor::None) {
             None
         } else {
@@ -2180,8 +3191,226 @@ impl NativeFxProcessor {
                 phase,
                 sample_rate,
             } => process_tremolo(left, right, *rate, *depth, phase, *sample_rate),
+            NativeFxProcessor::HostedVst3(state) => state.process(left, right),
         }
     }
+}
+
+impl HostedEffectState {
+    fn process(&mut self, left: f32, right: f32) -> (f32, f32) {
+        if self.disabled {
+            return (left, right);
+        }
+        let output = if self.ready {
+            (self.output[0][self.cursor], self.output[1][self.cursor])
+        } else {
+            (0.0, 0.0)
+        };
+        self.input[0][self.cursor] = left;
+        self.input[1][self.cursor] = right;
+        self.cursor += 1;
+        if self.cursor == VST3_BLOCK_FRAMES {
+            let parameters = hosted_automation_for_block(
+                &self.automation,
+                self.block_start_sample,
+                self.sample_rate,
+            );
+            let result = self.graph.process_off_callback(
+                &self.instance_id,
+                &self.input,
+                VST3_BLOCK_FRAMES,
+                &[],
+                parameters.as_slice(),
+                hosted_process_context(
+                    self.block_start_sample,
+                    self.sample_rate,
+                    self.bpm,
+                    self.time_sig,
+                    &self.transport_map,
+                    self.loop_region.as_ref(),
+                ),
+                hosted_deadline_micros(self.sample_rate),
+            );
+            if result.deadline_missed || result.disabled {
+                self.output = self.input;
+                self.disabled = result.disabled;
+            } else {
+                self.output = result.output;
+            }
+            self.ready = true;
+            self.cursor = 0;
+            self.block_start_sample += VST3_BLOCK_FRAMES as i64;
+        }
+        output
+    }
+}
+
+fn hosted_deadline_micros(sample_rate: u32) -> u32 {
+    ((VST3_BLOCK_FRAMES as f64 / sample_rate.max(1) as f64) * 1_000_000.0)
+        .floor()
+        .max(1.0) as u32
+}
+
+fn hosted_process_context(
+    sample: i64,
+    sample_rate: u32,
+    bpm: f64,
+    time_sig: i32,
+    transport_map: &[NativeTransportPoint],
+    loop_region: Option<&NativeLoopPayload>,
+) -> HostedProcessContext {
+    let seconds = sample.max(0) as f64 / sample_rate.max(1) as f64;
+    let (tempo, ppq, bar_position_ppq, numerator, denominator) =
+        transport_context_at(transport_map, seconds, bpm, time_sig);
+    let (loop_start_ppq, loop_end_ppq, looping) = loop_region
+        .filter(|region| region.enabled && region.end_seconds > region.start_seconds)
+        .map(|region| {
+            (
+                transport_context_at(transport_map, region.start_seconds, bpm, time_sig).1,
+                transport_context_at(transport_map, region.end_seconds, bpm, time_sig).1,
+                true,
+            )
+        })
+        .unwrap_or((0.0, 0.0, false));
+    HostedProcessContext {
+        project_time_samples: sample,
+        continuous_time_samples: sample,
+        project_ppq: ppq,
+        bar_position_ppq,
+        loop_start_ppq,
+        loop_end_ppq,
+        tempo,
+        numerator,
+        denominator,
+        playing: true,
+        recording: false,
+        looping,
+    }
+}
+
+fn transport_context_at(
+    points: &[NativeTransportPoint],
+    seconds: f64,
+    bpm: f64,
+    time_sig: i32,
+) -> (f64, f64, f64, i32, i32) {
+    let fallback_tempo = bpm.clamp(1.0, 999.0);
+    let fallback_meter = time_sig.clamp(1, 32);
+    let Some(first) = points.first() else {
+        return (
+            fallback_tempo,
+            seconds.max(0.0) * fallback_tempo / 60.0,
+            (seconds.max(0.0) * fallback_tempo / 60.0 / fallback_meter as f64).floor()
+                * fallback_meter as f64,
+            fallback_meter,
+            4,
+        );
+    };
+    let previous = points
+        .iter()
+        .rev()
+        .find(|point| point.time_seconds <= seconds)
+        .unwrap_or(first);
+    let next = points.iter().find(|point| point.time_seconds > seconds);
+    let (tempo, ppq) = if let Some(next) = next {
+        let ratio = ((seconds - previous.time_seconds)
+            / (next.time_seconds - previous.time_seconds).max(f64::EPSILON))
+        .clamp(0.0, 1.0);
+        let shaped = match previous.curve.as_str() {
+            "hold" => 0.0,
+            "ease-in" => ratio * ratio,
+            "ease-out" => 1.0 - (1.0 - ratio) * (1.0 - ratio),
+            _ => ratio,
+        };
+        (
+            previous.tempo + (next.tempo - previous.tempo) * shaped,
+            previous.project_ppq + (next.project_ppq - previous.project_ppq) * ratio,
+        )
+    } else {
+        let elapsed = (seconds - previous.time_seconds).max(0.0);
+        (
+            previous.tempo,
+            previous.project_ppq + elapsed * previous.tempo / 60.0,
+        )
+    };
+    (
+        tempo.clamp(1.0, 999.0),
+        ppq.max(0.0),
+        previous.bar_position_ppq.max(0.0),
+        previous.numerator.max(1),
+        previous.denominator.max(1),
+    )
+}
+
+fn hosted_automation_for_block(
+    automation: &[crate::vst3_session::HostedParameterAutomation],
+    start_sample: i64,
+    sample_rate: u32,
+) -> Vec<HostedParameterPoint> {
+    let start = start_sample.max(0) as f64 / sample_rate.max(1) as f64;
+    let end = start + VST3_BLOCK_FRAMES as f64 / sample_rate.max(1) as f64;
+    let mut output = Vec::new();
+    for lane in automation {
+        let Ok(parameter_id) = lane.parameter_id.parse::<u32>() else {
+            continue;
+        };
+        let Some(start_value) = hosted_automation_value_at(&lane.points, start) else {
+            continue;
+        };
+        output.push(HostedParameterPoint {
+            parameter_id,
+            sample_offset: 0,
+            value: start_value,
+        });
+        for point in lane
+            .points
+            .iter()
+            .filter(|point| point.time_seconds > start && point.time_seconds < end)
+        {
+            output.push(HostedParameterPoint {
+                parameter_id,
+                sample_offset: ((point.time_seconds - start) * sample_rate as f64)
+                    .floor()
+                    .clamp(1.0, (VST3_BLOCK_FRAMES - 1) as f64)
+                    as u32,
+                value: point.value.clamp(0.0, 1.0),
+            });
+        }
+        if let Some(end_value) =
+            hosted_automation_value_at(&lane.points, end - 1.0 / sample_rate.max(1) as f64)
+        {
+            output.push(HostedParameterPoint {
+                parameter_id,
+                sample_offset: (VST3_BLOCK_FRAMES - 1) as u32,
+                value: end_value,
+            });
+        }
+        if output.len() >= 256 {
+            break;
+        }
+    }
+    output.truncate(256);
+    output
+}
+
+fn hosted_automation_value_at(
+    points: &[crate::vst3_session::HostedAutomationPoint],
+    time: f64,
+) -> Option<f64> {
+    let first = points.first()?;
+    let previous = points.iter().rev().find(|point| point.time_seconds <= time);
+    let Some(previous) = previous else {
+        return Some(first.value.clamp(0.0, 1.0));
+    };
+    let Some(next) = points.iter().find(|point| point.time_seconds > time) else {
+        return Some(previous.value.clamp(0.0, 1.0));
+    };
+    if previous.curve == "hold" {
+        return Some(previous.value.clamp(0.0, 1.0));
+    }
+    let span = (next.time_seconds - previous.time_seconds).max(f64::EPSILON);
+    let ratio = ((time - previous.time_seconds) / span).clamp(0.0, 1.0);
+    Some((previous.value + (next.value - previous.value) * ratio).clamp(0.0, 1.0))
 }
 
 fn filters_for_slot(slot: &NativeFxSlotPayload, sample_rate: f32) -> Vec<BiquadFilter> {
@@ -2620,32 +3849,7 @@ fn render_region_sample(
     } else {
         (region.source_offset.max(0.0) + source_local) * sample_rate
     };
-    if !frame_position.is_finite() || frame_position < 0.0 {
-        return None;
-    }
-    let frame = frame_position.floor() as usize;
-    if asset.frame_count == 0 || frame >= asset.frame_count {
-        return None;
-    }
-    let next_frame = (frame + 1).min(asset.frame_count - 1);
-    let fraction = (frame_position - frame as f64).clamp(0.0, 1.0) as f32;
-    let channels = asset.channels.max(1) as usize;
-    let index = frame.checked_mul(channels)?;
-    let next_index = next_frame.checked_mul(channels)?;
-    let left_a = *asset.samples.get(index)?;
-    let right_a = if channels > 1 {
-        *asset.samples.get(index + 1).unwrap_or(&left_a)
-    } else {
-        left_a
-    };
-    let left_b = *asset.samples.get(next_index).unwrap_or(&left_a);
-    let right_b = if channels > 1 {
-        *asset.samples.get(next_index + 1).unwrap_or(&left_b)
-    } else {
-        left_b
-    };
-    let left = left_a + (left_b - left_a) * fraction;
-    let right = right_a + (right_b - right_a) * fraction;
+    let (left, right) = interpolated_asset_frame(asset, frame_position)?;
     let envelope = region_envelope_gain(region, local);
     Some((left * envelope, right * envelope))
 }
@@ -3394,12 +4598,20 @@ fn sound_profile_id(event: &NativeRenderedEvent) -> Option<&str> {
 
 fn chip_profile_active(event: &NativeRenderedEvent) -> bool {
     matches!(sound_profile_id(event), Some("chip_arcade" | "chip_tune"))
-        || event.chip_preset.as_deref().unwrap_or("").starts_with("chip_")
+        || event
+            .chip_preset
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("chip_")
 }
 
 fn metal_profile_active(event: &NativeRenderedEvent) -> bool {
     sound_profile_id(event) == Some("heavy_metal")
-        || event.metal_preset.as_deref().unwrap_or("").starts_with("metal_")
+        || event
+            .metal_preset
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("metal_")
 }
 
 fn funk_profile_active(event: &NativeRenderedEvent) -> bool {
@@ -3411,7 +4623,19 @@ fn western_profile_active(event: &NativeRenderedEvent) -> bool {
 }
 
 fn is_drum_kind(kind: &str) -> bool {
-    matches!(kind, "kick" | "snare" | "clap" | "hat" | "openhat" | "tomlow" | "tommid" | "tomhi" | "crash" | "ride")
+    matches!(
+        kind,
+        "kick"
+            | "snare"
+            | "clap"
+            | "hat"
+            | "openhat"
+            | "tomlow"
+            | "tommid"
+            | "tomhi"
+            | "crash"
+            | "ride"
+    )
 }
 
 fn expressive_velocity(event: &NativeRenderedEvent, velocity: f32) -> f32 {
@@ -3423,15 +4647,27 @@ fn expressive_velocity(event: &NativeRenderedEvent, velocity: f32) -> f32 {
     }
 }
 
-fn technique_namespace<'a>(event: &'a NativeRenderedEvent, namespace: &str) -> Option<&'a serde_json::Map<String, Value>> {
-    event.technique.as_ref()?.as_object()?.get(namespace)?.as_object()
+fn technique_namespace<'a>(
+    event: &'a NativeRenderedEvent,
+    namespace: &str,
+) -> Option<&'a serde_json::Map<String, Value>> {
+    event
+        .technique
+        .as_ref()?
+        .as_object()?
+        .get(namespace)?
+        .as_object()
 }
 
 fn technique_number(event: &NativeRenderedEvent, namespace: &str, key: &str) -> Option<f64> {
     technique_namespace(event, namespace)?.get(key)?.as_f64()
 }
 
-fn technique_string<'a>(event: &'a NativeRenderedEvent, namespace: &str, key: &str) -> Option<&'a str> {
+fn technique_string<'a>(
+    event: &'a NativeRenderedEvent,
+    namespace: &str,
+    key: &str,
+) -> Option<&'a str> {
     technique_namespace(event, namespace)?.get(key)?.as_str()
 }
 
@@ -3448,9 +4684,13 @@ fn sound_profile_number(event: &NativeRenderedEvent, key: &str, fallback: f64) -
 
 fn chip_channel(event: &NativeRenderedEvent) -> &str {
     technique_string(event, "chip", "channel").unwrap_or_else(|| {
-        if is_drum_kind(&event.kind) { "noise" }
-        else if event.kind == "bass" { "triangle" }
-        else { "pulse1" }
+        if is_drum_kind(&event.kind) {
+            "noise"
+        } else if event.kind == "bass" {
+            "triangle"
+        } else {
+            "pulse1"
+        }
     })
 }
 
@@ -3460,12 +4700,22 @@ fn render_chip_note(midi: f64, event: &NativeRenderedEvent, local: f64, velocity
     if !enabled || local > event.duration.max(0.04) + 0.08 {
         return 0.0;
     }
-    let crush = texture.map(|value| value.sample_rate_crush).unwrap_or(0.0).clamp(0.0, 1.0);
+    let crush = texture
+        .map(|value| value.sample_rate_crush)
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0);
     let virtual_rate = 48_000.0 * (1.0 - crush * 0.88).max(0.08);
     let quantized_local = (local * virtual_rate).floor() / virtual_rate;
-    let drift = texture.map(|value| value.pitch_drift).unwrap_or(0.0).clamp(0.0, 1.0);
-    let vibrato = technique_number(event, "chip", "vibrato").unwrap_or(0.0).clamp(0.0, 1.0);
-    let sweep = technique_number(event, "chip", "sweep").unwrap_or(0.0).clamp(-24.0, 24.0);
+    let drift = texture
+        .map(|value| value.pitch_drift)
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0);
+    let vibrato = technique_number(event, "chip", "vibrato")
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0);
+    let sweep = technique_number(event, "chip", "sweep")
+        .unwrap_or(0.0)
+        .clamp(-24.0, 24.0);
     let arp_offset = chip_arpeggio_offset(event, quantized_local);
     let drift_semitones = (quantized_local * 6.7).sin() * drift * 0.18
         + (quantized_local * 31.0).sin() * vibrato * 0.24;
@@ -3479,21 +4729,51 @@ fn render_chip_note(midi: f64, event: &NativeRenderedEvent, local: f64, velocity
     let mut sample = match channel {
         "triangle" => triangle(freq, quantized_local),
         "noise" => noise(event, quantized_local, 173),
-        "wavetable" => triangle(freq, quantized_local) * 0.62 + saw(freq * 2.0, quantized_local) * 0.2,
+        "wavetable" => {
+            triangle(freq, quantized_local) * 0.62 + saw(freq * 2.0, quantized_local) * 0.2
+        }
         _ => pulse_wave(freq, quantized_local, duty),
     };
-    let spread = texture.map(|value| value.stereo_spread).unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+    let spread = texture
+        .map(|value| value.stereo_spread)
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0) as f32;
     if spread > 0.0 && channel != "noise" {
         sample = sample * (1.0 - spread * 0.22)
-            + pulse_wave(freq * (1.0 + spread * 0.006), quantized_local + spread as f64 * 0.0007, duty) * spread * 0.22;
+            + pulse_wave(
+                freq * (1.0 + spread * 0.006),
+                quantized_local + spread as f64 * 0.0007,
+                duty,
+            ) * spread
+                * 0.22;
     }
-    let connected = matches!(event.articulation.as_deref(), Some("hammer" | "pull" | "legato"));
+    let connected = matches!(
+        event.articulation.as_deref(),
+        Some("hammer" | "pull" | "legato")
+    );
     let attack = if connected { 0.018 } else { 0.0015 };
-    let release = if event.articulation.as_deref() == Some("staccato") { 0.025 } else { 0.07 };
-    let env = note_envelope(quantized_local, event.duration.max(0.035), attack, 0.03, 0.72, release);
-    let saturation = texture.map(|value| value.saturation).unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+    let release = if event.articulation.as_deref() == Some("staccato") {
+        0.025
+    } else {
+        0.07
+    };
+    let env = note_envelope(
+        quantized_local,
+        event.duration.max(0.035),
+        attack,
+        0.03,
+        0.72,
+        release,
+    );
+    let saturation = texture
+        .map(|value| value.saturation)
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0) as f32;
     let driven = (sample * (1.0 + saturation * 3.2)).tanh() / (1.0 + saturation * 0.45);
-    let bit_depth = texture.map(|value| value.bit_depth).unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+    let bit_depth = texture
+        .map(|value| value.bit_depth)
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0) as f32;
     let levels = (256.0 - bit_depth * 240.0).max(8.0);
     ((driven * levels).round() / levels) * env * velocity * 0.18
 }
@@ -3501,20 +4781,43 @@ fn render_chip_note(midi: f64, event: &NativeRenderedEvent, local: f64, velocity
 fn render_chip_chord(notes: &[f64], event: &NativeRenderedEvent, local: f64, velocity: f32) -> f32 {
     let notes = if notes.is_empty() { &[60.0][..] } else { notes };
     let scale = (notes.len() as f32).sqrt().max(1.0);
-    notes.iter().take(4).enumerate().map(|(index, midi)| {
-        let offset = if technique_string(event, "chip", "channel") == Some("arpeggio") { index as f64 * 0.045 } else { 0.0 };
-        if local < offset { 0.0 } else { render_chip_note(*midi, event, local - offset, velocity) / scale }
-    }).sum()
+    notes
+        .iter()
+        .take(4)
+        .enumerate()
+        .map(|(index, midi)| {
+            let offset = if technique_string(event, "chip", "channel") == Some("arpeggio") {
+                index as f64 * 0.045
+            } else {
+                0.0
+            };
+            if local < offset {
+                0.0
+            } else {
+                render_chip_note(*midi, event, local - offset, velocity) / scale
+            }
+        })
+        .sum()
 }
 
 fn render_chip_noise_channel(event: &NativeRenderedEvent, local: f64, velocity: f32) -> f32 {
-    let period = technique_number(event, "chip", "noisePeriod").unwrap_or(0.45).clamp(0.0, 1.0);
-    let retrigger = technique_number(event, "chip", "retrigger").unwrap_or(0.0).clamp(0.0, 1.0);
+    let period = technique_number(event, "chip", "noisePeriod")
+        .unwrap_or(0.45)
+        .clamp(0.0, 1.0);
+    let retrigger = technique_number(event, "chip", "retrigger")
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0);
     let stop = event.duration.max(0.025).min(0.42);
-    if local > stop { return 0.0; }
+    if local > stop {
+        return 0.0;
+    }
     let rate = 3_000.0 + period * 19_000.0;
     let index = (local * rate).floor() as u64;
-    let burst = if retrigger > 0.0 { 0.72 + 0.28 * (local * (8.0 + retrigger * 40.0)).sin().abs() } else { 1.0 };
+    let burst = if retrigger > 0.0 {
+        0.72 + 0.28 * (local * (8.0 + retrigger * 40.0)).sin().abs()
+    } else {
+        1.0
+    };
     stable_noise_sample(index, 181 + event_seed_u64(event, 0))
         * note_envelope(local, stop, 0.001, 0.018, 0.18, 0.035)
         * velocity
@@ -3523,51 +4826,117 @@ fn render_chip_noise_channel(event: &NativeRenderedEvent, local: f64, velocity: 
 }
 
 fn chip_arpeggio_offset(event: &NativeRenderedEvent, local: f64) -> f64 {
-    let Some(values) = technique_namespace(event, "chip").and_then(|value| value.get("arpeggio")).and_then(Value::as_array) else {
+    let Some(values) = technique_namespace(event, "chip")
+        .and_then(|value| value.get("arpeggio"))
+        .and_then(Value::as_array)
+    else {
         return 0.0;
     };
-    if values.is_empty() { return 0.0; }
+    if values.is_empty() {
+        return 0.0;
+    }
     let index = ((local / 0.055).floor() as usize) % values.len();
     values[index].as_f64().unwrap_or(0.0).clamp(-24.0, 24.0)
 }
 
 fn pulse_wave(freq: f32, local: f64, duty: f32) -> f32 {
-    if (freq as f64 * local).fract() < duty.clamp(0.02, 0.98) as f64 { 1.0 } else { -1.0 }
+    if (freq as f64 * local).fract() < duty.clamp(0.02, 0.98) as f64 {
+        1.0
+    } else {
+        -1.0
+    }
 }
 
-fn render_metal_guitar(notes: &[f64], event: &NativeRenderedEvent, local: f64, velocity: f32) -> f32 {
+fn render_metal_guitar(
+    notes: &[f64],
+    event: &NativeRenderedEvent,
+    local: f64,
+    velocity: f32,
+) -> f32 {
     let texture = event.metal_texture.as_ref();
-    let texture_mix = if texture.map(|value| value.enabled).unwrap_or(true) { 1.0 } else { 0.0 };
-    let drive = (0.22 + (texture.map(|value| value.drive).unwrap_or(0.48).clamp(0.0, 1.0) - 0.22) * texture_mix) as f32;
-    let tightness = (0.45 + (texture.map(|value| value.low_tightness).unwrap_or(0.82).clamp(0.0, 1.0) - 0.45) * texture_mix) as f32;
-    let presence = (0.34 + (texture.map(|value| value.presence).unwrap_or(0.58).clamp(0.0, 1.0) - 0.34) * texture_mix) as f32;
-    let pick = (0.32 + (texture.map(|value| value.pick_attack).unwrap_or(0.7).clamp(0.0, 1.0) - 0.32) * texture_mix) as f32;
-    let room = (texture.map(|value| value.room_size).unwrap_or(0.12).clamp(0.0, 1.0) * texture_mix) as f32;
+    let texture_mix = if texture.map(|value| value.enabled).unwrap_or(true) {
+        1.0
+    } else {
+        0.0
+    };
+    let drive = (0.22
+        + (texture
+            .map(|value| value.drive)
+            .unwrap_or(0.48)
+            .clamp(0.0, 1.0)
+            - 0.22)
+            * texture_mix) as f32;
+    let tightness = (0.45
+        + (texture
+            .map(|value| value.low_tightness)
+            .unwrap_or(0.82)
+            .clamp(0.0, 1.0)
+            - 0.45)
+            * texture_mix) as f32;
+    let presence = (0.34
+        + (texture
+            .map(|value| value.presence)
+            .unwrap_or(0.58)
+            .clamp(0.0, 1.0)
+            - 0.34)
+            * texture_mix) as f32;
+    let pick = (0.32
+        + (texture
+            .map(|value| value.pick_attack)
+            .unwrap_or(0.7)
+            .clamp(0.0, 1.0)
+            - 0.32)
+            * texture_mix) as f32;
+    let room = (texture
+        .map(|value| value.room_size)
+        .unwrap_or(0.12)
+        .clamp(0.0, 1.0)
+        * texture_mix) as f32;
     let mute_depth = technique_number(event, "metal", "palmMuteDepth")
         .or_else(|| texture.map(|value| value.palm_mute))
         .unwrap_or(0.72)
         .clamp(0.0, 1.0);
-    let palm_muted = matches!(event.articulation.as_deref(), Some("chug" | "palm_mute" | "mute"));
+    let palm_muted = matches!(
+        event.articulation.as_deref(),
+        Some("chug" | "palm_mute" | "mute")
+    );
     let play_dur = if palm_muted {
         event.duration.min(0.16 - mute_depth * 0.105).max(0.025)
     } else {
         event.duration.max(0.08)
     };
-    if local > play_dur + 0.16 + room as f64 * 0.12 { return 0.0; }
+    if local > play_dur + 0.16 + room as f64 * 0.12 {
+        return 0.0;
+    }
     let source_notes = if notes.is_empty() { &[40.0][..] } else { notes };
-    let reverse = technique_string(event, "metal", "pickDirection").or(event.direction.as_deref()) == Some("up");
-    let dual_seed = technique_number(event, "metal", "dualTakeSeed").unwrap_or(event_seed_u64(event, 211) as f64);
+    let reverse = technique_string(event, "metal", "pickDirection").or(event.direction.as_deref())
+        == Some("up");
+    let dual_seed = technique_number(event, "metal", "dualTakeSeed")
+        .unwrap_or(event_seed_u64(event, 211) as f64);
     let seed_unit = ((dual_seed.sin() * 0.5 + 0.5) as f32).clamp(0.0, 1.0);
     let scale = (source_notes.len() as f32).sqrt().max(1.0);
     let mut sample = 0.0_f32;
     for index in 0..source_notes.len().min(6) {
-        let note_index = if reverse { source_notes.len() - 1 - index } else { index };
+        let note_index = if reverse {
+            source_notes.len() - 1 - index
+        } else {
+            index
+        };
         let midi = source_notes[note_index];
         let offset = index as f64 * if palm_muted { 0.0025 } else { 0.0065 };
-        if local < offset { continue; }
+        if local < offset {
+            continue;
+        }
         let note_local = local - offset;
         let freq = midi_to_freq(midi) as f32;
-        let env = note_envelope(note_local, play_dur, 0.0015, if palm_muted { 0.022 } else { 0.06 }, if palm_muted { 0.08 } else { 0.42 }, if palm_muted { 0.025 } else { 0.13 });
+        let env = note_envelope(
+            note_local,
+            play_dur,
+            0.0015,
+            if palm_muted { 0.022 } else { 0.06 },
+            if palm_muted { 0.08 } else { 0.42 },
+            if palm_muted { 0.025 } else { 0.13 },
+        );
         let preamp = (saw(freq, note_local) * 0.7 + triangle(freq * 2.0, note_local) * 0.22)
             * (2.6 + drive * 8.8)
             * (0.78 + tightness * 0.18);
@@ -3586,22 +4955,56 @@ fn render_metal_guitar(notes: &[f64], event: &NativeRenderedEvent, local: f64, v
             * (-local * 145.0).exp() as f32
             * pick
             * 0.22
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let room_reflection = if room > 0.0 && local > 0.035 {
         sample * room * 0.14 * (-local * 4.5).exp() as f32
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     (sample + pick_transient + room_reflection) * velocity * 0.24
 }
 
 fn render_metal_bass(event: &NativeRenderedEvent, local: f64, velocity: f32) -> f32 {
     let texture = event.metal_texture.as_ref();
-    let texture_mix = if texture.map(|value| value.enabled).unwrap_or(true) { 1.0 } else { 0.0 };
-    let drive = (0.18 + (texture.map(|value| value.drive).unwrap_or(0.48).clamp(0.0, 1.0) - 0.18) * texture_mix) as f32;
-    let tightness = (0.42 + (texture.map(|value| value.low_tightness).unwrap_or(0.82).clamp(0.0, 1.0) - 0.42) * texture_mix) as f32;
-    let presence = (0.3 + (texture.map(|value| value.presence).unwrap_or(0.58).clamp(0.0, 1.0) - 0.3) * texture_mix) as f32;
-    let pick = (0.28 + (texture.map(|value| value.pick_attack).unwrap_or(0.7).clamp(0.0, 1.0) - 0.28) * texture_mix) as f32;
+    let texture_mix = if texture.map(|value| value.enabled).unwrap_or(true) {
+        1.0
+    } else {
+        0.0
+    };
+    let drive = (0.18
+        + (texture
+            .map(|value| value.drive)
+            .unwrap_or(0.48)
+            .clamp(0.0, 1.0)
+            - 0.18)
+            * texture_mix) as f32;
+    let tightness = (0.42
+        + (texture
+            .map(|value| value.low_tightness)
+            .unwrap_or(0.82)
+            .clamp(0.0, 1.0)
+            - 0.42)
+            * texture_mix) as f32;
+    let presence = (0.3
+        + (texture
+            .map(|value| value.presence)
+            .unwrap_or(0.58)
+            .clamp(0.0, 1.0)
+            - 0.3)
+            * texture_mix) as f32;
+    let pick = (0.28
+        + (texture
+            .map(|value| value.pick_attack)
+            .unwrap_or(0.7)
+            .clamp(0.0, 1.0)
+            - 0.28)
+            * texture_mix) as f32;
     let dur = event.duration.max(0.055);
-    if local > dur + 0.18 { return 0.0; }
+    if local > dur + 0.18 {
+        return 0.0;
+    }
     let freq = midi_to_freq(event.midi.unwrap_or(36.0)) as f32;
     let clean_env = note_envelope(local, dur, 0.004, 0.055, 0.62, 0.15);
     let grit_env = note_envelope(local, dur.min(0.32), 0.002, 0.035, 0.38, 0.09);
@@ -3612,7 +5015,11 @@ fn render_metal_bass(event: &NativeRenderedEvent, local: f64, velocity: f32) -> 
         * (0.16 + drive * 0.28)
         * lowpass_tone_factor(freq * 4.0, 1_450.0 + presence * 2_400.0)
         * (0.78 + tightness * 0.18);
-    let attack = if local < 0.022 { noise(event, local, 229) * (-local * 170.0).exp() as f32 * pick * 0.12 } else { 0.0 };
+    let attack = if local < 0.022 {
+        noise(event, local, 229) * (-local * 170.0).exp() as f32 * pick * 0.12
+    } else {
+        0.0
+    };
     (clean + grit + attack) * velocity
 }
 
@@ -3628,36 +5035,89 @@ fn render_funk_bass(event: &NativeRenderedEvent, local: f64, velocity: f32) -> f
     let freq = midi_to_freq(midi) as f32;
     let connected = matches!(articulation, "hammer" | "pull" | "legato");
     let muted = matches!(articulation, "mute" | "ghost");
-    let dur = if muted { event.duration.min(0.13 - mute_depth as f64 * 0.075).max(0.035) } else { event.duration.max(0.05) };
-    if local > dur + 0.11 { return 0.0; }
+    let dur = if muted {
+        event
+            .duration
+            .min(0.13 - mute_depth as f64 * 0.075)
+            .max(0.035)
+    } else {
+        event.duration.max(0.05)
+    };
+    if local > dur + 0.11 {
+        return 0.0;
+    }
     if muted {
-        let body = triangle(freq, local) * note_envelope(local, dur, 0.001, 0.018, 0.04, 0.025) * (0.18 - mute_depth * 0.09);
-        let thump = noise(event, local, 239) * (-local * 62.0).exp() as f32 * (0.12 + ghost_depth * 0.15 + (1.0 - mute_depth) * 0.08);
+        let body = triangle(freq, local)
+            * note_envelope(local, dur, 0.001, 0.018, 0.04, 0.025)
+            * (0.18 - mute_depth * 0.09);
+        let thump = noise(event, local, 239)
+            * (-local * 62.0).exp() as f32
+            * (0.12 + ghost_depth * 0.15 + (1.0 - mute_depth) * 0.08);
         return (body + thump) * velocity;
     }
-    let env = note_envelope(local, dur, if connected { 0.022 } else { 0.0035 }, 0.045, 0.5, 0.09);
+    let env = note_envelope(
+        local,
+        dur,
+        if connected { 0.022 } else { 0.0035 },
+        0.045,
+        0.5,
+        0.09,
+    );
     let mut body = (triangle(freq, local) * 0.72 + phase(freq * 0.5, local) * 0.22) * env * 0.55;
     let transient = match articulation {
-        "slap" => noise(event, local, 241) * (-local * 185.0).exp() as f32 * (0.12 + slap_amount * 0.2) + triangle(freq * 2.0, local) * (-local * 95.0).exp() as f32 * (0.06 + slap_amount * 0.1),
-        "pop" => noise(event, local, 243) * (-local * 210.0).exp() as f32 * (0.1 + pop_brightness * 0.18) + saw(freq * (2.0 + pop_brightness), local) * (-local * 82.0).exp() as f32 * (0.07 + pop_brightness * 0.13),
+        "slap" => {
+            noise(event, local, 241) * (-local * 185.0).exp() as f32 * (0.12 + slap_amount * 0.2)
+                + triangle(freq * 2.0, local)
+                    * (-local * 95.0).exp() as f32
+                    * (0.06 + slap_amount * 0.1)
+        }
+        "pop" => {
+            noise(event, local, 243) * (-local * 210.0).exp() as f32 * (0.1 + pop_brightness * 0.18)
+                + saw(freq * (2.0 + pop_brightness), local)
+                    * (-local * 82.0).exp() as f32
+                    * (0.07 + pop_brightness * 0.13)
+        }
         _ if connected => 0.0,
         _ => noise(event, local, 245) * (-local * 175.0).exp() as f32 * 0.055,
     };
-    if articulation == "pop" { body += triangle(freq * 2.0, local) * env * (0.04 + pop_brightness * 0.09); }
+    if articulation == "pop" {
+        body += triangle(freq * 2.0, local) * env * (0.04 + pop_brightness * 0.09);
+    }
     (body + transient) * velocity
 }
 
-fn render_western_guitar(notes: &[f64], event: &NativeRenderedEvent, local: f64, velocity: f32) -> f32 {
+fn render_western_guitar(
+    notes: &[f64],
+    event: &NativeRenderedEvent,
+    local: f64,
+    velocity: f32,
+) -> f32 {
     let base = render_guitar_notes(notes, event, local, velocity);
-    let connected = matches!(event.articulation.as_deref(), Some("hammer" | "pull" | "legato"));
+    let connected = matches!(
+        event.articulation.as_deref(),
+        Some("hammer" | "pull" | "legato")
+    );
     let pick = if !connected && local < 0.028 {
-        let direction = technique_string(event, "western", "pickDirection").or(event.direction.as_deref());
+        let direction =
+            technique_string(event, "western", "pickDirection").or(event.direction.as_deref());
         let polarity = if direction == Some("up") { -1.0 } else { 1.0 };
         noise(event, local, 251) * (-local * 135.0).exp() as f32 * polarity * velocity * 0.065
-    } else { 0.0 };
-    let roll = technique_number(event, "western", "banjoRoll").unwrap_or(0.0).clamp(0.0, 1.0);
-    let roll_gate = if roll > 0.0 { 0.72 + 0.28 * (local * (28.0 + roll * 34.0)).sin().abs() as f32 } else { 1.0 };
-    let connected_attack = if connected { (local / 0.022).clamp(0.0, 1.0) as f32 } else { 1.0 };
+    } else {
+        0.0
+    };
+    let roll = technique_number(event, "western", "banjoRoll")
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0);
+    let roll_gate = if roll > 0.0 {
+        0.72 + 0.28 * (local * (28.0 + roll * 34.0)).sin().abs() as f32
+    } else {
+        1.0
+    };
+    let connected_attack = if connected {
+        (local / 0.022).clamp(0.0, 1.0) as f32
+    } else {
+        1.0
+    };
     (base + pick) * roll_gate * connected_attack
 }
 
@@ -4132,10 +5592,79 @@ fn event_release_end(event: &NativeRenderedEvent) -> f64 {
     event.time + base
 }
 
-fn find_scan_start(events: &[NativeRenderedEvent], seconds: f64) -> usize {
+fn playback_event_release_end(playback: &PlaybackShared, index: usize) -> f64 {
+    let Some(event) = playback.events.get(index) else {
+        return 0.0;
+    };
+    let Some(route) = playback
+        .compiled_sampler_routes
+        .get(index)
+        .and_then(|entry| entry.as_ref())
+    else {
+        return event_release_end(event);
+    };
+    let source_frames = ((route.end_position - route.start_position).max(0.0)
+        * route.asset.frame_count as f64)
+        .max(1.0);
+    let sample_seconds =
+        source_frames / route.asset.sample_rate.max(1) as f64 / route.pitch_ratio.max(0.000_001);
+    let release = route
+        .envelope
+        .as_ref()
+        .map(|env| env.release_seconds.max(0.0))
+        .unwrap_or(0.008);
+    let natural_end = event.time + sample_seconds;
+    let mode_end = if route.playback_mode == "one-shot" {
+        natural_end
+    } else if route.playback_mode == "loop" {
+        event.time + event.duration.max(0.0) + release
+    } else {
+        natural_end.min(event.time + event.duration.max(0.0) + release)
+    };
+    route
+        .choke_end_time
+        .map(|end| mode_end.min(end))
+        .unwrap_or(mode_end)
+}
+
+fn find_scan_start(
+    events: &[NativeRenderedEvent],
+    sampler_routes: &[Option<CompiledSamplerEventRoute>],
+    seconds: f64,
+) -> usize {
     events
         .iter()
-        .position(|event| event_release_end(event) >= seconds)
+        .enumerate()
+        .position(|(index, event)| {
+            if let Some(route) = sampler_routes.get(index).and_then(|entry| entry.as_ref()) {
+                let source_frames = ((route.end_position - route.start_position).max(0.0)
+                    * route.asset.frame_count as f64)
+                    .max(1.0);
+                let sample_seconds = source_frames
+                    / route.asset.sample_rate.max(1) as f64
+                    / route.pitch_ratio.max(0.000_001);
+                let release = route
+                    .envelope
+                    .as_ref()
+                    .map(|env| env.release_seconds.max(0.0))
+                    .unwrap_or(0.008);
+                let end = if route.playback_mode == "one-shot" {
+                    event.time + sample_seconds
+                } else if route.playback_mode == "loop" {
+                    event.time + event.duration.max(0.0) + release
+                } else {
+                    (event.time + sample_seconds)
+                        .min(event.time + event.duration.max(0.0) + release)
+                };
+                route
+                    .choke_end_time
+                    .map(|choke| end.min(choke))
+                    .unwrap_or(end)
+                    >= seconds
+            } else {
+                event_release_end(event) >= seconds
+            }
+        })
         .unwrap_or(events.len())
 }
 
@@ -4172,6 +5701,123 @@ fn compile_generated_event_routes(
             })
         })
         .collect()
+}
+
+fn compile_sampler_event_routes(
+    events: &[NativeRenderedEvent],
+    samplers: &[NativeSamplerDevicePayload],
+    assets: &HashMap<String, Arc<DecodedAudioAsset>>,
+    track_indices: &HashMap<String, usize>,
+) -> Vec<Option<CompiledSamplerEventRoute>> {
+    let devices = samplers
+        .iter()
+        .filter(|device| device.enabled)
+        .map(|device| (device.track_id.as_str(), device))
+        .collect::<HashMap<_, _>>();
+    let mut next_choke = HashMap::<(String, String), f64>::new();
+    let mut routes = (0..events.len()).map(|_| None).collect::<Vec<_>>();
+    for index in (0..events.len()).rev() {
+        let event = &events[index];
+        if event.kind != "midi" {
+            continue;
+        }
+        let Some(device) = devices.get(event.track_id.as_str()).copied() else {
+            continue;
+        };
+        if !track_indices.contains_key(&event.track_id) {
+            continue;
+        }
+        let midi = event.midi.unwrap_or(-1.0).round().clamp(0.0, 127.0) as u8;
+        let (
+            asset_id,
+            gain,
+            pan,
+            coarse,
+            fine,
+            start,
+            end,
+            reverse,
+            mode,
+            loop_start,
+            loop_end,
+            envelope,
+            choke,
+        ) = if device.device_type == "quick-sampler" {
+            let Some(asset_id) = device.asset_id.as_deref() else {
+                continue;
+            };
+            let key_offset = if device.key_tracking {
+                event.midi.unwrap_or(device.root_note) - device.root_note
+            } else {
+                0.0
+            };
+            (
+                asset_id,
+                device.gain,
+                device.pan,
+                device.coarse_tune + key_offset,
+                device.fine_tune_cents,
+                device.start_position,
+                device.end_position,
+                device.reverse,
+                device.playback_mode.clone(),
+                device.loop_start_position,
+                device.loop_end_position,
+                device.envelope.clone(),
+                None,
+            )
+        } else if device.device_type == "drum-rack" {
+            let any_solo = device.pads.iter().any(|pad| pad.solo && !pad.mute);
+            let Some(pad) = device.pads.iter().find(|pad| pad.midi_note == midi) else {
+                continue;
+            };
+            if pad.mute || (any_solo && !pad.solo) {
+                continue;
+            }
+            (
+                pad.asset_id.as_str(),
+                pad.gain,
+                pad.pan,
+                pad.coarse_tune,
+                pad.fine_tune_cents,
+                pad.start_position,
+                pad.end_position,
+                pad.reverse,
+                pad.playback_mode.clone(),
+                pad.start_position,
+                pad.end_position,
+                None,
+                pad.choke_group.clone(),
+            )
+        } else {
+            continue;
+        };
+        let Some(asset) = assets.get(asset_id) else {
+            continue;
+        };
+        let choke_end_time = choke
+            .as_ref()
+            .and_then(|group| next_choke.get(&(device.id.clone(), group.clone())).copied());
+        if let Some(group) = choke {
+            next_choke.insert((device.id.clone(), group), event.time);
+        }
+        let detune = event.detune_cents.unwrap_or(0.0);
+        routes[index] = Some(CompiledSamplerEventRoute {
+            asset: Arc::clone(asset),
+            gain: gain.clamp(0.0, 4.0) as f32,
+            pan: pan.clamp(-1.0, 1.0) as f32,
+            pitch_ratio: 2.0_f64.powf((coarse + fine / 100.0 + detune / 100.0) / 12.0),
+            start_position: start.clamp(0.0, 0.999),
+            end_position: end.clamp(0.001, 1.0),
+            reverse,
+            playback_mode: mode,
+            loop_start_position: loop_start.clamp(0.0, 0.999),
+            loop_end_position: loop_end.clamp(0.001, 1.0),
+            envelope,
+            choke_end_time,
+        });
+    }
+    routes
 }
 
 fn compile_sidechain_triggers(
@@ -4579,6 +6225,69 @@ mod tests {
     }
 
     #[test]
+    fn cubic_asset_interpolation_clamps_edges_and_overshoot() {
+        let asset = DecodedAudioAsset {
+            sample_rate: 4,
+            channels: 2,
+            samples: vec![1.0, -1.0, -1.0, 1.0, 1.0, -1.0],
+            frame_count: 3,
+        };
+
+        assert_eq!(interpolated_asset_frame(&asset, 0.0), Some((1.0, -1.0)));
+        assert_eq!(interpolated_asset_frame(&asset, 2.0), Some((1.0, -1.0)));
+        let between = interpolated_asset_frame(&asset, 0.5).expect("fractional frame");
+        assert!(between.0.is_finite() && between.1.is_finite());
+        assert!(between.0.abs() <= 1.25 && between.1.abs() <= 1.25);
+        assert!(interpolated_asset_frame(&asset, 3.0).is_none());
+    }
+
+    #[test]
+    fn cubic_asset_interpolation_preserves_float_cache_stem_headroom() {
+        let asset = DecodedAudioAsset {
+            sample_rate: 4,
+            channels: 1,
+            samples: vec![0.0, 4.0, 8.0, 12.0],
+            frame_count: 4,
+        };
+
+        assert_eq!(interpolated_asset_frame(&asset, 2.0), Some((8.0, 8.0)));
+        let between = interpolated_asset_frame(&asset, 1.5).expect("fractional headroom frame");
+        assert!((between.0 - 6.0).abs() < 0.000_001);
+        assert_eq!(between.0, between.1);
+    }
+
+    #[test]
+    fn timeline_and_sampler_share_fractional_frame_interpolation() {
+        let asset = Arc::new(DecodedAudioAsset {
+            sample_rate: 8,
+            channels: 2,
+            samples: vec![0.0, 0.2, 0.8, 0.6, -0.4, -0.2, 1.0, 0.5, 0.1, -0.1],
+            frame_count: 5,
+        });
+        let region = test_region("region", "asset", "bass", 0.0, 0.0, 0.5, 1.0, 0.0);
+        let event = test_generated_event("sample", "midi", 0.0, 1.0, 1.0);
+        let route = CompiledSamplerEventRoute {
+            asset: Arc::clone(&asset),
+            gain: 1.0,
+            pan: 0.0,
+            pitch_ratio: 1.0,
+            start_position: 0.0,
+            end_position: 1.0,
+            reverse: false,
+            playback_mode: "one-shot".to_string(),
+            loop_start_position: 0.0,
+            loop_end_position: 1.0,
+            envelope: None,
+            choke_end_time: None,
+        };
+
+        let timeline = render_region_sample(&region, &asset, 0.1875).expect("timeline sample");
+        let sampler = render_sampler_event_sample(&event, &route, 0.1875).expect("sampler sample");
+        assert!((timeline.0 - sampler.0).abs() < 0.000_001);
+        assert!((timeline.1 - sampler.1).abs() < 0.000_001);
+    }
+
+    #[test]
     fn renders_region_samples_with_linear_fades() {
         let asset = DecodedAudioAsset {
             sample_rate: 4,
@@ -4884,6 +6593,7 @@ mod tests {
                     ("threshold".to_string(), Value::from(-6.0)),
                     ("reduction".to_string(), Value::from(0.25)),
                 ]),
+                hosted_plugin: None,
             },
             48_000.0,
         )
@@ -5262,7 +6972,8 @@ mod tests {
         let mut base = test_generated_event("chip_profile", "melody", 0.0, 0.28, 0.9);
         base.midi = Some(69.0);
         base.sound_profile = Some(test_sound_profile("chip_arcade", "chip_nes_pulse"));
-        base.technique = Some(serde_json::json!({ "chip": { "channel": "pulse1", "arpeggio": [0, 7, 12] } }));
+        base.technique =
+            Some(serde_json::json!({ "chip": { "channel": "pulse1", "arpeggio": [0, 7, 12] } }));
         base.chip_texture = Some(NativeChipTexture {
             enabled: true,
             bit_depth: 0.2,
@@ -5273,31 +6984,88 @@ mod tests {
             stereo_spread: 0.12,
         });
         let times = [0.0031, 0.0087, 0.0193, 0.0431, 0.0717, 0.1163, 0.1739];
-        let baseline: Vec<f32> = times.iter().map(|time| render_event_sample(&base, *time)).collect();
+        let baseline: Vec<f32> = times
+            .iter()
+            .map(|time| render_event_sample(&base, *time))
+            .collect();
         for (name, texture) in [
-            ("bitDepth", NativeChipTexture { bit_depth: 0.86, ..base.chip_texture.clone().unwrap() }),
-            ("sampleRateCrush", NativeChipTexture { sample_rate_crush: 0.82, ..base.chip_texture.clone().unwrap() }),
-            ("pulseWidth", NativeChipTexture { pulse_width: 0.22, ..base.chip_texture.clone().unwrap() }),
-            ("pitchDrift", NativeChipTexture { pitch_drift: 0.72, ..base.chip_texture.clone().unwrap() }),
-            ("saturation", NativeChipTexture { saturation: 0.88, ..base.chip_texture.clone().unwrap() }),
-            ("stereoSpread", NativeChipTexture { stereo_spread: 0.82, ..base.chip_texture.clone().unwrap() }),
+            (
+                "bitDepth",
+                NativeChipTexture {
+                    bit_depth: 0.86,
+                    ..base.chip_texture.clone().unwrap()
+                },
+            ),
+            (
+                "sampleRateCrush",
+                NativeChipTexture {
+                    sample_rate_crush: 0.82,
+                    ..base.chip_texture.clone().unwrap()
+                },
+            ),
+            (
+                "pulseWidth",
+                NativeChipTexture {
+                    pulse_width: 0.22,
+                    ..base.chip_texture.clone().unwrap()
+                },
+            ),
+            (
+                "pitchDrift",
+                NativeChipTexture {
+                    pitch_drift: 0.72,
+                    ..base.chip_texture.clone().unwrap()
+                },
+            ),
+            (
+                "saturation",
+                NativeChipTexture {
+                    saturation: 0.88,
+                    ..base.chip_texture.clone().unwrap()
+                },
+            ),
+            (
+                "stereoSpread",
+                NativeChipTexture {
+                    stereo_spread: 0.82,
+                    ..base.chip_texture.clone().unwrap()
+                },
+            ),
         ] {
             let mut variant = base.clone();
             variant.chip_texture = Some(texture);
-            let diff: f32 = times.iter().enumerate().map(|(index, time)| (render_event_sample(&variant, *time) - baseline[index]).abs()).sum();
-            assert!(diff > 0.00001, "chip texture {name} should perturb native samples, diff={diff}");
+            let diff: f32 = times
+                .iter()
+                .enumerate()
+                .map(|(index, time)| (render_event_sample(&variant, *time) - baseline[index]).abs())
+                .sum();
+            assert!(
+                diff > 0.00001,
+                "chip texture {name} should perturb native samples, diff={diff}"
+            );
         }
         let mut triangle_channel = base.clone();
         triangle_channel.technique = Some(serde_json::json!({ "chip": { "channel": "triangle" } }));
-        let channel_diff: f32 = times.iter().enumerate().map(|(index, time)| (render_event_sample(&triangle_channel, *time) - baseline[index]).abs()).sum();
-        assert!(channel_diff > 0.001, "chip channel selection should be audible, diff={channel_diff}");
+        let channel_diff: f32 = times
+            .iter()
+            .enumerate()
+            .map(|(index, time)| {
+                (render_event_sample(&triangle_channel, *time) - baseline[index]).abs()
+            })
+            .sum();
+        assert!(
+            channel_diff > 0.001,
+            "chip channel selection should be audible, diff={channel_diff}"
+        );
     }
 
     #[test]
     fn metal_texture_parameters_perturb_preamp_cab_pick_mute_and_dual_take_audio() {
         let mut base = test_guitar_event("tight_metal", "palm_mute");
         base.sound_profile = Some(test_sound_profile("heavy_metal", "metal_tight_riff"));
-        base.technique = Some(serde_json::json!({ "metal": { "pickDirection": "down", "dualTakeSeed": 17, "palmMuteDepth": 0.76 } }));
+        base.technique = Some(
+            serde_json::json!({ "metal": { "pickDirection": "down", "dualTakeSeed": 17, "palmMuteDepth": 0.76 } }),
+        );
         base.metal_texture = Some(NativeMetalTexture {
             enabled: true,
             drive: 0.48,
@@ -5308,47 +7076,129 @@ mod tests {
             pick_attack: 0.64,
         });
         let times = [0.0023, 0.0069, 0.0147, 0.0311, 0.0523, 0.0817, 0.1271];
-        let baseline: Vec<f32> = times.iter().map(|time| render_event_sample(&base, *time)).collect();
+        let baseline: Vec<f32> = times
+            .iter()
+            .map(|time| render_event_sample(&base, *time))
+            .collect();
         for (name, texture) in [
-            ("drive", NativeMetalTexture { drive: 0.91, ..base.metal_texture.clone().unwrap() }),
-            ("palmMute", NativeMetalTexture { palm_mute: 0.18, ..base.metal_texture.clone().unwrap() }),
-            ("lowTightness", NativeMetalTexture { low_tightness: 0.16, ..base.metal_texture.clone().unwrap() }),
-            ("presence", NativeMetalTexture { presence: 0.93, ..base.metal_texture.clone().unwrap() }),
-            ("roomSize", NativeMetalTexture { room_size: 0.82, ..base.metal_texture.clone().unwrap() }),
-            ("pickAttack", NativeMetalTexture { pick_attack: 0.08, ..base.metal_texture.clone().unwrap() }),
+            (
+                "drive",
+                NativeMetalTexture {
+                    drive: 0.91,
+                    ..base.metal_texture.clone().unwrap()
+                },
+            ),
+            (
+                "palmMute",
+                NativeMetalTexture {
+                    palm_mute: 0.18,
+                    ..base.metal_texture.clone().unwrap()
+                },
+            ),
+            (
+                "lowTightness",
+                NativeMetalTexture {
+                    low_tightness: 0.16,
+                    ..base.metal_texture.clone().unwrap()
+                },
+            ),
+            (
+                "presence",
+                NativeMetalTexture {
+                    presence: 0.93,
+                    ..base.metal_texture.clone().unwrap()
+                },
+            ),
+            (
+                "roomSize",
+                NativeMetalTexture {
+                    room_size: 0.82,
+                    ..base.metal_texture.clone().unwrap()
+                },
+            ),
+            (
+                "pickAttack",
+                NativeMetalTexture {
+                    pick_attack: 0.08,
+                    ..base.metal_texture.clone().unwrap()
+                },
+            ),
         ] {
             let mut variant = base.clone();
             variant.metal_texture = Some(texture);
             if name == "palmMute" {
-                variant.technique = Some(serde_json::json!({ "metal": { "pickDirection": "down", "dualTakeSeed": 17 } }));
+                variant.technique = Some(
+                    serde_json::json!({ "metal": { "pickDirection": "down", "dualTakeSeed": 17 } }),
+                );
             }
-            let diff: f32 = times.iter().enumerate().map(|(index, time)| (render_event_sample(&variant, *time) - baseline[index]).abs()).sum();
-            assert!(diff > 0.00001, "metal texture {name} should perturb native samples, diff={diff}");
+            let diff: f32 = times
+                .iter()
+                .enumerate()
+                .map(|(index, time)| (render_event_sample(&variant, *time) - baseline[index]).abs())
+                .sum();
+            assert!(
+                diff > 0.00001,
+                "metal texture {name} should perturb native samples, diff={diff}"
+            );
         }
         let mut other_take = base.clone();
-        other_take.technique = Some(serde_json::json!({ "metal": { "pickDirection": "down", "dualTakeSeed": 99, "palmMuteDepth": 0.76 } }));
-        let take_diff: f32 = times.iter().enumerate().map(|(index, time)| (render_event_sample(&other_take, *time) - baseline[index]).abs()).sum();
-        assert!(take_diff > 0.00001, "dual-take seed should perturb deterministic audio, diff={take_diff}");
+        other_take.technique = Some(
+            serde_json::json!({ "metal": { "pickDirection": "down", "dualTakeSeed": 99, "palmMuteDepth": 0.76 } }),
+        );
+        let take_diff: f32 = times
+            .iter()
+            .enumerate()
+            .map(|(index, time)| (render_event_sample(&other_take, *time) - baseline[index]).abs())
+            .sum();
+        assert!(
+            take_diff > 0.00001,
+            "dual-take seed should perturb deterministic audio, diff={take_diff}"
+        );
         let mut disabled = base.clone();
-        disabled.metal_texture = Some(NativeMetalTexture { enabled: false, ..base.metal_texture.clone().unwrap() });
-        let enabled_diff: f32 = times.iter().enumerate().map(|(index, time)| (render_event_sample(&disabled, *time) - baseline[index]).abs()).sum();
-        assert!(enabled_diff > 0.00001, "metal texture enable should perturb native samples, diff={enabled_diff}");
+        disabled.metal_texture = Some(NativeMetalTexture {
+            enabled: false,
+            ..base.metal_texture.clone().unwrap()
+        });
+        let enabled_diff: f32 = times
+            .iter()
+            .enumerate()
+            .map(|(index, time)| (render_event_sample(&disabled, *time) - baseline[index]).abs())
+            .sum();
+        assert!(
+            enabled_diff > 0.00001,
+            "metal texture enable should perturb native samples, diff={enabled_diff}"
+        );
     }
 
     #[test]
     fn funk_slap_pop_mute_profile_parameters_perturb_native_audio() {
         let times = [0.0017, 0.0049, 0.0123, 0.0287, 0.0611, 0.0983];
-        for (parameter, articulation) in [("slapAmount", "slap"), ("popBrightness", "pop"), ("muteDepth", "mute")] {
+        for (parameter, articulation) in [
+            ("slapAmount", "slap"),
+            ("popBrightness", "pop"),
+            ("muteDepth", "mute"),
+        ] {
             let mut base = test_generated_event("funk_parameter", "bass", 0.0, 0.24, 0.82);
             base.articulation = Some(articulation.to_string());
             let mut profile = test_sound_profile("funk_groove", "funk_classic_pocket");
             profile.parameters = serde_json::json!({ (parameter): 0.12 });
             base.sound_profile = Some(profile);
-            let baseline: Vec<f32> = times.iter().map(|time| render_event_sample(&base, *time)).collect();
+            let baseline: Vec<f32> = times
+                .iter()
+                .map(|time| render_event_sample(&base, *time))
+                .collect();
             let mut variant = base.clone();
-            variant.sound_profile.as_mut().unwrap().parameters = serde_json::json!({ (parameter): 0.92 });
-            let diff: f32 = times.iter().enumerate().map(|(index, time)| (render_event_sample(&variant, *time) - baseline[index]).abs()).sum();
-            assert!(diff > 0.00001, "funk {parameter} should perturb native samples, diff={diff}");
+            variant.sound_profile.as_mut().unwrap().parameters =
+                serde_json::json!({ (parameter): 0.92 });
+            let diff: f32 = times
+                .iter()
+                .enumerate()
+                .map(|(index, time)| (render_event_sample(&variant, *time) - baseline[index]).abs())
+                .sum();
+            assert!(
+                diff > 0.00001,
+                "funk {parameter} should perturb native samples, diff={diff}"
+            );
         }
     }
 
@@ -5356,7 +7206,15 @@ mod tests {
     fn metal_bass_funk_articulations_and_western_fallbacks_have_audio_evidence() {
         let mut metal_bass = test_generated_event("metal_bass", "bass", 0.0, 0.3, 0.8);
         metal_bass.sound_profile = Some(test_sound_profile("heavy_metal", "metal_tight_riff"));
-        metal_bass.metal_texture = Some(NativeMetalTexture { enabled: true, drive: 0.72, palm_mute: 0.7, low_tightness: 0.86, presence: 0.7, room_size: 0.1, pick_attack: 0.78 });
+        metal_bass.metal_texture = Some(NativeMetalTexture {
+            enabled: true,
+            drive: 0.72,
+            palm_mute: 0.7,
+            low_tightness: 0.86,
+            presence: 0.7,
+            room_size: 0.1,
+            pick_attack: 0.78,
+        });
         assert!(render_event_sample_energy(&metal_bass, &[0.004, 0.016, 0.041, 0.09]) > 0.02);
 
         let mut finger = test_generated_event("funk_finger", "bass", 0.0, 0.24, 0.8);
@@ -5377,7 +7235,8 @@ mod tests {
 
         let mut western = test_guitar_event("western_twang", "hammer");
         western.sound_profile = Some(test_sound_profile("western_frontier", "western_trail"));
-        western.technique = Some(serde_json::json!({ "western": { "pickDirection": "up", "banjoRoll": 0.7 } }));
+        western.technique =
+            Some(serde_json::json!({ "western": { "pickDirection": "up", "banjoRoll": 0.7 } }));
         assert!(render_event_sample_energy(&western, &[0.01, 0.03, 0.06, 0.11]) > 0.001);
     }
 
@@ -5727,6 +7586,7 @@ mod tests {
             project_title: Some("Cached".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
@@ -5741,6 +7601,8 @@ mod tests {
             position_seconds: 0.0,
             sample_rate: 8_000,
             channels: 2,
+            bpm: 120.0,
+            time_sig: 4,
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
@@ -5755,6 +7617,8 @@ mod tests {
             slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
+            hosted_instruments: HashMap::new(),
+            hosted_graph: None,
             loop_region: None,
             metronome: None,
             sidechain: None,
@@ -5795,6 +7659,7 @@ mod tests {
             project_title: Some("Cached pan".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
@@ -5809,6 +7674,8 @@ mod tests {
             position_seconds: 0.0,
             sample_rate: 8_000,
             channels: 2,
+            bpm: 120.0,
+            time_sig: 4,
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
@@ -5823,6 +7690,8 @@ mod tests {
             slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
+            hosted_instruments: HashMap::new(),
+            hosted_graph: None,
             loop_region: None,
             metronome: None,
             sidechain: None,
@@ -5864,6 +7733,7 @@ mod tests {
             project_title: Some("Cached track pan".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
@@ -5878,6 +7748,8 @@ mod tests {
             position_seconds: 0.0,
             sample_rate: 8_000,
             channels: 2,
+            bpm: 120.0,
+            time_sig: 4,
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
@@ -5892,6 +7764,8 @@ mod tests {
             slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
+            hosted_instruments: HashMap::new(),
+            hosted_graph: None,
             loop_region: None,
             metronome: None,
             sidechain: None,
@@ -5963,6 +7837,7 @@ mod tests {
             project_title: Some("Cached sidechain".to_string()),
             events: vec![trigger_marker],
             compiled_event_routes: Vec::new(),
+            compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([
@@ -5990,6 +7865,8 @@ mod tests {
             position_seconds: 0.0,
             sample_rate: 8_000,
             channels: 2,
+            bpm: 120.0,
+            time_sig: 4,
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
@@ -6004,6 +7881,8 @@ mod tests {
             slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
+            hosted_instruments: HashMap::new(),
+            hosted_graph: None,
             loop_region: None,
             metronome: None,
             sidechain: Some(sidechain),
@@ -6058,6 +7937,7 @@ mod tests {
             project_title: Some("Cached live mixer".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([("stem".to_string(), Arc::new(decoded))]),
@@ -6072,6 +7952,8 @@ mod tests {
             position_seconds: 0.0,
             sample_rate: 8_000,
             channels: 2,
+            bpm: 120.0,
+            time_sig: 4,
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
@@ -6086,6 +7968,8 @@ mod tests {
             slow_callback_count: 0,
             generation: 1,
             fx: test_live_mixer_fx_runtime(),
+            hosted_instruments: HashMap::new(),
+            hosted_graph: None,
             loop_region: None,
             metronome: None,
             sidechain: None,
@@ -6185,6 +8069,7 @@ mod tests {
             project_title: Some("Cached dense stems".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([
@@ -6212,6 +8097,8 @@ mod tests {
             position_seconds: 0.0,
             sample_rate: 8_000,
             channels: 2,
+            bpm: 120.0,
+            time_sig: 4,
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
@@ -6226,16 +8113,33 @@ mod tests {
             slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
+            hosted_instruments: HashMap::new(),
+            hosted_graph: None,
             loop_region: None,
             metronome: None,
             sidechain: None,
         };
         let cached_frames = render_frames(&mut cached, 160);
         let max_diff = max_frame_diff(&procedural_frames, &cached_frames);
+        let (max_diff_index, procedural_at_max, cached_at_max) = procedural_frames
+            .iter()
+            .zip(cached_frames.iter())
+            .enumerate()
+            .max_by(|(_, (left_a, right_a)), (_, (left_b, right_b))| {
+                let left_diff = (left_a.0 - right_a.0)
+                    .abs()
+                    .max((left_a.1 - right_a.1).abs());
+                let right_diff = (left_b.0 - right_b.0)
+                    .abs()
+                    .max((left_b.1 - right_b.1).abs());
+                left_diff.total_cmp(&right_diff)
+            })
+            .map(|(index, (procedural, cached))| (index, *procedural, *cached))
+            .expect("parity fixture should render frames");
 
         assert!(
             max_diff < 0.00008,
-            "expected cached stems to match procedural mix under cross-track voice pressure, max diff {max_diff}"
+            "expected cached stems to match procedural mix under cross-track voice pressure, max diff {max_diff} at frame {max_diff_index}: procedural {procedural_at_max:?}, cached {cached_at_max:?}"
         );
     }
 
@@ -6261,6 +8165,7 @@ mod tests {
             project_title: Some("Test".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::from([("asset".to_string(), Arc::new(asset))]),
@@ -6275,6 +8180,8 @@ mod tests {
             position_seconds: 0.0,
             sample_rate: 4,
             channels: 2,
+            bpm: 120.0,
+            time_sig: 4,
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
@@ -6289,6 +8196,8 @@ mod tests {
             slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
+            hosted_instruments: HashMap::new(),
+            hosted_graph: None,
             loop_region: None,
             metronome: None,
             sidechain: None,
@@ -6311,6 +8220,7 @@ mod tests {
             project_title: Some("Test".to_string()),
             events,
             compiled_event_routes: Vec::new(),
+            compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
             assets: HashMap::new(),
@@ -6323,6 +8233,8 @@ mod tests {
             position_seconds: 0.0,
             sample_rate: 1000,
             channels: 2,
+            bpm: 120.0,
+            time_sig: 4,
             playing: true,
             rendered_frame_count: 0,
             scan_start_index: 0,
@@ -6337,6 +8249,8 @@ mod tests {
             slow_callback_count: 0,
             generation: 1,
             fx: NativeFxRuntime::default(),
+            hosted_instruments: HashMap::new(),
+            hosted_graph: None,
             loop_region: None,
             metronome: None,
             sidechain: None,
@@ -6367,6 +8281,143 @@ mod tests {
         playback.compiled_event_routes.clear();
         playback.compiled_sidechain_triggers.clear();
         playback.compiled_sidechain_trigger_source_len = 0;
+    }
+
+    #[test]
+    fn hosted_context_uses_project_tempo_meter_and_loop_bounds() {
+        let context = hosted_process_context(
+            48_000,
+            48_000,
+            90.0,
+            3,
+            &[],
+            Some(&NativeLoopPayload {
+                enabled: true,
+                start_seconds: 1.0,
+                end_seconds: 5.0,
+            }),
+        );
+        assert_eq!(context.tempo, 90.0);
+        assert_eq!(context.numerator, 3);
+        assert_eq!(context.denominator, 4);
+        assert!((context.project_ppq - 1.5).abs() < 0.0001);
+        assert!((context.loop_start_ppq - 1.5).abs() < 0.0001);
+        assert!((context.loop_end_ppq - 7.5).abs() < 0.0001);
+        assert!(context.looping);
+    }
+
+    #[test]
+    fn hosted_context_follows_tempo_and_meter_map_at_sample_positions() {
+        let map = vec![
+            NativeTransportPoint {
+                time_seconds: 0.0,
+                project_ppq: 0.0,
+                bar_position_ppq: 0.0,
+                tempo: 120.0,
+                numerator: 4,
+                denominator: 4,
+                curve: "linear".to_string(),
+            },
+            NativeTransportPoint {
+                time_seconds: 2.0,
+                project_ppq: 4.0,
+                bar_position_ppq: 4.0,
+                tempo: 60.0,
+                numerator: 3,
+                denominator: 8,
+                curve: "hold".to_string(),
+            },
+        ];
+        let ramp = hosted_process_context(48_000, 48_000, 120.0, 4, &map, None);
+        assert!((ramp.tempo - 90.0).abs() < 0.0001);
+        assert!((ramp.project_ppq - 2.0).abs() < 0.0001);
+        assert_eq!((ramp.numerator, ramp.denominator), (4, 4));
+        let changed = hosted_process_context(
+            96_000,
+            48_000,
+            120.0,
+            4,
+            &map,
+            Some(&NativeLoopPayload {
+                enabled: true,
+                start_seconds: 0.5,
+                end_seconds: 2.0,
+            }),
+        );
+        assert_eq!(
+            (changed.tempo, changed.project_ppq, changed.bar_position_ppq),
+            (60.0, 4.0, 4.0)
+        );
+        assert_eq!((changed.numerator, changed.denominator), (3, 8));
+        assert!((changed.loop_start_ppq - 1.0).abs() < 0.0001);
+        assert_eq!(changed.loop_end_ppq, 4.0);
+    }
+
+    #[test]
+    fn hosted_automation_emits_interpolated_and_hold_block_boundaries() {
+        use crate::vst3_session::{HostedAutomationPoint, HostedParameterAutomation};
+        let lanes = vec![HostedParameterAutomation {
+            parameter_id: "7".to_string(),
+            points: vec![
+                HostedAutomationPoint {
+                    time_seconds: 0.0,
+                    value: 0.0,
+                    curve: "linear".to_string(),
+                },
+                HostedAutomationPoint {
+                    time_seconds: 1.0,
+                    value: 1.0,
+                    curve: "hold".to_string(),
+                },
+                HostedAutomationPoint {
+                    time_seconds: 2.0,
+                    value: 0.25,
+                    curve: "linear".to_string(),
+                },
+            ],
+        }];
+        let linear = hosted_automation_for_block(&lanes, 24_000, 48_000);
+        assert_eq!(linear.first().unwrap().sample_offset, 0);
+        assert!((linear.first().unwrap().value - 0.5).abs() < 0.0001);
+        let hold = hosted_automation_for_block(&lanes, 72_000, 48_000);
+        assert_eq!(hold.first().unwrap().value, 1.0);
+        assert_eq!(hold.last().unwrap().value, 1.0);
+    }
+
+    #[test]
+    fn hosted_latency_delay_is_exact_and_output_ring_callback_never_renders() {
+        assert_eq!(
+            accumulate_hosted_timing([(7, 64), (3, 10)].into_iter()),
+            (266, 74)
+        );
+        assert_eq!(
+            accumulate_hosted_timing([(u32::MAX, u32::MAX)].into_iter()),
+            (MAX_HOSTED_LATENCY_SAMPLES, MAX_HOSTED_TAIL_SAMPLES)
+        );
+        assert!(StereoDelayLine::new(MAX_HOSTED_LATENCY_SAMPLES as usize + 1).is_none());
+        let track_ids = (0..64)
+            .map(|index| format!("track-{index}"))
+            .collect::<Vec<_>>();
+        let mut fx = NativeFxRuntime::default();
+        fx.track_latency_samples
+            .insert("max".to_string(), MAX_HOSTED_LATENCY_SAMPLES);
+        fx.rebuild_latency_compensation(track_ids.iter());
+        let allocated_samples = fx
+            .latency_compensation
+            .values()
+            .map(|delay| delay.left.len())
+            .sum::<usize>();
+        assert!(allocated_samples <= MAX_NATIVE_LATENCY_COMPENSATION_SAMPLES);
+        let mut delay = StereoDelayLine::new(2).unwrap();
+        assert_eq!(delay.process(1.0, -1.0), (0.0, 0.0));
+        assert_eq!(delay.process(2.0, -2.0), (0.0, 0.0));
+        assert_eq!(delay.process(3.0, -3.0), (1.0, -1.0));
+        let ring = NativeOutputRing::new();
+        assert!(ring.push(&[0.25, -0.5]));
+        let mut output = [0.0; 4];
+        write_ring_output(&mut output, &ring, 2, 48_000);
+        assert_eq!(output, [0.25, -0.5, 0.0, 0.0]);
+        assert_eq!(ring.callback_count.load(Ordering::Relaxed), 1);
     }
 
     fn test_track(id: &str, volume: f64, pan: f64, mute: bool, solo: bool) -> NativeTrackControl {
@@ -6401,6 +8452,7 @@ mod tests {
                     ("highShelfEnabled".to_string(), Value::Bool(false)),
                     ("lpEnabled".to_string(), Value::Bool(false)),
                 ]),
+                hosted_plugin: None,
             }],
         }
     }
@@ -6449,6 +8501,7 @@ mod tests {
                 .into_iter()
                 .map(|(key, value)| (key.to_string(), Value::from(value)))
                 .collect(),
+            hosted_plugin: None,
         }
     }
 
@@ -6555,6 +8608,79 @@ mod tests {
             fade_out: 0.0,
             gain_automation: Vec::new(),
         }
+    }
+
+    #[test]
+    fn sampler_render_uses_shared_cubic_resampling_and_reverse_direction() {
+        let asset = Arc::new(DecodedAudioAsset {
+            sample_rate: 4,
+            channels: 1,
+            samples: vec![0.0, 1.0, 0.0, -1.0],
+            frame_count: 4,
+        });
+        let event = test_generated_event("sample", "midi", 0.0, 1.0, 1.0);
+        let mut route = CompiledSamplerEventRoute {
+            asset,
+            gain: 1.0,
+            pan: 0.0,
+            pitch_ratio: 1.0,
+            start_position: 0.0,
+            end_position: 1.0,
+            reverse: false,
+            playback_mode: "one-shot".to_string(),
+            loop_start_position: 0.0,
+            loop_end_position: 1.0,
+            envelope: None,
+            choke_end_time: None,
+        };
+        let forward = render_sampler_event_sample(&event, &route, 0.5).expect("forward sample");
+        route.reverse = true;
+        let reverse = render_sampler_event_sample(&event, &route, 0.5).expect("reverse sample");
+        assert!(forward.0.abs() < 0.0001);
+        assert!((reverse.0 - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn sampler_adsr_gate_and_choke_end_are_sample_clock_positioned() {
+        let asset = Arc::new(DecodedAudioAsset {
+            sample_rate: 100,
+            channels: 1,
+            samples: vec![1.0; 200],
+            frame_count: 200,
+        });
+        let event = test_generated_event("sample", "midi", 2.0, 0.5, 1.0);
+        let route = CompiledSamplerEventRoute {
+            asset,
+            gain: 1.0,
+            pan: 0.0,
+            pitch_ratio: 1.0,
+            start_position: 0.0,
+            end_position: 1.0,
+            reverse: false,
+            playback_mode: "gate".to_string(),
+            loop_start_position: 0.0,
+            loop_end_position: 1.0,
+            envelope: Some(NativeSamplerEnvelopePayload {
+                attack_seconds: 0.1,
+                decay_seconds: 0.1,
+                sustain_level: 0.5,
+                release_seconds: 0.2,
+            }),
+            choke_end_time: Some(2.65),
+        };
+        let attack = render_sampler_event_sample(&event, &route, 2.05)
+            .expect("attack")
+            .0;
+        let sustain = render_sampler_event_sample(&event, &route, 2.3)
+            .expect("sustain")
+            .0;
+        let release = render_sampler_event_sample(&event, &route, 2.6)
+            .expect("release")
+            .0;
+        assert!((attack - 0.5).abs() < 0.02);
+        assert!((sustain - 0.5).abs() < 0.02);
+        assert!(release > 0.2 && release < sustain);
+        assert!(render_sampler_event_sample(&event, &route, 2.65).is_none());
     }
 
     fn test_generated_event(

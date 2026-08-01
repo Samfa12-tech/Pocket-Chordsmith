@@ -1,11 +1,12 @@
-import type { FxChain, JsonValue, PocketDawProject } from "../daw/schema";
+import type { DrumRackDevice, FxChain, HostedPluginIdentity, HostedPluginProjectMetadata, HostedPluginStateSnapshot, JsonObject, JsonValue, PocketDawProject, SamplerDevice } from "../daw/schema";
 import type { RenderedEvent } from "../audio/eventRenderer";
 import { buildMetronomeClicks } from "../audio/metronome";
 import { chordsmithSidechainSettings } from "../audio/sidechain";
 import { activeTrackSendRoutes } from "../daw/routing";
 import { getAutomatedFxChains, getAutomatedTrackControls, getProjectAutomationLane } from "../daw/automation";
-import { timelineBarAtSeconds, timelineDurationSeconds, timelineSecondsAtBar } from "../daw/timeline";
+import { timelineBarAtSeconds, timelineDurationSeconds, timelineMetricsAtSortedBars, timelineSecondsAtBar } from "../daw/timeline";
 import { trackIsAudible } from "../daw/tracks";
+import { validHostedStateSnapshot } from "../daw/hostedPlugins";
 
 export interface NativeAudioStatus {
   backend: "native-cpal" | string;
@@ -89,6 +90,7 @@ export interface NativeAudioFxSlot {
   enabled: boolean;
   presetId?: string;
   parameters: Record<string, JsonValue>;
+  hostedPlugin?: NativeHostedPluginInstance;
 }
 
 export interface NativeAudioFxChain {
@@ -110,6 +112,87 @@ export interface NativeAudioAsset {
   sizeBytes?: number;
   sourceHash?: string;
   bytes?: number[];
+  mediaPoolItemId?: string;
+  sampleLibraryOnly?: boolean;
+}
+
+export interface NativeSamplerEnvelope {
+  attackSeconds: number;
+  decaySeconds: number;
+  sustainLevel: number;
+  releaseSeconds: number;
+}
+
+export interface NativeSamplerPad {
+  midiNote: number;
+  assetId: string;
+  gain: number;
+  pan: number;
+  coarseTune: number;
+  fineTuneCents: number;
+  startPosition: number;
+  endPosition: number;
+  reverse: boolean;
+  playbackMode: "one-shot" | "gate";
+  mute: boolean;
+  solo: boolean;
+  chokeGroup: string | null;
+}
+
+export interface NativeSamplerDevice {
+  id: string;
+  trackId: string;
+  type: "quick-sampler" | "drum-rack";
+  enabled: boolean;
+  assetId?: string;
+  rootNote?: number;
+  keyTracking?: boolean;
+  coarseTune?: number;
+  fineTuneCents?: number;
+  gain?: number;
+  pan?: number;
+  startPosition?: number;
+  endPosition?: number;
+  reverse?: boolean;
+  playbackMode?: "one-shot" | "gate" | "loop";
+  loopStartPosition?: number;
+  loopEndPosition?: number;
+  envelope?: NativeSamplerEnvelope;
+  pads?: NativeSamplerPad[];
+}
+
+export interface NativeHostedPluginIdentity {
+  format: "vst3";
+  classId: string;
+  binaryFingerprint: string;
+  moduleFilename: string;
+  vendor: string;
+  name: string;
+  version: string;
+  category: string;
+}
+
+export interface NativeHostedPluginAutomationPoint {
+  timeSeconds: number;
+  value: number;
+  curve: "linear" | "hold" | "ease-in" | "ease-out";
+}
+
+export interface NativeHostedPluginParameterAutomation {
+  parameterId: string;
+  points: NativeHostedPluginAutomationPoint[];
+}
+
+export interface NativeHostedPluginInstance {
+  instanceId: string;
+  role: "instrument" | "effect";
+  trackId: string;
+  chainId?: string;
+  enabled: boolean;
+  identity: NativeHostedPluginIdentity;
+  state?: HostedPluginStateSnapshot;
+  parameters: Record<string, number>;
+  automation: NativeHostedPluginParameterAutomation[];
 }
 
 export interface NativeAudioRegion {
@@ -133,6 +216,9 @@ export interface NativeAudioStartPayload {
   projectTitle: string;
   sampleRate: number;
   startSeconds: number;
+  bpm: number;
+  timeSig: number;
+  transportMap?: NativeAudioTransportPoint[];
   outputDeviceId: string | null;
   loop?: NativeAudioLoop | null;
   metronome?: NativeAudioMetronome | null;
@@ -142,6 +228,18 @@ export interface NativeAudioStartPayload {
   fxChains: NativeAudioFxChain[];
   assets?: NativeAudioAsset[];
   regions?: NativeAudioRegion[];
+  samplers?: NativeSamplerDevice[];
+  hostedInstruments?: NativeHostedPluginInstance[];
+}
+
+export interface NativeAudioTransportPoint {
+  timeSeconds: number;
+  projectPpq: number;
+  barPositionPpq: number;
+  tempo: number;
+  numerator: number;
+  denominator: number;
+  curve: "linear" | "hold" | "ease-in" | "ease-out";
 }
 
 export interface NativeAudioLoop {
@@ -290,6 +388,9 @@ export function buildNativeAudioStartPayload(
     projectTitle: project.project.title,
     sampleRate: project.project.sampleRate,
     startSeconds: Math.max(0, startSeconds),
+    bpm: Math.max(1, project.project.bpm || 120),
+    timeSig: Math.max(1, Math.round(project.project.timeSig || 4)),
+    transportMap: nativeTransportMap(project),
     outputDeviceId: project.audioDeviceSettings.outputDeviceId,
     loop: nativeLoop(project),
     metronome: nativeMetronome(project),
@@ -342,9 +443,87 @@ export function buildNativeAudioStartPayload(
       direction: event.direction,
       drumLane: event.drumLane
     })),
-    fxChains: nativeFxChains(getAutomatedFxChains(project, startBar)),
+    fxChains: nativeFxChains(project, getAutomatedFxChains(project, startBar)),
     assets: cache?.assets || [],
-    regions: cache?.regions || []
+    regions: cache?.regions || [],
+    samplers: nativeSamplerDevices(project, cache?.assets || []),
+    hostedInstruments: nativeHostedInstruments(project)
+  };
+}
+
+function nativeTransportMap(project: PocketDawProject): NativeAudioTransportPoint[] {
+  const endBar = Math.max(2, project.timeline.bars + 2);
+  const step = Math.max(0.25, (endBar - 1) / 16_000);
+  const bars = new Set<number>([1, endBar]);
+  for (let bar = 1; bar < endBar; bar += step) bars.add(Math.min(endBar, Math.round(bar * 1_000_000) / 1_000_000));
+  const tempoLane = getProjectAutomationLane(project, "tempo");
+  tempoLane?.points.forEach((point) => Number.isFinite(point.bar) && bars.add(Math.max(1, point.bar)));
+  project.project.meterMap?.forEach((point) => Number.isFinite(point.bar) && bars.add(Math.max(1, point.bar)));
+  const sortedBars = [...bars].sort((a, b) => a - b);
+  const metricBars = [...new Set(sortedBars.flatMap((bar) => [bar, Math.max(1, Math.floor(bar + 0.000001))]))].sort((a, b) => a - b);
+  const metrics = new Map(timelineMetricsAtSortedBars(project, metricBars).map((metric) => [metric.bar, metric]));
+  return sortedBars.map((bar) => {
+    const metric = metrics.get(bar)!;
+    const barStart = metrics.get(Math.max(1, Math.floor(bar + 0.000001)))!;
+    return {
+      timeSeconds: metric.timeSeconds,
+      projectPpq: metric.projectPpq,
+      barPositionPpq: barStart.projectPpq,
+      tempo: metric.tempo,
+      numerator: metric.meter.numerator,
+      denominator: metric.meter.denominator,
+      curve: metric.curve
+    };
+  }).filter((point, index, points) => index === 0 || point.timeSeconds > points[index - 1]!.timeSeconds + 0.0000001);
+}
+
+function nativeSamplerDevices(project: PocketDawProject, assets: NativeAudioAsset[]): NativeSamplerDevice[] {
+  const assetByMediaId = new Map(assets.filter((asset) => asset.mediaPoolItemId).map((asset) => [asset.mediaPoolItemId!, asset.id]));
+  return project.tracks.flatMap((track) => {
+    const device = track.instrumentDeviceId ? project.devices.find((item) => item.id === track.instrumentDeviceId) : null;
+    if (!device || !device.enabled) return [];
+    if (device.type === "quick-sampler") {
+      const assetId = assetByMediaId.get(device.mediaPoolItemId);
+      return assetId ? [nativeQuickSampler(track.id, device, assetId)] : [];
+    }
+    if (device.type === "drum-rack") return [nativeDrumRack(track.id, device, assetByMediaId)];
+    return [];
+  });
+}
+
+function nativeQuickSampler(trackId: string, device: SamplerDevice, assetId: string): NativeSamplerDevice {
+  return {
+    id: device.id,
+    trackId,
+    type: "quick-sampler",
+    enabled: device.enabled,
+    assetId,
+    rootNote: device.rootNote,
+    keyTracking: device.keyTracking,
+    coarseTune: device.coarseTune,
+    fineTuneCents: device.fineTuneCents,
+    gain: device.gain,
+    pan: device.pan,
+    startPosition: device.startPosition,
+    endPosition: device.endPosition,
+    reverse: device.reverse,
+    playbackMode: device.playbackMode,
+    loopStartPosition: device.loopStartPosition,
+    loopEndPosition: device.loopEndPosition,
+    envelope: device.envelope
+  };
+}
+
+function nativeDrumRack(trackId: string, device: DrumRackDevice, assetByMediaId: Map<string, string>): NativeSamplerDevice {
+  return {
+    id: device.id,
+    trackId,
+    type: "drum-rack",
+    enabled: device.enabled,
+    pads: device.pads.flatMap((pad) => {
+      const assetId = pad.mediaPoolItemId ? assetByMediaId.get(pad.mediaPoolItemId) : null;
+      return assetId ? [{ ...pad, assetId }] : [];
+    })
   };
 }
 
@@ -387,19 +566,144 @@ function nativeSidechain(project: PocketDawProject): NativeAudioSidechain | null
   };
 }
 
-function nativeFxChains(chains: FxChain[]): NativeAudioFxChain[] {
+function nativeHostedInstruments(project: PocketDawProject): NativeHostedPluginInstance[] {
+  return project.tracks.flatMap((track) => {
+    const device = track.instrumentDeviceId ? project.devices.find((item) => item.id === track.instrumentDeviceId) : null;
+    if (!device || device.type !== "vst3-instrument") return [];
+    return [nativeHostedPluginInstance(
+      project,
+      device.id,
+      "instrument",
+      track.id,
+      undefined,
+      device.enabled,
+      device.hostedPlugin,
+      device.hostedPluginState,
+      device.parameters,
+      device.hostedPluginMetadata
+    )];
+  });
+}
+
+function nativeFxChains(project: PocketDawProject, chains: FxChain[]): NativeAudioFxChain[] {
   return chains.map((chain) => ({
     id: chain.id,
     ownerTrackId: chain.ownerTrackId,
     metadata: chain.metadata,
-    slots: chain.slots.map((slot) => ({
-      id: slot.id,
-      type: String(slot.type),
-      enabled: slot.enabled,
-      presetId: slot.presetId,
-      parameters: slot.parameters || {}
-    }))
+    slots: chain.slots.map((slot) => {
+      const trackId = chain.ownerTrackId || (typeof chain.metadata?.parentTrackId === "string" ? chain.metadata.parentTrackId : "");
+      return {
+        id: slot.id,
+        type: String(slot.type),
+        enabled: slot.enabled,
+        presetId: slot.presetId,
+        parameters: slot.parameters || {},
+        ...(slot.hostedPlugin && trackId ? {
+          hostedPlugin: nativeHostedPluginInstance(
+            project,
+            slot.id,
+            "effect",
+            trackId,
+            chain.id,
+            slot.enabled,
+            slot.hostedPlugin,
+            slot.hostedPluginState,
+            slot.parameters,
+            slot.hostedPluginMetadata
+          )
+        } : {})
+      };
+    })
   }));
+}
+
+function nativeHostedPluginInstance(
+  project: PocketDawProject,
+  instanceId: string,
+  role: NativeHostedPluginInstance["role"],
+  trackId: string,
+  chainId: string | undefined,
+  enabled: boolean,
+  identity: HostedPluginIdentity,
+  state: HostedPluginStateSnapshot | undefined,
+  parameters: JsonObject,
+  metadata: HostedPluginProjectMetadata | undefined
+): NativeHostedPluginInstance {
+  return {
+    instanceId,
+    role,
+    trackId,
+    ...(chainId ? { chainId } : {}),
+    enabled,
+    identity: nativeHostedIdentity(identity),
+    ...(state && validHostedStateSnapshot(state) ? { state: { ...state } } : {}),
+    parameters: nativeHostedParameters(parameters, metadata),
+    automation: nativeHostedAutomation(project, instanceId, chainId, metadata)
+  };
+}
+
+function nativeHostedIdentity(identity: HostedPluginIdentity): NativeHostedPluginIdentity {
+  return {
+    format: "vst3",
+    classId: String(identity.classId || "").slice(0, 128),
+    binaryFingerprint: String(identity.binaryFingerprint || "").replace(/[^a-f0-9]/gi, "").slice(0, 128),
+    moduleFilename: String(identity.moduleFilename || "Unknown.vst3").split(/[\\/]/).pop()!.slice(0, 160),
+    vendor: String(identity.vendor || "Unknown vendor").slice(0, 96),
+    name: String(identity.name || "Unknown plug-in").slice(0, 96),
+    version: String(identity.version || "Unknown").slice(0, 64),
+    category: String(identity.category || "Unknown").slice(0, 64)
+  };
+}
+
+function nativeHostedParameters(parameters: JsonObject, metadata: HostedPluginProjectMetadata | undefined): Record<string, number> {
+  return Object.fromEntries(nativeVstParameterDescriptors(metadata).filter((descriptor) => !descriptor.readOnly).flatMap((descriptor) => {
+    const value = parameters[descriptor.stableId];
+    return typeof value === "number" && Number.isFinite(value)
+      ? [[descriptor.stableId, normalizeVstParameter(value, descriptor.min, descriptor.max)]]
+      : [];
+  }));
+}
+
+function nativeHostedAutomation(
+  project: PocketDawProject,
+  instanceId: string,
+  chainId: string | undefined,
+  metadata: HostedPluginProjectMetadata | undefined
+): NativeHostedPluginParameterAutomation[] {
+  const descriptors = new Map(nativeVstParameterDescriptors(metadata).map((descriptor) => [descriptor.stableId, descriptor]));
+  return project.automation.lanes.flatMap((lane) => {
+    if (!lane.enabled) return [];
+    const match = chainId
+      ? lane.targetPath.match(/^fx\.([^.]+)\.slots\.([^.]+)\.parameters\.([^.]+)$/)
+      : lane.targetPath.match(/^device:([^:]+):parameter:([^:]+)$/);
+    if (!match) return [];
+    const matchesInstance = chainId ? match[1] === chainId && match[2] === instanceId : match[1] === instanceId;
+    const parameterId = chainId ? match[3] : match[2];
+    const descriptor = matchesInstance ? descriptors.get(parameterId) : undefined;
+    if (!descriptor?.automatable || descriptor.readOnly) return [];
+    const points = lane.points
+      .filter((point) => Number.isFinite(point.bar) && Number.isFinite(point.value))
+      .map((point) => ({
+        timeSeconds: Math.max(0, timelineSecondsAtBar(project, point.bar)),
+        value: normalizeVstParameter(point.value, descriptor.min, descriptor.max),
+        curve: point.curve || "linear" as const
+      }))
+      .sort((left, right) => left.timeSeconds - right.timeSeconds);
+    return points.length ? [{ parameterId, points }] : [];
+  }).sort((left, right) => left.parameterId.localeCompare(right.parameterId, undefined, { numeric: true }));
+}
+
+function nativeVstParameterDescriptors(metadata: HostedPluginProjectMetadata | undefined) {
+  return (Array.isArray(metadata?.parameterDescriptors) ? metadata.parameterDescriptors : [])
+    .filter((descriptor) => descriptor !== null && typeof descriptor === "object")
+    .filter((descriptor) => /^\d+$/.test(descriptor.stableId) && Number.isFinite(descriptor.min) && Number.isFinite(descriptor.max) && descriptor.max >= descriptor.min)
+    .sort((left, right) => left.stableId.localeCompare(right.stableId, undefined, { numeric: true }));
+}
+
+function normalizeVstParameter(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max)) return 0;
+  if (max <= min) return 0;
+  return clamp((value - min) / (max - min), 0, 1);
 }
 
 let defaultApiPromise: Promise<NativeAudioInvokeApi | null> | null = null;

@@ -10,6 +10,7 @@ const releaseDir = join(ROOT, "releases", "itch");
 const installersDir = join(releaseDir, "installers");
 const manifestPath = join(releaseDir, `pocket-daw-release-manifest-v${version}.json`);
 const checksumPath = join(releaseDir, `CHECKSUMS_SHA256_v${version}.txt`);
+const thirdPartyNoticesPath = join(ROOT, "src-tauri", "resources", "THIRD_PARTY_NOTICES.txt");
 
 const required = [
   installersDir,
@@ -44,7 +45,7 @@ for (const file of installerFiles) assertNoForbidden(file, `installer upload fil
 
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 if (manifest.version !== version) fail(`Manifest version ${manifest.version} does not match package ${version}`);
-if (manifest.schemaVersion !== 2) fail(`Manifest schemaVersion ${manifest.schemaVersion} must remain 2`);
+if (manifest.schemaVersion !== 3) fail(`Manifest schemaVersion ${manifest.schemaVersion} must be 3`);
 if (manifest.target?.channel !== ITCH_CHANNEL) fail(`Manifest channel ${manifest.target?.channel} must be ${ITCH_CHANNEL}`);
 if (manifest.distribution?.installerOnly !== true) fail("Manifest must mark the release as installer-only.");
 if (manifest.distribution?.publicPortableApp !== false) fail("Manifest must explicitly disable public portable app distribution.");
@@ -53,6 +54,7 @@ if (manifest.manualItchUpload?.run !== false) fail("Manifest must not claim itch
 if (manifest.windowsSmokeTest?.status !== "NOT RUN" && manifest.windowsSmokeTest?.status !== "PASSED" && manifest.windowsSmokeTest?.status !== "FAILED") {
   fail("Manifest has an invalid Windows smoke status.");
 }
+assertPluginHostSidecar(manifest.pluginHostSidecar);
 
 for (const artifact of manifest.artifacts || []) {
   if (/\.zip$/i.test(artifact.path)) fail(`Manifest includes ZIP artifact; Pocket DAW public distribution is installer-only: ${artifact.path}`);
@@ -119,6 +121,51 @@ function assertSignatureFreshness(installerPath, signaturePath, label) {
   const signatureTime = statSync(signaturePath).mtimeMs;
   if (signatureTime + 1000 < installerTime) {
     fail(`Tauri updater signature for ${label} appears stale. Rebuild with TAURI_SIGNING_PRIVATE_KEY so ${basename(signaturePath)} is regenerated after ${basename(installerPath)}.`);
+  }
+}
+
+function assertPluginHostSidecar(sidecar) {
+  if (!sidecar || sidecar.component !== "pocket-daw-plugin-host") fail("Manifest is missing Pocket DAW plug-in host sidecar metadata.");
+  if (sidecar.protocolVersion !== 2) fail("Manifest plug-in host protocol version must be 2.");
+  if (sidecar.target !== "x86_64-pc-windows-msvc") fail("Manifest plug-in host target must be Windows x64 MSVC.");
+  if (sidecar.profile !== "release") fail("Manifest plug-in host must be a release-profile build.");
+  if (sidecar.audioBlockFrames !== 128) fail("Manifest plug-in host audio block size must be 128 frames.");
+  if (!/^[a-f0-9]{64}$/.test(sidecar.sha256 || "") || !Number.isSafeInteger(sidecar.sizeBytes) || sidecar.sizeBytes <= 0) {
+    fail("Manifest plug-in host hash or size is invalid.");
+  }
+  if (sidecar.packagingIntent !== "tauriExternalBin") fail("Manifest must record Tauri external-binary packaging intent.");
+  if (sidecar.installedProbeStatus !== "NOT RUN" && sidecar.installedProbeStatus !== "PASSED" && sidecar.installedProbeStatus !== "FAILED") {
+    fail("Manifest plug-in host installed probe status is invalid.");
+  }
+  if (!sidecar.vst3SdkLinked && (sidecar.scannerAvailable || sidecar.audioHostingAvailable)) {
+    fail("Manifest plug-in host cannot advertise SDK capabilities when the SDK is not linked.");
+  }
+  if (sidecar.vst3SdkLinked && (!sidecar.scannerAvailable || !sidecar.audioHostingAvailable)) {
+    fail("Manifest SDK-linked plug-in host must expose both isolated scanning and session audio hosting.");
+  }
+  if (sidecar.thirdPartyNoticesRequired !== sidecar.vst3SdkLinked) {
+    fail("Manifest plug-in host third-party notice requirement does not match SDK linkage.");
+  }
+  const baseConfig = JSON.parse(readFileSync(join(ROOT, "src-tauri", "tauri.conf.json"), "utf8"));
+  const packageConfig = JSON.parse(readFileSync(join(ROOT, "src-tauri", "tauri.package.conf.json"), "utf8"));
+  if (baseConfig.bundle?.resources?.["resources/THIRD_PARTY_NOTICES.txt"] !== "THIRD_PARTY_NOTICES.txt") {
+    fail("Tauri must install THIRD_PARTY_NOTICES.txt.");
+  }
+  if (!packageConfig.bundle?.externalBin?.includes("binaries/pocket-daw-plugin-host")) {
+    fail("Tauri release packaging must include the Pocket DAW plug-in host external binary.");
+  }
+  if (!existsSync(thirdPartyNoticesPath)) fail("Installed third-party notices resource is missing.");
+  if (sidecar.vst3SdkLinked) {
+    const notices = readFileSync(thirdPartyNoticesPath, "utf8");
+    if (!/Steinberg VST 3 SDK/i.test(notices) || !/Permission is hereby granted/i.test(notices)) {
+      fail("SDK-linked release is missing the installed Steinberg VST 3 SDK MIT notice.");
+    }
+    if (!sidecar.vst3SdkTag || !/^[a-f0-9]{40}$/.test(sidecar.vst3SdkCommit || "")) {
+      fail("SDK-linked release is missing its exact VST3 SDK tag or commit.");
+    }
+    if (!/^[a-f0-9]{64}$/.test(sidecar.vst3SdkLicenseSha256 || "")) {
+      fail("SDK-linked release is missing the pinned VST3 SDK license hash.");
+    }
   }
 }
 

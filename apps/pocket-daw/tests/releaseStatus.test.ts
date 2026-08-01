@@ -12,14 +12,14 @@ const baseContext = {
   tauriConfigVersion: "0.6.20",
   cargoTomlVersion: "0.6.20",
   cargoLockVersion: "0.6.20",
-  schemaVersion: "2",
+  schemaVersion: "3",
   schemaAppVersion: "0.6.20"
 };
 
 const baseStatus = {
   schema: 1,
   sourceVersion: "0.6.20",
-  projectSchemaVersion: 2,
+  projectSchemaVersion: 3,
   latestPublishedVersion: "0.6.19",
   latestPublishedTag: "pocket-daw-v0.6.19",
   latestPublishedCommit: "eee587c9afc39d89fa7893ea8a98e730c948a5e9",

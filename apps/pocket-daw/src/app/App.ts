@@ -37,6 +37,41 @@ import {
   type OpenProjectFileResult
 } from "../native/fileBridge";
 import { pushGamePackToGodot } from "../native/gamePackPushBridge";
+import { NativeAudioPlaybackBridge } from "../native/audioPlayback";
+import {
+  discoverStarterSoundsNative,
+  loadSampleLibraryIndex,
+  mergeSampleLibraryDiscovery,
+  recordSampleRecent,
+  saveSampleLibraryIndex,
+  scanSampleLibraryPathsNative,
+  selectSampleLibraryFilesNative,
+  selectSampleLibraryFolderNative,
+  toggleSampleFavorite,
+  type SampleLibraryEntry
+} from "../native/sampleLibrary";
+import {
+  discoverVst3Modules,
+  findExactVst3Descriptor,
+  getVst3BetaStatus,
+  listVst3Registry,
+  loadVst3Instance,
+  openVst3VendorEditor,
+  pollVst3ParameterEdits,
+  queryVst3InstanceStatus,
+  readVst3InstanceState,
+  restoreVst3InstanceState,
+  retryVst3Instance,
+  selectVst3FactoryProgram,
+  selectVst3UserScanFolder,
+  setVst3BetaEnabled,
+  setVst3InstanceParameter,
+  unloadVst3Instance,
+  validateVst3StateSnapshot,
+  verifiedVst3Descriptors,
+  vst3DescriptorKey,
+  type Vst3InstanceStatus
+} from "../plugins/vst3Foundation";
 import { readPocketDawHandoff, type PocketDawHandoff } from "../native/pocketHandoff";
 import {
   listenForAiBridgeRequests,
@@ -70,6 +105,19 @@ import {
   addClipAutomationPointCommand,
   appendChordsmithSectionCommand,
   addTrackCommand,
+  createDrumRackTrackCommand,
+  createQuickSamplerTrackCommand,
+  createHostedPluginInstrumentTrackCommand,
+  addHostedPluginEffectCommand,
+  substituteHostedPluginCommand,
+  setHostedPluginParameterCommand,
+  setHostedPluginParametersCommand,
+  refreshHostedPluginRuntimeMetadataCommand,
+  ensureHostedPluginAutomationLaneCommand,
+  retainHostedPluginStateCommand,
+  saveHostedPocketPresetCommand,
+  applyHostedPocketPresetCommand,
+  selectHostedFactoryProgramCommand,
   addTrackFxCommand,
   addGameStateMarkerAtPlayheadCommand,
   addMarkerAtPlayheadCommand,
@@ -143,6 +191,7 @@ import {
   moveSelectedClip,
   moveSelectedClipBySnap,
   moveMidiNoteCommand,
+  mapDrumRackPadSampleCommand,
   muteAudioTakeLaneCommand,
   pasteClipAtPlayhead,
   placeMidiRecordingTakeCommand,
@@ -191,6 +240,10 @@ import {
   setMelodyPanCommand,
   setMelodyInstrumentCommand,
   setMelodySoloCommand,
+  setInstrumentDeviceEnabledCommand,
+  setSamplerEnvelopeParameterCommand,
+  setSamplerParameterCommand,
+  setDrumRackPadParameterCommand,
   setTrackFolderCommand,
   setSectionBarsCommand,
   setSectionChordCommand,
@@ -250,11 +303,13 @@ import { collapsedSectionsForCreationPreset, createInitialState, createMidiInput
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { automationSurfaceAudioSyncMode, automationSurfacePointFromClient } from "./automationSurface";
 import { renderAppShell } from "./ui";
+import { appendHostedStateSaveWarnings, safeReloadHostedInstance, serializeAfterReadyHostedStateCapture } from "./vst3SaveOrchestration";
 import { replacePresent } from "../daw/undo";
+import type { DrumRackPadParameter, SamplerEnvelopeParameter, SamplerParameter } from "../daw/devices";
 import { evaluateProjectTempoAtBar, type ClipAutomationField } from "../daw/automation";
 import { probeAudioDevices } from "../native/audioDevices";
 import { cloneProject } from "../daw/dawProject";
-import { POCKET_DAW_VERSION, type Clip, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
+import { POCKET_DAW_VERSION, type Clip, type HostedPluginIdentity, type HostedPluginStateSnapshot, type JsonObject, type PocketDawProject, type Track } from "../daw/schema";
 import { buildGroupedRecordingCapturePlan, buildNativeRecordingAlphaInputPreflight, buildRecordingInputPreflight, nativeRecordingAlphaChannelCompatibilityError } from "../daw/recordingInputs";
 import { recordingLatencyOffsetSeconds, trackIsAudible, type AddTrackKind } from "../daw/tracks";
 import { barFloatToDisplayPosition, secondsToBars, snapProjectBarValue } from "../daw/timeline";
@@ -422,6 +477,12 @@ export class App {
   private projectFileLaunchUnlisten: (() => void) | null = null;
   private dialogActive = false;
   private dialogReturnFocus: { selector: string; index: number } | null = null;
+  private samplePreviewBridge = new NativeAudioPlaybackBridge();
+  private samplePreviewTimer: number | null = null;
+  private sampleLibraryDragUnlisten: (() => void) | null = null;
+  private vst3EditorPollTimers = new Map<string, number>();
+  private vst3VendorEditorInstances = new Set<string>();
+  private vst3ActivationQueue: Promise<void> = Promise.resolve();
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -506,6 +567,462 @@ export class App {
     void this.bindAiBridgeRequests();
     this.scheduleStartupUpdateCheck();
     void this.syncArmedInputPreview();
+    void this.initializeSoundLibrary();
+    void this.bindSampleLibraryExplorerDrops();
+    void this.refreshVst3Foundation();
+  }
+
+  private async bindSampleLibraryExplorerDrops() {
+    if (this.sampleLibraryDragUnlisten || !("__TAURI_INTERNALS__" in window || "__TAURI__" in window)) return;
+    try {
+      const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+      this.sampleLibraryDragUnlisten = await getCurrentWebview().onDragDropEvent((event) => {
+        if (event.payload.type !== "drop" || !event.payload.paths.length) return;
+        void this.addDroppedSampleLibraryPaths(event.payload.paths);
+      });
+    } catch {
+      // Native drag/drop is additive; the file and folder pickers remain available.
+    }
+  }
+
+  private async addDroppedSampleLibraryPaths(paths: string[]) {
+    this.state.sampleLibraryLoading = true;
+    this.state.sampleLibraryMessage = "Checking dropped files...";
+    this.render({ preserveScroll: true });
+    try {
+      const discovery = await scanSampleLibraryPathsNative(paths);
+      if (!discovery) throw new Error("Native Explorer drop handling is unavailable.");
+      const source = discovery.rootPath ? "folder" : "file";
+      this.state.sampleLibrary = mergeSampleLibraryDiscovery(this.state.sampleLibrary, discovery, source);
+      this.state.sampleLibraryTab = "samples";
+      await this.persistSampleLibrary(`${discovery.files.length} dropped sample${discovery.files.length === 1 ? "" : "s"} added.${discovery.warnings.length ? ` ${discovery.warnings.join(" ")}` : ""}`);
+    } catch (error) {
+      this.state.sampleLibraryMessage = error instanceof Error ? `Dropped samples could not be added: ${error.message}` : "Dropped samples could not be added.";
+    } finally {
+      this.state.sampleLibraryLoading = false;
+      this.render({ preserveScroll: true });
+    }
+  }
+
+  private async initializeSoundLibrary() {
+    this.state.sampleLibraryLoading = true;
+    try {
+      let index = await loadSampleLibraryIndex();
+      const starter = await discoverStarterSoundsNative();
+      if (starter) index = mergeSampleLibraryDiscovery(index, starter, "starter");
+      this.state.sampleLibrary = await saveSampleLibraryIndex(index);
+      this.state.sampleLibraryMessage = starter?.warnings.length
+        ? `Pocket Starter Sounds loaded with ${starter.warnings.length} warning${starter.warnings.length === 1 ? "" : "s"}.`
+        : `${index.entries.length} sound${index.entries.length === 1 ? "" : "s"} available.`;
+    } catch (error) {
+      this.state.sampleLibraryMessage = error instanceof Error ? `Sound Library could not load: ${error.message}` : "Sound Library could not load.";
+    } finally {
+      this.state.sampleLibraryLoading = false;
+      this.render({ preserveScroll: true });
+    }
+  }
+
+  private async refreshVst3Foundation(discover = false) {
+    try {
+      this.state.vst3BetaStatus = await getVst3BetaStatus();
+      this.state.vst3Modules = this.state.vst3BetaStatus?.enabled
+        ? (discover ? await discoverVst3Modules() : await listVst3Registry())
+        : [];
+      this.reconcileVst3ProjectInstances();
+    } catch (error) {
+      this.state.sampleLibraryMessage = error instanceof Error ? `VST3 registry unavailable: ${error.message}` : "VST3 registry unavailable.";
+    }
+    this.render({ preserveScroll: true });
+  }
+
+  private hostedProjectInstances(project: PocketDawProject = currentProject(this.state)): Array<{
+    instanceId: string;
+    identity: HostedPluginIdentity;
+    role: "instrument" | "effect";
+    parameters: JsonObject;
+    snapshot?: HostedPluginStateSnapshot;
+  }> {
+    return [
+      ...project.devices.filter((device) => device.type === "vst3-instrument").map((device) => ({
+        instanceId: device.id,
+        identity: device.hostedPlugin,
+        role: "instrument" as const,
+        parameters: device.parameters,
+        snapshot: device.hostedPluginState
+      })),
+      ...project.fx.chains.flatMap((chain) => chain.slots.filter((slot) => slot.hostedPlugin).map((slot) => ({
+        instanceId: slot.id,
+        identity: slot.hostedPlugin!,
+        role: "effect" as const,
+        parameters: slot.parameters,
+        snapshot: slot.hostedPluginState
+      })))
+    ];
+  }
+
+  private reconcileVst3ProjectInstances() {
+    const status = this.state.vst3BetaStatus;
+    const next: Record<string, Vst3InstanceStatus> = {};
+    this.hostedProjectInstances().forEach((instance) => {
+      const existing = this.state.vst3InstanceStatuses[instance.instanceId];
+      const exact = findExactVst3Descriptor(instance.identity, this.state.vst3Modules);
+      next[instance.instanceId] = !exact
+        ? this.vst3UnavailableStatus(instance.instanceId, "missing", "missingPlugin")
+        : !status?.audioHostingAvailable
+          ? this.vst3UnavailableStatus(instance.instanceId, "unavailable", "unsupported")
+          : existing || this.vst3UnavailableStatus(instance.instanceId, "loading");
+      if (exact && status?.audioHostingAvailable && !existing) void this.activateVst3Instance(instance.instanceId);
+    });
+    this.state.vst3InstanceStatuses = next;
+  }
+
+  private vst3UnavailableStatus(
+    instanceId: string,
+    phase: Vst3InstanceStatus["phase"],
+    failureCode?: Vst3InstanceStatus["failureCode"]
+  ): Vst3InstanceStatus {
+    return {
+      instanceId,
+      phase,
+      disabled: phase === "disabled" || phase === "failed" || phase === "missing",
+      ...(failureCode ? { failureCode } : {}),
+      latencySamples: 0,
+      tailSamples: 0,
+      parameterDescriptors: [],
+      factoryPrograms: [],
+      vendorEditorAvailable: false,
+      genericEditorAvailable: false
+    };
+  }
+
+  private hostedProjectInstance(instanceId: string, project: PocketDawProject = currentProject(this.state)) {
+    return this.hostedProjectInstances(project).find((instance) => instance.instanceId === instanceId) || null;
+  }
+
+  private hostedParameterDescriptor(instanceId: string, stableId: string, project: PocketDawProject) {
+    const device = project.devices.find((item) => item.id === instanceId && item.type === "vst3-instrument");
+    const slot = project.fx.chains.flatMap((chain) => chain.slots).find((item) => item.id === instanceId && item.hostedPlugin);
+    return (device?.type === "vst3-instrument" ? device.hostedPluginMetadata : slot?.hostedPluginMetadata)
+      ?.parameterDescriptors.find((item) => item.stableId === stableId);
+  }
+
+  private normalizedVst3ParameterValue(instanceId: string, stableId: string, value: number, project: PocketDawProject): number {
+    const descriptor = this.hostedParameterDescriptor(instanceId, stableId, project);
+    if (!descriptor || descriptor.max <= descriptor.min) return Math.max(0, Math.min(1, value));
+    return Math.max(0, Math.min(1, (value - descriptor.min) / (descriptor.max - descriptor.min)));
+  }
+
+  private async applyVst3ProjectInstanceSettings(instanceId: string, project: PocketDawProject = currentProject(this.state)) {
+    const instance = this.hostedProjectInstance(instanceId, project);
+    if (!instance) throw new Error("The hosted plug-in instance is no longer in the project.");
+    if (instance.snapshot && !(await restoreVst3InstanceState(instanceId, instance.snapshot))) {
+      throw new Error("The plug-in rejected its saved state.");
+    }
+    for (const [stableId, rawValue] of Object.entries(instance.parameters)) {
+      const value = Number(rawValue);
+      if (!Number.isFinite(value) || this.hostedParameterDescriptor(instanceId, stableId, project)?.readOnly) continue;
+      const accepted = await setVst3InstanceParameter(
+        instanceId,
+        stableId,
+        this.normalizedVst3ParameterValue(instanceId, stableId, value, project)
+      );
+      if (!accepted) throw new Error(`The plug-in rejected parameter ${stableId}.`);
+    }
+  }
+
+  private stopVst3EditorPolling(instanceId: string) {
+    const timer = this.vst3EditorPollTimers.get(instanceId);
+    if (timer !== undefined) window.clearTimeout(timer);
+    this.vst3EditorPollTimers.delete(instanceId);
+  }
+
+  private startVst3EditorPolling(instanceId: string, captureOnClose = true) {
+    this.stopVst3EditorPolling(instanceId);
+    const poll = async () => {
+      try {
+        const response = await pollVst3ParameterEdits(instanceId);
+        const instance = this.hostedProjectInstance(instanceId);
+        if (!response || !instance) {
+          this.stopVst3EditorPolling(instanceId);
+          return;
+        }
+        if (response.parameterEdits.length) {
+          const project = currentProject(this.state);
+          const chainId = project.fx.chains.find((chain) => chain.slots.some((slot) => slot.id === instanceId))?.id;
+          const edits = response.parameterEdits.map((edit) => {
+            const stableId = String(edit.parameterId);
+            const descriptor = this.hostedParameterDescriptor(instanceId, stableId, project);
+            const normalized = Math.max(0, Math.min(1, Number(edit.value) || 0));
+            return {
+              stableId,
+              value: descriptor ? descriptor.min + normalized * (descriptor.max - descriptor.min) : normalized
+            };
+          });
+          this.applyProjectState(setHostedPluginParametersCommand(this.state, instanceId, edits, chainId), {
+            audio: "none", preserveScroll: true, reason: "vst3-vendor-editor-parameters"
+          });
+        }
+        if (response.stateSnapshot) {
+          const compressed = decodeBase64Bytes(response.stateSnapshot.data);
+          const validation = await validateVst3StateSnapshot(compressed, response.stateSnapshot.checksum);
+          if (validation?.valid) {
+            this.applyProjectState(retainHostedPluginStateCommand(this.state, instanceId, response.stateSnapshot, validation), {
+              audio: "none", preserveScroll: true, reason: "vst3-vendor-editor-state"
+            });
+          }
+        }
+        if (response.restartFlags) {
+          const status = await queryVst3InstanceStatus(instanceId);
+          if (status) this.state.vst3InstanceStatuses[instanceId] = status;
+          this.state.status = "The plug-in changed its processing setup; Pocket DAW refreshed its latency and parameter information.";
+          this.render({ preserveScroll: true });
+        }
+        if (!response.editorOpen) {
+          this.stopVst3EditorPolling(instanceId);
+          if (captureOnClose || this.vst3VendorEditorInstances.has(instanceId)) {
+            this.vst3VendorEditorInstances.delete(instanceId);
+            await this.captureVst3InstanceState(instanceId);
+          }
+          return;
+        }
+        this.vst3EditorPollTimers.set(instanceId, window.setTimeout(poll, 250));
+      } catch {
+        this.stopVst3EditorPolling(instanceId);
+      }
+    };
+    this.vst3EditorPollTimers.set(instanceId, window.setTimeout(poll, 100));
+  }
+
+  private syncVst3RenderBoundaryState() {
+    this.hostedProjectInstances().forEach((instance) => {
+      if (this.state.vst3InstanceStatuses[instance.instanceId]?.phase === "ready") {
+        this.startVst3EditorPolling(instance.instanceId, false);
+      }
+    });
+  }
+
+  private activateVst3Instance(instanceId: string): Promise<void> {
+    const activation = this.vst3ActivationQueue.then(() => this.activateVst3InstanceNow(instanceId));
+    this.vst3ActivationQueue = activation.catch(() => undefined);
+    return activation;
+  }
+
+  private async activateVst3InstanceNow(instanceId: string) {
+    const instance = this.hostedProjectInstance(instanceId);
+    if (!instance || !this.state.vst3BetaStatus?.audioHostingAvailable || !findExactVst3Descriptor(instance.identity, this.state.vst3Modules)) return;
+    this.state.vst3BusyInstanceId = instanceId;
+    this.state.vst3InstanceStatuses[instanceId] = this.vst3UnavailableStatus(instanceId, "loading");
+    this.render({ preserveScroll: true });
+    try {
+      const loaded = await loadVst3Instance(instanceId, instance.identity, instance.role);
+      if (!loaded) throw new Error("The native session host did not return an instance status.");
+      await this.applyVst3ProjectInstanceSettings(instanceId);
+      const status = await queryVst3InstanceStatus(instanceId) || loaded;
+      this.state = refreshHostedPluginRuntimeMetadataCommand(this.state, instanceId, {
+        parameterDescriptors: status.parameterDescriptors,
+        factoryPrograms: status.factoryPrograms,
+        selectedFactoryProgramId: status.selectedFactoryProgramId,
+        latencySamples: status.latencySamples,
+        tailSamples: status.tailSamples
+      });
+      this.state.vst3InstanceStatuses[instanceId] = status;
+      this.state.sampleLibraryMessage = `${instance.identity.name} loaded in the isolated session graph.`;
+    } catch (error) {
+      this.state.vst3InstanceStatuses[instanceId] = this.vst3UnavailableStatus(instanceId, "failed", "loadFailure");
+      this.state.sampleLibraryMessage = error instanceof Error ? `VST3 host could not load the instance: ${error.message}` : "VST3 host could not load the instance.";
+    } finally {
+      this.state.vst3BusyInstanceId = null;
+      this.render({ preserveScroll: true });
+    }
+  }
+
+  private async captureVst3InstanceState(instanceId: string): Promise<{ captured: boolean; warning?: string }> {
+    try {
+      const snapshot = await readVst3InstanceState(instanceId);
+      if (!snapshot) {
+        return { captured: false, warning: "Plug-in state was unavailable; the previous valid snapshot was retained." };
+      }
+      const compressed = decodeBase64Bytes(snapshot.data);
+      const validation = await validateVst3StateSnapshot(compressed, snapshot.checksum);
+      if (!validation || !validation.valid) {
+        return { captured: false, warning: "Plug-in returned invalid state; the previous valid snapshot was retained." };
+      }
+      const beforeProject = currentProject(this.state);
+      const nextState = retainHostedPluginStateCommand(this.state, instanceId, snapshot, validation);
+      if (nextState.undoStack.present === beforeProject) {
+        return { captured: false, warning: "Plug-in returned invalid or oversized state; the previous valid snapshot was retained." };
+      }
+      this.applyProjectState(nextState, {
+        audio: "none", preserveScroll: true, reason: "vst3-state-snapshot"
+      });
+      return { captured: true };
+    } catch (error) {
+      const detail = error instanceof Error && error.message ? ` ${error.message}` : "";
+      const warning = `Plug-in returned invalid or oversized state; the previous valid snapshot was retained.${detail}`;
+      this.state.status = warning;
+      this.render({ preserveScroll: true });
+      return { captured: false, warning };
+    }
+  }
+
+  private sampleLibraryEntry(entryId: string): SampleLibraryEntry | null {
+    return this.state.sampleLibrary.entries.find((entry) => entry.id === entryId) || null;
+  }
+
+  private async persistSampleLibrary(message?: string) {
+    this.state.sampleLibrary = await saveSampleLibraryIndex(this.state.sampleLibrary);
+    if (message) this.state.sampleLibraryMessage = message;
+  }
+
+  private async addSampleLibraryFiles() {
+    this.state.sampleLibraryLoading = true;
+    this.state.sampleLibraryMessage = "Choose one or more supported audio files.";
+    this.render({ preserveScroll: true });
+    try {
+      const discovery = await selectSampleLibraryFilesNative();
+      if (!discovery) {
+        this.state.sampleLibraryMessage = "No files were added.";
+        return;
+      }
+      this.state.sampleLibrary = mergeSampleLibraryDiscovery(this.state.sampleLibrary, discovery, "file");
+      await this.persistSampleLibrary(`${discovery.files.length} sample file${discovery.files.length === 1 ? "" : "s"} added.${discovery.warnings.length ? ` ${discovery.warnings.join(" ")}` : ""}`);
+      this.state.sampleLibraryTab = "samples";
+    } catch (error) {
+      this.state.sampleLibraryMessage = error instanceof Error ? `Files could not be added: ${error.message}` : "Files could not be added.";
+    } finally {
+      this.state.sampleLibraryLoading = false;
+      this.render({ preserveScroll: true });
+    }
+  }
+
+  private async addSampleLibraryFolder() {
+    this.state.sampleLibraryLoading = true;
+    this.state.sampleLibraryMessage = "Choose a sample folder. Only that folder will be scanned.";
+    this.render({ preserveScroll: true });
+    try {
+      const discovery = await selectSampleLibraryFolderNative();
+      if (!discovery) {
+        this.state.sampleLibraryMessage = "No folder was added.";
+        return;
+      }
+      this.state.sampleLibrary = mergeSampleLibraryDiscovery(this.state.sampleLibrary, discovery, "folder");
+      await this.persistSampleLibrary(`${discovery.files.length} supported sample${discovery.files.length === 1 ? "" : "s"} indexed from ${discovery.rootLabel || "the selected folder"}.${discovery.warnings.length ? ` ${discovery.warnings.join(" ")}` : ""}`);
+      this.state.sampleLibraryTab = "samples";
+    } catch (error) {
+      this.state.sampleLibraryMessage = error instanceof Error ? `Folder could not be added: ${error.message}` : "Folder could not be added.";
+    } finally {
+      this.state.sampleLibraryLoading = false;
+      this.render({ preserveScroll: true });
+    }
+  }
+
+  private async importSampleLibraryEntry(entryId: string): Promise<string | null> {
+    const entry = this.sampleLibraryEntry(entryId);
+    if (!entry) {
+      this.state.sampleLibraryMessage = "That sound is no longer in the library index.";
+      return null;
+    }
+    const existing = currentProject(this.state).mediaPool.find((item) => item.kind === "audio" && item.uri === entry.path);
+    if (existing) {
+      this.state.sampleLibrary = recordSampleRecent(this.state.sampleLibrary, entry.id);
+      await this.persistSampleLibrary();
+      return existing.id;
+    }
+    this.state.sampleLibraryLoading = true;
+    this.state.sampleLibraryMessage = `Loading ${entry.name}...`;
+    this.render({ preserveScroll: true });
+    const source = await loadAudioMediaNative(entry.path, this.state.currentFile.path);
+    const mediaPoolItemId = source ? await this.addDecodedAudioMedia(source) : null;
+    this.state.sampleLibraryLoading = false;
+    if (!mediaPoolItemId) {
+      this.state.sampleLibraryMessage = `${entry.name} could not be decoded. The source may be missing or unsupported.`;
+      this.render({ preserveScroll: true });
+      return null;
+    }
+    this.state.sampleLibrary = recordSampleRecent(this.state.sampleLibrary, entry.id);
+    await this.persistSampleLibrary(`${entry.name} is ready in this project.`);
+    return mediaPoolItemId;
+  }
+
+  private async previewSampleLibraryEntry(entryId?: string) {
+    const targetId = entryId || this.state.selectedSampleLibraryIds[0] || this.state.previewingSampleLibraryId || "";
+    if (this.state.previewingSampleLibraryId && (!targetId || targetId === this.state.previewingSampleLibraryId)) {
+      await this.samplePreviewBridge.stop();
+      if (this.samplePreviewTimer !== null) window.clearTimeout(this.samplePreviewTimer);
+      this.samplePreviewTimer = null;
+      this.state.previewingSampleLibraryId = null;
+      this.state.sampleLibraryMessage = "Preview stopped.";
+      this.render({ preserveScroll: true });
+      return;
+    }
+    const entry = this.sampleLibraryEntry(targetId);
+    if (!entry) {
+      this.state.sampleLibraryMessage = "Select a sound, then press Ctrl+Space to preview it.";
+      this.render({ preserveScroll: true });
+      return;
+    }
+    this.state.sampleLibraryLoading = true;
+    this.state.sampleLibraryMessage = `Preparing native preview for ${entry.name}...`;
+    this.render({ preserveScroll: true });
+    try {
+      const source = await loadAudioMediaNative(entry.path, this.state.currentFile.path);
+      if (!source || source.nativeDecodeError || source.decodedMimeType !== "audio/wav") {
+        throw new Error(source?.nativeDecodeError || "Native decoder did not return previewable PCM audio.");
+      }
+      if (!entry.waveformPeaks?.length) {
+        try {
+          const analysis = await this.decodeAudioSource(source);
+          this.state.sampleLibrary = {
+            ...this.state.sampleLibrary,
+            entries: this.state.sampleLibrary.entries.map((item) => item.id === entry.id ? { ...item, waveformPeaks: analysis.waveformPeaks } : item)
+          };
+        } catch {
+          // Native preview remains available when WebView waveform analysis is not.
+        }
+      }
+      this.engine.stop();
+      this.stopLiveMetronome();
+      const duration = Math.max(0.01, source.durationSeconds || 1);
+      const result = await this.samplePreviewBridge.start({
+        projectTitle: "Sample Preview",
+        sampleRate: source.sampleRate || currentProject(this.state).project.sampleRate,
+        startSeconds: 0,
+        bpm: currentProject(this.state).project.bpm,
+        timeSig: currentProject(this.state).project.timeSig,
+        outputDeviceId: currentProject(this.state).audioDeviceSettings.outputDeviceId,
+        tracks: [{ id: "sample-preview", isReturn: false, sends: [], volume: this.state.sampleLibrary.settings.previewVolume, pan: 0, mute: false, solo: false }],
+        events: [],
+        fxChains: [],
+        assets: [{
+          id: `sample-preview-${entry.id}`,
+          name: entry.name,
+          mimeType: "audio/wav",
+          sampleRate: source.sampleRate || currentProject(this.state).project.sampleRate,
+          channels: source.channels || 2,
+          durationSeconds: duration,
+          sizeBytes: source.decodedSizeBytes || source.sizeBytes,
+          bytes: Array.from(new Uint8Array(source.bytes))
+        }],
+        regions: [{ id: `sample-preview-region-${entry.id}`, assetId: `sample-preview-${entry.id}`, trackId: "sample-preview", startTime: 0, sourceOffset: 0, duration, gain: 1, pan: 0, fadeIn: 0.003, fadeOut: Math.min(0.02, duration / 4) }]
+      });
+      if (!result.started) throw new Error(result.error || "Native preview is unavailable.");
+      this.state.previewingSampleLibraryId = entry.id;
+      if (this.samplePreviewTimer !== null) window.clearTimeout(this.samplePreviewTimer);
+      this.samplePreviewTimer = window.setTimeout(() => {
+        if (this.state.previewingSampleLibraryId !== entry.id) return;
+        this.state.previewingSampleLibraryId = null;
+        this.samplePreviewTimer = null;
+        this.render({ preserveScroll: true });
+      }, Math.min(2_147_000_000, Math.ceil(duration * 1000) + 80));
+      this.state.sampleLibrary = recordSampleRecent(this.state.sampleLibrary, entry.id);
+      await this.persistSampleLibrary(`Previewing ${entry.name}. Ctrl+Space stops.`);
+    } catch (error) {
+      this.state.previewingSampleLibraryId = null;
+      this.state.sampleLibraryMessage = error instanceof Error ? `Preview failed: ${error.message}` : "Preview failed.";
+    } finally {
+      this.state.sampleLibraryLoading = false;
+      this.render({ preserveScroll: true });
+    }
   }
 
   private consumeHandoff(handoff: PocketDawHandoff): boolean {
@@ -750,6 +1267,9 @@ export class App {
     }
     if (action === "stop") {
       this.engine.stop();
+      if (this.samplePreviewTimer !== null) window.clearTimeout(this.samplePreviewTimer);
+      this.samplePreviewTimer = null;
+      this.state.previewingSampleLibraryId = null;
       this.stopLiveMetronome();
       this.render({ preserveScroll: true });
       return { ok: true, action, status: "stopped", transport: this.aiBridgeLiveStatus().transport };
@@ -1269,6 +1789,16 @@ export class App {
     this.dialogReturnFocus = { selector, index: Math.max(0, matches.indexOf(element)) };
   }
 
+  private restoreRememberedTriggerSoon() {
+    const returnFocus = this.dialogReturnFocus;
+    this.dialogReturnFocus = null;
+    if (!returnFocus) return;
+    requestAnimationFrame(() => {
+      const matches = this.root.querySelectorAll<HTMLElement>(returnFocus.selector);
+      (matches[returnFocus.index] || matches[0])?.focus();
+    });
+  }
+
   private syncDialogAccessibility() {
     const dialog = this.root.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
     const shell = this.root.querySelector<HTMLElement>(".app-shell");
@@ -1458,6 +1988,170 @@ export class App {
   }
 
   private bind() {
+    this.root.querySelector<HTMLInputElement>("[data-vst3-descriptor-search]")?.addEventListener("input", (event) => {
+      this.state.vst3DescriptorQuery = (event.currentTarget as HTMLInputElement).value;
+      this.render({ preserveScroll: true });
+      const search = this.root.querySelector<HTMLInputElement>("[data-vst3-descriptor-search]");
+      search?.focus();
+      search?.setSelectionRange(search.value.length, search.value.length);
+    });
+    this.root.querySelector<HTMLSelectElement>("[data-vst3-role-filter]")?.addEventListener("change", (event) => {
+      this.state.vst3RoleFilter = (event.currentTarget as HTMLSelectElement).value as typeof this.state.vst3RoleFilter;
+      this.render({ preserveScroll: true });
+    });
+    this.root.querySelector<HTMLInputElement>("[data-vst3-parameter-search]")?.addEventListener("input", (event) => {
+      this.state.vst3ParameterQuery = (event.currentTarget as HTMLInputElement).value;
+      this.render({ preserveScroll: true });
+      const search = this.root.querySelector<HTMLInputElement>("[data-vst3-parameter-search]");
+      search?.focus();
+      search?.setSelectionRange(search.value.length, search.value.length);
+    });
+    this.root.querySelector<HTMLInputElement>("[data-sample-library-search]")?.addEventListener("input", (event) => {
+      this.state.sampleLibraryQuery = (event.currentTarget as HTMLInputElement).value;
+      this.render({ preserveScroll: true });
+      const search = this.root.querySelector<HTMLInputElement>("[data-sample-library-search]");
+      search?.setSelectionRange(search.value.length, search.value.length);
+    });
+    this.root.querySelector<HTMLSelectElement>("[data-sample-library-category]")?.addEventListener("change", (event) => {
+      this.state.sampleLibraryCategory = (event.currentTarget as HTMLSelectElement).value as typeof this.state.sampleLibraryCategory;
+      this.render({ preserveScroll: true });
+    });
+    this.root.querySelector<HTMLSelectElement>("[data-sample-library-folder]")?.addEventListener("change", (event) => {
+      this.state.sampleLibraryFolderId = (event.currentTarget as HTMLSelectElement).value || null;
+      this.render({ preserveScroll: true });
+    });
+    this.root.querySelector<HTMLInputElement>("[data-sample-library-favorites]")?.addEventListener("change", (event) => {
+      this.state.sampleLibraryFavoritesOnly = (event.currentTarget as HTMLInputElement).checked;
+      this.render({ preserveScroll: true });
+    });
+    this.root.querySelector<HTMLInputElement>("[data-sample-library-preview-volume]")?.addEventListener("change", (event) => {
+      this.state.sampleLibrary = {
+        ...this.state.sampleLibrary,
+        settings: { ...this.state.sampleLibrary.settings, previewVolume: Math.max(0, Math.min(1, Number((event.currentTarget as HTMLInputElement).value) || 0)) }
+      };
+      void this.persistSampleLibrary();
+      this.render({ preserveScroll: true });
+    });
+    this.root.querySelector<HTMLSelectElement>("[data-sample-library-target-track]")?.addEventListener("change", (event) => {
+      this.state.sampleLibraryTargetTrackId = (event.currentTarget as HTMLSelectElement).value || null;
+      this.render({ preserveScroll: true });
+    });
+    this.root.querySelector<HTMLInputElement>("[data-sample-library-target-bar]")?.addEventListener("change", (event) => {
+      this.state.sampleLibraryTargetBar = Math.max(1, Number((event.currentTarget as HTMLInputElement).value) || 1);
+      this.render({ preserveScroll: true });
+    });
+    this.root.querySelectorAll<HTMLInputElement>("[data-sample-library-select]").forEach((input) => input.addEventListener("change", () => {
+      const entryId = input.dataset.sampleLibrarySelect || "";
+      this.state.selectedSampleLibraryIds = input.checked
+        ? [...this.state.selectedSampleLibraryIds.filter((id) => id !== entryId), entryId]
+        : this.state.selectedSampleLibraryIds.filter((id) => id !== entryId);
+      this.render({ preserveScroll: true });
+    }));
+    this.root.querySelectorAll<HTMLInputElement>("[data-instrument-device-enabled]").forEach((input) => input.addEventListener("change", () => {
+      this.applyProjectState(setInstrumentDeviceEnabledCommand(this.state, input.dataset.instrumentDeviceEnabled || "", input.checked), {
+        audio: "composition-events", preserveScroll: true, reason: "instrument-device-enabled"
+      });
+    }));
+    this.root.querySelectorAll<HTMLInputElement>("[data-vst3-param-instance]").forEach((input) => input.addEventListener("change", async () => {
+      const instanceId = input.dataset.vst3ParamInstance || "";
+      const stableId = input.dataset.vst3ParamId || "";
+      const chainId = input.dataset.vst3ChainId || undefined;
+      if (!instanceId || !stableId) return;
+      const value = Number(input.value);
+      if (this.state.vst3InstanceStatuses[instanceId]?.phase === "ready") {
+        try {
+          const accepted = await setVst3InstanceParameter(
+            instanceId,
+            stableId,
+            this.normalizedVst3ParameterValue(instanceId, stableId, value, currentProject(this.state))
+          );
+          if (!accepted) throw new Error("Parameter rejected");
+        } catch {
+          this.state.status = "The host rejected that parameter update; project automation remains preserved.";
+          this.render({ preserveScroll: true });
+          return;
+        }
+      }
+      this.applyProjectState(setHostedPluginParameterCommand(this.state, instanceId, stableId, value, chainId), {
+        audio: chainId ? "mixer-graph" : "composition-events", preserveScroll: true, reason: "vst3-parameter"
+      });
+    }));
+    this.root.querySelectorAll<HTMLSelectElement>("[data-vst3-factory-program]").forEach((select) => select.addEventListener("change", async () => {
+      const instanceId = select.dataset.vst3FactoryProgram || "";
+      if (!instanceId || !select.value) return;
+      try {
+        const status = await selectVst3FactoryProgram(instanceId, select.value);
+        if (!status) throw new Error("The native host did not confirm the program change.");
+        this.applyProjectState(selectHostedFactoryProgramCommand(this.state, instanceId, select.value), {
+          audio: "mixer-graph", preserveScroll: true, reason: "vst3-factory-program"
+        });
+        this.state = refreshHostedPluginRuntimeMetadataCommand(this.state, instanceId, {
+          parameterDescriptors: status.parameterDescriptors,
+          factoryPrograms: status.factoryPrograms,
+          selectedFactoryProgramId: select.value,
+          latencySamples: status.latencySamples,
+          tailSamples: status.tailSamples
+        });
+        if (status) this.state.vst3InstanceStatuses[instanceId] = status;
+        await this.captureVst3InstanceState(instanceId);
+      } catch (error) {
+        this.state.status = error instanceof Error
+          ? `Factory program was not changed: ${error.message}`
+          : "Factory program was not changed.";
+        this.render({ preserveScroll: true });
+      }
+    }));
+    this.root.querySelectorAll<HTMLSelectElement>("[data-vst3-pocket-preset]").forEach((select) => select.addEventListener("change", async () => {
+      const instanceId = select.dataset.vst3PocketPreset || "";
+      if (!instanceId || !select.value) return;
+      const nextState = applyHostedPocketPresetCommand(this.state, instanceId, select.value);
+      try {
+        if (this.state.vst3InstanceStatuses[instanceId]?.phase === "ready") {
+          await this.applyVst3ProjectInstanceSettings(instanceId, nextState.undoStack.present);
+        }
+        this.applyProjectState(nextState, {
+          audio: "mixer-graph", preserveScroll: true, reason: "vst3-pocket-preset"
+        });
+      } catch (error) {
+        this.state.status = error instanceof Error
+          ? `Pocket preset was not applied: ${error.message}`
+          : "Pocket preset was not applied.";
+        this.render({ preserveScroll: true });
+      }
+    }));
+    this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-sampler-param]").forEach((input) => input.addEventListener("change", () => {
+      const [deviceId, parameter] = String(input.dataset.samplerParam || "").split(":");
+      const value = input instanceof HTMLInputElement && input.type === "checkbox" ? input.checked : input instanceof HTMLInputElement && input.type === "number" ? Number(input.value) : input.value;
+      this.applyProjectState(setSamplerParameterCommand(this.state, deviceId, parameter as SamplerParameter, value), {
+        audio: "composition-events", preserveScroll: true, reason: `sampler-${parameter}`
+      });
+    }));
+    this.root.querySelectorAll<HTMLInputElement>("[data-sampler-envelope]").forEach((input) => input.addEventListener("change", () => {
+      const [deviceId, parameter] = String(input.dataset.samplerEnvelope || "").split(":");
+      this.applyProjectState(setSamplerEnvelopeParameterCommand(this.state, deviceId, parameter as SamplerEnvelopeParameter, Number(input.value)), {
+        audio: "composition-events", preserveScroll: true, reason: `sampler-envelope-${parameter}`
+      });
+    }));
+    this.root.querySelectorAll<HTMLSelectElement>("[data-drum-pad-map]").forEach((select) => select.addEventListener("change", () => {
+      const [deviceId, rawPadIndex] = String(select.dataset.drumPadMap || "").split(":");
+      const media = currentProject(this.state).mediaPool.find((item) => item.id === select.value);
+      this.applyProjectState(mapDrumRackPadSampleCommand(this.state, deviceId, Number(rawPadIndex), select.value || null, media?.name), {
+        audio: "composition-events", preserveScroll: true, reason: "drum-pad-map"
+      });
+    }));
+    this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-drum-pad-param]").forEach((input) => input.addEventListener("change", () => {
+      const [deviceId, rawPadIndex, parameter] = String(input.dataset.drumPadParam || "").split(":");
+      const value = input instanceof HTMLInputElement && input.type === "checkbox"
+        ? input.checked
+        : input instanceof HTMLInputElement && input.type === "number"
+          ? Number(input.value)
+          : parameter === "chokeGroup" && !input.value.trim()
+            ? null
+            : input.value;
+      this.applyProjectState(setDrumRackPadParameterCommand(this.state, deviceId, Number(rawPadIndex), parameter as DrumRackPadParameter, value), {
+        audio: "composition-events", preserveScroll: true, reason: `drum-pad-${parameter}`
+      });
+    }));
     this.root.querySelectorAll<HTMLElement>("[data-clip-id]:not([data-inline-sequencer])").forEach((el) => {
       el.addEventListener("click", (event) => {
         if (this.consumeSuppressedClipClick()) return;
@@ -3266,7 +3960,175 @@ export class App {
     if (action === "add-track-close") {
       this.state.showAddTrack = false;
       this.render({ preserveScroll: true });
+      this.restoreRememberedTriggerSoon();
     }
+    if (action === "sample-library-tab-sounds" || action === "sample-library-tab-samples" || action === "sample-library-tab-plugins") {
+      this.state.sampleLibraryTab = action.replace("sample-library-tab-", "") as typeof this.state.sampleLibraryTab;
+      this.state.sampleLibraryMessage = this.state.sampleLibraryTab === "plugins"
+        ? "VST3 Beta stays disabled until you explicitly enable it."
+        : `${this.state.sampleLibrary.entries.length} indexed sound${this.state.sampleLibrary.entries.length === 1 ? "" : "s"}.`;
+      this.render({ preserveScroll: true });
+      if (this.state.sampleLibraryTab === "plugins") await this.refreshVst3Foundation();
+    }
+    if (action === "sample-library-add-files") await this.addSampleLibraryFiles();
+    if (action === "sample-library-add-folder") await this.addSampleLibraryFolder();
+    if (action === "sample-library-favorite") {
+      const entryId = actionSource?.dataset.sampleId || "";
+      this.state.sampleLibrary = toggleSampleFavorite(this.state.sampleLibrary, entryId);
+      await this.persistSampleLibrary();
+      this.render({ preserveScroll: true });
+    }
+    if (action === "sample-library-preview") await this.previewSampleLibraryEntry(actionSource?.dataset.sampleId);
+    if (action === "sample-library-add-clip") {
+      const mediaPoolItemId = await this.importSampleLibraryEntry(actionSource?.dataset.sampleId || "");
+      if (mediaPoolItemId) this.applyProjectState(placeAudioClipCommand(this.state, mediaPoolItemId, this.state.sampleLibraryTargetTrackId, this.state.sampleLibraryTargetBar), { audio: "timeline-structure", preserveScroll: true, reason: "sample-library-add-clip" });
+    }
+    if (action === "sample-library-create-sampler") {
+      const mediaPoolItemId = await this.importSampleLibraryEntry(actionSource?.dataset.sampleId || "");
+      if (mediaPoolItemId) this.applyProjectState(createQuickSamplerTrackCommand(this.state, mediaPoolItemId), { audio: "composition-events", preserveScroll: true, reason: "sample-library-create-sampler" });
+    }
+    if (action === "sample-library-create-drum-rack") {
+      const mappedIds: string[] = [];
+      for (const entryId of this.state.selectedSampleLibraryIds.slice(0, 16)) {
+        const mediaPoolItemId = await this.importSampleLibraryEntry(entryId);
+        if (mediaPoolItemId) mappedIds.push(mediaPoolItemId);
+      }
+      if (mappedIds.length) this.applyProjectState(createDrumRackTrackCommand(this.state, mappedIds), { audio: "composition-events", preserveScroll: true, reason: "sample-library-create-drum-rack" });
+    }
+    if (action === "vst3-enable") {
+      this.state.vst3BetaStatus = await setVst3BetaEnabled(true);
+      this.state.sampleLibraryMessage = this.state.vst3BetaStatus?.audioHostingAvailable
+        ? "VST3 Beta enabled. Verified plug-ins can be loaded in the isolated session graph."
+        : "VST3 Beta enabled. Verified descriptors remain placeholders until the isolated audio session host is available.";
+      await this.refreshVst3Foundation();
+    }
+    if (action === "vst3-rescan") {
+      this.state.sampleLibraryLoading = true;
+      this.state.sampleLibraryMessage = "Discovering changed VST3 modules in approved locations...";
+      this.render({ preserveScroll: true });
+      try {
+        await this.refreshVst3Foundation(true);
+        this.state.sampleLibraryMessage = "VST3 scan complete. Only isolated-scanner verified descriptors can be inserted.";
+      } finally {
+        this.state.sampleLibraryLoading = false;
+        this.render({ preserveScroll: true });
+      }
+    }
+    if (action === "vst3-add-folder") {
+      const roots = await selectVst3UserScanFolder();
+      if (roots) {
+        this.state.sampleLibraryMessage = `VST3 folder added privately. ${roots.length} user-approved folder${roots.length === 1 ? "" : "s"} configured.`;
+        await this.refreshVst3Foundation();
+      }
+    }
+    if (action === "vst3-guide-open") await this.openExternalUrl("https://www.joehagenmusic.com/post/a-comprehensive-guide-to-high-quality-free-plugins-that-you-ll-actually-use");
+    if (action === "vst3-insert-instrument" || action === "vst3-insert-effect" || action === "vst3-substitute") {
+      const descriptorKey = actionSource?.dataset.vst3DescriptorKey || "";
+      const descriptor = verifiedVst3Descriptors(this.state.vst3Modules).find((item) => vst3DescriptorKey(item.identity) === descriptorKey);
+      if (!descriptor) {
+        this.state.sampleLibraryMessage = "That descriptor is no longer verified. Rescan before inserting it.";
+        this.render({ preserveScroll: true });
+      } else if (!this.state.vst3BetaStatus?.audioHostingAvailable) {
+        this.state.sampleLibraryMessage = "The isolated audio session host is unavailable; no plug-in was inserted.";
+        this.render({ preserveScroll: true });
+      } else if (action === "vst3-insert-instrument") {
+        const before = new Set(currentProject(this.state).devices.map((device) => device.id));
+        this.applyProjectState(createHostedPluginInstrumentTrackCommand(this.state, descriptor), {
+          audio: "composition-events", preserveScroll: true, reason: "vst3-insert-instrument"
+        });
+        const instance = currentProject(this.state).devices.find((device) => !before.has(device.id) && device.type === "vst3-instrument");
+        if (instance) await this.activateVst3Instance(instance.id);
+      } else if (action === "vst3-insert-effect") {
+        const trackId = this.state.selectedTrackId || "";
+        const before = new Set(currentProject(this.state).fx.chains.flatMap((chain) => chain.slots.map((slot) => slot.id)));
+        this.applyProjectState(addHostedPluginEffectCommand(this.state, trackId, descriptor), {
+          audio: "mixer-graph", preserveScroll: true, reason: "vst3-insert-effect"
+        });
+        const instance = currentProject(this.state).fx.chains.flatMap((chain) => chain.slots).find((slot) => !before.has(slot.id) && slot.hostedPlugin);
+        if (instance) await this.activateVst3Instance(instance.id);
+      } else {
+        const target = this.state.vst3SubstitutionTarget;
+        if (target) {
+          this.applyProjectState(substituteHostedPluginCommand(this.state, target.instanceId, descriptor), {
+            audio: target.role === "effect" ? "mixer-graph" : "composition-events", preserveScroll: true, reason: "vst3-substitute"
+          });
+          this.state.vst3SubstitutionTarget = null;
+          await this.activateVst3Instance(target.instanceId);
+        }
+      }
+    }
+    if (action === "vst3-choose-substitute") {
+      const instanceId = actionSource?.dataset.vst3InstanceId || "";
+      const role = actionSource?.dataset.vst3Role === "effect" ? "effect" : "instrument";
+      this.state.vst3SubstitutionTarget = { instanceId, role, ...(actionSource?.dataset.vst3ChainId ? { chainId: actionSource.dataset.vst3ChainId } : {}) };
+      this.state.vst3RoleFilter = role;
+      this.state.sampleLibraryTab = "plugins";
+      this.state.showAddTrack = true;
+      this.state.sampleLibraryMessage = `Choose a verified ${role} replacement.`;
+      this.render({ preserveScroll: true });
+    }
+    if (action === "vst3-cancel-substitute") {
+      this.state.vst3SubstitutionTarget = null;
+      this.state.sampleLibraryMessage = "Plug-in substitution cancelled.";
+      this.render({ preserveScroll: true });
+    }
+    if (action === "vst3-instance-retry") {
+      const instanceId = actionSource?.dataset.vst3InstanceId || "";
+      this.state.vst3BusyInstanceId = instanceId;
+      try {
+        const status = await retryVst3Instance(instanceId);
+        if (status) this.state.vst3InstanceStatuses[instanceId] = status;
+        else await this.activateVst3Instance(instanceId);
+      } catch {
+        this.state.vst3InstanceStatuses[instanceId] = this.vst3UnavailableStatus(instanceId, "failed", "loadFailure");
+      } finally {
+        this.state.vst3BusyInstanceId = null;
+        this.render({ preserveScroll: true });
+      }
+    }
+    if (action === "vst3-safe-reload") {
+      const instanceId = actionSource?.dataset.vst3InstanceId || "";
+      const capture = await safeReloadHostedInstance(
+        instanceId,
+        this.state.vst3InstanceStatuses[instanceId]?.phase,
+        (id) => this.captureVst3InstanceState(id),
+        (id) => unloadVst3Instance(id),
+        (id) => this.activateVst3Instance(id)
+      );
+      if (capture.warning) {
+        this.state.status = `${capture.warning} Safe Reload used the previous valid snapshot.`;
+        this.render({ preserveScroll: true });
+      }
+    }
+    if (action === "vst3-open-editor") {
+      const instanceId = actionSource?.dataset.vst3InstanceId || "";
+      const result = await openVst3VendorEditor(instanceId).catch(() => ({ opened: false, code: "unsupported" as const }));
+      if (result.opened) {
+        this.vst3VendorEditorInstances.add(instanceId);
+        this.startVst3EditorPolling(instanceId);
+      }
+      this.state.status = result.opened ? "Opened vendor editor." : "Vendor editor is unavailable; use Pocket DAW's Generic controls.";
+      this.render({ preserveScroll: true });
+    }
+    if (action === "vst3-automate-parameter") {
+      const instanceId = actionSource?.dataset.vst3InstanceId || "";
+      const stableId = actionSource?.dataset.vst3ParameterId || "";
+      const chainId = actionSource?.dataset.vst3ChainId || undefined;
+      this.applyProjectState(ensureHostedPluginAutomationLaneCommand(this.state, instanceId, stableId, chainId), {
+        audio: chainId ? "mixer-graph" : "composition-events", preserveScroll: true, reason: "vst3-automation"
+      });
+    }
+    if (action === "vst3-save-pocket-preset") {
+      const instanceId = actionSource?.dataset.vst3InstanceId || "";
+      const name = window.prompt("Pocket preset name", "Pocket Preset")?.trim();
+      if (name) {
+        await this.captureVst3InstanceState(instanceId);
+        this.applyProjectState(saveHostedPocketPresetCommand(this.state, instanceId, name), {
+          audio: "none", preserveScroll: true, reason: "vst3-save-pocket-preset"
+        });
+      }
+    }
+    if (action === "vst3-freeze-render") await this.freezeSelectedClip(actionSource?.dataset.vst3InstanceId);
     if (action === "audio-settings-open") {
       this.state.showAudioSettings = true;
       this.render({ preserveScroll: true });
@@ -3657,6 +4519,13 @@ export class App {
 
   private async handleKeyboard(event: KeyboardEvent) {
     if (this.handleDialogKeyboard(event)) return;
+    if (event.key === "Escape" && this.state.showAddTrack) {
+      event.preventDefault();
+      this.state.showAddTrack = false;
+      this.render({ preserveScroll: true });
+      this.restoreRememberedTriggerSoon();
+      return;
+    }
     if (this.handleClipRepeatKeyboard(event)) return;
     if (this.handleStepGridKeyboard(event)) return;
     if (this.handleTimelineRulerKeyboard(event)) return;
@@ -3664,6 +4533,7 @@ export class App {
     const command = commandFromKeyboardEvent(event);
     if (!command) return;
     event.preventDefault();
+    if (command === "preview-sample") await this.previewSampleLibraryEntry();
     if (command === "play-pause") {
       if (this.state.playing) {
         this.engine.pause();
@@ -3727,6 +4597,9 @@ export class App {
   }
 
   private async playTransport() {
+    if (this.samplePreviewTimer !== null) window.clearTimeout(this.samplePreviewTimer);
+    this.samplePreviewTimer = null;
+    this.state.previewingSampleLibraryId = null;
     if (this.engine.canResumePausedNativePlayback()) {
       await this.engine.play();
       return;
@@ -3739,6 +4612,7 @@ export class App {
       showedBusy = prepared.showedBusy;
       hydration = prepared.hydration;
       await this.engine.play();
+      this.syncVst3RenderBoundaryState();
       this.startLiveMetronome(false);
       if (hydration.loaded > 0) {
         this.state.status = `Loaded ${hydration.loaded} audio file${hydration.loaded === 1 ? "" : "s"} for native playback.`;
@@ -3802,6 +4676,7 @@ export class App {
       const prepared = await this.prepareTimelineAudioForPlayback("restart");
       showedBusy = prepared.showedBusy;
       await this.engine.restart();
+      this.syncVst3RenderBoundaryState();
       this.startLiveMetronome(false);
     } finally {
       if (showedBusy) {
@@ -5298,7 +6173,7 @@ export class App {
     }
   }
 
-  private async addDecodedAudioMedia(source: ImportedAudioBytes) {
+  private async addDecodedAudioMedia(source: ImportedAudioBytes): Promise<string | null> {
     try {
       const decoded = await this.decodeAudioSource(source);
       const result = addImportedAudioMedia(currentProject(this.state), {
@@ -5323,11 +6198,13 @@ export class App {
       if (cacheMetadata) project = updateMediaPoolItemMetadata(project, result.item.id, cacheMetadata);
       this.applyProjectState(commitProject(this.state, project, `Imported audio ${source.name}.`));
       this.root.querySelector<HTMLElement>("#mediaPool")?.scrollIntoView({ block: "nearest" });
+      return result.item.id;
     } catch (error) {
       const nativeDetail = source.nativeDecodeError ? ` Native decoder reported: ${source.nativeDecodeError}` : "";
       const detail = error instanceof Error ? ` ${error.message}` : "";
       this.state.status = `Could not decode ${source.name}.${nativeDetail}${detail}`;
       this.render();
+      return null;
     }
   }
 
@@ -5627,8 +6504,18 @@ export class App {
   }
 
   private async saveProject(forceSaveAs: boolean) {
-    const project = currentProject(this.state);
-    const result = await saveProjectFile(project, this.state.currentFile.path, forceSaveAs);
+    const previousProjectFilePath = this.state.currentFile.path;
+    const captured = await serializeAfterReadyHostedStateCapture(
+      this.hostedProjectInstances().map((instance) => ({
+        instanceId: instance.instanceId,
+        name: instance.identity.name,
+        phase: this.state.vst3InstanceStatuses[instance.instanceId]?.phase
+      })),
+      (instanceId) => this.captureVst3InstanceState(instanceId),
+      () => saveProjectFile(currentProject(this.state), this.state.currentFile.path, forceSaveAs)
+    );
+    const result = captured.result;
+    const pluginStateWarnings = captured.warnings;
     if (result.file) {
       this.state.currentFile = result.file;
       const adoptedTitle = this.adoptSavedFileTitle(result.file);
@@ -5639,10 +6526,112 @@ export class App {
       }
       saveRecentProject(result.file.label, result.file.path);
       this.state.recent = loadRecentProjects();
+      if (result.file.path) {
+        const collection = await this.autoCollectUsedSamplesAfterSave(result.file.path, forceSaveAs ? previousProjectFilePath : null);
+        result.message = `${result.message} ${collection.message}`.trim();
+      }
     }
+    result.message = appendHostedStateSaveWarnings(result.message, pluginStateWarnings);
     this.state.status = result.message;
-    this.saveAutosaveSnapshot(project);
+    this.saveAutosaveSnapshot(currentProject(this.state));
     this.render({ preserveScroll: true });
+  }
+
+  private usedSampleMediaIds(project: PocketDawProject): string[] {
+    const ids = new Set<string>();
+    project.devices.forEach((device) => {
+      if (device.type === "quick-sampler") ids.add(device.mediaPoolItemId);
+      if (device.type === "drum-rack") device.pads.forEach((pad) => {
+        if (pad.mediaPoolItemId) ids.add(pad.mediaPoolItemId);
+      });
+    });
+    return [...ids];
+  }
+
+  private async autoCollectUsedSamplesAfterSave(projectFilePath: string, previousProjectFilePath: string | null): Promise<{ message: string; collected: number; missing: number }> {
+    const sampleIds = this.usedSampleMediaIds(currentProject(this.state));
+    if (!sampleIds.length) return { message: "", collected: 0, missing: 0 };
+    let nextProject = currentProject(this.state);
+    let collectedCount = 0;
+    let recoveredCount = 0;
+    const missing: string[] = [];
+    for (const id of sampleIds) {
+      const item = findMediaPoolItem(nextProject, id);
+      if (!item) {
+        missing.push(id);
+        continue;
+      }
+      const status = mediaPoolStatus(item);
+      const projectRelativePath = normalizeProjectRelativeMediaPath(String(item.metadata?.projectRelativePath || item.uri || ""));
+      const relocatingProjectMedia = !!previousProjectFilePath && previousProjectFilePath.toLowerCase() !== projectFilePath.toLowerCase() && projectRelativePath.startsWith("project-media/");
+      if (!relocatingProjectMedia && !status.external && !status.missing && !status.unresolved && projectRelativePath.startsWith("project-media/")) continue;
+      const candidates = mediaPoolReloadCandidates(item);
+      const relocatedSource = relocatingProjectMedia
+        ? (typeof item.metadata?.nativePath === "string" && /^[a-z]:[\\/]/i.test(item.metadata.nativePath)
+          ? item.metadata.nativePath
+          : this.projectRelativePathBesideFile(previousProjectFilePath!, projectRelativePath))
+        : null;
+      const original = relocatedSource || item.uri && !String(item.uri).startsWith("project-")
+        ? { path: relocatedSource || item.uri!, kind: "source" as const }
+        : null;
+      const decodedCacheCandidate = candidates.find((candidate) => candidate.kind === "decoded-cache");
+      const decodedCachePath = typeof item.metadata?.nativeDecodedCachePath === "string" && /^[a-z]:[\\/]/i.test(item.metadata.nativeDecodedCachePath)
+        ? item.metadata.nativeDecodedCachePath
+        : decodedCacheCandidate?.projectRelative
+          ? this.projectRelativePathBesideFile(previousProjectFilePath || projectFilePath, decodedCacheCandidate.path)
+          : decodedCacheCandidate?.path;
+      const attempts: Array<{ path: string; kind: "source" | "decoded-cache" }> = [];
+      if (original) attempts.push(original);
+      if (decodedCachePath) attempts.push({ path: decodedCachePath, kind: "decoded-cache" });
+      let collected = false;
+      for (const candidate of attempts) {
+        const recovered = candidate.kind === "decoded-cache";
+        const baseName = recovered ? item.name.replace(/\.[^.]+$/, "") : item.name;
+        const fileName = recovered ? safeName(`${item.id}-${baseName}`, "wav") : `${item.id}-${baseName}`;
+        const targetRelativePath = `project-media/samples/${fileName}`;
+        try {
+          const copied = await collectProjectMediaNative(projectFilePath, [{ id, sourceUri: candidate.path, targetRelativePath }]);
+          if (!copied?.length) continue;
+          nextProject = markMediaPoolItemCollected(nextProject, copied[0]);
+          if (recovered) {
+            nextProject = updateMediaPoolItemMetadata(nextProject, id, {
+              recoveredFromDecodedCache: true,
+              recoveredAt: new Date().toISOString(),
+              portabilityLabel: "Recovered WAV"
+            });
+            recoveredCount += 1;
+          }
+          collectedCount += 1;
+          collected = true;
+          break;
+        } catch {
+          // Try the valid decoded cache before declaring the used sample missing.
+        }
+      }
+      if (!collected) {
+        nextProject = markMediaPoolItemMissing(nextProject, id, true, "Used sampler source and decoded cache are unavailable.");
+        missing.push(item.name);
+      }
+    }
+    if (nextProject !== currentProject(this.state)) {
+      const saved = await writeProjectFileNativeStrict(nextProject, projectFilePath);
+      if (saved.file) this.state.currentFile = saved.file;
+      this.state = commitProject(this.state, nextProject, missing.length
+        ? `Saved with ${missing.length} missing used sample${missing.length === 1 ? "" : "s"}.`
+        : `Collected ${collectedCount} used sample${collectedCount === 1 ? "" : "s"}.`);
+    }
+    const recovered = recoveredCount ? ` ${recoveredCount} recovered from decoded WAV cache.` : "";
+    const warning = missing.length
+      ? ` Warning: ${missing.length} used sample${missing.length === 1 ? " is" : "s are"} missing; the project is not fully portable and will play silent placeholders.`
+      : ` ${collectedCount} used sample${collectedCount === 1 ? "" : "s"} collected into project-media/samples/.`;
+    return { message: `${warning}${recovered}`.trim(), collected: collectedCount, missing: missing.length };
+  }
+
+  private projectRelativePathBesideFile(projectFilePath: string, relativePath: string): string {
+    const separator = projectFilePath.includes("\\") ? "\\" : "/";
+    const lastSeparator = Math.max(projectFilePath.lastIndexOf("\\"), projectFilePath.lastIndexOf("/"));
+    const folder = lastSeparator >= 0 ? projectFilePath.slice(0, lastSeparator) : projectFilePath;
+    return `${folder}${separator}${relativePath.replace(/[\\/]/g, separator)}`;
   }
 
   private adoptSavedFileTitle(file: { label: string; path: string | null }): string | null {
@@ -5757,9 +6746,18 @@ export class App {
     }
   }
 
-  private async freezeSelectedClip() {
+  private async freezeSelectedClip(hostedInstanceId?: string) {
     const project = currentProject(this.state);
     const clip = project.timeline.clips.find((item) => item.id === this.state.selectedClipId);
+    if (hostedInstanceId && clip) {
+      const deviceTrackId = project.tracks.find((track) => track.instrumentDeviceId === hostedInstanceId)?.id;
+      const effectTrackId = project.fx.chains.find((chain) => chain.slots.some((slot) => slot.id === hostedInstanceId))?.ownerTrackId;
+      if (clip.trackId !== deviceTrackId && clip.trackId !== effectTrackId) {
+        this.state.status = "Select a renderable clip on this plug-in's track before freezing.";
+        this.render();
+        return;
+      }
+    }
     const renderTarget = clip ? projectForClipRender(project, clip.id) : null;
     if (!clip || !renderTarget) {
       this.state.status = "Select a clip before freezing.";
@@ -5998,7 +6996,12 @@ export class App {
   }
 
   private async renderWavNativeFirst(project: PocketDawProject, options: { channelMode?: WavChannelMode; bitDepth?: WavBitDepth; dither?: WavDitherMode; normalizePeak?: boolean } = {}): Promise<Blob> {
-    return await renderProjectToNativeWavBlob(project, undefined, options) || await renderProjectToWavBlob(project, options);
+    const native = await renderProjectToNativeWavBlob(project, undefined, options);
+    if (native) {
+      this.syncVst3RenderBoundaryState();
+      return native;
+    }
+    return await renderProjectToWavBlob(project, options);
   }
 
   private mediaPortabilityStatus(project: PocketDawProject): string {
@@ -6990,6 +7993,14 @@ function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number, message: 
       }
     );
   });
+}
+
+function decodeBase64Bytes(value: string): Uint8Array {
+  if (!value || value.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+    throw new Error("Plug-in state was not valid base64.");
+  }
+  const binary = atob(value);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
 function monotonicNowMs(): number {

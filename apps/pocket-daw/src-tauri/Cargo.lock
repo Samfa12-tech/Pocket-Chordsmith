@@ -2866,6 +2866,8 @@ dependencies = [
 name = "pocket-daw"
 version = "0.6.42"
 dependencies = [
+ "base64 0.22.1",
+ "cc",
  "cfb",
  "cpal",
  "flate2",
@@ -2882,6 +2884,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "windows-sys 0.61.2",
  "zip",
 ]
 

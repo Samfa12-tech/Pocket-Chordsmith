@@ -1858,11 +1858,11 @@ function filterNativeRenderCacheForTimeRanges(cache: NativeRenderCache, ranges: 
     const regionEnd = regionStart + Math.max(0, region.duration);
     return validRanges.some(([startSeconds, endSeconds]) => regionEnd > startSeconds && regionStart < endSeconds);
   });
-  if (!regions.length) return null;
+  if (!regions.length && !cache.assets.some((asset) => asset.sampleLibraryOnly === true)) return null;
   const keptAssetIds = new Set(regions.map((region) => region.assetId));
-  const assets = cache.assets.filter((asset) => keptAssetIds.has(asset.id));
+  const assets = cache.assets.filter((asset) => keptAssetIds.has(asset.id) || asset.sampleLibraryOnly === true);
   if (!assets.length) return null;
-  const renderCacheItems = cache.renderCacheItems.filter((item) => keptAssetIds.has(String(item.metadata?.assetId || item.id)));
+  const renderCacheItems = cache.renderCacheItems.filter((item) => keptAssetIds.has(String(item.metadata?.assetId || item.id)) || String(item.metadata?.cacheKind || "") === "native-sampler-asset");
   const cachedClipIds = new Set<string>();
   renderCacheItems.forEach((item) => {
     if (item.sourceClipId) cachedClipIds.add(item.sourceClipId);

@@ -1,5 +1,8 @@
 {
   "bundle": {
-    "createUpdaterArtifacts": false
+    "createUpdaterArtifacts": false,
+    "externalBin": [
+      "binaries/pocket-daw-plugin-host"
+    ]
   }
 }

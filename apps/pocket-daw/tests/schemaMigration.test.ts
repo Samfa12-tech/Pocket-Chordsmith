@@ -5,7 +5,7 @@ import { DRUM_LANE_DEFS } from "../src/daw/drumLanes";
 import { createMediaOnlyPocketDawProject } from "../src/daw/dawProject";
 
 describe("schema migrations", () => {
-  it("fills required v2 future-ready containers", () => {
+  it("fills required v3 device and future-ready containers", () => {
     const migrated = migratePocketDawProject({
       app: "PocketDAW",
       schemaVersion: 1,
@@ -13,7 +13,8 @@ describe("schema migrations", () => {
       timeline: { clips: [], futureTimelineField: "keep" },
       futureRootField: { keep: true }
     });
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.devices).toEqual([]);
     expect(migrated.mediaPool).toEqual([]);
     expect(migrated.renderCache).toEqual([]);
     expect(migrated.automation.lanes).toEqual([]);
@@ -88,7 +89,7 @@ describe("schema migrations", () => {
       }
     });
 
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.schemaVersion).toBe(3);
     expect(migrated.project.bpm).toBe(MAX_DAW_TEMPO_BPM);
     expect(migrated.project.timeSig).toBe(4);
     expect(migrated.project.swing).toBe(0.35);

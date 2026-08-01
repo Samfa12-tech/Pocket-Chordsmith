@@ -24,11 +24,13 @@ export type KeyboardCommand =
   | "save-project"
   | "open-file"
   | "export-wav"
-  | "add-track";
+  | "add-track"
+  | "preview-sample";
 
 export function commandFromKeyboardEvent(event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey" | "target">): KeyboardCommand | null {
-  if (isEditableTarget(event.target)) return null;
   const ctrl = event.ctrlKey || event.metaKey;
+  if (ctrl && !event.altKey && !event.shiftKey && isSpacebarEvent(event)) return "preview-sample";
+  if (isEditableTarget(event.target)) return null;
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   if (ctrl && !event.altKey && !event.shiftKey && key === "z") return "undo";
   if (ctrl && !event.altKey && !event.shiftKey && key === "y") return "redo";

@@ -42,8 +42,8 @@ export function validateReleaseStatus(releaseStatus, context) {
     .filter(([, value]) => value !== expectedVersion)
     .map(([name, value]) => `${name} is ${value || "missing"}, expected ${expectedVersion}`);
 
-  if (context.schemaVersion !== "2") {
-    failures.push(`POCKET_DAW_SCHEMA_VERSION is ${context.schemaVersion}, expected 2`);
+  if (context.schemaVersion !== "3") {
+    failures.push(`POCKET_DAW_SCHEMA_VERSION is ${context.schemaVersion}, expected 3`);
   }
   if (releaseStatus.schema !== 1) {
     failures.push(`release-status.json schema is ${releaseStatus.schema}, expected 1`);

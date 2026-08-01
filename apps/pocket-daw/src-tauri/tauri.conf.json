@@ -24,6 +24,10 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "resources": {
+      "../../../addons/pocket_chordsmith/audio/web_kit/*.wav": "samples/pocket-starter-sounds/",
+      "resources/THIRD_PARTY_NOTICES.txt": "THIRD_PARTY_NOTICES.txt"
+    },
     "icon": [
       "icons/pocket-daw-icon.ico",
       "icons/pocket-daw-icon.png"

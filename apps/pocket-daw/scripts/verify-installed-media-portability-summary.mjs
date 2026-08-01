@@ -35,11 +35,28 @@ export function validateInstalledMediaPortabilitySummary(summary, expectations =
   validateExports(summary.exports, failures, requireExportFiles);
   validateGamePack(summary.gamePacks?.godot, "gamePacks.godot", failures);
   validateGamePack(summary.gamePacks?.web, "gamePacks.web", failures);
+  validateInstrumentDevices(summary.instrumentDevices, failures);
 
   if (!isObject(summary.invariants) || summary.invariants.errorCount !== 0) {
     failures.push("invariants.errorCount must be 0");
   }
   return { ok: failures.length === 0, failures };
+}
+
+function validateInstrumentDevices(devices, failures) {
+  if (!isObject(devices) || !isObject(devices.quickSampler) || !isObject(devices.drumRack)) {
+    failures.push("instrumentDevices must include Quick Sampler and Drum Rack evidence");
+    return;
+  }
+  if (devices.quickSampler.type !== "quick-sampler" || !devices.quickSampler.id || !devices.quickSampler.trackId || !devices.quickSampler.mediaPoolItemId) {
+    failures.push("instrumentDevices.quickSampler must preserve its device, track, and media mapping");
+  }
+  const pads = devices.drumRack.mappedPads;
+  if (devices.drumRack.type !== "drum-rack" || !devices.drumRack.id || !devices.drumRack.trackId || !Array.isArray(pads) || pads.length < 2) {
+    failures.push("instrumentDevices.drumRack must preserve at least two ordered pad mappings");
+  } else if (pads[0]?.midiNote !== 36 || pads[1]?.midiNote !== 37 || !pads[0]?.mediaPoolItemId || !pads[1]?.mediaPoolItemId) {
+    failures.push("instrumentDevices.drumRack must preserve ordered MIDI notes 36-37 and their media mappings");
+  }
 }
 
 export function verifyInstalledMediaPortabilitySummaryFile(options = {}) {

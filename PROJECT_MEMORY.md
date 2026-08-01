@@ -59,6 +59,12 @@ playhead position. The UI only displays state and dispatches commands.
 - Exact mixed-quality chord overlays remain Pocket DAW-local. No family schema bump was made; schema-16 PCS1 progression output would be simplified and must be labeled as such. `apps/pocket-daw/docs/ADR_MIDI_EXACT_CHORD_OVERLAY_COMPATIBILITY.md` records the deferred Chordsmith-web extension decision.
 - This work shipped in `0.6.41` after exact-installer audio/MIDI/export smoke, private owned-fixture validation, media portability, and Godot/Web target-runtime evidence passed. Use the 2026-07-17 notes above for current release truth.
 
+### Current 2026-08-01 Pocket DAW Source Notes
+
+- Current working-tree release truth is source `0.6.42`, latest published public updater release `0.6.41`, project schema `3`, and last installed-smoke `0.6.41`. The Samples/Samplers/VST3 Beta candidate is source-only until the exact-installer release gate is completed; trust `apps/pocket-daw/docs/CURRENT_RELEASE_STATUS.md` and `apps/pocket-daw/release-status.json` for generated release truth.
+- Schema 3 adds serializable instrument devices while schema-2 projects migrate without changing existing tracks, clips, media or built-in effects. Local sample-library paths and VST3 scan paths remain app-local settings, not project or analytics data.
+- The native-only VST3 candidate uses protocol 2, a persistent crash-isolated x64 sidecar, a bounded 128-frame block graph, native-clock events/automation/transport, state/program/editor support, latency/tails and failure bypass/silence. Deterministic coverage plus unbundled official JS80P 4.0.2 and Surge XT 1.3.4 compatibility passed before the installed release run.
+
 ### Current 2026-07-13 Pocket DAW Source Notes
 
 - The unreleased Portable Projects + Media Recovery slice hardens native Collect Media against collisions, partial copies and false project-save success; identical-byte retries are idempotent, different-content overwrites are refused, and existing project-media names are reserved deterministically.

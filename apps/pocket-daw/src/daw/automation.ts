@@ -46,6 +46,10 @@ export function fxParameterAutomationPath(chainId: string, slotId: string, param
   return `fx.${safePathPart(chainId)}.slots.${safePathPart(slotId)}.parameters.${safeFxParameter(parameter)}`;
 }
 
+export function deviceParameterAutomationPath(deviceId: string, parameter: string): string {
+  return `device:${safePathPart(deviceId)}:parameter:${safeFxParameter(parameter)}`;
+}
+
 export function createAutomationLane(project: PocketDawProject, targetPath: string, options: Partial<AutomationLane> = {}): { project: PocketDawProject; laneId: string } {
   const next = cloneProject(project);
   const laneId = uniqueLaneId(next, options.id || laneIdFromTarget(targetPath));
@@ -63,6 +67,7 @@ export function createAutomationLane(project: PocketDawProject, targetPath: stri
   attachLaneToTrack(next, lane);
   attachLaneToClip(next, lane);
   attachLaneToFx(next, lane);
+  attachLaneToDevice(next, lane);
   return { project: next, laneId };
 }
 
@@ -242,6 +247,7 @@ function editLane(project: PocketDawProject, laneId: string, updater: (lane: Aut
   attachLaneToTrack(next, lane);
   attachLaneToClip(next, lane);
   attachLaneToFx(next, lane);
+  attachLaneToDevice(next, lane);
   return next;
 }
 
@@ -264,6 +270,13 @@ function attachLaneToFx(project: PocketDawProject, lane: AutomationLane) {
   if (!parsed) return;
   const chain = project.fx?.chains.find((item) => item.id === parsed.chainId);
   const track = chain?.ownerTrackId ? project.tracks.find((item) => item.id === chain.ownerTrackId) : null;
+  if (track && !track.automationLaneIds.includes(lane.id)) track.automationLaneIds.push(lane.id);
+}
+
+function attachLaneToDevice(project: PocketDawProject, lane: AutomationLane) {
+  const match = lane.targetPath.match(/^device:([^:]+):parameter:([^:]+)$/);
+  if (!match) return;
+  const track = project.tracks.find((item) => item.instrumentDeviceId === match[1]);
   if (track && !track.automationLaneIds.includes(lane.id)) track.automationLaneIds.push(lane.id);
 }
 
@@ -291,6 +304,7 @@ function automationDefaultsForTarget(targetPath: string): { unit: AutomationLane
   const clipField = targetPath.match(/^clips\.[^.]+\.(gain|fadeInSeconds|fadeOutSeconds|sourceOffsetSeconds)$/)?.[1] as ClipAutomationField | undefined;
   if (clipField) return clipAutomationDefaults(clipField);
   if (/^fx\.[^.]+\.slots\.[^.]+\.parameters\.[^.]+$/.test(targetPath)) return { unit: "linear", min: 0, max: 1 };
+  if (/^device:[^:]+:parameter:[^:]+$/.test(targetPath)) return { unit: "linear", min: 0, max: 1 };
   return { unit: "percent", min: 0, max: 1.2 };
 }
 

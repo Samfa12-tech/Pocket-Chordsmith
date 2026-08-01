@@ -59,6 +59,7 @@ export function createEmptyPocketDawProject(): PocketDawProject {
       clips: [clip]
     },
     tracks,
+    devices: [],
     automation: { lanes: [] },
     routing: { masterTrackId: "master", buses: [], returns: [] },
     mediaPool: [],
@@ -93,6 +94,7 @@ export function createMediaOnlyPocketDawProject(title = "Untitled Imported Sessi
     clips: []
   };
   project.tracks = project.tracks.filter((track) => retainedTrackIds.has(track.id));
+  project.devices = [];
   project.automation = { lanes: [] };
   project.fx.chains = project.fx.chains.filter((chain) => !chain.ownerTrackId || retainedTrackIds.has(chain.ownerTrackId));
   project.mediaPool = [];

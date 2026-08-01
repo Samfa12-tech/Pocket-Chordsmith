@@ -47,13 +47,16 @@ Run from `apps/pocket-daw/`.
    attestation, candidate verifier, and publish guard.
 8. Run installed media portability once. Reuse its Godot and Web ZIPs for the
    target-runtime smokes and candidate verifier.
-9. Run one final Godot import/runtime smoke and one final Chromium Web Audio
+9. Run the installed VST3 host smoke against the sidecar inside that exact
+   installation. It must process the deterministic instrument and effect
+   fixtures and bind the installed sidecar hash to the candidate metadata.
+10. Run one final Godot import/runtime smoke and one final Chromium Web Audio
    smoke. If either finds a product bug, fix it, commit, rebuild once, and
    discard all earlier exact-artifact evidence.
-10. Build the attestation from the final evidence paths and SHA-256 values.
-11. Run `verify:candidate` once with both game packs and all strict flags.
-12. Re-hash the staged setup and confirm it did not change.
-13. Push the tested commit, publish the already-staged files without a rebuild,
+11. Build the attestation from the final evidence paths and SHA-256 values.
+12. Run `verify:candidate` once with both game packs and all strict flags.
+13. Re-hash the staged setup and confirm it did not change.
+14. Push the tested commit, publish the already-staged files without a rebuild,
     and verify the remote manifest, installer download hash, release tag, and
     target commit.
 
@@ -177,6 +180,7 @@ npm run verify:candidate -- `
   --installer <exact-staged-setup.exe> `
   --punch-take-summary <final-punch-summary.json> `
   --media-portability-summary <final-media-summary.json> `
+  --vst3-host-summary <final-vst3-host-summary.json> `
   --require-audible-audio `
   --require-export-files `
   --require-midi-input `

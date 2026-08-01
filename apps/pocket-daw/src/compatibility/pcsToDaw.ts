@@ -124,6 +124,7 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
       clips
     },
     tracks,
+    devices: [],
     automation: { lanes: [] },
     routing: { masterTrackId: "master", buses: [], returns: [] },
     mediaPool: [],

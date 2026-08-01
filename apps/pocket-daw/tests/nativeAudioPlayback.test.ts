@@ -11,6 +11,17 @@ import type { RenderedEvent } from "../src/audio/eventRenderer";
 import { buildNativeAudioStartPayload, NativeAudioPlaybackBridge, type NativeAudioInvokeApi, type NativeAudioStatus } from "../src/native/audioPlayback";
 import { toggleTrackSolo } from "../src/daw/mixer";
 import { addTrackToProject, setTrackFolder } from "../src/daw/tracks";
+import { createQuickSamplerDevice, replaceTrackInstrumentDevice } from "../src/daw/devices";
+import {
+  addHostedPluginEffect,
+  createHostedPluginInstrumentTrack,
+  ensureHostedEffectAutomationLane,
+  ensureHostedInstrumentAutomationLane,
+  setHostedEffectParameter,
+  setHostedInstrumentParameter,
+  setHostedPluginSnapshot,
+  type VerifiedHostedPluginDescriptor
+} from "../src/daw/hostedPlugins";
 
 function status(overrides: Partial<NativeAudioStatus> = {}): NativeAudioStatus {
   return {
@@ -301,6 +312,175 @@ describe("native audio playback bridge", () => {
     expect(nativeDelay?.parameters.mix).toBeCloseTo(0.556, 5);
   });
 
+  it("emits path-free hosted instrument and FX payloads with validated state and ordered normalized automation", () => {
+    const instrumentDescriptor: VerifiedHostedPluginDescriptor = {
+      verified: true,
+      identity: {
+        format: "vst3",
+        classId: "instrument-class",
+        binaryFingerprint: "a".repeat(64),
+        moduleFilename: "C:\\Private\\Synth.vst3",
+        vendor: "Test Vendor",
+        name: "Test Synth",
+        version: "1.0.0",
+        category: "Instrument"
+      },
+      supportsInstrumentRole: true,
+      supportsEffectRole: false,
+      reportedLatencySamples: 32,
+      reportedTailSamples: 0,
+      parameterDescriptors: [{ stableId: "1001", name: "Cutoff", min: 20, max: 2_020, defaultValue: 1_020, automatable: true }],
+      factoryPrograms: []
+    };
+    const effectDescriptor: VerifiedHostedPluginDescriptor = {
+      ...instrumentDescriptor,
+      identity: {
+        ...instrumentDescriptor.identity,
+        classId: "effect-class",
+        binaryFingerprint: "b".repeat(64),
+        moduleFilename: "C:\\Private\\Delay.vst3",
+        name: "Test Delay",
+        category: "Fx"
+      },
+      supportsInstrumentRole: false,
+      supportsEffectRole: true,
+      parameterDescriptors: [{ stableId: "2002", name: "Mix", min: 0, max: 100, defaultValue: 50, automatable: true }]
+    };
+    let project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    const instrument = createHostedPluginInstrumentTrack(project, instrumentDescriptor)!;
+    project = setHostedInstrumentParameter(instrument.project, instrument.instanceId, "1001", 2_020);
+    const instrumentAutomation = ensureHostedInstrumentAutomationLane(project, instrument.instanceId, "1001")!;
+    project = addAutomationPoint(instrumentAutomation.project, instrumentAutomation.laneId, { bar: 3, value: 20, curve: "hold" });
+    const effect = addHostedPluginEffect(project, "master", effectDescriptor)!;
+    project = setHostedEffectParameter(effect.project, effect.chainId!, effect.instanceId, "2002", 25);
+    const effectAutomation = ensureHostedEffectAutomationLane(project, effect.chainId!, effect.instanceId, "2002")!;
+    project = addAutomationPoint(effectAutomation.project, effectAutomation.laneId, { bar: 2, value: 75, curve: "ease-in" });
+    const snapshot = { encoding: "gzip-base64" as const, data: "AQID", checksum: "c".repeat(64), sizeBytes: 3 };
+    project = setHostedPluginSnapshot(project, instrument.instanceId, snapshot, {
+      valid: true,
+      compressedBytes: 3,
+      checksumSha256: snapshot.checksum
+    });
+    project = setHostedPluginSnapshot(project, effect.instanceId, snapshot, {
+      valid: true,
+      compressedBytes: 3,
+      checksumSha256: snapshot.checksum
+    });
+    const hostedDevice = project.devices.find((device) => device.id === instrument.instanceId);
+    if (hostedDevice?.type === "vst3-instrument") hostedDevice.hostedPlugin.moduleFilename = "C:\\Private\\Synth.vst3";
+    const hostedEffectSlot = project.fx.chains.find((chain) => chain.id === effect.chainId)?.slots.find((slot) => slot.id === effect.instanceId);
+    if (hostedEffectSlot?.hostedPlugin) hostedEffectSlot.hostedPlugin.moduleFilename = "C:\\Private\\Delay.vst3";
+
+    const payload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
+    const instrumentPayload = payload.hostedInstruments?.find((item) => item.instanceId === instrument.instanceId);
+    const effectPayload = payload.fxChains.find((chain) => chain.id === effect.chainId)?.slots
+      .find((slot) => slot.id === effect.instanceId)?.hostedPlugin;
+
+    expect(instrumentPayload).toMatchObject({
+      instanceId: instrument.instanceId,
+      role: "instrument",
+      trackId: instrument.trackId,
+      enabled: true,
+      identity: { classId: "instrument-class", moduleFilename: "Synth.vst3" },
+      state: snapshot,
+      parameters: { "1001": 1 }
+    });
+    expect(instrumentPayload?.automation).toEqual([{
+      parameterId: "1001",
+      points: [
+        { timeSeconds: 0, value: 1, curve: "linear" },
+        { timeSeconds: 4, value: 0, curve: "hold" }
+      ]
+    }]);
+    expect(effectPayload).toMatchObject({
+      instanceId: effect.instanceId,
+      role: "effect",
+      trackId: "master",
+      chainId: effect.chainId,
+      identity: { classId: "effect-class", moduleFilename: "Delay.vst3" },
+      state: snapshot,
+      parameters: { "2002": 0.25 }
+    });
+    expect(effectPayload?.automation).toEqual([{
+      parameterId: "2002",
+      points: [
+        { timeSeconds: 0, value: 0.25, curve: "linear" },
+        { timeSeconds: 2, value: 0.75, curve: "ease-in" }
+      ]
+    }]);
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toMatch(/modulePath|C:\\\\Private/i);
+
+    if (hostedEffectSlot) hostedEffectSlot.hostedPluginState = { ...snapshot, data: "not-base64", sizeBytes: 10 };
+    const invalidStatePayload = buildNativeAudioStartPayload(project, renderTimelineEvents(project), 0);
+    expect(invalidStatePayload.fxChains.find((chain) => chain.id === effect.chainId)?.slots
+      .find((slot) => slot.id === effect.instanceId)?.hostedPlugin?.state).toBeUndefined();
+  });
+
+  it("keeps hosted plug-in payloads identical for live playback and offline rendering", () => {
+    const descriptor: VerifiedHostedPluginDescriptor = {
+      verified: true,
+      identity: {
+        format: "vst3",
+        classId: "parity-class",
+        binaryFingerprint: "d".repeat(64),
+        moduleFilename: "Parity.vst3",
+        vendor: "Test Vendor",
+        name: "Parity Synth",
+        version: "1",
+        category: "Instrument"
+      },
+      supportsInstrumentRole: true,
+      supportsEffectRole: false,
+      reportedLatencySamples: 0,
+      reportedTailSamples: 0,
+      parameterDescriptors: [{ stableId: "7", name: "Value", min: 0, max: 1, defaultValue: 0.5, automatable: true }],
+      factoryPrograms: []
+    };
+    const inserted = createHostedPluginInstrumentTrack(createDemoProject(), descriptor)!;
+    const events = renderTimelineEvents(inserted.project);
+    const live = buildNativeAudioStartPayload(inserted.project, events, 0);
+    const offline = buildNativeAudioStartPayload(inserted.project, events, 0, { assets: [], regions: [] });
+
+    expect(offline.hostedInstruments).toEqual(live.hostedInstruments);
+    expect(offline.fxChains.map((chain) => chain.slots.map((slot) => slot.hostedPlugin)))
+      .toEqual(live.fxChains.map((chain) => chain.slots.map((slot) => slot.hostedPlugin)));
+  });
+
+  it("fails closed when imported hosted metadata is not an array", () => {
+    const descriptor: VerifiedHostedPluginDescriptor = {
+      verified: true,
+      identity: {
+        format: "vst3",
+        classId: "malformed-metadata-class",
+        binaryFingerprint: "e".repeat(64),
+        moduleFilename: "Safe.vst3",
+        vendor: "Test Vendor",
+        name: "Safe Effect",
+        version: "1",
+        category: "Fx"
+      },
+      supportsInstrumentRole: false,
+      supportsEffectRole: true,
+      reportedLatencySamples: 0,
+      reportedTailSamples: 0,
+      parameterDescriptors: [{ stableId: "1", name: "Mix", min: 0, max: 1, defaultValue: 0.5, automatable: true }],
+      factoryPrograms: []
+    };
+    const inserted = addHostedPluginEffect(createDemoProject(), "master", descriptor)!;
+    const slot = inserted.project.fx.chains.find((chain) => chain.id === inserted.chainId)?.slots.find((item) => item.id === inserted.instanceId)!;
+    (slot.hostedPluginMetadata as unknown as { parameterDescriptors: object }).parameterDescriptors = {};
+
+    expect(() => buildNativeAudioStartPayload(inserted.project, renderTimelineEvents(inserted.project), 0)).not.toThrow();
+    const payload = buildNativeAudioStartPayload(inserted.project, renderTimelineEvents(inserted.project), 0);
+    expect(payload.fxChains.flatMap((chain) => chain.slots).find((item) => item.id === inserted.instanceId)?.hostedPlugin?.parameters).toEqual({});
+
+    (slot.hostedPluginMetadata as unknown as { parameterDescriptors: unknown[] }).parameterDescriptors = [null, 7, "bad"];
+    expect(() => buildNativeAudioStartPayload(inserted.project, renderTimelineEvents(inserted.project), 0)).not.toThrow();
+  });
+
   it("can route every Chordsmith live drum pad lane through native per-lane FX", () => {
     const project = DRUM_LANE_DEFS.reduce(
       (next, lane) => addDrumLaneFx(next, lane.id, "parametric-eq"),
@@ -415,6 +595,49 @@ describe("native audio playback bridge", () => {
     expect(payload.events).toEqual([]);
     expect(payload.assets).toEqual(cache.assets);
     expect(payload.regions).toEqual(cache.regions);
+  });
+
+  it("binds schema-3 Quick Sampler devices to hydrated native assets", () => {
+    const added = addTrackToProject(createDemoProject(), "midi-instrument");
+    added.project.mediaPool.push({ id: "sample_c3", kind: "audio", name: "C3.wav" });
+    const sampler = createQuickSamplerDevice("sample_c3", { id: "sampler_c3" });
+    const project = replaceTrackInstrumentDevice(added.project, added.trackId, sampler);
+    const events: RenderedEvent[] = [{
+      id: "sampler-note",
+      clipId: "sampler-clip",
+      kind: "midi",
+      trackId: added.trackId,
+      role: "media",
+      time: 0.125,
+      duration: 0.5,
+      bar: 1,
+      step: 60,
+      midi: 60,
+      velocity: 0.8
+    }];
+    const asset = {
+      id: "native-sample-c3",
+      name: "C3.wav",
+      sampleRate: 48000,
+      channels: 1,
+      durationSeconds: 1,
+      bytes: [82, 73, 70, 70],
+      mediaPoolItemId: "sample_c3",
+      sampleLibraryOnly: true
+    };
+
+    const payload = buildNativeAudioStartPayload(project, events, 0, { assets: [asset], regions: [] });
+
+    expect(payload.samplers).toEqual([expect.objectContaining({
+      id: "sampler_c3",
+      trackId: added.trackId,
+      type: "quick-sampler",
+      assetId: asset.id,
+      rootNote: 60,
+      playbackMode: "one-shot",
+      envelope: expect.objectContaining({ sustainLevel: 1 })
+    })]);
+    expect(payload.events[0]).toMatchObject({ time: 0.125, duration: 0.5, midi: 60 });
   });
 
   it("omits already decoded native asset bytes on later starts", async () => {

@@ -7,6 +7,7 @@ import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitiz
 import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 import { addMediaPoolItem, createMediaPoolItem } from "../src/daw/mediaPool";
 import { addTrackToProject } from "../src/daw/tracks";
+import { createQuickSamplerTrack } from "../src/daw/devices";
 import { addFxSlot } from "../src/daw/fx";
 import { branchGeneratedDrumsToTracks, setDrumBranchGroupCollapsed } from "../src/daw/drumLanes";
 import { createAutomationLane, ensureTrackSendAutomationLane } from "../src/daw/automation";
@@ -22,6 +23,7 @@ import { FUNCTION_ACTION_CATALOG_DOC, FUNCTION_ACTION_REFERENCE, FUNCTION_GUIDE_
 import { addTrackCommand, importTextToProject, setTrackFolderCommand, toggleFolderExpandedCommand } from "../src/app/commands";
 import { utf8ToBase64Url } from "../src/compatibility/pcsParser";
 import { createPocketDjImportFixture } from "./pocketDjFixtures";
+import { createHostedPluginInstrumentTrack, type VerifiedHostedPluginDescriptor } from "../src/daw/hostedPlugins";
 
 function inspectorHtml(html: string) {
   return html.match(/<aside class="inspector"[\s\S]*?<\/aside>/)?.[0] || "";
@@ -1791,8 +1793,8 @@ describe("Pocket DAW UI rendering", () => {
     const html = renderAppShell(state);
     const lower = lowerDockHtml(html);
 
-    expect(html).toContain('id="add-track-title">Library / Add Track</h2>');
-    expect(html).toContain("Recording input and mono/stereo mode appear on record-capable mixer strips after the track is created.");
+    expect(html).toContain('id="add-track-title">Sounds Library</h2>');
+    expect(html).toContain("Pocket DAW never scans personal drives automatically.");
     expect(html).toContain('class="add-track-library"');
     expect(html).toContain("Audio Recording");
     expect(html).toContain("Record-capable vocal audio track");
@@ -2352,5 +2354,222 @@ describe("Pocket DAW UI rendering", () => {
 
     expect(handler).toMatch(/applyBassPresetCommand\(\s*this\.state/s);
     expect(handler).toContain('"chordsmith-bass-preset"');
+  });
+
+  it("renders the searchable, privacy-labelled sample library with sampler actions", () => {
+    const state = createInitialState();
+    state.showAddTrack = true;
+    state.sampleLibraryTab = "samples";
+    state.sampleLibrary.entries = [{
+      id: "sample-kick",
+      path: "C:\\Sounds\\Kick.wav",
+      name: "Kick.wav",
+      folderPath: "C:\\Sounds",
+      extension: "wav",
+      sizeBytes: 2048,
+      modifiedUnixMs: 1,
+      category: "drums",
+      source: "file",
+      sourceRoot: null,
+      addedAt: "2026-08-01T00:00:00.000Z",
+      lastSeenAt: "2026-08-01T00:00:00.000Z"
+    }];
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("Your local studio browser");
+    expect(html).toContain('data-sample-library-search="true"');
+    expect(html).toContain('data-action="sample-library-preview"');
+    expect(html).toContain('data-action="sample-library-create-sampler"');
+    expect(html).toContain('data-action="sample-library-create-drum-rack"');
+    expect(html).toContain('data-sample-library-target-track="true"');
+    expect(html).toContain('data-sample-library-target-bar="true"');
+    expect(html).toContain("stored in app data, not inside projects or analytics");
+    expect(html).not.toContain("C:\\Sounds\\Kick.wav");
+  });
+
+  it("renders one-click VST3 beta consent without claiming unavailable hosting", () => {
+    const state = createInitialState();
+    state.showAddTrack = true;
+    state.sampleLibraryTab = "plugins";
+    state.vst3BetaStatus = {
+      enabled: false,
+      consentVersion: null,
+      currentConsentVersion: 1,
+      scannerAvailable: false,
+      audioHostingAvailable: false,
+      vendorEditorAvailable: false,
+      genericEditorAvailable: false,
+      sidecarAvailable: false,
+      sidecarProtocolVersion: null,
+      vst3SdkLinked: false,
+      audioBlockFrames: 256,
+      officialScanRootCount: 2,
+      userScanRootCount: 0,
+      cachedModuleCount: 0,
+      verifiedDescriptorCount: 0,
+      quarantinedModuleCount: 0,
+      stateLimitBytes: 32 * 1024 * 1024,
+      boundary: "Hosting is unavailable."
+    };
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("Enable VST3 Beta?");
+    expect(html).toContain('data-action="vst3-enable"');
+    expect(html).toContain("isolated scanner and audio host are unavailable in this installed build");
+    expect(html).toContain("placeholder-only mode");
+    expect(html).toContain("No VST2");
+  });
+
+  it("renders a missing hosted instrument as a state-preserving placeholder", () => {
+    const state = createInitialState();
+    const descriptor: VerifiedHostedPluginDescriptor = {
+      verified: true,
+      identity: {
+        format: "vst3",
+        classId: "0123456789abcdef0123456789abcdef",
+        vendor: "Test Vendor",
+        name: "Test Synth",
+        version: "1.0.0",
+        category: "Instrument|Synth",
+        moduleFilename: "Test Synth.vst3",
+        binaryFingerprint: "a".repeat(64)
+      },
+      supportsInstrumentRole: true,
+      supportsEffectRole: false,
+      reportedLatencySamples: 32,
+      reportedTailSamples: 0,
+      parameterDescriptors: [{
+        stableId: "cutoff",
+        name: "Cutoff",
+        unit: "Hz",
+        min: 20,
+        max: 20_000,
+        defaultValue: 1_000,
+        automatable: true
+      }],
+      factoryPrograms: []
+    };
+    const inserted = createHostedPluginInstrumentTrack(state.undoStack.present, descriptor);
+    expect(inserted).not.toBeNull();
+    state.undoStack = createUndoStack(inserted!.project);
+    state.selectedTrackId = inserted!.trackId;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("Missing plug-in: exact class ID and binary fingerprint were not found.");
+    expect(html).toContain("Choose replacement…");
+    expect(html).toContain("Vendor editor unavailable; use Generic controls.");
+    expect(html).toContain('data-vst3-param-id="cutoff"');
+    expect(html).toContain("Identity, state, automation and chain position remain preserved.");
+  });
+
+  it("renders ready hosted generic controls and only enables Freeze for a renderable selected clip", () => {
+    const state = createInitialState();
+    const descriptor: VerifiedHostedPluginDescriptor = {
+      verified: true,
+      identity: {
+        format: "vst3",
+        classId: "fedcba9876543210fedcba9876543210",
+        vendor: "Test Vendor",
+        name: "Ready Synth",
+        version: "2.0.0",
+        category: "Instrument|Synth",
+        moduleFilename: "Ready Synth.vst3",
+        binaryFingerprint: "b".repeat(64)
+      },
+      supportsInstrumentRole: true,
+      supportsEffectRole: false,
+      reportedLatencySamples: 64,
+      reportedTailSamples: 480,
+      parameterDescriptors: [{ stableId: "mix", name: "Mix", unit: "%", min: 0, max: 1, defaultValue: 0.5, stepCount: 100, automatable: true }],
+      factoryPrograms: [{ id: "init", name: "Init" }]
+    };
+    const inserted = createHostedPluginInstrumentTrack(state.undoStack.present, descriptor)!;
+    state.undoStack = createUndoStack(inserted.project);
+    state.selectedTrackId = inserted.trackId;
+    state.selectedClipId = null;
+    state.vst3BetaStatus = {
+      enabled: true,
+      consentVersion: 1,
+      currentConsentVersion: 1,
+      scannerAvailable: true,
+      audioHostingAvailable: true,
+      vendorEditorAvailable: false,
+      genericEditorAvailable: true,
+      sidecarAvailable: true,
+      sidecarProtocolVersion: 2,
+      vst3SdkLinked: true,
+      audioBlockFrames: 128,
+      officialScanRootCount: 2,
+      userScanRootCount: 0,
+      cachedModuleCount: 1,
+      verifiedDescriptorCount: 1,
+      quarantinedModuleCount: 0,
+      stateLimitBytes: 32 * 1024 * 1024,
+      boundary: "Hosted session graph ready."
+    };
+    state.vst3Modules = [{
+      sourceKey: "local-registry-key",
+      moduleFilename: descriptor.identity.moduleFilename,
+      binaryFingerprint: descriptor.identity.binaryFingerprint,
+      locationScope: "official",
+      descriptorStatus: "verifiedByIsolatedScanner",
+      quarantined: false,
+      descriptors: [{
+        identity: descriptor.identity,
+        moduleSourceKey: "local-registry-key",
+        supportsInstrumentRole: true,
+        supportsEffectRole: false,
+        audioInputBusCount: 0,
+        audioOutputBusCount: 1,
+        eventInputBusCount: 1,
+        reportedLatencySamples: 64,
+        reportedTailSamples: 480,
+        parameterDescriptors: descriptor.parameterDescriptors,
+        factoryPrograms: descriptor.factoryPrograms,
+        vendorEditorAvailable: false
+      }]
+    }];
+    state.vst3InstanceStatuses[inserted.instanceId] = {
+      instanceId: inserted.instanceId,
+      phase: "ready",
+      disabled: false,
+      latencySamples: 64,
+      tailSamples: 480,
+      parameterDescriptors: descriptor.parameterDescriptors,
+      factoryPrograms: descriptor.factoryPrograms,
+      vendorEditorAvailable: false,
+      genericEditorAvailable: true
+    };
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("Hosted in the isolated session graph.");
+    expect(html).toContain("Latency 64 samples");
+    expect(html).toContain('data-vst3-param-id="mix"');
+    expect(html).toContain('data-action="vst3-automate-parameter"');
+    expect(html).toContain('data-action="vst3-freeze-render"');
+    expect(html).toContain('disabled title="Select a renderable clip on this plug-in\'s track before freezing"');
+  });
+
+  it("renders the full Quick Sampler editing surface on its instrument track", () => {
+    const state = createInitialState();
+    const media = createMediaPoolItem({ kind: "audio", name: "Sampler.wav", uri: "C:\\Sounds\\Sampler.wav", mimeType: "audio/wav" });
+    const withMedia = addMediaPoolItem(state.undoStack.present, media);
+    const sampler = createQuickSamplerTrack(withMedia, media.id, "Playable Sample");
+    expect(sampler).not.toBeNull();
+    state.undoStack = createUndoStack(sampler!.project);
+    state.selectedTrackId = sampler!.trackId;
+
+    const html = renderAppShell(state);
+
+    expect(html).toContain("Quick Sampler");
+    expect(html).toContain(`data-sampler-param="${sampler!.deviceId}:rootNote"`);
+    expect(html).toContain(`data-sampler-param="${sampler!.deviceId}:playbackMode"`);
+    expect(html).toContain(`data-sampler-envelope="${sampler!.deviceId}:attackSeconds"`);
+    expect(html).toContain("Loop start");
+    expect(html).toContain("Release");
   });
 });

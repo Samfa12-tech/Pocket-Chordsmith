@@ -1,0 +1,20 @@
+{
+  "upstream": "https://github.com/steinbergmedia/vst3sdk.git",
+  "tag": "v3.8.0_build_66",
+  "commit": "9fad9770f2ae8542ab1a548a68c1ad1ac690abe0",
+  "licenseSha256": "bcefe3f3928dbc395deed6100b2e7dc74672a88c10e67a7803689961e30316a9",
+  "vendoredTreeSha256": "6c038761d4e040f4acf3e1c0608f0ef3a8184e8a2019f42c72745fef5aa17c38",
+  "submodules": {
+    "base": "3d2e82f8e6bff59c1d8b7a27491a29c2286b5206",
+    "cmake": "de6e54eeaaab35b7145f5c32c279b5e892146e04",
+    "pluginterfaces": "31d6eeba6daaa3e2a8bfbe3e7a90ca0b7fbfbc1c",
+    "public.sdk": "a3911a4615dabbfdfd9d181ee26b05c70c289a95"
+  },
+  "vendoredSubset": [
+    "LICENSE.txt",
+    "pluginterfaces/base",
+    "pluginterfaces/gui/iplugview.h",
+    "pluginterfaces/vst"
+  ],
+  "purpose": "Windows x64 scanner, session audio, controller and vendor-editor ABI"
+}

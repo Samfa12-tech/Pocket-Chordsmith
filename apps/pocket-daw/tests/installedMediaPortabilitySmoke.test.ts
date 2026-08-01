@@ -27,6 +27,18 @@ function validSummary() {
     projectFolderMoved: true,
     originalSourcesDeleted: true,
     replacementSourceDeleted: true,
+    instrumentDevices: {
+      quickSampler: { id: "sampler-1", type: "quick-sampler", trackId: "track-sampler", mediaPoolItemId: "media-a" },
+      drumRack: {
+        id: "rack-1",
+        type: "drum-rack",
+        trackId: "track-rack",
+        mappedPads: [
+          { midiNote: 36, mediaPoolItemId: "media-a" },
+          { midiNote: 37, mediaPoolItemId: "media-b" }
+        ]
+      }
+    },
     phases: {
       initial: { externalReferenceCount: 2, portability: {} },
       collected: {
@@ -85,5 +97,16 @@ describe("installed media portability smoke verifier", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.failures).toContain("phases.final.externalReferenceCount must be 0");
+  });
+
+  it("rejects installed evidence without both sampler device mappings", () => {
+    const summary = validSummary();
+    summary.instrumentDevices.drumRack.mappedPads = [{ midiNote: 36, mediaPoolItemId: "media-a" }];
+    const result = validateInstalledMediaPortabilitySummary(summary, {
+      version: "0.6.40",
+      requireExportFiles: false
+    });
+    expect(result.ok).toBe(false);
+    expect(result.failures).toContain("instrumentDevices.drumRack must preserve at least two ordered pad mappings");
   });
 });

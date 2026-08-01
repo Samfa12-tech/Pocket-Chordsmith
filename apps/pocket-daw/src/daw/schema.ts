@@ -1,6 +1,9 @@
 export const POCKET_DAW_APP = "PocketDAW" as const;
-export const POCKET_DAW_SCHEMA_VERSION = 2;
+export const POCKET_DAW_SCHEMA_VERSION = 3;
 export const POCKET_DAW_VERSION = "0.6.42";
+export const MAX_HOSTED_PLUGIN_STATE_BYTES = 32 * 1024 * 1024;
+export const MAX_HOSTED_PLUGIN_LATENCY_SAMPLES = 262_144;
+export const MAX_HOSTED_PLUGIN_TAIL_SAMPLES = 5_760_000;
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -186,6 +189,7 @@ export interface Track {
   colour: string;
   routing: TrackRouting;
   automationLaneIds: string[];
+  instrumentDeviceId?: string;
   fxChainId?: string;
   folderId?: string | null;
   recordKind?: "none" | "live-vocals" | "live-instrument";
@@ -226,6 +230,9 @@ export interface FxPluginInstance {
   enabled: boolean;
   presetId?: string;
   parameters: JsonObject;
+  hostedPlugin?: HostedPluginIdentity;
+  hostedPluginState?: HostedPluginStateSnapshot;
+  hostedPluginMetadata?: HostedPluginProjectMetadata;
 }
 
 export interface FxChain {
@@ -239,6 +246,130 @@ export interface FxChain {
 export interface FxState {
   chains: FxChain[];
 }
+
+export interface HostedPluginIdentity {
+  format: "vst3";
+  classId: string;
+  vendor: string;
+  name: string;
+  version: string;
+  category: string;
+  moduleFilename: string;
+  binaryFingerprint: string;
+}
+
+export interface HostedPluginStateSnapshot {
+  encoding: "gzip-base64";
+  data: string;
+  checksum: string;
+  /** Compressed bytes represented by data, before base64 expansion. */
+  sizeBytes: number;
+}
+
+export interface HostedPluginParameterDescriptor {
+  stableId: string;
+  name: string;
+  shortLabel?: string;
+  unit?: string;
+  min: number;
+  max: number;
+  defaultValue: number;
+  stepCount?: number;
+  automatable: boolean;
+  readOnly?: boolean;
+}
+
+export interface HostedPluginFactoryProgram {
+  id: string;
+  name: string;
+}
+
+export interface HostedPluginPocketPreset {
+  id: string;
+  name: string;
+  createdAt: string;
+  parameters: JsonObject;
+  hostedPluginState?: HostedPluginStateSnapshot;
+}
+
+export interface HostedPluginProjectMetadata {
+  parameterDescriptors: HostedPluginParameterDescriptor[];
+  factoryPrograms: HostedPluginFactoryProgram[];
+  selectedFactoryProgramId?: string;
+  pocketPresets: HostedPluginPocketPreset[];
+  selectedPocketPresetId?: string;
+  lastKnownLatencySamples?: number;
+  lastKnownTailSamples?: number;
+}
+
+export interface SamplerEnvelope {
+  attackSeconds: number;
+  decaySeconds: number;
+  sustainLevel: number;
+  releaseSeconds: number;
+}
+
+export type SamplerPlaybackMode = "one-shot" | "gate" | "loop";
+
+export interface SamplerDevice {
+  id: string;
+  type: "quick-sampler";
+  name: string;
+  enabled: boolean;
+  mediaPoolItemId: string;
+  rootNote: number;
+  keyTracking: boolean;
+  coarseTune: number;
+  fineTuneCents: number;
+  gain: number;
+  pan: number;
+  startPosition: number;
+  endPosition: number;
+  reverse: boolean;
+  playbackMode: SamplerPlaybackMode;
+  loopStartPosition: number;
+  loopEndPosition: number;
+  envelope: SamplerEnvelope;
+}
+
+export interface DrumRackPad {
+  id: string;
+  midiNote: number;
+  name: string;
+  mediaPoolItemId?: string;
+  gain: number;
+  pan: number;
+  coarseTune: number;
+  fineTuneCents: number;
+  startPosition: number;
+  endPosition: number;
+  reverse: boolean;
+  playbackMode: Exclude<SamplerPlaybackMode, "loop">;
+  mute: boolean;
+  solo: boolean;
+  chokeGroup: string | null;
+}
+
+export interface DrumRackDevice {
+  id: string;
+  type: "drum-rack";
+  name: string;
+  enabled: boolean;
+  pads: DrumRackPad[];
+}
+
+export interface HostedPluginDevice {
+  id: string;
+  type: "vst3-instrument";
+  name: string;
+  enabled: boolean;
+  hostedPlugin: HostedPluginIdentity;
+  hostedPluginState?: HostedPluginStateSnapshot;
+  hostedPluginMetadata?: HostedPluginProjectMetadata;
+  parameters: JsonObject;
+}
+
+export type InstrumentDevice = SamplerDevice | DrumRackDevice | HostedPluginDevice;
 
 export interface AudioDeviceInfo {
   id: string;
@@ -391,6 +522,7 @@ export interface PocketDawProject {
   project: ProjectMeta;
   timeline: Timeline;
   tracks: Track[];
+  devices: InstrumentDevice[];
   automation: AutomationState;
   routing: RoutingGraph;
   mediaPool: MediaPoolItem[];

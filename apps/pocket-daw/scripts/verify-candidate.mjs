@@ -4,6 +4,7 @@ import packageJson from "../package.json" with { type: "json" };
 import { verifyGamePackZip } from "./verify-game-pack.mjs";
 import { verifyInstalledPunchTakeSummaryFile } from "./verify-installed-punch-take-summary.mjs";
 import { verifyInstalledMediaPortabilitySummaryFile } from "./verify-installed-media-portability-summary.mjs";
+import { verifyInstalledVst3HostSummaryFile } from "./verify-installed-vst3-host-summary.mjs";
 import { assertReleaseCandidateTruth } from "./verify-release-candidate-truth.mjs";
 import { verifySmokeAttestationFile } from "./verify-smoke-attestation.mjs";
 
@@ -30,6 +31,7 @@ function parseArgs(argv) {
     installer: "",
     punchTakeSummary: "",
     mediaPortabilitySummary: "",
+    vst3HostSummary: "",
     commit: "",
     version: packageJson.version,
     requireAudibleAudio: false,
@@ -51,6 +53,9 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg === "--media-portability-summary") {
       parsed.mediaPortabilitySummary = requiredValue(arg, value);
+      index += 1;
+    } else if (arg === "--vst3-host-summary") {
+      parsed.vst3HostSummary = requiredValue(arg, value);
       index += 1;
     } else if (arg === "--commit") {
       parsed.commit = requiredValue(arg, value);
@@ -89,6 +94,7 @@ function assertRequiredEvidence(options) {
   if (!options.installer) missing.push("--installer <setup.exe>");
   if (!options.punchTakeSummary) missing.push("--punch-take-summary <punch-take-lane-installed-smoke-summary.json>");
   if (!options.mediaPortabilitySummary) missing.push("--media-portability-summary <installed-media-portability-smoke-summary.json>");
+  if (!options.vst3HostSummary) missing.push("--vst3-host-summary <installed-vst3-host-smoke-summary.json>");
   if (!options.commit) missing.push("--commit <full-git-sha>");
   if (!options.gamePacks.length) missing.push("--game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>");
   if (missing.length) {
@@ -141,6 +147,19 @@ function verifyInstalledMediaPortabilityEvidence(options) {
   console.log("Installed media portability smoke summary verification OK");
 }
 
+function verifyInstalledVst3HostEvidence(options) {
+  const result = verifyInstalledVst3HostSummaryFile({
+    summaryPath: options.vst3HostSummary,
+    installerPath: options.installer,
+    version: options.version
+  });
+  if (!result.ok) {
+    result.failures.forEach((failure) => console.error(failure));
+    process.exit(1);
+  }
+  console.log("Installed VST3 host smoke summary verification OK");
+}
+
 function verifyGamePackEvidence(options) {
   for (const gamePack of options.gamePacks) {
     const result = verifyGamePackZip(path.resolve(gamePack.zipPath), { kind: gamePack.kind });
@@ -168,6 +187,7 @@ function main() {
   verifyInstalledSmokeEvidence(options);
   verifyInstalledPunchTakeEvidence(options);
   verifyInstalledMediaPortabilityEvidence(options);
+  verifyInstalledVst3HostEvidence(options);
   verifyGamePackEvidence(options);
   console.log("Pocket DAW candidate verification OK");
 }
@@ -176,6 +196,6 @@ try {
   main();
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
-  console.error("Usage: node scripts/verify-candidate.mjs --attestation <smoke-attestation.json> --installer <setup.exe> --punch-take-summary <punch-take-lane-installed-smoke-summary.json> --media-portability-summary <installed-media-portability-smoke-summary.json> [--require-audible-audio] [--require-export-files] [--require-midi-input] --commit <full-git-sha> --game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>");
+  console.error("Usage: node scripts/verify-candidate.mjs --attestation <smoke-attestation.json> --installer <setup.exe> --punch-take-summary <punch-take-lane-installed-smoke-summary.json> --media-portability-summary <installed-media-portability-smoke-summary.json> --vst3-host-summary <installed-vst3-host-smoke-summary.json> [--require-audible-audio] [--require-export-files] [--require-midi-input] --commit <full-git-sha> --game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>");
   process.exit(2);
 }

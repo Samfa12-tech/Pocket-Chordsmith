@@ -8,7 +8,7 @@ import { addTrackFx, removeTrackFx, setTrackInput, setTrackPan, setTrackRecordin
 import { setTrackRecordingInputAssignment } from "../daw/recordingInputs";
 import { addDrumLaneFx, branchGeneratedDrumsToTracks, collapseGeneratedDrumBranches, cycleDrumBranchStep, drumBranchGroupCollapsed, isDrumLaneId, removeDrumLaneFx, setDrumBranchGroupCollapsed, setDrumLaneGate, setDrumLaneMute, setDrumLanePan, setDrumLaneVolume, toggleDrumLaneFx } from "../daw/drumLanes";
 import { addTrackToProject, recordingLatencyOffsetSeconds, renameTrack, setTrackFolder, setTrackRecordingLatencyOffset, toggleFolderExpanded, type AddTrackKind } from "../daw/tracks";
-import { placeAudioClipOnTimeline, placePunchRecordingClipOnTrack } from "../daw/audioClips";
+import { placeAudioClipOnTimeline, placeAudioClipOnTrack, placePunchRecordingClipOnTrack } from "../daw/audioClips";
 import { addMidiAftertouch, addMidiController, addMidiNote, addMidiPitchBend, addMidiProgramChange, applyMidiGrooveTemplate, createEmptyMidiClip, createMidiTempoMapSummary, cropMidiClipToRange, deleteMidiAftertouch, deleteMidiClipRange, deleteMidiController, deleteMidiNote, deleteMidiPitchBend, deleteMidiProgramChange, duplicateMidiAftertouch, duplicateMidiController, duplicateMidiNote, duplicateMidiPitchBend, duplicateMidiProgramChange, midiDataFromClip, midiGrooveTemplateById, moveMidiNote, placeMidiRecordingClipOnTrack, quantizeMidiClip, quantizeMidiClipDurations, resizeMidiNote, rippleDeleteMidiClipRange, rippleDeleteMidiTimelineRange, setMidiAftertouchField, setMidiClipBarLength, setMidiControllerField, setMidiNoteField, setMidiNoteVelocity, setMidiPitchBendField, setMidiProgramChangeField, splitMidiClipsAtRange, swingMidiClip, transformMidiClipPitch, transformMidiClipVelocity, transposeMidiNote, type MidiAftertouchField, type MidiControllerField, type MidiGrooveTemplateId, type MidiNoteField, type MidiPitchBendField, type MidiPitchTransform, type MidiProgramChangeField, type MidiQuantizeGrid, type MidiRecordingNoteInput, type MidiSwingPercent, type MidiVelocityTransform } from "../daw/midiClips";
 import type { MidiTempoMapSummary } from "../daw/midiClips";
 import { convertMidiClipToBassOverlays } from "../daw/midiBassConversion";
@@ -20,7 +20,26 @@ import { convertMidiClipFaithfully, manualMidiRoleAssignment, type MidiFaithfulC
 import { addAutomationPoint, deleteAutomationPoint, ensureClipAutomationLane, ensureFxParameterAutomationLane, ensureProjectAutomationLane, ensureTrackAutomationLane, ensureTrackSendAutomationLane, getClipAutomationLane, getFxParameterAutomationLane, getTrackAutomationLane, getTrackSendAutomationLane, setAutomationLaneEnabled, setAutomationLanePoints, type ClipAutomationField, type ProjectAutomationField, type TrackAutomationField, type TrackSendAutomationField, updateAutomationPoint } from "../daw/automation";
 import { addBusTrack, addReturnTrack, routeTrackToOutput, setTrackSendLevel, setTrackSendMode, type TrackSendMode } from "../daw/routing";
 import { setFxSlotParameter, setPocketProEqPreset } from "../daw/fx";
-import { pushUndo, redo, undo } from "../daw/undo";
+import { createDrumRackTrack, createQuickSamplerTrack, mapDrumRackPadSample, removeInstrumentDevice, replaceTrackInstrumentDevice, setDrumRackPadParameter, setInstrumentDeviceEnabled, setSamplerEnvelopeParameter, setSamplerParameter, type DrumRackPadParameter, type SamplerEnvelopeParameter, type SamplerParameter } from "../daw/devices";
+import {
+  addHostedPluginEffect,
+  applyHostedPocketPreset,
+  createHostedPluginInstrumentTrack,
+  ensureHostedEffectAutomationLane,
+  ensureHostedInstrumentAutomationLane,
+  mergeHostedPluginRuntimeMetadata,
+  saveHostedPocketPreset,
+  selectHostedFactoryProgram,
+  setHostedEffectParameter,
+  setHostedInstrumentParameter,
+  setHostedPluginSnapshot,
+  substituteHostedPlugin,
+  type HostedPluginStateValidationResult,
+  type HostedPluginRuntimeMetadata,
+  type VerifiedHostedPluginDescriptor
+} from "../daw/hostedPlugins";
+import type { HostedPluginStateSnapshot } from "../daw/schema";
+import { pushUndo, redo, replacePresent, undo } from "../daw/undo";
 import { addGameStateMarkerAtBar, addMarkerAtBar, clearLoop, clearTimelineSelection, deleteMarker, effectiveMeterAtBar, gameStateMarkerLabel, isGameStateMarkerId, renameMarker, setLoopToClip, setTimelineSelectionRange, setTimelineSelectionToClip, setTimelineSelectionToLoop, snapBarValue, snapBeatStepAtBar, snapProjectBarValue, timelineQuarterNoteBeatsBetweenBars } from "../daw/timeline";
 import {
   appendChordsmithSection,
@@ -59,7 +78,7 @@ import {
 import { drumPresetEventsForProject, drumPresetLabel, drumPresetVisibleForProject, findDrumPreset } from "../daw/chordsmithDrumPresets";
 import { bassPresetLabel, bassPresetPatternForProject, bassPresetVisibleForProject, findBassPreset } from "../daw/chordsmithBassPresets";
 import { findGuitarPreset, guitarPresetLabel, guitarPresetPatternForProject, guitarPresetVisibleForProject } from "../daw/chordsmithGuitarPresets";
-import type { AutomationPoint, Clip, JsonObject, JsonValue, PocketDawProject, ProjectMeterMapPoint, RecordingChannelMode, RecordingInputMode, TrackRecordingInput } from "../daw/schema";
+import type { AutomationPoint, Clip, InstrumentDevice, JsonObject, JsonValue, PocketDawProject, ProjectMeterMapPoint, RecordingChannelMode, RecordingInputMode, TrackRecordingInput } from "../daw/schema";
 import type { AppState, MidiRoleSourceSelection } from "./state";
 
 export function importTextToProject(text: string): { project: PocketDawProject; message: string } {
@@ -895,6 +914,200 @@ export function addTrackCommand(state: AppState, kind: AddTrackKind): AppState {
   };
 }
 
+export function createQuickSamplerTrackCommand(state: AppState, mediaPoolItemId: string, name?: string): AppState {
+  const result = createQuickSamplerTrack(state.undoStack.present, mediaPoolItemId, name);
+  if (!result) return { ...state, status: "Choose an imported audio sample before creating Quick Sampler." };
+  return {
+    ...commitProject(state, result.project, "Created Quick Sampler from sample."),
+    selectedTrackId: result.trackId,
+    showAddTrack: false
+  };
+}
+
+export function createDrumRackTrackCommand(state: AppState, mediaPoolItemIds: readonly string[], name?: string): AppState {
+  const result = createDrumRackTrack(state.undoStack.present, mediaPoolItemIds, name);
+  if (!result) return { ...state, status: "Choose at least one imported audio sample before creating Drum Rack." };
+  return {
+    ...commitProject(state, result.project, `Created Drum Rack with ${Math.min(mediaPoolItemIds.length, 16)} mapped sample${mediaPoolItemIds.length === 1 ? "" : "s"}.`),
+    selectedTrackId: result.trackId,
+    showAddTrack: false
+  };
+}
+
+export function createHostedPluginInstrumentTrackCommand(state: AppState, descriptor: VerifiedHostedPluginDescriptor): AppState {
+  const result = createHostedPluginInstrumentTrack(state.undoStack.present, descriptor);
+  if (!result) return { ...state, status: "Only a verified VST3 instrument can be inserted." };
+  return {
+    ...commitProject(state, result.project, `Added ${descriptor.identity.name} instrument.`),
+    selectedTrackId: result.trackId,
+    showAddTrack: false
+  };
+}
+
+export function addHostedPluginEffectCommand(state: AppState, trackId: string, descriptor: VerifiedHostedPluginDescriptor): AppState {
+  const result = addHostedPluginEffect(state.undoStack.present, trackId, descriptor);
+  if (!result) return { ...state, status: "Choose an FX-capable track and a verified VST3 effect." };
+  return {
+    ...commitProject(state, result.project, `Added ${descriptor.identity.name} effect.`),
+    selectedTrackId: trackId
+  };
+}
+
+export function substituteHostedPluginCommand(state: AppState, instanceId: string, descriptor: VerifiedHostedPluginDescriptor): AppState {
+  const next = substituteHostedPlugin(state.undoStack.present, instanceId, descriptor);
+  if (next === state.undoStack.present) return { ...state, status: "Choose a verified plug-in with the matching instrument or effect role." };
+  return commitProject(state, next, `Substituted ${descriptor.identity.name}; chain position, state and automation were preserved.`);
+}
+
+export function setHostedPluginParameterCommand(
+  state: AppState,
+  instanceId: string,
+  stableId: string,
+  value: number,
+  chainId?: string
+): AppState {
+  const next = chainId
+    ? setHostedEffectParameter(state.undoStack.present, chainId, instanceId, stableId, value)
+    : setHostedInstrumentParameter(state.undoStack.present, instanceId, stableId, value);
+  if (next === state.undoStack.present) return { ...state, status: "Hosted plug-in parameter is unavailable or read-only." };
+  return commitProject(state, next, `Updated ${stableId}.`);
+}
+
+export function setHostedPluginParametersCommand(
+  state: AppState,
+  instanceId: string,
+  edits: Array<{ stableId: string; value: number }>,
+  chainId?: string
+): AppState {
+  let next = state.undoStack.present;
+  for (const edit of edits) {
+    next = chainId
+      ? setHostedEffectParameter(next, chainId, instanceId, edit.stableId, edit.value)
+      : setHostedInstrumentParameter(next, instanceId, edit.stableId, edit.value);
+  }
+  if (next === state.undoStack.present) return state;
+  return commitProject(state, next, `Applied ${edits.length} vendor editor parameter update${edits.length === 1 ? "" : "s"}.`);
+}
+
+export function refreshHostedPluginRuntimeMetadataCommand(
+  state: AppState,
+  instanceId: string,
+  runtime: HostedPluginRuntimeMetadata
+): AppState {
+  const project = mergeHostedPluginRuntimeMetadata(state.undoStack.present, instanceId, runtime);
+  if (project === state.undoStack.present) return state;
+  return { ...state, undoStack: replacePresent(state.undoStack, project) };
+}
+
+export function ensureHostedPluginAutomationLaneCommand(
+  state: AppState,
+  instanceId: string,
+  stableId: string,
+  chainId?: string
+): AppState {
+  const result = chainId
+    ? ensureHostedEffectAutomationLane(state.undoStack.present, chainId, instanceId, stableId)
+    : ensureHostedInstrumentAutomationLane(state.undoStack.present, instanceId, stableId);
+  if (!result) return { ...state, status: "That hosted parameter cannot be automated." };
+  return commitProject(state, result.project, `Enabled automation for ${stableId}.`);
+}
+
+export function retainHostedPluginStateCommand(
+  state: AppState,
+  instanceId: string,
+  snapshot: HostedPluginStateSnapshot,
+  validation: HostedPluginStateValidationResult
+): AppState {
+  const next = setHostedPluginSnapshot(state.undoStack.present, instanceId, snapshot, validation);
+  if (next === state.undoStack.present) return { ...state, status: "Plug-in returned invalid or oversized state; the previous valid snapshot was retained." };
+  return commitProject(state, next, "Saved hosted plug-in state.");
+}
+
+export function saveHostedPocketPresetCommand(state: AppState, instanceId: string, name: string): AppState {
+  const next = saveHostedPocketPreset(state.undoStack.present, instanceId, name);
+  if (next === state.undoStack.present) return { ...state, status: "Hosted plug-in instance was not found." };
+  return commitProject(state, next, `Saved Pocket preset ${name.trim() || "Pocket Preset"}.`);
+}
+
+export function applyHostedPocketPresetCommand(state: AppState, instanceId: string, presetId: string): AppState {
+  const next = applyHostedPocketPreset(state.undoStack.present, instanceId, presetId);
+  if (next === state.undoStack.present) return { ...state, status: "Pocket preset was not found." };
+  return commitProject(state, next, "Applied Pocket preset.");
+}
+
+export function selectHostedFactoryProgramCommand(state: AppState, instanceId: string, programId: string): AppState {
+  const next = selectHostedFactoryProgram(state.undoStack.present, instanceId, programId);
+  if (next === state.undoStack.present) return { ...state, status: "Factory program is unavailable." };
+  return commitProject(state, next, "Selected factory program.");
+}
+
+export function replaceTrackInstrumentDeviceCommand(state: AppState, trackId: string, device: InstrumentDevice): AppState {
+  const next = replaceTrackInstrumentDevice(state.undoStack.present, trackId, device);
+  if (next === state.undoStack.present) return { ...state, status: "Choose a MIDI track and valid sample device before replacing its instrument." };
+  return {
+    ...commitProject(state, next, `Replaced track instrument with ${device.name}.`),
+    selectedTrackId: trackId
+  };
+}
+
+export function removeInstrumentDeviceCommand(state: AppState, deviceId: string): AppState {
+  const next = removeInstrumentDevice(state.undoStack.present, deviceId);
+  if (next === state.undoStack.present) return { ...state, status: "Instrument device was not found." };
+  return commitProject(state, next, "Removed instrument device.");
+}
+
+export function setInstrumentDeviceEnabledCommand(state: AppState, deviceId: string, enabled: boolean): AppState {
+  const next = setInstrumentDeviceEnabled(state.undoStack.present, deviceId, enabled);
+  if (next === state.undoStack.present) return { ...state, status: "Instrument device state is unchanged." };
+  return commitProject(state, next, `${enabled ? "Enabled" : "Bypassed"} instrument device.`);
+}
+
+export function setSamplerParameterCommand(
+  state: AppState,
+  deviceId: string,
+  parameter: SamplerParameter,
+  value: number | boolean | string
+): AppState {
+  const next = setSamplerParameter(state.undoStack.present, deviceId, parameter, value);
+  if (next === state.undoStack.present) return { ...state, status: "Quick Sampler device was not found." };
+  return commitProject(state, next, `Updated Quick Sampler ${parameter}.`);
+}
+
+export function setSamplerEnvelopeParameterCommand(
+  state: AppState,
+  deviceId: string,
+  parameter: SamplerEnvelopeParameter,
+  value: number
+): AppState {
+  const next = setSamplerEnvelopeParameter(state.undoStack.present, deviceId, parameter, value);
+  if (next === state.undoStack.present) return { ...state, status: "Quick Sampler device was not found." };
+  return commitProject(state, next, `Updated Quick Sampler ${parameter}.`);
+}
+
+export function setDrumRackPadParameterCommand(
+  state: AppState,
+  deviceId: string,
+  padIndex: number,
+  parameter: DrumRackPadParameter,
+  value: number | boolean | string | null
+): AppState {
+  const next = setDrumRackPadParameter(state.undoStack.present, deviceId, padIndex, parameter, value);
+  if (next === state.undoStack.present) return { ...state, status: "Choose a valid Drum Rack pad before editing it." };
+  return commitProject(state, next, `Updated Drum Rack pad ${padIndex + 1} ${parameter}.`);
+}
+
+export function mapDrumRackPadSampleCommand(
+  state: AppState,
+  deviceId: string,
+  padIndex: number,
+  mediaPoolItemId: string | null,
+  name?: string
+): AppState {
+  const next = mapDrumRackPadSample(state.undoStack.present, deviceId, padIndex, mediaPoolItemId, name);
+  if (next === state.undoStack.present) return { ...state, status: "Choose a valid Drum Rack pad and imported audio sample." };
+  return commitProject(state, next, mediaPoolItemId ? `Mapped sample to Drum Rack pad ${padIndex + 1}.` : `Cleared Drum Rack pad ${padIndex + 1}.`);
+}
+
 export function setTrackFolderCommand(state: AppState, trackId: string, folderId: string | null): AppState {
   const project = state.undoStack.present;
   const track = project.tracks.find((item) => item.id === trackId);
@@ -1249,8 +1462,11 @@ function cleanAutomationCurve(value: string | undefined): NonNullable<Automation
   return "linear";
 }
 
-export function placeAudioClipCommand(state: AppState, mediaPoolItemId: string): AppState {
-  const result = placeAudioClipOnTimeline(state.undoStack.present, mediaPoolItemId, state.cursorBar || state.playheadBar || 1);
+export function placeAudioClipCommand(state: AppState, mediaPoolItemId: string, targetTrackId?: string | null, targetBar?: number): AppState {
+  const startBar = Number.isFinite(targetBar) ? Math.max(1, Number(targetBar)) : state.cursorBar || state.playheadBar || 1;
+  const result = targetTrackId
+    ? placeAudioClipOnTrack(state.undoStack.present, mediaPoolItemId, targetTrackId, startBar)
+    : placeAudioClipOnTimeline(state.undoStack.present, mediaPoolItemId, startBar);
   if (!result.clipId) return { ...state, status: "Choose an audio media item before placing a clip." };
   return {
     ...commitProject(state, result.project, "Placed audio clip on the timeline."),

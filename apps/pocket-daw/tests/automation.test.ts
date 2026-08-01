@@ -3,7 +3,7 @@ import { createDemoProject } from "../src/demo/demoProject";
 import { MAX_DAW_TEMPO_BPM, addAutomationPoint, createAutomationLane, deleteAutomationPoint, ensureClipAutomationLane, ensureProjectAutomationLane, ensureTrackSendAutomationLane, evaluateAutomationLane, evaluateProjectTempoAtBar, getAutomatedTrackControls, getProjectAutomationLane, getTrackSendAutomationLane, updateAutomationPoint } from "../src/daw/automation";
 import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../src/daw/audioClips";
 import { addReturnTrack, setTrackSendLevel } from "../src/daw/routing";
-import { barsToSeconds, timelineBarAtSeconds, timelineDurationSeconds, timelineSecondsAtBar } from "../src/daw/timeline";
+import { barsToSeconds, timelineBarAtSeconds, timelineDurationSeconds, timelineMetricsAtSortedBars, timelineQuarterNoteBeatsBetweenBars, timelineSecondsAtBar } from "../src/daw/timeline";
 
 describe("automation helpers", () => {
   it("creates, evaluates, updates and deletes clamped automation points", () => {
@@ -168,5 +168,32 @@ describe("automation helpers", () => {
     }).project;
 
     expect(timelineSecondsAtBar(automated, 3)).toBeCloseTo(8 * Math.log(2), 5);
+  });
+
+  it("computes native transport coordinates in one pass without changing timeline results", () => {
+    const project = createDemoProject();
+    project.project.bpm = 120;
+    project.project.timeSig = 4;
+    project.project.meterMap = [
+      { id: "meter_3", bar: 3, numerator: 3, denominator: 4, source: "manual" }
+    ];
+    const automated = createAutomationLane(project, "project.tempo", {
+      min: 40,
+      max: 240,
+      points: [
+        { bar: 1, value: 120, curve: "linear" },
+        { bar: 3, value: 60, curve: "ease-out" },
+        { bar: 5, value: 180, curve: "hold" }
+      ]
+    }).project;
+    const bars = [1, 1.5, 2, 3, 4.25, 5, 6];
+    const metrics = timelineMetricsAtSortedBars(automated, bars);
+
+    expect(metrics.map((metric) => metric.bar)).toEqual(bars);
+    metrics.forEach((metric) => {
+      expect(metric.timeSeconds).toBeCloseTo(timelineSecondsAtBar(automated, metric.bar), 5);
+      expect(metric.projectPpq).toBeCloseTo(timelineQuarterNoteBeatsBetweenBars(automated, 1, metric.bar), 5);
+    });
+    expect(metrics.find((metric) => metric.bar === 4.25)?.meter).toMatchObject({ numerator: 3, denominator: 4 });
   });
 });
