@@ -1,6 +1,6 @@
 export const POCKET_DAW_APP = "PocketDAW" as const;
 export const POCKET_DAW_SCHEMA_VERSION = 3;
-export const POCKET_DAW_VERSION = "0.6.43";
+export const POCKET_DAW_VERSION = "0.6.44";
 export const MAX_HOSTED_PLUGIN_STATE_BYTES = 32 * 1024 * 1024;
 export const MAX_HOSTED_PLUGIN_LATENCY_SAMPLES = 262_144;
 export const MAX_HOSTED_PLUGIN_TAIL_SAMPLES = 5_760_000;

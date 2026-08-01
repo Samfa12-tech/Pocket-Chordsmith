@@ -58,6 +58,34 @@ function createInitialState() {
 }
 
 describe("Pocket DAW UI rendering", () => {
+  it("keeps installed MCP help machine-local and hides source-checkout command templates", () => {
+    const state = createInitialState();
+    state.showMcpSetupPanel = true;
+    state.currentFile = { path: "D:\\Music\\Other User.pocketdaw", label: "Other User.pocketdaw" };
+    state.aiBridge = {
+      runtimeAvailable: true,
+      enabled: true,
+      url: "http://127.0.0.1:47858",
+      statusUrl: "http://127.0.0.1:47858/status",
+      controlUrl: "http://127.0.0.1:47858/control",
+      sessionPath: "C:\\Users\\other_user\\AppData\\Local\\Pocket DAW\\ai-bridge-session.json",
+      processId: 1234,
+      startedAt: "2026-08-01T00:00:00.000Z",
+      lastRequestAt: null,
+      lastError: null,
+      testMessage: "Live app bridge is enabled."
+    };
+
+    const html = renderAppShell(state);
+    expect(html).toContain("D:\\Music\\Other User.pocketdaw");
+    expect(html).toContain("C:\\Users\\other_user\\AppData\\Local\\Pocket DAW\\ai-bridge-session.json");
+    expect(html).toContain("does not expose developer-machine paths");
+    expect(html).not.toContain("POCKET_DAW_SOURCE_DIR");
+    expect(html).not.toContain("C:\\Users\\sam_s");
+    expect(html).not.toContain("Command template");
+    expect(html).not.toContain("Copy All Templates");
+  });
+
   it("uses the saved file name for an untitled project and keeps About in Help only", () => {
     const state = createInitialState();
     const project = createEmptyPocketDawProject();

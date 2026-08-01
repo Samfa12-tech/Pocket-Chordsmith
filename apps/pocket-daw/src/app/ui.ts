@@ -4222,10 +4222,8 @@ function renderFunctionActionCatalog(): string {
 
 function renderMcpSetupPanel(state: AppState): string {
   const project = currentProject(state);
-  const command = pocketDawMcpCommandLine();
-  const claudeConfig = pocketDawMcpClaudeConfig();
-  const codexConfig = pocketDawMcpCodexConfig();
   const bridge = state.aiBridge;
+  const showDeveloperFileMcpSetup = !bridge.runtimeAvailable;
   const liveStatus = bridge.runtimeAvailable
     ? bridge.enabled ? "Enabled for this app session" : "Disabled"
     : "Installed app runtime unavailable";
@@ -4238,9 +4236,11 @@ function renderMcpSetupPanel(state: AppState): string {
         </header>
         <div class="control-guide">
           <p><strong>Project</strong><span>${escapeHtml(project.project.title)} / ${escapeHtml(state.currentFile.path || state.currentFile.label)}</span></p>
-          <p><strong>File MCP</strong><span>Local stdio MCP server for reading, validating, creating, editing and export-planning Pocket DAW projects while the app is open or closed.</span></p>
+          <p><strong>File MCP</strong><span>${showDeveloperFileMcpSetup
+            ? "Developer source-checkout tool for reading, validating, creating, editing and export-planning Pocket DAW projects while the app is open or closed. Replace the source-directory placeholder in the templates below."
+            : "Developer source-checkout tool; it is not bundled with the installed app. This installed build uses the live app bridge below and does not expose developer-machine paths."}</span></p>
           <p><strong>Live bridge</strong><span>${escapeHtml(liveStatus)}. Live tools can read this running app, control transport, select tracks/clips, apply safe mixer edits and capture bounded performance diagnostics.</span></p>
-          <p><strong>Workspace</strong><span>${escapeHtml(POCKET_DAW_MCP_WORKSPACE)}</span></p>
+          ${showDeveloperFileMcpSetup ? `<p><strong>Source directory</strong><span>${escapeHtml(POCKET_DAW_MCP_WORKSPACE)}</span></p>` : ""}
           <p><strong>Writes</strong><span>MCP tools return proposed JSON by default and only write when an output path is provided.</span></p>
           <p><strong>Session file</strong><span>${escapeHtml(bridge.sessionPath || "Created by the installed app at startup.")}</span></p>
           <p><strong>Last live request</strong><span>${escapeHtml(bridge.lastRequestAt || "None this session.")}</span></p>
@@ -4254,12 +4254,12 @@ function renderMcpSetupPanel(state: AppState): string {
           <p><strong>Endpoint</strong><span>${escapeHtml(bridge.url || "http://127.0.0.1:47858")}</span></p>
           <p><strong>Auth</strong><span>Live endpoints require the bearer token from the local session file. File MCP tools do not need the app running.</span></p>
         </div>
-        ${renderMcpConfigBlock("Command", "command", command)}
-        ${renderMcpConfigBlock("Claude / JSON MCP clients", "claude-json", claudeConfig)}
-        ${renderMcpConfigBlock("Codex config.toml", "codex-toml", codexConfig)}
+        ${showDeveloperFileMcpSetup ? renderMcpConfigBlock("Command template", "command", pocketDawMcpCommandLine()) : ""}
+        ${showDeveloperFileMcpSetup ? renderMcpConfigBlock("Claude / JSON MCP client template", "claude-json", pocketDawMcpClaudeConfig()) : ""}
+        ${showDeveloperFileMcpSetup ? renderMcpConfigBlock("Codex config.toml template", "codex-toml", pocketDawMcpCodexConfig()) : ""}
         <div class="diagnostic-actions">
           <button data-action="ai-bridge-test" ${bridge.enabled ? "" : "disabled"}>Test live bridge</button>
-          <button data-action="copy-mcp-setup" data-copy-mcp-setup="all">Copy All</button>
+          ${showDeveloperFileMcpSetup ? `<button data-action="copy-mcp-setup" data-copy-mcp-setup="all">Copy All Templates</button>` : ""}
           <button data-action="mcp-setup-close">Close</button>
         </div>
       </section>
