@@ -4,11 +4,11 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.42` |
+| Source version | `0.6.43` |
 | Project schema version | `3` |
-| Latest published version | `0.6.41` |
-| Latest published tag | `pocket-daw-v0.6.41` |
-| Latest published commit | `15761a1ff2dd6dbba70698c343b7181095a7a7e6` |
+| Latest published version | `0.6.42` |
+| Latest published tag | `pocket-daw-v0.6.42` |
+| Latest published commit | `045c51497e67eff563468908567d345b506ed735` |
 | Last installed-smoke version | `0.6.41` |
 | Last installed-smoke result | `pass` |
 | Last installed-smoke date | `2026-07-17T07:21:51.646Z` |
@@ -29,7 +29,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
-- 2026-08-01 source-only Samples, Samplers and VST3 Beta candidate: project schema 3, explicit local Samples and Sounds Library, Pocket Starter Sounds, Quick Sampler and 16-pad Drum Rack native rendering, used-sample auto-collection/recovery, plus pinned-SDK crash-isolated x64 VST3 scanning and session audio hosting for instruments/effects with native-clock events, automation, state, programs, editors, latency, tails and failure isolation. Deterministic and unbundled JS80P 4.0.2 / Surge XT 1.3.4 compatibility tests pass; exact-installer smoke and public updater publication are still pending.
+- 2026-08-01 source-only 0.6.43 Samples, Samplers and VST3 Beta candidate: project schema 3, explicit local Samples and Sounds Library, Pocket Starter Sounds, Quick Sampler and 16-pad Drum Rack native rendering, used-sample auto-collection/recovery, plus pinned-SDK crash-isolated x64 VST3 scanning and session audio hosting for instruments/effects with native-clock events, automation, state, programs, editors, latency, tails and failure isolation. Deterministic and unbundled JS80P 4.0.2 / Surge XT 1.3.4 compatibility tests pass; exact-installer smoke and public updater publication are still pending. Version 0.6.43 avoids replacing the already-published 0.6.42 updater release.
 - 2026-07-17 post-release documentation and test-helper update: added the one-pass exact-artifact release fast path, corrected normal itch policy, recorded 0.6.41 process failures to avoid, and promoted the loopMIDI sender into a tracked reusable script.
 - 2026-07-22 Pocket Audio sound-profile update: imports and renders PCS schema 17 profile identity, expressive events, Funk bass articulations, upgraded Metal texture, Western character, Chiptune channel controls, expanded drum lanes, capability diagnostics, and preserved unknown intent while retaining legacy schema-16 compatibility.
 

@@ -45,7 +45,8 @@ describe("installed VST3 host smoke evidence", () => {
 function createFixture() {
   const directory = mkdtempSync(join(tmpdir(), "pocket-daw-vst3-evidence-"));
   temporaryDirectories.push(directory);
-  const installerPath = join(directory, "Pocket.DAW_0.6.42_x64-setup.exe");
+  const installerFileName = `Pocket.DAW_${packageJson.version}_x64-setup.exe`;
+  const installerPath = join(directory, installerFileName);
   const candidateMetadataPath = join(directory, "sidecar.json");
   const summaryPath = join(directory, "summary.json");
   const installerBytes = Buffer.from("exact candidate installer");
@@ -70,7 +71,7 @@ function createFixture() {
     completedAt: "2026-08-01T00:00:01.000Z",
     result: "pass",
     installer: {
-      fileName: "Pocket.DAW_0.6.42_x64-setup.exe",
+      fileName: installerFileName,
       sha256: createHash("sha256").update(installerBytes).digest("hex")
     },
     pluginHostSidecar: { ...candidate },
