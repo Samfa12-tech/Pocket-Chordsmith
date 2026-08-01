@@ -23,7 +23,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Samples, Samplers + VST3 Beta`;
+export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - MCP Help Path Hotfix`;
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -313,7 +313,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Samples, Samplers + VST3 Beta
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - MCP Help Path Hotfix
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -321,7 +321,14 @@ Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket C
 
 ${artifactTable}
 
-## Highlights
+## ${VERSION} Hotfix
+
+- Installed AI / MCP Bridge help no longer displays or copies the developer build machine's source-workspace or Node.js paths.
+- Current-project and live-session paths remain runtime-derived from each user's own machine.
+- File MCP launch templates are now clearly identified as source-checkout developer tools, use a neutral \`<POCKET_DAW_SOURCE_DIR>\` placeholder and are hidden in the installed runtime.
+- Audio, project, Samples, Samplers and VST3 behavior is unchanged from 0.6.43.
+
+## Included From 0.6.43
 
 - Added a persistent Sounds and Samples Library with explicit file/folder import, Explorer drag-and-drop, search, filters, favourites, recents, waveform audition, and keyboard-accessible actions. Pocket DAW never scans personal drives automatically.
 - Bundled the existing Pocket Starter Sounds as a useful starter collection.
