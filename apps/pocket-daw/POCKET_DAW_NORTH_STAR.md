@@ -89,7 +89,7 @@ Pocket DAW should grow toward these DAW features:
 - MIDI quantization, swing/groove tools, controller editing and deeper piano-roll workflows.
 - Audio transient quantization, warp markers, time-stretch, pitch-shift and source-preserving clip analysis.
 - Vocal pitch correction/autotune-style correction after pitch analysis, audio preservation and monitoring latency are reliable.
-- Plugin hosting research for CLAP, VST3, LV2 or other formats, only after the native mixer, automation, render and crash-boundary contracts are mature.
+- A shipped opt-in Windows x64 VST3 beta host with crash isolation, bounded block processing, native-clock automation, state, latency/tails and recovery. CLAP, LV2, AU/AAX and other formats remain future research.
 - Shared Pocket Audio Core integration when the real core package/API is available, with Pocket DAW timeline events adapted into that engine rather than guessed from memory.
 - Stem rendering.
 - Full-song rendering.
@@ -181,7 +181,7 @@ Preferred order:
 8. Export and bounce expansion: MP3/FLAC, richer bounce profiles, freeze/print tracks, routing-aware stems, batch exports and release-grade package verification. The current WAV profile foundation now supports sample-rate, mono/stereo, peak normalization, Off/TPDF fixed-point dithering, 16/24-bit PCM rendering and 32-bit float rendering for full-song, stem and section-loop WAV paths, and ZIP package builders self-check manifest/entry/artifact consistency before reporting success.
 9. Stereo and simultaneous multitrack recording: explicit input assignment, stereo tracks, monitoring controls, low-latency device paths, take lanes, punch recording and comping.
 10. Audio quantization and pitch tools: transient detection, warp markers, first source-safe varispeed rate/pitch-as-speed playback and global warp-marker varispeed timing, then pitch-preserving time-stretch, pitch-shift, groove matching and vocal pitch correction/autotune after preservation and latency are dependable.
-11. Plugin hosting or bridge: evaluate CLAP/VST3/LV2 and related open-source host code only after the native mixer, automation, preset, render and crash-boundary contracts are ready.
+11. Hosted plug-in expansion: deepen VST3 compatibility, hosted-parameter automation, routing-aware latency/tails and portable freeze/render workflows before evaluating CLAP/LV2/AU/AAX.
 
 Every feature in this list should become part of the project schema, command model, undo/redo stack, UI, playback engine, save/open path, render/export path and smoke tests. Pocket Chordsmith, Pocket DJ and Godot integrations should use those same primitives rather than separate add-on flows.
 
@@ -216,7 +216,7 @@ It does not yet prove:
 - Deep MIDI clip editor behavior beyond the compact piano-roll foundation.
 - Audio transient quantization beyond global varispeed from warp marker anchors.
 - Pitch-preserving time-stretch, independent pitch-shift and vocal pitch correction/autotune.
-- Plugin hosting or a plugin-host bridge.
+- Hosted VST3 is present as an opt-in Windows x64 beta in public 0.6.43. Remaining gaps are broader format support, multi-bus/sidechain/MPE/MIDI-output support, wider compatibility and deeper continuous hosted-parameter automation.
 - Full drawn automation editing, beat-grid snap/edit and source-audio warp tempo-ramp behavior, FX automation, deeper send/pre-post automation and hosted-parameter automation.
 - Full insert/send processing and third-party plugin latency/compensation handling.
 - Installed-app proof for project-relative media relink/reload workflow. Source now has native relink/reload, decoded-cache recovery, quiet hydration metadata repair, and project-relative path hardening.

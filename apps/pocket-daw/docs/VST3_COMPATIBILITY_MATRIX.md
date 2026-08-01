@@ -1,9 +1,10 @@
 # Pocket DAW VST3 Beta Compatibility Matrix
 
-This matrix records source-candidate tests only until `CURRENT_RELEASE_STATUS.md`
-records matching exact-installer evidence. Plug-ins are downloaded from official
-vendor releases for local testing and are never committed, bundled, mirrored,
-or downloaded by Pocket DAW.
+The public 0.6.43 installer passed the installed VST3 host smoke. This matrix
+also records compatibility tests run against unbundled official vendor
+releases. Plug-ins are never committed, bundled, mirrored, or downloaded by
+Pocket DAW. The current source-only 0.6.44 MCP help hotfix does not change the
+VST3 host contract.
 
 ## 2026-08-01 source-candidate pass
 

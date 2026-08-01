@@ -1,12 +1,13 @@
 # VST3 Hosting Beta
 
-## Current source boundary
+## Current release boundary
 
 Pocket DAW now contains a crash-isolated Windows x64 VST3 host for instruments
 and effects. The feature remains a one-click beta and is disabled until the user
-accepts the explanation in the Plug-ins tab. This document describes source
-capability; public availability is recorded separately in
-`CURRENT_RELEASE_STATUS.md` only after exact-installer smoke and publication.
+accepts the explanation in the Plug-ins tab. It shipped in the public 0.6.43
+installer after exact installed VST3 smoke. The current source version is 0.6.44,
+which is a source-only MCP help hotfix; use `CURRENT_RELEASE_STATUS.md` for the
+public/source/smoke distinction.
 
 The native CPAL callback and sample clock remain authoritative. Pocket DAW
 renders a bounded 128-frame graph off the callback, exchanges audio and events
@@ -46,10 +47,9 @@ load installed modules. Those paths stay in private app data under
 `%LOCALAPPDATA%\Pocket DAW`; projects, normal diagnostics, and analytics do not
 contain them.
 
-## Release acceptance gate
+## Release acceptance gate and evidence
 
-The beta may be published only when all of the following pass against one exact
-installer hash:
+The 0.6.43 beta passed the following gates against one exact installer hash:
 
 1. Deterministic instrument/effect tests cover scan, audio, note and parameter
    timing, state, programs, latency, tails, transport/loop/seek, editors,
@@ -61,6 +61,14 @@ installer hash:
    the tested installer.
 4. Packaging verifies the pinned SDK license notice and refuses to advertise
    scanner or audio-hosting capability when the exact sidecar probe disagrees.
+
+The exact 0.6.43 setup artifact is
+`Pocket.DAW_0.6.43_x64-setup.exe` with SHA-256
+`8e68415dcd4f8272a9a4a308d4950e8c2561feaf4bacbc8f1cb6fe7499f15b96`.
+Installed smoke covered scanning, instrument/effect processing, state,
+automation, factory programs, latency, tails, editor lifecycle and
+unload/reload recovery. The packaged sidecar SHA-256 is
+`dac69b746657c4e241087c387ae16a3ceda9167b473db9f940de45cae01a19fc`.
 
 Pocket DAW never downloads, bundles, mirrors, or endorses third-party plug-ins.
 Help may link to Joe Hagen's guide for discovery, but directs users to the

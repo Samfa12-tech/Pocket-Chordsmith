@@ -1,6 +1,6 @@
 # Pocket DAW Action Catalog
 
-Last updated: 2026-07-17
+Last updated: 2026-08-01
 
 This catalog is generated from `src/app/functionGuide.ts` so the Markdown help and the in-app Function Guide describe the same controls. The broader workflow guide remains `docs/POCKET_DAW_FUNCTION_REFERENCE.md`.
 
@@ -284,7 +284,7 @@ Use `data-action` values for ordinary command buttons. Use selector entries for 
 
 | Control | Action / Selector | Shortcut | What it does | Use when | AI counterpart notes |
 | --- | --- | --- | --- | --- | --- |
-| Add FX | `data-add-fx / data-drum-lane-add-fx` |  | Adds a built-in effect slot to a track or drum lane. | Use for internal processing such as EQ, delay, dynamics, or color. | Third-party plugin hosting is not claimed. |
+| Add FX | `data-add-fx / data-drum-lane-add-fx` |  | Adds a built-in effect slot to a track or drum lane; verified VST3 effects are added from **Library → Plug-ins**. | Use for internal processing such as EQ, delay, dynamics, color, or an opt-in hosted VST3 effect. | VST3 effects run in the crash-isolated Windows x64 beta helper. Use `docs/VST3_INSTALLATION_GUIDE.md` for installation and recovery. |
 | Bypass/Enable FX | `data-fx-toggle / data-drum-lane-fx-toggle` |  | Bypasses or enables an effect slot. | Use to audition processing impact. | Bypassed effects still exist in the project. |
 | Remove FX | `data-fx-remove / data-drum-lane-fx-remove` |  | Removes an effect slot from its chain. | Use when an effect is no longer wanted. | This can remove parameter/automation context; verify undo coverage. |
 | Pocket Pro EQ Presets And Bands | `data-fx-eq-preset / data-fx-param` |  | Applies EQ presets and edits EQ band enable, frequency, gain, and Q parameters. | Use for tonal shaping and corrective EQ. | Check parameter automation after changing EQ values. |

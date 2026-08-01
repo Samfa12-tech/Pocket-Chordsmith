@@ -9,23 +9,21 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 | Latest published version | `0.6.43` |
 | Latest published tag | `pocket-daw-v0.6.43` |
 | Latest published commit | `546228a333971c319808fda88d751a7cc8fc77b6` |
-| Last installed-smoke version | `0.6.41` |
+| Last installed-smoke version | `0.6.43` |
 | Last installed-smoke result | `pass` |
-| Last installed-smoke date | `2026-07-17T07:21:51.646Z` |
-| Last installed-smoke installer | `Pocket.DAW_0.6.41_x64-setup.exe` |
-| Last installed-smoke SHA-256 | `ee347b4786a1e6477d9a07659bc920fb126323dc3243f8b452df3170b0954174` |
+| Last installed-smoke date | `2026-08-01T12:43:45.050Z` |
+| Last installed-smoke installer | `Pocket.DAW_0.6.43_x64-setup.exe` |
+| Last installed-smoke SHA-256 | `8e68415dcd4f8272a9a4a308d4950e8c2561feaf4bacbc8f1cb6fe7499f15b96` |
 
 ## Installed-Smoke Notes
 
-- Pocket DAW 0.6.41 was built from clean commit 15761a1ff2dd6dbba70698c343b7181095a7a7e6; the release manifest recorded dirtyWorkingTree false before installation.
-- The exact staged setup EXE was releases/updater/Pocket.DAW_0.6.41_x64-setup.exe with SHA-256 ee347b4786a1e6477d9a07659bc920fb126323dc3243f8b452df3170b0954174, installed locally, launched from C:\Users\sam_s\AppData\Local\Pocket DAW\pocket-daw.exe, and re-hashed unchanged after final candidate verification.
-- One combined strict installed smoke captured 10.069977 seconds of 48000 Hz mono audio with filePeak 0.021575927734375 and fileRms 0.0017969736972514663, plus 19 loopMIDI notes in an unmuted active punched MIDI take lane spanning bars 7-9.
-- The same installed smoke exported retained WAV and MIDI files and passed strict audible-audio, connected-MIDI, take-lane-placement, captured-pitch, installer-hash and export-file verification.
-- Installed media-portability smoke passed collect, folder move/reopen, original deletion, decoded-cache-only recovery, relink/recollect, final portable reopen, WAV/stem/section-loop/Godot/Web exports and evidence re-hashing.
-- Godot 4.6.3 imported and runtime-validated the final pack with 464 events and two STEM_SYNC stems; Chromium decoded the final Web full mix, stems and audible exact-duration 0.508475-second section loop and completed offline rendering.
-- Sam's owned Billions of Years MIDI passed faithful conversion with 74 bars, 244 melody attacks, 148 chord events containing 453 notes, exact resolution 4, raw MIDI retained and zero generated accompaniment; owned files were excluded from git and public packages.
-- The final candidate gate passed 1037 Vitest tests, 115 Rust tests, 14 Chromium E2E tests, smoke attestation, installed punch/take verification, media portability and both game-pack verifiers.
-- 0.6.41 was published to GitHub release pocket-daw-v0.6.41 on 2026-07-17. GitHub latest updater/bootstrapper manifests, remote setup HTTP response and downloaded setup SHA-256 were verified; the release tag and origin/main pointed at the exact tested commit. Itch was correctly left on its stable unchanged bootstrapper payload.
+- Pocket DAW 0.6.43 was built from clean commit 546228a333971c319808fda88d751a7cc8fc77b6; the release manifest recorded dirtyWorkingTree false before installation.
+- The exact staged setup EXE was releases/updater/Pocket.DAW_0.6.43_x64-setup.exe with SHA-256 8e68415dcd4f8272a9a4a308d4950e8c2561feaf4bacbc8f1cb6fe7499f15b96, installed locally and re-hashed unchanged after final candidate verification.
+- Installed smoke passed Samples Library, Quick Sampler, Drum Rack, schema-3 save/reopen, native audio capture/render/export, punch/take lanes, MIDI input, media portability and game-pack checks. The final input take was intentionally quiet at the user's request; rendered/exported audio audibility and the user's audio-path confirmation passed.
+- The installed VST3 host passed scanning, instrument/effect processing, state round-trips, automation, factory programs, latency, tails, vendor-editor lifecycle and unload/reload recovery. The packaged sidecar SHA-256 was dac69b746657c4e241087c387ae16a3ceda9167b473db9f940de45cae01a19fc.
+- Compatibility coverage includes unbundled official JS80P 4.0.2 and Surge XT 1.3.4 releases; Pocket DAW does not bundle, download or redistribute them.
+- The final candidate gate passed 1109 Vitest tests, 158 native library tests, 5 sidecar unit tests, 98 Pocket DAW Chordsmith parity tests and 17 Chromium E2E tests, plus exact installed VST3, media-portability, punch/take and target-runtime evidence.
+- 0.6.43 was published to GitHub release pocket-daw-v0.6.43 on 2026-08-01. Latest updater/bootstrapper manifests, remote setup download and SHA-256, release tag and origin/main were verified; itch remains on its stable unchanged bootstrapper payload.
 
 ## Unreleased Source-Only Notes
 

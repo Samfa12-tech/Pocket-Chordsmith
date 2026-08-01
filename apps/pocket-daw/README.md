@@ -14,12 +14,15 @@ Pocket DAW is not:
 - Pocket Chordsmith
 - Pocket DJ
 
-Current public status: **free Windows alpha testing on itch**.
+Current public status: **free Windows alpha testing on itch, public updater
+version 0.6.43**. This release includes the Samples/Sounds Library, Quick
+Sampler, 16-pad Drum Rack, and the opt-in Windows x64 VST3 beta host.
 
 For current source/public/smoke truth, use:
 
 - `docs/CURRENT_RELEASE_STATUS.md`
 - `release-status.json`
+- `docs/VST3_INSTALLATION_GUIDE.md` for the complete plug-in install workflow
 
 - Itch page: `https://samfa12.itch.io/pocket-daw`
 - Project hub: `https://samfa12.com`
@@ -37,6 +40,31 @@ For current source/public/smoke truth, use:
 Pocket DAW is installed-app only for public alpha testing. Do not document, test, or publish a user-facing portable/extract-and-run app workflow. ZIPs, if any are generated later, are release/upload containers for installer artifacts only.
 
 Pocket DAW uses signed Tauri updater artifacts from GitHub Releases. The app is not updated from raw git source.
+
+## Samples, Samplers And VST3 Plug-ins
+
+The **Library** rail destination is now a persistent local studio browser:
+
+- **Sounds** contains the bundled Pocket Starter Sounds collection.
+- **Samples** supports explicit file/folder import, Explorer drag-and-drop,
+  search, favourites, recents, waveform audition, timeline placement, Quick
+  Sampler tracks and 16-pad Drum Racks.
+- **Plug-ins** is the opt-in Windows x64 VST3 beta. Pocket DAW scans the two
+  official Windows VST3 locations plus folders you explicitly add; it never
+  scans personal drives automatically.
+
+To install a plug-in, download the Windows x64 **VST3** build from the vendor's
+official site, install it to `%ProgramFiles%\Common Files\VST3` or
+`%LOCALAPPDATA%\Programs\Common\VST3`, then open **Library → Plug-ins**, choose
+**Enable VST3 Beta**, and use **Discover Modules**. For a custom install folder,
+choose **Add Folder…** first. Insert verified instruments with **New instrument
+track** or effects with **Add effect**. See
+[`docs/VST3_INSTALLATION_GUIDE.md`](docs/VST3_INSTALLATION_GUIDE.md) for
+recovery, portability and unsupported-format details.
+
+Pocket DAW does not download, bundle or redistribute third-party plug-ins. Use
+the [Joe Hagen guide](https://www.joehagenmusic.com/post/a-comprehensive-guide-to-high-quality-free-plugins-that-you-ll-actually-use)
+for discovery only, then download from the current official vendor site.
 
 Source commits after the last published checkpoint are unreleased until a
 new checkpoint is deliberately versioned, packaged, hashed, smoke-tested, and
@@ -124,6 +152,9 @@ User and agent help docs:
 
 - `docs/POCKET_DAW_FUNCTION_REFERENCE.md`
 - `docs/POCKET_DAW_ACTION_CATALOG.md`
+- `docs/VST3_INSTALLATION_GUIDE.md`
+- `docs/VST3_BETA_FOUNDATION.md`
+- `docs/VST3_COMPATIBILITY_MATRIX.md`
 
 Release and update docs:
 
@@ -165,6 +196,13 @@ Architecture docs:
 - v0.6.12 corrects the MCP setup snippets to use a tested Windows `cmd` argument-array launch shape.
 - v0.6.13 adds `Help -> AI / MCP Bridge` and live app MCP tools for status, transport, selection and safe mixer edits.
 - v0.6.19 adds native loop/metronome playback, latest-only native restarts during rapid live composition edits, better native-cache reuse after live edits, Save As title adoption from `.pocketdaw` filenames, and refreshed release/bootstrapper manifests.
+- v0.6.43 is the public Samples, Samplers and VST3 Beta release: schema 3
+  devices, Pocket Starter Sounds, Quick Sampler, 16-pad Drum Rack, used-sample
+  collection/recovery, and crash-isolated Windows x64 VST3 instruments/effects
+  with state, automation, latency/tails, editors and missing-plugin recovery.
+- v0.6.44 is a source-only MCP help hotfix after the 0.6.43 release. It removes
+  developer build-machine paths from installed help snippets; it is not yet a
+  separately published installer.
 - Historical v0.6.22 checkpoint: cached-playback UI fixes from source commit `5cd186a22b6a8be9d706e1474b6a204ddbd065aa` and exact-artifact installed smoke for setup SHA-256 `c7adc2aea5595490e55dbb720bed6735cd91348caef69ef249f3ff1c0868a6b7`.
 - Historical installed-app note: Windows `.pocketdaw` association, cold-start launch, second-instance launch, live project-open, and `pocket-daw://` Chordsmith handoff coexistence passed local installed `0.6.34` smoke on 2026-06-28. Keep File -> Open / Ctrl+O as the fallback and keep association smoke in future public release checkpoints; use `release-status.json` for the current public checkpoint.
 - The latest published updater checkpoint and its exact installed-smoke notes are recorded in `release-status.json` and `docs/CURRENT_RELEASE_STATUS.md`. That is the source of truth for any current public release claim.

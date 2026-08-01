@@ -1,5 +1,10 @@
 # Pocket DAW v0.6.38 Alpha Testing Release Status
 
+> Historical checkpoint document. The current public release is 0.6.43 and the
+> current source tree is 0.6.44. Use `CURRENT_RELEASE_STATUS.md` and
+> `release-status.json` for current version, installer, Samples/Samplers and
+> VST3-hosting truth.
+
 Pocket DAW is now live for public Windows alpha testing on itch and linked from `samfa12.com`.
 
 This file records the current source baseline and public installed-release evidence. Current source target is `0.6.38` punch/take-lane workflow candidate. The machine-readable current status is `../release-status.json`; regenerate `CURRENT_RELEASE_STATUS.md` with `npm run status:release`.

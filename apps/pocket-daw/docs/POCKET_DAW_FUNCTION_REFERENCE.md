@@ -1,6 +1,6 @@
 # Pocket DAW Function Reference
 
-Last updated: 2026-07-17
+Last updated: 2026-08-01
 
 This document explains Pocket DAW's user-facing functions in plain language for a human user and their AI counterpart. It describes what each function does, when to use it, and what an AI helper should be careful about.
 
@@ -40,6 +40,20 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | MIDI To Chordsmith Source | Chooses Faithful transcription or Arrange into Chordsmith. Faithful mode independently assigns melody, chords, bass, drums and guitar from automatic or manual track/channel sources. | Converting multitrack MIDI without leaking chord guides into melody or inventing unrequested roles. | Use faithful mode for exact selected roles; use arrange mode only for intentional interpretation and generation. |
 | MIDI Raw Reference | Keeps or removes the imported MIDI timeline clip after a successful Chordsmith mapping while preserving the source media-pool item. | Cleaning up a converted sketch or keeping the raw MIDI beside generated overlays for comparison. | Leave on for auditability; turn off only when the generated overlay result is the intended working surface. |
 | Chordsmith Handoff | Converts Chordsmith material into DAW tracks, clips, sections and generated roles. | Moving from Pocket Chordsmith composition into DAW arrangement/export. | Keep Chordsmith as musical source of truth; do not duplicate whole Chordsmith UI logic inside the DAW. |
+
+## Sounds, Samples And Plug-ins
+
+| Function | What it does | Use when | AI counterpart notes |
+| --- | --- | --- | --- |
+| Sounds Library | Shows the bundled Pocket Starter Sounds collection with search, category filters, favourites, recents, waveform audition and keyboard-accessible actions. | Starting with a useful local sound palette without scanning the user's drives. | Starter Sounds are a convenience collection, not a premium instrument library. |
+| Samples Library | Keeps explicitly imported files/folders in a local library index. Files stay external until used in a project. | Reusing loops, one-shots, recordings and references across projects. | Import is explicit; Explorer drag-and-drop is supported; personal drives are never scanned automatically. |
+| Sample Preview | Auditions a sample through the native preview bus; `Ctrl+Space` starts/stops preview while Space remains transport. | Checking a sample before placing or mapping it. | Preview is separate from the project transport and should not change musical placement. |
+| Timeline Sample Placement | Places a selected sample on a chosen track and bar. | Turning a browser item into an arrangement clip. | Confirm target track/bar and preserve the media-pool reference. |
+| Quick Sampler | Creates a sampler instrument from one sample with root note C3, key tracking, coarse/fine tune, gain, pan, start/end, reverse, one-shot/gate/loop modes, loop bounds and ADSR. | Playing one sample melodically or as a gated/looped instrument. | The sample is referenced by media-pool ID; Save/Save As collects only used samples. |
+| 16-pad Drum Rack | Maps up to sixteen selected samples to MIDI notes 36–51 in selection order. Each pad has gain, pan, tune, start/end, reverse, one-shot/gate, mute/solo and choke-group controls. | Building a playable kit from one-shots or a batch of samples. | Closed/open hats share a default choke group; mapping and pad edits are undoable. |
+| Plug-ins Library | Enables the one-click VST3 beta, lists isolated-scanner-verified Windows x64 VST3 instruments/effects, and provides role filters, search, custom folders and rescan. | Adding a third-party native instrument or effect. | Install only from official vendor sites; Pocket DAW never downloads or bundles plug-ins. See `docs/VST3_INSTALLATION_GUIDE.md`. |
+| Hosted Plug-in Editor | Opens the vendor editor when available or exposes Pocket DAW's searchable generic parameter editor, automation, factory programs and Pocket presets. | Tuning a hosted VST3 device while retaining a generic fallback. | State is opaque, checksum-validated and limited to 32 MiB per instance. |
+| Plug-in Recovery | Provides Retry host, Safe Reload, Rescan, verified replacement, bypass and Freeze selected clip for failures or missing binaries. | A scanner timeout, helper failure or moved/uninstalled plug-in. | Identity, state, automation and chain position remain in the project; do not silently substitute a different class ID. |
 
 ## Transport
 
@@ -131,7 +145,7 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 | Function | What it does | Use when | AI counterpart notes |
 | --- | --- | --- | --- |
 | Mixer Strips | Provides volume, pan, mute, solo, arm, monitor, output and FX access. | Everyday mix balancing and routing checks. | Meters are live readouts, not final loudness proof. |
-| Inserts | Shows selected-track FX chain and add/bypass/remove/automation controls. | Track-level sound shaping. | Third-party plugin hosting is future work. |
+| Inserts | Shows selected-track FX chain and add/bypass/remove/automation controls for built-in effects and verified VST3 effects. | Track-level sound shaping. | VST3 effects are opt-in beta and run in the crash-isolated helper; use generic controls if a vendor editor is unavailable. |
 | Pocket Pro EQ | Provides EQ presets and band controls. | Corrective or tonal EQ. | Check automation/parameter state after presets. |
 | Bus And Return Tracks | Adds grouped routing and send-effect returns. | Organizing submixes or shared effects. | Full send/return processing remains guarded; check routing summaries. |
 | Folder Tracks | Adds visible timeline organizer tracks that save/reopen, can be renamed, can hold child lanes, collapse or expand, and Mute/Solo their assigned children without processing audio. | Structuring and auditioning larger arrangements before folder-bus routing exists. | Group Mute/Solo is present; audio routing, sends, FX inheritance and export grouping remain future work. |
@@ -214,7 +228,9 @@ For button-level and selector-level detail, use `docs/POCKET_DAW_ACTION_CATALOG.
 
 ## Current Non-Claims
 
-- No third-party VST/AU/AAX plugin hosting is claimed.
+- VST3 is supported only as the opt-in Windows x64 beta described above. VST2,
+  32-bit bridging, CLAP, AU/AAX/LV2, multi-bus/surround, sidechain inputs,
+  MIDI output, MPE and `.vstpreset` interchange are not supported.
 - No ASIO or low-latency backend is claimed as shipped.
 - No simultaneous multitrack recording is claimed as shipped.
 - No full elastic audio/autotune/vocal correction is claimed as shipped.
