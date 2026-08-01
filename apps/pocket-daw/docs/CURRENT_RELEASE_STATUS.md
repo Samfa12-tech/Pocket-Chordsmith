@@ -4,11 +4,11 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.44` |
+| Source version | `0.6.45` |
 | Project schema version | `3` |
-| Latest published version | `0.6.43` |
-| Latest published tag | `pocket-daw-v0.6.43` |
-| Latest published commit | `546228a333971c319808fda88d751a7cc8fc77b6` |
+| Latest published version | `0.6.44` |
+| Latest published tag | `pocket-daw-v0.6.44` |
+| Latest published commit | `bab1a5850801b890b95c5192d0a1366a0f61b252` |
 | Last installed-smoke version | `0.6.43` |
 | Last installed-smoke result | `pass` |
 | Last installed-smoke date | `2026-08-01T12:43:45.050Z` |
@@ -27,7 +27,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
-- 2026-08-01 source-only 0.6.44 MCP help hotfix: installed builds no longer display or copy source-checkout commands containing the developer build-machine path. The current project and live-bridge session file remain runtime-derived for each machine; neutral source templates appear only outside the installed runtime. Validation is intentionally limited to focused MCP/UI tests and installer/package checks for this surgical text-only update.
+- 2026-08-01 source-only 0.6.45 live MCP test hotfix: the loopback bridge now accepts the exact http://tauri.localhost and https://tauri.localhost origins used by the installed Windows Tauri WebView. This fixes the in-app Live test CORS preflight failure while preserving loopback-host, trusted-origin and bearer-token checks. Validation is intentionally limited to the focused Rust origin regression, MCP/UI tests and installer/package checks.
 - 2026-07-17 post-release documentation and test-helper update: added the one-pass exact-artifact release fast path, corrected normal itch policy, recorded 0.6.41 process failures to avoid, and promoted the loopMIDI sender into a tracked reusable script.
 - 2026-07-22 Pocket Audio sound-profile update: imports and renders PCS schema 17 profile identity, expressive events, Funk bass articulations, upgraded Metal texture, Western character, Chiptune channel controls, expanded drum lanes, capability diagnostics, and preserved unknown intent while retaining legacy schema-16 compatibility.
 

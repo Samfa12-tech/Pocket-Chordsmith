@@ -326,6 +326,7 @@ ${artifactTable}
 - Installed AI / MCP Bridge help no longer displays or copies the developer build machine's source-workspace or Node.js paths.
 - Current-project and live-session paths remain runtime-derived from each user's own machine.
 - File MCP launch templates are now clearly identified as source-checkout developer tools, use a neutral \`<POCKET_DAW_SOURCE_DIR>\` placeholder and are hidden in the installed runtime.
+- Live test now accepts the installed Windows Tauri WebView origin, fixing its CORS preflight "Failed to fetch" error while retaining loopback-host and bearer-token checks.
 - Audio, project, Samples, Samplers and VST3 behavior is unchanged from 0.6.43.
 
 ## Included From 0.6.43

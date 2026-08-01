@@ -666,6 +666,8 @@ fn local_bridge_origin_is_trusted(origin: Option<&str>) -> bool {
     }
     let lower = origin.to_ascii_lowercase();
     lower == "tauri://localhost"
+        || lower == "http://tauri.localhost"
+        || lower == "https://tauri.localhost"
         || lower.starts_with("http://127.0.0.1:")
         || lower.starts_with("https://127.0.0.1:")
         || lower.starts_with("http://localhost:")
@@ -2473,12 +2475,20 @@ mod tests {
         let trusted_dev = "POST /pocket-daw/handoff HTTP/1.1\r\nHost: 127.0.0.1:47858\r\nOrigin: http://localhost:5173\r\nContent-Length: 7\r\n\r\nabc-123";
         let trusted_file = "POST /pocket-daw/handoff HTTP/1.1\r\nHost: localhost:47858\r\nOrigin: null\r\nContent-Length: 7\r\n\r\nabc-123";
         let trusted_tauri = "GET /pocket-daw/live/status HTTP/1.1\r\nHost: [::1]:47858\r\nOrigin: tauri://localhost\r\n\r\n";
+        let trusted_tauri_windows = "OPTIONS /pocket-daw/live/status HTTP/1.1\r\nHost: 127.0.0.1:47858\r\nOrigin: http://tauri.localhost\r\nAccess-Control-Request-Method: GET\r\nAccess-Control-Request-Headers: authorization\r\n\r\n";
+        let trusted_tauri_windows_https = "OPTIONS /pocket-daw/live/status HTTP/1.1\r\nHost: localhost:47858\r\nOrigin: https://tauri.localhost\r\nAccess-Control-Request-Method: GET\r\n\r\n";
         let untrusted_host = "POST /pocket-daw/handoff HTTP/1.1\r\nHost: example.com\r\nOrigin: http://localhost:5173\r\nContent-Length: 7\r\n\r\nabc-123";
         let untrusted_origin = "POST /pocket-daw/handoff HTTP/1.1\r\nHost: 127.0.0.1:47858\r\nOrigin: https://example.com\r\nContent-Length: 7\r\n\r\nabc-123";
 
         assert!(local_bridge_request_headers_are_trusted(trusted_dev));
         assert!(local_bridge_request_headers_are_trusted(trusted_file));
         assert!(local_bridge_request_headers_are_trusted(trusted_tauri));
+        assert!(local_bridge_request_headers_are_trusted(
+            trusted_tauri_windows
+        ));
+        assert!(local_bridge_request_headers_are_trusted(
+            trusted_tauri_windows_https
+        ));
         assert!(!local_bridge_request_headers_are_trusted(untrusted_host));
         assert!(!local_bridge_request_headers_are_trusted(untrusted_origin));
         assert!(!local_bridge_request_headers_are_trusted(
