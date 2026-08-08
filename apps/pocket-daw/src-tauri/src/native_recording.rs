@@ -570,58 +570,49 @@ struct RecordingShared {
     last_error: Mutex<Option<String>>,
 }
 
+struct RecordingSharedConfig {
+    sample_rate: u32,
+    input_channel_count: usize,
+    input_channel_index: usize,
+    capture_channels: u16,
+    monitor_enabled: bool,
+    monitor_volume: f64,
+    monitor_pan: f64,
+    capture_enabled: bool,
+}
+
 impl RecordingShared {
-    fn new(
-        sample_rate: u32,
-        input_channel_count: usize,
-        input_channel_index: usize,
-        capture_channels: u16,
-        monitor_enabled: bool,
-        monitor_volume: f64,
-        monitor_pan: f64,
-        capture_enabled: bool,
-    ) -> Self {
-        let capture_channels = sanitize_capture_channels(capture_channels);
-        Self::new_with_writer_capacity(
-            sample_rate,
-            input_channel_count,
-            input_channel_index,
-            capture_channels,
-            monitor_enabled,
-            monitor_volume,
-            monitor_pan,
-            capture_enabled,
-            sample_rate as usize * WRITER_RING_SECONDS * capture_channels as usize,
-        )
+    fn new(config: RecordingSharedConfig) -> Self {
+        let capture_channels = sanitize_capture_channels(config.capture_channels);
+        let writer_sample_capacity =
+            config.sample_rate as usize * WRITER_RING_SECONDS * capture_channels as usize;
+        Self::new_with_writer_capacity(config, writer_sample_capacity)
     }
 
     fn new_with_writer_capacity(
-        sample_rate: u32,
-        input_channel_count: usize,
-        input_channel_index: usize,
-        capture_channels: u16,
-        monitor_enabled: bool,
-        monitor_volume: f64,
-        monitor_pan: f64,
-        capture_enabled: bool,
+        config: RecordingSharedConfig,
         writer_sample_capacity: usize,
     ) -> Self {
-        let capture_channels = sanitize_capture_channels(capture_channels);
+        let capture_channels = sanitize_capture_channels(config.capture_channels);
         Self {
             writer_ring: Arc::new(CaptureWriterRing::new(writer_sample_capacity)),
-            monitor_ring: MonitorRing::new(sample_rate as usize * MONITOR_BUFFER_SECONDS),
-            sample_rate,
-            input_channel_count,
-            input_channel_index: AtomicUsize::new(input_channel_index),
+            monitor_ring: MonitorRing::new(config.sample_rate as usize * MONITOR_BUFFER_SECONDS),
+            sample_rate: config.sample_rate,
+            input_channel_count: config.input_channel_count,
+            input_channel_index: AtomicUsize::new(config.input_channel_index),
             capture_channels: AtomicU8::new(capture_channels as u8),
-            monitor_enabled: AtomicBool::new(monitor_enabled),
-            monitor_gain_bits: AtomicU32::new(clamp_monitor_gain(monitor_volume).to_bits()),
-            monitor_pan_bits: AtomicU32::new(clamp_monitor_pan(monitor_pan).to_bits()),
-            capture_enabled: AtomicBool::new(capture_enabled),
+            monitor_enabled: AtomicBool::new(config.monitor_enabled),
+            monitor_gain_bits: AtomicU32::new(clamp_monitor_gain(config.monitor_volume).to_bits()),
+            monitor_pan_bits: AtomicU32::new(clamp_monitor_pan(config.monitor_pan).to_bits()),
+            capture_enabled: AtomicBool::new(config.capture_enabled),
             peak_bits: AtomicU32::new(0.0f32.to_bits()),
             input_frame_count: AtomicU64::new(0),
             captured_frame_count: AtomicU64::new(0),
-            capture_start_input_frame: AtomicU64::new(if capture_enabled { 0 } else { NO_FRAME }),
+            capture_start_input_frame: AtomicU64::new(if config.capture_enabled {
+                0
+            } else {
+                NO_FRAME
+            }),
             first_input_frame: AtomicU64::new(NO_FRAME),
             active_input_callback_count: AtomicUsize::new(0),
             dropped_input_frame_count: AtomicU64::new(0),
@@ -862,16 +853,16 @@ pub fn native_recording_start(
         &payload.project_title,
         &payload.track_name,
     )?;
-    let shared = Arc::new(RecordingShared::new(
+    let shared = Arc::new(RecordingShared::new(RecordingSharedConfig {
         sample_rate,
-        input_channels,
+        input_channel_count: input_channels,
         input_channel_index,
         capture_channels,
-        payload.monitor_enabled,
-        payload.monitor_volume,
-        payload.monitor_pan,
-        false,
-    ));
+        monitor_enabled: payload.monitor_enabled,
+        monitor_volume: payload.monitor_volume,
+        monitor_pan: payload.monitor_pan,
+        capture_enabled: false,
+    }));
     let err_shared = Arc::clone(&shared);
     let error_callback = move |err| {
         err_shared.set_monitor_settings(false, 0.0, 0.0);
@@ -1099,16 +1090,16 @@ pub fn native_recording_start_preview(
         input_channels,
     )?;
     let stream_config: cpal::StreamConfig = config.clone().into();
-    let shared = Arc::new(RecordingShared::new(
+    let shared = Arc::new(RecordingShared::new(RecordingSharedConfig {
         sample_rate,
-        input_channels,
+        input_channel_count: input_channels,
         input_channel_index,
         capture_channels,
-        payload.monitor_enabled,
-        payload.monitor_volume,
-        payload.monitor_pan,
-        false,
-    ));
+        monitor_enabled: payload.monitor_enabled,
+        monitor_volume: payload.monitor_volume,
+        monitor_pan: payload.monitor_pan,
+        capture_enabled: false,
+    }));
     let err_shared = Arc::clone(&shared);
     let error_callback = move |err| {
         err_shared.set_monitor_settings(false, 0.0, 0.0);
@@ -2318,14 +2309,16 @@ mod tests {
         writer_sample_capacity: usize,
     ) -> Arc<RecordingShared> {
         Arc::new(RecordingShared::new_with_writer_capacity(
-            sample_rate,
-            2,
-            0,
-            1,
-            true,
-            1.0,
-            0.0,
-            capture_enabled,
+            RecordingSharedConfig {
+                sample_rate,
+                input_channel_count: 2,
+                input_channel_index: 0,
+                capture_channels: 1,
+                monitor_enabled: true,
+                monitor_volume: 1.0,
+                monitor_pan: 0.0,
+                capture_enabled,
+            },
             writer_sample_capacity,
         ))
     }
