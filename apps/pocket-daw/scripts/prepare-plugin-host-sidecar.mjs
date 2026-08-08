@@ -18,7 +18,7 @@ export const SIDECAR_TARGET = "x86_64-pc-windows-msvc";
 export const SIDECAR_BLOCK_FRAMES = 128;
 export const VST3_SDK_TAG = "v3.8.0_build_66";
 export const VST3_SDK_COMMIT = "9fad9770f2ae8542ab1a548a68c1ad1ac690abe0";
-export const VST3_SDK_LICENSE_SHA256 = "bcefe3f3928dbc395deed6100b2e7dc74672a88c10e67a7803689961e30316a9";
+export const VST3_SDK_LICENSE_SHA256 = "d6115b263faa1cdf8c7372d70889c833dde1cec95252e7ee93e4f7d599ec96ca";
 
 export function hashVendoredSdkTree(sdkRoot, subsets) {
   const files = [];
