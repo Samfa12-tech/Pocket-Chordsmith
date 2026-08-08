@@ -39,14 +39,14 @@
       "required": ["mode", "fingerprint"],
       "properties": {
         "mode": {
-          "enum": ["fresh-audible", "baseline-reuse"]
+          "enum": ["fresh-audible", "manual-fresh-audible", "baseline-reuse"]
         },
         "fingerprint": {
           "type": "object",
           "additionalProperties": false,
           "required": ["schema", "algorithm", "value", "inputs"],
           "properties": {
-            "schema": { "const": "pocket-daw-native-capture-v1" },
+            "schema": { "const": "pocket-daw-native-pcm-capture-v2" },
             "algorithm": { "const": "sha256" },
             "value": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
             "inputs": {
@@ -74,6 +74,24 @@
             "installerFile": { "type": "string", "minLength": 1 },
             "installerSha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
           }
+        },
+        "manual": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["evidenceFile", "evidenceSha256"],
+          "properties": {
+            "evidenceFile": { "type": "string", "minLength": 1 },
+            "evidenceSha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
+          }
+        },
+        "companion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["summaryFile", "summarySha256"],
+          "properties": {
+            "summaryFile": { "type": "string", "minLength": 1 },
+            "summarySha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
+          }
         }
       },
       "allOf": [
@@ -81,6 +99,16 @@
           "if": { "properties": { "mode": { "const": "baseline-reuse" } } },
           "then": { "required": ["baseline"] },
           "else": { "not": { "required": ["baseline"] } }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "manual-fresh-audible" } } },
+          "then": { "required": ["manual", "companion"] },
+          "else": {
+            "allOf": [
+              { "not": { "required": ["manual"] } },
+              { "not": { "required": ["companion"] } }
+            ]
+          }
         }
       ]
     },

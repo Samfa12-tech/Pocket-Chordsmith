@@ -39,6 +39,7 @@ function parseArgs(argv) {
     requireMidiInput: false,
     audioCaptureBaselineAttestation: "",
     audioCaptureBaselineInstaller: "",
+    manualFreshAudibleEvidence: "",
     gamePacks: []
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -77,6 +78,9 @@ function parseArgs(argv) {
     } else if (arg === "--audio-capture-baseline-installer") {
       parsed.audioCaptureBaselineInstaller = requiredValue(arg, value);
       index += 1;
+    } else if (arg === "--manual-fresh-audible-evidence") {
+      parsed.manualFreshAudibleEvidence = requiredValue(arg, value);
+      index += 1;
     } else if (arg === "--game-pack") {
       parsed.gamePacks.push({ zipPath: requiredValue(arg, value), kind: "" });
       index += 1;
@@ -109,11 +113,12 @@ function assertRequiredEvidence(options) {
   if (!options.requireMidiInput) missing.push("--require-midi-input");
   const hasBaselineAttestation = !!options.audioCaptureBaselineAttestation;
   const hasBaselineInstaller = !!options.audioCaptureBaselineInstaller;
-  if (!options.requireAudibleAudio && !hasBaselineAttestation && !hasBaselineInstaller) {
-    missing.push("--require-audible-audio or both --audio-capture-baseline-attestation/--audio-capture-baseline-installer");
-  }
   if (hasBaselineAttestation !== hasBaselineInstaller) missing.push("both baseline reuse paths");
-  if (options.requireAudibleAudio && (hasBaselineAttestation || hasBaselineInstaller)) missing.push("exactly one audio evidence mode, not fresh plus baseline");
+  const audioModeCount = (options.requireAudibleAudio ? 1 : 0)
+    + (hasBaselineAttestation && hasBaselineInstaller ? 1 : 0)
+    + (options.manualFreshAudibleEvidence ? 1 : 0);
+  if (audioModeCount === 0) missing.push("one audio mode: --require-audible-audio, baseline reuse paths, or --manual-fresh-audible-evidence");
+  if (audioModeCount > 1) missing.push("exactly one audio evidence mode");
   if (missing.length) {
     throw new Error(`Missing candidate evidence: ${missing.join(", ")}.`);
   }
@@ -142,6 +147,7 @@ function verifyInstalledPunchTakeEvidence(options) {
     requireAudibleAudio: options.requireAudibleAudio,
     baselineAttestationPath: options.audioCaptureBaselineAttestation,
     baselineInstallerPath: options.audioCaptureBaselineInstaller,
+    manualFreshAudibleEvidencePath: options.manualFreshAudibleEvidence,
     root: process.cwd()
   });
   if (!result.ok) {
@@ -215,6 +221,6 @@ try {
   main();
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
-  console.error("Usage: node scripts/verify-candidate.mjs --attestation <smoke-attestation.json> --installer <setup.exe> --punch-take-summary <punch-take-lane-installed-smoke-summary.json> --media-portability-summary <installed-media-portability-smoke-summary.json> --vst3-host-summary <installed-vst3-host-smoke-summary.json> (--require-audible-audio | --audio-capture-baseline-attestation <prior.json> --audio-capture-baseline-installer <prior-setup.exe>) --require-export-files --require-midi-input --commit <full-git-sha> --game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>");
+  console.error("Usage: node scripts/verify-candidate.mjs --attestation <smoke-attestation.json> --installer <setup.exe> --punch-take-summary <punch-take-lane-installed-smoke-summary.json> --media-portability-summary <installed-media-portability-smoke-summary.json> --vst3-host-summary <installed-vst3-host-smoke-summary.json> (--require-audible-audio | --manual-fresh-audible-evidence <manual-report.json> | --audio-capture-baseline-attestation <prior.json> --audio-capture-baseline-installer <prior-setup.exe>) --require-export-files --require-midi-input --commit <full-git-sha> --game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>");
   process.exit(2);
 }

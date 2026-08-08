@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
-import { computeNativeCaptureFingerprint, sameNativeCaptureFingerprint } from "./native-capture-fingerprint.mjs";
+import {
+  computeNativeCaptureFingerprint,
+  computeNativeCaptureFingerprintAtCommit,
+  NATIVE_CAPTURE_FINGERPRINT_SCHEMA,
+  sameNativeCaptureFingerprint
+} from "./native-capture-fingerprint.mjs";
 
 export const REQUIRED_SMOKE_CHECK_IDS = Object.freeze([
   "install-launch",
@@ -129,7 +134,6 @@ export function verifySmokeAttestationFile(options = {}) {
   const installerPath = options.installerPath || options.installer;
   const version = options.version || packageJson.version;
   const commit = options.commit;
-  const audioCaptureFingerprint = options.audioCaptureFingerprint || computeNativeCaptureFingerprint(options.root || process.cwd());
 
   if (!installerPath) throw new Error("Missing required installerPath.");
   if (!commit) throw new Error("Missing required commit.");
@@ -137,6 +141,9 @@ export function verifySmokeAttestationFile(options = {}) {
   if (!existsSync(installerPath)) throw new Error(`Installer file does not exist: ${installerPath}`);
 
   const attestation = JSON.parse(readFileSync(attestationPath, "utf8"));
+  const audioCaptureFingerprint = options.audioCaptureFingerprint || (attestation.audioCaptureEvidence?.mode === "manual-fresh-audible"
+    ? computeNativeCaptureFingerprintAtCommit(options.root || process.cwd(), commit)
+    : computeNativeCaptureFingerprint(options.root || process.cwd()));
   const actualInstallerSha256 = sha256File(installerPath);
   const result = validateSmokeAttestation(attestation, {
     version,
@@ -178,8 +185,8 @@ function validateAudioCaptureEvidence(value, expectedFingerprint, failures) {
     failures.push("audioCaptureEvidence must be a JSON object");
     return;
   }
-  if (value.mode !== "fresh-audible" && value.mode !== "baseline-reuse") {
-    failures.push("audioCaptureEvidence.mode must be fresh-audible or baseline-reuse");
+  if (!["fresh-audible", "manual-fresh-audible", "baseline-reuse"].includes(value.mode)) {
+    failures.push("audioCaptureEvidence.mode must be fresh-audible, manual-fresh-audible, or baseline-reuse");
   }
   validateCaptureFingerprint(value.fingerprint, "audioCaptureEvidence.fingerprint", failures);
   if (expectedFingerprint && !sameNativeCaptureFingerprint(value.fingerprint, expectedFingerprint)) {
@@ -187,9 +194,17 @@ function validateAudioCaptureEvidence(value, expectedFingerprint, failures) {
   }
   if (value.mode === "fresh-audible") {
     if (value.baseline !== undefined) failures.push("audioCaptureEvidence.baseline must be omitted for fresh-audible evidence");
+    if (value.manual !== undefined || value.companion !== undefined) failures.push("audioCaptureEvidence manual/companion bindings must be omitted for fresh-audible evidence");
+    return;
+  }
+  if (value.mode === "manual-fresh-audible") {
+    if (value.baseline !== undefined) failures.push("audioCaptureEvidence.baseline must be omitted for manual-fresh-audible evidence");
+    validateFileBinding(value.manual, "audioCaptureEvidence.manual", "evidenceFile", "evidenceSha256", failures);
+    validateFileBinding(value.companion, "audioCaptureEvidence.companion", "summaryFile", "summarySha256", failures);
     return;
   }
   if (value.mode === "baseline-reuse") {
+    if (value.manual !== undefined || value.companion !== undefined) failures.push("audioCaptureEvidence manual/companion bindings must be omitted for baseline-reuse evidence");
     if (!isPlainObject(value.baseline)) {
       failures.push("audioCaptureEvidence.baseline must be a JSON object for baseline-reuse evidence");
       return;
@@ -201,12 +216,21 @@ function validateAudioCaptureEvidence(value, expectedFingerprint, failures) {
   }
 }
 
+function validateFileBinding(value, label, fileField, hashField, failures) {
+  if (!isPlainObject(value)) {
+    failures.push(`${label} must be a JSON object`);
+    return;
+  }
+  requireString(value[fileField], `${label}.${fileField}`, failures);
+  validateInstallerHash(value[hashField], `${label}.${hashField}`, failures);
+}
+
 function validateCaptureFingerprint(value, label, failures) {
   if (!isPlainObject(value)) {
     failures.push(`${label} must be a JSON object`);
     return;
   }
-  if (value.schema !== "pocket-daw-native-capture-v1") failures.push(`${label}.schema must be pocket-daw-native-capture-v1`);
+  if (value.schema !== NATIVE_CAPTURE_FINGERPRINT_SCHEMA) failures.push(`${label}.schema must be ${NATIVE_CAPTURE_FINGERPRINT_SCHEMA}`);
   if (value.algorithm !== "sha256") failures.push(`${label}.algorithm must be sha256`);
   validateInstallerHash(value.value, `${label}.value`, failures);
   if (!Array.isArray(value.inputs) || !value.inputs.length) {

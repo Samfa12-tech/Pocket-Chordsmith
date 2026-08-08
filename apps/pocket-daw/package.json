@@ -44,6 +44,7 @@
     "verify:release-candidate-truth": "node scripts/verify-release-candidate-truth.mjs",
     "verify:smoke-attestation": "node scripts/verify-smoke-attestation.mjs",
     "evidence:native-capture-fingerprint": "node scripts/native-capture-fingerprint.mjs",
+    "evidence:manual-fresh-audible": "node scripts/manual-fresh-audible-evidence.mjs",
     "smoke:installed:punch-takes": "tsx scripts/smoke-installed-punch-take-lanes.ts",
     "verify:installed:punch-takes": "node scripts/verify-installed-punch-take-summary.mjs",
     "smoke:installed:media-portability": "tsx scripts/smoke-installed-media-portability.ts",
