@@ -43,6 +43,7 @@ import {
   POCKET_PRO_EQ_PRESETS,
   POCKET_PRO_EQ_TYPE,
   POCKET_LOFI_SOUND_REGISTRY,
+  METAL_BASS_TONE_CONFIGS,
   POCKET_SOUND_REGISTRY,
   CHIP_DRUM_KITS,
   CHIP_BASS_TONES,
@@ -318,6 +319,18 @@ test("lofi sound registry covers every public lofi sound id", () => {
   assert.equal(POCKET_LOFI_SOUND_REGISTRY.bassTones.warm_sub.cutoff, 210);
   assert.equal(POCKET_LOFI_SOUND_REGISTRY.chordInstruments.dusty_rhodes.freq, 1550);
   assert.equal(POCKET_LOFI_SOUND_REGISTRY.leadInstruments.tape_bell.extra.freq, 2100);
+});
+
+test("metal pick bass keeps its approved smoother voicing", () => {
+  assert.deepEqual(METAL_BASS_TONE_CONFIGS.metal_pick_bass, {
+    mainWave: "triangle",
+    subWave: "sine",
+    mainPeak: 0.64,
+    subPeak: 0.34,
+    cutoff: 430,
+    subCutoff: 125,
+    attack: 0.006
+  });
 });
 
 test("shared sound registry includes the classic Chordsmith bass voice", () => {

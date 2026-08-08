@@ -374,6 +374,7 @@ function applyMetalPresetToProject(presetId, options={}){
   state.lastAdvancedResolution = 4;
   state.bassMode = "manual";
   state.guitarEnabled = true;
+  state.guitarVolume = METAL_GUITAR_MIX_VOLUME;
   state.guitarTone = safeChoice(preset.guitarTone, guitarToneIds(), "tight_metal");
   state.guitarRegister = preset.guitarTone === "doom_fuzz" ? "low" : "mid";
   state.guitarStrumMode = "down";
@@ -684,6 +685,7 @@ function applyGenreCompositionSoundProfile(plan, options={}){
     state.chordPlayMode = "block";
     state.chordRhythmMode = "quarter";
     state.guitarEnabled = true;
+    state.guitarVolume = METAL_GUITAR_MIX_VOLUME;
     state.guitarTone = safeChoice(preset.guitarTone, guitarToneIds(), "tight_metal");
     state.guitarRegister = preset.guitarTone === "doom_fuzz" ? "low" : "mid";
     state.guitarStrumMode = "down";

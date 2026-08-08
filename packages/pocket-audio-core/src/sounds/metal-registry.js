@@ -7,7 +7,7 @@ export const METAL_DRUM_KIT_CONFIGS = Object.freeze({
 });
 
 export const METAL_BASS_TONE_CONFIGS = Object.freeze({
-  metal_pick_bass: Object.freeze({ mainWave: "sawtooth", subWave: "square", mainPeak: 0.72, subPeak: 0.4, cutoff: 520, subCutoff: 140, attack: 0.003 }),
+  metal_pick_bass: Object.freeze({ mainWave: "triangle", subWave: "sine", mainPeak: 0.64, subPeak: 0.34, cutoff: 430, subCutoff: 125, attack: 0.006 }),
   metal_sub_pick: Object.freeze({ mainWave: "triangle", subWave: "sine", mainPeak: 0.58, subPeak: 0.68, cutoff: 360, subCutoff: 110, attack: 0.006 }),
   metal_grind_bass: Object.freeze({ mainWave: "sawtooth", subWave: "triangle", mainPeak: 0.66, subPeak: 0.32, cutoff: 760, subCutoff: 170, attack: 0.002 })
 });

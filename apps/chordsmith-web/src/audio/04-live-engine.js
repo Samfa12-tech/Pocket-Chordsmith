@@ -556,7 +556,7 @@ function bassToneConfig(tone=state.bassTone){
   if(tone === "chip_square_bass") return {mainWave:"square", subWave:"triangle", mainPeak:0.72, subPeak:0.22, cutoff:680, subCutoff:220, attack:0.002};
   if(tone === "modern_chip_sub") return {mainWave:"square", subWave:"sine", mainPeak:0.64, subPeak:0.62, cutoff:420, subCutoff:150, attack:0.006};
   if(tone === "bitcrush_bass") return {mainWave:"sawtooth", subWave:"square", mainPeak:0.58, subPeak:0.34, cutoff:560, subCutoff:210, attack:0.003};
-  if(tone === "metal_pick_bass") return {mainWave:"sawtooth", subWave:"square", mainPeak:0.72, subPeak:0.4, cutoff:520, subCutoff:140, attack:0.003};
+  if(tone === "metal_pick_bass") return {mainWave:"triangle", subWave:"sine", mainPeak:0.64, subPeak:0.34, cutoff:430, subCutoff:125, attack:0.006};
   if(tone === "metal_sub_pick") return {mainWave:"triangle", subWave:"sine", mainPeak:0.58, subPeak:0.68, cutoff:360, subCutoff:110, attack:0.006};
   if(tone === "metal_grind_bass") return {mainWave:"sawtooth", subWave:"triangle", mainPeak:0.66, subPeak:0.32, cutoff:760, subCutoff:170, attack:0.002};
   if(tone === "warm_sub") return {mainWave:"sine", subWave:"sine", mainPeak:0.82, subPeak:0.55, cutoff:210, subCutoff:120, attack:0.018};
