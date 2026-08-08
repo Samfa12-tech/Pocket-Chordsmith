@@ -36,7 +36,7 @@
     "verify": "npm run test:scheduler && npm run lint && npm run typecheck && npm run format:check && npm run report:size && npm run verify:single-file && npm run test:e2e && npm run test:cross-browser && npm run package:itch"
   },
   "devDependencies": {
-    "@playwright/test": "^1.52.0",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^25.0.0",
     "bestzip": "^2.2.1",
     "eslint": "^9.28.0",
