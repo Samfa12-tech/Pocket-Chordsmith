@@ -1,15 +1,16 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 
-export const NATIVE_CAPTURE_FINGERPRINT_SCHEMA = "pocket-daw-native-capture-v1";
+export const NATIVE_CAPTURE_FINGERPRINT_SCHEMA = "pocket-daw-native-pcm-capture-v2";
+export const LEGACY_NATIVE_CAPTURE_FINGERPRINT_SCHEMA = "pocket-daw-native-capture-v1";
 
 const FULL_SOURCE_INPUTS = Object.freeze([
   "src-tauri/src/native_recording.rs",
   "src/native/recordingBridge.ts",
   "src/native/audioDevices.ts",
-  "src/daw/recordingInputs.ts",
-  "src/app/recordingOrchestration.ts"
+  "src/daw/recordingInputs.ts"
 ]);
 
 const SOURCE_REGIONS = Object.freeze([
@@ -18,12 +19,6 @@ const SOURCE_REGIONS = Object.freeze([
     path: "src/app/App.ts",
     start: "  private async startRecording() {",
     end: "\n  private async toggleMidiInputRecording()"
-  },
-  {
-    id: "src/app/App.ts#stopRecording",
-    path: "src/app/App.ts",
-    start: "  private async stopRecording() {",
-    end: "\n  private startRecordingTimer()"
   },
   {
     id: "src/app/App.ts#armedInputPreview",
@@ -39,22 +34,94 @@ const SOURCE_REGIONS = Object.freeze([
   }
 ]);
 
+const LEGACY_FULL_SOURCE_INPUTS = Object.freeze([
+  ...FULL_SOURCE_INPUTS,
+  "src/app/recordingOrchestration.ts"
+]);
+
+const LEGACY_SOURCE_REGIONS = Object.freeze([
+  ...SOURCE_REGIONS,
+  {
+    id: "src/app/App.ts#stopRecording",
+    path: "src/app/App.ts",
+    start: "  private async stopRecording() {",
+    end: "\n  private startRecordingTimer()"
+  }
+]);
+
 export function computeNativeCaptureFingerprint(root = process.cwd()) {
+  return computeNativeCaptureFingerprintFromReader((relativePath) => readText(root, relativePath), {
+    schema: NATIVE_CAPTURE_FINGERPRINT_SCHEMA,
+    fullSourceInputs: FULL_SOURCE_INPUTS,
+    sourceRegions: SOURCE_REGIONS
+  });
+}
+
+export function computeNativeCaptureFingerprintAtCommit(root = process.cwd(), commit) {
+  if (typeof commit !== "string" || !/^[a-f0-9]{40}$/i.test(commit)) {
+    throw new Error("Native capture fingerprint commit must be a 40-character git SHA.");
+  }
+  const appRoot = resolve(root);
+  const repositoryRoot = gitOutput(appRoot, ["rev-parse", "--show-toplevel"]).trim();
+  const prefix = relative(repositoryRoot, appRoot).replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  return computeNativeCaptureFingerprintFromReader((relativePath) => {
+    const repositoryPath = prefix ? `${prefix}/${relativePath}` : relativePath;
+    return normalizeText(gitOutput(repositoryRoot, ["show", `${commit}:${repositoryPath}`]));
+  }, {
+    schema: NATIVE_CAPTURE_FINGERPRINT_SCHEMA,
+    fullSourceInputs: FULL_SOURCE_INPUTS,
+    sourceRegions: SOURCE_REGIONS
+  });
+}
+
+export function computeLegacyNativeCaptureFingerprintAtCommit(root = process.cwd(), commit) {
+  if (typeof commit !== "string" || !/^[a-f0-9]{40}$/i.test(commit)) {
+    throw new Error("Legacy native capture fingerprint commit must be a 40-character git SHA.");
+  }
+  const appRoot = resolve(root);
+  const repositoryRoot = gitOutput(appRoot, ["rev-parse", "--show-toplevel"]).trim();
+  const prefix = relative(repositoryRoot, appRoot).replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  return computeNativeCaptureFingerprintFromReader((relativePath) => {
+    const repositoryPath = prefix ? `${prefix}/${relativePath}` : relativePath;
+    return normalizeText(gitOutput(repositoryRoot, ["show", `${commit}:${repositoryPath}`]));
+  }, {
+    schema: LEGACY_NATIVE_CAPTURE_FINGERPRINT_SCHEMA,
+    fullSourceInputs: LEGACY_FULL_SOURCE_INPUTS,
+    sourceRegions: LEGACY_SOURCE_REGIONS
+  });
+}
+
+function computeNativeCaptureFingerprintFromReader(readSource, contract) {
   const inputs = [];
-  for (const relativePath of FULL_SOURCE_INPUTS) {
-    inputs.push(inputRecord(relativePath, readText(root, relativePath)));
+  for (const relativePath of contract.fullSourceInputs) {
+    inputs.push(inputRecord(relativePath, readSource(relativePath)));
   }
-  for (const region of SOURCE_REGIONS) {
-    inputs.push(inputRecord(region.id, extractRegion(readText(root, region.path), region)));
+  for (const region of contract.sourceRegions) {
+    inputs.push(inputRecord(region.id, extractRegion(readSource(region.path), region)));
   }
-  inputs.push(inputRecord("src-tauri/src/lib.rs#nativeRecordingRegistration", nativeRegistration(readText(root, "src-tauri/src/lib.rs"))));
-  inputs.push(inputRecord("src-tauri/Cargo.toml#cpal", tomlDependency(readText(root, "src-tauri/Cargo.toml"), "cpal")));
-  inputs.push(inputRecord("src-tauri/Cargo.lock#cpalDependencyClosure", cargoDependencyClosure(readText(root, "src-tauri/Cargo.lock"), "cpal")));
-  inputs.push(inputRecord("package.json#@tauri-apps/api", jsonDependency(readText(root, "package.json"), "@tauri-apps/api")));
-  inputs.push(inputRecord("package-lock.json#@tauri-apps/api", packageLockDependency(readText(root, "package-lock.json"), "node_modules/@tauri-apps/api")));
+  inputs.push(inputRecord("src-tauri/src/lib.rs#nativeRecordingRegistration", nativeRegistration(readSource("src-tauri/src/lib.rs"))));
+  inputs.push(inputRecord("src-tauri/Cargo.toml#cpal", tomlDependency(readSource("src-tauri/Cargo.toml"), "cpal")));
+  inputs.push(inputRecord("src-tauri/Cargo.lock#cpalDependencyClosure", cargoDependencyClosure(readSource("src-tauri/Cargo.lock"), "cpal")));
+  inputs.push(inputRecord("package.json#@tauri-apps/api", jsonDependency(readSource("package.json"), "@tauri-apps/api")));
+  inputs.push(inputRecord("package-lock.json#@tauri-apps/api", packageLockDependency(readSource("package-lock.json"), "node_modules/@tauri-apps/api")));
   inputs.sort((left, right) => left.id.localeCompare(right.id));
-  const value = sha256(JSON.stringify({ schema: NATIVE_CAPTURE_FINGERPRINT_SCHEMA, inputs }));
-  return { schema: NATIVE_CAPTURE_FINGERPRINT_SCHEMA, algorithm: "sha256", value, inputs };
+  const value = sha256(JSON.stringify({ schema: contract.schema, inputs }));
+  return { schema: contract.schema, algorithm: "sha256", value, inputs };
+}
+
+function gitOutput(cwd, args) {
+  const result = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    shell: false,
+    maxBuffer: 32 * 1024 * 1024
+  });
+  if (result.error || result.status !== 0) {
+    const detail = String(result.stderr || result.error?.message || "git command failed").trim();
+    throw new Error(`Could not read native capture inputs from git: ${detail}`);
+  }
+  return String(result.stdout || "");
 }
 
 export function sameNativeCaptureFingerprint(left, right) {

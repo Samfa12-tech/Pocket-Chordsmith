@@ -49,6 +49,10 @@ interface RecordedAudioMediaEvidence {
   fileSampleRate: number;
   fileChannels: number;
   fileFrameCount: number;
+  inputMode: string | null;
+  channelMap: number[] | null;
+  clipInputMode: string | null;
+  clipChannelMap: number[] | null;
 }
 
 const args = parseInstalledPunchTakeSmokeArgs(process.argv.slice(2));
@@ -481,7 +485,7 @@ async function exerciseAudioRecordingControl(
     if (!stop.ok) throw new Error(`Live control record_stop failed after audio recording start: ${stop.message || stop.code || "unknown failure"}`);
     const after = audioTakeSmokeCounts(await liveStatus(session));
     const placement = assertAudioRecordingTakePlacement(before, after);
-    const media = await assertRecordedAudioMediaFile(projectPath, beforeProject, trackId);
+    const media = await assertRecordedAudioMediaFile(projectPath, beforeProject, trackId, audioInput);
     return {
       outcome: "started-and-stopped",
       startMessage: start.message || "",
@@ -561,7 +565,12 @@ function assertAudioRecordingTakePlacement(before: AudioTakeSmokeCounts, after: 
   return { before, after, delta };
 }
 
-async function assertRecordedAudioMediaFile(projectPath: string, beforeProject: ReturnType<typeof loadPocketDawRaw>, trackId: string): Promise<RecordedAudioMediaEvidence> {
+async function assertRecordedAudioMediaFile(
+  projectPath: string,
+  beforeProject: ReturnType<typeof loadPocketDawRaw>,
+  trackId: string,
+  audioInput: ResolvedInstalledAudioInput
+): Promise<RecordedAudioMediaEvidence> {
   const afterProject = loadPocketDawRaw(await readFile(projectPath, "utf8"));
   const previousMediaIds = new Set(beforeProject.mediaPool.map((item) => item.id));
   const media = afterProject.mediaPool.find((item) => {
@@ -604,6 +613,14 @@ async function assertRecordedAudioMediaFile(projectPath: string, beforeProject: 
   if (clip.muted || clip.metadata?.takeStatus !== "active" || clip.metadata?.takeActive !== true || !clip.metadata?.recordingTakeGroupId) {
     throw new Error(`Recorded clip did not remain an active take-lane clip: ${JSON.stringify({ id: clip.id, muted: clip.muted, metadata: clip.metadata })}`);
   }
+  const channelMap = Array.isArray(metadata.channelMap) ? metadata.channelMap.map(Number) : null;
+  const clipChannelMap = Array.isArray(clip.metadata?.channelMap) ? clip.metadata.channelMap.map(Number) : null;
+  if (metadata.inputMode !== "mono" || !sameNumberArray(channelMap, [audioInput.channelIndex])) {
+    throw new Error(`Recorded media input metadata did not match the requested native mono channel: ${JSON.stringify({ inputMode: metadata.inputMode, channelMap, requested: audioInput })}`);
+  }
+  if (clip.metadata?.inputMode !== "mono" || !sameNumberArray(clipChannelMap, [audioInput.channelIndex])) {
+    throw new Error(`Recorded clip input metadata did not match the requested native mono channel: ${JSON.stringify({ inputMode: clip.metadata?.inputMode, channelMap: clipChannelMap, requested: audioInput })}`);
+  }
   return {
     mediaPoolItemId: media.id,
     clipId: clip.id,
@@ -618,8 +635,16 @@ async function assertRecordedAudioMediaFile(projectPath: string, beforeProject: 
     fileRms: fileAnalysis.rms,
     fileSampleRate: fileAnalysis.sampleRate,
     fileChannels: fileAnalysis.channels,
-    fileFrameCount: fileAnalysis.frameCount
+    fileFrameCount: fileAnalysis.frameCount,
+    inputMode: String(metadata.inputMode),
+    channelMap,
+    clipInputMode: String(clip.metadata?.inputMode),
+    clipChannelMap
   };
+}
+
+function sameNumberArray(actual: number[] | null, expected: number[]) {
+  return Array.isArray(actual) && actual.length === expected.length && actual.every((value, index) => value === expected[index]);
 }
 
 async function exerciseMidiInputRecordingControl(session: AiBridgeSession, midiTrackId: string, projectPath: string, midiRecordMs: number) {

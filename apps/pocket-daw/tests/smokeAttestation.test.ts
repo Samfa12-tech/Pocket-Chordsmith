@@ -68,8 +68,19 @@ function buildPunchTakeSummary(overrides: Record<string, any> = {}) {
     exportedMidiPitches: [50, 83, 84, 86],
     midiTakeGroupCount: 1,
     midiRecordingTakeGroupCount: 1,
+    audioInput: {
+      deviceId: "wasapi:input:test-microphone",
+      deviceName: "Test Microphone",
+      channelIndex: 1,
+      channelCount: 2
+    },
     audioRecordingControl: {
       outcome: "started-and-stopped",
+      inputMeterPreflight: {
+        inputDeviceId: "wasapi:input:test-microphone",
+        inputChannelIndex: 1,
+        inputChannelMap: [1]
+      },
       placement: {
         delta: {
           clipCount: 1,
@@ -92,7 +103,11 @@ function buildPunchTakeSummary(overrides: Record<string, any> = {}) {
         fileRms: 0.000002,
         fileSampleRate: 48000,
         fileChannels: 1,
-        fileFrameCount: 25920
+        fileFrameCount: 25920,
+        inputMode: "mono",
+        channelMap: [1],
+        clipInputMode: "mono",
+        clipChannelMap: [1]
       }
     },
     midiInputRecordingControl: {
@@ -411,6 +426,39 @@ describe("smoke attestation verifier", () => {
     expect(validateSmokeAttestation(missingBinding, expectations).failures.join("\n")).toContain("baseline must be a JSON object");
     expect(validateSmokeAttestation(freshWithBinding, expectations).failures.join("\n")).toContain("must be omitted");
   });
+
+  it("requires separately named manual and automated companion bindings", () => {
+    const fingerprint = computeNativeCaptureFingerprint();
+    const valid = buildAttestation({
+      audioCaptureEvidence: {
+        mode: "manual-fresh-audible",
+        fingerprint,
+        manual: { evidenceFile: "manual-audio.json", evidenceSha256: "a".repeat(64) },
+        companion: { summaryFile: "automated-companion.json", summarySha256: "b".repeat(64) }
+      }
+    });
+    const expectations = {
+      version: valid.version,
+      commit: valid.commit,
+      installerFile: valid.installerFile,
+      installerSha256: valid.installerSha256,
+      audioCaptureFingerprint: fingerprint
+    };
+    expect(validateSmokeAttestation(valid, expectations)).toEqual({ ok: true, failures: [] });
+
+    const missingCompanion: any = structuredClone(valid);
+    delete missingCompanion.audioCaptureEvidence.companion;
+    expect(validateSmokeAttestation(missingCompanion, expectations).failures.join("\n")).toContain("companion must be a JSON object");
+
+    const chained: any = structuredClone(valid);
+    chained.audioCaptureEvidence.baseline = {
+      attestationFile: "prior.json",
+      attestationSha256: "c".repeat(64),
+      installerFile: "prior.exe",
+      installerSha256: "d".repeat(64)
+    };
+    expect(validateSmokeAttestation(chained, expectations).failures.join("\n")).toContain("baseline must be omitted");
+  });
 });
 
 describe("native capture evidence contract", () => {
@@ -618,6 +666,28 @@ describe("installed punch/take smoke summary verifier", () => {
     expect(validation.failures.join("\n")).toContain("started-and-stopped");
     expect(validation.failures.join("\n")).toContain("audioRecordingControl.placement.delta");
     expect(validation.failures.join("\n")).toContain("audioRecordingControl.media");
+  });
+
+  it("binds current installed-smoke take metadata to the requested native input channel", () => {
+    const summary = buildPunchTakeSummary();
+    const mismatched = validateInstalledPunchTakeSummary({
+      ...summary,
+      audioRecordingControl: {
+        ...summary.audioRecordingControl,
+        media: {
+          ...summary.audioRecordingControl.media,
+          channelMap: [0],
+          clipChannelMap: [0]
+        }
+      }
+    }, {
+      version: "0.6.38",
+      installerFile: "Pocket.DAW_0.6.38_x64-setup.exe",
+      installerSha256: sha256("installer bytes")
+    });
+    expect(mismatched.ok).toBe(false);
+    expect(mismatched.failures.join("\n")).toContain("media channel metadata must match the requested mono input channel");
+    expect(mismatched.failures.join("\n")).toContain("clip channel metadata must match the requested mono input channel");
   });
 
   it("rejects unrelated installer filenames even when the hash matches", () => {

@@ -43,11 +43,12 @@ Run from `apps/pocket-daw/`.
 6. Run private/owned MIDI fixture validation once through the current parser
    and converter. Keep the fixture and report ignored; never commit owned MIDI.
 7. Generate the native-capture fingerprint and select exactly one audio-evidence
-   mode using the fail-closed rules below. Run one combined exact-installed
-   punch/take smoke. The current installer always has to prove a real PCM take
-   of the requested duration, retained WAV/MIDI export integrity, and connected
-   loopMIDI input; only the human audibility threshold may come from an eligible
-   prior baseline.
+   mode using the fail-closed rules below. Fresh and baseline-reuse modes use one
+   combined exact-installed punch/take smoke. Manual-fresh mode explicitly binds
+   one direct manual recording plus one later, separately named automated
+   companion run; it never claims they were the same run. The current installer
+   always has to prove a real PCM take of the requested duration, retained
+   WAV/MIDI export integrity, and connected loopMIDI input.
 8. Run installed media portability once. Reuse its Godot and Web ZIPs for the
    target-runtime smokes and candidate verifier.
 9. Run the installed VST3 host smoke against the sidecar inside that exact
@@ -59,7 +60,8 @@ Run from `apps/pocket-daw/`.
 11. Build the attestation from the final evidence paths and SHA-256 values,
     including `audioCaptureEvidence` exactly as described below.
 12. Run `verify:candidate` once with both game packs, current-installer
-    export/MIDI flags, and exactly one fresh-audible or baseline-reuse mode.
+    export/MIDI flags, and exactly one fresh-audible, manual-fresh-audible, or
+    baseline-reuse mode.
 13. Re-hash the staged setup and confirm it did not change.
 14. Push the tested commit, publish the already-staged files without a rebuild,
     and verify the remote manifest, installer download hash, release tag, and
@@ -71,8 +73,11 @@ adding another manual layer of duplicate `npm test`, Cargo, build, and E2E runs.
 
 ## Combined Installed Audio and MIDI Smoke
 
-The final strict summary must prove both hardware paths in the same run. Do not
-merge separate summaries and do not weaken thresholds to obtain a pass.
+The final strict summary must prove both hardware paths in the same run in
+`fresh-audible` mode. Do not merge summaries or weaken thresholds. The explicit
+`manual-fresh-audible` contract below is different: it retains a directly
+analyzed manual WAV and a separately identified automated companion summary,
+and its schema forbids describing them as same-run evidence.
 
 Preflight:
 
@@ -104,24 +109,36 @@ Generate and retain the deterministic capture fingerprint first:
 npm run --silent evidence:native-capture-fingerprint > <ignored-final-evidence-folder>\native-capture-fingerprint.json
 ```
 
-The fingerprint covers the native CPAL recorder, recording bridge/input and
-orchestration modules, capture-only regions in the large app/native entry
-files, the CPAL dependency closure, and the Tauri API dependency used by the
-bridge. A source edit outside those inputs does not invalidate human audibility
-evidence. A changed/missing input, changed dependency, changed recipe schema,
-or malformed fingerprint does.
+The v2 fingerprint covers semantic PCM acquisition: the native CPAL recorder,
+recording bridge/input and device routing, armed preview/start control,
+capture-only native entry regions, the CPAL dependency closure, and the Tauri
+API dependency used by the bridge. Post-capture take labels are excluded because
+they cannot change captured samples and are independently enforced by the
+current installed smoke. A source edit outside those inputs does not invalidate
+human audibility evidence. A changed/missing input, changed dependency, changed
+schema, or malformed fingerprint does.
 
 Select exactly one mode:
 
 - `fresh-audible`: required when the fingerprint changed or no eligible prior
   baseline is retained. The current run must clear the existing 3-second,
   0.005 file-peak, and 0.001 file-RMS thresholds. Do not lower them.
-- `baseline-reuse`: allowed only when an exact prior `fresh-audible`
-  attestation, its installer, and its attested punch summary are retained. The
-  verifier re-hashes all of them, re-verifies the old summary at the unchanged
-  audible thresholds, requires an identical current fingerprint, and forbids
-  reuse chains. The current attestation must bind the prior attestation and
-  installer filenames and SHA-256 values.
+- `baseline-reuse`: allowed only when an exact prior direct `fresh-audible` or
+  fully verified direct `manual-fresh-audible` attestation, its installer, and
+  its attested punch summary are retained. The verifier re-hashes all files,
+  re-verifies the direct audible evidence, requires an identical semantic PCM
+  fingerprint, and forbids reuse chains. The current attestation must bind the
+  prior attestation and installer filenames and SHA-256 values.
+- `manual-fresh-audible`: allowed when one deliberate recording already exists
+  from the exact candidate and another microphone action is unnecessary. A
+  generated report independently re-hashes and parses that WAV, enforces the
+  unchanged duration/peak/RMS thresholds, binds the referenced project clip,
+  pre-capture project, input device/channel, exact installer, commit and
+  fingerprint, and records capture/finalization timestamps. A later automated
+  companion run against the same installer must still prove current PCM file
+  integrity, connected loopMIDI and retained WAV/MIDI exports. The attestation
+  binds both files and hashes separately; neither file may be substituted,
+  chained, timestamped before the manual capture, or described as same-run.
 
 The installed smoke refreshes the candidate's native device list before it
 arms recording. By default it selects the probed default input and zero-based
@@ -147,8 +164,8 @@ npm run smoke:installed:punch-takes -- `
   --installer "$setup" `
   --record-ms 10000 `
   --midi-record-ms 10000 `
-  --audio-input-device-id "wasapi:input:microphone-array" `
-  --audio-input-channel-index 1 `
+  --audio-input-device-id <available-input-device-id> `
+  --audio-input-channel-index <available-zero-based-channel> `
   --require-audible-audio `
   --require-midi-input `
   --require-export-files
@@ -167,6 +184,59 @@ npm run smoke:installed:punch-takes -- `
   --require-midi-input `
   --require-export-files
 ```
+
+In manual-fresh mode, first create the direct manual report beside retained
+copies of the recorded project, its pre-capture project, and referenced WAV:
+
+```powershell
+npm run evidence:manual-fresh-audible -- create `
+  --out-path <ignored-evidence-folder>\manual-fresh-audible-evidence.json `
+  --project-path <ignored-evidence-folder>\recorded.pocketdaw `
+  --pre-capture-project-path <ignored-evidence-folder>\recorded.pocketdaw.bak `
+  --wav-path <ignored-evidence-folder>\project-media\recordings\manual-take.wav `
+  --installer-path "$setup" `
+  --fingerprint-path <ignored-evidence-folder>\native-capture-fingerprint.json `
+  --version <version> --commit <exact-candidate-commit> `
+  --clip-id <recorded-clip-id> --track-id <recorded-track-id>
+```
+
+The report creator refuses overwrite, non-PCM16/native WAVs, threshold failure,
+missing project references, channel drift, hash/timestamp mismatch, and files
+outside its retained evidence folder. `--fingerprint-path` is the fingerprint
+retained at capture time: v2 for new runs, or the exact original v1 preflight
+file for the legacy 0.6.46 take. The report always computes and binds the
+semantic v2 candidate fingerprint as well. Then run the automated companion once,
+without `--require-audible-audio`; keep explicit input routing when applicable:
+
+```powershell
+npm run smoke:installed:punch-takes -- `
+  --out <ignored-companion-folder> `
+  --installer "$setup" `
+  --record-ms 10000 `
+  --midi-record-ms 10000 `
+  --audio-input-device-id "wasapi:input:microphone-array" `
+  --audio-input-channel-index 1 `
+  --require-midi-input `
+  --require-export-files
+```
+
+The exact `0.6.46` candidate at commit
+`e650be444207cb81c7b91035be5eb4e62fafc326` wrote `[0]` into mono take metadata
+even when native capture received Mono Ch2. Only that version/commit may use the
+narrow `known-bug-corroborated` rule, and only when both the pre-capture and
+recorded projects preserve the same explicit non-Ch1 assignment while the clip
+and media contain the exact legacy `[0]` defect. All later candidates require
+take metadata to match the selected channel exactly. Its automated companion
+must use a channel whose saved take metadata is truthful (Mono Ch1 is the
+compatible default for that one legacy build); the manual report remains the
+independently corroborated Mono Ch2 audible proof. Every rebuilt candidate must
+use the intended explicit channel, and the installed smoke now fails unless the
+saved clip and media channel maps both equal that request.
+
+The manual report also retains the exact original v1 capture-run fingerprint
+and verifies it deterministically at the candidate commit. The semantic v2
+fingerprint and independently tested take metadata are a versioned separation,
+not a broad source-change bypass.
 
 For a fresh run, verify that exact summary with `--require-audible-audio` as
 before. In reuse mode, omit only that flag; `verify:candidate` performs the
@@ -188,7 +258,24 @@ exact JSON emitted by `evidence:native-capture-fingerprint`):
 {
   "audioCaptureEvidence": {
     "mode": "fresh-audible",
-    "fingerprint": { "schema": "pocket-daw-native-capture-v1", "algorithm": "sha256", "value": "<sha256>", "inputs": [] }
+    "fingerprint": { "schema": "pocket-daw-native-pcm-capture-v2", "algorithm": "sha256", "value": "<sha256>", "inputs": [] }
+  }
+}
+```
+
+```json
+{
+  "audioCaptureEvidence": {
+    "mode": "manual-fresh-audible",
+    "fingerprint": { "schema": "pocket-daw-native-pcm-capture-v2", "algorithm": "sha256", "value": "<sha256>", "inputs": [] },
+    "manual": {
+      "evidenceFile": "manual-fresh-audible-evidence.json",
+      "evidenceSha256": "<sha256>"
+    },
+    "companion": {
+      "summaryFile": "automated-companion-summary.json",
+      "summarySha256": "<sha256>"
+    }
   }
 }
 ```
@@ -197,7 +284,7 @@ exact JSON emitted by `evidence:native-capture-fingerprint`):
 {
   "audioCaptureEvidence": {
     "mode": "baseline-reuse",
-    "fingerprint": { "schema": "pocket-daw-native-capture-v1", "algorithm": "sha256", "value": "<sha256>", "inputs": [] },
+    "fingerprint": { "schema": "pocket-daw-native-pcm-capture-v2", "algorithm": "sha256", "value": "<sha256>", "inputs": [] },
     "baseline": {
       "attestationFile": "<prior-attestation.json>",
       "attestationSha256": "<sha256>",
@@ -208,7 +295,7 @@ exact JSON emitted by `evidence:native-capture-fingerprint`):
 }
 ```
 
-The abbreviated empty `inputs` arrays above are explanatory only; the real
+The abbreviated empty `inputs` arrays above are explanatory only; every real
 attestation must contain the complete non-empty emitted fingerprint.
 
 Why ten seconds matters: shortening the first phase to four seconds left the
@@ -305,9 +392,33 @@ npm run verify:candidate -- `
   --game-pack <final-web.zip> --kind web-game-pack
 ```
 
-The verifier rejects neither-mode, both-mode, partial baseline paths, changed
-fingerprints, altered baseline bytes, non-prior timestamps/commits, and any
-baseline whose own mode is not direct `fresh-audible`.
+Manual-fresh-audible mode also omits `--require-audible-audio` and baseline
+paths, and supplies its exact direct report:
+
+```powershell
+npm run verify:candidate -- `
+  --attestation <final-attestation.json> `
+  --installer <exact-staged-setup.exe> `
+  --punch-take-summary <automated-companion-summary.json> `
+  --manual-fresh-audible-evidence <manual-fresh-audible-evidence.json> `
+  --media-portability-summary <final-media-summary.json> `
+  --vst3-host-summary <final-vst3-host-summary.json> `
+  --require-export-files `
+  --require-midi-input `
+  --commit <full-tested-commit> `
+  --game-pack <final-godot.zip> --kind godot-adaptive-pack `
+  --game-pack <final-web.zip> --kind web-game-pack
+```
+
+For guarded publication in this mode, set
+`MANUAL_FRESH_AUDIBLE_EVIDENCE` to that exact report in addition to the normal
+`SMOKE_ATTESTATION` and `PUNCH_TAKE_SUMMARY` bindings. Do not set
+`PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO` or either baseline environment variable.
+
+The verifier rejects neither-mode, multiple modes, partial baseline paths,
+changed fingerprints, altered manual/companion/baseline bytes, invalid evidence
+ordering, reuse chains, and any baseline whose own mode is not direct
+`fresh-audible` or fully verified direct `manual-fresh-audible`.
 
 After it passes, re-hash the setup EXE and compare it to the attestation and
 installed-smoke summaries before publication.
@@ -351,7 +462,9 @@ the normal checkpoint path.
 - Shortening the proven recording timing and moving capture outside the punch
   window.
 - Treating `ECONNREFUSED` as a product failure before the app bridge is ready.
-- Combining audio evidence from one run with MIDI evidence from another.
+- Combining audio evidence from one run with MIDI evidence from another unless
+  the attestation explicitly uses `manual-fresh-audible`, separately hashes both
+  direct files, and never claims they were captured in the same run.
 - Reconstructing attestation facts from chat instead of retained JSON and file
   hashes.
 - Rediscovering itch policy at publication time instead of reading it first.

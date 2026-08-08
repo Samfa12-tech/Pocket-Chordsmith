@@ -236,6 +236,7 @@ function verifyPunchTakeSummaryForPublish(staged) {
     requireAudibleAudio: envFlag("PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO"),
     baselineAttestationPath: process.env.AUDIO_CAPTURE_BASELINE_ATTESTATION,
     baselineInstallerPath: process.env.AUDIO_CAPTURE_BASELINE_INSTALLER,
+    manualFreshAudibleEvidencePath: process.env.MANUAL_FRESH_AUDIBLE_EVIDENCE,
     root: ROOT
   });
   if (!result.ok) {

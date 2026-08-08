@@ -43,6 +43,7 @@ export interface NativeRecordingTakeMetadataInput {
   recordingSessionId?: number | null;
   trackId?: string | null;
   channelMode?: "mono" | "stereo" | string | null;
+  inputChannelIndex?: number | null;
 }
 
 export interface RecordingCompletionMessageInput {
@@ -225,6 +226,9 @@ export function buildNativeRecordingDiagnosticsMetadata(source: NativeRecordingD
 
 export function buildNativeRecordingTakeMetadata(input: NativeRecordingTakeMetadataInput) {
   const channelMode = input.channelMode === "stereo" ? "stereo" : "mono";
+  const inputChannelIndex = Number.isInteger(input.inputChannelIndex) && Number(input.inputChannelIndex) >= 0
+    ? Number(input.inputChannelIndex)
+    : 0;
   const recordingSessionId = nullableFinite(input.recordingSessionId);
   const trackId = nullableText(input.trackId);
   const takeGroupId = recordingSessionId !== null
@@ -235,7 +239,7 @@ export function buildNativeRecordingTakeMetadata(input: NativeRecordingTakeMetad
     recordingTakeGroupId: takeGroupId,
     takeStatus: "active",
     inputMode: channelMode,
-    channelMap: channelMode === "stereo" ? [0, 1] : [0],
+    channelMap: channelMode === "stereo" ? [0, 1] : [inputChannelIndex],
     latencyCompensationAppliedSeconds: 0
   };
 }

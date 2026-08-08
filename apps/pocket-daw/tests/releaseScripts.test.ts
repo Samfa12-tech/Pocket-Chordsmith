@@ -78,6 +78,8 @@ describe("release scripts", () => {
     const nativeCaptureFingerprint = readFileSync("scripts/native-capture-fingerprint.mjs", "utf8");
     const verifyReleaseCandidateTruth = readFileSync("scripts/verify-release-candidate-truth.mjs", "utf8");
 
+    expect(packageJson.scripts["evidence:manual-fresh-audible"]).toBe("node scripts/manual-fresh-audible-evidence.mjs");
+
     expect(packageJson.scripts["tauri:build"]).toContain("plugin-host:prepare:release");
     expect(packageJson.scripts["tauri:build"]).toContain("tauri.sidecar.conf.json");
     expect(packageJson.scripts["tauri:build:installers"]).toContain("plugin-host:prepare:release");
@@ -153,6 +155,7 @@ describe("release scripts", () => {
     expect(guardedPush).toContain("PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO");
     expect(guardedPush).toContain("AUDIO_CAPTURE_BASELINE_ATTESTATION");
     expect(guardedPush).toContain("AUDIO_CAPTURE_BASELINE_INSTALLER");
+    expect(guardedPush).toContain("MANUAL_FRESH_AUDIBLE_EVIDENCE");
     expect(guardedPush).toContain("assertReleaseCandidateTruth");
     expect(guardedPush).toContain('"releases/itch/installers"');
     expect(updaterManifest).toContain("pocket-daw-latest.json");
@@ -174,6 +177,7 @@ describe("release scripts", () => {
     expect(releaseUpdaterBuild).toContain("PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO");
     expect(releaseUpdaterBuild).toContain("AUDIO_CAPTURE_BASELINE_ATTESTATION");
     expect(releaseUpdaterBuild).toContain("AUDIO_CAPTURE_BASELINE_INSTALLER");
+    expect(releaseUpdaterBuild).toContain("MANUAL_FRESH_AUDIBLE_EVIDENCE");
     expect(releaseUpdaterBuild).toContain("assertReleaseCandidateTruth");
     expect(releaseUpdaterBuild).toContain("--fast --publish is blocked");
     expect(releaseUpdaterBuild).toContain("makeUpdaterManifest");
@@ -206,8 +210,11 @@ describe("release scripts", () => {
     expect(verifyCandidate).toContain("requireAudibleAudio: options.requireAudibleAudio");
     expect(verifyNativeCaptureEvidence).toContain("requireExportFiles: true");
     expect(verifyNativeCaptureEvidence).toContain("requireMidiInput: true");
-    expect(verifyNativeCaptureEvidence).toContain("requireAudibleAudio: true");
+    expect(verifyNativeCaptureEvidence).toContain('requireAudibleAudio: mode === "fresh-audible"');
+    expect(verifyNativeCaptureEvidence).toContain('requireAudibleAudio: baselineMode === "fresh-audible"');
     expect(verifyNativeCaptureEvidence).toContain("baseline-reuse chains are forbidden");
+    expect(verifyNativeCaptureEvidence).toContain("must not relabel the automated companion run as audible");
+    expect(verifyNativeCaptureEvidence).toContain("prior summaries cannot be reused");
     expect(verifyNativeCaptureEvidence).toContain("Baseline attestation SHA-256");
     expect(nativeCaptureFingerprint).toContain("src-tauri/src/native_recording.rs");
     expect(nativeCaptureFingerprint).toContain("cpalDependencyClosure");
@@ -219,6 +226,7 @@ describe("release scripts", () => {
     expect(verifyCandidate).toContain("--require-midi-input");
     expect(verifyCandidate).toContain("--audio-capture-baseline-attestation");
     expect(verifyCandidate).toContain("--audio-capture-baseline-installer");
+    expect(verifyCandidate).toContain("--manual-fresh-audible-evidence");
     expect(verifyCandidate).toContain("--commit");
     expect(verifyCandidate).toContain("--game-pack");
     expect(verifyReleaseCandidateTruth).toContain("validateReleaseCandidateTruth");

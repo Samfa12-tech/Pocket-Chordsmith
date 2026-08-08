@@ -40,7 +40,13 @@ export function validateInstalledPunchTakeSummary(summary, expectations = {}) {
   if (!Number.isInteger(summary.activeCount) || summary.activeCount < 4) failures.push("activeCount must include active audio and MIDI takes");
   if (!Number.isInteger(summary.mutedCount) || summary.mutedCount < 2) failures.push("mutedCount must include inactive take-lane material");
 
-  validateAudioRecordingControl(summary.audioRecordingControl, failures, { requireAudibleAudio, minAudioDurationSeconds, minAudioPeak, minAudioRms });
+  validateAudioRecordingControl(summary.audioRecordingControl, failures, {
+    requireAudibleAudio,
+    minAudioDurationSeconds,
+    minAudioPeak,
+    minAudioRms,
+    audioInput: summary.audioInput
+  });
   validateMidiInputRecordingControl(summary.midiInputRecordingControl, failures, { requireMidiInput });
   validateMidiDevicePreflight(summary.midiDevicePreflight, summary.midiInputRecordingControl, failures, { requireMidiInput });
   validateMidiExport(summary, failures);
@@ -68,6 +74,23 @@ function validateAudioRecordingControl(control, failures, options = {}) {
   }
   if (control.outcome !== "started-and-stopped") {
     failures.push(`audioRecordingControl.outcome must be started-and-stopped for release evidence, received ${JSON.stringify(control.outcome)}`);
+  }
+  const audioInput = options.audioInput;
+  if (!isPlainObject(audioInput)) {
+    failures.push("audioInput must bind the exact requested input device/channel");
+  } else {
+    requireString(audioInput.deviceId, "audioInput.deviceId", failures);
+    requireString(audioInput.deviceName, "audioInput.deviceName", failures);
+    if (!Number.isInteger(audioInput.channelIndex) || audioInput.channelIndex < 0) failures.push("audioInput.channelIndex must be a non-negative integer");
+    if (!Number.isInteger(audioInput.channelCount) || audioInput.channelCount < 1 || audioInput.channelIndex >= audioInput.channelCount) failures.push("audioInput.channelIndex must be within audioInput.channelCount");
+    const preflight = control.inputMeterPreflight;
+    if (!isPlainObject(preflight)) {
+      failures.push("audioRecordingControl.inputMeterPreflight must bind the native preview device/channel");
+    } else {
+      if (preflight.inputDeviceId !== audioInput.deviceId) failures.push("audioRecordingControl.inputMeterPreflight.inputDeviceId must match audioInput.deviceId");
+      if (preflight.inputChannelIndex !== audioInput.channelIndex) failures.push("audioRecordingControl.inputMeterPreflight.inputChannelIndex must match audioInput.channelIndex");
+      if (!sameNumberArray(preflight.inputChannelMap, [audioInput.channelIndex])) failures.push("audioRecordingControl.inputMeterPreflight.inputChannelMap must match audioInput.channelIndex");
+    }
   }
   const delta = control.placement?.delta;
   if (!isPlainObject(delta)) {
@@ -104,6 +127,10 @@ function validateAudioRecordingControl(control, failures, options = {}) {
   if (media.fileSampleRate !== undefined && (typeof media.fileSampleRate !== "number" || media.fileSampleRate <= 0)) failures.push("audioRecordingControl.media.fileSampleRate must be positive");
   if (media.fileChannels !== undefined && (!Number.isInteger(media.fileChannels) || media.fileChannels <= 0)) failures.push("audioRecordingControl.media.fileChannels must be a positive integer");
   if (media.fileFrameCount !== undefined && (!Number.isInteger(media.fileFrameCount) || media.fileFrameCount <= 0)) failures.push("audioRecordingControl.media.fileFrameCount must be a positive integer");
+  if (isPlainObject(audioInput)) {
+    if (media.inputMode !== "mono" || !sameNumberArray(media.channelMap, [audioInput.channelIndex])) failures.push("audioRecordingControl.media channel metadata must match the requested mono input channel");
+    if (media.clipInputMode !== "mono" || !sameNumberArray(media.clipChannelMap, [audioInput.channelIndex])) failures.push("audioRecordingControl clip channel metadata must match the requested mono input channel");
+  }
   if (options.requireAudibleAudio) {
     if (typeof media.durationSeconds !== "number" || media.durationSeconds < options.minAudioDurationSeconds) {
       failures.push(`audioRecordingControl.media.durationSeconds must be at least ${options.minAudioDurationSeconds} when audible audio evidence is required`);
@@ -119,6 +146,10 @@ function validateAudioRecordingControl(control, failures, options = {}) {
       failures.push(`audioRecordingControl.media.fileRms must be at least ${options.minAudioRms} when audible audio evidence is required`);
     }
   }
+}
+
+function sameNumberArray(actual, expected) {
+  return Array.isArray(actual) && actual.length === expected.length && actual.every((value, index) => Number(value) === Number(expected[index]));
 }
 
 function validateMidiInputRecordingControl(control, failures, options = {}) {

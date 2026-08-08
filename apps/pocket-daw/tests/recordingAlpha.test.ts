@@ -895,13 +895,14 @@ describe("recording alpha foundations", () => {
     expect(buildNativeRecordingTakeMetadata({
       recordingSessionId: 42,
       trackId: "live-vocals",
-      channelMode: "mono"
+      channelMode: "mono",
+      inputChannelIndex: 1
     })).toEqual({
       takeGroupId: "recording-session-42",
       recordingTakeGroupId: "recording-session-42",
       takeStatus: "active",
       inputMode: "mono",
-      channelMap: [0],
+      channelMap: [1],
       latencyCompensationAppliedSeconds: 0
     });
 
@@ -915,6 +916,15 @@ describe("recording alpha foundations", () => {
       takeStatus: "active",
       inputMode: "stereo",
       channelMap: [0, 1]
+    });
+
+    expect(buildNativeRecordingTakeMetadata({
+      recordingSessionId: 44,
+      trackId: "legacy-default",
+      channelMode: "mono"
+    })).toMatchObject({
+      inputMode: "mono",
+      channelMap: [0]
     });
   });
 

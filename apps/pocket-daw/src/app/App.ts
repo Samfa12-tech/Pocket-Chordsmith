@@ -5230,7 +5230,8 @@ export class App {
           ...buildNativeRecordingTakeMetadata({
             recordingSessionId: result.recordingSessionId,
             trackId: result.trackId,
-            channelMode: decoded?.channels === 2 || result.channels === 2 ? "stereo" : recordingTrack?.recordingChannelMode
+            channelMode: decoded?.channels === 2 || result.channels === 2 ? "stereo" : recordingTrack?.recordingChannelMode,
+            inputChannelIndex: recordingTrack?.recordingInput?.channelIndex
           }),
           latencyCompensationRequestedSeconds: recordingLatencyOffsetSeconds(recordingTrack),
           latencyCompensationMode: "manual-track-offset",
