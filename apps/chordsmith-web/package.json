@@ -45,7 +45,7 @@
     "@playwright/test": "^1.52.0",
     "bestzip": "^2.2.1",
     "eslint": "^9.28.0",
-    "prettier": "^3.5.3",
+    "prettier": "^3.9.6",
     "typescript": "^5.8.3",
     "vitest": "^4.1.8",
     "vite": "^6.3.5"
