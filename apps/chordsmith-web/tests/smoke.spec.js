@@ -1079,6 +1079,24 @@ test("exports a fixture WAV through Chordsmith using the same Core WAV plumbing 
   expect(comparison.status).toContain("WAV render song sequence");
 });
 
+test("WAV export refuses an oversized render before allocating an OfflineAudioContext", async ({ page }) => {
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await page.evaluate(() => {
+    window.__offlineAudioContextAllocations = 0;
+    const RealOfflineAudioContext = window.OfflineAudioContext;
+    window.OfflineAudioContext = function GuardedOfflineAudioContext(...args) {
+      window.__offlineAudioContextAllocations += 1;
+      return new RealOfflineAudioContext(...args);
+    };
+    window.buildSequenceEvents = () => [{ type: "chord", time: 600, dur: 1, chord: 1 }];
+  });
+
+  await page.locator("#exportWavBtn").click();
+  await expect(page.locator("#wavProgressText")).toContainText("Choose Current section");
+  await expect(page.locator("#statusText")).toContainText("WAV export stopped safely");
+  expect(await page.evaluate(() => window.__offlineAudioContextAllocations)).toBe(0);
+});
+
 test("PCS1 share code round-trips through the settings text box", async ({
   page,
 }) => {
@@ -1095,6 +1113,58 @@ test("PCS1 share code round-trips through the settings text box", async ({
   expect(roundTrip.projectVersion).toBe(17);
   expect(roundTrip.audioProfile).toBe(FIXTURE_CASES[0].audioProfile);
   expect(roundTrip.lofiPreset).toBe(FIXTURE_CASES[0].preset);
+});
+
+test("project imports reject oversized encoded, rich-event, and MIDI inputs before expensive work", async ({ page }) => {
+  const result = await page.evaluate(() => {
+    const realAtob = window.atob;
+    let atobCalls = 0;
+    window.atob = (...args) => {
+      atobCalls += 1;
+      return realAtob(...args);
+    };
+    let shareError;
+    try {
+      parseShareCode(`PCS1:${"A".repeat(PCS_MAX_ENCODED_CHARS + 1)}`);
+    } catch (error) {
+      shareError = { code: error.code, message: error.message };
+    } finally {
+      window.atob = realAtob;
+    }
+
+    const project = {
+      projectVersion: 17,
+      sections: { A: { tracks: { melody1: { events: new Array(PROJECT_RESOURCE_LIMITS.maxEventsPerTrack + 1).fill({ step: 0, note: 60 }) } } } },
+    };
+    let projectError;
+    try {
+      sanitizeProjectData(project);
+    } catch (error) {
+      projectError = { code: error.code, path: error.path, actual: error.actual };
+    }
+
+    let midiError;
+    try {
+      parseStandardMidi(new ArrayBuffer(MIDI_IMPORT_MAX_BYTES + 1));
+    } catch (error) {
+      midiError = error.message;
+    }
+
+    history.replaceState({}, "", "?handoffRelay=https%3A%2F%2Fevil.example");
+    const relay = configuredPocketAudioHandoffRelayUrl();
+    history.replaceState({}, "", location.pathname);
+    return { atobCalls, shareError, projectError, midiError, relay };
+  });
+
+  expect(result.atobCalls).toBe(0);
+  expect(result.shareError.code).toBe("PROJECT_PAYLOAD_TOO_LARGE");
+  expect(result.projectError).toMatchObject({
+    code: "PROJECT_RESOURCE_LIMIT_EXCEEDED",
+    path: "sections.A.tracks.melody1.events",
+    actual: 4097,
+  });
+  expect(result.midiError).toContain("4 MiB import limit");
+  expect(result.relay).toBe("");
 });
 
 test("schema 17 Funk projects preserve rich intent, unknown namespaces, and reversible schema 16 compatibility", async ({ page }) => {
@@ -1267,6 +1337,10 @@ test("Godot direct push sends a schema 17 PCS1 payload to the local receiver", a
 }) => {
   await importFixtureThroughSettings(page, FIXTURE_CASES[1].path);
   await page.evaluate(() => {
+    sessionStorage.setItem(
+      "pocket_chordsmith_godot_receiver_token_v1",
+      "current-godot-session-token",
+    );
     window.__pocketChordsmithFetches = [];
     window.fetch = async (url, options = {}) => {
       window.__pocketChordsmithFetches.push({
@@ -1277,6 +1351,7 @@ test("Godot direct push sends a schema 17 PCS1 payload to the local receiver", a
       });
       return {
         ok: true,
+        status: 200,
         json: async () => ({ ok: true, event_count: 42 }),
         text: async () => "ok",
       };
@@ -1291,6 +1366,10 @@ test("Godot direct push sends a schema 17 PCS1 payload to the local receiver", a
     "http://127.0.0.1:9087/pocket-chordsmith/push-to-godot",
   );
   expect(fetches[0].method).toBe("POST");
+  expect(fetches[0].headers.Authorization).toBe(
+    "Bearer current-godot-session-token",
+  );
+  expect(fetches[0].headers["X-Pocket-Audio-Request-Id"]).toBeTruthy();
   const body = JSON.parse(fetches[0].body);
   expect(body).toMatchObject({
     type: "pocket-chordsmith.push-to-godot",
@@ -1431,15 +1510,16 @@ test("mobile transfer opens the static handoff page with a short code", async ({
   releaseRelay();
   await transferClick;
 
+  await expect(page.locator("#mobileTransferStatus")).toContainText(
+    "short code SAM-TEST42",
+  );
+
   const openedUrls = await page.evaluate(() =>
     window.__pocketChordsmithOpenedUrls.map((item) => item.location.href),
   );
   expect(openedUrls).toHaveLength(1);
   expect(openedUrls[0]).toContain("/apps/pocket-audio-handoff/index.html");
   expect(openedUrls[0]).toContain("#code=SAM-TEST42");
-  await expect(page.locator("#mobileTransferStatus")).toContainText(
-    "short code SAM-TEST42",
-  );
 });
 
 test("static handoff page imports hash payload and builds desktop fallbacks", async ({

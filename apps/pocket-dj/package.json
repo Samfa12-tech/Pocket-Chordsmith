@@ -22,11 +22,25 @@
     "songwriting"
   ],
   "scripts": {
-    "package:itch": "node scripts/package-itch.mjs",
-    "test:e2e": "playwright test"
+    "build:single-file": "node scripts/build-single-file.mjs",
+    "verify:single-file": "node scripts/build-single-file.mjs --check",
+    "package:itch": "npm run build:single-file && node scripts/package-itch.mjs",
+    "test:scheduler": "node --test tests/scheduler-policy.test.mjs",
+    "test:e2e": "playwright test --project=chromium-desktop",
+    "test:cross-browser": "playwright test tests/core-smoke.spec.js --project=firefox-desktop --project=webkit-desktop --grep \"Pocket DJ exposes accessible|loads demo deck|deck controls queue\"",
+    "lint": "eslint tests/**/*.mjs scripts/**/*.mjs",
+    "typecheck": "tsc --noEmit --allowJs --checkJs --target ES2022 --module NodeNext --moduleResolution NodeNext tests/scheduler-policy.test.mjs scripts/package-itch.mjs",
+    "format": "prettier tests/**/*.mjs scripts/**/*.mjs --write",
+    "format:check": "prettier tests/**/*.mjs scripts/**/*.mjs --check",
+    "report:size": "node ../../scripts/report-web-surface.mjs --product Pocket-DJ --app . --active pocket_dj_v1g_core_bridge.html --maxActiveBytes 300000",
+    "verify": "npm run test:scheduler && npm run lint && npm run typecheck && npm run format:check && npm run report:size && npm run verify:single-file && npm run test:e2e && npm run test:cross-browser && npm run package:itch"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
-    "bestzip": "^2.2.1"
+    "@types/node": "^25.0.0",
+    "bestzip": "^2.2.1",
+    "eslint": "^9.28.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3"
   }
 }

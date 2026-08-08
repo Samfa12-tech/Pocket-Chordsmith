@@ -1,0 +1,112 @@
+{
+  "$schema": "./docs/schemas/pocket-audio-family-manifest.schema.json",
+  "manifestVersion": 1,
+  "updated": "2026-08-08",
+  "schemaPolicy": {
+    "canonicalProjectSchema": 17,
+    "legacyProjectionSchema": 16,
+    "projectionRule": "Schema 16 is emitted only for an explicit compatibility target and its loss report must be inspected."
+  },
+  "components": [
+    {
+      "id": "chordsmith-web",
+      "name": "Pocket Chordsmith",
+      "path": "apps/chordsmith-web",
+      "kind": "hosted-web-app",
+      "versions": { "package": "1.0.0", "build": "v68", "schema": "17", "legacySchema": "16", "core": "0.2.0" },
+      "license": "UNLICENSED",
+      "releaseStatus": "public-hosted",
+      "packageCommand": "cd apps/chordsmith-web && npm run package:itch",
+      "testCommand": "cd apps/chordsmith-web && npm run verify",
+      "deployment": {
+        "channel": "samfa12/pocket-chordsmith:pocket-audio-core",
+        "identifier": "pcs17-genre-composer-20260731 (#1845264)",
+        "sourceCommit": "b4d288242c75c488e50b8fd4b2382c005cf52d9b"
+      }
+    },
+    {
+      "id": "pocket-dj",
+      "name": "Pocket DJ",
+      "path": "apps/pocket-dj",
+      "kind": "hosted-web-app",
+      "versions": { "package": "1.0.0", "build": "v1g", "sessionSchema": "1", "sourceSchema": "17", "legacySourceSchema": "16", "core": "0.2.0" },
+      "license": "UNLICENSED",
+      "releaseStatus": "public-hosted",
+      "packageCommand": "cd apps/pocket-dj && npm run package:itch",
+      "testCommand": "cd apps/pocket-dj && npm run verify",
+      "deployment": {
+        "channel": "samfa12/pocket-dj:html",
+        "identifier": "Samfa12 site sync 0e7db88829aadeaf88ec33d9124f71031507448c; last independently verified itch build #1736545",
+        "sourceCommit": "531ed5d386905c82914fa3879224140c4441f0e6"
+      }
+    },
+    {
+      "id": "pocket-audio-handoff",
+      "name": "Pocket Audio Handoff",
+      "path": "apps/pocket-audio-handoff",
+      "kind": "hosted-web-app",
+      "versions": { "build": "handoff-v1", "handoffSchema": "1", "sourceSchemas": "16,17" },
+      "license": "UNLICENSED",
+      "releaseStatus": "public-hosted",
+      "packageCommand": "node scripts/package-handoff.mjs",
+      "testCommand": "cd apps/pocket-audio-handoff && npm test",
+      "deployment": {
+        "channel": "https://samfa12.com/apps/pocket-audio-handoff/",
+        "identifier": "Samfa12 site sync 0e7db88829aadeaf88ec33d9124f71031507448c",
+        "sourceCommit": "dc429d3907631dc15ac5e07ddd7195e36c78a510"
+      }
+    },
+    {
+      "id": "pocket-daw",
+      "name": "Pocket DAW",
+      "path": "apps/pocket-daw",
+      "kind": "native-windows-app",
+      "versions": { "source": "0.6.45", "projectSchema": "3", "latestPublished": "0.6.44", "lastInstalledSmoke": "0.6.43" },
+      "license": "UNLICENSED",
+      "releaseStatus": "public-alpha-source-ahead-of-smoke",
+      "packageCommand": "cd apps/pocket-daw && npm run release:update:full",
+      "testCommand": "cd apps/pocket-daw && npm run verify:versions && npm run verify:release-candidate-truth && npm test",
+      "deployment": {
+        "channel": "GitHub updater / stable itch bootstrapper",
+        "identifier": "pocket-daw-v0.6.44",
+        "sourceCommit": "bab1a5850801b890b95c5192d0a1366a0f61b252"
+      }
+    },
+    {
+      "id": "pocket-audio-core",
+      "name": "Pocket Audio Core",
+      "path": "packages/pocket-audio-core",
+      "kind": "private-package-source",
+      "versions": { "package": "0.2.0", "schemas": "16,17" },
+      "license": "UNLICENSED",
+      "releaseStatus": "private-workspace-package",
+      "packageCommand": "cd packages/pocket-audio-core && npm run build",
+      "testCommand": "cd packages/pocket-audio-core && npm test && npm run verify:family-parity",
+      "deployment": { "channel": "repository-only", "identifier": "0.2.0", "sourceCommit": null }
+    },
+    {
+      "id": "pcs-format",
+      "name": "PCS Format",
+      "path": "packages/pcs-format",
+      "kind": "private-package-source",
+      "versions": { "package": "0.2.0", "canonicalSchema": "17", "legacyProjectionSchema": "16" },
+      "license": "UNLICENSED",
+      "releaseStatus": "private-workspace-package",
+      "packageCommand": "cd packages/pcs-format && npm run build",
+      "testCommand": "cd packages/pcs-format && npm test",
+      "deployment": { "channel": "repository-only", "identifier": "0.2.0", "sourceCommit": null }
+    },
+    {
+      "id": "godot-addon",
+      "name": "Pocket Chordsmith Godot addon",
+      "path": "addons/pocket_chordsmith",
+      "kind": "godot-addon",
+      "versions": { "addon": "1.2.0", "schemas": "16,17", "supportedGodot": "4.6.3" },
+      "license": "MIT",
+      "releaseStatus": "public-addon",
+      "packageCommand": "godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd -- --output <zip>",
+      "testCommand": "node scripts/verify-godot-ci.mjs --godot-bin <godot>",
+      "deployment": { "channel": "Godot addon-only release", "identifier": "1.2.0", "sourceCommit": null }
+    }
+  ]
+}

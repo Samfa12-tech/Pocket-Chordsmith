@@ -2,6 +2,7 @@
 /// Existing built-in DSP remains sample-accurate inside each block.
 pub(crate) const NATIVE_AUDIO_BLOCK_FRAMES: usize = 128;
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn for_each_output_block<T>(
     output: &mut [T],
     channels: usize,

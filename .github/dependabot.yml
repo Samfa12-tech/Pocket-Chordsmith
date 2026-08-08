@@ -1,0 +1,30 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Australia/Sydney }
+    labels: [dependencies, security]
+  - package-ecosystem: npm
+    directory: /apps/chordsmith-web
+    schedule: { interval: weekly, day: monday, time: "06:10", timezone: Australia/Sydney }
+    labels: [dependencies, chordsmith]
+  - package-ecosystem: npm
+    directory: /apps/pocket-dj
+    schedule: { interval: weekly, day: monday, time: "06:20", timezone: Australia/Sydney }
+    labels: [dependencies, pocket-dj]
+  - package-ecosystem: npm
+    directory: /apps/pocket-daw
+    schedule: { interval: weekly, day: monday, time: "06:30", timezone: Australia/Sydney }
+    labels: [dependencies, pocket-daw]
+  - package-ecosystem: npm
+    directory: /packages/pocket-audio-core
+    schedule: { interval: weekly, day: monday, time: "06:40", timezone: Australia/Sydney }
+    labels: [dependencies, core]
+  - package-ecosystem: npm
+    directory: /packages/pcs-format
+    schedule: { interval: weekly, day: monday, time: "06:50", timezone: Australia/Sydney }
+    labels: [dependencies, pcs-format]
+  - package-ecosystem: cargo
+    directory: /apps/pocket-daw/src-tauri
+    schedule: { interval: weekly, day: monday, time: "07:00", timezone: Australia/Sydney }
+    labels: [dependencies, rust, pocket-daw]

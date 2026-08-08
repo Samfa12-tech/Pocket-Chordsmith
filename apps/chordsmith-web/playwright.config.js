@@ -4,6 +4,7 @@ const port = Number(process.env.PORT || 4174);
 
 export default defineConfig({
   testDir: "./tests",
+  testMatch: "**/*.spec.js",
   timeout: 30_000,
   fullyParallel: true,
   reporter: [["list"], ["html", { open: "never" }]],
@@ -25,6 +26,14 @@ export default defineConfig({
     {
       name: "mobile-chrome",
       use: { ...devices["Pixel 7"] },
+    },
+    {
+      name: "firefox-desktop",
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "webkit-desktop",
+      use: { ...devices["Desktop Safari"] },
     },
   ],
 });

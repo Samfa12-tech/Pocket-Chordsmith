@@ -3,128 +3,265 @@ name: CI
 on:
   pull_request:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 22
 
 jobs:
-  ci:
+  governance:
+    name: Repository and generated governance
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
-
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - name: Verify repository organization
+        run: node scripts/check-repo-organization.mjs
+      - name: Verify family manifest and generated documentation
+        run: node scripts/generate-family-governance.mjs --check
+      - name: Verify immutable runnable archive
+        run: node scripts/generate-archive-index.mjs --check
+
+  core-format:
+    name: Core and PCS Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: |
-            apps/chordsmith-web/package-lock.json
-            apps/pocket-dj/package-lock.json
             apps/pocket-daw/package-lock.json
             packages/pocket-audio-core/package-lock.json
             packages/pcs-format/package-lock.json
-
-      - name: Install Playwright system dependencies
-        run: npx --yes playwright@1.61.1 install-deps chromium
-
-      - name: Repository hygiene
-        shell: bash
-        run: |
-          node scripts/check-repo-organization.mjs
-
       - name: Install Pocket DAW dependencies for family parity
         working-directory: apps/pocket-daw
         run: npm ci
-
-      - name: Pocket Audio Core
+      - name: Install Core dependencies and Chromium
         working-directory: packages/pocket-audio-core
         run: |
           npm ci
+          npx playwright install-deps chromium
           npx playwright install chromium
+      - name: Test and build Pocket Audio Core
+        working-directory: packages/pocket-audio-core
+        run: |
           npm test
           npm run build
           npm run verify:family-parity
-
-      - name: PCS Format
+      - name: Test and build PCS Format
         working-directory: packages/pcs-format
         run: |
           npm ci
           npm test
           npm run build
 
-      - name: Pocket Chordsmith web
+  chordsmith:
+    name: Pocket Chordsmith web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/chordsmith-web/package-lock.json
+            packages/pocket-audio-core/package-lock.json
+      - name: Install dependencies and browser engines
         working-directory: apps/chordsmith-web
         run: |
           npm ci
-          npx playwright install chromium
-          npm run build
-          npm run test:e2e
-          npm run package:itch
-
-      - name: Pocket DJ
-        working-directory: apps/pocket-dj
+          npx playwright install-deps chromium firefox webkit
+          npx playwright install chromium firefox webkit
+      - name: Build Pocket Audio Core browser artifacts
+        working-directory: packages/pocket-audio-core
         run: |
           npm ci
-          npx playwright install chromium
-          npm run package:itch
-          npm run test:e2e
-
-      - name: Pocket DAW
-        working-directory: apps/pocket-daw
-        run: |
-          npx playwright install chromium
-          npm run verify:versions
-          npm test
           npm run build
+      - name: Deterministic composer contract
+        working-directory: apps/chordsmith-web
+        run: |
+          npm run test:composer
+          npm run test:audio-quality
+      - name: Unit, lint, type, format and size gates
+        working-directory: apps/chordsmith-web
+        run: |
+          npm run test:unit
+          npm run lint
+          npm run typecheck
+          npm run format:check
+          npm run report:size
+      - name: Browser, build and package gates
+        working-directory: apps/chordsmith-web
+        run: |
+          npm run verify:single-file
           npm run test:e2e
-
-      - name: Upload browser test reports
-        if: failure()
-        uses: actions/upload-artifact@v7
+          npm run test:cross-browser
+          npm run build
+          npm run package:itch
+      - name: Upload Chordsmith reports and provenance
+        if: always()
+        # actions/upload-artifact@v7 pinned below.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: browser-test-reports-${{ github.run_id }}
+          name: chordsmith-reports-${{ github.run_id }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
-            apps/chordsmith-web/playwright-report/
             apps/chordsmith-web/test-results/
-            apps/pocket-dj/playwright-report/
-            apps/pocket-dj/test-results/
-            apps/pocket-daw/playwright-report/
-            apps/pocket-daw/test-results/
+            apps/chordsmith-web/playwright-report/
+            local-artifacts/staging/chordsmith-web/*.release.json
 
-  pocket-daw-windows-native:
-    runs-on: windows-latest
+  pocket-dj:
+    name: Pocket DJ
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
-
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/pocket-dj/package-lock.json
+            packages/pocket-audio-core/package-lock.json
+      - name: Install dependencies and browser engines
+        working-directory: apps/pocket-dj
+        run: |
+          npm ci
+          npx playwright install-deps chromium firefox webkit
+          npx playwright install chromium firefox webkit
+      - name: Build Pocket Audio Core browser artifacts
+        working-directory: packages/pocket-audio-core
+        run: |
+          npm ci
+          npm run build
+      - name: Scheduler and tooling gates
+        working-directory: apps/pocket-dj
+        run: |
+          npm run test:scheduler
+          npm run lint
+          npm run typecheck
+          npm run format:check
+          npm run report:size
+      - name: Browser and package gates
+        working-directory: apps/pocket-dj
+        run: |
+          npm run verify:single-file
+          npm run test:e2e
+          npm run test:cross-browser
+          npm run package:itch
+      - name: Upload Pocket DJ reports and provenance
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pocket-dj-reports-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            apps/pocket-dj/test-results/
+            apps/pocket-dj/playwright-report/
+            local-artifacts/staging/pocket-dj/*.release.json
+
+  handoff:
+    name: Pocket Audio Handoff
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - name: Endpoint trust, PCS payload, CSP and relay contract
+        run: npm test --prefix apps/pocket-audio-handoff
+      - name: Package and provenance gate
+        run: node scripts/package-handoff.mjs
+      - name: Upload Handoff provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: handoff-provenance-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 7
+          path: local-artifacts/staging/pocket-audio-handoff/*.release.json
+
+  pocket-daw-linux:
+    name: Pocket DAW frontend and release contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/pocket-daw/package-lock.json
+      - name: Install dependencies and Chromium
+        working-directory: apps/pocket-daw
+        run: |
+          npm ci
+          npx playwright install-deps chromium
+          npx playwright install chromium
+      - name: Version, release-truth and generated recipe gates
+        working-directory: apps/pocket-daw
+        run: |
+          npm run verify:versions
+          npm run verify:release-candidate-truth
+          npm run verify:native-sound-recipes
+          npm run verify:ci-workflow
+      - name: Frontend tests, build and browser smoke
+        working-directory: apps/pocket-daw
+        run: |
+          npm test
+          npm run build
+          npm run test:e2e
+      - name: Upload Pocket DAW browser reports
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pocket-daw-linux-reports-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            apps/pocket-daw/test-results/
+            apps/pocket-daw/playwright-report/
 
+  pocket-daw-windows-native:
+    name: Pocket DAW Windows native
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/pocket-daw/package-lock.json
       - name: Setup Rust
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-          rustup component add rustfmt
-          rustup component add clippy
-
-      # Do not cache Cargo build output here. The compiled Tauri target directory
-      # was producing ~1 GB immutable caches for each Cargo.lock revision, which
-      # quickly exhausted this account's 0.5 GB Actions storage allowance.
-      # The Windows job is intentionally allowed to rebuild from source instead.
-
+          rustup component add rustfmt clippy
       - name: Pocket DAW frontend and native checks
         working-directory: apps/pocket-daw
         run: |
           npm ci
-          npx playwright install chromium
           npm run verify:versions
           npm test
           npm run build
@@ -132,13 +269,80 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml
           cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
-      - name: Upload native check reports
-        if: failure()
-        uses: actions/upload-artifact@v7
+  godot:
+    name: Godot 4.6.3 import and addon package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          name: pocket-daw-windows-native-reports-${{ github.run_id }}
-          if-no-files-found: ignore
-          retention-days: 7
-          path: |
-            apps/pocket-daw/test-results/
-            apps/pocket-daw/playwright-report/
+          node-version: 22
+      - name: Install official Godot 4.6.3 headless binary
+        run: |
+          curl --fail --location --retry 3 --output godot.zip https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable/Godot_v4.6.3-stable_linux.x86_64.zip
+          unzip -q godot.zip
+          chmod +x Godot_v4.6.3-stable_linux.x86_64
+      - name: Headless import, contract and addon-only package gates
+        run: node scripts/verify-godot-ci.mjs --godot-bin ./Godot_v4.6.3-stable_linux.x86_64
+
+  security:
+    name: Dependency, secret and license security gates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - name: Check hosted Dependency graph availability
+        id: dependency-graph
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/dependency-graph/sbom" >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Dependency review
+        if: github.event_name == 'pull_request' && steps.dependency-graph.outputs.available == 'true'
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
+      - name: Record unavailable hosted dependency review
+        if: github.event_name == 'pull_request' && steps.dependency-graph.outputs.available != 'true'
+        run: echo "::warning::GitHub dependency review could not run. Enable Dependency graph in repository settings; repository-owned lockfile audits remain required below."
+      - name: Scan tracked source for secret patterns
+        run: node scripts/scan-tracked-secrets.mjs
+      - name: Verify lockfiles, licences and security scope
+        run: node scripts/verify-security-governance.mjs
+      - name: Audit npm lockfiles
+        run: node scripts/audit-node-dependencies.mjs
+
+  family-gate:
+    name: Pocket Audio family gate
+    if: always()
+    needs:
+      - governance
+      - core-format
+      - chordsmith
+      - pocket-dj
+      - handoff
+      - pocket-daw-linux
+      - pocket-daw-windows-native
+      - godot
+      - security
+    runs-on: ubuntu-latest
+    env:
+      FAMILY_RESULTS: ${{ toJson(needs) }}
+    steps:
+      - name: Require every component gate
+        run: |
+          node -e 'const needs=JSON.parse(process.env.FAMILY_RESULTS); const bad=Object.entries(needs).filter(([,job])=>job.result!=="success"); if(bad.length){console.error(bad.map(([name,job])=>`${name}: ${job.result}`).join("\n")); process.exit(1)} console.log("All Pocket Audio family gates passed.")'

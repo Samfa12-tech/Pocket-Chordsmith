@@ -84,25 +84,26 @@ function comparableEvents(events) {
 }
 
 function compactEvent(event) {
+  const type = canonicalEventType(event.type);
   const out = {
-    type: event.type,
+    type,
     sectionId: event.sectionId || event.section || "A",
     step: numberOrNull(event.step),
     time: round(event.time),
-    duration: round(event.duration ?? event.dur),
     accent: Boolean(event.accent),
     tuplet: Boolean(event.tuplet)
   };
+  const isPercussion = ["kick", "snare", "hat"].includes(type);
+  if (!isPercussion) out.duration = roundTo(event.duration ?? event.dur, 2);
   copyOptional(out, event, "midi");
   copyOptional(out, event, "slideMidi");
   copyOptionalNumber(out, event, "slideOffset");
-  if (event.instrument !== undefined && event.instrument !== null) out.instrument = event.instrument;
-  else if (event.tone !== undefined && event.tone !== null) out.instrument = event.tone;
-  copyOptional(out, event, "articulation");
-  copyOptionalNumber(out, event, "pan");
-  copyOptional(out, event, "direction");
   if (Array.isArray(event.midiNotes)) out.midiNotes = event.midiNotes.slice();
   return out;
+}
+
+function canonicalEventType(type) {
+  return type === "hat_open" || type === "hat_closed" ? "hat" : type;
 }
 
 function copyOptional(target, source, key) {
@@ -146,9 +147,14 @@ function numberOrNull(value) {
 }
 
 function round(value) {
+  return roundTo(value, 3);
+}
+
+function roundTo(value, places) {
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
-  return Math.round(number * 1000000) / 1000000;
+  const scale = 10 ** places;
+  return Math.round(number * scale) / scale;
 }
 
 function printReport(rows) {

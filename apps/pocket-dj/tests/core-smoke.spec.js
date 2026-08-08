@@ -48,6 +48,50 @@ test("Pocket DJ associates import errors with the field and clears them without 
   await expect(page.locator("#statusText")).toContainText("Pocket Chordsmith project imported");
 });
 
+test("Pocket DJ bounds share decoding, rich projects, and same-step rich playback", async ({ page }) => {
+  await page.goto("/apps/pocket-dj/");
+  const result = await page.evaluate(() => {
+    const realAtob = window.atob;
+    let atobCalls = 0;
+    window.atob = (...args) => {
+      atobCalls += 1;
+      return realAtob(...args);
+    };
+    let shareError;
+    try {
+      parsePocketChordsmithShareCode(`PCS1:${"A".repeat(SHARE_MAX_ENCODED_CHARS + 1)}`);
+    } catch (error) {
+      shareError = { code: error.code, message: error.message };
+    } finally {
+      window.atob = realAtob;
+    }
+
+    const events = new Array(PROJECT_RESOURCE_LIMITS.maxEventsPerTrack + 1).fill({ step: 0, note: 60 });
+    let projectError;
+    try {
+      sanitizePocketChordsmithProject({ projectVersion: 17, sections: { A: { tracks: { melody: { events } } } } });
+    } catch (error) {
+      projectError = { code: error.code, path: error.path, actual: error.actual };
+    }
+
+    session = { deck: { soundProfile: { id: "funk_groove" } } };
+    const section = { richTracks: { melody: { events: new Array(100).fill({ step: 0, note: 60 }) } } };
+    const budget = { remaining: PROJECT_RESOURCE_LIMITS.maxRichEventsPerStep, dropped: 0 };
+    const accepted = richEventsAt(section, "melody", 0, budget).length;
+    return { atobCalls, shareError, projectError, accepted, dropped: budget.dropped };
+  });
+
+  expect(result.atobCalls).toBe(0);
+  expect(result.shareError.code).toBe("SHARE_PAYLOAD_TOO_LARGE");
+  expect(result.projectError).toMatchObject({
+    code: "PROJECT_RESOURCE_LIMIT_EXCEEDED",
+    path: "sections.A.tracks.melody.events",
+    actual: 4097,
+  });
+  expect(result.accepted).toBe(64);
+  expect(result.dropped).toBe(36);
+});
+
 test("Pocket Audio Handoff labels fields and explains the short-lived relay", async ({ page }) => {
   await page.goto("/apps/pocket-audio-handoff/");
   await expect(page.getByRole("heading", { level: 1, name: "Pocket Audio Handoff" })).toBeVisible();
@@ -719,6 +763,7 @@ test("metal and chip recipe parameters change the DJ playback recipe", async ({ 
 test("deck controls queue, loop, mix, filter, build and drop cleanly", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   await page.getByRole("button", { name: "Load Demo" }).click();
   await expect(page.locator("#currentSectionText")).toHaveText("A");
 

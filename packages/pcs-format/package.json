@@ -11,6 +11,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "pretest": "npm run build",
     "test": "node --test"
   },
   "repository": {
@@ -30,5 +31,8 @@
     "wav",
     "songwriting"
   ],
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "esbuild": "^0.25.12"
+  }
 }

@@ -31,6 +31,16 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 - 2026-07-17 post-release documentation and test-helper update: added the one-pass exact-artifact release fast path, corrected normal itch policy, recorded 0.6.41 process failures to avoid, and promoted the loopMIDI sender into a tracked reusable script.
 - 2026-07-22 Pocket Audio sound-profile update: imports and renders PCS schema 17 profile identity, expressive events, Funk bass articulations, upgraded Metal texture, Western character, Chiptune channel controls, expanded drum lanes, capability diagnostics, and preserved unknown intent while retaining legacy schema-16 compatibility.
 
+## Installed-Smoke Exception
+
+- Kind: `source-only-no-installer`
+- Published version: `0.6.44`
+- Baseline installed smoke: `0.6.43`
+- Rationale: 0.6.44 is a source-only MCP help-text tag that removes developer build-machine paths. It did not publish a replacement installer or claim new installed audio behavior, so the exact 0.6.43 installer smoke remains the applicable binary evidence.
+- Focused evidence:
+  - Installed help snippets contain no developer build-machine paths.
+  - README and current release status identify 0.6.44 as source-only and not a separately published installer.
+
 ## Capability Claim Boundary
 
 - Public release claims must be limited to the latest published version plus the exact installed-smoke evidence recorded above.

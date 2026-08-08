@@ -18,9 +18,11 @@ import { DEFAULT_GUITAR_STRUM_MODE } from "../sounds/guitar.js";
 import { CHORDSMITH_SEQUENCED_DRUM_LANE_IDS, normalisePocketAudioDrumLane } from "../sounds/drum-lanes.js";
 import { normalisePocketAudioArticulation } from "../performance/expression.js";
 import { createPocketAudioRendererCapabilityReport } from "../engine/capabilities.js";
+import { assertPocketAudioProjectResourceLimits } from "../schema/resource-limits.js";
 
 export function buildPocketAudioTimeline(project, options = {}) {
   if (!project || project.app !== "PocketAudioProject") throw new Error("buildPocketAudioTimeline expects a normalised PocketAudioProject.");
+  assertPocketAudioProjectResourceLimits(project);
   const scope = options.scope || "sequence";
   const sectionIds = resolveTimelineSectionIds(project, { ...options, scope });
   const events = [];
@@ -64,6 +66,7 @@ function normaliseSectionId(value) {
 }
 
 export function buildSectionEvents(project, section, { baseTime = 0, baseTick = 0, arrangementIndex = 0 } = {}) {
+  assertPocketAudioProjectResourceLimits(project);
   const meta = project.meta;
   const spb = stepsPerBar(project);
   const totalSteps = section.bars * spb;
@@ -176,7 +179,8 @@ function buildRichSectionEvents(project, section, context) {
 function richTrackOwnsStem(project, track) {
   const profileId = String(project.soundProfile?.id || project.meta?.audioProfile || "standard");
   const compactMirror = track?.compatibility?.compactMirror === true;
-  return !compactMirror || !["standard", "lofi_chill"].includes(profileId);
+  const verifiedLiveMirror = track?.compatibility?.liveMirror === true;
+  return verifiedLiveMirror || !compactMirror || !["standard", "lofi_chill"].includes(profileId);
 }
 
 function addDrumEvents(events, project, section, context) {

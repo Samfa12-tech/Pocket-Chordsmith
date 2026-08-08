@@ -16,7 +16,7 @@ import { encodeWav } from "./offlineRender";
 
 export const NATIVE_RENDER_CACHE_ROOT = "project-cache/native-audio";
 export const NATIVE_GENERATED_STEM_TAIL_SECONDS = 0.25;
-export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v34-da092472-vst3-transport";
+export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v34-f212e6cf-vst3-transport";
 export const NATIVE_CACHE_STEM_RENDER_MODE = "cache-stem";
 const STEM_ROLES: TrackRole[] = ["drums", "bass", "chords", "melody", "guitar"];
 

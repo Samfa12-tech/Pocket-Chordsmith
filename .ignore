@@ -1,0 +1,3 @@
+# Historical runnable snapshots are intentionally excluded from ordinary local
+# searches. Search this path explicitly when doing archive archaeology.
+apps/archive/unsupported-runnable-builds/

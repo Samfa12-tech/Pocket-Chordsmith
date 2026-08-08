@@ -13,6 +13,20 @@ const context = { globalThis: {}, Uint32Array, Date };
 vm.createContext(context);
 vm.runInContext(source, context, { filename: "genre-composer.js" });
 const composer = context.globalThis.PocketChordsmithGenreComposer;
+const reportPath = path.join(appRoot, "test-results", "composer-fixture-report.json");
+let currentFixture = null;
+
+process.on("uncaughtException", (error) => {
+  writeReport({
+    result: "fail",
+    fixtureGeneratorVersion: fixtures.generatorVersion,
+    loadedGeneratorVersion: composer?.VERSION || null,
+    currentFixture,
+    error: error instanceof Error ? error.message : String(error),
+  });
+  console.error(error);
+  process.exit(1);
+});
 
 if (!composer || composer.VERSION !== fixtures.generatorVersion) {
   throw new Error("Fixture generator version does not match the loaded composer.");
@@ -23,6 +37,7 @@ const archetypeCoverage = new Map();
 let totalMilliseconds = 0;
 let maximumMilliseconds = 0;
 for (const fixture of fixtures.fixtures) {
+  currentFixture = fixture;
   const startedAt = performance.now();
   const plan = composer.composeSong(fixture);
   const elapsedMilliseconds = performance.now() - startedAt;
@@ -42,6 +57,7 @@ for (const fixture of fixtures.fixtures) {
     metalByArchetype.set(fixture.archetype, (metalByArchetype.get(fixture.archetype) || 0) + 1);
   }
 }
+currentFixture = null;
 
 for (const archetype of Object.keys(composer.GENRES.metal.archetypes)) {
   if (metalByArchetype.get(archetype) !== 3) {
@@ -56,4 +72,17 @@ for (const [genreId, genre] of Object.entries(composer.GENRES)) {
   }
 }
 
+writeReport({
+  result: "pass",
+  fixtureGeneratorVersion: fixtures.generatorVersion,
+  loadedGeneratorVersion: composer.VERSION,
+  fixtureCount: fixtures.fixtures.length,
+  totalMilliseconds,
+  maximumMilliseconds,
+});
 console.log(`genre-composer fixtures: ${fixtures.fixtures.length} deterministic plans verified; ${totalMilliseconds.toFixed(2)} ms total, ${maximumMilliseconds.toFixed(2)} ms max`);
+
+function writeReport(report) {
+  fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+  fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+}

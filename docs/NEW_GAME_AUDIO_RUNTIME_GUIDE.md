@@ -15,14 +15,17 @@ const music = new PocketAudioCore.PocketAudio({ profile: "game" });
 </script>
 ```
 
-The IIFE build exposes `globalThis.PocketAudioCore`. It is intentionally lightweight and suitable for simple games, prototypes, and itch-style uploads.
+The IIFE exposes `globalThis.PocketAudioCore` and is bundled from the same real
+browser module graph as the browser ESM build. It includes Web Audio playback,
+bounded late-event handling, quantized music-state transitions, and PCM/WAV
+rendering; it is not a metadata or silent compatibility stub.
 
 ## Import The ESM Build
 
 For a module-based game:
 
 ```js
-import { PocketAudio } from "./pocket-audio-core.esm.js";
+import { PocketAudio } from "./pocket-audio-core.browser.esm.js";
 
 const music = new PocketAudio({ profile: "game" });
 ```

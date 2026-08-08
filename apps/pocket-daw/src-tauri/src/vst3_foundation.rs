@@ -345,6 +345,7 @@ pub(crate) fn vst3_beta_list_registry() -> Vec<Vst3ModuleCandidate> {
     to_public_candidates(registry.modules)
 }
 
+#[allow(dead_code)]
 pub(crate) fn resolve_hosted_module(identity: &HostedPluginIdentity) -> Result<PathBuf, String> {
     resolve_hosted_module_and_source(identity).map(|(path, _)| path)
 }

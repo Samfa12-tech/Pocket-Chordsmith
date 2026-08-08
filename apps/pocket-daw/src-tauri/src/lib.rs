@@ -337,10 +337,35 @@ fn open_external_url(url: String) -> Result<(), String> {
     let url = normalized_external_url(&url)?;
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &url])
-            .spawn()
-            .map_err(|err| format!("Could not open external URL: {err}"))?;
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+
+        let operation: Vec<u16> = std::ffi::OsStr::new("open")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let target: Vec<u16> = std::ffi::OsStr::new(&url)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        // ShellExecuteW delegates directly to the registered OS URL handler. It does
+        // not create a command shell, so URL query separators stay URL data.
+        let result = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                operation.as_ptr(),
+                target.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1,
+            )
+        };
+        if result as isize <= 32 {
+            return Err(format!(
+                "Could not open external URL through the Windows URL handler (code {}).",
+                result as isize
+            ));
+        }
         return Ok(());
     }
 
@@ -368,12 +393,39 @@ fn open_external_url(url: String) -> Result<(), String> {
 
 fn normalized_external_url(url: &str) -> Result<String, String> {
     let trimmed = url.trim();
-    let lower = trimmed.to_ascii_lowercase();
-    if lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")
-    {
-        return Ok(trimmed.to_string());
+    if trimmed.is_empty() || trimmed.chars().any(char::is_control) {
+        return Err("External URL is empty or contains control characters.".to_string());
     }
-    Err("Only http, https and mailto external URLs can be opened.".to_string())
+    if !has_valid_percent_encoding(trimmed) {
+        return Err("External URL contains malformed percent encoding.".to_string());
+    }
+    let parsed = url::Url::parse(trimmed).map_err(|_| "External URL is malformed.".to_string())?;
+    match parsed.scheme() {
+        "http" | "https" if parsed.host_str().is_some() => Ok(trimmed.to_string()),
+        "mailto" if !parsed.path().trim().is_empty() => Ok(trimmed.to_string()),
+        "http" | "https" => Err("HTTP external URLs require a host.".to_string()),
+        "mailto" => Err("Mail links require a recipient.".to_string()),
+        _ => Err("Only http, https and mailto external URLs can be opened.".to_string()),
+    }
+}
+
+fn has_valid_percent_encoding(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len()
+                || !bytes[index + 1].is_ascii_hexdigit()
+                || !bytes[index + 2].is_ascii_hexdigit()
+            {
+                return false;
+            }
+            index += 3;
+        } else {
+            index += 1;
+        }
+    }
+    true
 }
 
 #[tauri::command]
@@ -2087,6 +2139,16 @@ mod tests {
             "https://samfa12.com"
         );
         assert!(normalized_external_url("mailto:test@example.com").is_ok());
+        assert_eq!(
+            normalized_external_url("mailto:test@example.com?subject=Hello%20World&body=A%26B")
+                .expect("encoded mail URLs should remain intact"),
+            "mailto:test@example.com?subject=Hello%20World&body=A%26B"
+        );
+        assert!(normalized_external_url("https://samfa12.com/help?a=1&b=2").is_ok());
+        assert!(normalized_external_url("https://").is_err());
+        assert!(normalized_external_url("mailto:").is_err());
+        assert!(normalized_external_url("https://samfa12.com/%ZZ").is_err());
+        assert!(normalized_external_url("https://samfa12.com/\r\nnext").is_err());
         assert!(normalized_external_url("javascript:alert(1)").is_err());
         assert!(normalized_external_url("file:///C:/secret.txt").is_err());
     }

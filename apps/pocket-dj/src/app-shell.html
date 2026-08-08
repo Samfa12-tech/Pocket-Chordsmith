@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#070711" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self'" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Pocket DJ" />
+<title>Pocket DJ v1g Core Bridge</title>
+<style>
+  :root{
+    --bg:#070711;
+    --panel:#101222;
+    --panel2:#171a2f;
+    --line:#2d3154;
+    --text:#f4f7ff;
+    --muted:#98a2c8;
+    --cyan:#48f5ff;
+    --magenta:#ff4fd8;
+    --violet:#9b6cff;
+    --lime:#a8ff61;
+    --amber:#ffd166;
+    --danger:#ff6b8b;
+    --radius:18px;
+    --safe-b:env(safe-area-inset-bottom,0px);
+    --safe-t:env(safe-area-inset-top,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;min-height:100%;background:
+    radial-gradient(circle at 15% 5%,rgba(72,245,255,.18),transparent 28%),
+    radial-gradient(circle at 90% 10%,rgba(255,79,216,.16),transparent 32%),
+    radial-gradient(circle at 50% 95%,rgba(155,108,255,.14),transparent 32%),
+    linear-gradient(180deg,#060711,#0b0c18 50%,#060711);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  body{padding:calc(12px + var(--safe-t)) 12px calc(118px + var(--safe-b));overscroll-behavior:none}
+  button,input,select,textarea{font:inherit;color:inherit}
+  button{touch-action:manipulation;cursor:pointer}
+  .app{width:100%;max-width:980px;margin:0 auto;display:grid;gap:12px;min-width:0}
+  .hidden{display:none!important}
+  .panel{width:100%;max-width:100%;background:rgba(16,18,34,.86);border:1px solid rgba(115,125,190,.28);border-radius:var(--radius);box-shadow:0 18px 54px rgba(0,0,0,.35);backdrop-filter:blur(14px);overflow:hidden;min-width:0}
+  .section{padding:14px;min-width:0}.section+.section{border-top:1px solid rgba(115,125,190,.18)}
+  .titlebar{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:16px 16px 10px;min-width:0}.titlebar>*{min-width:0}
+  h1,h2,h3{margin:0}.logo{font-size:1.35rem;font-weight:900;letter-spacing:.02em;text-shadow:0 0 18px rgba(72,245,255,.42)}
+  .tagline{font-size:.86rem;color:var(--muted);margin-top:3px}.status{font-size:.8rem;color:var(--cyan);text-align:right;max-width:42%}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+  .btn,.select,.input,.slider-shell{border:1px solid rgba(125,137,210,.34);background:rgba(23,26,47,.95);border-radius:14px;min-height:44px;padding:10px 13px;color:var(--text)}
+  .btn{font-weight:800;letter-spacing:.01em;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03)}
+  .btn:active,.pad:active{transform:scale(.985)}
+  .primary{background:linear-gradient(135deg,rgba(72,245,255,.28),rgba(155,108,255,.25));border-color:rgba(72,245,255,.72);box-shadow:0 0 22px rgba(72,245,255,.18)}
+  .hot{background:linear-gradient(135deg,rgba(255,79,216,.26),rgba(255,209,102,.18));border-color:rgba(255,79,216,.72);box-shadow:0 0 22px rgba(255,79,216,.18)}
+  .good{background:linear-gradient(135deg,rgba(168,255,97,.20),rgba(72,245,255,.12));border-color:rgba(168,255,97,.65)}
+  .danger{border-color:rgba(255,107,139,.75);background:rgba(80,28,47,.7)}
+  .muted-btn{opacity:.68}.small{font-size:.78rem;color:var(--muted)}.micro{font-size:.68rem;color:var(--muted)}
+  textarea{width:100%;min-height:190px;resize:vertical;background:#080b15;border:1px solid rgba(125,137,210,.38);border-radius:16px;padding:12px;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#eaf2ff}
+  [aria-invalid="true"]{border-color:#ff668f;box-shadow:0 0 0 2px rgba(255,102,143,.2)}
+  .field-help{margin:0;color:var(--muted);font-size:.78rem;line-height:1.45}
+  .field-error{min-height:1.15em;margin:0;color:#ff9ab4;font-size:.78rem;line-height:1.45}
+  .import-hero{display:grid;gap:12px}.import-copy{font-size:1rem;line-height:1.45;color:#cfd7ff}.import-copy strong{color:#fff}
+  .meta-grid{width:100%;max-width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;min-width:0}.meta-card{background:rgba(23,26,47,.75);border:1px solid rgba(125,137,210,.24);border-radius:15px;padding:10px;min-height:66px;min-width:0}.meta-card .k{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.meta-card .v{font-weight:900;margin-top:4px;font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .now-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:10px;min-width:0}.now-card{background:linear-gradient(135deg,rgba(72,245,255,.12),rgba(155,108,255,.08));border:1px solid rgba(72,245,255,.28);border-radius:18px;padding:13px;min-width:0}.now-card .big{font-size:2.2rem;font-weight:950;line-height:1;text-shadow:0 0 24px rgba(72,245,255,.45)}.queued .big{color:var(--magenta);text-shadow:0 0 20px rgba(255,79,216,.45)}
+  .progress-wrap{display:grid;gap:8px;margin-top:10px}.progress-track{height:16px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(125,137,210,.22)}.progress-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--cyan),var(--magenta),var(--amber));box-shadow:0 0 22px rgba(72,245,255,.45);transition:width .08s linear}.beat-dots{display:grid;grid-template-columns:repeat(var(--beats),1fr);gap:6px}.beat-dot{height:7px;border-radius:999px;background:rgba(255,255,255,.12)}.beat-dot.on{background:var(--cyan);box-shadow:0 0 16px rgba(72,245,255,.8)}
+  .pad-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.pad{position:relative;min-height:96px;border-radius:20px;border:1px solid rgba(125,137,210,.28);background:linear-gradient(160deg,rgba(24,28,55,.96),rgba(12,14,28,.96));padding:12px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden}.pad:before{content:"";position:absolute;inset:-55%;background:radial-gradient(circle,rgba(72,245,255,.18),transparent 54%);opacity:.28;transform:scale(.75);transition:.18s ease}.pad .letter{position:relative;font-size:2.1rem;font-weight:950;letter-spacing:.02em}.pad .pad-meta{position:relative;display:flex;justify-content:space-between;gap:8px;align-items:end}.pad .state{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.pad.current{border-color:rgba(72,245,255,.9);box-shadow:0 0 26px rgba(72,245,255,.25),inset 0 0 34px rgba(72,245,255,.09)}.pad.current:before{opacity:.82;transform:scale(1.02)}.pad.queued{border-color:rgba(255,79,216,.9);animation:pulseQueued 1s infinite alternate;box-shadow:0 0 26px rgba(255,79,216,.24)}.pad.looping{outline:2px solid rgba(168,255,97,.75)}.pad.drop-target{border-color:rgba(255,209,102,.92);box-shadow:0 0 28px rgba(255,209,102,.25),inset 0 0 30px rgba(255,209,102,.08)}.pad .drop-badge{position:absolute;top:9px;right:9px;border:1px solid rgba(255,209,102,.75);background:rgba(255,209,102,.15);color:var(--amber);border-radius:999px;padding:3px 7px;font-size:.62rem;font-weight:950;letter-spacing:.08em}.pad.inactive{opacity:.36;filter:saturate(.55);cursor:not-allowed}.pad.inactive:before{display:none}
+  @keyframes pulseQueued{from{box-shadow:0 0 12px rgba(255,79,216,.18)}to{box-shadow:0 0 34px rgba(255,79,216,.45)}}
+  .mixer{display:grid;gap:9px}.stem{display:grid;grid-template-columns:82px 54px minmax(120px,1fr) 32px;gap:8px;align-items:center;background:rgba(23,26,47,.72);border:1px solid rgba(125,137,210,.22);border-radius:16px;padding:9px}.stem.inactive{opacity:.46}.stem-name{font-weight:900}.mute{min-height:38px;padding:8px 10px;border-radius:12px}.mute.on{border-color:rgba(255,107,139,.9);background:rgba(255,107,139,.18);color:#ffdce5}.stem input[type="range"],.fx-grid input[type="range"],.bottom-transport input[type="range"]{width:100%;accent-color:var(--cyan)}.meter{height:26px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(125,137,210,.18)}.meter-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--lime),var(--cyan));box-shadow:0 0 14px rgba(72,245,255,.75);transition:width .12s ease}.stem.lit .meter-fill{width:100%}
+  .fx-grid{display:grid;grid-template-columns:1fr;gap:10px}.fx-row{display:grid;grid-template-columns:104px minmax(120px,1fr) 42px;gap:8px;align-items:center;background:rgba(23,26,47,.72);border:1px solid rgba(125,137,210,.22);border-radius:16px;padding:9px}.fx-value{text-align:right;color:var(--muted);font-size:.78rem}.build-state{color:var(--amber);text-shadow:0 0 14px rgba(255,209,102,.45)}.btn.building{border-color:rgba(255,209,102,.9);box-shadow:0 0 26px rgba(255,209,102,.28);animation:pulseBuild .8s infinite alternate}.btn.drop-armed{border-color:rgba(168,255,97,.9);box-shadow:0 0 26px rgba(168,255,97,.28)}@keyframes pulseBuild{from{filter:brightness(1)}to{filter:brightness(1.22)}}
+
+  .sequence-panel{display:grid;gap:10px}.sequence-strip{display:flex;gap:7px;align-items:center;overflow-x:auto;padding:4px 2px 2px;scrollbar-width:thin}.sequence-chip{flex:0 0 auto;min-width:42px;border:1px solid rgba(125,137,210,.32);background:rgba(23,26,47,.82);border-radius:999px;padding:7px 10px;text-align:center;font-weight:900;color:var(--muted)}.sequence-chip.current{color:var(--text);border-color:rgba(72,245,255,.85);box-shadow:0 0 16px rgba(72,245,255,.25);background:rgba(72,245,255,.12)}.sequence-chip.next{border-color:rgba(255,79,216,.68);color:var(--magenta)}.sequence-arrow{flex:0 0 auto;color:var(--muted);font-weight:900}.theme-pill{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(125,137,210,.28);border-radius:999px;padding:3px 8px;background:rgba(23,26,47,.72);font-size:.72rem;color:var(--muted)}
+  .bottom-transport{position:fixed;left:50%;bottom:calc(10px + var(--safe-b));transform:translateX(-50%);z-index:40;width:min(980px,calc(100vw - 20px));display:grid;grid-template-columns:auto auto auto 1fr;gap:8px;align-items:center;background:rgba(7,7,17,.92);border:1px solid rgba(125,137,210,.34);border-radius:20px;padding:9px;box-shadow:0 16px 60px rgba(0,0,0,.52);backdrop-filter:blur(16px)}
+  .bottom-transport .btn{min-height:46px;padding:10px}.master-wrap{display:grid;grid-template-columns:52px minmax(80px,1fr);gap:8px;align-items:center}.linkish{color:var(--cyan);text-decoration:none}#deckScreen{width:100%;max-width:100%;min-width:0}.deck-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0}
+
+  .help-btn{min-width:44px;padding:10px 12px;border-radius:999px}
+  .help-overlay{position:fixed;inset:0;z-index:100;display:flex;align-items:flex-end;justify-content:center;padding:14px;background:rgba(3,4,10,.62);backdrop-filter:blur(10px)}
+  .help-card{width:min(720px,100%);max-height:min(82vh,760px);overflow:auto;background:rgba(16,18,34,.98);border:1px solid rgba(125,137,210,.42);border-radius:24px;box-shadow:0 24px 80px rgba(0,0,0,.58)}
+  .help-head{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;border-bottom:1px solid rgba(125,137,210,.22);background:rgba(16,18,34,.96);backdrop-filter:blur(12px)}
+  .help-body{padding:14px 16px 18px;display:grid;gap:12px}
+  .help-grid{display:grid;grid-template-columns:1fr;gap:10px}
+  .help-item{background:rgba(23,26,47,.72);border:1px solid rgba(125,137,210,.22);border-radius:16px;padding:11px 12px}
+  .help-item strong{display:block;margin-bottom:4px;color:var(--text)}
+  .help-item span{display:block;color:var(--muted);font-size:.9rem;line-height:1.35}
+  .help-kbd{display:inline-block;border:1px solid rgba(125,137,210,.42);background:rgba(255,255,255,.06);border-radius:8px;padding:1px 6px;margin:0 2px;color:var(--text);font-size:.82em}
+  @media (min-width:720px){.help-overlay{align-items:center}.help-grid{grid-template-columns:1fr 1fr}}
+
+  .toast{position:fixed;left:50%;top:calc(12px + var(--safe-t));transform:translateX(-50%);z-index:80;max-width:calc(100vw - 24px);background:rgba(7,7,17,.95);border:1px solid rgba(72,245,255,.4);border-radius:999px;padding:10px 14px;color:#fff;box-shadow:0 10px 38px rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:.18s ease}.toast.show{opacity:1;transform:translateX(-50%) translateY(4px)}
+  :focus-visible{outline:3px solid var(--cyan);outline-offset:3px}
+  @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+  @media (min-width:820px){.deck-layout{grid-template-columns:1fr 1fr}.fx-grid{grid-template-columns:1fr 1fr}.fx-row{grid-template-columns:112px minmax(100px,1fr) 42px}.pad-grid{grid-template-columns:repeat(4,1fr)}.pad{min-height:120px}.meta-grid{grid-template-columns:repeat(6,1fr)}}
+  @media (max-width:540px){body{padding-left:10px;padding-right:10px}.meta-grid{grid-template-columns:repeat(2,1fr)}.now-grid{grid-template-columns:1fr 1fr}.now-card .big{font-size:1.8rem}.status{max-width:46%;font-size:.72rem}.stem{grid-template-columns:72px 48px minmax(92px,1fr) 28px}.bottom-transport{grid-template-columns:auto auto auto;grid-template-areas:"play stop restart" "master master master"}.bottom-transport .play{grid-area:play}.bottom-transport .stop{grid-area:stop}.bottom-transport .restart{grid-area:restart}.master-wrap{grid-area:master}.pad{min-height:88px}.pad .letter{font-size:1.8rem}}
+</style>
+</head>
+<body>
+<div class="toast" id="toast" aria-hidden="true"></div>
+<div class="app">
+  <main class="panel" id="importScreen">
+    <div class="titlebar">
+      <div>
+        <h1 class="logo">Pocket DJ</h1>
+        <div class="tagline">Turn Pocket Chordsmith songs into live remix decks.</div>
+      </div>
+      <div class="row" style="justify-content:flex-end;max-width:46%"><button class="btn help-btn" id="importHelpBtn" type="button" aria-label="Open help">?</button><div class="status" id="importStatus" role="status" aria-live="polite">Ready</div></div>
+    </div>
+    <div class="section import-hero">
+      <div class="import-copy"><strong>Paste a Pocket Chordsmith song export</strong> to turn it into a live remix deck. Pocket Chordsmith is the studio. Pocket DJ is the stage.</div>
+      <label for="importText"><strong>Pocket Chordsmith song export</strong></label>
+      <textarea id="importText" spellcheck="false" placeholder="Paste your Pocket Chordsmith share code or exported project here..." aria-describedby="importHelp importError"></textarea>
+      <p class="field-help" id="importHelp">Paste a PCS1 share code or a Pocket Chordsmith JSON project.</p>
+      <p class="field-error" id="importError"></p>
+      <div class="toolbar">
+        <div class="row">
+          <button class="btn primary" id="importBtn">Import</button>
+          <button class="btn good" id="demoBtn">Load Demo</button>
+          <button class="btn good" id="lofiDemoBtn">Lofi DJ Demo</button>
+          <button class="btn good" id="chipDemoBtn">Chip DJ Demo</button>
+          <button class="btn good" id="metalDemoBtn">Metal DJ Demo</button>
+          <button class="btn" id="loadLastBtn">Load Last Session</button>
+        </div>
+        <a class="small linkish" href="https://samfa12.itch.io/pocket-chordsmith" target="_blank" rel="noopener">Pocket Chordsmith on itch.io</a>
+      </div>
+      <div class="small">Tip: export or share your song from Pocket Chordsmith, paste it here, then press Import.</div>
+    </div>
+  </main>
+
+  <main id="deckScreen" class="hidden">
+    <section class="panel">
+      <div class="titlebar">
+        <div>
+          <h1 class="logo">Pocket DJ</h1>
+          <div class="tagline" id="deckName">Imported Chordsmith Project</div>
+        </div>
+        <div class="row" style="justify-content:flex-end;max-width:46%"><button class="btn help-btn" id="deckHelpBtn" type="button" aria-label="Open help">?</button><div class="status" id="statusText" role="status" aria-live="polite">Deck loaded</div></div>
+      </div>
+      <div class="section">
+        <div class="meta-grid" id="metaGrid"></div>
+      </div>
+      <div class="section">
+        <div class="now-grid">
+          <div class="now-card">
+            <div class="small">CURRENT</div>
+            <div class="big" id="currentSectionText">A</div>
+            <div class="micro" id="barBeatText">Bar 1 · Beat 1</div>
+          </div>
+          <div class="now-card queued">
+            <div class="small">QUEUED</div>
+            <div class="big" id="queuedSectionText">—</div>
+            <div class="micro" id="loopText">Hold off</div>
+          </div>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+          <div class="beat-dots" id="beatDots" style="--beats:4"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="deck-layout">
+      <section class="panel">
+        <div class="section toolbar">
+          <div>
+            <h2>Section Pads</h2>
+            <div class="small">Tap = queue · Long-press = set Drop target</div>
+          </div>
+          <select class="select" id="launchModeSelect" aria-label="Launch mode">
+            <option value="bar">Next Bar</option>
+            <option value="section">End of Section</option>
+            <option value="instant">Instant</option>
+          </select>
+        </div>
+        <div class="section">
+          <div class="pad-grid" id="sectionPads"></div>
+        </div>
+        <div class="section sequence-panel">
+          <div class="toolbar">
+            <div>
+              <h3>Sequence</h3>
+              <div class="small">Play the imported song order, or hold a section to stay there.</div>
+            </div>
+            <div class="row">
+              <button class="btn" id="sequencePlayBtn">Play Sequence</button>
+              <button class="btn" id="sequenceRepeatBtn">Repeat On</button>
+            </div>
+          </div>
+          <div class="sequence-strip" id="sequenceStrip"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section toolbar">
+          <div>
+            <h2>Stem Mixer</h2>
+            <div class="small">Mute, strip back and bring parts back for drops.</div>
+          </div>
+          <button class="btn" id="saveBtn">Save Session</button>
+        </div>
+        <div class="section">
+          <div class="mixer" id="mixer"></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <div class="section toolbar">
+        <div>
+          <h2>FX / Build / Drop</h2>
+          <div class="small" id="buildStateText">Neutral</div>
+        </div>
+        <div class="row">
+          <button class="btn hot" id="buildBtn">Build</button>
+          <button class="btn good" id="dropBtn">Drop</button>
+          <button class="btn" id="resetFxBtn">Reset FX</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="gentleBuildBtn">Gentle Build</button>
+          <button class="btn" id="rainyDropBtn">Rainy Drop</button>
+          <button class="btn" id="filteredStudyBtn">Filtered Study Mode</button>
+          <button class="btn" id="tapeResetBtn">Tape Stop</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="funkOneDropBtn">One-drop</button>
+          <button class="btn" id="funkBassMuteBtn">Bass Mute</button>
+          <button class="btn" id="funkSlapPopBtn">Slap/Pop Emphasis</button>
+          <button class="btn" id="funkGhostLiftBtn">Ghost Lift</button>
+          <button class="btn" id="funkPhraseFillBtn">Phrase Fill</button>
+        </div>
+      </div>
+      <div class="section">
+        <div class="fx-grid" id="fxGrid"></div>
+      </div>
+      <div class="section toolbar">
+        <button class="btn" id="loopBtn">Hold Section</button>
+        <button class="btn good" id="editSourceBtn">Edit this song</button>
+        <button class="btn" id="loadLastDeckBtn">Load Last</button>
+        <button class="btn danger" id="clearSessionBtn">Clear Session</button>
+      </div>
+      <div class="section hidden" id="handoffBox">
+        <div class="toolbar">
+          <div>
+            <h3>Chordsmith handoff</h3>
+            <div class="small" id="handoffHelp">Copy this source song code into Pocket Chordsmith Import.</div>
+          </div>
+        </div>
+        <textarea id="handoffText" readonly spellcheck="false" aria-label="Pocket Chordsmith source song handoff code"></textarea>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="bottom-transport hidden" id="transportBar">
+  <button class="btn primary play" id="playBtn">Play</button>
+  <button class="btn stop" id="stopBtn">Stop</button>
+  <button class="btn restart" id="restartBtn">Restart</button>
+  <label class="master-wrap small">Master <input id="masterVolume" type="range" min="0" max="1" step="0.01" value="0.82"></label>
+</div>
+
+
+<div class="help-overlay hidden" id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+  <div class="help-card">
+    <div class="help-head">
+      <div>
+        <h2 id="helpTitle">Pocket DJ Help</h2>
+        <div class="small">Quick controls for performing a Pocket Chordsmith song.</div>
+      </div>
+      <button class="btn" id="helpCloseBtn" type="button">Close</button>
+    </div>
+    <div class="help-body">
+      <div class="help-grid">
+        <div class="help-item"><strong>Import</strong><span>Paste a Pocket Chordsmith song export, then press <span class="help-kbd">Import</span>. Use <span class="help-kbd">Load Demo</span> to test the deck immediately.</span></div>
+        <div class="help-item"><strong>Play sections</strong><span>Tap a section pad to queue it. The current pad glows cyan. The queued pad pulses pink.</span></div>
+        <div class="help-item"><strong>Set the Drop section</strong><span>Long-press a section pad, or focus it and press <span class="help-kbd">D</span>. It will show a <span class="help-kbd">DROP</span> badge and the button changes to <span class="help-kbd">Drop → section</span>.</span></div>
+        <div class="help-item"><strong>Build and Drop</strong><span><span class="help-kbd">Build</span> strips the mix back and adds tension. <span class="help-kbd">Drop</span> restores the mix and lands on the drop section.</span></div>
+        <div class="help-item"><strong>Launch mode</strong><span><span class="help-kbd">Next Bar</span> is DJ-style. <span class="help-kbd">End of Section</span> finishes the whole section first. <span class="help-kbd">Instant</span> jumps now.</span></div>
+        <div class="help-item"><strong>Sequence</strong><span><span class="help-kbd">Play Sequence</span> follows the song order. <span class="help-kbd">Repeat</span> loops that order.</span></div>
+        <div class="help-item"><strong>Hold Section</strong><span>Use this to stay on the current section during a sequence. Release it to let the next queued or sequence section play.</span></div>
+        <div class="help-item"><strong>Stem Mixer</strong><span>Mute or lower drums, bass, chords, melody and guitar for live breakdowns and drops.</span></div>
+        <div class="help-item"><strong>Edit this song</strong><span>Copies the original Pocket Chordsmith song and opens Chordsmith. DJ mutes, loops and FX stay in Pocket DJ.</span></div>
+        <div class="help-item"><strong>Pocket Audio Core</strong><span>This build uses Pocket Audio Core for shared project parsing, timeline diagnostics and mirrored deck controls when the local core module is available. The legacy DJ audio engine remains active as the playback fallback.</span></div>
+      </div>
+      <div class="small">Pocket DJ keeps the technical import details in the background so the deck stays focused on performance.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/*__POCKET_DJ_INLINE_BUNDLE__*/
+</script>
+</body>
+</html>

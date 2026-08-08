@@ -14,8 +14,9 @@ const bestzipCli = resolve(appRoot, "node_modules", "bestzip", "bin", "cli.js");
 const requiredEntries = [
   "index.html",
   "pocket_dj_v1g_core_bridge.html",
-  "pocket-audio-core/src/index.js",
   "pocket-audio-core/dist/pocket-audio-core.esm.js",
+  "pocket-audio-core/dist/pocket-audio-core.iife.js",
+  "pocket-audio-core/dist/api-manifest.json",
 ];
 
 function run(command, args, options = {}) {
@@ -24,7 +25,9 @@ function run(command, args, options = {}) {
     throw result.error;
   }
   if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(" ")} failed with status ${result.status}`);
+    throw new Error(
+      `${command} ${args.join(" ")} failed with status ${result.status}`,
+    );
   }
   return result;
 }
@@ -57,10 +60,17 @@ function readZipEntries(zipPath) {
   const zip = readFileSync(zipPath);
   const minEndOfCentralDirectorySize = 22;
   const maxCommentSize = 0xffff;
-  const searchStart = Math.max(0, zip.length - minEndOfCentralDirectorySize - maxCommentSize);
+  const searchStart = Math.max(
+    0,
+    zip.length - minEndOfCentralDirectorySize - maxCommentSize,
+  );
   let endOfCentralDirectory = -1;
 
-  for (let offset = zip.length - minEndOfCentralDirectorySize; offset >= searchStart; offset -= 1) {
+  for (
+    let offset = zip.length - minEndOfCentralDirectorySize;
+    offset >= searchStart;
+    offset -= 1
+  ) {
     if (zip.readUInt32LE(offset) === 0x06054b50) {
       endOfCentralDirectory = offset;
       break;
@@ -85,7 +95,9 @@ function readZipEntries(zipPath) {
     const commentLength = zip.readUInt16LE(offset + 32);
     const fileNameStart = offset + 46;
     const fileNameEnd = fileNameStart + fileNameLength;
-    entries.add(zip.toString("utf8", fileNameStart, fileNameEnd).replace(/\\/g, "/"));
+    entries.add(
+      zip.toString("utf8", fileNameStart, fileNameEnd).replace(/\\/g, "/"),
+    );
     offset = fileNameEnd + extraLength + commentLength;
   }
 
@@ -93,18 +105,29 @@ function readZipEntries(zipPath) {
 }
 
 if (!existsSync(bestzipCli)) {
-  throw new Error("bestzip is not installed. Run npm install in apps/pocket-dj first.");
+  throw new Error(
+    "bestzip is not installed. Run npm install in apps/pocket-dj first.",
+  );
 }
 
-run(process.execPath, [resolve(coreRoot, "scripts", "build.mjs")], { cwd: coreRoot });
+run(process.execPath, [resolve(coreRoot, "scripts", "build.mjs")], {
+  cwd: coreRoot,
+});
 
 rmSync(packageDir, { recursive: true, force: true });
 mkdirSync(bundledCoreRoot, { recursive: true });
 
-copyRequiredFile(resolve(appRoot, "index.html"), resolve(packageDir, "index.html"));
-copyRequiredFile(resolve(appRoot, "pocket_dj_v1g_core_bridge.html"), resolve(packageDir, "pocket_dj_v1g_core_bridge.html"));
-cpSync(resolve(coreRoot, "src"), resolve(bundledCoreRoot, "src"), { recursive: true });
-cpSync(resolve(coreRoot, "dist"), resolve(bundledCoreRoot, "dist"), { recursive: true });
+copyRequiredFile(
+  resolve(appRoot, "index.html"),
+  resolve(packageDir, "index.html"),
+);
+copyRequiredFile(
+  resolve(appRoot, "pocket_dj_v1g_core_bridge.html"),
+  resolve(packageDir, "pocket_dj_v1g_core_bridge.html"),
+);
+cpSync(resolve(coreRoot, "dist"), resolve(bundledCoreRoot, "dist"), {
+  recursive: true,
+});
 
 mkdirSync(outputDir, { recursive: true });
 for (const entry of requiredEntries) {
@@ -119,5 +142,32 @@ for (const entry of requiredEntries) {
     throw new Error(`Zip is missing required entry: ${entry}`);
   }
 }
+
+run(
+  process.execPath,
+  [
+    resolve(repoRoot, "scripts", "web-release-provenance.mjs"),
+    "--repoRoot",
+    repoRoot,
+    "--product",
+    "Pocket DJ",
+    "--build",
+    "v1g",
+    "--schema",
+    "17",
+    "--legacySchema",
+    "16",
+    "--core",
+    "0.2.0",
+    "--sourceEntry",
+    "apps/pocket-dj/pocket_dj_v1g_core_bridge.html",
+    "--zip",
+    relative(repoRoot, outputZip),
+    "--output",
+    "local-artifacts/staging/pocket-dj/pocket-dj-web.release.json",
+    ...requiredEntries.flatMap((entry) => ["--required", entry]),
+  ],
+  { cwd: repoRoot },
+);
 
 console.log(`Created ${outputZip}`);

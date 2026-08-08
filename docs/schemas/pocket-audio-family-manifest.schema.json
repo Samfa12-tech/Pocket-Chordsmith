@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://samfa12.com/schemas/pocket-audio-family-manifest.schema.json",
+  "title": "Pocket Audio family manifest",
+  "type": "object",
+  "required": ["manifestVersion", "updated", "schemaPolicy", "components"],
+  "properties": {
+    "manifestVersion": { "type": "integer", "minimum": 1 },
+    "updated": { "type": "string", "format": "date" },
+    "schemaPolicy": {
+      "type": "object",
+      "required": ["canonicalProjectSchema", "legacyProjectionSchema", "projectionRule"]
+    },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "path", "kind", "versions", "license", "releaseStatus", "packageCommand", "testCommand", "deployment"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "name": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "minLength": 1 },
+          "versions": { "type": "object", "minProperties": 1 },
+          "license": { "type": "string", "minLength": 1 },
+          "releaseStatus": { "type": "string", "minLength": 1 },
+          "packageCommand": { "type": "string", "minLength": 1 },
+          "testCommand": { "type": "string", "minLength": 1 },
+          "deployment": {
+            "type": "object",
+            "required": ["channel", "identifier", "sourceCommit"]
+          }
+        }
+      }
+    }
+  }
+}

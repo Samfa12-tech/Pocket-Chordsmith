@@ -16,8 +16,7 @@
       "import": "./dist/pocket-audio-core.esm.js",
       "default": "./dist/pocket-audio-core.esm.js"
     },
-    "./browser": "./dist/pocket-audio-core.browser.esm.js",
-    "./src": "./src/index.js"
+    "./browser": "./dist/pocket-audio-core.browser.esm.js"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -28,6 +27,7 @@
     "verify:family-parity": "node scripts/verify-family-parity.mjs",
     "compare:chordsmith-browser-trace": "node scripts/compare-chordsmith-browser-trace.mjs",
     "compare:chordsmith-godot-trace": "node scripts/compare-chordsmith-godot-trace.mjs",
+    "pretest": "npm run build",
     "test": "node --test",
     "test:core": "node --test tests/core.test.js",
     "test:golden": "node --test tests/golden.test.js --test-name-pattern \"golden event trace|fixture index\"",
@@ -36,7 +36,6 @@
   },
   "files": [
     "dist",
-    "src",
     "README.md"
   ],
   "keywords": [
@@ -54,6 +53,7 @@
   ],
   "license": "UNLICENSED",
   "devDependencies": {
+    "esbuild": "^0.25.12",
     "playwright": "^1.52.0"
   }
 }

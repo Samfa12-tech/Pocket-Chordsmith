@@ -1,0 +1,21 @@
+# Default maintainer review.
+* @Samfa12-tech
+
+# Native/security-sensitive boundaries.
+/apps/pocket-daw/src-tauri/ @Samfa12-tech
+/apps/pocket-daw/src/native/ @Samfa12-tech
+/apps/pocket-audio-handoff/ @Samfa12-tech
+/addons/pocket_chordsmith/editor/pcs_push_receiver.gd @Samfa12-tech
+/addons/pocket_chordsmith/import/ @Samfa12-tech
+
+# Schema compatibility and shared runtime ownership.
+/packages/pcs-format/ @Samfa12-tech
+/packages/pocket-audio-core/src/schema/ @Samfa12-tech
+/apps/chordsmith-web/skills/pocket-chordsmith-composer/ @Samfa12-tech
+/FAMILY_MANIFEST.json @Samfa12-tech
+
+# Release/security workflows and immutable historical evidence.
+/.github/workflows/ @Samfa12-tech
+/.github/dependabot.yml @Samfa12-tech
+/scripts/web-release-provenance.mjs @Samfa12-tech
+/apps/archive/ @Samfa12-tech
