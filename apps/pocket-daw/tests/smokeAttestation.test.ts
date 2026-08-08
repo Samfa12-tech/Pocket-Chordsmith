@@ -510,7 +510,7 @@ describe("native capture evidence contract", () => {
       testedAt: "2026-06-20T00:00:00Z",
       audioCaptureEvidence: { mode: "fresh-audible", fingerprint }
     });
-    baseline.checks = baseline.checks.map((check: Record<string, any>) => check.id === "punch-take-lane-recording"
+    baseline.checks = baseline.checks.map((check) => check.id === "punch-take-lane-recording"
       ? { ...check, evidence: [{ kind: "installed-punch-take-summary", result: "pass", file: basename(baselineSummaryPath), sha256: sha256(readFileSync(baselineSummaryPath)) }] }
       : check);
     writeFileSync(baselineAttestationPath, JSON.stringify(baseline));
