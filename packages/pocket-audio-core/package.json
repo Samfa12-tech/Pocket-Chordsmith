@@ -54,6 +54,6 @@
   "license": "UNLICENSED",
   "devDependencies": {
     "esbuild": "^0.25.12",
-    "playwright": "^1.52.0"
+    "playwright": "^1.62.1"
   }
 }
