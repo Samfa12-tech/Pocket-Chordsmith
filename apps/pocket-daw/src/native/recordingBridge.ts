@@ -11,6 +11,7 @@ export interface NativeRecordingStartPayload {
   monitorVolume: number;
   monitorPan: number;
   channelMode: "mono" | "stereo";
+  inputChannelIndex?: number | null;
   recordingSessionId?: number | null;
   startBar: number;
   requestedStartSeconds?: number | null;
@@ -31,6 +32,8 @@ export interface NativeRecordingPreviewPayload {
   monitorEnabled: boolean;
   monitorVolume: number;
   monitorPan: number;
+  channelMode: "mono" | "stereo";
+  inputChannelIndex?: number | null;
 }
 
 export interface NativeRecordingStatus {

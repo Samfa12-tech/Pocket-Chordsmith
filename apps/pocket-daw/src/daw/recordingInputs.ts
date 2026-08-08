@@ -209,9 +209,12 @@ export function buildGroupedRecordingCapturePlan(
 
 export function nativeRecordingAlphaChannelCompatibilityError(item: RecordingInputCapturePlanItem | null | undefined): string | null {
   if (!item) return "No recording capture plan is available.";
-  if (item.mode === "mono" && item.channelMap.length === 1 && item.channelMap[0] === 0) return null;
+  if ((item.mode === "mono" || item.mode === "split-mono")
+    && item.channelMap.length === 1
+    && Number.isInteger(item.channelMap[0])
+    && item.channelMap[0] >= 0) return null;
   if (item.mode === "stereo" && item.channelMap.length === 2 && item.channelMap[0] === 0 && item.channelMap[1] === 1) return null;
-  const supported = item.mode === "stereo" ? "Stereo Ch 1-2" : "Mono Ch 1";
+  const supported = item.mode === "stereo" ? "Stereo Ch 1-2" : "one explicit mono input channel";
   return `${item.trackName} is assigned to ${labelForAssignment({ deviceId: item.deviceId, mode: item.mode, channelIndex: item.channelMap[0], channelPair: item.channelMap.length > 1 ? [item.channelMap[0], item.channelMap[1]] : undefined }, item.channelMap)}, but the native recording alpha currently captures ${supported} only.`;
 }
 

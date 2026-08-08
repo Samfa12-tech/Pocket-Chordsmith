@@ -521,6 +521,11 @@ async function exerciseAudioRecordingControl(session: AiBridgeSession, trackId: 
     ]
   });
   await liveControl(session, { action: "select_track", trackId });
+  const inputMeterPreflight = await waitForAudioInputMeterPreflight(
+    session,
+    trackId,
+    args.requireAudibleAudio ? args.minAudioPeak : 0
+  );
   const beforeProject = loadPocketDawRaw(await readFile(projectPath, "utf8"));
   const before = audioTakeSmokeCounts(await liveStatus(session));
   const start = await liveControlResult(session, { action: "record_start" });
@@ -536,6 +541,7 @@ async function exerciseAudioRecordingControl(session: AiBridgeSession, trackId: 
       startMessage: start.message || "",
       stopMessage: stop.message || "",
       requestedRecordMs: recordMs,
+      inputMeterPreflight,
       placement,
       media
     };
@@ -549,6 +555,40 @@ async function exerciseAudioRecordingControl(session: AiBridgeSession, trackId: 
     code: start.code || null,
     message
   };
+}
+
+async function waitForAudioInputMeterPreflight(session: AiBridgeSession, trackId: string, requiredPeak: number) {
+  const deadline = Date.now() + 3000;
+  let lastStatus: any = null;
+  while (Date.now() <= deadline) {
+    lastStatus = await liveStatus(session);
+    const recording = lastStatus?.recording;
+    const inputPeak = recording?.inputPeak;
+    const inputDeviceName = typeof recording?.inputDeviceName === "string" ? recording.inputDeviceName.trim() : "";
+    if (recording?.status === "idle"
+      && recording?.trackId === trackId
+      && recording?.inputPreflight?.ok === true
+      && inputDeviceName
+      && Number.isFinite(inputPeak)
+      && inputPeak >= Math.max(0, requiredPeak)
+      && inputPeak <= 1) {
+      return {
+        trackId,
+        inputDeviceName,
+        aggregateInputPeak: inputPeak,
+        requiredAggregateInputPeak: Math.max(0, requiredPeak),
+        channelClaim: "aggregate-device-meter-only"
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Audio input meter preflight did not become ready before capture: ${JSON.stringify({
+    status: lastStatus?.recording?.status,
+    trackId: lastStatus?.recording?.trackId,
+    inputDeviceName: lastStatus?.recording?.inputDeviceName,
+    inputPeak: lastStatus?.recording?.inputPeak,
+    inputPreflight: lastStatus?.recording?.inputPreflight
+  })}`);
 }
 
 function audioTakeSmokeCounts(status: {
@@ -644,6 +684,8 @@ async function assertRecordedAudioMediaFile(projectPath: string, beforeProject: 
 }
 
 async function exerciseMidiInputRecordingControl(session: AiBridgeSession, midiTrackId: string, projectPath: string, midiRecordMs: number) {
+  const requestedCaptureStartBar = 6;
+  await liveControl(session, { action: "stop" });
   await liveControl(session, { action: "set_recording_options", punchEnabled: true, takeMode: "take-lane" });
   await liveControl(session, {
     action: "apply_commands",
@@ -651,7 +693,12 @@ async function exerciseMidiInputRecordingControl(session: AiBridgeSession, midiT
       { type: "set_punch_range", startBar: 7, endBar: 9 }
     ]
   });
-  await liveControl(session, { action: "seek_bar", bar: 6 });
+  await liveControl(session, { action: "seek_bar", bar: requestedCaptureStartBar });
+  const positioned = await liveStatus(session);
+  const positionedBar = Number(positioned.transport?.playheadBar);
+  if (positioned.transport?.playing !== false || !Number.isFinite(positionedBar) || Math.abs(positionedBar - requestedCaptureStartBar) > 0.0001) {
+    throw new Error(`MIDI input recording preflight did not settle at stopped bar ${requestedCaptureStartBar}: ${JSON.stringify(positioned.transport || null)}`);
+  }
   await liveControl(session, { action: "select_track", trackId: midiTrackId });
   const beforeProject = loadPocketDawRaw(await readFile(projectPath, "utf8"));
   const before = audioTakeSmokeCounts(await liveStatus(session));
@@ -681,8 +728,8 @@ async function exerciseMidiInputRecordingControl(session: AiBridgeSession, midiT
       punchEnabled: true,
       punchStartBar: 7,
       punchEndBar: 9,
-      requestedCaptureStartBar: 6,
-      captureStartBar: typeof take.captureStartBar === "number" ? take.captureStartBar : 6,
+      requestedCaptureStartBar,
+      captureStartBar: typeof take.captureStartBar === "number" ? take.captureStartBar : requestedCaptureStartBar,
       placement,
       take
     };

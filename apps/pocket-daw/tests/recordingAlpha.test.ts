@@ -206,6 +206,42 @@ describe("recording alpha foundations", () => {
     expect(nativeRecordingAlphaChannelCompatibilityError(stereo.capturePlan[0])).toBeNull();
   });
 
+  it("accepts an explicit Mono Ch 2 assignment and keeps the selected zero-based channel", () => {
+    let project = addTrackToProject(createDemoProject(), "live-vocals").project;
+    project.tracks.find((track) => track.id === "live-vocals")!.armed = true;
+    project = setTrackRecordingInputAssignment(project, "live-vocals", {
+      deviceId: "microphone-array",
+      mode: "mono",
+      channelIndex: 1
+    });
+
+    const plan = buildRecordingInputPreflight(project, {
+      availableInputDevices: [{ id: "microphone-array", name: "Microphone Array", channelCount: 2 }]
+    });
+
+    expect(plan.ok).toBe(true);
+    expect(plan.capturePlan[0]).toMatchObject({ mode: "mono", channelMap: [1], label: "Live Vocals: Mono Ch 2" });
+    expect(nativeRecordingAlphaChannelCompatibilityError(plan.capturePlan[0])).toBeNull();
+  });
+
+  it("rejects an explicit mono channel outside the selected device range", () => {
+    let project = addTrackToProject(createDemoProject(), "live-vocals").project;
+    project.tracks.find((track) => track.id === "live-vocals")!.armed = true;
+    project = setTrackRecordingInputAssignment(project, "live-vocals", {
+      deviceId: "mono-microphone",
+      mode: "mono",
+      channelIndex: 1
+    });
+
+    const plan = buildRecordingInputPreflight(project, {
+      availableInputDevices: [{ id: "mono-microphone", name: "Mono Microphone", channelCount: 1 }]
+    });
+
+    expect(plan.ok).toBe(false);
+    expect(plan.capturePlan).toEqual([]);
+    expect(plan.errors.join("\n")).toContain("needs channel 2 but Mono Microphone exposes 1 input channel");
+  });
+
   it("rejects unavailable recording channel assignments before native capture starts", () => {
     let project = addTrackToProject(createDemoProject(), "live-vocals").project;
     project.tracks.find((track) => track.id === "live-vocals")!.armed = true;
