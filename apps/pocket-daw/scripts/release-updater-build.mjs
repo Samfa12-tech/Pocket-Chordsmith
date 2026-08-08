@@ -13,7 +13,7 @@ import { packageItchRelease } from "./package-itch.mjs";
 import { makeUpdaterManifest } from "./make-updater-manifest.mjs";
 import { DEFAULT_BOOTSTRAPPER_MANIFEST, makeBootstrapperManifest } from "./make-bootstrapper-manifest.mjs";
 import { assertReleaseCandidateTruth } from "./verify-release-candidate-truth.mjs";
-import { verifyInstalledPunchTakeSummaryFile } from "./verify-installed-punch-take-summary.mjs";
+import { verifyNativeCaptureEvidence } from "./verify-native-capture-evidence.mjs";
 import { verifySmokeAttestationFile } from "./verify-smoke-attestation.mjs";
 
 const ROOT = process.cwd();
@@ -228,13 +228,15 @@ function verifyPunchTakeSummaryForPublish(staged) {
   if (!summaryPath) {
     fail("Refusing to publish. Set PUNCH_TAKE_SUMMARY to a matching installed punch/take-lane smoke summary JSON.");
   }
-  const result = verifyInstalledPunchTakeSummaryFile({
-    summaryPath,
+  const result = verifyNativeCaptureEvidence({
+    attestationPath: process.env.SMOKE_ATTESTATION,
+    punchTakeSummaryPath: summaryPath,
     installerPath: staged.setupExe,
     version: VERSION,
     requireAudibleAudio: envFlag("PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO"),
-    requireExportFiles: envFlag("PUNCH_TAKE_REQUIRE_EXPORT_FILES"),
-    requireMidiInput: envFlag("PUNCH_TAKE_REQUIRE_MIDI_INPUT")
+    baselineAttestationPath: process.env.AUDIO_CAPTURE_BASELINE_ATTESTATION,
+    baselineInstallerPath: process.env.AUDIO_CAPTURE_BASELINE_INSTALLER,
+    root: ROOT
   });
   if (!result.ok) {
     fail(`Installed punch/take-lane smoke summary did not match staged installer:\n${result.failures.join("\n")}`);

@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import schema from "../releases/smoke-attestation.schema.json" with { type: "json" };
+import { computeNativeCaptureFingerprint } from "../scripts/native-capture-fingerprint.mjs";
 import { validateInstalledPunchTakeSummary } from "../scripts/verify-installed-punch-take-summary.mjs";
+import { verifyNativeCaptureEvidence } from "../scripts/verify-native-capture-evidence.mjs";
 import { REQUIRED_SMOKE_CHECK_IDS, validateSmokeAttestation } from "../scripts/verify-smoke-attestation.mjs";
 
 function sha256(value: string | NodeJS.ArrayBufferView) {
@@ -21,6 +23,10 @@ function buildAttestation(overrides: Record<string, any> = {}) {
     commit,
     installerFile,
     installerSha256,
+    audioCaptureEvidence: {
+      mode: "fresh-audible",
+      fingerprint: computeNativeCaptureFingerprint()
+    },
     testedAt: "2026-06-21",
     result: "pass",
     machine: {
@@ -160,6 +166,40 @@ function midiBytesWithPitches(pitches: number[]) {
   ]);
 }
 
+function connectedMidiInputControl() {
+  return {
+    outcome: "started-and-stopped",
+    startMessage: "Recording MIDI input.",
+    stopMessage: "Recorded MIDI take.",
+    punchEnabled: true,
+    requestedCaptureStartBar: 6,
+    captureStartBar: 6.294,
+    punchStartBar: 7,
+    punchEndBar: 9,
+    placement: {
+      before: { clipCount: 10, groupedClipCount: 9, groupCount: 4, activeCount: 5 },
+      after: { clipCount: 11, groupedClipCount: 10, groupCount: 5, activeCount: 6 },
+      delta: { clipCount: 1, groupedClipCount: 1, groupCount: 1, activeCount: 1 }
+    },
+    take: {
+      captured: true,
+      clipId: "clip_midi_input_1",
+      trackId: "track_midi_1",
+      name: "MIDI Input Take",
+      muted: false,
+      takeGroupId: "midi-recording-session-midi-input-123",
+      takeLaneIndex: 1,
+      takeStatus: "active",
+      punchStartBar: 7,
+      punchEndBar: 9,
+      captureStartBar: 6.294,
+      punchMode: "create-new-midi-take-lane",
+      noteCount: 2,
+      pitches: [60, 67]
+    }
+  };
+}
+
 describe("smoke attestation schema", () => {
   it("requires the exact-artifact smoke attestation fields", () => {
     expect(schema.required).toEqual([
@@ -167,6 +207,7 @@ describe("smoke attestation schema", () => {
       "commit",
       "installerFile",
       "installerSha256",
+      "audioCaptureEvidence",
       "testedAt",
       "result",
       "machine",
@@ -174,6 +215,7 @@ describe("smoke attestation schema", () => {
       "knownFailures"
     ]);
     expect(schema.properties.result.const).toBe("pass");
+    expect(schema.properties.audioCaptureEvidence.required).toEqual(["mode", "fingerprint"]);
     expect(schema.properties.machine.required).toEqual([
       "windowsVersion",
       "architecture",
@@ -198,7 +240,8 @@ describe("smoke attestation verifier", () => {
       version: "0.6.20",
       commit: attestation.commit,
       installerFile: basename(installer),
-      installerSha256: attestation.installerSha256
+      installerSha256: attestation.installerSha256,
+      audioCaptureFingerprint: computeNativeCaptureFingerprint()
     })).toEqual({ ok: true, failures: [] });
   });
 
@@ -218,7 +261,8 @@ describe("smoke attestation verifier", () => {
         version: "0.6.20",
         commit: "e".repeat(40),
         installerFile: "Pocket.DAW_0.6.20_x64-setup.exe",
-        installerSha256: sha256("installer bytes")
+        installerSha256: sha256("installer bytes"),
+        audioCaptureFingerprint: computeNativeCaptureFingerprint()
       });
       expect(validation.ok).toBe(false);
       expect(validation.failures.join("\n")).toContain(expectedMessage);
@@ -240,7 +284,8 @@ describe("smoke attestation verifier", () => {
       version: "0.6.20",
       commit: "e".repeat(40),
       installerFile: "Pocket.DAW_0.6.20_x64-setup.exe",
-      installerSha256: sha256("installer bytes")
+      installerSha256: sha256("installer bytes"),
+      audioCaptureFingerprint: computeNativeCaptureFingerprint()
     });
 
     expect(validation.ok).toBe(false);
@@ -259,7 +304,8 @@ describe("smoke attestation verifier", () => {
       version: "0.6.20",
       commit: "e".repeat(40),
       installerFile: "Pocket.DAW_0.6.20_x64-setup.exe",
-      installerSha256: sha256("installer bytes")
+      installerSha256: sha256("installer bytes"),
+      audioCaptureFingerprint: computeNativeCaptureFingerprint()
     });
 
     expect(validation.ok).toBe(false);
@@ -278,7 +324,8 @@ describe("smoke attestation verifier", () => {
       version: "0.6.20",
       commit: attestation.commit,
       installerFile: attestation.installerFile,
-      installerSha256: rebuilt
+      installerSha256: rebuilt,
+      audioCaptureFingerprint: computeNativeCaptureFingerprint()
     });
 
     expect(validation.ok).toBe(false);
@@ -303,12 +350,215 @@ describe("smoke attestation verifier", () => {
       version: "0.6.20",
       commit: attestation.commit,
       installerFile: attestation.installerFile,
-      installerSha256: attestation.installerSha256
+      installerSha256: attestation.installerSha256,
+      audioCaptureFingerprint: computeNativeCaptureFingerprint()
     });
 
     expect(validation.ok).toBe(false);
     expect(validation.failures.join("\n")).toContain("machine.audioOutput");
     expect(validation.failures.join("\n")).toContain("checks must all pass");
+  });
+
+  it("binds audio evidence to the deterministic current capture fingerprint", () => {
+    const fingerprint = computeNativeCaptureFingerprint();
+    expect(computeNativeCaptureFingerprint()).toEqual(fingerprint);
+    expect(fingerprint.inputs.map((entry: { id: string }) => entry.id)).toEqual(expect.arrayContaining([
+      "src-tauri/src/native_recording.rs",
+      "src-tauri/Cargo.lock#cpalDependencyClosure",
+      "src/app/App.ts#startRecording",
+      "src/native/recordingBridge.ts"
+    ]));
+
+    const drifted = buildAttestation({
+      audioCaptureEvidence: {
+        mode: "fresh-audible",
+        fingerprint: { ...fingerprint, value: "a".repeat(64) }
+      }
+    });
+    const validation = validateSmokeAttestation(drifted, {
+      version: drifted.version,
+      commit: drifted.commit,
+      installerFile: drifted.installerFile,
+      installerSha256: drifted.installerSha256,
+      audioCaptureFingerprint: fingerprint
+    });
+    expect(validation.ok).toBe(false);
+    expect(validation.failures.join("\n")).toContain("does not match the current native capture");
+  });
+
+  it("requires exact baseline bindings and forbids them on fresh audible evidence", () => {
+    const fingerprint = computeNativeCaptureFingerprint();
+    const missingBinding = buildAttestation({ audioCaptureEvidence: { mode: "baseline-reuse", fingerprint } });
+    const freshWithBinding = buildAttestation({
+      audioCaptureEvidence: {
+        mode: "fresh-audible",
+        fingerprint,
+        baseline: {
+          attestationFile: "prior.json",
+          attestationSha256: "a".repeat(64),
+          installerFile: "prior.exe",
+          installerSha256: "b".repeat(64)
+        }
+      }
+    });
+    const expectations = {
+      version: missingBinding.version,
+      commit: missingBinding.commit,
+      installerFile: missingBinding.installerFile,
+      installerSha256: missingBinding.installerSha256,
+      audioCaptureFingerprint: fingerprint
+    };
+    expect(validateSmokeAttestation(missingBinding, expectations).failures.join("\n")).toContain("baseline must be a JSON object");
+    expect(validateSmokeAttestation(freshWithBinding, expectations).failures.join("\n")).toContain("must be omitted");
+  });
+});
+
+describe("native capture evidence contract", () => {
+  it("keeps fresh audible thresholds and current-installer MIDI/export requirements strict", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-fresh-capture-"));
+    const installer = join(dir, "Pocket.DAW_0.6.20_x64-setup.exe");
+    const attestationPath = join(dir, "attestation.json");
+    const summaryPath = join(dir, "summary.json");
+    writeFileSync(installer, "current installer");
+    writeFileSync(attestationPath, JSON.stringify({
+      audioCaptureEvidence: { mode: "fresh-audible", fingerprint: computeNativeCaptureFingerprint() }
+    }));
+    const exports = writeExportEvidenceFiles(dir);
+    const summary = buildPunchTakeSummary({
+      runningVersion: "0.6.20",
+      installer: { file: basename(installer), sha256: sha256("current installer") },
+      ...exports,
+      midiInputRecordingControl: connectedMidiInputControl(),
+      audioRecordingControl: {
+        ...buildPunchTakeSummary().audioRecordingControl,
+        media: {
+          ...buildPunchTakeSummary().audioRecordingControl.media,
+          durationSeconds: 5.2,
+          peak: 0.12,
+          filePeak: 0.12,
+          fileRms: 0.03,
+          fileFrameCount: 249600
+        }
+      }
+    });
+    writeFileSync(summaryPath, JSON.stringify(summary));
+
+    expect(verifyNativeCaptureEvidence({
+      attestationPath,
+      punchTakeSummaryPath: summaryPath,
+      installerPath: installer,
+      version: "0.6.20",
+      requireAudibleAudio: true
+    })).toMatchObject({ ok: true, mode: "fresh-audible", failures: [] });
+
+    writeFileSync(summaryPath, JSON.stringify({
+      ...summary,
+      audioRecordingControl: {
+        ...summary.audioRecordingControl,
+        media: { ...summary.audioRecordingControl.media, durationSeconds: 0.54, peak: 0.00001, filePeak: 0.00001, fileRms: 0.000002 }
+      }
+    }));
+    const quiet = verifyNativeCaptureEvidence({
+      attestationPath,
+      punchTakeSummaryPath: summaryPath,
+      installerPath: installer,
+      version: "0.6.20",
+      requireAudibleAudio: true
+    });
+    expect(quiet.ok).toBe(false);
+    expect(quiet.failures.join("\n")).toContain("durationSeconds must be at least 3");
+    expect(quiet.failures.join("\n")).toContain("filePeak must be at least 0.005");
+    expect(quiet.failures.join("\n")).toContain("fileRms must be at least 0.001");
+  });
+
+  it("reuses only an exact direct fresh baseline with the same fingerprint", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocket-daw-baseline-capture-"));
+    const fingerprint = computeNativeCaptureFingerprint();
+    const baselineInstaller = join(dir, "Pocket.DAW_0.6.19_x64-setup.exe");
+    const currentInstaller = join(dir, "Pocket.DAW_0.6.20_x64-setup.exe");
+    const baselineSummaryPath = join(dir, "punch-summary.json");
+    const currentSummaryPath = join(dir, "current-summary.json");
+    const baselineAttestationPath = join(dir, "prior-attestation.json");
+    const currentAttestationPath = join(dir, "current-attestation.json");
+    writeFileSync(baselineInstaller, "prior installer");
+    writeFileSync(currentInstaller, "current installer");
+    writeFileSync(join(dir, "media-summary.json"), "media");
+    writeFileSync(join(dir, "godot-pack.zip"), "pack");
+    writeFileSync(join(dir, "godot-import.json"), "godot import");
+
+    const baselineSummary = buildPunchTakeSummary({
+      runningVersion: "0.6.19",
+      installer: { file: basename(baselineInstaller), sha256: sha256("prior installer") },
+      audioRecordingControl: {
+        ...buildPunchTakeSummary().audioRecordingControl,
+        media: {
+          ...buildPunchTakeSummary().audioRecordingControl.media,
+          durationSeconds: 5.2,
+          peak: 0.12,
+          filePeak: 0.12,
+          fileRms: 0.03,
+          fileFrameCount: 249600
+        }
+      }
+    });
+    writeFileSync(baselineSummaryPath, JSON.stringify(baselineSummary));
+    const baseline = buildAttestation({
+      version: "0.6.19",
+      commit: "b".repeat(40),
+      installerFile: basename(baselineInstaller),
+      installerSha256: sha256("prior installer"),
+      testedAt: "2026-06-20T00:00:00Z",
+      audioCaptureEvidence: { mode: "fresh-audible", fingerprint }
+    });
+    baseline.checks = baseline.checks.map((check: Record<string, any>) => check.id === "punch-take-lane-recording"
+      ? { ...check, evidence: [{ kind: "installed-punch-take-summary", result: "pass", file: basename(baselineSummaryPath), sha256: sha256(readFileSync(baselineSummaryPath)) }] }
+      : check);
+    writeFileSync(baselineAttestationPath, JSON.stringify(baseline));
+
+    const exports = writeExportEvidenceFiles(dir);
+    writeFileSync(currentSummaryPath, JSON.stringify(buildPunchTakeSummary({
+      runningVersion: "0.6.20",
+      installer: { file: basename(currentInstaller), sha256: sha256("current installer") },
+      ...exports,
+      midiInputRecordingControl: connectedMidiInputControl()
+    })));
+    writeFileSync(currentAttestationPath, JSON.stringify({
+      commit: "c".repeat(40),
+      testedAt: "2026-06-21T00:00:00Z",
+      audioCaptureEvidence: {
+        mode: "baseline-reuse",
+        fingerprint,
+        baseline: {
+          attestationFile: basename(baselineAttestationPath),
+          attestationSha256: sha256(readFileSync(baselineAttestationPath)),
+          installerFile: basename(baselineInstaller),
+          installerSha256: sha256("prior installer")
+        }
+      }
+    }));
+
+    expect(verifyNativeCaptureEvidence({
+      attestationPath: currentAttestationPath,
+      punchTakeSummaryPath: currentSummaryPath,
+      installerPath: currentInstaller,
+      version: "0.6.20",
+      baselineAttestationPath,
+      baselineInstallerPath: baselineInstaller
+    })).toMatchObject({ ok: true, mode: "baseline-reuse", failures: [] });
+
+    baseline.audioCaptureEvidence.mode = "baseline-reuse";
+    writeFileSync(baselineAttestationPath, JSON.stringify(baseline));
+    const chained = verifyNativeCaptureEvidence({
+      attestationPath: currentAttestationPath,
+      punchTakeSummaryPath: currentSummaryPath,
+      installerPath: currentInstaller,
+      version: "0.6.20",
+      baselineAttestationPath,
+      baselineInstallerPath: baselineInstaller
+    });
+    expect(chained.ok).toBe(false);
+    expect(chained.failures.join("\n")).toContain("reuse chains are forbidden");
+    expect(chained.failures.join("\n")).toContain("Baseline attestation SHA-256");
   });
 });
 

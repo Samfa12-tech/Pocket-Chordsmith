@@ -46,6 +46,11 @@ playhead position. The UI only displays state and dispatches commands.
 
 ## Current Notes And Known Gaps
 
+### Current 2026-08-08 Pocket DAW Audio-Evidence Policy
+
+- Pocket DAW remains version `0.6.45`. Use `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md` for current exact-installer release procedure and the component-owned release-status files for publication truth.
+- Do not repeatedly ask Sam for a room-microphone pass. A fresh audible pass is required only when no eligible prior `fresh-audible` baseline exists or the deterministic native-capture fingerprint changed. With an identical fingerprint, the guarded verifier may reuse one directly retained fresh baseline while the current exact installer still proves PCM duration/file integrity, connected loopMIDI, and retained WAV/MIDI exports. Reuse chains and altered/missing evidence fail closed.
+
 ### Current 2026-07-17 Pocket DAW 0.6.41 Release And Fast-Path Notes
 
 - Pocket DAW `0.6.41` is published from exact tested commit `15761a1ff2dd6dbba70698c343b7181095a7a7e6`. The public setup EXE `Pocket.DAW_0.6.41_x64-setup.exe` has SHA-256 `ee347b4786a1e6477d9a07659bc920fb126323dc3243f8b452df3170b0954174`; GitHub latest manifests, the downloaded remote installer hash, release tag and target commit were verified after publication.

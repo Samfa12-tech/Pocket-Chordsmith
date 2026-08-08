@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
+import { computeNativeCaptureFingerprint, sameNativeCaptureFingerprint } from "./native-capture-fingerprint.mjs";
 
 export const REQUIRED_SMOKE_CHECK_IDS = Object.freeze([
   "install-launch",
@@ -60,6 +61,8 @@ export function validateSmokeAttestation(attestation, expectations) {
   if (expected.installerSha256 && attestation.installerSha256?.toLowerCase() !== expected.installerSha256.toLowerCase()) {
     failures.push(`installerSha256 ${JSON.stringify(attestation.installerSha256)} does not match current installer hash ${JSON.stringify(expected.installerSha256)}`);
   }
+
+  validateAudioCaptureEvidence(attestation.audioCaptureEvidence, expected.audioCaptureFingerprint, failures);
 
   if (!isPlainObject(attestation.machine)) {
     failures.push("machine must be a JSON object");
@@ -126,6 +129,7 @@ export function verifySmokeAttestationFile(options = {}) {
   const installerPath = options.installerPath || options.installer;
   const version = options.version || packageJson.version;
   const commit = options.commit;
+  const audioCaptureFingerprint = options.audioCaptureFingerprint || computeNativeCaptureFingerprint(options.root || process.cwd());
 
   if (!installerPath) throw new Error("Missing required installerPath.");
   if (!commit) throw new Error("Missing required commit.");
@@ -138,7 +142,8 @@ export function verifySmokeAttestationFile(options = {}) {
     version,
     commit,
     installerFile: basename(installerPath),
-    installerSha256: actualInstallerSha256
+    installerSha256: actualInstallerSha256,
+    audioCaptureFingerprint
   });
   verifyEvidenceFiles(attestation, attestationPath, result.failures);
   return { ok: result.failures.length === 0, failures: result.failures };
@@ -161,10 +166,64 @@ function normalizeExpectations(expectations, failures) {
       failures.push(`expected ${field} is required`);
     }
   }
+  if (expectations.audioCaptureFingerprint) normalized.audioCaptureFingerprint = expectations.audioCaptureFingerprint;
   validateSemverLike(normalized.version, "expected version", failures);
   validateCommit(normalized.commit, "expected commit", failures);
   if (normalized.installerSha256) validateInstallerHash(normalized.installerSha256, "expected installerSha256", failures);
   return normalized;
+}
+
+function validateAudioCaptureEvidence(value, expectedFingerprint, failures) {
+  if (!isPlainObject(value)) {
+    failures.push("audioCaptureEvidence must be a JSON object");
+    return;
+  }
+  if (value.mode !== "fresh-audible" && value.mode !== "baseline-reuse") {
+    failures.push("audioCaptureEvidence.mode must be fresh-audible or baseline-reuse");
+  }
+  validateCaptureFingerprint(value.fingerprint, "audioCaptureEvidence.fingerprint", failures);
+  if (expectedFingerprint && !sameNativeCaptureFingerprint(value.fingerprint, expectedFingerprint)) {
+    failures.push("audioCaptureEvidence.fingerprint does not match the current native capture source/dependency fingerprint");
+  }
+  if (value.mode === "fresh-audible") {
+    if (value.baseline !== undefined) failures.push("audioCaptureEvidence.baseline must be omitted for fresh-audible evidence");
+    return;
+  }
+  if (value.mode === "baseline-reuse") {
+    if (!isPlainObject(value.baseline)) {
+      failures.push("audioCaptureEvidence.baseline must be a JSON object for baseline-reuse evidence");
+      return;
+    }
+    requireString(value.baseline.attestationFile, "audioCaptureEvidence.baseline.attestationFile", failures);
+    validateInstallerHash(value.baseline.attestationSha256, "audioCaptureEvidence.baseline.attestationSha256", failures);
+    requireString(value.baseline.installerFile, "audioCaptureEvidence.baseline.installerFile", failures);
+    validateInstallerHash(value.baseline.installerSha256, "audioCaptureEvidence.baseline.installerSha256", failures);
+  }
+}
+
+function validateCaptureFingerprint(value, label, failures) {
+  if (!isPlainObject(value)) {
+    failures.push(`${label} must be a JSON object`);
+    return;
+  }
+  if (value.schema !== "pocket-daw-native-capture-v1") failures.push(`${label}.schema must be pocket-daw-native-capture-v1`);
+  if (value.algorithm !== "sha256") failures.push(`${label}.algorithm must be sha256`);
+  validateInstallerHash(value.value, `${label}.value`, failures);
+  if (!Array.isArray(value.inputs) || !value.inputs.length) {
+    failures.push(`${label}.inputs must be a non-empty array`);
+    return;
+  }
+  const ids = new Set();
+  for (const [index, entry] of value.inputs.entries()) {
+    if (!isPlainObject(entry)) {
+      failures.push(`${label}.inputs[${index}] must be a JSON object`);
+      continue;
+    }
+    requireString(entry.id, `${label}.inputs[${index}].id`, failures);
+    validateInstallerHash(entry.sha256, `${label}.inputs[${index}].sha256`, failures);
+    if (ids.has(entry.id)) failures.push(`${label}.inputs contains duplicate id ${JSON.stringify(entry.id)}`);
+    ids.add(entry.id);
+  }
 }
 
 function requireString(value, label, failures) {
