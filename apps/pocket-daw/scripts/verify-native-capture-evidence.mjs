@@ -2,10 +2,21 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { computeNativeCaptureFingerprint, computeNativeCaptureFingerprintAtCommit, sameNativeCaptureFingerprint } from "./native-capture-fingerprint.mjs";
 import { verifyInstalledPunchTakeSummaryFile } from "./verify-installed-punch-take-summary.mjs";
-import { verifyManualFreshAudibleEvidence } from "./manual-fresh-audible-evidence.mjs";
+import {
+  verifyManualFreshAudibleEvidence,
+  verifyManualFreshAudibleEvidenceForTests
+} from "./manual-fresh-audible-evidence.mjs";
 import { sha256File, verifySmokeAttestationFile } from "./verify-smoke-attestation.mjs";
 
 export function verifyNativeCaptureEvidence(options = {}) {
+  return verifyNativeCaptureEvidenceImpl(options, null);
+}
+
+export function verifyNativeCaptureEvidenceForTests(options = {}, testFingerprintDependencies) {
+  return verifyNativeCaptureEvidenceImpl(options, testFingerprintDependencies);
+}
+
+function verifyNativeCaptureEvidenceImpl(options, testFingerprintDependencies) {
   const failures = [];
   const root = options.root || process.cwd();
   const attestation = readJson(options.attestationPath, "Current smoke attestation", failures);
@@ -54,7 +65,7 @@ export function verifyNativeCaptureEvidence(options = {}) {
       manualEvidencePath: options.manualFreshAudibleEvidencePath,
       version: options.version,
       fingerprint: currentFingerprint
-    }, failures);
+    }, failures, testFingerprintDependencies);
   } else if (mode === "baseline-reuse") {
     if (options.requireAudibleAudio === true) failures.push("Baseline-reuse mode must not also request fresh-audible mode.");
     verifyBaselineReuse({
@@ -66,7 +77,7 @@ export function verifyNativeCaptureEvidence(options = {}) {
       baselineInstallerPath,
       currentFingerprint,
       root
-    }, failures);
+    }, failures, testFingerprintDependencies);
   } else {
     failures.push("Current attestation must select audioCaptureEvidence.mode fresh-audible, manual-fresh-audible, or baseline-reuse.");
   }
@@ -74,7 +85,7 @@ export function verifyNativeCaptureEvidence(options = {}) {
   return { ok: failures.length === 0, failures, mode, fingerprint: currentFingerprint };
 }
 
-function verifyManualFreshAudibleMode(options, failures) {
+function verifyManualFreshAudibleMode(options, failures, testFingerprintDependencies) {
   if (!options.manualEvidencePath) {
     failures.push("Manual-fresh-audible mode requires --manual-fresh-audible-evidence.");
     return;
@@ -95,13 +106,16 @@ function verifyManualFreshAudibleMode(options, failures) {
     compareHash(companionBinding.summarySha256, sha256File(options.punchTakeSummaryPath), "Automated companion summary SHA-256", failures);
   }
 
-  const manual = verifyManualFreshAudibleEvidence({
+  const manualOptions = {
     reportPath: options.manualEvidencePath,
     installerPath: options.installerPath,
     version: options.version,
     commit: options.attestation.commit,
     expectedFingerprint: options.fingerprint
-  });
+  };
+  const manual = testFingerprintDependencies
+    ? verifyManualFreshAudibleEvidenceForTests(manualOptions, testFingerprintDependencies)
+    : verifyManualFreshAudibleEvidence(manualOptions);
   if (!manual.ok) failures.push(...manual.failures.map((failure) => `Manual audible evidence: ${failure}`));
 
   const report = readJson(options.manualEvidencePath, "Manual fresh-audible report", failures);
@@ -119,7 +133,7 @@ function verifyManualFreshAudibleMode(options, failures) {
   }
 }
 
-function verifyBaselineReuse(options, failures) {
+function verifyBaselineReuse(options, failures, testFingerprintDependencies) {
   if (!options.baselineAttestationPath) failures.push("Baseline-reuse mode requires --audio-capture-baseline-attestation.");
   if (!options.baselineInstallerPath) failures.push("Baseline-reuse mode requires --audio-capture-baseline-installer.");
   if (!options.baselineAttestationPath || !options.baselineInstallerPath) return;
@@ -202,7 +216,7 @@ function verifyBaselineReuse(options, failures) {
         manualEvidencePath: manualPath,
         version: baseline.version,
         fingerprint: options.currentFingerprint
-      }, failures);
+      }, failures, testFingerprintDependencies);
     }
   }
 }

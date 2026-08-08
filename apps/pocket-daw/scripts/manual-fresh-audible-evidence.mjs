@@ -23,6 +23,14 @@ const LEGACY_MONO_CHANNEL_MAP_BUG = Object.freeze({
 });
 
 export function createManualFreshAudibleEvidence(options = {}) {
+  return createManualFreshAudibleEvidenceImpl(options, DEFAULT_FINGERPRINT_DEPENDENCIES);
+}
+
+export function createManualFreshAudibleEvidenceForTests(options = {}, testDependencies) {
+  return createManualFreshAudibleEvidenceImpl(options, validateTestFingerprintDependencies(testDependencies));
+}
+
+function createManualFreshAudibleEvidenceImpl(options, fingerprintDependencies) {
   const outPath = requiredPath(options.outPath, "outPath");
   const projectPath = requiredPath(options.projectPath, "projectPath");
   const preCaptureProjectPath = requiredPath(options.preCaptureProjectPath, "preCaptureProjectPath");
@@ -38,11 +46,11 @@ export function createManualFreshAudibleEvidence(options = {}) {
   }
 
   const captureRunFingerprint = readJson(fingerprintPath, "Native capture run fingerprint");
-  const expectedCaptureRunFingerprint = deterministicCaptureRunFingerprint(process.cwd(), commit, captureRunFingerprint?.schema);
+  const expectedCaptureRunFingerprint = deterministicCaptureRunFingerprint(process.cwd(), commit, captureRunFingerprint?.schema, fingerprintDependencies);
   if (!sameNativeCaptureFingerprint(captureRunFingerprint, expectedCaptureRunFingerprint)) {
     throw new Error("Retained native capture run fingerprint does not match the exact candidate commit's deterministic fingerprint.");
   }
-  const fingerprint = computeNativeCaptureFingerprintAtCommit(process.cwd(), commit);
+  const fingerprint = fingerprintDependencies.computeNativeCaptureFingerprintAtCommit(process.cwd(), commit);
   const project = readJson(projectPath, "Manual recording project");
   const preCaptureProject = readJson(preCaptureProjectPath, "Pre-capture project");
   const projectEvidence = resolveProjectEvidence(project, preCaptureProject, clipId, trackId);
@@ -100,7 +108,7 @@ export function createManualFreshAudibleEvidence(options = {}) {
     input
   };
 
-  const verified = verifyManualFreshAudibleEvidence({
+  const verified = verifyManualFreshAudibleEvidenceImpl({
     report,
     reportPath: outPath,
     installerPath,
@@ -108,13 +116,21 @@ export function createManualFreshAudibleEvidence(options = {}) {
     commit,
     expectedFingerprint: fingerprint,
     expectedCaptureRunFingerprint
-  });
+  }, fingerprintDependencies);
   if (!verified.ok) throw new Error(`Manual fresh-audible evidence could not be created:\n${verified.failures.join("\n")}`);
   writeFileSync(outPath, `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
   return report;
 }
 
 export function verifyManualFreshAudibleEvidence(options = {}) {
+  return verifyManualFreshAudibleEvidenceImpl(options, DEFAULT_FINGERPRINT_DEPENDENCIES);
+}
+
+export function verifyManualFreshAudibleEvidenceForTests(options = {}, testDependencies) {
+  return verifyManualFreshAudibleEvidenceImpl(options, validateTestFingerprintDependencies(testDependencies));
+}
+
+function verifyManualFreshAudibleEvidenceImpl(options, fingerprintDependencies) {
   const failures = [];
   const reportPath = options.reportPath ? resolve(options.reportPath) : null;
   const report = options.report || (reportPath && existsSync(reportPath) ? readJson(reportPath, "Manual fresh-audible report") : null);
@@ -143,7 +159,7 @@ export function verifyManualFreshAudibleEvidence(options = {}) {
   let deterministicRunFingerprint = null;
   try {
     deterministicRunFingerprint = options.commit
-      ? deterministicCaptureRunFingerprint(process.cwd(), options.commit, report.captureRunFingerprint?.schema)
+      ? deterministicCaptureRunFingerprint(process.cwd(), options.commit, report.captureRunFingerprint?.schema, fingerprintDependencies)
       : null;
   } catch (error) {
     failures.push(error instanceof Error ? error.message : String(error));
@@ -395,10 +411,27 @@ function isSha256(value) {
   return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
 }
 
-function deterministicCaptureRunFingerprint(root, commit, schema) {
-  if (schema === LEGACY_NATIVE_CAPTURE_FINGERPRINT_SCHEMA) return computeLegacyNativeCaptureFingerprintAtCommit(root, commit);
-  if (schema === NATIVE_CAPTURE_FINGERPRINT_SCHEMA) return computeNativeCaptureFingerprintAtCommit(root, commit);
+function deterministicCaptureRunFingerprint(root, commit, schema, dependencies) {
+  if (schema === LEGACY_NATIVE_CAPTURE_FINGERPRINT_SCHEMA) return dependencies.computeLegacyNativeCaptureFingerprintAtCommit(root, commit);
+  if (schema === NATIVE_CAPTURE_FINGERPRINT_SCHEMA) return dependencies.computeNativeCaptureFingerprintAtCommit(root, commit);
   throw new Error(`Unsupported retained native capture run fingerprint schema: ${schema || "missing"}.`);
+}
+
+const DEFAULT_FINGERPRINT_DEPENDENCIES = Object.freeze({
+  computeNativeCaptureFingerprintAtCommit,
+  computeLegacyNativeCaptureFingerprintAtCommit
+});
+
+function validateTestFingerprintDependencies(testDependencies) {
+  if (
+    !testDependencies
+    || typeof testDependencies !== "object"
+    || typeof testDependencies.computeNativeCaptureFingerprintAtCommit !== "function"
+    || typeof testDependencies.computeLegacyNativeCaptureFingerprintAtCommit !== "function"
+  ) {
+    throw new Error("Test fingerprint dependencies must provide both historical fingerprint readers.");
+  }
+  return testDependencies;
 }
 
 function resolveProjectEvidence(project, preCaptureProject, clipId, trackId) {

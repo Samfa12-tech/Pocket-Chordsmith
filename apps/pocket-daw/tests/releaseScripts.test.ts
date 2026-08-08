@@ -76,6 +76,7 @@ describe("release scripts", () => {
     const verifyCandidate = readFileSync("scripts/verify-candidate.mjs", "utf8");
     const verifyNativeCaptureEvidence = readFileSync("scripts/verify-native-capture-evidence.mjs", "utf8");
     const nativeCaptureFingerprint = readFileSync("scripts/native-capture-fingerprint.mjs", "utf8");
+    const manualFreshAudibleEvidence = readFileSync("scripts/manual-fresh-audible-evidence.mjs", "utf8");
     const verifyReleaseCandidateTruth = readFileSync("scripts/verify-release-candidate-truth.mjs", "utf8");
 
     expect(packageJson.scripts["evidence:manual-fresh-audible"]).toBe("node scripts/manual-fresh-audible-evidence.mjs");
@@ -218,6 +219,14 @@ describe("release scripts", () => {
     expect(verifyNativeCaptureEvidence).toContain("Baseline attestation SHA-256");
     expect(nativeCaptureFingerprint).toContain("src-tauri/src/native_recording.rs");
     expect(nativeCaptureFingerprint).toContain("cpalDependencyClosure");
+    expect(nativeCaptureFingerprint).toContain('["show", `${commit}:${repositoryPath}`]');
+    expect(manualFreshAudibleEvidence).toContain('computeNativeCaptureFingerprintAtCommit(process.cwd(), requiredCommit(args.commit, "commit"))');
+    expect(manualFreshAudibleEvidence).toContain("createManualFreshAudibleEvidenceImpl(options, DEFAULT_FINGERPRINT_DEPENDENCIES)");
+    expect(manualFreshAudibleEvidence).toContain("verifyManualFreshAudibleEvidenceImpl(options, DEFAULT_FINGERPRINT_DEPENDENCIES)");
+    expect(manualFreshAudibleEvidence).toContain("createManualFreshAudibleEvidenceForTests");
+    expect(manualFreshAudibleEvidence).not.toContain("__testFingerprintDependencies");
+    expect(verifyNativeCaptureEvidence).toContain("verifyNativeCaptureEvidenceForTests");
+    expect(verifyNativeCaptureEvidence).not.toContain("__testFingerprintDependencies");
     expect(verifyCandidate).toContain("--attestation");
     expect(verifyCandidate).toContain("--installer");
     expect(verifyCandidate).toContain("--punch-take-summary");

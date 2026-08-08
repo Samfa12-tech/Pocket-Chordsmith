@@ -3,32 +3,49 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  computeLegacyNativeCaptureFingerprintAtCommit,
-  computeNativeCaptureFingerprint,
-  computeNativeCaptureFingerprintAtCommit
-} from "../scripts/native-capture-fingerprint.mjs";
+import { computeNativeCaptureFingerprint } from "../scripts/native-capture-fingerprint.mjs";
 import {
   analyzePcm16Wav,
-  createManualFreshAudibleEvidence,
-  verifyManualFreshAudibleEvidence
+  createManualFreshAudibleEvidenceForTests,
+  verifyManualFreshAudibleEvidenceForTests
 } from "../scripts/manual-fresh-audible-evidence.mjs";
-import { verifyNativeCaptureEvidence } from "../scripts/verify-native-capture-evidence.mjs";
+import { verifyNativeCaptureEvidenceForTests } from "../scripts/verify-native-capture-evidence.mjs";
 
 const LEGACY_COMMIT = "e650be444207cb81c7b91035be5eb4e62fafc326";
 const UNRELATED_COMMIT = "32f6be33cc14916fe75432f802735550f2c5e61d";
 const CAPTURED_AT_MS = 1786226911491;
+const E650_SEMANTIC_FINGERPRINT = snapshotFingerprint(
+  "pocket-daw-native-pcm-capture-v2",
+  "e4ec7e55c375f6d43a7683bca61b3a4a60a96f73f9df9c09d745b21066aff770",
+  "e650be44-semantic-pcm-v2"
+);
+const E650_CAPTURE_RUN_FINGERPRINT = snapshotFingerprint(
+  "pocket-daw-native-capture-v1",
+  "89db764e8ddce248597275b729bde0966b770991ebd2030f2d02a0715ed1d709",
+  "e650be44-original-capture-run-v1"
+);
+const TEST_FINGERPRINT_DEPENDENCIES = {
+  computeNativeCaptureFingerprintAtCommit: (_root: string, commit: string) => commit === LEGACY_COMMIT
+    ? structuredClone(E650_SEMANTIC_FINGERPRINT)
+    : snapshotFingerprint("pocket-daw-native-pcm-capture-v2", sha256(`semantic:${commit}`), `semantic-${commit}`),
+  computeLegacyNativeCaptureFingerprintAtCommit: (_root: string, commit: string) => commit === LEGACY_COMMIT
+    ? structuredClone(E650_CAPTURE_RUN_FINGERPRINT)
+    : snapshotFingerprint("pocket-daw-native-capture-v1", sha256(`legacy:${commit}`), `legacy-${commit}`)
+};
+const createManualFreshAudibleEvidence = (options: Record<string, unknown>) =>
+  createManualFreshAudibleEvidenceForTests(options, TEST_FINGERPRINT_DEPENDENCIES);
+const verifyManualFreshAudibleEvidence = (options: Record<string, unknown>) =>
+  verifyManualFreshAudibleEvidenceForTests(options, TEST_FINGERPRINT_DEPENDENCIES);
+const verifyNativeCaptureEvidence = (options: Record<string, unknown>) =>
+  verifyNativeCaptureEvidenceForTests(options, TEST_FINGERPRINT_DEPENDENCIES);
 
 describe("manual fresh-audible evidence", () => {
   it("keeps PCM capture reuse semantic while retaining the exact legacy run fingerprint", () => {
-    const priorSemantic = computeNativeCaptureFingerprintAtCommit(process.cwd(), LEGACY_COMMIT);
     const currentSemantic = computeNativeCaptureFingerprint();
-    const priorRun = computeLegacyNativeCaptureFingerprintAtCommit(process.cwd(), LEGACY_COMMIT);
-    expect(priorSemantic).toEqual(currentSemantic);
-    expect(priorSemantic.schema).toBe("pocket-daw-native-pcm-capture-v2");
-    expect(priorSemantic.value).toBe("e4ec7e55c375f6d43a7683bca61b3a4a60a96f73f9df9c09d745b21066aff770");
-    expect(priorRun.schema).toBe("pocket-daw-native-capture-v1");
-    expect(priorRun.value).toBe("89db764e8ddce248597275b729bde0966b770991ebd2030f2d02a0715ed1d709");
+    expect(currentSemantic.schema).toBe(E650_SEMANTIC_FINGERPRINT.schema);
+    expect(currentSemantic.value).toBe(E650_SEMANTIC_FINGERPRINT.value);
+    expect(E650_CAPTURE_RUN_FINGERPRINT.schema).toBe("pocket-daw-native-capture-v1");
+    expect(E650_CAPTURE_RUN_FINGERPRINT.value).toBe("89db764e8ddce248597275b729bde0966b770991ebd2030f2d02a0715ed1d709");
   });
 
   it("admits only the exact legacy Mono Ch2 metadata bug with pre/post project corroboration", () => {
@@ -43,7 +60,7 @@ describe("manual fresh-audible evidence", () => {
       provenance: "known-bug-corroborated",
       knownBugId: "pocket-daw-0.6.46-mono-take-metadata-hardcoded-ch1"
     });
-    expect(report.fingerprint).toEqual(computeNativeCaptureFingerprint());
+    expect(report.fingerprint).toEqual(E650_SEMANTIC_FINGERPRINT);
     expect(report.captureRunFingerprint.value).toBe("89db764e8ddce248597275b729bde0966b770991ebd2030f2d02a0715ed1d709");
     expect(verifyManualFreshAudibleEvidence({
       reportPath: fixture.reportPath,
@@ -125,7 +142,8 @@ describe("manual fresh-audible evidence", () => {
       manualFreshAudibleEvidencePath: fixture.reportPath,
       installerPath: fixture.installerPath,
       version: "0.6.46",
-      root: process.cwd()
+      root: process.cwd(),
+      audioCaptureFingerprint: fixture.fingerprint
     })).toMatchObject({ ok: true, mode: "manual-fresh-audible", failures: [] });
 
     const mediaSummaryPath = join(fixture.dir, "media-summary.json");
@@ -176,7 +194,8 @@ describe("manual fresh-audible evidence", () => {
       version: "0.6.47",
       baselineAttestationPath: attestationPath,
       baselineInstallerPath: fixture.installerPath,
-      root: process.cwd()
+      root: process.cwd(),
+      audioCaptureFingerprint: fixture.fingerprint
     })).toMatchObject({ ok: true, mode: "baseline-reuse", failures: [] });
 
     const relabeled = verifyNativeCaptureEvidence({
@@ -186,7 +205,8 @@ describe("manual fresh-audible evidence", () => {
       installerPath: fixture.installerPath,
       version: "0.6.46",
       requireAudibleAudio: true,
-      root: process.cwd()
+      root: process.cwd(),
+      audioCaptureFingerprint: fixture.fingerprint
     });
     expect(relabeled.failures.join("\n")).toContain("must not relabel the automated companion run as audible");
 
@@ -197,7 +217,8 @@ describe("manual fresh-audible evidence", () => {
       manualFreshAudibleEvidencePath: fixture.reportPath,
       installerPath: fixture.installerPath,
       version: "0.6.46",
-      root: process.cwd()
+      root: process.cwd(),
+      audioCaptureFingerprint: fixture.fingerprint
     });
     expect(stale.failures.join("\n")).toContain("Automated companion summary SHA-256");
     expect(stale.failures.join("\n")).toContain("prior summaries cannot be reused");
@@ -266,10 +287,10 @@ function createFixture(input: {
   };
   writeFileSync(preCaptureProjectPath, JSON.stringify(preCaptureProject));
   writeFileSync(projectPath, JSON.stringify(project));
-  const fingerprint = computeNativeCaptureFingerprintAtCommit(process.cwd(), input.commit);
+  const fingerprint = TEST_FINGERPRINT_DEPENDENCIES.computeNativeCaptureFingerprintAtCommit(process.cwd(), input.commit);
   const captureRunFingerprint = input.captureRunSchema === "v2"
     ? fingerprint
-    : computeLegacyNativeCaptureFingerprintAtCommit(process.cwd(), input.commit);
+    : TEST_FINGERPRINT_DEPENDENCIES.computeLegacyNativeCaptureFingerprintAtCommit(process.cwd(), input.commit);
   writeFileSync(fingerprintPath, JSON.stringify(captureRunFingerprint));
   return {
     dir,
@@ -437,6 +458,15 @@ function midiWithPitches(pitches: number[]) {
 
 function sha256(value: string | NodeJS.ArrayBufferView) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function snapshotFingerprint(schema: string, value: string, id: string) {
+  return {
+    schema,
+    algorithm: "sha256",
+    value,
+    inputs: [{ id, sha256: sha256(`input:${id}`) }]
+  };
 }
 
 function pcm16Wav({ seconds, amplitude }: { seconds: number; amplitude: number }) {
