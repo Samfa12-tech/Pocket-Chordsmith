@@ -5,6 +5,7 @@ import packageJson from "../package.json" with { type: "json" };
 describe("release scripts", () => {
   it("requires an armed native aggregate input meter preflight before audio capture", () => {
     const source = readFileSync("scripts/smoke-installed-punch-take-lanes.ts", "utf8");
+    const inputSource = readFileSync("scripts/installed-punch-take-audio-input.ts", "utf8");
     const functionStart = source.indexOf("async function exerciseAudioRecordingControl");
     const functionEnd = source.indexOf("function audioTakeSmokeCounts", functionStart);
     const audioCapture = source.slice(functionStart, functionEnd);
@@ -13,12 +14,23 @@ describe("release scripts", () => {
     const recordStart = audioCapture.indexOf('await liveControlResult(session, { action: "record_start" })');
     expect(meterPreflight).toBeGreaterThanOrEqual(0);
     expect(recordStart).toBeGreaterThan(meterPreflight);
-    expect(audioCapture).toContain('recording?.status === "idle"');
-    expect(audioCapture).toContain("recording?.inputPreflight?.ok === true");
-    expect(audioCapture).toContain("Number.isFinite(inputPeak)");
-    expect(audioCapture).toContain("inputPeak >= Math.max(0, requiredPeak)");
+    expect(audioCapture.indexOf("installedAudioInputPreviewControlPlan(")).toBeLessThan(meterPreflight);
+    expect(inputSource).toContain('recording?.status !== "idle"');
+    expect(inputSource).toContain("preflight?.ok !== true");
+    expect(inputSource).toContain("capturePlan?.deviceId !== input.deviceId");
+    expect(inputSource).toContain("channelMap[0] !== input.channelIndex");
+    expect(inputSource).toContain("!Number.isFinite(inputPeak)");
+    expect(inputSource).toContain("inputPeak < Math.max(0, requiredPeak)");
     expect(audioCapture).toContain("args.requireAudibleAudio ? args.minAudioPeak : 0");
-    expect(audioCapture).toContain('channelClaim: "aggregate-device-meter-only"');
+    expect(inputSource).toContain('channelClaim: "explicit-native-mono-channel"');
+    expect(inputSource).toContain('meterClaim: "aggregate-device-meter-only"');
+
+    const refresh = source.indexOf('await liveControl(session, { action: "refresh_audio_devices" });');
+    const resolve = source.indexOf("const audioInput = resolveInstalledAudioInput(");
+    const exercise = source.indexOf("const audioRecordingControl = await exerciseAudioRecordingControl(");
+    expect([refresh, resolve, exercise].every((index) => index >= 0)).toBe(true);
+    expect(refresh).toBeLessThan(resolve);
+    expect(resolve).toBeLessThan(exercise);
   });
 
   it("stops and verifies MIDI punch positioning before installed input capture", () => {
@@ -59,6 +71,7 @@ describe("release scripts", () => {
     const guardedBootstrapperPush = readFileSync("scripts/guarded-butler-push-bootstrapper.mjs", "utf8");
     const releaseUpdaterBuild = readFileSync("scripts/release-updater-build.mjs", "utf8");
     const installedPunchTakeSmoke = readFileSync("scripts/smoke-installed-punch-take-lanes.ts", "utf8");
+    const installedPunchTakeSmokeConfig = readFileSync("scripts/installed-punch-take-smoke-config.ts", "utf8");
     const installedVst3HostSmoke = readFileSync("scripts/smoke-installed-vst3-host.mjs", "utf8");
     const verifyCandidate = readFileSync("scripts/verify-candidate.mjs", "utf8");
     const verifyNativeCaptureEvidence = readFileSync("scripts/verify-native-capture-evidence.mjs", "utf8");
@@ -168,7 +181,9 @@ describe("release scripts", () => {
     expect(releaseUpdaterBuild).toContain("assertGithubReleaseMissing");
     expect(releaseUpdaterBuild).toContain("Remote setup SHA-256 verified");
     expect(releaseUpdaterBuild).not.toContain('run("butler"');
-    expect(installedPunchTakeSmoke).toContain("--midi-record-ms");
+    expect(installedPunchTakeSmokeConfig).toContain("--midi-record-ms");
+    expect(installedPunchTakeSmokeConfig).toContain("--audio-input-device-id");
+    expect(installedPunchTakeSmokeConfig).toContain("--audio-input-channel-index");
     expect(installedPunchTakeSmoke).toContain("midiRecordMs");
     expect(installedPunchTakeSmoke).toContain("requestedRecordMs: midiRecordMs");
     expect(installedPunchTakeSmoke).toContain("midiDevicePreflightEvidence");
