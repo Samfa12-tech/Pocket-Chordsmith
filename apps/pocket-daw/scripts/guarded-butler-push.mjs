@@ -4,7 +4,7 @@ import { join } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
 import { ITCH_CHANNEL, ITCH_SLUG } from "./package-itch.mjs";
 import { assertReleaseCandidateTruth } from "./verify-release-candidate-truth.mjs";
-import { verifyInstalledPunchTakeSummaryFile } from "./verify-installed-punch-take-summary.mjs";
+import { verifyNativeCaptureEvidence } from "./verify-native-capture-evidence.mjs";
 import { verifySmokeAttestationFile } from "./verify-smoke-attestation.mjs";
 
 if (process.env.PUBLISH !== "1") {
@@ -42,13 +42,15 @@ if (!smoke.ok) {
   for (const failure of smoke.failures) console.error(failure);
   process.exit(1);
 }
-const punchTake = verifyInstalledPunchTakeSummaryFile({
-  summaryPath: punchTakeSummary,
+const punchTake = verifyNativeCaptureEvidence({
+  attestationPath: smokeAttestation,
+  punchTakeSummaryPath: punchTakeSummary,
   installerPath: setupInstaller,
   version,
   requireAudibleAudio: envFlag("PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO"),
-  requireExportFiles: envFlag("PUNCH_TAKE_REQUIRE_EXPORT_FILES"),
-  requireMidiInput: envFlag("PUNCH_TAKE_REQUIRE_MIDI_INPUT")
+  baselineAttestationPath: process.env.AUDIO_CAPTURE_BASELINE_ATTESTATION,
+  baselineInstallerPath: process.env.AUDIO_CAPTURE_BASELINE_INSTALLER,
+  root: process.cwd()
 });
 if (!punchTake.ok) {
   for (const failure of punchTake.failures) console.error(failure);

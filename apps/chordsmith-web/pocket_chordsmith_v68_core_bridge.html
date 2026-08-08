@@ -1411,6 +1411,7 @@ const METAL_DRUM_GROOVE_PRESETS = ["metal_backbeat_chug","metal_gallop_160","met
 const DEFAULT_LOFI_TEXTURE = {enabled:false, vinylCrackle:0.08, tapeHiss:0.05, wowFlutter:0.03, warmth:0.16, lowPassAge:0.22, bitCrush:0.01};
 const DEFAULT_CHIP_TEXTURE = {enabled:false, bitDepth:0.22, sampleRateCrush:0.18, pulseWidth:0.5, pitchDrift:0.03, saturation:0.16, stereoSpread:0.12};
 const DEFAULT_METAL_TEXTURE = {enabled:false, drive:0.45, palmMute:0.68, lowTightness:0.78, presence:0.55, roomSize:0.14, pickAttack:0.7};
+const METAL_GUITAR_MIX_VOLUME = 0.76;
 const DEFAULT_FUNK_PARAMETERS = {pocket:0.72,ghostNotes:0.42,slapAmount:0.68,popBrightness:0.62,muteDepth:0.74,stabTightness:0.76};
 const FALLBACK_DRUM_KIT_CONFIGS = {
   classic:{kick:{startFreq:155,endFreq:45,sweepSeconds:0.14,gainFloor:0.08,gainScale:1,length:0.17,rampSeconds:0.16},snare:{noiseSeconds:0.12,highpass:1700,gainFloor:0.05,gainScale:1,length:0.13,rampSeconds:0.12},hat:{closedLength:0.05,openLength:0.16,highpassClosed:5600,highpassOpen:3800,gainFloorClosed:0.03,gainFloorOpen:0.05,gainScaleClosed:1,gainScaleOpen:1,rampSecondsClosed:0.05,rampSecondsOpen:0.14}},
@@ -4738,7 +4739,7 @@ function bassToneConfig(tone=state.bassTone){
   if(tone === "chip_square_bass") return {mainWave:"square", subWave:"triangle", mainPeak:0.72, subPeak:0.22, cutoff:680, subCutoff:220, attack:0.002};
   if(tone === "modern_chip_sub") return {mainWave:"square", subWave:"sine", mainPeak:0.64, subPeak:0.62, cutoff:420, subCutoff:150, attack:0.006};
   if(tone === "bitcrush_bass") return {mainWave:"sawtooth", subWave:"square", mainPeak:0.58, subPeak:0.34, cutoff:560, subCutoff:210, attack:0.003};
-  if(tone === "metal_pick_bass") return {mainWave:"sawtooth", subWave:"square", mainPeak:0.72, subPeak:0.4, cutoff:520, subCutoff:140, attack:0.003};
+  if(tone === "metal_pick_bass") return {mainWave:"triangle", subWave:"sine", mainPeak:0.64, subPeak:0.34, cutoff:430, subCutoff:125, attack:0.006};
   if(tone === "metal_sub_pick") return {mainWave:"triangle", subWave:"sine", mainPeak:0.58, subPeak:0.68, cutoff:360, subCutoff:110, attack:0.006};
   if(tone === "metal_grind_bass") return {mainWave:"sawtooth", subWave:"triangle", mainPeak:0.66, subPeak:0.32, cutoff:760, subCutoff:170, attack:0.002};
   if(tone === "warm_sub") return {mainWave:"sine", subWave:"sine", mainPeak:0.82, subPeak:0.55, cutoff:210, subCutoff:120, attack:0.018};
@@ -27639,6 +27640,7 @@ function applyMetalPresetToProject(presetId, options={}){
   state.lastAdvancedResolution = 4;
   state.bassMode = "manual";
   state.guitarEnabled = true;
+  state.guitarVolume = METAL_GUITAR_MIX_VOLUME;
   state.guitarTone = safeChoice(preset.guitarTone, guitarToneIds(), "tight_metal");
   state.guitarRegister = preset.guitarTone === "doom_fuzz" ? "low" : "mid";
   state.guitarStrumMode = "down";
@@ -27949,6 +27951,7 @@ function applyGenreCompositionSoundProfile(plan, options={}){
     state.chordPlayMode = "block";
     state.chordRhythmMode = "quarter";
     state.guitarEnabled = true;
+    state.guitarVolume = METAL_GUITAR_MIX_VOLUME;
     state.guitarTone = safeChoice(preset.guitarTone, guitarToneIds(), "tight_metal");
     state.guitarRegister = preset.guitarTone === "doom_fuzz" ? "low" : "mid";
     state.guitarStrumMode = "down";
@@ -30342,7 +30345,9 @@ function generatedRichTracksForSection(sectionId){
       return;
     }
     if(event.type === "guitar"){
-      pushEvent("guitar",{...timing,notes:event.notes,velocity:event.articulation === "accent" ? 112 : 94,articulation:event.articulation,sound:event.tone || state.guitarTone,role:"rhythm",technique:profileId === HEAVY_METAL_AUDIO_PROFILE_ID ? {metal:{palmMuteDepth:state.metalTexture?.palmMute ?? 0,pickDirection:event.direction}} : profileId === WESTERN_AUDIO_PROFILE_ID ? {western:{pickDirection:event.direction}} : {}});
+      const baseVelocity = event.articulation === "accent" ? 112 : 94;
+      const mixScale = profileId === HEAVY_METAL_AUDIO_PROFILE_ID ? (state.guitarVolume ?? 0.66) / 0.66 : 1;
+      pushEvent("guitar",{...timing,notes:event.notes,velocity:clamp(Math.round(baseVelocity * mixScale),1,127),articulation:event.articulation,sound:event.tone || state.guitarTone,role:"rhythm",technique:profileId === HEAVY_METAL_AUDIO_PROFILE_ID ? {metal:{palmMuteDepth:state.metalTexture?.palmMute ?? 0,pickDirection:event.direction}} : profileId === WESTERN_AUDIO_PROFILE_ID ? {western:{pickDirection:event.direction}} : {}});
       return;
     }
     if(event.type === "chord"){

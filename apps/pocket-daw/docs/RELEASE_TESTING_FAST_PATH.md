@@ -42,9 +42,12 @@ Run from `apps/pocket-daw/`.
    these three values as immutable candidate identity.
 6. Run private/owned MIDI fixture validation once through the current parser
    and converter. Keep the fixture and report ignored; never commit owned MIDI.
-7. Run one combined exact-installed punch/take smoke with strict audio, MIDI,
-   and export requirements. Use the same summary for its direct verifier,
-   attestation, candidate verifier, and publish guard.
+7. Generate the native-capture fingerprint and select exactly one audio-evidence
+   mode using the fail-closed rules below. Run one combined exact-installed
+   punch/take smoke. The current installer always has to prove a real PCM take
+   of the requested duration, retained WAV/MIDI export integrity, and connected
+   loopMIDI input; only the human audibility threshold may come from an eligible
+   prior baseline.
 8. Run installed media portability once. Reuse its Godot and Web ZIPs for the
    target-runtime smokes and candidate verifier.
 9. Run the installed VST3 host smoke against the sidecar inside that exact
@@ -53,8 +56,10 @@ Run from `apps/pocket-daw/`.
 10. Run one final Godot import/runtime smoke and one final Chromium Web Audio
    smoke. If either finds a product bug, fix it, commit, rebuild once, and
    discard all earlier exact-artifact evidence.
-11. Build the attestation from the final evidence paths and SHA-256 values.
-12. Run `verify:candidate` once with both game packs and all strict flags.
+11. Build the attestation from the final evidence paths and SHA-256 values,
+    including `audioCaptureEvidence` exactly as described below.
+12. Run `verify:candidate` once with both game packs, current-installer
+    export/MIDI flags, and exactly one fresh-audible or baseline-reuse mode.
 13. Re-hash the staged setup and confirm it did not change.
 14. Push the tested commit, publish the already-staged files without a rebuild,
     and verify the remote manifest, installer download hash, release tag, and
@@ -93,7 +98,32 @@ Start-Process -FilePath 'powershell.exe' `
 Start-Sleep -Seconds 2
 ```
 
-Use the proven ten-second timing for both phases:
+Generate and retain the deterministic capture fingerprint first:
+
+```powershell
+npm run --silent evidence:native-capture-fingerprint > <ignored-final-evidence-folder>\native-capture-fingerprint.json
+```
+
+The fingerprint covers the native CPAL recorder, recording bridge/input and
+orchestration modules, capture-only regions in the large app/native entry
+files, the CPAL dependency closure, and the Tauri API dependency used by the
+bridge. A source edit outside those inputs does not invalidate human audibility
+evidence. A changed/missing input, changed dependency, changed recipe schema,
+or malformed fingerprint does.
+
+Select exactly one mode:
+
+- `fresh-audible`: required when the fingerprint changed or no eligible prior
+  baseline is retained. The current run must clear the existing 3-second,
+  0.005 file-peak, and 0.001 file-RMS thresholds. Do not lower them.
+- `baseline-reuse`: allowed only when an exact prior `fresh-audible`
+  attestation, its installer, and its attested punch summary are retained. The
+  verifier re-hashes all of them, re-verifies the old summary at the unchanged
+  audible thresholds, requires an identical current fingerprint, and forbids
+  reuse chains. The current attestation must bind the prior attestation and
+  installer filenames and SHA-256 values.
+
+Use the proven ten-second timing for both phases. In fresh mode:
 
 ```powershell
 npm run smoke:installed:punch-takes -- `
@@ -106,7 +136,23 @@ npm run smoke:installed:punch-takes -- `
   --require-export-files
 ```
 
-Then verify that exact summary:
+In baseline-reuse mode, run the same exact current-installer capture without
+`--require-audible-audio`; keep both duration arguments and both MIDI/export
+requirements:
+
+```powershell
+npm run smoke:installed:punch-takes -- `
+  --out <ignored-final-evidence-folder> `
+  --installer "$setup" `
+  --record-ms 10000 `
+  --midi-record-ms 10000 `
+  --require-midi-input `
+  --require-export-files
+```
+
+For a fresh run, verify that exact summary with `--require-audible-audio` as
+before. In reuse mode, omit only that flag; `verify:candidate` performs the
+baseline proof:
 
 ```powershell
 npm run verify:installed:punch-takes -- `
@@ -117,16 +163,48 @@ npm run verify:installed:punch-takes -- `
   --require-export-files
 ```
 
+The attestation must contain one of these shapes (the fingerprint object is the
+exact JSON emitted by `evidence:native-capture-fingerprint`):
+
+```json
+{
+  "audioCaptureEvidence": {
+    "mode": "fresh-audible",
+    "fingerprint": { "schema": "pocket-daw-native-capture-v1", "algorithm": "sha256", "value": "<sha256>", "inputs": [] }
+  }
+}
+```
+
+```json
+{
+  "audioCaptureEvidence": {
+    "mode": "baseline-reuse",
+    "fingerprint": { "schema": "pocket-daw-native-capture-v1", "algorithm": "sha256", "value": "<sha256>", "inputs": [] },
+    "baseline": {
+      "attestationFile": "<prior-attestation.json>",
+      "attestationSha256": "<sha256>",
+      "installerFile": "<prior-setup.exe>",
+      "installerSha256": "<sha256>"
+    }
+  }
+}
+```
+
+The abbreviated empty `inputs` arrays above are explanatory only; the real
+attestation must contain the complete non-empty emitted fingerprint.
+
 Why ten seconds matters: shortening the first phase to four seconds left the
 transport before the requested MIDI punch window in the `0.6.41` rehearsal.
 The sender was connected and a take lane was created, but the in-window note
 count was zero. Reusing the proven `10000/10000` timing captured 19 notes and
 passed the strict audio thresholds in one unattended run.
 
-If audible audio fails, inspect the single summary first. Ask the user for one
-deliberate microphone pass only if local automation cannot meet the threshold;
-do not repeatedly ask them to make noise. MIDI input remains the agent's job via
-the tracked loopMIDI sender.
+If fresh audible audio fails, inspect the single summary first. Ask the user for
+one deliberate microphone pass only when fresh mode is required and local
+automation cannot meet the unchanged threshold; do not repeatedly ask them to
+make noise. An unrelated installer with an eligible unchanged baseline needs no
+human microphone pass. MIDI input remains the agent's job via the tracked
+loopMIDI sender on every candidate.
 
 ## Process Launch and Cleanup Rules
 
@@ -174,6 +252,8 @@ packager.
 
 ## Final Candidate Command
 
+Fresh-audible mode:
+
 ```powershell
 npm run verify:candidate -- `
   --attestation <final-attestation.json> `
@@ -188,6 +268,28 @@ npm run verify:candidate -- `
   --game-pack <final-godot.zip> --kind godot-adaptive-pack `
   --game-pack <final-web.zip> --kind web-game-pack
 ```
+
+Baseline-reuse mode replaces only `--require-audible-audio`:
+
+```powershell
+npm run verify:candidate -- `
+  --attestation <final-attestation.json> `
+  --installer <exact-staged-setup.exe> `
+  --punch-take-summary <final-punch-summary.json> `
+  --media-portability-summary <final-media-summary.json> `
+  --vst3-host-summary <final-vst3-host-summary.json> `
+  --audio-capture-baseline-attestation <prior-fresh-attestation.json> `
+  --audio-capture-baseline-installer <prior-exact-setup.exe> `
+  --require-export-files `
+  --require-midi-input `
+  --commit <full-tested-commit> `
+  --game-pack <final-godot.zip> --kind godot-adaptive-pack `
+  --game-pack <final-web.zip> --kind web-game-pack
+```
+
+The verifier rejects neither-mode, both-mode, partial baseline paths, changed
+fingerprints, altered baseline bytes, non-prior timestamps/commits, and any
+baseline whose own mode is not direct `fresh-audible`.
 
 After it passes, re-hash the setup EXE and compare it to the attestation and
 installed-smoke summaries before publication.

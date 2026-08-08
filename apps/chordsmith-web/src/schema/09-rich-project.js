@@ -56,7 +56,9 @@ function generatedRichTracksForSection(sectionId){
       return;
     }
     if(event.type === "guitar"){
-      pushEvent("guitar",{...timing,notes:event.notes,velocity:event.articulation === "accent" ? 112 : 94,articulation:event.articulation,sound:event.tone || state.guitarTone,role:"rhythm",technique:profileId === HEAVY_METAL_AUDIO_PROFILE_ID ? {metal:{palmMuteDepth:state.metalTexture?.palmMute ?? 0,pickDirection:event.direction}} : profileId === WESTERN_AUDIO_PROFILE_ID ? {western:{pickDirection:event.direction}} : {}});
+      const baseVelocity = event.articulation === "accent" ? 112 : 94;
+      const mixScale = profileId === HEAVY_METAL_AUDIO_PROFILE_ID ? (state.guitarVolume ?? 0.66) / 0.66 : 1;
+      pushEvent("guitar",{...timing,notes:event.notes,velocity:clamp(Math.round(baseVelocity * mixScale),1,127),articulation:event.articulation,sound:event.tone || state.guitarTone,role:"rhythm",technique:profileId === HEAVY_METAL_AUDIO_PROFILE_ID ? {metal:{palmMuteDepth:state.metalTexture?.palmMute ?? 0,pickDirection:event.direction}} : profileId === WESTERN_AUDIO_PROFILE_ID ? {western:{pickDirection:event.direction}} : {}});
       return;
     }
     if(event.type === "chord"){

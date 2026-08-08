@@ -383,6 +383,7 @@ const METAL_DRUM_GROOVE_PRESETS = ["metal_backbeat_chug","metal_gallop_160","met
 const DEFAULT_LOFI_TEXTURE = {enabled:false, vinylCrackle:0.08, tapeHiss:0.05, wowFlutter:0.03, warmth:0.16, lowPassAge:0.22, bitCrush:0.01};
 const DEFAULT_CHIP_TEXTURE = {enabled:false, bitDepth:0.22, sampleRateCrush:0.18, pulseWidth:0.5, pitchDrift:0.03, saturation:0.16, stereoSpread:0.12};
 const DEFAULT_METAL_TEXTURE = {enabled:false, drive:0.45, palmMute:0.68, lowTightness:0.78, presence:0.55, roomSize:0.14, pickAttack:0.7};
+const METAL_GUITAR_MIX_VOLUME = 0.76;
 const DEFAULT_FUNK_PARAMETERS = {pocket:0.72,ghostNotes:0.42,slapAmount:0.68,popBrightness:0.62,muteDepth:0.74,stabTightness:0.76};
 const FALLBACK_DRUM_KIT_CONFIGS = {
   classic:{kick:{startFreq:155,endFreq:45,sweepSeconds:0.14,gainFloor:0.08,gainScale:1,length:0.17,rampSeconds:0.16},snare:{noiseSeconds:0.12,highpass:1700,gainFloor:0.05,gainScale:1,length:0.13,rampSeconds:0.12},hat:{closedLength:0.05,openLength:0.16,highpassClosed:5600,highpassOpen:3800,gainFloorClosed:0.03,gainFloorOpen:0.05,gainScaleClosed:1,gainScaleOpen:1,rampSecondsClosed:0.05,rampSecondsOpen:0.14}},

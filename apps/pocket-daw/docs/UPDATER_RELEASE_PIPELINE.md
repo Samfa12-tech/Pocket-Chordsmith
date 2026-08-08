@@ -209,7 +209,7 @@ npm run smoke:installed:media-portability -- --installer <setup.exe> --require-i
 npm run verify:installed:media-portability -- --summary <installed-media-portability-smoke-summary.json> --installer <setup.exe> --require-installer
 ```
 
-For a hardware-backed punch/take-lane candidate, pass the strict summary gates through the full candidate verifier:
+For a hardware-backed punch/take-lane candidate, pass the strict summary gates through the full candidate verifier. The command below is fresh-audible mode. When `RELEASE_TESTING_FAST_PATH.md` permits baseline reuse, omit `--require-audible-audio` and supply both exact `--audio-capture-baseline-attestation` and `--audio-capture-baseline-installer` paths instead. Export files and connected MIDI remain mandatory either way:
 
 ```powershell
 npm run smoke:installed:punch-takes -- --installer <setup.exe> --record-ms 10000 --midi-record-ms 10000 --require-audible-audio --require-midi-input --require-export-files
@@ -222,12 +222,11 @@ Guarded public publish paths also require the punch/take-lane summary:
 ```powershell
 $env:SMOKE_ATTESTATION = "<path-to-smoke-attestation.json>"
 $env:PUNCH_TAKE_SUMMARY = "<punch-take-lane-installed-smoke-summary.json>"
-$env:PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO = "1" # for hardware-backed recording releases
-$env:PUNCH_TAKE_REQUIRE_EXPORT_FILES = "1"  # for on-disk WAV/MIDI export artifact checks
-$env:PUNCH_TAKE_REQUIRE_MIDI_INPUT = "1"    # for connected-controller MIDI releases
+$env:PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO = "1" # fresh-audible mode only
+# Baseline-reuse mode instead sets both AUDIO_CAPTURE_BASELINE_ATTESTATION and AUDIO_CAPTURE_BASELINE_INSTALLER.
 ```
 
-The punch/take summary verifier checks the installer SHA-256 and accepts the known Pocket DAW setup filename normalization between local `Pocket DAW_...` NSIS artifacts and staged `Pocket.DAW_...` release assets. Add `--require-export-files` only when the summary's WAV/MIDI export paths are expected to still exist on disk; archived summaries may legitimately point at deleted temp folders. New summaries also include export size/SHA-256 fields, and the verifier compares those hashes and sizes when they are present. Strict export-file mode also requires WAV sample data and parses the MIDI file bytes for active/inactive take-lane sentinel pitches. Strict MIDI-input mode requires a saved active punched MIDI input take with captured note pitches, matching capture/punch bars, punch mode metadata and take-lane placement evidence.
+The standalone punch/take summary verifier checks the installer SHA-256 and accepts the known Pocket DAW setup filename normalization between local `Pocket DAW_...` NSIS artifacts and staged `Pocket.DAW_...` release assets. Archived standalone summaries may legitimately point at deleted temp export folders, but the candidate and publish verifiers now always require retained on-disk WAV/MIDI exports and connected MIDI input for the current exact installer. Strict export-file mode requires WAV sample data and parses the MIDI file bytes for active/inactive take-lane sentinel pitches. Strict MIDI-input mode requires a saved active punched MIDI input take with captured note pitches, matching capture/punch bars, punch mode metadata and take-lane placement evidence.
 
 Use the tracked `scripts/send-loopmidi-smoke.ps1` sender for connected MIDI
 input. Quote its full path when passing it to background PowerShell because the

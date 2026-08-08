@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import packageJson from "../package.json" with { type: "json" };
 import { verifyGamePackZip } from "./verify-game-pack.mjs";
-import { verifyInstalledPunchTakeSummaryFile } from "./verify-installed-punch-take-summary.mjs";
 import { verifyInstalledMediaPortabilitySummaryFile } from "./verify-installed-media-portability-summary.mjs";
 import { verifyInstalledVst3HostSummaryFile } from "./verify-installed-vst3-host-summary.mjs";
+import { verifyNativeCaptureEvidence } from "./verify-native-capture-evidence.mjs";
 import { assertReleaseCandidateTruth } from "./verify-release-candidate-truth.mjs";
 import { verifySmokeAttestationFile } from "./verify-smoke-attestation.mjs";
 
@@ -37,6 +37,8 @@ function parseArgs(argv) {
     requireAudibleAudio: false,
     requireExportFiles: false,
     requireMidiInput: false,
+    audioCaptureBaselineAttestation: "",
+    audioCaptureBaselineInstaller: "",
     gamePacks: []
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -69,6 +71,12 @@ function parseArgs(argv) {
       parsed.requireExportFiles = true;
     } else if (arg === "--require-midi-input") {
       parsed.requireMidiInput = true;
+    } else if (arg === "--audio-capture-baseline-attestation") {
+      parsed.audioCaptureBaselineAttestation = requiredValue(arg, value);
+      index += 1;
+    } else if (arg === "--audio-capture-baseline-installer") {
+      parsed.audioCaptureBaselineInstaller = requiredValue(arg, value);
+      index += 1;
     } else if (arg === "--game-pack") {
       parsed.gamePacks.push({ zipPath: requiredValue(arg, value), kind: "" });
       index += 1;
@@ -97,6 +105,15 @@ function assertRequiredEvidence(options) {
   if (!options.vst3HostSummary) missing.push("--vst3-host-summary <installed-vst3-host-smoke-summary.json>");
   if (!options.commit) missing.push("--commit <full-git-sha>");
   if (!options.gamePacks.length) missing.push("--game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>");
+  if (!options.requireExportFiles) missing.push("--require-export-files");
+  if (!options.requireMidiInput) missing.push("--require-midi-input");
+  const hasBaselineAttestation = !!options.audioCaptureBaselineAttestation;
+  const hasBaselineInstaller = !!options.audioCaptureBaselineInstaller;
+  if (!options.requireAudibleAudio && !hasBaselineAttestation && !hasBaselineInstaller) {
+    missing.push("--require-audible-audio or both --audio-capture-baseline-attestation/--audio-capture-baseline-installer");
+  }
+  if (hasBaselineAttestation !== hasBaselineInstaller) missing.push("both baseline reuse paths");
+  if (options.requireAudibleAudio && (hasBaselineAttestation || hasBaselineInstaller)) missing.push("exactly one audio evidence mode, not fresh plus baseline");
   if (missing.length) {
     throw new Error(`Missing candidate evidence: ${missing.join(", ")}.`);
   }
@@ -117,19 +134,21 @@ function verifyInstalledSmokeEvidence(options) {
 }
 
 function verifyInstalledPunchTakeEvidence(options) {
-  const result = verifyInstalledPunchTakeSummaryFile({
-    summaryPath: options.punchTakeSummary,
+  const result = verifyNativeCaptureEvidence({
+    attestationPath: options.attestation,
+    punchTakeSummaryPath: options.punchTakeSummary,
     installerPath: options.installer,
     version: options.version,
     requireAudibleAudio: options.requireAudibleAudio,
-    requireExportFiles: options.requireExportFiles,
-    requireMidiInput: options.requireMidiInput
+    baselineAttestationPath: options.audioCaptureBaselineAttestation,
+    baselineInstallerPath: options.audioCaptureBaselineInstaller,
+    root: process.cwd()
   });
   if (!result.ok) {
     result.failures.forEach((failure) => console.error(failure));
     process.exit(1);
   }
-  console.log("Installed punch/take smoke summary verification OK");
+  console.log(`Installed punch/take smoke and ${result.mode} audio evidence verification OK`);
 }
 
 function verifyInstalledMediaPortabilityEvidence(options) {
@@ -196,6 +215,6 @@ try {
   main();
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
-  console.error("Usage: node scripts/verify-candidate.mjs --attestation <smoke-attestation.json> --installer <setup.exe> --punch-take-summary <punch-take-lane-installed-smoke-summary.json> --media-portability-summary <installed-media-portability-smoke-summary.json> --vst3-host-summary <installed-vst3-host-smoke-summary.json> [--require-audible-audio] [--require-export-files] [--require-midi-input] --commit <full-git-sha> --game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>");
+  console.error("Usage: node scripts/verify-candidate.mjs --attestation <smoke-attestation.json> --installer <setup.exe> --punch-take-summary <punch-take-lane-installed-smoke-summary.json> --media-portability-summary <installed-media-portability-smoke-summary.json> --vst3-host-summary <installed-vst3-host-smoke-summary.json> (--require-audible-audio | --audio-capture-baseline-attestation <prior.json> --audio-capture-baseline-installer <prior-setup.exe>) --require-export-files --require-midi-input --commit <full-git-sha> --game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>");
   process.exit(2);
 }

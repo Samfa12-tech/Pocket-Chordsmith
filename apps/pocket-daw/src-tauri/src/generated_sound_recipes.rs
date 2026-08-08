@@ -624,13 +624,13 @@ fn native_bass_tone_bitcrush_bass() -> NativeBassToneConfig {
 
 fn native_bass_tone_metal_pick_bass() -> NativeBassToneConfig {
     NativeBassToneConfig {
-        main_wave: "sawtooth",
-        sub_wave: "square",
-        main_peak: 0.72,
-        sub_peak: 0.4,
-        cutoff: 520.0,
-        sub_cutoff: 140.0,
-        attack: 0.003,
+        main_wave: "triangle",
+        sub_wave: "sine",
+        main_peak: 0.64,
+        sub_peak: 0.34,
+        cutoff: 430.0,
+        sub_cutoff: 125.0,
+        attack: 0.006,
     }
 }
 

@@ -91,16 +91,48 @@ test("metal coordinates its rhythm section and keeps lead out of verse and break
       const leadNotes = project[`melodyTracks${section.id}`].flat().filter((note) => note !== null).length;
       return { role: section.role, lead: section.lead, attacks, guitarAttacks, leadNotes, energy: section.energy };
     });
-    return { sections, profile: project.soundProfile, sequence: project.songSequence };
+    return {
+      sections,
+      profile: project.soundProfile,
+      sequence: project.songSequence,
+      mix: {
+        guitarVolume: project.guitarVolume,
+        bassTone: project.bassTone,
+        bassConfig: bassToneConfig(project.bassTone),
+      },
+    };
   });
 
   expect(result.profile).toMatchObject({ id: "heavy_metal", preset: "metal_thrashing_gallop", recipeVersion: 1 });
+  expect(result.mix.guitarVolume).toBe(0.76);
+  expect(result.mix.bassTone).toBe("metal_grind_bass");
   expect(result.sequence.length).toBeGreaterThan(7);
   expect(result.sections.some((section) => section.energy < 0.5)).toBe(true);
   for (const section of result.sections) {
     if (section.guitarAttacks) expect(section.attacks / section.guitarAttacks).toBeGreaterThanOrEqual(0.9);
     if (["verse", "breakdown"].includes(section.role)) expect(section.leadNotes).toBe(0);
   }
+});
+
+test("classic metal uses the approved softer bass voicing and louder guitar balance", async ({ page }) => {
+  const mix = await page.evaluate(() => {
+    composeGenreSong("metal", { archetype: "metal_classic_chug", seed: "audio-review-metal-v1" });
+    const project = exportProject();
+    return {
+      guitarVolume: project.guitarVolume,
+      bassTone: project.bassTone,
+      bassConfig: bassToneConfig(project.bassTone),
+    };
+  });
+
+  expect(mix.guitarVolume).toBe(0.76);
+  expect(mix.bassTone).toBe("metal_pick_bass");
+  expect(mix.bassConfig).toMatchObject({
+    mainWave: "triangle",
+    subWave: "sine",
+    mainPeak: 0.64,
+    cutoff: 430,
+  });
 });
 
 test("genre policies keep inappropriate automatic lead instruments out", async ({ page }) => {
