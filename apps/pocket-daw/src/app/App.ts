@@ -350,7 +350,7 @@ import { applyUpdaterCheckResult, applyUpdaterInstallResult, applyUpdaterProgres
 type MixerControlField = "volume" | "pan";
 type ScrollSnapshot = Record<string, { top: number; left: number }>;
 type ClipDragMode = "move" | "repeat";
-type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "midi_panic" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "import_session" | "collect_media" | "reload_media" | "relink_media" | "set_recording_options" | "record_start" | "record_stop" | "record_toggle" | "midi_record_start" | "midi_record_stop" | "midi_record_toggle" | "apply_commands" | "performance_diagnostics" | "export_project";
+type AiBridgeControlAction = "play" | "pause" | "stop" | "restart" | "midi_panic" | "seek_bar" | "save_current" | "select_track" | "select_clip" | "open_project" | "import_session" | "collect_media" | "reload_media" | "relink_media" | "refresh_audio_devices" | "set_recording_options" | "record_start" | "record_stop" | "record_toggle" | "midi_record_start" | "midi_record_stop" | "midi_record_toggle" | "apply_commands" | "performance_diagnostics" | "export_project";
 type AiBridgeLiveCommand =
   | { type: "set_track_volume"; trackId: string; volume: number }
   | { type: "set_track_pan"; trackId: string; pan: number }
@@ -1235,7 +1235,7 @@ export class App {
       })),
       capabilities: {
         read: ["status", "recording_input_preflight", "export_readiness", "media_take_summary"],
-        control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "import_session", "collect_media", "reload_media", "relink_media", "set_recording_options", "record_start", "record_stop", "record_toggle", "midi_record_start", "midi_record_stop", "midi_record_toggle", "performance_diagnostics", "export_project"],
+        control: ["play", "pause", "stop", "restart", "midi_panic", "seek_bar", "save_current", "select_track", "select_clip", "open_project", "import_session", "collect_media", "reload_media", "relink_media", "refresh_audio_devices", "set_recording_options", "record_start", "record_stop", "record_toggle", "midi_record_start", "midi_record_stop", "midi_record_toggle", "performance_diagnostics", "export_project"],
         liveCommands: ["set_track_volume", "set_track_pan", "set_track_mute", "set_track_solo", "set_track_input", "set_track_armed", "set_track_monitor", "set_recording_latency_offset", "set_recording_input_channel", "set_punch_range", "set_timeline_selection", "set_timeline_selection_to_clip", "clear_timeline_selection", "split_timeline_selection", "crop_clip_to_timeline_selection", "delete_clip_range", "ripple_delete_clip_range", "ripple_delete_timeline_selection", "apply_audio_clip_action", "set_audio_warp_marker_target", "delete_audio_warp_marker", "quantize_midi_clip", "quantize_midi_durations", "swing_midi_clip", "apply_midi_groove", "transform_midi_velocity", "transform_midi_pitch", "place_midi_recording_take", "create_take_lane_group", "activate_audio_take_lane", "set_audio_take_archived", "comp_audio_take_from_bar", "comp_audio_take_range", "place_punch_recording_clip_from_range"]
       }
     };
@@ -1449,6 +1449,15 @@ export class App {
     if (action === "apply_commands") {
       const commands = Array.isArray(input.commands) ? input.commands as AiBridgeLiveCommand[] : [];
       return this.applyAiBridgeLiveCommands(commands);
+    }
+    if (action === "refresh_audio_devices") {
+      await this.refreshAudioDevices();
+      return {
+        ok: true,
+        action,
+        audioDeviceSettings: this.aiBridgeLiveStatus().diagnostics.audio.audioDeviceSettings,
+        message: this.state.status
+      };
     }
     if (action === "import_session") {
       const path = stringInput(input.path, "path");

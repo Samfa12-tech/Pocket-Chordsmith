@@ -123,6 +123,22 @@ Select exactly one mode:
   reuse chains. The current attestation must bind the prior attestation and
   installer filenames and SHA-256 values.
 
+The installed smoke refreshes the candidate's native device list before it
+arms recording. By default it selects the probed default input and zero-based
+channel index `0` (Mono Ch 1). To bind a different mono channel, pass the exact
+probed device ID and a zero-based channel index. For example, this machine's
+built-in two-channel microphone array uses:
+
+```powershell
+--audio-input-device-id "wasapi:input:microphone-array" `
+--audio-input-channel-index 1
+```
+
+The runner fails closed if the device is absent, the channel is out of range,
+the saved/reopened project does not preserve the assignment, or native armed
+preview does not report the exact device/channel before the unchanged meter
+threshold. Do not substitute a display name for the probed device ID.
+
 Use the proven ten-second timing for both phases. In fresh mode:
 
 ```powershell
@@ -131,6 +147,8 @@ npm run smoke:installed:punch-takes -- `
   --installer "$setup" `
   --record-ms 10000 `
   --midi-record-ms 10000 `
+  --audio-input-device-id "wasapi:input:microphone-array" `
+  --audio-input-channel-index 1 `
   --require-audible-audio `
   --require-midi-input `
   --require-export-files

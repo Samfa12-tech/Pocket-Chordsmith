@@ -13,25 +13,18 @@ import { validateProjectInvariants } from "../src/daw/projectInvariants";
 import { POCKET_DAW_VERSION } from "../src/daw/schema";
 import { addTrackToProject } from "../src/daw/tracks";
 import { validateInstalledPunchTakeSummary } from "./verify-installed-punch-take-summary.mjs";
+import {
+  evaluateInstalledAudioInputPreviewStatus,
+  installedAudioInputPreviewControlPlan,
+  resolveInstalledAudioInput,
+  type ResolvedInstalledAudioInput
+} from "./installed-punch-take-audio-input";
+import { parseInstalledPunchTakeSmokeArgs } from "./installed-punch-take-smoke-config";
 
 interface AiBridgeSession {
   statusUrl: string;
   controlUrl: string;
   token: string;
-}
-
-interface SmokeArgs {
-  sessionPath: string;
-  outputDir: string | null;
-  installerPath: string | null;
-  recordMs: number;
-  midiRecordMs: number;
-  requireAudibleAudio: boolean;
-  requireMidiInput: boolean;
-  requireExportFiles: boolean;
-  minAudioDurationSeconds: number;
-  minAudioPeak: number;
-  minAudioRms: number;
 }
 
 interface AudioTakeSmokeCounts {
@@ -58,7 +51,7 @@ interface RecordedAudioMediaEvidence {
   fileFrameCount: number;
 }
 
-const args = parseArgs(process.argv.slice(2));
+const args = parseInstalledPunchTakeSmokeArgs(process.argv.slice(2));
 const root = args.outputDir ? resolve(args.outputDir) : await mkdtemp(join(tmpdir(), "pocket-daw-punch-take-installed-smoke-"));
 const session = await readSession(args.sessionPath);
 const projectPath = join(root, "punch-take-lane-installed-smoke.pocketdaw");
@@ -91,6 +84,7 @@ assertCapability(opened, "set_recording_options");
 assertCapability(opened, "record_start");
 assertCapability(opened, "record_stop");
 assertCapability(opened, "record_toggle");
+assertCapability(opened, "refresh_audio_devices");
 assertCapability(opened, "midi_record_start");
 assertCapability(opened, "midi_record_stop");
 assertCapability(opened, "midi_record_toggle");
@@ -101,7 +95,12 @@ const punchMediaId = "media_002";
 if (!trackId) throw new Error("Smoke project did not expose live-vocals track after open.");
 if (!punchMediaId) throw new Error("Smoke project did not expose punch media after open.");
 
-const audioRecordingControl = await exerciseAudioRecordingControl(session, trackId, projectPath, args.recordMs);
+await liveControl(session, { action: "refresh_audio_devices" });
+const audioInput = resolveInstalledAudioInput(await liveStatus(session), {
+  deviceId: args.audioInputDeviceId,
+  channelIndex: args.audioInputChannelIndex
+});
+const audioRecordingControl = await exerciseAudioRecordingControl(session, trackId, projectPath, args.recordMs, audioInput);
 await liveControl(session, { action: "set_recording_options", punchEnabled: true, takeMode: "take-lane" });
 const midiInputRecordingControl = await exerciseMidiInputRecordingControl(session, midiTrackId, projectPath, args.midiRecordMs);
 const midiRecordingTakeGroupId = typeof midiInputRecordingControl.take?.takeGroupId === "string" && midiInputRecordingControl.take.takeGroupId
@@ -206,6 +205,7 @@ const summary = {
     minAudioRms: args.minAudioRms
   }),
   audioRecordingControl,
+  audioInput,
   midiInputRecordingControl
 };
 const summaryPath = join(root, "punch-take-lane-installed-smoke-summary.json");
@@ -293,44 +293,6 @@ async function createSmokeProject(rootDir: string) {
   return project;
 }
 
-function parseArgs(argv: string[]): SmokeArgs {
-  const localAppData = process.env.LOCALAPPDATA || tmpdir();
-  const parsed: SmokeArgs = {
-    sessionPath: join(localAppData, "Pocket DAW", "ai-bridge-session.json"),
-    outputDir: null,
-    installerPath: null,
-    recordMs: 500,
-    midiRecordMs: 500,
-    requireAudibleAudio: false,
-    requireMidiInput: false,
-    requireExportFiles: false,
-    minAudioDurationSeconds: 3,
-    minAudioPeak: 0.005,
-    minAudioRms: 0.001
-  };
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === "--session") parsed.sessionPath = requiredValue(argv[++index], arg);
-    else if (arg === "--out") parsed.outputDir = requiredValue(argv[++index], arg);
-    else if (arg === "--installer") parsed.installerPath = requiredValue(argv[++index], arg);
-    else if (arg === "--record-ms") parsed.recordMs = parsePositiveInteger(requiredValue(argv[++index], arg), arg);
-    else if (arg === "--midi-record-ms") parsed.midiRecordMs = parsePositiveInteger(requiredValue(argv[++index], arg), arg);
-    else if (arg === "--require-audible-audio") parsed.requireAudibleAudio = true;
-    else if (arg === "--require-midi-input") parsed.requireMidiInput = true;
-    else if (arg === "--require-export-files") parsed.requireExportFiles = true;
-    else if (arg === "--min-audio-duration-seconds") parsed.minAudioDurationSeconds = parsePositiveNumber(requiredValue(argv[++index], arg), arg);
-    else if (arg === "--min-audio-peak") parsed.minAudioPeak = parsePositiveNumber(requiredValue(argv[++index], arg), arg);
-    else if (arg === "--min-audio-rms") parsed.minAudioRms = parsePositiveNumber(requiredValue(argv[++index], arg), arg);
-    else if (arg === "--help") {
-      console.log("Usage: tsx scripts/smoke-installed-punch-take-lanes.ts [--session <ai-bridge-session.json>] [--out <folder>] [--installer <setup.exe>] [--record-ms <milliseconds>] [--midi-record-ms <milliseconds>] [--require-audible-audio] [--require-midi-input] [--require-export-files] [--min-audio-duration-seconds <seconds>] [--min-audio-peak <peak>] [--min-audio-rms <rms>]");
-      process.exit(0);
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-  return parsed;
-}
-
 async function installerSmokeEvidence(installerPath: string) {
   const bytes = await readFile(installerPath);
   return {
@@ -346,23 +308,6 @@ async function fileEvidence(path: string) {
     sizeBytes: (await stat(path)).size,
     sha256: createHash("sha256").update(bytes).digest("hex")
   };
-}
-
-function requiredValue(value: string | undefined, flag: string): string {
-  if (!value || value.startsWith("--")) throw new Error(`${flag} requires a value.`);
-  return value;
-}
-
-function parsePositiveInteger(value: string, flag: string): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${flag} must be a positive integer.`);
-  return parsed;
-}
-
-function parsePositiveNumber(value: string, flag: string): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${flag} must be a positive number.`);
-  return parsed;
 }
 
 function installedRecordingConfidence(input: {
@@ -511,19 +456,20 @@ async function liveControlResult(session: AiBridgeSession, body: Record<string, 
   return payload;
 }
 
-async function exerciseAudioRecordingControl(session: AiBridgeSession, trackId: string, projectPath: string, recordMs: number) {
-  await liveControl(session, { action: "set_recording_options", punchEnabled: false, takeMode: "take-lane" });
-  await liveControl(session, {
-    action: "apply_commands",
-    commands: [
-      { type: "set_track_armed", trackId, armed: true },
-      { type: "set_track_monitor", trackId, monitorEnabled: false }
-    ]
-  });
-  await liveControl(session, { action: "select_track", trackId });
+async function exerciseAudioRecordingControl(
+  session: AiBridgeSession,
+  trackId: string,
+  projectPath: string,
+  recordMs: number,
+  audioInput: ResolvedInstalledAudioInput
+) {
+  for (const body of installedAudioInputPreviewControlPlan(trackId, projectPath, audioInput)) {
+    await liveControl(session, body);
+  }
   const inputMeterPreflight = await waitForAudioInputMeterPreflight(
     session,
     trackId,
+    audioInput,
     args.requireAudibleAudio ? args.minAudioPeak : 0
   );
   const beforeProject = loadPocketDawRaw(await readFile(projectPath, "utf8"));
@@ -557,29 +503,20 @@ async function exerciseAudioRecordingControl(session: AiBridgeSession, trackId: 
   };
 }
 
-async function waitForAudioInputMeterPreflight(session: AiBridgeSession, trackId: string, requiredPeak: number) {
+async function waitForAudioInputMeterPreflight(
+  session: AiBridgeSession,
+  trackId: string,
+  audioInput: ResolvedInstalledAudioInput,
+  requiredPeak: number
+) {
   const deadline = Date.now() + 3000;
   let lastStatus: any = null;
+  let lastErrors: string[] = [];
   while (Date.now() <= deadline) {
     lastStatus = await liveStatus(session);
-    const recording = lastStatus?.recording;
-    const inputPeak = recording?.inputPeak;
-    const inputDeviceName = typeof recording?.inputDeviceName === "string" ? recording.inputDeviceName.trim() : "";
-    if (recording?.status === "idle"
-      && recording?.trackId === trackId
-      && recording?.inputPreflight?.ok === true
-      && inputDeviceName
-      && Number.isFinite(inputPeak)
-      && inputPeak >= Math.max(0, requiredPeak)
-      && inputPeak <= 1) {
-      return {
-        trackId,
-        inputDeviceName,
-        aggregateInputPeak: inputPeak,
-        requiredAggregateInputPeak: Math.max(0, requiredPeak),
-        channelClaim: "aggregate-device-meter-only"
-      };
-    }
+    const evaluated = evaluateInstalledAudioInputPreviewStatus(lastStatus, trackId, audioInput, requiredPeak);
+    if (evaluated.ok) return evaluated.evidence;
+    lastErrors = evaluated.errors;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(`Audio input meter preflight did not become ready before capture: ${JSON.stringify({
@@ -587,7 +524,9 @@ async function waitForAudioInputMeterPreflight(session: AiBridgeSession, trackId
     trackId: lastStatus?.recording?.trackId,
     inputDeviceName: lastStatus?.recording?.inputDeviceName,
     inputPeak: lastStatus?.recording?.inputPeak,
-    inputPreflight: lastStatus?.recording?.inputPreflight
+    inputPreflight: lastStatus?.recording?.inputPreflight,
+    expectedAudioInput: audioInput,
+    errors: lastErrors
   })}`);
 }
 
