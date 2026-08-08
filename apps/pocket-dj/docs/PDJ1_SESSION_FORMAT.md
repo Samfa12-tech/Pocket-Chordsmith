@@ -28,13 +28,28 @@ The current session object created by `createDjSessionFromChordsmithProject()` h
 
 `PDJ1:` should encode this object as UTF-8 JSON with base64url payload after the `PDJ1:` prefix. Import should continue to normalize through `normalizePocketDjSession()` so missing or older fields can safely fall back to the source `PCS1:` project.
 
+## Import and playback resource limits
+
+Raw session/project JSON and decoded `PCS1:` or `PDJ1:` payloads are limited to
+4 MiB. Rich project input allows at most 32 tracks per section, 4,096 events per
+track, 16,384 rich events per project and 16 notes per event. Import rejects a
+payload that exceeds a limit before project/session cloning; it does not silently
+truncate authored source data.
+
+The fallback live engine schedules at most 64 rich events at a single musical
+step and records skipped excess events in `droppedRichEventCount`. Scheduler
+catch-up is limited to 256 steps per tick; a larger main-thread stall resets the
+audio epoch and increments `catchupResetCount` instead of running an unbounded
+catch-up loop.
+
 ## Source References
 
 `source` should preserve enough data to rebuild the deck and edit the song:
 
 - `app`: currently `PocketChordsmith`.
 - `sourcePrefix`: currently `PCS1`.
-- `projectVersion`: source project schema, currently `16`.
+- `projectVersion`: source project schema, currently canonical schema `17`;
+  schema `16` remains an explicit legacy compatibility projection.
 - `project`: the sanitized Pocket Chordsmith project used as the canonical musical source.
 - Future optional metadata: `sourceHash`, `importedAt`, `sourceTitle`, `sourceCode`, `sourceUrl`, `originAppVersion`.
 

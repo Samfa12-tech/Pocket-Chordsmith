@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#070711" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self'" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="Pocket DJ" />
@@ -282,6 +283,9 @@
 /* 1. Constants */
 const PCS_SHARE_PREFIX = "PCS1:";
 const PDJ_SHARE_PREFIX = "PDJ1:";
+const SHARE_MAX_DECODED_BYTES = 4 * 1024 * 1024;
+const SHARE_MAX_ENCODED_CHARS = Math.ceil(SHARE_MAX_DECODED_BYTES / 3) * 4;
+const PROJECT_RESOURCE_LIMITS = Object.freeze({maxTracksPerSection:32,maxEventsPerTrack:4096,maxEventsPerProject:16384,maxNotesPerEvent:16,maxRichEventsPerStep:64});
 // Direct handoff target for the self-hosted Samfa12 web app.
 // itch.io remains a public mirror; local development still uses relative paths.
 const POCKET_CHORDSMITH_URL = "https://samfa12.com/apps/pocket-chordsmith/";
@@ -295,15 +299,11 @@ const POCKET_AUDIO_CORE_VERSION = "0.2.0";
 const POCKET_AUDIO_CORE_SCHEMA_SUPPORT = "17 (16 compatible)";
 const POCKET_AUDIO_CORE_REPO_IMPORT_PATHS = [
   "../../packages/pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
-  "../../packages/pocket-audio-core/src/browser.js",
-  "../../packages/pocket-audio-core/dist/pocket-audio-core.esm.js",
-  "../../packages/pocket-audio-core/src/index.js"
+  "../../packages/pocket-audio-core/dist/pocket-audio-core.esm.js"
 ];
 const POCKET_AUDIO_CORE_PACKAGED_IMPORT_PATHS = [
   "./pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
-  "./pocket-audio-core/src/browser.js",
-  "./pocket-audio-core/dist/pocket-audio-core.esm.js",
-  "./pocket-audio-core/src/index.js"
+  "./pocket-audio-core/dist/pocket-audio-core.esm.js"
 ];
 const POCKET_AUDIO_CORE_REPO_IIFE_PATHS = [
   "../../packages/pocket-audio-core/dist/pocket-audio-core.iife.js"
@@ -319,6 +319,8 @@ const MAX_BARS = 4;
 const LOCAL_KEY = "pocket_dj_v1_last_session";
 const LOOKAHEAD_SECONDS = 0.22;
 const SCHEDULER_MS = 25;
+const MAX_AUDIBLE_LATENESS_SECONDS = 0.08;
+const MAX_SCHEDULER_CATCHUP_STEPS = 256;
 const DEFAULT_PROGRESSION = [0,4,5,3];
 const DEFAULT_STEM_VOLUMES = {drums:0.86,bass:0.86,chords:0.72,melody:0.65,guitar:0.66};
 const DEFAULT_STEM_MUTES = {drums:false,bass:false,chords:false,melody:false,guitar:false};
@@ -564,47 +566,69 @@ function chordsmithFxParams(fx = {}){
 }
 
 /* 2. Compatibility parser */
+
 function utf8ToBase64Url(text){
   const bytes = new TextEncoder().encode(text);
+  if(bytes.byteLength > SHARE_MAX_DECODED_BYTES) throw sharePayloadTooLargeError();
   let binary = "";
   for(let i=0;i<bytes.length;i+=0x8000) binary += String.fromCharCode(...bytes.subarray(i,i+0x8000));
   return btoa(binary).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
 }
 function base64UrlToUtf8(value){
-  const normalized = String(value || "").replace(/-/g,"+").replace(/_/g,"/");
+  const source = String(value || "");
+  if(source.length > SHARE_MAX_ENCODED_CHARS) throw sharePayloadTooLargeError();
+  if(!/^[A-Za-z0-9_-]*$/.test(source)) throw new Error("Share payload contains invalid base64url characters.");
+  if(Math.floor(source.length * 3 / 4) > SHARE_MAX_DECODED_BYTES) throw sharePayloadTooLargeError();
+  const normalized = source.replace(/-/g,"+").replace(/_/g,"/");
   const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
   const binary = atob(padded);
+  if(binary.length > SHARE_MAX_DECODED_BYTES) throw sharePayloadTooLargeError();
   const bytes = new Uint8Array(binary.length);
   for(let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
-  return new TextDecoder().decode(bytes);
+  return new TextDecoder("utf-8", {fatal:true}).decode(bytes);
+}
+function sharePayloadTooLargeError(){
+  const error = new RangeError(`Share payload exceeds ${SHARE_MAX_DECODED_BYTES} decoded bytes.`);
+  error.code = "SHARE_PAYLOAD_TOO_LARGE";
+  return error;
+}
+function assertRawImportTextSize(value){
+  const text = String(value || "");
+  if(text.length > SHARE_MAX_DECODED_BYTES || new TextEncoder().encode(text).byteLength > SHARE_MAX_DECODED_BYTES) throw sharePayloadTooLargeError();
+  return text;
 }
 function parsePocketChordsmithShareCode(text){
-  const trimmed = String(text || "").trim();
+  const source = String(text || "");
+  if(source.length > SHARE_MAX_ENCODED_CHARS + PCS_SHARE_PREFIX.length) throw sharePayloadTooLargeError();
+  const trimmed = source.trim();
   if(!trimmed.startsWith(PCS_SHARE_PREFIX)) throw new Error("That doesn’t look like a Pocket Chordsmith share code.");
   const payload = trimmed.slice(PCS_SHARE_PREFIX.length).trim();
   if(!payload) throw new Error("That share code is empty.");
   let decoded, parsed;
-  try{ decoded = base64UrlToUtf8(payload); }catch(e){ throw new Error("That Pocket Chordsmith share code could not be decoded."); }
+  try{ decoded = base64UrlToUtf8(payload); }catch(e){ if(e?.code === "SHARE_PAYLOAD_TOO_LARGE") throw e; throw new Error("That Pocket Chordsmith share code could not be decoded."); }
   try{ parsed = JSON.parse(decoded); }catch(e){ throw new Error("That share code decoded, but the project JSON was invalid."); }
   return parsed;
 }
 function parsePocketDjShareCode(text){
-  const trimmed = String(text || "").trim();
+  const source = String(text || "");
+  if(source.length > SHARE_MAX_ENCODED_CHARS + PDJ_SHARE_PREFIX.length) throw sharePayloadTooLargeError();
+  const trimmed = source.trim();
   if(!trimmed.startsWith(PDJ_SHARE_PREFIX)) throw new Error("Invalid Pocket DJ share code.");
   let decoded, parsed;
   try{ decoded = base64UrlToUtf8(trimmed.slice(PDJ_SHARE_PREFIX.length).trim()); parsed = JSON.parse(decoded); }
-  catch(e){ throw new Error("That Pocket DJ session could not be decoded."); }
+  catch(e){ if(e?.code === "SHARE_PAYLOAD_TOO_LARGE") throw e; throw new Error("That Pocket DJ session could not be decoded."); }
   return parsed;
 }
 function parsePocketChordsmithJson(text){
-  try{ return JSON.parse(String(text || "").trim()); }
+  try{ return JSON.parse(assertRawImportTextSize(text).trim()); }
   catch(e){ throw new Error("That doesn’t look like a Pocket Chordsmith share code or JSON project."); }
 }
 function parseAnyImportText(text){
-  const trimmed = String(text || "").trim();
+  const source = String(text || "");
+  if(/^\s*PDJ1:/.test(source)) return {kind:"pdj", data:parsePocketDjShareCode(source)};
+  if(/^\s*PCS1:/.test(source)) return {kind:"pcs", data:parsePocketChordsmithShareCode(source)};
+  const trimmed = assertRawImportTextSize(source).trim();
   if(!trimmed) throw new Error("Paste a Pocket Chordsmith share code or project JSON first.");
-  if(trimmed.startsWith(PDJ_SHARE_PREFIX)) return {kind:"pdj", data:parsePocketDjShareCode(trimmed)};
-  if(trimmed.startsWith(PCS_SHARE_PREFIX)) return {kind:"pcs", data:parsePocketChordsmithShareCode(trimmed)};
   const parsed = parsePocketChordsmithJson(trimmed);
   if(parsed && parsed.app === "PocketDJ") return {kind:"pdj", data:parsed};
   return {kind:"pcs", data:parsed};
@@ -716,6 +740,7 @@ function isExpectedHandoff(payload, expectedKind){
 }
 
 /* 3. Sanitiser */
+
 function clamp(n,min,max){ return Math.max(min, Math.min(max, n)); }
 function asNum(v,fallback){ const n = Number(v); return Number.isFinite(n) ? n : fallback; }
 function asInt(v,fallback){ const n = parseInt(v,10); return Number.isFinite(n) ? n : fallback; }
@@ -723,6 +748,39 @@ function safeChoice(value, allowed, fallback){ return allowed.includes(value) ? 
 function cloneJson(value){
   if(value === undefined) return undefined;
   try{ return JSON.parse(JSON.stringify(value)); }catch(_e){ return value; }
+}
+function assertPocketDjProjectResourceLimits(project){
+  if(!project || typeof project !== "object" || Array.isArray(project)) return;
+  const sections = project.sections && typeof project.sections === "object" && !Array.isArray(project.sections) ? project.sections : {};
+  let totalEvents = 0;
+  SECTION_IDS.forEach(id => {
+    const section = sections[id];
+    if(!section || typeof section !== "object" || Array.isArray(section)) return;
+    const groups = [section.tracks,section.richTracks].filter((group,index,all) => group && typeof group === "object" && !Array.isArray(group) && all.indexOf(group) === index);
+    const entries = groups.flatMap(group => Object.entries(group));
+    assertPocketDjProjectResourceLimit(`sections.${id}.tracks`,entries.length,PROJECT_RESOURCE_LIMITS.maxTracksPerSection);
+    entries.forEach(([trackId,track]) => {
+      if(!track || typeof track !== "object" || Array.isArray(track)) return;
+      const eventLists = [Array.isArray(track.events) ? track.events : []];
+      if(track.lanes && typeof track.lanes === "object" && !Array.isArray(track.lanes)) Object.values(track.lanes).forEach(events => eventLists.push(Array.isArray(events) ? events : []));
+      const trackEventCount = eventLists.reduce((sum,events) => sum + events.length,0);
+      assertPocketDjProjectResourceLimit(`sections.${id}.tracks.${trackId}.events`,trackEventCount,PROJECT_RESOURCE_LIMITS.maxEventsPerTrack);
+      totalEvents += trackEventCount;
+      assertPocketDjProjectResourceLimit("project rich events",totalEvents,PROJECT_RESOURCE_LIMITS.maxEventsPerProject);
+      eventLists.forEach(events => events.forEach((event,index) => {
+        if(Array.isArray(event?.notes)) assertPocketDjProjectResourceLimit(`sections.${id}.tracks.${trackId}.events[${index}].notes`,event.notes.length,PROJECT_RESOURCE_LIMITS.maxNotesPerEvent);
+      }));
+    });
+  });
+}
+function assertPocketDjProjectResourceLimit(path,actual,limit){
+  if(actual <= limit) return;
+  const error = new RangeError(`Project exceeds ${path} limit (${actual} > ${limit}).`);
+  error.code = "PROJECT_RESOURCE_LIMIT_EXCEEDED";
+  error.path = path;
+  error.actual = actual;
+  error.limit = limit;
+  throw error;
 }
 function uniqueStrings(values){ return Array.from(new Set((Array.isArray(values) ? values : []).map(value => String(value || "")).filter(Boolean))); }
 function canonicalProfileId(value){
@@ -786,12 +844,20 @@ function richEventStep(event, project=session?.source?.project){
   }
   return null;
 }
-function richEventsAt(section, trackId, step){
+function richEventsAt(section, trackId, step, budget){
   if(!richTrackOwnsPlayback(section,trackId)) return [];
-  return richTrackEvents(section,trackId).filter(event => {
+  const matches = [];
+  for(const event of richTrackEvents(section,trackId)){
     const eventStep = richEventStep(event);
-    return eventStep !== null && Math.abs(eventStep - step) < .001;
-  });
+    if(eventStep === null || Math.abs(eventStep - step) >= .001) continue;
+    if(budget && budget.remaining <= 0){
+      budget.dropped++;
+      continue;
+    }
+    matches.push(event);
+    if(budget) budget.remaining--;
+  }
+  return matches;
 }
 function richTrackOwnsPlayback(section,trackId){
   const track = section?.richTracks?.[trackId];
@@ -1038,6 +1104,7 @@ function sanitizeMetalTexture(raw){
 }
 function sanitizePocketChordsmithProject(raw){
   if(!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("That project is not a valid Pocket Chordsmith JSON object.");
+  assertPocketDjProjectResourceLimits(raw);
   const originalProject = cloneJson(raw);
   const soundProfile = normalizeSoundProfile(raw);
   const rawStylePreset = raw.stylePreset || "";
@@ -1167,6 +1234,10 @@ function createDjSessionFromChordsmithProject(project, originalProject=project?.
 }
 function normalizePocketDjSession(raw){
   if(!raw || raw.app !== "PocketDJ") throw new Error("That is not a Pocket DJ session.");
+  assertPocketDjProjectResourceLimits(raw);
+  assertPocketDjProjectResourceLimits(raw.source?.project);
+  assertPocketDjProjectResourceLimits(raw.source?.originalProject);
+  assertPocketDjProjectResourceLimits(raw.project);
   const originalProject = raw.source?.originalProject || raw.source?.project || raw.project || {};
   const sourceProject = raw.source && raw.source.project ? sanitizePocketChordsmithProject(raw.source.project) : sanitizePocketChordsmithProject(raw.project || {});
   const base = createDjSessionFromChordsmithProject(sourceProject, originalProject);
@@ -1280,6 +1351,7 @@ async function editSourceSongInChordsmith(){
 }
 
 /* 5. Audio engine */
+
 let session = null;
 let audioCtx = null, masterGain, masterFilter, limiter,
     synthBusGain, synthDryGain, fxWetMasterGain, fxToneFilter,
@@ -1292,6 +1364,7 @@ let noiseBuffer = null;
 const liveNoiseBuffers = new Map();
 let schedulerId = null;
 let nextEventTime = 0;
+let schedulerDiagnostics = {missedTickCount:0,droppedStepCount:0,droppedRichEventCount:0,catchupResetCount:0,interruptionCount:0};
 let visualTimers = [];
 let macroFrameId = null;
 let macroToken = 0;
@@ -1326,6 +1399,13 @@ function ensureAudio(){
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if(!Ctx) throw new Error("Web Audio is not available in this browser.");
   audioCtx = new Ctx();
+  audioCtx.addEventListener?.("statechange", () => {
+    if(state.playing && audioCtx.state !== "running"){
+      schedulerDiagnostics.interruptionCount++;
+      stopPlayback();
+      showStatus("Audio was interrupted. Press Play to resume cleanly.");
+    }
+  });
   masterGain = audioCtx.createGain();
   masterFilter = audioCtx.createBiquadFilter();
   limiter = audioCtx.createDynamicsCompressor();
@@ -1935,6 +2015,7 @@ function applyMixerAndFx(){
 }
 
 /* 6. Scheduler */
+
 function getSection(id=state.currentSection){ return session?.sections[id] || session?.sections.A; }
 function currentChord(section, step){
   const bar = Math.floor(step / stepsPerBar()) % MAX_BARS;
@@ -2040,13 +2121,13 @@ function chordDurationForStep(section, step){
 }
 function richEventNotes(event, track, section, step){
   const raw = Array.isArray(event?.notes) ? event.notes : event?.note === undefined ? [] : [event.note];
-  if(raw.length) return raw.map(value => clamp(asNum(value,0),0,127));
+  if(raw.length) return raw.slice(0,PROJECT_RESOURCE_LIMITS.maxNotesPerEvent).map(value => clamp(asNum(value,0),0,127));
   if(track === "guitar") return powerChordNotes(currentChord(section,step));
   return track === "bass" ? [bassMidiAt(section,step)] : [];
 }
-function scheduleRichDrumEvents(section, step, time){
+function scheduleRichDrumEvents(section, step, time, budget){
   if(session.performance.stemMutes.drums) return;
-  richEventsAt(section,"drums",step).forEach(event => {
+  richEventsAt(section,"drums",step,budget).forEach(event => {
     const lane = String(event.sound || event.lane || event.role || "hat_closed").toLowerCase();
     const art = String(event.articulation || "").toLowerCase();
     if(session.performance.funkMacros?.oneDrop && step % stepsPerBar() !== 0 && lane !== "kick") return;
@@ -2054,16 +2135,16 @@ function scheduleRichDrumEvents(section, step, time){
     playDrumLane(lane,time + humanizeOffset(step,29),peak);
   });
 }
-function scheduleRichBassEvents(section, step, time){
-  richEventsAt(section,"bass",step).forEach(event => {
+function scheduleRichBassEvents(section, step, time, budget){
+  richEventsAt(section,"bass",step,budget).forEach(event => {
     const art = String(event.articulation || "finger").toLowerCase();
     const midi = richEventNotes(event,"bass",section,step)[0];
     const duration = richEventDuration(event,step,bassPhraseDuration(section,step));
     playBassExpressive(midi,time + humanizeOffset(step,4),duration,.42,art,event);
   });
 }
-function scheduleRichMelodyEvents(section, step, time){
-  richEventsAt(section,"melody",step).forEach(event => {
+function scheduleRichMelodyEvents(section, step, time, budget){
+  richEventsAt(section,"melody",step,budget).forEach(event => {
     const notes = richEventNotes(event,"melody",section,step);
     const duration = richEventDuration(event,step,Math.max(.06,stepDuration(step)*.92));
     const instrument = event.sound || event.instrument || section.melodyInstruments[0] || "pulse";
@@ -2071,8 +2152,8 @@ function scheduleRichMelodyEvents(section, step, time){
     notes.forEach((midi,index) => playMelody(midi,time + index*.008,duration,instrument,asNum(event.expression?.pan,section.melodyPan[0] || 0),peak));
   });
 }
-function scheduleRichChordEvents(section, step, time){
-  richEventsAt(section,"chords",step).forEach(event => {
+function scheduleRichChordEvents(section, step, time, budget){
+  richEventsAt(section,"chords",step,budget).forEach(event => {
     const cfg = chordInstrumentConfig(event.sound || session.deck.chordInstrument || "pocket");
     const duration = richEventDuration(event,step,chordDurationForStep(section,step));
     const peak = richEventVelocity(event,1);
@@ -2080,19 +2161,20 @@ function scheduleRichChordEvents(section, step, time){
     flashStem("chords");
   });
 }
-function scheduleRichGuitarEvents(section, step, time){
-  richEventsAt(section,"guitar",step).forEach(event => {
+function scheduleRichGuitarEvents(section, step, time, budget){
+  richEventsAt(section,"guitar",step,budget).forEach(event => {
     const art = normalizeGuitarArt(event.articulation || event.sound || "open");
     playGuitar(richEventNotes(event,"guitar",section,step),time + humanizeOffset(step,17),richEventDuration(event,step,guitarStepDuration(section,step,art)),art,step);
   });
 }
 function scheduleStep(section, step, time){
   if(!section) return;
+  const richEventBudget = {remaining:PROJECT_RESOURCE_LIMITS.maxRichEventsPerStep,dropped:0};
   const stepCount = sectionStepCount(section);
   const funkMacros = session.performance.funkMacros || {};
   if(step % resolution() === 0) playLofiTexture(time, step);
   const hasRichDrums = richTrackHasEvents(section,"drums");
-  if(hasRichDrums) scheduleRichDrumEvents(section,step,time);
+  if(hasRichDrums) scheduleRichDrumEvents(section,step,time,richEventBudget);
   ["kick","snare","hat"].forEach(track => {
     if(hasRichDrums) return;
     if(session.performance.stemMutes.drums) return;
@@ -2117,7 +2199,7 @@ function scheduleStep(section, step, time){
     } else if(level > 0) playOne(level,time);
   });
   const hasRichBass = richTrackHasEvents(section,"bass");
-  if(hasRichBass && !session.performance.stemMutes.bass && !session.performance.funkMacros?.bassMute) scheduleRichBassEvents(section,step,time);
+  if(hasRichBass && !session.performance.stemMutes.bass && !session.performance.funkMacros?.bassMute) scheduleRichBassEvents(section,step,time,richEventBudget);
   if(!hasRichBass && !session.performance.stemMutes.bass && !session.performance.funkMacros?.bassMute && !section.bassHold[step] && !section.bassSlide[step]){
     const vals = session.deck.bassMode === "manual" ? section.bassNotes : section.grid.bass;
     const tuplets = section.gridTuplets.bass || [];
@@ -2137,10 +2219,10 @@ function scheduleStep(section, step, time){
     }
   }
   const hasRichChords = richTrackHasEvents(section,"chords");
-  if(hasRichChords && !session.performance.stemMutes.chords) scheduleRichChordEvents(section,step,time);
+  if(hasRichChords && !session.performance.stemMutes.chords) scheduleRichChordEvents(section,step,time,richEventBudget);
   if(!hasRichChords && !session.performance.stemMutes.chords && chordShouldPlay(step)) playChord(currentChord(section,step), time, chordDurationForStep(section,step));
   const hasRichMelody = richTrackHasEvents(section,"melody");
-  if(hasRichMelody && !session.performance.stemMutes.melody) scheduleRichMelodyEvents(section,step,time);
+  if(hasRichMelody && !session.performance.stemMutes.melody) scheduleRichMelodyEvents(section,step,time,richEventBudget);
   if(!hasRichMelody && !session.performance.stemMutes.melody){
     const anySolo = (section.melodySolo || []).some(Boolean);
     section.melodyTracks.forEach((track, ti) => {
@@ -2160,7 +2242,7 @@ function scheduleStep(section, step, time){
     });
   }
   const hasRichGuitar = richTrackHasEvents(section,"guitar");
-  if(hasRichGuitar && session.deck.guitarActive && !session.performance.stemMutes.guitar) scheduleRichGuitarEvents(section,step,time);
+  if(hasRichGuitar && session.deck.guitarActive && !session.performance.stemMutes.guitar) scheduleRichGuitarEvents(section,step,time,richEventBudget);
   if(!hasRichGuitar && session.deck.guitarActive && !session.performance.stemMutes.guitar){
     const art = section.guitarPattern[step];
     if(art && art !== "off" && art !== "hold") playGuitar(powerChordNotes(currentChord(section,step)), time + humanizeOffset(step,17), guitarStepDuration(section,step,art), art, step);
@@ -2171,6 +2253,7 @@ function scheduleStep(section, step, time){
     }
     if(step % stepsPerBar() === stepsPerBar() - 1) funkMacros.phraseFill = false;
   }
+  schedulerDiagnostics.droppedRichEventCount += richEventBudget.dropped;
   scheduleVisual(section, step, time);
 }
 function scheduleVisual(section, step, time){
@@ -2194,14 +2277,44 @@ function scheduleUiAt(time, callback){
 }
 function schedulerTick(){
   if(!state.playing || !session || !audioCtx) return;
-  while(nextEventTime < audioCtx.currentTime + LOOKAHEAD_SECONDS){
+  const tickNow = audioCtx.currentTime;
+  let lastDroppedStep = null;
+  let processedSteps = 0;
+  if(nextEventTime < tickNow - MAX_AUDIBLE_LATENESS_SECONDS) schedulerDiagnostics.missedTickCount++;
+  while(nextEventTime < tickNow + LOOKAHEAD_SECONDS){
+    if(pocketDjSchedulerCatchupDecision(processedSteps,MAX_SCHEDULER_CATCHUP_STEPS) === "reset"){
+      schedulerDiagnostics.catchupResetCount++;
+      nextEventTime = tickNow;
+      break;
+    }
     const section = getSection(session.performance.currentSection);
     const step = state.currentStepForSchedule ?? 0;
-    scheduleStep(section, step, nextEventTime);
+    const policy = pocketDjSchedulerPolicy(nextEventTime, tickNow, LOOKAHEAD_SECONDS, MAX_AUDIBLE_LATENESS_SECONDS);
+    if(policy === "schedule") scheduleStep(section, step, nextEventTime);
+    else if(policy === "drop") { schedulerDiagnostics.droppedStepCount++; lastDroppedStep = step; }
+    else break;
     nextEventTime += stepDuration(step);
     advanceStepAfterScheduling(section, step);
+    processedSteps++;
+  }
+  if(lastDroppedStep !== null){
+    state.currentStep = lastDroppedStep;
+    state.bar = Math.floor(lastDroppedStep / stepsPerBar()) + 1;
+    state.beat = Math.floor((lastDroppedStep % stepsPerBar()) / resolution()) + 1;
+    updatePadStates();
+    renderTransportState();
   }
 }
+/* scheduler-policy:start */
+function pocketDjSchedulerPolicy(eventTime, now, lookaheadSeconds, maxAudibleLatenessSeconds){
+  if(eventTime < now - maxAudibleLatenessSeconds) return "drop";
+  if(eventTime < now + lookaheadSeconds) return "schedule";
+  return "wait";
+}
+function pocketDjSchedulerCatchupDecision(processedSteps,maxSteps){
+  return processedSteps >= maxSteps ? "reset" : "continue";
+}
+/* scheduler-policy:end */
 function applyDropAtBoundary(boundaryTime){
   if(!state.dropQueued || state.dropBoundaryScheduled || !session) return;
   state.dropBoundaryScheduled = true;
@@ -2587,6 +2700,7 @@ function resetFx(show=true){
 
 /* 10. UI renderer */
 const el = {};
+
 function bindElements(){
   ["toast","helpOverlay","helpCloseBtn","importHelpBtn","deckHelpBtn","importScreen","deckScreen","transportBar","importText","importError","importBtn","demoBtn","lofiDemoBtn","chipDemoBtn","metalDemoBtn","loadLastBtn","importStatus","statusText","deckName","metaGrid","currentSectionText","queuedSectionText","barBeatText","loopText","progressFill","beatDots","sectionPads","launchModeSelect","sequencePlayBtn","sequenceRepeatBtn","sequenceStrip","mixer","fxGrid","buildStateText","buildBtn","dropBtn","gentleBuildBtn","rainyDropBtn","filteredStudyBtn","tapeResetBtn","funkOneDropBtn","funkBassMuteBtn","funkSlapPopBtn","funkGhostLiftBtn","funkPhraseFillBtn","resetFxBtn","loopBtn","editSourceBtn","handoffBox","handoffText","handoffHelp","saveBtn","loadLastDeckBtn","clearSessionBtn","playBtn","stopBtn","restartBtn","masterVolume"].forEach(id => el[id] = document.getElementById(id));
 }
@@ -2909,6 +3023,7 @@ function updateButtons(){
 function escapeHtml(str){ return String(str).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
 
 let helpReturnFocus = null;
+
 function helpFocusable(){
   return Array.from(el.helpOverlay?.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])') || []).filter(node => !node.disabled && node.offsetParent !== null);
 }
@@ -3336,8 +3451,17 @@ function loadMetalDemo(){
   saveLocalSession(); renderAll(); showStatus("Heavy Metal DJ Demo loaded");
 }
 
+document.addEventListener("visibilitychange", () => {
+  if(document.hidden && state.playing){
+    schedulerDiagnostics.interruptionCount++;
+    stopPlayback();
+    showStatus("Playback stopped while the tab was hidden. Press Play to resume on a clean boundary.");
+  }
+});
+
 function init(){
   window.PocketDJCapabilities = cloneJson(POCKET_DJ_CAPABILITIES);
+  window.getPocketDJSchedulerDiagnostics = () => cloneJson(schedulerDiagnostics);
   window.negotiatePocketDjCapabilities = negotiatePocketDjCapabilities;
   window.pocketDjCapabilityReportForProject = capabilityReportForProject;
   window.pocketDjPlaybackRecipeProbe = pocketDjPlaybackRecipeProbe;

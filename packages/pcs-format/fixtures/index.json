@@ -3,6 +3,16 @@
   "status": "0.2.0-schema17",
   "schemaVersion": 17,
   "prefix": "PCS1:",
+  "canonicalApi": "canonicalizePcsProject",
+  "maxDecodedBytes": 4194304,
+  "maxEncodedChars": 5592408,
+  "consumerContract": [
+    "schemaVersion",
+    "unknownFields",
+    "warnings",
+    "lossReport",
+    "capabilityReport"
+  ],
   "fixtures": [
     {
       "file": "schema16-valid.json",

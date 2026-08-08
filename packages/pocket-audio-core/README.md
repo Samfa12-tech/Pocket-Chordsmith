@@ -59,7 +59,7 @@ import {
   PocketAudio,
   parsePocketChordsmithInput,
   normalisePocketChordsmithProject
-} from "./dist/pocket-audio-core.esm.js";
+} from "./dist/pocket-audio-core.browser.esm.js";
 
 const project = normalisePocketChordsmithProject(parsePocketChordsmithInput(pcs1OrJson));
 const audio = new PocketAudio({ diagnostics: true });
@@ -73,6 +73,12 @@ audio.setStemMute("melody", true);
 audio.setFx({ filter: 0.8, echo: 0.1, reverb: 0.2 });
 audio.stop();
 ```
+
+### Project and live-scheduler resource limits
+
+Pocket Audio Core rejects over-budget rich projects before cloning or timeline construction. The public `POCKET_AUDIO_RESOURCE_LIMITS` contract allows 32 rich tracks per section, 4,096 events per track, 16,384 rich events per project, and 16 notes per event. Exceeding a limit throws `PocketAudioResourceLimitError` with code `POCKET_AUDIO_PROJECT_LIMIT_EXCEEDED`; Core never silently truncates imported schema data.
+
+Live playback dispatches at most 256 current events per scheduler tick. Additional same-horizon events are skipped and counted in `getDiagnostics().skippedOverBudgetEventCount`, preventing one malformed musical instant from allocating an unbounded Web Audio graph.
 
 ## Game Runtime
 
@@ -105,7 +111,7 @@ Minimal PCS data example: `../../docs/examples/minimal-pcs-project.md`.
 ## Godot Export Kits
 
 ```js
-import { createGodotExportKit, GODOT_EXPORT_PROFILES } from "./dist/pocket-audio-core.esm.js";
+import { createGodotExportKit, GODOT_EXPORT_PROFILES } from "./dist/pocket-audio-core.browser.esm.js";
 
 const kit = await createGodotExportKit(pcs1OrJson, {
   profile: GODOT_EXPORT_PROFILES.LOOP_KIT,
@@ -130,20 +136,27 @@ The build script writes:
 
 ```text
 dist/pocket-audio-core.esm.js
+dist/pocket-audio-core.browser.esm.js
 dist/pocket-audio-core.iife.js
+dist/api-manifest.json
 ```
 
-The current build is intentionally simple and dependency-free. A later extraction phase can replace it with a production bundler once the module graph is larger.
+One esbuild pipeline produces a self-contained Node-capable ESM artifact and
+self-contained browser ESM/IIFE artifacts from the source module graph. The
+generated manifest records the package version, formats, sourcemap policy, and
+exported API. Distribution tests load artifacts without `src/` imports and run
+the same `PocketAudio` playback/WAV surface through browser ESM and IIFE.
 
-## Stubbed Areas
+## Current Limitations
 
-- Full Chordsmith procedural drums, bass, chords, melody, and guitar
-- Chordsmith FX parity
-- High-fidelity offline full-mix rendering
-- High-fidelity stem rendering
+- Procedural browser voices and offline rendering are reference implementations,
+  not claims of mastered Chordsmith/DAW/Godot tone parity.
+- Some Chordsmith FX and production-routing details remain backend-specific.
 - MIDI export
 - Future/full Godot kit polish: high-fidelity sample kit assets, native procedural parity, editor import smoke, and production routing/conductor docs
 
-These are represented by modules and public API seams so the later extraction prompts can fill them in without changing the high-level package shape.
+The live extraction gate remains closed until listening, device, mobile, and
+rollback evidence is complete; this distribution/timing work does not make
+Core the default Chordsmith audible engine.
 
 See `../../docs/POCKET_AUDIO_CORE_MIDI_EXPORT_CHECKPOINT.md` before moving DAW or Chordsmith MIDI export behind Core; the exporter should wait for shared event-renderer parity gates rather than duplicating app-specific behavior early.

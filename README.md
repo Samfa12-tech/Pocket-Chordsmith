@@ -17,6 +17,7 @@ Project hub: `https://samfa12.com`
 | --- | --- | --- | --- |
 | Pocket Chordsmith | `apps/chordsmith-web/` | Browser music sketchpad for progressions, sections, drums, bass, melody, guitar, MIDI, WAV, JSON, and `PCS1:` share data. | Source-available, UNLICENSED |
 | Pocket DJ | `apps/pocket-dj/` | Live performance/remix deck that imports Pocket Chordsmith songs and turns them into section pads, stem controls, loops, builds, drops, and FX. | Source-available, UNLICENSED |
+| Pocket Audio Handoff | `apps/pocket-audio-handoff/` | Hosted, short-lived transfer utility for moving bounded `PCS1:` payloads between phone, desktop Pocket DAW, and the Godot addon. | Source-available, UNLICENSED |
 | Pocket DAW | `apps/pocket-daw/` | Native-only Windows desktop arrangement/production DAW for Pocket Chordsmith/Pocket Audio projects. Built as a Tauri Windows app with native audio playback/recording/render/export paths. Do not implement or publish Pocket DAW as a browser/HTML5/Web Audio app. | Alpha-testing binary on itch; source-available, UNLICENSED |
 | Pocket Audio Core | `packages/pocket-audio-core/` | Shared headless runtime and sound-profile contract for parsing, normalising, expressive timelines, Web Audio playback, WAV/stem output, capability reporting, and game-music APIs. | WIP/private package source, UNLICENSED |
 | PCS Format | `packages/pcs-format/` | Shared schema-17 format definitions, fixtures, migrations, capability reports, and reversible legacy projection for `PCS1:` and related JSON. | WIP/private package source, UNLICENSED |
@@ -27,6 +28,11 @@ Public app links already referenced in this repo:
 - Pocket Chordsmith: `https://samfa12.itch.io/pocket-chordsmith`
 - Pocket DJ: `https://samfa12.itch.io/pocket-dj`
 - Pocket DAW alpha: `https://samfa12.itch.io/pocket-daw`
+- Pocket Audio Handoff: `https://samfa12.com/apps/pocket-audio-handoff/`
+
+The machine-readable component, version, compatibility, licence, release and
+deployment inventory is `FAMILY_MANIFEST.json`. Generated views live under
+`docs/generated/` and CI rejects drift from the manifest.
 
 ## Data Flow
 
@@ -65,6 +71,8 @@ cd apps/chordsmith-web
 npm install
 npm run dev
 npm run build
+npm run test:composer
+npm run test:unit
 npm run test:e2e
 npm run package:itch
 ```
@@ -74,6 +82,7 @@ Pocket DJ:
 ```powershell
 cd apps/pocket-dj
 npm install
+npm run test:scheduler
 npm run test:e2e
 ```
 
@@ -161,6 +170,9 @@ Security and responsible disclosure notes are in `SECURITY.md`.
   installers, release zips, Playwright reports, or local `.pocketdaw` saves.
 - GitHub source archives are full monorepo archives. Addon-only releases should
   use `addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd`.
+- Runnable historical builds live only under
+  `apps/archive/unsupported-runnable-builds/`; they are immutable, excluded
+  from release packages and unsupported for security fixes.
 
 For architecture context, see:
 

@@ -2,13 +2,17 @@
 
 First shared Pocket Chordsmith / Pocket Audio format contract slice.
 
-This package owns the stable `PCS1:` envelope for schema 16 and schema 17.
+This package is the canonical owner of the stable `PCS1:` interchange envelope,
+bounded browser-safe encoding/decoding, and schema 16/17 validation and
+migration contracts. Product-specific editor, DJ, DAW, and runtime
+normalisation remains with each product.
 Schema 16 remains readable through the existing compact-field helpers. Schema
 17 adds profile intent, feature declarations, sparse expressive events,
 expanded drum lanes, capability negotiation, deterministic migration, and a
 schema-16 projection with a structured loss report. Unknown root, profile,
 section, track, and event fields are retained verbatim by the format helpers.
 
+Use `canonicalizePcsProject` as the default parse/validate/migrate entrypoint.
 Use `validatePcsProject`, `migratePcsProject`/`projectToSchema17`,
 `projectToSchema16`, `encodePcsProject`, and `negotiatePcsCapabilities` for new
 interchange work. `validateSchema16Project`, `schema16SongSequence`, and
@@ -71,5 +75,12 @@ ship only after compatibility tests prove round-trips across the app family.
 License/status: WIP private package, `UNLICENSED`, and `private: true`.
 See the repository root `LICENSES.md` before reusing or redistributing package
 code.
+
+PCS1 payloads are bounded to 4 MiB decoded (and the corresponding base64url
+size) before JSON parsing. The codec uses `TextEncoder`, `TextDecoder`, `btoa`,
+and `atob`, so the same source runs in browsers and current Node runtimes
+without a `Buffer` polyfill. Pocket Audio Core delegates its PCS1 envelope
+codec to this package; broader consumer migration remains incremental and must
+retain schema-16 compatibility and explicit loss reports.
 
 Do not move app-specific editor, DJ, DAW, or Godot runtime behavior here until the shared boundary is proven.

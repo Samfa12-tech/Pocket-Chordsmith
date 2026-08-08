@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#10131a" />
+  <meta name="application-version" content="handoff-v1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://pocket-audio-handoff.samfa12.workers.dev http://localhost:* http://127.0.0.1:*" />
   <title>Pocket Audio Handoff</title>
   <style>
     :root{
@@ -59,7 +61,7 @@
 <body>
   <main>
     <header class="handoff-header">
-      <h1>Pocket Audio Handoff</h1>
+      <h1>Pocket Audio Handoff <span class="muted" aria-label="Build handoff-v1">handoff-v1</span></h1>
       <p class="muted">Move a Pocket Chordsmith PCS1 song between phone, desktop Pocket DAW, and the Godot addon. The phone gets a short code for desktop pickup; copy and file fallbacks stay available.</p>
     </header>
 
@@ -83,7 +85,8 @@
     <section class="panel" aria-labelledby="relayTitle">
       <div>
         <h2 id="relayTitle">Phone to desktop</h2>
-        <p class="muted">Relay transfers send your PCS1 song to the Pocket Audio relay service. Codes are short-lived, expire automatically, and should only be shared with someone you trust.</p>
+        <p class="muted">Relay transfers upload your complete PCS1 song to the Pocket Audio relay service. The service returns an expiry time for each short-lived code, and codes expire automatically at that time; only share that code with someone you trust.</p>
+        <p class="muted" id="relayEndpoint">Relay service: checking…</p>
         <p class="muted" id="relayStatus" role="status" aria-live="polite">Load a song, then create a short code. On your computer, open this page and enter the code.</p>
       </div>
       <div class="code-card hidden" id="relayCard">
@@ -147,10 +150,12 @@
     const HANDOFF_PARAM = "pocketHandoff";
     const SHARE_CODE_PREFIX = "PCS1:";
     const TRANSFER_URL_LIMIT = 60000;
+    const MAX_HANDOFF_FILE_BYTES = 4 * 1024 * 1024;
+    const OFFICIAL_RELAY_ENDPOINT = "https://pocket-audio-handoff.samfa12.workers.dev/api/pocket-audio-handoff";
     const RELAY_ENDPOINT = resolveRelayEndpoint();
 
     const els = {};
-    ["handoffText","sourceStatus","sourceFieldError","loadTextBtn","fileInput","copyLinkBtn","payloadSummary","copyDawBtn","openDawBtn","copyGodotBtn","downloadBtn","relayStatus","relayCard","relayCode","relayExpiry","copyRelayUrlBtn","copyRelayCodeBtn","createRelayBtn","redeemCodeInput","redeemCodeError","redeemRelayBtn"].forEach(id => els[id] = document.getElementById(id));
+    ["handoffText","sourceStatus","sourceFieldError","loadTextBtn","fileInput","copyLinkBtn","payloadSummary","copyDawBtn","openDawBtn","copyGodotBtn","downloadBtn","relayStatus","relayEndpoint","relayCard","relayCode","relayExpiry","copyRelayUrlBtn","copyRelayCodeBtn","createRelayBtn","redeemCodeInput","redeemCodeError","redeemRelayBtn"].forEach(id => els[id] = document.getElementById(id));
 
     let currentCode = "";
     let currentSource = "";
@@ -251,15 +256,30 @@
       return null;
     }
     function resolveRelayEndpoint(){
+      if(!isLocalDevelopmentOrigin() || !isRelayDeveloperModeEnabled()) return OFFICIAL_RELAY_ENDPOINT;
       const configured = relayEndpointFromUrl() || window.POCKET_AUDIO_HANDOFF_RELAY_URL || document.querySelector('meta[name="pocket-audio-handoff-relay"]')?.content;
-      if(configured) return String(configured).replace(/\/+$/g, "");
-      const host = window.location.hostname;
-      const local = ["localhost","127.0.0.1"].includes(host)
+      if(!configured) return `${window.location.origin}/api/pocket-audio-handoff`;
+      try{
+        const url = new URL(String(configured), window.location.origin);
+        if(!["http:","https:"].includes(url.protocol) || !isLocalHostname(url.hostname)) return OFFICIAL_RELAY_ENDPOINT;
+        return url.href.replace(/\/+$/g, "");
+      }catch(e){
+        return OFFICIAL_RELAY_ENDPOINT;
+      }
+    }
+    function isLocalHostname(hostname){
+      const host = String(hostname || "").toLowerCase();
+      return ["localhost","127.0.0.1","::1"].includes(host)
         || /^10\./.test(host)
         || /^192\.168\./.test(host)
         || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
-      if(local) return `${window.location.origin}/api/pocket-audio-handoff`;
-      return "https://pocket-audio-handoff.samfa12.workers.dev/api/pocket-audio-handoff";
+    }
+    function isLocalDevelopmentOrigin(){
+      return ["http:","https:"].includes(window.location.protocol) && isLocalHostname(window.location.hostname);
+    }
+    function isRelayDeveloperModeEnabled(){
+      return window.POCKET_AUDIO_HANDOFF_DEV_MODE === true
+        || document.querySelector('meta[name="pocket-audio-handoff-dev-mode"]')?.content === "enabled";
     }
     function relayEndpointFromUrl(){
       try{
@@ -434,6 +454,13 @@
     els.fileInput.addEventListener("change", async () => {
       const file = els.fileInput.files && els.fileInput.files[0];
       if(!file) return;
+      if(file.size > MAX_HANDOFF_FILE_BYTES){
+        const message = `That file is too large. The limit is ${(MAX_HANDOFF_FILE_BYTES / 1024 / 1024).toFixed(0)} MiB.`;
+        setSourceError(message);
+        els.sourceStatus.textContent = message;
+        els.fileInput.value = "";
+        return;
+      }
       const text = await file.text();
       const result = extractCode(text);
       if(result) loadCode(result.code, file.name);
@@ -456,6 +483,9 @@
     els.copyGodotBtn.addEventListener("click", () => copyText(currentCode, "PCS1 copied for Godot Paste JSON/Code."));
     els.downloadBtn.addEventListener("click", () => downloadCode());
     els.openDawBtn.addEventListener("click", openPocketDaw);
+
+    const relayHost = new URL(RELAY_ENDPOINT).host;
+    els.relayEndpoint.textContent = `Relay service: ${relayHost}${RELAY_ENDPOINT === OFFICIAL_RELAY_ENDPOINT ? " (official)" : " (local developer mode)"}.`;
 
     const hashPayload = readHashPayload();
     if(hashPayload?.shortCode){

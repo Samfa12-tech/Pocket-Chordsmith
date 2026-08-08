@@ -32,6 +32,8 @@ var _save_button: Button
 var _render_preview_audio_button: Button
 var _play_button: Button
 var _stop_button: Button
+var _receiver_toggle_button: Button
+var _receiver_token_button: Button
 var _timeline: PCSTimelineView
 var _section_list: PCSSectionList
 var _report: PCSImportReport
@@ -62,7 +64,7 @@ func _ready() -> void:
 	add_child(conductor)
 	_assign_default_preview_profile(false)
 	_timeline.set_conductor(conductor)
-	_start_push_receiver()
+	_prepare_push_receiver()
 	_connect_file_drop_signal()
 	_update_actions()
 
@@ -132,6 +134,20 @@ func _build_ui() -> void:
 		"Paste raw Pocket Chordsmith JSON, a PCS1 share code, or the code copied by Pocket Chordsmith's Push to Godot action.",
 		_open_paste_dialog
 	)
+
+	_receiver_toggle_button = _toolbar_button(
+		toolbar,
+		"Browser Receiver: Off",
+		"Explicitly enable the authenticated localhost receiver for direct browser Push to Godot.",
+		_toggle_push_receiver
+	)
+	_receiver_token_button = _toolbar_button(
+		toolbar,
+		"Copy Receiver Token",
+		"Copy the per-session token required by Pocket Chordsmith's direct browser push.",
+		_copy_push_receiver_token
+	)
+	_receiver_token_button.disabled = true
 
 	_toolbar_button(
 		toolbar,
@@ -683,16 +699,46 @@ func _compile_import_result(source_label: String) -> void:
 	_refresh_chart_views()
 
 
-func _start_push_receiver() -> void:
+func _prepare_push_receiver() -> void:
 	if _push_receiver != null:
 		return
 	_push_receiver = PushReceiver.new()
 	_push_receiver.name = "BrowserPushReceiver"
 	_push_receiver.import_callback = Callable(self, "_import_pushed_song")
 	add_child(_push_receiver)
+	_update_push_receiver_controls()
+
+
+func _toggle_push_receiver() -> void:
+	_prepare_push_receiver()
+	if _push_receiver.is_active():
+		_push_receiver.stop()
+		_update_push_receiver_controls()
+		_set_status("Browser Push to Godot receiver is off. Paste JSON/Code remains available.")
+		return
 	var error := _push_receiver.start()
 	if error != OK:
 		_set_status("Direct Push to Godot receiver unavailable on localhost:%d: %s" % [PCSPushReceiver.DEFAULT_PORT, error_string(error)])
+	_update_push_receiver_controls()
+	if error == OK:
+		_set_status("Browser receiver active on localhost:%d. Copy its per-session token into Pocket Chordsmith when prompted." % PCSPushReceiver.DEFAULT_PORT)
+
+
+func _copy_push_receiver_token() -> void:
+	if _push_receiver == null or not _push_receiver.is_active():
+		_set_status("Turn on Browser Receiver before copying its token.")
+		return
+	DisplayServer.clipboard_set(_push_receiver.get_session_token())
+	_set_status("Current Browser Receiver token copied. It changes whenever the receiver restarts.")
+
+
+func _update_push_receiver_controls() -> void:
+	var active := _push_receiver != null and _push_receiver.is_active()
+	if _receiver_toggle_button != null:
+		_receiver_toggle_button.text = "Browser Receiver: On" if active else "Browser Receiver: Off"
+		_receiver_toggle_button.tooltip_text = "Turn off the authenticated localhost receiver." if active else "Explicitly enable the authenticated localhost receiver for direct browser Push to Godot."
+	if _receiver_token_button != null:
+		_receiver_token_button.disabled = not active
 
 
 func _save_chart_resource(path: String) -> void:

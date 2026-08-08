@@ -24,13 +24,13 @@ const baseStatus = {
   latestPublishedTag: "pocket-daw-v0.6.19",
   latestPublishedCommit: "eee587c9afc39d89fa7893ea8a98e730c948a5e9",
   lastInstalledSmoke: {
-    version: "0.6.10",
+    version: "0.6.19",
     commit: null,
-    installerFile: "Pocket.DAW_0.6.10_x64-setup.exe",
+    installerFile: "Pocket.DAW_0.6.19_x64-setup.exe",
     installerSha256: "c893ddcc545738c79fb72bd486b75cbe263534b466fcd4d2f593574d509fd00e",
     testedAt: "2026-06-19",
     result: "pass",
-    notes: ["Bootstrapper install smoke evidence is recorded for 0.6.10."]
+    notes: ["Exact installer smoke evidence is recorded for 0.6.19."]
   }
 };
 
@@ -77,7 +77,7 @@ describe("release status source", () => {
 
     expect(markdown).toContain("Source version | `0.6.20`");
     expect(markdown).toContain("Latest published version | `0.6.19`");
-    expect(markdown).toContain("Last installed-smoke version | `0.6.10`");
+    expect(markdown).toContain("Last installed-smoke version | `0.6.19`");
     expect(markdown).toContain("## Unreleased Source-Only Notes");
     expect(markdown).toContain("Stem ZIP source work is pending installed smoke.");
     expect(markdown).toContain("## Capability Claim Boundary");
@@ -99,6 +99,37 @@ describe("release status source", () => {
     expect(validation.ok).toBe(false);
     expect(validation.failures.join("\n")).toContain("sourceVersion matches latestPublishedVersion");
     expect(validation.failures.join("\n")).toContain("bump the next Pocket DAW checkpoint version before packaging/publishing source-only changes");
+  });
+
+  it("blocks a published version newer than exact installed-smoke evidence", () => {
+    const validation = validateReleaseCandidateTruth({
+      ...baseStatus,
+      latestPublishedVersion: "0.6.20",
+      latestPublishedTag: "pocket-daw-v0.6.20"
+    }, baseContext, { currentCommit: "a".repeat(40) });
+
+    expect(validation.ok).toBe(false);
+    expect(validation.failures.join("\n")).toContain("is newer than lastInstalledSmoke.version");
+    expect(validation.failures.join("\n")).toContain("installedSmokeException is missing");
+  });
+
+  it("allows a matching documented source-only no-installer exception", () => {
+    const validation = validateReleaseCandidateTruth({
+      ...baseStatus,
+      latestPublishedVersion: "0.6.20",
+      latestPublishedTag: "pocket-daw-v0.6.20",
+      latestPublishedCommit: "a".repeat(40),
+      installedSmokeException: {
+        kind: "source-only-no-installer",
+        publishedVersion: "0.6.20",
+        baselineInstalledSmokeVersion: "0.6.19",
+        approvedAt: "2026-08-01T00:00:00.000Z",
+        rationale: "Help text only; no replacement installer was published.",
+        focusedEvidence: ["Help path regression passed."]
+      }
+    }, baseContext, { currentCommit: "a".repeat(40) });
+
+    expect(validation).toEqual({ ok: true, failures: [] });
   });
 
   it("blocks same-version release candidates when source-only notes are present", () => {
@@ -143,6 +174,11 @@ describe("release status source", () => {
       latestPublishedVersion: baseStatus.sourceVersion,
       latestPublishedTag: `pocket-daw-v${baseStatus.sourceVersion}`,
       latestPublishedCommit: "a".repeat(40),
+      lastInstalledSmoke: {
+        ...baseStatus.lastInstalledSmoke,
+        version: baseStatus.sourceVersion,
+        installerFile: `Pocket.DAW_${baseStatus.sourceVersion}_x64-setup.exe`
+      },
       unreleasedSourceNotes: []
     }, baseContext, {
       currentCommit: "a".repeat(40)

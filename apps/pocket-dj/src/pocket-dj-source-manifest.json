@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "output": "pocket_dj_v1g_core_bridge.html",
+  "fragments": [
+    "src/state/01-foundation.js",
+    "src/handoff/02-transfer.js",
+    "src/schema/03-session-format.js",
+    "src/audio/04-live-engine.js",
+    "src/transport/05-scheduler.js",
+    "src/ui/06-interface.js",
+    "src/accessibility/07-help-and-init.js"
+  ]
+}

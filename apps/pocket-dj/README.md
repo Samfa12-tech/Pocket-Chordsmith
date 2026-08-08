@@ -22,7 +22,7 @@ Future Pocket DJ sessions can export a `PDJ1` format that captures performance s
 Canonical source path: `apps/pocket-dj/`.
 
 - `index.html` redirects to `pocket_dj_v1g_core_bridge.html`.
-- `pocket_dj_v1f_push_handoffs.html` is retained as the direct push-handoff reference build.
+- `../archive/unsupported-runnable-builds/pocket-dj/pocket_dj_v1f_push_handoffs.html` is retained only as an unsupported historical snapshot and is excluded from current packages.
 - Planning docs live in `docs/`.
 
 ## Lofi Chill Pack

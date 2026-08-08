@@ -369,9 +369,14 @@ pub struct NativeRenderedEvent {
     metal_texture: Option<NativeMetalTexture>,
     #[serde(rename = "soundProfile")]
     sound_profile: Option<NativeSoundProfile>,
+    // Retained as part of the renderer payload contract even when this backend
+    // does not need to inspect the metadata directly.
+    #[allow(dead_code)]
     sound: Option<String>,
     #[serde(rename = "performanceRole")]
+    #[allow(dead_code)]
     performance_role: Option<String>,
+    #[allow(dead_code)]
     expression: Option<Value>,
     technique: Option<Value>,
     accent: Option<bool>,
@@ -456,8 +461,12 @@ fn default_metal_pick_attack() -> f64 {
 #[derive(Clone, Deserialize)]
 pub struct NativeSoundProfile {
     id: String,
+    // Preserved for recipe-version compatibility and diagnostics; audio
+    // behavior is selected by the normalized profile id and parameters.
+    #[allow(dead_code)]
     preset: String,
     #[serde(rename = "recipeVersion", default = "default_recipe_version")]
+    #[allow(dead_code)]
     recipe_version: u32,
     #[serde(default)]
     parameters: Value,
@@ -779,6 +788,9 @@ struct NativeFxSlotState {
     processor: NativeFxProcessor,
 }
 
+// Hosted plug-ins carry substantially more state than built-in processors.
+// Keeping the processor value inline avoids an allocation in the audio graph.
+#[allow(clippy::large_enum_variant)]
 enum NativeFxProcessor {
     None,
     UtilityGain {
@@ -1585,6 +1597,7 @@ fn write_ring_output_u16(
     });
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn write_output(data: &mut [f32], shared: &Arc<Mutex<PlaybackShared>>) {
     let started = Instant::now();
     if let Ok(mut playback) = shared.lock() {
@@ -1602,6 +1615,7 @@ fn write_output(data: &mut [f32], shared: &Arc<Mutex<PlaybackShared>>) {
     }
 }
 
+#[allow(dead_code)]
 fn write_output_i16(data: &mut [i16], shared: &Arc<Mutex<PlaybackShared>>) {
     let started = Instant::now();
     if let Ok(mut playback) = shared.lock() {
@@ -1627,6 +1641,7 @@ fn write_output_i16(data: &mut [i16], shared: &Arc<Mutex<PlaybackShared>>) {
     }
 }
 
+#[allow(dead_code)]
 fn write_output_u16(data: &mut [u16], shared: &Arc<Mutex<PlaybackShared>>) {
     let started = Instant::now();
     if let Ok(mut playback) = shared.lock() {
@@ -1656,6 +1671,7 @@ fn frame_count_for_output(sample_count: usize, channels: usize) -> usize {
     sample_count / channels.max(1)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn record_callback_timing(playback: &mut PlaybackShared, started: Instant, frame_count: usize) {
     let elapsed_micros = started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64;
     playback.callback_count = playback.callback_count.saturating_add(1);
@@ -2898,6 +2914,7 @@ fn chordsmith_sidechain_gain_at(amount: f64, elapsed: f64) -> f64 {
     duck * (1.0 / duck).powf(release_progress)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_native_fx_runtime(
     chains: Vec<NativeFxChainPayload>,
     tracks: &HashMap<String, NativeTrackControl>,
@@ -3015,6 +3032,7 @@ fn accumulate_hosted_timing(timing: impl Iterator<Item = (u32, u32)>) -> (u32, u
 }
 
 impl NativeFxChainState {
+    #[cfg_attr(not(test), allow(dead_code))]
     fn from_payload(chain: &NativeFxChainPayload, sample_rate: f32) -> Self {
         Self::from_payload_with_graph(chain, sample_rate, None, 120.0, 4, Vec::new(), None)
     }
@@ -3069,6 +3087,7 @@ impl NativeFxChainState {
 }
 
 impl NativeFxSlotState {
+    #[cfg_attr(not(test), allow(dead_code))]
     fn from_payload(slot: &NativeFxSlotPayload, sample_rate: f32) -> Option<Self> {
         Self::from_payload_with_graph(slot, sample_rate, None, 120.0, 4, Vec::new(), None)
     }
@@ -4807,7 +4826,7 @@ fn render_chip_noise_channel(event: &NativeRenderedEvent, local: f64, velocity: 
     let retrigger = technique_number(event, "chip", "retrigger")
         .unwrap_or(0.0)
         .clamp(0.0, 1.0);
-    let stop = event.duration.max(0.025).min(0.42);
+    let stop = event.duration.clamp(0.025, 0.42);
     if local > stop {
         return 0.0;
     }

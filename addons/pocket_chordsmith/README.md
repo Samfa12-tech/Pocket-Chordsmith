@@ -203,6 +203,7 @@ Release-candidate tools:
 ```text
 godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/compile_pocket_chordsmith_charts.gd -- --source <json-or-folder> [--output <folder-or-file>] [--beside-source]
 godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/validate_pocket_chordsmith_runtime.gd -- --chart <chart.tres> [--profile <profile.tres>] [--report <report.md>]
+godot --headless --path <project> --script res://addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd -- --output <versioned-addon.zip>
 ```
 
 Use `docs/HEADLESS_VALIDATION.md` for the complete headless gate, direct Push-to-Godot smoke checklist, and receiver security review.
@@ -213,3 +214,5 @@ Godot Asset Library release checklist:
 2. Copy the full 40-character Git commit hash from that addon-only revision.
 3. Paste that full hash into the Godot Asset Library `Download Commit` field.
 4. Do not use branch names or version tags such as `main`, `master`, or `v1.1.6` for `Download Commit`.
+
+The package command reopens and verifies the ZIP against the exact intended addon file set, rejects generated/import metadata and paths outside `addons/pocket_chordsmith/`, and prints the addon version and SHA-256. Use that verified artifact to prepare the addon-only release revision; never point Asset Library at a normal monorepo source archive.

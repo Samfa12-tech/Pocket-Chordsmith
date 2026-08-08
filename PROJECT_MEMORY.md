@@ -1,5 +1,9 @@
 # Project Memory
 
+> Historical project log, not current instruction. Entries are dated snapshots
+> and can be stale. Use `AGENTS.md`, `FAMILY_MANIFEST.json`, generated governance
+> views, and component-owned current release-status files for current truth.
+
 Use this file first when returning to the Pocket Audio family monorepo.
 
 ## Current Shape
@@ -32,7 +36,7 @@ playhead position. The UI only displays state and dispatches commands.
 
 - Pocket Chordsmith web entry: `apps/chordsmith-web/index.html`.
 - Pocket Chordsmith current build: `apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html`.
-- Pocket Chordsmith direct-Godot fallback/reference build: `apps/chordsmith-web/pocket_chordsmith_v67_direct_godot_push.html`.
+- Pocket Chordsmith direct-Godot historical reference: `apps/archive/unsupported-runnable-builds/chordsmith-web/pocket_chordsmith_v67_direct_godot_push.html` (unsupported; not current instruction).
 - Durable Chordsmith app context: `apps/chordsmith-web/POCKET_CHORDSMITH_CODEX_CONTEXT.md`.
 - Pocket DJ entry: `apps/pocket-dj/index.html`.
 - Pocket DJ current build: `apps/pocket-dj/pocket_dj_v1g_core_bridge.html`.

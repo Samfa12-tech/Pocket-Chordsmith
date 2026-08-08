@@ -1,4 +1,4 @@
-import { SECTION_IDS, STEM_IDS } from "../constants.js";
+import { POCKET_AUDIO_RESOURCE_LIMITS, SECTION_IDS, STEM_IDS } from "../constants.js";
 import { buildPocketAudioTimeline } from "../events/timeline-events.js";
 import { createAudioContext } from "./audio-context.js";
 import { parsePocketChordsmithInput } from "../schema/parse-share-code.js";
@@ -19,6 +19,9 @@ export class PocketAudio {
     this.audioContext = null;
     this.schedulerTimer = null;
     this.playStartedAt = 0;
+    this.audioStartTime = null;
+    this.timelineStartTime = null;
+    this.timelineLoopOffset = 0;
     this.nextEventIndex = 0;
     this.listeners = new Map();
     this.musicStates = new Map();
@@ -29,8 +32,27 @@ export class PocketAudio {
     this.ducking = { enabled: false, amount: 0, releaseMs: 0 };
     this.lowpassAmount = 1;
     this.lastSchedulerTickAt = 0;
+    this.pendingTransition = null;
+    this.lookaheadSeconds = Math.max(0.01, Number(options.lookaheadSeconds ?? 0.12));
+    this.lateEventThresholdSeconds = Math.max(0, Number(options.lateEventThresholdSeconds ?? 0.08));
+    this.schedulerIntervalMs = Math.max(5, Number(options.schedulerIntervalMs ?? 25));
+    const requestedEventBudget = Number(options.maxEventsPerSchedulerTick);
+    this.maxEventsPerSchedulerTick = Number.isFinite(requestedEventBudget)
+      ? Math.max(1, Math.min(POCKET_AUDIO_RESOURCE_LIMITS.maxEventsPerSchedulerTick, Math.floor(requestedEventBudget)))
+      : POCKET_AUDIO_RESOURCE_LIMITS.maxEventsPerSchedulerTick;
+    this.clock = typeof options.now === "function" ? options.now : () => nowSeconds(this.audioContext);
+    this.setIntervalFn = options.setInterval || globalThis.setInterval;
+    this.clearIntervalFn = options.clearInterval || globalThis.clearInterval;
+    if (options.audioContext) this.audioContext = options.audioContext;
     this.transport = { sectionId: "A", bar: 1, beat: 1, step: -1, seconds: 0, tick: 0 };
-    this.diagnostics = { scheduledEventCount: 0, skippedLateEventCount: 0, schedulerTickCount: 0, missedSchedulerTickCount: 0 };
+    this.diagnostics = {
+      scheduledEventCount: 0,
+      skippedLateEventCount: 0,
+      skippedOverBudgetEventCount: 0,
+      schedulerTickCount: 0,
+      missedSchedulerTickCount: 0,
+      maxEventsPerSchedulerTick: this.maxEventsPerSchedulerTick
+    };
     this.defineMusicStates(options.musicStates || options.stateMap || {});
   }
 
@@ -44,8 +66,10 @@ export class PocketAudio {
   }
 
   async resume() {
-    if (this.options.audio !== false && (globalThis.AudioContext || globalThis.webkitAudioContext)) {
-      this.audioContext = this.audioContext || await createAudioContext();
+    if (this.options.audio !== false && this.audioContext?.state === "suspended" && typeof this.audioContext.resume === "function") {
+      await this.audioContext.resume();
+    } else if (this.options.audio !== false && !this.audioContext && (globalThis.AudioContext || globalThis.webkitAudioContext)) {
+      this.audioContext = await createAudioContext();
     }
     this.emit("resume", {});
   }
@@ -61,7 +85,12 @@ export class PocketAudio {
     if (options.sectionId) this.transport.sectionId = normaliseSectionId(options.sectionId);
     this.timeline = buildPocketAudioTimeline(this.project, { scope: options.scope || "sequence", sectionId: this.transport.sectionId });
     this.nextEventIndex = 0;
-    this.playStartedAt = nowSeconds(this.audioContext);
+    this.audioStartTime = this.clock();
+    this.playStartedAt = this.audioStartTime;
+    this.timelineStartTime = this.audioStartTime;
+    this.timelineLoopOffset = 0;
+    this.lastSchedulerTickAt = 0;
+    this.pendingTransition = null;
     this.startTimelineScheduler();
     this.emit("play", this.getTransport());
   }
@@ -90,11 +119,10 @@ export class PocketAudio {
       return this.queueMusicState(sectionId, options);
     }
     const safe = normaliseSectionId(sectionId);
-    this.transport.sectionId = safe;
-    this.project.transport.currentSection = safe;
-    this.timeline = buildPocketAudioTimeline(this.project, { scope: "section", sectionId: safe });
-    this.emit("sectionQueued", { sectionId: safe, quantize: options.quantize || "bar" });
-    return { sectionId: safe, quantize: options.quantize || "bar" };
+    const quantize = options.quantize || "bar";
+    const queued = this.queueTransition({ kind: "section", sectionId: safe, quantize });
+    this.emit("sectionQueued", queued);
+    return queued;
   }
 
   setSequence(sequence) {
@@ -120,8 +148,20 @@ export class PocketAudio {
     const definition = this.getMusicStateDefinition(name);
     this.currentMusicState = String(name);
     this.queuedMusicState = null;
-    if (Array.isArray(definition.sequence)) this.setSequence(definition.sequence);
-    if (definition.section) this.queueSection(definition.section, options);
+    if (Array.isArray(definition.sequence)) {
+      this.project.sequence = definition.sequence.map(normaliseSectionId);
+      this.emit("sequence", { sequence: this.project.sequence.slice() });
+    }
+    if (definition.section) {
+      const safe = normaliseSectionId(definition.section);
+      this.transport.sectionId = safe;
+      this.project.transport.currentSection = safe;
+      this.emit("section", {
+        sectionId: safe,
+        quantize: options.quantize || "instant",
+        transitionTime: options.transitionTime ?? this.currentTransportTime()
+      });
+    }
     if (definition.loop !== undefined) this.setLoop({ enabled: Boolean(definition.loop), sectionId: definition.section || this.transport.sectionId });
     if (definition.intensity !== undefined) this.setIntensity(definition.intensity);
     if (definition.fx) this.setFx(definition.fx);
@@ -130,15 +170,23 @@ export class PocketAudio {
     if (definition.stems) this.applyStemPatchMap(definition.stems);
     if (definition.stinger) this.triggerStinger(name, { ...options, stateDefinition: definition });
     if (definition.thenReturnTo) this.pendingReturnState = definition.thenReturnTo;
-    this.emit("musicState", { name: this.currentMusicState, definition, quantize: options.quantize || "instant" });
+    this.rebuildTimelineForState(definition, options.transitionTime);
+    this.emit("musicState", {
+      name: this.currentMusicState,
+      definition,
+      quantize: options.quantize || "instant",
+      transitionTime: options.transitionTime ?? this.currentTransportTime()
+    });
     return definition;
   }
 
   queueMusicState(name, options = {}) {
     const definition = this.getMusicStateDefinition(name);
-    this.queuedMusicState = { name: String(name), definition, quantize: options.quantize || "bar" };
-    this.emit("musicStateQueued", this.queuedMusicState);
-    return this.setMusicState(name, options);
+    const quantize = options.quantize || "bar";
+    const transition = this.queueTransition({ kind: "musicState", name: String(name), definition, quantize });
+    if (this.pendingTransition === transition) this.queuedMusicState = transition;
+    this.emit("musicStateQueued", transition);
+    return transition;
   }
 
   triggerStinger(name, options = {}) {
@@ -223,9 +271,10 @@ export class PocketAudio {
 
   getDiagnostics() {
     return {
-      coreStub: true,
+      coreStub: false,
       profile: this.profile,
-      audioContextState: "not-created",
+      audioContextState: this.audioContext?.state || (this.options.audio === false ? "disabled" : "not-created"),
+      audioStartTime: this.audioStartTime,
       timelineEventCount: this.timeline?.events.length || 0,
       currentSection: this.transport.sectionId,
       currentMusicState: this.currentMusicState,
@@ -235,6 +284,57 @@ export class PocketAudio {
       projectLoaded: Boolean(this.project),
       ...this.diagnostics
     };
+  }
+
+  currentTransportTime() {
+    if (this.audioStartTime === null) return Number(this.transport.seconds || 0);
+    return Math.max(Number(this.transport.seconds || 0), this.clock() - this.audioStartTime);
+  }
+
+  quantizedTransitionTime(quantize = "bar") {
+    const current = this.currentTransportTime();
+    if (!this.playing || quantize === "instant" || quantize === "none") return current;
+    const beat = 60 / Math.max(1, Number(this.project?.meta?.bpm || 96));
+    const quantum = quantize === "beat" ? beat : beat * Math.max(1, Number(this.project?.meta?.timeSig || 4));
+    return Math.ceil((current + 1e-9) / quantum) * quantum;
+  }
+
+  queueTransition(transition) {
+    const transitionTime = this.quantizedTransitionTime(transition.quantize);
+    const queued = { ...transition, transitionTime };
+    if (!this.playing || transition.quantize === "instant" || transition.quantize === "none") {
+      this.applyTransition(queued);
+    } else {
+      this.pendingTransition = queued;
+    }
+    return queued;
+  }
+
+  applyTransition(transition) {
+    this.pendingTransition = null;
+    if (transition.kind === "musicState") {
+      this.setMusicState(transition.name, { quantize: transition.quantize, transitionTime: transition.transitionTime });
+      return;
+    }
+    const safe = normaliseSectionId(transition.sectionId);
+    this.transport.sectionId = safe;
+    this.project.transport.currentSection = safe;
+    this.timeline = buildPocketAudioTimeline(this.project, { scope: "section", sectionId: safe });
+    this.resetTimelineAtTransition(transition.transitionTime);
+    this.emit("section", { sectionId: safe, quantize: transition.quantize, transitionTime: transition.transitionTime });
+  }
+
+  rebuildTimelineForState(definition = {}, transitionTime = this.currentTransportTime()) {
+    const scope = definition.section ? "section" : "sequence";
+    this.timeline = buildPocketAudioTimeline(this.project, { scope, sectionId: this.transport.sectionId });
+    this.resetTimelineAtTransition(transitionTime);
+  }
+
+  resetTimelineAtTransition(transportTime) {
+    if (this.audioStartTime === null) return;
+    this.timelineStartTime = this.audioStartTime + Number(transportTime || 0);
+    this.timelineLoopOffset = 0;
+    this.nextEventIndex = 0;
   }
 
   on(type, callback) {
@@ -264,36 +364,53 @@ export class PocketAudio {
     this.clearTimelineScheduler();
     const tick = () => {
       if (!this.playing || !this.timeline) return;
-      const tickNow = nowSeconds(this.audioContext);
+      const tickNow = this.clock();
       this.diagnostics.schedulerTickCount += 1;
       if (this.lastSchedulerTickAt && tickNow - this.lastSchedulerTickAt > 0.18) this.diagnostics.missedSchedulerTickCount += 1;
       this.lastSchedulerTickAt = tickNow;
-      const elapsed = nowSeconds(this.audioContext) - this.playStartedAt;
-      this.transport.seconds = elapsed;
-      while (this.nextEventIndex < this.timeline.events.length && this.timeline.events[this.nextEventIndex].time <= elapsed + 0.12) {
+      const elapsed = Math.max(0, tickNow - this.audioStartTime);
+      this.transport.seconds = Math.max(this.transport.seconds, elapsed);
+      if (this.pendingTransition && elapsed + 1e-9 >= this.pendingTransition.transitionTime) {
+        this.applyTransition(this.pendingTransition);
+      }
+      const transitionAudioTime = this.pendingTransition ? this.audioStartTime + this.pendingTransition.transitionTime : Infinity;
+      const horizon = Math.min(tickNow + this.lookaheadSeconds, transitionAudioTime);
+      let dispatchedThisTick = 0;
+      while (this.nextEventIndex < this.timeline.events.length) {
         const event = this.timeline.events[this.nextEventIndex];
-        this.dispatchTimelineEvent(event);
+        const targetAudioTime = this.timelineStartTime + this.timelineLoopOffset + event.time;
+        if (targetAudioTime >= horizon) break;
+        if (targetAudioTime < tickNow - this.lateEventThresholdSeconds) {
+          this.diagnostics.skippedLateEventCount += 1;
+        } else if (dispatchedThisTick >= this.maxEventsPerSchedulerTick) {
+          this.diagnostics.skippedOverBudgetEventCount += 1;
+        } else {
+          this.dispatchTimelineEvent(event, targetAudioTime);
+          dispatchedThisTick += 1;
+        }
         this.nextEventIndex += 1;
       }
-      if (elapsed >= this.timeline.duration) {
+      if (tickNow >= this.timelineStartTime + this.timelineLoopOffset + this.timeline.duration) {
         if (this.loop?.enabled) {
-          this.playStartedAt = nowSeconds(this.audioContext);
+          const completedLoops = Math.max(1, Math.floor((tickNow - this.timelineStartTime) / this.timeline.duration));
+          this.timelineLoopOffset = completedLoops * this.timeline.duration;
           this.nextEventIndex = 0;
         } else {
           this.stop();
         }
       }
     };
-    this.schedulerTimer = setInterval(tick, 25);
+    this.schedulerTick = tick;
+    this.schedulerTimer = this.setIntervalFn(tick, this.schedulerIntervalMs);
     tick();
   }
 
   clearTimelineScheduler() {
-    if (this.schedulerTimer !== null) clearInterval(this.schedulerTimer);
+    if (this.schedulerTimer !== null) this.clearIntervalFn(this.schedulerTimer);
     this.schedulerTimer = null;
   }
 
-  dispatchTimelineEvent(event) {
+  dispatchTimelineEvent(event, targetAudioTime) {
     this.transport = {
       ...this.transport,
       sectionId: event.sectionId,
@@ -308,8 +425,9 @@ export class PocketAudio {
       this.emit("section", event);
     }
     this.emit("beat", event);
-    this.emit("event", event);
-    if (this.audioContext) scheduleSimpleAudioEvent(this.audioContext, event, this.project);
+    const scheduledEvent = { ...event, scheduledAudioTime: targetAudioTime };
+    this.emit("event", scheduledEvent);
+    if (this.audioContext) scheduleSimpleAudioEvent(this.audioContext, event, this.project, targetAudioTime);
   }
 
   patchStem(stem, patch) {
@@ -338,11 +456,11 @@ function nowSeconds(context) {
   return context?.currentTime ?? performance.now() / 1000;
 }
 
-function scheduleSimpleAudioEvent(context, event, project) {
+function scheduleSimpleAudioEvent(context, event, project, targetAudioTime) {
   if (project?.mixer?.stems?.[event.stem]?.mute) return;
   const funk = event.audioProfile === "funk_groove" ? liveFunkParameters(event) : null;
   const pocketOffset = funk && Number(event.step || 0) % 2 !== 0 ? (funk.pocket - 0.5) * 0.03 : 0;
-  const start = Math.max(context.currentTime + 0.005, context.currentTime + Math.max(0, event.time + pocketOffset - ((performance.now() / 1000) % Math.max(event.time + 1, 1))));
+  const start = Math.max(context.currentTime + 0.005, targetAudioTime + pocketOffset);
   if (event.type === "guitar" && event.audioProfile === "heavy_metal") {
     scheduleMetalGuitarAudioEvent(context, event, project, start);
     return;

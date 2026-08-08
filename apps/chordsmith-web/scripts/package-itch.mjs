@@ -14,8 +14,10 @@ const requiredEntries = [
   "index.html",
   "pocket_chordsmith_v68_core_bridge.html",
   "icon.png",
-  "pocket-audio-core/src/index.js",
+  "pocket-audio-core/dist/api-manifest.json",
+  "pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
   "pocket-audio-core/dist/pocket-audio-core.esm.js",
+  "pocket-audio-core/dist/pocket-audio-core.iife.js",
 ];
 
 function run(command, args, options = {}) {
@@ -87,7 +89,6 @@ run(process.execPath, [resolve(coreRoot, "scripts", "build.mjs")], { cwd: coreRo
 
 rmSync(bundledCoreRoot, { recursive: true, force: true });
 mkdirSync(bundledCoreRoot, { recursive: true });
-cpSync(resolve(coreRoot, "src"), resolve(bundledCoreRoot, "src"), { recursive: true });
 cpSync(resolve(coreRoot, "dist"), resolve(bundledCoreRoot, "dist"), { recursive: true });
 cpSync(resolve(appRoot, "icon.png"), resolve(distDir, "icon.png"));
 
@@ -104,5 +105,19 @@ for (const entry of requiredEntries) {
     throw new Error(`Zip is missing required entry: ${entry}`);
   }
 }
+
+run(process.execPath, [
+  resolve(repoRoot, "scripts", "web-release-provenance.mjs"),
+  "--repoRoot", repoRoot,
+  "--product", "Pocket Chordsmith",
+  "--build", "v68",
+  "--schema", "17",
+  "--legacySchema", "16",
+  "--core", "0.2.0",
+  "--sourceEntry", "apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html",
+  "--zip", relative(repoRoot, outputZip),
+  "--output", "local-artifacts/staging/chordsmith-web/pocket-chordsmith-web.release.json",
+  ...requiredEntries.flatMap((entry) => ["--required", entry]),
+], { cwd: repoRoot });
 
 console.log(`Created ${outputZip}`);

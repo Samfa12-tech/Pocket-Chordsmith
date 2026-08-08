@@ -15,7 +15,10 @@ const contentTypes = new Map([
 ]);
 
 function resolveRequestPath(urlPath) {
-  const cleanPath = decodeURIComponent(urlPath.split("?")[0]).replace(/^\/+/, "");
+  const cleanPath = decodeURIComponent(urlPath.split("?")[0]).replace(
+    /^\/+/,
+    "",
+  );
   let filePath = resolve(repoRoot, cleanPath || "apps/pocket-dj/index.html");
   const pathFromRoot = relative(repoRoot, filePath);
   if (pathFromRoot.startsWith("..") || pathFromRoot.includes(`..${sep}`)) {
@@ -36,7 +39,8 @@ createServer((request, response) => {
   }
 
   response.writeHead(200, {
-    "content-type": contentTypes.get(extname(filePath)) || "application/octet-stream",
+    "content-type":
+      contentTypes.get(extname(filePath)) || "application/octet-stream",
   });
   createReadStream(filePath).pipe(response);
 }).listen(port, "127.0.0.1", () => {

@@ -317,7 +317,7 @@ fn scan_module(path: &Path) -> Result<Vec<ScannedClassDescriptor>, ScanError> {
         )
     };
     if code != 0 {
-        return Err(if matches!(code, 6 | 7 | 8) {
+        return Err(if matches!(code, 6..=8) {
             ScanError::InvalidDescriptor
         } else {
             ScanError::LoadFailure
@@ -685,8 +685,7 @@ impl SessionGraph {
             || !valid_class_id(class_id)
             || !shared_memory_name.starts_with(SHARED_MEMORY_PREFIX)
             || !valid_identifier(&shared_memory_name[SHARED_MEMORY_PREFIX.len()..], 120)
-            || sample_rate < 8_000.0
-            || sample_rate > 384_000.0
+            || !(8_000.0..=384_000.0).contains(&sample_rate)
         {
             return response(request, false, "invalidRequest", false);
         }

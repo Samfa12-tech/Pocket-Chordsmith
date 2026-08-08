@@ -1,0 +1,26 @@
+{
+  "manifestVersion": 1,
+  "product": "Pocket Chordsmith",
+  "sourceCommit": "b4d288242c75c488e50b8fd4b2382c005cf52d9b",
+  "dirtyWorkingTree": false,
+  "internalBuild": "v68",
+  "schemaVersion": 17,
+  "legacySchemaVersion": 16,
+  "coreVersion": "0.2.0",
+  "publishedAt": "2026-07-31T06:23:37.918Z",
+  "deployment": {
+    "channel": "samfa12/pocket-chordsmith:pocket-audio-core",
+    "identifier": "pcs17-genre-composer-20260731",
+    "build": 1845264
+  },
+  "packageFile": "pocket-chordsmith-web.zip",
+  "packageSha256": "232dbe364fb070406348905376931cb7630862fc905e738ef0e8cf0217c2ae7d",
+  "sourceEntry": "apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html",
+  "requiredFiles": [
+    "index.html",
+    "pocket_chordsmith_v68_core_bridge.html",
+    "icon.png",
+    "pocket-audio-core/src/index.js",
+    "pocket-audio-core/dist/pocket-audio-core.esm.js"
+  ]
+}

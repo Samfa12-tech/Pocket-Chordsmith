@@ -11,12 +11,20 @@ Security reports are most useful for:
 - `apps/chordsmith-web/`
 - `apps/pocket-dj/`
 - `apps/pocket-daw/`
+- `apps/pocket-audio-handoff/`
 - `packages/pocket-audio-core/`
+- `packages/pcs-format/`
 - `addons/pocket_chordsmith/`
 - release and packaging scripts
 
-Older archive snapshots are retained for reference and may not receive fixes
-unless the same issue affects a current component.
+The generated scope in `docs/generated/SECURITY_SCOPE.md` is derived from
+`FAMILY_MANIFEST.json` and CI checks it for drift.
+
+Runnable files under `apps/archive/unsupported-runnable-builds/` are explicitly
+unsupported. They are immutable historical evidence, excluded from source
+archives and current packages, and may contain issues already fixed in current
+source. Reproduce an archive issue against a current component before expecting
+a fix.
 
 ## Reporting
 

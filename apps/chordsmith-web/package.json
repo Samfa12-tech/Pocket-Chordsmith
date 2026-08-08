@@ -24,11 +24,21 @@
   ],
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build:single-file": "node scripts/build-single-file.mjs",
+    "verify:single-file": "node scripts/build-single-file.mjs --check",
+    "build": "npm run build:single-file && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test tests/smoke.spec.js --project=chromium-desktop --project=mobile-chrome",
+    "test:cross-browser": "playwright test tests/smoke.spec.js --project=firefox-desktop --project=webkit-desktop --grep \"loads the main app controls|demo button loads|settings export scope|PCS1 share code\"",
+    "test:audio-quality": "playwright test tests/genre-audio-quality.spec.js --project=chromium-desktop",
+    "test:unit": "vitest run tests/wav-export-preflight.test.js",
     "test:composer": "node scripts/verify-genre-composer-fixtures.mjs",
-    "format": "prettier . --write",
+    "lint": "eslint src/genre-composer.js src/wav-export-preflight.js",
+    "typecheck": "tsc --noEmit --allowJs --checkJs --target ES2022 --module ESNext --moduleResolution bundler src/genre-composer.js src/wav-export-preflight.js",
+    "format": "prettier src/genre-composer.js src/wav-export-preflight.js scripts/build-single-file.mjs --write",
+    "format:check": "prettier src/genre-composer.js src/wav-export-preflight.js scripts/build-single-file.mjs --check",
+    "report:size": "node ../../scripts/report-web-surface.mjs --product Chordsmith --app . --active pocket_chordsmith_v68_core_bridge.html --maxActiveBytes 1100000 --maxModuleBytes 900000",
+    "verify": "npm run lint && npm run typecheck && npm run format:check && npm run test:unit && npm run test:composer && npm run test:audio-quality && npm run report:size && npm run verify:single-file && npm run test:e2e && npm run test:cross-browser && npm run build",
     "package:itch": "npm run build && node scripts/package-itch.mjs"
   },
   "devDependencies": {
@@ -37,6 +47,7 @@
     "eslint": "^9.28.0",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",
+    "vitest": "^4.1.8",
     "vite": "^6.3.5"
   }
 }

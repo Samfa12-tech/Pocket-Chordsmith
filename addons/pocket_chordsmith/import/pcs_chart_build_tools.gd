@@ -12,12 +12,23 @@ const GamePackManifest := preload("res://addons/pocket_chordsmith/import/pcs_gam
 const SharedSoundConstants := preload("res://addons/pocket_chordsmith/import/pcs_shared_sound_constants.gd")
 
 const DEFAULT_DAW_PACK_IMPORT_ROOT := "res://music/pocket_chordsmith_packs"
+const MAX_SOURCE_TEXT_BYTES := 4 * 1024 * 1024
+const MAX_ZIP_BYTES := 128 * 1024 * 1024
+const MAX_ZIP_ENTRIES := 512
+const MAX_ZIP_PATH_DEPTH := 12
+const MAX_ZIP_ENTRY_BYTES := 64 * 1024 * 1024
+const MAX_ZIP_TOTAL_BYTES := 256 * 1024 * 1024
+const MAX_ZIP_COMPRESSION_RATIO := 200.0
 
 
 func compile_file(source_path: String, output_path := "", options := {}) -> Dictionary:
 	var result := _empty_result()
 	if not FileAccess.file_exists(source_path):
 		result["errors"].append("Source file does not exist: %s" % source_path)
+		return result
+	var source_size := FileAccess.get_size(source_path)
+	if source_size < 0 or source_size > MAX_SOURCE_TEXT_BYTES:
+		result["errors"].append("Source file exceeds the %d-byte import limit: %s" % [MAX_SOURCE_TEXT_BYTES, source_path])
 		return result
 
 	var text := FileAccess.get_file_as_string(source_path)
@@ -160,7 +171,7 @@ func import_daw_game_pack(pack_path: String, destination_root := DEFAULT_DAW_PAC
 	if not bool(profile_result.get("ok", false)):
 		return result
 
-	var source_project_path: String = GamePackManifest.source_project_path_from_manifest(manifest, pack_root)
+	var source_project_path: String = GamePackManifest.source_project_path_from_manifest(manifest, pack_root, bool(options.get("trusted_project_paths", false)))
 	if source_project_path.is_empty() and manifest.get("project", null) is Dictionary:
 		source_project_path = _resource_path_join(pack_root, "source_project.json")
 		var write_error := _write_text_to_resource_path(source_project_path, JSON.stringify(manifest.get("project", {}), "\t"))
@@ -479,6 +490,10 @@ func _extract_game_pack_zip(zip_path: String, destination_root: String, options:
 		"errors": [],
 	}
 	var reader := ZIPReader.new()
+	var archive_size := FileAccess.get_size(zip_path)
+	if archive_size < 0 or archive_size > MAX_ZIP_BYTES:
+		result["errors"].append("DAW pack ZIP exceeds the %d-byte archive limit." % MAX_ZIP_BYTES)
+		return result
 	var error := reader.open(zip_path)
 	if error != OK:
 		result["errors"].append("Could not open DAW pack ZIP: %s" % error_string(error))
@@ -488,30 +503,194 @@ func _extract_game_pack_zip(zip_path: String, destination_root: String, options:
 	if pack_name.is_empty():
 		pack_name = "pocket_daw_pack"
 	var pack_root := _resource_path_join(destination_root, pack_name)
-	_ensure_resource_dir(pack_root)
-
+	var staging_root := _resource_path_join(destination_root, ".%s.importing-%s" % [pack_name, Crypto.new().generate_random_bytes(8).hex_encode()])
+	var destination_absolute := ProjectSettings.globalize_path(_resource_save_path(destination_root)).simplify_path()
+	var pack_absolute := ProjectSettings.globalize_path(_resource_save_path(pack_root)).simplify_path()
+	var staging_absolute := ProjectSettings.globalize_path(_resource_save_path(staging_root)).simplify_path()
+	if not _absolute_descendant_of(pack_absolute, destination_absolute) or not _absolute_descendant_of(staging_absolute, destination_absolute):
+		reader.close()
+		result["errors"].append("DAW pack destination escaped the configured import root.")
+		return result
+	if DirAccess.dir_exists_absolute(pack_absolute) or FileAccess.file_exists(pack_absolute):
+		reader.close()
+		result["errors"].append("DAW pack destination already exists; choose a different pack name: %s" % pack_root)
+		return result
 	var files := reader.get_files()
-	for entry_path in files:
+	var metadata_result := _read_zip_central_directory(zip_path)
+	result["errors"].append_array(metadata_result.get("errors", []))
+	if not result["errors"].is_empty():
+		reader.close()
+		return result
+	var metadata: Array = metadata_result.get("entries", [])
+	if files.size() != metadata.size() or files.size() > MAX_ZIP_ENTRIES:
+		reader.close()
+		result["errors"].append("DAW pack ZIP entry count is invalid or exceeds %d." % MAX_ZIP_ENTRIES)
+		return result
+	var seen_paths := {}
+	var total_uncompressed := 0
+	var total_compressed := 0
+	for entry_index in range(files.size()):
+		var entry_path = files[entry_index]
 		var entry := str(entry_path).replace("\\", "/")
-		if entry.ends_with("/"):
-			_ensure_resource_dir(_resource_path_join(pack_root, entry))
-			continue
 		if not _is_safe_pack_relative_path(entry):
 			result["errors"].append("Unsafe path in DAW pack ZIP: %s" % entry)
 			continue
-		var out_path := _resource_path_join(pack_root, entry)
+		if entry.trim_suffix("/").split("/", false).size() > MAX_ZIP_PATH_DEPTH:
+			result["errors"].append("DAW pack ZIP path is too deeply nested: %s" % entry)
+			continue
+		var collision_key := entry.trim_suffix("/").to_lower()
+		if seen_paths.has(collision_key):
+			result["errors"].append("Duplicate or case-colliding DAW pack ZIP path: %s" % entry)
+			continue
+		seen_paths[collision_key] = true
+		var entry_metadata: Dictionary = metadata[entry_index]
+		if str(entry_metadata.get("name", "")).replace("\\", "/") != entry:
+			result["errors"].append("DAW pack ZIP directory metadata does not match entry: %s" % entry)
+			continue
+		var uncompressed := int(entry_metadata.get("uncompressed", 0))
+		var compressed := int(entry_metadata.get("compressed", 0))
+		if uncompressed > MAX_ZIP_ENTRY_BYTES:
+			result["errors"].append("DAW pack ZIP entry exceeds %d bytes: %s" % [MAX_ZIP_ENTRY_BYTES, entry])
+		total_uncompressed += uncompressed
+		total_compressed += compressed
+		if uncompressed > 0 and (compressed <= 0 or float(uncompressed) / float(compressed) > MAX_ZIP_COMPRESSION_RATIO):
+			result["errors"].append("DAW pack ZIP entry has an unsafe compression ratio: %s" % entry)
+	if total_uncompressed > MAX_ZIP_TOTAL_BYTES:
+		result["errors"].append("DAW pack ZIP expands beyond the %d-byte aggregate limit." % MAX_ZIP_TOTAL_BYTES)
+	if total_uncompressed > 0 and (total_compressed <= 0 or float(total_uncompressed) / float(total_compressed) > MAX_ZIP_COMPRESSION_RATIO):
+		result["errors"].append("DAW pack ZIP has an unsafe aggregate compression ratio.")
+	if not result["errors"].is_empty():
+		reader.close()
+		return result
+
+	var stage_error := _ensure_resource_dir(staging_root)
+	if stage_error != OK:
+		reader.close()
+		result["errors"].append("Could not create guarded DAW pack staging directory: %s" % error_string(stage_error))
+		return result
+	var relative_files := []
+	for entry_index in range(files.size()):
+		var entry := str(files[entry_index]).replace("\\", "/")
+		var out_path := _resource_path_join(staging_root, entry)
+		var out_absolute := ProjectSettings.globalize_path(_resource_save_path(out_path)).simplify_path()
+		if not _absolute_descendant_of(out_absolute.trim_suffix("/"), staging_absolute):
+			result["errors"].append("DAW pack ZIP entry escaped the staging directory: %s" % entry)
+			break
+		if entry.ends_with("/"):
+			var directory_error := _ensure_resource_dir(out_path)
+			if directory_error != OK:
+				result["errors"].append("Could not create staged directory %s: %s" % [entry, error_string(directory_error)])
+				break
+			continue
 		_ensure_resource_dir(out_path.get_base_dir())
 		var bytes := reader.read_file(entry)
+		if bytes.size() != int(metadata[entry_index].get("uncompressed", bytes.size())):
+			result["errors"].append("DAW pack ZIP entry size changed while reading: %s" % entry)
+			break
 		var write_error := _write_bytes_to_resource_path(out_path, bytes)
 		if write_error != OK:
 			result["errors"].append("Could not write %s: %s" % [out_path, error_string(write_error)])
-			continue
-		result["entries"].append(out_path)
+			break
+		relative_files.append(entry)
 
 	reader.close()
-	result["ok"] = result["errors"].is_empty()
+	if result["errors"].is_empty():
+		var staged_manifest := _find_manifest_in_pack(staging_root)
+		if staged_manifest.is_empty():
+			result["errors"].append("DAW pack ZIP does not contain a game-pack manifest.")
+		else:
+			var manifest_result: Dictionary = GamePackManifest.load_manifest_file(staged_manifest)
+			if not bool(manifest_result.get("ok", false)):
+				result["errors"].append_array(manifest_result.get("errors", []))
+			elif not _looks_like_daw_game_pack_manifest(manifest_result.get("manifest", {})):
+				result["errors"].append("DAW pack ZIP manifest does not identify a supported game-pack shape.")
+	if not result["errors"].is_empty():
+		_remove_resource_tree(staging_root)
+		return result
+	var move_error := DirAccess.rename_absolute(staging_absolute, pack_absolute)
+	if move_error != OK:
+		_remove_resource_tree(staging_root)
+		result["errors"].append("Could not publish validated DAW pack from staging: %s" % error_string(move_error))
+		return result
+	for relative_path in relative_files:
+		result["entries"].append(_resource_path_join(pack_root, relative_path))
+	result["ok"] = true
 	result["pack_root"] = pack_root
 	return result
+
+
+func _read_zip_central_directory(zip_path: String) -> Dictionary:
+	var result := {"entries": [], "errors": []}
+	var bytes := FileAccess.get_file_as_bytes(zip_path)
+	if bytes.size() < 22:
+		result["errors"].append("DAW pack ZIP is missing its central directory.")
+		return result
+	var eocd := -1
+	var search_start := max(0, bytes.size() - 65557)
+	for offset in range(bytes.size() - 22, search_start - 1, -1):
+		if bytes.decode_u32(offset) == 0x06054b50:
+			eocd = offset
+			break
+	if eocd < 0:
+		result["errors"].append("DAW pack ZIP central-directory footer was not found.")
+		return result
+	var disk_number := bytes.decode_u16(eocd + 4)
+	var directory_disk := bytes.decode_u16(eocd + 6)
+	var entry_count := bytes.decode_u16(eocd + 10)
+	var directory_size := bytes.decode_u32(eocd + 12)
+	var directory_offset := bytes.decode_u32(eocd + 16)
+	if disk_number != 0 or directory_disk != 0 or entry_count == 0xffff or directory_size == 0xffffffff or directory_offset == 0xffffffff:
+		result["errors"].append("Multi-disk and ZIP64 DAW packs are not accepted.")
+		return result
+	if directory_offset + directory_size > eocd or entry_count > MAX_ZIP_ENTRIES:
+		result["errors"].append("DAW pack ZIP central directory is out of bounds.")
+		return result
+	var cursor := directory_offset
+	for _entry_index in range(entry_count):
+		if cursor + 46 > bytes.size() or bytes.decode_u32(cursor) != 0x02014b50:
+			result["errors"].append("DAW pack ZIP central directory entry is malformed.")
+			return result
+		var flags := bytes.decode_u16(cursor + 8)
+		var compressed := bytes.decode_u32(cursor + 20)
+		var uncompressed := bytes.decode_u32(cursor + 24)
+		var name_length := bytes.decode_u16(cursor + 28)
+		var extra_length := bytes.decode_u16(cursor + 30)
+		var comment_length := bytes.decode_u16(cursor + 32)
+		var record_size := 46 + name_length + extra_length + comment_length
+		if cursor + record_size > bytes.size() or compressed == 0xffffffff or uncompressed == 0xffffffff:
+			result["errors"].append("ZIP64 or truncated DAW pack entries are not accepted.")
+			return result
+		if flags & 0x1:
+			result["errors"].append("Encrypted DAW pack ZIP entries are not accepted.")
+			return result
+		var name := bytes.slice(cursor + 46, cursor + 46 + name_length).get_string_from_utf8()
+		result["entries"].append({"name": name, "compressed": compressed, "uncompressed": uncompressed})
+		cursor += record_size
+	return result
+
+
+func _absolute_descendant_of(path: String, root: String) -> bool:
+	var normalized_path := path.replace("\\", "/").trim_suffix("/")
+	var normalized_root := root.replace("\\", "/").trim_suffix("/")
+	return normalized_path.begins_with(normalized_root + "/")
+
+
+func _remove_resource_tree(path: String) -> void:
+	var absolute := ProjectSettings.globalize_path(_resource_save_path(path)).simplify_path()
+	var dir := DirAccess.open(absolute)
+	if dir == null:
+		return
+	dir.list_dir_begin()
+	var name := dir.get_next()
+	while not name.is_empty():
+		var child := absolute.path_join(name)
+		if dir.current_is_dir():
+			_remove_resource_tree(child)
+		else:
+			DirAccess.remove_absolute(child)
+		name = dir.get_next()
+	dir.list_dir_end()
+	DirAccess.remove_absolute(absolute)
 
 
 func _find_manifest_in_pack(pack_root: String) -> String:
@@ -564,9 +743,10 @@ func _write_text_to_resource_path(path: String, text: String) -> int:
 
 
 func _is_safe_pack_relative_path(path: String) -> bool:
-	if path.begins_with("/") or path.find(":") >= 0:
+	var candidate := path.trim_suffix("/")
+	if candidate.is_empty() or candidate.begins_with("/") or candidate.find(":") >= 0 or candidate.find(String.chr(0)) >= 0:
 		return false
-	for part in path.split("/"):
+	for part in candidate.split("/"):
 		if part.is_empty() or part == "." or part == "..":
 			return false
 	return true

@@ -1,0 +1,8 @@
+{
+  "name": "@pocket-audio/handoff",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/handoff-security.test.mjs"
+  }
+}

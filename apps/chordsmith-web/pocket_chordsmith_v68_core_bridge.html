@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#0f1115" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://pocket-audio-handoff.samfa12.workers.dev http://localhost:* http://127.0.0.1:*; form-action http://localhost:* http://127.0.0.1:*" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="Pocket Chordsmith" />
@@ -1023,6 +1024,7 @@
   </div>
 </div>
 <script type="module" src="./src/genre-composer.js"></script>
+<script type="module" src="./src/wav-export-preflight.js"></script>
 <script>
 const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const DEGREE_LABELS = ["I","ii","iii","IV","V","vi","vii dim"];
@@ -1326,6 +1328,12 @@ const MAX_MELODY_TRACKS = 6;
 const DEFAULT_SECTION_BARS = Object.fromEntries(SECTION_IDS.map(id => [id, MAX_BARS]));
 const DEFAULT_SONG_SEQUENCE = ["A","A","B","A","A","B","C","B","A","D"];
 const SHARE_CODE_PREFIX = "PCS1:";
+const PCS_MAX_DECODED_BYTES = 4 * 1024 * 1024;
+const PCS_MAX_ENCODED_CHARS = Math.ceil(PCS_MAX_DECODED_BYTES / 3) * 4;
+const PROJECT_RESOURCE_LIMITS = Object.freeze({maxTracksPerSection:32,maxEventsPerTrack:4096,maxEventsPerProject:16384,maxNotesPerEvent:16});
+const MIDI_IMPORT_MAX_BYTES = 4 * 1024 * 1024;
+const MIDI_IMPORT_MAX_TRACKS = 256;
+const MIDI_IMPORT_MAX_EVENTS = 65536;
 const PROJECT_SCHEMA_VERSION = 17;
 const LEGACY_PROJECT_SCHEMA_VERSION = 16;
 const FORMAT_FEATURES = ["sound-profile-v1","rich-events-v1","articulations-v1","expanded-drums-v1","capability-report-v1"];
@@ -1362,6 +1370,7 @@ const GODOT_PUSH_ENDPOINTS = [
   "http://127.0.0.1:9087/pocket-chordsmith/push-to-godot",
   "http://localhost:9087/pocket-chordsmith/push-to-godot"
 ];
+const GODOT_RECEIVER_TOKEN_KEY = "pocket_chordsmith_godot_receiver_token_v1";
 const HANDOFF_PARAM = "pocketHandoff";
 const HANDOFF_WINDOW_PREFIX = "PocketHandoff:";
 const HANDOFF_TO_DJ_KEY = "pocket_chordsmith_to_dj_handoff_v1";
@@ -2116,6 +2125,37 @@ function sanitizeRichEvent(raw){
   out.technique = raw.technique && typeof raw.technique === "object" && !Array.isArray(raw.technique) ? deepCloneProjectValue(raw.technique) : {};
   return out;
 }
+function assertProjectResourceLimits(project){
+  if(!project || typeof project !== "object" || Array.isArray(project)) return;
+  const sections = project.sections && typeof project.sections === "object" && !Array.isArray(project.sections) ? project.sections : {};
+  let totalEvents = 0;
+  SECTION_IDS.forEach(id => {
+    const section = sections[id];
+    if(!section || typeof section !== "object" || Array.isArray(section)) return;
+    const tracks = section.tracks && typeof section.tracks === "object" && !Array.isArray(section.tracks) ? section.tracks : {};
+    const entries = Object.entries(tracks);
+    assertProjectResourceLimit(`sections.${id}.tracks`,entries.length,PROJECT_RESOURCE_LIMITS.maxTracksPerSection);
+    entries.forEach(([trackId,track]) => {
+      if(!track || typeof track !== "object" || Array.isArray(track)) return;
+      const events = Array.isArray(track.events) ? track.events : [];
+      assertProjectResourceLimit(`sections.${id}.tracks.${trackId}.events`,events.length,PROJECT_RESOURCE_LIMITS.maxEventsPerTrack);
+      totalEvents += events.length;
+      assertProjectResourceLimit("project rich events",totalEvents,PROJECT_RESOURCE_LIMITS.maxEventsPerProject);
+      events.forEach((event,index) => {
+        if(Array.isArray(event?.notes)) assertProjectResourceLimit(`sections.${id}.tracks.${trackId}.events[${index}].notes`,event.notes.length,PROJECT_RESOURCE_LIMITS.maxNotesPerEvent);
+      });
+    });
+  });
+}
+function assertProjectResourceLimit(path,actual,limit){
+  if(actual <= limit) return;
+  const error = new RangeError(`Project exceeds ${path} limit (${actual} > ${limit}).`);
+  error.code = "PROJECT_RESOURCE_LIMIT_EXCEEDED";
+  error.path = path;
+  error.actual = actual;
+  error.limit = limit;
+  throw error;
+}
 function sanitizeRichSections(rawSections){
   const source = rawSections && typeof rawSections === "object" && !Array.isArray(rawSections) ? rawSections : {};
   const out = deepCloneProjectValue(source) || {};
@@ -2177,8 +2217,11 @@ function applyRichSectionsToLegacyData(data){
 }
 function sanitizeProjectData(raw){
   if(!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Project data must be a JSON object");
+  assertProjectResourceLimits(raw);
+  assertProjectResourceLimits(raw.compatibility?.richSource);
   if(asInt(raw.projectVersion ?? raw.schemaVersion,1) <= LEGACY_PROJECT_SCHEMA_VERSION && raw.compatibility?.richSource?.projectVersion >= PROJECT_SCHEMA_VERSION){
     raw = mergeProjectValues(raw,raw.compatibility.richSource);
+    assertProjectResourceLimits(raw);
   }
   const preservedSource = raw.__preservedProjectSource || raw;
   const soundProfile = sanitizeSoundProfile(raw.soundProfile, raw);
@@ -2310,8 +2353,10 @@ function sanitizeProjectData(raw){
 
   return data;
 }
+
 function utf8ToBase64Url(text){
   const bytes = new TextEncoder().encode(text);
+  if(bytes.byteLength > PCS_MAX_DECODED_BYTES) throw projectPayloadTooLargeError();
   let binary = "";
   const chunkSize = 0x8000;
   for(let i = 0; i < bytes.length; i += chunkSize){
@@ -2320,19 +2365,35 @@ function utf8ToBase64Url(text){
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 function base64UrlToUtf8(value){
+  if(value.length > PCS_MAX_ENCODED_CHARS) throw projectPayloadTooLargeError();
+  if(!/^[A-Za-z0-9_-]*$/.test(value)) throw new Error("PCS1 payload contains invalid base64url characters.");
+  if(Math.floor(value.length * 3 / 4) > PCS_MAX_DECODED_BYTES) throw projectPayloadTooLargeError();
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
   const binary = atob(padded);
+  if(binary.length > PCS_MAX_DECODED_BYTES) throw projectPayloadTooLargeError();
   const bytes = new Uint8Array(binary.length);
   for(let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new TextDecoder().decode(bytes);
+  return new TextDecoder("utf-8", {fatal:true}).decode(bytes);
+}
+function projectPayloadTooLargeError(){
+  const error = new RangeError(`Project payload exceeds ${PCS_MAX_DECODED_BYTES} decoded bytes.`);
+  error.code = "PROJECT_PAYLOAD_TOO_LARGE";
+  return error;
+}
+function assertRawProjectTextSize(value){
+  const text = String(value || "");
+  if(text.length > PCS_MAX_DECODED_BYTES || new TextEncoder().encode(text).byteLength > PCS_MAX_DECODED_BYTES) throw projectPayloadTooLargeError();
+  return text;
 }
 function buildShareCode(){
   const compact = JSON.stringify(exportProject());
   return `${SHARE_CODE_PREFIX}${utf8ToBase64Url(compact)}`;
 }
 function parseShareCode(text){
-  const trimmed = String(text || "").trim();
+  const source = String(text || "");
+  if(source.length > PCS_MAX_ENCODED_CHARS + SHARE_CODE_PREFIX.length) throw projectPayloadTooLargeError();
+  const trimmed = source.trim();
   if(!trimmed.startsWith(SHARE_CODE_PREFIX)){
     if(trimmed.startsWith("{") || trimmed.startsWith("[")) throw new Error("This looks like raw JSON. Press Import to auto-detect it.");
     throw new Error("This does not look like a PCS1 share code or raw JSON project.");
@@ -2343,6 +2404,7 @@ function parseShareCode(text){
   try{
     decoded = base64UrlToUtf8(payload);
   }catch(e){
+    if(e?.code === "PROJECT_PAYLOAD_TOO_LARGE") throw e;
     throw new Error("That PCS1 share code could not be decoded.");
   }
   let parsed;
@@ -2354,9 +2416,10 @@ function parseShareCode(text){
   return sanitizeProjectData(parsed);
 }
 function parseProjectText(text){
-  const trimmed = String(text || "").trim();
+  const source = String(text || "");
+  if(/^\s*PCS1:/.test(source)) return parseShareCode(source);
+  const trimmed = assertRawProjectTextSize(source).trim();
   if(!trimmed) throw new Error("Paste a project JSON or PCS1 share code first.");
-  if(trimmed.startsWith(SHARE_CODE_PREFIX)) return parseShareCode(trimmed);
   let parsed;
   try{
     parsed = JSON.parse(trimmed);
@@ -2445,10 +2508,14 @@ function resolvePocketAudioHandoffUrl(){
   return withRelayOverride(POCKET_AUDIO_HANDOFF_URL);
 }
 function configuredPocketAudioHandoffRelayUrl(){
+  if(window.location.protocol !== "file:" && !["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)) return "";
   try{
     const params = new URL(window.location.href).searchParams;
     const value = params.get("handoffRelay") || params.get("relay");
-    if(value) return value;
+    if(!value) return "";
+    const parsed = new URL(value);
+    if(!["http:","https:"].includes(parsed.protocol) || !["localhost","127.0.0.1","::1"].includes(parsed.hostname)) return "";
+    return parsed.href.replace(/\/$/,"");
   }catch(e){}
   return "";
 }
@@ -2987,13 +3054,31 @@ async function sendPocketDawLocalHandoff(encodedHandoff, options={}){
   if(formFallback && submitPocketDawLocalHandoffForm(encodedHandoff)) return "submitted";
   return "failed";
 }
-async function postCodeToGodotReceiver(endpoint, code){
+function getGodotReceiverToken(){
+  try{ return sessionStorage.getItem(GODOT_RECEIVER_TOKEN_KEY) || ""; }catch(e){ return ""; }
+}
+function setGodotReceiverToken(token){
+  try{
+    if(token) sessionStorage.setItem(GODOT_RECEIVER_TOKEN_KEY, token);
+    else sessionStorage.removeItem(GODOT_RECEIVER_TOKEN_KEY);
+  }catch(e){}
+}
+function makeGodotReceiverRequestId(){
+  try{ if(crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID(); }catch(e){}
+  return `pcs-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+async function postCodeToGodotReceiver(endpoint, code, token=""){
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1400);
   try{
+    const headers = {
+      "Content-Type":"application/json",
+      "X-Pocket-Audio-Request-Id":makeGodotReceiverRequestId()
+    };
+    if(token) headers.Authorization = `Bearer ${token}`;
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: {"Content-Type":"application/json"},
+      headers,
       targetAddressSpace: "loopback",
       body: JSON.stringify({
         type: "pocket-chordsmith.push-to-godot",
@@ -3012,6 +3097,7 @@ async function postCodeToGodotReceiver(endpoint, code){
     return {
       ok:false,
       endpoint,
+      authRequired: response.status === 401,
       error: data && data.error ? data.error : `Godot receiver returned ${response.status}`
     };
   }catch(e){
@@ -3022,16 +3108,29 @@ async function postCodeToGodotReceiver(endpoint, code){
 }
 async function pushCodeDirectlyToGodot(code){
   const failures = [];
+  let token = getGodotReceiverToken();
   for(const endpoint of GODOT_PUSH_ENDPOINTS){
-    const result = await postCodeToGodotReceiver(endpoint, code);
+    let result = await postCodeToGodotReceiver(endpoint, code, token);
     if(result.ok) return result;
+    if(result.authRequired){
+      setGodotReceiverToken("");
+      const entered = window.prompt("In Godot, turn on Browser Receiver, choose Copy Receiver Token, then paste that per-session token here.", "");
+      token = String(entered || "").trim();
+      if(!token) return {ok:false, error:"Godot receiver token was not provided"};
+      setGodotReceiverToken(token);
+      result = await postCodeToGodotReceiver(endpoint, code, token);
+      if(result.ok) return result;
+      if(result.authRequired) setGodotReceiverToken("");
+    }
     failures.push(result.error || endpoint);
   }
   const uniqueFailures = [...new Set(failures.filter(Boolean))];
   return {ok:false, error: uniqueFailures.join("; ") || "Godot receiver unavailable"};
 }
 function submitCodeToGodotReceiver(code){
-  return submitGodotReceiverForm(GODOT_PUSH_ENDPOINTS[0], code);
+  // Authenticated requests require headers, which HTML form fallback cannot
+  // provide. Manual paste remains the universal fallback.
+  return false;
 }
 function localNetworkAccessPolicyState(){
   const policy = document.permissionsPolicy || document.featurePolicy;
@@ -7104,6 +7203,7 @@ async function previewCurrentChordSetting(message){
     if(chord) playChord(chord, audioCtx.currentTime + 0.015, 0.62);
   }catch(e){}
 }
+
 function bindKeyboardShortcuts(){
   document.addEventListener("keydown", (ev) => {
     if(!(ev.ctrlKey || ev.metaKey) || ev.shiftKey || ev.altKey) return;
@@ -28279,6 +28379,7 @@ function normalizeChordsmithTraceEvent(ev){
   if(ev.slideOffset !== undefined) out.slideOffset = roundTraceNumber(ev.slideOffset);
   if(ev.instrument !== undefined) out.instrument = ev.instrument;
   if(ev.trackIndex !== undefined) out.trackIndex = ev.trackIndex;
+  if(ev.lane !== undefined) out.lane = ev.lane;
   if(ev.pan !== undefined) out.pan = roundTraceNumber(ev.pan);
   if(ev.articulation !== undefined) out.articulation = ev.articulation;
   if(ev.notes !== undefined) out.midiNotes = ev.notes.slice();
@@ -28616,6 +28717,7 @@ function midiChunkName(view, offset){
   return String.fromCharCode(view.getUint8(offset), view.getUint8(offset + 1), view.getUint8(offset + 2), view.getUint8(offset + 3));
 }
 function parseStandardMidi(buffer){
+  if(!(buffer instanceof ArrayBuffer) || buffer.byteLength > MIDI_IMPORT_MAX_BYTES) throw new RangeError(`MIDI file exceeds the ${MIDI_IMPORT_MAX_BYTES / (1024 * 1024)} MiB import limit`);
   const view = new DataView(buffer);
   let offset = 0;
   const readU16 = () => { const v = view.getUint16(offset, false); offset += 2; return v; };
@@ -28625,6 +28727,7 @@ function parseStandardMidi(buffer){
   const headerLength = readU32();
   const format = readU16();
   const trackCount = readU16();
+  if(trackCount > MIDI_IMPORT_MAX_TRACKS) throw new RangeError(`MIDI file exceeds the ${MIDI_IMPORT_MAX_TRACKS}-track import limit`);
   const division = readU16();
   offset = 8 + headerLength;
   if(format !== 0 && format !== 1) throw new Error("Only MIDI format 0 and 1 are supported");
@@ -28641,6 +28744,7 @@ function parseStandardMidi(buffer){
   const pitchBends = [];
   let sysexCount = 0;
   let tracksRead = 0;
+  let parsedEventCount = 0;
   const decodeMidiText = (bytes, start, len) => {
     const chunk = bytes.slice(start, start + len);
     try{
@@ -28670,6 +28774,8 @@ function parseStandardMidi(buffer){
     };
 
     while(ref.pos < trackBytes.length){
+      parsedEventCount++;
+      if(parsedEventCount > MIDI_IMPORT_MAX_EVENTS) throw new RangeError(`MIDI file exceeds the ${MIDI_IMPORT_MAX_EVENTS}-event import limit`);
       tick += readMidiVLQ(trackBytes, ref);
       if(ref.pos >= trackBytes.length) break;
       let status = trackBytes[ref.pos++];
@@ -29559,6 +29665,7 @@ async function importMidiFile(file){
       setMidiImportSummary("MIDI import is available in Advanced mode only.");
       return;
     }
+    if(Number(file.size) > MIDI_IMPORT_MAX_BYTES) throw new RangeError(`MIDI file exceeds the ${MIDI_IMPORT_MAX_BYTES / (1024 * 1024)} MiB import limit`);
     setStatus("Importing MIDI...");
     const buffer = await file.arrayBuffer();
     const parsed = parseStandardMidi(buffer);
@@ -29572,7 +29679,6 @@ async function importMidiFile(file){
     if(els.midiImportInput) els.midiImportInput.value = "";
   }
 }
-
 
 function makeOfflineTone(ctx, dest, freq, t, dur, type, peak=0.4, filterType=null, filterFreq=1400, pan=0){
   t = safeAudioTime(t);
@@ -30010,6 +30116,22 @@ async function renderCoreWavForCurrentProject(durationLabel, eventCount){
   }
 }
 
+function preflightWavExport(durationSeconds, sampleRate, channels = 2){
+  const api = globalThis.PocketChordsmithWavExportPreflight;
+  if(!api) throw new Error("WAV safety preflight did not load. Reload Pocket Chordsmith before exporting.");
+  const budget = api.chooseWavExportBudget({
+    userAgent: navigator.userAgent,
+    deviceMemory: navigator.deviceMemory,
+  });
+  return api.estimateWavExportResources({
+    durationSeconds,
+    sampleRate,
+    channels,
+    maximumWorkingBytes: budget.maximumWorkingBytes,
+    maximumDurationSeconds: budget.maximumDurationSeconds,
+  });
+}
+
 
 async function exportWavFile(){
   const token = ++state.wavExportToken;
@@ -30040,8 +30162,16 @@ async function exportWavFile(){
     const sampleRate = 44100;
     const durationLabel = `${Math.ceil(totalDuration)}s audio`;
     const scopeLabel = exportScopeLabel();
+    const resourceEstimate = preflightWavExport(totalDuration, sampleRate, 2);
+    if(!resourceEstimate.ok){
+      const message = globalThis.PocketChordsmithWavExportPreflight.formatWavExportPreflightFailure(resourceEstimate);
+      setWavProgress(message);
+      setStatus(`WAV export stopped safely. ${message}`);
+      return;
+    }
+    const workingMemoryMb = Math.ceil(resourceEstimate.estimatedWorkingBytes / 1024 / 1024);
     setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) from ${events.length} events. Keep this tab open.`);
-    setStatus(`Rendering WAV (${scopeLabel}, ${durationLabel})...`);
+    setStatus(`Rendering WAV (${scopeLabel}, ${durationLabel}, up to ${workingMemoryMb} MB working memory)...`);
     await new Promise(resolve => setTimeout(resolve, 50));
     if(token !== state.wavExportToken) return;
     if(await renderCoreWavForCurrentProject(durationLabel, events.length)) return;
@@ -30164,48 +30294,66 @@ function richEventDurationSteps(holdTrack, step, stepCount){
   while(step + duration < stepCount && holdTrack?.[step + duration]) duration++;
   return duration;
 }
+function compactEventsForRichSection(sectionId){
+  const previousScope = els.exportScopeSelect ? els.exportScopeSelect.value : "";
+  if(els.exportScopeSelect) els.exportScopeSelect.value = sanitizeSectionId(sectionId);
+  try{
+    return buildSequenceEvents();
+  }finally{
+    if(els.exportScopeSelect) els.exportScopeSelect.value = previousScope;
+  }
+}
 function generatedRichTracksForSection(sectionId){
   const section = getSectionData(sectionId,true);
-  const stepCount = section.bars * stepsPerBar();
-  const compactMirror = () => ({compatibility:{compactMirror:true},events:[]});
+  const compactMirror = () => ({compatibility:{compactMirror:true,liveMirror:true},events:[]});
   const tracks = {drums:compactMirror(),bass:compactMirror(),guitar:compactMirror(),chords:compactMirror()};
   const pushEvent = (track,event) => {
     if(!tracks[track]) tracks[track] = compactMirror();
-    tracks[track].events.push({step:event.step,tick:Math.round(event.step * MIDI_TICKS_PER_QUARTER / activeResolution()),duration:event.duration ?? 1,velocity:event.velocity ?? 96,articulation:event.articulation || "finger",sound:event.sound || "standard",role:event.role || "support",expression:event.expression || {},technique:event.technique || {},...(event.note !== undefined ? {note:event.note} : {}),...(event.notes ? {notes:event.notes} : {})});
+    tracks[track].events.push({
+      step:event.step,
+      tick:event.tick ?? Math.round(event.step * MIDI_TICKS_PER_QUARTER / activeResolution()),
+      duration:event.duration ?? 1,
+      durationTicks:event.durationTicks ?? Math.max(1,Math.round((event.duration ?? 1) * MIDI_TICKS_PER_QUARTER / activeResolution())),
+      velocity:event.velocity ?? 96,
+      articulation:event.articulation || "finger",
+      sound:event.sound || "standard",
+      role:event.role || "support",
+      expression:event.expression || {},
+      technique:event.technique || {},
+      ...(event.lane ? {lane:event.lane} : {}),
+      ...(event.note !== undefined ? {note:event.note} : {}),
+      ...(event.notes ? {notes:event.notes} : {})
+    });
   };
-  const lanes = sanitizeDrumLanes(section.drumLanes || {});
-  for(let step=0;step<stepCount;step++){
-    if(normalizeBeatCell(section.grid.kick[step])) lanes.kick[step] = normalizeBeatCell(section.grid.kick[step]);
-    if(normalizeBeatCell(section.grid.snare[step])) lanes.snare[step] = normalizeBeatCell(section.grid.snare[step]);
-    const hatLevel = normalizeBeatCell(section.grid.hat[step]);
-    if(hatLevel) lanes[hatLevel === 2 ? "hat_open" : "hat_closed"][step] = hatLevel;
-    COMMON_DRUM_LANES.forEach(lane => {
-      const level = normalizeBeatCell(lanes[lane]?.[step]);
-      if(level) pushEvent("drums",{step,duration:1,velocity:level === 2 ? 116 : lane === "hat_closed" ? 74 : 98,articulation:level === 2 ? "accent" : lane === "hat_open" ? "open" : "finger",sound:lane,role:lane === "kick" && step % stepsPerBar() === 0 ? "anchor" : "groove",technique:{drums:{lane}}});
-    });
-    if(bassStepHasTrigger(section,step) && !(section.bassHold || [])[step] && !(section.bassSlide || [])[step]){
-      const note = bassStepMidiAt(section,step);
-      const articulation = bassArticulationAt(section,step);
-      pushEvent("bass",{step,duration:richEventDurationSteps(section.bassHold,step,stepCount),note,velocity:bassStepAccentAt(section,step) ? 112 : articulation === "mute" ? 72 : 92,articulation,sound:state.bassTone || "classic",role:step % stepsPerBar() === 0 ? "anchor" : articulation === "pop" ? "fill" : "groove",technique:normalizeSoundProfileId(state.audioProfile) === FUNK_AUDIO_PROFILE_ID ? {funk:{hand:articulation === "slap" ? "thumb" : articulation === "pop" ? "index" : "finger"}} : {}});
+  const beatSeconds = Math.max(0.001,beatDur());
+  const profileId = normalizeSoundProfileId(state.audioProfile);
+  compactEventsForRichSection(sectionId).forEach(event => {
+    if(event.type === "texture") return;
+    const tick = Math.max(0,Math.round(Number(event.time || 0) / beatSeconds * MIDI_TICKS_PER_QUARTER));
+    const durationTicks = Math.max(1,Math.round(Number(event.dur || 0.08) / beatSeconds * MIDI_TICKS_PER_QUARTER));
+    const timing = {step:event.step,tick,durationTicks,duration:durationTicks * activeResolution() / MIDI_TICKS_PER_QUARTER};
+    if(event.type === "kick" || event.type === "snare" || event.type === "hat" || event.type === "drum"){
+      const lane = event.type === "hat" ? (event.accent ? "hat_open" : "hat_closed") : event.type === "drum" ? event.lane : event.type;
+      pushEvent("drums",{...timing,lane,sound:lane,velocity:event.accent ? 116 : Math.round(96 * (event.velocityScale ?? 1)),articulation:event.accent ? "accent" : lane === "hat_open" ? "open" : "finger",role:lane === "kick" && event.step % stepsPerBar() === 0 ? "anchor" : "groove",technique:{drums:{lane}}});
+      return;
     }
-    if(state.guitarEnabled){
-      const articulation = guitarStepArt(section,step);
-      if(articulation !== "off" && articulation !== "hold"){
-        const chord = section.progression[Math.floor(step/stepsPerBar())] || state.availableChords[0];
-        pushEvent("guitar",{step,duration:Math.max(1,Math.round(guitarStepDuration(section,step,articulation)/Math.max(0.001,stepDurationForIndex(step)))),notes:buildPowerChordNotes(chord,state.guitarRegister),velocity:articulation === "accent" ? 112 : 94,articulation,sound:state.guitarTone,role:"rhythm",technique:normalizeSoundProfileId(state.audioProfile) === HEAVY_METAL_AUDIO_PROFILE_ID ? {metal:{palmMuteDepth:state.metalTexture?.palmMute ?? 0,pickDirection:guitarDirectionForStep(step)}} : normalizeSoundProfileId(state.audioProfile) === WESTERN_AUDIO_PROFILE_ID ? {western:{pickDirection:guitarDirectionForStep(step)}} : {}});
-      }
+    if(event.type === "bass"){
+      pushEvent("bass",{...timing,note:event.midi,velocity:event.accent ? 112 : event.articulation === "mute" ? 72 : 92,articulation:event.articulation,sound:state.bassTone || "classic",role:event.step % stepsPerBar() === 0 ? "anchor" : event.articulation === "pop" ? "fill" : "groove",technique:profileId === FUNK_AUDIO_PROFILE_ID ? {funk:{hand:event.articulation === "slap" ? "thumb" : event.articulation === "pop" ? "index" : "finger"}} : {}});
+      return;
     }
-    if(step % stepsPerBar() === 0){
-      const chord = section.progression[Math.floor(step/stepsPerBar())] || state.availableChords[0];
-      pushEvent("chords",{step,duration:stepsPerBar(),notes:chordNotes(chord),velocity:82,articulation:state.chordPlayMode,sound:state.chordInstrument,role:"harmony"});
+    if(event.type === "guitar"){
+      pushEvent("guitar",{...timing,notes:event.notes,velocity:event.articulation === "accent" ? 112 : 94,articulation:event.articulation,sound:event.tone || state.guitarTone,role:"rhythm",technique:profileId === HEAVY_METAL_AUDIO_PROFILE_ID ? {metal:{palmMuteDepth:state.metalTexture?.palmMute ?? 0,pickDirection:event.direction}} : profileId === WESTERN_AUDIO_PROFILE_ID ? {western:{pickDirection:event.direction}} : {}});
+      return;
     }
-    (section.melodyTracks || []).forEach((melody,trackIndex) => {
-      if(melody[step] === null || melody[step] === undefined || (section.melodyHold?.[trackIndex] || [])[step] || (section.melodySlide?.[trackIndex] || [])[step]) return;
-      const trackName = `melody${trackIndex + 1}`;
-      const trackOctave = section.melodyOctaves?.[trackIndex] ?? state.melodyOctave ?? 0;
-      pushEvent(trackName,{step,duration:richEventDurationSteps(section.melodyHold?.[trackIndex],step,stepCount),note:melodyIndexToMidi(melody[step],trackOctave),velocity:94,articulation:(section.melodySlide?.[trackIndex] || [])[step+1] ? "slide" : "legato",sound:section.melodyInstruments?.[trackIndex] || "pulse",role:trackIndex === 0 ? "lead" : "response",expression:{pan:section.melodyPan?.[trackIndex] || 0}});
-    });
-  }
+    if(event.type === "chord"){
+      pushEvent("chords",{...timing,notes:chordNotes(event.chord),velocity:82,articulation:state.chordPlayMode,sound:state.chordInstrument,role:"harmony"});
+      return;
+    }
+    if(event.type === "melody"){
+      const trackIndex = Math.max(0,asInt(event.trackIndex,0));
+      pushEvent(`melody${trackIndex + 1}`,{...timing,note:event.midi,velocity:94,articulation:event.slideMidi !== undefined ? "slide" : "legato",sound:event.instrument || section.melodyInstruments?.[trackIndex] || "pulse",role:trackIndex === 0 ? "lead" : "response",expression:{pan:event.pan ?? section.melodyPan?.[trackIndex] ?? 0}});
+    }
+  });
   return tracks;
 }
 function richEventsMatch(a,b){
@@ -30246,7 +30394,7 @@ function buildRichSections(){
         return mergeProjectValues(sourceEvent,{...event,expression:mergeProjectValues(sourceEvent.expression,event.expression),technique:mergeProjectValues(sourceEvent.technique,event.technique)});
       });
       sourceEvents.forEach((event,index) => { if(!used.has(index) && richEventNeedsPreservation(event)) events.push(deepCloneProjectValue(event)); });
-      mergedSection.tracks[trackName] = mergeProjectValues(sourceTrack,{compatibility:mergeProjectValues(sourceTrack?.compatibility,{compactMirror:true}),events});
+      mergedSection.tracks[trackName] = mergeProjectValues(sourceTrack,{compatibility:mergeProjectValues(sourceTrack?.compatibility,track.compatibility),events});
     });
     Object.entries(sourceSection.tracks || {}).forEach(([trackName,track]) => { if(!generated[trackName]) mergedSection.tracks[trackName] = deepCloneProjectValue(track); });
     out[id] = mergedSection;

@@ -30,6 +30,7 @@ export * from "./performance/tuplets.js";
 export * from "./events/timeline-events.js";
 export * from "./schema/parse-share-code.js";
 export * from "./schema/migrations.js";
+export * from "./schema/resource-limits.js";
 export * from "./schema/normalise-project.js";
 export * from "./music/scales.js";
 export * from "./music/chords.js";

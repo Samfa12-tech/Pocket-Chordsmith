@@ -5,9 +5,14 @@ export interface NativeExternalLinkApi {
 
 export function normalizeExternalUrl(url: string): string | null {
   const trimmed = url.trim();
-  if (!trimmed) return null;
-  const lower = trimmed.toLowerCase();
-  if (lower.startsWith("https://") || lower.startsWith("http://") || lower.startsWith("mailto:")) return trimmed;
+  if (!trimmed || /[\u0000-\u001f\u007f]/.test(trimmed) || /%(?![0-9a-f]{2})/i.test(trimmed)) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if ((parsed.protocol === "https:" || parsed.protocol === "http:") && parsed.hostname) return trimmed;
+    if (parsed.protocol === "mailto:" && parsed.pathname.trim()) return trimmed;
+  } catch {
+    // A malformed URL never reaches the native bridge.
+  }
   return null;
 }
 

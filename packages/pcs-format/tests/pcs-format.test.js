@@ -9,10 +9,13 @@ import {
   PCS_FORMAT_FEATURES,
   PCS_ARTICULATIONS,
   PCS_LEGACY_SCHEMA_VERSION,
+  PCS_MAX_DECODED_BYTES,
+  PCS_MAX_ENCODED_CHARS,
   PCS_PREFIX,
   PCS_PROFILE_IDS,
   PCS_SCHEMA_VERSION,
   PCS_DRUM_LANES,
+  canonicalizePcsProject,
   encodePcsProject,
   migratePcsProject,
   negotiatePcsCapabilities,
@@ -87,7 +90,7 @@ test("exports stable PCS1, schema, profile, feature, and drum metadata", () => {
 });
 
 test("documents package scope without claiming app-runtime ownership", () => {
-  assert.ok(PCS_FORMAT_SCOPE.owns.includes("PCS1 prefix metadata"));
+  assert.ok(PCS_FORMAT_SCOPE.owns.includes("canonical PCS1 interchange parsing and encoding"));
   assert.ok(PCS_FORMAT_SCOPE.owns.includes("rich event normalization"));
   assert.ok(
     PCS_FORMAT_SCOPE.doesNotOwn.includes("full app runtime normalization"),
@@ -104,6 +107,10 @@ test("indexes fixture roles and expected high-level assertions", () => {
   assert.equal(fixtureIndex.status, PCS_FORMAT_STATUS);
   assert.equal(fixtureIndex.schemaVersion, PCS_SCHEMA_VERSION);
   assert.equal(fixtureIndex.prefix, PCS_PREFIX);
+  assert.equal(fixtureIndex.canonicalApi, "canonicalizePcsProject");
+  assert.equal(fixtureIndex.maxDecodedBytes, PCS_MAX_DECODED_BYTES);
+  assert.equal(fixtureIndex.maxEncodedChars, PCS_MAX_ENCODED_CHARS);
+  assert.deepEqual(fixtureIndex.consumerContract, ["schemaVersion", "unknownFields", "warnings", "lossReport", "capabilityReport"]);
 
   for (const fixture of fixtureIndex.fixtures) {
     assert.equal(PCS_FIXTURE_ROLES[fixture.file], fixture.role);
@@ -231,6 +238,52 @@ test("parses current app raw JSON and PCS1 payloads", () => {
     encodedResult.project.songSequence,
     currentAppDemo.songSequence,
   );
+});
+
+test("browser-safe codec round trips Unicode without a Node Buffer global", () => {
+  const project = structuredClone(valid);
+  project.title = "Kōtare groove 🎵";
+  const previousBuffer = globalThis.Buffer;
+  try {
+    globalThis.Buffer = undefined;
+    const encoded = encodePcsProject(project);
+    const parsed = parsePcsProject(encoded);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.project.title, project.title);
+  } finally {
+    globalThis.Buffer = previousBuffer;
+  }
+});
+
+test("self-contained dist codec runs without source imports or Buffer", async () => {
+  const distSource = readFileSync(new URL("../dist/index.js", import.meta.url), "utf8");
+  assert.doesNotMatch(distSource, /(?:from|import\()\s*["']\.\.\/src\//);
+  const dist = await import(`../dist/index.js?test=${Date.now()}`);
+  const previousBuffer = globalThis.Buffer;
+  try {
+    globalThis.Buffer = undefined;
+    const encoded = dist.encodePcsProject(valid);
+    assert.equal(dist.parsePcsProject(encoded).ok, true);
+  } finally {
+    globalThis.Buffer = previousBuffer;
+  }
+});
+
+test("rejects oversized encoded and decoded payloads before JSON parsing", () => {
+  const encoded = parsePcsProject(`${PCS_PREFIX}${"A".repeat(PCS_MAX_ENCODED_CHARS + 1)}`);
+  const decoded = parsePcsProject(`{"projectVersion":16,"padding":"${"x".repeat(PCS_MAX_DECODED_BYTES)}"}`);
+  assert.equal(encoded.ok, false);
+  assert.equal(encoded.error.code, "payload-too-large");
+  assert.equal(decoded.ok, false);
+  assert.equal(decoded.error.code, "payload-too-large");
+});
+
+test("canonical interchange API migrates schema 16 and preserves unknown fields", () => {
+  const result = canonicalizePcsProject(encodePcsProject(valid));
+  assert.equal(result.ok, true);
+  assert.equal(result.sourceSchemaVersion, PCS_LEGACY_SCHEMA_VERSION);
+  assert.equal(result.project.projectVersion, PCS_SCHEMA_VERSION);
+  assert.equal(result.project.unknownFutureField.keep, true);
 });
 
 test("summarizes playable Section A and song sequence fixture units", () => {

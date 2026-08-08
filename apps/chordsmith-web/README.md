@@ -4,6 +4,10 @@ Pocket Chordsmith is a mobile-first music sketchpad for building chord progressi
 
 The current app build is `pocket_chordsmith_v68_core_bridge.html`. `index.html` redirects to it so the project can be uploaded as a simple web app bundle, including on itch.io.
 
+Composition/agent guidance is versioned in
+`docs/COMPOSING_FOR_POCKET_CHORDSMITH.md`. New native project JSON targets
+schema 17; schema 16 is an explicit compatibility projection with a loss report.
+
 Public app page:
 
 ```text
@@ -17,7 +21,7 @@ License/status: source-available app, `UNLICENSED`. See the repository root
 
 - `index.html` - hosting entry point.
 - `pocket_chordsmith_v68_core_bridge.html` - current Pocket Chordsmith app with Pocket Audio Core bridge diagnostics and core WAV export fallback.
-- `pocket_chordsmith_v67_direct_godot_push.html` - previous direct Godot push build.
+- `../archive/unsupported-runnable-builds/chordsmith-web/pocket_chordsmith_v67_direct_godot_push.html` - unsupported historical direct-Godot snapshot; excluded from current builds.
 - `pocket_chordsmith_v65_midi_guitar_import_polish.html` - previous MIDI/guitar import polish build.
 - `pocket_chordsmith_v65_notes_and_limitations.txt` - implementation notes, limitations, and manual test recommendations for v65.
 - `pocket_chordsmith_v64_western_sounds.html` - previous western sound compatibility build.
@@ -65,6 +69,17 @@ Pocket Chordsmith exports `PCS1:` share codes and JSON. Those payloads are the
 current bridge into Pocket DJ, Pocket DAW experiments, Pocket Audio Core tests,
 and the Pocket Chordsmith Godot addon.
 
+Import resource limits are part of that boundary. Raw project JSON and decoded
+`PCS1:` data are limited to 4 MiB; schema-17 projects allow at most 32 rich
+tracks per section, 4,096 events per track, 16,384 rich events per project and
+16 notes per event. Standard MIDI import is limited to 4 MiB, 256 tracks and
+65,536 parsed events. Imports fail with a visible error before cloning,
+base64 decoding or MIDI event planning; they are never silently truncated.
+
+Relay query overrides are development-only and accept only loopback HTTP(S)
+endpoints while Chordsmith itself is running from a file or loopback origin.
+Production pages keep the configured official handoff path.
+
 ## Lofi Chill Pack
 
 `pocket_chordsmith_v68_core_bridge.html` includes a procedural lofi/chillhop profile for loopable study and chill-game background music. Simple mode exposes `Compose Lofi Song`; the Advanced Genre Studio separates Current Section, Apply Sound Profile, Compose Full Song, and Game Loop actions. Advanced mode exposes the lofi preset, lofi drum kit, lofi bass tone, and subtle texture controls.
@@ -99,6 +114,9 @@ optional `genreComposition` planning metadata alongside the normal editable
 Chordsmith section data. See `docs/GENRE_COMPOSER.md` for reference seeds,
 commands, compatibility details, and the manual listening checklist.
 ## Release Notes
+
+The entries below are dated historical snapshots. For current project authoring,
+schema, and compatibility guidance, use the documents linked above.
 
 ### v68 Pocket Audio Core Bridge
 
@@ -182,7 +200,9 @@ For itch.io, upload a zip that contains at least:
 
 Keep generated exports, old local snapshots, and add-on packaging zips out of Git unless they are intentional release artifacts.
 
-Older intentional HTML snapshots live in `archive/`.
+The v68 HTML is deterministic generated output. Edit the ordered fragments listed in `src/chordsmith-source-manifest.json` (state, schema, audio, transport, export, handoff, UI, and accessibility-bearing UI code), then run `npm run build:single-file`. `npm run verify:single-file` fails if the portable HTML has drifted from those sources.
+
+Older intentional HTML snapshots live in the central unsupported archive at `../archive/unsupported-runnable-builds/chordsmith-web/`; they are excluded from current builds and packages.
 
 ## Codex / AI Development Context
 

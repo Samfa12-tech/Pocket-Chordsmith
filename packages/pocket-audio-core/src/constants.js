@@ -9,6 +9,14 @@ export const DEFAULT_TIME_SIG = 4;
 export const DEFAULT_RESOLUTION = 4;
 export const MAX_SEQUENCE_SLOTS = 64;
 
+export const POCKET_AUDIO_RESOURCE_LIMITS = Object.freeze({
+  maxRichTracksPerSection: 32,
+  maxRichEventsPerTrack: 4096,
+  maxRichEventsPerProject: 16384,
+  maxNotesPerEvent: 16,
+  maxEventsPerSchedulerTick: 256
+});
+
 export const SECTION_IDS = Object.freeze(["A", "B", "C", "D", "E", "F", "G", "H"]);
 export const STEM_IDS = Object.freeze(["drums", "bass", "chords", "melody", "guitar"]);
 export const DRUM_LANES = Object.freeze(["kick", "snare", "hat", "bass"]);

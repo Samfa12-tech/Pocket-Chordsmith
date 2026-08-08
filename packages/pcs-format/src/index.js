@@ -10,6 +10,8 @@ export const PCS_SUPPORTED_SCHEMA_VERSIONS = Object.freeze([
   PCS_SCHEMA_VERSION,
 ]);
 export const PCS_FORMAT_STATUS = "0.2.0-schema17";
+export const PCS_MAX_DECODED_BYTES = 4 * 1024 * 1024;
+export const PCS_MAX_ENCODED_CHARS = Math.ceil(PCS_MAX_DECODED_BYTES / 3) * 4;
 
 export const PCS_PROFILE_IDS = Object.freeze([
   "standard",
@@ -80,8 +82,8 @@ export const PCS_SCHEMA17_TYPES = Object.freeze({
 
 export const PCS_FORMAT_SCOPE = Object.freeze({
   owns: Object.freeze([
-    "PCS1 prefix metadata", "schema-16 and schema-17 compatibility metadata",
-    "parse/validate result shape", "rich event normalization", "sound profile intent",
+    "canonical PCS1 interchange parsing and encoding", "schema-16 and schema-17 compatibility metadata",
+    "parse/validate/migrate result shape", "rich event normalization", "sound profile intent",
     "capability negotiation", "legacy projection loss reports",
   ]),
   doesNotOwn: Object.freeze([
@@ -110,9 +112,13 @@ export function parsePcsProject(input) {
   try {
     const text = String(input || "").trim();
     if (!text) return parseError("empty-input", "PCS input is empty.");
+    if (text.startsWith(PCS_PREFIX) && text.length - PCS_PREFIX.length > PCS_MAX_ENCODED_CHARS) {
+      return parseError("payload-too-large", `PCS1 payload exceeds ${PCS_MAX_ENCODED_CHARS} encoded characters.`);
+    }
     const jsonText = text.startsWith(PCS_PREFIX)
-      ? decodePcs1Payload(text.slice(PCS_PREFIX.length))
+      ? decodePcsPayload(text.slice(PCS_PREFIX.length))
       : text;
+    assertDecodedSize(jsonText);
     const project = JSON.parse(jsonText);
     const validation = validatePcsProject(project);
     if (!validation.ok) {
@@ -124,7 +130,7 @@ export function parsePcsProject(input) {
     }
     return { ok: true, project, schemaVersion: validation.schemaVersion, warnings: validation.warnings };
   } catch (error) {
-    return parseError("parse-failed", error instanceof Error ? error.message : String(error));
+    return parseError(error?.code || "parse-failed", error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -138,7 +144,25 @@ export function encodePcsProject(project, options = {}) {
     throw error;
   }
   const json = JSON.stringify(project);
-  return options.prefix === false ? json : `${PCS_PREFIX}${Buffer.from(json, "utf8").toString("base64url")}`;
+  assertDecodedSize(json);
+  return options.prefix === false ? json : `${PCS_PREFIX}${encodePcsPayload(json)}`;
+}
+
+/** Canonical interchange entrypoint: parse, validate, and migrate to schema 17 by default. */
+export function canonicalizePcsProject(input, options = {}) {
+  const validation = typeof input === "string" ? null : validatePcsProject(input);
+  const parsed = typeof input === "string"
+    ? parsePcsProject(input)
+    : validation.ok
+      ? { ok: true, project: input, schemaVersion: schemaProjectVersion(input), warnings: validation.warnings }
+      : parseError("invalid-project", validation.errors[0], validation.errors);
+  if (!parsed.ok || options.migrate === false || parsed.schemaVersion === PCS_SCHEMA_VERSION) return parsed;
+  const migrated = migratePcsProject(parsed.project);
+  return {
+    ...migrated,
+    sourceSchemaVersion: parsed.schemaVersion,
+    warnings: [...(parsed.warnings || []), ...(migrated.warnings || [])],
+  };
 }
 
 export function validatePcsProject(project) {
@@ -566,4 +590,41 @@ function collectTechniqueCapabilities(technique, required) {
 }
 function isPlainObject(value) { return Boolean(value && typeof value === "object" && !Array.isArray(value)); }
 function deepClone(value) { return JSON.parse(JSON.stringify(value)); }
-function decodePcs1Payload(payload) { const normalized = payload.replace(/-/g, "+").replace(/_/g, "/"); const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="); return Buffer.from(padded, "base64").toString("utf8"); }
+export function encodePcsPayload(text) {
+  const bytes = new TextEncoder().encode(text);
+  if (bytes.byteLength > PCS_MAX_DECODED_BYTES) throw payloadTooLargeError();
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return requireBase64Function("btoa")(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+export function decodePcsPayload(payload) {
+  if (payload.length > PCS_MAX_ENCODED_CHARS) throw payloadTooLargeError();
+  if (!/^[A-Za-z0-9_-]*$/.test(payload)) throw new Error("PCS1 payload contains invalid base64url characters.");
+  const estimatedBytes = Math.floor(payload.length * 3 / 4);
+  if (estimatedBytes > PCS_MAX_DECODED_BYTES) throw payloadTooLargeError();
+  const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = requireBase64Function("atob")(padded);
+  if (binary.length > PCS_MAX_DECODED_BYTES) throw payloadTooLargeError();
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
+function assertDecodedSize(text) {
+  if (new TextEncoder().encode(text).byteLength > PCS_MAX_DECODED_BYTES) throw payloadTooLargeError();
+}
+
+function payloadTooLargeError() {
+  const error = new Error(`PCS payload exceeds ${PCS_MAX_DECODED_BYTES} decoded bytes.`);
+  error.code = "payload-too-large";
+  return error;
+}
+
+function requireBase64Function(name) {
+  if (typeof globalThis[name] !== "function") throw new Error(`${name} is required for PCS1 base64url encoding.`);
+  return globalThis[name].bind(globalThis);
+}

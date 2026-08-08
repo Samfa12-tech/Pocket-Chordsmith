@@ -1,7 +1,7 @@
 @tool
 extends SceneTree
 
-const EXPECTED_TOOLBAR_ACTIONS := 14
+const EXPECTED_TOOLBAR_ACTIONS := 16
 const MAIN_SCREEN := preload("res://addons/pocket_chordsmith/editor/pcs_main_screen.tscn")
 
 

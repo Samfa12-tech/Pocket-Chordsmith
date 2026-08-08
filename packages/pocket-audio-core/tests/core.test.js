@@ -809,7 +809,7 @@ test("schema 17 rich pitches remain absolute MIDI notes", () => {
   assert.deepEqual(events.find((event) => event.stem === "chords").midiNotes, [62, 65, 69]);
 });
 
-test("compact mirrors defer to compact data while authored rich tracks own their stem", () => {
+test("compact mirrors defer to compact data while verified live mirrors and authored rich tracks own their stem", () => {
   const withTrack = (track) => normalisePocketChordsmithProject({
     ...minimalProject,
     projectVersion: 17,
@@ -823,12 +823,19 @@ test("compact mirrors defer to compact data while authored rich tracks own their
   const authored = buildPocketAudioTimeline(withTrack({
     events: [{ step: 0, durationTicks: 73, note: 61, velocity: 100 }],
   }), { scope: "section", sectionId: "A" }).events.filter((event) => event.stem === "bass");
+  const verifiedLiveMirror = buildPocketAudioTimeline(withTrack({
+    compatibility: { compactMirror: true, liveMirror: true },
+    events: [{ step: 0, durationTicks: 73, note: 62, velocity: 100 }],
+  }), { scope: "section", sectionId: "A" }).events.filter((event) => event.stem === "bass");
 
   assert.notEqual(mirrored[0].midi, 99);
   assert.notEqual(mirrored[0].durationTicks, 73);
   assert.equal(authored.length, 1);
   assert.equal(authored[0].midi, 61);
   assert.equal(authored[0].durationTicks, 73);
+  assert.equal(verifiedLiveMirror.length, 1);
+  assert.equal(verifiedLiveMirror[0].midi, 62);
+  assert.equal(verifiedLiveMirror[0].durationTicks, 73);
 });
 
 test("timeline fallback stem velocities use shared Chordsmith mix defaults", () => {

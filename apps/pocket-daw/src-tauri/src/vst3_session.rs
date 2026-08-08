@@ -106,6 +106,9 @@ pub(crate) struct HostedProcessResult {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct HostedInstanceRuntimeInfo {
+    // Kept in the host response contract even though the current graph routes
+    // instances from the already-normalized role.
+    #[allow(dead_code)]
     pub instrument: bool,
     pub input_channels: u32,
     pub output_channels: u32,
@@ -192,6 +195,9 @@ mod windows {
     struct Mapping {
         handle: HANDLE,
         view: *mut u8,
+        // Holding the mapping name alongside the handles makes its lifetime
+        // and diagnostic identity explicit even when no later read is needed.
+        #[allow(dead_code)]
         name: String,
     }
 
@@ -566,6 +572,7 @@ mod windows {
             self.instances.get(id).map(|value| value.info)
         }
 
+        #[allow(clippy::too_many_arguments)]
         pub(crate) fn process(
             &mut self,
             id: &str,
@@ -665,10 +672,6 @@ mod windows {
                 fallback.disabled = false
             }
             fallback
-        }
-
-        pub(crate) fn last_active_source_key(&self) -> Option<&str> {
-            self.last_active_source_key.as_deref()
         }
 
         pub(crate) fn control(&mut self, kind: &str, payload: Value) -> Result<Value, String> {
@@ -911,6 +914,9 @@ struct GraphProcessRequest {
     deadline_micros: u32,
 }
 
+// Commands are bounded and sent through a synchronous channel. Keeping their
+// payloads inline avoids a second allocation on the graph-control path.
+#[allow(clippy::large_enum_variant)]
 enum GraphCommand {
     Process(
         GraphProcessRequest,
@@ -1154,6 +1160,7 @@ impl Vst3GraphService {
         Ok(Some(Self { inner }))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn process_off_callback(
         &self,
         instance_id: &str,
@@ -1575,7 +1582,7 @@ pub(crate) fn vst3_session_load_instance(
     let graph = if let Ok(graph) = active_graph() {
         graph
     } else {
-        Vst3GraphService::start(&[payload.clone()], 48_000)?
+        Vst3GraphService::start(std::slice::from_ref(&payload), 48_000)?
             .ok_or_else(|| "The VST3 graph could not be started.".to_string())?
     };
     if !graph

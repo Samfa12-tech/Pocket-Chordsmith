@@ -5,6 +5,14 @@ describe("external link bridge", () => {
   it("normalizes only expected external URL schemes", () => {
     expect(normalizeExternalUrl(" https://samfa12.com ")).toBe("https://samfa12.com");
     expect(normalizeExternalUrl("mailto:test@example.com")).toBe("mailto:test@example.com");
+    expect(normalizeExternalUrl("https://samfa12.com/help?a=1&b=2")).toBe("https://samfa12.com/help?a=1&b=2");
+    expect(normalizeExternalUrl("mailto:test@example.com?subject=Hello%20World&body=A%26B")).toBe(
+      "mailto:test@example.com?subject=Hello%20World&body=A%26B"
+    );
+    expect(normalizeExternalUrl("https://")).toBeNull();
+    expect(normalizeExternalUrl("mailto:")).toBeNull();
+    expect(normalizeExternalUrl("https://samfa12.com/%ZZ")).toBeNull();
+    expect(normalizeExternalUrl("https://samfa12.com/\r\nnext")).toBeNull();
     expect(normalizeExternalUrl("javascript:alert(1)")).toBeNull();
     expect(normalizeExternalUrl("")).toBeNull();
   });

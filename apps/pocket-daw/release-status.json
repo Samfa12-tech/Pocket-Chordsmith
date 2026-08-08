@@ -5,6 +5,17 @@
   "latestPublishedVersion": "0.6.44",
   "latestPublishedTag": "pocket-daw-v0.6.44",
   "latestPublishedCommit": "bab1a5850801b890b95c5192d0a1366a0f61b252",
+  "installedSmokeException": {
+    "kind": "source-only-no-installer",
+    "publishedVersion": "0.6.44",
+    "baselineInstalledSmokeVersion": "0.6.43",
+    "approvedAt": "2026-08-01T00:00:00.000Z",
+    "rationale": "0.6.44 is a source-only MCP help-text tag that removes developer build-machine paths. It did not publish a replacement installer or claim new installed audio behavior, so the exact 0.6.43 installer smoke remains the applicable binary evidence.",
+    "focusedEvidence": [
+      "Installed help snippets contain no developer build-machine paths.",
+      "README and current release status identify 0.6.44 as source-only and not a separately published installer."
+    ]
+  },
   "unreleasedSourceNotes": [
     "2026-08-01 source-only 0.6.45 live MCP test hotfix: the loopback bridge now accepts the exact http://tauri.localhost and https://tauri.localhost origins used by the installed Windows Tauri WebView. This fixes the in-app Live test CORS preflight failure while preserving loopback-host, trusted-origin and bearer-token checks. Validation is intentionally limited to the focused Rust origin regression, MCP/UI tests and installer/package checks.",
     "2026-07-17 post-release documentation and test-helper update: added the one-pass exact-artifact release fast path, corrected normal itch policy, recorded 0.6.41 process failures to avoid, and promoted the loopMIDI sender into a tracked reusable script.",

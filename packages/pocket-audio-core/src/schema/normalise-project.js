@@ -24,10 +24,12 @@ import { CHORDSMITH_CHORD_PLAY_MODES, CHORDSMITH_CHORD_RHYTHM_MODES } from "../p
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../sounds/instruments.js";
 import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_ARTICULATIONS, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../sounds/guitar.js";
 import { migratePocketChordsmithProject } from "./migrations.js";
+import { assertPocketAudioProjectResourceLimits } from "./resource-limits.js";
 
 const DEFAULT_PROGRESSION = Object.freeze([0, 4, 5, 3]);
 
 export function normalisePocketChordsmithProject(raw, options = {}) {
+  assertPocketAudioProjectResourceLimits(raw);
   const { project, sourceSchemaVersion, migrationNotes } = migratePocketChordsmithProject(raw);
   const soundProfile = normaliseSoundProfile(project);
   const lofi = soundProfile.lofi;

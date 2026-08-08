@@ -98,6 +98,16 @@ export function validateReleaseCandidateTruth(releaseStatus, context, options = 
   const currentCommit = String(options.currentCommit || "").trim();
   const latestPublishedCommit = String(releaseStatus?.latestPublishedCommit || "").trim();
   const sourceOnlyNotes = Array.isArray(releaseStatus?.unreleasedSourceNotes) ? releaseStatus.unreleasedSourceNotes : [];
+  const smokeVersion = String(releaseStatus?.lastInstalledSmoke?.version || "");
+
+  if (compareSemver(latestPublishedVersion, smokeVersion) > 0) {
+    const policy = releaseStatus?.installedSmokeException;
+    const policyErrors = validateInstalledSmokeException(policy, { latestPublishedVersion, smokeVersion });
+    if (policyErrors.length) {
+      failures.push(`release-status.json latestPublishedVersion ${latestPublishedVersion} is newer than lastInstalledSmoke.version ${smokeVersion}; exact installed evidence is required unless installedSmokeException is complete and matches both versions.`);
+      failures.push(...policyErrors);
+    }
+  }
 
   if (sourceVersion && sourceVersion === latestPublishedVersion) {
     if (!currentCommit || !/^[a-f0-9]{40}$/i.test(currentCommit)) {
@@ -113,6 +123,39 @@ export function validateReleaseCandidateTruth(releaseStatus, context, options = 
   return { ok: failures.length === 0, failures };
 }
 
+function compareSemver(left, right) {
+  const parse = (value) => /^\d+\.\d+\.\d+$/.test(value) ? value.split(".").map(Number) : null;
+  const a = parse(left);
+  const b = parse(right);
+  if (!a || !b) return 0;
+  for (let index = 0; index < 3; index += 1) {
+    if (a[index] !== b[index]) return a[index] > b[index] ? 1 : -1;
+  }
+  return 0;
+}
+
+function validateInstalledSmokeException(policy, versions) {
+  const failures = [];
+  if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
+    return ["release-status.json installedSmokeException is missing."];
+  }
+  if (!["source-only-no-installer", "reduced-hotfix-gate"].includes(policy.kind)) {
+    failures.push("release-status.json installedSmokeException.kind must be source-only-no-installer or reduced-hotfix-gate.");
+  }
+  if (String(policy.publishedVersion || "") !== versions.latestPublishedVersion) {
+    failures.push("release-status.json installedSmokeException.publishedVersion must match latestPublishedVersion.");
+  }
+  if (String(policy.baselineInstalledSmokeVersion || "") !== versions.smokeVersion) {
+    failures.push("release-status.json installedSmokeException.baselineInstalledSmokeVersion must match lastInstalledSmoke.version.");
+  }
+  if (!String(policy.rationale || "").trim()) failures.push("release-status.json installedSmokeException.rationale is required.");
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(String(policy.approvedAt || ""))) failures.push("release-status.json installedSmokeException.approvedAt must be an ISO timestamp.");
+  if (!Array.isArray(policy.focusedEvidence) || policy.focusedEvidence.length === 0 || policy.focusedEvidence.some((entry) => !String(entry).trim())) {
+    failures.push("release-status.json installedSmokeException.focusedEvidence must contain at least one evidence entry.");
+  }
+  return failures;
+}
+
 export function renderReleaseStatusMarkdown(releaseStatus) {
   const smoke = releaseStatus.lastInstalledSmoke || {};
   const smokeVersion = smoke.version || "not recorded";
@@ -125,6 +168,9 @@ export function renderReleaseStatusMarkdown(releaseStatus) {
   const unreleasedNotes = Array.isArray(releaseStatus.unreleasedSourceNotes) && releaseStatus.unreleasedSourceNotes.length
     ? releaseStatus.unreleasedSourceNotes.map((note) => `- ${note}`).join("\n")
     : "- No unreleased source-only notes recorded.";
+  const smokeException = releaseStatus.installedSmokeException
+    ? `- Kind: \`${releaseStatus.installedSmokeException.kind}\`\n- Published version: \`${releaseStatus.installedSmokeException.publishedVersion}\`\n- Baseline installed smoke: \`${releaseStatus.installedSmokeException.baselineInstalledSmokeVersion}\`\n- Rationale: ${releaseStatus.installedSmokeException.rationale}\n- Focused evidence:\n${(releaseStatus.installedSmokeException.focusedEvidence || []).map((entry) => `  - ${entry}`).join("\n")}`
+    : "- No exception recorded; published installer checkpoints require matching exact installed-smoke evidence.";
   return `# Pocket DAW Current Release Status
 
 Generated from \`release-status.json\`. Refresh with \`npm run status:release\`.
@@ -149,6 +195,10 @@ ${notes}
 ## Unreleased Source-Only Notes
 
 ${unreleasedNotes}
+
+## Installed-Smoke Exception
+
+${smokeException}
 
 ## Capability Claim Boundary
 

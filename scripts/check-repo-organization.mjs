@@ -9,7 +9,11 @@ const canonicalAnchors = [
   "apps/chordsmith-web/index.html",
   "apps/pocket-dj/index.html",
   "apps/pocket-daw/package.json",
+  "apps/pocket-audio-handoff/index.html",
   "packages/pocket-audio-core/package.json",
+  "packages/pcs-format/package.json",
+  "FAMILY_MANIFEST.json",
+  "apps/archive/archive-manifest.json",
   "docs/LOCAL_ARTIFACTS_POLICY.md"
 ];
 const retiredRootDirectories = [
@@ -57,6 +61,12 @@ if (existsSync(localArtifactsRoot)) {
 for (const sourceRoot of ["addons", "apps", "packages", "docs"]) {
   for (const gitDirectory of findDirectories(join(root, sourceRoot), ".git")) {
     errors.push(`Nested Git repository in canonical source: ${relative(root, gitDirectory)}`);
+  }
+}
+
+for (const retiredArchive of ["apps/chordsmith-web/archive", "apps/pocket-dj/archive"]) {
+  if (existsSync(join(root, retiredArchive))) {
+    errors.push(`Per-component runnable archive present: ${retiredArchive} (use apps/archive/unsupported-runnable-builds/)`);
   }
 }
 

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "output": "pocket_chordsmith_v68_core_bridge.html",
+  "fragments": [
+    "src/state/01-foundation.js",
+    "src/handoff/02-transfer.js",
+    "src/state/03-project-state.js",
+    "src/audio/04-live-engine.js",
+    "src/ui/05-composer-ui.js",
+    "src/accessibility/06-interaction-accessibility.js",
+    "src/state/06-genre-library.js",
+    "src/export/07-sequence-midi.js",
+    "src/audio/08-offline-renderer.js",
+    "src/schema/09-rich-project.js",
+    "src/transport/10-transport.js",
+    "src/ui/11-bind-init.js"
+  ]
+}
