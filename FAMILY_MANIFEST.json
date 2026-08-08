@@ -61,15 +61,15 @@
       "name": "Pocket DAW",
       "path": "apps/pocket-daw",
       "kind": "native-windows-app",
-      "versions": { "source": "0.6.45", "projectSchema": "3", "latestPublished": "0.6.44", "lastInstalledSmoke": "0.6.43" },
+      "versions": { "source": "0.6.46", "projectSchema": "3", "latestPublished": "0.6.45", "lastInstalledSmoke": "0.6.43" },
       "license": "UNLICENSED",
       "releaseStatus": "public-alpha-source-ahead-of-smoke",
       "packageCommand": "cd apps/pocket-daw && npm run release:update:full",
       "testCommand": "cd apps/pocket-daw && npm run verify:versions && npm run verify:release-candidate-truth && npm test",
       "deployment": {
         "channel": "GitHub updater / stable itch bootstrapper",
-        "identifier": "pocket-daw-v0.6.44",
-        "sourceCommit": "bab1a5850801b890b95c5192d0a1366a0f61b252"
+        "identifier": "pocket-daw-v0.6.45",
+        "sourceCommit": "0595c29aec62ba6329e2e1e58aaf3dcb9d863ba3"
       }
     },
     {

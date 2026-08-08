@@ -4,11 +4,11 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.45` |
+| Source version | `0.6.46` |
 | Project schema version | `3` |
-| Latest published version | `0.6.44` |
-| Latest published tag | `pocket-daw-v0.6.44` |
-| Latest published commit | `bab1a5850801b890b95c5192d0a1366a0f61b252` |
+| Latest published version | `0.6.45` |
+| Latest published tag | `pocket-daw-v0.6.45` |
+| Latest published commit | `0595c29aec62ba6329e2e1e58aaf3dcb9d863ba3` |
 | Last installed-smoke version | `0.6.43` |
 | Last installed-smoke result | `pass` |
 | Last installed-smoke date | `2026-08-01T12:43:45.050Z` |
@@ -27,19 +27,20 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
+- 2026-08-08 source 0.6.46 checkpoint: incorporates the full repository-audit remediation merge, approved softer Heavy Metal bass and louder Metal guitar across the Pocket Audio family, and fail-closed native-capture fingerprinting so future unchanged recording releases can reuse one direct fresh-audible baseline while still re-proving current PCM duration/file integrity, connected loopMIDI and WAV/MIDI exports.
 - 2026-08-01 source-only 0.6.45 live MCP test hotfix: the loopback bridge now accepts the exact http://tauri.localhost and https://tauri.localhost origins used by the installed Windows Tauri WebView. This fixes the in-app Live test CORS preflight failure while preserving loopback-host, trusted-origin and bearer-token checks. Validation is intentionally limited to the focused Rust origin regression, MCP/UI tests and installer/package checks.
 - 2026-07-17 post-release documentation and test-helper update: added the one-pass exact-artifact release fast path, corrected normal itch policy, recorded 0.6.41 process failures to avoid, and promoted the loopMIDI sender into a tracked reusable script.
 - 2026-07-22 Pocket Audio sound-profile update: imports and renders PCS schema 17 profile identity, expressive events, Funk bass articulations, upgraded Metal texture, Western character, Chiptune channel controls, expanded drum lanes, capability diagnostics, and preserved unknown intent while retaining legacy schema-16 compatibility.
 
 ## Installed-Smoke Exception
 
-- Kind: `source-only-no-installer`
-- Published version: `0.6.44`
+- Kind: `reduced-hotfix-gate`
+- Published version: `0.6.45`
 - Baseline installed smoke: `0.6.43`
-- Rationale: 0.6.44 is a source-only MCP help-text tag that removes developer build-machine paths. It did not publish a replacement installer or claim new installed audio behavior, so the exact 0.6.43 installer smoke remains the applicable binary evidence.
+- Rationale: 0.6.45 published a replacement installer for the narrow installed MCP bridge CORS hotfix without changing native recording, playback, render or export behavior. Its retained release verdict explicitly records that a full Windows smoke was not run, so the exact 0.6.43 installed audio smoke remains the applicable baseline rather than being silently relabeled as 0.6.45 evidence.
 - Focused evidence:
-  - Installed help snippets contain no developer build-machine paths.
-  - README and current release status identify 0.6.44 as source-only and not a separately published installer.
+  - GitHub release pocket-daw-v0.6.45 targets commit 0595c29aec62ba6329e2e1e58aaf3dcb9d863ba3 and publishes setup SHA-256 65d507de5f3fdc4e86d0da66900d7d80b39883d24633b0e71cf2b60db139d5d8.
+  - The retained 0.6.45 final release verdict records focused packaging evidence and explicitly says the full Windows smoke was not run.
 
 ## Capability Claim Boundary
 
