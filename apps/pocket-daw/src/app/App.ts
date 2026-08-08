@@ -4837,6 +4837,7 @@ export class App {
         monitorVolume: track.mute ? 0 : track.volume,
         monitorPan: track.pan,
         channelMode: capturePlan.mode === "stereo" ? "stereo" : "mono",
+        inputChannelIndex: capturePlan.mode === "stereo" ? null : capturePlan.channelMap[0],
         recordingSessionId: sessionId,
         startBar,
         requestedStartSeconds: captureStartTransportSeconds,
@@ -5895,13 +5896,16 @@ export class App {
     const key = this.inputPreviewSignature(project, track);
     if (this.inputPreviewKey === key) return;
     try {
+      const previewPlan = buildRecordingInputPreflight(project).capturePlan.find((item) => item.trackId === track.id);
       const status = await startNativeRecordingPreview({
         trackId: track.id,
         inputDeviceId: track.inputDeviceId || project.audioDeviceSettings.inputDeviceId,
         outputDeviceId: project.audioDeviceSettings.outputDeviceId,
         monitorEnabled: !!track.monitorEnabled && !track.mute,
         monitorVolume: track.mute ? 0 : track.volume,
-        monitorPan: track.pan
+        monitorPan: track.pan,
+        channelMode: previewPlan?.mode === "stereo" ? "stereo" : "mono",
+        inputChannelIndex: previewPlan && previewPlan.mode !== "stereo" ? previewPlan.channelMap[0] : null
       });
       this.inputPreviewKey = key;
       if (!["idle", "preparing", "count-in"].includes(this.state.recording.status)) return;
@@ -5962,6 +5966,9 @@ export class App {
     return [
       track.id,
       track.inputDeviceId || project.audioDeviceSettings.inputDeviceId || "",
+      track.recordingInput?.mode || track.recordingChannelMode || "mono",
+      track.recordingInput?.channelIndex ?? "default",
+      track.recordingInput?.channelPair?.join(",") || "",
       project.audioDeviceSettings.outputDeviceId || "",
       track.monitorEnabled && !track.mute ? "monitor" : "meter",
       track.mute ? 0 : track.volume,

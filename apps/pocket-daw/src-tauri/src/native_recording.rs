@@ -40,6 +40,41 @@ fn channel_count_for_mode(mode: Option<&str>) -> u16 {
     }
 }
 
+fn validated_input_channel_index(
+    channel_mode: Option<&str>,
+    requested_index: Option<f64>,
+    input_channel_count: usize,
+) -> Result<usize, String> {
+    if input_channel_count == 0 {
+        return Err("The selected input device exposes no input channels.".to_string());
+    }
+    if matches!(channel_mode, Some(value) if value.eq_ignore_ascii_case("stereo")) {
+        if requested_index.is_some() {
+            return Err("inputChannelIndex is only valid for mono recording input.".to_string());
+        }
+        if input_channel_count < 2 {
+            return Err(
+                "Stereo Ch 1-2 requires an input device with at least 2 channels.".to_string(),
+            );
+        }
+        return Ok(0);
+    }
+    let requested_index = requested_index.unwrap_or(0.0);
+    if !requested_index.is_finite() || requested_index < 0.0 || requested_index.fract() != 0.0 {
+        return Err("inputChannelIndex must be a finite non-negative integer.".to_string());
+    }
+    let requested_index = requested_index as usize;
+    if requested_index >= input_channel_count {
+        return Err(format!(
+            "Mono Ch {} is unavailable because the selected input device exposes {} input channel{}.",
+            requested_index + 1,
+            input_channel_count,
+            if input_channel_count == 1 { "" } else { "s" }
+        ));
+    }
+    Ok(requested_index)
+}
+
 struct RecordingWriterRuntime {
     handle: JoinHandle<Result<RecordingWriterSummary, String>>,
     queue: Arc<CaptureWriterRing>,
@@ -99,6 +134,8 @@ pub struct NativeRecordingStartPayload {
     monitor_pan: f64,
     #[serde(rename = "channelMode")]
     channel_mode: Option<String>,
+    #[serde(rename = "inputChannelIndex")]
+    input_channel_index: Option<f64>,
     #[serde(rename = "recordingSessionId")]
     recording_session_id: Option<u64>,
     #[serde(rename = "startBar")]
@@ -135,6 +172,10 @@ pub struct NativeRecordingPreviewPayload {
     monitor_volume: f64,
     #[serde(rename = "monitorPan")]
     monitor_pan: f64,
+    #[serde(rename = "channelMode")]
+    channel_mode: Option<String>,
+    #[serde(rename = "inputChannelIndex")]
+    input_channel_index: Option<f64>,
 }
 
 #[derive(Clone, Serialize)]
@@ -509,6 +550,8 @@ struct RecordingShared {
     writer_ring: Arc<CaptureWriterRing>,
     monitor_ring: MonitorRing,
     sample_rate: u32,
+    input_channel_count: usize,
+    input_channel_index: AtomicUsize,
     capture_channels: AtomicU8,
     monitor_enabled: AtomicBool,
     monitor_gain_bits: AtomicU32,
@@ -527,50 +570,49 @@ struct RecordingShared {
     last_error: Mutex<Option<String>>,
 }
 
+struct RecordingSharedConfig {
+    sample_rate: u32,
+    input_channel_count: usize,
+    input_channel_index: usize,
+    capture_channels: u16,
+    monitor_enabled: bool,
+    monitor_volume: f64,
+    monitor_pan: f64,
+    capture_enabled: bool,
+}
+
 impl RecordingShared {
-    fn new(
-        sample_rate: u32,
-        capture_channels: u16,
-        monitor_enabled: bool,
-        monitor_volume: f64,
-        monitor_pan: f64,
-        capture_enabled: bool,
-    ) -> Self {
-        let capture_channels = sanitize_capture_channels(capture_channels);
-        Self::new_with_writer_capacity(
-            sample_rate,
-            capture_channels,
-            monitor_enabled,
-            monitor_volume,
-            monitor_pan,
-            capture_enabled,
-            sample_rate as usize * WRITER_RING_SECONDS * capture_channels as usize,
-        )
+    fn new(config: RecordingSharedConfig) -> Self {
+        let capture_channels = sanitize_capture_channels(config.capture_channels);
+        let writer_sample_capacity =
+            config.sample_rate as usize * WRITER_RING_SECONDS * capture_channels as usize;
+        Self::new_with_writer_capacity(config, writer_sample_capacity)
     }
 
     fn new_with_writer_capacity(
-        sample_rate: u32,
-        capture_channels: u16,
-        monitor_enabled: bool,
-        monitor_volume: f64,
-        monitor_pan: f64,
-        capture_enabled: bool,
+        config: RecordingSharedConfig,
         writer_sample_capacity: usize,
     ) -> Self {
-        let capture_channels = sanitize_capture_channels(capture_channels);
+        let capture_channels = sanitize_capture_channels(config.capture_channels);
         Self {
             writer_ring: Arc::new(CaptureWriterRing::new(writer_sample_capacity)),
-            monitor_ring: MonitorRing::new(sample_rate as usize * MONITOR_BUFFER_SECONDS),
-            sample_rate,
+            monitor_ring: MonitorRing::new(config.sample_rate as usize * MONITOR_BUFFER_SECONDS),
+            sample_rate: config.sample_rate,
+            input_channel_count: config.input_channel_count,
+            input_channel_index: AtomicUsize::new(config.input_channel_index),
             capture_channels: AtomicU8::new(capture_channels as u8),
-            monitor_enabled: AtomicBool::new(monitor_enabled),
-            monitor_gain_bits: AtomicU32::new(clamp_monitor_gain(monitor_volume).to_bits()),
-            monitor_pan_bits: AtomicU32::new(clamp_monitor_pan(monitor_pan).to_bits()),
-            capture_enabled: AtomicBool::new(capture_enabled),
+            monitor_enabled: AtomicBool::new(config.monitor_enabled),
+            monitor_gain_bits: AtomicU32::new(clamp_monitor_gain(config.monitor_volume).to_bits()),
+            monitor_pan_bits: AtomicU32::new(clamp_monitor_pan(config.monitor_pan).to_bits()),
+            capture_enabled: AtomicBool::new(config.capture_enabled),
             peak_bits: AtomicU32::new(0.0f32.to_bits()),
             input_frame_count: AtomicU64::new(0),
             captured_frame_count: AtomicU64::new(0),
-            capture_start_input_frame: AtomicU64::new(if capture_enabled { 0 } else { NO_FRAME }),
+            capture_start_input_frame: AtomicU64::new(if config.capture_enabled {
+                0
+            } else {
+                NO_FRAME
+            }),
             first_input_frame: AtomicU64::new(NO_FRAME),
             active_input_callback_count: AtomicUsize::new(0),
             dropped_input_frame_count: AtomicU64::new(0),
@@ -600,6 +642,15 @@ impl RecordingShared {
     fn set_capture_channels(&self, channels: u16) {
         self.capture_channels
             .store(sanitize_capture_channels(channels) as u8, Ordering::Release);
+    }
+
+    fn input_channel_index(&self) -> usize {
+        self.input_channel_index.load(Ordering::Acquire)
+    }
+
+    fn set_input_channel_index(&self, channel_index: usize) {
+        self.input_channel_index
+            .store(channel_index, Ordering::Release);
     }
 
     fn update_peak(&self, block_peak: f32) {
@@ -791,20 +842,27 @@ pub fn native_recording_start(
     let sample_rate = config.sample_rate();
     let input_channels = config.channels().max(1) as usize;
     let capture_channels = channel_count_for_mode(payload.channel_mode.as_deref());
+    let input_channel_index = validated_input_channel_index(
+        payload.channel_mode.as_deref(),
+        payload.input_channel_index,
+        input_channels,
+    )?;
     let stream_config: cpal::StreamConfig = config.clone().into();
     let (target_path, target_relative_path, file_name) = recording_output_path(
         &payload.project_file_path,
         &payload.project_title,
         &payload.track_name,
     )?;
-    let shared = Arc::new(RecordingShared::new(
+    let shared = Arc::new(RecordingShared::new(RecordingSharedConfig {
         sample_rate,
+        input_channel_count: input_channels,
+        input_channel_index,
         capture_channels,
-        payload.monitor_enabled,
-        payload.monitor_volume,
-        payload.monitor_pan,
-        false,
-    ));
+        monitor_enabled: payload.monitor_enabled,
+        monitor_volume: payload.monitor_volume,
+        monitor_pan: payload.monitor_pan,
+        capture_enabled: false,
+    }));
     let err_shared = Arc::clone(&shared);
     let error_callback = move |err| {
         err_shared.set_monitor_settings(false, 0.0, 0.0);
@@ -957,6 +1015,12 @@ fn promote_preview_to_recording(
 
     let sample_rate = shared_sample_rate(&shared)?;
     let capture_channels = channel_count_for_mode(payload.channel_mode.as_deref());
+    let input_channel_index = validated_input_channel_index(
+        payload.channel_mode.as_deref(),
+        payload.input_channel_index,
+        shared.input_channel_count,
+    )?;
+    shared.set_input_channel_index(input_channel_index);
     shared.set_capture_channels(capture_channels);
     let writer = start_recording_writer(
         &target_path,
@@ -1019,15 +1083,23 @@ pub fn native_recording_start_preview(
     })?;
     let sample_rate = config.sample_rate();
     let input_channels = config.channels().max(1) as usize;
+    let capture_channels = channel_count_for_mode(payload.channel_mode.as_deref());
+    let input_channel_index = validated_input_channel_index(
+        payload.channel_mode.as_deref(),
+        payload.input_channel_index,
+        input_channels,
+    )?;
     let stream_config: cpal::StreamConfig = config.clone().into();
-    let shared = Arc::new(RecordingShared::new(
+    let shared = Arc::new(RecordingShared::new(RecordingSharedConfig {
         sample_rate,
-        2,
-        payload.monitor_enabled,
-        payload.monitor_volume,
-        payload.monitor_pan,
-        false,
-    ));
+        input_channel_count: input_channels,
+        input_channel_index,
+        capture_channels,
+        monitor_enabled: payload.monitor_enabled,
+        monitor_volume: payload.monitor_volume,
+        monitor_pan: payload.monitor_pan,
+        capture_enabled: false,
+    }));
     let err_shared = Arc::clone(&shared);
     let error_callback = move |err| {
         err_shared.set_monitor_settings(false, 0.0, 0.0);
@@ -1480,49 +1552,115 @@ fn enable_capture_on_shared_with_before_enable<F>(
 }
 
 fn capture_f32(data: &[f32], channels: usize, shared: &Arc<RecordingShared>) {
-    capture_samples(data.chunks(channels).map(capture_frame_f32), shared);
+    let selected_channel = shared.input_channel_index();
+    capture_samples(
+        data.chunks(channels)
+            .map(|frame| capture_frame_f32(frame, selected_channel)),
+        shared,
+    );
 }
 
 fn capture_i16(data: &[i16], channels: usize, shared: &Arc<RecordingShared>) {
-    capture_samples(data.chunks(channels).map(capture_frame_i16), shared);
+    let selected_channel = shared.input_channel_index();
+    capture_samples(
+        data.chunks(channels)
+            .map(|frame| capture_frame_i16(frame, selected_channel)),
+        shared,
+    );
 }
 
 fn capture_u16(data: &[u16], channels: usize, shared: &Arc<RecordingShared>) {
-    capture_samples(data.chunks(channels).map(capture_frame_u16), shared);
+    let selected_channel = shared.input_channel_index();
+    capture_samples(
+        data.chunks(channels)
+            .map(|frame| capture_frame_u16(frame, selected_channel)),
+        shared,
+    );
 }
 
-fn capture_frame_f32(frame: &[f32]) -> [f32; 2] {
+#[derive(Clone, Copy)]
+struct CaptureFrame {
+    left: f32,
+    right: f32,
+    selected_mono: f32,
+    aggregate_peak: f32,
+}
+
+fn capture_frame_f32(frame: &[f32], selected_channel: usize) -> CaptureFrame {
     let left = *frame.first().unwrap_or(&0.0);
     let right = *frame.get(1).unwrap_or(&left);
-    [left.clamp(-1.0, 1.0), right.clamp(-1.0, 1.0)]
+    let selected_mono = *frame.get(selected_channel).unwrap_or(&0.0);
+    CaptureFrame {
+        left: left.clamp(-1.0, 1.0),
+        right: right.clamp(-1.0, 1.0),
+        selected_mono: selected_mono.clamp(-1.0, 1.0),
+        aggregate_peak: frame
+            .iter()
+            .fold(0.0f32, |peak, sample| peak.max(sample.abs().min(1.0))),
+    }
 }
 
-fn capture_frame_i16(frame: &[i16]) -> [f32; 2] {
+fn capture_frame_i16(frame: &[i16], selected_channel: usize) -> CaptureFrame {
     let left = *frame.first().unwrap_or(&0) as f32 / i16::MAX as f32;
     let right = *frame.get(1).unwrap_or(frame.first().unwrap_or(&0)) as f32 / i16::MAX as f32;
-    [left.clamp(-1.0, 1.0), right.clamp(-1.0, 1.0)]
+    let selected_mono = *frame.get(selected_channel).unwrap_or(&0) as f32 / i16::MAX as f32;
+    CaptureFrame {
+        left: left.clamp(-1.0, 1.0),
+        right: right.clamp(-1.0, 1.0),
+        selected_mono: selected_mono.clamp(-1.0, 1.0),
+        aggregate_peak: frame.iter().fold(0.0f32, |peak, sample| {
+            peak.max((*sample as f32 / i16::MAX as f32).abs().min(1.0))
+        }),
+    }
 }
 
-fn capture_frame_u16(frame: &[u16]) -> [f32; 2] {
+fn capture_frame_u16(frame: &[u16], selected_channel: usize) -> CaptureFrame {
     let default = u16::MAX / 2;
     let to_f32 = |sample: u16| (sample as f32 / u16::MAX as f32) * 2.0 - 1.0;
     let left = to_f32(*frame.first().unwrap_or(&default));
     let right = to_f32(*frame.get(1).unwrap_or(frame.first().unwrap_or(&default)));
-    [left.clamp(-1.0, 1.0), right.clamp(-1.0, 1.0)]
+    let selected_mono = to_f32(*frame.get(selected_channel).unwrap_or(&default));
+    CaptureFrame {
+        left: left.clamp(-1.0, 1.0),
+        right: right.clamp(-1.0, 1.0),
+        selected_mono: selected_mono.clamp(-1.0, 1.0),
+        aggregate_peak: frame.iter().fold(0.0f32, |peak, sample| {
+            peak.max(to_f32(*sample).abs().min(1.0))
+        }),
+    }
 }
 
 trait IntoCaptureFrame {
-    fn into_capture_frame(self) -> [f32; 2];
+    fn into_capture_frame(self) -> CaptureFrame;
 }
 
 impl IntoCaptureFrame for f32 {
-    fn into_capture_frame(self) -> [f32; 2] {
-        [self, self]
+    fn into_capture_frame(self) -> CaptureFrame {
+        let sample = self.clamp(-1.0, 1.0);
+        CaptureFrame {
+            left: sample,
+            right: sample,
+            selected_mono: sample,
+            aggregate_peak: sample.abs(),
+        }
     }
 }
 
 impl IntoCaptureFrame for [f32; 2] {
-    fn into_capture_frame(self) -> [f32; 2] {
+    fn into_capture_frame(self) -> CaptureFrame {
+        let left = self[0].clamp(-1.0, 1.0);
+        let right = self[1].clamp(-1.0, 1.0);
+        CaptureFrame {
+            left,
+            right,
+            selected_mono: left,
+            aggregate_peak: left.abs().max(right.abs()),
+        }
+    }
+}
+
+impl IntoCaptureFrame for CaptureFrame {
+    fn into_capture_frame(self) -> CaptureFrame {
         self
     }
 }
@@ -1542,18 +1680,14 @@ where
     let mut wrote_to_writer_ring = false;
     for frame in samples.map(IntoCaptureFrame::into_capture_frame) {
         let input_frame = shared.input_frame_count.fetch_add(1, Ordering::AcqRel);
-        let left = frame[0].clamp(-1.0, 1.0);
-        let right = frame[1].clamp(-1.0, 1.0);
+        let left = frame.left.clamp(-1.0, 1.0);
+        let right = frame.right.clamp(-1.0, 1.0);
         let mono = if capture_channels == 2 {
             ((left + right) * 0.5).clamp(-1.0, 1.0)
         } else {
-            left
+            frame.selected_mono.clamp(-1.0, 1.0)
         };
-        block_peak = block_peak.max(left.abs()).max(if capture_channels == 2 {
-            right.abs()
-        } else {
-            0.0
-        });
+        block_peak = block_peak.max(frame.aggregate_peak.clamp(0.0, 1.0));
         if shared.capture_enabled.load(Ordering::Acquire) {
             let _ = shared.capture_start_input_frame.compare_exchange(
                 NO_FRAME,
@@ -2175,12 +2309,16 @@ mod tests {
         writer_sample_capacity: usize,
     ) -> Arc<RecordingShared> {
         Arc::new(RecordingShared::new_with_writer_capacity(
-            sample_rate,
-            1,
-            true,
-            1.0,
-            0.0,
-            capture_enabled,
+            RecordingSharedConfig {
+                sample_rate,
+                input_channel_count: 2,
+                input_channel_index: 0,
+                capture_channels: 1,
+                monitor_enabled: true,
+                monitor_volume: 1.0,
+                monitor_pan: 0.0,
+                capture_enabled,
+            },
             writer_sample_capacity,
         ))
     }
@@ -2572,6 +2710,52 @@ mod tests {
         assert_eq!(load_count(&shared.input_frame_count), 2);
         assert_eq!(load_count(&shared.captured_frame_count), 2);
         assert_eq!(drain_writer_ring(&queue), vec![0.25, -0.5, 0.75, 0.5]);
+    }
+
+    #[test]
+    fn explicit_second_mono_channel_is_written_without_changing_aggregate_metering() {
+        let shared = test_shared(true, 48_000);
+        shared.set_input_channel_index(1);
+        let queue = attach_test_writer(&shared);
+
+        capture_f32(&[0.01, 0.75, -0.02, -0.5], 2, &shared);
+
+        assert_eq!(drain_writer_ring(&queue), vec![0.75, -0.5]);
+        assert_eq!(shared.peak(), 0.75);
+    }
+
+    #[test]
+    fn validates_mono_channel_selection_against_native_input_width() {
+        assert_eq!(validated_input_channel_index(Some("mono"), None, 2), Ok(0));
+        assert_eq!(
+            validated_input_channel_index(Some("mono"), Some(1.0), 2),
+            Ok(1)
+        );
+        assert!(validated_input_channel_index(Some("mono"), Some(2.0), 2)
+            .expect_err("channel three must be rejected")
+            .contains("exposes 2 input channels"));
+        assert!(validated_input_channel_index(Some("mono"), Some(0.5), 2)
+            .expect_err("fractional channel must be rejected")
+            .contains("finite non-negative integer"));
+        assert!(
+            validated_input_channel_index(Some("mono"), Some(f64::NAN), 2)
+                .expect_err("non-finite channel must be rejected")
+                .contains("finite non-negative integer")
+        );
+    }
+
+    #[test]
+    fn stereo_remains_fixed_to_channels_one_and_two() {
+        assert_eq!(
+            validated_input_channel_index(Some("stereo"), None, 2),
+            Ok(0)
+        );
+        assert!(validated_input_channel_index(Some("stereo"), Some(1.0), 2)
+            .expect_err("mono selector must not alter stereo mapping")
+            .contains("only valid for mono"));
+        assert!(validated_input_channel_index(Some("stereo"), None, 1)
+            .expect_err("stereo needs two native channels")
+            .contains("at least 2 channels"));
     }
 
     #[test]

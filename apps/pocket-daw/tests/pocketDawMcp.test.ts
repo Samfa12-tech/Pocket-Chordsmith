@@ -515,7 +515,11 @@ describe("Pocket DAW MCP tools", () => {
       outputChannels: 1,
       projectRelativePath: "project-media/recordings/mcp-preview-live-vocals-split-ch2.wav"
     });
-    expect(result.summary.recordingInputPreflight.errors.join("\n")).toContain("native recording alpha currently captures Mono Ch 1 only");
+    expect(result.summary.recordingInputPreflight).toMatchObject({
+      ok: true,
+      errors: [],
+      capturePlan: [{ mode: "split-mono", channelMap: [1] }]
+    });
   });
 
   it("applies generated drum branch overlay edits through the file-first command path", async () => {

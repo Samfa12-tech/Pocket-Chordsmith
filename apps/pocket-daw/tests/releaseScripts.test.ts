@@ -3,6 +3,50 @@ import { describe, expect, it } from "vitest";
 import packageJson from "../package.json" with { type: "json" };
 
 describe("release scripts", () => {
+  it("requires an armed native aggregate input meter preflight before audio capture", () => {
+    const source = readFileSync("scripts/smoke-installed-punch-take-lanes.ts", "utf8");
+    const functionStart = source.indexOf("async function exerciseAudioRecordingControl");
+    const functionEnd = source.indexOf("function audioTakeSmokeCounts", functionStart);
+    const audioCapture = source.slice(functionStart, functionEnd);
+
+    const meterPreflight = audioCapture.indexOf("await waitForAudioInputMeterPreflight(");
+    const recordStart = audioCapture.indexOf('await liveControlResult(session, { action: "record_start" })');
+    expect(meterPreflight).toBeGreaterThanOrEqual(0);
+    expect(recordStart).toBeGreaterThan(meterPreflight);
+    expect(audioCapture).toContain('recording?.status === "idle"');
+    expect(audioCapture).toContain("recording?.inputPreflight?.ok === true");
+    expect(audioCapture).toContain("Number.isFinite(inputPeak)");
+    expect(audioCapture).toContain("inputPeak >= Math.max(0, requiredPeak)");
+    expect(audioCapture).toContain("args.requireAudibleAudio ? args.minAudioPeak : 0");
+    expect(audioCapture).toContain('channelClaim: "aggregate-device-meter-only"');
+  });
+
+  it("stops and verifies MIDI punch positioning before installed input capture", () => {
+    const source = readFileSync("scripts/smoke-installed-punch-take-lanes.ts", "utf8");
+    const functionStart = source.indexOf("async function exerciseMidiInputRecordingControl");
+    const functionEnd = source.indexOf("function assertMidiInputRecordingTake", functionStart);
+
+    expect(functionStart).toBeGreaterThanOrEqual(0);
+    expect(functionEnd).toBeGreaterThan(functionStart);
+
+    const midiCapture = source.slice(functionStart, functionEnd);
+    const orderedSteps = [
+      'await liveControl(session, { action: "stop" });',
+      '{ type: "set_punch_range", startBar: 7, endBar: 9 }',
+      'await liveControl(session, { action: "seek_bar", bar: requestedCaptureStartBar });',
+      "const positioned = await liveStatus(session);",
+      "positioned.transport?.playing !== false",
+      "Math.abs(positionedBar - requestedCaptureStartBar) > 0.0001",
+      'await liveControlResult(session, { action: "midi_record_start" });'
+    ].map((step) => midiCapture.indexOf(step));
+
+    orderedSteps.forEach((index) => expect(index).toBeGreaterThanOrEqual(0));
+    expect(orderedSteps).toEqual([...orderedSteps].sort((left, right) => left - right));
+    expect(midiCapture).toContain("const requestedCaptureStartBar = 6;");
+    expect(midiCapture).toContain("!Number.isFinite(positionedBar)");
+    expect(midiCapture).toContain("MIDI input recording preflight did not settle at stopped bar");
+  });
+
   it("keeps native release bundling explicit", () => {
     const script = readFileSync("scripts/verify-release.mjs", "utf8");
     const itchScript = readFileSync("scripts/verify-itch.mjs", "utf8");
@@ -67,6 +111,7 @@ describe("release scripts", () => {
     expect(packageItch).toContain("assertReleaseCandidateTruth");
     expect(packageItch).toContain("Audit Hardening and Metal Mix");
     expect(packageItch).toContain("Softens the Heavy Metal picked-bass voice");
+    expect(packageItch).toContain("Native recording now honors an explicitly selected mono input channel");
     expect(packageItch).toContain("fail-closed native-capture fingerprinting");
     expect(packageItch).not.toContain("MCP Help Path Hotfix");
     expect(packageItch).not.toContain("Audio, project, Samples, Samplers and VST3 behavior is unchanged from 0.6.43");

@@ -326,6 +326,7 @@ ${artifactTable}
 - Incorporates the Pocket Audio repository-audit remediation, including stricter release truth, CI, dependency, packaging and external-link controls.
 - Softens the Heavy Metal picked-bass voice and raises Metal guitar balance to match the approved cross-app mix.
 - Keeps generated Pocket Audio sound recipes aligned with Chordsmith, Pocket Audio Core and Pocket DJ.
+- Native recording now honors an explicitly selected mono input channel, including Mono Ch 2 on two-channel microphone arrays, while default mono remains Ch 1 and stereo remains Ch 1-2.
 - Adds fail-closed native-capture fingerprinting. A directly retained fresh-audible baseline may be reused only while the recording code and dependency fingerprint remain identical; every current installer still has to prove PCM duration/file integrity, connected loopMIDI and retained WAV/MIDI exports.
 - Installed AI / MCP Bridge help remains machine-neutral, and Live test accepts the installed Windows Tauri WebView origin while retaining loopback-host, trusted-origin and bearer-token checks.
 
