@@ -28,7 +28,7 @@ This file records audit requirements that cannot be truthfully completed by repo
 
 ## Pocket DAW release boundary
 
-The current public `0.6.44` tag is explicitly classified in `apps/pocket-daw/release-status.json` as source-only with no replacement installer. The exact `0.6.43` installed smoke remains the binary evidence. The release-candidate truth verifier now fails whenever a newer published version outruns installed-smoke evidence unless a complete, version-matched `source-only-no-installer` or `reduced-hotfix-gate` exception is recorded. The next installer publication still requires the full exact-artifact procedure in `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md`.
+The current public `0.6.45` tag is explicitly classified in `apps/pocket-daw/release-status.json` as a reduced-gate installed MCP bridge hotfix. Its retained release verdict says the full Windows smoke was not run, so the exact `0.6.43` installed smoke remains the binary baseline rather than being relabeled as `0.6.45` evidence. The release-candidate truth verifier fails whenever a newer published version outruns installed-smoke evidence unless a complete, version-matched `source-only-no-installer` or `reduced-hotfix-gate` exception is recorded. The next installer publication still requires the full exact-artifact procedure in `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md`.
 
 ## Evidence record template
 
