@@ -23,7 +23,7 @@ import { verifyWindowsSignature } from "./verify-windows-signature.mjs";
 
 export const ITCH_CHANNEL = "windows-installer";
 export const ITCH_SLUG = "samfa12/pocket-daw";
-export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - MCP Help Path Hotfix`;
+export const RELEASE_TITLE = `Pocket DAW v${packageJson.version} - Audit Hardening and Metal Mix`;
 export const FORBIDDEN_PACKAGE_PARTS = [
   ".git",
   ".env",
@@ -313,7 +313,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - MCP Help Path Hotfix
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Audit Hardening and Metal Mix
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -321,13 +321,13 @@ Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket C
 
 ${artifactTable}
 
-## ${VERSION} Hotfix
+## ${VERSION} Checkpoint
 
-- Installed AI / MCP Bridge help no longer displays or copies the developer build machine's source-workspace or Node.js paths.
-- Current-project and live-session paths remain runtime-derived from each user's own machine.
-- File MCP launch templates are now clearly identified as source-checkout developer tools, use a neutral \`<POCKET_DAW_SOURCE_DIR>\` placeholder and are hidden in the installed runtime.
-- Live test now accepts the installed Windows Tauri WebView origin, fixing its CORS preflight "Failed to fetch" error while retaining loopback-host and bearer-token checks.
-- Audio, project, Samples, Samplers and VST3 behavior is unchanged from 0.6.43.
+- Incorporates the Pocket Audio repository-audit remediation, including stricter release truth, CI, dependency, packaging and external-link controls.
+- Softens the Heavy Metal picked-bass voice and raises Metal guitar balance to match the approved cross-app mix.
+- Keeps generated Pocket Audio sound recipes aligned with Chordsmith, Pocket Audio Core and Pocket DJ.
+- Adds fail-closed native-capture fingerprinting. A directly retained fresh-audible baseline may be reused only while the recording code and dependency fingerprint remain identical; every current installer still has to prove PCM duration/file integrity, connected loopMIDI and retained WAV/MIDI exports.
+- Installed AI / MCP Bridge help remains machine-neutral, and Live test accepts the installed Windows Tauri WebView origin while retaining loopback-host, trusted-origin and bearer-token checks.
 
 ## Included From 0.6.43
 
