@@ -235,19 +235,37 @@ function ensureUpdaterSignatures(paths) {
   }
 }
 
-function signUpdaterArtifact(installerPath) {
-  const keyPath = updaterSigningKeyPath();
-  const cliPath = join(ROOT, "node_modules", "@tauri-apps", "cli", "tauri.js");
-  if (!existsSync(cliPath)) throw new Error(`Tauri CLI was not found at ${cliPath}. Run npm install before packaging.`);
+export function signUpdaterArtifact(installerPath, { sourceEnv = process.env, run = runDirect } = {}) {
+  const invocation = updaterSignerInvocation(installerPath, sourceEnv);
   console.log(`Signing updater artifact ${basename(installerPath)}`);
-  runDirect(process.execPath, [cliPath, "signer", "sign", "--private-key-path", keyPath, "--password=", installerPath]);
+  run(invocation.command, invocation.args, { env: invocation.env });
 }
 
-function updaterSigningKeyPath() {
-  const configured = process.env.TAURI_SIGNING_PRIVATE_KEY_PATH || process.env.TAURI_SIGNING_PRIVATE_KEY_FILE;
+function updaterSignerInvocation(installerPath, sourceEnv = process.env) {
+  const keyPath = updaterSigningKeyPath(sourceEnv);
+  const cliPath = join(ROOT, "node_modules", "@tauri-apps", "cli", "tauri.js");
+  if (!existsSync(cliPath)) throw new Error(`Tauri CLI was not found at ${cliPath}. Run npm install before packaging.`);
+  return {
+    command: process.execPath,
+    args: [cliPath, "signer", "sign", "--private-key-path", keyPath, installerPath],
+    env: updaterSignerChildEnvironment(sourceEnv)
+  };
+}
+
+export function updaterSignerChildEnvironment(sourceEnv = process.env) {
+  const childEnv = {
+    ...sourceEnv,
+    TAURI_SIGNING_PRIVATE_KEY_PASSWORD: sourceEnv.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? ""
+  };
+  delete childEnv.TAURI_SIGNING_PRIVATE_KEY;
+  return childEnv;
+}
+
+export function updaterSigningKeyPath(sourceEnv = process.env) {
+  const configured = sourceEnv.TAURI_SIGNING_PRIVATE_KEY_PATH || sourceEnv.TAURI_SIGNING_PRIVATE_KEY_FILE;
   if (configured && existsSync(configured)) return configured;
-  if (process.env.TAURI_SIGNING_PRIVATE_KEY && existsSync(process.env.TAURI_SIGNING_PRIVATE_KEY)) return process.env.TAURI_SIGNING_PRIVATE_KEY;
-  const fallback = join(process.env.USERPROFILE || "", ".pocket-daw-secrets", "tauri-updater.key");
+  if (sourceEnv.TAURI_SIGNING_PRIVATE_KEY && existsSync(sourceEnv.TAURI_SIGNING_PRIVATE_KEY)) return sourceEnv.TAURI_SIGNING_PRIVATE_KEY;
+  const fallback = join(sourceEnv.USERPROFILE || "", ".pocket-daw-secrets", "tauri-updater.key");
   if (existsSync(fallback)) return fallback;
   throw new Error("Missing Tauri updater signing key file. Set TAURI_SIGNING_PRIVATE_KEY_PATH or place tauri-updater.key under %USERPROFILE%\\.pocket-daw-secrets.");
 }
@@ -793,9 +811,9 @@ function run(command, args) {
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed with status ${result.status}`);
 }
 
-function runDirect(command, args) {
+function runDirect(command, args, { env = process.env } = {}) {
   console.log(`\n> ${command} ${args.join(" ")}`);
-  const result = spawnSync(command, args, { cwd: ROOT, stdio: "inherit", shell: false });
+  const result = spawnSync(command, args, { cwd: ROOT, env, stdio: "inherit", shell: false });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed with status ${result.status}`);
 }
