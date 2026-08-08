@@ -65,6 +65,11 @@ describe("release scripts", () => {
     expect(packageItch).not.toContain("new AdmZip");
     expect(packageItch).toContain("butler push-preview");
     expect(packageItch).toContain("assertReleaseCandidateTruth");
+    expect(packageItch).toContain("Audit Hardening and Metal Mix");
+    expect(packageItch).toContain("Softens the Heavy Metal picked-bass voice");
+    expect(packageItch).toContain("fail-closed native-capture fingerprinting");
+    expect(packageItch).not.toContain("MCP Help Path Hotfix");
+    expect(packageItch).not.toContain("Audio, project, Samples, Samplers and VST3 behavior is unchanged from 0.6.43");
     expect(packageItch).toContain("releases/itch/installers");
     expect(packageItch).toContain("appears stale");
     expect(packageItch).toContain("mix-slider values");
