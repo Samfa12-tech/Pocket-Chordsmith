@@ -42,7 +42,7 @@
     "package:itch": "npm run build && node scripts/package-itch.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "^1.52.0",
+    "@playwright/test": "^1.62.1",
     "bestzip": "^2.2.1",
     "eslint": "^9.28.0",
     "prettier": "^3.5.3",
