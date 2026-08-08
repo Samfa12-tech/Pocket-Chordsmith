@@ -32,7 +32,7 @@ The shared procedural voice registries live in `src/sounds/lofi-registry.js` and
 
 When changing shared sound IDs, voice curves, or Pocket Pro EQ bands, run `npm run generate:sound-surfaces` from this package. It refreshes the generated Godot sample-preview constants and Pocket DAW native Rust sound recipes from the same core registries. CI/local release checks can use `npm run verify:sound-surfaces` to catch stale generated files before DAW, Chordsmith, DJ, and Godot drift apart.
 
-For a fuller parity gate after changing sound features, run `npm run verify:family-parity` from this package. It checks generated sound surfaces, cross-app surface drift, Chordsmith browser trace parity, core render/Godot-pack fixtures, Pocket DAW Chordsmith import/render/export parity tests, and DAW-vs-Chordsmith browser event parity in one pass.
+For a fuller parity gate after changing sound features, run `npm run verify:family-parity` from this package. It checks generated sound surfaces, cross-app surface drift, Chordsmith-to-Core structural timing/pitch correspondence after Chordsmith import, core render/Godot-pack fixtures, Pocket DAW Chordsmith import/render/export parity tests, and DAW-vs-Chordsmith browser event parity in one pass. The browser trace comparison intentionally excludes engine-specific percussion envelopes and optional presentation defaults such as pan, strum direction, and inferred articulation; focused sound-surface, genre audio, render, and DAW tests own those contracts.
 
 Use `../../docs/POCKET_AUDIO_SOUND_PARITY_MATRIX.md` before describing a change as sound parity. Core has deterministic event/render fixtures and first-pass exports, but exact app-to-app tone parity still needs the matrix's component gates and listening evidence.
 

@@ -77,13 +77,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/chordsmith-web/package-lock.json
+          cache-dependency-path: |
+            apps/chordsmith-web/package-lock.json
+            packages/pocket-audio-core/package-lock.json
       - name: Install dependencies and browser engines
         working-directory: apps/chordsmith-web
         run: |
           npm ci
           npx playwright install-deps chromium firefox webkit
           npx playwright install chromium firefox webkit
+      - name: Build Pocket Audio Core browser artifacts
+        working-directory: packages/pocket-audio-core
+        run: |
+          npm ci
+          npm run build
       - name: Deterministic composer contract
         working-directory: apps/chordsmith-web
         run: |
@@ -129,13 +136,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/pocket-dj/package-lock.json
+          cache-dependency-path: |
+            apps/pocket-dj/package-lock.json
+            packages/pocket-audio-core/package-lock.json
       - name: Install dependencies and browser engines
         working-directory: apps/pocket-dj
         run: |
           npm ci
           npx playwright install-deps chromium firefox webkit
           npx playwright install chromium firefox webkit
+      - name: Build Pocket Audio Core browser artifacts
+        working-directory: packages/pocket-audio-core
+        run: |
+          npm ci
+          npm run build
       - name: Scheduler and tooling gates
         working-directory: apps/pocket-dj
         run: |
@@ -286,11 +300,25 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
-      - name: Dependency review
+      - name: Check hosted Dependency graph availability
+        id: dependency-graph
         if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/dependency-graph/sbom" >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Dependency review
+        if: github.event_name == 'pull_request' && steps.dependency-graph.outputs.available == 'true'
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           fail-on-severity: high
+      - name: Record unavailable hosted dependency review
+        if: github.event_name == 'pull_request' && steps.dependency-graph.outputs.available != 'true'
+        run: echo "::warning::GitHub dependency review could not run. Enable Dependency graph in repository settings; repository-owned lockfile audits remain required below."
       - name: Scan tracked source for secret patterns
         run: node scripts/scan-tracked-secrets.mjs
       - name: Verify lockfiles, licences and security scope

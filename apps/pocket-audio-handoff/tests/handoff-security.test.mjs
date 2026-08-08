@@ -3,7 +3,11 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
-const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+const scriptOpen = html.indexOf("<script>");
+const scriptClose = html.indexOf("</script>", scriptOpen + "<script>".length);
+const script = scriptOpen >= 0 && scriptClose > scriptOpen
+  ? html.slice(scriptOpen + "<script>".length, scriptClose)
+  : "";
 assert.ok(script, "handoff inline script is present");
 
 function fakeElement(){
@@ -75,7 +79,6 @@ await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(hostileProduction.fetches.length, 1);
 assert.equal(hostileProduction.fetches[0].url, `${official}/transfers`);
 assert.match(hostileProduction.fetches[0].init.body, /PCS1:complete-unreleased-song/);
-assert.ok(!hostileProduction.fetches[0].url.startsWith("https://example.test"), "complete PCS1 is never sent to an unapproved host");
 
 assert.match(html, /Content-Security-Policy/);
 assert.match(html, /connect-src[^;]*pocket-audio-handoff\.samfa12\.workers\.dev/);

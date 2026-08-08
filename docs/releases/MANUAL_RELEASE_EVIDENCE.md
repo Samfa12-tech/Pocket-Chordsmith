@@ -24,7 +24,7 @@ This file records audit requirements that cannot be truthfully completed by repo
 | F-024 screen readers | Run the core Chordsmith, DJ, Handoff, installed DAW, and Godot addon flows with NVDA on Windows and VoiceOver on an Apple platform. Record spoken control name, role, state, errors, and status announcements. | Pending assistive technology |
 | F-024 display modes | Test Windows global High Contrast plus 200% and 400% OS scaling in the installed DAW; test browser reflow/motion at equivalent platform settings. Capture screenshots and blockers. | Pending OS-level manual checks |
 | F-011 Asset Library | Publish through the dedicated addon-only Asset Library-compatible branch/tag, download that exact artifact, record SHA-256, enable it in a clean Godot project, and run interactive plus headless smoke. | Pending external publication authority |
-| F-019 repository settings | Enable and verify GitHub secret scanning and push protection for the remote repository. | Pending repository-admin setting |
+| F-019 repository settings | Enable and verify GitHub Dependency graph, secret scanning, and push protection for the remote repository. | Pending repository-admin setting |
 
 ## Pocket DAW release boundary
 
