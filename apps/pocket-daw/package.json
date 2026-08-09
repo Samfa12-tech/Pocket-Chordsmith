@@ -80,7 +80,7 @@
     "tauri:build:signed": "npm run plugin-host:prepare:release && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-tauri-signing-env.ps1 npx tauri build --config src-tauri/tauri.sidecar.conf.json"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-deep-link": "^2.4.9",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1"
