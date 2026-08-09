@@ -54,7 +54,8 @@ describe("exact published release verification", () => {
         { path: "C:/candidate/Pocket DAW_0.6.47_x64-setup.exe", sha256: hash("setup") },
         { path: "C:/candidate/Pocket DAW_0.6.47_x64-setup.exe.sig", sha256: hash("signature") }
       ],
-      fetchImpl: async (url: string) => new Response(bodies.get(url), { status: 200 })
+      fetchImpl: async (input: URL | RequestInfo) =>
+        new Response(bodies.get(String(input)), { status: 200 })
     });
     expect(result.ok, result.failures.join("\n")).toBe(true);
   });

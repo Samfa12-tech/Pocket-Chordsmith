@@ -37,7 +37,7 @@ export function sha256FileSync(filePath) {
   return createHash("sha256").update(readFileSync(filePath)).digest("hex");
 }
 
-export function assertCleanCandidateWorktree({ root, inspect = inspectGitState } = {}) {
+export function assertCleanCandidateWorktree({ root = process.cwd(), inspect = inspectGitState } = {}) {
   const state = inspect(root);
   if (!/^[a-f0-9]{40}$/.test(state.commit || "")) throw new Error("Could not resolve a full candidate Git commit.");
   if (String(state.status || "").trim()) {
