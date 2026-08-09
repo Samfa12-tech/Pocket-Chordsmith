@@ -20,8 +20,8 @@
       "testCommand": "cd apps/chordsmith-web && npm run verify",
       "deployment": {
         "channel": "samfa12/pocket-chordsmith:pocket-audio-core",
-        "identifier": "pcs17-genre-composer-20260731 (#1845264)",
-        "sourceCommit": "b4d288242c75c488e50b8fd4b2382c005cf52d9b"
+        "identifier": "audit-hardening-metal-mix-v68-20260809 (#1867911); Samfa12 site sync 35c269f330fe1042c3fbdab702bc4898fd4ee038",
+        "sourceCommit": "347a2b939bbd5597cb3eab5112a668959c44df7b"
       }
     },
     {
@@ -36,8 +36,8 @@
       "testCommand": "cd apps/pocket-dj && npm run verify",
       "deployment": {
         "channel": "samfa12/pocket-dj:html",
-        "identifier": "Samfa12 site sync 0e7db88829aadeaf88ec33d9124f71031507448c; last independently verified itch build #1736545",
-        "sourceCommit": "531ed5d386905c82914fa3879224140c4441f0e6"
+        "identifier": "audit-hardening-metal-mix-v1g-20260809 (#1867913); Samfa12 site sync 35c269f330fe1042c3fbdab702bc4898fd4ee038",
+        "sourceCommit": "347a2b939bbd5597cb3eab5112a668959c44df7b"
       }
     },
     {
@@ -52,8 +52,8 @@
       "testCommand": "cd apps/pocket-audio-handoff && npm test",
       "deployment": {
         "channel": "https://samfa12.com/apps/pocket-audio-handoff/",
-        "identifier": "Samfa12 site sync 0e7db88829aadeaf88ec33d9124f71031507448c",
-        "sourceCommit": "dc429d3907631dc15ac5e07ddd7195e36c78a510"
+        "identifier": "Samfa12 site sync 35c269f330fe1042c3fbdab702bc4898fd4ee038",
+        "sourceCommit": "347a2b939bbd5597cb3eab5112a668959c44df7b"
       }
     },
     {

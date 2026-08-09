@@ -4,9 +4,9 @@
 
 | Component | Source/build/schema versions | Status | Channel | Current identifier | Gate |
 | --- | --- | --- | --- | --- | --- |
-| Pocket Chordsmith | package 1.0.0; build v68; schema 17; legacySchema 16; core 0.2.0 | public-hosted | samfa12/pocket-chordsmith:pocket-audio-core | pcs17-genre-composer-20260731 (#1845264) | `cd apps/chordsmith-web && npm run verify` |
-| Pocket DJ | package 1.0.0; build v1g; sessionSchema 1; sourceSchema 17; legacySourceSchema 16; core 0.2.0 | public-hosted | samfa12/pocket-dj:html | Samfa12 site sync 0e7db88829aadeaf88ec33d9124f71031507448c; last independently verified itch build #1736545 | `cd apps/pocket-dj && npm run verify` |
-| Pocket Audio Handoff | build handoff-v1; handoffSchema 1; sourceSchemas 16,17 | public-hosted | https://samfa12.com/apps/pocket-audio-handoff/ | Samfa12 site sync 0e7db88829aadeaf88ec33d9124f71031507448c | `cd apps/pocket-audio-handoff && npm test` |
+| Pocket Chordsmith | package 1.0.0; build v68; schema 17; legacySchema 16; core 0.2.0 | public-hosted | samfa12/pocket-chordsmith:pocket-audio-core | audit-hardening-metal-mix-v68-20260809 (#1867911); Samfa12 site sync 35c269f330fe1042c3fbdab702bc4898fd4ee038 | `cd apps/chordsmith-web && npm run verify` |
+| Pocket DJ | package 1.0.0; build v1g; sessionSchema 1; sourceSchema 17; legacySourceSchema 16; core 0.2.0 | public-hosted | samfa12/pocket-dj:html | audit-hardening-metal-mix-v1g-20260809 (#1867913); Samfa12 site sync 35c269f330fe1042c3fbdab702bc4898fd4ee038 | `cd apps/pocket-dj && npm run verify` |
+| Pocket Audio Handoff | build handoff-v1; handoffSchema 1; sourceSchemas 16,17 | public-hosted | https://samfa12.com/apps/pocket-audio-handoff/ | Samfa12 site sync 35c269f330fe1042c3fbdab702bc4898fd4ee038 | `cd apps/pocket-audio-handoff && npm test` |
 | Pocket DAW | source 0.6.47; projectSchema 3; latestPublished 0.6.46; lastInstalledSmoke 0.6.46 | public-alpha-source-ahead-of-public | GitHub updater / stable itch bootstrapper | pocket-daw-v0.6.46 | `cd apps/pocket-daw && npm run verify:versions && npm run verify:release-candidate-truth && npm test` |
 | Pocket Audio Core | package 0.2.0; schemas 16,17 | private-workspace-package | repository-only | 0.2.0 | `cd packages/pocket-audio-core && npm test && npm run verify:family-parity` |
 | PCS Format | package 0.2.0; canonicalSchema 17; legacyProjectionSchema 16 | private-workspace-package | repository-only | 0.2.0 | `cd packages/pcs-format && npm test` |
