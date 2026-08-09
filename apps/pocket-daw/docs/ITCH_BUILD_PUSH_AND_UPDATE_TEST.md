@@ -86,16 +86,13 @@ Windows Authenticode signing is separate from Tauri updater signatures. SmartScr
 From `apps/pocket-daw`:
 
 ```powershell
-$env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.pocket-daw-secrets\tauri-updater.key"
-npm run verify:versions
-npm test
-npm run build
-npm run release:update:full
+$env:TAURI_SIGNING_PRIVATE_KEY_PATH = "$env:USERPROFILE\.pocket-daw-secrets\tauri-updater.key"
+npm run release:prepare
 npm run package:itch-bootstrapper
 npm run verify:itch-bootstrapper
 ```
 
-`npm run release:update:full` builds and verifies the Tauri updater package. `npm run package:itch-bootstrapper` builds the small itch downloader. `npm run package:itch` remains available for the manual full-installer fallback.
+`npm run release:prepare` runs the source gates once, builds/packages/stages once, verifies artifacts once, and writes the immutable candidate receipt. `npm run package:itch-bootstrapper` builds the small itch downloader. `npm run package:itch` remains available for the manual full-installer fallback, not for normal checkpoint preparation.
 
 ## Push to Itch
 

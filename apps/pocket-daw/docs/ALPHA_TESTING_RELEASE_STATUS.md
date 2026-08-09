@@ -1,7 +1,7 @@
 # Pocket DAW v0.6.38 Alpha Testing Release Status
 
-> Historical checkpoint document. The current public release is 0.6.43 and the
-> current source tree is 0.6.44. Use `CURRENT_RELEASE_STATUS.md` and
+> Historical checkpoint document. The current public/exact-smoked release is
+> 0.6.46 and the source-only tree is 0.6.47. Use `CURRENT_RELEASE_STATUS.md` and
 > `release-status.json` for current version, installer, Samples/Samplers and
 > VST3-hosting truth.
 

@@ -24,11 +24,11 @@ This file records audit requirements that cannot be truthfully completed by repo
 | F-024 screen readers | Run the core Chordsmith, DJ, Handoff, installed DAW, and Godot addon flows with NVDA on Windows and VoiceOver on an Apple platform. Record spoken control name, role, state, errors, and status announcements. | Pending assistive technology |
 | F-024 display modes | Test Windows global High Contrast plus 200% and 400% OS scaling in the installed DAW; test browser reflow/motion at equivalent platform settings. Capture screenshots and blockers. | Pending OS-level manual checks |
 | F-011 Asset Library | Publish through the dedicated addon-only Asset Library-compatible branch/tag, download that exact artifact, record SHA-256, enable it in a clean Godot project, and run interactive plus headless smoke. | Pending external publication authority |
-| F-019 repository settings | Enable and verify GitHub Dependency graph, secret scanning, and push protection for the remote repository. | Pending repository-admin setting |
+| F-019 repository settings | GitHub API verification confirmed Dependency graph/dependabot security updates, secret scanning, and push protection enabled. | Verified 2026-08-09 |
 
 ## Pocket DAW release boundary
 
-The current public `0.6.45` tag is explicitly classified in `apps/pocket-daw/release-status.json` as a reduced-gate installed MCP bridge hotfix. Its retained release verdict says the full Windows smoke was not run, so the exact `0.6.43` installed smoke remains the binary baseline rather than being relabeled as `0.6.45` evidence. The release-candidate truth verifier fails whenever a newer published version outruns installed-smoke evidence unless a complete, version-matched `source-only-no-installer` or `reduced-hotfix-gate` exception is recorded. The next installer publication still requires the full exact-artifact procedure in `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md`.
+Pocket DAW `0.6.46` is the current public and exact-installed-smoked release. Its tag and smoke both bind commit `aa519f2fc26064f3804d9f9ee917d277a966d080` and setup SHA-256 `e58e3498d5b905c52d5cc439a2ad48aa3609cd60e7ac8be6b4c819e9c0a1e18e`. The current `0.6.47` tree is source-only release-process work: no 0.6.47 installer has been built, smoked, or published. Every future installer still requires the exact-artifact procedure in `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md`.
 
 ## Evidence record template
 

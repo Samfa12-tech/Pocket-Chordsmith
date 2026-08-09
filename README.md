@@ -128,9 +128,10 @@ To use it in Godot:
 5. Save the compiled chart resource.
 6. Assign the chart to `PocketChordsmithConductor` in a scene.
 
-The browser app can also push to an open Godot editor through the local receiver
-at `http://127.0.0.1:9087/pocket-chordsmith/push-to-godot`, with clipboard/manual
-paste fallback if local push is blocked.
+The browser app can also push to an open Godot editor through the opt-in local
+receiver at `http://127.0.0.1:9087/pocket-chordsmith/push-to-godot`. The receiver
+is off by default and requires its rotating token/trust checks; clipboard/manual
+paste remains the fallback when authenticated local push is unavailable.
 
 More addon docs:
 

@@ -6,16 +6,24 @@ too much time was lost to repeated hardware smoke, duplicated gates, an
 incorrect background PowerShell invocation, and late rediscovery of the itch
 bootstrapper policy.
 
+Current boundary: 0.6.47 is a source-only process checkpoint. No 0.6.47
+installer was produced. The next package-producing source checkpoint must bump
+to at least 0.6.48 before running `release:prepare`.
+
 ## Core Rule
 
-Build the release installer once, record its SHA-256, and bind every installed
-smoke summary, attestation, target report, updater manifest, and remote check to
-that exact file. If a source or installer-producing change occurs, invalidate
-the old evidence and start again from the final commit.
+Run `release:prepare` once. It runs every source gate once, performs one Tauri
+release build and one package/stage/verify pass, then writes an immutable
+candidate receipt that binds the full commit, version, setup/MSI and updater
+signatures, release/updater/bootstrapper manifests, checksums, verdict, and
+packaged VST3 sidecar hash. If source or any receipt-bound byte changes,
+invalidate the evidence and start again at a new version from the final commit.
 
-Do not rebuild after exact-installer smoke. In particular, do not run
-`release:update:publish` after smoke: it rebuilds installers. Publish the
-already-smoked files from `releases/updater/` instead.
+After preparation, `verify:candidate` is evidence-only: it re-hashes the
+receipt and frozen artifacts and runs the existing strict installed-evidence
+validators without source tests or builds. `release:publish-exact` accepts only
+that receipt plus its immutable candidate-verification report and uploads those
+already-smoked bytes. It never builds or restages.
 
 ## One-Pass Order
 
@@ -25,21 +33,22 @@ Run from `apps/pocket-daw/`.
    `docs/ITCH_BUILD_PUSH_AND_UPDATE_TEST.md` before deciding the release path.
 2. Finish source, test, release-script, and release-note changes first.
 3. Commit them and require a clean tracked worktree.
-4. Run the bundled build gates once:
+4. Run the single bundled prepare gate once:
 
    ```powershell
-   npm run release:update:full
-   npm run verify:itch
-   npm run release:update:fast
+   npm run release:prepare
    ```
 
-   `verify:itch` automatically sets `POCKET_DAW_SKIP_NATIVE_BUILD=1` so it
-   validates and restages the installer built by `release:update:full` instead
-   of producing a second native binary. `release:update:fast` then restages
-   updater manifests around those same-version installers; it does not rebuild
-   the native binary and cannot publish.
-5. Record the full source commit, staged setup path, and setup SHA-256. Treat
-   these three values as immutable candidate identity.
+   This performs version/sound/CI/parity gates, one Vitest run, one Cargo run,
+   one Chromium E2E run, one Tauri release build (whose configured frontend
+   hook builds once), one release package, one artifact verification, and one
+   updater stage. It refuses a dirty tracked tree and refuses to overwrite an
+   existing receipt. `release:update` and `release:update:full` are safe aliases;
+   `verify:itch` is a deprecated alias for the same one-pass command.
+   `release:update:fast` is retired and fails without touching artifacts.
+5. Retain `releases/updater/pocket-daw-candidate-receipt-v<version>.json`.
+   Its commit, staged setup path/hash and other artifact hashes are immutable
+   candidate identity. Do not hand-edit it.
 6. Run private/owned MIDI fixture validation once through the current parser
    and converter. Keep the fixture and report ignored; never commit owned MIDI.
 7. Generate the native-capture fingerprint and select exactly one audio-evidence
@@ -59,17 +68,19 @@ Run from `apps/pocket-daw/`.
    discard all earlier exact-artifact evidence.
 11. Build the attestation from the final evidence paths and SHA-256 values,
     including `audioCaptureEvidence` exactly as described below.
-12. Run `verify:candidate` once with both game packs, current-installer
+12. Run `verify:candidate` once with the receipt, both game packs, current-installer
     export/MIDI flags, and exactly one fresh-audible, manual-fresh-audible, or
     baseline-reuse mode.
 13. Re-hash the staged setup and confirm it did not change.
-14. Push the tested commit, publish the already-staged files without a rebuild,
-    and verify the remote manifest, installer download hash, release tag, and
-    target commit.
+14. Push the tested commit, then publish with `PUBLISH=1 npm run
+    release:publish-exact -- --receipt <receipt> --verification-report <report>`.
+    The command re-hashes the receipt, every frozen upload and every retained
+    evidence file before upload, targets the receipt commit explicitly, and
+    performs the remote manifest/download checks without a build or restage.
 
-Do not separately rerun commands already contained inside these guarded scripts
-unless diagnosing a failure. The guards intentionally repeat some checks; avoid
-adding another manual layer of duplicate `npm test`, Cargo, build, and E2E runs.
+Do not separately rerun commands already completed in the receipt unless
+diagnosing a failure. A diagnosis does not update the immutable receipt; any
+source or package-producing correction requires a new version and prepare run.
 
 ## Combined Installed Audio and MIDI Smoke
 
@@ -361,15 +372,14 @@ Fresh-audible mode:
 
 ```powershell
 npm run verify:candidate -- `
+  --receipt <candidate-receipt.json> `
   --attestation <final-attestation.json> `
-  --installer <exact-staged-setup.exe> `
   --punch-take-summary <final-punch-summary.json> `
   --media-portability-summary <final-media-summary.json> `
   --vst3-host-summary <final-vst3-host-summary.json> `
   --require-audible-audio `
   --require-export-files `
   --require-midi-input `
-  --commit <full-tested-commit> `
   --game-pack <final-godot.zip> --kind godot-adaptive-pack `
   --game-pack <final-web.zip> --kind web-game-pack
 ```
@@ -378,8 +388,8 @@ Baseline-reuse mode replaces only `--require-audible-audio`:
 
 ```powershell
 npm run verify:candidate -- `
+  --receipt <candidate-receipt.json> `
   --attestation <final-attestation.json> `
-  --installer <exact-staged-setup.exe> `
   --punch-take-summary <final-punch-summary.json> `
   --media-portability-summary <final-media-summary.json> `
   --vst3-host-summary <final-vst3-host-summary.json> `
@@ -387,7 +397,6 @@ npm run verify:candidate -- `
   --audio-capture-baseline-installer <prior-exact-setup.exe> `
   --require-export-files `
   --require-midi-input `
-  --commit <full-tested-commit> `
   --game-pack <final-godot.zip> --kind godot-adaptive-pack `
   --game-pack <final-web.zip> --kind web-game-pack
 ```
@@ -397,15 +406,14 @@ paths, and supplies its exact direct report:
 
 ```powershell
 npm run verify:candidate -- `
+  --receipt <candidate-receipt.json> `
   --attestation <final-attestation.json> `
-  --installer <exact-staged-setup.exe> `
   --punch-take-summary <automated-companion-summary.json> `
   --manual-fresh-audible-evidence <manual-fresh-audible-evidence.json> `
   --media-portability-summary <final-media-summary.json> `
   --vst3-host-summary <final-vst3-host-summary.json> `
   --require-export-files `
   --require-midi-input `
-  --commit <full-tested-commit> `
   --game-pack <final-godot.zip> --kind godot-adaptive-pack `
   --game-pack <final-web.zip> --kind web-game-pack
 ```
@@ -420,16 +428,28 @@ changed fingerprints, altered manual/companion/baseline bytes, invalid evidence
 ordering, reuse chains, and any baseline whose own mode is not direct
 `fresh-audible` or fully verified direct `manual-fresh-audible`.
 
-After it passes, re-hash the setup EXE and compare it to the attestation and
-installed-smoke summaries before publication.
+After it passes, retain the emitted
+`pocket-daw-candidate-verification-v<version>.json`. It binds the receipt and
+all evidence bytes. The setup path, version and commit come from the receipt;
+legacy `--installer`, `--version`, and `--commit` arguments are optional and
+are rejected if they disagree.
 
 ## Publication Without Rebuild
 
 The exact-smoked staged files live under `releases/updater/`. Push the tested
-commit first, then create the GitHub release from those files using the asset
-list in `scripts/release-updater-build.mjs:createGithubRelease`. Set
-`--target` to the tested full commit. Do not call a build command between smoke
-and upload.
+commit first, then run:
+
+```powershell
+$env:PUBLISH = "1"
+npm run release:publish-exact -- `
+  --receipt <candidate-receipt.json> `
+  --verification-report <candidate-verification.json>
+```
+
+The command verifies all frozen artifacts and retained evidence, uploads the
+receipt-bound asset list, and sets `--target` to the receipt commit. The legacy
+`release:update:publish` name is a safe alias for this exact-only path and no
+longer builds.
 
 Post-publication checks:
 
@@ -455,7 +475,8 @@ the normal checkpoint path.
 ## Mistakes That Invalidate or Waste a Release Run
 
 - Rebuilding or restaging a different setup EXE after exact-installer smoke.
-- Running `release:update:publish` after collecting artifact-bound evidence.
+- Calling any installer-producing command after the receipt exists.
+- Deleting or editing a receipt to restage same-version bytes instead of bumping the version.
 - Repeating microphone tests without first inspecting peak/RMS in the summary.
 - Expecting the user to provide MIDI input instead of using loopMIDI.
 - Starting a PowerShell helper with an unquoted path containing spaces.

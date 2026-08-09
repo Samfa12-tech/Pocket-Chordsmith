@@ -4,43 +4,34 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.46` |
+| Source version | `0.6.47` |
 | Project schema version | `3` |
-| Latest published version | `0.6.45` |
-| Latest published tag | `pocket-daw-v0.6.45` |
-| Latest published commit | `0595c29aec62ba6329e2e1e58aaf3dcb9d863ba3` |
-| Last installed-smoke version | `0.6.43` |
+| Latest published version | `0.6.46` |
+| Latest published tag | `pocket-daw-v0.6.46` |
+| Latest published commit | `aa519f2fc26064f3804d9f9ee917d277a966d080` |
+| Last installed-smoke version | `0.6.46` |
 | Last installed-smoke result | `pass` |
-| Last installed-smoke date | `2026-08-01T12:43:45.050Z` |
-| Last installed-smoke installer | `Pocket.DAW_0.6.43_x64-setup.exe` |
-| Last installed-smoke SHA-256 | `8e68415dcd4f8272a9a4a308d4950e8c2561feaf4bacbc8f1cb6fe7499f15b96` |
+| Last installed-smoke date | `2026-08-09T00:23:18.707Z` |
+| Last installed-smoke installer | `Pocket.DAW_0.6.46_x64-setup.exe` |
+| Last installed-smoke SHA-256 | `e58e3498d5b905c52d5cc439a2ad48aa3609cd60e7ac8be6b4c819e9c0a1e18e` |
 
 ## Installed-Smoke Notes
 
-- Pocket DAW 0.6.43 was built from clean commit 546228a333971c319808fda88d751a7cc8fc77b6; the release manifest recorded dirtyWorkingTree false before installation.
-- The exact staged setup EXE was releases/updater/Pocket.DAW_0.6.43_x64-setup.exe with SHA-256 8e68415dcd4f8272a9a4a308d4950e8c2561feaf4bacbc8f1cb6fe7499f15b96, installed locally and re-hashed unchanged after final candidate verification.
-- Installed smoke passed Samples Library, Quick Sampler, Drum Rack, schema-3 save/reopen, native audio capture/render/export, punch/take lanes, MIDI input, media portability and game-pack checks. The final input take was intentionally quiet at the user's request; rendered/exported audio audibility and the user's audio-path confirmation passed.
-- The installed VST3 host passed scanning, instrument/effect processing, state round-trips, automation, factory programs, latency, tails, vendor-editor lifecycle and unload/reload recovery. The packaged sidecar SHA-256 was dac69b746657c4e241087c387ae16a3ceda9167b473db9f940de45cae01a19fc.
+- Pocket DAW 0.6.46 was published and installed-smoked from exact clean commit aa519f2fc26064f3804d9f9ee917d277a966d080.
+- The exact staged setup EXE was releases/updater/Pocket.DAW_0.6.46_x64-setup.exe with SHA-256 e58e3498d5b905c52d5cc439a2ad48aa3609cd60e7ac8be6b4c819e9c0a1e18e; the remote setup re-download hash matched and the release tag, origin/main and tested commit agreed.
+- Installed smoke passed 10.049977 seconds of 48 kHz mono PCM capture (file peak 0.6365356, RMS 0.0381953), 16 loopMIDI notes, retained WAV/MIDI exports, media portability, installed VST3 hosting, and Godot/Chromium target packs. Audio evidence reused the directly eligible manual-fresh attestation with an unchanged semantic PCM v2 fingerprint while the current installer independently re-proved PCM, MIDI and export integrity.
+- The installed VST3 host passed with packaged sidecar SHA-256 a83ebd41120efdd2313125567c4ee6bf6f3378b6d18bb92c01f44c8a38b57fcd.
 - Compatibility coverage includes unbundled official JS80P 4.0.2 and Surge XT 1.3.4 releases; Pocket DAW does not bundle, download or redistribute them.
-- The final candidate gate passed 1109 Vitest tests, 158 native library tests, 5 sidecar unit tests, 98 Pocket DAW Chordsmith parity tests and 17 Chromium E2E tests, plus exact installed VST3, media-portability, punch/take and target-runtime evidence.
-- 0.6.43 was published to GitHub release pocket-daw-v0.6.43 on 2026-08-01. Latest updater/bootstrapper manifests, remote setup download and SHA-256, release tag and origin/main were verified; itch remains on its stable unchanged bootstrapper payload.
+- Godot 4.6.3 runtime pack SHA-256 e0b423631d8124693650dc8ee22e037bbcb22bc13305cc14b1eb1202040489d0 and Chromium pack SHA-256 6a96bc139293ca30697ff5dd53314b06ed2b69cae732910839d3536930145af1 both passed.
+- 0.6.46 was published to GitHub release pocket-daw-v0.6.46 on 2026-08-09; itch remains on its stable unchanged bootstrapper payload.
 
 ## Unreleased Source-Only Notes
 
-- 2026-08-09 source 0.6.46 checkpoint: incorporates the full repository-audit remediation merge, approved softer Heavy Metal bass and louder Metal guitar across the Pocket Audio family, explicit native Mono Ch 2 capture for two-channel microphone arrays, fail-closed input-meter/MIDI positioning preflights, and native-capture fingerprinting so future unchanged recording releases can reuse one direct fresh-audible baseline while still re-proving current PCM duration/file integrity, connected loopMIDI and WAV/MIDI exports.
-- 2026-08-01 source-only 0.6.45 live MCP test hotfix: the loopback bridge now accepts the exact http://tauri.localhost and https://tauri.localhost origins used by the installed Windows Tauri WebView. This fixes the in-app Live test CORS preflight failure while preserving loopback-host, trusted-origin and bearer-token checks. Validation is intentionally limited to the focused Rust origin regression, MCP/UI tests and installer/package checks.
-- 2026-07-17 post-release documentation and test-helper update: added the one-pass exact-artifact release fast path, corrected normal itch policy, recorded 0.6.41 process failures to avoid, and promoted the loopMIDI sender into a tracked reusable script.
-- 2026-07-22 Pocket Audio sound-profile update: imports and renders PCS schema 17 profile identity, expressive events, Funk bass articulations, upgraded Metal texture, Western character, Chiptune channel controls, expanded drum lanes, capability diagnostics, and preserved unknown intent while retaining legacy schema-16 compatibility.
+- 2026-08-09 source-only 0.6.47 release-process checkpoint: consolidates repeated release gates into one immutable candidate-receipt prepare pass, evidence-only candidate verification, and exact frozen-asset publication. No 0.6.47 installer has been built, installed-smoked, or published; the next package-producing source checkpoint must bump to at least 0.6.48.
 
 ## Installed-Smoke Exception
 
-- Kind: `reduced-hotfix-gate`
-- Published version: `0.6.45`
-- Baseline installed smoke: `0.6.43`
-- Rationale: 0.6.45 published a replacement installer for the narrow installed MCP bridge CORS hotfix without changing native recording, playback, render or export behavior. Its retained release verdict explicitly records that a full Windows smoke was not run, so the exact 0.6.43 installed audio smoke remains the applicable baseline rather than being silently relabeled as 0.6.45 evidence.
-- Focused evidence:
-  - GitHub release pocket-daw-v0.6.45 targets commit 0595c29aec62ba6329e2e1e58aaf3dcb9d863ba3 and publishes setup SHA-256 65d507de5f3fdc4e86d0da66900d7d80b39883d24633b0e71cf2b60db139d5d8.
-  - The retained 0.6.45 final release verdict records focused packaging evidence and explicitly says the full Windows smoke was not run.
+- No exception recorded; published installer checkpoints require matching exact installed-smoke evidence.
 
 ## Capability Claim Boundary
 
