@@ -46,9 +46,14 @@ playhead position. The UI only displays state and dispatches commands.
 
 ## Current Notes And Known Gaps
 
+### Current 2026-08-09 Pocket DAW Release And Process Notes
+
+- Pocket DAW `0.6.46` is the latest public and exact-installed-smoked release from commit `aa519f2fc26064f3804d9f9ee917d277a966d080`; setup SHA-256 is `e58e3498d5b905c52d5cc439a2ad48aa3609cd60e7ac8be6b4c819e9c0a1e18e`. The exact committed `0.6.47` source-only process checkpoint may run its first `release:prepare`; no 0.6.47 installer, smoke, or publication exists yet. After a 0.6.47 receipt exists, or if source/package-producing bytes change from that exact commit, bump to at least 0.6.48 before preparing again.
+- The release fast path is receipt-based: one `release:prepare` source/build/package/stage pass, evidence-only `verify:candidate`, then `release:publish-exact` for frozen assets. Never rebuild or same-version-restage after receipt creation.
+
 ### Current 2026-08-08 Pocket DAW Audio-Evidence Policy
 
-- Pocket DAW remains version `0.6.45`. Use `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md` for current exact-installer release procedure and the component-owned release-status files for publication truth.
+- Historical policy origin: the native-capture reuse rules introduced before 0.6.46 remain current. Use `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md` and the component-owned release-status files for current truth.
 - Do not repeatedly ask Sam for a room-microphone pass. A fresh audible pass is required only when no eligible prior `fresh-audible` baseline exists or the deterministic native-capture fingerprint changed. With an identical fingerprint, the guarded verifier may reuse one directly retained fresh baseline while the current exact installer still proves PCM duration/file integrity, connected loopMIDI, and retained WAV/MIDI exports. Reuse chains and altered/missing evidence fail closed.
 
 ### Current 2026-07-17 Pocket DAW 0.6.41 Release And Fast-Path Notes
@@ -57,7 +62,7 @@ playhead position. The UI only displays state and dispatches commands.
 - The exact installed combined smoke passed without further user microphone work: 10.069977 seconds of 48 kHz mono audio cleared peak/RMS thresholds and loopMIDI captured 19 notes into an unmuted active punched take lane, with WAV and MIDI exports retained and verified. MIDI input is an agent responsibility through `apps/pocket-daw/scripts/send-loopmidi-smoke.ps1`.
 - Sam's private `Billions of Years` score passed faithful conversion on the final code at Type 1 / PPQ 960 / 86 BPM / F-sharp minor / 4/4: 74 source and destination bars, A-E lengths 16/16/16/16/10, resolution 4 exact, 244 melody attacks, 148 chord events containing 453 notes, final four `[54,58,61]` half-bar voicings, raw MIDI retained, and zero generated bass/drums/guitar/harmony. Owned handoff files and reports remain ignored and outside public packages.
 - Final gates passed 1,037 Vitest tests, 115 Rust tests, 14 Chromium E2E tests, strict installed media portability, Godot/Web pack verification, Godot 4.6.3 target import/runtime validation and Chromium Web Audio decode/offline render. The target smoke found and fixed a silent fractional-section-loop bug before the final installer.
-- Use `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md` for future releases. Build/stage once, run one combined strict audio/MIDI/export smoke at `10000/10000` ms, reuse one evidence set, run target smokes once, then publish the already-smoked staged files without rebuilding. Do not run `release:update:publish` after exact smoke.
+- Use `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md` for future releases. Prepare once, run one combined strict audio/MIDI/export smoke at `10000/10000` ms, reuse one evidence set, run target smokes once, then publish the already-smoked staged files with `release:publish-exact` and no rebuild.
 - Normal updater checkpoints do not repush itch. The `windows-installer` channel is the stable bootstrapper and stays on its prior user-version unless the bootstrapper executable/upload payload changes; it discovers `0.6.41` through the GitHub bootstrapper manifest.
 - Mistakes to avoid: unquoted `Start-Process -File` paths containing spaces, cleanup filters that match and terminate their own shell, starting smoke before the installed bridge is ready, shortening the audio phase so MIDI capture begins before the punch window, repeating microphone requests instead of inspecting one summary, combining evidence from separate runs, rebuilding after smoke, and reconstructing policy/evidence from chat instead of retained docs and JSON.
 

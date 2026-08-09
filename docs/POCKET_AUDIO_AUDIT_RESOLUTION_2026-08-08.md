@@ -16,17 +16,17 @@ All 27 findings now have a repository-side resolution. Findings that require a p
 | F-006 | DJ drops stale audible steps after stalls, separates visual catch-up, tracks diagnostics, and stops cleanly on visibility/audio interruption. | Closed |
 | F-007 | Chordsmith deterministic composer fixtures run in CI before browser build/package. | Closed |
 | F-008 | CI is split into pinned component, Godot, security, and final family gates; Handoff and native/release contracts are included. | Closed |
-| F-009 | Release-candidate truth now rejects a published version newer than exact installed smoke unless a complete version-matched exception is recorded. The public 0.6.45 reduced-hotfix exception is explicit about its focused MCP bridge scope and retained no-full-smoke verdict. | Guard closed; next installer remains exact-artifact work |
+| F-009 | Release-candidate truth rejects a published version newer than exact installed smoke unless a complete version-matched exception is recorded. Pocket DAW 0.6.46 was subsequently published and exact-installed-smoked from commit `aa519f2fc26064f3804d9f9ee917d277a966d080`, closing the prior 0.6.45 reduced-hotfix evidence gap. | Fully closed by exact 0.6.46 publication |
 | F-010 | PCS Format now has a bounded browser-safe codec, canonicalize/migrate API, self-contained build, cross-consumer fixture contract, and honest contract-library ownership language. Core delegates PCS1 envelope handling to it; app-local migrations remain explicit rather than falsely claimed canonical. | Immediate defect/claim closed |
 | F-011 | Addon packaging reopens and verifies an addon-only ZIP and emits version/SHA evidence; monorepo source archives are no longer presented as the addon payload. | Code closed; Asset Library publication pending authority |
 | F-012 | Current composing guidance defaults to native schema 17, A-H sections, preserved rich/unknown intent, explicit schema-16 loss reports, and import/Section A/Play Song validation. | Closed |
 | F-013 | DAW external links use `ShellExecuteW` directly after strict URL parsing, scheme/host/recipient checks, and malformed-encoding/control-character rejection; no command shell is involved. | Closed |
 | F-014 | Five fixed genres have deterministic duration/peak/RMS/DC/clipping/non-finite/silence goldens. Fresh current-source tests prove matching sequence duration, event counts, and exact live/Core structural keys for lofi, chip, metal, western, and funk. | Automated evidence closed; listening/blind review pending human evidence |
-| F-015 | WAV export estimates frames and working memory before allocation, applies desktop/mobile/constrained-mobile limits, and offers Current Section/shorter render recovery. Oversized tests prove zero `OfflineAudioContext` allocations. | Code/emulation closed; physical mobile evidence pending |
+| F-015 | WAV export estimates frames and working memory before allocation, applies desktop/mobile/constrained-mobile limits, and offers Current Section/shorter render recovery. Physical SM-S948B Android 16 / Chrome 151 evidence at commit `aa519f2f` passed a 12-second 1,869,884-byte Core WAV and rejected a synthetic 480.1-minute / 53,296 MB request at 384 MB before allocation with no reload and interactive controls. | Android closed; iOS physical evidence pending |
 | F-016 | Chordsmith is generated deterministically from 12 ordered state/schema/audio/transport/export/handoff/UI/accessibility fragments; DJ from 7. Portable single-file artifacts and drift checks are retained. | Closed |
 | F-017 | `FAMILY_MANIFEST.json` generates component inventory, licensing, security scope, release dashboard, and version matrix; historical memory is marked non-current. | Closed |
-| F-018 | Every-change Chromium desktop/Pixel gates remain; focused Chordsmith and DJ parser/UI/transport smoke now runs in Firefox and WebKit. | Automated stage closed; real-device/interruption/output matrix pending |
-| F-019 | Dependabot, CODEOWNERS, dependency review, CodeQL JS/TS/Rust, tracked-secret scan, governance validation, and all-lockfile high-severity audit gates are present. Dependency review records a warning until GitHub Dependency graph is enabled; repository-owned lockfile audits remain hard gates. | Automation closed; GitHub Dependency graph and secret-scanning settings pending admin |
+| F-018 | Every-change Chromium desktop/Pixel gates remain; focused Chordsmith and DJ parser/UI/transport smoke runs in Firefox/WebKit. Physical SM-S948B Android Settings-background / Chrome-foreground testing on the phone speaker produced a monotonic step 0-13 trace with no duplicate/backward scheduling. | Android transport-only pass; iOS, audio interruption, wired/Bluetooth routes, acoustic no-burst perception, and latency pending |
+| F-019 | Dependabot, CODEOWNERS, dependency review, CodeQL JS/TS/Rust, tracked-secret scan, governance validation, and all-lockfile high-severity audit gates are present. GitHub remote settings were verified with Dependency graph/dependabot security updates, secret scanning, and push protection enabled. | Closed; remote settings verified 2026-08-09 |
 | F-020 | Explicit CSPs now cover Handoff, Chordsmith, DJ, and the Tauri WebView with narrow network/media/object/navigation policies appropriate to each runtime. | Closed |
 | F-021 | Core dist artifacts are self-contained; packaged Chordsmith and DJ ZIPs contain no raw Core source and validate ESM/IIFE/API-manifest requirements. | Closed |
 | F-022 | Imported Godot packs default to pack-relative ownership. External Godot paths require explicit trusted-project configuration, warnings, existence, and type checks. | Closed |
@@ -47,10 +47,11 @@ All 27 findings now have a repository-side resolution. Findings that require a p
 - Godot 4.6.3/4.7.1 trust-boundary, schema-17, accessibility, and addon-only packaging checks passed during this pass.
 - Family governance, archive hashes, organization, tracked-secret scanning, security governance, all npm high-severity audits, package-content checks, and `git diff --check` passed.
 
-During the autonomous audit and verification phase, no deployment, release
+Historical audit-phase boundary: during that phase no deployment, release
 publication, GitHub settings change, staging, commit, or push was performed.
-Any later review-branch or pull-request activity is represented by Git history;
-it does not change the release-evidence boundaries recorded here.
+Subsequently Pocket DAW 0.6.46 was published and exact-installed-smoked, and
+the repository security settings named in F-019 were verified enabled. Those
+later facts do not relabel the audit-phase command evidence.
 
 ## Sealed change-aware security review
 

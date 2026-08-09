@@ -70,51 +70,42 @@ Release frequency policy:
 For a normal local signed updater package, run:
 
 ```powershell
-npm run release:update
+npm run release:prepare
 ```
 
-This verifies version and native sound recipe sync, builds/signs the Windows installers once, packages the itch installer folder, verifies release artifacts, copies the updater files into `releases/updater/`, and writes `pocket-daw-latest.json` plus `SHA256SUMS.txt`. It does not upload to itch or GitHub.
+This runs every source gate once, builds/signs the Windows installers once, packages and verifies once, stages updater files, and writes an immutable candidate receipt. It does not upload to itch or GitHub.
 
 For a full pre-public gate before an intentional checkpoint release, run:
 
 ```powershell
-npm run release:update:full
+npm run release:prepare
 ```
 
-This adds `npm test` and `cargo test`, then builds/signs the installers once. It replaces the older manual habit of running a full gate and then repeating build/package/copy/manifest steps by hand.
+`release:update` and `release:update:full` are safe aliases for this same complete pass. `verify:itch` is deprecated to it.
 
-For release-note or manifest-only rehearsal using existing signed installers for the same version, run:
-
-```powershell
-npm run release:update:fast
-```
-
-The fast path reuses existing version-matched installers and is blocked from publishing. Use it only when the native app binary has not changed.
-
-`release:update:publish` is an all-in-one build-and-publish path. It is only
-appropriate before artifact-bound smoke exists and only when the newly built
-artifact will receive fresh matching evidence. It must not be run after an
-installer has already passed exact-artifact smoke, because it rebuilds the
-installer and invalidates that evidence.
+Same-version restaging is retired: `release:update:fast` fails without touching
+artifacts. Release-note or manifest changes are package-producing changes and
+require a new version and prepare receipt.
 
 The normal exact-artifact checkpoint procedure is documented in
 `RELEASE_TESTING_FAST_PATH.md`: build and stage once, smoke that setup EXE,
 verify the candidate, then create the GitHub release from the already-staged
 files without running another build.
 
-The guarded all-in-one command remains available for a workflow that can
-collect evidence against its newly built output before upload:
+After evidence-only `verify:candidate` writes its verification report, publish
+the frozen candidate without a build or restage:
 
 ```powershell
 $env:PUBLISH = "1"
-npm run release:update:publish
+npm run release:publish-exact -- --receipt <candidate-receipt.json> --verification-report <candidate-verification.json>
 ```
 
-This runs the full gate, packages/stages updater files, creates the GitHub
-release, then verifies the live updater manifest and release asset hash. It
-does not push itch. It refuses to publish if `PUBLISH=1` is not set, if
-`--fast` is used, if required exact-artifact evidence does not match its staged
-installer, or if the GitHub release tag already exists.
+This re-hashes the receipt, all staged assets, and all evidence bound by the
+verification report; creates the GitHub release at the receipt commit; then
+requires that exact remote target and asset-name set and downloads/re-hashes
+all eleven receipt-bound assets. Missing, extra, or changed remote assets fail.
+The legacy
+`release:update:publish` command is a safe alias for this exact-only path.
 
 Current itch policy is bootstrapper-first: GitHub Releases host the signed updater installers and manifests, while the itch `windows-installer` channel hosts `releases/itch-bootstrapper/upload/`. That upload contains the bootstrapper EXE, README, checksums, and an `index.html` fallback so itch browser-mode requests do not fail with `asset not found: index.html`. Use the full installer itch package only as a manual fallback.
 
@@ -195,9 +186,7 @@ Before installed smoke, use the bundled one-pass release gate from
 guarded scripts:
 
 ```powershell
-npm run release:update:full
-npm run verify:itch
-npm run release:update:fast
+npm run release:prepare
 ```
 
 After the candidate installer exists, validate the exact smoke attestation plus the installed punch/take-lane and media-portability summaries:
@@ -214,18 +203,11 @@ For a hardware-backed punch/take-lane candidate, pass the strict summary gates t
 ```powershell
 npm run smoke:installed:punch-takes -- --installer <setup.exe> --record-ms 10000 --midi-record-ms 10000 --require-audible-audio --require-midi-input --require-export-files
 npm run smoke:installed:media-portability -- --installer <setup.exe> --require-installer
-npm run verify:candidate -- --attestation <path-to-smoke-attestation.json> --installer <setup.exe> --punch-take-summary <punch-take-lane-installed-smoke-summary.json> --media-portability-summary <installed-media-portability-smoke-summary.json> --require-audible-audio --require-export-files --require-midi-input --commit <full-source-sha> --game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>
+npm run verify:candidate -- --receipt <candidate-receipt.json> --attestation <path-to-smoke-attestation.json> --punch-take-summary <punch-take-lane-installed-smoke-summary.json> --media-portability-summary <installed-media-portability-smoke-summary.json> --vst3-host-summary <installed-vst3-host-smoke-summary.json> --require-audible-audio --require-export-files --require-midi-input --game-pack <pack.zip> --kind <godot-adaptive-pack|web-game-pack>
 ```
 
-Guarded public publish paths also require the punch/take-lane summary:
-
-```powershell
-$env:SMOKE_ATTESTATION = "<path-to-smoke-attestation.json>"
-$env:PUNCH_TAKE_SUMMARY = "<punch-take-lane-installed-smoke-summary.json>"
-$env:PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO = "1" # fresh-audible mode only
-# Baseline-reuse mode instead sets both AUDIO_CAPTURE_BASELINE_ATTESTATION and AUDIO_CAPTURE_BASELINE_INSTALLER.
-# Manual-fresh-audible mode instead sets MANUAL_FRESH_AUDIBLE_EVIDENCE to the exact retained manual report.
-```
+Guarded publication requires the immutable receipt and candidate-verification
+report; it does not rebuild or reinterpret environment-bound evidence.
 
 The standalone punch/take summary verifier checks the installer SHA-256 and accepts the known Pocket DAW setup filename normalization between local `Pocket DAW_...` NSIS artifacts and staged `Pocket.DAW_...` release assets. Archived standalone summaries may legitimately point at deleted temp export folders, but the candidate and publish verifiers now always require retained on-disk WAV/MIDI exports and connected MIDI input for the current exact installer. Strict export-file mode requires WAV sample data and parses the MIDI file bytes for active/inactive take-lane sentinel pitches. Strict MIDI-input mode requires a saved active punched MIDI input take with captured note pitches, matching capture/punch bars, punch mode metadata and take-lane placement evidence.
 

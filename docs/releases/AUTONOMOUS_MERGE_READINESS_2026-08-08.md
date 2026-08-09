@@ -66,20 +66,26 @@ packaged again so release provenance identifies the real commit.
 - A transitive npm `glob` deprecation warning appears during one clean install;
   all five high-severity lockfile audits pass.
 
-## Actions deliberately not performed during the audit phase
+## Actions deliberately not performed during the audit phase (historical)
 
 At the completion of the autonomous audit and clean-snapshot reproduction, no
 files had been staged or committed in the real repository and nothing had been
 pushed. Later review-branch and pull-request activity is represented by Git
 history. Nothing was published or deployed, no DAW installer was built or
 installed, no release was created, and no GitHub or other external settings
-were changed during this pass.
+were changed during this pass. Afterward Pocket DAW 0.6.46 was published and
+exact-installed-smoked from commit
+`aa519f2fc26064f3804d9f9ee917d277a966d080`; current release truth records that
+later outcome.
 
 ## Human handoff
 
 Reviewers should assess the complete pull-request diff together with this
-evidence. Before any public release, complete the pending rows in
-`MANUAL_RELEASE_EVIDENCE.md` against the exact eventual artifact. Pocket DAW's
-next installer still requires its documented exact-artifact hardware smoke;
-the Godot Asset Library and GitHub secret-scanning settings still require human
-authority.
+evidence. Before any future public release, complete the still-applicable rows
+in `MANUAL_RELEASE_EVIDENCE.md` against that exact artifact. Pocket DAW 0.6.46
+has exact-artifact evidence; 0.6.47 is source-only. Android physical memory and
+background/foreground transport evidence is now retained separately; iOS,
+audio interruptions, wired/Bluetooth routes, acoustic no-burst confirmation,
+latency, assistive-technology, high-contrast/scaling, and Godot Asset Library evidence
+remain pending. GitHub Dependency graph/dependabot security updates, secret
+scanning, and push protection were subsequently verified enabled.

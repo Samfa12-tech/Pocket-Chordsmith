@@ -203,7 +203,7 @@ Use this template for the next public checkpoint update smoke:
 - Candidate setup SHA-256:
 - Candidate updater manifest URL:
 - Smoke attestation path:
-- Command gate run: `npm run verify:versions`, `npm test`, `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run release:update:full`
+- Command gate run: one `npm run release:prepare` pass, recorded by the immutable candidate receipt
 - Attestation gate run: `npm run verify:smoke-attestation -- --attestation <path> --installer <setup.exe> --commit <full-sha>`
 - Help -> Check for Updates result:
 - Download/install result:

@@ -14,9 +14,9 @@ Pocket DAW is not:
 - Pocket Chordsmith
 - Pocket DJ
 
-Current public status: **free Windows alpha testing on itch, public updater
-version 0.6.43**. This release includes the Samples/Sounds Library, Quick
-Sampler, 16-pad Drum Rack, and the opt-in Windows x64 VST3 beta host.
+Current public status: **free Windows alpha testing, public updater and exact
+installed-smoke version 0.6.46**. Current source is 0.6.47 release-process work;
+no 0.6.47 installer has been built, smoked, or published.
 
 For current source/public/smoke truth, use:
 
@@ -122,12 +122,10 @@ order for exact-artifact packaging, combined audio/MIDI smoke, target-runtime
 evidence, candidate verification, and publication without a rebuild.
 
 ```powershell
-npm run release:update:full
-npm run verify:itch
-npm run release:update:fast
+npm run release:prepare
 ```
 
-Use `npm run release:update` for a local signed updater package without the full test gate. Use `npm run release:update:fast` only to restage manifests/release notes against existing same-version installers; it never publishes. Once exact-installer smoke exists, do not run `release:update:publish`, because it rebuilds and changes the artifact identity. Publish the exact already-smoked files under `releases/updater/` as described in the fast-path document. Public checkpoints publish GitHub updater assets and `pocket-daw-bootstrapper-latest.json`; they do not push itch.
+`release:prepare` runs each source gate once, performs one installer build/package/stage/verify pass, and writes an immutable candidate receipt. `release:update` and `release:update:full` are safe aliases; `verify:itch` is deprecated to the same pass; `release:update:fast` is retired and fails without changing artifacts. After installed evidence, run receipt-bound `verify:candidate`, then `release:publish-exact` with the immutable receipt and verification report. The legacy `release:update:publish` name is an exact-only alias and does not rebuild. Public checkpoints publish GitHub updater assets and `pocket-daw-bootstrapper-latest.json`; they do not push itch.
 
 Use `npm run package:itch-bootstrapper` and `npm run verify:itch-bootstrapper` to build the stable itch downloader. Upload it with `PUBLISH=1 npm run itch:push:bootstrapper` only when the bootstrapper itself changes. The old full-installer itch scripts remain as a manual fallback.
 
@@ -196,13 +194,15 @@ Architecture docs:
 - v0.6.12 corrects the MCP setup snippets to use a tested Windows `cmd` argument-array launch shape.
 - v0.6.13 adds `Help -> AI / MCP Bridge` and live app MCP tools for status, transport, selection and safe mixer edits.
 - v0.6.19 adds native loop/metronome playback, latest-only native restarts during rapid live composition edits, better native-cache reuse after live edits, Save As title adoption from `.pocketdaw` filenames, and refreshed release/bootstrapper manifests.
-- v0.6.43 is the public Samples, Samplers and VST3 Beta release: schema 3
+- Historical v0.6.43 introduced the public Samples, Samplers and VST3 Beta release: schema 3
   devices, Pocket Starter Sounds, Quick Sampler, 16-pad Drum Rack, used-sample
   collection/recovery, and crash-isolated Windows x64 VST3 instruments/effects
   with state, automation, latency/tails, editors and missing-plugin recovery.
-- v0.6.44 is a source-only MCP help hotfix after the 0.6.43 release. It removes
-  developer build-machine paths from installed help snippets; it is not yet a
-  separately published installer.
+- v0.6.46 is the current public and exact-installed-smoked checkpoint, including
+  the MCP help fix, audit remediation, approved Metal mix, explicit native mono
+  channel capture and fail-closed audio-evidence fingerprinting.
+- v0.6.47 is source-only release-process consolidation. It has no installer or
+  public-release claim.
 - Historical v0.6.22 checkpoint: cached-playback UI fixes from source commit `5cd186a22b6a8be9d706e1474b6a204ddbd065aa` and exact-artifact installed smoke for setup SHA-256 `c7adc2aea5595490e55dbb720bed6735cd91348caef69ef249f3ff1c0868a6b7`.
 - Historical installed-app note: Windows `.pocketdaw` association, cold-start launch, second-instance launch, live project-open, and `pocket-daw://` Chordsmith handoff coexistence passed local installed `0.6.34` smoke on 2026-06-28. Keep File -> Open / Ctrl+O as the fallback and keep association smoke in future public release checkpoints; use `release-status.json` for the current public checkpoint.
 - The latest published updater checkpoint and its exact installed-smoke notes are recorded in `release-status.json` and `docs/CURRENT_RELEASE_STATUS.md`. That is the source of truth for any current public release claim.

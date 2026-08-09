@@ -1,6 +1,6 @@
 # Pocket Audio Manual Release Evidence
 
-Updated: 2026-08-08
+Updated: 2026-08-09
 
 This file records audit requirements that cannot be truthfully completed by repository automation alone. A pending row is a release-evidence boundary, not a claim that the check passed. Do not replace a pending row with `pass` without recording the exact build/artifact, device or assistive technology, reviewer, date, and result.
 
@@ -18,17 +18,25 @@ This file records audit requirements that cannot be truthfully completed by repo
 | --- | --- | --- |
 | F-014 listening | For each fixed seed, listen to Section A and Play Song, then its exported WAV, on neutral headphones, a phone speaker, and desktop speakers. Record audible defects and live/WAV differences. | Pending human listening |
 | F-014 genre recognition | Present the five fixed-seed renders without genre labels to at least one reviewer and record the guessed genre plus confidence. | Pending human review |
-| F-015 mobile memory | On one supported Android browser and one supported iOS browser, verify typical export succeeds and an intentionally oversized export shows the recovery message without a tab reload/crash. | Pending physical devices |
-| F-018 interruption/output | On Android and iOS, exercise background/foreground, audio interruption, wired/speaker output, and Bluetooth output where available. Record browser/OS/device and whether transport resumes without a note burst. | Pending physical devices |
+| F-015 mobile memory | On one supported Android browser and one supported iOS browser, verify typical export succeeds and an intentionally oversized export shows the recovery message without a tab reload/crash. | Android pass on SM-S948B; iOS pending |
+| F-018 interruption/output | On Android and iOS, exercise background/foreground, audio interruption, wired/speaker output, and Bluetooth output where available. Record browser/OS/device and whether transport resumes without a note burst. | Android background/foreground transport on phone speaker passed; iOS, interruptions, wired/Bluetooth routes, acoustic no-burst confirmation pending |
 | F-018 recording latency | Record Chordsmith input-to-grid latency on at least one Android and one iOS device; retain the measured offset and audio route. | Pending physical devices |
 | F-024 screen readers | Run the core Chordsmith, DJ, Handoff, installed DAW, and Godot addon flows with NVDA on Windows and VoiceOver on an Apple platform. Record spoken control name, role, state, errors, and status announcements. | Pending assistive technology |
 | F-024 display modes | Test Windows global High Contrast plus 200% and 400% OS scaling in the installed DAW; test browser reflow/motion at equivalent platform settings. Capture screenshots and blockers. | Pending OS-level manual checks |
 | F-011 Asset Library | Publish through the dedicated addon-only Asset Library-compatible branch/tag, download that exact artifact, record SHA-256, enable it in a clean Godot project, and run interactive plus headless smoke. | Pending external publication authority |
-| F-019 repository settings | Enable and verify GitHub Dependency graph, secret scanning, and push protection for the remote repository. | Pending repository-admin setting |
+| F-019 repository settings | GitHub API verification confirmed Dependency graph/dependabot security updates, secret scanning, and push protection enabled. | Verified 2026-08-09 |
+
+## 2026-08-09 physical Android evidence
+
+Retained ignored local report: `local-artifacts/release-evidence/android-f015-f018-2026-08-09/physical-chrome-report.json`. The physical artifact is not tracked in git. Device: SM-S948B, Android 16 / API 36, Chrome 151.0.7922.83; tested source commit: `aa519f2fc26064f3804d9f9ee917d277a966d080`.
+
+- F-015 Android: a 12-second Pocket Audio Core WAV export completed at 1,869,884 bytes. A synthetic 480.1-minute / 53,296 MB request was rejected at the 384 MB constrained-mobile boundary before allocation; the tab did not reload and controls remained interactive.
+- F-018 Android transport-only: with real Settings-background / Chrome-foreground transitions and phone-speaker output, the retained trace was monotonic from step 0 through 13 with no duplicate or backward scheduled steps.
+- This does not close iOS, Bluetooth or wired routes, audio interruption, acoustic confirmation/no-burst perception, or latency measurement. Those evidence boundaries remain open.
 
 ## Pocket DAW release boundary
 
-The current public `0.6.45` tag is explicitly classified in `apps/pocket-daw/release-status.json` as a reduced-gate installed MCP bridge hotfix. Its retained release verdict says the full Windows smoke was not run, so the exact `0.6.43` installed smoke remains the binary baseline rather than being relabeled as `0.6.45` evidence. The release-candidate truth verifier fails whenever a newer published version outruns installed-smoke evidence unless a complete, version-matched `source-only-no-installer` or `reduced-hotfix-gate` exception is recorded. The next installer publication still requires the full exact-artifact procedure in `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md`.
+Pocket DAW `0.6.46` is the current public and exact-installed-smoked release. Its tag and smoke both bind commit `aa519f2fc26064f3804d9f9ee917d277a966d080` and setup SHA-256 `e58e3498d5b905c52d5cc439a2ad48aa3609cd60e7ac8be6b4c819e9c0a1e18e`. The current `0.6.47` tree is source-only release-process work: no 0.6.47 installer has been built, smoked, or published. Every future installer still requires the exact-artifact procedure in `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md`.
 
 ## Evidence record template
 

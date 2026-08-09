@@ -1,9 +1,9 @@
 # Install a VST3 plug-in in Pocket DAW
 
-Pocket DAW 0.6.43 supports Windows x64 VST3 instruments and effects as an
-opt-in beta. The current source tree is 0.6.44; that version is a source-only
-MCP help hotfix and is not a separate public installer. Use the updater or the
-exact 0.6.43 installer for the public plug-in host.
+Pocket DAW 0.6.46 supports Windows x64 VST3 instruments and effects as an
+opt-in beta and passed exact installed host smoke. The current 0.6.47 source is
+release-process-only and has no separate public installer. Use the updater or
+the exact 0.6.46 installer for the public plug-in host.
 
 ## 1. Download the plug-in from its developer
 
