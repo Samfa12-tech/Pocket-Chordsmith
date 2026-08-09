@@ -48,7 +48,7 @@ playhead position. The UI only displays state and dispatches commands.
 
 ### Current 2026-08-09 Pocket DAW Release And Process Notes
 
-- Pocket DAW `0.6.46` is the latest public and exact-installed-smoked release from commit `aa519f2fc26064f3804d9f9ee917d277a966d080`; setup SHA-256 is `e58e3498d5b905c52d5cc439a2ad48aa3609cd60e7ac8be6b4c819e9c0a1e18e`. The `0.6.47` tree is source-only release-process work with no installer, installed smoke, or publication; the next package-producing source checkpoint must bump to at least 0.6.48.
+- Pocket DAW `0.6.46` is the latest public and exact-installed-smoked release from commit `aa519f2fc26064f3804d9f9ee917d277a966d080`; setup SHA-256 is `e58e3498d5b905c52d5cc439a2ad48aa3609cd60e7ac8be6b4c819e9c0a1e18e`. The exact committed `0.6.47` source-only process checkpoint may run its first `release:prepare`; no 0.6.47 installer, smoke, or publication exists yet. After a 0.6.47 receipt exists, or if source/package-producing bytes change from that exact commit, bump to at least 0.6.48 before preparing again.
 - The release fast path is receipt-based: one `release:prepare` source/build/package/stage pass, evidence-only `verify:candidate`, then `release:publish-exact` for frozen assets. Never rebuild or same-version-restage after receipt creation.
 
 ### Current 2026-08-08 Pocket DAW Audio-Evidence Policy

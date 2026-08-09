@@ -71,6 +71,7 @@ describe("release scripts", () => {
     const guardedBootstrapperPush = readFileSync("scripts/guarded-butler-push-bootstrapper.mjs", "utf8");
     const releaseUpdaterBuild = readFileSync("scripts/release-updater-build.mjs", "utf8");
     const candidateReceipt = readFileSync("scripts/release-candidate-receipt.mjs", "utf8");
+    const publishedReleaseVerifier = readFileSync("scripts/verify-published-release.mjs", "utf8");
     const installedPunchTakeSmoke = readFileSync("scripts/smoke-installed-punch-take-lanes.ts", "utf8");
     const installedPunchTakeSmokeConfig = readFileSync("scripts/installed-punch-take-smoke-config.ts", "utf8");
     const installedVst3HostSmoke = readFileSync("scripts/smoke-installed-vst3-host.mjs", "utf8");
@@ -177,6 +178,8 @@ describe("release scripts", () => {
     expect(releaseUpdaterBuild).toContain("assertReleaseCandidateTruth");
     expect(releaseUpdaterBuild).toContain("--publish-exact");
     expect(releaseUpdaterBuild).toContain("verifyCandidateVerificationReport");
+    expect(releaseUpdaterBuild).toContain("assertCleanCandidateWorktree");
+    expect(releaseUpdaterBuild).toContain("verifyGithubReleaseSnapshot");
     expect(releaseUpdaterBuild).toContain('"--target", targetCommit');
     expect(releaseUpdaterBuild.match(/run\("npm", \["test"\]\)/g)).toHaveLength(1);
     expect(releaseUpdaterBuild.match(/run\("cargo", \["test"/g)).toHaveLength(1);
@@ -185,6 +188,8 @@ describe("release scripts", () => {
     const stageStart = releaseUpdaterBuild.indexOf("function stageUpdaterFiles", publishExactStart);
     expect(releaseUpdaterBuild.slice(publishExactStart, stageStart)).not.toContain("packageItchRelease");
     expect(releaseUpdaterBuild.slice(publishExactStart, stageStart)).not.toContain('run("npm"');
+    expect(releaseUpdaterBuild.slice(publishExactStart, stageStart)).toContain("assertCleanCandidateWorktree");
+    expect(releaseUpdaterBuild.slice(publishExactStart, stageStart)).toContain("expectedCommit: commit");
     expect(releaseUpdaterBuild).toContain("makeUpdaterManifest");
     expect(releaseUpdaterBuild).toContain("makeBootstrapperManifest");
     expect(releaseUpdaterBuild).toContain("assertGithubReleaseMissing");
@@ -207,9 +212,15 @@ describe("release scripts", () => {
     expect(verifyCandidate).not.toContain("cargo");
     expect(verifyCandidate).toContain("verifyCandidateReceipt");
     expect(verifyCandidate).toContain("writeCandidateVerification");
+    expect(verifyCandidate).toContain("assertCleanCandidateWorktree");
+    expect(verifyCandidate).toContain("expectedCommit: headCommit");
     expect(candidateReceipt).toContain("SOURCE_GATE_IDS");
+    expect(candidateReceipt).toContain('["status", "--porcelain"]');
     expect(candidateReceipt).toContain("pluginHostSidecar");
     expect(candidateReceipt).toContain("verifyCandidateVerificationReport");
+    expect(publishedReleaseVerifier).toContain("targetCommitish");
+    expect(publishedReleaseVerifier).toContain("unexpected asset");
+    expect(publishedReleaseVerifier).toContain("arrayBuffer");
     expect(verifyCandidate).toContain("verifySmokeAttestationFile");
     expect(verifyCandidate).toContain("verifyNativeCaptureEvidence");
     expect(verifyCandidate).toContain("verifyInstalledVst3HostSummaryFile");

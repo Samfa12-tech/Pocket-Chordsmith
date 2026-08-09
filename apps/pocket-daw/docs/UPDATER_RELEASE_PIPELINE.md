@@ -102,7 +102,9 @@ npm run release:publish-exact -- --receipt <candidate-receipt.json> --verificati
 
 This re-hashes the receipt, all staged assets, and all evidence bound by the
 verification report; creates the GitHub release at the receipt commit; then
-verifies the live manifest and remote installer hash. The legacy
+requires that exact remote target and asset-name set and downloads/re-hashes
+all eleven receipt-bound assets. Missing, extra, or changed remote assets fail.
+The legacy
 `release:update:publish` command is a safe alias for this exact-only path.
 
 Current itch policy is bootstrapper-first: GitHub Releases host the signed updater installers and manifests, while the itch `windows-installer` channel hosts `releases/itch-bootstrapper/upload/`. That upload contains the bootstrapper EXE, README, checksums, and an `index.html` fallback so itch browser-mode requests do not fail with `asset not found: index.html`. Use the full installer itch package only as a manual fallback.

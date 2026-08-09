@@ -14,12 +14,14 @@ import { makeUpdaterManifest } from "./make-updater-manifest.mjs";
 import { DEFAULT_BOOTSTRAPPER_MANIFEST, makeBootstrapperManifest } from "./make-bootstrapper-manifest.mjs";
 import {
   SOURCE_GATE_IDS,
+  assertCleanCandidateWorktree,
   createCandidateReceipt,
   receiptArtifactPath,
   verifyCandidateReceipt,
   verifyCandidateVerificationReport
 } from "./release-candidate-receipt.mjs";
 import { assertReleaseCandidateTruth } from "./verify-release-candidate-truth.mjs";
+import { expectedGithubReleaseArtifacts, verifyGithubReleaseSnapshot } from "./verify-published-release.mjs";
 
 const ROOT = process.cwd();
 const VERSION = packageJson.version;
@@ -109,7 +111,7 @@ async function publishExact(options) {
   if (process.env.PUBLISH !== "1") throw new Error("Refusing to publish. Set PUBLISH=1 only after deciding this exact verified candidate should go public.");
   if (!options.receipt) throw new Error("--publish-exact requires --receipt <candidate-receipt.json>.");
   if (!options.verificationReport) throw new Error("--publish-exact requires --verification-report <candidate-verification.json>.");
-  const commit = currentCommit();
+  const commit = assertCleanCandidateWorktree({ root: ROOT });
   const checked = verifyCandidateReceipt({ root: ROOT, receiptPath: options.receipt, expectedVersion: VERSION, expectedCommit: commit });
   if (!checked.ok) throw new Error(`Candidate receipt verification failed:\n${checked.failures.join("\n")}`);
   const verified = verifyCandidateVerificationReport({
@@ -121,7 +123,7 @@ async function publishExact(options) {
   assertGithubReleaseMissing();
   const staged = stagedFromReceipt(checked.receipt);
   createGithubRelease(staged, checked.receiptPath, checked.receipt.commit);
-  await verifyPublishedRelease(staged);
+  await verifyPublishedRelease(staged, checked.receiptPath, checked.receipt);
   console.log(`Pocket DAW ${VERSION} exact frozen candidate was published without a build or restage.`);
 }
 
@@ -201,8 +203,27 @@ function createGithubRelease(staged, receiptPath, targetCommit) {
   ]);
 }
 
-async function verifyPublishedRelease(staged) {
-  run("gh", ["release", "view", RELEASE_TAG, "--repo", REPO, "--json", "tagName,targetCommitish,url,publishedAt,assets"]);
+async function verifyPublishedRelease(staged, receiptPath, receipt) {
+  const releaseViewResult = spawn("gh", ["release", "view", RELEASE_TAG, "--repo", REPO, "--json", "tagName,targetCommitish,url,publishedAt,assets"], { quiet: true });
+  if (releaseViewResult.error || releaseViewResult.status !== 0) throw releaseViewResult.error || new Error("Could not inspect the published GitHub release.");
+  let releaseView;
+  try { releaseView = JSON.parse(String(releaseViewResult.stdout || "")); }
+  catch (error) { throw new Error(`GitHub release view returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`); }
+  const expectedArtifacts = expectedGithubReleaseArtifacts({
+    staged,
+    receiptPath,
+    receipt,
+    receiptSha256: sha256File(receiptPath)
+  });
+  const uploaded = await verifyGithubReleaseSnapshot({
+    releaseView,
+    expectedTag: RELEASE_TAG,
+    expectedTargetCommit: receipt.commit,
+    expectedArtifacts
+  });
+  if (!uploaded.ok) throw new Error(`Published GitHub release verification failed:\n${uploaded.failures.join("\n")}`);
+  console.log(`Verified ${expectedArtifacts.length} exact receipt-bound GitHub release assets.`);
+
   const manifestResponse = await fetch(LATEST_MANIFEST_URL);
   if (!manifestResponse.ok) throw new Error(`Updater manifest fetch failed: ${manifestResponse.status}`);
   const manifest = await manifestResponse.json();

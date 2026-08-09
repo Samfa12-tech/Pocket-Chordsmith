@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   REQUIRED_ARTIFACT_KEYS,
   SOURCE_GATE_IDS,
+  assertCleanCandidateWorktree,
   createCandidateReceipt,
   evidenceRecord,
   verifyCandidateReceipt,
@@ -57,6 +58,17 @@ function fixture() {
 }
 
 describe("immutable release candidate receipts", () => {
+  it("fails closed on tracked or untracked-relevant candidate changes", () => {
+    expect(assertCleanCandidateWorktree({
+      root: "C:/candidate",
+      inspect: () => ({ commit, status: "" })
+    })).toBe(commit);
+    expect(() => assertCleanCandidateWorktree({
+      root: "C:/candidate",
+      inspect: () => ({ commit, status: "?? untracked-evidence.json\n M package.json\n" })
+    })).toThrow(/empty git status --porcelain/);
+  });
+
   it("binds every frozen artifact, source gate, manifest identity, and sidecar hash", () => {
     const built = fixture();
     const result = verifyCandidateReceipt({ root: built.root, receiptPath: built.receiptPath, expectedVersion: "0.6.47", expectedCommit: commit });

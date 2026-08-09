@@ -6,9 +6,10 @@ too much time was lost to repeated hardware smoke, duplicated gates, an
 incorrect background PowerShell invocation, and late rediscovery of the itch
 bootstrapper policy.
 
-Current boundary: 0.6.47 is a source-only process checkpoint. No 0.6.47
-installer was produced. The next package-producing source checkpoint must bump
-to at least 0.6.48 before running `release:prepare`.
+Current boundary: the exact committed 0.6.47 source-only process checkpoint may
+run its first `release:prepare`; no 0.6.47 installer exists yet. After a 0.6.47
+receipt exists, or if source/package-producing bytes change from that exact
+commit, bump to at least 0.6.48 before preparing again.
 
 ## Core Rule
 
@@ -453,10 +454,15 @@ longer builds.
 
 Post-publication checks:
 
-1. `gh release view <tag>` reports the intended target commit and all assets.
+1. `gh release view <tag>` reports the receipt commit as `targetCommitish` and
+   exactly the eleven expected assets: setup/signature, MSI/signature,
+   updater/bootstrapper manifests, updater/release checksums, release manifest,
+   verdict, and candidate receipt. Release notes are the body, not an asset.
 2. GitHub `latest/download/pocket-daw-latest.json` reports the new version.
 3. The manifest setup URL returns HTTP 200 after redirects.
-4. A downloaded remote setup EXE hashes exactly like the local staged setup.
+4. Every uploaded receipt-bound asset is downloaded and hashes exactly like its
+   frozen local byte sequence; missing, extra, renamed-beyond-space-normalized,
+   or changed assets fail publication verification.
 5. `pocket-daw-bootstrapper-latest.json` reports the same installer hash.
 6. The release tag, `origin/main`, and tested commit agree.
 

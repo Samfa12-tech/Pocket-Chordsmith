@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -34,6 +35,23 @@ export const REQUIRED_ARTIFACT_KEYS = Object.freeze([
 
 export function sha256FileSync(filePath) {
   return createHash("sha256").update(readFileSync(filePath)).digest("hex");
+}
+
+export function assertCleanCandidateWorktree({ root, inspect = inspectGitState } = {}) {
+  const state = inspect(root);
+  if (!/^[a-f0-9]{40}$/.test(state.commit || "")) throw new Error("Could not resolve a full candidate Git commit.");
+  if (String(state.status || "").trim()) {
+    throw new Error(`Candidate verification and publication require an empty git status --porcelain result:\n${String(state.status).trim()}`);
+  }
+  return state.commit;
+}
+
+function inspectGitState(root) {
+  const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], shell: false });
+  if (commitResult.error || commitResult.status !== 0) throw commitResult.error || new Error("git rev-parse HEAD failed.");
+  const statusResult = spawnSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], shell: false });
+  if (statusResult.error || statusResult.status !== 0) throw statusResult.error || new Error("git status --porcelain failed.");
+  return { commit: commitResult.stdout.trim(), status: statusResult.stdout };
 }
 
 export function artifactRecord(root, filePath) {

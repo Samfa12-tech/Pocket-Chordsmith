@@ -27,7 +27,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
-- 2026-08-09 source-only 0.6.47 release-process checkpoint: consolidates repeated release gates into one immutable candidate-receipt prepare pass, evidence-only candidate verification, and exact frozen-asset publication. No 0.6.47 installer has been built, installed-smoked, or published; the next package-producing source checkpoint must bump to at least 0.6.48.
+- 2026-08-09 source-only 0.6.47 release-process checkpoint: consolidates repeated release gates into one immutable candidate-receipt prepare pass, evidence-only candidate verification, and exact frozen-asset publication. This exact committed source checkpoint may run its first release:prepare; no 0.6.47 installer has been built, installed-smoked, or published. After a 0.6.47 receipt exists, or if source/package-producing bytes change from that exact commit, bump to at least 0.6.48 before preparing again.
 
 ## Installed-Smoke Exception
 

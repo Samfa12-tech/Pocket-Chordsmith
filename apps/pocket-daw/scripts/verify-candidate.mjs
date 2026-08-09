@@ -7,6 +7,7 @@ import { verifyNativeCaptureEvidence } from "./verify-native-capture-evidence.mj
 import { assertReleaseCandidateTruth } from "./verify-release-candidate-truth.mjs";
 import { verifySmokeAttestationFile } from "./verify-smoke-attestation.mjs";
 import {
+  assertCleanCandidateWorktree,
   evidenceRecord,
   receiptArtifactPath,
   verifyCandidateReceipt,
@@ -197,12 +198,13 @@ function verifyGamePackEvidence(options) {
 function main() {
   const options = parseArgs(process.argv.slice(2));
   assertRequiredEvidence(options);
+  const headCommit = assertCleanCandidateWorktree({ root: process.cwd() });
   assertReleaseCandidateTruth(process.cwd());
   const checked = verifyCandidateReceipt({
     root: process.cwd(),
     receiptPath: options.receipt,
     expectedVersion: options.version === packageJson.version ? packageJson.version : options.version,
-    expectedCommit: options.commit || ""
+    expectedCommit: headCommit
   });
   if (!checked.ok) throw new Error(`Candidate receipt verification failed:\n${checked.failures.join("\n")}`);
   const receipt = checked.receipt;

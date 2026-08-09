@@ -83,7 +83,9 @@ later outcome.
 Reviewers should assess the complete pull-request diff together with this
 evidence. Before any future public release, complete the still-applicable rows
 in `MANUAL_RELEASE_EVIDENCE.md` against that exact artifact. Pocket DAW 0.6.46
-has exact-artifact evidence; 0.6.47 is source-only. Real mobile interruption,
-assistive-technology, high-contrast/scaling, and Godot Asset Library evidence
+has exact-artifact evidence; 0.6.47 is source-only. Android physical memory and
+background/foreground transport evidence is now retained separately; iOS,
+audio interruptions, wired/Bluetooth routes, acoustic no-burst confirmation,
+latency, assistive-technology, high-contrast/scaling, and Godot Asset Library evidence
 remain pending. GitHub Dependency graph/dependabot security updates, secret
 scanning, and push protection were subsequently verified enabled.
