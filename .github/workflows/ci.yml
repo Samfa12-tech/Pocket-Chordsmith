@@ -271,9 +271,12 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/pocket-daw/package-lock.json
-      - name: Install dependencies
+      - name: Install dependencies and Chromium for browser-parity coverage
         working-directory: apps/pocket-daw
-        run: npm ci
+        run: |
+          npm ci
+          npx playwright install-deps chromium
+          npx playwright install chromium
       - name: Full deterministic frontend tests and build (Linux owns this suite)
         working-directory: apps/pocket-daw
         run: |

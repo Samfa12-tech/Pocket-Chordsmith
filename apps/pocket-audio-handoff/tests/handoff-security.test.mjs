@@ -13,7 +13,7 @@ const official = "https://pocket-audio-handoff.samfa12.workers.dev/api/pocket-au
 // Match the runtime element as HTML, not a case-sensitive literal.  This keeps
 // the CSP hash check correct if the document serializer changes tag casing or
 // adds a benign attribute to the generated inline runtime.
-const script = html.match(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/i)?.[1] || "";
+const script = html.match(/<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/i)?.[1] || "";
 assert.ok(script, "handoff production runtime is present");
 
 function fakeElement(){
