@@ -24,7 +24,9 @@ const runtime = [
 ].join("\n");
 const expression = new RegExp(`${escapeRegExp(begin)}[\\s\\S]*?${escapeRegExp(end)}`);
 const withRuntime = handoff.replace(expression, runtime);
-const scriptMatch = withRuntime.match(/<script>([\s\S]*?)<\/script>/);
+// Keep the CSP hash bound to the inline runtime even if HTML serialization
+// changes tag casing or adds a non-executable attribute.
+const scriptMatch = withRuntime.match(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/i);
 if (!scriptMatch) throw new Error("Pocket Audio Handoff is missing its runtime script.");
 const scriptHash = createHash("sha256").update(scriptMatch[1], "utf8").digest("base64");
 const next = withRuntime.replace(

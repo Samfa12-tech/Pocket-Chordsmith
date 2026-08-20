@@ -290,6 +290,8 @@ jobs:
             apps/pocket-daw/test-results/
             apps/pocket-daw/playwright-report/
             local-artifacts/test-profiles/pocket-daw-vitest-baseline.json
+            local-artifacts/test-profiles/pocket-daw-vitest-baseline.vitest.json
+            local-artifacts/test-profiles/pocket-daw-vitest-baseline.vitest.log
 
   pocket-daw-browser-e2e:
     name: Pocket DAW browser E2E

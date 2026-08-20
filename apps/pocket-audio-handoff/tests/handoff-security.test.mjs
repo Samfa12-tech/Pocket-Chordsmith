@@ -10,7 +10,10 @@ const pcs = project => `PCS1:${Buffer.from(JSON.stringify(project), "utf8").toSt
 const valid16 = pcs(schema16);
 const valid17 = pcs(schema17);
 const official = "https://pocket-audio-handoff.samfa12.workers.dev/api/pocket-audio-handoff";
-const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] || "";
+// Match the runtime element as HTML, not a case-sensitive literal.  This keeps
+// the CSP hash check correct if the document serializer changes tag casing or
+// adds a benign attribute to the generated inline runtime.
+const script = html.match(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/i)?.[1] || "";
 assert.ok(script, "handoff production runtime is present");
 
 function fakeElement(){
