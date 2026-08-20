@@ -1,5 +1,14 @@
 # Pocket DAW Release Testing Fast Path
 
+## Agent decision boundary
+
+For an ordinary source-only task, use the manifest-driven `npm run check` or
+`npm run check:pr` scopes and do **not** run `release:prepare`, create a Tauri
+installer, perform installed hardware smoke, verify a candidate receipt, or
+publish. Use this document only for a deliberate release checkpoint: the
+one-pass sequence is prepare, retained installed/manual evidence,
+evidence-only candidate verification, then exact publication.
+
 Use this as the default procedure for an exact-artifact Pocket DAW checkpoint.
 It records the lessons from the `0.6.41` release, where the release passed but
 too much time was lost to repeated hardware smoke, duplicated gates, an

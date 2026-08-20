@@ -4,6 +4,19 @@ on:
   pull_request:
   push:
     branches: [main, master]
+  schedule:
+    - cron: "17 20 * * 0"
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run the complete Pocket Audio family validation
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: pocket-audio-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -12,9 +25,39 @@ env:
   NODE_VERSION: 22
 
 jobs:
+  ci-plan:
+    name: Plan Pocket Audio CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - name: Checkout complete comparison history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - name: Produce a fail-closed repository-owned plan
+        id: plan
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_DISPATCH_FULL: ${{ inputs.full }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$CI_DISPATCH_FULL" = "true" ]; then
+            node scripts/plan-ci.mjs --event workflow-dispatch-full
+          else
+            node scripts/plan-ci.mjs --event "${{ github.event_name }}"
+          fi
+
   governance:
     name: Repository and generated governance
+    needs: ci-plan
+    if: ${{ needs.ci-plan.result == 'success' && fromJSON(needs.ci-plan.outputs.plan).jobs.governance }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -28,10 +71,15 @@ jobs:
         run: node scripts/generate-family-governance.mjs --check
       - name: Verify immutable runnable archive
         run: node scripts/generate-archive-index.mjs --check
+      - name: Verify CI planner and immutable workflow pins
+        run: node --test scripts/tests/*.test.mjs
 
   core-format:
     name: Core and PCS Format
+    needs: ci-plan
+    if: ${{ needs.ci-plan.result == 'success' && fromJSON(needs.ci-plan.outputs.plan).jobs.core-format }}
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -68,7 +116,10 @@ jobs:
 
   chordsmith:
     name: Pocket Chordsmith web
+    needs: ci-plan
+    if: ${{ needs.ci-plan.result == 'success' && fromJSON(needs.ci-plan.outputs.plan).jobs.chordsmith }}
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -127,7 +178,10 @@ jobs:
 
   pocket-dj:
     name: Pocket DJ
+    needs: ci-plan
+    if: ${{ needs.ci-plan.result == 'success' && fromJSON(needs.ci-plan.outputs.plan).jobs.pocket-dj }}
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -179,7 +233,10 @@ jobs:
 
   handoff:
     name: Pocket Audio Handoff
+    needs: ci-plan
+    if: ${{ needs.ci-plan.result == 'success' && fromJSON(needs.ci-plan.outputs.plan).jobs.handoff }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -201,7 +258,50 @@ jobs:
 
   pocket-daw-linux:
     name: Pocket DAW frontend and release contracts
+    needs: ci-plan
+    if: ${{ needs.ci-plan.result == 'success' && fromJSON(needs.ci-plan.outputs.plan).jobs.pocket-daw-linux }}
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/pocket-daw/package-lock.json
+      - name: Install dependencies and Chromium for browser-parity coverage
+        working-directory: apps/pocket-daw
+        run: |
+          npm ci
+          npx playwright install-deps chromium
+          npx playwright install chromium
+      - name: Full deterministic frontend tests and build (Linux owns this suite)
+        working-directory: apps/pocket-daw
+        run: |
+          npm run profile:test
+          npm run build
+      - name: Upload Pocket DAW deterministic reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pocket-daw-linux-reports-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            apps/pocket-daw/test-results/
+            apps/pocket-daw/playwright-report/
+            local-artifacts/test-profiles/pocket-daw-vitest-baseline.json
+            local-artifacts/test-profiles/pocket-daw-vitest-baseline.vitest.json
+            local-artifacts/test-profiles/pocket-daw-vitest-baseline.vitest.log
+
+  pocket-daw-browser-e2e:
+    name: Pocket DAW browser E2E
+    needs: ci-plan
+    if: ${{ needs.ci-plan.result == 'success' && fromJSON(needs.ci-plan.outputs.plan).jobs.pocket-daw-browser-e2e }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -217,33 +317,52 @@ jobs:
           npm ci
           npx playwright install-deps chromium
           npx playwright install chromium
-      - name: Version, release-truth and generated recipe gates
+      - name: Browser smoke
         working-directory: apps/pocket-daw
-        run: |
-          npm run verify:versions
-          npm run verify:release-candidate-truth
-          npm run verify:native-sound-recipes
-          npm run verify:ci-workflow
-      - name: Frontend tests, build and browser smoke
-        working-directory: apps/pocket-daw
-        run: |
-          npm test
-          npm run build
-          npm run test:e2e
-      - name: Upload Pocket DAW browser reports
+        run: npm run test:e2e
+      - name: Upload browser reports
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: pocket-daw-linux-reports-${{ github.run_id }}
+          name: pocket-daw-browser-e2e-${{ github.run_id }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
             apps/pocket-daw/test-results/
             apps/pocket-daw/playwright-report/
 
+  pocket-daw-release-contract:
+    name: Pocket DAW release contracts
+    needs: ci-plan
+    if: ${{ needs.ci-plan.result == 'success' && fromJSON(needs.ci-plan.outputs.plan).jobs.pocket-daw-release-contract }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/pocket-daw/package-lock.json
+      - name: Install dependencies
+        working-directory: apps/pocket-daw
+        run: npm ci
+      - name: Release truth and receipt-bound source contracts
+        working-directory: apps/pocket-daw
+        run: |
+          npm run verify:versions
+          npm run verify:release-candidate-truth
+          npm run verify:native-sound-recipes
+          npm run verify:ci-workflow
+
   pocket-daw-windows-native:
     name: Pocket DAW Windows native
+    needs: ci-plan
+    if: ${{ needs.ci-plan.result == 'success' && fromJSON(needs.ci-plan.outputs.plan).jobs.pocket-daw-windows-native }}
     runs-on: windows-latest
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -258,20 +377,21 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup component add rustfmt clippy
-      - name: Pocket DAW frontend and native checks
+      - name: Pocket DAW Windows-contract and native checks
         working-directory: apps/pocket-daw
         run: |
           npm ci
-          npm run verify:versions
-          npm test
-          npm run build
+          npm run check:windows-contract
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
           cargo test --manifest-path src-tauri/Cargo.toml
           cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
   godot:
     name: Godot 4.6.3 import and addon package
+    needs: ci-plan
+    if: ${{ needs.ci-plan.result == 'success' && fromJSON(needs.ci-plan.outputs.plan).jobs.godot }}
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -289,7 +409,10 @@ jobs:
 
   security:
     name: Dependency, secret and license security gates
+    needs: ci-plan
+    if: ${{ needs.ci-plan.result == 'success' && fromJSON(needs.ci-plan.outputs.plan).jobs.security }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: read
@@ -330,19 +453,29 @@ jobs:
     name: Pocket Audio family gate
     if: always()
     needs:
+      - ci-plan
       - governance
       - core-format
       - chordsmith
       - pocket-dj
       - handoff
       - pocket-daw-linux
+      - pocket-daw-browser-e2e
+      - pocket-daw-release-contract
       - pocket-daw-windows-native
       - godot
       - security
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       FAMILY_RESULTS: ${{ toJson(needs) }}
+      CI_PLAN: ${{ needs.ci-plan.outputs.plan }}
     steps:
+      - name: Checkout family-gate verifier
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
       - name: Require every component gate
-        run: |
-          node -e 'const needs=JSON.parse(process.env.FAMILY_RESULTS); const bad=Object.entries(needs).filter(([,job])=>job.result!=="success"); if(bad.length){console.error(bad.map(([name,job])=>`${name}: ${job.result}`).join("\n")); process.exit(1)} console.log("All Pocket Audio family gates passed.")'
+        run: node scripts/verify-family-gate.mjs
