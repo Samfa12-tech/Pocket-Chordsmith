@@ -1,32 +1,38 @@
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { openExternalUrlWithFallback, selectTrackHeader } from "../src/app/interactionContracts";
 
-describe("App interaction source guards", () => {
+describe("App interaction contracts", () => {
   it("clears stale clip selection when a plain track header is selected", () => {
-    const source = readFileSync("src/app/App.ts", "utf8");
-    const trackClickHandler = source.slice(
-      source.indexOf('this.root.querySelectorAll<HTMLElement>("[data-track-id]")'),
-      source.indexOf('this.root.querySelectorAll<HTMLInputElement>("[data-volume]")')
-    );
-
-    expect(trackClickHandler).toContain("this.state.selectedTrackId = el.dataset.trackId || null");
-    expect(trackClickHandler).toContain("this.state.selectedClipId = null");
-    expect(trackClickHandler).toContain("this.state.selectedClipIds = []");
+    expect(selectTrackHeader({ selectedTrackId: "drums", selectedClipId: "clip-1", selectedClipIds: ["clip-1", "clip-2"], untouched: true }, "bass")).toEqual({
+      selectedTrackId: "bass", selectedClipId: null, selectedClipIds: [], untouched: true
+    });
   });
 
-  it("routes More by Samfa12 and feedback mailto through the external-link bridge", () => {
-    const source = readFileSync("src/app/App.ts", "utf8");
-    const moreAction = source.slice(
-      source.indexOf('if (action === "more-by-samfa12")'),
-      source.indexOf('if (action === "studio-focus-timeline")')
-    );
-    const feedbackSend = source.slice(source.indexOf("private async sendFeedbackEmail"), source.indexOf("private async openExternalUrl"));
-    const externalUrlHelper = source.slice(source.indexOf("private async openExternalUrl"), source.indexOf("private async refreshAudioDevices"));
+  it("uses the native external-link bridge when available", async () => {
+    const openNative = vi.fn(async () => true);
+    const openBrowser = vi.fn(() => true);
+    const replaceLocation = vi.fn();
+    await expect(openExternalUrlWithFallback("https://samfa12.com", { openNative, nativeBridgeAvailable: () => true, openBrowser, replaceLocation })).resolves.toBe("native-opened");
+    expect(openNative).toHaveBeenCalledWith("https://samfa12.com");
+    expect(openBrowser).not.toHaveBeenCalled();
+    expect(replaceLocation).not.toHaveBeenCalled();
+  });
 
-    expect(moreAction).toContain("await this.openExternalUrl(MORE_BY_SAMFA12_URL)");
-    expect(feedbackSend).toContain("await this.openExternalUrl(draft.mailtoUrl)");
-    expect(externalUrlHelper).toContain("await openExternalUrlNative(url)");
-    expect(externalUrlHelper).toContain("if (isNativeExternalLinkAvailable())");
-    expect(externalUrlHelper.indexOf("if (isNativeExternalLinkAvailable())")).toBeLessThan(externalUrlHelper.indexOf("window.open"));
+  it("uses browser fallback only when the native bridge is unavailable", async () => {
+    const openBrowser = vi.fn(() => true);
+    const replaceLocation = vi.fn();
+    await expect(openExternalUrlWithFallback("mailto:sam@example.test", { openNative: async () => false, nativeBridgeAvailable: () => false, openBrowser, replaceLocation })).resolves.toBe("location-fallback");
+    expect(openBrowser).not.toHaveBeenCalled();
+    expect(replaceLocation).toHaveBeenCalledWith("mailto:sam@example.test");
+    await expect(openExternalUrlWithFallback("https://samfa12.com", { openNative: async () => false, nativeBridgeAvailable: () => false, openBrowser, replaceLocation })).resolves.toBe("browser-opened");
+    expect(openBrowser).toHaveBeenCalledWith("https://samfa12.com");
+  });
+
+  it("does not leak a failed native-link action into a browser fallback", async () => {
+    const openBrowser = vi.fn(() => true);
+    const replaceLocation = vi.fn();
+    await expect(openExternalUrlWithFallback("https://samfa12.com", { openNative: async () => false, nativeBridgeAvailable: () => true, openBrowser, replaceLocation })).resolves.toBe("native-failed");
+    expect(openBrowser).not.toHaveBeenCalled();
+    expect(replaceLocation).not.toHaveBeenCalled();
   });
 });

@@ -70,6 +70,13 @@ Do not load broad design guidance by default.
 
 ## Pocket DAW Release Notes For Agents
 
+| Task | Use | Never run as part of ordinary source work |
+| --- | --- | --- |
+| Ordinary/frontend work | `npm run check` or `npm run check:pr` | `release:prepare`, installed hardware smoke, publication |
+| Native/Rust/Tauri work | `npm run check:windows-contract` plus native checks | Browser/Web Audio substitutes |
+| Release-script work | release-contract source checks | `release:prepare` unless deliberately preparing a release |
+| Deliberate release | one-pass fast path only | Rebuild/restage after receipt/evidence |
+
 - Read `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md` before any checkpoint build or hardware smoke. Follow its one-pass order; do not reconstruct the release procedure from older checklist fragments.
 - For Pocket DAW, work from `apps/pocket-daw/` and keep release metadata aligned across `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/tauri.conf.json`, and `src/daw/schema.ts`.
 - Commit release-script or doc fixes first, then run `npm run release:prepare` once. It performs the source gates, single Tauri build/package/stage/verify pass, and writes an immutable candidate receipt. `release:update` and `release:update:full` are safe aliases; `verify:itch` is deprecated to the same pass; `release:update:fast` is retired.

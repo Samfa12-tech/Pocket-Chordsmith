@@ -2,36 +2,13 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import releaseContract from "../releases/release-contract.json" with { type: "json" };
 
 export const RECEIPT_SCHEMA = "pocket-daw-release-candidate-receipt-v1";
 export const VERIFICATION_SCHEMA = "pocket-daw-release-candidate-verification-v1";
 
-export const SOURCE_GATE_IDS = Object.freeze([
-  "versions",
-  "native-sound-recipes",
-  "ci-workflow",
-  "family-parity",
-  "frontend-vitest",
-  "native-cargo-test",
-  "chromium-e2e",
-  "tauri-release-build",
-  "release-package",
-  "release-artifacts"
-]);
-
-export const REQUIRED_ARTIFACT_KEYS = Object.freeze([
-  "setupExe",
-  "setupSignature",
-  "msi",
-  "msiSignature",
-  "releaseNotes",
-  "releaseChecksums",
-  "releaseVerdict",
-  "releaseManifest",
-  "updaterManifest",
-  "bootstrapperManifest",
-  "updaterChecksums"
-]);
+export const SOURCE_GATE_IDS = Object.freeze([...releaseContract.candidateSourceGateIds]);
+export const REQUIRED_ARTIFACT_KEYS = Object.freeze([...releaseContract.releaseArtifactKeys]);
 
 export function sha256FileSync(filePath) {
   return createHash("sha256").update(readFileSync(filePath)).digest("hex");

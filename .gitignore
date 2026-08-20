@@ -39,3 +39,6 @@ playwright-report/
 # See docs/LOCAL_ARTIFACTS_POLICY.md. Do not recreate the retired root folders
 # such as archive/, release/, releases/, godot-addon/, or marketing-assets/.
 /local-artifacts/
+# Earlier local DAW profiling wrote here; keep any migrated local reports out
+# of the working tree while current profiling targets the root taxonomy above.
+/apps/pocket-daw/local-artifacts/
