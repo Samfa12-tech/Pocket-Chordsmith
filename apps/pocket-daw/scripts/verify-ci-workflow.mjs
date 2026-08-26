@@ -1,18 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyWorkflowPins } from "../../../scripts/verify-workflow-pins.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "../../..");
 const workflowPath = path.join(repoRoot, ".github", "workflows", "ci.yml");
 const corePackagePath = path.join(repoRoot, "packages", "pocket-audio-core", "package.json");
 const coreLockPath = path.join(repoRoot, "packages", "pocket-audio-core", "package-lock.json");
-
-const minimumActionMajors = {
-  "upload-artifact": 7,
-  cache: 6
-};
-const requiredActions = new Set(["upload-artifact"]);
 
 function readText(filePath) {
   return fs.readFileSync(filePath, "utf8");
@@ -25,23 +20,6 @@ function readJson(filePath) {
 function fail(message) {
   console.error(message);
   process.exitCode = 1;
-}
-
-function verifyActionMajors(workflow) {
-  const actionUsePattern = /uses:\s*actions\/(upload-artifact|cache)@v?(\d+)/g;
-  const seen = new Set();
-  for (const match of workflow.matchAll(actionUsePattern)) {
-    const [, action, majorText] = match;
-    const major = Number(majorText);
-    seen.add(action);
-    const required = minimumActionMajors[action];
-    if (!Number.isFinite(major) || major < required) {
-      fail(`.github/workflows/ci.yml uses actions/${action}@v${majorText}; use v${required}+ so GitHub does not emit Node 20 deprecation warnings.`);
-    }
-  }
-  for (const action of requiredActions) {
-    if (!seen.has(action)) fail(`.github/workflows/ci.yml does not contain actions/${action}; update this verifier if the CI artifact/cache strategy changed.`);
-  }
 }
 
 function verifyWorkflowNode(workflow) {
@@ -75,7 +53,7 @@ function verifyPocketAudioCorePlaywrightDependency() {
 }
 
 const workflow = readText(workflowPath);
-verifyActionMajors(workflow);
+for (const error of verifyWorkflowPins({ workflowsDir: path.join(repoRoot, ".github", "workflows") })) fail(error);
 verifyWorkflowNode(workflow);
 verifyFamilyParityDependencies(workflow);
 verifyPocketAudioCorePlaywrightDependency();

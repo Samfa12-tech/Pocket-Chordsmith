@@ -6,6 +6,12 @@ Resolved against `Pocket-Audio-Full-Repository-Audit-2026-08-05.md` on 2026-08-0
 
 All 27 findings now have a repository-side resolution. Findings that require a physical device, human perception, external publication, or repository-admin authority are explicitly retained as pending release evidence in `docs/releases/MANUAL_RELEASE_EVIDENCE.md`; they are not represented as automated passes.
 
+## 2026-08-20 Handoff follow-up
+
+`handoff-v2` closes the verification follow-up without expanding the relay trust boundary: full PCS1 links and nested PocketHandoff payloads are now decoded, bounded, and validated through the generated shared PCS Format browser runtime before any Handoff action is enabled. Opening a full-song link loads it locally only; creating a short code remains the separate, explicit upload action. The regression suite covers malformed base64url, invalid JSON, unsupported schemas, encoded and decoded size limits, and invalid nested payloads.
+
+This is source and packaged-artifact evidence only. The existing hosted Handoff deployment remains the recorded `handoff-v1` site sync until the verified `handoff-v2` artifact is deliberately published through the normal website deployment path.
+
 | Finding | Repository resolution | Status |
 | --- | --- | --- |
 | F-001 | Production Handoff relay is pinned to the official Worker. Overrides require explicit loopback developer mode, and the effective endpoint plus complete-song upload disclosure are visible. | Code closed |

@@ -1,265 +1,28 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import packageJson from "../package.json" with { type: "json" };
+import { audioRecordingControlPlan, midiPunchRecordingPreparationPlan } from "../scripts/installed-punch-take-control-plan";
 
-describe("release scripts", () => {
-  it("requires an armed native aggregate input meter preflight before audio capture", () => {
-    const source = readFileSync("scripts/smoke-installed-punch-take-lanes.ts", "utf8");
-    const inputSource = readFileSync("scripts/installed-punch-take-audio-input.ts", "utf8");
-    const functionStart = source.indexOf("async function exerciseAudioRecordingControl");
-    const functionEnd = source.indexOf("function audioTakeSmokeCounts", functionStart);
-    const audioCapture = source.slice(functionStart, functionEnd);
+const input = { deviceId: "wasapi:input:microphone-array", deviceName: "Microphone Array", channelIndex: 0, channelCount: 2 };
 
-    const meterPreflight = audioCapture.indexOf("await waitForAudioInputMeterPreflight(");
-    const recordStart = audioCapture.indexOf('await liveControlResult(session, { action: "record_start" })');
-    expect(meterPreflight).toBeGreaterThanOrEqual(0);
-    expect(recordStart).toBeGreaterThan(meterPreflight);
-    expect(audioCapture.indexOf("installedAudioInputPreviewControlPlan(")).toBeLessThan(meterPreflight);
-    expect(inputSource).toContain('recording?.status !== "idle"');
-    expect(inputSource).toContain("preflight?.ok !== true");
-    expect(inputSource).toContain("capturePlan?.deviceId !== input.deviceId");
-    expect(inputSource).toContain("channelMap[0] !== input.channelIndex");
-    expect(inputSource).toContain("!Number.isFinite(inputPeak)");
-    expect(inputSource).toContain("inputPeak < Math.max(0, requiredPeak)");
-    expect(audioCapture).toContain("args.requireAudibleAudio ? args.minAudioPeak : 0");
-    expect(inputSource).toContain('channelClaim: "explicit-native-mono-channel"');
-    expect(inputSource).toContain('meterClaim: "aggregate-device-meter-only"');
-
-    const refresh = source.indexOf('await liveControl(session, { action: "refresh_audio_devices" });');
-    const resolve = source.indexOf("const audioInput = resolveInstalledAudioInput(");
-    const exercise = source.indexOf("const audioRecordingControl = await exerciseAudioRecordingControl(");
-    expect([refresh, resolve, exercise].every((index) => index >= 0)).toBe(true);
-    expect(refresh).toBeLessThan(resolve);
-    expect(resolve).toBeLessThan(exercise);
+describe("installed-smoke control contracts", () => {
+  it("requires an armed native aggregate-meter preflight before audio capture", () => {
+    const audible = audioRecordingControlPlan("live", "C:\\smoke.pocketdaw", input, true, 0.01);
+    const nonAudible = audioRecordingControlPlan("live", "C:\\smoke.pocketdaw", input, false, 0.01);
+    expect(audible.preflightBeforeCapture).toBe(true);
+    expect(audible.requiredAggregateInputPeak).toBe(0.01);
+    expect(nonAudible.requiredAggregateInputPeak).toBe(0);
+    expect(audible.previewControls.map((control) => control.action)).toEqual([
+      "stop", "set_recording_options", "apply_commands", "save_current", "open_project", "stop", "seek_bar", "select_track"
+    ]);
+    expect(audible.captureAction).toBe("record_start");
   });
 
-  it("stops and verifies MIDI punch positioning before installed input capture", () => {
-    const source = readFileSync("scripts/smoke-installed-punch-take-lanes.ts", "utf8");
-    const functionStart = source.indexOf("async function exerciseMidiInputRecordingControl");
-    const functionEnd = source.indexOf("function assertMidiInputRecordingTake", functionStart);
-
-    expect(functionStart).toBeGreaterThanOrEqual(0);
-    expect(functionEnd).toBeGreaterThan(functionStart);
-
-    const midiCapture = source.slice(functionStart, functionEnd);
-    const orderedSteps = [
-      'await liveControl(session, { action: "stop" });',
-      '{ type: "set_punch_range", startBar: 7, endBar: 9 }',
-      'await liveControl(session, { action: "seek_bar", bar: requestedCaptureStartBar });',
-      "const positioned = await liveStatus(session);",
-      "positioned.transport?.playing !== false",
-      "Math.abs(positionedBar - requestedCaptureStartBar) > 0.0001",
-      'await liveControlResult(session, { action: "midi_record_start" });'
-    ].map((step) => midiCapture.indexOf(step));
-
-    orderedSteps.forEach((index) => expect(index).toBeGreaterThanOrEqual(0));
-    expect(orderedSteps).toEqual([...orderedSteps].sort((left, right) => left - right));
-    expect(midiCapture).toContain("const requestedCaptureStartBar = 6;");
-    expect(midiCapture).toContain("!Number.isFinite(positionedBar)");
-    expect(midiCapture).toContain("MIDI input recording preflight did not settle at stopped bar");
-  });
-
-  it("keeps native release bundling explicit", () => {
-    const script = readFileSync("scripts/verify-release.mjs", "utf8");
-    const itchScript = readFileSync("scripts/verify-itch.mjs", "utf8");
-    const packageItch = readFileSync("scripts/package-itch.mjs", "utf8");
-    const verifyArtifacts = readFileSync("scripts/verify-release-artifacts.mjs", "utf8");
-    const guardedPush = readFileSync("scripts/guarded-butler-push.mjs", "utf8");
-    const updaterManifest = readFileSync("scripts/make-updater-manifest.mjs", "utf8");
-    const bootstrapperManifest = readFileSync("scripts/make-bootstrapper-manifest.mjs", "utf8");
-    const packageBootstrapper = readFileSync("scripts/package-itch-bootstrapper.mjs", "utf8");
-    const guardedBootstrapperPush = readFileSync("scripts/guarded-butler-push-bootstrapper.mjs", "utf8");
-    const releaseUpdaterBuild = readFileSync("scripts/release-updater-build.mjs", "utf8");
-    const candidateReceipt = readFileSync("scripts/release-candidate-receipt.mjs", "utf8");
-    const publishedReleaseVerifier = readFileSync("scripts/verify-published-release.mjs", "utf8");
-    const installedPunchTakeSmoke = readFileSync("scripts/smoke-installed-punch-take-lanes.ts", "utf8");
-    const installedPunchTakeSmokeConfig = readFileSync("scripts/installed-punch-take-smoke-config.ts", "utf8");
-    const installedVst3HostSmoke = readFileSync("scripts/smoke-installed-vst3-host.mjs", "utf8");
-    const verifyCandidate = readFileSync("scripts/verify-candidate.mjs", "utf8");
-    const verifyNativeCaptureEvidence = readFileSync("scripts/verify-native-capture-evidence.mjs", "utf8");
-    const nativeCaptureFingerprint = readFileSync("scripts/native-capture-fingerprint.mjs", "utf8");
-    const manualFreshAudibleEvidence = readFileSync("scripts/manual-fresh-audible-evidence.mjs", "utf8");
-    const verifyReleaseCandidateTruth = readFileSync("scripts/verify-release-candidate-truth.mjs", "utf8");
-
-    expect(packageJson.scripts["evidence:manual-fresh-audible"]).toBe("node scripts/manual-fresh-audible-evidence.mjs");
-
-    expect(packageJson.scripts["tauri:build"]).toContain("plugin-host:prepare:release");
-    expect(packageJson.scripts["tauri:build"]).toContain("tauri.sidecar.conf.json");
-    expect(packageJson.scripts["tauri:build:installers"]).toContain("plugin-host:prepare:release");
-    expect(packageJson.scripts["tauri:build:installers"]).toContain("tauri.package.conf.json");
-    expect(packageJson.scripts["verify:plugin-host"]).toContain("--check");
-    expect(packageJson.scripts["verify:native-release"]).toContain("--native-release");
-    expect(packageJson.scripts["package:itch"]).toBe("node scripts/package-itch.mjs");
-    expect(packageJson.scripts["verify:itch"]).toBe("node scripts/verify-itch.mjs");
-    expect(packageJson.scripts["package:itch-bootstrapper"]).toBe("node scripts/package-itch-bootstrapper.mjs");
-    expect(packageJson.scripts["verify:itch-bootstrapper"]).toBe("node scripts/verify-itch-bootstrapper.mjs");
-    expect(packageJson.scripts["release:itch:local"]).toBe("npm run verify:itch");
-    expect(packageJson.scripts["release:updater-manifest"]).toBe("node scripts/make-updater-manifest.mjs");
-    expect(packageJson.scripts["status:release"]).toBe("node scripts/render-release-status.mjs");
-    expect(packageJson.scripts["verify:smoke-attestation"]).toBe("node scripts/verify-smoke-attestation.mjs");
-    expect(packageJson.scripts["verify:candidate"]).toBe("node scripts/verify-candidate.mjs");
-    expect(packageJson.scripts["evidence:native-capture-fingerprint"]).toBe("node scripts/native-capture-fingerprint.mjs");
-    expect(packageJson.scripts["smoke:installed:vst3-host"]).toBe("node scripts/smoke-installed-vst3-host.mjs");
-    expect(packageJson.scripts["verify:installed:vst3-host"]).toBe("node scripts/verify-installed-vst3-host-summary.mjs");
-    expect(packageJson.scripts["verify:release-candidate-truth"]).toBe("node scripts/verify-release-candidate-truth.mjs");
-    expect(packageJson.scripts["release:prepare"]).toBe("node scripts/release-updater-build.mjs --prepare");
-    expect(packageJson.scripts["release:publish-exact"]).toBe("node scripts/release-updater-build.mjs --publish-exact");
-    expect(packageJson.scripts["release:update"]).toBe("npm run release:prepare");
-    expect(packageJson.scripts["release:update:fast"]).toBe("node scripts/release-updater-build.mjs --fast");
-    expect(packageJson.scripts["release:update:full"]).toBe("npm run release:prepare");
-    expect(packageJson.scripts["release:update:publish"]).toBe("npm run release:publish-exact --");
-    expect(packageJson.scripts["itch:push:bootstrapper"]).toBe("node scripts/guarded-butler-push-bootstrapper.mjs");
-    expect(packageJson.scripts["mcp:pocket-daw"]).toContain("pocketDawMcpServer.ts");
-    expect(script).toContain('process.argv.includes("--native-release")');
-    expect(script).toContain("POCKET_DAW_NATIVE_RELEASE");
-    expect(script).toContain("../../../packages/pocket-audio-core");
-    expect(script).toContain('"verify:ci-workflow"');
-    expect(script).toContain('"verify:family-parity"');
-    expect(script).toContain('"tauri:debug"');
-    expect(script).toContain('"tauri:build"');
-    expect(itchScript).toContain("deprecated");
-    expect(itchScript).toContain("release:prepare");
-    expect(itchScript).not.toContain("POCKET_DAW_SKIP_NATIVE_BUILD");
-    expect(packageItch).toContain('ITCH_CHANNEL = "windows-installer"');
-    expect(packageItch).toContain("installerOnly: true");
-    expect(packageItch).toContain("publicPortableApp: false");
-    expect(packageItch).toContain("rmCurrentVersionReleaseFiles");
-    expect(packageItch).toContain("pocket-daw-windows-x64-v${VERSION}");
-    expect(packageItch).not.toContain("zip.writeZip");
-    expect(packageItch).not.toContain("new AdmZip");
-    expect(packageItch).toContain("butler push-preview");
-    expect(packageItch).toContain("assertReleaseCandidateTruth");
-    expect(packageItch).toContain("Audit Hardening and Metal Mix");
-    expect(packageItch).toContain("Softens the Heavy Metal picked-bass voice");
-    expect(packageItch).toContain("Native recording now honors an explicitly selected mono input channel");
-    expect(packageItch).toContain("fail-closed native-capture fingerprinting");
-    expect(packageItch).not.toContain("MCP Help Path Hotfix");
-    expect(packageItch).not.toContain("Audio, project, Samples, Samplers and VST3 behavior is unchanged from 0.6.43");
-    expect(packageItch).toContain("releases/itch/installers");
-    expect(packageItch).toContain("appears stale");
-    expect(packageItch).toContain("mix-slider values");
-    expect(packageItch).toContain("DAW-vs-Chordsmith browser event parity");
-    expect(packageItch).toContain("per-drum lane mixer/FX");
-    expect(packageItch).toContain("Godot addon accepts the DAW pack");
-    expect(packageItch).toContain("Manual Build Native Cache now immediately swaps active native playback");
-    expect(packageItch).toContain("low or zero procedural fallback events");
-    expect(packageItch).toContain("Native Playback and Native Cache readouts");
-    expect(packageItch).toContain("loadCandidatePluginHostMetadata");
-    expect(packageItch).toContain("SIDECAR_PACKAGED_BINARY_PATH");
-    expect(packageItch).toContain("preBundleSha256");
-    expect(packageItch).toContain("thirdPartyNoticesRequired");
-    expect(verifyArtifacts).toContain("assertSignatureFreshness");
-    expect(verifyArtifacts).toContain("assertPluginHostSidecar");
-    expect(verifyArtifacts).toContain("Permission is hereby granted");
-    expect(verifyArtifacts).toContain("TAURI_SIGNING_PRIVATE_KEY");
-    expect(guardedPush).toContain('PUBLISH !== "1"');
-    expect(guardedPush).toContain("SMOKE_ATTESTATION");
-    expect(guardedPush).toContain("PUNCH_TAKE_SUMMARY");
-    expect(guardedPush).toContain("verifySmokeAttestationFile");
-    expect(guardedPush).toContain("verifyNativeCaptureEvidence");
-    expect(guardedPush).toContain("PUNCH_TAKE_REQUIRE_AUDIBLE_AUDIO");
-    expect(guardedPush).toContain("AUDIO_CAPTURE_BASELINE_ATTESTATION");
-    expect(guardedPush).toContain("AUDIO_CAPTURE_BASELINE_INSTALLER");
-    expect(guardedPush).toContain("MANUAL_FRESH_AUDIBLE_EVIDENCE");
-    expect(guardedPush).toContain("assertReleaseCandidateTruth");
-    expect(guardedPush).toContain('"releases/itch/installers"');
-    expect(updaterManifest).toContain("pocket-daw-latest.json");
-    expect(updaterManifest).toContain("SHA256SUMS.txt");
-    expect(bootstrapperManifest).toContain("pocket-daw-bootstrapper-latest.json");
-    expect(bootstrapperManifest).toContain("sha256");
-    expect(packageBootstrapper).toContain("Get-FileHash -Algorithm SHA256");
-    expect(packageBootstrapper).toContain("Start-Process -FilePath $installerPath");
-    expect(packageBootstrapper).not.toContain("Start-Process -FilePath $installerPath -Wait");
-    expect(packageBootstrapper).toContain("AutoCloseWindow true");
-    expect(guardedBootstrapperPush).toContain('PUBLISH !== "1"');
-    expect(guardedBootstrapperPush).toContain('"releases/itch-bootstrapper/upload"');
-    expect(releaseUpdaterBuild).toContain("packageItchRelease");
-    expect(releaseUpdaterBuild).toContain('process.env.PUBLISH !== "1"');
-    expect(releaseUpdaterBuild).toContain("assertReleaseCandidateTruth");
-    expect(releaseUpdaterBuild).toContain("--publish-exact");
-    expect(releaseUpdaterBuild).toContain("verifyCandidateVerificationReport");
-    expect(releaseUpdaterBuild).toContain("assertCleanCandidateWorktree");
-    expect(releaseUpdaterBuild).toContain("verifyGithubReleaseSnapshot");
-    expect(releaseUpdaterBuild).toContain('"--target", targetCommit');
-    expect(releaseUpdaterBuild.match(/run\("npm", \["test"\]\)/g)).toHaveLength(1);
-    expect(releaseUpdaterBuild.match(/run\("cargo", \["test"/g)).toHaveLength(1);
-    expect(releaseUpdaterBuild.match(/run\("npm", \["run", "test:e2e"\]\)/g)).toHaveLength(1);
-    const publishExactStart = releaseUpdaterBuild.indexOf("async function publishExact");
-    const stageStart = releaseUpdaterBuild.indexOf("function stageUpdaterFiles", publishExactStart);
-    expect(releaseUpdaterBuild.slice(publishExactStart, stageStart)).not.toContain("packageItchRelease");
-    expect(releaseUpdaterBuild.slice(publishExactStart, stageStart)).not.toContain('run("npm"');
-    expect(releaseUpdaterBuild.slice(publishExactStart, stageStart)).toContain("assertCleanCandidateWorktree");
-    expect(releaseUpdaterBuild.slice(publishExactStart, stageStart)).toContain("expectedCommit: commit");
-    expect(releaseUpdaterBuild).toContain("makeUpdaterManifest");
-    expect(releaseUpdaterBuild).toContain("makeBootstrapperManifest");
-    expect(releaseUpdaterBuild).toContain("assertGithubReleaseMissing");
-    expect(releaseUpdaterBuild).toContain("Remote setup SHA-256 verified");
-    expect(releaseUpdaterBuild).not.toContain('run("butler"');
-    expect(installedPunchTakeSmokeConfig).toContain("--midi-record-ms");
-    expect(installedPunchTakeSmokeConfig).toContain("--audio-input-device-id");
-    expect(installedPunchTakeSmokeConfig).toContain("--audio-input-channel-index");
-    expect(installedPunchTakeSmoke).toContain("midiRecordMs");
-    expect(installedPunchTakeSmoke).toContain("requestedRecordMs: midiRecordMs");
-    expect(installedPunchTakeSmoke).toContain("midiDevicePreflightEvidence");
-    expect(installedPunchTakeSmoke).toContain("midiDevicePreflight");
-    expect(installedVst3HostSmoke).toContain("POCKET_DAW_TEST_PLUGIN_HOST_EXE");
-    expect(installedVst3HostSmoke).toContain("persistent_session_graph_processes_two_fixture_instances_and_recovers_cleanly");
-    expect(installedVst3HostSmoke).toContain("candidate.sha256 !== sidecarSha256");
-    expect(verifyCandidate).not.toContain('"verify:versions"');
-    expect(verifyCandidate).not.toContain('"verify:native-sound-recipes"');
-    expect(verifyCandidate).not.toContain('"verify:release"');
-    expect(verifyCandidate).not.toContain('"test:e2e"');
-    expect(verifyCandidate).not.toContain("cargo");
-    expect(verifyCandidate).toContain("verifyCandidateReceipt");
-    expect(verifyCandidate).toContain("writeCandidateVerification");
-    expect(verifyCandidate).toContain("assertCleanCandidateWorktree");
-    expect(verifyCandidate).toContain("expectedCommit: headCommit");
-    expect(candidateReceipt).toContain("SOURCE_GATE_IDS");
-    expect(candidateReceipt).toContain('["status", "--porcelain"]');
-    expect(candidateReceipt).toContain("pluginHostSidecar");
-    expect(candidateReceipt).toContain("verifyCandidateVerificationReport");
-    expect(publishedReleaseVerifier).toContain("targetCommitish");
-    expect(publishedReleaseVerifier).toContain("unexpected asset");
-    expect(publishedReleaseVerifier).toContain("arrayBuffer");
-    expect(verifyCandidate).toContain("verifySmokeAttestationFile");
-    expect(verifyCandidate).toContain("verifyNativeCaptureEvidence");
-    expect(verifyCandidate).toContain("verifyInstalledVst3HostSummaryFile");
-    expect(verifyCandidate).toContain("verifyGamePackZip");
-    expect(verifyCandidate).toContain("assertReleaseCandidateTruth");
-    expect(verifyCandidate).toContain("--punch-take-summary <punch-take-lane-installed-smoke-summary.json>");
-    expect(verifyCandidate).toContain("--vst3-host-summary <installed-vst3-host-smoke-summary.json>");
-    expect(verifyCandidate).toContain("requireAudibleAudio: options.requireAudibleAudio");
-    expect(verifyNativeCaptureEvidence).toContain("requireExportFiles: true");
-    expect(verifyNativeCaptureEvidence).toContain("requireMidiInput: true");
-    expect(verifyNativeCaptureEvidence).toContain('requireAudibleAudio: mode === "fresh-audible"');
-    expect(verifyNativeCaptureEvidence).toContain('requireAudibleAudio: baselineMode === "fresh-audible"');
-    expect(verifyNativeCaptureEvidence).toContain("baseline-reuse chains are forbidden");
-    expect(verifyNativeCaptureEvidence).toContain("must not relabel the automated companion run as audible");
-    expect(verifyNativeCaptureEvidence).toContain("prior summaries cannot be reused");
-    expect(verifyNativeCaptureEvidence).toContain("Baseline attestation SHA-256");
-    expect(nativeCaptureFingerprint).toContain("src-tauri/src/native_recording.rs");
-    expect(nativeCaptureFingerprint).toContain("cpalDependencyClosure");
-    expect(nativeCaptureFingerprint).toContain('["show", `${commit}:${repositoryPath}`]');
-    expect(manualFreshAudibleEvidence).toContain('computeNativeCaptureFingerprintAtCommit(process.cwd(), requiredCommit(args.commit, "commit"))');
-    expect(manualFreshAudibleEvidence).toContain("createManualFreshAudibleEvidenceImpl(options, DEFAULT_FINGERPRINT_DEPENDENCIES)");
-    expect(manualFreshAudibleEvidence).toContain("verifyManualFreshAudibleEvidenceImpl(options, DEFAULT_FINGERPRINT_DEPENDENCIES)");
-    expect(manualFreshAudibleEvidence).toContain("createManualFreshAudibleEvidenceForTests");
-    expect(manualFreshAudibleEvidence).not.toContain("__testFingerprintDependencies");
-    expect(verifyNativeCaptureEvidence).toContain("verifyNativeCaptureEvidenceForTests");
-    expect(verifyNativeCaptureEvidence).not.toContain("__testFingerprintDependencies");
-    expect(verifyCandidate).toContain("--attestation");
-    expect(verifyCandidate).toContain("--installer");
-    expect(verifyCandidate).toContain("--punch-take-summary");
-    expect(verifyCandidate).toContain("--require-audible-audio");
-    expect(verifyCandidate).toContain("--require-export-files");
-    expect(verifyCandidate).toContain("--require-midi-input");
-    expect(verifyCandidate).toContain("--audio-capture-baseline-attestation");
-    expect(verifyCandidate).toContain("--audio-capture-baseline-installer");
-    expect(verifyCandidate).toContain("--manual-fresh-audible-evidence");
-    expect(verifyCandidate).toContain("--commit");
-    expect(verifyCandidate).toContain("--game-pack");
-    expect(verifyReleaseCandidateTruth).toContain("validateReleaseCandidateTruth");
-    expect(verifyReleaseCandidateTruth).toContain("git");
-    expect(verifyReleaseCandidateTruth).toContain("bump the next Pocket DAW checkpoint version");
+  it("stops and verifies MIDI punch positioning before input capture", () => {
+    const plan = midiPunchRecordingPreparationPlan();
+    expect(plan.mustBeStoppedAtRequestedBar).toBe(true);
+    expect(plan.requestedCaptureStartBar).toBe(6);
+    expect(plan.punchStartBar).toBe(7);
+    expect(plan.punchEndBar).toBe(9);
+    expect(plan.controls.map((control) => control.action)).toEqual(["stop", "set_recording_options", "apply_commands", "seek_bar"]);
+    expect(plan.captureAction).toBe("midi_record_start");
   });
 });

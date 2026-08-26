@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/handoff-security.test.mjs"
+    "build:dev": "node ../../scripts/build-handoff-dev.mjs",
+    "test": "node ../../scripts/embed-pcs-format-in-handoff.mjs --check && node tests/handoff-security.test.mjs"
   }
 }

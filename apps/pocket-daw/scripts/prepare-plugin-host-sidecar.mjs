@@ -20,6 +20,14 @@ export const VST3_SDK_TAG = "v3.8.0_build_66";
 export const VST3_SDK_COMMIT = "9fad9770f2ae8542ab1a548a68c1ad1ac690abe0";
 export const VST3_SDK_LICENSE_SHA256 = "d6115b263faa1cdf8c7372d70889c833dde1cec95252e7ee93e4f7d599ec96ca";
 
+// The vendored SDK is textual C/C++ source. Canonicalising CRLF means the
+// source lock identifies the same upstream bytes on Windows worktrees without
+// accepting any other content change. The staged sidecar itself remains bound
+// to its exact raw executable SHA-256.
+export function canonicalSdkSourceBytes(path) {
+  return Buffer.from(readFileSync(path).toString("latin1").replaceAll("\r\n", "\n"), "latin1");
+}
+
 export function hashVendoredSdkTree(sdkRoot, subsets) {
   const files = [];
   const collect = (path) => {
@@ -42,7 +50,7 @@ export function hashVendoredSdkTree(sdkRoot, subsets) {
   for (const path of uniqueFiles) {
     hash.update(path.slice(sdkRoot.length + 1).replaceAll("\\", "/"));
     hash.update(Buffer.from([0]));
-    hash.update(readFileSync(path));
+    hash.update(canonicalSdkSourceBytes(path));
     hash.update(Buffer.from([0]));
   }
   return hash.digest("hex");
@@ -102,7 +110,7 @@ export function preparePluginHostSidecar({ release = false, checkOnly = false, r
   if (!existsSync(stagedPath)) throw new Error("The staged Pocket DAW plug-in host sidecar is missing.");
   const bytes = readFileSync(stagedPath);
   if (!existsSync(sdkLicensePath)) throw new Error("Pinned VST3 SDK license is missing.");
-  const licenseHash = createHash("sha256").update(readFileSync(sdkLicensePath)).digest("hex");
+  const licenseHash = createHash("sha256").update(canonicalSdkSourceBytes(sdkLicensePath)).digest("hex");
   if (licenseHash !== VST3_SDK_LICENSE_SHA256) throw new Error("Pinned VST3 SDK license hash mismatch.");
   if (sdkLock.tag !== VST3_SDK_TAG || sdkLock.commit !== VST3_SDK_COMMIT) {
     throw new Error("Pinned VST3 SDK source metadata mismatch.");

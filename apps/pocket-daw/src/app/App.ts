@@ -333,6 +333,7 @@ import { buildSessionImportProject, recordSessionImportHydrationFailures, type S
 import { importDawSessionFilesNative, importDawSessionFolderNative, readDawSessionPathNative } from "../native/sessionBridge";
 import { isNativeRecordingAvailable, nativeRecordingStatus, startNativeRecording, startNativeRecordingPreview, stopNativeRecording, stopNativeRecordingPreview, updateNativeRecordingMonitor } from "../native/recordingBridge";
 import { isNativeExternalLinkAvailable, openExternalUrlNative } from "../native/externalLinkBridge";
+import { openExternalUrlWithFallback, selectTrackHeader } from "./interactionContracts";
 import { buildPortableGamePackSourceProjectFile, createGameExportManifest, createGamePackDeliveryTargets, createGamePackZipBlob, createSectionLoopMetadata, createSectionLoopZipBlob, createStemExportPlan, createStemZipBlob, projectForClipRender } from "../daw/exportJobs";
 import { assertExportProfileSupported, validateExportProfile } from "../daw/exportProfiles";
 import { getPrimaryChordsmithSource } from "../daw/chordsmithEditor";
@@ -2175,9 +2176,7 @@ export class App {
       el.addEventListener("click", (event) => {
         const target = event.target as HTMLElement | null;
         if (this.isTrackHeaderControlTarget(target)) return;
-        this.state.selectedTrackId = el.dataset.trackId || null;
-        this.state.selectedClipId = null;
-        this.state.selectedClipIds = [];
+        this.state = selectTrackHeader(this.state, el.dataset.trackId || null);
         this.render({ preserveScroll: true });
       });
     });
@@ -7375,20 +7374,19 @@ export class App {
   }
 
   private async openExternalUrl(url: string) {
-    if (await openExternalUrlNative(url)) return;
-    if (isNativeExternalLinkAvailable()) {
+    const result = await openExternalUrlWithFallback(url, {
+      openNative: openExternalUrlNative,
+      nativeBridgeAvailable: isNativeExternalLinkAvailable,
+      openBrowser: (target) => Boolean(window.open(target, "_blank", "noopener,noreferrer")),
+      replaceLocation: (target) => { window.location.href = target; }
+    });
+    if (result === "native-opened" || result === "browser-opened" || result === "location-fallback") return;
+    if (result === "native-failed") {
       this.state.status = url.startsWith("mailto:")
         ? "Could not open your mail app from Pocket DAW."
         : "Could not open the external link from Pocket DAW.";
       this.render({ preserveScroll: true });
-      return;
     }
-    if (url.startsWith("mailto:")) {
-      window.location.href = url;
-      return;
-    }
-    const opened = window.open(url, "_blank", "noopener,noreferrer");
-    if (!opened) window.location.href = url;
   }
 
   private async refreshAudioDevices() {

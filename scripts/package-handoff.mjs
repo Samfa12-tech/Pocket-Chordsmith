@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const root = resolve(import.meta.dirname, "..");
+run(process.execPath, [resolve(root, "scripts", "embed-pcs-format-in-handoff.mjs"), "--check"]);
 const sourcePath = resolve(root, "apps", "pocket-audio-handoff", "index.html");
 const outputDir = resolve(root, "local-artifacts", "staging", "pocket-audio-handoff");
 const outputZip = resolve(outputDir, "pocket-audio-handoff.zip");
@@ -17,7 +18,7 @@ run(process.execPath, [
   resolve(root, "scripts", "web-release-provenance.mjs"),
   "--repoRoot", root,
   "--product", "Pocket Audio Handoff",
-  "--build", "handoff-v1",
+  "--build", "handoff-v2",
   "--schema", "17",
   "--legacySchema", "16",
   "--sourceEntry", "apps/pocket-audio-handoff/index.html",

@@ -47,6 +47,17 @@ async function fetchJsonFixture(page, fixturePath) {
   return response.json();
 }
 
+async function buildValidHandoffCode(page, padding = 0) {
+  const project = await fetchJsonFixture(page, FIXTURE_CASES[0].path);
+  return page.evaluate((value) => {
+    if (value.padding) value.project.__handoffTestPadding = "x".repeat(value.padding);
+    const bytes = new TextEncoder().encode(JSON.stringify(value.project));
+    let binary = "";
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    return `PCS1:${btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")}`;
+  }, { project, padding });
+}
+
 async function importFixtureThroughSettings(page, fixturePath) {
   const fixture = await fetchJsonFixture(page, fixturePath);
   await page.getByRole("button", { name: "Settings" }).first().click();
@@ -1525,11 +1536,13 @@ test("mobile transfer opens the static handoff page with a short code", async ({
 test("static handoff page imports hash payload and builds desktop fallbacks", async ({
   page,
 }) => {
+  const code = await buildValidHandoffCode(page);
+  let relayRequests = 0;
   const handoff = {
     app: "PocketHandoff",
     handoffVersion: 1,
     kind: "chordsmith-mobile-transfer",
-    code: "PCS1:mobile-test",
+    code,
     createdAt: "2026-07-03T00:00:00.000Z",
     sourceApp: "Pocket Chordsmith",
     targetApp: "Pocket Audio Handoff",
@@ -1544,8 +1557,9 @@ test("static handoff page imports hash payload and builds desktop fallbacks", as
   }, handoff);
 
   await page.route("**/api/pocket-audio-handoff/transfers", async (route) => {
+    relayRequests += 1;
     const body = route.request().postDataJSON();
-    expect(body.code).toBe("PCS1:mobile-test");
+    expect(body.code).toBe(code);
     await route.fulfill({
       status: 201,
       contentType: "application/json",
@@ -1553,14 +1567,19 @@ test("static handoff page imports hash payload and builds desktop fallbacks", as
         id: "SAM-MOBILE",
         shortCode: "SAM-MOBILE",
         url: `${new URL(route.request().url()).origin}/apps/pocket-audio-handoff/index.html#code=SAM-MOBILE`,
-        expiresAt: "2026-07-03T01:00:00.000Z",
+        expiresAt: "2030-07-03T01:00:00.000Z",
       }),
     });
   });
   await page.goto(`/apps/pocket-audio-handoff/#pocketHandoff=${encoded}`);
-  await expect(page.locator("#handoffText")).toHaveValue("PCS1:mobile-test");
+  await expect(page.locator("#handoffText")).toHaveValue(code);
   await expect(page.locator("#payloadSummary")).toContainText("handoff link");
+  await expect(page.getByText(/uploads your complete PCS1 song/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create short code" })).toBeEnabled();
+  expect(relayRequests).toBe(0);
+  await page.getByRole("button", { name: "Create short code" }).click();
   await expect(page.locator("#relayCode")).toContainText("SAM-MOBILE");
+  expect(relayRequests).toBe(1);
 
   await page.evaluate(() => {
     window.__handoffCopied = [];
@@ -1600,7 +1619,7 @@ test("static handoff page imports hash payload and builds desktop fallbacks", as
     protocolUrls: window.__handoffProtocolUrls,
     downloads: window.__handoffDownloads,
   }));
-  expect(result.copied).toEqual(["PCS1:mobile-test", "PCS1:mobile-test"]);
+  expect(result.copied).toEqual([code, code]);
   expect(result.downloads).toHaveLength(1);
   expect(result.downloads[0].fileName).toMatch(/^pocket-chordsmith-to-pocket-daw-.+\.pcs1\.txt$/);
   expect(result.protocolUrls).toHaveLength(1);
@@ -1613,6 +1632,7 @@ test("static handoff page imports hash payload and builds desktop fallbacks", as
 test("static handoff page redeems a short code for desktop DAW and Godot import", async ({
   page,
 }) => {
+  const code = await buildValidHandoffCode(page);
   await page.route("**/api/pocket-audio-handoff/transfers/SAM-DESK42", async (route) => {
     await route.fulfill({
       status: 200,
@@ -1620,17 +1640,18 @@ test("static handoff page redeems a short code for desktop DAW and Godot import"
       body: JSON.stringify({
         id: "SAM-DESK42",
         shortCode: "SAM-DESK42",
-        code: "PCS1:redeemed-desktop-test",
+        code,
+        url: `${new URL(route.request().url()).origin}/apps/pocket-audio-handoff/index.html#code=SAM-DESK42`,
         source: "Pocket Chordsmith",
         metadata: { bpm: "96" },
         createdAt: "2026-07-03T00:00:00.000Z",
-        expiresAt: "2026-07-03T01:00:00.000Z",
+        expiresAt: "2030-07-03T01:00:00.000Z",
       }),
     });
   });
 
   await page.goto("/apps/pocket-audio-handoff/#code=SAM-DESK42");
-  await expect(page.locator("#handoffText")).toHaveValue("PCS1:redeemed-desktop-test");
+  await expect(page.locator("#handoffText")).toHaveValue(code);
   await expect(page.locator("#relayStatus")).toContainText(
     "SAM-DESK42 loaded",
   );
@@ -1641,8 +1662,9 @@ test("static handoff page redeems a short code for desktop DAW and Godot import"
 test("static handoff page accepts pasted PCS1 text and downloads exact payload", async ({
   page,
 }) => {
+  const code = await buildValidHandoffCode(page);
   await page.goto("/apps/pocket-audio-handoff/");
-  await page.locator("#handoffText").fill("PCS1:pasted-mobile-test");
+  await page.locator("#handoffText").fill(code);
 
   await page.evaluate(() => {
     window.__handoffDownloads = [];
@@ -1668,8 +1690,9 @@ test("static handoff page accepts pasted PCS1 text and downloads exact payload",
 test("static handoff page keeps copy and download available when transfer URL is large", async ({
   page,
 }) => {
+  const code = await buildValidHandoffCode(page, 3200);
   await page.goto("/apps/pocket-audio-handoff/");
-  await page.locator("#handoffText").fill(`PCS1:${"x".repeat(3200)}`);
+  await page.locator("#handoffText").fill(code);
   await page.getByRole("button", { name: "Load pasted code" }).click();
 
   await expect(page.locator("#sourceStatus")).toContainText(

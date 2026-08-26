@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "canonicalCommands": ["check", "check:pr", "check:full", "release:prepare", "verify:candidate", "release:publish-exact"],
+  "candidateSourceGateIds": ["versions", "native-sound-recipes", "ci-workflow", "family-parity", "frontend-vitest", "native-cargo-test", "chromium-e2e", "tauri-release-build", "release-package", "release-artifacts"],
+  "releaseArtifactKeys": ["setupExe", "setupSignature", "msi", "msiSignature", "releaseNotes", "releaseChecksums", "releaseVerdict", "releaseManifest", "updaterManifest", "bootstrapperManifest", "updaterChecksums"],
+  "publication": { "requiresPublishEnvironment": "PUBLISH=1", "requiresExactReceipt": true, "requiresVerificationReport": true, "buildOrRestageDuringPublication": false },
+  "itch": { "installerOnly": true, "bootstrapperIsStableChannel": true },
+  "requiredEvidenceClasses": ["smoke-attestation", "punch-take-summary", "media-portability-summary", "vst3-host-summary", "game-pack"]
+}

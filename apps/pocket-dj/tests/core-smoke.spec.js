@@ -99,7 +99,9 @@ test("Pocket Audio Handoff labels fields and explains the short-lived relay", as
   await expect(page.getByLabel("Desktop transfer code")).toBeVisible();
   await expect(page.locator("#sourceStatus")).toHaveAttribute("aria-live", "polite");
   await expect(page.locator("#relayStatus")).toHaveAttribute("aria-live", "polite");
-  await expect(page.getByText(/expire automatically/)).toBeVisible();
+  await expect(page.getByText(/service returns an expiry time/i)).toBeVisible();
+  await expect(page.getByText(/uploads your complete PCS1 song/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create short code" })).toBeDisabled();
   const shortTargets = await page.locator("button, .file-label, .code-input").evaluateAll(nodes => nodes.filter(node => {
     const rect = node.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0 && rect.height < 44;
@@ -108,12 +110,19 @@ test("Pocket Audio Handoff labels fields and explains the short-lived relay", as
 });
 
 test("Pocket Audio Handoff associates transfer and short-code errors and clears them on edit or success", async ({ page }) => {
+  const validCode = await buildPocketChordsmithShareCode(page, PCS_FIXTURES[0].path);
   await page.route("**/api/pocket-audio-handoff/transfers/**", async route => {
-    if(route.request().url().endsWith("/SAM-200")){
+    if(route.request().url().endsWith("/SAM-2000")){
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({code: "PCS1:phone-success", expiresAt: "2030-01-01T00:00:00.000Z"}),
+        body: JSON.stringify({
+          id: "SAM-2000",
+          shortCode: "SAM-2000",
+          code: validCode,
+          url: `${new URL(route.request().url()).origin}/apps/pocket-audio-handoff/#code=SAM-2000`,
+          expiresAt: "2030-01-01T00:00:00.000Z",
+        }),
       });
     }else{
       await route.fulfill({status: 404, contentType: "application/json", body: JSON.stringify({error: "Not found"})});
@@ -128,10 +137,10 @@ test("Pocket Audio Handoff associates transfer and short-code errors and clears 
   await transferButton.click();
   await expect(transferButton).toBeFocused();
   await expect(transfer).toHaveAttribute("aria-invalid", "true");
-  await expect(page.locator("#sourceFieldError")).toContainText("does not look like");
-  await expect(page.locator("#sourceStatus")).toContainText("does not look like");
+  await expect(page.locator("#sourceFieldError")).toContainText("PocketHandoff JSON is invalid");
+  await expect(page.locator("#sourceStatus")).toContainText("PocketHandoff JSON is invalid");
 
-  await transfer.fill("PCS1:valid-transfer");
+  await transfer.fill(validCode);
   await expect(transfer).not.toHaveAttribute("aria-invalid", "true");
   await expect(page.locator("#sourceFieldError")).toHaveText("");
   await transferButton.click();
@@ -144,7 +153,7 @@ test("Pocket Audio Handoff associates transfer and short-code errors and clears 
   await expect(shortCode).toBeFocused();
   await expect(shortCode).toHaveAttribute("aria-invalid", "true");
   await expect(page.locator("#redeemCodeError")).toHaveText("Enter the short code from your phone.");
-  await shortCode.fill("SAM-404");
+  await shortCode.fill("SAM-4040");
   await expect(shortCode).not.toHaveAttribute("aria-invalid", "true");
   await shortCode.press("Enter");
   await expect(shortCode).toBeFocused();
@@ -152,14 +161,14 @@ test("Pocket Audio Handoff associates transfer and short-code errors and clears 
   await expect(page.locator("#redeemCodeError")).toContainText("could not be loaded");
   await expect(page.locator("#relayStatus")).toContainText("could not be loaded");
 
-  await shortCode.fill("SAM-200");
+  await shortCode.fill("SAM-2000");
   await expect(shortCode).not.toHaveAttribute("aria-invalid", "true");
   await expect(page.locator("#redeemCodeError")).toHaveText("");
   await shortCode.press("Enter");
   await expect(shortCode).toBeFocused();
   await expect(shortCode).not.toHaveAttribute("aria-invalid", "true");
   await expect(page.locator("#redeemCodeError")).toHaveText("");
-  await expect(page.locator("#relayStatus")).toContainText("SAM-200 loaded");
+  await expect(page.locator("#relayStatus")).toContainText("SAM-2000 loaded");
 });
 
 test("Pocket DJ reflows at 320 CSS pixels without page-level horizontal scrolling", async ({ page }) => {

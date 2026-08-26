@@ -85,9 +85,12 @@ fn verify_vst3_sdk_lock(sdk_root: &Path) {
         let normalized = relative.to_string_lossy().replace('\\', "/");
         hasher.update(normalized.as_bytes());
         hasher.update([0]);
-        hasher.update(
-            std::fs::read(sdk_root.join(&relative)).expect("read pinned VST3 SDK source file"),
-        );
+        // The checked VST3 subset is textual C/C++ source. Canonical LF keeps
+        // the upstream source lock identical in Windows and LF worktrees;
+        // executable sidecar output is still verified by its raw SHA-256.
+        let bytes =
+            std::fs::read(sdk_root.join(&relative)).expect("read pinned VST3 SDK source file");
+        hasher.update(canonical_vst3_source_bytes(&bytes));
         hasher.update([0]);
     }
     let actual = format!("{:x}", hasher.finalize());
@@ -95,6 +98,21 @@ fn verify_vst3_sdk_lock(sdk_root: &Path) {
         actual, expected,
         "Vendored VST3 SDK contents do not match SOURCE_LOCK.json"
     );
+}
+
+fn canonical_vst3_source_bytes(bytes: &[u8]) -> Vec<u8> {
+    let mut canonical = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
+            canonical.push(b'\n');
+            index += 2;
+        } else {
+            canonical.push(bytes[index]);
+            index += 1;
+        }
+    }
+    canonical
 }
 
 fn collect_vendored_files(root: &Path, path: &Path, files: &mut Vec<PathBuf>) {

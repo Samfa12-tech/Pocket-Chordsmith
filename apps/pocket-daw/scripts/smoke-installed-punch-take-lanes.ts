@@ -15,10 +15,10 @@ import { addTrackToProject } from "../src/daw/tracks";
 import { validateInstalledPunchTakeSummary } from "./verify-installed-punch-take-summary.mjs";
 import {
   evaluateInstalledAudioInputPreviewStatus,
-  installedAudioInputPreviewControlPlan,
   resolveInstalledAudioInput,
   type ResolvedInstalledAudioInput
 } from "./installed-punch-take-audio-input";
+import { audioRecordingControlPlan, midiPunchRecordingPreparationPlan } from "./installed-punch-take-control-plan";
 import { parseInstalledPunchTakeSmokeArgs } from "./installed-punch-take-smoke-config";
 
 interface AiBridgeSession {
@@ -467,14 +467,15 @@ async function exerciseAudioRecordingControl(
   recordMs: number,
   audioInput: ResolvedInstalledAudioInput
 ) {
-  for (const body of installedAudioInputPreviewControlPlan(trackId, projectPath, audioInput)) {
+  const plan = audioRecordingControlPlan(trackId, projectPath, audioInput, args.requireAudibleAudio, args.minAudioPeak);
+  for (const body of plan.previewControls) {
     await liveControl(session, body);
   }
   const inputMeterPreflight = await waitForAudioInputMeterPreflight(
     session,
     trackId,
     audioInput,
-    args.requireAudibleAudio ? args.minAudioPeak : 0
+    plan.requiredAggregateInputPeak
   );
   const beforeProject = loadPocketDawRaw(await readFile(projectPath, "utf8"));
   const before = audioTakeSmokeCounts(await liveStatus(session));
@@ -648,16 +649,9 @@ function sameNumberArray(actual: number[] | null, expected: number[]) {
 }
 
 async function exerciseMidiInputRecordingControl(session: AiBridgeSession, midiTrackId: string, projectPath: string, midiRecordMs: number) {
-  const requestedCaptureStartBar = 6;
-  await liveControl(session, { action: "stop" });
-  await liveControl(session, { action: "set_recording_options", punchEnabled: true, takeMode: "take-lane" });
-  await liveControl(session, {
-    action: "apply_commands",
-    commands: [
-      { type: "set_punch_range", startBar: 7, endBar: 9 }
-    ]
-  });
-  await liveControl(session, { action: "seek_bar", bar: requestedCaptureStartBar });
+  const plan = midiPunchRecordingPreparationPlan();
+  const { requestedCaptureStartBar } = plan;
+  for (const body of plan.controls) await liveControl(session, body);
   const positioned = await liveStatus(session);
   const positionedBar = Number(positioned.transport?.playheadBar);
   if (positioned.transport?.playing !== false || !Number.isFinite(positionedBar) || Math.abs(positionedBar - requestedCaptureStartBar) > 0.0001) {
@@ -666,7 +660,7 @@ async function exerciseMidiInputRecordingControl(session: AiBridgeSession, midiT
   await liveControl(session, { action: "select_track", trackId: midiTrackId });
   const beforeProject = loadPocketDawRaw(await readFile(projectPath, "utf8"));
   const before = audioTakeSmokeCounts(await liveStatus(session));
-  const start = await liveControlResult(session, { action: "midi_record_start" });
+  const start = await liveControlResult(session, { action: plan.captureAction });
   if (start.ok) {
     await new Promise((resolve) => setTimeout(resolve, midiRecordMs));
     const stop = await liveControlResult(session, { action: "midi_record_stop" });
@@ -690,8 +684,8 @@ async function exerciseMidiInputRecordingControl(session: AiBridgeSession, midiT
       stopMessage: stop.message || "",
       requestedRecordMs: midiRecordMs,
       punchEnabled: true,
-      punchStartBar: 7,
-      punchEndBar: 9,
+      punchStartBar: plan.punchStartBar,
+      punchEndBar: plan.punchEndBar,
       requestedCaptureStartBar,
       captureStartBar: typeof take.captureStartBar === "number" ? take.captureStartBar : requestedCaptureStartBar,
       placement,
