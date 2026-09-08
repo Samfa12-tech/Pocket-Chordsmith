@@ -7553,8 +7553,9 @@ mod tests {
             32
         );
         assert!(rendered.bytes.len() > 44);
+        let (chunks, _remainder) = rendered.bytes[44..].as_chunks::<4>();
         assert!(
-            rendered.bytes[44..].chunks_exact(4).any(|chunk| {
+            chunks.iter().any(|chunk| {
                 f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]).abs() > 0.0001
             }),
             "expected 32-bit float payload to contain audible rendered samples"

@@ -374,9 +374,11 @@ jobs:
           cache-dependency-path: apps/pocket-daw/package-lock.json
       - name: Setup Rust
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          rustup component add rustfmt clippy
+          $toolchain = (Select-String -Path rust-toolchain.toml -Pattern '^\s*channel\s*=\s*"([^"]+)"\s*$').Matches.Groups[1].Value
+          if (-not $toolchain) { throw "rust-toolchain.toml must declare an exact Rust channel." }
+          rustup toolchain install $toolchain --profile minimal
+          rustup component add rustfmt clippy --toolchain $toolchain
+          rustup show active-toolchain
       - name: Pocket DAW Windows-contract and native checks
         working-directory: apps/pocket-daw
         run: |

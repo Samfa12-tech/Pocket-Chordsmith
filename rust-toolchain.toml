@@ -1,0 +1,8 @@
+# This exact pin is the supported Rust baseline for native Pocket Audio checks.
+# Upgrade it deliberately: run the Windows native verification commands and the
+# repository CI/planner checks on the candidate, then review the resulting Clippy
+# diagnostics before changing this channel. The CI workflow reads this channel.
+[toolchain]
+channel = "1.98.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

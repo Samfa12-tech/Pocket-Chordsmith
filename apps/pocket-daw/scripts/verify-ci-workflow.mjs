@@ -6,6 +6,7 @@ import { verifyWorkflowPins } from "../../../scripts/verify-workflow-pins.mjs";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "../../..");
 const workflowPath = path.join(repoRoot, ".github", "workflows", "ci.yml");
+const rustToolchainPath = path.join(repoRoot, "rust-toolchain.toml");
 const corePackagePath = path.join(repoRoot, "packages", "pocket-audio-core", "package.json");
 const coreLockPath = path.join(repoRoot, "packages", "pocket-audio-core", "package-lock.json");
 
@@ -26,6 +27,27 @@ function verifyWorkflowNode(workflow) {
   if (!/node-version:\s*22\b/.test(workflow)) fail(".github/workflows/ci.yml should keep project commands on Node 22.");
   if (/playwright@1\.52\.0\s+install\s+--with-deps/.test(workflow)) {
     fail(".github/workflows/ci.yml still uses the old Playwright 1.52 install --with-deps path; use install-deps plus per-package browser installs.");
+  }
+}
+
+function verifyRustToolchain(workflow) {
+  const toolchain = readText(rustToolchainPath);
+  const channel = toolchain.match(/^\s*channel\s*=\s*"([^"]+)"\s*$/m)?.[1];
+  if (!channel || !/^\d+\.\d+\.\d+$/.test(channel)) {
+    fail("rust-toolchain.toml must pin an exact Rust release channel.");
+    return;
+  }
+  if (!workflow.includes("rust-toolchain.toml")) {
+    fail(".github/workflows/ci.yml must load the repository Rust toolchain policy.");
+  }
+  if (!workflow.includes("rustup toolchain install $toolchain --profile minimal")) {
+    fail(`.github/workflows/ci.yml must install the pinned Rust toolchain ${channel} from the policy file.`);
+  }
+  if (!workflow.includes("rustup component add rustfmt clippy --toolchain $toolchain")) {
+    fail(".github/workflows/ci.yml must install rustfmt and clippy for the pinned Rust toolchain.");
+  }
+  if (/rustup toolchain install\s+stable\b/.test(workflow) || /rustup default\s+stable\b/.test(workflow)) {
+    fail(".github/workflows/ci.yml must not fall back to floating Rust stable.");
   }
 }
 
@@ -55,6 +77,7 @@ function verifyPocketAudioCorePlaywrightDependency() {
 const workflow = readText(workflowPath);
 for (const error of verifyWorkflowPins({ workflowsDir: path.join(repoRoot, ".github", "workflows") })) fail(error);
 verifyWorkflowNode(workflow);
+verifyRustToolchain(workflow);
 verifyFamilyParityDependencies(workflow);
 verifyPocketAudioCorePlaywrightDependency();
 
