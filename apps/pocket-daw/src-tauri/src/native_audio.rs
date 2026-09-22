@@ -70,6 +70,7 @@ struct NativeOutputRing {
     paused: AtomicBool,
     discontinuity_position_bits: AtomicU64,
     consumed_position_bits: AtomicU64,
+    inflight_position_bits: AtomicU64,
     consumed_frame_count: AtomicU64,
     underrun_frame_count: AtomicU64,
     underrun_callback_count: AtomicU64,
@@ -112,6 +113,7 @@ impl NativeOutputRing {
             paused: AtomicBool::new(false),
             discontinuity_position_bits: AtomicU64::new(start_position_seconds.to_bits()),
             consumed_position_bits: AtomicU64::new(start_position_seconds.to_bits()),
+            inflight_position_bits: AtomicU64::new(start_position_seconds.to_bits()),
             consumed_frame_count: AtomicU64::new(0),
             underrun_frame_count: AtomicU64::new(0),
             underrun_callback_count: AtomicU64::new(0),
@@ -169,6 +171,10 @@ impl NativeOutputRing {
                 self.discontinuity_position_bits.load(Ordering::Relaxed),
                 Ordering::Relaxed,
             );
+            self.inflight_position_bits.store(
+                self.discontinuity_position_bits.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
             self.consumed_generation.store(requested, Ordering::Release);
             return true;
         }
@@ -182,6 +188,17 @@ impl NativeOutputRing {
             self.discontinuity_position_bits.load(Ordering::Relaxed)
         } else {
             self.consumed_position_bits.load(Ordering::Relaxed)
+        };
+        f64::from_bits(position_bits)
+    }
+
+    fn control_position_seconds(&self) -> f64 {
+        let position_bits = if self.requested_generation.load(Ordering::Acquire)
+            != self.consumed_generation.load(Ordering::Acquire)
+        {
+            self.discontinuity_position_bits.load(Ordering::Relaxed)
+        } else {
+            self.inflight_position_bits.load(Ordering::Relaxed)
         };
         f64::from_bits(position_bits)
     }
@@ -1153,7 +1170,7 @@ pub fn native_audio_pause(
     if let Some(shared) = &runtime.shared {
         if let Ok(mut playback) = shared.lock() {
             if let Some(ring) = &runtime.output_ring {
-                playback.position_seconds = ring.consumed_position_seconds();
+                playback.position_seconds = ring.control_position_seconds();
                 ring.request_discontinuity(playback.position_seconds, true);
             }
             playback.playing = false;
@@ -1246,7 +1263,7 @@ pub fn native_audio_update_track(
             if changed {
                 if hard_change {
                     if let Some(ring) = &runtime.output_ring {
-                        playback.position_seconds = ring.consumed_position_seconds();
+                        playback.position_seconds = ring.control_position_seconds();
                     }
                 }
                 if let Some(track) = playback.tracks.get_mut(&patch.track_id) {
@@ -1935,6 +1952,10 @@ fn write_ring_output_converted_with_hook<T: Copy>(
                 valid_frames += 1;
                 intentional_frames += u64::from(frame_intentional);
                 last_position = frame_position;
+                if let Some(position) = frame_position {
+                    ring.inflight_position_bits
+                        .store(position.to_bits(), Ordering::Relaxed);
+                }
                 continue;
             }
             frame.fill(convert(0.0));
@@ -9012,6 +9033,43 @@ mod tests {
         write_ring_output(&mut second, &ring, 2, 48_000);
         assert_eq!(second, [0.75, 0.75]);
         assert_eq!(ring.consumed_position_seconds(), 1.1);
+    }
+
+    #[test]
+    fn pause_captures_the_frame_written_by_an_inflight_callback() {
+        let ring = NativeOutputRing::new(0.0);
+        let first_frame = OutputSample {
+            value: 0.25,
+            next_position_seconds: 0.1,
+            intentional_silence: false,
+            generation: 0,
+        };
+        let second_frame = OutputSample {
+            value: 0.5,
+            next_position_seconds: 0.2,
+            intentional_silence: false,
+            generation: 0,
+        };
+        assert!(ring.push(&[first_frame, first_frame, second_frame, second_frame]));
+        let mut output = [0.0; 4];
+        write_ring_output_converted_with_hook(
+            &mut output,
+            &ring,
+            2,
+            48_000,
+            |sample| sample,
+            |index| {
+                if index == 1 {
+                    assert_eq!(ring.consumed_position_seconds(), 0.0);
+                    let pause_position = ring.control_position_seconds();
+                    assert_eq!(pause_position, 0.1);
+                    ring.request_discontinuity(pause_position, true);
+                }
+            },
+        );
+        assert_eq!(output, [0.25, 0.25, 0.0, 0.0]);
+        assert_eq!(ring.control_position_seconds(), 0.1);
+        assert_eq!(ring.consumed_position_seconds(), 0.1);
     }
 
     #[test]
