@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 const root = resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(
@@ -54,6 +55,29 @@ const outputPath = resolve(root, manifest.output);
 if (process.argv.includes("--check")) {
   const current = readFileSync(outputPath, "utf8");
   if (current !== output) {
+    const prefix = 'const POCKET_AUDIO_CORE_WAV_WORKER_GZIP_BASE64 = "';
+    const embeddedPayload = (html) => {
+      const start = html.indexOf(prefix);
+      if (start < 0) return null;
+      const from = start + prefix.length;
+      const end = html.indexOf('"', from);
+      return end < 0 ? null : Buffer.from(html.slice(from, end), "base64");
+    };
+    const hash = (bytes) =>
+      createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+    const currentGzip = embeddedPayload(current);
+    const expectedGzip = embeddedPayload(output);
+    if (currentGzip && expectedGzip) {
+      try {
+        console.error(
+          `Embedded worker raw SHA-256: committed=${hash(gunzipSync(currentGzip))} generated=${hash(gunzipSync(expectedGzip))}; gzip SHA-256: committed=${hash(currentGzip)} generated=${hash(expectedGzip)}.`,
+        );
+      } catch {
+        console.error(
+          "Embedded worker payload could not be decoded during drift diagnosis.",
+        );
+      }
+    }
     console.error(
       `${manifest.output} has drifted from modular Chordsmith source. Run npm run build:single-file.`,
     );
