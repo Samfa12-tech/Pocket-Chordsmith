@@ -105,6 +105,8 @@ jobs:
         working-directory: packages/pocket-audio-core
         run: |
           npm test
+          npm run test:golden
+          npm run test:render
           npm run build
           npm run verify:family-parity
       - name: Test and build PCS Format
@@ -277,6 +279,11 @@ jobs:
           npm ci
           npx playwright install-deps chromium
           npx playwright install chromium
+      - name: Validate DAW test inventory and check tooling
+        working-directory: apps/pocket-daw
+        run: |
+          node scripts/verify-test-scope-manifest.mjs
+          npm run test:tooling
       - name: Full deterministic frontend tests and build (Linux owns this suite)
         working-directory: apps/pocket-daw
         run: |

@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { collectChangedFiles, resolveChangedScope, selectDawChecks, vitestExitCode } from "./run-daw-checks.mjs";
+import { branchChangedFilesGitArgs, collectChangedFiles, resolveChangedScope, selectDawChecks, vitestExitCode, workingTreeChangedFilesGitArgs } from "./run-daw-checks.mjs";
 import { loadManifest } from "./verify-test-scope-manifest.mjs";
 
 const manifest = loadManifest();
@@ -46,6 +46,12 @@ test("changed sources select their mapped tests and unknown scopes fail", () => 
   assert.ok(changed.length > 0);
   assert.ok(changed.length < manifest.tests.filter((entry) => entry.ordinaryVitest).length);
   assert.throws(() => selectDawChecks("typo", manifest), /Unknown Pocket DAW check scope/);
+});
+
+test("Git path discovery includes all statuses and preserves both rename paths", () => {
+  assert.deepEqual(workingTreeChangedFilesGitArgs(), ["diff", "--no-renames", "--name-only", "-z", "HEAD"]);
+  assert.deepEqual(branchChangedFilesGitArgs("origin/main"), ["diff", "--no-renames", "--name-only", "-z", "origin/main...HEAD"]);
+  assert.throws(() => branchChangedFilesGitArgs(""), /DAW_CHECK_BASE is required/);
 });
 
 test("local changed scope covers index, worktree, deletions, both rename paths, and relevant untracked source", (context) => {
@@ -105,6 +111,6 @@ test("invalid branch bases broaden to full scope", () => {
 test("abnormal Vitest termination fails closed", () => {
   assert.equal(vitestExitCode({ status: 0, signal: null }), 0);
   assert.equal(vitestExitCode({ status: 3, signal: null }), 3);
-  assert.equal(vitestExitCode({ status: null, signal: "SIGTERM" }), 1);
+  assert.equal(vitestExitCode({ status: null, signal: "SIGTERM" }, () => {}), 1);
   assert.throws(() => vitestExitCode({ status: null, error: new Error("spawn failed") }), /spawn failed/);
 });

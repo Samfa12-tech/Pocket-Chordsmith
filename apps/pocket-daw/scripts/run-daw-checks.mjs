@@ -16,11 +16,11 @@ const vitest = resolve(appRoot, "node_modules", "vitest", "vitest.mjs");
 
 export function branchChangedFilesGitArgs(base) {
   if (!base) throw new Error("DAW_CHECK_BASE is required for a branch scope.");
-  return ["diff", "--no-renames", "--name-only", "-z", "--diff-filter=ACMRD", `${base}...HEAD`];
+  return ["diff", "--no-renames", "--name-only", "-z", `${base}...HEAD`];
 }
 
 export function workingTreeChangedFilesGitArgs() {
-  return ["diff", "--no-renames", "--name-only", "-z", "--diff-filter=ACMRD", "HEAD"];
+  return ["diff", "--no-renames", "--name-only", "-z", "HEAD"];
 }
 
 function splitGitPaths(output) {
@@ -62,11 +62,11 @@ export function selectDawChecks(scope, manifest, changedFiles = []) {
   throw new Error(`Unknown Pocket DAW check scope: ${scope}`);
 }
 
-export function vitestExitCode(result) {
+export function vitestExitCode(result, writeStderr = (message) => process.stderr.write(message)) {
   if (result.error) throw result.error;
   if (Number.isInteger(result.status)) return result.status;
   const cause = result.signal ? `signal ${result.signal}` : "unknown process failure";
-  process.stderr.write(`Vitest did not exit normally (${cause}); treating the check as failed.\n`);
+  writeStderr(`Vitest did not exit normally (${cause}); treating the check as failed.\n`);
   return 1;
 }
 
@@ -76,7 +76,7 @@ function main(argv) {
   const manifest = loadManifest();
   let changed = explicitChanged;
   let broadened = false;
-  if (scope === "changed" && changed.length === 0 || scope === "branch") {
+  if ((scope === "changed" && changed.length === 0) || scope === "branch") {
     const resolved = resolveChangedScope(scope, process.env.DAW_CHECK_BASE);
     changed = resolved.changed;
     broadened = resolved.broadened;
