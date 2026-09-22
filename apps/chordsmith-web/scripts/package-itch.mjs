@@ -18,6 +18,7 @@ const requiredEntries = [
   "pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
   "pocket-audio-core/dist/pocket-audio-core.esm.js",
   "pocket-audio-core/dist/pocket-audio-core.iife.js",
+  "pocket-audio-core/dist/chordsmith-wav-worker.js",
 ];
 
 function run(command, args, options = {}) {

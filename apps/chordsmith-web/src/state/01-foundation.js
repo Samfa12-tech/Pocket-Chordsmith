@@ -311,6 +311,7 @@ const LEGACY_PROJECT_SCHEMA_VERSION = 16;
 const FORMAT_FEATURES = ["sound-profile-v1","rich-events-v1","articulations-v1","expanded-drums-v1","capability-report-v1"];
 const POCKET_AUDIO_CORE_VERSION = "0.2.0";
 const POCKET_AUDIO_CORE_SCHEMA_SUPPORT = "17";
+const POCKET_AUDIO_CORE_WAV_WORKER_GZIP_BASE64 = "__POCKET_AUDIO_CORE_WAV_WORKER_GZIP_BASE64__";
 const POCKET_AUDIO_CORE_PACKAGED_IMPORT_PATHS = [
   "./pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
   "./pocket-audio-core/src/browser.js",
@@ -322,6 +323,12 @@ const POCKET_AUDIO_CORE_REPO_IMPORT_PATHS = [
   "../../packages/pocket-audio-core/src/browser.js",
   "../../packages/pocket-audio-core/src/index.js",
   "../../packages/pocket-audio-core/dist/pocket-audio-core.esm.js"
+];
+const POCKET_AUDIO_CORE_PACKAGED_WAV_WORKER_PATHS = [
+  "./pocket-audio-core/dist/chordsmith-wav-worker.js"
+];
+const POCKET_AUDIO_CORE_REPO_WAV_WORKER_PATHS = [
+  "../../packages/pocket-audio-core/dist/chordsmith-wav-worker.js"
 ];
 const POCKET_AUDIO_CORE_PACKAGED_IIFE_PATHS = [
   "./pocket-audio-core/dist/pocket-audio-core.iife.js"
@@ -491,7 +498,7 @@ const state = {
   melodyTracksA:[], melodyTracksB:[], melodyTracksC:[], melodyTracksD:[], melodyTracks:[], melodyInstrumentsA:[], melodyInstrumentsB:[], melodyInstrumentsC:[], melodyInstrumentsD:[], melodyInstruments:[], melodyOctavesA:[], melodyOctavesB:[], melodyOctavesC:[], melodyOctavesD:[], melodyOctaves:[], melodyMuteA:[], melodyMuteB:[], melodyMuteC:[], melodyMuteD:[], melodyMute:[], melodySoloA:[], melodySoloB:[], melodySoloC:[], melodySoloD:[], melodySolo:[], melodyPanA:[], melodyPanB:[], melodyPanC:[], melodyPanD:[], melodyPan:[], melodyHoldA:[], melodyHoldB:[], melodyHoldC:[], melodyHoldD:[], melodyHold:[], melodySlideA:[], melodySlideB:[], melodySlideC:[], melodySlideD:[], melodySlide:[], melodyTupletsA:[], melodyTupletsB:[], melodyTupletsC:[], melodyTupletsD:[], melodyTuplets:[], bassHoldA:[], bassHoldB:[], bassHoldC:[], bassHoldD:[], bassHold:[], bassSlideA:[], bassSlideB:[], bassSlideC:[], bassSlideD:[], bassSlide:[], bassNotesA:[], bassNotesB:[], bassNotesC:[], bassNotesD:[], bassNotes:[], bassAccentA:[], bassAccentB:[], bassAccentC:[], bassAccentD:[], bassAccent:[], bassArticulationA:[], bassArticulationB:[], bassArticulationC:[], bassArticulationD:[], bassArticulation:[], drumLanesA:{}, drumLanesB:{}, drumLanesC:{}, drumLanesD:{}, drumLanes:{}, activeMelodyTrack:0, selectedMelodyDegree:0,
   guitarPatternA:[], guitarPatternB:[], guitarPatternC:[], guitarPatternD:[], guitarPattern:[],
   melodyInputMode:"grid", xyPlaybackMode:"sustain", xyPadMode:"sustain", xyScaleMode:"song", xyChordFollow:true, xyRecordToGrid:false, xyLastWriteStep:-1, xyLiveActive:false, xyLiveMidi:null, xyLiveBrightness:1800, xyLiveGate:0.18, xyLivePulseInterval:0.5, xyLivePulseLabel:"Quarter", xyLiveInstrument:"pulse", xyLivePan:0, undoStack:[], suspendUndo:false,
-  lastAdvancedResolution:2, pendingUiTimers:[], liveRecordStepClock:[], lastHighlightedStep:-1, advancedFxPrimed:false, settingsGenreDrawerOpen:false, settingsGenre:"clean", genreComposition:null,
+  lastAdvancedResolution:2, pendingUiTimers:new Set(), liveRecordStepClock:[], lastHighlightedStep:-1, advancedFxPrimed:false, settingsGenreDrawerOpen:false, settingsGenre:"clean", genreComposition:null,
   transportPlan:[], autosaveDirty:false, wavExporting:false, wavExportToken:0, pendingImmersiveRestore:false, exportSchemaVersion:17, lastCapabilityReport:[], _projectSource:null, _richSource:null,
   availableChords:[], nextSuggested:[]
 };
@@ -503,6 +510,8 @@ let tooltipLayerBound = false;
 let pocketAudioCoreModulePromise = null;
 let pocketAudioCoreModule = null;
 let pocketAudioCore = null;
+let wavExportWorker = null;
+let pocketAudioCoreWavWorkerFailure = "";
 let pocketAudioCoreStatus = "legacy playback/WAV fallback active";
 function pocketAudioCoreImportPaths(){
   const path = String(window.location.pathname || "").replace(/\\/g, "/").toLowerCase();
@@ -510,6 +519,13 @@ function pocketAudioCoreImportPaths(){
   return sourceTree
     ? [...POCKET_AUDIO_CORE_REPO_IMPORT_PATHS, ...POCKET_AUDIO_CORE_PACKAGED_IMPORT_PATHS]
     : [...POCKET_AUDIO_CORE_PACKAGED_IMPORT_PATHS, ...POCKET_AUDIO_CORE_REPO_IMPORT_PATHS];
+}
+function pocketAudioCoreWavWorkerPaths(){
+  const path = String(window.location.pathname || "").replace(/\\/g, "/").toLowerCase();
+  const sourceTree = path.includes("/apps/chordsmith-web/") || path.includes("/web-app/");
+  return sourceTree
+    ? [...POCKET_AUDIO_CORE_REPO_WAV_WORKER_PATHS, ...POCKET_AUDIO_CORE_PACKAGED_WAV_WORKER_PATHS]
+    : [...POCKET_AUDIO_CORE_PACKAGED_WAV_WORKER_PATHS, ...POCKET_AUDIO_CORE_REPO_WAV_WORKER_PATHS];
 }
 function pocketAudioCoreScriptPaths(){
   const path = String(window.location.pathname || "").replace(/\\/g, "/").toLowerCase();

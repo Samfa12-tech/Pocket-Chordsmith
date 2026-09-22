@@ -200,7 +200,7 @@ For itch.io, upload a zip that contains at least:
 
 Keep generated exports, old local snapshots, and add-on packaging zips out of Git unless they are intentional release artifacts.
 
-The v68 HTML is deterministic generated output. Edit the ordered fragments listed in `src/chordsmith-source-manifest.json` (state, schema, audio, transport, export, handoff, UI, and accessibility-bearing UI code), then run `npm run build:single-file`. `npm run verify:single-file` fails if the portable HTML has drifted from those sources.
+The v68 HTML is deterministic generated output. Edit the ordered fragments listed in `src/chordsmith-source-manifest.json` (state, schema, audio, transport, export, handoff, UI, and accessibility-bearing UI code), then run `npm run build:single-file`. This builds Pocket Audio Core and embeds its compressed WAV worker in the HTML, so worker rendering remains available when the file is opened on its own. `npm run verify:single-file` rebuilds that worker and fails if the portable HTML has drifted from its sources.
 
 Older intentional HTML snapshots live in the central unsupported archive at `../archive/unsupported-runnable-builds/chordsmith-web/`; they are excluded from current builds and packages.
 

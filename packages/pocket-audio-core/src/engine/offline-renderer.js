@@ -1,5 +1,5 @@
 import { buildPocketAudioTimeline } from "../events/timeline-events.js";
-import { encodePcm16WavBlob } from "../export/wav.js";
+import { encodePcm16WavBytes } from "../export/wav.js";
 import {
   CHORDSMITH_LOFI_TEXTURE_OFFLINE,
   chordsmithLofiTextureOfflineCrackleWindow,
@@ -109,8 +109,12 @@ function filterTextureSample(input, state) {
 }
 
 export function renderPocketAudioWav(project, options = {}) {
+  return new Blob([renderPocketAudioWavBytes(project, options)], { type: "audio/wav" });
+}
+
+export function renderPocketAudioWavBytes(project, options = {}) {
   const buffer = renderPocketAudioBuffer(project, options);
-  return encodePcm16WavBlob({ channels: buffer.channels, sampleRate: buffer.sampleRate });
+  return encodePcm16WavBytes({ channels: buffer.channels, sampleRate: buffer.sampleRate });
 }
 
 function renderEventToChannels(event, left, right, sampleRate) {

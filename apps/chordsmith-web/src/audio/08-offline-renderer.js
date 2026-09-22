@@ -196,7 +196,12 @@ function makeOfflineToneSlide(ctx, dest, startFreq, endFreq, t, dur, slideOffset
   osc.stop(safeT + safeDur + 0.2);
 }
 
-function writeWavFromBuffer(buffer){
+async function yieldWavExportWork(token){
+  await new Promise(resolve => setTimeout(resolve, 0));
+  if(token !== state.wavExportToken) throw new DOMException("WAV export cancelled", "AbortError");
+}
+
+async function writeWavFromBuffer(buffer, token){
   const numChannels = buffer.numberOfChannels;
   const sampleRate = buffer.sampleRate;
   const samples = buffer.length;
@@ -228,12 +233,17 @@ function writeWavFromBuffer(buffer){
   const channels = [];
   for(let ch = 0; ch < numChannels; ch++) channels.push(buffer.getChannelData(ch));
 
-  for(let i = 0; i < samples; i++){
-    for(let ch = 0; ch < numChannels; ch++){
-      const s = Math.max(-1, Math.min(1, channels[ch][i]));
-      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-      offset += 2;
+  const encodeBlockSamples = 16384;
+  for(let blockStart = 0; blockStart < samples; blockStart += encodeBlockSamples){
+    const blockEnd = Math.min(samples, blockStart + encodeBlockSamples);
+    for(let i = blockStart; i < blockEnd; i++){
+      for(let ch = 0; ch < numChannels; ch++){
+        const s = Math.max(-1, Math.min(1, channels[ch][i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        offset += 2;
+      }
     }
+    if(blockEnd < samples) await yieldWavExportWork(token);
   }
 
   return new Blob([out], {type:"audio/wav"});
@@ -378,7 +388,7 @@ function makeOfflineExpandedDrum(ctx,dest,lane,t,accent=false,velocityScale=1){
   }
 }
 
-function makeOfflineLofiTexture(ctx, dest, totalDuration){
+async function makeOfflineLofiTexture(ctx, dest, totalDuration, token){
   if(!isLofiActive() || !state.lofiTexture?.enabled) return;
   const texture = sanitizeLofiTexture(state.lofiTexture, state.lofiPreset);
   const hiss = clamp(texture.tapeHiss, 0, 1);
@@ -391,16 +401,21 @@ function makeOfflineLofiTexture(ctx, dest, totalDuration){
   const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
   const data = buffer.getChannelData(0);
   const crackleWindow = Math.max(900, Math.floor(ctx.sampleRate * 0.09));
-  for(let i = 0; i < len; i++){
-    const base = stableNoiseSample(i, 91) * hiss * 0.014;
-    const tick = Math.floor(i / crackleWindow);
-    const tickSeed = featureSeed(tick, 92);
-    const local = i % crackleWindow;
-    const crack = tickSeed < crackle * 0.22 && local < 760
-      ? stableNoiseSample(i, 93) * crackle * 0.07 * Math.exp(-local / 130)
-      : 0;
-    const crushed = bit > 0.01 ? Math.round((base + crack) * (28 - bit * 18)) / (28 - bit * 18) : base + crack;
-    data[i] = crushed;
+  const textureBlockSamples = 32768;
+  for(let blockStart = 0; blockStart < len; blockStart += textureBlockSamples){
+    const blockEnd = Math.min(len, blockStart + textureBlockSamples);
+    for(let i = blockStart; i < blockEnd; i++){
+      const base = stableNoiseSample(i, 91) * hiss * 0.014;
+      const tick = Math.floor(i / crackleWindow);
+      const tickSeed = featureSeed(tick, 92);
+      const local = i % crackleWindow;
+      const crack = tickSeed < crackle * 0.22 && local < 760
+        ? stableNoiseSample(i, 93) * crackle * 0.07 * Math.exp(-local / 130)
+        : 0;
+      const crushed = bit > 0.01 ? Math.round((base + crack) * (28 - bit * 18)) / (28 - bit * 18) : base + crack;
+      data[i] = crushed;
+    }
+    if(blockEnd < len) await yieldWavExportWork(token);
   }
   const src = ctx.createBufferSource();
   src.buffer = buffer;
@@ -412,23 +427,76 @@ function makeOfflineLofiTexture(ctx, dest, totalDuration){
   src.stop(totalDuration);
 }
 
-async function renderCoreWavForCurrentProject(durationLabel, eventCount){
-  const exportScope = getSelectedExportScope();
+function terminateWavExportWorker(){
+  const job = wavExportWorker;
+  wavExportWorker = null;
+  if(!job) return;
+  job.cancel();
+}
+
+async function createPocketAudioWavWorker(token){
+  if(typeof Worker !== "function") return null;
+  if(typeof DecompressionStream === "function" && POCKET_AUDIO_CORE_WAV_WORKER_GZIP_BASE64){
+    let blobUrl = null;
+    try{
+      const encoded = atob(POCKET_AUDIO_CORE_WAV_WORKER_GZIP_BASE64);
+      const compressed = Uint8Array.from(encoded, char => char.charCodeAt(0));
+      const source = await new Response(new Blob([compressed]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if(token !== state.wavExportToken) return null;
+      blobUrl = URL.createObjectURL(new Blob([source], {type:"text/javascript"}));
+      return {worker:new Worker(blobUrl), blobUrl};
+    }catch(_e){
+      if(blobUrl) URL.revokeObjectURL(blobUrl);
+    }
+  }
+  for(const path of pocketAudioCoreWavWorkerPaths()){
+    const workerUrl = new URL(path, document.baseURI);
+    if(!(await pocketAudioCoreAssetExists(workerUrl.href)) || token !== state.wavExportToken) continue;
+    try{
+      return {worker:new Worker(workerUrl), blobUrl:null};
+    }catch(_e){}
+  }
+  return null;
+}
+
+async function renderCoreWavForCurrentProject(projectSnapshot, exportScope, timelineOptions, durationLabel, eventCount, token){
   const scopeLabel = exportScopeLabel(exportScope);
-  const timelineOptions = coreTimelineOptionsForExportScope(exportScope);
   try{
-    const mod = await loadPocketAudioCoreModule();
-    const project = await pocketAudioCore.loadProject(exportProject());
-    const timeline = mod.buildPocketAudioTimeline ? mod.buildPocketAudioTimeline(project, timelineOptions) : pocketAudioCore.timeline;
-    setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) with Pocket Audio Core from ${timeline?.events?.length || eventCount} events.`);
-    pocketAudioCoreStatus = `WAV render ${scopeLabel}: ${timeline?.events?.length || eventCount} timeline events`;
+    if(typeof Worker !== "function" || token !== state.wavExportToken) return false;
+    setWavProgress(`Preparing Pocket Audio Core worker for ${scopeLabel} export...`);
+    const workerJob = await createPocketAudioWavWorker(token);
+    if(!workerJob) return token !== state.wavExportToken;
+    if(token !== state.wavExportToken){
+      workerJob.worker.terminate();
+      if(workerJob.blobUrl) URL.revokeObjectURL(workerJob.blobUrl);
+      return true;
+    }
+    setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) with Pocket Audio Core off the UI thread from ${eventCount} events.`);
+    pocketAudioCoreStatus = `WAV render ${scopeLabel}: ${eventCount} timeline events`;
     updatePocketAudioCoreStatusUi();
-    const blob = await pocketAudioCore.renderWav({sampleRate:44100, ...timelineOptions});
+    const id = `wav-${token}-${Date.now()}`;
+    const blob = await awaitPocketAudioWavWorkerResult({
+      workerJob,
+      id,
+      payload:{id, project:projectSnapshot, options:{sampleRate:44100, ...timelineOptions}},
+      isCurrent:() => token === state.wavExportToken,
+      setActiveWorker:job => { wavExportWorker = job; },
+      clearActiveWorker:completedWorker => {
+        if(wavExportWorker?.worker === completedWorker) wavExportWorker = null;
+      },
+      onRendering:() => {
+        setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) with Pocket Audio Core off the UI thread from ${eventCount} events.`);
+      }
+    });
+    if(token !== state.wavExportToken) return true;
     setWavOutput(blob);
     setWavProgress(`WAV ready via Pocket Audio Core (${scopeLabel}): ${durationLabel}, ${Math.round(blob.size / 1024 / 1024 * 10) / 10} MB.`);
     setStatus(`WAV ready via Pocket Audio Core (${scopeLabel}). Preview, open, or download it from Settings.`);
     return true;
   }catch(e){
+    if(e?.name === "AbortError" || token !== state.wavExportToken) return true;
+    pocketAudioCoreWavWorkerFailure = e?.message || String(e);
     setWavProgress(`Pocket Audio Core render unavailable for ${scopeLabel}; falling back to the Chordsmith WAV renderer.`);
     return false;
   }
@@ -453,17 +521,12 @@ function preflightWavExport(durationSeconds, sampleRate, channels = 2){
 
 async function exportWavFile(){
   const token = ++state.wavExportToken;
+  pocketAudioCoreWavWorkerFailure = "";
   state.wavExporting = true;
   updateWavExportUi();
   setWavProgress("Preparing WAV render...");
   try{
     const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    if(!OfflineCtx){
-      setStatus("WAV export not supported in this browser");
-      setWavProgress("");
-      return;
-    }
-
     clearWavOutput();
     const events = buildSequenceEvents();
     if(!events.length){
@@ -487,12 +550,23 @@ async function exportWavFile(){
       setStatus(`WAV export stopped safely. ${message}`);
       return;
     }
+    const projectSnapshot = JSON.parse(JSON.stringify(exportProject()));
+    const exportScope = getSelectedExportScope();
+    const timelineOptions = coreTimelineOptionsForExportScope(exportScope);
     const workingMemoryMb = Math.ceil(resourceEstimate.estimatedWorkingBytes / 1024 / 1024);
     setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) from ${events.length} events. Keep this tab open.`);
     setStatus(`Rendering WAV (${scopeLabel}, ${durationLabel}, up to ${workingMemoryMb} MB working memory)...`);
     await new Promise(resolve => setTimeout(resolve, 50));
     if(token !== state.wavExportToken) return;
-    if(await renderCoreWavForCurrentProject(durationLabel, events.length)) return;
+    if(await renderCoreWavForCurrentProject(projectSnapshot, exportScope, timelineOptions, durationLabel, events.length, token)) return;
+    if(token !== state.wavExportToken) return;
+    if(!OfflineCtx){
+      setStatus(pocketAudioCoreWavWorkerFailure
+        ? `WAV export is unavailable in this browser: ${pocketAudioCoreWavWorkerFailure}`
+        : "WAV export is not supported in this browser.");
+      setWavProgress("");
+      return;
+    }
 
     const ctx = new OfflineCtx(2, Math.ceil(totalDuration * sampleRate), sampleRate);
 
@@ -521,9 +595,10 @@ async function exportWavFile(){
     guitarG.connect(master);
     master.connect(comp);
     comp.connect(ctx.destination);
-    makeOfflineLofiTexture(ctx, master, totalDuration);
+    await makeOfflineLofiTexture(ctx, master, totalDuration, token);
 
-    events.forEach(ev => {
+    for(let eventIndex = 0; eventIndex < events.length; eventIndex++){
+      const ev = events[eventIndex];
       if(ev.type === "chord"){
         chordNotes(ev.chord).forEach((note, idx) => {
           const cfg = chordInstrumentConfig(state.chordInstrument);
@@ -579,22 +654,26 @@ async function exportWavFile(){
       } else if(ev.type === "drum"){
         makeOfflineExpandedDrum(ctx,beatG,ev.lane,safeAudioTime(ev.time),!!ev.accent,ev.velocityScale ?? 1);
       }
-    });
+      if(eventIndex > 0 && eventIndex % 32 === 0) await yieldWavExportWork(token);
+    }
 
     const rendered = await ctx.startRendering();
     if(token !== state.wavExportToken) return;
     setWavProgress("Encoding WAV file...");
     await new Promise(resolve => setTimeout(resolve, 20));
     if(token !== state.wavExportToken) return;
-    const blob = writeWavFromBuffer(rendered);
+    const blob = await writeWavFromBuffer(rendered, token);
+    if(token !== state.wavExportToken) return;
     setWavOutput(blob);
     setWavProgress(`WAV ready via Chordsmith renderer (${scopeLabel}): ${durationLabel}, ${Math.round(blob.size / 1024 / 1024 * 10) / 10} MB.`);
     setStatus(`WAV ready via Chordsmith renderer (${scopeLabel}). Preview, open, or download it from Settings.`);
   }catch(e){
+    if(e?.name === "AbortError" || token !== state.wavExportToken) return;
     console.error(e);
     setWavProgress("");
     setStatus(`WAV export failed${e && e.message ? ": " + e.message : ""}`);
   }finally{
+    if(wavExportWorker && token === state.wavExportToken) terminateWavExportWorker();
     if(token === state.wavExportToken){
       state.wavExporting = false;
       updateWavExportUi();

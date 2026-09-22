@@ -2102,6 +2102,20 @@ function renderSectionSequence(){
     els.sectionSequence.appendChild(b);
   });
 }
+function updateSectionPlaybackIndicators(){
+  if(els.sectionChips){
+    Array.from(els.sectionChips.children).forEach((chip, index) => {
+      const sectionId = SECTION_IDS[index];
+      chip.classList.toggle("active", state.currentSection === sectionId);
+      chip.classList.toggle("playing", state.isPlaying && state.currentPlaybackSection === sectionId);
+    });
+  }
+  if(els.sectionSequence){
+    Array.from(els.sectionSequence.children).forEach((slot, index) => {
+      slot.classList.toggle("playing", state.currentSequenceIndex === index && state.isPlaying && state.playbackMode === "sequence");
+    });
+  }
+}
 function highlightSlots(){
   [...els.progressionSlots.children].forEach((slot, i) => {
     slot.classList.toggle("playing", state.currentPlaybackSection === state.currentSection && Math.floor(state.currentStep / stepsPerBar()) === i && state.currentStep >= 0 && i < sectionBarCount());

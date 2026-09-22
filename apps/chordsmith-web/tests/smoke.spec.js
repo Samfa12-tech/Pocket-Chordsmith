@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const FIXTURE_CASES = [
   {
@@ -1106,6 +1108,272 @@ test("WAV export refuses an oversized render before allocating an OfflineAudioCo
   await expect(page.locator("#wavProgressText")).toContainText("Choose Current section");
   await expect(page.locator("#statusText")).toContainText("WAV export stopped safely");
   expect(await page.evaluate(() => window.__offlineAudioContextAllocations)).toBe(0);
+});
+
+test("WAV export cancellation terminates a pending worker and ignores stale results", async ({ page }) => {
+  await importFixtureThroughSettings(page, CORE_WAV_AB_FIXTURE);
+  await page.evaluate(() => {
+    window.Worker = class PendingWavWorker {
+      postMessage(message) { this.job = message; }
+      terminate() { this.terminated = true; }
+    };
+  });
+  await page.locator("#exportWavBtn").click();
+  await expect(page.locator("#cancelWavExportBtn")).toBeVisible();
+  await page.locator("#cancelWavExportBtn").click();
+  await expect(page.locator("#wavProgressText")).toContainText("WAV export cancelled");
+  await expect(page.locator("#exportWavBtn")).toBeEnabled();
+  await page.waitForTimeout(100);
+  await expect(page.locator("#wavResultBox")).toBeHidden();
+  await expect(page.locator("#wavProgressText")).not.toContainText("WAV ready");
+});
+
+test("a late completion from export A cannot overwrite export B", async ({ page }) => {
+  await importFixtureThroughSettings(page, CORE_WAV_AB_FIXTURE);
+  await page.locator("#exportScopeSelect").selectOption("A");
+  await page.evaluate(() => {
+    window.__wavWorkers = [];
+    window.Worker = class ControlledWavWorker {
+      constructor(url, options) { this.url = String(url); this.options = options; window.__wavWorkers.push(this); }
+      postMessage(message) { this.job = message; }
+      terminate() { this.terminated = true; }
+    };
+  });
+
+  await page.locator("#exportWavBtn").click();
+  await page.waitForFunction(() => window.__wavWorkers.length === 1);
+  await page.locator("#cancelWavExportBtn").click();
+  await page.locator("#exportScopeSelect").selectOption("SEQUENCE");
+  await page.locator("#exportWavBtn").click();
+  await page.waitForFunction(() => window.__wavWorkers.length === 2);
+  const states = await page.evaluate(async () => {
+    const [first, second] = window.__wavWorkers;
+    const bytes = new Uint8Array([1, 2, 3, 4]).buffer;
+    const sequencePreparingText = document.querySelector("#wavProgressText").textContent;
+    first.onmessage({ data: { id: first.job.id, state: "rendering" } });
+    const afterLateRendering = document.querySelector("#wavProgressText").textContent;
+    second.onmessage({ data: { id: second.job.id, ok: true, bytes, type: "audio/wav" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    const completedText = document.querySelector("#wavProgressText").textContent;
+    first.onmessage({ data: { id: first.job.id, ok: true, bytes: new Uint8Array([9, 9]).buffer, type: "audio/wav" } });
+    first.onmessage({ data: { id: first.job.id, state: "rendering" } });
+    await Promise.resolve();
+    return {
+      firstTerminated: first.terminated,
+      secondTerminated: second.terminated,
+      sequencePreparingText,
+      afterLateRendering,
+      completedText,
+      finalText: document.querySelector("#wavProgressText").textContent,
+      size: state.wavBlob?.size
+    };
+  });
+  expect(states.firstTerminated).toBe(true);
+  expect(states.secondTerminated).toBe(true);
+  expect(states.sequencePreparingText).toContain("song sequence");
+  expect(states.afterLateRendering).toBe(states.sequencePreparingText);
+  expect(states.finalText).toBe(states.completedText);
+  expect(states.size).toBe(4);
+});
+
+test("a synchronous postMessage failure terminates the worker and revokes its Blob URL", async ({ page }) => {
+  await importFixtureThroughSettings(page, CORE_WAV_AB_FIXTURE);
+  await page.evaluate(() => {
+    window.OfflineAudioContext = undefined;
+    window.__revokedWavWorkerUrls = [];
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = url => {
+      window.__revokedWavWorkerUrls.push(url);
+      return revokeObjectURL(url);
+    };
+    window.Worker = class ThrowingWavWorker {
+      constructor(url) { this.url = String(url); window.__throwingWavWorker = this; }
+      postMessage() { throw new DOMException("simulated clone failure", "DataCloneError"); }
+      terminate() { this.terminated = true; }
+    };
+  });
+
+  await page.locator("#exportWavBtn").click();
+  await expect(page.locator("#statusText")).toContainText("simulated clone failure");
+  const cleanup = await page.evaluate(() => ({
+    terminated: window.__throwingWavWorker.terminated,
+    revoked: window.__revokedWavWorkerUrls.includes(window.__throwingWavWorker.url)
+  }));
+  expect(cleanup).toEqual({ terminated: true, revoked: true });
+  await expect(page.locator("#exportWavBtn")).toBeEnabled();
+});
+
+test("cancelling during worker preparation does not start the main-thread fallback", async ({ page }) => {
+  await importFixtureThroughSettings(page, CORE_WAV_AB_FIXTURE);
+  await page.evaluate(() => {
+    window.__offlineAudioContextAllocations = 0;
+    window.__workerInstances = 0;
+    const RealOfflineAudioContext = window.OfflineAudioContext;
+    window.OfflineAudioContext = function GuardedOfflineAudioContext(...args) {
+      window.__offlineAudioContextAllocations++;
+      return new RealOfflineAudioContext(...args);
+    };
+    const RealWorker = window.Worker;
+    window.Worker = function CountingWorker(...args) {
+      window.__workerInstances++;
+      return new RealWorker(...args);
+    };
+    const responseText = Response.prototype.text;
+    Response.prototype.text = function (...args) {
+      window.__workerPrepStarted = true;
+      return new Promise((resolve, reject) => {
+        window.__releaseWorkerPrep = () => responseText.apply(this, args).then(resolve, reject);
+      });
+    };
+  });
+  await page.locator("#exportWavBtn").click();
+  await page.waitForFunction(() => window.__workerPrepStarted === true);
+  await page.locator("#cancelWavExportBtn").click();
+  await page.evaluate(() => window.__releaseWorkerPrep());
+  await page.waitForTimeout(150);
+  expect(await page.evaluate(() => window.__workerInstances)).toBe(0);
+  expect(await page.evaluate(() => window.__offlineAudioContextAllocations)).toBe(0);
+  await expect(page.locator("#wavProgressText")).toContainText("WAV export cancelled");
+});
+
+test("the no-Worker fallback yields during PCM encoding and stays cancellable", async ({ page }) => {
+  await importFixtureThroughSettings(page, CORE_WAV_AB_FIXTURE);
+  await page.evaluate(() => {
+    window.Worker = undefined;
+    window.__wavEncodeYieldCalls = 0;
+    const originalYield = yieldWavExportWork;
+    yieldWavExportWork = async token => {
+      window.__wavEncodeYieldCalls++;
+      await new Promise(resolve => setTimeout(resolve, 400));
+      return originalYield(token);
+    };
+  });
+  await page.locator("#exportWavBtn").click();
+  await expect(page.locator("#wavProgressText")).toContainText("Encoding WAV file", { timeout: 30_000 });
+  await page.locator("#cancelWavExportBtn").click();
+  expect(await page.evaluate(() => window.__wavEncodeYieldCalls)).toBeGreaterThan(0);
+  await expect(page.locator("#wavProgressText")).toContainText("WAV export cancelled");
+  await page.waitForTimeout(100);
+  await expect(page.locator("#wavResultBox")).toBeHidden();
+  await expect(page.locator("#statusText")).toContainText("WAV export cancelled");
+});
+
+test("large Core worker exports keep the composer responsive while rendering", async ({ page }) => {
+  test.setTimeout(60_000);
+  await importFixtureThroughSettings(page, CORE_WAV_AB_FIXTURE);
+  await page.evaluate(() => {
+    state.uiMode = "advanced";
+    state.resolution = 4;
+    state.bpm = 240;
+    state.chordsOn = false;
+    state.bassOn = false;
+    state.lofiTexture = { ...state.lofiTexture, enabled: false };
+    SECTION_IDS.forEach(sectionId => {
+      state.sectionBars[sectionId] = 16;
+      const steps = 16 * state.timeSig * state.resolution;
+      state[sectionPropKey("melodyTracks", sectionId)] = Array.from({length:6}, () => Array(steps).fill(0));
+      state[sectionPropKey("melodyInstruments", sectionId)] = Array(6).fill("pulse");
+      state[sectionPropKey("melodyOctaves", sectionId)] = Array(6).fill(0);
+      state[sectionPropKey("melodyMute", sectionId)] = Array(6).fill(false);
+      state[sectionPropKey("melodySolo", sectionId)] = Array(6).fill(false);
+      state[sectionPropKey("melodyPan", sectionId)] = Array(6).fill(0);
+    });
+    state.songSequence = SECTION_IDS.slice();
+    state.currentSection = "A";
+    syncSection();
+    renderAll();
+  });
+  await page.locator("#exportScopeSelect").selectOption("SEQUENCE");
+  await page.locator("#exportWavBtn").click();
+  await expect(page.locator("#wavProgressText")).toContainText("Pocket Audio Core off the UI thread", { timeout: 30_000 });
+  await page.locator("#themeSelect").selectOption("ocean");
+  await expect(page.locator("#themeSelect")).toHaveValue("ocean");
+  await expect(page.locator("#wavProgressText")).toContainText("WAV ready via Pocket Audio Core", { timeout: 45_000 });
+});
+
+test("generated single-file HTML exports WAV from file URLs using its embedded worker", async ({ page }) => {
+  await page.goto(pathToFileURL(resolve("pocket_chordsmith_v68_core_bridge.html")).href);
+  await expect(page.getByRole("heading", { name: "Pocket Chordsmith v68" })).toBeVisible();
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await page.locator("#exportWavBtn").click();
+  await expect(page.locator("#wavProgressText")).toContainText("WAV ready via Pocket Audio Core", { timeout: 30_000 });
+});
+
+test("Chordsmith scheduler fast-forwards 2-second, 30-second, and hour-long stalls to the correct phase", async ({ page }) => {
+  const result = await page.evaluate(() => {
+    const savedSchedulePlanStep = schedulePlanStep;
+    const scheduled = [];
+    const plan = [
+      { section: "A", step: 0, seqIndex: 0, stepCount: 2, absStep: 0 },
+      { section: "A", step: 1, seqIndex: 0, stepCount: 2, absStep: 1 },
+      { section: "B", step: 0, seqIndex: 1, stepCount: 2, absStep: 2 },
+      { section: "B", step: 1, seqIndex: 1, stepCount: 2, absStep: 3 }
+    ];
+    audioCtx = { state: "suspended", currentTime: 100, resume: async () => {} };
+    state.transportPlan = plan;
+    rebuildSchedulerPlanTiming();
+    schedulePlanStep = (item, time) => scheduled.push({ section: item.section, step: item.step, time });
+
+    const runStall = seconds => {
+      scheduled.length = 0;
+      nextNoteTime = 100 - seconds;
+      playStep = 0;
+      const beforeResume = { nextNoteTime, playStep };
+      audioCtx.state = "suspended";
+      scheduler();
+      const suspensionHeld = nextNoteTime === beforeResume.nextNoteTime && playStep === beforeResume.playStep && scheduled.length === 0;
+
+      let expectedTime = nextNoteTime;
+      let expectedIndex = 0;
+      let skipped = 0;
+      while(expectedTime < 100.005){
+        expectedTime += stepDurationForIndex(plan[expectedIndex].step);
+        expectedIndex = (expectedIndex + 1) % plan.length;
+        skipped++;
+      }
+      audioCtx.state = "running";
+      scheduler();
+      return { scheduled: scheduled.slice(), nextNoteTime, phaseIndex: playStep % plan.length, skipped, expectedIndex, suspensionHeld };
+    };
+    const brief = runStall(0.25);
+    const short = runStall(2);
+    const long = runStall(30);
+    const hour = runStall(3600);
+    schedulePlanStep = savedSchedulePlanStep;
+    return { brief, short, long, hour };
+  });
+
+  for (const stall of [result.brief, result.short, result.long, result.hour]) {
+    expect(stall.suspensionHeld).toBe(true);
+    expect(stall.scheduled.length).toBeLessThanOrEqual(64);
+    expect(stall.scheduled.every(item => item.time >= 100.005)).toBe(true);
+    expect(stall.phaseIndex).toBe((stall.expectedIndex + stall.scheduled.length) % 4);
+    if(stall.scheduled.length) expect(stall.scheduled[0]).toMatchObject({ section: stall.expectedIndex < 2 ? "A" : "B", step: stall.expectedIndex % 2 });
+    expect(stall.nextNoteTime).toBeGreaterThanOrEqual(100);
+  }
+});
+
+test("playback removes expired UI timers and does not rebuild sequence DOM per step", async ({ page }) => {
+  await page.evaluate(() => {
+    window.__sequenceRendersDuringPlayback = 0;
+    const original = renderSectionSequence;
+    renderSectionSequence = function (...args) {
+      window.__sequenceRendersDuringPlayback++;
+      return original.apply(this, args);
+    };
+  });
+  await page.locator("#playBtn").click();
+  await expect(page.locator("#statusText")).toContainText("Playing section");
+  await page.waitForTimeout(900);
+  const during = await page.evaluate(() => ({
+    pending: state.pendingUiTimers.size,
+    sequenceRenders: window.__sequenceRendersDuringPlayback
+  }));
+  expect(during.pending).toBeLessThanOrEqual(4);
+  expect(during.sequenceRenders).toBe(0);
+  await page.locator("#stopBtn").click();
+  await expect.poll(() => page.evaluate(() => state.pendingUiTimers.size)).toBe(0);
 });
 
 test("PCS1 share code round-trips through the settings text box", async ({

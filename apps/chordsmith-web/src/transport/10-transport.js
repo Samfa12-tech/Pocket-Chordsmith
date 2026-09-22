@@ -13,6 +13,28 @@ function buildPlaybackPlan(mode="section"){
   });
   return plan;
 }
+const MAX_SCHEDULER_STEPS_PER_TICK = 64;
+const MIN_SCHEDULER_AHEAD_SECONDS = 0.005;
+let schedulerPlanTiming = createSchedulerTiming([]);
+let schedulerPlanTimingSignature = "";
+function currentSchedulerTimingSignature(){
+  return `${state.bpm}:${activeResolution()}:${state.swing}`;
+}
+function rebuildSchedulerPlanTiming(){
+  schedulerPlanTiming = createSchedulerTiming(state.transportPlan.map(item => stepDurationForIndex(item.step)));
+  schedulerPlanTimingSignature = currentSchedulerTimingSignature();
+}
+function fastForwardSchedulerPast(targetTime){
+  const skipped = schedulerStepsToReach(nextNoteTime, targetTime, playStep, schedulerPlanTiming);
+  if(!skipped) return 0;
+  nextNoteTime += elapsedSchedulerPlanSeconds(skipped, playStep, schedulerPlanTiming);
+  playStep += skipped;
+  return skipped;
+}
+function advancePlaybackPlanStep(item){
+  nextNoteTime += stepDurationForIndex(item.step);
+  playStep++;
+}
 function schedulePlanStep(item, time){
   const section = getSectionData(item.section, true);
   const step = item.step;
@@ -125,7 +147,10 @@ function schedulePlanStep(item, time){
     }
   }
   const delayMs = Math.max(0, (time - audioCtx.currentTime) * 1000);
-  const timer = setTimeout(() => {
+  let timer = null;
+  timer = setTimeout(() => {
+    state.pendingUiTimers.delete(timer);
+    if(!state.isPlaying || time < audioCtx.currentTime - 0.02) return;
     const prevStep = state.lastHighlightedStep;
     state.currentStep = step;
     state.currentPlaybackSection = item.section;
@@ -144,22 +169,28 @@ function schedulePlanStep(item, time){
     } else {
       updatePlaybackHighlights(prevStep, step);
       highlightSlots();
-      renderSectionChips();
-      renderSectionSequence();
+      updateSectionPlaybackIndicators();
     }
     triggerXYPadPulse();
   }, delayMs);
-  state.pendingUiTimers.push(timer);
+  state.pendingUiTimers.add(timer);
 }
 function scheduler(){
   if(audioCtx && audioCtx.state === "suspended"){
     audioCtx.resume().catch(() => {});
+    return;
   }
-  while(nextNoteTime < audioCtx.currentTime + SCHEDULER_LOOKAHEAD_SECONDS){
+  if(!audioCtx || audioCtx.state !== "running") return;
+  if(schedulerPlanTimingSignature !== currentSchedulerTimingSignature()) rebuildSchedulerPlanTiming();
+  const now = audioCtx.currentTime;
+  const horizon = now + SCHEDULER_LOOKAHEAD_SECONDS;
+  fastForwardSchedulerPast(now + MIN_SCHEDULER_AHEAD_SECONDS);
+  let work = 0;
+  while(state.transportPlan.length && nextNoteTime < horizon && work < MAX_SCHEDULER_STEPS_PER_TICK){
     const item = state.transportPlan[playStep % state.transportPlan.length];
-    schedulePlanStep(item, nextNoteTime);
-    nextNoteTime += stepDurationForIndex(playStep % Math.max(1, item.stepCount));
-    playStep++;
+    if(nextNoteTime >= now + MIN_SCHEDULER_AHEAD_SECONDS) schedulePlanStep(item, nextNoteTime);
+    advancePlaybackPlanStep(item);
+    work++;
   }
 }
 async function startPlayback(mode="section"){
@@ -176,6 +207,7 @@ async function startPlayback(mode="section"){
   clearSchedulerTimers();
   clearPendingUiTimers();
   state.transportPlan = buildPlaybackPlan(mode);
+  rebuildSchedulerPlanTiming();
   state.playbackMode = mode;
   nextNoteTime = audioCtx.currentTime + 0.04;
   playStep = 0;
