@@ -7,12 +7,12 @@ import { fileURLToPath } from "node:url";
  * beginning of a SHA.  In particular, a SHA beginning with "7" is not v7.
  */
 export const ACTION_ALLOWLIST = Object.freeze({
-  "actions/checkout": { version: "v6", sha: "d23441a48e516b6c34aea4fa41551a30e30af803" },
-  "actions/setup-node": { version: "v6", sha: "249970729cb0ef3589644e2896645e5dc5ba9c38" },
+  "actions/checkout": { version: "v7.0.1", sha: "3d3c42e5aac5ba805825da76410c181273ba90b1" },
+  "actions/setup-node": { version: "v7.0.0", sha: "820762786026740c76f36085b0efc47a31fe5020" },
   "actions/upload-artifact": { version: "v7", sha: "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" },
-  "actions/dependency-review-action": { version: "v4.9.0", sha: "2031cfc080254a8a887f58cffee85186f0e49e48" },
-  "github/codeql-action/init": { version: "v4.37.6", sha: "9e3211c9a3b9311dfe05da2ed48eea3386f042dd" },
-  "github/codeql-action/analyze": { version: "v4.37.6", sha: "9e3211c9a3b9311dfe05da2ed48eea3386f042dd" }
+  "actions/dependency-review-action": { version: "v5.0.0", sha: "a1d282b36b6f3519aa1f3fc636f609c47dddb294" },
+  "github/codeql-action/init": { version: "v4.37.6", sha: "5595ccaf912efad79be6eef63a5619ff05969be3" },
+  "github/codeql-action/analyze": { version: "v4.37.6", sha: "5595ccaf912efad79be6eef63a5619ff05969be3" }
 });
 
 const SHA = /^[a-f0-9]{40}$/i;
