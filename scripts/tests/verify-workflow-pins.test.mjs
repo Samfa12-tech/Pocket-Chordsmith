@@ -3,7 +3,7 @@ import test from "node:test";
 import { ACTION_ALLOWLIST, verifyWorkflowText } from "../verify-workflow-pins.mjs";
 
 const checkout = ACTION_ALLOWLIST["actions/checkout"];
-const use = (reference, comment = "v6") => `steps:\n  - uses: ${reference} # ${comment}\n`;
+const use = (reference, comment = checkout.version) => `steps:\n  - uses: ${reference} # ${comment}\n`;
 
 test("accepts an approved full SHA and intended version comment", () => {
   assert.deepEqual(verifyWorkflowText(use(`actions/checkout@${checkout.sha}`)), []);
@@ -25,7 +25,7 @@ test("rejects malformed and unapproved actions", () => {
 });
 
 test("rejects misleading comments without reading a SHA as a version", () => {
-  assert.match(verifyWorkflowText(use(`actions/checkout@${checkout.sha}`, "v7")).join("\n"), /inline comment # v6/);
+  assert.match(verifyWorkflowText(use(`actions/checkout@${checkout.sha}`, "v6")).join("\n"), new RegExp(`inline comment # ${checkout.version}`));
 });
 
 test("allows repository-local actions separately", () => {
