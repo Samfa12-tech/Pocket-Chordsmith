@@ -24,6 +24,10 @@ export interface NativeAudioStatus {
   hostName: string | null;
   lastError: string | null;
   assetCount?: number;
+  decodedAssetCacheBytes?: number;
+  decodedAssetCachePinnedBytes?: number;
+  decodedAssetActiveBytes?: number;
+  decodedAssetResidentBytes?: number;
   assetRegionCount?: number;
   proceduralEventCount?: number;
   callbackCount?: number;

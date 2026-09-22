@@ -12,7 +12,7 @@ describe("native audio renderer cache contract", () => {
       sourceSection(nativeAudio, "fn render_generated_event_source", "fn sanitize_loop_region"),
       sourceSection(nativeAudio, "fn render_region_sample", "fn validate_asset"),
       sourceSection(nativeAudio, "fn render_event_sample", "impl EventSeed for NativeRenderedEvent"),
-      sourceSection(nativeAudio, "fn render_hosted_instruments", "fn hosted_note_events_for_block"),
+      sourceSection(nativeAudio, "fn render_hosted_instruments", "fn render_next_cache_stem_frame"),
       sourceSection(nativeAudio, "impl HostedEffectState", "fn hosted_deadline_micros"),
       sourceSection(nativeAudio, "impl NativeFxRuntime", "impl NativeFxChainState"),
       sourceSection(vst3Session, "pub(crate) struct HostedInstancePayload", "#[derive(Clone, Copy, Debug, Default)]"),

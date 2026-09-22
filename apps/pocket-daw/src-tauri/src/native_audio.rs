@@ -2,7 +2,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cell::UnsafeCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -31,6 +31,10 @@ const CHORDSMITH_LOFI_TEXTURE_CRACKLE_DECAY_SECONDS: f64 = 0.024;
 const CHORDSMITH_LOFI_TEXTURE_CRACKLE_STOP_SECONDS: f64 = 0.028;
 const NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK: usize = 96;
 const MAX_NATIVE_AUDIO_SOURCE_FILE_BYTES: u64 = 600 * 1024 * 1024;
+// Bounds decoded PCM retained for reuse. Active Arcs are not LRU victims; the
+// cache reports their bytes separately, and active assets that cannot fit stay
+// caller-owned until playback/render releases them.
+const MAX_NATIVE_DECODED_ASSET_CACHE_BYTES: usize = 512 * 1024 * 1024;
 const MAX_NATIVE_LATENCY_COMPENSATION_BYTES: usize = 64 * 1024 * 1024;
 const STEREO_DELAY_BYTES_PER_SAMPLE: usize = 2 * std::mem::size_of::<f32>();
 const MAX_NATIVE_LATENCY_COMPENSATION_SAMPLES: usize =
@@ -43,7 +47,9 @@ pub struct NativeAudioRuntime {
     output_ring: Option<Arc<NativeOutputRing>>,
     render_stop: Option<Arc<AtomicBool>>,
     render_thread: Option<JoinHandle<()>>,
-    asset_cache: HashMap<(String, String), Arc<DecodedAudioAsset>>,
+    asset_cache: HashMap<(String, String), CachedDecodedAudioAsset>,
+    asset_cache_bytes: usize,
+    asset_cache_clock: u64,
     generation: u64,
     last_error: Option<String>,
     device_name: Option<String>,
@@ -780,6 +786,16 @@ pub struct NativeAudioStatus {
     last_error: Option<String>,
     #[serde(rename = "assetCount")]
     asset_count: usize,
+    // CachePinnedBytes is a subset of the cache/active union; resident is
+    // pointer-deduplicated so cached active assets are counted only once.
+    #[serde(rename = "decodedAssetCacheBytes")]
+    decoded_asset_cache_bytes: usize,
+    #[serde(rename = "decodedAssetCachePinnedBytes")]
+    decoded_asset_cache_pinned_bytes: usize,
+    #[serde(rename = "decodedAssetActiveBytes")]
+    decoded_asset_active_bytes: usize,
+    #[serde(rename = "decodedAssetResidentBytes")]
+    decoded_asset_resident_bytes: usize,
     #[serde(rename = "assetRegionCount")]
     asset_region_count: usize,
     #[serde(rename = "proceduralEventCount")]
@@ -935,6 +951,12 @@ struct DecodedAudioAsset {
     frame_count: usize,
 }
 
+struct CachedDecodedAudioAsset {
+    decoded: Arc<DecodedAudioAsset>,
+    last_used: u64,
+    byte_size: usize,
+}
+
 #[derive(Default)]
 struct NativeFxRuntime {
     track_chains: HashMap<String, NativeFxChainState>,
@@ -1072,18 +1094,31 @@ struct HostedEffectState {
     transport_map: Vec<NativeTransportPoint>,
     loop_region: Option<NativeLoopPayload>,
     automation: Vec<crate::vst3_session::HostedParameterAutomation>,
+    parameter_scratch: Vec<HostedParameterPoint>,
     ready: bool,
     disabled: bool,
 }
 
 struct HostedInstrumentState {
     payload: HostedInstancePayload,
+    track_index: usize,
     graph: Vst3GraphService,
     output: [[f32; VST3_BLOCK_FRAMES]; 2],
     cursor: usize,
     block_start_sample: i64,
     disabled: bool,
     transport_map: Vec<NativeTransportPoint>,
+    note_events: Vec<CompiledHostedNoteEvent>,
+    note_event_cursor: usize,
+    next_note_block_sample: Option<i64>,
+    note_event_scratch: Vec<HostedNoteEvent>,
+    parameter_scratch: Vec<HostedParameterPoint>,
+}
+
+#[derive(Clone, Copy)]
+struct CompiledHostedNoteEvent {
+    sample: i64,
+    event: HostedNoteEvent,
 }
 
 #[derive(Clone, Debug)]
@@ -1239,6 +1274,7 @@ pub fn native_audio_stop(
         .lock()
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
     runtime.stop();
+    runtime.clear_decoded_asset_cache();
     Ok(runtime.status())
 }
 
@@ -1564,19 +1600,31 @@ impl NativeAudioRuntime {
                     .hosted_instruments
                     .iter()
                     .filter(|item| item.enabled && item.role == "instrument")
-                    .map(|item| {
-                        (
+                    .filter_map(|item| {
+                        let track_index =
+                            hosted_instrument_track_index(&item.track_id, &track_indices)?;
+                        Some((
                             item.track_id.clone(),
                             HostedInstrumentState {
                                 payload: item.clone(),
+                                track_index,
                                 graph: graph.clone(),
                                 output: [[0.0; VST3_BLOCK_FRAMES]; 2],
                                 cursor: VST3_BLOCK_FRAMES,
                                 block_start_sample: 0,
                                 disabled: false,
                                 transport_map: payload.transport_map.clone(),
+                                note_events: compile_hosted_note_events(
+                                    &events,
+                                    &item.track_id,
+                                    sample_rate,
+                                ),
+                                note_event_cursor: 0,
+                                next_note_block_sample: None,
+                                note_event_scratch: Vec::with_capacity(256),
+                                parameter_scratch: Vec::with_capacity(256),
                             },
-                        )
+                        ))
                     })
                     .collect::<HashMap<_, _>>()
             })
@@ -1657,9 +1705,17 @@ impl NativeAudioRuntime {
     ) -> Result<Arc<DecodedAudioAsset>, String> {
         let cache_key = native_asset_cache_key(asset);
         if asset.bytes.is_empty() {
-            if let Some(decoded) = self.asset_cache.get(&cache_key) {
-                validate_asset_metadata(asset, decoded)?;
-                return Ok(Arc::clone(decoded));
+            if let Some(decoded) = self
+                .asset_cache
+                .get(&cache_key)
+                .map(|entry| Arc::clone(&entry.decoded))
+            {
+                validate_asset_metadata(asset, &decoded)?;
+                self.asset_cache_clock = self.asset_cache_clock.wrapping_add(1);
+                if let Some(entry) = self.asset_cache.get_mut(&cache_key) {
+                    entry.last_used = self.asset_cache_clock;
+                }
+                return Ok(decoded);
             }
             if let Some(source_path) = asset.source_path.as_deref() {
                 let bytes = read_native_audio_source_file(source_path)?;
@@ -1688,10 +1744,101 @@ impl NativeAudioRuntime {
         asset: &NativeAudioAssetPayload,
         decoded: Arc<DecodedAudioAsset>,
     ) {
+        self.cache_decoded_asset_with_budget(asset, decoded, MAX_NATIVE_DECODED_ASSET_CACHE_BYTES);
+    }
+
+    fn cache_decoded_asset_with_budget(
+        &mut self,
+        asset: &NativeAudioAssetPayload,
+        decoded: Arc<DecodedAudioAsset>,
+        budget_bytes: usize,
+    ) {
+        let cache_key = native_asset_cache_key(asset);
+        if self
+            .asset_cache
+            .get(&cache_key)
+            .is_some_and(|entry| Arc::strong_count(&entry.decoded) > 1)
+        {
+            // Keep the cached revision pinned while a render still owns it.
+            // The active caller can use its freshly decoded Arc without adding a
+            // second cache entry for the same revision.
+            return;
+        }
+        if let Some(entry) = self.asset_cache.remove(&cache_key) {
+            self.asset_cache_bytes = self.asset_cache_bytes.saturating_sub(entry.byte_size);
+        }
+        let replacing = self
+            .asset_cache
+            .iter()
+            .filter(|((asset_id, revision), entry)| {
+                asset_id == &asset.id
+                    && revision != &cache_key.1
+                    && Arc::strong_count(&entry.decoded) == 1
+            })
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        for key in replacing {
+            if let Some(entry) = self.asset_cache.remove(&key) {
+                self.asset_cache_bytes = self.asset_cache_bytes.saturating_sub(entry.byte_size);
+            }
+        }
+
+        let byte_size = decoded
+            .samples
+            .capacity()
+            .saturating_mul(std::mem::size_of::<f32>());
+        if byte_size > budget_bytes {
+            return;
+        }
+        while self.asset_cache_bytes.saturating_add(byte_size) > budget_bytes {
+            let Some(oldest_key) = self
+                .asset_cache
+                .iter()
+                .filter(|(_, entry)| Arc::strong_count(&entry.decoded) == 1)
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(key, _)| key.clone())
+            else {
+                // The remaining cached assets are pinned by active render or
+                // playback Arcs. Do not evict them to satisfy the inactive-cache
+                // budget; let the current caller use its uncached Arc instead.
+                return;
+            };
+            if let Some(entry) = self.asset_cache.remove(&oldest_key) {
+                self.asset_cache_bytes = self.asset_cache_bytes.saturating_sub(entry.byte_size);
+            }
+        }
+        self.asset_cache_clock = self.asset_cache_clock.wrapping_add(1);
+        self.asset_cache_bytes = self.asset_cache_bytes.saturating_add(byte_size);
+        self.asset_cache.insert(
+            cache_key,
+            CachedDecodedAudioAsset {
+                decoded,
+                last_used: self.asset_cache_clock,
+                byte_size,
+            },
+        );
+    }
+
+    fn clear_decoded_asset_cache(&mut self) {
+        self.asset_cache.clear();
+        self.asset_cache_bytes = 0;
+    }
+
+    fn pinned_decoded_asset_cache_bytes(&self) -> usize {
         self.asset_cache
-            .retain(|(asset_id, _revision), _| asset_id != &asset.id);
-        self.asset_cache
-            .insert(native_asset_cache_key(asset), decoded);
+            .values()
+            .filter(|entry| Arc::strong_count(&entry.decoded) > 1)
+            .map(|entry| entry.byte_size)
+            .sum()
+    }
+
+    fn decoded_asset_resident_bytes(&self, playback: &PlaybackShared) -> usize {
+        unique_decoded_audio_asset_bytes(
+            self.asset_cache
+                .values()
+                .map(|entry| &entry.decoded)
+                .chain(playback.assets.values()),
+        )
     }
 
     fn status(&self) -> NativeAudioStatus {
@@ -1733,6 +1880,12 @@ impl NativeAudioRuntime {
                         self.last_error.clone()
                     },
                     asset_count: playback.assets.len(),
+                    decoded_asset_cache_bytes: self.asset_cache_bytes,
+                    decoded_asset_cache_pinned_bytes: self.pinned_decoded_asset_cache_bytes(),
+                    decoded_asset_active_bytes: unique_decoded_audio_asset_bytes(
+                        playback.assets.values(),
+                    ),
+                    decoded_asset_resident_bytes: self.decoded_asset_resident_bytes(&playback),
                     asset_region_count: playback.regions.len(),
                     procedural_event_count: playback.events.len(),
                     callback_count: self
@@ -1779,6 +1932,10 @@ impl NativeAudioRuntime {
             host_name: self.host_name.clone(),
             last_error: self.last_error.clone(),
             asset_count: 0,
+            decoded_asset_cache_bytes: self.asset_cache_bytes,
+            decoded_asset_cache_pinned_bytes: self.pinned_decoded_asset_cache_bytes(),
+            decoded_asset_active_bytes: 0,
+            decoded_asset_resident_bytes: self.asset_cache_bytes,
             asset_region_count: 0,
             procedural_event_count: 0,
             callback_count: 0,
@@ -1803,6 +1960,22 @@ fn native_asset_cache_key(asset: &NativeAudioAssetPayload) -> (String, String) {
         })
         .unwrap_or_default();
     (asset.id.clone(), revision.to_string())
+}
+
+fn unique_decoded_audio_asset_bytes<'a>(
+    assets: impl IntoIterator<Item = &'a Arc<DecodedAudioAsset>>,
+) -> usize {
+    let mut seen = HashSet::new();
+    assets
+        .into_iter()
+        .filter(|asset| seen.insert(Arc::as_ptr(asset) as usize))
+        .map(|asset| {
+            asset
+                .samples
+                .capacity()
+                .saturating_mul(std::mem::size_of::<f32>())
+        })
+        .fold(0, usize::saturating_add)
 }
 
 fn read_native_audio_source_file(source_path: &str) -> Result<Vec<u8>, String> {
@@ -1857,6 +2030,10 @@ impl NativeAudioStatus {
             host_name: None,
             last_error,
             asset_count: 0,
+            decoded_asset_cache_bytes: 0,
+            decoded_asset_cache_pinned_bytes: 0,
+            decoded_asset_active_bytes: 0,
+            decoded_asset_resident_bytes: 0,
             asset_region_count: 0,
             procedural_event_count: 0,
             callback_count: 0,
@@ -2973,47 +3150,38 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
 fn render_hosted_instruments(playback: &mut PlaybackShared, t: f64, track_mixes: &mut [TrackMix]) {
     let sample_rate = playback.sample_rate.max(1);
     let current_sample = (t * sample_rate as f64).round().max(0.0) as i64;
-    let track_ids = playback
-        .hosted_instruments
-        .keys()
-        .cloned()
-        .collect::<Vec<_>>();
-    for track_id in track_ids {
-        let Some(track_index) = playback.track_indices.get(&track_id).copied() else {
-            continue;
-        };
+    for state in playback.hosted_instruments.values_mut() {
+        let track_index = state.track_index;
         if !playback
             .tracks
-            .get(&track_id)
+            .get(&state.payload.track_id)
             .is_some_and(|track| track_is_enabled(track, playback.has_solo))
         {
             continue;
         }
-        let needs_block = playback
-            .hosted_instruments
-            .get(&track_id)
-            .is_some_and(|state| state.cursor >= VST3_BLOCK_FRAMES);
-        if needs_block {
+        if state.cursor >= VST3_BLOCK_FRAMES {
             let block_end = current_sample + VST3_BLOCK_FRAMES as i64;
-            let events = hosted_note_events_for_block(
-                &playback.events,
-                &track_id,
+            collect_hosted_note_events_for_block(
+                &state.note_events,
+                &mut state.note_event_cursor,
+                &mut state.next_note_block_sample,
                 current_sample,
                 block_end,
-                sample_rate,
+                &mut state.note_event_scratch,
             );
-            let Some(state) = playback.hosted_instruments.get_mut(&track_id) else {
-                continue;
-            };
             state.block_start_sample = current_sample;
-            let parameters =
-                hosted_automation_for_block(&state.payload.automation, current_sample, sample_rate);
+            hosted_automation_for_block(
+                &state.payload.automation,
+                current_sample,
+                sample_rate,
+                &mut state.parameter_scratch,
+            );
             let result = state.graph.process_off_callback(
                 &state.payload.instance_id,
                 &[[0.0; VST3_BLOCK_FRAMES]; 2],
                 VST3_BLOCK_FRAMES,
-                &events,
-                &parameters,
+                &state.note_event_scratch,
+                &state.parameter_scratch,
                 hosted_process_context(
                     current_sample,
                     sample_rate,
@@ -3032,9 +3200,6 @@ fn render_hosted_instruments(playback: &mut PlaybackShared, t: f64, track_mixes:
             };
             state.cursor = 0;
         }
-        let Some(state) = playback.hosted_instruments.get_mut(&track_id) else {
-            continue;
-        };
         if state.disabled {
             continue;
         }
@@ -3048,49 +3213,83 @@ fn render_hosted_instruments(playback: &mut PlaybackShared, t: f64, track_mixes:
     }
 }
 
-fn hosted_note_events_for_block(
+fn compile_hosted_note_events(
     events: &[NativeRenderedEvent],
     track_id: &str,
-    start_sample: i64,
-    end_sample: i64,
     sample_rate: u32,
-) -> Vec<HostedNoteEvent> {
+) -> Vec<CompiledHostedNoteEvent> {
     let mut hosted = Vec::new();
     for (event_index, event) in events
         .iter()
         .enumerate()
         .filter(|(_, event)| event.track_id == track_id)
     {
-        let pitches = if event.midi_notes.is_empty() {
-            event.midi.into_iter().collect::<Vec<_>>()
+        let pitch_count = if event.midi_notes.is_empty() {
+            usize::from(event.midi.is_some())
         } else {
-            event.midi_notes.clone()
+            event.midi_notes.len()
         };
-        for (pitch_index, pitch) in pitches.into_iter().enumerate() {
+        for pitch_index in 0..pitch_count {
+            let pitch = event
+                .midi_notes
+                .get(pitch_index)
+                .copied()
+                .or(event.midi)
+                .unwrap_or(0.0);
             let note_id = ((event_index as u64 * 32 + pitch_index as u64) & i32::MAX as u64) as i32;
             for (note_on, seconds) in [
                 (true, event.time),
                 (false, event.time + event.duration.max(0.0)),
             ] {
                 let sample = (seconds * sample_rate as f64).round() as i64;
-                if sample < start_sample || sample >= end_sample {
-                    continue;
-                }
-                hosted.push(HostedNoteEvent {
-                    note_on,
-                    sample_offset: (sample - start_sample) as u32,
-                    note_id,
-                    channel: 0,
-                    pitch: pitch.round().clamp(0.0, 127.0) as i16,
-                    value: event.velocity.clamp(0.0, 1.0) as f32,
-                    tuning: event.detune_cents.unwrap_or(0.0) as f32,
+                hosted.push(CompiledHostedNoteEvent {
+                    sample,
+                    event: HostedNoteEvent {
+                        note_on,
+                        sample_offset: 0,
+                        note_id,
+                        channel: 0,
+                        pitch: pitch.round().clamp(0.0, 127.0) as i16,
+                        value: event.velocity.clamp(0.0, 1.0) as f32,
+                        tuning: event.detune_cents.unwrap_or(0.0) as f32,
+                    },
                 });
             }
         }
     }
-    hosted.sort_by_key(|event| event.sample_offset);
-    hosted.truncate(256);
+    hosted.sort_by_key(|event| event.sample);
     hosted
+}
+
+fn hosted_instrument_track_index(
+    track_id: &str,
+    track_indices: &HashMap<String, usize>,
+) -> Option<usize> {
+    track_indices.get(track_id).copied()
+}
+
+fn collect_hosted_note_events_for_block(
+    events: &[CompiledHostedNoteEvent],
+    cursor: &mut usize,
+    next_block_sample: &mut Option<i64>,
+    start_sample: i64,
+    end_sample: i64,
+    output: &mut Vec<HostedNoteEvent>,
+) {
+    if *next_block_sample != Some(start_sample) {
+        *cursor = events.partition_point(|event| event.sample < start_sample);
+    }
+    let end = *cursor + events[*cursor..].partition_point(|event| event.sample < end_sample);
+    output.clear();
+    // The VST3 shared event block holds 256 events. Preserve the existing
+    // earliest-in-block truncation policy when denser blocks exceed that limit.
+    output.extend(events[*cursor..end].iter().take(256).map(|compiled| {
+        let mut event = compiled.event;
+        event.sample_offset = (compiled.sample - start_sample) as u32;
+        event
+    }));
+    *cursor = end;
+    *next_block_sample = Some(end_sample);
 }
 
 fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
@@ -3255,6 +3454,7 @@ fn reset_hosted_processing(playback: &mut PlaybackShared) {
         state.output = [[0.0; VST3_BLOCK_FRAMES]; 2];
         state.cursor = VST3_BLOCK_FRAMES;
         state.disabled = false;
+        state.next_note_block_sample = None;
     }
     for chain in playback.fx.track_chains.values_mut() {
         chain.reset_hosted_adapters();
@@ -3952,6 +4152,7 @@ impl NativeFxSlotState {
                     transport_map,
                     loop_region,
                     automation: payload.automation.clone(),
+                    parameter_scratch: Vec::with_capacity(256),
                     ready: false,
                     disabled: false,
                 })
@@ -4064,17 +4265,18 @@ impl HostedEffectState {
         self.input[1][self.cursor] = right;
         self.cursor += 1;
         if self.cursor == VST3_BLOCK_FRAMES {
-            let parameters = hosted_automation_for_block(
+            hosted_automation_for_block(
                 &self.automation,
                 self.block_start_sample,
                 self.sample_rate,
+                &mut self.parameter_scratch,
             );
             let result = self.graph.process_off_callback(
                 &self.instance_id,
                 &self.input,
                 VST3_BLOCK_FRAMES,
                 &[],
-                parameters.as_slice(),
+                &self.parameter_scratch,
                 hosted_process_context(
                     self.block_start_sample,
                     self.sample_rate,
@@ -4200,10 +4402,11 @@ fn hosted_automation_for_block(
     automation: &[crate::vst3_session::HostedParameterAutomation],
     start_sample: i64,
     sample_rate: u32,
-) -> Vec<HostedParameterPoint> {
+    output: &mut Vec<HostedParameterPoint>,
+) {
     let start = start_sample.max(0) as f64 / sample_rate.max(1) as f64;
     let end = start + VST3_BLOCK_FRAMES as f64 / sample_rate.max(1) as f64;
-    let mut output = Vec::new();
+    output.clear();
     for lane in automation {
         let Ok(parameter_id) = lane.parameter_id.parse::<u32>() else {
             continue;
@@ -4211,6 +4414,9 @@ fn hosted_automation_for_block(
         let Some(start_value) = hosted_automation_value_at(&lane.points, start) else {
             continue;
         };
+        if output.len() >= 256 {
+            break;
+        }
         output.push(HostedParameterPoint {
             parameter_id,
             sample_offset: 0,
@@ -4221,6 +4427,9 @@ fn hosted_automation_for_block(
             .iter()
             .filter(|point| point.time_seconds > start && point.time_seconds < end)
         {
+            if output.len() >= 256 {
+                break;
+            }
             output.push(HostedParameterPoint {
                 parameter_id,
                 sample_offset: ((point.time_seconds - start) * sample_rate as f64)
@@ -4233,6 +4442,9 @@ fn hosted_automation_for_block(
         if let Some(end_value) =
             hosted_automation_value_at(&lane.points, end - 1.0 / sample_rate.max(1) as f64)
         {
+            if output.len() >= 256 {
+                break;
+            }
             output.push(HostedParameterPoint {
                 parameter_id,
                 sample_offset: (VST3_BLOCK_FRAMES - 1) as u32,
@@ -4243,8 +4455,6 @@ fn hosted_automation_for_block(
             break;
         }
     }
-    output.truncate(256);
-    output
 }
 
 fn hosted_automation_value_at(
@@ -6946,7 +7156,7 @@ mod tests {
     }
 
     #[test]
-    fn replaces_decoded_assets_when_the_source_revision_changes() {
+    fn keeps_active_decoded_revisions_until_their_arcs_are_released() {
         let mut runtime = NativeAudioRuntime::default();
         let first_asset = NativeAudioAssetPayload {
             id: "asset".to_string(),
@@ -6973,7 +7183,448 @@ mod tests {
 
         assert!(!Arc::ptr_eq(&first, &second));
         assert_ne!(first.samples, second.samples);
+        assert_eq!(runtime.asset_cache.len(), 2);
+        assert_eq!(
+            runtime.pinned_decoded_asset_cache_bytes(),
+            runtime.asset_cache_bytes
+        );
+        drop(first);
+        drop(second);
+        let third_asset = NativeAudioAssetPayload {
+            source_hash: Some("revision-3".to_string()),
+            ..first_asset.clone()
+        };
+        runtime
+            .decode_or_reuse_asset(&third_asset)
+            .expect("inactive older revisions should be retired");
         assert_eq!(runtime.asset_cache.len(), 1);
+    }
+
+    #[test]
+    fn decoded_asset_cache_evicts_lru_entries_within_byte_budget() {
+        let mut runtime = NativeAudioRuntime::default();
+        let make_asset = |id: &str| NativeAudioAssetPayload {
+            id: id.to_string(),
+            name: format!("{id}.wav"),
+            sample_rate: 48_000,
+            channels: 2,
+            duration_seconds: 1.0 / 48_000.0,
+            source_path: None,
+            source_hash: Some("v1".to_string()),
+            bytes: pcm16_wav(48_000, 2, &[1, 2, 3, 4]),
+        };
+        let first = make_asset("first");
+        let second = make_asset("second");
+        let first_decoded = Arc::new(decode_payload_asset(&first).expect("first decode"));
+        let bytes_per_asset = first_decoded.samples.capacity() * std::mem::size_of::<f32>();
+        assert!(bytes_per_asset > 0);
+        let budget = bytes_per_asset * 2;
+        runtime.cache_decoded_asset_with_budget(&first, first_decoded, budget);
+        runtime.cache_decoded_asset_with_budget(
+            &second,
+            Arc::new(decode_payload_asset(&second).expect("second decode")),
+            budget,
+        );
+
+        let metadata_only_first = NativeAudioAssetPayload {
+            bytes: Vec::new(),
+            ..first.clone()
+        };
+        let active_first = runtime
+            .decode_or_reuse_asset(&metadata_only_first)
+            .expect("cache hit should refresh first asset recency");
+        let metadata_only_second = NativeAudioAssetPayload {
+            bytes: Vec::new(),
+            ..second.clone()
+        };
+        runtime
+            .decode_or_reuse_asset(&metadata_only_second)
+            .expect("second cache hit should make active first the LRU asset");
+        for index in 0..16 {
+            let next = make_asset(&format!("new-{index}"));
+            runtime.cache_decoded_asset_with_budget(
+                &next,
+                Arc::new(decode_payload_asset(&next).expect("decode next asset")),
+                budget,
+            );
+            assert!(runtime.asset_cache_bytes <= budget);
+            assert_eq!(runtime.asset_cache.len(), 2);
+        }
+
+        assert!(runtime
+            .asset_cache
+            .contains_key(&native_asset_cache_key(&first)));
+        assert!(!runtime
+            .asset_cache
+            .contains_key(&native_asset_cache_key(&second)));
+        assert!(runtime
+            .asset_cache
+            .contains_key(&native_asset_cache_key(&make_asset("new-15"))));
+        assert!(runtime.asset_cache_bytes <= budget);
+        assert_eq!(runtime.asset_cache.len(), 2);
+        assert_eq!(runtime.pinned_decoded_asset_cache_bytes(), bytes_per_asset);
+        drop(active_first);
+        assert_eq!(runtime.pinned_decoded_asset_cache_bytes(), 0);
+    }
+
+    #[test]
+    fn active_assets_can_exceed_cache_budget_without_being_evicted_or_double_counted() {
+        let mut runtime = NativeAudioRuntime::default();
+        let make_asset = |id: &str| NativeAudioAssetPayload {
+            id: id.to_string(),
+            name: format!("{id}.wav"),
+            sample_rate: 48_000,
+            channels: 2,
+            duration_seconds: 1.0 / 48_000.0,
+            source_path: None,
+            source_hash: Some("v1".to_string()),
+            bytes: pcm16_wav(48_000, 2, &[1, 2, 3, 4]),
+        };
+        let first = make_asset("first-active");
+        let second = make_asset("second-active");
+        let first_active = Arc::new(decode_payload_asset(&first).expect("first decode"));
+        let second_active = Arc::new(decode_payload_asset(&second).expect("second decode"));
+        let bytes_per_asset = first_active.samples.capacity() * std::mem::size_of::<f32>();
+        let budget = bytes_per_asset;
+        runtime.cache_decoded_asset_with_budget(&first, Arc::clone(&first_active), budget);
+        runtime.cache_decoded_asset_with_budget(&second, Arc::clone(&second_active), budget);
+
+        let active_assets = HashMap::from([
+            ("first".to_string(), Arc::clone(&first_active)),
+            ("alias".to_string(), Arc::clone(&first_active)),
+            ("second".to_string(), Arc::clone(&second_active)),
+        ]);
+        let active_bytes = unique_decoded_audio_asset_bytes(active_assets.values());
+        let resident_bytes = unique_decoded_audio_asset_bytes(
+            runtime
+                .asset_cache
+                .values()
+                .map(|entry| &entry.decoded)
+                .chain(active_assets.values()),
+        );
+
+        assert_eq!(runtime.asset_cache.len(), 1);
+        assert_eq!(runtime.asset_cache_bytes, bytes_per_asset);
+        assert_eq!(runtime.pinned_decoded_asset_cache_bytes(), bytes_per_asset);
+        assert_eq!(active_bytes, bytes_per_asset * 2);
+        assert_eq!(resident_bytes, bytes_per_asset * 2);
+        assert!(
+            resident_bytes > budget,
+            "active working set may exceed the reusable cache budget"
+        );
+        assert_eq!(first_active.frame_count, second_active.frame_count);
+    }
+
+    #[test]
+    fn decoded_asset_over_budget_stays_live_without_being_retained() {
+        let mut runtime = NativeAudioRuntime::default();
+        let asset = NativeAudioAssetPayload {
+            id: "oversized".to_string(),
+            name: "oversized.wav".to_string(),
+            sample_rate: 48_000,
+            channels: 2,
+            duration_seconds: 1.0 / 48_000.0,
+            source_path: None,
+            source_hash: Some("v1".to_string()),
+            bytes: pcm16_wav(48_000, 2, &[1, 2, 3, 4]),
+        };
+        let decoded = Arc::new(decode_payload_asset(&asset).expect("decode"));
+        let retained = Arc::clone(&decoded);
+
+        runtime.cache_decoded_asset_with_budget(&asset, decoded, 1);
+
+        assert!(runtime.asset_cache.is_empty());
+        assert_eq!(Arc::strong_count(&retained), 1);
+        assert_eq!(retained.frame_count, 2);
+    }
+
+    #[test]
+    fn explicit_cache_cleanup_does_not_invalidate_active_asset_arcs() {
+        let mut runtime = NativeAudioRuntime::default();
+        let asset = NativeAudioAssetPayload {
+            id: "active".to_string(),
+            name: "active.wav".to_string(),
+            sample_rate: 48_000,
+            channels: 2,
+            duration_seconds: 1.0 / 48_000.0,
+            source_path: None,
+            source_hash: Some("v1".to_string()),
+            bytes: pcm16_wav(48_000, 2, &[16_384, -16_384]),
+        };
+        let active_render_asset = runtime
+            .decode_or_reuse_asset(&asset)
+            .expect("asset should decode and be cached");
+        let expected = active_render_asset.samples.clone();
+        let expected_bytes = active_render_asset.samples.capacity() * std::mem::size_of::<f32>();
+        let status = serde_json::to_value(runtime.status()).expect("status serializes");
+        assert_eq!(status["decodedAssetCacheBytes"], expected_bytes);
+        assert_eq!(status["decodedAssetCachePinnedBytes"], expected_bytes);
+
+        runtime.clear_decoded_asset_cache();
+
+        assert!(runtime.asset_cache.is_empty());
+        assert_eq!(runtime.asset_cache_bytes, 0);
+        assert_eq!(active_render_asset.samples, expected);
+    }
+
+    #[test]
+    fn hosted_note_precompile_preserves_block_ordering_seek_and_loop_rewind() {
+        let events = vec![
+            test_generated_event("a", "melody", 0.128, 0.128, 0.8),
+            test_generated_event("b", "melody", 0.2, 0.128, 0.6),
+        ];
+        let compiled = compile_hosted_note_events(&events, "bass", 1_000);
+        assert_eq!(compiled.len(), 4);
+        assert!(compiled
+            .windows(2)
+            .all(|pair| pair[0].sample <= pair[1].sample));
+
+        let mut cursor = 0;
+        let mut next_block = None;
+        let mut scratch = Vec::with_capacity(256);
+        collect_hosted_note_events_for_block(
+            &compiled,
+            &mut cursor,
+            &mut next_block,
+            128,
+            256,
+            &mut scratch,
+        );
+        assert_eq!(scratch.len(), 2);
+        assert!(scratch[0].note_on);
+        assert_eq!(scratch[0].sample_offset, 0);
+        assert!(scratch[1].note_on);
+        assert_eq!(scratch[1].sample_offset, 72);
+
+        collect_hosted_note_events_for_block(
+            &compiled,
+            &mut cursor,
+            &mut next_block,
+            256,
+            384,
+            &mut scratch,
+        );
+        assert_eq!(scratch.len(), 2);
+        assert!(scratch.iter().all(|event| !event.note_on));
+        assert_eq!(scratch[0].sample_offset, 0);
+        assert_eq!(scratch[1].sample_offset, 72);
+
+        // A loop rewind and an arbitrary seek rebuild the cursor by sample position.
+        collect_hosted_note_events_for_block(
+            &compiled,
+            &mut cursor,
+            &mut next_block,
+            128,
+            256,
+            &mut scratch,
+        );
+        assert_eq!(scratch.len(), 2);
+        assert!(scratch.iter().all(|event| event.note_on));
+    }
+
+    #[test]
+    fn hosted_instrument_with_unknown_track_id_is_not_routed_to_track_zero() {
+        let track_indices = HashMap::from([("bass".to_string(), 3)]);
+
+        assert_eq!(
+            hosted_instrument_track_index("bass", &track_indices),
+            Some(3)
+        );
+        assert_eq!(
+            hosted_instrument_track_index("missing", &track_indices),
+            None
+        );
+    }
+
+    #[test]
+    fn hosted_note_block_overflow_keeps_earliest_256_events_in_order() {
+        let compiled = (0..300)
+            .map(|sample| CompiledHostedNoteEvent {
+                sample,
+                event: HostedNoteEvent {
+                    note_on: true,
+                    note_id: sample as i32,
+                    ..HostedNoteEvent::default()
+                },
+            })
+            .collect::<Vec<_>>();
+        let mut cursor = 0;
+        let mut next_block = None;
+        let mut scratch = Vec::with_capacity(256);
+
+        collect_hosted_note_events_for_block(
+            &compiled,
+            &mut cursor,
+            &mut next_block,
+            0,
+            300,
+            &mut scratch,
+        );
+
+        assert_eq!(scratch.len(), 256);
+        assert_eq!(scratch.first().unwrap().sample_offset, 0);
+        assert_eq!(scratch.last().unwrap().sample_offset, 255);
+        assert!(scratch
+            .iter()
+            .enumerate()
+            .all(|(sample, event)| event.note_id == sample as i32));
+        assert_eq!(
+            cursor, 300,
+            "overflow events keep the historical drop policy"
+        );
+
+        collect_hosted_note_events_for_block(
+            &compiled,
+            &mut cursor,
+            &mut next_block,
+            300,
+            428,
+            &mut scratch,
+        );
+        assert!(scratch.is_empty());
+    }
+
+    #[test]
+    #[ignore = "manual synthetic hosted-event scaling benchmark"]
+    fn hosted_event_scaling_benchmark() {
+        fn legacy_block_scan(
+            events: &[NativeRenderedEvent],
+            track_id: &str,
+            start_sample: i64,
+            end_sample: i64,
+            sample_rate: u32,
+        ) -> Vec<HostedNoteEvent> {
+            let mut hosted = Vec::new();
+            for (event_index, event) in events
+                .iter()
+                .enumerate()
+                .filter(|(_, event)| event.track_id == track_id)
+            {
+                let pitches = if event.midi_notes.is_empty() {
+                    event.midi.into_iter().collect::<Vec<_>>()
+                } else {
+                    event.midi_notes.clone()
+                };
+                for (pitch_index, pitch) in pitches.into_iter().enumerate() {
+                    let note_id =
+                        ((event_index as u64 * 32 + pitch_index as u64) & i32::MAX as u64) as i32;
+                    for (note_on, seconds) in [
+                        (true, event.time),
+                        (false, event.time + event.duration.max(0.0)),
+                    ] {
+                        let sample = (seconds * sample_rate as f64).round() as i64;
+                        if (start_sample..end_sample).contains(&sample) {
+                            hosted.push(HostedNoteEvent {
+                                note_on,
+                                sample_offset: (sample - start_sample) as u32,
+                                note_id,
+                                channel: 0,
+                                pitch: pitch.round().clamp(0.0, 127.0) as i16,
+                                value: event.velocity.clamp(0.0, 1.0) as f32,
+                                tuning: event.detune_cents.unwrap_or(0.0) as f32,
+                            });
+                        }
+                    }
+                }
+            }
+            hosted.sort_by_key(|event| event.sample_offset);
+            hosted.truncate(256);
+            hosted
+        }
+
+        let sample_rate = 48_000;
+        for hosted_tracks in [1, 8, 16] {
+            for events_per_track in [128, 1_024, 4_096] {
+                let mut source_events = Vec::with_capacity(hosted_tracks * events_per_track);
+                for index in 0..hosted_tracks * events_per_track {
+                    let track = index % hosted_tracks;
+                    let mut event = test_generated_event(
+                        "benchmark",
+                        "melody",
+                        (index / hosted_tracks) as f64 / events_per_track as f64 * 5.0,
+                        0.015,
+                        0.8,
+                    );
+                    event.track_id = format!("track-{track}");
+                    source_events.push(event);
+                }
+                let track_ids = (0..hosted_tracks)
+                    .map(|track| format!("track-{track}"))
+                    .collect::<Vec<_>>();
+                let started = Instant::now();
+                let compiled = track_ids
+                    .iter()
+                    .map(|track_id| {
+                        compile_hosted_note_events(&source_events, track_id, sample_rate)
+                    })
+                    .collect::<Vec<_>>();
+                let precompile_elapsed = started.elapsed();
+                let mut cursors = vec![0; hosted_tracks];
+                let mut next_samples = vec![None; hosted_tracks];
+                let mut scratch = (0..hosted_tracks)
+                    .map(|_| Vec::with_capacity(256))
+                    .collect::<Vec<_>>();
+                let scratch_capacities = scratch.iter().map(Vec::capacity).collect::<Vec<_>>();
+                let iterations = 256;
+                let mut legacy_block_nanos = Vec::with_capacity(iterations * hosted_tracks);
+
+                for iteration in 0..iterations {
+                    let start_sample = iteration as i64 * VST3_BLOCK_FRAMES as i64;
+                    let end_sample = start_sample + VST3_BLOCK_FRAMES as i64;
+                    for track_id in &track_ids {
+                        let started = Instant::now();
+                        let _ = legacy_block_scan(
+                            &source_events,
+                            track_id,
+                            start_sample,
+                            end_sample,
+                            sample_rate,
+                        );
+                        legacy_block_nanos.push(started.elapsed().as_nanos());
+                    }
+                }
+
+                let mut indexed_block_nanos = Vec::with_capacity(iterations * hosted_tracks);
+                for iteration in 0..iterations {
+                    let start_sample = iteration as i64 * VST3_BLOCK_FRAMES as i64;
+                    let end_sample = start_sample + VST3_BLOCK_FRAMES as i64;
+                    for track in 0..hosted_tracks {
+                        let started = Instant::now();
+                        collect_hosted_note_events_for_block(
+                            &compiled[track],
+                            &mut cursors[track],
+                            &mut next_samples[track],
+                            start_sample,
+                            end_sample,
+                            &mut scratch[track],
+                        );
+                        indexed_block_nanos.push(started.elapsed().as_nanos());
+                    }
+                }
+                assert_eq!(
+                    scratch.iter().map(Vec::capacity).collect::<Vec<_>>(),
+                    scratch_capacities,
+                    "normal hosted blocks must reuse preallocated bounded scratch"
+                );
+                let percentile_us = |samples: &mut Vec<u128>, percentile: f64| {
+                    samples.sort_unstable();
+                    let index = ((samples.len() as f64 * percentile).ceil() as usize)
+                        .saturating_sub(1)
+                        .min(samples.len().saturating_sub(1));
+                    samples[index] as f64 / 1_000.0
+                };
+                let legacy_p95 = percentile_us(&mut legacy_block_nanos, 0.95);
+                let legacy_p99 = percentile_us(&mut legacy_block_nanos, 0.99);
+                let legacy_max = *legacy_block_nanos.last().unwrap() as f64 / 1_000.0;
+                let indexed_p95 = percentile_us(&mut indexed_block_nanos, 0.95);
+                let indexed_p99 = percentile_us(&mut indexed_block_nanos, 0.99);
+                let indexed_max = *indexed_block_nanos.last().unwrap() as f64 / 1_000.0;
+                eprintln!(
+                    "[hosted-event-bench] hosted={hosted_tracks} events_per_track={events_per_track} precompile_ms={:.3} legacy_block_us_p95={legacy_p95:.3} legacy_block_us_p99={legacy_p99:.3} legacy_block_us_max={legacy_max:.3} indexed_block_us_p95={indexed_p95:.3} indexed_block_us_p99={indexed_p99:.3} indexed_block_us_max={indexed_max:.3}",
+                    precompile_elapsed.as_secs_f64() * 1_000.0,
+                );
+            }
+        }
     }
 
     #[test]
@@ -9609,10 +10260,12 @@ mod tests {
                 },
             ],
         }];
-        let linear = hosted_automation_for_block(&lanes, 24_000, 48_000);
+        let mut linear = Vec::with_capacity(256);
+        hosted_automation_for_block(&lanes, 24_000, 48_000, &mut linear);
         assert_eq!(linear.first().unwrap().sample_offset, 0);
         assert!((linear.first().unwrap().value - 0.5).abs() < 0.0001);
-        let hold = hosted_automation_for_block(&lanes, 72_000, 48_000);
+        let mut hold = Vec::with_capacity(256);
+        hosted_automation_for_block(&lanes, 72_000, 48_000, &mut hold);
         assert_eq!(hold.first().unwrap().value, 1.0);
         assert_eq!(hold.last().unwrap().value, 1.0);
     }
