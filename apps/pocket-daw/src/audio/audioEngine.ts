@@ -29,7 +29,7 @@ import {
   type NativeRenderCachePersistResult
 } from "./nativeRenderCache";
 import type { NativeMediaApi } from "../native/mediaBridge";
-import { NativeTransportClock } from "./nativeTransportClock";
+import { NativeTransportClock, shouldApplyNativeStatus } from "./nativeTransportClock";
 
 interface TrackOutput {
   input: GainNode;
@@ -543,15 +543,16 @@ export class AudioEngine {
     return this.playbackBackend === "native-cpal-paused" && !this.playing && !this.nativeRenderCacheBypassedForLiveEdits;
   }
 
-  async nativePlaybackRecordingAnchor(source: string, snapshotMonotonicMs: number = performance.now()): Promise<RecordingNativePlaybackAnchor> {
+  async nativePlaybackRecordingAnchor(source: string): Promise<RecordingNativePlaybackAnchor> {
     let status = this.nativeStatus;
     if (this.isNativePlaybackActive()) {
       const refreshed = await this.nativePlayback.status();
       if (refreshed) {
-        status = refreshed;
         this.applyNativeStatus(refreshed);
+        status = this.nativeStatus || refreshed;
       }
     }
+    const snapshotMonotonicMs = performance.now();
     return {
       source,
       snapshotMonotonicMs,
@@ -1769,9 +1770,17 @@ export class AudioEngine {
 
   private applyNativeStatus(status: NativeAudioStatus | null | undefined) {
     if (!status) return;
+    if (!shouldApplyNativeStatus(this.nativeStatus, status)) return;
     this.nativeStatus = status;
     const snapshot = this.nativeTransportClock.updateFromStatus(status);
     this.offsetSeconds = snapshot.positionSeconds;
+    if (status.outputDiagnostics?.streamFailed) {
+      this.nativeLastError = status.lastError || "Native output stream failed. Restart playback or select another output device.";
+      this.playing = false;
+      this.playbackBackend = "idle";
+      this.stopNativeTicker();
+      this.emitTick(true);
+    }
   }
 }
 

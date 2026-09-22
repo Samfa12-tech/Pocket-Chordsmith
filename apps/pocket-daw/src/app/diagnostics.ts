@@ -1,4 +1,5 @@
 import type { AudioEngine } from "../audio/audioEngine";
+import type { NativeOutputDiagnostics } from "../native/audioPlayback";
 import { getCachedAudioBuffer } from "../audio/audioBufferCache";
 import { createAudioMediaAnalysisSummary, createPortableMediaProject, createRenderCacheSummary, mediaPoolStatus, verifyMediaPortability, verifySharedMediaPortability, type AudioMediaAnalysisSummary, type MediaPortabilityVerification, type RenderCacheSummary, type SharedMediaPortabilityVerification } from "../daw/mediaPool";
 import { validateProjectInvariants, type ProjectInvariantIssue } from "../daw/projectInvariants";
@@ -57,6 +58,7 @@ export interface TesterDiagnosticsPayload {
     nativeLastCallbackMicros: number | null;
     nativeMaxCallbackMicros: number | null;
     nativeSlowCallbackCount: number | null;
+    nativeOutput?: NativeOutputDiagnostics | null;
     deviceHost: string;
     deviceCount: number;
     defaultInputId: string | null;
@@ -238,6 +240,7 @@ export function buildTesterDiagnosticsPayload(
       nativeLastCallbackMicros: audioDiagnostics.nativeAudio.status?.lastCallbackMicros ?? null,
       nativeMaxCallbackMicros: audioDiagnostics.nativeAudio.status?.maxCallbackMicros ?? null,
       nativeSlowCallbackCount: audioDiagnostics.nativeAudio.status?.slowCallbackCount ?? null,
+      nativeOutput: audioDiagnostics.nativeAudio.status?.outputDiagnostics ?? null,
       deviceHost: project.audioDeviceSettings.host,
       deviceCount: devices.length,
       defaultInputId: project.audioDeviceSettings.inputDeviceId || null,
