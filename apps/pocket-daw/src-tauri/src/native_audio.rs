@@ -1600,9 +1600,10 @@ impl NativeAudioRuntime {
                     .hosted_instruments
                     .iter()
                     .filter(|item| item.enabled && item.role == "instrument")
-                    .map(|item| {
-                        let track_index = track_indices.get(&item.track_id).copied().unwrap_or(0);
-                        (
+                    .filter_map(|item| {
+                        let track_index =
+                            hosted_instrument_track_index(&item.track_id, &track_indices)?;
+                        Some((
                             item.track_id.clone(),
                             HostedInstrumentState {
                                 payload: item.clone(),
@@ -1623,7 +1624,7 @@ impl NativeAudioRuntime {
                                 note_event_scratch: Vec::with_capacity(256),
                                 parameter_scratch: Vec::with_capacity(256),
                             },
-                        )
+                        ))
                     })
                     .collect::<HashMap<_, _>>()
             })
@@ -3258,6 +3259,13 @@ fn compile_hosted_note_events(
     }
     hosted.sort_by_key(|event| event.sample);
     hosted
+}
+
+fn hosted_instrument_track_index(
+    track_id: &str,
+    track_indices: &HashMap<String, usize>,
+) -> Option<usize> {
+    track_indices.get(track_id).copied()
 }
 
 fn collect_hosted_note_events_for_block(
@@ -7412,6 +7420,20 @@ mod tests {
         );
         assert_eq!(scratch.len(), 2);
         assert!(scratch.iter().all(|event| event.note_on));
+    }
+
+    #[test]
+    fn hosted_instrument_with_unknown_track_id_is_not_routed_to_track_zero() {
+        let track_indices = HashMap::from([("bass".to_string(), 3)]);
+
+        assert_eq!(
+            hosted_instrument_track_index("bass", &track_indices),
+            Some(3)
+        );
+        assert_eq!(
+            hosted_instrument_track_index("missing", &track_indices),
+            None
+        );
     }
 
     #[test]
