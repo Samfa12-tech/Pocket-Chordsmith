@@ -939,8 +939,14 @@ struct DecodedAudioAsset {
 struct NativeFxRuntime {
     track_chains: HashMap<String, NativeFxChainState>,
     drum_lane_chains: HashMap<String, NativeFxChainState>,
+    drum_lane_order: Vec<String>,
+    drum_lane_indices: HashMap<String, usize>,
+    drum_lane_mixes: Vec<TrackMix>,
+    drum_lane_tail_gates: Vec<TailGate>,
+    track_tail_gates: Vec<TailGate>,
     master_chain: Option<NativeFxChainState>,
     latency_compensation: HashMap<String, StereoDelayLine>,
+    send_latency_compensation: HashMap<String, Vec<Option<StereoDelayLine>>>,
     track_latency_samples: HashMap<String, u32>,
     max_tail_samples: u32,
 }
@@ -1549,7 +1555,8 @@ impl NativeAudioRuntime {
                 }
             }
         }
-        fx.rebuild_latency_compensation(tracks.keys());
+        fx.rebuild_latency_compensation(&tracks);
+        fx.prepare_bus_state(&track_order);
         let hosted_instruments = hosted_graph
             .as_ref()
             .map(|graph| {
@@ -2230,6 +2237,11 @@ fn render_playback_to_wav(
     let frame_count = match mode {
         NativeAudioRenderMode::Mix => base_frame_count
             .saturating_add(playback.fx.max_tail_samples as usize)
+            .saturating_add(
+                playback
+                    .fx
+                    .builtin_tail_allowance(sample_rate, &playback.tracks),
+            )
             .saturating_add(if playback.hosted_graph.is_some() {
                 VST3_BLOCK_FRAMES
             } else {
@@ -2417,20 +2429,73 @@ struct TrackMix {
     right: f32,
 }
 
-fn add_track_mix(track_mixes: &mut Vec<TrackMix>, track_index: usize, left: f32, right: f32) {
-    let Some(entry) = track_mixes
-        .iter_mut()
-        .find(|mix| mix.track_index == track_index)
-    else {
-        track_mixes.push(TrackMix {
+impl TrackMix {
+    fn empty(track_index: usize) -> Self {
+        Self {
             track_index,
-            left,
-            right,
-        });
-        return;
-    };
-    entry.left += left;
-    entry.right += right;
+            left: 0.0,
+            right: 0.0,
+        }
+    }
+}
+
+fn add_track_mix(track_mixes: &mut [TrackMix], track_index: usize, left: f32, right: f32) {
+    if let Some(entry) = track_mixes.get_mut(track_index) {
+        entry.left += left;
+        entry.right += right;
+    }
+}
+
+#[derive(Default)]
+struct TailGate {
+    active: bool,
+    quiet_frames: usize,
+    frames_since_input: usize,
+    quiet_requirement: usize,
+    minimum_tail_frames: usize,
+}
+
+impl TailGate {
+    fn new(delay_samples: usize, minimum_tail_frames: usize) -> Self {
+        Self {
+            quiet_requirement: delay_samples.saturating_add(128).max(128),
+            minimum_tail_frames,
+            ..Self::default()
+        }
+    }
+
+    fn should_process(&self, has_input: bool) -> bool {
+        has_input || self.active
+    }
+
+    fn advance(&mut self, has_input: bool, output: (f32, f32)) {
+        if has_input {
+            self.active = true;
+            self.quiet_frames = 0;
+            self.frames_since_input = 0;
+            return;
+        }
+        if !self.active {
+            return;
+        }
+        self.frames_since_input = self.frames_since_input.saturating_add(1);
+        if output.0.abs().max(output.1.abs()) <= 0.00001 {
+            self.quiet_frames = self.quiet_frames.saturating_add(1);
+        } else {
+            self.quiet_frames = 0;
+        }
+        if self.frames_since_input >= self.minimum_tail_frames
+            && self.quiet_frames >= self.quiet_requirement
+        {
+            self.active = false;
+        }
+    }
+
+    fn clear(&mut self) {
+        self.active = false;
+        self.quiet_frames = 0;
+        self.frames_since_input = 0;
+    }
 }
 
 #[derive(Default)]
@@ -2474,6 +2539,7 @@ fn render_generated_event_source(
     event_index: usize,
     t: f64,
     active_counts: &mut TrackSourceBudget,
+    route_lane_bus: bool,
 ) -> Option<GeneratedEventSource> {
     let event = playback.events.get(event_index)?;
     let route = playback.compiled_event_routes.get(event_index)?.as_ref()?;
@@ -2511,11 +2577,18 @@ fn render_generated_event_source(
         return None;
     }
     let (pan_left, pan_right) = source_pan_gains(event_pan);
-    let mut lane_left = sample_left * pan_left;
-    let mut lane_right = sample_right * pan_right;
-    if let Some(lane) = route.drum_lane.as_deref() {
-        if let Some(chain) = playback.fx.drum_lane_chains.get_mut(lane) {
-            (lane_left, lane_right) = chain.process(lane_left, lane_right);
+    let lane_left = sample_left * pan_left;
+    let lane_right = sample_right * pan_right;
+    if let Some(lane) = route.drum_lane.as_deref().filter(|_| route_lane_bus) {
+        if let Some(lane_index) = playback.fx.drum_lane_indices.get(lane).copied() {
+            if let Some(mix) = playback.fx.drum_lane_mixes.get_mut(lane_index) {
+                if mix.track_index == usize::MAX {
+                    mix.track_index = track_index;
+                }
+                mix.left += lane_left;
+                mix.right += lane_right;
+                return None;
+            }
         }
     }
     Some(GeneratedEventSource {
@@ -2681,10 +2754,22 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     }
     sync_active_regions(playback, t);
 
+    if playback.fx.track_tail_gates.len() != playback.track_order.len()
+        || playback.fx.drum_lane_order.len() != playback.fx.drum_lane_chains.len()
+    {
+        playback.fx.prepare_bus_state(&playback.track_order);
+    }
+
     let mut track_mixes = std::mem::take(&mut playback.track_mix_scratch);
     track_mixes.clear();
+    track_mixes.extend((0..playback.track_order.len()).map(TrackMix::empty));
     let mut return_mixes = std::mem::take(&mut playback.return_mix_scratch);
     return_mixes.clear();
+    return_mixes.extend((0..playback.track_order.len()).map(TrackMix::empty));
+    for lane in &mut playback.fx.drum_lane_mixes {
+        lane.left = 0.0;
+        lane.right = 0.0;
+    }
     let mut active_counts_by_track = std::mem::take(&mut playback.source_budget_scratch);
     active_counts_by_track.clear();
 
@@ -2732,9 +2817,13 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
             event_index += 1;
             continue;
         }
-        if let Some(source) =
-            render_generated_event_source(playback, event_index, t, &mut active_counts_by_track)
-        {
+        if let Some(source) = render_generated_event_source(
+            playback,
+            event_index,
+            t,
+            &mut active_counts_by_track,
+            true,
+        ) {
             add_track_mix(
                 &mut track_mixes,
                 source.track_index,
@@ -2743,6 +2832,28 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
             );
         }
         event_index += 1;
+    }
+
+    for lane_index in 0..playback.fx.drum_lane_order.len() {
+        let mix = &playback.fx.drum_lane_mixes[lane_index];
+        let lane_track_index = mix.track_index;
+        if lane_track_index == usize::MAX {
+            continue;
+        }
+        let input = (mix.left, mix.right);
+        let has_input = input.0.abs().max(input.1.abs()) > 0.00000001;
+        let gate = &mut playback.fx.drum_lane_tail_gates[lane_index];
+        if !gate.should_process(has_input) {
+            continue;
+        }
+        let lane = &playback.fx.drum_lane_order[lane_index];
+        let output = playback
+            .fx
+            .drum_lane_chains
+            .get_mut(lane)
+            .map_or(input, |chain| chain.process(input.0, input.1));
+        gate.advance(has_input, output);
+        add_track_mix(&mut track_mixes, lane_track_index, output.0, output.1);
     }
 
     let mut left = 0.0_f32;
@@ -2766,26 +2877,43 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
             .map(|track| track.is_return)
             .unwrap_or(false);
         if is_return {
+            if let Some(delay) = playback.fx.latency_compensation.get_mut(track_id) {
+                (track_left, track_right) = delay.process(track_left, track_right);
+            }
             add_track_mix(&mut return_mixes, mix.track_index, track_left, track_right);
             continue;
         }
         (track_left, track_right) = apply_bus_pan(track_left, track_right, track_id, playback);
-        if let Some(chain) = playback.fx.track_chains.get_mut(track_id) {
-            (track_left, track_right) = chain.process(track_left, track_right);
-        }
-        if let Some(delay) = playback.fx.latency_compensation.get_mut(track_id) {
-            (track_left, track_right) = delay.process(track_left, track_right);
+        let has_input = track_left.abs().max(track_right.abs()) > 0.00000001;
+        let mut send_left = track_left;
+        let mut send_right = track_right;
+        if let Some(gate) = playback.fx.track_tail_gates.get_mut(mix.track_index) {
+            if gate.should_process(has_input) {
+                if let Some(chain) = playback.fx.track_chains.get_mut(track_id) {
+                    (track_left, track_right) = chain.process(track_left, track_right);
+                }
+                (send_left, send_right) = (track_left, track_right);
+                if let Some(delay) = playback.fx.latency_compensation.get_mut(track_id) {
+                    (track_left, track_right) = delay.process(track_left, track_right);
+                }
+                gate.advance(has_input, (track_left, track_right));
+            }
         }
         let sidechain_gain = sidechain_gain(playback, track_id, t);
         track_left *= sidechain_gain;
         track_right *= sidechain_gain;
+        send_left *= sidechain_gain;
+        send_right *= sidechain_gain;
         route_track_sends(
-            playback,
+            &playback.tracks,
+            playback.has_solo,
+            &playback.track_indices,
+            &mut playback.fx.send_latency_compensation,
             track_id,
-            pre_fader_left,
-            pre_fader_right,
-            track_left,
-            track_right,
+            TrackSendInputs {
+                pre_fader: (pre_fader_left, pre_fader_right),
+                post_fader: (send_left, send_right),
+            },
             &mut return_mixes,
         );
         left += track_left;
@@ -2795,14 +2923,24 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
         let Some(track_id) = playback.track_order.get(mix.track_index) else {
             continue;
         };
+        if !playback
+            .tracks
+            .get(track_id)
+            .is_some_and(|track| track.is_return)
+        {
+            continue;
+        }
         let mut track_left = mix.left;
         let mut track_right = mix.right;
         (track_left, track_right) = apply_bus_pan(track_left, track_right, track_id, playback);
-        if let Some(chain) = playback.fx.track_chains.get_mut(track_id) {
-            (track_left, track_right) = chain.process(track_left, track_right);
-        }
-        if let Some(delay) = playback.fx.latency_compensation.get_mut(track_id) {
-            (track_left, track_right) = delay.process(track_left, track_right);
+        let has_input = track_left.abs().max(track_right.abs()) > 0.00000001;
+        if let Some(gate) = playback.fx.track_tail_gates.get_mut(mix.track_index) {
+            if gate.should_process(has_input) {
+                if let Some(chain) = playback.fx.track_chains.get_mut(track_id) {
+                    (track_left, track_right) = chain.process(track_left, track_right);
+                }
+                gate.advance(has_input, (track_left, track_right));
+            }
         }
         let sidechain_gain = sidechain_gain(playback, track_id, t);
         track_left *= sidechain_gain;
@@ -2832,11 +2970,7 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     )
 }
 
-fn render_hosted_instruments(
-    playback: &mut PlaybackShared,
-    t: f64,
-    track_mixes: &mut Vec<TrackMix>,
-) {
+fn render_hosted_instruments(playback: &mut PlaybackShared, t: f64, track_mixes: &mut [TrackMix]) {
     let sample_rate = playback.sample_rate.max(1);
     let current_sample = (t * sample_rate as f64).round().max(0.0) as i64;
     let track_ids = playback
@@ -2990,9 +3124,13 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
             event_index += 1;
             continue;
         }
-        if let Some(source) =
-            render_generated_event_source(playback, event_index, t, &mut active_counts_by_track)
-        {
+        if let Some(source) = render_generated_event_source(
+            playback,
+            event_index,
+            t,
+            &mut active_counts_by_track,
+            false,
+        ) {
             left += source.left;
             right += source.right;
         }
@@ -3130,6 +3268,11 @@ fn reset_hosted_processing(playback: &mut PlaybackShared) {
     for delay in playback.fx.latency_compensation.values_mut() {
         delay.clear();
     }
+    for routes in playback.fx.send_latency_compensation.values_mut() {
+        for delay in routes.iter_mut().flatten() {
+            delay.clear();
+        }
+    }
 }
 
 fn reset_builtin_effect_state(playback: &mut PlaybackShared) {
@@ -3141,6 +3284,12 @@ fn reset_builtin_effect_state(playback: &mut PlaybackShared) {
     }
     if let Some(chain) = playback.fx.master_chain.as_mut() {
         chain.reset_builtin_state();
+    }
+    for gate in &mut playback.fx.track_tail_gates {
+        gate.clear();
+    }
+    for gate in &mut playback.fx.drum_lane_tail_gates {
+        gate.clear();
     }
 }
 
@@ -3215,29 +3364,34 @@ fn ensure_compiled_sidechain_triggers(playback: &mut PlaybackShared) {
     playback.compiled_sidechain_trigger_source_len = playback.events.len();
 }
 
+struct TrackSendInputs {
+    pre_fader: (f32, f32),
+    post_fader: (f32, f32),
+}
+
 fn route_track_sends(
-    playback: &PlaybackShared,
+    tracks: &HashMap<String, NativeTrackControl>,
+    has_solo: bool,
+    track_indices: &HashMap<String, usize>,
+    send_latency_compensation: &mut HashMap<String, Vec<Option<StereoDelayLine>>>,
     track_id: &str,
-    pre_fader_left: f32,
-    pre_fader_right: f32,
-    post_fader_left: f32,
-    post_fader_right: f32,
-    return_mixes: &mut Vec<TrackMix>,
+    inputs: TrackSendInputs,
+    return_mixes: &mut [TrackMix],
 ) {
-    let Some(track) = playback.tracks.get(track_id) else {
+    let Some(track) = tracks.get(track_id) else {
         return;
     };
-    for send in &track.sends {
+    for (send_index, send) in track.sends.iter().enumerate() {
         if send.return_track_id == track_id {
             continue;
         }
-        let Some(return_track) = playback.tracks.get(&send.return_track_id) else {
+        let Some(return_track) = tracks.get(&send.return_track_id) else {
             continue;
         };
         if !return_track.is_return {
             continue;
         }
-        let return_gain = track_gain(return_track, playback.has_solo);
+        let return_gain = track_gain(return_track, has_solo);
         if return_gain <= 0.0001 {
             continue;
         }
@@ -3245,17 +3399,22 @@ fn route_track_sends(
         if level <= 0.0001 {
             continue;
         }
-        let Some(return_track_index) = playback.track_indices.get(&send.return_track_id).copied()
-        else {
+        let Some(return_track_index) = track_indices.get(&send.return_track_id).copied() else {
             continue;
         };
         let gain = level * return_gain as f32;
         let (left, right) = if send.mode == "pre-fader" {
-            (pre_fader_left, pre_fader_right)
+            inputs.pre_fader
         } else {
-            (post_fader_left, post_fader_right)
+            inputs.post_fader
         };
-        add_track_mix(return_mixes, return_track_index, left * gain, right * gain);
+        let input = (left * gain, right * gain);
+        let output = send_latency_compensation
+            .get_mut(track_id)
+            .and_then(|routes| routes.get_mut(send_index))
+            .and_then(Option::as_mut)
+            .map_or(input, |delay| delay.process(input.0, input.1));
+        add_track_mix(return_mixes, return_track_index, output.0, output.1);
     }
 }
 
@@ -3381,19 +3540,144 @@ fn build_native_fx_runtime(
 }
 
 impl NativeFxRuntime {
-    fn rebuild_latency_compensation<'a>(&mut self, track_ids: impl Iterator<Item = &'a String>) {
+    fn builtin_tail_allowance(
+        &self,
+        sample_rate: u32,
+        tracks: &HashMap<String, NativeTrackControl>,
+    ) -> usize {
+        let max_frames = sample_rate as usize * 60;
+        let lane = self
+            .drum_lane_chains
+            .values()
+            .map(NativeFxChainState::estimated_builtin_tail_samples)
+            .max()
+            .unwrap_or(0);
+        let track = self
+            .track_chains
+            .iter()
+            .filter(|(id, _)| !tracks.get(*id).is_some_and(|track| track.is_return))
+            .map(|(_, chain)| chain.estimated_builtin_tail_samples())
+            .max()
+            .unwrap_or(0);
+        let returns = self
+            .track_chains
+            .iter()
+            .filter(|(id, _)| tracks.get(*id).is_some_and(|track| track.is_return))
+            .map(|(_, chain)| chain.estimated_builtin_tail_samples())
+            .max()
+            .unwrap_or(0);
+        let master = self
+            .master_chain
+            .as_ref()
+            .map_or(0, NativeFxChainState::estimated_builtin_tail_samples);
+        lane.saturating_add(track)
+            .saturating_add(returns)
+            .saturating_add(master)
+            .min(max_frames)
+    }
+
+    fn prepare_bus_state(&mut self, track_order: &[String]) {
+        self.track_tail_gates = track_order
+            .iter()
+            .map(|track_id| {
+                let chain = self.track_chains.get(track_id);
+                let chain_delay = chain.map_or(0, NativeFxChainState::serial_delay_samples);
+                let latency_delay = self
+                    .latency_compensation
+                    .get(track_id)
+                    .map_or(0, |delay| delay.left.len());
+                let hosted_latency = self
+                    .track_latency_samples
+                    .get(track_id)
+                    .copied()
+                    .unwrap_or(0) as usize;
+                let hosted_tail = if chain.is_some_and(NativeFxChainState::has_hosted) {
+                    self.max_tail_samples as usize
+                } else {
+                    0
+                };
+                TailGate::new(
+                    chain_delay
+                        .saturating_add(hosted_latency)
+                        .saturating_add(latency_delay),
+                    hosted_tail,
+                )
+            })
+            .collect();
+        self.drum_lane_order = self.drum_lane_chains.keys().cloned().collect();
+        self.drum_lane_order.sort();
+        self.drum_lane_indices = self
+            .drum_lane_order
+            .iter()
+            .enumerate()
+            .map(|(index, lane)| (lane.clone(), index))
+            .collect();
+        self.drum_lane_mixes = self
+            .drum_lane_order
+            .iter()
+            .map(|_| TrackMix::empty(usize::MAX))
+            .collect();
+        self.drum_lane_tail_gates = self
+            .drum_lane_order
+            .iter()
+            .map(|lane| {
+                let chain = &self.drum_lane_chains[lane];
+                let hosted_tail = if chain.has_hosted() {
+                    self.max_tail_samples as usize
+                } else {
+                    0
+                };
+                TailGate::new(chain.serial_delay_samples(), hosted_tail)
+            })
+            .collect();
+    }
+
+    fn rebuild_latency_compensation(&mut self, tracks: &HashMap<String, NativeTrackControl>) {
         self.latency_compensation.clear();
+        self.send_latency_compensation.clear();
         let mut remaining_samples = MAX_NATIVE_LATENCY_COMPENSATION_SAMPLES;
-        let max_latency = self
+        let mut track_ids = tracks.keys().collect::<Vec<_>>();
+        track_ids.sort();
+        let mut max_latency = self
             .track_latency_samples
             .values()
             .copied()
             .max()
             .unwrap_or(0);
-        for track_id in track_ids {
+        for track_id in &track_ids {
+            let track = &tracks[*track_id];
+            if track.is_return {
+                continue;
+            }
+            let source_latency = self
+                .track_latency_samples
+                .get(track_id.as_str())
+                .copied()
+                .unwrap_or(0);
+            for send in &track.sends {
+                if !tracks
+                    .get(&send.return_track_id)
+                    .is_some_and(|target| target.is_return)
+                {
+                    continue;
+                }
+                let return_latency = self
+                    .track_latency_samples
+                    .get(&send.return_track_id)
+                    .copied()
+                    .unwrap_or(0);
+                let send_input_latency = if send.mode == "pre-fader" {
+                    0
+                } else {
+                    source_latency
+                };
+                max_latency = max_latency.max(send_input_latency.saturating_add(return_latency));
+            }
+        }
+        for track_id in &track_ids {
             let latency = self
                 .track_latency_samples
-                .get(track_id)
+                .get(track_id.as_str())
                 .copied()
                 .unwrap_or(0);
             let delay_samples = max_latency.saturating_sub(latency) as usize;
@@ -3402,8 +3686,54 @@ impl NativeFxRuntime {
             }
             if let Some(delay) = StereoDelayLine::new(delay_samples) {
                 remaining_samples -= delay_samples;
-                self.latency_compensation.insert(track_id.clone(), delay);
+                self.latency_compensation.insert((*track_id).clone(), delay);
             }
+        }
+        for track_id in track_ids {
+            let track = &tracks[track_id];
+            if track.is_return {
+                continue;
+            }
+            let source_latency = self
+                .track_latency_samples
+                .get(track_id)
+                .copied()
+                .unwrap_or(0);
+            let mut routes = Vec::with_capacity(track.sends.len());
+            for send in &track.sends {
+                let mut route = None;
+                if !tracks
+                    .get(&send.return_track_id)
+                    .is_some_and(|target| target.is_return)
+                {
+                    routes.push(route);
+                    continue;
+                }
+                let return_latency = self
+                    .track_latency_samples
+                    .get(&send.return_track_id)
+                    .copied()
+                    .unwrap_or(0);
+                let input_latency = if send.mode == "pre-fader" {
+                    0
+                } else {
+                    source_latency
+                };
+                let delay_samples = max_latency
+                    .saturating_sub(input_latency.saturating_add(return_latency))
+                    as usize;
+                if delay_samples > remaining_samples {
+                    routes.push(route);
+                    continue;
+                }
+                if let Some(delay) = StereoDelayLine::new(delay_samples) {
+                    remaining_samples -= delay_samples;
+                    route = Some(delay);
+                }
+                routes.push(route);
+            }
+            self.send_latency_compensation
+                .insert(track_id.clone(), routes);
         }
     }
 }
@@ -3436,6 +3766,70 @@ fn accumulate_hosted_timing(timing: impl Iterator<Item = (u32, u32)>) -> (u32, u
 }
 
 impl NativeFxChainState {
+    fn estimated_builtin_tail_samples(&self) -> usize {
+        self.slots
+            .iter()
+            .map(|slot| match &slot.processor {
+                NativeFxProcessor::Delay {
+                    buffer_l,
+                    buffer_r,
+                    feedback,
+                    mix,
+                    ..
+                } if *mix > 0.0 => {
+                    let repeats = if *feedback <= 0.0 {
+                        1
+                    } else {
+                        (0.001_f32.ln() / feedback.ln()).ceil().max(1.0) as usize
+                    };
+                    buffer_l.len().max(buffer_r.len()).saturating_mul(repeats)
+                }
+                NativeFxProcessor::Reverb {
+                    buffer_l,
+                    buffer_r,
+                    feedback,
+                    mix,
+                    ..
+                } if *mix > 0.0 => {
+                    let decay = (feedback * 1.22).clamp(0.001, 0.999);
+                    let repeats = (0.001_f32.ln() / decay.ln()).ceil().max(1.0) as usize;
+                    buffer_l.len().max(buffer_r.len()).saturating_mul(repeats)
+                }
+                NativeFxProcessor::ModDelay {
+                    buffer_l,
+                    buffer_r,
+                    mix,
+                    ..
+                } if *mix > 0.0 => buffer_l.len().max(buffer_r.len()),
+                _ => 0,
+            })
+            .fold(0_usize, usize::saturating_add)
+    }
+
+    fn serial_delay_samples(&self) -> usize {
+        self.slots
+            .iter()
+            .map(|slot| match &slot.processor {
+                NativeFxProcessor::Delay {
+                    buffer_l, buffer_r, ..
+                }
+                | NativeFxProcessor::Reverb {
+                    buffer_l, buffer_r, ..
+                }
+                | NativeFxProcessor::ModDelay {
+                    buffer_l, buffer_r, ..
+                } => buffer_l.len().max(buffer_r.len()),
+                _ => 0,
+            })
+            .fold(0_usize, usize::saturating_add)
+    }
+
+    fn has_hosted(&self) -> bool {
+        self.slots
+            .iter()
+            .any(|slot| matches!(&slot.processor, NativeFxProcessor::HostedVst3(_)))
+    }
+
     #[cfg_attr(not(test), allow(dead_code))]
     fn from_payload(chain: &NativeFxChainPayload, sample_rate: f32) -> Self {
         Self::from_payload_with_graph(chain, sample_rate, None, 120.0, 4, Vec::new(), None)
@@ -3971,7 +4365,9 @@ fn processor_for_slot(slot: &NativeFxSlotPayload, sample_rate: f32) -> NativeFxP
                     delay_samples + ((0.011 * sample_rate).round() as usize).max(1)
                 ],
                 index: 0,
-                feedback: (0.38 + decay * 0.08).clamp(0.4, 0.86),
+                // The coupled feedback matrix has a 1.22x common-mode gain.
+                // Keep its largest eigenvalue below one so the tail retires.
+                feedback: (0.38 + decay * 0.08).clamp(0.4, 0.8),
                 mix: param(&slot.parameters, "mix", 0.24).clamp(0.0, 1.0),
             }
         }
@@ -6982,6 +7378,382 @@ mod tests {
     }
 
     #[test]
+    fn track_delay_and_latency_compensation_advance_through_source_silence() {
+        let mut delayed = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+        delayed.assets.insert(
+            "asset".to_string(),
+            Arc::new(DecodedAudioAsset {
+                sample_rate: 4,
+                channels: 2,
+                samples: vec![1.0, 1.0, 0.0, 0.0],
+                frame_count: 2,
+            }),
+        );
+        delayed.fx.track_chains.insert(
+            "bass".to_string(),
+            NativeFxChainState {
+                slots: vec![NativeFxSlotState::from_payload(
+                    &test_fx_slot("delay", [("time", 0.5), ("feedback", 0.0), ("mix", 1.0)]),
+                    4.0,
+                )
+                .expect("delay should build")],
+            },
+        );
+        let samples = (0..4)
+            .map(|_| render_next_frame(&mut delayed).0)
+            .collect::<Vec<_>>();
+        assert!(samples[0].abs() < 0.00001);
+        assert!(samples[1].abs() < 0.00001);
+        assert!(
+            samples[2] > 0.1,
+            "delay tail must emerge after source ends: {samples:?}"
+        );
+        for _ in 0..200 {
+            render_next_frame(&mut delayed);
+        }
+        let bass_index = delayed.track_indices["bass"];
+        assert!(!delayed.fx.track_tail_gates[bass_index].active);
+        let index_after_retirement = match &delayed.fx.track_chains["bass"].slots[0].processor {
+            NativeFxProcessor::Delay { index, .. } => *index,
+            _ => unreachable!(),
+        };
+        for _ in 0..10 {
+            render_next_frame(&mut delayed);
+        }
+        let final_index = match &delayed.fx.track_chains["bass"].slots[0].processor {
+            NativeFxProcessor::Delay { index, .. } => *index,
+            _ => unreachable!(),
+        };
+        assert_eq!(final_index, index_after_retirement);
+
+        let mut compensated = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+        compensated.assets.insert(
+            "asset".to_string(),
+            Arc::new(DecodedAudioAsset {
+                sample_rate: 4,
+                channels: 2,
+                samples: vec![1.0, 1.0, 0.0, 0.0],
+                frame_count: 2,
+            }),
+        );
+        compensated
+            .fx
+            .latency_compensation
+            .insert("bass".to_string(), StereoDelayLine::new(3).unwrap());
+        let samples = (0..5)
+            .map(|_| render_next_frame(&mut compensated).0)
+            .collect::<Vec<_>>();
+        assert!(
+            samples[3] > 0.1,
+            "latency line must advance across silence: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn serial_delays_keep_the_bus_alive_until_the_later_echo() {
+        let mut playback = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+        playback.sample_rate = 100;
+        playback.assets.insert(
+            "asset".to_string(),
+            Arc::new(DecodedAudioAsset {
+                sample_rate: 100,
+                channels: 2,
+                samples: vec![1.0, 1.0, 0.0, 0.0],
+                frame_count: 2,
+            }),
+        );
+        playback.regions[0].duration = 0.02;
+        let delay = test_fx_slot("delay", [("time", 2.0), ("feedback", 0.0), ("mix", 1.0)]);
+        playback.fx.track_chains.insert(
+            "bass".to_string(),
+            NativeFxChainState {
+                slots: vec![
+                    NativeFxSlotState::from_payload(&delay, 100.0).unwrap(),
+                    NativeFxSlotState::from_payload(&delay, 100.0).unwrap(),
+                ],
+            },
+        );
+        let mut late_echo = 0.0;
+        for frame in 0..401 {
+            let sample = render_next_frame(&mut playback).0;
+            if frame == 400 {
+                late_echo = sample;
+            }
+        }
+        assert!(
+            late_echo > 0.1,
+            "serial delay echo was retired before frame 400"
+        );
+    }
+
+    #[test]
+    fn offline_mix_keeps_builtin_delay_tail_past_requested_endpoint() {
+        let mut playback = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+        playback.assets.insert(
+            "asset".to_string(),
+            Arc::new(DecodedAudioAsset {
+                sample_rate: 4,
+                channels: 2,
+                samples: vec![1.0, 1.0, 0.0, 0.0],
+                frame_count: 2,
+            }),
+        );
+        playback.fx.track_chains.insert(
+            "bass".to_string(),
+            NativeFxChainState {
+                slots: vec![NativeFxSlotState::from_payload(
+                    &test_fx_slot("delay", [("time", 0.5), ("feedback", 0.0), ("mix", 1.0)]),
+                    4.0,
+                )
+                .unwrap()],
+            },
+        );
+        let wav =
+            render_playback_to_wav(&mut playback, 0.5, NativeAudioRenderMode::Mix, 16).unwrap();
+        let decoded = decode_pcm16_wav(&wav.bytes).unwrap();
+        assert!(decoded.frame_count > 2);
+        assert!(
+            decoded.samples[4].abs() > 0.1,
+            "delay echo after requested endpoint was truncated"
+        );
+    }
+
+    #[test]
+    fn offline_mix_keeps_return_reverb_tail_past_requested_endpoint() {
+        let mut bass = test_track("bass", 1.0, 0.0, false, false);
+        bass.sends.push(NativeTrackSend {
+            return_track_id: "fx-return".to_string(),
+            level: 1.0,
+            mode: "post-fader".to_string(),
+        });
+        let mut playback = playback_with_region(bass);
+        playback.assets.insert(
+            "asset".to_string(),
+            Arc::new(DecodedAudioAsset {
+                sample_rate: 4,
+                channels: 2,
+                samples: vec![1.0, 1.0, 0.0, 0.0],
+                frame_count: 2,
+            }),
+        );
+        let mut fx_return = test_track("fx-return", 1.0, 0.0, false, false);
+        fx_return.is_return = true;
+        insert_playback_track(&mut playback, fx_return);
+        playback.fx.track_chains.insert(
+            "fx-return".to_string(),
+            NativeFxChainState {
+                slots: vec![NativeFxSlotState::from_payload(
+                    &test_fx_slot("reverb", [("decay", 1.8), ("mix", 1.0)]),
+                    4.0,
+                )
+                .unwrap()],
+            },
+        );
+        let wav =
+            render_playback_to_wav(&mut playback, 0.25, NativeAudioRenderMode::Mix, 16).unwrap();
+        let decoded = decode_pcm16_wav(&wav.bytes).unwrap();
+        assert!(decoded.frame_count > 1);
+        assert!(decoded.samples[2..]
+            .iter()
+            .any(|sample| sample.abs() > 0.01));
+    }
+
+    #[test]
+    fn return_reverb_tail_continues_after_send_input_ends() {
+        let mut bass = test_track("bass", 1.0, 0.0, false, false);
+        bass.sends.push(NativeTrackSend {
+            return_track_id: "fx-return".to_string(),
+            level: 1.0,
+            mode: "post-fader".to_string(),
+        });
+        let mut playback = playback_with_region(bass);
+        playback.assets.insert(
+            "asset".to_string(),
+            Arc::new(DecodedAudioAsset {
+                sample_rate: 4,
+                channels: 2,
+                samples: vec![1.0, 1.0, 0.0, 0.0],
+                frame_count: 2,
+            }),
+        );
+        let mut fx_return = test_track("fx-return", 1.0, 0.0, false, false);
+        fx_return.is_return = true;
+        insert_playback_track(&mut playback, fx_return);
+        playback.fx.track_chains.insert(
+            "fx-return".to_string(),
+            NativeFxChainState {
+                slots: vec![NativeFxSlotState::from_payload(
+                    &test_fx_slot("reverb", [("decay", 1.8), ("mix", 1.0)]),
+                    4.0,
+                )
+                .expect("return reverb should build")],
+            },
+        );
+        let first = render_next_frame(&mut playback).0;
+        let tail = render_next_frame(&mut playback).0;
+        assert!(first > 0.1);
+        assert!(
+            tail > 0.01,
+            "return tail should continue after dry source is zero"
+        );
+    }
+
+    #[test]
+    fn post_fader_return_does_not_compensate_source_latency_twice() {
+        let mut bass = test_track("bass", 1.0, 0.0, false, false);
+        bass.sends.push(NativeTrackSend {
+            return_track_id: "fx-return".to_string(),
+            level: 1.0,
+            mode: "post-fader".to_string(),
+        });
+        let mut playback = playback_with_region(bass);
+        playback.assets.insert(
+            "asset".to_string(),
+            Arc::new(DecodedAudioAsset {
+                sample_rate: 4,
+                channels: 2,
+                samples: vec![1.0, 1.0, 0.0, 0.0],
+                frame_count: 2,
+            }),
+        );
+        let mut fx_return = test_track("fx-return", 1.0, 0.0, false, false);
+        fx_return.is_return = true;
+        insert_playback_track(&mut playback, fx_return);
+        insert_playback_track(&mut playback, test_track("slow", 1.0, 0.0, false, false));
+        playback
+            .fx
+            .track_latency_samples
+            .insert("slow".to_string(), 3);
+        playback.fx.rebuild_latency_compensation(&playback.tracks);
+        let samples = (0..7)
+            .map(|_| render_next_frame(&mut playback).0)
+            .collect::<Vec<_>>();
+        assert!(samples[..3].iter().all(|sample| sample.abs() < 0.00001));
+        assert!(
+            samples[3] > 0.6,
+            "direct and return should align: {samples:?}"
+        );
+        assert!(
+            samples[4..].iter().all(|sample| sample.abs() < 0.00001),
+            "late wet echo: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn send_compensation_accounts_for_source_and_return_chain_latency() {
+        let mut bass = test_track("bass", 1.0, 0.0, false, false);
+        bass.sends.push(NativeTrackSend {
+            return_track_id: "fx-return".to_string(),
+            level: 1.0,
+            mode: "post-fader".to_string(),
+        });
+        let mut playback = playback_with_region(bass);
+        playback.assets.insert(
+            "asset".to_string(),
+            Arc::new(DecodedAudioAsset {
+                sample_rate: 4,
+                channels: 2,
+                samples: vec![1.0, 1.0, 0.0, 0.0],
+                frame_count: 2,
+            }),
+        );
+        let mut fx_return = test_track("fx-return", 1.0, 0.0, false, false);
+        fx_return.is_return = true;
+        insert_playback_track(&mut playback, fx_return);
+        insert_playback_track(&mut playback, test_track("slow", 1.0, 0.0, false, false));
+        for (id, time, samples) in [("bass", 0.25, 1), ("fx-return", 0.5, 2)] {
+            playback.fx.track_chains.insert(
+                id.to_string(),
+                NativeFxChainState {
+                    slots: vec![NativeFxSlotState::from_payload(
+                        &test_fx_slot("delay", [("time", time), ("feedback", 0.0), ("mix", 1.0)]),
+                        4.0,
+                    )
+                    .unwrap()],
+                },
+            );
+            playback
+                .fx
+                .track_latency_samples
+                .insert(id.to_string(), samples);
+        }
+        playback
+            .fx
+            .track_latency_samples
+            .insert("slow".to_string(), 4);
+        playback.fx.rebuild_latency_compensation(&playback.tracks);
+        let samples = (0..8)
+            .map(|_| render_next_frame(&mut playback).0)
+            .collect::<Vec<_>>();
+        assert!(samples[..4].iter().all(|sample| sample.abs() < 0.00001));
+        assert!(
+            samples[4] > 0.6,
+            "dry and wet paths should meet at frame four: {samples:?}"
+        );
+        assert!(
+            samples[5..].iter().all(|sample| sample.abs() < 0.00001),
+            "misaligned send: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn overlapping_same_lane_drums_tick_one_effect_chain_once_per_frame() {
+        let mut kick_a = test_kick_trigger_event();
+        kick_a.id = "kick-a".to_string();
+        kick_a.velocity = 1.0;
+        let mut kick_b = kick_a.clone();
+        kick_b.id = "kick-b".to_string();
+        let mut playback = playback_with_events(vec![kick_a, kick_b]);
+        playback.position_seconds = 0.005;
+        playback.fx.drum_lane_chains.insert(
+            "kick".to_string(),
+            NativeFxChainState {
+                slots: vec![NativeFxSlotState::from_payload(
+                    &test_fx_slot("delay", [("time", 0.01), ("feedback", 0.0), ("mix", 1.0)]),
+                    1000.0,
+                )
+                .expect("lane delay should build")],
+            },
+        );
+        render_next_frame(&mut playback);
+        let index = match &playback.fx.drum_lane_chains["kick"].slots[0].processor {
+            NativeFxProcessor::Delay { index, .. } => *index,
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            index, 1,
+            "the shared lane chain must tick once for both voices"
+        );
+        assert!(playback.fx.drum_lane_tail_gates[0].active);
+    }
+
+    #[test]
+    fn cache_stem_keeps_lane_routed_event_raw_and_does_not_feed_live_bus() {
+        let mut event = test_kick_trigger_event();
+        event.velocity = 1.0;
+        let mut playback = playback_with_events(vec![event]);
+        playback.position_seconds = 0.005;
+        playback.fx.drum_lane_chains.insert(
+            "kick".to_string(),
+            NativeFxChainState {
+                slots: vec![NativeFxSlotState::from_payload(
+                    &test_fx_slot("delay", [("time", 0.01), ("feedback", 0.0), ("mix", 1.0)]),
+                    1000.0,
+                )
+                .unwrap()],
+            },
+        );
+        playback.fx.prepare_bus_state(&playback.track_order);
+        let sample = render_next_cache_stem_frame(&mut playback);
+        assert!(sample.0.abs().max(sample.1.abs()) > 0.0001);
+        assert!(playback
+            .fx
+            .drum_lane_mixes
+            .iter()
+            .all(|mix| mix.left == 0.0 && mix.right == 0.0));
+    }
+
+    #[test]
     fn native_pre_fader_send_uses_source_before_track_volume() {
         let mut post_bass = test_track("bass", 0.0, 0.0, false, false);
         post_bass.sends.push(NativeTrackSend {
@@ -8862,7 +9634,11 @@ mod tests {
         let mut fx = NativeFxRuntime::default();
         fx.track_latency_samples
             .insert("max".to_string(), MAX_HOSTED_LATENCY_SAMPLES);
-        fx.rebuild_latency_compensation(track_ids.iter());
+        let tracks = track_ids
+            .iter()
+            .map(|id| (id.clone(), test_track(id, 1.0, 0.0, false, false)))
+            .collect::<HashMap<_, _>>();
+        fx.rebuild_latency_compensation(&tracks);
         let allocated_samples = fx
             .latency_compensation
             .values()
