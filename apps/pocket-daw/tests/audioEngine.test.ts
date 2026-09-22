@@ -1698,6 +1698,47 @@ describe("audio engine diagnostics", () => {
       (globalThis as any).window = previousWindow;
     }
   });
+
+  it("ignores a status poll that resolves after a newer seek", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = { setInterval: () => 1, clearInterval: () => undefined };
+    let resolvePoll: ((status: NativeAudioStatus) => void) | undefined;
+    const withEpoch = (positionSeconds: number, requestedQueueGeneration: number, consumedFrameCount: number) => nativeStatus({
+      positionSeconds,
+      outputDiagnostics: { requestedQueueGeneration, consumedFrameCount } as NativeAudioStatus["outputDiagnostics"]
+    });
+    const native = {
+      async start() { return { started: true, status: withEpoch(0, 0, 0), error: null }; },
+      async pause() { return withEpoch(0, 0, 0); },
+      async resume() { return withEpoch(0, 0, 0); },
+      async stop() { return nativeStatus({ active: false, playing: false }); },
+      async seek(seconds: number) { return withEpoch(seconds, 1, 0); },
+      async updateTrack() { return null; },
+      status() { return new Promise<NativeAudioStatus>((resolve) => { resolvePoll = resolve; }); }
+    };
+    try {
+      const engine = new AudioEngine(createDemoProject(), native);
+      await engine.play();
+      const internals = engine as any;
+      internals.nativeLastStatusRefreshAtMs = performance.now() - 1_000;
+      internals.refreshNativePositionEstimate(0);
+      expect(resolvePoll).toBeTypeOf("function");
+      engine.seek(7);
+      await waitForAsyncCondition(() => internals.nativeStatus?.outputDiagnostics?.requestedQueueGeneration === 1);
+      const expectedOffset = internals.offsetSeconds;
+      const expectedTick = internals.nativeLastTickSeconds;
+      const expectedEventIndex = internals.nextEventIndex;
+      resolvePoll!(withEpoch(1, 0, 48_000));
+      await waitForAsyncCondition(() => !internals.nativeStatusRefreshInFlight);
+      expect(internals.offsetSeconds).toBe(expectedOffset);
+      expect(internals.nativeLastTickSeconds).toBe(expectedTick);
+      expect(internals.nextEventIndex).toBe(expectedEventIndex);
+      expect(internals.nativeStatus.positionSeconds).toBe(7);
+      engine.stop();
+    } finally {
+      (globalThis as any).window = previousWindow;
+    }
+  });
 });
 
 async function waitForAsyncCondition(condition: () => boolean, attempts = 25): Promise<void> {

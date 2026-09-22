@@ -67,5 +67,8 @@ describe("NativeTransportClock", () => {
     expect(shouldApplyNativeStatus(current, status(0.1, 96_000, 4, 4))).toBe(true);
     expect(shouldApplyNativeStatus(current, status(0, 0, 0, 5))).toBe(true);
     expect(shouldApplyNativeStatus(current, status(3, 144_000, 4, 3))).toBe(false);
+    const stopped = { ...status(0, 0, 0, 4), active: false, playing: false };
+    expect(shouldApplyNativeStatus(current, stopped)).toBe(true);
+    expect(shouldApplyNativeStatus(stopped, current)).toBe(false);
   });
 });

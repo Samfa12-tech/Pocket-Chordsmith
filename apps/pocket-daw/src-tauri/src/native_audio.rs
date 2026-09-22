@@ -58,6 +58,7 @@ struct OutputSample {
     value: f32,
     next_position_seconds: f64,
     intentional_silence: bool,
+    generation: u64,
 }
 
 struct NativeOutputRing {
@@ -99,6 +100,7 @@ impl NativeOutputRing {
                         value: 0.0,
                         next_position_seconds: start_position_seconds,
                         intentional_silence: true,
+                        generation: 0,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -153,8 +155,16 @@ impl NativeOutputRing {
     fn begin_callback(&self) -> bool {
         let requested = self.requested_generation.load(Ordering::Acquire);
         if requested != self.consumed_generation.load(Ordering::Relaxed) {
+            let mut read = self.read.load(Ordering::Relaxed);
             let write = self.write.load(Ordering::Acquire);
-            self.read.store(write, Ordering::Release);
+            while read != write {
+                let sample = unsafe { *self.samples[read & (self.samples.len() - 1)].get() };
+                if sample.generation == requested {
+                    break;
+                }
+                read = read.wrapping_add(1);
+            }
+            self.read.store(read, Ordering::Release);
             self.consumed_position_bits.store(
                 self.discontinuity_position_bits.load(Ordering::Relaxed),
                 Ordering::Relaxed,
@@ -201,14 +211,17 @@ impl NativeOutputRing {
         true
     }
 
-    fn pop(&self) -> Option<OutputSample> {
+    fn pop(&self, generation: u64) -> Result<Option<OutputSample>, ()> {
         let read = self.read.load(Ordering::Relaxed);
         if read == self.write.load(Ordering::Acquire) {
-            return None;
+            return Ok(None);
         }
         let sample = unsafe { *self.samples[read & (self.samples.len() - 1)].get() };
+        if sample.generation != generation {
+            return Err(());
+        }
         self.read.store(read.wrapping_add(1), Ordering::Release);
-        Some(sample)
+        Ok(Some(sample))
     }
 
     fn record_callback(&self, started: Instant, frame_count: usize, sample_rate: u32) {
@@ -1367,6 +1380,7 @@ impl NativeAudioRuntime {
                         value: 0.0,
                         next_position_seconds: start_position_seconds,
                         intentional_silence: true,
+                        generation: 0,
                     };
                     block_samples
                 ];
@@ -1382,6 +1396,7 @@ impl NativeAudioRuntime {
                     }
                     let started = Instant::now();
                     if let Ok(mut playback) = producer_shared.lock() {
+                        let generation = producer_ring.requested_generation.load(Ordering::Acquire);
                         for output_frame in block.chunks_mut(channels as usize) {
                             let intentional_silence = !playback.playing;
                             let (left, right) = render_next_frame(&mut playback);
@@ -1392,6 +1407,7 @@ impl NativeAudioRuntime {
                                     value: *value,
                                     next_position_seconds,
                                     intentional_silence,
+                                    generation,
                                 };
                             }
                         }
@@ -1865,38 +1881,84 @@ fn write_ring_output_converted<T: Copy>(
     sample_rate: u32,
     convert: impl Fn(f32) -> T,
 ) {
+    write_ring_output_converted_with_hook(data, ring, channels, sample_rate, convert, |_| {});
+}
+
+fn write_ring_output_converted_with_hook<T: Copy>(
+    data: &mut [T],
+    ring: &NativeOutputRing,
+    channels: usize,
+    sample_rate: u32,
+    convert: impl Fn(f32) -> T,
+    mut before_frame: impl FnMut(usize),
+) {
     let started = Instant::now();
-    let flushed_generation = ring.begin_callback();
-    let mut valid_samples = 0_usize;
-    let mut intentional_samples = 0_usize;
+    let changed_at_start = ring.begin_callback();
+    let generation = ring.consumed_generation.load(Ordering::Acquire);
+    let mut valid_frames = 0_u64;
+    let mut intentional_frames = 0_u64;
+    let mut underrun_frames = 0_u64;
     let mut last_position = None;
-    for output in data.iter_mut() {
-        if let Some(sample) = ring.pop() {
-            *output = convert(sample.value);
-            valid_samples += 1;
-            intentional_samples += usize::from(sample.intentional_silence);
-            last_position = Some(sample.next_position_seconds);
+    let mut interrupted = false;
+    let mut gap_started = false;
+    let channels = channels.max(1);
+    for (frame_index, frame) in data.chunks_mut(channels).enumerate() {
+        before_frame(frame_index);
+        if !interrupted && ring.requested_generation.load(Ordering::Acquire) != generation {
+            ring.begin_callback();
+            interrupted = true;
+        }
+        if interrupted || gap_started {
+            frame.fill(convert(0.0));
         } else {
-            *output = convert(0.0);
+            let mut frame_position = None;
+            let mut frame_intentional = true;
+            for output in frame.iter_mut() {
+                match ring.pop(generation) {
+                    Ok(Some(sample)) => {
+                        *output = convert(sample.value);
+                        frame_position = Some(sample.next_position_seconds);
+                        frame_intentional &= sample.intentional_silence;
+                    }
+                    Ok(None) => {
+                        gap_started = true;
+                        break;
+                    }
+                    Err(()) => {
+                        ring.begin_callback();
+                        interrupted = true;
+                        break;
+                    }
+                }
+            }
+            if !gap_started && !interrupted {
+                valid_frames += 1;
+                intentional_frames += u64::from(frame_intentional);
+                last_position = frame_position;
+                continue;
+            }
+            frame.fill(convert(0.0));
+        }
+        if interrupted
+            || ring.paused.load(Ordering::Acquire)
+            || (changed_at_start && valid_frames == 0)
+        {
+            intentional_frames += 1;
+        } else {
+            underrun_frames += 1;
         }
     }
-    let channels = channels.max(1);
-    let missing_samples = data.len().saturating_sub(valid_samples);
-    if let Some(position) = last_position {
+    if let Some(position) = last_position.filter(|_| !interrupted) {
         ring.consumed_position_bits
             .store(position.to_bits(), Ordering::Relaxed);
     }
     ring.consumed_frame_count
-        .fetch_add((valid_samples / channels) as u64, Ordering::Relaxed);
-    let intentional_gap = flushed_generation || ring.paused.load(Ordering::Acquire);
-    ring.intentional_silence_frame_count.fetch_add(
-        ((intentional_samples + if intentional_gap { missing_samples } else { 0 }) / channels)
-            as u64,
-        Ordering::Relaxed,
-    );
-    if missing_samples > 0 && !intentional_gap {
+        .fetch_add(valid_frames, Ordering::Relaxed);
+    ring.intentional_silence_frame_count
+        .fetch_add(intentional_frames, Ordering::Relaxed);
+    if underrun_frames > 0 {
         ring.underrun_frame_count
-            .fetch_add(missing_samples.div_ceil(channels) as u64, Ordering::Relaxed);
+            .fetch_add(underrun_frames, Ordering::Relaxed);
         ring.underrun_callback_count.fetch_add(1, Ordering::Relaxed);
     }
     ring.record_callback(
@@ -8795,12 +8857,14 @@ mod tests {
             OutputSample {
                 value: 0.25,
                 next_position_seconds: 1.0 / 48_000.0,
-                intentional_silence: false
+                intentional_silence: false,
+                generation: 0,
             },
             OutputSample {
                 value: -0.5,
                 next_position_seconds: 1.0 / 48_000.0,
-                intentional_silence: false
+                intentional_silence: false,
+                generation: 0,
             },
         ]));
         let mut output = [0.0; 4];
@@ -8817,22 +8881,26 @@ mod tests {
             OutputSample {
                 value: 0.5,
                 next_position_seconds: 0.5,
-                intentional_silence: false
+                intentional_silence: false,
+                generation: 0,
             },
             OutputSample {
                 value: -0.5,
                 next_position_seconds: 0.5,
-                intentional_silence: false
+                intentional_silence: false,
+                generation: 0,
             },
             OutputSample {
                 value: 0.25,
                 next_position_seconds: 0.1,
-                intentional_silence: false
+                intentional_silence: false,
+                generation: 0,
             },
             OutputSample {
                 value: -0.25,
                 next_position_seconds: 0.1,
-                intentional_silence: false
+                intentional_silence: false,
+                generation: 0,
             },
         ]));
         assert_eq!(ring.queued_samples(), 4);
@@ -8860,12 +8928,14 @@ mod tests {
             OutputSample {
                 value: 0.75,
                 next_position_seconds: 0.1,
-                intentional_silence: false
+                intentional_silence: false,
+                generation: 1,
             },
             OutputSample {
                 value: -0.75,
                 next_position_seconds: 0.1,
-                intentional_silence: false
+                intentional_silence: false,
+                generation: 1,
             },
         ]));
         let mut fresh = [0.0; 2];
@@ -8874,6 +8944,74 @@ mod tests {
         assert_eq!(ring.consumed_position_seconds(), 0.1);
         assert_eq!(ring.consumed_frame_count.load(Ordering::Relaxed), 2);
         assert_eq!(ring.consumed_generation.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn output_ring_preserves_fresh_queued_audio_and_counts_trailing_starvation() {
+        let ring = NativeOutputRing::new(0.0);
+        let old = OutputSample {
+            value: 0.25,
+            next_position_seconds: 0.1,
+            intentional_silence: false,
+            generation: 0,
+        };
+        let fresh = OutputSample {
+            value: 0.75,
+            next_position_seconds: 1.1,
+            intentional_silence: false,
+            generation: 1,
+        };
+        assert!(ring.push(&[old, old]));
+        ring.request_discontinuity(1.0, false);
+        assert!(ring.push(&[fresh, fresh]));
+        let mut output = [0.0; 4];
+        write_ring_output(&mut output, &ring, 2, 48_000);
+        assert_eq!(output, [0.75, 0.75, 0.0, 0.0]);
+        assert_eq!(ring.consumed_position_seconds(), 1.1);
+        assert_eq!(ring.underrun_frame_count.load(Ordering::Relaxed), 1);
+        assert_eq!(ring.underrun_callback_count.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            ring.intentional_silence_frame_count.load(Ordering::Relaxed),
+            0
+        );
+    }
+
+    #[test]
+    fn output_ring_does_not_mix_generations_within_one_callback() {
+        let ring = NativeOutputRing::new(0.0);
+        let old = OutputSample {
+            value: 0.25,
+            next_position_seconds: 0.1,
+            intentional_silence: false,
+            generation: 0,
+        };
+        let fresh = OutputSample {
+            value: 0.75,
+            next_position_seconds: 1.1,
+            intentional_silence: false,
+            generation: 1,
+        };
+        assert!(ring.push(&[old, old, old, old]));
+        let mut first = [0.0; 4];
+        write_ring_output_converted_with_hook(
+            &mut first,
+            &ring,
+            2,
+            48_000,
+            |sample| sample,
+            |index| {
+                if index == 1 {
+                    ring.request_discontinuity(1.0, false);
+                    assert!(ring.push(&[fresh, fresh]));
+                }
+            },
+        );
+        assert_eq!(first, [0.25, 0.25, 0.0, 0.0]);
+        assert_eq!(ring.consumed_position_seconds(), 1.0);
+        let mut second = [0.0; 2];
+        write_ring_output(&mut second, &ring, 2, 48_000);
+        assert_eq!(second, [0.75, 0.75]);
+        assert_eq!(ring.consumed_position_seconds(), 1.1);
     }
 
     #[test]

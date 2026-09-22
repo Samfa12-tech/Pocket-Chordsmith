@@ -4837,7 +4837,7 @@ export class App {
       }
 
       captureRequestedAtMonotonicMs = monotonicNowMs();
-      const playbackCaptureAnchor = await this.engine.nativePlaybackRecordingAnchor("capture-request");
+      const playbackCaptureAnchor = await this.engine.nativePlaybackRecordingAnchor("capture-request", captureRequestedAtMonotonicMs);
       const status = await startNativeRecording({
         projectFilePath: this.state.currentFile.path,
         projectTitle: project.project.title,
@@ -5168,7 +5168,7 @@ export class App {
     const captureRequestedAtMonotonicMs = this.state.recording.captureRequestedAtMonotonicMs;
     const playbackCaptureAnchor = this.state.recording.playbackCaptureAnchor;
     const timingSource = this.state.recording.timingSource || "ui-transport-boundary-estimate";
-    const playbackStopAnchor = await this.engine.nativePlaybackRecordingAnchor("stop-request").catch(() => null);
+    const playbackStopAnchor = await this.engine.nativePlaybackRecordingAnchor("stop-request", monotonicNowMs()).catch(() => null);
     const punchRange = this.state.recordingPunchEnabled ? activePunchRange(currentProject(this.state)) : null;
     const createTakeLane = this.state.recordingTakeMode === "take-lane";
     if (!recordingSessionMatches(this.state.recording, sessionId, ["recording", "stopping"])) return;

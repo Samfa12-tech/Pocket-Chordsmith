@@ -7,6 +7,11 @@ consumed by the CPAL callback. `outputDiagnostics.renderedPositionSeconds` may
 lead it; `queueDelaySeconds` covers queued PCM only, while
 `deviceOutputLatencySeconds` is `null` until measured externally.
 
+Seek, pause/resume and discrete mute/solo changes request a new output queue
+generation. Continuous volume/pan automation follows the render worker and may
+take up to the bounded queue duration to reach CPAL; it does not repeatedly
+flush the device queue.
+
 Use an installed build from the exact candidate being accepted and a physical
 Windows output device. Keep the project, device, sample rate, buffer setting,
 build hash and any loopback recording with the test record.

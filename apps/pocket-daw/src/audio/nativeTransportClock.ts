@@ -12,6 +12,8 @@ export interface NativeTransportClockSnapshot {
 export function shouldApplyNativeStatus(current: NativeAudioStatus | null, next: NativeAudioStatus): boolean {
   if (!current) return true;
   if (next.startedGeneration !== current.startedGeneration) return next.startedGeneration > current.startedGeneration;
+  if (!next.active) return true;
+  if (!current.active) return false;
   const priorOutput = current.outputDiagnostics;
   const nextOutput = next.outputDiagnostics;
   if (!priorOutput || !nextOutput) return true;

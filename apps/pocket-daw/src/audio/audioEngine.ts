@@ -543,7 +543,7 @@ export class AudioEngine {
     return this.playbackBackend === "native-cpal-paused" && !this.playing && !this.nativeRenderCacheBypassedForLiveEdits;
   }
 
-  async nativePlaybackRecordingAnchor(source: string): Promise<RecordingNativePlaybackAnchor> {
+  async nativePlaybackRecordingAnchor(source: string, _requestedAtMonotonicMs?: number): Promise<RecordingNativePlaybackAnchor> {
     let status = this.nativeStatus;
     if (this.isNativePlaybackActive()) {
       const refreshed = await this.nativePlayback.status();
@@ -552,6 +552,8 @@ export class AudioEngine {
         status = this.nativeStatus || refreshed;
       }
     }
+    // The caller records request time separately; this snapshot belongs to the
+    // status response, after IPC, so it does not predate the consumed position.
     const snapshotMonotonicMs = performance.now();
     return {
       source,
@@ -708,7 +710,7 @@ export class AudioEngine {
       this.applyNativeStatus(status);
       return false;
     }
-    this.applyNativeStatus(status);
+    if (!this.applyNativeStatus(status)) return false;
     this.nativeLastError = null;
     this.offsetSeconds = this.currentSeconds();
     this.playing = true;
@@ -806,7 +808,7 @@ export class AudioEngine {
       this.nativeRestartCount += 1;
       this.nativePlaybackStartedWithRenderCache = !!playbackCache?.regions.length;
       this.nativePlaybackStartedWithProceduralFallbackEventCount = playbackEvents.proceduralFallbackEventCount;
-      this.applyNativeStatus(result.status);
+      if (!this.applyNativeStatus(result.status)) return;
       this.nativeLastError = null;
       if (request.options.reason === "play-cache-window-advance") this.nativePlaybackCacheWindowAdvanceLastError = null;
     } else {
@@ -1318,7 +1320,7 @@ export class AudioEngine {
     void this.nativePlayback.status()
       .then((status) => {
         if (!status) return;
-        this.applyNativeStatus(status);
+        if (!this.applyNativeStatus(status)) return;
         if (this.playbackBackend !== "native-cpal" || !this.playing || !status.active || !status.playing) return;
         const nativeSeconds = Math.max(0, status.positionSeconds || 0);
         if (Math.abs(nativeSeconds - estimatedSeconds) < 0.02) return;
@@ -1768,9 +1770,9 @@ export class AudioEngine {
     return timelineBarAtSeconds(this.project, seconds);
   }
 
-  private applyNativeStatus(status: NativeAudioStatus | null | undefined) {
-    if (!status) return;
-    if (!shouldApplyNativeStatus(this.nativeStatus, status)) return;
+  private applyNativeStatus(status: NativeAudioStatus | null | undefined): boolean {
+    if (!status) return false;
+    if (!shouldApplyNativeStatus(this.nativeStatus, status)) return false;
     this.nativeStatus = status;
     const snapshot = this.nativeTransportClock.updateFromStatus(status);
     this.offsetSeconds = snapshot.positionSeconds;
@@ -1781,6 +1783,7 @@ export class AudioEngine {
       this.stopNativeTicker();
       this.emitTick(true);
     }
+    return true;
   }
 }
 
