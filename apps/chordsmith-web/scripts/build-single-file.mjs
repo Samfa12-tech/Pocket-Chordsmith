@@ -1,7 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { constants as zlibConstants, gunzipSync, gzipSync } from "node:zlib";
+import { gunzipSync } from "node:zlib";
+import { gzipSync } from "fflate";
 
 const root = resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(
@@ -46,10 +47,11 @@ if (bundle.split(workerMarker).length !== 2) {
     "Chordsmith source must contain exactly one Core WAV worker embedding marker.",
   );
 }
-const workerPayload = gzipSync(workerSource, {
-  level: 9,
-  strategy: zlibConstants.Z_FIXED,
-}).toString("base64");
+// Native zlib produces different gzip bytes on Windows and Linux for the same
+// worker source. A pinned pure-JS compressor keeps the tracked HTML reproducible.
+const workerPayload = Buffer.from(
+  gzipSync(workerSource, { level: 9, mtime: 0 }),
+).toString("base64");
 const embeddedBundle = bundle.replace(workerMarker, workerPayload);
 const standaloneShell = shell.replace(preflightModuleTag, "");
 const output = standaloneShell.replace(placeholder, embeddedBundle);
