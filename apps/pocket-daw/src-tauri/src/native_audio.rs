@@ -2,7 +2,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cell::UnsafeCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -31,6 +31,9 @@ const CHORDSMITH_LOFI_TEXTURE_CRACKLE_DECAY_SECONDS: f64 = 0.024;
 const CHORDSMITH_LOFI_TEXTURE_CRACKLE_STOP_SECONDS: f64 = 0.028;
 const NATIVE_ACTIVE_SOURCE_LIMIT_PER_TRACK: usize = 96;
 const MAX_NATIVE_AUDIO_SOURCE_FILE_BYTES: u64 = 600 * 1024 * 1024;
+// Bounds decoded PCM retained for reuse. Active Arcs are not LRU victims; the
+// cache reports their bytes separately, and active assets that cannot fit stay
+// caller-owned until playback/render releases them.
 const MAX_NATIVE_DECODED_ASSET_CACHE_BYTES: usize = 512 * 1024 * 1024;
 const MAX_NATIVE_LATENCY_COMPENSATION_BYTES: usize = 64 * 1024 * 1024;
 const STEREO_DELAY_BYTES_PER_SAMPLE: usize = 2 * std::mem::size_of::<f32>();
@@ -783,6 +786,16 @@ pub struct NativeAudioStatus {
     last_error: Option<String>,
     #[serde(rename = "assetCount")]
     asset_count: usize,
+    // CachePinnedBytes is a subset of the cache/active union; resident is
+    // pointer-deduplicated so cached active assets are counted only once.
+    #[serde(rename = "decodedAssetCacheBytes")]
+    decoded_asset_cache_bytes: usize,
+    #[serde(rename = "decodedAssetCachePinnedBytes")]
+    decoded_asset_cache_pinned_bytes: usize,
+    #[serde(rename = "decodedAssetActiveBytes")]
+    decoded_asset_active_bytes: usize,
+    #[serde(rename = "decodedAssetResidentBytes")]
+    decoded_asset_resident_bytes: usize,
     #[serde(rename = "assetRegionCount")]
     asset_region_count: usize,
     #[serde(rename = "proceduralEventCount")]
@@ -1740,11 +1753,28 @@ impl NativeAudioRuntime {
         budget_bytes: usize,
     ) {
         let cache_key = native_asset_cache_key(asset);
+        if self
+            .asset_cache
+            .get(&cache_key)
+            .is_some_and(|entry| Arc::strong_count(&entry.decoded) > 1)
+        {
+            // Keep the cached revision pinned while a render still owns it.
+            // The active caller can use its freshly decoded Arc without adding a
+            // second cache entry for the same revision.
+            return;
+        }
+        if let Some(entry) = self.asset_cache.remove(&cache_key) {
+            self.asset_cache_bytes = self.asset_cache_bytes.saturating_sub(entry.byte_size);
+        }
         let replacing = self
             .asset_cache
-            .keys()
-            .filter(|(asset_id, _)| asset_id == &asset.id)
-            .cloned()
+            .iter()
+            .filter(|((asset_id, revision), entry)| {
+                asset_id == &asset.id
+                    && revision != &cache_key.1
+                    && Arc::strong_count(&entry.decoded) == 1
+            })
+            .map(|(key, _)| key.clone())
             .collect::<Vec<_>>();
         for key in replacing {
             if let Some(entry) = self.asset_cache.remove(&key) {
@@ -1763,10 +1793,14 @@ impl NativeAudioRuntime {
             let Some(oldest_key) = self
                 .asset_cache
                 .iter()
+                .filter(|(_, entry)| Arc::strong_count(&entry.decoded) == 1)
                 .min_by_key(|(_, entry)| entry.last_used)
                 .map(|(key, _)| key.clone())
             else {
-                break;
+                // The remaining cached assets are pinned by active render or
+                // playback Arcs. Do not evict them to satisfy the inactive-cache
+                // budget; let the current caller use its uncached Arc instead.
+                return;
             };
             if let Some(entry) = self.asset_cache.remove(&oldest_key) {
                 self.asset_cache_bytes = self.asset_cache_bytes.saturating_sub(entry.byte_size);
@@ -1787,6 +1821,23 @@ impl NativeAudioRuntime {
     fn clear_decoded_asset_cache(&mut self) {
         self.asset_cache.clear();
         self.asset_cache_bytes = 0;
+    }
+
+    fn pinned_decoded_asset_cache_bytes(&self) -> usize {
+        self.asset_cache
+            .values()
+            .filter(|entry| Arc::strong_count(&entry.decoded) > 1)
+            .map(|entry| entry.byte_size)
+            .sum()
+    }
+
+    fn decoded_asset_resident_bytes(&self, playback: &PlaybackShared) -> usize {
+        unique_decoded_audio_asset_bytes(
+            self.asset_cache
+                .values()
+                .map(|entry| &entry.decoded)
+                .chain(playback.assets.values()),
+        )
     }
 
     fn status(&self) -> NativeAudioStatus {
@@ -1828,6 +1879,12 @@ impl NativeAudioRuntime {
                         self.last_error.clone()
                     },
                     asset_count: playback.assets.len(),
+                    decoded_asset_cache_bytes: self.asset_cache_bytes,
+                    decoded_asset_cache_pinned_bytes: self.pinned_decoded_asset_cache_bytes(),
+                    decoded_asset_active_bytes: unique_decoded_audio_asset_bytes(
+                        playback.assets.values(),
+                    ),
+                    decoded_asset_resident_bytes: self.decoded_asset_resident_bytes(&playback),
                     asset_region_count: playback.regions.len(),
                     procedural_event_count: playback.events.len(),
                     callback_count: self
@@ -1874,6 +1931,10 @@ impl NativeAudioRuntime {
             host_name: self.host_name.clone(),
             last_error: self.last_error.clone(),
             asset_count: 0,
+            decoded_asset_cache_bytes: self.asset_cache_bytes,
+            decoded_asset_cache_pinned_bytes: self.pinned_decoded_asset_cache_bytes(),
+            decoded_asset_active_bytes: 0,
+            decoded_asset_resident_bytes: self.asset_cache_bytes,
             asset_region_count: 0,
             procedural_event_count: 0,
             callback_count: 0,
@@ -1898,6 +1959,22 @@ fn native_asset_cache_key(asset: &NativeAudioAssetPayload) -> (String, String) {
         })
         .unwrap_or_default();
     (asset.id.clone(), revision.to_string())
+}
+
+fn unique_decoded_audio_asset_bytes<'a>(
+    assets: impl IntoIterator<Item = &'a Arc<DecodedAudioAsset>>,
+) -> usize {
+    let mut seen = HashSet::new();
+    assets
+        .into_iter()
+        .filter(|asset| seen.insert(Arc::as_ptr(asset) as usize))
+        .map(|asset| {
+            asset
+                .samples
+                .capacity()
+                .saturating_mul(std::mem::size_of::<f32>())
+        })
+        .fold(0, usize::saturating_add)
 }
 
 fn read_native_audio_source_file(source_path: &str) -> Result<Vec<u8>, String> {
@@ -1952,6 +2029,10 @@ impl NativeAudioStatus {
             host_name: None,
             last_error,
             asset_count: 0,
+            decoded_asset_cache_bytes: 0,
+            decoded_asset_cache_pinned_bytes: 0,
+            decoded_asset_active_bytes: 0,
+            decoded_asset_resident_bytes: 0,
             asset_region_count: 0,
             procedural_event_count: 0,
             callback_count: 0,
@@ -3192,6 +3273,8 @@ fn collect_hosted_note_events_for_block(
     }
     let end = *cursor + events[*cursor..].partition_point(|event| event.sample < end_sample);
     output.clear();
+    // The VST3 shared event block holds 256 events. Preserve the existing
+    // earliest-in-block truncation policy when denser blocks exceed that limit.
     output.extend(events[*cursor..end].iter().take(256).map(|compiled| {
         let mut event = compiled.event;
         event.sample_offset = (compiled.sample - start_sample) as u32;
@@ -7065,7 +7148,7 @@ mod tests {
     }
 
     #[test]
-    fn replaces_decoded_assets_when_the_source_revision_changes() {
+    fn keeps_active_decoded_revisions_until_their_arcs_are_released() {
         let mut runtime = NativeAudioRuntime::default();
         let first_asset = NativeAudioAssetPayload {
             id: "asset".to_string(),
@@ -7092,6 +7175,20 @@ mod tests {
 
         assert!(!Arc::ptr_eq(&first, &second));
         assert_ne!(first.samples, second.samples);
+        assert_eq!(runtime.asset_cache.len(), 2);
+        assert_eq!(
+            runtime.pinned_decoded_asset_cache_bytes(),
+            runtime.asset_cache_bytes
+        );
+        drop(first);
+        drop(second);
+        let third_asset = NativeAudioAssetPayload {
+            source_hash: Some("revision-3".to_string()),
+            ..first_asset.clone()
+        };
+        runtime
+            .decode_or_reuse_asset(&third_asset)
+            .expect("inactive older revisions should be retired");
         assert_eq!(runtime.asset_cache.len(), 1);
     }
 
@@ -7110,7 +7207,6 @@ mod tests {
         };
         let first = make_asset("first");
         let second = make_asset("second");
-        let third = make_asset("third");
         let first_decoded = Arc::new(decode_payload_asset(&first).expect("first decode"));
         let bytes_per_asset = first_decoded.samples.capacity() * std::mem::size_of::<f32>();
         assert!(bytes_per_asset > 0);
@@ -7126,14 +7222,26 @@ mod tests {
             bytes: Vec::new(),
             ..first.clone()
         };
-        runtime
+        let active_first = runtime
             .decode_or_reuse_asset(&metadata_only_first)
             .expect("cache hit should refresh first asset recency");
-        runtime.cache_decoded_asset_with_budget(
-            &third,
-            Arc::new(decode_payload_asset(&third).expect("third decode")),
-            budget,
-        );
+        let metadata_only_second = NativeAudioAssetPayload {
+            bytes: Vec::new(),
+            ..second.clone()
+        };
+        runtime
+            .decode_or_reuse_asset(&metadata_only_second)
+            .expect("second cache hit should make active first the LRU asset");
+        for index in 0..16 {
+            let next = make_asset(&format!("new-{index}"));
+            runtime.cache_decoded_asset_with_budget(
+                &next,
+                Arc::new(decode_payload_asset(&next).expect("decode next asset")),
+                budget,
+            );
+            assert!(runtime.asset_cache_bytes <= budget);
+            assert_eq!(runtime.asset_cache.len(), 2);
+        }
 
         assert!(runtime
             .asset_cache
@@ -7143,9 +7251,60 @@ mod tests {
             .contains_key(&native_asset_cache_key(&second)));
         assert!(runtime
             .asset_cache
-            .contains_key(&native_asset_cache_key(&third)));
+            .contains_key(&native_asset_cache_key(&make_asset("new-15"))));
         assert!(runtime.asset_cache_bytes <= budget);
         assert_eq!(runtime.asset_cache.len(), 2);
+        assert_eq!(runtime.pinned_decoded_asset_cache_bytes(), bytes_per_asset);
+        drop(active_first);
+        assert_eq!(runtime.pinned_decoded_asset_cache_bytes(), 0);
+    }
+
+    #[test]
+    fn active_assets_can_exceed_cache_budget_without_being_evicted_or_double_counted() {
+        let mut runtime = NativeAudioRuntime::default();
+        let make_asset = |id: &str| NativeAudioAssetPayload {
+            id: id.to_string(),
+            name: format!("{id}.wav"),
+            sample_rate: 48_000,
+            channels: 2,
+            duration_seconds: 1.0 / 48_000.0,
+            source_path: None,
+            source_hash: Some("v1".to_string()),
+            bytes: pcm16_wav(48_000, 2, &[1, 2, 3, 4]),
+        };
+        let first = make_asset("first-active");
+        let second = make_asset("second-active");
+        let first_active = Arc::new(decode_payload_asset(&first).expect("first decode"));
+        let second_active = Arc::new(decode_payload_asset(&second).expect("second decode"));
+        let bytes_per_asset = first_active.samples.capacity() * std::mem::size_of::<f32>();
+        let budget = bytes_per_asset;
+        runtime.cache_decoded_asset_with_budget(&first, Arc::clone(&first_active), budget);
+        runtime.cache_decoded_asset_with_budget(&second, Arc::clone(&second_active), budget);
+
+        let active_assets = HashMap::from([
+            ("first".to_string(), Arc::clone(&first_active)),
+            ("alias".to_string(), Arc::clone(&first_active)),
+            ("second".to_string(), Arc::clone(&second_active)),
+        ]);
+        let active_bytes = unique_decoded_audio_asset_bytes(active_assets.values());
+        let resident_bytes = unique_decoded_audio_asset_bytes(
+            runtime
+                .asset_cache
+                .values()
+                .map(|entry| &entry.decoded)
+                .chain(active_assets.values()),
+        );
+
+        assert_eq!(runtime.asset_cache.len(), 1);
+        assert_eq!(runtime.asset_cache_bytes, bytes_per_asset);
+        assert_eq!(runtime.pinned_decoded_asset_cache_bytes(), bytes_per_asset);
+        assert_eq!(active_bytes, bytes_per_asset * 2);
+        assert_eq!(resident_bytes, bytes_per_asset * 2);
+        assert!(
+            resident_bytes > budget,
+            "active working set may exceed the reusable cache budget"
+        );
+        assert_eq!(first_active.frame_count, second_active.frame_count);
     }
 
     #[test]
@@ -7188,6 +7347,10 @@ mod tests {
             .decode_or_reuse_asset(&asset)
             .expect("asset should decode and be cached");
         let expected = active_render_asset.samples.clone();
+        let expected_bytes = active_render_asset.samples.capacity() * std::mem::size_of::<f32>();
+        let status = serde_json::to_value(runtime.status()).expect("status serializes");
+        assert_eq!(status["decodedAssetCacheBytes"], expected_bytes);
+        assert_eq!(status["decodedAssetCachePinnedBytes"], expected_bytes);
 
         runtime.clear_decoded_asset_cache();
 
@@ -7252,6 +7415,54 @@ mod tests {
     }
 
     #[test]
+    fn hosted_note_block_overflow_keeps_earliest_256_events_in_order() {
+        let compiled = (0..300)
+            .map(|sample| CompiledHostedNoteEvent {
+                sample,
+                event: HostedNoteEvent {
+                    note_on: true,
+                    note_id: sample as i32,
+                    ..HostedNoteEvent::default()
+                },
+            })
+            .collect::<Vec<_>>();
+        let mut cursor = 0;
+        let mut next_block = None;
+        let mut scratch = Vec::with_capacity(256);
+
+        collect_hosted_note_events_for_block(
+            &compiled,
+            &mut cursor,
+            &mut next_block,
+            0,
+            300,
+            &mut scratch,
+        );
+
+        assert_eq!(scratch.len(), 256);
+        assert_eq!(scratch.first().unwrap().sample_offset, 0);
+        assert_eq!(scratch.last().unwrap().sample_offset, 255);
+        assert!(scratch
+            .iter()
+            .enumerate()
+            .all(|(sample, event)| event.note_id == sample as i32));
+        assert_eq!(
+            cursor, 300,
+            "overflow events keep the historical drop policy"
+        );
+
+        collect_hosted_note_events_for_block(
+            &compiled,
+            &mut cursor,
+            &mut next_block,
+            300,
+            428,
+            &mut scratch,
+        );
+        assert!(scratch.is_empty());
+    }
+
+    #[test]
     #[ignore = "manual synthetic hosted-event scaling benchmark"]
     fn hosted_event_scaling_benchmark() {
         fn legacy_block_scan(
@@ -7300,8 +7511,6 @@ mod tests {
         }
 
         let sample_rate = 48_000;
-        let start_sample = 50_000;
-        let end_sample = start_sample + VST3_BLOCK_FRAMES as i64;
         for hosted_tracks in [1, 8, 16] {
             for events_per_track in [128, 1_024, 4_096] {
                 let mut source_events = Vec::with_capacity(hosted_tracks * events_per_track);
@@ -7310,8 +7519,8 @@ mod tests {
                     let mut event = test_generated_event(
                         "benchmark",
                         "melody",
-                        (index / hosted_tracks) as f64 * 0.1,
-                        0.025,
+                        (index / hosted_tracks) as f64 / events_per_track as f64 * 5.0,
+                        0.015,
                         0.8,
                     );
                     event.track_id = format!("track-{track}");
@@ -7333,11 +7542,15 @@ mod tests {
                 let mut scratch = (0..hosted_tracks)
                     .map(|_| Vec::with_capacity(256))
                     .collect::<Vec<_>>();
-                let iterations = 20;
+                let scratch_capacities = scratch.iter().map(Vec::capacity).collect::<Vec<_>>();
+                let iterations = 256;
+                let mut legacy_block_nanos = Vec::with_capacity(iterations * hosted_tracks);
 
-                let started = Instant::now();
-                for _ in 0..iterations {
+                for iteration in 0..iterations {
+                    let start_sample = iteration as i64 * VST3_BLOCK_FRAMES as i64;
+                    let end_sample = start_sample + VST3_BLOCK_FRAMES as i64;
                     for track_id in &track_ids {
+                        let started = Instant::now();
                         let _ = legacy_block_scan(
                             &source_events,
                             track_id,
@@ -7345,13 +7558,16 @@ mod tests {
                             end_sample,
                             sample_rate,
                         );
+                        legacy_block_nanos.push(started.elapsed().as_nanos());
                     }
                 }
-                let legacy_elapsed = started.elapsed();
 
-                let started = Instant::now();
-                for _ in 0..iterations {
+                let mut indexed_block_nanos = Vec::with_capacity(iterations * hosted_tracks);
+                for iteration in 0..iterations {
+                    let start_sample = iteration as i64 * VST3_BLOCK_FRAMES as i64;
+                    let end_sample = start_sample + VST3_BLOCK_FRAMES as i64;
                     for track in 0..hosted_tracks {
+                        let started = Instant::now();
                         collect_hosted_note_events_for_block(
                             &compiled[track],
                             &mut cursors[track],
@@ -7360,14 +7576,30 @@ mod tests {
                             end_sample,
                             &mut scratch[track],
                         );
+                        indexed_block_nanos.push(started.elapsed().as_nanos());
                     }
                 }
-                let indexed_elapsed = started.elapsed();
+                assert_eq!(
+                    scratch.iter().map(Vec::capacity).collect::<Vec<_>>(),
+                    scratch_capacities,
+                    "normal hosted blocks must reuse preallocated bounded scratch"
+                );
+                let percentile_us = |samples: &mut Vec<u128>, percentile: f64| {
+                    samples.sort_unstable();
+                    let index = ((samples.len() as f64 * percentile).ceil() as usize)
+                        .saturating_sub(1)
+                        .min(samples.len().saturating_sub(1));
+                    samples[index] as f64 / 1_000.0
+                };
+                let legacy_p95 = percentile_us(&mut legacy_block_nanos, 0.95);
+                let legacy_p99 = percentile_us(&mut legacy_block_nanos, 0.99);
+                let legacy_max = *legacy_block_nanos.last().unwrap() as f64 / 1_000.0;
+                let indexed_p95 = percentile_us(&mut indexed_block_nanos, 0.95);
+                let indexed_p99 = percentile_us(&mut indexed_block_nanos, 0.99);
+                let indexed_max = *indexed_block_nanos.last().unwrap() as f64 / 1_000.0;
                 eprintln!(
-                    "[hosted-event-bench] hosted={hosted_tracks} events_per_track={events_per_track} precompile_ms={:.3} legacy_20_blocks_ms={:.3} indexed_20_blocks_ms={:.3}",
+                    "[hosted-event-bench] hosted={hosted_tracks} events_per_track={events_per_track} precompile_ms={:.3} legacy_block_us_p95={legacy_p95:.3} legacy_block_us_p99={legacy_p99:.3} legacy_block_us_max={legacy_max:.3} indexed_block_us_p95={indexed_p95:.3} indexed_block_us_p99={indexed_p99:.3} indexed_block_us_max={indexed_max:.3}",
                     precompile_elapsed.as_secs_f64() * 1_000.0,
-                    legacy_elapsed.as_secs_f64() * 1_000.0,
-                    indexed_elapsed.as_secs_f64() * 1_000.0,
                 );
             }
         }
