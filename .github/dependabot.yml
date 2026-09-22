@@ -40,7 +40,7 @@ updates:
       time: "06:20"
       timezone: Australia/Sydney
     open-pull-requests-limit: 1
-    labels: [dependencies, rust, pocket-daw]
+    labels: [dependencies]
     allow:
       - dependency-name: "*"
         update-types:
@@ -61,7 +61,7 @@ updates:
       time: "06:30"
       timezone: Australia/Sydney
     open-pull-requests-limit: 1
-    labels: [dependencies, security]
+    labels: [dependencies]
     allow:
       - dependency-name: "*"
         update-types:
