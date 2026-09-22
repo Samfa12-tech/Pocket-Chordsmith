@@ -30,8 +30,8 @@
     "pretest": "npm run build",
     "test": "node --test",
     "test:core": "node --test tests/core.test.js",
-    "test:golden": "node --test tests/golden.test.js --test-name-pattern \"golden event trace|fixture index\"",
-    "test:render": "node --test tests/golden.test.js --test-name-pattern \"audio metrics\"",
+    "test:golden": "node --test --test-name-pattern=\"golden event trace|fixture index\" tests/golden.test.js",
+    "test:render": "node --test --test-name-pattern=\"audio metrics\" tests/golden.test.js",
     "update:golden": "node scripts/update-golden.mjs"
   },
   "files": [

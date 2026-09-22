@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 /**
- * Small, manifest-driven Pocket DAW Vitest orchestrator.
- *
- * A missing comparison base, a manifest failure, or an unknown changed source
- * file deliberately selects the complete deterministic scope.  This is a
- * safety boundary: optimisation must never turn uncertainty into a skip.
+ * Manifest-driven Pocket DAW Vitest scopes. Uncertain local or branch mapping
+ * deliberately broadens to every deterministic test so optimization cannot
+ * turn incomplete Git state into a skip.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -16,15 +14,37 @@ const appRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repositoryRoot = resolve(appRoot, "..", "..");
 const vitest = resolve(appRoot, "node_modules", "vitest", "vitest.mjs");
 
-function gitChangedFiles() {
-  const base = process.env.DAW_CHECK_BASE;
-  if (!base) throw new Error("DAW_CHECK_BASE is required for a changed scope.");
-  const output = execFileSync("git", ["diff", "--name-only", "--diff-filter=ACMR", `${base}...HEAD`], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  return output.split(/\r?\n/).filter(Boolean);
+export function branchChangedFilesGitArgs(base) {
+  if (!base) throw new Error("DAW_CHECK_BASE is required for a branch scope.");
+  return ["diff", "--no-renames", "--name-only", "-z", `${base}...HEAD`];
+}
+
+export function workingTreeChangedFilesGitArgs() {
+  return ["diff", "--no-renames", "--name-only", "-z", "HEAD"];
+}
+
+function splitGitPaths(output) {
+  return output.split("\0").filter(Boolean).map((path) => path.replaceAll("\\", "/"));
+}
+
+export function collectChangedFiles(scope, base, cwd = repositoryRoot, runGit = execFileSync) {
+  if (scope === "branch") {
+    const diff = runGit("git", branchChangedFilesGitArgs(base), { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return [...new Set(splitGitPaths(diff))].sort();
+  }
+  if (scope !== "changed") throw new Error(`Unknown changed-file scope: ${scope}`);
+
+  const diff = runGit("git", workingTreeChangedFilesGitArgs(), { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const untracked = runGit("git", ["ls-files", "--others", "--exclude-standard", "-z"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  return [...new Set([...splitGitPaths(diff), ...splitGitPaths(untracked)])].sort();
+}
+
+export function resolveChangedScope(scope, base, cwd = repositoryRoot) {
+  try {
+    return { changed: collectChangedFiles(scope, base, cwd), broadened: false, reason: null };
+  } catch (error) {
+    return { changed: [], broadened: true, reason: error.message };
+  }
 }
 
 export function selectDawChecks(scope, manifest, changedFiles = []) {
@@ -42,25 +62,33 @@ export function selectDawChecks(scope, manifest, changedFiles = []) {
   throw new Error(`Unknown Pocket DAW check scope: ${scope}`);
 }
 
+export function vitestExitCode(result, writeStderr = (message) => process.stderr.write(message)) {
+  if (result.error) throw result.error;
+  if (Number.isInteger(result.status)) return result.status;
+  const cause = result.signal ? `signal ${result.signal}` : "unknown process failure";
+  writeStderr(`Vitest did not exit normally (${cause}); treating the check as failed.\n`);
+  return 1;
+}
+
 function main(argv) {
   const scope = argv[0] || "changed";
   const explicitChanged = argv.slice(1).filter((argument) => !argument.startsWith("--"));
   const manifest = loadManifest();
   let changed = explicitChanged;
   let broadened = false;
-  if (scope === "changed" && changed.length === 0) {
-    try {
-      changed = gitChangedFiles();
-    } catch (error) {
-      broadened = true;
-      process.stderr.write(`Unable to determine changed paths (${error.message}); running the complete deterministic scope.\n`);
+  if ((scope === "changed" && changed.length === 0) || scope === "branch") {
+    const resolved = resolveChangedScope(scope, process.env.DAW_CHECK_BASE);
+    changed = resolved.changed;
+    broadened = resolved.broadened;
+    if (broadened) {
+      process.stderr.write(`Unable to determine ${scope} paths (${resolved.reason}); running the complete deterministic scope.\n`);
     }
   }
   let tests;
   try {
-    tests = selectDawChecks(broadened ? "full" : scope, manifest, changed);
+    tests = selectDawChecks(broadened ? "full" : scope === "branch" ? "changed" : scope, manifest, changed);
   } catch (error) {
-    if (scope !== "changed") throw error;
+    if (scope !== "changed" && scope !== "branch") throw error;
     broadened = true;
     process.stderr.write(`Changed-scope mapping is uncertain (${error.message}); running the complete deterministic scope.\n`);
     tests = selectDawChecks("full", manifest);
@@ -73,8 +101,7 @@ function main(argv) {
     return;
   }
   const result = spawnSync(process.execPath, [vitest, "run", ...paths], { cwd: appRoot, stdio: "inherit" });
-  if (result.error) throw result.error;
-  process.exitCode = result.status || 0;
+  process.exitCode = vitestExitCode(result);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) main(process.argv.slice(2));

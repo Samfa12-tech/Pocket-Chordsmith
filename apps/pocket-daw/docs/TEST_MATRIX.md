@@ -2,7 +2,7 @@
 
 > Generated from `apps/pocket-daw/test-scope-manifest.json` by `node scripts/verify-test-scope-manifest.mjs --write-matrix`. Do not hand-edit this file.
 
-Current inventory: 101 runnable test artifacts. The categories below identify the primary execution contract; evidence-validator tests are deterministic and do not claim that physical/manual evidence has occurred.
+Current inventory: 102 runnable test artifacts. The categories below identify the primary execution contract; evidence-validator tests are deterministic and do not claim that physical/manual evidence has occurred.
 
 ## Category totals
 
@@ -13,7 +13,7 @@ Current inventory: 101 runnable test artifacts. The categories below identify th
 | integration | 23 |
 | native-rust | 2 |
 | release-contract | 15 |
-| unit-domain | 27 |
+| unit-domain | 28 |
 | windows-contract | 15 |
 
 ## Inventory
@@ -112,6 +112,7 @@ Current inventory: 101 runnable test artifacts. The categories below identify th
 | `apps/pocket-daw/tests/vst3SidecarPackaging.test.ts` | release-contract | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Sidecar hash/isolation packaging contract. |
 | `apps/pocket-daw/src-tauri/tests/vst3_scanner_process.rs` | native-rust | windows | yes | yes | yes | no | none (validator/fixture only) | Rust process integration for scanner isolation. |
 | `apps/pocket-daw/src-tauri/tests/vst3_session_process.rs` | native-rust | windows | yes | yes | yes | no | none (validator/fixture only) | Rust process integration for VST3 session isolation. |
+| `apps/pocket-daw/src/audio/audioBufferCache.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Source-colocated audio-buffer peak reduction behavior. |
 | `apps/pocket-daw/src/audio/eventRenderer.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Source-colocated renderer unit coverage. |
 | `apps/pocket-daw/src/app/feedback.test.ts` | integration | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Source-colocated feedback/link behavior. |
 | `apps/pocket-daw/src/app/keyboard.test.ts` | integration | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Source-colocated keyboard behavior. |
