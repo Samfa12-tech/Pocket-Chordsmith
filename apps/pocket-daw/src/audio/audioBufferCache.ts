@@ -60,12 +60,14 @@ export function clearAudioBufferCache(): void {
 
 export function audioBufferPeaks(buffer: AudioBuffer, buckets = 256): number[] {
   const out: number[] = [];
-  const length = Math.max(1, buffer.length);
-  const bucketSize = Math.max(1, Math.floor(length / buckets));
+  const length = buffer.length;
+  if (length === 0 || !Number.isFinite(buckets) || buckets <= 0) return out;
+  const count = Math.min(length, Math.floor(buckets));
   const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index));
-  for (let start = 0; start < length; start += bucketSize) {
+  for (let bucket = 0; bucket < count; bucket += 1) {
     let peak = 0;
-    const end = Math.min(length, start + bucketSize);
+    const start = Math.floor(bucket * length / count);
+    const end = Math.floor((bucket + 1) * length / count);
     for (let i = start; i < end; i += 1) {
       channels.forEach((channel) => {
         peak = Math.max(peak, Math.abs(channel[i] || 0));
@@ -73,7 +75,7 @@ export function audioBufferPeaks(buffer: AudioBuffer, buckets = 256): number[] {
     }
     out.push(Number(Math.min(1, peak).toFixed(3)));
   }
-  return out.slice(0, buckets);
+  return out;
 }
 
 function copySourceBytes(bytes: CachedAudioBufferOptions["sourceBytes"]): ArrayBuffer | undefined {
