@@ -503,6 +503,10 @@ export class App {
         if (tick.playing) {
           this.updateLiveDom();
         } else {
+          const nativeAudio = this.engine.getDiagnostics().nativeAudio;
+          if (nativeAudio.status?.outputDiagnostics?.streamFailed) {
+            this.state.status = nativeAudio.lastError || "Native output stream failed.";
+          }
           this.playbackRenderScheduler.flushAfterPlaybackStops({ preserveScroll: true }, this.renderSchedulerCallbacks(), this.renderSchedulerTimers());
         }
       } else {

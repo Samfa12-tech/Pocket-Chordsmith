@@ -30,6 +30,29 @@ export interface NativeAudioStatus {
   lastCallbackMicros?: number;
   maxCallbackMicros?: number;
   slowCallbackCount?: number;
+  outputDiagnostics?: NativeOutputDiagnostics;
+}
+
+export interface NativeOutputDiagnostics {
+  renderedPositionSeconds: number;
+  consumedPositionSeconds: number;
+  queueFrames: number;
+  queueDelaySeconds: number;
+  deviceOutputLatencySeconds: number | null;
+  targetQueueFrames: number;
+  queueCapacityFrames: number;
+  maxQueueFrames: number;
+  consumedFrameCount: number;
+  underrunFrameCount: number;
+  underrunCallbackCount: number;
+  intentionalSilenceFrameCount: number;
+  lastRenderMicros: number;
+  maxRenderMicros: number;
+  slowRenderBlockCount: number;
+  streamFailed: boolean;
+  streamErrorCount: number;
+  queueGeneration: number;
+  requestedQueueGeneration: number;
 }
 
 export interface NativeAudioTrack {

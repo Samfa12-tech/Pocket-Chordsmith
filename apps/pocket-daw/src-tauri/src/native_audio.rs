@@ -51,16 +51,41 @@ pub struct NativeAudioRuntime {
 }
 
 const NATIVE_OUTPUT_RING_SAMPLES: usize = 1 << 16;
+const NATIVE_OUTPUT_TARGET_MIN_FRAMES: usize = 1024;
+
+#[derive(Clone, Copy)]
+struct OutputSample {
+    value: f32,
+    next_position_seconds: f64,
+    intentional_silence: bool,
+    generation: u64,
+}
 
 struct NativeOutputRing {
-    samples: Box<[UnsafeCell<f32>]>,
+    samples: Box<[UnsafeCell<OutputSample>]>,
     read: AtomicUsize,
     write: AtomicUsize,
+    requested_generation: AtomicU64,
+    consumed_generation: AtomicU64,
+    paused: AtomicBool,
+    discontinuity_position_bits: AtomicU64,
+    consumed_position_bits: AtomicU64,
+    inflight_position_bits: AtomicU64,
+    consumed_frame_count: AtomicU64,
+    underrun_frame_count: AtomicU64,
+    underrun_callback_count: AtomicU64,
+    intentional_silence_frame_count: AtomicU64,
+    max_queue_samples: AtomicUsize,
+    last_callback_frames: AtomicUsize,
+    last_render_micros: AtomicU64,
+    max_render_micros: AtomicU64,
+    slow_render_block_count: AtomicU64,
     callback_count: AtomicU64,
     last_callback_micros: AtomicU64,
     max_callback_micros: AtomicU64,
     slow_callback_count: AtomicU64,
     stream_failed: AtomicBool,
+    stream_error_count: AtomicU64,
 }
 
 // One render worker writes and the CPAL callback is the sole reader. The
@@ -68,20 +93,114 @@ struct NativeOutputRing {
 unsafe impl Sync for NativeOutputRing {}
 
 impl NativeOutputRing {
-    fn new() -> Self {
+    fn new(start_position_seconds: f64) -> Self {
         Self {
             samples: (0..NATIVE_OUTPUT_RING_SAMPLES)
-                .map(|_| UnsafeCell::new(0.0))
+                .map(|_| {
+                    UnsafeCell::new(OutputSample {
+                        value: 0.0,
+                        next_position_seconds: start_position_seconds,
+                        intentional_silence: true,
+                        generation: 0,
+                    })
+                })
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
             read: AtomicUsize::new(0),
             write: AtomicUsize::new(0),
+            requested_generation: AtomicU64::new(0),
+            consumed_generation: AtomicU64::new(0),
+            paused: AtomicBool::new(false),
+            discontinuity_position_bits: AtomicU64::new(start_position_seconds.to_bits()),
+            consumed_position_bits: AtomicU64::new(start_position_seconds.to_bits()),
+            inflight_position_bits: AtomicU64::new(start_position_seconds.to_bits()),
+            consumed_frame_count: AtomicU64::new(0),
+            underrun_frame_count: AtomicU64::new(0),
+            underrun_callback_count: AtomicU64::new(0),
+            intentional_silence_frame_count: AtomicU64::new(0),
+            max_queue_samples: AtomicUsize::new(0),
+            last_callback_frames: AtomicUsize::new(0),
+            last_render_micros: AtomicU64::new(0),
+            max_render_micros: AtomicU64::new(0),
+            slow_render_block_count: AtomicU64::new(0),
             callback_count: AtomicU64::new(0),
             last_callback_micros: AtomicU64::new(0),
             max_callback_micros: AtomicU64::new(0),
             slow_callback_count: AtomicU64::new(0),
             stream_failed: AtomicBool::new(false),
+            stream_error_count: AtomicU64::new(0),
         }
+    }
+
+    fn queued_samples(&self) -> usize {
+        // Read first so a concurrent consumer advance cannot be newer than
+        // the sampled producer cursor and appear as a wrapped huge queue.
+        let read = self.read.load(Ordering::Acquire);
+        self.write.load(Ordering::Acquire).wrapping_sub(read)
+    }
+
+    fn target_samples(&self, channels: usize) -> usize {
+        let callback_frames = self.last_callback_frames.load(Ordering::Relaxed);
+        let frames = NATIVE_OUTPUT_TARGET_MIN_FRAMES.max(callback_frames.saturating_mul(2));
+        frames.saturating_mul(channels).min(self.samples.len() / 2)
+    }
+
+    // Control threads request a new generation while holding PlaybackShared.
+    // Only the CPAL consumer moves the read cursor when it observes the request.
+    fn request_discontinuity(&self, position_seconds: f64, paused: bool) {
+        self.discontinuity_position_bits
+            .store(position_seconds.to_bits(), Ordering::Relaxed);
+        self.paused.store(paused, Ordering::Relaxed);
+        self.requested_generation.fetch_add(1, Ordering::Release);
+    }
+
+    fn begin_callback(&self) -> bool {
+        let requested = self.requested_generation.load(Ordering::Acquire);
+        if requested != self.consumed_generation.load(Ordering::Relaxed) {
+            let mut read = self.read.load(Ordering::Relaxed);
+            let write = self.write.load(Ordering::Acquire);
+            while read != write {
+                let sample = unsafe { *self.samples[read & (self.samples.len() - 1)].get() };
+                if sample.generation == requested {
+                    break;
+                }
+                read = read.wrapping_add(1);
+            }
+            self.read.store(read, Ordering::Release);
+            self.consumed_position_bits.store(
+                self.discontinuity_position_bits.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+            self.inflight_position_bits.store(
+                self.discontinuity_position_bits.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+            self.consumed_generation.store(requested, Ordering::Release);
+            return true;
+        }
+        false
+    }
+
+    fn consumed_position_seconds(&self) -> f64 {
+        let position_bits = if self.requested_generation.load(Ordering::Acquire)
+            != self.consumed_generation.load(Ordering::Acquire)
+        {
+            self.discontinuity_position_bits.load(Ordering::Relaxed)
+        } else {
+            self.consumed_position_bits.load(Ordering::Relaxed)
+        };
+        f64::from_bits(position_bits)
+    }
+
+    fn control_position_seconds(&self) -> f64 {
+        let position_bits = if self.requested_generation.load(Ordering::Acquire)
+            != self.consumed_generation.load(Ordering::Acquire)
+        {
+            self.discontinuity_position_bits.load(Ordering::Relaxed)
+        } else {
+            self.inflight_position_bits.load(Ordering::Relaxed)
+        };
+        f64::from_bits(position_bits)
     }
 
     fn available_to_write(&self) -> usize {
@@ -92,7 +211,7 @@ impl NativeOutputRing {
         )
     }
 
-    fn push(&self, source: &[f32]) -> bool {
+    fn push(&self, source: &[OutputSample]) -> bool {
         if self.available_to_write() < source.len() {
             return false;
         }
@@ -104,28 +223,70 @@ impl NativeOutputRing {
         }
         self.write
             .store(write.wrapping_add(source.len()), Ordering::Release);
+        self.max_queue_samples
+            .fetch_max(self.queued_samples(), Ordering::Relaxed);
         true
     }
 
-    fn pop(&self) -> Option<f32> {
+    fn pop(&self, generation: u64) -> Result<Option<OutputSample>, ()> {
         let read = self.read.load(Ordering::Relaxed);
         if read == self.write.load(Ordering::Acquire) {
-            return None;
+            return Ok(None);
         }
         let sample = unsafe { *self.samples[read & (self.samples.len() - 1)].get() };
+        if sample.generation != generation {
+            return Err(());
+        }
         self.read.store(read.wrapping_add(1), Ordering::Release);
-        Some(sample)
+        Ok(Some(sample))
     }
 
     fn record_callback(&self, started: Instant, frame_count: usize, sample_rate: u32) {
         let elapsed = started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64;
         self.callback_count.fetch_add(1, Ordering::Relaxed);
+        self.last_callback_frames
+            .store(frame_count, Ordering::Relaxed);
         self.last_callback_micros.store(elapsed, Ordering::Relaxed);
         self.max_callback_micros
             .fetch_max(elapsed, Ordering::Relaxed);
         let deadline = callback_deadline_micros(sample_rate, frame_count);
         if deadline > 0 && elapsed > deadline {
             self.slow_callback_count.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+impl NativeOutputDiagnostics {
+    fn from_ring(
+        ring: &NativeOutputRing,
+        rendered_position_seconds: f64,
+        channels: usize,
+        sample_rate: u32,
+    ) -> Self {
+        let channels = channels.max(1);
+        let queue_frames = ring.queued_samples() / channels;
+        Self {
+            rendered_position_seconds,
+            consumed_position_seconds: ring.consumed_position_seconds(),
+            queue_frames,
+            queue_delay_seconds: queue_frames as f64 / sample_rate.max(1) as f64,
+            device_output_latency_seconds: None,
+            target_queue_frames: ring.target_samples(channels) / channels,
+            queue_capacity_frames: ring.samples.len() / channels,
+            max_queue_frames: ring.max_queue_samples.load(Ordering::Relaxed) / channels,
+            consumed_frame_count: ring.consumed_frame_count.load(Ordering::Relaxed),
+            underrun_frame_count: ring.underrun_frame_count.load(Ordering::Relaxed),
+            underrun_callback_count: ring.underrun_callback_count.load(Ordering::Relaxed),
+            intentional_silence_frame_count: ring
+                .intentional_silence_frame_count
+                .load(Ordering::Relaxed),
+            last_render_micros: ring.last_render_micros.load(Ordering::Relaxed),
+            max_render_micros: ring.max_render_micros.load(Ordering::Relaxed),
+            slow_render_block_count: ring.slow_render_block_count.load(Ordering::Relaxed),
+            stream_failed: ring.stream_failed.load(Ordering::Acquire),
+            stream_error_count: ring.stream_error_count.load(Ordering::Relaxed),
+            queue_generation: ring.consumed_generation.load(Ordering::Acquire),
+            requested_queue_generation: ring.requested_generation.load(Ordering::Acquire),
         }
     }
 }
@@ -631,6 +792,50 @@ pub struct NativeAudioStatus {
     max_callback_micros: u64,
     #[serde(rename = "slowCallbackCount")]
     slow_callback_count: u64,
+    #[serde(rename = "outputDiagnostics")]
+    output_diagnostics: NativeOutputDiagnostics,
+}
+
+#[derive(Clone, Default, Serialize)]
+pub struct NativeOutputDiagnostics {
+    #[serde(rename = "renderedPositionSeconds")]
+    rendered_position_seconds: f64,
+    #[serde(rename = "consumedPositionSeconds")]
+    consumed_position_seconds: f64,
+    #[serde(rename = "queueFrames")]
+    queue_frames: usize,
+    #[serde(rename = "queueDelaySeconds")]
+    queue_delay_seconds: f64,
+    #[serde(rename = "deviceOutputLatencySeconds")]
+    device_output_latency_seconds: Option<f64>,
+    #[serde(rename = "targetQueueFrames")]
+    target_queue_frames: usize,
+    #[serde(rename = "queueCapacityFrames")]
+    queue_capacity_frames: usize,
+    #[serde(rename = "maxQueueFrames")]
+    max_queue_frames: usize,
+    #[serde(rename = "consumedFrameCount")]
+    consumed_frame_count: u64,
+    #[serde(rename = "underrunFrameCount")]
+    underrun_frame_count: u64,
+    #[serde(rename = "underrunCallbackCount")]
+    underrun_callback_count: u64,
+    #[serde(rename = "intentionalSilenceFrameCount")]
+    intentional_silence_frame_count: u64,
+    #[serde(rename = "lastRenderMicros")]
+    last_render_micros: u64,
+    #[serde(rename = "maxRenderMicros")]
+    max_render_micros: u64,
+    #[serde(rename = "slowRenderBlockCount")]
+    slow_render_block_count: u64,
+    #[serde(rename = "streamFailed")]
+    stream_failed: bool,
+    #[serde(rename = "streamErrorCount")]
+    stream_error_count: u64,
+    #[serde(rename = "queueGeneration")]
+    queue_generation: u64,
+    #[serde(rename = "requestedQueueGeneration")]
+    requested_queue_generation: u64,
 }
 
 #[derive(Serialize)]
@@ -964,7 +1169,14 @@ pub fn native_audio_pause(
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
     if let Some(shared) = &runtime.shared {
         if let Ok(mut playback) = shared.lock() {
+            if let Some(ring) = &runtime.output_ring {
+                playback.position_seconds = ring.control_position_seconds();
+                ring.request_discontinuity(playback.position_seconds, true);
+            }
             playback.playing = false;
+            reset_hosted_processing(&mut playback);
+            reset_builtin_effect_state(&mut playback);
+            reset_scan_starts(&mut playback);
         }
     }
     Ok(runtime.status())
@@ -982,6 +1194,9 @@ pub fn native_audio_resume(
             playback.playing = true;
             apply_loop_wrap(&mut playback);
             reset_scan_starts(&mut playback);
+            if let Some(ring) = &runtime.output_ring {
+                ring.request_discontinuity(playback.position_seconds, false);
+            }
         }
     }
     Ok(runtime.status())
@@ -999,8 +1214,12 @@ pub fn native_audio_seek(
         if let Ok(mut playback) = shared.lock() {
             playback.position_seconds = seconds.max(0.0);
             reset_hosted_processing(&mut playback);
+            reset_builtin_effect_state(&mut playback);
             apply_loop_wrap(&mut playback);
             reset_scan_starts(&mut playback);
+            if let Some(ring) = &runtime.output_ring {
+                ring.request_discontinuity(playback.position_seconds, !playback.playing);
+            }
         }
     }
     Ok(runtime.status())
@@ -1027,20 +1246,49 @@ pub fn native_audio_update_track(
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
     if let Some(shared) = &runtime.shared {
         if let Ok(mut playback) = shared.lock() {
-            if let Some(track) = playback.tracks.get_mut(&patch.track_id) {
-                if let Some(volume) = patch.volume {
-                    track.volume = volume.clamp(0.0, 1.2);
+            let changed = playback.tracks.get(&patch.track_id).is_some_and(|track| {
+                patch
+                    .volume
+                    .is_some_and(|value| track.volume != value.clamp(0.0, 1.2))
+                    || patch
+                        .pan
+                        .is_some_and(|value| track.pan != value.clamp(-1.0, 1.0))
+                    || patch.mute.is_some_and(|value| track.mute != value)
+                    || patch.solo.is_some_and(|value| track.solo != value)
+            });
+            let hard_change = playback.tracks.get(&patch.track_id).is_some_and(|track| {
+                patch.mute.is_some_and(|value| track.mute != value)
+                    || patch.solo.is_some_and(|value| track.solo != value)
+            });
+            if changed {
+                if hard_change {
+                    if let Some(ring) = &runtime.output_ring {
+                        playback.position_seconds = ring.control_position_seconds();
+                    }
                 }
-                if let Some(pan) = patch.pan {
-                    track.pan = pan.clamp(-1.0, 1.0);
-                }
-                if let Some(mute) = patch.mute {
-                    track.mute = mute;
-                }
-                if let Some(solo) = patch.solo {
-                    track.solo = solo;
+                if let Some(track) = playback.tracks.get_mut(&patch.track_id) {
+                    if let Some(volume) = patch.volume {
+                        track.volume = volume.clamp(0.0, 1.2);
+                    }
+                    if let Some(pan) = patch.pan {
+                        track.pan = pan.clamp(-1.0, 1.0);
+                    }
+                    if let Some(mute) = patch.mute {
+                        track.mute = mute;
+                    }
+                    if let Some(solo) = patch.solo {
+                        track.solo = solo;
+                    }
                 }
                 playback.has_solo = playback.tracks.values().any(|item| item.solo);
+                if hard_change {
+                    reset_hosted_processing(&mut playback);
+                    reset_builtin_effect_state(&mut playback);
+                    reset_scan_starts(&mut playback);
+                    if let Some(ring) = &runtime.output_ring {
+                        ring.request_discontinuity(playback.position_seconds, !playback.playing);
+                    }
+                }
             }
         }
     }
@@ -1081,10 +1329,15 @@ impl NativeAudioRuntime {
             reset_scan_starts(&mut playback);
         }
 
-        let output_ring = Arc::new(NativeOutputRing::new());
+        let start_position_seconds = shared
+            .lock()
+            .map(|playback| playback.position_seconds)
+            .unwrap_or(0.0);
+        let output_ring = Arc::new(NativeOutputRing::new(start_position_seconds));
         let err_ring = Arc::clone(&output_ring);
         let err_fn = move |err| {
             err_ring.stream_failed.store(true, Ordering::Release);
+            err_ring.stream_error_count.fetch_add(1, Ordering::Relaxed);
             eprintln!("Pocket DAW native audio stream error: {}", err);
         };
 
@@ -1139,22 +1392,62 @@ impl NativeAudioRuntime {
             .name("pocket-daw-native-render".to_string())
             .spawn(move || {
                 let block_samples = NATIVE_AUDIO_BLOCK_FRAMES * channels as usize;
-                let mut block = vec![0.0_f32; block_samples];
+                let mut block = vec![
+                    OutputSample {
+                        value: 0.0,
+                        next_position_seconds: start_position_seconds,
+                        intentional_silence: true,
+                        generation: 0,
+                    };
+                    block_samples
+                ];
+                let mut frame_scratch = vec![0.0_f32; channels as usize];
                 while !producer_stop.load(Ordering::Acquire) {
-                    if producer_ring.available_to_write() < block_samples {
+                    if producer_ring.stream_failed.load(Ordering::Acquire)
+                        || producer_ring.queued_samples()
+                            >= producer_ring.target_samples(channels as usize)
+                        || producer_ring.available_to_write() < block_samples
+                    {
                         std::thread::sleep(Duration::from_millis(1));
                         continue;
                     }
+                    let started = Instant::now();
                     if let Ok(mut playback) = producer_shared.lock() {
-                        for frame in block.chunks_mut(channels as usize) {
+                        let generation = producer_ring.requested_generation.load(Ordering::Acquire);
+                        for output_frame in block.chunks_mut(channels as usize) {
+                            let intentional_silence = !playback.playing;
                             let (left, right) = render_next_frame(&mut playback);
-                            write_frame(frame, left, right);
+                            write_frame(&mut frame_scratch, left, right);
+                            let next_position_seconds = playback.position_seconds;
+                            for (output, value) in output_frame.iter_mut().zip(&frame_scratch) {
+                                *output = OutputSample {
+                                    value: *value,
+                                    next_position_seconds,
+                                    intentional_silence,
+                                    generation,
+                                };
+                            }
+                        }
+                        // Keep publication under the playback lock: a control command
+                        // cannot request a new generation after rendering but before push.
+                        if !producer_ring.push(&block) {
+                            std::thread::yield_now();
                         }
                     } else {
-                        block.fill(0.0);
+                        std::thread::sleep(Duration::from_millis(1));
+                        continue;
                     }
-                    if !producer_ring.push(&block) {
-                        std::thread::yield_now();
+                    let elapsed = started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64;
+                    producer_ring
+                        .last_render_micros
+                        .store(elapsed, Ordering::Relaxed);
+                    producer_ring
+                        .max_render_micros
+                        .fetch_max(elapsed, Ordering::Relaxed);
+                    if elapsed > callback_deadline_micros(sample_rate, NATIVE_AUDIO_BLOCK_FRAMES) {
+                        producer_ring
+                            .slow_render_block_count
+                            .fetch_add(1, Ordering::Relaxed);
                     }
                 }
             })
@@ -1397,12 +1690,28 @@ impl NativeAudioRuntime {
     fn status(&self) -> NativeAudioStatus {
         if let Some(shared) = &self.shared {
             if let Ok(playback) = shared.lock() {
+                let output_diagnostics = self.output_ring.as_ref().map_or_else(
+                    || NativeOutputDiagnostics {
+                        rendered_position_seconds: playback.position_seconds,
+                        consumed_position_seconds: playback.position_seconds,
+                        ..NativeOutputDiagnostics::default()
+                    },
+                    |ring| {
+                        NativeOutputDiagnostics::from_ring(
+                            ring,
+                            playback.position_seconds,
+                            playback.channels as usize,
+                            playback.sample_rate,
+                        )
+                    },
+                );
+                let stream_failed = output_diagnostics.stream_failed;
                 return NativeAudioStatus {
                     backend: "native-cpal".to_string(),
                     available: true,
-                    active: true,
-                    playing: playback.playing,
-                    position_seconds: playback.position_seconds,
+                    active: !stream_failed,
+                    playing: playback.playing && !stream_failed,
+                    position_seconds: output_diagnostics.consumed_position_seconds,
                     event_count: playback.events.len(),
                     sample_rate: playback.sample_rate,
                     channels: playback.channels,
@@ -1411,7 +1720,11 @@ impl NativeAudioRuntime {
                     project_title: playback.project_title.clone(),
                     device_name: self.device_name.clone(),
                     host_name: self.host_name.clone(),
-                    last_error: self.last_error.clone(),
+                    last_error: if stream_failed {
+                        Some("Native output stream failed. Restart playback or select another output device.".to_string())
+                    } else {
+                        self.last_error.clone()
+                    },
                     asset_count: playback.assets.len(),
                     asset_region_count: playback.regions.len(),
                     procedural_event_count: playback.events.len(),
@@ -1439,6 +1752,7 @@ impl NativeAudioRuntime {
                         .map_or(playback.slow_callback_count, |ring| {
                             ring.slow_callback_count.load(Ordering::Relaxed)
                         }),
+                    output_diagnostics,
                 };
             }
         }
@@ -1464,6 +1778,7 @@ impl NativeAudioRuntime {
             last_callback_micros: 0,
             max_callback_micros: 0,
             slow_callback_count: 0,
+            output_diagnostics: NativeOutputDiagnostics::default(),
         }
     }
 }
@@ -1541,21 +1856,14 @@ impl NativeAudioStatus {
             last_callback_micros: 0,
             max_callback_micros: 0,
             slow_callback_count: 0,
+            output_diagnostics: NativeOutputDiagnostics::default(),
         }
     }
 }
 
 fn write_ring_output(data: &mut [f32], ring: &NativeOutputRing, channels: usize, sample_rate: u32) {
     crate::vst3_session::with_audio_callback_scope(|| {
-        let started = Instant::now();
-        for sample in data.iter_mut() {
-            *sample = ring.pop().unwrap_or(0.0);
-        }
-        ring.record_callback(
-            started,
-            frame_count_for_output(data.len(), channels),
-            sample_rate,
-        );
+        write_ring_output_converted(data, ring, channels, sample_rate, |sample| sample);
     });
 }
 
@@ -1566,15 +1874,9 @@ fn write_ring_output_i16(
     sample_rate: u32,
 ) {
     crate::vst3_session::with_audio_callback_scope(|| {
-        let started = Instant::now();
-        for sample in data.iter_mut() {
-            *sample = (ring.pop().unwrap_or(0.0).clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
-        }
-        ring.record_callback(
-            started,
-            frame_count_for_output(data.len(), channels),
-            sample_rate,
-        );
+        write_ring_output_converted(data, ring, channels, sample_rate, |sample| {
+            (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16
+        });
     });
 }
 
@@ -1585,16 +1887,106 @@ fn write_ring_output_u16(
     sample_rate: u32,
 ) {
     crate::vst3_session::with_audio_callback_scope(|| {
-        let started = Instant::now();
-        for sample in data.iter_mut() {
-            *sample = f32_to_u16(ring.pop().unwrap_or(0.0));
-        }
-        ring.record_callback(
-            started,
-            frame_count_for_output(data.len(), channels),
-            sample_rate,
-        );
+        write_ring_output_converted(data, ring, channels, sample_rate, f32_to_u16);
     });
+}
+
+fn write_ring_output_converted<T: Copy>(
+    data: &mut [T],
+    ring: &NativeOutputRing,
+    channels: usize,
+    sample_rate: u32,
+    convert: impl Fn(f32) -> T,
+) {
+    write_ring_output_converted_with_hook(data, ring, channels, sample_rate, convert, |_| {});
+}
+
+fn write_ring_output_converted_with_hook<T: Copy>(
+    data: &mut [T],
+    ring: &NativeOutputRing,
+    channels: usize,
+    sample_rate: u32,
+    convert: impl Fn(f32) -> T,
+    mut before_frame: impl FnMut(usize),
+) {
+    let started = Instant::now();
+    let changed_at_start = ring.begin_callback();
+    let generation = ring.consumed_generation.load(Ordering::Acquire);
+    let mut valid_frames = 0_u64;
+    let mut intentional_frames = 0_u64;
+    let mut underrun_frames = 0_u64;
+    let mut last_position = None;
+    let mut interrupted = false;
+    let mut gap_started = false;
+    let channels = channels.max(1);
+    for (frame_index, frame) in data.chunks_mut(channels).enumerate() {
+        before_frame(frame_index);
+        if !interrupted && ring.requested_generation.load(Ordering::Acquire) != generation {
+            ring.begin_callback();
+            interrupted = true;
+        }
+        if interrupted || gap_started {
+            frame.fill(convert(0.0));
+        } else {
+            let mut frame_position = None;
+            let mut frame_intentional = true;
+            for output in frame.iter_mut() {
+                match ring.pop(generation) {
+                    Ok(Some(sample)) => {
+                        *output = convert(sample.value);
+                        frame_position = Some(sample.next_position_seconds);
+                        frame_intentional &= sample.intentional_silence;
+                    }
+                    Ok(None) => {
+                        gap_started = true;
+                        break;
+                    }
+                    Err(()) => {
+                        ring.begin_callback();
+                        interrupted = true;
+                        break;
+                    }
+                }
+            }
+            if !gap_started && !interrupted {
+                valid_frames += 1;
+                intentional_frames += u64::from(frame_intentional);
+                last_position = frame_position;
+                if let Some(position) = frame_position {
+                    ring.inflight_position_bits
+                        .store(position.to_bits(), Ordering::Relaxed);
+                }
+                continue;
+            }
+            frame.fill(convert(0.0));
+        }
+        if interrupted
+            || ring.paused.load(Ordering::Acquire)
+            || (changed_at_start && valid_frames == 0)
+        {
+            intentional_frames += 1;
+        } else {
+            underrun_frames += 1;
+        }
+    }
+    if let Some(position) = last_position.filter(|_| !interrupted) {
+        ring.consumed_position_bits
+            .store(position.to_bits(), Ordering::Relaxed);
+    }
+    ring.consumed_frame_count
+        .fetch_add(valid_frames, Ordering::Relaxed);
+    ring.intentional_silence_frame_count
+        .fetch_add(intentional_frames, Ordering::Relaxed);
+    if underrun_frames > 0 {
+        ring.underrun_frame_count
+            .fetch_add(underrun_frames, Ordering::Relaxed);
+        ring.underrun_callback_count.fetch_add(1, Ordering::Relaxed);
+    }
+    ring.record_callback(
+        started,
+        frame_count_for_output(data.len(), channels),
+        sample_rate,
+    );
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -2740,6 +3132,18 @@ fn reset_hosted_processing(playback: &mut PlaybackShared) {
     }
 }
 
+fn reset_builtin_effect_state(playback: &mut PlaybackShared) {
+    for chain in playback.fx.track_chains.values_mut() {
+        chain.reset_builtin_state();
+    }
+    for chain in playback.fx.drum_lane_chains.values_mut() {
+        chain.reset_builtin_state();
+    }
+    if let Some(chain) = playback.fx.master_chain.as_mut() {
+        chain.reset_builtin_state();
+    }
+}
+
 fn reset_scan_starts(playback: &mut PlaybackShared) {
     ensure_compiled_regions(playback);
     playback.scan_start_index = find_scan_start(
@@ -3081,6 +3485,43 @@ impl NativeFxChainState {
                 state.cursor = 0;
                 state.ready = false;
                 state.disabled = false;
+            }
+        }
+    }
+
+    fn reset_builtin_state(&mut self) {
+        for slot in &mut self.slots {
+            for filter in &mut slot.filters {
+                filter.z1_l = 0.0;
+                filter.z2_l = 0.0;
+                filter.z1_r = 0.0;
+                filter.z2_r = 0.0;
+            }
+            match &mut slot.processor {
+                NativeFxProcessor::Delay {
+                    buffer_l,
+                    buffer_r,
+                    index,
+                    ..
+                }
+                | NativeFxProcessor::Reverb {
+                    buffer_l,
+                    buffer_r,
+                    index,
+                    ..
+                }
+                | NativeFxProcessor::ModDelay {
+                    buffer_l,
+                    buffer_r,
+                    index,
+                    ..
+                } => {
+                    buffer_l.fill(0.0);
+                    buffer_r.fill(0.0);
+                    *index = 0;
+                }
+                NativeFxProcessor::TremoloAutopan { phase, .. } => *phase = 0.0,
+                _ => {}
             }
         }
     }
@@ -8432,12 +8873,265 @@ mod tests {
         assert_eq!(delay.process(1.0, -1.0), (0.0, 0.0));
         assert_eq!(delay.process(2.0, -2.0), (0.0, 0.0));
         assert_eq!(delay.process(3.0, -3.0), (1.0, -1.0));
-        let ring = NativeOutputRing::new();
-        assert!(ring.push(&[0.25, -0.5]));
+        let ring = NativeOutputRing::new(0.0);
+        assert!(ring.push(&[
+            OutputSample {
+                value: 0.25,
+                next_position_seconds: 1.0 / 48_000.0,
+                intentional_silence: false,
+                generation: 0,
+            },
+            OutputSample {
+                value: -0.5,
+                next_position_seconds: 1.0 / 48_000.0,
+                intentional_silence: false,
+                generation: 0,
+            },
+        ]));
         let mut output = [0.0; 4];
         write_ring_output(&mut output, &ring, 2, 48_000);
         assert_eq!(output, [0.25, -0.5, 0.0, 0.0]);
         assert_eq!(ring.callback_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn output_ring_reports_consumed_loop_position_and_flushes_stale_generations() {
+        let ring = NativeOutputRing::new(0.49);
+        assert_eq!(ring.target_samples(2), NATIVE_OUTPUT_TARGET_MIN_FRAMES * 2);
+        assert!(ring.push(&[
+            OutputSample {
+                value: 0.5,
+                next_position_seconds: 0.5,
+                intentional_silence: false,
+                generation: 0,
+            },
+            OutputSample {
+                value: -0.5,
+                next_position_seconds: 0.5,
+                intentional_silence: false,
+                generation: 0,
+            },
+            OutputSample {
+                value: 0.25,
+                next_position_seconds: 0.1,
+                intentional_silence: false,
+                generation: 0,
+            },
+            OutputSample {
+                value: -0.25,
+                next_position_seconds: 0.1,
+                intentional_silence: false,
+                generation: 0,
+            },
+        ]));
+        assert_eq!(ring.queued_samples(), 4);
+        let mut first = [0.0; 2];
+        write_ring_output(&mut first, &ring, 2, 48_000);
+        assert_eq!(first, [0.5, -0.5]);
+        assert_eq!(ring.consumed_position_seconds(), 0.5);
+        assert_eq!(ring.queued_samples(), 2);
+
+        ring.request_discontinuity(1.25, false);
+        // The consumer, not the command thread, owns the read cursor.
+        assert_eq!(ring.queued_samples(), 2);
+        assert_eq!(ring.consumed_position_seconds(), 1.25);
+        let mut stale = [1.0; 2];
+        write_ring_output(&mut stale, &ring, 2, 48_000);
+        assert_eq!(stale, [0.0, 0.0]);
+        assert_eq!(ring.queued_samples(), 0);
+        assert_eq!(ring.underrun_frame_count.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            ring.intentional_silence_frame_count.load(Ordering::Relaxed),
+            1
+        );
+
+        assert!(ring.push(&[
+            OutputSample {
+                value: 0.75,
+                next_position_seconds: 0.1,
+                intentional_silence: false,
+                generation: 1,
+            },
+            OutputSample {
+                value: -0.75,
+                next_position_seconds: 0.1,
+                intentional_silence: false,
+                generation: 1,
+            },
+        ]));
+        let mut fresh = [0.0; 2];
+        write_ring_output(&mut fresh, &ring, 2, 48_000);
+        assert_eq!(fresh, [0.75, -0.75]);
+        assert_eq!(ring.consumed_position_seconds(), 0.1);
+        assert_eq!(ring.consumed_frame_count.load(Ordering::Relaxed), 2);
+        assert_eq!(ring.consumed_generation.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn output_ring_preserves_fresh_queued_audio_and_counts_trailing_starvation() {
+        let ring = NativeOutputRing::new(0.0);
+        let old = OutputSample {
+            value: 0.25,
+            next_position_seconds: 0.1,
+            intentional_silence: false,
+            generation: 0,
+        };
+        let fresh = OutputSample {
+            value: 0.75,
+            next_position_seconds: 1.1,
+            intentional_silence: false,
+            generation: 1,
+        };
+        assert!(ring.push(&[old, old]));
+        ring.request_discontinuity(1.0, false);
+        assert!(ring.push(&[fresh, fresh]));
+        let mut output = [0.0; 4];
+        write_ring_output(&mut output, &ring, 2, 48_000);
+        assert_eq!(output, [0.75, 0.75, 0.0, 0.0]);
+        assert_eq!(ring.consumed_position_seconds(), 1.1);
+        assert_eq!(ring.underrun_frame_count.load(Ordering::Relaxed), 1);
+        assert_eq!(ring.underrun_callback_count.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            ring.intentional_silence_frame_count.load(Ordering::Relaxed),
+            0
+        );
+    }
+
+    #[test]
+    fn output_ring_does_not_mix_generations_within_one_callback() {
+        let ring = NativeOutputRing::new(0.0);
+        let old = OutputSample {
+            value: 0.25,
+            next_position_seconds: 0.1,
+            intentional_silence: false,
+            generation: 0,
+        };
+        let fresh = OutputSample {
+            value: 0.75,
+            next_position_seconds: 1.1,
+            intentional_silence: false,
+            generation: 1,
+        };
+        assert!(ring.push(&[old, old, old, old]));
+        let mut first = [0.0; 4];
+        write_ring_output_converted_with_hook(
+            &mut first,
+            &ring,
+            2,
+            48_000,
+            |sample| sample,
+            |index| {
+                if index == 1 {
+                    ring.request_discontinuity(1.0, false);
+                    assert!(ring.push(&[fresh, fresh]));
+                }
+            },
+        );
+        assert_eq!(first, [0.25, 0.25, 0.0, 0.0]);
+        assert_eq!(ring.consumed_position_seconds(), 1.0);
+        let mut second = [0.0; 2];
+        write_ring_output(&mut second, &ring, 2, 48_000);
+        assert_eq!(second, [0.75, 0.75]);
+        assert_eq!(ring.consumed_position_seconds(), 1.1);
+    }
+
+    #[test]
+    fn pause_captures_the_frame_written_by_an_inflight_callback() {
+        let ring = NativeOutputRing::new(0.0);
+        let first_frame = OutputSample {
+            value: 0.25,
+            next_position_seconds: 0.1,
+            intentional_silence: false,
+            generation: 0,
+        };
+        let second_frame = OutputSample {
+            value: 0.5,
+            next_position_seconds: 0.2,
+            intentional_silence: false,
+            generation: 0,
+        };
+        assert!(ring.push(&[first_frame, first_frame, second_frame, second_frame]));
+        let mut output = [0.0; 4];
+        write_ring_output_converted_with_hook(
+            &mut output,
+            &ring,
+            2,
+            48_000,
+            |sample| sample,
+            |index| {
+                if index == 1 {
+                    assert_eq!(ring.consumed_position_seconds(), 0.0);
+                    let pause_position = ring.control_position_seconds();
+                    assert_eq!(pause_position, 0.1);
+                    ring.request_discontinuity(pause_position, true);
+                }
+            },
+        );
+        assert_eq!(output, [0.25, 0.25, 0.0, 0.0]);
+        assert_eq!(ring.control_position_seconds(), 0.1);
+        assert_eq!(ring.consumed_position_seconds(), 0.1);
+    }
+
+    #[test]
+    fn output_ring_distinguishes_starvation_from_paused_silence_and_stream_failure() {
+        let ring = NativeOutputRing::new(2.0);
+        let mut output = [1.0; 4];
+        write_ring_output(&mut output, &ring, 2, 48_000);
+        assert_eq!(output, [0.0; 4]);
+        assert_eq!(ring.underrun_frame_count.load(Ordering::Relaxed), 2);
+        assert_eq!(ring.underrun_callback_count.load(Ordering::Relaxed), 1);
+
+        ring.request_discontinuity(2.0, true);
+        write_ring_output(&mut output, &ring, 2, 48_000);
+        assert_eq!(ring.underrun_frame_count.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            ring.intentional_silence_frame_count.load(Ordering::Relaxed),
+            2
+        );
+        ring.stream_failed.store(true, Ordering::Release);
+        ring.stream_error_count.fetch_add(1, Ordering::Relaxed);
+        let diagnostics = NativeOutputDiagnostics::from_ring(&ring, 2.05, 2, 48_000);
+        assert!(diagnostics.stream_failed);
+        assert_eq!(diagnostics.stream_error_count, 1);
+        assert_eq!(diagnostics.consumed_position_seconds, 2.0);
+        assert_eq!(diagnostics.queue_frames, 0);
+        assert!(diagnostics.target_queue_frames < diagnostics.queue_capacity_frames);
+    }
+
+    #[test]
+    fn runtime_status_uses_consumed_transport_and_surfaces_device_failure() {
+        let mut runtime = NativeAudioRuntime::default();
+        let payload: NativeAudioStartPayload = serde_json::from_value(serde_json::json!({
+            "startSeconds": 2.5,
+            "sampleRate": 48_000,
+            "tracks": [],
+            "events": []
+        }))
+        .expect("minimal playback payload should deserialize");
+        let mut playback = runtime
+            .build_playback(payload, 48_000, 2, 1)
+            .expect("minimal playback should build");
+        playback.position_seconds = 3.0;
+        runtime.shared = Some(Arc::new(Mutex::new(playback)));
+        let ring = Arc::new(NativeOutputRing::new(2.5));
+        runtime.output_ring = Some(Arc::clone(&ring));
+
+        let healthy = runtime.status();
+        assert!(healthy.active && healthy.playing);
+        assert_eq!(healthy.position_seconds, 2.5);
+        assert_eq!(healthy.output_diagnostics.rendered_position_seconds, 3.0);
+        assert_eq!(
+            healthy.output_diagnostics.device_output_latency_seconds,
+            None
+        );
+
+        ring.stream_failed.store(true, Ordering::Release);
+        ring.stream_error_count.fetch_add(1, Ordering::Relaxed);
+        let failed = runtime.status();
+        assert!(!failed.active && !failed.playing);
+        assert!(failed.last_error.unwrap().contains("Restart playback"));
+        assert!(failed.output_diagnostics.stream_failed);
+        assert_eq!(failed.output_diagnostics.stream_error_count, 1);
     }
 
     fn test_track(id: &str, volume: f64, pan: f64, mute: bool, solo: bool) -> NativeTrackControl {
