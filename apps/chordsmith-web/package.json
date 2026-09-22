@@ -35,7 +35,7 @@
     "test:unit": "vitest run tests/wav-export-preflight.test.js",
     "test:composer": "node scripts/verify-genre-composer-fixtures.mjs",
     "check:lifecycle-source": "node --check src/audio/08-offline-renderer.js && node --check src/transport/10-transport.js",
-    "lint": "npm run check:lifecycle-source && eslint src/genre-composer.js src/wav-export-preflight.js && node scripts/lint-core-worker.mjs",
+    "lint": "npm run check:lifecycle-source && eslint src/genre-composer.js src/wav-export-preflight.js && node scripts/lint-authored-fragments.mjs",
     "typecheck": "tsc --noEmit --allowJs --checkJs --target ES2022 --module ESNext --moduleResolution bundler src/genre-composer.js src/wav-export-preflight.js",
     "format": "prettier src/genre-composer.js src/wav-export-preflight.js scripts/build-single-file.mjs --write",
     "format:check": "prettier src/genre-composer.js src/wav-export-preflight.js scripts/build-single-file.mjs --check",

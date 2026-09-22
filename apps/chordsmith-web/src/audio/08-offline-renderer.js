@@ -475,34 +475,19 @@ async function renderCoreWavForCurrentProject(projectSnapshot, exportScope, time
     setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) with Pocket Audio Core off the UI thread from ${eventCount} events.`);
     pocketAudioCoreStatus = `WAV render ${scopeLabel}: ${eventCount} timeline events`;
     updatePocketAudioCoreStatusUi();
-    const worker = workerJob.worker;
     const id = `wav-${token}-${Date.now()}`;
-    const blob = await new Promise((resolve, reject) => {
-      let settled = false;
-      const finish = (callback, value) => {
-        if(settled) return;
-        settled = true;
-        worker.terminate();
-        if(workerJob.blobUrl) URL.revokeObjectURL(workerJob.blobUrl);
-        if(wavExportWorker?.worker === worker) wavExportWorker = null;
-        callback(value);
-      };
-      wavExportWorker = {
-        worker,
-        cancel:() => finish(reject, new DOMException("WAV export cancelled", "AbortError"))
-      };
-      worker.onmessage = event => {
-        const message = event.data || {};
-        if(message.id !== id) return;
-        if(message.state === "rendering"){
-          setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) with Pocket Audio Core off the UI thread from ${eventCount} events.`);
-          return;
-        }
-        if(!message.ok) return finish(reject, new Error(message.error || "Pocket Audio Core worker failed."));
-        finish(resolve, new Blob([message.bytes], {type:message.type || "audio/wav"}));
-      };
-      worker.onerror = event => finish(reject, new Error(event.message || "Pocket Audio Core worker failed to load."));
-      worker.postMessage({id, project:projectSnapshot, options:{sampleRate:44100, ...timelineOptions}});
+    const blob = await awaitPocketAudioWavWorkerResult({
+      workerJob,
+      id,
+      payload:{id, project:projectSnapshot, options:{sampleRate:44100, ...timelineOptions}},
+      isCurrent:() => token === state.wavExportToken,
+      setActiveWorker:job => { wavExportWorker = job; },
+      clearActiveWorker:completedWorker => {
+        if(wavExportWorker?.worker === completedWorker) wavExportWorker = null;
+      },
+      onRendering:() => {
+        setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) with Pocket Audio Core off the UI thread from ${eventCount} events.`);
+      }
     });
     if(token !== state.wavExportToken) return true;
     setWavOutput(blob);

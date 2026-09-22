@@ -29809,6 +29809,39 @@ async function importMidiFile(file){
   }
 }
 
+/* exported awaitPocketAudioWavWorkerResult */
+function awaitPocketAudioWavWorkerResult({workerJob, id, payload, isCurrent, onRendering, setActiveWorker, clearActiveWorker}){
+  const {worker, blobUrl} = workerJob;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback, value) => {
+      if(settled) return;
+      settled = true;
+      worker.terminate();
+      if(blobUrl) URL.revokeObjectURL(blobUrl);
+      clearActiveWorker(worker);
+      callback(value);
+    };
+    const cancel = () => finish(reject, new DOMException("WAV export cancelled", "AbortError"));
+
+    setActiveWorker({worker, cancel});
+    worker.onmessage = event => {
+      const message = event.data || {};
+      if(message.id !== id) return;
+      if(!isCurrent()) return cancel();
+      if(message.state === "rendering") return onRendering();
+      if(!message.ok) return finish(reject, new Error(message.error || "Pocket Audio Core worker failed."));
+      finish(resolve, new Blob([message.bytes], {type:message.type || "audio/wav"}));
+    };
+    worker.onerror = event => finish(reject, new Error(event.message || "Pocket Audio Core worker failed to load."));
+    try{
+      worker.postMessage(payload);
+    }catch(error){
+      finish(reject, error);
+    }
+  });
+}
+
 function makeOfflineTone(ctx, dest, freq, t, dur, type, peak=0.4, filterType=null, filterFreq=1400, pan=0){
   t = safeAudioTime(t);
   dur = Math.max(0.001, Number.isFinite(dur) ? dur : 0.001);
@@ -30286,34 +30319,19 @@ async function renderCoreWavForCurrentProject(projectSnapshot, exportScope, time
     setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) with Pocket Audio Core off the UI thread from ${eventCount} events.`);
     pocketAudioCoreStatus = `WAV render ${scopeLabel}: ${eventCount} timeline events`;
     updatePocketAudioCoreStatusUi();
-    const worker = workerJob.worker;
     const id = `wav-${token}-${Date.now()}`;
-    const blob = await new Promise((resolve, reject) => {
-      let settled = false;
-      const finish = (callback, value) => {
-        if(settled) return;
-        settled = true;
-        worker.terminate();
-        if(workerJob.blobUrl) URL.revokeObjectURL(workerJob.blobUrl);
-        if(wavExportWorker?.worker === worker) wavExportWorker = null;
-        callback(value);
-      };
-      wavExportWorker = {
-        worker,
-        cancel:() => finish(reject, new DOMException("WAV export cancelled", "AbortError"))
-      };
-      worker.onmessage = event => {
-        const message = event.data || {};
-        if(message.id !== id) return;
-        if(message.state === "rendering"){
-          setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) with Pocket Audio Core off the UI thread from ${eventCount} events.`);
-          return;
-        }
-        if(!message.ok) return finish(reject, new Error(message.error || "Pocket Audio Core worker failed."));
-        finish(resolve, new Blob([message.bytes], {type:message.type || "audio/wav"}));
-      };
-      worker.onerror = event => finish(reject, new Error(event.message || "Pocket Audio Core worker failed to load."));
-      worker.postMessage({id, project:projectSnapshot, options:{sampleRate:44100, ...timelineOptions}});
+    const blob = await awaitPocketAudioWavWorkerResult({
+      workerJob,
+      id,
+      payload:{id, project:projectSnapshot, options:{sampleRate:44100, ...timelineOptions}},
+      isCurrent:() => token === state.wavExportToken,
+      setActiveWorker:job => { wavExportWorker = job; },
+      clearActiveWorker:completedWorker => {
+        if(wavExportWorker?.worker === completedWorker) wavExportWorker = null;
+      },
+      onRendering:() => {
+        setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) with Pocket Audio Core off the UI thread from ${eventCount} events.`);
+      }
     });
     if(token !== state.wavExportToken) return true;
     setWavOutput(blob);
@@ -30880,6 +30898,42 @@ function importProject(rawData){
   return true;
 }
 
+/* exported createSchedulerTiming, elapsedSchedulerPlanSeconds, schedulerStepsToReach */
+function createSchedulerTiming(durations){
+  const prefix = [0];
+  durations.forEach(duration => {
+    prefix.push(prefix[prefix.length - 1] + Math.max(0, Number(duration) || 0));
+  });
+  return {prefix, total:prefix[prefix.length - 1] || 0};
+}
+
+function elapsedSchedulerPlanSeconds(stepCount, playStep, timing){
+  const planLength = timing.prefix.length - 1;
+  if(!planLength || stepCount <= 0) return 0;
+  const cycles = Math.floor(stepCount / planLength);
+  const remainder = stepCount % planLength;
+  const position = playStep % planLength;
+  const end = position + remainder;
+  const partial = end <= planLength
+    ? timing.prefix[end] - timing.prefix[position]
+    : timing.total - timing.prefix[position] + timing.prefix[end - planLength];
+  return cycles * timing.total + partial;
+}
+
+function schedulerStepsToReach(nextNoteTime, targetTime, playStep, timing){
+  const overdueSeconds = targetTime - nextNoteTime;
+  if(overdueSeconds <= 0 || timing.total <= 0) return 0;
+  let low = 0;
+  let high = 1;
+  while(elapsedSchedulerPlanSeconds(high, playStep, timing) < overdueSeconds && high < Number.MAX_SAFE_INTEGER / 2) high *= 2;
+  while(low + 1 < high){
+    const middle = low + Math.floor((high - low) / 2);
+    if(elapsedSchedulerPlanSeconds(middle, playStep, timing) < overdueSeconds) low = middle;
+    else high = middle;
+  }
+  return high;
+}
+
 function buildPlaybackPlan(mode="section"){
   const includeSequence = mode === "sequence";
   const sections = includeSequence ? sequenceList() : [state.currentSection];
@@ -30897,45 +30951,19 @@ function buildPlaybackPlan(mode="section"){
 }
 const MAX_SCHEDULER_STEPS_PER_TICK = 64;
 const MIN_SCHEDULER_AHEAD_SECONDS = 0.005;
-let schedulerPlanPrefixSeconds = [0];
-let schedulerPlanDurationSeconds = 0;
+let schedulerPlanTiming = createSchedulerTiming([]);
 let schedulerPlanTimingSignature = "";
 function currentSchedulerTimingSignature(){
   return `${state.bpm}:${activeResolution()}:${state.swing}`;
 }
 function rebuildSchedulerPlanTiming(){
-  schedulerPlanPrefixSeconds = [0];
-  state.transportPlan.forEach(item => {
-    schedulerPlanPrefixSeconds.push(schedulerPlanPrefixSeconds[schedulerPlanPrefixSeconds.length - 1] + stepDurationForIndex(item.step));
-  });
-  schedulerPlanDurationSeconds = schedulerPlanPrefixSeconds[schedulerPlanPrefixSeconds.length - 1] || 0;
+  schedulerPlanTiming = createSchedulerTiming(state.transportPlan.map(item => stepDurationForIndex(item.step)));
   schedulerPlanTimingSignature = currentSchedulerTimingSignature();
 }
-function elapsedSchedulerPlanSeconds(stepCount){
-  const planLength = state.transportPlan.length;
-  if(!planLength || stepCount <= 0) return 0;
-  const cycles = Math.floor(stepCount / planLength);
-  const remainder = stepCount % planLength;
-  const position = playStep % planLength;
-  const end = position + remainder;
-  const partial = end <= planLength
-    ? schedulerPlanPrefixSeconds[end] - schedulerPlanPrefixSeconds[position]
-    : schedulerPlanDurationSeconds - schedulerPlanPrefixSeconds[position] + schedulerPlanPrefixSeconds[end - planLength];
-  return cycles * schedulerPlanDurationSeconds + partial;
-}
 function fastForwardSchedulerPast(targetTime){
-  const overdueSeconds = targetTime - nextNoteTime;
-  if(overdueSeconds <= 0 || schedulerPlanDurationSeconds <= 0) return 0;
-  let low = 0;
-  let high = 1;
-  while(elapsedSchedulerPlanSeconds(high) < overdueSeconds && high < Number.MAX_SAFE_INTEGER / 2) high *= 2;
-  while(low + 1 < high){
-    const middle = low + Math.floor((high - low) / 2);
-    if(elapsedSchedulerPlanSeconds(middle) < overdueSeconds) low = middle;
-    else high = middle;
-  }
-  const skipped = high;
-  nextNoteTime += elapsedSchedulerPlanSeconds(skipped);
+  const skipped = schedulerStepsToReach(nextNoteTime, targetTime, playStep, schedulerPlanTiming);
+  if(!skipped) return 0;
+  nextNoteTime += elapsedSchedulerPlanSeconds(skipped, playStep, schedulerPlanTiming);
   playStep += skipped;
   return skipped;
 }

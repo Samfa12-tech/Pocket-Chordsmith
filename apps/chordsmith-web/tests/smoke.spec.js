@@ -1130,6 +1130,7 @@ test("WAV export cancellation terminates a pending worker and ignores stale resu
 
 test("a late completion from export A cannot overwrite export B", async ({ page }) => {
   await importFixtureThroughSettings(page, CORE_WAV_AB_FIXTURE);
+  await page.locator("#exportScopeSelect").selectOption("A");
   await page.evaluate(() => {
     window.__wavWorkers = [];
     window.Worker = class ControlledWavWorker {
@@ -1142,20 +1143,27 @@ test("a late completion from export A cannot overwrite export B", async ({ page 
   await page.locator("#exportWavBtn").click();
   await page.waitForFunction(() => window.__wavWorkers.length === 1);
   await page.locator("#cancelWavExportBtn").click();
+  await page.locator("#exportScopeSelect").selectOption("SEQUENCE");
   await page.locator("#exportWavBtn").click();
   await page.waitForFunction(() => window.__wavWorkers.length === 2);
   const states = await page.evaluate(async () => {
     const [first, second] = window.__wavWorkers;
     const bytes = new Uint8Array([1, 2, 3, 4]).buffer;
+    const sequencePreparingText = document.querySelector("#wavProgressText").textContent;
+    first.onmessage({ data: { id: first.job.id, state: "rendering" } });
+    const afterLateRendering = document.querySelector("#wavProgressText").textContent;
     second.onmessage({ data: { id: second.job.id, ok: true, bytes, type: "audio/wav" } });
     await Promise.resolve();
     await Promise.resolve();
     const completedText = document.querySelector("#wavProgressText").textContent;
     first.onmessage({ data: { id: first.job.id, ok: true, bytes: new Uint8Array([9, 9]).buffer, type: "audio/wav" } });
+    first.onmessage({ data: { id: first.job.id, state: "rendering" } });
     await Promise.resolve();
     return {
       firstTerminated: first.terminated,
       secondTerminated: second.terminated,
+      sequencePreparingText,
+      afterLateRendering,
       completedText,
       finalText: document.querySelector("#wavProgressText").textContent,
       size: state.wavBlob?.size
@@ -1163,8 +1171,37 @@ test("a late completion from export A cannot overwrite export B", async ({ page 
   });
   expect(states.firstTerminated).toBe(true);
   expect(states.secondTerminated).toBe(true);
+  expect(states.sequencePreparingText).toContain("song sequence");
+  expect(states.afterLateRendering).toBe(states.sequencePreparingText);
   expect(states.finalText).toBe(states.completedText);
   expect(states.size).toBe(4);
+});
+
+test("a synchronous postMessage failure terminates the worker and revokes its Blob URL", async ({ page }) => {
+  await importFixtureThroughSettings(page, CORE_WAV_AB_FIXTURE);
+  await page.evaluate(() => {
+    window.OfflineAudioContext = undefined;
+    window.__revokedWavWorkerUrls = [];
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = url => {
+      window.__revokedWavWorkerUrls.push(url);
+      return revokeObjectURL(url);
+    };
+    window.Worker = class ThrowingWavWorker {
+      constructor(url) { this.url = String(url); window.__throwingWavWorker = this; }
+      postMessage() { throw new DOMException("simulated clone failure", "DataCloneError"); }
+      terminate() { this.terminated = true; }
+    };
+  });
+
+  await page.locator("#exportWavBtn").click();
+  await expect(page.locator("#statusText")).toContainText("simulated clone failure");
+  const cleanup = await page.evaluate(() => ({
+    terminated: window.__throwingWavWorker.terminated,
+    revoked: window.__revokedWavWorkerUrls.includes(window.__throwingWavWorker.url)
+  }));
+  expect(cleanup).toEqual({ terminated: true, revoked: true });
+  await expect(page.locator("#exportWavBtn")).toBeEnabled();
 });
 
 test("cancelling during worker preparation does not start the main-thread fallback", async ({ page }) => {
@@ -1299,14 +1336,15 @@ test("Chordsmith scheduler fast-forwards 2-second, 30-second, and hour-long stal
       scheduler();
       return { scheduled: scheduled.slice(), nextNoteTime, phaseIndex: playStep % plan.length, skipped, expectedIndex, suspensionHeld };
     };
+    const brief = runStall(0.25);
     const short = runStall(2);
     const long = runStall(30);
     const hour = runStall(3600);
     schedulePlanStep = savedSchedulePlanStep;
-    return { short, long, hour };
+    return { brief, short, long, hour };
   });
 
-  for (const stall of [result.short, result.long, result.hour]) {
+  for (const stall of [result.brief, result.short, result.long, result.hour]) {
     expect(stall.suspensionHeld).toBe(true);
     expect(stall.scheduled.length).toBeLessThanOrEqual(64);
     expect(stall.scheduled.every(item => item.time >= 100.005)).toBe(true);

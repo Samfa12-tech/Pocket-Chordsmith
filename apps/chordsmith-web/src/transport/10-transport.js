@@ -15,45 +15,19 @@ function buildPlaybackPlan(mode="section"){
 }
 const MAX_SCHEDULER_STEPS_PER_TICK = 64;
 const MIN_SCHEDULER_AHEAD_SECONDS = 0.005;
-let schedulerPlanPrefixSeconds = [0];
-let schedulerPlanDurationSeconds = 0;
+let schedulerPlanTiming = createSchedulerTiming([]);
 let schedulerPlanTimingSignature = "";
 function currentSchedulerTimingSignature(){
   return `${state.bpm}:${activeResolution()}:${state.swing}`;
 }
 function rebuildSchedulerPlanTiming(){
-  schedulerPlanPrefixSeconds = [0];
-  state.transportPlan.forEach(item => {
-    schedulerPlanPrefixSeconds.push(schedulerPlanPrefixSeconds[schedulerPlanPrefixSeconds.length - 1] + stepDurationForIndex(item.step));
-  });
-  schedulerPlanDurationSeconds = schedulerPlanPrefixSeconds[schedulerPlanPrefixSeconds.length - 1] || 0;
+  schedulerPlanTiming = createSchedulerTiming(state.transportPlan.map(item => stepDurationForIndex(item.step)));
   schedulerPlanTimingSignature = currentSchedulerTimingSignature();
 }
-function elapsedSchedulerPlanSeconds(stepCount){
-  const planLength = state.transportPlan.length;
-  if(!planLength || stepCount <= 0) return 0;
-  const cycles = Math.floor(stepCount / planLength);
-  const remainder = stepCount % planLength;
-  const position = playStep % planLength;
-  const end = position + remainder;
-  const partial = end <= planLength
-    ? schedulerPlanPrefixSeconds[end] - schedulerPlanPrefixSeconds[position]
-    : schedulerPlanDurationSeconds - schedulerPlanPrefixSeconds[position] + schedulerPlanPrefixSeconds[end - planLength];
-  return cycles * schedulerPlanDurationSeconds + partial;
-}
 function fastForwardSchedulerPast(targetTime){
-  const overdueSeconds = targetTime - nextNoteTime;
-  if(overdueSeconds <= 0 || schedulerPlanDurationSeconds <= 0) return 0;
-  let low = 0;
-  let high = 1;
-  while(elapsedSchedulerPlanSeconds(high) < overdueSeconds && high < Number.MAX_SAFE_INTEGER / 2) high *= 2;
-  while(low + 1 < high){
-    const middle = low + Math.floor((high - low) / 2);
-    if(elapsedSchedulerPlanSeconds(middle) < overdueSeconds) low = middle;
-    else high = middle;
-  }
-  const skipped = high;
-  nextNoteTime += elapsedSchedulerPlanSeconds(skipped);
+  const skipped = schedulerStepsToReach(nextNoteTime, targetTime, playStep, schedulerPlanTiming);
+  if(!skipped) return 0;
+  nextNoteTime += elapsedSchedulerPlanSeconds(skipped, playStep, schedulerPlanTiming);
   playStep += skipped;
   return skipped;
 }
