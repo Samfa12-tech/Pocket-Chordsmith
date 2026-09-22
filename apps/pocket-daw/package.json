@@ -83,7 +83,9 @@
     "tauri:debug": "npm run plugin-host:prepare && tauri build --debug --no-bundle --config src-tauri/tauri.sidecar.conf.json",
     "tauri:build:installers": "npm run plugin-host:prepare:release && tauri build --config src-tauri/tauri.package.conf.json",
     "tauri:build": "npm run plugin-host:prepare:release && tauri build --config src-tauri/tauri.sidecar.conf.json",
-    "tauri:build:signed": "npm run plugin-host:prepare:release && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-tauri-signing-env.ps1 npx tauri build --config src-tauri/tauri.sidecar.conf.json"
+    "tauri:build:signed": "npm run plugin-host:prepare:release && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/with-tauri-signing-env.ps1 npx tauri build --config src-tauri/tauri.sidecar.conf.json",
+    "test:tooling": "node --test scripts/run-daw-checks.test.mjs",
+    "check:branch": "node scripts/run-daw-checks.mjs branch"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",
