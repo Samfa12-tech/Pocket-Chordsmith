@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { constants as zlibConstants, gunzipSync, gzipSync } from "node:zlib";
 
 const root = resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(
@@ -46,7 +46,10 @@ if (bundle.split(workerMarker).length !== 2) {
     "Chordsmith source must contain exactly one Core WAV worker embedding marker.",
   );
 }
-const workerPayload = gzipSync(workerSource, { level: 9 }).toString("base64");
+const workerPayload = gzipSync(workerSource, {
+  level: 9,
+  strategy: zlibConstants.Z_FIXED,
+}).toString("base64");
 const embeddedBundle = bundle.replace(workerMarker, workerPayload);
 const standaloneShell = shell.replace(preflightModuleTag, "");
 const output = standaloneShell.replace(placeholder, embeddedBundle);
