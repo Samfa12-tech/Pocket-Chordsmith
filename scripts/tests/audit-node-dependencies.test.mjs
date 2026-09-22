@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { relative, resolve } from "node:path";
 import test from "node:test";
 import { auditNodeDependencies } from "../audit-node-dependencies.mjs";
 
 const cleanReport = JSON.stringify({ metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 } }, vulnerabilities: {} });
+const repositoryRoot = resolve("audit-test-root");
 
 function auditWith({ platform = "linux", env = {}, lockfiles = ["app/package-lock.json"], results = [{ status: 0, stdout: cleanReport, stderr: "" }] } = {}) {
   const calls = [];
@@ -10,11 +12,11 @@ function auditWith({ platform = "linux", env = {}, lockfiles = ["app/package-loc
   const errors = [];
   let index = 0;
   const result = auditNodeDependencies({
-    repositoryRoot: "C:/repo",
+    repositoryRoot,
     packages: ["app"],
     platform,
     env,
-    exists: (path) => lockfiles.includes(path.replaceAll("\\", "/").replace("C:/repo/", "")),
+    exists: (path) => lockfiles.includes(relative(repositoryRoot, path).replaceAll("\\", "/")),
     spawn: (...args) => {
       calls.push(args);
       return results[index++];
@@ -31,7 +33,7 @@ test("audits request JSON at the high severity threshold and summarize clean rep
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0], "npm");
   assert.deepEqual(calls[0][1], ["audit", "--json", "--audit-level=high"]);
-  assert.equal(calls[0][2].cwd.replaceAll("\\", "/"), "C:/repo/app");
+  assert.equal(calls[0][2].cwd, resolve(repositoryRoot, "app"));
   assert.equal(calls[0][2].stdio[1], "pipe");
   assert.match(out[0], /passed \(0 total advisories/);
 });
