@@ -707,6 +707,7 @@ function restartPlaybackPlanAfterStructureChange(message="Playback plan updated"
   clearPendingUiTimers();
   resetPlaybackHighlights();
   state.transportPlan = buildPlaybackPlan(mode);
+  rebuildSchedulerPlanTiming();
   nextNoteTime = audioCtx.currentTime + 0.12;
   playStep = 0;
   resetLiveRecordStepClock();
@@ -759,7 +760,7 @@ function applyResolutionChange(newRes, playbackMessage=null){
 
 function clearPendingUiTimers(){
   state.pendingUiTimers.forEach(id => clearTimeout(id));
-  state.pendingUiTimers = [];
+  state.pendingUiTimers.clear();
 }
 
 function setCellCurrentState(cell, isCurrent){

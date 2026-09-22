@@ -44,6 +44,15 @@ await build({
   globalName: "PocketAudioCore",
 });
 
+await build({
+  ...common,
+  platform: "browser",
+  target: ["es2020"],
+  entryPoints: [fileURLToPath(new URL("src/export/chordsmith-wav-worker.js", packageRoot))],
+  outfile: fileURLToPath(new URL("chordsmith-wav-worker.js", distDir)),
+  format: "iife",
+});
+
 const esmOutput = Object.values(esmResult.metafile.outputs).find((output) => Array.isArray(output.exports));
 const browserOutput = Object.values(browserResult.metafile.outputs).find((output) => Array.isArray(output.exports));
 const manifest = {
@@ -65,4 +74,4 @@ await writeFile(
   new URL("README.md", distDir),
   "Generated from the same source module graph by `npm run build`. All ESM and IIFE files are self-contained and do not import `../src`.\n",
 );
-console.log("Built self-contained ESM, browser ESM, IIFE, and API manifest.");
+console.log("Built self-contained ESM, browser ESM, IIFE, WAV worker, and API manifest.");

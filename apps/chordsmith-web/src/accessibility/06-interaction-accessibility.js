@@ -450,6 +450,7 @@ function updateWavExportUi(){
 function cancelWavExport(){
   if(!state.wavExporting) return;
   state.wavExportToken++;
+  terminateWavExportWorker();
   state.wavExporting = false;
   updateWavExportUi();
   setWavProgress("WAV export cancelled. The phone may finish clearing the render for a moment.");
