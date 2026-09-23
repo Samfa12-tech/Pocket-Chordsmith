@@ -1,7 +1,7 @@
 {
   "$schema": "./docs/schemas/pocket-audio-family-manifest.schema.json",
   "manifestVersion": 1,
-  "updated": "2026-08-20",
+  "updated": "2026-09-23",
   "schemaPolicy": {
     "canonicalProjectSchema": 17,
     "legacyProjectionSchema": 16,
@@ -20,8 +20,8 @@
       "testCommand": "cd apps/chordsmith-web && npm run verify",
       "deployment": {
         "channel": "samfa12/pocket-chordsmith:pocket-audio-core",
-        "identifier": "audit-hardening-metal-mix-v68-20260809 (#1867911); Samfa12 site sync 35c269f330fe1042c3fbdab702bc4898fd4ee038",
-        "sourceCommit": "347a2b939bbd5597cb3eab5112a668959c44df7b"
+        "identifier": "audio-audit-remediation-v68-20260923-b7aeaa5 (#2006257); Samfa12 site sync 9fd1e59e9e860bafbca77fea0914c529cde87eeb",
+        "sourceCommit": "b7aeaa5bb744905c80bdd475095945896ee3eb95"
       }
     },
     {

@@ -1,0 +1,31 @@
+{
+  "manifestVersion": 1,
+  "product": "Pocket Chordsmith",
+  "sourceCommit": "b7aeaa5bb744905c80bdd475095945896ee3eb95",
+  "dirtyWorkingTree": false,
+  "dirtyPaths": [],
+  "internalBuild": "v68",
+  "schemaVersion": 17,
+  "legacySchemaVersion": 16,
+  "coreVersion": "0.2.0",
+  "builtAt": "2026-09-23T00:22:57.991Z",
+  "publishedAt": "2026-09-23T00:30:43Z",
+  "deployment": {
+    "channel": "samfa12/pocket-chordsmith:pocket-audio-core",
+    "identifier": "audio-audit-remediation-v68-20260923-b7aeaa5",
+    "build": 2006257
+  },
+  "packageFile": "pocket-chordsmith-web.zip",
+  "packageSha256": "560fa3e589d006132ca2efa8253758f6b0e8df9aec0f623df254d12f905ea6a4",
+  "sourceEntry": "apps/chordsmith-web/pocket_chordsmith_v68_core_bridge.html",
+  "requiredFiles": [
+    "index.html",
+    "pocket_chordsmith_v68_core_bridge.html",
+    "icon.png",
+    "pocket-audio-core/dist/api-manifest.json",
+    "pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
+    "pocket-audio-core/dist/pocket-audio-core.esm.js",
+    "pocket-audio-core/dist/pocket-audio-core.iife.js",
+    "pocket-audio-core/dist/chordsmith-wav-worker.js"
+  ]
+}
