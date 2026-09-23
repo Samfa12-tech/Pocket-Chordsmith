@@ -4,32 +4,29 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.49` |
+| Source version | `0.6.50` |
 | Project schema version | `3` |
-| Latest published version | `0.6.46` |
-| Latest published tag | `pocket-daw-v0.6.46` |
-| Latest published commit | `aa519f2fc26064f3804d9f9ee917d277a966d080` |
-| Last installed-smoke version | `0.6.46` |
+| Latest published version | `0.6.49` |
+| Latest published tag | `pocket-daw-v0.6.49` |
+| Latest published commit | `a8ebe0b6525f9f7679e0028d5b98db0d0f6bf2ca` |
+| Last installed-smoke version | `0.6.49` |
 | Last installed-smoke result | `pass` |
-| Last installed-smoke date | `2026-08-09T00:23:18.707Z` |
-| Last installed-smoke installer | `Pocket.DAW_0.6.46_x64-setup.exe` |
-| Last installed-smoke SHA-256 | `e58e3498d5b905c52d5cc439a2ad48aa3609cd60e7ac8be6b4c819e9c0a1e18e` |
+| Last installed-smoke date | `2026-09-23T05:49:39.778Z` |
+| Last installed-smoke installer | `Pocket.DAW_0.6.49_x64-setup.exe` |
+| Last installed-smoke SHA-256 | `4125cf21080310a9413c4bedf7c7155d5ef8d500ffd3ad9fe451021f78196829` |
 
 ## Installed-Smoke Notes
 
-- Pocket DAW 0.6.46 was published and installed-smoked from exact clean commit aa519f2fc26064f3804d9f9ee917d277a966d080.
-- The exact staged setup EXE was releases/updater/Pocket.DAW_0.6.46_x64-setup.exe with SHA-256 e58e3498d5b905c52d5cc439a2ad48aa3609cd60e7ac8be6b4c819e9c0a1e18e; the remote setup re-download hash matched and the release tag, origin/main and tested commit agreed.
-- Installed smoke passed 10.049977 seconds of 48 kHz mono PCM capture (file peak 0.6365356, RMS 0.0381953), 16 loopMIDI notes, retained WAV/MIDI exports, media portability, installed VST3 hosting, and Godot/Chromium target packs. Audio evidence reused the directly eligible manual-fresh attestation with an unchanged semantic PCM v2 fingerprint while the current installer independently re-proved PCM, MIDI and export integrity.
-- The installed VST3 host passed with packaged sidecar SHA-256 a83ebd41120efdd2313125567c4ee6bf6f3378b6d18bb92c01f44c8a38b57fcd.
-- Compatibility coverage includes unbundled official JS80P 4.0.2 and Surge XT 1.3.4 releases; Pocket DAW does not bundle, download or redistribute them.
-- Godot 4.6.3 runtime pack SHA-256 e0b423631d8124693650dc8ee22e037bbcb22bc13305cc14b1eb1202040489d0 and Chromium pack SHA-256 6a96bc139293ca30697ff5dd53314b06ed2b69cae732910839d3536930145af1 both passed.
-- 0.6.46 was published to GitHub release pocket-daw-v0.6.46 on 2026-08-09; itch remains on its stable unchanged bootstrapper payload.
+- 0.6.49 was published from the exact installer-tested commit a8ebe0b6525f9f7679e0028d5b98db0d0f6bf2ca. The 0.6.48 candidate remained unpublished after its installed Godot section-loop duration failure.
+- The exact setup EXE SHA-256 is 4125cf21080310a9413c4bedf7c7155d5ef8d500ffd3ad9fe451021f78196829. Evidence-only verify:candidate passed in fresh-audible mode; release:publish-exact uploaded and reverified 11 receipt-bound assets without rebuilding or restaging.
+- The installed 48 kHz mono microphone take lasted 10.039977 seconds (file peak 0.5115356, RMS 0.0460856); the same strict run captured 20 loopMIDI notes in a punched take lane and retained WAV/MIDI exports.
+- Installed media portability and deterministic VST3 host smoke passed. The packaged VST3 sidecar SHA-256 was f2b5e909f142d00cadcdfbf7e44c970c23a645204000f6d42fd1cee4f241ddd8.
+- Godot 4.6.3 target-runtime pack SHA-256 8f3ae90a5a383ca6c368e8832bbdc11fb2a5b94dcad89e3d3c7fa76d97f16359 and Chromium Web Audio pack SHA-256 3f79574edfdf9e236d26fc175efcf33759891e9a59865a306be75842dad762d2 passed, including exact section-loop duration checks.
+- CI, Pocket DAW Windows native and CodeQL passed on the release commit. The public latest updater and bootstrapper manifests report 0.6.49, the setup URL returns HTTP 200, and the remote installer hash matches the tested setup. The unchanged itch bootstrapper was not repushed.
 
 ## Unreleased Source-Only Notes
 
-- 0.6.47 was a source-only release-process checkpoint; no 0.6.47 installer was published.
-- 0.6.48 produced one immutable but unpublished candidate; its exact installed Godot section-loop pack failed the manifest duration contract, so the candidate was not published.
-- 2026-09-23 source-only 0.6.49 candidate: consumed-output native transport timing, generation-safe pause/seek/control changes, output underrun and stream-failure diagnostics, once-per-frame bus effects with explicit tail/latency handling, indexed hosted VST event scheduling, bounded decoded-audio cache, complete waveform peak coverage, stronger scoped validation and npm-audit diagnostics, and exact tail-free native section-loop duration. Public release remains 0.6.46 until this new exact candidate passes installed evidence and is published.
+- 0.6.50 is a source-only release-status/documentation checkpoint after the exact 0.6.49 publication. No 0.6.50 installer or updater has been prepared or published; any future package requires a new clean 0.6.50 candidate and full release evidence.
 
 ## Installed-Smoke Exception
 
