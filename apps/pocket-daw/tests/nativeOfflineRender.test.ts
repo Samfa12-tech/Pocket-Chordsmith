@@ -44,6 +44,7 @@ describe("native offline WAV rendering", () => {
       sampleRate: number;
     };
     expect(args.durationSeconds).toBeCloseTo(nativeWavExportDurationSeconds(project), 5);
+    expect(args.renderMode).toBe("mix");
     expect(args.bitDepth).toBe(16);
     expect(payload.loop).toBeNull();
     expect(payload.metronome).toBeNull();
@@ -300,6 +301,54 @@ describe("native offline WAV rendering", () => {
 
     expect(loop.lengthSeconds).toBeLessThan(1);
     expect(nativeWavExportDurationSeconds(renderProject)).toBeCloseTo(loop.lengthSeconds, 5);
+  });
+
+  it("requests an exact native mix for a tail-free section loop", async () => {
+    const project = createDemoProject();
+    const source = project.timeline.clips.find((clip) => clip.type === "generated-section")!;
+    source.barLength = 0.25;
+    const loop = createSectionLoopMetadata(project).find((item) => item.sourceClipId === source.id)!;
+    const renderProject = projectForSectionLoopRender(project, loop);
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeMediaApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return {
+          sampleRate: 48_000,
+          channels: 2,
+          durationSeconds: Number((args as Record<string, unknown>).durationSeconds),
+          sizeBytes: 4,
+          bytes: [82, 73, 70, 70]
+        } as never;
+      }
+    };
+
+    await renderProjectToNativeWavBlob(renderProject, api);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].command).toBe("native_audio_render_wav");
+    expect(calls[0].args?.renderMode).toBe("mix-exact");
+    expect(calls[0].args?.durationSeconds).toBeCloseTo(loop.lengthSeconds, 5);
+  });
+
+  it("rejects a native tail-free render that appends effect-tail frames", async () => {
+    const project = createDemoProject();
+    const loop = createSectionLoopMetadata(project)[0];
+    const renderProject = projectForSectionLoopRender(project, loop);
+    const api: NativeMediaApi = {
+      isAvailable: () => true,
+      async invoke(_command, args) {
+        return {
+          sampleRate: 48_000,
+          channels: 2,
+          durationSeconds: Number((args as Record<string, unknown>).durationSeconds) + 1,
+          sizeBytes: 4,
+          bytes: [82, 73, 70, 70]
+        } as never;
+      }
+    };
+
+    await expect(renderProjectToNativeWavBlob(renderProject, api)).rejects.toThrow("Native tail-free WAV export duration differs");
   });
 });
 

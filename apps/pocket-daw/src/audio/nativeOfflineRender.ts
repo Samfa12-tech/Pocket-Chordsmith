@@ -16,12 +16,17 @@ export async function renderProjectToNativeWavBlob(project: PocketDawProject, ap
     throw new Error("Native WAV export is missing one or more timeline audio files.");
   }
   const payload = buildNativeAudioStartPayload(renderProject, renderTimelineEvents(renderProject), 0, runtimeCache);
+  const exactDuration = Number(renderProject.exportProfiles.find((profile) => profile.id === "full-song-wav")?.settings.tailSeconds ?? 1.2) === 0;
+  const requestedDuration = nativeWavExportDurationSeconds(renderProject);
   const rendered = await renderNativeAudioWav({
     ...payload,
     loop: null,
     metronome: null
-  }, nativeWavExportDurationSeconds(renderProject), { bitDepth: nativeBitDepth }, api);
+  }, requestedDuration, { renderMode: exactDuration ? "mix-exact" : "mix", bitDepth: nativeBitDepth }, api);
   if (!rendered) return null;
+  if (exactDuration && Math.abs(rendered.durationSeconds - requestedDuration) > 1 / rendered.sampleRate + 0.000001) {
+    throw new Error("Native tail-free WAV export duration differs from the requested musical loop length.");
+  }
   return wavBlobWithChannelMode(
     new Blob([new Uint8Array(rendered.bytes)], { type: "audio/wav" }),
     options.channelMode || fullSongWavChannelMode(renderProject),
