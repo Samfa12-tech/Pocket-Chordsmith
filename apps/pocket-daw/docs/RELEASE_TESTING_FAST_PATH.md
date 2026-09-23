@@ -17,10 +17,13 @@ bootstrapper policy.
 
 Current boundary: 0.6.47 remained source-only. The frozen 0.6.48 candidate
 failed exact-installed Godot section-loop duration validation and was not
-published. The final clean 0.6.49 release commit may run its first
-`release:prepare`. Once its immutable receipt exists, source or
-package-producing changes require a new version and a new candidate; never
-rebuild or restage the same version.
+published. Pocket DAW 0.6.49 was published from exact tested commit
+`a8ebe0b6525f9f7679e0028d5b98db0d0f6bf2ca` after one prepare pass,
+fresh-audible installed smoke, evidence-only candidate verification, and
+exact publication. The current 0.6.50 source is a documentation/status
+checkpoint only; no 0.6.50 installer or receipt exists. Its first release
+prepare must follow the complete one-pass procedure from a clean final commit.
+Never rebuild or restage 0.6.49 from later source.
 
 ## Core Rule
 

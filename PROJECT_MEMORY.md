@@ -46,9 +46,10 @@ playhead position. The UI only displays state and dispatches commands.
 
 ## Current Notes And Known Gaps
 
-### Current 2026-08-09 Pocket DAW Release And Process Notes
+### Current 2026-09-23 Pocket DAW Release And Process Notes
 
-- Pocket DAW `0.6.46` is the latest public and exact-installed-smoked release from commit `aa519f2fc26064f3804d9f9ee917d277a966d080`; setup SHA-256 is `e58e3498d5b905c52d5cc439a2ad48aa3609cd60e7ac8be6b4c819e9c0a1e18e`. The exact committed `0.6.47` source-only process checkpoint may run its first `release:prepare`; no 0.6.47 installer, smoke, or publication exists yet. After a 0.6.47 receipt exists, or if source/package-producing bytes change from that exact commit, bump to at least 0.6.48 before preparing again.
+- Pocket DAW `0.6.49` is the latest public and exact-installed-smoked release from commit `a8ebe0b6525f9f7679e0028d5b98db0d0f6bf2ca`; setup SHA-256 is `4125cf21080310a9413c4bedf7c7155d5ef8d500ffd3ad9fe451021f78196829`. Fresh-audible microphone smoke, connected loopMIDI, WAV/MIDI exports, installed media portability, VST3 hosting, Godot/Chromium target packs, candidate verification, CI and CodeQL passed. Both public updater manifests serve 0.6.49. The unchanged itch bootstrapper was not repushed.
+- Version `0.6.47` remained source-only, and the immutable `0.6.48` candidate was withheld after its installed Godot section-loop duration failure. Current `0.6.50` source is a documentation/status checkpoint only; it has no installer, receipt, installed smoke, or publication. The release tag remains on the exact 0.6.49 tested commit, distinct from this later documentation commit.
 - The release fast path is receipt-based: one `release:prepare` source/build/package/stage pass, evidence-only `verify:candidate`, then `release:publish-exact` for frozen assets. Never rebuild or same-version-restage after receipt creation.
 
 ### Current 2026-08-08 Pocket DAW Audio-Evidence Policy
