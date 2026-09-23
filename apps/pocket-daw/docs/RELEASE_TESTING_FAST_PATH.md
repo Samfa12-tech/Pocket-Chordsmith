@@ -15,10 +15,10 @@ too much time was lost to repeated hardware smoke, duplicated gates, an
 incorrect background PowerShell invocation, and late rediscovery of the itch
 bootstrapper policy.
 
-Current boundary: the exact committed 0.6.47 source-only process checkpoint may
-run its first `release:prepare`; no 0.6.47 installer exists yet. After a 0.6.47
-receipt exists, or if source/package-producing bytes change from that exact
-commit, bump to at least 0.6.48 before preparing again.
+Current boundary: 0.6.47 remained source-only. The final clean 0.6.48 release
+commit may run its first `release:prepare`. Once its immutable receipt exists,
+source or package-producing changes require a new version and a new candidate;
+never rebuild or restage 0.6.48 under the same version.
 
 ## Core Rule
 
