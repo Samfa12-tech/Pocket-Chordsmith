@@ -331,7 +331,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Audit Hardening and Metal Mix
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Native Audio and Validation Reliability
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -341,12 +341,14 @@ ${artifactTable}
 
 ## ${VERSION} Checkpoint
 
-- Incorporates the Pocket Audio repository-audit remediation, including stricter release truth, CI, dependency, packaging and external-link controls.
-- Softens the Heavy Metal picked-bass voice and raises Metal guitar balance to match the approved cross-app mix.
-- Keeps generated Pocket Audio sound recipes aligned with Chordsmith, Pocket Audio Core and Pocket DJ.
-- Native recording now honors an explicitly selected mono input channel, including Mono Ch 2 on two-channel microphone arrays, while default mono remains Ch 1 and stereo remains Ch 1-2.
-- Adds fail-closed native-capture fingerprinting. A directly retained fresh-audible baseline may be reused only while the recording code and dependency fingerprint remain identical; every current installer still has to prove PCM duration/file integrity, connected loopMIDI and retained WAV/MIDI exports.
-- Installed AI / MCP Bridge help remains machine-neutral, and Live test accepts the installed Windows Tauri WebView origin while retaining loopback-host, trusted-origin and bearer-token checks.
+- Reports transport from consumed native output, with bounded queue fill and generation-safe invalidation after pause, seek, loop and track-control changes. Musical position follows the audio path instead of producer render-ahead.
+- Exposes output queue fill, starvation/underrun counts, render and callback timing, and stream/device failures for diagnosis and recovery. A fast callback alone is not treated as proof of healthy rendering.
+- Advances each native lane, track and return effects chain once per output frame, including zero-input tail and latency processing; overlapping percussion voices are mixed before lane effects.
+- Uses stable hosted-instrument/event indexing and reusable scheduling storage to avoid per-frame key cloning and repeated full MIDI-event scans.
+- Bounds decoded native asset memory with byte accounting and inactive-asset eviction while preserving active references.
+- Covers the full audio buffer in waveform peak summaries, including a final-frame impulse.
+- Strengthens selective DAW test scope for local changes, deletions, renames and child failures; targets Pocket Audio Core tests correctly; and reports actionable npm-audit advisory versus infrastructure failures without weakening the high-severity gate.
+- Retains the 0.6.47 immutable-candidate release process. Publication of this version requires its own exact installed audio, MIDI, export, media, plug-in and game-pack evidence.
 
 ## Included From 0.6.43
 

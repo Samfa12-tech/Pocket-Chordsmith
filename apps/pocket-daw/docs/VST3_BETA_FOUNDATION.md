@@ -6,8 +6,8 @@ Pocket DAW now contains a crash-isolated Windows x64 VST3 host for instruments
 and effects. The feature remains a one-click beta and is disabled until the user
 accepts the explanation in the Plug-ins tab. It shipped in 0.6.43 and the
 current public 0.6.46 installer passed exact installed VST3 smoke. Current
-source 0.6.47 is release-process-only; use `CURRENT_RELEASE_STATUS.md` for the
-public/source/smoke distinction.
+source 0.6.48 includes hosted event scheduling changes and remains a candidate;
+use `CURRENT_RELEASE_STATUS.md` for the public/source/smoke distinction.
 
 The native CPAL callback and sample clock remain authoritative. Pocket DAW
 renders a bounded 128-frame graph off the callback, exchanges audio and events
