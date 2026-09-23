@@ -869,6 +869,7 @@ pub struct NativeAudioRenderedWav {
 #[derive(Clone, Copy)]
 enum NativeAudioRenderMode {
     Mix,
+    MixExact,
     CacheStem,
 }
 
@@ -2387,6 +2388,7 @@ fn output_config_range_supports_sample_rate(
 fn parse_render_mode(value: Option<&str>) -> NativeAudioRenderMode {
     match value {
         Some("cache-stem") | Some("cacheStem") => NativeAudioRenderMode::CacheStem,
+        Some("mix-exact") => NativeAudioRenderMode::MixExact,
         _ => NativeAudioRenderMode::Mix,
     }
 }
@@ -2424,11 +2426,11 @@ fn render_playback_to_wav(
             } else {
                 0
             }),
-        NativeAudioRenderMode::CacheStem => base_frame_count,
+        NativeAudioRenderMode::MixExact | NativeAudioRenderMode::CacheStem => base_frame_count,
     }
     .min((MAX_OFFLINE_RENDER_SECONDS * sample_rate as f64) as usize);
     let bytes = match mode {
-        NativeAudioRenderMode::Mix => {
+        NativeAudioRenderMode::Mix | NativeAudioRenderMode::MixExact => {
             if bit_depth == 32 {
                 render_float32_wav_frames(sample_rate, 2, frame_count, || {
                     render_next_frame(playback)
@@ -8167,6 +8169,38 @@ mod tests {
             decoded.samples[4].abs() > 0.1,
             "delay echo after requested endpoint was truncated"
         );
+    }
+
+    #[test]
+    fn offline_mix_exact_ends_at_requested_frame_despite_effect_tail() {
+        let mut playback = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+        playback.assets.insert(
+            "asset".to_string(),
+            Arc::new(DecodedAudioAsset {
+                sample_rate: 4,
+                channels: 2,
+                samples: vec![1.0, 1.0, 0.0, 0.0],
+                frame_count: 2,
+            }),
+        );
+        playback.fx.track_chains.insert(
+            "bass".to_string(),
+            NativeFxChainState {
+                slots: vec![NativeFxSlotState::from_payload(
+                    &test_fx_slot("delay", [("time", 0.5), ("feedback", 0.0), ("mix", 1.0)]),
+                    4.0,
+                )
+                .unwrap()],
+            },
+        );
+        let wav = render_playback_to_wav(&mut playback, 0.5, NativeAudioRenderMode::MixExact, 16)
+            .unwrap();
+        let decoded = decode_pcm16_wav(&wav.bytes).unwrap();
+        assert_eq!(
+            decoded.frame_count,
+            (0.5_f64 * wav.sample_rate as f64).ceil() as usize
+        );
+        assert_eq!(wav.duration_seconds, 0.5);
     }
 
     #[test]

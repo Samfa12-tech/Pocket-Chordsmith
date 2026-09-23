@@ -344,6 +344,7 @@ ${artifactTable}
 - Reports transport from consumed native output, with bounded queue fill and generation-safe invalidation after pause, seek, loop and track-control changes. Musical position follows the audio path instead of producer render-ahead.
 - Exposes output queue fill, starvation/underrun counts, render and callback timing, and stream/device failures for diagnosis and recovery. A fast callback alone is not treated as proof of healthy rendering.
 - Advances each native lane, track and return effects chain once per output frame, including zero-input tail and latency processing; overlapping percussion voices are mixed before lane effects.
+- Keeps tail-free native section-loop WAVs at the exact manifest duration while preserving effect tails in full-song mixes.
 - Uses stable hosted-instrument/event indexing and reusable scheduling storage to avoid per-frame key cloning and repeated full MIDI-event scans.
 - Bounds decoded native asset memory with byte accounting and inactive-asset eviction while preserving active references.
 - Covers the full audio buffer in waveform peak summaries, including a final-frame impulse.

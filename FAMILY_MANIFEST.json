@@ -61,7 +61,7 @@
       "name": "Pocket DAW",
       "path": "apps/pocket-daw",
       "kind": "native-windows-app",
-      "versions": { "source": "0.6.48", "projectSchema": "3", "latestPublished": "0.6.46", "lastInstalledSmoke": "0.6.46" },
+      "versions": { "source": "0.6.49", "projectSchema": "3", "latestPublished": "0.6.46", "lastInstalledSmoke": "0.6.46" },
       "license": "UNLICENSED",
       "releaseStatus": "public-alpha-source-ahead-of-public",
       "packageCommand": "cd apps/pocket-daw && npm run release:prepare",

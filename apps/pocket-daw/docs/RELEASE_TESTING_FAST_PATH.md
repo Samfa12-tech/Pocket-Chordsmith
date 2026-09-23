@@ -15,10 +15,12 @@ too much time was lost to repeated hardware smoke, duplicated gates, an
 incorrect background PowerShell invocation, and late rediscovery of the itch
 bootstrapper policy.
 
-Current boundary: 0.6.47 remained source-only. The final clean 0.6.48 release
-commit may run its first `release:prepare`. Once its immutable receipt exists,
-source or package-producing changes require a new version and a new candidate;
-never rebuild or restage 0.6.48 under the same version.
+Current boundary: 0.6.47 remained source-only. The frozen 0.6.48 candidate
+failed exact-installed Godot section-loop duration validation and was not
+published. The final clean 0.6.49 release commit may run its first
+`release:prepare`. Once its immutable receipt exists, source or
+package-producing changes require a new version and a new candidate; never
+rebuild or restage the same version.
 
 ## Core Rule
 

@@ -221,7 +221,7 @@ export async function pruneNativeCacheAssets(
 export async function renderNativeAudioWav(
   payload: NativeAudioStartPayload,
   durationSeconds: number,
-  renderModeOrApi?: "mix" | "cache-stem" | { renderMode?: "mix" | "cache-stem"; bitDepth?: 16 | 24 | 32 } | NativeMediaApi,
+  renderModeOrApi?: "mix" | "mix-exact" | "cache-stem" | { renderMode?: "mix" | "mix-exact" | "cache-stem"; bitDepth?: 16 | 24 | 32 } | NativeMediaApi,
   injectedApi?: NativeMediaApi
 ): Promise<NativeRenderedWav | null> {
   const renderOptions = typeof renderModeOrApi === "object" && renderModeOrApi && !("isAvailable" in renderModeOrApi) ? renderModeOrApi : null;

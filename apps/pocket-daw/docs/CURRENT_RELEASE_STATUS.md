@@ -4,7 +4,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 | Field | Value |
 | --- | --- |
-| Source version | `0.6.48` |
+| Source version | `0.6.49` |
 | Project schema version | `3` |
 | Latest published version | `0.6.46` |
 | Latest published tag | `pocket-daw-v0.6.46` |
@@ -28,7 +28,8 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 ## Unreleased Source-Only Notes
 
 - 0.6.47 was a source-only release-process checkpoint; no 0.6.47 installer was published.
-- 2026-09-23 source-only 0.6.48 candidate: consumed-output native transport timing, generation-safe pause/seek/control changes, output underrun and stream-failure diagnostics, once-per-frame bus effects with explicit tail/latency handling, indexed hosted VST event scheduling, bounded decoded-audio cache, complete waveform peak coverage, and stronger scoped validation and npm-audit diagnostics. Public release remains 0.6.46 until this exact candidate passes installed evidence and is published.
+- 0.6.48 produced one immutable but unpublished candidate; its exact installed Godot section-loop pack failed the manifest duration contract, so the candidate was not published.
+- 2026-09-23 source-only 0.6.49 candidate: consumed-output native transport timing, generation-safe pause/seek/control changes, output underrun and stream-failure diagnostics, once-per-frame bus effects with explicit tail/latency handling, indexed hosted VST event scheduling, bounded decoded-audio cache, complete waveform peak coverage, stronger scoped validation and npm-audit diagnostics, and exact tail-free native section-loop duration. Public release remains 0.6.46 until this new exact candidate passes installed evidence and is published.
 
 ## Installed-Smoke Exception
 

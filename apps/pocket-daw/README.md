@@ -15,9 +15,9 @@ Pocket DAW is not:
 - Pocket DJ
 
 Current public status: **free Windows alpha testing, public updater and exact
-installed-smoke version 0.6.46**. Current source is the 0.6.48 native-audio
-and validation release candidate; no 0.6.48 installer has yet been installed-smoked
-or published.
+installed-smoke version 0.6.46**. Current source is the 0.6.49 native-audio
+and validation release candidate; 0.6.48 was prepared but failed exact-installed
+Godot pack validation and was not published.
 
 For current source/public/smoke truth, use:
 
@@ -204,10 +204,13 @@ Architecture docs:
   channel capture and fail-closed audio-evidence fingerprinting.
 - v0.6.47 is source-only release-process consolidation. It has no installer or
   public-release claim.
-- v0.6.48 is a source-only candidate for consumed-output transport timing,
+- v0.6.48 was an unpublished candidate; exact-installed Godot pack validation
+  found a section-loop duration mismatch. Its immutable receipt remains retained.
+- v0.6.49 is the source candidate for consumed-output transport timing,
   generation-safe discontinuities, native output diagnostics, correct effect
   advancement/tails, hosted VST scheduling, bounded decoded-audio memory,
-  complete waveform peaks and stronger validation diagnostics. Public claims
+  complete waveform peaks, stronger validation diagnostics and exact tail-free
+  section-loop exports. Public claims
   require the exact-installer release evidence in `docs/CURRENT_RELEASE_STATUS.md`.
 - Historical v0.6.22 checkpoint: cached-playback UI fixes from source commit `5cd186a22b6a8be9d706e1474b6a204ddbd065aa` and exact-artifact installed smoke for setup SHA-256 `c7adc2aea5595490e55dbb720bed6735cd91348caef69ef249f3ff1c0868a6b7`.
 - Historical installed-app note: Windows `.pocketdaw` association, cold-start launch, second-instance launch, live project-open, and `pocket-daw://` Chordsmith handoff coexistence passed local installed `0.6.34` smoke on 2026-06-28. Keep File -> Open / Ctrl+O as the fallback and keep association smoke in future public release checkpoints; use `release-status.json` for the current public checkpoint.
