@@ -36,7 +36,7 @@ Retained ignored local report: `local-artifacts/release-evidence/android-f015-f0
 
 ## Pocket DAW release boundary
 
-Pocket DAW `0.6.46` is the current public and exact-installed-smoked release. Its tag and smoke both bind commit `aa519f2fc26064f3804d9f9ee917d277a966d080` and setup SHA-256 `e58e3498d5b905c52d5cc439a2ad48aa3609cd60e7ac8be6b4c819e9c0a1e18e`. The current `0.6.48` tree is a source-only release candidate; 0.6.47 remained source-only. No 0.6.48 installer is public or installed-smoked yet. Every future installer still requires the exact-artifact procedure in `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md`.
+Pocket DAW `0.6.46` is the current public and exact-installed-smoked release. Its tag and smoke both bind commit `aa519f2fc26064f3804d9f9ee917d277a966d080` and setup SHA-256 `e58e3498d5b905c52d5cc439a2ad48aa3609cd60e7ac8be6b4c819e9c0a1e18e`. The current `0.6.49` tree is a source-only release candidate; 0.6.47 remained source-only, while the frozen 0.6.48 candidate failed exact-installed Godot section-loop validation and was not published. Every future installer still requires the exact-artifact procedure in `apps/pocket-daw/docs/RELEASE_TESTING_FAST_PATH.md`.
 
 ## Evidence record template
 

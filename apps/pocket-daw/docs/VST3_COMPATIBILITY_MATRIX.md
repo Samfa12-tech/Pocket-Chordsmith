@@ -3,8 +3,8 @@
 The public 0.6.46 installer passed the installed VST3 host smoke. This matrix
 also records compatibility tests run against unbundled official vendor
 releases. Plug-ins are never committed, bundled, mirrored, or downloaded by
-Pocket DAW. The 0.6.48 source candidate changes hosted event scheduling; its
-installed host smoke is required before making a 0.6.48 compatibility claim.
+Pocket DAW. The 0.6.49 source candidate changes hosted event scheduling; its
+installed host smoke is required before making a 0.6.49 compatibility claim.
 
 ## 2026-08-01 source-candidate pass
 

@@ -4,7 +4,7 @@
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current release truth: `0.6.46` is the published and exact-installed-smoked updater checkpoint. Source `0.6.48` is the native-audio and validation release candidate; `0.6.47` remained source-only. See `docs/CURRENT_RELEASE_STATUS.md`.
+- Current release truth: `0.6.46` is the published and exact-installed-smoked updater checkpoint. Source `0.6.49` is the native-audio and validation release candidate; `0.6.47` remained source-only and the frozen `0.6.48` candidate failed Godot pack validation without publication. See `docs/CURRENT_RELEASE_STATUS.md`.
 - Last completed public artifact record in this repo: tracked in `release-status.json`
 - Last installed public smoke evidence in this repo: tracked in `release-status.json`
 - Machine-readable release status: `release-status.json`
