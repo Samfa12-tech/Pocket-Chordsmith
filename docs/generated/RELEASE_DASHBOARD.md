@@ -4,7 +4,7 @@
 
 | Component | Source/build/schema versions | Status | Channel | Current identifier | Gate |
 | --- | --- | --- | --- | --- | --- |
-| Pocket Chordsmith | package 1.0.0; build v68; schema 17; legacySchema 16; core 0.2.0 | public-hosted | samfa12/pocket-chordsmith:pocket-audio-core | audio-audit-remediation-v68-20260923-b7aeaa5 (#2006257); Samfa12 site sync 9fd1e59e9e860bafbca77fea0914c529cde87eeb | `cd apps/chordsmith-web && npm run verify` |
+| Pocket Chordsmith | package 1.0.0; build v68; schema 17; legacySchema 16; core 0.2.0 | public-hosted | samfa12/pocket-chordsmith:pocket-audio-core | audio-audit-remediation-v68-20260923-b7aeaa5b (#2006257); Samfa12 site sync 9fd1e59e9e860bafbca77fea0914c529cde87eeb | `cd apps/chordsmith-web && npm run verify` |
 | Pocket DJ | package 1.0.0; build v1g; sessionSchema 1; sourceSchema 17; legacySourceSchema 16; core 0.2.0 | public-hosted | samfa12/pocket-dj:html | audit-hardening-metal-mix-v1g-20260809 (#1867913); Samfa12 site sync 35c269f330fe1042c3fbdab702bc4898fd4ee038 | `cd apps/pocket-dj && npm run verify` |
 | Pocket Audio Handoff | build handoff-v2; handoffSchema 1; sourceSchemas 16,17 | public-hosted-source-ahead-of-public | https://samfa12.com/apps/pocket-audio-handoff/ | Samfa12 site sync 35c269f330fe1042c3fbdab702bc4898fd4ee038; handoff-v2 source is pending deployment | `cd apps/pocket-audio-handoff && npm test` |
 | Pocket DAW | source 0.6.47; projectSchema 3; latestPublished 0.6.46; lastInstalledSmoke 0.6.46 | public-alpha-source-ahead-of-public | GitHub updater / stable itch bootstrapper | pocket-daw-v0.6.46 | `cd apps/pocket-daw && npm run verify:versions && npm run verify:release-candidate-truth && npm test` |

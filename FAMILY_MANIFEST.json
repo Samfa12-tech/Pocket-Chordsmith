@@ -20,7 +20,7 @@
       "testCommand": "cd apps/chordsmith-web && npm run verify",
       "deployment": {
         "channel": "samfa12/pocket-chordsmith:pocket-audio-core",
-        "identifier": "audio-audit-remediation-v68-20260923-b7aeaa5 (#2006257); Samfa12 site sync 9fd1e59e9e860bafbca77fea0914c529cde87eeb",
+        "identifier": "audio-audit-remediation-v68-20260923-b7aeaa5b (#2006257); Samfa12 site sync 9fd1e59e9e860bafbca77fea0914c529cde87eeb",
         "sourceCommit": "b7aeaa5bb744905c80bdd475095945896ee3eb95"
       }
     },
