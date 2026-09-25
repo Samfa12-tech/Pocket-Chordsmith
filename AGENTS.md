@@ -52,6 +52,22 @@ native/audio bridge code before editing. Do not create a new web DAW.
 
 The composer skill must verify the current app constants and export/import contract before generating JSON. The current app may be newer than the skill text.
 
+## Canonical Game Music Architecture
+
+For new Samfa12 game music, Pocket Chordsmith schema-17 JSON / `PCS1:` data is the canonical musical source and `packages/pocket-audio-core/` is the canonical browser/HTML/Three.js/Babylon.js/Capacitor playback runtime. Godot games should use the supported Pocket Chordsmith / Pocket Audio Godot integration.
+
+Hard rules:
+
+- Keep the original Pocket Chordsmith project as a portable source asset. It must remain importable into the current Pocket Chordsmith editor.
+- Games may map gameplay states to project sections, sequences, intensity, stems, stingers, ducking, filtering and other runtime controls without rewriting the composition.
+- Do not duplicate a Pocket Chordsmith composition into game-specific chord/note tables as the shipping source of truth.
+- Do not copy, fork or recreate Pocket Chordsmith instrument recipes, schedulers or a bespoke "Chordsmith-style" synthesizer inside a new game. If shared runtime capability is missing, extend Pocket Audio Core or the supported Godot integration instead.
+- Do not translate a canonical project into a lossy game-specific format and then describe the result as the same Pocket Chordsmith song.
+- Treat older games with embedded/custom Chordsmith-style engines as legacy migrations. Preserve their existing audio as the reference, capture parity evidence, and migrate deliberately rather than silently changing their sound.
+- When adding Pocket Chordsmith music to a game, validate the canonical project in current Chordsmith first, then validate the same project/runtime path in the target game.
+
+See `docs/NEW_GAME_AUDIO_RUNTIME_GUIDE.md` for browser-game integration and `addons/pocket_chordsmith/` for Godot.
+
 ## Design Plugins
 
 Do not load broad design guidance by default.

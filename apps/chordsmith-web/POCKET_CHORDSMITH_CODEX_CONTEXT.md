@@ -310,6 +310,23 @@ Audio rules:
 - Avoid spawning excessive nodes for very dense patterns where a simpler approach works.
 - Live playback and WAV export should match as closely as practical.
 
+### Canonical game-music architecture
+
+For new Samfa12 games, use this invariant:
+
+```text
+Pocket Chordsmith schema-17 project / PCS1
+        -> Pocket Audio Core (browser-family games)
+        -> supported Pocket Chordsmith / Pocket Audio Godot path (Godot)
+        -> game-state mapping and runtime controls
+```
+
+The Pocket Chordsmith project is the canonical musical source. A game-specific adapter may translate gameplay state into Pocket Audio Core calls, but it must not contain its own copied Chordsmith composition, instrument recipes, scheduler or synthesizer.
+
+Do not use the historical Fish Tank, Ant Farm, Dust on the River, Party Bus or similar embedded "Chordsmith-style" implementations as architecture templates for new games. They are useful performance/migration references only. If a shared feature is missing, improve Pocket Audio Core or the supported Godot integration.
+
+For legacy migration, preserve the existing game audio as the reference and prove score/event and audible parity before replacing its renderer. Do not silently change a shipped soundtrack merely to make it conform to the current runtime.
+
 ### Game runtime and export integration lessons
 
 When generating or adapting Pocket Chordsmith output into browser games, especially WebGL-heavy games, the exported music engine must protect musical layers as well as raw performance. Do not rely on one global audio voice limit or one global overload guard.
@@ -321,7 +338,7 @@ Reference lesson: the Party Bus performance/audio issue showed that a single glo
 Best architecture for HTML games:
 
 - keep Pocket Chordsmith as the musical brain: progression, beat, bass, chord/pad, guitar/chug, lead/melody, ambience and state/section data
-- add a small game music runtime adapter around the score instead of pasting the full app engine into each game
+- use a thin game-state adapter around Pocket Audio Core (or the supported Godot runtime) instead of pasting, copying or recreating the Chordsmith engine inside each game
 - let the adapter own scheduling, voice groups, resource caching, node cleanup, debug counters and game-state transitions
 - keep music state separate from the renderer; game scenes can request mode changes such as menu, calm, danger, return, victory or pause without directly creating audio nodes
 - treat SFX as another budgeted role, not as a free unlimited path that can steal the music budget
@@ -504,7 +521,7 @@ Known limitations:
 
 Likely future updates may include:
 
-- shared game music runtime/export adapter for HTML games
+- Pocket Audio Core game-runtime integration, portability and sound-parity hardening for HTML games
 - stronger game/adaptive music export guidance and examples
 - Party Bus-style stress-test fixtures for heavy WebGL/Babylon scenes
 - grouped voice budgets, debug counters and cached Web Audio resources in generated game engines

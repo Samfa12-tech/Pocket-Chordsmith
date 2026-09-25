@@ -4,6 +4,33 @@ Pocket Audio Core lets new HTML, canvas, Three.js, Babylon.js, and Capacitor gam
 
 Use this for new games first. Do not migrate older games until their music behavior is reviewed separately.
 
+## Canonical Architecture
+
+For new games, the portable Pocket Chordsmith project is the source of truth.
+
+```text
+Pocket Chordsmith project JSON / PCS1
+        ↓
+Pocket Audio Core
+        ↓
+game music-state map
+        ↓
+sections / sequences / intensity / stems / stingers / ducking
+```
+
+Required rules:
+
+- Keep the canonical schema-17 project or `PCS1:` payload as a game asset or reproducibly generated source asset.
+- Load that project through Pocket Audio Core. The game should request musical state changes; it should not recreate the composition.
+- Do not copy the song into game-specific chord arrays, note tables or cue objects as the shipping source of truth.
+- Do not copy/fork Chordsmith instrument recipes or build a separate "Chordsmith-style" Web Audio scheduler/synth for a new game.
+- If a required instrument, effect, adaptive transition or runtime control is missing, extend Pocket Audio Core so the improvement is shared.
+- A game-specific adapter may map gameplay concepts to Pocket Audio Core calls, but it must not become a second renderer.
+- The canonical project should round-trip back into the current Pocket Chordsmith editor without musical reconstruction.
+- Validate the same source project in Pocket Chordsmith and in the target game. A successful JSON parse is not sound-parity evidence.
+
+Legacy games that already contain embedded/custom Chordsmith-style engines are migration projects, not templates for new work. Preserve their existing audible result as a reference, capture deterministic score/event traces where practical, and establish parity before replacing the legacy renderer.
+
 ## Include The IIFE Build
 
 For a single-file or no-build game, copy `packages/pocket-audio-core/dist/pocket-audio-core.iife.js` beside the game and load it before your game script:
@@ -42,7 +69,7 @@ const pcs1 = "PCS1:...";
 await music.loadProject(pcs1);
 ```
 
-For bigger projects, keep the string in a separate `.js` or `.json` file so the game source stays readable.
+For bigger projects, prefer keeping the canonical project in a separate `.json` asset (or an unmodified `PCS1:` source payload) so the game source stays readable and the music remains portable back to Pocket Chordsmith.
 
 ## Load JSON
 

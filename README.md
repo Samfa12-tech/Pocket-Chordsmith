@@ -50,6 +50,27 @@ consume compatible song data rather than replacing the Chordsmith editor. The
 Godot addon compiles exported data into lightweight chart resources and runtime
 signals for games.
 
+### Canonical game music architecture
+
+For new Samfa12 games, the Pocket Chordsmith project remains the canonical score:
+
+```text
+Pocket Chordsmith schema-17 JSON / PCS1
+  -> Pocket Audio Core for browser/HTML/Three.js/Babylon.js/Capacitor games
+  -> supported Pocket Chordsmith / Pocket Audio integration for Godot
+  -> game-state controls select sections/sequences, intensity, stems, stingers and ducking
+```
+
+Do not create a new game by copying Chordsmith note tables, instrument recipes or
+scheduler/synth code into the game. If the shared runtime lacks a required music
+feature, add that capability to Pocket Audio Core or the supported Godot path so
+the same source project remains portable across Chordsmith, games and downstream
+Pocket Audio tools.
+
+Older titles may contain bespoke "Pocket Chordsmith-style" runtimes. Treat those
+as legacy migration cases and preserve their existing sound as the parity
+reference before changing the runtime.
+
 ## Project Routing Rules
 
 - Pocket Chordsmith browser composer work belongs in `apps/chordsmith-web/`.
