@@ -13,6 +13,19 @@ Use this skill when asked to create, improve, vary, or export music for Pocket C
 2. Compose for phone use first: clear loop identity, fast auditioning, restrained density, and export that imports without hand repair.
 3. Return valid JSON only when the user asks for import-ready output. Do not wrap it in Markdown unless the user asks for explanation.
 
+## Game-Music Delivery Rule
+
+For new game music, Pocket Chordsmith project JSON / `PCS1:` is the canonical composition source.
+
+- Return a real importable Pocket Chordsmith project, not descriptive cue data or bespoke JavaScript note/chord tables.
+- Browser/HTML/Three.js/Babylon.js/Capacitor targets should load the canonical project through `packages/pocket-audio-core/`.
+- Godot targets should use the supported Pocket Chordsmith / Pocket Audio Godot integration.
+- Game code may map state names to sections/sequences and use runtime controls such as intensity, stems, stingers, ducking and filtering; it must not recreate the Chordsmith renderer.
+- Do not copy/fork Chordsmith instrument recipes or schedulers into a new game. Extend the shared runtime when functionality is missing.
+- Do not silently alter pitch register, harmony or instrument identity to fit a target. Preserve rich intent and report a compatibility/loss gap instead.
+- Validate the same canonical project in the current Chordsmith app and through the target runtime before claiming game parity.
+- Treat existing bespoke Chordsmith-style game engines as legacy migration inputs, not as templates for new integrations.
+
 ## Current JSON Contract
 
 Current v68 exports schema `17`; schema `16` remains the explicit legacy compatibility projection. Treat the app as the source of truth and emit a single object that matches `exportProject()`:
