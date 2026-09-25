@@ -38,6 +38,19 @@ logic. The local composer skill at
 `apps/chordsmith-web/skills/pocket-chordsmith-composer/SKILL.md` has the detailed
 field contract.
 
+## Game Delivery Contract
+
+When music is intended for a game, deliver the actual Pocket Chordsmith project as the canonical composition asset.
+
+- Use native schema-17 JSON / `PCS1:` as the source of truth.
+- Do not convert the song into bespoke JavaScript chord/note/cue tables for the game.
+- Do not generate or copy a game-specific Chordsmith-style synth/scheduler. Browser games should use Pocket Audio Core; Godot games should use the supported Pocket Chordsmith / Pocket Audio integration.
+- Keep gameplay adaptation outside the score: map game states to sections, sequences, intensity, stems, stingers, ducking and other supported runtime controls.
+- If the target runtime cannot represent a musical feature faithfully, retain the original rich project data and report the compatibility gap. Do not silently octave-fold, substitute instruments or rewrite harmony and call it exact.
+- Any game-delivery pack should be validated by importing/playing the canonical project in the current Chordsmith app and by exercising the same project through the target game runtime.
+
+Legacy titles with embedded/custom Chordsmith-style engines require a deliberate parity migration. Their existing audible output is the migration reference; their bespoke cue objects are not the preferred authoring format for new projects.
+
 ## Required Validation
 
 1. Parse the generated JSON.
