@@ -727,6 +727,134 @@ describe("native audio playback bridge", () => {
     expect(startAssets[0].bytes).toBeUndefined();
   });
 
+  it("retries a metadata-only start with bytes after the native cache evicts an asset", async () => {
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const missingAssetError = "Native cached asset asset_evicted was requested without bytes or a source path before it was decoded.";
+    const api: NativeAudioInvokeApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        if (command === "native_audio_start") {
+          const payload = args?.payload as { assets: Array<{ id: string; bytes?: number[] }> };
+          if (!payload.assets[0]?.bytes?.length) throw new Error(missingAssetError);
+        }
+        return status({ active: true }) as never;
+      }
+    };
+    const bridge = new NativeAudioPlaybackBridge(async () => api);
+    const cache = {
+      assets: [{
+        id: "asset_evicted",
+        name: "Evicted loop.wav",
+        sourceHash: "revision-1",
+        sampleRate: 48000,
+        channels: 2,
+        durationSeconds: 8,
+        bytes: [82, 73, 70, 70]
+      }],
+      regions: [{
+        id: "region_evicted_loop",
+        assetId: "asset_evicted",
+        trackId: "bass",
+        startTime: 0,
+        sourceOffset: 0,
+        duration: 8,
+        gain: 1,
+        pan: 0,
+        fadeIn: 0,
+        fadeOut: 0
+      }]
+    };
+    const payload = buildNativeAudioStartPayload(createDemoProject(), [], 0, cache);
+
+    await expect(bridge.preloadAssets(cache.assets)).resolves.toBe(1);
+    await expect(bridge.start(payload)).resolves.toMatchObject({ started: true, error: null });
+
+    const startCalls = calls.filter((call) => call.command === "native_audio_start");
+    expect(startCalls).toHaveLength(2);
+    expect((startCalls[0].args?.payload as { assets: Array<{ bytes?: number[] }> }).assets[0].bytes).toBeUndefined();
+    expect((startCalls[1].args?.payload as { assets: Array<{ bytes?: number[] }> }).assets[0].bytes).toEqual([82, 73, 70, 70]);
+    await bridge.start(payload);
+    expect((calls.at(-1)?.args?.payload as { assets: Array<{ bytes?: number[] }> }).assets[0].bytes).toEqual([82, 73, 70, 70]);
+  });
+
+  it("keeps cached-asset hints revision-specific", async () => {
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const api: NativeAudioInvokeApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        return status({ active: true }) as never;
+      }
+    };
+    const bridge = new NativeAudioPlaybackBridge(async () => api);
+    const makePayload = (sourceHash: string) => buildNativeAudioStartPayload(createDemoProject(), [], 0, {
+      assets: [{
+        id: "asset_revisioned",
+        name: "Revisioned loop.wav",
+        sourceHash,
+        sampleRate: 48000,
+        channels: 2,
+        durationSeconds: 8,
+        bytes: [82, 73, 70, 70]
+      }],
+      regions: [{
+        id: `region_${sourceHash}`,
+        assetId: "asset_revisioned",
+        trackId: "bass",
+        startTime: 0,
+        sourceOffset: 0,
+        duration: 8,
+        gain: 1,
+        pan: 0,
+        fadeIn: 0,
+        fadeOut: 0
+      }]
+    });
+
+    await bridge.start(makePayload("revision-1"));
+    await bridge.start(makePayload("revision-2"));
+
+    const secondAssets = (calls[1].args?.payload as { assets: Array<{ sourceHash?: string; bytes?: number[] }> }).assets;
+    expect(secondAssets[0]).toMatchObject({ sourceHash: "revision-2", bytes: [82, 73, 70, 70] });
+  });
+
+  it("returns the retry error when a full-payload recovery start also fails", async () => {
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const missingAssetError = "Native cached asset asset_retry_failure was requested without bytes or a source path before it was decoded.";
+    const api: NativeAudioInvokeApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        calls.push({ command, args });
+        if (command === "native_audio_start") {
+          const payload = args?.payload as { assets: Array<{ bytes?: number[] }> };
+          throw new Error(payload.assets[0]?.bytes?.length ? "Native output stream failed." : missingAssetError);
+        }
+        return status() as never;
+      }
+    };
+    const bridge = new NativeAudioPlaybackBridge(async () => api);
+    const asset = {
+      id: "asset_retry_failure",
+      name: "Retry failure loop.wav",
+      sourceHash: "revision-1",
+      sampleRate: 48000,
+      channels: 2,
+      durationSeconds: 8,
+      bytes: [82, 73, 70, 70]
+    };
+    const payload = buildNativeAudioStartPayload(createDemoProject(), [], 0, { assets: [asset], regions: [] });
+
+    await bridge.preloadAssets([asset]);
+
+    await expect(bridge.start(payload)).resolves.toMatchObject({
+      started: false,
+      status: null,
+      error: "Native output stream failed."
+    });
+    expect(calls.filter((call) => call.command === "native_audio_start")).toHaveLength(2);
+  });
+
   it("preloads file-backed WAV assets without serializing audio bytes", async () => {
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
     const api: NativeAudioInvokeApi = {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { createDemoProject } from "../src/demo/demoProject";
+import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
+import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 import { buildPocketDawProjectFile, createEmptyPocketDawProject, parsePocketDawProjectFile } from "../src/daw/dawProject";
 import {
   cycleBassStep,
@@ -16,6 +18,7 @@ import {
   setChordsmithGlobals,
   setGuitarSettings,
   setMelodyInstrument,
+  setMelodyTrackInstrument,
   setMelodyMute,
   setMelodyOctave,
   setMelodyPan,
@@ -307,6 +310,55 @@ describe("Chordsmith visual sequencer edits", () => {
     expect((original.melodyInstrumentsA as string[])[0]).toBe("harmonica");
     expect(project.tracks.find((track) => track.id === "melody")?.name).toBe("Melody 1 - Harmonica");
     expect(renderTimelineEvents(project).some((event) => event.kind === "melody" && event.instrument === "harmonica")).toBe(true);
+  });
+
+  it("changes Melody 3 across all sections and survives save/reopen without changing other lanes", () => {
+    let project = createDemoProject();
+    for (const sectionId of ["A", "B"] as const) {
+      project = cycleMelodyStep(project, sectionId, 2, 1);
+      project = setMelodyInstrument(project, sectionId, 2, sectionId === "A" ? "tape_bell" : "soft_pluck");
+    }
+    project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject(project.sourceRefs[0].original));
+    const before = structuredClone(getPrimaryChordsmithSource(project)!);
+    const starts = sectionClipStarts(project);
+    project = setMelodyTrackInstrument(project, 2, "cowboy_whistle");
+    const reopened = parsePocketDawProjectFile(buildPocketDawProjectFile(project));
+    for (const result of [project, reopened]) {
+      const pcs = getPrimaryChordsmithSource(result)!;
+      for (const sectionId of Object.keys(pcs.sections) as Array<keyof typeof pcs.sections>) {
+        const section = pcs.sections[sectionId];
+        expect(section.melodyInstruments[2]).toBe("cowboy_whistle");
+        const existingLaneCount = before.sections[sectionId].melodyTracks.length;
+        expect(section.melodyInstruments.slice(0, Math.min(2, existingLaneCount))).toEqual(before.sections[sectionId].melodyInstruments.slice(0, 2));
+        expect(section.active).toBe(before.sections[sectionId].active);
+        expect(section.melodyTracks.slice(0, before.sections[sectionId].melodyTracks.length)).toEqual(before.sections[sectionId].melodyTracks);
+        expect(section.melodyPan.slice(0, Math.min(2, existingLaneCount))).toEqual(before.sections[sectionId].melodyPan.slice(0, 2));
+      }
+      expect(sectionClipStarts(result)).toEqual(starts);
+      const events = renderTimelineEvents(result).filter((event) => event.kind === "melody" && event.trackId === "melody-3");
+      expect(events.length).toBeGreaterThan(0);
+      expect(events.every((event) => event.instrument === "cowboy_whistle")).toBe(true);
+      expect(events.some((event) => result.timeline.clips.find((clip) => clip.id === event.clipId)?.sectionId === "B")).toBe(true);
+    }
+    expect(setMelodyTrackInstrument(project, Number.NaN, "pulse")).toBe(project);
+    expect(setMelodyTrackInstrument(project, 8, "pulse")).toBe(project);
+  });
+
+  it("changes schema-17 melody event sounds while preserving note expression and portable source", () => {
+    const event = { step: 0, duration: 2, note: 64, velocity: 90, sound: "soft_pluck", articulation: "legato", expression: { pan: 0.2 }, technique: { future: { keep: true } } };
+    let project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({
+      projectVersion: 17, sectionBars: { A: 1, B: 1 }, songSequence: ["A", "B"],
+      sections: { A: { tracks: { melody: { events: [event] } } }, B: { tracks: { melody: { events: [event] } } } }
+    }));
+    project = setMelodyTrackInstrument(project, 0, "harmonica");
+    const reopened = parsePocketDawProjectFile(buildPocketDawProjectFile(project));
+    for (const result of [project, reopened]) {
+      const events = renderTimelineEvents(result).filter((item) => item.kind === "melody");
+      expect(events).toHaveLength(2);
+      expect(events.every((item) => item.instrument === "harmonica" && item.midi === 64 && item.technique?.future)).toBe(true);
+      const original = result.sourceRefs[0].original as { sections: Record<string, { tracks: { melody: { events: unknown[] } } }> };
+      expect(original.sections.B.tracks.melody.events[0]).toEqual({ ...event, sound: "harmonica" });
+    }
   });
 
   it("changes the source-backed chord instrument", () => {

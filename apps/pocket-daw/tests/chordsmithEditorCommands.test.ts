@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { nativeRenderCacheSignature } from "../src/audio/nativeRenderCache";
-import { applyBassPresetCommand, applyDrumPresetCommand, applyGuitarPresetCommand, cycleDrumStepCommand, toggleBassTupletCommand } from "../src/app/commands";
+import { applyBassPresetCommand, applyDrumPresetCommand, applyGuitarPresetCommand, cycleDrumStepCommand, setMelodyInstrumentCommand, toggleBassTupletCommand, undoCommand } from "../src/app/commands";
 import { createInitialState } from "../src/app/state";
 import { getPrimaryChordsmithSource } from "../src/daw/chordsmithEditor";
 
 describe("Chordsmith editor command integration", () => {
+  it("changes the whole melody row in one undoable editor command", () => {
+    const state = createInitialState();
+    const next = setMelodyInstrumentCommand(state, "A", 0, "harmonica");
+    expect(next.status).toBe("Updated Melody 1 instrument across all sections.");
+    expect(Object.values(getPrimaryChordsmithSource(next.undoStack.present)!.sections)
+      .every((section) => section.melodyInstruments[0] === "harmonica")).toBe(true);
+    expect(undoCommand(next).undoStack.present).toEqual(state.undoStack.present);
+  });
   it("changes drum source data and regenerated playback events", () => {
     const state = createInitialState();
     const next = cycleDrumStepCommand(state, "A", "kick", 1);

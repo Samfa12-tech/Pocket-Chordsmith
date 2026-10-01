@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+use tauri::Manager;
 
 use crate::native_audio_blocks::{
     for_each_frame_block, for_each_output_block, NATIVE_AUDIO_BLOCK_FRAMES,
@@ -1169,12 +1170,35 @@ pub fn native_audio_preload_asset(
 }
 
 #[tauri::command]
-pub fn native_audio_render_wav(
+pub async fn native_audio_render_wav(
     payload: NativeAudioStartPayload,
     duration_seconds: f64,
     render_mode: Option<String>,
     bit_depth: Option<u16>,
-    state: tauri::State<'_, NativeAudioState>,
+    app: tauri::AppHandle,
+) -> Result<NativeAudioRenderedWav, String> {
+    // Sound edits rebuild multiple stems. Keep their DSP and WAV encoding off
+    // the window thread and the async executor, without changing audio timing.
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<NativeAudioState>();
+        render_native_audio_wav_on_worker(
+            payload,
+            duration_seconds,
+            render_mode,
+            bit_depth,
+            state.inner(),
+        )
+    })
+    .await
+    .map_err(|error| format!("Native audio render task failed: {error}"))?
+}
+
+fn render_native_audio_wav_on_worker(
+    payload: NativeAudioStartPayload,
+    duration_seconds: f64,
+    render_mode: Option<String>,
+    bit_depth: Option<u16>,
+    state: &NativeAudioState,
 ) -> Result<NativeAudioRenderedWav, String> {
     let mut runtime = state
         .lock()

@@ -4,6 +4,14 @@ import { join } from "node:path";
 import { NATIVE_AUDIO_RENDERER_CONTRACT_VERSION } from "../src/audio/nativeRenderCache";
 
 describe("native audio renderer cache contract", () => {
+  it("dispatches native WAV rendering to a blocking worker so sound edits cannot block the window thread", () => {
+    const source = readFileSync(join(process.cwd(), "src-tauri", "src", "native_audio.rs"), "utf8");
+    const command = sourceSection(source, "pub async fn native_audio_render_wav", "fn render_native_audio_wav_on_worker");
+    expect(command).toContain("tauri::async_runtime::spawn_blocking(move ||");
+    expect(command).toContain("render_native_audio_wav_on_worker(");
+    const worker = sourceSection(source, "fn render_native_audio_wav_on_worker", "pub fn native_audio_pause");
+    expect(worker.indexOf("drop(runtime)")).toBeLessThan(worker.indexOf("render_playback_to_wav("));
+  });
   it("changes when native cached/procedural parity-sensitive renderer code changes", () => {
     const nativeAudio = readFileSync(join(process.cwd(), "src-tauri", "src", "native_audio.rs"), "utf8");
     const vst3Session = readFileSync(join(process.cwd(), "src-tauri", "src", "vst3_session.rs"), "utf8");

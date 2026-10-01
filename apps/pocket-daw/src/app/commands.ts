@@ -61,7 +61,7 @@ import {
   setMelodyMute,
   setMelodyOctave,
   setMelodyPan,
-  setMelodyInstrument,
+  setMelodyTrackInstrument,
   setMelodySolo,
   setSectionBars,
   setSectionChord,
@@ -2620,7 +2620,7 @@ export function cycleMelodyStepCommand(state: AppState, sectionId: string, track
 
 export function setMelodyInstrumentCommand(state: AppState, sectionId: string, trackIndex: number, instrument: string): AppState {
   if (!isSectionId(sectionId)) return state;
-  return commitProject(state, setMelodyInstrument(state.undoStack.present, sectionId, trackIndex, instrument), `Updated Section ${sectionId} melody instrument.`);
+  return commitProject(state, setMelodyTrackInstrument(state.undoStack.present, trackIndex, instrument), `Updated Melody ${trackIndex + 1} instrument across all sections.`);
 }
 
 export function setMelodyOctaveCommand(state: AppState, sectionId: string, trackIndex: number, octave: number): AppState {

@@ -2061,7 +2061,7 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     surface: "Chordsmith Editing",
     control: "Melody Track Settings",
     selector: "data-melody-instrument / data-melody-octave / data-melody-pan / data-melody-mute / data-melody-solo",
-    does: "Sets melody track instrument, octave, pan, mute, and solo values for generated melody playback.",
+    does: "Sets the melody instrument across the entire track. Octave, pan, mute, and solo apply to the selected section.",
     useWhen: "Use to balance or isolate melody tracks while editing generated sections.",
     aiNote: "Mute and solo affect audition/render perception; inspect them before diagnosing missing melody."
   },

@@ -2445,8 +2445,8 @@ function renderMelodyEditor(section: SanitizedPcsSection, trackIndex: number, st
     <div class="sequencer-block" data-step-grid="true" role="group" aria-label="Melody ${trackIndex + 1} sequencer">
       <strong>Melody ${trackIndex + 1}</strong>
       <div class="editor-controls lane-controls">
-        <label>Instrument
-          <select data-melody-instrument="${sanitizeDataAttr(`${section.id}:${trackIndex}`)}">
+        <label>Track instrument
+          <select title="Changes Melody ${trackIndex + 1} across all sections" data-melody-instrument="${sanitizeDataAttr(`${section.id}:${trackIndex}`)}">
             ${POCKET_MELODY_INSTRUMENTS.map((value) => `<option value="${value}" ${instrument === value ? "selected" : ""}>${escapeHtml(instrumentLabel(value))}</option>`).join("")}
           </select>
         </label>

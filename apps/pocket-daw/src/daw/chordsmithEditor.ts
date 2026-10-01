@@ -431,6 +431,43 @@ export function setMelodyInstrument(project: PocketDawProject, sectionId: Sectio
   });
 }
 
+export function setMelodyTrackInstrument(project: PocketDawProject, trackIndex: number, instrument: string): PocketDawProject {
+  if (!Number.isInteger(trackIndex) || trackIndex < 0 || trackIndex >= 8) return project;
+  const safeInstrument = safeInstrumentName(instrument);
+  return editChordsmithProject(project, (pcs, next) => {
+    const ref = getPrimaryChordsmithSourceRef(next)!;
+    const original = ref.original as Record<string, unknown>;
+    SECTION_IDS.forEach((sectionId) => {
+      const section = pcs.sections[sectionId];
+      ensureMelodyTrack(section, trackIndex);
+      section.melodyInstruments[trackIndex] = safeInstrument;
+      // Schema-17 events can own their sound instead of the compact lane.
+      Object.entries(section.richEvents || {}).forEach(([role, events]) => {
+        const laneIndex = role === "melody" ? 0 : /^melody_?\d+$/i.test(role) ? Number(role.replace(/\D/g, "")) - 1 : -1;
+        if (laneIndex !== trackIndex) return;
+        events.forEach((event) => {
+          event.sound = safeInstrument;
+          event.raw.sound = safeInstrument;
+        });
+        const tracks = (original?.sections as Record<string, { tracks?: Record<string, { events?: unknown[] }> }> | undefined)?.[sectionId]?.tracks;
+        tracks?.[role]?.events?.forEach((event) => {
+          if (event && typeof event === "object" && !Array.isArray(event)) (event as Record<string, unknown>).sound = safeInstrument;
+        });
+      });
+      // Persist the whole-row change even when automatic bass only syncs globals.
+      if (original && typeof original === "object" && !Array.isArray(original)) {
+        original[`melodyTracks${sectionId}`] = section.melodyTracks.map((notes) => notes.slice());
+        original[`melodyInstruments${sectionId}`] = section.melodyInstruments.slice();
+      }
+    });
+    const track = next.tracks.find((item) => item.role === "melody" && item.metadata?.chordsmithMelodyTrackIndex === trackIndex);
+    if (track) {
+      track.metadata = { ...(track.metadata || {}), chordsmithInstrument: safeInstrument };
+      track.name = `Melody ${trackIndex + 1} - ${titleCase(safeInstrument.replace(/_/g, " "))}`;
+    }
+  });
+}
+
 export function setMelodyOctave(project: PocketDawProject, sectionId: SectionId, trackIndex: number, octave: number): PocketDawProject {
   return editChordsmithSection(project, sectionId, (_pcs, section) => {
     ensureMelodyTrack(section, trackIndex);

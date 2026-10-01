@@ -26,7 +26,7 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
-- 0.6.50 is a source-only release-status/documentation checkpoint after the exact 0.6.49 publication. No 0.6.50 installer or updater has been prepared or published; any future package requires a new clean 0.6.50 candidate and full release evidence.
+- 0.6.50 changes melody instruments across the whole track, moves native stem rendering off the window thread, and recovers playback from evicted native cache assets. This source checkpoint is awaiting an exact candidate and installed validation; 0.6.49 remains the public release.
 
 ## Installed-Smoke Exception
 

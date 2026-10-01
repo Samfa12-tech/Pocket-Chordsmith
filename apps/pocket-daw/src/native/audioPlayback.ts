@@ -318,7 +318,7 @@ export interface NativeAudioStartResult {
 type NativeAudioApiFactory = () => Promise<NativeAudioInvokeApi | null>;
 
 export class NativeAudioPlaybackBridge {
-  private readonly knownNativeAssetIds = new Set<string>();
+  private readonly knownNativeAssetRevisions = new Set<string>();
 
   constructor(private readonly apiFactory: NativeAudioApiFactory = defaultNativeAudioApi) {}
 
@@ -329,10 +329,30 @@ export class NativeAudioPlaybackBridge {
     }
     try {
       const status = await api.invoke<NativeAudioStatus>("native_audio_start", { payload: this.withCachedAssetHints(payload) });
-      payload.assets?.forEach((asset) => this.knownNativeAssetIds.add(asset.id));
+      payload.assets?.forEach((asset) => this.knownNativeAssetRevisions.add(nativeAssetCacheHintKey(asset)));
       return { started: true, status, error: null };
     } catch (error) {
-      return { started: false, status: null, error: errorMessage(error) };
+      const message = errorMessage(error);
+      const missingAsset = payload.assets?.find((asset) => message === missingNativeAssetError(asset.id));
+      if (!missingAsset?.bytes?.length) {
+        return { started: false, status: null, error: message };
+      }
+
+      // The native cache is bounded and may have evicted an asset that this
+      // bridge previously marked as resident. Retry this start once with the
+      // original bytes, and stop treating the missing revision as resident.
+      this.knownNativeAssetRevisions.delete(nativeAssetCacheHintKey(missingAsset));
+      const missingAssetKey = nativeAssetCacheHintKey(missingAsset);
+      try {
+        const status = await api.invoke<NativeAudioStatus>("native_audio_start", { payload });
+        payload.assets?.forEach((asset) => {
+          const cacheHintKey = nativeAssetCacheHintKey(asset);
+          if (cacheHintKey !== missingAssetKey) this.knownNativeAssetRevisions.add(cacheHintKey);
+        });
+        return { started: true, status, error: null };
+      } catch (retryError) {
+        return { started: false, status: null, error: errorMessage(retryError) };
+      }
     }
   }
 
@@ -341,14 +361,15 @@ export class NativeAudioPlaybackBridge {
     if (!api?.isAvailable()) return 0;
     let loaded = 0;
     for (const asset of assets) {
-      if (this.knownNativeAssetIds.has(asset.id)) {
+      const cacheHintKey = nativeAssetCacheHintKey(asset);
+      if (this.knownNativeAssetRevisions.has(cacheHintKey)) {
         loaded += 1;
         continue;
       }
       if (!asset.bytes?.length && !asset.sourcePath) continue;
       try {
         await api.invoke<NativeAudioStatus>("native_audio_preload_asset", { asset });
-        this.knownNativeAssetIds.add(asset.id);
+        this.knownNativeAssetRevisions.add(cacheHintKey);
         loaded += 1;
       } catch {
         // Playback can still send bytes for assets that fail to preload.
@@ -396,12 +417,21 @@ export class NativeAudioPlaybackBridge {
     return {
       ...payload,
       assets: payload.assets.map((asset) => {
-        if (!this.knownNativeAssetIds.has(asset.id)) return asset;
+        if (!this.knownNativeAssetRevisions.has(nativeAssetCacheHintKey(asset))) return asset;
         const { bytes: _bytes, ...metadataOnly } = asset;
         return metadataOnly;
       })
     };
   }
+}
+
+function nativeAssetCacheHintKey(asset: NativeAudioAsset): string {
+  const revision = asset.sourceHash || asset.sourcePath || "";
+  return JSON.stringify([asset.id, revision]);
+}
+
+function missingNativeAssetError(assetId: string): string {
+  return `Native cached asset ${assetId} was requested without bytes or a source path before it was decoded.`;
 }
 
 export function buildNativeAudioStartPayload(

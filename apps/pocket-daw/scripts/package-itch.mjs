@@ -331,7 +331,7 @@ Pocket DAW is installed-app only. Do not run it as a public portable/extract-and
 
 Checksums are in CHECKSUMS_SHA256.txt. Manual Windows smoke testing status: NOT RUN until a tester fills the installed-app checklist for this exact installer hash.
 `,
-    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Native Audio and Validation Reliability
+    "RELEASE_NOTES.md": `# Pocket DAW v${VERSION} - Track Sounds and Playback Recovery
 
 Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket Chordsmith projects. It is distributed as an installed Windows app only.
 
@@ -340,6 +340,13 @@ Pocket DAW is a free Windows alpha for arranging, editing and exporting Pocket C
 ${artifactTable}
 
 ## ${VERSION} Checkpoint
+
+- Melody instrument changes now apply across the whole melody track in every section, persist through save/reopen, and undo as one edit. Other melody tracks and note expression are preserved.
+- Native stem rendering runs on a background worker so changing chord or melody sounds does not run audio rendering on the window thread.
+- Playback retries once with retained audio bytes when the bounded native cache has evicted an asset. Cache hints include source revisions so revised sounds do not reuse stale entries.
+- Requires exact installed audio, MIDI, export, media, plug-in and game-pack validation before public publication.
+
+## Included From 0.6.49
 
 - Reports transport from consumed native output, with bounded queue fill and generation-safe invalidation after pause, seek, loop and track-control changes. Musical position follows the audio path instead of producer render-ahead.
 - Exposes output queue fill, starvation/underrun counts, render and callback timing, and stream/device failures for diagnosis and recovery. A fast callback alone is not treated as proof of healthy rendering.
