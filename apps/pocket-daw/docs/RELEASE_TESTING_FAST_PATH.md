@@ -20,10 +20,12 @@ failed exact-installed Godot section-loop duration validation and was not
 published. Pocket DAW 0.6.49 was published from exact tested commit
 `a8ebe0b6525f9f7679e0028d5b98db0d0f6bf2ca` after one prepare pass,
 fresh-audible installed smoke, evidence-only candidate verification, and
-exact publication. The current 0.6.50 source includes whole-track melody sound
-changes and native render/cache recovery fixes. Its first release
-prepare must follow the complete one-pass procedure from a clean final commit.
-Never rebuild or restage 0.6.49 from later source.
+exact publication. Pocket DAW 0.6.50 is now published from exact tested commit
+`ec3f783b24abdd85d46229c2893ea953e96248cd` with whole-track melody sound changes and native
+render/cache recovery fixes. Its exact installer passed fresh-audible, MIDI,
+export, media, VST3 and Godot/Chromium target validation. Current 0.6.51 source
+is a release-status checkpoint only, with no installer, receipt or installed
+smoke. Never rebuild or restage 0.6.50 from later source.
 
 ## Core Rule
 

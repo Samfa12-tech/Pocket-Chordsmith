@@ -1,27 +1,27 @@
 {
   "schema": 1,
-  "sourceVersion": "0.6.50",
+  "sourceVersion": "0.6.51",
   "projectSchemaVersion": 3,
-  "latestPublishedVersion": "0.6.49",
-  "latestPublishedTag": "pocket-daw-v0.6.49",
-  "latestPublishedCommit": "a8ebe0b6525f9f7679e0028d5b98db0d0f6bf2ca",
+  "latestPublishedVersion": "0.6.50",
+  "latestPublishedTag": "pocket-daw-v0.6.50",
+  "latestPublishedCommit": "ec3f783b24abdd85d46229c2893ea953e96248cd",
   "unreleasedSourceNotes": [
-    "0.6.50 changes melody instruments across the whole track, moves native stem rendering off the window thread, and recovers playback from evicted native cache assets. This source checkpoint is awaiting an exact candidate and installed validation; 0.6.49 remains the public release."
+    "0.6.51 is a source-only release-status checkpoint. No 0.6.51 installer, candidate receipt, installed smoke, or publication exists. The public 0.6.50 installer remains bound to its exact tested commit."
   ],
   "lastInstalledSmoke": {
-    "version": "0.6.49",
-    "commit": "a8ebe0b6525f9f7679e0028d5b98db0d0f6bf2ca",
-    "installerFile": "Pocket.DAW_0.6.49_x64-setup.exe",
-    "installerSha256": "4125cf21080310a9413c4bedf7c7155d5ef8d500ffd3ad9fe451021f78196829",
-    "testedAt": "2026-09-23T05:49:39.778Z",
+    "version": "0.6.50",
+    "commit": "ec3f783b24abdd85d46229c2893ea953e96248cd",
+    "installerFile": "Pocket.DAW_0.6.50_x64-setup.exe",
+    "installerSha256": "150e006b74b0d2675f361305c3b582b2ca41b82335f5451e0c39835c7dd4ad98",
+    "testedAt": "2026-10-01T05:52:59.122Z",
     "result": "pass",
     "notes": [
-      "0.6.49 was published from the exact installer-tested commit a8ebe0b6525f9f7679e0028d5b98db0d0f6bf2ca. The 0.6.48 candidate remained unpublished after its installed Godot section-loop duration failure.",
-      "The exact setup EXE SHA-256 is 4125cf21080310a9413c4bedf7c7155d5ef8d500ffd3ad9fe451021f78196829. Evidence-only verify:candidate passed in fresh-audible mode; release:publish-exact uploaded and reverified 11 receipt-bound assets without rebuilding or restaging.",
-      "The installed 48 kHz mono microphone take lasted 10.039977 seconds (file peak 0.5115356, RMS 0.0460856); the same strict run captured 20 loopMIDI notes in a punched take lane and retained WAV/MIDI exports.",
-      "Installed media portability and deterministic VST3 host smoke passed. The packaged VST3 sidecar SHA-256 was f2b5e909f142d00cadcdfbf7e44c970c23a645204000f6d42fd1cee4f241ddd8.",
-      "Godot 4.6.3 target-runtime pack SHA-256 8f3ae90a5a383ca6c368e8832bbdc11fb2a5b94dcad89e3d3c7fa76d97f16359 and Chromium Web Audio pack SHA-256 3f79574edfdf9e236d26fc175efcf33759891e9a59865a306be75842dad762d2 passed, including exact section-loop duration checks.",
-      "CI, Pocket DAW Windows native and CodeQL passed on the release commit. The public latest updater and bootstrapper manifests report 0.6.49, the setup URL returns HTTP 200, and the remote installer hash matches the tested setup. The unchanged itch bootstrapper was not repushed."
+      "0.6.50 was published from exact tested commit ec3f783b24abdd85d46229c2893ea953e96248cd using one prepare pass, fresh-audible installed evidence, evidence-only candidate verification, and exact publication without rebuilding or restaging.",
+      "Fixes whole-row melody instrument changes, blocking native stem renders, and playback recovery after decoded cache eviction. Installed Melody 3 changes persisted in all A-H source arrays, and native Play passed on the original and reopened test song.",
+      "The combined installed smoke retained 10.049977 seconds of 48 kHz mono microphone PCM (peak 0.4734497, RMS 0.0545173), 19 live loopMIDI notes, punched take lanes, and verified WAV/MIDI exports.",
+      "Installed media portability, deterministic VST3 instrument/effect hosting, and owned MIDI conversion passed. Godot 4.6.3 and Chromium 149 decoded all six final pack WAVs with nonzero PCM and exact section-loop durations.",
+      "CI including Windows native, and both CodeQL languages passed on the release commit. All 11 public receipt-bound assets were downloaded and hash-verified; both latest manifests report 0.6.50 and the setup URL returns HTTP 200. The unchanged itch bootstrapper was not repushed.",
+      "Exact installer and full direct fresh-audible evidence are retained under ignored local-artifacts/archive/packages/pocket-daw/0.6.50-ec3f783b and local-artifacts/release-evidence/pocket-daw/0.6.50-sound-fixes for future fingerprint-compatible baseline reuse."
     ]
   }
 }
