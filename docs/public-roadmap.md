@@ -26,6 +26,13 @@ products.
 
 ## Pocket DAW
 
+- Prioritize measured preparation/cache-related hitch reduction, dependable UI
+  layout and controls, and Godot performance/sound fidelity before broad feature
+  growth. Cache work is a suspected cause of owner-reported pauses, not a diagnosis.
+  See the [prioritized performance, polish and finishing plan](../apps/pocket-daw/docs/PERFORMANCE_POLISH_AND_FINISH_ROADMAP.md)
+  for acceptance criteria, existing DSP-based Finish & Export work and targeted
+  reliability regressions. Existing release commitments below remain in place.
+
 - Keep `apps/pocket-daw/` clearly marked public-alpha, source-available, and
   private-license until licensing, packaging, and product scope are deliberately
   settled.
@@ -51,6 +58,11 @@ products.
   before any new encoded format ships.
 
 ## Godot Addon
+
+- Prove real-game performance and sound fidelity from both Chordsmith/Core and
+  native DAW rendered exports using the [Godot validation track](../addons/pocket_chordsmith/docs/PERFORMANT_AUDIO_ROADMAP.md#priority-validation-track-game-performance-and-two-source-fidelity).
+  Test cold/warm loading, transitions, long sessions and retained audible A/B
+  evidence on supported Godot targets; preview-kit audition is not final parity.
 
 - Keep `addons/pocket_chordsmith/` stable.
 - Improve examples for runtime callbacks, chart resources, buses, and stem workflows.
