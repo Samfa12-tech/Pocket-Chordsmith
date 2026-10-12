@@ -25,6 +25,57 @@ Baseline inspected: main `0c6975cadcd4aba0047ab94170a2adabc722517f`.
 0.6.50 and source-only 0.6.51. Future evidence must identify its actual source
 commit and installed artifact rather than imply this planning work was shipped.
 
+## Audit follow-through: 2026-10-12
+
+The [full dated audit](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md) preserves 13 source-reviewed findings,
+commit-pinned evidence, existing mitigations, proposed fixes, regression risks
+and validation plans at source `0c6975cadcd4aba0047ab94170a2adabc722517f`.
+It is a static investigation, not proof of the reported hitches, measured
+performance, successful runtime tests, an implemented fix or a shipped release.
+
+Use this ledger when implementation resumes. Priority expresses investigation
+order, not proven impact; collect the baseline first and keep fixes bounded.
+Start with CACHE-02, then unchanged-playback/UI work, bounded reuse/cancellation
+and measured stream continuity. Reproduce GODOT-01 and GODOT-02 before making
+game-audio fidelity claims. UI-04 and larger export ownership changes follow
+measurement. All entries start at **source-reviewed / test pending / fix pending**.
+
+| ID and evidence | Priority | Next test and smallest candidate change | Runtime test | Fix | Verified update / evidence |
+| --- | --- | --- | --- | --- | --- |
+| [CACHE-01](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#cache-01) | P0 / staged | Measure restart/output gaps; prepare a safe stream/graph replacement preserving clock, tails and rollback. | Pending | Pending | None yet |
+| [CACHE-02](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#cache-02) | P0 / first | Test Play–Stop–Play residency and retry counters versus Pause–Resume; reconcile confirmed native clears and bridge hints. | Pending | Pending | None yet |
+| [CACHE-03](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#cache-03) | P0 | Warm, stop/pause, edit one lane and rebuild; retain bounded valid reusable assets without allowing stale playback. | Pending | Pending | None yet |
+| [CACHE-04](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#cache-04) | P0 | Defer a stem render, edit/switch project and assert obsolete jobs stop dispatching; retain latest-state correctness. | Pending | Pending | None yet |
+| [CACHE-05](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#cache-05) | P0 / early | Count unchanged-tick hash/compile work; reuse immutable revision facts and cover every sound-affecting invalidation. | Pending | Pending | None yet |
+| [UI-01](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#ui-01) | P1 / early | Assert stable studio/input nodes while typing, IME, filters and keyboard shortcuts; patch only result regions. | Pending | Pending | None yet |
+| [UI-02](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#ui-02) | P1 / early | Measure DOM query counts and stable readout children; validate add/remove/reorder, recording and accessibility. | Pending | Pending | None yet |
+| [UI-03](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#ui-03) | P1 | Trace dense automation IPC and producer contention; batch/coalesce with generation ordering and compact status. | Pending | Pending | None yet |
+| [UI-04](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#ui-04) | P2 | Profile regions × cache-items traversal; index metadata and prove unchanged visual output across seek/loop/cache swaps. | Pending | Pending | None yet |
+| [GODOT-01](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#godot-01) | P1 / correctness first | Use audible A/B/repeated-section fixtures, seek and loops; make audio-set time origins explicit. | Pending | Pending | None yet |
+| [GODOT-02](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#godot-02) | P1 / correctness first | Compare actual PCM/full mix and branch overlap; define alternative groups, gain, normalization and shared-FX semantics. | Pending | Pending | None yet |
+| [EXPORT-01](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#export-01) | P2 / measure first | Profile IPC/peak memory for 4/16/32 stems; reduce copies or use native streaming while preserving export PCM and cancellation. | Pending | Pending | None yet |
+| [GODOT-03](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md#godot-03) | P1 | Measure cold/warm real-game transitions and teardown; prepare ahead with explicit readiness and bounded working sets. | Pending | Pending | None yet |
+
+Session checklist:
+- [ ] Reconcile each finding with current main and the installed build; record
+  source changes since the pinned audit before assuming it still applies.
+- [ ] Capture small/large owned fixtures and hardware/device/sample-rate/buffer
+  settings; retain hashes and private fixture evidence without publishing audio
+  or personal project paths.
+- [ ] Add focused failing regression tests or a repeatable profiler/PCM capture.
+  Record UI long tasks, native preparation, underruns/output gaps and memory
+  separately. A source-level pattern is not itself a measured user-visible cause.
+- [ ] Implement and review one bounded slice, preserving native-clock authority,
+  valid cache invalidation, plugin isolation, effect tails and failure recovery.
+- [ ] Run applicable source gates and actual Windows/Godot target checks; retain
+  before/after traces with the same fixtures, explicit tolerances and limitations.
+- [ ] Update the row with outcome (confirmed, narrowed, disproved or deferred),
+  regression-test paths, fix PR/commit, exact runtime evidence and remaining work.
+  Mark a fix verified only after its acceptance evidence exists; preserve the
+  original audit as historical evidence rather than silently rewriting it.
+- [ ] Keep test/fix completion separate from release/publication status. Follow
+  the existing receipt-bound release process only when a release is intended.
+
 ## P0: Find and remove preparation hitches
 
 The first outcome is responsive editing and transport interaction, not a generic
