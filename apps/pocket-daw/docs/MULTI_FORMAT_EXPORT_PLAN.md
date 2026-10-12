@@ -4,7 +4,8 @@ This is the design anchor for export formats beyond the current WAV, MIDI and ZI
 
 ## Current Baseline
 
-- `src/audio/offlineRender.ts` renders the audible project into a stereo `AudioBuffer` and encodes 16-bit PCM WAV in `encodeWav`.
+- The native Windows export path is `src/audio/nativeOfflineRender.ts`, backed by the native renderer. `src/audio/offlineRender.ts` provides WAV settings/encoding utilities and a development/test renderer; it is not a browser-DAW product direction.
+- Current WAV support includes 16/24-bit PCM and 32-bit float, mono/stereo, sample-rate settings, peak normalization and Off/TPDF dither at applicable fixed-point conversion. These are existing capabilities, not new codec backlog.
 - `src/audio/midiExport.ts` owns Standard MIDI File export for generated events.
 - `src/daw/exportProfiles.ts` defines current default profiles for full-song WAV, full-song MIDI, stem WAVs, section loops, Godot adaptive pack, web-game pack and a future Pocket DJ session.
 - `src/daw/schema.ts` already gives `ExportProfile` optional `sampleRate`, `bitDepth`, `includeMuted`, `includeMetadata` and flexible `settings`.
@@ -21,7 +22,7 @@ This is the design anchor for export formats beyond the current WAV, MIDI and ZI
 
 ## Proposed Export Profile Shape
 
-Keep schema `2` initially and expand profile settings in place.
+The current project schema is `3`. Preserve compatible profile settings and migrations; do not make a schema change solely because this planning example is old.
 
 ```ts
 type AudioExportFormat = "wav" | "flac" | "mp3" | "ogg-vorbis" | "opus";
@@ -48,7 +49,7 @@ Existing `ExportProfile.format` is currently `"wav" | "midi" | "zip" | "json"`. 
 
 | Target | First useful settings | Use case | Notes |
 | --- | --- | --- | --- |
-| WAV PCM | 44.1/48 kHz, 16/24-bit, optional dither | Master, stems, archival game import | Already implemented as 16-bit WAV; 24-bit needs encoder work. |
+| WAV PCM / float | Sample-rate settings, 16/24-bit PCM or 32-bit float, applicable Off/TPDF dither | Master, stems, archival game import | Existing native WAV path; preserve and verify it. |
 | FLAC | 44.1/48 kHz, 16/24-bit, compression level | Lossless sharing and smaller source packs | Good first native codec after WAV because it preserves audio. |
 | MP3 | 128/192/256/320 kbps, stereo | Broad playback compatibility | Patent risk is low in modern practice, but dependency licensing must still be recorded before bundling. |
 | Ogg Vorbis | quality 3-8 | Browser/game-friendly compressed loops | Useful for web packs when target importers support it. |
@@ -80,13 +81,13 @@ interface EncodedAudioArtifact {
 }
 ```
 
-The browser renderer can keep producing WAV/PCM for now. Installed builds can hand PCM or WAV bytes to native encoders when a codec dependency is added. Game packs should use the same `EncodedAudioArtifact` summary in manifests so Godot/web importers know exactly what they received.
+The native DAW renderer remains the production WAV/PCM source. Installed builds can hand that PCM or WAV to native encoders when a codec dependency is added; the browser renderer remains development/test support. Game packs should use the same `EncodedAudioArtifact` summary in manifests so Godot/web importers know exactly what they received.
 
 ## Normalization, Bit Depth And Dither
 
 - `normalize: false` remains the default.
 - Peak normalization should scan the rendered buffer before encoding and apply a visible gain value stored in export metadata.
-- LUFS normalization should wait until a measured loudness implementation exists; do not approximate it with peak.
+- Core has estimated loudness analysis and mastering/QC already. General release-grade LUFS normalization claims must wait for external calibration; do not approximate LUFS with peak. See the [Finish & Export acceptance gates](PERFORMANCE_POLISH_AND_FINISH_ROADMAP.md#p2-finish--export-with-existing-pocket-dsp).
 - Dither only matters when reducing to fixed-point PCM bit depths. Apply it at the final bit-depth conversion stage, not before lossy encoding.
 - Store `normalizationGainDb`, measured peak, target peak/LUFS, dither mode, encoder name and encoder version in export manifests or sidecar metadata.
 
@@ -133,7 +134,7 @@ Pocket DAW should own:
 - Project migration and roundtrip preserve future export profile settings without dropping unknown fields.
 - A profile validation test rejects unsupported codec/settings combinations before rendering.
 - A PCM normalization test proves peak gain calculation without clipping.
-- A WAV 24-bit or FLAC fixture validates file headers and decoded duration/sample rate before release.
+- Retain existing WAV 16/24/32-bit fixture coverage; a new FLAC fixture must validate file headers and decoded duration/sample rate before release.
 - MP3/Ogg/Opus fixtures verify duration, sample rate, channel count, bitrate/quality metadata and target-runtime decode.
 - Godot/web compressed game-pack smoke imports a real ZIP in the target runtime and proves loop/stem playback before release notes claim support.
 

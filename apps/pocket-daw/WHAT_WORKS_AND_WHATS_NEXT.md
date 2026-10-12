@@ -4,7 +4,7 @@
 
 Pocket DAW is live for Windows alpha testing on itch at `https://samfa12.itch.io/pocket-daw` and linked from `https://samfa12.com`.
 
-- Current release truth: `0.6.46` is the published and exact-installed-smoked updater checkpoint. Source `0.6.49` is the native-audio and validation release candidate; `0.6.47` remained source-only and the frozen `0.6.48` candidate failed Godot pack validation without publication. See `docs/CURRENT_RELEASE_STATUS.md`.
+- Current release truth: `0.6.50` is the published and exact-installed-smoked updater checkpoint; `0.6.51` is source-only release-status metadata with no installer or publication. See [current release status](docs/CURRENT_RELEASE_STATUS.md).
 - Last completed public artifact record in this repo: tracked in `release-status.json`
 - Last installed public smoke evidence in this repo: tracked in `release-status.json`
 - Machine-readable release status: `release-status.json`
@@ -57,6 +57,15 @@ the package/Tauri/schema metadata at the previous public checkpoint.
 - UI density checkpoint: current source opens with the timeline as the dominant work area, hides native file inputs offscreen, keeps the lower dock tucked in Music mode, keeps full timeline/range tools behind the explicit `Tools` expander, and scrolls the app shell to the lower dock when rail/dock buttons open it. Sam manually confirmed the new UI direction is good enough to pause UI work for now.
 - CI/release reliability checkpoint: `.github/workflows/ci.yml` now uses GitHub action majors that run on the current Node action runtime, Pocket Audio Core declares its Playwright browser-trace dependency, and `npm run verify:release` now runs both `verify:ci-workflow` and `packages/pocket-audio-core` `verify:family-parity` before DAW tests/build/package checks.
 - Remaining goal boundary: the small/medium reliability and UI-density work is now checkpointed; the remaining north-star gaps are large feature tracks, especially simultaneous multitrack capture, user-facing punch/take lanes, pitch-preserving time-stretch/pitch-shift, richer routing/latency tools, compressed export codecs and eventual plugin-host research.
+
+## Current priority refinement (2026-10-12)
+
+The [performance, polish and finishing plan](docs/PERFORMANCE_POLISH_AND_FINISH_ROADMAP.md)
+prioritizes owner-reported preparation hitches (caching is suspected, not diagnosed),
+UI ordering/stacking/overflow polish, and Godot runtime performance plus sound
+fidelity from Chordsmith and DAW exports. It adds concrete acceptance gates around
+existing foundations and proposes a focused Finish & Export UX using Pocket DSP.
+It does not change release dates, versions or existing release commitments.
 
 ## DAW capability map and next direction
 

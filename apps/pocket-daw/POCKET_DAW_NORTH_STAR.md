@@ -169,6 +169,12 @@ Pocket DAW can consume PocketHandoff envelopes and legacy Chordsmith import para
 
 Do not jump to flashy DAW surface area before the foundations are solid.
 
+Near-term refinement: the owner's current priority is preparation hitching,
+UI ordering/overflow polish and real-game Godot sound/performance confidence.
+Use the [performance, polish and finishing plan](docs/PERFORMANCE_POLISH_AND_FINISH_ROADMAP.md)
+for measurable acceptance criteria within the foundation/reliability stages below.
+This adds no release deadline and does not remove the longer-term commitments.
+
 Preferred order:
 
 1. Release-state hygiene and installed reliability: Open, Save, Save As, recent files, media relink/reload, diagnostics, updater checks and exact release smoke tests.
