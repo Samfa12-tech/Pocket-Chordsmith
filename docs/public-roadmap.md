@@ -29,6 +29,13 @@ products.
 - Preserve the current browser app behavior and share-code compatibility.
 - Improve docs around imports, exports, MIDI, WAV, and Godot push.
 - Add tests around existing behaviors before large UI or engine changes.
+- Plan a UI revamp for the next update: give Pocket Chordsmith a more
+  interesting, engaging and distinctive musical personality, avoiding a generic
+  AI-template aesthetic. Explore visual directions and agree on one with Sam
+  before broad implementation; no particular aesthetic is approved yet. Preserve
+  legibility, accessible touch targets, keyboard usability and responsive layouts.
+  Keep existing behavior, compatibility and performance/reliability priorities
+  intact. Design exploration and implementation are pending.
 
 ## Pocket DJ
 
