@@ -12,6 +12,18 @@ products.
 - Keep CI covering core, web, DJ, DAW, and repo hygiene.
 - Document manual release checks for itch and Godot addon publishing.
 
+## Next update: shared Campfire Acoustic guitar
+
+- Add the Towtal Chaos-inspired **Campfire Acoustic** instrument (working name)
+  across Core, Chordsmith, DJ, native DAW and Godot using the
+  [canonical next-update plan](CAMPFIRE_ACOUSTIC_NEXT_UPDATE_PLAN.md).
+  This is planned work, with provenance, deterministic rendering, compatibility,
+  listening parity and measured performance gates still pending.
+- Preserve the existing performance/polish and release priorities below. Godot
+  production fidelity uses matching rendered stems; optional native preview
+  parity is a separate scope. No release date or completed implementation is
+  implied.
+
 ## Pocket Chordsmith
 
 - Preserve the current browser app behavior and share-code compatibility.
