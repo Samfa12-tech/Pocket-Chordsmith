@@ -76,6 +76,18 @@ Session checklist:
 - [ ] Keep test/fix completion separate from release/publication status. Follow
   the existing receipt-bound release process only when a release is intended.
 
+## Next-update instrument slice: Campfire Acoustic
+
+The [canonical Campfire Acoustic plan](../../../docs/CAMPFIRE_ACOUSTIC_NEXT_UPDATE_PLAN.md)
+records the requested Towtal Chaos guitar addition across Core, Chordsmith, DJ,
+native DAW and Godot. It is planned, with implementation and acceptance pending.
+Keep the audit ledger and P0/P1 order intact; resolve blocking cache/timing issues
+before adding the sound. DAW acceptance includes native live/offline rendering,
+versioned cache invalidation, full voicing/strum/picking intent, installed listening
+evidence and exports that agree with the reference. Godot uses prepared stems for
+production parity, with optional native preview work separately gated.
+This documentation does not start a build or alter release status.
+
 ## P0: Find and remove preparation hitches
 
 The first outcome is responsive editing and transport interaction, not a generic
