@@ -56,6 +56,15 @@ The runtime should not parse full JSON per frame, spawn nodes per note, or synth
 
    Future `STEM_SYNC` work should support overlap/crossfade players for state changes, short pre-roll where needed, and clean transitions between section stem sets.
 
+   Extend editor audition with the [shared hear/compare/keep workflow](../../../docs/public-roadmap.md#next-update-workflow-refinements-hear-compare-keep):
+   select a state transition and hear its prepared lead-in, boundary and tail.
+   Compare original/proposed transition settings at the same musical position;
+   Apply is one undoable editor change and Discard preserves the original.
+   Optional listen-for A/B explains an observed gap, overlap or level change,
+   with honest not-checked/uncertain status and manual override. Test Stop,
+   repeated transitions and stale assets; do not add analysis/render work to
+   gameplay frames or treat preview as proof of production two-source parity.
+
 ## Next-update instrument slice: Campfire Acoustic
 
 See the [canonical cross-family plan](../../../docs/CAMPFIRE_ACOUSTIC_NEXT_UPDATE_PLAN.md)
