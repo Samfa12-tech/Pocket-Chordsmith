@@ -30,6 +30,7 @@
     "pretest": "npm run build",
     "test": "node --test",
     "test:core": "node --test tests/core.test.js",
+    "calibrate:meters": "node scripts/calibrate-audio-meters.mjs",
     "verify:campfire-browser": "npm run build && node scripts/verify-campfire-browser.mjs",
     "test:golden": "node --test --test-name-pattern=\"golden event trace|fixture index\" tests/golden.test.js",
     "test:render": "node --test --test-name-pattern=\"audio metrics\" tests/golden.test.js",

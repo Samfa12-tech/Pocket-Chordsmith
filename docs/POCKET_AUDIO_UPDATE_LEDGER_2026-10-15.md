@@ -1153,3 +1153,29 @@ loop claim. Generated-media recording path +native FX/automation fixture only.
 Next: remaining reversible audition/finishing/QC/calibration/decoded outputs,
 broader two-source game acceptance and exact installed/reviewed release targets.
 No Sam input blocker; all original whole-family scope remains active.
+
+## Existing Core meter correction and external reference
+
+Implemented original K-weighting coefficient/rate-transform correction and32tap
+Blackman-sinc4x truepeak estimation in the existing offline analyzer. Baseline
+installedFFmpeg9 comparisons reproduced33/40LUFS +35/40defaultpeak passes; Kfix
+alone40/40LUFS. Final63/63LUFS +63/63peak passes7rates ×9 original generated
+mono/stereo fixture families. Explicitfloat64 4xSWR/astats peak reference avoids
+defaultmode192k resolution limits; retains originalebur128peak too. Intermediate
+S16autonegotiated/clippedreference49/56failed, preservednotpassed. Finalbounds
+0.15LU/0.2dB, worst0.056508LU/0.010227dB. Input+binarySHA256 and external numeric
+readings frozen forCI; no FFmpegruntime dependency/sourcecodecopy/licencechange.
+
+Corebuild/full208/208pass inclrelease-mastering;5newtests exercise63hashedexternal
+reference cases, analyticalcounterexamples andfailclosedparsing. Existingpublic
+estimatedstatusretained. Twelve ordinaryrenderPCMhashes +alloriginalsource/share/
+normalized/eventfilesverifiedunchanged. Goldenupdater'sunwantedtimestamps/old
+normalizationmetadata refreshcaught/restoredownoutputto99base beforeverification;
+onlymeter goldenfields retained. Reproduce/details/docs/AUDIO_METER_CALIBRATION_2026-10-15.md.
+
+No newaccounts/dependencies/publication/CoreNPM/installedcandidate/micpass.
+Futureexplicitmasterrendersmaychangeduetocorrectedtrim/limiterQCdecisions;
+existingexportedfilesuntouched. Nativefinishpresets/monitorgain/seamlessAB/
+ApplyDiscardUndo/decodedformats/nativeintegration/vocal-liveacceptance remain.
+Fullfamilygame/load/installed/releasegatesremainactive. Sourcecandidatepending
+familyconsumerchecks/review; no Sam input blocker.

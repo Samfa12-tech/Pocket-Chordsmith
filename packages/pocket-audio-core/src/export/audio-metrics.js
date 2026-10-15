@@ -38,7 +38,7 @@ export function analyseRenderedBuffer(rendered) {
   const rms = Math.sqrt(sumSquares / Math.max(1, count));
   const sampleRate = rendered.sampleRate || 44100;
   const frameCount = Math.max(0, channels[0]?.length || 0);
-  const truePeak = estimateTruePeak(channels);
+  const truePeak = estimateTruePeak(channels, peak, nanSamples + infiniteSamples > 0);
   const spectralBalance = estimateSpectralBalance(channels, sampleRate);
   const left = channels[0] || new Float32Array(0);
   const right = channels[1] || left;
@@ -53,12 +53,12 @@ export function analyseRenderedBuffer(rendered) {
     samplePeakDbfs: ampToDb(peak),
     truePeakDbtp: ampToDb(truePeak),
     estimatedTruePeakDbtp: ampToDb(truePeak),
-    truePeakMethod: "estimated_catmull_rom_4x_v2",
+    truePeakMethod: "estimated_blackman_sinc_4x32_v3",
     intersampleRisk: truePeak > peak + dbToAmp(-60),
     rms: round(rms),
     rmsDbfs: ampToDb(rms),
     integratedLufs: estimateIntegratedLufs(channels, sampleRate),
-    lufsMethod: "estimated_bs1770_k_weighted_gated_v2",
+    lufsMethod: "estimated_bs1770_k_weighted_gated_v3",
     meteringStatus: "estimated_pending_external_calibration",
     crestFactorDb: rms > 0 ? round(ampToDb(peak / rms)) : null,
     clippedSamples,
@@ -95,23 +95,44 @@ function dbToAmp(db) {
   return Math.pow(10, db / 20);
 }
 
-function estimateTruePeak(channels, oversample = 4) {
-  let peak = 0;
-  channels.forEach((channel) => {
+const TRUE_PEAK_RADIUS = 16;
+const TRUE_PEAK_KERNELS = [0.25, 0.5, 0.75].map(fraction => {
+  const coefficients = Float64Array.from({ length: TRUE_PEAK_RADIUS * 2 }, (_, tap) => {
+    const distance = fraction - (tap + 1 - TRUE_PEAK_RADIUS);
+    if (Math.abs(distance) >= TRUE_PEAK_RADIUS) return 0;
+    const sinc = Math.abs(distance) < 1e-12 ? 1 : Math.sin(Math.PI * distance) / (Math.PI * distance);
+    const window = 0.42 + 0.5 * Math.cos(Math.PI * distance / TRUE_PEAK_RADIUS) + 0.08 * Math.cos(2 * Math.PI * distance / TRUE_PEAK_RADIUS);
+    return sinc * window;
+  });
+  const sum = coefficients.reduce((total, coefficient) => total + coefficient, 0);
+  return coefficients.map(coefficient => coefficient / sum);
+});
+
+function estimateTruePeak(channels, samplePeak, hasNonFinite) {
+  let peak = samplePeak;
+  for (const channel of channels) {
+    if (!channel.length) continue;
     for (let index = 0; index < channel.length; index += 1) {
-      const p0 = finiteAt(channel, index - 1);
-      const p1 = finiteAt(channel, index);
-      const p2 = finiteAt(channel, index + 1, p1);
-      const p3 = finiteAt(channel, index + 2, p2);
-      peak = Math.max(peak, Math.abs(p1));
-      for (let step = 1; step < oversample; step += 1) {
-        const t = step / oversample;
-        const interpolated = catmullRom(p0, p1, p2, p3, t);
+      const interior = index >= TRUE_PEAK_RADIUS - 1 && index + TRUE_PEAK_RADIUS < channel.length;
+      for (const coefficients of TRUE_PEAK_KERNELS) {
+        let interpolated = 0;
+        for (let tap = 0; tap < coefficients.length; tap += 1) {
+          const sourceIndex = index + tap + 1 - TRUE_PEAK_RADIUS;
+          const value = channel[interior ? sourceIndex : mirrorIndex(sourceIndex, channel.length)];
+          interpolated += (hasNonFinite && !Number.isFinite(value) ? 0 : value) * coefficients[tap];
+        }
         peak = Math.max(peak, Math.abs(interpolated));
       }
     }
-  });
+  }
   return peak;
+}
+
+function mirrorIndex(index, length) {
+  if (length <= 1) return 0;
+  const period = 2 * (length - 1);
+  const folded = ((index % period) + period) % period;
+  return folded < length ? folded : period - folded;
 }
 
 function estimateIntegratedLufs(channels, sampleRate) {
@@ -143,28 +164,12 @@ function estimateIntegratedLufs(channels, sampleRate) {
   return round(loudnessFromPower(mean));
 }
 
-function finiteAt(channel, index, fallback = 0) {
-  const value = channel[index];
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function catmullRom(p0, p1, p2, p3, t) {
-  const t2 = t * t;
-  const t3 = t2 * t;
-  return 0.5 * (
-    (2 * p1) +
-    (-p0 + p2) * t +
-    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
-    (-p0 + 3 * p1 - 3 * p2 + p3) * t3
-  );
-}
-
 function loudnessFromPower(power) {
   return -0.691 + 10 * Math.log10(Math.max(1e-20, power));
 }
 
 function applyKWeighting(channel, sampleRate) {
-  const highShelf = designHighShelf(sampleRate, 1681.974450955533, 3.999843853973347, 0.7071752369554196);
+  const highShelf = kWeightingShelf(sampleRate);
   const highPass = designHighPass(sampleRate, 38.13547087613982, 0.5003270373238773);
   return applyBiquad(applyBiquad(channel, highShelf), highPass);
 }
@@ -187,34 +192,31 @@ function applyBiquad(channel, coeffs) {
   return out;
 }
 
-function designHighShelf(sampleRate, hz, gainDb, q) {
-  const a = Math.pow(10, gainDb / 40);
-  const omega = 2 * Math.PI * hz / sampleRate;
-  const sin = Math.sin(omega);
-  const cos = Math.cos(omega);
-  const alpha = sin / (2 * q);
-  const sqrtA = Math.sqrt(a);
-  const b0 = a * ((a + 1) + (a - 1) * cos + 2 * sqrtA * alpha);
-  const b1 = -2 * a * ((a - 1) + (a + 1) * cos);
-  const b2 = a * ((a + 1) + (a - 1) * cos - 2 * sqrtA * alpha);
-  const a0 = (a + 1) - (a - 1) * cos + 2 * sqrtA * alpha;
-  const a1 = 2 * ((a - 1) - (a + 1) * cos);
-  const a2 = (a + 1) - (a - 1) * cos - 2 * sqrtA * alpha;
+function kWeightingShelf(sampleRate) {
+  // ITU-R BS.1770-5 Annex1/Table1 coefficient facts at48kHz. Re-express
+  // the transfer polynomial through a prewarped bilinear rate transform.
+  // This is measurement filtering, not a shelf inserted into rendered audio.
+  const b = [1.53512485958697, -2.69169618940638, 1.19839281085285];
+  const a = [1, -1.69065929318241, 0.73248077421585];
+  const hz = 1681.974450955533;
+  const ratio = Math.tan(Math.PI * hz / 48000) / Math.tan(Math.PI * hz / sampleRate);
+  const transform = ([c0, c1, c2]) => {
+    const constant = c0 + c1 + c2;
+    const linear = 2 * (c0 - c2) * ratio;
+    const square = (c0 - c1 + c2) * ratio * ratio;
+    return [constant + linear + square, 2 * constant - 2 * square, constant - linear + square];
+  };
+  const [b0, b1, b2] = transform(b);
+  const [a0, a1, a2] = transform(a);
   return normalizeBiquad({ b0, b1, b2, a0, a1, a2 });
 }
 
 function designHighPass(sampleRate, hz, q) {
-  const omega = 2 * Math.PI * hz / sampleRate;
-  const sin = Math.sin(omega);
-  const cos = Math.cos(omega);
-  const alpha = sin / (2 * q);
-  const b0 = (1 + cos) / 2;
-  const b1 = -(1 + cos);
-  const b2 = (1 + cos) / 2;
-  const a0 = 1 + alpha;
-  const a1 = -2 * cos;
-  const a2 = 1 - alpha;
-  return normalizeBiquad({ b0, b1, b2, a0, a1, a2 });
+  const k = Math.tan(Math.PI * hz / sampleRate);
+  const denominator = 1 + k / q + k * k;
+  // RLB weighting retains its [1,-2,1] numerator; a unity-gain audio
+  // high-pass normalization changes the loudness measurement.
+  return { b0: 1, b1: -2, b2: 1, a1: 2 * (k * k - 1) / denominator, a2: (1 - k / q + k * k) / denominator };
 }
 
 function normalizeBiquad({ b0, b1, b2, a0, a1, a2 }) {

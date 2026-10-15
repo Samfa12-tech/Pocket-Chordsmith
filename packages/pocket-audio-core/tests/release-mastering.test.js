@@ -31,8 +31,8 @@ test("release metrics report finite, peak, LUFS, stereo and tail fields", () => 
   assert.equal(metrics.nonFiniteSamples, 0);
   assert.equal(metrics.clippedSamples, 0);
   assert.ok(metrics.integratedLufs < -10);
-  assert.equal(metrics.lufsMethod, "estimated_bs1770_k_weighted_gated_v2");
-  assert.equal(metrics.truePeakMethod, "estimated_catmull_rom_4x_v2");
+  assert.equal(metrics.lufsMethod, "estimated_bs1770_k_weighted_gated_v3");
+  assert.equal(metrics.truePeakMethod, "estimated_blackman_sinc_4x32_v3");
   assert.equal(metrics.meteringStatus, "estimated_pending_external_calibration");
   assert.ok(metrics.samplePeakDbfs < -11);
   assert.ok(metrics.tailSeconds > 0.4);

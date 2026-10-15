@@ -10,6 +10,16 @@ code.
 
 ## Current Status
 
+The existing offline meter now uses v3 K-weighting and 32-tap windowed-sinc
+four-times true-peak estimation. Independent installed FFmpeg 9.0 comparisons
+pass 63 deterministic mono/stereo cases across 16/22.05/44.1/48/88.2/96/192kHz.
+Frozen external readings and PCM hashes run in the normal Core tests; FFmpeg is
+not a new runtime dependency. `npm run calibrate:meters -- --ffmpeg <binary>
+--output <directory>` reproduces the external run. Read
+[the calibration checkpoint](../../docs/AUDIO_METER_CALIBRATION_2026-10-15.md)
+for exact methods, tolerances, failed controls and scope. Measurements remain
+labelled estimates; this is not EBU/ITU certification or a blanket mastering claim.
+
 - Core version: `0.2.0`
 - Supported source prefix: `PCS1:`
 - Source schema targets: Pocket Chordsmith schemas `16` and `17`, with reversible legacy projection and explicit loss reporting
