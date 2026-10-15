@@ -216,8 +216,21 @@ node scripts/verify-core-godot-pcm.mjs --godot-bin <Godot-4.6.3> --rendered
 ```
 
 The fixture compares both mix choices in both player modes against decoded
-source PCM, accounting for output latency. It includes a shared texture bed.
-It does not validate the native DAW route or human listening.
+source PCM, accounting for output latency up to 0.5 seconds. Every reference
+frame, including the final frame, must be captured and compared. Capture
+truncation is a failure; silence padding cannot hide an early audio ending.
+The final 100 ms also has a separate RMS/energy check. PCM16 limits remain
+explicit: maximum sample error below 8/32767 and RMS error below 2/32767;
+an ending above 4/32767 RMS must retain its energy within 5% plus 2/32767 RMS.
+This accounts for independent PCM16 quantization without fitting gain or duration.
+The deliberate truncation tests include a one-frame-short recording and a
+full-length recording whose ending was replaced by silence.
+
+It includes a shared texture bed. It does not validate the native DAW route,
+browser master parity, continuous adaptive looping or human listening. Rendered
+LOOP_KIT seams/endings, nonzero-tail alignment and loud/clipping reconstruction
+remain separate acceptance work; these four short captures deliberately disable
+conductor processing to isolate PCM delivery.
 
 For `LOOP_KIT`, section assets are mapped into `playback_profile.stem_sets`. For `STEM_SYNC`, full-song stems are mapped into `playback_profile.stem_paths`. For `HYBRID`, bed stems and sample/stinger assets are mapped into the existing profile dictionaries.
 

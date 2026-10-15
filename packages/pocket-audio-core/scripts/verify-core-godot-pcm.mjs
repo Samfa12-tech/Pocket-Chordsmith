@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { createGodotExportKit, decodePcmWavBytes } from "../src/index.js";
+import { compareCapturedStereoPcm } from "./lib/pcm-parity.mjs";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const binIndex = process.argv.indexOf("--godot-bin");
@@ -34,7 +35,12 @@ const source = {
       { tick: 0, durationTicks: 240, notes: [50, 57, 62, 66], sound: "campfire_acoustic", velocity: 110, direction: "up" },
       { tick: 960, durationTicks: 240, notes: [74], sound: "campfire_acoustic", velocity: 80 }
     ] },
-    melody: { events: [{ tick: 480, durationTicks: 240, notes: [69], sound: "tape_bell", velocity: 80 }] }
+    melody: { events: [
+      { tick: 480, durationTicks: 240, notes: [69], sound: "tape_bell", velocity: 80 },
+      // A naturally decaying ending cue detects silence-padded early stops.
+      // Nonzero hard-cut endings are a separate, currently failing seam gate.
+      { tick: 1728, durationTicks: 144, notes: [69], sound: "soft", velocity: 110 }
+    ] }
   } } }
 };
 const kit = await createGodotExportKit(source, { profile: "STEM_SYNC", sampleRate: 48000 });
@@ -93,29 +99,16 @@ function run(args, log) {
 
 function compare(item) {
   const bytes = readFileSync(resolve(workspace, item.file));
+  if (bytes.length % 8) throw new Error(`Captured stereo Float32 bytes are truncated: ${item.file}`);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const actualFrames = bytes.length / 8;
   const actual = Array.from({ length: 2 }, () => new Float32Array(actualFrames));
   for (let frame = 0; frame < actualFrames; frame += 1) for (let channel = 0; channel < 2; channel += 1) actual[channel][frame] = view.getFloat32(frame * 8 + channel * 4, true);
-  const maxLag = Math.min(24000, actualFrames - 1024);
-  let bestLag = 0, bestError = Infinity;
-  for (let lag = 0; lag <= maxLag; lag += 1) {
-    let error = 0;
-    for (let frame = 0; frame < 1024; frame += 8) {
-      const delta = actual[0][frame + lag] - expected.channels[0][frame];
-      error += delta * delta;
-    }
-    if (error < bestError) { bestError = error; bestLag = lag; }
-  }
-  const frames = Math.min(actualFrames - bestLag, expected.channels[0].length);
-  let maxError = 0, sumError = 0, peak = 0;
-  for (let channel = 0; channel < 2; channel += 1) for (let frame = 0; frame < frames; frame += 1) {
-    const value = actual[channel][frame + bestLag];
-    const error = Math.abs(value - expected.channels[channel][frame]);
-    maxError = Math.max(maxError, error);
-    sumError += error * error;
-    peak = Math.max(peak, Math.abs(value));
-  }
-  const rmsError = Math.sqrt(sumError / (frames * 2));
-  return { ...item, comparedFrames: frames, referenceFrames: expected.channels[0].length, alignedLatencyFrames: bestLag, maxError, rmsError, capturedPeak: peak, passed: frames >= expected.channels[0].length * 0.9 && peak > 0.001 && maxError < 8 / 32767 && rmsError < 2 / 32767 };
+  const comparison = compareCapturedStereoPcm(actual, expected.channels, expected.sampleRate);
+  const short = actual.map((channel) => channel.slice(0, comparison.alignedLatencyFrames + comparison.referenceFrames - 1));
+  const padded = actual.map((channel) => channel.slice());
+  padded.forEach((channel) => channel.fill(0, comparison.alignedLatencyFrames + comparison.referenceFrames - comparison.tail.frames));
+  const rejectsMissingFinalFrame = !compareCapturedStereoPcm(short, expected.channels, expected.sampleRate).passed;
+  const rejectsSilencePaddedEnding = !compareCapturedStereoPcm(padded, expected.channels, expected.sampleRate).passed;
+  return { ...item, ...comparison, deliberateTruncation: { rejectsMissingFinalFrame, rejectsSilencePaddedEnding }, passed: comparison.passed && comparison.tail.energyRequired && rejectsMissingFinalFrame && rejectsSilencePaddedEnding };
 }

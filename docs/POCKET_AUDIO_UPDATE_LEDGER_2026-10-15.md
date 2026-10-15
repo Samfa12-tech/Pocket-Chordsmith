@@ -139,6 +139,29 @@ Published: nothing. No exact installed candidate, human listening or native DAW
 two-source parity pass is claimed. The importer still emits its pre-existing
 NUL-check diagnostic during path validation; those guard rules were unchanged.
 
+Independent review accepted the bounded source change at `68394c17` without a
+confirmed blocking defect. It correctly identified that the verifier's 90%
+reference coverage threshold could miss an ending. The correction requires
+100% reference coverage, reports missing frames explicitly and checks the final
+100 ms separately. Five tests include one-frame/480-frame capture truncation,
+silence-padded early endings, gain/latency and invalid PCM. All four rendered
+WASAPI routes pass again: 96,000/96,000 frames, zero missing frames, an audible
+naturally decaying ending cue, and both deliberate truncations rejected for
+each route. PCM16 sample/RMS and bounded
+latency tolerances remain explicit in the report; no gain or duration fitting.
+
+Review follow-through still includes rendered LOOP_KIT seam/end behavior,
+nonzero-tail alignment and loud/clipping reconstruction. Four short Core
+captures with conductor processing disabled are PCM delivery evidence only,
+not continuous adaptive-loop, native DAW, browser-master or listening parity.
+An additional late Campfire cue with a nonzero hard-cut ending failed the
+unchanged sample tolerance (maximum error about 0.00281 in ordinary layers and
+0.000306 synchronized). This is retained as a failed seam/end gate, not covered
+by the naturally decaying fixture. Cause and correction remain pending.
+Strict passing report: `core-godot-pcm/strict-ending-final-report.json`;
+failed hard-cut report: `core-godot-pcm/run-R7Va79/parity-report.json`, both
+under this review checkout's ignored validation directory.
+
 ## Second source candidate: Core Campfire foundation
 
 Stacked branch `codex/pocket-audio-campfire-20261015` starts at the reliability
