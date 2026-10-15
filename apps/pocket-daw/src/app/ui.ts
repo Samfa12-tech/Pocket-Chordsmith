@@ -1,4 +1,5 @@
 import type { AppState } from "./state";
+import { selectionAuditionPlan } from "../daw/selectionAudition";
 import { currentProject, isUiSectionCollapsed, type ChordsmithStepSelection, type LowerDockTab, type UiCollapseSection } from "./state";
 import { BUILT_IN_FX, getTrackFxChain } from "../daw/fx";
 import { DRUM_LANE_DEFS, drumBranchGroupCollapsed, generatedDrumBranchLane, getDrumBranchStepLevel, getDrumLaneFxChain, getDrumLaneMix, type DrumLaneId } from "../daw/drumLanes";
@@ -486,6 +487,7 @@ function renderTimeline(state: AppState): string {
                 <button data-action="trim-end-left" title="Trim the selected clip end earlier by one snap step">Trim End</button>
                 <button data-action="clip-delete" title="Delete the selected clip">Delete</button>
                 <button data-action="clip-mute" title="Mute or unmute the selected clip without deleting it">Mute Clip</button>
+                ${renderSelectionAuditionButtons(state)}
               </div>
               ${renderTimelineSongSettings(pcs)}
               <div class="timeline-options">
@@ -565,6 +567,7 @@ function renderCompactTimelineTools(
   return `
     <div class="timeline-compact-tools" aria-label="Essential timeline tools">
       <span class="timeline-compact-status">${escapeHtml(loopSummary)} / ${escapeHtml(rangeSummary)}</span>
+      ${renderSelectionAuditionButtons(state)}
       <button data-action="clip-split" title="Split the selected clip at the playhead">Split</button>
       <button data-action="toggle-inspector" title="${state.inspectorVisible ? "Hide" : "Show"} the selected clip and track inspector">${state.inspectorVisible ? "Hide Inspector" : "Inspector"}</button>
       <button data-action="zoom-out" title="Zoom the timeline out">Zoom -</button>
@@ -1338,6 +1341,7 @@ function renderClipEditPalette(project: ReturnType<typeof currentProject>, state
     && selectedClips.every((item) => item.type === clip.type && item.trackId === clip.trackId);
   return `
     <div class="clip-edit-palette" aria-label="Selected clip edit actions">
+        ${renderSelectionAuditionSettings(state)}
       <h3>Edit</h3>
       <p class="editor-note">These edit the selected clip or the active edit range and can be undone.</p>
       <div class="clip-edit-grid">
@@ -1365,6 +1369,34 @@ function renderClipEditPalette(project: ReturnType<typeof currentProject>, state
       </div>
     </div>
   `;
+}
+
+function selectionAuditionDescription(state: AppState): { text: string; available: boolean; range: string } {
+  try {
+    const plan = selectionAuditionPlan(currentProject(state), Array.from(selectedClipIdSet(state)), state.auditionLeadInSeconds, state.auditionTailSeconds);
+    const recording = ["preparing", "count-in", "recording", "stopping"].includes(state.recording.status) || state.midiInputRecording.status === "recording";
+    return { text: recording ? "Finish recording before auditioning a selection." : `${plan.label}, bars ${formatBarNumber(plan.startBar)}-${formatBarNumber(plan.endBar)} in the current mix; ${plan.leadInSeconds.toFixed(1)}s lead-in, ${plan.tailSeconds}s tail; final 10ms monitor fade.`, available: !recording, range: recording ? "Finish recording" : `Bars ${formatBarNumber(plan.startBar)}-${formatBarNumber(plan.endBar)}` };
+  } catch (error) { return { text: error instanceof Error ? error.message : "Select a clip or range.", available: false, range: "Choose a shorter range (up to 120s)" }; }
+}
+
+function renderSelectionAuditionButtons(state: AppState): string {
+  if (!currentProject(state).timeline.selection && selectedClipIdSet(state).size === 0) return "";
+  const description = selectionAuditionDescription(state);
+  const active = state.selectionAudition.phase !== "idle";
+  return `<span class="selection-audition-controls" aria-label="Selection audition">
+    <button type="button" class="selection-audition-hear" data-action="audition-selection" data-audition-control="hear" title="${escapeAttr(description.text)}" aria-label="${escapeAttr(`Hear this bit: ${description.text}`)}" ${!description.available || active ? "disabled" : ""}><strong>Hear this bit</strong><small>${escapeHtml(description.range)}${description.available ? ` / ${state.auditionLeadInSeconds}s before / ${state.auditionTailSeconds}s after` : ""}</small></button>
+    ${active ? `<button type="button" data-action="stop" data-audition-control="stop" aria-label="Stop selection audition">Stop</button>` : ""}
+  </span>`;
+}
+
+function renderSelectionAuditionSettings(state: AppState): string {
+  return `<section class="selection-audition-settings" aria-label="Audition selection settings">
+    <h3>Hear this bit</h3>
+    <p class="editor-note">${escapeHtml(selectionAuditionDescription(state).text)} Source and selection stay unchanged. Playback starts only when you choose Hear this bit.</p>
+    <label>Lead-in <select id="auditionLeadIn" data-audition-setting="lead" aria-label="Audition lead-in seconds">${[0, 0.5, 1, 2].map(value => `<option value="${value}" ${value === state.auditionLeadInSeconds ? "selected" : ""}>${value}s</option>`).join("")}</select></label>
+    <label>Tail <select id="auditionTail" data-audition-setting="tail" aria-label="Audition tail seconds">${[0, 0.5, 1, 2, 4, 8].map(value => `<option value="${value}" ${value === state.auditionTailSeconds ? "selected" : ""}>${value}s</option>`).join("")}</select></label>
+    ${renderSelectionAuditionButtons(state)}
+  </section>`;
 }
 
 function renderAudioClipProperties(project: ReturnType<typeof currentProject>, clip: Clip): string {

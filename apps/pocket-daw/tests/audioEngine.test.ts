@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AudioEngine, calculateLoopSeekSeconds } from "../src/audio/audioEngine";
 import type { RenderedEvent } from "../src/audio/eventRenderer";
 import { createDemoProject } from "../src/demo/demoProject";
-import type { NativeAudioAsset, NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
+import type { NativeAudioAsset, NativeAudioStartPayload, NativeAudioStartResult, NativeAudioStatus } from "../src/native/audioPlayback";
 import { cycleBassStep } from "../src/daw/chordsmithEditor";
 import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
@@ -15,6 +15,107 @@ import type { Clip, PocketDawProject } from "../src/daw/schema";
 import { simpleMidiBytes } from "./midiFixtures";
 
 describe("audio engine diagnostics", () => {
+  it("sends bounded audition on the native path without changing loop or source data", async () => withNativeAuditionTimers(async () => {
+    const project = createDemoProject();
+    project.timeline.loop = { enabled: true, startBar: 2, endBar: 3 };
+    const before = structuredClone(project);
+    const starts: NativeAudioStartPayload[] = [];
+    const engine = new AudioEngine(project, auditionBridge(async payload => {
+      starts.push(payload);
+      return { started: true, status: nativeStatus({ positionSeconds: payload.startSeconds }), error: null };
+    }));
+    expect(await engine.playAudition(4, 5.5)).toBe(true);
+    expect(starts[0]).toMatchObject({ startSeconds: 4, audition: { endSeconds: 5.5 }, loop: null });
+    expect(engine.currentSeconds()).toBeGreaterThanOrEqual(4);
+    expect(engine.currentSeconds()).toBeLessThan(4.2);
+    expect(project).toEqual(before);
+    engine.stop();
+  }));
+
+  it("never substitutes Web Audio when native selection audition is unavailable", async () => withNativeAuditionTimers(async () => {
+    (globalThis as any).window.AudioContext = class { constructor() { throw new Error("Must not create Web Audio for native audition"); } };
+    const engine = new AudioEngine(createDemoProject(), auditionBridge(async () => ({ started: false, status: null, error: "Native runtime unavailable", unavailable: true })));
+    expect(await engine.playAudition(1, 2)).toBe(false);
+    expect(engine.getDiagnostics().audioContextState).toBe("not-created");
+    expect(engine.getDiagnostics().nativeAudio.lastError).toContain("unavailable");
+  }));
+
+  it("observes consumed native completion and cancels audition after an edit", async () => withNativeAuditionTimers(async () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project, auditionBridge(async payload => ({ started: true, status: nativeStatus({ positionSeconds: payload.startSeconds }), error: null })));
+    await engine.playAudition(1, 2);
+    const internals = engine as unknown as { applyNativeStatus(status: NativeAudioStatus): void };
+    internals.applyNativeStatus(nativeStatus({ playing: false, positionSeconds: 2 }));
+    expect(engine.isPlaying()).toBe(false);
+    expect(engine.currentSeconds()).toBe(2);
+    await engine.playAudition(3, 4);
+    engine.syncProject(project, "mixer-controls", "audition-edit");
+    expect(engine.isPlaying()).toBe(false);
+  }));
+
+  it("rejects an older audition result without clearing the newer request", async () => withNativeAuditionTimers(async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let starts = 0;
+    const engine = new AudioEngine(createDemoProject(), auditionBridge(async payload => {
+      const index = ++starts;
+      if (index === 1) await gate;
+      return { started: true, status: nativeStatus({ positionSeconds: payload.startSeconds, startedGeneration: index }), error: null };
+    }));
+    const first = engine.playAudition(1, 2);
+    for (let i = 0; i < 20 && !starts; i += 1) await Promise.resolve();
+    expect(starts).toBe(1);
+    expect(await engine.playAudition(3, 4)).toBe(true);
+    release();
+    expect(await first).toBe(false);
+    expect(engine.isPlaying()).toBe(true);
+    expect(engine.currentSeconds()).toBeGreaterThanOrEqual(3);
+    engine.stop();
+  }));
+
+  it("does not start audio after Stop cancels asynchronous preparation", async () => withNativeAuditionTimers(async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let starts = 0;
+    const engine = new AudioEngine(createDemoProject(), auditionBridge(async () => { starts += 1; return { started: true, status: nativeStatus(), error: null }; }));
+    const internals = engine as unknown as { nativePlaybackCacheWithRuntimeAudio(): Promise<null> };
+    internals.nativePlaybackCacheWithRuntimeAudio = async () => { await gate; return null; };
+    const pending = engine.playAudition(1, 2);
+    engine.stop();
+    release();
+    expect(await pending).toBe(false);
+    expect(starts).toBe(0);
+    expect(engine.isPlaying()).toBe(false);
+  }));
+
+  it("keeps Stop authoritative when an earlier native start resolves late", async () => {
+    const previousWindow = (globalThis as any).window;
+    (globalThis as any).window = { setInterval: () => 1, clearInterval: () => undefined };
+    let release: () => void = () => undefined;
+    const pendingStart = new Promise<void>(resolve => { release = resolve; });
+    let starts = 0;
+    const native = {
+      async start() { starts += 1; await pendingStart; return { started: true, status: nativeStatus(), error: null }; },
+      async pause() { return nativeStatus({ playing: false }); },
+      async resume() { return nativeStatus(); },
+      async stop() { return nativeStatus({ playing: false }); },
+      async seek() { return nativeStatus(); },
+      async updateTrack() { return nativeStatus(); },
+      async status() { return nativeStatus(); }
+    };
+    try {
+      const engine = new AudioEngine(createDemoProject(), native);
+      const pending = engine.play();
+      for (let i = 0; i < 20 && !starts; i += 1) await Promise.resolve();
+      expect(starts).toBe(1);
+      engine.stop();
+      release();
+      await pending;
+      expect(engine.isPlaying()).toBe(false);
+      expect(engine.getDiagnostics().playbackBackend).toBe("idle");
+    } finally { (globalThis as any).window = previousWindow; }
+  });
+
   it("reports event counts without starting playback", () => {
     const engine = new AudioEngine(createDemoProject());
     const diagnostics = engine.getDiagnostics();
@@ -1921,6 +2022,23 @@ function generatedStemCacheItem(clipId: string, role: string, trackId: string, a
       trackId,
       assetId
     }
+  };
+}
+
+async function withNativeAuditionTimers(run: () => Promise<void>) {
+  const previousWindow = (globalThis as any).window;
+  (globalThis as any).window = { __TAURI__: {}, setInterval: () => 1, clearInterval: () => undefined };
+  try { await run(); } finally { (globalThis as any).window = previousWindow; }
+}
+
+function auditionBridge(start: (payload: NativeAudioStartPayload) => Promise<NativeAudioStartResult>) {
+  return { start,
+    async pause() { return nativeStatus({ playing: false }); },
+    async resume() { return nativeStatus(); },
+    async stop() { return nativeStatus({ playing: false }); },
+    async seek() { return nativeStatus(); },
+    async updateTrack() { return nativeStatus(); },
+    async status() { return nativeStatus(); }
   };
 }
 

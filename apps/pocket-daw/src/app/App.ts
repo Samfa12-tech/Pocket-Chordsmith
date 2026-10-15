@@ -301,6 +301,7 @@ import {
 } from "./commands";
 import { commandFromKeyboardEvent } from "./keyboard";
 import { DesktopMenus } from "./desktopMenus";
+import { selectionAuditionPlan } from "../daw/selectionAudition";
 import { collapsedSectionsForCreationPreset, createInitialState, createMidiInputRecordingUiState, createRecordingUiState, currentProject, isUiCollapseSection, loadProjectIntoState, lowerDockTabForCreationPreset, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type LoadProjectIntoStateOptions, type NativeCacheUiStatus } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { automationSurfaceAudioSyncMode, automationSurfacePointFromClient } from "./automationSurface";
@@ -483,6 +484,8 @@ export class App {
   private dialogReturnFocus: { selector: string; index: number } | null = null;
   private samplePreviewBridge = new NativeAudioPlaybackBridge();
   private samplePreviewTimer: number | null = null;
+  private selectionAuditionToken = 0;
+  private selectionAuditionContext: { project: PocketDawProject; key: string; transportRevision: number; endSeconds: number } | null = null;
   private sampleLibraryDragUnlisten: (() => void) | null = null;
   private vst3EditorPollTimers = new Map<string, number>();
   private vst3VendorEditorInstances = new Set<string>();
@@ -496,6 +499,13 @@ export class App {
     this.state.updaterAutoCheckOnStartup = loadUpdaterAutoCheckPreference();
     this.engine = new AudioEngine(currentProject(this.state));
     this.engine.setOnTick((tick) => {
+      if (!tick.playing && this.state.selectionAudition.phase === "playing") {
+        const end = this.selectionAuditionContext?.endSeconds;
+        this.state.selectionAudition = { phase: "idle", message: end !== undefined && tick.seconds >= end - 0.001 ? "Audition complete." : "Audition stopped." };
+        this.state.status = this.state.selectionAudition.message;
+        this.selectionAuditionContext = null;
+        this.selectionAuditionToken += 1;
+      }
       const playingChanged = this.state.playing !== tick.playing;
       this.state.playing = tick.playing;
       this.state.playheadBar = tick.bar;
@@ -1780,10 +1790,14 @@ export class App {
   }
 
   private render(options: RenderOptions = {}) {
+    if (this.selectionAuditionContext && !this.selectionAuditionIsCurrent()) this.cancelSelectionAudition("Selection or playback changed. Hear this bit again to use the new context.");
     this.playbackRenderScheduler.cancelPending(this.renderSchedulerTimers());
     const menu = this.desktopMenus.snapshot();
     const scroll = options.preserveScroll ? this.captureScrollSnapshot() : null;
     const focused = document.activeElement instanceof HTMLElement && this.root.contains(document.activeElement) ? document.activeElement : null;
+    const auditionFocus = focused?.hasAttribute("data-audition-setting")
+      ? `[data-audition-setting="${CSS.escape(focused.dataset.auditionSetting || "")}"]`
+      : focused?.hasAttribute("data-audition-control") ? `[data-audition-control="${CSS.escape(focused.dataset.auditionControl || "")}"]:not(:disabled)` : null;
     const menuFocus = focused?.classList.contains("menu-root") ? focused.id : null;
     const guitarFocus = focused?.hasAttribute("data-guitar-performance")
       ? `[data-guitar-performance="${CSS.escape(focused.dataset.guitarPerformance || "")}"]`
@@ -1799,6 +1813,12 @@ export class App {
     this.bind();
     this.syncDialogAccessibility();
     this.desktopMenus.restore(menu);
+    if (auditionFocus && document.activeElement === document.body) {
+      const fallback = this.state.selectionAudition.phase === "idle" ? "hear" : "stop";
+      const preferred = Array.from(this.root.querySelectorAll<HTMLElement>(auditionFocus)).find(element => element.getClientRects().length > 0);
+      const alternative = Array.from(this.root.querySelectorAll<HTMLElement>(`[data-audition-control="${fallback}"]:not(:disabled)`)).find(element => element.getClientRects().length > 0);
+      (preferred || alternative)?.focus({ preventScroll: true });
+    }
     if (menuFocus && document.activeElement === document.body) this.root.querySelector<HTMLElement>(`#${CSS.escape(menuFocus)}`)?.focus({preventScroll:true});
     if (guitarFocus && document.activeElement === document.body) this.root.querySelector<HTMLElement>(guitarFocus)?.focus({preventScroll:true});
     if (scroll) this.restoreScrollSnapshotSoon(scroll);
@@ -2053,6 +2073,12 @@ export class App {
   }
 
   private bind() {
+    this.root.querySelectorAll<HTMLSelectElement>("[data-audition-setting]").forEach(select => select.addEventListener("change", () => {
+      this.cancelSelectionAudition("Audition settings changed. Hear this bit again to use them.");
+      if (select.dataset.auditionSetting === "lead") this.state.auditionLeadInSeconds = Number(select.value);
+      else this.state.auditionTailSeconds = Number(select.value);
+      this.render({ preserveScroll: true });
+    }));
     this.root.querySelector<HTMLInputElement>("[data-vst3-descriptor-search]")?.addEventListener("input", (event) => {
       this.state.vst3DescriptorQuery = (event.currentTarget as HTMLInputElement).value;
       this.render({ preserveScroll: true });
@@ -3898,6 +3924,8 @@ export class App {
   }
 
   private async dispatch(action: string, actionSource?: HTMLElement) {
+    if (action === "audition-selection") { await this.playSelectionAudition(); return; }
+    if (["stop", "play", "pause", "restart", "record-toggle", "midi-record-toggle", "midi-panic"].includes(action)) this.cancelSelectionAudition("Audition stopped.");
     if (["controls-open", "file-window-open", "import-focus", "add-track-open", "audio-settings-open", "updater-open", "mcp-setup-open", "function-guide-open", "feedback-open"].includes(action)) {
       this.rememberDialogTrigger(actionSource?.closest(".menu-popover")?.parentElement?.querySelector<HTMLElement>(".menu-root") || actionSource || (document.activeElement as HTMLElement | null));
     }
@@ -7201,7 +7229,8 @@ export class App {
     }
   }
 
-  private async hydrateTimelineAudioBuffers(): Promise<{ total: number; loaded: number; cached: number; missing: string[] }> {
+  private async hydrateTimelineAudioBuffers(options: { isCurrent?: () => boolean; onPreparedProject?: (project: PocketDawProject) => void } = {}): Promise<{ total: number; loaded: number; cached: number; missing: string[] }> {
+    const assertCurrent = () => { if (options.isCurrent && !options.isCurrent()) throw new Error("Audition preparation was cancelled or changed."); };
     let project = currentProject(this.state);
     let repairedProjectMetadata = false;
     const ids = Array.from(new Set(project.timeline.clips
@@ -7211,6 +7240,7 @@ export class App {
     let cached = 0;
     const missing: string[] = [];
     for (const id of ids) {
+      assertCurrent();
       if (getCachedAudioBuffer(id)) {
         cached += 1;
         continue;
@@ -7225,12 +7255,14 @@ export class App {
       for (const candidate of candidates) {
         try {
           const source = await loadAudioMediaNative(candidate.path, this.state.currentFile.path);
+          assertCurrent();
           if (!source) {
             missing.push(item.name || id);
             hydrated = true;
             break;
           }
           const decoded = await this.decodeAudioSource(source);
+          assertCurrent();
           setCachedAudioBuffer(id, decoded.buffer, sourceCacheOptions(source));
           project = updateAudioMediaReloadAnalysis(project, id, {
             name: item.name,
@@ -7248,6 +7280,7 @@ export class App {
           hydrated = true;
           break;
         } catch {
+          assertCurrent();
           // Try the next candidate, such as a decoded native cache when the original source moved.
         }
       }
@@ -7256,13 +7289,77 @@ export class App {
       }
     }
     if (repairedProjectMetadata) {
+      assertCurrent();
       this.state = {
         ...this.state,
         undoStack: replacePresent(this.state.undoStack, project)
       };
+      options.onPreparedProject?.(project);
       this.saveAutosaveSnapshot(project);
     }
     return { total: ids.length, loaded, cached, missing };
+  }
+
+  private selectionAuditionKey(): string {
+    return JSON.stringify([this.normalizedSelectedClipIds(), this.state.selectedTrackId, currentProject(this.state).timeline.selection || null, this.state.auditionLeadInSeconds, this.state.auditionTailSeconds]);
+  }
+
+  private selectionAuditionIsCurrent(): boolean {
+    const context = this.selectionAuditionContext;
+    return !!context && context.project === currentProject(this.state) && context.key === this.selectionAuditionKey() && context.transportRevision === this.engine.getTransportRevision();
+  }
+
+  private cancelSelectionAudition(message: string) {
+    const active = this.state.selectionAudition.phase !== "idle";
+    if (!active && !this.selectionAuditionContext) return;
+    const ownsTransport = this.selectionAuditionContext?.transportRevision === this.engine.getTransportRevision();
+    this.selectionAuditionToken += 1;
+    this.selectionAuditionContext = null;
+    this.state.selectionAudition = { phase: "idle", message };
+    if (active && ownsTransport) this.state.status = message;
+    if (active && ownsTransport) this.engine.stop();
+  }
+
+  private async playSelectionAudition() {
+    if (["preparing", "count-in", "recording", "stopping"].includes(this.state.recording.status) || this.state.midiInputRecording.status === "recording") {
+      this.state.selectionAudition.message = "Finish recording before auditioning a selection.";
+      this.render({ preserveScroll: true });
+      return;
+    }
+    let requestToken: number | undefined;
+    try {
+      const plan = selectionAuditionPlan(currentProject(this.state), this.normalizedSelectedClipIds(), this.state.auditionLeadInSeconds, this.state.auditionTailSeconds);
+      this.cancelSelectionAudition("");
+      this.engine.stop();
+      this.stopLiveMetronome();
+      const token = ++this.selectionAuditionToken;
+      requestToken = token;
+      const context = { project: currentProject(this.state), key: this.selectionAuditionKey(), transportRevision: this.engine.getTransportRevision(), endSeconds: plan.endSeconds };
+      this.selectionAuditionContext = context;
+      this.state.selectionAudition = { phase: "preparing", message: `Preparing ${plan.label}, bars ${plan.startBar}-${plan.endBar}. Stop cancels preparation.` };
+      this.state.status = this.state.selectionAudition.message;
+      this.render({ preserveScroll: true });
+      const hydration = await this.hydrateTimelineAudioBuffers({ isCurrent: () => token === this.selectionAuditionToken && this.selectionAuditionIsCurrent(), onPreparedProject: project => { context.project = project; } });
+      if (token !== this.selectionAuditionToken || !this.selectionAuditionIsCurrent()) return;
+      this.assertNoMissingAudibleAudioBuffers(hydration, "Selection audition");
+      await this.engine.prepareNativeRuntimeAudioForPlayback("selection-audition");
+      if (token !== this.selectionAuditionToken || !this.selectionAuditionIsCurrent()) return;
+      const starting = this.engine.playAudition(plan.startSeconds, plan.endSeconds);
+      context.transportRevision = this.engine.getTransportRevision();
+      const started = await starting;
+      if (token !== this.selectionAuditionToken || !this.selectionAuditionIsCurrent()) return;
+      this.state.selectionAudition = started
+        ? { phase: "playing", message: `${plan.label}, bars ${plan.startBar}-${plan.endBar}; ${plan.leadInSeconds.toFixed(1)}s lead-in, ${plan.tailSeconds}s tail. Native clock; Stop ends audition.` }
+        : { phase: "idle", message: this.engine.getDiagnostics().nativeAudio.lastError || "Native selection audition is unavailable." };
+      this.state.status = this.state.selectionAudition.message;
+      if (!started) this.selectionAuditionContext = null;
+    } catch (error) {
+      if (requestToken !== undefined && requestToken !== this.selectionAuditionToken) return;
+      if (this.state.selectionAudition.phase === "preparing") this.cancelSelectionAudition(error instanceof Error ? error.message : "Selection audition could not start.");
+      else if (!this.selectionAuditionContext) this.state.selectionAudition.message = error instanceof Error ? error.message : "Selection audition could not start.";
+      this.state.status = this.state.selectionAudition.message;
+    }
+    this.render({ preserveScroll: true });
   }
 
   private assertNoMissingAudibleAudioBuffers(hydration: { missing: string[] }, label: string) {

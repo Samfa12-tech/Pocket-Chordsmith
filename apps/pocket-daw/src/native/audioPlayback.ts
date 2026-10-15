@@ -246,6 +246,8 @@ export interface NativeAudioStartPayload {
   projectTitle: string;
   sampleRate: number;
   startSeconds: number;
+  /** Monitor-only range; never stored in a project or exported processing. */
+  audition?: { endSeconds: number };
   bpm: number;
   timeSig: number;
   transportMap?: NativeAudioTransportPoint[];

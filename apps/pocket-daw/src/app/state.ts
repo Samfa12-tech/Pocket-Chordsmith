@@ -39,6 +39,9 @@ export interface AppState {
   lowerDockTab: LowerDockTab;
   status: string;
   playing: boolean;
+  auditionLeadInSeconds: number;
+  auditionTailSeconds: number;
+  selectionAudition: { phase: "idle" | "preparing" | "playing"; message: string };
   playheadBar: number;
   meterLevels: Record<string, number>;
   importText: string;
@@ -289,6 +292,9 @@ export function createInitialState(): AppState {
     lowerDockTab: "mixer",
     status: "Editable demo copy loaded. Edits autosave to this copy.",
     playing: false,
+    auditionLeadInSeconds: 0.5,
+    auditionTailSeconds: 1,
+    selectionAudition: { phase: "idle", message: "" },
     playheadBar: 1,
     meterLevels: {},
     importText: "",

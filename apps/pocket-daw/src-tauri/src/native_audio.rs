@@ -314,6 +314,8 @@ pub struct NativeAudioStartPayload {
     sample_rate: u32,
     #[serde(rename = "startSeconds")]
     start_seconds: f64,
+    #[serde(default)]
+    audition: Option<NativeAuditionBounds>,
     #[serde(default = "default_bpm")]
     bpm: f64,
     #[serde(rename = "timeSig", default = "default_time_sig")]
@@ -340,6 +342,38 @@ pub struct NativeAudioStartPayload {
     samplers: Vec<NativeSamplerDevicePayload>,
     #[serde(rename = "hostedInstruments", default)]
     hosted_instruments: Vec<HostedInstancePayload>,
+}
+
+#[derive(Clone, Deserialize)]
+struct NativeAuditionBounds {
+    #[serde(rename = "endSeconds")]
+    end_seconds: f64,
+}
+
+fn validate_audition_bounds(
+    bounds: Option<NativeAuditionBounds>,
+    start_seconds: f64,
+    sample_rate: u32,
+) -> Result<Option<NativeAuditionBounds>, String> {
+    let Some(mut bounds) = bounds else {
+        return Ok(None);
+    };
+    if !start_seconds.is_finite()
+        || start_seconds < 0.0
+        || !bounds.end_seconds.is_finite()
+        || bounds.end_seconds <= start_seconds
+        || bounds.end_seconds - start_seconds > 120.0
+    {
+        return Err(
+            "Audition must have a finite positive range of at most 120 seconds.".to_string(),
+        );
+    }
+    let rate = sample_rate.max(1) as f64;
+    bounds.end_seconds = (bounds.end_seconds * rate).round() / rate;
+    if bounds.end_seconds <= start_seconds {
+        return Err("Audition range must contain at least one output frame.".to_string());
+    }
+    Ok(Some(bounds))
 }
 
 fn default_bpm() -> f64 {
@@ -882,6 +916,7 @@ enum NativeAudioRenderMode {
 
 struct PlaybackShared {
     project_title: Option<String>,
+    audition: Option<NativeAuditionBounds>,
     events: Vec<NativeRenderedEvent>,
     compiled_event_routes: Vec<Option<CompiledGeneratedEventRoute>>,
     campfire_events: HashMap<String, Arc<PreparedCampfireEvent>>,
@@ -1202,12 +1237,14 @@ pub async fn native_audio_render_wav(
 }
 
 fn render_native_audio_wav_on_worker(
-    payload: NativeAudioStartPayload,
+    mut payload: NativeAudioStartPayload,
     duration_seconds: f64,
     render_mode: Option<String>,
     bit_depth: Option<u16>,
     state: &NativeAudioState,
 ) -> Result<NativeAudioRenderedWav, String> {
+    // Audition is a monitor control, never exported processing or duration.
+    payload.audition = None;
     let mut runtime = state
         .lock()
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
@@ -1490,7 +1527,8 @@ impl NativeAudioRuntime {
                     if let Ok(mut playback) = producer_shared.lock() {
                         let generation = producer_ring.requested_generation.load(Ordering::Acquire);
                         for output_frame in block.chunks_mut(channels as usize) {
-                            let intentional_silence = !playback.playing;
+                            let intentional_silence = !playback.playing
+                                || audition_finished_at(&playback, playback.position_seconds);
                             let (left, right) = render_next_frame(&mut playback);
                             write_frame(&mut frame_scratch, left, right);
                             let next_position_seconds = playback.position_seconds;
@@ -1551,6 +1589,8 @@ impl NativeAudioRuntime {
         channels: u16,
         generation: u64,
     ) -> Result<PlaybackShared, String> {
+        let audition =
+            validate_audition_bounds(payload.audition.clone(), payload.start_seconds, sample_rate)?;
         let mut hosted_payloads = payload.hosted_instruments.clone();
         hosted_payloads.extend(
             payload
@@ -1675,6 +1715,7 @@ impl NativeAudioRuntime {
         let active_region_capacity = regions.len();
         let mut playback = PlaybackShared {
             project_title: payload.project_title,
+            audition,
             events,
             compiled_event_routes,
             campfire_events,
@@ -1691,7 +1732,11 @@ impl NativeAudioRuntime {
             fx,
             hosted_instruments,
             hosted_graph,
-            loop_region: sanitize_loop_region(payload.loop_region),
+            loop_region: if payload.audition.is_some() {
+                None
+            } else {
+                sanitize_loop_region(payload.loop_region)
+            },
             metronome: sanitize_metronome(payload.metronome),
             sidechain: payload.sidechain,
             position_seconds: payload.start_seconds.max(0.0),
@@ -1900,7 +1945,12 @@ impl NativeAudioRuntime {
                     backend: "native-cpal".to_string(),
                     available: true,
                     active: !stream_failed,
-                    playing: playback.playing && !stream_failed,
+                    playing: playback.playing
+                        && !stream_failed
+                        && !audition_finished_at(
+                            &playback,
+                            output_diagnostics.consumed_position_seconds,
+                        ),
                     position_seconds: output_diagnostics.consumed_position_seconds,
                     event_count: playback.events.len(),
                     sample_rate: playback.sample_rate,
@@ -3000,11 +3050,21 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     render_next_frame_with_campfire_cutoff(playback, None)
 }
 
+fn audition_finished_at(playback: &PlaybackShared, position_seconds: f64) -> bool {
+    playback.audition.as_ref().is_some_and(|bounds| {
+        position_seconds + 0.25 / playback.sample_rate.max(1) as f64 >= bounds.end_seconds
+    })
+}
+
 fn render_next_frame_with_campfire_cutoff(
     playback: &mut PlaybackShared,
     campfire_cutoff: Option<f64>,
 ) -> (f32, f32) {
     if !playback.playing {
+        return (0.0, 0.0);
+    }
+    if audition_finished_at(playback, playback.position_seconds) {
+        playback.position_seconds = playback.audition.as_ref().unwrap().end_seconds;
         return (0.0, 0.0);
     }
 
@@ -3239,6 +3299,12 @@ fn render_next_frame_with_campfire_cutoff(
         (left, right) = chain.process(left, right);
     }
     let master = master_gain(playback);
+    // Monitor-only ending fade. The requested visible tail precedes this final
+    // 10 ms; ordinary playback and exports without audition bounds are unchanged.
+    let audition_gain = playback.audition.as_ref().map_or(1.0, |bounds| {
+        ((bounds.end_seconds - t - 1.0 / playback.sample_rate.max(1) as f64) / 0.01).clamp(0.0, 1.0)
+            as f32
+    });
     playback.position_seconds += 1.0 / playback.sample_rate.max(1) as f64;
     apply_loop_wrap(playback);
     playback.rendered_frame_count = playback.rendered_frame_count.saturating_add(1);
@@ -3249,8 +3315,8 @@ fn render_next_frame_with_campfire_cutoff(
     playback.return_mix_scratch = return_mixes;
     playback.source_budget_scratch = active_counts_by_track;
     (
-        soft_limit(left * 0.72 * master),
-        soft_limit(right * 0.72 * master),
+        soft_limit(left * 0.72 * master) * audition_gain,
+        soft_limit(right * 0.72 * master) * audition_gain,
     )
 }
 
@@ -9747,6 +9813,7 @@ mod tests {
         let tracks = HashMap::from([("bass".to_string(), track)]);
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
+            audition: None,
             project_title: Some("Cached".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
@@ -9821,6 +9888,7 @@ mod tests {
         let tracks = HashMap::from([("melody".to_string(), track)]);
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
+            audition: None,
             project_title: Some("Cached pan".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
@@ -9896,6 +9964,7 @@ mod tests {
         let tracks = HashMap::from([("melody".to_string(), track)]);
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
+            audition: None,
             project_title: Some("Cached track pan".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
@@ -10001,6 +10070,7 @@ mod tests {
         ]);
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
+            audition: None,
             project_title: Some("Cached sidechain".to_string()),
             events: vec![trigger_marker],
             compiled_event_routes: Vec::new(),
@@ -10102,6 +10172,7 @@ mod tests {
         ]);
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
+            audition: None,
             project_title: Some("Cached live mixer".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
@@ -10235,6 +10306,7 @@ mod tests {
         ]);
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
+            audition: None,
             project_title: Some("Cached dense stems".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
@@ -10332,6 +10404,7 @@ mod tests {
         let tracks = HashMap::from([("bass".to_string(), track)]);
         let (track_order, track_indices) = track_index_state(&tracks);
         PlaybackShared {
+            audition: None,
             project_title: Some("Test".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
@@ -10388,6 +10461,7 @@ mod tests {
         ]);
         let (track_order, track_indices) = track_index_state(&tracks);
         PlaybackShared {
+            audition: None,
             project_title: Some("Test".to_string()),
             events,
             compiled_event_routes: Vec::new(),
@@ -11198,6 +11272,112 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn native_audition_stops_on_output_frames_without_ui_polls() {
+        for rate in [44_100, 48_000] {
+            let end_frames = 1001;
+            let end_seconds = end_frames as f64 / rate as f64;
+            let mut original = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+            original.sample_rate = rate;
+            let expected = render_frames(&mut original, end_frames + 100);
+            let mut preview = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+            preview.sample_rate = rate;
+            preview.audition = Some(NativeAuditionBounds { end_seconds });
+            let actual = render_frames(&mut preview, end_frames + 100);
+            let unchanged_frames = end_frames - (rate as f64 * 0.01).ceil() as usize - 1;
+            assert_eq!(&actual[..unchanged_frames], &expected[..unchanged_frames]);
+            assert!(actual[..end_frames]
+                .iter()
+                .any(|frame| frame.0.abs() > 0.00001));
+            assert!(actual[end_frames..]
+                .iter()
+                .all(|frame| *frame == (0.0, 0.0)));
+            assert!(actual[end_frames - 1].0.abs() < 1e-9);
+            assert_eq!(preview.rendered_frame_count, end_frames as u64);
+            assert_eq!(preview.position_seconds, end_seconds);
+        }
+    }
+
+    #[test]
+    fn native_audition_completion_follows_consumed_audio_not_render_ahead() {
+        let mut preview = playback_with_region(test_track("bass", 1.0, 0.0, false, false));
+        preview.sample_rate = 48_000;
+        preview.audition = Some(NativeAuditionBounds { end_seconds: 0.02 });
+        let _ = render_frames(&mut preview, 2000);
+        let ring = Arc::new(NativeOutputRing::new(0.0));
+        ring.consumed_position_bits
+            .store(0.019_f64.to_bits(), Ordering::Relaxed);
+        let runtime = NativeAudioRuntime {
+            shared: Some(Arc::new(Mutex::new(preview))),
+            output_ring: Some(Arc::clone(&ring)),
+            ..NativeAudioRuntime::default()
+        };
+        assert!(
+            runtime.status().playing,
+            "Queued audible frames have not finished yet"
+        );
+        ring.consumed_position_bits
+            .store(0.02_f64.to_bits(), Ordering::Relaxed);
+        assert!(
+            !runtime.status().playing,
+            "Consumed end completes independently of UI polling"
+        );
+    }
+
+    #[test]
+    fn native_audition_bounds_are_explicit_bounded_and_optional() {
+        assert!(validate_audition_bounds(None, 0.0, 48_000)
+            .unwrap()
+            .is_none());
+        for end in [f64::NAN, f64::INFINITY, 0.0, -1.0, 120.1] {
+            assert!(validate_audition_bounds(
+                Some(NativeAuditionBounds { end_seconds: end }),
+                0.0,
+                48_000
+            )
+            .is_err());
+        }
+        assert!(validate_audition_bounds(
+            Some(NativeAuditionBounds { end_seconds: 2.0 }),
+            f64::NAN,
+            48_000
+        )
+        .is_err());
+        let bounds = validate_audition_bounds(
+            Some(NativeAuditionBounds {
+                end_seconds: 1.234567,
+            }),
+            1.0,
+            48_000,
+        )
+        .unwrap()
+        .unwrap();
+        assert!((bounds.end_seconds * 48_000.0 - (1.234567_f64 * 48_000.0).round()).abs() < 1e-8);
+    }
+
+    #[test]
+    fn native_audition_bounds_cannot_change_export_bytes() {
+        let payload: NativeAudioStartPayload = serde_json::from_value(serde_json::json!({
+            "projectTitle":"Audition export separation", "sampleRate":48000,
+            "startSeconds":0, "bpm":120, "timeSig":4,
+            "tracks":[{"id":"bass","volume":1,"pan":0,"mute":false,"solo":false}],
+            "events":[{"id":"note","kind":"bass","trackId":"bass","time":0,
+                "duration":0.25,"midi":48,"midiNotes":[],"velocity":0.8}],
+            "fxChains":[]
+        }))
+        .unwrap();
+        let state = Mutex::new(NativeAudioRuntime::default());
+        let reference =
+            render_native_audio_wav_on_worker(payload.clone(), 0.3, None, Some(16), &state)
+                .unwrap();
+        let mut monitor_payload = payload;
+        monitor_payload.audition = Some(NativeAuditionBounds { end_seconds: 0.05 });
+        let exported =
+            render_native_audio_wav_on_worker(monitor_payload, 0.3, None, Some(16), &state)
+                .unwrap();
+        assert_eq!(reference.bytes, exported.bytes);
     }
 
     #[test]

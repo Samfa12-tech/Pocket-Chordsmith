@@ -876,6 +876,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
   },
   {
     surface: "Transport",
+    control: "Hear this bit",
+    actionId: "audition-selection",
+    does: "Auditions the active edit range or selected clips in the current native mix, with visible lead-in and tail and a sample-clock end boundary.",
+    useWhen: "Use for a passage of up to 120 seconds including context. Change lead-in/tail in the selected clip inspector; Stop cancels preparation or playback.",
+    aiNote: "GUI monitor action only; it never applies an edit or starts automatically. Native Windows audio is required. Selection/source/settings changes reject stale preparation. Recording must finish first. The final 10ms preview fade is excluded from exports; device/listening acceptance remains separate."
+  },
+  {
+    surface: "Transport",
     control: "Stop",
     actionId: "stop",
     does: "Stops playback and live metronome activity.",

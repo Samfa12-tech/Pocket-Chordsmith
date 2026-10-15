@@ -1073,3 +1073,34 @@ finishing/dry/loudness comparison/measured warnings/calibration/decoded outputs;
 then complete two-source Godot game timeline acceptance and exact installed/
 release targets. Existing save/undo/media/plugin isolation foundations retained.
 No Sam input currently required; no work on Reef Sweep or unrelated PRs.
+
+## DAW contextual selection audition
+
+Implemented: explicit range or selected-clip-span Hear this bit in the timeline
+and inspector, visible bars/lead-in/tail, Stop during preparation/playback, no
+autoplay, native-only capability reporting and recording guard. Native sample
+clock owns the <=120-second bound including context and final10ms monitor fade;
+consumed-clock status avoids early completion from render-ahead. Project loop is
+bypassed for the preview only. Native WAV worker strips monitor bounds and its
+export bytes are unchanged. Source/selection/settings/transport revisions reject
+stale preparation and guard media/metadata promotion. Existing late-start-after-
+Stop and stale-Stop-position-reset races were reproduced and fixed with tokens.
+Internal renderer contract v44-selection-audition-66b32035 matches source; no
+dependency/product release version change.
+
+Tested: fullsource1197/1197, Windowscontract284, Rust204pass/3ignored,
+Clippy-Dwarnings, fullbrowser31/31, types/productionbuild/manifest107 and
+repo/security/governance/whitespace pass. Native four-test subset covers actual
+44.1/48k rendered sample frames, consumed-clock status, validation and export
+byte separation. Browser native IPC is mocked control sequencing, not device
+audio. Final visible-range adjustment rechecked productionbuild +5 browser
+cases; selection-audition-context.png inspected at1280x720 with inspector.
+Logs native-audition-*.log retain original race failures and successful gates.
+
+Published:none. No installer or installed/device/listening acceptance claimed.
+Native capture fingerprint unchanged e4ec7e55c375f6d43a7683bca61b3a4a60a96f73f9df9c09d745b21066aff770;
+mic scoped omitted, not passed; final shared-output device acceptance remains.
+Existing native Stop clears decoded residency, so no zero-allocation/warm latency
+claim. Same-position A/B/Apply/Discard/Undo, finishing/loudness/calibration,
+fully arranged native Godot timeline/game integration and final installed/release
+scope remain active. Details: apps/pocket-daw/docs/SELECTION_AUDITION_2026-10-15.md.
