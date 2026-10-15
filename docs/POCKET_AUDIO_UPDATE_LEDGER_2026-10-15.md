@@ -1304,3 +1304,33 @@ working-setandcrossfamilyinteraction,installed/scaling/device/listening,versions
 advisories/review/publicationtargetsremainactive. Nohardenvironmentblocker.
 102exact26f91469912063928b1f4c0309b21671839911dbCI38816510250/CodeQL38816510257terminal
 green; scoped skippedjobsarenotpassed. Parentreviewnotinferred.
+
+## Cold hydration ownership correction (follow-up to held PR102/103)
+
+Parent review found successful cold audio hydration installs replacePresent's
+clone but callback passed the original object; strict owner identity rejected
+both Finish and contextual audition before native preparation. Reproduced old
+first-use Finish and audition failures with saved external generated WAV media.
+Fix returns currentProject(this.state) after replacement to both existing owner
+callbacks and autosave. Strict cancellation/identity guards are unchanged.
+
+Six new browser regressions pass: first cold FinishReady/noautoplay, reopened
+cold media/Ready, oneApplyUndo, cold firstauditionPlaying, delayed read after
+concurrentStop/edit forbothflows (six testcases with combined assertions).
+Focused relatedbrowser16/16 +fullDAW1228/1228/types/build/repo/security/whitespace
+pass. BrowserusesrealAudioContextdecodeofgeneratedWAV andmockednativefile/command
+transport; no physicalrecording/nativeDSP/device/listening claim. Old2failure
+counterexample log retained; corrected reports underlocal-artifacts/scratch/
+validation/hydration-owner. Existing Core/Rust/long-worker/otherbrowser checks
+notrerun for this narrowUIownership correction. Captureplumbing unchanged.
+
+Review status:101foundation and103incremental source accepted, but102/103stack
+held until this correction is independently reviewed. Preserve alloldheads.
+Hosted103browser37passed/2skipped, NOT39hostedpasses; prior39-pass heartbeat/
+long-worker evidence is local and remains separate acceptance. Newshortfull
+checklist docs/POCKET_AUDIO_CURRENT_CHECKLIST.md.
+
+DeliveryQCWIP preserved in exactstashf3a578b56b1708db7e26295e47eba584fb03efe9 on
+codex/daw-delivery-qc-20261016. Resume onlyafterintegratingthiscorrection; it has
+noUI/committeddeliveryQCclaim yet. Rest of originalfamily task remainsactive.
+No installer/release/merge/deps/accounts/licence/security/CoreNPM change.

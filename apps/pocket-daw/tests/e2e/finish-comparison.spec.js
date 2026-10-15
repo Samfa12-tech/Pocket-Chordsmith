@@ -2,23 +2,46 @@ import { expect, test } from "@playwright/test";
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { serveBuiltUi } from "./staticUiTransport.js";
+import { createDemoProject } from "../../src/demo/demoProject.ts";
+import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../../src/daw/audioClips.ts";
+import { buildPocketDawProjectFile } from "../../src/daw/dawProject.ts";
 
 test.beforeEach(async ({ page }) => serveBuiltUi(page));
 
-async function fixture(page, pending = false) {
+async function fixture(page, pending = false, { cold = false, holdCold = false } = {}) {
+  let savedProject = null;
+  if (cold) {
+    const imported = addImportedAudioMedia(createDemoProject(), { name: "Saved guitar.wav", uri: "C:\\fixture\\saved-guitar.wav", mimeType: "audio/wav", durationSeconds: 1, sampleRate: 48000, channels: 1, sizeBytes: 96044, metadata: { mediaRefKind: "external" } });
+    const placed = placeAudioClipOnTimeline(imported.project, imported.item.id, 1);
+    placed.project.project.title = "Cold saved audio fixture";
+    savedProject = buildPocketDawProjectFile(placed.project);
+  }
   // Command/control fixture with generated PCM. This is never evidence of
   // installed native DSP, physical output or human listening.
-  await page.addInitScript(({ pending }) => {
+  await page.addInitScript(({ pending, savedProject, holdCold }) => {
     let next = 0;
     const files = new Map();
     window.__finishCalls = [];
     window.__finishRenderInputs = [];
+    window.__coldHydrationReads = 0;
+    window.__coldOpenCount = 0;
     let status = { monitorComparisonVersion: 2, backend: "native-cpal", available: true, active: true, playing: false, positionSeconds: 0, eventCount: 0, sampleRate: 48000, channels: 2, renderedFrameCount: 0, startedGeneration: 1, projectTitle: "Control fixture", deviceName: null, hostName: null, lastError: null };
     window.__TAURI_INTERNALS__ = {
       metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
       transformCallback(callback) { const id = ++next; window[`_${id}`] = callback; return id; }, unregisterCallback(id) { delete window[`_${id}`]; },
       async invoke(command, args = {}) {
         window.__finishCalls.push([command, args]);
+        if (command === "open_project_file" && savedProject) { window.__coldOpenCount++; return { contents: savedProject, path: "C:\\fixture\\cold-saved.pocketdaw", label: "cold-saved.pocketdaw" }; }
+        if (command === "read_audio_media_file" && savedProject) {
+          window.__coldHydrationReads++;
+          const buffer = new ArrayBuffer(96044), view = new DataView(buffer);
+          const ascii = (at, text) => [...text].forEach((character, index) => view.setUint8(at + index, character.charCodeAt(0)));
+          ascii(0, "RIFF"); view.setUint32(4, 96036, true); ascii(8, "WAVE"); ascii(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, 48000, true); view.setUint32(28, 96000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); ascii(36, "data"); view.setUint32(40, 96000, true);
+          for (let frame = 0; frame < 48000; frame++) view.setInt16(44 + frame * 2, Math.round(4000 * Math.sin(frame * Math.PI * 2 * 220 / 48000)), true);
+          const media = { path: "C:\\fixture\\saved-guitar.wav", label: "Saved guitar.wav", mimeType: "audio/wav", sizeBytes: buffer.byteLength, bytes: Array.from(new Uint8Array(buffer)), sampleRate: 48000, channels: 1, durationSeconds: 1 };
+          if (holdCold && !window.__coldReleased) return new Promise(resolve => { window.__releaseColdHydration = () => { window.__coldReleased = true; resolve(media); }; });
+          return media;
+        }
         if (command === "native_finish_preview_begin") return `fixture-${++next}`;
         if (command === "native_finish_preview_prepare") {
           window.__finishRenderInputs.push(args.payload);
@@ -47,13 +70,72 @@ async function fixture(page, pending = false) {
         return null;
       }
     };
-  }, { pending });
+  }, { pending, savedProject, holdCold });
 }
 
 async function openFinish(page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.locator('[data-action="lower-dock-export-details"]').first().click();
   await expect(page.getByRole("heading", { name: "Finish & Compare" })).toBeVisible();
+}
+
+async function openColdSavedProject(page) {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Open .pocketdaw", exact: true }).first().click();
+  await page.waitForFunction(() => window.__coldOpenCount === 1);
+  await expect(page.locator('[data-transport-status="true"]')).toContainText("Opened cold-saved.pocketdaw");
+}
+
+test("cold saved audio and reopen reach Finish Ready, retain one Apply Undo and never autoplay", async ({ page }) => {
+  await fixture(page, false, { cold: true }); await openColdSavedProject(page);
+  await page.locator('[data-action="lower-dock-export-details"]').first().click();
+  expect(await page.evaluate(() => window.__coldHydrationReads)).toBe(0);
+  await page.locator('[data-action="finish-prepare"]').click();
+  await expect(page.locator(".finish-comparison [role=status]")).toContainText("Ready.", { timeout: 10000 });
+  expect(await page.evaluate(() => window.__coldHydrationReads)).toBe(1);
+  expect(await page.evaluate(() => window.__finishRenderInputs[0].regions.length)).toBeGreaterThan(0);
+  await expect(page.locator('[data-finish-focus="undo"]')).toBeDisabled();
+  await page.locator('[data-action="finish-apply"]').click();
+  await expect(page.locator('[data-finish-focus="undo"]')).toBeEnabled();
+  await page.locator('[data-finish-focus="undo"]').click();
+  await expect(page.locator('[data-finish-focus="undo"]')).toBeDisabled();
+  await page.keyboard.press("Control+o");
+  await page.waitForFunction(() => window.__coldOpenCount === 2);
+  await page.locator('[data-action="lower-dock-export-details"]').first().click();
+  await page.locator('[data-action="finish-prepare"]').click();
+  await expect(page.locator(".finish-comparison [role=status]")).toContainText("Ready.", { timeout: 10000 });
+  expect(await page.evaluate(() => window.__coldHydrationReads)).toBe(2);
+  expect(await page.evaluate(() => window.__finishCalls.some(([command]) => command === "native_audio_start"))).toBe(false);
+});
+
+test("cold saved audio reaches contextual audition playing on the first request", async ({ page }) => {
+  await fixture(page, false, { cold: true }); await openColdSavedProject(page);
+  await page.locator('.timeline-compact-tools [data-audition-control="hear"]').click();
+  await expect(page.locator('[data-transport-toggle="true"]')).toContainText("Pause", { timeout: 10000 });
+  expect(await page.evaluate(() => window.__coldHydrationReads)).toBe(1);
+  expect(await page.evaluate(() => window.__finishCalls.filter(([command]) => command === "native_audio_start").length)).toBe(1);
+  await page.locator('.timeline-compact-tools [data-audition-control="stop"]').click();
+});
+
+for (const flow of ["Finish", "audition"]) for (const cancellation of ["Stop", "edit"]) {
+  test(`cold ${flow} hydration rejects a late load after concurrent ${cancellation}`, async ({ page }) => {
+    await fixture(page, false, { cold: true, holdCold: true }); await openColdSavedProject(page);
+    if (flow === "Finish") await page.locator('[data-action="lower-dock-export-details"]').first().click();
+    const prepare = flow === "Finish" ? '[data-action="finish-prepare"]' : '.timeline-compact-tools [data-audition-control="hear"]';
+    await page.locator(prepare).click();
+    await page.waitForFunction(() => !!window.__releaseColdHydration);
+    const before = await page.locator("[data-clip-id]").count();
+    if (cancellation === "Stop") await page.locator(flow === "Finish" ? '[data-action="finish-stop"]' : '.timeline-compact-tools [data-audition-control="stop"]').click();
+    else { await page.keyboard.press("d"); await expect.poll(() => page.locator("[data-clip-id]").count()).toBeGreaterThan(before); }
+    const count = await page.locator("[data-clip-id]").count();
+    await page.evaluate(() => window.__releaseColdHydration());
+    expect(await page.evaluate(() => window.__finishCalls.some(([command]) => command === "native_audio_start" || command === "native_finish_preview_prepare"))).toBe(false);
+    await page.locator(prepare).click();
+    if (flow === "Finish") await expect(page.locator(".finish-comparison [role=status]")).toContainText("Ready.", { timeout: 10000 });
+    else await expect(page.locator('[data-transport-toggle="true"]')).toContainText("Pause", { timeout: 10000 });
+    expect(await page.evaluate(() => window.__coldHydrationReads)).toBe(2);
+    await expect(page.locator("[data-clip-id]")).toHaveCount(count);
+  });
 }
 
 test("prepared measured comparison has no autoplay; A/B shares one start and Apply has one Undo", async ({ page }, testInfo) => {

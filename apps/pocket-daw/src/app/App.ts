@@ -7325,8 +7325,9 @@ export class App {
         ...this.state,
         undoStack: replacePresent(this.state.undoStack, project)
       };
-      options.onPreparedProject?.(project);
-      this.saveAutosaveSnapshot(project);
+      const installedProject = currentProject(this.state);
+      options.onPreparedProject?.(installedProject);
+      this.saveAutosaveSnapshot(installedProject);
     }
     return { total: ids.length, loaded, cached, missing };
   }
