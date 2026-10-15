@@ -9,6 +9,7 @@ import { trackIsAudible } from "../daw/tracks";
 import { validHostedStateSnapshot } from "../daw/hostedPlugins";
 
 export interface NativeAudioStatus {
+  monitorComparisonVersion?: number;
   backend: "native-cpal" | string;
   available: boolean;
   active: boolean;
@@ -248,6 +249,7 @@ export interface NativeAudioStartPayload {
   startSeconds: number;
   /** Monitor-only range; never stored in a project or exported processing. */
   audition?: { endSeconds: number };
+  monitorComparison?: { aTrackId: string; bTrackId: string; aGain: number; bGain: number; side: "a" | "b" };
   bpm: number;
   timeSig: number;
   transportMap?: NativeAudioTransportPoint[];
@@ -431,6 +433,10 @@ export class NativeAudioPlaybackBridge {
 
   async updateTrack(patch: NativeAudioTrackPatch): Promise<NativeAudioStatus | null> {
     return this.invokeIfAvailable("native_audio_update_track", { patch });
+  }
+
+  async compareMonitor(side: "a" | "b", expectedGeneration: number): Promise<NativeAudioStatus | null> {
+    return this.invokeIfAvailable("native_audio_compare_monitor", { side, expectedGeneration }, this.playbackRequest);
   }
 
   async status(): Promise<NativeAudioStatus | null> {

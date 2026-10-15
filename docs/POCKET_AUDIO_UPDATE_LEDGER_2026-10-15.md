@@ -1179,3 +1179,36 @@ existingexportedfilesuntouched. Nativefinishpresets/monitorgain/seamlessAB/
 ApplyDiscardUndo/decodedformats/nativeintegration/vocal-liveacceptance remain.
 Fullfamilygame/load/installed/releasegatesremainactive. Sourcecandidatepending
 familyconsumerchecks/review; no Sam input blocker.
+
+## Prepared native Finish comparison foundation (candidate after PR100)
+
+Implemented: two aligned, already rendered PCM tracks share the existing native
+sample clock. One generation-checked A/B command crossfades over 10 ms without
+restarting transport or output. Neutral-path validation rejects processing,
+loop/metronome, transforms and boost gains. Prepared audio bypasses the ordinary
+centre pan/master attenuation and soft limit already present in its source WAV.
+The existing AudioEngine owns playback; its project mixer/cache refresh path is
+excluded during this bounded monitor. Stop, edits and delayed capability/start
+requests retain the existing ownership guards. Old native versions fail closed.
+
+Original, 30 Hz tidy, gentle 25 Hz/1.3:1 glue and managed-effects bypass proposals
+use existing FX. Source/user FX stay intact; replacing managed effects removes
+only their automation and one normal Undo restores the complete prior project.
+Matching attenuates to the quieter measured LUFS with shared -1 dBTP headroom;
+monitor gain is never written to the project. Measurements remain estimates.
+
+Tested: DAW full 1216/1216, then added automation/Undo regression passed with
+contract check (6/6) and TypeScript. Rust full 208 passed, 3 pre-existing ignored;
+Clippy/build, manifest108, tooling7 and security governance pass. Native PCM test
+reproduced extra centre-pan attenuation before fixing it; final 44.1/48 kHz
+samples preserve phase/level across rapid A/B reversals and continuous frame
+count. Native command rejects stale generation/stopped playback. No physical
+output/listening acceptance inferred. Capture fingerprint unchanged at e4ec7e55
+(full value in retained fingerprint output); microphone omitted for this slice,
+not passed. First unscoped Vitest invocation included a Node tooling suite and
+lacked the browser path; corrected manifest-driven full run passed. Logs retained.
+
+Not yet implemented by this foundation: preparation/analysis worker, long-song
+cancellation responsiveness, measured rendered-output warnings, UI Apply/Discard,
+preview/export decoded parity and installed acceptance. No public release,
+installer build, new dependency/account/licence/security change or Core npm.

@@ -56,6 +56,7 @@ interface NativePlaybackBridgeLike {
   seek(seconds: number): Promise<NativeAudioStatus | null>;
   updateTrack(patch: TrackMixerControlPatch & { trackId: string }): Promise<NativeAudioStatus | null>;
   status(): Promise<NativeAudioStatus | null>;
+  compareMonitor?(side: "a" | "b", expectedGeneration: number): Promise<NativeAudioStatus | null>;
 }
 
 export interface TrackMixerControlPatch {
@@ -164,6 +165,7 @@ export class AudioEngine {
   private nativeStatus: NativeAudioStatus | null = null;
   private playRequestToken = 0;
   private auditionEndSeconds: number | null = null;
+  private preparedMonitorActive = false;
   private nativeLastError: string | null = null;
   private nativeRestartToken = 0;
   private pendingNativeRestart: NativeRestartRequest | null = null;
@@ -489,9 +491,42 @@ export class AudioEngine {
     return this.playing;
   }
 
+  async playPreparedComparison(payload: ReturnType<typeof buildNativeAudioStartPayload>): Promise<boolean> {
+    if (!payload.monitorComparison || !payload.audition) throw new Error("Compare needs prepared audio and a bounded passage.");
+    this.stop();
+    const token = ++this.playRequestToken;
+    const capability = await this.nativePlayback.status();
+    if (token !== this.playRequestToken) return false;
+    if (!capability?.available || capability.monitorComparisonVersion !== 1 || !this.nativePlayback.compareMonitor) {
+      throw new Error("This native audio version does not support prepared A/B comparison.");
+    }
+    const result = await this.nativePlayback.start(payload);
+    if (token !== this.playRequestToken) return false;
+    if (!result.started || !result.status || !this.applyNativeStatus(result.status)) {
+      throw new Error(result.error || "Native A/B comparison could not start.");
+    }
+    this.auditionEndSeconds = payload.audition.endSeconds;
+    this.preparedMonitorActive = true;
+    this.playbackBackend = "native-cpal";
+    this.playing = true;
+    this.nativeLastTickSeconds = this.offsetSeconds;
+    this.startNativeTicker();
+    this.emitTick(true);
+    return true;
+  }
+
+  async switchPreparedComparison(side: "a" | "b"): Promise<boolean> {
+    if (!this.preparedMonitorActive || !this.playing || !this.nativePlayback.compareMonitor || !this.nativeStatus) return false;
+    const token = this.playRequestToken;
+    const status = await this.nativePlayback.compareMonitor(side, this.nativeStatus.startedGeneration);
+    if (token !== this.playRequestToken || !this.preparedMonitorActive) return false;
+    return this.applyNativeStatus(status);
+  }
+
   stop() {
     const token = ++this.playRequestToken;
     this.auditionEndSeconds = null;
+    this.preparedMonitorActive = false;
     this.cancelPendingNativeRestarts();
     this.cancelLiveNativeRenderCacheRefresh();
     this.playing = false;
@@ -1328,6 +1363,11 @@ export class AudioEngine {
   private tickNativePlayback() {
     if (this.playbackBackend !== "native-cpal" || !this.playing) return;
     const current = this.currentSeconds();
+    if (this.preparedMonitorActive) {
+      this.refreshNativePositionEstimate(current);
+      this.emitTick();
+      return;
+    }
     if (current + 0.08 < this.nativeLastTickSeconds) {
       this.lastAudioDropCause = this.project.timeline.loop.enabled
         ? "loop"
@@ -1868,6 +1908,7 @@ export class AudioEngine {
       // decide when the audio stops and never advances the musical clock.
       this.playRequestToken += 1;
       this.auditionEndSeconds = null;
+      this.preparedMonitorActive = false;
       this.cancelPendingNativeRestarts();
       this.cancelLiveNativeRenderCacheRefresh();
       this.playing = false;

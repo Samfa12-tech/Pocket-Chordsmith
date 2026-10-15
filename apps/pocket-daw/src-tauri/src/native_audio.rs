@@ -316,6 +316,8 @@ pub struct NativeAudioStartPayload {
     start_seconds: f64,
     #[serde(default)]
     audition: Option<NativeAuditionBounds>,
+    #[serde(rename = "monitorComparison", default)]
+    monitor_comparison: Option<NativeMonitorComparisonPayload>,
     #[serde(default = "default_bpm")]
     bpm: f64,
     #[serde(rename = "timeSig", default = "default_time_sig")]
@@ -348,6 +350,147 @@ pub struct NativeAudioStartPayload {
 struct NativeAuditionBounds {
     #[serde(rename = "endSeconds")]
     end_seconds: f64,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NativeMonitorSide {
+    A,
+    B,
+}
+
+#[derive(Clone, Deserialize)]
+struct NativeMonitorComparisonPayload {
+    #[serde(rename = "aTrackId")]
+    a_track_id: String,
+    #[serde(rename = "bTrackId")]
+    b_track_id: String,
+    #[serde(rename = "aGain")]
+    a_gain: f32,
+    #[serde(rename = "bGain")]
+    b_gain: f32,
+    side: NativeMonitorSide,
+}
+
+struct NativeMonitorComparison {
+    a_index: usize,
+    b_index: usize,
+    a_gain: f32,
+    b_gain: f32,
+    blend: f32,
+    target_blend: f32,
+    ramp_frames: usize,
+}
+
+impl NativeMonitorComparison {
+    fn switch(&mut self, side: NativeMonitorSide, sample_rate: u32) {
+        self.target_blend = match side {
+            NativeMonitorSide::A => 0.0,
+            NativeMonitorSide::B => 1.0,
+        };
+        self.ramp_frames = ((sample_rate as f64 * 0.01).round() as usize).max(1);
+    }
+
+    fn next_gains(&mut self) -> (usize, usize, f32, f32) {
+        if self.ramp_frames > 0 {
+            self.blend += (self.target_blend - self.blend) / self.ramp_frames as f32;
+            self.ramp_frames -= 1;
+            if self.ramp_frames == 0 {
+                self.blend = self.target_blend;
+            }
+        }
+        (
+            self.a_index,
+            self.b_index,
+            self.a_gain * (1.0 - self.blend),
+            self.b_gain * self.blend,
+        )
+    }
+}
+
+fn validate_monitor_comparison(
+    payload: &NativeAudioStartPayload,
+) -> Result<Option<NativeMonitorComparison>, String> {
+    let Some(comparison) = payload.monitor_comparison.as_ref() else {
+        return Ok(None);
+    };
+    if payload.audition.is_none()
+        || payload.loop_region.is_some()
+        || payload.metronome.is_some()
+        || payload.sidechain.is_some()
+        || !payload.events.is_empty()
+        || !payload.fx_chains.is_empty()
+        || !payload.hosted_instruments.is_empty()
+        || !payload.samplers.is_empty()
+        || payload.tracks.len() != 2
+        || payload.regions.len() != 2
+        || comparison.a_track_id == comparison.b_track_id
+        || !comparison.a_gain.is_finite()
+        || !(0.0..=1.0).contains(&comparison.a_gain)
+        || !comparison.b_gain.is_finite()
+        || !(0.0..=1.0).contains(&comparison.b_gain)
+    {
+        return Err("Monitor comparison requires two prepared PCM tracks, bounded audition and attenuation-only gains.".to_string());
+    }
+    for track in &payload.tracks {
+        if track.volume != 1.0
+            || track.pan != 0.0
+            || track.mute
+            || track.solo
+            || track.is_return
+            || !track.sends.is_empty()
+            || track.fx_chain_id.is_some()
+        {
+            return Err(
+                "Monitor comparison tracks must use a neutral rendered-audio path.".to_string(),
+            );
+        }
+        let regions = payload
+            .regions
+            .iter()
+            .filter(|region| region.track_id == track.id)
+            .collect::<Vec<_>>();
+        if regions.len() != 1
+            || regions[0].gain != 1.0
+            || regions[0].pan != 0.0
+            || regions[0].start_time != 0.0
+            || regions[0].source_offset != 0.0
+            || regions[0].phase_multiplier != 1.0
+            || regions[0].reversed
+            || regions[0].playback_rate != 1.0
+            || regions[0].fade_in != 0.0
+            || regions[0].fade_out != 0.0
+            || !regions[0].gain_automation.is_empty()
+        {
+            return Err(
+                "Monitor comparison requires one globally aligned unity-gain asset per track."
+                    .to_string(),
+            );
+        }
+    }
+    let a_index = payload
+        .tracks
+        .iter()
+        .position(|track| track.id == comparison.a_track_id)
+        .ok_or("Monitor comparison Original track is missing.")?;
+    let b_index = payload
+        .tracks
+        .iter()
+        .position(|track| track.id == comparison.b_track_id)
+        .ok_or("Monitor comparison Proposed track is missing.")?;
+    let blend = match comparison.side {
+        NativeMonitorSide::A => 0.0,
+        NativeMonitorSide::B => 1.0,
+    };
+    Ok(Some(NativeMonitorComparison {
+        a_index,
+        b_index,
+        a_gain: comparison.a_gain,
+        b_gain: comparison.b_gain,
+        blend,
+        target_blend: blend,
+        ramp_frames: 0,
+    }))
 }
 
 fn validate_audition_bounds(
@@ -802,6 +945,8 @@ pub struct NativeTrackControlPatch {
 
 #[derive(Clone, Serialize)]
 pub struct NativeAudioStatus {
+    #[serde(rename = "monitorComparisonVersion")]
+    monitor_comparison_version: u32,
     backend: String,
     available: bool,
     active: bool,
@@ -917,6 +1062,7 @@ enum NativeAudioRenderMode {
 struct PlaybackShared {
     project_title: Option<String>,
     audition: Option<NativeAuditionBounds>,
+    monitor_comparison: Option<NativeMonitorComparison>,
     events: Vec<NativeRenderedEvent>,
     compiled_event_routes: Vec<Option<CompiledGeneratedEventRoute>>,
     campfire_events: HashMap<String, Arc<PreparedCampfireEvent>>,
@@ -1245,6 +1391,7 @@ fn render_native_audio_wav_on_worker(
 ) -> Result<NativeAudioRenderedWav, String> {
     // Audition is a monitor control, never exported processing or duration.
     payload.audition = None;
+    payload.monitor_comparison = None;
     let mut runtime = state
         .lock()
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
@@ -1358,6 +1505,9 @@ pub fn native_audio_update_track(
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
     if let Some(shared) = &runtime.shared {
         if let Ok(mut playback) = shared.lock() {
+            if playback.monitor_comparison.is_some() {
+                return Err("Stop prepared comparison before changing mixer controls.".to_string());
+            }
             let changed = playback.tracks.get(&patch.track_id).is_some_and(|track| {
                 patch
                     .volume
@@ -1405,6 +1555,46 @@ pub fn native_audio_update_track(
         }
     }
     Ok(runtime.status())
+}
+
+#[tauri::command]
+pub fn native_audio_compare_monitor(
+    side: NativeMonitorSide,
+    expected_generation: u64,
+    state: tauri::State<'_, NativeAudioState>,
+) -> Result<NativeAudioStatus, String> {
+    let runtime = state
+        .lock()
+        .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
+    switch_monitor_comparison(&runtime, side, expected_generation)?;
+    Ok(runtime.status())
+}
+
+fn switch_monitor_comparison(
+    runtime: &NativeAudioRuntime,
+    side: NativeMonitorSide,
+    expected_generation: u64,
+) -> Result<(), String> {
+    if runtime.generation != expected_generation {
+        return Err("Monitor comparison was superseded by another playback request.".to_string());
+    }
+    let shared = runtime
+        .shared
+        .as_ref()
+        .ok_or("No active monitor comparison.")?;
+    let mut playback = shared
+        .lock()
+        .map_err(|_| "Native playback lock was poisoned.".to_string())?;
+    let rate = playback.sample_rate;
+    if !playback.playing {
+        return Err("Monitor comparison is stopped.".to_string());
+    }
+    let comparison = playback
+        .monitor_comparison
+        .as_mut()
+        .ok_or("No active monitor comparison.")?;
+    comparison.switch(side, rate);
+    Ok(())
 }
 
 impl NativeAudioRuntime {
@@ -1589,6 +1779,7 @@ impl NativeAudioRuntime {
         channels: u16,
         generation: u64,
     ) -> Result<PlaybackShared, String> {
+        let monitor_comparison = validate_monitor_comparison(&payload)?;
         let audition =
             validate_audition_bounds(payload.audition.clone(), payload.start_seconds, sample_rate)?;
         let mut hosted_payloads = payload.hosted_instruments.clone();
@@ -1716,6 +1907,7 @@ impl NativeAudioRuntime {
         let mut playback = PlaybackShared {
             project_title: payload.project_title,
             audition,
+            monitor_comparison,
             events,
             compiled_event_routes,
             campfire_events,
@@ -1942,6 +2134,7 @@ impl NativeAudioRuntime {
                 );
                 let stream_failed = output_diagnostics.stream_failed;
                 return NativeAudioStatus {
+                    monitor_comparison_version: 1,
                     backend: "native-cpal".to_string(),
                     available: true,
                     active: !stream_failed,
@@ -2003,6 +2196,7 @@ impl NativeAudioRuntime {
             }
         }
         NativeAudioStatus {
+            monitor_comparison_version: 1,
             backend: "native-cpal".to_string(),
             available: true,
             active: false,
@@ -2101,6 +2295,7 @@ fn is_wav_path(path: &Path) -> bool {
 impl NativeAudioStatus {
     fn unavailable(last_error: Option<String>) -> Self {
         Self {
+            monitor_comparison_version: 1,
             backend: "native-cpal".to_string(),
             available: false,
             active: false,
@@ -3072,6 +3267,10 @@ fn render_next_frame_with_campfire_cutoff(
     ensure_compiled_sidechain_triggers(playback);
     apply_loop_wrap(playback);
     let t = playback.position_seconds;
+    let monitor_gains = playback
+        .monitor_comparison
+        .as_mut()
+        .map(NativeMonitorComparison::next_gains);
     while playback.scan_start_index < playback.events.len()
         && playback_event_release_end(playback, playback.scan_start_index) < t
     {
@@ -3206,11 +3405,20 @@ fn render_next_frame_with_campfire_cutoff(
         let Some(track_id) = playback.track_order.get(mix.track_index) else {
             continue;
         };
-        let track_gain = playback
+        let mut track_gain = playback
             .tracks
             .get(track_id)
             .map(|track| track_gain(track, playback.has_solo) as f32)
             .unwrap_or(0.0);
+        if let Some((a_index, b_index, a_gain, b_gain)) = monitor_gains {
+            track_gain *= if mix.track_index == a_index {
+                a_gain
+            } else if mix.track_index == b_index {
+                b_gain
+            } else {
+                0.0
+            };
+        }
         let pre_fader_left = mix.left;
         let pre_fader_right = mix.right;
         let mut track_left = pre_fader_left * track_gain;
@@ -3227,7 +3435,9 @@ fn render_next_frame_with_campfire_cutoff(
             add_track_mix(&mut return_mixes, mix.track_index, track_left, track_right);
             continue;
         }
-        (track_left, track_right) = apply_bus_pan(track_left, track_right, track_id, playback);
+        if monitor_gains.is_none() {
+            (track_left, track_right) = apply_bus_pan(track_left, track_right, track_id, playback);
+        }
         let has_input = track_left.abs().max(track_right.abs()) > 0.00000001;
         let mut send_left = track_left;
         let mut send_right = track_right;
@@ -3314,6 +3524,11 @@ fn render_next_frame_with_campfire_cutoff(
     playback.track_mix_scratch = track_mixes;
     playback.return_mix_scratch = return_mixes;
     playback.source_budget_scratch = active_counts_by_track;
+    if monitor_gains.is_some() {
+        // These assets already contain the final native mix/master processing.
+        // Preserve their level and shape instead of applying 0.72/soft_limit twice.
+        return (left * audition_gain, right * audition_gain);
+    }
     (
         soft_limit(left * 0.72 * master) * audition_gain,
         soft_limit(right * 0.72 * master) * audition_gain,
@@ -9583,6 +9798,170 @@ mod tests {
         assert_eq!(loop_region.end_seconds, 3.0);
     }
 
+    fn monitor_payload() -> NativeAudioStartPayload {
+        serde_json::from_value(serde_json::json!({
+            "projectTitle": "Prepared monitor", "startSeconds": 0.0,
+            "audition": { "endSeconds": 1.0 },
+            "monitorComparison": { "aTrackId": "z-original", "bTrackId": "a-proposed", "aGain": 1.0, "bGain": 0.5, "side": "a" },
+            "tracks": [
+                { "id": "z-original", "volume": 1.0, "pan": 0.0, "mute": false, "solo": false },
+                { "id": "a-proposed", "volume": 1.0, "pan": 0.0, "mute": false, "solo": false }
+            ],
+            "events": [], "fxChains": [], "assets": [],
+            "regions": [
+                { "id": "ar", "assetId": "a", "trackId": "z-original", "startTime": 0.0, "sourceOffset": 0.0, "duration": 1.0, "gain": 1.0, "pan": 0.0 },
+                { "id": "br", "assetId": "b", "trackId": "a-proposed", "startTime": 0.0, "sourceOffset": 0.0, "duration": 1.0, "gain": 1.0, "pan": 0.0 }
+            ]
+        })).unwrap()
+    }
+
+    #[test]
+    fn monitor_comparison_rejects_unbounded_or_processed_paths() {
+        for mutation in 0..10 {
+            let mut payload = monitor_payload();
+            match mutation {
+                0 => payload.audition = None,
+                1 => payload.monitor_comparison.as_mut().unwrap().b_gain = 1.01,
+                2 => payload.monitor_comparison.as_mut().unwrap().a_gain = f32::NAN,
+                3 => payload.regions[0].reversed = true,
+                4 => payload.regions[0].playback_rate = 2.0,
+                5 => payload.regions[0].phase_multiplier = -1.0,
+                6 => payload.regions[0].fade_in = 0.1,
+                7 => payload.tracks[0].volume = 0.9,
+                8 => payload.regions[0].source_offset = 0.1,
+                _ => {
+                    payload.monitor_comparison.as_mut().unwrap().a_track_id = "missing".to_string()
+                }
+            }
+            assert!(
+                validate_monitor_comparison(&payload).is_err(),
+                "mutation {mutation}"
+            );
+        }
+        assert!(validate_monitor_comparison(&monitor_payload())
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn monitor_comparison_preserves_pcm_level_clock_and_phase_across_switches() {
+        for rate in [44_100, 48_000] {
+            let mut runtime = NativeAudioRuntime::default();
+            let mut playback = runtime
+                .build_playback(monitor_payload(), rate, 2, 7)
+                .unwrap();
+            for (id, level) in [("a", 0.2_f32), ("b", 0.4_f32)] {
+                let samples = (0..rate)
+                    .flat_map(|index| {
+                        let value = level * (index as f32 * 0.03).sin();
+                        [value, -value]
+                    })
+                    .collect();
+                playback.assets.insert(
+                    id.to_string(),
+                    Arc::new(DecodedAudioAsset {
+                        sample_rate: rate,
+                        channels: 2,
+                        samples,
+                        frame_count: rate as usize,
+                    }),
+                );
+            }
+            playback.compiled_regions =
+                compile_audio_regions(&playback.regions, &playback.assets, &playback.track_indices);
+            for index in 0..rate / 4 {
+                if index == 100 {
+                    playback
+                        .monitor_comparison
+                        .as_mut()
+                        .unwrap()
+                        .switch(NativeMonitorSide::B, rate);
+                }
+                if index == 200 {
+                    playback
+                        .monitor_comparison
+                        .as_mut()
+                        .unwrap()
+                        .switch(NativeMonitorSide::A, rate);
+                }
+                if index == 900 {
+                    playback
+                        .monitor_comparison
+                        .as_mut()
+                        .unwrap()
+                        .switch(NativeMonitorSide::B, rate);
+                }
+                let (left, right) = render_next_frame(&mut playback);
+                let expected = 0.2 * (index as f32 * 0.03).sin();
+                assert!(
+                    (left - expected).abs() < 0.00001,
+                    "rate {rate}, frame {index}: {left} vs {expected}"
+                );
+                assert!((right + expected).abs() < 0.00001);
+                assert_eq!(playback.rendered_frame_count, index as u64 + 1);
+            }
+            assert!((playback.position_seconds - 0.25).abs() < 1.0 / rate as f64);
+            assert_eq!(playback.generation, 7);
+            assert_eq!(playback.monitor_comparison.as_ref().unwrap().blend, 1.0);
+        }
+    }
+
+    #[test]
+    fn monitor_crossfade_is_ten_ms_linear_and_reverses_from_current_gain() {
+        let mut state = validate_monitor_comparison(&monitor_payload())
+            .unwrap()
+            .unwrap();
+        state.switch(NativeMonitorSide::B, 48_000);
+        for index in 1..=240 {
+            let (_, _, a, b) = state.next_gains();
+            assert!((a - (1.0 - index as f32 / 480.0)).abs() < 0.00001);
+            assert!((b - index as f32 / 960.0).abs() < 0.00001);
+        }
+        state.switch(NativeMonitorSide::A, 48_000);
+        let (_, _, a, _) = state.next_gains();
+        assert!(a > 0.5 && a < 0.502);
+        for _ in 1..480 {
+            state.next_gains();
+        }
+        assert_eq!(state.blend, 0.0);
+    }
+
+    #[test]
+    fn monitor_command_rejects_superseded_generation_and_stopped_playback() {
+        let mut runtime = NativeAudioRuntime {
+            generation: 7,
+            ..NativeAudioRuntime::default()
+        };
+        let playback = runtime
+            .build_playback(monitor_payload(), 48_000, 2, 7)
+            .unwrap();
+        runtime.shared = Some(Arc::new(Mutex::new(playback)));
+        assert!(switch_monitor_comparison(&runtime, NativeMonitorSide::B, 6).is_err());
+        assert_eq!(
+            runtime
+                .shared
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .monitor_comparison
+                .as_ref()
+                .unwrap()
+                .target_blend,
+            0.0
+        );
+        switch_monitor_comparison(&runtime, NativeMonitorSide::B, 7).unwrap();
+        let mut shared = runtime.shared.as_ref().unwrap().lock().unwrap();
+        assert_eq!(
+            shared.monitor_comparison.as_ref().unwrap().target_blend,
+            1.0
+        );
+        assert_eq!(shared.position_seconds, 0.0);
+        shared.playing = false;
+        drop(shared);
+        assert!(switch_monitor_comparison(&runtime, NativeMonitorSide::A, 7).is_err());
+    }
+
     #[test]
     fn output_config_range_supports_requested_project_sample_rate() {
         assert!(output_config_range_supports_sample_rate(
@@ -9814,6 +10193,7 @@ mod tests {
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
             audition: None,
+            monitor_comparison: None,
             project_title: Some("Cached".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
@@ -9889,6 +10269,7 @@ mod tests {
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
             audition: None,
+            monitor_comparison: None,
             project_title: Some("Cached pan".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
@@ -9965,6 +10346,7 @@ mod tests {
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
             audition: None,
+            monitor_comparison: None,
             project_title: Some("Cached track pan".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
@@ -10071,6 +10453,7 @@ mod tests {
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
             audition: None,
+            monitor_comparison: None,
             project_title: Some("Cached sidechain".to_string()),
             events: vec![trigger_marker],
             compiled_event_routes: Vec::new(),
@@ -10173,6 +10556,7 @@ mod tests {
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
             audition: None,
+            monitor_comparison: None,
             project_title: Some("Cached live mixer".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
@@ -10307,6 +10691,7 @@ mod tests {
         let (track_order, track_indices) = track_index_state(&tracks);
         let mut cached = PlaybackShared {
             audition: None,
+            monitor_comparison: None,
             project_title: Some("Cached dense stems".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
@@ -10405,6 +10790,7 @@ mod tests {
         let (track_order, track_indices) = track_index_state(&tracks);
         PlaybackShared {
             audition: None,
+            monitor_comparison: None,
             project_title: Some("Test".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
@@ -10462,6 +10848,7 @@ mod tests {
         let (track_order, track_indices) = track_index_state(&tracks);
         PlaybackShared {
             audition: None,
+            monitor_comparison: None,
             project_title: Some("Test".to_string()),
             events,
             compiled_event_routes: Vec::new(),

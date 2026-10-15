@@ -23,6 +23,28 @@ import {
   type VerifiedHostedPluginDescriptor
 } from "../src/daw/hostedPlugins";
 
+describe("prepared comparison command ownership", () => {
+  it("passes the owned generation and side in one atomic command", async () => {
+    const invoke = vi.fn(async (_command: string) => status());
+    const bridge = new NativeAudioPlaybackBridge(async () => ({ isAvailable: () => true, invoke: invoke as NativeAudioInvokeApi["invoke"] }));
+    await bridge.compareMonitor("b", 42);
+    expect(invoke).toHaveBeenCalledWith("native_audio_compare_monitor", { side: "b", expectedGeneration: 42 });
+  });
+  it("does not invoke a delayed comparison after Stop supersedes it", async () => {
+    let release!: (api: NativeAudioInvokeApi) => void;
+    const gate = new Promise<NativeAudioInvokeApi>(resolve => { release = resolve; });
+    const invoke = vi.fn(async (_command: string) => status());
+    let calls = 0;
+    const api = { isAvailable: () => true, invoke: invoke as NativeAudioInvokeApi["invoke"] };
+    const bridge = new NativeAudioPlaybackBridge(async () => ++calls === 1 ? gate : api);
+    const comparison = bridge.compareMonitor("a", 41);
+    await bridge.stop();
+    release(api);
+    expect(await comparison).toBeNull();
+    expect(invoke.mock.calls.map(call => call[0])).toEqual(["native_audio_stop"]);
+  });
+});
+
 function status(overrides: Partial<NativeAudioStatus> = {}): NativeAudioStatus {
   return {
     backend: "native-cpal",

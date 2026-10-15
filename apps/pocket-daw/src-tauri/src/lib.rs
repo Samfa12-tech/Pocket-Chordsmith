@@ -257,6 +257,7 @@ pub fn run() {
             native_audio::native_audio_seek,
             native_audio::native_audio_stop,
             native_audio::native_audio_update_track,
+            native_audio::native_audio_compare_monitor,
             native_recording::native_recording_status,
             native_recording::native_recording_start,
             native_recording::native_recording_start_preview,

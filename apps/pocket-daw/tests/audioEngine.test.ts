@@ -15,6 +15,45 @@ import type { Clip, PocketDawProject } from "../src/daw/schema";
 import { simpleMidiBytes } from "./midiFixtures";
 
 describe("audio engine diagnostics", () => {
+  it("requires the prepared monitor capability before starting two assets", async () => withNativeAuditionTimers(async () => {
+    let starts = 0;
+    const bridge = { ...auditionBridge(async () => { starts++; return { started: true, status: nativeStatus(), error: null }; }), compareMonitor: async () => nativeStatus() };
+    const engine = new AudioEngine(createDemoProject(), bridge);
+    const payload = { monitorComparison: { aTrackId: "a", bTrackId: "b", aGain: 1, bGain: 1, side: "a" as const }, audition: { endSeconds: 2 } } as NativeAudioStartPayload;
+    await expect(engine.playPreparedComparison(payload)).rejects.toThrow(/does not support/);
+    expect(starts).toBe(0);
+  }));
+
+  it("switches prepared A/B on its generation without restarting or syncing project controls", async () => withNativeAuditionTimers(async () => {
+    let starts = 0, updates = 0;
+    const switches: unknown[] = [];
+    const status = nativeStatus({ monitorComparisonVersion: 1, startedGeneration: 41, positionSeconds: 1 });
+    const bridge = { ...auditionBridge(async () => { starts++; return { started: true, status, error: null }; }), status: async () => status,
+      updateTrack: async () => { updates++; return status; }, compareMonitor: async (side: "a" | "b", generation: number) => { switches.push([side, generation]); return status; } };
+    const engine = new AudioEngine(createDemoProject(), bridge);
+    const payload = { monitorComparison: { aTrackId: "a", bTrackId: "b", aGain: 1, bGain: 1, side: "a" as const }, audition: { endSeconds: 2 } } as NativeAudioStartPayload;
+    expect(await engine.playPreparedComparison(payload)).toBe(true);
+    (engine as any).tickNativePlayback();
+    expect(await engine.switchPreparedComparison("b")).toBe(true);
+    expect(switches).toEqual([["b", 41]]);
+    expect(starts).toBe(1);
+    expect(updates).toBe(0);
+    engine.stop();
+    expect(await engine.switchPreparedComparison("a")).toBe(false);
+  }));
+
+  it("cancels prepared comparison before a delayed capability check can start audio", async () => withNativeAuditionTimers(async () => {
+    let release!: (status: NativeAudioStatus) => void, starts = 0;
+    const status = new Promise<NativeAudioStatus>(resolve => { release = resolve; });
+    const bridge = { ...auditionBridge(async () => { starts++; return { started: true, status: nativeStatus(), error: null }; }), status: () => status, compareMonitor: async () => nativeStatus() };
+    const engine = new AudioEngine(createDemoProject(), bridge);
+    const pending = engine.playPreparedComparison({ monitorComparison: {}, audition: { endSeconds: 2 } } as NativeAudioStartPayload);
+    engine.stop();
+    release(nativeStatus({ monitorComparisonVersion: 1 }));
+    expect(await pending).toBe(false);
+    expect(starts).toBe(0);
+  }));
+
   it("sends bounded audition on the native path without changing loop or source data", async () => withNativeAuditionTimers(async () => {
     const project = createDemoProject();
     project.timeline.loop = { enabled: true, startBar: 2, endBar: 3 };
