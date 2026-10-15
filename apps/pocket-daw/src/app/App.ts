@@ -302,7 +302,7 @@ import { commandFromKeyboardEvent } from "./keyboard";
 import { collapsedSectionsForCreationPreset, createInitialState, createMidiInputRecordingUiState, createRecordingUiState, currentProject, isUiCollapseSection, loadProjectIntoState, lowerDockTabForCreationPreset, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type LoadProjectIntoStateOptions, type NativeCacheUiStatus } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { automationSurfaceAudioSyncMode, automationSurfacePointFromClient } from "./automationSurface";
-import { renderAppShell } from "./ui";
+import { renderAppShell, renderAddTrackPanel } from "./ui";
 import { appendHostedStateSaveWarnings, safeReloadHostedInstance, serializeAfterReadyHostedStateCapture } from "./vst3SaveOrchestration";
 import { replacePresent } from "../daw/undo";
 import type { DrumRackPadParameter, SamplerEnvelopeParameter, SamplerParameter } from "../daw/devices";
@@ -1976,29 +1976,67 @@ export class App {
       recordButton.classList.toggle("on", recordingActive);
     }
 
+    const meterFills = dataElementMap(this.root, "data-meter-fill");
+    const meters = dataElementMap(this.root, "data-meter");
+    const inputFills = dataElementMap(this.root, "data-input-activity-fill");
     project.tracks.forEach((track) => {
       const inputPreviewActive = track.id === this.state.recording.trackId && (track.armed || this.state.recording.status === "recording");
       const level = Math.max(0, Math.min(1, inputPreviewActive ? this.state.recording.inputPeak : this.state.meterLevels[track.id] || 0));
       const percent = Math.round(level * 100);
-      const fill = findDataElement<HTMLElement>(this.root, "data-meter-fill", track.id);
-      if (fill) fill.style.height = `${percent}%`;
-      const meter = findDataElement<HTMLElement>(this.root, "data-meter", track.id);
-      if (meter) meter.setAttribute("aria-label", `${track.name} peak meter ${percent}%`);
-      const inputFill = findDataElement<HTMLElement>(this.root, "data-input-activity-fill", track.id);
-      if (inputFill) inputFill.style.width = `${inputPreviewActive ? percent : 0}%`;
+      const fill = meterFills.get(track.id);
+      if (fill && fill.style.height !== `${percent}%`) fill.style.height = `${percent}%`;
+      const meter = meters.get(track.id);
+      const label = `${track.name} peak meter ${percent}%`;
+      if (meter && meter.getAttribute("aria-label") !== label) meter.setAttribute("aria-label", label);
+      const inputFill = inputFills.get(track.id);
+      const width = `${inputPreviewActive ? percent : 0}%`;
+      if (inputFill && inputFill.style.width !== width) inputFill.style.width = width;
     });
   }
 
   private setTransportReadout(node: HTMLElement, primary: string, secondary = "") {
-    node.replaceChildren();
-    const primaryNode = document.createElement("strong");
-    primaryNode.textContent = primary;
-    node.appendChild(primaryNode);
-    if (secondary) {
-      const secondaryNode = document.createElement("small");
-      secondaryNode.textContent = secondary;
-      node.appendChild(secondaryNode);
+    let primaryNode = node.querySelector("strong");
+    if (!primaryNode) {
+      primaryNode = document.createElement("strong");
+      node.prepend(primaryNode);
     }
+    if (primaryNode.textContent !== primary) primaryNode.textContent = primary;
+    let secondaryNode = node.querySelector("small");
+    if (secondary) {
+      if (!secondaryNode) {
+        secondaryNode = document.createElement("small");
+        node.appendChild(secondaryNode);
+      }
+      if (secondaryNode.textContent !== secondary) secondaryNode.textContent = secondary;
+    } else secondaryNode?.remove();
+  }
+
+  private renderSampleLibraryResults() {
+    const results = this.root.querySelector<HTMLElement>(".sample-library-results");
+    if (!results) return;
+    const template = document.createElement("template");
+    template.innerHTML = renderAddTrackPanel(this.state);
+    const next = template.content.querySelector<HTMLElement>(".sample-library-results");
+    if (!next) return;
+    const previousScroll = results.querySelector<HTMLElement>(".sample-library-list")?.scrollTop || 0;
+    const focusedSelectionId = results.contains(document.activeElement)
+      ? (document.activeElement as HTMLElement).getAttribute("data-sample-library-select")
+      : null;
+    results.replaceChildren(...Array.from(next.childNodes));
+    const list = results.querySelector<HTMLElement>(".sample-library-list");
+    if (list) list.scrollTop = previousScroll;
+    this.bindSampleLibrarySelection(results);
+    if (focusedSelectionId) dataElementMap(results, "data-sample-library-select").get(focusedSelectionId)?.focus();
+  }
+
+  private bindSampleLibrarySelection(scope: ParentNode) {
+    scope.querySelectorAll<HTMLInputElement>("[data-sample-library-select]").forEach((input) => input.addEventListener("change", () => {
+      const entryId = input.dataset.sampleLibrarySelect || "";
+      this.state.selectedSampleLibraryIds = input.checked
+        ? [...this.state.selectedSampleLibraryIds.filter((id) => id !== entryId), entryId]
+        : this.state.selectedSampleLibraryIds.filter((id) => id !== entryId);
+      this.renderSampleLibraryResults();
+    }));
   }
 
   private bind() {
@@ -2022,21 +2060,19 @@ export class App {
     });
     this.root.querySelector<HTMLInputElement>("[data-sample-library-search]")?.addEventListener("input", (event) => {
       this.state.sampleLibraryQuery = (event.currentTarget as HTMLInputElement).value;
-      this.render({ preserveScroll: true });
-      const search = this.root.querySelector<HTMLInputElement>("[data-sample-library-search]");
-      search?.setSelectionRange(search.value.length, search.value.length);
+      this.renderSampleLibraryResults();
     });
     this.root.querySelector<HTMLSelectElement>("[data-sample-library-category]")?.addEventListener("change", (event) => {
       this.state.sampleLibraryCategory = (event.currentTarget as HTMLSelectElement).value as typeof this.state.sampleLibraryCategory;
-      this.render({ preserveScroll: true });
+      this.renderSampleLibraryResults();
     });
     this.root.querySelector<HTMLSelectElement>("[data-sample-library-folder]")?.addEventListener("change", (event) => {
       this.state.sampleLibraryFolderId = (event.currentTarget as HTMLSelectElement).value || null;
-      this.render({ preserveScroll: true });
+      this.renderSampleLibraryResults();
     });
     this.root.querySelector<HTMLInputElement>("[data-sample-library-favorites]")?.addEventListener("change", (event) => {
       this.state.sampleLibraryFavoritesOnly = (event.currentTarget as HTMLInputElement).checked;
-      this.render({ preserveScroll: true });
+      this.renderSampleLibraryResults();
     });
     this.root.querySelector<HTMLInputElement>("[data-sample-library-preview-volume]")?.addEventListener("change", (event) => {
       this.state.sampleLibrary = {
@@ -2054,13 +2090,7 @@ export class App {
       this.state.sampleLibraryTargetBar = Math.max(1, Number((event.currentTarget as HTMLInputElement).value) || 1);
       this.render({ preserveScroll: true });
     });
-    this.root.querySelectorAll<HTMLInputElement>("[data-sample-library-select]").forEach((input) => input.addEventListener("change", () => {
-      const entryId = input.dataset.sampleLibrarySelect || "";
-      this.state.selectedSampleLibraryIds = input.checked
-        ? [...this.state.selectedSampleLibraryIds.filter((id) => id !== entryId), entryId]
-        : this.state.selectedSampleLibraryIds.filter((id) => id !== entryId);
-      this.render({ preserveScroll: true });
-    }));
+    this.bindSampleLibrarySelection(this.root);
     this.root.querySelectorAll<HTMLInputElement>("[data-instrument-device-enabled]").forEach((input) => input.addEventListener("change", () => {
       this.applyProjectState(setInstrumentDeviceEnabledCommand(this.state, input.dataset.instrumentDeviceEnabled || "", input.checked), {
         audio: "composition-events", preserveScroll: true, reason: "instrument-device-enabled"
@@ -7693,6 +7723,15 @@ function nativeCacheStatusFromDiagnostics(diagnostics: ReturnType<AudioEngine["g
     generatedStemRenderFailureCount: diagnostics.nativeRenderCache.generatedStemRenderFailureCount,
     lastGeneratedStemRenderError: diagnostics.nativeRenderCache.lastGeneratedStemRenderError
   };
+}
+
+function dataElementMap(root: ParentNode, attr: string): Map<string, HTMLElement> {
+  const elements = new Map<string, HTMLElement>();
+  root.querySelectorAll<HTMLElement>(`[${attr}]`).forEach((node) => {
+    const key = node.getAttribute(attr)!;
+    if (!elements.has(key)) elements.set(key, node);
+  });
+  return elements;
 }
 
 function findDataElement<T extends HTMLElement>(root: ParentNode, attr: string, value: string): T | null {

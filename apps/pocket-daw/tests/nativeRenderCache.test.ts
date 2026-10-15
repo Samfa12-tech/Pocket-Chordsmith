@@ -80,7 +80,7 @@ import { addFxSlot } from "../src/daw/fx";
 import { createAutomationLane } from "../src/daw/automation";
 import { importMidiFileToProject } from "../src/daw/midiClips";
 import { parseStandardMidiFile } from "../src/daw/midiParser";
-import type { Clip, MediaPoolItem } from "../src/daw/schema";
+import type { Clip, MediaPoolItem, PocketDawProject } from "../src/daw/schema";
 import type { NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
 import type { NativeMediaApi } from "../src/native/mediaBridge";
 import { simpleMidiBytes } from "./midiFixtures";
@@ -451,6 +451,61 @@ describe("native render cache", () => {
     expect(secondRenderCount).toBeLessThan(firstRenderCount);
     expect(reusedCount).toBeGreaterThan(0);
     expect(second.renderCacheHitCount).toBeGreaterThan(0);
+  });
+
+  it("reuses unaffected stems through a stopped engine edit, but clears reuse on project load", async () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    await engine.rebuildNativeRenderCache("warm");
+    const coldRenders = nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length;
+    const edited = cycleBassStep(project, "A", 0);
+    nativeMediaBridgeMock.renderNativeAudioWav.mockClear();
+    engine.syncProject(edited, "composition-events");
+    expect(engine.getDiagnostics().nativeRenderCache.assetCount).toBe(0);
+    const rebuilt = await engine.rebuildNativeRenderCache("stopped-edit");
+    expect(rebuilt?.renderCacheHitCount).toBeGreaterThan(0);
+    expect(nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length).toBeGreaterThan(0);
+    expect(nativeMediaBridgeMock.renderNativeAudioWav.mock.calls.length).toBeLessThan(coldRenders);
+    engine.setProject(project);
+    nativeMediaBridgeMock.renderNativeAudioWav.mockClear();
+    await engine.rebuildNativeRenderCache("new-project");
+    expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalledTimes(coldRenders);
+  });
+
+  it("stops dispatching obsolete stems after a deferred render and builds the newest project", async () => {
+    const project = createDemoProject();
+    const engine = new AudioEngine(project);
+    let finish!: (value: ReturnType<typeof nativeRenderResult>) => void;
+    nativeMediaBridgeMock.renderNativeAudioWav.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }) as never);
+    const obsolete = engine.rebuildNativeRenderCache("obsolete");
+    await vi.waitFor(() => expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalledTimes(1));
+    const edited = cycleBassStep(project, "A", 0);
+    engine.syncProject(edited, "composition-events");
+    const latest = engine.rebuildNativeRenderCache("latest");
+    finish(nativeRenderResult());
+    await expect(obsolete).resolves.toBeNull();
+    // Only one old stem may finish; no further old jobs reach the renderer.
+    const result = await latest;
+    expect(result?.signature).toBe(nativeRenderCacheSignature(edited));
+    const latestStemCount = result!.renderCacheMissCount;
+    expect(nativeMediaBridgeMock.renderNativeAudioWav).toHaveBeenCalledTimes(latestStemCount + 1);
+    expect(engine.getDiagnostics().nativeRenderCache.discardedBuildCount).toBe(1);
+    expect(engine.getDiagnostics().nativeRenderCache.lastError).toBeNull();
+  });
+
+  it("does not traverse source music again while validating unchanged full-cache ticks", async () => {
+    const engine = new AudioEngine(createDemoProject());
+    await engine.rebuildNativeRenderCache("warm");
+    const internals = engine as unknown as { project: PocketDawProject; readyNativeRenderCache(): unknown };
+    const sourceReads = vi.spyOn(internals.project.sourceRefs, "map");
+    for (let tick = 0; tick < 100; tick += 1) expect(internals.readyNativeRenderCache()).not.toBeNull();
+    expect(sourceReads).not.toHaveBeenCalled();
+    sourceReads.mockRestore();
+    const edited = cycleBassStep(createDemoProject(), "A", 0);
+    engine.syncProject(edited, "composition-events");
+    expect(internals.readyNativeRenderCache()).toBeNull();
+    const rebuilt = await engine.rebuildNativeRenderCache("changed");
+    expect(rebuilt?.signature).toBe(nativeRenderCacheSignature(edited));
   });
 
   it("filters stale generated native stems to tracks that are still current", async () => {

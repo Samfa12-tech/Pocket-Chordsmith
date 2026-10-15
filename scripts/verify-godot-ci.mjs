@@ -30,6 +30,7 @@ try {
   run(["--headless", "--path", workspace, "--editor", "--quit"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_schema17_contract_test.gd");
   runScript("res://addons/pocket_chordsmith/tests/pcs_trust_boundary_test.gd");
+  runScript("res://addons/pocket_chordsmith/tests/pcs_stem_origin_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tools/validate_editor_accessibility.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd", [], [
     "--output",

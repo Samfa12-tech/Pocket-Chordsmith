@@ -3808,7 +3808,7 @@ function renderInputSelector(project: ReturnType<typeof currentProject> | null, 
   `;
 }
 
-function renderAddTrackPanel(state: AppState): string {
+export function renderAddTrackPanel(state: AppState): string {
   const project = currentProject(state);
   const audioTracks = project.tracks.filter((track) => track.trackType === "audio");
   const recentRank = new Map(state.sampleLibrary.recentIds.map((id, index) => [id, index]));

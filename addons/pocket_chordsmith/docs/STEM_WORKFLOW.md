@@ -39,6 +39,19 @@ Prepared section stems live in `PCSPlaybackProfile.section_stem_sets`:
 
 At runtime, `PocketChordsmithConductor.queue_section("B")` changes the chart section and resolves the matching section stem map. Call `conductor.prewarm_audio()` during loading so section/state/full-song stems are imported or diagnosed before gameplay.
 
+Section stem files start at the beginning of that section. The conductor
+subtracts the current arrangement occurrence's start tick, so repeated A/B
+sections and halfway seeks use the same local audio. `stem_paths` remains
+arrangement-absolute. State sets also retain absolute playback by default; an
+explicit `state_stem_origin_ticks[state_name]` declares the absolute tick that
+corresponds to zero in a state-local file. Do not infer origins from filenames.
+`seek_tick()` repositions prepared players as well as chart/event cursors.
+
+The automated `tests/pcs_stem_origin_test.gd` uses deterministic PCM tones,
+actual Godot players and engine-bus capture with the warmed Dummy driver. It
+checks local/absolute positions in both player modes. It does not establish
+physical output, human listening, source-engine fidelity or cold-load budgets.
+
 Suggested full-arrangement stem names:
 
 ```text

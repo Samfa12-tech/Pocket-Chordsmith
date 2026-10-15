@@ -27,6 +27,11 @@ commit and installed artifact rather than imply this planning work was shipped.
 
 ## Audit follow-through: 2026-10-12
 
+Current source-candidate progress is tracked in the
+[15 October implementation ledger](../../../docs/POCKET_AUDIO_UPDATE_LEDGER_2026-10-15.md).
+The table below preserves the planning baseline; source checks, installed
+acceptance and publication remain separate in that ledger.
+
 The [full dated audit](PERFORMANCE_AND_GODOT_AUDIT_2026-10-12.md) preserves 13 source-reviewed findings,
 commit-pinned evidence, existing mitigations, proposed fixes, regression risks
 and validation plans at source `0c6975cadcd4aba0047ab94170a2adabc722517f`.

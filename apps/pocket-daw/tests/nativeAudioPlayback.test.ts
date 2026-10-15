@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderTimelineEvents } from "../src/audio/eventRenderer";
 import { createDemoProject, createLofiTemplateProject } from "../src/demo/demoProject";
 import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
@@ -930,6 +930,91 @@ describe("native audio playback bridge", () => {
     ]);
     expect(calls[0].args).toMatchObject({ payload: expect.objectContaining({ projectTitle: expect.any(String) }) });
     expect(calls[4].args).toMatchObject({ patch: { trackId: "bass", volume: 0.4, pan: -0.5 } });
+  });
+
+  it.each([false, true])("reconciles Stop residency before the next Play (file-backed: %s)", async (fileBacked) => {
+    const resident = new Set<string>();
+    const starts: Array<{ assets: Array<{ id: string; bytes?: number[]; sourcePath?: string }> }> = [];
+    let preloadCount = 0;
+    const bridge = new NativeAudioPlaybackBridge(async () => ({
+      isAvailable: () => true,
+      async invoke(command, args) {
+        if (command === "native_audio_preload_asset") {
+          preloadCount += 1;
+          resident.add((args?.asset as { id: string }).id);
+        }
+        if (command === "native_audio_stop") resident.clear();
+        if (command === "native_audio_start") {
+          const payload = args?.payload as typeof starts[number];
+          starts.push(payload);
+          for (const asset of payload.assets) {
+            if (!resident.has(asset.id) && !asset.bytes?.length && !asset.sourcePath) {
+              throw new Error(`Native cached asset ${asset.id} was requested without bytes or a source path before it was decoded.`);
+            }
+            resident.add(asset.id);
+          }
+        }
+        return status() as never;
+      }
+    }));
+    const asset = { id: "lifecycle", name: "loop.wav", sourceHash: "v1", sampleRate: 48000, channels: 2, durationSeconds: 1,
+      ...(fileBacked ? { sourcePath: "C:/fixture/loop.wav" } : { bytes: [82, 73, 70, 70] }) };
+    const payload = buildNativeAudioStartPayload(createDemoProject(), [], 0, { assets: [asset], regions: [] });
+    await bridge.preloadAssets([asset]);
+    await bridge.start(payload);
+    await bridge.pause();
+    await bridge.resume();
+    await bridge.preloadAssets([asset]);
+    expect(preloadCount).toBe(1);
+    await bridge.stop();
+    await bridge.preloadAssets([asset]);
+    await expect(bridge.start(payload)).resolves.toMatchObject({ started: true });
+    expect(preloadCount).toBe(2);
+    expect(starts).toHaveLength(2);
+  });
+
+  it.each(["native_audio_preload_asset", "native_audio_start"])("ignores a late %s residency acknowledgment after Stop", async (delayedCommand) => {
+    let finish!: (value: NativeAudioStatus) => void;
+    let dispatched = false;
+    const starts: Array<{ assets: Array<{ bytes?: number[] }> }> = [];
+    const bridge = new NativeAudioPlaybackBridge(async () => ({
+      isAvailable: () => true,
+      async invoke(command, args) {
+        if (command === "native_audio_start") starts.push(args?.payload as typeof starts[number]);
+        if (command === delayedCommand && !dispatched) {
+          dispatched = true;
+          return new Promise<NativeAudioStatus>((resolve) => { finish = resolve; }) as never;
+        }
+        return status() as never;
+      }
+    }));
+    const asset = { id: "late", name: "loop.wav", sourceHash: "v1", sampleRate: 48000, channels: 2, durationSeconds: 1, bytes: [82, 73, 70, 70] };
+    const payload = buildNativeAudioStartPayload(createDemoProject(), [], 0, { assets: [asset], regions: [] });
+    const pending = delayedCommand === "native_audio_start" ? bridge.start(payload) : bridge.preloadAssets([asset]);
+    await vi.waitFor(() => expect(dispatched).toBe(true));
+    await bridge.stop();
+    finish(status());
+    await pending;
+    await bridge.start(payload);
+    expect(starts.at(-1)?.assets[0].bytes).toEqual(asset.bytes);
+  });
+
+  it("drops optimistic hints after an uncertain Stop without hiding its failure", async () => {
+    const starts: Array<{ assets: Array<{ bytes?: number[] }> }> = [];
+    const bridge = new NativeAudioPlaybackBridge(async () => ({
+      isAvailable: () => true,
+      async invoke(command, args) {
+        if (command === "native_audio_stop") throw new Error("reply lost");
+        if (command === "native_audio_start") starts.push(args?.payload as typeof starts[number]);
+        return status() as never;
+      }
+    }));
+    const asset = { id: "uncertain", name: "loop.wav", sampleRate: 48000, channels: 2, durationSeconds: 1, bytes: [82, 73, 70, 70] };
+    const payload = buildNativeAudioStartPayload(createDemoProject(), [], 0, { assets: [asset], regions: [] });
+    await bridge.start(payload);
+    await expect(bridge.stop()).resolves.toBeNull();
+    await bridge.start(payload);
+    expect(starts.at(-1)?.assets[0].bytes).toEqual(asset.bytes);
   });
 
   it("reports unavailable native runtime without throwing", async () => {

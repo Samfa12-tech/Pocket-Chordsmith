@@ -84,6 +84,7 @@ var _sequence_should_loop := true
 var _pending_stinger := {}
 var _stem_player: AudioStreamPlayer
 var _stem_layer_players := {}
+var _prepared_stem_origin_tick := 0
 var _stinger_player: AudioStreamPlayer
 var _stinger_playback: AudioStreamPlaybackPolyphonic
 var _polyphonic_players := {}
@@ -273,7 +274,7 @@ func resume() -> void:
 		_reset_wall_clock_anchor()
 
 
-func seek_tick(tick: int) -> void:
+func seek_tick(tick: int, sync_stems := true) -> void:
 	if chart == null:
 		return
 	current_tick = clamp(tick, 0, max(0, chart.get_length_ticks()))
@@ -288,6 +289,9 @@ func seek_tick(tick: int) -> void:
 	_last_bar_index = int(floor(float(current_tick) / float(max(1, chart.time_signature * chart.ticks_per_quarter)))) - 1
 	_update_position_fields()
 	_last_section_id = current_section
+	if sync_stems and _playing:
+		_prepare_stem_sync_for_current_state()
+		_start_native_stems_from_current_tick()
 
 
 func jump_to_section(section_id: String) -> void:
@@ -298,7 +302,7 @@ func jump_to_section(section_id: String) -> void:
 	if target_tick < 0:
 		push_warning("PocketChordsmithConductor could not find section '%s' in the arrangement." % section_id)
 		return
-	seek_tick(target_tick)
+	seek_tick(target_tick, false)
 	_emit_current_section_started()
 	_sync_sequence_index_to_section(canonical_section)
 	_prepare_stem_sync_for_current_state()
@@ -1209,7 +1213,7 @@ func _seek_to_sequence_index(index: int) -> void:
 	if target_tick < 0:
 		push_warning("PocketChordsmithConductor could not find section '%s' for sequence playback." % section_id)
 		return
-	seek_tick(target_tick)
+	seek_tick(target_tick, false)
 	_emit_current_section_started()
 	_prepare_stem_sync_for_current_state()
 	_start_native_stems_from_current_tick()
@@ -2038,8 +2042,13 @@ func _prepare_stem_sync_for_current_state() -> void:
 	if playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.PROCEDURAL_PREVIEW:
 		return
 	_setup_native_audio_players()
-	var stem_map := _stem_map_for_current_state()
+	var selection := _stem_selection_for_current_state()
+	var stem_map: Dictionary = selection.get("stems", {})
+	_prepared_stem_origin_tick = int(selection.get("origin_tick", 0))
 	if stem_map.is_empty():
+		_stop_layer_stem_players()
+		_stem_player.stop()
+		_stem_player.stream = null
 		return
 	if not playback_profile.use_audio_stream_synchronized:
 		_prepare_layer_stem_players(stem_map)
@@ -2106,7 +2115,7 @@ func _start_native_stems_from_current_tick() -> void:
 		return
 	if playback_profile != null and playback_profile.playback_backend == PlaybackProfile.PlaybackBackend.PROCEDURAL_PREVIEW:
 		return
-	var offset_seconds: float = float(current_tick) * float(chart.get_seconds_per_tick())
+	var offset_seconds: float = float(max(0, current_tick - _prepared_stem_origin_tick)) * float(chart.get_seconds_per_tick())
 	if _has_ready_stem_players():
 		for player_value in _stem_layer_players.values():
 			var player := player_value as AudioStreamPlayer
@@ -2118,22 +2127,36 @@ func _start_native_stems_from_current_tick() -> void:
 
 
 func _stem_map_for_current_state() -> Dictionary:
+	return _stem_selection_for_current_state().get("stems", {})
+
+
+func _stem_selection_for_current_state() -> Dictionary:
 	if playback_profile == null:
 		return {}
 	if not current_music_state.is_empty():
 		var state_map := _state_stem_map(current_music_state)
 		if not state_map.is_empty():
-			return state_map
+			return {"stems": state_map, "origin_tick": _state_stem_origin_tick()}
 	var section_map := _section_stem_map(current_section)
 	if not section_map.is_empty():
-		return section_map
+		var occurrence: Dictionary = chart.find_section_at_tick(current_tick) if chart != null else {}
+		return {"stems": section_map, "origin_tick": int(occurrence.get("start_tick", 0))}
 	if not current_music_state.is_empty() and playback_profile.stem_sets.has(current_music_state) and playback_profile.stem_sets[current_music_state] is Dictionary:
-		return _normalize_stem_map(playback_profile.stem_sets[current_music_state])
+		return {"stems": _normalize_stem_map(playback_profile.stem_sets[current_music_state]), "origin_tick": _state_stem_origin_tick()}
 	if not playback_profile.stem_paths.is_empty():
-		return _normalize_stem_map(playback_profile.stem_paths)
+		return {"stems": _normalize_stem_map(playback_profile.stem_paths), "origin_tick": 0}
 	if chart != null and not current_music_state.is_empty() and chart.stem_sets.has(current_music_state) and chart.stem_sets[current_music_state] is Dictionary:
-		return _normalize_stem_map(chart.stem_sets[current_music_state])
+		return {"stems": _normalize_stem_map(chart.stem_sets[current_music_state]), "origin_tick": _state_stem_origin_tick()}
 	return {}
+
+
+func _state_stem_origin_tick() -> int:
+	# Existing state sets retain arrangement-absolute playback unless the
+	# profile declares an explicit origin. Section sets are always local to
+	# the current occurrence, including repeated A/B sections.
+	if _profile_has_property("state_stem_origin_ticks"):
+		return max(0, int(playback_profile.state_stem_origin_ticks.get(current_music_state, 0)))
+	return 0
 
 
 func _state_stem_map(state_name: String) -> Dictionary:

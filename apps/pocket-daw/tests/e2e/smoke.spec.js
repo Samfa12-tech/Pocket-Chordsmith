@@ -344,15 +344,71 @@ test("opens the persistent Sounds Library without trapping the rest of the studi
   await expect(search).toBeFocused();
   await search.fill("kick");
   await page.keyboard.press("Space");
-  await expect(search).toHaveValue("kick");
-  await expect(page.locator('[data-transport-toggle="true"]')).toHaveText("Pause");
+  await expect(search).toHaveValue("kick ");
+  await expect(search).toBeFocused();
+  await expect(page.locator('[data-transport-toggle="true"]')).toHaveText("Play");
 
   await page.keyboard.press("Control+Space");
   await expect(library.getByRole("status")).toContainText("Select a sound");
-  await expect(page.locator('[data-transport-toggle="true"]')).toHaveText("Pause");
+  await expect(page.locator('[data-transport-toggle="true"]')).toHaveText("Play");
 
   await page.keyboard.press("Escape");
   await expect(library).toHaveCount(0);
+});
+
+test("filters sample results without replacing studio, search, composition or selection", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("pocket_daw_sample_library_v1", JSON.stringify({
+    version: 1, folders: [], favoriteIds: [], recentIds: [], settings: { previewVolume: 0.8, lastCategory: "all", lastFolderId: null },
+    entries: ["Kick", "Guitar"].map((name) => ({ id: name.toLowerCase(), name, path: `C:/fixtures/${name}.wav`, folderPath: "C:/fixtures", extension: "wav", sizeBytes: 100, modifiedUnixMs: null, category: name === "Kick" ? "drums" : "guitar", source: "file", sourceRoot: null, addedAt: "2026-10-15", lastSeenAt: "2026-10-15" }))
+  })));
+  await gotoApp(page);
+  await openSoundLibrary(page);
+  await page.getByRole("tab", { name: "Samples", exact: true }).click();
+  await expect(page.locator(".sample-library-row")).toHaveCount(2);
+  await page.locator('[data-sample-library-select="kick"]').check();
+  await expect(page.locator('[data-sample-library-select="kick"]')).toBeFocused();
+  const search = page.locator("[data-sample-library-search]");
+  const identities = await page.evaluateHandle(() => ({ shell: document.querySelector(".app-shell"), input: document.querySelector("[data-sample-library-search]"), transport: document.querySelector("[data-transport-toggle]"), renders: document.querySelector("#app").dataset.renderCount }));
+  await search.fill("Guitar");
+  await expect(page.locator(".sample-library-row")).toHaveCount(1);
+  await expect(page.locator(".sample-library-file strong")).toHaveText("Guitar");
+  await search.evaluate((input) => {
+    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "音" }));
+    input.value = "音";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "音", isComposing: true }));
+    input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "音" }));
+  });
+  await expect(search).toBeFocused();
+  await search.fill("");
+  await expect(page.locator('[data-sample-library-select="kick"]')).toBeChecked();
+  expect(await page.evaluate((before) => before.shell === document.querySelector(".app-shell") && before.input === document.querySelector("[data-sample-library-search]") && before.transport === document.querySelector("[data-transport-toggle]") && before.renders === document.querySelector("#app").dataset.renderCount, identities)).toBe(true);
+  await search.fill("Kick");
+  await search.press("Home");
+  await search.press("Delete");
+  await expect(search).toHaveValue("ick");
+  await expect(search).toBeFocused();
+  await page.locator("[data-sample-library-category]").focus();
+  await page.locator("[data-sample-library-category]").selectOption("guitar");
+  await expect(page.locator(".sample-library-row")).toHaveCount(0);
+  await expect(page.locator("[data-sample-library-category]")).toBeFocused();
+});
+
+test("updates meters with a fixed query count and keeps readout children during playback", async ({ page }) => {
+  await gotoApp(page);
+  await page.locator("[data-transport-toggle]").click();
+  await expect(page.locator("[data-playing-state]")).toContainText("Playing");
+  const measurement = await page.evaluateHandle(() => {
+    const root = document.querySelector("#app");
+    const original = root.querySelectorAll.bind(root);
+    const state = { calls: 0, initial: Number(root.dataset.liveUpdateCount), readout: root.querySelector("[data-playing-state] strong") };
+    root.querySelectorAll = (selector) => { if (["[data-meter]", "[data-meter-fill]", "[data-input-activity-fill]"].includes(selector)) state.calls += 1; return original(selector); };
+    return state;
+  });
+  await expect.poll(() => page.evaluate((m) => Number(document.querySelector("#app").dataset.liveUpdateCount) - m.initial, measurement)).toBeGreaterThanOrEqual(3);
+  const result = await page.evaluate((m) => ({ calls: m.calls, updates: Number(document.querySelector("#app").dataset.liveUpdateCount) - m.initial, stable: m.readout === document.querySelector("[data-playing-state] strong") }), measurement);
+  expect(result.stable).toBe(true);
+  expect(result.calls).toBeLessThanOrEqual(result.updates * 3);
+  await page.locator("[data-transport-toggle]").click();
 });
 
 test("exposes honest sample empty states and the native-only VST3 boundary", async ({ page }) => {

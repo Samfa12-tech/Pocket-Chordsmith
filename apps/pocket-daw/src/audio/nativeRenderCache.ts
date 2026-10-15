@@ -64,6 +64,7 @@ export interface NativeRenderCachePersistOptions {
 export interface NativeRenderCacheBuildOptions {
   clipIds?: Set<string>;
   coverage?: "full" | "partial";
+  signal?: AbortSignal;
 }
 
 export interface NativeRenderCacheHydrationResult {
@@ -117,6 +118,7 @@ export async function buildNativeRenderCache(
   reuseCache: NativeRenderCache | null = null,
   options: NativeRenderCacheBuildOptions = {}
 ): Promise<NativeRenderCache> {
+  options.signal?.throwIfAborted();
   const requestedClipIds = options.clipIds ? new Set(options.clipIds) : null;
   const cacheableClips = project.timeline.clips
     .filter((clip) => isNativeStemCacheableClip(project, clip))
@@ -137,6 +139,7 @@ export async function buildNativeRenderCache(
 
   const buildItems = groupOverlappingAssetBuildItems(project, cacheableClips.flatMap((clip) => assetBuildItems(project, clip)));
   for (const item of buildItems) {
+    options.signal?.throwIfAborted();
     let asset: NativeAudioAsset | null | undefined = assets.get(item.key);
     if (asset) {
       renderCacheHitCount += 1;
@@ -148,6 +151,7 @@ export async function buildNativeRenderCache(
       } else {
         renderCacheMissCount += 1;
         const rendered = await renderAsset(project, item);
+        options.signal?.throwIfAborted();
         asset = rendered.asset;
         if (!asset) {
           generatedStemRenderFailureCount += 1;
@@ -183,7 +187,8 @@ export async function buildNativeRenderCache(
 
   generatedRegionCount -= pruneOverlappingGeneratedStemRegionsForNativeParity(regions, cachedClipIds, renderCacheItems, assets);
 
-  const runtimeStats = await appendRuntimeAudioCache(project, signature, assets, regions, cachedClipIds, renderCacheItems, createdAt);
+  options.signal?.throwIfAborted();
+  const runtimeStats = await appendRuntimeAudioCache(project, signature, assets, regions, cachedClipIds, renderCacheItems, createdAt, options.signal);
   renderCacheHitCount += runtimeStats.renderCacheHitCount;
   renderCacheMissCount += runtimeStats.renderCacheMissCount;
   runtimeAudioRegionCount += runtimeStats.runtimeAudioRegionCount;
@@ -1416,13 +1421,15 @@ async function appendRuntimeAudioCache(
   regions: NativeAudioRegion[],
   cachedClipIds: Set<string>,
   renderCacheItems: RenderCacheItem[],
-  createdAt: string
+  createdAt: string,
+  signal?: AbortSignal
 ): Promise<Pick<NativeRenderCache, "renderCacheHitCount" | "renderCacheMissCount" | "runtimeAudioRegionCount" | "missingRuntimeAudioRegionCount">> {
   let renderCacheHitCount = 0;
   let renderCacheMissCount = 0;
   let runtimeAudioRegionCount = 0;
   let missingRuntimeAudioRegionCount = 0;
   for (const region of renderTimelineAudioRegions(project, { includeMutedTracks: true }).audioRegions) {
+    signal?.throwIfAborted();
     const cached = getCachedAudioBuffer(region.mediaPoolItemId);
     if (!cached || cached.channels < 1 || cached.channels > 2 || cached.buffer.duration <= region.sourceOffsetSeconds) {
       missingRuntimeAudioRegionCount += 1;
@@ -1435,6 +1442,7 @@ async function appendRuntimeAudioCache(
     } else {
       renderCacheMissCount += 1;
       const source = await runtimeAudioAssetSource(cached);
+      signal?.throwIfAborted();
       const id = `native-audio-${hashString(key)}`;
       asset = {
         id,
@@ -1483,6 +1491,7 @@ async function appendRuntimeAudioCache(
   }));
   const samplerSignature = nativeRuntimeAudioCacheSignature(project);
   for (const mediaPoolItemId of samplerMediaIds) {
+    signal?.throwIfAborted();
     const cached = getCachedAudioBuffer(mediaPoolItemId);
     if (!cached || cached.channels < 1 || cached.channels > 2) continue;
     const key = runtimeAudioAssetKey(project, mediaPoolItemId, cached);
@@ -1493,6 +1502,7 @@ async function appendRuntimeAudioCache(
       continue;
     }
     const source = await runtimeAudioAssetSource(cached);
+    signal?.throwIfAborted();
     const id = `native-sample-${hashString(key)}`;
     const asset: NativeAudioAsset = {
       id,

@@ -26,7 +26,8 @@ Generated from `release-status.json`. Refresh with `npm run status:release`.
 
 ## Unreleased Source-Only Notes
 
-- 0.6.51 is a source-only release-status checkpoint. No 0.6.51 installer, candidate receipt, installed smoke, or publication exists. The public 0.6.50 installer remains bound to its exact tested commit.
+- 0.6.51 is a source-only reliability candidate: Stop/cache residency reconciliation, bounded stopped-edit stem reuse, superseded build cancellation, unchanged-revision signature reuse, scoped sample-library filtering and linear meter/stable readout updates. See docs/POCKET_AUDIO_UPDATE_LEDGER_2026-10-15.md at the repository root for executed source checks and remaining native acceptance.
+- No 0.6.51 installer, candidate receipt, installed smoke, or publication exists. The public 0.6.50 installer remains bound to its exact tested commit.
 
 ## Installed-Smoke Exception
 

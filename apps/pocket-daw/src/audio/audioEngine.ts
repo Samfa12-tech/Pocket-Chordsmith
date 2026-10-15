@@ -108,6 +108,7 @@ export function calculateLoopSeekSeconds(project: PocketDawProject, currentSecon
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private project: PocketDawProject;
+  private projectRenderCacheSignature: string | null = null;
   private events: RenderedEvent[] = [];
   private audioRegions: AudioRegion[] = [];
   private trackOutputs = new Map<string, TrackOutput>();
@@ -120,8 +121,10 @@ export class AudioEngine {
   private nativeTransportClock = new NativeTransportClock();
   private nativePlayback: NativePlaybackBridgeLike;
   private nativeRenderCache: NativeRenderCache | null = null;
+  private nativeReusableRenderCache: NativeRenderCache | null = null;
   private nativeRenderCacheBuildPromise: Promise<NativeRenderCache | null> | null = null;
   private nativeRenderCacheBuildSignature: string | null = null;
+  private nativeRenderCacheBuildController: AbortController | null = null;
   private nativeRuntimeAudioCache: NativeRenderCache | null = null;
   private nativeRuntimeAudioCacheBuildPromise: Promise<NativeRenderCache | null> | null = null;
   private nativeRuntimeAudioCacheBuildSignature: string | null = null;
@@ -278,8 +281,16 @@ export class AudioEngine {
   syncProject(project: PocketDawProject, mode: AudioProjectSyncMode, reason: string = mode) {
     const current = this.currentSeconds();
     const previousNativeRenderCache = this.nativeRenderCache;
+    if (mode === "project-load") this.nativeReusableRenderCache = null;
+    else if (previousNativeRenderCache) {
+      // Retain at most one previous generation for unchanged-stem reuse. JS
+      // numeric arrays can cost eight bytes per WAV byte; budget conservatively.
+      const retainedBytes = previousNativeRenderCache.assets.reduce((sum, asset) => sum + (asset.bytes?.length || 0) * 8, 0);
+      this.nativeReusableRenderCache = retainedBytes <= 64 * 1024 * 1024 ? previousNativeRenderCache : null;
+    }
     this.project = cloneProject(project);
     this.projectSyncCount += 1;
+    this.projectRenderCacheSignature = null;
     this.lastProjectSyncMode = mode;
     this.lastProjectSyncReason = reason;
 
@@ -289,6 +300,10 @@ export class AudioEngine {
       this.events = renderTimelineEvents(this.project);
       this.audioRegions = renderTimelineAudioRegions(this.project).audioRegions;
       const renderCacheSignature = nativeRenderCacheSignature(this.project);
+      this.projectRenderCacheSignature = renderCacheSignature;
+      if (mode === "project-load" || this.nativeRenderCacheBuildSignature?.split(":")[0] !== renderCacheSignature) {
+        this.nativeRenderCacheBuildController?.abort();
+      }
       const keepPreviousNativeRenderCache = !!previousNativeRenderCache
         && (previousNativeRenderCache.signature === renderCacheSignature || liveNativeCompositionEdit);
       this.nativeRenderCache = keepPreviousNativeRenderCache ? previousNativeRenderCache : null;
@@ -1006,7 +1021,13 @@ export class AudioEngine {
 
   private readyNativeRenderCache(): NativeRenderCache | null {
     if (!this.nativeRenderCache) return null;
-    return this.nativeRenderCache.signature === nativeRenderCacheSignature(this.project) ? this.nativeRenderCache : null;
+    return this.nativeRenderCache.signature === this.currentRenderCacheSignature() ? this.nativeRenderCache : null;
+  }
+
+  private currentRenderCacheSignature(): string {
+    // The engine owns its cloned project. Recompute after sync, never on every
+    // unchanged native tick. Direct fader patches affect only post-cache mix.
+    return this.projectRenderCacheSignature ??= nativeRenderCacheSignature(this.project);
   }
 
   private playableNativeRenderCache(): NativeRenderCache | null {
@@ -1014,14 +1035,14 @@ export class AudioEngine {
     if (cache) return cache;
     if (this.nativeRenderCacheStaleForLiveEdits && this.playbackBackend === "native-cpal" && this.playing) {
       return this.nativeRenderCache
-        ? filterNativeRenderCacheForProject(this.project, this.nativeRenderCache, nativeRenderCacheSignature(this.project))
+        ? filterNativeRenderCacheForProject(this.project, this.nativeRenderCache, this.currentRenderCacheSignature())
         : null;
     }
     return null;
   }
 
   private async ensureNativeRenderCache(reason: string, options: NativeRenderCacheBuildOptions = {}): Promise<NativeRenderCache | null> {
-    const signature = nativeRenderCacheSignature(this.project);
+    const signature = this.currentRenderCacheSignature();
     const coverage = options.coverage || (options.clipIds?.size ? "partial" : "full");
     const buildSignature = this.nativeRenderCacheBuildSignatureFor(signature, options);
     if (this.nativeRenderCache?.signature === signature) {
@@ -1029,30 +1050,37 @@ export class AudioEngine {
       if (coverage === "partial" && this.nativeRenderCacheCoversClipIds(this.nativeRenderCache, options.clipIds)) return this.nativeRenderCache;
     }
     if (this.nativeRenderCacheBuildPromise) {
-      if (this.nativeRenderCacheBuildSignature === buildSignature) return this.nativeRenderCacheBuildPromise;
+      if (this.nativeRenderCacheBuildSignature === buildSignature && !this.nativeRenderCacheBuildController?.signal.aborted) return this.nativeRenderCacheBuildPromise;
       await this.nativeRenderCacheBuildPromise;
       return this.ensureNativeRenderCache(reason, options);
     }
     const projectSnapshot = cloneProject(this.project);
+    const controller = new AbortController();
+    this.nativeRenderCacheBuildController = controller;
     this.nativeRenderCacheBuildSignature = buildSignature;
-    const reusableCache = this.nativeRenderCache;
+    const reusableCache = this.nativeRenderCache || this.nativeReusableRenderCache;
     this.nativeRenderCacheBuildPromise = (async () => {
       try {
         const started = nowMs();
-        const cache = await buildNativeRenderCache(projectSnapshot, signature, reusableCache, options);
+        const cache = await buildNativeRenderCache(projectSnapshot, signature, reusableCache, { ...options, signal: controller.signal });
         this.nativeRenderCacheBuildCount += 1;
         this.nativeRenderCacheLastBuildMs = Math.max(0, nowMs() - started);
         this.nativeRenderCacheLastBuildReason = reason;
         this.nativeRenderCacheError = null;
-        if (nativeRenderCacheSignature(this.project) !== signature) {
+        if (controller.signal.aborted || this.currentRenderCacheSignature() !== signature) {
           this.nativeRenderCacheDiscardedBuildCount += 1;
           return null;
         }
         this.nativeRenderCache = cache;
+        this.nativeReusableRenderCache = null;
         this.nativeRenderCacheStaleForLiveEdits = false;
         this.preloadNativeRenderCacheAssetsNear(cache, this.offsetSeconds);
         return this.nativeRenderCache;
       } catch (error) {
+        if (controller.signal.aborted) {
+          this.nativeRenderCacheDiscardedBuildCount += 1;
+          return null;
+        }
         if (!this.nativeRenderCacheStaleForLiveEdits) this.nativeRenderCache = null;
         this.nativeRenderCacheError = error instanceof Error ? error.message : "Native render cache failed.";
         return null;
@@ -1060,6 +1088,7 @@ export class AudioEngine {
         if (this.nativeRenderCacheBuildSignature === buildSignature) {
           this.nativeRenderCacheBuildSignature = null;
           this.nativeRenderCacheBuildPromise = null;
+          this.nativeRenderCacheBuildController = null;
         }
       }
     })();
@@ -1145,7 +1174,7 @@ export class AudioEngine {
 
   private scheduleNativeRenderCachePrewarm(reason: string): boolean {
     if (!this.shouldPrewarmNativeRenderCache()) return false;
-    const signature = nativeRenderCacheSignature(this.project);
+    const signature = this.currentRenderCacheSignature();
     if ((this.nativeRenderCache?.signature === signature && this.nativeRenderCache.coverage !== "partial")
       || (this.nativeRenderCacheBuildPromise && this.nativeRenderCacheBuildSignature === signature)) {
       return true;

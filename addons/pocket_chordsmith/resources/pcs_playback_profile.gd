@@ -108,6 +108,7 @@ enum PlaybackBackend {
 @export var stem_sets: Dictionary = {}
 @export var section_stem_sets: Dictionary = {}
 @export var state_stem_sets: Dictionary = {}
+@export var state_stem_origin_ticks: Dictionary = {}
 @export var stem_playback_mode := "mixer_routed_stems"
 @export var section_transition_quantize := "bar"
 @export var transition_mode := "cut"

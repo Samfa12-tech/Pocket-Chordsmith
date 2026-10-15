@@ -319,17 +319,21 @@ type NativeAudioApiFactory = () => Promise<NativeAudioInvokeApi | null>;
 
 export class NativeAudioPlaybackBridge {
   private readonly knownNativeAssetRevisions = new Set<string>();
+  private assetResidencyGeneration = 0;
 
   constructor(private readonly apiFactory: NativeAudioApiFactory = defaultNativeAudioApi) {}
 
   async start(payload: NativeAudioStartPayload): Promise<NativeAudioStartResult> {
+    const residencyGeneration = this.assetResidencyGeneration;
     const api = await this.apiFactory();
     if (!api?.isAvailable()) {
       return { started: false, status: null, error: "Native Tauri audio runtime is unavailable.", unavailable: true };
     }
     try {
       const status = await api.invoke<NativeAudioStatus>("native_audio_start", { payload: this.withCachedAssetHints(payload) });
-      payload.assets?.forEach((asset) => this.knownNativeAssetRevisions.add(nativeAssetCacheHintKey(asset)));
+      if (residencyGeneration === this.assetResidencyGeneration) {
+        payload.assets?.forEach((asset) => this.knownNativeAssetRevisions.add(nativeAssetCacheHintKey(asset)));
+      }
       return { started: true, status, error: null };
     } catch (error) {
       const message = errorMessage(error);
@@ -345,7 +349,7 @@ export class NativeAudioPlaybackBridge {
       const missingAssetKey = nativeAssetCacheHintKey(missingAsset);
       try {
         const status = await api.invoke<NativeAudioStatus>("native_audio_start", { payload });
-        payload.assets?.forEach((asset) => {
+        if (residencyGeneration === this.assetResidencyGeneration) payload.assets?.forEach((asset) => {
           const cacheHintKey = nativeAssetCacheHintKey(asset);
           if (cacheHintKey !== missingAssetKey) this.knownNativeAssetRevisions.add(cacheHintKey);
         });
@@ -357,6 +361,7 @@ export class NativeAudioPlaybackBridge {
   }
 
   async preloadAssets(assets: NativeAudioAsset[]): Promise<number> {
+    const residencyGeneration = this.assetResidencyGeneration;
     const api = await this.apiFactory();
     if (!api?.isAvailable()) return 0;
     let loaded = 0;
@@ -369,7 +374,7 @@ export class NativeAudioPlaybackBridge {
       if (!asset.bytes?.length && !asset.sourcePath) continue;
       try {
         await api.invoke<NativeAudioStatus>("native_audio_preload_asset", { asset });
-        this.knownNativeAssetRevisions.add(cacheHintKey);
+        if (residencyGeneration === this.assetResidencyGeneration) this.knownNativeAssetRevisions.add(cacheHintKey);
         loaded += 1;
       } catch {
         // Playback can still send bytes for assets that fail to preload.
@@ -387,7 +392,21 @@ export class NativeAudioPlaybackBridge {
   }
 
   async stop(): Promise<NativeAudioStatus | null> {
-    return this.invokeIfAvailable("native_audio_stop");
+    // Explicit Stop clears Rust's decoded cache. A failed/lost acknowledgment
+    // also leaves residency uncertain, so retain bytes on the next start.
+    // Invalidate on both sides of the await to cover overlapping preload/start
+    // replies; Pause/Resume deliberately keep the current residency generation.
+    this.invalidateAssetResidency();
+    try {
+      return await this.invokeIfAvailable("native_audio_stop");
+    } finally {
+      this.invalidateAssetResidency();
+    }
+  }
+
+  private invalidateAssetResidency(): void {
+    this.assetResidencyGeneration += 1;
+    this.knownNativeAssetRevisions.clear();
   }
 
   async seek(seconds: number): Promise<NativeAudioStatus | null> {

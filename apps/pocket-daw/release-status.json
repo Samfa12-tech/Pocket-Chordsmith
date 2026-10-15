@@ -6,7 +6,8 @@
   "latestPublishedTag": "pocket-daw-v0.6.50",
   "latestPublishedCommit": "ec3f783b24abdd85d46229c2893ea953e96248cd",
   "unreleasedSourceNotes": [
-    "0.6.51 is a source-only release-status checkpoint. No 0.6.51 installer, candidate receipt, installed smoke, or publication exists. The public 0.6.50 installer remains bound to its exact tested commit."
+    "0.6.51 is a source-only reliability candidate: Stop/cache residency reconciliation, bounded stopped-edit stem reuse, superseded build cancellation, unchanged-revision signature reuse, scoped sample-library filtering and linear meter/stable readout updates. See docs/POCKET_AUDIO_UPDATE_LEDGER_2026-10-15.md at the repository root for executed source checks and remaining native acceptance.",
+    "No 0.6.51 installer, candidate receipt, installed smoke, or publication exists. The public 0.6.50 installer remains bound to its exact tested commit."
   ],
   "lastInstalledSmoke": {
     "version": "0.6.50",
