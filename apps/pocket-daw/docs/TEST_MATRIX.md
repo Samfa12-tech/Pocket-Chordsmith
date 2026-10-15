@@ -2,14 +2,14 @@
 
 > Generated from `apps/pocket-daw/test-scope-manifest.json` by `node scripts/verify-test-scope-manifest.mjs --write-matrix`. Do not hand-edit this file.
 
-Current inventory: 103 runnable test artifacts. The categories below identify the primary execution contract; evidence-validator tests are deterministic and do not claim that physical/manual evidence has occurred.
+Current inventory: 104 runnable test artifacts. The categories below identify the primary execution contract; evidence-validator tests are deterministic and do not claim that physical/manual evidence has occurred.
 
 ## Category totals
 
 | Category | Test artifacts |
 | --- | ---: |
 | browser-e2e | 1 |
-| compatibility-parity | 18 |
+| compatibility-parity | 19 |
 | integration | 23 |
 | native-rust | 2 |
 | release-contract | 15 |
@@ -20,6 +20,7 @@ Current inventory: 103 runnable test artifacts. The categories below identify th
 
 | Test artifact | Primary category | Platforms | PR | Main | Release prepare | Ordinary Vitest | Evidence requirement | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `apps/pocket-daw/tests/campfireAuthoring.test.ts` | compatibility-parity | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Campfire source/clock/clip/MIDI/undo/cache intent; native PCM/device evidence is separate. |
 | `apps/pocket-daw/tests/aiBridgeLiveCommands.test.ts` | integration | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained integration coverage for live-command planning. |
 | `apps/pocket-daw/tests/appInteractionSource.test.ts` | integration | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Behavioral replacement is owned by the App interaction controller workstream. |
 | `apps/pocket-daw/tests/audioClipCommands.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained domain command coverage. |

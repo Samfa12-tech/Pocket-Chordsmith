@@ -15,11 +15,12 @@ import { chordsmithHumanizeOffset, chordsmithHumanizePeak } from "../performance
 import { chordsmithPhraseInfo } from "../performance/phrases.js";
 import { chordsmithPitchedTupletDuration, chordsmithPitchedTupletMiddleIndex, chordsmithPitchedTupletMiddleMidi } from "../performance/tuplets.js";
 import { DEFAULT_GUITAR_STRUM_MODE } from "../sounds/guitar.js";
-import { CAMPFIRE_ACOUSTIC_RECIPE, campfireAcousticVoicing } from "../sounds/campfire-acoustic.js";
+import { CAMPFIRE_ACOUSTIC_RECIPE, campfireAcousticVoicing, campfireAcousticPerformanceNote } from "../sounds/campfire-acoustic.js";
 import { CHORDSMITH_SEQUENCED_DRUM_LANE_IDS, normalisePocketAudioDrumLane } from "../sounds/drum-lanes.js";
 import { normalisePocketAudioArticulation } from "../performance/expression.js";
 import { createPocketAudioRendererCapabilityReport } from "../engine/capabilities.js";
 import { assertPocketAudioProjectResourceLimits } from "../schema/resource-limits.js";
+import { richTrackStem } from "../schema/rich-track-stem.js";
 
 export function buildPocketAudioTimeline(project, options = {}) {
   if (!project || project.app !== "PocketAudioProject") throw new Error("buildPocketAudioTimeline expects a normalised PocketAudioProject.");
@@ -357,18 +358,11 @@ function addGuitarEvents(events, project, section, context) {
   if (campfire && section.guitar.performance === "strum_pick") {
     if (context.step % project.meta.resolution !== 0) return;
     const beat = Math.floor(context.step / project.meta.resolution);
-    if (beat % 4 !== 0 && beat % 2 !== 1) return;
     const chord = currentChord(project, section, context.step);
-    const notes = campfireAcousticVoicing({rootPc:chord.rootPc, quality:chord.quality, register:section.guitar.register});
-    const picked = beat % 2 === 1;
-    const midi = picked ? notes[beat % 3 === 1 ? 3 : 2] + 12 : undefined;
-    if (picked && midi > CAMPFIRE_ACOUSTIC_RECIPE.maxMidi) throw new RangeError("Campfire strum and pick needs Low or Mid register. High picking exceeds the supported note range.");
+    const note = campfireAcousticPerformanceNote({beat,rootPc:chord.rootPc,quality:chord.quality,register:section.guitar.register,direction:guitarDirection(Math.floor(beat / 4),section.guitar.strumMode)});
+    if (!note) return;
     events.push(baseEvent(project, section, context, {
-      stem:"guitar", type:"guitar", time:context.baseTime + beat * beatSeconds(project), duration:1.5,
-      ...(picked ? {midi} : {midiNotes:notes}), instrument:CAMPFIRE_ACOUSTIC_RECIPE.id,
-      velocity:picked ? 0.15 / CAMPFIRE_ACOUSTIC_RECIPE.noteGain : 1, articulation:"open",
-      direction:guitarDirection(Math.floor(beat / 4), section.guitar.strumMode),
-      technique:{campfire:{recipeVersion:1, strumSeconds:0.027, tailPolicy:"reference-cut"}},
+      ...note, stem:"guitar", type:"guitar", time:context.baseTime + beat * beatSeconds(project),
       humanizeSeed:17, humanizeVelocity:false
     }));
     return;
@@ -581,15 +575,6 @@ function guitarDirection(step, mode) {
   if (mode === "up") return "up";
   if (mode === "alternate") return step % 2 ? "up" : DEFAULT_GUITAR_STRUM_MODE;
   return DEFAULT_GUITAR_STRUM_MODE;
-}
-
-function richTrackStem(trackId, track) {
-  const requested = String(track?.stem || track?.role || trackId || "").toLowerCase();
-  if (["drums", "drum", "kick", "snare", "rim", "clap", "hat", "hat_closed", "hat_open", "ride", "crash", "china", "tom_high", "tom_mid", "tom_low", "percussion"].includes(requested)) return "drums";
-  if (requested === "bass") return "bass";
-  if (["chord", "chords", "harmony", "stab", "stabs"].includes(requested)) return "chords";
-  if (requested === "guitar") return "guitar";
-  return "melody";
 }
 
 function richEventType(stem, lane) {

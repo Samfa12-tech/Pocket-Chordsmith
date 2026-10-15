@@ -29,8 +29,9 @@ import {
   normaliseMetalTexture
 } from "../../../../packages/pocket-audio-core/src/presets/metal.js";
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
-import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_PATTERN_PRESETS, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_PATTERN_PRESETS, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES, POCKET_PREPARED_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 import { PCS17_FORMAT_FEATURES, type PocketDawProfileId } from "./pcsCapabilities";
+import { richTrackStem } from "../../../../packages/pocket-audio-core/src/schema/rich-track-stem.js";
 
 export const SECTION_IDS = ["A", "B", "C", "D", "E", "F", "G", "H"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
@@ -57,6 +58,7 @@ export interface SanitizedPcsSection {
   bassAccent: boolean[];
   bassArticulation: string[];
   guitarPattern: string[];
+  guitarPerformance?: string;
   richEvents: Record<string, SanitizedPcsRichEvent[]>;
 }
 
@@ -227,8 +229,8 @@ export function sanitizePocketChordsmithProject(raw: unknown): SanitizedPcsProje
     chordsOn: obj.chordsOn !== false,
     bassOn: obj.bassOn !== false,
     bassMode: safeChoice(obj.bassMode, ["auto", "manual"], "auto") as "auto" | "manual",
-    guitarEnabled: Boolean(obj.guitarEnabled ?? ["heavy_metal", "western_frontier", "funk_groove"].includes(audioProfile)),
-    guitarTone: safeChoice(obj.guitarTone, POCKET_GUITAR_TONES, defaultGuitarTone),
+    guitarEnabled: Boolean(obj.guitarEnabled ?? (hasCampfireGuitar(obj) || ["heavy_metal", "western_frontier", "funk_groove"].includes(audioProfile))),
+    guitarTone: safeChoice(obj.guitarTone, [...POCKET_GUITAR_TONES, ...POCKET_PREPARED_GUITAR_TONES], defaultGuitarTone),
     guitarRegister: safeChoice(obj.guitarRegister, POCKET_GUITAR_REGISTERS, DEFAULT_GUITAR_REGISTER),
     guitarStrumMode: safeChoice(obj.guitarStrumMode, POCKET_GUITAR_STRUM_MODES, DEFAULT_GUITAR_STRUM_MODE),
     guitarPatternPreset: safeChoice(obj.guitarPatternPreset, POCKET_GUITAR_PATTERN_PRESETS, audioProfile === "western_frontier" ? "boom_chick" : metalStylePreset?.guitarPatternPreset ?? "metal_chug"),
@@ -366,6 +368,7 @@ function sanitizeSection(raw: JsonObject, project: SanitizedPcsProject, id: Sect
     bassAccent: fitArray(raw[sectionKey("bassAccent", id)], len, false, Boolean),
     bassArticulation: fitArray(raw[sectionKey("bassArticulation", id)], len, "", normalizeBassArticulation),
     guitarPattern,
+    guitarPerformance: String(raw[sectionKey("guitarPerformance", id)] || "grid"),
     richEvents
   };
 }
@@ -379,14 +382,16 @@ function sanitizeRichEvents(raw: JsonObject, id: SectionId): Record<string, Sani
   const section = jsonObject(jsonObject(raw.sections)[id]);
   const tracks = jsonObject(section.tracks);
   const out: Record<string, SanitizedPcsRichEvent[]> = {};
-  Object.entries(tracks).forEach(([role, track]) => {
+  Object.entries(tracks).forEach(([trackId, track]) => {
     const events = jsonObject(track).events;
     if (!Array.isArray(events)) return;
+    const prepared = raw.guitarTone === "campfire_acoustic" || events.some(event => (jsonObject(event).sound || jsonObject(event).instrument) === "campfire_acoustic");
+    const role = prepared ? richTrackStem(trackId, jsonObject(track)) : trackId;
     const compactMirror = jsonObject(jsonObject(track).compatibility).compactMirror === true;
-    out[role] = events
+    out[role] = [...(out[role] || []), ...events
       .slice(0, MAX_SECTION_STEPS * 4)
       .map((event) => sanitizeRichEvent(event, compactMirror))
-      .filter((event): event is SanitizedPcsRichEvent => !!event);
+      .filter((event): event is SanitizedPcsRichEvent => !!event)];
   });
   const richDrumLanes = jsonObject(section.drumLanes);
   Object.entries(richDrumLanes).forEach(([lane, laneEvents]) => {
@@ -406,6 +411,7 @@ function sanitizeRichEvents(raw: JsonObject, id: SectionId): Record<string, Sani
 function sanitizeRichEvent(value: unknown, compactMirror = false): SanitizedPcsRichEvent | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = cloneJsonObject(value);
+  const sound = cleanId(raw.sound) || (raw.instrument === "campfire_acoustic" ? "campfire_acoustic" : "");
   const hasTick = Number.isFinite(Number(raw.tick));
   const hasStep = Number.isFinite(Number(raw.step));
   if (!hasTick && !hasStep) return null;
@@ -417,18 +423,25 @@ function sanitizeRichEvent(value: unknown, compactMirror = false): SanitizedPcsR
     ...(hasStep ? { step: clamp(asNum(raw.step, 0), 0, MAX_SECTION_STEPS) } : {}),
     ...(hasTick ? { tick: clamp(asNum(raw.tick, 0), 0, MAX_SECTION_STEPS * 9600) } : {}),
     duration: clamp(asNum(raw.duration, 1), 0.01, MAX_SECTION_STEPS * 16),
-    ...(Number.isFinite(Number(raw.durationTicks)) ? { durationTicks: clamp(asInt(raw.durationTicks, 1), 1, MAX_SECTION_STEPS * 9600) } : {}),
+    ...(Number.isFinite(Number(raw.durationTicks)) ? { durationTicks: clamp(sound === "campfire_acoustic" ? asNum(raw.durationTicks, 1) : asInt(raw.durationTicks, 1), 1, MAX_SECTION_STEPS * 9600) } : {}),
     ...(typeof note === "number" ? { note } : {}),
     ...(notes?.length ? { notes } : {}),
     velocity: clamp(asNum(raw.velocity, 100), 0, 127),
     articulation: cleanId(raw.articulation) || "note",
-    sound: cleanId(raw.sound),
+    sound,
     role: cleanId(raw.role),
     expression: cloneJsonObject(raw.expression),
     technique: cloneJsonObject(raw.technique),
     compactMirror,
     raw
   };
+}
+
+function hasCampfireGuitar(raw: JsonObject): boolean {
+  if (raw.guitarTone === "campfire_acoustic") return true;
+  return Object.values(jsonObject(raw.sections)).some((section) => Object.entries(jsonObject(jsonObject(section).tracks)).some(([id, track]) =>
+    richTrackStem(id,jsonObject(track)) === "guitar" && Array.isArray(jsonObject(track).events) &&
+    (jsonObject(track).events as unknown[]).some((event) => (jsonObject(event).sound || jsonObject(event).instrument) === "campfire_acoustic")));
 }
 
 function observedRichEventEnd(raw: JsonObject, id: SectionId, resolution: number, ppq: number): number {

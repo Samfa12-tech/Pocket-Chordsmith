@@ -5,6 +5,7 @@ import { renderTimelineEvents, type RenderedEvent } from "./eventRenderer";
 import { trackIsAudible } from "../daw/tracks";
 import { clipIsAudibleTake } from "../daw/clips";
 import { evaluateProjectTempoAtBar, getProjectAutomationLane } from "../daw/automation";
+import { campfireAcousticEventVoices } from "../../../../packages/pocket-audio-core/src/sounds/campfire-acoustic.js";
 
 interface MidiMessage {
   tick: number;
@@ -60,8 +61,17 @@ function buildMidiTracks(project: PocketDawProject, ppq: number, options: MidiEx
   const eventTrackIds = Array.from(new Set([...events.map((event) => event.trackId), ...controllerClipTrackIds, ...programChangeClipTrackIds, ...pitchBendClipTrackIds, ...aftertouchClipTrackIds]));
   const musicalTracks = project.tracks.filter((track) => eventTrackIds.includes(track.id));
   const byTrack = new Map(musicalTracks.map((track) => [track.id, [] as MidiMessage[]]));
+  const campfireTracks = new Map<string, RenderedEvent | null>();
+  events.forEach(event => {
+    if (event.kind !== "guitar" || event.instrument !== "campfire_acoustic") campfireTracks.set(event.trackId,null);
+    else if (!campfireTracks.has(event.trackId)) campfireTracks.set(event.trackId,event);
+  });
   musicalTracks.forEach((track) => {
     byTrack.get(track.id)?.push(trackNameMessage(track.name));
+    const guitar = campfireTracks.get(track.id);
+    if (guitar && !programChangeClipTrackIds.includes(track.id)) {
+      byTrack.get(track.id)?.push({tick:0,data:[0xc0 + midiChannelForEvent(guitar,project),25]});
+    }
   });
   events.forEach((event) => {
     const messages = byTrack.get(event.trackId);
@@ -94,6 +104,25 @@ function midiClipCanExport(project: PocketDawProject, clip: PocketDawProject["ti
 }
 
 function addEventMessages(messages: MidiMessage[], event: RenderedEvent, project: PocketDawProject, ppq: number) {
+  if (event.kind === "guitar" && event.instrument === "campfire_acoustic") {
+    campfireAcousticEventVoices(event,{sampleRate:project.project.sampleRate});
+    const sourceVelocity = event.velocity * (event.clipGain ?? 1);
+    if (sourceVelocity <= 0) return;
+    const notes = event.midiNotes?.length ? [...event.midiNotes] : event.midi === undefined ? [] : [event.midi];
+    if (event.direction === "up") notes.reverse();
+    const technique = event.technique?.campfire;
+    const strum = technique && typeof technique === "object" && !Array.isArray(technique) ? Number(technique.strumSeconds ?? 0.027) : 0.027;
+    const channel = midiChannelForEvent(event,project);
+    const velocity = Math.max(1,Math.min(127,Math.round(sourceVelocity * (event.sound === undefined ? 100 : 127))));
+    notes.forEach((note,index) => {
+      const time = event.time + index * strum;
+      const start = secondsToTimelineTicks(time,project,ppq);
+      const end = Math.max(start + 12,secondsToTimelineTicks(time + 1.5,project,ppq));
+      messages.push({tick:start,data:[0x90 + channel,note,velocity]});
+      messages.push({tick:end,data:[0x80 + channel,note,0]});
+    });
+    return;
+  }
   const startTick = secondsToTimelineTicks(event.time, project, ppq);
   const endTick = Math.max(startTick + 12, secondsToTimelineTicks(event.time + event.duration, project, ppq));
   const channel = midiChannelForEvent(event, project);

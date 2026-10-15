@@ -791,3 +791,53 @@ role Play/MIDI/WAV/Undo2 pass;lint/type/format/size/whitespace pass. Size225098.
 Earlier prepared/source/cancellation/mute/restart tests remain passing in full
 27-case desktop run. Raw role failures retained in primary ignored validation.
 No live full-bus PCM/listening claim follows from these scheduler/export tests.
+
+## Native Campfire authoring candidate (2026-10-16)
+
+Implemented on top of accepted PR91/92. Native guitar tone now accepts the
+separate prepared Campfire ID without changing the eight legacy amp IDs. Compact
+notes use Core full major/minor voicings; per-section Grid / strum + pick uses a
+shared clock-free intent helper, existing native timeline/sample clock and clip
+transforms. D/G/Bm/A at76 BPM retains24 events, quiet picks,27ms strums and exact
+15-second onset. High automatic picking is explicitly refused rather than
+clamped. Exact rich fractional ticks, voices, velocity, seed and unknown source
+metadata survive save/reopen. Core stem > role > ID ownership is shared for this
+new path; explicit other-stem tracks remain untouched.
+
+Prepared note velocity and native clip gain0..4 are independent. The Rust path
+validates gain before preparation, reuses immutable prepared PCM and applies gain
+in the existing native source graph. Explicit gain0 adds no audible tail. Native
+renderer cache contract changes to v43/a3073ea9 so older rendered assets cannot
+silently survive the new source behavior. Legacy events omit clipGain and retain
+their existing behavior.
+
+Both inline timeline and inspector show the active automatic performance as
+readonly, retain stored Grid and focus, and explain exact imported-note ownership.
+An explicit rhythm preset replaces only guitar events using the selected tone;
+whole-project Undo restores source notes and metadata. MIDI bytes carry full
+ordered voicings,27ms timing, quiet picks, existing guitar channel8 and GM25 for
+pure Campfire tracks, while mixed/authored program tracks retain their programs.
+
+Tested: Core203; family parity including1185 DAW tests; Windows contracts284;
+complete DAW shell browser20; regenerated Chordsmith desktop/touch Campfire10;
+TypeScript and DAW production UI build; Rust Clippy-Dwarnings and full lib200pass,
+2ignored. Existing real native dry stereo graph captures32/32 at44.1/48kHz match
+Core reference exactly including long onsets/fractional onsets/tail seeks. New
+native source-gain test covers0/0.4/1/4, PCM reuse and invalid values. Test manifest
+104 artifacts, repo/security/sound/governance, whitespace and generated freshness
+pass. Chordsmith active1067177/1100000 and modular894680/900000 bytes.
+
+Failed probes retained: initial reference float accumulation, native renderer
+contract missing hash, and browser duplicate-step selector exposed an actual
+inline/inspector display mismatch; all corrected and corresponding gates rerun.
+Ignored evidence: local-artifacts/scratch/validation/native-campfire-authoring-*.log
+and native-campfire-graph/run-*/. Regenerated canonical Chordsmith HTML includes
+the shared planner; no dependency, licence, version or capture-plumbing changes.
+
+Not published. Source candidate only: no new installer or real device/listening
+acceptance, no complete authored song/full-bus nonlinear mix parity claim from the
+single-source reference captures. Two ignored Rust tests are not passes. Existing
+Windows WebKit live-audio limitation remains. Mic is scoped omitted, not passed;
+retain Sam's hands-on check if final shared risk requires it. Core repo-only/no
+npm, no Reef Sweep/PR75/dependency merges. Remaining whole-family Godot runtime
+routes, layout/BeatStitch/finishing and exact installed acceptance remain active.

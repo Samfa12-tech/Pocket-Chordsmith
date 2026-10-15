@@ -1,5 +1,5 @@
 import type { Clip, JsonObject, PocketDawProject, TrackRole } from "../daw/schema";
-import { sortClips, timelineDurationSeconds, timelineSecondsAtBar } from "../daw/timeline";
+import { sortClips, timelineDurationSeconds, timelineSecondsAtBar, timelineMetricsAtSortedBars } from "../daw/timeline";
 import { clipIsAudibleTake, clipSourceStartBar } from "../daw/clips";
 import { midiDataFromClip, midiTempoMappedSecondsAtTick } from "../daw/midiClips";
 import { anyDrumLaneSolo, DRUM_LANE_DEFS, generatedDrumBranchLane, getDrumBranchLaneSteps, getDrumLaneMix, type DrumLaneId } from "../daw/drumLanes";
@@ -25,6 +25,7 @@ import {
 } from "../../../../packages/pocket-audio-core/src/music/pitches.js";
 import { DEFAULT_MELODY_INSTRUMENT } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { DEFAULT_GUITAR_STRUM_MODE } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import { CAMPFIRE_ACOUSTIC_RECIPE, campfireAcousticVoicing, campfireAcousticPerformanceNote } from "../../../../packages/pocket-audio-core/src/sounds/campfire-acoustic.js";
 import { CHORDSMITH_SEQUENCED_DRUM_LANE_IDS, chordsmithLiveDrumPadPeak } from "../../../../packages/pocket-audio-core/src/sounds/drum-lanes.js";
 
 export type RenderedEventKind = DrumLaneId | "texture" | "bass" | "chord" | "melody" | "guitar" | "midi";
@@ -48,6 +49,8 @@ export interface RenderedEvent {
   midiExportVelocity?: number;
   detuneCents?: number;
   velocity: number;
+  /** Prepared Campfire clip gain is independent of its bounded note velocity. */
+  clipGain?: number;
   pan?: number;
   instrument?: string;
   drumLane?: DrumLaneId;
@@ -282,9 +285,15 @@ function renderGeneratedSectionEvents(
   const clipGain = clip.transforms.gain ?? 1;
   const stemMutes = clip.transforms.stemMutes || {};
   const sourceMeta = sourceEventMetadata(pcs);
+  const campfire = pcs.guitarTone === CAMPFIRE_ACOUSTIC_RECIPE.id;
+  const automaticCampfire = campfire && section.guitarPerformance === "strum_pick";
+  const beatSteps = automaticCampfire ? Array.from({length:renderSteps}, (_,localStep) => localStep).filter(localStep => (sourceStartStep + localStep) % resolution === 0) : [];
+  const mappedCampfireClock = automaticCampfire && projectUsesTimelineClock(project);
+  const beatMetrics = mappedCampfireClock ? timelineMetricsAtSortedBars(project, beatSteps.map(localStep => clip.startBar + localStep / stepsPerBar)) : [];
+  const campfireBeatTimes = new Map(beatSteps.map((localStep,index) => [localStep,mappedCampfireClock ? beatMetrics[index].timeSeconds : ((clip.startBar - 1) * timeSig + localStep / resolution) * secondsPerBeat]));
   const richRoles = new Set(
     Object.entries(section.richEvents || {})
-      .filter(([role, events]) => richRoleRequiresDirectRendering(pcs, role, events))
+      .filter(([role, events]) => !(automaticCampfire && normalizedRichTrackRole(role) === "guitar") && richRoleRequiresDirectRendering(pcs, role, events))
       .map(([role]) => normalizedRichTrackRole(role))
       .filter((role): role is TrackRole => role !== null)
   );
@@ -570,6 +579,22 @@ function renderGeneratedSectionEvents(
     }
 
     if (!stemMutes.guitar && !richRoles.has("guitar") && pcs.guitarEnabled) {
+      if (automaticCampfire) {
+        if (step % resolution !== 0) continue;
+        const beat = Math.floor(step / resolution);
+        const chord = currentChord(pcs, section, step);
+        const note = campfireAcousticPerformanceNote({beat,rootPc:chord.rootPc,quality:chord.quality,register:pcs.guitarRegister,direction:guitarDirectionForStep(Math.floor(beat / 4),pcs.guitarStrumMode)});
+        if (!note) continue;
+        out.push({
+          ...note, ...sourceMeta, id:`${clip.id}_guitar_${step}`,clipId:clip.id,kind:"guitar",trackId:"guitar",role:"guitar",
+          time:humanizedTime(pcs,campfireBeatTimes.get(localStep) ?? eventTime,step,17),
+          bar:eventBar,step,velocity:note.velocity,clipGain,
+          ...(note.midi === undefined ? {} : {midi:applyClipPitchTransform(note.midi,clip)}),
+          ...(note.midiNotes ? {midiNotes:note.midiNotes.map(midi => applyClipPitchTransform(midi,clip))} : {}),
+          direction:note.direction as "down" | "up"
+        });
+        continue;
+      }
       const art = section.guitarPattern[step];
       if (art && art !== "off" && art !== "hold") {
         out.push({
@@ -582,11 +607,13 @@ function renderGeneratedSectionEvents(
           duration: guitarStepDuration(section, step, art, secondsPerBeat, resolution, swing, sectionMaxSteps),
           bar: eventBar,
           step,
-          midiNotes: powerChordNotes(pcs, currentChord(pcs, section, step)).map((midi) => applyClipPitchTransform(midi, clip)),
-          velocity: clipGain,
+          midiNotes: (campfire ? campfireAcousticVoicing({...currentChord(pcs,section,step),register:pcs.guitarRegister}) : powerChordNotes(pcs, currentChord(pcs, section, step))).map((midi) => applyClipPitchTransform(midi, clip)),
+          velocity: campfire ? (art === "accent" ? 1.28 : 1) : clipGain,
+          ...(campfire ? {clipGain} : {}),
           articulation: art,
           instrument: pcs.guitarTone,
           direction: guitarDirectionForStep(step, pcs.guitarStrumMode),
+          ...(campfire ? {technique:{campfire:{recipeVersion:1,strumSeconds:0.027,tailPolicy:"reference-cut"}}} : {}),
           ...sourceMeta
         });
       }
@@ -627,6 +654,7 @@ function renderRichSectionEvents(
       const baseDuration = Math.max(0.01, end - start);
       const mappedArticulation = mapPcsArticulation(event.articulation);
       const mappedSound = mapPcsSound(pcs.soundProfile.id, event.sound);
+      const preparedCampfire = stemRole === "guitar" && mappedSound === "campfire_acoustic";
       const noteValues = event.notes?.length ? event.notes : typeof event.note === "number" ? [event.note] : [];
       const midiNotes = noteValues.map(richNoteToMidi).map((note) => applyClipPitchTransform(note, clip));
       const expressionPan = numericJsonField(event.expression, "pan");
@@ -653,7 +681,8 @@ function renderRichSectionEvents(
         bar: clip.startBar + Math.floor(localStep / window.stepsPerBar),
         step: sourceStep,
         ...(typeof event.tick === "number" ? { tick: event.tick } : {}),
-        velocity: richVelocity(event.velocity) * window.clipGain * profileVelocityScale,
+        velocity: richVelocity(event.velocity) * (preparedCampfire ? 1 : window.clipGain) * profileVelocityScale,
+        ...(preparedCampfire ? {clipGain:window.clipGain} : {}),
         ...(expressionPan === null ? {} : { pan: Math.max(-1, Math.min(1, expressionPan)) }),
         ...(stemRole === "drums" && mappedArticulation === "finger" ? {} : { articulation: mappedArticulation }),
         accent: event.articulation === "accent" || event.expression.accent === true || event.velocity >= 110,

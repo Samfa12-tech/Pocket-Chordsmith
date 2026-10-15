@@ -88,6 +88,7 @@ export interface NativeAudioEvent {
   detuneCents?: number;
   midiNotes: number[];
   velocity: number;
+  clipGain?: number;
   step?: number;
   pan?: number;
   instrument?: string;
@@ -498,6 +499,7 @@ export function buildNativeAudioStartPayload(
       slideOffset: event.slideOffset,
       detuneCents: event.detuneCents,
       midiNotes: event.midiNotes || [],
+      ...(typeof event.clipGain === "number" ? {clipGain:event.clipGain} : {}),
       velocity: clamp(event.velocity, 0, 1.4),
       step: event.step,
       pan: event.pan,

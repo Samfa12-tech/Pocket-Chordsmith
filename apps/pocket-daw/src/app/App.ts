@@ -223,6 +223,7 @@ import {
   setDrumLanePanCommand,
   setDrumLaneVolumeCommand,
   setGuitarSettingsCommand,
+  setGuitarPerformanceCommand,
   setFxSlotParameterCommand,
   setExportProfileSettingCommand,
   setPocketProEqPresetCommand,
@@ -1778,6 +1779,10 @@ export class App {
   private render(options: RenderOptions = {}) {
     this.playbackRenderScheduler.cancelPending(this.renderSchedulerTimers());
     const scroll = options.preserveScroll ? this.captureScrollSnapshot() : null;
+    const focused = document.activeElement instanceof HTMLElement && this.root.contains(document.activeElement) ? document.activeElement : null;
+    const guitarFocus = focused?.hasAttribute("data-guitar-performance")
+      ? `[data-guitar-performance="${CSS.escape(focused.dataset.guitarPerformance || "")}"]`
+      : focused?.hasAttribute("data-guitar-setting") ? `[data-guitar-setting="${CSS.escape(focused.dataset.guitarSetting || "")}"]` : null;
     this.renderCount += 1;
     if (this.state.playing || this.engine.isPlaying()) this.renderCountDuringPlayback += 1;
     this.state.nativeCacheStatus = nativeCacheStatusFromDiagnostics(this.engine.getDiagnostics());
@@ -1788,6 +1793,7 @@ export class App {
     this.applyButtonTooltips();
     this.bind();
     this.syncDialogAccessibility();
+    if (guitarFocus && document.activeElement === document.body) this.root.querySelector<HTMLElement>(guitarFocus)?.focus({preventScroll:true});
     if (scroll) this.restoreScrollSnapshotSoon(scroll);
   }
 
@@ -2605,6 +2611,9 @@ export class App {
         const value = input instanceof HTMLInputElement && input.type === "checkbox" ? input.checked : input.value;
         this.applyChordsmithEditorEdit(setGuitarSettingsCommand(this.state, { [field]: field === "guitarVolume" ? Number(value) : value }), "chordsmith-guitar-settings");
       });
+    });
+    this.root.querySelectorAll<HTMLSelectElement>("[data-guitar-performance]").forEach((select) => {
+      select.addEventListener("change", () => this.applyChordsmithEditorEdit(setGuitarPerformanceCommand(this.state,select.dataset.guitarPerformance || "",select.value),"chordsmith-guitar-performance"));
     });
     this.root.querySelectorAll<HTMLSelectElement>("[data-section-chord]").forEach((select) => {
       select.addEventListener("change", () => {

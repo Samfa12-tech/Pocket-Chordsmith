@@ -27,6 +27,41 @@ async function openSoundLibrary(page) {
   return library;
 }
 
+test("Campfire editor controls retain focus, stored grid and undo with native playback tested separately", async ({ page }) => {
+  await gotoApp(page);
+  await openImportPanel(page);
+  await page.locator("#importText").fill(JSON.stringify({projectVersion:17,key:"D",bpm:76,timeSig:4,resolution:4,guitarEnabled:true,guitarTone:"clean",sectionBars:{A:1},songSequence:["A"],guitarPatternA:["open"]}));
+  await page.locator('[data-action="import-text"]').click();
+  const close=page.locator('[data-action="file-window-close"]');
+  if(await close.isVisible()) await close.click();
+  await page.locator('.timeline-track-header[data-track-id="guitar"]').click({position:{x:4,y:8}});
+  await page.getByRole("button",{name:"Inspector",exact:true}).click();
+  const tone=page.locator('[data-guitar-setting="guitarTone"]');
+  await expect(tone).toBeVisible();
+  await tone.focus();
+  await tone.selectOption("campfire_acoustic");
+  await expect(tone).toHaveValue("campfire_acoustic");
+  await expect(tone).toBeFocused();
+  const performance=page.locator('[data-guitar-performance="A"]');
+  await performance.focus();
+  await performance.selectOption("strum_pick");
+  await expect(performance).toHaveValue("strum_pick");
+  await expect(performance).toBeFocused();
+  await expect(page.locator('[data-guitar-setting="guitarRegister"] option[value="high"]')).toHaveAttribute("disabled", "");
+  for (const surface of ['.timeline-step', '.sequencer-block']) {
+    const step = surface === '.timeline-step' ? page.locator('.timeline-step[data-guitar-step="A:0"]') : page.locator('.sequencer-block [data-guitar-step="A:0"]');
+    await expect(step).toBeDisabled();
+    await expect(step).toHaveAttribute("aria-label",/Strum/i);
+  }
+  await expect(page.locator('.sequencer-block [data-guitar-step="A:4"]')).toHaveAttribute("aria-label",/Pick/i);
+  await performance.selectOption("grid");
+  await expect(page.locator('.sequencer-block [data-guitar-step="A:0"]')).toBeEnabled();
+  await expect(page.locator('.timeline-step[data-guitar-step="A:0"]')).toBeEnabled();
+  await expect(page.locator('.sequencer-block [data-guitar-step="A:0"]')).toHaveAttribute("aria-label",/Open/i);
+  await page.locator('[data-action="undo"]:visible').first().click();
+  await expect(performance).toHaveValue("strum_pick");
+});
+
 test("starts the browser fallback and exposes core DAW controls", async ({ page }) => {
   await gotoApp(page);
 

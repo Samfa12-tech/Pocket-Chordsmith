@@ -2,8 +2,9 @@ import type { Clip, PocketDawProject, SourceRef, TimelineMarker } from "./schema
 import { cloneProject } from "./dawProject";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
-import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STEP_CYCLE, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STEP_CYCLE, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES, POCKET_PREPARED_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 import { chordsmithAutoBassMidi, chordsmithBassIndexToMidi, chordsmithChordForStep } from "../../../../packages/pocket-audio-core/src/music/pitches.js";
+import { richTrackStem } from "../../../../packages/pocket-audio-core/src/schema/rich-track-stem.js";
 import {
   drumPresetEventsForProject,
   drumPresetVisibleForProject,
@@ -47,7 +48,7 @@ const SECTION_COLORS: Record<string, string> = {
 const BASS_CYCLE: Array<number | null> = [null, 0, 4, 7, 11];
 const MELODY_CYCLE: Array<number | null> = [null, 0, 2, 4, 7, 9, 12];
 const GUITAR_CYCLE = POCKET_GUITAR_STEP_CYCLE;
-const GUITAR_TONES = POCKET_GUITAR_TONES;
+const GUITAR_TONES = [...POCKET_GUITAR_TONES, ...POCKET_PREPARED_GUITAR_TONES];
 const GUITAR_REGISTERS = POCKET_GUITAR_REGISTERS;
 const GUITAR_STRUM_MODES = POCKET_GUITAR_STRUM_MODES;
 
@@ -168,6 +169,7 @@ export function configureFaithfulMidiChordsmithStructure(project: PocketDawProje
       section.bassSlide = new Array<boolean>(steps).fill(false);
       section.bassAccent = new Array<boolean>(steps).fill(false);
       section.guitarPattern = new Array<string>(steps).fill("off");
+      section.guitarPerformance = "grid";
     });
 
     next.timeline.clips = next.timeline.clips.filter((clip) => clip.type !== "generated-section" || clip.linked === false);
@@ -309,16 +311,31 @@ export function applyDrumPreset(project: PocketDawProject, sectionId: SectionId,
 
 export function applyGuitarPreset(project: PocketDawProject, sectionId: SectionId, presetId: string): PocketDawProject {
   const preset = findGuitarPreset(presetId);
+  let replacePreparedSource = false;
   return editChordsmithSection(project, sectionId, (pcs, section) => {
     if (!preset || !guitarPresetVisibleForProject(preset, pcs)) return;
     const { pattern } = guitarPresetPatternForProject(preset.id, pcs, section);
     if (!pattern.length) return;
+    replacePreparedSource = pcs.guitarTone === "campfire_acoustic" || section.richEvents.guitar.some(event => event.sound === "campfire_acoustic");
+    if (replacePreparedSource) section.richEvents.guitar = [];
     const totalSteps = totalEditorSteps(pcs, section);
     section.guitarPattern = pattern.slice(0, totalSteps);
+    section.guitarPerformance = "grid";
     while (section.guitarPattern.length < totalSteps) section.guitarPattern.push("off");
     pcs.guitarEnabled = true;
     pcs.guitarPatternPreset = preset.id;
   }, (next, pcs) => {
+    if (replacePreparedSource) {
+      const original = getPrimaryChordsmithSourceRef(next)?.original;
+      if (original && typeof original === "object" && !Array.isArray(original)) {
+        const sections = original.sections;
+        const section = sections && typeof sections === "object" && !Array.isArray(sections) ? sections[sectionId] : null;
+        const tracks = section && typeof section === "object" && !Array.isArray(section) ? section.tracks : null;
+        if (tracks && typeof tracks === "object" && !Array.isArray(tracks)) Object.entries(tracks).forEach(([id, track]) => {
+          if (track && typeof track === "object" && !Array.isArray(track) && richTrackStem(id,track) === "guitar") track.events = [];
+        });
+      }
+    }
     syncGuitarTrackFromSource(next, pcs, false);
   });
 }
@@ -531,6 +548,8 @@ export function cycleGuitarStep(project: PocketDawProject, sectionId: SectionId,
 }
 
 export function setGuitarSettings(project: PocketDawProject, patch: GuitarSettingsPatch): PocketDawProject {
+  const source = getPrimaryChordsmithSource(project);
+  if (source && (patch.guitarTone ?? source.guitarTone) === "campfire_acoustic" && (patch.guitarRegister ?? source.guitarRegister) === "high" && Object.values(source.sections).some(section => section.guitarPerformance === "strum_pick")) return project;
   return editChordsmithProject(project, (pcs, next) => {
     if (patch.guitarEnabled !== undefined) pcs.guitarEnabled = !!patch.guitarEnabled;
     if (patch.guitarTone !== undefined) pcs.guitarTone = safeChoiceText(patch.guitarTone, GUITAR_TONES, pcs.guitarTone || DEFAULT_GUITAR_TONE);
@@ -541,6 +560,14 @@ export function setGuitarSettings(project: PocketDawProject, patch: GuitarSettin
     if (guitar) {
       syncGuitarTrackFromSource(next, pcs, true);
     }
+  });
+}
+
+export function setGuitarPerformance(project: PocketDawProject, sectionId: SectionId, value: string): PocketDawProject {
+  const source = getPrimaryChordsmithSource(project);
+  if (value === "strum_pick" && (source?.guitarTone !== "campfire_acoustic" || source.guitarRegister === "high")) return project;
+  return editChordsmithSection(project, sectionId, (_pcs, section) => {
+    section.guitarPerformance = value === "strum_pick" ? "strum_pick" : "grid";
   });
 }
 
@@ -770,6 +797,7 @@ function syncChordsmithOriginalShadow(ref: SourceRef, pcs: SanitizedPcsProject, 
   target[`melodySlide${sectionId}`] = section.melodySlide.map((track) => track.slice());
   target[`melodyTuplets${sectionId}`] = section.melodyTuplets.map((track) => track.slice());
   target[`guitarPattern${sectionId}`] = section.guitarPattern.slice();
+  target[`guitarPerformance${sectionId}`] = section.guitarPerformance || "grid";
 }
 
 function syncChordsmithOriginalGlobals(ref: SourceRef, pcs: SanitizedPcsProject) {

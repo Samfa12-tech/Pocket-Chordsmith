@@ -2098,6 +2098,14 @@ export const FUNCTION_ACTION_REFERENCE: FunctionActionReference[] = [
     aiNote: "Guitar enable state affects whether guitar material is audible and exported."
   },
   {
+    surface: "Chordsmith Editing",
+    control: "Guitar Performance",
+    selector: "data-guitar-performance",
+    does: "Chooses the stored grid or Campfire strum and pick for the current section.",
+    useWhen: "Use Campfire Acoustic in Low or Mid register to follow the section chords with strums and picked notes.",
+    aiNote: "The stored grid and imported rich notes remain intact. Choose Grid or Undo to restore them. High picking is unavailable."
+  },
+  {
     surface: "Drum Kit Lanes",
     control: "Branch Drums",
     actionId: "branch-generated-drums",

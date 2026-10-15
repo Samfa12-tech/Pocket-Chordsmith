@@ -127,6 +127,29 @@ export function campfireAcousticVoicing({ rootPc, quality = "maj", register = "l
   return (reference?.notes || [root, root + fifth, root + 12, root + third + 12]).map((note) => note + octave);
 }
 
+// Clock-free performance intent shared by Core and native authoring. Hosts keep
+// their existing timeline/sample clock and apply only their own clip transforms.
+/**
+ * @param {{beat:number, rootPc:number, quality?:string, register?:string, direction?:string}} options
+ * @returns {{midi?:number, midiNotes?:number[], instrument:string, duration:number, velocity:number, articulation:string, direction:string, technique:{campfire:{recipeVersion:number,strumSeconds:number,tailPolicy:string}}} | null}
+ */
+export function campfireAcousticPerformanceNote({ beat, rootPc, quality = "maj", register = "low", direction = "down" } = {}) {
+  requireInteger(beat, 0, 16383, "performance beat");
+  if (!["down", "up"].includes(direction)) throw new RangeError(`Unsupported Campfire direction: ${direction}`);
+  if (beat % 4 !== 0 && beat % 2 !== 1) return null;
+  const notes = campfireAcousticVoicing({rootPc, quality, register});
+  const picked = beat % 2 === 1;
+  const midi = picked ? notes[beat % 3 === 1 ? 3 : 2] + 12 : undefined;
+  if (picked && midi > CAMPFIRE_ACOUSTIC_RECIPE.maxMidi) throw new RangeError("Campfire strum and pick needs Low or Mid register. High picking exceeds the supported note range.");
+  return {
+    ...(picked ? {midi} : {midiNotes:notes}),
+    instrument:CAMPFIRE_ACOUSTIC_RECIPE.id, duration:1.5,
+    velocity:picked ? 0.15 / CAMPFIRE_ACOUSTIC_RECIPE.noteGain : 1,
+    articulation:"open", direction,
+    technique:{campfire:{recipeVersion:1,strumSeconds:0.027,tailPolicy:"reference-cut"}}
+  };
+}
+
 function campfireEventParameters(event, { sampleRate = 44100, noteGain = 0.36 } = {}) {
   const notes = event.midiNotes?.length ? [...event.midiNotes] : [event.midi];
   if (notes.length > 12) throw new RangeError("Campfire supports at most 12 ordered notes per event.");

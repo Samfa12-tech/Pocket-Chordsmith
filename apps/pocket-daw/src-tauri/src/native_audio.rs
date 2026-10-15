@@ -518,6 +518,8 @@ pub struct NativeRenderedEvent {
     #[serde(rename = "midiNotes", default)]
     midi_notes: Vec<f64>,
     velocity: f64,
+    #[serde(rename = "clipGain")]
+    clip_gain: Option<f64>,
     step: Option<f64>,
     pan: Option<f64>,
     instrument: Option<String>,
@@ -2452,7 +2454,10 @@ fn render_playback_to_wav(
             .iter()
             .filter(|event| is_campfire_event(event))
             .filter(|event| {
-                event.time < duration_seconds && event.velocity > 0.0 && master_gain(playback) > 0.0
+                event.time < duration_seconds
+                    && event.velocity > 0.0
+                    && event.clip_gain.unwrap_or(1.0) > 0.0
+                    && master_gain(playback) > 0.0
             })
             .filter(|event| {
                 playback
@@ -2817,6 +2822,7 @@ fn render_generated_event_source(
     } else {
         let sample = if let Some(prepared) = route.campfire.as_ref() {
             prepared.sample_at_timeline_position(t, event.time)
+                * event.clip_gain.unwrap_or(1.0) as f32
         } else {
             render_event_sample(event, t)
         };
@@ -6928,6 +6934,12 @@ fn prepare_campfire_events(
     }
     let mut bank = CampfireNoteBank::new(sample_rate, 64 * 1024 * 1024)?;
     for event in events.iter().filter(|event| is_campfire_event(event)) {
+        if event
+            .clip_gain
+            .is_some_and(|gain| !gain.is_finite() || !(0.0..=4.0).contains(&gain))
+        {
+            return Err("Campfire clip gain must be finite and from 0 to 4.".into());
+        }
         if !event.time.is_finite() || event.time < 0.0 {
             return Err("Campfire event time must be finite and nonnegative.".into());
         }
@@ -11152,6 +11164,37 @@ mod tests {
     }
 
     #[test]
+    fn native_campfire_clip_gain_is_separate_from_note_velocity_and_reuses_pcm() {
+        let mut playback = campfire_test_playback(0.0);
+        let prepared = Arc::clone(playback.campfire_events.get("campfire").unwrap());
+        let mut budget = TrackSourceBudget::with_capacity(4);
+        let reference =
+            render_generated_event_source(&mut playback, 0, 0.1, &mut budget, false).unwrap();
+        for gain in [0.4, 1.0, 4.0] {
+            playback.events[0].clip_gain = Some(gain);
+            let mut budget = TrackSourceBudget::with_capacity(4);
+            let actual =
+                render_generated_event_source(&mut playback, 0, 0.1, &mut budget, false).unwrap();
+            assert!((actual.left - reference.left * gain as f32).abs() < 1e-8);
+            assert!((actual.right - reference.right * gain as f32).abs() < 1e-8);
+            assert!(Arc::ptr_eq(
+                &prepared,
+                playback.campfire_events.get("campfire").unwrap()
+            ));
+            assert_eq!(playback.events[0].velocity, 0.8);
+        }
+        assert!(prepare_campfire_events(&playback.events, 8000).is_ok());
+        playback.events[0].clip_gain = Some(0.0);
+        let mut budget = TrackSourceBudget::with_capacity(4);
+        assert!(render_generated_event_source(&mut playback, 0, 0.1, &mut budget, false).is_none());
+        for invalid in [f64::NAN, f64::INFINITY, -0.01, 4.01] {
+            playback.events[0].clip_gain = Some(invalid);
+            assert!(prepare_campfire_events(&playback.events, 8000)
+                .is_err_and(|error| error.contains("clip gain")));
+        }
+    }
+
+    #[test]
     fn native_campfire_full_stereo_graph_is_invariant_at_later_onsets_and_tail_seeks() {
         fn retain_capture(
             rate: u32,
@@ -11388,12 +11431,14 @@ mod tests {
 
     #[test]
     fn native_campfire_mix_tail_does_not_extend_for_explicitly_silent_sources() {
-        for silent in ["velocity", "track-volume", "master-volume"] {
+        for silent in ["velocity", "clip-gain", "track-volume", "master-volume"] {
             let mut playback = campfire_test_playback(0.9);
             if silent == "velocity" {
                 playback.events[0].velocity = 0.0;
                 playback.campfire_events = prepare_campfire_events(&playback.events, 8000).unwrap();
                 playback.compiled_event_routes.clear();
+            } else if silent == "clip-gain" {
+                playback.events[0].clip_gain = Some(0.0);
             } else if silent == "track-volume" {
                 playback.tracks.get_mut("guitar").unwrap().volume = 0.0;
             } else {
@@ -11585,6 +11630,7 @@ mod tests {
             detune_cents: None,
             midi_notes: Vec::new(),
             velocity,
+            clip_gain: None,
             step: Some(0.0),
             pan: None,
             instrument: None,
@@ -11622,6 +11668,7 @@ mod tests {
             detune_cents: None,
             midi_notes: vec![40.0, 47.0, 52.0],
             velocity: 1.0,
+            clip_gain: None,
             step: Some(0.0),
             pan: None,
             instrument: Some(tone.to_string()),
@@ -11659,6 +11706,7 @@ mod tests {
             detune_cents: None,
             midi_notes: Vec::new(),
             velocity: 0.0,
+            clip_gain: None,
             step: Some(0.0),
             pan: None,
             instrument: None,
@@ -11696,6 +11744,7 @@ mod tests {
             detune_cents: None,
             midi_notes: vec![48.0, 55.0, 64.0],
             velocity: 1.0,
+            clip_gain: None,
             step: Some(0.0),
             pan: None,
             instrument: Some("warm_pad".to_string()),

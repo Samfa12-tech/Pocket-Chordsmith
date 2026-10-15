@@ -17,7 +17,7 @@ import { encodeWav } from "./offlineRender";
 
 export const NATIVE_RENDER_CACHE_ROOT = "project-cache/native-audio";
 export const NATIVE_GENERATED_STEM_TAIL_SECONDS = 0.25;
-export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v42-680a0e22-campfire-acoustic-r1";
+export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v43-campfire-authoring-gain-a3073ea9";
 export const NATIVE_CACHE_STEM_RENDER_MODE = "cache-stem";
 const STEM_ROLES: TrackRole[] = ["drums", "bass", "chords", "melody", "guitar"];
 
@@ -1083,6 +1083,7 @@ async function renderNativeGeneratedStemWav(assetProject: PocketDawProject, dura
     const events = renderTimelineEvents(assetProject);
     for (const event of events) {
       if (event.trackId !== trackId || event.kind !== "guitar" || event.instrument !== "campfire_acoustic") continue;
+      if (event.velocity <= 0 || (event.clipGain ?? 1) <= 0) continue;
       durationSeconds = Math.max(durationSeconds, event.time + campfireAcousticEventFrameCount(event, { sampleRate: assetProject.project.sampleRate }) / assetProject.project.sampleRate);
     }
     const payload = buildNativeAudioStartPayload(assetProject, events, 0);

@@ -8,7 +8,7 @@ import { drumPresetLabel, visibleDrumPresetsForProject } from "../daw/chordsmith
 import { guitarPresetLabel, visibleGuitarPresetsForProject } from "../daw/chordsmithGuitarPresets";
 import { GAME_STATE_MARKERS, POCKET_DAW_VERSION, type AutomationLane, type AutomationPoint, type Clip, type FxChain, type FxPluginInstance, type GameStateMarkerId, type HostedPluginIdentity, type HostedPluginParameterDescriptor, type HostedPluginProjectMetadata, type HostedPluginStateSnapshot, type JsonObject, type Track } from "../daw/schema";
 import { POCKET_PRO_EQ_BANDS, POCKET_PRO_EQ_PRESETS, POCKET_PRO_EQ_TYPE } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
-import { POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import { POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES, POCKET_PREPARED_GUITAR_TONES } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
 import { POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { DEFAULT_STEM_MIX } from "../../../../packages/pocket-audio-core/src/constants.js";
 import { SECTION_IDS, type SanitizedPcsProject, type SanitizedPcsSection, type SectionId } from "../compatibility/pcsSanitizer";
@@ -870,7 +870,7 @@ function renderInlineChordsmithClip(
           : track.role === "melody"
             ? renderInlineMelodyEditor(section, selectedMelodyTrackIndex(track), sourceStartStep, renderSteps, state.chordsmithStepSelection)
             : track.role === "guitar"
-              ? renderInlineGuitarEditor(section, sourceStartStep, renderSteps)
+              ? renderInlineGuitarEditor(pcs, section, sourceStartStep, renderSteps)
               : "";
   if (!body) return "";
   return `
@@ -972,15 +972,23 @@ function renderInlineMelodyEditor(section: SanitizedPcsSection, trackIndex: numb
   `;
 }
 
-function renderInlineGuitarEditor(section: SanitizedPcsSection, startStep: number, steps: number): string {
+function guitarStepDisplay(pcs: SanitizedPcsProject, section: SanitizedPcsSection, step: number) {
+  const automatic = pcs.guitarTone === "campfire_acoustic" && section.guitarPerformance === "strum_pick";
+  const imported = !automatic && section.richEvents.guitar.some(event => !event.compactMirror && event.sound === "campfire_acoustic");
+  const beat = Math.floor(step / pcs.resolution);
+  const art = automatic ? step % pcs.resolution === 0 ? beat % 4 === 0 ? "strum" : beat % 2 === 1 ? "pick" : "off" : "off" : section.guitarPattern[step] || "off";
+  return {art, disabled: automatic || imported, hint: automatic ? ". Choose Grid to edit stored notes." : imported ? ". Imported notes play instead; choose a rhythm preset to replace them." : ""};
+}
+
+function renderInlineGuitarEditor(pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number): string {
   return `
     <div class="inline-lane single-inline-lane" data-step-grid="true" role="group" aria-label="Guitar steps">
       <div class="inline-step-grid" style="grid-template-columns:repeat(${steps}, minmax(0, 1fr));">
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
-          const art = section.guitarPattern[actualStep] || "off";
+          const {art, disabled, hint} = guitarStepDisplay(pcs, section, actualStep);
           const on = art !== "off";
-          return `<button class="step timeline-step guitar-step ${on ? "on" : ""}" ${stepCellAccessibility(`Guitar, section ${section.id}, step ${actualStep + 1}, ${on ? instrumentLabel(art) : "off"}`, on, step === 0, 0, step)} title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
+          return `<button class="step timeline-step guitar-step ${on ? "on" : ""}" ${disabled ? "disabled" : ""} ${stepCellAccessibility(`Guitar, section ${section.id}, step ${actualStep + 1}, ${on ? instrumentLabel(art) : "off"}`, on, step === 0, 0, step)} title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}${hint}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
         }).join("")}
       </div>
     </div>
@@ -2489,6 +2497,10 @@ function selectedMelodyTrackIndex(track: Track | null) {
 function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: SanitizedPcsProject, section: SanitizedPcsSection, startStep: number, steps: number): string {
   const guitarTrack = project.tracks.find((track) => track.role === "guitar");
   const inactive = !pcs.guitarEnabled || guitarTrack?.active === false;
+  const campfire = pcs.guitarTone === "campfire_acoustic";
+  const automaticCampfire = campfire && section.guitarPerformance === "strum_pick";
+  const exactImported = !automaticCampfire && section.richEvents.guitar.some(event => !event.compactMirror && event.sound === "campfire_acoustic");
+  const highPickingBlocked = campfire && Object.values(pcs.sections).some(part => part.guitarPerformance === "strum_pick");
   return `
     <div class="sequencer-block ${inactive ? "muted-editor" : ""}" data-step-grid="true" role="group" aria-label="Guitar sequencer">
       <strong>Guitar</strong>
@@ -2496,12 +2508,12 @@ function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: San
         <label class="inline-toggle" title="Enable or mute generated guitar playback for this Chordsmith source."><input data-guitar-setting="guitarEnabled" type="checkbox" ${pcs.guitarEnabled ? "checked" : ""} title="Enable or mute generated guitar playback for this Chordsmith source."> Enabled</label>
         <label>Tone
           <select data-guitar-setting="guitarTone">
-            ${POCKET_GUITAR_TONES.map((tone) => `<option value="${tone}" ${pcs.guitarTone === tone ? "selected" : ""}>${escapeHtml(instrumentLabel(tone))}</option>`).join("")}
+            ${[...POCKET_GUITAR_TONES,...POCKET_PREPARED_GUITAR_TONES].map((tone) => `<option value="${tone}" ${pcs.guitarTone === tone ? "selected" : ""}>${escapeHtml(instrumentLabel(tone))}</option>`).join("")}
           </select>
         </label>
         <label>Register
           <select data-guitar-setting="guitarRegister">
-            ${POCKET_GUITAR_REGISTERS.map((register) => `<option value="${register}" ${pcs.guitarRegister === register ? "selected" : ""}>${escapeHtml(instrumentLabel(register))}</option>`).join("")}
+            ${POCKET_GUITAR_REGISTERS.map((register) => `<option value="${register}" ${register === "high" && highPickingBlocked ? "disabled" : ""} ${pcs.guitarRegister === register ? "selected" : ""}>${escapeHtml(instrumentLabel(register))}</option>`).join("")}
           </select>
         </label>
         <label>Strum
@@ -2510,15 +2522,22 @@ function renderGuitarEditor(project: ReturnType<typeof currentProject>, pcs: San
           </select>
         </label>
         <label>Volume <input data-guitar-setting="guitarVolume" type="range" min="0" max="1" step="0.01" value="${sanitizeCssLengthOrNumber(pcs.guitarVolume, DEFAULT_STEM_MIX.guitar.volume, 0, 1)}"></label>
+        <label>Performance
+          <select data-guitar-performance="${section.id}" aria-describedby="guitar-performance-note-${section.id}">
+            <option value="grid" ${automaticCampfire ? "" : "selected"}>Grid</option>
+            <option value="strum_pick" ${!campfire || pcs.guitarRegister === "high" ? "disabled" : ""} ${automaticCampfire ? "selected" : ""}>Campfire strum + pick</option>
+          </select>
+        </label>
       </div>
+      <p class="muted" id="guitar-performance-note-${section.id}">${automaticCampfire ? "Strum + pick follows the chords. Your stored grid and imported notes are retained; choose Grid to restore them." : exactImported ? "Exact imported guitar notes retain their pitches, voices and timing. Choosing a rhythm preset replaces that part using the selected Tone; Undo restores it." : campfire ? "Full acoustic voicings. Chug/scratch use a natural pluck; seventh/sus compact chords use triads. Exact imported pitches are retained." : "Campfire strum + pick is available with Campfire Acoustic in Low or Mid register."}</p>
       ${renderStepRuler(startStep, steps)}
       <div class="sequencer-row">
         <span>pattern</span>
         ${Array.from({ length: steps }, (_, step) => {
           const actualStep = startStep + step;
-          const art = section.guitarPattern[actualStep] || "off";
+          const {art, disabled, hint} = guitarStepDisplay(pcs, section, actualStep);
           const on = art !== "off";
-          return `<button class="step guitar-step ${on ? "on" : ""}" ${stepCellAccessibility(`Guitar, section ${section.id}, step ${actualStep + 1}, ${on ? instrumentLabel(art) : "off"}`, on, step === 0, 0, step)} title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
+          return `<button class="step guitar-step ${on ? "on" : ""}" ${disabled ? "disabled" : ""} ${stepCellAccessibility(`Guitar, section ${section.id}, step ${actualStep + 1}, ${on ? instrumentLabel(art) : "off"}`, on, step === 0, 0, step)} title="${escapeAttr(`Guitar ${instrumentLabel(art)} step ${actualStep + 1}${hint}`)}" data-guitar-step="${sanitizeDataAttr(`${section.id}:${actualStep}`)}">${escapeHtml(GUITAR_LABELS[art] || art.slice(0, 2))}</button>`;
         }).join("")}
       </div>
     </div>
