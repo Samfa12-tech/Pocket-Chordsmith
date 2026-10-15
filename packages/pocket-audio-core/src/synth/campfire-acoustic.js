@@ -51,10 +51,10 @@ export async function prepareCampfireAcousticNoteBank(context, events, options =
       if (voice.stopped) continue;
       voice.stopped = true;
       const now = context.currentTime;
-        if (voice.when > now) {
-          voice.source.stop(now);
-          continue;
-        }
+      if (voice.when > now) {
+        voice.source.stop(now);
+        continue;
+      }
       rampVoiceGain(voice, 0, releaseSeconds);
       voice.source.stop(now + releaseSeconds);
     }
