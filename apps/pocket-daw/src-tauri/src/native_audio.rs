@@ -22,7 +22,7 @@ use crate::vst3_session::{
     Vst3GraphService, MAX_HOSTED_LATENCY_SAMPLES, MAX_HOSTED_TAIL_SAMPLES, VST3_BLOCK_FRAMES,
 };
 
-type NativeAudioState = Mutex<NativeAudioRuntime>;
+pub(crate) type NativeAudioState = Mutex<NativeAudioRuntime>;
 const CHORDSMITH_SIDECHAIN_ATTACK_SECONDS: f64 = 0.012;
 const CHORDSMITH_SIDECHAIN_RELEASE_SECONDS: f64 = 0.22;
 const CHORDSMITH_SIDECHAIN_DEPTH: f64 = 0.72;
@@ -311,7 +311,7 @@ pub struct NativeAudioStartPayload {
     #[serde(rename = "projectTitle")]
     project_title: Option<String>,
     #[serde(rename = "sampleRate", default)]
-    sample_rate: u32,
+    pub(crate) sample_rate: u32,
     #[serde(rename = "startSeconds")]
     start_seconds: f64,
     #[serde(default)]
@@ -373,6 +373,7 @@ struct NativeMonitorComparisonPayload {
 }
 
 struct NativeMonitorComparison {
+    last_sequence: u64,
     a_index: usize,
     b_index: usize,
     a_gain: f32,
@@ -483,6 +484,7 @@ fn validate_monitor_comparison(
         NativeMonitorSide::B => 1.0,
     };
     Ok(Some(NativeMonitorComparison {
+        last_sequence: 0,
         a_index,
         b_index,
         a_gain: comparison.a_gain,
@@ -1043,13 +1045,13 @@ pub struct NativeOutputDiagnostics {
 #[derive(Serialize)]
 pub struct NativeAudioRenderedWav {
     #[serde(rename = "sampleRate")]
-    sample_rate: u32,
-    channels: u16,
+    pub(crate) sample_rate: u32,
+    pub(crate) channels: u16,
     #[serde(rename = "durationSeconds")]
-    duration_seconds: f64,
+    pub(crate) duration_seconds: f64,
     #[serde(rename = "sizeBytes")]
-    size_bytes: usize,
-    bytes: Vec<u8>,
+    pub(crate) size_bytes: usize,
+    pub(crate) bytes: Vec<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -1383,12 +1385,49 @@ pub async fn native_audio_render_wav(
 }
 
 fn render_native_audio_wav_on_worker(
-    mut payload: NativeAudioStartPayload,
+    payload: NativeAudioStartPayload,
     duration_seconds: f64,
     render_mode: Option<String>,
     bit_depth: Option<u16>,
     state: &NativeAudioState,
 ) -> Result<NativeAudioRenderedWav, String> {
+    render_native_audio_wav_with_cancel(
+        payload,
+        duration_seconds,
+        render_mode,
+        bit_depth,
+        state,
+        None,
+    )
+}
+
+pub(crate) fn render_finish_preview_on_worker(
+    payload: NativeAudioStartPayload,
+    duration_seconds: f64,
+    state: &NativeAudioState,
+    cancelled: &AtomicBool,
+) -> Result<NativeAudioRenderedWav, String> {
+    render_native_audio_wav_with_cancel(
+        payload,
+        duration_seconds,
+        Some("mix-exact".into()),
+        Some(32),
+        state,
+        Some(cancelled),
+    )
+}
+
+fn render_native_audio_wav_with_cancel(
+    mut payload: NativeAudioStartPayload,
+    duration_seconds: f64,
+    render_mode: Option<String>,
+    bit_depth: Option<u16>,
+    state: &NativeAudioState,
+    cancelled: Option<&AtomicBool>,
+) -> Result<NativeAudioRenderedWav, String> {
+    if cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return Err("Finish preparation cancelled.".into());
+    }
     // Audition is a monitor control, never exported processing or duration.
     payload.audition = None;
     payload.monitor_comparison = None;
@@ -1410,11 +1449,12 @@ fn render_native_audio_wav_on_worker(
     let generation = runtime.generation;
     let mut playback = runtime.build_playback(payload, sample_rate, 2, generation)?;
     drop(runtime);
-    render_playback_to_wav(
+    render_playback_to_wav_cancellable(
         &mut playback,
         duration_seconds,
         parse_render_mode(render_mode.as_deref()),
         sanitize_offline_bit_depth(bit_depth),
+        cancelled,
     )
 }
 
@@ -1561,12 +1601,13 @@ pub fn native_audio_update_track(
 pub fn native_audio_compare_monitor(
     side: NativeMonitorSide,
     expected_generation: u64,
+    sequence: u64,
     state: tauri::State<'_, NativeAudioState>,
 ) -> Result<NativeAudioStatus, String> {
     let runtime = state
         .lock()
         .map_err(|_| "Native audio runtime lock was poisoned.".to_string())?;
-    switch_monitor_comparison(&runtime, side, expected_generation)?;
+    switch_monitor_comparison(&runtime, side, expected_generation, sequence)?;
     Ok(runtime.status())
 }
 
@@ -1574,6 +1615,7 @@ fn switch_monitor_comparison(
     runtime: &NativeAudioRuntime,
     side: NativeMonitorSide,
     expected_generation: u64,
+    sequence: u64,
 ) -> Result<(), String> {
     if runtime.generation != expected_generation {
         return Err("Monitor comparison was superseded by another playback request.".to_string());
@@ -1593,6 +1635,10 @@ fn switch_monitor_comparison(
         .monitor_comparison
         .as_mut()
         .ok_or("No active monitor comparison.")?;
+    if sequence <= comparison.last_sequence {
+        return Err("Monitor side change was superseded by a newer choice.".into());
+    }
+    comparison.last_sequence = sequence;
     comparison.switch(side, rate);
     Ok(())
 }
@@ -2134,7 +2180,7 @@ impl NativeAudioRuntime {
                 );
                 let stream_failed = output_diagnostics.stream_failed;
                 return NativeAudioStatus {
-                    monitor_comparison_version: 1,
+                    monitor_comparison_version: 2,
                     backend: "native-cpal".to_string(),
                     available: true,
                     active: !stream_failed,
@@ -2196,7 +2242,7 @@ impl NativeAudioRuntime {
             }
         }
         NativeAudioStatus {
-            monitor_comparison_version: 1,
+            monitor_comparison_version: 2,
             backend: "native-cpal".to_string(),
             available: true,
             active: false,
@@ -2295,7 +2341,7 @@ fn is_wav_path(path: &Path) -> bool {
 impl NativeAudioStatus {
     fn unavailable(last_error: Option<String>) -> Self {
         Self {
-            monitor_comparison_version: 1,
+            monitor_comparison_version: 2,
             backend: "native-cpal".to_string(),
             available: false,
             active: false,
@@ -2602,6 +2648,7 @@ fn sanitize_offline_sample_rate(sample_rate: u32) -> u32 {
 
 fn sanitize_offline_bit_depth(bit_depth: Option<u16>) -> u16 {
     match bit_depth {
+        Some(32) => 32,
         Some(24) => 24,
         _ => 16,
     }
@@ -2673,11 +2720,22 @@ fn parse_render_mode(value: Option<&str>) -> NativeAudioRenderMode {
     }
 }
 
+#[cfg(test)]
 fn render_playback_to_wav(
     playback: &mut PlaybackShared,
     duration_seconds: f64,
     mode: NativeAudioRenderMode,
     bit_depth: u16,
+) -> Result<NativeAudioRenderedWav, String> {
+    render_playback_to_wav_cancellable(playback, duration_seconds, mode, bit_depth, None)
+}
+
+fn render_playback_to_wav_cancellable(
+    playback: &mut PlaybackShared,
+    duration_seconds: f64,
+    mode: NativeAudioRenderMode,
+    bit_depth: u16,
+    cancelled: Option<&AtomicBool>,
 ) -> Result<NativeAudioRenderedWav, String> {
     if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
         return Err("Native offline render duration must be positive and finite.".to_string());
@@ -2748,9 +2806,13 @@ fn render_playback_to_wav(
     let bytes = match mode {
         NativeAudioRenderMode::Mix | NativeAudioRenderMode::MixExact => {
             if bit_depth == 32 {
-                render_float32_wav_frames(sample_rate, 2, frame_count, || {
-                    render_next_frame_with_campfire_cutoff(playback, campfire_cutoff)
-                })?
+                render_float32_wav_frames_cancellable(
+                    sample_rate,
+                    2,
+                    frame_count,
+                    cancelled,
+                    || render_next_frame_with_campfire_cutoff(playback, campfire_cutoff),
+                )?
             } else {
                 render_pcm_wav_frames(sample_rate, 2, bit_depth, frame_count, || {
                     render_next_frame_with_campfire_cutoff(playback, campfire_cutoff)
@@ -2836,6 +2898,19 @@ fn render_float32_wav_frames<F>(
     sample_rate: u32,
     channels: u16,
     frame_count: usize,
+    next_frame: F,
+) -> Result<Vec<u8>, String>
+where
+    F: FnMut() -> (f32, f32),
+{
+    render_float32_wav_frames_cancellable(sample_rate, channels, frame_count, None, next_frame)
+}
+
+fn render_float32_wav_frames_cancellable<F>(
+    sample_rate: u32,
+    channels: u16,
+    frame_count: usize,
+    cancelled: Option<&AtomicBool>,
     mut next_frame: F,
 ) -> Result<Vec<u8>, String>
 where
@@ -2843,7 +2918,12 @@ where
 {
     let data_len = wav_data_len(frame_count, channels, 4)?;
     let mut bytes = wav_header(sample_rate, channels, 3, 32, data_len)?;
-    for_each_frame_block(frame_count, |block_frames| {
+    let mut remaining = frame_count;
+    while remaining > 0 {
+        if cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return Err("Finish preparation cancelled.".into());
+        }
+        let block_frames = remaining.min(NATIVE_AUDIO_BLOCK_FRAMES);
         for _ in 0..block_frames {
             let (left, right) = next_frame();
             bytes.extend_from_slice(&left.to_le_bytes());
@@ -2851,7 +2931,8 @@ where
                 bytes.extend_from_slice(&right.to_le_bytes());
             }
         }
-    });
+        remaining -= block_frames;
+    }
     Ok(bytes)
 }
 
@@ -9936,7 +10017,7 @@ mod tests {
             .build_playback(monitor_payload(), 48_000, 2, 7)
             .unwrap();
         runtime.shared = Some(Arc::new(Mutex::new(playback)));
-        assert!(switch_monitor_comparison(&runtime, NativeMonitorSide::B, 6).is_err());
+        assert!(switch_monitor_comparison(&runtime, NativeMonitorSide::B, 6, 1).is_err());
         assert_eq!(
             runtime
                 .shared
@@ -9950,7 +10031,8 @@ mod tests {
                 .target_blend,
             0.0
         );
-        switch_monitor_comparison(&runtime, NativeMonitorSide::B, 7).unwrap();
+        switch_monitor_comparison(&runtime, NativeMonitorSide::B, 7, 2).unwrap();
+        assert!(switch_monitor_comparison(&runtime, NativeMonitorSide::A, 7, 1).is_err());
         let mut shared = runtime.shared.as_ref().unwrap().lock().unwrap();
         assert_eq!(
             shared.monitor_comparison.as_ref().unwrap().target_blend,
@@ -9959,7 +10041,81 @@ mod tests {
         assert_eq!(shared.position_seconds, 0.0);
         shared.playing = false;
         drop(shared);
-        assert!(switch_monitor_comparison(&runtime, NativeMonitorSide::A, 7).is_err());
+        assert!(switch_monitor_comparison(&runtime, NativeMonitorSide::A, 7, 3).is_err());
+    }
+
+    #[test]
+    fn native_worker_preserves_requested_float32_format_and_sample_precision() {
+        let mut payload = monitor_payload();
+        payload.sample_rate = 8_000;
+        payload.regions.clear();
+        payload.tracks = vec![test_track("bass", 1.0, 0.0, false, false)];
+        payload.events = vec![test_generated_event("precision", "bass", 0.0, 0.05, 0.001)];
+        let state = Mutex::new(NativeAudioRuntime::default());
+        let actual = render_native_audio_wav_on_worker(
+            payload.clone(),
+            0.1,
+            Some("mix-exact".into()),
+            Some(32),
+            &state,
+        )
+        .unwrap();
+        let mut direct = NativeAudioRuntime::default()
+            .build_playback(
+                {
+                    payload.audition = None;
+                    payload.monitor_comparison = None;
+                    payload
+                },
+                8_000,
+                2,
+                0,
+            )
+            .unwrap();
+        let expected =
+            render_playback_to_wav(&mut direct, 0.1, NativeAudioRenderMode::MixExact, 32).unwrap();
+        assert_eq!(
+            u16::from_le_bytes([actual.bytes[20], actual.bytes[21]]),
+            3,
+            "command adapter must retain IEEE float WAV"
+        );
+        assert_eq!(u16::from_le_bytes([actual.bytes[34], actual.bytes[35]]), 32);
+        assert_eq!(actual.bytes, expected.bytes);
+        assert!(actual.bytes[44..]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|chunk| f32::from_le_bytes(*chunk).abs() > 0.000001));
+    }
+
+    #[test]
+    fn preview_render_cancels_at_next_audio_block_without_returning_partial_wav() {
+        let cancelled = AtomicBool::new(false);
+        let mut frames = 0;
+        let result = render_float32_wav_frames_cancellable(
+            48_000,
+            2,
+            48_000 * 300,
+            Some(&cancelled),
+            || {
+                frames += 1;
+                if frames == 17 {
+                    cancelled.store(true, Ordering::Relaxed);
+                }
+                (0.1, -0.1)
+            },
+        );
+        assert!(result.unwrap_err().contains("cancelled"));
+        assert_eq!(frames, NATIVE_AUDIO_BLOCK_FRAMES);
+        let mut called = false;
+        assert!(
+            render_float32_wav_frames_cancellable(48_000, 2, 100, Some(&cancelled), || {
+                called = true;
+                (0.0, 0.0)
+            })
+            .is_err()
+        );
+        assert!(!called);
     }
 
     #[test]

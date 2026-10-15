@@ -3347,3 +3347,13 @@ button.record:hover {
     border-color: CanvasText;
   }
 }
+
+.finish-comparison { grid-column: 1 / -1; align-self: start; min-width: 0; padding: 1rem; border: 1px solid var(--border, #526078); border-radius: .5rem; }
+.finish-comparison label { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.finish-comparison select { max-width: 100%; }
+.finish-comparison summary { cursor: pointer; padding-block: .5rem; }
+.finish-comparison p, .finish-comparison li { overflow-wrap: anywhere; }
+.finish-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .75rem; }
+.finish-actions button { min-height: 44px; }
+.finish-actions button[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 2px; }
+.finish-warnings { border-inline-start: 3px solid #d8ac5c; padding-inline-start: 1.5rem; }

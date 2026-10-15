@@ -1212,3 +1212,58 @@ Not yet implemented by this foundation: preparation/analysis worker, long-song
 cancellation responsiveness, measured rendered-output warnings, UI Apply/Discard,
 preview/export decoded parity and installed acceptance. No public release,
 installer build, new dependency/account/licence/security change or Core npm.
+
+## Finish workflow and cancellable file-backed preparation (candidate after PR101)
+
+Implemented: Export/Finish UI prepares Original vs subtle tidy/glue/managed
+bypass without autoplay or source mutation, exposes visible passage/lead/tail,
+optional listening cues, estimated decoded-PCM LUFS/true peak and actionable
+warnings, A/B/Stop/Apply/Discard/one existing Undo. Stale project/selection/settings/
+transport and delayed commands cannot promote old proposals. Native monitor v2
+adds ordered side changes so a late older A/B command cannot override the latest
+choice. Recording blocks preparation/play/apply; shared capture plumbing unchanged.
+
+Prepared prefix WAVs use the existing native DSP worker and owned cache IDs,
+max two 128 MiB files and existing 600-second history limit; audible passage <=120
+seconds. Binary Response IPC plus transfer-to-worker avoids JSON preview sample
+arrays. Core analysis runs off UI/live callback; Abort terminates its worker and
+native render checks cancellation between128-frame blocks. Current decode/bank/
+plugin setup completes its operation first. Ready files are removed on discard/
+shutdown; next reservation sweeps only abandoned native-named preview files,
+preserving active/unrelated files. No project media/source file write. Explicit
+bounds and conservative meter labels retained.
+
+Real additional export bug: actual command adapter coerced requested float32 to
+PCM16. New actualworker regression FAILED oldadapter (format1 vs3), then passed
+corrected adapter byte-for-byte against direct float renderer. Defaults16/24
+unchanged; explicit float/dither intermediate now retains precision. Renderer
+contract v46-float-preview-80005e03 includes the bitdepth adapter. Final normalized/
+encoded output still requires decoded reanalysis; preview readings are not final
+file readings.
+
+Tested: final full DAW1226/1226, Rust213pass/3existingignored, fullbrowser39/39
+(including8Finish checks), types/build/Clippy, manifest111/tooling7, repository/
+security/workflowpins/soundprofile6surfaces/whitespace. Native cancellation test
+stops at128frames, no partial WAV. File persistence never overwrites existing
+files; cleanup preserves active/unrelated entries. Actual float worker counterexample
+log retained. Browser command fixtures establish control behavior only; real
+production worker transfers/analyzes five-minute48k stereo115200044-byte PCM,
+completes with continued UI heartbeats and cancels after actual analysis starts.
+Observed completed runs ~6.1-7.2sec and UI maxgaps109.5-138.3ms (diagnostic,
+not universal budgets); raw final reports retained. Tests requiring production
+static transport explicitly skip without it; skipped is not passed. Screenshot
+inspection caught narrow-column clipping; full-width row/scroll preservation and
+all-control/readings reachability now pass at1100x720 and800x600stress.
+
+Capture fingerprint exact e4ec7e55c375f6d43a7683bca61b3a4a60a96f73f9df9c09d745b21066aff770;
+microphone scoped omission, notpass. Documentation:
+apps/pocket-daw/docs/FINISH_COMPARISON_2026-10-16.md. Pending: combined real native
+preset/render/monitor integration, real vocal/live listening, decoded normalized/
+encoded output parity/reanalysis, installed Windows/WebView/scaling/device and
+remaining family acceptance/review/release targets. No installer/publication/new
+accounts/dependencies/licence/security changes/Core npm. No Sam input blocker.
+
+PR101 exact60b7c9f5a844887fb0f7cae1490dba6c882cf44f hostedCI38813156609 and
+CodeQL38813156556 terminalgreen; scoped skipped jobs remain skipped. Parent source
+review not inferred. Website editorial commit b2469ac41f721074868b89d1fbab9ccfea56e34f
+must be preserved from fresh website main for any later product-bundle publication.

@@ -15,6 +15,7 @@ import type { MidiChordsmithConversionIntent, MidiConversionRole } from "../daw/
 import type { MidiImportPlacementMode } from "../daw/midiClips";
 import { createEmptySampleLibraryIndex, type SampleLibraryCategory, type SampleLibraryIndex } from "../native/sampleLibrary";
 import type { Vst3BetaStatus, Vst3InstanceStatus, Vst3ModuleCandidate } from "../plugins/vst3Foundation";
+import type { FinishPresetId } from "../daw/finishing";
 
 export type ChordsmithStepSelection =
   | { kind: "drums"; sectionId: string; lane: DrumLaneId; step: number }
@@ -42,6 +43,15 @@ export interface AppState {
   auditionLeadInSeconds: number;
   auditionTailSeconds: number;
   selectionAudition: { phase: "idle" | "preparing" | "playing"; message: string };
+  finishComparison: {
+    presetId: FinishPresetId;
+    phase: "idle" | "preparing" | "ready" | "playing";
+    side: "a" | "b";
+    message: string;
+    rangeLabel: string;
+    readings: string[];
+    warnings: string[];
+  };
   playheadBar: number;
   meterLevels: Record<string, number>;
   importText: string;
@@ -295,6 +305,7 @@ export function createInitialState(): AppState {
     auditionLeadInSeconds: 0.5,
     auditionTailSeconds: 1,
     selectionAudition: { phase: "idle", message: "" },
+    finishComparison: { presetId: "tidy", phase: "idle", side: "a", message: "Choose a passage and prepare a comparison. Nothing plays or changes until you choose it.", rangeLabel: "", readings: [], warnings: [] },
     playheadBar: 1,
     meterLevels: {},
     importText: "",

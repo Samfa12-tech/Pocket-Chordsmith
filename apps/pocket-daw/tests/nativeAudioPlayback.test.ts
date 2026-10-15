@@ -28,7 +28,7 @@ describe("prepared comparison command ownership", () => {
     const invoke = vi.fn(async (_command: string) => status());
     const bridge = new NativeAudioPlaybackBridge(async () => ({ isAvailable: () => true, invoke: invoke as NativeAudioInvokeApi["invoke"] }));
     await bridge.compareMonitor("b", 42);
-    expect(invoke).toHaveBeenCalledWith("native_audio_compare_monitor", { side: "b", expectedGeneration: 42 });
+    expect(invoke).toHaveBeenCalledWith("native_audio_compare_monitor", { side: "b", expectedGeneration: 42, sequence: 1 });
   });
   it("does not invoke a delayed comparison after Stop supersedes it", async () => {
     let release!: (api: NativeAudioInvokeApi) => void;
@@ -42,6 +42,20 @@ describe("prepared comparison command ownership", () => {
     release(api);
     expect(await comparison).toBeNull();
     expect(invoke.mock.calls.map(call => call[0])).toEqual(["native_audio_stop"]);
+  });
+  it("drops an older delayed side change after a newer A/B choice", async () => {
+    let release!: (api: NativeAudioInvokeApi) => void;
+    const gate = new Promise<NativeAudioInvokeApi>(resolve => { release = resolve; });
+    const invoke = vi.fn(async (_command: string, _args?: Record<string, unknown>) => status());
+    const api = { isAvailable: () => true, invoke: invoke as NativeAudioInvokeApi["invoke"] };
+    let calls = 0;
+    const bridge = new NativeAudioPlaybackBridge(async () => ++calls === 1 ? gate : api);
+    const first = bridge.compareMonitor("a", 41);
+    await bridge.compareMonitor("b", 41);
+    release(api);
+    expect(await first).toBeNull();
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("native_audio_compare_monitor", { side: "b", expectedGeneration: 41, sequence: 2 });
   });
 });
 

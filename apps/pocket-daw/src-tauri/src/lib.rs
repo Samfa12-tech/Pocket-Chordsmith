@@ -10,6 +10,7 @@ mod campfire_acoustic;
 mod native_audio;
 mod native_audio_blocks;
 mod native_decode;
+mod native_finish_preview;
 mod native_recording;
 mod project_files;
 mod sample_library;
@@ -227,6 +228,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_deep_link::init())
         .manage(native_audio::create_native_audio_runtime())
+        .manage(native_finish_preview::FinishPreviewState::default())
         .manage(native_recording::create_native_recording_runtime())
         .manage(create_ai_bridge_runtime())
         .setup(|app| {
@@ -250,6 +252,10 @@ pub fn run() {
             probe_audio_devices,
             native_audio::native_audio_status,
             native_audio::native_audio_render_wav,
+            native_finish_preview::native_finish_preview_begin,
+            native_finish_preview::native_finish_preview_prepare,
+            native_finish_preview::native_finish_preview_read,
+            native_finish_preview::native_finish_preview_discard,
             native_audio::native_audio_start,
             native_audio::native_audio_preload_asset,
             native_audio::native_audio_pause,

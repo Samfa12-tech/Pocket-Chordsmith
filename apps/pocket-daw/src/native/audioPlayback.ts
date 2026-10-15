@@ -325,6 +325,7 @@ export interface NativeAudioStartResult {
 type NativeAudioApiFactory = () => Promise<NativeAudioInvokeApi | null>;
 
 export class NativeAudioPlaybackBridge {
+  private monitorSequence = 0;
   private readonly knownNativeAssetRevisions = new Set<string>();
   private assetResidencyGeneration = 0;
   private playbackRequest = 0;
@@ -436,7 +437,12 @@ export class NativeAudioPlaybackBridge {
   }
 
   async compareMonitor(side: "a" | "b", expectedGeneration: number): Promise<NativeAudioStatus | null> {
-    return this.invokeIfAvailable("native_audio_compare_monitor", { side, expectedGeneration }, this.playbackRequest);
+    const sequence = ++this.monitorSequence;
+    const request = this.playbackRequest;
+    const api = await this.apiFactory();
+    if (request !== this.playbackRequest || sequence !== this.monitorSequence || !api?.isAvailable()) return null;
+    try { return await api.invoke<NativeAudioStatus>("native_audio_compare_monitor", { side, expectedGeneration, sequence }); }
+    catch { return null; }
   }
 
   async status(): Promise<NativeAudioStatus | null> {

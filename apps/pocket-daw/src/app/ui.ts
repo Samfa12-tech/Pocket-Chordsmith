@@ -1,5 +1,6 @@
 import type { AppState } from "./state";
 import { selectionAuditionPlan } from "../daw/selectionAudition";
+import { FINISH_PRESETS } from "../daw/finishing";
 import { currentProject, isUiSectionCollapsed, type ChordsmithStepSelection, type LowerDockTab, type UiCollapseSection } from "./state";
 import { BUILT_IN_FX, getTrackFxChain } from "../daw/fx";
 import { DRUM_LANE_DEFS, drumBranchGroupCollapsed, generatedDrumBranchLane, getDrumBranchStepLevel, getDrumLaneFxChain, getDrumLaneMix, type DrumLaneId } from "../daw/drumLanes";
@@ -2643,7 +2644,7 @@ function renderLowerDockBody(state: AppState, project: ReturnType<typeof current
   if (tab === "automation") return renderLowerDockAutomation(project, selectedTrack);
   if (tab === "piano-roll") return renderLowerDockPianoRoll(project, state);
   if (tab === "audio-editor") return renderLowerDockAudioEditor(project, state);
-  if (tab === "export-details") return renderLowerDockExportDetails(project);
+  if (tab === "export-details") return renderLowerDockExportDetails(project, state);
   return `<div class="lower-dock-body mixer-strips">${project.tracks.map((track) => renderMixerStrip(project, track, state.meterLevels[track.id] || 0, state)).join("")}</div>`;
 }
 
@@ -2804,7 +2805,7 @@ function renderLowerDockAudioEditor(project: ReturnType<typeof currentProject>, 
   `;
 }
 
-function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>): string {
+function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>, state: AppState): string {
   const stems = createStemExportPlan(project);
   const loops = createSectionLoopMetadata(project);
   const enabledProfiles = project.exportProfiles.filter((profile) => profile.enabled);
@@ -2813,7 +2814,8 @@ function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>
   const sharedPortability = verifySharedMediaPortability(createPortableMediaProject(project));
   const deliveryTargets = createGamePackDeliveryTargets();
   return `
-    <div class="lower-dock-body lower-dock-detail lower-dock-export">
+    <div class="lower-dock-body lower-dock-detail lower-dock-export" data-scroll-key="export-details" tabindex="0" aria-label="Finish and export details">
+      ${renderFinishComparison(state)}
       <section class="dock-track-context">
         <h3>${escapeHtml(project.project.title || "Untitled project")}</h3>
         <p>${project.timeline.bars} bars / ${project.project.bpm} BPM / ${project.project.sampleRate} Hz</p>
@@ -2876,6 +2878,32 @@ function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>
       </section>
     </div>
   `;
+}
+
+function renderFinishComparison(state: AppState): string {
+  const finish = state.finishComparison;
+  const available = finish.phase === "ready" || finish.phase === "playing";
+  const recording = ["preparing", "count-in", "recording", "stopping"].includes(state.recording.status) || state.midiInputRecording.status === "recording";
+  const preset = FINISH_PRESETS.find(item => item.id === finish.presetId)!;
+  return `<section class="finish-comparison" aria-labelledby="finishHeading">
+    <h3 id="finishHeading">Finish &amp; Compare</h3>
+    <label>Starting point <select data-finish-preset data-finish-focus="preset" ${finish.phase === "preparing" ? "disabled" : ""}>${FINISH_PRESETS.map(item => `<option value="${item.id}" ${item.id === finish.presetId ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}</select></label>
+    <details><summary>What to listen for</summary><p>${escapeHtml(preset.cue)}</p><p>Try a vocal phrase, a loud transition or a live instrument with a quiet tail. A/B keeps the same position; matched monitor gain never changes your exported mix.</p></details>
+    <p>${escapeHtml(finish.rangeLabel || "Uses the selected edit range or clips, with the visible Hear this bit lead-in and tail settings.")}</p>
+    <div class="finish-actions">
+      <button data-action="finish-prepare" data-finish-focus="prepare" ${recording || finish.phase === "preparing" ? "disabled" : ""}>Prepare comparison</button>
+      <button data-action="finish-a" data-finish-focus="a" aria-pressed="${finish.side === "a" && finish.phase === "playing"}" ${available && !recording ? "" : "disabled"}>A · Original</button>
+      <button data-action="finish-b" data-finish-focus="b" aria-pressed="${finish.side === "b" && finish.phase === "playing"}" ${available && !recording ? "" : "disabled"}>B · Proposed</button>
+      <button data-action="finish-stop" data-finish-focus="stop" ${["playing", "preparing"].includes(finish.phase) ? "" : "disabled"}>Stop</button>
+      <button data-action="finish-apply" data-finish-focus="apply" ${finish.phase === "ready" && !recording ? "" : "disabled"}>Apply proposed</button>
+      <button data-action="finish-discard" data-finish-focus="discard" ${finish.phase !== "idle" ? "" : "disabled"}>Discard</button>
+      <button data-action="undo" data-finish-focus="undo" ${state.undoStack.past.length ? "" : "disabled"}>Undo last edit</button>
+    </div>
+    <p role="status" aria-live="polite">${escapeHtml(finish.message)}</p>
+    ${finish.readings.length ? `<ul>${finish.readings.map(reading => `<li>${escapeHtml(reading)}</li>`).join("")}</ul>` : ""}
+    ${finish.warnings.length ? `<ul class="finish-warnings">${finish.warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}
+    <small>Offline estimates for this rendered passage. Export normalization and encoding can change the final file; check decoded delivery output separately.</small>
+  </section>`;
 }
 
 function renderFullSongWavExportProfileControls(project: ReturnType<typeof currentProject>): string {

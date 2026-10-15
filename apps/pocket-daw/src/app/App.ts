@@ -302,6 +302,8 @@ import {
 import { commandFromKeyboardEvent } from "./keyboard";
 import { DesktopMenus } from "./desktopMenus";
 import { selectionAuditionPlan } from "../daw/selectionAudition";
+import { FINISH_PRESETS, type FinishPresetId } from "../daw/finishing";
+import { prepareFinishComparison, type PreparedFinishComparison } from "../audio/finishPreparation";
 import { collapsedSectionsForCreationPreset, createInitialState, createMidiInputRecordingUiState, createRecordingUiState, currentProject, isUiCollapseSection, loadProjectIntoState, lowerDockTabForCreationPreset, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type LoadProjectIntoStateOptions, type NativeCacheUiStatus } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { automationSurfaceAudioSyncMode, automationSurfacePointFromClient } from "./automationSurface";
@@ -485,6 +487,8 @@ export class App {
   private samplePreviewBridge = new NativeAudioPlaybackBridge();
   private samplePreviewTimer: number | null = null;
   private selectionAuditionToken = 0;
+  private finishActionToken = 0;
+  private finishContext: { project: PocketDawProject; key: string; transportRevision: number; endSeconds: number; controller: AbortController; prepared: PreparedFinishComparison | null } | null = null;
   private selectionAuditionContext: { project: PocketDawProject; key: string; transportRevision: number; endSeconds: number } | null = null;
   private sampleLibraryDragUnlisten: (() => void) | null = null;
   private vst3EditorPollTimers = new Map<string, number>();
@@ -499,6 +503,12 @@ export class App {
     this.state.updaterAutoCheckOnStartup = loadUpdaterAutoCheckPreference();
     this.engine = new AudioEngine(currentProject(this.state));
     this.engine.setOnTick((tick) => {
+      if (!tick.playing && this.state.finishComparison.phase === "playing" && this.finishContext) {
+        this.finishActionToken += 1;
+        this.finishContext.transportRevision = this.engine.getTransportRevision();
+        this.state.finishComparison.phase = "ready";
+        this.state.finishComparison.message = tick.seconds >= this.finishContext.endSeconds - 0.001 ? "Comparison complete. A or B replays the same passage." : "Comparison stopped. A or B replays the passage.";
+      }
       if (!tick.playing && this.state.selectionAudition.phase === "playing") {
         const end = this.selectionAuditionContext?.endSeconds;
         this.state.selectionAudition = { phase: "idle", message: end !== undefined && tick.seconds >= end - 0.001 ? "Audition complete." : "Audition stopped." };
@@ -1790,15 +1800,17 @@ export class App {
   }
 
   private render(options: RenderOptions = {}) {
+    if (this.finishContext && !this.finishComparisonIsCurrent()) this.cancelFinishComparison("Project, selection or playback changed. Prepare a fresh comparison.");
     if (this.selectionAuditionContext && !this.selectionAuditionIsCurrent()) this.cancelSelectionAudition("Selection or playback changed. Hear this bit again to use the new context.");
     this.playbackRenderScheduler.cancelPending(this.renderSchedulerTimers());
     const menu = this.desktopMenus.snapshot();
-    const scroll = options.preserveScroll ? this.captureScrollSnapshot() : null;
+    const scroll = options.preserveScroll || this.finishContext ? this.captureScrollSnapshot() : null;
     const focused = document.activeElement instanceof HTMLElement && this.root.contains(document.activeElement) ? document.activeElement : null;
     const auditionFocus = focused?.hasAttribute("data-audition-setting")
       ? `[data-audition-setting="${CSS.escape(focused.dataset.auditionSetting || "")}"]`
       : focused?.hasAttribute("data-audition-control") ? `[data-audition-control="${CSS.escape(focused.dataset.auditionControl || "")}"]:not(:disabled)` : null;
     const menuFocus = focused?.classList.contains("menu-root") ? focused.id : null;
+    const finishFocus = focused?.dataset.finishFocus;
     const guitarFocus = focused?.hasAttribute("data-guitar-performance")
       ? `[data-guitar-performance="${CSS.escape(focused.dataset.guitarPerformance || "")}"]`
       : focused?.hasAttribute("data-guitar-setting") ? `[data-guitar-setting="${CSS.escape(focused.dataset.guitarSetting || "")}"]` : null;
@@ -1813,6 +1825,11 @@ export class App {
     this.bind();
     this.syncDialogAccessibility();
     this.desktopMenus.restore(menu);
+    if (finishFocus && document.activeElement === document.body) {
+      const preferred = this.root.querySelector<HTMLElement>(`[data-finish-focus="${CSS.escape(finishFocus)}"]:not(:disabled)`);
+      const fallback = this.state.finishComparison.phase === "preparing" ? "stop" : this.state.finishComparison.phase === "ready" ? "a" : "prepare";
+      (preferred || this.root.querySelector<HTMLElement>(`[data-finish-focus="${fallback}"]:not(:disabled)`))?.focus({ preventScroll: true });
+    }
     if (auditionFocus && document.activeElement === document.body) {
       const fallback = this.state.selectionAudition.phase === "idle" ? "hear" : "stop";
       const preferred = Array.from(this.root.querySelectorAll<HTMLElement>(auditionFocus)).find(element => element.getClientRects().length > 0);
@@ -1821,7 +1838,12 @@ export class App {
     }
     if (menuFocus && document.activeElement === document.body) this.root.querySelector<HTMLElement>(`#${CSS.escape(menuFocus)}`)?.focus({preventScroll:true});
     if (guitarFocus && document.activeElement === document.body) this.root.querySelector<HTMLElement>(guitarFocus)?.focus({preventScroll:true});
-    if (scroll) this.restoreScrollSnapshotSoon(scroll);
+    if (scroll) {
+      // Progress/status updates may render again before the next animation
+      // frame. Keep the visible Finish passage in place for that next snapshot.
+      if (this.finishContext) this.restoreScrollSnapshot(scroll);
+      this.restoreScrollSnapshotSoon(scroll);
+    }
   }
 
   private rememberDialogTrigger(element: HTMLElement | null) {
@@ -2073,6 +2095,13 @@ export class App {
   }
 
   private bind() {
+    this.root.querySelector<HTMLSelectElement>("[data-finish-preset]")?.addEventListener("change", event => {
+      const value = (event.currentTarget as HTMLSelectElement).value;
+      if (!FINISH_PRESETS.some(preset => preset.id === value)) return;
+      this.cancelFinishComparison("Starting point changed. Prepare a fresh comparison.");
+      this.state.finishComparison.presetId = value as FinishPresetId;
+      this.render({ preserveScroll: true });
+    });
     this.root.querySelectorAll<HTMLSelectElement>("[data-audition-setting]").forEach(select => select.addEventListener("change", () => {
       this.cancelSelectionAudition("Audition settings changed. Hear this bit again to use them.");
       if (select.dataset.auditionSetting === "lead") this.state.auditionLeadInSeconds = Number(select.value);
@@ -3924,6 +3953,8 @@ export class App {
   }
 
   private async dispatch(action: string, actionSource?: HTMLElement) {
+    if (action.startsWith("finish-")) { await this.handleFinishAction(action); return; }
+    if (["audition-selection", "stop", "play", "pause", "restart", "record-toggle", "midi-record-toggle", "midi-panic"].includes(action)) this.cancelFinishComparison("Comparison stopped by another transport action.");
     if (action === "audition-selection") { await this.playSelectionAudition(); return; }
     if (["stop", "play", "pause", "restart", "record-toggle", "midi-record-toggle", "midi-panic"].includes(action)) this.cancelSelectionAudition("Audition stopped.");
     if (["controls-open", "file-window-open", "import-focus", "add-track-open", "audio-settings-open", "updater-open", "mcp-setup-open", "function-guide-open", "feedback-open"].includes(action)) {
@@ -7302,6 +7333,105 @@ export class App {
 
   private selectionAuditionKey(): string {
     return JSON.stringify([this.normalizedSelectedClipIds(), this.state.selectedTrackId, currentProject(this.state).timeline.selection || null, this.state.auditionLeadInSeconds, this.state.auditionTailSeconds]);
+  }
+
+  private finishComparisonIsCurrent(): boolean {
+    const context = this.finishContext;
+    return !!context && !context.controller.signal.aborted && context.project === currentProject(this.state) && context.key === this.selectionAuditionKey() && context.transportRevision === this.engine.getTransportRevision();
+  }
+
+  private cancelFinishComparison(message: string) {
+    this.finishActionToken += 1;
+    const context = this.finishContext;
+    this.finishContext = null;
+    const ownsTransport = context?.transportRevision === this.engine.getTransportRevision();
+    this.state.finishComparison = { ...this.state.finishComparison, phase: "idle", message, rangeLabel: "", readings: [], warnings: [] };
+    context?.controller.abort();
+    if (context?.prepared) void context.prepared.dispose().catch(error => { this.state.status = `Finish preview cleanup needs attention: ${String(error)}`; });
+    if (context && ownsTransport) this.engine.stop();
+  }
+
+  private async handleFinishAction(action: string) {
+    let actionToken = ++this.finishActionToken;
+    const ui = this.state.finishComparison;
+    if (action === "finish-discard") { this.cancelFinishComparison("Proposal discarded. Your mix is unchanged."); this.render({ preserveScroll: true }); return; }
+    if (action === "finish-stop") {
+      const context = this.finishContext;
+      if (ui.phase === "preparing" || !context?.prepared) this.cancelFinishComparison("Preparation cancelled. Your mix is unchanged.");
+      else if (this.finishComparisonIsCurrent()) {
+        ui.phase = "ready";
+        ui.message = "Comparison stopped. A or B replays the same passage.";
+        context.transportRevision = this.engine.getTransportRevision() + 1;
+        this.engine.stop();
+      }
+      this.render({ preserveScroll: true }); return;
+    }
+    if (["preparing", "count-in", "recording", "stopping"].includes(this.state.recording.status) || this.state.midiInputRecording.status === "recording") {
+      ui.message = "Finish recording before preparing, comparing or applying Finish.";
+      this.render({ preserveScroll: true }); return;
+    }
+    let context = this.finishContext;
+    try {
+      if (action === "finish-prepare") {
+        const plan = selectionAuditionPlan(currentProject(this.state), this.normalizedSelectedClipIds(), this.state.auditionLeadInSeconds, this.state.auditionTailSeconds);
+        this.cancelFinishComparison("");
+        actionToken = ++this.finishActionToken;
+        this.cancelSelectionAudition("");
+        this.engine.stop(); this.stopLiveMetronome();
+        context = { project: currentProject(this.state), key: this.selectionAuditionKey(), transportRevision: this.engine.getTransportRevision(), endSeconds: plan.endSeconds, controller: new AbortController(), prepared: null };
+        this.finishContext = context;
+        const owner = context;
+        this.state.finishComparison.phase = "preparing";
+        this.state.finishComparison.rangeLabel = `${plan.label}, bars ${plan.startBar}–${plan.endBar}; ${plan.leadInSeconds.toFixed(1)} s lead-in, ${plan.tailSeconds} s tail.`;
+        this.state.finishComparison.message = "Preparing comparison. Stop cancels; nothing autoplays.";
+        this.render({ preserveScroll: true });
+        const hydration = await this.hydrateTimelineAudioBuffers({ isCurrent: () => this.finishContext === owner && this.finishComparisonIsCurrent(), onPreparedProject: project => { owner.project = project; } });
+        if (this.finishContext !== owner || !this.finishComparisonIsCurrent()) return;
+        this.assertNoMissingAudibleAudioBuffers(hydration, "Finish comparison");
+        const prepared = await prepareFinishComparison(owner.project, this.state.finishComparison.presetId, plan, owner.controller.signal, message => {
+          if (this.finishContext !== owner || !this.finishComparisonIsCurrent()) return;
+          this.state.finishComparison.message = message; this.render({ preserveScroll: true });
+        }, error => { this.state.status = `Finish preview cleanup needs attention: ${String(error)}`; });
+        if (this.finishContext !== owner || !this.finishComparisonIsCurrent()) { await prepared.dispose(); return; }
+        owner.prepared = prepared;
+        this.state.finishComparison.phase = "ready";
+        this.state.finishComparison.readings = [
+          `Original estimate: ${prepared.a.integratedLufs?.toFixed(1)} LUFS, ${prepared.a.truePeakDbtp?.toFixed(1)} dBTP; monitor ${prepared.gains.aDb.toFixed(1)} dB.`,
+          `Proposed estimate: ${prepared.b.integratedLufs?.toFixed(1)} LUFS, ${prepared.b.truePeakDbtp?.toFixed(1)} dBTP; monitor ${prepared.gains.bDb.toFixed(1)} dB.`
+        ];
+        this.state.finishComparison.warnings = prepared.warnings;
+        this.state.finishComparison.message = "Ready. Choose A or B to hear this passage. Apply is one undoable edit; monitor matching is never exported.";
+      } else {
+        if (!context?.prepared || !this.finishComparisonIsCurrent()) throw new Error("Prepare a fresh comparison for the current project and selection.");
+        if (action === "finish-apply") {
+          const proposed = context.prepared.proposed;
+          this.cancelFinishComparison("Proposed Finish applied. Undo last edit restores the previous mix.");
+          this.applyProjectState(commitProject(this.state, proposed, "Applied Finish proposal. Undo restores the previous mix."), { preserveScroll: true, audio: "mixer-graph", reason: "finish-apply" });
+          return;
+        }
+        if (action === "finish-a" || action === "finish-b") {
+          const side = action === "finish-a" ? "a" : "b";
+          if (ui.phase === "playing") {
+            const switched = await this.engine.switchPreparedComparison(side);
+            if (actionToken !== this.finishActionToken) return;
+            if (!switched) throw new Error("The comparison was stopped or superseded. Prepare it again.");
+          } else {
+            const starting = this.engine.playPreparedComparison({ ...context.prepared.payload, monitorComparison: { ...context.prepared.payload.monitorComparison!, side } });
+            context.transportRevision = this.engine.getTransportRevision();
+            if (!await starting) return;
+          }
+          if (actionToken !== this.finishActionToken || this.finishContext !== context || !this.finishComparisonIsCurrent()) return;
+          this.state.finishComparison.side = side;
+          this.state.finishComparison.phase = "playing";
+          this.state.finishComparison.message = `${side === "a" ? "Original" : "Proposed"} playing with matched monitor level. A/B switches at the same position; Stop ends playback.`;
+        }
+      }
+    } catch (error) {
+      if (actionToken !== this.finishActionToken) return;
+      if (context && this.finishContext !== context) return;
+      this.cancelFinishComparison(error instanceof Error ? error.message : "Finish comparison failed.");
+    }
+    this.render({ preserveScroll: true });
   }
 
   private selectionAuditionIsCurrent(): boolean {

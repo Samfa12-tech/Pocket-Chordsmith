@@ -497,7 +497,7 @@ export class AudioEngine {
     const token = ++this.playRequestToken;
     const capability = await this.nativePlayback.status();
     if (token !== this.playRequestToken) return false;
-    if (!capability?.available || capability.monitorComparisonVersion !== 1 || !this.nativePlayback.compareMonitor) {
+    if (!capability?.available || capability.monitorComparisonVersion !== 2 || !this.nativePlayback.compareMonitor) {
       throw new Error("This native audio version does not support prepared A/B comparison.");
     }
     const result = await this.nativePlayback.start(payload);
