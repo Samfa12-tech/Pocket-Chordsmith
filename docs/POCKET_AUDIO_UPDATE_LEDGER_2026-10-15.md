@@ -708,3 +708,22 @@ See docs/design/CHORDSMITH_THEME_INTEGRATION_2026-10-15.md for evidence and limi
 Published: nothing. Physical phones/screen readers/scaling remain unclaimed.
 Audio routes, broader authoring controls and other family work remain active.
 
+Combined candidate verification: 114 desktop/touch tests passed, including actual
+Export MIDI button bytes decoded back to exact notes/onsets/program25. Core202,
+family1173, genre5, composer34, four WAV budget units, lint/type/format/size,
+generated freshness, production build, repository organization/security/sound
+contract/governance checks pass. The sandbox-only unit EPERM is resolved by the
+successful escalation run; no product test was counted as passing from that error.
+
+Exact Firefox155/WebKit26.6 binaries were installed into ignored task validation,
+without package changes. Required cross-browser baseline8 pass. New Campfire/theme
+cases: Firefox5 pass; WebKit2 export/theme pass,3 live-audio skipped. An actual
+WebKit probe proved both AudioContext and webkitAudioContext are absent in the
+Windows binary before preparation begins; raw failed checks and diagnostic are
+retained. A capability requirement skips those live cases honestly. This is not
+Safari/macOS/iOS live acceptance and no mocked audio substitutes were used.
+
+Approved PR88 themes are combined through a455475d4f661cfd2e2983d711edb0f69cfc8c14;
+blue default and saved choices remain. Local reviewed-source itch package built
+successfully, not uploaded. Candidate is for parent source review/CI, not release.
+Size1066549/1100000 active and894424/900000 modular. Main/owner checkout unchanged.

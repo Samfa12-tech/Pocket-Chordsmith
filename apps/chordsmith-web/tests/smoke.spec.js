@@ -49,7 +49,13 @@ async function fetchJsonFixture(page, fixturePath) {
   return response.json();
 }
 
+async function requireLiveBrowserAudio(page) {
+  const available = await page.evaluate(() => typeof (window.AudioContext || window.webkitAudioContext) === "function");
+  test.skip(!available, "This browser binary has no real Web Audio context; live playback is not tested.");
+}
+
 test("Campfire uses prepared audio on the existing Play and Stop controls and reuses warm PCM", async ({ page }) => {
+  await requireLiveBrowserAudio(page);
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.getByRole("button", { name: "Settings" }).first().click();
@@ -165,6 +171,7 @@ test("Campfire strum and pick preserves the grid and exports the canonical notes
 });
 
 test("standalone Campfire cancels cold Play and reuses prepared tails during live edits", async ({ page }) => {
+  await requireLiveBrowserAudio(page);
   await page.goto(pathToFileURL(resolve("pocket_chordsmith_v68_core_bridge.html")).href);
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -199,6 +206,7 @@ test("standalone Campfire cancels cold Play and reuses prepared tails during liv
 });
 
 test("exact imported Campfire chords and picked notes survive live preparation and MIDI", async ({ page }) => {
+  await requireLiveBrowserAudio(page);
   await page.locator("#settingsBtn").click();
   const events = [
     {tick:0,durationTicks:480,notes:[50,57,62,66],sound:"campfire_acoustic",velocity:100,direction:"up",technique:{campfire:{seed:123}}},
