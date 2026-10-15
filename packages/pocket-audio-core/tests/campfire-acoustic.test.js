@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { renderPocketAudioEventBuffer } from "../src/engine/offline-renderer.js";
+import { renderPocketAudioBuffer, renderPocketAudioEventBuffer, renderPocketAudioStemBuffers } from "../src/engine/offline-renderer.js";
 import { chordsmithOfflineStemRenderGain } from "../src/performance/stem-mix.js";
 import { normalisePocketChordsmithProject } from "../src/schema/normalise-project.js";
 import { buildPocketAudioTimeline } from "../src/events/timeline-events.js";
@@ -10,6 +10,8 @@ import { parsePocketChordsmithInput } from "../src/schema/parse-share-code.js";
 import { createPocketAudioRendererCapabilityReport } from "../src/engine/capabilities.js";
 import { PocketAudio } from "../src/engine/live-engine.js";
 import { prepareCampfireAcousticNoteBank } from "../src/synth/campfire-acoustic.js";
+import { createGodotExportKit } from "../src/export/godot-kit.js";
+import { decodePcmWavBytes } from "../src/export/wav.js";
 import {
   CAMPFIRE_ACOUSTIC_RECIPE, CAMPFIRE_REFERENCE_CHORDS, CampfireAcousticNoteCache,
   campfireAcousticNoteKey, campfireAcousticReferenceEvents, campfireAcousticVoicing,
@@ -258,6 +260,45 @@ const liveCampfireSource = {
   ] } } }]))
 };
 
+test("Campfire offline mix and aligned stems honor zero/non-default guitar volume and mute", () => {
+  for (const volume of [0, 0.2, 0.9]) {
+    const project = normalisePocketChordsmithProject({ ...liveCampfireSource, guitarVolume: volume, chordsOn: false, bassOn: false });
+    const event = buildPocketAudioTimeline(project).events.find((item) => item.instrument === "campfire_acoustic");
+    const rendered = renderPocketAudioBuffer(project, { sampleRate: 8000 });
+    const stem = renderPocketAudioStemBuffers(project, { sampleRate: 8000, stems: ["guitar"] }).guitar;
+    const pcm = renderCampfireAcousticEvent(event, { sampleRate: 8000 });
+    const gain = chordsmithOfflineStemRenderGain("guitar", volume) * Math.SQRT1_2;
+    for (let channel = 0; channel < 2; channel += 1) {
+      assert.deepEqual(rendered.channels[channel], stem.channels[channel]);
+      for (let frame = 0; frame < rendered.channels[channel].length; frame += 1) {
+        assert.ok(Math.abs(rendered.channels[channel][frame] - (pcm[frame] || 0) * gain) < 1e-8, `wrong mixer gain at volume ${volume}, frame ${frame}`);
+      }
+    }
+    project.mixer.stems.guitar.mute = true;
+    assert.equal(peak(renderPocketAudioBuffer(project, { sampleRate: 8000 }).channels[0]), 0);
+    assert.equal(peak(renderPocketAudioStemBuffers(project, { sampleRate: 8000, stems: ["guitar"] }).guitar.channels[0]), 0);
+  }
+});
+
+test("Campfire decoded STEM_SYNC and HYBRID WAVs retain the source guitar mixer gain", async () => {
+  for (const volume of [0, 0.2, 0.9]) {
+    const source = { ...liveCampfireSource, guitarVolume: volume, chordsOn: false, bassOn: false };
+    const project = normalisePocketChordsmithProject(source);
+    const expected = renderPocketAudioBuffer(project, { sampleRate: 8000, tailSeconds: 0 });
+    for (const profile of ["STEM_SYNC", "HYBRID"]) {
+      const kit = await createGodotExportKit(source, { sampleRate: 8000, profile });
+      const mix = decodePcmWavBytes(new Uint8Array(await kit.files.get(kit.manifest.assets.mix).arrayBuffer()));
+      const guitar = decodePcmWavBytes(new Uint8Array(await kit.files.get(kit.manifest.assets.guitar).arrayBuffer()));
+      assert.equal(mix.channels[0].length, expected.channels[0].length);
+      assert.deepEqual(mix.channels, guitar.channels);
+      for (let channel = 0; channel < 2; channel += 1) for (let frame = 0; frame < mix.channels[channel].length; frame += 1) {
+        assert.ok(Math.abs(mix.channels[channel][frame] - expected.channels[channel][frame]) <= 1 / 32767, `${profile} changed gain at volume ${volume}, frame ${frame}`);
+      }
+      assert.equal(peak(mix.channels[0]) === 0, volume === 0);
+    }
+  }
+});
+
 test("live Play prepares unsequenced adaptive sections, then Stop and project load cancel scheduled voices", async () => {
   const context = preparationContext();
   const engine = new PocketAudio({ audioContext: context, setInterval: () => 1, clearInterval() {} });
@@ -275,6 +316,33 @@ test("live Play prepares unsequenced adaptive sections, then Stop and project lo
   await engine.loadProject({ bpm: 96 });
   assert.equal(engine.getDiagnostics().campfirePrepared, null);
   engine.dispose();
+});
+
+test("live Campfire mixer changes reuse prepared voices and reject invalid gain automation", async () => {
+  const context = preparationContext();
+  const engine = new PocketAudio({ audioContext: context, setInterval: () => 1, clearInterval() {} });
+  await engine.loadProject(liveCampfireSource);
+  for (const stem of ["drums", "bass", "chords", "melody"]) engine.setStemMute(stem, true);
+  await engine.play();
+  const buffers = context.buffers.length;
+  const starts = context.sources.map((source) => [...source.starts]);
+  context.currentTime = 0.01;
+  engine.setStemVolume("guitar", 0.2);
+  assert.equal(engine.getDiagnostics().campfirePrepared.outputGain, chordsmithOfflineStemRenderGain("guitar", 0.2));
+  engine.setStemMute("guitar", true);
+  assert.equal(engine.getDiagnostics().campfirePrepared.outputGain, 0);
+  engine.setStemMute("guitar", false);
+  assert.equal(engine.getDiagnostics().campfirePrepared.outputGain, chordsmithOfflineStemRenderGain("guitar", 0.2));
+  assert.equal(context.buffers.length, buffers, "mixer changes must not rebuild PCM");
+  assert.deepEqual(context.sources.map((source) => source.starts), starts, "mixer changes must not retrigger or shift existing notes");
+  assert.ok(context.sources.every((source) => source.stops.length === 0));
+  const bank = engine.campfireNoteBank;
+  const gain = bank.getDiagnostics().outputGain;
+  for (const invalid of [NaN, Infinity, -1]) assert.throws(() => bank.setOutputGain(invalid), RangeError);
+  assert.throws(() => bank.setOutputGain(0.2, 0.5), RangeError);
+  assert.equal(bank.getDiagnostics().outputGain, gain);
+  engine.dispose();
+  assert.throws(() => bank.setOutputGain(0.2), /disposed/);
 });
 
 test("natural completion preserves the final tail and explicit Stop still cancels it", async () => {

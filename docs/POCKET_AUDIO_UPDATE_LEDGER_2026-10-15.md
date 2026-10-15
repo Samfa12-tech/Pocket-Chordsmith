@@ -432,3 +432,52 @@ loop-seam fix. Rendered LOOP_KIT seams/endings, nonzero-tail alignment, loud/
 clipping reconstruction, browser master, fully arranged native DAW-to-Godot,
 installed-device output, real-game performance and human listening remain
 independent acceptance work. No new installer or public artifact was produced.
+
+## Eighth source candidate: Core Campfire mixer gain
+
+Branch `codex/pocket-audio-campfire-mixer-20261015` follows Godot ending candidate
+`c0310dcd304551372bbba871e64dc661c06ea190`, which includes the native review
+corrections. A new regression reproduced Campfire output at guitar volume zero.
+Actual Chromium live/offline comparison also failed at zero volume: offline
+used a fixed default gain while live used the normalized project mixer.
+
+Core full-mix and aligned-stem rendering now pass the normalized guitar mixer
+to the Campfire PCM path. Volume and mute apply consistently; the original
+default gain, note recipe, seed, strum, tail and old instruments are unchanged.
+Direct event-buffer calls retain the existing default unless an explicit
+`stemMix.guitar` is supplied. No shared/browser master parity is implied.
+
+Audio-time browser suspension also reproduced mute leaving an existing tail
+audible. Prepared voices now share an updateable output gain with anchored
+five-millisecond ramps. Live volume/mute changes update existing and already
+scheduled strum voices without resynthesis, retriggering, moving their note
+position or discarding their natural tails. Stop holds the current automation
+value before fading; rapid same-time changes cannot jump to an earlier target.
+
+Executed: all 192 Core tests; 20 real Chromium OfflineAudioContext live/offline
+cases at 44.1/48 kHz, up/down, volumes 0/0.2/0.66/0.9 and mute set before Play.
+All pass with maximum error 1.87e-9. The 10 independent dry PCM hashes still
+match. Decoded STEM_SYNC/HYBRID WAV full mixes and guitar stems retain zero and
+non-default gains at PCM16 precision. Complete family parity passes, including
+1,173 DAW tests. Four additional browser captures suspend at actual audio times
+to mute both future strum starts and already sounding notes, unmute at the same
+position, then change volume. Every sample through the five-ms ramps is compared
+against the unfitted PCM/gain reference; muted windows are exactly silent and
+the resumed tail stays aligned. No PCM rebuild/new note start occurs in the API
+regression. Organization/governance/whitespace checks pass. All seven default-
+gain WAV hashes still match the retained Godot rendered reference byte for byte.
+
+Evidence under ignored validation: `campfire-mixer-before.log`,
+`campfire-mixer-browser-before.log`, `campfire-mixer-after.log`,
+`campfire-mixer-browser-after.log`, `campfire-mixer-core-final.log`,
+`campfire-mixer-family-final.log`, and
+`campfire-mixer-godot-reference-hashes.json`.
+Live control evidence: `campfire-live-mixer-before.log`,
+`campfire-live-mixer-after.log` (intermediate ramp failure retained), and
+`campfire-live-mixer-final.log`.
+
+Published: nothing. This validates Campfire gain and existing prepared voices;
+adding unprepared note identities still needs preparation. Product
+selectors, full voicings/picking in the authoring apps, legacy fallback/DJ,
+installed/native and full two-source Godot acceptance remain pending. No physical
+output or listening claim follows from OfflineAudioContext.

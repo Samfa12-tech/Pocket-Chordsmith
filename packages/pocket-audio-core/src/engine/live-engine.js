@@ -109,6 +109,7 @@ export class PocketAudio {
           const bank = await prepareCampfireAcousticNoteBank(this.audioContext, events, { maxBytes: this.options.campfireMaxPreparedBytes, signal: preparation.signal });
           if (requestGeneration !== this.playRequestGeneration) { bank.dispose(); return; }
           this.campfireNoteBank = bank;
+          this.updateCampfireMixerGain();
         } catch (error) {
           if (preparation.signal.aborted) return;
           throw error;
@@ -484,7 +485,7 @@ export class PocketAudio {
       if (isCampfireEvent(event)) {
         if (this.project.mixer.stems.guitar.mute) return;
         if (!this.campfireNoteBank) throw new Error("Campfire audio must be prepared before transport starts.");
-        this.campfireNoteBank.schedule(event, targetAudioTime, { gain: chordsmithOfflineStemRenderGain("guitar", this.project.mixer.stems.guitar.volume) });
+        this.campfireNoteBank.schedule(event, targetAudioTime);
       } else scheduleSimpleAudioEvent(this.audioContext, event, this.project, targetAudioTime);
     }
   }
@@ -493,6 +494,7 @@ export class PocketAudio {
     this.ensureProject();
     if (!this.project.mixer.stems[stem]) throw new Error(`Unknown stem: ${stem}`);
     this.project.mixer.stems[stem] = { ...this.project.mixer.stems[stem], ...patch };
+    if (stem === "guitar") this.updateCampfireMixerGain();
     this.emit("stem", { stem, settings: this.project.mixer.stems[stem] });
   }
 
@@ -501,6 +503,11 @@ export class PocketAudio {
       if (patch.volume !== undefined) this.setStemVolume(stem, patch.volume);
       if (patch.mute !== undefined) this.setStemMute(stem, patch.mute);
     });
+  }
+
+  updateCampfireMixerGain() {
+    const mix = this.project?.mixer?.stems?.guitar;
+    this.campfireNoteBank?.setOutputGain(mix?.mute ? 0 : chordsmithOfflineStemRenderGain("guitar", mix?.volume));
   }
 
   getMusicStateDefinition(name) {

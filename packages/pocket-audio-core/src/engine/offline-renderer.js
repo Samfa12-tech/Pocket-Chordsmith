@@ -22,6 +22,7 @@ export function renderPocketAudioBuffer(project, options = {}) {
   return renderPocketAudioEventBuffer(timeline.events, {
     ...options,
     durationSeconds: timeline.duration,
+    stemMix: project?.mixer?.stems,
     lofiTexture: project?.lofi?.texture,
     timeline
   });
@@ -40,6 +41,7 @@ export function renderPocketAudioStemBuffers(project, options = {}) {
       ...options,
       sampleRate,
       durationSeconds: alignedDuration,
+      stemMix: project?.mixer?.stems,
       lofiTexture: null,
       timeline: {
         ...timeline,
@@ -69,7 +71,9 @@ export function renderPocketAudioEventBuffer(events, options = {}) {
   const left = new Float32Array(frameCount);
   const right = new Float32Array(frameCount);
   const campfireCache = events.some(isCampfireEvent) ? new CampfireAcousticNoteCache() : null;
-  events.forEach((event) => renderEventToChannels(event, left, right, sampleRate, campfireCache));
+  const campfireMix = options.stemMix?.guitar;
+  const campfireGain = campfireMix?.mute ? 0 : chordsmithOfflineStemRenderGain("guitar", campfireMix?.volume);
+  events.forEach((event) => renderEventToChannels(event, left, right, sampleRate, campfireCache, campfireGain));
   renderLofiTexture({ lofi: { texture: options.lofiTexture } }, left, right, sampleRate);
   return {
     channels: [left, right],
@@ -135,13 +139,14 @@ function isCampfireEvent(event) {
   return event.type === "guitar" && event.instrument === "campfire_acoustic";
 }
 
-function renderEventToChannels(event, left, right, sampleRate, campfireCache) {
+function renderEventToChannels(event, left, right, sampleRate, campfireCache, campfireGain) {
   if (isCampfireEvent(event)) {
+    if (campfireGain === 0) return;
     const samples = renderCampfireAcousticEvent(event, { sampleRate, cache: campfireCache });
     const start = Math.max(0, Math.floor(Number(event.time || 0) * sampleRate));
     const pan = Math.max(-1, Math.min(1, Number(event.pan || 0)));
-    const leftGain = Math.cos((pan + 1) * Math.PI / 4) * stemScale("guitar");
-    const rightGain = Math.sin((pan + 1) * Math.PI / 4) * stemScale("guitar");
+    const leftGain = Math.cos((pan + 1) * Math.PI / 4) * campfireGain;
+    const rightGain = Math.sin((pan + 1) * Math.PI / 4) * campfireGain;
     for (let frame = 0; frame < samples.length && start + frame < left.length; frame += 1) {
       left[start + frame] += samples[frame] * leftGain;
       right[start + frame] += samples[frame] * rightGain;

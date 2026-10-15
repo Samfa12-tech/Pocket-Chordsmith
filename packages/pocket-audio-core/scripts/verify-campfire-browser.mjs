@@ -44,16 +44,16 @@ try {
     const silent = await cancelledContext.startRendering();
     if (!silent.getChannelData(0).every((value) => value === 0)) throw new Error("Cancelled future voice became audible");
     const liveResults = [];
-    for (const sampleRate of [44100, 48000]) for (const direction of ["down", "up"]) {
+    for (const sampleRate of [44100, 48000]) for (const direction of ["down", "up"]) for (const mix of [{ volume: 0 }, { volume: 0.2 }, { volume: 0.66 }, { volume: 0.9 }, { volume: 0.66, mute: true }]) {
       const context = new OfflineAudioContext(2, sampleRate * 2, sampleRate);
       const engine = new core.PocketAudio({ audioContext: context, setInterval: () => 1, clearInterval() {} });
-      await engine.loadProject({ schemaVersion: 17, bpm: 76, songSequence: ["A"], sectionBars: { A: 1 }, sections: { A: { tracks: { guitar: { events: [
+      await engine.loadProject({ schemaVersion: 17, bpm: 76, guitarVolume: mix.volume, songSequence: ["A"], sectionBars: { A: 1 }, sections: { A: { tracks: { guitar: { events: [
         { tick: 0, durationTicks: 120, notes: [50, 57, 62, 66], sound: "campfire_acoustic", velocity: 100, direction, technique: { campfire: { seed: 123 } } }
       ] } } } } });
       for (const stem of ["drums", "bass", "chords", "melody"]) engine.setStemMute(stem, true);
+      if (mix.mute) engine.setStemMute("guitar", true);
       await engine.play();
-      const event = engine.timeline.events.find((item) => item.instrument === "campfire_acoustic");
-      const expected = core.renderPocketAudioEventBuffer([event], { sampleRate, durationSeconds: 2, tailSeconds: 0 });
+      const expected = core.renderPocketAudioBuffer(engine.project, { sampleRate, tailSeconds: 0 });
       const rendered = await context.startRendering();
       let maxError = 0;
       let squaredError = 0;
@@ -66,9 +66,62 @@ try {
         signalPeak = Math.max(signalPeak, Math.abs(actual));
       }
       const rmsError = Math.sqrt(squaredError / (rendered.length * 2));
-      if (signalPeak < 0.001 || maxError > 1e-7 || rmsError > 1e-8) throw new Error(`Live/offline Campfire mismatch ${sampleRate}/${direction}: ${maxError}/${rmsError}`);
+      const silenceExpected = mix.volume === 0 || mix.mute;
+      if ((silenceExpected ? signalPeak !== 0 : signalPeak < 0.001) || maxError > 1e-7 || rmsError > 1e-8) throw new Error(`Live/offline Campfire mismatch ${sampleRate}/${direction}/volume=${mix.volume}/mute=${!!mix.mute}: ${maxError}/${rmsError}`);
       if (engine.getDiagnostics().campfirePrepared.activeVoices !== 0) throw new Error("Natural browser completion leaked Campfire voices");
-      liveResults.push({ sampleRate, direction, maxError, rmsError, signalPeak, passed: true });
+      liveResults.push({ sampleRate, direction, volume: mix.volume, mute: !!mix.mute, maxError, rmsError, signalPeak, passed: true });
+      engine.dispose();
+    }
+    const liveMixerChanges = [];
+    for (const sampleRate of [44100, 48000]) for (const muteTime of [0.01, 0.25]) {
+      const context = new OfflineAudioContext(2, sampleRate * 2, sampleRate);
+      const engine = new core.PocketAudio({ audioContext: context, setInterval: () => 1, clearInterval() {} });
+      await engine.loadProject({ schemaVersion: 17, bpm: 76, guitarVolume: 0.66, songSequence: ["A"], sectionBars: { A: 1 }, sections: { A: { tracks: { guitar: { events: [
+        { tick: 0, durationTicks: 120, notes: [50, 57, 62, 66], sound: "campfire_acoustic", velocity: 100, technique: { campfire: { seed: 123 } } }
+      ] } } } } });
+      for (const stem of ["drums", "bass", "chords", "melody"]) engine.setStemMute(stem, true);
+      await engine.play();
+      const referenceProject = structuredClone(engine.project);
+      referenceProject.mixer.stems.guitar.volume = 1;
+      const reference = core.renderPocketAudioBuffer(referenceProject, { sampleRate, tailSeconds: 0 });
+      const changes = [];
+      const muted = context.suspend(muteTime);
+      const rendering = context.startRendering();
+      await muted;
+      changes.push({ time: context.currentTime, from: 0.66, to: 0 });
+      engine.setStemMute("guitar", true);
+      const unmuted = context.suspend(0.5);
+      await context.resume();
+      await unmuted;
+      changes.push({ time: context.currentTime, from: 0, to: 0.2 });
+      // Two controls at the same audio time must hold the actual current gain,
+      // rather than jump to the first ramp's target before the second ramp.
+      engine.setStemMute("guitar", false);
+      engine.setStemVolume("guitar", 0.2);
+      const louder = context.suspend(0.75);
+      await context.resume();
+      await louder;
+      changes.push({ time: context.currentTime, from: 0.2, to: 0.8 });
+      engine.setStemVolume("guitar", 0.8);
+      await context.resume();
+      const rendered = await rendering;
+      let maxError = 0, squaredError = 0, mutedPeak = 0, resumedPeak = 0, maxErrorFrame = 0;
+      for (let frame = 0; frame < rendered.length; frame += 1) {
+        const time = frame / sampleRate;
+        let volume = 0.66;
+        for (const change of changes) if (time >= change.time) volume = time < change.time + 0.005 ? change.from + (change.to - change.from) * (time - change.time) / 0.005 : change.to;
+        for (let channel = 0; channel < 2; channel += 1) {
+          const actual = rendered.getChannelData(channel)[frame];
+          const error = Math.abs(actual - reference.channels[channel][frame] * volume);
+          if (error > maxError) { maxError = error; maxErrorFrame = frame; }
+          squaredError += error * error;
+          if (time >= 0.3 && time < 0.45) mutedPeak = Math.max(mutedPeak, Math.abs(actual));
+          if (time >= 0.8 && time < 1.1) resumedPeak = Math.max(resumedPeak, Math.abs(actual));
+        }
+      }
+      const rmsError = Math.sqrt(squaredError / (rendered.length * 2));
+      if (maxError > 1e-7 || rmsError > 1e-8 || mutedPeak !== 0 || resumedPeak < 0.0001) throw new Error(`Live Campfire mixer failed ${sampleRate}: ${maxError}/${rmsError}/muted=${mutedPeak}/resumed=${resumedPeak}/frame=${maxErrorFrame}/changes=${JSON.stringify(changes)}`);
+      liveMixerChanges.push({ sampleRate, muteTime, changes, maxError, rmsError, mutedPeak, resumedPeak, passed: true });
       engine.dispose();
     }
     const lookaheadContext = new OfflineAudioContext(2, 48000 * 2, 48000);
@@ -84,7 +137,7 @@ try {
     for (let frame = 0; frame < actual.length; frame += 1) if (Math.abs(actual[frame] - (firstPcm[frame] || 0)) > 1e-7) throw new Error("Section transition cut an existing tail or leaked cancelled lookahead");
     if (!lookahead.getChannelData(1).every((value) => value === 0)) throw new Error("Hard-left prepared Campfire leaked into the right channel");
     bank.dispose();
-    return { renderer: "Chromium OfflineAudioContext", physicalOutput: "not tested", records: results, liveOfflineParity: liveResults, cancelledFutureVoice: "passed", preservedTailAndCancelledLookahead: "passed", preparationAutoplay: "none" };
+    return { renderer: "Chromium OfflineAudioContext", physicalOutput: "not tested", records: results, liveOfflineParity: liveResults, liveMixerChanges, cancelledFutureVoice: "passed", preservedTailAndCancelledLookahead: "passed", preparationAutoplay: "none" };
   }, fixtures.records);
   console.log(JSON.stringify({ browserVersion: browser.version(), ...result }, null, 2));
 } finally {

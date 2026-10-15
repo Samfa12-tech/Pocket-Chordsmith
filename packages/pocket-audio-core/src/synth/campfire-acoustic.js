@@ -32,20 +32,37 @@ export async function prepareCampfireAcousticNoteBank(context, events, options =
   checkCancelled();
   const active = new Set();
   let disposed = false;
+  let outputGain = 1;
+  const rampVoiceGain = (voice, level, seconds) => {
+    const now = context.currentTime;
+    const param = voice.gain.gain;
+    const currentLevel = Number.isFinite(param.value) ? param.value : voice.level;
+    if (typeof param.cancelAndHoldAtTime === "function") param.cancelAndHoldAtTime(now);
+    else param.cancelScheduledValues(now);
+    // Anchor the ramp at now even after a long constant-gain segment; otherwise
+    // a new ramp may interpolate from the voice's original start-time event.
+    param.setValueAtTime(currentLevel, now);
+    param.linearRampToValueAtTime(level, now + seconds);
+    voice.level = level;
+  };
   const stopAll = (releaseSeconds = 0.005) => {
     if (!Number.isFinite(releaseSeconds) || releaseSeconds < 0 || releaseSeconds > 0.1) throw new RangeError("Campfire stop release must be from zero to 0.1 seconds.");
     for (const voice of active) {
       if (voice.stopped) continue;
       voice.stopped = true;
       const now = context.currentTime;
-      voice.gain.gain.cancelScheduledValues(now);
-      voice.gain.gain.setValueAtTime(voice.level, now);
-      voice.gain.gain.linearRampToValueAtTime(0, now + releaseSeconds);
+      rampVoiceGain(voice, 0, releaseSeconds);
       voice.source.stop(now + releaseSeconds);
     }
   };
   return {
-    getDiagnostics: () => ({ entries: buffers.size, bytes: disposed ? 0 : bytes, maxBytes, activeVoices: active.size }),
+    getDiagnostics: () => ({ entries: buffers.size, bytes: disposed ? 0 : bytes, maxBytes, activeVoices: active.size, outputGain }),
+    setOutputGain(gain, rampSeconds = 0.005) {
+      if (disposed) throw new Error("Campfire note bank has been disposed.");
+      if (!Number.isFinite(gain) || gain < 0 || !Number.isFinite(rampSeconds) || rampSeconds < 0 || rampSeconds > 0.1) throw new RangeError("Invalid Campfire output gain or ramp time.");
+      outputGain = gain;
+      for (const voice of active) if (!voice.stopped) rampVoiceGain(voice, voice.baseLevel * outputGain, rampSeconds);
+    },
     schedule(event, when, { gain = 1, pan = event.pan ?? 0 } = {}) {
       if (disposed) throw new Error("Campfire note bank has been disposed.");
       if (!Number.isFinite(when) || !Number.isFinite(gain) || gain < 0 || !Number.isFinite(pan) || pan < -1 || pan > 1) throw new RangeError("Invalid Campfire scheduling time, gain or pan.");
@@ -60,14 +77,15 @@ export async function prepareCampfireAcousticNoteBank(context, events, options =
         const source = context.createBufferSource();
         const output = context.createGain();
         const panner = context.createStereoPanner();
-        const level = item.gain * gain;
+        const baseLevel = item.gain * gain;
+        const level = baseLevel * outputGain;
         source.buffer = item.buffer;
         output.gain.setValueAtTime(level, start + item.offsetSeconds);
         panner.pan.setValueAtTime(pan, start);
         source.connect(output);
         output.connect(panner);
         panner.connect(options.destination || context.destination);
-        const voice = { source, gain: output, level, when: start + item.offsetSeconds, stopped: false };
+        const voice = { source, gain: output, baseLevel, level, when: start + item.offsetSeconds, stopped: false };
         source.onended = () => {
           active.delete(voice);
           source.disconnect();

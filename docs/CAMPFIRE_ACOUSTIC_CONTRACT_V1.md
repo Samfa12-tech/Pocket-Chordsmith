@@ -167,6 +167,17 @@ These are short prerolls/seeks at those positions, not hours of uninterrupted
 callbacks. Host/master-FX processing, installed devices, browser-master parity,
 two-source Godot fidelity and human listening remain separate acceptance work.
 
+Core Campfire full-mix/stem export uses the normalized guitar volume/mute rather
+than a fixed default gain. Live mixer changes also update already sounding and
+scheduled strum voices through anchored five-millisecond gain ramps, retaining
+note position and natural tail without rebuilding PCM. Stop holds the actual
+current gain before its release. Direct event-buffer rendering retains the
+existing default gain unless `stemMix.guitar` is supplied. Browser validation
+includes 20 static gain/mute cases and four sample-accurate dynamic captures at
+44.1/48 kHz, including mute before future string starts, unmute, and two controls
+at the same audio time. This is separate from browser/shared-master fidelity
+and physical listening.
+
 - 10 dry-note Float32 little-endian SHA-256 fixtures match the inspected
   reference at 44.1/48 kHz and MIDI 36/50/69/84/96.
 - 26 deterministic tests cover those hashes, every major/minor root, exact
@@ -180,8 +191,9 @@ two-source Godot fidelity and human listening remain separate acceptance work.
   1.87e-9 per sample (float summation order). A real browser rendered tail test
   preserves the first voice and cancels obsolete future lookahead, with correct
   hard-left channel routing. This is DSP evidence, not physical-device listening.
-- Core's full 177-test suite passes. No old ID, default, schema, JSON/PCS1
-  migration or existing sound registry was changed by this foundation.
+- The foundation checkpoint passed Core's then-current 177-test suite. See the
+  implementation ledger for subsequent source/test counts. No old ID, default,
+  schema, JSON/PCS1 migration or existing sound registry changed in that foundation.
 - The required family-parity gate passes: generated surface freshness, surface
   drift, Chordsmith browser event trace, Core render/game-pack fixtures and the
   DAW regression scope (1,170 passing tests across 100 files).
