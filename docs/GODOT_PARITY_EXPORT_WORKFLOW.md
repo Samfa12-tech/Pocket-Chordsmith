@@ -232,6 +232,38 @@ LOOP_KIT seams/endings, nonzero-tail alignment and loud/clipping reconstruction
 remain separate acceptance work; these four short captures deliberately disable
 conductor processing to isolate PCM delivery.
 
+### Preserve prepared WAV endings
+
+New game-pack imports enable `preserve_prepared_wav_endings` on the playback
+profile. Existing profiles keep their prior default (`false`); callers can
+explicitly import with `preserve_wav_endings: false`.
+
+Godot 4.6.3 applies a stream-end lookahead fade and its WAV resampler needs
+trailing history ([mixer](https://github.com/godotengine/godot/blob/4.6.3-stable/servers/audio/audio_server.cpp),
+[resampler](https://github.com/godotengine/godot/blob/4.6.3-stable/servers/audio/audio_stream.cpp)).
+Rendered measurement reproduced lost/dimmed final samples in both player modes.
+The conductor now makes a private non-looping PCM WAV resource with a silent
+transport guard after the complete original body. No source file, imported
+resource, sample-preview path or authored loop is modified. Explicitly looping
+WAVs bypass this guard and retain their original loop points and length.
+
+The guard covers 128 output frames plus four source-history frames, adjusted
+for the source/mix rates, bounded to 8–4096 source frames. At 48 kHz into 48 kHz
+it is 132 silent frames (2.75 ms). Compressed WAVs remain unchanged with a
+lossless-import warning; other stream formats retain their existing behavior.
+This preserves endings at normal playback speed; arbitrary pitch/global-speed
+changes remain outside the captured parity contract.
+
+Prewarm and repeated Play reuse the same prepared cache entry; profile replacement
+clears it. PCM preparation can transiently copy the body once. Cold-loading and
+working-set budgets remain pending GODOT-03 work; a warm cache check is not a
+memory/performance pass. The appended transport silence is not an authored
+natural tail or a loop seam fix.
+
+The strict rendered verifier supports `--hard-cut-ending` to retain a late
+Campfire pluck with nonzero final PCM. The same complete-reference and ending
+checks apply, including deliberately truncated and silence-padded captures.
+
 For `LOOP_KIT`, section assets are mapped into `playback_profile.stem_sets`. For `STEM_SYNC`, full-song stems are mapped into `playback_profile.stem_paths`. For `HYBRID`, bed stems and sample/stinger assets are mapped into the existing profile dictionaries.
 
 Do not remove the existing chart import. The chart importer remains useful for editor inspection and procedural preview. The parity workflow adds rendered audio assets beside it.

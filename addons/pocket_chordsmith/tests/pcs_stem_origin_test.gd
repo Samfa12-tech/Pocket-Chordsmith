@@ -64,6 +64,7 @@ func _check_route(synchronized: bool, local: bool) -> void:
 		chart.arrangement_positions.append({"id": chart.arrangement[i], "arrangement_index": i, "start_tick": i * 1920, "length_ticks": 1920, "bars": 1})
 	var profile = Profile.new()
 	profile.use_audio_stream_synchronized = synchronized
+	profile.preserve_prepared_wav_endings = true
 	profile.sample_preview_enabled = false
 	profile.sample_preview_prewarm_on_ready = false
 	if local:
@@ -133,6 +134,7 @@ func _fixture_chart() -> Resource:
 func _fixture_profile(synchronized: bool) -> Resource:
 	var profile = Profile.new()
 	profile.use_audio_stream_synchronized = synchronized
+	profile.preserve_prepared_wav_endings = true
 	profile.sample_preview_enabled = false
 	profile.sample_preview_prewarm_on_ready = false
 	return profile

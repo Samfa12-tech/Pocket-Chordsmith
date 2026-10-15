@@ -531,7 +531,7 @@ func prewarm_audio(include_stems := true, include_native_preview := false) -> Di
 	_prewarm_audio_dictionary(playback_profile.accent_streams, seen, report, true)
 	if include_stems:
 		for stem_map in _all_stem_maps_for_prewarm():
-			_prewarm_audio_dictionary(stem_map, seen, report, false)
+			_prewarm_audio_dictionary(stem_map, seen, report, false, true)
 	if include_native_preview:
 		_sync_native_preview_cache_signature()
 		_prewarm_native_preview_streams(report)
@@ -556,7 +556,7 @@ func prewarm_section(section_id: String) -> bool:
 	var stem_map := _section_stem_map(section_id)
 	if stem_map.is_empty():
 		return false
-	_prewarm_audio_dictionary(stem_map, seen, report, false)
+	_prewarm_audio_dictionary(stem_map, seen, report, false, true)
 	return bool(report.get("ok", false)) and int(report.get("failed", 0)) == 0
 
 
@@ -2067,7 +2067,7 @@ func _prepare_stem_sync_for_current_state() -> void:
 	sync_stream.set_stream_count(layers.size())
 	for index in range(layers.size()):
 		var layer_name := str(layers[index])
-		var stream := _load_audio_stream(stem_map[layer_name])
+		var stream := _load_prepared_stem_audio_stream(stem_map[layer_name])
 		if stream != null:
 			sync_stream.set_sync_stream(index, stream)
 			sync_stream.set_sync_stream_volume(index, float(_layer_volumes.get(layer_name, 0.0)))
@@ -2084,7 +2084,7 @@ func _prepare_layer_stem_players(stem_map: Dictionary) -> void:
 	layers.sort()
 	for layer_value in layers:
 		var layer_name := normalize_layer_name(str(layer_value))
-		var stream := _load_audio_stream(stem_map[layer_name])
+		var stream := _load_prepared_stem_audio_stream(stem_map[layer_name])
 		if stream == null:
 			continue
 		var player := _stem_player_for_layer(layer_name)
@@ -2240,6 +2240,61 @@ func _profile_has_property(property_name: String) -> bool:
 	return false
 
 
+func _prepared_stem_cache_key(value) -> String:
+	if value is String:
+		return "prepared-eof-v1:%s" % _audio_cache_key(str(value))
+	return "prepared-eof-v1:stream:%s" % str(value.get_instance_id()) if value is AudioStream else ""
+
+
+func _load_prepared_stem_audio_stream(value) -> AudioStream:
+	if playback_profile == null or not playback_profile.preserve_prepared_wav_endings:
+		return _load_audio_stream(value)
+	var key := _prepared_stem_cache_key(value)
+	if not key.is_empty() and _audio_stream_cache.has(key):
+		var cached := _audio_stream_cache[key] as AudioStream
+		if not cached.has_meta("pcs_guard_mix_rate") or cached.get_meta("pcs_guard_mix_rate") == AudioServer.get_mix_rate():
+			return cached
+		_audio_stream_cache.erase(key)
+	var source := _load_audio_stream(value)
+	if not (source is AudioStreamWAV):
+		if not key.is_empty() and source != null:
+			_audio_stream_cache[key] = source
+		return source
+	var wav := source as AudioStreamWAV
+	if wav.loop_mode != AudioStreamWAV.LOOP_DISABLED:
+		return source # Preserve authored loop points and length exactly.
+	if wav.format != AudioStreamWAV.FORMAT_16_BITS and wav.format != AudioStreamWAV.FORMAT_8_BITS:
+		push_warning("Prepared WAV ending preservation requires lossless PCM import; compressed stream is unchanged.")
+		_audio_stream_cache[key] = source
+		return source
+	# Godot's stream-end lookahead fades the final 64 output frames; WAV's
+	# resampler also needs trailing history. Move both into bounded silence.
+	# Duplicate the resource, never mutate a caller-owned/imported stream or file.
+	var guard_frames := ceili(128.0 * wav.mix_rate / maxf(1.0, AudioServer.get_mix_rate())) + 4
+	if guard_frames > 4096:
+		push_warning("Prepared WAV rate needs an unsupported ending guard; stream is unchanged.")
+		_audio_stream_cache[key] = source
+		return source
+	guard_frames = maxi(8, guard_frames)
+	var guarded := wav.duplicate() as AudioStreamWAV
+	var pcm := wav.data
+	var frame_bytes := (2 if wav.format == AudioStreamWAV.FORMAT_16_BITS else 1) * (2 if wav.stereo else 1)
+	var content_frames := pcm.size() / frame_bytes
+	var content_bytes := pcm.size()
+	pcm.resize(pcm.size() + guard_frames * frame_bytes)
+	for index in range(content_bytes, pcm.size()):
+		pcm[index] = 0
+	guarded.data = pcm
+	guarded.set_meta("pcs_content_frames", content_frames)
+	guarded.set_meta("pcs_eof_guard_frames", guard_frames)
+	guarded.set_meta("pcs_guard_mix_rate", AudioServer.get_mix_rate())
+	_audio_stream_cache[key] = guarded
+	if value is String:
+		# Retain one prepared PCM resource per path, including prewarm/repeated Play.
+		_audio_stream_cache.erase(_audio_cache_key(str(value)))
+	return guarded
+
+
 func _load_audio_stream(value, prefer_uncompressed_wav := false) -> AudioStream:
 	if value is AudioStream:
 		return value
@@ -2281,6 +2336,7 @@ func _audio_prewarm_signature(include_stems := false, include_native_preview := 
 		str(include_stems),
 		str(include_native_preview),
 		str(playback_profile.sample_preview_load_wavs_uncompressed),
+		str(playback_profile.preserve_prepared_wav_endings),
 	]
 	_append_audio_prewarm_map_signature(parts, playback_profile.drum_kit, true)
 	_append_audio_prewarm_map_signature(parts, playback_profile.event_sample_streams, true)
@@ -2338,13 +2394,15 @@ func _append_audio_prewarm_map_signature(parts: Array, stream_map: Dictionary, p
 	parts.append(",".join(values))
 
 
-func _prewarm_audio_dictionary(stream_map: Dictionary, seen: Dictionary, report: Dictionary, prefer_uncompressed_wav := false) -> void:
+func _prewarm_audio_dictionary(stream_map: Dictionary, seen: Dictionary, report: Dictionary, prefer_uncompressed_wav := false, prepared_stem := false) -> void:
 	for value in stream_map.values():
-		_prewarm_audio_value(value, seen, report, prefer_uncompressed_wav)
+		_prewarm_audio_value(value, seen, report, prefer_uncompressed_wav, prepared_stem)
 
 
-func _prewarm_audio_value(value, seen: Dictionary, report: Dictionary, prefer_uncompressed_wav := false) -> void:
+func _prewarm_audio_value(value, seen: Dictionary, report: Dictionary, prefer_uncompressed_wav := false, prepared_stem := false) -> void:
 	if value is AudioStream:
+		if prepared_stem:
+			_load_prepared_stem_audio_stream(value)
 		report["loaded"] = int(report["loaded"]) + 1
 		return
 	if not (value is String):
@@ -2353,10 +2411,12 @@ func _prewarm_audio_value(value, seen: Dictionary, report: Dictionary, prefer_un
 	if path.is_empty():
 		return
 	var key := _audio_cache_key(path, prefer_uncompressed_wav)
+	if prepared_stem and playback_profile != null and playback_profile.preserve_prepared_wav_endings:
+		key = _prepared_stem_cache_key(path)
 	if seen.has(key):
 		return
 	seen[key] = true
-	var stream := _load_audio_stream(path, prefer_uncompressed_wav)
+	var stream := _load_prepared_stem_audio_stream(path) if prepared_stem else _load_audio_stream(path, prefer_uncompressed_wav)
 	if stream != null:
 		report["loaded"] = int(report["loaded"]) + 1
 	else:

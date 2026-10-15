@@ -20,6 +20,7 @@ enum PlaybackBackend {
 @export var stem_paths: Dictionary = {}
 @export var stem_bus_names: Dictionary = {}
 @export var use_audio_stream_synchronized := true
+@export var preserve_prepared_wav_endings := false
 @export var use_audio_stream_polyphonic_for_accents := true
 @export var accent_streams: Dictionary = {}
 @export var event_sample_streams: Dictionary = {}

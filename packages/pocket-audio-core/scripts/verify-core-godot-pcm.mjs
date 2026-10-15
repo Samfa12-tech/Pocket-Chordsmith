@@ -11,6 +11,7 @@ const binIndex = process.argv.indexOf("--godot-bin");
 if (binIndex < 0 || !process.argv[binIndex + 1]) throw new Error("Pass --godot-bin with Godot 4.6.3.");
 const godot = process.argv[binIndex + 1];
 const rendered = process.argv.includes("--rendered");
+const hardCutEnding = process.argv.includes("--hard-cut-ending");
 const scratch = resolve(root, "local-artifacts/scratch/validation/core-godot-pcm");
 mkdirSync(scratch, { recursive: true });
 const workspace = mkdtempSync(resolve(scratch, "run-"));
@@ -43,6 +44,10 @@ const source = {
     ] }
   } } }
 };
+if (hardCutEnding) {
+  source.sections.A.tracks.guitar.events.push({ tick: 1680, durationTicks: 120, notes: [50], sound: "campfire_acoustic", velocity: 110 });
+  source.sections.A.tracks.melody.events.pop();
+}
 const kit = await createGodotExportKit(source, { profile: "STEM_SYNC", sampleRate: 48000 });
 const pack = resolve(workspace, "pack");
 mkdirSync(pack);
@@ -84,7 +89,7 @@ if (!capture || capture.mix_rate !== 48000) throw new Error("Missing 48 kHz Godo
 const expected = decodePcmWavBytes(readFileSync(resolve(pack, kit.manifest.assets.mix)));
 const records = capture.captures.map((item) => compare(item));
 if (capture.captures.some((item) => item.mix === "layers" && item.selected_streams !== 6)) throw new Error("The rendered fixture must include five dry stems and a shared bed.");
-const report = { route: "Core source -> real recipe WAV pack -> imported profile -> Godot conductor -> engine bus", driver: capture.driver, rendered, mixRate: capture.mix_rate, workspace, sourceHashes, sourceWavBytesPreserved: true, explicitLoopChoicePreserved: true, records, humanListening: "not tested", nativeDawRoute: "not tested by this fixture" };
+const report = { route: "Core source -> real recipe WAV pack -> imported profile -> Godot conductor -> engine bus", driver: capture.driver, rendered, ending: hardCutEnding ? "nonzero-hard-cut" : "natural-decay", mixRate: capture.mix_rate, workspace, sourceHashes, sourceWavBytesPreserved: true, explicitLoopChoicePreserved: true, records, humanListening: "not tested", nativeDawRoute: "not tested by this fixture" };
 writeFileSync(resolve(workspace, "parity-report.json"), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));
 if (records.some((item) => !item.passed)) process.exitCode = 1;

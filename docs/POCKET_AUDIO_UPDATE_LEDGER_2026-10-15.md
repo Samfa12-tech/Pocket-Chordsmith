@@ -157,7 +157,8 @@ not continuous adaptive-loop, native DAW, browser-master or listening parity.
 An additional late Campfire cue with a nonzero hard-cut ending failed the
 unchanged sample tolerance (maximum error about 0.00281 in ordinary layers and
 0.000306 synchronized). This is retained as a failed seam/end gate, not covered
-by the naturally decaying fixture. Cause and correction remain pending.
+by the naturally decaying fixture. The later prepared-WAV ending slice below
+diagnoses and corrects this retained failure without relaxing measurement.
 Strict passing report: `core-godot-pcm/strict-ending-final-report.json`;
 failed hard-cut report: `core-godot-pcm/run-R7Va79/parity-report.json`, both
 under this review checkout's ignored validation directory.
@@ -370,3 +371,46 @@ Published: nothing. These are short prerolls and seeks at named positions, not
 two hours of continuous callbacks. Installed devices, hosted/master FX, browser
 master, both complete Godot routes and listening remain separate acceptance.
 Capture/input plumbing is unchanged; omitted mic interaction is not passed.
+
+## Seventh source candidate: prepared Godot WAV endings
+
+Branch `codex/pocket-audio-godot-ending-20261015` follows corrected native
+candidate `b4073d53885cdca516f21869868c1f066f81d62b`. The retained late Campfire
+hard-cut capture failed by 0.00281 in ordinary players and 0.000306 synchronized.
+Godot 4.6.3's own mixer applies a 64-frame stream-end lookahead fade, and its
+WAV resampler has an end-history boundary. A private PCM transport guard now
+moves those boundaries into silence after the complete authored body.
+
+New pack imports enable `preserve_prepared_wav_endings`; existing profiles keep
+their previous default. Opt-out is explicit. Only non-looping PCM WAV resources
+are guarded; source files and caller-owned/imported resources stay unchanged.
+Authored looping streams retain their mode/points/length. Compressed WAVs stay
+unchanged with a lossless-import warning. Guard size is source/mix-rate-aware,
+8–4096 source frames (132 frames at 48/48 kHz). Prewarm and repeat preparation
+reuse one prepared cache entry per path; profile replacement clears it. A
+transient body copy and cold-load/working-set budgets remain GODOT-03 work.
+
+Executed: 13 ownership/cache/rate/loop checks; 17 pack-selection checks; all 48
+origin/pause/resume/seek/ownership scenarios on Dummy with the guard enabled;
+schema/trust/accessibility and 134-entry addon-only package gate; 189 Core tests;
+complete family parity including 1,173 DAW tests. Rendered WASAPI passes all
+four hard-cut and all four natural-ending routes, comparing every one of 96,000
+stereo reference frames per route and rejecting deliberately missing-final-frame
+and silence-padded endings. Maximum error is 0.00006211; original PCM16 sample/
+RMS tolerances remain unchanged. Source WAV hashes and explicit loop choice
+remain preserved. The following 100 ms of all eight captures is silent.
+Rendered WASAPI also passes all 48 guard-enabled origin/pause/seek scenarios.
+
+Evidence under ignored validation: `godot-ending-ci-final.log`,
+`godot-ending-core.log`, `godot-ending-family.log`,
+`core-godot-pcm/run-McJaIT/parity-report.json` (hard cut),
+`core-godot-pcm/run-AZMenQ/parity-report.json` (natural), and
+`godot-ending-origin-rendered.log` and `godot-ending-post-body-silence.json`.
+The earlier failed report remains intact in
+the review checkout at `core-godot-pcm/run-R7Va79/parity-report.json`.
+
+Published: nothing. Transport silence is not an authored natural tail or a
+loop-seam fix. Rendered LOOP_KIT seams/endings, nonzero-tail alignment, loud/
+clipping reconstruction, browser master, fully arranged native DAW-to-Godot,
+installed-device output, real-game performance and human listening remain
+independent acceptance work. No new installer or public artifact was produced.
