@@ -125,7 +125,7 @@ test("generated ESM and IIFE share the real browser API and render audible WAV P
 });
 
 test("dist artifacts are self-contained and publish a generated API manifest", async () => {
-  for (const file of ["pocket-audio-core.esm.js", "pocket-audio-core.browser.esm.js", "pocket-audio-core.iife.js"]) {
+  for (const file of ["pocket-audio-core.esm.js", "pocket-audio-core.browser.esm.js", "pocket-audio-core.iife.js", "pocket-audio-campfire.iife.js", "pocket-audio-prepared.iife.js"]) {
     const source = await readFile(new URL(`../dist/${file}`, import.meta.url), "utf8");
     assert.doesNotMatch(source, /(?:from|import\()\s*["']\.\.\/src\//);
   }

@@ -326,6 +326,58 @@ test("cold preparation rejects its memory budget before allocating and accepts c
   assert.equal(context.sources.length, 0);
 });
 
+test("prepared live edits add only missing PCM without stopping or retriggering sounding notes", async () => {
+  const context = preparationContext();
+  const bank = await prepareCampfireAcousticNoteBank(context, [{midi:50}]);
+  bank.schedule({midi:50}, 0);
+  const starts = [...context.sources[0].starts];
+  const added = await bank.prepareMissingEvents([{midiNotes:[50,57,62]}]);
+  assert.equal(added.added, 2);
+  assert.equal(context.buffers.length, 3);
+  assert.equal(bank.getDiagnostics().entries, 3);
+  assert.equal(context.sources.length, 1, "preparing an edit never starts a voice");
+  assert.deepEqual(context.sources[0].starts, starts);
+  assert.deepEqual(context.sources[0].stops, [], "existing natural tails are retained");
+  assert.equal((await bank.prepareMissingEvents([{midiNotes:[62,57,50], direction:"up", velocity:0.2}])).added, 0);
+  assert.equal(context.buffers.length, 3);
+  bank.dispose();
+});
+
+test("prepared edit budget and cancellation cannot partially promote stale PCM", async () => {
+  const context = preparationContext();
+  const noteBytes = 48000 * 1.5 * 4;
+  const bank = await prepareCampfireAcousticNoteBank(context, [{midi:50}], {maxBytes:noteBytes * 5});
+  await assert.rejects(bank.prepareMissingEvents([{midiNotes:[51,52,53,54,55]}]), /budget/);
+  assert.equal(context.buffers.length, 1, "budget failure precedes PCM allocation");
+  const controller = new AbortController();
+  await assert.rejects(bank.prepareMissingEvents([{midiNotes:[51,52,53,54]}], {signal:controller.signal, yieldTask:async () => controller.abort()}), {name:"AbortError"});
+  assert.equal(bank.getDiagnostics().entries, 1);
+  assert.equal(bank.getDiagnostics().bytes, noteBytes);
+  assert.throws(() => bank.schedule({midi:51}, 0), /not prepared/);
+  assert.equal((await bank.prepareMissingEvents([{midi:57}])).added, 1);
+  assert.equal(bank.getDiagnostics().entries, 2);
+  bank.dispose();
+});
+
+test("a newer prepared edit supersedes a yielded update and dispose rejects later promotion", async () => {
+  const context = preparationContext();
+  const bank = await prepareCampfireAcousticNoteBank(context, [{midi:50}]);
+  let release, didYield;
+  const yielded = new Promise(resolve => { didYield = resolve; });
+  const first = bank.prepareMissingEvents([{midiNotes:[51,52,53,54]}], {yieldTask:async () => { didYield(); await new Promise(resolve => { release = resolve; }); }});
+  const cancelled = assert.rejects(first, {name:"AbortError"});
+  await yielded;
+  const latest = bank.prepareMissingEvents([{midi:57}]);
+  release();
+  await cancelled;
+  assert.equal((await latest).added, 1);
+  assert.equal(bank.getDiagnostics().entries, 2);
+  assert.throws(() => bank.schedule({midi:51}, 0), /not prepared/);
+  await assert.rejects(bank.prepareMissingEvents([{midiNotes:[60,61,62,63]}], {yieldTask:async () => bank.dispose()}), {name:"AbortError"});
+  assert.equal(bank.getDiagnostics().bytes, 0);
+  assert.equal(bank.getDiagnostics().entries, 0);
+});
+
 const liveCampfireSource = {
   schemaVersion: 17, bpm: 76, sectionBars: { A: 1, B: 1 }, songSequence: ["A"],
   sections: Object.fromEntries(["A", "B"].map((sectionId, i) => [sectionId, { tracks: { guitar: { events: [

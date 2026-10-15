@@ -312,6 +312,7 @@ const FORMAT_FEATURES = ["sound-profile-v1","rich-events-v1","articulations-v1",
 const POCKET_AUDIO_CORE_VERSION = "0.2.0";
 const POCKET_AUDIO_CORE_SCHEMA_SUPPORT = "17";
 const POCKET_AUDIO_CORE_WAV_WORKER_GZIP_BASE64 = "__POCKET_AUDIO_CORE_WAV_WORKER_GZIP_BASE64__";
+const POCKET_AUDIO_PREPARED_RUNTIME_GZIP_BASE64 = "__POCKET_AUDIO_PREPARED_RUNTIME_GZIP_BASE64__";
 const POCKET_AUDIO_CORE_PACKAGED_IMPORT_PATHS = [
   "./pocket-audio-core/dist/pocket-audio-core.browser.esm.js",
   "./pocket-audio-core/src/browser.js",
@@ -654,7 +655,7 @@ function funkDrumKitIds(){ return FUNK_DRUM_KITS.slice(); }
 function funkBassToneIds(){ return FUNK_BASS_TONES.slice(); }
 function pocketDrumKitIds(){ return Array.from(new Set(["classic", ...lofiDrumKitIds(), ...chipDrumKitIds(), ...metalDrumKitIds(),...funkDrumKitIds()])); }
 function pocketBassToneIds(){ return Array.from(new Set(["classic", ...lofiBassToneIds(), ...chipBassToneIds(), ...metalBassToneIds(),...funkBassToneIds()])); }
-function guitarToneIds(){ return coreArrayExport("POCKET_GUITAR_TONES", GUITAR_TONES); }
+function guitarToneIds(){ return [...coreArrayExport("POCKET_GUITAR_TONES", GUITAR_TONES), "campfire_acoustic"]; }
 function guitarRegisterIds(){ return coreArrayExport("POCKET_GUITAR_REGISTERS", GUITAR_REGISTERS); }
 function guitarStrumModeIds(){ return coreArrayExport("POCKET_GUITAR_STRUM_MODES", GUITAR_STRUM_MODES); }
 function guitarPatternPresetIds(){ return coreArrayExport("POCKET_GUITAR_PATTERN_PRESETS", GUITAR_PATTERN_PRESETS); }
@@ -1245,7 +1246,7 @@ function sanitizeProjectData(raw){
     midiExportMode: safeChoice(raw.midiExportMode, ["quantized","performance"], "quantized"),
     midiChordExport: safeChoice(raw.midiChordExport, ["played","block","none"], "played"),
     midiExactDurations: raw.midiExactDurations !== false,
-    guitarEnabled: !!raw.guitarEnabled,
+    guitarEnabled: raw.guitarEnabled === undefined ? chordsmithProjectHasCampfire(raw) : !!raw.guitarEnabled,
     guitarTone: safeChoice(raw.guitarTone, guitarToneIds(), "high_gain"),
     guitarRegister: safeChoice(raw.guitarRegister, guitarRegisterIds(), "low"),
     guitarStrumMode: safeChoice(raw.guitarStrumMode, guitarStrumModeIds(), "down"),

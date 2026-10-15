@@ -52,7 +52,14 @@ if (bundle.split(workerMarker).length !== 2) {
 const workerPayload = Buffer.from(
   gzipSync(workerSource, { level: 9, mtime: 0 }),
 ).toString("base64");
-const embeddedBundle = bundle.replace(workerMarker, workerPayload);
+const preparedMarker = "__POCKET_AUDIO_PREPARED_RUNTIME_GZIP_BASE64__";
+if (bundle.split(preparedMarker).length !== 2) {
+  throw new Error("Chordsmith source must contain exactly one prepared runtime embedding marker.");
+}
+const preparedSource = readFileSync(resolve(root, "../../packages/pocket-audio-core/dist/pocket-audio-prepared.iife.js"));
+const preparedPayload = Buffer.from(gzipSync(preparedSource, { level: 9, mtime: 0 })).toString("base64");
+const campfireSource = readFileSync(resolve(root, "../../packages/pocket-audio-core/dist/pocket-audio-campfire.iife.js"), "utf8");
+const embeddedBundle = `${campfireSource}\n${bundle.replace(workerMarker, workerPayload).replace(preparedMarker, preparedPayload)}`;
 const standaloneShell = shell.replace(preflightModuleTag, "");
 const output = standaloneShell.replace(placeholder, embeddedBundle);
 const outputPath = resolve(root, manifest.output);

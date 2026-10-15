@@ -223,6 +223,7 @@ function importProject(rawData){
     throw e;
   }
   const wasPlaying = state.isPlaying;
+  cancelChordsmithCampfirePlayback(true);
   if(wasPlaying) stopPlayback();
 
   state.key = data.key;

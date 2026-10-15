@@ -49,6 +49,43 @@ async function fetchJsonFixture(page, fixturePath) {
   return response.json();
 }
 
+test("Campfire uses prepared audio on the existing Play and Stop controls and reuses warm PCM", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await page.locator("#projectBox").fill(JSON.stringify({
+    projectVersion: 17, uiMode: "advanced", key: "D", scale: "major", bpm: 76,
+    timeSig: 4, resolution: 4, chordsOn: false, bassOn: false,
+    guitarEnabled: true, guitarTone: "campfire_acoustic", guitarRegister: "low",
+    guitarVolume: 0.66, songSequence: ["A"], sectionBars: { A: 1 },
+    progressionA: [0], guitarPatternA: ["open"]
+  }));
+  await page.locator("#importJsonBtn").click();
+  await expect(page.locator("#guitarToneSelect")).toHaveValue("campfire_acoustic");
+  await page.locator("#closeSettingsBtn").click();
+  await page.locator("#playBtn").click();
+  await expect(page.locator("#playBtn")).toHaveText("Pause");
+  await expect.poll(() => page.evaluate(() => getChordsmithCampfireDiagnostics().bank.activeVoices)).toBeGreaterThan(0);
+  const cold = await page.evaluate(() => getChordsmithCampfireDiagnostics());
+  expect(cold.bank.entries).toBe(4);
+  expect(cold.bank.activeVoices).toBeGreaterThan(0);
+  await page.locator("#stopBtn").click();
+  await expect.poll(() => page.evaluate(() => getChordsmithCampfireDiagnostics().bank.activeVoices)).toBe(0);
+  await page.evaluate(() => {
+    window.__campfireBufferAllocations = 0;
+    const createBuffer = audioCtx.createBuffer.bind(audioCtx);
+    audioCtx.createBuffer = (...args) => { window.__campfireBufferAllocations++; return createBuffer(...args); };
+  });
+  await page.locator("#playBtn").click();
+  await expect(page.locator("#playBtn")).toHaveText("Pause");
+  const warm = await page.evaluate(() => ({...getChordsmithCampfireDiagnostics(), allocations:window.__campfireBufferAllocations}));
+  expect(warm.preparations).toBe(cold.preparations);
+  expect(warm.reuses).toBeGreaterThan(cold.reuses);
+  expect(warm.allocations).toBe(0);
+  await page.locator("#stopBtn").click();
+  expect(errors).toEqual([]);
+});
+
 async function buildValidHandoffCode(page, padding = 0) {
   const project = await fetchJsonFixture(page, FIXTURE_CASES[0].path);
   return page.evaluate((value) => {

@@ -17,7 +17,7 @@ export async function prepareCampfireAcousticNoteBank(context, events, options =
       if (identities.size * bytesPerNote > maxBytes) throw new RangeError(`Campfire preparation exceeds the configured ${maxBytes} PCM byte budget. Use offline rendering or a smaller set of note identities.`);
     }
   }
-  const bytes = identities.size * bytesPerNote;
+  let bytes = identities.size * bytesPerNote;
   const buffers = new Map();
   const yieldTask = options.yieldTask || (() => new Promise((resolve) => setTimeout(resolve, 0)));
   for (const [key, identity] of identities) {
@@ -32,6 +32,8 @@ export async function prepareCampfireAcousticNoteBank(context, events, options =
   checkCancelled();
   const active = new Set();
   let disposed = false;
+  let updateGeneration = 0;
+  let updateTail = Promise.resolve();
   let outputGain = 1;
   const rampVoiceGain = (voice, level, seconds) => {
     const now = context.currentTime;
@@ -61,6 +63,40 @@ export async function prepareCampfireAcousticNoteBank(context, events, options =
   };
   return {
     getDiagnostics: () => ({ entries: buffers.size, bytes: disposed ? 0 : bytes, maxBytes, activeVoices: active.size, outputGain }),
+    prepareMissingEvents(events, {signal, yieldTask:yieldMore = yieldTask} = {}) {
+      const generation = ++updateGeneration;
+      const update = updateTail.catch(() => {}).then(async () => {
+        const check = () => {
+          if(disposed || signal?.aborted || generation !== updateGeneration) throw new DOMException("Campfire preparation cancelled", "AbortError");
+        };
+        check();
+        const missing = new Map();
+        for(const event of events) for(const voice of campfireAcousticEventVoices(event, {sampleRate:context.sampleRate})) {
+          const key = campfireAcousticNoteKey(voice.identity);
+          if(!buffers.has(key)) missing.set(key, voice.identity);
+          if(bytes + missing.size * bytesPerNote > maxBytes) throw new RangeError("Campfire live edits exceed the prepared PCM budget. Stop and Play to rebuild the current note set.");
+        }
+        const pending = new Map();
+        try {
+          for(const [key, identity] of missing) {
+            check();
+            const pcm = renderCampfireAcousticNote(identity);
+            const buffer = context.createBuffer(1, pcm.length, context.sampleRate);
+            buffer.copyToChannel(pcm, 0);
+            pending.set(key, buffer);
+            if(pending.size % 4 === 0) await yieldMore();
+          }
+          check();
+          for(const [key, buffer] of pending) buffers.set(key, buffer);
+          bytes = buffers.size * bytesPerNote;
+          return {added:pending.size, bytes};
+        } finally {
+          pending.clear();
+        }
+      });
+      updateTail = update;
+      return update;
+    },
     setOutputGain(gain, rampSeconds = 0.005) {
       if (disposed) throw new Error("Campfire note bank has been disposed.");
       if (!Number.isFinite(gain) || gain < 0 || !Number.isFinite(rampSeconds) || rampSeconds < 0 || rampSeconds > 0.1) throw new RangeError("Invalid Campfire output gain or ramp time.");
@@ -116,6 +152,7 @@ export async function prepareCampfireAcousticNoteBank(context, events, options =
       }
     },
     dispose() {
+      updateGeneration++;
       stopAll();
       buffers.clear();
       disposed = true;

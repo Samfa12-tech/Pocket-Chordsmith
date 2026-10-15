@@ -194,6 +194,7 @@ function scheduler(){
   }
 }
 async function startPlayback(mode="section"){
+  const playbackRequest = ++chordsmithPlaybackRequest;
   state.bpm = sanitizeBpm(els.bpmInput.value, 96);
   els.bpmInput.value = state.bpm;
   storeSection();
@@ -204,6 +205,9 @@ async function startPlayback(mode="section"){
   if(els.playSequenceBtn) els.playSequenceBtn.textContent = mode === "sequence" ? "..." : "Play Song";
   setStatus(mode === "sequence" ? "Starting song sequence..." : "Starting audio...");
   await ensureAudio();
+  if(playbackRequest !== chordsmithPlaybackRequest) return;
+  if(!(await prepareChordsmithCampfirePlayback(exportProject(), playbackRequest))) return;
+  if(playbackRequest !== chordsmithPlaybackRequest) return;
   clearSchedulerTimers();
   clearPendingUiTimers();
   state.transportPlan = buildPlaybackPlan(mode);
@@ -247,12 +251,13 @@ async function togglePlay(mode="section"){
     state.isPlaying = false;
     clearSchedulerTimers();
     updateTransportButtonLabels();
-    setStatus("Could not start audio");
+    setStatus(e?.message || "Could not start audio");
   }finally{
     transportBusy = false;
   }
 }
 function stopPlayback(){
+  cancelChordsmithCampfirePlayback();
   callPocketAudioCore("stop");
   state.isPlaying = false;
   clearSchedulerTimers();

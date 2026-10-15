@@ -6,6 +6,7 @@
     "src/handoff/02-transfer.js",
     "src/state/03-project-state.js",
     "src/audio/04-live-engine.js",
+    "src/audio/campfire-playback.js",
     "src/ui/05-composer-ui.js",
     "src/accessibility/06-interaction-accessibility.js",
     "src/state/06-genre-library.js",

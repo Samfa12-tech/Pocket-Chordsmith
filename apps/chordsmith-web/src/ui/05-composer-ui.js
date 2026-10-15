@@ -959,6 +959,7 @@ function guitarStepDuration(section, step, articulation){
 }
 function buildPowerChordNotes(ch, register=state.guitarRegister){
   const chord = ch || state.availableChords[0] || {root:0};
+  if(state.guitarTone === "campfire_acoustic") return globalThis.PocketAudioCampfire.campfireAcousticVoicing({rootPc:chord.root, quality:chord.quality || "maj", register});
   const rootPc = clamp(asInt(chord.root, 0), 0, 11);
   const minByRegister = register === "high" ? 52 : register === "mid" ? 45 : 35;
   const maxByRegister = register === "high" ? 64 : register === "mid" ? 57 : 47;
@@ -997,6 +998,11 @@ function guitarDirectionForStep(step, mode=state.guitarStrumMode){
 }
 function playGuitarVoice(ctx, dest, notes, t, dur, articulation="open", toneName=state.guitarTone, direction="down", step=0){
   if(!ctx || !dest || !Array.isArray(notes) || !notes.length) return;
+  if(toneName === "campfire_acoustic"){
+    if(ctx !== chordsmithCampfireContext || dest !== chordsmithCampfireDestination || !chordsmithCampfireBank) throw new Error("Campfire Acoustic must finish preparation before playback. Core WAV export is supported separately.");
+    chordsmithCampfireBank.schedule({midiNotes:notes, direction, velocity:articulation === "accent" ? 1.28 : 1}, t);
+    return;
+  }
   t = safeAudioTime(t);
   let cfg = {...guitarToneConfig(toneName)};
   if(normalizeSoundProfileId(state.audioProfile) === HEAVY_METAL_AUDIO_PROFILE_ID && state.metalTexture?.enabled){
@@ -1093,6 +1099,7 @@ function playGuitarVoice(ctx, dest, notes, t, dur, articulation="open", toneName
   });
 }
 function scheduleGuitarStep(section, step, time){
+  if(scheduleChordsmithCampfireStep(section.name, step, time)) return;
   if(!state.guitarEnabled) return;
   const art = guitarStepArt(section, step);
   if(art === "off" || art === "hold") return;
@@ -1114,6 +1121,17 @@ function firstAudibleGuitarStep(section){
   return -1;
 }
 async function auditionCurrentSectionGuitar(){
+  if(chordsmithProjectHasCampfire(exportProject())){
+    await ensureAudio();
+    applyVolumes();
+    const request = ++chordsmithPlaybackRequest;
+    if(!(await prepareChordsmithCampfirePlayback(exportProject(), request))) return false;
+    const events = chordsmithCampfirePlan?.sections.get(state.currentSection)?.byStep;
+    const first = events && [...events.values()][0]?.[0];
+    if(!first) return false;
+    chordsmithCampfireBank.schedule(first.event, audioCtx.currentTime + 0.015);
+    return true;
+  }
   const section = getSectionData(state.currentSection, false);
   const step = firstAudibleGuitarStep(section);
   if(step < 0) return false;
@@ -1245,6 +1263,7 @@ async function setGuitarEnabled(enabled, audition=false){
     if(generated) setStatus(heard ? `No guitar part existed, so ${guitarFillStyleLabel(state.guitarPatternPreset)} was generated and enabled` : `No guitar part existed, so ${guitarFillStyleLabel(state.guitarPatternPreset)} was generated. Press Play to hear it.`);
     else setStatus(heard ? "Guitar rhythm enabled" : "Guitar rhythm enabled. Add guitar cells or choose Fill Guitar From Chords to hear it.");
   } else {
+    chordsmithCampfireBank?.stopAll();
     setStatus("Guitar rhythm disabled");
   }
   markProjectDirty();
@@ -2222,6 +2241,7 @@ function refreshAutoSaveStatus(){
 }
 function markProjectDirty(){
   state.autosaveDirty = true;
+  queueChordsmithCampfireRefresh();
   if(els.autoSaveStatus) els.autoSaveStatus.textContent = "Auto-save pending";
 }
 function saveAutoSnapshot(force=false){
