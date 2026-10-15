@@ -115,6 +115,34 @@ this change does not add a seek/resume-position API.
 
 ## Executed acceptance and next integration
 
+### Native renderer foundation
+
+The native Windows graph prepares an original Rust recipe-1 note bank before
+rendering. Prepared voices share immutable note PCM, bounded to 64 MiB per
+playback working set. The audio callback/render frame path performs sample
+reads and summation only. Full seed/rate/pitch/tail identity, 27 ms offsets,
+ordered up/down strums and post-cache gain agree with Core. Invalid pitches,
+seeds, recipe/tail/direction requests and oversized working sets fail explicitly.
+The amplifier recipe is never substituted for an unprepared Campfire request.
+
+Ordinary native WAV rendering retains the final audible pluck's natural tail;
+muted tracks cannot add a silent tail. Explicit exact-loop/cache render modes
+retain their requested length. Native seek and cache-prune routing keep using
+the same prepared PCM. Renderer contract v37 includes the new module and export
+tail policy in its enforced source fingerprint; the recipe is included in cache
+identity, invalidating old generated caches once.
+
+Eight focused native tests cover preparation, constructor integration, full
+graph output, natural/explicit tails, seek/prune and invalid-intent rejection.
+Ten dry-note hashes match the independent reference; four composite event hashes
+(both rates/directions with explicit seed, gain and fade) match canonical Core.
+These are native code/DSP tests, not installed output or human listening.
+
+Product integration is still pending: registries/import/UI selectors, full
+voicings and picking, browser/DJ/fallback routes, and the generated native stem
+cache's current 250 ms tail assumption. Do not expose the sound as a completed
+product until cache regions retain its longer tails and target acceptance passes.
+
 - 10 dry-note Float32 little-endian SHA-256 fixtures match the inspected
   reference at 44.1/48 kHz and MIDI 36/50/69/84/96.
 - 26 deterministic tests cover those hashes, every major/minor root, exact

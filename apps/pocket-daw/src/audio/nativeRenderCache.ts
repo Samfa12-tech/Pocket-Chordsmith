@@ -8,6 +8,7 @@ import { pruneNativeCacheAssets, readNativeCacheAsset, renderNativeAudioWav, wri
 import { POCKET_BASS_TONE_CONFIGS, POCKET_DRUM_KIT_CONFIGS } from "../../../../packages/pocket-audio-core/src/sounds/lofi-registry.js";
 import { POCKET_CHORD_INSTRUMENT_CONFIGS, POCKET_LEAD_INSTRUMENT_CONFIGS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { POCKET_GUITAR_TONE_CONFIGS } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
+import { CAMPFIRE_ACOUSTIC_RECIPE } from "../../../../packages/pocket-audio-core/src/sounds/campfire-acoustic.js";
 import { POCKET_PRO_EQ_BANDS } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
 import { audioRegionFromClip, renderTimelineAudioRegions } from "./audioRegions";
 import { getCachedAudioBuffer, type CachedAudioBuffer } from "./audioBufferCache";
@@ -16,7 +17,7 @@ import { encodeWav } from "./offlineRender";
 
 export const NATIVE_RENDER_CACHE_ROOT = "project-cache/native-audio";
 export const NATIVE_GENERATED_STEM_TAIL_SECONDS = 0.25;
-export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v36-bfbccfdf-vst3-transport-bus-tails";
+export const NATIVE_AUDIO_RENDERER_CONTRACT_VERSION = "native-audio-renderer-v37-107dfc2d-campfire-acoustic-r1";
 export const NATIVE_CACHE_STEM_RENDER_MODE = "cache-stem";
 const STEM_ROLES: TrackRole[] = ["drums", "bass", "chords", "melody", "guitar"];
 
@@ -855,6 +856,7 @@ function nativeRendererRecipeHash(): string {
     chordInstruments: POCKET_CHORD_INSTRUMENT_CONFIGS,
     leadInstruments: POCKET_LEAD_INSTRUMENT_CONFIGS,
     guitarTones: POCKET_GUITAR_TONE_CONFIGS,
+    campfireAcoustic: CAMPFIRE_ACOUSTIC_RECIPE,
     proEqBands: POCKET_PRO_EQ_BANDS
   }));
 }

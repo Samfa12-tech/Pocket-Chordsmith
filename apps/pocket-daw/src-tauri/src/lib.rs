@@ -6,6 +6,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 
+mod campfire_acoustic;
 mod native_audio;
 mod native_audio_blocks;
 mod native_decode;

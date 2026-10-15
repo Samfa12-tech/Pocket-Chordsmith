@@ -73,7 +73,7 @@ hands-on check and continue independent work.
 | Area | Implementation/test status | Gate / next action |
 | --- | --- | --- |
 | Campfire Acoustic/Core | Original recipe, offline and prepared existing live transport implemented/tested; product selectors pending | [Recipe 1 contract](CAMPFIRE_ACOUSTIC_CONTRACT_V1.md): exact voicings/reference hashes, deterministic PCM, bounded preparation/cache and explicit tails. No game code copied or licence changed. |
-| Chordsmith/DJ/native DAW Campfire | Pending | Real audible paths, full voicings/strums/picking and explicit fallback limits; preserve old IDs/PCS1/JSON. |
+| Chordsmith/DJ/native DAW Campfire | Native renderer foundation implemented/tested; product integration pending | Original prepared Rust PCM matches Core; registries/import/selectors/browser/DJ, picking and native generated-cache tail assumptions still need integration. Preserve old IDs/PCS1/JSON. |
 | Both Godot export routes | Core pack real-recipe and captured PCM route tested; DAW gain/alternatives contract tested | Core offline is its own reference; browser FX/master equivalence remains pending. Fully arranged native DAW recording/FX/automation still needs its own actual rendered reference and Godot capture. |
 | DAW layout/accessibility | Pending beyond sample search/meter slice | Reproduce ordering/overflow at named window sizes/scales; native popover/focus/recording acceptance. |
 | Chordsmith visual direction | Three alternatives prepared/tested in draft PR80, `4fbfc35f29cdefcff268b6da018049ceba0e2e62` | Offline interactive Set List/Pedal Board/Tape Notes study, validated at 1440/720/375/360 px. Broad reskin awaits Sam's choice; app unchanged. |
@@ -184,7 +184,46 @@ x86_64-pc-windows-msvc -i glib`) reports no dependency. No Tauri/GTK upgrade was
 made. The locked Linux dependency path is confirmed through GTK 0.18 and
 Tauri 2.11.2 (muda/tao/wry/webkit2gtk), and needs deliberate upstream review;
 do not turn the clean npm audits into an all-ecosystem advisory claim.
-## Independent review correction — GODOT-01
+## Fourth source candidate: native Campfire renderer foundation
+
+Branch `codex/pocket-audio-native-campfire-20261015` follows Godot fidelity
+candidate `68394c17bbe19f1687275564e00beb27a360d373`. The original Rust note
+recipe prepares immutable shared PCM before starting render work, with a 64 MiB
+working-set limit and explicit unsupported-input failure. The existing native
+graph reads prepared voices; no note synthesis is added to the audio callback.
+Direction, seed, note gain, rate and optional fade match Core. Natural tails
+survive native seek/cache pruning and ordinary WAV export; exact-loop/cache
+modes retain explicit lengths. Muted tracks cannot extend the render with a
+silent Campfire tail.
+
+Renderer contract v37 fingerprints the new DSP module and export tail logic,
+and includes recipe identity in generated cache hashes. Old generated caches
+will rebuild once. Existing sound IDs/defaults, licences, dependencies,
+capture/device plumbing and release versions remain unchanged.
+
+Executed: eight focused native tests, including the real native playback
+constructor; 10 independent dry-note hashes and four cross-engine event hashes;
+184 Core tests; 64 focused cache/native-export tests and TypeScript; full native
+192 passed/2 ignored; 283 Windows-contract tests; Clippy with warnings denied.
+Final reports are under
+`local-artifacts/scratch/validation/native-campfire-*.log`. Two existing manual
+native tests (hosted-event benchmark and owned external session fixture) remain
+ignored, not passed.
+
+The capture fingerprint remains
+`e4ec7e55c375f6d43a7683bca61b3a4a60a96f73f9df9c09d745b21066aff770`;
+recording input/capture code is unaffected. This source slice does not require
+a fresh hands-on mic check, and does not count that omitted action as passed.
+Exact-installed PCM/MIDI/export and eligible retained-baseline verification
+remain required for a release candidate.
+
+Published: nothing. Product selectors/import/rich handoffs, browser/DJ paths,
+full voicings/picking and generated cache tail handling remain pending. In
+particular, the existing 250 ms generated-stem tail assumption must be resolved
+before exposing Campfire as a complete product feature. No full native-to-Godot
+or listening claim follows from these code tests.
+
+## Independent review correction - GODOT-01 (historical evidence)
 
 Independent review of `59f9c1e5ab3515f73af141c8e9d3bf3e15290584` correctly found
 that the empty-selection path stopped layer players but retained their streams.

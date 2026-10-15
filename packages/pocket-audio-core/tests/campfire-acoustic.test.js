@@ -17,6 +17,7 @@ import {
 } from "../src/sounds/campfire-acoustic.js";
 
 const reference = JSON.parse(readFileSync(new URL("./fixtures/campfire-reference-hashes.json", import.meta.url)));
+const eventReference = JSON.parse(readFileSync(new URL("./fixtures/campfire-event-reference-hashes.json", import.meta.url)));
 const pcmHash = (samples) => {
   const bytes = Buffer.alloc(samples.length * 4);
   samples.forEach((sample, index) => bytes.writeFloatLE(sample, index * 4));
@@ -32,6 +33,14 @@ for (const fixture of reference.records) {
     assert.ok(samples.every(Number.isFinite));
     assert.ok(peak(samples) > 0.01 && peak(samples) <= 0.225);
     assert.equal(pcmHash(renderCampfireAcousticNote(fixture)), fixture.sha256);
+  });
+}
+
+for (const fixture of eventReference.records) {
+  test(`canonical cross-engine event PCM ${fixture.sampleRate} Hz / ${fixture.event.direction}`, () => {
+    const samples = renderCampfireAcousticEvent(fixture.event, { sampleRate: fixture.sampleRate });
+    assert.equal(samples.length, fixture.frames);
+    assert.equal(pcmHash(samples), fixture.sha256);
   });
 }
 

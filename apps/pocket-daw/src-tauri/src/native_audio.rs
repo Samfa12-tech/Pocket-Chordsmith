@@ -1,3 +1,7 @@
+use crate::campfire_acoustic::{
+    EventSpec as CampfireEventSpec, NoteBank as CampfireNoteBank,
+    PreparedEvent as PreparedCampfireEvent, TailPolicy as CampfireTailPolicy,
+};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -878,6 +882,7 @@ struct PlaybackShared {
     project_title: Option<String>,
     events: Vec<NativeRenderedEvent>,
     compiled_event_routes: Vec<Option<CompiledGeneratedEventRoute>>,
+    campfire_events: HashMap<String, Arc<PreparedCampfireEvent>>,
     compiled_sampler_routes: Vec<Option<CompiledSamplerEventRoute>>,
     compiled_sidechain_triggers: Vec<CompiledSidechainTrigger>,
     compiled_sidechain_trigger_source_len: usize,
@@ -923,6 +928,7 @@ struct CompiledAudioRegion {
 struct CompiledGeneratedEventRoute {
     track_index: usize,
     drum_lane: Option<String>,
+    campfire: Option<Arc<PreparedCampfireEvent>>,
 }
 
 struct CompiledSamplerEventRoute {
@@ -1656,7 +1662,9 @@ impl NativeAudioRuntime {
             .unwrap_or_default();
         let scratch_track_capacity = tracks.len().max(1);
         let compiled_regions = compile_audio_regions(&regions, &assets, &track_indices);
-        let compiled_event_routes = compile_generated_event_routes(&events, &track_indices);
+        let campfire_events = prepare_campfire_events(&events, sample_rate)?;
+        let compiled_event_routes =
+            compile_generated_event_routes(&events, &track_indices, &campfire_events);
         let compiled_sampler_routes =
             compile_sampler_event_routes(&events, &payload.samplers, &assets, &track_indices);
         let compiled_sidechain_triggers =
@@ -1667,6 +1675,7 @@ impl NativeAudioRuntime {
             project_title: payload.project_title,
             events,
             compiled_event_routes,
+            campfire_events,
             compiled_sampler_routes,
             compiled_sidechain_triggers,
             compiled_sidechain_trigger_source_len,
@@ -2439,6 +2448,26 @@ fn render_playback_to_wav(
     let base_frame_count = (duration_seconds * sample_rate as f64).ceil().max(1.0) as usize;
     let frame_count = match mode {
         NativeAudioRenderMode::Mix => base_frame_count
+            .max(
+                playback
+                    .events
+                    .iter()
+                    .filter(|event| {
+                        playback
+                            .tracks
+                            .get(&event.track_id)
+                            .is_some_and(|track| track_is_enabled(track, playback.has_solo))
+                            && !playback.hosted_instruments.contains_key(&event.track_id)
+                    })
+                    .filter_map(|event| {
+                        playback.campfire_events.get(&event.id).map(|voice| {
+                            ((event.time + voice.duration_seconds()).max(0.0) * sample_rate as f64)
+                                .ceil() as usize
+                        })
+                    })
+                    .max()
+                    .unwrap_or(0),
+            )
             .saturating_add(playback.fx.max_tail_samples as usize)
             .saturating_add(
                 playback
@@ -2490,8 +2519,11 @@ fn prune_cache_stem_events(playback: &mut PlaybackShared) {
             .map(|track| track_gain(track, has_solo) > 0.0001)
             .unwrap_or(false)
     });
-    playback.compiled_event_routes =
-        compile_generated_event_routes(&playback.events, &playback.track_indices);
+    playback.compiled_event_routes = compile_generated_event_routes(
+        &playback.events,
+        &playback.track_indices,
+        &playback.campfire_events,
+    );
     playback.compiled_sidechain_triggers = compile_sidechain_triggers(
         &playback.events,
         playback.sidechain.as_ref(),
@@ -2770,7 +2802,11 @@ fn render_generated_event_source(
         let (left, right) = render_sampler_event_sample(event, sampler, t)?;
         (left, right, sampler.pan)
     } else {
-        let sample = render_event_sample(event, t);
+        let sample = if let Some(prepared) = route.campfire.as_ref() {
+            prepared.sample(t - event.time)
+        } else {
+            render_event_sample(event, t)
+        };
         if sample.abs() <= 0.000001 {
             return None;
         }
@@ -3567,8 +3603,11 @@ fn ensure_compiled_event_routes(playback: &mut PlaybackShared) {
     if playback.compiled_event_routes.len() == playback.events.len() {
         return;
     }
-    playback.compiled_event_routes =
-        compile_generated_event_routes(&playback.events, &playback.track_indices);
+    playback.compiled_event_routes = compile_generated_event_routes(
+        &playback.events,
+        &playback.track_indices,
+        &playback.campfire_events,
+    );
 }
 
 fn ensure_compiled_sidechain_triggers(playback: &mut PlaybackShared) {
@@ -5442,6 +5481,11 @@ fn harmonic_wave_coefficient(wave: &str, harmonic: usize) -> Option<f32> {
 }
 
 fn render_event_sample(event: &NativeRenderedEvent, t: f64) -> f32 {
+    // This instrument is prepared before the render worker. Never silently
+    // route an unprepared Campfire request through the amplifier recipe.
+    if is_campfire_event(event) {
+        return 0.0;
+    }
     let local = t - event.time;
     if local < 0.0 {
         return 0.0;
@@ -6675,6 +6719,20 @@ fn guitar_tone_config(tone: Option<&str>) -> NativeGuitarToneConfig {
 }
 
 fn event_release_end(event: &NativeRenderedEvent) -> f64 {
+    if is_campfire_event(event) {
+        let count = event.midi_notes.len().clamp(1, 12);
+        let strum = event
+            .technique
+            .as_ref()
+            .and_then(|value| value.get("campfire"))
+            .and_then(|value| value.get("strumSeconds"))
+            .and_then(Value::as_f64)
+            .unwrap_or(0.027)
+            .clamp(0.0, 0.1);
+        // Conservative scan fallback; actual playback uses the prepared exact
+        // frame length below. No pluck may expire at the old note gate.
+        return event.time + 1.5 + (count - 1) as f64 * strum + 0.000125;
+    }
     let base = match event.kind.as_str() {
         "kick" => 0.22,
         "snare" => 0.16,
@@ -6688,6 +6746,14 @@ fn playback_event_release_end(playback: &PlaybackShared, index: usize) -> f64 {
     let Some(event) = playback.events.get(index) else {
         return 0.0;
     };
+    if let Some(prepared) = playback
+        .compiled_event_routes
+        .get(index)
+        .and_then(|route| route.as_ref())
+        .and_then(|route| route.campfire.as_ref())
+    {
+        return event.time + prepared.duration_seconds();
+    }
     let Some(route) = playback
         .compiled_sampler_routes
         .get(index)
@@ -6782,6 +6848,7 @@ fn compile_audio_regions(
 fn compile_generated_event_routes(
     events: &[NativeRenderedEvent],
     track_indices: &HashMap<String, usize>,
+    campfire_events: &HashMap<String, Arc<PreparedCampfireEvent>>,
 ) -> Vec<Option<CompiledGeneratedEventRoute>> {
     events
         .iter()
@@ -6790,9 +6857,101 @@ fn compile_generated_event_routes(
             Some(CompiledGeneratedEventRoute {
                 track_index,
                 drum_lane: event.drum_lane.clone(),
+                campfire: campfire_events.get(&event.id).cloned(),
             })
         })
         .collect()
+}
+
+fn is_campfire_event(event: &NativeRenderedEvent) -> bool {
+    event.kind == "guitar" && event.instrument.as_deref() == Some("campfire_acoustic")
+}
+
+fn prepare_campfire_events(
+    events: &[NativeRenderedEvent],
+    sample_rate: u32,
+) -> Result<HashMap<String, Arc<PreparedCampfireEvent>>, String> {
+    let mut prepared = HashMap::new();
+    if !events.iter().any(is_campfire_event) {
+        return Ok(prepared);
+    }
+    let mut bank = CampfireNoteBank::new(sample_rate, 64 * 1024 * 1024)?;
+    for event in events.iter().filter(|event| is_campfire_event(event)) {
+        if !event.time.is_finite() {
+            return Err("Campfire event time must be finite.".into());
+        }
+        if prepared.contains_key(&event.id) {
+            return Err("Campfire generated event IDs must be unique.".into());
+        }
+        let source_notes = if event.midi_notes.is_empty() {
+            vec![event.midi.ok_or("Campfire needs explicit MIDI notes.")?]
+        } else {
+            event.midi_notes.clone()
+        };
+        if source_notes
+            .iter()
+            .any(|midi| !midi.is_finite() || midi.fract() != 0.0 || !(36.0..=96.0).contains(midi))
+        {
+            return Err("Campfire requires integer MIDI pitches from 36 to 96.".into());
+        }
+        let performance = event
+            .technique
+            .as_ref()
+            .and_then(|value| value.get("campfire"));
+        if performance.is_some_and(|value| !value.is_object()) {
+            return Err("Campfire technique must be an object.".into());
+        }
+        if performance
+            .and_then(|value| value.get("recipeVersion"))
+            .is_some_and(|value| value.as_u64() != Some(1))
+        {
+            return Err(
+                "Unsupported Campfire recipe version; native renderer supports recipe 1.".into(),
+            );
+        }
+        let seed = performance
+            .and_then(|value| value.get("seed"))
+            .map(|value| {
+                value
+                    .as_u64()
+                    .filter(|seed| *seed <= u32::MAX as u64)
+                    .map(|seed| seed as u32)
+                    .ok_or("Campfire seed must be an unsigned 32-bit integer.")
+            })
+            .transpose()?;
+        let tail = match performance
+            .and_then(|value| value.get("tailPolicy"))
+            .map(|value| value.as_str())
+        {
+            None | Some(Some("reference-cut")) => CampfireTailPolicy::ReferenceCut,
+            Some(Some("fade-5ms")) => CampfireTailPolicy::Fade5Ms,
+            _ => return Err("Unsupported Campfire tail policy.".into()),
+        };
+        let up = match event.direction.as_deref() {
+            None | Some("down") => false,
+            Some("up") => true,
+            _ => return Err("Campfire strum direction must be up or down.".into()),
+        };
+        let strum_seconds = performance
+            .and_then(|value| value.get("strumSeconds"))
+            .map(|value| {
+                value
+                    .as_f64()
+                    .ok_or("Campfire strum spacing must be numeric.")
+            })
+            .transpose()?
+            .unwrap_or(0.027);
+        let voice = bank.prepare(CampfireEventSpec {
+            notes: source_notes.iter().map(|midi| *midi as u8).collect(),
+            velocity: event.velocity,
+            up,
+            seed,
+            tail,
+            strum_seconds,
+        })?;
+        prepared.insert(event.id.clone(), Arc::new(voice));
+    }
+    Ok(prepared)
 }
 
 fn compile_sampler_event_routes(
@@ -9528,6 +9687,7 @@ mod tests {
             project_title: Some("Cached".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -9601,6 +9761,7 @@ mod tests {
             project_title: Some("Cached pan".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -9675,6 +9836,7 @@ mod tests {
             project_title: Some("Cached track pan".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -9779,6 +9941,7 @@ mod tests {
             project_title: Some("Cached sidechain".to_string()),
             events: vec![trigger_marker],
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -9879,6 +10042,7 @@ mod tests {
             project_title: Some("Cached live mixer".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -10011,6 +10175,7 @@ mod tests {
             project_title: Some("Cached dense stems".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -10107,6 +10272,7 @@ mod tests {
             project_title: Some("Test".to_string()),
             events: Vec::new(),
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -10162,6 +10328,7 @@ mod tests {
             project_title: Some("Test".to_string()),
             events,
             compiled_event_routes: Vec::new(),
+            campfire_events: HashMap::new(),
             compiled_sampler_routes: Vec::new(),
             compiled_sidechain_triggers: Vec::new(),
             compiled_sidechain_trigger_source_len: 0,
@@ -10882,6 +11049,135 @@ mod tests {
         assert!((sustain - 0.5).abs() < 0.02);
         assert!(release > 0.2 && release < sustain);
         assert!(render_sampler_event_sample(&event, &route, 2.65).is_none());
+    }
+
+    fn campfire_test_playback(event_time: f64) -> PlaybackShared {
+        let mut event = test_generated_event("campfire", "guitar", event_time, 0.04, 0.8);
+        event.track_id = "guitar".into();
+        event.instrument = Some("campfire_acoustic".into());
+        event.midi_notes = vec![50.0, 57.0, 62.0, 66.0];
+        let mut playback = playback_with_events(vec![event]);
+        playback.sample_rate = 8000;
+        playback.campfire_events = prepare_campfire_events(&playback.events, 8000).unwrap();
+        insert_playback_track(&mut playback, test_track("guitar", 1.0, 0.0, false, false));
+        ensure_compiled_event_routes(&mut playback);
+        playback
+    }
+
+    #[test]
+    fn native_campfire_graph_reads_prepared_pcm_and_seeks_into_complete_tail() {
+        let mut playback = campfire_test_playback(0.0);
+        let prepared = Arc::clone(playback.campfire_events.get("campfire").unwrap());
+        let mut budget = TrackSourceBudget::with_capacity(4);
+        let source =
+            render_generated_event_source(&mut playback, 0, 0.0, &mut budget, false).unwrap();
+        let (left, right) = source_pan_gains(0.0);
+        assert_eq!(source.left, prepared.sample(0.0) * left);
+        assert_eq!(source.right, prepared.sample(0.0) * right);
+        assert!(playback_event_release_end(&playback, 0) > 1.58);
+        playback.position_seconds = 1.0;
+        reset_scan_starts(&mut playback);
+        assert_eq!(
+            playback.scan_start_index, 0,
+            "seek must retain a sounding natural tail past the old gate"
+        );
+        let tail = render_frames(&mut playback, 80);
+        assert!(tail
+            .iter()
+            .any(|(left, right)| left.abs() > 0.00001 || right.abs() > 0.00001));
+        prune_cache_stem_events(&mut playback);
+        assert!(
+            Arc::ptr_eq(
+                &prepared,
+                playback.compiled_event_routes[0]
+                    .as_ref()
+                    .unwrap()
+                    .campfire
+                    .as_ref()
+                    .unwrap()
+            ),
+            "cache pruning reuses prepared PCM"
+        );
+    }
+
+    #[test]
+    fn native_campfire_ordinary_export_keeps_tails_and_exact_loops_keep_length() {
+        let mut ordinary = campfire_test_playback(0.9);
+        let wav =
+            render_playback_to_wav(&mut ordinary, 1.0, NativeAudioRenderMode::Mix, 32).unwrap();
+        assert!(wav.duration_seconds >= 2.481);
+        let mut exact = campfire_test_playback(0.9);
+        let wav =
+            render_playback_to_wav(&mut exact, 1.0, NativeAudioRenderMode::MixExact, 32).unwrap();
+        assert_eq!(wav.duration_seconds, 1.0);
+        let mut muted = campfire_test_playback(0.9);
+        muted.tracks.get_mut("guitar").unwrap().mute = true;
+        let wav = render_playback_to_wav(&mut muted, 1.0, NativeAudioRenderMode::Mix, 32).unwrap();
+        assert_eq!(
+            wav.duration_seconds, 1.0,
+            "muted Campfire cannot add a silent tail to the export"
+        );
+    }
+
+    #[test]
+    fn native_campfire_constructor_prepares_and_rejects_invalid_recipe_before_playback() {
+        let mut payload = serde_json::json!({
+            "startSeconds": 0.0, "sampleRate": 48000,
+            "tracks": [{"id": "guitar", "volume": 1.0, "pan": 0.0, "mute": false, "solo": false}],
+            "events": [{"id": "campfire", "kind": "guitar", "trackId": "guitar", "time": 0.0, "duration": 0.1, "velocity": 0.7,
+                "instrument": "campfire_acoustic", "midiNotes": [50, 57, 62, 66], "direction": "up", "technique": {"campfire": {"recipeVersion": 1, "seed": 123}}}]
+        });
+        let mut runtime = NativeAudioRuntime::default();
+        let mut playback = runtime
+            .build_playback(
+                serde_json::from_value(payload.clone()).unwrap(),
+                48000,
+                2,
+                1,
+            )
+            .unwrap();
+        assert_eq!(playback.campfire_events.len(), 1);
+        assert!(playback.compiled_event_routes[0]
+            .as_ref()
+            .unwrap()
+            .campfire
+            .is_some());
+        assert!(render_frames(&mut playback, 2048)
+            .iter()
+            .any(|(left, right)| left.abs() > 0.001 || right.abs() > 0.001));
+        payload["events"][0]["technique"]["campfire"]["recipeVersion"] = serde_json::json!(2);
+        assert!(runtime
+            .build_playback(serde_json::from_value(payload).unwrap(), 48000, 2, 2)
+            .is_err());
+        assert!(
+            runtime.shared.is_none(),
+            "preparation test must never open a physical device"
+        );
+    }
+
+    #[test]
+    fn native_campfire_invalid_intent_fails_before_render_and_never_uses_amp_fallback() {
+        let playback = campfire_test_playback(0.0);
+        let event = &playback.events[0];
+        assert_eq!(
+            render_event_sample(event, 0.01),
+            0.0,
+            "unprepared helper must not substitute a sawtooth"
+        );
+        for performance in [
+            serde_json::json!({"recipeVersion": 2}),
+            serde_json::json!({"seed": -1}),
+            serde_json::json!({"tailPolicy": "hidden-normalize"}),
+            serde_json::json!({"strumSeconds": 1e12}),
+        ] {
+            let mut invalid = event.clone();
+            invalid.technique = Some(serde_json::json!({"campfire": performance}));
+            assert!(prepare_campfire_events(&[invalid], 48000).is_err());
+        }
+        let mut invalid = event.clone();
+        invalid.midi_notes[0] = 50.5;
+        assert!(prepare_campfire_events(&[invalid], 48000).is_err());
+        assert!(prepare_campfire_events(&[event.clone(), event.clone()], 48000).is_err());
     }
 
     fn test_generated_event(

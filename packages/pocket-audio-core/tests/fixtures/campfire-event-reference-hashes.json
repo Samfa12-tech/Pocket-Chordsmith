@@ -1,0 +1,98 @@
+{
+  "source": "Canonical Pocket Audio Core recipe 1 event renderer; cross-engine fixture, not an independent game master reference",
+  "format": "mono-float32-le",
+  "records": [
+    {
+      "sampleRate": 44100,
+      "event": {
+        "midiNotes": [
+          50,
+          57,
+          62,
+          66
+        ],
+        "direction": "down",
+        "velocity": 0.7,
+        "technique": {
+          "campfire": {
+            "recipeVersion": 1,
+            "seed": 123,
+            "tailPolicy": "fade-5ms",
+            "strumSeconds": 0.027
+          }
+        }
+      },
+      "frames": 69722,
+      "sha256": "43d068e75be83af7844b137f36de45fb9a8305cdc61df9aaf1d622eed31a8ee1"
+    },
+    {
+      "sampleRate": 44100,
+      "event": {
+        "midiNotes": [
+          50,
+          57,
+          62,
+          66
+        ],
+        "direction": "up",
+        "velocity": 0.7,
+        "technique": {
+          "campfire": {
+            "recipeVersion": 1,
+            "seed": 123,
+            "tailPolicy": "fade-5ms",
+            "strumSeconds": 0.027
+          }
+        }
+      },
+      "frames": 69722,
+      "sha256": "e2bced261b18b5219c40e8f1f7f6ea15a473c33bffecfd1efd6b820e360bce99"
+    },
+    {
+      "sampleRate": 48000,
+      "event": {
+        "midiNotes": [
+          50,
+          57,
+          62,
+          66
+        ],
+        "direction": "down",
+        "velocity": 0.7,
+        "technique": {
+          "campfire": {
+            "recipeVersion": 1,
+            "seed": 123,
+            "tailPolicy": "fade-5ms",
+            "strumSeconds": 0.027
+          }
+        }
+      },
+      "frames": 75888,
+      "sha256": "9ef41f17bb31f5df46254ee55c30bffb9b77edff8a50247d1780929351b1e3e2"
+    },
+    {
+      "sampleRate": 48000,
+      "event": {
+        "midiNotes": [
+          50,
+          57,
+          62,
+          66
+        ],
+        "direction": "up",
+        "velocity": 0.7,
+        "technique": {
+          "campfire": {
+            "recipeVersion": 1,
+            "seed": 123,
+            "tailPolicy": "fade-5ms",
+            "strumSeconds": 0.027
+          }
+        }
+      },
+      "frames": 75888,
+      "sha256": "ce3026f33ae16f48695cde7dbf798a96fe28f25f1dcda141168944a1c03f95e1"
+    }
+  ]
+}
