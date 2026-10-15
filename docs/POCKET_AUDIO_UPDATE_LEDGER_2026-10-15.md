@@ -937,3 +937,42 @@ local-artifacts/scratch/validation/native-campfire-empty-grid-*.log. No Rust,
 recording/capture, version or dependency changes; no installed/listening claim.
 Final corrected source gate1187/1187 passed with the installed browser path;
 production UI build, repository/security/manifest104/whitespace also pass.
+
+## PR95 continuous-loop clock review correction
+
+Reviewer reproduced a separate clock gap after PCM looping was fixed. Automatic
+continuous repeats still called seek_tick at the section boundary, dropping late
+frame overshoot/fractional ticks and resetting the wall-clock anchor while native
+PCM continued. Actual six-case reproduction on unchanged7cfb5ea6 failed allcases:
+30 irregular delta frames lost up to757.44ticks on sequence repeats and13.44ticks
+on arrangement repeats; beat/queued transition assertions also failed.
+
+Continuous sequence and arrangement repeats now translate the existing clock
+anchor to the new occurrence and retain fractional elapsed remainder. Explicit
+seeks and different-asset restarts keep their established path. The player itself
+continues; the correction adds no PCM generation or scheduling engine.
+
+Corrected local six-case probe passes on Godot4.6.3 Dummy: four deterministic
+cases each30 deliberately late fractional frames, beaterror0, maxclockerror below
+1.2e-11ticks; two actual wall-clock cases wait until absolute late boundaries at
+2.020/4.033/6.009seconds, preserve the original anchor and execute a later queued
+transition. Running player phase is measured with a150ms driver-buffer bound;
+this is not physical/human listening evidence. Only four cases check a queued
+transition; the two arrangement-only cases explicitly report unchecked/null.
+Complete Godot gate passed with136 addon-only entries and existing56 origin/
+seek/switch captures,20mix/17ending/8residency/schema/trust/editor checks.
+
+Evidence in primary local-artifacts/scratch/validation: godot-loop-clock-
+{before,after,final-gate}.log and loop-clock-review/before-3emlZm/clock.log. The
+strict old-head snapshot uses the same tightened fixture and fails, confirming
+regression sensitivity. Stopped streams are drained before test shutdown.
+Repo/security/governance/whitespace pass; no dependencies/version/licence changes.
+
+Fresh rendered WASAPI PCM rerun is INCOMPLETE, not passed: escalated execution
+transport disconnected after3/4 captures in run-8Yb8PV; no final report. A default
+sandbox retry crashed during lossless import before capture. Existing pre-clock
+PCM evidence remains scoped to that earlier head. Source/runtime-clock proof is
+complete; exact hosted CI/re-review and fresh rendered/installed acceptance remain
+pending. GitHub draft update uses the connected API because privileged local
+Git execution is unavailable. Worktree source/records are preserved for later
+normal Git reconciliation; no release/main merge or device/listening claim.
