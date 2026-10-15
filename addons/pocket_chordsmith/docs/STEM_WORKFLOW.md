@@ -54,8 +54,20 @@ The automated `tests/pcs_stem_origin_test.gd` uses deterministic PCM tones,
 actual Godot players and engine-bus capture with the warmed Dummy driver. It
 checks local/absolute positions and tone identity in both player modes,
 nonempty-to-empty silence, automatic A/B/repeated-A transitions with processing
-active, explicit state origins and pause/seek/resume. It does not establish
+active, explicit state origins, pause/seek/resume, ordinary pause/resume position
+and in-place player-mode switching with exclusive ownership. It does not establish
 physical output, human listening, source-engine fidelity or cold-load budgets.
+
+Game-pack import uses exclusive full-mix/layer selection. The adaptive default
+excludes the full mix and duplicate aggregate/branch drums. Choose
+`playback_mix: "full-mix"` for the source reference or `drum_stems: "branches"`
+for independent drum branches. Core's shared texture bed is a single layer.
+Keep baked layer gains at unity. `PCSChartBuildTools` sets pack-local WAVs to
+lossless PCM import; let the editor reimport before auditioning or exporting the
+game. Godot 4.6 otherwise defaults to lossy QOA. Uncompressed stems require more
+memory, so cold-load budgeting remains a separate gate. See
+`docs/GODOT_PARITY_EXPORT_WORKFLOW.md` in the repository root for contracts and
+the rendered Core PCM comparison command.
 
 Suggested full-arrangement stem names:
 

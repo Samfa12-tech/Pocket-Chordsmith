@@ -107,8 +107,23 @@ function createBaseManifest(project, { profile, sampleRate }) {
       samples: GAME_PACK_FOLDERS.samples
     },
     events: [],
+    mixContract: {
+      version: 1,
+      sourceRenderer: "pocket-audio-core-offline",
+      sampleRate,
+      bitDepth: 16,
+      normalization: "off",
+      layerGain: "baked-core-offline-stem-gain-and-pan",
+      sharedBed: "separate-when-enabled",
+      masterFx: "metadata-only-not-baked",
+      reconstruction: "verify-decoded-pcm-against-full-mix-at-unity-gain",
+      outputClipping: "hard-limit-at-output",
+      playbackGroups: []
+    },
     notes: [
-      "Exact parity requires these core-rendered assets. Native Godot procedural playback should be labelled preview until tested."
+      "The Core-rendered full mix is the reference for these assets; this does not establish Chordsmith browser or native DAW full-mix parity.",
+      "Choose the full mix OR the corresponding layer set. Never sum the full mix with its stems. Keep baked layer gains at unity unless intentionally remixing.",
+      "FX settings are descriptive metadata; Core offline export does not bake the browser's shared FX/master chain. Procedural playback remains preview until tested."
     ]
   };
 }
@@ -117,12 +132,13 @@ async function addStemSyncAssets(project, manifest, files, { sampleRate }) {
   const fullMixName = gamePackPath("full", "full_mix.wav");
   files.set(fullMixName, renderPocketAudioWav(project, { scope: "sequence", sampleRate, tailSeconds: 0 }));
   manifest.assets.mix = fullMixName;
-  const stems = await renderPocketAudioStems(project, { scope: "sequence", sampleRate, tailSeconds: 0, stems: STEM_IDS });
-  STEM_IDS.forEach((stem) => {
+  const stems = await renderPocketAudioStems(project, { scope: "sequence", sampleRate, tailSeconds: 0, stems: STEM_IDS, includeSharedBed: true });
+  Object.keys(stems).forEach((stem) => {
     const name = gamePackPath("stems", `${stem}.wav`);
     files.set(name, stems[stem]);
     manifest.assets[stem] = name;
   });
+  addPlaybackGroup(manifest, "sequence", manifest.assets);
 }
 
 async function addLoopKitAssets(project, manifest, files, { sampleRate, includeStems }) {
@@ -132,29 +148,42 @@ async function addLoopKitAssets(project, manifest, files, { sampleRate, includeS
     files.set(mixName, renderPocketAudioWav(project, { scope: "section", sectionId, sampleRate, tailSeconds: 0 }));
     sectionManifest.assets.mix = mixName;
     if (includeStems) {
-      const stems = await renderPocketAudioStems(project, { scope: "section", sectionId, sampleRate, tailSeconds: 0, stems: STEM_IDS });
-      STEM_IDS.forEach((stem) => {
+      const stems = await renderPocketAudioStems(project, { scope: "section", sectionId, sampleRate, tailSeconds: 0, stems: STEM_IDS, includeSharedBed: true });
+      Object.keys(stems).forEach((stem) => {
         const name = gamePackPath("stems", `section_${sectionId}_${stem}.wav`);
         files.set(name, stems[stem]);
         sectionManifest.assets[stem] = name;
       });
     }
+    addPlaybackGroup(manifest, `section:${sectionId}`, sectionManifest.assets);
   }
 }
 
 async function addHybridAssets(project, manifest, files, { sampleRate }) {
-  const stems = await renderPocketAudioStems(project, { scope: "sequence", sampleRate, tailSeconds: 0, stems: STEM_IDS });
-  STEM_IDS.forEach((stem) => {
+  const fullMixName = gamePackPath("full", "full_mix.wav");
+  files.set(fullMixName, renderPocketAudioWav(project, { scope: "sequence", sampleRate, tailSeconds: 0 }));
+  manifest.assets.mix = fullMixName;
+  const stems = await renderPocketAudioStems(project, { scope: "sequence", sampleRate, tailSeconds: 0, stems: STEM_IDS, includeSharedBed: true });
+  Object.keys(stems).forEach((stem) => {
     const name = gamePackPath("stems", `bed_${stem}.wav`);
     files.set(name, stems[stem]);
     manifest.assets[stem] = name;
   });
+  addPlaybackGroup(manifest, "sequence", manifest.assets);
   ["kick", "snare", "crash", "victory_stinger"].forEach((sample) => {
     const name = gamePackPath("samples", `${sample}.wav`);
     files.set(name, createSilentWavBlob({ durationSeconds: sample.endsWith("stinger") ? 0.75 : 0.25, sampleRate }));
     manifest.assets[sample] = name;
   });
   manifest.notes.push("HYBRID sample assets are generated placeholders in this v0 export and should be replaced as the sample kit matures.");
+}
+
+function addPlaybackGroup(manifest, id, assets) {
+  const layers = Object.entries(assets).filter(([name]) => name !== "mix").map(([, path]) => path);
+  manifest.mixContract.playbackGroups.push({ id, alternatives: [
+    ...(assets.mix ? [{ id: "full-mix-reference", assets: [assets.mix] }] : []),
+    ...(layers.length ? [{ id: "adaptive-layers", assets: layers }] : [])
+  ] });
 }
 
 function createFxManifest(project) {

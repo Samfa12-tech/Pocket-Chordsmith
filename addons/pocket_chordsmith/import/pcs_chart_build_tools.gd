@@ -107,6 +107,13 @@ func create_playback_profile_from_game_pack_manifest(manifest_path: String, save
 	var profile_result: Dictionary = GamePackManifest.create_playback_profile_from_manifest(manifest_result.get("manifest", {}), resolved_pack_root, options)
 	if not bool(profile_result.get("ok", false)):
 		return profile_result
+	if bool(options.get("preserve_wav_pcm", true)):
+		var wav_result := _configure_pack_wav_imports(manifest_result.get("manifest", {}), resolved_pack_root)
+		profile_result["errors"].append_array(wav_result.get("errors", []))
+		profile_result["wav_import_paths"] = wav_result.get("paths", [])
+		if not profile_result["errors"].is_empty():
+			profile_result["ok"] = false
+			return profile_result
 
 	if not save_path.strip_edges().is_empty():
 		var profile = profile_result.get("profile", null)
@@ -117,6 +124,57 @@ func create_playback_profile_from_game_pack_manifest(manifest_path: String, save
 			return profile_result
 		profile_result["path"] = save_path
 	return profile_result
+
+
+func _configure_pack_wav_imports(manifest: Dictionary, pack_root: String) -> Dictionary:
+	var result := {"paths": [], "errors": []}
+	var candidates: Array = []
+	var maps: Array = [manifest.get("assets", {})]
+	var sections = manifest.get("sections", {})
+	for section in sections.values() if sections is Dictionary else []:
+		if section is Dictionary:
+			maps.append(section.get("assets", {}))
+	var states = manifest.get("states", {})
+	for state in states.values() if states is Dictionary else []:
+		if state is Dictionary:
+			maps.append(state.get("stems", state.get("assets", {})))
+	for assets in maps:
+		if assets is Dictionary:
+			candidates.append_array(assets.values())
+	for stem in manifest.get("stems", []):
+		if stem is Dictionary:
+			candidates.append(stem.get("packPath", ""))
+	for section in manifest.get("sectionLoops", []):
+		if section is Dictionary:
+			candidates.append(section.get("packPath", section.get("path", "")))
+	candidates.append(manifest.get("fullMix", ""))
+	var seen := {}
+	for candidate in candidates:
+		if not candidate is String or str(candidate).contains(":"):
+			continue # Never rewrite import settings of external project assets.
+		var path := GamePackManifest.resolve_asset_path(str(candidate), pack_root)
+		if path.is_empty() or not path.begins_with("res://") or path.get_extension().to_lower() != "wav" or seen.has(path):
+			continue
+		seen[path] = true
+		var config := ConfigFile.new()
+		var import_path := path + ".import"
+		var load_error := config.load(import_path)
+		if load_error != OK and load_error != ERR_FILE_NOT_FOUND:
+			result["errors"].append("Cannot read WAV import settings for %s: %s" % [path, error_string(load_error)])
+			continue
+		config.set_value("remap", "importer", "wav")
+		config.set_value("remap", "type", "AudioStreamWAV")
+		# Godot 4.6 defaults to lossy QOA. Preserve source PCM, channels, rate,
+		# gain and alignment. Existing explicit loop settings remain untouched.
+		for key in ["force/8_bit", "force/mono", "force/max_rate", "edit/normalize", "edit/trim"]:
+			config.set_value("params", key, false)
+		config.set_value("params", "compress/mode", 0)
+		var save_error := config.save(import_path)
+		if save_error != OK:
+			result["errors"].append("Cannot save lossless WAV import settings for %s: %s" % [path, error_string(save_error)])
+		else:
+			result["paths"].append(path)
+	return result
 
 
 func import_daw_game_pack(pack_path: String, destination_root := DEFAULT_DAW_PACK_IMPORT_ROOT, options := {}) -> Dictionary:

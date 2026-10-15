@@ -31,12 +31,15 @@ export function renderPocketAudioStemBuffers(project, options = {}) {
   const sampleRate = options.sampleRate || 44100;
   const stems = options.stems || ["drums", "bass", "chords", "melody", "guitar"];
   const timeline = buildPocketAudioTimeline(project, options);
+  const tailSeconds = options.tailSeconds ?? 0.6;
+  const campfireEnd = tailSeconds === 0 ? 0 : timeline.events.reduce((end, event) => isCampfireEvent(event) ? Math.max(end, Number(event.time || 0) + campfireAcousticEventFrameCount(event, { sampleRate }) / sampleRate) : end, 0);
+  const alignedDuration = Math.max(timeline.duration, campfireEnd - tailSeconds);
   const out = {};
   stems.forEach((stem) => {
     out[stem] = renderPocketAudioEventBuffer(timeline.events.filter((event) => event.stem === stem), {
       ...options,
       sampleRate,
-      durationSeconds: timeline.duration,
+      durationSeconds: alignedDuration,
       lofiTexture: null,
       timeline: {
         ...timeline,
@@ -44,6 +47,9 @@ export function renderPocketAudioStemBuffers(project, options = {}) {
       }
     });
   });
+  if (options.includeSharedBed && project?.lofi?.texture?.enabled) {
+    out.shared_bed = renderPocketAudioEventBuffer([], { ...options, sampleRate, durationSeconds: alignedDuration, lofiTexture: project.lofi.texture, timeline });
+  }
   return out;
 }
 

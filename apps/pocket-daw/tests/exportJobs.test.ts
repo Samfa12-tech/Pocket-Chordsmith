@@ -408,9 +408,17 @@ describe("export job helpers", () => {
     const project = createDemoProject();
     project.exportProfiles.find((profile) => profile.id === "full-song-wav")!.sampleRate = 48000;
     project.exportProfiles.find((profile) => profile.id === "full-song-wav")!.settings.normalize = "peak";
+    const renderProfiles: Array<{ sampleRate?: number; normalize?: unknown; dither?: unknown; channelMode?: unknown }> = [];
+    project.exportProfiles.find((profile) => profile.id === "section-loops")!.sampleRate = 22050;
+    project.exportProfiles.find((profile) => profile.id === "section-loops")!.settings.normalize = "peak";
+    const sourceBefore = JSON.stringify(project);
     const result = await createGamePackZipBlob(project, "web-game-pack", {
       sourceProjectContents: JSON.stringify(project),
-      renderWav: async (renderProject) => new Blob([`bars:${renderProject.timeline.bars}`], { type: "audio/wav" })
+      renderWav: async (renderProject) => {
+        const profile = renderProject.exportProfiles.find((item) => item.id === "full-song-wav")!;
+        renderProfiles.push({ sampleRate: profile.sampleRate, normalize: profile.settings.normalize, dither: profile.settings.dither, channelMode: profile.settings.channelMode });
+        return new Blob([`bars:${renderProject.timeline.bars}`], { type: "audio/wav" });
+      }
     });
     const paths = result.entries.map((entry) => entry.path);
 
@@ -442,9 +450,24 @@ describe("export job helpers", () => {
       expect(result.manifest.artifacts.find((artifact) => artifact.path === entry.path)?.sizeBytes).toBe(entry.size);
     }
     expect(result.manifest.audio.current.sampleRate).toBe(48000);
-    expect(result.manifest.audio.current.normalization).toEqual({ mode: "peak", targetPeak: 0.95 });
+    expect(result.manifest.audio.current.normalization).toEqual({ mode: "off" });
     expect(result.manifest.artifacts.filter((artifact) => artifact.audio).every((artifact) => artifact.audio?.sampleRate === 48000)).toBe(true);
-    expect(result.manifest.artifacts.filter((artifact) => artifact.audio).every((artifact) => artifact.audio?.normalization.mode === "peak")).toBe(true);
+    expect(result.manifest.artifacts.filter((artifact) => artifact.audio).every((artifact) => artifact.audio?.normalization.mode === "off")).toBe(true);
+    expect(renderProfiles.every((profile) => profile.sampleRate === 48000 && profile.normalize === false && profile.dither === "off" && profile.channelMode === "stereo")).toBe(true);
+    expect(JSON.stringify(project)).toBe(sourceBefore);
+    expect(result.manifest.mixContract.reference).toBe(result.manifest.fullMix);
+    expect(result.manifest.mixContract.reconstruction).toBe("independently-rendered-stems-not-guaranteed-sum-equivalent");
+  });
+
+  it("marks aggregate drums and their branches as alternative playback sets", () => {
+    const project = branchGeneratedDrumsToTracks(createDemoProject());
+    const manifest = createGameExportManifest(project, "godot-adaptive-pack");
+    const alternatives = manifest.mixContract.stemAlternatives.find((group) => group.id === "drums")!.alternatives;
+    expect(alternatives.find((item) => item.id === "aggregate")!.stemIds).toEqual(["drums"]);
+    const branches = alternatives.find((item) => item.id === "branches")!.stemIds;
+    expect(branches).toContain("drums-kick");
+    expect(branches).not.toContain("drums");
+    expect(manifest.mixContract.playbackChoice).toBe("full-mix-or-adaptive-layers");
   });
 
   it("reports package self-check failures for missing manifest entries", () => {

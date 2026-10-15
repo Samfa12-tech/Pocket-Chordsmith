@@ -1,12 +1,17 @@
 # Godot Parity Export Workflow
 
-Pocket Audio Core is the sound-truth layer for Pocket Chordsmith-to-Godot parity.
+Pocket Audio Core provides a reproducible offline reference for its own rendered
+assets. Chordsmith's browser FX/master output and the fully arranged native DAW
+output require their own source-engine references; they are separate routes.
 
 The safest route is to export audio assets and manifests from Pocket Audio Core, then let Godot use its native audio players, buses, conductor nodes, transitions, ducking, and signals to perform those assets. Godot games do not need to run JavaScript at runtime.
 
 ## Core Rule
 
-Exact parity requires core-rendered assets.
+PCM delivery parity requires source-engine renders, lossless import settings,
+known gain/buses and captured runtime comparison. Headless import alone does not
+prove audio parity. Core's current offline FX manifest is descriptive metadata;
+it does not bake the browser's shared FX/master chain.
 
 Godot-native procedural playback is useful for fast editor preview, but it must be labelled `PROCEDURAL_PREVIEW` unless it has been tested against core-rendered output.
 
@@ -161,7 +166,10 @@ Loop points are section-relative and should be fed into the Godot conductor for 
 2. Run `createGodotExportKit` in a desktop/web tooling step.
 3. Write every `kit.files` entry to a Godot project folder.
 4. Write `kit.manifest` as `manifest.json`.
-5. Import WAVs into Godot.
+5. Create the playback profile with `PCSChartBuildTools` and let the editor
+   reimport its WAVs. The tooling sets pack-local WAVs to uncompressed PCM,
+   retaining source rate, channels, gain and leading silence. Godot 4.6's default
+   WAV importer uses lossy QOA, so a default import is insufficient for PCM parity.
 6. Let `PCSGamePackManifest` or project code read `manifests/godot-adaptive-manifest.json`.
 7. Use native Godot `AudioStreamPlayer` nodes/buses to play stems or section loops.
 8. Use manifest `events` for section starts, beat/bar metadata, and gameplay signals.
@@ -172,9 +180,44 @@ Loop points are section-relative and should be fed into the Godot conductor for 
 var tools := PCSChartBuildTools.new()
 var result := tools.create_playback_profile_from_game_pack_manifest(
 	"res://music/my_song/manifests/godot-adaptive-manifest.json",
-	"res://music/my_song/my_song_profile.tres"
+	"res://music/my_song/my_song_profile.tres",
+	"res://music/my_song",
+	{"playback_mix": "layers", "drum_stems": "aggregate"}
 )
 ```
+
+`playback_mix: "layers"` is the adaptive default. It excludes a corresponding
+full mix, includes a separate shared texture bed when present, and excludes
+duplicate DAW drum branches when an aggregate is selected. Use `drum_stems:
+"branches"` to select the branch set instead. Use `playback_mix: "full-mix"`
+for the authoritative full-mix reference. The importer never silently starts
+both alternatives. Synchronized sets over 32 streams fail explicitly; choose a
+smaller set or full mix rather than silently changing synchronization mode.
+
+Keep baked layer gains at unity unless intentionally remixing. Core dry stems
+now use its real offline instrument renderer, including Campfire Acoustic.
+Independent PCM16 quantization can make their sum differ by a few quantization
+steps; clipping and nonlinear shared processing require explicit comparison.
+Native DAW stems are rendered independently through source routing/master
+processing and are not guaranteed to sum to its full mix. Its game-pack helper
+uses stereo PCM16 with normalization/dither off at a common rate, preserving
+exact zero-tail section-loop lengths. The editable source project is unchanged.
+
+The tooling changes only relative, pack-local `res://` WAV import settings.
+Trusted external audio references are left alone. Existing loop settings are
+retained. `preserve_wav_pcm: false` deliberately opts out; manually confirm
+import settings and fidelity in that case. Uncompressed WAVs cost more memory;
+this correction does not establish cold-load or gameplay frame budgets.
+
+Reproduce the Core route's rendered capture from the Core package:
+
+```text
+node scripts/verify-core-godot-pcm.mjs --godot-bin <Godot-4.6.3> --rendered
+```
+
+The fixture compares both mix choices in both player modes against decoded
+source PCM, accounting for output latency. It includes a shared texture bed.
+It does not validate the native DAW route or human listening.
 
 For `LOOP_KIT`, section assets are mapped into `playback_profile.stem_sets`. For `STEM_SYNC`, full-song stems are mapped into `playback_profile.stem_paths`. For `HYBRID`, bed stems and sample/stinger assets are mapped into the existing profile dictionaries.
 

@@ -23,11 +23,11 @@ Reef Sweep, PR75 and dependency PRs71–74 were not changed or merged.
 | CACHE-05 | Complete generated signature memoized for the engine-owned project revision, invalidated on sync. Sound-affecting signature contract unchanged. | 100 unchanged ready-cache validations do not traverse source music again; edited project rejects old coverage and rebuilds to its new signature. | Not published. Runtime-audio signature and stale-filter preparation remain separate measured follow-through. |
 | UI-01 | Sample search/category/folder/favourites patch only results. Search input survives IME events, caret edits and filtering; selected samples remain selected. | Chromium regressions pass. Existing test corrected: Space in the retained text field enters a space and does not start transport. | Partial: VST descriptor/parameter searches still need scoped updates. Native WebView/scaling checks pending. |
 | UI-02 | One DOM query per meter attribute per update, mapped by ID; change-only meter writes and stable transport strong/small nodes. | Chromium playback regression proves fixed three-query update bound and stable readout child. Existing accessible meter labels/recording override retained. | Not published. Dense native WebView/add-remove-reorder/recording profiling pending. |
-| GODOT-01 | Prepared selection carries origin. Section sets are occurrence-local; full-song sets stay absolute; state origin is explicit/opt-in. Public seek repositions actual players. Empty selections stop obsolete audio. | Godot 4.6.3 reproduced incorrect B/repeated-section playback before patch. Sixteen local/full-song × synchronized/layer-player × first/seek/repeated scenarios pass with nonzero engine-bus PCM capture on both warmed Dummy and a rendered Windows WASAPI scene. | Not published. No human listening or source-engine parity claim. Two-source rendered-game fidelity, fractional/tempo-map and stress acceptance remain pending. |
+| GODOT-01 | Prepared selection carries origin. Section sets are occurrence-local; full-song sets stay absolute; state origin is explicit/opt-in. Public seek repositions actual players. Empty selections stop obsolete audio. | Strengthened review/follow-on suite passes 48/48 on Dummy and rendered WASAPI: tone identity, repeated/automatic sections, empty-set silence, state origins, paused seek, ordinary pause/resume position and exclusive in-place player switching. Initial 16 position/nonzero checks were insufficient; see review history below. | Not published. No human listening claim. Two-source rendered-game fidelity, fractional/tempo-map and stress acceptance remain pending. |
 | CACHE-01 | Pending | Source hypothesis only for actual gap duration. | Measure native stream continuity, tails and rollback before changing graph/stream ownership. |
 | UI-03 | Pending | Source hypothesis; no new IPC batching. | Trace dense automation/mutex/underruns first. |
 | UI-04 | Pending | No region-index optimization claimed. | Measure cache-region classification before change. |
-| GODOT-02 | Pending | No summed-PCM fidelity or branch partition claim. | Fullmix default/alternative groups/common gain/shared-FX contract and two-source PCM fixtures needed. |
+| GODOT-02 | Partial: real Core recipe stems, shared texture bed, exclusive mix/layer and aggregate/branch selection, lossless WAV import, explicit 32-stream limit; DAW normalization/manifest alignment | Old sine-placeholder stem and reconstruction tests fail; corrected Core PCM passes. Rendered Core pack capture passes both player modes and mix choices. DAW export helper/metadata tests pass; independent stem processing is explicitly not guaranteed sum-equivalent. | Not published. Fully arranged native DAW recording/FX/automation PCM route, source-master equivalence and listening remain pending. |
 | GODOT-03 | Pending | No cold-loading speedup claimed. | Background preparation, readiness/working-set and real-game transition evidence needed. |
 | EXPORT-01 | Pending | No memory/copy speedup claimed. | Profile 4/16/32 stems and cancellation before changing ownership. |
 
@@ -74,7 +74,7 @@ hands-on check and continue independent work.
 | --- | --- | --- |
 | Campfire Acoustic/Core | Original recipe, offline and prepared existing live transport implemented/tested; product selectors pending | [Recipe 1 contract](CAMPFIRE_ACOUSTIC_CONTRACT_V1.md): exact voicings/reference hashes, deterministic PCM, bounded preparation/cache and explicit tails. No game code copied or licence changed. |
 | Chordsmith/DJ/native DAW Campfire | Pending | Real audible paths, full voicings/strums/picking and explicit fallback limits; preserve old IDs/PCS1/JSON. |
-| Both Godot export routes | Partial origin correction only | Chordsmith/Core and fully arranged native DAW audio need separate rendered reference, FX/automation/recording, captured playback and game-scene evidence. |
+| Both Godot export routes | Core pack real-recipe and captured PCM route tested; DAW gain/alternatives contract tested | Core offline is its own reference; browser FX/master equivalence remains pending. Fully arranged native DAW recording/FX/automation still needs its own actual rendered reference and Godot capture. |
 | DAW layout/accessibility | Pending beyond sample search/meter slice | Reproduce ordering/overflow at named window sizes/scales; native popover/focus/recording acceptance. |
 | Chordsmith visual direction | Three alternatives prepared/tested in draft PR80, `4fbfc35f29cdefcff268b6da018049ceba0e2e62` | Offline interactive Set List/Pedal Board/Tape Notes study, validated at 1440/720/375/360 px. Broad reskin awaits Sam's choice; app unchanged. |
 | Hear/compare/keep refinements | Pending | Contextual range/lead-in/tail/Stop, actionable reversible feedback, same-position A/B and stale-preview rejection; no autoplay. |
@@ -96,6 +96,48 @@ directory and Vite temporary-file rename were resolved using scoped approved
 execution; no uncertain external mutation remains. The missing Playwright
 browser was an environment prerequisite and is resolved. Remaining checks are
 pending work/acceptance, not asserted passes.
+
+## Third source candidate: Godot export fidelity
+
+Branch `codex/pocket-audio-godot-fidelity-20261015` follows the Core candidate
+`b8bfa2addad49bd533c0036c10c5454cfea92119`. Two reproduced bugs in Core's stem
+helper: it rendered sine placeholders instead of real instruments (Campfire
+sample error 0.0658), and summed stems differed from its full mix by 0.315.
+The helper now uses the real offline renderer. Ordinary stem tails share an
+aligned duration; exact zero-tail loops remain exact. Enabled texture is one
+separate shared bed. HYBRID also retains an authoritative full-mix reference.
+
+The Godot importer formerly selected a Core full mix plus its stems, and DAW
+aggregate drums plus branch files. These are now exclusive alternatives.
+Adaptive layers remain the default; `playback_mix: "full-mix"` selects only the
+reference and `drum_stems: "branches"` explicitly selects the drum branches.
+Oversized synchronized imports fail at 32 streams instead of silently changing
+player mode. Baked gains stay at unity unless intentionally remixed.
+
+Actual rendered capture then failed because Godot 4.6.3's default WAV import
+uses lossy QOA (full-mix max sample error 0.00873). The pack build tooling now
+configures only pack-local res:// WAVs for lossless PCM, original rate/channels,
+no normalization/trim, retaining explicit loop settings. Source WAV bytes and
+external project audio assets are unchanged. Reimport is required. Uncompressed
+memory cost and cold-loading budgets remain a separate pending gate.
+
+The reusable native DAW game-pack helper now enforces the existing UI's stereo
+PCM16/no-normalization/no-dither contract at a common rate for full mix, stems
+and loops, without mutating the editable source. Metadata agrees with that
+contract. Independent shared/master processing is explicitly not guaranteed to
+sum to the full mix; native route fidelity is not inferred from Core results.
+
+Executed: 180 Core tests; 29 focused DAW export tests; TypeScript; Godot schema,
+trust boundary, 15 mix-selection/limit checks, 48 origin/ownership checks and
+133-entry addon-only packaging. The Core rendered WASAPI comparison covers
+96,000 stereo frames for each of four routes (mix/layers × synchronized/players),
+including six layers with shared texture. Reports and before/fix evidence live
+under `local-artifacts/scratch/validation/core-godot-pcm/` and
+`local-artifacts/scratch/campfire-reference/godot-stem-before.log`.
+
+Published: nothing. No exact installed candidate, human listening or native DAW
+two-source parity pass is claimed. The importer still emits its pre-existing
+NUL-check diagnostic during path validation; those guard rules were unchanged.
 
 ## Second source candidate: Core Campfire foundation
 

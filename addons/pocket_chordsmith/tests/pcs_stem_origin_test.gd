@@ -41,6 +41,8 @@ func _run() -> void:
 		await _check_empty_selection(synchronized)
 		await _check_automatic_sections(synchronized)
 		await _check_state_pause_seek(synchronized)
+		await _check_ordinary_pause_resume(synchronized)
+		await _check_player_ownership_switches(synchronized)
 	AudioServer.remove_bus_effect(0, AudioServer.get_bus_effect_count(0) - 1)
 	await create_timer(0.1).timeout
 	scene_label.text = "Pocket Audio — prepared stem origins\nGodot %s · %s\n\n%s / %s scenarios passed\nSection-local / full-song · seek / repeated A/B\nSynchronized / per-layer players\n\nEngine-bus PCM capture; no human listening claim" % [Engine.get_version_info().get("string", ""), AudioServer.get_driver_name(), measurements.filter(func(item): return item.passed).size(), measurements.size()]
@@ -233,3 +235,46 @@ func _tone(hz: float, seconds: float) -> AudioStreamWAV:
 		pcm.encode_s16(i * 2, int(sin(TAU * hz * float(i) / 48000.0) * 2000))
 	stream.data = pcm
 	return stream
+
+func _check_ordinary_pause_resume(synchronized: bool) -> void:
+	var profile = _fixture_profile(synchronized)
+	profile.set_section_stems("A", {"music": _tone(220.0, 8.0)})
+	var music = _fixture_music(profile)
+	await create_timer(0.25).timeout
+	var player: AudioStreamPlayer = music.get("_stem_player") if synchronized else music.get("_stem_layer_players").get("full")
+	music.pause()
+	var before := player.get_playback_position()
+	await _assert_silence(music, synchronized, "ordinary-paused", false)
+	var after := player.get_playback_position()
+	var ok: bool = abs(after - before) < 0.03 and player.stream_paused
+	measurements.append({"synchronized": synchronized, "scenario": "ordinary-pause-preserves-position", "before_seconds": before, "after_seconds": after, "passed": ok})
+	if not ok:
+		errors.append("ordinary pause changed position: sync=%s before=%s after=%s" % [synchronized, before, after])
+	music.resume()
+	await _assert_position(music, before, synchronized, true, "ordinary-resume-position", 220.0)
+	await _dispose_music(music)
+
+func _check_player_ownership_switches(initial_synchronized: bool) -> void:
+	var profile = _fixture_profile(initial_synchronized)
+	profile.set_section_stems("A", {"music": _tone(220.0, 8.0)})
+	profile.set_section_stems("B", {"music": _tone(660.0, 8.0)})
+	var music = _fixture_music(profile)
+	for synchronized in [not initial_synchronized, initial_synchronized]:
+		profile.use_audio_stream_synchronized = synchronized
+		music.jump_to_section("B" if synchronized != initial_synchronized else "A")
+		await _assert_position(music, 0.0, synchronized, true, "in-place-player-mode-switch", 660.0 if synchronized != initial_synchronized else 220.0)
+		var sync_player: AudioStreamPlayer = music.get("_stem_player")
+		var layer_count := 0
+		var layer_streams := 0
+		for player_value in music.get("_stem_layer_players").values():
+			var player := player_value as AudioStreamPlayer
+			if player.stream != null:
+				layer_streams += 1
+			if player.playing and not player.stream_paused:
+				layer_count += 1
+		var sync_active := sync_player.playing and not sync_player.stream_paused
+		var ok: bool = (sync_active and layer_count == 0 and layer_streams == 0) if synchronized else (not sync_active and sync_player.stream == null and layer_count == 1)
+		measurements.append({"synchronized": synchronized, "scenario": "exclusive-player-ownership", "synchronized_active": sync_active, "layer_active_count": layer_count, "layer_stream_count": layer_streams, "passed": ok})
+		if not ok:
+			errors.append("player mode switch retained overlapping ownership: sync=%s layers=%s sync_active=%s" % [synchronized, layer_count, sync_active])
+	await _dispose_music(music)
