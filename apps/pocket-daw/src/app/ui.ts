@@ -306,11 +306,12 @@ function renderMenuStrip(state: AppState): string {
 }
 
 function renderMenuGroup(label: string, actions: Array<[string, string]>): string {
+  const id = `desktop-menu-${label.toLowerCase()}`;
   return `
     <div class="menu-group">
-      <button class="menu-root" type="button">${escapeHtml(label)}</button>
-      <div class="menu-popover">
-        ${actions.map(([name, action]) => `<button type="button" data-action="${escapeAttr(action)}">${escapeHtml(name)}</button>`).join("")}
+      <button class="menu-root" id="${id}" type="button" aria-haspopup="menu" aria-controls="${id}-popup" aria-expanded="false">${escapeHtml(label)}</button>
+      <div class="menu-popover" id="${id}-popup" role="menu" aria-labelledby="${id}" hidden>
+        ${actions.map(([name, action]) => `<button type="button" role="menuitem" tabindex="-1" data-action="${escapeAttr(action)}">${escapeHtml(name)}</button>`).join("")}
       </div>
     </div>
   `;

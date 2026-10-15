@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { serveBuiltUi } from "./staticUiTransport.js";
+
+test.beforeEach(async ({ page }) => serveBuiltUi(page));
 
 test.setTimeout(60_000);
 
@@ -144,7 +147,7 @@ test("saves and exports diagnostics through browser fallback downloads", async (
 test("opens diagnostics and audio settings panels without native APIs", async ({ page }) => {
   await gotoApp(page);
 
-  await page.locator(".menu-group").filter({ hasText: "Help" }).hover();
+  await page.locator(".menu-root").filter({ hasText: /^Help$/ }).click();
   await page.locator(".menu-group").filter({ hasText: "Help" }).locator('[data-action="controls-open"]').first().click();
   await expect(page.locator('[data-controls-backdrop="true"]')).toBeVisible();
   await expect(page.locator("#controls-title")).toContainText("About / Diagnostics");

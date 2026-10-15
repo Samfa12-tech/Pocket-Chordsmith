@@ -300,6 +300,7 @@ import {
   undoCommand
 } from "./commands";
 import { commandFromKeyboardEvent } from "./keyboard";
+import { DesktopMenus } from "./desktopMenus";
 import { collapsedSectionsForCreationPreset, createInitialState, createMidiInputRecordingUiState, createRecordingUiState, currentProject, isUiCollapseSection, loadProjectIntoState, lowerDockTabForCreationPreset, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type LoadProjectIntoStateOptions, type NativeCacheUiStatus } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { automationSurfaceAudioSyncMode, automationSurfacePointFromClient } from "./automationSurface";
@@ -447,6 +448,7 @@ const MAX_PROJECT_IMPORT_BYTES = 25 * 1024 * 1024;
 export class App {
   private root: HTMLElement;
   private state: AppState;
+  private desktopMenus: DesktopMenus;
   private engine: AudioEngine;
   private fileInput: HTMLInputElement;
   private audioFileInput: HTMLInputElement;
@@ -488,6 +490,7 @@ export class App {
 
   constructor(root: HTMLElement) {
     this.root = root;
+    this.desktopMenus = new DesktopMenus(root);
     this.state = createInitialState();
     this.state.recent = loadRecentProjects();
     this.state.updaterAutoCheckOnStartup = loadUpdaterAutoCheckPreference();
@@ -1778,8 +1781,10 @@ export class App {
 
   private render(options: RenderOptions = {}) {
     this.playbackRenderScheduler.cancelPending(this.renderSchedulerTimers());
+    const menu = this.desktopMenus.snapshot();
     const scroll = options.preserveScroll ? this.captureScrollSnapshot() : null;
     const focused = document.activeElement instanceof HTMLElement && this.root.contains(document.activeElement) ? document.activeElement : null;
+    const menuFocus = focused?.classList.contains("menu-root") ? focused.id : null;
     const guitarFocus = focused?.hasAttribute("data-guitar-performance")
       ? `[data-guitar-performance="${CSS.escape(focused.dataset.guitarPerformance || "")}"]`
       : focused?.hasAttribute("data-guitar-setting") ? `[data-guitar-setting="${CSS.escape(focused.dataset.guitarSetting || "")}"]` : null;
@@ -1793,6 +1798,8 @@ export class App {
     this.applyButtonTooltips();
     this.bind();
     this.syncDialogAccessibility();
+    this.desktopMenus.restore(menu);
+    if (menuFocus && document.activeElement === document.body) this.root.querySelector<HTMLElement>(`#${CSS.escape(menuFocus)}`)?.focus({preventScroll:true});
     if (guitarFocus && document.activeElement === document.body) this.root.querySelector<HTMLElement>(guitarFocus)?.focus({preventScroll:true});
     if (scroll) this.restoreScrollSnapshotSoon(scroll);
   }
@@ -3892,7 +3899,7 @@ export class App {
 
   private async dispatch(action: string, actionSource?: HTMLElement) {
     if (["controls-open", "file-window-open", "import-focus", "add-track-open", "audio-settings-open", "updater-open", "mcp-setup-open", "function-guide-open", "feedback-open"].includes(action)) {
-      this.rememberDialogTrigger(actionSource || (document.activeElement as HTMLElement | null));
+      this.rememberDialogTrigger(actionSource?.closest(".menu-popover")?.parentElement?.querySelector<HTMLElement>(".menu-root") || actionSource || (document.activeElement as HTMLElement | null));
     }
     if (action === "play") await this.playTransport();
     if (action === "pause") {
@@ -4570,6 +4577,7 @@ export class App {
 
   private async handleKeyboard(event: KeyboardEvent) {
     if (this.handleDialogKeyboard(event)) return;
+    if (this.desktopMenus.handleKeyboard(event)) return;
     if (event.key === "Escape" && this.state.showAddTrack) {
       event.preventDefault();
       this.state.showAddTrack = false;

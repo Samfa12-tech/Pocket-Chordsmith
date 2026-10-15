@@ -1031,3 +1031,45 @@ no autoplay and stale rejection; finishing subtle presets/dry bypass/loudness A-
 external measurement calibration/decoded outputs; final installed candidate and
 retained real exports/device acceptance; reviewed release targets/version truth.
 No Sam input currently required. Mic/capture unchanged, scoped omission not pass.
+
+## DAW desktop command menu polish
+
+Implemented: bounded scrollable menus with explicit disclosure state, predictable
+click/keyboard opening and hover switching after opening. Arrow/Home/End/letter
+navigation owns menu keys before timeline shortcuts. Escape/Tab/outside dismissal,
+visible root focus after dialogs, and open/focus/scroll retention across startup
+status refreshes extend the existing shell/action dispatcher. No project/audio/
+recording/cache timing changes. Existing studio composition/command order stays.
+
+Reproduced old behavior in production UI: last Edit command y651 outside800x600
+stress window; Escape retained the focused menu. Raw failures retained in
+primary validation desktop-menus-static-before.log. Native configured minimum is
+1100x720; initial1440x920.800x600 is browser stress, not native minimum. Allthree
+geometries tested. Browser DPR1.25/1.5 touch-capable emulation is not actual
+Windows display scaling/physical touch/WebView2 acceptance.
+
+Tested: final fullsource1187/1187, UI/shortcut98, full browser shell27/27, scaled
+menu12/12 (DPR1.25 +DPR1.5-touch), types/productionbuild/manifest105/repo/security/
+governance/whitespace pass. Six menu scenarios include a deterministic timed
+startup status refresh while scrolled/focused; original selected clip count is
+preserved while menu letters/arrows run. Screenshot edit-menu-constrained.png
+visually inspected. Build assets are fulfilled in Playwright via optional
+POCKET_DAW_UI_STATIC_DIR because default sandbox loopback sockets are denied;
+normal CI retains Vite. No host/security/browser-policy settings changed.
+Initial source gate blocked on unmapped new test (now properly mapped), old
+hover-only test and test locator/geometry races corrected; unsuccessful runs
+retained, never counted as passed. Atomic bounds assertions survive legitimate
+shell refreshes without permitting an invisible or clipped menu.
+
+Artifacts: desktop-menus-{static-before,after-build,full-source-final,all-final,
+dpr-final}.log; Playwright results/screenshots. Scope and exact window truth in
+apps/pocket-daw/docs/DESKTOP_MENU_POLISH_2026-10-15.md. Installed native layout/
+scaling/dense-session/other popover edges and final release acceptance remain.
+Published:none; version/dependencies unchanged. Mic scoped omission, not pass.
+
+Next requested user-facing work: contextual selection audition/Stop with native
+clock and safe cancellation, reversible compare/Apply/Discard/Undo, subtle native
+finishing/dry/loudness comparison/measured warnings/calibration/decoded outputs;
+then complete two-source Godot game timeline acceptance and exact installed/
+release targets. Existing save/undo/media/plugin isolation foundations retained.
+No Sam input currently required; no work on Reef Sweep or unrelated PRs.

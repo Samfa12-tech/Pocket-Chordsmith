@@ -9,14 +9,14 @@ export default defineConfig({
     ["html", { outputFolder: "playwright-report", open: "never" }],
     ["json", { outputFile: "test-results/playwright-results.json" }]
   ],
-  webServer: {
+  webServer: process.env.POCKET_DAW_UI_STATIC_DIR ? undefined : {
     command: "npm run dev",
     url: "http://127.0.0.1:5177",
     reuseExistingServer: true,
     timeout: 60_000
   },
   use: {
-    baseURL: "http://127.0.0.1:5177",
+    baseURL: process.env.POCKET_DAW_UI_STATIC_DIR ? "http://pocket-daw.test" : "http://127.0.0.1:5177",
     trace: "retain-on-failure"
   },
   projects: [
