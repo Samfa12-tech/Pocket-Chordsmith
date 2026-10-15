@@ -90,7 +90,7 @@ export function buildSectionEvents(project, section, { baseTime = 0, baseTick = 
     if (!rich.ownedStems.has("bass")) addBassEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
     if (!rich.ownedStems.has("chords")) addChordEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex });
     if (!rich.ownedStems.has("melody")) addMelodyEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
-    if (!rich.ownedStems.has("guitar")) addGuitarEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps });
+    if (!rich.ownedStems.has("guitar")) addGuitarEvents(events, project, section, { step, time, tick, bar, beat, arrangementIndex, totalSteps, baseTime });
   }
   return {
     events,
@@ -106,6 +106,7 @@ function buildRichSectionEvents(project, section, context) {
     const sourceEvents = Array.isArray(track?.events) ? track.events : [];
     if (!sourceEvents.length) return;
     const stem = richTrackStem(trackId, track);
+    if (stem === "guitar" && section.guitar.tone === CAMPFIRE_ACOUSTIC_RECIPE.id && section.guitar.performance === "strum_pick") return;
     if (!richTrackOwnsStem(project, track)) return;
     ownedStems.add(stem);
     let previousPitched = null;
@@ -353,6 +354,25 @@ function addMelodyEvents(events, project, section, context) {
 function addGuitarEvents(events, project, section, context) {
   const campfire = section.guitar.tone === CAMPFIRE_ACOUSTIC_RECIPE.id;
   if (!section.guitar.enabled || (project.mixer.stems.guitar?.mute && !campfire)) return;
+  if (campfire && section.guitar.performance === "strum_pick") {
+    if (context.step % project.meta.resolution !== 0) return;
+    const beat = Math.floor(context.step / project.meta.resolution);
+    if (beat % 4 !== 0 && beat % 2 !== 1) return;
+    const chord = currentChord(project, section, context.step);
+    const notes = campfireAcousticVoicing({rootPc:chord.rootPc, quality:chord.quality, register:section.guitar.register});
+    const picked = beat % 2 === 1;
+    const midi = picked ? notes[beat % 3 === 1 ? 3 : 2] + 12 : undefined;
+    if (picked && midi > CAMPFIRE_ACOUSTIC_RECIPE.maxMidi) throw new RangeError("Campfire strum and pick needs Low or Mid register. High picking exceeds the supported note range.");
+    events.push(baseEvent(project, section, context, {
+      stem:"guitar", type:"guitar", time:context.baseTime + beat * beatSeconds(project), duration:1.5,
+      ...(picked ? {midi} : {midiNotes:notes}), instrument:CAMPFIRE_ACOUSTIC_RECIPE.id,
+      velocity:picked ? 0.15 / CAMPFIRE_ACOUSTIC_RECIPE.noteGain : 1, articulation:"open",
+      direction:guitarDirection(Math.floor(beat / 4), section.guitar.strumMode),
+      technique:{campfire:{recipeVersion:1, strumSeconds:0.027, tailPolicy:"reference-cut"}},
+      humanizeSeed:17, humanizeVelocity:false
+    }));
+    return;
+  }
   const art = section.guitar.pattern[context.step];
   if (!art || art === "off" || art === "hold") return;
   const chord = currentChord(project, section, context.step);

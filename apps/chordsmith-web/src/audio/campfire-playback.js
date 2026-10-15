@@ -16,11 +16,34 @@ function chordsmithProjectHasCampfire(project){
     (id === "guitar" || track?.stem === "guitar") && track?.events?.some(event => (event.sound || event.instrument) === "campfire_acoustic")));
 }
 
+function chordsmithStateHasCampfire(){
+  return state.guitarTone === "campfire_acoustic" || chordsmithProjectHasCampfire({sections:state._richSource || state._projectSource?.sections});
+}
+
+function setChordsmithGuitarPerformance(sectionId, value){
+  state[sectionPropKey("guitarPerformance", sectionId)] = value;
+  if(sectionId === state.currentSection) state.guitarPerformance = value;
+}
+
+function chordsmithHasAuthoredCampfireGuitar(sectionId){
+  return Object.entries(state._richSource?.[sectionId]?.tracks || {}).some(([id, track]) =>
+    id.startsWith("guitar") && track?.compatibility?.compactMirror !== true && track?.events?.some(event => event.sound === "campfire_acoustic"));
+}
+
+function replaceChordsmithCampfireRichPartWithGrid(sectionId){
+  if(!chordsmithStateHasCampfire()) return;
+  for(const [id, track] of Object.entries(state._richSource?.[sectionId]?.tracks || {})){
+    if(!id.startsWith("guitar")) continue;
+    track.events = [];
+    track.compatibility = {...track.compatibility, compactMirror:true};
+  }
+}
+
 async function loadChordsmithCampfirePlanner(){
   if(globalThis.PocketAudioPrepared) return globalThis.PocketAudioPrepared;
   if(!chordsmithCampfirePlannerPromise){
     chordsmithCampfirePlannerPromise = (async () => {
-      if(typeof DecompressionStream !== "function") throw new Error("Campfire Acoustic playback is unavailable in this browser. Use a current browser or Core WAV export.");
+      if(typeof DecompressionStream !== "function") throw new Error("Campfire Acoustic needs a current browser. Your song is unchanged.");
       const bytes = Uint8Array.from(atob(POCKET_AUDIO_PREPARED_RUNTIME_GZIP_BASE64), char => char.charCodeAt(0));
       const source = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
       // This is only the immutable, locally built Core payload embedded above.
@@ -29,7 +52,7 @@ async function loadChordsmithCampfirePlanner(){
       script.textContent = source;
       document.head.append(script);
       script.remove();
-      if(!globalThis.PocketAudioPrepared) throw new Error("Campfire Acoustic could not load. Core WAV export is available separately.");
+      if(!globalThis.PocketAudioPrepared) throw new Error("Campfire Acoustic could not load. Reload the app or try a current browser.");
       return globalThis.PocketAudioPrepared;
     })().catch(error => { chordsmithCampfirePlannerPromise = null; throw error; });
   }
@@ -65,8 +88,9 @@ function compileChordsmithCampfirePlan(module, snapshot){
 async function prepareChordsmithCampfirePlayback(snapshot, request){
   chordsmithCampfirePreparation?.abort();
   chordsmithCampfirePreparation = null;
-  chordsmithCampfireRequired = chordsmithProjectHasCampfire(snapshot);
+  chordsmithCampfireRequired = snapshot ? chordsmithProjectHasCampfire(snapshot) : chordsmithStateHasCampfire();
   if(!chordsmithCampfireRequired){ chordsmithCampfirePlan = null; return true; }
+  snapshot ||= exportProject();
   const preparation = new AbortController();
   chordsmithCampfirePreparation = preparation;
   const start = performance.now();
@@ -137,6 +161,11 @@ function scheduleChordsmithCampfireStep(sectionId, step, time){
 }
 
 function queueChordsmithCampfireRefresh(){
+  if(chordsmithCampfirePreparation){
+    chordsmithPlaybackRequest++;
+    chordsmithCampfirePreparation.abort();
+    if(!state.isPlaying){ updateTransportButtonLabels(); setStatus("Guitar changes are ready. Press Play to prepare them."); }
+  }
   if(!state.isPlaying || !(chordsmithCampfireRequired || state.guitarTone === "campfire_acoustic")) return;
   clearTimeout(chordsmithCampfireRefreshTimer);
   chordsmithCampfireRefreshTimer = setTimeout(async () => {
@@ -144,7 +173,7 @@ function queueChordsmithCampfireRefresh(){
     if(!state.isPlaying) return;
     const request = ++chordsmithPlaybackRequest;
     try {
-      await prepareChordsmithCampfirePlayback(exportProject(), request);
+      await prepareChordsmithCampfirePlayback(null, request);
     } catch(error) {
       if(request !== chordsmithPlaybackRequest || !state.isPlaying) return;
       chordsmithCampfirePlan = null;
@@ -154,6 +183,52 @@ function queueChordsmithCampfireRefresh(){
   }, 50);
 }
 
+async function previewChordsmithCampfireStep(sectionId, step){
+  try{
+  await ensureAudio();
+  applyVolumes();
+  const request = ++chordsmithPlaybackRequest;
+  const snapshot = exportProject();
+  snapshot.guitarEnabled = true;
+  if(!(await prepareChordsmithCampfirePlayback(snapshot, request))) return false;
+  const items = chordsmithCampfirePlan?.sections.get(sectionId)?.byStep.get(step) || [];
+  if(!items.length) return false;
+  const first = Math.min(...items.map(item => item.offset));
+  for(const item of items) chordsmithCampfireBank.schedule(item.event, audioCtx.currentTime + 0.015 + item.offset - first);
+  return true;
+  }catch(error){
+    if(error?.name !== "AbortError") setStatus(error.message || "Campfire preview is unavailable");
+    return false;
+  }
+}
+
 function getChordsmithCampfireDiagnostics(){
   return {...chordsmithCampfireDiagnostics, pending:!!chordsmithCampfirePreparation, bank:chordsmithCampfireBank?.getDiagnostics() || null};
+}
+
+async function chordsmithCampfireExportTimeline(snapshot, options){
+  const module = await loadChordsmithCampfirePlanner();
+  return module.buildPocketAudioTimeline(module.normalisePocketChordsmithProject(snapshot), options);
+}
+
+async function chordsmithCampfireMidiEvents(events, ticksPerQuarter, snapshot, options){
+  const timeline = await chordsmithCampfireExportTimeline(snapshot, options);
+  const out = events.filter(event => event.ch !== 3);
+  if(!snapshot.guitarEnabled) return {events:out, guitarProgram:null};
+  const guitarEvents = timeline.events.filter(item => item.type === "guitar");
+  const ticks = seconds => Math.max(0, Math.round(seconds * snapshot.bpm / 60 * ticksPerQuarter));
+  for(const event of guitarEvents){
+    if(event.velocity <= 0) continue;
+    const campfire = event.instrument === "campfire_acoustic";
+    if(!campfire && event.articulation === "scratch") continue;
+    const notes = event.midiNotes?.length ? [...event.midiNotes] : [event.midi];
+    if(event.direction === "up") notes.reverse();
+    const onset = snapshot.midiExportMode === "performance" ? ticks(event.time) : Math.round(event.tick / timeline.ppq * ticksPerQuarter);
+    const spread = campfire ? event.technique?.campfire?.strumSeconds ?? 0.027 : event.articulation === "chug" ? 0.004 : 0.012;
+    const velocity = event.trackId ? Math.round(event.velocity * 127) : campfire ? Math.round(event.velocity * 100) : event.articulation === "accent" ? 108 : event.articulation === "chug" ? 92 : 96;
+    const duration = campfire ? 1.5 : event.duration;
+    if(campfire) globalThis.PocketAudioCampfire.campfireAcousticEventVoices(event, {sampleRate:44100});
+    for(let index = 0; index < notes.length; index++) pushMidiNote(out, onset + ticks(index * spread), ticks(duration * (snapshot.midiExactDurations ? 1 : 0.92)), notes[index], velocity, 3);
+  }
+  return {events:out.sort((a,b) => a.tick - b.tick || (a.on === b.on ? 0 : a.on ? -1 : 1)), guitarProgram:guitarEvents.length && guitarEvents.every(event => event.instrument === "campfire_acoustic") ? 25 : null};
 }

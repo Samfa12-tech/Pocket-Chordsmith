@@ -479,6 +479,7 @@ const SECTION_PROP_GROUPS = [
   "bassArticulation",
   "drumLanes",
   "guitarPattern",
+  "guitarPerformance",
   "progression"
 ];
 
@@ -709,6 +710,7 @@ function getSectionData(sectionId, includeMelody=state.uiMode === "advanced"){
     grid: state[sectionPropKey("grid", id)],
     gridTuplets: state[sectionPropKey("gridTuplets", id)] || blankGridTuplets(),
     guitarPattern: state[sectionPropKey("guitarPattern", id)] || createGuitarState(),
+    guitarPerformance: state[sectionPropKey("guitarPerformance", id)] || "grid",
     melodyTracks: includeMelody ? state[sectionPropKey("melodyTracks", id)] : [],
     melodyInstruments: includeMelody ? state[sectionPropKey("melodyInstruments", id)] : [],
     melodyOctaves: includeMelody ? state[sectionPropKey("melodyOctaves", id)] : [],
@@ -1103,13 +1105,14 @@ function sanitizeRichEvent(raw){
   if(!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const out = deepCloneProjectValue(raw) || {};
   if(raw.step !== undefined) out.step = Math.max(0, asNumber(raw.step,0));
-  if(raw.tick !== undefined) out.tick = Math.max(0, asInt(raw.tick,0));
+  const campfire = (raw.sound || raw.instrument) === "campfire_acoustic";
+  if(raw.tick !== undefined) out.tick = Math.max(0, campfire ? asNumber(raw.tick,0) : asInt(raw.tick,0));
   out.duration = Math.max(0.001,asNumber(raw.duration,1));
   if(raw.note !== undefined) out.note = asNumber(raw.note,0);
   if(Array.isArray(raw.notes)) out.notes = raw.notes.map(note => asNumber(note,0));
-  out.velocity = clamp(asInt(raw.velocity,96),1,127);
+  out.velocity = campfire ? clamp(asNumber(raw.velocity,100),0,127) : clamp(asInt(raw.velocity,96),1,127);
   out.articulation = String(raw.articulation || "finger");
-  out.sound = String(raw.sound || "standard");
+  out.sound = String(raw.sound || (campfire ? raw.instrument : "") || "standard");
   out.role = String(raw.role || "support");
   out.expression = raw.expression && typeof raw.expression === "object" && !Array.isArray(raw.expression) ? deepCloneProjectValue(raw.expression) : {};
   out.technique = raw.technique && typeof raw.technique === "object" && !Array.isArray(raw.technique) ? deepCloneProjectValue(raw.technique) : {};
@@ -1334,6 +1337,7 @@ function sanitizeProjectData(raw){
     data[`bassArticulation${id}`] = ensureBassArticulationTrack(raw[`bassArticulation${id}`] || []);
     data[`drumLanes${id}`] = sanitizeDrumLanes(raw[`drumLanes${id}`] || {});
     data[`guitarPattern${id}`] = normaliseGuitarState(raw[`guitarPattern${id}`] || raw[`rockGuitar${id}`] || []);
+    data[`guitarPerformance${id}`] = String(raw[`guitarPerformance${id}`] || "grid");
   });
 
   data.sections = sanitizeRichSections(raw.sections);

@@ -497,7 +497,7 @@ async function renderCoreWavForCurrentProject(projectSnapshot, exportScope, time
   }catch(e){
     if(e?.name === "AbortError" || token !== state.wavExportToken) return true;
     pocketAudioCoreWavWorkerFailure = e?.message || String(e);
-    setWavProgress(`Pocket Audio Core render unavailable for ${scopeLabel}; falling back to the Chordsmith WAV renderer.`);
+    setWavProgress(chordsmithProjectHasCampfire(projectSnapshot) ? "Campfire Acoustic needs the Core WAV renderer. Your song is unchanged." : `Pocket Audio Core render unavailable for ${scopeLabel}; falling back to the Chordsmith WAV renderer.`);
     return false;
   }
 }
@@ -528,7 +528,15 @@ async function exportWavFile(){
   try{
     const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     clearWavOutput();
-    const events = buildSequenceEvents();
+    let projectSnapshot = null;
+    const exportScope = getSelectedExportScope();
+    const timelineOptions = coreTimelineOptionsForExportScope(exportScope);
+    const campfire = chordsmithStateHasCampfire();
+    if(campfire) projectSnapshot = JSON.parse(JSON.stringify(exportProject()));
+    if(campfire && !state.guitarEnabled) projectSnapshot.guitarVolume = 0;
+    const campfireTimeline = campfire ? await chordsmithCampfireExportTimeline(projectSnapshot, timelineOptions) : null;
+    const events = campfireTimeline ? campfireTimeline.events : buildSequenceEvents();
+    if(token !== state.wavExportToken) return;
     if(!events.length){
       setStatus("Nothing to export");
       setWavProgress("");
@@ -537,9 +545,11 @@ async function exportWavFile(){
 
     const maxEventEnd = events.reduce((m, ev) => {
       const tail = ev.type === "chord" ? 0.6 : ev.type === "melody" ? 0.5 : ev.type === "guitar" ? 0.45 : 0.25;
-      return Math.max(m, (ev.time || 0) + (ev.dur || 0) + tail);
+      const duration = ev.instrument === "campfire_acoustic" ? 1.5 + Math.max(0, (ev.midiNotes?.length || 1) - 1) * (ev.technique?.campfire?.strumSeconds ?? 0.027) : ev.dur || ev.duration || 0;
+      return Math.max(m, (ev.time || 0) + duration + tail);
     }, 0);
-    const totalDuration = Math.max(2.0, maxEventEnd + 1.0);
+    // Include the complete authored body, even when its last bars are silent.
+    const totalDuration = Math.max(2.0, maxEventEnd + 1.0, campfireTimeline ? campfireTimeline.duration + 0.6 : 0);
     const sampleRate = 44100;
     const durationLabel = `${Math.ceil(totalDuration)}s audio`;
     const scopeLabel = exportScopeLabel();
@@ -550,9 +560,7 @@ async function exportWavFile(){
       setStatus(`WAV export stopped safely. ${message}`);
       return;
     }
-    const projectSnapshot = JSON.parse(JSON.stringify(exportProject()));
-    const exportScope = getSelectedExportScope();
-    const timelineOptions = coreTimelineOptionsForExportScope(exportScope);
+    projectSnapshot ||= JSON.parse(JSON.stringify(exportProject()));
     const workingMemoryMb = Math.ceil(resourceEstimate.estimatedWorkingBytes / 1024 / 1024);
     setWavProgress(`Rendering ${durationLabel} (${scopeLabel}) from ${events.length} events. Keep this tab open.`);
     setStatus(`Rendering WAV (${scopeLabel}, ${durationLabel}, up to ${workingMemoryMb} MB working memory)...`);
@@ -560,6 +568,12 @@ async function exportWavFile(){
     if(token !== state.wavExportToken) return;
     if(await renderCoreWavForCurrentProject(projectSnapshot, exportScope, timelineOptions, durationLabel, events.length, token)) return;
     if(token !== state.wavExportToken) return;
+    if(campfire){
+      const message = "Campfire Acoustic WAV needs the Core renderer in this browser. Try a current browser; your song is unchanged.";
+      setStatus(message);
+      setWavProgress(message);
+      return;
+    }
     if(!OfflineCtx){
       setStatus(pocketAudioCoreWavWorkerFailure
         ? `WAV export is unavailable in this browser: ${pocketAudioCoreWavWorkerFailure}`

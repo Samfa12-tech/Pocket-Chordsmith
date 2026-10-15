@@ -94,6 +94,25 @@ test("compact Campfire accents carry explicit note velocity independently of mix
   }
 });
 
+test("non-destructive Campfire strum/pick authoring matches the complete 76 BPM reference", () => {
+  const source = { projectVersion:17, key:"D", scale:"major", bpm:76, timeSig:4, resolution:4,
+    guitarEnabled:true, guitarTone:"campfire_acoustic", guitarRegister:"low", guitarPerformanceA:"strum_pick",
+    sectionBars:{A:8}, songSequence:["A"], progressionA:[0,0,3,3,5,5,4,4], guitarPatternA:["scratch"] };
+  const project = normalisePocketChordsmithProject(source);
+  const actual = buildPocketAudioTimeline(project).events.filter(event => event.type === "guitar");
+  const expected = campfireAcousticReferenceEvents();
+  assert.equal(actual.length, 24);
+  actual.forEach((event, index) => {
+    for(const key of ["time","duration","velocity","midi","midiNotes","instrument"]) assert.deepEqual(event[key], expected[index][key]);
+  });
+  assert.equal(buildPocketAudioTimeline(project).capabilityReport.exact, true, "inactive manual scratch data is preserved, not rendered");
+  assert.equal(project.source.original.guitarPatternA[0], "scratch");
+  const restored = normalisePocketChordsmithProject({...source, guitarPerformanceA:"grid"});
+  assert.equal(buildPocketAudioTimeline(restored).events.find(event => event.type === "guitar").articulation, "scratch");
+  assert.throws(() => buildPocketAudioTimeline(normalisePocketChordsmithProject({...source,guitarRegister:"high"})), /Low or Mid/);
+  for(const input of [source, project]) assert.equal(createPocketAudioRendererCapabilityReport(input).exact, true);
+});
+
 test("compact Campfire suspended chords report approximation in raw and normalized data while rich notes stay exact", () => {
   for (const chordType of ["sus2", "sus4"]) {
     const source = { projectVersion: 17, guitarEnabled: true, guitarTone: "campfire_acoustic", chordType, guitarPatternA: ["open"], sectionBars: { A: 1 }, songSequence: ["A"] };

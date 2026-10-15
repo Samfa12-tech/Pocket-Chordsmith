@@ -586,20 +586,37 @@ function bindControls(){
   if(els.guitarEnabledToggle) els.guitarEnabledToggle.addEventListener("change", ()=>updateGuitarEnabled(els.guitarEnabledToggle.checked));
   if(els.guitarEnabledToggleSettings) els.guitarEnabledToggleSettings.addEventListener("change", ()=>updateGuitarEnabled(els.guitarEnabledToggleSettings.checked));
   if(els.guitarToneSelect) els.guitarToneSelect.addEventListener("change", ()=>{
+    pushUndoState();
     state.guitarTone = safeChoice(els.guitarToneSelect.value, guitarToneIds(), "high_gain");
     markProjectDirty();
     renderGuitarPanel();
     setStatus(`Guitar tone: ${els.guitarToneSelect.options[els.guitarToneSelect.selectedIndex].text}`);
   });
   if(els.guitarRegisterSelect) els.guitarRegisterSelect.addEventListener("change", ()=>{
+    pushUndoState();
     state.guitarRegister = safeChoice(els.guitarRegisterSelect.value, guitarRegisterIds(), "low");
     markProjectDirty();
+    renderGuitarPanel();
     setStatus(`Guitar register: ${els.guitarRegisterSelect.options[els.guitarRegisterSelect.selectedIndex].text}`);
   });
   if(els.guitarStrumModeSelect) els.guitarStrumModeSelect.addEventListener("change", ()=>{
+    pushUndoState();
     state.guitarStrumMode = safeChoice(els.guitarStrumModeSelect.value, guitarStrumModeIds(), "down");
     markProjectDirty();
     setStatus(`Guitar strum: ${els.guitarStrumModeSelect.options[els.guitarStrumModeSelect.selectedIndex].text}`);
+  });
+  if(els.guitarPerformanceSelect) els.guitarPerformanceSelect.addEventListener("change", ()=>{
+    const value = els.guitarPerformanceSelect.value;
+    if(value === "strum_pick" && state.guitarRegister === "high"){
+      els.guitarPerformanceSelect.value = getSectionData(state.currentSection, false).guitarPerformance;
+      setStatus("Campfire strum + pick uses Low or Mid register. Your guitar part is unchanged.");
+      return;
+    }
+    pushUndoState();
+    setChordsmithGuitarPerformance(state.currentSection, value);
+    markProjectDirty();
+    renderGuitarPanel();
+    setStatus(value === "strum_pick" ? "Campfire strum + pick selected. Grid notes are kept for switching back." : "Guitar grid restored");
   });
   if(els.guitarVolume) els.guitarVolume.addEventListener("input", ()=>{
     state.guitarVolume = clamp(asNumber(els.guitarVolume.value, 0.66), 0, 1);
@@ -950,10 +967,12 @@ function init(){
   ["genreDrawerBtn","genreDrawer","closeGenreDrawerBtn","genreSeedInput","genreSummary","cleanGenreBtn","westernTrailBtn","westernPresetSelect","westernApplyIdeaBtn","westernApplyLoopBtn","westernApplyProfileBtn","westernComposeSongBtn","westernDrumPresetSelect","westernGuitarPresetSelect","funkGrooveBtn","funkGameLoopBtn","funkPresetSelect","funkApplyIdeaBtn","funkApplyLoopBtn","funkApplyProfileBtn","funkComposeSongBtn","funkPocket","funkSlap","funkGhost"].forEach(id => els[id] = document.getElementById(id));
   els.drumPresetSelect = document.getElementById("drumPresetSelect");
   els.guitarPresetSelect = document.getElementById("guitarPresetSelect");
+  els.guitarPerformanceSelect = document.getElementById("guitarPerformanceSelect");
+  els.guitarPerformanceNote = document.getElementById("guitarPerformanceNote");
   els.pocketAudioCoreStatus = document.getElementById("pocketAudioCoreStatus");
   const controlNames = {
     chordOctaveSelect:"Chord octave", chordPlayModeSelect:"Chord style", chordRhythmModeSelect:"Chord rhythm",
-    resolutionSelect:"Beat resolution", guitarToneSelect:"Guitar tone", guitarRegisterSelect:"Guitar register",
+    resolutionSelect:"Beat resolution", guitarToneSelect:"Guitar tone", guitarRegisterSelect:"Guitar register", guitarPerformanceSelect:"Guitar performance",
     guitarStrumModeSelect:"Guitar strum style", guitarPresetSelect:"Guitar pattern preset", guitarFillStyleSelect:"Guitar fill style",
     melodyDegreeSelect:"Melody note", melodyInputModeSelect:"Melody input mode", melodyInstrumentSelect:"Melody instrument",
     melodyPitchModeSelect:"Melody pitch mode", xyPlaybackModeSelect:"X-Y playback mode", xyPadModeSelect:"X-Y pad mode",

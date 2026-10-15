@@ -164,6 +164,7 @@ function normaliseSection(project, id, context) {
       tone: safeChoice(project.guitarTone, [...POCKET_GUITAR_TONES, ...POCKET_PREPARED_GUITAR_TONES], DEFAULT_GUITAR_TONE),
       register: safeChoice(project.guitarRegister, POCKET_GUITAR_REGISTERS, DEFAULT_GUITAR_REGISTER),
       strumMode: safeChoice(project.guitarStrumMode, POCKET_GUITAR_STRUM_MODES, DEFAULT_GUITAR_STRUM_MODE),
+      performance: String(project[`guitarPerformance${id}`] || "grid"),
       volume: clamp(asNumber(project.guitarVolume, DEFAULT_STEM_MIX.guitar.volume), 0, 1),
       pattern: guitarPattern
     },

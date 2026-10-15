@@ -84,13 +84,18 @@ export function createPocketAudioRendererCapabilityReport(input, options = {}) {
   SECTION_IDS.forEach((id) => {
     const section = input?.sections?.[id];
     const guitar = section?.guitar;
-    if ((guitar?.tone || input?.guitarTone) !== "campfire_acoustic" || !(guitar?.enabled ?? input?.guitarEnabled)) return;
+    if (!(guitar?.enabled ?? input?.guitarEnabled)) return;
+    const tone = guitar?.tone || input?.guitarTone;
+    const performance = guitar?.performance || input?.[`guitarPerformance${id}`] || "grid";
+    if (performance !== "grid" && (performance !== "strum_pick" || tone !== "campfire_acoustic")) entries.push(entry(`sections.${id}.guitar.performance`, `guitar-performance:${performance}`, "fallback", "grid", "This guitar performance is unsupported for the selected tone. The grid is used and source intent is retained."));
+    if (tone !== "campfire_acoustic") return;
     const pattern = guitar?.pattern || input?.[`guitarPattern${id}`] || [];
-    if (!pattern.some(value => value && value !== "off" && value !== "hold")) return;
+    const automatic = performance === "strum_pick";
+    if (!automatic && !pattern.some(value => value && value !== "off" && value !== "hold")) return;
     const chordType = section?.chords?.type || input?.chordType;
     if (["seventh", "sus2", "sus4"].includes(chordType)) entries.push(entry(`sections.${id}.chords.type`, `campfire-chord:${chordType}`, "approximated", "triad", `Compact Campfire voicings support major/minor triads. Use explicit rich note arrays to preserve ${chordType} chords; source chord intent is retained.`));
     pattern.forEach((articulation, index) => {
-      if (articulation === "chug" || articulation === "scratch") entries.push(campfireArticulationEntry(`sections.${id}.guitar.pattern[${index}]`, articulation));
+      if (!automatic && (articulation === "chug" || articulation === "scratch")) entries.push(campfireArticulationEntry(`sections.${id}.guitar.pattern[${index}]`, articulation));
     });
   });
 

@@ -206,7 +206,7 @@ async function startPlayback(mode="section"){
   setStatus(mode === "sequence" ? "Starting song sequence..." : "Starting audio...");
   await ensureAudio();
   if(playbackRequest !== chordsmithPlaybackRequest) return;
-  if(!(await prepareChordsmithCampfirePlayback(exportProject(), playbackRequest))) return;
+  if(!(await prepareChordsmithCampfirePlayback(null, playbackRequest))) return;
   if(playbackRequest !== chordsmithPlaybackRequest) return;
   clearSchedulerTimers();
   clearPendingUiTimers();

@@ -55,6 +55,10 @@ function generatedRichTracksForSection(sectionId){
       pushEvent("bass",{...timing,note:event.midi,velocity:event.accent ? 112 : event.articulation === "mute" ? 72 : 92,articulation:event.articulation,sound:state.bassTone || "classic",role:event.step % stepsPerBar() === 0 ? "anchor" : event.articulation === "pop" ? "fill" : "groove",technique:profileId === FUNK_AUDIO_PROFILE_ID ? {funk:{hand:event.articulation === "slap" ? "thumb" : event.articulation === "pop" ? "index" : "finger"}} : {}});
       return;
     }
+    // Campfire's compact part is canonical: generic MIDI mirrors cannot encode
+    // its accent gain, deterministic recipe and full strum identity losslessly.
+    // Authored rich guitar tracks are retained by buildRichSections below.
+    if(event.type === "guitar" && (event.tone || state.guitarTone) === "campfire_acoustic") return;
     if(event.type === "guitar"){
       const baseVelocity = event.articulation === "accent" ? 112 : 94;
       const mixScale = profileId === HEAVY_METAL_AUDIO_PROFILE_ID ? (state.guitarVolume ?? 0.66) / 0.66 : 1;
@@ -191,6 +195,7 @@ function exportProject(options={}){
     out[sectionPropKey("bassArticulation", id)] = state[sectionPropKey("bassArticulation", id)] || ensureBassArticulationTrack([]);
     out[sectionPropKey("drumLanes", id)] = state[sectionPropKey("drumLanes", id)] || createDrumLanes();
     out[sectionPropKey("guitarPattern", id)] = state[sectionPropKey("guitarPattern", id)] || createGuitarState();
+    out[sectionPropKey("guitarPerformance", id)] = state[sectionPropKey("guitarPerformance", id)] || "grid";
   });
   out.sections = buildRichSections();
   const canonical = mergeProjectValues(state._projectSource,out);
@@ -352,6 +357,7 @@ function importProject(rawData){
     state[sectionPropKey("bassArticulation", id)] = ensureBassArticulationTrack(data[sectionPropKey("bassArticulation", id)] || []);
     state[sectionPropKey("drumLanes", id)] = sanitizeDrumLanes(data[sectionPropKey("drumLanes", id)] || {});
     state[sectionPropKey("guitarPattern", id)] = normaliseGuitarState(data[sectionPropKey("guitarPattern", id)] || []);
+    state[sectionPropKey("guitarPerformance", id)] = data[sectionPropKey("guitarPerformance", id)] || "grid";
     ensureGridLengths(state[sectionPropKey("grid", id)]);
     state[sectionPropKey("gridTuplets", id)] = ensureGridTupletLengths(state[sectionPropKey("gridTuplets", id)] || blankGridTuplets());
     clearInvalidGridTuplets(id);

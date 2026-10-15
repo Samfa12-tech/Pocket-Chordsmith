@@ -66,6 +66,15 @@ test("Campfire uses prepared audio on the existing Play and Stop controls and re
   await page.locator("#playBtn").click();
   await expect(page.locator("#playBtn")).toHaveText("Pause");
   await expect.poll(() => page.evaluate(() => getChordsmithCampfireDiagnostics().bank.activeVoices)).toBeGreaterThan(0);
+  const identity = await page.evaluate(async () => {
+    const snapshot = exportProject();
+    const timeline = await chordsmithCampfireExportTimeline(snapshot, {scope:"section",sectionId:"A"});
+    const compact = {...snapshot,sections:{}};
+    const reference = await chordsmithCampfireExportTimeline(compact, {scope:"section",sectionId:"A"});
+    const audible = events => events.filter(event=>event.type === "guitar").map(event=>({time:event.time,notes:event.midiNotes,velocity:event.velocity,duration:event.duration,direction:event.direction,technique:event.technique}));
+    return {actual:audible(timeline.events),expected:audible(reference.events)};
+  });
+  expect(identity.actual).toEqual(identity.expected);
   const cold = await page.evaluate(() => getChordsmithCampfireDiagnostics());
   expect(cold.bank.entries).toBe(4);
   expect(cold.bank.activeVoices).toBeGreaterThan(0);
@@ -84,6 +93,135 @@ test("Campfire uses prepared audio on the existing Play and Stop controls and re
   expect(warm.allocations).toBe(0);
   await page.locator("#stopBtn").click();
   expect(errors).toEqual([]);
+});
+
+test("Campfire strum and pick preserves the grid and exports the canonical notes through MIDI and Core WAV", async ({ page }) => {
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  await page.locator("#projectBox").fill(JSON.stringify({
+    projectVersion:17, uiMode:"advanced", key:"D", scale:"major", bpm:76, timeSig:4, resolution:4,
+    chordsOn:false, bassOn:false, guitarEnabled:true, guitarTone:"campfire_acoustic", guitarRegister:"low",
+    sectionBars:{A:4}, songSequence:["A"], progressionA:[0,0,3,3], guitarPatternA:["scratch"], futureMarker:"keep"
+  }));
+  await page.locator("#importJsonBtn").click();
+  await page.locator("#closeSettingsBtn").click();
+  const before = await page.evaluate(() => exportProject());
+  await page.locator("#guitarPerformanceSelect").selectOption("strum_pick");
+  const performance = await page.evaluate(async () => {
+    const snapshot = exportProject();
+    const options = {scope:"section",sectionId:"A"};
+    const timeline = await chordsmithCampfireExportTimeline(snapshot, options);
+    const midi = await chordsmithCampfireMidiEvents(buildQuantizedMidiEvents(), MIDI_TICKS_PER_QUARTER, snapshot, options);
+    return {snapshot, rawPerformance:state.guitarPerformanceA, normalized:globalThis.PocketAudioPrepared.normalisePocketChordsmithProject(snapshot).sections.A.guitar, playing:state.isPlaying, voices:getChordsmithCampfireDiagnostics().bank?.activeVoices || 0,
+      guitar:timeline.events.filter(event => event.type === "guitar"), midi};
+  });
+  expect(performance.playing).toBe(false);
+  expect(performance.voices).toBe(0);
+  expect(performance.snapshot.guitarPatternA).toEqual(before.guitarPatternA);
+  expect(performance.snapshot.futureMarker).toBe("keep");
+  expect({raw:performance.rawPerformance,snapshot:performance.snapshot.guitarPerformanceA,normalized:performance.normalized.performance,tone:performance.normalized.tone}).toEqual({raw:"strum_pick",snapshot:"strum_pick",normalized:"strum_pick",tone:"campfire_acoustic"});
+  expect(performance.guitar).toHaveLength(12);
+  expect(performance.guitar.filter(event => event.midiNotes).map(event => event.midiNotes)).toEqual([
+    [50,57,62,66],[50,57,62,66],[55,59,62,67],[55,59,62,67]
+  ]);
+  const ons = performance.midi.events.filter(event => event.on && event.ch === 3);
+  expect(ons).toHaveLength(24);
+  expect(ons.slice(0,4).map(event => [event.tick,event.note])).toEqual([[0,50],[16,57],[33,62],[49,66]]);
+  expect(ons.find(event => event.tick === 480).note).toBe(78);
+  expect(performance.midi.guitarProgram).toBe(25);
+  await page.locator("#settingsBtn").click();
+  await page.locator("#exportScopeSelect").selectOption("A");
+  await page.evaluate(() => {
+    const create = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = blob => { if(blob.type === "audio/midi") window.__campfireMidiBlob = blob; return create(blob); };
+  });
+  await page.locator("#exportMidiBtn").click();
+  await expect.poll(() => page.evaluate(() => !!window.__campfireMidiBlob)).toBe(true);
+  const decodedMidi = await page.evaluate(async () => {
+    const parsed = parseStandardMidi(await window.__campfireMidiBlob.arrayBuffer());
+    return {notes:parsed.notes.filter(note=>note.channel === 3).sort((a,b)=>a.startTick-b.startTick),programs:parsed.programChanges};
+  });
+  expect(decodedMidi.notes).toHaveLength(24);
+  expect(decodedMidi.notes.slice(0,4).map(note=>[note.startTick,note.note])).toEqual([[0,50],[16,57],[33,62],[49,66]]);
+  expect(decodedMidi.programs).toContainEqual(expect.objectContaining({channel:3,program:25}));
+  await page.locator("#exportWavBtn").click();
+  await expect(page.locator("#wavProgressText")).toContainText("WAV ready via Pocket Audio Core", {timeout:30_000});
+  const parity = await page.evaluate(async () => {
+    const core = await loadPocketAudioCoreModule();
+    const expected = await core.renderPocketAudioWav(core.normalisePocketChordsmithProject(exportProject()), {sampleRate:44100,scope:"section",sectionId:"A"});
+    const hash = async blob => [...new Uint8Array(await crypto.subtle.digest("SHA-256",await blob.arrayBuffer()))].map(value=>value.toString(16).padStart(2,"0")).join("");
+    return {actual:await hash(state.wavBlob),expected:await hash(expected),bytes:state.wavBlob.size};
+  });
+  expect(parity.bytes).toBeGreaterThan(44);
+  expect(parity.actual).toBe(parity.expected);
+  await page.evaluate(() => { window.Worker = undefined; });
+  await page.locator("#exportWavBtn").click();
+  await expect(page.locator("#wavProgressText")).toContainText("Campfire Acoustic WAV needs the Core renderer");
+  await expect(page.locator("#wavResultBox")).toBeHidden();
+  await page.locator("#closeSettingsBtn").click();
+  await page.locator("#guitarPerformanceSelect").selectOption("grid");
+  const restored = await page.evaluate(() => exportProject());
+  expect(restored.guitarPatternA).toEqual(before.guitarPatternA);
+  expect(restored.futureMarker).toBe("keep");
+});
+
+test("standalone Campfire cancels cold Play and reuses prepared tails during live edits", async ({ page }) => {
+  await page.goto(pathToFileURL(resolve("pocket_chordsmith_v68_core_bridge.html")).href);
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.locator("#settingsBtn").click();
+  await page.locator("#projectBox").fill(JSON.stringify({projectVersion:17,uiMode:"advanced",key:"D",bpm:76,resolution:4,timeSig:4,chordsOn:false,bassOn:false,guitarEnabled:true,guitarTone:"campfire_acoustic",sectionBars:{A:1},songSequence:["A"],guitarPatternA:["open"]}));
+  await page.locator("#importJsonBtn").click();
+  await page.locator("#closeSettingsBtn").click();
+  await page.evaluate(() => {
+    const load = loadChordsmithCampfirePlanner;
+    window.__campfireGate = new Promise(resolve => { window.__releaseCampfire = resolve; });
+    loadChordsmithCampfirePlanner = async () => { await window.__campfireGate; return load(); };
+  });
+  await page.locator("#playBtn").click();
+  await expect.poll(() => page.evaluate(() => getChordsmithCampfireDiagnostics().pending)).toBe(true);
+  await page.locator("#stopBtn").click();
+  await page.evaluate(() => window.__releaseCampfire());
+  await expect.poll(() => page.evaluate(() => getChordsmithCampfireDiagnostics().pending)).toBe(false);
+  expect(await page.evaluate(() => ({playing:state.isPlaying,bank:getChordsmithCampfireDiagnostics().bank}))).toEqual({playing:false,bank:null});
+  await page.locator("#playBtn").click();
+  await expect.poll(() => page.evaluate(() => getChordsmithCampfireDiagnostics().bank?.activeVoices || 0)).toBeGreaterThan(0);
+  await page.evaluate(() => {
+    window.__campfireOriginalBank = chordsmithCampfireBank;
+    window.__campfireOriginalPlan = chordsmithCampfirePlan;
+  });
+  await page.locator("#keySelect").selectOption("E");
+  await expect.poll(() => page.evaluate(() => chordsmithCampfirePlan !== window.__campfireOriginalPlan)).toBe(true);
+  const edit = await page.evaluate(() => ({sameBank:chordsmithCampfireBank === window.__campfireOriginalBank,entries:getChordsmithCampfireDiagnostics().bank.entries,playing:state.isPlaying}));
+  expect(edit).toEqual({sameBank:true,entries:8,playing:true});
+  await page.locator("#stopBtn").click();
+  await expect.poll(() => page.evaluate(() => getChordsmithCampfireDiagnostics().bank.activeVoices)).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test("exact imported Campfire chords and picked notes survive live preparation and MIDI", async ({ page }) => {
+  await page.locator("#settingsBtn").click();
+  const events = [
+    {tick:0,durationTicks:480,notes:[50,57,62,66],sound:"campfire_acoustic",velocity:100,direction:"up",technique:{campfire:{seed:123}}},
+    {tick:123.5,durationTicks:120,note:78,instrument:"campfire_acoustic",velocity:0.4166666666666667,technique:{campfire:{seed:456}},future:{keep:true}}
+  ];
+  await page.locator("#projectBox").fill(JSON.stringify({projectVersion:17,uiMode:"advanced",key:"D",bpm:76,resolution:4,timeSig:4,chordsOn:false,bassOn:false,sectionBars:{A:1},songSequence:["A"],sections:{A:{tracks:{guitar:{events}}}}}));
+  await page.locator("#importJsonBtn").click();
+  await page.locator("#closeSettingsBtn").click();
+  await expect(page.locator("#guitarPerformanceNote")).toContainText("Exact imported guitar notes are preserved");
+  await page.locator("#playBtn").click();
+  await expect(page.locator("#playBtn")).toHaveText("Pause");
+  const captured = await page.evaluate(async () => ({
+    source:exportProject().sections.A.tracks.guitar.events,
+    prepared:chordsmithCampfirePlan.events.map(event=>({notes:event.midiNotes,midi:event.midi,technique:event.technique,direction:event.direction})),
+    midi:await chordsmithCampfireMidiEvents([],MIDI_TICKS_PER_QUARTER,exportProject(),{scope:"section",sectionId:"A"})
+  }));
+  expect(captured.source).toMatchObject(events);
+  expect(captured.prepared[0].notes).toEqual([50,57,62,66]);
+  expect(captured.prepared[0].direction).toBe("up");
+  expect(captured.prepared[1].midi).toBe(78);
+  expect(captured.prepared[1].technique.campfire.seed).toBe(456);
+  expect(captured.midi.events.filter(event=>event.on).map(event=>event.note)).toEqual([66,62,57,50,78]);
+  await page.locator("#stopBtn").click();
 });
 
 async function buildValidHandoffCode(page, padding = 0) {

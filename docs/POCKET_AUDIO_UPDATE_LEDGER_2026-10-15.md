@@ -645,3 +645,43 @@ canonical artifact rebuild/freshness and focused reporting/pitch regressions
 pass. Logs: campfire-suspended-core-final.log, -family-final.log,
 -chordsmith-build.log, -focused-final.log in the primary validation directory.
 Fresh exact-head CI and parent re-review remain pending after this correction.
+
+## Chordsmith Campfire usable authoring integration (local candidate)
+
+Connects the existing browser transport/sample clock to the shared prepared Core
+voice bank; no second live scheduler. Campfire full voicings, exact imported
+poly/single notes, up/down strum and non-destructive section strum/pick controls
+are audible. Manual grid data survives performance selection and Undo. Existing
+four-bar section limits remain. JSON/PCS1 schema and amplifier IDs are unchanged.
+Rich Campfire fractional ticks, low/zero velocity, seed, direction and unknown
+fields survive import. Generated generic MIDI mirrors are not used for compact
+Campfire because they lose velocity/recipe/direction; authored rich tracks remain.
+
+Cold Play is cancellable. Warm replay reuses PCM without new buffers. Key edits
+prepare missing identities outside the scheduler, keep the same bank and leave
+sounding tails intact. Preparation has the existing 16-MiB bound, atomic staged
+promotion, cancellation and stale-request guards. These are focused prepared
+instrument changes, not a general cache rewrite.
+
+MIDI uses canonical guitar notes and 27-ms strum timing, including exact rich
+pitches; pure Campfire receives steel-string GM program25. Core worker WAV is the
+supported Campfire render path; the old synth fallback explicitly refuses it
+rather than silently sounding like an amplifier. Actual UI-worker output SHA256
+matches direct Core WAV for the tested phrase. Core module compression uses the
+already installed Chordsmith compressor; no dependency or CSP changes.
+
+Executed before theme integration: Core202 passed; family parity passed including
+1173 DAW tests; browser112 desktop/touch passed; genre audio-quality5 passed;
+composer34 deterministic plans passed; lint/typecheck/format/size passed.
+Size1061408/1100000 active and893379/900000 modular. A sandbox Temp EPERM prevented
+one unit run before tests executed; escalation rerun pending. More actual MIDI
+byte checks and theme integration gates follow. Failed generated-mirror parity
+probe retained alongside passing corrections in ignored chordsmith-campfire logs.
+No physical listening or device acceptance is claimed. No published files.
+
+Explicit remaining limitation: a live section mixing prepared Campfire and amp
+voices is rejected with a Core-WAV instruction; offline Core supports it. This
+slice is not full family acceptance. DJ/native controls, remaining DAW UX and
+finishing, both Godot source routes/runtime/scene checks and exact installed
+candidate/human output acceptance remain active. Capture plumbing unchanged:
+microphone omission remains scoped and is not a passed hands-on test.

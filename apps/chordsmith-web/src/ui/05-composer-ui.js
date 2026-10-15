@@ -1113,6 +1113,7 @@ function renderGuitarOffline(ctx, dest, ev){
   playGuitarVoice(ctx, dest, ev.notes, ev.time, ev.dur, ev.articulation, ev.tone, ev.direction, ev.step);
 }
 function firstAudibleGuitarStep(section){
+  if(state.guitarTone === "campfire_acoustic" && section.guitarPerformance === "strum_pick") return 0;
   const stepCount = (section && section.bars ? section.bars : sectionBarCount()) * stepsPerBar();
   for(let step=0; step<stepCount; step++){
     const art = guitarStepArt(section, step);
@@ -1121,18 +1122,11 @@ function firstAudibleGuitarStep(section){
   return -1;
 }
 async function auditionCurrentSectionGuitar(){
-  if(chordsmithProjectHasCampfire(exportProject())){
-    await ensureAudio();
-    applyVolumes();
-    const request = ++chordsmithPlaybackRequest;
-    if(!(await prepareChordsmithCampfirePlayback(exportProject(), request))) return false;
-    const events = chordsmithCampfirePlan?.sections.get(state.currentSection)?.byStep;
-    const first = events && [...events.values()][0]?.[0];
-    if(!first) return false;
-    chordsmithCampfireBank.schedule(first.event, audioCtx.currentTime + 0.015);
-    return true;
-  }
-  const section = getSectionData(state.currentSection, false);
+  if(chordsmithStateHasCampfire()){
+    const section = getSectionData(state.currentSection, false);
+    const step = firstAudibleGuitarStep(section);
+    return step >= 0 ? previewChordsmithCampfireStep(state.currentSection, step) : false;
+  }  const section = getSectionData(state.currentSection, false);
   const step = firstAudibleGuitarStep(section);
   if(step < 0) return false;
   await ensureAudio();
@@ -1146,6 +1140,7 @@ async function auditionCurrentSectionGuitar(){
 }
 function guitarPatternHasAudibleData(sectionId=state.currentSection){
   const id = sanitizeSectionId(sectionId);
+  if(state.guitarTone === "campfire_acoustic" && state[sectionPropKey("guitarPerformance", id)] === "strum_pick") return true;
   const pattern = state[sectionPropKey("guitarPattern", id)] || [];
   const steps = getSectionStepCount(id);
   for(let i = 0; i < steps; i++){
@@ -1217,6 +1212,8 @@ function fillGuitarFromChords(sectionId=state.currentSection, style=null, replac
   const id = sanitizeSectionId(sectionId);
   const chosenStyle = style || (els.guitarFillStyleSelect ? els.guitarFillStyleSelect.value : "gentle_strum");
   if(!replace && guitarPatternHasAudibleData(id)) return false;
+  replaceChordsmithCampfireRichPartWithGrid(id);
+  setChordsmithGuitarPerformance(id, "grid");
   state[sectionPropKey("guitarPattern", id)] = buildGeneratedGuitarPattern(id, chosenStyle);
   if(id === state.currentSection) state.guitarPattern = state[sectionPropKey("guitarPattern", id)];
   state.guitarPatternPreset = chosenStyle;
@@ -1224,6 +1221,8 @@ function fillGuitarFromChords(sectionId=state.currentSection, style=null, replac
 }
 function clearGuitarPattern(sectionId=state.currentSection){
   const id = sanitizeSectionId(sectionId);
+  replaceChordsmithCampfireRichPartWithGrid(id);
+  setChordsmithGuitarPerformance(id, "grid");
   state[sectionPropKey("guitarPattern", id)] = createGuitarState();
   if(id === state.currentSection) state.guitarPattern = state[sectionPropKey("guitarPattern", id)];
 }
@@ -1296,6 +1295,8 @@ function exportGuitarToMidi(events, tick, section, step, ticksPerQuarter=MIDI_TI
 }
 function applyGuitarPreset(name=state.guitarPatternPreset, sectionId=state.currentSection){
   const id = sanitizeSectionId(sectionId);
+  replaceChordsmithCampfireRichPartWithGrid(id);
+  setChordsmithGuitarPerformance(id, "grid");
   const pattern = createGuitarState();
   const stepCount = sectionBarCount(id) * stepsPerBar();
   const res = activeResolution();
@@ -1962,6 +1963,22 @@ function renderGuitarPanel(){
   if(!els.guitarRow) return;
   const steps = visibleSectionSteps();
   const section = getSectionData(state.currentSection, false);
+  const campfire = state.guitarTone === "campfire_acoustic";
+  const automatic = campfire && section.guitarPerformance === "strum_pick";
+  const exactImported = !automatic && chordsmithHasAuthoredCampfireGuitar(state.currentSection);
+  if(els.guitarPerformanceSelect){
+    els.guitarPerformanceSelect.value = section.guitarPerformance === "strum_pick" ? "strum_pick" : "grid";
+    els.guitarPerformanceSelect.querySelector('[value="strum_pick"]').disabled = !campfire || state.guitarRegister === "high";
+  }
+  if(els.guitarPerformanceNote){
+    els.guitarPerformanceNote.hidden = !campfire && !exactImported;
+    els.guitarPerformanceNote.textContent = exactImported ? "Exact imported guitar notes are preserved. Cells preview them; edit the JSON or use Fill/Clear to replace this part with the grid. Undo restores the exact part." : automatic ? "Strum + pick follows this section's chords. Grid notes are kept; choose Grid to edit them. Low/Mid register supports the picked notes." : "Full major/minor voicings. Chug/scratch use a natural pluck; suspended/seventh chords need exact imported notes.";
+  }
+  if(els.guitarRegisterSelect) [...els.guitarRegisterSelect.options].forEach(option => {
+    const label = {low:"Low",mid:"Mid",high:"High"}[option.value];
+    option.textContent = `${label} ${campfire ? "voicing" : "power chords"}`;
+    option.disabled = automatic && option.value === "high";
+  });
   state.guitarPattern = ensureGuitarPatternLength(state.guitarPattern || []);
   els.guitarRow.style.setProperty("--steps", steps);
   els.guitarRow.innerHTML = "";
@@ -1970,7 +1987,7 @@ function renderGuitarPanel(){
   name.type = "button";
   name.className = "track-name" + (state.guitarEnabled ? " active" : "");
   name.textContent = "Gtr";
-  name.dataset.tip = "Guitar rhythm power-chord lane.";
+  name.dataset.tip = campfire ? "Prepared acoustic guitar lane." : "Guitar rhythm power-chord lane.";
   name.addEventListener("click", () => {
     pushUndoState();
     setGuitarEnabled(!state.guitarEnabled, true);
@@ -1978,20 +1995,27 @@ function renderGuitarPanel(){
   els.guitarRow.appendChild(name);
 
   for(let i=0; i<steps; i++){
-    const art = normalizeGuitarArticulation(state.guitarPattern[i]);
+    const beat = Math.floor(i / activeResolution());
+    const generated = i % activeResolution() === 0 ? beat % 4 === 0 ? "open" : beat % 2 === 1 ? "pick" : "off" : "off";
+    const art = automatic ? generated : normalizeGuitarArticulation(state.guitarPattern[i]);
     const c = document.createElement("button");
     c.className = "cell guitar" + (art !== "off" ? " on guitar" : "") + (art === "accent" ? " accent" : "") + (art === "chug" ? " chug" : "") + (art === "scratch" ? " scratch" : "") + (i === state.currentStep ? " current" : "");
     c.dataset.step = String(i);
-    c.dataset.tip = `Guitar rhythm step: ${guitarArticulationTip(art)}. Tap to cycle rest, strum, palm mute, accent, hold and scratch.`;
-    c.textContent = guitarArticulationLabel(art);
-    c.setAttribute("aria-label", `Guitar, step ${i + 1}, ${art}`);
+    c.dataset.tip = automatic || exactImported ? "Preview this step. Choose Grid to edit manual cells, or use Fill/Clear to replace an exact imported part." : `Guitar rhythm step: ${guitarArticulationTip(art)}. Tap to cycle rest, strum, palm mute, accent, hold and scratch.`;
+    c.textContent = art === "pick" ? (beat % 3 === 1 ? "P↑" : "P") : guitarArticulationLabel(art);
+    c.setAttribute("aria-label", `Guitar, step ${i + 1}, ${automatic ? "generated " : exactImported ? "exact imported " : ""}${art}`);
     c.setAttribute("aria-pressed", art === "off" ? "false" : "true");
-    c.setAttribute("aria-describedby", "guitarKeyboardHelp");
+    c.setAttribute("aria-describedby", automatic || exactImported ? "guitarPerformanceNote" : "guitarKeyboardHelp");
     let restoreAfterKeyboardClick = false;
     c.addEventListener("keydown", event => {
       const direct = {"1":"open","2":"chug","3":"accent","4":"hold","5":"scratch"};
       const command = event.key.toLowerCase();
       if(event.key === " " || event.key === "Enter") { restoreAfterKeyboardClick = true; return; }
+      if((automatic || exactImported) && (direct[command] || command === "delete" || command === "backspace")){
+        event.preventDefault(); event.stopPropagation();
+        setStatus("Choose Grid to edit the saved guitar cells. Strum + pick follows your chords.");
+        return;
+      }
       const next = command === "delete" || command === "backspace" ? "off" : direct[command] || null;
       if(!next) return;
       event.preventDefault();
@@ -2004,6 +2028,11 @@ function renderGuitarPanel(){
       requestAnimationFrame(() => els.guitarRow?.querySelector(`[data-step="${i}"]`)?.focus({preventScroll:true}));
     });
     c.addEventListener("click", async () => {
+      if(automatic || exactImported){
+        restoreAfterKeyboardClick = false;
+        await previewChordsmithCampfireStep(state.currentSection, i);
+        return;
+      }
       pushUndoState();
       const order = ["off","open","chug","accent","hold","scratch"];
       const current = normalizeGuitarArticulation(state.guitarPattern[i]);
@@ -2015,6 +2044,10 @@ function renderGuitarPanel(){
         requestAnimationFrame(() => els.guitarRow?.querySelector(`[data-step="${i}"]`)?.focus({preventScroll:true}));
       }
       if(state.guitarPattern[i] !== "off" && state.guitarPattern[i] !== "hold"){
+        if(chordsmithStateHasCampfire()){
+          await previewChordsmithCampfireStep(state.currentSection, i);
+          return;
+        }
         await ensureAudio();
         const bar = Math.floor(i / stepsPerBar());
         const notes = buildPowerChordNotes((section.progression || state.progression)[bar] || state.availableChords[0], state.guitarRegister);

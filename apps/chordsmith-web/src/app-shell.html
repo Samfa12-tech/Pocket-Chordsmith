@@ -434,7 +434,9 @@
               <option value="alternate">Alternate</option>
             </select>
             <label class="sub">Guitar <input id="guitarVolume" type="range" min="0" max="1" step="0.01" value="0.66"></label>
+              <label class="sub">Performance <select class="tiny-select" id="guitarPerformanceSelect"><option value="grid">Grid</option><option value="strum_pick">Campfire strum + pick</option></select></label>
           </div>
+            <div class="tiny" id="guitarPerformanceNote" hidden></div>
           <div class="row">
             <label class="sub">Rhythm preset
               <select class="tiny-select preset-select" id="guitarPresetSelect"></select>
