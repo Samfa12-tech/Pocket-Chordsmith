@@ -84,6 +84,8 @@ import type { Clip, MediaPoolItem, PocketDawProject } from "../src/daw/schema";
 import type { NativeAudioStartPayload, NativeAudioStatus } from "../src/native/audioPlayback";
 import type { NativeMediaApi } from "../src/native/mediaBridge";
 import { simpleMidiBytes } from "./midiFixtures";
+import { sanitizePocketChordsmithProject } from "../src/compatibility/pcsSanitizer";
+import { createDawProjectFromChordsmithProject } from "../src/compatibility/pcsToDaw";
 
 function nativeRenderResult(samples: number[] = [512, -512, 256, -256]) {
   const bytes = Array.from(wavBytes(48_000, 2, samples));
@@ -103,6 +105,58 @@ describe("native render cache", () => {
     offlineRenderMock.encodeWav.mockClear();
     nativeMediaBridgeMock.renderNativeAudioWav.mockReset();
     nativeMediaBridgeMock.renderNativeAudioWav.mockResolvedValue(nativeRenderResult() as never);
+  });
+
+  it("retains complete Campfire tails through render, reuse and hydrate without treating adjacent tails as body overlap", async () => {
+    const project = createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({
+      projectVersion: 17, bpm: 120, timeSig: 4, resolution: 4, songSequence: ["A", "A"], sectionBars: { A: 1 }, guitarEnabled: true,
+      sections: { A: { tracks: { guitar: { events: [
+        { tick: 1680, durationTicks: 120, notes: [50, 57, 62, 66], sound: "campfire_acoustic", velocity: 100, direction: "down" }
+      ] } } } }
+    }));
+    project.project.sampleRate = 48000;
+    const reference = renderTimelineEvents(project).filter((event) => event.instrument === "campfire_acoustic");
+    expect(reference).toHaveLength(2);
+    const expectedDuration = 1.75 + 1.5 + 3 * 0.027;
+    const renderMock = nativeMediaBridgeMock.renderNativeAudioWav as unknown as {
+      mockImplementation(fn: (_payload: NativeAudioStartPayload, durationSeconds: number) => Promise<unknown>): void;
+    };
+    const requests: Array<{ payload: NativeAudioStartPayload; duration: number }> = [];
+    renderMock.mockImplementation(async (payload, durationSeconds) => {
+      requests.push({ payload, duration: durationSeconds });
+      return { ...nativeRenderResult(), durationSeconds };
+    });
+    const built = await buildNativeRenderCache(project, nativeRenderCacheSignature(project));
+    expect(built.lastGeneratedStemRenderError).toBeNull();
+    const guitarRequests = requests.filter((request) => request.payload.events.some((event) => event.instrument === "campfire_acoustic") && request.payload.tracks.some((track) => track.id === "guitar" && !track.mute));
+    expect(guitarRequests.length).toBeGreaterThan(0);
+    guitarRequests.forEach((request) => expect(request.duration).toBeCloseTo(expectedDuration, 6));
+    const regions = built.regions.filter((region) => region.trackId === "guitar");
+    expect(regions).toHaveLength(2);
+    regions.forEach((region) => {
+      expect(region.duration).toBeCloseTo(expectedDuration, 6);
+      expect(region.generatedBodyDurationSeconds).toBeCloseTo(2, 6);
+    });
+    const items = built.renderCacheItems.filter((item) => item.metadata?.trackId === "guitar");
+    items.forEach((item) => expect(Number(item.metadata?.renderTailSeconds)).toBeCloseTo(expectedDuration - 2, 6));
+    const requestCount = requests.length;
+    const reused = await buildNativeRenderCache(project, nativeRenderCacheSignature(project), built);
+    expect(requests).toHaveLength(requestCount);
+    expect(reused.regions.filter((region) => region.trackId === "guitar")).toEqual(regions);
+    project.renderCache = built.renderCacheItems;
+    const api: NativeMediaApi = { isAvailable: () => true, async invoke(_command, args) {
+      const bytes = wavBytes();
+      return { assetId: String(args?.assetId || ""), path: `C:\\Songs\\${String(args?.relativePath || "")}`, relativePath: String(args?.relativePath || ""), sizeBytes: bytes.length, bytes: Array.from(bytes) } as never;
+    } };
+    const hydrated = await hydrateNativeRenderCacheAssets("C:\\Songs\\Campfire.pocketdaw", project, api);
+    expect(hydrated.errors).toEqual([]);
+    const restored = hydrated.cache!.regions.filter((region) => region.trackId === "guitar");
+    expect(restored).toHaveLength(2);
+    restored.forEach((region) => {
+      expect(region.duration).toBeCloseTo(expectedDuration, 6);
+      expect(region.generatedBodyDurationSeconds).toBeCloseTo(2, 6);
+    });
+    expect(hydrated.cache!.cachedClipIds.size).toBe(built.cachedClipIds.size);
   });
 
   it("does not invalidate cache signatures for live mixer mute and solo changes", () => {

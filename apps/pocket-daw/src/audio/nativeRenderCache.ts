@@ -8,7 +8,7 @@ import { pruneNativeCacheAssets, readNativeCacheAsset, renderNativeAudioWav, wri
 import { POCKET_BASS_TONE_CONFIGS, POCKET_DRUM_KIT_CONFIGS } from "../../../../packages/pocket-audio-core/src/sounds/lofi-registry.js";
 import { POCKET_CHORD_INSTRUMENT_CONFIGS, POCKET_LEAD_INSTRUMENT_CONFIGS } from "../../../../packages/pocket-audio-core/src/sounds/instruments.js";
 import { POCKET_GUITAR_TONE_CONFIGS } from "../../../../packages/pocket-audio-core/src/sounds/guitar.js";
-import { CAMPFIRE_ACOUSTIC_RECIPE } from "../../../../packages/pocket-audio-core/src/sounds/campfire-acoustic.js";
+import { CAMPFIRE_ACOUSTIC_RECIPE, campfireAcousticEventFrameCount } from "../../../../packages/pocket-audio-core/src/sounds/campfire-acoustic.js";
 import { POCKET_PRO_EQ_BANDS } from "../../../../packages/pocket-audio-core/src/fx/pro-eq.js";
 import { audioRegionFromClip, renderTimelineAudioRegions } from "./audioRegions";
 import { getCachedAudioBuffer, type CachedAudioBuffer } from "./audioBufferCache";
@@ -161,12 +161,11 @@ export async function buildNativeRenderCache(
         }
       }
       assets.set(item.key, asset);
-      renderCacheItems.push(renderCacheItemForAsset(asset, createdAt, item));
+      renderCacheItems.push(renderCacheItemForAsset(project, asset, createdAt, item));
     }
     const itemStartBar = item.startBar ?? item.clip.startBar;
     const itemBarLength = item.barLength ?? item.clip.barLength;
     const duration = timelineSecondsBetweenBars(project, itemStartBar, itemStartBar + itemBarLength);
-    const regionDuration = generatedStemRenderDuration(duration);
     const sourceClipIds = sourceClipIdsForBuildItem(item);
     regions.push({
       id: `${sourceClipIds.join("_")}_${item.trackId}_${item.role}`,
@@ -174,7 +173,8 @@ export async function buildNativeRenderCache(
       trackId: item.trackId,
       startTime: timelineSecondsAtBar(project, itemStartBar),
       sourceOffset: 0,
-      duration: Math.min(regionDuration, asset.durationSeconds),
+      duration: asset.durationSeconds,
+      generatedBodyDurationSeconds: Math.min(duration, asset.durationSeconds),
       gain: 1,
       phaseMultiplier: 1,
       reversed: false,
@@ -274,6 +274,9 @@ function pruneOverlappingGeneratedStemRegionsForNativeParity(
 }
 
 function generatedStemRegionBodyEnd(region: NativeAudioRegion): number {
+  if (Number.isFinite(region.generatedBodyDurationSeconds) && Number(region.generatedBodyDurationSeconds) >= 0) {
+    return region.startTime + Math.min(region.duration, Number(region.generatedBodyDurationSeconds));
+  }
   return region.startTime + Math.max(0, region.duration - NATIVE_GENERATED_STEM_TAIL_SECONDS);
 }
 
@@ -833,7 +836,8 @@ function nativeAudioRendererContract(sampleRate: number) {
     recipeHash: nativeRendererRecipeHash(),
     renderMode: NATIVE_CACHE_STEM_RENDER_MODE,
     renderSampleRate: sampleRate,
-    stemTailSeconds: NATIVE_GENERATED_STEM_TAIL_SECONDS
+    stemTailSeconds: NATIVE_GENERATED_STEM_TAIL_SECONDS,
+    campfireTailPolicy: "complete-prepared-note-v1"
   };
 }
 
@@ -978,7 +982,7 @@ async function renderAsset(project: PocketDawProject, item: AssetBuildItem): Pro
     : projectForNativeGeneratedStemRender(project, item.clip, item.trackId);
   const clipDurationSeconds = timelineSecondsBetweenBars(project, itemStartBar, itemStartBar + itemBarLength);
   const renderDurationSeconds = generatedStemRenderDuration(clipDurationSeconds);
-  const { rendered: nativeRender, error } = await renderNativeGeneratedStemWav(assetProject, renderDurationSeconds);
+  const { rendered: nativeRender, error } = await renderNativeGeneratedStemWav(assetProject, renderDurationSeconds, item.trackId);
   if (!nativeRender?.bytes?.length) return { asset: null, error: error || "Native cache-stem renderer returned no audio." };
   const bytes = nativeRender.bytes;
   const sampleRate = nativeRender.sampleRate || project.project.sampleRate;
@@ -1074,9 +1078,13 @@ function timelineSecondsBetweenBars(project: PocketDawProject, startBar: number,
   return Math.max(0, timelineSecondsAtBar(project, endBar) - timelineSecondsAtBar(project, startBar));
 }
 
-async function renderNativeGeneratedStemWav(assetProject: PocketDawProject, durationSeconds: number) {
+async function renderNativeGeneratedStemWav(assetProject: PocketDawProject, durationSeconds: number, trackId: string) {
   try {
     const events = renderTimelineEvents(assetProject);
+    for (const event of events) {
+      if (event.trackId !== trackId || event.kind !== "guitar" || event.instrument !== "campfire_acoustic") continue;
+      durationSeconds = Math.max(durationSeconds, event.time + campfireAcousticEventFrameCount(event, { sampleRate: assetProject.project.sampleRate }) / assetProject.project.sampleRate);
+    }
     const payload = buildNativeAudioStartPayload(assetProject, events, 0);
     const rendered = await renderNativeAudioWav({ ...payload, loop: null, metronome: null }, durationSeconds, NATIVE_CACHE_STEM_RENDER_MODE);
     return {
@@ -1156,8 +1164,10 @@ function isDrumRoleTrack(project: PocketDawProject, trackId: string): boolean {
   return project.tracks.some((track) => track.id === trackId && track.role === "drums");
 }
 
-function renderCacheItemForAsset(asset: NativeAudioAsset, createdAt: string, item: AssetBuildItem): RenderCacheItem {
+function renderCacheItemForAsset(project: PocketDawProject, asset: NativeAudioAsset, createdAt: string, item: AssetBuildItem): RenderCacheItem {
   const sourceClipIds = sourceClipIdsForBuildItem(item);
+  const startBar = item.startBar ?? item.clip.startBar;
+  const duration = timelineSecondsBetweenBars(project, startBar, startBar + (item.barLength ?? item.clip.barLength));
   return {
     id: asset.id,
     sourceClipId: sourceClipIds[0],
@@ -1178,7 +1188,7 @@ function renderCacheItemForAsset(asset: NativeAudioAsset, createdAt: string, ite
       mimeType: asset.mimeType || "audio/wav",
       role: item.role,
       trackId: item.trackId,
-      renderTailSeconds: NATIVE_GENERATED_STEM_TAIL_SECONDS,
+      renderTailSeconds: Math.max(NATIVE_GENERATED_STEM_TAIL_SECONDS, asset.durationSeconds - duration),
       sampleRate: asset.sampleRate,
       channels: asset.channels,
       durationSeconds: asset.durationSeconds,
@@ -1287,7 +1297,7 @@ function hydratedGeneratedStemEntries(
   return matchingBuildItems.map((buildItem) => ({
     item,
     asset,
-    region: nativeGeneratedRegionFromClip(project, buildItem.clip, buildItem.trackId, asset),
+    region: nativeGeneratedRegionFromClip(project, buildItem.clip, buildItem.trackId, asset, generatedTailSecondsFromItem(item)),
     cacheKind,
     clipId: buildItem.clip.id,
     generatedKey: `${buildItem.role}:${buildItem.trackId}`
@@ -1323,7 +1333,7 @@ function nativeRegionFromHydratedItem(project: PocketDawProject, item: RenderCac
     const sourceClipIds = sourceClipIdsForRenderCacheItem(item);
     if (sourceClipIds.length > 1) return nativeGeneratedGroupRegionFromItem(project, item, asset);
     const trackId = String(item.metadata?.trackId || clip.trackId);
-    return nativeGeneratedRegionFromClip(project, clip, trackId, asset);
+    return nativeGeneratedRegionFromClip(project, clip, trackId, asset, generatedTailSecondsFromItem(item));
   }
 
   return null;
@@ -1345,7 +1355,8 @@ function nativeGeneratedGroupRegionFromItem(project: PocketDawProject, item: Ren
     trackId,
     startTime: timelineSecondsAtBar(project, startBar),
     sourceOffset: 0,
-    duration: Math.min(generatedStemRenderDuration(duration), asset.durationSeconds),
+    duration: Math.min(duration + generatedTailSecondsFromItem(item), asset.durationSeconds),
+    generatedBodyDurationSeconds: Math.min(duration, asset.durationSeconds),
     gain: 1,
     phaseMultiplier: 1,
     reversed: false,
@@ -1355,7 +1366,7 @@ function nativeGeneratedGroupRegionFromItem(project: PocketDawProject, item: Ren
   };
 }
 
-function nativeGeneratedRegionFromClip(project: PocketDawProject, clip: Clip, trackId: string, asset: NativeAudioAsset): NativeAudioRegion {
+function nativeGeneratedRegionFromClip(project: PocketDawProject, clip: Clip, trackId: string, asset: NativeAudioAsset, tailSeconds = NATIVE_GENERATED_STEM_TAIL_SECONDS): NativeAudioRegion {
   const clipDuration = timelineSecondsBetweenBars(project, clip.startBar, clip.startBar + clip.barLength);
   return {
     id: `${clip.id}_${trackId}_${asset.id}_hydrated`,
@@ -1363,7 +1374,8 @@ function nativeGeneratedRegionFromClip(project: PocketDawProject, clip: Clip, tr
     trackId,
     startTime: timelineSecondsAtBar(project, clip.startBar),
     sourceOffset: 0,
-    duration: Math.min(generatedStemRenderDuration(clipDuration), asset.durationSeconds),
+    duration: Math.min(clipDuration + tailSeconds, asset.durationSeconds),
+    generatedBodyDurationSeconds: Math.min(clipDuration, asset.durationSeconds),
     gain: 1,
     phaseMultiplier: 1,
     reversed: false,
@@ -1378,8 +1390,12 @@ function hydratedDurationFallback(project: PocketDawProject, item: RenderCacheIt
   if (!clip) return 0;
   const clipDuration = timelineSecondsBetweenBars(project, clip.startBar, clip.startBar + clip.barLength);
   return String(item.metadata?.cacheKind || "") === "native-generated-stem"
-    ? generatedStemRenderDuration(clipDuration)
+    ? clipDuration + generatedTailSecondsFromItem(item)
     : clipDuration;
+}
+
+function generatedTailSecondsFromItem(item: RenderCacheItem): number {
+  return cleanPositiveNumber(item.metadata?.renderTailSeconds, NATIVE_GENERATED_STEM_TAIL_SECONDS);
 }
 
 function expectedGeneratedStemKeys(project: PocketDawProject, clip: Clip): Set<string> {

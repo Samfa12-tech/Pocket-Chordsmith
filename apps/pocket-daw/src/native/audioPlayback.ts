@@ -229,6 +229,8 @@ export interface NativeAudioRegion {
   startTime: number;
   sourceOffset: number;
   duration: number;
+  /** Musical body of a generated cache region; trailing PCM is not body overlap. */
+  generatedBodyDurationSeconds?: number;
   gain: number;
   phaseMultiplier?: number;
   reversed?: boolean;

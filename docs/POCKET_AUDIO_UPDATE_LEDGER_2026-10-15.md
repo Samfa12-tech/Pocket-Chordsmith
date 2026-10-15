@@ -246,6 +246,38 @@ particular, the existing 250 ms generated-stem tail assumption must be resolved
 before exposing Campfire as a complete product feature. No full native-to-Godot
 or listening claim follows from these code tests.
 
+## Fifth source candidate: imported guitar and complete cache tails
+
+Branch `codex/pocket-audio-campfire-cache-tails-20261015` follows the corrected
+native candidate `569d0da08a07620ae9d16f770d7dfdd2734e40dc` and includes the
+strict Godot measurement correction. Enabled authored rich guitar was imported
+as inactive/muted if its legacy step pattern was empty. A regression reproduced
+this silent route; import now recognizes authored rich events while preserving
+an explicitly disabled guitar track. Explicit event up/down direction takes
+precedence over the legacy strum default. Source data is not mutated.
+
+Generated Campfire cache requests now include the complete prepared note plus
+strum tail instead of assuming 250 ms. Rendered duration and persisted tail
+metadata survive reuse/hydration; an explicit body duration prevents adjacent
+clips' overlapping natural tails from being mistaken for overlapping musical
+bodies and discarded. Tail-policy identity invalidates the previous cache.
+The reviewed baseline requests 2.25 seconds for the late four-note strum where
+3.331 seconds is required; the new regression fails on that exact difference.
+
+Executed: 113 affected cache/import/engine/renderer-contract tests and
+TypeScript pass after merging the reviewed native guard. The new cache test
+uses bridge output metadata to verify dispatch lengths, reuse and reload; it is
+not rendered/native PCM parity. All 189 Core tests and the complete family gate
+pass, including 1,173 DAW tests across 100 files.
+Reports: `campfire-rich-import-before.log` and
+`campfire-cache-tail-before.log`, `campfire-cache-import-final.log`,
+`campfire-cache-core-final.log` and
+`campfire-cache-family-final.log` under ignored validation artifacts.
+
+Published: nothing. Product selectors and full stereo graph parity at long
+onsets/seek, installed output, host/master behavior, two Godot source routes and
+listening remain pending. Capture/input plumbing remains unchanged.
+
 ## Native Campfire review correction
 
 Independent review of `86e5a4dd363c9ab3552f480633398195a571e040`

@@ -53,7 +53,7 @@ export function createDawProjectFromChordsmithProject(project: SanitizedPcsProje
     return clip;
   });
 
-  const guitarActive = project.guitarEnabled && SECTION_IDS.some((id) => project.sections[id].guitarPattern.some((v) => v !== "off"));
+  const guitarActive = project.guitarEnabled && SECTION_IDS.some((id) => project.sections[id].guitarPattern.some((v) => v !== "off") || project.sections[id].richEvents.guitar.some((event) => !event.compactMirror));
   const totalBars = Math.max(1, clips.reduce((max, clip) => Math.max(max, clip.startBar + clip.barLength - 1), 1));
   const tracks = createDefaultTracks({ guitarActive });
   addSourceMelodyTracks(tracks, project);

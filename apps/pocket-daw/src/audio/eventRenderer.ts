@@ -774,7 +774,7 @@ function defaultRichInstrument(pcs: SanitizedPcsProject, role: string): string {
 function richDirection(event: SanitizedPcsRichEvent, step: number, fallbackMode: string): "down" | "up" {
   const metal = nestedJsonObject(event.technique, "metal");
   const western = nestedJsonObject(event.technique, "western");
-  const requested = String(metal.pickDirection || western.pickDirection || western.strumDirection || "");
+  const requested = String(event.raw.direction || metal.pickDirection || western.pickDirection || western.strumDirection || "");
   if (requested === "up") return "up";
   if (requested === "alternate") return step % 2 ? "up" : "down";
   if (requested === "down") return "down";
