@@ -123,8 +123,12 @@ impl NoteBank {
 }
 
 impl PreparedEvent {
-    pub fn duration_seconds(&self) -> f64 {
-        self.frames as f64 / self.sample_rate as f64
+    pub fn end_frame(&self, onset: f64) -> usize {
+        ((onset * self.sample_rate as f64).floor().max(0.0) as usize).saturating_add(self.frames)
+    }
+
+    pub fn end_seconds(&self, onset: f64) -> f64 {
+        self.end_frame(onset) as f64 / self.sample_rate as f64
     }
 
     pub fn sample(&self, local: f64) -> f32 {
@@ -257,7 +261,7 @@ mod tests {
             );
         }
         assert_eq!(event.sample(-0.01), 0.0);
-        assert_eq!(event.sample(event.duration_seconds()), 0.0);
+        assert_eq!(event.sample(event.end_seconds(0.0)), 0.0);
         assert!(event.sample(1.0).abs() > 0.0);
     }
 

@@ -495,3 +495,45 @@ adding unprepared note identities still needs preparation. Product
 selectors, full voicings/picking in the authoring apps, legacy fallback/DJ,
 installed/native and full two-source Godot acceptance remain pending. No physical
 output or listening claim follows from OfflineAudioContext.
+
+## Ninth source candidate: native Campfire render window and tail frames
+
+Based on corrected Core mixer candidate 8179c736cd0f4b5039a63ea32282f74f7e858ce0.
+New real native WAV regressions reproduced three duration errors: a note at or
+after the requested body extended output by 1.581 seconds; explicitly zero
+velocity/track/master gain still added a silent tail; fractional onset rounding
+added one quiet frame. A later onset could also enter an earlier pluck's valid
+tail extension.
+
+Ordinary Mix export now extends only audible, enabled, native-owned Campfire
+notes that start inside the requested body. The prepared voice end uses the
+same floored onset frame plus exact prepared PCM frame count as the renderer.
+The extended window cannot admit a new Campfire onset beyond its original body.
+A complete Campfire tail beyond the existing 600-second native render limit
+returns an explicit error before allocation rather than silently truncating it.
+Exact-duration MixExact/CacheStem behavior, live scheduling and other sound
+recipes retain their existing paths. This is a bounded Campfire rule, not a
+claim that general recording/hosted-plugin range cropping has been fixed.
+Cache renderer identity advances to v42-680a0e22-campfire-acoustic-r1.
+
+Executed: 199 Rust tests pass, two existing tests remain ignored; Clippy with
+warnings denied passes. Endpoint/future onsets produce exactly the requested
+silent body; zero-gain cases assert numerical silence, including signed zero.
+A distinct future pitch cannot enter another note's tail (byte-identical WAV
+comparison). Fractional onsets at both 44.1/48 kHz have exact expected WAV byte
+counts. The 600-second policy test proves rejection without a long allocation.
+All 32 real native stereo graph captures still match the unfitted Core plus
+explicit dry native gain/pan/soft-limit reference exactly (1,825,884 frames).
+Windows contract: 284 pass. Fresh Core build and required family gate pass,
+including 1,173 DAW tests. Organization, governance and whitespace checks pass.
+
+Retained failing/passing logs in ignored local-artifacts/scratch/validation:
+native-campfire-tail-window-before.log, -after.log (intermediate signed-zero
+assertion corrected), -final.log, -full.log, -clippy.log, -graph.log,
+-windows.log and -family.log. The graph script retains all 32 actual f32 captures
+and parity-report.json in its printed run directory.
+
+Published: nothing. Installed device, decoded persisted-cache, full arranged
+DAW/Godot, browser-master, plugin/recording/automation and human listening gates
+remain open. Input/capture plumbing is unchanged; microphone interaction is
+scoped omitted, never recorded as passed.

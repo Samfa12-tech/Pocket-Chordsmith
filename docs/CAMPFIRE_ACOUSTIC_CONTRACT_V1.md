@@ -210,3 +210,12 @@ intent, native cache/registry recipe identity and both rendered Godot routes in
 agreement. Capture level-matched listening and host full-mix comparisons before
 claiming a completed instrument release. Follow the canonical
 [family plan](CAMPFIRE_ACOUSTIC_NEXT_UPDATE_PLAN.md).
+
+Native ordinary Mix tail sizing admits only audible native Campfire onsets
+strictly inside the requested body; an extended pluck tail cannot start later
+Campfire notes. Prepared end frames equal floored onset plus PCM length, with
+no float-seconds re-ceiling. A complete tail beyond the existing 600-second
+native render limit reports an explicit error. Explicit exact-duration export
+retains its chosen cut. Renderer cache identity is v42-680a0e22-campfire-acoustic-r1.
+This leaves other instruments, live playback and hosted/recorded range policies
+unchanged. See ninth ledger candidate for exact native WAV and graph evidence.

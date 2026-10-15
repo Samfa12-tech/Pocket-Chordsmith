@@ -2446,29 +2446,37 @@ fn render_playback_to_wav(
     playback.sample_rate = sample_rate;
     playback.channels = 2;
     let base_frame_count = (duration_seconds * sample_rate as f64).ceil().max(1.0) as usize;
+    let campfire_end_frame = match mode {
+        NativeAudioRenderMode::Mix => playback
+            .events
+            .iter()
+            .filter(|event| is_campfire_event(event))
+            .filter(|event| {
+                event.time < duration_seconds && event.velocity > 0.0 && master_gain(playback) > 0.0
+            })
+            .filter(|event| {
+                playback
+                    .tracks
+                    .get(&event.track_id)
+                    .is_some_and(|track| track_gain(track, playback.has_solo) > 0.0)
+                    && !playback.hosted_instruments.contains_key(&event.track_id)
+            })
+            .filter_map(|event| {
+                playback
+                    .campfire_events
+                    .get(&event.id)
+                    .map(|voice| voice.end_frame(event.time))
+            })
+            .max()
+            .unwrap_or(0),
+        _ => 0,
+    };
+    if campfire_end_frame > (MAX_OFFLINE_RENDER_SECONDS * sample_rate as f64) as usize {
+        return Err("Complete Campfire tail exceeds the 600-second native render limit. Shorten the render or choose an explicit exact-duration export.".into());
+    }
     let frame_count = match mode {
         NativeAudioRenderMode::Mix => base_frame_count
-            .max(
-                playback
-                    .events
-                    .iter()
-                    .filter(|event| is_campfire_event(event))
-                    .filter(|event| {
-                        playback
-                            .tracks
-                            .get(&event.track_id)
-                            .is_some_and(|track| track_is_enabled(track, playback.has_solo))
-                            && !playback.hosted_instruments.contains_key(&event.track_id)
-                    })
-                    .filter_map(|event| {
-                        playback.campfire_events.get(&event.id).map(|voice| {
-                            ((event.time + voice.duration_seconds()).max(0.0) * sample_rate as f64)
-                                .ceil() as usize
-                        })
-                    })
-                    .max()
-                    .unwrap_or(0),
-            )
+            .max(campfire_end_frame)
             .saturating_add(playback.fx.max_tail_samples as usize)
             .saturating_add(
                 playback
@@ -2483,15 +2491,19 @@ fn render_playback_to_wav(
         NativeAudioRenderMode::MixExact | NativeAudioRenderMode::CacheStem => base_frame_count,
     }
     .min((MAX_OFFLINE_RENDER_SECONDS * sample_rate as f64) as usize);
+    let campfire_cutoff = match mode {
+        NativeAudioRenderMode::Mix => Some(duration_seconds),
+        _ => None,
+    };
     let bytes = match mode {
         NativeAudioRenderMode::Mix | NativeAudioRenderMode::MixExact => {
             if bit_depth == 32 {
                 render_float32_wav_frames(sample_rate, 2, frame_count, || {
-                    render_next_frame(playback)
+                    render_next_frame_with_campfire_cutoff(playback, campfire_cutoff)
                 })?
             } else {
                 render_pcm_wav_frames(sample_rate, 2, bit_depth, frame_count, || {
-                    render_next_frame(playback)
+                    render_next_frame_with_campfire_cutoff(playback, campfire_cutoff)
                 })?
             }
         }
@@ -2979,6 +2991,13 @@ fn cubic_asset_channel(
 }
 
 fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
+    render_next_frame_with_campfire_cutoff(playback, None)
+}
+
+fn render_next_frame_with_campfire_cutoff(
+    playback: &mut PlaybackShared,
+    campfire_cutoff: Option<f64>,
+) -> (f32, f32) {
     if !playback.playing {
         return (0.0, 0.0);
     }
@@ -3062,6 +3081,14 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
                 event_index += 1;
                 continue;
             }
+        }
+        // Ordinary export can extend a started pluck, but the extension must
+        // not admit a new prepared Campfire onset beyond its requested window.
+        if campfire_cutoff.is_some_and(|end| event_time >= end)
+            && is_campfire_event(&playback.events[event_index])
+        {
+            event_index += 1;
+            continue;
         }
         let event_expired = playback_event_release_end(playback, event_index) < t;
         if event_expired {
@@ -6772,7 +6799,7 @@ fn playback_event_release_end(playback: &PlaybackShared, index: usize) -> f64 {
         .and_then(|route| route.as_ref())
         .and_then(|route| route.campfire.as_ref())
     {
-        return event.time + prepared.duration_seconds();
+        return prepared.end_seconds(event.time);
     }
     let Some(route) = playback
         .compiled_sampler_routes
@@ -11325,6 +11352,107 @@ mod tests {
     }
 
     #[test]
+    fn native_campfire_mix_tail_does_not_start_notes_outside_the_requested_body() {
+        for onset in [1.0, 2.0] {
+            let mut playback = campfire_test_playback(onset);
+            let rendered =
+                render_playback_to_wav(&mut playback, 1.0, NativeAudioRenderMode::Mix, 32).unwrap();
+            assert_eq!(
+                rendered.duration_seconds, 1.0,
+                "a future note at {onset} must not extend or enter the requested render"
+            );
+            assert!(rendered.bytes[44..]
+                .chunks_exact(4)
+                .all(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()) == 0.0));
+        }
+        let mut reference = campfire_test_playback(0.9);
+        let expected =
+            render_playback_to_wav(&mut reference, 1.0, NativeAudioRenderMode::Mix, 32).unwrap();
+        let mut with_future = campfire_test_playback(0.9);
+        let mut future = with_future.events[0].clone();
+        future.id = "outside-window".into();
+        future.time = 1.5;
+        future.midi_notes = vec![74.0];
+        with_future.events.push(future);
+        with_future.campfire_events = prepare_campfire_events(&with_future.events, 8000).unwrap();
+        with_future.compiled_event_routes.clear();
+        let actual =
+            render_playback_to_wav(&mut with_future, 1.0, NativeAudioRenderMode::Mix, 32).unwrap();
+        assert_eq!(
+            actual.bytes, expected.bytes,
+            "a future pluck must not enter another note's legitimate tail extension"
+        );
+    }
+
+    #[test]
+    fn native_campfire_mix_tail_does_not_extend_for_explicitly_silent_sources() {
+        for silent in ["velocity", "track-volume", "master-volume"] {
+            let mut playback = campfire_test_playback(0.9);
+            if silent == "velocity" {
+                playback.events[0].velocity = 0.0;
+                playback.campfire_events = prepare_campfire_events(&playback.events, 8000).unwrap();
+                playback.compiled_event_routes.clear();
+            } else if silent == "track-volume" {
+                playback.tracks.get_mut("guitar").unwrap().volume = 0.0;
+            } else {
+                insert_playback_track(&mut playback, test_track("master", 0.0, 0.0, false, false));
+            }
+            let rendered =
+                render_playback_to_wav(&mut playback, 1.0, NativeAudioRenderMode::Mix, 32).unwrap();
+            assert_eq!(
+                rendered.duration_seconds, 1.0,
+                "{silent} must not add a silent Campfire tail"
+            );
+            assert!(
+                rendered.bytes[44..]
+                    .chunks_exact(4)
+                    .all(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()) == 0.0),
+                "{silent} must render numerical silence, including either sign of zero"
+            );
+        }
+    }
+
+    #[test]
+    fn native_campfire_mix_tail_ends_on_the_same_floored_grid_as_prepared_pcm() {
+        for rate in [44100_u32, 48000] {
+            let onset = 0.123456_f64;
+            let mut playback = campfire_test_playback(onset);
+            playback.sample_rate = rate;
+            playback.campfire_events = prepare_campfire_events(&playback.events, rate).unwrap();
+            playback.compiled_event_routes.clear();
+            let expected_frames = (onset * rate as f64).floor() as usize
+                + (1.5 * rate as f64) as usize
+                + (3.0 * 0.027 * rate as f64).round() as usize;
+            let rendered =
+                render_playback_to_wav(&mut playback, 0.2, NativeAudioRenderMode::Mix, 32).unwrap();
+            assert_eq!(
+                rendered.bytes.len(),
+                44 + expected_frames * 8,
+                "ordinary tail must not acquire an extra frame from raw fractional seconds"
+            );
+            assert_eq!(
+                rendered.duration_seconds,
+                expected_frames as f64 / rate as f64
+            );
+            assert_eq!(
+                playback_event_release_end(&playback, 0),
+                expected_frames as f64 / rate as f64
+            );
+        }
+    }
+
+    #[test]
+    fn native_campfire_mix_reports_a_tail_beyond_the_existing_render_limit() {
+        let mut playback = campfire_test_playback(599.9);
+        let result = render_playback_to_wav(&mut playback, 600.0, NativeAudioRenderMode::Mix, 32);
+        assert!(result.is_err());
+        assert!(result
+            .err()
+            .unwrap()
+            .contains("Campfire tail exceeds the 600-second"));
+    }
+
+    #[test]
     fn native_campfire_mix_tail_ignores_mixed_instrument_id_collisions() {
         for (kind, instrument) in [
             ("bass", None),
@@ -11332,7 +11460,7 @@ mod tests {
             ("bass", Some("campfire_acoustic")),
         ] {
             let mut playback = campfire_test_playback(0.0);
-            let expected_duration = playback.campfire_events["campfire"].duration_seconds();
+            let expected_duration = playback.campfire_events["campfire"].end_seconds(0.0);
             let mut collision = test_generated_event("campfire", kind, 1.0, 0.1, 0.8);
             collision.track_id = "guitar".into();
             collision.instrument = instrument.map(str::to_owned);
