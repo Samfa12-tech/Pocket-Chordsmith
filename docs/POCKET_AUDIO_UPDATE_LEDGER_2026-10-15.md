@@ -72,11 +72,11 @@ hands-on check and continue independent work.
 
 | Area | Implementation/test status | Gate / next action |
 | --- | --- | --- |
-| Campfire Acoustic/Core | Original recipe/preparation API and offline event path implemented/tested; existing live engine and selectors pending | [Recipe 1 contract](CAMPFIRE_ACOUSTIC_CONTRACT_V1.md): exact voicings/reference hashes, deterministic PCM, bounded cache and explicit tails. No game code copied or licence changed. |
+| Campfire Acoustic/Core | Original recipe, offline and prepared existing live transport implemented/tested; product selectors pending | [Recipe 1 contract](CAMPFIRE_ACOUSTIC_CONTRACT_V1.md): exact voicings/reference hashes, deterministic PCM, bounded preparation/cache and explicit tails. No game code copied or licence changed. |
 | Chordsmith/DJ/native DAW Campfire | Pending | Real audible paths, full voicings/strums/picking and explicit fallback limits; preserve old IDs/PCS1/JSON. |
 | Both Godot export routes | Partial origin correction only | Chordsmith/Core and fully arranged native DAW audio need separate rendered reference, FX/automation/recording, captured playback and game-scene evidence. |
 | DAW layout/accessibility | Pending beyond sample search/meter slice | Reproduce ordering/overflow at named window sizes/scales; native popover/focus/recording acceptance. |
-| Chordsmith visual direction | No aesthetic selected | Prepare small alternatives for Sam; broad reskin awaits selection. This does not block reliability work. |
+| Chordsmith visual direction | Three alternatives prepared/tested in draft PR80, `4fbfc35f29cdefcff268b6da018049ceba0e2e62` | Offline interactive Set List/Pedal Board/Tape Notes study, validated at 1440/720/375/360 px. Broad reskin awaits Sam's choice; app unchanged. |
 | Hear/compare/keep refinements | Pending | Contextual range/lead-in/tail/Stop, actionable reversible feedback, same-position A/B and stale-preview rejection; no autoplay. |
 | Finish & Export | Pending | Existing DSP, subtle presets/dry bypass, measured loudness match, independent LUFS/truepeak calibration and decoded output parity. |
 | Save/undo/media/plugin faults | Existing foundations retained | Extend targeted failure/cancel/reopen regressions rather than rebuild. |
@@ -113,20 +113,25 @@ explicit reference-cut/optional fade tails and a prepared AudioContext playback
 API with explicit start/cancel/Stop and no autoplay. The Core offline event path
 now uses the PCM with shared stem gain, complete ordinary tails and exact
 zero-tail loops. Rich JSON/PCS1 retains notes/direction/unknown source intent.
-The existing live engine explicitly rejects this pending path and reports the
-capability limit. Sound selectors, existing live engines and native renderers
-are not yet wired to it.
+The existing Core live engine now prepares all reachable sections before setting
+its audio clock, then schedules cached note voices only. It has a 16 MiB default
+PCM budget, explicit oversized/missing-identity failure, cooperative cold-load
+cancellation, stale-Play rejection and cancelled lookahead on section changes.
+Explicit Stop/Pause cancels voices; natural completion retains tails. Legacy
+app sound selectors and native renderers are not yet wired to it.
 
 Tested: 10 reference dry PCM hashes at 44.1/48 kHz × MIDI 36/50/69/84/96;
-20 focused deterministic tests; all 171 Core tests; actual Chromium
+26 focused deterministic tests; all 177 Core tests; actual Chromium
 OfflineAudioContext produces the same 10 hashes at the requested onset and
-keeps cancelled future voices silent. Full required family-parity gate passes,
+keeps cancelled future voices silent. Live/offline strums at both rates and
+directions match within 1.87e-9 per sample; captured browser output preserves
+existing tails while cancelling obsolete lookahead. Full required family-parity gate passes,
 including 1,170 DAW tests across 100 files. Reports are retained under ignored
 `local-artifacts/scratch/campfire-reference/`. Physical output and human
 listening are not inferred from OfflineAudioContext.
 
 Published: **nothing**. No Core npm release. Remaining: integrate the existing
-Core live/browser/native/DJ paths, preserve portable source/intent, expose honest
+legacy browser/native/DJ paths, preserve portable source/intent, expose honest
 capabilities, validate both Godot source routes and full-mix gain/FX semantics,
 and complete listening/native acceptance before product release.
 
@@ -134,7 +139,8 @@ Current separate dependency note: GitHub alert 21 is medium-severity Rust
 `glib` GHSA-wrw7-89jp-8q8g, not the npm source-map-js advisory. Locked Windows
 target dependency inspection (`cargo tree --locked --target
 x86_64-pc-windows-msvc -i glib`) reports no dependency. No Tauri/GTK upgrade was
-made. The Linux dependency path needs deliberate upstream compatibility review;
+made. The locked Linux dependency path is confirmed through GTK 0.18 and
+Tauri 2.11.2 (muda/tao/wry/webkit2gtk), and needs deliberate upstream review;
 do not turn the clean npm audits into an all-ecosystem advisory claim.
 ## Independent review correction — GODOT-01
 

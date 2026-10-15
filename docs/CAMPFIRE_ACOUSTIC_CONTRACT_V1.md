@@ -90,37 +90,52 @@ Core offline events tagged `instrument: "campfire_acoustic"` use this PCM with
 the existing stem render gain and panning. Ordinary renders retain complete
 pluck/strum tails; explicit zero-tail loop exports retain their exact duration.
 Rich schema-17 JSON/PCS1 notes, direction and technique survive that route,
-including unknown source fields. The existing Core live engine rejects actual
-Campfire playback with an actionable offline/prepared-path message and reports
-the missing capability; it does not substitute a sawtooth guitar.
+including unknown source fields.
 
 `prepareCampfireAcousticPlayback(context, event, options)` prepares one reusable
 AudioBuffer before scheduling. Preparation never starts audio. `start(when)`
 uses AudioContext time; the caller owns musical position and destination routing.
 `stopAll()` and per-voice `stop()` cancel scheduled voices and apply an explicit
 5 ms stop release by default. There is no timer-driven musical scheduling.
-Natural completion disconnects nodes. This additive API has not replaced the
-current PocketAudio live engine, browser legacy fallback or native DAW renderer.
+Natural completion disconnects nodes.
+
+`prepareCampfireAcousticNoteBank()` prepares deduplicated note identities before
+transport starts, with a default 16 MiB PCM budget (configurable up to 64 MiB).
+An oversized set fails before allocating audio buffers. It yields between cold
+batches so AbortSignal cancellation can stop preparation. Scheduling only
+creates voices from prepared buffers; it cannot synthesize a missing identity.
+`PocketAudio.play()` uses that bank for all reachable sections, including
+unsequenced adaptive sections. It commits the transport clock after preparation.
+Stop, Pause, newer Play, project load and dispose cancel pending work and voices;
+natural song completion retains tails. Section changes cancel old lookahead
+while retaining already sounding tails. Gain/pan follow the Core offline dry
+stem recipe. This extends Core's existing transport, not the browser legacy
+fallback or native DAW renderer. Core's existing Play restart semantics remain;
+this change does not add a seek/resume-position API.
 
 ## Executed acceptance and next integration
 
 - 10 dry-note Float32 little-endian SHA-256 fixtures match the inspected
   reference at 44.1/48 kHz and MIDI 36/50/69/84/96.
-- 20 deterministic tests cover those hashes, every major/minor root, exact
+- 26 deterministic tests cover those hashes, every major/minor root, exact
   voicings, up/down onset order, 27 ms strum, picking, tails, silence, seed/rate/
   recipe/tail identity, LRU eviction and mutation isolation, invalid inputs,
-  offline gain/tails/exact-loop behavior and JSON/PCS1 intent/capability limits.
+  offline gain/tails/exact-loop behavior, JSON/PCS1 intent, preparation memory,
+  cancellation, concurrent Play, project replacement and adaptive sections.
 - Chromium OfflineAudioContext reproduces all 10 PCM hashes at the requested
   sample position; preparation does not autoplay, and a cancelled future voice
-  remains silent. This is browser DSP evidence, not physical-device listening.
-- Core's full 171-test suite passes. No old ID, default, schema, JSON/PCS1
+  remains silent. Live/offline up/down strums at both rates differ by at most
+  1.87e-9 per sample (float summation order). A real browser rendered tail test
+  preserves the first voice and cancels obsolete future lookahead, with correct
+  hard-left channel routing. This is DSP evidence, not physical-device listening.
+- Core's full 177-test suite passes. No old ID, default, schema, JSON/PCS1
   migration or existing sound registry was changed by this foundation.
 - The required family-parity gate passes: generated surface freshness, surface
   drift, Chordsmith browser event trace, Core render/game-pack fixtures and the
   DAW regression scope (1,170 passing tests across 100 files).
 
-Next: connect the recipe to the existing Core live path and legacy tone selectors, then
-Chordsmith's live and fallback export, the native DAW and DJ audible paths. Add
+Next: connect legacy tone selectors, Chordsmith's live and fallback export,
+the native DAW and DJ audible paths. Add
 explicit unsupported-path reporting before exposing selectors. Keep source
 intent, native cache/registry recipe identity and both rendered Godot routes in
 agreement. Capture level-matched listening and host full-mix comparisons before

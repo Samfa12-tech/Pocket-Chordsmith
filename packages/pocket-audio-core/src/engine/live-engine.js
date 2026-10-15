@@ -7,6 +7,8 @@ import { renderPocketAudioWav } from "./offline-renderer.js";
 import { renderPocketAudioStems } from "../export/stems.js";
 import { findPocketChordInstrumentConfig, findPocketLeadInstrumentConfig } from "../sounds/instruments.js";
 import { findPocketGuitarTone } from "../sounds/guitar.js";
+import { prepareCampfireAcousticNoteBank } from "../synth/campfire-acoustic.js";
+import { chordsmithOfflineStemRenderGain } from "../performance/stem-mix.js";
 import { POCKET_BASS_TONE_CONFIGS, POCKET_DRUM_KIT_CONFIGS, resolvePocketBassToneId, resolvePocketDrumKitId } from "../sounds/lofi-registry.js";
 
 export class PocketAudio {
@@ -18,6 +20,9 @@ export class PocketAudio {
     this.playing = false;
     this.audioContext = null;
     this.schedulerTimer = null;
+    this.campfireNoteBank = null;
+    this.campfirePreparation = null;
+    this.playRequestGeneration = 0;
     this.playStartedAt = 0;
     this.audioStartTime = null;
     this.timelineStartTime = null;
@@ -57,6 +62,9 @@ export class PocketAudio {
   }
 
   async loadProject(input, options = {}) {
+    this.stop();
+    this.campfireNoteBank?.dispose();
+    this.campfireNoteBank = null;
     const raw = input?.app === "PocketAudioProject" ? input.source?.original || input : parsePocketChordsmithInput(input);
     this.project = raw?.app === "PocketAudioProject" ? raw : normalisePocketChordsmithProject(raw, options);
     this.timeline = buildPocketAudioTimeline(this.project, { scope: "sequence" });
@@ -80,12 +88,34 @@ export class PocketAudio {
 
   async play(options = {}) {
     this.ensureProject();
+    const requestGeneration = ++this.playRequestGeneration;
+    this.campfirePreparation?.abort();
+    this.campfireNoteBank?.dispose();
+    this.campfireNoteBank = null;
+    this.playing = false;
+    this.clearTimelineScheduler();
     if (!this.audioContext && this.options.audio !== false && (globalThis.AudioContext || globalThis.webkitAudioContext)) await this.resume();
+    if (requestGeneration !== this.playRequestGeneration) return;
     if (options.sectionId) this.transport.sectionId = normaliseSectionId(options.sectionId);
     this.timeline = buildPocketAudioTimeline(this.project, { scope: options.scope || "sequence", sectionId: this.transport.sectionId, renderer: "live" });
-    if (this.options.audio !== false && this.timeline.events.some((event) => event.type === "guitar" && event.instrument === "campfire_acoustic")) {
-      this.pause();
-      throw new Error("Campfire Acoustic requires Core offline rendering or prepareCampfireAcousticPlayback; this live engine is not connected yet.");
+    if (this.options.audio !== false && projectUsesCampfire(this.project)) {
+      // Include sections outside the current sequence for adaptive game states.
+      const events = Object.keys(this.project.sections).flatMap((sectionId) => buildPocketAudioTimeline(this.project, { scope: "section", sectionId, renderer: "live" }).events.filter(isCampfireEvent));
+      if (events.length) {
+        if (!this.audioContext) throw new Error("Campfire live playback needs an AudioContext. Use Core offline rendering when browser audio is unavailable.");
+        const preparation = new AbortController();
+        this.campfirePreparation = preparation;
+        try {
+          const bank = await prepareCampfireAcousticNoteBank(this.audioContext, events, { maxBytes: this.options.campfireMaxPreparedBytes, signal: preparation.signal });
+          if (requestGeneration !== this.playRequestGeneration) { bank.dispose(); return; }
+          this.campfireNoteBank = bank;
+        } catch (error) {
+          if (preparation.signal.aborted) return;
+          throw error;
+        } finally {
+          if (this.campfirePreparation === preparation) this.campfirePreparation = null;
+        }
+      }
     }
     this.playing = true;
     this.nextEventIndex = 0;
@@ -100,12 +130,14 @@ export class PocketAudio {
   }
 
   pause() {
+    this.cancelCampfirePlayback();
     this.playing = false;
     this.clearTimelineScheduler();
     this.emit("pause", this.getTransport());
   }
 
   stop() {
+    this.cancelCampfirePlayback();
     this.playing = false;
     this.clearTimelineScheduler();
     this.transport = { ...this.transport, bar: 1, beat: 1, step: -1, seconds: 0, tick: 0 };
@@ -114,7 +146,14 @@ export class PocketAudio {
 
   restart() {
     this.stop();
-    this.play();
+    return this.play();
+  }
+
+  cancelCampfirePlayback() {
+    this.playRequestGeneration += 1;
+    this.campfirePreparation?.abort();
+    this.campfirePreparation = null;
+    this.campfireNoteBank?.stopAll();
   }
 
   queueSection(sectionId, options = {}) {
@@ -286,6 +325,8 @@ export class PocketAudio {
       intensity: this.intensity,
       ducking: this.ducking,
       projectLoaded: Boolean(this.project),
+      campfirePreparationPending: Boolean(this.campfirePreparation),
+      campfirePrepared: this.campfireNoteBank?.getDiagnostics() || null,
       ...this.diagnostics
     };
   }
@@ -337,6 +378,7 @@ export class PocketAudio {
   resetTimelineAtTransition(transportTime) {
     if (this.audioStartTime === null) return;
     this.timelineStartTime = this.audioStartTime + Number(transportTime || 0);
+    this.campfireNoteBank?.cancelScheduledFrom(this.timelineStartTime);
     this.timelineLoopOffset = 0;
     this.nextEventIndex = 0;
   }
@@ -357,6 +399,8 @@ export class PocketAudio {
 
   dispose() {
     this.stop();
+    this.campfireNoteBank?.dispose();
+    this.campfireNoteBank = null;
     this.listeners.clear();
   }
 
@@ -400,7 +444,12 @@ export class PocketAudio {
           this.timelineLoopOffset = completedLoops * this.timeline.duration;
           this.nextEventIndex = 0;
         } else {
-          this.stop();
+          // Natural song completion allows the final pluck/strum to decay.
+          // Explicit Stop, Pause, new Play and project load cancel those tails.
+          this.playing = false;
+          this.clearTimelineScheduler();
+          this.transport = { ...this.transport, bar: 1, beat: 1, step: -1, seconds: 0, tick: 0 };
+          this.emit("stop", this.getTransport());
         }
       }
     };
@@ -431,7 +480,13 @@ export class PocketAudio {
     this.emit("beat", event);
     const scheduledEvent = { ...event, scheduledAudioTime: targetAudioTime };
     this.emit("event", scheduledEvent);
-    if (this.audioContext) scheduleSimpleAudioEvent(this.audioContext, event, this.project, targetAudioTime);
+    if (this.audioContext && this.options.audio !== false) {
+      if (isCampfireEvent(event)) {
+        if (this.project.mixer.stems.guitar.mute) return;
+        if (!this.campfireNoteBank) throw new Error("Campfire audio must be prepared before transport starts.");
+        this.campfireNoteBank.schedule(event, targetAudioTime, { gain: chordsmithOfflineStemRenderGain("guitar", this.project.mixer.stems.guitar.volume) });
+      } else scheduleSimpleAudioEvent(this.audioContext, event, this.project, targetAudioTime);
+    }
   }
 
   patchStem(stem, patch) {
@@ -454,6 +509,14 @@ export class PocketAudio {
     if (!definition) throw new Error(`Unknown music state: ${safeName}`);
     return definition;
   }
+}
+
+function isCampfireEvent(event) {
+  return event.type === "guitar" && event.instrument === "campfire_acoustic";
+}
+
+function projectUsesCampfire(project) {
+  return Object.values(project.sections).some((section) => section.guitar?.tone === "campfire_acoustic" || Object.values(section.richTracks || {}).some((track) => track.events?.some((event) => (event.sound || event.instrument) === "campfire_acoustic")));
 }
 
 function nowSeconds(context) {

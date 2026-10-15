@@ -43,7 +43,48 @@ try {
     cancelled.stopAll();
     const silent = await cancelledContext.startRendering();
     if (!silent.getChannelData(0).every((value) => value === 0)) throw new Error("Cancelled future voice became audible");
-    return { renderer: "Chromium OfflineAudioContext", physicalOutput: "not tested", records: results, cancelledFutureVoice: "passed", preparationAutoplay: "none" };
+    const liveResults = [];
+    for (const sampleRate of [44100, 48000]) for (const direction of ["down", "up"]) {
+      const context = new OfflineAudioContext(2, sampleRate * 2, sampleRate);
+      const engine = new core.PocketAudio({ audioContext: context, setInterval: () => 1, clearInterval() {} });
+      await engine.loadProject({ schemaVersion: 17, bpm: 76, songSequence: ["A"], sectionBars: { A: 1 }, sections: { A: { tracks: { guitar: { events: [
+        { tick: 0, durationTicks: 120, notes: [50, 57, 62, 66], sound: "campfire_acoustic", velocity: 100, direction, technique: { campfire: { seed: 123 } } }
+      ] } } } } });
+      for (const stem of ["drums", "bass", "chords", "melody"]) engine.setStemMute(stem, true);
+      await engine.play();
+      const event = engine.timeline.events.find((item) => item.instrument === "campfire_acoustic");
+      const expected = core.renderPocketAudioEventBuffer([event], { sampleRate, durationSeconds: 2, tailSeconds: 0 });
+      const rendered = await context.startRendering();
+      let maxError = 0;
+      let squaredError = 0;
+      let signalPeak = 0;
+      for (let channel = 0; channel < 2; channel += 1) for (let frame = 0; frame < rendered.length; frame += 1) {
+        const actual = rendered.getChannelData(channel)[frame];
+        const error = Math.abs(actual - expected.channels[channel][frame]);
+        maxError = Math.max(maxError, error);
+        squaredError += error * error;
+        signalPeak = Math.max(signalPeak, Math.abs(actual));
+      }
+      const rmsError = Math.sqrt(squaredError / (rendered.length * 2));
+      if (signalPeak < 0.001 || maxError > 1e-7 || rmsError > 1e-8) throw new Error(`Live/offline Campfire mismatch ${sampleRate}/${direction}: ${maxError}/${rmsError}`);
+      if (engine.getDiagnostics().campfirePrepared.activeVoices !== 0) throw new Error("Natural browser completion leaked Campfire voices");
+      liveResults.push({ sampleRate, direction, maxError, rmsError, signalPeak, passed: true });
+      engine.dispose();
+    }
+    const lookaheadContext = new OfflineAudioContext(2, 48000 * 2, 48000);
+    const first = { midi: 50, velocity: 1 };
+    const future = { midi: 69, velocity: 1 };
+    const bank = await core.prepareCampfireAcousticNoteBank(lookaheadContext, [first, future]);
+    bank.schedule(first, 0, { pan: -1 });
+    bank.schedule(future, 0.4, { pan: -1 });
+    bank.cancelScheduledFrom(0.3);
+    const lookahead = await lookaheadContext.startRendering();
+    const firstPcm = core.renderCampfireAcousticEvent(first, { sampleRate: 48000 });
+    const actual = lookahead.getChannelData(0);
+    for (let frame = 0; frame < actual.length; frame += 1) if (Math.abs(actual[frame] - (firstPcm[frame] || 0)) > 1e-7) throw new Error("Section transition cut an existing tail or leaked cancelled lookahead");
+    if (!lookahead.getChannelData(1).every((value) => value === 0)) throw new Error("Hard-left prepared Campfire leaked into the right channel");
+    bank.dispose();
+    return { renderer: "Chromium OfflineAudioContext", physicalOutput: "not tested", records: results, liveOfflineParity: liveResults, cancelledFutureVoice: "passed", preservedTailAndCancelledLookahead: "passed", preparationAutoplay: "none" };
   }, fixtures.records);
   console.log(JSON.stringify({ browserVersion: browser.version(), ...result }, null, 2));
 } finally {

@@ -148,6 +148,17 @@ export function campfireAcousticEventFrameCount(event, options = {}) {
   return campfireEventParameters(event, options).frameCount;
 }
 
+// Small scheduling descriptors share the renderer's validation and rounding.
+// PCM preparation belongs outside the transport scheduler.
+export function campfireAcousticEventVoices(event, options = {}) {
+  const { notes, identity, performance, strumSeconds, velocity, noteGain, sampleRate } = campfireEventParameters(event, options);
+  return notes.map((midi, index) => ({
+    identity: { ...identity, midi, seed: performance.seed ?? midi * 311 },
+    offsetSeconds: Math.round(index * strumSeconds * sampleRate) / sampleRate,
+    gain: velocity * noteGain
+  }));
+}
+
 export function renderCampfireAcousticEvent(event, options = {}) {
   const { notes, identity, performance, strumSeconds, velocity, noteGain, sampleRate, frameCount } = campfireEventParameters(event, options);
   const cache = options.cache || null;

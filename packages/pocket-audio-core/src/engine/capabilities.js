@@ -28,6 +28,7 @@ export const POCKET_AUDIO_RENDERER_CAPABILITIES = Object.freeze({
     directDrumLanes: DIRECT_DRUM_LANES,
     directArticulations: DIRECT_ARTICULATIONS,
     techniqueCommands: {
+      campfire: ["seed", "recipeVersion", "tailPolicy", "strumSeconds"],
       chip: ["channel", "duty", "envelope", "commands", "sweep", "pitchSlide", "vibrato", "retrigger"],
       metal: ["palmMute", "pickDirection", "tremoloRate", "string", "dualTakeSeed"],
       western: ["pickDirection", "strumDirection", "banjoRoll", "bowDirection", "breathDirection", "bend"],
@@ -55,9 +56,6 @@ export function createPocketAudioRendererCapabilityReport(input, options = {}) {
   }
 
   collectRichEvents(input).forEach(({ event, path, trackId }) => {
-    if ((event.sound || event.instrument) === "campfire_acoustic" && renderer === "live") {
-      entries.push(entry(`${path}.sound`, "instrument:campfire_acoustic", "dropped", "offline-or-prepared-audio", "Campfire is available through Core offline rendering or prepared playback; the existing live engine is not connected yet."));
-    }
     const articulation = String(event.articulation || "").toLowerCase();
     if (articulation && !capabilities.directArticulations.includes(articulation)) {
       const action = capabilities.approximatedArticulations.includes(articulation) ? "approximated" : "fallback";

@@ -9,6 +9,7 @@ import { buildPocketAudioTimeline } from "../src/events/timeline-events.js";
 import { parsePocketChordsmithInput } from "../src/schema/parse-share-code.js";
 import { createPocketAudioRendererCapabilityReport } from "../src/engine/capabilities.js";
 import { PocketAudio } from "../src/engine/live-engine.js";
+import { prepareCampfireAcousticNoteBank } from "../src/synth/campfire-acoustic.js";
 import {
   CAMPFIRE_ACOUSTIC_RECIPE, CAMPFIRE_REFERENCE_CHORDS, CampfireAcousticNoteCache,
   campfireAcousticNoteKey, campfireAcousticReferenceEvents, campfireAcousticVoicing,
@@ -164,7 +165,7 @@ test("Core exact-loop policy deliberately crops Campfire tails without changing 
   assert.ok(peak(rendered.channels[0]) > 0);
 });
 
-test("schema-17 JSON/PCS1 preserves explicit Campfire intent and reports the pending live path honestly", async () => {
+test("schema-17 JSON/PCS1 preserves explicit Campfire intent and reports live/offline support", async () => {
   const source = { schemaVersion: 17, bpm: 76, key: "D", scale: "major", timeSig: 4, resolution: 4, sectionBars: { A: 1 }, songSequence: ["A"], sections: { A: { tracks: { guitar: { events: [
     { tick: 0, durationTicks: 480, notes: [50, 57, 62, 66], sound: "campfire_acoustic", velocity: 100, articulation: "open", direction: "up", technique: { campfire: { seed: 123, strumSeconds: 0.027 }, future: { retain: "yes" } }, futureField: "preserved" }
   ] } } } } };
@@ -180,15 +181,138 @@ test("schema-17 JSON/PCS1 preserves explicit Campfire intent and reports the pen
     assert.equal(project.source.original.sections.A.tracks.guitar.events[0].futureField, "preserved");
     assert.ok(peak(renderPocketAudioEventBuffer([event]).channels[0]) > 0);
     const live = createPocketAudioRendererCapabilityReport(project, { renderer: "live" });
-    assert.equal(live.supported, false);
-    assert.ok(live.losses.some((loss) => loss.feature === "instrument:campfire_acoustic"));
+    assert.equal(live.supported, true);
+    assert.ok(!live.entries.some((entry) => entry.feature.startsWith("technique:campfire:")));
     const offline = createPocketAudioRendererCapabilityReport(project, { renderer: "offline" });
     assert.ok(!offline.losses.some((loss) => loss.feature === "instrument:campfire_acoustic"));
     const engine = new PocketAudio();
     await engine.loadProject(input);
-    await assert.rejects(() => engine.play(), /requires Core offline rendering or prepareCampfireAcousticPlayback/);
+    await assert.rejects(() => engine.play(), /needs an AudioContext/);
     assert.equal(engine.playing, false);
     engine.dispose();
   }
   assert.equal(JSON.stringify(source), before);
+});
+
+function preparationContext() {
+  const param = () => ({ setValueAtTime() {}, cancelScheduledValues() {}, linearRampToValueAtTime() {} });
+  const node = () => ({ connect() {}, disconnect() {}, gain: param(), pan: param() });
+  return {
+    sampleRate: 48000, currentTime: 0, destination: {}, buffers: [], sources: [],
+    createBuffer(channels, frames, sampleRate) { const buffer = { frames, sampleRate, copyToChannel() {} }; this.buffers.push(buffer); return buffer; },
+    createGain: node, createStereoPanner: node,
+    createBufferSource() { const source = { ...node(), starts: [], stops: [], start(when) { this.starts.push(when); }, stop(when) { this.stops.push(when); } }; this.sources.push(source); return source; }
+  };
+}
+
+test("prepared bank deduplicates PCM, schedules only prepared identities, cancels old lookahead and disconnects ended voices", async () => {
+  const context = preparationContext();
+  const event = { midiNotes: [50, 57, 62, 66], velocity: 1 };
+  const bank = await prepareCampfireAcousticNoteBank(context, [event, event]);
+  assert.equal(context.buffers.length, 4);
+  assert.equal(context.sources.length, 0);
+  bank.schedule(event, 0.1);
+  bank.schedule(event, 0.3);
+  assert.equal(context.buffers.length, 4, "scheduler must not synthesize or allocate PCM");
+  assert.deepEqual(context.sources.slice(0, 4).map((source) => source.starts[0]), [0.1, 0.127, 0.154, 0.181]);
+  context.currentTime = 0.2;
+  bank.cancelScheduledFrom(0.2);
+  assert.ok(context.sources.slice(0, 4).every((source) => source.stops.length === 0), "sounding tails survive section changes");
+  assert.ok(context.sources.slice(4).every((source) => source.stops[0] === 0.2));
+  assert.throws(() => bank.schedule({ midi: 51 }, 0.4), /not prepared/);
+  assert.equal(context.sources.length, 8, "missing identity cannot partly dispatch an event");
+  bank.stopAll();
+  bank.stopAll();
+  assert.ok(context.sources.every((source) => source.stops.length === 1));
+  context.sources.forEach((source) => source.onended());
+  assert.equal(bank.getDiagnostics().activeVoices, 0);
+  bank.dispose();
+  assert.equal(bank.getDiagnostics().bytes, 0);
+  assert.throws(() => bank.schedule(event, 1), /disposed/);
+});
+
+test("cold preparation rejects its memory budget before allocating and accepts cancellation between batches", async () => {
+  const context = preparationContext();
+  const events = [{ midiNotes: [50, 57, 62, 66, 69] }];
+  await assert.rejects(() => prepareCampfireAcousticNoteBank(context, events, { maxBytes: 1 }), /byte budget/);
+  assert.equal(context.buffers.length, 0);
+  const controller = new AbortController();
+  await assert.rejects(() => prepareCampfireAcousticNoteBank(context, events, { signal: controller.signal, yieldTask: async () => controller.abort() }), { name: "AbortError" });
+  assert.equal(context.buffers.length, 4);
+  assert.equal(context.sources.length, 0);
+});
+
+const liveCampfireSource = {
+  schemaVersion: 17, bpm: 76, sectionBars: { A: 1, B: 1 }, songSequence: ["A"],
+  sections: Object.fromEntries(["A", "B"].map((sectionId, i) => [sectionId, { tracks: { guitar: { events: [
+    { tick: 0, durationTicks: 120, notes: [50 + i, 57 + i, 62 + i, 66 + i], sound: "campfire_acoustic", velocity: 100 }
+  ] } } }]))
+};
+
+test("live Play prepares unsequenced adaptive sections, then Stop and project load cancel scheduled voices", async () => {
+  const context = preparationContext();
+  const engine = new PocketAudio({ audioContext: context, setInterval: () => 1, clearInterval() {} });
+  await engine.loadProject(liveCampfireSource);
+  for (const stem of ["drums", "bass", "chords", "melody"]) engine.setStemMute(stem, true);
+  await engine.play();
+  assert.equal(engine.playing, true);
+  assert.equal(engine.getDiagnostics().campfirePrepared.entries, 8);
+  assert.equal(context.sources.length, 4);
+  engine.queueSection("B", { quantize: "instant" });
+  engine.schedulerTick();
+  assert.equal(context.sources.length, 8);
+  engine.stop();
+  assert.ok(context.sources.every((source) => source.stops.length === 1));
+  await engine.loadProject({ bpm: 96 });
+  assert.equal(engine.getDiagnostics().campfirePrepared, null);
+  engine.dispose();
+});
+
+test("natural completion preserves the final tail and explicit Stop still cancels it", async () => {
+  const context = preparationContext();
+  const engine = new PocketAudio({ audioContext: context, setInterval: () => 1, clearInterval() {} });
+  await engine.loadProject(liveCampfireSource);
+  for (const stem of ["drums", "bass", "chords", "melody"]) engine.setStemMute(stem, true);
+  await engine.play();
+  context.currentTime = engine.timeline.duration + 0.01;
+  engine.schedulerTick();
+  assert.equal(engine.playing, false);
+  assert.ok(context.sources.every((source) => source.stops.length === 0));
+  engine.stop();
+  assert.ok(context.sources.every((source) => source.stops.length === 1));
+  engine.dispose();
+});
+
+test("Stop during cold Play cannot later start transport or promote a stale bank", async () => {
+  const context = preparationContext();
+  const engine = new PocketAudio({ audioContext: context, setInterval: () => 1, clearInterval() {} });
+  await engine.loadProject(liveCampfireSource);
+  const playing = engine.play();
+  assert.equal(engine.getDiagnostics().campfirePreparationPending, true);
+  engine.stop();
+  await playing;
+  assert.equal(engine.playing, false);
+  assert.equal(engine.getDiagnostics().campfirePrepared, null);
+  assert.equal(context.sources.length, 0);
+  engine.dispose();
+});
+
+test("a newer Play supersedes cold preparation and a project load cannot promote the old bank", async () => {
+  const context = preparationContext();
+  const engine = new PocketAudio({ audioContext: context, setInterval: () => 1, clearInterval() {} });
+  await engine.loadProject(liveCampfireSource);
+  for (const stem of ["drums", "bass", "chords", "melody"]) engine.setStemMute(stem, true);
+  const first = engine.play();
+  const second = engine.play({ sectionId: "B", scope: "section" });
+  await Promise.all([first, second]);
+  assert.equal(engine.playing, true);
+  assert.equal(engine.transport.sectionId, "B");
+  assert.equal(context.sources.length, 4);
+  engine.stop();
+  const third = engine.play();
+  await engine.loadProject({ bpm: 96 });
+  await third;
+  assert.equal(engine.playing, false);
+  assert.equal(engine.getDiagnostics().campfirePrepared, null);
+  engine.dispose();
 });
