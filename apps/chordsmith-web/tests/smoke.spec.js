@@ -49,6 +49,29 @@ async function fetchJsonFixture(page, fixturePath) {
   return response.json();
 }
 
+test("approved themes keep the blue default and preserve saved songs, choices and undo", async ({ page }) => {
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "night");
+  await page.locator("#settingsBtn").click();
+  for (const theme of ["night", "ocean", "forest", "sunset", "set_list", "pedal_board", "tape_notes"]) {
+    const before = await page.evaluate(() => exportProject());
+    await page.locator("#themeSelect").selectOption(theme);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    const after = await page.evaluate(() => exportProject());
+    delete before.theme;
+    delete after.theme;
+    expect(after, "theme changes preserve every song/editor field").toEqual(before);
+    await page.locator("#saveSlot1Btn").click();
+    await page.locator("#themeSelect").selectOption(theme === "night" ? "ocean" : "night");
+    await page.locator("#loadSlot1Btn").click();
+    await expect(page.locator("#themeSelect")).toHaveValue(theme);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    await page.locator("#themeSelect").selectOption(theme === "night" ? "ocean" : "night");
+    await page.evaluate(() => undoLastChange());
+    await expect(page.locator("#themeSelect")).toHaveValue(theme);
+    expect(await page.evaluate(() => state.isPlaying)).toBe(false);
+  }
+});
+
 async function buildValidHandoffCode(page, padding = 0) {
   const project = await fetchJsonFixture(page, FIXTURE_CASES[0].path);
   return page.evaluate((value) => {

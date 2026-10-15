@@ -2127,13 +2127,22 @@ function applyTheme(){
     night:{bg:"#0f1115",panel:"#171a21",panel2:"#1e2430",line:"#2b3242",text:"#eef2ff",muted:"#9eabc7",accent:"#7aa2ff",accent2:"#8ff0c6"},
     ocean:{bg:"#0d1720",panel:"#132430",panel2:"#193241",line:"#2d4b5d",text:"#edf9ff",muted:"#9cc6d4",accent:"#63b7ff",accent2:"#7ef0d7"},
     forest:{bg:"#101811",panel:"#17211a",panel2:"#213025",line:"#38503f",text:"#eef8ef",muted:"#a7c0ab",accent:"#8dcf7b",accent2:"#d9f29a"},
-    sunset:{bg:"#201116",panel:"#2c1820",panel2:"#3a2029",line:"#5a3640",text:"#fff1ee",muted:"#ddb3a9",accent:"#ff9d6b",accent2:"#ffd27a"}
+    sunset:{bg:"#201116",panel:"#2c1820",panel2:"#3a2029",line:"#5a3640",text:"#fff1ee",muted:"#ddb3a9",accent:"#ff9d6b",accent2:"#ffd27a"},
+    set_list:{bg:"#e8e4dc",panel:"#fff8e8",panel2:"#fffdf5",line:"#9a917e",text:"#34362d",muted:"#67604e",accent:"#a34428",accent2:"#3b655f",accentInk:"#fff8e8",focus:"#1674a0",study:true,light:true},
+    pedal_board:{bg:"#aaba9f",panel:"#bfd0bc",panel2:"#e9ead7",line:"#647e68",text:"#233b32",muted:"#3d5748",accent:"#e6ab4e",accent2:"#365c49",accentInk:"#2c3527",focus:"#7b2f0a",study:true,light:true},
+    tape_notes:{bg:"#211f1c",panel:"#2b2926",panel2:"#36342f",line:"#858272",text:"#f5ead5",muted:"#c0b7a5",accent:"#ff9670",accent2:"#c2d3a4",accentInk:"#29251f",focus:"#d2e8ff",study:true}
   };
   const t = themes[state.theme] || themes.night;
   const r = document.documentElement.style;
   r.setProperty("--bg", t.bg); r.setProperty("--panel", t.panel); r.setProperty("--panel2", t.panel2);
   r.setProperty("--line", t.line); r.setProperty("--text", t.text); r.setProperty("--muted", t.muted);
   r.setProperty("--accent", t.accent); r.setProperty("--accent2", t.accent2);
+  r.setProperty("--accent-ink", t.accentInk || t.text);
+  r.setProperty("--theme-focus", t.focus || t.accent2);
+  document.documentElement.dataset.theme = themes[state.theme] ? state.theme : "night";
+  document.documentElement.dataset.themeKind = t.study ? "studio" : "classic";
+  r.colorScheme = t.light ? "light" : "dark";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", t.bg);
 }
 function applyUiMode(){
   document.querySelectorAll(".adv-only").forEach(el => el.classList.toggle("hidden", state.uiMode !== "advanced"));
