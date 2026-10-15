@@ -87,7 +87,8 @@ export function createPocketAudioRendererCapabilityReport(input, options = {}) {
     if ((guitar?.tone || input?.guitarTone) !== "campfire_acoustic" || !(guitar?.enabled ?? input?.guitarEnabled)) return;
     const pattern = guitar?.pattern || input?.[`guitarPattern${id}`] || [];
     if (!pattern.some(value => value && value !== "off" && value !== "hold")) return;
-    if ((section?.chords?.type || input?.chordType) === "seventh") entries.push(entry(`sections.${id}.chords.type`, "campfire-chord:seventh", "approximated", "triad", "Compact Campfire voicings support major/minor triads. Use explicit rich note arrays to preserve seventh chords; source chord intent is retained."));
+    const chordType = section?.chords?.type || input?.chordType;
+    if (["seventh", "sus2", "sus4"].includes(chordType)) entries.push(entry(`sections.${id}.chords.type`, `campfire-chord:${chordType}`, "approximated", "triad", `Compact Campfire voicings support major/minor triads. Use explicit rich note arrays to preserve ${chordType} chords; source chord intent is retained.`));
     pattern.forEach((articulation, index) => {
       if (articulation === "chug" || articulation === "scratch") entries.push(campfireArticulationEntry(`sections.${id}.guitar.pattern[${index}]`, articulation));
     });

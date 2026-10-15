@@ -93,6 +93,31 @@ test("compact Campfire accents carry explicit note velocity independently of mix
     assert.equal(createPocketAudioRendererCapabilityReport(normalisePocketChordsmithProject(source)).exact, true);
   }
 });
+
+test("compact Campfire suspended chords report approximation in raw and normalized data while rich notes stay exact", () => {
+  for (const chordType of ["sus2", "sus4"]) {
+    const source = { projectVersion: 17, guitarEnabled: true, guitarTone: "campfire_acoustic", chordType, guitarPatternA: ["open"], sectionBars: { A: 1 }, songSequence: ["A"] };
+    const project = normalisePocketChordsmithProject(source);
+    for (const input of [source, project]) {
+      const report = createPocketAudioRendererCapabilityReport(input);
+      assert.equal(report.exact, false);
+      assert.equal(report.losses.length, 1);
+      assert.equal(report.losses[0].feature, `campfire-chord:${chordType}`);
+      assert.equal(report.losses[0].action, "approximated");
+      assert.equal(report.losses[0].fallback, "triad");
+    }
+    assert.equal(project.source.original.chordType, chordType);
+    const timeline = buildPocketAudioTimeline(project);
+    assert.ok(timeline.lossReport.some(item => item.feature === `campfire-chord:${chordType}`));
+    const notes = chordType === "sus2" ? [50, 57, 62, 64] : [50, 57, 62, 67];
+    const rich = normalisePocketChordsmithProject({ ...source, guitarPatternA: [], sections: { A: { tracks: { guitar: { events: [
+      { tick: 0, durationTicks: 480, notes, sound: "campfire_acoustic", articulation: "open", velocity: 100 }
+    ] } } } } });
+    const richTimeline = buildPocketAudioTimeline(rich);
+    assert.equal(richTimeline.capabilityReport.exact, true);
+    assert.deepEqual(richTimeline.events.find(event => event.type === "guitar").midiNotes, notes);
+  }
+});
 const pcmHash = (samples) => {
   const bytes = Buffer.alloc(samples.length * 4);
   samples.forEach((sample, index) => bytes.writeFloatLE(sample, index * 4));
