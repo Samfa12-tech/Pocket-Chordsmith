@@ -969,8 +969,14 @@ func _handle_end_of_chart() -> void:
 	if loop_enabled:
 		loop_completed.emit("arrangement")
 		if playback_profile != null and playback_profile.loop_prepared_sections:
-			seek_tick(posmod(current_tick, length_ticks), false)
-			if not _continue_prepared_section_loop():
+			var previous_float := _tick_float
+			var previous_anchor_tick := _clock_anchor_tick
+			var previous_anchor_usec := _clock_anchor_usec
+			var target_float := fposmod(previous_float, float(length_ticks))
+			seek_tick(int(floor(target_float)), false)
+			if _continue_prepared_section_loop():
+				_restore_continuous_loop_clock(target_float, previous_float, previous_anchor_tick, previous_anchor_usec)
+			else:
 				_prepare_stem_sync_for_current_state()
 				_start_native_stems_from_current_tick()
 		else:
@@ -1219,7 +1225,7 @@ func _process_sequence_progression(previous_tick: int, next_tick: int) -> void:
 				return
 			next_index = 0
 			loop_completed.emit(current_loop)
-		_seek_to_sequence_index(next_index, true)
+		_seek_to_sequence_index(next_index, true, maxf(0.0, _tick_float - float(end_tick)))
 
 
 func _boundary_reached(previous_tick: int, next_tick: int, boundary: int) -> bool:
@@ -1260,7 +1266,7 @@ func _process_marker_transition(marker_name: String) -> void:
 		_apply_queued_transition()
 
 
-func _seek_to_sequence_index(index: int, preserve_prepared_loop := false) -> void:
+func _seek_to_sequence_index(index: int, preserve_prepared_loop := false, overshoot_ticks := 0.0) -> void:
 	if current_sequence.is_empty():
 		return
 	_current_sequence_index = posmod(index, current_sequence.size())
@@ -1269,12 +1275,29 @@ func _seek_to_sequence_index(index: int, preserve_prepared_loop := false) -> voi
 	if target_tick < 0:
 		push_warning("PocketChordsmithConductor could not find section '%s' for sequence playback." % section_id)
 		return
+	var previous_float := _tick_float
+	var previous_anchor_tick := _clock_anchor_tick
+	var previous_anchor_usec := _clock_anchor_usec
 	seek_tick(target_tick, false)
-	_emit_current_section_started()
 	if preserve_prepared_loop and _continue_prepared_section_loop():
+		var occurrence: Dictionary = chart.find_section_at_tick(target_tick)
+		var length_ticks := maxi(1, int(occurrence.get("length_ticks", 1)))
+		var target_float := float(target_tick) + fposmod(overshoot_ticks, float(length_ticks))
+		_restore_continuous_loop_clock(target_float, previous_float, previous_anchor_tick, previous_anchor_usec)
+		_emit_current_section_started()
 		return
+	_emit_current_section_started()
 	_prepare_stem_sync_for_current_state()
 	_start_native_stems_from_current_tick()
+
+
+func _restore_continuous_loop_clock(target_float: float, previous_float: float, anchor_tick: int, anchor_usec: int) -> void:
+	# The audio thread never restarted. Translate the existing clock into the
+	# new occurrence rather than rebasing it at this late gameplay frame.
+	seek_tick(int(floor(target_float)), false)
+	_tick_float = target_float
+	_clock_anchor_tick = anchor_tick + roundi(target_float - previous_float)
+	_clock_anchor_usec = anchor_usec
 
 
 func _sequence_target_tick(index: int, section_id: String) -> int:
