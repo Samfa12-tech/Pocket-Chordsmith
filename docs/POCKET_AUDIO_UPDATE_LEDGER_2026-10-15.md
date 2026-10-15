@@ -728,6 +728,7 @@ blue default and saved choices remain. Local reviewed-source itch package built
 successfully, not uploaded. Candidate is for parent source review/CI, not release.
 Size1066549/1100000 active and894424/900000 modular. Main/owner checkout unchanged.
 
+
 ## DJ prepared Campfire and shared precision integration candidate
 
 DJ now preserves imported campfire_acoustic rather than silently replacing it
@@ -767,3 +768,26 @@ Local package prepared only, SHA256
 Not published, not a final release installer/physical listening acceptance.
 Native DAW compact controls/performance, remaining DAW UX/finishing, both full
 Godot source/runtime routes and exact installed acceptance remain active.
+
+PR91 review correction: custom-ID rich tracks with role:guitar now use the same
+stem/role/ID precedence and case handling as Core for Campfire detection, authored
+part UI, and scoped Clear/Fill replacement. Explicit non-guitar stems override a
+guitar role/ID. The retained failing regression first left guitarEnabled false
+when omitted. Corrected desktop/touch custom-role flow passes actual Play,
+decoded Export MIDI bytes, UI-worker/direct-Core WAV hash equality, Clear/Undo,
+unknown track metadata and preservation of a melody-stem guitar-role lookalike.
+All116 desktop/touch cases pass;lint/type/format/size/whitespace pass. Rebuilt
+canonical HTML, size1066805 active/894680 modular. Logs chordsmith-campfire-role-
+{before,after,full,build}.log in primary ignored validation. Hosted exact-head
+review/CI pending. These establish scheduling/export routing, not full-bus live
+PCM or physical listening. Shared fractional timing correction remains in PR92.
+
+PR92 role follow-through: includes PR91 correction83ddfd47 and applies identical
+Core stem/role/ID precedence to DJ activation/detection. A custom-ID uppercase
+role:guitar source first reproduced guitarActive=false; corrected Play and saved
+session restore pass desktop/touch/Firefox, with explicit stem-over-role negative
+check. DJ desktop27 pass, new role touch/Firefox2 pass, merged Chordsmith custom
+role Play/MIDI/WAV/Undo2 pass;lint/type/format/size/whitespace pass. Size225098.
+Earlier prepared/source/cancellation/mute/restart tests remain passing in full
+27-case desktop run. Raw role failures retained in primary ignored validation.
+No live full-bus PCM/listening claim follows from these scheduler/export tests.

@@ -10,10 +10,15 @@ let chordsmithCampfireRequired = false;
 let chordsmithCampfireRefreshTimer = null;
 const chordsmithCampfireDiagnostics = {preparations:0, reuses:0, bytes:0, lastPrepareMs:0};
 
+function chordsmithRichTrackIsGuitar(id, track){
+  // Match Core's richTrackStem precedence, including custom IDs and case.
+  return String(track?.stem || track?.role || id || "").toLowerCase() === "guitar";
+}
+
 function chordsmithProjectHasCampfire(project){
   if(project?.guitarTone === "campfire_acoustic") return true;
   return Object.values(project?.sections || {}).some(section => Object.entries(section?.tracks || {}).some(([id, track]) =>
-    (id === "guitar" || track?.stem === "guitar") && track?.events?.some(event => (event.sound || event.instrument) === "campfire_acoustic")));
+    chordsmithRichTrackIsGuitar(id, track) && track?.events?.some(event => (event.sound || event.instrument) === "campfire_acoustic")));
 }
 
 function chordsmithStateHasCampfire(){
@@ -27,13 +32,13 @@ function setChordsmithGuitarPerformance(sectionId, value){
 
 function chordsmithHasAuthoredCampfireGuitar(sectionId){
   return Object.entries(state._richSource?.[sectionId]?.tracks || {}).some(([id, track]) =>
-    id.startsWith("guitar") && track?.compatibility?.compactMirror !== true && track?.events?.some(event => event.sound === "campfire_acoustic"));
+    chordsmithRichTrackIsGuitar(id, track) && track?.compatibility?.compactMirror !== true && track?.events?.some(event => (event.sound || event.instrument) === "campfire_acoustic"));
 }
 
 function replaceChordsmithCampfireRichPartWithGrid(sectionId){
   if(!chordsmithStateHasCampfire()) return;
   for(const [id, track] of Object.entries(state._richSource?.[sectionId]?.tracks || {})){
-    if(!id.startsWith("guitar")) continue;
+    if(!chordsmithRichTrackIsGuitar(id, track)) continue;
     track.events = [];
     track.compatibility = {...track.compatibility, compactMirror:true};
   }
