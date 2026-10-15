@@ -2803,7 +2803,7 @@ fn render_generated_event_source(
         (left, right, sampler.pan)
     } else {
         let sample = if let Some(prepared) = route.campfire.as_ref() {
-            prepared.sample(t - event.time)
+            prepared.sample_at_timeline_position(t, event.time)
         } else {
             render_event_sample(event, t)
         };
@@ -3049,7 +3049,16 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     while event_index < playback.events.len() {
         let event_time = playback.events[event_index].time;
         if event_time > t {
-            break;
+            // A prepared Campfire onset rounds to the native output grid.
+            // Scan the half-frame window without starting other recipes early;
+            // otherwise a nearby legacy event could hide a due Campfire onset.
+            if event_time > t + 0.5 / playback.sample_rate.max(1) as f64 {
+                break;
+            }
+            if !is_campfire_event(&playback.events[event_index]) {
+                event_index += 1;
+                continue;
+            }
         }
         let event_expired = playback_event_release_end(playback, event_index) < t;
         if event_expired {
@@ -3378,7 +3387,13 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     while event_index < playback.events.len() {
         let event_time = playback.events[event_index].time;
         if event_time > t {
-            break;
+            if event_time > t + 0.5 / playback.sample_rate.max(1) as f64 {
+                break;
+            }
+            if !is_campfire_event(&playback.events[event_index]) {
+                event_index += 1;
+                continue;
+            }
         }
         let event_expired = playback_event_release_end(playback, event_index) < t;
         if event_expired {
@@ -11101,6 +11116,127 @@ mod tests {
                     .unwrap()
             ),
             "cache pruning reuses prepared PCM"
+        );
+    }
+
+    #[test]
+    fn native_campfire_full_stereo_graph_is_invariant_at_later_onsets_and_tail_seeks() {
+        fn retain_capture(rate: u32, onset: usize, offset: i64, frames: &[(f32, f32)]) {
+            if let Ok(directory) = std::env::var("POCKET_DAW_NATIVE_CAMPFIRE_PARITY_DIR") {
+                let directory = std::path::Path::new(&directory);
+                std::fs::create_dir_all(directory).unwrap();
+                let bytes = frames
+                    .iter()
+                    .flat_map(|(left, right)| [left.to_le_bytes(), right.to_le_bytes()].concat())
+                    .collect::<Vec<_>>();
+                std::fs::write(
+                    directory.join(format!("{rate}-{onset}-{offset}.f32")),
+                    bytes,
+                )
+                .unwrap();
+            }
+        }
+        fn fixture(rate: u32, onset_frame: usize) -> PlaybackShared {
+            let mut playback = campfire_test_playback(onset_frame as f64 / rate as f64);
+            playback.sample_rate = rate;
+            playback.events[0].pan = Some(-0.3);
+            playback.campfire_events = prepare_campfire_events(&playback.events, rate).unwrap();
+            playback.compiled_event_routes.clear();
+            let track = playback.tracks.get_mut("guitar").unwrap();
+            track.volume = 0.65;
+            track.pan = 0.23;
+            ensure_compiled_event_routes(&mut playback);
+            playback
+        }
+        let mut failures = Vec::new();
+        for rate in [44100, 48000] {
+            let frames = (rate as f64 * 1.65).round() as usize;
+            let mut origin = fixture(rate, 0);
+            let reference = render_frames(&mut origin, frames);
+            retain_capture(rate, 0, 0, &reference);
+            assert!(reference
+                .iter()
+                .any(|(left, right)| (left - right).abs() > 0.001));
+            for onset_frame in [
+                12345,
+                rate as usize * 10 + 123,
+                rate as usize * 60 + 123,
+                rate as usize * 100 + 123,
+                rate as usize * 1800 + 123,
+                rate as usize * 7200 + 123,
+            ] {
+                let mut later = fixture(rate, onset_frame);
+                later.position_seconds = (onset_frame - 128) as f64 / rate as f64;
+                reset_scan_starts(&mut later);
+                let rendered = render_frames(&mut later, frames + 128);
+                retain_capture(rate, onset_frame, -128, &rendered);
+                let onset_error = max_frame_diff(&reference, &rendered[128..]);
+                let preroll_peak = rendered[..128].iter().fold(0.0_f32, |peak, (left, right)| {
+                    peak.max(left.abs()).max(right.abs())
+                });
+                let seek_frame = (rate as f64 * 1.1).round() as usize;
+                let mut seek = fixture(rate, onset_frame);
+                seek.position_seconds = (onset_frame + seek_frame) as f64 / rate as f64;
+                reset_scan_starts(&mut seek);
+                let seek_rendered = render_frames(&mut seek, frames - seek_frame);
+                retain_capture(rate, onset_frame, seek_frame as i64, &seek_rendered);
+                let seek_error = max_frame_diff(&reference[seek_frame..], &seek_rendered);
+                eprintln!("Campfire full stereo rate={rate} onset_frame={onset_frame} onset_error={onset_error} seek_error={seek_error} preroll_peak={preroll_peak}");
+                if onset_error > 1e-7 || seek_error > 1e-7 || preroll_peak > 0.0 {
+                    failures.push((rate, onset_frame, onset_error, seek_error, preroll_peak));
+                }
+            }
+            for fraction in [0.4_f64, 0.6] {
+                let onset = rate as usize * 10 + 123;
+                let rounded_onset = onset + fraction.round() as usize;
+                let mut fractional = fixture(rate, onset);
+                fractional.events[0].time = (onset as f64 + fraction) / rate as f64;
+                fractional.position_seconds = (rounded_onset - 128) as f64 / rate as f64;
+                reset_scan_starts(&mut fractional);
+                let rendered = render_frames(&mut fractional, frames + 128);
+                assert!(
+                    max_frame_diff(&reference, &rendered[128..]) < 1e-7,
+                    "fractional Campfire onset must match Core's output-grid rounding"
+                );
+            }
+            // An earlier legacy event in the half-frame window must neither
+            // sound early nor hide the Campfire onset rounded to this frame.
+            for cache_stem in [false, true] {
+                let onset = rate as usize * 10 + 123;
+                let mut mixed = fixture(rate, onset);
+                mixed.events[0].time = (onset as f64 + 0.4) / rate as f64;
+                let mut legacy = test_generated_event(
+                    "nearby-bass",
+                    "bass",
+                    (onset as f64 + 0.1) / rate as f64,
+                    0.04,
+                    0.8,
+                );
+                legacy.track_id = "guitar".into();
+                mixed.events.insert(0, legacy);
+                mixed.position_seconds = onset as f64 / rate as f64;
+                reset_scan_starts(&mut mixed);
+                let mut origin = fixture(rate, 0);
+                let (actual, expected) = if cache_stem {
+                    (
+                        render_next_cache_stem_frame(&mut mixed),
+                        render_next_cache_stem_frame(&mut origin),
+                    )
+                } else {
+                    (
+                        render_next_frame(&mut mixed),
+                        render_next_frame(&mut origin),
+                    )
+                };
+                assert_eq!(
+                    actual, expected,
+                    "legacy future event must stay silent without blocking Campfire"
+                );
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "full stereo graph changes with timeline origin/seek: {failures:?}"
         );
     }
 

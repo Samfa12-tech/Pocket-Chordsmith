@@ -134,6 +134,22 @@ impl PreparedEvent {
         // Native t is derived from sample position. Tiny floating subtraction
         // error must not move an exact frame into the preceding sample.
         let frame = (local * self.sample_rate as f64 + 1e-7).floor() as usize;
+        self.sample_frame(frame)
+    }
+
+    pub fn sample_at_timeline_position(&self, position: f64, onset: f64) -> f32 {
+        // Align both absolute positions before subtraction. Accumulated seconds
+        // can sit just below an integer frame, especially after a long seek.
+        // This also matches Core's rounded event onset on the output grid.
+        let frame = (position * self.sample_rate as f64).round()
+            - (onset * self.sample_rate as f64).round();
+        if !frame.is_finite() || frame < 0.0 {
+            return 0.0;
+        }
+        self.sample(frame / self.sample_rate as f64)
+    }
+
+    fn sample_frame(&self, frame: usize) -> f32 {
         if frame >= self.frames {
             return 0.0;
         }
