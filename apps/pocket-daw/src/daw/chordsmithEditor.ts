@@ -568,14 +568,16 @@ export function setGuitarPerformance(project: PocketDawProject, sectionId: Secti
   if (value === "strum_pick" && (source?.guitarTone !== "campfire_acoustic" || source.guitarRegister === "high")) return project;
   return editChordsmithSection(project, sectionId, (_pcs, section) => {
     section.guitarPerformance = value === "strum_pick" ? "strum_pick" : "grid";
+  }, (next, pcs) => {
+    syncGuitarTrackFromSource(next, pcs, false, true);
   });
 }
 
-function syncGuitarTrackFromSource(project: PocketDawProject, pcs: SanitizedPcsProject, syncVolume: boolean) {
+function syncGuitarTrackFromSource(project: PocketDawProject, pcs: SanitizedPcsProject, syncVolume: boolean, preserveMute = false) {
   const guitar = project.tracks.find((track) => track.role === "guitar");
   if (!guitar) return;
   guitar.active = pcs.guitarEnabled;
-  guitar.mute = !pcs.guitarEnabled;
+  if (!preserveMute) guitar.mute = !pcs.guitarEnabled;
   if (syncVolume) guitar.volume = pcs.guitarVolume;
   guitar.metadata = {
     ...(guitar.metadata || {}),

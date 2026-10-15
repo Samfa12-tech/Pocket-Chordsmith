@@ -921,3 +921,19 @@ to different assets, crossfades, representative-game/SFX-load budgets or full
 Core/browser nonlinear-master identity. Existing path guard String.chr(0) emits
 Unexpected NUL warnings during manifest validation; no SCRIPT ERROR occurred.
 That safety guard is unchanged under the no-security-change instruction.
+PR93 review correction: reproduced enabled Campfire empty Grid -> strum/pick
+leaving its track inactive/muted. Performance edits now synchronize source track
+activation without changing explicit mixer mute. Prepared Campfire empty imports
+retain inactivity separately from mute (source disable still mutes); legacy amp
+import policy stays unchanged. No source guitarEnabled flag is silently enabled.
+New regressions cover empty Grid -> automatic -> Grid, native payload audibility
+and24 prepared events,48 decoded MIDI notes, explicit empty-track mixer mute,
+explicit source disable, and exact Undo. Actual shell UI checks inactivity/mute
+controls and multiple Undo steps. Targeted59 and TypeScript pass; full shell21
+pass. First complete source run could not find the installed browser executable
+(1173passed/14skipped); rerun uses the retained browser path, not counted as a
+product test failure/pass. Raw before/after/setup logs retained under primary
+local-artifacts/scratch/validation/native-campfire-empty-grid-*.log. No Rust,
+recording/capture, version or dependency changes; no installed/listening claim.
+Final corrected source gate1187/1187 passed with the installed browser path;
+production UI build, repository/security/manifest104/whitespace also pass.

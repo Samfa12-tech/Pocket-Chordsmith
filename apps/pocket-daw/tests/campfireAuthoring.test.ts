@@ -16,12 +16,48 @@ import { createInitialState } from "../src/app/state";
 import { createUndoStack } from "../src/daw/undo";
 import { applyGuitarPresetCommand, setGuitarPerformanceCommand, undoCommand } from "../src/app/commands";
 import { nativeRenderCacheSignature } from "../src/audio/nativeRenderCache";
+import { toggleTrackMute } from "../src/daw/mixer";
 
 function referenceSource() {
   return {projectVersion:17,key:"D",scale:"major",bpm:76,timeSig:4,resolution:4,guitarEnabled:true,guitarTone:"campfire_acoustic",guitarPerformanceA:"strum_pick",sectionBars:{A:8},songSequence:["A"],progressionA:[0,0,3,3,5,5,4,4],guitarPatternA:["scratch"],future:{keep:true}};
 }
 
 describe("native Campfire compact authoring", () => {
+  it("activates empty Grid to strum/pick for native playback and decoded MIDI, with exact Undo", async () => {
+    const source={...referenceSource(),guitarPerformanceA:"grid",guitarPatternA:[]};
+    const project=createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject(source));
+    expect(project.tracks.find(track=>track.role === "guitar")?.active).toBe(false);
+    const state={...createInitialState(),undoStack:createUndoStack(project)};
+    const changed=setGuitarPerformanceCommand(state,"A","strum_pick");
+    const track=changed.undoStack.present.tracks.find(track=>track.role === "guitar");
+    expect(track).toMatchObject({active:true,mute:false});
+    const payload=buildNativeAudioStartPayload(changed.undoStack.present,renderTimelineEvents(changed.undoStack.present),0);
+    expect(payload.tracks.find(item=>item.id === track?.id)?.mute).toBe(false);
+    expect(payload.events.filter(event=>event.instrument === "campfire_acoustic")).toHaveLength(24);
+    const midi=parseStandardMidiFile(new Uint8Array(await exportProjectToMidiBlob(changed.undoStack.present).arrayBuffer()));
+    expect(midi.notes.filter(note=>note.channel === 8)).toHaveLength(48);
+    const grid=setGuitarPerformanceCommand(changed,"A","grid");
+    expect(renderTimelineEvents(grid.undoStack.present).filter(event=>event.kind === "guitar")).toHaveLength(0);
+    expect(undoCommand(changed).undoStack.present).toEqual(project);
+    expect(undoCommand(grid).undoStack.present).toEqual(changed.undoStack.present);
+  });
+
+  it("retains explicit mixer mute and source disable when selecting automatic performance", async () => {
+    const source={...referenceSource(),guitarPerformanceA:"grid",guitarPatternA:[]};
+    const project=createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject(source));
+    const muted=toggleTrackMute(project,"guitar");
+    expect(muted.tracks.find(track=>track.role === "guitar")?.mute).toBe(true);
+    const changed=setGuitarPerformance(muted,"A","strum_pick");
+    expect(changed.tracks.find(track=>track.role === "guitar")).toMatchObject({active:true,mute:true});
+    expect(buildNativeAudioStartPayload(changed,renderTimelineEvents(changed),0).tracks.find(track=>track.id === "guitar")?.mute).toBe(true);
+    const midi=parseStandardMidiFile(new Uint8Array(await exportProjectToMidiBlob(changed).arrayBuffer()));
+    expect(midi.notes.filter(note=>note.channel === 8)).toHaveLength(0);
+    const disabled=createDawProjectFromChordsmithProject(sanitizePocketChordsmithProject({...source,guitarEnabled:false}));
+    const disabledChanged=setGuitarPerformance(disabled,"A","strum_pick");
+    expect(getPrimaryChordsmithSource(disabledChanged)?.guitarEnabled).toBe(false);
+    expect(disabledChanged.tracks.find(track=>track.role === "guitar")).toMatchObject({active:false,mute:true});
+    expect(buildNativeAudioStartPayload(disabledChanged,renderTimelineEvents(disabledChanged),0).events.filter(event=>event.instrument === "campfire_acoustic")).toHaveLength(0);
+  });
   it("preserves the prepared identity and complete major/minor voicings", () => {
     const pcs = sanitizePocketChordsmithProject({projectVersion:17,key:"D",scale:"major",bpm:76,timeSig:4,resolution:1,guitarEnabled:true,guitarTone:"campfire_acoustic",sectionBars:{A:4},songSequence:["A"],progressionA:[0,3,5,4],guitarPatternA:Array.from({length:16},(_,index)=>index%4===0?"open":"off")});
     expect(pcs.guitarTone).toBe("campfire_acoustic");

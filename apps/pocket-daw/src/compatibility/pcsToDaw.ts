@@ -213,7 +213,9 @@ function alignTracksToChordsmithSource(tracks: ReturnType<typeof createDefaultTr
   if (guitar) {
     guitar.volume = project.guitarVolume;
     guitar.active = guitarActive;
-    guitar.mute = !guitarActive;
+    // An empty prepared Grid is inactive, not an explicit mixer mute. Keep
+    // that distinction so later performance edits can activate it safely.
+    guitar.mute = project.guitarTone === "campfire_acoustic" ? !project.guitarEnabled : !guitarActive;
     guitar.metadata = {
       ...(guitar.metadata || {}),
       ...sourceSoundMetadata,
