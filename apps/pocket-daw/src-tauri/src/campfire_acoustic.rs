@@ -138,11 +138,11 @@ impl PreparedEvent {
     }
 
     pub fn sample_at_timeline_position(&self, position: f64, onset: f64) -> f32 {
-        // Align both absolute positions before subtraction. Accumulated seconds
-        // can sit just below an integer frame, especially after a long seek.
-        // This also matches Core's rounded event onset on the output grid.
+        // Recover the native output frame before subtraction; accumulated
+        // seconds can sit just below an integer frame after a long seek.
+        // Core floors absolute event onsets (strum offsets still round).
         let frame = (position * self.sample_rate as f64).round()
-            - (onset * self.sample_rate as f64).round();
+            - (onset * self.sample_rate as f64).floor();
         if !frame.is_finite() || frame < 0.0 {
             return 0.0;
         }

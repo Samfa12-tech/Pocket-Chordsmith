@@ -3049,10 +3049,10 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     while event_index < playback.events.len() {
         let event_time = playback.events[event_index].time;
         if event_time > t {
-            // A prepared Campfire onset rounds to the native output grid.
-            // Scan the half-frame window without starting other recipes early;
+            // Core floors prepared Campfire onsets to the output grid.
+            // Scan that one-frame window without starting other recipes early;
             // otherwise a nearby legacy event could hide a due Campfire onset.
-            if event_time > t + 0.5 / playback.sample_rate.max(1) as f64 {
+            if event_time > t + 1.0 / playback.sample_rate.max(1) as f64 {
                 break;
             }
             if !is_campfire_event(&playback.events[event_index]) {
@@ -3387,7 +3387,7 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     while event_index < playback.events.len() {
         let event_time = playback.events[event_index].time;
         if event_time > t {
-            if event_time > t + 0.5 / playback.sample_rate.max(1) as f64 {
+            if event_time > t + 1.0 / playback.sample_rate.max(1) as f64 {
                 break;
             }
             if !is_campfire_event(&playback.events[event_index]) {
@@ -6896,8 +6896,8 @@ fn prepare_campfire_events(
     }
     let mut bank = CampfireNoteBank::new(sample_rate, 64 * 1024 * 1024)?;
     for event in events.iter().filter(|event| is_campfire_event(event)) {
-        if !event.time.is_finite() {
-            return Err("Campfire event time must be finite.".into());
+        if !event.time.is_finite() || event.time < 0.0 {
+            return Err("Campfire event time must be finite and nonnegative.".into());
         }
         if prepared.contains_key(&event.id) {
             return Err("Campfire generated event IDs must be unique.".into());
@@ -11121,7 +11121,13 @@ mod tests {
 
     #[test]
     fn native_campfire_full_stereo_graph_is_invariant_at_later_onsets_and_tail_seeks() {
-        fn retain_capture(rate: u32, onset: usize, offset: i64, frames: &[(f32, f32)]) {
+        fn retain_capture(
+            rate: u32,
+            onset: usize,
+            offset: i64,
+            label: &str,
+            frames: &[(f32, f32)],
+        ) {
             if let Ok(directory) = std::env::var("POCKET_DAW_NATIVE_CAMPFIRE_PARITY_DIR") {
                 let directory = std::path::Path::new(&directory);
                 std::fs::create_dir_all(directory).unwrap();
@@ -11129,8 +11135,13 @@ mod tests {
                     .iter()
                     .flat_map(|(left, right)| [left.to_le_bytes(), right.to_le_bytes()].concat())
                     .collect::<Vec<_>>();
+                let suffix = if label.is_empty() {
+                    String::new()
+                } else {
+                    format!("-{label}")
+                };
                 std::fs::write(
-                    directory.join(format!("{rate}-{onset}-{offset}.f32")),
+                    directory.join(format!("{rate}-{onset}-{offset}{suffix}.f32")),
                     bytes,
                 )
                 .unwrap();
@@ -11153,7 +11164,7 @@ mod tests {
             let frames = (rate as f64 * 1.65).round() as usize;
             let mut origin = fixture(rate, 0);
             let reference = render_frames(&mut origin, frames);
-            retain_capture(rate, 0, 0, &reference);
+            retain_capture(rate, 0, 0, "", &reference);
             assert!(reference
                 .iter()
                 .any(|(left, right)| (left - right).abs() > 0.001));
@@ -11169,7 +11180,7 @@ mod tests {
                 later.position_seconds = (onset_frame - 128) as f64 / rate as f64;
                 reset_scan_starts(&mut later);
                 let rendered = render_frames(&mut later, frames + 128);
-                retain_capture(rate, onset_frame, -128, &rendered);
+                retain_capture(rate, onset_frame, -128, "", &rendered);
                 let onset_error = max_frame_diff(&reference, &rendered[128..]);
                 let preroll_peak = rendered[..128].iter().fold(0.0_f32, |peak, (left, right)| {
                     peak.max(left.abs()).max(right.abs())
@@ -11179,7 +11190,7 @@ mod tests {
                 seek.position_seconds = (onset_frame + seek_frame) as f64 / rate as f64;
                 reset_scan_starts(&mut seek);
                 let seek_rendered = render_frames(&mut seek, frames - seek_frame);
-                retain_capture(rate, onset_frame, seek_frame as i64, &seek_rendered);
+                retain_capture(rate, onset_frame, seek_frame as i64, "", &seek_rendered);
                 let seek_error = max_frame_diff(&reference[seek_frame..], &seek_rendered);
                 eprintln!("Campfire full stereo rate={rate} onset_frame={onset_frame} onset_error={onset_error} seek_error={seek_error} preroll_peak={preroll_peak}");
                 if onset_error > 1e-7 || seek_error > 1e-7 || preroll_peak > 0.0 {
@@ -11188,19 +11199,30 @@ mod tests {
             }
             for fraction in [0.4_f64, 0.6] {
                 let onset = rate as usize * 10 + 123;
-                let rounded_onset = onset + fraction.round() as usize;
+                let floored_onset = onset;
                 let mut fractional = fixture(rate, onset);
                 fractional.events[0].time = (onset as f64 + fraction) / rate as f64;
-                fractional.position_seconds = (rounded_onset - 128) as f64 / rate as f64;
+                fractional.position_seconds = (floored_onset - 128) as f64 / rate as f64;
                 reset_scan_starts(&mut fractional);
                 let rendered = render_frames(&mut fractional, frames + 128);
+                retain_capture(
+                    rate,
+                    onset,
+                    -128,
+                    if fraction < 0.5 {
+                        "fraction04"
+                    } else {
+                        "fraction06"
+                    },
+                    &rendered,
+                );
                 assert!(
                     max_frame_diff(&reference, &rendered[128..]) < 1e-7,
-                    "fractional Campfire onset must match Core's output-grid rounding"
+                    "fractional Campfire onset must match Core's floored output-grid onset"
                 );
             }
-            // An earlier legacy event in the half-frame window must neither
-            // sound early nor hide the Campfire onset rounded to this frame.
+            // An earlier legacy event in the one-frame window must neither
+            // sound early nor hide the Campfire onset floored to this frame.
             for cache_stem in [false, true] {
                 let onset = rate as usize * 10 + 123;
                 let mut mixed = fixture(rate, onset);
@@ -11373,6 +11395,9 @@ mod tests {
             invalid.technique = Some(serde_json::json!({"campfire": performance}));
             assert!(prepare_campfire_events(&[invalid], 48000).is_err());
         }
+        let mut invalid = event.clone();
+        invalid.time = -0.1;
+        assert!(prepare_campfire_events(&[invalid], 48000).is_err());
         let mut invalid = event.clone();
         invalid.midi_notes[0] = 50.5;
         assert!(prepare_campfire_events(&[invalid], 48000).is_err());

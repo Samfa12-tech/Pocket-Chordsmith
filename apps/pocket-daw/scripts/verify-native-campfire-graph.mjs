@@ -40,7 +40,7 @@ function graphReference(rate) {
 }
 const references = new Map([44100, 48000].map((rate) => [rate, graphReference(rate)]));
 const records = readdirSync(workspace).filter((file) => file.endsWith(".f32")).map((file) => {
-  const [, rateText, onsetText, offsetText] = /^(\d+)-(\d+)-(-?\d+)\.f32$/.exec(file) || [];
+  const [, rateText, onsetText, offsetText, fractionLabel] = /^(\d+)-(\d+)-(-?\d+)(?:-(fraction04|fraction06))?\.f32$/.exec(file) || [];
   if (!rateText) throw new Error(`Unexpected native capture: ${file}`);
   const rate = Number(rateText), offset = Number(offsetText), reference = references.get(rate);
   const bytes = readFileSync(resolve(workspace, file));
@@ -57,12 +57,12 @@ const records = readdirSync(workspace).filter((file) => file.endsWith(".f32")).m
     maxError = Math.max(maxError, delta); squaredError += delta * delta; peak = Math.max(peak, Math.abs(actual));
   }
   const rmsError = Math.sqrt(squaredError / (frames * 2));
-  return { file, rate, onsetFrame: Number(onsetText), sourceOffsetFrames: offset, frames, requiredFrames, maxError, rmsError, invalidSamples, peak,
+  return { file, rate, onsetFrame: Number(onsetText), onsetSubframe: fractionLabel === "fraction04" ? 0.4 : fractionLabel === "fraction06" ? 0.6 : 0, sourceOffsetFrames: offset, frames, requiredFrames, maxError, rmsError, invalidSamples, peak,
     passed: frames === requiredFrames && invalidSamples === 0 && peak > 0.00001 && maxError < 1e-7 && rmsError < 1e-8 };
 });
 const report = { workspace, route: "Core recipe PCM -> documented native dry gain/pan/soft-limit -> actual native stereo graph", tolerances: { maxSampleError: 1e-7, rmsError: 1e-8 }, fittedLatencyOrGain: false,
   limits: "No installed device/host/master-FX/browser-master/listening claim. Positions are rendered after a short preroll or seek; this does not simulate two hours of uninterrupted callbacks.", records,
-  passed: records.length === 26 && records.every((record) => record.passed) };
+  passed: records.length === 30 && records.every((record) => record.passed) };
 writeFileSync(resolve(workspace, "parity-report.json"), `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify(report, null, 2));
 if (!report.passed) process.exitCode = 1;

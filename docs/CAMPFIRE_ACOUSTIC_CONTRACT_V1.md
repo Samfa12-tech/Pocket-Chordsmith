@@ -128,7 +128,7 @@ The amplifier recipe is never substituted for an unprepared Campfire request.
 Ordinary native WAV rendering retains the final audible pluck's natural tail;
 muted tracks cannot add a silent tail. Explicit exact-loop/cache render modes
 retain their requested length. Native seek and cache-prune routing keep using
-the same prepared PCM. Renderer contract v39 includes the module, corrected
+the same prepared PCM. Renderer contract v40 includes the module, corrected
 instrument routing, sample-grid alignment and export tail policy in its enforced
 source fingerprint; recipe/tail identity invalidates old generated caches.
 
@@ -150,13 +150,15 @@ Full native stereo timing validation is reproducible from `apps/pocket-daw/`:
 npm run verify:campfire-native-graph -- --cargo-bin <cargo-executable>
 ```
 
-The real native graph captures 26 stereo outputs at 44.1/48 kHz with noncentral
-source/track pan and track gain. It compares all 1,369,221 frames against Core
+The real native graph captures 30 stereo outputs at 44.1/48 kHz with noncentral
+source/track pan and track gain. It compares all 1,673,663 frames against Core
 recipe PCM plus the documented native dry gain/pan/soft-limit path, without
 latency/gain fitting (limits: maximum error below 1e-7, RMS below 1e-8). The
 current run has zero sample difference. Named onsets span subsecond, 10/60/100
 seconds, 30 minutes and two hours; seeks start 1.1 seconds into each tail.
-Additional graph checks cover fractional onset rounding and a nearby legacy
+Absolute event onsets use Core's floor convention; strum offsets still round.
+Native Campfire rejects nonfinite/negative onsets before playback. Additional
+graph checks cover fractional floored onsets and a nearby legacy
 future event in both normal/cache render modes. Before the sample-grid fix,
 later onsets differed by up to 0.0492 and tail seeks by up to 0.000274.
 

@@ -341,23 +341,30 @@ measurement reproduced onset error up to 0.04916 and tail-seek error up to
 then flooring could select the preceding prepared PCM frame.
 
 Campfire now aligns absolute native positions and event onsets on the output
-sample grid before selecting PCM. Normal/cache event scans admit the half-frame
-Campfire rounding window while keeping future legacy events silent, including
+sample grid before selecting PCM. Core floors absolute event onsets, while
+native current output positions and strum offsets round to their sample grid.
+Normal/cache event scans admit the one-frame Campfire onset window while keeping
+future legacy events silent, including
 when one sorts just before a due Campfire event. Native clock ownership and
-existing recipes' timing stay intact. Renderer contract v39 invalidates affected
+existing recipes' timing stay intact. Renderer contract v40 invalidates affected
 caches. No callback synthesis or new dependency is introduced.
 
 Executed: 194 native tests pass, two existing manual tests ignored; Clippy with
 warnings denied; 284 Windows-contract tests; complete family parity including
 1,173 DAW tests; organization/governance/whitespace checks. The graph regression
 covers both rates, six onset positions up to two hours, seeks 1.1 seconds into
-tails, fractional onset rounding and nearby legacy events in both render modes.
-The reproducible `verify-native-campfire-graph.mjs` captures 26 full stereo
+tails, fractional floored onsets and nearby legacy events in both render modes.
+The reproducible `verify-native-campfire-graph.mjs` captures 30 full stereo
 outputs and compares every frame against canonical Core PCM plus documented
-native dry source/track pan, track gain and soft limiting. All 1,369,221 frames
+native dry source/track pan, track gain and soft limiting. All 1,673,663 frames
 match exactly; declared maximum/RMS limits remain 1e-7/1e-8 with no latency/gain
-fit. Reports: `native-campfire-frame-before.log`, `native-campfire-frame-*.log`
-and `native-campfire-graph/run-An9frk/parity-report.json` under ignored validation.
+fit. The original 26 integer-onset captures passed before an additional source
+read caught the wrong nearest-onset convention in the first fractional test.
+The correction now retains four fractional-onset captures too, and rejects
+nonfinite/negative native onsets explicitly. Original reports:
+`native-campfire-frame-before.log`, `native-campfire-frame-*.log` and
+`native-campfire-graph/run-An9frk/parity-report.json` under ignored validation.
+Corrected 30-capture report: review checkout `native-campfire-graph-floor.log`.
 
 Published: nothing. These are short prerolls and seeks at named positions, not
 two hours of continuous callbacks. Installed devices, hosted/master FX, browser
