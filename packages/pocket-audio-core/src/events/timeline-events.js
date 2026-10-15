@@ -15,6 +15,7 @@ import { chordsmithHumanizeOffset, chordsmithHumanizePeak } from "../performance
 import { chordsmithPhraseInfo } from "../performance/phrases.js";
 import { chordsmithPitchedTupletDuration, chordsmithPitchedTupletMiddleIndex, chordsmithPitchedTupletMiddleMidi } from "../performance/tuplets.js";
 import { DEFAULT_GUITAR_STRUM_MODE } from "../sounds/guitar.js";
+import { CAMPFIRE_ACOUSTIC_RECIPE, campfireAcousticVoicing } from "../sounds/campfire-acoustic.js";
 import { CHORDSMITH_SEQUENCED_DRUM_LANE_IDS, normalisePocketAudioDrumLane } from "../sounds/drum-lanes.js";
 import { normalisePocketAudioArticulation } from "../performance/expression.js";
 import { createPocketAudioRendererCapabilityReport } from "../engine/capabilities.js";
@@ -350,7 +351,8 @@ function addMelodyEvents(events, project, section, context) {
 }
 
 function addGuitarEvents(events, project, section, context) {
-  if (project.mixer.stems.guitar?.mute || !section.guitar.enabled) return;
+  const campfire = section.guitar.tone === CAMPFIRE_ACOUSTIC_RECIPE.id;
+  if (!section.guitar.enabled || (project.mixer.stems.guitar?.mute && !campfire)) return;
   const art = section.guitar.pattern[context.step];
   if (!art || art === "off" || art === "hold") return;
   const chord = currentChord(project, section, context.step);
@@ -358,11 +360,13 @@ function addGuitarEvents(events, project, section, context) {
     stem: "guitar",
     type: "guitar",
     duration: guitarDuration(project, section, context.step, art, context.totalSteps),
-    velocity: section.guitar.volume,
-    midiNotes: powerChordNotes(project, section, chord),
+    // Campfire's shared mixer applies volume once, independently of note intent.
+    velocity: campfire ? (art === "accent" ? 1.28 : 1) : section.guitar.volume,
+    midiNotes: campfire ? campfireAcousticVoicing({ rootPc: chord.rootPc, quality: chord.quality, register: section.guitar.register }) : powerChordNotes(project, section, chord),
     instrument: section.guitar.tone,
     articulation: art,
     direction: guitarDirection(context.step, section.guitar.strumMode),
+    ...(campfire ? { technique: { campfire: { recipeVersion: CAMPFIRE_ACOUSTIC_RECIPE.version, strumSeconds: CAMPFIRE_ACOUSTIC_RECIPE.strumSeconds, tailPolicy: CAMPFIRE_ACOUSTIC_RECIPE.tailPolicy } } } : {}),
     humanizeSeed: 17,
     humanizeVelocity: false
   }));

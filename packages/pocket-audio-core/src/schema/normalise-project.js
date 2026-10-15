@@ -22,7 +22,7 @@ import { FUNK_AUDIO_PROFILE_ID, normaliseFunkProjectSettings } from "../presets/
 import { WESTERN_AUDIO_PROFILE_ID, normaliseWesternProjectSettings } from "../presets/western.js";
 import { CHORDSMITH_CHORD_PLAY_MODES, CHORDSMITH_CHORD_RHYTHM_MODES } from "../performance/chord-rhythm.js";
 import { DEFAULT_CHORD_INSTRUMENT, DEFAULT_MELODY_INSTRUMENT, POCKET_CHORD_INSTRUMENTS, POCKET_MELODY_INSTRUMENTS } from "../sounds/instruments.js";
-import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_ARTICULATIONS, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES } from "../sounds/guitar.js";
+import { DEFAULT_GUITAR_REGISTER, DEFAULT_GUITAR_STRUM_MODE, DEFAULT_GUITAR_TONE, POCKET_GUITAR_ARTICULATIONS, POCKET_GUITAR_REGISTERS, POCKET_GUITAR_STRUM_MODES, POCKET_GUITAR_TONES, POCKET_PREPARED_GUITAR_TONES } from "../sounds/guitar.js";
 import { migratePocketChordsmithProject } from "./migrations.js";
 import { assertPocketAudioProjectResourceLimits } from "./resource-limits.js";
 
@@ -161,7 +161,7 @@ function normaliseSection(project, id, context) {
     })),
     guitar: {
       enabled: Boolean(project.guitarEnabled),
-      tone: safeChoice(project.guitarTone, POCKET_GUITAR_TONES, DEFAULT_GUITAR_TONE),
+      tone: safeChoice(project.guitarTone, [...POCKET_GUITAR_TONES, ...POCKET_PREPARED_GUITAR_TONES], DEFAULT_GUITAR_TONE),
       register: safeChoice(project.guitarRegister, POCKET_GUITAR_REGISTERS, DEFAULT_GUITAR_REGISTER),
       strumMode: safeChoice(project.guitarStrumMode, POCKET_GUITAR_STRUM_MODES, DEFAULT_GUITAR_STRUM_MODE),
       volume: clamp(asNumber(project.guitarVolume, DEFAULT_STEM_MIX.guitar.volume), 0, 1),

@@ -483,7 +483,7 @@ export class PocketAudio {
     this.emit("event", scheduledEvent);
     if (this.audioContext && this.options.audio !== false) {
       if (isCampfireEvent(event)) {
-        if (this.project.mixer.stems.guitar.mute) return;
+        // Prepared mute is gain automation, so unmute resumes the same pluck.
         if (!this.campfireNoteBank) throw new Error("Campfire audio must be prepared before transport starts.");
         this.campfireNoteBank.schedule(event, targetAudioTime);
       } else scheduleSimpleAudioEvent(this.audioContext, event, this.project, targetAudioTime);

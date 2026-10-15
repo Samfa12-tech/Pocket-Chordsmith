@@ -229,6 +229,51 @@ try {
       if (peak !== 0) throw new Error(`Stopped queued prepared playback sounded ${sampleRate}/${leadFrames}: ${peak}`);
       preparedStops.push({ sampleRate, leadFrames, peak, passed: true });
     }
+    const compactParity = [];
+    for (const sampleRate of [44100, 48000]) for (const direction of ["down", "up"]) for (const mode of [0, 0.2, 0.9, "muted-start"]) {
+      const frames = Math.ceil((16 * 60 / 76 + 2) * sampleRate);
+      const context = new OfflineAudioContext(2, frames, sampleRate);
+      const engine = new core.PocketAudio({ audioContext: context, setInterval: () => 1, clearInterval() {} });
+      await engine.loadProject({ projectVersion: 17, key: "D", scale: "major", bpm: 76, timeSig: 4, resolution: 1,
+        chordsOn: false, bassOn: false, guitarEnabled: true, guitarTone: "campfire_acoustic", guitarRegister: "low",
+        guitarVolume: mode === "muted-start" ? 0.66 : mode, guitarStrumMode: direction,
+        songSequence: ["A"], sectionBars: { A: 4 }, progressionA: [0, 3, 5, 4],
+        guitarPatternA: Array.from({ length: 16 }, (_, step) => step % 4 === 0 ? "open" : "off") });
+      for (const stem of ["drums", "bass", "chords", "melody"]) engine.setStemMute(stem, true);
+      if (mode === "muted-start") engine.setStemMute("guitar", true);
+      await engine.play();
+      const events = engine.timeline.events.filter(event => event.type === "guitar");
+      if (events.length !== 4 || events.some(event => event.instrument !== "campfire_acoustic" || event.midiNotes.length !== 4)) throw new Error(`Compact Campfire lost its authored notes under ${mode}`);
+      const referenceProject = structuredClone(engine.project);
+      referenceProject.mixer.stems.guitar.mute = false;
+      const reference = core.renderPocketAudioBuffer(referenceProject, { sampleRate, tailSeconds: 2 });
+      const controls = events.slice(1).map(event => ({ time: event.time - 0.05, scheduler: true }));
+      if (mode === "muted-start") controls.unshift({ time: 0.25, unmute: true });
+      let suspended = context.suspend(controls[0].time);
+      const rendering = context.startRendering();
+      let unmuteTime = null;
+      for (let index = 0; index < controls.length; index += 1) {
+        await suspended;
+        if (controls[index].unmute) { unmuteTime = context.currentTime; engine.setStemMute("guitar", false); }
+        if (controls[index].scheduler) engine.schedulerTick();
+        if (index + 1 < controls.length) suspended = context.suspend(controls[index + 1].time);
+        await context.resume();
+      }
+      const rendered = await rendering;
+      let maxError = 0, squaredError = 0;
+      for (let frame = 0; frame < frames; frame += 1) {
+        const time = frame / sampleRate;
+        const gain = unmuteTime === null ? 1 : Math.max(0, Math.min(1, (time - unmuteTime) / 0.005));
+        for (let channel = 0; channel < 2; channel += 1) {
+          const error = Math.abs(rendered.getChannelData(channel)[frame] - reference.channels[channel][frame] * gain);
+          maxError = Math.max(maxError, error); squaredError += error * error;
+        }
+      }
+      const rmsError = Math.sqrt(squaredError / (frames * 2));
+      if (maxError > 1e-7 || rmsError > 1e-8) throw new Error(`Compact Campfire live/offline mismatch ${sampleRate}/${direction}/${mode}: ${maxError}/${rmsError}`);
+      compactParity.push({ sampleRate, direction, mode, frames, unmuteTime, maxError, rmsError, passed: true });
+      engine.dispose();
+    }
     const lookaheadContext = new OfflineAudioContext(2, 48000 * 2, 48000);
     const first = { midi: 50, velocity: 1 };
     const future = { midi: 69, velocity: 1 };
@@ -242,7 +287,7 @@ try {
     for (let frame = 0; frame < actual.length; frame += 1) if (Math.abs(actual[frame] - (firstPcm[frame] || 0)) > 1e-7) throw new Error("Section transition cut an existing tail or leaked cancelled lookahead");
     if (!lookahead.getChannelData(1).every((value) => value === 0)) throw new Error("Hard-left prepared Campfire leaked into the right channel");
     bank.dispose();
-    return { renderer: "Chromium OfflineAudioContext", physicalOutput: "not tested", records: results, liveOfflineParity: liveResults, liveMixerChanges, queuedControls, frameGrid, preparedStarts, preparedStops, cancelledFutureVoice: "passed", preservedTailAndCancelledLookahead: "passed", preparationAutoplay: "none" };
+    return { renderer: "Chromium OfflineAudioContext", physicalOutput: "not tested", records: results, liveOfflineParity: liveResults, liveMixerChanges, queuedControls, frameGrid, preparedStarts, preparedStops, compactParity, cancelledFutureVoice: "passed", preservedTailAndCancelledLookahead: "passed", preparationAutoplay: "none" };
   }, fixtures.records);
   console.log(JSON.stringify({ browserVersion: browser.version(), ...result }, null, 2));
 } finally {

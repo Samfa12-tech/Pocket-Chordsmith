@@ -10,6 +10,7 @@ import { parsePocketChordsmithInput } from "../src/schema/parse-share-code.js";
 import { createPocketAudioRendererCapabilityReport } from "../src/engine/capabilities.js";
 import { PocketAudio } from "../src/engine/live-engine.js";
 import { prepareCampfireAcousticNoteBank } from "../src/synth/campfire-acoustic.js";
+import { findPocketGuitarTone, POCKET_GUITAR_TONES, POCKET_PREPARED_GUITAR_TONES } from "../src/sounds/guitar.js";
 import { createGodotExportKit } from "../src/export/godot-kit.js";
 import { decodePcmWavBytes } from "../src/export/wav.js";
 import {
@@ -20,6 +21,78 @@ import {
 
 const reference = JSON.parse(readFileSync(new URL("./fixtures/campfire-reference-hashes.json", import.meta.url)));
 const eventReference = JSON.parse(readFileSync(new URL("./fixtures/campfire-event-reference-hashes.json", import.meta.url)));
+
+test("compact Campfire authoring retains identity and complete D/G/Bm/A voicings without changing amplifier IDs", () => {
+  assert.deepEqual(POCKET_PREPARED_GUITAR_TONES, ["campfire_acoustic"]);
+  assert.equal(POCKET_GUITAR_TONES.length, 8, "prepared instruments must not acquire an amplifier fallback");
+  assert.throws(() => findPocketGuitarTone("campfire_acoustic"), /prepared PCM/);
+  for (const register of ["low", "mid", "high"]) {
+    const project = normalisePocketChordsmithProject({
+      projectVersion: 17, key: "D", scale: "major", bpm: 76, timeSig: 4, resolution: 1,
+      guitarEnabled: true, guitarTone: "campfire_acoustic", guitarRegister: register, guitarVolume: 0.2,
+      guitarStrumMode: "alternate", songSequence: ["A"], sectionBars: { A: 4 },
+      progressionA: [0, 3, 5, 4], guitarPatternA: Array.from({ length: 16 }, (_, index) => index % 4 === 0 ? "open" : "off")
+    });
+    const events = buildPocketAudioTimeline(project).events.filter(event => event.type === "guitar");
+    assert.equal(project.sections.A.guitar.tone, "campfire_acoustic");
+    assert.equal(events.length, 4);
+    const octave = { low: 0, mid: 12, high: 24 }[register];
+    assert.deepEqual(events.map(event => event.midiNotes), CAMPFIRE_REFERENCE_CHORDS.map(chord => chord.notes.map(note => note + octave)));
+    for (const event of events) {
+      assert.equal(event.instrument, "campfire_acoustic");
+      assert.equal(event.velocity, 1, "project volume belongs to the shared mixer, not a second note gain");
+      assert.equal(event.technique.campfire.strumSeconds, 0.027);
+      assert.equal(event.technique.campfire.recipeVersion, 1);
+    }
+    for (const input of [JSON.stringify(project.source.original), `PCS1:${Buffer.from(JSON.stringify(project.source.original)).toString("base64url")}`]) {
+      const roundTrip = normalisePocketChordsmithProject(parsePocketChordsmithInput(input));
+      assert.deepEqual(buildPocketAudioTimeline(roundTrip).events, buildPocketAudioTimeline(project).events);
+    }
+  }
+});
+
+test("compact Campfire major/minor quality survives all keys and old power-chord songs stay unchanged", () => {
+  for (const key of ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]) for (const scale of ["major", "minor"]) {
+    const source = { projectVersion: 17, key, scale, guitarEnabled: true, guitarTone: "campfire_acoustic", guitarPatternA: ["open"], sectionBars: { A: 1 }, songSequence: ["A"] };
+    const event = buildPocketAudioTimeline(normalisePocketChordsmithProject(source)).events.find(event => event.type === "guitar");
+    const third = scale === "major" ? 4 : 3;
+    assert.equal(event.midiNotes.length, 4);
+    assert.ok(event.midiNotes.some(note => (note - event.midiNotes[0] + 24) % 12 === third), `${key} ${scale} must retain its third`);
+    const old = buildPocketAudioTimeline(normalisePocketChordsmithProject({ ...source, guitarTone: "high_gain" })).events.find(event => event.type === "guitar");
+    assert.equal(old.midiNotes.length, 3);
+    assert.deepEqual(old.midiNotes.map(note => note - old.midiNotes[0]), [0, 7, 12]);
+    assert.equal(old.velocity, 0.66);
+    assert.equal(old.technique, undefined);
+  }
+});
+
+test("Campfire capability reports declare compact extensions and unsupported articulations without changing rich notes", () => {
+  const source = { projectVersion: 17, guitarEnabled: true, guitarTone: "campfire_acoustic", chordType: "seventh", guitarPatternA: ["open", "chug", "scratch"], sectionBars: { A: 1 }, songSequence: ["A"] };
+  for (const input of [source, normalisePocketChordsmithProject(source)]) {
+    const report = createPocketAudioRendererCapabilityReport(input);
+    assert.equal(report.exact, false);
+    assert.equal(report.losses.length, 3);
+    assert.deepEqual(report.capabilities.preparedGuitarTones, ["campfire_acoustic"]);
+    assert.ok(report.losses.some(item => item.feature === "campfire-chord:seventh" && item.fallback === "triad"));
+    assert.equal(report.losses.filter(item => item.fallback === "natural-pluck").length, 2);
+  }
+  const rich = [{ type: "guitar", stem: "guitar", instrument: "campfire_acoustic", midiNotes: [50, 57, 61, 66], articulation: "palm_mute" }];
+  const copy = structuredClone(rich);
+  const report = createPocketAudioRendererCapabilityReport(rich);
+  assert.equal(report.exact, false);
+  assert.equal(report.losses[0].fallback, "natural-pluck");
+  assert.deepEqual(rich, copy, "reporting must retain explicit seventh notes and source technique");
+  assert.equal(createPocketAudioRendererCapabilityReport([{ ...rich[0], articulation: "open" }]).exact, true);
+});
+
+test("compact Campfire accents carry explicit note velocity independently of mixer volume", () => {
+  for (const volume of [0, 0.2, 0.9]) {
+    const source = { projectVersion: 17, guitarEnabled: true, guitarTone: "campfire_acoustic", guitarVolume: volume, guitarPatternA: ["open", "accent"], sectionBars: { A: 1 }, songSequence: ["A"] };
+    const events = buildPocketAudioTimeline(normalisePocketChordsmithProject(source)).events.filter(event => event.type === "guitar");
+    assert.deepEqual(events.map(event => event.velocity), [1, 1.28]);
+    assert.equal(createPocketAudioRendererCapabilityReport(normalisePocketChordsmithProject(source)).exact, true);
+  }
+});
 const pcmHash = (samples) => {
   const bytes = Buffer.alloc(samples.length * 4);
   samples.forEach((sample, index) => bytes.writeFloatLE(sample, index * 4));
@@ -343,6 +416,24 @@ test("live Campfire mixer changes reuse prepared voices and reject invalid gain 
   assert.equal(bank.getDiagnostics().outputGain, gain);
   engine.dispose();
   assert.throws(() => bank.setOutputGain(0.2), /disposed/);
+});
+
+test("compact Campfire muted Play prepares and clocks voices so unmute cannot retrigger or lose their tails", async () => {
+  const context = preparationContext();
+  const engine = new PocketAudio({ audioContext: context, setInterval: () => 1, clearInterval() {} });
+  await engine.loadProject({ projectVersion: 17, guitarEnabled: true, guitarTone: "campfire_acoustic", guitarPatternA: ["open"], sectionBars: { A: 1 }, songSequence: ["A"] });
+  for (const stem of ["drums", "bass", "chords", "melody", "guitar"]) engine.setStemMute(stem, true);
+  await engine.play();
+  assert.equal(context.sources.length, 4, "muted notes retain their original clock position");
+  assert.equal(engine.getDiagnostics().campfirePrepared.outputGain, 0);
+  const buffers = context.buffers.length;
+  const starts = context.sources.map(source => [...source.starts]);
+  context.currentTime = 0.25;
+  engine.setStemMute("guitar", false);
+  assert.equal(context.buffers.length, buffers);
+  assert.deepEqual(context.sources.map(source => source.starts), starts);
+  assert.equal(engine.getDiagnostics().campfirePrepared.outputGain, chordsmithOfflineStemRenderGain("guitar", 0.66));
+  engine.dispose();
 });
 
 test("natural completion preserves the final tail and explicit Stop still cancels it", async () => {

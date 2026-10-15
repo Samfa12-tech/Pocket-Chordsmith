@@ -588,3 +588,49 @@ campfire-prepared-helper-before and campfire-prepared-helper-stop-before (all
 
 Published: nothing. Existing product selectors/full authoring paths, warm reuse,
 installed-device and full two-source Godot acceptance remain active work.
+
+## Eleventh source candidate: compact Core Campfire authoring
+
+Core now recognizes the prepared Campfire identity in compact guitarTone data,
+using a separate POCKET_PREPARED_GUITAR_TONES registry. The eight amplifier IDs,
+configurations and old-song power chords remain unchanged. Accidentally asking
+the amplifier lookup for a prepared tone fails explicitly. Product selectors
+are not exposed before their audible routes are connected.
+
+Compact Campfire events use full major/minor four-note voicings, preserving the
+canonical D/G/Bm/A inversions in all three registers, plus the existing up/down
+controls. The shared mixer applies volume once; open note velocity is one and
+an accent explicitly carries 1.28 independently of the mixer. Recipe 1, 27-ms
+strum and reference-cut tail identity are explicit. JSON and unchanged PCS1
+round-trip this data. Rich explicit note arrays retain all notes/extensions.
+
+Capability reports now disclose that compact seventh chords use the triad
+voicing (use explicit rich notes to preserve sevenths), and unsupported Campfire
+chug/scratch/expressive techniques use a natural pluck. Source intent remains
+preserved. This does not pretend the amplifier's gates are acoustic techniques.
+
+A real browser muted-start probe first lost all compact guitar notes, then a
+retained-timeline probe lost the initial sounding tail (maximum error 0.006882).
+Campfire timelines now retain muted onsets and prepared dispatch uses gain zero
+instead of deleting the voice. Unmute resumes its exact current sample without
+retriggering or rebuilding PCM. Other instrument mute policies are unchanged.
+
+Executed: 197 Core tests pass; all-key major/minor thirds, all registers of the
+reference voicings, unchanged old power chords/gain, JSON/PCS1, explicit accent
+velocity, capability warnings and muted voice/cache reuse. Sixteen actual
+Chromium scheduled compact live/offline captures span 44.1/48 kHz, down/up,
+volumes 0/0.2/0.9 and muted-start/unmute. Every frame passes unfitted comparison:
+maximum error below 3.8e-9, RMS below 1.3e-10. The four muted-start cases resume
+the first pluck in place and clock the later three full chords correctly.
+Existing prepared-frame/control/reference/hash captures pass again. Required
+family parity passes including 1,173 DAW tests. Canonical Chordsmith worker
+rebuild/freshness and organization/governance/whitespace gates pass.
+
+Evidence in second checkout ignored validation: campfire-compact-authoring-
+initial.log, -focused.log; campfire-compact-browser-before.log and
+campfire-compact-browser-muted-dispatch-before.log retain actual failures;
+campfire-compact-browser-final.log, campfire-compact-core-final.log,
+campfire-compact-family-final.log and campfire-compact-chordsmith-build.log.
+Published: nothing. Core-only authoring integration; full Chordsmith/DJ/native
+selectors/workflows, picking controls, warm preparation, installed/human output
+and both Godot authoring-source acceptance remain active work.

@@ -227,3 +227,12 @@ interpolation of the reference PCM. Explicit Stop cancels future helper voices
 immediately and releases only sounding voices. Real browser captures cover
 fractional starts and the entire 32-beat 76 BPM reference at both 44.1/48 kHz;
 see the tenth ledger candidate for tolerances, measured failure and fixed output.
+
+Compact Core guitarTone=campfire_acoustic uses the separate prepared-guitar
+registry, full major/minor voicings and one shared mixer gain. Open note velocity
+is1, accent 1.28; old amplifier songs retain their prior notes/gains. Muted
+prepared onsets retain clock position and resume in place on unmute. Compact
+sevenths and unsupported expressive/articulated amplifier gates have explicit
+capability warnings; rich explicit note arrays preserve seventh/other notes.
+JSON/PCS1 remain unchanged. Product selectors require their audible integration
+before exposure; see eleventh ledger candidate for Core authoring evidence.
