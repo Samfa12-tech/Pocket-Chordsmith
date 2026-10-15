@@ -634,3 +634,14 @@ campfire-compact-family-final.log and campfire-compact-chordsmith-build.log.
 Published: nothing. Core-only authoring integration; full Chordsmith/DJ/native
 selectors/workflows, picking controls, warm preparation, installed/human output
 and both Godot authoring-source acceptance remain active work.
+
+PR90 review correction: compact sus2/sus4 chords, like sevenths, use the current
+major/minor Campfire voicing and now explicitly report approximation for both
+raw and normalized projects. Source chordType is retained. Explicit rich sus2/
+sus4 note arrays remain exact through normalization and timeline generation.
+The missing truth-reporting case was identified at 388271a; no DSP/voicing
+algorithm changed in this correction. Core suite198 and family1173 DAW gates,
+canonical artifact rebuild/freshness and focused reporting/pitch regressions
+pass. Logs: campfire-suspended-core-final.log, -family-final.log,
+-chordsmith-build.log, -focused-final.log in the primary validation directory.
+Fresh exact-head CI and parent re-review remain pending after this correction.

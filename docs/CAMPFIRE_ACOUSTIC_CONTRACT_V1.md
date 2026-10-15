@@ -236,3 +236,5 @@ sevenths and unsupported expressive/articulated amplifier gates have explicit
 capability warnings; rich explicit note arrays preserve seventh/other notes.
 JSON/PCS1 remain unchanged. Product selectors require their audible integration
 before exposure; see eleventh ledger candidate for Core authoring evidence.
+
+Compact sus2/sus4 chords also report major/minor triad approximation in raw and normalized capability reports. Explicit rich suspended-note arrays retain their pitches and exact status.
