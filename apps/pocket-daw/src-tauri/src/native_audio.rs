@@ -6857,7 +6857,11 @@ fn compile_generated_event_routes(
             Some(CompiledGeneratedEventRoute {
                 track_index,
                 drum_lane: event.drum_lane.clone(),
-                campfire: campfire_events.get(&event.id).cloned(),
+                campfire: if is_campfire_event(event) {
+                    campfire_events.get(&event.id).cloned()
+                } else {
+                    None
+                },
             })
         })
         .collect()
@@ -11153,6 +11157,65 @@ mod tests {
             runtime.shared.is_none(),
             "preparation test must never open a physical device"
         );
+    }
+
+    #[test]
+    fn native_campfire_id_collision_cannot_replace_another_instrument_or_its_release() {
+        let mut playback = campfire_test_playback(0.0);
+        for (kind, instrument) in [
+            ("bass", None),
+            ("guitar", Some("amp")),
+            ("bass", Some("campfire_acoustic")),
+        ] {
+            let mut event = test_generated_event("campfire", kind, 0.0, 0.04, 0.8);
+            event.track_id = "guitar".into();
+            event.instrument = instrument.map(str::to_owned);
+            event.midi_notes = vec![50.0, 57.0, 62.0, 66.0];
+            playback.events.push(event);
+        }
+        // Mixed-instrument IDs remain accepted; only true Campfire events may
+        // acquire the prepared bank entry associated with that ID.
+        playback.campfire_events = prepare_campfire_events(&playback.events, 8000).unwrap();
+        ensure_compiled_event_routes(&mut playback);
+        assert!(playback.compiled_event_routes[0]
+            .as_ref()
+            .unwrap()
+            .campfire
+            .is_some());
+        let (left, right) = source_pan_gains(0.0);
+        for index in 1..playback.events.len() {
+            assert!(playback.compiled_event_routes[index]
+                .as_ref()
+                .unwrap()
+                .campfire
+                .is_none());
+            assert_eq!(
+                playback_event_release_end(&playback, index),
+                event_release_end(&playback.events[index])
+            );
+            let mut audible = false;
+            for frame in [1, 17, 101] {
+                let t = frame as f64 / 8000.0;
+                let expected = render_event_sample(&playback.events[index], t);
+                let mut budget = TrackSourceBudget::with_capacity(4);
+                let source =
+                    render_generated_event_source(&mut playback, index, t, &mut budget, false);
+                if expected.abs() <= 0.000001 {
+                    assert!(source.is_none());
+                } else {
+                    audible = true;
+                    let source = source.unwrap();
+                    assert_eq!(
+                        (source.left, source.right),
+                        (expected * left, expected * right)
+                    );
+                }
+            }
+            assert!(
+                audible,
+                "fixture must exercise the original instrument's audible route"
+            );
+        }
     }
 
     #[test]

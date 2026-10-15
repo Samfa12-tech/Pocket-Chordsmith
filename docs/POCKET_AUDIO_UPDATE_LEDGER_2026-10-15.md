@@ -246,6 +246,31 @@ particular, the existing 250 ms generated-stem tail assumption must be resolved
 before exposing Campfire as a complete product feature. No full native-to-Godot
 or listening claim follows from these code tests.
 
+## Native Campfire review correction
+
+Independent review of `86e5a4dd363c9ab3552f480633398195a571e040`
+found that compiled routes looked up prepared Campfire PCM by ID alone. A bass
+or another guitar instrument sharing that ID could acquire the wrong samples
+and release duration. The mixed-instrument collision regression reproduces the
+failure on that source. Prepared lookup now additionally requires the actual
+Campfire guitar predicate. Existing mixed-instrument IDs stay accepted and keep
+their original instrument route/release; duplicate Campfire IDs still fail.
+Renderer contract v38 invalidates generated caches for this correction.
+
+The regression covers ordinary bass, another guitar tone, and a bass carrying
+the Campfire instrument string. All five native Campfire graph/constructor tests
+pass after the correction. Full native regression passes 193 tests with two
+existing manual tests ignored; Clippy passes with warnings denied. Reports are
+`native-campfire-collision-before.log`, `native-campfire-collision-after.log`,
+`native-campfire-review-full.log` and `native-campfire-review-clippy.log` under
+the review checkout's ignored validation directory. Physical output and human
+listening are not implied.
+
+Native acceptance still requires full stereo graph parity at nonzero and long
+song onsets and after seek. Direct prepared-event hashes and initial nonzero
+samples do not establish that timing accuracy. Fixed cache tails, host/master
+processing, exact installed output and listening remain separate gates.
+
 ## Independent review correction - GODOT-01 (historical evidence)
 
 Independent review of `59f9c1e5ab3515f73af141c8e9d3bf3e15290584` correctly found
