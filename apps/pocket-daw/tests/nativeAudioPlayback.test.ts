@@ -819,6 +819,65 @@ describe("native audio playback bridge", () => {
     expect(secondAssets[0]).toMatchObject({ sourceHash: "revision-2", bytes: [82, 73, 70, 70] });
   });
 
+  it.each(["stop", "newer-start"])("does not retry an evicted-asset start superseded by %s", async (supersession) => {
+    const calls: string[] = [];
+    let rejectMissing!: (error: Error) => void;
+    const api: NativeAudioInvokeApi = {
+      isAvailable: () => true,
+      async invoke(command, args) {
+        if (command !== "native_audio_start") { calls.push(command); return status() as never; }
+        const payload = args?.payload as { startSeconds: number; assets: Array<{ bytes?: number[] }> };
+        calls.push(`start:${payload.startSeconds}:${payload.assets[0]?.bytes?.length ? "bytes" : "metadata"}`);
+        if (calls.filter(call => call.startsWith("start:")).length === 1) return new Promise((_resolve, reject) => { rejectMissing = reject; }) as never;
+        return status() as never;
+      }
+    };
+    const bridge = new NativeAudioPlaybackBridge(async () => api);
+    const asset = { id: "evicted", name: "Evicted.wav", sampleRate: 48000, channels: 2, durationSeconds: 1, bytes: [82, 73, 70, 70] };
+    const payload = { ...buildNativeAudioStartPayload(createDemoProject(), [], 0), assets: [asset] };
+    await bridge.preloadAssets([asset]);
+    const oldStart = bridge.start(payload);
+    await vi.waitFor(() => expect(rejectMissing).toBeTypeOf("function"));
+    if (supersession === "stop") await bridge.stop();
+    else await bridge.start({ ...payload, startSeconds: 2 });
+    rejectMissing(new Error("Native cached asset evicted was requested without bytes or a source path before it was decoded."));
+    const result = await oldStart;
+    expect(calls).toEqual(["native_audio_preload_asset", "start:0:metadata", supersession === "stop" ? "native_audio_stop" : "start:2:metadata"]);
+    expect(result.started).toBe(false);
+  });
+
+  it.each(["stop", "newer-start"])("does not dispatch an initial start after delayed API setup is superseded by %s", async (supersession) => {
+    const calls: string[] = [];
+    const api: NativeAudioInvokeApi = { isAvailable: () => true, async invoke(command, args) {
+      calls.push(command === "native_audio_start" ? `start:${(args?.payload as { startSeconds: number }).startSeconds}` : command);
+      return status() as never;
+    }};
+    let resolveSetup!: (api: NativeAudioInvokeApi) => void;
+    let setupCount = 0;
+    const bridge = new NativeAudioPlaybackBridge(async () => ++setupCount === 1 ? new Promise(resolve => { resolveSetup = resolve; }) : api);
+    const payload = buildNativeAudioStartPayload(createDemoProject(), [], 0);
+    const oldStart = bridge.start(payload);
+    if (supersession === "stop") await bridge.stop();
+    else await bridge.start({ ...payload, startSeconds: 2 });
+    resolveSetup(api);
+    const result = await oldStart;
+    expect(calls).toEqual([supersession === "stop" ? "native_audio_stop" : "start:2"]);
+    expect(result.started).toBe(false);
+  });
+
+  it.each(["stop", "pause", "resume", "seek"] as const)("does not dispatch a delayed %s over a newer start", async (command) => {
+    const calls: string[] = [];
+    const api: NativeAudioInvokeApi = {isAvailable: () => true, async invoke(name) { calls.push(name); return status() as never; }};
+    let resolveSetup!: (api: NativeAudioInvokeApi) => void;
+    let setupCount = 0;
+    const bridge = new NativeAudioPlaybackBridge(async () => ++setupCount === 1 ? new Promise(resolve => { resolveSetup = resolve; }) : api);
+    const pending = command === "seek" ? bridge.seek(1) : bridge[command]();
+    await bridge.start(buildNativeAudioStartPayload(createDemoProject(), [], 2));
+    resolveSetup(api);
+    await expect(pending).resolves.toBeNull();
+    expect(calls).toEqual(["native_audio_start"]);
+  });
+
   it("returns the retry error when a full-payload recovery start also fails", async () => {
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
     const missingAssetError = "Native cached asset asset_retry_failure was requested without bytes or a source path before it was decoded.";

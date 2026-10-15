@@ -1104,3 +1104,14 @@ Existing native Stop clears decoded residency, so no zero-allocation/warm latenc
 claim. Same-position A/B/Apply/Discard/Undo, finishing/loudness/calibration,
 fully arranged native Godot timeline/game integration and final installed/release
 scope remain active. Details: apps/pocket-daw/docs/SELECTION_AUDITION_2026-10-15.md.
+
+PR98 review correction: source acceptance remains pending until the corrected
+head is reviewed. An evicted-asset metadata start could retry with bytes after
+Stop or a newer start; stale engine reply guards alone did not prevent native
+reactivation. Four actual bridge command-sequence regressions reproduced the
+old bug. Separate transport ownership now gates initial/retry invocation and
+replies; delayed Stop/Pause/Resume/Seek cannot dispatch over a newer start.
+Eight new regressions and all94 bridge/engine/audition tests pass. Native Rust,
+capture code and audio payloads unchanged; no repeated native/device claim.
+Raw audition-bridge-retry-before/after logs retained. Godot timeline WIP is
+preserved in a separate worktree; this correction contains only bridge/tests/docs.

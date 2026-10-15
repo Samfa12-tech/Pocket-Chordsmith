@@ -44,3 +44,24 @@ require final device acceptance. No installer was built or published here.
 The existing native Stop clears decoded residency; no warm allocation or device
 latency claim follows. Same-position A/B, Apply/Discard/Undo and finishing/loudness
 comparison are subsequent work, not features completed by this slice.
+
+## Review correction: native cached-asset retry ownership
+
+Review identified a production bridge path missed by the single-promise engine
+fixtures: a metadata-only native start could report an evicted asset after Stop,
+then retry with bytes and restart actual native playback despite the engine
+discarding the stale reply. A newer start could be overwritten the same way.
+
+The bridge now owns a transport request revision, separate from cache residency.
+It checks ownership after API setup, before the initial invocation and retry,
+and after each reply. Superseded starts cannot retry or promote residency. Stop,
+Pause, Resume and Seek invalidate pending starts and skip their own invocation
+when delayed API setup has already been superseded by a newer request.
+
+Four new retry/setup cases fail against the old bridge; eight command-order
+regressions cover Stop/newer-start and delayed transport dispatch. All94 bridge,
+engine and audition tests pass. Before/after logs are
+`audition-bridge-retry-{before,after}.log`. These are native-command control tests,
+not new device/listening evidence. Native Rust, capture code and audio payloads
+are unchanged by the correction; earlier native frame/export evidence retains
+its stated scope. Exact corrected-head hosted checks and source review follow.
