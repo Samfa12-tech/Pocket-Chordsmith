@@ -11362,8 +11362,10 @@ mod tests {
                 "a future note at {onset} must not extend or enter the requested render"
             );
             assert!(rendered.bytes[44..]
-                .chunks_exact(4)
-                .all(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()) == 0.0));
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|bytes| f32::from_le_bytes(*bytes) == 0.0));
         }
         let mut reference = campfire_test_playback(0.9);
         let expected =
@@ -11405,8 +11407,10 @@ mod tests {
             );
             assert!(
                 rendered.bytes[44..]
-                    .chunks_exact(4)
-                    .all(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()) == 0.0),
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .all(|bytes| f32::from_le_bytes(*bytes) == 0.0),
                 "{silent} must render numerical silence, including either sign of zero"
             );
         }

@@ -537,3 +537,15 @@ Published: nothing. Installed device, decoded persisted-cache, full arranged
 DAW/Godot, browser-master, plugin/recording/automation and human listening gates
 remain open. Input/capture plumbing is unchanged; microphone interaction is
 scoped omitted, never recorded as passed.
+
+CI follow-up at 4c5b94b: run 38748408943 passed native tests but failed
+warnings-denied Clippy on two test-only constant-size chunks_exact calls. The
+initial local Clippy scope omitted test targets. Both assertions now use typed
+as_chunks arrays, without suppressions or runtime changes. The exact CI command
+cargo clippy --manifest-path apps/pocket-daw/src-tauri/Cargo.toml --all-targets
+-- -D warnings now passes locally, as does the exact default cargo test command
+(199 library tests, two ignored; one additional harness test passes, one ignored).
+Logs: native-tail-ci-clippy-all-targets.log and native-tail-ci-cargo-test.log in
+the primary checkout's ignored validation directory. Renderer identity is
+unchanged because this follow-up changes tests only. Fresh exact-head hosted
+CI and parent review remain pending.
