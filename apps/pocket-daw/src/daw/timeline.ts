@@ -555,3 +555,30 @@ function timelineSegmentsBetweenBars(project: PocketDawProject, startBar: number
 function quarterNoteBeatsPerBar(meter: TimelineMeter): number {
   return Math.max(0.000001, meter.numerator * (4 / Math.max(1, meter.denominator)));
 }
+
+/** Shared native PPQ/time mapping for playback and prepared game exports. */
+export function nativeTransportMap(project: PocketDawProject) {
+  const endBar = Math.max(2, project.timeline.bars + 2);
+  const step = Math.max(0.25, (endBar - 1) / 16_000);
+  const bars = new Set<number>([1, endBar]);
+  for (let bar = 1; bar < endBar; bar += step) bars.add(Math.min(endBar, Math.round(bar * 1_000_000) / 1_000_000));
+  const tempoLane = getProjectAutomationLane(project, "tempo");
+  tempoLane?.points.forEach((point) => Number.isFinite(point.bar) && bars.add(Math.max(1, point.bar)));
+  project.project.meterMap?.forEach((point) => Number.isFinite(point.bar) && bars.add(Math.max(1, point.bar)));
+  const sortedBars = [...bars].sort((a, b) => a - b);
+  const metricBars = [...new Set(sortedBars.flatMap((bar) => [bar, Math.max(1, Math.floor(bar + 0.000001))]))].sort((a, b) => a - b);
+  const metrics = new Map(timelineMetricsAtSortedBars(project, metricBars).map((metric) => [metric.bar, metric]));
+  return sortedBars.map((bar) => {
+    const metric = metrics.get(bar)!;
+    const barStart = metrics.get(Math.max(1, Math.floor(bar + 0.000001)))!;
+    return {
+      timeSeconds: metric.timeSeconds,
+      projectPpq: metric.projectPpq,
+      barPositionPpq: barStart.projectPpq,
+      tempo: metric.tempo,
+      numerator: metric.meter.numerator,
+      denominator: metric.meter.denominator,
+      curve: metric.curve
+    };
+  }).filter((point, index, points) => index === 0 || point.timeSeconds > points[index - 1]!.timeSeconds + 0.0000001);
+}

@@ -10,6 +10,7 @@ const SoundKitGenerator := preload("res://addons/pocket_chordsmith/editor/pcs_so
 const Validator := preload("res://addons/pocket_chordsmith/import/pcs_validator.gd")
 const GamePackManifest := preload("res://addons/pocket_chordsmith/import/pcs_game_pack_manifest.gd")
 const SharedSoundConstants := preload("res://addons/pocket_chordsmith/import/pcs_shared_sound_constants.gd")
+const NativeArrangementChart := preload("res://addons/pocket_chordsmith/import/pcs_native_arrangement_chart.gd")
 
 const DEFAULT_DAW_PACK_IMPORT_ROOT := "res://music/pocket_chordsmith_packs"
 const MAX_SOURCE_TEXT_BYTES := 4 * 1024 * 1024
@@ -223,7 +224,14 @@ func import_daw_game_pack(pack_path: String, destination_root := DEFAULT_DAW_PAC
 	if profile_stem.is_empty():
 		profile_stem = source_path.get_file().get_basename()
 	var profile_path := _resource_path_join(pack_root, "%s_playback_profile.tres" % profile_stem)
-	var profile_result: Dictionary = create_playback_profile_from_game_pack_manifest(manifest_path, profile_path, pack_root, options)
+	var native_arrangement := manifest.has("nativeTimeline")
+	var profile_options: Dictionary = options.duplicate()
+	if native_arrangement:
+		profile_options["playback_scope"] = "arrangement"
+		# Exact native full mix is the safe default; layers remain explicit choices.
+		if not profile_options.has("playback_mix"):
+			profile_options["playback_mix"] = "full-mix"
+	var profile_result: Dictionary = create_playback_profile_from_game_pack_manifest(manifest_path, profile_path, pack_root, profile_options)
 	result["warnings"].append_array(profile_result.get("warnings", []))
 	result["errors"].append_array(profile_result.get("errors", []))
 	if not bool(profile_result.get("ok", false)):
@@ -242,9 +250,11 @@ func import_daw_game_pack(pack_path: String, destination_root := DEFAULT_DAW_PAC
 
 	var charts_dir := _resource_path_join(pack_root, "charts")
 	_ensure_resource_dir(charts_dir)
-	var compile_result := compile_file(source_project_path, charts_dir, {
-		"save_beside_source": false,
-	})
+	var compile_result: Dictionary
+	if native_arrangement:
+		compile_result = _compile_native_arrangement(manifest, pack_root, source_project_path, charts_dir.path_join(profile_stem + "_pcs_chart.tres"))
+	else:
+		compile_result = compile_file(source_project_path, charts_dir, {"save_beside_source": false})
 	result["compiled"].append_array(compile_result.get("compiled", []))
 	result["warnings"].append_array(compile_result.get("warnings", []))
 	result["errors"].append_array(compile_result.get("errors", []))
@@ -262,6 +272,22 @@ func import_daw_game_pack(pack_path: String, destination_root := DEFAULT_DAW_PAC
 	result["playback_profile"] = profile_result.get("profile", null)
 	result["profile"] = profile_result.get("profile", null)
 	result["entries"] = entries
+	return result
+
+
+func _compile_native_arrangement(manifest: Dictionary, pack_root: String, source_path: String, save_path: String) -> Dictionary:
+	var compiled := NativeArrangementChart.compile_manifest(manifest, pack_root, source_path)
+	var result := _empty_result()
+	result["errors"].append_array(compiled.get("errors", []))
+	if not bool(compiled.get("ok", false)):
+		return result
+	var chart = compiled.chart
+	var error := ResourceSaver.save(chart, _resource_save_path(save_path))
+	if error != OK:
+		result["errors"].append("Could not save native arrangement chart: %s" % error_string(error))
+		return result
+	result["compiled"].append({"source": source_path, "path": save_path, "id": "daw_arrangement", "events": chart.compiled_events.size(), "warnings": []})
+	result["ok"] = true
 	return result
 
 

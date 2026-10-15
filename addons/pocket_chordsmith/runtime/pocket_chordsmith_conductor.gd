@@ -70,6 +70,7 @@ var _event_cursor := 0
 var _audio_event_cursor := 0
 var _last_beat_index := -1
 var _last_bar_index := -1
+var _native_last_timing_tick := -1
 var _last_section_id := ""
 var _queued_section := ""
 var _active_intensity := ""
@@ -260,6 +261,7 @@ func stop() -> void:
 	_sample_preview_last_kick_tick = -2147483648
 	_last_beat_index = -1
 	_last_bar_index = -1
+	_native_last_timing_tick = -1
 	_last_section_id = ""
 	current_section = ""
 	current_bar = 1
@@ -299,6 +301,7 @@ func seek_tick(tick: int, sync_stems := true) -> void:
 	reset_native_preview_prewarm_cursor(current_tick)
 	_sample_preview_last_kick_tick = -2147483648
 	_last_beat_index = int(floor(float(current_tick) / float(chart.ticks_per_quarter))) - 1
+	_native_last_timing_tick = current_tick - 1
 	_last_bar_index = int(floor(float(current_tick) / float(max(1, chart.time_signature * chart.ticks_per_quarter)))) - 1
 	_update_position_fields()
 	_last_section_id = current_section
@@ -932,9 +935,9 @@ func _process(delta: float) -> void:
 	var previous_tick := current_tick
 	if _use_wall_clock_timing():
 		var elapsed_seconds := float(Time.get_ticks_usec() - _clock_anchor_usec) / 1000000.0
-		_tick_float = float(_clock_anchor_tick) + elapsed_seconds * _ticks_per_second()
+		_tick_float = chart.seconds_to_tick(chart.tick_to_seconds(float(_clock_anchor_tick)) + elapsed_seconds) if _has_native_timeline() else float(_clock_anchor_tick) + elapsed_seconds * _ticks_per_second()
 	else:
-		_tick_float += delta * _ticks_per_second()
+		_tick_float = chart.seconds_to_tick(chart.tick_to_seconds(_tick_float) + delta) if _has_native_timeline() else _tick_float + delta * _ticks_per_second()
 	current_tick = int(floor(_tick_float))
 	_process_previous_tick = previous_tick
 
@@ -942,6 +945,8 @@ func _process(delta: float) -> void:
 	if not transitioned:
 		_process_sequence_progression(previous_tick, current_tick)
 	_handle_end_of_chart()
+	if _has_native_timeline() and not _playing:
+		return
 	_update_stinger_finishes()
 	_update_position_fields()
 	_emit_timing_signals()
@@ -966,6 +971,18 @@ func _handle_end_of_chart() -> void:
 	var length_ticks: int = chart.get_length_ticks()
 	if length_ticks <= 0 or current_tick < length_ticks:
 		return
+	if _has_native_timeline():
+		# Gameplay frames can advance before queued PCM reaches the device. Let
+		# the selected Godot players consume their complete rendered endings.
+		if _native_arrangement_audio_playing():
+			return
+		if loop_enabled:
+			loop_completed.emit("arrangement")
+			seek_tick(0)
+			_emit_current_section_started()
+		else:
+			stop()
+		return
 	if loop_enabled:
 		loop_completed.emit("arrangement")
 		if playback_profile != null and playback_profile.loop_prepared_sections:
@@ -986,8 +1003,25 @@ func _handle_end_of_chart() -> void:
 		stop()
 
 
+func _native_arrangement_audio_playing() -> bool:
+	if _stem_player != null and _stem_player.playing:
+		return true
+	for value in _stem_layer_players.values():
+		var player := value as AudioStreamPlayer
+		if is_instance_valid(player) and player.playing:
+			return true
+	return false
+
+
 func _update_position_fields() -> void:
 	if chart == null:
+		return
+	if _has_native_timeline():
+		var position: Dictionary = chart.native_position_at_tick(float(current_tick))
+		current_bar = int(position.get("bar", 1))
+		current_beat = int(position.get("beat", 1))
+		current_section = "daw_arrangement"
+		current_arrangement_index = 0
 		return
 	var beat_ticks := max(1, chart.ticks_per_quarter)
 	var bar_ticks := max(1, chart.time_signature * chart.ticks_per_quarter)
@@ -1001,6 +1035,9 @@ func _update_position_fields() -> void:
 
 
 func _emit_timing_signals() -> void:
+	if _has_native_timeline():
+		_emit_native_timing_signals()
+		return
 	var beat_ticks := max(1, chart.ticks_per_quarter)
 	var bar_ticks := max(1, chart.time_signature * chart.ticks_per_quarter)
 	var beat_index := int(floor(float(current_tick) / float(beat_ticks)))
@@ -1015,6 +1052,31 @@ func _emit_timing_signals() -> void:
 		for index in range(_last_bar_index + 1, bar_index + 1):
 			bar_started.emit(index + 1)
 		_last_bar_index = bar_index
+
+
+func _has_native_timeline() -> bool:
+	return chart != null and not chart.native_timeline.is_empty()
+
+
+func _emit_native_timing_signals() -> void:
+	var bars: Array = chart.native_timeline.get("bars", [])
+	var first: Dictionary = chart.native_bar_at_tick(float(maxi(0, _native_last_timing_tick)))
+	var start_index := maxi(0, int(first.get("bar", 1)) - 1)
+	for index in range(start_index, bars.size()):
+		var row: Dictionary = bars[index]
+		if float(row.startTick) > current_tick:
+			break
+		var beat_ticks := float(chart.ticks_per_quarter) * 4.0 / float(row.denominator)
+		for number in range(int(row.numerator)):
+			var tick := roundi(float(row.startTick) + number * beat_ticks)
+			if tick >= float(row.endTick) or tick > current_tick:
+				break
+			if tick <= _native_last_timing_tick:
+				continue
+			if number == 0:
+				bar_started.emit(int(row.bar))
+			beat.emit(int(row.bar), number + 1)
+	_native_last_timing_tick = current_tick
 
 
 func _emit_section_changes() -> void:
@@ -1214,6 +1276,8 @@ func _state_definition(state_name: String) -> Dictionary:
 func _process_sequence_progression(previous_tick: int, next_tick: int) -> void:
 	if current_sequence.is_empty() or chart == null:
 		return
+	if _has_native_timeline():
+		return # The one global occurrence ends/loops only after its rendered tail.
 	var section_info: Dictionary = chart.find_section_at_tick(previous_tick)
 	if section_info.is_empty():
 		return
@@ -1233,9 +1297,13 @@ func _boundary_reached(previous_tick: int, next_tick: int, boundary: int) -> boo
 		TransitionBoundary.IMMEDIATE:
 			return true
 		TransitionBoundary.NEXT_BEAT:
+			if _has_native_timeline():
+				return chart.native_position_at_tick(float(previous_tick)) != chart.native_position_at_tick(float(next_tick))
 			var beat_ticks := max(1, chart.ticks_per_quarter)
 			return int(floor(float(previous_tick) / float(beat_ticks))) != int(floor(float(next_tick) / float(beat_ticks)))
 		TransitionBoundary.NEXT_BAR:
+			if _has_native_timeline():
+				return int(chart.native_position_at_tick(float(previous_tick)).get("bar", 1)) != int(chart.native_position_at_tick(float(next_tick)).get("bar", 1))
 			var bar_ticks := max(1, chart.time_signature * chart.ticks_per_quarter)
 			return int(floor(float(previous_tick) / float(bar_ticks))) != int(floor(float(next_tick) / float(bar_ticks)))
 		TransitionBoundary.NEXT_SECTION:
@@ -2236,7 +2304,7 @@ func _start_native_stems_from_current_tick() -> void:
 		_set_native_stems_paused(true)
 		return
 	_native_stem_seek_pending = false
-	var offset_seconds: float = float(max(0, current_tick - _prepared_stem_origin_tick)) * float(chart.get_seconds_per_tick())
+	var offset_seconds: float = chart.tick_to_seconds(float(current_tick)) - chart.tick_to_seconds(float(_prepared_stem_origin_tick)) if _has_native_timeline() else float(max(0, current_tick - _prepared_stem_origin_tick)) * float(chart.get_seconds_per_tick())
 	if _has_ready_stem_players():
 		for player_value in _stem_layer_players.values():
 			var player := player_value as AudioStreamPlayer

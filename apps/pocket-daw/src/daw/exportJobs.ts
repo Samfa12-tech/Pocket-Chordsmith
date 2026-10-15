@@ -5,6 +5,7 @@ import { createAudioMediaAnalysisSummary, createMediaPortabilitySummary, createP
 import { validateProjectInvariants } from "./projectInvariants";
 import { createRoutingExportSummary, type RoutingExportSummary } from "./routing";
 import { timelineSecondsAtBar } from "./timeline";
+import { createNativeGameTimeline, type NativeGameTimeline } from "./nativeGameTimeline";
 import { createZipBlob, type ZipArchiveEntry } from "./zipArchive";
 import { DRUM_LANE_DEFS, generatedDrumBranchLane, ensureDrumLaneMixerInPlace } from "./drumLanes";
 import {
@@ -114,6 +115,7 @@ export interface GamePackDeliveryTarget {
 }
 
 export interface GameExportManifest {
+  nativeTimeline: NativeGameTimeline;
   kind: "godot-adaptive-pack" | "web-game-pack";
   projectTitle: string;
   bpm: number;
@@ -667,6 +669,7 @@ export function createGameExportManifest(project: PocketDawProject, kind: GameEx
   ];
   return {
     kind,
+    nativeTimeline: createNativeGameTimeline(project),
     projectTitle: project.project.title,
     bpm: project.project.bpm,
     key: project.project.key,

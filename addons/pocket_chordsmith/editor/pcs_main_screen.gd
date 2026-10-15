@@ -490,6 +490,9 @@ func _render_preview_audio() -> void:
 	if chart == null:
 		_set_status("Import or load a chart before rendering preview audio.")
 		return
+	if not chart.native_timeline.is_empty():
+		_set_status("This DAW arrangement already contains rendered audio. Edit and render it in Pocket DAW, then import the updated pack.")
+		return
 	_stop_preview()
 	conductor.chart = chart
 	if not _assign_default_preview_profile(true):
@@ -828,7 +831,8 @@ func _update_actions() -> void:
 	if _save_button != null:
 		_save_button.disabled = not has_chart
 	if _render_preview_audio_button != null:
-		_render_preview_audio_button.disabled = not has_chart
+		_render_preview_audio_button.disabled = not has_chart or not chart.native_timeline.is_empty()
+		_render_preview_audio_button.tooltip_text = "DAW arrangements use their exported audio. Edit and render changes in Pocket DAW." if has_chart and not chart.native_timeline.is_empty() else "Render preview audio from compiled Chordsmith notes."
 	if _play_button != null:
 		_play_button.disabled = not has_chart
 	if _stop_button != null:
@@ -840,6 +844,9 @@ func _update_summary() -> void:
 		return
 	if chart == null:
 		_summary_label.text = "No chart loaded."
+		return
+	if not chart.native_timeline.is_empty():
+		_summary_label.text = "Prepared DAW arrangement: %s bars, %.3f seconds including tails. Original DAW source retained; tempo/meter map and markers follow the arrangement." % [chart.native_timeline.bars.size(), chart.native_audio_duration_seconds]
 		return
 	_summary_label.text = "Chart: %s bpm, %s/4, %s %s, resolution %s, length %s ticks" % [
 		chart.bpm,

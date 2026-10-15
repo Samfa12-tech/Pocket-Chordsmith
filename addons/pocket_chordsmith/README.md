@@ -56,8 +56,8 @@ Pocket DAW pack workflow:
 
 1. Export `Godot Adaptive Pack` from Pocket DAW.
 2. In the Godot `Chordsmith` tab, click `Import DAW Pack` and choose the exported ZIP.
-3. The addon extracts the pack under `res://music/pocket_chordsmith_packs/`, compiles the embedded Pocket Chordsmith source into a chart resource, and creates a `PCSPlaybackProfile` pointing at the rendered full mix, stems, and section loops.
-4. Adaptive section stems are stored in `PCSPlaybackProfile.section_stem_sets` by canonical section (`A`-`H`) and normalized stem name (`drums`, `bass`, `chords`, `guitar`, `melody`, etc.).
+3. The addon extracts the pack under `res://music/pocket_chordsmith_packs/` and creates a compiled chart and `PCSPlaybackProfile`. New native DAW packs use their exported arrangement clock and default to the full native mix. This preserves later clip edits, gaps, recorded-media placement, FX, automation and rendered tails. The original `.pocketdaw` source stays in the pack for editing.
+4. Chordsmith/Core and legacy packs keep their existing source/adaptive section route. New native arrangement charts expose bar/beat timing and authored markers over one global `daw_arrangement` occurrence. They use prepared audio rather than rebuilding native DSP or substituting embedded PCS sections. Note-level game-event reconstruction and adaptive section remixes of a native arrangement are not implied.
 5. Press `Play Preview` to audition the rendered pack audio, then use the saved chart/profile resources on `PocketChordsmithConductor`.
 
 This DAW pack path is intentionally lighter for Godot than a text-only Chordsmith import: the expensive rendering work has already happened, and the addon mostly extracts files, compiles the chart, creates references, and routes audio through Godot buses.
@@ -165,11 +165,20 @@ For a full native arrangement, the low-level manifest/profile API accepts
 their zero origin even when section or state overrides exist. Combine it with
 `playback_mix: "full-mix"` for the native reference, or `"layers"` for independent
 stems. The default `"adaptive"` scope retains section/state selection; section-only
-packs cannot use arrangement scope. This option selects audio assets only: it does
-not reconstruct an edited DAW timeline from the embedded Chordsmith source. Use a
-chart with the matching arrangement and duration. The high-level DAW pack import's
-native timeline compilation is still pending; importing a pack is not audio parity
-acceptance.
+packs cannot use arrangement scope. For new native DAW packs with `nativeTimeline`,
+the high-level importer selects arrangement scope and compiles the matching native
+clock instead of embedded PCS sections. It reads the full-mix WAV's actual duration
+so release tails remain playable. `playback_mix: "layers"` is an explicit alternative;
+independently rendered stems can differ from the full mix through nonlinear buses.
+Legacy packs without native timing metadata retain their old source chart path;
+re-export an edited DAW project to obtain the native arrangement chart. Import alone
+is not runtime audio parity acceptance.
+
+Native timing supports up to 16384 bars and bar-aligned meter changes. Unsupported
+size/fractional meter changes fail explicitly; ordinary native WAV export remains
+available. The mapped clock uses the same bounded PPQ/time points as native playback,
+including tempo automation. The editor identifies prepared arrangements and keeps
+procedural preview rendering disabled so it cannot replace the exported native mix.
 
 Adaptive music states:
 

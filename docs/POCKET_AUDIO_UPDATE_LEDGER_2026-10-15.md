@@ -1115,3 +1115,41 @@ Eight new regressions and all94 bridge/engine/audition tests pass. Native Rust,
 capture code and audio payloads unchanged; no repeated native/device claim.
 Raw audition-bridge-retry-before/after logs retained. Godot timeline WIP is
 preserved in a separate worktree; this correction contains only bridge/tests/docs.
+
+## Native DAW Godot high-level arrangement clock
+
+Implemented: nativeTimeline v1 exported from the same bounded native playback
+PPQ/time helper, with bar/meter/clip placement/markers and original portable
+source retained. High-level Godot import now compiles the native clock instead
+of the embedded PCS source; one global daw_arrangement defaults to the exact
+native full mix and uses actual WAV duration/tails. Native-only mapped clock,
+seek, beat/bar/marker signals and player-consumed ending guard preserve queued
+audio. Editor distinguishes prepared arrangements and disables procedural render.
+Core/Chordsmith/legacy source routes stay unchanged. Explicit size/meter limits
+and no per-note reconstruction/adaptive native section remix claim documented.
+
+Runtime before probe reproduced4s PCS chart vs8.8568125s actual native arrangement.
+Final source1208/typesproductionbuild pass after integrating corrected98
+6f7446e062acc20f0f74d99f74ee2a549fd459d8; targeted73 also checks actual tempo
+automation and meter denominator. Final Godot4.6.3 completegate pass with21 new
+native assertions, existing30mix/17ending/8residency/6clock/64origin and138 addon
+package entries. Repo/security/governance/manifest107/whitespace pass.
+
+Real native7WAV worker->productionpack->highlevel chart with processing active:
+final RENDERED WASAPI48k fullmix/layers×separate/synchronized4/4 PCM comparisons
+pass complete425127frames8.8568125s, naturalend and silence-mutant rejection.
+Worstmax1.6540288925170898e-6/RMS2.97520290942293e-7. Selected layer references are
+independent native stems. Local run-1QILLX retains raw native inputs/WAVs/ZIP,
+final capture log, wasapi-capture/highlevel-parity-report.json and inspected PNG.
+Detailed failures, reruns and evidence limits in
+apps/pocket-daw/docs/NATIVE_GODOT_TIMELINE_2026-10-15.md. Initial missing browser
+path1186pass14skip fixed with14-suite rerun; final integrated1208 gate passed.
+First capture script parse/diagnostic frame-limit runs were not passed.
+
+Published:none; updated addon source required, public1.2.0 compatibility/release
+version still to reconcile. No physical mic/recording/listening, installed DAW/
+Tauri IPC, full-game SFX/load/working-set or seamless native full-arrangement
+loop claim. Generated-media recording path +native FX/automation fixture only.
+Next: remaining reversible audition/finishing/QC/calibration/decoded outputs,
+broader two-source game acceptance and exact installed/reviewed release targets.
+No Sam input blocker; all original whole-family scope remains active.

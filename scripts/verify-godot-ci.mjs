@@ -35,6 +35,7 @@ try {
   runScript("res://addons/pocket_chordsmith/tests/pcs_audio_cache_residency_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_prepared_loop_clock_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tests/pcs_stem_origin_test.gd", ["--audio-driver", "Dummy"]);
+  runScript("res://addons/pocket_chordsmith/tests/pcs_native_arrangement_chart_test.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tools/validate_editor_accessibility.gd", ["--audio-driver", "Dummy"]);
   runScript("res://addons/pocket_chordsmith/tools/package_pocket_chordsmith_addon.gd", [], [
     "--output",
@@ -73,7 +74,7 @@ function runScript(script, godotArgs = [], scriptArgs = []) {
 }
 
 function run(args) {
-  const result = spawnSync(godotBin, args, { cwd: workspace, encoding: "utf8" });
+  const result = spawnSync(godotBin, args, { cwd: workspace, encoding: "utf8", timeout: 180_000 });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.error) throw result.error;

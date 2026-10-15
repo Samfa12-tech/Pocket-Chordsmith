@@ -7,9 +7,54 @@ import { branchGeneratedDrumsToTracks, cycleDrumBranchStep, DRUM_LANE_DEFS, getD
 import { addMediaPoolItem, createMediaPoolItem } from "../src/daw/mediaPool";
 import { addReturnTrack, setTrackSendLevel, setTrackSendMode } from "../src/daw/routing";
 import { toggleTrackMute, toggleTrackSolo } from "../src/daw/mixer";
+import { createNativeGameTimeline } from "../src/daw/nativeGameTimeline";
+import { createAutomationLane } from "../src/daw/automation";
+import { nativeTransportMap, timelineSecondsAtBar } from "../src/daw/timeline";
+import { buildNativeAudioStartPayload } from "../src/native/audioPlayback";
 import { addTrackToProject, setTrackFolder, trackIsAudible } from "../src/daw/tracks";
 
 describe("export job helpers", () => {
+  it("exports edited native placement, gaps, tempo and meter using the playback clock map", () => {
+    let project = createDemoProject();
+    project.timeline.bars = 6;
+    project.project.meterMap = [{id: "three", bar: 3, numerator: 3, denominator: 8}];
+    project = createAutomationLane(project, "project.tempo", {min: 30, max: 300, points: [{bar: 1, value: 120, curve: "linear"}, {bar: 5, value: 180, curve: "hold"}]}).project;
+    const clip = project.timeline.clips[0];
+    clip.startBar = 4.5;
+    clip.barLength = 0.5;
+    project.timeline.markers = [{id: "native-cue", bar: 4.5, name: "Edited entry"}];
+    const before = JSON.stringify(project);
+    const timeline = createGameExportManifest(project, "godot-adaptive-pack").nativeTimeline;
+    expect(timeline.transportMap).toEqual(buildNativeAudioStartPayload(project, [], 0).transportMap);
+    expect(timeline.transportMap).toEqual(nativeTransportMap(project));
+    expect(timeline.transportMap[0].tempo).toBe(120);
+    expect(timeline.transportMap.find(point => point.tempo === 180)).toBeTruthy();
+    expect(timeline.bars[2]).toMatchObject({bar: 3, numerator: 3, denominator: 8, startTick: 3840, endTick: 4560});
+    const placed = timeline.clips.find(item => item.id === clip.id)!;
+    expect(placed).toMatchObject({startBar: 4.5, endBar: 5});
+    expect(placed.startSeconds).toBeCloseTo(timelineSecondsAtBar(project, 4.5), 12);
+    expect(placed.endSeconds).toBeCloseTo(timelineSecondsAtBar(project, 5), 12);
+    expect(timeline.markers[0].seconds).toBeCloseTo(timelineSecondsAtBar(project, 4.5), 12);
+    expect(timeline.musicalEndSeconds).toBeCloseTo(timelineSecondsAtBar(project, 7), 12);
+    expect(JSON.stringify(project)).toBe(before);
+  });
+
+  it("exports audio-only native projects without requiring an embedded Chordsmith project", () => {
+    const project = createDemoProject();
+    project.sourceRefs = [];
+    project.timeline.clips = [];
+    project.timeline.bars = 2;
+    expect(createNativeGameTimeline(project)).toMatchObject({version: 1, audioMode: "prepared-arrangement", clips: [], musicalEndTick: 3840});
+  });
+
+  it("reports native timeline size and fractional meter limits before rendering", () => {
+    const project = createDemoProject();
+    project.timeline.bars = 16385;
+    expect(() => createNativeGameTimeline(project)).toThrow("16384 bars");
+    project.timeline.bars = 4;
+    project.project.meterMap = [{id: "fraction", bar: 2.5, numerator: 3, denominator: 4}];
+    expect(() => createNativeGameTimeline(project)).toThrow("bar boundaries");
+  });
   it("builds stem plans and track-filtered stem projects", () => {
     const project = createDemoProject();
     const stems = createStemExportPlan(project);
