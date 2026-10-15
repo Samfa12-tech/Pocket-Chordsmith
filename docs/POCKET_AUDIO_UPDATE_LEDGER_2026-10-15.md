@@ -781,3 +781,13 @@ canonical HTML, size1066805 active/894680 modular. Logs chordsmith-campfire-role
 {before,after,full,build}.log in primary ignored validation. Hosted exact-head
 review/CI pending. These establish scheduling/export routing, not full-bus live
 PCM or physical listening. Shared fractional timing correction remains in PR92.
+
+PR92 role follow-through: includes PR91 correction83ddfd47 and applies identical
+Core stem/role/ID precedence to DJ activation/detection. A custom-ID uppercase
+role:guitar source first reproduced guitarActive=false; corrected Play and saved
+session restore pass desktop/touch/Firefox, with explicit stem-over-role negative
+check. DJ desktop27 pass, new role touch/Firefox2 pass, merged Chordsmith custom
+role Play/MIDI/WAV/Undo2 pass;lint/type/format/size/whitespace pass. Size225098.
+Earlier prepared/source/cancellation/mute/restart tests remain passing in full
+27-case desktop run. Raw role failures retained in primary ignored validation.
+No live full-bus PCM/listening claim follows from these scheduler/export tests.

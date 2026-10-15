@@ -5,7 +5,7 @@ let pocketDjPlaybackRequest = 0;
 
 function pocketDjProjectHasCampfire(project){
   return project?.guitarTone === "campfire_acoustic" || Object.values(project?.sections || {}).some(section =>
-    Object.entries(section?.tracks || {}).some(([id,track]) => (id.startsWith("guitar") || track?.stem === "guitar") &&
+    Object.entries(section?.tracks || {}).some(([id,track]) => String(track?.stem || track?.role || id || "").toLowerCase() === "guitar" &&
       track?.events?.some(event => (event.sound || event.instrument) === "campfire_acoustic")));
 }
 
