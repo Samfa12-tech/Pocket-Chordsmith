@@ -76,6 +76,7 @@ export function decodePcmWavBytes(bytes) {
     const payloadOffset = offset + 8;
     if (payloadOffset + size > bytes.byteLength) throw new Error("Invalid WAV chunk size.");
     if (id === "fmt ") {
+      if (size < 16) throw new Error("Invalid WAV fmt chunk size.");
       fmt = {
         audioFormat: view.getUint16(payloadOffset, true),
         channels: view.getUint16(payloadOffset + 2, true),
@@ -90,7 +91,9 @@ export function decodePcmWavBytes(bytes) {
     offset = payloadOffset + size + (size % 2);
   }
   if (!fmt || dataOffset < 0) throw new Error("WAV file is missing fmt or data chunks.");
-  if (fmt.audioFormat !== 1 || ![16, 24].includes(fmt.bitsPerSample)) {
+  const integerPcm = fmt.audioFormat === 1 && [16, 24].includes(fmt.bitsPerSample);
+  const floatPcm = fmt.audioFormat === 3 && fmt.bitsPerSample === 32;
+  if (!integerPcm && !floatPcm) {
     throw new Error(`Unsupported WAV format: format=${fmt.audioFormat} bits=${fmt.bitsPerSample}.`);
   }
   const bytesPerSample = fmt.bitsPerSample / 8;
@@ -99,7 +102,7 @@ export function decodePcmWavBytes(bytes) {
   for (let frame = 0; frame < frameCount; frame += 1) {
     for (let channel = 0; channel < fmt.channels; channel += 1) {
       const sampleOffset = dataOffset + (frame * fmt.channels + channel) * bytesPerSample;
-      channels[channel][frame] = readPcmSample(view, sampleOffset, fmt.bitsPerSample);
+      channels[channel][frame] = floatPcm ? view.getFloat32(sampleOffset, true) : readPcmSample(view, sampleOffset, fmt.bitsPerSample);
     }
   }
   return {

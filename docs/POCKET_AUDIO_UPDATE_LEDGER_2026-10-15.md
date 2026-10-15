@@ -1267,3 +1267,40 @@ PR101 exact60b7c9f5a844887fb0f7cae1490dba6c882cf44f hostedCI38813156609 and
 CodeQL38813156556 terminalgreen; scoped skipped jobs remain skipped. Parent source
 review not inferred. Website editorial commit b2469ac41f721074868b89d1fbab9ccfea56e34f
 must be preserved from fresh website main for any later product-bundle publication.
+
+## Actual native Finish monitor and written WAV verification (candidate after PR102)
+
+Reproduced two format gaps: actual native float32 output was rejected by Core's
+shared decoder (format3/bits32); explicit stereo PCM16 conversion incorrectly
+returned a float32 blob through a presumed-16-bit fast path. Core now reads
+IEEEfloat32 without losing precision/stereo/overrange/nonfinite diagnostics,
+retaining PCM16/24 behavior. DAW conversion honours explicit16 while retaining
+normalPCM16 passthrough with only44headerbytes inspected. Two prior IPC-contract
+fixtures used invalid4byteRIFF placeholders; replaced with valid48byteWAV headers
+rather than accepting corrupt transport. No musical renderer/source/schema change.
+
+Actualnative Original/tidy/glue rendered from retained99 generated recorded-media/
+Campfire/FX/automation fixture, full8.8568125s48k/425127frames. Extended existing
+ignored test transport captures actual prepared-monitor DSP plus atomic side
+commands (producerclock only): maxPCMerror4.0978193283081055e-8/RMS1.3039068936530938e-9,
+continuous switchpositions/framecounts/generation and rapidreverse. Reanalyzed
+matchedpassages both-30.174001LUFS. Seven actualwrittenWAVs(stereo16/24/float32,
+mono16,16/24TPDF,normalized24) decode withcorrectformat/channels/frames andPCM
+quantization/dither bounds.7/7externalLUFS+7/7explicit4xfloat64TPpass FFmpeg9,
+worst0.026009LU/0.008178dB. Normalizedsamplepeak0.95 producesestimated+0.271217dBTP
+andrealheadroomwarning; provesfinaldeliveryanalysisneeded. This verifiesoutputQC,
+not yetexportUIpresentation. NonWAVformatsremainstaged.
+
+FullCorebuild212/212, DAW1228/1228/types/build, Rust213/3existingignored+Clippy,
+actualnative4rendercaptures, Chordsmith/DJunchangeddeterministicHTMLfreshness/size,
+repo/security/workflowpins/sound6/whitespacepass. CoreGoldensunchanged; no updater
+run. Earlier firstharnessassetmissingname/error andcounterexamples retained,
+notpasses. Currentraw actualsuccesslocal-artifacts/scratch/validation/native-finish/
+run-avkZJ0, sharednative-finish-*.log; seeNATIVE_FINISH_PCM_VALIDATION_2026-10-16.md.
+No installedTauriIPC/physicalrecording/deviceconsumed/humanvocal-liveacceptance;
+noinstaller/publication/deps/accounts/licence/securitychanges/CoreNPM.
+Remainingfinal-deliveryQCUI,explicitfloat32Godotruntimeacceptance,fullgameSFX/coldwarm/
+working-setandcrossfamilyinteraction,installed/scaling/device/listening,versions/
+advisories/review/publicationtargetsremainactive. Nohardenvironmentblocker.
+102exact26f91469912063928b1f4c0309b21671839911dbCI38816510250/CodeQL38816510257terminal
+green; scoped skippedjobsarenotpassed. Parentreviewnotinferred.

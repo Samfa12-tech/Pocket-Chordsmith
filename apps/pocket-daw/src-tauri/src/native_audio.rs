@@ -11792,15 +11792,60 @@ mod tests {
             serde_json::from_value(request["payload"].clone()).unwrap();
         let duration = request["durationSeconds"].as_f64().unwrap();
         assert!(duration.is_finite() && duration > 0.0 && duration <= 30.0);
-        let state = Mutex::new(NativeAudioRuntime::default());
-        let rendered = render_native_audio_wav_on_worker(
-            payload,
-            duration,
-            request["renderMode"].as_str().map(str::to_owned),
-            request["bitDepth"].as_u64().map(|depth| depth as u16),
-            &state,
-        )
-        .expect("Real native WAV export worker must render the arranged fixture");
+        let mut monitor_clock_evidence = Vec::new();
+        let rendered = if request["monitorCapture"].as_bool() == Some(true) {
+            // Offline integration of actual prepared-monitor DSP/commands.
+            // This is a producer-clock capture, not device/consumed PCM.
+            let rate = payload.sample_rate;
+            let mut runtime = NativeAudioRuntime {
+                generation: 17,
+                ..NativeAudioRuntime::default()
+            };
+            let playback = runtime.build_playback(payload, rate, 2, 17).unwrap();
+            let shared = Arc::new(Mutex::new(playback));
+            runtime.shared = Some(shared.clone());
+            let frames = (duration * rate as f64).round() as usize;
+            let schedule = request["switches"].as_array().unwrap();
+            let mut samples = Vec::with_capacity(frames * 2);
+            for frame in 0..frames {
+                for change in schedule
+                    .iter()
+                    .filter(|change| change["frame"].as_u64() == Some(frame as u64))
+                {
+                    let side: NativeMonitorSide =
+                        serde_json::from_value(change["side"].clone()).unwrap();
+                    switch_monitor_comparison(
+                        &runtime,
+                        side,
+                        17,
+                        change["sequence"].as_u64().unwrap(),
+                    )
+                    .unwrap();
+                    let playback = shared.lock().unwrap();
+                    monitor_clock_evidence.push(serde_json::json!({ "frame": frame, "positionSeconds": playback.position_seconds, "renderedFrameCount": playback.rendered_frame_count, "generation": playback.generation }));
+                }
+                let (left, right) = render_next_frame(&mut shared.lock().unwrap());
+                samples.extend_from_slice(&[left, right]);
+            }
+            let bytes = encode_float32_wav(rate, 2, &samples).unwrap();
+            NativeAudioRenderedWav {
+                sample_rate: rate,
+                channels: 2,
+                duration_seconds: frames as f64 / rate as f64,
+                size_bytes: bytes.len(),
+                bytes,
+            }
+        } else {
+            let state = Mutex::new(NativeAudioRuntime::default());
+            render_native_audio_wav_on_worker(
+                payload,
+                duration,
+                request["renderMode"].as_str().map(str::to_owned),
+                request["bitDepth"].as_u64().map(|depth| depth as u16),
+                &state,
+            )
+            .expect("Real native WAV export worker must render the arranged fixture")
+        };
         let directory = Path::new(&output);
         std::fs::create_dir_all(directory).unwrap();
         std::fs::write(directory.join("render.wav"), &rendered.bytes).unwrap();
@@ -11811,6 +11856,7 @@ mod tests {
                 "channels": rendered.channels,
                 "durationSeconds": rendered.duration_seconds,
                 "sizeBytes": rendered.size_bytes,
+                "monitorProducerClockEvidence": monitor_clock_evidence,
             }))
             .unwrap(),
         )

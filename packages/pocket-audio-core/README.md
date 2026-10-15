@@ -1,5 +1,9 @@
 # Pocket Audio Core
 
+`decodePcmWavBytes` accepts existing PCM16/24 and IEEE float32 WAVs, including
+native DAW float exports. Float values retain their precision and non-finite
+diagnostics for offline analysis; this does not change the PCM16/24 encoders.
+
 Pocket Audio Core is the shared, headless Web Audio runtime and sound-profile contract for the Pocket Chordsmith family. It provides the common parser, normaliser, expressive event renderer, scheduler, instrument recipes, stem mixer, FX layer, offline renderer, capability reporting, and adaptive game-music API used across Pocket Chordsmith, Pocket DJ, Pocket DAW, browser games, and Godot export workflows.
 
 Version 0.2 adds the canonical Standard, Lofi, Chiptune, Western, Heavy Metal, and Funk profile registry; PCS schema-17 expressive events; deterministic live/offline reference rendering; shared recipe generation; and capability/loss reports. Exact app-to-app mastered tone parity still requires the backend-specific listening gates in the sound-parity matrix.
