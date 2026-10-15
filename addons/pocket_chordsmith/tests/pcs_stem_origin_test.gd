@@ -38,6 +38,7 @@ func _run() -> void:
 	for synchronized in [false, true]:
 		await _check_route(synchronized, true)
 		await _check_route(synchronized, false)
+		await _check_route(synchronized, true, true)
 		await _check_empty_selection(synchronized)
 		await _check_automatic_sections(synchronized)
 		await _check_state_pause_seek(synchronized)
@@ -55,7 +56,7 @@ func _run() -> void:
 	print(JSON.stringify({"test": "prepared-stem-origin", "engine": Engine.get_version_info(), "audio_driver": AudioServer.get_driver_name(), "measurements": measurements, "errors": errors}))
 	quit(0 if errors.is_empty() else 1)
 
-func _check_route(synchronized: bool, local: bool) -> void:
+func _check_route(synchronized: bool, local: bool, native_loop := false) -> void:
 	var chart = Chart.new()
 	chart.bpm = 120
 	chart.time_signature = 4
@@ -65,6 +66,7 @@ func _check_route(synchronized: bool, local: bool) -> void:
 	var profile = Profile.new()
 	profile.use_audio_stream_synchronized = synchronized
 	profile.preserve_prepared_wav_endings = true
+	profile.loop_prepared_sections = native_loop
 	profile.sample_preview_enabled = false
 	profile.sample_preview_prewarm_on_ready = false
 	if local:
@@ -109,7 +111,7 @@ func _assert_position(music: Node, expected: float, synchronized: bool, local: b
 	var actual_hz := _captured_frequency(samples)
 	var tone_matches: bool = abs(actual_hz - expected_hz) < max(15.0, expected_hz * 0.05)
 	var ok: bool = is_instance_valid(player) and player.playing and actual >= expected - 0.03 and actual < expected + elapsed_seconds + 0.35 and peak > 0.001 and tone_matches
-	measurements.append({"synchronized": synchronized, "local": local, "scenario": scenario, "expected_seconds": expected, "actual_seconds": actual, "elapsed_seconds": elapsed_seconds, "expected_hz": expected_hz, "captured_hz": actual_hz, "playing": is_instance_valid(player) and player.playing, "captured_frames": samples.size(), "captured_peak": peak, "passed": ok})
+	measurements.append({"synchronized": synchronized, "local": local, "native_section_loop": music.playback_profile.loop_prepared_sections, "scenario": scenario, "expected_seconds": expected, "actual_seconds": actual, "elapsed_seconds": elapsed_seconds, "expected_hz": expected_hz, "captured_hz": actual_hz, "playing": is_instance_valid(player) and player.playing, "captured_frames": samples.size(), "captured_peak": peak, "passed": ok})
 	if not ok:
 		errors.append("%s sync=%s local=%s expected=%s actual=%s" % [scenario, synchronized, local, expected, actual])
 

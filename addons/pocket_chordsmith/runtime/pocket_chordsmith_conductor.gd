@@ -85,6 +85,7 @@ var _pending_stinger := {}
 var _stem_player: AudioStreamPlayer
 var _stem_layer_players := {}
 var _prepared_stem_origin_tick := 0
+var _prepared_stem_sources := {}
 var _native_stem_seek_pending := false
 var _stinger_player: AudioStreamPlayer
 var _stinger_playback: AudioStreamPlaybackPolyphonic
@@ -211,6 +212,7 @@ func set_playback_profile(profile: Resource, stop_active_samples := true) -> voi
 		_stop_polyphonic_streams()
 		_remove_sample_preview_pan_buses()
 	playback_profile = profile if profile != null else PlaybackProfile.new()
+	_prepared_stem_sources.clear()
 	_audio_stream_cache.clear()
 	_last_audio_prewarm_signature = ""
 	_clear_native_preview_caches()
@@ -966,7 +968,13 @@ func _handle_end_of_chart() -> void:
 		return
 	if loop_enabled:
 		loop_completed.emit("arrangement")
-		seek_tick(posmod(current_tick, length_ticks))
+		if playback_profile != null and playback_profile.loop_prepared_sections:
+			seek_tick(posmod(current_tick, length_ticks), false)
+			if not _continue_prepared_section_loop():
+				_prepare_stem_sync_for_current_state()
+				_start_native_stems_from_current_tick()
+		else:
+			seek_tick(posmod(current_tick, length_ticks))
 		_emit_current_section_started()
 	else:
 		stop()
@@ -1211,7 +1219,7 @@ func _process_sequence_progression(previous_tick: int, next_tick: int) -> void:
 				return
 			next_index = 0
 			loop_completed.emit(current_loop)
-		_seek_to_sequence_index(next_index)
+		_seek_to_sequence_index(next_index, true)
 
 
 func _boundary_reached(previous_tick: int, next_tick: int, boundary: int) -> bool:
@@ -1252,7 +1260,7 @@ func _process_marker_transition(marker_name: String) -> void:
 		_apply_queued_transition()
 
 
-func _seek_to_sequence_index(index: int) -> void:
+func _seek_to_sequence_index(index: int, preserve_prepared_loop := false) -> void:
 	if current_sequence.is_empty():
 		return
 	_current_sequence_index = posmod(index, current_sequence.size())
@@ -1263,6 +1271,8 @@ func _seek_to_sequence_index(index: int) -> void:
 		return
 	seek_tick(target_tick, false)
 	_emit_current_section_started()
+	if preserve_prepared_loop and _continue_prepared_section_loop():
+		return
 	_prepare_stem_sync_for_current_state()
 	_start_native_stems_from_current_tick()
 
@@ -2084,6 +2094,40 @@ func _amount_to_effect_value(effect_name: String, amount: float):
 	return safe_amount
 
 
+func _continue_prepared_section_loop() -> bool:
+	if playback_profile == null or not playback_profile.loop_prepared_sections:
+		return false
+	var selection := _stem_selection_for_current_state()
+	var sources: Dictionary = selection.get("stems", {})
+	if sources.is_empty() or sources != _prepared_stem_sources:
+		return false
+	if _has_ready_stem_players():
+		var active := 0
+		for value in _stem_layer_players.values():
+			var player := value as AudioStreamPlayer
+			if is_instance_valid(player) and player.stream != null:
+				if not player.playing or not _is_prepared_section_loop(player.stream):
+					return false
+				active += 1
+		if active != sources.size():
+			return false
+	else:
+		if not is_instance_valid(_stem_player) or not _stem_player.playing or not (_stem_player.stream is AudioStreamSynchronized):
+			return false
+		var sync := _stem_player.stream as AudioStreamSynchronized
+		if sync.get_stream_count() != sources.size():
+			return false
+		for index in range(sync.get_stream_count()):
+			if not _is_prepared_section_loop(sync.get_sync_stream(index)):
+				return false
+	_prepared_stem_origin_tick = int(selection.get("origin_tick", 0))
+	return true
+
+
+func _is_prepared_section_loop(stream: AudioStream) -> bool:
+	return stream is AudioStreamWAV and stream.loop_mode == AudioStreamWAV.LOOP_FORWARD and stream.get_meta("pcs_native_section_loop", false)
+
+
 func _prepare_stem_sync_for_current_state() -> void:
 	if playback_profile == null:
 		return
@@ -2092,6 +2136,7 @@ func _prepare_stem_sync_for_current_state() -> void:
 	_setup_native_audio_players()
 	var selection := _stem_selection_for_current_state()
 	var stem_map: Dictionary = selection.get("stems", {})
+	_prepared_stem_sources = stem_map.duplicate()
 	_prepared_stem_origin_tick = int(selection.get("origin_tick", 0))
 	if stem_map.is_empty():
 		_stop_layer_stem_players(true)
@@ -2282,13 +2327,14 @@ func _profile_has_property(property_name: String) -> bool:
 
 
 func _prepared_stem_cache_key(value) -> String:
+	var policy := "prepared-loop-v1" if playback_profile != null and playback_profile.loop_prepared_sections else "prepared-eof-v1"
 	if value is String:
-		return "prepared-eof-v1:%s" % _audio_cache_key(str(value))
-	return "prepared-eof-v1:stream:%s" % str(value.get_instance_id()) if value is AudioStream else ""
+		return "%s:%s" % [policy, _audio_cache_key(str(value))]
+	return "%s:stream:%s" % [policy, str(value.get_instance_id())] if value is AudioStream else ""
 
 
 func _load_prepared_stem_audio_stream(value) -> AudioStream:
-	if playback_profile == null or not playback_profile.preserve_prepared_wav_endings:
+	if playback_profile == null or (not playback_profile.preserve_prepared_wav_endings and not playback_profile.loop_prepared_sections):
 		return _load_audio_stream(value)
 	var key := _prepared_stem_cache_key(value)
 	if not key.is_empty() and _audio_stream_cache.has(key):
@@ -2308,6 +2354,19 @@ func _load_prepared_stem_audio_stream(value) -> AudioStream:
 		push_warning("Prepared WAV ending preservation requires lossless PCM import; compressed stream is unchanged.")
 		_audio_stream_cache[key] = source
 		return source
+	if playback_profile.loop_prepared_sections:
+		# LOOP_KIT assets are exact-length section bodies. Godot's audio thread
+		# repeats them; gameplay frame timing must not stop/restart identical PCM.
+		var looped := wav.duplicate() as AudioStreamWAV
+		var loop_frame_bytes := (2 if wav.format == AudioStreamWAV.FORMAT_16_BITS else 1) * (2 if wav.stereo else 1)
+		looped.loop_begin = 0
+		looped.loop_end = wav.data.size() / loop_frame_bytes
+		looped.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		looped.set_meta("pcs_native_section_loop", true)
+		_audio_stream_cache[key] = looped
+		if value is String:
+			_audio_stream_cache.erase(_audio_cache_key(str(value)))
+		return looped
 	# Godot's stream-end lookahead fades the final 64 output frames; WAV's
 	# resampler also needs trailing history. Move both into bounded silence.
 	# Duplicate the resource, never mutate a caller-owned/imported stream or file.
@@ -2378,6 +2437,7 @@ func _audio_prewarm_signature(include_stems := false, include_native_preview := 
 		str(include_native_preview),
 		str(playback_profile.sample_preview_load_wavs_uncompressed),
 		str(playback_profile.preserve_prepared_wav_endings),
+		str(playback_profile.loop_prepared_sections),
 	]
 	_append_audio_prewarm_map_signature(parts, playback_profile.drum_kit, true)
 	_append_audio_prewarm_map_signature(parts, playback_profile.event_sample_streams, true)
@@ -2452,7 +2512,7 @@ func _prewarm_audio_value(value, seen: Dictionary, report: Dictionary, prefer_un
 	if path.is_empty():
 		return
 	var key := _audio_cache_key(path, prefer_uncompressed_wav)
-	if prepared_stem and playback_profile != null and playback_profile.preserve_prepared_wav_endings:
+	if prepared_stem and playback_profile != null and (playback_profile.preserve_prepared_wav_endings or playback_profile.loop_prepared_sections):
 		key = _prepared_stem_cache_key(path)
 	if seen.has(key):
 		return

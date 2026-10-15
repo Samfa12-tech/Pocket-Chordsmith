@@ -877,3 +877,47 @@ No audio parity/listening claim follows from residency tests. Large-file cold
 load/working-set budgets, real prepared LOOP_KIT transitions, full authored-song
 Core/native two-source capture and exact installed/listening gates remain active.
 No source-engine recipes copied into the MIT addon and no licence/version changes.
+
+## Godot prepared section-loop PCM correction (2026-10-16)
+
+Extended the existing Core -> WAV kit -> real Godot conductor -> engine-bus
+capture to LOOP_KIT and three repeats. Before correction all4 routes failed:
+fullmix/layers with synchronized/separate players. First-loop body could be cut
+roughly38ms early and later repeats drifted (peak mismatch about0.13). This is
+runtime evidence, beyond manifest/import parity. Raw run-vWDXaN and loop-window
+analysis retained; first probe's stream count was corrected to inspect the active
+section selection instead of empty full-song paths.
+
+LOOP_KIT now opts into Godot-native whole-body WAV repetition. Only identical,
+currently playing native prepared loop sets continue across automatic boundaries;
+explicit seeks, different assets and other profiles use their existing restart
+path. Caller-owned PCM/authored loop points are never mutated. Preparation uses
+its own cache policy, clears stale selection identity on profile replacement and
+participates in existing prewarm identity. The import option
+loop_prepared_sections:false retains legacy restart behavior. No gameplay synth,
+per-note nodes, sample scheduler or source recipe copy was added.
+
+Tested: all4 Dummy and all4 actual rendered WASAPI routes pass3 repeats with
+288000 reference frames each, finite samples, full ending coverage and existing
+PCM16 max/RMS limits. Worst sample error0.0000621043 and RMS0.0000177803; fullmix
+peakerror0.0000021682. Negative truncated/silence-padded endings are rejected.
+Source WAV hashes survive import. Ordinary STEM_SYNC hardcut4-route PCM regression
+passes, preserving explicit Disabled loop choice. Complete Godot gate passes:
+mix20, ending17, residency8,56 section-origin/seek/A-B switch captures (8 new
+native-loop control scenarios), schema/trust/editor checks and135 addon-only
+package entries. Repo/security/governance/whitespace and Node syntax pass.
+
+Evidence: ignored local-artifacts/scratch/validation/godot-loop-pcm-*.log and
+core-godot-pcm/run-prlFOq (Dummy loops), run-ZA4HEq (ordinary ending), run-9dRiEM
+(actual rendered WASAPI loops, parity-report.json and rendered-pack-runtime.png).
+Godot4.6.3 official,48kHz, OpenGL3.3/NVIDIA RTX5050 Laptop GPU. This is engine-bus
+PCM with actual WASAPI selected, not a human listening or physical output capture.
+The verifier now fails closed if the requested driver is not used and records
+engine metadata on new runs.
+
+Not published. Native DAW fully arranged recording/FX/automation route remains
+independent. Same-body loop proof does not establish sample-accurate transitions
+to different assets, crossfades, representative-game/SFX-load budgets or full
+Core/browser nonlinear-master identity. Existing path guard String.chr(0) emits
+Unexpected NUL warnings during manifest validation; no SCRIPT ERROR occurred.
+That safety guard is unchanged under the no-security-change instruction.

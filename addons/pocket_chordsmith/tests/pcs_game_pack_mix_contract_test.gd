@@ -24,6 +24,13 @@ func _init() -> void:
 	var full: Dictionary = Manifest.create_playback_profile_from_manifest(core, pack_root, {"playback_mix": "full-mix"})
 	_expect(full.ok and full.profile.stem_paths.keys() == ["full"], "Explicit full-mix reference selects only the mix")
 	_expect(full.profile.get_section_stems("A").keys() == ["full"], "Explicit section full-mix reference selects only the mix")
+	_expect(not full.profile.loop_prepared_sections, "Ordinary full-song profiles retain their existing playback policy")
+	var loop_kit := core.duplicate(true)
+	loop_kit.profile = "LOOP_KIT"
+	var loop_profile: Dictionary = Manifest.create_playback_profile_from_manifest(loop_kit, pack_root)
+	_expect(loop_profile.ok and loop_profile.profile.loop_prepared_sections, "LOOP_KIT selects native prepared section repetition")
+	var opt_out: Dictionary = Manifest.create_playback_profile_from_manifest(loop_kit, pack_root, {"loop_prepared_sections": false})
+	_expect(opt_out.ok and not opt_out.profile.loop_prepared_sections, "Legacy section restart remains an explicit import choice")
 	var daw := {"kind": "godot-adaptive-pack", "fullMix": "fixture.wav", "stems": [
 		{"id": "drums", "packPath": "fixture.wav"}, {"id": "drums-kick", "packPath": "fixture.wav"}, {"id": "bass", "packPath": "fixture.wav"}
 	]}

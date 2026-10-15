@@ -9,10 +9,11 @@ func _init() -> void:
 
 func _run() -> void:
 	var args := OS.get_cmdline_user_args()
-	if args.size() != 2:
+	if args.size() < 2 or args.size() > 3:
 		push_error("Expected pack manifest path and output directory.")
 		quit(1)
 		return
+	var repetitions := maxi(1, int(args[2])) if args.size() == 3 else 1
 	var source: Dictionary = Manifest.load_manifest_file(args[0])
 	if not source.ok:
 		push_error(str(source.errors))
@@ -24,7 +25,7 @@ func _run() -> void:
 	label.add_theme_font_size_override("font_size", 20)
 	root.add_child(label)
 	var capture := AudioEffectCapture.new()
-	capture.buffer_length = 5.0
+	capture.buffer_length = 2.0 * repetitions + 2.0
 	AudioServer.add_bus_effect(0, capture)
 	var results: Array = []
 	for synchronized in [false, true]:
@@ -37,7 +38,10 @@ func _run() -> void:
 			var chart = Chart.new()
 			chart.bpm = 120
 			chart.arrangement.assign(["A"])
-			chart.arrangement_positions.append({"id": "A", "arrangement_index": 0, "start_tick": 0, "length_ticks": 3840, "bars": 2})
+			chart.arrangement_positions.append({"id": "A", "arrangement_index": 0, "start_tick": 0, "length_ticks": 1920 if repetitions > 1 else 3840, "bars": 1 if repetitions > 1 else 2})
+			if repetitions > 1:
+				chart.default_music_state = "reference_loop"
+				chart.music_states = {"reference_loop": {"section": "A", "loop": true}}
 			var music = Conductor.new()
 			music.chart = chart
 			music.playback_profile = imported.profile
@@ -49,8 +53,9 @@ func _run() -> void:
 			await create_timer(0.3).timeout
 			capture.clear_buffer()
 			music.play()
-			music.set_process(false)
-			await create_timer(2.5).timeout
+			var selected_streams: int = music._stem_map_for_current_state().size()
+			music.set_process(repetitions > 1)
+			await create_timer(2.0 * repetitions + 0.5).timeout
 			music.stop()
 			var samples := capture.get_buffer(capture.get_frames_available())
 			var pcm := PackedByteArray()
@@ -62,7 +67,7 @@ func _run() -> void:
 			var output := FileAccess.open(args[1].path_join(name), FileAccess.WRITE)
 			output.store_buffer(pcm)
 			output.close()
-			results.append({"mix": mix, "synchronized": synchronized, "frames": samples.size(), "file": name, "selected_streams": imported.profile.stem_paths.size()})
+			results.append({"mix": mix, "synchronized": synchronized, "frames": samples.size(), "file": name, "selected_streams": selected_streams})
 			music.queue_free()
 			await process_frame
 	AudioServer.remove_bus_effect(0, AudioServer.get_bus_effect_count(0) - 1)
@@ -71,5 +76,5 @@ func _run() -> void:
 		await process_frame
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png(args[1].path_join("rendered-pack-runtime.png"))
-	print(JSON.stringify({"test": "rendered-pack-capture", "mix_rate": AudioServer.get_mix_rate(), "driver": AudioServer.get_driver_name(), "captures": results}))
+	print(JSON.stringify({"test": "rendered-pack-capture", "engine": Engine.get_version_info().get("string", ""), "mix_rate": AudioServer.get_mix_rate(), "driver": AudioServer.get_driver_name(), "captures": results}))
 	quit(0)

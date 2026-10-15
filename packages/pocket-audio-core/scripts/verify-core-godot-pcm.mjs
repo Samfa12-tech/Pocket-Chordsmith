@@ -12,6 +12,8 @@ if (binIndex < 0 || !process.argv[binIndex + 1]) throw new Error("Pass --godot-b
 const godot = process.argv[binIndex + 1];
 const rendered = process.argv.includes("--rendered");
 const hardCutEnding = process.argv.includes("--hard-cut-ending");
+const loopKit = process.argv.includes("--loop-kit");
+const repetitions = loopKit ? 3 : 1;
 const scratch = resolve(root, "local-artifacts/scratch/validation/core-godot-pcm");
 mkdirSync(scratch, { recursive: true });
 const workspace = mkdtempSync(resolve(scratch, "run-"));
@@ -39,7 +41,7 @@ const source = {
     melody: { events: [
       { tick: 480, durationTicks: 240, notes: [69], sound: "tape_bell", velocity: 80 },
       // A naturally decaying ending cue detects silence-padded early stops.
-      // Nonzero hard-cut endings are a separate, currently failing seam gate.
+      // Nonzero hard-cut endings and repeated section seams have separate gates.
       { tick: 1728, durationTicks: 144, notes: [69], sound: "soft", velocity: 110 }
     ] }
   } } }
@@ -48,7 +50,8 @@ if (hardCutEnding) {
   source.sections.A.tracks.guitar.events.push({ tick: 1680, durationTicks: 120, notes: [50], sound: "campfire_acoustic", velocity: 110 });
   source.sections.A.tracks.melody.events.pop();
 }
-const kit = await createGodotExportKit(source, { profile: "STEM_SYNC", sampleRate: 48000 });
+const kit = await createGodotExportKit(source, { profile: loopKit ? "LOOP_KIT" : "STEM_SYNC", sampleRate: 48000 });
+const referencePath = loopKit ? kit.manifest.sections.A.assets.mix : kit.manifest.assets.mix;
 const pack = resolve(workspace, "pack");
 mkdirSync(pack);
 const sourceHashes = {};
@@ -65,9 +68,9 @@ writeFileSync(resolve(workspace, "prepare-pack.gd"), `extends SceneTree
 const Tools = preload("res://addons/pocket_chordsmith/import/pcs_chart_build_tools.gd")
 func _init():
 \tvar config = ConfigFile.new()
-\tconfig.load("res://pack/audio/full/full_mix.wav.import")
-\tconfig.set_value("params", "edit/loop_mode", 1) # Explicit Disabled choice must survive.
-\tconfig.save("res://pack/audio/full/full_mix.wav.import")
+\tconfig.load(${JSON.stringify(`res://pack/${referencePath}.import`)})
+\tconfig.set_value("params", "edit/loop_mode", ${loopKit ? 0 : 1}) # Default for loop probe; explicit Disabled for ordinary ending gate.
+\tconfig.save(${JSON.stringify(`res://pack/${referencePath}.import`)})
 \tvar result = Tools.new().create_playback_profile_from_game_pack_manifest("res://pack/manifest.json", "", "res://pack")
 \tprint(JSON.stringify({"ok": result.ok, "errors": result.errors, "wav_import_paths": result.get("wav_import_paths", [])}))
 \tquit(0 if result.ok else 1)
@@ -79,17 +82,23 @@ for (const path of kit.files.keys()) {
   if (!settings.includes("compress/mode=0") || !settings.includes("edit/normalize=false") || !settings.includes("force/max_rate=false")) throw new Error(`Lossless import settings were not applied: ${path}`);
   if (createHash("sha256").update(readFileSync(resolve(pack, path))).digest("hex") !== sourceHashes[path]) throw new Error(`Import changed source WAV bytes: ${path}`);
 }
-if (!readFileSync(resolve(pack, `${kit.manifest.assets.mix}.import`), "utf8").includes("edit/loop_mode=1")) throw new Error("Import discarded the explicit loop choice.");
+if (!loopKit && !readFileSync(resolve(pack, `${referencePath}.import`), "utf8").includes("edit/loop_mode=1")) throw new Error("Import discarded the explicit loop choice.");
 const output = run([
   ...(rendered ? ["--rendering-method", "gl_compatibility", "--audio-driver", "WASAPI"] : ["--headless", "--audio-driver", "Dummy"]),
-  "--script", "res://addons/pocket_chordsmith/tests/pcs_rendered_pack_capture_test.gd", "--", "res://pack/manifest.json", "res://"
+  "--script", "res://addons/pocket_chordsmith/tests/pcs_rendered_pack_capture_test.gd", "--", "res://pack/manifest.json", "res://", String(repetitions)
 ], "capture.log");
 const capture = output.split(/\r?\n/).filter((line) => line.startsWith('{"captures"') || line.includes('"test":"rendered-pack-capture"')).map((line) => JSON.parse(line)).at(-1);
 if (!capture || capture.mix_rate !== 48000) throw new Error("Missing 48 kHz Godot capture report.");
-const expected = decodePcmWavBytes(readFileSync(resolve(pack, kit.manifest.assets.mix)));
+if (capture.driver !== (rendered ? "WASAPI" : "Dummy")) throw new Error(`Requested audio driver was not used: ${capture.driver}`);
+const decoded = decodePcmWavBytes(readFileSync(resolve(pack, referencePath)));
+const expected = {...decoded, channels:decoded.channels.map(channel => {
+  const repeated = new Float32Array(channel.length * repetitions);
+  for(let index=0;index<repetitions;index++) repeated.set(channel,index*channel.length);
+  return repeated;
+})};
 const records = capture.captures.map((item) => compare(item));
 if (capture.captures.some((item) => item.mix === "layers" && item.selected_streams !== 6)) throw new Error("The rendered fixture must include five dry stems and a shared bed.");
-const report = { route: "Core source -> real recipe WAV pack -> imported profile -> Godot conductor -> engine bus", driver: capture.driver, rendered, ending: hardCutEnding ? "nonzero-hard-cut" : "natural-decay", mixRate: capture.mix_rate, workspace, sourceHashes, sourceWavBytesPreserved: true, explicitLoopChoicePreserved: true, records, humanListening: "not tested", nativeDawRoute: "not tested by this fixture" };
+const report = { route: "Core source -> real recipe WAV pack -> imported profile -> Godot conductor -> engine bus", engine:capture.engine, profile:kit.manifest.profile, repetitions, driver: capture.driver, rendered, ending: hardCutEnding ? "nonzero-hard-cut" : "natural-decay", mixRate: capture.mix_rate, workspace, sourceHashes, sourceWavBytesPreserved: true, explicitLoopChoicePreserved: !loopKit, records, humanListening: "not tested", nativeDawRoute: "not tested by this fixture" };
 writeFileSync(resolve(workspace, "parity-report.json"), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));
 if (records.some((item) => !item.passed)) process.exitCode = 1;

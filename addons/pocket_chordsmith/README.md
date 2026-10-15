@@ -151,6 +151,15 @@ is cooperative loading, not a background decoder or a per-frame time guarantee.
 The existing synchronous `prewarm_section(s)` and `prewarm_audio` APIs remain
 available for callers that already manage their loading phase.
 
+Core `LOOP_KIT` profiles repeat exact-length prepared section WAVs on Godot's
+audio thread. Repeating the same prepared set keeps its players running across
+the gameplay boundary; explicit seeks or different section assets still restart
+the selected streams. Source WAV bytes and authored loop points are preserved.
+Set the manifest import option `loop_prepared_sections: false` to retain the
+older section restart policy. Ordinary full-song profiles keep their existing
+policy. This does not promise sample-accurate transitions between different
+assets or tail crossfades; those require separate runtime validation.
+
 Adaptive music states:
 
 ```gdscript

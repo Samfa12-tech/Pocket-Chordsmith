@@ -79,6 +79,21 @@ func _run() -> void:
 	checks += 1
 	if not music._audio_stream_cache.is_empty():
 		failures.append("Profile replacement must clear prepared resources.")
+	music.playback_profile.loop_prepared_sections = true
+	var native_loop := music._load_prepared_stem_audio_stream(source) as AudioStreamWAV
+	checks += 1
+	if native_loop == source or native_loop.data != pcm or native_loop.loop_mode != AudioStreamWAV.LOOP_FORWARD or native_loop.loop_begin != 0 or native_loop.loop_end != 480 or source.loop_mode != AudioStreamWAV.LOOP_DISABLED:
+		failures.append("Native section loop must repeat the complete original PCM without guards or source mutation.")
+	checks += 1
+	if music._load_prepared_stem_audio_stream(source) != native_loop or not music._is_prepared_section_loop(native_loop):
+		failures.append("Native loop preparation must reuse its policy-specific resident resource.")
+	checks += 1
+	if music._load_prepared_stem_audio_stream(looped) != looped or looped.loop_begin != 17 or looped.loop_end != 470:
+		failures.append("Native section looping must preserve a source's authored loop points.")
+	music.playback_profile.loop_prepared_sections = false
+	checks += 1
+	if music._load_prepared_stem_audio_stream(source) != source:
+		failures.append("Opting out of section looping must not reuse the loop-enabled resource.")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(file_path))
 	music.queue_free()
 	await process_frame

@@ -87,6 +87,7 @@ static func create_playback_profile_from_manifest(manifest: Dictionary, pack_roo
 	var use_audio_stream_synchronized := bool(options.get("use_audio_stream_synchronized", profile.use_audio_stream_synchronized))
 	profile.use_audio_stream_synchronized = use_audio_stream_synchronized
 	profile.preserve_prepared_wav_endings = bool(options.get("preserve_wav_endings", true))
+	profile.loop_prepared_sections = str(manifest.get("profile", "")).to_upper() == "LOOP_KIT" and bool(options.get("loop_prepared_sections", true))
 	if use_audio_stream_synchronized:
 		var selected_sets: Array = [profile.stem_paths]
 		selected_sets.append_array(profile.section_stem_sets.values())
