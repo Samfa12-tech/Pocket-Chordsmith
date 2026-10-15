@@ -9,28 +9,33 @@ func _init() -> void:
 
 func _run() -> void:
 	var args := OS.get_cmdline_user_args()
-	if args.size() < 2 or args.size() > 3:
+	if args.size() < 2 or args.size() > 5:
 		push_error("Expected pack manifest path and output directory.")
 		quit(1)
 		return
-	var repetitions := maxi(1, int(args[2])) if args.size() == 3 else 1
+	var repetitions := maxi(1, int(args[2])) if args.size() >= 3 else 1
+	var capture_seconds := clampf(float(args[3]), 0.5, 35.0) if args.size() >= 4 else 2.0 * repetitions + 0.5
+	var playback_scope := str(args[4]) if args.size() == 5 else "adaptive"
 	var source: Dictionary = Manifest.load_manifest_file(args[0])
 	if not source.ok:
 		push_error(str(source.errors))
 		quit(1)
 		return
+	var pack_root := args[0].get_base_dir()
+	if pack_root.get_file() == "manifests":
+		pack_root = pack_root.get_base_dir()
 	root.size = Vector2i(640, 360)
 	var label := Label.new()
 	label.position = Vector2(24, 36)
 	label.add_theme_font_size_override("font_size", 20)
 	root.add_child(label)
 	var capture := AudioEffectCapture.new()
-	capture.buffer_length = 2.0 * repetitions + 2.0
+	capture.buffer_length = capture_seconds + 2.0
 	AudioServer.add_bus_effect(0, capture)
 	var results: Array = []
 	for synchronized in [false, true]:
 		for mix in ["full-mix", "layers"]:
-			var imported: Dictionary = Manifest.create_playback_profile_from_manifest(source.manifest, args[0].get_base_dir(), {"playback_mix": mix, "use_audio_stream_synchronized": synchronized})
+			var imported: Dictionary = Manifest.create_playback_profile_from_manifest(source.manifest, pack_root, {"playback_mix": mix, "playback_scope": playback_scope, "use_audio_stream_synchronized": synchronized})
 			if not imported.ok:
 				push_error(str(imported.errors))
 				quit(1)
@@ -55,7 +60,7 @@ func _run() -> void:
 			music.play()
 			var selected_streams: int = music._stem_map_for_current_state().size()
 			music.set_process(repetitions > 1)
-			await create_timer(2.0 * repetitions + 0.5).timeout
+			await create_timer(capture_seconds).timeout
 			music.stop()
 			var samples := capture.get_buffer(capture.get_frames_available())
 			var pcm := PackedByteArray()

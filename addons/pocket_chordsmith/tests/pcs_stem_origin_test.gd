@@ -38,6 +38,7 @@ func _run() -> void:
 	for synchronized in [false, true]:
 		await _check_route(synchronized, true)
 		await _check_route(synchronized, false)
+		await _check_route(synchronized, false, false, true)
 		await _check_route(synchronized, true, true)
 		await _check_empty_selection(synchronized)
 		await _check_automatic_sections(synchronized)
@@ -56,7 +57,7 @@ func _run() -> void:
 	print(JSON.stringify({"test": "prepared-stem-origin", "engine": Engine.get_version_info(), "audio_driver": AudioServer.get_driver_name(), "measurements": measurements, "errors": errors}))
 	quit(0 if errors.is_empty() else 1)
 
-func _check_route(synchronized: bool, local: bool, native_loop := false) -> void:
+func _check_route(synchronized: bool, local: bool, native_loop := false, arrangement_scope := false) -> void:
 	var chart = Chart.new()
 	chart.bpm = 120
 	chart.time_signature = 4
@@ -76,12 +77,21 @@ func _check_route(synchronized: bool, local: bool, native_loop := false) -> void
 		profile.set_section_stems("B", {"music": _tone(660.0, 4.0)})
 	else:
 		profile.stem_paths = {"music": _tone(330.0, 8.0)}
+	if arrangement_scope:
+		# Deliberately retain contradictory maps on a hand-authored profile.
+		# The runtime must enforce the scope even without manifest conversion.
+		profile.prepared_playback_scope = "arrangement"
+		profile.set_section_stems("A", {"music": _tone(220.0, 4.0)})
+		profile.set_section_stems("B", {"music": _tone(660.0, 4.0)})
+		profile.state_stem_sets = {"camp": {"music": _tone(440.0, 4.0)}}
 	var music = Conductor.new()
 	music.chart = chart
 	music.playback_profile = profile
 	root.add_child(music)
 	music.play()
 	music.set_process(false)
+	if arrangement_scope:
+		music.current_music_state = "camp"
 	music.jump_to_section("B")
 	await _assert_position(music, 0.0 if local else 2.0, synchronized, local, "first-B", 660.0 if local else 330.0)
 	music.seek_tick(2880)

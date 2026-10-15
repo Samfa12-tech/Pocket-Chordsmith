@@ -51,6 +51,11 @@ static func create_playback_profile_from_manifest(manifest: Dictionary, pack_roo
 		return result
 
 	var profile = PlaybackProfile.new()
+	var playback_scope := str(options.get("playback_scope", "adaptive"))
+	if playback_scope not in ["adaptive", "arrangement"]:
+		result["errors"].append("playback_scope must be adaptive or arrangement.")
+		return result
+	profile.prepared_playback_scope = playback_scope
 	if not str(options.get("playback_mix", "layers")) in ["layers", "full-mix"] or not str(options.get("drum_stems", "aggregate")) in ["aggregate", "branches"]:
 		result["errors"].append("playback_mix must be layers/full-mix and drum_stems must be aggregate/branches.")
 		return result
@@ -80,6 +85,13 @@ static func create_playback_profile_from_manifest(manifest: Dictionary, pack_roo
 	profile.section_stem_sets = section_sets
 	profile.stem_sets = section_sets.duplicate(true)
 	profile.state_stem_sets = state_stem_sets_from_manifest(manifest, pack_root, trusted_project_paths, prefer_full_mix)
+	if playback_scope == "arrangement":
+		if profile.stem_paths.is_empty():
+			result["errors"].append("Arrangement playback requires full-song assets. Use adaptive scope for section-only LOOP_KIT packs.")
+			return result
+		profile.section_stem_sets.clear()
+		profile.stem_sets.clear()
+		profile.state_stem_sets.clear()
 	profile.drum_kit = drum_kit_from_manifest(manifest, pack_root, trusted_project_paths)
 	profile.accent_streams = accent_streams_from_manifest(manifest, pack_root, trusted_project_paths)
 	profile.event_sample_streams = event_sample_streams_from_manifest(manifest, pack_root, trusted_project_paths)
@@ -87,7 +99,7 @@ static func create_playback_profile_from_manifest(manifest: Dictionary, pack_roo
 	var use_audio_stream_synchronized := bool(options.get("use_audio_stream_synchronized", profile.use_audio_stream_synchronized))
 	profile.use_audio_stream_synchronized = use_audio_stream_synchronized
 	profile.preserve_prepared_wav_endings = bool(options.get("preserve_wav_endings", true))
-	profile.loop_prepared_sections = str(manifest.get("profile", "")).to_upper() == "LOOP_KIT" and bool(options.get("loop_prepared_sections", true))
+	profile.loop_prepared_sections = playback_scope == "adaptive" and str(manifest.get("profile", "")).to_upper() == "LOOP_KIT" and bool(options.get("loop_prepared_sections", true))
 	if use_audio_stream_synchronized:
 		var selected_sets: Array = [profile.stem_paths]
 		selected_sets.append_array(profile.section_stem_sets.values())

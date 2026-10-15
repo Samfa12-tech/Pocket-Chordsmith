@@ -55,6 +55,19 @@ func _init() -> void:
 	_expect(separate.ok and separate.profile.stem_paths.size() == 33, "Independent players require an explicit caller choice")
 	var invalid: Dictionary = Manifest.create_playback_profile_from_manifest(core, pack_root, {"playback_mix": "both"})
 	_expect(not invalid.ok, "Invalid mix preference cannot silently select both paths")
+	var invalid_scope: Dictionary = Manifest.create_playback_profile_from_manifest(core, pack_root, {"playback_scope": "unknown"})
+	_expect(not invalid_scope.ok, "Invalid playback scope fails explicitly")
+	for mix in ["layers", "full-mix"]:
+		var arrangement: Dictionary = Manifest.create_playback_profile_from_manifest(core, pack_root, {"playback_scope": "arrangement", "playback_mix": mix})
+		_expect(arrangement.ok and arrangement.profile.prepared_playback_scope == "arrangement", "Explicit arrangement scope imports")
+		_expect(arrangement.profile.section_stem_sets.is_empty() and arrangement.profile.stem_sets.is_empty() and arrangement.profile.state_stem_sets.is_empty(), "Arrangement cannot retain local section/state overrides")
+		_expect(arrangement.profile.stem_paths.size() == (1 if mix == "full-mix" else 3), "Arrangement keeps the selected exclusive mix/layer path")
+	var section_only := {"profile": "LOOP_KIT", "sections": {"A": {"assets": assets}}}
+	var unsupported: Dictionary = Manifest.create_playback_profile_from_manifest(section_only, pack_root, {"playback_scope": "arrangement"})
+	_expect(not unsupported.ok and str(unsupported.errors).contains("full-song assets"), "Section-only packs cannot silently use arrangement scope")
+	_expect(layers.profile.prepared_playback_scope == "adaptive", "Existing profile scope remains adaptive by default")
+	var loop_arrangement: Dictionary = Manifest.create_playback_profile_from_manifest(loop_kit, pack_root, {"playback_scope": "arrangement"})
+	_expect(loop_arrangement.ok and not loop_arrangement.profile.loop_prepared_sections, "Arrangement does not loop full-song files at section boundaries")
 	for message in errors:
 		push_error(message)
 	print(JSON.stringify({"test": "game-pack-mix-contract", "checks": checks, "errors": errors}))

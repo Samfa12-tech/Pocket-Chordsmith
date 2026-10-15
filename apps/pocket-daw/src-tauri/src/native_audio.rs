@@ -11164,6 +11164,43 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Run scripts/verify-native-godot-route.ts to capture real native offline export bytes"]
+    fn native_godot_arranged_export_fixture() {
+        let input = std::env::var("POCKET_DAW_NATIVE_GODOT_INPUT")
+            .expect("The route verifier must provide an input JSON file");
+        let output = std::env::var("POCKET_DAW_NATIVE_GODOT_OUTPUT")
+            .expect("The route verifier must provide an output directory");
+        let request: Value = serde_json::from_slice(&std::fs::read(input).unwrap()).unwrap();
+        let payload: NativeAudioStartPayload =
+            serde_json::from_value(request["payload"].clone()).unwrap();
+        let duration = request["durationSeconds"].as_f64().unwrap();
+        assert!(duration.is_finite() && duration > 0.0 && duration <= 30.0);
+        let state = Mutex::new(NativeAudioRuntime::default());
+        let rendered = render_native_audio_wav_on_worker(
+            payload,
+            duration,
+            request["renderMode"].as_str().map(str::to_owned),
+            request["bitDepth"].as_u64().map(|depth| depth as u16),
+            &state,
+        )
+        .expect("Real native WAV export worker must render the arranged fixture");
+        let directory = Path::new(&output);
+        std::fs::create_dir_all(directory).unwrap();
+        std::fs::write(directory.join("render.wav"), &rendered.bytes).unwrap();
+        std::fs::write(
+            directory.join("render.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "sampleRate": rendered.sample_rate,
+                "channels": rendered.channels,
+                "durationSeconds": rendered.duration_seconds,
+                "sizeBytes": rendered.size_bytes,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn native_campfire_clip_gain_is_separate_from_note_velocity_and_reuses_pcm() {
         let mut playback = campfire_test_playback(0.0);
         let prepared = Arc::clone(playback.campfire_events.get("campfire").unwrap());

@@ -18,6 +18,7 @@ enum PlaybackBackend {
 @export var emit_generated_events := true
 @export var mobile_safe := true
 @export var stem_paths: Dictionary = {}
+@export_enum("adaptive", "arrangement") var prepared_playback_scope := "adaptive"
 @export var stem_bus_names: Dictionary = {}
 @export var use_audio_stream_synchronized := true
 @export var preserve_prepared_wav_endings := false

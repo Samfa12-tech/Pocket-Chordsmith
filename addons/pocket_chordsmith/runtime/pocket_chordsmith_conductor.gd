@@ -2256,6 +2256,8 @@ func _stem_map_for_current_state() -> Dictionary:
 func _stem_selection_for_current_state() -> Dictionary:
 	if playback_profile == null:
 		return {}
+	if playback_profile.prepared_playback_scope == "arrangement":
+		return {"stems": _normalize_stem_map(playback_profile.stem_paths), "origin_tick": 0}
 	if not current_music_state.is_empty():
 		var state_map := _state_stem_map(current_music_state)
 		if not state_map.is_empty():

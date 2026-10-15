@@ -160,6 +160,17 @@ older section restart policy. Ordinary full-song profiles keep their existing
 policy. This does not promise sample-accurate transitions between different
 assets or tail crossfades; those require separate runtime validation.
 
+For a full native arrangement, the low-level manifest/profile API accepts
+`playback_scope: "arrangement"`. It selects only the full-song assets, preserving
+their zero origin even when section or state overrides exist. Combine it with
+`playback_mix: "full-mix"` for the native reference, or `"layers"` for independent
+stems. The default `"adaptive"` scope retains section/state selection; section-only
+packs cannot use arrangement scope. This option selects audio assets only: it does
+not reconstruct an edited DAW timeline from the embedded Chordsmith source. Use a
+chart with the matching arrangement and duration. The high-level DAW pack import's
+native timeline compilation is still pending; importing a pack is not audio parity
+acceptance.
+
 Adaptive music states:
 
 ```gdscript

@@ -976,3 +976,58 @@ complete; exact hosted CI/re-review and fresh rendered/installed acceptance rema
 pending. GitHub draft update uses the connected API because privileged local
 Git execution is unavailable. Worktree source/records are preserved for later
 normal Git reconciliation; no release/main merge or device/listening claim.
+
+## Full native arrangement asset selection (bounded follow-up to PR95)
+
+Implemented: low-level playback_scope arrangement selects global full-song stems
+at origin zero and ignores section/state overrides, including on hand-authored
+profiles. Existing adaptive scope remains default. Full mix/layers remain
+exclusive; invalid scope and section-only arrangement requests fail explicitly.
+Arrangement scope does not enable LOOP_KIT section repetition on full-song files.
+This selects assets only. High-level DAW import still compiles embedded PCS;
+native edited timeline compilation, tempo/meter/seeks/end integration remains
+unfinished and must not be described as completed native DAW game integration.
+
+Reproducible verify-native-godot-route.ts uses production native WAV worker and
+production portable-media/game-pack builders through a test-only file transport.
+It creates a moved/transposed/gain-adjusted Campfire arrangement plus collected
+stereo generated WAV media with source trim/fades, low-pass/master compressor and
+clip gain automation. Seven actual native WAV exports and production ZIP verifier
+pass; Godot Dummy captures all four full-mix/layer sync/separate routes. Captured
+full mix compares with decoded native full mix; layers compare with decoded
+selected native stems, never claiming nonlinear shared-effects sum equivalence.
+Only latency is fitted, no gain/time scaling; silence mutants must fail. This
+fixture disables chart progression and proves prepared asset selection/PCM only.
+Generated test media is not a physical recording; Tauri IPC and installed/device/
+human listening acceptance are not tested by this fixture.
+
+Tested: complete Godot4.6.3 gate passes 30 mix-contract checks, 64 origin/seek/
+switch PCM scenarios (8 arrangement-scope regressions),17 endings,8 residency,
+6 clock cases/schema/trust/editor checks and136 addon-only package entries.
+Real native fixture run-SHgeQD compares425127 reference frames (8.8568125seconds)
+in all4routes, worstmax1.6540288925170898e-6/RMS2.97520290942293e-7;
+all4 silence mutants rejected. Rust200 pass/3ignored (new native export fixture
+is intentionally invoked by the route verifier),fmt/Clippy-Dwarnings, script
+strict types, exportJobs29, repo/security/governance/whitespace pass.
+
+Environment evidence: default sandbox first Rust run191pass/9fail/3ignored due
+access-denied temporary atomic renames; process-only TEMP/TMP into workspace
+then gives200pass. Initial Godot default-user-data launch crashed; process-only
+APPDATA into workspace plus local self-contained installed4.6.3 copy runs all
+gates successfully. No host security/configuration/dependency changes.
+
+PR95 corrected immutable5007dbd125d8c1b39b715fc8b13ece269d40511d now also has
+fresh completed rendered WASAPI48k three-repeat evidence run-r4AF7w (primary
+checkout): all4 routes cover288000referenceframes, worstmax6.210431456565857e-5/
+RMS1.7922591953146787e-5. Conductor blob remains reviewed d433d2b9c762b6d0a5887df9cc498a9a3fe149ce.
+Exact CI/CodeQL and independent source re-review accepted. Earlier interrupted/
+crashed runs are retained as unsuccessful, superseded by this completed run.
+No physical/human listening claim. Published:none. Versions unchanged.
+
+Remaining user-facing scope: native/Core both-source game timeline acceptance;
+DAW layout/window scaling/focus/popovers/shortcuts; BeatStitch contextual audible
+selection/lead-in/tail/Stop and reversible same-position A-B/Apply/Discard/Undo,
+no autoplay and stale rejection; finishing subtle presets/dry bypass/loudness A-B/
+external measurement calibration/decoded outputs; final installed candidate and
+retained real exports/device acceptance; reviewed release targets/version truth.
+No Sam input currently required. Mic/capture unchanged, scoped omission not pass.
