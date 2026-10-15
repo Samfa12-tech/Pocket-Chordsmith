@@ -8,6 +8,7 @@ import {
 import { chordsmithOfflineStemRenderGain } from "../performance/stem-mix.js";
 import { findPocketChordInstrumentConfig, findPocketLeadInstrumentConfig, pocketLeadExtraLayers } from "../sounds/instruments.js";
 import { findPocketGuitarTone } from "../sounds/guitar.js";
+import { CampfireAcousticNoteCache, campfireAcousticEventFrameCount, renderCampfireAcousticEvent } from "../sounds/campfire-acoustic.js";
 import { POCKET_BASS_TONE_CONFIGS, POCKET_DRUM_KIT_CONFIGS, resolvePocketBassToneId, resolvePocketDrumKitId } from "../sounds/lofi-registry.js";
 import { pocketAudioDrumLaneFallback } from "../sounds/drum-lanes.js";
 
@@ -52,10 +53,17 @@ export function renderPocketAudioEventBuffer(events, options = {}) {
   const durationSeconds = Number.isFinite(options.durationSeconds)
     ? Math.max(0, Number(options.durationSeconds))
     : events.reduce((duration, event) => Math.max(duration, Number(event.time || 0) + Number(event.duration || 0)), 0);
-  const frameCount = Math.max(1, Math.ceil((durationSeconds + tailSeconds) * sampleRate));
+  // Exact loop exports explicitly set zero tail. Ordinary renders retain the
+  // complete prepared pluck, including the final string's strum offset.
+  const campfireEnd = tailSeconds === 0 ? 0 : events.reduce((end, event) => {
+    if (!isCampfireEvent(event)) return end;
+    return Math.max(end, Number(event.time || 0) + campfireAcousticEventFrameCount(event, { sampleRate }) / sampleRate);
+  }, 0);
+  const frameCount = Math.max(1, Math.ceil(Math.max(durationSeconds + tailSeconds, campfireEnd) * sampleRate));
   const left = new Float32Array(frameCount);
   const right = new Float32Array(frameCount);
-  events.forEach((event) => renderEventToChannels(event, left, right, sampleRate));
+  const campfireCache = events.some(isCampfireEvent) ? new CampfireAcousticNoteCache() : null;
+  events.forEach((event) => renderEventToChannels(event, left, right, sampleRate, campfireCache));
   renderLofiTexture({ lofi: { texture: options.lofiTexture } }, left, right, sampleRate);
   return {
     channels: [left, right],
@@ -117,7 +125,23 @@ export function renderPocketAudioWavBytes(project, options = {}) {
   return encodePcm16WavBytes({ channels: buffer.channels, sampleRate: buffer.sampleRate });
 }
 
-function renderEventToChannels(event, left, right, sampleRate) {
+function isCampfireEvent(event) {
+  return event.type === "guitar" && event.instrument === "campfire_acoustic";
+}
+
+function renderEventToChannels(event, left, right, sampleRate, campfireCache) {
+  if (isCampfireEvent(event)) {
+    const samples = renderCampfireAcousticEvent(event, { sampleRate, cache: campfireCache });
+    const start = Math.max(0, Math.floor(Number(event.time || 0) * sampleRate));
+    const pan = Math.max(-1, Math.min(1, Number(event.pan || 0)));
+    const leftGain = Math.cos((pan + 1) * Math.PI / 4) * stemScale("guitar");
+    const rightGain = Math.sin((pan + 1) * Math.PI / 4) * stemScale("guitar");
+    for (let frame = 0; frame < samples.length && start + frame < left.length; frame += 1) {
+      left[start + frame] += samples[frame] * leftGain;
+      right[start + frame] += samples[frame] * rightGain;
+    }
+    return;
+  }
   const funk = event.audioProfile === "funk_groove" ? funkParameters(event) : null;
   const pocketOffset = funk && Number(event.step || 0) % 2 !== 0 ? (funk.pocket - 0.5) * 0.03 : 0;
   const durationScale = funk && event.type === "chord" ? 1 - funk.stabTightness * 0.68 : 1;

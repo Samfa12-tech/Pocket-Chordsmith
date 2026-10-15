@@ -127,7 +127,7 @@ export function campfireAcousticVoicing({ rootPc, quality = "maj", register = "l
   return (reference?.notes || [root, root + fifth, root + 12, root + third + 12]).map((note) => note + octave);
 }
 
-export function renderCampfireAcousticEvent(event, { sampleRate = 44100, cache = null, noteGain = 0.36 } = {}) {
+function campfireEventParameters(event, { sampleRate = 44100, noteGain = 0.36 } = {}) {
   const notes = event.midiNotes?.length ? [...event.midiNotes] : [event.midi];
   if (notes.length > 12) throw new RangeError("Campfire supports at most 12 ordered notes per event.");
   const performance = event.technique?.campfire || {};
@@ -139,7 +139,18 @@ export function renderCampfireAcousticEvent(event, { sampleRate = 44100, cache =
   if (event.direction !== undefined && !["down", "up"].includes(event.direction)) throw new RangeError(`Unsupported Campfire direction: ${event.direction}`);
   if (event.direction === "up") notes.reverse();
   const identity = campfireAcousticNoteIdentity({ midi: notes[0], sampleRate, seed: performance.seed, recipeVersion: performance.recipeVersion, tailPolicy: performance.tailPolicy });
+  notes.forEach((midi) => campfireAcousticNoteIdentity({ ...identity, midi, seed: performance.seed ?? midi * 311 }));
   const frameCount = Math.floor(sampleRate * 1.5) + Math.round((notes.length - 1) * strumSeconds * sampleRate);
+  return { notes, identity, performance, strumSeconds, velocity, noteGain, sampleRate, frameCount };
+}
+
+export function campfireAcousticEventFrameCount(event, options = {}) {
+  return campfireEventParameters(event, options).frameCount;
+}
+
+export function renderCampfireAcousticEvent(event, options = {}) {
+  const { notes, identity, performance, strumSeconds, velocity, noteGain, sampleRate, frameCount } = campfireEventParameters(event, options);
+  const cache = options.cache || null;
   const output = new Float32Array(frameCount);
   notes.forEach((midi, stringIndex) => {
     // Per-note default seeds remain pitch-dependent, as in the reference.

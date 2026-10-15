@@ -152,6 +152,7 @@ function buildRichSectionEvents(project, section, context) {
         role: source.role,
         expression: source.expression,
         technique: source.technique,
+        direction: source.direction,
         note: source.note,
         notes: source.notes,
         sourceDuration: source.duration,

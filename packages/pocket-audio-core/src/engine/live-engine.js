@@ -81,9 +81,13 @@ export class PocketAudio {
   async play(options = {}) {
     this.ensureProject();
     if (!this.audioContext && this.options.audio !== false && (globalThis.AudioContext || globalThis.webkitAudioContext)) await this.resume();
-    this.playing = true;
     if (options.sectionId) this.transport.sectionId = normaliseSectionId(options.sectionId);
-    this.timeline = buildPocketAudioTimeline(this.project, { scope: options.scope || "sequence", sectionId: this.transport.sectionId });
+    this.timeline = buildPocketAudioTimeline(this.project, { scope: options.scope || "sequence", sectionId: this.transport.sectionId, renderer: "live" });
+    if (this.options.audio !== false && this.timeline.events.some((event) => event.type === "guitar" && event.instrument === "campfire_acoustic")) {
+      this.pause();
+      throw new Error("Campfire Acoustic requires Core offline rendering or prepareCampfireAcousticPlayback; this live engine is not connected yet.");
+    }
+    this.playing = true;
     this.nextEventIndex = 0;
     this.audioStartTime = this.clock();
     this.playStartedAt = this.audioStartTime;

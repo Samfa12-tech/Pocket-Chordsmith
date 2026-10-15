@@ -2,6 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { renderPocketAudioEventBuffer } from "../src/engine/offline-renderer.js";
+import { chordsmithOfflineStemRenderGain } from "../src/performance/stem-mix.js";
+import { normalisePocketChordsmithProject } from "../src/schema/normalise-project.js";
+import { buildPocketAudioTimeline } from "../src/events/timeline-events.js";
+import { parsePocketChordsmithInput } from "../src/schema/parse-share-code.js";
+import { createPocketAudioRendererCapabilityReport } from "../src/engine/capabilities.js";
+import { PocketAudio } from "../src/engine/live-engine.js";
 import {
   CAMPFIRE_ACOUSTIC_RECIPE, CAMPFIRE_REFERENCE_CHORDS, CampfireAcousticNoteCache,
   campfireAcousticNoteKey, campfireAcousticReferenceEvents, campfireAcousticVoicing,
@@ -131,5 +138,57 @@ test("unsupported requests fail explicitly instead of retuning or changing recip
   assert.throws(() => renderCampfireAcousticEvent({ midi: 50, direction: "random" }), RangeError);
   assert.throws(() => renderCampfireAcousticEvent({ midi: 50, technique: { campfire: { strumSeconds: -0.01 } } }), RangeError);
   assert.throws(() => renderCampfireAcousticEvent({ midiNotes: new Array(13).fill(50) }), RangeError);
+  assert.throws(() => renderPocketAudioEventBuffer([{ type: "guitar", instrument: "campfire_acoustic", midi: 50, technique: { campfire: { strumSeconds: 1e12 } } }]), RangeError);
   assert.throws(() => campfireAcousticVoicing({ rootPc: 2, quality: "unknown" }), RangeError);
+});
+
+test("Core offline events use the pluck PCM with shared stem gain and complete tails", () => {
+  const event = { type: "guitar", stem: "guitar", instrument: "campfire_acoustic", midiNotes: [50, 57, 62, 66], velocity: 0.7, time: 0.1, duration: 0.1, pan: -1 };
+  const sampleRate = 48000;
+  const rendered = renderPocketAudioEventBuffer([event], { sampleRate });
+  const dry = renderCampfireAcousticEvent(event, { sampleRate });
+  const offset = 4800;
+  const gain = chordsmithOfflineStemRenderGain("guitar");
+  assert.ok(rendered.channels[0].length >= dry.length + offset);
+  assert.ok(rendered.channels[0].subarray(0, offset).every((sample) => sample === 0));
+  dry.forEach((sample, frame) => assert.equal(rendered.channels[0][offset + frame], Math.fround(sample * gain)));
+  assert.equal(peak(rendered.channels[1]), 0);
+  const silent = renderPocketAudioEventBuffer([{ ...event, velocity: 0 }], { sampleRate });
+  assert.equal(peak(silent.channels[0]), 0);
+});
+
+test("Core exact-loop policy deliberately crops Campfire tails without changing other loop durations", () => {
+  const events = [{ type: "guitar", stem: "guitar", instrument: "campfire_acoustic", midi: 50, time: 0, duration: 0.25, velocity: 1 }];
+  const rendered = renderPocketAudioEventBuffer(events, { sampleRate: 48000, durationSeconds: 0.5, tailSeconds: 0 });
+  assert.equal(rendered.channels[0].length, 24000);
+  assert.ok(peak(rendered.channels[0]) > 0);
+});
+
+test("schema-17 JSON/PCS1 preserves explicit Campfire intent and reports the pending live path honestly", async () => {
+  const source = { schemaVersion: 17, bpm: 76, key: "D", scale: "major", timeSig: 4, resolution: 4, sectionBars: { A: 1 }, songSequence: ["A"], sections: { A: { tracks: { guitar: { events: [
+    { tick: 0, durationTicks: 480, notes: [50, 57, 62, 66], sound: "campfire_acoustic", velocity: 100, articulation: "open", direction: "up", technique: { campfire: { seed: 123, strumSeconds: 0.027 }, future: { retain: "yes" } }, futureField: "preserved" }
+  ] } } } } };
+  const before = JSON.stringify(source);
+  for (const input of [JSON.stringify(source), `PCS1:${Buffer.from(JSON.stringify(source)).toString("base64")}`]) {
+    const project = normalisePocketChordsmithProject(parsePocketChordsmithInput(input));
+    const timeline = buildPocketAudioTimeline(project);
+    const event = timeline.events.find((item) => item.instrument === "campfire_acoustic");
+    assert.ok(event);
+    assert.deepEqual(event.midiNotes, [50, 57, 62, 66]);
+    assert.equal(event.direction, "up");
+    assert.equal(event.technique.future.retain, "yes");
+    assert.equal(project.source.original.sections.A.tracks.guitar.events[0].futureField, "preserved");
+    assert.ok(peak(renderPocketAudioEventBuffer([event]).channels[0]) > 0);
+    const live = createPocketAudioRendererCapabilityReport(project, { renderer: "live" });
+    assert.equal(live.supported, false);
+    assert.ok(live.losses.some((loss) => loss.feature === "instrument:campfire_acoustic"));
+    const offline = createPocketAudioRendererCapabilityReport(project, { renderer: "offline" });
+    assert.ok(!offline.losses.some((loss) => loss.feature === "instrument:campfire_acoustic"));
+    const engine = new PocketAudio();
+    await engine.loadProject(input);
+    await assert.rejects(() => engine.play(), /requires Core offline rendering or prepareCampfireAcousticPlayback/);
+    assert.equal(engine.playing, false);
+    engine.dispose();
+  }
+  assert.equal(JSON.stringify(source), before);
 });
