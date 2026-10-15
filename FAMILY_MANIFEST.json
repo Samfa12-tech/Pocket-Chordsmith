@@ -1,7 +1,7 @@
 {
   "$schema": "./docs/schemas/pocket-audio-family-manifest.schema.json",
   "manifestVersion": 1,
-  "updated": "2026-09-23",
+  "updated": "2026-10-15",
   "schemaPolicy": {
     "canonicalProjectSchema": 17,
     "legacyProjectionSchema": 16,
@@ -61,15 +61,15 @@
       "name": "Pocket DAW",
       "path": "apps/pocket-daw",
       "kind": "native-windows-app",
-      "versions": { "source": "0.6.50", "projectSchema": "3", "latestPublished": "0.6.49", "lastInstalledSmoke": "0.6.49" },
+      "versions": { "source": "0.6.51", "projectSchema": "3", "latestPublished": "0.6.50", "lastInstalledSmoke": "0.6.50" },
       "license": "UNLICENSED",
       "releaseStatus": "public-alpha-source-ahead-of-public",
       "packageCommand": "cd apps/pocket-daw && npm run release:prepare",
       "testCommand": "cd apps/pocket-daw && npm run verify:versions && npm run verify:release-candidate-truth && npm test",
       "deployment": {
         "channel": "GitHub updater / stable itch bootstrapper",
-        "identifier": "pocket-daw-v0.6.49",
-        "sourceCommit": "a8ebe0b6525f9f7679e0028d5b98db0d0f6bf2ca"
+        "identifier": "pocket-daw-v0.6.50",
+        "sourceCommit": "ec3f783b24abdd85d46229c2893ea953e96248cd"
       }
     },
     {
