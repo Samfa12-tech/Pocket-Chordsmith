@@ -2816,6 +2816,7 @@ function renderLowerDockExportDetails(project: ReturnType<typeof currentProject>
   return `
     <div class="lower-dock-body lower-dock-detail lower-dock-export" data-scroll-key="export-details" tabindex="0" aria-label="Finish and export details">
       ${renderFinishComparison(state)}
+      <div data-delivery-qc-host="dock">${renderDeliveryQc(state)}</div>
       <section class="dock-track-context">
         <h3>${escapeHtml(project.project.title || "Untitled project")}</h3>
         <p>${project.timeline.bars} bars / ${project.project.bpm} BPM / ${project.project.sampleRate} Hz</p>
@@ -2903,6 +2904,28 @@ function renderFinishComparison(state: AppState): string {
     ${finish.readings.length ? `<ul>${finish.readings.map(reading => `<li>${escapeHtml(reading)}</li>`).join("")}</ul>` : ""}
     ${finish.warnings.length ? `<ul class="finish-warnings">${finish.warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}
     <small>Offline estimates for this rendered passage. Export normalization and encoding can change the final file; check decoded delivery output separately.</small>
+  </section>`;
+}
+
+export function renderDeliveryQc(state: AppState): string {
+  const qc = state.deliveryQc;
+  const busy = state.playing || ["preparing", "count-in", "recording", "stopping"].includes(state.recording.status) || state.midiInputRecording.status === "recording";
+  const analysis = qc.analysis;
+  const number = (value: number | null | undefined, suffix: string) => value === null || value === undefined ? "unavailable" : `${value.toFixed(1)} ${suffix}`;
+  return `<section class="delivery-qc" aria-label="Last WAV check">
+    <h3>Last WAV check</h3>
+    ${qc.fileName ? `<p><strong>${escapeHtml(qc.fileName)}</strong> · ${Math.round(qc.bytes / 1024)} KB · ${escapeHtml(qc.projectTitle)}</p>` : ""}
+    <p role="status" aria-live="polite">${escapeHtml(qc.message)}</p>
+    ${qc.projectChanged ? `<p>The project has changed since this download. Export again to check the current mix.</p>` : ""}
+    ${analysis ? `<p>${analysis.measurements.sampleRate} Hz · ${analysis.measurements.channelCount === 1 ? "mono" : "stereo"} · ${analysis.bitDepth}-bit${analysis.bitDepth === 32 ? " float" : " PCM"} · ${analysis.measurements.durationSeconds.toFixed(3)} s · ${analysis.frameCount} frames</p>
+      <p>Estimated integrated loudness: <strong>${number(analysis.measurements.integratedLufs, "LUFS")}</strong> · estimated true peak: <strong>${number(analysis.measurements.truePeakDbtp, "dBTP")}</strong></p>
+      ${analysis.byteSha256 ? `<details><summary>File identity</summary><code>SHA-256 ${escapeHtml(analysis.byteSha256)}</code></details>` : ""}
+      ${qc.warnings.length ? `<ul class="finish-warnings">${qc.warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : "<p>No measured warning threshold was crossed. Review the estimates against your delivery target.</p>"}` : ""}
+    <div class="finish-actions">
+      <button data-action="delivery-qc-cancel" data-delivery-qc-control="cancel" ${qc.phase === "analysing" ? "" : "disabled"}>Cancel check</button>
+      <button data-action="delivery-qc-start" data-delivery-qc-control="start" ${qc.canRetry && !busy ? "" : "disabled"}>Check WAV</button>
+      <button data-action="delivery-qc-report" data-delivery-qc-control="report" ${qc.phase === "ready" ? "" : "disabled"}>Save audio report</button>
+    </div>
   </section>`;
 }
 
@@ -3235,6 +3258,7 @@ function renderFilePanel(state: AppState): string {
             </div>
           ` : ""}
           <p class="file-note">Full mix, stem, section-loop and game-pack exports render real audio into deterministic pack paths.</p>
+            <div data-delivery-qc-host="file">${renderDeliveryQc(state)}</div>
         </section>
         <section class="file-window-section" aria-labelledby="file-media-title">
           <div>

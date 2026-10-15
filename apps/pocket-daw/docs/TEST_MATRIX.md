@@ -2,7 +2,7 @@
 
 > Generated from `apps/pocket-daw/test-scope-manifest.json` by `node scripts/verify-test-scope-manifest.mjs --write-matrix`. Do not hand-edit this file.
 
-Current inventory: 111 runnable test artifacts. The categories below identify the primary execution contract; evidence-validator tests are deterministic and do not claim that physical/manual evidence has occurred.
+Current inventory: 112 runnable test artifacts. The categories below identify the primary execution contract; evidence-validator tests are deterministic and do not claim that physical/manual evidence has occurred.
 
 ## Category totals
 
@@ -13,7 +13,7 @@ Current inventory: 111 runnable test artifacts. The categories below identify th
 | integration | 23 |
 | native-rust | 2 |
 | release-contract | 15 |
-| unit-domain | 33 |
+| unit-domain | 34 |
 | windows-contract | 15 |
 
 ## Inventory
@@ -29,6 +29,7 @@ Current inventory: 111 runnable test artifacts. The categories below identify th
 | `apps/pocket-daw/tests/selectionAudition.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Read-only contextual audition range, authored tempo timing and explicit limits; native clock/audio and installed acceptance remain separate. |
 | `apps/pocket-daw/tests/finishing.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Finish proposals preserve user effects; attenuation-only monitor matching rejects incompatible measurements. |
 | `apps/pocket-daw/tests/finishAnalysis.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Actual decoded float PCM metrics, fail-closed headers/ranges and worker cancellation. |
+| `apps/pocket-daw/tests/deliveryQc.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Immutable delivery-byte ownership, deferred/cancelled checks, late-result rejection and explicit limits. |
 | `apps/pocket-daw/tests/finishPreview.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Owned preview reservation/render/read/discard lifecycle, cancellation and late-result rejection. |
 | `apps/pocket-daw/tests/automation.test.ts` | unit-domain | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained domain coverage. |
 | `apps/pocket-daw/tests/automationSurface.test.ts` | compatibility-parity | linux, windows | yes | yes | yes | yes | none (validator/fixture only) | Retained surface parity coverage. |

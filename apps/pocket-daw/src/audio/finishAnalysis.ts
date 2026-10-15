@@ -1,7 +1,24 @@
 import { analyseAudioChannels } from "../../../../packages/pocket-audio-core/src/export/audio-metrics.js";
+import { decodePcmWavBytes } from "../../../../packages/pocket-audio-core/src/export/wav.js";
 
 export interface FinishAnalysisRange { startSeconds: number; endSeconds: number }
 export type FinishMeasurements = ReturnType<typeof analyseAudioChannels>;
+export const MAX_DELIVERY_ANALYSIS_BYTES = 128 * 1024 * 1024;
+export interface DeliveryAnalysis {
+  measurements: FinishMeasurements;
+  bitDepth: number;
+  frameCount: number;
+  byteLength: number;
+  byteSha256: string | null;
+}
+
+/** Measures the complete final WAV, after channel/depth/dither/normalization. */
+export function analyseDeliveryWav(buffer: ArrayBuffer): DeliveryAnalysis {
+  if (buffer.byteLength < 44 || buffer.byteLength > MAX_DELIVERY_ANALYSIS_BYTES) throw new Error("WAV check supports files up to 128 MiB.");
+  const decoded = decodePcmWavBytes(new Uint8Array(buffer));
+  if (![1, 2].includes(decoded.channels.length) || decoded.sampleRate < 8000 || decoded.sampleRate > 192000 || decoded.duration <= 0 || decoded.duration > 600) throw new Error("WAV check supports mono/stereo, 8–192 kHz and up to 600 seconds.");
+  return { measurements: analyseAudioChannels(decoded), bitDepth: decoded.bitDepth, frameCount: decoded.channels[0].length, byteLength: buffer.byteLength, byteSha256: null };
+}
 
 /** Decode the canonical float WAV written by our native preview renderer only. */
 export function analyseFinishWav(buffer: ArrayBuffer, range: FinishAnalysisRange): FinishMeasurements {

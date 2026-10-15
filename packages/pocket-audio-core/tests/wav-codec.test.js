@@ -40,3 +40,10 @@ test("float support rejects unsupported formats, incomplete chunks and short fmt
   const short = floatWav([new Float32Array(3)]); new DataView(short.buffer).setUint32(16, 2, true);
   assert.throws(() => decodePcmWavBytes(short), /fmt chunk size/);
 });
+test("WAV decoder rejects inconsistent frame/rate metadata instead of partial-frame output", () => {
+  for (const [offset, value, width] of [[22, 0, 2], [24, 0, 4], [28, 123, 4], [32, 3, 2], [40, 3, 4]]) {
+    const bytes = floatWav([new Float32Array(3)]), view = new DataView(bytes.buffer);
+    if (width === 2) view.setUint16(offset, value, true); else view.setUint32(offset, value, true);
+    assert.throws(() => decodePcmWavBytes(bytes), /alignment|sample-rate/);
+  }
+});

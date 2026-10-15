@@ -1334,3 +1334,33 @@ DeliveryQCWIP preserved in exactstashf3a578b56b1708db7e26295e47eba584fb03efe9 on
 codex/daw-delivery-qc-20261016. Resume onlyafterintegratingthiscorrection; it has
 noUI/committeddeliveryQCclaim yet. Rest of originalfamily task remainsactive.
 No installer/release/merge/deps/accounts/licence/security/CoreNPM change.
+
+## Hydration accepted; final-download WAV QC source slice
+
+PR104 exact65534010c704fdb3633a8a549db1f7d8b1d4fd7b independently accepted;
+source owner/clone blocker cleared. Exact CI38820399984/CodeQL38820399393 success;
+hosted browser43passed/2long-worker skipped, frontend1228passed/types/build.
+Syntheticmerge dbedf69f102f7dac8727c27de739124b6e3f8528 into unchanged103head.
+Installed/device/listening/fullfamily gates remain open.
+
+Delivery QC resumed on isolated branch based104; originalstashf3a578b retained.
+Full WAV hands immutable finalBlob todownload and a cancellable dedicated worker,
+measures full output afterchannel/depth/dither/normalization, showsformat/frames/
+estimatedLUFS/truepeak+existing measuredwarnings, optionalWebCryptoSHA/reportJSON.
+No autoplay/projectprocessing/passlabel; successfulcheck meansanalysiscomplete.
+128MiB/600sec/mono-stereo/8–192k limits explicit; busyplayback/capture defers/cancels;
+cancel/retry/latestgeneration preservedownload. PartialDOMrefresh preservesfocus/
+unfinishedtailinput; projectchange labelsoldfile. Ordinary coldexport hydration
+nowrejects lateedit replacement. CoreWAV rejectsinvalid frame/rate metadata.
+
+Local Core213/213, DAW1235/1235, typecheck/build, targetedbrowser22/22 including
+two real long-worker checks. FinaldownloadedfixturePCM/report decoded independently;
+one initialbrowserdownloadcanceled, isolatedretry+whole22rerunpassed, failurelog
+retained. FixturegeneratedPCM/mocknativecommands isnotnativeDSP evidence.
+800x600 controls/readings reachableinexisting scrollarea/nohorizontaloverflow.
+Prior103realnative seven writtenWAV/reference evidence reused separately; no new
+Rust/native/installed/device/humanlistening run. Capture fingerprinte4ec7e55...
+unchanged; mic scoped omitted, NOTpassed. SeeDELIVERY_WAV_QC_2026-10-16.md.
+Fullgamefloat32/runtime/loadbudgets, remainingcrossfamilyBeatStitch/Hear/phoneUX,
+dense/scaling/installedPCM/devices/listening, versions/advisories/review/publication
+remainactive. No newinstaller/merge/release/deps/account/licence/security/CoreNPM.

@@ -3357,3 +3357,6 @@ button.record:hover {
 .finish-actions button { min-height: 44px; }
 .finish-actions button[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 2px; }
 .finish-warnings { border-inline-start: 3px solid #d8ac5c; padding-inline-start: 1.5rem; }
+[data-delivery-qc-host] { grid-column: 1 / -1; min-width: 0; }
+.delivery-qc { min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: .5rem; }
+.delivery-qc p, .delivery-qc code { overflow-wrap: anywhere; }

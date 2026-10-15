@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { analyseFinishWav, finishAudioWarnings } from "../src/audio/finishAnalysis";
+import { analyseDeliveryWav, analyseFinishWav, finishAudioWarnings } from "../src/audio/finishAnalysis";
+import { encodePcmWavBytes } from "../../../packages/pocket-audio-core/src/export/wav.js";
 import { analyseFinishWavOffThread } from "../src/audio/finishAnalysisClient";
 import { finishMonitorGains } from "../src/daw/finishing";
 
@@ -13,6 +14,28 @@ function floatWav(amplitude: number, seconds = 1): ArrayBuffer {
 }
 
 describe("rendered Finish analysis", () => {
+  it("checks the complete encoded PCM16/24/float32 file rather than a preview range", () => {
+    const channel = Float32Array.from({ length: 16000 }, (_, frame) => 0.2 * Math.sin(frame * Math.PI / 8));
+    for (const bitDepth of [16, 24]) {
+      const bytes = encodePcmWavBytes({ channels: [channel], sampleRate: 16000, bitDepth });
+      const result = analyseDeliveryWav(bytes.buffer);
+      expect(result.bitDepth).toBe(bitDepth); expect(result.frameCount).toBe(16000);
+      expect(result.byteLength).toBe(bytes.length); expect(result.measurements.durationSeconds).toBe(1);
+      expect(result.measurements.channelCount).toBe(1);
+    }
+    expect(analyseDeliveryWav(floatWav(0.2)).bitDepth).toBe(32);
+  });
+  it("reports final-file intersample headroom and rejects malformed or unsupported delivery audio", () => {
+    const bytes = floatWav(0.2), view = new DataView(bytes);
+    for (let frame = 0; frame < 16000; frame++) for (let channel = 0; channel < 2; channel++) view.setFloat32(44 + frame * 8 + channel * 4, Math.sin(frame * Math.PI / 2 + Math.PI / 4) * 0.95 / Math.SQRT1_2, true);
+    const result = analyseDeliveryWav(bytes);
+    expect(result.measurements.peak).toBeCloseTo(0.95, 5);
+    expect(result.measurements.truePeakDbtp).toBeGreaterThan(1);
+    expect(finishAudioWarnings(result.measurements).join(" ")).toMatch(/true peak exceeds/);
+    const bad = floatWav(0.2); new DataView(bad).setUint16(32, 0, true);
+    expect(() => analyseDeliveryWav(bad)).toThrow(/alignment/);
+    expect(() => analyseDeliveryWav(new ArrayBuffer(0))).toThrow();
+  });
   it("measures decoded float PCM, matches a known level change, and preserves the supplied WAV", () => {
     const buffer = floatWav(0.2), before = buffer.slice(0);
     const a = analyseFinishWav(buffer, { startSeconds: 0, endSeconds: 1 });

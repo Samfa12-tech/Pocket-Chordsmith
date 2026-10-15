@@ -16,6 +16,7 @@ import type { MidiImportPlacementMode } from "../daw/midiClips";
 import { createEmptySampleLibraryIndex, type SampleLibraryCategory, type SampleLibraryIndex } from "../native/sampleLibrary";
 import type { Vst3BetaStatus, Vst3InstanceStatus, Vst3ModuleCandidate } from "../plugins/vst3Foundation";
 import type { FinishPresetId } from "../daw/finishing";
+import { initialDeliveryQcState, type DeliveryQcState } from "../audio/deliveryQc";
 
 export type ChordsmithStepSelection =
   | { kind: "drums"; sectionId: string; lane: DrumLaneId; step: number }
@@ -65,6 +66,7 @@ export interface AppState {
   currentFile: ProjectFileState;
   busyMessage: string | null;
   exportProgress: { message: string; detail?: string } | null;
+  deliveryQc: DeliveryQcState;
   recent: RecentProject[];
   showFilePanel: boolean;
   showControls: boolean;
@@ -319,6 +321,7 @@ export function createInitialState(): AppState {
     currentFile: { path: null, label: "Editable demo copy" },
     busyMessage: null,
     exportProgress: null,
+    deliveryQc: initialDeliveryQcState(),
     recent: [],
     showFilePanel: false,
     showControls: false,

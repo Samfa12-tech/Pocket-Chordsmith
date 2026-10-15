@@ -81,6 +81,8 @@ export function decodePcmWavBytes(bytes) {
         audioFormat: view.getUint16(payloadOffset, true),
         channels: view.getUint16(payloadOffset + 2, true),
         sampleRate: view.getUint32(payloadOffset + 4, true),
+        byteRate: view.getUint32(payloadOffset + 8, true),
+        blockAlign: view.getUint16(payloadOffset + 12, true),
         bitsPerSample: view.getUint16(payloadOffset + 14, true)
       };
     } else if (id === "data") {
@@ -97,6 +99,10 @@ export function decodePcmWavBytes(bytes) {
     throw new Error(`Unsupported WAV format: format=${fmt.audioFormat} bits=${fmt.bitsPerSample}.`);
   }
   const bytesPerSample = fmt.bitsPerSample / 8;
+  if (!fmt.channels || !fmt.sampleRate || fmt.blockAlign !== fmt.channels * bytesPerSample
+    || fmt.byteRate !== fmt.sampleRate * fmt.blockAlign || dataSize % fmt.blockAlign) {
+    throw new Error("Invalid WAV frame alignment or sample-rate metadata.");
+  }
   const frameCount = Math.floor(dataSize / (fmt.channels * bytesPerSample));
   const channels = Array.from({ length: fmt.channels }, () => new Float32Array(frameCount));
   for (let frame = 0; frame < frameCount; frame += 1) {

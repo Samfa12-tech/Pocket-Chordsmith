@@ -304,10 +304,11 @@ import { DesktopMenus } from "./desktopMenus";
 import { selectionAuditionPlan } from "../daw/selectionAudition";
 import { FINISH_PRESETS, type FinishPresetId } from "../daw/finishing";
 import { prepareFinishComparison, type PreparedFinishComparison } from "../audio/finishPreparation";
+import { DeliveryQcJob } from "../audio/deliveryQc";
 import { collapsedSectionsForCreationPreset, createInitialState, createMidiInputRecordingUiState, createRecordingUiState, currentProject, isUiCollapseSection, loadProjectIntoState, lowerDockTabForCreationPreset, recordingSessionMatches, type AppState, type ChordsmithStepSelection, type HandoffResult, type LoadProjectIntoStateOptions, type NativeCacheUiStatus } from "./state";
 import { chordsmithStepDragAction, type ChordsmithStepArticulation } from "./chordsmithStepGestures";
 import { automationSurfaceAudioSyncMode, automationSurfacePointFromClient } from "./automationSurface";
-import { renderAppShell, renderAddTrackPanel } from "./ui";
+import { renderAppShell, renderAddTrackPanel, renderDeliveryQc } from "./ui";
 import { appendHostedStateSaveWarnings, safeReloadHostedInstance, serializeAfterReadyHostedStateCapture } from "./vst3SaveOrchestration";
 import { replacePresent } from "../daw/undo";
 import type { DrumRackPadParameter, SamplerEnvelopeParameter, SamplerParameter } from "../daw/devices";
@@ -487,6 +488,9 @@ export class App {
   private samplePreviewBridge = new NativeAudioPlaybackBridge();
   private samplePreviewTimer: number | null = null;
   private selectionAuditionToken = 0;
+  private deliveryQcJob: DeliveryQcJob;
+  private deliveryQcProject: PocketDawProject | null = null;
+  private wavExportInProgress = false;
   private finishActionToken = 0;
   private finishContext: { project: PocketDawProject; key: string; transportRevision: number; endSeconds: number; controller: AbortController; prepared: PreparedFinishComparison | null } | null = null;
   private selectionAuditionContext: { project: PocketDawProject; key: string; transportRevision: number; endSeconds: number } | null = null;
@@ -502,6 +506,10 @@ export class App {
     this.state.recent = loadRecentProjects();
     this.state.updaterAutoCheckOnStartup = loadUpdaterAutoCheckPreference();
     this.engine = new AudioEngine(currentProject(this.state));
+    this.deliveryQcJob = new DeliveryQcJob(state => {
+      this.state.deliveryQc = { ...state, projectChanged: this.deliveryQcProject !== currentProject(this.state) };
+      this.updateDeliveryQcDom();
+    });
     this.engine.setOnTick((tick) => {
       if (!tick.playing && this.state.finishComparison.phase === "playing" && this.finishContext) {
         this.finishActionToken += 1;
@@ -518,6 +526,8 @@ export class App {
       }
       const playingChanged = this.state.playing !== tick.playing;
       this.state.playing = tick.playing;
+      if (tick.playing && this.state.deliveryQc.phase === "analysing") this.deliveryQcJob.cancel("Check cancelled to keep audio resources available. Stop playback/recording, then Check WAV again.");
+      if (playingChanged && this.state.deliveryQc.fileName) this.updateDeliveryQcDom();
       this.state.playheadBar = tick.bar;
       this.state.meterLevels = this.engine.getMeterLevels();
       this.maybeAutoPunchOutRecording();
@@ -1800,6 +1810,8 @@ export class App {
   }
 
   private render(options: RenderOptions = {}) {
+    if (this.state.deliveryQc.phase === "analysing" && this.deliveryQcAudioBusy()) this.deliveryQcJob.cancel("Check cancelled to keep audio resources available. Stop playback/recording, then Check WAV again.");
+    this.state.deliveryQc.projectChanged = !!this.deliveryQcProject && this.deliveryQcProject !== currentProject(this.state);
     if (this.finishContext && !this.finishComparisonIsCurrent()) this.cancelFinishComparison("Project, selection or playback changed. Prepare a fresh comparison.");
     if (this.selectionAuditionContext && !this.selectionAuditionIsCurrent()) this.cancelSelectionAudition("Selection or playback changed. Hear this bit again to use the new context.");
     this.playbackRenderScheduler.cancelPending(this.renderSchedulerTimers());
@@ -3953,6 +3965,12 @@ export class App {
   }
 
   private async dispatch(action: string, actionSource?: HTMLElement) {
+    if (action === "delivery-qc-cancel") { this.deliveryQcJob.cancel(); return; }
+    if (action === "delivery-qc-start") { if (!this.deliveryQcAudioBusy()) await this.deliveryQcJob.start(); return; }
+    if (action === "delivery-qc-report") {
+      downloadBlob(new Blob([JSON.stringify({ schemaVersion: 1, ...this.state.deliveryQc }, null, 2)], { type: "application/json" }), `${this.state.deliveryQc.fileName}.audio-report.json`);
+      return;
+    }
     if (action.startsWith("finish-")) { await this.handleFinishAction(action); return; }
     if (["audition-selection", "stop", "play", "pause", "restart", "record-toggle", "midi-record-toggle", "midi-panic"].includes(action)) this.cancelFinishComparison("Comparison stopped by another transport action.");
     if (action === "audition-selection") { await this.playSelectionAudition(); return; }
@@ -6777,21 +6795,45 @@ export class App {
   }
 
   private async exportWav() {
+    if (this.wavExportInProgress) return;
+    this.wavExportInProgress = true;
+    this.deliveryQcJob.cancel("A new WAV export is being prepared. The prior check was cancelled.");
     try {
       await this.showExportProgress("Preparing WAV export", "Loading timeline audio files");
       const { project, blob } = await this.createFullMixWavBlobForExport(async () => {
         await this.showExportProgress("Rendering WAV mix", "Longer songs and imported audio can take a little while");
       });
       await this.showExportProgress("Preparing WAV download", `${Math.round(blob.size / 1024)} KB rendered`);
-      downloadBlob(blob, safeName(project.project.title, "wav"));
+      const fileName = safeName(project.project.title, "wav");
+      downloadBlob(blob, fileName);
       this.state.exportProgress = null;
-      this.state.status = `Exported WAV (${Math.round(blob.size / 1024)} KB).`;
+      this.state.status = `WAV download requested (${Math.round(blob.size / 1024)} KB). See Last WAV check in Export for decoded-file measurements.`;
       this.render({ preserveScroll: true });
+      this.deliveryQcProject = project;
+      this.deliveryQcJob.queue(blob, fileName, project.project.title, this.deliveryQcAudioBusy());
     } catch (error) {
       this.state.exportProgress = null;
       this.state.status = error instanceof Error ? `WAV export failed: ${error.message}` : "WAV export failed.";
       this.render({ preserveScroll: true });
+    } finally {
+      this.wavExportInProgress = false;
     }
+  }
+
+  private deliveryQcAudioBusy(): boolean {
+    return this.engine.isPlaying() || ["preparing", "count-in", "recording", "stopping"].includes(this.state.recording.status) || this.state.midiInputRecording.status === "recording";
+  }
+
+  private updateDeliveryQcDom() {
+    this.root.querySelectorAll<HTMLElement>("[data-delivery-qc-host]").forEach(host => {
+      const focused = document.activeElement instanceof HTMLElement && host.contains(document.activeElement) ? document.activeElement.dataset.deliveryQcControl : undefined;
+      host.innerHTML = renderDeliveryQc(this.state);
+      if (focused) {
+        const preferred = host.querySelector<HTMLElement>(`[data-delivery-qc-control="${CSS.escape(focused)}"]:not(:disabled)`);
+        const fallback = host.querySelector<HTMLElement>('[data-delivery-qc-control]:not(:disabled)');
+        (preferred || fallback)?.focus({ preventScroll: true });
+      }
+    });
   }
 
   private async createFullMixWavBlobForExport(onReadyToRender?: () => Promise<void>): Promise<{ project: PocketDawProject; blob: Blob }> {
@@ -7261,7 +7303,8 @@ export class App {
   }
 
   private async hydrateTimelineAudioBuffers(options: { isCurrent?: () => boolean; onPreparedProject?: (project: PocketDawProject) => void } = {}): Promise<{ total: number; loaded: number; cached: number; missing: string[] }> {
-    const assertCurrent = () => { if (options.isCurrent && !options.isCurrent()) throw new Error("Audition preparation was cancelled or changed."); };
+    const originalProject = currentProject(this.state);
+    const assertCurrent = () => { if (currentProject(this.state) !== originalProject || (options.isCurrent && !options.isCurrent())) throw new Error("Audio preparation was cancelled or the project changed. Try again with the current project."); };
     let project = currentProject(this.state);
     let repairedProjectMetadata = false;
     const ids = Array.from(new Set(project.timeline.clips

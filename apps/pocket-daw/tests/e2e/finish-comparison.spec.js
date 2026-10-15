@@ -1,14 +1,17 @@
 import { expect, test } from "@playwright/test";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { serveBuiltUi } from "./staticUiTransport.js";
 import { createDemoProject } from "../../src/demo/demoProject.ts";
 import { addImportedAudioMedia, placeAudioClipOnTimeline } from "../../src/daw/audioClips.ts";
 import { buildPocketDawProjectFile } from "../../src/daw/dawProject.ts";
+import { decodePcmWavBytes } from "../../../../packages/pocket-audio-core/src/export/wav.js";
+import { analyseAudioChannels } from "../../../../packages/pocket-audio-core/src/export/audio-metrics.js";
 
 test.beforeEach(async ({ page }) => serveBuiltUi(page));
 
-async function fixture(page, pending = false, { cold = false, holdCold = false } = {}) {
+async function fixture(page, pending = false, { cold = false, holdCold = false, downloadAudio = false, holdDelivery = false } = {}) {
   let savedProject = null;
   if (cold) {
     const imported = addImportedAudioMedia(createDemoProject(), { name: "Saved guitar.wav", uri: "C:\\fixture\\saved-guitar.wav", mimeType: "audio/wav", durationSeconds: 1, sampleRate: 48000, channels: 1, sizeBytes: 96044, metadata: { mediaRefKind: "external" } });
@@ -18,13 +21,25 @@ async function fixture(page, pending = false, { cold = false, holdCold = false }
   }
   // Command/control fixture with generated PCM. This is never evidence of
   // installed native DSP, physical output or human listening.
-  await page.addInitScript(({ pending, savedProject, holdCold }) => {
+  await page.addInitScript(({ pending, savedProject, holdCold, downloadAudio, holdDelivery }) => {
     let next = 0;
     const files = new Map();
     window.__finishCalls = [];
     window.__finishRenderInputs = [];
     window.__coldHydrationReads = 0;
     window.__coldOpenCount = 0;
+    if (holdDelivery) {
+      const ActualWorker = window.Worker;
+      window.Worker = class extends ActualWorker {
+        set onmessage(handler) {
+          super.onmessage = event => {
+            if (event.data.delivery && !window.__deliveryReleased) window.__releaseDelivery = () => { window.__deliveryReleased = true; handler(event); };
+            else handler(event);
+          };
+        }
+        get onmessage() { return super.onmessage; }
+      };
+    }
     let status = { monitorComparisonVersion: 2, backend: "native-cpal", available: true, active: true, playing: false, positionSeconds: 0, eventCount: 0, sampleRate: 48000, channels: 2, renderedFrameCount: 0, startedGeneration: 1, projectTitle: "Control fixture", deviceName: null, hostName: null, lastError: null };
     window.__TAURI_INTERNALS__ = {
       metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
@@ -65,12 +80,27 @@ async function fixture(page, pending = false, { cold = false, holdCold = false }
         }
         if (command === "native_audio_stop") { status.playing = false; return { ...status }; }
         if (command === "native_audio_status" || command === "native_audio_preload_asset") return { ...status };
-        if (command === "native_audio_render_wav") throw new Error("Control fixture does not render native DSP");
+        if (command === "native_audio_render_wav") {
+          if (!downloadAudio || args.renderMode === "cache-stem") throw new Error("Control fixture does not render native DSP");
+          // Generated one-second transport output, deliberately independent
+          // from project metadata. QC must measure final bytes, not that metadata.
+          const rate = args.payload.sampleRate, depth = args.bitDepth || 16, bytesPerSample = depth / 8;
+          const buffer = new ArrayBuffer(44 + rate * 2 * bytesPerSample), view = new DataView(buffer);
+          const ascii = (at, text) => [...text].forEach((character, index) => view.setUint8(at + index, character.charCodeAt(0)));
+          ascii(0, "RIFF"); view.setUint32(4, buffer.byteLength - 8, true); ascii(8, "WAVE"); ascii(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, depth === 32 ? 3 : 1, true); view.setUint16(22, 2, true); view.setUint32(24, rate, true); view.setUint32(28, rate * 2 * bytesPerSample, true); view.setUint16(32, 2 * bytesPerSample, true); view.setUint16(34, depth, true); ascii(36, "data"); view.setUint32(40, buffer.byteLength - 44, true);
+          for (let frame = 0; frame < rate; frame++) for (let channel = 0; channel < 2; channel++) {
+            const value = 0.1 * Math.sin(frame * Math.PI / 2 + Math.PI / 4), offset = 44 + (frame * 2 + channel) * bytesPerSample;
+            if (depth === 32) view.setFloat32(offset, value, true);
+            else if (depth === 16) view.setInt16(offset, Math.round(value * 32767), true);
+            else { const integer = Math.round(value * 8388607); view.setUint8(offset, integer & 255); view.setUint8(offset + 1, (integer >> 8) & 255); view.setUint8(offset + 2, (integer >> 16) & 255); }
+          }
+          return { sampleRate: rate, channels: 2, durationSeconds: 1, sizeBytes: buffer.byteLength, bytes: Array.from(new Uint8Array(buffer)) };
+        }
         if (command.includes("listen")) return 1;
         return null;
       }
     };
-  }, { pending, savedProject, holdCold });
+  }, { pending, savedProject, holdCold, downloadAudio, holdDelivery });
 }
 
 async function openFinish(page) {
@@ -115,6 +145,97 @@ test("cold saved audio reaches contextual audition playing on the first request"
   expect(await page.evaluate(() => window.__coldHydrationReads)).toBe(1);
   expect(await page.evaluate(() => window.__finishCalls.filter(([command]) => command === "native_audio_start").length)).toBe(1);
   await page.locator('.timeline-compact-tools [data-audition-control="stop"]').click();
+});
+
+test("delivery QC measures the downloaded normalized file without replacing unfinished input", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 800, height: 600 });
+  await fixture(page, false, { downloadAudio: true, holdDelivery: true }); await openFinish(page);
+  await page.locator('[data-export-profile-setting="full-song-wav:bitDepth"]').selectOption("32");
+  await page.locator('[data-export-profile-setting="full-song-wav:normalize"]').selectOption("peak");
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator('.lower-dock-export [data-action="export-wav"]').click();
+  const download = await downloadPromise;
+  await page.waitForFunction(() => !!window.__releaseDelivery);
+  await page.evaluate(() => {
+    window.__qcInput = document.querySelector('[data-export-profile-setting="full-song-wav:tailSeconds"]');
+    window.__qcInput.value = "0.25"; window.__qcInput.focus();
+    window.__qcRenderCount = document.querySelector("#app").dataset.renderCount;
+    window.__releaseDelivery();
+  });
+  const qc = page.locator('[data-delivery-qc-host="dock"]');
+  await expect(qc).toContainText("Check complete");
+  await expect(qc).toContainText("1.000 s");
+  await expect(qc).toContainText("32-bit float");
+  await expect(qc).toContainText("true peak exceeds -1");
+  expect(await page.evaluate(() => window.__qcInput.isConnected && document.activeElement === window.__qcInput && window.__qcInput.value === "0.25" && document.querySelector("#app").dataset.renderCount === window.__qcRenderCount)).toBe(true);
+  expect(download.suggestedFilename()).toMatch(/\.wav$/);
+  const downloaded = await readFile(await download.path());
+  const decoded = decodePcmWavBytes(downloaded), measured = analyseAudioChannels(decoded);
+  const reportPromise = page.waitForEvent("download");
+  await qc.locator('[data-action="delivery-qc-report"]').click();
+  const reportDownload = await reportPromise;
+  const report = JSON.parse(await readFile(await reportDownload.path(), "utf8"));
+  expect(report.fileName).toBe(download.suggestedFilename());
+  expect(report.analysis.byteLength).toBe(downloaded.length);
+  expect(report.analysis.frameCount).toBe(decoded.channels[0].length);
+  expect(report.analysis.measurements.truePeakDbtp).toBeCloseTo(measured.truePeakDbtp, 5);
+  expect(report.analysis.measurements.integratedLufs).toBeCloseTo(measured.integratedLufs, 5);
+  if (report.analysis.byteSha256) expect(report.analysis.byteSha256).toBe(createHash("sha256").update(downloaded).digest("hex"));
+  await testInfo.attach("decoded-delivery.wav", { body: downloaded, contentType: "audio/wav" });
+  await testInfo.attach("delivery-report.json", { body: JSON.stringify(report, null, 2), contentType: "application/json" });
+  for (const element of [qc.getByRole("heading", { name: "Last WAV check" }), qc.locator('[role="status"]'), qc.locator(".finish-warnings"), qc.locator('[data-action="delivery-qc-report"]')]) {
+    await element.scrollIntoViewIfNeeded(); await expect(element).toBeInViewport();
+  }
+  expect(await page.locator(".lower-dock-export").evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+  await qc.screenshot({ path: testInfo.outputPath("delivery-qc-normalized.png") });
+});
+
+test("cancelled delivery QC rejects its late result and keeps the requested download", async ({ page }) => {
+  await fixture(page, false, { downloadAudio: true, holdDelivery: true }); await openFinish(page);
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator('.lower-dock-export [data-action="export-wav"]').click(); await downloadPromise;
+  await page.waitForFunction(() => !!window.__releaseDelivery);
+  const qc = page.locator('[data-delivery-qc-host="dock"]');
+  await qc.locator('[data-action="delivery-qc-cancel"]').click();
+  await page.evaluate(() => window.__releaseDelivery());
+  await expect(qc).toContainText("Check cancelled");
+  await expect(qc.locator('[data-action="delivery-qc-report"]')).toBeDisabled();
+  await qc.locator('[data-action="delivery-qc-start"]').click();
+  await expect(qc).toContainText("Check complete");
+});
+
+test("delivery checking defers while audio plays and can start after Stop", async ({ page }) => {
+  await fixture(page, false, { downloadAudio: true }); await openFinish(page);
+  await page.locator('[data-transport-toggle="true"]').click();
+  await expect(page.locator('[data-transport-toggle="true"]')).toContainText("Pause");
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator('.lower-dock-export [data-action="export-wav"]').click(); await downloadPromise;
+  const qc = page.locator('[data-delivery-qc-host="dock"]');
+  await expect(qc).toContainText("Stop playback/recording");
+  await expect(qc.locator('[data-action="delivery-qc-start"]')).toBeDisabled();
+  await page.locator('[data-action="stop"]:visible').first().click();
+  await expect(qc.locator('[data-action="delivery-qc-start"]')).toBeEnabled();
+  await qc.locator('[data-action="delivery-qc-start"]').click();
+  await expect(qc).toContainText("Check complete");
+});
+
+test("a late ordinary-export hydration cannot replace concurrent project edits", async ({ page }) => {
+  await fixture(page, false, { cold: true, holdCold: true, downloadAudio: true }); await openColdSavedProject(page);
+  await page.locator('[data-action="lower-dock-export-details"]').first().click();
+  await page.locator('.lower-dock-export [data-action="export-wav"]').click();
+  await page.waitForFunction(() => !!window.__releaseColdHydration);
+  const before = await page.locator("[data-clip-id]").count();
+  await page.keyboard.press("d");
+  await expect.poll(() => page.locator("[data-clip-id]").count()).toBeGreaterThan(before);
+  const count = await page.locator("[data-clip-id]").count();
+  await page.evaluate(() => window.__releaseColdHydration());
+  await expect(page.locator('[data-transport-status="true"]')).toContainText("project changed");
+  await expect(page.locator("[data-clip-id]")).toHaveCount(count);
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator('.lower-dock-export [data-action="export-wav"]').click(); await downloadPromise;
+  await expect(page.locator('[data-delivery-qc-host="dock"]')).toContainText("Check complete");
+  expect(await page.evaluate(() => window.__coldHydrationReads)).toBe(2);
+  await expect(page.locator("[data-clip-id]")).toHaveCount(count);
 });
 
 for (const flow of ["Finish", "audition"]) for (const cancellation of ["Stop", "edit"]) {
