@@ -2452,6 +2452,7 @@ fn render_playback_to_wav(
                 playback
                     .events
                     .iter()
+                    .filter(|event| is_campfire_event(event))
                     .filter(|event| {
                         playback
                             .tracks
@@ -3049,10 +3050,12 @@ fn render_next_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     while event_index < playback.events.len() {
         let event_time = playback.events[event_index].time;
         if event_time > t {
-            // Core floors prepared Campfire onsets to the output grid.
-            // Scan that one-frame window without starting other recipes early;
+            // Use the same sample-grid comparison as prepared PCM lookup.
+            // A seconds-based cutoff can disagree after long-position preroll.
             // otherwise a nearby legacy event could hide a due Campfire onset.
-            if event_time > t + 1.0 / playback.sample_rate.max(1) as f64 {
+            if (event_time * playback.sample_rate.max(1) as f64).floor()
+                > (t * playback.sample_rate.max(1) as f64).round()
+            {
                 break;
             }
             if !is_campfire_event(&playback.events[event_index]) {
@@ -3387,7 +3390,9 @@ fn render_next_cache_stem_frame(playback: &mut PlaybackShared) -> (f32, f32) {
     while event_index < playback.events.len() {
         let event_time = playback.events[event_index].time;
         if event_time > t {
-            if event_time > t + 1.0 / playback.sample_rate.max(1) as f64 {
+            if (event_time * playback.sample_rate.max(1) as f64).floor()
+                > (t * playback.sample_rate.max(1) as f64).round()
+            {
                 break;
             }
             if !is_campfire_event(&playback.events[event_index]) {
@@ -11197,8 +11202,8 @@ mod tests {
                     failures.push((rate, onset_frame, onset_error, seek_error, preroll_peak));
                 }
             }
-            for fraction in [0.4_f64, 0.6] {
-                let onset = rate as usize * 10 + 123;
+            for (seconds, fraction) in [(10, 0.4_f64), (10, 0.6), (7200, 0.999999)] {
+                let onset = rate as usize * seconds + 123;
                 let floored_onset = onset;
                 let mut fractional = fixture(rate, onset);
                 fractional.events[0].time = (onset as f64 + fraction) / rate as f64;
@@ -11211,8 +11216,10 @@ mod tests {
                     -128,
                     if fraction < 0.5 {
                         "fraction04"
-                    } else {
+                    } else if fraction < 0.9 {
                         "fraction06"
+                    } else {
+                        "fraction999999"
                     },
                     &rendered,
                 );
@@ -11315,6 +11322,29 @@ mod tests {
             runtime.shared.is_none(),
             "preparation test must never open a physical device"
         );
+    }
+
+    #[test]
+    fn native_campfire_mix_tail_ignores_mixed_instrument_id_collisions() {
+        for (kind, instrument) in [
+            ("bass", None),
+            ("guitar", Some("amp")),
+            ("bass", Some("campfire_acoustic")),
+        ] {
+            let mut playback = campfire_test_playback(0.0);
+            let expected_duration = playback.campfire_events["campfire"].duration_seconds();
+            let mut collision = test_generated_event("campfire", kind, 1.0, 0.1, 0.8);
+            collision.track_id = "guitar".into();
+            collision.instrument = instrument.map(str::to_owned);
+            collision.midi_notes = vec![50.0, 57.0, 62.0, 66.0];
+            playback.events.push(collision);
+            let rendered =
+                render_playback_to_wav(&mut playback, 1.2, NativeAudioRenderMode::Mix, 32).unwrap();
+            assert_eq!(
+                rendered.duration_seconds, expected_duration,
+                "{kind}/{instrument:?} must not add a phantom Campfire export tail"
+            );
+        }
     }
 
     #[test]

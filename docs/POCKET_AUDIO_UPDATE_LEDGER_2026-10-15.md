@@ -343,20 +343,21 @@ then flooring could select the preceding prepared PCM frame.
 Campfire now aligns absolute native positions and event onsets on the output
 sample grid before selecting PCM. Core floors absolute event onsets, while
 native current output positions and strum offsets round to their sample grid.
-Normal/cache event scans admit the one-frame Campfire onset window while keeping
+Normal/cache event scans compare floored onset frames directly with the rounded
+current output frame while keeping
 future legacy events silent, including
 when one sorts just before a due Campfire event. Native clock ownership and
-existing recipes' timing stay intact. Renderer contract v40 invalidates affected
+existing recipes' timing stay intact. Renderer contract v41 invalidates affected
 caches. No callback synthesis or new dependency is introduced.
 
-Executed: 194 native tests pass, two existing manual tests ignored; Clippy with
+Executed: 195 native tests pass, two existing manual tests ignored; Clippy with
 warnings denied; 284 Windows-contract tests; complete family parity including
 1,173 DAW tests; organization/governance/whitespace checks. The graph regression
 covers both rates, six onset positions up to two hours, seeks 1.1 seconds into
 tails, fractional floored onsets and nearby legacy events in both render modes.
-The reproducible `verify-native-campfire-graph.mjs` captures 30 full stereo
+The reproducible `verify-native-campfire-graph.mjs` captures 32 full stereo
 outputs and compares every frame against canonical Core PCM plus documented
-native dry source/track pan, track gain and soft limiting. All 1,673,663 frames
+native dry source/track pan, track gain and soft limiting. All 1,825,884 frames
 match exactly; declared maximum/RMS limits remain 1e-7/1e-8 with no latency/gain
 fit. The original 26 integer-onset captures passed before an additional source
 read caught the wrong nearest-onset convention in the first fractional test.
@@ -365,6 +366,23 @@ nonfinite/negative native onsets explicitly. Original reports:
 `native-campfire-frame-before.log`, `native-campfire-frame-*.log` and
 `native-campfire-graph/run-An9frk/parity-report.json` under ignored validation.
 Corrected 30-capture report: review checkout `native-campfire-graph-floor.log`.
+
+Further independent review of `b4073d53885cdca516f21869868c1f066f81d62b`
+reproduced two remaining failures: a later bass sharing a Campfire ID extended
+the Mix WAV from 1.581 to 2.581 seconds, and fractional onset 0.999999 after a
+two-hour-position preroll was due by PCM lookup but skipped by the seconds-based
+scan cutoff. Mix tail sizing now requires the Campfire instrument predicate;
+both scans use the same floored-onset/rounded-output frame comparison as PCM.
+Regressions cover mixed bass/other guitar IDs and retain both long-position
+near-frame-end stereo captures. Updated 32-output report is review checkout
+`native-campfire-graph/run-aBsW3h/parity-report.json`; baseline failures are in
+`native-campfire-review2-before.log`. Full native/lint reruns are retained in
+`native-campfire-review2-full.log` and `native-campfire-review2-clippy.log`.
+The final review source also passes 284 Windows-contract checks and a fresh full
+family gate, including 1,173 DAW tests. Those reports are
+`native-campfire-review2-windows.log` and `native-campfire-review2-family.log` in
+the review checkout. Fresh exact-head hosted CI remains required before source
+acceptance.
 
 Published: nothing. These are short prerolls and seeks at named positions, not
 two hours of continuous callbacks. Installed devices, hosted/master FX, browser
