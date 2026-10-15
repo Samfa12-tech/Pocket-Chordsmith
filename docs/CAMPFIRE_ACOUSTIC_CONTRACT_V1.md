@@ -171,11 +171,16 @@ Core Campfire full-mix/stem export uses the normalized guitar volume/mute rather
 than a fixed default gain. Live mixer changes also update already sounding and
 scheduled strum voices through anchored five-millisecond gain ramps, retaining
 note position and natural tail without rebuilding PCM. Stop holds the actual
-current gain before its release. Direct event-buffer rendering retains the
+current gain before its release and cancels queued strings immediately. Queued
+voices initialize their intrinsic gain while silent, so a pre-onset control
+cannot expose GainNode's default level. Direct event-buffer rendering retains the
 existing default gain unless `stemMix.guitar` is supplied. Browser validation
-includes 20 static gain/mute cases and four sample-accurate dynamic captures at
+includes 20 static gain/mute cases and six sample-accurate dynamic captures at
 44.1/48 kHz, including mute before future string starts, unmute, and two controls
-at the same audio time. This is separate from browser/shared-master fidelity
+at the same audio time. Twelve further captures measure and assert controls one
+or two audio frames before queued onset: mute, nonzero volume change and Stop,
+at both rates, against a whole-output five-ms envelope without gain fitting.
+This is separate from browser/shared-master fidelity
 and physical listening.
 
 - 10 dry-note Float32 little-endian SHA-256 fixtures match the inspected

@@ -73,7 +73,7 @@ try {
       engine.dispose();
     }
     const liveMixerChanges = [];
-    for (const sampleRate of [44100, 48000]) for (const muteTime of [0.01, 0.25]) {
+    for (const sampleRate of [44100, 48000]) for (const muteTime of [0.01, 0.026, 0.25]) {
       const context = new OfflineAudioContext(2, sampleRate * 2, sampleRate);
       const engine = new core.PocketAudio({ audioContext: context, setInterval: () => 1, clearInterval() {} });
       await engine.loadProject({ schemaVersion: 17, bpm: 76, guitarVolume: 0.66, songSequence: ["A"], sectionBars: { A: 1 }, sections: { A: { tracks: { guitar: { events: [
@@ -124,6 +124,53 @@ try {
       liveMixerChanges.push({ sampleRate, muteTime, changes, maxError, rmsError, mutedPeak, resumedPeak, passed: true });
       engine.dispose();
     }
+    const queuedControls = [];
+    for (const sampleRate of [44100, 48000]) for (const leadFrames of [1, 2]) for (const action of ["mute", "volume", "stop"]) {
+      const controlFrame = 2048;
+      const startFrame = controlFrame + leadFrames - Math.round(0.027 * sampleRate);
+      const event = { midiNotes: [50, 57, 62, 66], velocity: 1, seed: 123 };
+      const context = new OfflineAudioContext(2, sampleRate * 2, sampleRate);
+      const referenceContext = new OfflineAudioContext(2, sampleRate * 2, sampleRate);
+      const bank = await core.prepareCampfireAcousticNoteBank(context, [event]);
+      const referenceBank = await core.prepareCampfireAcousticNoteBank(referenceContext, [event]);
+      bank.setOutputGain(0.66, 0);
+      bank.schedule(event, startFrame / sampleRate);
+      referenceBank.schedule(event, startFrame / sampleRate);
+      // Stop must cancel queued strings, while releasing the already sounding one.
+      if (action === "stop") referenceBank.cancelScheduledFrom(controlFrame / sampleRate);
+      const baselineRendering = referenceContext.startRendering();
+      // OfflineAudioContext suspension rounds to a render quantum. Measure it;
+      // do not mistake the requested suspension time for the actual control time.
+      const suspended = context.suspend((controlFrame - 0.25) / sampleRate);
+      const rendering = context.startRendering();
+      await suspended;
+      const actualControlFrame = Math.round(context.currentTime * sampleRate);
+      const actualLead = startFrame + Math.round(0.027 * sampleRate) - actualControlFrame;
+      if (actualControlFrame !== controlFrame || actualLead !== leadFrames) throw new Error(`Queued control missed its ${leadFrames}-frame window: ${actualControlFrame}/${actualLead}`);
+      const before = bank.getDiagnostics();
+      const target = action === "volume" ? 0.2 : 0;
+      if (action === "stop") bank.stopAll(0.005);
+      else bank.setOutputGain(target, 0.005);
+      const after = bank.getDiagnostics();
+      if (before.entries !== after.entries || before.bytes !== after.bytes || before.activeVoices !== after.activeVoices) throw new Error("Queued control rebuilt or retriggered prepared voices");
+      await context.resume();
+      const [rendered, baseline] = await Promise.all([rendering, baselineRendering]);
+      let maxError = 0, squaredError = 0;
+      for (let frame = 0; frame < rendered.length; frame += 1) {
+        const elapsed = (frame - actualControlFrame) / sampleRate;
+        const gain = elapsed < 0 ? 0.66 : elapsed < 0.005 ? 0.66 + (target - 0.66) * elapsed / 0.005 : target;
+        for (let channel = 0; channel < 2; channel += 1) {
+          const error = Math.abs(rendered.getChannelData(channel)[frame] - baseline.getChannelData(channel)[frame] * gain);
+          maxError = Math.max(maxError, error);
+          squaredError += error * error;
+        }
+      }
+      const rmsError = Math.sqrt(squaredError / (rendered.length * 2));
+      if (maxError > 1e-7 || rmsError > 1e-8) throw new Error(`Queued ${action} failed ${sampleRate}/${leadFrames}: ${maxError}/${rmsError}`);
+      queuedControls.push({ sampleRate, action, leadFrames, actualControlFrame, maxError, rmsError, passed: true });
+      bank.dispose();
+      referenceBank.dispose();
+    }
     const lookaheadContext = new OfflineAudioContext(2, 48000 * 2, 48000);
     const first = { midi: 50, velocity: 1 };
     const future = { midi: 69, velocity: 1 };
@@ -137,7 +184,7 @@ try {
     for (let frame = 0; frame < actual.length; frame += 1) if (Math.abs(actual[frame] - (firstPcm[frame] || 0)) > 1e-7) throw new Error("Section transition cut an existing tail or leaked cancelled lookahead");
     if (!lookahead.getChannelData(1).every((value) => value === 0)) throw new Error("Hard-left prepared Campfire leaked into the right channel");
     bank.dispose();
-    return { renderer: "Chromium OfflineAudioContext", physicalOutput: "not tested", records: results, liveOfflineParity: liveResults, liveMixerChanges, cancelledFutureVoice: "passed", preservedTailAndCancelledLookahead: "passed", preparationAutoplay: "none" };
+    return { renderer: "Chromium OfflineAudioContext", physicalOutput: "not tested", records: results, liveOfflineParity: liveResults, liveMixerChanges, queuedControls, cancelledFutureVoice: "passed", preservedTailAndCancelledLookahead: "passed", preparationAutoplay: "none" };
   }, fixtures.records);
   console.log(JSON.stringify({ browserVersion: browser.version(), ...result }, null, 2));
 } finally {

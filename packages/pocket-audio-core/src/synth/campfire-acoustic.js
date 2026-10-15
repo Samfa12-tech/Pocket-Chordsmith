@@ -51,6 +51,10 @@ export async function prepareCampfireAcousticNoteBank(context, events, options =
       if (voice.stopped) continue;
       voice.stopped = true;
       const now = context.currentTime;
+        if (voice.when > now) {
+          voice.source.stop(now);
+          continue;
+        }
       rampVoiceGain(voice, 0, releaseSeconds);
       voice.source.stop(now + releaseSeconds);
     }
@@ -80,6 +84,9 @@ export async function prepareCampfireAcousticNoteBank(context, events, options =
         const baseLevel = item.gain * gain;
         const level = baseLevel * outputGain;
         source.buffer = item.buffer;
+        // Controls may cancel the onset event before this queued string starts.
+        // Its intrinsic gain must already be the intended level while silent.
+        output.gain.value = level;
         output.gain.setValueAtTime(level, start + item.offsetSeconds);
         panner.pan.setValueAtTime(pan, start);
         source.connect(output);

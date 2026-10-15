@@ -453,13 +453,18 @@ five-millisecond ramps. Live volume/mute changes update existing and already
 scheduled strum voices without resynthesis, retriggering, moving their note
 position or discarding their natural tails. Stop holds the current automation
 value before fading; rapid same-time changes cannot jump to an earlier target.
+Review found a queued-string exception: cancelling its future onset automation
+could expose GainNode's default gain of one. A Chromium capture 0.026 seconds
+into the strum reproduced a 0.113575 maximum sample error. Each voice now sets
+its intrinsic gain while still silent. Stop immediately cancels not-yet-started
+strings and applies the release only to already sounding voices.
 
 Executed: all 192 Core tests; 20 real Chromium OfflineAudioContext live/offline
 cases at 44.1/48 kHz, up/down, volumes 0/0.2/0.66/0.9 and mute set before Play.
 All pass with maximum error 1.87e-9. The 10 independent dry PCM hashes still
 match. Decoded STEM_SYNC/HYBRID WAV full mixes and guitar stems retain zero and
 non-default gains at PCM16 precision. Complete family parity passes, including
-1,173 DAW tests. Four additional browser captures suspend at actual audio times
+1,173 DAW tests. Six additional browser captures suspend at actual audio times
 to mute both future strum starts and already sounding notes, unmute at the same
 position, then change volume. Every sample through the five-ms ramps is compared
 against the unfitted PCM/gain reference; muted windows are exactly silent and
@@ -475,6 +480,15 @@ Evidence under ignored validation: `campfire-mixer-before.log`,
 Live control evidence: `campfire-live-mixer-before.log`,
 `campfire-live-mixer-after.log` (intermediate ramp failure retained), and
 `campfire-live-mixer-final.log`.
+Review validation: `campfire-queued-gain-before.log` retains the audible default-
+gain failure. `campfire-queued-gain-final.log` includes six dynamic captures and
+12 additional mute/volume/Stop captures precisely one or two audio frames before
+the second string onset at both rates. Suspension's actual quantum-rounded audio
+time is asserted. Every output sample is checked against the unfitted five-ms
+gain reference (maximum error below 3.8e-8, RMS below 5.4e-10); no prepared PCM or
+voice is added by the controls. All 192 Core tests pass again. The existing
+Chordsmith builder regenerated the tracked embedded WAV worker and the exact
+`verify:single-file` freshness gate passes; the validator was not changed.
 
 Published: nothing. This validates Campfire gain and existing prepared voices;
 adding unprepared note identities still needs preparation. Product
