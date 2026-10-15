@@ -62,6 +62,41 @@ test("Campfire editor controls retain focus, stored grid and undo with native pl
   await expect(performance).toHaveValue("strum_pick");
 });
 
+test("empty Campfire Grid activates automatic performance while preserving explicit mixer mute and Undo", async ({ page }) => {
+  await gotoApp(page);
+  await openImportPanel(page);
+  await page.locator("#importText").fill(JSON.stringify({projectVersion:17,key:"D",bpm:76,timeSig:4,resolution:4,guitarEnabled:true,guitarTone:"campfire_acoustic",sectionBars:{A:1},songSequence:["A"],guitarPatternA:[]}));
+  await page.locator('[data-action="import-text"]').click();
+  const close=page.locator('[data-action="file-window-close"]');
+  if(await close.isVisible()) await close.click();
+  const header=page.locator('.timeline-track-header[data-track-id="guitar"]');
+  await expect(header).toHaveClass(/inactive/);
+  const mute=header.locator('[data-mute-track="guitar"]');
+  await expect(mute).toHaveAttribute("aria-pressed","false");
+  await header.click({position:{x:4,y:8}});
+  await page.getByRole("button",{name:"Inspector",exact:true}).click();
+  const performance=page.locator('[data-guitar-performance="A"]');
+  await performance.selectOption("strum_pick");
+  await expect(header).not.toHaveClass(/inactive/);
+  await expect(mute).toHaveAttribute("aria-pressed","false");
+  await mute.click();
+  await expect(mute).toHaveAttribute("aria-pressed","true");
+  await performance.selectOption("grid");
+  await performance.selectOption("strum_pick");
+  await expect(mute).toHaveAttribute("aria-pressed","true");
+  const undo=page.locator('[data-action="undo"]:visible').first();
+  await undo.click();
+  await expect(performance).toHaveValue("grid");
+  await expect(mute).toHaveAttribute("aria-pressed","true");
+  await undo.click();
+  await undo.click();
+  await expect(performance).toHaveValue("strum_pick");
+  await expect(mute).toHaveAttribute("aria-pressed","false");
+  await undo.click();
+  await expect(header).toHaveClass(/inactive/);
+  await expect(performance).toHaveValue("grid");
+});
+
 test("starts the browser fallback and exposes core DAW controls", async ({ page }) => {
   await gotoApp(page);
 

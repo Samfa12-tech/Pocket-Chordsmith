@@ -877,3 +877,19 @@ No audio parity/listening claim follows from residency tests. Large-file cold
 load/working-set budgets, real prepared LOOP_KIT transitions, full authored-song
 Core/native two-source capture and exact installed/listening gates remain active.
 No source-engine recipes copied into the MIT addon and no licence/version changes.
+PR93 review correction: reproduced enabled Campfire empty Grid -> strum/pick
+leaving its track inactive/muted. Performance edits now synchronize source track
+activation without changing explicit mixer mute. Prepared Campfire empty imports
+retain inactivity separately from mute (source disable still mutes); legacy amp
+import policy stays unchanged. No source guitarEnabled flag is silently enabled.
+New regressions cover empty Grid -> automatic -> Grid, native payload audibility
+and24 prepared events,48 decoded MIDI notes, explicit empty-track mixer mute,
+explicit source disable, and exact Undo. Actual shell UI checks inactivity/mute
+controls and multiple Undo steps. Targeted59 and TypeScript pass; full shell21
+pass. First complete source run could not find the installed browser executable
+(1173passed/14skipped); rerun uses the retained browser path, not counted as a
+product test failure/pass. Raw before/after/setup logs retained under primary
+local-artifacts/scratch/validation/native-campfire-empty-grid-*.log. No Rust,
+recording/capture, version or dependency changes; no installed/listening claim.
+Final corrected source gate1187/1187 passed with the installed browser path;
+production UI build, repository/security/manifest104/whitespace also pass.
