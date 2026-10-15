@@ -727,3 +727,16 @@ Approved PR88 themes are combined through a455475d4f661cfd2e2983d711edb0f69cfc8c
 blue default and saved choices remain. Local reviewed-source itch package built
 successfully, not uploaded. Candidate is for parent source review/CI, not release.
 Size1066549/1100000 active and894424/900000 modular. Main/owner checkout unchanged.
+
+PR91 review correction: custom-ID rich tracks with role:guitar now use the same
+stem/role/ID precedence and case handling as Core for Campfire detection, authored
+part UI, and scoped Clear/Fill replacement. Explicit non-guitar stems override a
+guitar role/ID. The retained failing regression first left guitarEnabled false
+when omitted. Corrected desktop/touch custom-role flow passes actual Play,
+decoded Export MIDI bytes, UI-worker/direct-Core WAV hash equality, Clear/Undo,
+unknown track metadata and preservation of a melody-stem guitar-role lookalike.
+All116 desktop/touch cases pass;lint/type/format/size/whitespace pass. Rebuilt
+canonical HTML, size1066805 active/894680 modular. Logs chordsmith-campfire-role-
+{before,after,full,build}.log in primary ignored validation. Hosted exact-head
+review/CI pending. These establish scheduling/export routing, not full-bus live
+PCM or physical listening. Shared fractional timing correction remains in PR92.

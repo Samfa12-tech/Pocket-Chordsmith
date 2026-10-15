@@ -232,6 +232,54 @@ test("exact imported Campfire chords and picked notes survive live preparation a
   await page.locator("#stopBtn").click();
 });
 
+test("custom-ID role guitar Campfire imports prepare Play and reach MIDI and WAV, with reversible replacement", async ({ page }) => {
+  await requireLiveBrowserAudio(page);
+  const events = [{tick:0,durationTicks:480,notes:[50,57,62,66],sound:"campfire_acoustic",velocity:100,direction:"up"},{tick:480,durationTicks:120,note:78,sound:"campfire_acoustic",velocity:60}];
+  const other = {stem:"melody",role:"guitar",events:[{tick:0,note:84,sound:"soft_pluck",velocity:60}],future:{keep:true}};
+  const source = {projectVersion:17,uiMode:"advanced",key:"D",bpm:76,resolution:4,timeSig:4,chordsOn:false,bassOn:false,sectionBars:{A:1},songSequence:["A"],sections:{A:{tracks:{handPlayed:{role:"guitar",events,future:{keep:true}},guitarShadow:other}}}};
+  await page.locator("#settingsBtn").click();
+  await page.locator("#projectBox").fill(JSON.stringify(source));
+  await page.locator("#importJsonBtn").click();
+  expect(await page.evaluate(() => state.guitarEnabled)).toBe(true);
+  await page.locator("#closeSettingsBtn").click();
+  await expect(page.locator("#guitarPerformanceNote")).toContainText("Exact imported guitar notes are preserved");
+  await page.locator("#playBtn").click();
+  await expect(page.locator("#playBtn")).toHaveText("Pause");
+  await expect.poll(() => page.evaluate(() => getChordsmithCampfireDiagnostics().bank.activeVoices)).toBeGreaterThan(0);
+  const prepared = await page.evaluate(() => chordsmithCampfirePlan.events);
+  expect(prepared).toHaveLength(2);
+  expect(prepared[0]).toMatchObject({midiNotes:[50,57,62,66],direction:"up",instrument:"campfire_acoustic"});
+  expect(prepared[1].midi).toBe(78);
+  await page.locator("#stopBtn").click();
+  await page.locator("#settingsBtn").click();
+  await page.locator("#exportScopeSelect").selectOption("A");
+  await page.evaluate(() => {const create=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{if(blob.type === "audio/midi") window.__roleMidi=blob;return create(blob);};});
+  await page.locator("#exportMidiBtn").click();
+  await expect.poll(() => page.evaluate(() => !!window.__roleMidi)).toBe(true);
+  const midi = await page.evaluate(async () => parseStandardMidi(await window.__roleMidi.arrayBuffer()).notes.filter(note=>note.channel === 3).sort((a,b)=>a.startTick-b.startTick));
+  expect(midi.map(note=>note.note)).toEqual([66,62,57,50,78]);
+  await page.locator("#exportWavBtn").click();
+  await expect(page.locator("#wavProgressText")).toContainText("WAV ready via Pocket Audio Core");
+  const parity = await page.evaluate(async () => {
+    const core=await loadPocketAudioCoreModule();
+    const expected=await core.renderPocketAudioWav(core.normalisePocketChordsmithProject(exportProject()),{sampleRate:44100,scope:"section",sectionId:"A"});
+    const hash=async blob=>[...new Uint8Array(await crypto.subtle.digest("SHA-256",await blob.arrayBuffer()))];
+    return {actual:await hash(state.wavBlob),expected:await hash(expected)};
+  });
+  expect(parity.actual).toEqual(parity.expected);
+  await page.locator("#closeSettingsBtn").click();
+  page.once("dialog",dialog=>dialog.accept());
+  await page.locator("#clearGuitarBtn").click();
+  const cleared=await page.evaluate(()=>exportProject().sections.A.tracks);
+  expect(cleared.handPlayed.events).toEqual([]);
+  expect(cleared.handPlayed.future).toEqual({keep:true});
+  expect(cleared.guitarShadow).toMatchObject(other);
+  await page.locator("#undoBtn").click();
+  const restored=await page.evaluate(()=>exportProject().sections.A.tracks);
+  expect(restored.handPlayed.events).toMatchObject(events);
+  expect(restored.guitarShadow).toMatchObject(other);
+});
+
 test("approved themes keep the blue default and preserve saved songs, choices and undo", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "night");
   await page.locator("#settingsBtn").click();
