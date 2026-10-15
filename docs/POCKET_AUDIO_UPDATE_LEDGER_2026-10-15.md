@@ -1364,3 +1364,50 @@ unchanged; mic scoped omitted, NOTpassed. SeeDELIVERY_WAV_QC_2026-10-16.md.
 Fullgamefloat32/runtime/loadbudgets, remainingcrossfamilyBeatStitch/Hear/phoneUX,
 dense/scaling/installedPCM/devices/listening, versions/advisories/review/publication
 remainactive. No newinstaller/merge/release/deps/account/licence/security/CoreNPM.
+
+## Godot imported worker preparation and measured runtime limits
+
+PR105 deliveryQC exact158b7f11623a22dc3ab4442927ea12b875edd272 remotelyconfirmed
+draftattached; CI38822567029/CodeQL38822567991 terminalsuccess. Source review
+pending; no publication. PR104coldhydration independently accepted asabove.
+
+Update: PR105independentlyacceptedsource; all13CIjobsandbothCodeQLlanguagesgreen.
+HostedCore213/DAW1235/browser47passed2longworkersskipped. Decoderdoesnotvalidate
+enclosingRIFFlength; nonblockingforown-exportQC, notgeneralfilecertification.
+
+Newisolatedcodex/godot-runtime-audio-budget-20261016 source usesGodot'sthreaded
+loader for importedres stems in explicit section/globalnativearrangementasync
+preparation. Existingplayers/clocks/PCMending policyretained. Rootownedjobsdrain
+requestedI/O aftercancel/exit/free; consumerdetachwhilealivefixesreproducedfreed
+coroutine/profileleak. Explicit/profile/inplace/exitcancelrejectoldcachepromotion.
+CancellationdoesnotabortGodot'salreadyrequesteddiskoperation. RawWAVdecodeand
+preparedPCMguardcopy stillsynchronousandmeasured, neverclaimed16msguarantee.
+19regressionchecks passedinclglobalnative/noautoplay/samePCM/dedupe/warmidentity/
+cancel/exit/free/missingassets; verbosefinalnoobjects/resourcesleaked. Initial
+invalidtesttype/free-locked-object/too-earlycleanup assertions retainedasfailed
+experiments,notpasses. Onehungisolatedtest stoppedonlyafterexactPID/pathverification.
+FullGodotregressionand141entryaddononlypackagegatepassed; no newreleaseZIP claim.
+Finalgate afteracceptancedoc/testwaitupdate passed142addononlyentries; no new
+runtime/native/recording changesafterthatgate.
+
+Original8x60sPCM16/48kstereosyntheticfixture shows29-31mscolddisk+preparation;
+threadedreprotool shows19.837msremainingmainprep/21.113msmaxcoldframe,0.435msmax
+warmPlay,8residentstreams92,164,224logicalPCMbytes. Headlessbaseline/music/SFX
+maxframes17.708/16.758/16.700ms,23SFXrequests/nonzerobusPCM. RenderedWASAPI/NVIDIA5050
+GL3.3driver610.47baselinealready604.347msmax/513.332msp95;renderedframebudgetFAILED.
+One60HzframecoldpreparebudgetFAILED; warm2ms/headless33ms/fixturePCMboundpassed.
+Thesearemeasuredsyntheticlimits,notfullgame/peakworking-set/longsession/listening.
+Reproharnessscripts/verify-godot-audio-budget.mjs retainsrawarrays/inputhashes/logs;
+initialSFXprobehadfullcapturebufferfrombaselinephases,correctedexplicitdrainand
+retainedfailedzeroprobe,nofalseSFXpass. No graphics/securitysettingschanges.
+
+Actualretainednativefloat32fullmix compatibilityfixture (productionpackstillPCM16)
+playedfull425127frames8.8568125sec48kthroughhighlevelnativechartin4WASAPIroutes.
+GodotconvertsfloatWAVtoPCM16;max3.05148e-5/RMS1.33918e-5,boundednotfloatbitexact.
+Unchanged16bitlayersmax1.654e-6/RMS2.975e-7; allnaturalending/silencemutantsrejected.
+Captureisenginebusnotdeviceconsumed/humanlistening/installedDAW/physicalmicrophone.
+Sourceactualgeneratedrecordedmedia+Campfire/FX/automation/tailretained. See
+addons/pocket_chordsmith/docs/RUNTIME_AUDIO_ACCEPTANCE_2026-10-16.md forscope,
+failedbudgetsandremainingfullgame/scaling/interactions/installed/review/releases.
+Public4.4advertisingvs4.6.3testingstillreleasegate. No version/licence/accounts/
+credentials/securitysettings/dependencies/CoreNPM/productpublicationchanges.

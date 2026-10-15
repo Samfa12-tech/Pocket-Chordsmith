@@ -12,7 +12,7 @@ means published or physically heard unless explicitly evidenced there.
 | DAW Hear/Finish | PR101 foundation, PR103 incremental source and PR104 hydration correction accepted; PR102 workflow retained | Installed/native/device/listening acceptance remains separate |
 | Cold saved audio | PR104 returns the installed clone; six new regressions pass locally and hosted; source hold cleared | Final installed cold/reopen acceptance |
 | Meter/delivery | PR100 calibration; PR103 native monitor/seven WAV references; final-file QC presentation, cancellation/report/unfinished-input checks implemented locally | New QC candidate source/hosted review; exact installed output checks |
-| Godot | Core/Chordsmith and native arranged routes, prior scene/PCM captures, 4.6.3 checks | Explicit float32 runtime parity, game SFX/load/cold-warm budgets; reconcile advertised 4.4 vs tested 4.6.3 |
+| Godot | Core/Chordsmith/native arranged routes; bounded float32→PCM16 compatibility captures; worker loading and synthetic SFX/cold-warm/residency measurements | New loading candidate review; rendered frame stalls, full-game/long-session/peak working-set/listening; reconcile advertised 4.4 vs tested 4.6.3 |
 | DAW safeguards | Existing save/Undo/media/plugin foundations retained; menu/focus/overflow fixes | Remaining dense-session, popover/shortcut and actual Windows scaling acceptance |
 | Installed acceptance | No new installer built; source/PCM/UI evidence kept separate | One exact final installed candidate, retained real exports, device/loopMIDI/output/listening checks |
 | Release truth | Draft candidates and evidence ledger; Core stays private/workspace-only | Versions/family manifest/current advisory applicability; reviewed candidates before public targets |
@@ -28,6 +28,12 @@ local evidence and a distinct acceptance item, not a hosted or device pass.
 The delivery-QC slice has local Core213/DAW1235/typecheck/build and targeted
 browser22 passes (including both real long-worker checks), not yet hosted or
 installed evidence. See apps/pocket-daw/docs/DELIVERY_WAV_QC_2026-10-16.md.
+PR105 exact158b7f11623a22dc3ab4442927ea12b875edd272 independently accepted in
+source. CI38822567029 and CodeQL38822567991 terminal success; hosted Core213,
+DAW1235, browser47passed/2long-worker skipped. Its decoder/QC is not general WAV
+file certification. Installed/device/listening acceptance remains separate.
+Godot loading/compatibility details and explicit failed/open performance budgets:
+addons/pocket_chordsmith/docs/RUNTIME_AUDIO_ACCEPTANCE_2026-10-16.md.
 
 The capture fingerprint is unchanged; the source-level microphone omission is
 documented as omitted, not passed. If later shared/capture impact requires a

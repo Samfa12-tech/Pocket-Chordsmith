@@ -165,8 +165,9 @@ func _configure_pack_wav_imports(manifest: Dictionary, pack_root: String) -> Dic
 			continue
 		config.set_value("remap", "importer", "wav")
 		config.set_value("remap", "type", "AudioStreamWAV")
-		# Godot 4.6 defaults to lossy QOA. Preserve source PCM, channels, rate,
-		# gain and alignment. Existing explicit loop settings remain untouched.
+		# Godot 4.6 defaults to lossy QOA. Preserve PCM16, channels, rate, gain
+		# and alignment. Godot converts float WAVs to PCM16 internally; disabling
+		# compression does not preserve float precision. Keep authored loop points.
 		for key in ["force/8_bit", "force/mono", "force/max_rate", "edit/normalize", "edit/trim"]:
 			config.set_value("params", key, false)
 		config.set_value("params", "compress/mode", 0)

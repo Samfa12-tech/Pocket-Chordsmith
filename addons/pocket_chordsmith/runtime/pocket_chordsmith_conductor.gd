@@ -4,6 +4,7 @@ class_name PocketChordsmithConductor
 
 const PlaybackProfile := preload("res://addons/pocket_chordsmith/resources/pcs_playback_profile.gd")
 const SoundProfileContract := preload("res://addons/pocket_chordsmith/import/pcs_sound_profile_contract.gd")
+const AudioAssetLoadJob := preload("res://addons/pocket_chordsmith/runtime/pcs_audio_asset_load_job.gd")
 
 const NATIVE_BASS_SAMPLE_RATE := 44100
 const DEFAULT_SAMPLE_PREVIEW_MIX := {
@@ -119,6 +120,7 @@ var _stinger_play_requests_total := 0
 var _stinger_play_failures_total := 0
 var _audio_stream_cache := {}
 var _audio_prepare_generation := 0
+var _pending_audio_load_jobs: Array[Node] = []
 var _last_audio_prewarm_signature := ""
 var _warned_missing_stem_sections := {}
 var _native_bass_stream_cache := {}
@@ -149,6 +151,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	_audio_prepare_generation += 1
+	_detach_audio_load_consumers()
 	_stop_polyphonic_streams()
 	_active_stinger_ids.clear()
 	_stinger_return_states.clear()
@@ -209,6 +212,7 @@ func _stop_polyphonic_streams() -> void:
 
 func set_playback_profile(profile: Resource, stop_active_samples := true) -> void:
 	_audio_prepare_generation += 1
+	_detach_audio_load_consumers()
 	if stop_active_samples:
 		_stop_polyphonic_streams()
 		_remove_sample_preview_pan_buses()
@@ -578,31 +582,71 @@ func prewarm_sections(section_ids: Array) -> Dictionary:
 	return out
 
 
-## Loading-scene preparation: yield between assets and never start playback.
-## One large file may still take time to decode; max_asset_load_us reports that
-## cost explicitly. This does not move raw WAV decoding to a background thread.
+## Loading-scene preparation: imported resources load on Godot's worker thread.
+## Raw, unimported WAV decoding and prepared ending guards remain synchronous;
+## max_asset_load_us reports main-thread preparation cost, not worker wait time.
 func prewarm_sections_async(section_ids: Array) -> Dictionary:
+	var values: Array = []
+	var warnings: Array = []
+	if playback_profile != null:
+		for section_value in section_ids:
+			var stem_map := _section_stem_map(str(section_value))
+			if stem_map.is_empty():
+				warnings.append("No prepared stems for section: %s" % str(section_value))
+			values.append_array(stem_map.values())
+	return await _prewarm_prepared_audio_values_async(values, warnings)
+
+
+## Native DAW arrangement packs use global prepared assets, not section sets.
+func prewarm_arrangement_async() -> Dictionary:
+	var values: Array = playback_profile.stem_paths.values() if playback_profile != null else []
+	return await _prewarm_prepared_audio_values_async(values, ["No full-song prepared stems are assigned."] if values.is_empty() else [])
+
+
+func _prewarm_prepared_audio_values_async(values: Array, warnings: Array) -> Dictionary:
 	var generation := _audio_prepare_generation
 	var profile := playback_profile
-	var report := {"ok": false, "cancelled": false, "loaded": 0, "failed": 0, "warnings": [], "max_asset_load_us": 0, "cached_streams": _audio_stream_cache.size()}
+	var preparation_signature := _audio_prewarm_signature(true, false)
+	var report := {"ok": false, "cancelled": false, "loaded": 0, "failed": warnings.size(), "warnings": warnings.duplicate(), "max_asset_load_us": 0, "max_thread_wait_us": 0, "threaded_assets": 0, "cached_streams": _audio_stream_cache.size()}
 	if profile == null or not is_inside_tree():
 		report.warnings.append("A playback profile and active loading scene are required for section preparation.")
 		return report
-	var values: Array = []
-	for section_value in section_ids:
-		var stem_map := _section_stem_map(str(section_value))
-		if stem_map.is_empty():
-			report.failed += 1
-			report.warnings.append("No prepared stems for section: %s" % str(section_value))
-		values.append_array(stem_map.values())
 	var seen := {}
 	for value in values:
 		# Give the caller a frame to display loading/cancellation before any I/O.
 		await get_tree().process_frame
-		if generation != _audio_prepare_generation or playback_profile != profile or not is_inside_tree():
+		if generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
 			report.cancelled = true
 			report.cached_streams = _audio_stream_cache.size()
 			return report
+		if value is String:
+			var path := str(value)
+			var key := _prepared_stem_cache_key(path) if profile.preserve_prepared_wav_endings or profile.loop_prepared_sections else _audio_cache_key(path)
+			if path.begins_with("res://") and not seen.has(key) and not _audio_stream_cache.has(key) and not _audio_stream_cache.has(_audio_cache_key(path)) and ResourceLoader.exists(path):
+				var job := AudioAssetLoadJob.new()
+				job.asset_path = path
+				get_tree().root.add_child(job)
+				if generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
+					job.detach_consumer()
+					report.cancelled = true
+					report.cached_streams = _audio_stream_cache.size()
+					return report
+				_pending_audio_load_jobs.append(job)
+				var waiting := Time.get_ticks_usec()
+				var stream: AudioStream = await job.completed
+				_pending_audio_load_jobs.erase(job)
+				report.max_thread_wait_us = maxi(report.max_thread_wait_us, Time.get_ticks_usec() - waiting)
+				if generation != _audio_prepare_generation or playback_profile != profile or preparation_signature != _audio_prewarm_signature(true, false) or not is_inside_tree():
+					report.cancelled = true
+					report.cached_streams = _audio_stream_cache.size()
+					return report
+				if stream == null:
+					report.failed += 1
+					report.warnings.append("Could not load imported audio resource: %s" % path)
+					seen[key] = true
+					continue
+				_audio_stream_cache[_audio_cache_key(path)] = stream
+				report.threaded_assets += 1
 		var started := Time.get_ticks_usec()
 		_prewarm_audio_value(value, seen, report, false, true)
 		report.max_asset_load_us = maxi(report.max_asset_load_us, Time.get_ticks_usec() - started)
@@ -613,6 +657,15 @@ func prewarm_sections_async(section_ids: Array) -> Dictionary:
 
 func cancel_audio_prewarm() -> void:
 	_audio_prepare_generation += 1
+	_detach_audio_load_consumers()
+
+
+func _detach_audio_load_consumers() -> void:
+	var jobs := _pending_audio_load_jobs.duplicate()
+	_pending_audio_load_jobs.clear()
+	for job in jobs:
+		if is_instance_valid(job):
+			job.detach_consumer()
 
 
 func get_missing_audio_assets() -> Array[String]:

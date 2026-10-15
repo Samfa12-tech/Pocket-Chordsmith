@@ -145,9 +145,13 @@ This helper yields between assets and never starts playback itself. Use
 `cancel_audio_prewarm()` when cancelling the loading screen; replacing the
 playback profile also cancels pending work, so an old request cannot refill the
 new profile's cache. Preparation reports `loaded`, `failed`, `cached_streams`,
-`cancelled` and `max_asset_load_us`. A single large file still decodes
-synchronously: inspect that measured cost and prepare it before gameplay. This
-is cooperative loading, not a background decoder or a per-frame time guarantee.
+`cancelled`, `threaded_assets`, `max_thread_wait_us` and `max_asset_load_us`.
+Imported `res://` resources use Godot's threaded loader. A root-owned job drains
+each request even if the conductor exits; cancellation completes its consumer
+without promoting stale PCM. Raw unimported WAV decoding and prepared PCM ending
+guards remain synchronous: inspect the measured main-thread cost and prepare
+before gameplay. This is not a per-frame time guarantee. Native DAW packs use
+global full-song assets; await `prewarm_arrangement_async()` for those profiles.
 The existing synchronous `prewarm_section(s)` and `prewarm_audio` APIs remain
 available for callers that already manage their loading phase.
 

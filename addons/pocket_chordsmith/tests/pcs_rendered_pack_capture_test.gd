@@ -64,6 +64,13 @@ func _run() -> void:
 			music.playback_profile.sample_preview_enabled = false
 			music.playback_profile.sample_preview_prewarm_on_ready = false
 			root.add_child(music)
+			var preparation := {}
+			if native_chart:
+				preparation = await music.prewarm_arrangement_async()
+				if not preparation.ok or music.is_playing():
+					push_error("Native arrangement preparation failed or started playback.")
+					quit(1)
+					return
 			label.text = "Pocket Audio - exported PCM parity\n\n%s / synchronized=%s\nMix rate: %s / driver: %s\n\nCapturing engine-bus PCM for reference comparison.\nNo human listening claim." % [mix, synchronized, AudioServer.get_mix_rate(), AudioServer.get_driver_name()]
 			# Drain the previous run's output before capturing this start.
 			await create_timer(0.3).timeout
@@ -84,7 +91,7 @@ func _run() -> void:
 			var output := FileAccess.open(args[1].path_join(name), FileAccess.WRITE)
 			output.store_buffer(pcm)
 			output.close()
-			results.append({"mix": mix, "synchronized": synchronized, "frames": samples.size(), "file": name, "selected_streams": selected_streams, "native_chart_processing": native_chart, "naturally_ended": naturally_ended, "chart_audio_seconds": chart.native_audio_duration_seconds})
+			results.append({"mix": mix, "synchronized": synchronized, "frames": samples.size(), "file": name, "selected_streams": selected_streams, "native_chart_processing": native_chart, "naturally_ended": naturally_ended, "chart_audio_seconds": chart.native_audio_duration_seconds, "preparation": preparation})
 			music.queue_free()
 			await process_frame
 	AudioServer.remove_bus_effect(0, AudioServer.get_bus_effect_count(0) - 1)
