@@ -76,8 +76,12 @@ export async function prepareCampfireAcousticNoteBank(context, events, options =
         if (!buffer) throw new Error("Campfire note identity was not prepared. Stop and prepare the updated project before playing.");
         return { ...voice, buffer };
       });
-      const start = Math.max(context.currentTime, when);
+      // Match offline/native onset placement. Fractional BufferSource start
+      // times interpolate the prepared PCM instead of playing its exact samples.
+      const startFrame = Math.max(Math.round(context.currentTime * context.sampleRate), Math.floor(when * context.sampleRate));
+      const start = startFrame / context.sampleRate;
       for (const item of prepared) {
+        const voiceWhen = (startFrame + Math.round(item.offsetSeconds * context.sampleRate)) / context.sampleRate;
         const source = context.createBufferSource();
         const output = context.createGain();
         const panner = context.createStereoPanner();
@@ -87,12 +91,12 @@ export async function prepareCampfireAcousticNoteBank(context, events, options =
         // Controls may cancel the onset event before this queued string starts.
         // Its intrinsic gain must already be the intended level while silent.
         output.gain.value = level;
-        output.gain.setValueAtTime(level, start + item.offsetSeconds);
+        output.gain.setValueAtTime(level, voiceWhen);
         panner.pan.setValueAtTime(pan, start);
         source.connect(output);
         output.connect(panner);
         panner.connect(options.destination || context.destination);
-        const voice = { source, gain: output, baseLevel, level, when: start + item.offsetSeconds, stopped: false };
+        const voice = { source, gain: output, baseLevel, level, when: voiceWhen, stopped: false };
         source.onended = () => {
           active.delete(voice);
           source.disconnect();
@@ -100,7 +104,7 @@ export async function prepareCampfireAcousticNoteBank(context, events, options =
           panner.disconnect();
         };
         active.add(voice);
-        source.start(start + item.offsetSeconds);
+        source.start(voiceWhen);
       }
     },
     stopAll,
@@ -133,6 +137,10 @@ export function prepareCampfireAcousticPlayback(context, event, options = {}) {
     if (!Number.isFinite(releaseSeconds) || releaseSeconds < 0 || releaseSeconds > 0.1) throw new RangeError("Campfire stop release must be from zero to 0.1 seconds.");
     const now = context.currentTime;
     voice.stopped = true;
+    if (voice.when > now) {
+      voice.source.stop(now);
+      return;
+    }
     voice.gain.gain.cancelScheduledValues(now);
     voice.gain.gain.setValueAtTime(1, now);
     voice.gain.gain.linearRampToValueAtTime(0, now + releaseSeconds);
@@ -150,13 +158,14 @@ export function prepareCampfireAcousticPlayback(context, event, options = {}) {
       source.buffer = buffer;
       source.connect(gain);
       gain.connect(destination);
-      const voice = { source, gain, stopped: false };
+      const startFrame = Math.max(Math.round(context.currentTime * context.sampleRate), Math.floor(when * context.sampleRate));
+      const voice = { source, gain, when: startFrame / context.sampleRate, stopped: false };
       source.onended = () => {
         active.delete(voice);
         source.disconnect();
         gain.disconnect();
       };
-      source.start(when);
+      source.start(voice.when);
       active.add(voice);
       return { stop: (releaseSeconds) => stopVoice(voice, releaseSeconds) };
     },

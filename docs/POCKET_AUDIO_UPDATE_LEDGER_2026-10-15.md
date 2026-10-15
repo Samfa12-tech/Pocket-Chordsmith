@@ -549,3 +549,42 @@ Logs: native-tail-ci-clippy-all-targets.log and native-tail-ci-cargo-test.log in
 the primary checkout's ignored validation directory. Renderer identity is
 unchanged because this follow-up changes tests only. Fresh exact-head hosted
 CI and parent review remain pending.
+
+## Tenth source candidate: prepared Campfire sample-grid starts
+
+Based on native tail candidate 75aec991885c290e3bfa004f3e5824a2cc939308.
+Real Chromium fractional-start probes reproduced interpolated prepared PCM:
+NoteBank maximum error 0.004574 at 44.1 kHz, and the separate public prepared
+playback helper 0.064688. A further one-frame pre-onset Stop probe reproduced
+a 0.074598 peak from the queued helper.
+
+Both prepared APIs now use the canonical floored onset frame, clamped to the
+current audio frame. Each NoteBank string adds its rounded strum offset as an
+integer frame before converting to AudioContext seconds. No note PCM, recipe,
+master chain or transport clock is replaced. The public helper immediately
+cancels a not-yet-started voice on Stop, retaining its five-ms release for a
+sounding voice. PR86's accepted intrinsic-gain initialization is retained.
+
+Executed in Chromium 153.0.8010.12: six bank captures at fractional offsets
+0.4/0.6/0.999999 and full 32-beat D/G/Bm/A reference arrangements at 76 BPM,
+both 44.1/48 kHz. Every frame matches canonical PCM plus explicit validation gain
+0.1 and center pan, without fitting: maximum error below 2.8e-9, RMS below
+7.2e-11. Six mono public-helper fractional captures are sample-identical. Four
+public-helper Stops one/two frames before onset are exactly silent. The actual
+suspend frame is asserted. All 20 static, six dynamic and 12 bank queued-control
+captures and ten independent raw PCM hashes pass again. The queued control
+fixture uses a quarter-frame requested offset so the floored second-string onset
+is exactly one/two frames after the asserted suspension, avoiding quotient
+roundtrip ambiguity in the test itself. Queued maximum error remains below
+4.7e-8. Preparation never autoplays or synthesizes inside schedule.
+
+All 192 Core tests and fresh family parity (including 1,173 DAW tests) pass.
+The unchanged Chordsmith builder regenerates the affected embedded worker;
+verify:single-file passes. Organization/governance/whitespace gates pass.
+Retained ignored logs in the second checkout: campfire-prepared-frame-grid-before,
+-after, -final, -core-final, -family-final, -chordsmith-build; helper failures in
+campfire-prepared-helper-before and campfire-prepared-helper-stop-before (all
+.log). This tests real rendered browser audio, not physical output or listening.
+
+Published: nothing. Existing product selectors/full authoring paths, warm reuse,
+installed-device and full two-source Godot acceptance remain active work.

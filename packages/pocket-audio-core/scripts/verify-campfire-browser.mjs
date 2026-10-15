@@ -128,14 +128,15 @@ try {
     for (const sampleRate of [44100, 48000]) for (const leadFrames of [1, 2]) for (const action of ["mute", "volume", "stop"]) {
       const controlFrame = 2048;
       const startFrame = controlFrame + leadFrames - Math.round(0.027 * sampleRate);
+      const startTime = (startFrame + 0.25) / sampleRate;
       const event = { midiNotes: [50, 57, 62, 66], velocity: 1, seed: 123 };
       const context = new OfflineAudioContext(2, sampleRate * 2, sampleRate);
       const referenceContext = new OfflineAudioContext(2, sampleRate * 2, sampleRate);
       const bank = await core.prepareCampfireAcousticNoteBank(context, [event]);
       const referenceBank = await core.prepareCampfireAcousticNoteBank(referenceContext, [event]);
       bank.setOutputGain(0.66, 0);
-      bank.schedule(event, startFrame / sampleRate);
-      referenceBank.schedule(event, startFrame / sampleRate);
+      bank.schedule(event, startTime);
+      referenceBank.schedule(event, startTime);
       // Stop must cancel queued strings, while releasing the already sounding one.
       if (action === "stop") referenceBank.cancelScheduledFrom(controlFrame / sampleRate);
       const baselineRendering = referenceContext.startRendering();
@@ -145,7 +146,7 @@ try {
       const rendering = context.startRendering();
       await suspended;
       const actualControlFrame = Math.round(context.currentTime * sampleRate);
-      const actualLead = startFrame + Math.round(0.027 * sampleRate) - actualControlFrame;
+      const actualLead = Math.floor(startTime * sampleRate) + Math.round(0.027 * sampleRate) - actualControlFrame;
       if (actualControlFrame !== controlFrame || actualLead !== leadFrames) throw new Error(`Queued control missed its ${leadFrames}-frame window: ${actualControlFrame}/${actualLead}`);
       const before = bank.getDiagnostics();
       const target = action === "volume" ? 0.2 : 0;
@@ -171,6 +172,63 @@ try {
       bank.dispose();
       referenceBank.dispose();
     }
+    const frameGrid = [];
+    for (const sampleRate of [44100, 48000]) for (const scenario of [0.4, 0.6, 0.999999, "reference-76-bpm"]) {
+      const events = scenario === "reference-76-bpm" ? core.campfireAcousticReferenceEvents() : [{ time: (sampleRate / 10 + scenario) / sampleRate, midiNotes: [50, 57, 62, 66], velocity: 1 }];
+      const frames = Math.ceil((Math.max(...events.map(event => event.time)) + 1.7) * sampleRate);
+      const context = new OfflineAudioContext(2, frames, sampleRate);
+      const bank = await core.prepareCampfireAcousticNoteBank(context, events);
+      bank.setOutputGain(0.1, 0);
+      const expected = new Float32Array(frames);
+      for (const event of events) {
+        bank.schedule(event, event.time);
+        const pcm = core.renderCampfireAcousticEvent(event, { sampleRate });
+        const onset = Math.floor(event.time * sampleRate);
+        for (let frame = 0; frame < pcm.length; frame += 1) expected[onset + frame] += pcm[frame] * 0.1 * Math.SQRT1_2;
+      }
+      const rendered = await context.startRendering();
+      let maxError = 0, squaredError = 0;
+      for (let frame = 0; frame < frames; frame += 1) for (let channel = 0; channel < 2; channel += 1) {
+        const error = Math.abs(rendered.getChannelData(channel)[frame] - expected[frame]);
+        maxError = Math.max(maxError, error); squaredError += error * error;
+      }
+      const rmsError = Math.sqrt(squaredError / (frames * 2));
+      if (maxError > 1e-7 || rmsError > 1e-8) throw new Error(`Prepared frame-grid mismatch ${sampleRate}/${scenario}: ${maxError}/${rmsError}`);
+      frameGrid.push({ sampleRate, scenario, frames, maxError, rmsError, passed: true });
+      bank.dispose();
+    }
+    const preparedStarts = [];
+    for (const sampleRate of [44100, 48000]) for (const fraction of [0.4, 0.6, 0.999999]) {
+      const event = { midiNotes: [50, 57, 62, 66], velocity: 1 };
+      const when = (sampleRate / 10 + fraction) / sampleRate;
+      const context = new OfflineAudioContext(1, sampleRate * 2, sampleRate);
+      const prepared = core.prepareCampfireAcousticPlayback(context, event);
+      prepared.start(when);
+      const rendered = await context.startRendering();
+      const pcm = core.renderCampfireAcousticEvent(event, { sampleRate });
+      const onset = Math.floor(when * sampleRate);
+      let maxError = 0;
+      for (let frame = 0; frame < rendered.length; frame += 1) maxError = Math.max(maxError, Math.abs(rendered.getChannelData(0)[frame] - (pcm[frame - onset] || 0)));
+      if (maxError > 1e-7) throw new Error(`Prepared playback fractional mismatch ${sampleRate}/${fraction}: ${maxError}`);
+      preparedStarts.push({ sampleRate, fraction, maxError, passed: true });
+    }
+    const preparedStops = [];
+    for (const sampleRate of [44100, 48000]) for (const leadFrames of [1, 2]) {
+      const context = new OfflineAudioContext(1, sampleRate, sampleRate);
+      const prepared = core.prepareCampfireAcousticPlayback(context, { midi: 50 });
+      const voice = prepared.start((2048 + leadFrames + 0.25) / sampleRate);
+      const suspended = context.suspend((2048 - 0.25) / sampleRate);
+      const rendering = context.startRendering();
+      await suspended;
+      if (Math.round(context.currentTime * sampleRate) !== 2048) throw new Error("Prepared Stop missed its asserted audio frame");
+      voice.stop(0.005);
+      await context.resume();
+      const rendered = await rendering;
+      let peak = 0;
+      for (const sample of rendered.getChannelData(0)) peak = Math.max(peak, Math.abs(sample));
+      if (peak !== 0) throw new Error(`Stopped queued prepared playback sounded ${sampleRate}/${leadFrames}: ${peak}`);
+      preparedStops.push({ sampleRate, leadFrames, peak, passed: true });
+    }
     const lookaheadContext = new OfflineAudioContext(2, 48000 * 2, 48000);
     const first = { midi: 50, velocity: 1 };
     const future = { midi: 69, velocity: 1 };
@@ -184,7 +242,7 @@ try {
     for (let frame = 0; frame < actual.length; frame += 1) if (Math.abs(actual[frame] - (firstPcm[frame] || 0)) > 1e-7) throw new Error("Section transition cut an existing tail or leaked cancelled lookahead");
     if (!lookahead.getChannelData(1).every((value) => value === 0)) throw new Error("Hard-left prepared Campfire leaked into the right channel");
     bank.dispose();
-    return { renderer: "Chromium OfflineAudioContext", physicalOutput: "not tested", records: results, liveOfflineParity: liveResults, liveMixerChanges, queuedControls, cancelledFutureVoice: "passed", preservedTailAndCancelledLookahead: "passed", preparationAutoplay: "none" };
+    return { renderer: "Chromium OfflineAudioContext", physicalOutput: "not tested", records: results, liveOfflineParity: liveResults, liveMixerChanges, queuedControls, frameGrid, preparedStarts, preparedStops, cancelledFutureVoice: "passed", preservedTailAndCancelledLookahead: "passed", preparationAutoplay: "none" };
   }, fixtures.records);
   console.log(JSON.stringify({ browserVersion: browser.version(), ...result }, null, 2));
 } finally {

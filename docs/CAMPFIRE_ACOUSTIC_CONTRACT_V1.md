@@ -219,3 +219,11 @@ native render limit reports an explicit error. Explicit exact-duration export
 retains its chosen cut. Renderer cache identity is v42-680a0e22-campfire-acoustic-r1.
 This leaves other instruments, live playback and hosted/recorded range policies
 unchanged. See ninth ledger candidate for exact native WAV and graph evidence.
+
+Prepared browser Campfire APIs place a requested onset on floor(time*sampleRate),
+clamped to the current audio frame. Each bank string adds its integer rounded
+strum offset before converting to seconds; this avoids fractional BufferSource
+interpolation of the reference PCM. Explicit Stop cancels future helper voices
+immediately and releases only sounding voices. Real browser captures cover
+fractional starts and the entire 32-beat 76 BPM reference at both 44.1/48 kHz;
+see the tenth ledger candidate for tolerances, measured failure and fixed output.
