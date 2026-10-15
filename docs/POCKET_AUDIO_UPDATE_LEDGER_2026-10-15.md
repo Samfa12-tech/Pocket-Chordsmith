@@ -841,3 +841,20 @@ Windows WebKit live-audio limitation remains. Mic is scoped omitted, not passed;
 retain Sam's hands-on check if final shared risk requires it. Core repo-only/no
 npm, no Reef Sweep/PR75/dependency merges. Remaining whole-family Godot runtime
 routes, layout/BeatStitch/finishing and exact installed acceptance remain active.
+
+PR93 review correction: reproduced enabled Campfire empty Grid -> strum/pick
+leaving its track inactive/muted. Performance edits now synchronize source track
+activation without changing explicit mixer mute. Prepared Campfire empty imports
+retain inactivity separately from mute (source disable still mutes); legacy amp
+import policy stays unchanged. No source guitarEnabled flag is silently enabled.
+New regressions cover empty Grid -> automatic -> Grid, native payload audibility
+and24 prepared events,48 decoded MIDI notes, explicit empty-track mixer mute,
+explicit source disable, and exact Undo. Actual shell UI checks inactivity/mute
+controls and multiple Undo steps. Targeted59 and TypeScript pass; full shell21
+pass. First complete source run could not find the installed browser executable
+(1173passed/14skipped); rerun uses the retained browser path, not counted as a
+product test failure/pass. Raw before/after/setup logs retained under primary
+local-artifacts/scratch/validation/native-campfire-empty-grid-*.log. No Rust,
+recording/capture, version or dependency changes; no installed/listening claim.
+Final corrected source gate1187/1187 passed with the installed browser path;
+production UI build, repository/security/manifest104/whitespace also pass.
